@@ -1,7 +1,8 @@
 # mimarsinan ROADMAP — toward a generic, publication-grade SNN-deployment toolchain
 
 *Living artifact. Dependency-ordered. Re-priced as increments land. The companion to
-`PROGRAM_CHECKPOINT_v2.md` (state) and `HYPERVOLUME.md` (the axis SSOT).*
+`PROGRAM_CHECKPOINT_v2.md` (state), `docs/checkpoint_research/00_INDEX.md` (engineering
+handoff since tuner-unification phase 3), and `HYPERVOLUME.md` (the axis SSOT).*
 
 ## North star (Definition of Done)
 

@@ -11,6 +11,11 @@ that carried the work from "can it map" to "what does it cost to map at
 ImageNet scale." Every number below is from the science-valid ledger or a
 named measured probe. Nothing here is invented or extrapolated.
 
+**Engineering handoff since phase 3:** [`docs/checkpoint_research/00_INDEX.md`](../checkpoint_research/00_INDEX.md)
+documents the ~296-commit delta (tuning refactor, campaign infra, CIFAR conversion fidelity,
+ImageNet F4) with code entry points and next-work tickets. v2 MNIST-era claims hold within
+their stated scope; CIFAR natural-image results extend the frontier there.
+
 ---
 
 ## 1. Vision and where we stand

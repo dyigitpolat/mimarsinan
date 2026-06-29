@@ -1,0 +1,7 @@
+{
+  "schema": "semantic-screen-v1",
+  "axis": "pruning",
+  "status": "ASSERTED_UNSCREENED",
+  "paired_cells_required": true,
+  "note": "Semantic pruning axis remains enumerated until GPU equivalence screens complete."
+}

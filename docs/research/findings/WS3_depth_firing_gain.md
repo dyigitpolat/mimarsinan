@@ -787,6 +787,41 @@ gate-fix completes the dataset × depth × rescue cube (backlog `plan_stage:25`)
 
 ---
 
+### 4i.1 CONFIRMED (consolidated, strict-validity re-derivation) — the d10 dataset death-cascade survives the `returncode==0` finalization rule; synchronized holds the ANN ceiling (`item_id=dcnn_d10_dataset_cascaded_vs_sync`, 2026-06-26)
+
+This re-derives §4i under the **strict `returncode==0` finalization rule** (one finalized
+cascaded seed per dataset is dropped) and re-cites the `pdcnnd10data_*` run_ids for director
+per-run harvest coverage. The verdict is **unchanged**: on the VALID trainable `deep_cnn`
+(width 16, S=4, `ttfs_cycle_based`) at **d10**, cascaded single-spike collapses while
+synchronized stays near-lossless on **both harder datasets**. Ledger: `cluster:"WS3"`,
+`kind:"depth_firing_gain"`.
+
+| dataset | cascaded (n=2 strict-valid) | synchronized (n=3) | **casc→sync GAP** | ANN ref | casc→ANN | sync→ANN | excluded seed (NOT finalized) |
+|:--------|:----------------------------|:-------------------|------------------:|--------:|---------:|---------:|:------------------------------|
+| FashionMNIST | **0.7250** (s0/s2 = .71/.74) | 0.9041 (.9007/.9087/.9028) | **+17.91** | 0.9336 | 21.13 | −2.95 | s1 `rc=-9` timed_out, pre-kill 0.7416 |
+| KMNIST | **0.8025** (s1/s2 = .77/.835) | 0.9623 (.9606/.9658/.9605) | **+15.98** | 0.9616 | 17.10 | −0.07 | s0 `rc=1` **NfScmParityError** (0.9336<0.98), pre-crash 0.8903 |
+
+**Verdict — CONFIRMED.** The death-cascade manifests at d10 across the harder-dataset spectrum
+and is **dataset-dependent in magnitude (FMNIST +17.91 > KMNIST +15.98 > MNIST §4f +13.86pp)**,
+while synchronized sits **AT the ANN ceiling** (KMNIST sync→ANN **−0.07pp**, FMNIST −2.95pp). The
+KMNIST cascaded s0 crash is itself signal: a **genuine cascaded torch↔deployed-sim fidelity
+divergence** (parity 0.9336 < 0.98 `min_agreement`), not an infra/packing crash, and its excluded
+pre-crash artifact 0.8903 points the **same** direction.
+
+**Confounds / bounds.** (1) **Strict n=2 cascaded:** by the `rc==0` rule each cascaded cell rests
+on 2 finalized seeds; the strict-valid means (FMNIST 0.725, KMNIST 0.8025) sit inside the
+including-excluded ranges (FMNIST +0.197..+0.226, KMNIST +0.127..+0.215 casc→ANN). All synchronized
+cells are clean n=3 `rc=0`. (2) **Read the gaps, not 3rd decimals:** cascaded at
+`max_simulation_samples=200` (FMNIST .71/.74 are exact n/200 multiples); synchronized is full-test
+SCM. The +16..+18pp casc→sync and +17..+21pp casc→ANN gaps are robust. (3) **NOT untrained-floor:**
+every ANN ≫ chance (FMNIST ~0.936, KMNIST ~0.97 ≫ 0.10) ⇒ genuine firing-gain. (4) casc→ANN /
+casc→sync mix an n=2 cascaded mean against an n=3 synchronized/ANN mean; sync ANN refs differ
+slightly from cascaded ANN refs (separately trained per schedule). Run ids:
+`pdcnnd10data_{FashionMNIST,KMNIST}_DataProvider_{cascaded,synchronized}_s{0,1,2}` (FMNIST cascaded
+s1, KMNIST cascaded s0 excluded).
+
+---
+
 ## 4j. The §4g d8 dataset cells are now CLEAN `rc=0` on `bigcores` — confound closed, dataset-margin death-cascade VALID on the convnet (2026-06-24)
 
 **Question (close the §4g d8 confound).** §4g measured the deep_cnn d8 FMNIST/KMNIST
@@ -1891,6 +1926,46 @@ CNN table and flags SVHN cascaded as sync-only.** (Run ids: see ledger
 
 ---
 
+## 5d. The dedicated SVHN cascaded RECOVER batch FAILS again — the n=1000 `plnsvhnrec_` re-run reproduces the identical NF↔SCM parity crash on all 3 seeds; SVHN cascaded LeNet5 is a deterministic deployment-gate failure (`item_id:"ws3_lenet_svhn_cascade_recovery_parityfail_persists"`, 2026-06-26)
+
+§5c flagged SVHN cascaded as "sync-only" off the `plnmargin_`/`plncpair_` arms. A
+dedicated **recover batch** (`plnsvhnrec_lenet_SVHN_cascaded_n1000`, 3 seeds) was queued
+to fix it. It **did not** — the recover re-run **reproduces the same crash**, confirming
+the failure is deterministic and cascaded-schedule-specific, not a transient OOM/timeout.
+
+| arm | run_id prefix | seeds | rc | finalized | NF↔SCM agreement | deployed | ANN ref |
+|:----|:--------------|:-----:|:--:|:---------:|:-----------------|:---------|--------:|
+| cascaded (recover) | `plnsvhnrec_..._cascaded_n1000` | s0/s1/s2 | **1** (q/failed/) | **no** | **0.8594 / 0.7812 / 0.8438** ≪ 0.98 | **null** (crash) | 0.8955 |
+| synchronized (paired) | `plncpair_..._synchronized_n1000` | s0/s1/s2 | 0 (q/done/) | yes | — | **0.8593 ± 0.36pp** | 0.8945 |
+
+**Verdict — `cascaded_svhn_parityfail_persists` (NEGATIVE/CONFIRMATION).** All 3 recover
+seeds finalize `returncode==1` in `q/failed/`, crashing at the IDENTICAL gate as §5c —
+`NfScmParityError` (`soft_core_mapping_step.py:361` → `nf_scm_parity.py:176`), cascaded
+NF↔SCM decision agreement **0.8594 / 0.7812 / 0.8438**, all far below `min_agreement=0.98`
+(the wrong-NF-dynamics incident class). By the strict `rc==0` rule
+`cascaded_run_finalized=false` and `cascaded_deployed_mean=null` ⇒ **the cascaded→sync
+gap is NOT computable**. The crash is **not transient** (`timed_out=false`, wall
+~500–556 s ≪ 3600 s budget; the run's own precondition to smoke ONE seed to `rc=0` before
+enabling was violated, and the re-run reproduced the prior 6-seed `plncpair_`/`csr_` SVHN
+cascaded `n1000` `rc=1` failures), so it is a **deterministic** SVHN-on-lenet5 cascaded
+deployment-gate failure.
+
+**Confounds / bounds.** (1) **Pre-crash floats are NOT deployed.** The
+`__target_metric.json` values 0.6709 / 0.6840 / 0.7062 are the **PRE-CRASH
+Normalization-Fusion analytical metric** captured before the SCM gate fired (the cascaded
+TTFS fine-tune had already collapsed ANN ~0.8955 → ~0.687 pre-crash); they are **not**
+deployed SCM accuracy and **must not** be cited as a deployment number. (2) **No
+untrained-floor confound:** cascaded ANN ~0.8955 and synchronized ANN ~0.8945 both ≫ SVHN
+chance 0.196, so this is a genuine firing-gain vehicle — the failure is a *fidelity-gate*
+failure, not a training floor. (3) **Matched synchronized arm finalizes cleanly** (`rc=0`,
+deployed 0.8593 ± 0.36pp, sync→ANN 3.52pp): **synchronized owns SVHN deployment** while
+cascaded cannot finalize. SVHN remains **the one cell where cascaded LeNet5 is not merely
+lossy but crashes the deployment parity gate.** (Ledger:
+`item_id:"ws3_lenet_svhn_cascade_recovery_parityfail_persists"`, aliasing
+`lenet_cascade_kmnist_rung_svhn_parityfail`.)
+
+---
+
 ## 4z. The bigcores-gatefix `deep_cnn` cascaded→ANN deficit WIDENS d8→d10 against a full-eval trained-ANN reference, and `conversion_policy` is NET-NEGATIVE at BOTH rungs (`item_id=dcnn_deep_n1000_gatefix_d8_d10`, 2026-06-25)
 
 The §4v MNIST depth ladder measured `cascaded→synchronized`; the WS7 §12 d8 escalation
@@ -2197,6 +2272,37 @@ cpFalse corroborative numbers; on FMNIST cp is unmeasurable (cpTrue all crashed)
 
 ---
 
+## 4af. DEDUP — the round item `dcnn_d10_theta_cotrain_rescue` is a re-derivation of §4ae/§4ac/§2h; every run_id was already harvested, so it adds an ALIAS row only — NO new cell (`item_id=dcnn_d10_theta_cotrain_rescue`, 2026-06-25)
+
+A later synthesis round re-confirmed the theta-cotrain rescue probe on the VALID `deep_cnn`
+d8/d10 vehicle (MNIST `pdcnnbcn1000fix_`, off-MNIST `pdcnnd10datafix_`, MNIST cotTrue
+`pdcnnd10fix_`) and reached **byte-identical conclusions** to the already-consolidated items:
+
+- **`theta_cotrain` (cotTrue) UNTESTABLE** — all 12 `cotTrue` runs crash `rc=1` at
+  `Conv2DPerceptronMapper(name='features_3')` (per-channel θ broadcast at the wrong conv spatial
+  dim, 28-vs-16 mismatch). Zero rescue numbers exist; the hypothesized recoveries (FMNIST 0.935 /
+  KMNIST 0.97–0.98 / MNIST 0.994) are **UNOBSERVED and UNOBTAINABLE** until a `src/` convnet-forward
+  fix lands. Already recorded NOT-USABLE under `ws3_deep_cnn_cascaded_firing_gain_at_depth` +
+  `dcnn_d10_firing_gain_rescue_levers`.
+- **`conversion_policy` (cp) does NOT rescue — it REGRESSES** the hi-res MNIST cells (d10 −1.83pp,
+  d8 −2.47pp). Identical to §2h `dcnn_deep_n1000_gatefix_d8_d10`.
+- **Cascade MILD on well-trained MNIST** (cotF cpF: d8 0.9723 / +2.25pp, d10 0.9433 / +4.83pp →ANN,
+  n1000) but **REAL-but-LOW-RES off MNIST** (FMNIST d10 0.75 / +18.8pp, KMNIST d10 0.8625 / +9.9pp,
+  n200/n=2). Identical to `dcnn_dataset_breadth_depth` + `dcnn_d10_firing_gain_rescue_levers`.
+- **No synchronized arm** in any of these prefixes → `cascaded_to_sync_gap_pp` NULL; the ~0.992
+  sync ceiling is a prior-stage anchor, not measured here.
+
+**Verdict — DEDUP (no new evidence).** All 32 run_ids (15 finalized `cotFalse`, 17 `cotTrue`-`rc=1`)
+were already in the ledger under `{ws3_deep_cnn_cascaded_firing_gain_at_depth,
+dcnn_deep_n1000_gatefix_d8_d10, dcnn_deep_controller_escalation, dcnn_d10_firing_gain_rescue_levers,
+dcnn_dataset_breadth_depth}`, and every per-cell number is byte-identical. The synthesizer appended
+**one alias row** (NULL per-cell data) so the director attributes these runs to the new item_id too,
+**without double-counting**. The standing engineering blocker is unchanged: the
+`Conv2DPerceptronMapper` per-channel θ-broadcast forward bug must be fixed in `src/` before the
+rescue lever can be evaluated at all.
+
+---
+
 ## 5. deep_cnn FashionMNIST — cascaded vs synchronized at d4, d6 onset (2026-06-25)
 
 **Question.** On the VALID trainable `deep_cnn` vehicle at FashionMNIST, does the
@@ -2272,6 +2378,520 @@ resolution (a WASH); only the multi-pp regressions exceed it. (3) Per-seed swing
 cascaded deployed on the n=200 cascaded-eval subset, sibling sync ceiling on the full 10000.
 (5) **No at-chance confound** — ANN refs ~0.928–0.932 ≫ 0.10 → genuine firing-gain, a valid
 result. (6) **KMNIST HALF UNUSABLE** — 10/12 KMNIST runs `rc=-9` (SIGKILL); only mix=0.1
-s0/s1 rc=0 → the mix axis CANNOT be characterized on KMNIST, no KMNIST rows emitted. Run ids —
+s0/s1 rc=0 → the mix axis CANNOT be characterized on KMNIST, no KMNIST rows emitted (see §6b
+for the one finalized KMNIST cell). Run ids —
 `pdcnnd6datastemix_FashionMNIST_DataProvider_mix{0.1,0.25,0.75,0.9}_s{0,1,2}`.
 
+---
+
+## 6b. deep_cnn d6 KMNIST — staircase-STE hedge mix sweep, mix axis LARGELY UNTESTABLE (10/12 SIGKILL); the one finalized mix REGRESSES the floor (`item_id=dcnn_d6_kmnist_staircase_ste_mix_sweep`, 2026-06-25)
+
+**Question.** Does the §6 FMNIST "staircase-STE escape hatch CLOSED" verdict extend to the
+**KMNIST** dataset axis? Same batch design: `deep_cnn` w16 (VALID on-chip-majority), S=4,
+`ttfs_cycle_based`, all cascaded, `ttfs_staircase_ste=True`, `allow_coalescing=True`,
+`max_simulation_samples=200`; only in-batch axis = `ttfs_ste_mix ∈ {0.1, 0.25, 0.75, 0.9}`,
+3 seeds each (12 runs).
+
+| ttfs_ste_mix | deployed (mean ± sd_pp) | per-seed (rc=0) | n (rc=0 of 3) | ANN ref | vs no-lever baseline (0.9167) | vs sync ceiling (0.9619) |
+|:-------------|:------------------------|:----------------|:--------------|--------:|------------------------------:|-------------------------:|
+| **0.1** | **0.895 ± 1.5pp** | .91/.88 | **2 of 3** | 0.9663 | **−2.17pp** (REGRESS, only finalized mix) | −6.69pp |
+| 0.25 | — (all `rc=-9` SIGKILL) | — | **0 of 3** | — | UNCHARACTERIZABLE | — |
+| 0.75 | — (all `rc=-9` SIGKILL) | — | **0 of 3** | — | UNCHARACTERIZABLE | — |
+| 0.9  | — (all `rc=-9` SIGKILL) | — | **0 of 3** | — | UNCHARACTERIZABLE | — |
+
+**Verdict — WASH/REGRESSION, escape hatch CLOSED on KMNIST, but PARTIALLY UNCHARACTERIZED.**
+The only finalizable cell, **mix=0.1, deploys 0.895 — a −2.17pp REGRESSION** below the sibling
+no-lever cascaded baseline 0.9167 (NOT a recovery) and **−6.69pp** below the synchronized
+ceiling 0.9619. This mirrors the §6 FMNIST mix=0.1 −2.50pp regression and **extends the
+staircase-STE-escape-hatch-CLOSED verdict to the KMNIST dataset axis** at the one tested mix.
+The other three mixes (0.25/0.75/0.9) have **0/3 valid seeds each** (all `rc=-9` SIGKILL), so
+**no mix recovers the cascaded floor and the mix axis cannot be fully swept on KMNIST**
+(firing-gain origin confirmed: ANN ~0.966 ≫ 0.10 chance).
+
+### Confounds / bounds
+
+(1) **MIX AXIS LARGELY UNTESTABLE / CRASH FLEET** — 10 of 12 KMNIST runs are `rc=-9` (SIGKILL,
+likely OOM/timeout, wall ~1368s for the 2 survivors). Only mix=0.1 s0/s1 are valid; mix=0.1 s2
+and ALL of mix=0.25/0.75/0.9 (9 runs) crashed → mix=0.25/0.75/0.9 have **ZERO valid seeds and
+CANNOT be characterized**. (2) **STALE METRIC FILES DISCARDED** — crashed runs still have
+`__target_metric.json` on disk (mix0.9 = 0.0/0.0/0.0; mix0.75 = 0.8517/0.3869/0.9726; mix0.25 =
+0.8983/0.896/0.8279); the 0.0 and the 0.9726-vs-0.3869 inconsistencies prove these are
+leftover/partial artifacts from killed processes → **DISCARDED per the rc==0 validity rule**, no
+rows emitted. (3) **n=2 for the only valid cell** (mix=0.1, below the requested 3); per-seed
+spread is large (.91 vs .88, sd ~1.5pp) → the −2.17pp regression carries several-pp noise (it
+exceeds the n=200 0.005 grid, but barely given n=2). (4) **MIX-SWEEP, NOT casc-vs-sync** — all
+runs are `ttfs_cycle_schedule=cascaded` (conversion_policy=False); NO synchronized arm in-batch.
+The sync ceiling 0.9619 and no-lever baseline 0.9167 are SIBLING `pdcnnbcd6data_KMNIST` runs (3
+seeds each, rc=0), NOT paired in-batch runs. (5) **EVAL-SET ASYMMETRY** — cascaded mix runs on
+the n=200 cascaded-eval subset; the sibling sync ceiling on the full test set. (6) **No at-chance
+confound for the valid cell** — ANN 0.9634/0.9691 (mean 0.9663) ≫ 0.10 → genuine firing-gain,
+not an untrained-net artifact. Run ids —
+`pdcnnd6datastemix_KMNIST_DataProvider_mix{0.1,0.25,0.75,0.9}_s{0,1,2}`.
+
+---
+
+## 7. deep_cnn FashionMNIST `f2_` baseline — cascaded vs synchronized × activation_scale_quantile, d4/d6 (2026-06-25)
+
+**Question.** Reproduce the §5 `f1_` FashionMNIST death-cascade onset on the independent
+`f2_` baseline batch (`activation_scale_quantile ∈ {0.99, 1.0}` axis, S=4, `ttfs_cycle_based`,
+fixed-chip, `max_simulation_samples=50`) and ask whether the `activation_scale_quantile` knob
+moves the synchronized ceiling. `item_id=f2_deep_cnn_fashionmnist_baseline_cascaded_vs_sync_depth`.
+
+| d | sched | deployed (valid rc=0) | n (rc=0) | ANN ref | gap→ANN (pp) | casc→sync (pp) |
+|:--|:------|:----------------------|:--------:|--------:|-------------:|---------------:|
+| 4 | cascaded     | **0.82** (valid s2=0.84 / s0=0.80; pooled-all6 mean **0.7653**) | **2 of 6** | 0.9276 | +10.66 (valid) / +16.2 (pooled) | **+8.2** (valid) / **+13.67** (pooled-all6) |
+| 4 | synchronized | **0.902 ± ~0.4pp** (6 seeds; q0.99 0.9019 / q1.0 0.9021) | 6 | 0.9276 | +2.55 | — |
+| 6 | cascaded     | — (deployed-at-crash mean **0.7221**) | **0 of 6** | 0.9308 | +20.87 at crash | — (no valid sync) |
+| 6 | synchronized | — (PRE-deploy analytic 0.9028 / 0.8961) | **0 of 6** | 0.9308 | — | — |
+
+**Verdict — `DEATH_CASCADE_CONFIRMED_WITH_CONFOUNDS` (reproduces §5 `f1_`).**
+(a) **d4 death-cascade reproduced:** cascaded deploys +8.2pp below the synchronized arm (valid
+n=2) and +10.66pp below the ~0.928 well-trained ANN, vs only +2.55pp for synchronized — a genuine
+firing-gain gap (FMNIST chance 0.10). The 4 crashed cascaded seeds (rc=1, retention-floor death-
+cascade at 0.78/0.76/0.69/0.72) **ARE the death-cascade**; pooling all 6 widens the gap to +13.67pp,
+bracketing the survivorship-biased valid-only +8.2pp. (b) **d6 deepens but is UNTESTABLE for a
+paired gap:** all 6 cascaded d6 crash at the retention floor (deployed-at-crash mean 0.7221 — deeper
+than d4's ~0.80–0.84), and all 6 synchronized d6 crash at **hard-core packing** (`softcore (1152
+axons,128 neurons) does not fit`) BEFORE the deployment sim, so the d6 `__target_metric` 0.9028/0.8961
+are PRE-deployment analytic, NOT on-chip. The widening is qualitatively confirmed (cascaded d6 ~16–23pp
+below the sync analytic ~0.90) but there is **no valid cascaded→sync deployed comparison at d6**.
+(c) **`activation_scale_quantile` is NEUTRAL** on the synchronized ceiling: q0.99=0.9019 vs q1.0=0.9021
+(−0.02pp, inside seed sd); the cascaded knob comparison is confounded by single-seed (n=1) valid points.
+
+### Confounds / bounds
+
+(1) `max_simulation_samples=50` → deployed precise to ~±0.02; **read GAPS in pp, not 3rd decimals**.
+(2) Cascaded d4 is **survivorship-biased HIGH** (only 2/6 rc=0; the 4 crashed seeds ARE the cascade
+collapse). (3) **d6 has 0 finalized in either arm** — the synchronized d6 packing fail is a hardware-fit
+confound, NOT firing-gain; the **bigcores platform override** (`plan_dcnn_deathcascade_bigcores`) is the
+proven fix to recover a valid sync d6 baseline. (4) ANN ~0.928 (d4) / ~0.931 (d6) ≫ 0.10 → genuine, not
+an untrained artifact. (5) **EVAL n=50** is the headline limiter for both arms. Run ids —
+`f2_deep_cnn_fashionmnist_baseline_FashionMNIST_DataProvider_{cascaded,synchronized}_d{4,6}_activation_scale_quantile_{0.99,1.0}_s{0,1,2}`.
+
+---
+
+## 8. deep_cnn MNIST `f2_` baseline — headline d6 pair MISSING; d4 stands in (2026-06-25)
+
+**Question.** The requested headline was a `deep_cnn` MNIST **d6** cascaded-vs-synchronized pair
+(`item_id=f2_deep_cnn_mnist_baseline_cascaded_vs_sync_depth`, `activation_scale_quantile ∈ {0.99,1.0}`,
+S=4, `ttfs_cycle_based`, `max_simulation_samples=50`).
+
+| d | sched | metric | deployed | n (rc=0) | ANN ref | gap→ANN (pp) | casc→sync (pp) |
+|:--|:------|:-------|:---------|:--------:|--------:|-------------:|---------------:|
+| 4 | cascaded     | full-set identity-mapped SCM | **0.9853** (q0.99 s1 0.9858 / s2 0.9872) | **2 of 3** | 0.9943 | +0.80 | **+0.35** |
+| 4 | synchronized | full-set identity-mapped SCM | **0.9888** | 3 | 0.9943 | +0.26 | — |
+| 6 | cascaded     | — | — (collapsed to 0.48 at FT crash) | **0 of 6** | 0.9904 | — | — |
+| 6 | synchronized | — | — (all rc=1) | **0 of 6** | 0.9904 | — | — |
+
+**Verdict — `CONFOUNDED_PARTIAL`: headline d6 pair does NOT exist; d4 stands in.**
+(a) **The d6 headline pair CANNOT be confirmed:** all 12 MNIST d6 runs (both modes × both quantiles
+× s0–s2) are `rc=1`, `timed_out=False`. Cascaded d6 crashed inside `TTFS Cycle Fine-Tuning` (acc
+collapsed to 0.48, tripping the retention assertion `target ≥ 0.9904·0.85 = 0.842`) — a depth-driven
+death-cascade; synchronized d6 also crashed. **No d6 deployed accuracy is emitted in either mode.**
+(b) **d4 stands in, directionally:** on the **matched full-set identity-mapped SCM** metric (the only
+mode-comparable read), synchronized is near-lossless (0.9888, +0.26pp under its ~0.99 ANN) and cascaded
+sits ~0.35pp lower (0.9853, +0.80pp under ANN) — a small but real cascaded deficit. (c) **`activation_scale_quantile`
+{0.99,1.0} is a WASH** (identical +0.23pp within-mode shift, inside ~0.002–0.003 seed sd). This supports
+the "synchronized as deep-model default" policy **but at d4, not the requested d6**.
+
+### Confounds / bounds
+
+(1) **HEADLINE d6 PAIR DOES NOT EXIST** — all 12 d6 runs crashed `rc=1`; no d6 number can be reported.
+(2) **Deployed `__target_metric` is NOT mode-comparable** — cascaded `__target_metric` is on 50
+subsampled samples (quantized 0.96=48/50, 0.98=49/50); synchronized `__target_metric` equals the FULL
+test set (per commit 5568518). The honest comparison therefore uses the **full-set identity-mapped SCM**
+accuracy for BOTH modes (cascaded SCM==HCM in these logs). (3) **Cascaded d4 is n=2** (s0 ALSO crashed
+`rc=1`, acc collapsed to 0.81, same retention assertion) vs synchronized n=3. (4) ANN refs ~0.989–0.997
+well-trained (MNIST chance 0.1135) → genuine firing-gain, not an untrained artifact. (5) **Fix to finalize
+d6:** bigcores platform override + n=1000 nevresim re-run. Run ids —
+`f2_deep_cnn_mnist_baseline_MNIST_DataProvider_{cascaded,synchronized}_d{4,6}_activation_scale_quantile_{0.99,1.0}_s{0,1,2}`.
+
+
+---
+
+## From-scratch `deep_cnn` (w16, S=4) cascaded-vs-synchronized — KMNIST clean, FMNIST degraded, margin does NOT order the from-scratch cascade (2026-06-25)
+
+Two CONFIRMED-this-round items on the **VALID on-chip-majority** `deep_cnn` (width 16,
+`ttfs_cycle_based` S=4) trained **FROM SCRATCH** (not pretrained-w64) and evaluated on
+the **FULL test set** (`max_simulation_samples=0`). Ledger: `cluster:"WS3"`,
+`kind:"arch_dataset"`, `item_id ∈ {dcnn_kmnist_from_scratch_cascade_vs_sync_depth,
+dcnn_fmnist_from_scratch_fulltest_d6_sync_gap_close}`.
+
+| dataset | depth | cascaded deployed (mean ± sd) | synchronized deployed | ANN ref | **casc→ANN gap** | casc→sync gap | sync→ANN | n (casc/sync) | verdict |
+|:--------|:------|:------------------------------|:----------------------|--------:|-----------------:|--------------:|---------:|:--------------|:--------|
+| KMNIST | d4 | **0.9210** (±0.61pp) | 0.9463 | 0.9680 | **4.70pp** | +2.53 | 1.90 | 5/5 | **VALID** (clean, no collapse) |
+| KMNIST | d6 | — (cascaded x5 `rc=-9` OOM) | **0.9666** | 0.9720 | — | — | 0.55 | 0/5 | **VALID_SYNC_ONLY** (near-lossless) |
+| FashionMNIST | d4 | **0.8579** (±0.04pp, n=2) | 0.9017 | 0.9263 | **6.80pp** | +4.39 | 2.49 | 2/5 | VALID (casc n=2, degraded) |
+| FashionMNIST | d6 | — (cascaded x5 `rc=1`) | **0.8947** | 0.9301 | — | — | 3.54 | 0/5 | **VALID_SYNC_ONLY** (d6 cascade UNANSWERABLE) |
+
+- **Synchronized recovers most of the cascade deficit and stays near-lossless deep.** On
+  KMNIST synchronized lifts the d4 deployed by **+2.53pp** (cascade ANN-gap 4.70 → sync
+  1.90pp) and holds **0.55pp** under ANN at d6; on FMNIST synchronized lifts d4 by **+4.39pp**
+  and holds 3.54pp at d6. The "synchronized is the deep-model default" policy holds **from
+  scratch on a VALID convnet**, not just on pretrained-w64.
+- **The from-scratch death-cascade does NOT order by dataset margin** the way the
+  pretrained-w64 ladder did. At matched d4 the cascaded ANN-gap is **FMNIST 13.01pp >
+  MNIST 8.45pp > KMNIST 4.70pp**, which does NOT track the ANN-ceiling order (MNIST 0.992 >
+  KMNIST 0.968 > FMNIST 0.928). Decisive confound: the MNIST and FMNIST cascaded means are
+  **bimodal per-seed collapses** (MNIST dep sd **9.68pp**, seeds s2/s3 crash to 0.829/0.756;
+  FMNIST dep sd 4.95pp), so they are not clean firing-gain gaps. **Only KMNIST is tight and
+  collapse-free (sd 0.61pp) — and it has the SMALLEST gap.** Margin-orders-the-cascade is
+  REFUTED from-scratch at w16.
+
+### Confounds / bounds
+
+(1) **No cascaded depth-progression beyond d4.** On KMNIST cascaded d6 ×5 finalized `rc=-9`
+(OOM/killed) and all d8 `rc=1`; on FMNIST cascaded d6 ×5 finalized `rc=1` and d8 ×5 `rc=1`.
+**There is NO d6 cascaded-vs-sync pair on either dataset from-scratch** — the d6 cells are
+synchronized-only. The FMNIST item's framed goal of "closing the d6 cascaded-vs-sync gap" is
+**NOT met**. (2) **FMNIST d4 cascaded is n=2** (s0,s3; s1/s2/s4 crashed `rc=1`) — below the
+3-seed bar, survivorship-flavored. (3) These are **5-seed** cells (method asked for 3-seed).
+(4) Deployed = bare float in `__target_metric.json` on the FULL test set; cascaded HCM log
+lines round ~0.001 below `__target_metric` (immaterial at pp/gap resolution). (5) **No
+at-chance confound** — all ANN refs > 0.92 ≫ 10-class chance 0.10, all runs trainable → a
+genuine firing-gain result, not an untrained artifact. Run ids —
+`f1_deep_cnn_{kmnist,fashionmnist,mnist}_ci_ft_{KMNIST,FashionMNIST,MNIST}_DataProvider_{cascaded,synchronized}_d{4,6}_s{0..4}`.
+
+---
+
+## From-scratch `deep_cnn` (w16, S=4) **MNIST depth-resolved** — cascade ONSET between d4 and d6; synchronized LOSSLESS at every deployed depth (2026-06-25)
+
+CONFIRMED-this-round (`item_id=depth_dcnn_mnist_cascade_deathcascade`) on the VALID
+on-chip-majority `deep_cnn` (width 16, 98.5% on-chip, `ttfs_cycle_based` S=4) trained
+**FROM SCRATCH** on MNIST, evaluated on the **FULL 10000-sample test set**
+(`max_simulation_samples=0`, the clean `ci_ft` family). This resolves the cascaded-vs-
+synchronized firing-gain question by **depth** d4→d6→d8 on a single dataset (where §4ac/the
+KMNIST/FMNIST item only had a d4 pair), and pins the **onset depth** of the death cascade.
+
+| depth | cascaded deployed | synchronized deployed | ANN ref | **casc→sync gap** | sync→ANN | n (casc rc0/genuine · sync rc0) | verdict |
+|:------|:------------------|:----------------------|--------:|------------------:|---------:|:--------------------------------|:--------|
+| d4 | **0.9847** (rc0 survivors, 3/5) | 0.9897 | 0.9928 | **+0.50pp** | 0.30pp | 3/5 · 5 | cascade NEAR-LOSSLESS on survivors; **onset variance** (2/5 seeds abort) |
+| d6 | **0.5198** (all 5 abort, range 0.15–0.81) | 0.9918 | 0.9932 | **+47.2pp** | 0.14pp | 0/5 · 5 | **DEATH-CASCADE** (all abort); sync LOSSLESS |
+| d8 | — (3/5 map-crash) | — (5/5 map-crash) | 0.992 | — | — | 0 · 0 | **UNMEASURABLE** (both arms crash at HardCoreMappingStep) |
+
+- **Death-cascade onset is bracketed between d4 and d6.** At d4 the rc=0 cascaded survivors
+  are within **+0.50pp** of synchronized (both ~ANN 0.993), but **2/5 seeds already
+  cascade-abort** (s2 0.757, s3 0.829) — the cascade is *beginning to bite* at d4. The
+  full-genuine 5-seed cascaded mean is **0.908** (gap +8.19pp), so the rc=0 0.985 figure is
+  **survivorship-biased UP**. By d6 **all 5** cascaded seeds cascade-abort and collapse to
+  mean **0.52** while synchronized holds **0.992** (sync→ANN +0.14pp, lossless).
+- **Synchronized is LOSSLESS at every depth it deploys** (d4 +0.30pp, d6 +0.14pp under ANN),
+  reaffirming the "synchronized owns deep deployment" policy from-scratch on a VALID convnet.
+- **Genuine firing-gain, not an untrained floor:** ANN 0.989–0.995 ≫ 10-class chance 0.1135
+  at every cell, so the collapse is a deployment artifact of the cascaded schedule.
+
+### Confounds / bounds
+
+(1) **rc==0 rule vs cascade-abort.** ALL d6 cascaded runs and 2/5 d4 cascaded runs finalize
+`rc=1`, but the `rc=1` **IS the death cascade** (the TTFS-Cycle-FT cumulative drop exceeds
+the cross-step degradation budget → pipeline assertion); their `__target_metric.json` is the
+genuine post-deployment cascade accuracy, so restricting to `rc==0` survivorship-biases the
+cascaded mean UP (d4 strict-rc0 0.985 vs full-genuine 0.908). The **+47.2pp** d6 gap is an
+**abort+budget-confounded LOWER BOUND** on cascade health — *not* a clean firing-gain
+magnitude. The clean firing-gain MAGNITUDE remains the bigcores `pdcnnbc…` d8 **+4.16pp
+PLATEAU** (§ the n1000/bigcores depth ladder), which this batch does **not** override.
+(2) **Mapping-crash (distinct rc=1).** ALL d8 runs (both schedules) and ALL d6 *synchronized*
+in the coarse `ci` family crash at `HardCoreMappingStep` ("No more hard cores available" —
+this small-cores config, `cores.count 120+120`, cannot pack d6-sync / d8); their written
+metric is the analytical SoftCore/NormFusion accuracy (~0.99), **EXCLUDED**. So **d8 is
+UNMEASURABLE on this batch** and the d6 synchronized baseline is borrowed from the clean
+`ci_ft` arm. (3) **Fidelity split:** `ci` family is `mss=50` (coarse 0.02 grid); `ci_ft` is
+`mss=0` (full 10k, clean) — the table above is the `ci_ft` family; the coarse `ci` family
+corroborates (d4 rc0 cascaded 0.987 vs sync 0.990; d6 cascaded mean 0.525, all abort).
+Run ids — `f1_deep_cnn_mnist_ci_ft_MNIST_DataProvider_{cascaded,synchronized}_d{4,6,8}_s{0..4}`.
+
+## CONSOLIDATED — the VALID `deep_cnn` `ci`/`ci_ft` cascaded death-cascade is DEPTH-AND-DATASET-resolved, sharpest at MNIST d6; synchronized holds at the ANN ceiling everywhere (`item_id=ws3_dcnn_cascade_deathcascade_ci`, 2026-06-25)
+
+CONFIRMED-this-round, **5 seeds/cell** on the VALID on-chip-majority `deep_cnn` (width 16,
+98.5% on-chip, `ttfs_cycle_based` S=4), `ci`/`ci_ft` from-scratch family. This pulls the
+per-dataset tables above into **one cross-dataset, depth-resolved view** and confirms the
+headline *"cascaded death-cascades while synchronized holds"* — but its magnitude is governed
+by **dataset margin × depth**, with the clean catastrophic collapse appearing **only at MNIST
+d6**. Distinguishing knob = `ttfs_cycle_schedule` (cascaded vs synchronized), a clean
+single-flag ablation at matched depth/dataset/seed. 7 ledger rows appended (kind=`depth`).
+
+| dataset | d | cascaded dep (mean) | sync dep (mean) | ANN ref | **casc→sync gap** | n seeds | verdict |
+|:--------|--:|:--------------------|:----------------|--------:|------------------:|:--------|:--------|
+| MNIST        | 4 | 0.890 (range .66–1.0, sd .131) | 0.990 | 0.992 | **+10.0pp** | 5 | PARTIAL/STOCHASTIC (bimodal: 3/5 pass, 2/5 collapse) |
+| MNIST        | 6 | **0.525** (range .30–.77, sd .172) | 0.990 | 0.994 | **+46.5pp** | 5 | **DEATH-CASCADE (catastrophic, headline cell)** |
+| FashionMNIST | 4 | 0.773 (range .71–.88, sd .066) | 0.902 | 0.928 | **+12.9pp** | 5 | SUBSTANTIAL GAP (steady deficit) |
+| FashionMNIST | 6 | 0.781 (range .75–.84, sd .031) | 0.901 | 0.931 | **+12.0pp** | 5 | SUBSTANTIAL GAP (depth-STABLE, ~12pp both) |
+| KMNIST       | 4 | 0.921 | 0.946 | 0.968 | **+2.5pp** | 5 | NO cascade (mild gap; full SCM parity 1.0) |
+| KMNIST       | 6 | 0.919 | 0.967 | 0.969 | **+4.8pp** | 5 | NO catastrophic cascade (mild monotone) |
+| KMNIST       | 8 | 0.896 | 0.961 | 0.969 | **+6.6pp** | 5 | NO catastrophic cascade (mild monotone; deepest rung) |
+
+- **The gap is ordered by dataset margin (MNIST ≫ FashionMNIST ≫ KMNIST) and, within MNIST,
+  explodes with depth** (d4 +10pp stochastic → d6 +46.5pp catastrophic). On FashionMNIST the
+  deficit is a **steady ~12pp that does NOT worsen d4→d6** — a dataset-level firing-gain
+  deficit, not a depth collapse. On KMNIST the cascade **does not appear**: the gap is a mild
+  +2.5→+6.6pp monotone with depth, and cascaded reaches the **full SCM-deployed pipeline with
+  torch↔deployed-sim parity 1.0**.
+- **Synchronized holds within ~1–2pp of the ANN ceiling at every depth/dataset** (e.g. KMNIST
+  d8 sync 0.961 vs ANN 0.969), reaffirming "synchronized owns deep deployment" on a VALID
+  convnet across three datasets.
+- **Genuine firing-gain, not an untrained floor:** ANN 0.928–0.994 ≫ 10-class chance 0.1135
+  at every cell, so every collapse is a deployment artifact of the cascaded schedule.
+
+### Confounds / bounds
+
+(1) **mss=50 on all MNIST/FashionMNIST cells** (the `ci` family) — read the **pp gaps, not
+3rd decimals** (e.g. MNIST d4 cascaded dep=1.0 on one seed is a 50-sample granularity
+artifact). KMNIST is the clean **mss=0 full-set** `ci_ft` family. (2) **rc=1 IS the
+death-cascade signal**: the collapsing cascaded MNIST/FashionMNIST cells finalize `rc=1`
+because the accuracy-retention assertion fires; their `__target_metric.json` value is the
+**genuine** post-deployment cascade accuracy (equals the assertion's `latest=`, ANN present),
+so it is a result, not a crash. (3) **KMNIST d6 cascaded is rc=-9** (SIGKILL/OOM) but **AFTER**
+the deployed metric and the torch↔deployed-sim parity 1.0 lines were written → dep is genuine,
+not a dep=0 crash; KMNIST d8 cascaded/sync are rc=1 (retention budget at depth, ANN present).
+(4) The ffcv-import and hard-core-packing crash runs (dep=0 / ANN absent) were **excluded**.
+Run ids — `f1_deep_cnn_{mnist,fashionmnist}_ci_*_DataProvider_{cascaded,synchronized}_d{4,6}_s{0..4}`
+and `f1_deep_cnn_kmnist_ci_ft_KMNIST_DataProvider_{cascaded,synchronized}_d{4,6,8}_s{0..4}`.
+
+---
+
+## The `f3` dual-regime screen — the from_scratch↔pretrained EQUIVALENCE is UNMEASURABLE on `deep_cnn` (the entire pretrained arm crashes before training); the surviving from-scratch arm re-confirms the d6 cascaded death-cascade on both MNIST and FashionMNIST (`item_id`s `f3_dcnn_mnist_dualregime_regime_axis` + `f3_dcnn_fmnist_dualregime_regime_axis`, 2026-06-25)
+
+CONFIRMED-this-round, two `deep_cnn` `f3_*_dualregime` batches (MNIST + FashionMNIST,
+`ttfs_cycle_based` S=4, `max_simulation_samples=50`, 3 seeds). The intended axis is the
+**regime axis** — `preload_weights ∈ {False=from_scratch, True=pretrained}` × schedule ×
+depth — to test whether a pretrained init makes the cascaded schedule deployable.
+**Verdict: the regime cross-screen is NOT completable.** Every `preload_weights=True` run
+(all 24: MNIST+FMNIST × d4+d6 × cascaded+sync × 3 seeds) crashes **identically in ~4s**
+with `ValueError: weight_source='torchvision' requires a model builder with
+get_pretrained_factory()` (`src/mimarsinan/model_training/weight_loading.py:171`) — the
+`deep_cnn` builder is a native from-scratch vehicle with **no** `get_pretrained_factory()`
+(only the `torch_*` builders — vgg16/squeezenet11/resnet50/vit — have one). The pretrained
+arm never trains or deploys, so the from_scratch↔pretrained equivalence is **UNMEASURABLE on
+this vehicle** — an infra/code precondition, not a firing-gain result. **6 ledger rows
+appended** (`kind=arch_dataset`).
+
+### The cells — only the from-scratch arm produced metrics
+
+| dataset | d | regime | cascaded dep | sync dep | ANN ref | casc→sync | finalized rc=0 | verdict |
+|:--------|--:|:-------|:-------------|:---------|--------:|----------:|:---------------|:--------|
+| MNIST        | 4 | from_scratch | 1.00 (50/50) | 0.990 | 0.991 | +1.0pp (noise) | **YES (only rc=0 cell)** | VALID — NO gap |
+| MNIST        | 6 | from_scratch | **0.621** (.40/.72/.74) | 0.992 | 0.990 | **+37.1pp** | no (rc=1 both arms) | CASCADE CONFIRMED, NON-FINALIZED |
+| MNIST     | 4&6 | pretrained   | — | — | — | — | no (rc=1, ~4s ValueError) | PRETRAINED ARM DEAD — unmeasurable |
+| FashionMNIST | 4 | from_scratch | 0.84 (1/3 seeds; 0.76/0.70 abort) | 0.905 | 0.928 | +6.5pp | sync YES, casc 1-seed | VALID-FLAGGED — sync clean, casc deficit |
+| FashionMNIST | 6 | from_scratch | 0.68 (.69/.72/.63) | 0.90 | 0.93 | **~+22pp** | no (rc=1 all 6) | CASCADE REAL-MAGNITUDE, NON-FINALIZED |
+| FashionMNIST | 4&6 | pretrained | — | — | — | — | no (rc=1, ~4s ValueError) | PRETRAINED ARM DEAD — unmeasurable |
+
+- **The pretrained arm is dead by construction**, not by chip-packing or retention. A
+  plain crash-survival re-run of the same `deep_cnn` grid will crash identically; the only
+  way to obtain a pretrained cell is (a) wire a `get_pretrained_factory()` onto `deep_cnn`,
+  or (b) move the regime contrast to a `torch_*` vehicle that already has one
+  (`torch_squeezenet11`/`torch_resnet18`/`torch_vit`).
+- **The from-scratch arm re-confirms the headline death-cascade.** At d6 the cascaded
+  schedule collapses (MNIST 0.40/0.72/0.74 mean 0.621; FMNIST 0.69/0.72/0.63 mean 0.68)
+  while synchronized holds ~0.99 (MNIST) / ~0.90 (FMNIST), i.e. **~37pp (MNIST) / ~22pp
+  (FMNIST)** casc→sync gaps — consistent with the dataset-margin ordering established in the
+  `ci`/`ci_ft` corpus above. ANN is clean (0.93–0.99 ≫ 0.1135 chance) → genuine firing-gain,
+  not an untrained floor.
+- **d4 reads zero depth-risk** on MNIST (cascaded 1.0 ≥ sync 0.99, the +1.0pp gap is n=50
+  noise) — the only fully-finalized `rc=0` cell; FMNIST d4 already shows the dataset-level
+  cascaded deficit (sync 0.905 clean, cascaded 0.84 finalized on 1/3 seeds).
+
+### Confounds / bounds
+
+(1) **PRETRAINED ARM DEAD (infra, not firing-gain):** all 24 `preload_weights=True` runs
+die in ~4s with the typed `ValueError` at `weight_loading.py:171` — `deep_cnn` has no
+pretrained factory. `__target_metric.json=0.0` is a crash sentinel (MNIST) / written-then-no-eval
+(FMNIST), **not** a deployed accuracy → regime equivalence UNMEASURABLE. (2) **The d6
+cascade gap is real in magnitude but NON-FINALIZED:** every d6 run is `rc=1` — the cascaded
+arm crashes **on** the TTFS Cycle Fine-Tuning retention assert (the collapse IS the failure;
+`__target_metric.json` == the assert's `latest=`, genuine), the synchronized arm crashes
+**after** writing its ~0.99/~0.90 metric on a Hard-core packing capacity `RuntimeError`
+(deployed-sim parity 1.0000/256 pre-crash, orthogonal to firing-gain). Per the `rc==0`
+rule these gaps are lower-bounds from non-finalized runs. (3) **mss=50 on every cell** →
+read pp gaps, not 3rd decimals (`DEP=1.0` is 50/50, not a true 1.000). (4) The only fully
+clean `rc=0` cell is MNIST d4 from-scratch (and the FMNIST d4 sync arm). **Next:** run the
+dual-regime contrast on a `torch_*` vehicle with a real `get_pretrained_factory()`
+(proposed: WS3 `plan_stage:94`/`95`/`96` below), since no amount of crash-survival on
+`deep_cnn` can supply the pretrained cell.
+Run ids — `f3_deep_cnn_{mnist,fashionmnist}_dualregime_*_DataProvider_{cascaded,synchronized}_d{4,6}_preload_weights_{False,True}_s{0,1,2}`.
+
+---
+
+## 4ag. CONSOLIDATED — the d10 gate-fix grid pooled across MNIST/FMNIST/KMNIST: NEITHER knob auto-rescues the death-cascade; `cot` is an ANN-ECHO ARTIFACT, `cp` is net-negative-to-flat (`item_id=ws3_gatefix_d10_rescue`, 2026-06-26)
+
+This rolls the full `ttfs_theta_cotrain` (`cot`) × `conversion_policy` (`cp`) 2×2 at the
+**d10 death-cascade rung** across the **whole dataset axis** into one item, with the
+seed-level reads pooled (n=6/dataset for the genuine `cotFalse` arms, n=12 on MNIST over
+the two batches `pdcnnbcn1000fix_`+`pdcnnd10fix_`). It **supersedes** the earlier n=2 partial
+rows and **corrects the central misread** baked into the §4ae/§4af `cotTrue` numbers: the
+high `cotTrue` floats are **not** cascaded deployments — they are the **ANN pretraining
+accuracy ECHOED** by a crash. `deep_cnn` (w16), S=4, `ttfs_cycle_based` cascaded; ANN/sync
+baselines are the gate-OFF ledger d10 rows (NOT re-derived). Ledger: `cluster:"WS3"`,
+`kind:"escalation"`, `item_id:"ws3_gatefix_d10_rescue"`.
+
+| dataset | cot (cotTrue) | cp lift (cotFalse cpF→cpT) | pooled cotFalse cascaded | sync (gate-OFF) | casc→sync gap | rescue verdict |
+|:--------|:--------------|---------------------------:|-------------------------:|----------------:|--------------:|:---------------|
+| MNIST  | UNMEASURABLE (6/6 cotTrue `rc=1`, ANN echo 0.991–0.994 ≈ ANN 0.99) | **−8.31pp** (0.9527 n6 → 0.8696 n6) | **0.9112** (n12) | 0.9917 | **+8.05** | NO rescue — cp net-NEGATIVE |
+| FMNIST | UNMEASURABLE (6/6 cotTrue `rc=1`, ANN echo 0.933–0.936 ≈ ANN 0.937) | **−3.46pp** (0.7439 n3 → 0.7093 n3) | **0.7266** (n6) | 0.9041 | **+17.75** | NO rescue — worst corner, floor==gate-OFF 0.725 |
+| KMNIST | UNMEASURABLE (6/6 cotTrue `rc=1`, ANN echo 0.970–0.980 ≈ ANN 0.96) | **+1.28pp** (0.8788 n3 → 0.8916 n3, within seed sd ~2.5pp) | **0.8852** (n6) | 0.9623 | **+7.71** | NO rescue — cp FLAT |
+
+**Verdict — REFUTED: the gate-fix does NOT auto-rescue the d10 cascaded death-cascade
+(WS7 DoD REFUTED across the dataset axis).** (a) **`cot` is UNMEASURABLE** — all 24 `cotTrue`
+arms (every dataset × cp × seed) finalize `rc=1`, crashing at `Conv2DPerceptronMapper(features_3)`
+(`tensor a(28) must match b(16)`) inside the TTFS Tuning fast-loss forward (`kd_blend_adaptation_tuner`),
+**before** any Soft-Core Mapping (0 SCM PROFILE lines). Their `__target_metric.json` ==
+that cell's ANN pretraining accuracy echoed (FIRST=='Test accuracy'==LAST log line, all to <1pp),
+so the apparent "MNIST ~0.99 full rescue" is a **crash artifact**, not a deployment. (b) **`cp`
+is net-negative-to-flat** on the genuine `cotFalse` arms (MNIST −8.31pp, FMNIST −3.46pp, KMNIST
++1.28pp within noise). (c) The genuine cascaded floor **narrows-but-stays-clearly-below
+synchronized on every dataset** (MNIST ~8pp, FMNIST ~18pp, KMNIST ~8pp gap to sync) and **never
+reaches the toy ~0.95 plateau** on the harder datasets — synchronized remains the unconditional
+deep-CNN default. This **confirms §4ae/§4ac/§4af** (`cot` UNMEASURABLE, `cp` regressive) and
+**corrects the §4ae/§4af `cotTrue` rows**: those high values were the ANN echo, not a rescue.
+
+**Confounds.** (1) **DOMINANT/cot — ANN echo:** the 24 `cotTrue` `__target_metric.json` floats
+are the ANN reference echoed by a pre-SCM crash; cot is genuinely UNMEASURABLE at d10 until the
+convnet `Conv2DPerceptronMapper` θ-cotrain forward bug is landed. (2) The genuine `cotFalse`
+deployed floats are pre-crash SCM (PROFILE metric==target==log Test acc) but **most runs
+finalized `rc!=0`** after the metric was written (MNIST cpTrue s2 `rc=1`, all n200 cpFalse +
+n200 cpTrue s2 `rc=-9`; FMNIST/KMNIST several seeds `rc=1`/`rc=-9`) — flagged. (3) `n_seeds<3`
+on several cp cells; pooled cotFalse gives n=6/dataset (n=12 MNIST). (4) `max_simulation_samples`
+= 200 (FMNIST/KMNIST/MNIST-n200) / 1000 (MNIST-n1000) → **read gaps, not 3rd decimals**. (5)
+ANN ≫ chance on every cell (MNIST ~0.99, FMNIST ~0.937, KMNIST ~0.96 ≫ 0.1135/0.10) ⇒ genuine
+firing-gain, NOT untrained-floor. (6) sync/ANN/gate-OFF baselines taken from the ledger d10
+gate-OFF rows (§4f / AC §1d/§1h), NOT re-derived. **Next:** land the convnet θ-cotrain forward
+fix (then re-run cotTrue), and stop treating the d10 gate-fix as a rescue path —
+synchronized-or-retire-cascaded is the deep-CNN ruling. Run ids:
+`pdcnnbcn1000fix_d10_cot{T,F}_cp{T,F}_s{0,1,2}` (MNIST), `pdcnnd10fix_cot{T,F}_cp{T,F}_s{0,1,2}`
+(MNIST n200), `pdcnnd10datafix_{FashionMNIST,KMNIST}_DataProvider_cot{T,F}_cp{T,F}_s{0,1,2}`.
+
+---
+
+## 4ah. CONFIRMED (consolidated, dataset-resolved) — the d10 FMNIST/KMNIST `cotFalse` death-cascade is genuine; `theta_cotrain` rescue stays UNVERIFIED (all `cotTrue` crash pre-deploy) (`item_id=dcnn_d10_dataset_theta_cotrain_conversion_rescue`, 2026-06-26)
+
+This consolidates the **off-MNIST (FMNIST/KMNIST) leg** of the d10 gate-fix grid into one
+dataset-resolved item that reads the gap **against each cell's own ANN** (no synchronized arm
+in this matrix — `synchronized_run_ids` empty). It re-derives §4ag/§4ae/§4ac on the FMNIST/KMNIST
+`pdcnnd10datafix_*` run set; every run_id is re-cited so the director's per-run coverage drops
+them from `harvest_todo`. `deep_cnn` (w16), S=4, `ttfs_cycle_based` cascaded; `mss=200`
+(deployed metric on a 200/10000 subsample; full-test cascade agrees <0.5pp). Ledger:
+`cluster:"WS3"`, `kind:"depth"`.
+
+| dataset | cotFalse cascaded deployed (n=6 pooled) | ANN ref | **cascaded→ANN gap** | cotTrue (intended rescue) | verdict |
+|:--------|----------------------------------------:|--------:|---------------------:|:--------------------------|:--------|
+| FashionMNIST | **0.7266** (cpF 0.755/0.745/0.7317; cpT 0.6604/0.7349/0.7327) | 0.9367 | **21.0pp** | UNVERIFIED — all 12 `cotTrue` crash `rc=1` pre-deploy, `__target_metric` is STALE ANN echo (gap 0.0000) | **DEATH_CASCADE_CONFIRMED_RESCUE_UNVERIFIED** |
+| KMNIST | **0.8852** (cpF 0.9114/0.885/0.84; cpT 0.9115/0.8984/0.865) | 0.9642 | **7.9pp** (MILDER) | UNVERIFIED — same crash (`Conv2DPerceptronMapper(features_3)`; KMNIST root cause tensor 28 vs 16 at dim 3) | **DEATH_CASCADE_CONFIRMED_MILD_RESCUE_UNVERIFIED** |
+
+**Verdict — CONFIRMED death-cascade, rescue NOT demonstrated.** The unrescued `cotFalse` arm
+**genuinely deploys** (reached the Simulation step; deployed < ANN by 21.0pp FMNIST / 7.9pp KMNIST,
+ordered by dataset margin exactly as §4ac/§4ae predicts). The intended `theta_cotrain` rescue is
+**UNVERIFIED**: all 12 `cotTrue` runs crashed at TTFS Cycle Fine-Tuning **before** any deployment,
+so their `__target_metric` (~0.935 FMNIST / ~0.975 KMNIST) is the **pretraining ANN echoed**
+(deployed==ANN, gap 0.0000) and **must not** be read as a rescue accuracy. `conversion_policy`
+shows no clear rescue (FMNIST cpFalse 0.744 vs cpTrue 0.709; KMNIST cpFalse 0.879 vs cpTrue 0.892 —
+both within seed noise).
+
+**Confounds / bounds.** (1) **CRITICAL — `cotTrue` ANN echo:** the rescue arm is a pre-SCM crash
+artifact, NOT a deployment (matches §4ag); `theta_cotrain` stays UNMEASURABLE at d10 until the
+convnet `Conv2DPerceptronMapper` θ-cotrain forward shape bug is landed. (2) 3 `cotFalse` runs are
+`rc==-9` (downstream OOM) but wrote a genuine deployed metric < ANN (verified real cascade
+Simulation) plus a separate ANN reference. (3) `mss=200` → read the 7.9–21.0pp gaps, not 3rd
+decimals. (4) ANN ≫ chance everywhere (0.93–0.96 ≫ 0.10) ⇒ genuine death-cascade, not
+untrained-floor. Run ids: `pdcnnd10datafix_{FashionMNIST,KMNIST}_DataProvider_cotFalse_cp{F,T}_s{0,1,2}`
+(cotFalse genuine) + `…_cotTrue_…` (UNVERIFIED, ANN echo, not recorded as deployed).
+
+---
+
+## 4ai. CONFIRMED (consolidated, dataset-resolved) — d5 cascaded-onset `ttfs_staircase_ste`: WASH on FMNIST, PARTIAL lift on KMNIST; neither reaches the sync ceiling (`item_id=dcnn_d5_staircase_ste_onset_dataset_axis`, 2026-06-26)
+
+This consolidates the `pdcnnd5stefix_*` d5-onset staircase-STE lever into one dataset-resolved item
+(re-derives §4ad / `dcnn_d5_ste_onset`; run_ids re-cited for per-run coverage). **Both arms run
+`ttfs_cycle_schedule=cascaded`** — the lever is `ttfs_staircase_ste` on/off, NOT cascaded-vs-sync; in
+the ledger `cascaded_deployed_mean`←steFalse, `synchronized_deployed_mean`←steTrue, and
+`cascaded_to_sync_gap_pp` is **repurposed as the STE delta** (steTrue−steFalse). The synchronized
+ceilings come from the PRIOR `pdcnnd5data_` item (`dcnn_d5_dataset_axis`), not this batch. `deep_cnn`
+(w16), S=4, `mss=200`. Ledger: `cluster:"WS3"`, `kind:"mode"`.
+
+| dataset | steFalse deployed | steTrue deployed | **STE Δ (pp)** | ANN ref | ANN gap steFalse→steTrue | prior sync ceiling | verdict |
+|:--------|------------------:|-----------------:|---------------:|--------:|:-------------------------|-------------------:|:--------|
+| FashionMNIST | **0.8067** (.82/.775/.825, n=3) | **0.8133** (.875/.80/.765, n=3) | **+0.67** (sign-flips +5.5/+2.5/−6.0) | 0.927 | 11.89 → 11.51 | 0.8986 (~8.5pp short) | **STE_WASH** |
+| KMNIST | **0.8775** (.88/.875, **n=2**) | **0.8917** (.935/.85/.89, n=3) | **+1.42** | 0.9669 | 9.31 → 7.28 | 0.9629 (~7.1pp short) | **STE_PARTIAL_LIFT** |
+
+**Verdict — PARTIAL/MIXED, dataset-dependent, sub-ceiling.** Staircase-STE is a **wash on FMNIST**
+(+0.67pp, within 200-sample noise, per-seed sign-flips) and a **clean partial lift on KMNIST**
+(+1.42pp, ANN gap narrows 9.3→7.3pp). On **neither** dataset does it reach the prior-item
+synchronized ceiling (residual ~7–8.5pp). The gradient knob **narrows but does not close** the d5
+dataset-margin firing-gain gap — consistent with the §4t/§4ad d6 finding (dominant but not lossless),
+now confirmed one rung shallower.
+
+**Confounds / bounds.** (1) **Lever is STE-on/off, NOT cascaded-vs-sync** (schema fields repurposed,
+see above). (2) **KMNIST steFalse is n=2:** seed s1 (`pdcnnd5stefix_KMNIST_DataProvider_steFalse_s1`)
+is `rc==-9` SIGKILL during TTFS Cycle Fine-Tuning before deployment; its on-disk
+`__target_metric.json` 0.9559 is a STALE ANN/torch-mapping artifact (Δ=0), NOT a deployed metric →
+excluded. The other 11 runs are `rc==0` and reached Hard Core Mapping. (3) `mss=200` → read pp gaps,
+not 3rd decimals (steFalse 200-sample means don't exactly reproduce the prior `pdcnnd5data_`
+cascaded baselines). (4) FMNIST per-seed STE delta is unstable (+5.5/+2.5/−6.0pp) → its +0.67pp mean
+is not significant at n=3. (5) ANN ≫ chance (0.927/0.967 ≫ 0.10) ⇒ genuine firing-gain. Run ids:
+`pdcnnd5stefix_{FashionMNIST,KMNIST}_DataProvider_ste{False,True}_s{0,1,2}` (KMNIST steFalse s1
+excluded).
+
+---
+
+## 9. F1 — multi-seed 95%-CI breadth on the full-test-set `deep_cnn` cascade ladder: the synchronized-lossless / cascaded-deficit law is PARTIALLY CONFIRMED with confounds (`item_id=F1_deep_cnn_CI_ablation_breadth`, 2026-06-26)
+
+The §"From-scratch" cells above are re-derived here with **proper multi-seed 95% CIs** on the
+**full test set** (`max_simulation_samples=0`), to ask whether the law survives a confidence-interval
+read rather than a point estimate. `deep_cnn` (w16, S=4, `ttfs_cycle_based`), 5 seeds/arm requested,
+paired cascaded-vs-synchronized (the configs differ ONLY in `ttfs_cycle_schedule`). Ledger:
+`cluster:"WS-mode"`, `kind:"ci_ablation"`.
+
+| dataset | depth | cascaded (mean, 95% CI) | synchronized (mean, 95% CI) | ANN ref | sync→ANN | casc→ANN | casc→sync | n (casc/sync) | verdict |
+|:--------|:------|:------------------------|:----------------------------|--------:|---------:|---------:|----------:|:--------------|:--------|
+| MNIST | d4 | **0.9847** [0.9829, 0.9865] | **0.9897** [0.9860, 0.9935] | 0.9921 | 0.35 | 0.64 | +0.51 | 3/5 | CONFIRMED (directional; casc n=3) |
+| MNIST | d6 | — (5× `rc=1`) | **0.9918** [0.9907, 0.9928] | 0.9937 | **0.19** | — | — | 0/5 | SYNC LOSSLESS, casc MISSING |
+| FashionMNIST | d4 | **0.8579** [0.8547, 0.8610] | **0.9017** [0.8996, 0.9038] | 0.9263 | 2.49 | 6.80 | +4.39 | 2/5 | CONFIRMED directional, **sync NOT lossless** |
+| FashionMNIST | d6 | — (5× `rc=1`) | **0.8947** [0.8894, 0.9000] | 0.9301 | **3.54** | — | — | 0/5 | sync NOT lossless (gap WIDENS), casc MISSING |
+| KMNIST | d4 | **0.9210** [0.9126, 0.9294] | **0.9463** [0.9367, 0.9559] | 0.9667 | 1.90 | 4.70 | +2.53 | **5/5** | CONFIRMED SIGNIFICANT (CIs disjoint) |
+| KMNIST | d6 | — (5× `rc=-9` OOM) | **0.9666** [0.9620, 0.9712] | 0.9720 | **0.55** | — | — | 0/5 | SYNC near-lossless, casc MISSING |
+
+**Verdict — PARTIALLY CONFIRMED WITH CONFOUNDS.** The law holds DIRECTIONALLY at d4 (synchronized
+beats cascaded by +0.51pp MNIST / +4.39pp FMNIST / +2.53pp KMNIST, and synchronized's ANN-gap is
+uniformly smaller and TIGHTENS with depth on MNIST 0.35→0.19pp and KMNIST 1.90→0.55pp). But it is
+only PARTIAL:
+
+- **Synchronized is near-lossless only on MNIST (both depths) and KMNIST-d6** (CI-tight 0.19–0.55pp
+  ANN-gap), **NOT on FashionMNIST** — where the synchronized ANN-gap is 2.49pp at d4 and **WIDENS to
+  3.54pp at d6**, the only cell where depth hurts synchronized. The synchronized-lossless claim is
+  **dataset-dependent**.
+- **The cascaded-deficit at d6 is UNMEASURABLE.** Every cascaded d6 run crashed (`rc=1` MNIST/FMNIST,
+  `rc=-9` OOM KMNIST), so **no cascaded-vs-synchronized pair exists above d4**; the deficit law is
+  measured ONLY at d4 in this CI ablation.
+- **Only KMNIST-d4 is a fully-powered n=5-vs-5 pair**, and its CIs ([0.9126,0.9294] vs [0.9367,0.9559])
+  **do not overlap** → the gap is statistically significant there. MNIST-d4 cascaded (n=3, seeds 2,3
+  crashed) and FMNIST-d4 cascaded (n=2, seeds 1,2,4 crashed) are seed-attrition underpowered.
+
+**Confounds / bounds.** (1) **No valid cascaded d6/d8 anywhere** — all crashed; the cascaded-deficit
+arm of the depth matrix is missing above d4. (2) **All d8 runs failed for both modes** (`rc=1`), so the
+depth axis tops out at d6-synchronized. (3) **Seed attrition** underpowers two cascaded d4 cells
+(MNIST n=3, FMNIST n=2); only KMNIST-d4 is full n=5/5. (4) **NOT an at-chance confound** — every ANN
+ref is 0.926–0.994 ≫ 0.10 chance ⇒ genuine firing-gain. (5) **Clean A/B** — cascaded and synchronized
+configs differ ONLY in `ttfs_cycle_schedule`; depth/width/seed/recipe/full-test-set budget are
+byte-identical. Run ids:
+`f1_deep_cnn_{mnist,fashionmnist,kmnist}_ci_ft_{MNIST,FashionMNIST,KMNIST}_DataProvider_{cascaded,synchronized}_d{4,6}_s{0..4}`
+(cascaded crashed seeds excluded). These cells also appear (point estimates) in the §"From-scratch"
+section and under prior ledger item_ids `f1_dcnn_depth_deathcascade` / `depth_dcnn_mnist_cascade_deathcascade`;
+this is the CI-breadth re-derivation.
+
+---
+
+## 10. F2 — the D7 percentile-norm lever (`activation_scale_quantile` 0.99 vs 1.0) is NEUTRAL on every valid vehicle (`item_id=F2_baseline_head_to_head_percentile_norm`, 2026-06-26)
+
+Re-confirms §7/§8: the published-baseline D7 percentile-norm lever has **no deployed-accuracy effect
+beyond the 50-sample measurement floor** on any valid `deep_cnn`/`lenet5` cell. On the fully-seeded
+cells the within-mode 0.99-vs-1.0 deployed delta is within the ~2pp n=50 floor: synchronized deep_cnn
+MNIST +0.23pp, synchronized deep_cnn FashionMNIST −0.02pp (q0.99 0.9019 vs q1.0 0.9021), lenet5 MNIST
+−0.05pp, cascaded deep_cnn MNIST 0.0pp. The only apparent 0.99-win (cascaded deep_cnn FashionMNIST
++4pp) is a single-seed-vs-single-seed artifact (n=1 each, identical ANN refs).
+
+**Verdict — NEUTRAL.** D7 percentile-norm is **neither a real win nor a regression** on these valid
+vehicles. **Confounds.** (1) `max_simulation_samples=50` quantizes deployed accuracy to ~2pp, so all
+conclusions are read at the gap level only. (2) The `deep_cnn` d6 cells (30 runs) crashed `rc=1`
+(depth-driven death-cascade in TTFS Cycle Fine-Tuning). (3) The cascaded `deep_cnn` d4 cells are
+under-seeded (MNIST n=2, FashionMNIST n=1). Run ids:
+`f2_deep_cnn_{mnist,fashionmnist}_baseline_{MNIST,FashionMNIST}_DataProvider_{cascaded,synchronized}_d{4,6}_activation_scale_quantile_{0.99,1.0}_s{0,1,2}`.
+No ledger rows added for F2 (NEUTRAL, no new cells beyond §7/§8); findings consolidation only.

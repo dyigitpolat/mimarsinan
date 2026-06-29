@@ -1,0 +1,45 @@
+profile = "mimarsinan-xlog1"
+
+[sync]
+include = [
+  "run.py",
+  "src/**",
+  "spikingjelly/**",
+  "sana_fe/**",
+  "nevresim/**",
+  "scripts/**",
+  "tests/**",
+  "templates/**",
+  "experiments/**",
+  "requirements.txt",
+  "pytest.ini",
+  "datasets/MNIST/**",
+]
+exclude = [
+  "**/__pycache__/**",
+  "**/*.pyc",
+  ".git/**",
+  "env/**",
+  "generated/**",
+  "runs/**",
+  "data/**",
+  "**/*.pt",
+  "**/*.pth",
+]
+
+[slurm]
+partition = "gpu"
+time = "02:00:00"
+gres = "gpu:h100-47:1"
+mem = "200G"
+cpus_per_gpu = 40
+nodes = 1
+
+[env]
+mode = "reuse"
+venv = "/home/y/yigit/mimarsinan_slurmech/env"
+
+[pack]
+parallelism = 1
+fail_fast = true
+kill_on_failure = true

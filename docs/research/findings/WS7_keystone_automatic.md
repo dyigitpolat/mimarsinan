@@ -822,6 +822,74 @@ baseline `pdcnnbcn1000fix_d8_cotFalse_cpFalse_s{0,1,2}`; cp escalation
 
 ---
 
+## 9. The conversion_policy rescue ladder — onset-vs-rescue map (2026-06-26)
+
+> ⚠️ **VEHICLE MISLABEL + VALIDITY:** the `cp_lad_*` / `cp_d8_*` cells below are
+> `deep_mlp w64`, **NOT** `deep_cnn` — every config is `model_type:deep_mlp` (verified
+> in `experiments/campaign/cp_lad_*.json`, 24/24). The exact 24 `cp_lad` ids sit in the
+> campaign **VALIDITY host-majority quarantine** (`ledger.jsonl` `kind:quarantine_coverage
+> n=292`). d4 ≈19.5% on-chip = **INVALID** (below the 20% gate-v2 floor); d6 ≈28.7% and
+> d8 ≈34% = **VALID_FLAGGED_placement** (the host `784→64` encoder Linear is offloadable
+> → ~99% on-chip if `encoding_layer_placement=offload`). Read this as the phenomenology of
+> the cp lever, not as a valid `deep_cnn` deployment.
+
+**Question.** Across the `deep_mlp w64` S=4 **cascaded** depth ladder, how does the
+`conversion_policy` escalation (`cpFalse → cpTrue`, which routes the cell to
+`driver=controller` — see §0.2) trade off against the *size* of the within-stack cascaded
+firing-gain deficit, as depth and dataset hardness grow?
+
+**Setup.** Pure cp **true/false control**: `ttfs_cycle_schedule=cascaded` and
+`ttfs_blend_fast=true` in **both** arms — the only knob is `conversion_policy`. There is
+**no synchronized run** here, so per the WS7 escalation convention the ledger's
+`cascaded_*` columns hold cpFalse, `synchronized_*` hold cpTrue, and
+`cascaded_to_sync_gap_pp` is **repurposed as `cp_lift` (cpTrue − cpFalse)**. 3 seeds/cell,
+`max_simulation_samples=200` (→ read pp-gaps, not 3rd decimals). All cells finalized
+(`rc=0`); ANNs well-trained (MNIST ~0.977–0.979, FMNIST ~0.886–0.881 ≫ 0.10 chance);
+parity clean on every run (NF↔SCM 1.0, torch↔sim 1.0) → the deployed metric is faithful.
+
+### 9.1 The ladder (all `deep_mlp w64`, S=4 cascaded, 3-seed means)
+
+| dataset | depth | cpFalse (cascaded) | cpTrue (escalated) | **cp_lift** | ANN | cpTrue→ANN gap | on-chip | validity |
+|---|---|---|---|---|---|---|---|---|
+| MNIST  | 4 | 0.9467 | 0.9550 | **+0.83** | 0.9791 | 2.63pp | ~19.5% | INVALID |
+| MNIST  | 6 | 0.9433 | 0.9700 | **+2.67** | 0.9794 | 0.91pp | ~28.7% | VALID_FLAGGED |
+| MNIST  | 8 | 0.8867 | 0.9483 | **+6.17** | 0.9769 | 2.86pp | ~34% | VALID_FLAGGED |
+| FMNIST | 4 | 0.8533 | 0.8750 | **+2.17** | 0.8884 | 1.31pp | ~19.5% | INVALID |
+| FMNIST | 6 | 0.7750 | 0.8483 | **+7.33** | 0.8862 | 3.83pp | ~28.7% | VALID_FLAGGED |
+| FMNIST | 8 | 0.6950 | 0.8283 | **+13.33** | 0.8806 | 5.23pp | ~34% | VALID_FLAGGED |
+
+(`cp_lad_*` = d4/d6; `cp_d8_*` = d8. Per-seed metric files verified on disk, e.g. FMNIST d6
+cpFalse [0.755,0.750,0.820] → cpTrue [0.860,0.850,0.835]; FMNIST d8 cpFalse
+[0.710,0.680,0.695] → cpTrue [0.855,0.830,0.800].)
+
+### 9.2 Verdict — the rescue is **firing-gain-deficit-PROPORTIONAL**
+
+The cp escalation lift grows **monotonically with the size of the within-stack cascaded
+deficit**: tiny/within-noise where the cascade barely breaks (MNIST d4 +0.83, FMNIST d4
++2.17, MNIST d6 +2.67), and large exactly where it breaks worst (FMNIST d6 +7.33, MNIST d8
++6.17, **FMNIST d8 +13.33**). The deepest-hardest cell (FMNIST d8) — where cpFalse sits
+18.56pp below its ANN — gets the **largest** rescue (~2.2× the near-lossless MNIST d8
+arm whose cpFalse sits only 9.0pp below ANN). This closes the dataset arm WS7 §0 left open
+and establishes a clean **onset-vs-rescue map**: cp escalation pays off in proportion to
+the deficit it has to repair.
+
+**Confounds.** (1) **VEHICLE MISLABEL** — both confirmed items titled "VALID deep_cnn";
+all cells are `deep_mlp w64` (decisive: this is NOT a deep_cnn result). (2) **VALIDITY** —
+d4 INVALID (host-majority, <20% floor); d6/d8 VALID_FLAGGED only because the host encoder
+is offloadable; the 24 `cp_lad` ids are in the host-majority quarantine. (3) **NOT a clean
+isolation** — cpTrue = the heavier `driver=controller` escalation path (wall 467–973s vs
+cpFalse 220–333s, 2–4×), so the lift bundles "more controller compute" with
+`conversion_policy`; §0.3's no-blend ablation already showed the *mechanism* is the
+controller's post-finalize recovery, not the cp decision per se. (4) **Headline-magnitude
+correction** — the source item cited FMNIST d6 as +10.5pp (0.755→0.86); that is the single
+**worst** cpFalse seed vs the cpTrue mean — the true 3-seed mean lift is **+7.33pp**.
+(5) `max_simulation_samples=200` → gaps reliable to ~1–2pp; the within-noise d4 lifts are
+not significant (cpTrue MNIST d4 spans 0.925–0.980). Ledger: `cluster:"WS7"`,
+`kind:"escalation"`, `item_id ∈ {ws7_dcnn_controller_rescue_depth_ladder,
+ws7_dcnn_d8_fmnist_rescue_completion}` (6 records).
+
+---
+
 ### Key file references
 
 - Decision logic + thresholds: `src/mimarsinan/tuning/orchestration/characterization.py`

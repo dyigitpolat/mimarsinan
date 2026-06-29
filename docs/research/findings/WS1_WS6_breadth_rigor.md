@@ -193,3 +193,102 @@ grayscale record carries `ann_test_acc`, `deployed_acc_mean`,
 Sequencing: fix the TTFS-FT gap on the known grayscale cells first (it is the
 attributable training axis), then graduate to the CNN+SVHN rung (the
 architecture + input-shape axes) so the next breadth result stays attributable.
+
+---
+
+## 8. Update — the classical-CNN breadth rung lands lossless (`lenet5`/MNIST/synchronized, 5-seed CI, independent cross-replication) (2026-06-25)
+
+§7's "graduate to the CNN rung" sequencing is now answered on MNIST. The
+**VALID classical-CNN** vehicle (`lenet5`, 99.1% params on-chip — unlike the
+INVALID host-majority `deep_mlp` of §1–§6) deploys **lossless** under the
+synchronized TTFS-cycle schedule, with a tight multi-seed CI, and the result
+**cross-replicates** across two independent 5-seed batches on the same vehicle.
+
+`lenet5`, MNIST, `ttfs_cycle_based`, **synchronized**, S=4, FULL test set
+(`max_simulation_samples=0`), 5 seeds, all `rc=0`.
+
+| batch (run-id family) | n | ANN ref (mean) | deployed (mean ± sd) | ANN→deployed gap | verdict |
+|-----------------------|--:|---------------:|----------------------|-----------------:|:-------:|
+| `f1_lenet5_mnist_ci_ft_*` (this round) | 5 | 0.99054 | **0.98928** ± 0.087pp (spread 0.24pp) | **−0.126pp** | **NEAR-LOSSLESS-TIGHT** |
+| `f1_lenet5_mnist_ci_*` (prior round, §AC 2g) | 5 | 0.99098 | 0.98972 ± 0.138pp | +0.126pp | lossless (CI straddles 0) |
+
+- Per-seed (this batch): deployed 0.9895/0.9892/0.9895/0.9903/0.9879; ANN
+  0.9889/0.9911/0.9912/0.9914/0.9901; per-seed sync−ANN +0.06 to −0.22pp.
+- The two independent batches agree on deployed accuracy to **within 0.04pp**
+  (0.98928 vs 0.98972) — the lossless synchronized-CNN result is **stable
+  across batches**, not a single-seed-matrix artifact.
+- **Contrast with §1–§6.** The deep_mlp breadth table opened a depth- and
+  dataset-scaled ANN→TTFS gap (MNIST d4 +1.0pp … KMNIST d8 +6.7pp), but that
+  vehicle is **INVALID host-majority**. On the **VALID** classical CNN the
+  synchronized MNIST cell is genuinely lossless (within seed noise), confirming
+  the §3 conclusion that the *lowering* is exact and any residual gap is a
+  *training* property — and on a real convnet at MNIST that training gap
+  effectively vanishes.
+
+**Confounds.** (1) This is a **synchronized-only** cell — the `_ci_ft` batch has
+no cascaded/`conversion_policy=true` arm, so `cascaded_to_sync_gap_pp` is **N/A**
+and the −0.126pp is synchronized-deployed vs float-ANN, NOT a cascaded→sync
+firing-gain gap. The firing-gain (cascaded) arm on this vehicle is closed
+separately in `AC_EVIDENCE.md` §1/§1b (paired, near-lossless, casc→sync 0.56pp).
+(2) No at-chance confound — ANN ~0.9905 ≫ chance 0.10. (3) FULL test set
+(`mss=0`, torch↔sim parity 1.0000) → the sub-0.2pp gap is meaningful. Ledger:
+`cluster:"WS6"`, `kind:"breadth"`, `item_id=f1_lenet5_mnist_synchronized_ci`.
+
+---
+
+## 9. Update — the cascaded→synchronized firing-gain ablation on the VALID convnet (`deep_cnn` d4, 3 datasets) (2026-06-26)
+
+§8 closed the *synchronized* CNN cell as lossless but left the
+cascaded-vs-synchronized **firing-gain** axis open on a VALID vehicle (lenet5's
+`_ci_ft` batch was synchronized-only). This round delivers that ablation on the
+**VALID `deep_cnn`** convnet (on-chip majority, `rc=0`), single-knob
+`ttfs_cycle_schedule: cascaded` vs `synchronized` at d4, S=4, FULL test set
+(`max_simulation_samples=0`), 5 seeds requested. The result: **cascaded TTFS is
+firing-gain degraded relative to synchronized, and the gap widens with dataset
+difficulty** — exactly the depth/difficulty-stacked direction §1–§6 saw on
+deep_mlp, but now on a *valid* vehicle with ANN refs 0.92–0.97 (not chance).
+
+`deep_cnn`, `ttfs_cycle_based`, d4, S=4, FULL test set, ft (`max_sim=0`):
+
+| dataset | ANN ref | sync (mean, n) | casc (mean, n) | sync→ANN | casc→ANN | **casc→sync** | verdict |
+|---------|--------:|---------------:|---------------:|---------:|---------:|--------------:|:-------:|
+| MNIST   | 0.9924 | 0.9897 (5) | 0.9847 (3) | −0.27pp | −0.77pp | **−0.50pp** | near-lossless both |
+| KMNIST  | 0.9667 | 0.9463 (5) | 0.9210 (5) | −2.04pp | −4.57pp | **−2.53pp** | **firing-gain degraded** |
+| FashionMNIST | 0.9264 | 0.9017 (5) | 0.8579 (2) | −2.47pp | −6.85pp | **−4.38pp** | **firing-gain degraded** |
+
+- **KMNIST d4 is the cleanest cell**: full 5+5 seeds, sync 95CI=[0.9367,0.9559]
+  vs casc 95CI=[0.9126,0.9294] — **non-overlapping** ⇒ the −2.53pp casc→sync gap
+  is statistically significant, not seed noise.
+- **The casc→sync gap tracks dataset difficulty** (MNIST −0.5pp < KMNIST −2.5pp <
+  FashionMNIST −4.4pp), monotone with the ANN→sync gap. Cascaded single-spike
+  pays a firing-gain tax that *stacks on top* of the synchronized fold; the
+  harder the dataset, the larger the cascade's extra deficit.
+- **Synchronized tightens (or holds) with depth on the sync-only d6 cells**
+  (this round's d6 cascaded arms all crashed, so only sync is readable): MNIST
+  sync→ANN d4 −0.27 → d6 −0.19pp; KMNIST −2.04 → −0.54pp. FashionMNIST is the
+  lone exception (d4 −2.47 → d6 −3.54pp, sync gap *widens*).
+
+**Confounds (read this before quoting any number).** (1) **`ft` vs `no-ft` is a
+sample-resolution confound, NOT a fine-tune toggle**: the `_ci_` (no-ft) arm
+differs from `_ci_ft_` only in `max_simulation_samples=50` vs `0` (training
+recipe/epochs identical), so no-ft CIs are 50-sample estimates and absurd
+(cascaded MNIST d4 no-ft 95CI=[0.93,1.04]) — **read GAPS only, never 3rd
+decimals** on no-ft cells. (2) **Crashed cells**: every `deep_cnn` **d6/d8
+cascaded** run crashed (d6 rc=1, KMNIST d6 rc=−9 OOM), so cascaded-vs-sync is
+**unavailable at d≥6**; all 6 d8 cells (3 datasets × 2 modes) crashed entirely.
+(3) **<3 seeds**: cascaded FashionMNIST d4 (n=2) and MNIST d4 (n=3) are
+small-n (rest of 5 crashed rc=1) — only KMNIST d4 cascaded is full n=5. (4)
+**lenet5 has zero cascaded runs** (synchronized-only enqueued) → no
+cascaded-vs-sync ablation on lenet5; that vehicle's firing-gain arm is closed
+separately in `AC_EVIDENCE.md` §1/§1b. (5) **No at-chance artifact** — all ANN
+refs 0.92–0.97 ≫ chance, so every gap is genuine firing-gain. Ledger:
+`cluster:"WS6"`, `kind:"ci_ablation"`, `item_id=f1_ci_ablation_deepcnn_lenet5`
+(5 rows this round; the 6 `max_sim=0` cells from the prior round carry
+`item_id=F1_deep_cnn_CI_ablation_breadth`).
+
+**DoD-F1 status (BOUNDED-GAP).** F1 (CIs + cascaded-vs-sync + ft-vs-no-ft vs ANN
+ref) is **MET only for `deep_cnn` d4** (3 datasets, full 5-seed sync CIs +
+cascaded gap; KMNIST d4 = the clean full-5+5 cell). It is **NOT met for d≥6**
+(all cascaded crashed) nor for **lenet5** (no cascaded arm). The ft-vs-no-ft
+axis collapses to the sim-sample confound above — it is not a separate
+fine-tune stage.

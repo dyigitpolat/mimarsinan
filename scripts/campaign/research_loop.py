@@ -85,9 +85,12 @@ def cmd_results(args) -> int:
 def cmd_ledger_append(args) -> int:
     rec = json.load(open(args.record)) if os.path.isfile(args.record) else json.loads(args.record)
     recs = rec if isinstance(rec, list) else [rec]
+    from mimarsinan.chip_simulation.ledger_schema import normalize_ledger_record
+
     os.makedirs(os.path.dirname(LEDGER), exist_ok=True)
     with open(LEDGER, "a") as fh:
         for r in recs:
+            r = normalize_ledger_record(r, require_science=False)
             r.setdefault("ts", time.time())
             fh.write(json.dumps(r) + "\n")
     print(json.dumps({"appended": len(recs)}))
