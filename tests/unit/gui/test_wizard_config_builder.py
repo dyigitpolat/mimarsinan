@@ -6,6 +6,10 @@ import os
 import pytest
 
 from mimarsinan.config_schema import build_flat_pipeline_config, to_flat, to_namespaced
+from mimarsinan.config_schema.defaults import (
+    get_default_deployment_parameters,
+    get_default_platform_constraints,
+)
 from mimarsinan.gui.runs import suggest_resume_step
 from mimarsinan.gui.wizard import build_deployment_config_from_state, validate_wizard_state
 from mimarsinan.gui.wizard.flow import (
@@ -28,36 +32,48 @@ _PER_LAYER_S_TEMPLATE = os.path.join(
 )
 
 
+def _resolved_flat(doc):
+    return build_flat_pipeline_config(
+        doc.get("deployment_parameters") or {},
+        doc.get("platform_constraints") or {},
+        pipeline_mode=doc.get("pipeline_mode", "phased"),
+    )
+
+
 class TestBuildDeploymentConfigFromState:
     def test_empty_state_gets_defaults(self):
         out = build_deployment_config_from_state({})
         assert out["data_provider_name"] == "MNIST_DataProvider"
         assert out["experiment_name"] == "experiment"
         assert out["generated_files_path"] == "./generated"
-        assert out["pipeline_mode"] == "phased"
-        assert "deployment_parameters" in out
-        assert "platform_constraints" in out
-        assert out["deployment_parameters"]["model_config_mode"] == "user"
-        assert out["deployment_parameters"]["hw_config_mode"] == "fixed"
-        assert out["deployment_parameters"]["spiking_mode"] == "lif"
-        assert out["deployment_parameters"].get("allow_scheduling") is False
+        assert "pipeline_mode" not in out
+        assert out["deployment_parameters"] == {}
+        assert out["platform_constraints"] == {}
 
     def test_phased_preset_applied(self):
         out = build_deployment_config_from_state({"pipeline_mode": "phased"})
-        assert out["deployment_parameters"].get("weight_quantization") is True
-        # Default spiking_mode is lif; wizard.js disables activation_quantization for LIF.
-        assert out["deployment_parameters"].get("activation_quantization") is False
+        assert "activation_quantization" not in out["deployment_parameters"]
+        assert _resolved_flat(out)["weight_quantization"] is True
+        # Default spiking_mode is lif; the pipeline preconditions LIF with AQ.
+        assert _resolved_flat(out)["activation_quantization"] is True
 
     def test_ttfs_quantized_enables_activation_quantization(self):
         out = build_deployment_config_from_state({
             "pipeline_mode": "phased",
             "deployment_parameters": {"spiking_mode": "ttfs_quantized"},
         })
-        assert out["deployment_parameters"].get("activation_quantization") is True
+        assert "activation_quantization" not in out["deployment_parameters"]
+        assert _resolved_flat(out)["activation_quantization"] is True
 
     def test_vanilla_preset_no_quantization_flags(self):
-        out = build_deployment_config_from_state({"pipeline_mode": "vanilla"})
-        assert "activation_quantization" not in out["deployment_parameters"] or out["deployment_parameters"]["activation_quantization"] is not True
+        out = build_deployment_config_from_state({
+            "pipeline_mode": "vanilla",
+            "deployment_parameters": {"weight_quantization": False},
+        })
+        assert "pipeline_mode" not in out
+        assert "activation_quantization" not in out["deployment_parameters"]
+        assert _resolved_flat(out)["weight_quantization"] is False
+        assert _resolved_flat(out)["activation_quantization"] is False
 
     def test_state_not_mutated(self):
         state = {"experiment_name": "my_run", "deployment_parameters": {"lr": 0.01}}
@@ -113,7 +129,8 @@ class TestBuildDeploymentConfigFromState:
 
     def test_enable_nevresim_simulation_default_true(self):
         out = build_deployment_config_from_state({})
-        assert out["deployment_parameters"]["enable_nevresim_simulation"] is True
+        assert "enable_nevresim_simulation" not in out["deployment_parameters"]
+        assert _resolved_flat(out)["enable_nevresim_simulation"] is True
 
     def test_enable_nevresim_simulation_false_preserved(self):
         out = build_deployment_config_from_state({
@@ -129,6 +146,96 @@ class TestBuildDeploymentConfigFromState:
         })
         assert out["deployment_parameters"]["enable_nevresim_simulation"] is False
         assert validate_wizard_state(out) == []
+
+    def test_derived_and_system_defaults_are_not_persisted(self):
+        dp = get_default_deployment_parameters()
+        dp.update({
+            "model_config_mode": "user",
+            "hw_config_mode": "fixed",
+            "model_type": "mlp_mixer",
+            "model_config": {},
+            "spiking_mode": "ttfs_quantized",
+            "weight_quantization": True,
+            "activation_quantization": True,
+            "pipeline_mode": "phased",
+            "firing_mode": "TTFS",
+            "spike_generation_mode": "TTFS",
+            "thresholding_mode": "<=",
+        })
+        out = build_deployment_config_from_state({
+            "pipeline_mode": "phased",
+            "deployment_parameters": dp,
+            "platform_constraints": get_default_platform_constraints(),
+        })
+
+        persisted = out["deployment_parameters"]
+        for key in (
+            "activation_quantization",
+            "pipeline_mode",
+            "firing_mode",
+            "spike_generation_mode",
+            "thresholding_mode",
+            "kd_ce_alpha",
+            "kd_temperature",
+            "ttfs_genuine_blend_ramp",
+            "optimization_driver",
+        ):
+            assert key not in persisted
+        assert "pipeline_mode" not in out
+
+    def test_minimal_persistence_resolves_byte_identical_to_bloated_config(self):
+        bloated_dp = get_default_deployment_parameters()
+        bloated_dp.update({
+            "model_config_mode": "user",
+            "hw_config_mode": "fixed",
+            "model_type": "mlp_mixer",
+            "model_config": {},
+            "spiking_mode": "ttfs_quantized",
+            "weight_quantization": True,
+            "activation_quantization": True,
+            "pipeline_mode": "phased",
+            "firing_mode": "TTFS",
+            "spike_generation_mode": "TTFS",
+            "thresholding_mode": "<=",
+        })
+        bloated = {
+            "pipeline_mode": "phased",
+            "deployment_parameters": bloated_dp,
+            "platform_constraints": get_default_platform_constraints(),
+        }
+
+        minimal = build_deployment_config_from_state(bloated)
+
+        assert json.dumps(_resolved_flat(minimal), sort_keys=True) == json.dumps(
+            _resolved_flat(bloated), sort_keys=True
+        )
+
+    def test_lif_minimal_config_preserves_runtime_threshold_resolution(self):
+        bloated = {
+            "pipeline_mode": "phased",
+            "deployment_parameters": {
+                "model_config_mode": "user",
+                "hw_config_mode": "fixed",
+                "model_type": "mlp_mixer",
+                "model_config": {},
+                "spiking_mode": "lif",
+                "weight_quantization": True,
+                "activation_quantization": True,
+                "pipeline_mode": "phased",
+                "firing_mode": "Default",
+                "spike_generation_mode": "Uniform",
+                "thresholding_mode": "<=",
+            },
+            "platform_constraints": get_default_platform_constraints(),
+        }
+
+        minimal = build_deployment_config_from_state(bloated)
+
+        assert "thresholding_mode" not in minimal["deployment_parameters"]
+        assert _resolved_flat(minimal)["thresholding_mode"] == "<="
+        assert json.dumps(_resolved_flat(minimal), sort_keys=True) == json.dumps(
+            _resolved_flat(bloated), sort_keys=True
+        )
 
     def test_continue_from_run_id_preserved_for_edit_and_continue(self):
         source = "mnist_hard_all_lif_phased_deployment_run_20260520_094327"
@@ -160,6 +267,39 @@ class TestValidateWizardState:
     def test_missing_required_keys_fails(self):
         errs = validate_wizard_state({"experiment_name": "x"})
         assert any("data_provider_name" in e.lower() for e in errs)
+
+    def test_ttfs_minimal_state_may_omit_derived_spiking_modes(self):
+        state = {
+            "data_provider_name": "MNIST_DataProvider",
+            "experiment_name": "t",
+            "generated_files_path": "./out",
+            "platform_constraints": {},
+            "deployment_parameters": {
+                "model_config_mode": "user",
+                "model_type": "mlp_mixer",
+                "model_config": {},
+                "spiking_mode": "ttfs_quantized",
+            },
+            "start_step": None,
+        }
+        assert validate_wizard_state(state) == []
+
+    def test_ttfs_explicit_wrong_spiking_modes_still_fail(self):
+        state = {
+            "data_provider_name": "MNIST_DataProvider",
+            "experiment_name": "t",
+            "generated_files_path": "./out",
+            "platform_constraints": {},
+            "deployment_parameters": {
+                "model_config_mode": "user",
+                "model_type": "mlp_mixer",
+                "model_config": {},
+                "spiking_mode": "ttfs_quantized",
+                "firing_mode": "Default",
+            },
+            "start_step": None,
+        }
+        assert any("firing_mode" in e for e in validate_wizard_state(state))
 
 
 class TestWizardFlow:
@@ -338,9 +478,9 @@ class TestWizardTemporalAllocationSurface:
             "start_step": None,
         }
         errs = validate_wizard_state(state)
-        assert any("allow_per_layer_s" in e for e in errs)
+        assert any("reserved/not implemented" in e for e in errs)
 
-    def test_explicit_state_with_capability_passes(self):
+    def test_explicit_state_with_capability_still_reserved(self):
         state = {
             "data_provider_name": "MNIST_DataProvider",
             "experiment_name": "t",
@@ -353,7 +493,7 @@ class TestWizardTemporalAllocationSurface:
             },
             "start_step": None,
         }
-        assert validate_wizard_state(state) == []
+        assert any("reserved/not implemented" in e for e in validate_wizard_state(state))
 
 
 class TestPerLayerSTemplate:
@@ -374,8 +514,8 @@ class TestPerLayerSTemplate:
         # Byte-identical-runnable: every explicit S equals the global uniform S.
         assert all(s == pc["simulation_steps"] for s in dp["s_allocation_explicit"])
 
-    def test_template_validates_as_wizard_state(self):
-        assert validate_wizard_state(self._doc()) == []
+    def test_template_documents_reserved_axis_but_is_not_runnable_yet(self):
+        assert any("reserved/not implemented" in e for e in validate_wizard_state(self._doc()))
 
     def test_template_builds_flat_pipeline_config(self):
         doc = self._doc()

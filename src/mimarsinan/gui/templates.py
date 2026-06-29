@@ -77,11 +77,13 @@ def get_template(template_id: str) -> dict[str, Any] | None:
 
 def save_template(name: str, config: dict[str, Any]) -> str:
     """Save a config as a named template. Returns the template ID."""
+    from mimarsinan.gui.wizard.config_builder import build_deployment_config_from_state
+
     display_name = name.strip()
     safe_name = re.sub(r"[^A-Za-z0-9_\-]", "_", display_name)
     if not safe_name:
         safe_name = "template"
-    out = dict(config)
+    out = build_deployment_config_from_state(config)
     out["experiment_name"] = display_name or "template"
     tdir = Path(get_templates_dir())
     tdir.mkdir(parents=True, exist_ok=True)

@@ -512,16 +512,16 @@ function applySpikingDeps() {
     document.getElementById('firingMode').value = 'Default';
     document.getElementById('spikeGenMode').value = 'Uniform';
     document.getElementById('thresholdMode').value = '<';
-    // LIFActivation subsumes clamp / shift / activation-quantization, so
-    // activation_quantization is forced OFF for LIF.
-    setToggle('actQuantToggle', false, true);
+    // LIF tuning is preconditioned by clamp / shift / activation quantization
+    // unless Float Weights selects the vanilla no-quantization pipeline.
+    setToggle('actQuantToggle', !floatWeights, true);
     setWtQuantFromHw();
     applyHwDeps();
     deps.push({ text: 'Firing: Default', active: true });
     deps.push({ text: 'Spike Gen: Uniform', active: true });
     deps.push({ text: 'Threshold: <', active: true });
     deps.push({ text: 'LIF Adaptation: included', active: true });
-    deps.push({ text: 'Activation Quant: subsumed by LIF', forced: true });
+    deps.push({ text: floatWeights ? 'Activation Quant: off for float weights' : 'Activation Quant: preconditions LIF', forced: true });
   } else if (mode === 'ttfs') {
     document.getElementById('firingMode').value = 'TTFS';
     document.getElementById('spikeGenMode').value = 'TTFS';
@@ -537,26 +537,25 @@ function applySpikingDeps() {
     document.getElementById('firingMode').value = 'TTFS';
     document.getElementById('spikeGenMode').value = 'TTFS';
     document.getElementById('thresholdMode').value = '<=';
-    // TTFS Quantized forces ACTIVATION quant only (not weight quant)
-    setToggle('actQuantToggle', true, true);
+    // TTFS Quantized forces activation quant only when quantized deployment is on.
+    setToggle('actQuantToggle', !floatWeights, true);
     setWtQuantFromHw();
     applyHwDeps();
     deps.push({ text: 'Firing: TTFS', forced: true });
     deps.push({ text: 'Spike Gen: TTFS', forced: true });
-    deps.push({ text: 'Activation Quant: forced ON', forced: true });
+    deps.push({ text: floatWeights ? 'Activation Quant: off for float weights' : 'Activation Quant: forced ON', forced: true });
   } else if (mode === 'ttfs_cycle_based') {
     document.getElementById('firingMode').value = 'TTFS';
     document.getElementById('spikeGenMode').value = 'TTFS';
     document.getElementById('thresholdMode').value = '<=';
-    // LIF-style: TTFS-Cycle Fine-Tuning blends straight to the exact single-spike
-    // kernel (clamps + quantises internally), so the activation-quant chain is
-    // subsumed and forced OFF — mirroring LIF.
-    setToggle('actQuantToggle', false, true);
+    // TTFS-Cycle Fine-Tuning is preconditioned by the activation-quant chain
+    // unless Float Weights selects the vanilla no-quantization pipeline.
+    setToggle('actQuantToggle', !floatWeights, true);
     setWtQuantFromHw();
     applyHwDeps();
     deps.push({ text: 'Firing: TTFS', forced: true });
     deps.push({ text: 'Spike Gen: TTFS', forced: true });
-    deps.push({ text: 'Activation Quant: subsumed by TTFS-Cycle Fine-Tuning', forced: true });
+    deps.push({ text: floatWeights ? 'Activation Quant: off for float weights' : 'Activation Quant: preconditions TTFS-Cycle', forced: true });
     deps.push({ text: 'TTFS-Cycle Fine-Tuning: included', active: true });
     const schedule = (document.getElementById('ttfsCycleSchedule') || {}).value || 'cascaded';
     if (schedule === 'synchronized') {
@@ -835,6 +834,27 @@ function removeCoreType(i) {
   if (state.coreTypes.length > 1) { state.coreTypes.splice(i, 1); renderCoreTypes(); update(); }
 }
 
+// Keys resolved server-side; never persist in saved user config.
+const DERIVED_TOP_LEVEL_KEYS = new Set(['pipeline_mode']);
+const DERIVED_DEPLOYMENT_KEYS = new Set([
+  'pipeline_mode',
+  'activation_quantization',
+  'weight_quantization',
+  'firing_mode',
+  'spike_generation_mode',
+  'thresholding_mode',
+]);
+
+function buildUserConfig() {
+  const cfg = buildConfig();
+  const out = { ...cfg };
+  for (const key of DERIVED_TOP_LEVEL_KEYS) delete out[key];
+  const dp = { ...cfg.deployment_parameters };
+  for (const key of DERIVED_DEPLOYMENT_KEYS) delete dp[key];
+  out.deployment_parameters = dp;
+  return out;
+}
+
 // ══════════════════════════════════════════════════════════
 // JSON GENERATION
 // ══════════════════════════════════════════════════════════
@@ -847,10 +867,11 @@ function buildConfig() {
 
   const floatWeights = isToggleOn('floatWeightsToggle');
   const wtQuant = !floatWeights;
-  // LIF and ttfs_cycle_based subsume activation quantization (the on-chip
-  // activation clamps+quantises internally); only ttfs_quantized needs the
-  // explicit discrete-levels chain.
-  const actQuant = (spikingMode === 'ttfs_quantized');
+  // Cycle-accurate LIF/TTFS tuning and ttfs_quantized use activation-quantization
+  // preconditioning. Float-weight deployments still force quantization off.
+  const actQuant = !floatWeights && (
+    spikingMode === 'lif' || spikingMode === 'ttfs_cycle_based' || spikingMode === 'ttfs_quantized'
+  );
   const pruning = isToggleOn('pruningToggle');
   let pipelineMode;
   if (floatWeights) {
@@ -1371,7 +1392,7 @@ function update() {
   applyTrainingDeps();
   applySimulationDeps();
   syncWtQuantToggle();
-  document.getElementById('jsonOutput').innerHTML = renderJson(buildConfig());
+  document.getElementById('jsonOutput').innerHTML = renderJson(buildUserConfig());
   schedulePipelineStepsUpdate();
 
   // NAS architecture search: mapping stats are meaningless until the search settles.
@@ -1556,14 +1577,14 @@ function escapeHtml(s) {
 
 // ── Actions ────────────────────────────────────────────────
 function copyJson() {
-  navigator.clipboard.writeText(JSON.stringify(buildConfig(), null, 2)).then(() => {
+  navigator.clipboard.writeText(JSON.stringify(buildUserConfig(), null, 2)).then(() => {
     const btn = document.querySelector('.btn-sm.primary');
     const orig = btn.textContent; btn.textContent = 'Copied!';
     setTimeout(() => btn.textContent = orig, 1500);
   });
 }
 function downloadJson() {
-  const cfg = buildConfig();
+  const cfg = buildUserConfig();
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([JSON.stringify(cfg, null, 2)], { type: 'application/json' }));
   a.download = (cfg.experiment_name || 'config') + '.json'; a.click();
@@ -1571,14 +1592,14 @@ function downloadJson() {
 function resetAll() { if (confirm('Reset all configuration to defaults?')) location.reload(); }
 
 function saveAsTemplate() {
-  var name = window.prompt('Template name:', buildConfig().experiment_name || 'config');
+  var name = window.prompt('Template name:', buildUserConfig().experiment_name || 'config');
   if (name == null || !name.trim()) return;
   var btn = document.getElementById('saveTemplateBtn');
   if (btn) btn.disabled = true;
   fetch('/api/templates', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name: name.trim(), config: buildConfig() }),
+    body: JSON.stringify({ name: name.trim(), config: buildUserConfig() }),
   }).then(function (r) {
     if (!r.ok) return r.json().then(function (b) { throw new Error(b.error || 'Save failed'); });
     return r.json();
@@ -1603,7 +1624,7 @@ function toggleShowJson(el) {
 function runPipeline() {
   const runBtn = document.getElementById('runBtn');
   if (runBtn) runBtn.disabled = true;
-  const config = buildConfig();
+  const config = buildUserConfig();
   fetch('/api/run', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

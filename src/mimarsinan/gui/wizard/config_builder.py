@@ -1,32 +1,102 @@
-"""
-Build deployment config JSON from wizard state.
-
-Wizard state has the same shape as the deployment config (main.py input).
-The builder applies defaults and pipeline_mode preset so the output is valid
-and can be saved to a file and passed to main.py.
-"""
+"""Build minimal deployment config JSON from wizard state."""
 
 from __future__ import annotations
 
 from typing import Any, Dict
 
-from mimarsinan.config_schema import (
-    get_default_deployment_parameters,
-    get_default_platform_constraints,
-    apply_preset,
-)
-from mimarsinan.config_schema.deployment_derivation import derive_deployment_parameters
+from mimarsinan.config_schema.namespaced_schema import KEY_SPECS, keys_with_exposure
+
+
+_EXTRA_USER_DEPLOYMENT_KEYS = frozenset({
+    # Wizard/model/search keys that are not defaulted in config_schema.defaults.
+    "model_type",
+    "model_config",
+    "arch_search",
+    "encoding_layer_placement",
+    "negative_value_shift",
+    "pruning",
+    "pruning_fraction",
+    "weight_source",
+    "finetune_epochs",
+    "finetune_lr",
+    "batch_size",
+    "preprocessing",
+    "max_simulation_samples",
+})
+
+_EXTRA_USER_PLATFORM_KEYS = frozenset({
+    # Wizard hardware shape helpers emitted alongside the canonical core list.
+    "max_axons",
+    "max_neurons",
+    "has_bias",
+    "search_space",
+    "mode",
+    "user",
+    "auto",
+    "fixed",
+})
+
+
+def _is_known_exposure(key: str, *exposures: str) -> bool:
+    spec = KEY_SPECS.get(key)
+    return spec is not None and spec.exposure in exposures
+
+
+def _minimal_deployment_parameters(raw: Dict[str, Any]) -> Dict[str, Any]:
+    user_keys = set(keys_with_exposure("user")) | set(_EXTRA_USER_DEPLOYMENT_KEYS)
+    hidden_keys = (
+        set(keys_with_exposure("derived"))
+        | set(keys_with_exposure("runtime"))
+        | set(keys_with_exposure("system"))
+    )
+    out: Dict[str, Any] = {}
+    for key, value in raw.items():
+        if key in user_keys:
+            out[key] = value
+        elif key not in hidden_keys:
+            # Preserve unknown future/user extension keys rather than losing data.
+            out[key] = value
+    return out
+
+
+def _minimal_platform_constraints(raw: Any) -> Dict[str, Any]:
+    if not isinstance(raw, dict):
+        return {}
+
+    user_keys = set(keys_with_exposure("user")) | set(_EXTRA_USER_PLATFORM_KEYS)
+    out: Dict[str, Any] = {}
+    for key, value in raw.items():
+        if key in {"user", "fixed"} and isinstance(value, dict):
+            nested = _minimal_platform_constraints(value)
+            if nested:
+                out[key] = nested
+        elif key == "auto" and isinstance(value, dict):
+            auto: Dict[str, Any] = {}
+            fixed = value.get("fixed")
+            if isinstance(fixed, dict):
+                fixed_min = _minimal_platform_constraints(fixed)
+                if fixed_min:
+                    auto["fixed"] = fixed_min
+            if isinstance(value.get("search_space"), dict):
+                auto["search_space"] = dict(value["search_space"])
+            for auto_key, auto_value in value.items():
+                if auto_key not in {"fixed", "search_space"}:
+                    auto[auto_key] = auto_value
+            if auto:
+                out[key] = auto
+        elif key in user_keys:
+            out[key] = value
+        elif not _is_known_exposure(key, "system", "derived", "runtime"):
+            out[key] = value
+    return out
 
 
 def build_deployment_config_from_state(state: Dict[str, Any]) -> Dict[str, Any]:
     """
     Build a deployment config dict from wizard state (same shape as main.py JSON).
 
-    - Applies pipeline_mode preset to deployment_parameters (setdefault).
-    - Fills missing top-level keys with defaults where applicable.
-    - Does not mutate state; returns a new dict.
-
-    The returned dict can be serialized to JSON and passed to main.py.
+    The saved shape keeps user-facing knobs only; runtime defaults and derived
+    fields are resolved later by config_schema.runtime / DeploymentPipeline.
     """
     state = state or {}
     out: Dict[str, Any] = {}
@@ -36,50 +106,18 @@ def build_deployment_config_from_state(state: Dict[str, Any]) -> Dict[str, Any]:
     out["experiment_name"] = state.get("experiment_name", "experiment")
     out["generated_files_path"] = state.get("generated_files_path", "./generated")
     out["seed"] = state.get("seed", 0)
-    out["pipeline_mode"] = state.get("pipeline_mode", "phased")
     out["start_step"] = state.get("start_step")
-    out["stop_step"] = state.get("stop_step")
-    out["target_metric_override"] = state.get("target_metric_override")
+    if "stop_step" in state:
+        out["stop_step"] = state.get("stop_step")
+    if "target_metric_override" in state:
+        out["target_metric_override"] = state.get("target_metric_override")
 
-    # deployment_parameters: merge defaults, then state, then apply preset
-    dp_defaults = get_default_deployment_parameters()
-    dp = dict(state.get("deployment_parameters") or {})
-    for k, v in dp_defaults.items():
-        dp.setdefault(k, v)
-    apply_preset(out["pipeline_mode"], dp)
-    derive_deployment_parameters(dp)
-    dp.setdefault("model_config_mode", "user")
-    dp.setdefault("hw_config_mode", "fixed")
-    out["deployment_parameters"] = dp
-    out["pipeline_mode"] = dp.get("pipeline_mode", out["pipeline_mode"])
-
-    # platform_constraints: pass through (user or {mode, user, auto}); optionally fill defaults for flat user
-    pc = state.get("platform_constraints")
-    if pc is None:
-        pc = dict(get_default_platform_constraints())
-    elif isinstance(pc, dict):
-        pc = dict(pc)
-        if "mode" not in pc:
-            for k, v in get_default_platform_constraints().items():
-                pc.setdefault(k, v)
-        elif pc.get("mode") == "user":
-            # Ensure "user" key exists for main.py: copy flat keys into user if missing
-            if "user" not in pc or not isinstance(pc.get("user"), dict):
-                user = {k: v for k, v in pc.items() if k != "mode"}
-                for k, v in get_default_platform_constraints().items():
-                    user.setdefault(k, v)
-                pc["user"] = user
-        elif pc.get("mode") == "auto":
-            auto = pc.get("auto")
-            if isinstance(auto, dict):
-                if "fixed" not in auto or not isinstance(auto.get("fixed"), dict):
-                    auto["fixed"] = dict(get_default_platform_constraints())
-                # search_space left as-is from state
-            else:
-                pc["auto"] = {"fixed": dict(get_default_platform_constraints()), "search_space": {}}
-    else:
-        pc = dict(pc)
-    out["platform_constraints"] = pc
+    out["deployment_parameters"] = _minimal_deployment_parameters(
+        dict(state.get("deployment_parameters") or {})
+    )
+    out["platform_constraints"] = _minimal_platform_constraints(
+        state.get("platform_constraints") or {}
+    )
 
     # Edit & continue: preserve internal keys (not written to saved JSON templates).
     continue_from = state.get("_continue_from_run_id")
