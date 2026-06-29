@@ -1,4 +1,0 @@
-{"label": "ttfs_budget4_ep20", "ann": 0.8192, "deployed": 0.7189, "retention_pp": -10.03, "returncode": 0, "wall_s": 542.8, "gradual_s": 5.502234935760498}
-{"label": "ttfs_budget16_ep40", "ann": 0.8325, "deployed": 0.7276, "retention_pp": -10.49, "returncode": 0, "wall_s": 744.7, "gradual_s": 7.382987976074219}
-{"label": "ttfs_budget40_ep60", "ann": 0.8375, "deployed": 0.7107, "retention_pp": -12.68, "returncode": 1, "wall_s": 333.7, "gradual_s": 7.386637449264526}
-{"label": "lif_budget16_ep40", "ann": 0.8285, "deployed": 0.6936, "retention_pp": -13.49, "returncode": 1, "wall_s": 281.2, "gradual_s": 10.292482376098633}

@@ -1,6 +1,0 @@
-{"label": "ttfs_a0.3_base", "ann": 0.7968, "deployed": 0.7086, "retention_pp": -8.82, "returncode": 0, "wall_s": 445.1, "last_step": "Core Quantization Verification"}
-{"label": "ttfs_a0.6", "ann": 0.7928, "deployed": 0.6973, "retention_pp": -9.55, "returncode": 0, "wall_s": 443.3, "last_step": "Core Quantization Verification"}
-{"label": "ttfs_a1.0", "ann": 0.7957, "deployed": 0.6978, "retention_pp": -9.79, "returncode": 0, "wall_s": 442.2, "last_step": "Core Quantization Verification"}
-{"label": "ttfs_q1.0", "ann": 0.7991, "deployed": 0.7103, "retention_pp": -8.88, "returncode": 0, "wall_s": 440.3, "last_step": "Core Quantization Verification"}
-{"label": "ttfs_a1.0_q1.0", "ann": 0.8017, "deployed": 0.6958, "retention_pp": -10.59, "returncode": 0, "wall_s": 433.5, "last_step": "Core Quantization Verification"}
-{"label": "lif_a0.3_base", "ann": 0.7969, "deployed": 0.1409, "retention_pp": -65.6, "returncode": 1, "wall_s": 1361.1, "last_step": "Hard Core Mapping"}

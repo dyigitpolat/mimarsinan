@@ -1,4 +1,0 @@
-{"label": "ttfs_T8", "ann": 0.7965, "deployed": 0.7095, "retention_pp": -8.7, "returncode": 0, "wall_s": 470.4, "last_step": "Core Quantization Verification"}
-{"label": "ttfs_T16", "ann": 0.7948, "deployed": 0.7007, "retention_pp": -9.41, "returncode": 0, "wall_s": 436.8, "last_step": "Core Quantization Verification"}
-{"label": "ttfs_T32", "ann": 0.7897, "deployed": 0.6885, "retention_pp": -10.12, "returncode": 0, "wall_s": 446.4, "last_step": "Core Quantization Verification"}
-{"label": "ttfs_T64", "ann": 0.7937, "deployed": 0.699, "retention_pp": -9.47, "returncode": 0, "wall_s": 446.4, "last_step": "Core Quantization Verification"}
