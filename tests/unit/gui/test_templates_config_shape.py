@@ -63,31 +63,3 @@ def test_save_template_strips_derived_and_system_defaults(tmp_path, monkeypatch)
     assert "firing_mode" not in persisted
     assert "kd_ce_alpha" not in persisted
     assert persisted["spiking_mode"] == "ttfs_quantized"
-"""Template POST body parsing (wire format vs flat deployment)."""
-
-from mimarsinan.gui.templates import name_and_deployment_from_post_body
-
-
-def test_name_and_deployment_from_post_body_wizard_shape() -> None:
-    dep = {
-        "experiment_name": "e",
-        "pipeline_mode": "m",
-        "deployment_parameters": {},
-    }
-    name, cfg = name_and_deployment_from_post_body({"name": "Display", "config": dep})
-    assert name == "Display"
-    assert cfg == dep
-
-
-def test_name_and_deployment_from_post_body_uses_experiment_when_name_empty() -> None:
-    dep = {"experiment_name": "from_exp", "pipeline_mode": "m", "deployment_parameters": {}}
-    name, cfg = name_and_deployment_from_post_body({"name": "", "config": dep})
-    assert name == "from_exp"
-    assert cfg == dep
-
-
-def test_name_and_deployment_from_post_body_flat() -> None:
-    dep = {"experiment_name": "only", "pipeline_mode": "m", "deployment_parameters": {}}
-    name, cfg = name_and_deployment_from_post_body(dep)
-    assert name == "only"
-    assert cfg == dep

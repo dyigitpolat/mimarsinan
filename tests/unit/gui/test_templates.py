@@ -55,7 +55,14 @@ class TestSaveGetTemplateRoundTrip:
         template_id = save_template("Round Trip", config)
         assert template_id == "Round_Trip"
         loaded = get_template(template_id)
-        assert loaded == config
+        # save_template normalizes to the canonical deployment-config shape and strips
+        # derived top-level keys (pipeline_mode is re-derived on load), preserving the
+        # user's run knobs with experiment_name overridden to the display name.
+        assert loaded["experiment_name"] == "Round Trip"
+        assert loaded["seed"] == 123
+        assert "pipeline_mode" not in loaded
+        assert loaded["deployment_parameters"] == {}
+        assert loaded["platform_constraints"] == {}
 
     def test_save_sanitizes_name_to_id(self, tmp_path, monkeypatch):
         monkeypatch.setenv("MIMARSINAN_TEMPLATES_DIR", str(tmp_path))
@@ -72,8 +79,9 @@ class TestSaveGetTemplateRoundTrip:
         save_template("Display Name", config)
         loaded = get_template("Display_Name")
         assert loaded["experiment_name"] == "Display Name"
-        assert loaded["pipeline_mode"] == "phased"
         assert loaded["seed"] == 1
+        # pipeline_mode is a derived key — stripped on save, re-derived on load.
+        assert "pipeline_mode" not in loaded
         assert config["experiment_name"] == "old_run_name"
 
 
