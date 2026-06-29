@@ -35,12 +35,15 @@ from __future__ import annotations
 
 import datetime as _dt
 import itertools
-import re
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 from mimarsinan.chip_simulation.certification import CertificationCell
+from mimarsinan.chip_simulation.hypervolume_axis_encoder import (
+    cell_coordinates_from_row,
+    syncs_from_row,
+)
 from mimarsinan.mapping.verification.onchip_fraction import (
     TIER_INVALID,
     TIER_VALID,
@@ -678,97 +681,11 @@ def classify_validity_tier(raw: Optional[str]) -> Optional[CoverageStatus]:
     return None
 
 
-def _firing_of(row: Mapping[str, Any]) -> str:
-    return str(row.get("spiking_mode") or row.get("mode") or "lif")
-
-
-_VALID_SYNC = ("cascaded", "synchronized")
-
-
-def _sync_of(row: Mapping[str, Any]) -> str:
-    """The sync axis value: ``cascaded`` / ``synchronized`` / ``none``.
-
-    Whitelists the two real sync schedules; any other ``schedule`` token (``all``,
-    ``offload``, ``finalize_attempt`` and other non-sync run-status leakage) is
-    normalized to ``none`` so it does not spawn a spurious sync cell.
-    """
-    schedule = row.get("schedule")
-    if schedule in _VALID_SYNC:
-        return str(schedule)
-    return "none"
-
-
-def _dataset_of(row: Mapping[str, Any]) -> str:
-    ds = row.get("dataset")
-    if not ds:
-        return "unknown"
-    return str(ds).lower().replace("fashionmnist", "fmnist").replace("fashion_mnist", "fmnist")
-
-
-# Parses a depth out of a ``_d<N>_`` token in a run_id (e.g. ``dcnn_d6_cascaded_s0``).
-_DEPTH_IN_RUN_ID = re.compile(r"_d(\d+)_")
-
-
-def _depth_of(row: Mapping[str, Any]) -> str:
-    """The depth axis value: the explicit ``depth`` field, else parsed from a run_id.
-
-    Reads the structured ``depth`` field first; if absent, parses a ``_d<N>_`` token
-    from any of the row's run-id fields (``run_id`` / ``cascaded_run_ids`` /
-    ``synchronized_run_ids``). A row with neither gets ``WILDCARD`` (``"any"``) — depth
-    is genuinely unknown for that row, so it does not claim a specific depth cell.
-    """
-    explicit = row.get("depth")
-    if explicit is not None and str(explicit) != "":
-        return str(explicit)
-    for field_name in ("run_id", "run_ids", "cascaded_run_ids", "synchronized_run_ids"):
-        value = row.get(field_name)
-        candidates = value if isinstance(value, (list, tuple)) else (value,)
-        for candidate in candidates:
-            if not candidate:
-                continue
-            match = _DEPTH_IN_RUN_ID.search(str(candidate))
-            if match:
-                return match.group(1)
-    return AXIS_WILDCARD
-
-
-def _syncs_of(row: Mapping[str, Any]) -> List[str]:
-    """The sync axis value(s) a row covers.
-
-    A row with an explicit ``schedule`` covers that one sync. An ``arch_dataset`` row
-    that reports BOTH ``cascaded_deployed_mean`` and ``synchronized_deployed_mean``
-    covers BOTH sync cells (it is one row holding two schedules' results), so it
-    expands to ``[cascaded, synchronized]``. Otherwise it covers the ``none`` sync
-    cell (the firing-only family, or a row with no schedule signal at all).
-    """
-    explicit = _sync_of(row)
-    if explicit in _VALID_SYNC:
-        return [explicit]
-    reported = [
-        sync
-        for sync, key in (
-            ("cascaded", "cascaded_deployed_mean"),
-            ("synchronized", "synchronized_deployed_mean"),
-        )
-        if row.get(key) is not None
-    ]
-    return reported or ["none"]
-
-
 def _cell_with_sync(row: Mapping[str, Any], vehicle: str, sync: str) -> HypervolumeCell:
-    return HypervolumeCell(
-        firing=_firing_of(row),
-        sync=sync,
-        backend=str(row.get("backend") or "sanafe"),
-        vehicle=str(vehicle),
-        dataset=_dataset_of(row),
-        regime=str(row.get("regime") or "from_scratch"),
-        quantization=str(row.get("quantization") or "none"),
-        pruning=str(row.get("pruning") or "dense"),
-        mapping_strategy=str(row.get("mapping_strategy") or "packed"),
-        s=str(row.get("S") if row.get("S") is not None else AXIS_WILDCARD),
-        depth=_depth_of(row),
-    )
+    coords = cell_coordinates_from_row(row, sync=sync, axis_wildcard=AXIS_WILDCARD)
+    data = coords.as_cell_kwargs()
+    data["vehicle"] = str(vehicle)
+    return HypervolumeCell(**data)
 
 
 def row_to_cells(row: Mapping[str, Any]) -> List[HypervolumeCell]:
@@ -785,7 +702,7 @@ def row_to_cells(row: Mapping[str, Any]) -> List[HypervolumeCell]:
     vehicle = row.get("model") or row.get("model_type")
     if not vehicle:
         return []
-    return [_cell_with_sync(row, vehicle, sync) for sync in _syncs_of(row)]
+    return [_cell_with_sync(row, vehicle, sync) for sync in syncs_from_row(row)]
 
 
 def row_to_cell(row: Mapping[str, Any]) -> Optional[HypervolumeCell]:

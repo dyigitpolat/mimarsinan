@@ -39,6 +39,23 @@ from mimarsinan.chip_simulation.coverage_ledger import (
     honest_claimed_subproduct,
     interacting_axes,
 )
+from mimarsinan.chip_simulation.hypervolume_axis_encoder import (
+    AxisCoordinates,
+    cell_coordinates_from_row,
+    pruning_axis,
+    quantization_axis,
+    regime_axis,
+    syncs_from_row,
+)
+from mimarsinan.chip_simulation.ledger_schema import (
+    LEDGER_SCHEMA_VERSION,
+    LedgerSchemaError,
+    fastest_successful_baseline_wall_s,
+    normalize_ledger_record,
+    normalize_planned_ledger_row,
+    normalize_step_metrics,
+    with_relative_timing,
+)
 from mimarsinan.chip_simulation.coverage_ci import (
     CoverageGuardError,
     assert_axes_screening_sound,
@@ -130,6 +147,19 @@ __all__ = [
     "claimed_subproduct",
     "honest_claimed_subproduct",
     "interacting_axes",
+    "AxisCoordinates",
+    "cell_coordinates_from_row",
+    "quantization_axis",
+    "pruning_axis",
+    "regime_axis",
+    "syncs_from_row",
+    "LEDGER_SCHEMA_VERSION",
+    "LedgerSchemaError",
+    "fastest_successful_baseline_wall_s",
+    "normalize_ledger_record",
+    "normalize_planned_ledger_row",
+    "normalize_step_metrics",
+    "with_relative_timing",
     "CoverageGuardError",
     "assert_axes_screening_sound",
     "assert_no_merged_valid_tiers",

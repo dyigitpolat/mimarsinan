@@ -127,14 +127,7 @@ class SpikingModePolicy:
     # ── activation-adaptation family (Vector V5 step planning) ──────────────
     @property
     def single_step_activation_replacement(self) -> bool:
-        """Whether one activation-replacement step (LIF / TTFS-cycle) subsumes
-        the multi-step clamp/shift/activation-quantization chain.
-
-        The (firing × sync) decision the V5 step planner reads to choose the
-        activation-adaptation family (a single fine-tuner vs the analytical
-        clamp→shift→quantize chain). Composes with ``DeploymentPlan`` via
-        ``plan.is_lif_style``.
-        """
+        """Whether this mode has a dedicated LIF/TTFS-cycle tuning step."""
         return False
 
     # ── conversion-health calibration family (E3 CalibrationPipeline keying) ──
@@ -202,8 +195,7 @@ class LifModePolicy(SpikingModePolicy):
 
     @property
     def single_step_activation_replacement(self) -> bool:
-        # LIFActivation clamps + quantises internally; one replacement step
-        # subsumes the non-ReLU→ReLU replacement AND the clamp/shift/quant chain.
+        # The LIF tuner still runs after activation preconditioning.
         return self.spiking_mode == "lif"
 
     def training_forward_kind(self) -> str:
@@ -339,7 +331,7 @@ class _TtfsCycleModePolicy(SpikingModePolicy):
 
     @property
     def single_step_activation_replacement(self) -> bool:
-        # TTFSCycleActivation subsumes the clamp/shift/quant chain like LIF.
+        # The TTFS-cycle tuner still runs after activation preconditioning.
         return True
 
     def calibration_forward(self):
