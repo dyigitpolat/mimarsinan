@@ -17,6 +17,8 @@ from mimarsinan.config_schema.defaults import (
     DEFAULT_PLATFORM_CONSTRAINTS,
     get_default_deployment_parameters,
     get_default_platform_constraints,
+    get_system_default_deployment_parameters,
+    get_user_default_deployment_parameters,
 )
 from mimarsinan.config_schema.namespaced_schema import (
     CONCERN_GROUPS,
@@ -24,6 +26,7 @@ from mimarsinan.config_schema.namespaced_schema import (
     KeySpec,
     LEGACY_KEY_TABLE,
     NAMESPACED_KEY_TABLE,
+    keys_with_exposure,
     keys_with_derivation,
     provenance_table,
     registered_flat_keys,
@@ -51,6 +54,19 @@ def _full_default_flat():
     flat = dict(get_default_deployment_parameters())
     flat.update(get_default_platform_constraints())
     return flat
+
+
+def test_user_and_system_defaults_partition_merged_defaults():
+    user = get_user_default_deployment_parameters()
+    system = get_system_default_deployment_parameters()
+    merged = get_default_deployment_parameters()
+
+    assert not (set(user) & set(system))
+    assert set(user) | set(system) == set(merged)
+    for key, value in user.items():
+        assert merged[key] == value
+    for key, value in system.items():
+        assert merged[key] == value
 
 
 class TestRegistryCoverage:
@@ -84,6 +100,11 @@ class TestRegistryCoverage:
         valid = {"default", "preset", "derived", "runtime"}
         for spec in KEY_SPECS.values():
             assert spec.derivation in valid
+
+    def test_every_spec_exposure_is_valid(self):
+        valid = {"user", "derived", "system", "runtime"}
+        for spec in KEY_SPECS.values():
+            assert spec.exposure in valid
 
     def test_every_spec_has_an_owner(self):
         for spec in KEY_SPECS.values():
@@ -143,6 +164,46 @@ class TestDerivationTagging:
         # the preset (setdefault precedence: derivation wins on the always-path).
         assert KEY_SPECS["activation_quantization"].derivation == "derived"
         assert KEY_SPECS["weight_quantization"].derivation == "derived"
+
+
+class TestExposureTaxonomy:
+    """Persistence exposure is separate from derivation provenance."""
+
+    def test_derived_keys_are_not_user_persisted(self):
+        assert {
+            "activation_quantization",
+            "pipeline_mode",
+            "firing_mode",
+            "spike_generation_mode",
+            "thresholding_mode",
+        } <= keys_with_exposure("derived")
+
+    def test_runtime_keys_are_runtime_exposure(self):
+        assert keys_with_exposure("runtime") == RUNTIME_KEYS
+
+    def test_wizard_visible_knobs_are_user_exposure(self):
+        assert {
+            "spiking_mode",
+            "weight_quantization",
+            "simulation_steps",
+            "target_tq",
+            "weight_bits",
+            "allow_scheduling",
+            "enable_nevresim_simulation",
+        } <= keys_with_exposure("user")
+
+    def test_internal_defaults_are_system_exposure(self):
+        assert {
+            "kd_ce_alpha",
+            "kd_temperature",
+            "ttfs_genuine_blend_ramp",
+            "optimization_driver",
+        } <= keys_with_exposure("system")
+
+    def test_weight_quantization_is_user_exposed_but_derived_provenance(self):
+        spec = KEY_SPECS["weight_quantization"]
+        assert spec.derivation == "derived"
+        assert spec.exposure == "user"
 
 
 class TestTranslationShimBijection:
@@ -305,6 +366,7 @@ class TestProvenanceTable:
         assert entry["group"] == "spiking"
         assert entry["owner"] == "SpikingDeploymentContract"
         assert entry["derivation"] == "default"
+        assert entry["exposure"] == "user"
         assert entry["namespaced_path"] == "spiking.spiking_mode"
 
 
@@ -319,6 +381,10 @@ class TestKeySpecValidation:
         with pytest.raises(ValueError):
             KeySpec("k", "hardware", "k", "owner", "made_up")
 
+    def test_unknown_exposure_raises(self):
+        with pytest.raises(ValueError):
+            KeySpec("k", "hardware", "k", "owner", "default", "made_up")
+
     def test_namespaced_path_property(self):
-        spec = KeySpec("weight_bits", "hardware", "weight_bits", "wq", "default")
+        spec = KeySpec("weight_bits", "hardware", "weight_bits", "wq", "default", "user")
         assert spec.namespaced_path == "hardware.weight_bits"

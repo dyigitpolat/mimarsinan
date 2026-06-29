@@ -20,7 +20,7 @@ from mimarsinan.tuning.orchestration.adaptation_manager import AdaptationManager
 from mimarsinan.tuning.tuners.lif_adaptation_tuner import LIFAdaptationTuner
 
 
-def _make_tuner(tmp_path, *, fast=True, steps_per_rate=3, rates=None):
+def _make_tuner(tmp_path, *, fast=True, steps_per_rate=3, rates=None, freeze_bn=False):
     cfg = default_config()
     cfg["spiking_mode"] = "lif"
     cfg["firing_mode"] = "Default"
@@ -28,6 +28,7 @@ def _make_tuner(tmp_path, *, fast=True, steps_per_rate=3, rates=None):
     cfg["tuning_budget_scale"] = 1.0
     cfg["simulation_steps"] = 4
     cfg["lif_blend_fast"] = fast
+    cfg["fast_ladder_freeze_bn"] = freeze_bn
     cfg["lif_blend_fast_steps_per_rate"] = steps_per_rate
     if rates is not None:
         cfg["lif_blend_fast_rates"] = rates
@@ -77,6 +78,46 @@ class TestLifFastRun:
     def test_fast_disables_stabilization(self, tmp_path):
         tuner, _, _ = _make_tuner(tmp_path, fast=True)
         assert tuner._stabilization_budget() == 0
+
+    def test_bn_freeze_keeps_batchnorm_eval_during_fast_steps(self, tmp_path):
+        tuner, model, _ = _make_tuner(
+            tmp_path, fast=True, freeze_bn=True, steps_per_rate=1, rates=[1.0],
+        )
+        seen = []
+        orig = tuner._fast_loss
+
+        def wrapped(x, y):
+            seen.extend(
+                m.training
+                for m in model.modules()
+                if isinstance(m, torch.nn.modules.batchnorm._BatchNorm)
+            )
+            return orig(x, y)
+
+        tuner._fast_loss = wrapped
+        tuner.run()
+        assert seen
+        assert not any(seen)
+
+    def test_bn_freeze_default_off_keeps_historical_train_mode(self, tmp_path):
+        tuner, model, _ = _make_tuner(
+            tmp_path, fast=True, freeze_bn=False, steps_per_rate=1, rates=[1.0],
+        )
+        seen = []
+        orig = tuner._fast_loss
+
+        def wrapped(x, y):
+            seen.extend(
+                m.training
+                for m in model.modules()
+                if isinstance(m, torch.nn.modules.batchnorm._BatchNorm)
+            )
+            return orig(x, y)
+
+        tuner._fast_loss = wrapped
+        tuner.run()
+        assert seen
+        assert any(seen)
 
     def test_rerun_resets_fast_scratch(self, tmp_path):
         torch.manual_seed(0)

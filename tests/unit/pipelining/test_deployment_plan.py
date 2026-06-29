@@ -527,6 +527,10 @@ class TestNoStrayDeploymentFlagReadsAnywhere:
         "code_generation/generate_main.py",
         # ── config_schema: DEFINES / DERIVES / DISPLAYS / VALIDATES the keys ──
         "config_schema/",
+        # ── coverage/ledger projection: this is the AUDIT bridge that maps raw
+        #    configs/rows and resolved plans into explicit hypervolume axes. It
+        #    is a writer/normalizer, not a deployment-decision consumer.
+        "chip_simulation/hypervolume_axis_encoder.py",
         # ── tuners select their own TRAINING-FORWARD family from spiking_mode /
         #    cycle_accurate_lif_forward (a V2 SpikingModePolicy concern, not a
         #    V1 decision-flag consumer). The read sits on the per-perceptron

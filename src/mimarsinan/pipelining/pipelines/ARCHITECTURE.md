@@ -23,12 +23,12 @@ Single source of truth in `deployment_pipeline.py`. High-level branches:
 | Condition | Effect |
 |-----------|--------|
 | `search_mode != "fixed"` | `ArchitectureSearchStep` instead of `ModelConfigurationStep` |
-| `spiking_mode == "lif"` | `LIFAdaptationStep` after activation analysis |
-| `spiking_mode != "lif"` and (`activation_quantization` or TTFS) | `ClampAdaptationStep`; optional activation-quant chain when `activation_quantization` |
+| cycle-accurate tuning (`lif` / `ttfs_cycle_based`) | Activation Adaptation → Clamp → Shift → Activation Quantization before `LIFAdaptationStep` / `TTFSCycleAdaptationStep` |
+| analytical/rate modes | `ClampAdaptationStep` when activation quantization or TTFS firing requires it; Shift/AQ only when `activation_quantization` |
 | `weight_quantization` | weight-quant steps before mapping; `CoreQuantizationVerificationStep` after soft-core mapping |
 | backend steps (nevresim / loihi / sanafe) | Selected + validated by **`chip_simulation.backend.BACKEND_REGISTRY`** (Vector V3): `selected_step_specs(plan)` reads each backend's `enable_*` predicate AND consults the `_BACKEND_CAPS` capability matrix UP-FRONT — an enabled backend×unsupported-mode (e.g. Loihi + TTFS) raises an actionable `ValueError` at assembly, before any step is appended. nevresim is skipped for the synchronized TTFS-cycle schedule (no synchronized-window backend yet). |
 
-Always: model build → (pretrain or preload) → optional torch map → optional pruning → activation analysis/adaptation → normalization fusion → soft core mapping → hard core mapping → backend simulation steps (registry-selected).
+Always: model build → (pretrain or preload) → optional torch map → optional pruning → activation analysis/preconditioning → optional LIF/TTFS-cycle tuning → normalization fusion → soft core mapping → hard core mapping → backend simulation steps (registry-selected).
 
 ## Dependencies
 

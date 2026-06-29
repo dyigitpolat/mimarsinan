@@ -10,9 +10,7 @@ class ClampAdaptationStep(TunerPipelineStep):
 
     @classmethod
     def applies_to(cls, plan):
-        return (not plan.is_lif_style) and (
-            plan.activation_quantization or plan.requires_ttfs_firing
-        )
+        return plan.requires_clamp_preconditioning
 
     def __init__(self, pipeline):
         super().__init__(self.REQUIRES, self.PROMISES, self.UPDATES, self.CLEARS, pipeline)

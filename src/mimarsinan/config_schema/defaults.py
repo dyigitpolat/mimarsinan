@@ -47,6 +47,9 @@ DEFAULT_DEPLOYMENT_PARAMETERS: Dict[str, object] = {
     "lr_range_max": 1e-1,
     "training_epochs": 10,
     "tuning_budget_scale": 1.0,
+    # Default off: historical max_training_steps cap remains 4000. When enabled,
+    # large tuning_budget_scale values can also lengthen the gradual ramp budget.
+    "tuning_budget_scale_ramp_steps": False,
     "tuner_target_floor_ratio": 0.90,
     # Activation-Analysis scale quantile = the per-perceptron LIF/TTFS decode scale
     # AND clamp ceiling. Raising it toward 1.0 reduces the systematic top-percentile
@@ -184,6 +187,11 @@ DEFAULT_DEPLOYMENT_PARAMETERS: Dict[str, object] = {
     # block's activation_scale to its Activation-Analysis theta_out and propagate
     # input_activation_scale = upstream theta_out (the LIF scale-aware analog).
     "ttfs_scale_aware_boundaries": False,
+    # Synchronized TTFS QAT opt-in: synchronized class forward already represents
+    # the deployed analytical staircase, so this enables production QAT/fast-ladder
+    # training through that deployed forward without enabling cascaded segment-spike
+    # genuine ramps. Default off => historical synchronized proxy/controller path.
+    "ttfs_sync_genuine_qat": False,
     # Teacher->genuine blend ramp + per-neuron DFQ distribution matching (opt-in,
     # experimental): ramp the output from (1-r)*teacher + r*genuine cascade while
     # DFQ-correcting each perceptron's bias to match the ANN activation distribution.
@@ -273,6 +281,9 @@ DEFAULT_DEPLOYMENT_PARAMETERS: Dict[str, object] = {
     "lif_blend_fast_rates": [0.25, 0.5, 0.75, 1.0],
     "lif_blend_fast_lr_eta_min": 0.1,
     "lif_blend_fast_stabilize_steps": 0,
+    # Shared fast-ladder BN policy: keep model trainable but force BatchNorm layers
+    # to eval during fast QAT steps. Default off preserves historical fast behavior.
+    "fast_ladder_freeze_bn": False,
     # DFQ per-neuron bias correction on the deployed LIF cascade (opt-in): match
     # each perceptron's deployed channel-mean to the teacher ANN's by nudging
     # layer.bias, shrinking the systematic ANN->SNN first-moment conversion gap.
@@ -280,6 +291,10 @@ DEFAULT_DEPLOYMENT_PARAMETERS: Dict[str, object] = {
     "lif_distmatch_bias_iters": 10,
     "lif_distmatch_bias_eta": 0.5,
     "lif_distmatch_cal_batches": 8,
+    # Per-channel trainable firing-gain theta (opt-in): rebind each non-encoding
+    # perceptron's activation_scale to a per-output-channel param the blend ramp
+    # co-trains with the weights, the LIF analogue of ttfs_theta_cotrain.
+    "lif_theta_cotrain": False,
     "model_config_mode": "user",
     "hw_config_mode": "fixed",
     "spiking_mode": "lif",
@@ -369,6 +384,7 @@ CONFIG_KEYS_SET: Set[str] = {
     "scheduling_latency_weight",
     "weight_bits",
     "tuning_budget_scale",
+    "tuning_budget_scale_ramp_steps",
     "tuner_target_floor_ratio",
     "checkpoint_scope",
     "checkpoint_location",
@@ -400,6 +416,7 @@ CONFIG_KEYS_SET: Set[str] = {
     "ttfs_ramp_alpha_min",
     "ttfs_ramp_alpha_max",
     "ttfs_scale_aware_boundaries",
+    "ttfs_sync_genuine_qat",
     "ttfs_genuine_blend_ramp",
     "ttfs_distmatch_bias_iters",
     "ttfs_distmatch_bias_eta",
@@ -431,10 +448,12 @@ CONFIG_KEYS_SET: Set[str] = {
     "lif_blend_fast_rates",
     "lif_blend_fast_lr_eta_min",
     "lif_blend_fast_stabilize_steps",
+    "fast_ladder_freeze_bn",
     "lif_distmatch",
     "lif_distmatch_bias_iters",
     "lif_distmatch_bias_eta",
     "lif_distmatch_cal_batches",
+    "lif_theta_cotrain",
     "finetune_epochs",
     "finetune_lr",
     "batch_size",
@@ -500,6 +519,67 @@ def get_default_tuning_recipe() -> Dict[str, object]:
 def get_default_platform_constraints() -> Dict[str, object]:
     """Return a copy of default platform constraints."""
     return dict(DEFAULT_PLATFORM_CONSTRAINTS)
+
+
+def get_user_default_deployment_parameters() -> Dict[str, object]:
+    """Return user-facing deployment defaults (wizard/template starting points)."""
+    from mimarsinan.config_schema.namespaced_schema import keys_with_exposure
+
+    user_keys = set(keys_with_exposure("user")) | {
+        "model_type",
+        "model_config",
+        "arch_search",
+        "encoding_layer_placement",
+        "negative_value_shift",
+        "pruning",
+        "pruning_fraction",
+        "weight_source",
+        "finetune_epochs",
+        "finetune_lr",
+        "batch_size",
+        "preprocessing",
+        "max_simulation_samples",
+    }
+    out = {k: v for k, v in DEFAULT_DEPLOYMENT_PARAMETERS.items() if k in user_keys}
+    if "training_recipe" in out:
+        out["training_recipe"] = dict(out["training_recipe"])
+    if "tuning_recipe" in out:
+        out["tuning_recipe"] = dict(out["tuning_recipe"])
+    return out
+
+
+def get_system_default_deployment_parameters() -> Dict[str, object]:
+    """Return internal/system deployment defaults hidden from saved user config."""
+    user_keys = set(get_user_default_deployment_parameters())
+    out = {k: v for k, v in DEFAULT_DEPLOYMENT_PARAMETERS.items() if k not in user_keys}
+    if "training_recipe" in out:
+        out["training_recipe"] = dict(out["training_recipe"])
+    if "tuning_recipe" in out:
+        out["tuning_recipe"] = dict(out["tuning_recipe"])
+    return out
+
+
+def get_user_default_platform_constraints() -> Dict[str, object]:
+    """Return user-facing platform defaults."""
+    from mimarsinan.config_schema.namespaced_schema import keys_with_exposure
+
+    user_keys = set(keys_with_exposure("user")) | {
+        "max_axons",
+        "max_neurons",
+        "has_bias",
+        "search_space",
+        "mode",
+        "user",
+        "auto",
+        "fixed",
+    }
+    return {k: v for k, v in DEFAULT_PLATFORM_CONSTRAINTS.items() if k in user_keys}
+
+
+def get_system_default_platform_constraints() -> Dict[str, object]:
+    """Return internal/system platform defaults."""
+    user_keys = set(get_user_default_platform_constraints())
+    return {k: v for k, v in DEFAULT_PLATFORM_CONSTRAINTS.items() if k not in user_keys}
 
 
 def get_pipeline_mode_presets() -> Dict[str, Dict[str, object]]:

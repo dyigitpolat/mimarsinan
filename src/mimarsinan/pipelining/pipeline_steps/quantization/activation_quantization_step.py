@@ -8,7 +8,7 @@ class ActivationQuantizationStep(TunerPipelineStep):
 
     @classmethod
     def applies_to(cls, plan):
-        return (not plan.is_lif_style) and plan.activation_quantization
+        return plan.requires_activation_quantization_preconditioning
 
     def __init__(self, pipeline):
         super().__init__(self.REQUIRES, self.PROMISES, self.UPDATES, self.CLEARS, pipeline)

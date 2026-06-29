@@ -21,6 +21,18 @@ class TestTuningBudget:
         assert b2.max_training_steps >= b1.max_training_steps
         assert b1.check_interval == b2.check_interval
 
+    def test_large_budget_scale_keeps_legacy_cap_by_default(self):
+        b = TuningBudget.from_dataset(50000, 10, budget_scale=40.0)
+        assert b.max_training_steps == 4000
+
+    def test_opt_in_ramp_step_scaling_lifts_legacy_cap(self):
+        capped = TuningBudget.from_dataset(50000, 10, budget_scale=4.0)
+        scaled = TuningBudget.from_dataset(
+            50000, 10, budget_scale=40.0, scale_ramp_steps=True,
+        )
+        assert capped.max_training_steps == 4000
+        assert scaled.max_training_steps > capped.max_training_steps * 2
+
     def test_lr_probe_budget_capped(self):
         """LR probe count and step budget are capped to keep exploration cheap."""
         b = TuningBudget.from_dataset(50000, 100, budget_scale=1.0)
@@ -91,6 +103,18 @@ class TestTuningBudget:
         assert isinstance(b, TuningBudget)
         assert b.max_training_steps >= 1
         assert b.check_interval >= 1
+
+    def test_tuning_budget_from_pipeline_can_scale_ramp_steps(self):
+        factory = MockDataProviderFactory()
+        cfg = default_config()
+        cfg["tuning_budget_scale"] = 40.0
+        legacy = tuning_budget_from_pipeline(
+            MockPipeline(config=dict(cfg), data_provider_factory=factory)
+        )
+        cfg["tuning_budget_scale_ramp_steps"] = True
+        scaled = tuning_budget_from_pipeline(MockPipeline(config=cfg, data_provider_factory=factory))
+        assert scaled.max_training_steps >= legacy.max_training_steps
+        assert scaled.max_training_steps == 40
 
     def test_from_data_provider_populates_eval_n_batches(self):
         factory = MockDataProviderFactory()

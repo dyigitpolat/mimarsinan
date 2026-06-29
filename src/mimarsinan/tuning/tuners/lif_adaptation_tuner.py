@@ -115,6 +115,23 @@ class LIFAdaptationTuner(KDBlendAdaptationTuner):
             self.pipeline.config.get("lif_distmatch_cal_batches", 8)
         )
         self._lif_distmatch_stats = None
+        # Per-channel trainable firing-gain theta (opt-in, default OFF): a single
+        # scalar threshold cannot serve both wide and narrow channels of a perceptron,
+        # so rebind each non-encoding perceptron's activation_scale to a per-output-
+        # channel param the blend ramp co-trains WITH the weights (the LIF analogue of
+        # ttfs_theta_cotrain; promoted in _after_install_blend via the shared base
+        # helper, before the fast-ladder optimiser captures model.parameters()).
+        self._lif_theta_cotrain = bool(
+            self.pipeline.config.get("lif_theta_cotrain", False)
+        )
+
+    def _after_install_blend(self) -> None:
+        """Base pre-ramp setup + ramp-forward install, then (opt-in) promote the
+        per-channel theta so the deployed LIF nodes reference the trainable param
+        BEFORE the fast-ladder optimiser is built over ``model.parameters()``."""
+        super()._after_install_blend()
+        if self._lif_theta_cotrain:
+            self._promote_per_channel_theta()
 
     def _post_stabilization_hook(self):
         if self._lif_distmatch:

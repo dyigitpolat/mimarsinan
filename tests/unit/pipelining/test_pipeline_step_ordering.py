@@ -1,8 +1,8 @@
-"""Pipeline step ordering: Activation Analysis + Activation Adaptation + optional Clamp.
+"""Pipeline step ordering: activation preconditioning before spiking tuning.
 
-Activation Adaptation always runs immediately after Activation Analysis (ReLU
-replacement when needed, scales always). When act_q is True or spiking is
-TTFS, Clamp Adaptation runs after Activation Adaptation.
+Activation Adaptation always runs after Activation Analysis. Clamp/Shift/
+Activation Quantization precondition cycle-accurate LIF and TTFS-cycle tuning;
+for analytical/rate modes the activation-quantization flag remains the gate.
 """
 
 import pytest
@@ -102,9 +102,8 @@ class TestActivationAdaptationAlwaysPresent:
         assert "Activation Adaptation" in names
         assert "Clamp Adaptation" not in names
 
-    def test_activation_adaptation_absent_for_lif(self):
-        """LIF mode: no Activation Adaptation — LIF Adaptation subsumes the
-        non-ReLU→ReLU replacement during its blend ramp."""
+    def test_lif_preconditioning_runs_before_lif_adaptation(self):
+        """LIF mode: analytical preconditioning runs before the LIF tuning ramp."""
         config = {
             "configuration_mode": "user",
             "spiking_mode": "lif",
@@ -113,10 +112,15 @@ class TestActivationAdaptationAlwaysPresent:
             "model_type": "mlp_mixer",
         }
         names = _step_names(config)
-        assert "Activation Analysis" in names
-        assert "Activation Adaptation" not in names
-        assert "LIF Adaptation" in names
-        assert names.index("Activation Analysis") < names.index("LIF Adaptation")
+        expected = [
+            "Activation Analysis",
+            "Activation Adaptation",
+            "Clamp Adaptation",
+            "Activation Shifting",
+            "Activation Quantization",
+            "LIF Adaptation",
+        ]
+        assert [name for name in names if name in expected] == expected
 
     def _ttfs_cycle_config(self, **overrides):
         config = {
@@ -129,18 +133,18 @@ class TestActivationAdaptationAlwaysPresent:
         config.update(overrides)
         return config
 
-    def test_ttfs_cycle_is_lif_style_replacing_quant_chain(self):
-        """LIF-style: TTFS-Cycle Fine-Tuning REPLACES the activation-quant chain
-        (no Activation Adaptation / Clamp / Shift / Activation Quantization),
-        directly after Activation Analysis and before Weight Quantization."""
-        names = _step_names(self._ttfs_cycle_config())
-        assert "TTFS Cycle Fine-Tuning" in names
-        for skipped in (
-            "Activation Adaptation", "Clamp Adaptation",
-            "Activation Shifting", "Activation Quantization",
-        ):
-            assert skipped not in names, f"{skipped} must be skipped (LIF-style)"
-        assert names.index("Activation Analysis") < names.index("TTFS Cycle Fine-Tuning")
+    def test_ttfs_cycle_preconditioning_runs_before_cycle_finetuning(self):
+        """TTFS-cycle tuning is preconditioned by the analytical chain first."""
+        names = _step_names(self._ttfs_cycle_config(activation_quantization=False))
+        expected = [
+            "Activation Analysis",
+            "Activation Adaptation",
+            "Clamp Adaptation",
+            "Activation Shifting",
+            "Activation Quantization",
+            "TTFS Cycle Fine-Tuning",
+        ]
+        assert [name for name in names if name in expected] == expected
         assert names.index("TTFS Cycle Fine-Tuning") < names.index("Weight Quantization")
 
     def test_ttfs_cycle_synchronized_disables_nevresim_simulation(self):
@@ -199,7 +203,7 @@ class TestActivationAdaptationAlwaysPresent:
 
 
 class TestActivationQuantizationConditional:
-    """Shifting + Quantization steps should only appear when activation_quantization=True."""
+    """Default-off activation quantization still applies outside cycle-based modes."""
 
     def test_quantization_present_when_enabled(self):
         config = {
@@ -224,6 +228,19 @@ class TestActivationQuantizationConditional:
         names = _step_names(config)
         assert "Activation Shifting" not in names
         assert "Activation Quantization" not in names
+
+    @pytest.mark.parametrize("spiking_mode", ["lif", "ttfs_cycle_based"])
+    def test_cycle_based_modes_force_quant_preconditioning_even_when_flag_is_off(self, spiking_mode):
+        config = {
+            "configuration_mode": "user",
+            "spiking_mode": spiking_mode,
+            "activation_quantization": False,
+            "weight_quantization": False,
+            "model_type": "mlp_mixer",
+        }
+        names = _step_names(config)
+        assert "Activation Shifting" in names
+        assert "Activation Quantization" in names
 
 
 class TestStepOrderingInvariants:

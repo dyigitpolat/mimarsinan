@@ -56,6 +56,41 @@ class TestRampPrecedence:
         assert not p.staircase_ste
         assert not p.proxy_fast
 
+    def test_sync_genuine_qat_does_not_enable_cascade_genuine_ramps(self):
+        p = _resolve(
+            synchronized=True,
+            ttfs_sync_genuine_qat=True,
+            ttfs_genuine_annealed_ramp=True,
+            ttfs_genuine_blend_ramp=True,
+            ttfs_staircase_ste=True,
+        )
+        assert p.sync_genuine_qat is True
+        assert not p.genuine_annealed_ramp
+        assert not p.genuine_blend_ramp
+        assert not p.staircase_ste
+        assert not p.genuine_bare_target_ramp
+
+    def test_sync_genuine_qat_allows_fast_deployed_staircase_ramp(self):
+        p = _resolve(
+            synchronized=True,
+            optimization_driver="fast",
+            ttfs_sync_genuine_qat=True,
+            ttfs_blend_fast=True,
+        )
+        assert p.sync_genuine_qat is True
+        assert p.proxy_fast is True
+        assert p.fast_ladder_enabled is True
+
+    def test_sync_fast_proxy_stays_default_off_without_sync_qat_flag(self):
+        p = _resolve(
+            synchronized=True,
+            optimization_driver="fast",
+            ttfs_blend_fast=True,
+        )
+        assert p.sync_genuine_qat is False
+        assert p.proxy_fast is False
+        assert p.fast_ladder_enabled is False
+
 
 class TestDriverPrecedence:
     def test_ste_fast_requires_ste(self):

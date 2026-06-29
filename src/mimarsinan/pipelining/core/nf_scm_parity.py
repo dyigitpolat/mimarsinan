@@ -13,7 +13,17 @@ _DEBUG_ENV = "MIMARSINAN_NF_SCM_PARITY_DEBUG"
 
 
 class NfScmParityError(AssertionError):
-    """Per-neuron divergence between the analytical NF and the identity mapping."""
+    """Per-neuron divergence between the analytical NF and the identity mapping.
+
+    ``mismatch_fraction`` is the measured per-neuron flip fraction when the
+    raise came from the per-neuron budget check (``None`` for the decision-level
+    and structural raises that have no such scalar) — lets callers branch on how
+    far over budget a model landed without re-parsing the message.
+    """
+
+    def __init__(self, message: str, *, mismatch_fraction: float | None = None):
+        super().__init__(message)
+        self.mismatch_fraction = mismatch_fraction
 
 
 def _unify_model_device(model):
@@ -120,7 +130,8 @@ def assert_nf_scm_parity_or_raise(
             f"NF↔SCM per-neuron parity failed: {mismatches}/{total} values "
             f"differ beyond atol={atol} (fraction {fraction:.4f} > budget "
             f"{max_mismatch_fraction}). Worst: perceptron {pi} sample {s_idx} "
-            f"sorted-rank {rank}: nf={nf_v!r} scm={scm_v!r} (|Δ|={d!r})"
+            f"sorted-rank {rank}: nf={nf_v!r} scm={scm_v!r} (|Δ|={d!r})",
+            mismatch_fraction=fraction,
         )
     return fraction
 

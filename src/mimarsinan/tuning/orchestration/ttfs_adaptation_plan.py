@@ -14,7 +14,9 @@ The plan composes the three orthogonal abstractions: it picks the ramp strategy 
 is resolved once, each concern owning its own compatibility rules.
 
 Precedence (settled here, in order):
-* genuine ramps are cascaded-only (off when ``synchronized``);
+* cascade-genuine ramps are cascaded-only (off when ``synchronized``);
+* synchronized QAT is a separate default-off opt-in that may use the fast
+  deployed-staircase proxy path, but it does not enable the cascade forward;
 * the genuine **blend** ramp wins over the **annealed** ramp;
 * the **STE** reuses the annealed install (forces ``genuine_annealed_ramp``) and is
   excluded by the blend ramp;
@@ -42,6 +44,7 @@ _DEFAULT_BLEND_FAST_RATES = [0.5, 0.75, 0.9, 0.97, 1.0]
 @dataclass(frozen=True)
 class TtfsAdaptationPlan:
     # ── ramp strategy (mutually exclusive; else value-domain proxy) ──
+    sync_genuine_qat: bool
     genuine_annealed_ramp: bool
     genuine_blend_ramp: bool
     staircase_ste: bool
@@ -98,13 +101,15 @@ class TtfsAdaptationPlan:
     ) -> "TtfsAdaptationPlan":
         get = config.get
 
-        annealed = bool(get("ttfs_genuine_annealed_ramp", False)) and not synchronized
-        blend = bool(get("ttfs_genuine_blend_ramp", False)) and not synchronized
+        sync_genuine_qat = bool(get("ttfs_sync_genuine_qat", False)) and synchronized
+        cascade_genuine_allowed = not synchronized
+        annealed = bool(get("ttfs_genuine_annealed_ramp", False)) and cascade_genuine_allowed
+        blend = bool(get("ttfs_genuine_blend_ramp", False)) and cascade_genuine_allowed
         if blend:
             annealed = False  # blend wins over annealed
         ste = (
             bool(get("ttfs_staircase_ste", False))
-            and not synchronized and not blend
+            and cascade_genuine_allowed and not blend
         )
         if ste:
             annealed = True  # the STE reuses the annealed cascade-forward install
@@ -152,7 +157,8 @@ class TtfsAdaptationPlan:
         proxy_fast = (
             fast_enabled
             and bool(get("ttfs_blend_fast", False))
-            and not bare and not synchronized
+            and not bare
+            and (not synchronized or sync_genuine_qat)
         )
         ste_refine = proxy_fast and bool(get("ttfs_blend_fast_ste_refine", False))
 
@@ -189,6 +195,7 @@ class TtfsAdaptationPlan:
         )
 
         return cls(
+            sync_genuine_qat=sync_genuine_qat,
             genuine_annealed_ramp=annealed,
             genuine_blend_ramp=blend,
             staircase_ste=ste,

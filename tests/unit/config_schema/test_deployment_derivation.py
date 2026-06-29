@@ -1,12 +1,13 @@
+from mimarsinan.config_schema import build_flat_pipeline_config
 from mimarsinan.config_schema.defaults import get_default_deployment_parameters
 from mimarsinan.config_schema.deployment_derivation import derive_deployment_parameters
 from mimarsinan.gui.wizard.config_builder import build_deployment_config_from_state
 
 
-def test_lif_disables_activation_quantization():
+def test_lif_enables_activation_quantization_preconditioning():
     dp = {"spiking_mode": "lif", "weight_quantization": True, "activation_quantization": True}
     derive_deployment_parameters(dp)
-    assert dp["activation_quantization"] is False
+    assert dp["activation_quantization"] is True
 
 
 def test_ttfs_quantized_enables_activation_quant():
@@ -15,12 +16,12 @@ def test_ttfs_quantized_enables_activation_quant():
     assert dp["activation_quantization"] is True
 
 
-def test_ttfs_cycle_based_finetune_disables_activation_quant():
-    # LIF-style: TTFSCycleActivation subsumes the quant chain, so activation
-    # quantization is forced OFF when fine-tuning is on (the default).
+def test_ttfs_cycle_based_finetune_enables_activation_quant():
+    # Cycle-accurate TTFS is preconditioned by the activation-quantization chain
+    # before TTFS Cycle Fine-Tuning.
     dp = {"spiking_mode": "ttfs_cycle_based", "weight_quantization": True}
     derive_deployment_parameters(dp)
-    assert dp["activation_quantization"] is False
+    assert dp["activation_quantization"] is True
 
 
 def test_ttfs_cycle_based_synchronized_disables_nevresim():
@@ -60,19 +61,30 @@ def test_config_builder_pipeline_mode_sync():
         "pipeline_mode": "phased",
         "deployment_parameters": {"spiking_mode": "lif", "weight_quantization": True},
     })
-    assert cfg["pipeline_mode"] == cfg["deployment_parameters"]["pipeline_mode"]
+    assert "pipeline_mode" not in cfg
+    resolved = build_flat_pipeline_config(
+        cfg["deployment_parameters"],
+        cfg["platform_constraints"],
+        pipeline_mode="phased",
+    )
+    assert resolved["pipeline_mode"] == "phased"
 
 
 def test_config_builder_lif_derives_quant_flags():
     cfg = build_deployment_config_from_state({
         "deployment_parameters": {
             "spiking_mode": "lif",
-            "activation_quantization": True,
+            "activation_quantization": False,
             "weight_quantization": True,
         },
     })
-    dp = cfg["deployment_parameters"]
-    assert dp["activation_quantization"] is False
+    assert "activation_quantization" not in cfg["deployment_parameters"]
+    resolved = build_flat_pipeline_config(
+        cfg["deployment_parameters"],
+        cfg["platform_constraints"],
+        pipeline_mode="phased",
+    )
+    assert resolved["activation_quantization"] is True
 
 
 def test_default_cycle_accurate_lif_forward_is_true():
@@ -108,7 +120,12 @@ def test_ttfs_ramp_alpha_defaults():
 
 def test_config_builder_cycle_accurate_default_for_lif():
     cfg = build_deployment_config_from_state({})
-    assert cfg["deployment_parameters"]["cycle_accurate_lif_forward"] is True
+    resolved = build_flat_pipeline_config(
+        cfg["deployment_parameters"],
+        cfg["platform_constraints"],
+        pipeline_mode="phased",
+    )
+    assert resolved["cycle_accurate_lif_forward"] is True
 
 
 def test_ttfs_genuine_blend_ramp_defaults_off():

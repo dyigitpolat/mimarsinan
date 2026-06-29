@@ -114,11 +114,11 @@ def validate_deployment_config(config: Dict[str, Any]) -> List[str]:
         # TTFS consistency
         spiking = dp.get("spiking_mode", "lif")
         if requires_ttfs_firing(spiking):
-            if dp.get("firing_mode") != "TTFS":
+            if "firing_mode" in dp and dp.get("firing_mode") != "TTFS":
                 errors.append(
                     f"spiking_mode is '{spiking}' but firing_mode must be 'TTFS', got {dp.get('firing_mode')!r}"
                 )
-            if dp.get("spike_generation_mode") != "TTFS":
+            if "spike_generation_mode" in dp and dp.get("spike_generation_mode") != "TTFS":
                 errors.append(
                     f"spiking_mode is '{spiking}' but spike_generation_mode must be 'TTFS', got {dp.get('spike_generation_mode')!r}"
                 )

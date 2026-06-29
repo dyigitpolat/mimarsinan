@@ -23,6 +23,10 @@ from mimarsinan.config_schema.defaults import (
     get_default_deployment_parameters,
     get_default_platform_constraints,
 )
+from mimarsinan.config_schema.deployment_derivation import (
+    derive_deployment_parameters,
+    derive_pipeline_runtime_parameters,
+)
 from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 from mimarsinan.pipelining.core.search_mode import derive_search_mode  # noqa: F401 — re-export
 
@@ -67,6 +71,8 @@ class DeploymentPipeline(Pipeline):
 
         self.config.update(get_default_platform_constraints())
         self.config.update(platform_constraints)
+        derive_deployment_parameters(self.config)
+        derive_pipeline_runtime_parameters(self.config)
 
         if data_provider is None:
             data_provider = self.data_provider_factory.create()

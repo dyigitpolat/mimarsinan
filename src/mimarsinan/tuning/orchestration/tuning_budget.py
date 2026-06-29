@@ -46,6 +46,7 @@ class TuningBudget:
         val_batch_size: int | None = None,
         degradation_tolerance: float = 0.05,
         tuning_batch_size: int | None = None,
+        scale_ramp_steps: bool = False,
     ) -> TuningBudget:
         """Budget derived from the *tuning* batch size.
 
@@ -67,7 +68,8 @@ class TuningBudget:
         # so smaller tuning batches give proportionally more gradient steps.
         # Cap raised to 4000 so the common bs//4 default does not get pinned.
         spe_budget = int(float(steps_per_epoch) * float(budget_scale))
-        max_training_steps = max(1, min(4000, spe_budget))
+        cap = max(4000, spe_budget) if scale_ramp_steps else 4000
+        max_training_steps = max(1, min(cap, spe_budget))
         validation_steps = max(1, min(32, check_interval))
 
         # LR probes need only enough steps to detect destructive divergence.
@@ -113,6 +115,7 @@ class TuningBudget:
         degradation_tolerance: float = 0.05,
         *,
         tuning_batch_size: int | None = None,
+        scale_ramp_steps: bool = False,
     ) -> TuningBudget:
         return TuningBudget.from_dataset(
             data_provider.get_training_set_size(),
@@ -122,6 +125,7 @@ class TuningBudget:
             val_batch_size=data_provider.get_validation_batch_size(),
             degradation_tolerance=degradation_tolerance,
             tuning_batch_size=tuning_batch_size,
+            scale_ramp_steps=scale_ramp_steps,
         )
 
 
@@ -149,6 +153,7 @@ def tuning_budget_from_pipeline(pipeline) -> TuningBudget:
         float(pipeline.config.get("tuning_budget_scale", 1.0)),
         degradation_tolerance=float(pipeline.config.get("degradation_tolerance", 0.05)),
         tuning_batch_size=tuning_bs,
+        scale_ramp_steps=bool(pipeline.config.get("tuning_budget_scale_ramp_steps", False)),
     )
 
 

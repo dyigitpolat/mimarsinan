@@ -41,15 +41,14 @@ _STEP_PLAN = StepPlan([
     StepSpec("Torch Mapping",                  TorchMappingStep),
     StepSpec("Pruning Adaptation",             PruningAdaptationStep),
     StepSpec("Activation Analysis",            ActivationAnalysisStep),
-    # ── activation-adaptation family: V2 policy chooses LIF-style (one
-    #    replacement step) vs the analytical clamp→shift→quantize chain ──
-    StepSpec("LIF Adaptation",                 LIFAdaptationStep),
-    StepSpec("TTFS Cycle Fine-Tuning",         TTFSCycleAdaptationStep),
-    StepSpec("Noise Adaptation",               NoiseAdaptationStep),
+    # ── activation preconditioning, then cycle-accurate tuning when applicable ──
     StepSpec("Activation Adaptation",          ActivationAdaptationStep),
     StepSpec("Clamp Adaptation",               ClampAdaptationStep),
     StepSpec("Activation Shifting",            ActivationShiftStep),
     StepSpec("Activation Quantization",        ActivationQuantizationStep),
+    StepSpec("LIF Adaptation",                 LIFAdaptationStep),
+    StepSpec("TTFS Cycle Fine-Tuning",         TTFSCycleAdaptationStep),
+    StepSpec("Noise Adaptation",               NoiseAdaptationStep),
     # ── weight quantization ──
     StepSpec("Weight Quantization",            WeightQuantizationStep),
     StepSpec("Quantization Verification",      QuantizationVerificationStep),
@@ -121,9 +120,7 @@ def get_pipeline_step_specs(config: dict) -> list[tuple[str, type]]:
 def validate_deployment_config(config: dict, *, model_name: str, cuda_debug: bool) -> None:
     """Non-fatal sanity checks; warnings go to stderr."""
     plan = DeploymentPlan.resolve(config)
-    act_q = plan.activation_quantization
-    spiking = plan.spiking_mode
-    clamp_in_play = (spiking != "lif") and (act_q or spiking in ("ttfs", "ttfs_quantized"))
+    clamp_in_play = plan.requires_clamp_preconditioning
 
     if "vit" in model_name.lower() and clamp_in_play and not cuda_debug:
         print(

@@ -109,6 +109,12 @@ class KDBlendAdaptationTuner(CascadeForwardInstall, SmoothAdaptationTuner):
         self.adaptation_manager = adaptation_manager
         self._final_metric = None
         self._finalize_cliff = None
+        # Per-channel trainable theta (firing-gain) co-training is OPT-IN per family
+        # (ttfs_theta_cotrain / lif_theta_cotrain). The promoted params + stats live
+        # here so the shared fast-ladder optimiser and reporting see them uniformly;
+        # default None ⇒ the scalar-theta path is unchanged.
+        self._theta_cotrain_params = None
+        self._theta_cotrain_stats = None
 
         self._configure()
         # The ramp strategy bundles every seam that varies 0→1 (axis / blend /
@@ -178,6 +184,24 @@ class KDBlendAdaptationTuner(CascadeForwardInstall, SmoothAdaptationTuner):
         fwd = self._ramp_forward()
         if fwd is not None:
             self._install_forward(fwd)
+
+    def _promote_per_channel_theta(self) -> None:
+        """Rebind each non-encoding perceptron's ``activation_scale`` to a per-output-
+        channel trainable Parameter (on the perceptron AND every node that references
+        it) so the model optimiser co-trains the firing-gain theta WITH the weights
+        through the deployed forward. The promoted params are recorded for split-LR
+        optimiser groups; idempotent. Families opt in via their own gate + call site
+        (TTFS after scalar-theta calibration; LIF after the base install)."""
+        from mimarsinan.spiking.theta_cotrain import (
+            promote_activation_scale_per_channel,
+        )
+
+        params = promote_activation_scale_per_channel(self.model)
+        self._theta_cotrain_params = list(params)
+        self._theta_cotrain_stats = {"n_theta": len(params)}
+        self.pipeline.reporter.report(
+            f"{self.name} theta_cotrain", self._theta_cotrain_stats,
+        )
 
     def _make_kd_loss(self):
         return self._ramp.make_kd_loss(self)

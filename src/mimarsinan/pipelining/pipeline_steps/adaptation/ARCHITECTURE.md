@@ -1,6 +1,10 @@
 # pipeline_steps/adaptation/ — Adaptation and Analysis Steps
 
-Activation analysis, adaptation tuners, clamp/LIF/noise/pruning adaptation, activation shift.
+Activation analysis, activation preconditioning, clamp/LIF/noise/pruning adaptation, activation shift.
+
+Cycle-accurate LIF and `ttfs_cycle_based` pipelines run Activation Adaptation,
+Clamp, Activation Shifting, and Activation Quantization before their dedicated
+LIF / TTFS-cycle tuning step.
 
 | File | Step class |
 |------|------------|

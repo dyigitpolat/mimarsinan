@@ -23,6 +23,7 @@ purpose, components, dependencies, and exported API.
 | `mapping/` | Model-to-hardware mapping (IR, mapper graph, core packing) |
 | `transformations/` | Weight/activation quantization and fusion transforms |
 | `tuning/` | Progressive adaptation and tuning framework |
+| `research/` | Prototype-to-production contracts for vehicles, mechanisms, budgets, and promotion gates |
 | `search/` | Multi-objective architecture search |
 | `pipelining/` | Pipeline engine, steps, and cache |
 | `chip_simulation/` | Nevresim, optional Lava Loihi parity (`spike_recorder`), SANA-FE (`sanafe/`) |

@@ -288,12 +288,27 @@ class DeploymentPlan:
 
     @property
     def is_lif_style(self) -> bool:
-        """LIF or ttfs_cycle: one activation-replacement step subsumes the
-        clamp/shift/activation-quantization chain (it clamps + quantises
-        internally), so that chain is skipped. The (firing × sync) branch the
-        step planner reads to choose the activation-adaptation family —
-        composed from the V2 ``SpikingModePolicy``."""
+        """Whether this plan has a dedicated LIF/TTFS-cycle tuning step."""
         return self.mode_policy().single_step_activation_replacement
+
+    @property
+    def runs_cycle_accurate_activation_tuner(self) -> bool:
+        """Whether LIF/TTFS-cycle fine-tuning follows activation preconditioning."""
+        return self.spiking_mode == "lif" or self.is_ttfs_cycle_based
+
+    @property
+    def requires_clamp_preconditioning(self) -> bool:
+        """Clamp before TTFS firing, activation quantization, or cycle tuning."""
+        return (
+            self.runs_cycle_accurate_activation_tuner
+            or self.activation_quantization
+            or self.requires_ttfs_firing
+        )
+
+    @property
+    def requires_activation_quantization_preconditioning(self) -> bool:
+        """Run shift/AQ before cycle tuning or when activation quantization is enabled."""
+        return self.runs_cycle_accurate_activation_tuner or self.activation_quantization
 
     def spiking_contract(self):
         """The spiking-semantics sub-part SSOT (needs ``simulation_steps``)."""

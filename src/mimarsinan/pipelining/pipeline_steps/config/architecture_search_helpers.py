@@ -5,7 +5,6 @@ from __future__ import annotations
 import os
 from typing import Any, Dict, List, Literal, Sequence, Tuple
 
-from mimarsinan.search.optimizers.nsga2_optimizer import NSGA2Optimizer
 from mimarsinan.search.search_space_description import SearchSpaceDescription
 from mimarsinan.visualization.search_viz import (
     create_interactive_search_report,
@@ -82,6 +81,8 @@ def create_optimizer(
             active_objective_names=tuple(active_objective_names),
             verbose=True,
         )
+
+    from mimarsinan.search.optimizers.nsga2_optimizer import NSGA2Optimizer
 
     return NSGA2Optimizer(
         pop_size=pop_size,

@@ -585,16 +585,7 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
         the optimiser's gradient into the deployed forward."""
         if not self._theta_cotrain:
             return
-        from mimarsinan.spiking.theta_cotrain import (
-            promote_activation_scale_per_channel,
-        )
-
-        params = promote_activation_scale_per_channel(self.model)
-        self._theta_cotrain_params = list(params)
-        self._theta_cotrain_stats = {"n_theta": len(params)}
-        self.pipeline.reporter.report(
-            f"{self.name} theta_cotrain", self._theta_cotrain_stats,
-        )
+        self._promote_per_channel_theta()
 
     def _capture_gain_ramp_base(self) -> None:
         """Capture the (post-calibration) per-perceptron base scales + target gain

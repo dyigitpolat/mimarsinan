@@ -28,6 +28,12 @@ import time
 import torch
 
 
+def _freeze_batchnorm_modules(model) -> None:
+    for module in model.modules():
+        if isinstance(module, torch.nn.modules.batchnorm._BatchNorm):
+            module.eval()
+
+
 class FastLadderMixin:
     """The schedule-not-search fast ladder, shared by every smooth rate tuner.
 
@@ -80,6 +86,9 @@ class FastLadderMixin:
         self._fast_lr_schedule = None
         self._fast_optimizer_steps = 0
         self._fast_blend_path = False
+        self._fast_freeze_batchnorm = bool(
+            self.pipeline.config.get("fast_ladder_freeze_bn", False)
+        )
 
     def run(self):
         """Reset the per-run fast scratch (tuner-owned optimizer + spanning cosine)
@@ -184,6 +193,8 @@ class FastLadderMixin:
             x, y = self.trainer.next_training_batch()
             x, y = x.to(device), y.to(device)
             self.model.train()
+            if getattr(self, "_fast_freeze_batchnorm", False):
+                _freeze_batchnorm_modules(self.model)
             loss = self._fast_loss(x, y)
             self._fast_optimizer.zero_grad()
             loss.backward()
@@ -242,6 +253,8 @@ class FastLadderMixin:
             x, y = self.trainer.next_training_batch()
             x, y = x.to(device), y.to(device)
             self.model.train()
+            if getattr(self, "_fast_freeze_batchnorm", False):
+                _freeze_batchnorm_modules(self.model)
             loss = loss_fn(x, y)
             opt.zero_grad()
             loss.backward()

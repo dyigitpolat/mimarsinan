@@ -61,6 +61,13 @@ _VALID_GROUP_IDS = frozenset(g["id"] for g in CONCERN_GROUPS)
 #   "runtime"  — resolved by the pipeline at start (device / input shape / …)
 _VALID_DERIVATIONS = frozenset({"default", "preset", "derived", "runtime"})
 
+# Persistence exposure: whether a key belongs in saved user-facing config.
+#   "user"     — a value the wizard exposes as a user-editable knob
+#   "derived"  — computed from user/system inputs; never persisted as user config
+#   "system"   — internal default / policy / constant, resolved by runtime defaults
+#   "runtime"  — live environment value resolved by the pipeline
+_VALID_EXPOSURES = frozenset({"user", "derived", "system", "runtime"})
+
 
 @dataclass(frozen=True)
 class KeySpec:
@@ -77,6 +84,7 @@ class KeySpec:
     name: str
     owner: str
     derivation: str
+    exposure: str = "system"
 
     def __post_init__(self) -> None:
         if self.group not in _VALID_GROUP_IDS:
@@ -85,6 +93,10 @@ class KeySpec:
             raise ValueError(
                 f"KeySpec {self.flat_key!r}: unknown derivation {self.derivation!r}"
             )
+        if self.exposure not in _VALID_EXPOSURES:
+            raise ValueError(
+                f"KeySpec {self.flat_key!r}: unknown exposure {self.exposure!r}"
+            )
 
     @property
     def namespaced_path(self) -> str:
@@ -92,7 +104,7 @@ class KeySpec:
 
 
 def _spec(flat_key: str, group: str, owner: str, derivation: str = "default",
-          name: Optional[str] = None) -> KeySpec:
+          name: Optional[str] = None, exposure: str = "system") -> KeySpec:
     """KeySpec builder; ``name`` defaults to the flat key (identity rename)."""
     return KeySpec(
         flat_key=flat_key,
@@ -100,6 +112,7 @@ def _spec(flat_key: str, group: str, owner: str, derivation: str = "default",
         name=name if name is not None else flat_key,
         owner=owner,
         derivation=derivation,
+        exposure=exposure,
     )
 
 
@@ -107,22 +120,29 @@ def _spec(flat_key: str, group: str, owner: str, derivation: str = "default",
 # Owner strings name the consuming subsystem (grep target for the next reviewer).
 _KEY_SPECS: Tuple[KeySpec, ...] = (
     # Workload ──────────────────────────────────────────────────────────────
-    _spec("model_config_mode", "workload", "deployment_specs/search_mode"),
-    _spec("hw_config_mode", "workload", "deployment_specs/search_mode"),
+    _spec("model_config_mode", "workload", "deployment_specs/search_mode",
+          exposure="user"),
+    _spec("hw_config_mode", "workload", "deployment_specs/search_mode",
+          exposure="user"),
     _spec("spike_encoding_seed", "workload", "spike_generation"),
     # Spiking semantics ──────────────────────────────────────────────────────
-    _spec("spiking_mode", "spiking", "SpikingDeploymentContract"),
-    _spec("ttfs_cycle_schedule", "spiking", "SpikingDeploymentContract"),
-    _spec("cycle_accurate_lif_forward", "spiking", "lif_adaptation"),
+    _spec("spiking_mode", "spiking", "SpikingDeploymentContract", exposure="user"),
+    _spec("ttfs_cycle_schedule", "spiking", "SpikingDeploymentContract",
+          exposure="user"),
+    _spec("cycle_accurate_lif_forward", "spiking", "lif_adaptation",
+          exposure="user"),
     # Hardware platform / capabilities (MIGRATED group) ──────────────────────
-    _spec("cores", "hardware", "ChipCapabilities/mapping"),
-    _spec("target_tq", "hardware", "activation_quantization"),
-    _spec("simulation_steps", "hardware", "SimulationRunner"),
-    _spec("weight_bits", "hardware", "weight_quantization"),
-    _spec("allow_coalescing", "hardware", "MappingStrategy"),
-    _spec("allow_neuron_splitting", "hardware", "MappingStrategy"),
-    _spec("allow_per_layer_s", "hardware", "ChipCapabilities/TemporalAllocation"),
-    _spec("allow_scheduling", "hardware", "MappingStrategy/scheduler"),
+    _spec("cores", "hardware", "ChipCapabilities/mapping", exposure="user"),
+    _spec("target_tq", "hardware", "activation_quantization", exposure="user"),
+    _spec("simulation_steps", "hardware", "SimulationRunner", exposure="user"),
+    _spec("weight_bits", "hardware", "weight_quantization", exposure="user"),
+    _spec("allow_coalescing", "hardware", "MappingStrategy", exposure="user"),
+    _spec("allow_neuron_splitting", "hardware", "MappingStrategy",
+          exposure="user"),
+    _spec("allow_per_layer_s", "hardware", "ChipCapabilities/TemporalAllocation",
+          exposure="user"),
+    _spec("allow_scheduling", "hardware", "MappingStrategy/scheduler",
+          exposure="user"),
     _spec("max_schedule_passes", "hardware", "schedule_partitioner"),
     _spec("scheduling_latency_weight", "hardware", "schedule_partitioner"),
     # Conversion process — activation quant + calibration health + driver ─────
@@ -131,6 +151,7 @@ _KEY_SPECS: Tuple[KeySpec, ...] = (
     _spec("ttfs_ramp_alpha_min", "conversion", "ttfs_adaptation"),
     _spec("ttfs_ramp_alpha_max", "conversion", "ttfs_adaptation"),
     _spec("ttfs_scale_aware_boundaries", "conversion", "ttfs_adaptation"),
+    _spec("ttfs_sync_genuine_qat", "conversion", "ttfs_adaptation"),
     _spec("ttfs_genuine_blend_ramp", "conversion", "ttfs_adaptation"),
     _spec("ttfs_distmatch_bias_iters", "conversion", "ttfs_adaptation"),
     _spec("ttfs_distmatch_bias_eta", "conversion", "ttfs_adaptation"),
@@ -162,15 +183,18 @@ _KEY_SPECS: Tuple[KeySpec, ...] = (
     _spec("lif_blend_fast_rates", "conversion", "lif_adaptation"),
     _spec("lif_blend_fast_lr_eta_min", "conversion", "lif_adaptation"),
     _spec("lif_blend_fast_stabilize_steps", "conversion", "lif_adaptation"),
+    _spec("fast_ladder_freeze_bn", "conversion", "optimization"),
     _spec("lif_distmatch", "conversion", "lif_adaptation"),
     _spec("lif_distmatch_bias_iters", "conversion", "lif_adaptation"),
     _spec("lif_distmatch_bias_eta", "conversion", "lif_adaptation"),
     _spec("lif_distmatch_cal_batches", "conversion", "lif_adaptation"),
     _spec("enable_training_noise", "conversion", "noise_adaptation"),
     # Adaptation & tuning controller ──────────────────────────────────────────
-    _spec("tuning_budget_scale", "tuning", "AdaptationManager"),
+    _spec("tuning_budget_scale", "tuning", "AdaptationManager", exposure="user"),
+    _spec("tuning_budget_scale_ramp_steps", "tuning", "AdaptationManager",
+          exposure="user"),
     _spec("tuner_target_floor_ratio", "tuning", "AdaptationManager"),
-    _spec("degradation_tolerance", "tuning", "AccuracyBudget"),
+    _spec("degradation_tolerance", "tuning", "AccuracyBudget", exposure="user"),
     _spec("checkpoint_scope", "tuning", "CheckpointGuard"),
     _spec("checkpoint_location", "tuning", "CheckpointGuard"),
     _spec("tuning_use_paired_sensor", "tuning", "rollback_sensor"),
@@ -196,25 +220,36 @@ _KEY_SPECS: Tuple[KeySpec, ...] = (
     _spec("optimization_driver", "tuning", "OptimizationDriver"),
     # Per-layer-S temporal allocation (EW1 RESERVED): the Wizard declares the intent;
     # the per-depth S map is derived by the ConversionPolicy keystone (TemporalAllocation).
-    _spec("s_allocation", "conversion", "TemporalAllocation"),
-    _spec("s_allocation_explicit", "conversion", "TemporalAllocation"),
-    _spec("s_allocation_budget", "conversion", "TemporalAllocation"),
+    _spec("s_allocation", "conversion", "TemporalAllocation", exposure="user"),
+    _spec("s_allocation_explicit", "conversion", "TemporalAllocation",
+          exposure="user"),
+    _spec("s_allocation_budget", "conversion", "TemporalAllocation",
+          exposure="user"),
     # Training ────────────────────────────────────────────────────────────────
-    _spec("lr", "training", "training_loop"),
+    _spec("lr", "training", "training_loop", exposure="user"),
     _spec("lr_range_min", "training", "lr_finder"),
     _spec("lr_range_max", "training", "lr_finder"),
-    _spec("training_epochs", "training", "training_loop"),
-    _spec("training_recipe", "training", "training_loop"),
-    _spec("tuning_recipe", "training", "AdaptationManager"),
+    _spec("kd_ce_alpha", "training", "training_loop/distillation"),
+    _spec("kd_temperature", "training", "training_loop/distillation"),
+    _spec("training_epochs", "training", "training_loop", exposure="user"),
+    _spec("training_recipe", "training", "training_loop", exposure="user"),
+    _spec("tuning_recipe", "training", "AdaptationManager", exposure="user"),
     # Deployment target — backends + acceptance gates ─────────────────────────
-    _spec("enable_nevresim_simulation", "deployment_target", "backend_registry"),
+    _spec("enable_nevresim_simulation", "deployment_target", "backend_registry",
+          exposure="user"),
     _spec("nevresim_connectivity_mode", "deployment_target", "nevresim_backend"),
-    _spec("enable_loihi_simulation", "deployment_target", "backend_registry"),
-    _spec("enable_sanafe_simulation", "deployment_target", "backend_registry"),
-    _spec("sanafe_sample_count", "deployment_target", "sanafe_backend"),
-    _spec("sanafe_arch_preset", "deployment_target", "sanafe_backend"),
-    _spec("sanafe_custom_arch_path", "deployment_target", "sanafe_backend"),
-    _spec("sanafe_log_potential_trace", "deployment_target", "sanafe_backend"),
+    _spec("enable_loihi_simulation", "deployment_target", "backend_registry",
+          exposure="user"),
+    _spec("enable_sanafe_simulation", "deployment_target", "backend_registry",
+          exposure="user"),
+    _spec("sanafe_sample_count", "deployment_target", "sanafe_backend",
+          exposure="user"),
+    _spec("sanafe_arch_preset", "deployment_target", "sanafe_backend",
+          exposure="user"),
+    _spec("sanafe_custom_arch_path", "deployment_target", "sanafe_backend",
+          exposure="user"),
+    _spec("sanafe_log_potential_trace", "deployment_target", "sanafe_backend",
+          exposure="user"),
 )
 
 # ── Derived keys: written by a derivation pass, NOT in the defaults dict ──────
@@ -226,15 +261,20 @@ _KEY_SPECS: Tuple[KeySpec, ...] = (
 # the spiking mode via ``setdefault``. Tagged ``derived`` so provenance is real.
 # (The SSOT for the conversion-trio matches ``display_view_meta.DERIVED_KEYS``.)
 _DERIVED_KEY_SPECS: Tuple[KeySpec, ...] = (
-    _spec("pipeline_mode", "run", "deployment_derivation", derivation="derived"),
+    _spec("pipeline_mode", "run", "deployment_derivation", derivation="derived",
+          exposure="derived"),
     _spec("activation_quantization", "conversion",
-          "deployment_derivation/activation_analysis", derivation="derived"),
+          "deployment_derivation/activation_analysis", derivation="derived",
+          exposure="derived"),
     _spec("weight_quantization", "conversion",
-          "deployment_derivation/weight_quantization", derivation="derived"),
-    _spec("firing_mode", "spiking", "DeploymentPipeline", derivation="derived"),
+          "deployment_derivation/weight_quantization", derivation="derived",
+          exposure="user"),
+    _spec("firing_mode", "spiking", "DeploymentPipeline", derivation="derived",
+          exposure="derived"),
     _spec("spike_generation_mode", "spiking", "DeploymentPipeline",
-          derivation="derived"),
-    _spec("thresholding_mode", "spiking", "DeploymentPipeline", derivation="derived"),
+          derivation="derived", exposure="derived"),
+    _spec("thresholding_mode", "spiking", "DeploymentPipeline", derivation="derived",
+          exposure="derived"),
 )
 
 # ── Runtime keys: resolved by the pipeline at start (device / data-provider) ──
@@ -242,13 +282,14 @@ _DERIVED_KEY_SPECS: Tuple[KeySpec, ...] = (
 # (device probe) or the data provider (input shape / class count). Tagged
 # ``runtime`` (mirrors ``display_view_meta.RUNTIME_KEYS``).
 _RUNTIME_KEY_SPECS: Tuple[KeySpec, ...] = (
-    _spec("device", "run", "DeploymentPipeline/select_device", derivation="runtime"),
+    _spec("device", "run", "DeploymentPipeline/select_device", derivation="runtime",
+          exposure="runtime"),
     _spec("input_shape", "run", "DeploymentPipeline/data_provider",
-          derivation="runtime"),
+          derivation="runtime", exposure="runtime"),
     _spec("input_size", "run", "DeploymentPipeline/data_provider",
-          derivation="runtime"),
+          derivation="runtime", exposure="runtime"),
     _spec("num_classes", "run", "DeploymentPipeline/data_provider",
-          derivation="runtime"),
+          derivation="runtime", exposure="runtime"),
 )
 
 _ALL_KEY_SPECS: Tuple[KeySpec, ...] = (
@@ -318,6 +359,7 @@ def provenance_table() -> Dict[str, Dict[str, str]]:
             "name": s.name,
             "owner": s.owner,
             "derivation": s.derivation,
+            "exposure": s.exposure,
             "namespaced_path": s.namespaced_path,
         }
         for s in _ALL_KEY_SPECS
@@ -334,6 +376,13 @@ def keys_with_derivation(derivation: str) -> frozenset:
     if derivation not in _VALID_DERIVATIONS:
         raise ValueError(f"unknown derivation {derivation!r}")
     return frozenset(k for k, s in KEY_SPECS.items() if s.derivation == derivation)
+
+
+def keys_with_exposure(exposure: str) -> frozenset:
+    """Flat keys with the requested persistence exposure."""
+    if exposure not in _VALID_EXPOSURES:
+        raise ValueError(f"unknown exposure {exposure!r}")
+    return frozenset(k for k, s in KEY_SPECS.items() if s.exposure == exposure)
 
 
 def unregistered_default_keys() -> frozenset:

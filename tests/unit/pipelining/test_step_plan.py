@@ -128,7 +128,7 @@ class TestConfigurationDispatch:
 
 
 class TestActivationFamilyDispatch:
-    """The LIF-style branch is composed from the V2 SpikingModePolicy."""
+    """Cycle-accurate tuning keeps its own step but no longer skips preconditioning."""
 
     @pytest.mark.parametrize("mode,lif_style", [
         ("lif", True),
@@ -142,16 +142,22 @@ class TestActivationFamilyDispatch:
         assert plan.is_lif_style is lif_style
         assert plan.mode_policy().single_step_activation_replacement is lif_style
 
-    def test_lif_style_picks_single_replacement_step(self):
+    def test_cycle_based_modes_run_preconditioning_before_tuning_step(self):
         lif = _plan(spiking_mode="lif")
+        assert ActivationAdaptationStep.applies_to(lif)
+        assert ClampAdaptationStep.applies_to(lif)
+        assert ActivationShiftStep.applies_to(lif)
+        assert ActivationQuantizationStep.applies_to(lif)
         assert LIFAdaptationStep.applies_to(lif)
         assert not TTFSCycleAdaptationStep.applies_to(lif)
-        assert not ActivationAdaptationStep.applies_to(lif)
 
         cyc = _plan(spiking_mode="ttfs_cycle_based")
+        assert ActivationAdaptationStep.applies_to(cyc)
+        assert ClampAdaptationStep.applies_to(cyc)
+        assert ActivationShiftStep.applies_to(cyc)
+        assert ActivationQuantizationStep.applies_to(cyc)
         assert TTFSCycleAdaptationStep.applies_to(cyc)
         assert not LIFAdaptationStep.applies_to(cyc)
-        assert not ActivationAdaptationStep.applies_to(cyc)
 
     def test_non_lif_style_picks_analytical_chain(self):
         ttfs = _plan(spiking_mode="ttfs")
@@ -165,26 +171,37 @@ class TestActivationFamilyDispatch:
         # non-LIF-style never gets noise, even if the flag is on.
         assert not NoiseAdaptationStep.applies_to(_plan(spiking_mode="ttfs", enable_training_noise=True))
 
-    def test_clamp_for_ttfs_firing_or_act_quant_only_non_lif(self):
+    def test_clamp_for_cycle_based_ttfs_firing_or_act_quant(self):
+        # Cycle-accurate tuning modes are preconditioned before their tuning step.
+        assert ClampAdaptationStep.applies_to(_plan(spiking_mode="lif", activation_quantization=False))
+        assert ClampAdaptationStep.applies_to(_plan(spiking_mode="ttfs_cycle_based", activation_quantization=False))
         # TTFS firing forces clamp even without act_q.
         assert ClampAdaptationStep.applies_to(_plan(spiking_mode="ttfs", activation_quantization=False))
         # act_q forces clamp.
         assert ClampAdaptationStep.applies_to(_plan(spiking_mode="rate", activation_quantization=True))
         # rate + no act_q → no clamp.
         assert not ClampAdaptationStep.applies_to(_plan(spiking_mode="rate", activation_quantization=False))
-        # LIF-style never gets the chain.
-        assert not ClampAdaptationStep.applies_to(_plan(spiking_mode="lif", activation_quantization=True))
 
-    def test_activation_quant_chain_only_non_lif_with_act_q(self):
+    def test_activation_quant_chain_for_cycle_based_or_act_q(self):
+        lif_default = _plan(spiking_mode="lif", activation_quantization=False)
+        assert ActivationShiftStep.applies_to(lif_default)
+        assert ActivationQuantizationStep.applies_to(lif_default)
+
+        cyc_default = _plan(spiking_mode="ttfs_cycle_based", activation_quantization=False)
+        assert ActivationShiftStep.applies_to(cyc_default)
+        assert ActivationQuantizationStep.applies_to(cyc_default)
+
         on = _plan(spiking_mode="ttfs", activation_quantization=True)
         assert ActivationShiftStep.applies_to(on)
         assert ActivationQuantizationStep.applies_to(on)
+
         off = _plan(spiking_mode="ttfs", activation_quantization=False)
         assert not ActivationShiftStep.applies_to(off)
         assert not ActivationQuantizationStep.applies_to(off)
-        lif = _plan(spiking_mode="lif", activation_quantization=True)
-        assert not ActivationShiftStep.applies_to(lif)
-        assert not ActivationQuantizationStep.applies_to(lif)
+
+        rate_default = _plan(spiking_mode="rate", activation_quantization=False)
+        assert not ActivationShiftStep.applies_to(rate_default)
+        assert not ActivationQuantizationStep.applies_to(rate_default)
 
 
 class TestWeightQuantizationDispatch:

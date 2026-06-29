@@ -9,7 +9,10 @@ from mimarsinan.config_schema.defaults import (
     get_default_deployment_parameters,
     get_default_platform_constraints,
 )
-from mimarsinan.config_schema.deployment_derivation import derive_deployment_parameters
+from mimarsinan.config_schema.deployment_derivation import (
+    derive_deployment_parameters,
+    derive_pipeline_runtime_parameters,
+)
 
 
 def build_flat_pipeline_config(
@@ -23,7 +26,9 @@ def build_flat_pipeline_config(
     if deployment_parameters:
         dp.update(deployment_parameters)
     apply_preset(pipeline_mode, dp)
+    dp.setdefault("pipeline_mode", pipeline_mode)
     derive_deployment_parameters(dp)
+    derive_pipeline_runtime_parameters(dp)
 
     pc = dict(get_default_platform_constraints())
     if platform_constraints:
