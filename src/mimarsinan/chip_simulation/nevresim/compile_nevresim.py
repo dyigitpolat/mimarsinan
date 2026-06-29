@@ -79,6 +79,7 @@ def compile_simulator(
     p = subprocess.Popen(cmd)
     rc = p.wait()
     compile_s = time.perf_counter() - t0
+    success = rc == 0
 
     trace_json = None
     if time_trace and family == "clang" and success:
@@ -86,7 +87,6 @@ def compile_simulator(
         traces = sorted(search_dir.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
         trace_json = str(traces[0]) if traces else None
 
-    success = rc == 0
     if success:
         if verbose:
             print("Compilation outcome:", simulator_filename)
