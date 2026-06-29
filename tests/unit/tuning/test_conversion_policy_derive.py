@@ -3,7 +3,7 @@ deployment mode to its empirically-proven recipe (driver + knob set + the
 capability-derived sim-enable set + a special-case marker for the divergences).
 
 These are the collapsed fix-wave findings (``docs/research/findings/*`` in
-``mimarsinan_research``): every proven recipe rides the fast ladder; the four
+``mimarsinan_research``): every proven recipe rides the fast ladder; the five
 marked rows are the documented divergences from the generic flow. The knob VALUES
 here are the SSOT — the per-mode recipe constants are no longer user config keys.
 """
@@ -95,7 +95,10 @@ _EXPECTED_SIM_ENABLES = {
 
 _EXPECTED_SPECIAL_CASE = {
     ("lif", None): "bn_freeze",
-    ("rate", None): "bn_freeze",
+    # rate inherits the LIF recipe KNOBS but the pipeline excludes it from the LIF
+    # reconciliation STEPS, so it carries its OWN marker (not lif's bn_freeze): the
+    # deployed count-decode model is never QAT-reconciled ⇒ SCM collapse at T=4.
+    ("rate", None): "rate_subsumed_by_lif",
     ("ttfs", None): None,
     ("ttfs_quantized", None): "full_quantile_decode",
     ("ttfs_cycle_based", "cascaded"): "fast_only_never_controller",
