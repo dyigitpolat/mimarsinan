@@ -47,7 +47,7 @@ def get_wizard_temporal_allocation_schema() -> Dict[str, Any]:
 
     Declares the ``s_allocation`` axis modes + the reserved per-mode inputs + the
     ``allow_per_layer_s`` capability gate so the form can render the choice. The
-    per-depth S map is DERIVED downstream (ConversionPolicy keystone); the wizard
+    per-depth S map derivation is deferred to research (downstream); the wizard
     only DECLARES the intent. SSOT with config_schema defaults + the resolver modes.
     """
     dp_defaults = get_default_deployment_parameters()

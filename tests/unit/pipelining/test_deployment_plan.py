@@ -243,8 +243,7 @@ class TestOptimizationDriverAxis:
 
     @pytest.mark.parametrize(
         "switch",
-        ["lif_blend_fast", "ttfs_genuine_blend_fast", "ttfs_blend_fast",
-         "ttfs_staircase_ste_fast"],
+        ["lif_blend_fast", "ttfs_genuine_blend_fast", "ttfs_blend_fast"],
     )
     def test_legacy_fast_switch_implies_fast(self, switch):
         assert _resolve(**{switch: True}).optimization_driver == "fast"
@@ -376,56 +375,6 @@ class TestCalibrationPipelineAxis:
         )
         assert plan.calibration_pipeline(distmatch_driven=True).distmatch is True
         assert plan.calibration_pipeline(distmatch_driven=False).distmatch is False
-
-
-class TestConversionPolicyAxis:
-    """E4: the characterization-and-policy keystone is a contract-keyed seam.
-
-    DEFAULT-OFF / byte-identical: the plan's decision names the CURRENT behavior
-    (driver=controller, no characterization run) until ``conversion_policy`` is set.
-    """
-
-    def test_default_off_is_inert_controller(self):
-        for mode, schedule in (
-            ("lif", "cascaded"),
-            ("ttfs", "cascaded"),
-            ("ttfs_cycle_based", "cascaded"),
-            ("ttfs_cycle_based", "synchronized"),
-        ):
-            decision = _resolve(
-                spiking_mode=mode, ttfs_cycle_schedule=schedule
-            ).conversion_policy()
-            assert decision.enabled is False
-            assert decision.driver == "controller"
-            assert decision.characterized is False
-            assert decision.escalated is False
-
-    def test_enabled_proposes_and_characterizes(self):
-        decision = _resolve(
-            spiking_mode="lif", conversion_policy=True
-        ).conversion_policy()
-        assert decision.enabled is True
-        assert decision.characterized is True
-        assert decision.escalated is False
-
-    def test_enabled_mismatch_escalates_to_controller(self):
-        from mimarsinan.tuning.orchestration.conversion_policy import (
-            CharacterizationResult,
-            Characterizer,
-        )
-
-        class _Reject(Characterizer):
-            def characterize(self, *, model, recipe, context=None):
-                return CharacterizationResult(matches=False, reason="cliff")
-
-        decision = _resolve(
-            spiking_mode="ttfs_cycle_based",
-            ttfs_cycle_schedule="cascaded",
-            conversion_policy=True,
-        ).conversion_policy(characterizer=_Reject())
-        assert decision.escalated is True
-        assert decision.driver == "controller"
-        assert decision.escalation_reason == "cliff"
 
 
 class TestConversionRecipe:

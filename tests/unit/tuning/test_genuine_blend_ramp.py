@@ -16,8 +16,7 @@ finalize cliff -> 0 by construction; the teacher is dropped).
 
 These are MECHANISM tests; the empirical accuracy gate (genuine cascade 0.41 ->
 0.9355 on the real model) is a separate full run. Flag-OFF behavior must stay
-byte-identical to the shipping value-domain proxy ramp (the genuine-blend flag is
-mutually exclusive with the genuine-annealed flag; blend wins).
+byte-identical to the shipping value-domain proxy ramp.
 """
 
 from __future__ import annotations
@@ -42,7 +41,7 @@ from mimarsinan.tuning.tuners.ttfs_cycle_adaptation_tuner import (
 )
 
 
-def _make_pipeline(tmp_path, *, schedule="cascaded", blend=True, annealed=False):
+def _make_pipeline(tmp_path, *, schedule="cascaded", blend=True):
     cfg = default_config()
     cfg["spiking_mode"] = "ttfs_cycle_based"
     cfg["ttfs_cycle_schedule"] = schedule
@@ -50,7 +49,6 @@ def _make_pipeline(tmp_path, *, schedule="cascaded", blend=True, annealed=False)
     cfg["tuning_budget_scale"] = 1.0
     cfg["simulation_steps"] = 16
     cfg["ttfs_genuine_blend_ramp"] = blend
-    cfg["ttfs_genuine_annealed_ramp"] = annealed
     # Tiny calibration loops keep the unit test fast and deterministic.
     cfg["ttfs_distmatch_bias_iters"] = 3
     cfg["ttfs_distmatch_bias_eta"] = 0.7
@@ -60,9 +58,9 @@ def _make_pipeline(tmp_path, *, schedule="cascaded", blend=True, annealed=False)
     return pipeline
 
 
-def _make_tuner(tmp_path, *, schedule="cascaded", blend=True, annealed=False):
+def _make_tuner(tmp_path, *, schedule="cascaded", blend=True):
     pipeline = _make_pipeline(
-        tmp_path, schedule=schedule, blend=blend, annealed=annealed
+        tmp_path, schedule=schedule, blend=blend
     )
     model = make_tiny_supermodel()
     am = AdaptationManager()
@@ -470,14 +468,13 @@ class TestEndToEndRun:
             torch.testing.assert_close(model(x), fresh(x), rtol=0, atol=0)
 
 
-# ── Flag precedence: blend wins over annealed ─────────────────────────────────
+# ── Blend installs the genuine blend axis + forward ───────────────────────────
 
 
-class TestBlendWinsOverAnnealed:
-    def test_blend_takes_precedence_over_annealed(self, tmp_path):
-        tuner, model, _ = _make_tuner(tmp_path, blend=True, annealed=True)
+class TestBlendInstallsGenuineForward:
+    def test_blend_installs_the_genuine_blend_axis_and_forward(self, tmp_path):
+        tuner, model, _ = _make_tuner(tmp_path, blend=True)
         assert tuner._genuine_blend_ramp is True
-        assert tuner._genuine_annealed_ramp is False
         assert isinstance(tuner._axis, GenuineBlendAxis)
         assert isinstance(model.__dict__.get("forward"), BlendedGenuineForward)
 

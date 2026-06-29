@@ -3,9 +3,8 @@
 Per-layer-S = each cascade depth / latency group gets its own temporal resolution
 ``S_d`` instead of one global ``simulation_steps``. The Wizard *declares* the intent
 (``s_allocation`` ∈ {uniform | explicit | budget} + the ``allow_per_layer_s``
-capability gate, like ``allow_coalescing``); the actual per-depth S map is *derived*
-by the ConversionPolicy characterization keystone (E4) and certified by the
-certification protocol (E6).
+capability gate, like ``allow_coalescing``); the actual per-depth S map derivation
+is deferred to research (the keystone that would produce it is not on this branch).
 
 This module is the **resolver seam**, not the derivation. It is DEFAULT-OFF /
 byte-identical:
@@ -16,7 +15,7 @@ byte-identical:
   hand-tuned map); it is RESERVED — no consumer threads it into the forwards/sim yet.
 * ``budget`` is a **no-op** that returns uniform and records a ``derivation_deferred``
   marker (the budget allocator is the research keystone's job — its derivation is
-  deferred to the ConversionPolicy keystone). It parses + validates the budget body
+  deferred to research, not on this branch). It parses + validates the budget body
   but does not yet derive a map.
 
 The resolver is resolved on :class:`DeploymentPlan` (``plan.s_allocation`` /
@@ -49,7 +48,7 @@ S_ALLOCATION_SUPPORTED_MODES: Tuple[str, ...] = (S_ALLOCATION_UNIFORM,)
 # can tell "this returned uniform because the derivation is deferred to research"
 # from "this is genuinely uniform". The budget allocator is a no-op keystone seam.
 BUDGET_DERIVATION_DEFERRED = (
-    "derivation deferred to ConversionPolicy keystone (research)"
+    "derivation deferred to research (per-depth S allocator not on this branch)"
 )
 
 _VALID_BUDGET_KEYS = frozenset(
@@ -212,7 +211,7 @@ class TemporalAllocationResolver:
     def _resolve_budget(self, depth: int) -> TemporalAllocation:
         # RESERVED: the budget allocator is a no-op keystone seam. It validated the
         # budget body in from_config; here it returns uniform + the deferred marker so
-        # nothing behavioral changes (the real derivation is research E4/E6).
+        # nothing behavioral changes (the real derivation is deferred to research).
         return self._uniform(depth, derivation_deferred=BUDGET_DERIVATION_DEFERRED)
 
 

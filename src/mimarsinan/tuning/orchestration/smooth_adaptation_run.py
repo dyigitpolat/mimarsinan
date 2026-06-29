@@ -8,7 +8,6 @@ import warnings
 from mimarsinan.tuning.trace import DecisionTrace
 from mimarsinan.tuning.orchestration.acceptance_sensor import AcceptanceSensor
 from mimarsinan.tuning.orchestration.adaptation_driver import AdaptationDriver
-from mimarsinan.tuning.orchestration.characterization import characterize
 from mimarsinan.tuning.orchestration.recovery_engine import RecoveryEngine
 from mimarsinan.tuning.orchestration.tuning_budget import min_step_for_smooth_adaptation
 from mimarsinan.tuning.orchestration.tuner_base import (
@@ -327,19 +326,10 @@ class SmoothAdaptationRunMixin(TunerBase):
         rates = None
         if getattr(self, "_fixed_ladder_policy", False):
             # Schedule-not-search: a well-conditioned transformation (the genuine
-            # blend fast path) walks an explicit rate ladder with no bisection and
-            # no characterization — the fixed schedule is the policy.
+            # blend fast path) walks an explicit rate ladder with no bisection —
+            # the fixed schedule is the policy.
             policy_override = "fixed_ladder"
             rates = getattr(self, "_fixed_ladder_rates", None) or [1.0]
-        else:
-            profile = self._maybe_characterize()
-            if profile is not None:
-                epsilon = float(profile.epsilon_hint)
-                if not profile.monotonic:
-                    # A1: a non-monotone axis breaks the greedy/bisect monotonicity
-                    # premise — walk a dense grid at the characterized safe step.
-                    policy_override = "dense_grid"
-                    initial_step = float(profile.epsilon_hint)
         scheduler = AdaptationDriver.build_scheduler(
             epsilon=epsilon,
             max_rounds=max_cycles,
@@ -355,39 +345,6 @@ class SmoothAdaptationRunMixin(TunerBase):
             committed=self._committed_rate,
         )
         return driver.run()
-
-    def _maybe_characterize(self):
-        """Pre-phase axis characterization (spec §10), off unless flagged. Sweeps a
-        coarse α grid (non-destructively: clone → probe → restore) and returns a
-        ``Profile`` whose ``epsilon_hint``/``monotonic`` configure the scheduler.
-        Bit-exact no-op when disabled — the default path never builds a Profile."""
-        if not bool(self.pipeline.config.get("tuning_enable_characterization", False)):
-            return None
-        grid = self.pipeline.config.get(
-            "tuning_characterization_grid", [0.0, 0.25, 0.5, 0.75, 1.0]
-        )
-        baseline = getattr(self, "_validation_baseline", None)
-        if not grid or baseline is None:
-            return None
-
-        budget = float(getattr(self, "_rollback_tolerance", 0.02))
-        pre = self._clone_state()
-
-        def drop_fn(alpha):
-            return float(baseline) - float(self._update_and_evaluate(float(alpha)))
-
-        try:
-            profile = characterize(drop_fn, [float(a) for a in grid], budget=budget)
-        finally:
-            self._restore_state(pre)
-
-        self.pipeline.reporter.report(f"{self.name} characterization", {
-            "monotonic": profile.monotonic,
-            "epsilon_hint": round(float(profile.epsilon_hint), 6),
-            "max_slope": round(float(profile.max_slope), 4),
-            "feasible_max": round(float(profile.feasible_max), 4),
-        })
-        return profile
 
     def _driver_attempt(self, target):
         """One scheduler attempt: refresh per-cycle state, then run a cycle."""

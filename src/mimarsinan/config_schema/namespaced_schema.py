@@ -162,7 +162,7 @@ _KEY_SPECS: Tuple[KeySpec, ...] = (
     _spec("paired_confirm_batches", "tuning", "rollback_sensor"),
     _spec("global_budget", "tuning", "rollback_sensor"),
     # Per-layer-S temporal allocation (EW1 RESERVED): the Wizard declares the intent;
-    # the per-depth S map is derived by the ConversionPolicy keystone (TemporalAllocation).
+    # the per-depth S map derivation (TemporalAllocation) is deferred to research.
     _spec("s_allocation", "conversion", "TemporalAllocation", exposure="user"),
     _spec("s_allocation_explicit", "conversion", "TemporalAllocation",
           exposure="user"),

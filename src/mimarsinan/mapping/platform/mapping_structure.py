@@ -101,7 +101,7 @@ class ChipCapabilities:
 
     ``allow_per_layer_s`` is the EW1 RESERVED gate: it is declared here alongside
     ``allow_coalescing`` but no mapping decision consults it yet (the per-depth S map
-    is derived by the ConversionPolicy keystone, research). Default False ⇒ the
+    derivation is deferred to research). Default False ⇒ the
     uniform global S is the only path ⇒ byte-identical.
 
     ``allow_weight_reuse`` is the RESERVED time-domain weight-reuse gate: when set, a

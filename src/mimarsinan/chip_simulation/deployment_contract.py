@@ -111,29 +111,6 @@ class SpikingDeploymentContract:
             distmatch_driven=distmatch_driven,
         )
 
-    def conversion_policy(
-        self, config, *, model=None, characterizer=None, context=None, core: Any = None
-    ):
-        """The E4 characterization-and-policy decision for this (firing × sync) cell.
-
-        The keystone seam (propose → confirm → escalate). DEFAULT-OFF: until
-        ``conversion_policy`` is set in ``config`` the returned
-        ``ConversionDecision`` names the CURRENT behavior (driver=controller, no
-        characterization run) ⇒ byte-identical. When opted in, the contract's
-        (firing × sync) policy proposes the recipe, the ``characterizer`` confirms
-        it on ``model`` (drawing calibration batches from ``context``, the trainer),
-        and a mismatch escalates to the controller fallback. ``context`` is a
-        backward-compatible keyword (default None ⇒ inert ⇒ byte-identical)."""
-        from mimarsinan.tuning.orchestration.conversion_policy import ConversionPolicy
-
-        return ConversionPolicy.resolve(
-            config,
-            mode_policy=self.mode_policy(core=core),
-            model=model,
-            characterizer=characterizer,
-            context=context,
-        )
-
     def training_forward_kind(self, *, core: Any = None) -> str:
         """NF algorithm the fine-tuners must train through for this deployment.
 

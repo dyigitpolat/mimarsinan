@@ -84,9 +84,9 @@ DEFAULT_DEPLOYMENT_PARAMETERS: Dict[str, object] = {
     "global_budget": 0.0,
     # Per-layer-S temporal-allocation axis (EW1, RESERVED): each cascade depth /
     # latency group MAY get its own temporal resolution S_d instead of one global
-    # simulation_steps. The Wizard DECLARES the intent here; the per-depth S map is
-    # DERIVED by the ConversionPolicy keystone (research) and certified by the cert
-    # protocol. "uniform" (default) => the SAME global S for every depth =>
+    # simulation_steps. The Wizard DECLARES the intent here; the per-depth S map
+    # derivation is deferred to research (the allocator is not on this branch).
+    # "uniform" (default) => the SAME global S for every depth =>
     # byte-identical (no consumer threads a non-uniform map yet). "explicit" reads
     # s_allocation_explicit (a per-depth list, validated against the model depth).
     # "budget" reads s_allocation_budget and is a no-op that returns uniform + a

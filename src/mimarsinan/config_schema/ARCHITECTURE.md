@@ -34,8 +34,8 @@ self-contained bijection), the other groups are registered but their owners stil
 the flat keys. The **EW1 RESERVED** per-layer-S axis adds `allow_per_layer_s` to
 `hardware` (the capability gate, owner `ChipCapabilities/TemporalAllocation`) and
 `s_allocation` / `s_allocation_explicit` / `s_allocation_budget` to `conversion`
-(owner `TemporalAllocation`); the per-depth S map is derived by the ConversionPolicy
-keystone (research), default `uniform` ⇒ byte-identical.
+(owner `TemporalAllocation`); the per-depth S map derivation is deferred to research
+(not on this branch), default `uniform` ⇒ byte-identical.
 
 #### Provenance is real (not all `default`)
 

@@ -1,6 +1,6 @@
 """Contract-driven resolution of the TTFS-cycle adaptation flag-thicket.
 
-``_configure`` used to read ~24 ``ttfs_*`` flags inline and hand-derive the dispatch
+``_configure`` used to read the ``ttfs_*`` flags inline and hand-derive the dispatch
 (ramp strategy, optimization driver, fast-ladder rung) with the precedence /
 compatibility rules scattered between the reads. ``TtfsAdaptationPlan`` is the SINGLE
 declarative resolver: config (+ whether the schedule is synchronized) in, a validated,
@@ -14,17 +14,14 @@ The plan composes the three orthogonal abstractions: it picks the ramp strategy 
 is resolved once, each concern owning its own compatibility rules.
 
 Precedence (settled here, in order):
-* cascade-genuine ramps are cascaded-only (off when ``synchronized``);
+* the genuine **blend** ramp is cascaded-only (off when ``synchronized``);
 * synchronized QAT is a separate default-off opt-in that may use the fast
   deployed-staircase proxy path, but it does not enable the cascade forward;
-* the genuine **blend** ramp wins over the **annealed** ramp;
-* the **STE** reuses the annealed install (forces ``genuine_annealed_ramp``) and is
-  excluded by the blend ramp;
-* ``staircase_ste_fast`` requires the STE; ``genuine_blend_fast`` requires the blend ramp;
-* the **proxy** fast path is value-domain — inert under any genuine bare-target ramp or
-  synchronized; ``staircase_ste_refine`` requires the proxy path;
-* the fast-ladder rung is resolved by :class:`OptimizationDriver` (STE-fast → one rung
-  at 1.0; else the blend/proxy ladder, with the proxy flooring the endpoint LR);
+* ``genuine_blend_fast`` requires the blend ramp;
+* the **proxy** fast path is value-domain — inert under the genuine blend ramp or
+  synchronized (unless synchronized QAT opts it in);
+* the fast-ladder rung is resolved by :class:`OptimizationDriver` (the blend/proxy
+  ladder, with the proxy flooring the endpoint LR);
 * the calibration steps + their compatibility are resolved by
   :class:`CalibrationPipeline` keyed by the (firing × sync) ``SpikingModePolicy``
   (E3: the cascaded cycle opts into conversion-health, the synchronized cycle gets the
@@ -43,31 +40,17 @@ _DEFAULT_BLEND_FAST_RATES = [0.5, 0.75, 0.9, 0.97, 1.0]
 
 @dataclass(frozen=True)
 class TtfsAdaptationPlan:
-    # ── ramp strategy (mutually exclusive; else value-domain proxy) ──
+    # ── ramp strategy (genuine blend ramp; else value-domain proxy) ──
     sync_genuine_qat: bool
-    genuine_annealed_ramp: bool
     genuine_blend_ramp: bool
-    staircase_ste: bool
-    genuine_bare_target_ramp: bool
     # ── optimization driver ──
     proxy_fast: bool
     genuine_blend_fast: bool
-    staircase_ste_fast: bool
-    staircase_ste_refine: bool
     # ── numeric params (namespaced under their owner) ──
-    ste_mix: float
-    ste_steps: int
-    ste_w_lr: float
-    ste_theta_lr: float
-    ste_init_frac: float
     blend_fast_rates: list
     blend_fast_steps_per_rate: int
     fast_stabilize_steps: int
     blend_fast_lr_eta_min: float
-    # ── R2 two-residual S allocation (from the ConversionPolicy keystone) ──
-    # train_s_hint decouples the TRAINING-forward S from the deployed S; None (the
-    # default-off decision) ⇒ no decouple ⇒ train at the configured S ⇒ byte-identical.
-    train_s_hint: int | None
     # ── resolved optimization driver (controller vs fast-ladder rung) ──
     driver: OptimizationDriver
     # ── resolved conversion-health calibration steps ──
@@ -97,30 +80,19 @@ class TtfsAdaptationPlan:
         synchronized: bool,
         optimization_driver: str | None = None,
         calibration_resolver=None,
-        conversion_decision=None,
     ) -> "TtfsAdaptationPlan":
         get = config.get
 
         sync_genuine_qat = bool(get("ttfs_sync_genuine_qat", False)) and synchronized
         cascade_genuine_allowed = not synchronized
-        annealed = bool(get("ttfs_genuine_annealed_ramp", False)) and cascade_genuine_allowed
         blend = bool(get("ttfs_genuine_blend_ramp", False)) and cascade_genuine_allowed
-        if blend:
-            annealed = False  # blend wins over annealed
-        ste = (
-            bool(get("ttfs_staircase_ste", False))
-            and cascade_genuine_allowed and not blend
-        )
-        if ste:
-            annealed = True  # the STE reuses the annealed cascade-forward install
-        bare = annealed or blend
 
         # EF1: the pipeline-wide `optimization_driver` axis is the controller-vs-fast
-        # GATE over the three-way fast fork; the per-family flag below still selects
-        # WHICH fast variant runs. `None` (back-compat for direct callers) derives the
-        # gate from the legacy fast flags so the resolution stays byte-identical (those
-        # flags also feed DeploymentPlan.optimization_driver). An explicit `controller`
-        # vetoes every fast selector even if a legacy fast flag is set.
+        # GATE over the fast fork; the per-family flag below still selects WHICH fast
+        # variant runs. `None` (back-compat for direct callers) derives the gate from
+        # the legacy fast flags so the resolution stays byte-identical (those flags also
+        # feed DeploymentPlan.optimization_driver). An explicit `controller` vetoes every
+        # fast selector even if a legacy fast flag is set.
         from mimarsinan.pipelining.core.deployment_plan import (
             OPTIMIZATION_DRIVER_FAST,
             resolve_optimization_driver,
@@ -130,39 +102,18 @@ class TtfsAdaptationPlan:
             axis = resolve_optimization_driver(config)
         else:
             axis = str(optimization_driver).lower()
-        # EF3: the E4 ConversionPolicy keystone (propose → confirm → escalate) is the
-        # SAFE override of the axis when it ran. DEFAULT-OFF ⇒ the decision is inert
-        # (`enabled` False) ⇒ the axis is untouched ⇒ byte-identical. When opted in,
-        # the decision's driver (the proposed recipe's, or the controller fallback on
-        # an escalation) GATES the fast fork — escalation vetoes fast exactly like an
-        # explicit `controller` axis. This is the keystone consultation, not a flip.
-        train_s_hint = None
-        if conversion_decision is not None and getattr(
-            conversion_decision, "enabled", False
-        ):
-            axis = str(conversion_decision.driver).lower()
-            # R2: an enabled decision carries the two-residual train_s_hint that
-            # decouples the TRAINING-forward S from the deployed S. Inert by default
-            # (enabled=False ⇒ None ⇒ no decouple ⇒ byte-identical).
-            recipe = getattr(conversion_decision, "recipe", None)
-            train_s_hint = getattr(recipe, "train_s_hint", None)
         fast_enabled = axis == OPTIMIZATION_DRIVER_FAST
 
-        ste_fast = (
-            fast_enabled and ste and bool(get("ttfs_staircase_ste_fast", False))
-        )
         blend_fast = (
             fast_enabled and blend and bool(get("ttfs_genuine_blend_fast", False))
         )
         proxy_fast = (
             fast_enabled
             and bool(get("ttfs_blend_fast", False))
-            and not bare
+            and not blend
             and (not synchronized or sync_genuine_qat)
         )
-        ste_refine = proxy_fast and bool(get("ttfs_blend_fast_ste_refine", False))
 
-        ste_steps = max(1, int(get("ttfs_ste_steps", 1000)))
         blend_fast_rates = [
             float(r) for r in get("ttfs_blend_fast_rates", _DEFAULT_BLEND_FAST_RATES)
         ]
@@ -172,10 +123,8 @@ class TtfsAdaptationPlan:
         # The optimization-driver concern (controller vs fast-ladder rung) owns the
         # rung derivation; the precedence above settles which fast selector is active.
         driver = OptimizationDriver.resolve(
-            staircase_ste_fast=ste_fast,
             genuine_blend_fast=blend_fast,
             proxy_fast=proxy_fast,
-            ste_steps=ste_steps,
             blend_fast_rates=blend_fast_rates,
             blend_fast_steps_per_rate=blend_fast_steps,
             blend_fast_lr_eta_min=eta_min,
@@ -196,24 +145,13 @@ class TtfsAdaptationPlan:
 
         return cls(
             sync_genuine_qat=sync_genuine_qat,
-            genuine_annealed_ramp=annealed,
             genuine_blend_ramp=blend,
-            staircase_ste=ste,
-            genuine_bare_target_ramp=bare,
             proxy_fast=proxy_fast,
             genuine_blend_fast=blend_fast,
-            staircase_ste_fast=ste_fast,
-            staircase_ste_refine=ste_refine,
-            ste_mix=float(get("ttfs_ste_mix", 0.5)),
-            ste_steps=ste_steps,
-            ste_w_lr=float(get("ttfs_ste_w_lr", 2e-3)),
-            ste_theta_lr=float(get("ttfs_ste_theta_lr", 5e-2)),
-            ste_init_frac=float(get("ttfs_ste_init_frac", 1.0 / 3.0)),
             blend_fast_rates=blend_fast_rates,
             blend_fast_steps_per_rate=blend_fast_steps,
             fast_stabilize_steps=int(get("ttfs_blend_fast_stabilize_steps", 0)),
             blend_fast_lr_eta_min=eta_min,
-            train_s_hint=train_s_hint,
             driver=driver,
             calibration=calibration,
         )

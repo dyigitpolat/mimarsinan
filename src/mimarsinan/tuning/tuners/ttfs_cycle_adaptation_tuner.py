@@ -20,12 +20,6 @@ By default the genuine cross-layer dynamics are installed only at **finalize**:
   installed; the wire contract's stage-input grid snap q(x) is trained through
   an STE on each segment entry.
 
-The opt-in ``ttfs_genuine_annealed_ramp`` (default off, cascaded only) instead
-installs the genuine single-spike cascade for the WHOLE ramp and anneals the
-spike surrogate sharpness smooth→sharp (``TTFSGenuineAxis``). Since the surrogate
-``alpha`` is backward-only, rate=1 is bit-identical to the deployed cascade, so
-the finalize cliff is ~0 by construction.
-
 The opt-in ``ttfs_genuine_blend_ramp`` (default off, cascaded only) calibrates
 the deployed cascade to the teacher ANN's activation distribution
 (``match_activation_distributions``: scale-aware [0,1] boundaries + DFQ per-neuron
@@ -34,7 +28,7 @@ forward (``out = (1-rate)*teacher + rate*genuine``). The committed rate drives
 the blend live via ``GenuineBlendAxis`` (rate 0 = the frozen continuous teacher,
 rate 1 = the genuine cascade exactly), with KD recovery against the same teacher;
 finalize deploys the PURE genuine cascade (the teacher is dropped, so the cliff is
-0 by construction). It is mutually exclusive with the annealed ramp — blend wins.
+0 by construction).
 
 The EXPERIMENTAL ``ttfs_genuine_blend_fast`` (default off, requires the blend ramp)
 SKIPS the heavy SmoothAdaptation controller: ``run`` overrides the scheduler flow to
@@ -80,33 +74,13 @@ from mimarsinan.models.nn.activations.ttfs_spiking import TTFSActivation
 from mimarsinan.models.spiking.training.blended_genuine_forward import (
     BlendedGenuineForward,
 )
-from mimarsinan.tuning.axes.blend_axis import GenuineBlendAxis, TTFSGenuineAxis
+from mimarsinan.tuning.axes.blend_axis import GenuineBlendAxis
 from mimarsinan.tuning.forward_install import LazyExecutorForward
 from mimarsinan.tuning.orchestration.kd_blend_adaptation_tuner import (
     KDBlendAdaptationTuner,
     _KDClassificationLoss,
 )
 from mimarsinan.tuning.orchestration.ramp_strategy import RampStrategy
-
-
-def _conversion_characterizer_for(tuner):
-    """The E4 pre-flight characterizer the live tuner hands the ConversionPolicy.
-
-    The propose → CONFIRM → escalate ``Characterizer`` seam (EF3). DEFAULT-OFF
-    (``conversion_policy`` unset) ⇒ ``None`` ⇒ the policy is inert and the
-    characterizer is NEVER constructed ⇒ byte-identical. When the policy is enabled
-    AND the cell is the cascaded fire-once one (whose recipe carries the real probe
-    assumptions), build the real :class:`CascadeCharacterizer` with ``context`` =
-    the tuner's trainer (its ``iter_validation_batches`` is the calibration-batch
-    source); the four forward-only probes (cold-cascade liveness / ramp monotonicity
-    / staircase-vs-LIF ceiling / firing-gain) then confirm the recipe on this model."""
-    if not bool(tuner.pipeline.config.get("conversion_policy", False)):
-        return None
-    if tuner._synchronized:
-        return None
-    from mimarsinan.tuning.orchestration.characterization import CascadeCharacterizer
-
-    return CascadeCharacterizer(context=tuner.trainer, n_batches=1, S=tuner._T)
 
 
 class _SegmentSpikeForward(LazyExecutorForward):
@@ -188,57 +162,6 @@ class _BlendGenuineKDLoss(_KDClassificationLoss):
         return loss
 
 
-class _StaircaseSteKDLoss(_KDClassificationLoss):
-    """Straight-through estimator: forward value == the genuine single-spike cascade
-    (the exact deploy path), backward == a hedge of the CLEAN complete-sum staircase
-    gradient + the genuine surrogate. Fixes the deep high-S surrogate-gradient plateau
-    (research: lossless cascaded TTFS in <2min). ``mix`` (0.5 default) weights the
-    staircase half of the backward; the forward is genuine for any mix.
-
-        back = mix*staircase + (1-mix)*genuine
-        ste  = back + (genuine - back).detach()   # value=genuine, grad=back
-    """
-
-    def __init__(self, teacher, *, mix: float, forward_provider,
-                 temperature: float = 3.0, alpha: float = 0.3):
-        super().__init__(teacher, temperature=temperature, alpha=alpha)
-        self.mix = float(mix)
-        self._forward = forward_provider
-
-    @staticmethod
-    def _ste_logits(fwd, x, mix: float = 0.5):
-        """ste = back + (genuine-back).detach(); staircase via the model's unpatched
-        (analytical, cycle_accurate=False) forward, with the mode restored after."""
-        genuine = fwd(x)
-        nodes = [m for m in fwd.model.modules() if isinstance(m, TTFSActivation)]
-        prev = [n._cycle_accurate_mode for n in nodes]
-        for n in nodes:
-            n.set_cycle_accurate(False)
-        try:
-            staircase = fwd._unpatched_forward(x)
-        finally:
-            for n, p in zip(nodes, prev):
-                n.set_cycle_accurate(p)
-        back = mix * staircase + (1.0 - mix) * genuine
-        return back + (genuine - back).detach()
-
-    def __call__(self, model, x, y):
-        with torch.no_grad():
-            tp = next(self.teacher.parameters(), None)
-            if tp is not None and tp.device != x.device:
-                self.teacher.to(x.device)
-            teacher_logits = self.teacher(x)
-        student = self._ste_logits(self._forward(), x, self.mix)
-        ce = F.cross_entropy(student, y)
-        T = self.temperature
-        kd = F.kl_div(
-            F.log_softmax(student / T, dim=-1),
-            F.softmax(teacher_logits / T, dim=-1),
-            reduction="batchmean",
-        ) * (T * T)
-        return self.alpha * ce + (1.0 - self.alpha) * kd
-
-
 class _GenuineRamp(RampStrategy):
     """Shared base of the genuine cascade ramps: ``base_activation`` IS the bare
     ``TTFSActivation`` target (no value blend) and the deployed on-chip rebuild
@@ -253,19 +176,6 @@ class _GenuineRamp(RampStrategy):
 
     def after_install_blend_pre(self, tuner) -> None:
         tuner._finalize_rebuild()
-
-
-class GenuineAnnealedRamp(_GenuineRamp):
-    """Train through the genuine single-spike cascade for the WHOLE ramp, annealing
-    the spike surrogate alpha alongside the rate (``TTFSGenuineAxis``)."""
-
-    def make_axis(self, tuner):
-        return TTFSGenuineAxis()
-
-    def ramp_forward(self, tuner, model):
-        # The RAMP (training) forward runs at train_S; finalize rebuilds the deploy
-        # nodes at deploy_S. They coincide (byte-identical) when train_S == deploy_S.
-        return tuner._ramp_forward_for(model)
 
 
 class GenuineBlendRamp(_GenuineRamp):
@@ -298,17 +208,6 @@ class GenuineBlendRamp(_GenuineRamp):
         tuner._blend_forward = None
 
 
-class StaircaseSteRamp(GenuineAnnealedRamp):
-    """Genuine annealed-ramp install with a straight-through estimator loss: forward
-    = the genuine cascade, backward = a staircase/genuine hedge."""
-
-    def make_kd_loss(self, tuner):
-        return _StaircaseSteKDLoss(
-            tuner._teacher, mix=tuner._ste_mix,
-            forward_provider=lambda: tuner.model.__dict__.get("forward"),
-        )
-
-
 class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
     """Ramp to the TTFS spike node, training through the schedule's NF dynamics."""
 
@@ -316,13 +215,10 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
 
     def _configure(self) -> None:
         self.name = "TTFS Cycle Fine-Tuning"
-        # self._T is the DEPLOY S (== simulation_steps): the deployed forward, node
+        # self._T is the deployment S (== simulation_steps): the deployed forward, node
         # build, gain stats, and the contract.simulation_steps that parity/mapping read.
-        # _train_T is the TRAINING-forward S — R2's two-residual decouple (train the
-        # genuine cascade low-S, deploy high-S). Defaults to _T (set below from the
-        # plan's train_s_hint), so when train_S == deploy_S the path is byte-identical.
+        # The genuine cascade trains and deploys at the same S.
         self._T = int(self.pipeline.config["simulation_steps"])
-        self._train_T = self._T
         self._thresholding_mode = str(self.pipeline.config.get("thresholding_mode", "<="))
         self._firing_mode = str(self.pipeline.config.get("firing_mode", "TTFS"))
         from mimarsinan.pipelining.core.platform_constraints_resolver import resolve_bias_mode
@@ -338,10 +234,10 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
         self.adaptation_manager.ttfs_active = True
         # The adaptation flag-thicket (ramp strategy × optimization driver × fast-ladder
         # rung) is resolved ONCE, declaratively: TtfsAdaptationPlan owns the precedence /
-        # compatibility rules (blend ⊐ annealed, STE ⇒ annealed, ste_fast ⊂ ste,
-        # proxy_fast excludes the genuine bare-target ramps + synchronized, ste_refine ⊂
-        # proxy_fast, the fast-ladder rung). _configure just binds the validated plan to
-        # the tuner's fields, so the dispatch is read in one tested place, not re-derived.
+        # compatibility rules (genuine_blend_fast ⊂ the blend ramp, proxy_fast excludes
+        # the genuine blend ramp + synchronized unless sync-QAT opts in, the fast-ladder
+        # rung). _configure just binds the validated plan to the tuner's fields, so the
+        # dispatch is read in one tested place, not re-derived.
         from mimarsinan.tuning.orchestration.ttfs_adaptation_plan import (
             TtfsAdaptationPlan,
         )
@@ -353,57 +249,25 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
         # `controller` ⇒ no fast variant ⇒ byte-identical.
         from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 
-        # EF3: the (firing × sync) E3 CalibrationPipeline + E4 ConversionPolicy keystone
-        # are CONSULTED through the contract seam, not resolved off the tuner's booleans.
-        #   * calibration_resolver routes the conversion-health resolution through
-        #     `contract.calibration_pipeline` (the pipeline-wide seam) — keyed by the
-        #     (firing × sync) policy, byte-identical to the boolean alias it replaces.
-        #   * conversion_decision consults `contract.conversion_policy` (propose →
-        #     confirm → escalate). DEFAULT-OFF ⇒ the decision is inert (names the
-        #     current controller behavior, the characterizer is never run) ⇒ nothing
-        #     runs and the axis is untouched ⇒ byte-identical. Fix B is later just a
-        #     default flip + real probes.
+        # EF3: the (firing × sync) E3 CalibrationPipeline is CONSULTED through the
+        # contract seam, not resolved off the tuner's booleans — calibration_resolver
+        # routes the conversion-health resolution through `contract.calibration_pipeline`
+        # (the pipeline-wide seam), keyed by the (firing × sync) policy.
         def _calibration_resolver(config, *, synchronized, distmatch_driven):
             return contract.calibration_pipeline(
                 config, distmatch_driven=distmatch_driven,
             )
-
-        # The real characterizer self-carries ``context=self.trainer`` (its
-        # calibration-batch source), so the contract seam need not re-thread it —
-        # keeping the call signature byte-identical to the inert wiring.
-        conversion_decision = contract.conversion_policy(
-            self.pipeline.config,
-            model=self.model,
-            characterizer=_conversion_characterizer_for(self),
-        )
-        self._conversion_decision = conversion_decision
 
         plan = TtfsAdaptationPlan.resolve(
             self.pipeline.config,
             synchronized=self._synchronized,
             optimization_driver=DeploymentPlan.of(self.pipeline).optimization_driver,
             calibration_resolver=_calibration_resolver,
-            conversion_decision=conversion_decision,
         )
         self._adaptation_plan = plan
-        # R2 two-residual decouple: train the genuine cascade at train_S (the
-        # ConversionPolicy keystone's train_s_hint), deploy at deploy_S (self._T).
-        # None (the default-off decision) ⇒ train at deploy_S ⇒ byte-identical.
-        if plan.train_s_hint is not None:
-            self._train_T = int(plan.train_s_hint)
-        self._genuine_annealed_ramp = plan.genuine_annealed_ramp
         self._genuine_blend_ramp = plan.genuine_blend_ramp
-        self._staircase_ste = plan.staircase_ste
-        self._ste_mix = plan.ste_mix
-        self._staircase_ste_fast = plan.staircase_ste_fast
-        self._ste_steps = plan.ste_steps
-        self._ste_w_lr = plan.ste_w_lr
-        self._ste_theta_lr = plan.ste_theta_lr
-        self._ste_init_frac = plan.ste_init_frac
-        self._genuine_bare_target_ramp = plan.genuine_bare_target_ramp
         self._genuine_blend_fast = plan.genuine_blend_fast
         self._proxy_fast = plan.proxy_fast
-        self._staircase_ste_refine = plan.staircase_ste_refine
         self._blend_fast_rates = plan.blend_fast_rates
         self._blend_fast_steps_per_rate = plan.blend_fast_steps_per_rate
         self._fast_stabilize_steps = plan.fast_stabilize_steps
@@ -455,7 +319,7 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
         self._theta_cotrain = cal.theta_cotrain
         self._theta_cotrain_stats = None
         # The promoted per-channel theta Parameters (set in _maybe_promote_theta_cotrain);
-        # the STE-fast loop trains them in their own LR group.
+        # the model optimiser co-trains them with the weights.
         self._theta_cotrain_params = None
 
     def _maybe_apply_gain_correction(self) -> None:
@@ -555,15 +419,11 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
 
     # -- genuine ramps (default OFF) -------------------------------------------
     def _make_ramp_strategy(self) -> RampStrategy:
-        """Pick the ramp strategy from the flags settled in ``_configure``. The
-        precedence (blend > annealed; STE forces the annealed install) is preserved
-        by the flag rules there — here it is a flat, mutually-exclusive dispatch."""
+        """Pick the ramp strategy from the flags settled in ``_configure`` — the
+        genuine teacher↔cascade blend ramp (cascaded only) or the base value-domain
+        proxy ramp."""
         if self._genuine_blend_ramp:
             return GenuineBlendRamp()
-        if self._staircase_ste:
-            return StaircaseSteRamp()
-        if self._genuine_annealed_ramp:
-            return GenuineAnnealedRamp()
         return super()._make_ramp_strategy()
 
     def _after_install_blend(self) -> None:
@@ -667,8 +527,8 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
         """Synchronized + ``ttfs_finetune_kd_against_rung2``: distill against the
         frozen teacher evaluated under rung-2 semantics (identity-mapped contract
         flow) instead of its torch forward (design doc §6.1, default off). The
-        genuine/STE losses are owned by their ramp strategies (the base
-        delegation); synchronized always rides the value-domain proxy ramp."""
+        genuine loss is owned by its ramp strategy (the base delegation);
+        synchronized always rides the value-domain proxy ramp."""
         if self._synchronized and bool(
             self.pipeline.config.get("ttfs_finetune_kd_against_rung2", False)
         ):
@@ -740,104 +600,6 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
     # validated genuine objective (plain CE on the blend + ce_alpha·CE on the PURE
     # genuine logits — lifts the r=1 endpoint, invariants 4/5) and the deployed-r=1
     # convergence probe via these two hooks.
-    def _fast_rate_attempt(self, target):
-        # STE-fast owns its single rung: the proven clean loop (split-LR +
-        # progressive depth + cosine) instead of the base single-optimizer ladder.
-        if getattr(self, "_staircase_ste_fast", False):
-            return self._run_staircase_ste_fast(float(target))
-        return super()._fast_rate_attempt(target)
-
-    def _weight_params_through(self, depth):
-        """Set ``requires_grad`` on the first ``depth`` perceptrons' layer weight/bias
-        (shallow->deep) and return the now-trainable ones; deeper layers stay frozen.
-        Progressive unfreeze grows ``depth`` to N so the final step trains all weights.
-        Frozen params just receive no gradient (Adam skips them) — no optimizer rebuild
-        is needed for the freeze itself; the rebuild on a depth CHANGE adds the newly
-        unfrozen params to the optimizer."""
-        out = []
-        for i, p in enumerate(self.model.get_perceptrons()):
-            req = i < depth
-            p.layer.weight.requires_grad_(req)
-            if p.layer.bias is not None:
-                p.layer.bias.requires_grad_(req)
-            if req:
-                out.append(p.layer.weight)
-                if p.layer.bias is not None:
-                    out.append(p.layer.bias)
-        return out
-
-    def _run_staircase_ste_fast(self, target):
-        """Clean fixed-step STE loop (the toy recipe that crossed the ~0.95 plateau):
-        split-LR optimizer (weights @ ``ttfs_ste_w_lr``, per-channel theta @
-        ``ttfs_ste_theta_lr`` when ``ttfs_theta_cotrain`` is on), progressive
-        shallow->deep weight unfreeze from ``ttfs_ste_init_frac`` of the depth, cosine
-        LR over ``ttfs_ste_steps``, and the installed STE+KD ``_fast_loss``. Forward is
-        the genuine cascade throughout (deploy-exact); commits ``target`` (== 1.0).
-        Replaces the rate-search controller, which caps the STE ~0.83 on MNIST."""
-        import time
-
-        t0 = time.time()
-        device = self.pipeline.config["device"]
-        self.model = self.model.to(device)
-        steps = self._ste_steps
-        thetas = list(getattr(self, "_theta_cotrain_params", None) or [])
-        n = len(self.model.get_perceptrons())
-        start = max(1, round(n * self._ste_init_frac))
-        schedule = [
-            min(n, start + round((n - start) * t / max(1, steps - 1)))
-            for t in range(steps)
-        ]
-        grad_clip = float(
-            (self.pipeline.config.get("tuning_recipe") or {}).get("grad_clip_norm", 1.0)
-        )
-        depth = -1
-        opt = sched = None
-        for t in range(steps):
-            if schedule[t] != depth:
-                depth = schedule[t]
-                weights = self._weight_params_through(depth)
-                groups = []
-                if thetas:
-                    groups.append({"params": thetas, "lr": self._ste_theta_lr})
-                groups.append({"params": weights, "lr": self._ste_w_lr})
-                opt = torch.optim.Adam(groups)
-                for g in opt.param_groups:
-                    g["initial_lr"] = g["lr"]
-                sched = torch.optim.lr_scheduler.CosineAnnealingLR(
-                    opt, T_max=steps, last_epoch=t - 1,
-                )
-                # Expose the live optimizer so the shared trace (_record_fast_cycle)
-                # can read the rung LR; rebuilt on each depth change.
-                self._fast_optimizer = opt
-            # Anneal the spike-surrogate sharpness (the annealed-ramp rate) 0->1 across
-            # the budget instead of jumping to a sharp surrogate at step 0: a sharp
-            # surrogate on the cold/dead cascade gives ~0 genuine gradient (the
-            # controller climbs because it ramps; a single rung at 1.0 stalls at chance).
-            self._set_rate(min(1.0, (t + 1) / steps))
-            x, y = self.trainer.next_training_batch()
-            x, y = x.to(device), y.to(device)
-            self.model.train()
-            loss = self._fast_loss(x, y)
-            opt.zero_grad()
-            loss.backward()
-            if grad_clip and grad_clip > 0.0:
-                torch.nn.utils.clip_grad_norm_(
-                    [p for grp in opt.param_groups for p in grp["params"]], grad_clip,
-                )
-            opt.step()
-            sched.step()
-            self._fast_optimizer_steps += 1
-        self._set_rate(float(target))  # commit/eval at the deploy rate (sharp surrogate)
-        self._committed_rate = float(target)
-        post_acc = self.probe()  # EF2: the STE-fast rung reads through the seam verb
-        self._record_fast_cycle(float(target), post_acc, t0)
-        self._last_post_acc = post_acc
-        self._fast_probe(float(target))
-        self._phase_seconds["fast_blend"] = (
-            self._phase_seconds.get("fast_blend", 0.0) + (time.time() - t0)
-        )
-        return float(target)
-
     def _fast_loss(self, x, y):
         # Proxy fast path: use the installed KD loss (distil the teacher onto the
         # value-domain blend) — there is no BlendedGenuineForward to read.
@@ -864,17 +626,7 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
         if not getattr(self, "_proxy_fast", False):
             return
         steps = getattr(self, "_fast_stabilize_steps", 0)
-        if getattr(self, "_staircase_ste_refine", False):
-            # Two-stage revive->refine: the deployed forward is now the revived genuine
-            # cascade, so refine it with the STE (staircase-backward hedge) instead of
-            # plain KD — the STE finally operates on an ALIVE cascade.
-            ste = _StaircaseSteKDLoss(
-                self._teacher, mix=self._ste_mix,
-                forward_provider=lambda: self.model.__dict__.get("forward"),
-            )
-            self._fast_stabilize(steps, loss_fn=lambda x, y: ste(self.model, x, y))
-        else:
-            self._fast_stabilize(steps)
+        self._fast_stabilize(steps)
 
     def _installed_genuine_branch(self):
         """The PURE genuine-cascade branch of the owned ``BlendedGenuineForward``
@@ -922,12 +674,10 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
         )
 
     def _ramp_forward_for(self, model):
-        """The RAMP (training) genuine cascade forward, built at TRAIN_S (``_train_T``)
-        for the genuine annealed / STE ramps. R2's two-residual decouple trains the
-        genuine cascade low-S (the FT sweet spot — train-AT-deploy-S collapses the deep
-        cascade); finalize rebuilds the deploy nodes at deploy_S. When
-        ``_train_T == _T`` (default) this is byte-identical to ``_finalize_forward_for``."""
-        return self._segment_spike_forward_at(model, self._train_T)
+        """The RAMP (training) genuine cascade forward, built at the deployment S.
+        Byte-identical to ``_finalize_forward_for`` — both bind the genuine single-spike
+        cascade at ``_T``."""
+        return self._segment_spike_forward_at(model, self._T)
 
     def _finalize_forward_for(self, model):
         """Cascaded builds the genuine single-spike cascade forward bound to
