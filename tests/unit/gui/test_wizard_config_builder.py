@@ -177,8 +177,6 @@ class TestBuildDeploymentConfigFromState:
             "thresholding_mode",
             "kd_ce_alpha",
             "kd_temperature",
-            "ttfs_genuine_blend_ramp",
-            "optimization_driver",
         ):
             assert key not in persisted
         assert "pipeline_mode" not in out

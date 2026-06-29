@@ -15,19 +15,18 @@ from mimarsinan.tuning.orchestration.conversion_policy import ConversionPolicy
 def _fold_conversion_recipe(dp: MutableMapping[str, Any], spiking_mode: str) -> None:
     """Fold the ConversionPolicy SSOT recipe for ``spiking_mode`` into the config.
 
-    ``sim_enables`` are AUTHORITATIVE — a backend is enabled iff it can run the mode
-    (an infeasible enable raises at assembly; this is where ``nevresim`` is disabled
-    for the synchronized schedule and ``loihi`` for every non-LIF mode). The
-    ``driver`` and per-mode ``knobs`` are applied with ``setdefault`` so an explicit
-    override still wins during the additive transition (Stage 2 makes the recipe the
-    sole source).
+    The recipe is the SOLE source of these knobs: ``sim_enables``, ``driver`` and the
+    per-mode ``knobs`` are all written AUTHORITATIVELY (a user value for any of them is
+    overwritten by the derived recipe — Pure SSOT). A backend is enabled iff it can run
+    the mode (an infeasible enable raises at assembly; this is where ``nevresim`` is
+    disabled for the synchronized schedule and ``loihi`` for every non-LIF mode).
     """
     recipe = ConversionPolicy.derive(spiking_mode, dp.get("ttfs_cycle_schedule"))
     for key, value in recipe.sim_enables.items():
         dp[key] = value
-    dp.setdefault("optimization_driver", recipe.driver)
+    dp["optimization_driver"] = recipe.driver
     for key, value in recipe.knobs.items():
-        dp.setdefault(key, value)
+        dp[key] = value
 
 
 def derive_deployment_parameters(dp: MutableMapping[str, Any]) -> None:

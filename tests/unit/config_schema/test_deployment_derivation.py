@@ -105,19 +105,6 @@ def test_default_enable_nevresim_simulation_is_true():
     assert dp["enable_nevresim_simulation"] is True
 
 
-def test_ttfs_genuine_annealed_ramp_defaults_off():
-    """The genuine annealed ramp is opt-in and must stay default-off until a
-    full real-model run clears the accuracy-non-regression gate."""
-    dp = get_default_deployment_parameters()
-    assert dp["ttfs_genuine_annealed_ramp"] is False
-
-
-def test_ttfs_ramp_alpha_defaults():
-    dp = get_default_deployment_parameters()
-    assert dp["ttfs_ramp_alpha_min"] == 0.5
-    assert dp["ttfs_ramp_alpha_max"] == 2.0
-
-
 def test_config_builder_cycle_accurate_default_for_lif():
     cfg = build_deployment_config_from_state({})
     resolved = build_flat_pipeline_config(
@@ -128,31 +115,16 @@ def test_config_builder_cycle_accurate_default_for_lif():
     assert resolved["cycle_accurate_lif_forward"] is True
 
 
-def test_ttfs_genuine_blend_ramp_defaults_off():
-    """The teacher->genuine blend ramp + distribution matching is opt-in and must
-    stay default-off so golden traces and existing behavior are byte-identical."""
+def test_ttfs_genuine_blend_ce_alpha_default():
+    # The genuine-blend CE weight survives the SSOT collapse as a registered knob
+    # (the recipe writes a mode value over it; the raw default stays 0.3).
     dp = get_default_deployment_parameters()
-    assert dp["ttfs_genuine_blend_ramp"] is False
-
-
-def test_ttfs_distmatch_defaults():
-    dp = get_default_deployment_parameters()
-    assert dp["ttfs_distmatch_bias_iters"] == 15
-    assert dp["ttfs_distmatch_bias_eta"] == 0.7
-    assert dp["ttfs_distmatch_quantile"] == 0.99
     assert dp["ttfs_genuine_blend_ce_alpha"] == 0.3
 
 
-def test_ttfs_genuine_blend_ramp_keys_in_config_keys_set():
+def test_ttfs_genuine_blend_ce_alpha_in_config_keys_set():
     from mimarsinan.config_schema.defaults import CONFIG_KEYS_SET
-    for key in (
-        "ttfs_genuine_blend_ramp",
-        "ttfs_distmatch_bias_iters",
-        "ttfs_distmatch_bias_eta",
-        "ttfs_distmatch_quantile",
-        "ttfs_genuine_blend_ce_alpha",
-    ):
-        assert key in CONFIG_KEYS_SET
+    assert "ttfs_genuine_blend_ce_alpha" in CONFIG_KEYS_SET
 
 
 # ── ConversionPolicy SSOT folding (the derivation writes the proven recipe) ─────

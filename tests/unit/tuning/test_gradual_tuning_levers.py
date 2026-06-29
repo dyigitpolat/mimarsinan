@@ -532,26 +532,6 @@ class TestRefindLrOnlyOnMiss:
 
 
 class TestAllLeversDefaultOff:
-    def test_new_flags_default_off(self):
-        from mimarsinan.config_schema.defaults import (
-            DEFAULT_DEPLOYMENT_PARAMETERS,
-            CONFIG_KEYS_SET,
-        )
-
-        assert DEFAULT_DEPLOYMENT_PARAMETERS["tuning_rollback_cumulative_bound"] == 0.05
-        assert DEFAULT_DEPLOYMENT_PARAMETERS["tuning_stabilization_bounded"] is False
-        assert DEFAULT_DEPLOYMENT_PARAMETERS["tuning_stabilization_ratio"] == 0.5
-        assert DEFAULT_DEPLOYMENT_PARAMETERS["tuning_tight_plateau"] is False
-        assert DEFAULT_DEPLOYMENT_PARAMETERS["tuning_recovery_check_divisor"] == 1
-        for k in (
-            "tuning_rollback_cumulative_bound",
-            "tuning_stabilization_bounded",
-            "tuning_stabilization_ratio",
-            "tuning_tight_plateau",
-            "tuning_recovery_check_divisor",
-        ):
-            assert k in CONFIG_KEYS_SET
-
     def test_decisions_and_stabilization_byte_identical_when_off(self, tmp_path, deterministic_rng):
         # Default config (none of the new flags set) → original per-cycle behavior.
         tuner = _make_cycle_tuner(tmp_path)

@@ -82,82 +82,6 @@ DEFAULT_DEPLOYMENT_PARAMETERS: Dict[str, object] = {
     "k_commit": 2.0,
     "paired_confirm_batches": 0,  # 0 → use eval_n_batches
     "global_budget": 0.0,
-    # Diagnostic (default off): after each commit, probe the value-domain
-    # rate-1.0 accuracy and report whether the gradual ramp's full-transform
-    # drop shrinks as the committed rate climbs (is the ramp converging the
-    # model toward 1.0-viability, or just inching the rate up?).
-    "tuning_full_transform_probe": False,
-    # Characterization pre-phase (spec §10 / V9, default off): before the rate
-    # search, sweep a coarse α grid to profile the axis — feed the slope-derived
-    # epsilon_hint to the scheduler (A3) and, if the drop is non-monotone (A1, e.g.
-    # a re-aligning quant grid), downgrade the search to dense_grid safe mode
-    # instead of trusting the global monotonicity assumption. Default off keeps the
-    # goldens bit-exact; enabling it changes the search trajectory (Tier-B).
-    "tuning_enable_characterization": False,
-    "tuning_characterization_grid": [0.0, 0.25, 0.5, 0.75, 1.0],
-    # Recovery-quality knobs (all default-off → byte-identical to current behavior):
-    # re-find the LR after a committed cycle MISSES the target (else the LR is
-    # cached at cycle 0 forever); the next cycle re-discovers a fresh LR.
-    "tuning_refind_lr_on_miss": False,
-    # Plateau LR reduction within a recovery: on a plateau, multiply the optimizer
-    # LR by ``_factor`` (up to ``_reductions`` times) and continue instead of
-    # breaking immediately — a coarse-to-fine recovery ladder.
-    "tuning_recovery_lr_plateau": False,
-    "tuning_recovery_lr_plateau_factor": 0.3,
-    "tuning_recovery_lr_plateau_reductions": 2,
-    # Non-stalling rollback ratchet: KEEP the per-step relative gate (so the ramp
-    # keeps climbing — each step may give back a little) but cap the CUMULATIVE
-    # drift below the best-committed high-water mark; the bound tightens as the
-    # best ratchets up (no accumulation, no stall). Only used when the flag is on.
-    "tuning_rollback_ratchet": False,
-    "tuning_rollback_cumulative_bound": 0.05,
-    # Bounded cosine-scheduled stabilization: instead of the open-ended patience/
-    # round-based pass, run a SINGLE hard-cutoff pass of ``ratio * gradual_steps``
-    # steps with a cosine-decay LR (chosen LR -> ~0 over exactly N steps).
-    "tuning_stabilization_bounded": False,
-    "tuning_stabilization_ratio": 0.5,
-    # Tighter plateau detection (validation is cheap): divide the recovery check
-    # interval by ``_divisor`` so the stale-streak patience trips after fewer steps.
-    "tuning_tight_plateau": False,
-    "tuning_recovery_check_divisor": 1,
-    # CERTIFIED non-destructive controller (R7d, default off => byte-identical):
-    # snapshot the model STATE at every commit whose gate metric STRICTLY beats the
-    # running best, and at the END of _finalize_run restore that best state iff the
-    # finalized gate metric is worse than it (by more than the rollback tolerance).
-    # The guard brackets the WHOLE ramp + after_run + stabilization, so a long ramp /
-    # the forced jump to rate 1.0 / a degrading stabilization pass can never ship a
-    # model worse than the best COMMITTED cycle. The gate metric is the paired
-    # correctness vector when tuning_use_paired_sensor is on (deployed-anchored where
-    # available), else validate_n_batches(eval_n_batches) — the same eval the per-cycle
-    # commit uses, so the snapshot and finalize metrics share one statistical basis.
-    "tuning_keepbest_certified": False,
-    # Anchor the adaptation RELAXATION target/floor on the REAL pipeline target
-    # (the upstream ANN metric carried by ``pipeline.get_target_metric()``, already
-    # passed to the tuner constructor as ``target_accuracy``) instead of the rate-0
-    # ``baseline_val``. On an ANN→LIF conversion that collapses at rate 0, the rate-0
-    # read is itself collapsed (~0.27 on the live ResNet-50 job); anchoring the target/
-    # original/floor on it (smooth_adaptation_run.py) lets the missed-target relaxation
-    # death-spiral down to ``baseline_val * (1 - tol)`` where it sticks, so the tuner
-    # stops aiming to recover toward the ANN. When ON and the real target is ABOVE the
-    # collapsed baseline, ``run()`` KEEPS the constructor's real-target anchor and caps
-    # the relaxation floor at ``max(baseline_floor, real_target * (1 - tol))`` — bounded
-    # below the real target, never down to the collapsed floor — so the model AIMS to
-    # recover toward the ANN. The per-cycle rollback gate stays baseline-anchored
-    # (acceptance_sensor.absolute_floor unchanged). Default off => byte-identical (the
-    # legacy baseline-anchored block at smooth_adaptation_run.py runs verbatim). Falls
-    # back to baseline anchoring when the real target is unavailable or <= baseline.
-    "tuning_target_floor_on_real_target": False,
-    # Recipe-driven STEP recovery (generic: routes tuning_recipe + warmup/cosine
-    # into the step recovery instead of the hardcoded Adam(wd=5e-5)/constant-LR path).
-    "tuning_recipe_recovery": False,
-    # Optimization-driver axis (E2 / Fix A): HOW the rate is driven 0->1, pipeline-
-    # wide and family-agnostic. "controller" = the full SmoothAdaptation machinery
-    # (adaptive rate scheduler + bisect / recover-to-target / rollback / stabilization
-    # / per-cycle LR-find), the robust default. "fast" = the schedule-not-search fixed
-    # ladder (one shared optimizer + spanning cosine, no per-cycle rollback/recovery).
-    # Default "controller" => byte-identical. None/unset also resolves to controller
-    # unless a legacy per-family fast switch (lif_blend_fast / ttfs_*_fast) is set.
-    "optimization_driver": None,
     # Per-layer-S temporal-allocation axis (EW1, RESERVED): each cascade depth /
     # latency group MAY get its own temporal resolution S_d instead of one global
     # simulation_steps. The Wizard DECLARES the intent here; the per-depth S map is
@@ -176,125 +100,10 @@ DEFAULT_DEPLOYMENT_PARAMETERS: Dict[str, object] = {
     # declared; otherwise a dict with optional {max_energy_proxy, max_latency_steps,
     # target}. Parsed + validated now; its derivation into a map is deferred (research).
     "s_allocation_budget": None,
-    # Genuine annealed TTFS-cascade ramp (opt-in): train through the genuine
-    # single-spike cascade for the whole ramp with the spike-surrogate sharpness
-    # annealed smooth->sharp. Must stay default-off until a full real-model run
-    # clears the accuracy-non-regression gate.
-    "ttfs_genuine_annealed_ramp": False,
-    "ttfs_ramp_alpha_min": 0.5,
-    "ttfs_ramp_alpha_max": 2.0,
-    # Scale-aware TTFS boundaries (opt-in): before ttfs_cycle fine-tuning, set each
-    # block's activation_scale to its Activation-Analysis theta_out and propagate
-    # input_activation_scale = upstream theta_out (the LIF scale-aware analog).
-    "ttfs_scale_aware_boundaries": False,
-    # Synchronized TTFS QAT opt-in: synchronized class forward already represents
-    # the deployed analytical staircase, so this enables production QAT/fast-ladder
-    # training through that deployed forward without enabling cascaded segment-spike
-    # genuine ramps. Default off => historical synchronized proxy/controller path.
-    "ttfs_sync_genuine_qat": False,
-    # Teacher->genuine blend ramp + per-neuron DFQ distribution matching (opt-in,
-    # experimental): ramp the output from (1-r)*teacher + r*genuine cascade while
-    # DFQ-correcting each perceptron's bias to match the ANN activation distribution.
-    "ttfs_genuine_blend_ramp": False,
-    "ttfs_distmatch_bias_iters": 15,
-    "ttfs_distmatch_bias_eta": 0.7,
-    "ttfs_distmatch_quantile": 0.99,
     # Weight of the extra CE on the PURE genuine logits in the blend-ramp loss
     # (the validated prototype value that pulls the rate-1 endpoint up). Canonical
     # source for the constant; the tuner reads this key once.
     "ttfs_genuine_blend_ce_alpha": 0.3,
-    # Offload-boundary straight-through estimator (opt-in, cascaded only): flow the
-    # genuine cascade backward through the round-based re-encode at offload/host-
-    # ComputeOp segment boundaries (a soft spike-time STE) so EVERY segment trains
-    # on the deployed dynamics, not only the last. Forward stays bit-exact.
-    "ttfs_boundary_surrogate": False,
-    "ttfs_boundary_surrogate_temp": 1.0,
-    # Per-cascade-depth gain correction (opt-in, cascaded only): invert the deployed
-    # ramp decode's depth-dependent attenuation (the death cascade) with a per-layer
-    # activation_scale trim theta_d *= gamma^d, gamma = 1 - sqrt(S)/(S+1). A pure
-    # calibration change (decode untouched -> NF<->SCM parity holds); recovers most of
-    # the cold conversion gap and gives the genuine fine-tune a healthy (alive) init.
-    "ttfs_gain_correction": False,
-    "ttfs_gain_correction_rule": "relative",
-    "ttfs_gain_correction_c": 1.9,
-    # Rate-gated gain correction (opt-in): instead of applying the gain trim once
-    # (cold, where a downstream fine-tune absorbs it at the readout), ramp it as a
-    # parameter transformation gated by the SAME rate as the KD blend — theta_d ->
-    # base * g_d**rate as rate 0->1 — so the model co-adapts to the calibration and
-    # the spiking dynamics together (the gradual non-destructive transformation).
-    "ttfs_gain_correction_ramp": False,
-    # Per-channel TRAINABLE theta co-training (opt-in, cascaded only): promote each
-    # non-encoding perceptron's activation_scale to a per-output-channel requires_grad
-    # Parameter so the deployed-cascade fine-tune co-optimises the firing-gain (theta,
-    # the death-cascade's root cause) WITH the weights. The near-lossless cascaded
-    # recipe's key lever (docs/research_artifacts_for_cascaded_ttfs_tuning/51_*). Unlike
-    # the per-DEPTH fixed-geometric gain correction, theta is learned per-neuron; the
-    # two are mutually exclusive (gain ramp wins). Encoding/entry theta stays fixed.
-    "ttfs_theta_cotrain": False,
-    # Staircase-backward STE (opt-in, cascaded only): train the genuine cascade with a
-    # straight-through estimator -- forward = genuine fire-once cascade (exact deploy),
-    # backward = ttfs_ste_mix * clean complete-sum staircase gradient + (1-mix) * genuine
-    # surrogate. Fixes the deep high-S surrogate-gradient plateau -> near-lossless cascaded
-    # TTFS in <2 min (docs/.../52_lossless_fast_program.md). mix=0.5 is the robust default
-    # across depth (pure staircase scrambles the basin; pure genuine stays on the plateau).
-    "ttfs_staircase_ste": False,
-    "ttfs_ste_mix": 0.5,
-    # Fast clean STE training (opt-in, requires ttfs_staircase_ste): route the STE
-    # through a dedicated fixed-step loop (the proven toy recipe) instead of the
-    # rate-search controller, which caps the STE at ~0.83 on MNIST (wrong driver: one
-    # high LR-find LR, no split-LR, no progressive depth). The loop trains
-    # ttfs_ste_steps steps with a split-LR optimizer (weights @ ttfs_ste_w_lr,
-    # per-channel theta @ ttfs_ste_theta_lr when ttfs_theta_cotrain is on), a cosine
-    # LR, and progressive shallow->deep weight unfreeze starting at ttfs_ste_init_frac
-    # of the depth. Forward stays the genuine cascade (deploy-exact).
-    "ttfs_staircase_ste_fast": False,
-    "ttfs_ste_steps": 1000,
-    "ttfs_ste_w_lr": 2e-3,
-    "ttfs_ste_theta_lr": 5e-2,
-    "ttfs_ste_init_frac": 1.0 / 3.0,
-    # Fast fixed-increment genuine-blend ramp (opt-in, requires ttfs_genuine_blend_ramp):
-    # runs through the orchestrator with a fixed_ladder RateScheduler policy
-    # (schedule-not-search) instead of greedy/bisect — one shared optimizer + spanning
-    # warmup/cosine LR over the whole ladder, no per-cycle rollback/recovery/LR-find/
-    # stabilization (~30-60s). Inherits the DecisionTrace + finalize observability.
-    "ttfs_genuine_blend_fast": False,
-    "ttfs_blend_fast_steps_per_rate": 120,
-    "ttfs_blend_fast_rates": [0.5, 0.75, 0.9, 0.97, 1.0],
-    # Fast PROXY ramp (opt-in, cascaded, NOT a genuine ramp): the value-domain
-    # blend ramp via the fixed_ladder policy + a post-finalize bounded stabilization
-    # on the genuine cascade (closes the proxy↔genuine cliff) — the LIF pattern for
-    # the better-accuracy TTFS path, made fast.
-    "ttfs_blend_fast": False,
-    "ttfs_blend_fast_stabilize_steps": 0,
-    "ttfs_blend_fast_lr_eta_min": 0.1,
-    # Two-stage revive->refine (requires ttfs_blend_fast): the proxy ramp revives the
-    # cascade, then the post-finalize stabilize refines the DEPLOYED cascade with the
-    # STE loss (staircase-backward hedge, ttfs_ste_mix) instead of plain KD. Direct STE
-    # on the dead cold cascade is chance; the proxy revival makes the STE a refinement
-    # lever on an alive cascade (docs/.../PHASE_C_stefast_findings.md).
-    "ttfs_blend_fast_ste_refine": False,
-    # Fast fixed-ladder LIF ramp (opt-in): the LIF value-domain blend ramp through
-    # the orchestrator's fixed_ladder policy (one shared optimizer + spanning cosine,
-    # KD recovery, no controller) — the FAST analog of the slow LIF controller ramp.
-    "lif_blend_fast": False,
-    "lif_blend_fast_steps_per_rate": 120,
-    "lif_blend_fast_rates": [0.25, 0.5, 0.75, 1.0],
-    "lif_blend_fast_lr_eta_min": 0.1,
-    "lif_blend_fast_stabilize_steps": 0,
-    # Shared fast-ladder BN policy: keep model trainable but force BatchNorm layers
-    # to eval during fast QAT steps. Default off preserves historical fast behavior.
-    "fast_ladder_freeze_bn": False,
-    # DFQ per-neuron bias correction on the deployed LIF cascade (opt-in): match
-    # each perceptron's deployed channel-mean to the teacher ANN's by nudging
-    # layer.bias, shrinking the systematic ANN->SNN first-moment conversion gap.
-    "lif_distmatch": False,
-    "lif_distmatch_bias_iters": 10,
-    "lif_distmatch_bias_eta": 0.5,
-    "lif_distmatch_cal_batches": 8,
-    # Per-channel trainable firing-gain theta (opt-in): rebind each non-encoding
-    # perceptron's activation_scale to a per-output-channel param the blend ramp
-    # co-trains with the weights, the LIF analogue of ttfs_theta_cotrain.
-    "lif_theta_cotrain": False,
     "model_config_mode": "user",
     "hw_config_mode": "fixed",
     "spiking_mode": "lif",
@@ -392,68 +201,10 @@ CONFIG_KEYS_SET: Set[str] = {
     "k_commit",
     "paired_confirm_batches",
     "global_budget",
-    "tuning_full_transform_probe",
-    "tuning_enable_characterization",
-    "tuning_characterization_grid",
-    "tuning_refind_lr_on_miss",
-    "tuning_recovery_lr_plateau",
-    "tuning_recovery_lr_plateau_factor",
-    "tuning_recovery_lr_plateau_reductions",
-    "tuning_rollback_ratchet",
-    "tuning_rollback_cumulative_bound",
-    "tuning_stabilization_bounded",
-    "tuning_stabilization_ratio",
-    "tuning_tight_plateau",
-    "tuning_recovery_check_divisor",
-    "tuning_keepbest_certified",
-    "tuning_target_floor_on_real_target",
-    "tuning_recipe_recovery",
-    "optimization_driver",
     "s_allocation",
     "s_allocation_explicit",
     "s_allocation_budget",
-    "ttfs_genuine_annealed_ramp",
-    "ttfs_ramp_alpha_min",
-    "ttfs_ramp_alpha_max",
-    "ttfs_scale_aware_boundaries",
-    "ttfs_sync_genuine_qat",
-    "ttfs_genuine_blend_ramp",
-    "ttfs_distmatch_bias_iters",
-    "ttfs_distmatch_bias_eta",
-    "ttfs_distmatch_quantile",
     "ttfs_genuine_blend_ce_alpha",
-    "ttfs_boundary_surrogate",
-    "ttfs_boundary_surrogate_temp",
-    "ttfs_gain_correction",
-    "ttfs_gain_correction_rule",
-    "ttfs_gain_correction_c",
-    "ttfs_gain_correction_ramp",
-    "ttfs_theta_cotrain",
-    "ttfs_staircase_ste",
-    "ttfs_ste_mix",
-    "ttfs_staircase_ste_fast",
-    "ttfs_ste_steps",
-    "ttfs_ste_w_lr",
-    "ttfs_ste_theta_lr",
-    "ttfs_ste_init_frac",
-    "ttfs_genuine_blend_fast",
-    "ttfs_blend_fast_steps_per_rate",
-    "ttfs_blend_fast_rates",
-    "ttfs_blend_fast",
-    "ttfs_blend_fast_stabilize_steps",
-    "ttfs_blend_fast_lr_eta_min",
-    "ttfs_blend_fast_ste_refine",
-    "lif_blend_fast",
-    "lif_blend_fast_steps_per_rate",
-    "lif_blend_fast_rates",
-    "lif_blend_fast_lr_eta_min",
-    "lif_blend_fast_stabilize_steps",
-    "fast_ladder_freeze_bn",
-    "lif_distmatch",
-    "lif_distmatch_bias_iters",
-    "lif_distmatch_bias_eta",
-    "lif_distmatch_cal_batches",
-    "lif_theta_cotrain",
     "finetune_epochs",
     "finetune_lr",
     "batch_size",

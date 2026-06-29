@@ -196,8 +196,8 @@ class TestExposureTaxonomy:
         assert {
             "kd_ce_alpha",
             "kd_temperature",
-            "ttfs_genuine_blend_ramp",
-            "optimization_driver",
+            "activation_scale_quantile",
+            "ttfs_genuine_blend_ce_alpha",
         } <= keys_with_exposure("system")
 
     def test_weight_quantization_is_user_exposed_but_derived_provenance(self):

@@ -229,15 +229,6 @@ class TestRecipeRecoveryFlagOff:
             sched_p.step()
         assert lrs_r == pytest.approx(lrs_p)
 
-    def test_flag_default_false_in_defaults(self):
-        from mimarsinan.config_schema.defaults import (
-            DEFAULT_DEPLOYMENT_PARAMETERS,
-            CONFIG_KEYS_SET,
-        )
-
-        assert DEFAULT_DEPLOYMENT_PARAMETERS["tuning_recipe_recovery"] is False
-        assert "tuning_recipe_recovery" in CONFIG_KEYS_SET
-
     def test_trainer_defaults_flag_off(self):
         """A trainer built without the kwarg keeps recovery on the legacy path."""
         trainer = _make_trainer(_adamw_recipe())

@@ -86,9 +86,7 @@
     "encoding_layer_placement": "subsume",
     "cycle_accurate_lif_forward": true,
     "activation_quantization": false,
-    "weight_quantization": true,
-    "lif_blend_fast": true,
-    "lif_blend_fast_stabilize_steps": 1200
+    "weight_quantization": true
   },
   "target_metric_override": null,
   "start_step": null,

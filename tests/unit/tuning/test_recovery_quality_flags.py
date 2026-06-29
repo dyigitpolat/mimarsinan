@@ -360,12 +360,6 @@ class TestRollbackRatchet:
 
 class TestAllFlagsDefaultOff:
     def test_flags_default_off_unchanged_decisions(self, tmp_path, deterministic_rng):
-        from mimarsinan.config_schema.defaults import DEFAULT_DEPLOYMENT_PARAMETERS
-
-        assert DEFAULT_DEPLOYMENT_PARAMETERS["tuning_refind_lr_on_miss"] is False
-        assert DEFAULT_DEPLOYMENT_PARAMETERS["tuning_recovery_lr_plateau"] is False
-        assert DEFAULT_DEPLOYMENT_PARAMETERS["tuning_rollback_ratchet"] is False
-
         # Default config (none of the flags set) → original behavior.
         # Baseline 0.80 (floor 0.76) keeps the cumulative-drift floor out of the way.
         tuner = _make_cycle_tuner(tmp_path)
