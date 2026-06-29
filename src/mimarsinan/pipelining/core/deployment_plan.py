@@ -257,6 +257,17 @@ class DeploymentPlan:
         return policy_for_spiking_mode(self.spiking_mode, self.ttfs_cycle_schedule)
 
     @property
+    def conversion_recipe(self):
+        """The ConversionPolicy SSOT recipe for this plan's resolved deployment mode.
+
+        The deterministic ``(spiking_mode, schedule) → ConversionRecipe`` table:
+        the fast-ladder driver, the per-mode knob set, the capability-derived
+        sim-enable set, and the special-case marker for the divergent rows."""
+        from mimarsinan.tuning.orchestration.conversion_policy import ConversionPolicy
+
+        return ConversionPolicy.derive(self.spiking_mode, self.ttfs_cycle_schedule)
+
+    @property
     def is_fast_driver(self) -> bool:
         """Whether the resolved optimization-driver axis is the fast ladder (E2)."""
         return self.optimization_driver == OPTIMIZATION_DRIVER_FAST

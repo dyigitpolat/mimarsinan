@@ -153,3 +153,81 @@ def test_ttfs_genuine_blend_ramp_keys_in_config_keys_set():
         "ttfs_genuine_blend_ce_alpha",
     ):
         assert key in CONFIG_KEYS_SET
+
+
+# ── ConversionPolicy SSOT folding (the derivation writes the proven recipe) ─────
+
+
+def test_lif_folds_the_proven_recipe_and_enables_loihi():
+    # A config carrying only the hypervolume coordinate (mode + precision) gets the
+    # full proven LIF recipe folded in by the policy SSOT.
+    dp = {"spiking_mode": "lif", "weight_quantization": True}
+    derive_deployment_parameters(dp)
+    assert dp["optimization_driver"] == "fast"
+    assert dp["lif_blend_fast"] is True
+    assert dp["fast_ladder_freeze_bn"] is True
+    assert dp["kd_ce_alpha"] == 0.5
+    assert dp["kd_temperature"] == 4.0
+    assert dp["enable_loihi_simulation"] is True
+    assert dp["enable_sanafe_simulation"] is True
+    assert dp["enable_nevresim_simulation"] is True
+
+
+def test_ttfs_folds_fast_driver_no_knobs_loihi_off():
+    dp = {"spiking_mode": "ttfs", "weight_quantization": True}
+    derive_deployment_parameters(dp)
+    assert dp["optimization_driver"] == "fast"
+    assert dp["enable_loihi_simulation"] is False  # loihi caps are LIF-only
+    assert "lif_blend_fast" not in dp  # the analytical reference carries no knobs
+
+
+def test_ttfs_quantized_folds_full_quantile_decode():
+    dp = {"spiking_mode": "ttfs_quantized", "weight_quantization": True}
+    derive_deployment_parameters(dp)
+    assert dp["activation_scale_quantile"] == 1.0
+    assert dp["manager_rate_fast_rates"] == [0.25, 0.5, 0.75, 1.0]
+    assert dp["manager_rate_fast_steps_per_rate"] == 120
+    assert dp["enable_loihi_simulation"] is False
+
+
+def test_cascaded_folds_genuine_blend_fast():
+    dp = {"spiking_mode": "ttfs_cycle_based", "weight_quantization": True,
+          "ttfs_cycle_schedule": "cascaded"}
+    derive_deployment_parameters(dp)
+    assert dp["optimization_driver"] == "fast"
+    assert dp["ttfs_genuine_blend_ramp"] is True
+    assert dp["ttfs_genuine_blend_fast"] is True
+    assert dp["ttfs_blend_fast_stabilize_steps"] == 300
+    assert dp["tuning_full_transform_probe"] is True
+    assert dp["enable_loihi_simulation"] is False
+
+
+def test_synchronized_folds_genuine_qat_and_disables_nevresim():
+    dp = {"spiking_mode": "ttfs_cycle_based", "weight_quantization": True,
+          "ttfs_cycle_schedule": "synchronized"}
+    derive_deployment_parameters(dp)
+    assert dp["ttfs_sync_genuine_qat"] is True
+    assert dp["fast_ladder_freeze_bn"] is True
+    assert dp["ttfs_blend_fast_stabilize_steps"] == 300
+    assert dp["enable_nevresim_simulation"] is False  # no sync-window backend
+    assert dp["enable_loihi_simulation"] is False
+
+
+def test_sim_enables_are_capability_authoritative():
+    # loihi + a non-LIF mode RAISES at assembly, so the policy MUST override an
+    # explicit enable rather than ship an infeasible config.
+    dp = {"spiking_mode": "ttfs", "weight_quantization": True,
+          "enable_loihi_simulation": True}
+    derive_deployment_parameters(dp)
+    assert dp["enable_loihi_simulation"] is False
+
+
+def test_vanilla_float_still_gets_driver_and_sim_enables():
+    # The mode-level recipe (driver + capability sim-enables) applies even for the
+    # float regime; only the quant flags are forced off by the vanilla branch.
+    dp = {"spiking_mode": "lif", "weight_quantization": False}
+    derive_deployment_parameters(dp)
+    assert dp["pipeline_mode"] == "vanilla"
+    assert dp["activation_quantization"] is False
+    assert dp["optimization_driver"] == "fast"
+    assert dp["enable_loihi_simulation"] is True

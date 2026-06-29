@@ -1,4 +1,12 @@
-"""E4 keystone — the characterization-and-policy layer (propose → confirm → escalate).
+"""The ConversionPolicy SSOT — derive the proven recipe for a deployment mode.
+
+:meth:`ConversionPolicy.derive` is the enacted source of truth: a deterministic
+``(spiking_mode, schedule) → ConversionRecipe`` table collapsing the fix-wave
+proven-best recipes (driver + knob set + capability-derived sim-enable set + a
+special-case marker for the divergences). It is what
+:func:`config_schema.deployment_derivation.derive_deployment_parameters` folds into
+every config. The propose → confirm → escalate scaffolding below is the inert
+predecessor (default-off, never enacted); it is retained only until Stage 2 strips it.
 
 The thin layer the contract/plan consults to pick a conversion recipe SAFELY, so a
 mode-tuned recipe is never shipped as a silent default on a model where the mode
@@ -43,6 +51,58 @@ _CASCADED_TRAIN_S_HINT = 16
 _CASCADED_DEPLOY_S_HINT = 32
 _CASCADED_STE_MIX = 0.5
 
+# ── the ConversionPolicy SSOT table (the collapsed fix-wave proven recipes) ───
+# Each deployment mode derives ONE proven recipe via ``ConversionPolicy.derive``:
+# the fast-ladder driver, the per-mode knob set (now internal constants, NOT user
+# config keys), the capability-derived sim-enable set, and a special-case marker +
+# rationale for the rows that DIVERGE from the generic flow (kept studyable). The
+# four marked rows below are exactly those documented divergences.
+_LIF_RECIPE_KNOBS = {
+    "lif_blend_fast": True,
+    "lif_blend_fast_stabilize_steps": 600,
+    "cycle_accurate_lif_forward": True,
+    "fast_ladder_freeze_bn": True,
+    "kd_ce_alpha": 0.5,
+    "kd_temperature": 4.0,
+}
+_TTFS_QUANTIZED_RECIPE_KNOBS = {
+    "activation_scale_quantile": 1.0,
+    "manager_rate_fast_rates": [0.25, 0.5, 0.75, 1.0],
+    "manager_rate_fast_steps_per_rate": 120,
+}
+_CASCADED_RECIPE_KNOBS = {
+    "ttfs_genuine_blend_ramp": True,
+    "ttfs_genuine_blend_fast": True,
+    "ttfs_blend_fast_stabilize_steps": 300,
+    "tuning_full_transform_probe": True,
+}
+_SYNCHRONIZED_RECIPE_KNOBS = {
+    "ttfs_blend_fast": True,
+    "ttfs_blend_fast_stabilize_steps": 300,
+    "ttfs_sync_genuine_qat": True,
+    "fast_ladder_freeze_bn": True,
+    "kd_ce_alpha": 0.5,
+    "kd_temperature": 4.0,
+}
+
+_LIF_RATIONALE = (
+    "BN-freeze makes the QAT train-forward bit-exact to the deployed eval-forward; "
+    "the faithful LIF levers cap ~0.95-0.96 (mnist_mixer_fix_wave / per_channel_theta)."
+)
+_TTFS_QUANTIZED_RATIONALE = (
+    "Full-quantile (q=1.0) per-perceptron decode helps the quantized timing path; it "
+    "is harmful for LIF, whose decode scale is per-channel (per_channel_theta)."
+)
+_CASCADED_RATIONALE = (
+    "The controller collapses on the deep genuine cascade (rate stalls then drops to "
+    "chance); the fast blend ladder is the ec=0 survivor (0.9396 @ parity 0.9961) "
+    "(per_channel_theta_deployment_fidelity)."
+)
+_SYNCHRONIZED_RATIONALE = (
+    "Fidelity comes from genuine QAT, NOT from relaxing the parity gate; ~0.96 at 3x "
+    "latency. nevresim has no synchronized-window backend (mnist_mixer_fix_wave)."
+)
+
 __all__ = [
     "OPTIMIZATION_DRIVER_CONTROLLER",
     "OPTIMIZATION_DRIVER_FAST",
@@ -83,6 +143,10 @@ class ConversionRecipe:
     ste_mix: Optional[float] = None
     assumptions: tuple[str, ...] = ()
     escalated: bool = False
+    knobs: Mapping[str, Any] = field(default_factory=dict)
+    sim_enables: Mapping[str, bool] = field(default_factory=dict)
+    special_case: Optional[str] = None
+    rationale: str = ""
 
 
 @dataclass(frozen=True)
@@ -257,6 +321,68 @@ class ConversionPolicy:
     """
 
     CONFIG_KEY = "conversion_policy"
+
+    @classmethod
+    def derive(cls, spiking_mode: str, schedule: Any = None) -> ConversionRecipe:
+        """Derive the proven recipe for a deployment mode — the SSOT mode→recipe table.
+
+        Maps ``(spiking_mode, schedule)`` to its empirically-proven recipe: the
+        fast-ladder ``driver`` (the controller path collapses on the deep cascade —
+        the SSOT never yields it), the per-mode ``knobs`` (now internal constants),
+        the capability-derived ``sim_enables`` (a backend is disabled ONLY where it
+        cannot run the mode), and the ``special_case`` marker + ``rationale`` for the
+        rows that diverge from the generic flow.
+        """
+        from mimarsinan.chip_simulation.spiking_mode_policy import (
+            policy_for_spiking_mode,
+        )
+        from mimarsinan.chip_simulation.spiking_semantics import (
+            is_synchronized_ttfs,
+            is_ttfs_cycle_based,
+        )
+
+        mode = str(spiking_mode or "lif")
+        policy = policy_for_spiking_mode(mode, schedule)
+        synchronized = is_synchronized_ttfs(mode, schedule)
+
+        if mode in ("lif", "rate"):
+            knobs, special_case, rationale, name = (
+                _LIF_RECIPE_KNOBS, "bn_freeze", _LIF_RATIONALE, mode,
+            )
+        elif mode == "ttfs_quantized":
+            knobs, special_case, rationale, name = (
+                _TTFS_QUANTIZED_RECIPE_KNOBS, "full_quantile_decode",
+                _TTFS_QUANTIZED_RATIONALE, mode,
+            )
+        elif is_ttfs_cycle_based(mode) and synchronized:
+            knobs, special_case, rationale, name = (
+                _SYNCHRONIZED_RECIPE_KNOBS, "genuine_qat_fidelity",
+                _SYNCHRONIZED_RATIONALE, f"{mode}/synchronized",
+            )
+        elif is_ttfs_cycle_based(mode):
+            knobs, special_case, rationale, name = (
+                _CASCADED_RECIPE_KNOBS, "fast_only_never_controller",
+                _CASCADED_RATIONALE, f"{mode}/cascaded",
+            )
+        else:  # analytical ``ttfs`` — the generic reference column (plain fast).
+            knobs, special_case, rationale, name = {}, None, "", mode
+
+        sim_enables = {
+            "enable_nevresim_simulation": (
+                policy.supports_backend("nevresim") and not synchronized
+            ),
+            "enable_sanafe_simulation": policy.supports_backend("sanafe"),
+            "enable_loihi_simulation": policy.supports_backend("loihi"),
+        }
+
+        return ConversionRecipe(
+            name=name,
+            driver=OPTIMIZATION_DRIVER_FAST,
+            knobs=dict(knobs),
+            sim_enables=sim_enables,
+            special_case=special_case,
+            rationale=rationale,
+        )
 
     @staticmethod
     def default_characterizer() -> Characterizer:

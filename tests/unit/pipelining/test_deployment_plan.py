@@ -428,6 +428,31 @@ class TestConversionPolicyAxis:
         assert decision.escalation_reason == "cliff"
 
 
+class TestConversionRecipe:
+    """The plan exposes the ConversionPolicy SSOT recipe for its resolved mode."""
+
+    def test_recipe_is_derived_for_the_plans_mode(self):
+        plan = _resolve(spiking_mode="lif")
+        recipe = plan.conversion_recipe
+        assert recipe.driver == "fast"
+        assert recipe.special_case == "bn_freeze"
+        assert recipe.knobs["lif_blend_fast"] is True
+        assert recipe.sim_enables["enable_loihi_simulation"] is True
+
+    def test_cascaded_recipe_is_fast_never_controller(self):
+        recipe = _resolve(
+            spiking_mode="ttfs_cycle_based", ttfs_cycle_schedule="cascaded"
+        ).conversion_recipe
+        assert recipe.driver == "fast"
+        assert recipe.special_case == "fast_only_never_controller"
+
+    def test_synchronized_recipe_disables_nevresim(self):
+        recipe = _resolve(
+            spiking_mode="ttfs_cycle_based", ttfs_cycle_schedule="synchronized"
+        ).conversion_recipe
+        assert recipe.sim_enables["enable_nevresim_simulation"] is False
+
+
 # ── V1 sole-reader guard (the deployment-decision flags) ───────────────────────
 
 # Deployment-decision flags owned by ``DeploymentPlan.resolve`` — NOT the broad
