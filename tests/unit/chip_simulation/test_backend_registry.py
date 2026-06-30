@@ -44,11 +44,10 @@ class TestBackendSupports:
         loihi = BACKEND_REGISTRY.get("loihi")
         sanafe = BACKEND_REGISTRY.get("sanafe")
         # nevresim/sanafe support every mode; loihi is LIF-only.
-        for mode in ("lif", "rate", "ttfs", "ttfs_quantized", "ttfs_cycle_based"):
+        for mode in ("lif", "ttfs", "ttfs_quantized", "ttfs_cycle_based"):
             assert nevresim.supports(_plan(spiking_mode=mode)), mode
             assert sanafe.supports(_plan(spiking_mode=mode)), mode
         assert loihi.supports(_plan(spiking_mode="lif"))
-        assert loihi.supports(_plan(spiking_mode="rate"))
         for mode in ("ttfs", "ttfs_quantized", "ttfs_cycle_based"):
             assert not loihi.supports(_plan(spiking_mode=mode)), mode
 
@@ -189,7 +188,6 @@ class TestByteIdentityVsLegacy:
 
     @pytest.mark.parametrize("spiking,schedule", [
         ("lif", None),
-        ("rate", None),
         ("ttfs", None),
         ("ttfs_quantized", None),
         ("ttfs_cycle_based", "cascaded"),

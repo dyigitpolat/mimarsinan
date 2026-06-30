@@ -50,7 +50,6 @@ class TestDefaults:
 class TestSpikingDerived:
     def test_requires_ttfs_firing(self):
         assert _resolve(spiking_mode="lif").requires_ttfs_firing is False
-        assert _resolve(spiking_mode="rate").requires_ttfs_firing is False
         for m in ("ttfs", "ttfs_quantized", "ttfs_cycle_based"):
             assert _resolve(spiking_mode=m).requires_ttfs_firing is True
 

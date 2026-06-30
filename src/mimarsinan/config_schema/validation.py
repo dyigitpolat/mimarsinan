@@ -14,7 +14,10 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Mapping
 
-from mimarsinan.chip_simulation.spiking_semantics import requires_ttfs_firing
+from mimarsinan.chip_simulation.spiking_semantics import (
+    require_known_spiking_mode,
+    requires_ttfs_firing,
+)
 from mimarsinan.mapping.platform.coalescing import coalescing_config_errors
 from mimarsinan.tuning.orchestration.temporal_allocation import (
     S_ALLOCATION_MODES,
@@ -111,8 +114,13 @@ def validate_deployment_config(config: Dict[str, Any]) -> List[str]:
             if "arch_search" not in dp or not isinstance(dp.get("arch_search"), dict):
                 errors.append("Search is active but arch_search is missing or not a dict")
 
-        # TTFS consistency
+        # spiking_mode membership (rejects removed/unknown modes, e.g. 'rate')
         spiking = dp.get("spiking_mode", "lif")
+        try:
+            require_known_spiking_mode(spiking)
+        except ValueError as exc:
+            errors.append(str(exc))
+        # TTFS consistency
         if requires_ttfs_firing(spiking):
             if "firing_mode" in dp and dp.get("firing_mode") != "TTFS":
                 errors.append(
@@ -139,6 +147,10 @@ def validate_merged_config(flat: Dict[str, Any]) -> List[str]:
         return errors
 
     spiking = flat.get("spiking_mode", "lif")
+    try:
+        require_known_spiking_mode(spiking)
+    except ValueError as exc:
+        errors.append(str(exc))
     if requires_ttfs_firing(spiking):
         if flat.get("firing_mode") != "TTFS":
             errors.append(

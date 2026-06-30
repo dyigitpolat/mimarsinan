@@ -37,7 +37,6 @@ def _contract(mode, schedule="cascaded"):
 class TestSelection:
     CASES = [
         ("lif", None, LifModePolicy),
-        ("rate", None, LifModePolicy),
         ("ttfs", "cascaded", TtfsAnalyticalModePolicy),
         ("ttfs", "synchronized", TtfsAnalyticalModePolicy),
         ("ttfs_quantized", "cascaded", TtfsAnalyticalModePolicy),
@@ -51,8 +50,15 @@ class TestSelection:
     def test_policy_for_spiking_mode(self, mode, schedule, cls):
         assert isinstance(policy_for_spiking_mode(mode, schedule), cls)
 
-    def test_unknown_mode_falls_back_to_lif(self):
-        assert isinstance(policy_for_spiking_mode("frobnicate"), LifModePolicy)
+    def test_unknown_mode_is_rejected(self):
+        # The SSOT no longer silently falls back to LIF for an unknown mode — that
+        # was exactly how the removed 'rate' mis-deployed. It now fails loud.
+        with pytest.raises(ValueError, match="unknown spiking_mode"):
+            policy_for_spiking_mode("frobnicate")
+
+    def test_removed_rate_is_rejected_with_hint(self):
+        with pytest.raises(ValueError, match="rate.*removed.*use 'lif'"):
+            policy_for_spiking_mode("rate")
 
     def test_none_mode_is_lif(self):
         assert isinstance(policy_for_spiking_mode(None), LifModePolicy)
@@ -76,8 +82,6 @@ class TestTrainingForwardKind:
         ("ttfs_quantized", "synchronized", "analytical_staircase"),
         ("lif", "cascaded", "lif_cycle"),
         ("lif", "synchronized", "lif_cycle"),
-        ("rate", "cascaded", "rate"),
-        ("rate", "synchronized", "rate"),
     ]
 
     @pytest.mark.parametrize("mode,schedule,kind", CASES)
@@ -94,7 +98,6 @@ class TestTrainingForwardKind:
 class TestDecodeMode:
     CASES = [
         ("lif", None, "count"),
-        ("rate", None, "count"),
         ("ttfs", "cascaded", "timing"),
         ("ttfs_quantized", "cascaded", "timing"),
         ("ttfs_cycle_based", "synchronized", "timing"),
@@ -111,7 +114,6 @@ class TestDecodeMode:
 class TestSomaName:
     CASES = [
         ("lif", None, "lif"),
-        ("rate", None, "lif"),
         ("ttfs", "cascaded", "ttfs_continuous"),
         ("ttfs", "synchronized", "ttfs_continuous"),
         ("ttfs_quantized", "cascaded", "ttfs_quantized"),
@@ -135,7 +137,6 @@ class TestSomaName:
 class TestLogPotential:
     CASES = [
         ("lif", None, False),
-        ("rate", None, False),
         ("ttfs", "cascaded", True),
         ("ttfs_quantized", "synchronized", True),
         ("ttfs_cycle_based", "synchronized", True),
@@ -272,8 +273,8 @@ class TestCalibrationForward:
             calibration_forward_for_mode,
         )
 
-        with pytest.raises(NotImplementedError, match="rate"):
-            calibration_forward_for_mode("rate")
+        with pytest.raises(NotImplementedError, match="bogus"):
+            calibration_forward_for_mode("bogus")
 
 
 # ── valid_backends ───────────────────────────────────────────────────────────
@@ -308,7 +309,6 @@ class TestConversionHealthCalibration:
 
     CASES = [
         ("lif", None, False),
-        ("rate", None, False),
         ("ttfs", "cascaded", False),
         ("ttfs", "synchronized", False),
         ("ttfs_quantized", "cascaded", False),
@@ -350,7 +350,7 @@ class TestRequiresTtfsFiring:
 
 class TestBackendCapability:
     ALL = ("hcm", "nevresim", "unified", "hybrid", "sanafe", "lava", "loihi", "training")
-    MODES = ("lif", "rate", "ttfs", "ttfs_quantized", "ttfs_cycle_based")
+    MODES = ("lif", "ttfs", "ttfs_quantized", "ttfs_cycle_based")
 
     @pytest.mark.parametrize("mode", MODES)
     @pytest.mark.parametrize("backend", ALL)

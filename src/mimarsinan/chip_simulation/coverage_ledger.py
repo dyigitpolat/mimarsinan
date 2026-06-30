@@ -213,7 +213,7 @@ AXES: Tuple[HypervolumeAxis, ...] = (
     HypervolumeAxis(
         name="firing",
         kind=AxisKind.INTERACTING,
-        values=("lif", "rate", "ttfs", "ttfs_quantized", "ttfs_cycle_based"),
+        values=("lif", "ttfs", "ttfs_quantized", "ttfs_cycle_based"),
         screening_status=ScreeningStatus.ENUMERATED_INTERACTING,
         interacts_with=("sync", "quantization", "S"),
         justification=(

@@ -214,7 +214,7 @@ def default_config():
         "lr": 0.001,
         "weight_quantization": False,
         "activation_quantization": False,
-        "spiking_mode": "rate",
+        "spiking_mode": "lif",
         "firing_mode": "Default",
         "spike_generation_mode": "Deterministic",
         "thresholding_mode": "<",

@@ -277,7 +277,6 @@ class TestByteIdenticalOnResolvedConfigs:
         [
             ("lif", True, "phased"),
             ("lif", False, "vanilla"),
-            ("rate", True, "phased"),
             ("ttfs", True, "phased"),
             ("ttfs_quantized", True, "phased"),
             ("ttfs_cycle_based", True, "phased"),

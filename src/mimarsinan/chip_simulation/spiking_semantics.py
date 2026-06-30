@@ -24,16 +24,42 @@ TTFS_FAMILY_MODES: FrozenSet[str] = frozenset(
     {"ttfs", "ttfs_quantized", "ttfs_cycle_based"}
 )
 CYCLE_BASED_MODES: FrozenSet[str] = frozenset({"lif", "ttfs_cycle_based"})
-LIF_MODES: FrozenSet[str] = frozenset({"lif", "rate"})
+LIF_MODES: FrozenSet[str] = frozenset({"lif"})
 ALL_SPIKING_MODES: FrozenSet[str] = frozenset(
-    {"lif", "rate", "ttfs", "ttfs_quantized", "ttfs_cycle_based"}
+    {"lif", "ttfs", "ttfs_quantized", "ttfs_cycle_based"}
 )
+
+# Modes removed from the deploy taxonomy, mapped to their replacement so a stale
+# config gets an actionable migration error instead of silent mis-behavior.
+# ``rate`` was the naive analytical rate-coding LIF path (no activation
+# quantization, no cycle-accurate reconciliation) — measured to collapse at Soft
+# Core Mapping; it is subsumed by ``lif`` (see mmixcore_verify_24cell finding).
+_REMOVED_SPIKING_MODES: dict = {"rate": "lif"}
 
 _ACT_QUANT_MODES: FrozenSet[str] = frozenset({"ttfs_quantized", "ttfs_cycle_based"})
 
 
 def _norm(spiking_mode: str) -> str:
     return str(spiking_mode or "lif")
+
+
+def require_known_spiking_mode(spiking_mode: str) -> str:
+    """Return the normalized mode, or raise ``ValueError`` if it is not deployable.
+
+    The SSOT membership gate: a ``spiking_mode`` outside ``ALL_SPIKING_MODES`` fails
+    loud, with a migration hint when it names a removed mode (e.g. ``rate`` → ``lif``).
+    """
+    mode = _norm(spiking_mode)
+    if mode in ALL_SPIKING_MODES:
+        return mode
+    if mode in _REMOVED_SPIKING_MODES:
+        raise ValueError(
+            f"spiking_mode {mode!r} was removed from the deploy taxonomy; "
+            f"use {_REMOVED_SPIKING_MODES[mode]!r} instead."
+        )
+    raise ValueError(
+        f"unknown spiking_mode {mode!r}; valid modes: {sorted(ALL_SPIKING_MODES)}."
+    )
 
 
 def requires_ttfs_firing(spiking_mode: str) -> bool:

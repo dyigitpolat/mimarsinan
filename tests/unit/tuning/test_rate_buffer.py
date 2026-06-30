@@ -161,9 +161,22 @@ class TestRateAdjustedDecoratorBuffer:
 # Axis conformance: buffer-path vs rebuild-path (the critical contract)
 # ---------------------------------------------------------------------------
 
+def _explicit_decode_config():
+    # These tests exercise the explicit clamp/quant/shift decorator stack driven by the
+    # manager-rate buffers. The LIF default SUBSUMES that stack
+    # (adaptation_manager.subsumes_decorators), so use ttfs_quantized — the deployable
+    # mode that keeps the explicit activation-quantization decorators installed.
+    cfg = default_config()
+    cfg["spiking_mode"] = "ttfs_quantized"
+    cfg["firing_mode"] = "TTFS"
+    cfg["spike_generation_mode"] = "TTFS"
+    cfg["thresholding_mode"] = "<="
+    return cfg
+
+
 def _buffer_config():
     # The in-place buffer is the baked default for eligible rates.
-    return default_config()
+    return _explicit_decode_config()
 
 
 def _make_axis(axis_cls, cfg, model, manager):
@@ -183,7 +196,7 @@ class TestAxisConformance:
         axis_buf = _make_axis(axis_cls, cfg_buf, model_buf, mgr_buf)
 
         # Rebuild path (flag off — legacy).
-        cfg_reb = default_config()
+        cfg_reb = _explicit_decode_config()
         model_reb = make_tiny_supermodel()
         mgr_reb = create_adaptation_manager_for_model(cfg_reb, model_reb)
         axis_reb = _make_axis(axis_cls, cfg_reb, model_reb, mgr_reb)
@@ -225,7 +238,7 @@ class TestAxisConformance:
         # drop to 0.0; the forward must still skip the RandomMask draw.
         axis_buf.set_rate(0.5)
 
-        cfg_reb = default_config()
+        cfg_reb = _explicit_decode_config()
         model_reb = make_tiny_supermodel()
         mgr_reb = create_adaptation_manager_for_model(cfg_reb, model_reb)
         axis_reb = _make_axis(ActQuantAxis, cfg_reb, model_reb, mgr_reb)

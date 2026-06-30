@@ -177,7 +177,6 @@ class TestForModeKeyedByContract:
 
     OFF_CELLS = [
         ("lif", None),
-        ("rate", None),
         ("ttfs", "cascaded"),
         ("ttfs", "synchronized"),
         ("ttfs_quantized", "cascaded"),

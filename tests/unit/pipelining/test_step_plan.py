@@ -133,7 +133,6 @@ class TestActivationFamilyDispatch:
     @pytest.mark.parametrize("mode,lif_style", [
         ("lif", True),
         ("ttfs_cycle_based", True),
-        ("rate", False),
         ("ttfs", False),
         ("ttfs_quantized", False),
     ])
@@ -177,10 +176,8 @@ class TestActivationFamilyDispatch:
         assert ClampAdaptationStep.applies_to(_plan(spiking_mode="ttfs_cycle_based", activation_quantization=False))
         # TTFS firing forces clamp even without act_q.
         assert ClampAdaptationStep.applies_to(_plan(spiking_mode="ttfs", activation_quantization=False))
-        # act_q forces clamp.
-        assert ClampAdaptationStep.applies_to(_plan(spiking_mode="rate", activation_quantization=True))
-        # rate + no act_q → no clamp.
-        assert not ClampAdaptationStep.applies_to(_plan(spiking_mode="rate", activation_quantization=False))
+        # act_q forces clamp (analytical ttfs without ttfs-firing path covered via act_q).
+        assert ClampAdaptationStep.applies_to(_plan(spiking_mode="ttfs_quantized", activation_quantization=True))
 
     def test_activation_quant_chain_for_cycle_based_or_act_q(self):
         lif_default = _plan(spiking_mode="lif", activation_quantization=False)
@@ -198,10 +195,6 @@ class TestActivationFamilyDispatch:
         off = _plan(spiking_mode="ttfs", activation_quantization=False)
         assert not ActivationShiftStep.applies_to(off)
         assert not ActivationQuantizationStep.applies_to(off)
-
-        rate_default = _plan(spiking_mode="rate", activation_quantization=False)
-        assert not ActivationShiftStep.applies_to(rate_default)
-        assert not ActivationQuantizationStep.applies_to(rate_default)
 
 
 class TestWeightQuantizationDispatch:

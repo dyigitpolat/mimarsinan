@@ -68,15 +68,15 @@ class TestCertificationCell:
     def test_variant_disambiguates_same_recipe_cell(self):
         # Two deployment configs that share a (firing × sync) recipe cell but have
         # distinct floors (e.g. plain vs pruned LIF) get distinct keys.
-        plain = CertificationCell("lif", None, "nevresim", variant="rate")
+        plain = CertificationCell("lif", None, "nevresim", variant="plain")
         pruned = CertificationCell("lif", None, "nevresim", variant="pruned_scheduled")
-        assert plain.cell_key == "lif@nevresim#rate"
+        assert plain.cell_key == "lif@nevresim#plain"
         assert pruned.cell_key == "lif@nevresim#pruned_scheduled"
         assert plain.cell_key != pruned.cell_key
 
     def test_variant_key_round_trips(self):
         for cell in (
-            CertificationCell("lif", None, "nevresim", variant="rate"),
+            CertificationCell("lif", None, "nevresim", variant="plain"),
             CertificationCell("ttfs_cycle_based", "cascaded", "sanafe", variant="nobias"),
         ):
             assert CertificationCell.from_key(cell.cell_key) == cell
@@ -583,7 +583,7 @@ class TestShippedFloorBookLoads:
         data = {
             "format_version": FLOOR_BOOK_FORMAT_VERSION,
             "floors": {
-                "lif@nevresim#rate": {
+                "lif@nevresim#plain": {
                     "deployed_accuracy": 0.972, "wall_clock_s": 1703.19,
                     "eps": 0.005, "wall_clock_slack": 0.25,
                     "wall_clock_budget_s": None, "provenance": {},
@@ -593,7 +593,7 @@ class TestShippedFloorBookLoads:
         path = tmp_path / "pre_overlay_floor.json"
         path.write_text(json.dumps(data))
         book = load_floor_book(str(path))
-        cell = CertificationCell("lif", None, "nevresim", variant="rate")
+        cell = CertificationCell("lif", None, "nevresim", variant="plain")
         floor = book.floor_for(cell)
         assert floor is not None
         assert floor.ac1_target is None

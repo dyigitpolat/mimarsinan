@@ -42,7 +42,7 @@ class TestActivationAdaptationAlwaysPresent:
 
     def test_activation_adaptation_follows_activation_analysis(self):
         """Activation Adaptation immediately follows Activation Analysis in all configs."""
-        for spiking in ("rate", "ttfs"):
+        for spiking in ("lif", "ttfs"):
             for act_q in (True, False):
                 config = {
                     "configuration_mode": "user",
@@ -88,19 +88,6 @@ class TestActivationAdaptationAlwaysPresent:
         assert "Activation Adaptation" in names
         assert "Clamp Adaptation" in names
         assert names.index("Activation Adaptation") < names.index("Clamp Adaptation")
-
-    def test_activation_adaptation_for_rate_when_act_q_false(self):
-        """Rate mode + act_q=False → Activation Adaptation only (no Clamp)."""
-        config = {
-            "configuration_mode": "user",
-            "spiking_mode": "rate",
-            "activation_quantization": False,
-            "weight_quantization": False,
-            "model_type": "mlp_mixer",
-        }
-        names = _step_names(config)
-        assert "Activation Adaptation" in names
-        assert "Clamp Adaptation" not in names
 
     def test_lif_preconditioning_runs_before_lif_adaptation(self):
         """LIF mode: analytical preconditioning runs before the LIF tuning ramp."""
@@ -174,7 +161,7 @@ class TestActivationAdaptationAlwaysPresent:
         })
         assert "Simulation" in lif_names
 
-    @pytest.mark.parametrize("spiking", ["ttfs", "ttfs_quantized", "lif", "rate"])
+    @pytest.mark.parametrize("spiking", ["ttfs", "ttfs_quantized", "lif"])
     def test_ttfs_cycle_finetuning_absent_for_other_modes(self, spiking):
         config = {
             "configuration_mode": "user",
@@ -261,20 +248,6 @@ class TestStepOrderingInvariants:
         assert "Activation Adaptation" in names
         assert "Clamp Adaptation" in names
         assert names.index("Activation Adaptation") < names.index("Clamp Adaptation")
-
-    def test_activation_adaptation_for_rate_when_act_q_false(self):
-        """Rate mode + act_q=False → Activation Adaptation only (no saturation)."""
-        config = {
-            "configuration_mode": "user",
-            "spiking_mode": "rate",
-            "activation_quantization": False,
-            "weight_quantization": False,
-            "model_type": "mlp_mixer",
-        }
-        names = _step_names(config)
-        assert "Activation Analysis" in names
-        assert "Activation Adaptation" in names
-        assert "Clamp Adaptation" not in names
 
     def test_clamp_adaptation_present_for_torch_models_ttfs_when_act_q_false(self):
         config = {

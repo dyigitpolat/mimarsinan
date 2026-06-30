@@ -76,8 +76,6 @@ class TestDerivedGettersTruthTable:
         ("ttfs_quantized", "synchronized", False, False, "analytical_staircase"),
         ("lif", "cascaded", False, False, "lif_cycle"),
         ("lif", "synchronized", False, False, "lif_cycle"),
-        ("rate", "cascaded", False, False, "rate"),
-        ("rate", "synchronized", False, False, "rate"),
     ]
 
     @pytest.mark.parametrize(

@@ -19,7 +19,14 @@ from mimarsinan.tuning.axes import ActQuantAxis
 
 
 def _act_quant_axis(rate=0.5):
+    # ttfs_quantized keeps the explicit activation-quant decorator (the LIF default
+    # subsumes it via adaptation_manager.subsumes_decorators), so the stochastic mask
+    # this test seeds is actually installed.
     cfg = default_config()
+    cfg["spiking_mode"] = "ttfs_quantized"
+    cfg["firing_mode"] = "TTFS"
+    cfg["spike_generation_mode"] = "TTFS"
+    cfg["thresholding_mode"] = "<="
     cfg["activation_quantization"] = True
     model = make_tiny_supermodel()
     manager = create_adaptation_manager_for_model(cfg, model)

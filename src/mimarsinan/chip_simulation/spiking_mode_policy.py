@@ -3,7 +3,7 @@
 One polymorphic ``SpikingModePolicy`` per (firing × sync) collapses the
 ``cascaded``/``synchronized`` predicate-then-branch that callers re-derive:
 
-- ``LifModePolicy`` — LIF rate family (``lif`` / ``rate``).
+- ``LifModePolicy`` — LIF family (``lif``).
 - ``TtfsAnalyticalModePolicy`` — closed-form analytical TTFS (``ttfs`` /
   ``ttfs_quantized``).
 - ``TtfsSyncCycleModePolicy`` — genuine single-spike, synchronized schedule.
@@ -30,6 +30,7 @@ from mimarsinan.chip_simulation.spiking_semantics import (
     is_cascaded_ttfs,
     is_synchronized_ttfs,
     is_ttfs_cycle_based,
+    require_known_spiking_mode,
     require_spiking_mode_supported,
     requires_ttfs_firing,
     supports_spiking_mode,
@@ -84,7 +85,7 @@ class SpikingModePolicy:
     Concrete subclasses override the firing-/schedule-derived behavior. The
     base resolves only what is shared (capability gate). ``spiking_mode``
     captures the sub-variation within a (firing × sync) family (``ttfs`` vs
-    ``ttfs_quantized``, ``lif`` vs ``rate``); ``schedule`` is the normalized
+    ``ttfs_quantized``); ``schedule`` is the normalized
     ``ttfs_cycle_schedule`` for the TTFS-cycle family (``None`` otherwise).
     """
 
@@ -191,15 +192,15 @@ class SpikingModePolicy:
 
 
 class LifModePolicy(SpikingModePolicy):
-    """LIF rate family: per-cycle integrate-and-fire, count decode."""
+    """LIF family: per-cycle integrate-and-fire, count decode."""
 
     @property
     def single_step_activation_replacement(self) -> bool:
         # The LIF tuner still runs after activation preconditioning.
-        return self.spiking_mode == "lif"
+        return True
 
     def training_forward_kind(self) -> str:
-        return "rate" if self.spiking_mode == "rate" else "lif_cycle"
+        return "lif_cycle"
 
     def calibration_forward(self):
         from mimarsinan.spiking.chip_aligned_nf import chip_aligned_segment_forward
@@ -458,8 +459,9 @@ def policy_for_spiking_mode(
 
     The single source of truth for the dispatch; downstream callers take the
     resolved policy instead of re-branching on ``cascaded``/``synchronized``.
+    Rejects modes outside ``ALL_SPIKING_MODES`` (incl. the removed ``rate``).
     """
-    mode = str(spiking_mode or "lif")
+    mode = require_known_spiking_mode(spiking_mode)
     if is_ttfs_cycle_based(mode):
         if is_synchronized_ttfs(mode, schedule):
             from mimarsinan.chip_simulation.spiking_semantics import ttfs_cycle_schedule

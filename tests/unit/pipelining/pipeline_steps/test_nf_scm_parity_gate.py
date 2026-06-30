@@ -101,7 +101,6 @@ class TestEnablement:
         # locked by test_ttfs_segment_node_recorder).
         ("ttfs_cycle_based", "cascaded", True),
         ("lif", None, False),
-        ("rate", None, False),
     ])
     def test_gate_runs_only_for_analytic_schedules(self, mode, schedule, enabled):
         from mimarsinan.chip_simulation.deployment_contract import (

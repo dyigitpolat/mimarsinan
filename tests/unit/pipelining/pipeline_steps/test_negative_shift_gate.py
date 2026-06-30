@@ -33,7 +33,7 @@ def test_negative_shift_unsupported_mode_fails_loud(mode):
 
 
 @pytest.mark.parametrize(
-    "mode", ["lif", "ttfs", "ttfs_quantized", "ttfs_cycle_based", "rate"]
+    "mode", ["lif", "ttfs", "ttfs_quantized", "ttfs_cycle_based"]
 )
 def test_negative_shift_disabled_is_silent_noop(mode):
     step = _step(negative_value_shift=False, spiking_mode=mode)

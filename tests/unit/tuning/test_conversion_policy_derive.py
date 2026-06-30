@@ -3,7 +3,7 @@ deployment mode to its empirically-proven recipe (driver + knob set + the
 capability-derived sim-enable set + a special-case marker for the divergences).
 
 These are the collapsed fix-wave findings (``docs/research/findings/*`` in
-``mimarsinan_research``): every proven recipe rides the fast ladder; the five
+``mimarsinan_research``): every proven recipe rides the fast ladder; the four
 marked rows are the documented divergences from the generic flow. The knob VALUES
 here are the SSOT — the per-mode recipe constants are no longer user config keys.
 """
@@ -22,14 +22,6 @@ from mimarsinan.tuning.orchestration.conversion_policy import (
 # (spiking_mode, schedule) -> proven recipe knobs (the SSOT constants).
 _EXPECTED_KNOBS = {
     ("lif", None): {
-        "lif_blend_fast": True,
-        "lif_blend_fast_stabilize_steps": 600,
-        "cycle_accurate_lif_forward": True,
-        "fast_ladder_freeze_bn": True,
-        "kd_ce_alpha": 0.5,
-        "kd_temperature": 4.0,
-    },
-    ("rate", None): {
         "lif_blend_fast": True,
         "lif_blend_fast_stabilize_steps": 600,
         "cycle_accurate_lif_forward": True,
@@ -66,11 +58,6 @@ _EXPECTED_SIM_ENABLES = {
         "enable_sanafe_simulation": True,
         "enable_loihi_simulation": True,
     },
-    ("rate", None): {
-        "enable_nevresim_simulation": True,
-        "enable_sanafe_simulation": True,
-        "enable_loihi_simulation": True,
-    },
     ("ttfs", None): {
         "enable_nevresim_simulation": True,
         "enable_sanafe_simulation": True,
@@ -95,10 +82,6 @@ _EXPECTED_SIM_ENABLES = {
 
 _EXPECTED_SPECIAL_CASE = {
     ("lif", None): "bn_freeze",
-    # rate inherits the LIF recipe KNOBS but the pipeline excludes it from the LIF
-    # reconciliation STEPS, so it carries its OWN marker (not lif's bn_freeze): the
-    # deployed count-decode model is never QAT-reconciled ⇒ SCM collapse at T=4.
-    ("rate", None): "rate_subsumed_by_lif",
     ("ttfs", None): None,
     ("ttfs_quantized", None): "full_quantile_decode",
     ("ttfs_cycle_based", "cascaded"): "fast_only_never_controller",
@@ -151,7 +134,7 @@ class TestDeriveSimEnables:
         # policy must keep loihi off for every TTFS mode.
         for mode, schedule in _CELLS:
             recipe = ConversionPolicy.derive(mode, schedule)
-            expected = mode in ("lif", "rate")
+            expected = mode == "lif"
             assert recipe.sim_enables["enable_loihi_simulation"] is expected
 
     def test_nevresim_off_only_for_synchronized(self):
@@ -187,6 +170,18 @@ class TestDeriveSpecialCases:
     def test_generic_reference_has_no_special_case(self):
         recipe = ConversionPolicy.derive("ttfs")
         assert recipe.special_case is None
+
+
+class TestRemovedModeRejected:
+    def test_rate_is_rejected_with_migration_hint(self):
+        # 'rate' (naive analytical LIF, collapses at SCM) was removed; deriving it
+        # must fail loud and point at its replacement, not silently fall through.
+        with pytest.raises(ValueError, match="rate.*removed.*use 'lif'"):
+            ConversionPolicy.derive("rate")
+
+    def test_unknown_mode_is_rejected(self):
+        with pytest.raises(ValueError, match="unknown spiking_mode"):
+            ConversionPolicy.derive("bogus")
 
 
 class TestRecipeIsFrozen:

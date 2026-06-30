@@ -562,7 +562,7 @@ def _init_adaptation_manager(supermodel, config=None):
     can call ``.decorate()`` on the activation.
     """
     if config is None:
-        config = {"target_tq": 64, "spiking_mode": "rate"}
+        config = {"target_tq": 64, "spiking_mode": "lif"}
     am = AdaptationManager()
     for p in supermodel.get_perceptrons():
         am.update_activation(config, p)
@@ -681,7 +681,7 @@ class TestAdaptationParameterConsistency:
         scales = _compute_activation_scales(supermodel, x)
         am = AdaptationManager()
         am.clamp_rate = clamp_rate
-        config = {"target_tq": 64, "spiking_mode": "rate"}
+        config = {"target_tq": 64, "spiking_mode": "lif"}
         for idx, p in enumerate(supermodel.get_perceptrons()):
             p.set_activation_scale(scales[idx])
             am.update_activation(config, p)

@@ -17,7 +17,7 @@ from mimarsinan.chip_simulation.spiking_mode_policy import (
 
 @pytest.mark.parametrize(
     "spiking_mode",
-    ["lif", "rate", "ttfs", "ttfs_quantized", "ttfs_cycle_based"],
+    ["lif", "ttfs", "ttfs_quantized", "ttfs_cycle_based"],
 )
 def test_resolve_exec_policy_all_modes(spiking_mode: str) -> None:
     spec = resolve_exec_policy(
@@ -140,7 +140,7 @@ _LEGACY_CASES = [
         "LIFirePolicy<ZeroReset, InclusiveCompare>>;",
     ),
     (
-        dict(spiking_mode="rate", firing_mode="Default", thresholding_mode="<",
+        dict(spiking_mode="lif", firing_mode="Default", thresholding_mode="<",
              spike_gen_mode="Deterministic", weight_type="double",
              simulation_length=8, latency=1, output_count=4),
         "SpikingCompute<LIFirePolicy<SubtractiveReset, StrictCompare>>",
@@ -222,14 +222,14 @@ def test_synchronized_ttfs_cycle_policy_rejects_nevresim() -> None:
 
 @pytest.mark.parametrize(
     "spiking_mode",
-    ["lif", "rate", "ttfs", "ttfs_quantized", "ttfs_cycle_based"],
+    ["lif", "ttfs", "ttfs_quantized", "ttfs_cycle_based"],
 )
 def test_build_runtime_exec_decl_all_modes(spiking_mode: str) -> None:
     compute, exec_decl = _build_runtime_exec_decl(
         spiking_mode=spiking_mode,
-        firing_mode="Default" if spiking_mode in ("lif", "rate") else "TTFS",
+        firing_mode="Default" if spiking_mode == "lif" else "TTFS",
         thresholding_mode="<=",
-        spike_gen_mode="Deterministic" if spiking_mode in ("lif", "rate") else "TTFS",
+        spike_gen_mode="Deterministic" if spiking_mode == "lif" else "TTFS",
         weight_type="double",
         simulation_length=4,
         latency=1,

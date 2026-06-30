@@ -14,6 +14,18 @@ from mimarsinan.models.nn.layers import TransformedActivation, LeakyGradReLU
 from conftest import default_config
 
 
+def _explicit_decode_config():
+    # Stress the explicit clamp/quant/shift decorator stack the manager-rate axes
+    # install. The LIF default SUBSUMES that stack (adaptation_manager.subsumes_
+    # decorators), so use ttfs_quantized — the deployable mode that keeps it.
+    base = default_config()
+    base["spiking_mode"] = "ttfs_quantized"
+    base["firing_mode"] = "TTFS"
+    base["spike_generation_mode"] = "TTFS"
+    base["thresholding_mode"] = "<="
+    return base
+
+
 class TestAdaptationManagerStress:
     def _make_perceptron(self):
         p = Perceptron(8, 16)
@@ -31,7 +43,7 @@ class TestAdaptationManagerStress:
         am.noise_rate = 1.0
 
         p = self._make_perceptron()
-        cfg = default_config()
+        cfg = _explicit_decode_config()
         am.update_activation(cfg, p)
 
         x = torch.randn(4, 16)
@@ -44,7 +56,7 @@ class TestAdaptationManagerStress:
         am = AdaptationManager()
         am.clamp_rate = 0.5
         p = self._make_perceptron()
-        cfg = default_config()
+        cfg = _explicit_decode_config()
 
         x = torch.randn(2, 16)
         for _ in range(50):
@@ -58,7 +70,7 @@ class TestAdaptationManagerStress:
         am.clamp_rate = 1.0
         p = self._make_perceptron()
         p.set_activation_scale(float("nan"))
-        cfg = default_config()
+        cfg = _explicit_decode_config()
         am.update_activation(cfg, p)
 
         x = torch.randn(2, 16)
@@ -73,7 +85,7 @@ class TestAdaptationManagerStress:
         am.clamp_rate = 1.0
         p = self._make_perceptron()
         p.set_activation_scale(0.0)
-        cfg = default_config()
+        cfg = _explicit_decode_config()
         am.update_activation(cfg, p)
 
         x = torch.randn(4, 16)

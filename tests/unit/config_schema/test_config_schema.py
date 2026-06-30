@@ -278,7 +278,7 @@ class TestValidateMergedConfig:
             "max_axons": 256,
             "max_neurons": 256,
             "target_tq": 32,
-            "spiking_mode": "rate",
+            "spiking_mode": "lif",
             "firing_mode": "Default",
             "spike_generation_mode": "Deterministic",
             "model_config_mode": "user",

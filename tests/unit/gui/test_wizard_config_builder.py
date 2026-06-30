@@ -350,7 +350,7 @@ class TestWizardSchema:
             "activation_quantization": True,
             "weight_quantization": True,
             "pruning": False,
-            "spiking_mode": "rate",
+            "spiking_mode": "lif",
         }
         steps = get_pipeline_step_names_for_config(config)
         assert "Model Configuration" in steps
