@@ -15,13 +15,17 @@ def ttfs_spike_time(rate: np.ndarray, simulation_length: int) -> np.ndarray:
     return ttfs_spike_time_np(rate, simulation_length)
 
 
-def ttfs_input_grid_quantize(rates: np.ndarray, simulation_length: int) -> np.ndarray:
+def ttfs_input_grid_quantize(
+    rates: np.ndarray, simulation_length: int, round_mode: str = "round"
+) -> np.ndarray:
     """Encode→decode round-trip: the value a single-spike timing can carry.
 
     Mirrors the synchronized cycle soma's decode ``(S - k)/S`` of a spike
     encoded at ``k = ttfs_spike_time(rate)``; ``k >= S`` never fires (0.0).
+    ``round_mode`` (SSOT: ``WireSemantics.spike_time_round``) selects round-to-
+    nearest (legacy) vs ``"ceil"`` (matches the firing staircase).
     """
-    return ttfs_grid_quantize_np(rates, simulation_length)
+    return ttfs_grid_quantize_np(rates, simulation_length, round_mode)
 
 
 def ttfs_latched_spike_train(rates: np.ndarray, simulation_length: int) -> np.ndarray:

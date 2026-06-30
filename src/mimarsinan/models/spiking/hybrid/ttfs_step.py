@@ -90,6 +90,7 @@ class HybridTtfsStepMixin:
                 quantize_input_to_ttfs_grid=is_synchronized_ttfs(
                     self.spiking_mode, self.ttfs_cycle_schedule,
                 ),
+                spike_time_round=self.spike_time_round,
             )
             for s in ctx.stage.output_map:
                 ctx.state_buffer[s.node_id] = torch.tensor(

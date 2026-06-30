@@ -27,6 +27,7 @@ class SpikingDeploymentContract:
     ttfs_cycle_schedule: str
     encoding_layer_placement: str
     bias_mode: str
+    spike_time_round: str = "round"
 
     # ── identity axes (delegated to the composed NeuralBehaviorConfig) ──────
     @property
@@ -63,6 +64,7 @@ class SpikingDeploymentContract:
                 cfg.get("encoding_layer_placement", "subsume")
             ),
             bias_mode=resolve_bias_mode(cfg),
+            spike_time_round=str(cfg.get("ttfs_spike_time_round", "round")),
         )
 
     # ── derived behavior (the D4 killer) ────────────────────────────────────
@@ -83,6 +85,7 @@ class SpikingDeploymentContract:
         return WireSemantics(
             simulation_steps=self.simulation_steps,
             compare_mode=self.thresholding_mode,
+            spike_time_round=self.spike_time_round,
         )
 
     def mode_policy(self, *, core: Any = None):

@@ -129,6 +129,8 @@ _KEY_SPECS: Tuple[KeySpec, ...] = (
     _spec("spiking_mode", "spiking", "SpikingDeploymentContract", exposure="user"),
     _spec("ttfs_cycle_schedule", "spiking", "SpikingDeploymentContract",
           exposure="user"),
+    _spec("ttfs_spike_time_round", "spiking", "SpikingDeploymentContract",
+          exposure="user"),
     _spec("cycle_accurate_lif_forward", "spiking", "lif_adaptation",
           exposure="user"),
     # Hardware platform / capabilities (MIGRATED group) ──────────────────────

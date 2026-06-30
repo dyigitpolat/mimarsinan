@@ -180,12 +180,16 @@ def run_ttfs_contract_neural_stage(
     spiking_mode: str,
     executor: TtfsAnalyticalExecutor | None = None,
     quantize_input_to_ttfs_grid: bool = False,
+    spike_time_round: str = "round",
 ) -> TtfsContractNeuralStageResult:
     """Run one neural stage on the shared TTFS contract path (float64 numpy).
 
     ``quantize_input_to_ttfs_grid`` snaps the assembled stage input to the
     single-spike timing grid — the synchronized schedule's hardware boundary
     (every axon is spike-time encoded, so off-grid values cannot cross it).
+    ``spike_time_round`` is the snap convention (SSOT: ``WireSemantics``);
+    ``"ceil"`` matches the firing staircase so the encode is a fixed point of
+    the fire (synchronized == the analytical kernel).
     """
     hcm = stage.hard_core_mapping
     assert hcm is not None
@@ -202,7 +206,7 @@ def run_ttfs_contract_neural_stage(
         stage.input_map, seg_in, getattr(mapping, "node_output_shifts", None),
     )
     if quantize_input_to_ttfs_grid:
-        seg_in = ttfs_input_grid_quantize(seg_in, simulation_length)
+        seg_in = ttfs_input_grid_quantize(seg_in, simulation_length, spike_time_round)
     result = exec_.run_segment(
         hcm, seg_in, simulation_length=simulation_length, spiking_mode=spiking_mode,
     )
@@ -256,6 +260,7 @@ def run_ttfs_hybrid_contract(
     spiking_mode: str | None = None,
     sample_index: int = 0,
     ttfs_cycle_schedule: str | None = None,
+    spike_time_round: str = "round",
     contract: Any = None,
 ) -> TtfsContractRunResult:
     """Execute the full hybrid mapping on the canonical TTFS contract path.
@@ -273,6 +278,7 @@ def run_ttfs_hybrid_contract(
             spiking_mode = contract.spiking_mode
         if ttfs_cycle_schedule is None:
             ttfs_cycle_schedule = contract.ttfs_cycle_schedule
+        spike_time_round = contract.spike_time_round
     if simulation_length is None or spiking_mode is None:
         raise ValueError(
             "run_ttfs_hybrid_contract requires simulation_length and "
@@ -306,6 +312,7 @@ def run_ttfs_hybrid_contract(
             spiking_mode=spiking_mode,
             executor=executor,
             quantize_input_to_ttfs_grid=quantize_input,
+            spike_time_round=spike_time_round,
         )
         record.segments[stage_index] = out.segment_record
 
