@@ -79,7 +79,6 @@ def build_spiking_hybrid_flow(
         spiking_mode=contract.spiking_mode,
         cycle_accurate_lif_forward=plan.cycle_accurate_lif_forward,
         ttfs_cycle_schedule=contract.ttfs_cycle_schedule,
-        spike_time_round=contract.spike_time_round,
     )
     if plan.cycle_accurate_lif_forward and model is not None:
         from mimarsinan.spiking.lif_utils import apply_cycle_accurate_trains_to_model

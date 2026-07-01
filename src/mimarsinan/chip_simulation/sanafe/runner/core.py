@@ -46,7 +46,6 @@ class SanafeRunner(SanafeNeuralStageMixin, SanafeNeuralStageRecordMixin, SanafeS
         spiking_mode: str = "lif",
         firing_mode: str = "Default",
         ttfs_cycle_schedule: str = "cascaded",
-        spike_time_round: str = "round",
         contract: Any = None,
         log_potential_trace: bool = False,
         log_message_trace: bool = True,
@@ -56,7 +55,6 @@ class SanafeRunner(SanafeNeuralStageMixin, SanafeNeuralStageRecordMixin, SanafeS
             # SpikingDeploymentContract supersedes the loose semantic kwargs.
             behavior = contract.behavior
             ttfs_cycle_schedule = contract.ttfs_cycle_schedule
-            spike_time_round = contract.spike_time_round
         if behavior is None:
             behavior = NeuralBehaviorConfig(
                 spiking_mode=str(spiking_mode),
@@ -69,7 +67,6 @@ class SanafeRunner(SanafeNeuralStageMixin, SanafeNeuralStageRecordMixin, SanafeS
         self.thresholding_mode = behavior.thresholding_mode
         self.firing_mode = behavior.firing_mode
         self.ttfs_cycle_schedule = str(ttfs_cycle_schedule)
-        self.spike_time_round = str(spike_time_round)
         behavior.require_backend("sanafe")
         if arch_preset not in PRESETS:
             raise ValueError(

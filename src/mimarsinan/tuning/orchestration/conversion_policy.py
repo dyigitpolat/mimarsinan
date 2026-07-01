@@ -55,10 +55,6 @@ _SYNCHRONIZED_RECIPE_KNOBS = {
     "fast_ladder_freeze_bn": True,
     "kd_ce_alpha": 0.5,
     "kd_temperature": 4.0,
-    # The synchronized segment-entry spike encode must use the SAME convention as
-    # the firing staircase (ceil) so the encode is a fixed point of the fire —
-    # otherwise round-encode vs ceil-fire diverge at grid ties (the ~7% NF↔SCM gap).
-    "ttfs_spike_time_round": "ceil",
 }
 
 _LIF_RATIONALE = (

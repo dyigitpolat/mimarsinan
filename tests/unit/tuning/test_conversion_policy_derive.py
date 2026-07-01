@@ -48,7 +48,6 @@ _EXPECTED_KNOBS = {
         "fast_ladder_freeze_bn": True,
         "kd_ce_alpha": 0.5,
         "kd_temperature": 4.0,
-        "ttfs_spike_time_round": "ceil",
     },
 }
 

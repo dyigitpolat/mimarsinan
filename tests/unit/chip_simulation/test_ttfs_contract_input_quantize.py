@@ -110,33 +110,6 @@ def test_analytical_modes_never_quantize_input(mode):
     )
 
 
-def _sync_output(round_mode):
-    return run_ttfs_hybrid_contract(
-        _single_stage_mapping(), OFF_GRID, simulation_length=S,
-        spiking_mode="ttfs_cycle_based", ttfs_cycle_schedule="synchronized",
-        spike_time_round=round_mode,
-    ).record.segments[0].cores[0].output_activation
-
-
-def _ttfs_quantized_output():
-    return run_ttfs_hybrid_contract(
-        _single_stage_mapping(), OFF_GRID, simulation_length=S,
-        spiking_mode="ttfs_quantized",
-    ).record.segments[0].cores[0].output_activation
-
-
-def test_synchronized_ceil_is_ttfs_quantized():
-    """With the ``ceil`` encode convention the segment-entry snap is a fixed point
-    of the firing staircase, so synchronized == ttfs_quantized — the mathematical
-    equivalence. (Round-encode vs ceil-fire was the ~7% NF↔SCM gap.)"""
-    np.testing.assert_array_equal(_sync_output("ceil"), _ttfs_quantized_output())
-
-
-def test_synchronized_round_diverges_from_ttfs_quantized():
-    """The legacy round encode does NOT match ttfs_quantized — the bug this fixes."""
-    assert not np.array_equal(_sync_output("round"), _ttfs_quantized_output())
-
-
 def test_reference_passes_schedule_from_pipeline_config():
     class _Pipe:
         config = {

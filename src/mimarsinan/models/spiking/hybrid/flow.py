@@ -50,7 +50,6 @@ class SpikingHybridCoreFlow(
         spiking_mode: str = "lif",
         cycle_accurate_lif_forward: bool = False,
         ttfs_cycle_schedule: str = "cascaded",
-        spike_time_round: str = "round",
     ):
         super().__init__()
 
@@ -64,7 +63,6 @@ class SpikingHybridCoreFlow(
         self.thresholding_mode = thresholding_mode
         self.spiking_mode = spiking_mode
         self.ttfs_cycle_schedule = ttfs_cycle_schedule
-        self.spike_time_round = spike_time_round
         self.cycle_accurate_lif_forward = bool(cycle_accurate_lif_forward)
         self._use_cycle_accurate_trains = (
             spiking_mode == "lif" and self.cycle_accurate_lif_forward
