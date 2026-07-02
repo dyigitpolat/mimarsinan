@@ -22,9 +22,16 @@ class ActivationShiftTuner(OneShotRateTunerSeamMixin, TunerBase):
     def __init__(self, pipeline, model, target_accuracy, lr, adaptation_manager):
         super().__init__(pipeline, model, target_accuracy, lr)
         self.adaptation_manager = adaptation_manager
-        self._use_ttfs = pipeline.config.get("spiking_mode", "lif") in (
-            "ttfs",
-            "ttfs_quantized",
+        from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
+
+        plan = DeploymentPlan.of(pipeline)
+        # TTFS value-domain modes keep the half-step inside the quantize decorator
+        # (shift_back); the LIF-style branch below (bias mutation + shift_rate) would
+        # double-shift them at mapping-time bias compensation. The synchronized
+        # floor-collapse trains the same convention as ttfs_quantized, so it must
+        # take the TTFS branch (sync_collapse_verify regression: deployed -1.9pp).
+        self._use_ttfs = (
+            plan.spiking_mode == "ttfs" or plan.uses_ttfs_floor_ceil_convention
         )
         self._final_metric = None
         self.name = "Shift Recovery"
@@ -36,11 +43,9 @@ class ActivationShiftTuner(OneShotRateTunerSeamMixin, TunerBase):
         # smooth fast ladder (one-shot apply-then-recover, not a rate ramp), so the fast
         # arm is a no-op for this family — it stays the controller path regardless,
         # byte-identical — but it still consumes the axis like every other family.
-        from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
-
-        self._optimization_driver = DeploymentPlan.of(
-            self.pipeline
-        ).optimization_driver_for_family(rates=[1.0], steps_per_rate=0)
+        self._optimization_driver = plan.optimization_driver_for_family(
+            rates=[1.0], steps_per_rate=0
+        )
 
     def _apply_shift(self):
         config = self.pipeline.config

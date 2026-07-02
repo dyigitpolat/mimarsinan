@@ -49,17 +49,18 @@ def _unify_model_device(model):
 def nf_scm_parity_enabled(contract: Any) -> bool:
     """Gate the modes whose NF can be held against the deployed executor.
 
-    Synchronized ttfs_cycle (post-R1/R3) and continuous ttfs share per-neuron
-    semantics with the contract runner (per-neuron gate). Cascaded gets a
-    decision-level gate (argmax agreement vs the genuine identity executor —
-    1.0 when healthy; per-logit atol is meaningless through host compute
-    ops). ttfs_quantized is excluded entirely: its NF trains the
-    floor-staircase + half-step-bias convention
-    (``apply_ttfs_quantization_bias_compensation``), agreeing with the ceil
-    kernel only within one step per layer (its protections are the accuracy
-    gates plus the bit-exact rung-3/4 parity).
+    Continuous ttfs shares per-neuron semantics with the contract runner
+    (per-neuron gate). Cascaded gets a decision-level gate (argmax agreement vs
+    the genuine identity executor — 1.0 when healthy; per-logit atol is
+    meaningless through host compute ops). The floor+half-step-bias convention
+    modes (ttfs_quantized AND the synchronized floor-collapse) are excluded
+    entirely: their NF trains the floor-staircase + half-step-bias convention
+    (``apply_ttfs_quantization_bias_compensation``), agreeing with the deployed
+    ceil kernel only within one step per layer (their protections are the
+    accuracy gates plus the bit-exact rung-3/4 parity). synchronized's genuine
+    single-spike DEPLOYMENT stays bit-exact regardless of this gate.
     """
-    if contract.spiking_mode == "ttfs_quantized":
+    if contract.uses_ttfs_floor_ceil_convention():
         return False
     if contract.is_cascaded():
         return True

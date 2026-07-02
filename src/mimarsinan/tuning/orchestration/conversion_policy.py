@@ -8,7 +8,7 @@ special-case marker for the divergences). It is what
 authoritatively into every config — the resolved config IS the materialized recipe.
 
 The four marked rows (``bn_freeze`` / ``full_quantile_decode`` /
-``fast_only_never_controller`` / ``genuine_qat_fidelity``) are the documented
+``fast_only_never_controller`` / ``synchronized_floor_collapse``) are the documented
 divergences from the generic flow; each carries a one-line ``rationale`` citing the
 finding so it stays studyable. Every proven recipe rides the fast ladder — the
 controller path is the one that collapses on the deep cascade, so the SSOT never
@@ -48,14 +48,6 @@ _CASCADED_RECIPE_KNOBS = {
     "ttfs_blend_fast_stabilize_steps": 300,
     "tuning_full_transform_probe": True,
 }
-_SYNCHRONIZED_RECIPE_KNOBS = {
-    "ttfs_blend_fast": True,
-    "ttfs_blend_fast_stabilize_steps": 300,
-    "ttfs_sync_genuine_qat": True,
-    "fast_ladder_freeze_bn": True,
-    "kd_ce_alpha": 0.5,
-    "kd_temperature": 4.0,
-}
 
 _LIF_RATIONALE = (
     "BN-freeze makes the QAT train-forward bit-exact to the deployed eval-forward; "
@@ -71,8 +63,14 @@ _CASCADED_RATIONALE = (
     "(per_channel_theta_deployment_fidelity)."
 )
 _SYNCHRONIZED_RATIONALE = (
-    "Fidelity comes from genuine QAT, NOT from relaxing the parity gate; ~0.96 at 3x "
-    "latency. nevresim has no synchronized-window backend (mnist_mixer_fix_wave)."
+    "synchronized IS ttfs_quantized at deploy: sync-deploy = ttfs_quantized-deploy + the "
+    "free segment-input single-spike grid-snap (decision-level exact). So it TRAINS the "
+    "well-conditioned ttfs_quantized floor recovery (floor+half-step-bias QAT + full "
+    "recovery) rather than the harder ceil-staircase genuine QAT, and DEPLOYS the "
+    "mode-derived single-spike ceil kernel + grid-snap (unchanged: SANA-FE parity 1.0, "
+    "bit-exact). Its per-neuron NF↔SCM parity therefore uses the honest ttfs_quantized "
+    "tolerance — excluded from the bit-exact per-neuron gate. nevresim has no "
+    "synchronized-window backend (mnist_mixer_fix_wave / synchronized_floor_collapse)."
 )
 
 __all__ = [
@@ -139,8 +137,12 @@ class ConversionPolicy:
                 _TTFS_QUANTIZED_RATIONALE,
             )
         elif is_ttfs_cycle_based(mode) and synchronized:
+            # synchronized ≡ ttfs_quantized at deploy (deploy adds the free
+            # single-spike grid-snap): train the well-conditioned ttfs_quantized
+            # floor recovery, deploy the mode-derived ceil kernel. See
+            # _SYNCHRONIZED_RATIONALE.
             knobs, special_case, rationale = (
-                _SYNCHRONIZED_RECIPE_KNOBS, "genuine_qat_fidelity",
+                _TTFS_QUANTIZED_RECIPE_KNOBS, "synchronized_floor_collapse",
                 _SYNCHRONIZED_RATIONALE,
             )
         elif is_ttfs_cycle_based(mode):

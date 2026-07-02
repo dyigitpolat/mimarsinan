@@ -77,6 +77,33 @@ class TestSpikingDerived:
         assert _resolve(spiking_mode="ttfs_cycle_based").is_ttfs_cycle_based is True
         assert _resolve(spiking_mode="lif").is_ttfs_cycle_based is False
 
+    def test_is_cascaded_ttfs_is_the_synchronized_complement(self):
+        # is_cascaded_ttfs is the greedy-schedule cell within the cycle family —
+        # the complement of is_synchronized_ttfs (drives TTFSCycleAdaptationStep).
+        assert _resolve(
+            spiking_mode="ttfs_cycle_based", ttfs_cycle_schedule="cascaded"
+        ).is_cascaded_ttfs is True
+        assert _resolve(
+            spiking_mode="ttfs_cycle_based", ttfs_cycle_schedule="synchronized"
+        ).is_cascaded_ttfs is False
+        # default schedule is cascaded; non-cycle modes are never cascaded_ttfs.
+        assert _resolve(spiking_mode="ttfs_cycle_based").is_cascaded_ttfs is True
+        assert _resolve(spiking_mode="lif").is_cascaded_ttfs is False
+
+    def test_uses_ttfs_floor_ceil_convention(self):
+        # The floor+half-step-bias convention: ttfs_quantized AND the synchronized
+        # floor-collapse train the floor NF and deploy the mode-derived ceil kernel.
+        assert _resolve(spiking_mode="ttfs_quantized").uses_ttfs_floor_ceil_convention
+        assert _resolve(
+            spiking_mode="ttfs_cycle_based", ttfs_cycle_schedule="synchronized"
+        ).uses_ttfs_floor_ceil_convention
+        # cascaded, continuous ttfs, and lif keep their own conventions.
+        assert not _resolve(
+            spiking_mode="ttfs_cycle_based", ttfs_cycle_schedule="cascaded"
+        ).uses_ttfs_floor_ceil_convention
+        assert not _resolve(spiking_mode="ttfs").uses_ttfs_floor_ceil_convention
+        assert not _resolve(spiking_mode="lif").uses_ttfs_floor_ceil_convention
+
 
 class TestNovenaChipFaithfulGate:
     """Novena's zero-reset needs the cycle-accurate cascade forward to deploy
@@ -512,7 +539,6 @@ class TestNoStrayDeploymentFlagReadsAnywhere:
         #    DeploymentPlan through these signatures removes no scattered branch
         #    and would not be byte-identical — pure churn. Left as-is on purpose.
         "tuning/orchestration/adaptation_manager.py",
-        "tuning/tuners/activation_shift_tuner.py",
         "tuning/tuners/lif_adaptation_tuner.py",
         "tuning/tuners/ttfs_cycle_adaptation_tuner.py",
         # ── byte-identity carve-out (NOT a "this isn't a decision flag" claim) ──

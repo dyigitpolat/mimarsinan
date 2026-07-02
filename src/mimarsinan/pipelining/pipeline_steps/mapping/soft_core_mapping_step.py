@@ -114,11 +114,12 @@ class SoftCoreMappingStep(PipelineStep):
 
         act_q = plan.activation_quantization
 
-        spiking_mode = plan.spiking_mode
-        if spiking_mode == "ttfs_quantized" and not act_q:
+        if plan.uses_ttfs_floor_ceil_convention and not act_q:
             print(
-                "[SoftCoreMappingStep] Warning: ttfs_quantized is on but activation_quantization is off; "
-                "deployment accuracy may drop compared to training."
+                f"[SoftCoreMappingStep] Warning: spiking_mode={plan.spiking_mode!r} "
+                "trains the TTFS floor+half-step-bias convention but "
+                "activation_quantization is off; deployment accuracy may drop "
+                "compared to training."
             )
 
         self._apply_ttfs_quantization_bias_compensation(model, act_q)
@@ -317,9 +318,9 @@ class SoftCoreMappingStep(PipelineStep):
         of ``scm_torch_sim_parity_samples``. The cascaded decision gate above checks
         a SIBLING identity executor (``build_identity_spiking_flow``); this checks the
         DEPLOYED one, so a torch↔sim deployment divergence cannot hide behind the
-        metric's 500-sample subsample. Gated by ``nf_scm_parity_enabled`` (skips
-        ttfs_quantized, not torch-bit-exact by design) + ``scm_torch_sim_parity_check``
-        (default on)."""
+        metric's 500-sample subsample. Gated by ``nf_scm_parity_enabled`` OR
+        synchronized (ttfs_quantized skips: not torch-bit-exact by design) +
+        ``scm_torch_sim_parity_check`` (default on)."""
         if not bool(self.pipeline.config.get("scm_torch_sim_parity_check", True)):
             return
         import mimarsinan.pipelining.core.nf_scm_parity as nf_scm_parity
@@ -330,7 +331,14 @@ class SoftCoreMappingStep(PipelineStep):
         )
 
         contract = build_deployment_contract(self.pipeline)
-        if not nf_scm_parity.nf_scm_parity_enabled(contract):
+        # Synchronized stays gated even though its per-neuron gate moved to the
+        # floor+half-step convention (excluded via nf_scm_parity_enabled): argmax
+        # agreement tolerates the within-one-step floor↔ceil residual, so this
+        # remains sync's standing deployment-lossless protection alongside the
+        # accuracy gates and rung-3/4 parity.
+        if not (
+            nf_scm_parity.nf_scm_parity_enabled(contract) or contract.is_synchronized()
+        ):
             return
         n = int(self.pipeline.config.get("scm_torch_sim_parity_samples", 256))
         if n <= 0:
@@ -402,11 +410,11 @@ class SoftCoreMappingStep(PipelineStep):
         if not batches:
             return
         samples = batches[0][:n_samples]
-        # Synchronized NF is the deployment kernel + segment-entry q(x) —
-        # measured bit-exact per-neuron — so it defaults tight (dtype-tie
-        # headroom only). Continuous ttfs keeps a loose default until its
-        # residual is calibrated; the wrong-dynamics signature is ~40 %.
-        default_budget = 0.02 if contract.is_synchronized() else 0.25
+        # Only continuous ttfs reaches this per-neuron path now: ttfs_quantized and
+        # the synchronized floor-collapse train the floor+half-step-bias convention
+        # and are excluded via nf_scm_parity_enabled. Continuous ttfs keeps a loose
+        # default until its residual is calibrated; the wrong-dynamics signature is ~40 %.
+        default_budget = 0.25
         fraction = nf_scm_parity.assert_nf_scm_parity_or_raise(
             self.pipeline,
             model,
@@ -425,14 +433,18 @@ class SoftCoreMappingStep(PipelineStep):
         )
 
     def _apply_ttfs_quantization_bias_compensation(self, model, act_q: bool) -> None:
-        spiking = str(DeploymentPlan.of(self.pipeline).spiking_mode)
+        plan = DeploymentPlan.of(self.pipeline)
+        spiking = str(plan.spiking_mode)
         if spiking == "ttfs" and act_q:
             print(
                 "[SoftCoreMappingStep] WARNING: spiking_mode='ttfs' with "
                 "activation_quantization=True is unsupported for SCM parity; "
                 "use ttfs_quantized or disable activation_quantization.",
             )
-        if spiking != "ttfs_quantized" or not act_q:
+        # The floor+half-step-bias convention (ttfs_quantized AND the synchronized
+        # floor-collapse) bakes the half-step shift that aligns the floor-trained
+        # decode to the deployed ceil kernel. Idempotent per perceptron.
+        if not plan.uses_ttfs_floor_ceil_convention or not act_q:
             return
         from mimarsinan.mapping.support.ttfs_bias import (
             apply_ttfs_quantization_bias_compensation,

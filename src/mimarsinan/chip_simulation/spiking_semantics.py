@@ -110,6 +110,21 @@ def is_synchronized_ttfs(spiking_mode: str, schedule) -> bool:
     return is_ttfs_cycle_based(spiking_mode) and ttfs_cycle_schedule(schedule) == "synchronized"
 
 
+def uses_ttfs_floor_ceil_convention(spiking_mode: str, schedule=None) -> bool:
+    """Modes whose torch NF trains the floor-staircase + half-step-bias convention
+    yet deploy the mode-derived ceil TTFS kernel (``ttfs_quantized`` and the
+    synchronized floor-collapse).
+
+    Both share one deploy convention: sync-deploy == ttfs_quantized-deploy + the
+    free single-spike grid-snap. Per-neuron NF↔SCM equality is NOT their invariant
+    (deploy is bit-exact regardless); they take the half-step bias compensation and
+    are excluded from the bit-exact per-neuron parity gate.
+    """
+    return _norm(spiking_mode) == "ttfs_quantized" or is_synchronized_ttfs(
+        spiking_mode, schedule
+    )
+
+
 @dataclass(frozen=True)
 class BackendSpikingCapabilities:
     lif: bool

@@ -41,13 +41,13 @@ _EXPECTED_KNOBS = {
         "ttfs_blend_fast_stabilize_steps": 300,
         "tuning_full_transform_probe": True,
     },
+    # synchronized collapses onto the ttfs_quantized floor-recovery recipe: it
+    # TRAINS the well-conditioned floor+half-step-bias QAT (identical knobs) and
+    # DEPLOYS the mode-derived single-spike ceil kernel + grid-snap.
     ("ttfs_cycle_based", "synchronized"): {
-        "ttfs_blend_fast": True,
-        "ttfs_blend_fast_stabilize_steps": 300,
-        "ttfs_sync_genuine_qat": True,
-        "fast_ladder_freeze_bn": True,
-        "kd_ce_alpha": 0.5,
-        "kd_temperature": 4.0,
+        "activation_scale_quantile": 1.0,
+        "manager_rate_fast_rates": [0.25, 0.5, 0.75, 1.0],
+        "manager_rate_fast_steps_per_rate": 120,
     },
 }
 
@@ -85,7 +85,8 @@ _EXPECTED_SPECIAL_CASE = {
     ("ttfs", None): None,
     ("ttfs_quantized", None): "full_quantile_decode",
     ("ttfs_cycle_based", "cascaded"): "fast_only_never_controller",
-    ("ttfs_cycle_based", "synchronized"): "genuine_qat_fidelity",
+    # synchronized trains the ttfs_quantized floor recovery, deploys the ceil kernel.
+    ("ttfs_cycle_based", "synchronized"): "synchronized_floor_collapse",
 }
 
 _CELLS = list(_EXPECTED_KNOBS.keys())

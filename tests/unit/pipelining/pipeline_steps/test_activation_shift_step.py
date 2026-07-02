@@ -58,3 +58,69 @@ def test_activation_shift_step_uses_step_budgeted_training(monkeypatch, mock_pip
 
     assert calls["max_steps"] > 0
     assert calls["validation_n_batches"] > 0
+
+
+class TestShiftConventionFollowsFloorCeilSSOT:
+    """The shift treatment must follow the floor+half-step convention SSOT.
+
+    ttfs_quantized AND the synchronized floor-collapse train the TTFS convention:
+    the half-step lives inside the quantize decorator (shift_back), so the shift
+    tuner must NOT mutate biases nor raise shift_rate — otherwise the mapping-time
+    bias compensation double-shifts and deployment over-fires by a full step
+    (the sync_collapse_verify regression: NF 0.9453 -> deployed 0.9289)."""
+
+    @pytest.mark.parametrize(
+        "mode,schedule,expect_lif_style_shift",
+        [
+            ("ttfs_quantized", None, False),
+            ("ttfs_cycle_based", "synchronized", False),
+            ("ttfs_cycle_based", "cascaded", True),
+            ("lif", None, True),
+        ],
+    )
+    def test_shift_branch_matches_convention(
+        self, monkeypatch, mock_pipeline, mode, schedule, expect_lif_style_shift
+    ):
+        import torch
+
+        mock_pipeline.config["spiking_mode"] = mode
+        if schedule is not None:
+            mock_pipeline.config["ttfs_cycle_schedule"] = schedule
+        model, am = _seed_shift_step(mock_pipeline)
+
+        monkeypatch.setattr(
+            BasicTrainer,
+            "train_steps_until_target",
+            lambda self, lr, max_steps, target_accuracy, *a, **kw: target_accuracy,
+        )
+        monkeypatch.setattr(
+            BasicTrainer, "validate_n_batches", lambda self, n_batches: 0.5
+        )
+        monkeypatch.setattr(BasicTrainer, "validate", lambda self: 0.5)
+
+        before = [
+            p.layer.bias.detach().clone()
+            for p in model.get_perceptrons()
+            if getattr(p.layer, "bias", None) is not None
+        ]
+        step = ActivationShiftStep(mock_pipeline)
+        step.name = "Activation Shift"
+        mock_pipeline.prepare_step(step)
+        step.run()
+        after = [
+            p.layer.bias.detach().clone()
+            for p in model.get_perceptrons()
+            if getattr(p.layer, "bias", None) is not None
+        ]
+
+        biases_mutated = any(
+            not torch.allclose(b, a) for b, a in zip(before, after)
+        )
+        expected_shift_rate = 1.0 if expect_lif_style_shift else 0.0
+        assert am.shift_rate == expected_shift_rate, (
+            f"{mode}/{schedule}: shift_rate {am.shift_rate} != {expected_shift_rate}"
+        )
+        assert biases_mutated == expect_lif_style_shift, (
+            f"{mode}/{schedule}: bias mutation {biases_mutated}, "
+            f"expected {expect_lif_style_shift}"
+        )

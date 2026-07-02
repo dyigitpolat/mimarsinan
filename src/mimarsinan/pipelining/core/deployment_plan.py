@@ -297,6 +297,28 @@ class DeploymentPlan:
         )
 
     @property
+    def is_cascaded_ttfs(self) -> bool:
+        """ttfs_cycle_based on the greedy pipelined (cascaded) schedule.
+
+        The complement of ``is_synchronized_ttfs`` within the cycle family — the
+        cell that installs the genuine ceil segment driver (TTFS Cycle Fine-Tuning),
+        as opposed to the synchronized cell, which now trains the ttfs_quantized
+        floor recovery and skips that install."""
+        return self.is_ttfs_cycle_based and not self.is_synchronized_ttfs
+
+    @property
+    def uses_ttfs_floor_ceil_convention(self) -> bool:
+        """Whether the NF trains the floor + half-step-bias convention and deploys
+        the ceil TTFS kernel (ttfs_quantized and the synchronized floor-collapse)."""
+        from mimarsinan.chip_simulation.spiking_semantics import (
+            uses_ttfs_floor_ceil_convention,
+        )
+
+        return uses_ttfs_floor_ceil_convention(
+            self.spiking_mode, self.ttfs_cycle_schedule
+        )
+
+    @property
     def is_lif_style(self) -> bool:
         """Whether this plan has a dedicated LIF/TTFS-cycle tuning step."""
         return self.mode_policy().single_step_activation_replacement

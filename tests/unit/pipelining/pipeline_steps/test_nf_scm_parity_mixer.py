@@ -1,31 +1,30 @@
-"""Synchronized MLP-mixer NF↔SCM parity: isolates the weight-quant residual.
+"""Synchronized MLP-mixer NF↔SCM parity: the deployment ceil kernel is bit-exact.
 
-Reproduction for the "synchronized mixer fails NF↔SCM per-neuron parity" incident.
-The prime suspect was the token-mixer ``permute(0,2,1)`` transpose. These tests
-REFUTE that and pin the real cause:
+These tests build the synchronized DEPLOYMENT kernel (the ceil ``TTFSCycleActivation``
++ segment-entry grid-snap) and hold it against the identity-mapped SCM run. That
+deployment kernel is UNCHANGED by the synchronized floor-collapse — synchronized now
+TRAINS the ttfs_quantized floor recovery but DEPLOYS this same ceil kernel — so these
+remain the proof that the deployed synchronized path is bit-exact:
 
   * ``test_..._bit_exact_without_weight_quant`` PASSES — with weight rounding off,
     the full two-block mixer (both token-mixer transposes included) is bit-exact
-    NF↔SCM across every perceptron. The NF dynamics and the transpose wiring are
+    NF↔SCM across every perceptron. The ceil dynamics and the transpose wiring are
     correct. ``permute(0,2,1)`` maps to a structural ``PermuteMapper``
     (``np.transpose`` of the IR source view), NOT the
-    ``ComputeOpMapper._emit_unary`` transpose branch the incident suspected.
+    ``ComputeOpMapper._emit_unary`` transpose branch an earlier incident suspected.
 
-  * ``test_..._exceeds_default_budget_but_meets_mixer_budget`` pins the honest
-    contract — turning weight quantization on at the same scales produces a
-    per-neuron residual that genuinely EXCEEDS the synchronized default budget
-    (0.02, from ``soft_core_mapping_step.py`` ``default_budget = 0.02 if
-    contract.is_synchronized() else 0.25``) yet sits under the mixer recipe
-    budget (0.15). The residual is pure weight-rounding amplified by the TTFS
-    ceil staircase at near-boundary activations; it is concentrated on the DEEP
-    perceptrons, with the transpose-downstream token-mixer fc1 the CLEANEST —
-    the opposite of a transpose-localized bug.
+  * ``test_..._exceeds_default_budget_but_meets_mixer_budget`` characterizes the
+    honest weight-quant residual — pure weight-rounding amplified by the TTFS ceil
+    staircase at near-boundary activations, concentrated on the DEEP perceptrons
+    (token-mixer fc1, transpose-downstream, is the CLEANEST — the opposite of a
+    transpose-localized bug). The two reference budgets (0.02 / 0.15) below are the
+    historical per-neuron gate budgets.
 
-Honest fix (NF proven correct by the first test): the global synchronized 0.02
-default correctly rejects the mixer, so it stays put — never loosen it. Every
-``mixer_sync_ttfs_*`` recipe instead carries
-``nf_scm_parity_max_mismatch_fraction = 0.15`` (the honest mixer WQ residual
-budget), which is the recipe-scoped path the second test verifies.
+Post floor-collapse, synchronized is EXCLUDED from the bit-exact per-neuron gate
+(``nf_scm_parity_enabled`` returns False — it trains the floor+half-step-bias
+convention like ttfs_quantized, whose per-neuron equality with the ceil contract is
+not its invariant). ``test_synchronized_excluded_from_per_neuron_gate`` locks that;
+its protection is the accuracy gates + the bit-exact deployment shown here.
 """
 
 import pytest
@@ -45,6 +44,7 @@ from mimarsinan.models.torch_mlp_mixer_core import TorchMLPMixerCore
 from mimarsinan.pipelining.core.nf_scm_parity import (
     NfScmParityError,
     assert_nf_scm_parity_or_raise,
+    nf_scm_parity_enabled,
 )
 from mimarsinan.spiking.scale_aware_boundaries import (
     calibrate_scale_aware_boundaries,
@@ -62,13 +62,14 @@ INPUT_SHAPE = (1, 28, 28)
 NUM_CLASSES = 4
 WEIGHT_BITS = 8
 
-# Production default for synchronized schedules (soft_core_mapping_step.py:395).
-# Calibrated on a shallow non-mixer reference; correctly too tight for the mixer's
-# honest weight-quant residual, which is why the mixer recipes carry an override.
+# Historical tight per-neuron gate budget (a shallow non-mixer reference); the
+# mixer's honest weight-quant residual sits above it. Kept as the reference point
+# these tests characterize the residual against — synchronized no longer runs the
+# per-neuron gate (it is excluded post floor-collapse).
 SYNCHRONIZED_DEFAULT_PARITY_BUDGET = 0.02
 
-# The honest mixer weight-quant residual budget carried by every mixer_sync_ttfs_*
-# recipe (research/harness.py: nf_scm_parity_max_mismatch_fraction = 0.15).
+# The honest mixer weight-quant residual budget (the historical mixer_sync_ttfs_*
+# recipe override: nf_scm_parity_max_mismatch_fraction = 0.15).
 MIXER_RECIPE_PARITY_BUDGET = 0.15
 
 # Lower activation scales pack post-ReLU activations near the TTFS grid steps,
@@ -245,3 +246,17 @@ def test_synchronized_mixer_exceeds_default_budget_but_meets_mixer_budget():
         atol=1e-6, max_mismatch_fraction=MIXER_RECIPE_PARITY_BUDGET,
     )
     assert admitted <= MIXER_RECIPE_PARITY_BUDGET
+
+
+def test_synchronized_excluded_from_per_neuron_gate():
+    """Post floor-collapse, synchronized joins ttfs_quantized in the floor +
+    half-step-bias convention: per-neuron NF↔SCM equality is NOT its invariant, so
+    the SoftCoreMappingStep per-neuron gate is off for it (deployment stays
+    bit-exact, proven by the ceil-kernel tests above)."""
+    from mimarsinan.chip_simulation.deployment_contract import (
+        SpikingDeploymentContract,
+    )
+
+    contract = SpikingDeploymentContract.from_pipeline_config(_pipeline().config)
+    assert contract.is_synchronized()
+    assert nf_scm_parity_enabled(contract) is False

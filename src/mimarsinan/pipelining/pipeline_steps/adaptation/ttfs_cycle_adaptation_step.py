@@ -17,7 +17,11 @@ class TTFSCycleAdaptationStep(TunerPipelineStep):
 
     @classmethod
     def applies_to(cls, plan):
-        return plan.is_ttfs_cycle_based
+        # Cascaded-only: it installs the genuine ceil segment driver
+        # (TTFSCycleActivation). The synchronized cell now keeps the floor NF from
+        # ActivationQuantizationStep (train ttfs_quantized floor recovery, deploy
+        # the mode-derived ceil kernel) instead of swapping to the ceil staircase.
+        return plan.is_cascaded_ttfs
 
     def __init__(self, pipeline):
         requires = list(self.REQUIRES)

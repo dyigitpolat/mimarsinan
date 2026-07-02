@@ -155,8 +155,28 @@ class TestActivationFamilyDispatch:
         assert ClampAdaptationStep.applies_to(cyc)
         assert ActivationShiftStep.applies_to(cyc)
         assert ActivationQuantizationStep.applies_to(cyc)
-        assert TTFSCycleAdaptationStep.applies_to(cyc)
+        assert TTFSCycleAdaptationStep.applies_to(cyc)  # cascaded default
         assert not LIFAdaptationStep.applies_to(cyc)
+
+    def test_synchronized_skips_cycle_finetuning_but_keeps_preconditioning(self):
+        # The synchronized floor-collapse keeps the floor NF from Activation
+        # Quantization (the ttfs_quantized recovery) and does NOT swap to the ceil
+        # segment driver, so TTFS Cycle Fine-Tuning is cascaded-only. Preconditioning
+        # (clamp/shift/AQ) STILL runs — it installs the floor NF.
+        sync = _plan(
+            spiking_mode="ttfs_cycle_based", ttfs_cycle_schedule="synchronized",
+        )
+        assert sync.is_synchronized_ttfs and not sync.is_cascaded_ttfs
+        assert not TTFSCycleAdaptationStep.applies_to(sync)
+        assert ActivationQuantizationStep.applies_to(sync)
+        assert ClampAdaptationStep.applies_to(sync)
+        assert ActivationShiftStep.applies_to(sync)
+
+        cascaded = _plan(
+            spiking_mode="ttfs_cycle_based", ttfs_cycle_schedule="cascaded",
+        )
+        assert cascaded.is_cascaded_ttfs
+        assert TTFSCycleAdaptationStep.applies_to(cascaded)
 
     def test_non_lif_style_picks_analytical_chain(self):
         ttfs = _plan(spiking_mode="ttfs")

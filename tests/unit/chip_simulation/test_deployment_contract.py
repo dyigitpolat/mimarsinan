@@ -92,6 +92,10 @@ class TestDerivedGettersTruthTable:
         )
         assert contract.quantize_stage_input_to_grid() is quantize
         assert contract.training_forward_kind() == kind
+        # The floor+half-step-bias convention: ttfs_quantized OR synchronized.
+        assert contract.uses_ttfs_floor_ceil_convention() is (
+            mode == "ttfs_quantized" or is_sync
+        )
 
 
 class TestReservedPerCoreSeam:

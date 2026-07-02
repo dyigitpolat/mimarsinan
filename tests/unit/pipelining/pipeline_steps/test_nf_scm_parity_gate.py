@@ -86,14 +86,15 @@ def _pipeline(schedule=None, spiking_mode="ttfs_quantized"):
 
 class TestEnablement:
     @pytest.mark.parametrize("mode,schedule,enabled", [
-        # ttfs_quantized NF deliberately trains the floor-staircase +
-        # half-step-bias convention (apply_ttfs_quantization_bias_compensation),
-        # which matches the chip ceil kernel only within one step per layer —
-        # per-neuron equality is NOT its invariant (46% step-flip fraction on a
-        # healthy mmixcore run with a 0.2 pp accuracy gap).
+        # The floor+half-step-bias convention modes (ttfs_quantized AND the
+        # synchronized floor-collapse) deliberately train the floor-staircase +
+        # half-step-bias NF (apply_ttfs_quantization_bias_compensation), which
+        # matches the deployed ceil kernel only within one step per layer —
+        # per-neuron equality is NOT their invariant. Both are excluded; their
+        # deployment stays bit-exact regardless (SANA-FE parity 1.0).
         ("ttfs_quantized", None, False),
         ("ttfs", None, True),
-        ("ttfs_cycle_based", "synchronized", True),
+        ("ttfs_cycle_based", "synchronized", False),
         # cascaded: decision-level gate (argmax agreement vs the genuine
         # identity executor) — per-logit atol is meaningless through the host
         # classifier, and WQ tie flips make per-neuron exactness unattainable
@@ -260,10 +261,26 @@ class TestStepWiring:
         # (the stale-bias incident measured 0.85); default budget is tight.
         assert decision_calls[0]["min_agreement"] == pytest.approx(0.98)
 
-    def test_synchronized_default_budget_is_tight(self, monkeypatch):
-        """Synchronized NF is the deployment kernel + segment-entry q(x):
-        measured bit-exact (0/122880 on run 20260607_045154), so its default
-        budget only needs dtype-tie headroom."""
+    def test_synchronized_skips_gate(self, monkeypatch):
+        """The synchronized floor-collapse trains the ttfs_quantized floor +
+        half-step-bias convention and deploys the mode-derived ceil kernel, so —
+        like ttfs_quantized — per-neuron equality with the ceil contract is not its
+        invariant. It is excluded from the per-neuron gate; deployment stays
+        bit-exact (SANA-FE parity 1.0)."""
+        import mimarsinan.pipelining.core.nf_scm_parity as parity_mod
+
+        calls = []
+        monkeypatch.setattr(
+            parity_mod, "assert_nf_scm_parity_or_raise",
+            lambda *args, **kwargs: calls.append(1),
+        )
+        step = self._make_step("synchronized", spiking_mode="ttfs_cycle_based")
+        step._run_nf_scm_parity_gate(model=object(), ir_graph=object())
+        assert calls == []
+
+    def test_continuous_ttfs_default_budget_is_loose(self, monkeypatch):
+        """Continuous ttfs is the only per-neuron path left; its default budget
+        keeps the loose (uncalibrated-residual) headroom."""
         import mimarsinan.pipelining.core.nf_scm_parity as parity_mod
 
         calls = []
@@ -273,11 +290,6 @@ class TestStepWiring:
             return 0.0
 
         monkeypatch.setattr(parity_mod, "assert_nf_scm_parity_or_raise", _record)
-        step = self._make_step("synchronized", spiking_mode="ttfs_cycle_based")
-        step._run_nf_scm_parity_gate(model=object(), ir_graph=object())
-        assert calls[0]["max_mismatch_fraction"] == pytest.approx(0.02)
-
-        calls.clear()
         step = self._make_step(spiking_mode="ttfs")
         step._run_nf_scm_parity_gate(model=object(), ir_graph=object())
         assert calls[0]["max_mismatch_fraction"] == pytest.approx(0.25)

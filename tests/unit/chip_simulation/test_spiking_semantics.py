@@ -14,6 +14,7 @@ from mimarsinan.chip_simulation.spiking_semantics import (
     requires_ttfs_firing,
     supports_spiking_mode,
     ttfs_cycle_schedule,
+    uses_ttfs_floor_ceil_convention,
 )
 
 
@@ -94,3 +95,15 @@ class TestCycleSchedule:
         assert not is_synchronized_ttfs("ttfs_cycle_based", "cascaded")
         assert not is_synchronized_ttfs("ttfs_cycle_based", None)  # default cascaded
         assert not is_synchronized_ttfs("lif", "synchronized")
+
+    def test_floor_ceil_convention_predicate(self):
+        # ttfs_quantized AND the synchronized floor-collapse train the floor +
+        # half-step-bias NF and deploy the mode-derived ceil kernel.
+        assert uses_ttfs_floor_ceil_convention("ttfs_quantized")
+        assert uses_ttfs_floor_ceil_convention("ttfs_quantized", "cascaded")
+        assert uses_ttfs_floor_ceil_convention("ttfs_cycle_based", "synchronized")
+        # cascaded (segment-spike), continuous ttfs, and lif keep their own kernels.
+        assert not uses_ttfs_floor_ceil_convention("ttfs_cycle_based", "cascaded")
+        assert not uses_ttfs_floor_ceil_convention("ttfs_cycle_based", None)
+        assert not uses_ttfs_floor_ceil_convention("ttfs")
+        assert not uses_ttfs_floor_ceil_convention("lif")

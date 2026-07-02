@@ -72,6 +72,18 @@ class SpikingDeploymentContract:
     def is_cascaded(self, *, core: Any = None) -> bool:
         return is_cascaded_ttfs(self.spiking_mode, self.ttfs_cycle_schedule)
 
+    def uses_ttfs_floor_ceil_convention(self, *, core: Any = None) -> bool:
+        """Modes whose NF trains the floor + half-step-bias convention and deploy the
+        ceil TTFS kernel (ttfs_quantized and the synchronized floor-collapse): the
+        half-step bias compensation applies and the bit-exact per-neuron gate is off."""
+        from mimarsinan.chip_simulation.spiking_semantics import (
+            uses_ttfs_floor_ceil_convention,
+        )
+
+        return uses_ttfs_floor_ceil_convention(
+            self.spiking_mode, self.ttfs_cycle_schedule
+        )
+
     def quantize_stage_input_to_grid(self, *, core: Any = None) -> bool:
         """The synchronized wire rule q(x), decided HERE, not per caller."""
         return self.is_synchronized(core=core)

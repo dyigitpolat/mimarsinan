@@ -174,13 +174,18 @@ def test_cascaded_folds_genuine_blend_fast():
     assert dp["enable_loihi_simulation"] is False
 
 
-def test_synchronized_folds_genuine_qat_and_disables_nevresim():
+def test_synchronized_folds_ttfs_quantized_floor_recovery_and_disables_nevresim():
+    # synchronized floor-collapse: it TRAINS the ttfs_quantized floor recovery
+    # (identical recovery knobs) and DEPLOYS the mode-derived ceil kernel + grid-snap.
     dp = {"spiking_mode": "ttfs_cycle_based", "weight_quantization": True,
           "ttfs_cycle_schedule": "synchronized"}
     derive_deployment_parameters(dp)
-    assert dp["ttfs_sync_genuine_qat"] is True
-    assert dp["fast_ladder_freeze_bn"] is True
-    assert dp["ttfs_blend_fast_stabilize_steps"] == 300
+    assert dp["activation_scale_quantile"] == 1.0
+    assert dp["manager_rate_fast_rates"] == [0.25, 0.5, 0.75, 1.0]
+    assert dp["manager_rate_fast_steps_per_rate"] == 120
+    assert dp["optimization_driver"] == "fast"
+    # the old genuine-QAT knobs are no longer folded for synchronized.
+    assert "ttfs_sync_genuine_qat" not in dp
     assert dp["enable_nevresim_simulation"] is False  # no sync-window backend
     assert dp["enable_loihi_simulation"] is False
 
