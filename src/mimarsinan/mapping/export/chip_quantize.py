@@ -46,13 +46,13 @@ def quantize_ir_graph(
                 scale_used = bank_scale_used[node.weight_bank_id]
                 node.threshold = scale_used
                 node.parameter_scale = torch.tensor(1.0)
-                _scale_hardware_bias(node, scale_used, q_dtype)
+                _scale_hardware_bias(node, scale_used, q_min, q_max, q_dtype)
             continue
         scale = _matrix_scale(node.core_matrix, node.parameter_scale, q_max, eps)
         node.core_matrix = np.clip(np.round(node.core_matrix * scale), q_min, q_max).astype(q_dtype)
         node.threshold = scale
         node.parameter_scale = torch.tensor(1.0)
-        _scale_hardware_bias(node, scale, q_dtype)
+        _scale_hardware_bias(node, scale, q_min, q_max, q_dtype)
 
 
 def _matrix_scale(matrix, parameter_scale, q_max: int, eps: float) -> float:
@@ -68,9 +68,16 @@ def _matrix_scale(matrix, parameter_scale, q_max: int, eps: float) -> float:
     return q_max / w_max
 
 
-def _scale_hardware_bias(node: NeuralCore, scale: float, q_dtype) -> None:
+def _scale_hardware_bias(
+    node: NeuralCore, scale: float, q_min: int, q_max: int, q_dtype
+) -> None:
+    """Quantize ``hardware_bias`` with the same ``[q_min, q_max]`` saturation the NF-side
+    NAPQ applies — clamp BEFORE the int cast so an out-of-range bias saturates instead of
+    silently wrapping modulo (NF↔SCM parity, matching ``core_matrix`` handling above)."""
     if node.hardware_bias is not None:
-        node.hardware_bias = np.round(node.hardware_bias * scale).astype(q_dtype)
+        node.hardware_bias = np.clip(
+            np.round(node.hardware_bias * scale), q_min, q_max
+        ).astype(q_dtype)
 
 
 def verify_ir_graph_quantized(ir_graph: IRGraph, bits: int) -> None:
