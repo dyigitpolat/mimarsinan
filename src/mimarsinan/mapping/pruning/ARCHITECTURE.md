@@ -8,6 +8,7 @@ Graph pruning, liveness analysis, and segmentation metadata for hybrid mapping.
 |------|---------|------|
 | `boundary_policy.py` | `PruningBoundaryPolicy`, `compute_model_io_boundary_policy` | Model I/O hard-exempt policy (single source of truth) |
 | `ir_pruning_core.py` | `prune_ir_graph` | Main prune pass |
+| `deployed_neuron_survival.py` | `DeployedNeuronSurvival`, `derive_deployed_neuron_survival` | The deployed per-neuron reality: which output neurons survive pruning; per-neuron gates project their full NF records onto it |
 | `ir_liveness.py` | Liveness helpers | Row/col liveness for pruning |
 | `liveness_semantics.py` | TTFS/liveness rules | Activation semantics for prune decisions |
 | `graph/pruning_propagation.py` | `compute_propagated_pruned_rows_cols` | Propagate prune masks |
@@ -34,3 +35,4 @@ Torch mask exemption uses `compute_perceptron_io_exemption_indices` (same rules,
 ## Dependents
 
 - `mapping.packing.hybrid_build`, verification steps, layout verifier, `transformations.pruning`, `tuning.tuners.pruning`.
+- `pipelining.core.nf_scm_parity` + `chip_simulation.cross_sim_parity` consume `DeployedNeuronSurvival` to align per-neuron records against the pruned deployment.

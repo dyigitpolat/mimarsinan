@@ -583,3 +583,83 @@ class TestTorchVsDeployedSimParity:
             assert_torch_vs_deployed_sim_parity_or_raise(
                 model, flow, x, min_agreement=0.98
             )
+
+
+class TestPrunedDeploymentParity:
+    """Pruning removes deployed output neurons (dead cores + zeroed columns), so the
+    identity-mapped SCM carries M < N of a perceptron's N neurons while the NF keeps all N
+    (pruned ones live at 0.0). The gate projects the NF onto the DEPLOYED survivor set (the
+    pruned ir_graph reality, via ``DeployedNeuronSurvival``) and compares bit-exact —
+    instead of false-failing the raw per-neuron shape check on a lossless pruned deploy."""
+
+    def _build_pruned_toy(self, pruned_out_neuron=5):
+        from mimarsinan.mapping.pruning.ir_pruning_core import prune_ir_graph
+        from mimarsinan.mapping.pruning.ir_pruning_masks import (
+            get_initial_pruning_masks_from_model,
+        )
+        from mimarsinan.tuning.tuners.pruning.pruning_tuner_enforce import (
+            enforce_pruning_persistently,
+            register_prune_buffers,
+        )
+
+        torch.manual_seed(0)
+        p1 = Perceptron(6, 8, normalization=nn.Identity(), base_activation_name="ReLU")
+        p2 = Perceptron(4, 6, normalization=nn.Identity(), base_activation_name="ReLU")
+        for p in (p1, p2):
+            act = TTFSCycleActivation(T=T, activation_scale=1.0)
+            p.base_activation = act
+            p.activation = act
+            p.set_activation_scale(1.0)
+
+        # Prune one output neuron of p1 (keep-mask: True = keep). Its downstream
+        # consumer p2 is rewired by prune_ir_graph — a genuine pruned deployment.
+        keep_p1 = torch.ones(6, dtype=torch.bool)
+        keep_p1[pruned_out_neuron] = False
+        row_masks = [keep_p1, torch.ones(4, dtype=torch.bool)]
+        col_masks = [torch.ones(8, dtype=torch.bool), torch.ones(6, dtype=torch.bool)]
+        register_prune_buffers([p1, p2], row_masks, col_masks)
+        enforce_pruning_persistently([p1, p2], row_masks, col_masks)
+
+        m2 = PerceptronMapper(PerceptronMapper(InputMapper((8,)), p1), p2)
+        repr_ = ModelRepresentation(m2)
+        repr_.assign_perceptron_indices()
+        compute_per_source_scales(repr_)
+        ir_graph = IRMapping(
+            q_max=1, firing_mode="TTFS", max_axons=1024, max_neurons=1024,
+        ).map(repr_)
+        for node in ir_graph.nodes:
+            if isinstance(node, NeuralCore):
+                node.threshold = 1.0
+                node.parameter_scale = torch.tensor(1.0)
+
+        model = _ToyFlow(repr_, [p1, p2]).double().eval()
+        initial_node, initial_bank = get_initial_pruning_masks_from_model(model, ir_graph)
+        ir_graph = prune_ir_graph(
+            ir_graph,
+            initial_pruned_per_node=initial_node or None,
+            initial_pruned_per_bank=initial_bank or None,
+            store_heatmap=False,
+            simulation_steps=T,
+            spiking_mode="ttfs_quantized",
+        )
+        IRLatency(ir_graph).calculate()
+        return model, ir_graph
+
+    def test_pruned_deployment_parity_is_bit_exact_via_projection(self):
+        model, ir_graph = self._build_pruned_toy()
+        # The pruned perceptron's core now carries M<N neurons; without the survival
+        # projection this raised "neuron-count mismatch". With it, bit-exact.
+        torch.manual_seed(1)
+        samples = torch.rand(3, 8, dtype=torch.float64)
+        fraction = assert_nf_scm_parity_or_raise(
+            _pipeline(), model, ir_graph, samples, atol=1e-9,
+        )
+        assert fraction == 0.0
+
+    def test_survival_reconstructs_the_pruned_neuron(self):
+        from mimarsinan.mapping.pruning import derive_deployed_neuron_survival
+
+        _, ir_graph = self._build_pruned_toy(pruned_out_neuron=2)
+        survival = derive_deployed_neuron_survival(ir_graph)
+        # Perceptron 0 (p1) has 6 output neurons; index 2 was pruned -> survivors omit it.
+        assert list(survival.survivors[0]) == [0, 1, 3, 4, 5]

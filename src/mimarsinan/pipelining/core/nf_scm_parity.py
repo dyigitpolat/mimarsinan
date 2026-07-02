@@ -102,7 +102,15 @@ def assert_nf_scm_parity_or_raise(
         ir_graph, pipeline_config=pipeline.config,
     )
 
+    from mimarsinan.mapping.pruning import derive_deployed_neuron_survival
+
     nf = _capture_nf_normalized(model, samples)
+    # Project the analytical NF (all N original output neurons per perceptron) onto the
+    # neurons ACTUALLY deployed after pruning (M <= N): liveness-dead cores and zeroed
+    # columns are absent from the executor, so a raw per-neuron shape check would
+    # false-fail a lossless pruned deployment. The pruned ir_graph is the survival
+    # authority; identity (no-op) when nothing was pruned.
+    nf = derive_deployed_neuron_survival(ir_graph).project(nf)
     scm = _collect_scm_normalized(identity_mapping, model, samples, contract)
 
     shared = sorted(set(nf) & set(scm))

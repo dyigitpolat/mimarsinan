@@ -126,6 +126,12 @@ def measured_max_abs_diff(
     ``nf_scm_parity.compare_normalized_records`` (atol=0 reports the true worst
     gap; a permuted-but-equal row reads 0). The parity math is wrapped, not
     duplicated.
+
+    Records must already share the deployed neuron reality: when one side is a
+    full analytical (NF) record and the other a pruned deployment (M < N neurons),
+    the caller must first project the full record with
+    ``mapping.pruning.DeployedNeuronSurvival.project`` (derived from the pruned
+    ir_graph) — otherwise the shape check fails loud, as it should.
     """
     _, _, worst = compare_normalized_records(nf_record, scm_record, atol=0.0)
     if worst is None:
