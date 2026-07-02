@@ -154,6 +154,20 @@ class SoftCoreMappingStep(PipelineStep):
         )
 
         compute_per_source_scales(mapper_repr)
+        # Boundary input scales (upstream theta_out -> each perceptron's
+        # input_activation_scale) share the SAME staleness hazard: the segment-entry
+        # grid-snap normalizes its input by input_activation_scale, so if the encoding /
+        # upstream theta was retuned AFTER these were last propagated, the snap
+        # normalizes by the wrong scale and saturates -> NF diverges from the SCM (which
+        # decodes at the correct scale) and the error compounds through the network
+        # (mmixcore_verify_synchronized). Re-propagate here so mapping is self-contained;
+        # idempotent (a pure function of the current activation_scales) => byte-identical
+        # when the calibration step already ran with the final scales.
+        from mimarsinan.spiking.scale_aware_boundaries import (
+            propagate_boundary_input_scales,
+        )
+
+        propagate_boundary_input_scales(model, input_data_scale=1.0)
         with _phase("ir_mapping.map"):
             ir_graph = ir_mapping.map(mapper_repr)
 

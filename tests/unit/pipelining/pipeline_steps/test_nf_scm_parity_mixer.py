@@ -46,7 +46,10 @@ from mimarsinan.pipelining.core.nf_scm_parity import (
     NfScmParityError,
     assert_nf_scm_parity_or_raise,
 )
-from mimarsinan.spiking.scale_aware_boundaries import calibrate_scale_aware_boundaries
+from mimarsinan.spiking.scale_aware_boundaries import (
+    calibrate_scale_aware_boundaries,
+    propagate_boundary_input_scales,
+)
 from mimarsinan.torch_mapping.converter import convert_torch_model
 from mimarsinan.torch_mapping.encoding_layers import (
     mark_encoding_layers,
@@ -169,6 +172,39 @@ def _build_synchronized_mixer(*, weight_quantization, scale_mult=TRAINED_LIKE_SC
 def _samples(n=8):
     torch.manual_seed(1)
     return torch.rand(n, *INPUT_SHAPE, dtype=torch.float64)
+
+
+def test_stale_input_activation_scale_breaks_parity_until_repropagated():
+    """The segment-entry grid-snap normalizes by ``input_activation_scale``. When that
+    scale goes STALE vs the upstream theta (the encoding layer retuned after the boundary
+    scales were propagated — the ``mmixcore_verify_synchronized`` field failure), the snap
+    normalizes by the wrong scale and saturates, so NF diverges from the SCM (which decodes
+    at the correct scale) and the error compounds through the network. Re-propagating the
+    boundary input scales — which ``SoftCoreMappingStep`` now does at map time, mirroring
+    its ``compute_per_source_scales`` self-contained-mapping call — restores bit-exactness.
+    """
+    flow, ir_graph = _build_synchronized_mixer(weight_quantization=False)
+    # Fresh scales: bit-exact.
+    assert assert_nf_scm_parity_or_raise(
+        _pipeline(), flow, ir_graph, _samples(), atol=1e-6, max_mismatch_fraction=0.0,
+    ) == 0.0
+
+    entry_ids = {id(p) for p in segment_entry_perceptrons(flow.get_mapper_repr())}
+    entries = [p for p in flow.get_perceptrons() if id(p) in entry_ids]
+    assert entries, "fixture must carry a segment-entry snap to exercise the seam"
+    for p in entries:
+        p.input_activation_scale.data = p.input_activation_scale.data * 0.25  # go stale
+
+    with pytest.raises(NfScmParityError):
+        assert_nf_scm_parity_or_raise(
+            _pipeline(), flow, ir_graph, _samples(), atol=1e-6,
+            max_mismatch_fraction=SYNCHRONIZED_DEFAULT_PARITY_BUDGET,
+        )
+
+    propagate_boundary_input_scales(flow, input_data_scale=1.0)
+    assert assert_nf_scm_parity_or_raise(
+        _pipeline(), flow, ir_graph, _samples(), atol=1e-6, max_mismatch_fraction=0.0,
+    ) == 0.0
 
 
 def test_synchronized_mixer_bit_exact_without_weight_quant():
