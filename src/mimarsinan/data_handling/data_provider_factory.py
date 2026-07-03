@@ -1,4 +1,12 @@
+import importlib
+
 from mimarsinan.data_handling.data_provider import DataProvider
+
+
+def _ensure_providers_registered() -> None:
+    """Import the providers package so its @register decorators populate the registry."""
+    importlib.import_module("mimarsinan.data_handling.data_providers")
+
 
 class DataProviderFactory:
     def create(self) -> DataProvider:
@@ -67,7 +75,7 @@ class BasicDataProviderFactory(DataProviderFactory):
         Excludes ``input_shape`` / ``num_classes`` (those need instantiation;
         use :meth:`get_metadata`).
         """
-        import mimarsinan.data_handling.data_providers  # noqa: F401 - populate registry
+        _ensure_providers_registered()
         result = []
         for name in sorted(cls._provider_registry.keys()):
             provider_cls = cls._provider_registry[name]
@@ -94,7 +102,7 @@ class BasicDataProviderFactory(DataProviderFactory):
         Returns id/label/input_shape/num_classes/supports_preprocessing;
         unknown providers raise ValueError and instantiation errors propagate.
         """
-        import mimarsinan.data_handling.data_providers  # noqa: F401 - populate registry
+        _ensure_providers_registered()
         if name not in cls._provider_registry:
             raise ValueError(f"Data provider {name!r} not registered.")
         provider_cls = cls._provider_registry[name]

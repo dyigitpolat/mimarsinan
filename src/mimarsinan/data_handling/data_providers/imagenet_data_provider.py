@@ -2,6 +2,7 @@
 
 import os
 from pathlib import Path
+from typing import Any
 
 import torch
 import torchvision
@@ -194,7 +195,7 @@ class ImageNet_DataProvider(DataProvider):
             "test": (self._get_test_dataset(), False),
         }
         workers = max(0, int(num_workers))
-        loader_kwargs = dict(
+        loader_kwargs: dict[str, Any] = dict(
             batch_size=int(batch_size),
             num_workers=workers,
             pin_memory=True,

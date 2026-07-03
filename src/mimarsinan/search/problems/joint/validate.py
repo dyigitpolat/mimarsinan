@@ -12,12 +12,12 @@ from mimarsinan.mapping.platform.coalescing import CoalescingConfigError, normal
 from mimarsinan.search.problem import ValidationResult
 from mimarsinan.search.results import ACCURACY_OBJECTIVE_NAME
 
-from .types import VALIDATION_CACHE_MAX_SIZE, ValidationEntry, json_key
+from .types import VALIDATION_CACHE_MAX_SIZE, JointHostContract, ValidationEntry, json_key
 
 logger = logging.getLogger(__name__)
 
 
-class JointValidateMixin:
+class JointValidateMixin(JointHostContract):
     """Feasibility validation for :class:`JointArchHwProblem`."""
 
     def _record_invalid(
@@ -91,7 +91,9 @@ class JointValidateMixin:
             cache.softcores, pcfg, cache.total_params, cache.host_side_segment_count,
         )
         if hw_obj is None:
-            return self._record_invalid(key, error, "hw_packing")
+            return self._record_invalid(
+                key, error or "HW bin-packing infeasible", "hw_packing",
+            )
 
         self._validation_cache[key] = ValidationEntry(
             model=None, total_params=cache.total_params, hw_objectives=hw_obj,
@@ -137,7 +139,9 @@ class JointValidateMixin:
             softcores, pcfg, total_params, host_segments,
         )
         if hw_obj is None:
-            return self._record_invalid(key, error, "hw_packing")
+            return self._record_invalid(
+                key, error or "HW bin-packing infeasible", "hw_packing",
+            )
 
         self._validation_cache[key] = ValidationEntry(
             model=raw_model, total_params=total_params, hw_objectives=hw_obj,

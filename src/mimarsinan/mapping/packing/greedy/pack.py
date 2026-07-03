@@ -41,7 +41,7 @@ def greedy_pack_softcores(
         if k is None:
             k = (int(hc.get_input_count()), int(hc.get_output_count()))
             try:
-                hc._type_key_cache = k
+                setattr(hc, "_type_key_cache", k)
             except AttributeError:
                 pass
         return k
@@ -140,9 +140,8 @@ def greedy_pack_softcores(
             if not unused_hardcores:
                 raise RuntimeError("No more hard cores available")
 
-            chosen_type = None
+            chosen: tuple[tuple[int, int], HardT] | None = None
             chosen_score = float("inf")
-            chosen_hc = None
             for type_key, bucket in unused_by_type.items():
                 if not bucket:
                     continue
@@ -152,11 +151,10 @@ def greedy_pack_softcores(
                     abundance = len(bucket)
                     score = waste / max(abundance, 1)
                     if score < chosen_score:
-                        chosen_type = type_key
                         chosen_score = score
-                        chosen_hc = hc
+                        chosen = (type_key, hc)
 
-            if chosen_hc is None:
+            if chosen is None:
                 s_a = int(core.get_input_count())
                 s_n = int(core.get_output_count())
                 avail = {k: len(b) for k, b in unused_by_type.items()}
@@ -205,6 +203,7 @@ def greedy_pack_softcores(
                         f"even with coalescing. Remaining types: {avail}"
                     )
             else:
+                chosen_type, chosen_hc = chosen
                 _identity_remove(unused_hardcores, chosen_hc)
                 bucket = unused_by_type[chosen_type]
                 if bucket and bucket[-1] is chosen_hc:

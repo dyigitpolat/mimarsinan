@@ -2,7 +2,10 @@ import numpy as np
 
 from typing import List, Sequence
 
-from mimarsinan.chip_simulation.ttfs.segment_arrays import SegmentTtfsArrays, segment_ttfs_arrays_from_mapping
+from mimarsinan.chip_simulation.ttfs.segment_arrays import (
+    SegmentTtfsArrays,
+    segment_ttfs_arrays_from_mapping as segment_ttfs_arrays_from_mapping,
+)
 from mimarsinan.mapping.support.spike_source_spans import SpikeSourceSpan
 from mimarsinan.models.spiking.ttfs_kernels import ttfs_quantized_activation_np
 
@@ -137,7 +140,7 @@ def _run_ttfs_segment_ordered(
     quantized = forces_activation_quantization(spiking_mode)
     s = max(int(simulation_length), 1)
 
-    buffers = [
+    buffers: List[np.ndarray] = [
         np.zeros((batch, seg.n_neurons_per_core[i]), dtype=np.float64)
         for i in range(n_cores)
     ]
@@ -158,8 +161,9 @@ def _run_ttfs_segment_ordered(
             spans=seg.axon_spans[ci],
         )
         v = input_signals[ci] @ seg.core_params[ci].T
-        if seg.hw_biases[ci] is not None:
-            v = v + seg.hw_biases[ci]
+        hw_bias = seg.hw_biases[ci]
+        if hw_bias is not None:
+            v = v + hw_bias
         v = v.astype(np.float64, copy=False)
         membrane[ci] = v
         if quantized:

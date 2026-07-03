@@ -2,6 +2,7 @@ import subprocess
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal, overload
 
 from mimarsinan.common.file_utils import prepare_containing_directory
 from mimarsinan.common.build_utils import find_cpp20_compiler
@@ -15,6 +16,36 @@ class CompileResult:
     compiler_family: str
     success: bool
     trace_json: str | None = None
+
+
+@overload
+def compile_simulator(
+    generated_files_path,
+    nevresim_path,
+    output_path=None,
+    verbose=True,
+    *,
+    optimization: str = "-O3",
+    time_trace: Literal[False] = False,
+    trace_output_dir: str | Path | None = None,
+    extra_flags: list[str] | None = None,
+    return_timing: Literal[False] = False,
+) -> str | None: ...
+
+
+@overload
+def compile_simulator(
+    generated_files_path,
+    nevresim_path,
+    output_path=None,
+    verbose=True,
+    *,
+    optimization: str = "-O3",
+    time_trace: bool = False,
+    trace_output_dir: str | Path | None = None,
+    extra_flags: list[str] | None = None,
+    return_timing: bool = False,
+) -> CompileResult | str | None: ...
 
 
 def compile_simulator(
@@ -38,7 +69,7 @@ def compile_simulator(
         print("Compiling nevresim for mapped chip...")
 
     cc_command, family = find_cpp20_compiler()
-    if cc_command is None:
+    if cc_command is None or family is None:
         print("No C++20-capable compiler found.")
         return None if not (time_trace or return_timing) else CompileResult(None, 0.0, "", "", False)
 

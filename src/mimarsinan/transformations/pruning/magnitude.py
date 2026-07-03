@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from typing import List, Sequence
+from typing import Any, List, Sequence, cast
 
 import torch
 import torch.nn as nn
@@ -137,7 +137,7 @@ def prune_perceptron_chain(
     ``sparsity == 0.0`` is the BYTE-IDENTICAL default: returns immediately, leaving
     every ``nn.Linear`` object (and its parameter tensors) untouched.
     """
-    layers = [p.layer for p in perceptrons]
+    layers = [cast(nn.Linear, cast(Any, p).layer) for p in perceptrons]
     if sparsity == 0.0 or not layers:
         all_kept = [
             torch.ones(l.out_features, dtype=torch.bool, device=l.weight.device)
@@ -156,15 +156,16 @@ def prune_perceptron_chain(
             keep_masks.append(kept_output_channels(layer.weight.data, sparsity))
 
     for i, perceptron in enumerate(perceptrons):
+        p = cast(Any, perceptron)
         out_keep = keep_masks[i]
         if not bool(out_keep.all()):
-            perceptron.layer = _shrink_linear_outputs(perceptron.layer, out_keep)
-            perceptron.output_channels = int(out_keep.sum().item())
+            p.layer = _shrink_linear_outputs(p.layer, out_keep)
+            p.output_channels = int(out_keep.sum().item())
         if i > 0:
             in_keep = keep_masks[i - 1]
-            if in_keep.numel() == perceptron.layer.in_features and not bool(in_keep.all()):
-                perceptron.layer = _shrink_linear_inputs(perceptron.layer, in_keep)
-                perceptron.input_features = int(in_keep.sum().item())
+            if in_keep.numel() == p.layer.in_features and not bool(in_keep.all()):
+                p.layer = _shrink_linear_inputs(p.layer, in_keep)
+                p.input_features = int(in_keep.sum().item())
 
     return ChannelPruningResult(
         sparsity=float(sparsity), pruned=True, kept_output_masks=keep_masks

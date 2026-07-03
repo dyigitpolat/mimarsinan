@@ -23,7 +23,7 @@ Converts PyTorch models to an intermediate representation (IR) and packs the IR 
 | File | Role |
 |------|------|
 | `ir_mapping.py` | `IRMapping` — materializes weights into `IRGraph` |
-| `mapping_utils.py` | Mapper registration and graph utilities |
+| `mapping_utils.py` | Legacy re-export facade (`__all__`-scoped) for `ModelRepresentation`, the mapper classes, and `hard_cores_to_chip`; import from the concrete modules in new code |
 | `weight_reuse.py` | Time-domain weight-reuse phase classification (round-1 keystone, default-off): `classify_segment_phases` / `weight_reuse_plan_from_graph` group a segment's `NeuralCore`s by `weight_bank_id` into N reprogram + M reuse passes (`SegmentReusePhases` / `WeightReusePlan`); `format_weight_reuse_summary` is the SCM-gate one-liner. Pure read of the IR; gated by `ChipCapabilities.allow_weight_reuse`. |
 | `model_representation.py` | Dual-purpose mapper graph.  `__call__` is a memory-frugal topological executor: a reverse-dependency refcount (computed once in `_ensure_exec_graph` as `self._consumer_count`) drives `del values[dep]` once every consumer has run, so peak live values is bounded by the maximum simultaneously-live working set rather than the total node count.  `self._peak_live_values` is exposed for testing / memory introspection. |
 

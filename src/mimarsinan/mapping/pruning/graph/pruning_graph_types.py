@@ -1,6 +1,6 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
-from typing import AbstractSet, Dict, Set, Tuple
+from typing import Dict, Set
 
 @dataclass
 class GlobalPruningResult:

@@ -49,8 +49,14 @@ def quantize_ir_graph(
                 node.parameter_scale = torch.tensor(1.0)
                 _scale_hardware_bias(node, scale_used, q_min, q_max, q_dtype)
             continue
-        scale = _matrix_scale(node.core_matrix, node.parameter_scale, q_max, eps)
-        node.core_matrix = np.clip(np.round(node.core_matrix * scale), q_min, q_max).astype(q_dtype)
+        matrix = node.core_matrix
+        if matrix is None:
+            raise ValueError(
+                f"quantize_ir_graph: NeuralCore {node.name} (id={node.id}) has "
+                f"neither a weight bank nor an owned core_matrix."
+            )
+        scale = _matrix_scale(matrix, node.parameter_scale, q_max, eps)
+        node.core_matrix = np.clip(np.round(matrix * scale), q_min, q_max).astype(q_dtype)
         node.threshold = scale
         node.parameter_scale = torch.tensor(1.0)
         _scale_hardware_bias(node, scale, q_min, q_max, q_dtype)

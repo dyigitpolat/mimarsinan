@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import time
 import warnings
+from typing import TYPE_CHECKING, Any
 
 from mimarsinan.tuning.trace import DecisionTrace
 from mimarsinan.tuning.orchestration.acceptance_sensor import AcceptanceSensor
@@ -17,6 +18,17 @@ from mimarsinan.tuning.orchestration.tuner_base import (
 
 
 class SmoothAdaptationRunMixin(TunerBase):
+    if TYPE_CHECKING:
+        # Host contract: cycle-scope services come from SmoothAdaptationCycleMixin
+        # in the composed SmoothAdaptationTuner.
+        def _clone_state(self) -> Any: ...
+        def _restore_state(self, state) -> None: ...
+        def _recovery_training_hooks(self, rate) -> list: ...
+        def _adaptation(self, rate) -> Any: ...
+        def _before_cycle(self) -> None: ...
+        def _after_run(self) -> Any: ...
+        def _certified_gate_metric(self, paired_post_acc=None) -> float: ...
+
     def _stabilization_budget(self):
         """Number of gradient steps for the final rate=1.0 stabilization pass
         (per round; ``_max_stabilization_rounds`` controls the round count).
@@ -242,12 +254,11 @@ class SmoothAdaptationRunMixin(TunerBase):
         """
         tol = self._pipeline_tolerance
         baseline_floor = baseline_val * (1.0 - tol)
-        anchor_on_real = (
+        if (
             bool(self.pipeline.config.get("tuning_target_floor_on_real_target", False))
             and real_target is not None
             and float(real_target) > float(baseline_val)
-        )
-        if anchor_on_real:
+        ):
             real = float(real_target)
             self.target_adjuster.target_metric = real
             self.target_adjuster.original_metric = real

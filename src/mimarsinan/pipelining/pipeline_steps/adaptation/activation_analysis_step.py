@@ -1,3 +1,5 @@
+from typing import Iterable, cast
+
 from mimarsinan.pipelining.core.registry.trainer_factory import make_basic_trainer
 from mimarsinan.pipelining.core.steps.trainer_pipeline_step import TrainerPipelineStep
 from mimarsinan.tuning.orchestration.tuning_budget import tuning_budget_from_pipeline
@@ -166,7 +168,12 @@ class ActivationAnalysisStep(TrainerPipelineStep):
         try:
             self.trainer.model.eval()
             with torch.no_grad():
-                for x, _ in self.trainer.iter_validation_batches(n_batches):
+                # cast: the validation cache yields (input, target) tensor pairs; _gpu_val_cache is untyped upstream.
+                val_batches = cast(
+                    "Iterable[tuple[torch.Tensor, torch.Tensor]]",
+                    self.trainer.iter_validation_batches(n_batches),
+                )
+                for x, _ in val_batches:
                     x = x.to(self.pipeline.config["device"])
                     _ = self.trainer.model(x)
 
@@ -219,7 +226,9 @@ class ActivationAnalysisStep(TrainerPipelineStep):
             f"scale_range=[{scale_summary['min_scale']:.4f}, {scale_summary['max_scale']:.4f}]"
         )
 
-        self.trainer.val_iter = iter(self.trainer.validation_loader)
+        validation_loader = self.trainer.validation_loader
+        assert validation_loader is not None, "trainer was closed during analysis"
+        self.trainer.val_iter = iter(validation_loader)
 
         self.add_entry("activation_scales", activation_scales)
         self.add_entry("activation_scale_stats", activation_scale_stats)

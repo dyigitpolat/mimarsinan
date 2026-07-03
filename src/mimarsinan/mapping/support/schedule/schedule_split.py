@@ -22,17 +22,12 @@ available-core numbers.
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import List, Optional, Sequence, Tuple
+from typing import List, Sequence
 
-from mimarsinan.mapping.ir import NeuralCore
 from mimarsinan.mapping.layout.layout_types import (
     LayoutHardCoreType,
     LayoutSoftCoreSpec,
 )
-
-
-# Budget helper — single source of truth for both wizard and runtime
-
 from mimarsinan.mapping.support.schedule.schedule_budget import _coalescing_bundles
 
 def split_softcores_by_capacity(
@@ -93,12 +88,13 @@ def split_softcores_by_capacity(
         mid = len(group) // 2
         return _halve_until_packs(group[:mid]) + _halve_until_packs(group[mid:])
 
-    use_coalescing_bundles = bool(
+    use_coalescing_bundles = False
+    if (
         allow_coalescing
         and coalescing_group_ids is not None
         and len(coalescing_group_ids) == len(softcores)
-    )
-    if use_coalescing_bundles:
+    ):
+        use_coalescing_bundles = True
         atomic = _coalescing_bundles(softcores, coalescing_group_ids)
     else:
         atomic = [[sc] for sc in softcores]

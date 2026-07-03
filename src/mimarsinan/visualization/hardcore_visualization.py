@@ -67,7 +67,7 @@ class HardCoreMappingVisualizer:
             bottom_n = bottom / total_height
             w_n = cw / total_width
             h_n = ch / total_height
-            ax = fig.add_axes([left_n, bottom_n, w_n, h_n])
+            ax = fig.add_axes((left_n, bottom_n, w_n, h_n))
             ax.imshow(np.abs(core.core_matrix), cmap="YlOrRd", aspect="auto")
             ax.set_title(f"Core {i+1}, L={core.latency}", fontsize=12)
             ax.axis("off")

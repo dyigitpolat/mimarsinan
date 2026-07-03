@@ -8,7 +8,7 @@ import os
 from dataclasses import dataclass
 from typing import Any, Optional
 
-import mimarsinan.data_handling.data_providers  # noqa: F401 — registers built-in providers
+import mimarsinan.data_handling.data_providers  # noqa: F401  # pyright: ignore[reportUnusedImport] — registers built-in providers
 from mimarsinan.common.best_effort import best_effort
 from mimarsinan.common.reporter import DefaultReporter
 from mimarsinan.data_handling.data_provider_factory import BasicDataProviderFactory

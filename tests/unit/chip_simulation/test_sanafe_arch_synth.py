@@ -301,6 +301,22 @@ def test_derive_arch_spec_resolves_plugin_paths():
     assert spec.soma_plugin_path.endswith("libmimarsinan_soma.so")
 
 
+def test_derive_arch_spec_missing_plugins_lists_every_missing_name(monkeypatch):
+    """The plugin gate aggregates ALL missing plugin names in one error."""
+    from mimarsinan.chip_simulation.sanafe.arch_synth import spec as spec_mod
+
+    absent = {"soma", "ttfs_cycle_soma"}
+    monkeypatch.setattr(
+        spec_mod, "_plugin_path",
+        lambda name: None if name in absent else f"/abs/libmimarsinan_{name}.so",
+    )
+    mapping = _fake_mapping(_fake_stage("neural", _fake_hcm((4, 2))))
+    with pytest.raises(FileNotFoundError) as exc:
+        spec_mod.derive_arch_spec(mapping, preset_name="loihi")
+    assert "soma, ttfs_cycle_soma" in str(exc.value)
+    assert "dendrite," not in str(exc.value)
+
+
 def test_render_arch_yaml_multi_tile_emits_one_block_per_tile():
     yaml = _render_arch_yaml(_spec(n_tiles=3, n_cores_per_tile=[2, 2, 1]))
     assert yaml.count("- name: tile") == 3

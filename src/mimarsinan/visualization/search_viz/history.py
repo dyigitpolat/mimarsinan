@@ -5,7 +5,11 @@ from typing import Any, Dict
 
 import matplotlib.pyplot as plt
 
-from mimarsinan.common.safe_numeric import safe_float
+from mimarsinan.visualization.search_viz.series import (
+    best_metric_series,
+    goal_by_metric,
+    nan_gapped,
+)
 
 __all__ = ["plot_history_best_metrics", "plot_history_metrics_separate"]
 
@@ -15,8 +19,7 @@ def plot_history_best_metrics(result_json: Dict[str, Any], out_path: str) -> Non
     if not hist:
         return
 
-    objectives = result_json.get("objectives", []) or []
-    metric_names = [o.get("name") for o in objectives if isinstance(o, dict) and o.get("name")]
+    metric_names = list(goal_by_metric(result_json).keys())
     if not metric_names:
         return
 
@@ -25,10 +28,10 @@ def plot_history_best_metrics(result_json: Dict[str, Any], out_path: str) -> Non
 
     plt.figure(figsize=(10, 6))
     for name in metric_names:
-        ys = [safe_float(b.get(name)) for b in bests]
+        ys = best_metric_series(bests, name)
         if all(y is None for y in ys):
             continue
-        plt.plot(gens, ys, label=name)
+        plt.plot(gens, nan_gapped(ys), label=name)
 
     plt.xlabel("generation")
     plt.ylabel("best metric value")
@@ -46,8 +49,7 @@ def plot_history_metrics_separate(result_json: Dict[str, Any], out_dir: str) -> 
     if not hist:
         return
 
-    objectives = result_json.get("objectives", []) or []
-    goal_by_name = {o.get("name"): o.get("goal") for o in objectives if isinstance(o, dict)}
+    goal_by_name = goal_by_metric(result_json)
     if not goal_by_name:
         return
 
@@ -58,12 +60,12 @@ def plot_history_metrics_separate(result_json: Dict[str, Any], out_dir: str) -> 
 
     for key, goal in goal_by_name.items():
         label = f"{key} ({goal})"
-        ys = [safe_float(b.get(key)) for b in bests]
+        ys = best_metric_series(bests, key)
         if all(y is None for y in ys):
             continue
 
         plt.figure(figsize=(8, 4.8))
-        plt.plot(gens, ys, marker="o", linewidth=1.5, markersize=3.5)
+        plt.plot(gens, nan_gapped(ys), marker="o", linewidth=1.5, markersize=3.5)
         plt.xlabel("generation")
         plt.ylabel(label)
         plt.title(f"NSGA-II best {key} per generation")

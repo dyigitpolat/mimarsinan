@@ -5,9 +5,10 @@ from __future__ import annotations
 from mimarsinan.mapping.latency.chip import ChipLatency
 from mimarsinan.mapping.packing.softcore import HardCoreMapping
 from mimarsinan.chip_simulation.nevresim.nevresim_driver import NevresimDriver
+from mimarsinan.chip_simulation.simulation_runner.host_contract import SimulationHostContract
 
 
-class SimulationFlatMixin:
+class SimulationFlatMixin(SimulationHostContract):
     def _run_flat_mapping(self, hard_core_mapping: HardCoreMapping) -> float:
         """Run a flat (single-segment) HardCoreMapping through nevresim."""
         delay = ChipLatency(hard_core_mapping).calculate()

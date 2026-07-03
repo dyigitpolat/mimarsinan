@@ -25,16 +25,15 @@ from collections import defaultdict
 from typing import List, Optional, Sequence, Tuple
 
 from mimarsinan.mapping.ir import NeuralCore
-from mimarsinan.mapping.layout.layout_types import (
-    LayoutHardCoreType,
-    LayoutSoftCoreSpec,
+from mimarsinan.mapping.layout.layout_types import LayoutSoftCoreSpec
+
+# Re-exported: wizard / verification callers import both names from this module.
+from mimarsinan.mapping.support.schedule.schedule_budget import (
+    effective_core_budget as effective_core_budget,
 )
-
-
-# Budget helper — single source of truth for both wizard and runtime
-
-from mimarsinan.mapping.support.schedule.schedule_budget import effective_core_budget
-from mimarsinan.mapping.support.schedule.schedule_split import split_softcores_by_capacity
+from mimarsinan.mapping.support.schedule.schedule_split import (
+    split_softcores_by_capacity as split_softcores_by_capacity,
+)
 
 def partition_segment_into_passes(
     cores: list[NeuralCore],

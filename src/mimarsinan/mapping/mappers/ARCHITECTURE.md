@@ -6,10 +6,11 @@
 
 | File | Role |
 |------|------|
-| `base.py` | `Mapper` base class + `resolve_activation_type`; default V6 per-node polymorphic methods (`propagate_source_scale`, `propagate_boundary_scale`, `flowchart_node_estimate`) |
+| `base.py` | `Mapper` base class + `resolve_activation_type`; `require_source_mapper()` (non-None source accessor); default V6 per-node polymorphic methods (`propagate_source_scale`, `propagate_boundary_scale`, `flowchart_node_estimate`) |
 | `perceptron_mapper.py` | FC / perceptron layers (`PerceptronMapper`) |
 | `compute_op_mapper.py` | Host-side ComputeOp mapper (`ComputeOpMapper`, `ShapeMismatchError`) |
 | `conv1d_mapper.py` / `conv2d_mapper.py` | Shared-weight conv perceptron mappers |
+| `conv_helpers.py` | Shared conv helpers: `_chunk_sizes`, `pad_source_grid` (OFF-source grid padding) |
 | `module_mapper.py` | Forward-only `ModuleMapper` (identity in IR) |
 | `structural.py` | Input, Reshape, EinopsRearrange, Stack, Concat, Subscript, Permute |
 | `leading_dim.py` | Merge / Split / Ensure-2D leading-dimension reshapes |

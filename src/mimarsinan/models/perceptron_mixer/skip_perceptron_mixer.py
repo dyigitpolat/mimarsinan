@@ -21,7 +21,8 @@ import einops
 
 class SkipPerceptronMixer(PerceptronFlow):
     def __init__(
-        self, 
+        self,
+        device,
         input_shape,
         num_classes,
         patch_n_1,
@@ -33,7 +34,7 @@ class SkipPerceptronMixer(PerceptronFlow):
         patch_c_2,
         fc_w_2,
         fc_k_2):
-        super(SkipPerceptronMixer, self).__init__()
+        super(SkipPerceptronMixer, self).__init__(device)
         
         self.input_shape = input_shape
         self.input_channels = input_shape[-3]
@@ -163,6 +164,7 @@ class SkipPerceptronMixer(PerceptronFlow):
             out = layer(out)
             if skip is None:
                 skip = out
+        assert skip is not None, "fc_layers must be non-empty"
         out = out + skip
 
         out = einops.einops.rearrange(
@@ -181,7 +183,8 @@ class SkipPerceptronMixer(PerceptronFlow):
             out = layer(out)
             if skip is None:
                 skip = out
-        out = out + skip 
+        assert skip is not None, "fc_layers_2 must be non-empty"
+        out = out + skip
 
         out = self.output_layer(out)
         return out

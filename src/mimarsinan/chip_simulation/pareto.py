@@ -6,7 +6,7 @@ import json
 import logging
 import os
 from dataclasses import dataclass, field
-from typing import Callable, Dict, List, Optional, Sequence
+from typing import Callable, Dict, List, Optional, Sequence, TypedDict, overload
 
 from mimarsinan.chip_simulation.cost_extraction import (
     COST_RECORD_FILENAME,
@@ -52,7 +52,12 @@ _VALID_SCHEDULES = ("cascaded", "synchronized")
 _VALID_BUDGETS = ("accuracy", "latency")
 
 
-ParetoPoint = Dict[str, object]
+class ParetoPoint(TypedDict):
+    """One (schedule-label, cost, accuracy) decision point."""
+
+    label: str
+    cost: float
+    accuracy: float
 
 
 def _point_dominates(a: ParetoPoint, b: ParetoPoint) -> bool:
@@ -285,6 +290,12 @@ def _best_cell_per_dataset(rows: Sequence[dict]) -> Dict[str, dict]:
     return best
 
 
+@overload
+def _norm_dataset(name: str) -> str: ...
+@overload
+def _norm_dataset(name: None) -> None: ...
+@overload
+def _norm_dataset(name: object) -> Optional[str]: ...
 def _norm_dataset(name) -> Optional[str]:
     """Canonicalize dataset labels (``MNIST``/``mnist``/``fashion_mnist`` -> a tag)."""
     if name is None:
@@ -331,7 +342,7 @@ def _verdict_for_cell(
     casc_cost, casc_measured = _schedule_cost(row, "cascaded", casc_band, run_dir_resolver)
     sync_cost, sync_measured = _schedule_cost(row, "synchronized", sync_band, run_dir_resolver)
     cost_measured = casc_measured or sync_measured
-    points = [
+    points: List[ParetoPoint] = [
         {"label": "cascaded", "cost": casc_cost, "accuracy": casc},
         {"label": "synchronized", "cost": sync_cost, "accuracy": sync},
     ]

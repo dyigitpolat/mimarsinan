@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from mimarsinan.common.best_effort import best_effort
 from mimarsinan.gui.runtime.collector.types import StepRecord, build_snapshot_etag
@@ -21,6 +21,9 @@ class ReadApiMixin:
     _pipeline_config: dict | None
     _current_step: str | None
     _working_directory: str | None
+
+    if TYPE_CHECKING:
+        def _broadcast(self, message: dict) -> None: ...
 
     def get_pipeline_overview(self) -> dict:
         with self._lock:

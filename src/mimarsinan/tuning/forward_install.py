@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any, TYPE_CHECKING
+
 
 class LazyExecutorForward:
     """Picklable ``model.forward`` override running a cross-layer NF forward.
@@ -43,6 +45,10 @@ class CascadeForwardInstall:
     Guarantees no double-patch (an unremoved prior wrapper would silently shadow the
     new one) and an idempotent unpatch, so downstream stages see the class forward.
     """
+
+    if TYPE_CHECKING:
+        # Host contract: the owning tuner supplies the patched model.
+        model: Any
 
     _patched_forward = False
 

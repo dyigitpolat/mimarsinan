@@ -35,7 +35,6 @@ ALLOWLIST = {
     "config_schema/display_view_build.py",
     "data_handling/data_loader_factory.py",
     "data_handling/data_provider.py",
-    "data_handling/data_provider_factory.py",
     "data_handling/data_providers/imagenet_data_provider.py",
     "data_handling/ffcv/loader_factory.py",
     "data_handling/ffcv/writer.py",

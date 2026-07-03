@@ -31,7 +31,7 @@ class ModelRegistry:
     @classmethod
     def _ensure_builders_loaded(cls) -> None:
         """Import builders package so all builders run their @ModelRegistry.register."""
-        import mimarsinan.models.builders  # noqa: F401
+        import mimarsinan.models.builders  # noqa: F401  # pyright: ignore[reportUnusedImport] — side-effect registration
 
     @classmethod
     def get_category(cls, model_id: str) -> str | None:

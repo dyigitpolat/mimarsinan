@@ -139,8 +139,6 @@ class SanafeRunner(SanafeNeuralStageMixin, SanafeNeuralStageRecordMixin, SanafeS
                     in_scale=in_scale, out_scale=out_scale,
                     dtype=_COMPUTE_DTYPE,
                 )
-                if hasattr(result, "detach"):
-                    result = result.detach().cpu().numpy()
                 out = np.asarray(result, dtype=_COMPUTE_DTYPE)
                 state_buffer[op.id] = out
                 compute_outputs[op.id] = out

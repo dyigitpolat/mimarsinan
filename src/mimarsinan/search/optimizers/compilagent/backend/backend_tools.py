@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Mapping
-from typing import Any, Dict
+from typing import Any, Dict, Tuple
 
 from compilagent import PassEvent
 
@@ -18,6 +18,11 @@ def platform_to_json_safe(pcfg: Mapping[str, Any]) -> Dict[str, Any]:
     return to_json_safe(dict(pcfg))
 
 
+def _int_bounds(problem: Any, attr: str, default: Tuple[int, int]) -> Tuple[int, int]:
+    bounds = getattr(problem, attr, default)
+    return int(bounds[0]), int(bounds[1])
+
+
 def description_for(problem: Any) -> SearchSpaceDescription:
     """Reconstruct the SearchSpaceDescription from the live problem."""
     return SearchSpaceDescription(
@@ -26,11 +31,9 @@ def description_for(problem: Any) -> SearchSpaceDescription:
             (str(k), tuple(v)) for k, v in getattr(problem, "arch_options", ())
         ),
         num_core_types=int(getattr(problem, "num_core_types", 1)),
-        core_axons_bounds=tuple(getattr(problem, "core_axons_bounds", (64, 1024))),
-        core_neurons_bounds=tuple(
-            getattr(problem, "core_neurons_bounds", (64, 1024))
-        ),
-        core_count_bounds=tuple(getattr(problem, "core_count_bounds", (50, 500))),
+        core_axons_bounds=_int_bounds(problem, "core_axons_bounds", (64, 1024)),
+        core_neurons_bounds=_int_bounds(problem, "core_neurons_bounds", (64, 1024)),
+        core_count_bounds=_int_bounds(problem, "core_count_bounds", (50, 500)),
         target_tq=int(getattr(problem, "target_tq", 32)),
         weight_bits=int(8),
     )

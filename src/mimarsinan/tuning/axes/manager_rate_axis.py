@@ -50,8 +50,8 @@ class ManagerRateAxis(AdaptationAxisBase):
             self.rate_attr = rate_attr
         if name is not None:
             self.name = name
-        self._decision_seed = None
-        self._decision_generators = {}
+        self._decision_seed: int | None = None
+        self._decision_generators: dict[str, torch.Generator] = {}
 
     def attach(self, model, adaptation_manager, config) -> None:
         super().attach(model, adaptation_manager, config)
@@ -79,24 +79,25 @@ class ManagerRateAxis(AdaptationAxisBase):
             gen.manual_seed(self._decision_seed)
         self._wire_decision_generators()
 
-    def _decision_generator_for(self, device):
+    def _decision_generator_for(self, device, seed: int):
         key = str(device)
         gen = self._decision_generators.get(key)
         if gen is None:
             gen = torch.Generator(device=device)
-            gen.manual_seed(self._decision_seed)
+            gen.manual_seed(seed)
             self._decision_generators[key] = gen
         return gen
 
     def _wire_decision_generators(self) -> None:
-        if self._decision_seed is None or self._model is None:
+        seed = self._decision_seed
+        if seed is None or self._model is None:
             return
         for perceptron in self._model.get_perceptrons():
             try:
                 device = next(perceptron.parameters()).device
             except StopIteration:
                 device = "cpu"
-            gen = self._decision_generator_for(device)
+            gen = self._decision_generator_for(device, seed)
             for obj in _iter_decision_objects(getattr(perceptron, "activation", None)):
                 obj._generator = gen
 

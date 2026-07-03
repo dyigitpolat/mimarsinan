@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import re
 from types import SimpleNamespace
-from typing import Any, Dict, List, Tuple, get_args, get_origin
+from typing import TYPE_CHECKING, Any, Dict, List, Tuple, get_args, get_origin
 
 from mimarsinan.common.best_effort import best_effort
 
@@ -151,6 +151,19 @@ def trace_response_summary(
 class LLMTraceMixin:
     """Trace emission and pydantic-ai LLM invocation."""
 
+    model: str
+    llm_retries: int
+    verbose: bool
+    _trace_gen: int
+    _trace_seq: int
+
+    if TYPE_CHECKING:
+
+        def _log(self, message: str) -> None: ...
+
+        @staticmethod
+        def _report_search_event(reporter: Any, event: Dict[str, Any]) -> None: ...
+
     _TRACE_MAX_SECTION_CHARS = TRACE_MAX_SECTION_CHARS
     _TRACE_MAX_SECTIONS = TRACE_MAX_SECTIONS
     _TRACE_MAX_RESPONSE_STR = TRACE_MAX_RESPONSE_STR
@@ -246,10 +259,13 @@ class LLMTraceMixin:
 
             from pydantic import BaseModel, create_model
 
+            field_definitions: Dict[str, Any] = {
+                k: (v, ...) for k, v in output_schema.items()
+            }
             output_model = create_model(
                 "_OutputModel",
                 __base__=BaseModel,
-                **{k: (v, ...) for k, v in output_schema.items()},
+                **field_definitions,
             )
             result = await agent.run(template, output_type=output_model)
             out = getattr(result, "output", result)

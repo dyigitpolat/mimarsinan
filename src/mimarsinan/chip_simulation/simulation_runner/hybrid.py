@@ -25,9 +25,10 @@ from mimarsinan.chip_simulation.spiking_semantics import is_analytical_ttfs, req
 from mimarsinan.chip_simulation.nevresim.nevresim_driver import NevresimDriver
 from mimarsinan.chip_simulation.nevresim.segment_execute import run_binary_raw
 from mimarsinan.chip_simulation.simulation_runner.emit import _PreparedSegment, _emit_and_compile_segment
+from mimarsinan.chip_simulation.simulation_runner.host_contract import SimulationHostContract
 
 
-class SimulationHybridMixin:
+class SimulationHybridMixin(SimulationHostContract):
     @staticmethod
     def _get_compute_op_output_size(op: ComputeOp, state_sizes: Dict[int, int]) -> int:
         """Infer flat output size for a ComputeOp. Uses output_shape when set, else dummy execute."""

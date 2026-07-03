@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING, Any, List, Sequence
+from typing import TYPE_CHECKING, List, Sequence
 
 from compilagent import ToolDecl
 from pydantic import BaseModel, Field

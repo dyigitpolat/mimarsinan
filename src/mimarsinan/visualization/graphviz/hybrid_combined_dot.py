@@ -62,7 +62,7 @@ def write_hybrid_hardcore_mapping_combined_dot(
             "weights_nnz": f"{nnz}/{cap} ({_percent(nnz, cap)})",
             "unusable_space": str(unusable),
             "segment_in": str(_input_size_from_mapping(mapping) or "n/a"),
-            "segment_out": str(len(mapping.output_sources.flatten())),
+            "segment_out": str(len(np.asarray(mapping.output_sources).flatten())),
         }
 
     def _img(src_path: str, *, w: int, h: int) -> str:
@@ -213,7 +213,7 @@ def write_hybrid_hardcore_mapping_combined_dot(
             last_neural = st.hard_core_mapping
             break
     if last_neural is not None:
-        final_label = str(len(last_neural.output_sources.flatten()))
+        final_label = str(len(np.asarray(last_neural.output_sources).flatten()))
     if final_label:
         lines.append(f"  {prev} -> output [label=\"{final_label}\"];")
     else:

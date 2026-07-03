@@ -26,21 +26,27 @@ def _compact_node(
     Liveness upstream guarantees a surviving core is never fully dead, so neither
     ``keep_cols`` nor ``keep_row_idx`` is ever empty; the asserts fail loud otherwise.
     """
+    mat = node.core_matrix
+    assert mat is not None, (
+        f"_compact_node: NeuralCore id={node.id} ({node.name}) has no owned "
+        "core_matrix; the caller must filter to owned-matrix cores."
+    )
     if pruned_cols:
-        keep_cols = [c for c in range(node.core_matrix.shape[1]) if c not in pruned_cols]
+        keep_cols = [c for c in range(mat.shape[1]) if c not in pruned_cols]
         assert keep_cols, (
             f"_compact_node: NeuralCore id={node.id} ({node.name}) has every "
             "column pruned; the liveness pass should have removed it. This "
             "indicates a missing call to compute_liveness + remove_nodes "
             "in the surrounding pipeline."
         )
-        node.core_matrix = node.core_matrix[:, keep_cols]
+        mat = mat[:, keep_cols]
+        node.core_matrix = mat
         node.hardware_bias = compact_hardware_bias_columns(
             node.hardware_bias, keep_cols
         )
 
     if pruned_rows:
-        n_axons = node.core_matrix.shape[0]
+        n_axons = mat.shape[0]
         keep_row_idx = np.fromiter(
             (r for r in range(n_axons) if r not in pruned_rows),
             dtype=np.int64,
@@ -48,13 +54,13 @@ def _compact_node(
         )
         flat_src = node.input_sources.flatten()
         if keep_row_idx.size > 0:
-            node.core_matrix = node.core_matrix[keep_row_idx, :]
+            node.core_matrix = mat[keep_row_idx, :]
             node.input_sources = flat_src[keep_row_idx]
         else:
             # BIAS_ONLY: all axons dead but bias-driven columns survive; collapse the row dim to a single OFF-source axon.
             node.core_matrix = np.zeros(
-                (1, node.core_matrix.shape[1]),
-                dtype=node.core_matrix.dtype,
+                (1, mat.shape[1]),
+                dtype=mat.dtype,
             )
             node.input_sources = np.array(
                 [IRSource(node_id=-1, index=0)], dtype=object,

@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+from typing import Sequence
+
 import numpy as np
 
 
 def compact_hardware_bias_columns(
     hardware_bias: np.ndarray | None,
-    keep_cols: np.ndarray,
+    keep_cols: "np.ndarray | Sequence[int]",
 ) -> np.ndarray | None:
     """Slice ``hardware_bias`` along neuron columns when pruning compacts a core."""
     if hardware_bias is None:

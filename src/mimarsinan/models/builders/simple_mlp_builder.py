@@ -1,3 +1,4 @@
+from mimarsinan.models.perceptron_mixer.perceptron import Perceptron
 from mimarsinan.models.perceptron_mixer.simple_mlp import SimpleMLP
 from mimarsinan.pipelining.core.registry.model_registry import ModelRegistry
 
@@ -21,7 +22,9 @@ class SimpleMLPBuilder:
             configuration["mlp_width_2"],
             base_activation_name=base_activation,
         )
-        perceptron_flow.perceptrons[0].is_encoding_layer = True
+        encoding_perceptron = perceptron_flow.perceptrons[0]
+        assert isinstance(encoding_perceptron, Perceptron)
+        encoding_perceptron.is_encoding_layer = True
         return perceptron_flow
 
     @classmethod

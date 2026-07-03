@@ -12,7 +12,7 @@ class MergeLeadingDimsMapper(Mapper):
         super(MergeLeadingDimsMapper, self).__init__(source_mapper)
 
     def _map_to_ir(self, ir_mapping):
-        return self.source_mapper.map_to_ir(ir_mapping)
+        return self.require_source_mapper().map_to_ir(ir_mapping)
 
     def _forward_impl(self, x):
         if x.dim() <= 2:
@@ -28,7 +28,7 @@ class SplitLeadingDimMapper(Mapper):
         self.second_dim_size = int(second_dim_size)
 
     def _map_to_ir(self, ir_mapping):
-        return self.source_mapper.map_to_ir(ir_mapping)
+        return self.require_source_mapper().map_to_ir(ir_mapping)
 
     def _forward_impl(self, x):
         if x.dim() != 2:
@@ -46,7 +46,7 @@ class Ensure2DMapper(Mapper):
         super(Ensure2DMapper, self).__init__(source_mapper)
 
     def _map_to_ir(self, ir_mapping):
-        sources = self.source_mapper.map_to_ir(ir_mapping)
+        sources = self.require_source_mapper().map_to_ir(ir_mapping)
         if len(sources.shape) == 1:
             return sources.reshape(1, -1)
         return sources

@@ -18,9 +18,11 @@ class ConvertedModelFlow(PerceptronFlow):
 
         # Register ALL perceptrons (not just chip-targeted get_perceptrons()) so .to(device)/state_dict()/parameters() reach every one.
         mapper_repr._ensure_exec_graph()
+        exec_order = mapper_repr._exec_order
+        assert exec_order is not None  # populated by _ensure_exec_graph
         seen_perceptrons = set()
         all_perceptrons = []
-        for node in mapper_repr._exec_order:
+        for node in exec_order:
             p = getattr(node, "perceptron", None)
             if p is not None and id(p) not in seen_perceptrons:
                 seen_perceptrons.add(id(p))
@@ -30,7 +32,7 @@ class ConvertedModelFlow(PerceptronFlow):
         # Register every nn.Module graph node as a submodule so _apply reaches them and lazy modules initialise from an installed site.
         registered_ids = {id(m) for m in self.modules()}
         idx = 0
-        for node in mapper_repr._exec_order:
+        for node in exec_order:
             if isinstance(node, nn.Module) and id(node) not in registered_ids:
                 self.add_module(f"graph_node_{idx}", node)
                 registered_ids.add(id(node))

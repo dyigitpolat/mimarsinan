@@ -136,6 +136,13 @@ def build_param_groups(
     return list(groups.values())
 
 
+def _betas_pair(recipe: TrainingRecipe) -> tuple[float, float]:
+    betas = tuple(recipe.betas)
+    if len(betas) != 2:
+        raise ValueError(f"recipe.betas must have exactly 2 entries, got {betas!r}")
+    return float(betas[0]), float(betas[1])
+
+
 def build_optimizer(
     model: torch.nn.Module,
     base_lr: float,
@@ -144,9 +151,9 @@ def build_optimizer(
     param_groups = build_param_groups(model, base_lr, recipe)
     name = recipe.optimizer.lower()
     if name == "adam":
-        return torch.optim.Adam(param_groups, lr=base_lr, betas=tuple(recipe.betas))
+        return torch.optim.Adam(param_groups, lr=base_lr, betas=_betas_pair(recipe))
     if name == "adamw":
-        return torch.optim.AdamW(param_groups, lr=base_lr, betas=tuple(recipe.betas))
+        return torch.optim.AdamW(param_groups, lr=base_lr, betas=_betas_pair(recipe))
     if name == "sgd":
         return torch.optim.SGD(param_groups, lr=base_lr, momentum=recipe.momentum)
     raise ValueError(f"Unknown optimizer: {recipe.optimizer!r}")
@@ -156,7 +163,7 @@ def build_scheduler(
     optimizer: torch.optim.Optimizer,
     recipe: TrainingRecipe,
     total_steps: int,
-) -> tuple[torch.optim.lr_scheduler._LRScheduler, int]:
+) -> tuple[torch.optim.lr_scheduler.LRScheduler, int]:
     """Return ``(scheduler, warmup_steps)`` scheduled over ``total_steps``.
 
     ``scheduler.step()`` is expected to be called once per step unit that

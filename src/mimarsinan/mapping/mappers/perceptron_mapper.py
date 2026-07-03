@@ -23,7 +23,7 @@ class PerceptronMapper(Mapper):
         layer_weights = PerceptronTransformer().get_effective_weight(self.perceptron)
         layer_biases = PerceptronTransformer().get_effective_bias(self.perceptron)
 
-        layer_sources = self.source_mapper.map_to_ir(ir_mapping)
+        layer_sources = self.require_source_mapper().map_to_ir(ir_mapping)
         layer_sources = layer_sources.transpose()
 
         if getattr(self.perceptron, "is_encoding_layer", False):

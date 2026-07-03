@@ -70,7 +70,8 @@ def build_config_display_view(
                 if key not in get_default_platform_constraints() and key not in _meta.TOP_LEVEL_RUN_KEYS:
                     runtime_keys.add(key)
 
-    nested = build_nested_blocks(flat, flat.get("model_type"))
+    model_type = flat.get("model_type")
+    nested = build_nested_blocks(flat, model_type if isinstance(model_type, str) else None)
     skip_in_sections = {"training_recipe", "tuning_recipe", "model_config", "arch_search", "platform_constraints"}
 
     grouped: Dict[str, List[Dict[str, Any]]] = {g["id"]: [] for g in _meta.CONFIG_DISPLAY_GROUPS}

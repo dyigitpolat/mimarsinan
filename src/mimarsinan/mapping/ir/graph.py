@@ -29,7 +29,8 @@ class IRGraph:
     weight_banks: Dict[int, WeightBank] = field(default_factory=dict)
     layout_softcores: List[Any] = field(default_factory=list)
     # Unique per construction; derived artifacts record it to detect stale cached copies across resumes.
-    build_token: str = field(default_factory=_new_build_token)
+    # None only for legacy unpickled graphs that predate the field (see __getattr__).
+    build_token: str | None = field(default_factory=_new_build_token)
 
     def __getattr__(self, name: str):
         if name == "weight_banks":

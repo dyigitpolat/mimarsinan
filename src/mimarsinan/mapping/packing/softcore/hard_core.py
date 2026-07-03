@@ -24,6 +24,9 @@ class HardCore:
 
         self.hardware_bias = None
 
+        # Axon widths of the original cores merged into this one by fusion; None when not fused.
+        self.fused_component_axons: list[int] | None = None
+
         self.unusable_space = 0
         self._axon_source_spans = None
 

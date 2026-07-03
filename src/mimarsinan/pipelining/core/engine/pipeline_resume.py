@@ -14,6 +14,9 @@ def find_starting_step_idx(pipeline, step_name: str) -> int:
         )
     else:
         starting_step_idx = get_step_idx(pipeline, step_name)
+        assert starting_step_idx is not None, (
+            f"Step '{step_name}' does not exist in pipeline"
+        )
 
     return starting_step_idx
 
@@ -46,6 +49,7 @@ def find_latest_possible_step_idx(pipeline, missing_requirements: set, step_name
     starting_step_idx = None
 
     begin_idx = get_step_idx(pipeline, step_name)
+    assert begin_idx is not None, f"Step '{step_name}' does not exist in pipeline"
     for idx in range(begin_idx - 1, -1, -1):
         name = pipeline.steps[idx][0]
         step = pipeline.steps[idx][1]

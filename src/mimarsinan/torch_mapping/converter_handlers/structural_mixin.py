@@ -14,12 +14,14 @@ from mimarsinan.mapping.mapping_utils import (
     ConcatMapper,
     ReshapeMapper,
 )
+from mimarsinan.torch_mapping.converter_handlers.converter_contract import ConverterContract
+from mimarsinan.torch_mapping.fx_shape_utils import fx_literal_int, node_target_str
 
 if TYPE_CHECKING:
     from mimarsinan.torch_mapping.representability_analyzer import RepresentabilityReport
 
 
-class StructuralConvertMixin:
+class StructuralConvertMixin(ConverterContract):
     def _convert_flatten_func(self, node: fx.Node) -> None:
         source = self._get_source_mapper(node)
         out_shape = self._get_output_shape(node)
@@ -41,12 +43,13 @@ class StructuralConvertMixin:
 
     def _convert_cat(self, node: fx.Node) -> None:
         tensors_arg = node.args[0] if node.args else []
-        dim = node.args[1] if len(node.args) > 1 else node.kwargs.get("dim", 1)
+        raw_dim = node.args[1] if len(node.args) > 1 else node.kwargs.get("dim", 1)
         if not isinstance(tensors_arg, (list, tuple)):
             source = self._get_source_mapper(node)
             self._node_to_mapper[node] = source
             return
-        if len(tensors_arg) == 2 and int(dim) == 1:
+        dim = fx_literal_int(raw_dim)
+        if len(tensors_arg) == 2 and dim == 1:
             first, second = tensors_arg
             first_const = self._get_expanded_constant_tensor(first) if isinstance(first, fx.Node) else None
             second_mapper = self._get_mapper(second) if isinstance(second, fx.Node) else None
@@ -63,7 +66,7 @@ class StructuralConvertMixin:
                     ComputeAdapter(
                         _cat_along,
                         bound_tensors=[prefix],
-                        kwargs={"dim": int(dim)},
+                        kwargs={"dim": dim},
                     ),
                     name=node.name,
                 )
@@ -101,7 +104,7 @@ class StructuralConvertMixin:
         """
         for user in node.users:
             if user.name in self._absorbed and user.op == "call_module":
-                mod = self._modules.get(user.target)
+                mod = self._modules.get(node_target_str(user))
                 if mod is not None and isinstance(mod, target_types):
                     return mod
                 if isinstance(mod, nn.Identity):

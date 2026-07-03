@@ -18,6 +18,7 @@ from mimarsinan.chip_simulation.hybrid_run.hybrid_stage_runner import (
 from mimarsinan.chip_simulation.recording.records import SegmentSpikeRecord
 from mimarsinan.chip_simulation.spiking_semantics import is_cascaded_ttfs
 from mimarsinan.mapping.ir import IRSource
+from mimarsinan.models.spiking.hybrid.host import HybridFlowHost
 from mimarsinan.models.spiking.spiking_config import COMPUTE_DTYPE
 from mimarsinan.spiking.segment_boundary import (
     decode_segment_output_torch,
@@ -25,7 +26,7 @@ from mimarsinan.spiking.segment_boundary import (
 )
 
 
-class HybridRateForwardMixin:
+class HybridRateForwardMixin(HybridFlowHost):
     """LIF rate-coded hybrid stage orchestration."""
 
     def _forward_rate(self, x: torch.Tensor) -> torch.Tensor:
@@ -52,6 +53,8 @@ class HybridRateForwardMixin:
 
         def _on_neural_rate(ctx: HybridStageContext) -> None:
             stage = ctx.stage
+            spikes_buffer = ctx.state_buffer_spikes
+            assert spikes_buffer is not None, "_ctx_factory always supplies state_buffer_spikes"
             seg_input_rates = self._assemble_segment_input(
                 stage.input_map, ctx.state_buffer, batch_size, device
             )
@@ -60,7 +63,7 @@ class HybridRateForwardMixin:
             spike_train = self._encode_segment_input(
                 stage,
                 seg_input_rates_clamped,
-                ctx.state_buffer_spikes,
+                spikes_buffer,
                 T=T,
                 batch_size=batch_size,
                 device=device,
@@ -99,15 +102,19 @@ class HybridRateForwardMixin:
                 ctx.recorder.segments[ctx.stage_index] = recorder_seg
 
         def _after_neural_rate(ctx: HybridStageContext) -> None:
+            remaining_counts = ctx.remaining
+            assert remaining_counts is not None, "_ctx_factory always supplies remaining"
             self._decref_consumers(
                 ctx.state_buffer,
-                ctx.remaining,
+                remaining_counts,
                 (int(s.node_id) for s in ctx.stage.input_map),
             )
 
         def _on_compute_rate(ctx: HybridStageContext) -> None:
             op = ctx.stage.compute_op
             assert op is not None
+            spikes_buffer = ctx.state_buffer_spikes
+            assert spikes_buffer is not None, "_ctx_factory always supplies state_buffer_spikes"
             in_scale, out_scale = resolve_stage_compute_scales(
                 self.hybrid_mapping, op.id, apply_ttfs=False
             )
@@ -123,12 +130,12 @@ class HybridRateForwardMixin:
             spike_train = encode_compute_boundary(
                 op=op,
                 state_buffer=ctx.state_buffer,
-                state_buffer_spikes=ctx.state_buffer_spikes,
+                state_buffer_spikes=spikes_buffer,
                 config=self._boundary_config,
                 hybrid_mapping=self.hybrid_mapping,
             )
             if spike_train is not None:
-                ctx.state_buffer_spikes[op.id] = spike_train
+                spikes_buffer[op.id] = spike_train
 
             if ctx.recorder is not None:
                 ctx.recorder.compute_outputs[int(op.id)] = (
@@ -138,9 +145,11 @@ class HybridRateForwardMixin:
         def _after_compute_rate(ctx: HybridStageContext) -> None:
             op = ctx.stage.compute_op
             assert op is not None
+            remaining_counts = ctx.remaining
+            assert remaining_counts is not None, "_ctx_factory always supplies remaining"
             self._decref_consumers(
                 ctx.state_buffer,
-                ctx.remaining,
+                remaining_counts,
                 (int(src.node_id) for src in op.input_sources.flatten()
                  if isinstance(src, IRSource) and src.node_id >= 0),
             )

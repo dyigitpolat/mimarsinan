@@ -13,7 +13,7 @@ Every architecture is built from `Perceptron` modules organized as a
 | `perceptron_mixer.py` | `PerceptronMixer` | MLP-Mixer architecture (patch embed + token/channel mixing) |
 | `vision_transformer.py` | `VisionTransformer` | Vision Transformer (ViT) with CLS token, positional embeddings, MHSA |
 | `simple_mlp.py` | `SimpleMLP` | Simple multi-layer perceptron |
-| `skip_perceptron_mixer.py` | `SkipPerceptronMixer` | MLP-Mixer variant with skip connections (experimental) |
+| `skip_perceptron_mixer.py` | `SkipPerceptronMixer` | MLP-Mixer variant with skip connections (experimental); ctor takes `device` first like `SimpleMLP` (required by `PerceptronFlow.__init__`) |
 | `perceptron_mixer_old.py` | `PerceptronMixerOld` | Legacy MLP-Mixer implementation |
 
 ## Dependencies

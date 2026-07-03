@@ -1,10 +1,29 @@
-"""Shared FX shape-metadata extraction helpers."""
+"""Shared FX shape-metadata extraction and literal-argument coercion helpers."""
 
 from __future__ import annotations
 
-from typing import List, Optional, Tuple
+from typing import List, Optional, SupportsInt, Tuple, cast
 
 import torch.fx as fx
+
+
+def fx_literal_int(value: object) -> int:
+    """Coerce a numeric FX literal to int; a Node means a dynamic value and is rejected."""
+    if isinstance(value, fx.Node):
+        raise TypeError(
+            f"FX argument {value!r} is a Node (dynamic value), not a numeric literal"
+        )
+    return int(cast(SupportsInt, value))
+
+
+def node_target_str(node: fx.Node) -> str:
+    """Target of a call_module/call_method/get_attr node; FX guarantees these are strings."""
+    target = node.target
+    if not isinstance(target, str):
+        raise TypeError(
+            f"expected a string target on {node.op} node {node.name}; got {target!r}"
+        )
+    return target
 
 
 def node_input_shapes(node: fx.Node) -> List[Optional[Tuple[int, ...]]]:

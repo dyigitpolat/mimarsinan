@@ -96,9 +96,12 @@ def _get_model_perceptrons(model: Any) -> list:
             linear_layers = []
             for i, child in enumerate(children):
                 if isinstance(child, nn.Linear):
-                    wrapper = type("_Wrapper", (), {"layer": child, "name": f"linear_{i}"})()
-                    wrapper.activation_scale = None
-                    wrapper.parameter_scale = None
+                    wrapper = type("_Wrapper", (), {
+                        "layer": child,
+                        "name": f"linear_{i}",
+                        "activation_scale": None,
+                        "parameter_scale": None,
+                    })()
                     linear_layers.append(wrapper)
             if linear_layers:
                 return linear_layers

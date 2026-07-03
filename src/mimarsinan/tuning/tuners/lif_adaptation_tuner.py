@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import cast
+
 import torch.nn as nn
 
 from mimarsinan.models.nn.activations import (
@@ -44,7 +46,8 @@ class LIFBlendActivation(BlendActivation):
 
     @property
     def lif_activation(self) -> LIFActivation:
-        return self.target_activation
+        # The constructor only accepts a LIFActivation target.
+        return cast(LIFActivation, self.target_activation)
 
 
 class LIFAdaptationTuner(KDBlendAdaptationTuner):
@@ -125,11 +128,12 @@ class LIFAdaptationTuner(KDBlendAdaptationTuner):
         )
 
     def _make_blend(self, old, target, rate):
-        return LIFBlendActivation(old, target, rate)
+        # ``_make_target_activation`` above builds the LIFActivation target.
+        return LIFBlendActivation(old, cast(LIFActivation, target), rate)
 
-    def _after_make_target(self, perceptron, lif) -> None:
+    def _after_make_target(self, perceptron, target) -> None:
         if self._cycle_accurate:
-            lif.use_cycle_accurate_trains = True
+            cast(LIFActivation, target).use_cycle_accurate_trains = True
 
     def _wrap_encoding_input(self, perceptron) -> None:
         if getattr(perceptron, "is_encoding_layer", False):

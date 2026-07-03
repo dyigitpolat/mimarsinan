@@ -82,6 +82,28 @@ class TestStructure:
         mro = SmoothAdaptationTuner.__mro__
         assert mro.index(FastLadderMixin) < mro.index(SmoothAdaptationRunMixin)
 
+    def test_fast_mixin_typing_host_base_is_runtime_inert(self):
+        # The TYPE_CHECKING-only host contract must never become a runtime base:
+        # the mixin stays object-based so the composed tuner's MRO is unchanged.
+        assert FastLadderMixin.__bases__ == (object,)
+
+    def test_smooth_tuner_mro_is_the_locked_composition_order(self):
+        from mimarsinan.tuning.orchestration.rate_tuner_seam import RateTunerSeamMixin
+        from mimarsinan.tuning.orchestration.smooth_adaptation_cycle import (
+            SmoothAdaptationCycleMixin,
+        )
+        from mimarsinan.tuning.orchestration.tuner_base import TunerBase
+
+        assert SmoothAdaptationTuner.__mro__ == (
+            SmoothAdaptationTuner,
+            RateTunerSeamMixin,
+            FastLadderMixin,
+            SmoothAdaptationCycleMixin,
+            SmoothAdaptationRunMixin,
+            TunerBase,
+            object,
+        )
+
     def test_kd_blend_does_not_redefine_the_lifted_methods(self):
         # The fast machinery moved up; KD-blend must inherit it, not shadow it.
         for name in (

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Iterable
+from typing import Iterable, Literal, overload
 
 import numpy as np
 
@@ -33,6 +33,38 @@ def save_segment_inputs(
         )
     else:
         save_inputs_to_files(work_dir, input_loader, max_input_count)
+
+
+@overload
+def run_binary_raw(
+    *,
+    binary_path: str,
+    work_dir: str,
+    input_loader: Iterable,
+    output_size: int,
+    simulation_length: int,
+    input_size: int,
+    spike_generation_mode: str,
+    max_input_count: int,
+    num_proc: int = 0,
+    record_spikes: Literal[False] = False,
+) -> np.ndarray: ...
+
+
+@overload
+def run_binary_raw(
+    *,
+    binary_path: str,
+    work_dir: str,
+    input_loader: Iterable,
+    output_size: int,
+    simulation_length: int,
+    input_size: int,
+    spike_generation_mode: str,
+    max_input_count: int,
+    num_proc: int = 0,
+    record_spikes: Literal[True],
+) -> tuple[np.ndarray, list[dict[int, dict[str, list[int]]]]]: ...
 
 
 def run_binary_raw(

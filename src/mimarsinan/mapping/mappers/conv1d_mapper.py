@@ -6,9 +6,8 @@ import numpy as np
 import torch.nn as nn
 import torch.nn.functional as F
 
-from mimarsinan.mapping.ir import IRSource
 from mimarsinan.mapping.mappers.base import Mapper, resolve_activation_type
-from mimarsinan.mapping.mappers.conv_helpers import _chunk_sizes
+from mimarsinan.mapping.mappers.conv_helpers import _chunk_sizes, pad_source_grid
 from mimarsinan.mapping.mappers.flowchart import FlowchartFCSpec, FlowchartNodeEstimate
 from mimarsinan.mapping.mappers.scale_propagation import (
     perceptron_boundary_scale,
@@ -122,7 +121,7 @@ class Conv1DPerceptronMapper(Mapper):
         return y
 
     def _map_to_ir(self, ir_mapping):
-        input_sources = self.source_mapper.map_to_ir(ir_mapping)
+        input_sources = self.require_source_mapper().map_to_ir(ir_mapping)
         if len(input_sources.shape) != 2:
             raise ValueError(
                 f"{self.name}: expects 2D input sources (C,L), got {input_sources.shape}"
@@ -152,15 +151,8 @@ class Conv1DPerceptronMapper(Mapper):
             )
             return out.reshape(self.out_channels, l_out)
 
-        off_source = IRSource(node_id=-1, index=0)
         if p > 0:
-            pad_width = ((0, 0), (p, p))
-            input_sources = np.pad(
-                input_sources,
-                pad_width,
-                mode="constant",
-                constant_values=off_source,
-            )
+            input_sources = pad_source_grid(input_sources, ((0, 0), (p, p)))
 
         full_w = PerceptronTransformer().get_effective_weight(self.perceptron)
         full_b = PerceptronTransformer().get_effective_bias(self.perceptron)

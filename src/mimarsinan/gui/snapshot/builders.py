@@ -11,8 +11,12 @@ from mimarsinan.common.best_effort import best_effort
 from mimarsinan.gui.snapshot.util.helpers import _t, _safe_dict, _CACHE_KEY_TO_SNAPSHOT_KEY
 from mimarsinan.gui.resources import ResourceDescriptor
 
-from mimarsinan.gui.snapshot.ir_graph.ir_graph_resources import _group_consecutive_compute_stages
-from mimarsinan.gui.snapshot.ir_graph.ir_graph_topology_groups import _merge_consecutive_compute_groups
+from mimarsinan.gui.snapshot.ir_graph.ir_graph_resources import (
+    _group_consecutive_compute_stages as _group_consecutive_compute_stages,
+)
+from mimarsinan.gui.snapshot.ir_graph.ir_graph_topology_groups import (
+    _merge_consecutive_compute_groups as _merge_consecutive_compute_groups,
+)
 
 from mimarsinan.gui.snapshot.util.constants import (
     LIVENESS_BIAS_ONLY,

@@ -1,16 +1,12 @@
-"""Convolution mappers: perceptron-style (shared-weight)."""
+"""Shared helpers for the shared-weight convolution mappers."""
 
 from __future__ import annotations
 
+from typing import Any, cast
+
 import numpy as np
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
 
 from mimarsinan.mapping.ir import IRSource
-from mimarsinan.mapping.mappers.base import Mapper, resolve_activation_type
-from mimarsinan.models.perceptron_mixer.perceptron import Perceptron
-from mimarsinan.transformations.perceptron.perceptron_transformer import PerceptronTransformer
 
 
 def _chunk_sizes(total: int, chunk: int):
@@ -22,3 +18,16 @@ def _chunk_sizes(total: int, chunk: int):
         remaining -= sizes[-1]
     return sizes
 
+
+def pad_source_grid(
+    input_sources: np.ndarray,
+    pad_width: tuple[tuple[int, int], ...],
+) -> np.ndarray:
+    """Pad an IRSource object grid with OFF sources (np.pad's stubs reject object fills)."""
+    off_source = IRSource(node_id=-1, index=0)
+    return np.pad(
+        input_sources,
+        pad_width,
+        mode="constant",
+        constant_values=cast(Any, off_source),
+    )

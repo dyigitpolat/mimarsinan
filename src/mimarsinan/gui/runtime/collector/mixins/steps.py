@@ -25,6 +25,10 @@ class StepsMixin:
     _current_step: str | None
     _resource_store: Any
 
+    if TYPE_CHECKING:
+        def _broadcast_lifecycle(self, message: dict) -> None: ...
+        def _broadcast_pipeline_overview(self) -> None: ...
+
     def step_started(self, step_name: str) -> None:
         with self._lock:
             self._current_step = step_name

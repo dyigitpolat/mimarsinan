@@ -6,7 +6,7 @@ import asyncio
 import logging
 import math
 from collections import deque
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from mimarsinan.common.best_effort import best_effort
 
@@ -20,6 +20,9 @@ class WebSocketMixin:
     _ws_listeners: list[Any]
     _event_seq: int
     _event_buffer: deque[dict]
+
+    if TYPE_CHECKING:
+        def get_pipeline_overview(self) -> dict: ...
 
     def add_ws_listener(self, ws: Any) -> None:
         with self._lock:

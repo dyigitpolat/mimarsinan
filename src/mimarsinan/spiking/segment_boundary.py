@@ -6,6 +6,7 @@ import logging
 from typing import Dict
 
 import numpy as np
+import numpy.typing as npt
 import torch
 
 from mimarsinan.mapping.packing.hybrid_hardcore_mapping import (
@@ -14,10 +15,8 @@ from mimarsinan.mapping.packing.hybrid_hardcore_mapping import (
 )
 from mimarsinan.spiking.boundary_config import BoundaryConfig
 from mimarsinan.spiking.compute_boundary import (
-    _gather_op_input_train,
-    _resolve_lif_perceptron,
-    _run_perceptron_single_step_T,
-    _shifted_rate_slice,
+    _gather_op_input_train as _gather_op_input_train,
+    _resolve_lif_perceptron as _resolve_lif_perceptron,
     encode_compute_boundary,
 )
 from mimarsinan.spiking.spike_trains import (
@@ -39,7 +38,7 @@ def decode_segment_output(
     seg_out_spike_count: np.ndarray,
     simulation_length: int,
     *,
-    dtype: np.dtype = np.float64,
+    dtype: npt.DTypeLike = np.float64,
 ) -> np.ndarray:
     """LIF / rate decode (numpy inter-stage): spike counts ``/ T``, flattened to ``(1, N)``."""
     t = max(int(simulation_length), 1)

@@ -55,7 +55,7 @@ class ReshapeMapper(Mapper):
         self.output_shape = output_shape
 
     def _map_to_ir(self, ir_mapping):
-        return self.source_mapper.map_to_ir(ir_mapping).reshape(self.output_shape)
+        return self.require_source_mapper().map_to_ir(ir_mapping).reshape(self.output_shape)
 
     def _forward_impl(self, x):
         return x.view(x.shape[0], *self.output_shape)
@@ -69,7 +69,7 @@ class EinopsRearrangeMapper(Mapper):
         self.einops_kwargs = einops_kwargs
 
     def _map_to_ir(self, ir_mapping):
-        layer_sources = self.source_mapper.map_to_ir(ir_mapping)
+        layer_sources = self.require_source_mapper().map_to_ir(ir_mapping)
         return einops.rearrange(
             layer_sources, self.einops_str, *self.einops_args, **self.einops_kwargs
         )
@@ -135,7 +135,7 @@ class SubscriptMapper(Mapper):
         self.index = index
 
     def _map_to_ir(self, ir_mapping):
-        return self.source_mapper.map_to_ir(ir_mapping)[self.index]
+        return self.require_source_mapper().map_to_ir(ir_mapping)[self.index]
 
     def _forward_impl(self, x):
         return x.select(1, self.index)
@@ -150,7 +150,7 @@ class PermuteMapper(Mapper):
         self._np_dims = tuple(d - 1 for d in self.dims if d != 0)
 
     def _map_to_ir(self, ir_mapping):
-        arr = self.source_mapper.map_to_ir(ir_mapping)
+        arr = self.require_source_mapper().map_to_ir(ir_mapping)
         return np.transpose(arr, self._np_dims)
 
     def _forward_impl(self, x):

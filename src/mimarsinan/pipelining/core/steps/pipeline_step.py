@@ -5,7 +5,7 @@ class PipelineStep:
     CLEARS: tuple[str, ...] = ()
 
     @classmethod
-    def applies_to(cls, plan):
+    def applies_to(cls, plan) -> bool:
         """Whether this step belongs in the pipeline for the resolved ``plan`` (base: always)."""
         return True
 

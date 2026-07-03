@@ -6,9 +6,9 @@ from typing import Sequence
 import numpy as np
 
 from mimarsinan.mapping.ir import IRGraph, NeuralCore
-from mimarsinan.mapping.packing.hybrid_segment import (
+from mimarsinan.mapping.packing.hybrid_segment import _flush_scheduled_segment
+from mimarsinan.mapping.packing.hybrid_segment_helpers import (
     _apply_reindex_to_ir_sources,
-    _flush_scheduled_segment,
     _reindex_nodes,
 )
 from mimarsinan.mapping.packing.hybrid_types import HybridStage

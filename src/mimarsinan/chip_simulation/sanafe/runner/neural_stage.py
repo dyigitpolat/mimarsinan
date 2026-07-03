@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 import numpy as np
+
+if TYPE_CHECKING:
+    from mimarsinan.chip_simulation.behavior_config import NeuralBehaviorConfig
 
 import mimarsinan.chip_simulation.sanafe.runner as _runner
 from mimarsinan.chip_simulation.hybrid_run.hybrid_execution import assemble_segment_input_numpy
@@ -30,6 +33,24 @@ from .constants import _COMPUTE_DTYPE
 
 class SanafeNeuralStageMixin:
     """Run one neural hybrid stage through SANA-FE."""
+
+    if TYPE_CHECKING:
+        # Host contract: attributes/methods supplied by SanafeRunner and its
+        # sibling mixins (declaration-only; no runtime effect).
+        _arch: Any
+        _behavior: NeuralBehaviorConfig
+        mapping: Any
+        T: int
+        cores_per_tile: int
+        firing_mode: str
+        spiking_mode: str
+        ttfs_cycle_schedule: str
+        log_potential_trace: bool
+        log_message_trace: bool
+
+        def _finalize_neural_stage_record(
+            self, **kwargs: Any,
+        ) -> SanafeSegmentRecord: ...
 
     def _run_neural_stage(
         self,

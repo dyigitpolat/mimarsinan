@@ -201,19 +201,20 @@ def transfer_negative_shifts_to_ir(model, ir_graph) -> None:
     by_name: dict[str, np.ndarray] = {}
     for node in mapper_repr._exec_order:
         s = getattr(node, "_negative_shift", None)
-        if isinstance(node, ComputeOpMapper) and s is not None:
-            by_name[getattr(node, "name", None)] = np.asarray(s, dtype=np.float64)
+        name = getattr(node, "name", None)
+        if isinstance(node, ComputeOpMapper) and s is not None and name is not None:
+            by_name[name] = np.asarray(s, dtype=np.float64)
     for node in ir_graph.nodes:
         if not isinstance(node, ComputeOp) or not node.name:
             continue
         if node.name in by_name:
-            node._negative_shift = by_name[node.name]
+            node._negative_shift = by_name[node.name]  # pyright: ignore[reportAttributeAccessIssue] — dynamic IR side-channel read via getattr
             continue
         base, sep, col = node.name.rpartition("_col")
         if sep and col.isdigit() and base in by_name:
             s = by_name[base]
             if s.ndim >= 2 and int(col) < s.shape[0]:
-                node._negative_shift = np.asarray(
+                node._negative_shift = np.asarray(  # pyright: ignore[reportAttributeAccessIssue] — dynamic IR side-channel read via getattr
                     s[int(col)], dtype=np.float64,
                 ).reshape(-1)
 

@@ -6,8 +6,11 @@ from dataclasses import dataclass
 from typing import Any, Dict, List
 
 from mimarsinan.common.safe_numeric import safe_float
-
-PENALTY_CUTOFF = 1e17
+from mimarsinan.visualization.search_viz.series import (
+    PENALTY_CUTOFF,
+    best_metric_series,
+    goal_by_metric,
+)
 
 
 @dataclass
@@ -82,7 +85,7 @@ def build_table_rows(
         is_pareto = meta.get("is_pareto", True if not all_candidates else False)
         gen = meta.get("generation", -1)
 
-        has_penalty = any(safe_float(v, 0) >= PENALTY_CUTOFF for v in objectives_data.values())
+        has_penalty = any((safe_float(v, 0.0) or 0.0) >= PENALTY_CUTOFF for v in objectives_data.values())
         if has_penalty:
             continue
 
@@ -108,12 +111,11 @@ def build_table_rows(
 
 
 def hist_series(bests: List[Dict[str, Any]], name: str) -> List[Any]:
-    return [safe_float(b.get(name)) for b in bests]
+    return list(best_metric_series(bests, name))
 
 
 def parse_search_result(result_json: Dict[str, Any]) -> ReportData:
-    objectives = result_json.get("objectives", []) or []
-    goal_by_name = {o.get("name"): o.get("goal") for o in objectives if isinstance(o, dict)}
+    goal_by_name = goal_by_metric(result_json)
     metric_names = list(goal_by_name.keys())
 
     pareto = result_json.get("pareto_front", []) or []

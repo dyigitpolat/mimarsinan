@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from typing import Dict
+from typing import Any, Dict
 
 from mimarsinan.mapping.ir import IRGraph, NeuralCore, ir_source_to_spike_source
 
 
 def neural_segment_to_soft_core_mapping(
     seg_graph: IRGraph,
-    weight_banks: Dict[int, object],
+    weight_banks: Dict[int, Any],
 ):
     """Convert a neural-only segment ``IRGraph`` to ``SoftCoreMapping`` via ``neural_core_to_soft_core``."""
     from mimarsinan.mapping.ir import neural_core_to_soft_core

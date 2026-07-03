@@ -123,6 +123,12 @@ class NeuralCore(IRNode):
         if self.core_matrix is not None:
             return self.core_matrix
 
+        if self.weight_bank_id is None:
+            raise ValueError(
+                f"NeuralCore {self.name} (id={self.id}) has neither an owned "
+                f"core_matrix nor a weight_bank_id to resolve one from."
+            )
+
         if graph is None:
             raise ValueError(
                 f"NeuralCore {self.name} (id={self.id}) references weight_bank_id="

@@ -72,19 +72,16 @@ def compute_mapping_stats(
     all_pass_lists: List[List[LayoutSoftCoreSpec]] = []
     sched_feasible = True
 
-    common_kwargs = dict(
-        max_hw_axons=max_hw_ax,
-        max_hw_neurons=max_hw_neu,
-        allow_coalescing=allow_coalescing,
-        allow_splitting=allow_neuron_splitting,
-        core_types=core_types,
-    )
-
     for sid in sorted(seg_softcores.keys()):
         seg_scs = seg_softcores[sid]
         if budget > 0:
             n_passes, seg_pass_lists, seg_ok = estimate_passes_for_layout_validated(
-                seg_scs, budget, **common_kwargs,
+                seg_scs, budget,
+                max_hw_axons=max_hw_ax,
+                max_hw_neurons=max_hw_neu,
+                allow_coalescing=allow_coalescing,
+                allow_splitting=allow_neuron_splitting,
+                core_types=core_types,
             )
             if not seg_ok:
                 sched_feasible = False

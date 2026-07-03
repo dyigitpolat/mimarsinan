@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Tuple
+from typing import Any, List, Tuple
 
 import numpy as np
 
+from mimarsinan.chip_simulation.sanafe.presets import PerEventEnergy
 from mimarsinan.chip_simulation.sanafe.records import (
     SanafeCycleEnergyPoint,
     SanafeEnergyBreakdown,
@@ -13,7 +14,7 @@ from mimarsinan.chip_simulation.sanafe.records import (
 
 def _per_core_energy_sanafe(
     *,
-    preset: Dict[str, float],
+    preset: PerEventEnergy,
     n_neurons: int,
     T_active: int,
     T_eff: int,
@@ -85,7 +86,7 @@ def _energy_share(total: SanafeEnergyBreakdown, *, n_cores: int) -> SanafeEnergy
 def _compute_cycle_energy_breakdown(
     message_trace: Any,
     spike_trace: list,
-    preset: Dict[str, float],
+    preset: PerEventEnergy,
     hcm: Any,
 ) -> List[SanafeCycleEnergyPoint]:
     """Reconstruct per-cycle energy split from spike/message traces."""

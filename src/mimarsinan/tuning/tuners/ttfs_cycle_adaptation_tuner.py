@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+from typing import Any, cast
 
 import torch
 import torch.nn as nn
@@ -19,6 +20,7 @@ from mimarsinan.tuning.orchestration.blend_ramp import (
     KDClassificationLoss,
     run_teacher_distmatch,
 )
+from mimarsinan.tuning.orchestration.genuine_probe import iter_val_batches
 from mimarsinan.tuning.orchestration.kd_blend_adaptation_tuner import (
     KDBlendAdaptationTuner,
 )
@@ -237,9 +239,11 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
     def _apply_gain_at_rate(self, rate: float) -> None:
         from mimarsinan.spiking.gain_correction import apply_gain_at_rate
 
-        apply_gain_at_rate(
-            self.model, self._gain_ramp_base, self._gain_ramp_factors, rate,
+        base, factors = self._gain_ramp_base, self._gain_ramp_factors
+        assert base is not None and factors is not None, (
+            "_capture_gain_ramp_base must run before _apply_gain_at_rate"
         )
+        apply_gain_at_rate(self.model, base, factors, rate)
 
     def _set_rate(self, rate: float) -> None:
         super()._set_rate(rate)
@@ -404,7 +408,8 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
         bits = int(cfg["weight_bits"])
         _, q_max = quantization_bounds(bits)
 
-        mapper_repr = self._teacher.get_mapper_repr()
+        # The teacher is a frozen deepcopy of the mapper-capable model.
+        mapper_repr = cast(Any, self._teacher).get_mapper_repr()
         if hasattr(mapper_repr, "assign_perceptron_indices"):
             mapper_repr.assign_perceptron_indices()
         compute_per_source_scales(mapper_repr)
@@ -458,7 +463,7 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
         self.model.eval()
         correct = total = 0
         with torch.no_grad():
-            for x, y in self.trainer.iter_validation_batches(self._budget.eval_n_batches):
+            for x, y in iter_val_batches(self.trainer, self._budget.eval_n_batches):
                 pred = self.model(x.to(device)).argmax(dim=1)
                 correct += int((pred == y.to(device)).sum())
                 total += int(y.numel())

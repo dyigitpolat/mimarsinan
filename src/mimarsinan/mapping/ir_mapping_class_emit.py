@@ -8,11 +8,13 @@ import numpy as np
 import torch
 
 from mimarsinan.mapping.ir import IRSource, NeuralCore
+from mimarsinan.mapping.ir_mapping_class_base import IRMappingCore
 
 
-class IRMappingEmitMixin:
+class IRMappingEmitMixin(IRMappingCore):
+    """Layer over ``IRMappingCore``: emits concrete NeuralCore nodes on top of the shape-only layout walk."""
 
-    def add_neural_core(
+    def add_neural_core(  # pyright: ignore[reportIncompatibleMethodOverride] -- intentionally materializes np.ndarray over the shape-only LayoutSourceView
             self,
             *,
             input_sources: np.ndarray,
@@ -101,7 +103,7 @@ class IRMappingEmitMixin:
             self.nodes.append(neural_core)
             return result
 
-    def add_shared_neural_core(
+    def add_shared_neural_core(  # pyright: ignore[reportIncompatibleMethodOverride] -- intentionally materializes np.ndarray over the shape-only LayoutSourceView
             self,
             *,
             input_sources: np.ndarray,

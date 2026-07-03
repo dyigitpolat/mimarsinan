@@ -6,12 +6,20 @@ from typing import Callable, Protocol, Sequence
 
 
 class _SpanLike(Protocol):
-    kind: str
-    dst_start: int
-    dst_end: int
-    src_start: int
-    src_end: int
-    src_node_id: int
+    """Read-only span surface satisfied by the frozen ``SpikeSourceSpan`` dataclass."""
+
+    @property
+    def kind(self) -> str: ...
+    @property
+    def dst_start(self) -> int: ...
+    @property
+    def dst_end(self) -> int: ...
+    @property
+    def src_core(self) -> int: ...
+    @property
+    def src_start(self) -> int: ...
+    @property
+    def src_end(self) -> int: ...
 
 
 def fill_signal_from_spans(

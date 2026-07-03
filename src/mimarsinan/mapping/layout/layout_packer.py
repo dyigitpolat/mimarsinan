@@ -36,8 +36,8 @@ class LayoutMaterializer:
         self.split_lineage: Dict[str, int] = {}
 
     @staticmethod
-    def is_mapping_possible(hardcore, softcore) -> bool:
-        return canonical_is_mapping_possible(hardcore, softcore)
+    def is_mapping_possible(softcore, hardcore) -> bool:
+        return canonical_is_mapping_possible(softcore, hardcore)
 
     def place(self, core_idx: int, hardcore: LayoutHardCoreInstance, core: LayoutSoftCoreSpec) -> None:
         hardcore.add_softcore(core)

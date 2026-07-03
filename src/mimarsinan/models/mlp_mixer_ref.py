@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 from einops.layers.torch import Rearrange
-import torchsummary
+import torchsummary  # pyright: ignore[reportMissingImports]  # optional backend, absent in this env
 
 
 class MLPMixer(nn.Module):

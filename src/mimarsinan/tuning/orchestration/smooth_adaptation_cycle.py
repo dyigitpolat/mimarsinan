@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import time
 import warnings
+from typing import TYPE_CHECKING, Any, cast
 
 from mimarsinan.tuning.trace import DecisionRecord, DecisionTrace
 from mimarsinan.tuning.orchestration.acceptance_sensor import AcceptanceSensor
@@ -26,6 +27,15 @@ from mimarsinan.tuning.orchestration.tuning_policy import TUNING_POLICY
 
 class SmoothAdaptationCycleMixin(TunerBase):
     """Adaptation cycle, rollback, and recovery training."""
+
+    if TYPE_CHECKING:
+        # Host contract: the seam verbs come from RateTunerSeamMixin in the
+        # composed SmoothAdaptationTuner.
+        _last_recover_lr: float
+
+        def ramp(self, rate: float) -> float: ...
+        def recover_to(self, target: float, rate: float | None = None) -> Any: ...
+        def probe(self) -> float: ...
 
     def __init__(self, pipeline, model, target_accuracy, lr):
         super().__init__(pipeline, model, target_accuracy, lr)
@@ -80,10 +90,13 @@ class SmoothAdaptationCycleMixin(TunerBase):
             pipeline.config.get("tuning_full_transform_probe", False)
         )
         self._full_transform_log = []
-        self.trainer._val_cache_max_batches = self._budget.eval_n_batches
-        self.trainer._gpu_val_cache = None
+        # The val-cache knobs are duck-typed trainer extras read via getattr in
+        # basic_trainer_eval, not part of BasicTrainer's declared surface.
+        trainer_extras = cast(Any, self.trainer)
+        trainer_extras._val_cache_max_batches = self._budget.eval_n_batches
+        trainer_extras._gpu_val_cache = None
 
-    def _update_and_evaluate(self, rate):
+    def _update_and_evaluate(self, rate) -> float:
         """Apply transformation T at *rate* and return a validation metric."""
         raise NotImplementedError
 
@@ -101,7 +114,7 @@ class SmoothAdaptationCycleMixin(TunerBase):
         """
         return []
 
-    def _get_extra_state(self):
+    def _get_extra_state(self) -> Any:
         """Override to return tuner-specific state to save alongside model params."""
         return None
 
@@ -368,7 +381,7 @@ class SmoothAdaptationCycleMixin(TunerBase):
                     rate=float(ctx.rate),
                     committed=float(self._committed_rate),
                     elapsed_sec=time.time() - ctx.t_cycle_start,
-                    instant_acc=float(ctx.instant_acc),
+                    instant_acc=float(ctx.instant_acc) if ctx.instant_acc is not None else None,
                     pre_cycle_acc=float(ctx.pre_cycle_acc),
                     target=float(self._get_target()),
                     validation_baseline=self._baseline_or_none(),

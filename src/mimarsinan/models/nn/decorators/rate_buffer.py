@@ -11,6 +11,8 @@ class RateBuffer(nn.Module):
     A ``RateAdjustedDecorator`` reads the live ``alpha`` at transform time, so
     advancing the rate is an O(1) in-place write, not a decorator rebuild."""
 
+    alpha: torch.Tensor
+
     def __init__(self) -> None:
         super().__init__()
         self.register_buffer("alpha", torch.zeros(()))

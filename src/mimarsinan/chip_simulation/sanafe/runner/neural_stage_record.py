@@ -2,9 +2,16 @@
 
 from __future__ import annotations
 
-from typing import Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
 import numpy as np
+
+if TYPE_CHECKING:
+    from mimarsinan.chip_simulation.sanafe.presets import PerEventEnergy
+    from mimarsinan.chip_simulation.sanafe.records import (
+        SanafeArchGeometry,
+        SanafeTileRecord,
+    )
 
 import mimarsinan.chip_simulation.sanafe.runner as _runner
 from mimarsinan.chip_simulation.hybrid_run.hybrid_semantics import (
@@ -41,6 +48,20 @@ from .constants import _COMPUTE_DTYPE
 
 
 class SanafeNeuralStageRecordMixin:
+    if TYPE_CHECKING:
+        # Host contract supplied by SanafeRunner + sibling mixins (declaration-only).
+        _preset: PerEventEnergy
+        _arch_geometry: Optional[SanafeArchGeometry]
+        T: int
+        spiking_mode: str
+        ttfs_cycle_schedule: str
+
+        def _derive_per_core_input_counts(self, *args: Any, **kwargs: Any) -> Tuple[np.ndarray, int]: ...
+        def _aggregate_per_tile(self, *args: Any, **kwargs: Any) -> List[SanafeTileRecord]: ...
+        def _collect_last_active_fires(self, *args: Any, **kwargs: Any) -> Dict[int, np.ndarray]: ...
+        def _single_spike_ramp_outputs(self, *args: Any, **kwargs: Any) -> Dict[int, np.ndarray]: ...
+        def _compute_seg_output_spike_count(self, *args: Any, **kwargs: Any) -> np.ndarray: ...
+
     def _finalize_neural_stage_record(
         self,
         *,

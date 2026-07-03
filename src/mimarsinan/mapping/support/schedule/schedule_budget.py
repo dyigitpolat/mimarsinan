@@ -21,14 +21,9 @@ available-core numbers.
 
 from __future__ import annotations
 
-from collections import defaultdict
-from typing import List, Optional, Sequence, Tuple
+from typing import List, Sequence
 
-from mimarsinan.mapping.ir import NeuralCore
-from mimarsinan.mapping.layout.layout_types import (
-    LayoutHardCoreType,
-    LayoutSoftCoreSpec,
-)
+from mimarsinan.mapping.layout.layout_types import LayoutSoftCoreSpec
 
 
 # Budget helper — single source of truth for both wizard and runtime

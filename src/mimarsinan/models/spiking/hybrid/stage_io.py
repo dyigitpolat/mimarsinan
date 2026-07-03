@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Dict
+from typing import Callable, Dict
 
+import numpy as np
 import torch
 
 from mimarsinan.chip_simulation.hybrid_run.hybrid_execution import (
@@ -20,11 +21,12 @@ from mimarsinan.mapping.support.spike_source_spans import (
     SpikeSourceSpan,
     compress_spike_sources,
 )
+from mimarsinan.models.spiking.hybrid.host import HybridFlowHost
 from mimarsinan.models.spiking.signal_spans import fill_signal_from_spans
 from mimarsinan.models.spiking.spiking_config import COMPUTE_DTYPE
 
 
-class HybridStageIOMixin:
+class HybridStageIOMixin(HybridFlowHost):
     """Segment tensor cache and state-buffer I/O."""
 
     def _build_consumer_counts(self) -> Dict[int, int]:
@@ -140,10 +142,12 @@ class HybridStageIOMixin:
         single_spike: bool = False,
         latency: int = 0,
     ) -> None:
-        on_always_on = None
-        if single_spike:
-            def on_always_on(d0: int, d1: int) -> None:
-                out[:, d0:d1].fill_(1.0 if cycle == latency else 0.0)
+        def _single_spike_always_on(d0: int, d1: int) -> None:
+            out[:, d0:d1].fill_(1.0 if cycle == latency else 0.0)
+
+        on_always_on: Callable[[int, int], None] | None = (
+            _single_spike_always_on if single_spike else None
+        )
 
         fill_signal_from_spans(
             out,
@@ -187,7 +191,9 @@ class HybridStageIOMixin:
         if hasattr(mapping, "get_output_source_spans"):
             output_spans = mapping.get_output_source_spans()
         else:
-            output_spans = compress_spike_sources(list(output_sources.flatten()))
+            output_spans = compress_spike_sources(
+                list(np.asarray(output_sources, dtype=object).flatten())
+            )
 
         bank_tensors: dict[int, torch.Tensor] = {}
 

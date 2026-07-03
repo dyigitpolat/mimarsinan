@@ -1,7 +1,5 @@
 """Apply pruning masks to perceptron weights."""
 
-import torch
-
 
 def apply_pruning_masks(perceptron, row_mask, col_mask, rate, original_weight, original_bias):
     """Apply rate-adaptive pruning using absolute scaling from original weights."""

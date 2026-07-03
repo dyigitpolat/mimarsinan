@@ -8,7 +8,6 @@ from mimarsinan.mapping.pruning.boundary_policy import (
     build_computeop_referenced_neurons,
 )
 from mimarsinan.mapping.pruning.graph.pruning_graph_types import GlobalPruningResult
-from mimarsinan.mapping.pruning.graph.pruning_propagation import compute_propagated_pruned_rows_cols
 from mimarsinan.mapping.pruning.graph.pruning_graph_refresh import (
     _cols_with_nonzero_bias,
     _refresh_bank_pruning,

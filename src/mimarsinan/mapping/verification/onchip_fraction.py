@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import cast
 
 import torch
 import torch.nn as nn
@@ -192,7 +193,7 @@ def _module_macs(module: nn.Module, in_shape, out_shape) -> int:
     pure element-wise/shape ops carry no MACs.
     """
     if _is_scale_wrapper(module):
-        return _module_macs(module.module, in_shape, out_shape)
+        return _module_macs(cast(nn.Module, module.module), in_shape, out_shape)
 
     layer = getattr(module, "layer", None)
     if isinstance(layer, nn.Linear):
@@ -384,6 +385,8 @@ def _collect_host_op_classes(flow):
             continue
         seen.add(id(unit))
         category, label = _classify_host_node(node)
+        if label is None:
+            continue
         if category == "unsupported_op":
             research_gap_ops.append(label)
         elif category == "placement":

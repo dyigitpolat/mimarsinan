@@ -111,7 +111,7 @@ def _resolve_budget(
     platform_constraints: Mapping[str, Any],
 ) -> tuple[int, int, int]:
     """Return ``(effective_max_axons, effective_max_neurons, total_core_count)`` via the mapping step's resolver."""
-    cores: Sequence[Mapping[str, Any]] = platform_constraints.get("cores") or []
+    cores: Sequence[dict[str, Any]] = platform_constraints.get("cores") or []
     if not cores:
         raise ValueError(
             "estimate_cores_needed: platform_constraints has no 'cores' budget."

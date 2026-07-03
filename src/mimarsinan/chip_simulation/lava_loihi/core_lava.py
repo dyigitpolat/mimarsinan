@@ -7,6 +7,7 @@ import multiprocessing as mp
 import numpy as np
 import torch.multiprocessing as torch_mp
 
+from mimarsinan.chip_simulation.behavior_config import NeuralBehaviorConfig
 from mimarsinan.chip_simulation.lava_loihi.timing import _LAVA_DTYPE
 
 _SUBTRACTIVE_LIF_CLS = None
@@ -24,7 +25,7 @@ def _make_set_start_method_idempotent() -> None:
             if force or current is None:
                 real_set(method, force=force)
 
-        _safe_set._mimarsinan_lava_safe = True
+        setattr(_safe_set, "_mimarsinan_lava_safe", True)
         module.set_start_method = _safe_set
 
     _patch(mp)
@@ -42,6 +43,12 @@ def _subtractive_lif_cls():
 
 
 class LavaCoreMixin:
+    """Host contract: attributes below are provided by ``LavaLoihiRunner.__init__``."""
+
+    T: int
+    thresholding_mode: str
+    _behavior: NeuralBehaviorConfig
+
     def _run_core_lava(
         self,
         *,

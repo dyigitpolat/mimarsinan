@@ -2,13 +2,19 @@ from __future__ import annotations
 
 import os
 from itertools import combinations
-from typing import Any, Dict, List
+from typing import Any, Dict, List, cast
 
 import matplotlib.pyplot as plt
 import numpy as np
 from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 
-from mimarsinan.common.safe_numeric import safe_float
+from mimarsinan.visualization.search_viz.series import (
+    best_metric_series,
+    finite_pairs,
+    goal_by_metric,
+    nan_gapped,
+    pareto_metric_series,
+)
 
 __all__ = ["write_search_report_png"]
 
@@ -17,39 +23,13 @@ def write_search_report_png(result_json: Dict[str, Any], out_path: str) -> None:
     """Single-file PNG report: objective history, 2D Pareto projections, and normalized 3D Pareto views."""
     os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
 
-    objectives = result_json.get("objectives", []) or []
-    goal_by_name = {o.get("name"): o.get("goal") for o in objectives if isinstance(o, dict)}
+    goal_by_name = goal_by_metric(result_json)
 
     pareto = result_json.get("pareto_front", []) or []
     hist = result_json.get("history", []) or []
 
-    gens = [h.get("gen") for h in hist if isinstance(h, dict) and "gen" in h]
+    gens = [h["gen"] for h in hist if isinstance(h, dict) and "gen" in h]
     bests = [h.get("best", {}) if isinstance(h, dict) else {} for h in hist]
-
-    def _hist_series(name: str):
-        return [safe_float(b.get(name)) for b in bests]
-
-    PENALTY_CUTOFF = 1e17
-
-    def _pareto_series(name: str):
-        vals = []
-        for c in pareto:
-            obj = (c.get("objectives", {}) if isinstance(c, dict) else {}) or {}
-            v = safe_float(obj.get(name))
-            if v is None or (v is not None and v >= PENALTY_CUTOFF):
-                vals.append(None)
-            else:
-                vals.append(v)
-        return vals
-
-    def _pairs(a, b):
-        xs, ys = [], []
-        for x, y in zip(a, b):
-            if x is None or y is None:
-                continue
-            xs.append(float(x))
-            ys.append(float(y))
-        return xs, ys
 
     def _normalize(vals: List[float | None], *, goal: str | None) -> List[float | None]:
         xs = [v for v in vals if v is not None and np.isfinite(v)]
@@ -70,7 +50,7 @@ def write_search_report_png(result_json: Dict[str, Any], out_path: str) -> None:
         plt.close("all")
         return
 
-    pareto_series = {name: _pareto_series(name) for name in metric_names}
+    pareto_series = {name: pareto_metric_series(pareto, name) for name in metric_names}
     norm_series = {
         name: _normalize(pareto_series[name], goal=goal_by_name.get(name))
         for name in metric_names
@@ -121,10 +101,10 @@ def write_search_report_png(result_json: Dict[str, Any], out_path: str) -> None:
         for i, name in enumerate(metric_names[:n_hist]):
             goal = goal_by_name.get(name, "")
             ax = fig.add_subplot(hist_gs[0, i])
-            ys = _hist_series(name)
+            ys = best_metric_series(bests, name)
             ax.set_title(f"History: {name}", fontsize=11)
             if gens and not all(y is None for y in ys):
-                ax.plot(gens, ys, marker="o", linewidth=1.2, markersize=3.0)
+                ax.plot(gens, nan_gapped(ys), marker="o", linewidth=1.2, markersize=3.0)
             ax.set_xlabel("generation")
             ax.set_ylabel(f"{name} ({goal})")
             ax.grid(True, alpha=0.25)
@@ -136,7 +116,7 @@ def write_search_report_png(result_json: Dict[str, Any], out_path: str) -> None:
             ga = goal_by_name.get(na, "")
             gb = goal_by_name.get(nb, "")
             ax = fig.add_subplot(p2_gs[0, i])
-            xs, ys = _pairs(pareto_series[na], pareto_series[nb])
+            xs, ys = finite_pairs(pareto_series[na], pareto_series[nb])
             ax.scatter(xs, ys, s=14, alpha=0.8)
             ax.set_title(f"Pareto: {na} vs {nb}", fontsize=11)
             ax.set_xlabel(f"{na} ({ga})")
@@ -162,7 +142,7 @@ def write_search_report_png(result_json: Dict[str, Any], out_path: str) -> None:
 
         last_sc = None
         for col_idx, (elev, azim) in enumerate(views):
-            ax = fig.add_subplot(gs[current_row + row_idx, col_idx], projection="3d")
+            ax = cast(Any, fig.add_subplot(gs[current_row + row_idx, col_idx], projection="3d"))
             sc = ax.scatter(X, Y, Z, c=C, s=14, alpha=0.9, cmap="viridis")
             last_sc = sc
 

@@ -15,13 +15,13 @@ class CycleContext:
     t_cycle_start: float
     pre_state: object = None
     pre_cycle_acc: float = 0.0
-    instant_acc: object = None
+    instant_acc: float | None = None
     is_catastrophic: bool = False
     lr: float = 0.0
     post_acc: float = 0.0
-    cand_correct: object = None
+    cand_correct: list | None = None
     noise_margin: float = 0.0
-    absolute_floor: object = None
+    absolute_floor: float | None = None
     rollback_threshold: float = 0.0
     rolled_back: bool = False
 

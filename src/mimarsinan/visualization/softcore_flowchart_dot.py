@@ -47,6 +47,7 @@ def generate_softcore_flowchart_dot(
         device = torch.device("cpu")
 
     mapper_repr._ensure_exec_graph()  # noqa: SLF001
+    assert mapper_repr._exec_order is not None and mapper_repr._deps is not None  # noqa: SLF001
     exec_order: list[Mapper] = list(mapper_repr._exec_order)  # noqa: SLF001
     deps = mapper_repr._deps  # noqa: SLF001
 
@@ -81,13 +82,6 @@ def generate_softcore_flowchart_dot(
         hw = None
         hw_text = "HW: n/a"
 
-        _est_kw = dict(
-            max_axons=int(max_axons),
-            max_neurons=int(max_neurons),
-            hardware_bias=hardware_bias,
-            allow_coalescing=allow_coalescing,
-        )
-
         estimate = node.flowchart_node_estimate(out_shape)
         sw_text = estimate.sw_text
         if estimate.fc_spec is not None:
@@ -97,7 +91,10 @@ def generate_softcore_flowchart_dot(
                 out_features=spec.out_features,
                 instances=spec.instances,
                 has_bias=spec.has_bias,
-                **_est_kw,
+                max_axons=int(max_axons),
+                max_neurons=int(max_neurons),
+                hardware_bias=hardware_bias,
+                allow_coalescing=allow_coalescing,
             )
 
         if hw is not None:

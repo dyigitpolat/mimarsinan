@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 from mimarsinan.config_schema.defaults import DEFAULT_PLATFORM_CONSTRAINTS
 from mimarsinan.mapping.platform.coalescing import CANONICAL_KEY, normalize_coalescing_config
@@ -16,7 +16,7 @@ def build_platform_constraints_resolved(
     """Single source for resolved platform constraints dict."""
     cores = pipeline_config.get("cores")
     if cores is None:
-        cores = list(DEFAULT_PLATFORM_CONSTRAINTS["cores"])
+        cores = list(cast("list[dict[str, Any]]", DEFAULT_PLATFORM_CONSTRAINTS["cores"]))
 
     global_has_bias = pipeline_config.get("platform_constraints", {}).get(
         "has_bias", True

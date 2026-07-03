@@ -110,6 +110,7 @@ def assert_nf_scm_parity_or_raise(
 
     fraction = mismatches / max(total, 1)
     if fraction > max_mismatch_fraction:
+        assert worst is not None, "mismatches > 0 implies a worst record"
         d, pi, s_idx, rank, nf_v, scm_v = worst
         raise NfScmParityError(
             f"NF↔SCM per-neuron parity failed: {mismatches}/{total} values "

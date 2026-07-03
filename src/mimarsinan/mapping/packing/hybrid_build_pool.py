@@ -11,9 +11,9 @@ from mimarsinan.mapping.support.activation_scales import (
 )
 from mimarsinan.mapping.ir import IRGraph, NeuralCore
 from mimarsinan.mapping.packing.softcore import HardCore
-from mimarsinan.mapping.packing.hybrid_segment import (
+from mimarsinan.mapping.packing.hybrid_segment import _flush_neural_segment
+from mimarsinan.mapping.packing.hybrid_segment_helpers import (
     _apply_reindex_to_ir_sources,
-    _flush_neural_segment,
     _make_available_hardware_cores,
     _reindex_nodes,
 )

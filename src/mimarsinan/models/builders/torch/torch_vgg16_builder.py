@@ -23,14 +23,18 @@ def _kept_vgg_pool_count(h: int, w: int) -> int:
 
 def _adapt_vgg_for_input(model: nn.Module, input_shape) -> nn.Module:
     c, h, w = parse_image_input_shape(input_shape, model_name="VGG16")
-    model.features[0] = adapt_conv_in_channels(model.features[0], c)
+    features = model.features
+    assert isinstance(features, nn.Sequential), "torchvision VGG exposes a Sequential features trunk"
+    stem = features[0]
+    assert isinstance(stem, nn.Conv2d), "torchvision VGG starts with a Conv2d stem"
+    features[0] = adapt_conv_in_channels(stem, c)
 
     max_pool_indices = [
-        idx for idx, mod in enumerate(model.features) if isinstance(mod, nn.MaxPool2d)
+        idx for idx, mod in enumerate(features) if isinstance(mod, nn.MaxPool2d)
     ]
     keep_pool_count = _kept_vgg_pool_count(h, w)
     for idx in max_pool_indices[keep_pool_count:]:
-        model.features[idx] = nn.Identity()
+        features[idx] = nn.Identity()
     return model
 
 

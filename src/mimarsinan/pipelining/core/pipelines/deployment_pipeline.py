@@ -7,7 +7,7 @@ import os
 from mimarsinan.pipelining.core.engine.pipeline import Pipeline
 from mimarsinan.data_handling.data_provider_factory import DataProviderFactory
 from mimarsinan.pipelining.core.pipelines.deployment_specs import (
-    get_pipeline_semantic_group_by_step_name,
+    get_pipeline_semantic_group_by_step_name as get_pipeline_semantic_group_by_step_name,
     get_pipeline_step_specs,
     select_device,
     validate_deployment_config,
@@ -27,7 +27,7 @@ from mimarsinan.config_schema.deployment_derivation import (
     derive_pipeline_runtime_parameters,
 )
 from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
-from mimarsinan.pipelining.core.search_mode import derive_search_mode  # noqa: F401 — re-export
+from mimarsinan.pipelining.core.search_mode import derive_search_mode as derive_search_mode  # noqa: F401 — re-export
 
 
 class DeploymentPipeline(Pipeline):

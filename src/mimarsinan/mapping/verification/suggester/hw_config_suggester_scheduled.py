@@ -33,16 +33,18 @@ def suggest_hardware_config_scheduled(
     max_passes = max(1, int(max_passes))
     softcores_list = list(softcores)
 
-    common_kwargs = dict(
-        allow_coalescing=allow_coalescing,
-        hardware_bias=hardware_bias,
-        axon_granularity=axon_granularity,
-        neuron_granularity=neuron_granularity,
-        safety_margin=safety_margin,
-        allow_neuron_splitting=allow_neuron_splitting,
-    )
+    def _suggest(scs: list[LayoutSoftCoreSpec]) -> HardwareSuggestion:
+        return suggest_hardware_config(
+            scs,
+            allow_coalescing=allow_coalescing,
+            hardware_bias=hardware_bias,
+            axon_granularity=axon_granularity,
+            neuron_granularity=neuron_granularity,
+            safety_margin=safety_margin,
+            allow_neuron_splitting=allow_neuron_splitting,
+        )
 
-    single = suggest_hardware_config(softcores_list, **common_kwargs)
+    single = _suggest(softcores_list)
 
     def _core_area(suggestion: HardwareSuggestion) -> float:
         return sum(
@@ -81,7 +83,7 @@ def suggest_hardware_config_scheduled(
 
         largest_pass = max(pass_lists, key=len)
         try:
-            suggestion = suggest_hardware_config(largest_pass, **common_kwargs)
+            suggestion = _suggest(largest_pass)
         except Exception:
             _logger.warning(
                 "suggest_hardware_config_scheduled: candidate budget=%s "

@@ -9,8 +9,8 @@ def collect_activation_stats(model, data_loader, device, num_batches=5):
     perceptrons = model.get_perceptrons()
     n = len(perceptrons)
 
-    input_sums = [None] * n
-    output_sums = [None] * n
+    input_sums: list[torch.Tensor | None] = [None] * n
+    output_sums: list[torch.Tensor | None] = [None] * n
     count = 0
 
     hooks = []
@@ -56,9 +56,11 @@ def collect_activation_stats(model, data_loader, device, num_batches=5):
 
     stats = []
     for i in range(n):
+        in_sum = input_sums[i]
+        out_sum = output_sums[i]
         stats.append({
-            'input_importance': input_sums[i] / count if input_sums[i] is not None else None,
-            'output_importance': output_sums[i] / count if output_sums[i] is not None else None,
+            'input_importance': in_sum / count if in_sum is not None else None,
+            'output_importance': out_sum / count if out_sum is not None else None,
         })
 
     return stats

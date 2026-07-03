@@ -88,6 +88,8 @@ class ScaleNormalizingWrapper(nn.Module):
     units while inputs/outputs travel as rates.
     """
 
+    output_scale: torch.Tensor
+
     def __init__(
         self,
         module: nn.Module,

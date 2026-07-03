@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from mimarsinan.model_training.basic_trainer import BasicTrainer
 from mimarsinan.pipelining.core.steps.pipeline_step import PipelineStep
 
 
@@ -10,7 +11,7 @@ class TrainerPipelineStep(PipelineStep):
 
     def __init__(self, requires, promises, updates, clears, pipeline):
         super().__init__(requires, promises, updates, clears, pipeline)
-        self.trainer = None
+        self.trainer: BasicTrainer | None = None
 
     def validate(self):
         if self.trainer is not None:

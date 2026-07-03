@@ -7,6 +7,8 @@ from typing import List, Optional
 
 import numpy as np
 import torch
+from torch.amp.autocast_mode import autocast
+from torch.amp.grad_scaler import GradScaler
 
 from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory, shutdown_data_loader
 from mimarsinan.data_handling.data_provider_factory import DataProviderFactory
@@ -70,7 +72,7 @@ class ExtrapolatingAccuracyEvaluator:
             )
 
             use_amp = self.device.type == "cuda"
-            scaler = torch.amp.GradScaler("cuda", enabled=use_amp)
+            scaler = GradScaler("cuda", enabled=use_amp)
 
             steps_per_epoch = max(1, len(train_loader))
             total_steps = steps_per_epoch * int(self.num_train_epochs)
@@ -101,7 +103,7 @@ class ExtrapolatingAccuracyEvaluator:
                         pg["lr"] = lr_now
 
                     optimizer.zero_grad(set_to_none=True)
-                    with torch.amp.autocast("cuda", enabled=use_amp):
+                    with autocast("cuda", enabled=use_amp):
                         loss = loss_fn(model, x, y)
                     scaler.scale(loss).backward()
                     scaler.step(optimizer)

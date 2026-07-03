@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any, Callable
 
 import torch
-from ffcv.loader import OrderOption
+from ffcv.loader import OrderOption  # pyright: ignore[reportImplicitRelativeImport, reportAttributeAccessIssue]  # third-party ffcv, name-shadowed by this package
 
 from mimarsinan.data_handling.ffcv.loader import IndexedLoader, preload_labels
 from mimarsinan.data_handling.ffcv.pipeline_spec import (
@@ -19,8 +19,8 @@ from mimarsinan.data_handling.ffcv.writer import ensure_beton
 
 def _build_ops(transform_chain, device):
     """Materialize op classes from a spec's (class_name, kwargs) entries."""
-    import ffcv.transforms as ffcv_t
-    from ffcv.fields import decoders as ffcv_decoders
+    import ffcv.transforms as ffcv_t  # pyright: ignore[reportMissingImports]  # optional ffcv backend
+    from ffcv.fields import decoders as ffcv_decoders  # pyright: ignore[reportMissingImports]  # optional ffcv backend
 
     ops = []
     for entry in transform_chain:

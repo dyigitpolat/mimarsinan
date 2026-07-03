@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 import math
+from typing import TYPE_CHECKING, cast
 
 import torch
 import torch.nn as nn
 
 from mimarsinan.models.nn.activations.bias_mode import validate_bias_mode
+
+if TYPE_CHECKING:
+    from spikingjelly.activation_based.surrogate import SurrogateFunctionBase
 
 
 def uniform_encode_to_spike_train(rate: torch.Tensor, T: int) -> torch.Tensor:
@@ -55,9 +59,10 @@ class _StrictHeavisideFunction(torch.autograd.Function):
         return (x > 0).to(x)
 
     @staticmethod
-    def backward(ctx, grad_output):
+    def backward(ctx, *grad_outputs):
         from spikingjelly.activation_based import surrogate
 
+        grad_output, = grad_outputs
         x, = ctx.saved_tensors
         return surrogate.atan_backward(grad_output, x, ctx.alpha)
 
@@ -121,7 +126,8 @@ class LIFActivation(nn.Module):
         ).training_lif_v_reset()
 
         if thresholding_mode == "<":
-            surrogate_fn = StrictATanSurrogate()
+            # Duck-typed stand-in: IFNode's torch backend only calls the surrogate module.
+            surrogate_fn = cast("SurrogateFunctionBase", StrictATanSurrogate())
             preferred_backend = "torch"
         else:
             surrogate_fn = surrogate.ATan()

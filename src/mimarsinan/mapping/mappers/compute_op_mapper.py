@@ -41,7 +41,7 @@ class ComputeOpMapper(Mapper):
         module: nn.Module,
         *,
         input_shape: Sequence[int] | None = None,
-        input_shapes: Sequence[Sequence[int]] | Sequence[int] | None = None,
+        input_shapes: Sequence[Sequence[int] | None] | Sequence[int] | None = None,
         output_shape: Sequence[int] | None = None,
         module_kwargs: dict | None = None,
         output_index: int | None = None,
@@ -257,7 +257,16 @@ class ComputeOpMapper(Mapper):
         self, source_arrays, module: nn.Module,
     ) -> list[tuple[int, ...]]:
         if self.input_shapes is not None:
-            return [tuple(s) for s in self.input_shapes]
+            resolved: list[tuple[int, ...]] = []
+            for shape in self.input_shapes:
+                if shape is None:
+                    raise ValueError(
+                        f"ComputeOpMapper(name={self.name!r}): multi-input mapping "
+                        f"requires a concrete shape for every entry of input_shapes, "
+                        f"got {self.input_shapes}"
+                    )
+                resolved.append(tuple(shape))
+            return resolved
         return [tuple(int(d) for d in arr.shape) for arr in source_arrays]
 
     def _probe_multi(
@@ -310,8 +319,10 @@ class ComputeOpMapper(Mapper):
     @staticmethod
     def _orient_2d_for_columns(src_arr, module: nn.Module):
         in_features = getattr(module, "in_features", None)
-        if in_features is None and hasattr(module, "0"):
-            in_features = getattr(module[0], "in_features", None)
+        if in_features is None:
+            first_submodule = getattr(module, "0", None)
+            if first_submodule is not None:
+                in_features = getattr(first_submodule, "in_features", None)
         if in_features is not None:
             if src_arr.shape[0] != in_features and src_arr.shape[1] == in_features:
                 return src_arr.T

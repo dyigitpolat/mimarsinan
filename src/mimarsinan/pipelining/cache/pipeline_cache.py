@@ -3,6 +3,8 @@ from mimarsinan.pipelining.cache.load_store_strategies import *
 import json
 import os
 
+from typing import Any
+
 class PipelineCache:
     LOAD_STORE_STRATEGIES = {
         "basic": BasicLoadStoreStrategy,
@@ -24,7 +26,7 @@ class PipelineCache:
         # Keys may contain '/'; on-disk filenames must stay flat.
         return name.replace("/", "%2F")
 
-    def get(self, name):
+    def get(self, name) -> Any:
         if name not in self.cache:
             return None
 
@@ -80,7 +82,7 @@ class PipelineCache:
     def __len__(self):
         return len(self.cache)
     
-    def __getitem__(self, name):
+    def __getitem__(self, name) -> Any:
         return self.get(name)
     
     def __setitem__(self, name, object):

@@ -9,10 +9,8 @@ from mimarsinan.mapping.packing.softcore import HardCore, HardCoreMapping, compa
 from mimarsinan.mapping.packing.hybrid_types import HybridStage, SegmentIOSlice
 
 from mimarsinan.mapping.packing.hybrid_segment_helpers import (
-    _apply_reindex_to_ir_sources,
     _check_no_split_coalescing_groups,
     _make_available_hardware_cores,
-    _reindex_nodes,
     _remap_external_sources_to_segment_inputs,
 )
 

@@ -7,5 +7,5 @@ from mimarsinan.mapping.ir_mapping_class_emit import IRMappingEmitMixin
 
 
 
-class IRMapping(IRMappingEmitMixin, IRMappingCore):
+class IRMapping(IRMappingEmitMixin, IRMappingCore):  # pyright: ignore[reportIncompatibleMethodOverride] -- emit mixin intentionally materializes np.ndarray over the shape-only LayoutSourceView
     """Unified IR mapping with concrete graph emission."""

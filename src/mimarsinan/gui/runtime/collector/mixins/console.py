@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from mimarsinan.common.best_effort import best_effort
 from mimarsinan.gui.runtime.collector.types import ConsoleLogEntry
@@ -19,6 +19,9 @@ class ConsoleMixin:
     _console_logs: list[ConsoleLogEntry]
     _console_seq: int
     _console_callback: Any
+
+    if TYPE_CHECKING:
+        def _broadcast(self, message: dict) -> None: ...
 
     def record_console_log(self, line: str, stream: str) -> None:
         with self._lock:

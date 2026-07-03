@@ -12,10 +12,11 @@ from mimarsinan.mapping.latency.chip import ChipLatency
 from mimarsinan.mapping.packing.hybrid_hardcore_mapping import HybridStage
 from mimarsinan.spiking.segment_boundary import encode_segment_input
 from mimarsinan.models.spiking.cycle_policy import cycle_neuron_policy
+from mimarsinan.models.spiking.hybrid.host import HybridFlowHost
 from mimarsinan.models.spiking.spiking_config import COMPUTE_DTYPE
 
 
-class HybridLifStepMixin:
+class HybridLifStepMixin(HybridFlowHost):
     """Rate-coded neural segments and LIF hybrid forward."""
 
     def _run_neural_segment_rate(
@@ -139,11 +140,12 @@ class HybridLifStepMixin:
                     output_dtype=COMPUTE_DTYPE,
                 )
 
-                if recording:
+                if record_in_t is not None and record_out_t is not None:
                     record_in_t[core_idx] += input_signals[core_idx][0].to(torch.int64)
                     record_out_t[core_idx] += buffers[core_idx][0].to(torch.int64).detach()
 
             if single_spike:
+                assert out_arrival is not None
                 # Single-spike decode: count each latched source only within its own [src_lat, src_lat+T) window, else shallow sources overcount and saturate.
                 for sp in output_spans:
                     d0 = int(sp.dst_start)
@@ -196,7 +198,8 @@ class HybridLifStepMixin:
                     continue
                 output_counts[:, d0:d1] += buffers[int(sp.src_core)][:, int(sp.src_start):int(sp.src_end)]
 
-        if recording:
+        if recorder_seg is not None:
+            assert record_in_t is not None and record_out_t is not None
             for core_idx, core in enumerate(cores):
                 axon_span_list = axon_spans[core_idx]
                 n_always_on = sum(

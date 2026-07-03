@@ -66,7 +66,9 @@ def mark_encoding_layers(
             f"got {placement!r}"
         )
     model_repr._ensure_exec_graph()
-    for node in model_repr._exec_order:
+    exec_order = model_repr._exec_order
+    assert exec_order is not None  # populated by _ensure_exec_graph
+    for node in exec_order:
         if not _is_perceptron_holder(node):
             continue
         # Idempotent per placement: offload clears any prior subsume marking so the perceptron maps on-chip.
@@ -83,8 +85,10 @@ def segment_entry_perceptrons(model_repr: ModelRepresentation) -> list:
     TTFS wire contract grid-quantizes. Structural mappers are transparent in the walk.
     """
     model_repr._ensure_exec_graph()
+    exec_order = model_repr._exec_order
+    assert exec_order is not None  # populated by _ensure_exec_graph
     entries = []
-    for node in model_repr._exec_order:
+    for node in exec_order:
         if not _is_perceptron_holder(node):
             continue
         if getattr(node.perceptron, "is_encoding_layer", False):

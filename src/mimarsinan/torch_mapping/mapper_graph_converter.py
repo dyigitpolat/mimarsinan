@@ -28,7 +28,9 @@ from mimarsinan.torch_mapping.converter_handlers import (
 )
 from mimarsinan.torch_mapping.mapper_graph_fx import MapperGraphFxMixin
 from mimarsinan.torch_mapping.fx_shape_utils import (
+    fx_literal_int,
     node_output_shape,
+    node_target_str,
     strip_batch,
 )
 
@@ -91,7 +93,7 @@ class MapperGraphConverter(
         args = node.args[0]
         if isinstance(args, fx.Node):
             return self._get_mapper(args)
-        if isinstance(args, (tuple, list)):
+        if isinstance(args, (tuple, list)) and args and isinstance(args[0], fx.Node):
             return self._get_mapper(args[0])
         return None
 
@@ -105,7 +107,7 @@ class MapperGraphConverter(
             self._propagate_absorbed(node)
             return
 
-        mod = self._modules.get(node.target)
+        mod = self._modules.get(node_target_str(node))
         if mod is None:
             return
 
@@ -158,11 +160,13 @@ class MapperGraphConverter(
         if method in ("view", "reshape"):
             shape_args = node.args[1:]
             if len(shape_args) == 1 and isinstance(shape_args[0], (tuple, list)):
-                target_shape = tuple(shape_args[0])
+                raw_dims = tuple(shape_args[0])
             else:
-                target_shape = tuple(
-                    a if isinstance(a, int) else -1 for a in shape_args
-                )
+                raw_dims = shape_args
+            # Dynamic (Node) dims act as -1 wildcards; the resolved FX shape wins when present.
+            target_shape = tuple(
+                a if isinstance(a, int) else -1 for a in raw_dims
+            )
             target_shape_no_batch = target_shape[1:] if len(target_shape) > 1 else target_shape
             out_shape = self._get_output_shape(node)
             resolved_shape_no_batch = (
@@ -177,7 +181,6 @@ class MapperGraphConverter(
             self._node_to_mapper[node] = mapper
 
         elif method == "flatten":
-            start_dim = node.args[1] if len(node.args) > 1 else 1
             out_shape = self._get_output_shape(node)
             if out_shape is not None and len(out_shape) >= 2:
                 new_shape = out_shape[1:]
@@ -194,12 +197,12 @@ class MapperGraphConverter(
             if method == "permute":
                 raw = node.args[1:]
                 if len(raw) == 1 and isinstance(raw[0], (tuple, list)):
-                    dims = tuple(int(d) for d in raw[0])
+                    dims = tuple(fx_literal_int(d) for d in raw[0])
                 else:
-                    dims = tuple(int(d) for d in raw)
+                    dims = tuple(fx_literal_int(d) for d in raw)
             else:
-                d0 = int(node.args[1]) if len(node.args) > 1 else 0
-                d1 = int(node.args[2]) if len(node.args) > 2 else 1
+                d0 = fx_literal_int(node.args[1]) if len(node.args) > 1 else 0
+                d1 = fx_literal_int(node.args[2]) if len(node.args) > 2 else 1
                 ndim = len(in_shape) if in_shape else 3
                 dims = list(range(ndim))
                 dims[d0], dims[d1] = dims[d1], dims[d0]

@@ -30,7 +30,7 @@ class NSGA2Optimizer(SearchOptimizer[Dict[str, Any]]):
 
     invalid_penalty: float = 1e18
 
-    def optimize(self, problem: EncodedProblem[Dict[str, Any]], reporter=None) -> SearchResult[Dict[str, Any]]:
+    def optimize(self, problem: EncodedProblem[Dict[str, Any]], reporter=None) -> SearchResult[Dict[str, Any]]:  # pyright: ignore[reportIncompatibleMethodOverride] — vector-encoded optimizer requires EncodedProblem
         specs = list(problem.objectives)
         n_obj = len(specs)
         if n_obj == 0:

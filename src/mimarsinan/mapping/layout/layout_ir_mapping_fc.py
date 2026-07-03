@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Callable, Optional
 
 import numpy as np
 
+from mimarsinan.mapping.layout.layout_source_view import LayoutSourceView
 from mimarsinan.mapping.layout.layout_source_view_ops import (
     concat_source_views,
     stack_source_views,
@@ -15,6 +16,15 @@ from mimarsinan.mapping.platform.mapping_structure import (
 
 
 class _LayoutIRMappingFC:
+    """FC-mapping mixin; the composed ``LayoutIRMapping`` provides the declared members."""
+
+    if TYPE_CHECKING:
+        max_axons: Optional[int]
+        max_neurons: Optional[int]
+        allow_coalescing: bool
+        hardware_bias: bool
+        _coalescing_group_counter: int
+        add_neural_core: Callable[..., Any]
 
     def map_fc(
         self,
@@ -33,7 +43,7 @@ class _LayoutIRMappingFC:
         psum_role: Optional[str] = None,
         coalescing_group_id: Optional[int] = None,
         coalescing_role: Optional[str] = None,
-    ) -> np.ndarray:
+    ) -> "np.ndarray | LayoutSourceView":
         """Decide tiling mode and dispatch to ``add_neural_core`` (or the
         psum / output-tiled helpers).  All structural decisions live here."""
         out_features = int(getattr(fc_weights, "shape", [0, 0])[0])
@@ -151,8 +161,11 @@ class _LayoutIRMappingFC:
         psum_role: Optional[str],
         coalescing_group_id: Optional[int],
         coalescing_role: Optional[str],
-    ):
+    ) -> "np.ndarray | LayoutSourceView":
         out_features = int(getattr(fc_weights, "shape", [0, 0])[0])
+        assert self.max_neurons is not None, (
+            "output-tiled FC mapping requires a max_neurons capacity"
+        )
         chunk_size = int(self.max_neurons)
 
         output_sources_list = []

@@ -6,6 +6,7 @@ import contextlib
 import random
 
 import torch
+from torch.amp.autocast_mode import autocast
 
 # Fixed so the decision subsample is identical across every validation in a run and reproducible across runs.
 _VAL_SUBSAMPLE_SEED = 1234
@@ -13,7 +14,7 @@ _VAL_SUBSAMPLE_SEED = 1234
 
 def _eval_autocast(device):
     if torch.device(device).type == "cuda":
-        return torch.amp.autocast("cuda")
+        return autocast("cuda")
     return contextlib.nullcontext()
 
 

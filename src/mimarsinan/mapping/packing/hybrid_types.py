@@ -7,6 +7,7 @@ import numpy as np
 
 from mimarsinan.mapping.ir import ComputeOp
 from mimarsinan.mapping.packing.softcore import HardCoreMapping
+from mimarsinan.mapping.support.activation_scales import NodeScale
 
 
 _FINAL_OUTPUT_SENTINEL = -999
@@ -40,10 +41,15 @@ class HybridHardCoreMapping:
 
     stages: List[HybridStage]
     output_sources: np.ndarray = field(default_factory=lambda: np.array([], dtype=object))
-    node_activation_scales: dict[int, float] = field(default_factory=dict)
-    node_input_activation_scales: dict[int, float] = field(default_factory=dict)
+    # Scalar float, or per-channel np.ndarray for ttfs_theta_cotrain nodes.
+    node_activation_scales: dict[int, NodeScale] = field(default_factory=dict)
+    node_input_activation_scales: dict[int, NodeScale] = field(default_factory=dict)
     # Per-producer per-channel rate shift applied before the [0,1] clamp; the consumer core's bias is pre-corrected (B' = B - W·s) so the on-chip result is unchanged.
     node_output_shifts: dict[int, np.ndarray] = field(default_factory=dict)
+    # Lazy consumer-refcount cache filled by SpikingHybridCoreFlow._build_consumer_counts.
+    _consumer_counts_cache: dict[int, int] | None = field(
+        default=None, init=False, repr=False, compare=False
+    )
 
     def get_compute_ops(self) -> List[ComputeOp]:
         return [s.compute_op for s in self.stages if s.kind == "compute" and s.compute_op is not None]

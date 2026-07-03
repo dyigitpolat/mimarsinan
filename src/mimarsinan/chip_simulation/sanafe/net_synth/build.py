@@ -94,7 +94,7 @@ def build_network_for_segment(
             # SANA-FE delivers an input spike to its consumer's synapse one cycle
             # after emission, so active_start is shifted +1 (else depth-0 cores
             # miss their first integration step).
-            if is_cycle and simulation_length is not None:
+            if cycle_core_group is not None and simulation_length is not None:
                 lat_group = int(cycle_core_group[core_idx])
                 active_start = (lat_group + 1) * int(simulation_length)
                 active_length = int(simulation_length)

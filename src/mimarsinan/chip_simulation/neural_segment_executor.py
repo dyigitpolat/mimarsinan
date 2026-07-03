@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, Dict
 
 import numpy as np
+import numpy.typing as npt
 
 from mimarsinan.chip_simulation.hybrid_run.hybrid_execution import assemble_segment_input_numpy
 from mimarsinan.chip_simulation.hybrid_run.hybrid_semantics import (
@@ -22,7 +23,7 @@ def execute_neural_segment_analytical(
     num_samples: int,
     simulation_length: int,
     spiking_mode: str,
-    dtype: np.dtype = np.float64,
+    dtype: npt.DTypeLike = np.float64,
 ) -> NeuralSegmentResult:
     """Canonical TTFS/LIF analytical path for references and buffer propagation."""
     seg_in = assemble_segment_input_numpy(

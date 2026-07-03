@@ -3,11 +3,26 @@
 from __future__ import annotations
 
 import time
+from typing import TYPE_CHECKING
 
 import torch
 
 from mimarsinan.model_training.training_recipe import build_optimizer, build_recipe
 from mimarsinan.tuning.trace import DecisionRecord
+
+if TYPE_CHECKING:
+    from mimarsinan.tuning.orchestration.smooth_adaptation_cycle import (
+        SmoothAdaptationCycleMixin,
+    )
+    from mimarsinan.tuning.orchestration.smooth_adaptation_run import (
+        SmoothAdaptationRunMixin,
+    )
+
+    class _FastLadderHost(SmoothAdaptationCycleMixin, SmoothAdaptationRunMixin):
+        """Static contract of the composed smooth tuner this mixes into."""
+
+else:
+    _FastLadderHost = object
 
 
 def _freeze_batchnorm_modules(model) -> None:
@@ -16,7 +31,7 @@ def _freeze_batchnorm_modules(model) -> None:
             module.eval()
 
 
-class FastLadderMixin:
+class FastLadderMixin(_FastLadderHost):
     """The schedule-not-search fast ladder, shared by every smooth rate tuner.
 
     Opt in via ``_setup_fast_ladder(...)``; subclasses may override the per-step
@@ -154,6 +169,10 @@ class FastLadderMixin:
         and ``_fast_loss`` (no per-rung search — ``probe`` reads the post acc once)."""
         device = self.pipeline.config["device"]
         self._fast_set_rate(float(rate))
+        optimizer, schedule = self._fast_optimizer, self._fast_lr_schedule
+        assert optimizer is not None and schedule is not None, (
+            "_ensure_fast_optimizer must run before _fast_ramp"
+        )
         for _ in range(self._fast_steps_per_rate):
             x, y = self.trainer.next_training_batch()
             x, y = x.to(device), y.to(device)
@@ -161,10 +180,10 @@ class FastLadderMixin:
             if getattr(self, "_fast_freeze_batchnorm", False):
                 _freeze_batchnorm_modules(self.model)
             loss = self._fast_loss(x, y)
-            self._fast_optimizer.zero_grad()
+            optimizer.zero_grad()
             loss.backward()
-            self._fast_optimizer.step()
-            self._fast_lr_schedule.step()
+            optimizer.step()
+            schedule.step()
             self._fast_optimizer_steps += 1
 
     def _fast_rate_attempt(self, target):
@@ -225,6 +244,10 @@ class FastLadderMixin:
         DecisionTrace."""
         if not hasattr(self, "_cycle_log"):
             return
+        optimizer = self._fast_optimizer
+        assert optimizer is not None, (
+            "_ensure_fast_optimizer must run before _record_fast_cycle"
+        )
         self._cycle_log.record(DecisionRecord(
             cycle_index=len(self._cycle_log),
             outcome="commit",
@@ -233,7 +256,7 @@ class FastLadderMixin:
             elapsed_sec=time.time() - t0,
             pre_cycle_acc=getattr(self, "_last_post_acc", None),
             post_acc=float(post_acc),
-            lr=float(self._fast_optimizer.param_groups[0]["lr"]),
+            lr=float(optimizer.param_groups[0]["lr"]),
             target=float(self._get_target()),
             validation_baseline=self._baseline_or_none(),
         ))

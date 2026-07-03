@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 
 from fastapi import FastAPI, Request, Response, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
@@ -140,7 +140,7 @@ def register_routes(
     @app.websocket("/ws")
     async def websocket_endpoint(ws: WebSocket):
         await ws.accept()
-        ws._loop = asyncio.get_event_loop()
+        cast(Any, ws)._loop = asyncio.get_event_loop()
         collector.add_ws_listener(ws)
         try:
             while True:

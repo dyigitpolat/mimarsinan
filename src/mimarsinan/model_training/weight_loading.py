@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Protocol, TypeGuard
 
 import torch
 import torch.nn as nn
@@ -130,7 +130,13 @@ class UnsupportedPreloadError(ValueError):
     """
 
 
-def torchvision_source_supported(model_builder=None) -> bool:
+class PretrainedFactoryBuilder(Protocol):
+    """Duck-typed model builder that can supply a pretrained torchvision factory."""
+
+    def get_pretrained_factory(self) -> Any: ...
+
+
+def torchvision_source_supported(model_builder=None) -> TypeGuard[PretrainedFactoryBuilder]:
     """Whether a ``weight_source='torchvision'`` preload can resolve for this builder.
 
     Non-raising predicate; the raising path lives in ``resolve_weight_strategy``.

@@ -7,12 +7,9 @@ from typing import Dict
 import torch
 import torch.nn as nn
 
-from mimarsinan.chip_simulation import spike_modes
-from mimarsinan.chip_simulation.hybrid_run.hybrid_execution import decref_consumers
 from mimarsinan.chip_simulation.recording.spike_recorder import RunRecord
 from mimarsinan.chip_simulation.spiking_mode_policy import policy_for_spiking_mode
 from mimarsinan.chip_simulation.spiking_semantics import is_cascaded_ttfs
-from mimarsinan.mapping.ir import IRSource
 from mimarsinan.mapping.packing.hybrid_hardcore_mapping import HybridHardCoreMapping
 from mimarsinan.spiking.segment_boundary import BoundaryConfig
 from mimarsinan.models.spiking.spiking_config import COMPUTE_DTYPE, validate_spiking_init
@@ -91,73 +88,6 @@ class SpikingHybridCoreFlow(
         self._segment_tensor_cache_key: int | None = None
 
         self._recorder: RunRecord | None = None
-
-    def _build_consumer_counts(self) -> Dict[int, int]:
-        """Return ``{node_id: downstream_read_count}`` for state-buffer refcount pruning."""
-        cached = getattr(self.hybrid_mapping, "_consumer_counts_cache", None)
-        if cached is not None:
-            return cached
-
-        counts: Dict[int, int] = {}
-
-        def _bump(nid: int) -> None:
-            counts[nid] = counts.get(nid, 0) + 1
-
-        for stage in self.hybrid_mapping.stages:
-            if stage.kind == "neural":
-                for s in stage.input_map:
-                    if s.node_id is not None and int(s.node_id) >= 0:
-                        _bump(int(s.node_id))
-            elif stage.kind == "compute":
-                op = stage.compute_op
-                assert op is not None
-                for src in op.input_sources.flatten():
-                    if isinstance(src, IRSource) and src.node_id >= 0:
-                        _bump(int(src.node_id))
-
-        for src in self.hybrid_mapping.output_sources.flatten():
-            if isinstance(src, IRSource) and src.node_id >= 0:
-                _bump(int(src.node_id))
-
-        try:
-            self.hybrid_mapping._consumer_counts_cache = counts
-        except (AttributeError, TypeError):
-            pass
-        return counts
-
-    @staticmethod
-    def _decref_consumers(
-        state_buffer: Dict[int, torch.Tensor],
-        remaining: Dict[int, int],
-        src_ids,
-    ) -> None:
-        decref_consumers(state_buffer, remaining, src_ids)
-
-    def _evict_segment_cache(self) -> None:
-        """Drop the cached segment's GPU tensors (no ``empty_cache`` here)."""
-        prev_key = self._segment_tensor_cache_key
-        if prev_key is None:
-            return
-        prev = self._segment_tensor_cache.pop(prev_key, None)
-        self._segment_tensor_cache_key = None
-        if prev is None:
-            return
-        for k in ("core_params", "hw_biases", "thresholds"):
-            v = prev.get(k)
-            if v is not None:
-                v.clear()
-        bt = prev.get("bank_tensors")
-        if bt is not None:
-            bt.clear()
-        prev.clear()
-
-    def to_spikes(self, tensor: torch.Tensor, cycle: int) -> torch.Tensor:
-        return spike_modes.to_spikes(
-            tensor,
-            cycle,
-            simulation_length=self.simulation_length,
-            spike_mode=self.spike_mode,
-        )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         try:

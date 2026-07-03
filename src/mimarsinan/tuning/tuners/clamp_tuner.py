@@ -6,6 +6,7 @@ import torch
 
 from mimarsinan.models.nn.layers import SavedTensorDecorator
 from mimarsinan.tuning.axes import ClampAxis
+from mimarsinan.tuning.orchestration.genuine_probe import iter_val_batches
 from mimarsinan.tuning.orchestration.smooth_adaptation_tuner import SmoothAdaptationTuner
 
 
@@ -119,7 +120,7 @@ class ClampTuner(SmoothAdaptationTuner):
         try:
             self.model.eval()
             with torch.no_grad():
-                for x, _ in self.trainer.iter_validation_batches(int(n_batches)):
+                for x, _ in iter_val_batches(self.trainer, n_batches):
                     x = x.to(self.pipeline.config["device"])
                     _ = self.model(x)
                     for idx, (perceptron, decorator) in enumerate(zip(perceptrons, decorators)):

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from mimarsinan.common.best_effort import best_effort
 from mimarsinan.gui.runtime.collector.types import MetricEvent, to_json_safe
@@ -20,6 +20,9 @@ class MetricsMixin:
     _metric_seq: int
     _current_step: str | None
     _metric_callback: Any
+
+    if TYPE_CHECKING:
+        def _broadcast(self, message: dict) -> None: ...
 
     def record_metric(self, metric_name: str, value: Any, step: int | None = None) -> None:
         with self._lock:

@@ -8,9 +8,9 @@ from typing import Any, Iterator
 import numpy as np
 import torch
 from torch.utils.data import Subset
-from ffcv.loader.epoch_iterator import EpochIterator
-from ffcv.loader.loader import Loader
-from ffcv.pipeline.compiler import Compiler
+from ffcv.loader.epoch_iterator import EpochIterator  # pyright: ignore[reportMissingImports]  # optional ffcv backend
+from ffcv.loader.loader import Loader  # pyright: ignore[reportMissingImports]  # optional ffcv backend
+from ffcv.pipeline.compiler import Compiler  # pyright: ignore[reportMissingImports]  # optional ffcv backend
 
 
 class _IndexedEpochIterator(EpochIterator):
@@ -65,8 +65,13 @@ def _unwrap(dataset: Any) -> Any:
     return dataset
 
 
-def preload_labels(dataset: Any) -> torch.LongTensor:
-    """Return all integer labels of ``dataset`` as a CPU ``torch.LongTensor``.
+def _sample_label(dataset: Any, index: int) -> int:
+    """Integer label of ``dataset[index]``, assuming ``(x, y)`` samples."""
+    return int(dataset[index][1])
+
+
+def preload_labels(dataset: Any) -> torch.Tensor:
+    """Return all integer labels of ``dataset`` as a CPU long tensor.
 
     Walks Subset/_AsRGB wrappers, preferring ``.targets`` / ``.labels``
     metadata and falling back to per-sample ``__getitem__``.
@@ -82,7 +87,7 @@ def preload_labels(dataset: Any) -> torch.LongTensor:
             return torch.as_tensor([int(t[i]) for i in idxs], dtype=torch.long)
         if hasattr(base, "labels"):
             return torch.as_tensor([int(base.labels[i]) for i in idxs], dtype=torch.long)
-        return torch.as_tensor([int(dataset[i][1]) for i in range(len(dataset))], dtype=torch.long)
+        return torch.as_tensor([_sample_label(dataset, i) for i in range(len(dataset))], dtype=torch.long)
 
     if hasattr(dataset, "targets"):
         t = dataset.targets
@@ -93,4 +98,4 @@ def preload_labels(dataset: Any) -> torch.LongTensor:
     if hasattr(dataset, "labels"):
         return torch.as_tensor(list(dataset.labels), dtype=torch.long)
 
-    return torch.as_tensor([int(dataset[i][1]) for i in range(len(dataset))], dtype=torch.long)
+    return torch.as_tensor([_sample_label(dataset, i) for i in range(len(dataset))], dtype=torch.long)

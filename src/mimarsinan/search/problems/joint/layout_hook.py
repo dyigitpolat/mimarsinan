@@ -16,10 +16,10 @@ from mimarsinan.mapping.platform.platform_constraints import resolve_platform_ma
 from mimarsinan.mapping.verification.layout_verification_scheduling import compute_mapping_stats
 from mimarsinan.torch_mapping.converter import convert_torch_model
 
-from .types import HwOnlyCache
+from .types import HwOnlyCache, JointHostContract
 
 
-class JointLayoutMixin:
+class JointLayoutMixin(JointHostContract):
     """Layout mapping and HW metric computation for :class:`JointArchHwProblem`."""
 
     def _build_raw_model(self, model_config: Dict, pcfg: Dict):

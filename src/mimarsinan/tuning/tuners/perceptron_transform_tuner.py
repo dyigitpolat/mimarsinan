@@ -15,13 +15,15 @@ class PerceptronTransformTuner(SmoothAdaptationTuner):
     # A persisted optimizer would step transform-produced tensors that receive no gradients (GradScaler crash).
     _supports_persistent_optimizer = False
 
+    trainer: PerceptronTransformTrainer
+
     def __init__(self, pipeline, model, target_accuracy, lr):
         self._device = pipeline.config["device"]
         self._data_loader_factory = DataLoaderFactory.for_pipeline(pipeline)
         self._pipeline_loss = pipeline.loss
         super().__init__(pipeline, model, target_accuracy, lr)
 
-    def _create_trainer(self):
+    def _create_trainer(self) -> PerceptronTransformTrainer:
         trainer = PerceptronTransformTrainer(
             self.model,
             self._device,

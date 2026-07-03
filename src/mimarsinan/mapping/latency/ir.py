@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from mimarsinan.mapping.ir import IRGraph, IRSource, NeuralCore, ComputeOp
+from mimarsinan.mapping.ir import IRGraph, IRNode, IRSource, NeuralCore
 from mimarsinan.mapping.latency.upstream import iter_upstream_neural_ids
 
 
@@ -12,7 +12,7 @@ class IRLatency:
     def __init__(self, ir_graph: IRGraph):
         self.ir_graph = ir_graph
         self._depth: dict[int, int] = {}
-        self._node_map: dict[int, NeuralCore | ComputeOp] = {
+        self._node_map: dict[int, IRNode] = {
             n.id: n for n in ir_graph.nodes
         }
 

@@ -1,4 +1,5 @@
 from contextlib import contextmanager
+from typing import Any
 
 from mimarsinan.model_training.training_utilities import AccuracyTracker
 from mimarsinan.data_handling.data_loader_factory import shutdown_data_loader
@@ -13,6 +14,8 @@ from mimarsinan.model_training import basic_trainer_epochs
 from mimarsinan.model_training import basic_trainer_eval
 
 import torch
+from torch.amp.autocast_mode import autocast
+from torch.amp.grad_scaler import GradScaler
 
 
 class BasicTrainer:
@@ -32,18 +35,19 @@ class BasicTrainer:
         self.validation_batch_size = self.data_provider.get_validation_batch_size()
         self.test_batch_size = self.data_provider.get_test_batch_size()
 
-        self.train_loader = data_loader_factory.create_training_loader(
+        # Loader/iterator attributes are Any: the factory's loader type is dynamic and close() nulls them, after which the trainer is defunct by contract.
+        self.train_loader: Any = data_loader_factory.create_training_loader(
             self.training_batch_size, self.data_provider)
-        self.validation_loader = data_loader_factory.create_validation_loader(
+        self.validation_loader: Any = data_loader_factory.create_validation_loader(
             self.validation_batch_size, self.data_provider)
-        self.test_loader = data_loader_factory.create_test_loader(
+        self.test_loader: Any = data_loader_factory.create_test_loader(
             self.test_batch_size, self.data_provider)
-        
+
         self.report_function = None
         self.loss_function = loss_function
 
-        self.val_iter = iter(self.validation_loader)
-        self.train_iter = iter(self.train_loader)
+        self.val_iter: Any = iter(self.validation_loader)
+        self.train_iter: Any = iter(self.train_loader)
 
         self.beta1 = 0.9
         self.beta2 = 0.99
@@ -101,7 +105,7 @@ class BasicTrainer:
         if self.recipe is not None and epochs > 0:
             optimizer = build_optimizer(self.model, lr, self.recipe)
             scheduler, _warmup = build_scheduler(optimizer, self.recipe, total_steps=epochs)
-            return optimizer, scheduler, torch.amp.GradScaler("cuda")
+            return optimizer, scheduler, GradScaler("cuda")
 
         optimizer = torch.optim.Adam(
             self.model.parameters(), lr = lr, betas = (self.beta1, self.beta2), weight_decay=5e-5)
@@ -112,7 +116,7 @@ class BasicTrainer:
         else:
             scheduler = torch.optim.lr_scheduler.ConstantLR(optimizer)
 
-        return optimizer, scheduler, torch.amp.GradScaler("cuda")
+        return optimizer, scheduler, GradScaler("cuda")
 
     def _recipe_step_recovery_enabled(self) -> bool:
         """Route the STEP recovery through ``self.recipe`` (optimizer + warmup/
@@ -124,16 +128,25 @@ class BasicTrainer:
         ``WeightTransformTrainer`` overrides to its aux model."""
         return self.model
 
+    def _require_recipe(self) -> TrainingRecipe:
+        recipe = self.recipe
+        if recipe is None:
+            raise RuntimeError(
+                "recipe-driven step training requires a TrainingRecipe; "
+                "this trainer was constructed with recipe=None"
+            )
+        return recipe
+
     def _build_recipe_step_optimizer(self, lr):
         """Recipe-driven step optimizer (honors optimizer family, weight-decay,
         momentum/betas). The supplied ``lr`` is the schedule's peak."""
-        return build_optimizer(self._recipe_optimization_model(), lr, self.recipe)
+        return build_optimizer(self._recipe_optimization_model(), lr, self._require_recipe())
 
     def _build_recipe_step_scheduler(self, optimizer, total_steps: int):
         """Warmup + cosine recipe schedule over the recovery budget; the optimizer
         base LR is the peak. Falls back to a 1-step budget when ``total_steps<=0``."""
         scheduler, _warmup = build_scheduler(
-            optimizer, self.recipe, total_steps=max(1, int(total_steps))
+            optimizer, self._require_recipe(), total_steps=max(1, int(total_steps))
         )
         return scheduler
 
@@ -141,9 +154,9 @@ class BasicTrainer:
         if self._recipe_step_recovery_enabled():
             optimizer = self._build_recipe_step_optimizer(lr)
             scheduler = self._build_recipe_step_scheduler(optimizer, total_steps)
-            return optimizer, scheduler, torch.amp.GradScaler("cuda")
+            return optimizer, scheduler, GradScaler("cuda")
 
-        adam_kwargs = dict(lr=lr, betas=(self.beta1, self.beta2), weight_decay=5e-5)
+        adam_kwargs: dict[str, Any] = dict(lr=lr, betas=(self.beta1, self.beta2), weight_decay=5e-5)
         if torch.device(self.device).type == "cuda":
             adam_kwargs["fused"] = True
         optimizer = torch.optim.Adam(self.model.parameters(), **adam_kwargs)
@@ -156,7 +169,7 @@ class BasicTrainer:
             scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
                 optimizer, T_max=int(total_steps), eta_min=lr * 1e-3
             )
-        return optimizer, scheduler, torch.amp.GradScaler("cuda")
+        return optimizer, scheduler, GradScaler("cuda")
 
     def build_step_optimizer(self, lr):
         """Build a fresh step-training optimizer that a caller can own and reuse.
@@ -167,7 +180,7 @@ class BasicTrainer:
         if self._recipe_step_recovery_enabled():
             return self._build_recipe_step_optimizer(lr)
 
-        adam_kwargs = dict(lr=lr, betas=(self.beta1, self.beta2), weight_decay=5e-5)
+        adam_kwargs: dict[str, Any] = dict(lr=lr, betas=(self.beta1, self.beta2), weight_decay=5e-5)
         if torch.device(self.device).type == "cuda":
             adam_kwargs["fused"] = True
         return torch.optim.Adam(self.model.parameters(), **adam_kwargs)
@@ -180,7 +193,7 @@ class BasicTrainer:
         """
         if self._recipe_step_recovery_enabled():
             scheduler = self._build_recipe_step_scheduler(optimizer, total_steps)
-            return scheduler, torch.amp.GradScaler("cuda")
+            return scheduler, GradScaler("cuda")
 
         if constant_lr or total_steps <= 0:
             warmup_iters = max(1, int(total_steps * 0.05)) if total_steps > 0 else 1
@@ -191,11 +204,11 @@ class BasicTrainer:
             scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
                 optimizer, T_max=int(total_steps), eta_min=lr * 1e-3
             )
-        return scheduler, torch.amp.GradScaler("cuda")
+        return scheduler, GradScaler("cuda")
 
     def _backward_pass_on_loss(self, x, y, scaler):
         self.model.train()
-        with torch.amp.autocast("cuda"):
+        with autocast("cuda"):
             loss = self.loss_function(self.model, x, y)
         scaler.scale(loss).backward()
         return loss

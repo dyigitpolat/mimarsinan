@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import cast
+
 import torch
 import torch.nn as nn
 
@@ -34,13 +36,14 @@ def adapt_conv_in_channels(conv: nn.Conv2d, in_channels: int) -> nn.Conv2d:
     """Clone ``conv`` with a new input-channel count and projected weights."""
     if conv.in_channels == in_channels:
         return conv
+    # Conv2d stores its 2-tuple geometry as tuple[int, ...]; cast back to the ctor's _size_2_t.
     new_conv = nn.Conv2d(
         in_channels,
         conv.out_channels,
-        kernel_size=conv.kernel_size,
-        stride=conv.stride,
-        padding=conv.padding,
-        dilation=conv.dilation,
+        kernel_size=cast("tuple[int, int]", conv.kernel_size),
+        stride=cast("tuple[int, int]", conv.stride),
+        padding=cast("str | tuple[int, int]", conv.padding),
+        dilation=cast("tuple[int, int]", conv.dilation),
         groups=conv.groups,
         bias=conv.bias is not None,
         padding_mode=conv.padding_mode,
@@ -50,5 +53,6 @@ def adapt_conv_in_channels(conv: nn.Conv2d, in_channels: int) -> nn.Conv2d:
     with torch.no_grad():
         new_conv.weight.copy_(resize_conv_input_weights(conv.weight, in_channels))
         if conv.bias is not None:
+            assert new_conv.bias is not None
             new_conv.bias.copy_(conv.bias)
     return new_conv

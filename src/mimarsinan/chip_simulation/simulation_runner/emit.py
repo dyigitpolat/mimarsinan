@@ -4,6 +4,7 @@ import os
 from dataclasses import dataclass
 
 from mimarsinan.mapping.packing.softcore import HardCoreMapping
+from mimarsinan.chip_simulation.nevresim.connectivity import ConnectivityMode
 from mimarsinan.chip_simulation.nevresim.nevresim_driver import NevresimDriver
 from mimarsinan.chip_simulation.nevresim.compile_nevresim import compile_simulator
 
@@ -33,7 +34,7 @@ def _emit_and_compile_segment(
     num_samples: int,
     sim_length: int,
     nevresim_path: str,
-    connectivity_mode: str,
+    connectivity_mode: ConnectivityMode,
 ) -> _PreparedSegment:
     """Top-level function for ProcessPoolExecutor: emit chip artifacts and compile."""
     NevresimDriver.nevresim_path = nevresim_path

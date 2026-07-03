@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Sequence, Tuple
 
+from mimarsinan.search.optimizers.agent_evolve.host_contract import EvolveHostContract
 from mimarsinan.search.optimizers.agent_evolve.schema import (
     CandidateResult,
     prettify_configuration,
@@ -16,7 +17,7 @@ from mimarsinan.search.results import ObjectiveSpec
 logger = logging.getLogger(__name__)
 
 
-class BatchEvalMixin:
+class BatchEvalMixin(EvolveHostContract):
     """Evaluate candidate batches and run generation regen loops."""
 
     @staticmethod

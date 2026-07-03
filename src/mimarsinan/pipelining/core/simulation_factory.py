@@ -51,8 +51,8 @@ def build_hybrid_mapping_for_pipeline(
         strategy=strategy,
     )
     propagate_negative_shifts_to_hybrid(ir_graph, hybrid_mapping)
-    # Provenance stamp for staleness detection when the ir_graph is regenerated.
-    hybrid_mapping.source_ir_build_token = getattr(ir_graph, "build_token", None)
+    # Provenance stamp (dynamic attribute) for staleness detection when the ir_graph is regenerated.
+    setattr(hybrid_mapping, "source_ir_build_token", getattr(ir_graph, "build_token", None))
     return hybrid_mapping
 
 

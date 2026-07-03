@@ -96,8 +96,13 @@ def neural_core_to_soft_core(neural_core: NeuralCore, graph: IRGraph | None = No
     bank_axon_slice = None
     bank_neuron_slice = None
     bank_includes_bias_row = False
-    if neural_core.has_weight_bank() and graph is not None:
+    if neural_core.weight_bank_id is not None and graph is not None:
         bank = graph.get_weight_bank(neural_core.weight_bank_id)
+        if bank is None:
+            raise KeyError(
+                f"neural_core_to_soft_core: NeuralCore {neural_core.name} references "
+                f"weight_bank_id={neural_core.weight_bank_id} which does not exist in the graph."
+            )
         bank_in, bank_out = bank.core_matrix.shape
         wrs = neural_core.weight_row_slice
         bank_neuron_slice = (
@@ -127,7 +132,7 @@ def neural_core_to_soft_core(neural_core: NeuralCore, graph: IRGraph | None = No
         threshold_group_id=int(pi) if pi is not None else None,
         weight_bank_id=(
             int(neural_core.weight_bank_id)
-            if neural_core.has_weight_bank() else None
+            if neural_core.weight_bank_id is not None else None
         ),
         bank_axon_slice=bank_axon_slice,
         bank_neuron_slice=bank_neuron_slice,

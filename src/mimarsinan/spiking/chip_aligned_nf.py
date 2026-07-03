@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any, cast
+
 import torch
 import torch.nn as nn
 
@@ -17,7 +19,7 @@ def chip_aligned_segment_forward(
     """Segment-aware chip-aligned NF forward (matches HCM ``_forward_rate``)."""
     if not hasattr(model, "get_mapper_repr"):
         return run_cycle_accurate(model, x, T)
-    mapper_repr = model.get_mapper_repr()
+    mapper_repr = cast(Any, model).get_mapper_repr()
     if mapper_repr is None:
         return run_cycle_accurate(model, x, T)
     driver = SegmentForwardDriver(mapper_repr, T, LifSegmentPolicy())

@@ -15,7 +15,7 @@ class ModuleMapper(Mapper):
         self.module = module
 
     def _map_to_ir(self, ir_mapping):
-        return self.source_mapper.map_to_ir(ir_mapping)
+        return self.require_source_mapper().map_to_ir(ir_mapping)
 
     def _forward_impl(self, x):
         return self.module(x)

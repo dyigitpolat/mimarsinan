@@ -11,12 +11,13 @@ import torch.fx as fx
 
 from mimarsinan.mapping.mapping_utils import ComputeOpMapper, Ensure2DMapper, PerceptronMapper
 from mimarsinan.models.perceptron_mixer.perceptron import Perceptron
+from mimarsinan.torch_mapping.converter_handlers.converter_contract import ConverterContract
 
 if TYPE_CHECKING:
     from mimarsinan.torch_mapping.representability_analyzer import RepresentabilityReport
 
 
-class LinearConvertMixin:
+class LinearConvertMixin(ConverterContract):
     @staticmethod
     def _activation_to_name(act_mod) -> str | None:
         if act_mod is None:

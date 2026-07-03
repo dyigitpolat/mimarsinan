@@ -142,29 +142,23 @@ def derive_arch_spec(
             "no neural cores in the mapping's segments; SANA-FE has nothing to simulate"
         )
 
-    dendrite_so = _plugin_path("dendrite")
-    soma_so = _plugin_path("soma")
-    ttfs_cont_so = _plugin_path("ttfs_continuous_soma")
-    ttfs_q_so = _plugin_path("ttfs_quantized_soma")
-    ttfs_cycle_so = _plugin_path("ttfs_cycle_soma")
-    ttfs_cascade_so = _plugin_path("ttfs_cascade_soma")
-    missing = [
-        name for name, path in (
-            ("dendrite", dendrite_so),
-            ("soma", soma_so),
-            ("ttfs_continuous_soma", ttfs_cont_so),
-            ("ttfs_quantized_soma", ttfs_q_so),
-            ("ttfs_cycle_soma", ttfs_cycle_so),
-            ("ttfs_cascade_soma", ttfs_cascade_so),
-        )
-        if path is None
-    ]
+    plugin_names = (
+        "dendrite",
+        "soma",
+        "ttfs_continuous_soma",
+        "ttfs_quantized_soma",
+        "ttfs_cycle_soma",
+        "ttfs_cascade_soma",
+    )
+    candidates = {name: _plugin_path(name) for name in plugin_names}
+    missing = [name for name, path in candidates.items() if path is None]
     if missing:
         raise FileNotFoundError(
             "mimarsinan SANA-FE plugins are not built (missing: "
             f"{', '.join(missing)}).  Run ``scripts/bootstrap_sanafe.sh`` "
             "to build all libmimarsinan_*.so artifacts."
         )
+    plugins = {name: path for name, path in candidates.items() if path is not None}
 
     if cores_per_tile <= 0:
         cores_per_tile = max(1, math.isqrt(total_cores))
@@ -185,12 +179,12 @@ def derive_arch_spec(
         axons_per_core=max_axons,
         neurons_per_core=max_neurons,
         preset=preset,
-        dendrite_plugin_path=dendrite_so,
-        soma_plugin_path=soma_so,
-        ttfs_continuous_plugin_path=ttfs_cont_so,
-        ttfs_quantized_plugin_path=ttfs_q_so,
-        ttfs_cycle_plugin_path=ttfs_cycle_so,
-        ttfs_cascade_plugin_path=ttfs_cascade_so,
+        dendrite_plugin_path=plugins["dendrite"],
+        soma_plugin_path=plugins["soma"],
+        ttfs_continuous_plugin_path=plugins["ttfs_continuous_soma"],
+        ttfs_quantized_plugin_path=plugins["ttfs_quantized_soma"],
+        ttfs_cycle_plugin_path=plugins["ttfs_cycle_soma"],
+        ttfs_cascade_plugin_path=plugins["ttfs_cascade_soma"],
         mesh_width=mesh_width,
         mesh_height=mesh_height,
         cores_per_tile_resolved=cores_per_tile,

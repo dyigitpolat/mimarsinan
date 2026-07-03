@@ -21,19 +21,21 @@ def _latency_stats(
     if not softcores:
         return 0, 0.0, 0.0, 0.0, 0
 
-    tagged_softcores = [sc for sc in softcores if sc.latency_tag is not None]
+    tagged = [
+        (sc, int(sc.latency_tag)) for sc in softcores if sc.latency_tag is not None
+    ]
     threshold_groups = len({sc.threshold_group_id for sc in softcores})
-    if not tagged_softcores:
+    if not tagged:
         return 0, 0.0, 0.0, 0.0, threshold_groups
 
     segments_to_latencies: Dict[int, set[int]] = {}
-    fallback_by_latency_tag = {int(sc.latency_tag) for sc in tagged_softcores}
-    has_segment_ids = any(sc.segment_id is not None for sc in tagged_softcores)
+    fallback_by_latency_tag = {lat for _, lat in tagged}
+    has_segment_ids = any(sc.segment_id is not None for sc, _ in tagged)
 
     if has_segment_ids:
-        for sc in tagged_softcores:
-            seg_id = int(sc.segment_id) if sc.segment_id is not None else int(sc.latency_tag)
-            segments_to_latencies.setdefault(seg_id, set()).add(int(sc.latency_tag))
+        for sc, lat in tagged:
+            seg_id = int(sc.segment_id) if sc.segment_id is not None else lat
+            segments_to_latencies.setdefault(seg_id, set()).add(lat)
     else:
         for lat in fallback_by_latency_tag:
             segments_to_latencies[lat] = {lat}

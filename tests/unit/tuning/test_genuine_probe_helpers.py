@@ -8,6 +8,7 @@ import torch.nn as nn
 from mimarsinan.tuning.orchestration.genuine_probe import (
     eval_forward_over_val,
     genuine_acc_on_clone,
+    iter_val_batches,
 )
 
 
@@ -56,6 +57,18 @@ def _make_batches():
     x1 = torch.tensor([[1.0, 5.0, 0.0], [4.0, 0.0, 0.0]])
     y1 = torch.tensor([0, 0])  # first wrong (pred 1), second correct
     return [(x0, y0), (x1, y1)]
+
+
+def test_iter_val_batches_is_a_pure_view_of_the_trainer_iterator():
+    batches = _make_batches()
+    trainer = _FakeTrainer(batches)
+
+    got = list(iter_val_batches(trainer, 3))
+    expected = list(trainer.iter_validation_batches(3))
+    assert len(got) == len(expected) == 3
+    for (gx, gy), (ex, ey) in zip(got, expected):
+        assert torch.equal(gx, ex)
+        assert torch.equal(gy, ey)
 
 
 def test_eval_forward_over_val_matches_hand_computed():

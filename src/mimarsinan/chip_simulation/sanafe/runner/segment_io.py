@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
 import numpy as np
+
+if TYPE_CHECKING:
+    from mimarsinan.chip_simulation.sanafe.presets import PerEventEnergy
+    from mimarsinan.chip_simulation.sanafe.records import SanafeArchGeometry
 
 from mimarsinan.chip_simulation.sanafe.analysis import _group_name
 from mimarsinan.chip_simulation.sanafe.records import SanafeCoreRecord, SanafeEnergyBreakdown, SanafeTileRecord
@@ -14,6 +18,16 @@ from mimarsinan.mapping.support.spike_source_spans import compress_spike_sources
 
 class SanafeSegmentIOMixin:
     """Derive segment spike counts and tile aggregates."""
+
+    if TYPE_CHECKING:
+        # Host contract: attributes supplied by SanafeRunner
+        # (declaration-only; no runtime effect).
+        _preset: PerEventEnergy
+        _arch_geometry: Optional[SanafeArchGeometry]
+        T: int
+        cores_per_tile: int
+        spiking_mode: str
+        ttfs_cycle_schedule: str
 
     def _derive_per_core_input_counts(
         self,
@@ -167,7 +181,7 @@ class SanafeSegmentIOMixin:
         output_map: List[Any],
         per_core_records: List[SanafeCoreRecord],
         *,
-        output_sources: np.ndarray,
+        output_sources: Optional[np.ndarray],
         T: int,
         hcm: Any,
         last_active_fires: Dict[int, np.ndarray],

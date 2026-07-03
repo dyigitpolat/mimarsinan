@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Optional, Tuple
 
 import torch
 import torch.nn as nn
@@ -10,6 +10,7 @@ import torch.fx as fx
 
 from mimarsinan.mapping.support.compute_modules import ComputeAdapter
 from mimarsinan.mapping.mapping_utils import ComputeOpMapper
+from mimarsinan.torch_mapping.converter_handlers.converter_contract import ConverterContract
 from mimarsinan.torch_mapping.fx_shape_utils import (
     node_input_shapes,
     node_output_shape,
@@ -24,11 +25,8 @@ def _normalize_bound_tensor(t: torch.Tensor) -> torch.Tensor:
     return t
 
 
-class MapperGraphFxMixin:
+class MapperGraphFxMixin(ConverterContract):
     """Shape metadata and generic compute-op emission for mapper conversion."""
-
-    _node_to_mapper: Dict[fx.Node, Any]
-    _node_to_attr: Dict[Any, Any]
 
     @staticmethod
     def _getitem_looks_like_real_slice(node: fx.Node) -> bool:

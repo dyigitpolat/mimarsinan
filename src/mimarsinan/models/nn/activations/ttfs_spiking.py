@@ -44,6 +44,9 @@ class TTFSActivation(nn.Module):
 
     _VALID_THRESHOLDING_MODES = ("<", "<=")
 
+    # Plain attribute installed via object.__setattr__ in set_bias (never a registered parameter).
+    _bias: torch.Tensor | None
+
     def __init__(
         self,
         T: int,
@@ -144,6 +147,7 @@ class TTFSActivation(nn.Module):
                 # Start one ramp-step low so the first crossing lands at the framework's TTFS spike index round(S*(1 - V/theta)).
                 self._membrane = v_norm - (1.0 / float(self.T))
                 self._has_fired = torch.zeros_like(x)
+            assert self._has_fired is not None
             self._membrane = self._membrane + (1.0 / float(self.T))
             pre = self._membrane - 1.0
             spike_raw = _heaviside_surrogate(pre, self.thresholding_mode, alpha=self.surrogate_alpha)
@@ -167,6 +171,7 @@ class TTFSActivation(nn.Module):
             self._ramp_current = torch.zeros_like(x)
             self._membrane = torch.zeros_like(x)
             self._has_fired = torch.zeros_like(x)
+        assert self._ramp_current is not None and self._has_fired is not None
 
         self._ramp_current = self._ramp_current + weighted
         self._membrane = self._membrane + self._ramp_current + bias_norm
@@ -216,6 +221,7 @@ def run_ttfs_cycle_accurate(model, x: torch.Tensor, T: int, forward_fn=None) -> 
             out_spike = forward_fn(spike_train[t])
             latched = out_spike if latched is None else torch.maximum(latched, out_spike)
             accum = latched if accum is None else accum + latched
+        assert accum is not None, "run_ttfs_cycle_accurate requires T >= 1"
         return accum / float(T)
     finally:
         for m in nodes:

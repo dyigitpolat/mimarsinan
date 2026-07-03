@@ -176,14 +176,18 @@ CONFIG_KEYS_SET: Set[str] = {
 }
 
 
+def _copy_recipe_blocks(out: Dict[str, object]) -> Dict[str, object]:
+    """Shallow-copy nested recipe dicts so callers can mutate them safely."""
+    for key in ("training_recipe", "tuning_recipe"):
+        value = out.get(key)
+        if isinstance(value, dict):
+            out[key] = dict(value)
+    return out
+
+
 def get_default_deployment_parameters() -> Dict[str, object]:
     """Return a copy of default deployment parameters."""
-    out = dict(DEFAULT_DEPLOYMENT_PARAMETERS)
-    if "training_recipe" in out:
-        out["training_recipe"] = dict(out["training_recipe"])
-    if "tuning_recipe" in out:
-        out["tuning_recipe"] = dict(out["tuning_recipe"])
-    return out
+    return _copy_recipe_blocks(dict(DEFAULT_DEPLOYMENT_PARAMETERS))
 
 
 def get_default_training_recipe() -> Dict[str, object]:
@@ -221,22 +225,14 @@ def get_user_default_deployment_parameters() -> Dict[str, object]:
         "max_simulation_samples",
     }
     out = {k: v for k, v in DEFAULT_DEPLOYMENT_PARAMETERS.items() if k in user_keys}
-    if "training_recipe" in out:
-        out["training_recipe"] = dict(out["training_recipe"])
-    if "tuning_recipe" in out:
-        out["tuning_recipe"] = dict(out["tuning_recipe"])
-    return out
+    return _copy_recipe_blocks(out)
 
 
 def get_system_default_deployment_parameters() -> Dict[str, object]:
     """Return internal/system deployment defaults hidden from saved user config."""
     user_keys = set(get_user_default_deployment_parameters())
     out = {k: v for k, v in DEFAULT_DEPLOYMENT_PARAMETERS.items() if k not in user_keys}
-    if "training_recipe" in out:
-        out["training_recipe"] = dict(out["training_recipe"])
-    if "tuning_recipe" in out:
-        out["tuning_recipe"] = dict(out["tuning_recipe"])
-    return out
+    return _copy_recipe_blocks(out)
 
 
 def get_user_default_platform_constraints() -> Dict[str, object]:

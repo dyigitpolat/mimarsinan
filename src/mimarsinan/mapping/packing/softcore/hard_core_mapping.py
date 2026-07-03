@@ -16,10 +16,10 @@ class RuntimeMaterializer:
         self._split_counter = 0
 
     @staticmethod
-    def is_mapping_possible(hardcore, softcore) -> bool:
+    def is_mapping_possible(softcore, hardcore) -> bool:
         from mimarsinan.mapping.packing.core_packing import canonical_is_mapping_possible
 
-        return canonical_is_mapping_possible(hardcore, softcore)
+        return canonical_is_mapping_possible(softcore, hardcore)
 
     def place(self, core_idx: int, hardcore, softcore) -> None:
         self._hcm.merge_softcore_into(core_idx, hardcore, softcore)
@@ -138,7 +138,7 @@ class HardCoreMapping:
         self.unused_cores = chip_cores
 
         self.cores = []
-        self.output_sources = []
+        self.output_sources: "np.ndarray | list" = []
         self.neuron_mapping = {}
         self.soft_core_placements_per_hard_core = []
         self.weight_banks: dict[int, "object"] = {}
@@ -279,5 +279,7 @@ class HardCoreMapping:
         """Cached range-compressed output_sources."""
         if self._output_source_spans is None:
             from mimarsinan.mapping.support.spike_source_spans import compress_spike_sources
-            self._output_source_spans = compress_spike_sources(self.output_sources.flatten().tolist())
+            self._output_source_spans = compress_spike_sources(
+                np.asarray(self.output_sources).flatten().tolist()
+            )
         return self._output_source_spans

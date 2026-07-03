@@ -7,4 +7,4 @@ import numpy as np
 _RAW_INPUT_NODE_ID = -2
 
 # float64 matches HCM; float32 drifts ±1 spike at rate-encoding boundaries.
-_COMPUTE_DTYPE: np.dtype = np.float64
+_COMPUTE_DTYPE: np.dtype = np.dtype(np.float64)

@@ -10,12 +10,28 @@ import torch.nn as nn
 import torch.fx as fx
 
 from mimarsinan.mapping.mapping_utils import ComputeOpMapper, Conv2DPerceptronMapper
+from mimarsinan.torch_mapping.converter_handlers.converter_contract import ConverterContract
 
 if TYPE_CHECKING:
     from mimarsinan.torch_mapping.representability_analyzer import RepresentabilityReport
 
 
-class ConvConvertMixin:
+_BN_TYPES = (nn.BatchNorm1d, nn.BatchNorm2d)
+
+
+class ConvConvertMixin(ConverterContract):
+    @staticmethod
+    def _require_int_padding(
+        node: fx.Node, padding: str | tuple[int, ...],
+    ) -> tuple[int, ...]:
+        """Perceptron conv mappers need numeric padding; reject 'same'/'valid' explicitly."""
+        if isinstance(padding, str):
+            raise NotImplementedError(
+                f"String padding {padding!r} is not supported for perceptron conv "
+                f"conversion (node {node.name})"
+            )
+        return padding
+
     @staticmethod
     def _conv_activation_to_name(act_mod) -> str | None:
         if act_mod is None:
@@ -63,7 +79,7 @@ class ConvConvertMixin:
                 out_channels=mod.out_channels,
                 kernel_size=mod.kernel_size,
                 stride=mod.stride,
-                padding=mod.padding,
+                padding=self._require_int_padding(node, mod.padding),
                 dilation=mod.dilation,
                 bias=mod.bias is not None,
                 use_batchnorm=bn_mod is not None,
@@ -113,7 +129,7 @@ class ConvConvertMixin:
                 out_channels=mod.out_channels,
                 kernel_size=mod.kernel_size[0],
                 stride=mod.stride[0],
-                padding=mod.padding[0],
+                padding=self._require_int_padding(node, mod.padding)[0],
                 dilation=mod.dilation[0],
                 bias=mod.bias is not None,
                 use_batchnorm=bn_mod is not None,
@@ -135,16 +151,17 @@ class ConvConvertMixin:
 
     @staticmethod
     def _copy_bn_params(dst_bn: nn.Module, src_bn: nn.Module) -> None:
-        if isinstance(dst_bn, nn.Identity):
+        """Copy affine params and running stats between BatchNorms (possibly 2d src → 1d dst)."""
+        if not isinstance(dst_bn, _BN_TYPES) or not isinstance(src_bn, _BN_TYPES):
             return
 
-        if hasattr(dst_bn, "weight") and hasattr(src_bn, "weight") and src_bn.weight is not None:
+        if src_bn.weight is not None and dst_bn.weight is not None:
             dst_bn.weight.data.copy_(src_bn.weight.data)
-        if hasattr(dst_bn, "bias") and hasattr(src_bn, "bias") and src_bn.bias is not None:
+        if src_bn.bias is not None and dst_bn.bias is not None:
             dst_bn.bias.data.copy_(src_bn.bias.data)
-        if hasattr(dst_bn, "running_mean") and hasattr(src_bn, "running_mean") and src_bn.running_mean is not None:
+        if src_bn.running_mean is not None and dst_bn.running_mean is not None:
             dst_bn.running_mean.copy_(src_bn.running_mean)
-        if hasattr(dst_bn, "running_var") and hasattr(src_bn, "running_var") and src_bn.running_var is not None:
+        if src_bn.running_var is not None and dst_bn.running_var is not None:
             dst_bn.running_var.copy_(src_bn.running_var)
-        if hasattr(dst_bn, "num_batches_tracked") and hasattr(src_bn, "num_batches_tracked"):
+        if src_bn.num_batches_tracked is not None and dst_bn.num_batches_tracked is not None:
             dst_bn.num_batches_tracked.copy_(src_bn.num_batches_tracked)

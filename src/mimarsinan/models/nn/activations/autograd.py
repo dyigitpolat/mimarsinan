@@ -22,7 +22,8 @@ class LeakyGradReLUFunction(Function):
         return torch.where(input <= 0, torch.zeros_like(input), input)
 
     @staticmethod
-    def backward(ctx, grad_output):
+    def backward(ctx, *grad_outputs):
+        grad_output, = grad_outputs
         input, = ctx.saved_tensors
         grad_input = torch.where(input < 0, grad_output * ctx.negative_slope, grad_output)
         return grad_input, None
@@ -47,7 +48,8 @@ class StaircaseFunction(Function):
         return floor_staircase(x, Tq)
 
     @staticmethod
-    def backward(ctx, grad_output):
+    def backward(ctx, *grad_outputs):
+        grad_output, = grad_outputs
         grad_input = grad_output.clone()
         return grad_input, None, None
 
@@ -63,7 +65,8 @@ class TTFSStaircaseFunction(Function):
         return ttfs_quantized_staircase(r, one, int(S))
 
     @staticmethod
-    def backward(ctx, grad_output):
+    def backward(ctx, *grad_outputs):
+        grad_output, = grad_outputs
         return grad_output.clone(), None
 
 
@@ -75,7 +78,8 @@ class RoundedStaircaseFunction(Function):
         return torch.round(x * T) / T
 
     @staticmethod
-    def backward(ctx, grad_output):
+    def backward(ctx, *grad_outputs):
+        grad_output, = grad_outputs
         return grad_output.clone(), None
 
 
@@ -114,7 +118,8 @@ class TTFSGridSnapFunction(Function):
         return ttfs_grid_quantize(x, int(S))
 
     @staticmethod
-    def backward(ctx, grad_output):
+    def backward(ctx, *grad_outputs):
+        grad_output, = grad_outputs
         return grad_output.clone(), None
 
 
@@ -144,7 +149,8 @@ class DifferentiableClamp(Function):
         return torch.clamp(x, a_dev, b_dev)
 
     @staticmethod
-    def backward(ctx, grad_output):
+    def backward(ctx, *grad_outputs):
+        grad_output, = grad_outputs
         x, a, b = ctx.saved_tensors
         below_grad = torch.clamp_min(torch.exp(x - a), _CLAMP_LEAK)
         above_grad = torch.clamp_min(torch.exp(b - x), _CLAMP_LEAK)

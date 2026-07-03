@@ -10,8 +10,9 @@ import torch.nn as nn
 
 def _resize_head(model: nn.Module, num_classes: int) -> nn.Module:
     """Swap a torchvision classifier ``fc`` Linear to ``num_classes`` outputs, eval()."""
-    in_features = model.fc.in_features
-    model.fc = nn.Linear(in_features, int(num_classes))
+    fc = model.fc
+    assert isinstance(fc, nn.Linear), f"expected a Linear fc head, got {type(fc).__name__}"
+    model.fc = nn.Linear(fc.in_features, int(num_classes))
     return model.eval()
 
 

@@ -1,5 +1,8 @@
 """SoftCore container for a mapped neural IR node."""
 
+from __future__ import annotations
+
+import numpy as np
 import torch
 
 
@@ -47,9 +50,9 @@ class SoftCore:
         self.bank_neuron_slice = bank_neuron_slice
         self.bank_includes_bias_row = bool(bank_includes_bias_row)
 
-        self.hardware_bias = None
+        self.hardware_bias: np.ndarray | None = None
 
-        self.latency = None
+        self.latency: int | None = None
         self._axon_source_spans = None
 
         self.neuron_offset_in_original = 0
@@ -57,8 +60,10 @@ class SoftCore:
         self.split_fragment_index = None
         self.split_original_neurons = None
 
-        self.perceptron_index = None
-        self.perceptron_output_slice = None
+        self.perceptron_index: int | None = None
+        self.perceptron_output_slice: tuple[int, int] | None = None
+        self.pruned_row_mask: list | None = None
+        self.pruned_col_mask: list | None = None
 
     def get_input_count(self):
         return len(self.axon_sources)

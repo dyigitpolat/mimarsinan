@@ -5,6 +5,7 @@ from mimarsinan.model_training.training_recipe import (
 )
 
 import torch
+from torch.amp.grad_scaler import GradScaler
 import copy
 
 class WeightTransformTrainer(BasicTrainer):
@@ -49,7 +50,7 @@ class WeightTransformTrainer(BasicTrainer):
         if self.recipe is not None and epochs > 0:
             optimizer = build_optimizer(self.aux_model, lr, self.recipe)
             scheduler, _warmup = build_scheduler(optimizer, self.recipe, total_steps=epochs)
-            return optimizer, scheduler, torch.amp.GradScaler("cuda")
+            return optimizer, scheduler, GradScaler("cuda")
 
         optimizer = torch.optim.AdamW(
             self.aux_model.parameters(), lr = lr, betas = (self.beta1, self.beta2))
@@ -57,17 +58,17 @@ class WeightTransformTrainer(BasicTrainer):
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
             optimizer, T_max = epochs, eta_min = lr * 1e-3)
 
-        return optimizer, scheduler, torch.amp.GradScaler("cuda")
+        return optimizer, scheduler, GradScaler("cuda")
 
     def _get_optimizer_and_scheduler_steps(self, lr, total_steps: int, *, constant_lr: bool = False):
         if self._recipe_step_recovery_enabled():
             optimizer = self._build_recipe_step_optimizer(lr)
             scheduler = self._build_recipe_step_scheduler(optimizer, total_steps)
-            return optimizer, scheduler, torch.amp.GradScaler("cuda")
+            return optimizer, scheduler, GradScaler("cuda")
         if self.recipe is not None and total_steps > 0 and not constant_lr:
             optimizer = build_optimizer(self.aux_model, lr, self.recipe)
             scheduler, _warmup = build_scheduler(optimizer, self.recipe, total_steps=int(total_steps))
-            return optimizer, scheduler, torch.amp.GradScaler("cuda")
+            return optimizer, scheduler, GradScaler("cuda")
 
         optimizer = torch.optim.AdamW(
             self.aux_model.parameters(), lr=lr, betas=(self.beta1, self.beta2)
@@ -81,4 +82,4 @@ class WeightTransformTrainer(BasicTrainer):
             scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
                 optimizer, T_max=int(total_steps), eta_min=lr * 1e-3
             )
-        return optimizer, scheduler, torch.amp.GradScaler("cuda")
+        return optimizer, scheduler, GradScaler("cuda")

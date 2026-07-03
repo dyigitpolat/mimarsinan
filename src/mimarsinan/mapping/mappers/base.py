@@ -32,9 +32,9 @@ def resolve_activation_type(perceptron) -> str | None:
 
 
 class Mapper(nn.Module):
-    def __init__(self, source_mapper=None):
+    def __init__(self, source_mapper: "Mapper | None" = None):
         super(Mapper, self).__init__()
-        self._source_mapper_container = [source_mapper]
+        self._source_mapper_container: list[Mapper | None] = [source_mapper]
         self._ir_sources = None
         self._cached_ir_mapping = None
 
@@ -64,8 +64,17 @@ class Mapper(nn.Module):
         return FlowchartNodeEstimate()
 
     @property
-    def source_mapper(self):
+    def source_mapper(self) -> "Mapper | None":
         return self._source_mapper_container[0]
+
+    def require_source_mapper(self) -> "Mapper":
+        """Return the source mapper; raise if this node was built without one."""
+        source = self._source_mapper_container[0]
+        if source is None:
+            raise ValueError(
+                f"{type(self).__name__} requires a source mapper but none was set"
+            )
+        return source
 
     def clear_cache(self):
         self._ir_sources = None

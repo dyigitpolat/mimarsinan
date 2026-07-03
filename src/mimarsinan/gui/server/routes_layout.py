@@ -103,7 +103,7 @@ def expand_preview_for_scheduling(preview, per_segment_passes, per_segment_pass_
 
         seg_pass_assignments[seg_id] = passes
 
-    new_flow = [{"kind": "input"}]
+    new_flow: list[dict] = [{"kind": "input"}]
     seg_idx = 0
     saw_neural_in_segment = False
     emitted_segments = set()
@@ -239,24 +239,35 @@ def register_routes(app: FastAPI) -> None:
             layout_body["max_neurons"] = max(int(body.get("max_neurons", 1024)), 4096)
             softcores = get_softcores_from_request(layout_body)
 
-            common_kwargs = dict(
-                allow_coalescing=bool(body.get("allow_coalescing", False)),
-                hardware_bias=bool(body.get("hardware_bias", True)),
-                axon_granularity=int(body.get("axon_granularity", 1)),
-                neuron_granularity=int(body.get("neuron_granularity", 1)),
-                safety_margin=float(body.get("safety_margin", 0.15)),
-                allow_neuron_splitting=bool(body.get("allow_neuron_splitting", False)),
-            )
+            allow_coalescing = bool(body.get("allow_coalescing", False))
+            hardware_bias = bool(body.get("hardware_bias", True))
+            axon_granularity = int(body.get("axon_granularity", 1))
+            neuron_granularity = int(body.get("neuron_granularity", 1))
+            safety_margin = float(body.get("safety_margin", 0.15))
+            allow_neuron_splitting = bool(body.get("allow_neuron_splitting", False))
 
             if bool(body.get("allow_scheduling", False)):
                 suggestion = suggest_hardware_config_scheduled(
                     softcores,
                     max_passes=int(body.get("max_schedule_passes", 8)),
                     latency_weight=float(body.get("scheduling_latency_weight", 1.0)),
-                    **common_kwargs,
+                    allow_coalescing=allow_coalescing,
+                    hardware_bias=hardware_bias,
+                    axon_granularity=axon_granularity,
+                    neuron_granularity=neuron_granularity,
+                    safety_margin=safety_margin,
+                    allow_neuron_splitting=allow_neuron_splitting,
                 )
             else:
-                suggestion = suggest_hardware_config(softcores, **common_kwargs)
+                suggestion = suggest_hardware_config(
+                    softcores,
+                    allow_coalescing=allow_coalescing,
+                    hardware_bias=hardware_bias,
+                    axon_granularity=axon_granularity,
+                    neuron_granularity=neuron_granularity,
+                    safety_margin=safety_margin,
+                    allow_neuron_splitting=allow_neuron_splitting,
+                )
 
             return {
                 "core_types": suggestion.core_types,

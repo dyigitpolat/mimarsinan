@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
+
+from mimarsinan.model_training.basic_trainer import BasicTrainer
+from mimarsinan.tuning.axes.adaptation_axis import AdaptationAxisBase
+from mimarsinan.tuning.orchestration.tuning_budget import TuningBudget
 
 
 @runtime_checkable
@@ -34,11 +38,21 @@ class RateTunerSeamMixin:
     tuner cannot change any number.
     """
 
+    if TYPE_CHECKING:
+        # Host contract: supplied by SmoothAdaptationCycleMixin + TunerBase.
+        # ``Any`` because tuner families narrow the trainer type (invariance).
+        trainer: Any
+        _budget: TuningBudget
+        _committed_rate: float
+
+        def _update_and_evaluate(self, rate) -> float: ...
+        def _recover_to_target(self, target, rate) -> tuple[float, Any]: ...
+
     def ramp(self, rate: float):
         """Predictor: apply T at ``rate`` via the tuner's ``_update_and_evaluate``."""
         return self._update_and_evaluate(float(rate))
 
-    def recover_to(self, target: float, rate: float = None):
+    def recover_to(self, target: float, rate: float | None = None):
         """Corrector: recover toward ``target`` via the shared recovery primitive.
 
         ``rate`` (default: the committed rate) selects which recovery hooks install;
@@ -64,12 +78,20 @@ class OneShotRateTunerSeamMixin:
     applies the full shift, ``recover_to`` runs ``train_steps_until_target``.
     """
 
+    if TYPE_CHECKING:
+        # Host contract: supplied by the owning one-shot tuner + TunerBase.
+        trainer: BasicTrainer
+        _budget: TuningBudget
+        _axis: AdaptationAxisBase
+
+        def _find_lr(self) -> float: ...
+
     def ramp(self, rate: float):
         """Apply the one-shot transform at ``rate`` (1.0 = the full shift)."""
         self._axis.set_rate(float(rate))
         return None
 
-    def recover_to(self, target: float, rate: float = None):
+    def recover_to(self, target: float, rate: float | None = None):
         """Step-budgeted recovery toward ``target`` — the tuner's ``run`` recovery."""
         lr = self._find_lr()
         return self.trainer.train_steps_until_target(

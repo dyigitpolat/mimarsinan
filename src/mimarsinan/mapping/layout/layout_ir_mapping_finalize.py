@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set
 
 from mimarsinan.mapping.layout.layout_types import LayoutSoftCoreSpec
 from mimarsinan.mapping.layout.segmentation import (
@@ -11,6 +11,14 @@ from mimarsinan.mapping.layout.segmentation import (
 
 
 class _LayoutIRMappingFinalize:
+    """Finalisation mixin; the composed ``LayoutIRMapping`` provides the declared members."""
+
+    if TYPE_CHECKING:
+        layout_softcores: List[LayoutSoftCoreSpec]
+        _node_input_node_ids: Dict[int, Set[int]]
+        _node_is_neural: Dict[int, bool]
+        _node_id_to_softcore_idx: Dict[int, int]
+        _sc_idx_to_perceptron_index: Dict[int, Optional[int]]
 
     def _compute_latencies(self) -> Dict[int, int]:
         return compute_node_latencies(

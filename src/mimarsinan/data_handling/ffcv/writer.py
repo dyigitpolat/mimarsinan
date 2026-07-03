@@ -17,7 +17,7 @@ from mimarsinan.data_handling.ffcv.pipeline_spec import (
 
 
 def _instantiate_field(field_spec):
-    from ffcv import fields as ffcv_fields
+    from ffcv import fields as ffcv_fields  # pyright: ignore[reportImplicitRelativeImport, reportAttributeAccessIssue]  # third-party ffcv, name-shadowed by this package
 
     cls = getattr(ffcv_fields, field_spec.write_type)
     return cls(**field_spec.write_kwargs)
@@ -62,7 +62,7 @@ def ensure_beton(
     Writes to a sibling tmp file then atomic-renames, so concurrent readers
     never see a partial beton.
     """
-    from ffcv.writer import DatasetWriter
+    from ffcv.writer import DatasetWriter  # pyright: ignore[reportImplicitRelativeImport, reportAttributeAccessIssue]  # third-party ffcv, name-shadowed by this package
 
     split = normalize_split_name(split)
     path = beton_path_for(spec, split)

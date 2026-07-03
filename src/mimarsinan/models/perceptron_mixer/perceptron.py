@@ -36,7 +36,7 @@ class Perceptron(nn.Module):
     def __init__(
         self,
         output_channels, input_features, bias=True,
-        normalization=nn.Identity(),
+        normalization: nn.Module = nn.Identity(),
         base_activation_name=None,
         name="Perceptron"):
 

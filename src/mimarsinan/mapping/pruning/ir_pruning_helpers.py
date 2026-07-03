@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Dict, Sequence, Set, Tuple
+from typing import Dict, Mapping, Sequence, Set, Tuple
 import numpy as np
 from mimarsinan.mapping.ir import IRGraph, IRSource, NeuralCore
 from mimarsinan.mapping.pruning.boundary_policy import compute_model_io_boundary_policy
@@ -38,7 +38,7 @@ def _masks_to_sets(
 
 def _boundary_policy_exemptions(
     graph: IRGraph,
-) -> Tuple[Dict[int, frozenset], Dict[int, frozenset]]:
+) -> Tuple[Mapping[int, frozenset], Mapping[int, frozenset]]:
     """Per-node frozensets of rows/cols that must never be pruned (model I/O)."""
     policy = compute_model_io_boundary_policy(graph)
     return policy.exempt_rows_per_node, policy.exempt_cols_per_node
@@ -129,26 +129,25 @@ def _rewire_sources(
     Bank-backed cores keep their indexing (compacted later at the soft-core stage). Mutates
     every node's ``input_sources`` and the graph's ``output_sources`` in place.
     """
-    owned_node_ids = {
-        n.id for n in graph.nodes
-        if isinstance(n, NeuralCore) and n.core_matrix is not None
-    }
+    owned_matrices: Dict[int, np.ndarray] = {}
+    for n in graph.nodes:
+        if isinstance(n, NeuralCore) and n.core_matrix is not None:
+            owned_matrices[n.id] = n.core_matrix
+    owned_node_ids = set(owned_matrices)
     pruned_cols: Dict[int, Set[int]] = {
         nid: pruned_cols_per_node.get(nid, set()) for nid in owned_node_ids
     }
     reindex_maps: Dict[int, Dict[int, int]] = {}
-    for node in graph.nodes:
-        if node.id not in owned_node_ids:
-            continue
-        n_neurons = node.core_matrix.shape[1]
-        zero_cols = pruned_cols[node.id]
+    for node_id, mat in owned_matrices.items():
+        n_neurons = mat.shape[1]
+        zero_cols = pruned_cols[node_id]
         new_idx = 0
         remap: Dict[int, int] = {}
         for old_idx in range(n_neurons):
             if old_idx not in zero_cols:
                 remap[old_idx] = new_idx
                 new_idx += 1
-        reindex_maps[node.id] = remap
+        reindex_maps[node_id] = remap
 
     def _rewire(sources: np.ndarray) -> np.ndarray:
         flat = sources.flatten()

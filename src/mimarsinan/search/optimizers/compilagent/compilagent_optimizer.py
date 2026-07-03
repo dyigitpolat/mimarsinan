@@ -198,7 +198,7 @@ class CompilagentOptimizer(SearchOptimizer):
         )
 
         request = HarnessRunRequest(
-            toolset=guided_toolset,
+            toolset=guided_toolset,  # pyright: ignore[reportArgumentType] — deliberate duck-typed drop-in for the frozen-slots Toolset
             system_instructions=self._build_system_instructions(active_objective_names),
             user_prompt=self.user_prompt,
             model_id=self.model,

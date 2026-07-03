@@ -10,3 +10,15 @@ from mimarsinan.chip_simulation.nevresim.connectivity import (
     default_nevresim_connectivity_mode,
     resolve_nevresim_connectivity_mode,
 )
+
+__all__ = [
+    "NevresimDriver",
+    "compile_simulator",
+    "CompileResult",
+    "execute_simulator",
+    "NevresimCompileCache",
+    "ConnectivityMode",
+    "DEFAULT_NEVRESIM_CONNECTIVITY_MODE",
+    "default_nevresim_connectivity_mode",
+    "resolve_nevresim_connectivity_mode",
+]

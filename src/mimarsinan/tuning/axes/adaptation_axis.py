@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Iterable, Protocol, runtime_checkable
+from typing import Any, Iterable, Protocol, runtime_checkable
 
 import torch.nn as nn
 
@@ -43,9 +43,10 @@ class AdaptationAxisBase:
     supports_smooth: bool = True
 
     def __init__(self) -> None:
-        self._model = None
-        self._manager = None
-        self._config = None
+        # Duck-typed attach context: models/managers/configs vary per pipeline.
+        self._model: Any = None
+        self._manager: Any = None
+        self._config: Any = None
 
     def attach(self, model, adaptation_manager, config) -> None:
         """Record the application context. Idempotent: re-attach overwrites refs."""
@@ -68,7 +69,7 @@ class AdaptationAxisBase:
     def finalize(self, model) -> None:
         return None
 
-    def get_extra_state(self):
+    def get_extra_state(self) -> Any:
         return None
 
     def set_extra_state(self, extra) -> None:

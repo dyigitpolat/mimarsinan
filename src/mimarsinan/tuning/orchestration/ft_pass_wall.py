@@ -4,7 +4,12 @@ from __future__ import annotations
 
 import time
 from contextlib import contextmanager
-from typing import Dict, Iterator, List
+from typing import Dict, Iterator, List, TypedDict
+
+
+class _PassRecord(TypedDict):
+    label: str
+    wall_s: float
 
 
 class FtPassWallLog:
@@ -14,7 +19,7 @@ class FtPassWallLog:
     (0.0 when empty — AC5 reads a float, never ``None``)."""
 
     def __init__(self) -> None:
-        self._passes: List[Dict[str, object]] = []
+        self._passes: List[_PassRecord] = []
 
     def record(self, label: str, wall_s: float) -> None:
         wall = float(wall_s)
@@ -44,4 +49,4 @@ class FtPassWallLog:
         """The worst single fine-tuning pass wall (0.0 when no pass ran)."""
         if not self._passes:
             return 0.0
-        return max(float(p["wall_s"]) for p in self._passes)
+        return max(p["wall_s"] for p in self._passes)

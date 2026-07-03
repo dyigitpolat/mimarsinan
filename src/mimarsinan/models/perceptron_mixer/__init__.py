@@ -5,5 +5,7 @@ Only ``Perceptron`` and ``PerceptronFlow`` are eagerly re-exported here.
 use torch-based builders and torch_mapping.
 """
 
-from mimarsinan.models.perceptron_mixer.perceptron import Perceptron
-from mimarsinan.models.perceptron_mixer.perceptron_flow import PerceptronFlow
+from mimarsinan.models.perceptron_mixer.perceptron import Perceptron as Perceptron
+from mimarsinan.models.perceptron_mixer.perceptron_flow import (
+    PerceptronFlow as PerceptronFlow,
+)

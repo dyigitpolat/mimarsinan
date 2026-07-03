@@ -96,10 +96,12 @@ class TunerBase:
                 coarse_signal=coarse_signal,
             )
 
-    def _get_cached_lr(self):
-        if getattr(self, "_cached_lr", None) is None:
-            self._cached_lr = self._find_lr()
-        return self._cached_lr
+    def _get_cached_lr(self) -> float:
+        cached = getattr(self, "_cached_lr", None)
+        if cached is None:
+            cached = self._find_lr()
+            self._cached_lr = cached
+        return cached
 
     def _invalidate_lr_cache(self):
         self._cached_lr = None

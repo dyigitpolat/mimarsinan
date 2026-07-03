@@ -79,8 +79,9 @@ class LRRangeFinder:
         return max(zip(lrs, accs), key=lambda x: x[1])[0]
 
     def find_best_lr(self) -> float:
-        if self.coarse_signal is not None:
-            return self._find_best_lr_coarse()
+        coarse_signal = self.coarse_signal
+        if coarse_signal is not None:
+            return self._find_best_lr_coarse(coarse_signal)
         state = self.clone_state()
         try:
             baseline = float(self.validate_fn())
@@ -108,7 +109,7 @@ class LRRangeFinder:
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
 
-    def _find_best_lr_coarse(self) -> float:
+    def _find_best_lr_coarse(self, coarse_signal: Callable[[], float]) -> float:
         """Cheap loss-slope coarse pass; full validation only for the top-K.
 
         Every probe is scored by ``coarse_signal`` (lower = better); only the
@@ -126,7 +127,7 @@ class LRRangeFinder:
                 lr = self._probe_lr(i)
                 self.trainer.train_n_steps(lr, self.steps_per_probe, constant_lr=True)
                 cumulative_steps += self.steps_per_probe
-                signals.append(float(self.coarse_signal()))
+                signals.append(float(coarse_signal()))
                 lrs.append(float(lr))
                 if self.max_total_steps and cumulative_steps >= self.max_total_steps:
                     break

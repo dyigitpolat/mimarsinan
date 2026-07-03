@@ -13,7 +13,7 @@ from mimarsinan.search.evaluators.extrapolating_accuracy_evaluator import Extrap
 from mimarsinan.search.evaluators.fast_accuracy_evaluator import FastAccuracyEvaluator
 from mimarsinan.search.results import ACCURACY_OBJECTIVE_NAME
 
-from .types import ValidationEntry, json_key
+from .types import JointHostContract, ValidationEntry, json_key
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +28,7 @@ def _warn_penalized(
     )
 
 
-class JointEvaluateMixin:
+class JointEvaluateMixin(JointHostContract):
     """Accuracy and objective evaluation for :class:`JointArchHwProblem`."""
 
     def evaluate(self, configuration: Dict[str, Any]) -> Dict[str, float]:

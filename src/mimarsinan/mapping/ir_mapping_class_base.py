@@ -49,7 +49,7 @@ class IRMappingCore(LayoutIRMapping):
         self.nodes: List[IRNode] = []
         self._weight_banks: Dict[int, WeightBank] = {}
 
-    def map(self, model_representation) -> IRGraph:
+    def map(self, model_representation) -> IRGraph:  # pyright: ignore[reportIncompatibleMethodOverride] -- intentionally returns the materialized IRGraph over the base's raw output sources
         output_sources = super().map(model_representation)
         # Downstream consumers require a real numpy object array of IRSource, not the shape-only LayoutSourceView, so materialise here.
         output_sources = np.asarray(output_sources, dtype=object)
@@ -92,7 +92,7 @@ class IRMappingCore(LayoutIRMapping):
             return tensor_or_array
         return tensor_or_array.detach().cpu().numpy()
 
-    def add_compute_op(
+    def add_compute_op(  # pyright: ignore[reportIncompatibleMethodOverride] -- weight-attaching override requires concrete params/ndarray result
         self,
         input_sources,
         op_type: str,
@@ -123,7 +123,7 @@ class IRMappingCore(LayoutIRMapping):
         ))
         return result
 
-    def register_weight_bank(
+    def register_weight_bank(  # pyright: ignore[reportIncompatibleMethodOverride] -- weight-attaching override requires concrete tensors over the base's shape-only Any/None defaults
         self,
         weights: np.ndarray | torch.Tensor,
         biases: np.ndarray | torch.Tensor | None = None,

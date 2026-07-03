@@ -22,7 +22,7 @@ def write_hardcore_mapping_dot(
     os.makedirs(os.path.dirname(out_dot) or ".", exist_ok=True)
 
     cores = list(hard_core_mapping.cores)
-    out_sources = list(hard_core_mapping.output_sources.flatten())
+    out_sources = list(np.asarray(hard_core_mapping.output_sources).flatten())
 
     packed: dict[int, dict[int, list[int]]] = {}
     for (soft_core_id, soft_neuron), (hard_core_idx, hard_neuron) in hard_core_mapping.neuron_mapping.items():

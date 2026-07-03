@@ -8,6 +8,8 @@ from typing import Dict, List, Optional
 import torch.nn as nn
 import torch.fx as fx
 
+from mimarsinan.torch_mapping.fx_shape_utils import node_target_str
+
 
 @dataclass
 class OpInfo:
@@ -100,7 +102,7 @@ class RepresentabilityAnalyzer:
     def _classify_module_node(
         self, node: fx.Node, report: RepresentabilityReport
     ) -> None:
-        mod = self._modules.get(node.target)
+        mod = self._modules.get(node_target_str(node))
         if mod is None:
             report.unsupported_ops.append(
                 OpInfo(node.name, "call_module", str(node.target),
@@ -137,7 +139,7 @@ class RepresentabilityAnalyzer:
     def _classify_method_node(
         self, node: fx.Node, report: RepresentabilityReport
     ) -> None:
-        method_name = node.target
+        method_name = node_target_str(node)
         report.supported_ops.append(
             OpInfo(node.name, "call_method", method_name)
         )
@@ -150,7 +152,7 @@ class RepresentabilityAnalyzer:
         for node in nodes:
             if node.op != "call_module":
                 continue
-            mod = self._modules.get(node.target)
+            mod = self._modules.get(node_target_str(node))
             if mod is None:
                 continue
 
@@ -172,7 +174,7 @@ class RepresentabilityAnalyzer:
     ) -> Optional[fx.Node]:
         """Walk back through already-absorbed nodes to find the originating neural-core node."""
         if node.op == "call_module":
-            mod = self._modules.get(node.target)
+            mod = self._modules.get(node_target_str(node))
             if mod is not None:
                 if type(mod) in _NEURAL_CORE_MODULES:
                     return node

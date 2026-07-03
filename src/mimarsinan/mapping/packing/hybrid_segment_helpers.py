@@ -5,7 +5,7 @@ from typing import Sequence
 
 import numpy as np
 
-from mimarsinan.mapping.ir import IRGraph, IRSource, NeuralCore
+from mimarsinan.mapping.ir import IRGraph, IRNode, IRSource, NeuralCore
 from mimarsinan.mapping.packing.softcore import HardCore
 from mimarsinan.mapping.packing.hybrid_types import SegmentIOSlice
 
@@ -74,7 +74,7 @@ def _remap_external_sources_to_segment_inputs(
             return IRSource(node_id=-2, index=offsets[src.node_id] + src.index)
         return src
 
-    new_nodes: list[NeuralCore] = []
+    new_nodes: list[IRNode] = []
     for n in nodes:
         n2 = copy.copy(n)
         flat = [remap_src(src) for src in n.input_sources.flatten()]
@@ -86,7 +86,7 @@ def _remap_external_sources_to_segment_inputs(
         output_sources=np.array(segment_output_refs, dtype=object),
         weight_banks=weight_banks,
     )
-    graph._is_segment_subgraph = True
+    graph._is_segment_subgraph = True  # pyright: ignore[reportAttributeAccessIssue] — dynamic marker read via getattr in boundary_policy
     return graph, input_map
 
 

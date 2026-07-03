@@ -17,8 +17,12 @@ from mimarsinan.tuning.orchestration.blend_ramp import (
 from mimarsinan.tuning.orchestration.genuine_probe import (
     eval_forward_over_val,
     genuine_acc_on_clone,
+    iter_val_batches,
 )
-from mimarsinan.tuning.orchestration.ramp_strategy import ValueDomainProxyRamp
+from mimarsinan.tuning.orchestration.ramp_strategy import (
+    RampStrategy,
+    ValueDomainProxyRamp,
+)
 from mimarsinan.tuning.orchestration.smooth_adaptation_tuner import SmoothAdaptationTuner
 from mimarsinan.tuning.perceptron_rate import rebuild_activations, set_blend_rate
 from mimarsinan.tuning.teacher import snapshot_frozen_teacher
@@ -62,7 +66,7 @@ class KDBlendAdaptationTuner(CascadeForwardInstall, SmoothAdaptationTuner):
     def _configure(self) -> None:
         """Read config, set names/params, and any adaptation_manager flags."""
 
-    def _make_ramp_strategy(self):
+    def _make_ramp_strategy(self) -> RampStrategy:
         """The ramp strategy bundling the 0→1 seams. Default = the value-domain
         proxy ramp; subclasses pick a strategy from the flags set in ``_configure``."""
         return ValueDomainProxyRamp()
@@ -151,7 +155,7 @@ class KDBlendAdaptationTuner(CascadeForwardInstall, SmoothAdaptationTuner):
         owns the choice; default ``None`` = the value-domain ramp)."""
         return self._ramp.ramp_forward(self, self.model)
 
-    def _finalize_forward_for(self, model):
+    def _finalize_forward_for(self, model) -> LazyExecutorForward | None:
         """The shared genuine-forward builder bound to ``model`` (``None`` for
         schedules with no separate genuine forward). The probe and the finalize
         install both route through this, so probe ≡ deploy by construction."""
@@ -241,7 +245,7 @@ class KDBlendAdaptationTuner(CascadeForwardInstall, SmoothAdaptationTuner):
         device = self.pipeline.config["device"]
         batches = [
             x.to(device)
-            for x, _ in self.trainer.iter_validation_batches(n_batches)
+            for x, _ in iter_val_batches(self.trainer, n_batches)
         ]
         return torch.cat(batches)
 

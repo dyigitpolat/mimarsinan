@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from mimarsinan.tuning.axes import BlendAxis
+from mimarsinan.tuning.axes.adaptation_axis import AdaptationAxisBase
+from mimarsinan.tuning.forward_install import LazyExecutorForward
 from mimarsinan.tuning.orchestration.blend_ramp import BlendActivation
 
 
@@ -14,7 +16,7 @@ class RampStrategy:
         """Whether ``base_activation`` IS the bare target node (no value blend)."""
         return False
 
-    def make_axis(self, tuner):
+    def make_axis(self, tuner) -> AdaptationAxisBase:
         return BlendAxis()
 
     def make_blend(self, tuner, old, target, rate):
@@ -24,7 +26,7 @@ class RampStrategy:
             old_type=tuner._old_activation_type,
         )
 
-    def ramp_forward(self, tuner, model):
+    def ramp_forward(self, tuner, model) -> LazyExecutorForward | None:
         """Cross-layer forward installed during the ramp (``None`` = value-domain)."""
         return None
 

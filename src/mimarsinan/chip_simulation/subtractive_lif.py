@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+from typing import cast
+
 import numpy as np
 
 from lava.magma.core.decorator import implements, requires, tag
@@ -55,11 +57,13 @@ class SubtractiveLIFReset(LIFReset):
 @requires(CPU)
 @tag("floating_pt")
 class PySubtractiveLIFResetModelFloat(AbstractPyLifModelFloat):
-    s_out: PyOutPort = LavaPyType(PyOutPort.VEC_DENSE, float)
-    vth: float = LavaPyType(float, float)
+    # Lava's builder swaps these LavaPyType descriptors for concrete ports/values at compile time.
+    s_out: PyOutPort = cast(PyOutPort, LavaPyType(PyOutPort.VEC_DENSE, float))
+    vth: float = cast(float, LavaPyType(float, float))
 
     def __init__(self, proc_params):
         super().__init__(proc_params)
+        assert proc_params is not None, "Lava constructs process models with concrete proc_params"
         self.reset_interval = int(proc_params["reset_interval"])
         self.reset_offset = int(proc_params["reset_offset"]) % self.reset_interval
         self.active_start = int(proc_params.get("active_start", self.reset_offset)) % self.reset_interval
@@ -81,7 +85,7 @@ class PySubtractiveLIFResetModelFloat(AbstractPyLifModelFloat):
             self.v[spike_vector] -= self.vth
 
     def run_spk(self):
-        a_in = self.a_in.recv()
+        a_in = cast(np.ndarray, self.a_in.recv())
         phase = self.time_step % self.reset_interval
         if phase == self.sample_start:
             self.u *= 0

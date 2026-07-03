@@ -103,7 +103,7 @@ class LifSegmentPolicy:
                     rate_out = forward_node(node, [rate_of(dep) for dep in d])
                     rate_norm = (rate_out / scale).clamp(0.0, 1.0)
                     node_rate[node] = rate_norm
-                    if self._boundary_runs_per_cycle(node, lif):
+                    if lif is not None and self._boundary_runs_per_cycle(node, lif):
                         lif.set_cycle_accurate(True)
                         functional.reset_net(lif.if_node)
                         dep_trains = [train_of(dep) for dep in d]
@@ -116,6 +116,9 @@ class LifSegmentPolicy:
                     else:
                         node_train[node] = uniform_spike_train(rate_norm, T) * scale
                 else:
+                    assert lif is not None, (
+                        "LifSegmentPolicy: non-encoding perceptron must carry a LIF activation"
+                    )
                     lif.set_cycle_accurate(True)
                     functional.reset_net(lif.if_node)
                     dep_trains = [train_of(dep) for dep in d]

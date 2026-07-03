@@ -1,3 +1,5 @@
+from typing import Iterable, cast
+
 import mimarsinan.pipelining.core.nf_scm_parity as nf_scm_parity
 from mimarsinan.pipelining.core.steps.pipeline_step import PipelineStep
 from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
@@ -30,6 +32,7 @@ from mimarsinan.pipelining.core.simulation_factory import (
     build_spiking_hybrid_flow,
     run_scm_identity_metric,
 )
+from mimarsinan.model_training.basic_trainer import BasicTrainer
 from mimarsinan.pipelining.core.registry.trainer_factory import make_basic_trainer
 from mimarsinan.common.best_effort import best_effort
 from mimarsinan.common.diagnostics import phase_profiler
@@ -56,8 +59,18 @@ class SoftCoreMappingStep(PipelineStep):
 
     def __init__(self, pipeline):
         super().__init__(self.REQUIRES, self.PROMISES, self.UPDATES, self.CLEARS, pipeline)
-        self.trainer = None
+        self.trainer: BasicTrainer | None = None
         self._soft_core_spiking_metric = None
+
+    def _validation_sample_batches(self, n_batches: int) -> list:
+        """Inputs-only validation batches for calibration/parity sampling; process() must construct the trainer first."""
+        assert self.trainer is not None, "trainer is not constructed yet"
+        # cast: the validation cache yields (input, target) tensor pairs; _gpu_val_cache is untyped upstream.
+        batches = cast(
+            "Iterable[tuple[torch.Tensor, torch.Tensor]]",
+            self.trainer.iter_validation_batches(n_batches),
+        )
+        return [x for x, _ in batches]
 
     def validate(self):
         if self._soft_core_spiking_metric is None:
@@ -275,7 +288,7 @@ class SoftCoreMappingStep(PipelineStep):
         n = int(self.pipeline.config.get("scm_torch_sim_parity_samples", 256))
         if n <= 0:
             return
-        batches = [x for x, _ in self.trainer.iter_validation_batches(8)]
+        batches = self._validation_sample_batches(8)
         if not batches:
             return
         samples = torch.cat(batches)[:n]
@@ -305,7 +318,7 @@ class SoftCoreMappingStep(PipelineStep):
             )
             if n_samples <= 0:
                 return
-            batches = [x for x, _ in self.trainer.iter_validation_batches(1)]
+            batches = self._validation_sample_batches(1)
             if not batches:
                 return
             samples = batches[0][:n_samples]
@@ -326,7 +339,7 @@ class SoftCoreMappingStep(PipelineStep):
         n_samples = int(self.pipeline.config.get("nf_scm_parity_samples", 2))
         if n_samples <= 0:
             return
-        batches = [x for x, _ in self.trainer.iter_validation_batches(1)]
+        batches = self._validation_sample_batches(1)
         if not batches:
             return
         samples = batches[0][:n_samples]
@@ -374,7 +387,7 @@ class SoftCoreMappingStep(PipelineStep):
 
         T = int(self.pipeline.config["simulation_steps"])
         device = self.pipeline.config["device"]
-        batches = [x for x, _ in self.trainer.iter_validation_batches(2)]
+        batches = self._validation_sample_batches(2)
         if not batches:
             return
         calibration_x = torch.cat(batches, dim=0).to(device)

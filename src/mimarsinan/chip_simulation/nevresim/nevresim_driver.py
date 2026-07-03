@@ -27,7 +27,7 @@ def _python_to_cpp_type_name(py_type) -> str:
 
 
 class NevresimDriver:
-    nevresim_path = None
+    nevresim_path: str | None = None
 
     def __init__(
         self, input_buffer_size, hard_core_mapping, generated_files_path, weight_type,
@@ -166,8 +166,8 @@ class NevresimDriver:
 
     def emit_main_and_compile(
         self, max_input_count, simulation_length, latency, output_path=None
-    ) -> str | None:
-        """Generate main.cpp and compile. Returns binary path or None on failure."""
+    ) -> str:
+        """Generate main.cpp and compile. Returns binary path; raises on failure."""
         cached = self._compile_cache_lookup(simulation_length, latency, output_path)
         if cached is not None:
             self.emit_main(max_input_count, simulation_length, latency, verbose=False)
@@ -184,7 +184,7 @@ class NevresimDriver:
 
     def _run_simulator(
         self, input_loader, simulation_length, latency, max_input_count=None, num_proc=0,
-        simulator_filename=None,
+        simulator_filename: str | None = None,
     ):
         """Save inputs, optionally compile, run, return raw float list."""
         if max_input_count is None:

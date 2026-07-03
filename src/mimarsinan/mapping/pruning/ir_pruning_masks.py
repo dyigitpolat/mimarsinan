@@ -46,7 +46,7 @@ def get_initial_pruning_masks_from_model(model, ir_graph: IRGraph):
         if idx is None or idx < 0 or idx >= len(perceptrons):
             continue
         row_pruned, col_pruned = _perceptron_masks(perceptrons[idx])
-        if row_pruned is None:
+        if row_pruned is None or col_pruned is None:
             continue
         out_slice = getattr(node, "perceptron_output_slice", None)
         in_slice = getattr(node, "perceptron_input_slice", None)
@@ -80,7 +80,7 @@ def get_initial_pruning_masks_from_model(model, ir_graph: IRGraph):
         if idx is None or idx < 0 or idx >= len(perceptrons):
             continue
         row_pruned, col_pruned = _perceptron_masks(perceptrons[idx])
-        if row_pruned is None:
+        if row_pruned is None or col_pruned is None:
             continue
         n_axons, n_neurons = bank.core_matrix.shape
         in_f = n_axons - 1
@@ -100,7 +100,7 @@ def get_initial_pruning_masks_from_model(model, ir_graph: IRGraph):
     ):
         for node, p in zip(neural_cores, chip_perceptrons):
             row_pruned, col_pruned = _perceptron_masks(p)
-            if row_pruned is None:
+            if row_pruned is None or col_pruned is None:
                 continue
             in_f, out_f = len(col_pruned), len(row_pruned)
             mat = node.get_core_matrix(ir_graph)

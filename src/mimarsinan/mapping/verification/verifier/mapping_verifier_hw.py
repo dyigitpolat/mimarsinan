@@ -93,14 +93,6 @@ def verify_hardware_config(
         max_hw_ax = max(hw.max_axons for hw in hw_types) if hw_types else 1
         max_hw_neu = max(hw.max_neurons for hw in hw_types) if hw_types else 1
 
-        common_est_kwargs = dict(
-            max_hw_axons=max_hw_ax,
-            max_hw_neurons=max_hw_neu,
-            allow_coalescing=allow_coalescing,
-            allow_splitting=allow_neuron_splitting,
-            core_types=hw_types,
-        )
-
         seg_softcores: Dict[int, List[LayoutSoftCoreSpec]] = {}
         for sc in all_softcores:
             sid = sc.segment_id if sc.segment_id is not None else 0
@@ -116,7 +108,12 @@ def verify_hardware_config(
             seg_scs = seg_softcores[sid]
             if budget > 0:
                 n_passes, seg_pass_lists, seg_ok = estimate_passes_for_layout_validated(
-                    seg_scs, budget, **common_est_kwargs,
+                    seg_scs, budget,
+                    max_hw_axons=max_hw_ax,
+                    max_hw_neurons=max_hw_neu,
+                    allow_coalescing=allow_coalescing,
+                    allow_splitting=allow_neuron_splitting,
+                    core_types=hw_types,
                 )
                 if not seg_ok:
                     sched_feasible = False

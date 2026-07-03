@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import time as _time
-from typing import Dict
+from typing import TYPE_CHECKING, Dict
 
 import numpy as np
 
@@ -11,10 +11,26 @@ from mimarsinan.chip_simulation.recording.spike_recorder import CoreSpikeCounts,
 from mimarsinan.mapping.packing.softcore import HardCoreMapping
 from mimarsinan.mapping.support.core_geometry import used_axons, used_neurons
 from mimarsinan.mapping.support.spike_source_spans import compress_spike_sources
+from mimarsinan.chip_simulation.behavior_config import NeuralBehaviorConfig
 from mimarsinan.chip_simulation.lava_loihi.timing import _LAVA_DTYPE, _SegmentTiming
 
 
 class LavaSegmentMixin:
+    """Host contract: ``T``/``_behavior`` set by ``LavaLoihiRunner.__init__``; ``_run_core_lava`` from ``LavaCoreMixin``."""
+
+    T: int
+    _behavior: NeuralBehaviorConfig
+
+    if TYPE_CHECKING:
+        def _run_core_lava(
+            self,
+            *,
+            weights: np.ndarray,
+            threshold: float,
+            hardware_bias: np.ndarray | None,
+            input_spikes: np.ndarray,
+        ) -> np.ndarray: ...
+
     def _run_neural_segment_scheduled(
         self,
         seg: HardCoreMapping,

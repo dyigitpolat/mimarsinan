@@ -20,6 +20,7 @@ from mimarsinan.search.optimizers.agent_evolve.codec import (
     compute_performance_stats,
     sample_failed_for_constraint,
 )
+from mimarsinan.search.optimizers.agent_evolve.host_contract import EvolveHostContract
 from mimarsinan.search.optimizers.agent_evolve.schema import (
     CandidateResult,
     format_performance_stats,
@@ -28,7 +29,7 @@ from mimarsinan.search.optimizers.agent_evolve.schema import (
 from mimarsinan.search.results import ObjectiveSpec
 
 
-class PromptingMixin:
+class PromptingMixin(EvolveHostContract):
     """High-level LLM interactions (candidates, insights, constraints)."""
 
     async def _generate_initial_candidates(

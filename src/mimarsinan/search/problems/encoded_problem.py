@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Protocol, Sequence, TypeVar
+from typing import Protocol, TypeVar
 
 import numpy as np
 

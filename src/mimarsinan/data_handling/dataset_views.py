@@ -2,9 +2,17 @@
 
 from __future__ import annotations
 
-from typing import Any, Callable
+from typing import Any, Callable, Protocol
 
 import torch
+
+
+class SizedDataset(Protocol):
+    """Map-style dataset contract: indexable and sized."""
+
+    def __len__(self) -> int: ...
+
+    def __getitem__(self, idx: int) -> Any: ...
 
 
 class ApplyTransform(torch.utils.data.Dataset):
@@ -14,7 +22,7 @@ class ApplyTransform(torch.utils.data.Dataset):
     ``Compose`` or any callable that takes one image and returns one image.
     """
 
-    def __init__(self, base: torch.utils.data.Dataset, transform: Callable[[Any], Any]):
+    def __init__(self, base: SizedDataset, transform: Callable[[Any], Any]):
         self._base = base
         self._transform = transform
 

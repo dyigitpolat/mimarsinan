@@ -19,6 +19,7 @@ from mimarsinan.chip_simulation.ttfs.ttfs_executor import (
 )
 from mimarsinan.mapping.ir import IRSource
 from mimarsinan.mapping.packing.hybrid_hardcore_mapping import HybridStage
+from mimarsinan.models.spiking.hybrid.host import HybridFlowHost
 from mimarsinan.models.spiking.spiking_config import (
     COMPUTE_DTYPE,
     TTFS_FIRING_MODES,
@@ -26,11 +27,11 @@ from mimarsinan.models.spiking.spiking_config import (
 )
 
 
-class HybridTtfsStepMixin:
+class HybridTtfsStepMixin(HybridFlowHost):
+    """TTFS neural segments and state-buffer TTFS forward."""
 
     _TTFS_FIRING_MODES = TTFS_FIRING_MODES
     _TTFS_SPIKING_MODES = TTFS_SPIKING_MODES
-    """TTFS neural segments and state-buffer TTFS forward."""
 
     def _run_neural_segment_ttfs(
         self,
@@ -95,9 +96,11 @@ class HybridTtfsStepMixin:
                 )
 
         def _after_neural_ttfs(ctx: HybridStageContext) -> None:
+            remaining_counts = ctx.remaining
+            assert remaining_counts is not None, "_ctx_factory always supplies remaining"
             self._decref_consumers(
                 ctx.state_buffer,
-                ctx.remaining,
+                remaining_counts,
                 (int(s.node_id) for s in ctx.stage.input_map),
             )
 
@@ -119,9 +122,11 @@ class HybridTtfsStepMixin:
         def _after_compute_ttfs(ctx: HybridStageContext) -> None:
             op = ctx.stage.compute_op
             assert op is not None
+            remaining_counts = ctx.remaining
+            assert remaining_counts is not None, "_ctx_factory always supplies remaining"
             self._decref_consumers(
                 ctx.state_buffer,
-                ctx.remaining,
+                remaining_counts,
                 (int(src.node_id) for src in op.input_sources.flatten()
                  if isinstance(src, IRSource) and src.node_id >= 0),
             )

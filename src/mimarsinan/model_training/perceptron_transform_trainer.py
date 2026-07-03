@@ -7,6 +7,7 @@ from mimarsinan.models.perceptron_mixer.perceptron import Perceptron
 
 import copy
 import torch
+from torch.amp.grad_scaler import GradScaler
 import functools
 
 
@@ -81,7 +82,7 @@ class PerceptronTransformTrainer(BasicTrainer):
         if self.recipe is not None and epochs > 0:
             optimizer = build_optimizer(self.aux_model, lr, self.recipe)
             scheduler, _warmup = build_scheduler(optimizer, self.recipe, total_steps=epochs)
-            return optimizer, scheduler, torch.amp.GradScaler("cuda", enabled=False)
+            return optimizer, scheduler, GradScaler("cuda", enabled=False)
 
         optimizer = torch.optim.Adam(
             self.aux_model.parameters(), lr = lr, weight_decay=0, betas=(self.beta1, self.beta2))
@@ -90,13 +91,13 @@ class PerceptronTransformTrainer(BasicTrainer):
             optimizer, lr_lambda = lambda epoch: 1)
         scheduler = identity_scheduler
 
-        return optimizer, scheduler, torch.amp.GradScaler("cuda", enabled=False)
+        return optimizer, scheduler, GradScaler("cuda", enabled=False)
 
     def _get_optimizer_and_scheduler_steps(self, lr, total_steps: int, *, constant_lr: bool = False):
         if self.recipe is not None and total_steps > 0 and not constant_lr:
             optimizer = build_optimizer(self.aux_model, lr, self.recipe)
             scheduler, _warmup = build_scheduler(optimizer, self.recipe, total_steps=int(total_steps))
-            return optimizer, scheduler, torch.amp.GradScaler("cuda", enabled=False)
+            return optimizer, scheduler, GradScaler("cuda", enabled=False)
 
         optimizer = torch.optim.Adam(
             self.aux_model.parameters(), lr=lr, weight_decay=0, betas=(self.beta1, self.beta2)
@@ -110,4 +111,4 @@ class PerceptronTransformTrainer(BasicTrainer):
             scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
                 optimizer, T_max=int(total_steps), eta_min=lr * 1e-3
             )
-        return optimizer, scheduler, torch.amp.GradScaler("cuda", enabled=False)
+        return optimizer, scheduler, GradScaler("cuda", enabled=False)

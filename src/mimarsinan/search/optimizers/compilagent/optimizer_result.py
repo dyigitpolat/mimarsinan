@@ -48,7 +48,7 @@ def build_search_result(
                 error_message=rec.reject_reason or "compile or evaluation failed",
                 failure_phase="compile",
             )
-            metadata = {"is_pareto": False, "valid": False}
+            metadata: Dict[str, Any] = {"is_pareto": False, "valid": False}
             if layout_md:
                 metadata["layout"] = layout_md
             all_candidates.append(result_to_candidate(cr, metadata))

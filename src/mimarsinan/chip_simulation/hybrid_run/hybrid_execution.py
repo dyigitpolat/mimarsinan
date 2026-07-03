@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Dict, Iterable
 
 import numpy as np
+import numpy.typing as npt
 import torch
 
 from mimarsinan.mapping.ir import ComputeOp, IRSource
@@ -103,7 +104,7 @@ def assemble_segment_input_numpy(
     state_buffer: Dict[int, np.ndarray],
     num_samples: int,
     *,
-    dtype: np.dtype = np.float32,
+    dtype: npt.DTypeLike = np.float32,
 ) -> np.ndarray:
     """Numpy segment-input assembly; pass ``dtype=np.float64`` for HCM parity."""
     total_size = max((s.offset + s.size for s in input_map), default=0)
@@ -178,7 +179,7 @@ def execute_compute_op_numpy(
     *,
     in_scale: float = 1.0,
     out_scale: float | None = None,
-    dtype: np.dtype = np.float32,
+    dtype: npt.DTypeLike = np.float32,
 ) -> np.ndarray:
     """Execute ComputeOp via torch wrapper; ``dtype=np.float64`` for HCM parity."""
     if out_scale is None:

@@ -61,8 +61,11 @@ class LavaLoihiRunner(LavaCoreMixin, LavaSegmentMixin):
         self._recorder: RunRecord | None = None
 
     def _load_test_samples(self) -> Tuple[np.ndarray, np.ndarray]:
-        provider = self._data_loader_factory.create_data_provider()
-        loader = self._data_loader_factory.create_test_loader(
+        factory = self._data_loader_factory
+        if factory is None:
+            raise RuntimeError("LavaLoihiRunner requires a pipeline to load test samples")
+        provider = factory.create_data_provider()
+        loader = factory.create_test_loader(
             provider.get_test_batch_size(), provider,
         )
         xs: List[np.ndarray] = []

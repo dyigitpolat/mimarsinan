@@ -8,6 +8,8 @@ import torch
 import torch.nn as nn
 import torch.fx as fx
 
+from mimarsinan.torch_mapping.fx_shape_utils import node_target_str
+
 
 _MM_MODULES = (nn.Linear, nn.Conv1d, nn.Conv2d)
 
@@ -25,7 +27,7 @@ def _get_sole_user_module(
     user = users[0]
     if user.op != "call_module":
         return None, None
-    mod = modules.get(user.target)
+    mod = modules.get(node_target_str(user))
     return user, mod
 
 
@@ -117,7 +119,7 @@ def _fuse_linear_pair(
         fused.weight.copy_(W_fused)
         fused.bias.copy_(b_fused)
 
-    fused_target = node2.target
+    fused_target = node_target_str(node2)
     gm.add_submodule(fused_target, fused)
 
     node2.args = node1.args
@@ -125,7 +127,7 @@ def _fuse_linear_pair(
 
 def normalize_fx_graph(gm: fx.GraphModule) -> fx.GraphModule:
     """Run in-place normalization passes: consecutive-Linear fusion then dead-code elimination."""
-    modules = dict(gm.named_modules())
+    modules: dict[str, nn.Module] = dict(gm.named_modules())
     graph = gm.graph
 
     fused = True
@@ -135,14 +137,14 @@ def normalize_fx_graph(gm: fx.GraphModule) -> fx.GraphModule:
         for node in list(graph.nodes):
             if node.op != "call_module":
                 continue
-            mod = modules.get(node.target)
+            mod = modules.get(node_target_str(node))
             if not isinstance(mod, nn.Linear):
                 continue
 
             next_node, chain = _find_next_linear_through_foldables(node, modules)
             if next_node is None:
                 continue
-            next_mod = modules.get(next_node.target)
+            next_mod = modules.get(node_target_str(next_node))
             if not isinstance(next_mod, nn.Linear):
                 continue
 

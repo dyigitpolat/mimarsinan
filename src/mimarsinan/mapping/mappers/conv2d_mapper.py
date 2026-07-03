@@ -6,9 +6,8 @@ import numpy as np
 import torch.nn as nn
 import torch.nn.functional as F
 
-from mimarsinan.mapping.ir import IRSource
 from mimarsinan.mapping.mappers.base import Mapper, resolve_activation_type
-from mimarsinan.mapping.mappers.conv_helpers import _chunk_sizes
+from mimarsinan.mapping.mappers.conv_helpers import _chunk_sizes, pad_source_grid
 from mimarsinan.mapping.mappers.flowchart import FlowchartFCSpec, FlowchartNodeEstimate
 from mimarsinan.mapping.mappers.scale_propagation import (
     perceptron_boundary_scale,
@@ -26,10 +25,10 @@ class Conv2DPerceptronMapper(Mapper):
         source_mapper,
         in_channels: int,
         out_channels: int,
-        kernel_size,
-        stride=1,
-        padding=0,
-        dilation=1,
+        kernel_size: int | tuple[int, ...],
+        stride: int | tuple[int, ...] = 1,
+        padding: int | tuple[int, ...] = 0,
+        dilation: int | tuple[int, ...] = 1,
         bias: bool = True,
         max_neurons: int | None = None,
         max_axons: int | None = None,
@@ -149,7 +148,7 @@ class Conv2DPerceptronMapper(Mapper):
         return y
 
     def _map_to_ir(self, ir_mapping):
-        input_sources = self.source_mapper.map_to_ir(ir_mapping)
+        input_sources = self.require_source_mapper().map_to_ir(ir_mapping)
 
         if len(input_sources.shape) != 3:
             raise ValueError(
@@ -181,14 +180,9 @@ class Conv2DPerceptronMapper(Mapper):
             )
             return out.reshape(self.out_channels, h_out, w_out)
 
-        off_source = IRSource(node_id=-1, index=0)
         if p_h > 0 or p_w > 0:
-            pad_width = ((0, 0), (p_h, p_h), (p_w, p_w))
-            input_sources = np.pad(
-                input_sources,
-                pad_width,
-                mode="constant",
-                constant_values=off_source,
+            input_sources = pad_source_grid(
+                input_sources, ((0, 0), (p_h, p_h), (p_w, p_w))
             )
 
         full_w = PerceptronTransformer().get_effective_weight(self.perceptron)
