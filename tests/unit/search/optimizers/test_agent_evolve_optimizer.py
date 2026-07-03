@@ -11,13 +11,9 @@ from __future__ import annotations
 import asyncio
 import inspect
 import os
-import sys
 from dataclasses import dataclass
 from typing import Any, Dict, Sequence
 from unittest.mock import patch
-
-# Add parent directory to path for imports
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 
 from mimarsinan.search.problem import SearchProblem
 from mimarsinan.search.results import Candidate, ObjectiveSpec, SearchResult
@@ -75,6 +71,39 @@ class MockMultiObjectiveProblem:
         return {}
 
 
+def _offline_llm():
+    """A deterministic pydantic-ai FunctionModel standing in for the real LLM."""
+    import json
+
+    from pydantic_ai.messages import ModelResponse, TextPart, ToolCallPart
+    from pydantic_ai.models.function import FunctionModel
+
+    def _args_from_schema(schema):
+        fillers = {"string": "synthetic", "number": 1.0, "integer": 1,
+                   "boolean": True, "array": [], "object": {}}
+        return {
+            name: fillers.get(prop.get("type", "string"), "synthetic")
+            for name, prop in schema.get("properties", {}).items()
+        }
+
+    def respond(messages, info):
+        if info.output_tools and not info.allow_text_output:
+            tool = info.output_tools[0]
+            return ModelResponse(parts=[
+                ToolCallPart(tool_name=tool.name,
+                             args=_args_from_schema(tool.parameters_json_schema)),
+            ])
+        payload = {
+            "reasoning": "deterministic offline candidates",
+            "candidates": [
+                {"x": 2.0, "y": 3.0}, {"x": 5.0, "y": 5.0}, {"x": 9.0, "y": 8.0},
+            ],
+        }
+        return ModelResponse(parts=[TextPart(json.dumps(payload))])
+
+    return FunctionModel(respond)
+
+
 def test_agent_evolve_optimizer_with_mock():
     """Test AgentEvolveOptimizer with the mock problem."""
     from mimarsinan.search.optimizers.agent_evolve import AgentEvolveOptimizer
@@ -87,7 +116,7 @@ def test_agent_evolve_optimizer_with_mock():
         candidates_per_batch=3,
         max_regen_rounds=3,
         max_failed_examples=3,
-        model="openai:gpt-4o-mini",
+        model=_offline_llm(),
         config_schema={
             "x": "float between 0 and 10",
             "y": "float between 0 and 10",
@@ -121,7 +150,8 @@ def test_agent_evolve_optimizer_with_mock():
     for h in result.history:
         print(f"  Gen {h['gen']}: valid={h['valid_count']}, failed={h['failed_count']}, pareto={h['pareto_size']}")
 
-    return result
+    assert result.best is not None
+    assert len(result.pareto_front) >= 1
 
 
 def test_optimize_uses_single_asyncio_run():

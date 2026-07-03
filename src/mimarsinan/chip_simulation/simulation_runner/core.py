@@ -47,7 +47,7 @@ class SimulationRunner(SimulationFlatMixin, SimulationHybridMixin):
         self.test_input = []
         self.test_targets = []
 
-        data_loader_factory = DataLoaderFactory(pipeline.data_provider_factory)
+        data_loader_factory = DataLoaderFactory.for_pipeline(pipeline)
         data_provider = data_loader_factory.create_data_provider()
         test_loader = data_loader_factory.create_test_loader(
             data_provider.get_test_batch_size(), data_provider,

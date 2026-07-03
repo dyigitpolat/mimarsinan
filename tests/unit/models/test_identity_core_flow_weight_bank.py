@@ -89,11 +89,11 @@ class TestForwardWithBanks:
         out = flow(x)
         assert out.shape == (2, 8)
 
-    def test_rate_mode(self):
+    def test_lif_count_mode(self):
         graph = _build_conv_like_graph(n_positions=2, axons=3, neurons=2)
         flow = build_identity_spiking_flow(
             input_shape=(3,), ir_graph=graph, simulation_length=4,
-            preprocessor=nn.Identity(), spiking_mode="rate",
+            preprocessor=nn.Identity(), spiking_mode="lif",
         )
         x = torch.rand(2, 3)
         out = flow(x)

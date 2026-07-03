@@ -101,7 +101,10 @@ class MaxValueScaler(nn.Module):
         max_x = torch.max(x)
 
         if self.training:
-            self.max_value.data = 0.1 * max_x + 0.9 * self.max_value
+            # Floor the EMA at a positive epsilon: an all-negative input stream
+            # would otherwise drive the divisor negative and flip output signs.
+            ema = 0.1 * max_x + 0.9 * self.max_value
+            self.max_value.data = torch.clamp(ema, min=1e-6)
 
         return x / self.max_value
 

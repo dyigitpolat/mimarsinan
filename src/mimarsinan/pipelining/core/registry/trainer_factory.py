@@ -17,7 +17,7 @@ def make_basic_trainer(
     trainer = BasicTrainer(
         model,
         pipeline.config["device"],
-        DataLoaderFactory(pipeline.data_provider_factory),
+        DataLoaderFactory.for_pipeline(pipeline),
         loss if loss is not None else pipeline.loss,
         recipe=recipe,
     )

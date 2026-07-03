@@ -128,57 +128,6 @@ def relu_model_to_ir_graph(model, in_dim, *, quantize=False, weight_bits=8):
 # ----------------------------------------------------------------
 # Test 1: TTFS input encoding
 # ----------------------------------------------------------------
-@pytest.mark.skip(
-    reason="Tested SpikingUnifiedCoreFlow._ttfs_encode_input, a retired unified-only "
-    "internal; the hybrid executor (build_identity_spiking_flow) has no equivalent "
-    "public encoder. Body kept for reference."
-)
-def test_ttfs_encoding():
-    print("=" * 60)
-    print("TEST 1: TTFS Input Encoding")
-    print("=" * 60)
-
-    T = 16
-    ir_graph = IRGraph(nodes=[], output_sources=np.array([], dtype=object))
-    flow = build_identity_spiking_flow(
-        input_shape=(5,),
-        ir_graph=ir_graph,
-        simulation_length=T,
-        preprocessor=nn.Identity(),
-        firing_mode="TTFS",
-        spike_mode="TTFS",
-        thresholding_mode="<=",
-        spiking_mode="ttfs",
-    )
-
-    activations = torch.tensor([[0.0, 0.25, 0.5, 0.75, 1.0]])
-    spike_train = flow._ttfs_encode_input(activations)  # (T, 1, 5)
-
-    print(f"  Activations: {activations[0].tolist()}")
-    all_ok = True
-    for i in range(5):
-        spike_cycles = (spike_train[:, 0, i] > 0).nonzero(as_tuple=True)[0].tolist()
-        expected_time = round(T * (1.0 - activations[0, i].item()))
-        print(f"    act={activations[0,i]:.2f}: spike at cycle {spike_cycles}, expected ~{expected_time}")
-        if expected_time < T:
-            if len(spike_cycles) != 1:
-                print(f"    FAIL: expected 1 spike, got {len(spike_cycles)}")
-                all_ok = False
-            elif spike_cycles[0] != expected_time:
-                print(f"    FAIL: expected spike at {expected_time}, got {spike_cycles[0]}")
-                all_ok = False
-        else:
-            if len(spike_cycles) != 0:
-                print(f"    FAIL: expected no spike (time={expected_time}), got {spike_cycles}")
-                all_ok = False
-
-    if all_ok:
-        print("  PASSED\n")
-    else:
-        print("  FAILED\n")
-    return all_ok
-
-
 # ----------------------------------------------------------------
 # Test 2: TTFS via UnifiedCoreFlow (unquantized)
 # ----------------------------------------------------------------
@@ -705,26 +654,3 @@ def test_ttfs_pipeline_artifacts():
     passed = accuracy > 0.2  # Better than random chance
     print(f"  {'PASSED' if passed else 'FAILED'} (threshold: > 20%)\n")
     return passed
-
-
-# ----------------------------------------------------------------
-if __name__ == "__main__":
-    results = {}
-    results["encoding"]       = test_ttfs_encoding()
-    results["fire_once"]      = test_ttfs_fire_once()
-    results["unified"]        = test_ttfs_unified_core_flow()
-    results["hybrid"]         = test_ttfs_hybrid_core_flow()
-    results["quantized"]      = test_ttfs_quantized()
-    results["unified_hybrid"] = test_unified_vs_hybrid_ttfs()
-    results["mixed_weights"]  = test_ttfs_realistic_mixed_weights()
-    results["pipeline"]       = test_ttfs_pipeline_artifacts()
-
-    print("=" * 60)
-    print("SUMMARY")
-    print("=" * 60)
-    for name, ok in results.items():
-        print(f"  {name:20s}: {'PASS' if ok else 'FAIL/WARN'}")
-    
-    all_pass = all(results.values())
-    print(f"\n{'ALL TESTS PASSED' if all_pass else 'SOME TESTS FAILED/WARNED'}")
-    print("=" * 60)

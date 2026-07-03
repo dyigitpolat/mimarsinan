@@ -51,7 +51,7 @@ class LavaLoihiRunner(LavaCoreMixin, LavaSegmentMixin):
         else:
             self.device = pipeline.config["device"]
             self.max_samples = int(pipeline.config.get("max_loihi_samples", 1))
-            self._data_loader_factory = DataLoaderFactory(pipeline.data_provider_factory)
+            self._data_loader_factory = DataLoaderFactory.for_pipeline(pipeline)
 
         _subtractive_lif_cls()
         self._profile = _RunProfile()

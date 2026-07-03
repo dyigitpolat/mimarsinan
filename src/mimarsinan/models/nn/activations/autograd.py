@@ -12,7 +12,9 @@ class LeakyGradReLUFunction(Function):
     def forward(ctx, input, negative_slope=1e-8):
         ctx.save_for_backward(input)
         ctx.negative_slope = negative_slope
-        return torch.where(input > 0, input, 0.0)
+        # ``input <= 0`` keeps NaN on the pass-through branch: NaN must
+        # propagate, not silently become 0.
+        return torch.where(input <= 0, torch.zeros_like(input), input)
 
     @staticmethod
     def backward(ctx, grad_output):

@@ -154,7 +154,15 @@ class MapperGraphConverter(
         elif fn is torch.flatten:
             self._convert_flatten_func(node)
         elif fn is operator.getitem and not self._getitem_looks_like_real_slice(node):
-            self._node_to_mapper[node] = self._get_source_mapper(node)
+            source_mapper = self._get_source_mapper(node)
+            if getattr(source_mapper, "output_index", None) is not None:
+                # The source mapper already selects its tuple element
+                # (e.g. attention emitted with output_index=0): pure alias.
+                self._node_to_mapper[node] = source_mapper
+            else:
+                # Element selection over a container-returning module
+                # (LSTM (out, (h, c)), chunk/split): keep the index.
+                self._emit_generic_compute_op(node, fn)
         else:
             self._emit_generic_compute_op(node, fn)
 

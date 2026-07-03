@@ -83,7 +83,7 @@ class TestComputeOpScalesStayScalar:
     factor (``in_scale == out_scale``)."""
 
     def _mixer_ir_with_per_channel_cores(self):
-        from tests.unit.mapping.test_identity_hybrid_mapping import (
+        from unit.mapping.test_identity_hybrid_mapping import (
             _make_mini_mixer_ir_graph,
         )
 
@@ -137,7 +137,7 @@ class TestCascadedIdentityExecutorPerChannel:
             run_ttfs_hybrid_contract,
         )
 
-        from tests.unit.mapping.test_identity_hybrid_mapping import (
+        from unit.mapping.test_identity_hybrid_mapping import (
             _make_mini_mixer_ir_graph,
         )
 

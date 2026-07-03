@@ -5,7 +5,10 @@ provider's surface — provider declares per-split FFCV op chains
 
 from __future__ import annotations
 
+import pytest
 import torch
+
+pytest.importorskip("ffcv", reason="optional ffcv backend not installed")
 
 
 class _TinyDS(torch.utils.data.Dataset):

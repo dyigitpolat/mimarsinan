@@ -10,10 +10,19 @@ import sys
 import os
 import tempfile
 
+# The default suite is deterministic CPU: xdist workers interleave unit and
+# integration tests, so device state must be uniform session-wide. Opt into
+# GPU runs with MIMARSINAN_TEST_CUDA=1.
+if os.environ.get("MIMARSINAN_TEST_CUDA") != "1":
+    os.environ.setdefault("CUDA_VISIBLE_DEVICES", "")
+
 import pytest
 import torch
 import torch.nn as nn
 import numpy as np
+
+# One torch thread per worker: N workers × N OpenMP threads thrashes the host.
+torch.set_num_threads(1)
 
 _repo_root = os.path.join(os.path.dirname(__file__), "..")
 sys.path.insert(0, os.path.join(_repo_root, "src"))

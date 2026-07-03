@@ -46,6 +46,10 @@ def _tiny_setup(platform_constraints):
     cfg["weight_quantization"] = False
     cfg["weight_bits"] = 8
     cfg["simulation_steps"] = 4
+    # The 64->16->4 fixture's host-side encoder holds 94% of parameters; this
+    # test checks sim-path parity, not deployment validity, so skip the
+    # on-chip-majority gate (same opt-out as the other tiny-fixture SCM tests).
+    cfg["onchip_majority_gate"] = False
 
     model = make_tiny_supermodel()
     for p in model.get_perceptrons():

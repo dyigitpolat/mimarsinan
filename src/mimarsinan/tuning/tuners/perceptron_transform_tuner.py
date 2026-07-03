@@ -24,7 +24,7 @@ class PerceptronTransformTuner(SmoothAdaptationTuner):
 
     def __init__(self, pipeline, model, target_accuracy, lr):
         self._device = pipeline.config["device"]
-        self._data_loader_factory = DataLoaderFactory(pipeline.data_provider_factory)
+        self._data_loader_factory = DataLoaderFactory.for_pipeline(pipeline)
         self._pipeline_loss = pipeline.loss
         super().__init__(pipeline, model, target_accuracy, lr)
 

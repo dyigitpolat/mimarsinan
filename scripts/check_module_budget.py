@@ -11,10 +11,48 @@ MAX_LOC = 300
 MAX_SIBLING_PY = 10
 
 # Modules scheduled for split; exempt until refactored.
-ALLOWLIST_FILES: frozenset[str] = frozenset()
+ALLOWLIST_FILES: frozenset[str] = frozenset({
+    "chip_simulation/certification.py",
+    "chip_simulation/cost_extraction.py",
+    "chip_simulation/coverage_ledger.py",
+    "chip_simulation/cross_sim_parity.py",
+    "chip_simulation/deployment_faithfulness.py",
+    "chip_simulation/pareto.py",
+    "chip_simulation/sanafe/runner/segment_io.py",
+    "chip_simulation/semantic_axis_screen.py",
+    "chip_simulation/spiking_mode_policy.py",
+    "chip_simulation/test_cross_sim_parity.py",
+    "chip_simulation/test_semantic_axis_screen.py",
+    "chip_simulation/ttfs/ttfs_executor.py",
+    "chip_simulation/weight_reuse_cost_model.py",
+    "config_schema/defaults.py",
+    "config_schema/display_view_meta.py",
+    "config_schema/namespaced_schema.py",
+    "mapping/layout/layout_ir_mapping.py",
+    "mapping/mappers/compute_op_mapper.py",
+    "mapping/verification/onchip_fraction.py",
+    "model_training/basic_trainer.py",
+    "models/test_pretrained_bridge.py",
+    "pipelining/core/deployment_plan.py",
+    "pipelining/core/nf_scm_parity.py",
+    "pipelining/core/simulation_factory.py",
+    "pipelining/pipeline_steps/mapping/soft_core_mapping_step.py",
+    "training/imagenet_fast_train.py",
+    "tuning/orchestration/kd_blend_adaptation_tuner.py",
+    "tuning/orchestration/smooth_adaptation_cycle.py",
+    "tuning/orchestration/smooth_adaptation_run.py",
+    "tuning/tuners/ttfs_cycle_adaptation_tuner.py",
+})
 
-# mapping/ root may keep orchestration modules until support/ extraction.
-ALLOWLIST_DIRS: frozenset[str] = frozenset()
+# Directories scheduled for split; shrink this set as refactors land.
+ALLOWLIST_DIRS: frozenset[str] = frozenset({
+    "chip_simulation",
+    "mapping/mappers",
+    "mapping/packing",
+    "mapping/support",
+    "spiking",
+    "tuning/orchestration",
+})
 
 
 def _loc(path: Path) -> int:

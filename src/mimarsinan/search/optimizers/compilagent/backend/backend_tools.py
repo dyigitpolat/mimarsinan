@@ -49,6 +49,6 @@ def fire_pass(callback: Any, stage: str, name: str, started_at: float) -> None:
 
 
 def list_introspection_tools(backend: Any):
-    from .tools import build_introspection_tools
+    from ..tools import build_introspection_tools
 
     return build_introspection_tools(backend)

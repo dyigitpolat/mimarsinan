@@ -244,8 +244,16 @@ class TestAgentEvolveLikeConfigs:
         obj = problem._evaluate_inner(mc, pcfg)
         assert obj["total_params"] < 1e17, f"Got penalty: {obj}"
 
-    @pytest.mark.parametrize("mc,pcfg", KEDI_CONFIGS,
-                             ids=["small_relu", "medium_gelu", "large_leaky"])
+    @pytest.mark.parametrize(
+        "mc,pcfg",
+        [
+            pytest.param(*KEDI_CONFIGS[0], id="small_relu"),
+            pytest.param(*KEDI_CONFIGS[1], id="medium_gelu"),
+            # The large cell trains a big mixer on CPU (~60 s); its HW path is
+            # covered by test_evaluate_inner_no_penalty[large_leaky] above.
+            pytest.param(*KEDI_CONFIGS[2], id="large_leaky", marks=pytest.mark.slow),
+        ],
+    )
     def test_full_evaluate_with_accuracy(self, mc, pcfg):
         """Full evaluate() with accuracy must return real values."""
         problem = _make_problem()

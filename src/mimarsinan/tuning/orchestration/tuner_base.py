@@ -72,12 +72,10 @@ class TunerBase:
         return build_recipe(self.pipeline.config, key="tuning_recipe")
 
     def _create_trainer(self):
-        num_workers = self.pipeline.config.get("num_workers", 4)
         trainer = BasicTrainer(
             self.model,
             self.pipeline.config["device"],
-            DataLoaderFactory(self.pipeline.data_provider_factory,
-                              num_workers=num_workers),
+            DataLoaderFactory.for_pipeline(self.pipeline),
             self.pipeline.loss,
             recipe=self._tuning_recipe(),
             tuning_recipe_recovery=bool(

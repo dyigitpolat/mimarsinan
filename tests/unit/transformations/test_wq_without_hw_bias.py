@@ -39,12 +39,6 @@ class TestPerceptronTransformerBiasGuard:
         pt.apply_effective_bias_transform(p, lambda b: b * 2)
         assert p.layer.bias is None
 
-    def test_apply_effective_bias_transform_to_norm_no_bias(self):
-        p = self._make_perceptron(bias=False)
-        pt = PerceptronTransformer()
-        pt.apply_effective_bias_transform_to_norm(p, lambda b: b * 2)
-        assert p.layer.bias is None
-
     def test_apply_effective_parameter_transform_no_bias(self):
         p = self._make_perceptron(bias=False)
         pt = PerceptronTransformer()

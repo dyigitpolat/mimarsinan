@@ -22,6 +22,12 @@ class PipelineCache:
         self.cache[name] = (object, load_store_strategy)
         self._dirty.add(name)
 
+    @staticmethod
+    def _filename_for(name):
+        # Keys may contain '/'; filenames must stay flat. Names without '/'
+        # keep their historical on-disk filename.
+        return name.replace("/", "%2F")
+
     def get(self, name):
         if name not in self.cache:
             return None
@@ -44,8 +50,7 @@ class PipelineCache:
             metadata = {}
 
         for name, (_, load_store_strategy) in self.cache.items():
-            filename = f"{name}"
-            metadata[name] = (load_store_strategy, filename)
+            metadata[name] = (load_store_strategy, self._filename_for(name))
 
         # Only re-serialize entries modified since the last store(). Loaded-
         # from-disk entries stay on disk untouched.
@@ -53,8 +58,7 @@ class PipelineCache:
             if name not in self.cache:
                 continue
             object, load_store_strategy = self.cache[name]
-            filename = f"{name}"
-            strategy = self.LOAD_STORE_STRATEGIES[load_store_strategy](filename)
+            strategy = self.LOAD_STORE_STRATEGIES[load_store_strategy](self._filename_for(name))
             strategy.store(cache_directory, object)
 
         with open(f"{cache_directory}/metadata.json", "w") as f:
@@ -72,9 +76,8 @@ class PipelineCache:
         else:
             metadata = {}
 
-        for name, (load_store_strategy, filename) in metadata.items():
-            filename = f"{name}"
-            strategy = self.LOAD_STORE_STRATEGIES[load_store_strategy](filename)
+        for name, (load_store_strategy, _) in metadata.items():
+            strategy = self.LOAD_STORE_STRATEGIES[load_store_strategy](self._filename_for(name))
             self.cache[name] = (strategy.load(cache_directory), load_store_strategy)
 
     def keys(self):
@@ -87,7 +90,9 @@ class PipelineCache:
         return self.get(name)
     
     def __setitem__(self, name, object):
-        self.add(name, object)
+        existing = self.cache.get(name)
+        strategy = existing[1] if existing is not None else "basic"
+        self.add(name, object, strategy)
     
     def __delitem__(self, name):
         self.remove(name)

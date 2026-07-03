@@ -120,6 +120,14 @@ class DataLoaderFactory:
         self._pin_memory = True
         self._ffcv_factory = None  # cached on first opt-in call
 
+    @classmethod
+    def for_pipeline(cls, pipeline) -> "DataLoaderFactory":
+        """The single pipeline-facing seam: honors config ``num_workers``."""
+        return cls(
+            pipeline.data_provider_factory,
+            num_workers=pipeline.config.get("num_workers", 4),
+        )
+
     def _ffcv_loader(self, kind: str, batch_size, data_provider):
         """Return an FFCV loader iff the provider opts in; else ``None``.
 

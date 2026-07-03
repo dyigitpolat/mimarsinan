@@ -51,7 +51,12 @@ def compile_simulator(
     else:
         step_limit_option = f"-fconstexpr-steps={step_limit}"
 
-    simulator_filename = output_path if output_path is not None else "./bin/simulator"
+    # Default the binary into the per-run generated tree: a cwd-shared path
+    # lets one concurrent run overwrite the binary another is executing
+    # (ETXTBSY / silently wrong simulator).
+    if output_path is None:
+        output_path = str(Path(generated_files_path) / "bin" / "simulator")
+    simulator_filename = output_path
     prepare_containing_directory(simulator_filename)
 
     cmd = [

@@ -27,13 +27,6 @@ from mimarsinan.models.nn.layers import (
 
 
 class TestLeakyGradReLUStress:
-    @pytest.mark.xfail(
-        reason="BUG: LeakyGradReLU silently converts NaN to 0.0. "
-               "torch.where(input > 0, input, 0.0) evaluates NaN > 0 as False, "
-               "so NaN inputs are mapped to zero instead of propagating. "
-               "This hides upstream numerical instability.",
-        strict=True,
-    )
     def test_nan_input_propagates(self):
         """NaN inputs should propagate, not silently disappear."""
         m = LeakyGradReLU()
@@ -114,32 +107,18 @@ class TestDifferentiableClampStress:
 
 
 class TestMaxValueScalerStress:
-    def test_all_negative_inputs_converge_to_negative_max(self):
-        """
-        BUG: MaxValueScaler uses torch.max(x) (not abs), so with all-negative
-        inputs the max_value converges to a negative number, and dividing by it
-        flips the sign of the output.
-        """
+    def test_all_negative_inputs_never_flip_output_sign(self):
+        """The EMA divisor is floored at a positive epsilon, so an all-negative
+        input stream must not converge to a negative max_value (sign flip)."""
         scaler = MaxValueScaler()
         scaler.train()
 
         for _ in range(200):
-            x = torch.tensor([-5.0, -10.0])
-            scaler(x)
+            scaler(torch.tensor([-5.0, -10.0]))
 
-        if scaler.max_value.item() < 0:
-            x_test = torch.tensor([-3.0])
-            out = scaler(x_test)
-            if out.item() > 0:
-                pytest.xfail(
-                    f"BUG: MaxValueScaler converged to negative max_value "
-                    f"({scaler.max_value.item():.4f}), causing sign flip: "
-                    f"input {x_test.item()} → output {out.item()}"
-                )
-
-        # If max_value stayed positive, that's fine
-        assert scaler.max_value.item() > 0 or True, \
-            "This test documents the behavior"
+        assert scaler.max_value.item() > 0
+        out = scaler(torch.tensor([-3.0]))
+        assert out.item() < 0, "negative input must stay negative after scaling"
 
     def test_zero_input_division_by_max_value(self):
         """When max_value is 1.0 (default), zero input should produce zero."""

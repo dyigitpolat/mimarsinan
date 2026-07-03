@@ -113,7 +113,7 @@ def run_trainer_metric(
     trainer = BasicTrainer(
         model,
         device,
-        DataLoaderFactory(pipeline.data_provider_factory),
+        DataLoaderFactory.for_pipeline(pipeline),
         None,
     )
     try:

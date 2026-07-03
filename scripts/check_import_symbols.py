@@ -13,6 +13,10 @@ ROOT = Path(__file__).resolve().parents[1]
 PKG_ROOT = ROOT / "src" / "mimarsinan"
 SKIP_SUBSTR = "mimarsinan-baseline-test"
 
+# Optional third-party backends: modules requiring them are skipped (not broken)
+# when the package is absent from the environment.
+OPTIONAL_TOP_LEVEL_DEPS = {"ffcv", "lava", "sanafe", "compilagent", "torchsummary"}
+
 
 def _scan_paths() -> list[Path]:
     paths: list[Path] = []
@@ -59,6 +63,12 @@ def main(argv: list[str] | None = None) -> int:
         for lineno, mod, names in _imports_in_file(path):
             try:
                 imported = importlib.import_module(mod)
+            except ModuleNotFoundError as exc:
+                missing_top = (exc.name or "").split(".")[0]
+                if missing_top in OPTIONAL_TOP_LEVEL_DEPS:
+                    continue
+                failures.append(f"{path}:{lineno}: import {mod!r} failed: {exc}")
+                continue
             except Exception as exc:
                 failures.append(f"{path}:{lineno}: import {mod!r} failed: {exc}")
                 continue

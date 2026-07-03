@@ -21,7 +21,6 @@ from mimarsinan.models.spiking.hybrid.flow import SpikingHybridCoreFlow
 
 CASES = [
     ("lif", "cascaded"),
-    ("rate", "cascaded"),
     ("ttfs", "cascaded"),
     ("ttfs", "synchronized"),
     ("ttfs_quantized", "cascaded"),

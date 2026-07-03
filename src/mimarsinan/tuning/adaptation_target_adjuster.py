@@ -28,7 +28,7 @@ class AdaptationTargetAdjuster:
         """
         from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory
 
-        dp = DataLoaderFactory(pipeline.data_provider_factory).create_data_provider()
+        dp = DataLoaderFactory.for_pipeline(pipeline).create_data_provider()
         n = dp.get_validation_set_size()
         decay = target_decay_from_validation_samples(n)
         dt = float(pipeline.config.get("degradation_tolerance", 0.05))

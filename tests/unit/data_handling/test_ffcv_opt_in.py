@@ -84,45 +84,34 @@ class TestProvidersOptInExplicitly:
         from mimarsinan.data_handling.data_providers.cifar10_data_provider import (
             CIFAR10_DataProvider,
         )
-        pytest.importorskip("torchvision")
-        import tempfile
-        with tempfile.TemporaryDirectory() as tmp:
-            try:
-                p = CIFAR10_DataProvider(datasets_path=tmp)
-            except Exception as e:
-                pytest.skip(f"CIFAR10 download/init not viable: {e!r}")
-            cfg = p.ffcv_transforms()
-            assert "splits" in cfg
-            assert set(cfg["splits"].keys()) == {"train", "val", "test"}
-            train_names = [op[0] for op in cfg["splits"]["train"]]
-            # Decoder is the first op.
-            assert train_names[0] == "SimpleRGBImageDecoder"
-            # Augments follow.
-            assert "RandomHorizontalFlip" in train_names
-            assert "RandomTranslate" in train_names
-            assert "Cutout" in train_names
-            # NormalizeImage is synthesized; not in the provider's chain.
-            assert "NormalizeImage" not in train_names
-            assert p.enable_ffcv() is True
+        # Class-level inspection: ffcv_transforms() needs no dataset, and
+        # constructing the provider would download CIFAR.
+        cfg = CIFAR10_DataProvider.ffcv_transforms(SimpleNamespace())
+        assert "splits" in cfg
+        assert set(cfg["splits"].keys()) == {"train", "val", "test"}
+        train_names = [op[0] for op in cfg["splits"]["train"]]
+        assert train_names[0] == "SimpleRGBImageDecoder"
+        assert "RandomHorizontalFlip" in train_names
+        assert "RandomTranslate" in train_names
+        assert "Cutout" in train_names
+        assert "NormalizeImage" not in train_names
+
+        from mimarsinan.data_handling.data_provider import DataProvider
+
+        stub = SimpleNamespace(ffcv_transforms=lambda: cfg)
+        assert DataProvider.enable_ffcv(stub) is True
 
     def test_cifar100_declares_strong_augmentation_no_flip(self):
         from mimarsinan.data_handling.data_providers.cifar100_data_provider import (
             CIFAR100_DataProvider,
         )
-        pytest.importorskip("torchvision")
-        import tempfile
-        with tempfile.TemporaryDirectory() as tmp:
-            try:
-                p = CIFAR100_DataProvider(datasets_path=tmp)
-            except Exception as e:
-                pytest.skip(f"CIFAR100 download/init not viable: {e!r}")
-            train_ops = p.ffcv_transforms()["splits"]["train"]
-            train_names = [op[0] for op in train_ops]
-            assert train_names[0] == "SimpleRGBImageDecoder"
-            assert "RandomHorizontalFlip" not in train_names
-            assert "RandomTranslate" in train_names
-            assert "Cutout" in train_names
-            assert "NormalizeImage" not in train_names
+        train_ops = CIFAR100_DataProvider.ffcv_transforms(SimpleNamespace())["splits"]["train"]
+        train_names = [op[0] for op in train_ops]
+        assert train_names[0] == "SimpleRGBImageDecoder"
+        assert "RandomHorizontalFlip" not in train_names
+        assert "RandomTranslate" in train_names
+        assert "Cutout" in train_names
+        assert "NormalizeImage" not in train_names
 
     def test_imagenet_declares_per_split_decoder_and_beton_size(self):
         """ImageNet's split-asymmetric crop policy lives in per-split

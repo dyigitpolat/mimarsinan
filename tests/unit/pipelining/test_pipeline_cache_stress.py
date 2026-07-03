@@ -23,27 +23,18 @@ class TestCacheStrategyDowngrade:
     objects.
     """
 
-    def test_setitem_downgrades_strategy(self, tmp_path):
+    def test_setitem_preserves_existing_strategy(self, tmp_path):
         c = PipelineCache()
-        model = nn.Linear(4, 2)
-        c.add("step.model", model, "torch_model")
+        c.add("step.model", nn.Linear(4, 2), "torch_model")
 
-        # Verify strategy is torch_model
+        c["step.model"] = nn.Linear(8, 2)
+
         assert c.cache["step.model"][1] == "torch_model"
+        c.store(str(tmp_path))
 
-        # Use __setitem__ to update the model
-        new_model = nn.Linear(4, 2)
-        c["step.model"] = new_model
-
-        # Strategy is now "basic" — this is the bug
-        if c.cache["step.model"][1] == "basic":
-            # Try to store — this will fail because nn.Module is not JSON serializable
-            with pytest.raises(TypeError):
-                c.store(str(tmp_path))
-            pytest.xfail(
-                "BUG: __setitem__ downgrades storage strategy from torch_model "
-                "to basic, causing store to fail with non-JSON-serializable objects"
-            )
+        c2 = PipelineCache()
+        c2.load(str(tmp_path))
+        assert c2.get("step.model").weight.shape == (2, 8)
 
     def test_overwrite_preserves_strategy_via_add(self, tmp_path):
         """Using add() with explicit strategy works correctly."""
@@ -135,17 +126,15 @@ class TestCacheEdgeCases:
         c2.load(str(tmp_path))
         assert c2.get("pipeline.step.sub.value") == 99
 
-    def test_key_with_special_characters(self, tmp_path):
-        """Keys with slashes or other filesystem-unfriendly characters."""
+    def test_key_with_slashes_roundtrips(self, tmp_path):
+        """Slash-bearing keys map to flat filenames and survive store/load."""
         c = PipelineCache()
         c.add("step/with/slashes", [1, 2])
-        # This might fail because the filename would create subdirectories
-        try:
-            c.store(str(tmp_path))
-        except (FileNotFoundError, OSError) as e:
-            pytest.xfail(
-                f"Cache keys with slashes create filesystem problems: {e}"
-            )
+        c.store(str(tmp_path))
+
+        c2 = PipelineCache()
+        c2.load(str(tmp_path))
+        assert c2.get("step/with/slashes") == [1, 2]
 
     def test_empty_string_key(self, tmp_path):
         c = PipelineCache()

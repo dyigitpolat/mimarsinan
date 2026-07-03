@@ -224,11 +224,14 @@ class TestConversion:
             out = supermodel(dummy)
         assert out.shape == (4, 10)
 
-    def test_convert_lstm_as_compute_op(self):
-        """LSTM model converts successfully — LSTM runs host-side as ComputeOp."""
+    def test_convert_lstm_fails_loud_with_node_context(self):
+        """Unsupported models (LSTM sequence slicing) must fail the conversion
+        probe with a clean error naming the failing node — never mis-convert."""
+        from mimarsinan.torch_mapping.conversion_probe import ConversionProbeError
+
         model = UnsupportedModel()
-        supermodel = convert_torch_model(model, input_shape=(16,), num_classes=10)
-        assert supermodel is not None
+        with pytest.raises(ConversionProbeError, match="getitem"):
+            convert_torch_model(model, input_shape=(16,), num_classes=10)
 
     def test_mapper_repr_exists(self):
         model = SimpleMLP(in_features=16, hidden=32, out_features=10)

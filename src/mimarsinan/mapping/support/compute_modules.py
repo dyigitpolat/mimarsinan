@@ -52,8 +52,21 @@ class ComputeAdapter(nn.Module):
     def _bound_tensors(self) -> list[torch.Tensor]:
         return [getattr(self, f"bound_{i}") for i in range(self._bound_count)]
 
-    def forward(self, *inputs: torch.Tensor) -> torch.Tensor:
-        batch_size = inputs[0].shape[0] if inputs else 1
+    @staticmethod
+    def _leading_tensor(obj) -> torch.Tensor | None:
+        if isinstance(obj, torch.Tensor):
+            return obj
+        if isinstance(obj, (tuple, list)):
+            for item in obj:
+                found = ComputeAdapter._leading_tensor(item)
+                if found is not None:
+                    return found
+        return None
+
+    def forward(self, *inputs) -> torch.Tensor:
+        # Inputs may be nested containers (e.g. getitem over an LSTM's (h, c)).
+        lead = self._leading_tensor(inputs)
+        batch_size = lead.shape[0] if lead is not None else 1
         expanded_bound = [
             t.unsqueeze(0).expand(batch_size, *t.shape) for t in self._bound_tensors()
         ]

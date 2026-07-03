@@ -69,7 +69,8 @@ def test_wizard_built_config_validates_and_pipeline_accepts(tmp_path):
 
     deployment_parameters = dict(cfg["deployment_parameters"])
     from mimarsinan.pipelining.core.pipelines.deployment_pipeline import DeploymentPipeline
-    DeploymentPipeline.apply_preset(cfg["pipeline_mode"], deployment_parameters)
+    # The wizard emits no top-level pipeline_mode; main.py defaults it to "phased".
+    DeploymentPipeline.apply_preset(cfg.get("pipeline_mode", "phased"), deployment_parameters)
 
     # Use mock data provider (tiny in-memory) so test does not need real dataset
     data_provider_factory = MockDataProviderFactory(input_shape=(1, 8, 8), num_classes=4)

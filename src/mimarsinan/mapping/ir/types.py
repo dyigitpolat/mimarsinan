@@ -243,6 +243,11 @@ class ComputeOp(IRNode):
             out = module(*call_args, **module_kwargs)
         if output_index is not None:
             out = out[output_index]
-        return out.reshape(out.shape[0], -1)
+        # An explicit feature size keeps the reshape well-defined for empty batches
+        # (``-1`` is ambiguous when the tensor has 0 elements).
+        features = 1
+        for dim in out.shape[1:]:
+            features *= dim
+        return out.reshape(out.shape[0], features)
 
 

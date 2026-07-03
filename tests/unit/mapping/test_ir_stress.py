@@ -151,13 +151,6 @@ class TestComputeOpStress:
         assert out[0, 0].item() == pytest.approx(0.0, abs=1e-5)
         assert out[0, 1].item() == pytest.approx(10.0, abs=0.01)
 
-    @pytest.mark.xfail(
-        reason="BUG: ComputeOp Identity-module crashes on empty batch. "
-               "out.reshape(out.shape[0], -1) cannot reshape 0-element tensor "
-               "because the -1 dimension is ambiguous with 0 elements.",
-        strict=True,
-        raises=RuntimeError,
-    )
     def test_empty_input_tensor(self):
         """Empty batch dimension should propagate without crashing."""
         sources = np.array([IRSource(-2, 0)], dtype=object)

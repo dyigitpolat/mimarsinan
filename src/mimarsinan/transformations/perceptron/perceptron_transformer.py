@@ -78,18 +78,6 @@ class PerceptronTransformer:
             u, beta, mean = self._get_u_beta_mean(perceptron.normalization)
             perceptron.layer.bias.data[:] = (((bias_transform(effective_bias) * perceptron.activation_scale - beta) / u) + mean)
 
-
-    def apply_effective_bias_transform_to_norm(self, perceptron, bias_transform):
-        if perceptron.layer.bias is None:
-            return
-        effective_bias = self.get_effective_bias(perceptron)
-        
-        if isinstance(perceptron.normalization, nn.Identity):
-            perceptron.layer.bias.data[:] = bias_transform(effective_bias) * perceptron.scale_factor
-        else:
-            u, beta, mean = self._get_u_beta_mean(perceptron.normalization)
-            perceptron.normalization.running_mean.data[:] = bias_transform(mean)
-
     def _get_u_beta_mean(self, bn_layer):
         from mimarsinan.models.nn.layers import norm_affine_params
 

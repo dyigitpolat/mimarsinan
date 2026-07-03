@@ -989,13 +989,3 @@ class TestMultilayerPruningVerification:
             out_A = model(x)
             out_B = model_B(x)
         assert torch.allclose(out_A, out_B)
-
-    @pytest.mark.skip(reason="SqueezeNet requires full pipeline + TorchMappingStep; use integration test with config")
-    def test_squeezenet_pruning_reduces_soft_core_size(self, device):
-        """Placeholder: run with pipeline + torch_squeezenet11 config to verify reduction and output equivalence."""
-        pytest.skip("SqueezeNet: run scripts or integration test with examples/cifar10_torch_squeezenet11_pretrained.json")
-
-    @pytest.mark.skip(reason="SqueezeNet requires full pipeline; use integration test")
-    def test_squeezenet_a_and_b_same_output(self, device):
-        """Placeholder: same as above for output equivalence."""
-        pytest.skip("SqueezeNet: run pipeline and compare model outputs")
