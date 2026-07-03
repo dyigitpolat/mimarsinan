@@ -1,35 +1,49 @@
-# common/ -- Shared Utilities
+# common/ — Shared leaf utilities: env-var SSOT, file I/O, compiler discovery, reporting, and diagnostics.
 
-Leaf-dependency module providing file I/O helpers, C++ compiler discovery, and
-experiment-tracking utilities. No mimarsinan-internal imports.
+`common/` is the near-leaf utility layer that every other mimarsinan module may
+depend on. It centralizes the `MIMARSINAN_*` environment-variable contract
+(`env.py`), the single sanctioned log-and-degrade seam (`best_effort`), the
+`Reporter` protocol used by the deployment pipeline for metrics, and the file
+writers that emit simulator inputs and chip code for nevresim runs. New
+contributors should treat it as the home for small, dependency-free mechanisms
+shared across the pipeline.
 
-## Key Components
-
-| File | Symbols | Purpose |
-|------|---------|---------|
-| `file_utils.py` | `prepare_containing_directory`, `input_to_file`, `save_inputs_to_files`, `save_weights_and_chip_code` | File I/O for pipeline cache, simulator input files, and chip code generation |
-| `build_utils.py` | `find_cpp20_compiler` | Discovers a C++20-capable compiler (Clang >= 17 preferred, g++-11 fallback) |
-| `reporter.py` | `Reporter` (Protocol), `DefaultReporter` | Reporter protocol used by Pipeline; DefaultReporter provides throttled console output |
-| `layer_key.py` | `layer_key_from_node_name` | Display/serialization: grouping key from IR or mapper node names (conv/fc/psum collapse); used by gui.snapshot and visualization.mapping_graphviz |
-| `safe_numeric.py` | `safe_float` | Display/serialization: safe float conversion for plots/labels (narrow conversion-error catch; unexpected errors propagate); used by visualization.search_visualization and visualization.mapping_graphviz |
-| `best_effort.py` | `best_effort` | The single sanctioned log-and-degrade seam: context manager that logs non-exit exceptions at debug and continues; only for telemetry/rendering side work |
-| `diagnostics.py` | `enable_cuda_debug`, `describe_tensor`, `phase_profiler`, `cuda_guard` | CUDA debugging/profiling helpers; telemetry failures degrade via `best_effort` |
+## Key files
+| File | Purpose |
+|---|---|
+| `best_effort.py` | `best_effort` context manager: the single sanctioned log-and-continue seam for non-critical telemetry/rendering side work |
+| `build_utils.py` | `find_cpp20_compiler`: probe-compiles to discover a working C++20 compiler (clang++ 17-20 with libc++, g++ 11-14, clang++ with libstdc++, plain g++), plus legacy wrappers |
+| `diagnostics.py` | CUDA debugging/profiling helpers: `enable_cuda_debug`, `describe_tensor`, `phase_profiler` (time/RSS/CUDA-peak), `cuda_guard` (synchronize-bracketed blocks) |
+| `env.py` | Single source of truth for `MIMARSINAN_*` (and `IMAGENET_ROOT`) environment variables; one call-time accessor per flag so tests can monkeypatch |
+| `file_utils.py` | Writers for pipeline artifacts: directory prep, per-sample simulator input files (scalar and spike-train), and chip weights/code emission (`save_weights_and_chip_code`) |
+| `layer_key.py` | `layer_key_from_node_name`: display/serialization grouping key that collapses per-position/per-tile/psum core names into one layer stack |
+| `reporter.py` | `Reporter` protocol for pipeline metric reporting and `DefaultReporter`, an in-tree implementation with throttled console output |
+| `safe_numeric.py` | `safe_float`: safe conversion to float for plots and labels; returns a default when unconvertible |
 
 ## Dependencies
+- `chip_simulation` — `file_utils.save_weights_and_chip_code` lazily imports `nevresim.connectivity.default_nevresim_connectivity_mode` to pick the chip-code emission mode.
+- `code_generation` — the same function lazily imports `mapping_spans_export` (`chip_config_header`, `write_mapping_spans_file`) for runtime-connectivity chip emission.
 
-- **Internal**: None (leaf module).
-- **External**: `torch`, `json`, `os`, `subprocess`.
+Both imports are deferred inside the function body; module import time keeps
+`common/` a leaf.
 
 ## Dependents
+- `pipelining` — `best_effort`, `phase_profiler`/`cuda_guard`, env flags (vram probe, resource debug, NF-SCM parity debug), `prepare_containing_directory`, `DefaultReporter`.
+- `gui` — `best_effort`, env accessors (`runs_root`, `templates_dir`, `gui_no_browser`), `layer_key_from_node_name`.
+- `data_handling` — `best_effort`, FFCV/ImageNet/resource-debug env accessors.
+- `chip_simulation` — `find_cpp20_compiler`, `file_utils` input/chip-code writers, `loihi_quiet`.
+- `visualization` — `layer_key_from_node_name`, `safe_float`.
+- `search` — `best_effort`.
+- `mapping` — `best_effort`, `cuda_debug_enabled`.
+- `tuning` — `best_effort`.
+- `model_training` — `vram_probe_enabled`.
+- `models` — `cuda_debug_enabled`.
+- `code_generation` — `file_utils` writers.
 
-- `chip_simulation` uses `file_utils` and `build_utils` for nevresim compilation
-- `code_generation` uses `file_utils` for writing generated C++ code
-- `pipelining` uses `prepare_containing_directory` for cache persistence
-- `gui` uses `Reporter` protocol for dispatching metrics; `gui.snapshot` uses `layer_key_from_node_name`
-- `visualization.mapping_graphviz` uses `layer_key_from_node_name` and `safe_float`
-- `visualization.search_visualization` uses `safe_float`
-- Entry point (`main.py`) uses `DefaultReporter`
+## Exported API
+`__init__.py` re-exports:
+- `prepare_containing_directory`, `input_to_file`, `save_inputs_to_files`, `save_weights_and_chip_code` — file I/O for pipeline artifacts.
+- `find_cpp20_compiler` — C++20 compiler discovery.
+- `Reporter`, `DefaultReporter` — metric-reporting protocol and default implementation.
 
-## Exported API (\_\_init\_\_.py)
-
-All public symbols from each file are re-exported at the package level.
+Other symbols (`env` accessors, `best_effort`, diagnostics, `layer_key_from_node_name`, `safe_float`) are imported from their submodules directly.

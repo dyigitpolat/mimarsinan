@@ -1,106 +1,49 @@
-# tuning/ -- Training-Aware Tuning Subsystem
+# tuning/ — Training-aware progressive adaptation of models toward hardware constraints
 
-Manages the progressive application of activation and weight transformations
-while maintaining model accuracy through smooth adaptation.
+After the ANN is built and trained, the deployment pipeline uses this module to
+apply hardware-motivated transformations (clamping, activation/weight
+quantization, noise, ANN→SNN blend, LIF/TTFS conversion, pruning) gradually
+while recovering accuracy at each step. The central abstractions are the
+`SmoothAdaptationTuner` control loop and its services (`orchestration/`), the
+rate-driven `AdaptationAxis` objects that know how to apply a transformation at
+a fractional rate (`axes/`), and the concrete per-transformation tuners
+(`tuners/`). Cross-cutting helpers at this level — target adjustment, LR
+search, rate application, decision tracing — are shared by all tuner families.
 
-## Key Components
-
-| File | Symbols | Purpose |
-|------|---------|---------|
-| `adaptation_manager.py` | `AdaptationManager` | Manages decorator rates (activation_adaptation, clamp, shift, quantization); clamp uses deterministic `MixAdjustmentStrategy`, quantization keeps nested random-mask path; for TTFS omits standalone shift decorator but nests shift inside QuantizeDecorator |
-| `adaptation_target_adjuster.py` | `AdaptationTargetAdjuster`, `target_decay_from_validation_samples`, `from_pipeline` | Proportional target decay; `floor_ratio` derived as `1 - degradation_tolerance`; growth capped at `original_metric`; `update_target(post_acc)` called only when the tuner is stuck (3+ consecutive committed steps < 1%), not on every cycle |
-| `learning_rate_explorer.py` | `LRRangeFinder`, `find_lr_range_for_trainer`, `clone_state_for_trainer`, `restore_state_for_trainer` | Multi-step exponential LR sweep with "largest non-destructive" selection heuristic (picks highest LR that does not degrade accuracy beyond `margin`); `anchor_lr` parameter centres range on `pipeline_lr` (±1 order of magnitude); `margin` derived from `budget.accuracy_se()`; restores state after each probe. State clones stay on the model's device (no GPU↔CPU memcpy); `load_state_dict` handles device transparently. Callers (e.g. `TunerBase._find_lr`) wrap the sweep in `trainer.validation_context("probe")` so every validation emitted during LR probing carries the `(probe)` suffix and appears as a distinct trace on the GUI Accuracy panel |
-| `adaptation_rate_tuner.py` | `AdaptationRateTuner`, `_DECISION_SEED` | Base for tuners that drive one `AdaptationManager` rate field (`quantization_rate`, `noise_rate`, …) via `_apply_rate` (delegates to `apply_manager_rate`). Seeds its axis with a fixed `_DECISION_SEED` at construction, so stochastic rates (ActQuant masks / Noise) are reproducible run-to-run rather than slaved to global RNG (a no-op for non-stochastic rates). `_after_run` commits rate=1.0 and then enforces the pipeline floor via `_ensure_pipeline_threshold` for the whole family — `ActivationQuantizationTuner`/`NoiseTuner` inherit it instead of each re-adding the floor check. |
-| `adaptation_manager_factory.py` | `create_adaptation_manager_for_model` | Constructs `AdaptationManager` and runs initial `update_activation` for all perceptrons (`ModelBuildingStep`, `TorchMappingStep`). |
-| `tuning_budget.py` | `TuningBudget`, `tuning_budget_from_pipeline`, `max_total_training_steps`, `min_step_for_smooth_adaptation` | All fields derived from `check_interval = sqrt(SPE)`; `max_training_steps = 3 * SPE * budget_scale`; `lr_steps_per_probe = lr_num_probes = tolerance_probe_steps = check_interval`; `eval_n_batches` from validation set size; `eval_sample_count` tracks number of evaluation samples; `accuracy_se()` returns `0.5 / sqrt(eval_sample_count)` — the Bernoulli worst-case standard error used to derive all tuning thresholds |
-| `unified_tuner.py` | `TunerBase`, `SmoothAdaptationTuner`, `CATASTROPHIC_DROP_FACTOR`, `_RECOVERY_PATIENCE`, `_SMALL_STEP_THRESHOLD`, `_STUCK_STREAK_REQUIRED` | `TunerBase`: shared infrastructure (pipeline, model, trainer, budget, target adjuster, LR finder with `anchor_lr=pipeline_lr`, validate). `SmoothAdaptationTuner`: the single orchestration loop (baseline calibration -> `RateScheduler` rate search via `_run_with_scheduler` -> `_finalize_run` = `_after_run` -> `_stabilize_at_full_rate`); `run()` calibrates tuner target from `validate_n_batches` at rate 0.0 before adaptation starts; max_cycles capped to `min(30, ...)`. Subclasses implement `_update_and_evaluate(rate)` and optionally `_recovery_training_hooks(rate)`, `_before_cycle()`, `_after_run()`, `_stabilization_budget()`. **Validation tagging**: `_find_lr()` wraps the LR sweep and `_adaptation()` wraps the `_update_and_evaluate(rate)` call in `trainer.validation_context("probe")`, so these exploratory validations appear as a separate `(probe)` trace on the Accuracy panel; pre-cycle baseline, post-recovery decision, safety-net and stabilization validations stay untagged and form the committed tuning-progress trace. `_adaptation()`: skips LR discovery when instant_acc is near target (uses `pipeline_lr`); scales recovery budget proportionally to accuracy gap; tracks committed step sizes via `_small_step_streak` — target relaxation only triggers after `_STUCK_STREAK_REQUIRED` (3) consecutive committed steps smaller than `_SMALL_STEP_THRESHOLD` (1%); rollbacks never trigger target decay and preserve the cached LR (the prior `_get_cached_lr()` value stays valid until a stuck-streak target relaxation invalidates it); the prior cycle's post-validation is reused as the next cycle's pre-validation baseline (`_last_post_acc`) to skip one full validation pass per cycle; the rate=1.0 internal gate uses `_validation_baseline` (captured once at run start) — `trainer.test()` is never called in tuner internals (see "Test-set isolation" below). Two tolerance levels: `_rollback_tolerance` (`3 * accuracy_se` — noise-only guard) and `_pipeline_tolerance` (strict pipeline dt). `_attempt_recovery_if_below_floor()` (aliased as `_ensure_pipeline_threshold`) uses validation-only recovery. **Stabilization rounds**: `_stabilize_at_full_rate` runs up to `_max_stabilization_rounds` passes (default 1 = historical single pass; `KDBlendAdaptationTuner` sets 3) — each extra round restarts from a freshly found LR and only runs while the previous round improved validation by more than `accuracy_se()/2`; the pre/post rollback guard brackets all rounds. `_RECOVERY_PATIENCE` (5): default patience for recovery training. See "Baseline-anchored absolute floor" and "Post-step stabilization" below |
-| `shift_calculation.py` | `calculate_activation_shift` | Computes activation shift amounts for quantization alignment |
-| `perceptron_rate.py` | `rebuild_activations`, `apply_manager_rate`, `set_blend_rate` | SSOT for applying a transformation rate across all perceptrons: `rebuild_activations` re-runs `update_activation` per perceptron; `apply_manager_rate` sets one `AdaptationManager` rate field then rebuilds (the `AdaptationRateTuner`/`NoiseTuner` family); `set_blend_rate` sets every `BlendActivation.rate` (the `KDBlendAdaptationTuner` family). Replaces the 4+ inlined `setattr; for p: update_activation` loops. |
-| `forward_install.py` | `LazyExecutorForward`, `CascadeForwardInstall` | Leaf module (no tuner imports) for installing a cross-layer NF forward as a `model.forward` override. `LazyExecutorForward` is the picklable base with `_ensure_executor(builder)` (build-once, drop-on-pickle); `CascadeForwardInstall` is the symmetric single-owner install/remove mixin. `kd_blend_adaptation_tuner` re-exports `LazyExecutorForward` as `_InstalledForward` for back-compat. |
-| `teacher.py` | `snapshot_frozen_teacher`, `freeze_module` | Leaf module: SSOT for capturing an eval-mode, gradient-frozen deepcopy of a model to distill against (deepcopy on CPU to avoid double accelerator residency). Used by `KDBlendAdaptationTuner` (single snapshot) and available for any future tuner that distills against a frozen reference. |
-| `trace.py` | `DecisionRecord`, `DecisionTrace` | Structured, JSON-round-trippable decision-trace artifact. `SmoothAdaptationCycleMixin._adaptation` records one `DecisionRecord` per cycle exit (catastrophic/rollback/commit) into `self._cycle_log` (a `DecisionTrace`); fields absent at an exit stay `None`. `DecisionTrace` iterates as the legacy per-outcome `_cycle_log` dicts (`as_legacy_dict` always emits numeric `rate`+`committed`) so `_log_cycle_summary` is unchanged. `to_json`/`from_json` are the golden-trace equivalence contract that later refactor phases are gated against (recorded under `tests/unit/tuning/golden/`, regenerated only via `MIMARSINAN_RECORD_GOLDEN`). |
-
-### Subdirectory
-
-| Directory | Purpose |
-|-----------|---------|
-| `orchestration/` | The smooth-adaptation control loop (cycle/run/tuner-base mixins), the `AdaptationManager` rate host, `TuningBudget`, the KD-blend base, the extracted `AcceptanceSensor` decision service, and the **uniform rate-tuner seam** (`rate_tuner_seam.py`: `RateTunerSeam` / `RateTunerSeamMixin` / `OneShotRateTunerSeamMixin` — the `ramp`/`recover_to`/`probe` verbs every tuner exposes so a driver drives any tuner generically, E1/Fix A). See its `ARCHITECTURE.md`. |
-| `tuners/` | Concrete tuner implementations for specific transformations |
-| `axes/` | `AdaptationAxis` contract + adapters (the rate-driven, control-facing axis objects the tuner refactor collapses the tuner zoo into; each delegates to `perceptron_rate`/`transformations`). Manager-rate family landed; blend/closure/shift/pruning adapters follow the same delegation discipline. |
+## Key files
+| File | Purpose |
+|---|---|
+| `adaptation_rate_tuner.py` | `AdaptationRateTuner`: `SmoothAdaptationTuner` driving one `AdaptationManager` rate field through a seeded `ManagerRateAxis`; base for the clamp/act-quant/noise family. |
+| `adaptation_target_adjuster.py` | `AdaptationTargetAdjuster`: proportional target decay/growth with validation-set-sized decay and a `1 - degradation_tolerance` floor. |
+| `forward_install.py` | `LazyExecutorForward` (picklable lazy cross-layer NF `model.forward` override) and `CascadeForwardInstall` (single-owner install/remove mixin). |
+| `learning_rate_explorer.py` | `LRRangeFinder`: exponential LR sweep selecting the largest non-destructive LR, with optional coarse loss-slope pre-scoring; `find_lr_range_for_trainer` derives probe parameters from the `TuningBudget`. |
+| `perceptron_rate.py` | SSOT for applying a rate model-wide: `rebuild_activations`, `apply_manager_rate`, `set_blend_rate`, `set_surrogate_alpha`. |
+| `shift_calculation.py` | `calculate_activation_shift`: activation-space shift for quantization alignment. |
+| `teacher.py` | `snapshot_frozen_teacher` / `freeze_module`: eval-mode, gradient-frozen deepcopy of a model for KD recovery (deepcopy on CPU). |
+| `trace.py` | `DecisionRecord` / `DecisionTrace`: JSON-round-trippable per-cycle decision trace; iterates as legacy `_cycle_log` dicts and backs the golden-trace tests. |
+| `axes/` | `AdaptationAxis` contract plus concrete axes (manager-rate family, blend/LIF/TTFS, perceptron-transform/NAPQ, pruning, activation shift); each delegates math to `transformations` and rate application to `perceptron_rate`. |
+| `orchestration/` | The smooth-adaptation machinery: `TunerBase`/`SmoothAdaptationTuner` (cycle/run mixins), `AdaptationManager` + factory, `TuningBudget`, `ConversionPolicy` SSOT, temporal allocation, rate scheduler / recovery engine / acceptance sensor / checkpoint guard, optimization driver + fast ladder, blend-ramp strategy, KD-blend tuner, and the uniform `RateTunerSeam`. |
+| `tuners/` | Concrete tuners: clamp, activation adaptation/quantization/shift, normalization-aware weight quantization, noise, LIF, TTFS cycle, perceptron transform, and `pruning/`. |
 
 ## Dependencies
-
-- **Internal**: `models.layers` (all decorator types), `model_training` (trainers).
-- **External**: `torch`, `copy`.
+- `models` — activation types (`TTFSActivation`, `LeakyGradReLU`, `make_activation`), decorator layers (`RandomMaskAdjustmentStrategy`, `RateBuffer`, `NoisyDropout`, `SavedTensorDecorator`), and the blended genuine spiking forward the KD-blend tuner installs.
+- `model_training` — `BasicTrainer`, the perceptron-transform trainer, and `build_recipe`/`build_optimizer` for recovery training.
+- `transformations` — normalization-aware perceptron quantization, `PerceptronTransformer`, pruning mask application and activation-stat collection.
+- `data_handling` — `DataLoaderFactory`/`DataProvider` for validation-set sizes that derive budgets and decay factors.
+- `mapping` — pruning boundary policy for the pruning tuner.
+- `common` — `best_effort` error containment.
 
 ## Dependents
+- `pipelining` — pipeline steps construct the tuners, the adaptation-manager factory, and `tuning_budget_from_pipeline`; `deployment_plan` consumes `temporal_allocation`, `ConversionPolicy`, the optimization driver, and the calibration pipeline.
+- `config_schema` — `temporal_allocation` for validation; `ConversionPolicy` for deployment derivation.
+- `chip_simulation` — calibration-pipeline constants in the deployment contract.
+- `model_training` — LR-explorer helpers in `basic_trainer_steps`.
+- `models` — `LazyExecutorForward` for the blended genuine forward.
+- `spiking` — `LIFBlendActivation` from the LIF adaptation tuner.
+- `mapping` — `calculate_activation_shift` for bias compensation.
+- `gui` — `S_ALLOCATION_MODES` in the wizard schema.
 
-- `pipelining.pipeline_steps` imports `AdaptationManager` (model building),
-  `calculate_activation_shift` (activation shift step), and tuners.
-
-## Exported API (\_\_init\_\_.py)
-
-`AdaptationManager`, `LRRangeFinder`, `calculate_activation_shift`.
-
-## SmoothAdaptationTuner — invariants
-
-### Baseline-anchored absolute floor
-
-The per-cycle rollback gate in `_adaptation()` enforces two thresholds, and
-takes the stricter:
-
-1. **Relative (noise) gate.** `post_acc >= pre_cycle_acc - _rollback_tolerance`.
-   Catches individual-cycle regressions outside measurement noise.
-2. **Absolute (baseline-anchored) gate.** `post_acc >= max(_validation_baseline
-   * (1 - _pipeline_tolerance), _pipeline_hard_floor)`. This prevents
-   cumulative drift across many cycles: without it, every cycle can drop
-   by up to `_rollback_tolerance` relative to its predecessor, and over
-   ~N cycles the committed model could silently degrade by ~`N *
-   rollback_tolerance` without any single cycle looking regressive.
-
-`_validation_baseline` is captured exactly once at run start (the average
-of two consecutive `validate_n_batches` calls at rate 0.0). When no
-baseline has been seeded (e.g. unit tests that invoke `_adaptation()`
-without calling `run()`), the gate falls back to the relative threshold.
-
-The `AdaptationTargetAdjuster`'s target decay is also clamped to the
-baseline-anchored floor, so a stuck-streak relaxation cannot take the
-tuner below the cumulative-drift guard.
-
-### Post-step stabilization
-
-After `_after_run()` has forced the final `rate == 1.0` state and the
-validation-only safety net (`_attempt_recovery_if_below_floor`) has run,
-`run()` calls `_stabilize_at_full_rate()`. This runs one extra
-`train_steps_until_target` pass with:
-
-- LR: the cached pipeline LR (no new LR search).
-- Budget: `_stabilization_budget()` steps — default `2 *
-  _budget.max_training_steps`. Subclasses can return `None` / `0` to
-  disable (or a larger value for tuners that benefit more from extra
-  stabilization).
-- Hooks: `_recovery_training_hooks(1.0)` installed/removed via
-  `try/finally` so pruning and decorator invariants are enforced
-  throughout and released on exception.
-- Rollback: pre-stabilization state is restored if validation drops by
-  more than `_rollback_tolerance`, so this pass can never make the model
-  worse than the point it was invoked at.
-
-This gives the model additional training time at the committed rate=1.0
-configuration — the regime where we historically saw slow but steady
-accuracy recovery that ran out of budget inside the per-cycle `_adaptation`
-loop.
-
-### Rate-aware weight quantization
-
-`transformations/normalization_aware_perceptron_quantization.py` accepts
-a `rate` argument that linearly interpolates in weight-value space between
-the FP and fully-quantized effective weights: `rate * q(w) + (1 - rate) *
-w`. At `rate == 0` it is identity; at `rate == 1` it matches the legacy
-full-quantization output bit-exactly. Partial rates produce a *coherent*
-small perturbation of the FP model rather than a random mix of FP and
-integer weights — which is what the legacy `_mix_params` random-mask mix
-produced on top of a rate-ignorant transformation, and the reason
-`NormalizationAwarePerceptronQuantizationTuner` used to fast-fail on every
-partial-rate cycle. `parameter_scale` is always set to the full-range
-scale (so downstream IR mapping is unaffected by the rate).
+## Exported API
+- `AdaptationManager` — per-perceptron decorator-rate host (re-exported from `orchestration/`).
+- `LRRangeFinder` — the LR range search.
+- `calculate_activation_shift` — quantization shift amount.

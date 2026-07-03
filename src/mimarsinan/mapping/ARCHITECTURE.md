@@ -1,50 +1,68 @@
-# mapping/ — Model-to-Hardware Mapping
+# mapping/ — PyTorch model → IR → packed hardware cores
 
-Converts PyTorch models to an intermediate representation (IR) and packs the IR into physical hardware cores.
+Takes the mapper graph produced by `torch_mapping` (a `ModelRepresentation` of
+`Mapper` nodes) and lowers it to deployable hardware: `IRMapping` materializes
+weights into an `IRGraph` of `NeuralCore` / `ComputeOp` / `WeightBank` nodes,
+pruning compacts and segments that graph, and packing bins the resulting soft
+cores into `HardCore`s under `ChipCapabilities` constraints (flat or hybrid
+multi-stage). Latency scheduling, shape-only layout estimation (for search),
+layout verification, and chip export round out the path from trained model to
+simulator-ready chip description. Design notes live beside the code in
+`FIRING.md` (firing-mode contract) and `LATENCY.md` (which latency engine to
+use when).
 
-## Subpackages
+## Key files
+| File | Purpose |
+|---|---|
+| `ir_mapping_class.py` | `IRMapping` — the unified full-weight mapper (emit mixin over the core base) |
+| `ir_mapping_class_base.py` | `IRMappingCore` — mapping walk producing an `IRGraph`, built on the shape-only `LayoutIRMapping` tiling base |
+| `ir_mapping_class_emit.py` | `IRMappingEmitMixin` — emits concrete `NeuralCore` nodes with materialized weights alongside the shape walk |
+| `map_model_to_ir.py` | `map_model_to_ir` — one-call convenience wrapper around `IRMapping.map` |
+| `model_representation.py` | `ModelRepresentation` — mapper-graph DAG with a memory-frugal refcounted topological executor and perceptron enumeration |
+| `mapping_utils.py` | Legacy star re-export facade; import from the concrete modules in new code |
+| `weight_reuse.py` | Time-domain weight-reuse phase classification of segments by `weight_bank_id` (default-off, pure read of the IR) |
+| `ir/` | Unified IR: `IRGraph` container, node types (`NeuralCore`, `ComputeOp`, `WeightBank`, `IRSource`), legacy conversions |
+| `mappers/` | Mapper hierarchy consumed by the graph: base, structural, perceptron, leading-dim, conv1d/conv2d, scale propagation |
+| `layout/` | Shape-only layout SSoT (`LayoutIRMapping`, layout plan/packer, segmentation) for fast architecture-search estimation |
+| `platform/` | `ChipCapabilities`, `MappingStrategy`, platform constraints, tiling/coalescing structure |
+| `pruning/` | IR pruning, liveness semantics, mask/compaction application, boundary policy, graph segmentation |
+| `packing/` | `SoftCore`/`HardCore` bin packing, placement engine, hybrid multi-stage mapping (`HybridHardCoreMapping`) |
+| `latency/` | `IRLatency` (IR topology tiers) and `ChipLatency` (packed-chip cycle scheduling) plus upstream closure |
+| `support/` | Shared mechanisms: activation/per-source scales, bias compensation, core geometry, source spans, residual merge, scheduling |
+| `verification/` | Layout verification services, capacity checks, hardware suggester, on-chip fraction/majority metrics, wizard verify |
+| `export/` | Chip export (`cpp_chip_model` emission) and IR quantization verify for simulation |
+| `onchip_attention/` | D5 research frontier: attention/LayerNorm on-chip mappability verdicts; not in the deployment path |
 
-| Directory | Doc | Role |
-|-----------|-----|------|
-| `ir/` | [ir/ARCHITECTURE.md](ir/ARCHITECTURE.md) | `IRGraph`, `NeuralCore`, `ComputeOp` |
-| `pruning/` | [pruning/ARCHITECTURE.md](pruning/ARCHITECTURE.md) | IR pruning, liveness, segmentation |
-| `packing/` | [packing/ARCHITECTURE.md](packing/ARCHITECTURE.md) | Soft/hard cores, bin packing, hybrid mapping |
-| `verification/` | [verification/ARCHITECTURE.md](verification/ARCHITECTURE.md) | Layout verifier, HW suggester |
-| `latency/` | [latency/ARCHITECTURE.md](latency/ARCHITECTURE.md) | `IRLatency`, `ChipLatency`, upstream closure |
-| `platform/` | [platform/ARCHITECTURE.md](platform/ARCHITECTURE.md) | Platform constraints, tiling structure |
-| `export/` | [export/ARCHITECTURE.md](export/ARCHITECTURE.md) | Chip export and IR quantization verify |
-| `layout/` | [layout/ARCHITECTURE.md](layout/ARCHITECTURE.md) | Shape-only layout SSoT |
-| `mappers/` | [mappers/ARCHITECTURE.md](mappers/ARCHITECTURE.md) | Mapper hierarchy |
-| `support/` | [support/ARCHITECTURE.md](support/ARCHITECTURE.md) | Scales, bias bakes (negative-value shift, TTFS), geometry, scheduling |
-| `onchip_attention/` | [onchip_attention/ARCHITECTURE.md](onchip_attention/ARCHITECTURE.md) | D5 transformer-frontier op→core mappability: realizability verdicts for attention/LN sub-ops + on-chip LayerNorm mean-centering (two-rail `NeuralCore`). Isolated research module; not in the deployment path. |
+## Dependencies
+- `code_generation` — `cpp_chip_model` chip types (`SpikeSource`, chip model) for export, softcore packing, and spike-source spans.
+- `models` — `Perceptron` and nn layers consumed by mappers; builders registry for the wizard layout verify.
+- `transformations` — `PerceptronTransformer` weight/bias extraction; weight quantization and quantization bounds/verify for export.
+- `torch_mapping` — `convert_torch_model` and encoding-layer marking in the wizard layout verify.
+- `pipelining` — `ModelRegistry` model loading in the wizard layout verify.
+- `chip_simulation` — spiking-semantics constants for pruning liveness.
+- `tuning` — activation-shift calculation for bias compensation.
+- `common` — env flags (`cuda_debug_enabled`) and `best_effort` wrapper.
 
-## Root modules (orchestration)
+## Dependents
+- `chip_simulation` — runs simulations from mapped `HardCoreMapping`s / segments.
+- `code_generation` — generates chip code from mapping outputs.
+- `config_schema` — mapping-related configuration surfaces.
+- `gui` — visual inspection of mappings.
+- `models` — model-side hooks into mapping types.
+- `pipelining` — pipeline steps that drive mapping, packing, and verification.
+- `search` — architecture search over shape-only layout estimates.
+- `spiking` — spiking-node interplay with IR types.
+- `torch_mapping` — builds the mapper graph that this module consumes.
+- `transformations` — transformations parameterized by mapping structures.
+- `tuning` — tuning stages that consult mapping/latency info.
+- `visualization` — plots of IR graphs and core layouts.
 
-| File | Role |
-|------|------|
-| `ir_mapping.py` | `IRMapping` — materializes weights into `IRGraph` |
-| `mapping_utils.py` | Legacy re-export facade (`__all__`-scoped) for `ModelRepresentation`, the mapper classes, and `hard_cores_to_chip`; import from the concrete modules in new code |
-| `weight_reuse.py` | Time-domain weight-reuse phase classification (round-1 keystone, default-off): `classify_segment_phases` / `weight_reuse_plan_from_graph` group a segment's `NeuralCore`s by `weight_bank_id` into N reprogram + M reuse passes (`SegmentReusePhases` / `WeightReusePlan`); `format_weight_reuse_summary` is the SCM-gate one-liner. Pure read of the IR; gated by `ChipCapabilities.allow_weight_reuse`. |
-| `model_representation.py` | Dual-purpose mapper graph.  `__call__` is a memory-frugal topological executor: a reverse-dependency refcount (computed once in `_ensure_exec_graph` as `self._consumer_count`) drives `del values[dep]` once every consumer has run, so peak live values is bounded by the maximum simultaneously-live working set rather than the total node count.  `self._peak_live_values` is exposed for testing / memory introspection. |
-
-## Multi-input `ComputeOpMapper` contract
-
-A `ComputeOpMapper` whose source list has length > 1 receives a tuple of
-tensors at forward time (one per source, in source order).  Two guards are
-in force before the wrapped module is invoked:
-
-1. **Compile-time shape recording.**  `MapperGraphConverter` records one
-   batch-stripped shape per source in `ComputeOpMapper.input_shapes`
-   (`tuple[tuple[int, ...] | None, ...]`).  Missing FX metadata becomes
-   `None` for that source; downstream callers fall back to source-array
-   shapes.
-2. **Runtime broadcast guard.**  `ComputeOpMapper._check_broadcastable`
-   runs `torch.broadcast_shapes` on the actual input shapes before
-   `self.module(*inputs, ...)` is called.  Any broadcast failure raises
-   `ShapeMismatchError` with the op name, observed shapes, and recorded
-   `input_shapes` — no large tensor is ever allocated with malformed
-   shapes.
-
-Import from subpackages directly (e.g. `from mimarsinan.mapping.ir import IRGraph`). [`__init__.py`](__init__.py) re-exports the public mapping API.
-
-Run `python scripts/import_path_inventory.py --check-legacy-path` to audit banned legacy paths.
+## Exported API
+`__init__.py` re-exports the public mapping surface:
+- IR types: `IRSource`, `IRNode`, `NeuralCore`, `ComputeOp`, `IRGraph`, `WeightBank`.
+- Mapping: `IRMapping` (model → IR).
+- Platform: `ChipCapabilities`, `MappingStrategy`, `compute_core_input_count`, `compute_fc_tiling_mode`.
+- Packing: `SoftCore`, `HardCore`, `HardCoreMapping`, `greedy_pack_softcores`; hybrid — `SegmentIOSlice`, `HybridStage`, `HybridHardCoreMapping`, `build_hybrid_hard_core_mapping`.
+- Latency: `ChipLatency`, `IRLatency`.
+- Scales: `compute_per_source_scales`.
+- Pruning: `prune_ir_graph`, `compute_propagated_pruned_rows_cols`, `GlobalPruningResult`, `compute_global_pruned_sets`, `compute_model_io_boundary_policy`.

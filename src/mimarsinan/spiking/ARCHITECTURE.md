@@ -1,84 +1,58 @@
-# `mimarsinan/spiking/`
+# spiking/ — Spike-train encoding, the unified segment-aware NF forward, and deployed-cascade calibration
 
-Host-side spike-train construction and boundary encoding shared by training
-(NF cycle-accurate), SCM/HCM (`SpikingHybridCoreFlow`), and deployment-side
-runners (SANA-FE, Lava, Nevresim).
+This module is the torch-side single source of truth for how spiking models
+execute and how values cross host/chip boundaries. `SegmentForwardDriver`
+partitions a model's mapper exec graph into host value nodes and neural spike
+segments and runs one decode→compute→re-encode walk for every mode; per-mode
+spike dynamics (cycle-accurate LIF, single-spike TTFS, pointwise analytical)
+live in pluggable segment policies. The same boundary encode/decode helpers
+are consumed by `SpikingHybridCoreFlow` and the SANA-FE/Lava/Nevresim runners,
+so NF↔SCM parity holds by construction; the calibration helpers (scale-aware
+boundaries, DFQ bias matching, gain correction, theta co-training) close the
+remaining ANN→SNN conversion gap on the deployed cascade.
 
-## Files
-
-| File | Exports | Role |
-|---|---|---|
-| `spike_trains.py` | `lif_spike_train`, `uniform_spike_train`, `rates_to_spike_train` | Low-level spike-train constructors (signed IF — no relu on the membrane). |
-| `lif_utils.py` | `unwrap_lif_activation`, `apply_cycle_accurate_trains_to_model` | Walk-and-unwrap activation helpers. |
-| `boundary_config.py` | `BoundaryConfig` | Runtime config for boundary encode/decode (re-exported by `segment_boundary`). |
-| `segment_boundary.py` | `BoundaryConfig`, `encode_segment_input`, `encode_compute_boundary`, `decode_segment_output`(`_torch`) | **Single source of truth** for boundary encode/decode (rates+cached trains → `(T,B,in)` spike train; spike counts → `counts/T` rates). Consumed identically by `SpikingHybridCoreFlow._forward_rate`, SANA-FE/Lava/Nevresim runners, and the segment-forward driver. |
-| `compute_boundary.py` | `encode_compute_boundary` | Cycle-accurate spike emission for subsumed **plain LIF-Perceptron** ComputeOp boundaries (wrappers stay rate-mode). The input gather (`_gather_op_input_train`) applies the producer's `node_output_shifts` entry before its [0,1] clamp (Case B) and warns once per op on unshifted negatives. |
-| `segment_partition.py` | `classify_spike_producers`, `partition_spike_segments`, `partition_perceptron_segments`, `perceptron_of`, `is_encoding_perceptron`, `is_value_boundary` | Mode-agnostic exec-graph classification. **Value boundaries** are the raw input and *every* host `ComputeOpMapper` (matching HCM, where every host ComputeOp runs once on decoded values); perceptrons produce spikes; structural nodes inherit. Segments = maximal connected spike regions; an `is_encoding_layer` perceptron starts a fresh segment (it consumes a decoded value). |
-| `scale_aware_boundaries.py` | `calibrate_scale_aware_boundaries`, `propagate_boundary_input_scales` | Sets each block's `activation_scale` (theta_out) and forward-propagates `input_activation_scale` (= upstream theta_out) so the fixed-window TTFS [0,1] train normalizes/un-normalizes each boundary. `propagate_boundary_input_scales` drives the V6 polymorphic walk (`mappers/scale_propagation.py`); per-kind decisions live on each `Mapper.propagate_boundary_scale`, not an isinstance chain. |
-| `dfq_bias_correction.py` | `channel_mean`, `teacher_activation_samples`, `teacher_channel_means`, `mean_abs_gap`, `dfq_correct_biases` | **Mode-agnostic DFQ core** shared by the TTFS and LIF distribution matchers. `dfq_correct_biases(model, ann_mean, cascade_means_fn, *, bias_iters, eta)` runs the per-neuron loop `bias += eta*(ann_mean − cascade_mean)`, re-measuring the cascade each round via the injected readout; returns before/after mean `|gap|`. The teacher-mean capture (forward hooks) and channel-mean helper live here too. |
-| `distribution_matching.py` | `match_activation_distributions` | **TTFS distribution-matching calibration** for the deployed single-spike cascade. (1) scale-aware boundaries from the teacher's per-perceptron activation `quantile` (theta_out); (2) the shared `dfq_correct_biases` loop over the TTFS cascade readout, reviving death-cascade-starved deep neurons. Model must already be in deployed-TTFS state. Returns a stats dict (before/after mean `|gap|` + %dead over the DFQ window). |
-| `gain_correction.py` | `apply_cascaded_gain_correction`, `g_relative`, `g_geometric`, `gamma_of`, `per_perceptron_cascade_depth` | **Per-cascade-depth gain correction** for the deployed single-spike TTFS cascade. The ramp decode gives an arriving spike at local time `τ` effective gain `(T−τ+1)/(T+1)` (quadratic over-weight of early spikes) and deep layers fire late → geometric **death cascade** (budget `d_max(S)≈0.56·√S`). Inverts it with a per-layer `activation_scale` trim `θ_d *= γ^d` (relative; `γ = 1 − √S/(S+1)`, leaves the depth-0 entry untouched — parity-safe) or `ρ_0·γ^d` (geometric; `ρ_0 = 1 − c/S`), then re-propagates input scales. Pure calibration change → decode bit-exact → NF↔SCM parity holds. Derived + validated in `docs/research_artifacts_for_cascaded_ttfs_tuning` (closes ~85% of the cold conversion gap; composes with the genuine fine-tune). |
-| `theta_cotrain.py` | `promote_activation_scale_per_channel` | **Per-channel trainable theta promotion** for the deployed cascade. Rebinds each non-encoding perceptron's `activation_scale` to a per-output-channel `requires_grad` Parameter — on the perceptron AND every node that references it — so a genuine-cascade fine-tune co-optimises the firing-gain (θ, the death-cascade's root cause) WITH the weights. `set_activation_scale` only copies `.data`, so a NEW trainable param needs this rebind or the optimiser trains a tensor the forward never reads. Idempotent (re-syncs node refs); encoding/entry θ left fixed (contract-pinned). The key lever of the near-lossless cascaded recipe (`docs/research_artifacts_for_cascaded_ttfs_tuning/51_near_lossless_recipe.md`). |
-| `lif_distribution_matching.py` | `match_lif_activation_distributions` | **LIF DFQ bias correction** for the deployed cycle-accurate cascade. The shared `dfq_correct_biases` loop over the LIF cascade readout (decoded values read via the segment forward's `node_value_recorder` side-channel), matching each perceptron's deployed channel-mean to the teacher ANN's. NO scale-aware boundary retune (LIF's rate code is linear; the q-quantile scale is already set in Activation Analysis) — a pure first-moment conversion-gap correction. Model must already be in deployed-LIF state. |
-| `segment_forward.py` | `SegmentForwardDriver` | **Unified segment-aware NF driver** — ONE walk for every spiking mode. Iterates the exec graph; host ComputeOps run **once on decoded values** (recording per-channel minima into `compute_min_recorder` and applying `_negative_shift` before downstream re-encode); spike segments are delegated to `policy.run_segment`. `__call__` also accepts a `node_value_recorder` dict (stashed on the driver) — a pure side-channel a policy fills with per-perceptron decoded values for DFQ calibration; it never alters the forward output. Fails loud (`NotImplementedError`) on host ops interleaved inside a neural segment (a segment runs atomically at its first member). |
-| `segment_policies.py` | `LifSegmentPolicy`, `AnalyticalSegmentPolicy` (+ re-export `TtfsSegmentPolicy`) | Per-mode segment dynamics. **LIF**: perceptrons cascade per-cycle signed-IF off upstream trains; a subsumed (encoding) perceptron mirrors HCM's two outputs — host-op rate value for ComputeOp consumers + cycle-emitted train (plain LIF only; Conv wrappers stay uniform); region exits decode `count/T`. When a `node_value_recorder` is set on the driver, each perceptron's decoded value (`train.mean(0)` = rate*scale) is recorded keyed by `id(perceptron)` (pure side-channel). **Analytical** (`ttfs`/`ttfs_quantized`): every node runs once on ideal values (the pointwise-analytical NF). Top-level picklable classes (tuner installs pickle the forwards). |
-| `segment_policy_ttfs.py` | `TtfsSegmentPolicy` | **TTFS** (`ttfs_cycle_based`): latency-windowed single-spike sim (1-cycle delay per perceptron hop, arrival latch, window `[depth, depth+T)`); non-encoding entries consume boundary values as single-spike TTFS trains (the rising edge of HCM's latched encode — ramp reconstruction makes the dynamics equal); a **subsumed encoding** entry charges the ideal decoded value directly (it mirrors HCM's host ComputeOp, so it is bias-mode-agnostic); region exits decode `count/T * activation_scale`. The per-neuron bias ramp is identical for `on_chip` and `param_encoded` (both give cumulative `bias·(t_local+1)`), so the NF forward does not branch on bias mode. **Drive-time bias install**: `prepare()` recomputes each perceptron's `effective_preactivation_bias` (norm-folded; differentiable) fresh on every drive and installs it on the `TTFSActivation`s; `finalize()` restores the raw `layer.bias` reference (the picklable stored contract). Subtracting the raw bias under a non-identity normalization poured `fused_b − b` into the ramp (the 2026-06-08 cascaded+offload fusion cliff); the drive-time recompute also closes the stale-reference class of bugs structurally. **Offload-boundary STE** (`boundary_surrogate_temp`, default `None` = severed): the boundary re-encode (`_boundary_single_spike_train`, `round`-based) has zero gradient, so the genuine backward trains only the LAST segment past a host-ComputeOp cut. When a temperature is set, `_straight_through` keeps the forward train byte-identical but routes the backward through a soft spike-time (`sigmoid((c − T(1−v))/temp)`), so the genuine cascade gradient reaches EVERY segment (the §7 gradient-severance root cause). Skipped under `no_grad` (eval forward already bit-exact). |
-| `chip_aligned_nf.py` | `chip_aligned_segment_forward` | Thin LIF wrapper: `SegmentForwardDriver` + `LifSegmentPolicy` (falls back to `run_cycle_accurate` when the model has no mapper graph). Threads an optional `node_value_recorder` through to the policy (per-perceptron decoded values for `lif_distribution_matching`). The torch-side mirror of HCM `_forward_rate`; per-neuron parity reference (`test_nf_hcm_per_node_spike_parity_mmixcore.py`, `test_nf_hcm_multisegment_parity.py`). Installed as the LIF tuner's NF probe. |
-
-## Boundary contract
-
-`encode_compute_boundary(op, …)` returns a `(T, B, D)` binary spike train
-when the op is a **plain LIF-Perceptron** boundary in cycle-accurate mode;
-otherwise `None`. "Plain LIF-Perceptron" means
-`op.params["module"]` exposes an `activation` that unwraps to `LIFActivation`
-and is *not* a wrapper (e.g. `Conv2DPerceptronMapper`, where
-`module.perceptron is not module`). Wrappers, non-LIF perceptrons, and
-structural ops (mean/flatten/add/etc.) stay rate-only — the chip's
-calibrated weights expect uniform encoding at those boundaries.
-
-## Signed integrate-and-fire
-
-`LIFActivation` and the spike-train builders charge the membrane with the
-**signed** normalized input (`x / scale`, no `relu`): negative weighted input
-lowers the membrane and may recover, matching the deployed chip / HCM
-(`memb += W@s + b`). This is what makes per-neuron NF↔HCM spike-count parity
-exact; the old relu-on-membrane diverged whenever a cycle's input went negative.
-See `tests/unit/models/test_lif_step_vs_activation_parity.py`.
-
-## `encode_segment_input` invariants
-
-- A cached spike train in `state_buffer_spikes[node_id]` is consumed verbatim — never re-encoded.
-- A missing non-raw input slice in cycle-accurate mode while *other* slices ARE cached is a hard error (`ValueError`): silently uniform-encoding a missing slice hides upstream emission bugs.
-- "Raw input only" stages uniform-encode the gathered rate.
-- In legacy rate mode, missing slices fall back to `rates_to_spike_train` with the configured `spike_mode`.
-
-## `chip_aligned_segment_forward`
-
-Installed by `LIFAdaptationTuner._finalize_forward` as `model.forward` at
-**finalize** (`rate == 1.0`). The blend ramp runs in the value domain (golden,
-non-destructive); this forward is installed only at finalize. All
-downstream pipeline steps (WQ, NormFusion, SCM accuracy probes) then validate
-against the same forward that Nevresim / SANA-FE / Lava run, closing the NF→chip
-gap by construction. Falls back to `run_cycle_accurate` only when the model has
-no mapper graph.
-
-## Unified segment-forward model
-
-`SegmentForwardDriver` is the single decode→compute→re-encode walk for all
-modes; only the segment-internal spike dynamics differ per mode and live in the
-policy's `run_segment`. LIF is the degenerate policy (depth-0, multi-spike,
-no latch, uniform encode); TTFS is the latency-windowed single-spike policy.
-`TTFSSegmentForward` (`models/spiking/training/ttfs_segment_forward.py`) and
-`chip_aligned_segment_forward` are thin wrappers over the same driver, so the
-boundary semantics (every ComputeOp = host value boundary) cannot drift between
-modes.
+## Key files
+| File | Purpose |
+|---|---|
+| `spike_trains.py` | Spike-train constructors: uniform, cycle-accurate signed-IF (`lif_spike_train`), materialized, and the legacy rate fallback. |
+| `boundary_config.py` | `BoundaryConfig` dataclass — runtime knobs for boundary encode/decode (T, spiking mode, cycle accuracy, dtype, negative shift). |
+| `segment_boundary.py` | SSOT boundary encode/decode: `encode_segment_input` (cached trains take precedence; missing non-raw slices are a hard error) and `decode_segment_output(_torch)` (counts / T). |
+| `compute_boundary.py` | `encode_compute_boundary` — cycle-accurate spike emission for subsumed plain-LIF-Perceptron ComputeOp boundaries; wrapper mappers and non-LIF ops stay rate-mode. |
+| `segment_partition.py` | Exec-graph classification (spike producer vs host value boundary) and union-find partition into maximal spike segments; encoding perceptrons start fresh segments. |
+| `segment_forward.py` | `SegmentForwardDriver` — the mode-agnostic walk: host ComputeOps run once on decoded values (with min recording and `_negative_shift`), spike segments delegate to `policy.run_segment`. |
+| `segment_policies.py` | `LifSegmentPolicy` (per-cycle signed-IF cascade, uniform re-encode at entries, `node_value_recorder` side-channel) and `AnalyticalSegmentPolicy` (every node once on ideal values); re-exports `TtfsSegmentPolicy`. |
+| `segment_policy_ttfs.py` | `TtfsSegmentPolicy` — latency-windowed single-spike sim (arrival latch, ramp decode), drive-time effective-bias install, optional offload-boundary STE (`boundary_surrogate_temp`). |
+| `chip_aligned_nf.py` | `chip_aligned_segment_forward` — thin LIF wrapper (driver + `LifSegmentPolicy`, `run_cycle_accurate` fallback); the torch mirror of HCM `_forward_rate`. |
+| `lif_utils.py` | Unwrap wrapped `LIFActivation`s; toggle `use_cycle_accurate_trains` model-wide. |
+| `scale_aware_boundaries.py` | Set per-block `activation_scale` (theta_out, encoding layer pinned) and forward-propagate `input_activation_scale` via the polymorphic mapper walk. |
+| `dfq_bias_correction.py` | Mode-agnostic DFQ core: teacher channel-mean capture (forward hooks) and the per-neuron `bias += eta*(ann − cascade)` loop with gap stats. |
+| `distribution_matching.py` | TTFS distribution matching: quantile scale-aware boundaries + the DFQ loop over the deployed single-spike cascade; returns gap/dead-fraction stats. |
+| `lif_distribution_matching.py` | LIF DFQ bias correction over the deployed cycle-accurate cascade (read via the `node_value_recorder` side-channel); no boundary retune. |
+| `gain_correction.py` | Per-cascade-depth theta trim (`gamma^d`, encoding/entry pinned) inverting the TTFS ramp-decode death cascade; `apply_gain_at_rate` for ramped tuning. |
+| `theta_cotrain.py` | Promote non-encoding perceptrons' `activation_scale` to trainable per-output-channel Parameters (rebound on every referencing node) for cascade fine-tuning. |
 
 ## Dependencies
-
-- **Internal**: `mimarsinan.mapping.ir` (`ComputeOp`, `IRSource`), `mimarsinan.mapping.packing.hybrid_hardcore_mapping` (`HybridStage`, `HybridHardCoreMapping`), `mimarsinan.models.activations` (`LIFActivation`, `run_cycle_accurate`), `mimarsinan.models.spiking.training.ttfs_segment_forward` (`TTFSSegmentForward` — `distribution_matching` drives the cascade for DFQ bias correction).
-- **External**: `torch`, `spikingjelly.activation_based` (IFNode + surrogates).
+- `mapping` — IR types (`ComputeOp`, `IRSource`) and `HybridHardCoreMapping`/`HybridStage` for boundary encode; mapper classes (`InputMapper`, `ComputeOpMapper`, `Conv1D/2DPerceptronMapper`) for node classification; `scale_propagation.walk_out_scales` for boundary-scale propagation.
+- `models` — `LIFActivation`, `run_cycle_accurate`, `TTFSActivation`, `TransformedActivation` (neuron dynamics + unwrap); `effective_preactivation_bias` (norm-folded TTFS bias); lazily `TTFSSegmentForward` as the DFQ cascade readout.
+- `chip_simulation` — `spike_modes` spike-timing encoders (Uniform / TTFS), shared with the simulators so encode timing cannot drift.
+- `tuning` — lazily `LIFBlendActivation` in `lif_utils` (unwrap/toggle during the blend ramp; deferred import avoids a cycle).
 
 ## Dependents
+- `chip_simulation` — SANA-FE neural-stage recording (`decode_segment_output`); `spiking_mode_policy` installs `chip_aligned_segment_forward` as the NF probe.
+- `mapping` — `support/bias_compensation` drives `SegmentForwardDriver` + `TtfsSegmentPolicy`.
+- `models` — `nn/activations/lif.py` builds spike trains; `perceptron_mixer/perceptron.py` unwraps LIF activations.
+- `pipelining` — the simulation factory toggles cycle-accurate trains; the SCM mapping and TTFS adaptation steps calibrate/propagate boundary scales.
+- `tuning` — the LIF/TTFS adaptation tuners (chip-aligned forward, DFQ matching, gain correction) and the KD blend tuner (theta co-training).
 
-- `mimarsinan.models.hybrid_core_flow.SpikingHybridCoreFlow` — calls `encode_compute_boundary` / `encode_segment_input` in `_forward_rate`.
-- `mimarsinan.tuning.tuners.lif_adaptation_tuner` — installs `chip_aligned_segment_forward` as `model.forward` at finalize (post-ramp).
+## Exported API
+`__init__.py` re-exports:
+- `BoundaryConfig`, `encode_segment_input`, `encode_compute_boundary`, `decode_segment_output`, `decode_segment_output_torch` — the boundary contract.
+- `SegmentForwardDriver`, `LifSegmentPolicy`, `TtfsSegmentPolicy` — the unified segment forward.
+- `lif_spike_train`, `uniform_spike_train`, `rates_to_spike_train` — spike-train constructors.
+- `unwrap_lif_activation`, `apply_cycle_accurate_trains_to_model` — LIF helpers.
+- `calibrate_scale_aware_boundaries`, `propagate_boundary_input_scales` — boundary-scale calibration.
+- `match_activation_distributions`, `match_lif_activation_distributions` — DFQ distribution matching.
+
+`AnalyticalSegmentPolicy`, `chip_aligned_segment_forward`, gain correction,
+theta co-training, and the partition helpers are imported from their modules
+directly.

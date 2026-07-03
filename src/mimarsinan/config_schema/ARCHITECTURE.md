@@ -1,134 +1,41 @@
-# config_schema/ -- Deployment Config Schema and Validation
+# config_schema/ — Deployment config SSOT: defaults, derivation, validation, provenance, display views
 
-Single source of truth for default deployment parameters, platform constraints,
-pipeline-mode presets, and validation of deployment config (JSON for main.py and
-merged flat config for pipeline runtime).
+Every pipeline run consumes one flat config dict merged from deployment parameters and
+platform constraints; this module is the single source of truth for its default values,
+pipeline-mode presets, and the derivation rules that fold spiking-mode implications and
+the `ConversionPolicy` recipe into that dict. It also validates both the deployment
+config JSON (`main.py` input) and the merged runtime config, records each key's concern
+group and provenance in a namespaced registry, and builds presentation-only config views
+for the GUI monitor. `DeploymentPipeline` and the wizard both build configs through these
+helpers so they stay in sync.
 
-## Key Components
-
-| File | Symbols | Purpose |
-|------|---------|---------|
-| `defaults.py` | `DEFAULT_DEPLOYMENT_PARAMETERS`, `DEFAULT_PLATFORM_CONSTRAINTS`, `PIPELINE_MODE_PRESETS`, `CONFIG_KEYS_SET`, `get_default_*`, `apply_preset` | Defaults and preset merge. **`spiking_mode` default `"lif"`**. Tuner keys: `tuner_target_floor_ratio`, `tuner_calibrate_smooth_tolerance`, etc. Platform: `allow_coalescing`, `allow_per_layer_s` (EW1 RESERVED temporal capability gate), `allow_scheduling`, `max_schedule_passes`, `scheduling_latency_weight`. Temporal allocation (EW1 RESERVED): `s_allocation` (`uniform`/`explicit`/`budget`), `s_allocation_explicit`, `s_allocation_budget`. |
-| `deployment_derivation.py` | `derive_deployment_parameters`, `derive_pipeline_runtime_parameters` | Mirrors deployment derivation rules: float weights → vanilla and disables quantization; cycle-accurate LIF/TTFS and `ttfs_quantized` enable `activation_quantization` preconditioning; runtime spiking fields are rehydrated for minimal persisted configs. **Folds the ConversionPolicy SSOT recipe** (`_fold_conversion_recipe` → `ConversionPolicy.derive(spiking_mode, ttfs_cycle_schedule)`): writes the capability-derived `enable_nevresim`/`enable_sanafe`/`enable_loihi`, the recipe `driver`, and the per-mode `knobs` **all authoritatively** (`dp[k]=v` — a user value is overwritten; Pure SSOT). A backend is enabled iff it can run the mode (nevresim disabled for synchronized, loihi for every non-LIF mode). The recipe is the sole source of these knobs: the ~58 former research/recipe defaults are deleted from `DEFAULT_DEPLOYMENT_PARAMETERS` / `CONFIG_KEYS_SET` / `KEY_SPECS` and live only as internal recipe-table constants in `conversion_policy.py`. Called from `runtime.build_flat_pipeline_config` and `DeploymentPipeline`. |
-| `runtime.py` | `build_flat_pipeline_config` | Merges defaults + deployment/platform dicts for API preview and wizard (no device I/O). Applies preset, `derive_deployment_parameters`, then `derive_pipeline_runtime_parameters`. |
-| `validation.py` | `validate_deployment_config`, `validate_merged_config`, `s_allocation_config_errors` | JSON / merged config validation; rejects deprecated coalescing keys via `mapping.coalescing`. **`spiking_mode` membership** is enforced via `require_known_spiking_mode` — a mode outside `ALL_SPIKING_MODES` (incl. the removed `rate`) is reported as an error with a migration hint. **EW2 (Q2 foot-gun closed):** `s_allocation_config_errors(dp, pc)` validates the per-layer-S declaration — `s_allocation ∈ {uniform\|explicit\|budget}`. Only `uniform` is WIRED; `explicit`/`budget` are RESERVED resolver seams that would silently no-op to uniform, so validation **loud-rejects** them at config-validation time (`temporal_allocation.unsupported_s_allocation_error` / the `S_ALLOCATION_SUPPORTED_MODES` SSOT) — BEFORE the silent-uniform resolver path is reachable. Wired into `validate_deployment_config` (so `validate_wizard_state` enforces it). `pc` is retained for call-site stability but no capability gate is consulted. `uniform` (default) ⇒ byte-identical. |
-| `display_view.py` / `display_view_meta.py` | `build_config_display_view`, `build_pipeline_config_view`, `load_saved_config_from_run_dir`, `CONFIG_DISPLAY_GROUPS`, `FIELD_DISPLAY_META` | Presentation-only metadata and structured monitor payloads: merges defaults, annotates field provenance (`explicit` / `default` / `derived` / `preset` / `runtime`), expands nested blocks (cores, recipes, model_config, arch_search). Values come from existing defaults/merge helpers — not duplicated. **EW2:** `FIELD_DISPLAY_META` adds the per-layer-S form fields — `allow_per_layer_s` (hardware capability gate) + `s_allocation` / `s_allocation_explicit` / `s_allocation_budget` (tuning group). |
-| `namespaced_schema.py` | `CONCERN_GROUPS`, `KeySpec`, `KEY_SPECS`, `LEGACY_KEY_TABLE`, `to_namespaced`, `to_flat`, `provenance_table`, `keys_with_derivation`, `keys_with_exposure`, `registered_flat_keys`, `unregistered_default_keys` | **V8** — namespaces the flat deployment/platform keys under their §2 concern group and records each key's owner + derivation (provenance registry) plus persistence exposure (`user` / `derived` / `system` / `runtime`). One translation table (`LEGACY_KEY_TABLE`) drives a byte-identical flat↔namespaced bijection (`to_namespaced`/`to_flat`). The runtime config stays flat (SSOT); this is the REGISTRY/PROVENANCE layer (concern view), **not** the consumer-side resolver. |
-| `__init__.py` | Re-exports | Public API |
-
-### Namespaced concern groups (V8)
-
-The flat runtime config is still the byte-identical SSOT every pipeline step reads.
-`namespaced_schema.py` adds the *concern view*: every default deployment/platform key
-carries a `KeySpec(group, name, owner, derivation)` so it has an owning §2 group and
-recorded provenance. `to_namespaced(flat) → {group: {name: value}}` and its inverse
-`to_flat` round-trip byte-identically for every registered key (unregistered/runtime
-keys pass through under the `run` group), so existing configs resolve identically.
-
-Groups mirror §2 of `docs/DESIGN_GOALS_and_refactoring_vectors.md`: `workload`,
-`spiking`, `hardware` (**migrated**: core grid + `weight_bits` + the `allow_*`
-capability gates), `conversion`, `tuning`, `training`, `deployment_target`, `run`.
-**Strangler-fig status:** all default keys are registered with provenance and the
-shim is byte-identical; the `hardware` group is migrated end-to-end (declared owners +
-self-contained bijection), the other groups are registered but their owners still read
-the flat keys. The **EW1 RESERVED** per-layer-S axis adds `allow_per_layer_s` to
-`hardware` (the capability gate, owner `ChipCapabilities/TemporalAllocation`) and
-`s_allocation` / `s_allocation_explicit` / `s_allocation_budget` to `conversion`
-(owner `TemporalAllocation`); the per-depth S map derivation is deferred to research
-(not on this branch), default `uniform` ⇒ byte-identical.
-
-#### Provenance is real (not all `default`)
-
-`derivation` records *where a key's value comes from* and is no longer uniformly
-`"default"`:
-
-| derivation | keys | written by |
-|---|---|---|
-| `derived` | `pipeline_mode`, `activation_quantization`, `weight_quantization` | `deployment_derivation.derive_deployment_parameters` (wizard parity) |
-| `derived` | `firing_mode`, `spike_generation_mode`, `thresholding_mode` | `DeploymentPipeline.__init__` (`setdefault` from `spiking_mode`) |
-| `runtime` | `device`, `input_shape`, `input_size`, `num_classes` | `DeploymentPipeline.__init__` (device probe / data provider) |
-| `default` | the remaining declared defaults | `DEFAULT_DEPLOYMENT_PARAMETERS` / `DEFAULT_PLATFORM_CONSTRAINTS` |
-
-The derived/runtime keys are *not* in the defaults dict (they have no standalone
-default value); they are registered as extra KeySpecs so the provenance table is
-complete. The conversion/runtime tags are locked to `display_view_meta.DERIVED_KEYS`
-/ `RUNTIME_KEYS` (the established UI provenance truth) by the schema tests, and the
-derivation pass's always-written trio is asserted `derived`. `keys_with_derivation(d)`
-queries the registry by provenance.
-
-#### This module is the registry; DeploymentPlan is the consumer-side resolver (V1)
-
-`namespaced_schema` is the **REGISTRY / PROVENANCE** layer: it records each key's
-owning concern + derivation and offers the namespaced concern view. It is **not** the
-place consumers read resolved decisions. **Consumer-side resolution is owned by V1's
-`DeploymentPlan`** (`pipelining/core/deployment_plan.py`): steps read
-`DeploymentPlan` fields/properties, which are the resolved SSOT. Re-pointing the ~50
-flat `config.get` consumers at `to_namespaced(config)[group]` is **deliberately not
-done** — it would duplicate `DeploymentPlan` and add a dict-projection per read
-without reducing blast radius. Concretely, the `deployment_target` group's backend
-gates (`enable_nevresim_simulation` / `enable_loihi_simulation` /
-`enable_sanafe_simulation`) are *already* resolved fields on `DeploymentPlan`, and the
-residual `sanafe_*` / `nevresim_connectivity_mode` reads are single-caller and
-co-located — so the correct future migration target for them is `DeploymentPlan`
-fields, not `to_namespaced`. **To finish a group, add resolved fields to
-`DeploymentPlan`** (the consumer SSOT) and keep `namespaced_schema` as the provenance
-registry that the resolver's keys are declared in.
-
-### Standing rule — pin every external dependency + version-guard at boundaries
-
-The SANA-FE SIGFPE was an unpinned C++ dependency upgrade that silently core-dumped
-instead of failing loud (design goal §7/§9). The standing policy, generalized:
-
-- **Pin** every external dependency (and reduction-order-sensitive numerics, e.g.
-  cuBLAS) to an exact version so the deployment is deterministic given (config, seed,
-  versions).
-- **Version/capability-guard at each integration boundary** (each backend/codegen
-  seam): validate the dep's version/capabilities *at assembly* and raise an actionable
-  error, never let an incompatibility reach the native layer. The sanafe version guard
-  is the concrete instance; new backends must add the analogous guard.
-
-## Deployment parameters (selected)
-
-Read by `DeploymentPipeline` / steps (see also `deployment_pipeline.default_deployment_parameters`):
-
-| Key | Role |
-|-----|------|
-| `spiking_mode` | `"lif"` (default), `"ttfs"`, `"ttfs_quantized"`, `"ttfs_cycle_based"` (the removed `"rate"` is loud-rejected by `require_known_spiking_mode` → use `"lif"`) |
-| `cycle_accurate_lif_forward` | LIF deploys the chip-aligned cross-layer forward (installed at finalize) when true (default **true**) |
-| `thresholding_mode` | `"<"` strict vs `"<="` inclusive LIF firing |
-| `enable_nevresim_simulation` | Append Nevresim Simulation step (default **true**) |
-| `nevresim_connectivity_mode` | `"runtime"` (default) or `"compile_time"` — chip wiring in generated C++ |
-| `enable_loihi_simulation` | Append Loihi Simulation step (LIF only) |
-| `enable_sanafe_simulation` | Append SANA-FE Simulation step |
-| `loihi_parity_sample_index` | Deterministic test index for Loihi parity |
-| `sanafe_sample_count`, `sanafe_arch_preset`, `sanafe_custom_arch_path` | SANA-FE step behaviour |
-| `activation_quantization`, `weight_quantization`, `pruning`, `pruning_fraction`, `prune_sparsity` | Step gating (`prune_sparsity` = D4 structured pre-mapping pruning fraction, default `0.0` ⇒ no-op, byte-identical) |
-| `enable_training_noise` | Optional `NoiseAdaptationStep` after LIF adaptation |
-| `tuning_budget_scale_ramp_steps` | Default-off option that lets large `tuning_budget_scale` values lengthen gradual-ramp steps instead of only recovery sample budget |
-| `max_simulation_samples`, `seed`, `simulation_steps` | Simulation subsampling and cycles |
-| `training_recipe`, `tuning_recipe` | AdamW + cosine defaults (ViT-aligned) |
-
-The per-mode conversion recipe (driver, fast-ladder/blend/QAT/BN-freeze/quantile
-knobs, `optimization_driver`) is **no longer a set of user config keys** — it is
-derived by `ConversionPolicy.derive` and folded in authoritatively. The four
-genuine special-cases (LIF BN-freeze, `ttfs_quantized` full-quantile decode,
-cascaded fast-only-never-controller genuine blend, synchronized genuine-QAT) are
-documented in `tuning/orchestration/conversion_policy.py`.
-
-`CONFIG_KEYS_SET` in `defaults.py` lists keys consumed by steps/tuners/simulation (including `enable_nevresim_simulation`, `enable_loihi_simulation`, `sanafe_*`, `cycle_accurate_lif_forward`, `onchip_majority_gate`/`onchip_majority_min_fraction` — the SoftCoreMappingStep on-chip parameter-majority gate — and `capacity_gate`, the E4 placement-capacity gate (SoftCoreMappingStep `_run_capacity_gate` + scheduler `capacity_precheck`), and `preload_weights` — the F3 dual-regime boolean read by `DeploymentPlan._resolve_weight_source` to derive `weight_source='torchvision'` (unset/false ⇒ from_scratch, byte-identical) — and `prune_sparsity` — the D4 structured pre-mapping pruning fraction resolved on `DeploymentPlan` and applied by `SoftCoreMappingStep` (`soft_core_structured_pruning.apply_structured_pruning_if_enabled`) before mapping; default `0.0`/unset ⇒ no-op ⇒ byte-identical). Extend it when adding new pipeline config.
+## Key files
+| File | Purpose |
+|---|---|
+| `defaults.py` | `DEFAULT_DEPLOYMENT_PARAMETERS` / `DEFAULT_PLATFORM_CONSTRAINTS` / training+tuning recipes, `PIPELINE_MODE_PRESETS` + `apply_preset`, `CONFIG_KEYS_SET`, and copy-returning getters (incl. user/system splits driven by exposure). |
+| `deployment_derivation.py` | `derive_deployment_parameters` (wizard-parity quantization/pipeline-mode rules; folds the `ConversionPolicy.derive` recipe authoritatively — sim enables, driver, per-mode knobs) and `derive_pipeline_runtime_parameters` (rehydrates firing/spike-generation/thresholding fields). |
+| `runtime.py` | `build_flat_pipeline_config` — merges defaults + overrides + preset + both derivation passes the same way `DeploymentPipeline` does, without device I/O. |
+| `validation.py` | `validate_deployment_config` (JSON shape, spiking-mode membership, TTFS firing consistency, coalescing-key rejection), `validate_merged_config` (runtime flat config), `s_allocation_config_errors` (loud-rejects reserved `explicit`/`budget` temporal-allocation modes). |
+| `namespaced_schema.py` | Provenance registry: `KeySpec` (group/owner/derivation/exposure per flat key), `CONCERN_GROUPS`, `KEY_SPECS`, `LEGACY_KEY_TABLE`, byte-identical `to_namespaced`/`to_flat` bijection, and `keys_with_derivation` / `keys_with_exposure` / `provenance_table` queries. |
+| `display_view.py` | `build_config_display_view` / `build_pipeline_config_view` / `load_saved_config_from_run_dir` — structured, JSON-safe monitor payloads with per-field source annotation (explicit/default/derived/preset/runtime). |
+| `display_view_meta.py` | Display metadata and resolution helpers: `CONFIG_DISPLAY_GROUPS`, `FIELD_DISPLAY_META`, `RUNTIME_KEYS` / `DERIVED_KEYS` / `TOP_LEVEL_RUN_KEYS`, field-source and default-value resolution. |
+| `display_view_build.py` | Nested display-block builders: recipe, model-config (via model registry schema), cores, arch-search blocks, and the pipeline-steps preview. |
 
 ## Dependencies
-
-- **Internal**: `mapping.coalescing` (coalescing-key validation), `tuning.orchestration.temporal_allocation` (the `s_allocation` mode constants the EW2 validation enforces), `tuning.orchestration.conversion_policy` (`deployment_derivation` folds `ConversionPolicy.derive` — the mode→recipe SSOT).
+- `chip_simulation` — `spiking_semantics` predicates (`require_known_spiking_mode`, `requires_ttfs_firing`, `forces_activation_quantization`, `is_cycle_based`) used by derivation and validation.
+- `tuning` — `orchestration.conversion_policy.ConversionPolicy` (the mode→recipe SSOT folded into derived parameters) and `orchestration.temporal_allocation` (`s_allocation` mode constants and the unsupported-mode error).
+- `mapping` — `platform.coalescing.coalescing_config_errors` rejects deprecated coalescing keys during config validation.
+- `pipelining` — lazy display-view imports: `core.registry.model_registry.get_model_config_schema` (model-config field schema) and `core.pipelines.deployment_specs` (pipeline-steps preview).
+- `gui` — lazy display-view imports: `wizard.config_builder.build_deployment_config_from_state` (expand saved wizard configs) and `wizard.schema.get_wizard_nas_schema` (arch-search block labels).
 
 ## Dependents
+- `pipelining` — `core.pipelines.deployment_pipeline` (defaults + both derivation passes) and `core.platform_constraints_resolver` (`DEFAULT_PLATFORM_CONSTRAINTS`).
+- `gui` — `wizard/schema.py` (form defaults), `wizard/validation.py` (`validate_deployment_config`), `wizard/config_builder.py` (`KEY_SPECS` / `keys_with_exposure`), `server/routes_wizard.py` (`build_flat_pipeline_config` preview), and `runs.py` / `runtime/process_monitor.py` / `runtime/collector/mixins/read_api.py` (monitor config views).
 
-- `pipelining.pipelines.deployment_pipeline`
-- `gui/wizard/schema.py` (wizard forms; labels should match defaults)
-- `gui/wizard/config_builder.py` (`derive_deployment_parameters` after preset)
-- `gui/server/` (`build_flat_pipeline_config` for `/api/pipeline_steps`; `build_deployment_config_from_state` for `/api/run`)
-- `gui/data_collector.py`, `gui/runs.py`, `gui/process_manager.py` (`build_config_display_view` / `build_pipeline_config_view` for monitor `config_view` in pipeline overview)
-
-## Exported API (`__init__.py`)
-
-`DEFAULT_DEPLOYMENT_PARAMETERS`, `DEFAULT_PLATFORM_CONSTRAINTS`, `PIPELINE_MODE_PRESETS`, `CONFIG_KEYS_SET`, `get_default_deployment_parameters`, `get_default_platform_constraints`, `get_pipeline_mode_presets`, `get_config_keys_set`, `apply_preset`, `validate_deployment_config`, `validate_merged_config`, `s_allocation_config_errors`, `build_flat_pipeline_config`, `build_config_display_view`, `build_pipeline_config_view`, `CONCERN_GROUPS`, `KEY_SPECS`, `KeySpec`, `LEGACY_KEY_TABLE`, `keys_with_derivation`, `keys_with_exposure`, `provenance_table`, `to_flat`, `to_namespaced`.
+## Exported API
+`__init__.py` re-exports:
+- Defaults and presets: `DEFAULT_DEPLOYMENT_PARAMETERS`, `DEFAULT_PLATFORM_CONSTRAINTS`, `DEFAULT_TRAINING_RECIPE`, `DEFAULT_TUNING_RECIPE`, `PIPELINE_MODE_PRESETS`, `CONFIG_KEYS_SET`, the `get_default_*` / `get_pipeline_mode_presets` / `get_config_keys_set` getters, `apply_preset`.
+- Runtime merge: `build_flat_pipeline_config`.
+- Validation: `validate_deployment_config`, `validate_merged_config`, `s_allocation_config_errors`.
+- Display views: `build_config_display_view`, `build_pipeline_config_view`.
+- Provenance registry: `CONCERN_GROUPS`, `KEY_SPECS`, `KeySpec`, `LEGACY_KEY_TABLE`, `keys_with_exposure`, `keys_with_derivation`, `provenance_table`, `to_flat`, `to_namespaced`.

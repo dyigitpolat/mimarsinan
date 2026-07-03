@@ -1,35 +1,46 @@
-# model_training/ -- Training Utilities
+# model_training/ — Trainers, training recipes, losses, and pretrained-weight loading
 
-Provides the standard training loop, specialized trainers for quantization-aware
-training, and shared training utilities.
+Provides the training machinery the deployment pipeline uses to pretrain models and
+to recover accuracy after each adaptation/tuning stage. The central abstraction is
+`BasicTrainer` — a facade owning the model, device, data loaders, and loss, whose
+epoch/step/eval/subsample APIs are implemented in the `basic_trainer_*` companion
+modules. Transform trainers subclass it to optimize an auxiliary full-precision model
+while the forward pass runs through a transformed copy (quantization-aware training),
+and `TrainingRecipe` is a declarative optimizer/scheduler spec that both the epoch
+paths and the opt-in recipe-driven step recovery consume.
 
-## Key Components
-
-| File | Symbols | Purpose |
-|------|---------|---------|
-| `basic_trainer.py` | `BasicTrainer` | Standard PyTorch training loop with cosine annealing, mixed precision, early stopping. **`test_on_subsample`**: deterministic test subsample (same indices as `SimulationRunner` / SCM / HCM when `seed` + `max_simulation_samples` match). Step-based APIs: `train_n_steps` (cosine `T_max` = steps), `validate_n_batches` (averaged accuracy), `train_steps_until_target` (convergence-aware: periodic checks every `check_interval` steps with `patience`-based early stopping; `min_steps` suppresses patience until that many gradient steps; `min_improvement` (default `1e-3`) sets the threshold for a check to count as progress — use `1e-4` for fine recovery; validates via `validate_n_batches`). **Plateau LR reduction** (`plateau_lr_factor` default `1.0` / `plateau_lr_reductions` default `0` → no-op = current break-on-patience): when `factor < 1` and `reductions > 0`, a plateau (stale checks reach `patience`) multiplies the base LR by `factor`, rebuilds the scheduler at the reduced base (`_rebuild_scheduler_at_reduced_lr` clears `initial_lr` so the rebuilt scheduler re-stamps the reduced base instead of walking the LR back up), resets `stale_checks`, decrements the budget, and continues; it only breaks once the reductions are exhausted and it plateaus again — a coarse-to-fine recovery ladder (tuner `tuning_recovery_lr_plateau`). **Recipe-driven STEP recovery** (`tuning_recipe_recovery`, default off → byte-identical): when on AND a `recipe` is configured, the three step builders (`_get_optimizer_and_scheduler_steps` / `build_step_optimizer` / `_scheduler_and_scaler_for_optimizer`) build the optimizer via `build_optimizer(self._recipe_optimization_model(), lr, recipe)` (recipe optimizer family / weight-decay / momentum/betas) and the scheduler via `build_scheduler(opt, recipe, total_steps)` (warmup + cosine over the budget; discovered `lr` = peak) instead of the hardcoded `Adam(wd=5e-5)` + constant/linear-warmup path. `train_steps_until_target` then drives the recipe schedule (not constant). **Plateau-vs-recipe composition**: the recipe schedule is the BASE LR trajectory; a plateau reduction multiplies its PEAK on top (`_rebuild_scheduler_at_reduced_lr` scales each group's `initial_lr` peak by `factor`, preserving layer-wise-LR-decay ratios, and restarts the warmup+cosine from the reduced peak). **`return_steps`** (default `False`): when `True`, returns `(accuracy, steps_run)` instead of the bare accuracy float — the gradual cycle sums these into `_gradual_train_steps` to size the bounded stabilization pass (tuner `tuning_stabilization_bounded`). **`cosine_decay`** (default `False`): when `True`, anneals the LR from `lr` down to ~0 over exactly `max_steps` via `CosineAnnealingLR` (the bounded cosine stabilization pass) instead of the constant/linear-warmup schedule. Batch helpers: `next_training_batch`, `next_validation_batch`, `iter_validation_batches`, `evaluate_loss_on_batch`, and `train_one_step(..., return_post_update_loss=True)` for stable LR probing on fixed batches. Epoch APIs: `train_until_target_accuracy` returns a metric on the **final** model weights. `train_validation_epochs` runs fixed train epochs with validation after each epoch and **does not** call `test()` (tolerance calibration fallback). `validate()` is one minibatch; `test()` is the full test split. **Eval forwards** (`test` / `validate_n_batches`) run under `torch.amp.autocast("cuda")` on cuda devices; argmax-accuracy is robust to FP16. **`iter_validation_batches`** serves from a GPU-resident cache built lazily on first use (cleared on `set_validation_batch_size`). **`validate_correctness_on_indices(batch_indices)`** returns per-example correctness (bool list) over fixed validation-cache batches — the paired-eval primitive for the McNemar rollback gate (tuning P2b); reads only the validation cache (never `test()`, preserving test-set isolation). Step-based optimizer (`_get_optimizer_and_scheduler_steps`) uses fused Adam on cuda. `train_n_steps` / `train_steps_until_target` accept an optional `optimizer=` (default `None` → build fresh + `del`, bit-exact; supplied → reused and never deleted so Adam moments persist across recovery calls, tuning P6); `build_step_optimizer(lr)` builds an ownable step optimizer and `_scheduler_and_scaler_for_optimizer` builds the matching schedule/scaler around it. **Validation tagging**: `validation_context(kind)` is a reentrant context manager that suffixes validation metric names emitted inside the block with `" (kind)"` (e.g. `"Validation accuracy (probe)"`). Tuners wrap exploratory validations (LR range search, rate-proposal evaluation) in `validation_context("probe")` so the GUI Accuracy panel can render committed tuning progress and exploratory probes as distinct traces on the same chart; untagged validations keep the original name. |
-| `training_utilities.py` | `AccuracyTracker`, `BasicClassificationLoss`, `CustomClassificationLoss` | Loss functions and accuracy tracking |
-| `weight_transform_trainer.py` | `WeightTransformTrainer` | Trainer that applies weight transforms each epoch (for quantization-aware training). Overrides `_recipe_optimization_model()` to group the aux-model params, so recipe-driven recovery (`tuning_recipe_recovery`) and the epoch/step recipe paths optimize the aux weights. |
-| `perceptron_transform_trainer.py` | `PerceptronTransformTrainer` | Trainer that applies per-perceptron transforms each epoch |
-| `weight_loading.py` | `WeightLoadingStrategy`, `TorchvisionWeightStrategy`, `CheckpointWeightStrategy`, `URLWeightStrategy`, `UnsupportedPreloadError`, `PretrainedFactoryBuilder`, `resolve_weight_strategy`, `torchvision_source_supported` | Strategy pattern for loading pretrained weights from various sources. `resolve_weight_strategy("torchvision", builder)` raises the typed `UnsupportedPreloadError` (a `ValueError` subclass) EARLY when the builder has no `get_pretrained_factory()` — a native from-scratch vehicle (deep_cnn/deep_mlp/lenet5/mlp_mixer_core) has no pretrained source, so `run.py` catches this typed error and records a CLEAN `skipped`/UNSUPPORTED exit (0) instead of an opaque rc=1. `torchvision_source_supported(builder)` is the non-raising predicate (the F3 generator uses it to gate the pretrained arm); it narrows to the `PretrainedFactoryBuilder` protocol via `TypeGuard`. |
+## Key files
+| File | Purpose |
+|---|---|
+| `basic_trainer.py` | `BasicTrainer`: loaders/iterators lifecycle, optimizer+scheduler construction (legacy Adam path or recipe-driven), `validation_context` metric tagging, pickling; delegates epoch/step/eval/subsample APIs to the companion modules. |
+| `basic_trainer_epochs.py` | Epoch-based training: `train_validation_epochs` (fixed epochs, validate each) and `train_until_target_accuracy` (early exit + final `test()`). |
+| `basic_trainer_steps.py` | Step-based training: `train_n_steps`, `train_one_step` (post-update loss probing), and `train_steps_until_target` — convergence checks with patience, best-state rollback, optional plateau LR-reduction ladder, reusable external optimizer, `return_steps`/`cosine_decay` modes. |
+| `basic_trainer_eval.py` | Evaluation helpers: full-test `test()`, single-batch `validate()`, `validate_n_batches` over a GPU-resident validation cache (seeded reservoir subsample), and `validate_correctness_on_indices` for paired per-example McNemar-style comparisons. |
+| `basic_trainer_subsample.py` | `test_on_subsample`: deterministic test-set subsample evaluation using the same indices as the chip simulators (shared seed + `max_samples`), with optional VRAM probe logging. |
+| `training_recipe.py` | `TrainingRecipe` frozen dataclass plus `build_recipe` (from config, strictly opt-in), `build_param_groups` (weight-decay exclusion + layer-wise LR decay), `build_optimizer` (adam/adamw/sgd), and `build_scheduler` (warmup + cosine/constant). |
+| `training_utilities.py` | `AccuracyTracker` (forward-hook accuracy), `BasicClassificationLoss` (label-smoothed CE), `CustomClassificationLoss` (CE + activation-overflow penalty via `SavedTensorDecorator`). |
+| `weight_transform_trainer.py` | `WeightTransformTrainer`: trains an aux model, applies a weight transformation into the main model each backward pass, and transfers gradients back (QAT for weight transforms). |
+| `perceptron_transform_trainer.py` | `PerceptronTransformTrainer`: same aux-model scheme but applies a per-`Perceptron` module transformation through preallocated temp slots, with NaN-sanitized gradient transfer. |
+| `weight_loading.py` | Pretrained-weight strategies (`TorchvisionWeightStrategy`, `CheckpointWeightStrategy`, `URLWeightStrategy`), `resolve_weight_strategy` (raises typed `UnsupportedPreloadError` early for builders without a pretrained source), and the non-raising `torchvision_source_supported` predicate. |
 
 ## Dependencies
-
-- **Internal**: `transformations.perceptron_transformer` (`PerceptronTransformer`), `models.layers` (`SavedTensorDecorator`), `models.perceptron_mixer.perceptron` (`Perceptron`).
-- **External**: `torch`, reporting via reporter callback.
+- `data_handling` — `shutdown_data_loader` for clean loader teardown in `BasicTrainer.close()`.
+- `chip_simulation` — `compute_test_subsample_indices` so `test_on_subsample` picks the exact indices the simulator runners use.
+- `common` — `vram_probe_enabled` env flag gating VRAM logging during subsample evaluation.
+- `tuning` — `clone_state_for_trainer` / `restore_state_for_trainer` for best-state snapshot and rollback in `train_steps_until_target`.
+- `models` — `SavedTensorDecorator` (activation capture in `CustomClassificationLoss`) and `Perceptron` (module slots in `PerceptronTransformTrainer`).
 
 ## Dependents
+- `pipelining` — trainer construction and reuse across pipeline steps (`trainer_pipeline_step`, `trainer_factory`, `simulation_factory`, mapping steps) and pretrained preloading (`weight_preloading_step` uses `build_recipe` + `resolve_weight_strategy`).
+- `tuning` — tuner base and orchestration build trainers and recipes (`tuner_base`, `rate_tuner_seam`, `fast_ladder`); `perceptron_transform_tuner` uses `PerceptronTransformTrainer`.
+- `data_handling` — lazy import of `BasicClassificationLoss` as the default loss in `data_provider`.
 
-Most-imported training module. Used by:
-- `tuning.tuners` (all tuners use trainers for adaptation recovery)
-- `search` evaluators (small-step, TE-NAS)
-- `pipelining.pipeline_steps` (pretraining, analysis, quantization, fusion steps)
-- `data_handling` (lazy import for `BasicClassificationLoss`)
+## Exported API
+`__init__.py` re-exports:
+- `BasicTrainer` — the standard trainer facade.
+- `AccuracyTracker`, `BasicClassificationLoss` — accuracy hook and default loss.
+- `WeightTransformTrainer`, `PerceptronTransformTrainer` — aux-model QAT trainers.
+- `WeightLoadingStrategy`, `TorchvisionWeightStrategy`, `CheckpointWeightStrategy`, `URLWeightStrategy` — pretrained-weight strategies.
+- `UnsupportedPreloadError`, `resolve_weight_strategy`, `torchvision_source_supported` — preload resolution and its typed failure/predicate.
 
-## Exported API (\_\_init\_\_.py)
-
-`BasicTrainer`, `AccuracyTracker`, `BasicClassificationLoss`,
-`WeightTransformTrainer`, `PerceptronTransformTrainer`,
-`WeightLoadingStrategy`, `TorchvisionWeightStrategy`, `CheckpointWeightStrategy`,
-`URLWeightStrategy`, `UnsupportedPreloadError`, `resolve_weight_strategy`,
-`torchvision_source_supported`.
+(`CustomClassificationLoss`, the `training_recipe` builders, and the `basic_trainer_*` companions are imported by path, not re-exported.)

@@ -1,46 +1,39 @@
-# data_handling/ -- Dataset Management
+# data_handling/ — Dataset providers, preprocessing, and DataLoader construction
 
-Provides abstractions for loading and serving datasets to the training,
-tuning, and evaluation subsystems.
+Supplies every training, tuning, search, and chip-simulation stage with datasets
+through one abstraction: a `DataProvider` declares per-split raw datasets and
+transform chains, and a `DataLoaderFactory` turns a provider into PyTorch
+`DataLoader`s (or FFCV loaders when the provider opts in via non-empty
+`ffcv_transforms()`). Providers are created by name through
+`BasicDataProviderFactory`'s class-level registry, and a config-driven
+`PreprocessingSpec` (resize + normalize) wraps each provider's native
+transforms so model input shape is a pipeline concern, not provider code.
 
-## Key Components
-
-| File | Symbols | Purpose |
-|------|---------|---------|
-| `data_provider.py` | `DataProvider`, `ClassificationMode`, `RegressionMode` | Abstract base. Subclasses override three per-split dict methods: `raw_datasets()` (datasets shared by both paths), `torch_transforms()` (raw torchvision transform lists; base class wraps with preprocessing in `_assemble_split` → `_wrap_with_preprocessing`), and `ffcv_transforms()` (FFCV op chains `[(op_name, kwargs), ...]`; non-empty opts the provider into FFCV — `enable_ffcv()` is derived, unless the global `MIMARSINAN_DISABLE_FFCV=1` kill-switch (`FFCV_DISABLE_ENV`) forces every provider onto the torch path on hosts without the compiled `ffcv` package). Beton write parameters like `max_resolution` are derived from `_preprocessing_spec.resize_to` (the canonical model-input contract) — no separate provider override. `get_validation_batch_size()` matches training batch size capped by validation set size. |
-| `data_provider_factory.py` | `DataProviderFactory`, `BasicDataProviderFactory` | Factory with class-level registry (`@register` decorator) |
-| `data_loader_factory.py` | `DataLoaderFactory`, `shutdown_data_loader` | Creates PyTorch `DataLoader`s for train/val/test splits; validation loaders use `shuffle=False`. Routes through `ffcv/` iff the provider opts in via `enable_ffcv()`. FFCV is a hard requirement when opted in — any FFCV import/build/load failure propagates; no silent fallback to the torch path. Helper to shut down multi-worker loaders. |
-| `dataset_views.py` | `ApplyTransform`, `SizedDataset` | Wrapper that composes a raw dataset with a per-call transform (`SizedDataset` is the indexable+sized protocol the base must satisfy). The base class uses this in `_assemble_split` to keep the raw dataset transform-free (the form FFCV needs for beton writing). |
-| `test_sample_loader.py` | `load_test_sample_by_index`, `load_test_samples_by_index` | Deterministic test-set sample fetch by global index (Loihi/SANA-FE parity steps). |
-| `data_providers/` | Concrete providers | MNIST, MNIST-32, CIFAR-10, CIFAR-100, ECG, ImageNet; each may set `DISPLAY_LABEL` for GUI dropdowns. CIFAR-10 / CIFAR-100 opt into FFCV by overriding `ffcv_transforms()` with explicit per-split op chains. MNIST / MNIST-32 / ECG / ImageNet inherit the empty default (MNIST: no grayscale-collapse op available in stock FFCV; ECG: 1D signal data; ImageNet: train/val use different crop policies that don't share a single `resize_to`). |
-| `ffcv/` | FFCV-backed fast data loading | See `ffcv/ARCHITECTURE.md` |
+## Key files
+| File | Purpose |
+|---|---|
+| `data_provider.py` | `DataProvider` base (per-split `raw_datasets()` / `torch_transforms()` / `ffcv_transforms()` hooks, seeded splits, batch-size policy) plus `ClassificationMode` / `RegressionMode` prediction modes that supply losses. |
+| `data_provider_factory.py` | `DataProviderFactory` interface and `BasicDataProviderFactory`: `@register` name registry, cached `create()` for split stability, and GUI metadata (`list_registered`, `get_metadata`). |
+| `data_loader_factory.py` | `DataLoaderFactory` builds train/val/test loaders (forkserver workers, FFCV routing iff the provider opts in — no silent fallback) and `shutdown_data_loader` for controlled multi-worker teardown. |
+| `preprocessing.py` | `PreprocessingSpec` / `resolve_preprocessing`: config-driven resize + normalization (with named presets) composed around each provider's raw transform list. |
+| `dataset_views.py` | `ApplyTransform` view composing a raw dataset with a per-call transform, and the `SizedDataset` protocol; keeps raw datasets transform-free for beton writing. |
+| `sample_loader.py` | `load_test_sample_by_index` / `load_test_samples_by_index`: deterministic test-set samples by global index (hardware parity steps). |
+| `data_providers/` | Registered concrete providers: MNIST, MNIST-32, Fashion-MNIST, KMNIST, SVHN, CIFAR-10, CIFAR-100, ECG, ImageNet; CIFAR-10/100 opt into FFCV. |
+| `ffcv/` | FFCV-backed fast loading: beton cache/writer, pipeline specs inferred from providers, and an `IndexedLoader` exposing per-batch indices. |
 
 ## Dependencies
-
-- **Internal**: `model_training.training_utilities.BasicClassificationLoss` (lazy import in `ClassificationMode`); `common.best_effort` (log-and-degrade seam for loader shutdown/telemetry helpers).
-- **External**: `torch`, `torchvision`.
+- `common` — `env` for environment knobs (`DISABLE_FFCV_VAR`/`ffcv_disabled` kill-switch, `resource_debug_enabled`, `ffcv_cache_dir`, `imagenet_root`); `best_effort` for never-raising loader shutdown and resource snapshots.
+- `model_training` — `training_utilities.BasicClassificationLoss`, lazily imported inside `ClassificationMode.create_loss()` to avoid a hard import cycle.
 
 ## Dependents
+- `pipelining` — pipeline steps and the deployment pipeline construct providers and loaders.
+- `tuning` — tuners evaluate candidates through data loaders.
+- `search` — evaluators need providers/loaders for scoring architectures.
+- `chip_simulation` — simulation runners fetch deterministic test samples and loaders.
+- `model_training` — trainers consume loaders and `shutdown_data_loader`.
+- `gui` — provider registry metadata for dataset dropdowns.
 
-Most-imported module in the codebase. Used by:
-- `model_training` (trainer needs data loaders)
-- `tuning` (tuners need data loaders for evaluation)
-- `search` (evaluators need data loaders and providers)
-- `pipelining` (pipeline steps and deployment pipeline)
-- `chip_simulation` (simulation runner)
-
-## Exported API (\_\_init\_\_.py)
-
-`DataProvider`, `ClassificationMode`, `RegressionMode`, `DataProviderFactory`,
-`BasicDataProviderFactory`, `DataLoaderFactory`, `shutdown_data_loader`.
-
-## Multi-worker DataLoader shutdown
-
-Any code that creates a `DataLoader` with `num_workers > 0` must call
-`shutdown_data_loader(loader)` when done (e.g. in a `finally` block or at end of
-use). This ensures worker processes and IPC queues are torn down in a controlled
-order and avoids `OSError: Bad file descriptor` and related errors on process exit.
-After shutting down workers, we unregister PyTorch's atexit worker cleanup
-callbacks (registered when `persistent_workers` and `pin_memory` are True) so
-process exit is fast and Ctrl+C does not produce "Exception ignored in atexit
-callback" noise.
+## Exported API
+- `DataProvider`, `ClassificationMode`, `RegressionMode` — provider base class and prediction modes.
+- `DataProviderFactory`, `BasicDataProviderFactory` — factory interface and registry-backed implementation.
+- `DataLoaderFactory`, `shutdown_data_loader` — loader construction and multi-worker teardown.

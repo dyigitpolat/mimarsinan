@@ -1,81 +1,64 @@
-# models/ -- Neural Network Models
+# models/ — Torch model zoo, NN building blocks, and the deployable spiking simulator
 
-Contains model definitions, activation/decorator layers, spiking simulators,
-and architecture-specific implementations.
+This module owns everything that *is* a `nn.Module` in the deployment pipeline: the
+trainable source architectures (MLP-Mixer variants, depth-probe MLP/CNN vehicles,
+LeNet-5, SqueezeNet, pretrained torchvision bridges), the custom layers/activations/
+decorators they are built from (`nn/`), and the spiking executors that run a mapped
+`HybridHardCoreMapping` as a torch model (`spiking/`, centered on
+`SpikingHybridCoreFlow`). Builders in `builders/` register each architecture with the
+pipeline's `ModelRegistry` so configs can instantiate models by `model_type` id.
 
-## Key Components
-
-| File | Symbols | Purpose |
-|------|---------|---------|
-| `activations.py` | `LeakyGradReLU`, `LIFActivation`, `uniform_encode_to_spike_train`, `run_cycle_accurate`, `StrictATanSurrogate`, `ChipInputQuantizer`, `TTFSInputGridQuantizer`, … | Custom autograd activations. **Encoding-input quantizers** (`nn/activations/autograd.py`): `ChipInputQuantizer` = STE `round(x·T)/T` (LIF chip rate grid); `TTFSInputGridQuantizer` = STE TTFS encode→decode round trip `(S − round(S·(1−x)))/S` (`TTFSGridSnapFunction`), bit-identical to `ttfs_encoding.ttfs_input_grid_quantize` — they differ at half-step ties. **`LIFActivation`**: SpikingJelly IFNode (subtractive reset), **signed integrate-and-fire** — charges the membrane with `x/scale` (no relu), so it can go negative and recover, matching the chip/HCM (`memb += W@s + b`); rate mode = multi-step mean; **`set_cycle_accurate(True)`** = single-step per call; **`forward_spiking`** + **`use_cycle_accurate_trains`** delegate to **`mimarsinan.spiking.spike_trains.lif_spike_train`**. **`thresholding_mode`**: `"<"` strict vs `"<="` inclusive. |
-| `nn/activations/ttfs_spiking.py` | `TTFSActivation`, `run_ttfs_cycle_accurate`, `refresh_perceptron_bias_references` | Genuine single-spike TTFS node (the TTFS analog of `LIFActivation`/`IFNode`): `set_cycle_accurate(True)` ramp-integrates and fires once; non-cycle mode is the analytical staircase kernel; `encoding=True` is the value→spike segment entry. `input_scale`/`activation_scale` (=θ) map weights/threshold into the normalised rate domain. **Channel-axis broadcast (`_scale_values` / `_broadcast_scale` + `_channel_broadcast_view`)**: scalar scales/biases stay scalar; a per-output-channel `[C]` scale (θ`_cotrain`) or bias broadcasts on the *channel* axis — for a conv `[B, C, H, W]` it is reshaped to `[1, C, 1, 1]` so it does not broadcast against `W` (which crashed when `C != W`, the `Conv2DPerceptronMapper` per-channel-θ crash); the scalar and 2-D linear `[B, C]` paths (where `[C]` already broadcasts on the last axis) are byte-identical. |
-| `../spiking/spike_trains.py` | `lif_spike_train`, `uniform_spike_train`, `rates_to_spike_train` | Shared spike-train construction for PyTorch cycle-accurate path and hybrid SCM. |
-| `decorators.py` | `NoisyDropout`, `SavedTensorDecorator`, `ShiftDecorator`, `RateAdjustedDecorator`, `RateBuffer`, … | Composable decorators. **Short-circuits**: omit `ShiftDecorator` when `shift_rate==0`; `RateAdjustedDecorator` / `NoisyDropout` no-op at rate 0 (the rate==0 RNG-skip of the RandomMask `torch.rand` is load-bearing for parity). `RateAdjustedDecorator.rate` may be a plain float or a `RateBuffer` (registered scalar `alpha`, `set(a)` fills in place); when a buffer, the rate is read live at transform time so an adaptation ramp advances O(1) without rebuilding the decorator stack (the W9 fix). |
-| `layers.py` | Re-exports; `TransformedActivation`, `norm_affine_params`, … | Thin re-exporter + standalone layers. `norm_affine_params(norm)` = `(u, beta, mean)` of a normalization's frozen-stats affine form (differentiable; works for `BatchNorm1d/2d` and `FrozenStatsNormalization`) — SSOT consumed by `PerceptronTransformer._get_u_beta_mean` and `effective_preactivation_bias`. |
-| `supermodel.py` | `Supermodel` | Top-level wrapper (preprocessor + perceptron flow) |
-| `spiking/hybrid/host.py` | `HybridFlowHost` | TYPE_CHECKING-only typing contract for the `SpikingHybridCoreFlow` mixins (`stage_io`/`lif_step`/`rate_forward`/`ttfs_step` subclass it; plain `object` at runtime) declaring the attributes `__init__` sets and the cross-mixin method surface. |
-| `spiking/hybrid/identity_flow.py` | `build_identity_spiking_flow` | Runs a flat `IRGraph` on a 1:1 identity `HybridHardCoreMapping` (`build_identity_hybrid_mapping`, no pool/pad/reindex) through the single `SpikingHybridCoreFlow` executor. Drop-in for the retired flat-`IRGraph` spiking simulator (tests / tooling / SCM rung-2 gate); computes IR latencies only when missing. **Note:** hybrid TTFS output is count-scaled (×T), unlike the retired flow's normalized output. |
-| `hybrid_core_flow.py` | `SpikingHybridCoreFlow` | **Primary** deployable simulator: `HybridHardCoreMapping`, per-core latencies, segment boundaries. Stages dispatch via `chip_simulation.hybrid_stage_runner.run_hybrid_stages` with `HybridStageContext` callbacks (`after_neural` / `after_compute`) for GPU refcount, segment weight cache, and `forward_with_recording()`. Compute stages use `resolve_stage_compute_scales` (always-on). |
-| `spiking/wire_semantics.py` | `WireSemantics`, `ttfs_quantized_staircase(_np)`, `ttfs_spike_time(_np)`, `ttfs_grid_quantize(_np)`, `floor_staircase(_np)` | **Kernel pairs**: each TTFS wire op defined once with torch+numpy twins (identical op order → bit-equal in float64; cross-twin tests sweep ±1 ULP around the S-grid). `WireSemantics(S, compare_mode)` bundles the ops per deployment (`contract.wire()`); `compare_mode='<'` = nevresim `StrictCompare` tie shift (exact grid ties fire one cycle later; C++ `<` parity not yet harness-covered). |
-| `ttfs_kernels.py` | `ttfs_quantized_activation` | Thin aliases over `spiking/wire_semantics.py` kernel pair (names kept for importers). |
-| `lif_kernels.py` | `lif_fire_and_reset` | Shared LIF threshold + Novena/Default reset step for unified and hybrid flows. |
-| `torch_mlp_mixer.py`, `torch_mlp_mixer_core.py`, `mlp_mixer_ref.py` | … | MLP-Mixer variants |
-| `deep_mlp.py` | `DeepMLP` | Narrow configurable-depth `Flatten -> [Linear(width)+act] x depth -> Linear(classes)` stack (pure Linear+ReLU, no conv/attention); the depth-probe vehicle, registered as `deep_mlp` (category "torch"). **`residual=True`** (opt-in, default off) wraps consecutive pairs of equal-width hidden layers (after the stem) in a bare equal-width skip `z = z + block(z)`, which lowers to a param-free host `ComputeAdapter(operator.add)` ComputeOp (the residual-mapping path); Linear count and `hidden.*` param names unchanged so plain↔residual share a state_dict, default path byte-identical |
-| `deep_cnn.py` | `DeepCNN`, `allowed_pool_count` | Configurable-depth (4..16) plain `[Conv(k3,pad1)+BatchNorm+ReLU] x depth` stack with periodic MaxPool (capped by `allowed_pool_count` so a 28x28/32x32 input never collapses below 1x1), channels doubling per pool boundary (cap 128), `AdaptiveAvgPool->Linear` head. No grouped/depthwise conv, no residuals — maps fully on-chip (SAME padding keeps multi-channel convs off the LayoutSourceView no-pad limitation). The TRAINABLE deep-conv vehicle for the cascaded single-spike firing-gain probe; registered as `deep_cnn` (category "torch"), input-shape-adaptive for MNIST (1x28x28) and SVHN (3x32x32) |
-
-| `lenet5.py` | `LeNet5` | Classic LeNet-5 CNN (Conv 1→6 k5, Conv 6→16 k5 with `padding=2`, two MaxPool, FC 120→84→n_classes); T1 classical rung, pipeline-native (no grouped/depthwise conv) |
-| `squeezenet.py` | `SqueezeNet`, `FireModule` | Scaled, input-adaptive SqueezeNet Fire-module conv vehicle (squeeze 1x1 → expand 1x1 + 3x3 with `padding=1`, `torch.cat` concat) for the SCALE breadth of the deployment hypervolume. Stem Conv(k3,pad1)+ReLU → periodic MaxPool → 6 Fire modules → Conv1x1 readout → AdaptiveAvgPool → Flatten; channels follow the squeeze/expand ratio and grow with `width` (default 24, ~379K params). Pipeline-native: Conv2d / ReLU / MaxPool2d / AdaptiveAvgPool2d / cat only — no grouped/depthwise conv, no attention/LayerNorm, maps fully on-chip (MEASURED `classify_validity` tier `VALID`, param_frac = mac_frac = 1.0 under `offload`; `estimate_cores_needed` ~942 hard cores on the default 256×256 / 1000-core budget). Input-adaptive for MNIST (1x28x28) and SVHN (3x32x32); not pipeline-registered (opt-in model) |
-| `pretrained_bridge.py` | `load_pretrained_resnet18`, `load_pretrained_resnet50`, `deploy_and_eval`, `DeployedEval` | The `regime=pretrained` REGION as a capability (no training, no GPU deploy). Imports stock torchvision residual nets (`ResNet18/50_Weights.IMAGENET1K_V1` when `pretrained=True`; random init offline) and re-sizes ONLY the `fc` head to `num_classes` (shared `_resize_head`) — the pretrained conv trunk (native 3-channel stem, residual blocks) is kept verbatim. Pipeline-native: Conv2d / BatchNorm2d (absorbed into conv) / ReLU / MaxPool2d / AdaptiveAvgPool2d / Linear + residual `add` (host ComputeOp) — NO grouped/depthwise conv (all `groups==1`), NO attention/LayerNorm, so it carries NO research-frontier op. MEASURED region descriptors at 3x32x32 (`research_gap_ops=[]` throughout): **ResNet-18** `VALID_FLAGGED` under BOTH placements — param_frac ≈ 0.4223 (subsume) / 0.4232 (offload) (param-MINORITY), mac_frac ≈ 0.997/0.999; `offload` does NOT lift it to VALID — it only moves the single `placement` Linear encoder on-chip (`placement_fixable_ops` `['Linear']`→`[]`), the 57.6 % host param majority lives in the residual-boundary `Sequential` ComputeOps (`supported_host`, NOT offloadable); cores 504 (subsume) / 651 (offload), feasible. **ResNet-50** `VALID` under BOTH placements — param_frac ≈ 0.666 (param-MAJORITY: bottleneck-block trunk outweighs the residual shortcuts), mac_frac ≈ 0.998; SUM cores 1460/1607 exceed the 1000-core budget (infeasible) but SCHEDULED fits — peak phase 208 cores across 16/17 reprogramming passes. So the param-minority verdict is architecture-dependent (BasicBlock minority vs Bottleneck majority), not an intrinsic residual property. Validity/capacity verdicts are structural (weight-independent); network-gated tests assert the REAL ImageNet weights load. **`deploy_and_eval(model, input_shape, num_classes, eval_inputs, eval_targets, *, simulation_length, spiking_mode="lif", ...)`** extends the bridge from validity-CLASSIFY to DEPLOY: it actually runs the model through the real SNN pipeline — `convert_torch_model` → install deployable `LIFActivation` + `mark_encoding_layers` → `IRMapping.map` → `build_hybrid_hard_core_mapping` → deployed `SpikingHybridCoreFlow` sim (the same executor `SimulationRunner` uses) — and returns a `DeployedEval` (deployed top-1 `accuracy`, rate-decoded `logits`, mapping fingerprint `neural_segments`/`hard_cores`). It CONSUMES the convert/map/deploy primitives verbatim (no reimplementation, no pipeline edit). FAST/SUBSET by design (tiny input shape + tiny `T` + tiny eval batch keep the spiking sim cheap; a real bridge ResNet-18 deploys at 3x16x16/T=4 in ~3 s, multi-segment across the residual `add` boundaries); LIF-only for now (TTFS deploy is a calibration-gated `ValueError`-flagged follow-up). Full-ImageNet deploy is a supervised Group-2 GPU run, NOT this path. Not pipeline-registered (opt-in). Unblocks F3 (dual-regime) + F4 (pretrained ImageNet deploy) |
-
-### Subdirectories
-
-| Directory | Purpose |
-|-----------|---------|
-| `perceptron_mixer/` | `Perceptron`, `PerceptronFlow`, `SimpleMLP` |
-| `preprocessing/` | `InputCQ` |
-| `builders/` | Model builders for pipeline/search |
+## Key files
+| File | Purpose |
+|---|---|
+| `deep_mlp.py` | `DeepMLP`: narrow configurable-depth Linear+ReLU stack (optional equal-width residual pairs); the depth-probe vehicle. |
+| `deep_cnn.py` | `DeepCNN`: configurable-depth (4..16) plain Conv-BN-ReLU stack with capped periodic MaxPool; the trainable deep-conv vehicle. |
+| `lenet5.py` | `LeNet5`: classic LeNet-5 CNN, input-shape-adaptive; the classical baseline rung. |
+| `squeezenet.py` | `SqueezeNet`/`FireModule`: scaled, input-adaptive Fire-module conv vehicle (opt-in; not pipeline-registered). |
+| `torch_mlp_mixer.py` | `TorchMLPMixer`: native plain-`nn.Module` MLP-Mixer for `torch_mapping` conversion. |
+| `torch_mlp_mixer_core.py` | Mixer variant with an activation after every FC so all mixer layers package as perceptrons. |
+| `mlp_mixer_ref.py` | Third-party reference MLP-Mixer (einops-based), kept for architecture comparison; not pipeline-native. |
+| `pretrained_bridge.py` | `load_pretrained_resnet18/50` (torchvision weights, resized `fc` head) + `deploy_and_eval`: run a stock model through the real convert→map→deploy SNN path and return a `DeployedEval`. |
+| `builders/` | Per-architecture builder classes, the canonical `BUILDERS_REGISTRY` (`model_type` id → builder), and wizard config-schema aggregation. |
+| `nn/` | NN building blocks: custom autograd activations (`LIFActivation`, TTFS nodes, STE input quantizers), composable activation decorators, standalone layers (`TransformedActivation`, `norm_affine_params`), and shared LIF/TTFS cycle kernels. |
+| `perceptron_mixer/` | Perceptron-based architectures: `Perceptron`, `PerceptronFlow`, `SimpleMLP` (mapper-repr example), and the skip-connection mixer. |
+| `preprocessing/` | Empty placeholder package (legacy `InputCQ` removed; input encoding now lives in IR encoding layers). |
+| `spiking/` | The deployable spiking simulator: `SpikingHybridCoreFlow` (`hybrid/` stage-IO/LIF/rate/TTFS mixins), per-cycle neuron policies, TTFS wire-semantics kernel pairs (torch+numpy twins), spiking config constants, and differentiable spike-train training forwards. |
 
 ## Dependencies
-
-- **Internal**: `mapping`, `code_generation` (via mapping), `chip_simulation.hybrid_execution`, `chip_simulation.spike_recorder`.
-- **External**: `torch`, `numpy`, `einops`; lazy `spikingjelly` for LIF; lazy `torchvision` for `pretrained_bridge` (opt-in; ImportError raised verbatim when absent).
+- **`mapping`** — `HybridHardCoreMapping`/`HybridStage` and `IRSource` consumed by the
+  spiking flow; core geometry and spike-source spans for stage IO; IR/chip latency for
+  identity flows and gating; bias compensation; `mapping_utils`/`ComputeAdapter` for the
+  perceptron-mixer models.
+- **`chip_simulation`** — hybrid stage runner/execution and spike modes; spiking-mode
+  policy and TTFS semantics predicates; run/segment spike recording (`RunRecord`,
+  `SegmentSpikeRecord`); the TTFS executor.
+- **`spiking`** — segment-boundary transcoding SSOT (`BoundaryConfig`,
+  `encode_segment_input`) and segment-forward helpers for training forwards.
+- **`pipelining`** — `ModelRegistry`, into which every builder registers its model type.
+- **`tuning`** — `LazyExecutorForward` for the blended genuine training forward.
+- **`common`** — `env.cuda_debug_enabled` debug flag in decorator transforms.
 
 ## Dependents
+- `chip_simulation` — runs `SpikingHybridCoreFlow` and shares spiking config/kernels.
+- `mapping` — maps perceptron/torch models; uses layer and activation types.
+- `torch_mapping` — converts the torch model zoo into IR.
+- `transformations` — transforms perceptrons and decorated activations.
+- `tuning` — installs/adapts activation decorators and spiking forwards.
+- `model_training` — trains the model zoo and spiking training forwards.
+- `pipelining` — builds models via `BUILDERS_REGISTRY` in pipeline steps.
+- `spiking` — boundary/encoding helpers typed against model spiking classes.
+- `gui` — wizard schema and model snapshots.
 
-- `mapping`, `tuning`, `model_training`, `pipelining`, `gui` (via snapshots).
+## Exported API
+`__init__.py` re-exports:
+- Layer/activation/decorator types from `nn/layers.py`: `LeakyGradReLU`,
+  `DifferentiableClamp`, `StaircaseFunction`, `NoisyDropout`, `TransformedActivation`,
+  `DecoratedActivation`, `ClampDecorator`, `QuantizeDecorator`, `ShiftDecorator`,
+  `ScaleDecorator`, `SavedTensorDecorator`, `StatsDecorator`, `RateAdjustedDecorator`,
+  `FrozenStatsNormalization`, `MaxValueScaler`, `FrozenStatsMaxValueScaler`.
+- `SqueezeNet`, `FireModule` — opt-in conv vehicle.
+- `load_pretrained_resnet18`, `load_pretrained_resnet50` — pretrained bridge loaders.
 
-## Compute dtype (float64 default)
-
-`SpikingHybridCoreFlow` defaults to **`torch.float64`** for on-chip spiking math. Nevresim TTFS uses `signal_t = double`; float32 can flip `ceil(S*(1 - V/θ))` when `V` is within one ULP of `θ`, which compounds across layers (~multi–percentage-point SCM drift on MNIST-scale runs). Pass `compute_dtype=torch.float32` only after measuring sensitivity; weight `nn.Parameter`s stay float32 for matmul.
-
-**Packed buffers:** owned/bank **weights** are stored as float32 `nn.Parameter`s (matmul path). **Thresholds** and **hardware_bias** are packed in `compute_dtype` (float64 by default) so `ceil(S*(1-V/θ))` and gather/add paths match HCM/nevresim — Python float thresholds (e.g. 8.656…) do not round-trip exactly in float32.
-
-### TTFS ComputeOp scaling (`SpikingHybridCoreFlow` / HCM)
-
-NeuralCore TTFS outputs are normalized to `[0, 1]` via effective weights; **ComputeOps** wrap the *training* module (unscaled bias). Two scales per ComputeOp node:
-
-| Field | Role |
-|-------|------|
-| `_ttfs_node_input_scale` | Multiply gathered input before `execute_on_gathered` — rescale NeuralCore sources from `[0,1]` to training range. **1.0** when all sources are raw graph input (encoding-layer ops); must not spuriously multiply encoding inputs. |
-| `_ttfs_node_output_scale` | Divide module output back to `[0,1]` for downstream `W_eff`. Perceptron-wrapped ops use the wrapped `activation_scale`; generic ops use the average of source scales. |
-
-ComputeOp gather runs in **float32** (slice assignment into `inp` downcasts; do not clone the full activation cache per op — ViT-scale graphs OOM). Results are stored in `compute_dtype` for downstream cores.
-
-### `SpikingHybridCoreFlow` execution notes
-
-- **Segment weight cache:** single-segment LRU — at most one neural segment's GPU weights resident (ViT-scale mappings need tens of GB if all segments are cached). `torch.cuda.empty_cache()` once per `forward`, not per segment evict.
-- **State buffer:** `Dict[node_id, Tensor]` with **consumer refcount** — drop entries when downstream read count hits 0 (long compute-op chains otherwise retain GB of intermediates per forward).
-- **Forward dispatch (`forward`):** routes on `SpikingModePolicy.decode_mode()` (V2) — `timing` → `_forward_ttfs` (analytical + synchronized cycle TTFS), `count` → `_forward_rate` (LIF/rate + cascaded cycle TTFS) — instead of an `is_cascaded_ttfs` + `requires_ttfs_firing` predicate cascade.
-- **Per-cycle policy (`spiking/cycle_policy.py`):** the cascade executor (`_run_neural_segment_rate`) is parameterized by `cycle_neuron_policy(spiking_mode, schedule, firing_mode)` mirroring nevresim's `FirePolicy`. `LIFCyclePolicy` (`latency_gated=True`) = multi-spike reset; `TTFSGreedyCyclePolicy` (`latency_gated=False`, `single_spike_io=True`) = cascaded greedy **single-spike** fire-once with a `ramp_current` accumulator (kernels in `nn/ttfs_cycle_kernels.py::ttfs_cycle_fire_once` + `spiking/ttfs_cycle_step.py`). The executor branches on `policy.latency_gated` (gating) and `policy.single_spike_io` (single-spike I/O + ramp decode).
-- **Rate-coded LIF (gated):** always-on axon contributes **one spike per cycle** in `[0, T)` only; neuron-source inputs accumulate only inside the source core's `[latency, latency+T)` window (matches Loihi `reset_offset` / HCM buffer semantics). **Raw-input axons are read in the CONSUMING core's window too:** a core at latency `L` reads input local cycle `cycle − L` (zero outside `[0, T)`), so a raw-input skip into a latency>0 merge integrates the FULL train (not a one-cycle-short `[L, L+T)` slice of the global `[0, T)` input presentation). No-op for `L == 0` — every non-residual model feeds raw input only to latency-0 cores. (Closes residual Tier-1 **Component A**, the skip-window truncation; the segment-output passthrough of a raw input still gathers at the boundary's latency-0 `[0, T)`.)
-- **Cascaded TTFS (single-spike, latency-gated):** hardware-faithful — each neuron fires **exactly once** (one spike on the wire). Cores are **latency-gated** (active in `[lat, lat+T)`), so bias/ramp start at the core's reference time and it fires in-window. The integration is a **ramp** reconstructed at the consumer: a single arrival at `t_j` contributes its weight every later cycle (`membrane(t)=Σ w_j·(t−t_j)`), via `ramp_current`. Input is single-spike; the segment-output **value** is the ramp counted **within each source's own window** `[src_lat, src_lat+T)` (per-column arrival latch `out_arrival`), value `= (src_lat+T−fire)/T`; recorded per-neuron **count** is single-spike traffic. **Per-source windowing is essential** — full-window accumulation overcounts shallow sources by `(chip_latency−src_lat)/T` and saturates everything when latency >> T (gave 9.2% on a real deep model before the fix). Greedy & lossy but bit-consistent across HCM/nevresim/SANA-FE; schedule via `ttfs_cycle_schedule`.
-- **Encoding boundary:** ComputeOps that wrap a plain LIF-Perceptron emit a `(T,B,D)` spike train via `mimarsinan.spiking.segment_encoding.emit_compute_spike_train` (single-step `T` cycles, divided by `activation_scale` for the chip's binary-input convention). Wrapper mappers (e.g. `Conv2DPerceptronMapper`), non-LIF perceptrons, and structural ops (mean/flatten/add/etc.) emit `None`; the downstream consumer uniform-encodes their rate. `build_segment_input_spike_train` consumes cached trains verbatim and raises on partial caches under cycle-accurate mode.
-- **`forward_with_recording()`:** requires `batch_size==1` and a per-cycle cascade mode (`lif` or cascaded `ttfs_cycle_based`); fills `RunRecord` for Loihi/SANA-FE/nevresim parity.
-
-### Rate vs TTFS always-on sources (`SpikingHybridCoreFlow`)
-
-In LIF/rate mode, always-on (`kind=="on"`) sources fire every cycle. In TTFS modes, always-on fires **only at cycle 0** (bias pulse once); later cycles skip the fill so rate and TTFS paths stay consistent with hardware.
-
-## Exported API (`__init__.py`)
-
-Layer types from `layers.py` and `Supermodel`. The spiking simulator is imported from `hybrid_core_flow` directly (heavy import cost); flat-`IRGraph` callers use `spiking/hybrid/identity_flow.build_identity_spiking_flow`.
+The spiking simulator is intentionally not re-exported (heavy import); import
+`SpikingHybridCoreFlow` from `mimarsinan.models.spiking.hybrid` directly.

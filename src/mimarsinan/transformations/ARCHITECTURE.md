@@ -1,46 +1,43 @@
-# transformations/ -- Model Transformations
+# transformations/ — weight/activation transforms for quantization, fusion, and pruning
 
-Provides weight and activation transformation utilities used during quantization
-pipeline steps and hardware mapping.
+Pure model-transformation utilities applied between training and hardware mapping in the
+deployment pipeline. The central abstraction is the "effective parameter" view provided by
+`PerceptronTransformer` — weights/biases with normalization, per-input scales, and activation
+scales folded in — on top of which quantization, normalization fusion, and pruning operate.
+Everything here mutates or inspects torch perceptrons and numpy core matrices; the `mapping`
+and `pipelining` modules consume the results when emitting IR and hard cores.
 
-## Key Components
-
-| File | Symbols | Purpose |
-|------|---------|---------|
-| `perceptron_transformer.py` | `PerceptronTransformer` | Computes effective weights/biases by fusing normalization; uses `per_input_scales` for per-channel input scaling. `apply_effective_bias_transform` and `apply_effective_bias_transform_to_norm` are no-ops when `layer.bias is None` (bias-less perceptrons). `_get_u_beta_mean` delegates to `models.nn.layers.norm_affine_params` (detached). |
-| `weight_quantization.py` | `TensorQuantization` | Symmetric tensor quantization to N-bit integers |
-| `normalization_aware_perceptron_quantization.py` | `NormalizationAwarePerceptronQuantization` | Weight quantization that accounts for normalization parameters. Accepts a `rate` argument and linearly interpolates in weight-value space between the FP and fully-quantized effective weights (`rate == 0` is identity, `rate == 1` matches the legacy full-quantization output). `parameter_scale` is always set to the full-range scale so downstream IR mapping is unaffected by rate |
-| `chip_quantization.py` | `ChipQuantization` | Legacy chip-level quantization utilities (mostly tests); production IR path uses `mapping.chip_quantize`. |
-| `quantization_bounds.py` | `quantization_bounds` | `(q_min, q_max)` from `weight_bits`; shared by SCM and `chip_quantize`. |
-| `activation_scale_policy.py` | `ActivationScalePolicy`, `CountQuantilePolicy`, `PercentileNormPolicy`, `MaxNormPolicy`, `make_activation_scale_policy` | Selectable per-layer activation-scale (ANN->SNN) calibration policies. DEFAULT `count_quantile` is byte-identical to the legacy `scale_from_activations` (count quantile over positive activations). `percentile_norm` = Rueckauer et al. (2017) robust-norm (p-th percentile of the FULL distribution; `p=100` == max-norm), a default-OFF baseline for head-to-head conversion comparison. |
-| `quantization_verify.py` | `assert_integer_scaled_matrix` | Shared integer-quantization checks for IR and perceptron verification. |
-| `normalization_fusion.py` | `fuse_into_perceptron` | Folds `perceptron.normalization` into `perceptron.layer` (fused bias = `effective_preactivation_bias`, the same SSOT the TTFS segment policy charges — fusion is therefore behavior-preserving under the cascade forward); used by `NormalizationFusionStep`. |
-| `weight_clipping.py` | `SoftTensorClipping`, `clip_core_weights` | Soft weight clipping for training stability |
-| `transformation_utils.py` | `transform_np_array` | Low-level numpy array quantization helper |
-| `pruning/` (subpackage) | `compute_masks_from_importance`, `compute_all_pruning_masks`, `compute_pruning_masks`, `apply_pruning_masks`, `_collect_activation_stats` | Unified mask computation: `compute_masks_from_importance` (importance + exempt layers + cross-layer propagation) used by `PruningTuner._get_masks` and by `compute_all_pruning_masks`. Activation-based or weight-L1 importance; 1D masks stored as `prune_row_mask`/`prune_col_mask` on layers for lossless IR extraction. NOTE: this is a PACKAGE (`pruning/`), not a `pruning.py` module — the D4 magnitude transform lives in `pruning/magnitude.py` to avoid shadowing it. |
-| `pruning/magnitude.py` | `prune_perceptron_chain`, `kept_output_channels`, `ChannelPruningResult` | **D4 deployment knob** — STRUCTURED magnitude pruning as a selectable, DEFAULT-OFF transform. Removes the lowest-magnitude OUTPUT neurons of each perceptron (per-row L2) and propagates the removal into the next layer's INPUT columns, so `nn.Linear` `out_features`/`in_features` actually SHRINK (the in-loop `apply.py` pruner only zero/down-scales, leaving crossbar shapes — and core count — unchanged). This drops the per-segment diagonal bound in `mapping.verification.capacity.estimate_cores_needed` (FEWER hard cores → fewer reprogram phases under scheduling; the `pruning=dense`/`pruning=pruned` ledger axis). Exemptions: last layer's logits and the first layer's network-input axons are never pruned. `sparsity == 0.0` is the byte-identical default (same `nn.Linear` objects, untouched). Pruned model forward stays shape-correct. MEASURED on a [64,256,256,256,10] MLP / 64×64 cores: cores 16→7 at s=0.5 (−56%); reprogram `phase_count` 4→2 under a tight scheduled budget. |
-
-### Subdirectory
-
-| Directory | Purpose |
-|-----------|---------|
-| `parameter_transforms/` | Composable parameter transform chains |
+## Key files
+| File | Purpose |
+|---|---|
+| `activation_scale_policy.py` | Selectable per-layer ANN-to-SNN activation-scale calibration policies (`count_quantile` default, `percentile_norm`, `max_norm`) behind `make_activation_scale_policy`. |
+| `chip_quantization.py` | Legacy chip-level core-matrix quantization/verification (`ChipQuantization`); the production IR path uses `mapping.export.chip_quantize` instead. |
+| `normalization_aware_perceptron_quantization.py` | `NormalizationAwarePerceptronQuantization`: per-perceptron quantization of effective weights/biases; `rate` interpolates between FP (`0`) and fully quantized (`1`), and `parameter_scale` is always the full-range scale. |
+| `normalization_fusion.py` | `fuse_into_perceptron`: folds `perceptron.normalization` into `perceptron.layer` (fused bias = `effective_preactivation_bias`), sets normalization to Identity, and refreshes TTFS bias references. |
+| `quantization_bounds.py` | `quantization_bounds(bits)` -> `(q_min, q_max)` for signed symmetric quantization; shared by SCM mapping, chip quantize, and tuners. |
+| `quantization_verify.py` | `assert_integer_scaled_matrix`: shared integer-quantization checks (returns failure messages) for perceptron and IR verification paths. |
+| `transformation_utils.py` | `transform_np_array`: applies a torch-tensor transform to a numpy array (numpy/torch bridge helper). |
+| `weight_clipping.py` | `SoftTensorClipping` / `clip_core_weights` / `get_clipped_w_b`: soft weight clipping (clamp to mean of top/bottom fraction) for training stability. |
+| `weight_quantization.py` | `TensorQuantization`: symmetric N-bit quantization (`quantize`, `scaled_quantize`) for torch tensors and numpy arrays. |
+| `parameter_transforms/` | `SequentialTransform`: composable chains of parameter transforms applied in sequence. |
+| `perceptron/` | `PerceptronTransformer`: computes effective weights/biases by fusing normalization, `per_input_scales`, and (possibly per-channel) `activation_scale`; applies transforms in effective-parameter space. |
+| `pruning/` | Pruning suite: mask computation from weight-L1 or activation importance with cross-layer propagation and IR-derived I/O exemptions (`masks.py`, `activation.py`), rate-adaptive mask application (`apply.py`), and structured magnitude channel pruning that shrinks layer shapes and core counts (`magnitude.py`, default-off deployment knob). |
 
 ## Dependencies
-
-- **Internal**: None (leaf module for core transform logic).
-- **External**: `torch`, `numpy`.
+- `models` — `normalization_fusion.py` uses `models.nn.activations.ttfs_spiking.refresh_perceptron_bias_references` and `models.perceptron_mixer.perceptron.effective_preactivation_bias`; `perceptron/perceptron_transformer.py` lazily imports `models.nn.layers.norm_affine_params` to read normalization affine parameters.
+- `mapping` — `pruning/masks.py` lazily imports `mapping.pruning.boundary_policy.compute_perceptron_io_exemption_indices` to exempt model-I/O layers when computing masks from an IR graph.
 
 ## Dependents
+- `mapping` — `PerceptronTransformer` (perceptron/conv1d/conv2d mappers, bias compensation), `TensorQuantization` (`mapping_utils`), `quantization_bounds` and `assert_integer_scaled_matrix` (`export.chip_quantize`, `pruning.boundary_policy`).
+- `pipelining` — `fuse_into_perceptron` (normalization-fusion step), `PerceptronTransformer` (quantization-verification step), `quantization_bounds` (soft-core mapping step), `prune_perceptron_chain` (soft-core structured-pruning step).
+- `tuning` — `NormalizationAwarePerceptronQuantization` (quantization tuner), `apply_pruning_masks` and `collect_activation_stats` (pruning tuner), `PerceptronTransformer` (activation-shift tuner), `quantization_bounds` (TTFS cycle-adaptation tuner).
 
-- `mapping.mapping_utils` imports `PerceptronTransformer` and `TensorQuantization`
-- `tuning.tuners` imports `NormalizationAwarePerceptronQuantization` and pruning (`compute_masks_from_importance`, `apply_pruning_masks`, `_collect_activation_stats`)
-- `pipelining.pipeline_steps` imports `PerceptronTransformer` for fusion/verification
-- `model_training` imports `PerceptronTransformer` for training utilities
-
-## Exported API (\_\_init\_\_.py)
-
-`PerceptronTransformer`, `TensorQuantization`, `NormalizationAwarePerceptronQuantization`,
-`transform_np_array`, `compute_pruning_masks`, `apply_pruning_masks`,
-`prune_perceptron_chain`, `kept_output_channels`, `ChannelPruningResult`,
-`ActivationScalePolicy`, `make_activation_scale_policy`, `DEFAULT_ACTIVATION_SCALE_POLICY`.
+## Exported API
+`__init__.py` re-exports:
+- `PerceptronTransformer` — effective weight/bias view of a perceptron.
+- `TensorQuantization` — symmetric N-bit tensor quantization.
+- `NormalizationAwarePerceptronQuantization` — rate-interpolated effective-weight quantization.
+- `transform_np_array` — numpy/torch transform bridge.
+- `compute_pruning_masks`, `apply_pruning_masks` — pruning mask computation and application.
+- `prune_perceptron_chain`, `kept_output_channels`, `ChannelPruningResult` — structured magnitude channel pruning.
+- `ActivationScalePolicy`, `make_activation_scale_policy`, `DEFAULT_ACTIVATION_SCALE_POLICY` — activation-scale calibration policies.

@@ -1,31 +1,40 @@
-# code_generation/ -- C++ Code Generation
+# code_generation/ — Generates nevresim C++ sources from hardware mapping artifacts
 
-Generates C++ source files for the nevresim chip simulator from hardware
-mapping artifacts.
+This module turns a mapped chip (cores, neurons, axon connections) into the C++
+files the nevresim simulator compiles and runs: a `generate_chip.hpp` /
+`generate_chip_config.hpp` header describing the chip, a `main.cpp` instantiated
+from a template, plus weight and span data files. Its central abstractions are
+`ChipModel` (the chip data model with `weight_type` / `threshold_type` emitters)
+and `resolve_exec_policy`, which delegates the spiking-mode → C++
+(ComputePolicy, Execution) type choice to `chip_simulation`'s
+`SpikingModePolicy` SSOT rather than hardcoding it here.
 
-## Key Components
-
-| File | Symbols | Purpose |
-|------|---------|---------|
-| `cpp_chip_model.py` | `SpikeSource`, `CodegenSpan`, `Connection`, `Neuron`, `Core`, `ChipModel` | Chip data model → C++ struct initializers. Template params: **`weight_type`** (`int`/`float`) and **`threshold_type`** (independent; TTFS uses `double` thresholds with `int` weights when quantised). |
-| `generate_main.py` | `generate_main_function`, `get_config`, `resolve_exec_policy`, `resolve_compare_policy`, `resolve_lif_fire_policy` | Instantiates `main.cpp` with simulation length, spike/firing modes, **`weight_type`**, **`threshold_type`**. `resolve_compare_policy(thresholding_mode)` → `Strict`/`InclusiveCompare` and `resolve_lif_fire_policy(firing,thresholding)` → `LIFirePolicy<reset,compare>` are the comparator/reset string selection (config-driven, never hardcoded). `resolve_exec_policy` **delegates the firing × sync → codegen choice to `SpikingModePolicy.nevresim_exec_policy(NevresimExecParams)`** (V2, `chip_simulation/spiking_mode_policy.py`): it selects the comparator/reset strings, packs the chip-shape scalars into `NevresimExecParams`, and the resolved policy returns the `(compute, exec)` `ExecPolicySpec`. A new spiking mode updates the **policy**, not this dispatch. (`ExecPolicySpec` lives in `spiking_mode_policy.py`, re-exported here.) Per-family C++ types: rate/LIF → `SpikingCompute<LIFirePolicy<reset,compare>>`; `ttfs` (analytical) → `TTFSContinuousExecution`; `ttfs_quantized` → `TTFSQuantizedCompute<S,compare>` + `TTFSExecution<S,lat,compare>`; **`ttfs_cycle_based` (cascaded) → `TTFSCascadeCompute<compare>` + `TTFSCascadeExecution<…,TTFSSpikeGenerator,…,compare>`** (each neuron fires once; the cascade reconstructs the ramp via `ramp_current`; `leak=0`). The synchronized schedule disables nevresim (its policy `nevresim_exec_policy` raises), so any nevresim run of `ttfs_cycle_based` is cascaded. |
-| `main_cpp_template.py` | `main_cpp_template` | Standard spiking execution. Inputs are loaded via `load_input_n` (rate-coded path). |
-| `main_cpp_template_real_valued_exec.py` | … | Real-valued (non-spiking) execution |
-| `main_cpp_template_debug_spikes.py` | … | Spike debug output |
-
-`NevresimDriver` passes both types into codegen so nevresim C++ matches Python simulator numeric semantics (decoupled since nevresim threshold-type refactor).
+## Key files
+| File | Purpose |
+|---|---|
+| `cpp_chip_model.py` | `ChipModel`: chip dimensions + cores/connections/outputs; emits the consteval `generate_chip` header, the weights text file, and chip JSON (save/load). |
+| `cpp_chip_model_types.py` | Codegen value types — `SpikeSource`, `CodegenSpan`, `Connection`, `Neuron`, `Core` — and `compress_sources_to_spans` (run-length encodes axon sources into spans). |
+| `generate_main.py` | Instantiates `main.cpp` from a template: `get_config`, `resolve_compare_policy` / `resolve_lif_fire_policy` (comparator/reset strings), `resolve_exec_policy` (delegates to `SpikingModePolicy.nevresim_exec_policy`), `generate_main_function`, `generate_main_function_runtime`, `generate_main_function_for_real_valued_exec`. |
+| `main_cpp_template.py` | Standard compile-time-chip spiking main; loads inputs via `load_input_n` or `load_spike_train_input_n`. |
+| `main_cpp_template_runtime.py` | Runtime-chip main: loads connectivity from `chip_spans.txt` at run time instead of baking it into a consteval chip (avoids recompiling per mapping). |
+| `main_cpp_template_debug_spikes.py` | Debug main that prints per-cycle firing neuron indices instead of output counts. |
+| `main_cpp_template_real_valued_exec.py` | Non-spiking (real-valued compute/execution) main for ANN-equivalent reference runs. |
+| `mapping_spans_export.py` | Writes `chip_spans.txt` (consumed by nevresim `mapping_loader.hpp`) and emits the dimensions-only `RuntimeChipConfig` header for runtime chips. |
 
 ## Dependencies
-
-- **Internal**: `common.file_utils`; `chip_simulation.spiking_mode_policy` (the V2
-  `SpikingModePolicy.nevresim_exec_policy` SSOT for the firing × sync → codegen choice).
-- **External**: `numpy`.
+- `chip_simulation` — `spiking_mode_policy` (`ExecPolicySpec`, `NevresimExecParams`, `policy_for_spiking_mode`): the SSOT deciding which C++ compute/execution types a spiking mode compiles to.
+- `common` — `file_utils` (`prepare_containing_directory`) for writing generated files.
+- `mapping` — `support.spike_source_spans.compress_spike_sources` (lazy import) to run-length encode `SpikeSource` lists into spans.
 
 ## Dependents
+- `chip_simulation` — `nevresim_driver`, `compile_cache`, and `nevresim/profiling` use `generate_main_function*`, `get_config`, `ChipModel`, `SpikeSource`.
+- `common` — `file_utils` lazily imports `mapping_spans_export` to write runtime-chip span/config files.
+- `mapping` — chip export, softcore packing/compaction, IR legacy conversion, and span utilities build on `SpikeSource` / `ChipModel`.
+- `visualization` — graphviz softcore/hardcore renderers consume `SpikeSource`.
 
-- `mapping` (`SpikeSource`), `chip_simulation` (`generate_main_function`), `visualization`.
-
-## Exported API (`__init__.py`)
-
-`SpikeSource`, `CodegenSpan`, `Connection`, `Neuron`, `Core`, `ChipModel`,
-`generate_main_function`, `generate_main_function_for_real_valued_exec`, `get_config`.
+## Exported API
+- `SpikeSource`, `CodegenSpan`, `Connection`, `Neuron`, `Core` — codegen value types for chip connectivity and parameters.
+- `ChipModel` — the chip data model and C++/JSON emitter.
+- `generate_main_function` — write a spiking `main.cpp` from a template + config.
+- `generate_main_function_for_real_valued_exec` — write the real-valued reference `main.cpp`.
+- `get_config` — build the simulation-config dict (spike gen, firing, thresholding, weight/threshold types, spiking mode).

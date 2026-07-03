@@ -1,69 +1,54 @@
-# torch_mapping/ -- PyTorch Model Conversion
+# torch_mapping/ — native PyTorch → mimarsinan Mapper DAG conversion
 
-Converts native PyTorch `nn.Module` models into mimarsinan's Mapper DAG /
-Supermodel representation. The conversion happens as a pipeline step after
-pretraining so that native models train at full speed and only get wrapped
-in Perceptrons when the adaptation/quantization stages need them.
+Converts a trained native `nn.Module` into a mimarsinan `ModelRepresentation`
+(Mapper DAG) wrapped in a `ConvertedModelFlow`, so pretraining runs on the
+unmodified torch model and the adaptation/quantization/mapping stages operate
+on Perceptrons. The pipeline is: FX-trace with shape propagation → graph
+normalization (Linear fusion) → representability analysis with a BN/activation
+absorption plan → node-by-node mapper emission. MM→BN?→ACT chains become
+Perceptron mappers (on-chip candidates); shape-only ops fold into structural
+mappers; every other op flows through one generic host `ComputeOpMapper` path.
 
-## Key Components
-
-| File | Symbols | Purpose |
-|------|---------|---------|
-| `torch_graph_tracer.py` | `trace_model` | FX-based graph extraction with shape propagation |
-| `representability_analyzer.py` | `RepresentabilityAnalyzer`, `RepresentabilityReport`, `OpInfo` | Validates whether an FX graph can be represented in mimarsinan IR |
-| `mapper_graph_converter.py` | `MapperGraphConverter` | Converts FX graph to Mapper DAG. Linear / Conv / LayerNorm / MultiheadAttention have dedicated handlers (they package weights / multi-input semantics). **All other ops** — `+`, `getitem`, `mean`, `F.*`, custom `nn.Module`s, … — flow through one generic `_emit_generic_compute_op(node, fn)` path that uses `_partition_fx_args` to classify every FX arg into `sources` (mapper-backed Nodes), `bound_tensors` (`get_attr`-backed Tensors / Parameters), `extra_args` (ints, slices, tuples, ...) and `kwargs` (non-Node kwargs), then builds a `ComputeOpMapper(sources, ComputeAdapter(fn, ...))`. **Structural shortcuts** (`torch.cat`, `torch.flatten`, `.view` / `.reshape` / `.flatten` methods, `.permute` / `.transpose` methods) are the only per-op handlers; they emit shape-only mappers (`ConcatMapper`, `ReshapeMapper`, `PermuteMapper`) that fold at mapping time without a runtime ComputeOp. |
-| `converter_handlers/` | `LinearConvertMixin`, `ConvConvertMixin`, `StructuralConvertMixin`, `ConverterContract` | Linear and Conv mixins package perceptron candidates with absorbed BN / activation. `StructuralConvertMixin` holds only the structural shortcuts (`_convert_cat`, `_convert_flatten_func`, `_convert_flatten_module`) and BN/activation absorption helpers — no compute-op-specific handlers. `converter_contract.py` declares (typing-only, runtime no-op base) the host attributes/methods `MapperGraphConverter` provides to all mixins. Perceptron conv conversion rejects string padding (`"same"`/`"valid"`) with `NotImplementedError`; the no-activation ComputeOp path still supports it. |
-| `converted_model_flow.py` | `ConvertedModelFlow` | PerceptronFlow subclass wrapping the converted ModelRepresentation; overrides `_apply` so that `to(device)` / `to(dtype)` also propagates to every node in the mapper graph, keeping mapper submodules (e.g. LayerNorm, ModuleMapper.module) on the same device/dtype as the rest of the model |
-| `graph_normalization.py` | `normalize_fx_graph` | MM+ fusion: folds BN into preceding Linear, fuses consecutive Linears (through Identity/BN), dead code elimination |
-| `fx_shape_utils.py` | `node_input_shapes`, `node_output_shape`, `strip_batch`, `fx_literal_int`, `node_target_str` | Shared FX `tensor_meta` extraction. Multi-input ops record one batch-stripped shape per source so downstream IR mapping, scale analysis, and the runtime broadcast guard all see the full picture. Replaces the older `_get_input_shape` (args[0]-only) duplicates. `fx_literal_int` coerces numeric FX literal args (rejecting dynamic Nodes with a clear TypeError); `node_target_str` returns the string target FX guarantees on call_module/call_method/get_attr nodes. |
-| `mapper_graph_fx.py` | `MapperGraphFxMixin`, `_normalize_bound_tensor` | Generic compute-op emission + bound-tensor normalisation.  Bound tensors stored via `_partition_fx_args` are squeezed of any leading singleton dim so `ComputeAdapter`'s `unsqueeze(0).expand(B, *t.shape)` re-adds the batch dim correctly.  Parameters like ViT `pos_embedding` `(1, N, D)` and `(1, D)` biases reach the adapter as `(N, D)` and `(D,)` respectively. |
-| `conversion_probe.py` | `probe_forward`, `ProbeResult`, `ConversionProbeError` | Strict-by-default warmup forward.  Parses the `"[ModelRepresentation] forward failed at node ..."` cause-chain marker so failure messages name the offending mapper.  Replaces the old `try / print / continue` patterns in `convert_torch_model` and `TorchMappingStep._verify_equivalence`. |
-| `converter.py` | `convert_torch_model`, `check_representability` | Public API facade.  `convert_torch_model(..., strict=True)` is the default — warmup failures now propagate as `ConversionProbeError` with the offending node name.  Pass `strict=False` only for tests / configs that explicitly accept a known-broken forward.  `encoding_layer_placement="subsume"` (default) / `"offload"` selects the encoding-layer deployment (see `encoding_layers.py`). |
-| `encoding_layers.py` | `mark_encoding_layers`, `segment_entry_perceptrons` | Subsume-vs-offload switch for encoding-layer neuralOps. `placement="subsume"` (default) marks segment-start perceptrons so the mappers emit them as **host ComputeOps** (spike-train generators). `placement="offload"` clears the flag so they map as on-chip **NeuralCores** and the flow encodes the raw segment input directly (Uniform/TTFS) — larger hardware-accelerated surface, functionally identical under signed-IF (offload HCM output == subsume to 1e-6). `segment_entry_perceptrons` returns the FIRST on-chip perceptron of each neural segment (raw-input / ComputeOp / host-encoder fed) — the seam the synchronized TTFS wire contract grid-quantizes; the TTFS-cycle tuner places its q(x) STE there. |
+## Key files
+| File | Purpose |
+|---|---|
+| `conversion_probe.py` | Strict-by-default warmup forward (`probe_forward`, `ProbeResult`, `ConversionProbeError`); parses the ModelRepresentation failure marker to name the offending mapper node |
+| `converted_model_flow.py` | `ConvertedModelFlow`: PerceptronFlow subclass wrapping the converted `ModelRepresentation`; registers all perceptrons and graph-node modules so `.to()`/`state_dict()`/`parameters()` reach every one |
+| `converter.py` | Public facade: `check_representability` and `convert_torch_model` (trace → normalize → analyze → convert → mark encoding layers → probe); `strict=True` default, `encoding_layer_placement="subsume"/"offload"` |
+| `converter_handlers/` | Mixins for `MapperGraphConverter`: `LinearConvertMixin`/`ConvConvertMixin` package Perceptrons with absorbed BN/activation (string conv padding rejected), `StructuralConvertMixin` holds cat/flatten shortcuts and absorption helpers, `converter_contract.py` is the typing-only host contract |
+| `encoding_layers.py` | `mark_encoding_layers` (subsume marks segment-start perceptrons as host spike-train ComputeOps; offload clears the mark so they map on-chip) and `segment_entry_perceptrons` (first on-chip perceptron per neural segment — the TTFS wire-contract seam) |
+| `fx_shape_utils.py` | Shared FX `tensor_meta` extraction (`node_input_shapes`, `node_output_shape`, `strip_batch`) plus `fx_literal_int` literal coercion and `node_target_str` |
+| `graph_normalization.py` | `normalize_fx_graph`: in-place fusion of consecutive Linears (walking through Identity/BN and folding BN into the preceding Linear) followed by dead-code elimination |
+| `mapper_graph_converter.py` | `MapperGraphConverter`: walks the FX graph emitting mappers — dedicated handlers for Linear/Conv/LayerNorm/MultiheadAttention, structural shortcuts (`ReshapeMapper`/`PermuteMapper`/`ConcatMapper`) for view/reshape/flatten/permute/transpose/cat, generic ComputeOp fallback for everything else |
+| `mapper_graph_fx.py` | `MapperGraphFxMixin`: `_partition_fx_args` splits FX args into mapper sources / bound tensors / extra args / kwargs; `_emit_generic_compute_op` builds a `ComputeOpMapper` over a `ComputeAdapter`; bound tensors are squeezed of a leading singleton dim |
+| `representability_analyzer.py` | `RepresentabilityAnalyzer` classifies every FX node (grouped convs are the unsupported case) and builds the BN/activation absorption plan; `RepresentabilityReport`, `OpInfo`, `RepresentabilityError` |
+| `torch_graph_tracer.py` | `trace_model`: FX symbolic tracing (MultiheadAttention/RNN/Transformer layers as leaves) + ShapeProp annotation; lock-serialized with stale-FX-patch restoration; raises `TracingError` |
 
 ## Dependencies
-
-- **Internal**: `models.perceptron_mixer.perceptron` (`Perceptron`),
-  `models.perceptron_mixer.perceptron_flow` (`PerceptronFlow`),
-  `models.supermodel` (`Supermodel`),
-  `models.preprocessing.input_cq` (`InputCQ`),
-  `mapping.mapping_utils` (all Mapper classes),
-  `models.layers` (`LeakyGradReLU`).
-- **External**: `torch`, `torch.fx`.
+- **mapping** — the target IR: Mapper classes from `mapping.mapping_utils` and
+  `mapping.mappers.*` (`ComputeOpMapper`, `InputMapper`, `PerceptronMapper`,
+  `Conv1DPerceptronMapper`, `Conv2DPerceptronMapper`, `ConcatMapper`,
+  `ReshapeMapper`, `PermuteMapper`, `Ensure2DMapper`), `ModelRepresentation`
+  as the converted graph container, and `mapping.support.compute_modules`
+  (`ComputeAdapter`, `_cat_along`) for generic host compute ops.
+- **models** — `models.perceptron_mixer.perceptron` (`Perceptron`, the packaged
+  MM+BN+activation unit) and `models.perceptron_mixer.perceptron_flow`
+  (`PerceptronFlow`, base class of `ConvertedModelFlow`).
 
 ## Dependents
+- **pipelining** — `pipeline_steps/config/torch_mapping_step.py` calls
+  `convert_torch_model` and handles `ConversionProbeError`.
+- **models** — `pretrained_bridge.py` converts pretrained models via
+  `convert_torch_model` + `mark_encoding_layers`.
+- **mapping** — `verification/wizard_layout_verify.py` and
+  `verification/onchip_fraction.py` convert models for layout verification
+  and on-chip-fraction analysis.
+- **search** — `problems/joint/layout_hook.py` converts candidate models
+  during joint architecture search.
+- **tuning** — `tuners/ttfs_cycle_adaptation_tuner.py` uses
+  `segment_entry_perceptrons` to place its q(x) STE at segment seams.
 
-- `pipelining.pipeline_steps.torch_mapping_step` uses `convert_torch_model`.
-- `models.builders` (torch_* builders) produce native models consumed by this module.
-
-## Perceptron packaging rule
-
-Conversion produces one `Perceptron` (wrapped by a `PerceptronMapper`) for each
-segment of the FX graph matching the pattern **MM+ → BN? → ACT**:
-
-- **MM+**: one or more matrix-multiplication-equivalent ops (`nn.Linear`,
-  `BatchNorm` — a diagonal MM) fused into a single `nn.Linear` by
-  `graph_normalization`.  Identity and BN between consecutive Linears are
-  walked through; BN is folded into the preceding Linear before the pair
-  is fused.
-- **BN?**: optional `BatchNorm1d`/`BatchNorm2d` (absorbed into the preceding
-  Linear).
-- **ACT**: optional activation (`ReLU`, `LeakyReLU`, `GELU`, `Identity`),
-  absorbed into the same Perceptron.
-
-Whether the resulting Perceptron participates in pipeline processing is
-determined by [`is_perceptron_activation()`](../mapping/mappers/base.py)
-(True for any non-Identity activation). Any detected nonlinearity (ReLU, GELU,
-LeakyReLU, etc.) maps to a NeuralCore. Identity (no activation) produces a
-host-side linear ComputeOp.
-
-The mapper boundary is the **single source of truth** for activation eligibility:
-`owned_perceptron_groups()` on every mapper type (FC, Conv2D, Conv1D) returns `[]`
-for Identity perceptrons and the perceptron list otherwise.  Downstream pipeline
-steps such as `ActivationAdaptationStep` consume `model.get_perceptrons()` and
-are therefore guaranteed to see only perceptrons with nonlinear activations — no
-special-casing of `Identity` is needed outside the mapper layer.
-
-## Exported API (\_\_init\_\_.py)
-
-`convert_torch_model`, `check_representability`, `RepresentabilityReport`.
+## Exported API
+- `convert_torch_model` — convert a trained native model to a `ConvertedModelFlow`.
+- `check_representability` — trace + normalize + classify without converting.
+- `RepresentabilityReport` — the per-op supported/unsupported classification result.
