@@ -141,8 +141,8 @@
       "expected_wall_min": 6
     },
     {
-      "name": "t0_08_ttfs_deepcnn_d8_fp_s32",
-      "config": "t0_08_ttfs_deepcnn_d8_fp_s32.json",
+      "name": "t0_08_ttfs_deepcnn_d8_fp_s32_sched",
+      "config": "t0_08_ttfs_deepcnn_d8_fp_s32_sched.json",
       "model_type": "deep_cnn",
       "cell": {
         "firing": "ttfs",
@@ -157,7 +157,8 @@
         "encoding_placement": "subsume"
       },
       "tags": [
-        "wall_risk"
+        "wall_risk",
+        "sched"
       ],
       "expected_wall_min": 12
     },
