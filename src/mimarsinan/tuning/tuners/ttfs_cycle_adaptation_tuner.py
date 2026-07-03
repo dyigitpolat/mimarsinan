@@ -15,9 +15,12 @@ from mimarsinan.models.spiking.training.blended_genuine_forward import (
 )
 from mimarsinan.tuning.axes.blend_axis import GenuineBlendAxis
 from mimarsinan.tuning.forward_install import LazyExecutorForward
+from mimarsinan.tuning.orchestration.blend_ramp import (
+    KDClassificationLoss,
+    run_teacher_distmatch,
+)
 from mimarsinan.tuning.orchestration.kd_blend_adaptation_tuner import (
     KDBlendAdaptationTuner,
-    _KDClassificationLoss,
 )
 from mimarsinan.tuning.orchestration.ramp_strategy import RampStrategy
 
@@ -69,7 +72,19 @@ class _Rung2TeacherFlow(nn.Module):
         return logits * self._output_scales.to(logits.device, logits.dtype)
 
 
-class _BlendGenuineKDLoss(_KDClassificationLoss):
+class _ContractCalibration:
+    """Calibration-pipeline resolver bound to the resolved deployment contract."""
+
+    def __init__(self, contract):
+        self._contract = contract
+
+    def __call__(self, config, *, synchronized, distmatch_driven):
+        return self._contract.calibration_pipeline(
+            config, distmatch_driven=distmatch_driven,
+        )
+
+
+class _BlendGenuineKDLoss(KDClassificationLoss):
     """KD (vs frozen teacher) on the blend output + a CE on the PURE genuine logits.
 
     The extra ``genuine_ce_alpha · CE(genuine_logits, y)`` term sharpens the pure cascade
@@ -165,16 +180,11 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
         )
         from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 
-        def _calibration_resolver(config, *, synchronized, distmatch_driven):
-            return contract.calibration_pipeline(
-                config, distmatch_driven=distmatch_driven,
-            )
-
         plan = TtfsAdaptationPlan.resolve(
             self.pipeline.config,
             synchronized=self._synchronized,
             optimization_driver=DeploymentPlan.of(self.pipeline).optimization_driver,
-            calibration_resolver=_calibration_resolver,
+            calibration_resolver=_ContractCalibration(contract),
         )
         self._adaptation_plan = plan
         self._genuine_blend_ramp = plan.genuine_blend_ramp
@@ -183,14 +193,7 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
         self._blend_fast_rates = plan.blend_fast_rates
         self._blend_fast_steps_per_rate = plan.blend_fast_steps_per_rate
         self._fast_stabilize_steps = plan.fast_stabilize_steps
-        driver = plan.driver
-        self._optimization_driver = driver
-        self._setup_fast_ladder(
-            enabled=driver.fast_ladder,
-            rates=driver.fast_ladder_rates,
-            steps_per_rate=driver.fast_ladder_steps_per_rate,
-            eta_min_factor=driver.fast_ladder_eta_min_factor,
-        )
+        self._adopt_optimization_driver(plan.driver)
         self._fast_full_transform_log = []
         self._blend_forward = None
         self._genuine_ce_alpha = float(
@@ -203,8 +206,6 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
         self._gain_correction_stats = None
         self._maybe_apply_gain_correction()
         self._theta_cotrain = cal.theta_cotrain
-        self._theta_cotrain_stats = None
-        self._theta_cotrain_params = None
 
     def _maybe_apply_gain_correction(self) -> None:
         """Per-cascade-depth activation_scale trim inverting the ramp decode's depth attenuation.
@@ -286,24 +287,9 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
             return GenuineBlendRamp()
         return super()._make_ramp_strategy()
 
-    def _after_install_blend(self) -> None:
-        """Strategy pre-step, gain base capture, ramp-forward install, theta promotion.
-
-        The ordering is parity-critical (theta promotion must follow scalar-theta calibration).
-        """
-        self._ramp.after_install_blend_pre(self)
+    def _before_ramp_forward_install(self) -> None:
+        """Capture the gain-ramp base after calibration, before the ramp forward (parity-critical order)."""
         self._capture_gain_ramp_base()
-        self._install_ramp_forward()
-        self._maybe_promote_theta_cotrain()
-
-    def _maybe_promote_theta_cotrain(self) -> None:
-        """Rebind ``activation_scale`` to a per-channel trainable param after scalar-theta calibration.
-
-        Routes the optimiser's gradient into the deployed forward (which references it by identity).
-        """
-        if not self._theta_cotrain:
-            return
-        self._promote_per_channel_theta()
 
     def _capture_gain_ramp_base(self) -> None:
         """Capture post-calibration base scales + target gain factors for the rate-gated ramp, and set rate 0."""
@@ -338,18 +324,12 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
         )
 
         cal = self._calibration
-        cal_x = self._calibration_inputs()
-        self._distmatch_stats = match_activation_distributions(
-            self.model,
-            self._teacher,
-            cal_x,
-            self._T,
+        self._distmatch_stats = run_teacher_distmatch(
+            self,
+            match_activation_distributions,
             quantile=cal.distmatch_quantile,
             bias_iters=cal.distmatch_bias_iters,
             eta=cal.distmatch_bias_eta,
-        )
-        self.pipeline.reporter.report(
-            f"{self.name} distmatch", self._distmatch_stats,
         )
 
     def _wrap_encoding_input(self, perceptron) -> None:

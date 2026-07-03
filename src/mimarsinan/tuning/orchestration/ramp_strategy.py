@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from mimarsinan.tuning.axes import BlendAxis
+from mimarsinan.tuning.orchestration.blend_ramp import BlendActivation
 
 
 class RampStrategy:
@@ -17,12 +18,6 @@ class RampStrategy:
         return BlendAxis()
 
     def make_blend(self, tuner, old, target, rate):
-        # Lazy: kd_blend_adaptation_tuner imports this module, so importing it at top
-        # would be a circular import.
-        from mimarsinan.tuning.orchestration.kd_blend_adaptation_tuner import (
-            BlendActivation,
-        )
-
         return BlendActivation(
             old, target, rate,
             target_type=tuner._target_activation_type,

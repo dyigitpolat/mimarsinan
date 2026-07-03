@@ -36,6 +36,10 @@ class FastLadderMixin:
         driver = DeploymentPlan.of(self.pipeline).optimization_driver_for_family(
             rates=rates, steps_per_rate=steps_per_rate, eta_min_factor=eta_min_factor,
         )
+        return self._adopt_optimization_driver(driver)
+
+    def _adopt_optimization_driver(self, driver):
+        """Stash a resolved ``OptimizationDriver`` and configure the fast ladder from its fields."""
         self._optimization_driver = driver
         self._setup_fast_ladder(
             enabled=driver.fast_ladder,

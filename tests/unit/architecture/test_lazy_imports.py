@@ -116,7 +116,6 @@ ALLOWLIST = {
     "tuning/orchestration/conversion_policy.py",
     "tuning/orchestration/fast_ladder.py",
     "tuning/orchestration/kd_blend_adaptation_tuner.py",
-    "tuning/orchestration/ramp_strategy.py",
     "tuning/orchestration/ttfs_adaptation_plan.py",
     "tuning/tuners/activation_adaptation_tuner.py",
     "tuning/tuners/activation_shift_tuner.py",

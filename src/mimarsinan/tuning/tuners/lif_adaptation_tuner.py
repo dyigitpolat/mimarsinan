@@ -8,8 +8,11 @@ from mimarsinan.models.nn.activations import (
     ChipInputQuantizer,
     LIFActivation,
 )
-from mimarsinan.tuning.orchestration.kd_blend_adaptation_tuner import (
+from mimarsinan.tuning.orchestration.blend_ramp import (
     BlendActivation,
+    run_teacher_distmatch,
+)
+from mimarsinan.tuning.orchestration.kd_blend_adaptation_tuner import (
     KDBlendAdaptationTuner,
     _InstalledForward,
 )
@@ -55,10 +58,9 @@ class LIFAdaptationTuner(KDBlendAdaptationTuner):
         self._thresholding_mode = str(self.pipeline.config.get("thresholding_mode", "<="))
         self._cycle_accurate = bool(self.pipeline.config.get("cycle_accurate_lif_forward", False))
         from mimarsinan.pipelining.core.platform_constraints_resolver import resolve_bias_mode
-        from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 
         self._bias_mode = resolve_bias_mode(self.pipeline.config)
-        driver = DeploymentPlan.of(self.pipeline).optimization_driver_for_family(
+        self._consume_optimization_driver(
             rates=self.pipeline.config.get(
                 "lif_blend_fast_rates", [0.25, 0.5, 0.75, 1.0]
             ),
@@ -68,13 +70,6 @@ class LIFAdaptationTuner(KDBlendAdaptationTuner):
             eta_min_factor=float(
                 self.pipeline.config.get("lif_blend_fast_lr_eta_min", 0.1)
             ),
-        )
-        self._optimization_driver = driver
-        self._setup_fast_ladder(
-            enabled=driver.fast_ladder,
-            rates=driver.fast_ladder_rates,
-            steps_per_rate=driver.fast_ladder_steps_per_rate,
-            eta_min_factor=driver.fast_ladder_eta_min_factor,
         )
         self._fast_stabilize_steps = int(
             self.pipeline.config.get("lif_blend_fast_stabilize_steps", 0)
@@ -93,13 +88,7 @@ class LIFAdaptationTuner(KDBlendAdaptationTuner):
         self._lif_theta_cotrain = bool(
             self.pipeline.config.get("lif_theta_cotrain", False)
         )
-
-    def _after_install_blend(self) -> None:
-        """Base pre-ramp setup + ramp-forward install, then (opt-in) promote per-channel
-        theta before the fast-ladder optimiser is built over ``model.parameters()``."""
-        super()._after_install_blend()
-        if self._lif_theta_cotrain:
-            self._promote_per_channel_theta()
+        self._theta_cotrain = self._lif_theta_cotrain
 
     def _post_stabilization_hook(self):
         if self._lif_distmatch:
@@ -118,17 +107,12 @@ class LIFAdaptationTuner(KDBlendAdaptationTuner):
             match_lif_activation_distributions,
         )
 
-        cal_x = self._calibration_inputs(self._lif_distmatch_cal_batches)
-        self._lif_distmatch_stats = match_lif_activation_distributions(
-            self.model,
-            self._teacher,
-            cal_x,
-            self._T,
+        self._lif_distmatch_stats = run_teacher_distmatch(
+            self,
+            match_lif_activation_distributions,
+            n_batches=self._lif_distmatch_cal_batches,
             bias_iters=self._lif_distmatch_bias_iters,
             eta=self._lif_distmatch_eta,
-        )
-        self.pipeline.reporter.report(
-            f"{self.name} distmatch", self._lif_distmatch_stats,
         )
 
     def _make_target_activation(self, perceptron) -> LIFActivation:

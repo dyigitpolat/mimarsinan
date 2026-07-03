@@ -6,10 +6,14 @@ import warnings
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 from mimarsinan.common.best_effort import best_effort
 from mimarsinan.tuning.forward_install import CascadeForwardInstall, LazyExecutorForward
+from mimarsinan.tuning.orchestration.blend_ramp import (
+    BlendActivation,
+    KDClassificationLoss,
+    kd_loss_from_config,
+)
 from mimarsinan.tuning.orchestration.genuine_probe import (
     eval_forward_over_val,
     genuine_acc_on_clone,
@@ -17,66 +21,12 @@ from mimarsinan.tuning.orchestration.genuine_probe import (
 from mimarsinan.tuning.orchestration.ramp_strategy import ValueDomainProxyRamp
 from mimarsinan.tuning.orchestration.smooth_adaptation_tuner import SmoothAdaptationTuner
 from mimarsinan.tuning.perceptron_rate import rebuild_activations, set_blend_rate
-from mimarsinan.tuning.teacher import freeze_module, snapshot_frozen_teacher
+from mimarsinan.tuning.teacher import snapshot_frozen_teacher
+
+__all__ = ["BlendActivation", "KDBlendAdaptationTuner"]
 
 _InstalledForward = LazyExecutorForward
-
-
-class BlendActivation(nn.Module):
-    """Linear blend of an old activation and a target activation controlled by ``rate``."""
-
-    def __init__(
-        self,
-        old_activation: nn.Module,
-        target_activation: nn.Module,
-        rate: float = 0.0,
-        *,
-        target_type: str,
-        old_type: str = "ReLU",
-    ):
-        super().__init__()
-        self.old_activation = old_activation
-        self.target_activation = target_activation
-        self.rate = float(rate)
-        self._target_type = target_type
-        self._old_type = old_type
-
-    @property
-    def activation_type(self) -> str:
-        return self._target_type if self.rate >= 1.0 else self._old_type
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        if self.rate <= 0.0:
-            return self.old_activation(x)
-        if self.rate >= 1.0:
-            return self.target_activation(x)
-        return (1.0 - self.rate) * self.old_activation(x) + self.rate * self.target_activation(x)
-
-
-class _KDClassificationLoss:
-    """KD + CE loss (T=3, α=0.3) for BasicTrainer.loss_function(model, x, y)."""
-
-    def __init__(self, teacher: nn.Module, temperature: float = 3.0, alpha: float = 0.3):
-        self.teacher = teacher
-        self.temperature = float(temperature)
-        self.alpha = float(alpha)
-        freeze_module(self.teacher)
-
-    def __call__(self, model: nn.Module, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
-        with torch.no_grad():
-            teacher_param = next(self.teacher.parameters(), None)
-            if teacher_param is not None and teacher_param.device != x.device:
-                self.teacher.to(x.device)
-            teacher_logits = self.teacher(x)
-        student_logits = model(x)
-        ce = F.cross_entropy(student_logits, y)
-        T = self.temperature
-        kd = F.kl_div(
-            F.log_softmax(student_logits / T, dim=-1),
-            F.softmax(teacher_logits / T, dim=-1),
-            reduction="batchmean",
-        ) * (T * T)
-        return self.alpha * ce + (1.0 - self.alpha) * kd
+_KDClassificationLoss = KDClassificationLoss
 
 
 class KDBlendAdaptationTuner(CascadeForwardInstall, SmoothAdaptationTuner):
@@ -89,6 +39,7 @@ class KDBlendAdaptationTuner(CascadeForwardInstall, SmoothAdaptationTuner):
     _initial_ramp_step = 0.125
     _ramp_step_growth = 1.0
     _max_stabilization_rounds = 3
+    _theta_cotrain = False
 
     def __init__(self, pipeline, model, target_accuracy, lr, adaptation_manager):
         super().__init__(pipeline, model, target_accuracy, lr)
@@ -147,10 +98,20 @@ class KDBlendAdaptationTuner(CascadeForwardInstall, SmoothAdaptationTuner):
             )
 
     def _after_install_blend(self) -> None:
-        """Strategy-specific pre-ramp setup, then install the ramp forward (if any)
-        after blends + KD loss are set."""
+        """Strategy pre-step, the pre-install hook, the ramp forward, then the opt-in
+        theta promotion (which must follow any scalar-theta calibration)."""
         self._ramp.after_install_blend_pre(self)
+        self._before_ramp_forward_install()
         self._install_ramp_forward()
+        self._maybe_promote_theta_cotrain()
+
+    def _before_ramp_forward_install(self) -> None:
+        """Hook between the ramp pre-step and the ramp-forward install (e.g. gain-base capture)."""
+
+    def _maybe_promote_theta_cotrain(self) -> None:
+        """Promote per-channel theta when the tuner opted in via ``_theta_cotrain``."""
+        if self._theta_cotrain:
+            self._promote_per_channel_theta()
 
     def _install_ramp_forward(self) -> None:
         fwd = self._ramp_forward()
@@ -177,17 +138,8 @@ class KDBlendAdaptationTuner(CascadeForwardInstall, SmoothAdaptationTuner):
         return self._ramp.make_kd_loss(self)
 
     def _kd_classification_loss(self, teacher):
-        """Build the KD+CE blend loss with config-driven weighting.
-
-        SSOT for ``_KDClassificationLoss`` across the LIF + TTFS fine-tune;
-        ``kd_ce_alpha`` / ``kd_temperature`` default to 0.3 / 3.0 (KD-heavy).
-        """
-        cfg = self.pipeline.config
-        return _KDClassificationLoss(
-            teacher,
-            temperature=float(cfg.get("kd_temperature", 3.0)),
-            alpha=float(cfg.get("kd_ce_alpha", 0.3)),
-        )
+        """The config-driven KD+CE blend loss (the ``blend_ramp`` SSOT) for this pipeline."""
+        return kd_loss_from_config(self.pipeline.config, teacher)
 
     def _remove_forward(self) -> None:
         """Let the ramp strategy clean up its owned references, then unpatch."""
