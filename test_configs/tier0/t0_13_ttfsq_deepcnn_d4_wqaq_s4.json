@@ -9,13 +9,13 @@
       {
         "max_axons": 1024,
         "max_neurons": 512,
-        "count": 140,
+        "count": 180,
         "has_bias": true
       },
       {
         "max_axons": 512,
         "max_neurons": 256,
-        "count": 140,
+        "count": 180,
         "has_bias": true
       }
     ],
