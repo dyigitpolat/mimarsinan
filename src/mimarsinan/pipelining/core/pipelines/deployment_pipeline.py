@@ -80,41 +80,19 @@ class DeploymentPipeline(Pipeline):
         self.config["num_classes"] = data_provider.get_prediction_mode().num_classes
         self.config["device"] = select_device()
 
-        plan = DeploymentPlan.resolve(self.config)
-        spiking = plan.spiking_mode
-        if plan.requires_ttfs_firing:
-            self.config.setdefault("firing_mode", "TTFS")
-            self.config.setdefault("spike_generation_mode", "TTFS")
-            self.config.setdefault("thresholding_mode", "<=")
-
-            if self.config["firing_mode"] != "TTFS":
-                raise ValueError(
-                    f"spiking_mode='{spiking}' requires firing_mode='TTFS', "
-                    f"got '{self.config['firing_mode']}'"
-                )
-            if self.config["spike_generation_mode"] != "TTFS":
-                raise ValueError(
-                    f"spiking_mode='{spiking}' requires spike_generation_mode='TTFS', "
-                    f"got '{self.config['spike_generation_mode']}'"
-                )
-        else:
-            self.config.setdefault("firing_mode", "Default")
-            self.config.setdefault("spike_generation_mode", "Uniform")
-            self.config.setdefault("thresholding_mode", "<=")
-            self.config.setdefault("cycle_accurate_lif_forward", True)
-
-        self.tolerance = 1.0 - plan.degradation_tolerance
-        if plan.scm_degradation_tolerance is not None:
-            self.step_tolerances["Soft Core Mapping"] = (
-                1.0 - plan.scm_degradation_tolerance
-            )
-
-        self.accuracy_budget.budget_total = plan.degradation_budget_total
-
         if os.environ.get("MIMARSINAN_CUDA_DEBUG") == "1":
             self.config.setdefault("cuda_debug", True)
-        # Re-resolve AFTER the env-driven setdefault so the plan observes it.
-        self.cuda_debug = DeploymentPlan.resolve(self.config).cuda_debug
+
+        # The single plan resolution for this pipeline instance.
+        self.plan = DeploymentPlan.resolve(self.config)
+        self.cuda_debug = self.plan.cuda_debug
+
+        self.tolerance = 1.0 - self.plan.degradation_tolerance
+        if self.plan.scm_degradation_tolerance is not None:
+            self.step_tolerances["Soft Core Mapping"] = (
+                1.0 - self.plan.scm_degradation_tolerance
+            )
+        self.accuracy_budget.budget_total = self.plan.degradation_budget_total
 
         self._validate_config()
 
@@ -127,7 +105,7 @@ class DeploymentPipeline(Pipeline):
         )
 
     def _display_config(self):
-        plan = DeploymentPlan.resolve(self.config)
+        plan = self.plan
         print(
             f"Deployment pipeline  "
             f"[search_mode={plan.search_mode}, spiking={plan.spiking_mode}, "
@@ -140,13 +118,11 @@ class DeploymentPipeline(Pipeline):
     def _assemble_steps(self):
         for name, cls in get_pipeline_step_specs(self.config):
             self.add_pipeline_step(name, cls(self))
-        plan = DeploymentPlan.resolve(self.config)
-        pruning = plan.pruning
-        pruning_fraction = plan.pruning_fraction
+        plan = self.plan
         if plan.pruning_enabled:
-            print(f"[DeploymentPipeline] Pruning enabled: pruning={pruning}, pruning_fraction={pruning_fraction}; PruningAdaptationStep added.")
+            print(f"[DeploymentPipeline] Pruning enabled: pruning={plan.pruning}, pruning_fraction={plan.pruning_fraction}; PruningAdaptationStep added.")
         else:
-            print(f"[DeploymentPipeline] Pruning not in pipeline: pruning={pruning}, pruning_fraction={pruning_fraction}")
+            print(f"[DeploymentPipeline] Pruning not in pipeline: pruning={plan.pruning}, pruning_fraction={plan.pruning_fraction}")
 
     @staticmethod
     def apply_preset(pipeline_mode: str, deployment_parameters: dict) -> None:

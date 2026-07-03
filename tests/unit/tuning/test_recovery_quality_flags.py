@@ -1,15 +1,15 @@
-"""Tests for the three coupled recovery-quality flags (all default-off byte-identical):
+"""Tests for the three coupled recovery-quality TuningPolicy fields (default-off):
 
-- CHANGE 1 ``tuning_refind_lr_on_miss``: a cycle that misses the target invalidates
+- CHANGE 1 ``refind_lr_on_miss``: a cycle that misses the target invalidates
   the cached LR so the next cycle re-discovers it.
-- CHANGE 2 ``tuning_recovery_lr_plateau``: ``train_steps_until_target`` reduces the
+- CHANGE 2 ``recovery_lr_plateau``: ``train_steps_until_target`` reduces the
   optimizer LR on a plateau (instead of breaking) until the reductions are exhausted.
-- CHANGE 3 ``tuning_rollback_ratchet``: the per-cycle rollback gate is computed
+- CHANGE 3 ``rollback_ratchet``: the per-cycle rollback gate is computed
   against the best-committed accuracy (a ratcheting high-water mark) so repeated
   small slips cannot accumulate down to the floor.
 
-The default-off regression at the end asserts the three flags off reproduces the
-current per-cycle decisions exactly.
+The default-off regression at the end asserts the default TUNING_POLICY reproduces
+the current per-cycle decisions exactly.
 """
 
 import pytest
@@ -20,6 +20,7 @@ from conftest import (
     MockPipeline,
     make_tiny_supermodel,
     default_config,
+    override_tuning_policy,
     MockDataProviderFactory,
 )
 from mimarsinan.tuning.orchestration.smooth_adaptation_tuner import SmoothAdaptationTuner
@@ -65,11 +66,12 @@ class _ScriptedCycleTuner(SmoothAdaptationTuner):
         return self._adaptation(rate)
 
 
-def _make_cycle_tuner(tmp_path, **flags):
+def _make_cycle_tuner(tmp_path, monkeypatch=None, **policy_overrides):
+    if policy_overrides:
+        override_tuning_policy(monkeypatch, **policy_overrides)
     cfg = default_config()
     cfg["tuning_budget_scale"] = 1.0
     cfg["degradation_tolerance"] = 0.05
-    cfg.update(flags)
     pipeline = MockPipeline(config=cfg, working_directory=str(tmp_path))
     tuner = _ScriptedCycleTuner(pipeline, make_tiny_supermodel(), 0.9, 0.001)
     tuner._rollback_tolerance = 0.05
@@ -81,8 +83,8 @@ def _make_cycle_tuner(tmp_path, **flags):
 
 
 class TestRefindLrOnMiss:
-    def test_miss_invalidates_lr_cache_when_flag_on(self, tmp_path, deterministic_rng):
-        tuner = _make_cycle_tuner(tmp_path, tuning_refind_lr_on_miss=True)
+    def test_miss_invalidates_lr_cache_when_flag_on(self, tmp_path, deterministic_rng, monkeypatch):
+        tuner = _make_cycle_tuner(tmp_path, monkeypatch, refind_lr_on_miss=True)
         # Baseline 0.85 → absolute floor 0.85*0.95 = 0.8075. Post 0.81 commits
         # (>= max(0.85-0.05, 0.8075)=0.8075) but 0.81 < target 0.9-0.05 = 0.85 → MISS.
         tuner._validation_baseline = 0.85
@@ -96,8 +98,8 @@ class TestRefindLrOnMiss:
         assert tuner.find_lr_calls == 2
         tuner.close()
 
-    def test_miss_retains_lr_cache_when_flag_off(self, tmp_path, deterministic_rng):
-        tuner = _make_cycle_tuner(tmp_path, tuning_refind_lr_on_miss=False)
+    def test_miss_retains_lr_cache_when_flag_off(self, tmp_path, deterministic_rng, monkeypatch):
+        tuner = _make_cycle_tuner(tmp_path, monkeypatch, refind_lr_on_miss=False)
         tuner._validation_baseline = 0.85
         tuner.drive(0.3, validate_seq=[0.85, 0.81])
         assert tuner._committed_rate == 0.3
@@ -108,9 +110,9 @@ class TestRefindLrOnMiss:
         assert tuner.find_lr_calls == 1, "cache retained → no second LR discovery"
         tuner.close()
 
-    def test_reached_target_never_invalidates_via_miss_path(self, tmp_path, deterministic_rng):
+    def test_reached_target_never_invalidates_via_miss_path(self, tmp_path, deterministic_rng, monkeypatch):
         """Hitting the target keeps the cache regardless of the flag."""
-        tuner = _make_cycle_tuner(tmp_path, tuning_refind_lr_on_miss=True)
+        tuner = _make_cycle_tuner(tmp_path, monkeypatch, refind_lr_on_miss=True)
         tuner.drive(0.3, validate_seq=[0.85, 0.90])  # post 0.90 >= 0.85 → reached
         assert tuner.find_lr_calls == 1
         assert tuner._cached_lr is not None
@@ -280,12 +282,12 @@ class TestPlateauLrReduction:
 
 
 class TestRollbackRatchet:
-    def test_drift_gated_against_high_water_mark(self, tmp_path, deterministic_rng):
+    def test_drift_gated_against_high_water_mark(self, tmp_path, deterministic_rng, monkeypatch):
         """A slowly drifting surface is gated against the BEST committed accuracy,
         so it cannot accumulate small slips down toward the floor."""
         # Baseline 0.80 → absolute floor 0.80*0.95 = 0.76, well below the gate, so
         # the ratchet (not the cumulative-drift floor) is what catches the drift.
-        tuner = _make_cycle_tuner(tmp_path, tuning_rollback_ratchet=True)
+        tuner = _make_cycle_tuner(tmp_path, monkeypatch, rollback_ratchet=True)
         tuner._rollback_tolerance = 0.05
         tuner._validation_baseline = 0.80
         tuner._best_committed_acc = 0.90  # high-water mark from earlier cycles
@@ -309,9 +311,9 @@ class TestRollbackRatchet:
         assert r3 == 0.4, "ratchet must roll back the slip below best-margin"
         tuner.close()
 
-    def test_new_high_ratchets_threshold_up(self, tmp_path, deterministic_rng):
+    def test_new_high_ratchets_threshold_up(self, tmp_path, deterministic_rng, monkeypatch):
         """A new committed high tightens the gate for subsequent cycles."""
-        tuner = _make_cycle_tuner(tmp_path, tuning_rollback_ratchet=True)
+        tuner = _make_cycle_tuner(tmp_path, monkeypatch, rollback_ratchet=True)
         tuner._rollback_tolerance = 0.05
         tuner._validation_baseline = 0.80  # floor 0.76, below the gate
         tuner._best_committed_acc = 0.85
@@ -326,10 +328,10 @@ class TestRollbackRatchet:
         assert r2 == 0.3, "ratcheted-up threshold rolls back the regression"
         tuner.close()
 
-    def test_flag_off_uses_relative_to_previous_gate(self, tmp_path, deterministic_rng):
+    def test_flag_off_uses_relative_to_previous_gate(self, tmp_path, deterministic_rng, monkeypatch):
         """With the flag off, the gate is relative to pre_cycle_acc exactly as today:
         a drifting surface commits each small slip (and would accumulate)."""
-        tuner = _make_cycle_tuner(tmp_path, tuning_rollback_ratchet=False)
+        tuner = _make_cycle_tuner(tmp_path, monkeypatch, rollback_ratchet=False)
         tuner._rollback_tolerance = 0.05
         tuner._validation_baseline = 0.80  # floor 0.76, below the gate
 
@@ -379,13 +381,13 @@ class TestAllFlagsDefaultOff:
         assert tuner.drive(0.7, validate_seq=[0.86, 0.84]) == 0.7
         tuner.close()
 
-    def test_recovery_caller_passes_default_plateau_kwargs_when_off(self, tmp_path, deterministic_rng):
-        """With ``tuning_recovery_lr_plateau`` off, the recovery call passes the
+    def test_recovery_caller_passes_default_plateau_kwargs_when_off(self, tmp_path, deterministic_rng, monkeypatch):
+        """With ``recovery_lr_plateau`` off, the recovery call passes the
         no-op plateau defaults (factor 1.0 / reductions 0)."""
         from unittest.mock import patch
         from mimarsinan.tuning.orchestration import smooth_adaptation_cycle as cyc
 
-        tuner = _make_cycle_tuner(tmp_path, tuning_recovery_lr_plateau=False)
+        tuner = _make_cycle_tuner(tmp_path, monkeypatch, recovery_lr_plateau=False)
         tuner.trainer.train_steps_until_target = lambda *a, **k: None
 
         captured = {}
@@ -400,15 +402,16 @@ class TestAllFlagsDefaultOff:
         assert captured.get("plateau_lr_reductions", 0) == 0
         tuner.close()
 
-    def test_recovery_caller_passes_configured_plateau_kwargs_when_on(self, tmp_path, deterministic_rng):
+    def test_recovery_caller_passes_configured_plateau_kwargs_when_on(self, tmp_path, deterministic_rng, monkeypatch):
         from unittest.mock import patch
         from mimarsinan.tuning.orchestration import smooth_adaptation_cycle as cyc
 
         tuner = _make_cycle_tuner(
             tmp_path,
-            tuning_recovery_lr_plateau=True,
-            tuning_recovery_lr_plateau_factor=0.3,
-            tuning_recovery_lr_plateau_reductions=2,
+            monkeypatch,
+            recovery_lr_plateau=True,
+            recovery_lr_plateau_factor=0.3,
+            recovery_lr_plateau_reductions=2,
         )
         tuner.trainer.train_steps_until_target = lambda *a, **k: None
 

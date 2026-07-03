@@ -237,13 +237,9 @@ class TestDeepMLPSmokeTemplate:
         assert config["deployment_parameters"]["ttfs_cycle_schedule"] == "cascaded"
         assert config["deployment_parameters"]["enable_sanafe_simulation"] is False
 
-        sys.path.insert(0, str(repo_root / "src"))
-        try:
-            from main import _parse_deployment_config
-        except ModuleNotFoundError:
-            pytest.skip("src.main not importable in this test context")
+        from mimarsinan.pipelining.session import parse_deployment_config
         config["generated_files_path"] = str(tmp_path / "generated")
         config["datasets_path"] = str(repo_root / "datasets")
-        parsed = _parse_deployment_config(config)
-        assert parsed["deployment_parameters"]["model_type"] == "deep_mlp"
-        assert parsed["deployment_name"]
+        parsed = parse_deployment_config(config)
+        assert parsed.deployment_parameters["model_type"] == "deep_mlp"
+        assert parsed.deployment_name

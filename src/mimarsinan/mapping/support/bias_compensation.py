@@ -1,4 +1,4 @@
-"""Negative-value shift: make negative-producing ComputeOp boundaries lossless for the spike encoder."""
+"""Deployed-bias compensation: additive effective-bias shifts reconciling training-time vs deployed activation conventions (negative-value shift, TTFS-quantized half-step)."""
 
 from __future__ import annotations
 
@@ -6,6 +6,18 @@ import numpy as np
 import torch
 
 from mimarsinan.transformations.perceptron.perceptron_transformer import PerceptronTransformer
+from mimarsinan.tuning.shift_calculation import calculate_activation_shift
+
+
+def apply_additive_effective_bias_shift(perceptron, shift, *, baked_flag: str) -> bool:
+    """Idempotently add ``shift`` to the effective bias; True when baked by this call."""
+    if getattr(perceptron, baked_flag, False):
+        return False
+    PerceptronTransformer().apply_effective_bias_transform(
+        perceptron, lambda b, s=shift: b + s,
+    )
+    setattr(perceptron, baked_flag, True)
+    return True
 
 
 def negative_shifts_from_min(min_by_node: dict[int, np.ndarray]) -> dict[int, np.ndarray]:
@@ -23,17 +35,32 @@ def apply_negative_shift_bias(perceptron, shift) -> None:
     if getattr(perceptron, "_neg_shift_baked", False):
         return
 
-    transformer = PerceptronTransformer()
-    effective_weight = transformer.get_effective_weight(perceptron)
+    effective_weight = PerceptronTransformer().get_effective_weight(perceptron)
     s = torch.as_tensor(
         shift, dtype=effective_weight.dtype, device=effective_weight.device,
     )
     correction = (effective_weight * s).sum(dim=-1)
-
-    transformer.apply_effective_bias_transform(
-        perceptron, lambda b, c=correction: b - c,
+    apply_additive_effective_bias_shift(
+        perceptron, -correction, baked_flag="_neg_shift_baked",
     )
-    perceptron._neg_shift_baked = True
+
+
+def apply_ttfs_quantization_bias_compensation(model, target_tq: int) -> None:
+    """Idempotent bias bake when activation quantization is enabled (ttfs_quantized)."""
+    for perceptron in model.get_perceptrons():
+        if getattr(perceptron, "is_encoding_layer", False):
+            continue
+        shift = calculate_activation_shift(target_tq, perceptron.activation_scale)
+        apply_additive_effective_bias_shift(
+            perceptron,
+            shift / perceptron.activation_scale,
+            baked_flag="_ttfs_shift_baked_into_bias",
+        )
+
+
+def apply_ttfs_quantized_bias_shift(model, target_tq: int) -> None:
+    """Backward-compatible alias for :func:`apply_ttfs_quantization_bias_compensation`."""
+    apply_ttfs_quantization_bias_compensation(model, target_tq)
 
 
 def _is_perceptron(node) -> bool:

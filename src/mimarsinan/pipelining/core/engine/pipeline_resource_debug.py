@@ -7,13 +7,12 @@ import os
 import sys
 
 from mimarsinan.common.best_effort import best_effort
-
-_RESOURCE_DEBUG = os.environ.get("MIMARSINAN_RESOURCE_DEBUG") == "1"
+from mimarsinan.common.env import resource_debug_enabled
 
 
 def log_resource_snapshot(tag: str) -> None:
     """One-line stderr snapshot of process resources. No-op unless MIMARSINAN_RESOURCE_DEBUG=1."""
-    if not _RESOURCE_DEBUG:
+    if not resource_debug_enabled():
         return
     with best_effort("resource snapshot"):
         pid = os.getpid()

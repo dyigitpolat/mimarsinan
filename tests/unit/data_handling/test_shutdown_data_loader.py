@@ -75,13 +75,23 @@ class TestShutdownDegradesViaBestEffort:
             _unregister_dataloader_atexit_handlers(Weird())
         assert any("atexit" in r.getMessage() for r in caplog.records)
 
+    def test_resource_snapshot_reads_env_at_call_time(self, monkeypatch, capsys):
+        import mimarsinan.data_handling.data_loader_factory as dlf_mod
+
+        monkeypatch.delenv("MIMARSINAN_RESOURCE_DEBUG", raising=False)
+        dlf_mod._resource_snapshot("disabled-tag")
+        assert "disabled-tag" not in capsys.readouterr().err
+        monkeypatch.setenv("MIMARSINAN_RESOURCE_DEBUG", "1")
+        dlf_mod._resource_snapshot("enabled-tag")
+        assert "enabled-tag" in capsys.readouterr().err
+
     def test_resource_snapshot_failure_degrades_and_logs(self, monkeypatch, caplog):
         import mimarsinan.data_handling.data_loader_factory as dlf_mod
 
         def exploding_children():
             raise RuntimeError("mp broken")
 
-        monkeypatch.setattr(dlf_mod, "_RESOURCE_DEBUG", True)
+        monkeypatch.setenv("MIMARSINAN_RESOURCE_DEBUG", "1")
         monkeypatch.setattr(dlf_mod._mp, "active_children", exploding_children)
         with caplog.at_level(logging.DEBUG, logger="mimarsinan.best_effort"):
             dlf_mod._resource_snapshot("test-tag")

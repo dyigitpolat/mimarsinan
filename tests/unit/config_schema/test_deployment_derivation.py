@@ -1,3 +1,5 @@
+import pytest
+
 from mimarsinan.config_schema import build_flat_pipeline_config
 from mimarsinan.config_schema.defaults import get_default_deployment_parameters
 from mimarsinan.config_schema.deployment_derivation import derive_deployment_parameters
@@ -208,3 +210,33 @@ def test_vanilla_float_still_gets_driver_and_sim_enables():
     assert dp["activation_quantization"] is False
     assert dp["optimization_driver"] == "fast"
     assert dp["enable_loihi_simulation"] is True
+
+
+class TestTtfsFiringValidation:
+    def test_explicit_non_ttfs_firing_mode_raises_for_ttfs_modes(self):
+        from mimarsinan.config_schema.deployment_derivation import (
+            derive_pipeline_runtime_parameters,
+        )
+
+        for mode in ("ttfs", "ttfs_quantized", "ttfs_cycle_based"):
+            dp = {"spiking_mode": mode, "firing_mode": "Default"}
+            with pytest.raises(ValueError, match="firing_mode"):
+                derive_pipeline_runtime_parameters(dp)
+
+    def test_explicit_non_ttfs_spike_generation_raises_for_ttfs_modes(self):
+        from mimarsinan.config_schema.deployment_derivation import (
+            derive_pipeline_runtime_parameters,
+        )
+
+        dp = {"spiking_mode": "ttfs_quantized", "spike_generation_mode": "Uniform"}
+        with pytest.raises(ValueError, match="spike_generation_mode"):
+            derive_pipeline_runtime_parameters(dp)
+
+    def test_lif_keeps_custom_firing_mode(self):
+        from mimarsinan.config_schema.deployment_derivation import (
+            derive_pipeline_runtime_parameters,
+        )
+
+        dp = {"spiking_mode": "lif", "firing_mode": "Novena"}
+        derive_pipeline_runtime_parameters(dp)
+        assert dp["firing_mode"] == "Novena"

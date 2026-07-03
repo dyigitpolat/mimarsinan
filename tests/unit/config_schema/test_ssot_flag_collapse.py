@@ -21,10 +21,16 @@ from mimarsinan.config_schema.namespaced_schema import (
     unregistered_default_keys,
 )
 
-# The full set of knobs collapsed into the ConversionPolicy SSOT (recipe-active)
-# or deleted as measured-dead research levers. None of these is a config key any
-# longer — they are internal recipe-table constants or gone entirely.
+# The full set of knobs collapsed into the ConversionPolicy SSOT (recipe-active),
+# the TuningPolicy SSOT (frozen tuning-loop behavior), or deleted as measured-dead
+# research levers. None of these is a config key any longer — they are internal
+# policy/recipe-table constants or gone entirely.
 COLLAPSED_KEYS = frozenset({
+    "checkpoint_location",
+    "checkpoint_scope",
+    "global_budget",
+    "k_commit",
+    "tuning_use_paired_sensor",
     "fast_ladder_freeze_bn",
     "lif_blend_fast",
     "lif_blend_fast_lr_eta_min",

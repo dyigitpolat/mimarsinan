@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import re
 from pathlib import Path
 from typing import Any
 
 from mimarsinan.common.best_effort import best_effort
+from mimarsinan.common.env import runs_root
 from mimarsinan.gui.runtime.persistence import load_persisted_steps, load_console_logs
 from mimarsinan.gui.snapshot.rebuild import rebuild_step_snapshot_from_disk
 
@@ -27,7 +27,7 @@ def suggest_resume_step(ordered_steps: list[str], completed_steps: set[str]) -> 
 
 
 def get_runs_root() -> str:
-    return os.environ.get("MIMARSINAN_RUNS_ROOT", "./generated")
+    return runs_root()
 
 
 def _validate_run_id(run_id: str) -> str:

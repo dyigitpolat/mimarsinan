@@ -1,7 +1,7 @@
 """Optional Loihi-target HCM-vs-Lava spike-parity step (LIF-only)."""
 
 from mimarsinan.chip_simulation.lava_loihi import LavaLoihiRunner
-from mimarsinan.data_handling.test_sample_loader import load_test_sample_by_index
+from mimarsinan.data_handling.sample_loader import load_test_sample_by_index
 from mimarsinan.pipelining.core.engine.pipeline_helpers import require_spiking_mode_supported
 from mimarsinan.pipelining.core.steps.pipeline_step import PipelineStep
 from mimarsinan.pipelining.core.simulation_factory import (

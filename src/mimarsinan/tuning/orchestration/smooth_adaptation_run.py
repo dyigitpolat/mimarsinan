@@ -328,9 +328,9 @@ class SmoothAdaptationRunMixin(TunerBase):
 
     def _restore_best_committed_state(self, finalize_result):
         """Certified non-destructive guard at run scope. When
-        ``tuning_keepbest_certified`` is on and the finalized metric is worse than the
-        best-committed state's (beyond the rollback tolerance), restore that state so
-        the run never ships below the best committed cycle."""
+        ``TUNING_POLICY.keepbest_certified`` is on and the finalized metric is worse
+        than the best-committed state's (beyond the rollback tolerance), restore that
+        state so the run never ships below the best committed cycle."""
         if not getattr(self, "_keepbest_certified", False):
             return finalize_result
         best_state = getattr(self, "_best_committed_state", None)

@@ -128,8 +128,11 @@ def test_layernorm_variance_division_is_scale_invariant_not_linear():
         c = v - v.mean(-1, keepdim=True)
         return c / (c.var(-1, unbiased=False, keepdim=True) + 1e-5).sqrt()
 
+    torch.manual_seed(0)
     x = torch.randn(3, 6, dtype=torch.float64)
-    assert torch.allclose(ln(x), ln(3.0 * x), atol=1e-5)
+    # Invariance is exact only for eps=0; the 1e-5 eps perturbs small-variance
+    # rows by up to ~2e-4.
+    assert torch.allclose(ln(x), ln(3.0 * x), atol=1e-3)
 
 
 def test_layernorm_centering_is_the_realizable_part():

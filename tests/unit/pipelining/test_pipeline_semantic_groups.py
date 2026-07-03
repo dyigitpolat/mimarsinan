@@ -11,9 +11,6 @@ from mimarsinan.pipelining.core.pipelines.deployment_pipeline import (
     get_pipeline_step_specs,
     get_pipeline_semantic_group_by_step_name,
 )
-from mimarsinan.pipelining.core.pipelines.deployment_specs import (
-    _SEMANTIC_GROUP_BY_STEP_CLASS,
-)
 
 
 # ── Helper ───────────────────────────────────────────────────────────────────
@@ -35,7 +32,7 @@ def _base_config(**overrides) -> dict:
 # ── Coverage: every step class must be in the group map ──────────────────────
 
 class TestSemanticGroupMapCoverage:
-    """_SEMANTIC_GROUP_BY_STEP_CLASS must cover every class returned by get_pipeline_step_specs."""
+    """Every step the registry composes must carry a real semantic group."""
 
     @pytest.mark.parametrize("config_overrides,label", [
         ({}, "lif / no quant"),
@@ -48,11 +45,10 @@ class TestSemanticGroupMapCoverage:
     ])
     def test_every_step_has_a_group(self, config_overrides, label):
         config = _base_config(**config_overrides)
-        specs = get_pipeline_step_specs(config)
-        for name, cls in specs:
-            assert cls in _SEMANTIC_GROUP_BY_STEP_CLASS, (
-                f"[{label}] Step class {cls.__name__!r} (step {name!r}) "
-                f"has no entry in _SEMANTIC_GROUP_BY_STEP_CLASS."
+        groups = get_pipeline_semantic_group_by_step_name(config)
+        for name, group in groups.items():
+            assert group and group != "other", (
+                f"[{label}] Step {name!r} has no semantic group on its StepSpec."
             )
 
     def test_get_pipeline_semantic_group_returns_non_empty_for_all_steps(self):

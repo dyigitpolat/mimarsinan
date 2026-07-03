@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import json
-import os
 import re
 from pathlib import Path
 from typing import Any
 
+from mimarsinan.common.env import templates_dir
 from mimarsinan.gui.wizard.config_builder import build_deployment_config_from_state
 
 _SAFE_ID_RE = re.compile(r"^[A-Za-z0-9_\-]+$")
@@ -29,7 +29,7 @@ def name_and_deployment_from_post_body(body: dict[str, Any]) -> tuple[str, dict[
 
 
 def get_templates_dir() -> str:
-    return os.environ.get("MIMARSINAN_TEMPLATES_DIR", "./templates")
+    return templates_dir()
 
 
 def _validate_id(template_id: str) -> str:

@@ -1,13 +1,11 @@
-import os
-
 import torch
 import torch.nn as nn
 import torchvision.transforms as _T
 
+from mimarsinan.common.env import DISABLE_FFCV_VAR as FFCV_DISABLE_ENV
+from mimarsinan.common.env import ffcv_disabled
 from mimarsinan.data_handling.dataset_views import ApplyTransform
 from mimarsinan.data_handling.preprocessing import resolve_preprocessing
-
-FFCV_DISABLE_ENV = "MIMARSINAN_DISABLE_FFCV"
 
 
 class ClassificationMode:
@@ -72,7 +70,7 @@ class DataProvider:
         return {}
 
     def enable_ffcv(self) -> bool:
-        if os.environ.get(FFCV_DISABLE_ENV) == "1":
+        if ffcv_disabled():
             return False
         return bool(self.ffcv_transforms())
 

@@ -6,6 +6,15 @@ from enum import Enum
 from typing import Any, Mapping
 
 from mimarsinan.chip_simulation.spiking_mode_policy import policy_for_spiking_mode
+from mimarsinan.chip_simulation.spiking_semantics import (
+    LIF_MODES,
+    forces_activation_quantization,
+    is_analytical_ttfs,
+    is_cascaded_ttfs,
+    is_explicit_ttfs_cycle_schedule,
+    requires_ttfs_firing,
+    uses_ttfs_floor_ceil_convention,
+)
 
 __all__ = [
     "ParityContractKind",
@@ -24,15 +33,19 @@ class ParityContractKind(str, Enum):
     INAPPLICABLE = "INAPPLICABLE"
 
 
+def _is_quantized_analytical_ttfs(spiking_mode: str) -> bool:
+    return is_analytical_ttfs(spiking_mode) and forces_activation_quantization(
+        spiking_mode
+    )
+
+
 def classify_ttfs_quantized_sync_equivalence(
     *,
     spiking_mode: str,
     schedule: str | None,
 ) -> ParityContractKind:
     """TTFS quantized and synchronized cycle TTFS share the q(x) wire rule."""
-    if spiking_mode == "ttfs_quantized":
-        return ParityContractKind.FUNCTIONAL_EQUIVALENCE
-    if spiking_mode == "ttfs_cycle_based" and schedule == "synchronized":
+    if uses_ttfs_floor_ceil_convention(spiking_mode, schedule):
         return ParityContractKind.FUNCTIONAL_EQUIVALENCE
     return ParityContractKind.INAPPLICABLE
 
@@ -44,15 +57,18 @@ def classify_nf_scm_contract(
     training_forward_kind: str | None = None,
 ) -> ParityContractKind:
     """NF↔SCM gate contract keyed by deployment mode."""
-    if spiking_mode == "ttfs_quantized":
+    if _is_quantized_analytical_ttfs(spiking_mode):
         return ParityContractKind.FUNCTIONAL_EQUIVALENCE
-    if spiking_mode == "ttfs_cycle_based" and schedule == "cascaded":
+    # An unrecorded schedule is NOT defaulted to cascaded here: it stays bit-parity.
+    if is_explicit_ttfs_cycle_schedule(schedule) and is_cascaded_ttfs(
+        spiking_mode, schedule
+    ):
         return ParityContractKind.FUNCTIONAL_EQUIVALENCE
     if training_forward_kind == "analytical_staircase":
         return ParityContractKind.BIT_PARITY
-    if spiking_mode in {"ttfs", "ttfs_cycle_based"}:
+    if requires_ttfs_firing(spiking_mode):
         return ParityContractKind.BIT_PARITY
-    if spiking_mode == "lif":
+    if spiking_mode in LIF_MODES:
         return ParityContractKind.BIT_PARITY
     return ParityContractKind.INAPPLICABLE
 
@@ -76,7 +92,7 @@ def parity_contract_metadata(row: Mapping[str, Any]) -> dict[str, str]:
     """Attach parity contract kinds to a ledger/campaign row."""
     spiking_mode = str(row.get("spiking_mode") or row.get("firing") or "")
     schedule = row.get("schedule") or row.get("sync")
-    if schedule in {"analytical", "none"}:
+    if not is_explicit_ttfs_cycle_schedule(schedule):
         schedule = None
     backend = str(row.get("backend") or "sanafe")
     training_forward_kind = row.get("training_forward_kind")

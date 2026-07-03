@@ -109,7 +109,7 @@ def test_lif_driver_compute_min_recorder_matches_chip_aligned():
 
 def test_lif_driver_applies_negative_shift_like_chip_aligned():
     from mimarsinan.spiking.chip_aligned_nf import chip_aligned_segment_forward
-    from mimarsinan.mapping.support.neg_shift_bias import apply_negative_value_shifts
+    from mimarsinan.mapping.support.bias_compensation import apply_negative_value_shifts
 
     T = 8
     flow = _lif_flow(_TwoSegLayerNorm(), (8,), 4, T)

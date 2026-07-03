@@ -30,66 +30,43 @@ def select_device() -> torch.device:
     return device
 
 
+def _backend_tail(plan: DeploymentPlan) -> list[StepSpec]:
+    return [
+        StepSpec(name, cls, group="simulation")
+        for name, cls in BACKEND_REGISTRY.selected_step_specs(plan)
+    ]
+
+
 _STEP_PLAN = StepPlan([
-    StepSpec("Architecture Search",            ArchitectureSearchStep),
-    StepSpec("Model Configuration",            ModelConfigurationStep),
-    StepSpec("Model Building",                 ModelBuildingStep),
-    StepSpec("Weight Preloading",              WeightPreloadingStep),
-    StepSpec("Pretraining",                    PretrainingStep),
-    StepSpec("Torch Mapping",                  TorchMappingStep),
-    StepSpec("Pruning Adaptation",             PruningAdaptationStep),
-    StepSpec("Activation Analysis",            ActivationAnalysisStep),
-    StepSpec("Activation Adaptation",          ActivationAdaptationStep),
-    StepSpec("Clamp Adaptation",               ClampAdaptationStep),
-    StepSpec("Activation Shifting",            ActivationShiftStep),
-    StepSpec("Activation Quantization",        ActivationQuantizationStep),
-    StepSpec("LIF Adaptation",                 LIFAdaptationStep),
-    StepSpec("TTFS Cycle Fine-Tuning",         TTFSCycleAdaptationStep),
-    StepSpec("Noise Adaptation",               NoiseAdaptationStep),
-    StepSpec("Weight Quantization",            WeightQuantizationStep),
-    StepSpec("Quantization Verification",      QuantizationVerificationStep),
-    StepSpec("Normalization Fusion",           NormalizationFusionStep),
-    StepSpec("Soft Core Mapping",              SoftCoreMappingStep),
-    StepSpec("Core Quantization Verification", CoreQuantizationVerificationStep),
-    StepSpec("Hard Core Mapping",              HardCoreMappingStep),
-    lambda plan: BACKEND_REGISTRY.selected_step_specs(plan),
+    StepSpec("Architecture Search",            ArchitectureSearchStep,           group="configuration"),
+    StepSpec("Model Configuration",            ModelConfigurationStep,           group="configuration"),
+    StepSpec("Model Building",                 ModelBuildingStep,                group="model_building"),
+    StepSpec("Weight Preloading",              WeightPreloadingStep,             group="pretraining"),
+    StepSpec("Pretraining",                    PretrainingStep,                  group="pretraining"),
+    StepSpec("Torch Mapping",                  TorchMappingStep,                 group="torch_mapping"),
+    StepSpec("Pruning Adaptation",             PruningAdaptationStep,            group="pruning"),
+    StepSpec("Activation Analysis",            ActivationAnalysisStep,           group="activation"),
+    StepSpec("Activation Adaptation",          ActivationAdaptationStep,         group="activation"),
+    StepSpec("Clamp Adaptation",               ClampAdaptationStep,              group="activation"),
+    StepSpec("Activation Shifting",            ActivationShiftStep,              group="activation_quantization"),
+    StepSpec("Activation Quantization",        ActivationQuantizationStep,       group="activation_quantization"),
+    StepSpec("LIF Adaptation",                 LIFAdaptationStep,                group="activation"),
+    StepSpec("TTFS Cycle Fine-Tuning",         TTFSCycleAdaptationStep,          group="activation"),
+    StepSpec("Noise Adaptation",               NoiseAdaptationStep,              group="activation"),
+    StepSpec("Weight Quantization",            WeightQuantizationStep,           group="weight_quantization"),
+    StepSpec("Quantization Verification",      QuantizationVerificationStep,     group="weight_quantization"),
+    StepSpec("Normalization Fusion",           NormalizationFusionStep,          group="normalization"),
+    StepSpec("Soft Core Mapping",              SoftCoreMappingStep,              group="soft_mapping"),
+    StepSpec("Core Quantization Verification", CoreQuantizationVerificationStep, group="core_verification"),
+    StepSpec("Hard Core Mapping",              HardCoreMappingStep,              group="hardware"),
+    _backend_tail,
 ])
-
-
-_SEMANTIC_GROUP_BY_STEP_CLASS: dict[type, str] = {
-    ArchitectureSearchStep:             "configuration",
-    ModelConfigurationStep:             "configuration",
-    ModelBuildingStep:                  "model_building",
-    PretrainingStep:                    "pretraining",
-    WeightPreloadingStep:               "pretraining",
-    TorchMappingStep:                   "torch_mapping",
-    PruningAdaptationStep:              "pruning",
-    ActivationAnalysisStep:             "activation",
-    ActivationAdaptationStep:           "activation",
-    ClampAdaptationStep:                "activation",
-    LIFAdaptationStep:                  "activation",
-    TTFSCycleAdaptationStep:            "activation",
-    NoiseAdaptationStep:                "activation",
-    ActivationShiftStep:                "activation_quantization",
-    ActivationQuantizationStep:         "activation_quantization",
-    WeightQuantizationStep:             "weight_quantization",
-    QuantizationVerificationStep:       "weight_quantization",
-    NormalizationFusionStep:            "normalization",
-    SoftCoreMappingStep:                "soft_mapping",
-    CoreQuantizationVerificationStep:   "core_verification",
-    HardCoreMappingStep:                "hardware",
-    SimulationStep:                     "simulation",
-    LoihiSimulationStep:                "simulation",
-    SanafeSimulationStep:               "simulation",
-}
 
 
 def get_pipeline_semantic_group_by_step_name(config: dict) -> dict[str, str]:
     """Return {step_name: semantic_group_id} for every step in the given config."""
-    return {
-        name: _SEMANTIC_GROUP_BY_STEP_CLASS.get(cls, "other")
-        for name, cls in get_pipeline_step_specs(config)
-    }
+    plan = DeploymentPlan.resolve(config)
+    return {spec.name: spec.group for spec in _STEP_PLAN.resolve(plan)}
 
 
 def get_pipeline_step_specs(config: dict) -> list[tuple[str, type]]:
@@ -99,7 +76,7 @@ def get_pipeline_step_specs(config: dict) -> list[tuple[str, type]]:
     requires/promises DAG is validated up-front, failing loud with the missing producer named.
     """
     plan = DeploymentPlan.resolve(config)
-    return _STEP_PLAN.validate_data_contract(plan)
+    return [spec.to_pair() for spec in _STEP_PLAN.validate_data_contract(plan)]
 
 
 def validate_deployment_config(config: dict, *, model_name: str, cuda_debug: bool) -> None:

@@ -58,6 +58,12 @@ def derive_pipeline_runtime_parameters(dp: MutableMapping[str, Any]) -> None:
         dp.setdefault("firing_mode", "TTFS")
         dp.setdefault("spike_generation_mode", "TTFS")
         dp.setdefault("thresholding_mode", "<=")
+        for key in ("firing_mode", "spike_generation_mode"):
+            if dp[key] != "TTFS":
+                raise ValueError(
+                    f"spiking_mode='{spiking_mode}' requires {key}='TTFS', "
+                    f"got '{dp[key]}'"
+                )
     else:
         dp.setdefault("firing_mode", "Default")
         dp.setdefault("spike_generation_mode", "Uniform")

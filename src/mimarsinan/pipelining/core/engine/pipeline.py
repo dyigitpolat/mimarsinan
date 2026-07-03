@@ -156,54 +156,15 @@ class Pipeline:
             hook(name, step)
 
         previous_metric = self.get_target_metric()
-
-        assert all([self._translate_key(step.name, requirement) in self.cache for requirement in step.requires]), \
-            f"Pipeline error: Some requirements are not found in the cache."
-
+        self._assert_requirements_present(step)
         step.pipeline_previous_metric = previous_metric
 
-        cuda_debug = bool(getattr(self, "cuda_debug", False))
         try:
-            try:
-                with cuda_guard(name, enabled=cuda_debug):
-                    step.run()
-            except Exception:
-                if cuda_debug:
-                    req_keys = [self._translate_key(step.name, r) for r in step.requires]
-                    prod_keys = [self._create_real_key(step.name, p) for p in step.promises]
-                    print(
-                        f"[Pipeline] Step '{name}' failed. "
-                        f"requires={req_keys} promises={prod_keys}. "
-                        f"Resume with: python run.py --headless <config.json> "
-                        f"--resume-from \"{name}\" --debug",
-                        file=sys.stderr,
-                    )
-                raise
-            step_metric = step.pipeline_metric()
-            self.set_target_metric(step_metric)
-            self.accuracy_budget.observe(step_metric)
-            self.accuracy_budget.warn_if_over_budget(step.name)
-            with phase_profiler(f"Pipeline::{name}", "save_cache"):
-                self.save_cache()
-            with phase_profiler(f"Pipeline::{name}", "offload_torch_models_to_cpu"):
-                self.cache.offload_torch_models_to_cpu()
-
-            for entry in step.clears:
-                self.cache.remove(self._create_real_key(step.name, entry))
-
-            assert all([self._create_real_key(step.name, promise) in self.cache for promise in step.promises]), \
-                f"Pipeline error: Some promised entries were not added."
-            assert all([self._create_real_key(step.name, entry) not in self.cache for entry in step.clears]), \
-                f"Pipeline error: Some cleared entries were not removed."
-
-            assert all([self._translate_key(step.name, entry) not in self.cache for entry in step.updates]), \
-                f"Pipeline error: Old values of some updated entries are still in the cache."
-            assert all([self._create_real_key(step.name, entry) in self.cache for entry in step.updates]), \
-                f"Pipeline error: New values of some updated entries are not found in the cache."
-
-            step_tolerance = self._step_tolerance(step.name)
-            assert self.get_target_metric() >= previous_metric * step_tolerance, \
-                f"[{step.name}] step failed to retain performance within tolerable limits: {self.get_target_metric()} < ({previous_metric} * {step_tolerance}) = {previous_metric * step_tolerance}"
+            self._execute_step(name, step)
+            self._record_step_metric(step)
+            self._persist_step_outputs(name, step)
+            self._assert_step_contract(step)
+            self._assert_metric_retention(step, previous_metric)
 
             for hook in self.post_step_hooks:
                 hook(name, step)
@@ -219,3 +180,67 @@ class Pipeline:
                 f"metric={final_metric:.4f} "
                 f"Δ={delta:+.4f} (prev={previous_metric:.4f})"
             )
+
+    def _assert_requirements_present(self, step):
+        assert all(
+            self._translate_key(step.name, requirement) in self.cache
+            for requirement in step.requires
+        ), "Pipeline error: Some requirements are not found in the cache."
+
+    def _execute_step(self, name, step):
+        cuda_debug = bool(getattr(self, "cuda_debug", False))
+        try:
+            with cuda_guard(name, enabled=cuda_debug):
+                step.run()
+        except Exception:
+            if cuda_debug:
+                req_keys = [self._translate_key(step.name, r) for r in step.requires]
+                prod_keys = [self._create_real_key(step.name, p) for p in step.promises]
+                print(
+                    f"[Pipeline] Step '{name}' failed. "
+                    f"requires={req_keys} promises={prod_keys}. "
+                    f"Resume with: python run.py --headless <config.json> "
+                    f"--resume-from \"{name}\" --debug",
+                    file=sys.stderr,
+                )
+            raise
+
+    def _record_step_metric(self, step):
+        step_metric = step.pipeline_metric()
+        self.set_target_metric(step_metric)
+        self.accuracy_budget.observe(step_metric)
+        self.accuracy_budget.warn_if_over_budget(step.name)
+
+    def _persist_step_outputs(self, name, step):
+        with phase_profiler(f"Pipeline::{name}", "save_cache"):
+            self.save_cache()
+        with phase_profiler(f"Pipeline::{name}", "offload_torch_models_to_cpu"):
+            self.cache.offload_torch_models_to_cpu()
+        for entry in step.clears:
+            self.cache.remove(self._create_real_key(step.name, entry))
+
+    def _assert_step_contract(self, step):
+        assert all(
+            self._create_real_key(step.name, promise) in self.cache
+            for promise in step.promises
+        ), "Pipeline error: Some promised entries were not added."
+        assert all(
+            self._create_real_key(step.name, entry) not in self.cache
+            for entry in step.clears
+        ), "Pipeline error: Some cleared entries were not removed."
+        assert all(
+            self._translate_key(step.name, entry) not in self.cache
+            for entry in step.updates
+        ), "Pipeline error: Old values of some updated entries are still in the cache."
+        assert all(
+            self._create_real_key(step.name, entry) in self.cache
+            for entry in step.updates
+        ), "Pipeline error: New values of some updated entries are not found in the cache."
+
+    def _assert_metric_retention(self, step, previous_metric):
+        step_tolerance = self._step_tolerance(step.name)
+        assert self.get_target_metric() >= previous_metric * step_tolerance, (
+            f"[{step.name}] step failed to retain performance within tolerable "
+            f"limits: {self.get_target_metric()} < ({previous_metric} * "
+            f"{step_tolerance}) = {previous_metric * step_tolerance}"
+        )

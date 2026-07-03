@@ -14,7 +14,7 @@ class StepPlanContractError(AssertionError):
 
 @dataclass(frozen=True)
 class StepSpec:
-    """One registry entry: a named step that declares its own applicability.
+    """One registry entry: a named step with its semantic group and applicability.
 
     ``applies`` defaults to the step class's ``applies_to``; an explicit override
     is only for the backend tail (validated in ``BACKEND_REGISTRY``).
@@ -22,6 +22,7 @@ class StepSpec:
 
     name: str
     step_class: type
+    group: str = "other"
     applies: Callable[[DeploymentPlan], bool] | None = None
 
     def applies_to(self, plan: DeploymentPlan) -> bool:
@@ -42,30 +43,30 @@ class StepPlan:
 
     def __init__(
         self,
-        entries: list[StepSpec | Callable[[DeploymentPlan], list[tuple[str, type]]]],
+        entries: list[StepSpec | Callable[[DeploymentPlan], list[StepSpec]]],
     ) -> None:
         self._entries = list(entries)
 
-    def resolve(self, plan: DeploymentPlan) -> list[tuple[str, type]]:
-        """Return the ordered ``(name, class)`` specs this plan needs."""
-        specs: list[tuple[str, type]] = []
+    def resolve(self, plan: DeploymentPlan) -> list[StepSpec]:
+        """Return the ordered concrete ``StepSpec`` list this plan needs."""
+        specs: list[StepSpec] = []
         for entry in self._entries:
             if isinstance(entry, StepSpec):
                 if entry.applies_to(plan):
-                    specs.append(entry.to_pair())
+                    specs.append(entry)
             else:
                 specs.extend(entry(plan))
         return specs
 
-    def validate_data_contract(self, plan: DeploymentPlan) -> list[tuple[str, type]]:
+    def validate_data_contract(self, plan: DeploymentPlan) -> list[StepSpec]:
         """Resolve the step sequence and assert its requires/promises DAG holds at assembly time.
 
         Every consumed entry must be promised by an earlier selected step; fails
-        loud naming the missing producer. Returns the resolved ``(name, class)`` sequence.
+        loud naming the missing producer. Returns the resolved ``StepSpec`` sequence.
         """
         specs = self.resolve(plan)
         available: dict[str, str] = {}
-        for name, step_class in specs:
+        for name, step_class in (s.to_pair() for s in specs):
             requires, promises, updates, clears = step_class.declared_contract()
             for requirement in requires:
                 if requirement not in available:

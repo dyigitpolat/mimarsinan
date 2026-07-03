@@ -1,24 +1,24 @@
-"""Four config-gated gradual-tuning levers (all default-off → byte-identical).
+"""Four TuningPolicy-gated gradual-tuning levers (all default-off → byte-identical).
 
 The gradual SmoothAdaptation ramp is KEPT; these levers only change recovery
 quality, the stabilization tail, and the rollback gate's drift bound:
 
-- CHANGE 1 ``tuning_rollback_ratchet`` + ``tuning_rollback_cumulative_bound``:
+- CHANGE 1 ``rollback_ratchet`` + ``rollback_cumulative_bound``:
   a NON-STALLING ratchet. The per-step gate stays RELATIVE to ``pre_cycle_acc``
   (so the ramp keeps climbing — a naturally-declining surface still commits),
   but the CUMULATIVE drift below the best-committed high-water mark is capped at
   ``cumulative_bound``; the bound TIGHTENS as the best ratchets up.
-- CHANGE 2 ``tuning_stabilization_bounded`` + ``tuning_stabilization_ratio``:
+- CHANGE 2 ``stabilization_bounded`` + ``stabilization_ratio``:
   ``train_steps_until_target`` reports the steps it ran; the tuner accumulates
   the gradual step total and runs a SINGLE bounded cosine-decay stabilization
   pass of ``ratio * gradual_steps`` steps (hard cutoff, no rounds/restarts).
-- CHANGE 3 ``tuning_tight_plateau`` + ``tuning_recovery_check_divisor``: divide
+- CHANGE 3 ``tight_plateau`` + ``recovery_check_divisor``: divide
   the recovery check interval so a plateau is detected in fewer steps.
-- CHANGE 4 ``tuning_refind_lr_on_miss``: a MISS is the sole LR-cache invalidation
+- CHANGE 4 ``refind_lr_on_miss``: a MISS is the sole LR-cache invalidation
   trigger in the gradual cycle (behind the flag); a reached target never is.
 
-The default-off regression at the end asserts the levers off reproduce the
-current per-cycle decisions and stabilization byte-identically.
+The default-off regression at the end asserts the default TUNING_POLICY reproduces
+the current per-cycle decisions and stabilization byte-identically.
 """
 
 import pytest
@@ -30,6 +30,7 @@ from conftest import (
     make_tiny_supermodel,
     make_scripted_run_tuner,
     default_config,
+    override_tuning_policy,
     MockDataProviderFactory,
 )
 from mimarsinan.tuning.orchestration.smooth_adaptation_tuner import SmoothAdaptationTuner
@@ -70,11 +71,12 @@ class _ScriptedCycleTuner(SmoothAdaptationTuner):
         return self._adaptation(rate)
 
 
-def _make_cycle_tuner(tmp_path, **flags):
+def _make_cycle_tuner(tmp_path, monkeypatch=None, **policy_overrides):
+    if policy_overrides:
+        override_tuning_policy(monkeypatch, **policy_overrides)
     cfg = default_config()
     cfg["tuning_budget_scale"] = 1.0
     cfg["degradation_tolerance"] = 0.05
-    cfg.update(flags)
     pipeline = MockPipeline(config=cfg, working_directory=str(tmp_path))
     tuner = _ScriptedCycleTuner(pipeline, make_tiny_supermodel(), 0.9, 0.001)
     tuner._rollback_tolerance = 0.05
@@ -86,13 +88,14 @@ def _make_cycle_tuner(tmp_path, **flags):
 
 
 class TestNonStallingRatchet:
-    def test_declining_surface_keeps_committing_does_not_stall(self, tmp_path, deterministic_rng):
+    def test_declining_surface_keeps_committing_does_not_stall(self, tmp_path, deterministic_rng, monkeypatch):
         """A surface that gives back a LITTLE each step still commits and the ramp
         progresses — the per-step gate is RELATIVE (no best-anchor stall)."""
         tuner = _make_cycle_tuner(
             tmp_path,
-            tuning_rollback_ratchet=True,
-            tuning_rollback_cumulative_bound=0.05,
+            monkeypatch,
+            rollback_ratchet=True,
+            rollback_cumulative_bound=0.05,
         )
         tuner._rollback_tolerance = 0.02
         tuner._validation_baseline = 0.80  # abs floor 0.76, well below the gate
@@ -108,14 +111,15 @@ class TestNonStallingRatchet:
         assert tuner._best_committed_acc == pytest.approx(0.90)
         tuner.close()
 
-    def test_drift_beyond_cumulative_bound_is_rolled_back(self, tmp_path, deterministic_rng):
+    def test_drift_beyond_cumulative_bound_is_rolled_back(self, tmp_path, deterministic_rng, monkeypatch):
         """A step that would push post_acc MORE than cumulative_bound below the
         best is rolled back even though the per-step relative gate would admit it
         (the cumulative drift is capped — no accumulation to the floor)."""
         tuner = _make_cycle_tuner(
             tmp_path,
-            tuning_rollback_ratchet=True,
-            tuning_rollback_cumulative_bound=0.05,
+            monkeypatch,
+            rollback_ratchet=True,
+            rollback_cumulative_bound=0.05,
         )
         tuner._rollback_tolerance = 0.02
         tuner._validation_baseline = 0.80  # abs floor 0.76, below the gate
@@ -128,13 +132,14 @@ class TestNonStallingRatchet:
         assert r != 0.5, "cumulative drift past the bound must roll back"
         tuner.close()
 
-    def test_relative_gate_is_the_stricter_when_it_exceeds_the_bound(self, tmp_path, deterministic_rng):
+    def test_relative_gate_is_the_stricter_when_it_exceeds_the_bound(self, tmp_path, deterministic_rng, monkeypatch):
         """The threshold is the MAX of the three lower bounds, so a sharp single-
         step drop (relative gate strictest) still rolls back."""
         tuner = _make_cycle_tuner(
             tmp_path,
-            tuning_rollback_ratchet=True,
-            tuning_rollback_cumulative_bound=0.30,  # loose cumulative bound
+            monkeypatch,
+            rollback_ratchet=True,
+            rollback_cumulative_bound=0.30,  # loose cumulative bound
         )
         tuner._rollback_tolerance = 0.02
         tuner._validation_baseline = 0.50  # abs floor 0.475, far below
@@ -146,13 +151,14 @@ class TestNonStallingRatchet:
         assert r != 0.5, "a sharp single-step drop is caught by the relative gate"
         tuner.close()
 
-    def test_new_high_tightens_the_cumulative_bound(self, tmp_path, deterministic_rng):
+    def test_new_high_tightens_the_cumulative_bound(self, tmp_path, deterministic_rng, monkeypatch):
         """A new committed high ratchets the best up, so the SAME post_acc that
         committed before the high now violates the tightened cumulative bound."""
         tuner = _make_cycle_tuner(
             tmp_path,
-            tuning_rollback_ratchet=True,
-            tuning_rollback_cumulative_bound=0.05,
+            monkeypatch,
+            rollback_ratchet=True,
+            rollback_cumulative_bound=0.05,
         )
         tuner._rollback_tolerance = 0.02
         tuner._validation_baseline = 0.50  # abs floor far below
@@ -169,10 +175,10 @@ class TestNonStallingRatchet:
         assert r2 == 0.3, "ratcheted-up best tightens the cumulative bound"
         tuner.close()
 
-    def test_flag_off_is_relative_to_previous_only(self, tmp_path, deterministic_rng):
+    def test_flag_off_is_relative_to_previous_only(self, tmp_path, deterministic_rng, monkeypatch):
         """Flag off → the gate is relative-to-pre_cycle_acc exactly as today; the
         cumulative bound is NOT applied (small slips accumulate)."""
-        tuner = _make_cycle_tuner(tmp_path, tuning_rollback_ratchet=False)
+        tuner = _make_cycle_tuner(tmp_path, monkeypatch, rollback_ratchet=False)
         tuner._rollback_tolerance = 0.05
         tuner._validation_baseline = 0.80  # abs floor 0.76, below the gate
         # Slips of 0.02 each off the PREVIOUS accumulate well past best-margin.
@@ -278,10 +284,11 @@ class _StabCountTuner(SmoothAdaptationTuner):
 
 
 class TestBoundedCosineStabilization:
-    def _tuner(self, tmp_path, **flags):
+    def _tuner(self, tmp_path, monkeypatch=None, **policy_overrides):
+        if policy_overrides:
+            override_tuning_policy(monkeypatch, **policy_overrides)
         cfg = default_config()
         cfg["tuning_budget_scale"] = 1.0
-        cfg.update(flags)
         t = _StabCountTuner(
             MockPipeline(config=cfg, working_directory=str(tmp_path)),
             make_tiny_supermodel(), 0.9, 0.001,
@@ -292,11 +299,12 @@ class TestBoundedCosineStabilization:
         t._cached_lr = 0.0005
         return t
 
-    def test_bounded_pass_uses_ratio_of_gradual_steps(self, tmp_path, deterministic_rng):
+    def test_bounded_pass_uses_ratio_of_gradual_steps(self, tmp_path, deterministic_rng, monkeypatch):
         t = self._tuner(
             tmp_path,
-            tuning_stabilization_bounded=True,
-            tuning_stabilization_ratio=0.5,
+            monkeypatch,
+            stabilization_bounded=True,
+            stabilization_ratio=0.5,
         )
         t._gradual_train_steps = 400  # accumulated across the gradual cycles
         t._stabilize_at_full_rate()
@@ -307,14 +315,15 @@ class TestBoundedCosineStabilization:
         assert tuner_kwargs.get("patience", 0) <= 1
         t.close()
 
-    def test_bounded_pass_lr_decays_cosine_to_near_zero(self, tmp_path, deterministic_rng):
+    def test_bounded_pass_lr_decays_cosine_to_near_zero(self, tmp_path, deterministic_rng, monkeypatch):
         """The bounded pass schedules a CosineAnnealingLR from the chosen lr down
         to ~0 over exactly N steps. Drive the real cosine schedule and assert the
         LR monotonically decays to near zero by the last step."""
+        override_tuning_policy(
+            monkeypatch, stabilization_bounded=True, stabilization_ratio=1.0
+        )
         cfg = default_config()
         cfg["tuning_budget_scale"] = 1.0
-        cfg["tuning_stabilization_bounded"] = True
-        cfg["tuning_stabilization_ratio"] = 1.0
         trainer = _build_real_trainer()
 
         observed = []
@@ -357,10 +366,10 @@ class TestBoundedCosineStabilization:
         assert observed[-1] < observed[0] * 0.1, "cosine decays to near zero"
         t.close()
 
-    def test_flag_off_reproduces_round_based_stabilization(self, tmp_path, deterministic_rng):
+    def test_flag_off_reproduces_round_based_stabilization(self, tmp_path, deterministic_rng, monkeypatch):
         """Flag off → the existing patience/round-based stabilization (2x budget,
         cached LR), unchanged."""
-        t = self._tuner(tmp_path, tuning_stabilization_bounded=False)
+        t = self._tuner(tmp_path, monkeypatch, stabilization_bounded=False)
         t._gradual_train_steps = 400
         t._stabilize_at_full_rate()
         assert len(t.train_calls) == 1
@@ -370,13 +379,14 @@ class TestBoundedCosineStabilization:
 
 
 class TestGradualStepAccumulation:
-    def test_run_accumulates_gradual_steps_when_bounded(self, tmp_path, deterministic_rng):
+    def test_run_accumulates_gradual_steps_when_bounded(self, tmp_path, deterministic_rng, monkeypatch):
         """A full scripted run accumulates the gradual training steps so the
         bounded stabilization has a budget to scale; flag off keeps it at 0."""
+        override_tuning_policy(
+            monkeypatch, stabilization_bounded=True, stabilization_ratio=0.5
+        )
         cfg = default_config()
         cfg["tuning_budget_scale"] = 1.0
-        cfg["tuning_stabilization_bounded"] = True
-        cfg["tuning_stabilization_ratio"] = 0.5
         pipeline = MockPipeline(config=cfg, working_directory=str(tmp_path))
 
         steps_per_cycle = [37]
@@ -441,7 +451,7 @@ class TestTightPlateau:
             f"tighter interval must break sooner ({steps_div3} vs {steps_div1})"
         )
 
-    def test_cycle_applies_divisor_to_check_interval_when_on(self, tmp_path, deterministic_rng):
+    def test_cycle_applies_divisor_to_check_interval_when_on(self, tmp_path, deterministic_rng, monkeypatch):
         """With the flag on and divisor>1, the recovery call receives a check
         interval reduced by the divisor; flag off passes the budget interval."""
         from unittest.mock import patch
@@ -453,7 +463,7 @@ class TestTightPlateau:
             captured.update(kw)
 
         tuner = _make_cycle_tuner(
-            tmp_path, tuning_tight_plateau=True, tuning_recovery_check_divisor=3
+            tmp_path, monkeypatch, tight_plateau=True, recovery_check_divisor=3
         )
         with patch.object(cyc.RecoveryEngine, "train_to_target", staticmethod(fake_train_to_target)):
             tuner.drive(0.3, validate_seq=[0.85, 0.90])
@@ -462,14 +472,14 @@ class TestTightPlateau:
         tuner.close()
 
         captured.clear()
-        tuner_off = _make_cycle_tuner(tmp_path, tuning_tight_plateau=False)
+        tuner_off = _make_cycle_tuner(tmp_path, monkeypatch, tight_plateau=False)
         with patch.object(cyc.RecoveryEngine, "train_to_target", staticmethod(fake_train_to_target)):
             tuner_off.drive(0.3, validate_seq=[0.85, 0.90])
         assert captured["check_interval"] == tuner_off._budget.check_interval
         tuner_off.close()
 
-    def test_divisor_combines_with_plateau_lr_reduction(self, tmp_path, deterministic_rng):
-        """The tight divisor and the ``tuning_recovery_lr_plateau`` reduction stack:
+    def test_divisor_combines_with_plateau_lr_reduction(self, tmp_path, deterministic_rng, monkeypatch):
+        """The tight divisor and the ``recovery_lr_plateau`` reduction stack:
         the recovery call gets BOTH a reduced interval and the plateau kwargs."""
         from unittest.mock import patch
         from mimarsinan.tuning.orchestration import smooth_adaptation_cycle as cyc
@@ -481,11 +491,12 @@ class TestTightPlateau:
 
         tuner = _make_cycle_tuner(
             tmp_path,
-            tuning_tight_plateau=True,
-            tuning_recovery_check_divisor=3,
-            tuning_recovery_lr_plateau=True,
-            tuning_recovery_lr_plateau_factor=0.3,
-            tuning_recovery_lr_plateau_reductions=2,
+            monkeypatch,
+            tight_plateau=True,
+            recovery_check_divisor=3,
+            recovery_lr_plateau=True,
+            recovery_lr_plateau_factor=0.3,
+            recovery_lr_plateau_reductions=2,
         )
         with patch.object(cyc.RecoveryEngine, "train_to_target", staticmethod(fake_train_to_target)):
             tuner.drive(0.3, validate_seq=[0.85, 0.90])
@@ -499,8 +510,8 @@ class TestTightPlateau:
 
 
 class TestRefindLrOnlyOnMiss:
-    def test_miss_invalidates_lr_cache_when_flag_on(self, tmp_path, deterministic_rng):
-        tuner = _make_cycle_tuner(tmp_path, tuning_refind_lr_on_miss=True)
+    def test_miss_invalidates_lr_cache_when_flag_on(self, tmp_path, deterministic_rng, monkeypatch):
+        tuner = _make_cycle_tuner(tmp_path, monkeypatch, refind_lr_on_miss=True)
         tuner._validation_baseline = 0.85  # abs floor 0.8075
         tuner.drive(0.3, validate_seq=[0.85, 0.81])  # commit but MISS (0.81 < 0.85)
         assert tuner._committed_rate == 0.3
@@ -510,15 +521,15 @@ class TestRefindLrOnlyOnMiss:
         assert tuner.find_lr_calls == 2, "next cycle re-discovers the LR"
         tuner.close()
 
-    def test_reached_target_never_invalidates(self, tmp_path, deterministic_rng):
-        tuner = _make_cycle_tuner(tmp_path, tuning_refind_lr_on_miss=True)
+    def test_reached_target_never_invalidates(self, tmp_path, deterministic_rng, monkeypatch):
+        tuner = _make_cycle_tuner(tmp_path, monkeypatch, refind_lr_on_miss=True)
         tuner.drive(0.3, validate_seq=[0.85, 0.90])  # post 0.90 >= 0.85 → reached
         assert tuner.find_lr_calls == 1
         assert tuner._cached_lr is not None, "reached target keeps the LR cache"
         tuner.close()
 
-    def test_flag_off_keeps_cache_on_miss(self, tmp_path, deterministic_rng):
-        tuner = _make_cycle_tuner(tmp_path, tuning_refind_lr_on_miss=False)
+    def test_flag_off_keeps_cache_on_miss(self, tmp_path, deterministic_rng, monkeypatch):
+        tuner = _make_cycle_tuner(tmp_path, monkeypatch, refind_lr_on_miss=False)
         tuner._validation_baseline = 0.85
         tuner.drive(0.3, validate_seq=[0.85, 0.81])
         assert tuner._committed_rate == 0.3

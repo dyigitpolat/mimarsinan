@@ -236,7 +236,7 @@ class TestCalibrationForward:
         )
 
     def test_analytical_modes_share_one_forward(self):
-        from mimarsinan.mapping.support.neg_shift_bias import (
+        from mimarsinan.mapping.support.bias_compensation import (
             _analytical_segment_calibration_forward,
         )
 
@@ -247,7 +247,7 @@ class TestCalibrationForward:
             )
 
     def test_ttfs_cycle_schedules_share_one_forward(self):
-        from mimarsinan.mapping.support.neg_shift_bias import (
+        from mimarsinan.mapping.support.bias_compensation import (
             _ttfs_segment_calibration_forward,
         )
 
@@ -258,7 +258,7 @@ class TestCalibrationForward:
             )
 
     def test_legacy_entry_point_matches_policy(self):
-        from mimarsinan.mapping.support.neg_shift_bias import (
+        from mimarsinan.mapping.support.bias_compensation import (
             calibration_forward_for_mode,
         )
 
@@ -269,7 +269,7 @@ class TestCalibrationForward:
             )
 
     def test_unsupported_mode_still_fails_loud(self):
-        from mimarsinan.mapping.support.neg_shift_bias import (
+        from mimarsinan.mapping.support.bias_compensation import (
             calibration_forward_for_mode,
         )
 

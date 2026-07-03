@@ -6,13 +6,13 @@ from mimarsinan.mapping.ir_mapping_class import IRMapping
 from mimarsinan.mapping.latency.ir import IRLatency
 from mimarsinan.mapping.export.chip_quantize import quantize_ir_graph
 from mimarsinan.mapping.platform.platform_constraints import resolve_platform_mapping_params
-from mimarsinan.mapping.support.neg_shift_bias import (
+from mimarsinan.mapping.support.bias_compensation import (
     apply_negative_value_shifts,
+    apply_ttfs_quantization_bias_compensation,
     calibration_forward_for_mode,
     transfer_negative_shifts_to_ir,
 )
 from mimarsinan.mapping.support.per_source_scales import compute_per_source_scales
-from mimarsinan.mapping.support.ttfs_bias import apply_ttfs_quantization_bias_compensation
 from mimarsinan.mapping.verification.capacity import estimate_cores_needed
 from mimarsinan.mapping.verification.onchip_majority import assert_onchip_majority_or_raise
 from mimarsinan.mapping.weight_reuse import (

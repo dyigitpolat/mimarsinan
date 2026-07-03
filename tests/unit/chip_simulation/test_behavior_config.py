@@ -81,6 +81,46 @@ def test_lava_zero_reset():
     assert novena.lava_zero_reset() is True
 
 
+# Captured cell-by-cell from the pre-refactor literal comparisons; the SSOT
+# reroute must not move a single cell.
+NEVRESIM_RESET_BY_FIRING_MODE = {
+    "Default": "SubtractiveReset",
+    "Novena": "ZeroReset",
+    "TTFS": "ZeroReset",
+    "": "ZeroReset",
+    "Bogus": "ZeroReset",
+}
+
+LAVA_ZERO_RESET_BY_FIRING_MODE = {
+    "Default": False,
+    "Novena": True,
+    "TTFS": False,
+    "": False,
+    "Bogus": False,
+}
+
+
+def _behavior_with_firing_mode(firing_mode: str) -> NeuralBehaviorConfig:
+    return NeuralBehaviorConfig(
+        spiking_mode="lif",
+        firing_mode=firing_mode,
+        thresholding_mode="<=",
+        spike_generation_mode="Uniform",
+    )
+
+
+def test_nevresim_reset_policy_full_firing_mode_table():
+    for firing_mode, expected in NEVRESIM_RESET_BY_FIRING_MODE.items():
+        got = _behavior_with_firing_mode(firing_mode).nevresim_reset_policy()
+        assert got == expected, firing_mode
+
+
+def test_lava_zero_reset_full_firing_mode_table():
+    for firing_mode, expected in LAVA_ZERO_RESET_BY_FIRING_MODE.items():
+        got = _behavior_with_firing_mode(firing_mode).lava_zero_reset()
+        assert got is expected, firing_mode
+
+
 def test_sanafe_reset_mode():
     cfg = NeuralBehaviorConfig(
         spiking_mode="lif",

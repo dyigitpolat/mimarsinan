@@ -48,7 +48,7 @@ def _attach_per_core_deltas(ref: object, sanafe_rec: SanafeRunRecord) -> None:
                 output_delta_sum=out_sum_sf - out_sum_ref,
             ))
         seg.hcm_diff = deltas
-from mimarsinan.data_handling.test_sample_loader import load_test_samples_by_index
+from mimarsinan.data_handling.sample_loader import load_test_samples_by_index
 from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 from mimarsinan.pipelining.core.engine.pipeline_helpers import (
     require_spiking_mode_supported,

@@ -211,7 +211,7 @@ class TtfsAnalyticalModePolicy(SpikingModePolicy):
         return "analytical_staircase"
 
     def calibration_forward(self):
-        from mimarsinan.mapping.support.neg_shift_bias import (
+        from mimarsinan.mapping.support.bias_compensation import (
             _analytical_segment_calibration_forward,
         )
 
@@ -291,7 +291,7 @@ class _TtfsCycleModePolicy(SpikingModePolicy):
         return True
 
     def calibration_forward(self):
-        from mimarsinan.mapping.support.neg_shift_bias import (
+        from mimarsinan.mapping.support.bias_compensation import (
             _ttfs_segment_calibration_forward,
         )
 

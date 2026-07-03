@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-import os
 from collections import defaultdict
 from typing import Any, Dict, List
 
 import numpy as np
 import torch
 
-_DEBUG_ENV = "MIMARSINAN_NF_SCM_PARITY_DEBUG"
+from mimarsinan.common.env import nf_scm_parity_debug_enabled
 
 
 class NfScmParityError(AssertionError):
@@ -98,7 +97,7 @@ def assert_nf_scm_parity_or_raise(
             "a perceptron_index; run assign_perceptron_indices before mapping)"
         )
 
-    debug = os.environ.get(_DEBUG_ENV) == "1"
+    debug = nf_scm_parity_debug_enabled()
     if debug:
         print(
             f"[nf_scm_parity] nf-only perceptrons: {sorted(set(nf) - set(scm))} "

@@ -21,6 +21,7 @@ from mimarsinan.tuning.orchestration.tuner_base import (
     _RECOVERY_PATIENCE,
     _STUCK_STREAK_REQUIRED,
 )
+from mimarsinan.tuning.orchestration.tuning_policy import TUNING_POLICY
 
 
 class SmoothAdaptationCycleMixin(TunerBase):
@@ -28,10 +29,11 @@ class SmoothAdaptationCycleMixin(TunerBase):
 
     def __init__(self, pipeline, model, target_accuracy, lr):
         super().__init__(pipeline, model, target_accuracy, lr)
+        policy = TUNING_POLICY
         self._checkpoint_guard = CheckpointGuard(
             self.trainer,
-            scope=pipeline.config.get("checkpoint_scope", "full"),
-            location=pipeline.config.get("checkpoint_location", "device"),
+            scope=policy.checkpoint_scope,
+            location=policy.checkpoint_location,
         )
         self._committed_rate = 0.0
         self._natural_rate = 0.0
@@ -44,48 +46,28 @@ class SmoothAdaptationCycleMixin(TunerBase):
         self._pipeline_hard_floor = None
         self._pre_relaxation_target = None
         self._validation_baseline = None
-        self._refind_lr_on_miss = bool(
-            pipeline.config.get("tuning_refind_lr_on_miss", False)
-        )
-        self._recovery_lr_plateau = bool(
-            pipeline.config.get("tuning_recovery_lr_plateau", False)
-        )
-        self._recovery_lr_plateau_factor = float(
-            pipeline.config.get("tuning_recovery_lr_plateau_factor", 0.3)
-        )
+        self._refind_lr_on_miss = bool(policy.refind_lr_on_miss)
+        self._recovery_lr_plateau = bool(policy.recovery_lr_plateau)
+        self._recovery_lr_plateau_factor = float(policy.recovery_lr_plateau_factor)
         self._recovery_lr_plateau_reductions = int(
-            pipeline.config.get("tuning_recovery_lr_plateau_reductions", 2)
+            policy.recovery_lr_plateau_reductions
         )
-        self._rollback_ratchet = bool(
-            pipeline.config.get("tuning_rollback_ratchet", False)
-        )
-        self._rollback_cumulative_bound = float(
-            pipeline.config.get("tuning_rollback_cumulative_bound", 0.05)
-        )
+        self._rollback_ratchet = bool(policy.rollback_ratchet)
+        self._rollback_cumulative_bound = float(policy.rollback_cumulative_bound)
         self._best_committed_acc = None
-        self._tight_plateau = bool(
-            pipeline.config.get("tuning_tight_plateau", False)
-        )
-        self._recovery_check_divisor = max(
-            1, int(pipeline.config.get("tuning_recovery_check_divisor", 1))
-        )
-        self._keepbest_certified = bool(
-            pipeline.config.get("tuning_keepbest_certified", False)
-        )
+        self._tight_plateau = bool(policy.tight_plateau)
+        self._recovery_check_divisor = max(1, int(policy.recovery_check_divisor))
+        self._keepbest_certified = bool(policy.keepbest_certified)
         self._best_committed_state = None
         self._best_committed_metric = None
-        self._stabilization_bounded = bool(
-            pipeline.config.get("tuning_stabilization_bounded", False)
-        )
-        self._stabilization_ratio = float(
-            pipeline.config.get("tuning_stabilization_ratio", 0.5)
-        )
+        self._stabilization_bounded = bool(policy.stabilization_bounded)
+        self._stabilization_ratio = float(policy.stabilization_ratio)
         self._gradual_train_steps = 0
         self._cycle_log = DecisionTrace.new()
         self._cached_lr = None
-        self._paired_gate = bool(pipeline.config.get("tuning_use_paired_sensor", False))
-        self._k_commit = float(pipeline.config.get("k_commit", 2.0))
-        self._global_budget = float(pipeline.config.get("global_budget", 0.0))
+        self._paired_gate = bool(policy.use_paired_sensor)
+        self._k_commit = float(policy.k_commit)
+        self._global_budget = float(policy.global_budget)
         if self._global_budget < 0.0:
             raise ValueError(
                 f"global_budget must be non-negative; got {self._global_budget}. "
@@ -180,9 +162,9 @@ class SmoothAdaptationCycleMixin(TunerBase):
         )
 
     def _recovery_plateau_kwargs(self):
-        """Plateau LR-reduction kwargs for the recovery call: the configured
-        factor/reductions when ``tuning_recovery_lr_plateau`` is on, else the
-        no-op defaults (1.0/0 → break-on-patience, unchanged)."""
+        """Plateau LR-reduction kwargs for the recovery call: the policy's
+        factor/reductions when ``TUNING_POLICY.recovery_lr_plateau`` is on, else
+        the no-op defaults (1.0/0 → break-on-patience, unchanged)."""
         if getattr(self, "_recovery_lr_plateau", False):
             return (
                 float(getattr(self, "_recovery_lr_plateau_factor", 0.3)),
@@ -203,8 +185,9 @@ class SmoothAdaptationCycleMixin(TunerBase):
         return None
 
     def _recovery_check_interval(self):
-        """Recovery check interval, tightened by ``tuning_recovery_check_divisor``
-        when ``tuning_tight_plateau`` is on (CHANGE 3); else the budget interval."""
+        """Recovery check interval, tightened by the policy's
+        ``recovery_check_divisor`` when ``tight_plateau`` is on (CHANGE 3); else
+        the budget interval."""
         interval = int(self._budget.check_interval)
         if getattr(self, "_tight_plateau", False):
             divisor = max(1, int(getattr(self, "_recovery_check_divisor", 1)))
@@ -229,9 +212,9 @@ class SmoothAdaptationCycleMixin(TunerBase):
 
     def _certified_gate_metric(self, paired_post_acc=None):
         """The keep-best gate metric, reading the same basis the commit gate uses:
-        the paired correctness fraction when ``tuning_use_paired_sensor`` is on, else
-        ``probe()``. ``paired_post_acc`` reuses a commit-time fraction; ``None`` forces
-        a fresh read."""
+        the paired correctness fraction when ``TUNING_POLICY.use_paired_sensor`` is
+        on, else ``probe()``. ``paired_post_acc`` reuses a commit-time fraction;
+        ``None`` forces a fresh read."""
         if getattr(self, "_paired_gate", False) and self._ref_correct is not None:
             if paired_post_acc is not None:
                 return float(paired_post_acc)
@@ -242,7 +225,7 @@ class SmoothAdaptationCycleMixin(TunerBase):
     def _snapshot_best_committed_if_improved(self, post_acc):
         """On a commit whose gate metric strictly beats the running best, clone the
         model state into ``_best_committed_state``. No-op unless
-        ``tuning_keepbest_certified`` is on."""
+        ``TUNING_POLICY.keepbest_certified`` is on."""
         if not getattr(self, "_keepbest_certified", False):
             return
         metric = self._certified_gate_metric(paired_post_acc=post_acc)

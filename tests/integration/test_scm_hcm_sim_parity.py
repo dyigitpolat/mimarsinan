@@ -22,7 +22,7 @@ from conftest import (
     default_config,
     platform_constraints,  # fixture
 )
-from mimarsinan.chip_simulation.test_subsample import (
+from mimarsinan.chip_simulation.subsample import (
     compute_test_subsample_indices,
 )
 from mimarsinan.mapping.packing.hybrid_hardcore_mapping import (

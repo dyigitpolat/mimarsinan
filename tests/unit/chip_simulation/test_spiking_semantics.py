@@ -8,6 +8,9 @@ from mimarsinan.chip_simulation.spiking_semantics import (
     is_analytical_ttfs,
     is_cascaded_ttfs,
     is_cycle_based,
+    is_default_firing_mode,
+    is_explicit_ttfs_cycle_schedule,
+    is_novena_firing_mode,
     is_synchronized_ttfs,
     is_ttfs_cycle_based,
     require_spiking_mode_supported,
@@ -96,6 +99,15 @@ class TestCycleSchedule:
         assert not is_synchronized_ttfs("ttfs_cycle_based", None)  # default cascaded
         assert not is_synchronized_ttfs("lif", "synchronized")
 
+    def test_explicit_schedule_predicate(self):
+        # Explicit schedules are exactly the values ttfs_cycle_schedule leaves unchanged.
+        assert is_explicit_ttfs_cycle_schedule("cascaded")
+        assert is_explicit_ttfs_cycle_schedule("synchronized")
+        for explicit in ("cascaded", "synchronized"):
+            assert ttfs_cycle_schedule(explicit) == explicit
+        for placeholder in (None, "", "analytical", "none", "bogus"):
+            assert not is_explicit_ttfs_cycle_schedule(placeholder), placeholder
+
     def test_floor_ceil_convention_predicate(self):
         # ttfs_quantized AND the synchronized floor-collapse train the floor +
         # half-step-bias NF and deploy the mode-derived ceil kernel.
@@ -107,3 +119,25 @@ class TestCycleSchedule:
         assert not uses_ttfs_floor_ceil_convention("ttfs_cycle_based", None)
         assert not uses_ttfs_floor_ceil_convention("ttfs")
         assert not uses_ttfs_floor_ceil_convention("lif")
+
+
+# ── firing-mode predicates ───────────────────────────────────────────────────
+
+class TestFiringModePredicates:
+    def test_default_firing_mode(self):
+        assert is_default_firing_mode("Default")
+        for other in ("Novena", "TTFS", "", "default", None):
+            assert not is_default_firing_mode(other), other
+
+    def test_novena_firing_mode(self):
+        assert is_novena_firing_mode("Novena")
+        for other in ("Default", "TTFS", "", "novena", None):
+            assert not is_novena_firing_mode(other), other
+
+    def test_predicates_accept_firing_mode_enum_members(self):
+        from mimarsinan.chip_simulation.firing_strategy import FiringMode
+
+        assert is_default_firing_mode(FiringMode.DEFAULT)
+        assert is_novena_firing_mode(FiringMode.NOVENA)
+        assert not is_novena_firing_mode(FiringMode.DEFAULT)
+        assert not is_default_firing_mode(FiringMode.TTFS)

@@ -79,7 +79,7 @@ def test_segment_aware_nf_matches_hcm_across_layernorm():
 def _build_with_lif(T, *, shift: bool):
     """Build NF flow + HCM for the LayerNorm 2-seg model, optionally with the
     negative-value shift applied (pre-mapping bake + tag + HCM propagation)."""
-    from mimarsinan.mapping.support.neg_shift_bias import (
+    from mimarsinan.mapping.support.bias_compensation import (
         apply_negative_value_shifts,
         transfer_negative_shifts_to_ir,
         propagate_negative_shifts_to_hybrid,

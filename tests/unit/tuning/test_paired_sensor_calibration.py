@@ -97,17 +97,17 @@ def test_montecarlo_true_drop_is_detected():
     assert detected / trials > 0.9  # a real 8% drop is almost always caught
 
 
-def _paired_tuner(tmp_path, cand_correct):
-    """A flagged tuner whose candidate paired-correctness vector is scripted."""
+def _paired_tuner(tmp_path, monkeypatch, cand_correct):
+    """A paired-gate tuner whose candidate paired-correctness vector is scripted."""
     import torch
 
-    from conftest import MockPipeline, default_config
+    from conftest import MockPipeline, default_config, override_tuning_policy
     from mimarsinan.tuning.orchestration.smooth_adaptation_tuner import (
         SmoothAdaptationTuner,
     )
 
+    override_tuning_policy(monkeypatch, use_paired_sensor=True)
     cfg = default_config()
-    cfg["tuning_use_paired_sensor"] = True
     cfg["tuning_budget_scale"] = 1.0
     pipeline = MockPipeline(config=cfg, working_directory=str(tmp_path))
     model = make_tiny_supermodel()
@@ -133,10 +133,10 @@ def _paired_tuner(tmp_path, cand_correct):
     return tuner, model
 
 
-def test_live_paired_gate_rolls_back_on_real_drop(tmp_path):
+def test_live_paired_gate_rolls_back_on_real_drop(tmp_path, monkeypatch):
     import torch
 
-    tuner, model = _paired_tuner(tmp_path, cand_correct=[False] * 8)
+    tuner, model = _paired_tuner(tmp_path, monkeypatch, cand_correct=[False] * 8)
     before = {k: v.clone() for k, v in model.state_dict().items()}
     result = tuner._adaptation(0.5)
     assert result == 0.0  # paired drop vs fixed baseline → rollback
@@ -145,18 +145,18 @@ def test_live_paired_gate_rolls_back_on_real_drop(tmp_path):
     tuner.close()
 
 
-def test_live_paired_gate_commits_when_no_drop(tmp_path):
-    tuner, _ = _paired_tuner(tmp_path, cand_correct=[True] * 8)
+def test_live_paired_gate_commits_when_no_drop(tmp_path, monkeypatch):
+    tuner, _ = _paired_tuner(tmp_path, monkeypatch, cand_correct=[True] * 8)
     result = tuner._adaptation(0.5)
     assert result == 0.5  # candidate matches baseline → commit
     tuner.close()
 
 
-def test_paired_gate_uses_single_post_eval_pass(tmp_path):
+def test_paired_gate_uses_single_post_eval_pass(tmp_path, monkeypatch):
     """D6: under the paired gate the post-recovery accuracy is derived from the
     SAME correctness vector the rollback gate uses — no separate marginal
     validate_n_batches pass (the redundant second eval the +139% cost included)."""
-    tuner, _ = _paired_tuner(tmp_path, cand_correct=[True] * 8)
+    tuner, _ = _paired_tuner(tmp_path, monkeypatch, cand_correct=[True] * 8)
     tuner._last_post_acc = 0.9  # skip the pre-cycle validate_n_batches as well
 
     counts = {"vn": 0, "vc": 0}
@@ -206,22 +206,24 @@ def test_correctness_primitive_reads_validation_cache(tmp_path):
 # ── D4: global_budget floor — consistency + validation (not the 0.005 footgun) ──
 # The ablation (docs/tuning_optimization_flags.md §1) measured a 0.005 floor to
 # ERASE the paired accuracy gain; 0.0 (no §8.2 floor) is strictly better and is
-# the registered default. These tests pin that contract: 0.0 stays the default,
-# the cycle mixin's fallback agrees with it (no silent 0.005 divergence), 0.0 is
-# a valid paired setting, and only a *negative* budget is rejected.
+# the TuningPolicy default. These tests pin that contract: 0.0 stays the default,
+# the cycle mixin reads it (no silent 0.005 divergence), 0.0 is a valid paired
+# setting, and only a *negative* budget is rejected.
 
-def _budget_tuner(tmp_path, *, paired, global_budget=None):
-    from conftest import MockPipeline, default_config
+def _budget_tuner(tmp_path, monkeypatch, *, paired, global_budget=None):
+    from conftest import MockPipeline, default_config, override_tuning_policy
     from mimarsinan.tuning.orchestration.smooth_adaptation_tuner import (
         SmoothAdaptationTuner,
     )
 
-    cfg = default_config()
+    overrides = {}
     if paired:
-        cfg["tuning_use_paired_sensor"] = True
+        overrides["use_paired_sensor"] = True
     if global_budget is not None:
-        cfg["global_budget"] = global_budget
-    pipeline = MockPipeline(config=cfg, working_directory=str(tmp_path))
+        overrides["global_budget"] = global_budget
+    if overrides:
+        override_tuning_policy(monkeypatch, **overrides)
+    pipeline = MockPipeline(config=default_config(), working_directory=str(tmp_path))
 
     class _T(SmoothAdaptationTuner):
         def _update_and_evaluate(self, rate):
@@ -234,28 +236,28 @@ def _budget_tuner(tmp_path, *, paired, global_budget=None):
     return tuner
 
 
-def test_global_budget_registered_default_is_zero():
-    from mimarsinan.config_schema.defaults import DEFAULT_DEPLOYMENT_PARAMETERS
+def test_global_budget_policy_default_is_zero():
+    from mimarsinan.tuning.orchestration.tuning_policy import TUNING_POLICY
 
-    assert DEFAULT_DEPLOYMENT_PARAMETERS["global_budget"] == 0.0
+    assert TUNING_POLICY.global_budget == 0.0
 
 
-def test_cycle_global_budget_fallback_matches_registered_default(tmp_path):
-    # config omits the key → the mixin fallback must be 0.0 (the registered
-    # default), not a divergent hardcoded 0.005.
-    tuner = _budget_tuner(tmp_path, paired=False)
+def test_cycle_global_budget_matches_policy_default(tmp_path, monkeypatch):
+    # default policy → the mixin reads 0.0 (the SSOT default), not a divergent
+    # hardcoded 0.005.
+    tuner = _budget_tuner(tmp_path, monkeypatch, paired=False)
     assert tuner._global_budget == 0.0
     tuner.close()
 
 
-def test_paired_with_zero_budget_is_allowed(tmp_path):
+def test_paired_with_zero_budget_is_allowed(tmp_path, monkeypatch):
     # 0.0 (no floor) is the measured best-accuracy operating point — it MUST stay
     # expressible with the paired gate on, not raised as a misconfiguration.
-    tuner = _budget_tuner(tmp_path, paired=True, global_budget=0.0)
+    tuner = _budget_tuner(tmp_path, monkeypatch, paired=True, global_budget=0.0)
     assert tuner._paired_gate is True and tuner._global_budget == 0.0
     tuner.close()
 
 
-def test_negative_global_budget_is_rejected(tmp_path):
+def test_negative_global_budget_is_rejected(tmp_path, monkeypatch):
     with pytest.raises(ValueError, match="global_budget"):
-        _budget_tuner(tmp_path, paired=True, global_budget=-0.01)
+        _budget_tuner(tmp_path, monkeypatch, paired=True, global_budget=-0.01)

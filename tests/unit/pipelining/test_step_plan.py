@@ -62,7 +62,7 @@ class TestStepPlanMechanics:
                 return False
 
         sp = StepPlan([StepSpec("A", _A), StepSpec("B", _B), StepSpec("A2", _A)])
-        assert sp.resolve(_plan()) == [("A", _A), ("A2", _A)]
+        assert [s.to_pair() for s in sp.resolve(_plan())] == [("A", _A), ("A2", _A)]
 
     def test_callable_entry_is_spliced_in_order(self):
         class _A(PipelineStep):
@@ -70,9 +70,9 @@ class TestStepPlanMechanics:
 
         sp = StepPlan([
             StepSpec("A", _A),
-            lambda plan: [("X", _A), ("Y", _A)],
+            lambda plan: [StepSpec("X", _A), StepSpec("Y", _A)],
         ])
-        assert sp.resolve(_plan()) == [("A", _A), ("X", _A), ("Y", _A)]
+        assert [s.to_pair() for s in sp.resolve(_plan())] == [("A", _A), ("X", _A), ("Y", _A)]
 
     def test_step_spec_defaults_to_class_applies_to(self):
         spec = StepSpec("Pruning", PruningAdaptationStep)
@@ -242,7 +242,7 @@ class TestRegistryIntegrity:
             cfg = {"configuration_mode": "user", "spiking_mode": "lif",
                    "model_type": "mlp_mixer", **overrides}
             plan = DeploymentPlan.resolve(cfg)
-            assert _STEP_PLAN.resolve(plan) == get_pipeline_step_specs(cfg)
+            assert [s.to_pair() for s in _STEP_PLAN.resolve(plan)] == get_pipeline_step_specs(cfg)
 
     def test_registry_step_classes_have_a_step_class_each(self):
         for cls in _STEP_PLAN.step_classes():
@@ -321,7 +321,9 @@ class TestDataContractDagValidation:
         # get_pipeline_step_specs routes through validate_data_contract; a valid
         # config returns the resolved sequence unchanged.
         cfg = {"configuration_mode": "user", "spiking_mode": "lif", "model_type": "mlp_mixer"}
-        assert get_pipeline_step_specs(cfg) == _STEP_PLAN.resolve(DeploymentPlan.resolve(cfg))
+        assert get_pipeline_step_specs(cfg) == [
+            s.to_pair() for s in _STEP_PLAN.resolve(DeploymentPlan.resolve(cfg))
+        ]
 
     def test_missing_producer_raises_naming_the_entry(self):
         class _Producer(PipelineStep):
@@ -396,3 +398,34 @@ class TestDataContractDagValidation:
         plan = _plan(**overrides)
         specs = _STEP_PLAN.validate_data_contract(plan)
         assert specs == _STEP_PLAN.resolve(plan)
+
+
+class TestSemanticGroupsLiveOnTheRegistry:
+    def test_every_registry_entry_declares_a_group(self):
+        from mimarsinan.pipelining.core.pipelines.deployment_specs import _STEP_PLAN
+        from mimarsinan.pipelining.core.step_plan import StepSpec
+
+        for entry in _STEP_PLAN._entries:
+            if isinstance(entry, StepSpec):
+                assert entry.group != "other", entry.name
+
+    def test_semantic_map_derives_from_registry(self):
+        from conftest import default_config
+        from mimarsinan.pipelining.core.pipelines.deployment_specs import (
+            get_pipeline_semantic_group_by_step_name,
+        )
+
+        cfg = default_config()
+        cfg["input_shape"] = (1, 8, 8)
+        groups = get_pipeline_semantic_group_by_step_name(cfg)
+        assert groups["Soft Core Mapping"] == "soft_mapping"
+        assert groups["Pretraining"] == "pretraining"
+        assert groups["Hard Core Mapping"] == "hardware"
+        for name in groups:
+            if "Simulation" in name:
+                assert groups[name] == "simulation", name
+
+    def test_parallel_group_dict_is_gone(self):
+        from mimarsinan.pipelining.core.pipelines import deployment_specs
+
+        assert not hasattr(deployment_specs, "_SEMANTIC_GROUP_BY_STEP_CLASS")

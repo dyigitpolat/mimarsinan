@@ -9,6 +9,7 @@ import time
 import traceback
 
 from mimarsinan.common.best_effort import best_effort
+from mimarsinan.common.env import set_cuda_debug
 
 
 def enable_cuda_debug() -> None:
@@ -19,7 +20,7 @@ def enable_cuda_debug() -> None:
     """
     os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
     os.environ["TORCH_USE_CUDA_DSA"] = "1"
-    os.environ["MIMARSINAN_CUDA_DEBUG"] = "1"
+    set_cuda_debug()
 
 
 def describe_tensor(t) -> str:

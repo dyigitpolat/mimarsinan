@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-import os
 import time as _time
 from typing import Dict
 
 import numpy as np
+
+from mimarsinan.common.env import loihi_quiet
 
 from mimarsinan.chip_simulation.recording.spike_recorder import CoreSpikeCounts, SegmentSpikeRecord
 from mimarsinan.mapping.packing.softcore import HardCoreMapping
@@ -69,7 +70,7 @@ class LavaSegmentMixin:
             visit(idx)
 
         t0 = _time.time()
-        verbose = os.environ.get("MIMARSINAN_LOIHI_QUIET") != "1"
+        verbose = not loihi_quiet()
         n_cores = len(topo_order)
         if verbose:
             print(

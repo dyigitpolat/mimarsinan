@@ -11,7 +11,7 @@ from mimarsinan.torch_mapping.encoding_layers import mark_encoding_layers
 from mimarsinan.models.nn.activations import LIFActivation
 from mimarsinan.models.nn.activations.ttfs_spiking import TTFSActivation
 from mimarsinan.mapping.mappers.compute_op_mapper import ComputeOpMapper
-from mimarsinan.mapping.support.neg_shift_bias import (
+from mimarsinan.mapping.support.bias_compensation import (
     apply_negative_value_shifts,
     calibration_forward_for_mode,
 )

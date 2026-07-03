@@ -62,7 +62,7 @@ from mimarsinan.mapping.platform.mapping_structure import MappingStrategy
 from mimarsinan.models.spiking.hybrid.flow import SpikingHybridCoreFlow
 from mimarsinan.models.nn.activations import LIFActivation
 from mimarsinan.models.nn.activations.ttfs_spiking import TTFSActivation
-from mimarsinan.mapping.support.neg_shift_bias import calibration_forward_for_mode
+from mimarsinan.mapping.support.bias_compensation import calibration_forward_for_mode
 from mimarsinan.spiking.chip_aligned_nf import chip_aligned_segment_forward
 
 from integration._split_reassembly import (

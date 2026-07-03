@@ -454,6 +454,20 @@ def make_scripted_run_tuner(
     return _ScriptedRunTuner(pipeline, model, target_accuracy, lr)
 
 
+def override_tuning_policy(monkeypatch, **overrides):
+    """Patch the TuningPolicy SSOT for one test via ``dataclasses.replace``.
+
+    Patches the binding the cycle mixin reads at construction time, so tuners
+    built after this call see the overridden policy fields."""
+    import dataclasses
+
+    from mimarsinan.tuning.orchestration import smooth_adaptation_cycle as cyc
+
+    monkeypatch.setattr(
+        cyc, "TUNING_POLICY", dataclasses.replace(cyc.TUNING_POLICY, **overrides)
+    )
+
+
 # ---------------------------------------------------------------------------
 # Determinism + golden-trace harness (tuning refactor P0)
 # ---------------------------------------------------------------------------

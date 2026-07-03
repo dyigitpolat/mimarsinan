@@ -75,6 +75,11 @@ def ttfs_cycle_schedule(schedule) -> str:
     return s if s in TTFS_CYCLE_SCHEDULES else DEFAULT_TTFS_CYCLE_SCHEDULE
 
 
+def is_explicit_ttfs_cycle_schedule(schedule) -> bool:
+    """``schedule`` explicitly names a known ttfs_cycle schedule (no default applied)."""
+    return schedule in TTFS_CYCLE_SCHEDULES
+
+
 def is_cascaded_ttfs(spiking_mode: str, schedule) -> bool:
     """ttfs_cycle_based running the greedy pipelined (cascaded) schedule."""
     return is_ttfs_cycle_based(spiking_mode) and ttfs_cycle_schedule(schedule) == "cascaded"
@@ -94,6 +99,20 @@ def uses_ttfs_floor_ceil_convention(spiking_mode: str, schedule=None) -> bool:
     return _norm(spiking_mode) == "ttfs_quantized" or is_synchronized_ttfs(
         spiking_mode, schedule
     )
+
+
+DEFAULT_FIRING_MODE = "Default"
+NOVENA_FIRING_MODE = "Novena"
+
+
+def is_default_firing_mode(firing_mode) -> bool:
+    """Firing mode with the Default (subtractive-reset) LIF semantics."""
+    return firing_mode == DEFAULT_FIRING_MODE
+
+
+def is_novena_firing_mode(firing_mode) -> bool:
+    """Firing mode with the Novena (zero-reset) LIF semantics."""
+    return firing_mode == NOVENA_FIRING_MODE
 
 
 @dataclass(frozen=True)

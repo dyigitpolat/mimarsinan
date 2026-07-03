@@ -4,20 +4,19 @@ import os
 import sys
 
 from mimarsinan.common.best_effort import best_effort
+from mimarsinan.common.env import resource_debug_enabled
 from mimarsinan.data_handling.data_provider import DataProvider
 
 import torch
 import torch.multiprocessing as torch_mp
 
 
-_RESOURCE_DEBUG = os.environ.get("MIMARSINAN_RESOURCE_DEBUG") == "1"
-
 # DataLoader workers use forkserver (not the global spawn start method) to fork from a clean CUDA-free process, avoiding truncated dataset pickles under resource pressure.
 _DATALOADER_MP_CONTEXT = torch_mp.get_context("forkserver")
 
 
 def _resource_snapshot(tag):
-    if not _RESOURCE_DEBUG:
+    if not resource_debug_enabled():
         return
     with best_effort("resource snapshot"):
         pid = os.getpid()

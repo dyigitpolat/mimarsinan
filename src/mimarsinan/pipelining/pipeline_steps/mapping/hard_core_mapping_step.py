@@ -1,6 +1,7 @@
 from mimarsinan.pipelining.core.steps.pipeline_step import PipelineStep
 
 from mimarsinan.common.best_effort import best_effort
+from mimarsinan.common.env import vram_probe_enabled
 from mimarsinan.pipelining.core.hybrid_mapping_consumer import load_hybrid_mapping_for_step
 from mimarsinan.pipelining.core.engine.pipeline_helpers import run_optional_viz
 from mimarsinan.pipelining.core.simulation_factory import run_hcm_mapping_metric
@@ -11,7 +12,7 @@ import os
 
 def _vram_probe(tag: str) -> None:
     """Opt-in VRAM/RSS probe when ``MIMARSINAN_VRAM_PROBE=1``."""
-    if os.environ.get("MIMARSINAN_VRAM_PROBE") != "1":
+    if not vram_probe_enabled():
         return
     rss = 0
     with best_effort("read process RSS via psutil"):

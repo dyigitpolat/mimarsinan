@@ -21,7 +21,7 @@ from mimarsinan.mapping.platform.mapping_structure import (
     ChipCapabilities,
     MappingStrategy,
 )
-from mimarsinan.mapping.support.neg_shift_bias import propagate_negative_shifts_to_hybrid
+from mimarsinan.mapping.support.bias_compensation import propagate_negative_shifts_to_hybrid
 from mimarsinan.model_training.basic_trainer import BasicTrainer
 from mimarsinan.models.spiking.hybrid.flow import SpikingHybridCoreFlow
 from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan

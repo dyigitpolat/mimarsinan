@@ -19,7 +19,7 @@ from mimarsinan.mapping.packing.hybrid_hardcore_mapping import build_hybrid_hard
 from mimarsinan.mapping.platform.mapping_structure import MappingStrategy
 from mimarsinan.models.spiking.hybrid.flow import SpikingHybridCoreFlow
 from mimarsinan.models.nn.activations import LIFActivation
-from mimarsinan.mapping.support.neg_shift_bias import (
+from mimarsinan.mapping.support.bias_compensation import (
     apply_negative_value_shifts,
     transfer_negative_shifts_to_ir,
     propagate_negative_shifts_to_hybrid,

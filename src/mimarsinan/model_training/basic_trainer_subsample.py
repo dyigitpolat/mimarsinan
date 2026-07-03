@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-import os
-
 import torch
 
-from mimarsinan.chip_simulation.test_subsample import compute_test_subsample_indices
+from mimarsinan.chip_simulation.subsample import compute_test_subsample_indices
+from mimarsinan.common.env import vram_probe_enabled
 
 
 def test_on_subsample(trainer, *, max_samples: int, seed: int = 0) -> float:
@@ -62,7 +61,7 @@ def test_on_subsample(trainer, *, max_samples: int, seed: int = 0) -> float:
     bs = int(trainer.test_batch_size)
     total = 0
     correct = 0
-    _probe = os.environ.get("MIMARSINAN_VRAM_PROBE") == "1"
+    _probe = vram_probe_enabled()
     with torch.no_grad():
         for batch_idx, start in enumerate(range(0, len(xs_all), bs)):
             x = torch.stack(xs_all[start:start + bs]).to(trainer.device)

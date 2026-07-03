@@ -14,7 +14,7 @@ import torch
 import torch.nn as nn
 
 from mimarsinan.models.perceptron_mixer.perceptron import Perceptron
-from mimarsinan.mapping.support.neg_shift_bias import apply_negative_shift_bias
+from mimarsinan.mapping.support.bias_compensation import apply_negative_shift_bias
 
 
 def _perceptron(W, B):
@@ -68,7 +68,7 @@ def test_idempotent():
 
 def test_negative_shifts_from_min():
     import numpy as np
-    from mimarsinan.mapping.support.neg_shift_bias import negative_shifts_from_min
+    from mimarsinan.mapping.support.bias_compensation import negative_shifts_from_min
 
     mins = {
         5: np.array([-0.4, 0.1, -1.2]),   # two negative channels → shift

@@ -52,6 +52,10 @@ class DataCollector(
         self._event_seq: int = 0
         self._event_buffer: deque[dict] = deque(maxlen=512)
 
+    def set_metric_callback(self, callback: Any) -> None:
+        with self._lock:
+            self._metric_callback = callback
+
     def set_resource_store(self, store: "ResourceStore | None") -> None:
         with self._lock:
             self._resource_store = store

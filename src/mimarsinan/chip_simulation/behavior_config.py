@@ -10,6 +10,10 @@ import numpy as np
 from mimarsinan.chip_simulation.firing_strategy import FiringStrategy, FiringStrategyFactory
 from mimarsinan.chip_simulation.recording._spike_encoding import encode_segment_input
 from mimarsinan.chip_simulation.spiking_mode_policy import policy_for_spiking_mode
+from mimarsinan.chip_simulation.spiking_semantics import (
+    is_default_firing_mode,
+    is_novena_firing_mode,
+)
 from mimarsinan.models.spiking.spiking_config import SPIKE_MODES
 
 
@@ -61,7 +65,9 @@ class NeuralBehaviorConfig:
         self.firing_strategy().require_backend(backend)
 
     def nevresim_reset_policy(self) -> str:
-        return "SubtractiveReset" if self.firing_mode == "Default" else "ZeroReset"
+        if is_default_firing_mode(self.firing_mode):
+            return "SubtractiveReset"
+        return "ZeroReset"
 
     def nevresim_compare_policy(self) -> str:
         return "StrictCompare" if self.thresholding_mode == "<" else "InclusiveCompare"
@@ -72,7 +78,7 @@ class NeuralBehaviorConfig:
         return f"LIFirePolicy<{reset}, {compare}>"
 
     def lava_zero_reset(self) -> bool:
-        return self.firing_mode == "Novena"
+        return is_novena_firing_mode(self.firing_mode)
 
     def sanafe_reset_mode(self) -> str:
         return self.firing_strategy().sanafe_reset_mode()

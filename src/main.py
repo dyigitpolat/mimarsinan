@@ -1,150 +1,45 @@
-from init import *
+"""CLI and GUI frontends over the PipelineSession composition root."""
 
-import os
+from init import init
+
+import json
+import sys
+import threading
 from pathlib import Path
 
 
 def _load_project_dotenv() -> None:
-    """Populate ``os.environ`` from the repo ``.env`` (not loaded by Python by default)."""
     try:
         from dotenv import load_dotenv
     except ImportError:
         return
-    repo_root = Path(__file__).resolve().parent.parent
-    load_dotenv(repo_root / ".env")
+    load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 
 _load_project_dotenv()
 
-from mimarsinan.common.reporter import DefaultReporter
-from mimarsinan.pipelining.core.pipelines.deployment_pipeline import (
-    DeploymentPipeline,
-)
-from mimarsinan.data_handling.data_provider_factory import BasicDataProviderFactory
-import mimarsinan.data_handling.data_providers
-
-import copy
-import sys
-import json
-import threading
-
-
-def _parse_deployment_config(deployment_config):
-    """Parse deployment config dict into args for pipeline creation. Used by main() and run_pipeline_from_config."""
-    data_provider_name = deployment_config['data_provider_name']
-    seed = deployment_config.get("seed", 0)
-    datasets_path = deployment_config.get("datasets_path", "./datasets")
-
-    deployment_name = deployment_config['experiment_name']
-    deployment_parameters = dict(deployment_config['deployment_parameters'])
-
-    preprocessing = deployment_parameters.get("preprocessing")
-    batch_size = deployment_parameters.get("batch_size")
-    data_provider_factory = BasicDataProviderFactory(
-        data_provider_name, datasets_path,
-        seed=seed, preprocessing=preprocessing, batch_size=batch_size,
-    )
-
-    platform_constraints_raw = deployment_config.get("platform_constraints", {})
-
-    # When hw_config_mode is "search", the platform_constraints dict contains
-    # both fixed values and a search_space sub-dict. Merge search_space keys
-    # into arch_search so the architecture search step can find them.
-    # Deep-copy before pop so we do not mutate deployment_config["platform_constraints"]:
-    # the same dict is written to _RUN_CONFIG/config.json and must keep search_space
-    # for Edit & Continue / wizard reload.
-    hw_mode = deployment_parameters.get("hw_config_mode", "fixed")
-    if hw_mode == "search" and isinstance(platform_constraints_raw, dict):
-        platform_constraints = copy.deepcopy(platform_constraints_raw)
-        search_space = platform_constraints.pop("search_space", {}) or {}
-        arch_cfg = deployment_parameters.setdefault("arch_search", {})
-        for k, v in search_space.items():
-            arch_cfg.setdefault(k, v)
-    else:
-        platform_constraints = platform_constraints_raw
-
-    pipeline_mode = deployment_config.get("pipeline_mode", "phased")
-
-    if "_working_directory" in deployment_config:
-        working_directory = deployment_config["_working_directory"]
-    else:
-        working_directory = (
-            deployment_config['generated_files_path'] + "/"
-            + deployment_name + "_" + pipeline_mode + "_deployment_run"
-        )
-
-    os.makedirs(working_directory + "/_RUN_CONFIG", exist_ok=True)
-    saveable_config = {k: v for k, v in deployment_config.items() if not k.startswith("_")}
-    with open(working_directory + "/_RUN_CONFIG/config.json", 'w') as f:
-        json.dump(saveable_config, f, indent=4)
-
-    return {
-        "pipeline_mode": pipeline_mode,
-        "data_provider_factory": data_provider_factory,
-        "deployment_name": deployment_name,
-        "platform_constraints": platform_constraints,
-        "deployment_parameters": deployment_parameters,
-        "working_directory": working_directory,
-        "start_step": deployment_config.get("start_step"),
-        "stop_step": deployment_config.get("stop_step"),
-        "target_metric_override": deployment_config.get("target_metric_override"),
-    }
+from mimarsinan.pipelining.session import PipelineSession
 
 
 def run_pipeline_from_config(deployment_config, collector, gui_port=8501):
-    """Create pipeline from config dict, attach collector and hooks, run pipeline in a background thread.
+    """Run a config in a background thread with the wizard GUI attached."""
+    from mimarsinan.gui import GUIHandle, to_json_safe
 
-    Used by the GUI when user clicks RUN in the wizard. Returns immediately; pipeline runs in thread.
-    """
-    parsed = _parse_deployment_config(deployment_config)
-    pipeline_mode = parsed["pipeline_mode"]
-    deployment_parameters = parsed["deployment_parameters"]
-    DeploymentPipeline.apply_preset(pipeline_mode, deployment_parameters)
+    session = PipelineSession.from_config(deployment_config)
+    gui = GUIHandle(session.pipeline, collector)
+    session.attach_gui(gui)
 
-    reporter = DefaultReporter()
-    pipeline = DeploymentPipeline(
-        data_provider_factory=parsed["data_provider_factory"],
-        deployment_parameters=deployment_parameters,
-        platform_constraints=parsed["platform_constraints"],
-        reporter=reporter,
-        working_directory=parsed["working_directory"],
+    collector.set_pipeline_info(
+        [name for name, _ in session.pipeline.steps],
+        to_json_safe(session.pipeline.config),
     )
-
-    resolved_start_step = None
-    if parsed["start_step"] is not None:
-        try:
-            resolved_start_step = pipeline.get_resolved_start_step(parsed["start_step"])
-        except Exception:
-            resolved_start_step = parsed["start_step"]
-
-    from mimarsinan.gui import GUIHandle
-    from mimarsinan.gui.runtime.collector import to_json_safe
-    from mimarsinan.gui.runtime.composite_reporter import CompositeReporter
-
-    gui = GUIHandle(pipeline, collector)
-    pipeline.reporter = CompositeReporter([reporter, gui.reporter])
-    pipeline.register_pre_step_hook(gui.on_step_start)
-    pipeline.register_post_step_hook(gui.on_step_end)
-
-    safe_config = to_json_safe(pipeline.config)
-    collector.set_pipeline_info([name for name, _ in pipeline.steps], safe_config)
-
-    if parsed["target_metric_override"] is not None:
-        pipeline.set_target_metric(parsed["target_metric_override"])
 
     def _run():
         try:
-            if resolved_start_step is None:
-                pipeline.run(stop_step=parsed["stop_step"])
-            else:
-                pipeline.run_from(step_name=resolved_start_step, stop_step=parsed["stop_step"])
+            session.run()
         finally:
-            try:
-                reporter.finish()
-            except Exception:
-                pass
-            finally:
-                collector.set_pipeline_thread(None)
+            session.finish()
+            collector.set_pipeline_thread(None)
 
     thread = threading.Thread(target=_run, daemon=False, name="pipeline-run")
     collector.set_pipeline_thread(thread)
@@ -154,90 +49,28 @@ def run_pipeline_from_config(deployment_config, collector, gui_port=8501):
 def main():
     if len(sys.argv) < 2:
         print("Usage: python main.py <deployment_config_json>")
-        exit(1)
+        raise SystemExit(1)
 
-    deployment_config_path = sys.argv[1]
-    with open(deployment_config_path, 'r') as f:
+    with open(sys.argv[1], "r") as f:
         deployment_config = json.load(f)
 
-    parsed = _parse_deployment_config(deployment_config)
-    run_pipeline(
-        pipeline_mode=parsed["pipeline_mode"],
-        data_provider_factory=parsed["data_provider_factory"],
-        deployment_name=parsed["deployment_name"],
-        platform_constraints=parsed["platform_constraints"],
-        deployment_parameters=parsed["deployment_parameters"],
-        working_directory=parsed["working_directory"],
-        start_step=parsed["start_step"],
-        stop_step=parsed["stop_step"],
-        target_metric_override=parsed["target_metric_override"],
-    )
+    session = PipelineSession.from_config(deployment_config)
 
-def run_pipeline(
-    pipeline_mode,
-    data_provider_factory, 
-    deployment_name, 
-    platform_constraints, 
-    deployment_parameters, 
-    working_directory,
-    start_step = None,
-    stop_step = None,
-    target_metric_override = None,
-    gui_port = 8501):
-
-    # Merge pipeline_mode preset into a copy of deployment_parameters
-    # so that explicit user values always win over preset defaults.
-    merged_params = dict(deployment_parameters)
-    DeploymentPipeline.apply_preset(pipeline_mode, merged_params)
-
-    reporter = DefaultReporter()
-
-    pipeline = DeploymentPipeline(
-        data_provider_factory=data_provider_factory,
-        deployment_parameters=merged_params,
-        platform_constraints=platform_constraints,
-        reporter=reporter,
-        working_directory=working_directory,
-    )
-
-    # Resolve actual start step (may be earlier if dependencies are missing)
-    resolved_start_step = None
-    if start_step is not None:
-        try:
-            resolved_start_step = pipeline.get_resolved_start_step(start_step)
-        except Exception:
-            resolved_start_step = start_step
-
-    # Start the browser-based monitoring GUI
-    gui_started = False
+    gui = None
     try:
         from mimarsinan.gui import start_gui
-        from mimarsinan.gui.runtime.composite_reporter import CompositeReporter
 
-        gui = start_gui(pipeline, port=gui_port, start_step=resolved_start_step)
-        pipeline.reporter = CompositeReporter([reporter, gui.reporter])
-        pipeline.register_pre_step_hook(gui.on_step_start)
-        pipeline.register_post_step_hook(gui.on_step_end)
-        gui_started = True
+        gui = start_gui(
+            session.pipeline, port=8501, start_step=session.resolved_start_step()
+        )
+        session.attach_gui(gui)
     except Exception as e:
         print(f"[GUI] Failed to start monitoring GUI (non-fatal): {e}")
 
-    if target_metric_override is not None:
-        pipeline.set_target_metric(target_metric_override)
-    
-    if start_step is None:
-        pipeline.run(stop_step=stop_step)
-    else:
-        pipeline.run_from(step_name=start_step, stop_step=stop_step)
+    session.run()
+    session.finish()
 
-    # Finish reporter (e.g. flush / no-op)
-    try:
-        reporter.finish()
-    except Exception:
-        pass  # Non-fatal
-
-    # Keep the process (and GUI server) alive until user confirms exit
-    if gui_started:
+    if gui is not None:
         print("\n────────────────────────────────────────")
         print("Pipeline complete. GUI server still running.")
         print("Press Enter to exit and close the GUI...")
@@ -245,7 +78,8 @@ def run_pipeline(
         try:
             input()
         except (KeyboardInterrupt, EOFError):
-            pass  # Graceful exit on Ctrl+C or EOF
+            pass
+
 
 if __name__ == "__main__":
     init()

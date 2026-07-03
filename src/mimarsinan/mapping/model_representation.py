@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-import os
-
 import torch
 import torch.nn as nn
+
+from mimarsinan.common.env import cuda_debug_enabled
 
 
 class ModelRepresentation:
@@ -116,9 +116,7 @@ class ModelRepresentation:
         """Execute the mapper graph; frees intermediates once their consumers run."""
         self._ensure_exec_graph()
 
-        cuda_debug = (
-            os.environ.get("MIMARSINAN_CUDA_DEBUG") == "1" and torch.cuda.is_available()
-        )
+        cuda_debug = cuda_debug_enabled() and torch.cuda.is_available()
 
         values = {}
         remaining = dict(self._consumer_count)

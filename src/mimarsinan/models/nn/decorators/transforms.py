@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-import os
-
 import torch
 import torch.nn as nn
+
+from mimarsinan.common.env import cuda_debug_enabled
 
 
 class NoisyDropout(nn.Module):
@@ -60,7 +60,7 @@ class SavedTensorDecorator(nn.Module):
             0, flat.numel() - 1, steps=self._max_samples, device=flat.device
         ).round().long()
         idx.clamp_(0, flat.numel() - 1)
-        if os.environ.get("MIMARSINAN_CUDA_DEBUG") == "1" and flat.is_cuda:
+        if cuda_debug_enabled() and flat.is_cuda:
             torch.cuda.synchronize()
         return flat.index_select(0, idx).cpu()
 

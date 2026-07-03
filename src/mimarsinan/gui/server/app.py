@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 import socket
 import threading
 import webbrowser
@@ -17,6 +16,7 @@ from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from mimarsinan.common.best_effort import best_effort
+from mimarsinan.common.env import gui_no_browser
 from mimarsinan.gui.server import routes_layout, routes_pipeline, routes_resources, routes_wizard
 from mimarsinan.gui.server.json_safe import SafeJSONResponse
 
@@ -99,7 +99,7 @@ def gui_entry_url(port: int) -> str:
 
 def schedule_open_browser(url: str) -> None:
     """Open *url* in the default browser after a short delay so the server is accepting."""
-    if os.environ.get("MIMARSINAN_GUI_NO_BROWSER", "").strip().lower() in ("1", "true", "yes"):
+    if gui_no_browser():
         return
 
     def _open() -> None:

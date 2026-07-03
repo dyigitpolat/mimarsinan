@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import torch.nn as nn
 
-from mimarsinan.chip_simulation.test_subsample import compute_test_subsample_indices
+from mimarsinan.chip_simulation.subsample import compute_test_subsample_indices
 from mimarsinan.chip_simulation.nevresim.connectivity import resolve_nevresim_connectivity_mode
 from mimarsinan.chip_simulation.spiking_semantics import requires_ttfs_firing
 from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory, shutdown_data_loader

@@ -8,7 +8,7 @@ from mimarsinan.mapping.latency.ir import IRLatency
 from mimarsinan.mapping.packing.hybrid_hardcore_mapping import (
     build_identity_hybrid_mapping,
 )
-from mimarsinan.mapping.support.neg_shift_bias import (
+from mimarsinan.mapping.support.bias_compensation import (
     propagate_negative_shifts_to_hybrid,
 )
 from mimarsinan.models.spiking.hybrid.flow import SpikingHybridCoreFlow

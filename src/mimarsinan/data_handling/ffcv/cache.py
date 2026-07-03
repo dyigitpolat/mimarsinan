@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
+from mimarsinan.common.env import ffcv_cache_dir
 from mimarsinan.data_handling.ffcv.pipeline_spec import PipelineSpec, normalize_split_name
 
 
 def cache_root() -> Path:
     """Return the cache root; override with ``MIMARSINAN_FFCV_CACHE_DIR``."""
-    override = os.environ.get("MIMARSINAN_FFCV_CACHE_DIR")
+    override = ffcv_cache_dir()
     if override:
         root = Path(override).expanduser()
     else:

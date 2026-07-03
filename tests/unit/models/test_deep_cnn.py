@@ -250,13 +250,9 @@ class TestDeepCNNSmokeTemplate:
         assert config["deployment_parameters"]["max_simulation_samples"] <= 200
         assert config["deployment_parameters"]["enable_sanafe_simulation"] is False
 
-        sys.path.insert(0, str(repo_root / "src"))
-        try:
-            from main import _parse_deployment_config
-        except ModuleNotFoundError:
-            pytest.skip("src.main not importable in this test context")
+        from mimarsinan.pipelining.session import parse_deployment_config
         config["generated_files_path"] = str(tmp_path / "generated")
         config["datasets_path"] = str(repo_root / "datasets")
-        parsed = _parse_deployment_config(config)
-        assert parsed["deployment_parameters"]["model_type"] == "deep_cnn"
-        assert parsed["deployment_name"]
+        parsed = parse_deployment_config(config)
+        assert parsed.deployment_parameters["model_type"] == "deep_cnn"
+        assert parsed.deployment_name

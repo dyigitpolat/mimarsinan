@@ -6,7 +6,7 @@ PRE-CYCLE clone (not the run best), and ``_after_run``'s forced jump to rate 1.0
 the stabilization pass are only bracketed by LOCAL guards (entry-to-stabilization,
 not run best). A long ramp can therefore drift below the best committed cycle.
 
-``tuning_keepbest_certified`` (default off => byte-identical) makes the run
+``TUNING_POLICY.keepbest_certified`` (default off => byte-identical) makes the run
 non-destructive end-to-end: every commit whose gate metric beats the running best
 snapshots the model STATE, and ``_finalize_run`` restores that best state iff the
 finalized gate metric is worse than it. The guard brackets the WHOLE
@@ -20,16 +20,20 @@ proves that without the finalize restore the certified invariant FAILS.
 import pytest
 import torch
 
-from conftest import MockPipeline, make_tiny_supermodel, default_config
+from conftest import (
+    MockPipeline,
+    make_tiny_supermodel,
+    default_config,
+    override_tuning_policy,
+)
 
 from mimarsinan.tuning.orchestration.smooth_adaptation_tuner import SmoothAdaptationTuner
 
 
-def _pipeline(tmp_path, **overrides):
+def _pipeline(tmp_path):
     cfg = default_config()
     cfg["tuning_budget_scale"] = 1.0
     cfg["degradation_tolerance"] = 0.05
-    cfg.update(overrides)
     return MockPipeline(config=cfg, working_directory=str(tmp_path))
 
 
@@ -102,8 +106,10 @@ def _peaked_acc(rate):
     return 0.90
 
 
-def _make(tmp_path, certified, acc=_peaked_acc, target=0.9, **cfg):
-    pipeline = _pipeline(tmp_path, tuning_keepbest_certified=certified, **cfg)
+def _make(tmp_path, monkeypatch, certified, acc=_peaked_acc, target=0.9):
+    if certified:
+        override_tuning_policy(monkeypatch, keepbest_certified=True)
+    pipeline = _pipeline(tmp_path)
     model = make_tiny_supermodel()
     tuner = _DegradingRunTuner(pipeline, model, target_accuracy=target, lr=0.001, acc_for_rate=acc)
     return tuner
@@ -113,8 +119,8 @@ class TestDefaultPathShipsRegression:
     """The default (flag-off) controller CAN finalize below the best committed
     state — this is exactly the R7 regression the fixed ladder ships."""
 
-    def test_default_finalizes_below_best_committed(self, tmp_path, deterministic_rng):
-        tuner = _make(tmp_path, certified=False)
+    def test_default_finalizes_below_best_committed(self, tmp_path, deterministic_rng, monkeypatch):
+        tuner = _make(tmp_path, monkeypatch, certified=False)
         tuner.run()
 
         # The run committed a 0.95 cycle (rate 0.5) but finalized at rate 1.0 (0.40).
@@ -136,8 +142,8 @@ class TestDefaultPathShipsRegression:
 class TestCertifiedKeepsBest:
     """The certified mode finalizes AT the best committed gate metric — never worse."""
 
-    def test_certified_finalizes_at_best_committed(self, tmp_path, deterministic_rng):
-        tuner = _make(tmp_path, certified=True)
+    def test_certified_finalizes_at_best_committed(self, tmp_path, deterministic_rng, monkeypatch):
+        tuner = _make(tmp_path, monkeypatch, certified=True)
         tuner.run()
 
         best_seen = max(
@@ -158,13 +164,13 @@ class TestCertifiedKeepsBest:
             "certified finalize must restore the best committed STATE's parameters"
         )
 
-    def test_certified_no_restore_when_final_is_best(self, tmp_path, deterministic_rng):
+    def test_certified_no_restore_when_final_is_best(self, tmp_path, deterministic_rng, monkeypatch):
         """When rate 1.0 is the BEST rung, the certified mode must NOT roll the
         model back (no spurious restore) — it ships the genuine final state."""
         def monotone(rate):
             return 0.80 + 0.15 * float(rate)  # best at rate 1.0
 
-        tuner = _make(tmp_path, certified=True, acc=monotone)
+        tuner = _make(tmp_path, monkeypatch, certified=True, acc=monotone)
         tuner.run()
         final = float(tuner.trainer.validate_n_batches(tuner._budget.eval_n_batches))
         assert final == pytest.approx(0.95)
@@ -178,7 +184,7 @@ class TestMutationGuard:
     invariant FAIL (the test is sensitive to the keep-best mechanism)."""
 
     def test_mutation_removing_restore_breaks_certified(self, tmp_path, deterministic_rng, monkeypatch):
-        tuner = _make(tmp_path, certified=True)
+        tuner = _make(tmp_path, monkeypatch, certified=True)
 
         # Neuter the finalize restore — the mutation under test (return the result
         # unchanged, i.e. never restore the best state).
@@ -202,26 +208,25 @@ class TestDefaultOffByteIdentical:
     is taken, no restore is attempted, and the finalized model is bit-identical to
     the legacy path."""
 
-    def test_no_snapshot_taken_when_flag_off(self, tmp_path, deterministic_rng):
-        tuner = _make(tmp_path, certified=False)
+    def test_no_snapshot_taken_when_flag_off(self, tmp_path, deterministic_rng, monkeypatch):
+        tuner = _make(tmp_path, monkeypatch, certified=False)
         tuner.run()
         assert getattr(tuner, "_best_committed_state", None) is None, (
             "flag off must never snapshot a best-committed state"
         )
 
-    def test_flag_off_matches_unconfigured_run(self, tmp_path, deterministic_rng):
-        """A run with the key absent and a run with the key explicitly False must
-        produce bit-identical finalized parameters (no inadvertent path change)."""
-        t_absent = _make(tmp_path / "a", certified=False)
-        # Drop the key entirely to exercise the registered-default fallback.
-        t_absent.pipeline.config.pop("tuning_keepbest_certified", None)
-        t_absent.__class__  # no-op; keep model build before run
-        t_absent.run()
-        sig_absent = {k: v.clone() for k, v in t_absent.model.state_dict().items()}
+    def test_explicit_off_matches_default_policy_run(self, tmp_path, deterministic_rng, monkeypatch):
+        """A run under the untouched default policy and a run with the field
+        explicitly replaced to False must produce bit-identical finalized
+        parameters (no inadvertent path change)."""
+        t_default = _make(tmp_path / "a", monkeypatch, certified=False)
+        t_default.run()
+        sig_default = {k: v.clone() for k, v in t_default.model.state_dict().items()}
 
-        t_false = _make(tmp_path / "b", certified=False)
+        override_tuning_policy(monkeypatch, keepbest_certified=False)
+        t_false = _make(tmp_path / "b", monkeypatch, certified=False)
         t_false.run()
         sig_false = t_false.model.state_dict()
 
-        for k, v in sig_absent.items():
-            assert torch.equal(v, sig_false[k]), f"param {k} diverged flag-off vs absent"
+        for k, v in sig_default.items():
+            assert torch.equal(v, sig_false[k]), f"param {k} diverged explicit-off vs default"

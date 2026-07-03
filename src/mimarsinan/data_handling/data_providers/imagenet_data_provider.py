@@ -8,6 +8,7 @@ import torchvision
 import torchvision.transforms as transforms
 from torch.utils.data import DataLoader
 
+from mimarsinan.common.env import imagenet_root
 from mimarsinan.data_handling.data_provider import ClassificationMode, DataProvider
 from mimarsinan.data_handling.data_provider_factory import BasicDataProviderFactory
 
@@ -26,7 +27,7 @@ def _load_project_dotenv() -> None:
 def _ensure_imagenet_symlink(datasets_path: str) -> str:
     """Return torchvision ``root``: ``datasets_path/imagenet`` symlinked to ``IMAGENET_ROOT``."""
     _load_project_dotenv()
-    target = os.environ.get("IMAGENET_ROOT", "").strip()
+    target = imagenet_root()
     if not target:
         return os.path.abspath(os.path.expanduser(str(datasets_path)))
 

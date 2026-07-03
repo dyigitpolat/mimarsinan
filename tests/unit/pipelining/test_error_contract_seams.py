@@ -46,8 +46,17 @@ def test_safe_warmup_forward_suppresses_and_logs(caplog):
     assert any("warmup" in r.getMessage() for r in caplog.records)
 
 
+def test_resource_snapshot_reads_env_at_call_time(monkeypatch, capsys):
+    monkeypatch.delenv("MIMARSINAN_RESOURCE_DEBUG", raising=False)
+    pipeline_resource_debug.log_resource_snapshot("disabled-tag")
+    assert "disabled-tag" not in capsys.readouterr().err
+    monkeypatch.setenv("MIMARSINAN_RESOURCE_DEBUG", "1")
+    pipeline_resource_debug.log_resource_snapshot("enabled-tag")
+    assert "enabled-tag" in capsys.readouterr().err
+
+
 def test_resource_snapshot_never_crashes(monkeypatch):
-    monkeypatch.setattr(pipeline_resource_debug, "_RESOURCE_DEBUG", True)
+    monkeypatch.setenv("MIMARSINAN_RESOURCE_DEBUG", "1")
     monkeypatch.setattr(
         pipeline_resource_debug.os, "getpid", lambda: _raise(RuntimeError("pid boom"))
     )
