@@ -1,0 +1,72 @@
+{
+  "tier": 2,
+  "dataset": "ImageNet",
+  "wall_budget_minutes_per_run": 360,
+  "runs": [
+    {
+      "name": "t2_01_lif_resnet50_wqaq_s32_sched",
+      "config": "t2_01_lif_resnet50_wqaq_s32_sched.json",
+      "model_type": "torch_resnet50",
+      "cell": {
+        "firing": "lif",
+        "sync": "none",
+        "quantization": "wq_aq",
+        "S": "32",
+        "depth": "any",
+        "vehicle": "vit_b",
+        "dataset": "imagenet",
+        "regime": "pretrained",
+        "pruning": "dense",
+        "encoding_placement": "subsume"
+      },
+      "tags": [
+        "sched"
+      ],
+      "expected_wall_min": 360
+    },
+    {
+      "name": "t2_02_ttfsq_vit_wqaq_s32_sched_pruned",
+      "config": "t2_02_ttfsq_vit_wqaq_s32_sched_pruned.json",
+      "model_type": "torch_vit",
+      "cell": {
+        "firing": "ttfs_quantized",
+        "sync": "none",
+        "quantization": "wq_aq",
+        "S": "32",
+        "depth": "any",
+        "vehicle": "vit_b",
+        "dataset": "cifar100",
+        "regime": "pretrained",
+        "pruning": "pruned",
+        "encoding_placement": "subsume"
+      },
+      "tags": [
+        "sched",
+        "pruned"
+      ],
+      "expected_wall_min": 360
+    },
+    {
+      "name": "t2_03_casc_squeezenet_wq_s32_sched",
+      "config": "t2_03_casc_squeezenet_wq_s32_sched.json",
+      "model_type": "torch_squeezenet11",
+      "cell": {
+        "firing": "ttfs_cycle_based",
+        "sync": "cascaded",
+        "quantization": "wq",
+        "S": "32",
+        "depth": "any",
+        "vehicle": "vit_b",
+        "dataset": "cifar100",
+        "regime": "pretrained",
+        "pruning": "dense",
+        "encoding_placement": "subsume"
+      },
+      "tags": [
+        "sched",
+        "wall_risk"
+      ],
+      "expected_wall_min": 360
+    }
+  ]
+}

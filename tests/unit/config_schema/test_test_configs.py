@@ -1,0 +1,168 @@
+"""The tiered test_configs are schema-valid, legal, and cover the claimed pairs."""
+
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+import pytest
+
+ROOT = Path(__file__).resolve().parents[3]
+TEST_CONFIGS = ROOT / "test_configs"
+
+TOP_LEVEL_KEYS = {
+    "seed", "pipeline_mode", "experiment_name", "generated_files_path",
+    "data_provider_name", "platform_constraints", "deployment_parameters",
+    "target_metric_override", "start_step", "stop_step",
+}
+QUANT_REQUIRED_MODES = {"ttfs_quantized", "ttfs_cycle_based"}
+SIM_ENABLE_KEYS = {
+    "enable_nevresim_simulation", "enable_sanafe_simulation", "enable_loihi_simulation",
+}
+
+
+def _tier_configs(tier):
+    tier_dir = TEST_CONFIGS / f"tier{tier}"
+    return sorted(p for p in tier_dir.glob("t*.json"))
+
+
+def _manifest(tier):
+    return json.loads((TEST_CONFIGS / f"tier{tier}" / "manifest.json").read_text())
+
+
+class TestGeneratorIsTheSSOT:
+    def test_generator_reproduces_committed_files(self, tmp_path):
+        """Regenerating must be a no-op: the JSONs never drift from generate.py."""
+        before = {
+            p.relative_to(TEST_CONFIGS): p.read_text()
+            for p in TEST_CONFIGS.rglob("*.json")
+        }
+        subprocess.run(
+            [sys.executable, str(TEST_CONFIGS / "generate.py")],
+            check=True, capture_output=True,
+        )
+        after = {
+            p.relative_to(TEST_CONFIGS): p.read_text()
+            for p in TEST_CONFIGS.rglob("*.json")
+        }
+        assert before == after
+
+
+class TestTierShapes:
+    def test_run_counts(self):
+        assert len(_tier_configs(0)) == 25
+        assert len(_tier_configs(1)) == 8
+        assert len(_tier_configs(2)) == 3
+
+    def test_manifest_matches_files(self):
+        for tier in (0, 1, 2):
+            manifest = _manifest(tier)
+            names = {r["config"] for r in manifest["runs"]}
+            files = {p.name for p in _tier_configs(tier)}
+            assert names == files
+
+
+class TestConfigValidity:
+    @pytest.mark.parametrize("tier", [0, 1, 2])
+    def test_keys_are_known(self, tier):
+        from mimarsinan.config_schema.defaults import (
+            CONFIG_KEYS_SET,
+            DEFAULT_PLATFORM_CONSTRAINTS,
+        )
+
+        # max_axons/max_neurons/has_bias are user-facing platform keys
+        # (see get_user_default_platform_constraints) without schema defaults.
+        platform_keys = set(DEFAULT_PLATFORM_CONSTRAINTS) | {
+            "cores", "max_axons", "max_neurons", "has_bias",
+        }
+        for path in _tier_configs(tier):
+            cfg = json.loads(path.read_text())
+            assert set(cfg) == TOP_LEVEL_KEYS, path.name
+            unknown = set(cfg["deployment_parameters"]) - set(CONFIG_KEYS_SET)
+            assert not unknown, f"{path.name}: unknown keys {unknown}"
+            unknown_pc = set(cfg["platform_constraints"]) - platform_keys
+            assert not unknown_pc, f"{path.name}: unknown platform keys {unknown_pc}"
+
+    @pytest.mark.parametrize("tier", [0, 1, 2])
+    def test_sim_enables_left_to_derivation(self, tier):
+        """Sim backends are ConversionPolicy-derived; configs must not pin them."""
+        for path in _tier_configs(tier):
+            cfg = json.loads(path.read_text())
+            assert not (set(cfg["deployment_parameters"]) & SIM_ENABLE_KEYS), path.name
+
+    @pytest.mark.parametrize("tier", [0, 1, 2])
+    def test_legality_rules(self, tier):
+        for path in _tier_configs(tier):
+            dp = json.loads(path.read_text())["deployment_parameters"]
+            if dp["spiking_mode"] in QUANT_REQUIRED_MODES:
+                assert dp["weight_quantization"] is True, path.name
+            if dp["spiking_mode"] == "ttfs_quantized":
+                assert dp["activation_quantization"] is True, path.name
+            assert dp["max_simulation_samples"] == 100, path.name
+
+    @pytest.mark.parametrize("tier", [0, 1, 2])
+    def test_configs_resolve_through_derivation(self, tier):
+        """Every config must survive the real config derivation pipeline."""
+        from mimarsinan.config_schema.defaults import (
+            get_default_deployment_parameters,
+            get_default_platform_constraints,
+        )
+        from mimarsinan.config_schema.deployment_derivation import (
+            derive_deployment_parameters,
+        )
+
+        for path in _tier_configs(tier):
+            cfg = json.loads(path.read_text())
+            merged = get_default_deployment_parameters()
+            merged.update(cfg["deployment_parameters"])
+            merged.update(get_default_platform_constraints())
+            merged.update(cfg["platform_constraints"])
+            derive_deployment_parameters(merged)
+            assert merged["spiking_mode"] == cfg["deployment_parameters"]["spiking_mode"]
+
+
+class TestTier0PairwiseCoverage:
+    def _cells(self):
+        return [r["cell"] for r in _manifest(0)["runs"]]
+
+    def test_firing_by_vehicle_full_grid(self):
+        runs = _manifest(0)["runs"]
+        pairs = {(r["cell"]["firing"], r["cell"]["sync"], r["model_type"]) for r in runs}
+        assert len(pairs) == 25
+
+    def test_firing_by_s_pairs(self):
+        cells = self._cells()
+        for firing, sync in [("lif", "none"), ("ttfs", "none"), ("ttfs_quantized", "none"),
+                             ("ttfs_cycle_based", "cascaded"), ("ttfs_cycle_based", "synchronized")]:
+            seen = {c["S"] for c in cells if (c["firing"], c["sync"]) == (firing, sync)}
+            assert seen == {"4", "8", "16", "32"}, (firing, sync, seen)
+
+    def test_every_mode_has_a_pruned_cell(self):
+        cells = self._cells()
+        for firing, sync in [("lif", "none"), ("ttfs", "none"), ("ttfs_quantized", "none"),
+                             ("ttfs_cycle_based", "cascaded"), ("ttfs_cycle_based", "synchronized")]:
+            assert any(
+                c["pruning"] == "pruned"
+                for c in cells if (c["firing"], c["sync"]) == (firing, sync)
+            ), (firing, sync)
+
+    def test_screened_axes_each_value_appears(self):
+        cells = self._cells()
+        assert {c["encoding_placement"] for c in cells} == {"subsume", "offload"}
+
+    def test_cell_vocabulary_matches_coverage_ledger(self):
+        from mimarsinan.chip_simulation.coverage_ledger import AXES
+
+        domains = {a.name: set(a.values) for a in AXES}
+        for cell in self._cells():
+            for axis in ("firing", "sync", "quantization", "S", "vehicle", "dataset",
+                         "regime", "pruning", "encoding_placement"):
+                assert cell[axis] == "any" or cell[axis] in domains[axis], (axis, cell[axis])
+
+
+class TestTier1Coverage:
+    def test_all_five_modes_and_both_regimes(self):
+        cells = [r["cell"] for r in _manifest(1)["runs"]]
+        modes = {(c["firing"], c["sync"]) for c in cells}
+        assert len(modes) == 5
+        assert {c["regime"] for c in cells} == {"from_scratch", "pretrained"}

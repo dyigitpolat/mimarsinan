@@ -1,0 +1,63 @@
+{
+  "seed": 0,
+  "pipeline_mode": "vanilla",
+  "experiment_name": "t1_08_ttfs_mixerc10_fp_s16",
+  "generated_files_path": "./generated",
+  "data_provider_name": "CIFAR10_DataProvider",
+  "platform_constraints": {
+    "cores": [
+      {
+        "max_axons": 2304,
+        "max_neurons": 512,
+        "count": 256,
+        "has_bias": true
+      },
+      {
+        "max_axons": 512,
+        "max_neurons": 256,
+        "count": 256,
+        "has_bias": true
+      }
+    ],
+    "max_axons": 2304,
+    "max_neurons": 512,
+    "has_bias": true,
+    "target_tq": 16,
+    "simulation_steps": 16,
+    "weight_bits": 8,
+    "allow_coalescing": true,
+    "allow_neuron_splitting": true
+  },
+  "deployment_parameters": {
+    "lr": 0.003,
+    "tuning_budget_scale": 1,
+    "degradation_tolerance": 0.1,
+    "model_config_mode": "user",
+    "hw_config_mode": "fixed",
+    "model_type": "mlp_mixer_core",
+    "model_config": {
+      "base_activation": "ReLU",
+      "patch_n_1": 4,
+      "patch_m_1": 4,
+      "patch_c_1": 256,
+      "fc_w_1": 128,
+      "fc_w_2": 256
+    },
+    "batch_size": 128,
+    "max_simulation_samples": 100,
+    "sanafe_arch_preset": "loihi",
+    "sanafe_sample_count": 1,
+    "allow_scheduling": false,
+    "spiking_mode": "ttfs",
+    "firing_mode": "TTFS",
+    "spike_generation_mode": "TTFS",
+    "thresholding_mode": "<=",
+    "encoding_layer_placement": "subsume",
+    "weight_quantization": false,
+    "activation_quantization": false,
+    "training_epochs": 20
+  },
+  "target_metric_override": null,
+  "start_step": null,
+  "stop_step": null
+}

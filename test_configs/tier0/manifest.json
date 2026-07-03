@@ -1,0 +1,513 @@
+{
+  "tier": 0,
+  "dataset": "MNIST",
+  "wall_budget_minutes_per_run": 5,
+  "runs": [
+    {
+      "name": "t0_01_lif_mmixcore_wq_s4",
+      "config": "t0_01_lif_mmixcore_wq_s4.json",
+      "model_type": "mlp_mixer_core",
+      "cell": {
+        "firing": "lif",
+        "sync": "none",
+        "quantization": "wq",
+        "S": "4",
+        "depth": "any",
+        "vehicle": "mlp_mixer_core",
+        "dataset": "mnist",
+        "regime": "from_scratch",
+        "pruning": "dense",
+        "encoding_placement": "subsume"
+      },
+      "tags": [],
+      "expected_wall_min": 5
+    },
+    {
+      "name": "t0_02_lif_lenet5_fp_s8_novena_offload_pruned",
+      "config": "t0_02_lif_lenet5_fp_s8_novena_offload_pruned.json",
+      "model_type": "lenet5",
+      "cell": {
+        "firing": "lif",
+        "sync": "none",
+        "quantization": "none",
+        "S": "8",
+        "depth": "any",
+        "vehicle": "lenet5",
+        "dataset": "mnist",
+        "regime": "from_scratch",
+        "pruning": "pruned",
+        "encoding_placement": "offload"
+      },
+      "tags": [
+        "novena",
+        "offload",
+        "pruned"
+      ],
+      "expected_wall_min": 5
+    },
+    {
+      "name": "t0_03_lif_deepcnn_d8_wqaq_s16",
+      "config": "t0_03_lif_deepcnn_d8_wqaq_s16.json",
+      "model_type": "deep_cnn",
+      "cell": {
+        "firing": "lif",
+        "sync": "none",
+        "quantization": "wq_aq",
+        "S": "16",
+        "depth": "8",
+        "vehicle": "deep_cnn",
+        "dataset": "mnist",
+        "regime": "from_scratch",
+        "pruning": "dense",
+        "encoding_placement": "subsume"
+      },
+      "tags": [],
+      "expected_wall_min": 5
+    },
+    {
+      "name": "t0_04_lif_deepmlp_d8_aq_s32",
+      "config": "t0_04_lif_deepmlp_d8_aq_s32.json",
+      "model_type": "deep_mlp",
+      "cell": {
+        "firing": "lif",
+        "sync": "none",
+        "quantization": "aq",
+        "S": "32",
+        "depth": "8",
+        "vehicle": "deep_mlp",
+        "dataset": "mnist",
+        "regime": "from_scratch",
+        "pruning": "dense",
+        "encoding_placement": "subsume"
+      },
+      "tags": [],
+      "expected_wall_min": 5
+    },
+    {
+      "name": "t0_05_lif_simplemlp_wq_s4",
+      "config": "t0_05_lif_simplemlp_wq_s4.json",
+      "model_type": "simple_mlp",
+      "cell": {
+        "firing": "lif",
+        "sync": "none",
+        "quantization": "wq",
+        "S": "4",
+        "depth": "any",
+        "vehicle": "deep_mlp",
+        "dataset": "mnist",
+        "regime": "from_scratch",
+        "pruning": "dense",
+        "encoding_placement": "subsume"
+      },
+      "tags": [],
+      "expected_wall_min": 5
+    },
+    {
+      "name": "t0_06_ttfs_mmixcore_wq_s8",
+      "config": "t0_06_ttfs_mmixcore_wq_s8.json",
+      "model_type": "mlp_mixer_core",
+      "cell": {
+        "firing": "ttfs",
+        "sync": "none",
+        "quantization": "wq",
+        "S": "8",
+        "depth": "any",
+        "vehicle": "mlp_mixer_core",
+        "dataset": "mnist",
+        "regime": "from_scratch",
+        "pruning": "dense",
+        "encoding_placement": "subsume"
+      },
+      "tags": [],
+      "expected_wall_min": 5
+    },
+    {
+      "name": "t0_07_ttfs_lenet5_aq_s16",
+      "config": "t0_07_ttfs_lenet5_aq_s16.json",
+      "model_type": "lenet5",
+      "cell": {
+        "firing": "ttfs",
+        "sync": "none",
+        "quantization": "aq",
+        "S": "16",
+        "depth": "any",
+        "vehicle": "lenet5",
+        "dataset": "mnist",
+        "regime": "from_scratch",
+        "pruning": "dense",
+        "encoding_placement": "subsume"
+      },
+      "tags": [],
+      "expected_wall_min": 5
+    },
+    {
+      "name": "t0_08_ttfs_deepcnn_d8_fp_s32",
+      "config": "t0_08_ttfs_deepcnn_d8_fp_s32.json",
+      "model_type": "deep_cnn",
+      "cell": {
+        "firing": "ttfs",
+        "sync": "none",
+        "quantization": "none",
+        "S": "32",
+        "depth": "8",
+        "vehicle": "deep_cnn",
+        "dataset": "mnist",
+        "regime": "from_scratch",
+        "pruning": "dense",
+        "encoding_placement": "subsume"
+      },
+      "tags": [
+        "wall_risk"
+      ],
+      "expected_wall_min": 5
+    },
+    {
+      "name": "t0_09_ttfs_deepmlp_d4_wqaq_s4_pruned",
+      "config": "t0_09_ttfs_deepmlp_d4_wqaq_s4_pruned.json",
+      "model_type": "deep_mlp",
+      "cell": {
+        "firing": "ttfs",
+        "sync": "none",
+        "quantization": "wq_aq",
+        "S": "4",
+        "depth": "4",
+        "vehicle": "deep_mlp",
+        "dataset": "mnist",
+        "regime": "from_scratch",
+        "pruning": "pruned",
+        "encoding_placement": "subsume"
+      },
+      "tags": [
+        "pruned"
+      ],
+      "expected_wall_min": 5
+    },
+    {
+      "name": "t0_10_ttfs_simplemlp_fp_s16_identity",
+      "config": "t0_10_ttfs_simplemlp_fp_s16_identity.json",
+      "model_type": "simple_mlp",
+      "cell": {
+        "firing": "ttfs",
+        "sync": "none",
+        "quantization": "none",
+        "S": "16",
+        "depth": "any",
+        "vehicle": "deep_mlp",
+        "dataset": "mnist",
+        "regime": "from_scratch",
+        "pruning": "dense",
+        "encoding_placement": "subsume"
+      },
+      "tags": [
+        "identity"
+      ],
+      "expected_wall_min": 5
+    },
+    {
+      "name": "t0_11_ttfsq_mmixcore_wqaq_s16_offload",
+      "config": "t0_11_ttfsq_mmixcore_wqaq_s16_offload.json",
+      "model_type": "mlp_mixer_core",
+      "cell": {
+        "firing": "ttfs_quantized",
+        "sync": "none",
+        "quantization": "wq_aq",
+        "S": "16",
+        "depth": "any",
+        "vehicle": "mlp_mixer_core",
+        "dataset": "mnist",
+        "regime": "from_scratch",
+        "pruning": "dense",
+        "encoding_placement": "offload"
+      },
+      "tags": [
+        "offload"
+      ],
+      "expected_wall_min": 5
+    },
+    {
+      "name": "t0_12_ttfsq_lenet5_wqaq_s32",
+      "config": "t0_12_ttfsq_lenet5_wqaq_s32.json",
+      "model_type": "lenet5",
+      "cell": {
+        "firing": "ttfs_quantized",
+        "sync": "none",
+        "quantization": "wq_aq",
+        "S": "32",
+        "depth": "any",
+        "vehicle": "lenet5",
+        "dataset": "mnist",
+        "regime": "from_scratch",
+        "pruning": "dense",
+        "encoding_placement": "subsume"
+      },
+      "tags": [
+        "wall_risk"
+      ],
+      "expected_wall_min": 5
+    },
+    {
+      "name": "t0_13_ttfsq_deepcnn_d4_wqaq_s4",
+      "config": "t0_13_ttfsq_deepcnn_d4_wqaq_s4.json",
+      "model_type": "deep_cnn",
+      "cell": {
+        "firing": "ttfs_quantized",
+        "sync": "none",
+        "quantization": "wq_aq",
+        "S": "4",
+        "depth": "4",
+        "vehicle": "deep_cnn",
+        "dataset": "mnist",
+        "regime": "from_scratch",
+        "pruning": "dense",
+        "encoding_placement": "subsume"
+      },
+      "tags": [],
+      "expected_wall_min": 5
+    },
+    {
+      "name": "t0_14_ttfsq_deepmlp_d8_wqaq_s8",
+      "config": "t0_14_ttfsq_deepmlp_d8_wqaq_s8.json",
+      "model_type": "deep_mlp",
+      "cell": {
+        "firing": "ttfs_quantized",
+        "sync": "none",
+        "quantization": "wq_aq",
+        "S": "8",
+        "depth": "8",
+        "vehicle": "deep_mlp",
+        "dataset": "mnist",
+        "regime": "from_scratch",
+        "pruning": "dense",
+        "encoding_placement": "subsume"
+      },
+      "tags": [],
+      "expected_wall_min": 5
+    },
+    {
+      "name": "t0_15_ttfsq_simplemlp_wqaq_s8_pruned",
+      "config": "t0_15_ttfsq_simplemlp_wqaq_s8_pruned.json",
+      "model_type": "simple_mlp",
+      "cell": {
+        "firing": "ttfs_quantized",
+        "sync": "none",
+        "quantization": "wq_aq",
+        "S": "8",
+        "depth": "any",
+        "vehicle": "deep_mlp",
+        "dataset": "mnist",
+        "regime": "from_scratch",
+        "pruning": "pruned",
+        "encoding_placement": "subsume"
+      },
+      "tags": [
+        "pruned"
+      ],
+      "expected_wall_min": 5
+    },
+    {
+      "name": "t0_16_casc_mmixcore_wq_s8_offload_sched_nobias",
+      "config": "t0_16_casc_mmixcore_wq_s8_offload_sched_nobias.json",
+      "model_type": "mlp_mixer_core",
+      "cell": {
+        "firing": "ttfs_cycle_based",
+        "sync": "cascaded",
+        "quantization": "wq",
+        "S": "8",
+        "depth": "any",
+        "vehicle": "mlp_mixer_core",
+        "dataset": "mnist",
+        "regime": "from_scratch",
+        "pruning": "dense",
+        "encoding_placement": "offload"
+      },
+      "tags": [
+        "offload",
+        "sched",
+        "nobias"
+      ],
+      "expected_wall_min": 5
+    },
+    {
+      "name": "t0_17_casc_lenet5_wqaq_s32",
+      "config": "t0_17_casc_lenet5_wqaq_s32.json",
+      "model_type": "lenet5",
+      "cell": {
+        "firing": "ttfs_cycle_based",
+        "sync": "cascaded",
+        "quantization": "wq_aq",
+        "S": "32",
+        "depth": "any",
+        "vehicle": "lenet5",
+        "dataset": "mnist",
+        "regime": "from_scratch",
+        "pruning": "dense",
+        "encoding_placement": "subsume"
+      },
+      "tags": [
+        "wall_risk"
+      ],
+      "expected_wall_min": 5
+    },
+    {
+      "name": "t0_18_casc_deepcnn_d4_wq_s4_pruned",
+      "config": "t0_18_casc_deepcnn_d4_wq_s4_pruned.json",
+      "model_type": "deep_cnn",
+      "cell": {
+        "firing": "ttfs_cycle_based",
+        "sync": "cascaded",
+        "quantization": "wq",
+        "S": "4",
+        "depth": "4",
+        "vehicle": "deep_cnn",
+        "dataset": "mnist",
+        "regime": "from_scratch",
+        "pruning": "pruned",
+        "encoding_placement": "subsume"
+      },
+      "tags": [
+        "pruned"
+      ],
+      "expected_wall_min": 5
+    },
+    {
+      "name": "t0_19_casc_deepmlp_d16_wq_s16",
+      "config": "t0_19_casc_deepmlp_d16_wq_s16.json",
+      "model_type": "deep_mlp",
+      "cell": {
+        "firing": "ttfs_cycle_based",
+        "sync": "cascaded",
+        "quantization": "wq",
+        "S": "16",
+        "depth": "16",
+        "vehicle": "deep_mlp",
+        "dataset": "mnist",
+        "regime": "from_scratch",
+        "pruning": "dense",
+        "encoding_placement": "subsume"
+      },
+      "tags": [
+        "wall_risk",
+        "known_collapse_candidate"
+      ],
+      "expected_wall_min": 5
+    },
+    {
+      "name": "t0_20_casc_simplemlp_wqaq_s4",
+      "config": "t0_20_casc_simplemlp_wqaq_s4.json",
+      "model_type": "simple_mlp",
+      "cell": {
+        "firing": "ttfs_cycle_based",
+        "sync": "cascaded",
+        "quantization": "wq_aq",
+        "S": "4",
+        "depth": "any",
+        "vehicle": "deep_mlp",
+        "dataset": "mnist",
+        "regime": "from_scratch",
+        "pruning": "dense",
+        "encoding_placement": "subsume"
+      },
+      "tags": [],
+      "expected_wall_min": 5
+    },
+    {
+      "name": "t0_21_sync_mmixcore_wq_s8_pruned",
+      "config": "t0_21_sync_mmixcore_wq_s8_pruned.json",
+      "model_type": "mlp_mixer_core",
+      "cell": {
+        "firing": "ttfs_cycle_based",
+        "sync": "synchronized",
+        "quantization": "wq",
+        "S": "8",
+        "depth": "any",
+        "vehicle": "mlp_mixer_core",
+        "dataset": "mnist",
+        "regime": "from_scratch",
+        "pruning": "pruned",
+        "encoding_placement": "subsume"
+      },
+      "tags": [
+        "pruned"
+      ],
+      "expected_wall_min": 5
+    },
+    {
+      "name": "t0_22_sync_lenet5_wq_s4_sched",
+      "config": "t0_22_sync_lenet5_wq_s4_sched.json",
+      "model_type": "lenet5",
+      "cell": {
+        "firing": "ttfs_cycle_based",
+        "sync": "synchronized",
+        "quantization": "wq",
+        "S": "4",
+        "depth": "any",
+        "vehicle": "lenet5",
+        "dataset": "mnist",
+        "regime": "from_scratch",
+        "pruning": "dense",
+        "encoding_placement": "subsume"
+      },
+      "tags": [
+        "sched"
+      ],
+      "expected_wall_min": 5
+    },
+    {
+      "name": "t0_23_sync_deepcnn_d4_wqaq_s16",
+      "config": "t0_23_sync_deepcnn_d4_wqaq_s16.json",
+      "model_type": "deep_cnn",
+      "cell": {
+        "firing": "ttfs_cycle_based",
+        "sync": "synchronized",
+        "quantization": "wq_aq",
+        "S": "16",
+        "depth": "4",
+        "vehicle": "deep_cnn",
+        "dataset": "mnist",
+        "regime": "from_scratch",
+        "pruning": "dense",
+        "encoding_placement": "subsume"
+      },
+      "tags": [],
+      "expected_wall_min": 5
+    },
+    {
+      "name": "t0_24_sync_deepmlp_d4_wqaq_s8",
+      "config": "t0_24_sync_deepmlp_d4_wqaq_s8.json",
+      "model_type": "deep_mlp",
+      "cell": {
+        "firing": "ttfs_cycle_based",
+        "sync": "synchronized",
+        "quantization": "wq_aq",
+        "S": "8",
+        "depth": "4",
+        "vehicle": "deep_mlp",
+        "dataset": "mnist",
+        "regime": "from_scratch",
+        "pruning": "dense",
+        "encoding_placement": "subsume"
+      },
+      "tags": [],
+      "expected_wall_min": 5
+    },
+    {
+      "name": "t0_25_sync_simplemlp_wq_s32",
+      "config": "t0_25_sync_simplemlp_wq_s32.json",
+      "model_type": "simple_mlp",
+      "cell": {
+        "firing": "ttfs_cycle_based",
+        "sync": "synchronized",
+        "quantization": "wq",
+        "S": "32",
+        "depth": "any",
+        "vehicle": "deep_mlp",
+        "dataset": "mnist",
+        "regime": "from_scratch",
+        "pruning": "dense",
+        "encoding_placement": "subsume"
+      },
+      "tags": [],
+      "expected_wall_min": 5
+    }
+  ]
+}

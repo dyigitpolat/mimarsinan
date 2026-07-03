@@ -32,3 +32,14 @@ class TestDefaultsMatchPipeline:
         p = get_default_platform_constraints()
         assert "allow_coalescing" in p
         assert "max_schedule_passes" in p
+
+
+class TestConfigKeysInventory:
+    def test_every_defaulted_key_is_a_known_key(self):
+        """CONFIG_KEYS_SET must cover DEFAULT_DEPLOYMENT_PARAMETERS (no drift)."""
+        from mimarsinan.config_schema.defaults import (
+            CONFIG_KEYS_SET,
+            DEFAULT_DEPLOYMENT_PARAMETERS,
+        )
+
+        assert set(DEFAULT_DEPLOYMENT_PARAMETERS) <= CONFIG_KEYS_SET

@@ -1,0 +1,65 @@
+{
+  "seed": 0,
+  "pipeline_mode": "phased",
+  "experiment_name": "t1_03_ttfsq_vit_wqaq_s32_pruned",
+  "generated_files_path": "./generated",
+  "data_provider_name": "CIFAR10_DataProvider",
+  "platform_constraints": {
+    "cores": [
+      {
+        "max_axons": 3072,
+        "max_neurons": 768,
+        "count": 69,
+        "has_bias": true
+      },
+      {
+        "max_axons": 768,
+        "max_neurons": 3072,
+        "count": 69,
+        "has_bias": true
+      }
+    ],
+    "max_axons": 3072,
+    "max_neurons": 3072,
+    "has_bias": true,
+    "target_tq": 32,
+    "simulation_steps": 32,
+    "weight_bits": 8,
+    "allow_coalescing": false,
+    "allow_neuron_splitting": true
+  },
+  "deployment_parameters": {
+    "lr": 0.003,
+    "tuning_budget_scale": 1,
+    "degradation_tolerance": 0.1,
+    "model_config_mode": "user",
+    "hw_config_mode": "fixed",
+    "model_type": "torch_vit",
+    "model_config": {},
+    "batch_size": 512,
+    "max_simulation_samples": 100,
+    "sanafe_arch_preset": "loihi",
+    "sanafe_sample_count": 1,
+    "allow_scheduling": false,
+    "spiking_mode": "ttfs_quantized",
+    "firing_mode": "TTFS",
+    "spike_generation_mode": "TTFS",
+    "thresholding_mode": "<=",
+    "encoding_layer_placement": "subsume",
+    "weight_quantization": true,
+    "activation_quantization": true,
+    "pruning": true,
+    "pruning_fraction": 0.05,
+    "tuning_batch_size": 128,
+    "preprocessing": {
+      "interpolation": "bicubic",
+      "resize_to": 224,
+      "normalize": "imagenet"
+    },
+    "weight_source": "torchvision",
+    "finetune_epochs": 2
+  },
+  "target_metric_override": null,
+  "start_step": null,
+  "stop_step": null
+}
