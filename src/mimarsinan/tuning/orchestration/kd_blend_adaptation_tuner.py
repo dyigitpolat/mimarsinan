@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import warnings
 
 import torch
@@ -201,6 +202,35 @@ class KDBlendAdaptationTuner(CascadeForwardInstall, SmoothAdaptationTuner):
 
     _finalize_manager_flags = ("lif_active", "ttfs_active")
 
+    @contextlib.contextmanager
+    def _finalize_flags_guard(self):
+        """Snapshot/restore the SHARED manager's finalize flags around a clone
+        rebuild (the rebuild hooks set them on the live adaptation_manager)."""
+        manager = self.adaptation_manager
+        flag_snapshot = {
+            name: getattr(manager, name)
+            for name in self._finalize_manager_flags
+            if hasattr(manager, name)
+        }
+        try:
+            yield
+        finally:
+            for name, value in flag_snapshot.items():
+                setattr(manager, name, value)
+
+    def _force_full_transform_on_clone(self, clone) -> None:
+        """Blend rate 1.0 + the finalize-style rebuild on an isolated ``clone``."""
+        set_blend_rate(clone, 1.0)
+        self._finalize_rebuild(clone)
+
+    def _mbh_full_transform_forward(self, clone):
+        """[MBH] The deployed full transformation on ``clone``: blend rate 1.0 +
+        finalize rebuild + the genuine forward (the clone itself when there is none)."""
+        with self._finalize_flags_guard():
+            self._force_full_transform_on_clone(clone)
+        fwd = self._finalize_forward_for(clone)
+        return clone if fwd is None else fwd
+
     def _full_transform_eval(self):
         """The GENUINE full-transform accuracy: run the deployed finalize forward at
         rate 1.0 on an isolated clone (falling back to the value-domain measure when
@@ -210,31 +240,17 @@ class KDBlendAdaptationTuner(CascadeForwardInstall, SmoothAdaptationTuner):
             return super()._full_transform_eval()
 
         device = self.pipeline.config["device"]
-        manager = self.adaptation_manager
-        flag_snapshot = {
-            name: getattr(manager, name)
-            for name in self._finalize_manager_flags
-            if hasattr(manager, name)
-        }
-
-        def prepare(clone):
-            set_blend_rate(clone, 1.0)
-            self._finalize_rebuild(clone)
-
-        try:
+        with self._finalize_flags_guard():
             return genuine_acc_on_clone(
                 self.model,
                 device,
-                prepare=prepare,
+                prepare=self._force_full_transform_on_clone,
                 build_forward=lambda m: self._finalize_forward_for(m),
                 evaluate=lambda fwd, m: eval_forward_over_val(
                     self.trainer, fwd, m,
                     self._budget.progress_eval_batches, device,
                 ),
             )
-        finally:
-            for name, value in flag_snapshot.items():
-                setattr(manager, name, value)
 
     def _snapshot_teacher(self) -> nn.Module:
         return snapshot_frozen_teacher(self.model, self.pipeline.config["device"])

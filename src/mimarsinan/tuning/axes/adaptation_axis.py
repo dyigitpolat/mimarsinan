@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 from typing import Any, Iterable, Protocol, runtime_checkable
 
 import torch.nn as nn
@@ -53,6 +54,20 @@ class AdaptationAxisBase:
         self._model = model
         self._manager = adaptation_manager
         self._config = config
+
+    def probe_replica(self, model, adaptation_manager, config) -> "AdaptationAxisBase":
+        """A detached copy of this axis attached to isolated probe targets.
+
+        The replica must share no mutable state with the live axis, so driving it
+        can never perturb the live ramp (``_reset_replica_state`` drops owned caches).
+        """
+        replica = copy.copy(self)
+        replica._reset_replica_state()
+        replica.attach(model, adaptation_manager, config)
+        return replica
+
+    def _reset_replica_state(self) -> None:
+        """Drop any mutable caches a shallow copy would share with the live axis."""
 
     def set_rate(self, alpha: float) -> None:
         raise NotImplementedError

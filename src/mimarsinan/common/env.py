@@ -19,6 +19,7 @@ RUNS_ROOT_VAR = "MIMARSINAN_RUNS_ROOT"
 TEMPLATES_DIR_VAR = "MIMARSINAN_TEMPLATES_DIR"
 TEST_CUDA_VAR = "MIMARSINAN_TEST_CUDA"
 MP_START_METHOD_VAR = "MIMARSINAN_MP_START_METHOD"
+MBH_LEDGER_VAR = "MIMARSINAN_MBH_LEDGER"
 IMAGENET_ROOT_VAR = "IMAGENET_ROOT"
 
 
@@ -83,6 +84,11 @@ def templates_dir() -> str:
 def test_cuda_enabled() -> bool:
     """Test suite may use CUDA (value exactly "1"); read by tests/conftest.py."""
     return os.environ.get(TEST_CUDA_VAR) == "1"
+
+
+def mbh_ledger_enabled() -> bool:
+    """The measurement-only per-rung [MBH] fast-ladder ledger is on (value exactly "1")."""
+    return os.environ.get(MBH_LEDGER_VAR) == "1"
 
 
 def mp_start_method() -> str | None:

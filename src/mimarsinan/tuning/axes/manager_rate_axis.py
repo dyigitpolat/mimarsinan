@@ -57,6 +57,9 @@ class ManagerRateAxis(AdaptationAxisBase):
         super().attach(model, adaptation_manager, config)
         self._inplace_installed = False
 
+    def _reset_replica_state(self) -> None:
+        self._decision_generators = {}
+
     def _inplace_enabled(self) -> bool:
         return self.rate_attr in _INPLACE_ELIGIBLE_RATES
 

@@ -250,6 +250,26 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
         if getattr(self, "_gain_ramp", False) and self._gain_ramp_base is not None:
             self._apply_gain_at_rate(rate)
 
+    def _mbh_full_transform_forward(self, clone):
+        """[MBH] The deployed cascade on ``clone``, with the rate-gated gain ramp
+        (keyed by live perceptron ids) re-applied to the clone at rate 1.0."""
+        fwd = super()._mbh_full_transform_forward(clone)
+        if getattr(self, "_gain_ramp", False) and self._gain_ramp_base is not None:
+            from mimarsinan.spiking.gain_correction import apply_gain_at_rate
+
+            factors = self._gain_ramp_factors
+            assert factors is not None, (
+                "_capture_gain_ramp_base must run before the [MBH] full-transform probe"
+            )
+            clone_factors = {
+                id(clone_p): factors.get(id(live_p), 1.0)
+                for live_p, clone_p in zip(
+                    self.model.get_perceptrons(), clone.get_perceptrons()
+                )
+            }
+            apply_gain_at_rate(clone, self._gain_ramp_base, clone_factors, 1.0)
+        return fwd
+
     def _invalidate_lr_cache(self):
         """The genuine ramp finds the LR once and never re-finds (it is stable across the ramp)."""
         if getattr(self, "_genuine_blend_ramp", False):

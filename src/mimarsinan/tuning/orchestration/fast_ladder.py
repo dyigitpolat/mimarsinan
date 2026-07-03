@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import copy
 import time
 from typing import TYPE_CHECKING
 
 import torch
 
 from mimarsinan.model_training.training_recipe import build_optimizer, build_recipe
+from mimarsinan.tuning.orchestration.mbh_ledger import emit_fast_rung_ledger
 from mimarsinan.tuning.trace import DecisionRecord
 
 if TYPE_CHECKING:
@@ -91,6 +93,7 @@ class FastLadderMixin(_FastLadderHost):
             self._fast_optimizer = None
             self._fast_lr_schedule = None
             self._fast_optimizer_steps = 0
+            self._mbh_rung_index = -1
         return super().run()
 
     def _driver_attempt(self, target):
@@ -201,7 +204,27 @@ class FastLadderMixin(_FastLadderHost):
         self._phase_seconds["fast_blend"] = (
             self._phase_seconds.get("fast_blend", 0.0) + (time.time() - t0)
         )
+        emit_fast_rung_ledger(self, rate=float(target), blended_acc=float(post_acc))
         return float(target)
+
+    def _mbh_full_transform_forward(self, clone):
+        """[MBH] Force the deployed full transformation (rate 1.0) on an isolated
+        ``clone`` and return the forward to evaluate; live state stays untouched.
+
+        Default: replay this tuner's rate axis on the clone against a deepcopied
+        manager (the manager-rate family); KD-blend families override with their
+        finalize rebuild + genuine forward.
+        """
+        axis = getattr(self, "_axis", None)
+        manager = getattr(self, "adaptation_manager", None)
+        if axis is None or manager is None:
+            raise AttributeError(
+                f"{type(self).__name__} exposes no rate axis / adaptation manager; "
+                "the [MBH] full-transform probe cannot prepare an isolated clone."
+            )
+        replica = axis.probe_replica(clone, copy.deepcopy(manager), self.pipeline.config)
+        replica.set_rate(1.0)
+        return clone
 
     def _fast_stabilize(self, steps, loss_fn=None) -> None:
         """Post-finalize bounded recovery on the deployed forward, for fast ramps

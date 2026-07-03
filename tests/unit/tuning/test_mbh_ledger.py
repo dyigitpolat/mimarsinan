@@ -1,0 +1,337 @@
+"""Measurement-only [MBH] fast-ladder rung ledger (MBH theory, experiment X1).
+
+Gated by ``MIMARSINAN_MBH_LEDGER`` through the env SSOT. Per fast-ladder rung the
+shared seam emits exactly one stdout line::
+
+    [MBH] tuner=<cls> rung=<i> rate=<r> blended_acc=<a> full_acc=<d> rho=<rho> grad_norm_t=<g>
+
+where ``blended_acc`` reuses the rung's existing probe, ``full_acc`` (D-hat) is the
+full-transformation (rate 1.0) accuracy on an isolated deepcopy, and ``rho`` is the
+transfer alignment <g1, gt>/||gt||^2 from plain-CE gradients on one fixed validation
+batch. HARD INVARIANT: ledger ON == OFF bit-identical training trajectory; all
+measurement runs on deepcopies inside ``fork_rng`` with live model/optimizer/RNG
+untouched.
+"""
+
+from __future__ import annotations
+
+import math
+import re
+
+import torch
+
+from conftest import (
+    MockPipeline,
+    default_config,
+    make_activation_scale_stats,
+    make_tiny_supermodel,
+)
+from mimarsinan.common import env
+from mimarsinan.tuning.orchestration.adaptation_manager import AdaptationManager
+from mimarsinan.tuning.orchestration.adaptation_manager_factory import (
+    create_adaptation_manager_for_model,
+)
+
+_LEDGER_RE = re.compile(
+    r"^\[MBH\] tuner=(?P<tuner>\S+) rung=(?P<rung>\d+) rate=(?P<rate>[0-9.]+) "
+    r"blended_acc=(?P<blended>[0-9.]+) full_acc=(?P<full>[0-9.]+) "
+    r"rho=(?P<rho>\S+) grad_norm_t=(?P<grad>\S+)$"
+)
+
+
+def _ledger_lines(text):
+    return [line for line in text.splitlines() if line.startswith("[MBH] ")]
+
+
+def _set_flag(monkeypatch, enabled):
+    if enabled:
+        monkeypatch.setenv(env.MBH_LEDGER_VAR, "1")
+    else:
+        monkeypatch.delenv(env.MBH_LEDGER_VAR, raising=False)
+
+
+# -- per-family fixtures (mirror test_lif_blend_fast / test_fast_ladder_base_lift /
+#    test_genuine_blend_fast) ---------------------------------------------------
+
+def _lif_tuner(tmp_path, *, fast=True, steps_per_rate=2, rates=(0.5, 1.0)):
+    from mimarsinan.tuning.tuners.lif_adaptation_tuner import LIFAdaptationTuner
+
+    cfg = default_config()
+    cfg["spiking_mode"] = "lif"
+    cfg["firing_mode"] = "Default"
+    cfg["thresholding_mode"] = "<"
+    cfg["simulation_steps"] = 4
+    cfg["lif_blend_fast"] = fast
+    cfg["lif_blend_fast_steps_per_rate"] = steps_per_rate
+    cfg["lif_blend_fast_rates"] = list(rates)
+    pipeline = MockPipeline(config=cfg, working_directory=str(tmp_path))
+    pipeline._target_metric = 0.5
+    model = make_tiny_supermodel()
+    return LIFAdaptationTuner(
+        pipeline, model=model, target_accuracy=0.5, lr=cfg["lr"],
+        adaptation_manager=AdaptationManager(),
+    )
+
+
+def _aq_tuner(tmp_path, *, steps_per_rate=2, rates=(0.5, 1.0)):
+    from mimarsinan.tuning.tuners.activation_quantization_tuner import (
+        ActivationQuantizationTuner,
+    )
+
+    cfg = default_config()
+    cfg["spiking_mode"] = "ttfs_quantized"
+    cfg["activation_quantization"] = True
+    cfg["optimization_driver"] = "fast"
+    cfg["manager_rate_fast_rates"] = list(rates)
+    cfg["manager_rate_fast_steps_per_rate"] = steps_per_rate
+    pipeline = MockPipeline(config=cfg, working_directory=str(tmp_path))
+    pipeline._target_metric = 0.5
+    model = make_tiny_supermodel()
+    manager = create_adaptation_manager_for_model(cfg, model)
+    return ActivationQuantizationTuner(pipeline, model, 4, 0.5, cfg["lr"], manager)
+
+
+def _clamp_tuner(tmp_path, *, steps_per_rate=2, rates=(0.5, 1.0)):
+    from mimarsinan.tuning.tuners.clamp_tuner import ClampTuner
+
+    cfg = default_config()
+    cfg["spiking_mode"] = "ttfs_quantized"
+    cfg["activation_quantization"] = True
+    cfg["optimization_driver"] = "fast"
+    cfg["clamp_fast_rates"] = list(rates)
+    cfg["clamp_fast_steps_per_rate"] = steps_per_rate
+    pipeline = MockPipeline(config=cfg, working_directory=str(tmp_path))
+    pipeline._target_metric = 0.5
+    model = make_tiny_supermodel()
+    manager = create_adaptation_manager_for_model(cfg, model)
+    scales = [1.0 for _ in model.get_perceptrons()]
+    stats = make_activation_scale_stats(model, scales)
+    return ClampTuner(pipeline, model, 0.5, cfg["lr"], manager, scales, stats)
+
+
+def _ttfs_tuner(tmp_path, *, steps_per_rate=2, rates=(0.5, 1.0)):
+    from mimarsinan.tuning.tuners.ttfs_cycle_adaptation_tuner import (
+        TTFSCycleAdaptationTuner,
+    )
+
+    cfg = default_config()
+    cfg["spiking_mode"] = "ttfs_cycle_based"
+    cfg["ttfs_cycle_schedule"] = "cascaded"
+    cfg["activation_quantization"] = True
+    cfg["simulation_steps"] = 16
+    cfg["ttfs_genuine_blend_ramp"] = True
+    cfg["ttfs_genuine_blend_fast"] = True
+    cfg["ttfs_blend_fast_steps_per_rate"] = steps_per_rate
+    cfg["ttfs_blend_fast_rates"] = list(rates)
+    cfg["ttfs_distmatch_bias_iters"] = 3
+    pipeline = MockPipeline(config=cfg, working_directory=str(tmp_path))
+    pipeline._target_metric = 0.5
+    model = make_tiny_supermodel()
+    return TTFSCycleAdaptationTuner(
+        pipeline, model=model, target_accuracy=0.5, lr=cfg["lr"],
+        adaptation_manager=AdaptationManager(),
+    )
+
+
+def _run_seeded(builder, tmp_path, monkeypatch, enabled, **kw):
+    _set_flag(monkeypatch, enabled)
+    torch.manual_seed(0)
+    tuner = builder(tmp_path, **kw)
+    try:
+        tuner.run()
+    finally:
+        tuner.close()
+    return tuner
+
+
+# -- the env SSOT accessor -----------------------------------------------------
+
+class TestEnvFlag:
+    def test_default_off(self, monkeypatch):
+        monkeypatch.delenv(env.MBH_LEDGER_VAR, raising=False)
+        assert env.mbh_ledger_enabled() is False
+
+    def test_exactly_one_enables(self, monkeypatch):
+        monkeypatch.setenv(env.MBH_LEDGER_VAR, "1")
+        assert env.mbh_ledger_enabled() is True
+
+    def test_other_values_stay_off(self, monkeypatch):
+        for value in ("0", "true", "yes", ""):
+            monkeypatch.setenv(env.MBH_LEDGER_VAR, value)
+            assert env.mbh_ledger_enabled() is False
+
+
+# -- (a) trajectory invariance: ON == OFF, bit-identical -------------------------
+
+class TestTrajectoryInvariance:
+    def _assert_invariant(self, builder, tmp_path, monkeypatch, capsys, **kw):
+        t_off = _run_seeded(builder, tmp_path / "off", monkeypatch, False, **kw)
+        out_off = capsys.readouterr().out
+        t_on = _run_seeded(builder, tmp_path / "on", monkeypatch, True, **kw)
+        out_on = capsys.readouterr().out
+
+        assert not _ledger_lines(out_off), "flag OFF must emit no [MBH] lines"
+        lines = _ledger_lines(out_on)
+        assert len(lines) == len(t_on._fixed_ladder_rates), (
+            "flag ON must emit exactly one [MBH] line per fast rung"
+        )
+
+        sd_off, sd_on = t_off.model.state_dict(), t_on.model.state_dict()
+        assert sd_off.keys() == sd_on.keys()
+        for key in sd_off:
+            assert torch.equal(sd_off[key], sd_on[key]), (
+                f"state_dict[{key}] diverged: the ledger perturbed the trajectory"
+            )
+        assert [entry["post_acc"] for entry in t_off._cycle_log] == \
+            [entry["post_acc"] for entry in t_on._cycle_log]
+
+    def test_lif_blend_family(self, tmp_path, monkeypatch, capsys):
+        self._assert_invariant(_lif_tuner, tmp_path, monkeypatch, capsys)
+
+    def test_manager_rate_family_stochastic_masks(self, tmp_path, monkeypatch, capsys):
+        self._assert_invariant(_aq_tuner, tmp_path, monkeypatch, capsys)
+
+    def test_ttfs_genuine_blend_family(self, tmp_path, monkeypatch, capsys):
+        self._assert_invariant(_ttfs_tuner, tmp_path, monkeypatch, capsys)
+
+
+# -- (b) ledger line format ------------------------------------------------------
+
+class TestLedgerFormat:
+    def test_lines_parse_and_rho_finite_on_smooth_ramp(
+        self, tmp_path, monkeypatch, capsys,
+    ):
+        _set_flag(monkeypatch, True)
+        torch.manual_seed(0)
+        tuner = _clamp_tuner(tmp_path, rates=(0.25, 0.5, 1.0))
+        try:
+            tuner.run()
+        finally:
+            tuner.close()
+        lines = _ledger_lines(capsys.readouterr().out)
+        assert len(lines) == 3
+        for rung, line in enumerate(lines):
+            match = _LEDGER_RE.match(line)
+            assert match is not None, f"unparseable ledger line: {line!r}"
+            assert match["tuner"] == "ClampTuner"
+            assert int(match["rung"]) == rung
+            assert 0.0 <= float(match["blended"]) <= 1.0
+            assert 0.0 <= float(match["full"]) <= 1.0
+            # the clamp Mix blend is smooth everywhere: rho must be well-defined
+            assert math.isfinite(float(match["rho"])), line
+            assert math.isfinite(float(match["grad"])), line
+        rates = [float(_LEDGER_RE.match(line)["rate"]) for line in lines]
+        assert rates == [0.25, 0.5, 1.0]
+
+    def test_lif_line_names_the_tuner_class(self, tmp_path, monkeypatch, capsys):
+        _set_flag(monkeypatch, True)
+        torch.manual_seed(0)
+        tuner = _lif_tuner(tmp_path, rates=(0.5, 1.0))
+        try:
+            tuner.run()
+        finally:
+            tuner.close()
+        lines = _ledger_lines(capsys.readouterr().out)
+        assert lines
+        for line in lines:
+            match = _LEDGER_RE.match(line)
+            assert match is not None, line
+            assert match["tuner"] == "LIFAdaptationTuner"
+
+    def test_controller_path_emits_nothing(self, tmp_path, monkeypatch, capsys):
+        # X1 instruments the fast ladder only; the controller path is untouched.
+        _run_seeded(_lif_tuner, tmp_path, monkeypatch, True, fast=False)
+        assert not _ledger_lines(capsys.readouterr().out)
+
+
+# -- (c) the D-hat probe is non-destructive ---------------------------------------
+
+class TestProbeNonDestructive:
+    def test_manager_rate_probe_leaves_rate_state_and_rng_untouched(
+        self, tmp_path, monkeypatch,
+    ):
+        from mimarsinan.tuning.orchestration.mbh_ledger import emit_fast_rung_ledger
+
+        _set_flag(monkeypatch, True)
+        torch.manual_seed(0)
+        tuner = _aq_tuner(tmp_path)
+        try:
+            tuner._fast_set_rate(0.5)
+            blended = tuner.probe()
+            manager = tuner.adaptation_manager
+            buffer = manager._rate_buffer("quantization_rate")
+            assert buffer is not None
+            pre_alpha = float(buffer.alpha)
+            pre_field = float(manager.quantization_rate)
+            pre_sd = {k: v.clone() for k, v in tuner.model.state_dict().items()}
+            pre_cursor = tuner.trainer._gpu_val_cursor
+            pre_rng = torch.get_rng_state()
+            pre_generators = {
+                key: gen.get_state().clone()
+                for key, gen in tuner._axis._decision_generators.items()
+            }
+
+            line = emit_fast_rung_ledger(tuner, rate=0.5, blended_acc=blended)
+
+            assert line is not None and _LEDGER_RE.match(line), line
+            assert float(buffer.alpha) == pre_alpha == 0.5
+            assert float(manager.quantization_rate) == pre_field
+            post_sd = tuner.model.state_dict()
+            for key in pre_sd:
+                assert torch.equal(pre_sd[key], post_sd[key]), key
+            assert tuner.trainer._gpu_val_cursor == pre_cursor
+            assert torch.equal(torch.get_rng_state(), pre_rng)
+            for key, state in pre_generators.items():
+                assert torch.equal(
+                    tuner._axis._decision_generators[key].get_state(), state
+                ), f"live decision generator {key} advanced"
+        finally:
+            tuner.close()
+
+    def test_kd_blend_probe_leaves_blend_rates_and_flags_untouched(
+        self, tmp_path, monkeypatch,
+    ):
+        from mimarsinan.tuning.orchestration.mbh_ledger import emit_fast_rung_ledger
+
+        _set_flag(monkeypatch, True)
+        torch.manual_seed(0)
+        tuner = _lif_tuner(tmp_path)
+        try:
+            tuner._fast_set_rate(0.5)
+            blended = tuner.probe()
+            pre_rates = [
+                float(p.base_activation.rate) for p in tuner.model.get_perceptrons()
+            ]
+            assert tuner.adaptation_manager.lif_active is False
+            pre_sd = {k: v.clone() for k, v in tuner.model.state_dict().items()}
+            pre_rng = torch.get_rng_state()
+
+            line = emit_fast_rung_ledger(tuner, rate=0.5, blended_acc=blended)
+
+            assert line is not None and _LEDGER_RE.match(line), line
+            post_rates = [
+                float(p.base_activation.rate) for p in tuner.model.get_perceptrons()
+            ]
+            assert post_rates == pre_rates
+            assert tuner.adaptation_manager.lif_active is False
+            assert "forward" not in tuner.model.__dict__, (
+                "the D-hat probe must never patch the live model's forward"
+            )
+            post_sd = tuner.model.state_dict()
+            for key in pre_sd:
+                assert torch.equal(pre_sd[key], post_sd[key]), key
+            assert torch.equal(torch.get_rng_state(), pre_rng)
+        finally:
+            tuner.close()
+
+    def test_disabled_emit_is_a_no_op(self, tmp_path, monkeypatch, capsys):
+        from mimarsinan.tuning.orchestration.mbh_ledger import emit_fast_rung_ledger
+
+        _set_flag(monkeypatch, False)
+        torch.manual_seed(0)
+        tuner = _lif_tuner(tmp_path)
+        try:
+            assert emit_fast_rung_ledger(tuner, rate=0.5, blended_acc=0.5) is None
+            assert not _ledger_lines(capsys.readouterr().out)
+        finally:
+            tuner.close()
