@@ -6,6 +6,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from mimarsinan.tuning.orchestration.mbh_ledger import full_transform_measurement
+from mimarsinan.tuning.orchestration.tuning_policy import TUNING_POLICY
 from mimarsinan.tuning.teacher import freeze_module
 
 
@@ -76,8 +78,17 @@ def kd_loss_from_config(config, teacher: nn.Module) -> KDClassificationLoss:
 
 
 def run_teacher_distmatch(tuner, matcher, *, n_batches: int = 8, **matcher_kwargs):
-    """Distribution-match the deployed model to the tuner's frozen KD teacher, report, return stats."""
+    """Distribution-match the deployed model to the tuner's frozen KD teacher, report, return stats.
+
+    Supplies the deployed full-transform probe (the gate's D-hat read) so the
+    matcher's DFQ loop keeps its best-probe iterate — calibration is ratcheted
+    and can never end worse than its entry state.
+    """
     cal_x = tuner._calibration_inputs(n_batches)
+    matcher_kwargs.setdefault("probe", lambda: full_transform_measurement(tuner))
+    matcher_kwargs.setdefault(
+        "probe_patience", TUNING_POLICY.dfq_keepbest_patience,
+    )
     stats = matcher(tuner.model, tuner._teacher, cal_x, tuner._T, **matcher_kwargs)
     tuner.pipeline.reporter.report(f"{tuner.name} distmatch", stats)
     return stats

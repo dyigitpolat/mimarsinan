@@ -21,7 +21,10 @@ from conftest import MockPipeline, default_config, make_tiny_supermodel
 from mimarsinan.tuning.orchestration.adaptation_manager import AdaptationManager
 from mimarsinan.tuning.tuners.lif_adaptation_tuner import LIFAdaptationTuner
 from mimarsinan.spiking.chip_aligned_nf import chip_aligned_segment_forward
-from mimarsinan.spiking.dfq_bias_correction import channel_mean, teacher_channel_means
+from mimarsinan.spiking.dfq_bias_correction import (
+    perceptron_channel_mean,
+    teacher_channel_means,
+)
 from mimarsinan.spiking.lif_distribution_matching import (
     match_lif_activation_distributions,
 )
@@ -71,11 +74,12 @@ def _lif_cascade_means(model, cal_x, T):
 def _mean_abs_gap(model, teacher, cal_x, T):
     ann_mu = teacher_channel_means(teacher, cal_x)
     cas = _lif_cascade_means(model, cal_x, T)
+    perceptrons = list(model.get_perceptrons())
     gaps = []
     for k in ann_mu:
         if k not in cas:
             continue
-        cm = channel_mean(cas[k])
+        cm = perceptron_channel_mean(perceptrons[k], cas[k])
         n = min(cm.numel(), ann_mu[k].numel())
         gaps.append((cm[:n] - ann_mu[k][:n]).abs().mean().item())
     return sum(gaps) / max(1, len(gaps))

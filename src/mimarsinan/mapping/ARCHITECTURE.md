@@ -36,7 +36,7 @@ use when).
 ## Dependencies
 - `code_generation` — `cpp_chip_model` chip types (`SpikeSource`, chip model) for export, softcore packing, and spike-source spans.
 - `models` — `Perceptron` and nn layers consumed by mappers; builders registry for the wizard layout verify.
-- `transformations` — `PerceptronTransformer` weight/bias extraction; weight quantization and quantization bounds/verify for export.
+- `transformations` — `PerceptronTransformer` weight/bias extraction; weight quantization and quantization bounds/verify for export; `pruning.committed_masks.commit_layer_pruning` in the conv mappers' forward (F.conv bypasses layer hooks).
 - `torch_mapping` — `convert_torch_model` and encoding-layer marking in the wizard layout verify.
 - `pipelining` — `ModelRegistry` model loading in the wizard layout verify.
 - `chip_simulation` — spiking-semantics constants for pruning liveness.

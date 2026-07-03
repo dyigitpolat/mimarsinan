@@ -18,6 +18,33 @@ def effective_preactivation_bias(perceptron):
     return (bias - mean) * u + beta
 
 
+def activation_channel_axis(perceptron, t: torch.Tensor) -> int:
+    """Resolve the output-channel axis of ``t``, an activation (or decoded-value)
+    tensor of ``perceptron``, from the owner-declared ``output_channel_axis``.
+    Fails loud when the declaration is missing or inconsistent with the tensor."""
+    axis = getattr(perceptron, "output_channel_axis", None)
+    if axis is None:
+        raise ValueError(
+            f"{type(perceptron).__name__} "
+            f"{getattr(perceptron, 'name', '<unnamed>')!r} does not declare "
+            "output_channel_axis; the activation channel axis is ambiguous. "
+            "The owner constructing the perceptron must declare its output "
+            "layout (nn.Linear layouts are channels-last; conv mappers are "
+            "channels-first, dim 1)."
+        )
+    resolved = int(axis) % t.dim()
+    out_channels = int(perceptron.layer.weight.shape[0])
+    if int(t.shape[resolved]) != out_channels:
+        raise ValueError(
+            f"{type(perceptron).__name__} "
+            f"{getattr(perceptron, 'name', '<unnamed>')!r} declares channel "
+            f"axis {axis} but tensor shape {tuple(t.shape)} has size "
+            f"{int(t.shape[resolved])} there, not the layer's "
+            f"{out_channels} output channels."
+        )
+    return resolved
+
+
 ACTIVATION_REGISTRY = {
     "ReLU": LeakyGradReLU,
     "LeakyReLU": nn.LeakyReLU,
@@ -69,7 +96,17 @@ class Perceptron(nn.Module):
 
         self.per_input_scales = None
 
+        # nn.Linear puts output channels on the LAST dim; conv mappers driving
+        # this perceptron through F.conv override this to 1 (channels-first).
+        self.output_channel_axis = -1
+
         self.is_encoding_layer = False
+
+    def __setstate__(self, state):
+        super().__setstate__(state)
+        # Caches saved before the layout declaration carry the nn.Linear
+        # channels-last layout; conv mappers re-stamp channels-first on load.
+        self.__dict__.setdefault("output_channel_axis", -1)
 
     def set_parameter_scale(self, new_scale):
         if isinstance(new_scale, float):

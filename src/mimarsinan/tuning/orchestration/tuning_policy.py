@@ -29,6 +29,9 @@ class TuningPolicy:
     use_paired_sensor: bool = False
     k_commit: float = 2.0
     global_budget: float = 0.0
+    # DFQ keep-best: iterations without a new best deployed-probe read before
+    # the calibration loop stops early (W-CAL-3).
+    dfq_keepbest_patience: int = 5
 
 
 TUNING_POLICY = TuningPolicy()

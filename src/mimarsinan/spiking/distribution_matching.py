@@ -5,9 +5,9 @@ from __future__ import annotations
 import torch
 
 from mimarsinan.spiking.dfq_bias_correction import (
-    channel_mean as _channel_mean,
     dfq_correct_biases,
     mean_abs_gap,
+    perceptron_channel_mean as _perceptron_channel_mean,
     teacher_activation_samples as _teacher_activation_samples,
 )
 from mimarsinan.spiking.scale_aware_boundaries import calibrate_scale_aware_boundaries
@@ -39,7 +39,9 @@ def _cascade_channel_means(model, cal_x, T):
 
 
 def _mean_abs_gap(model, ann_mean, cal_x, T):
-    return mean_abs_gap(ann_mean, _cascade_channel_means(model, cal_x, T))
+    return mean_abs_gap(
+        model.get_perceptrons(), ann_mean, _cascade_channel_means(model, cal_x, T),
+    )
 
 
 def _dead_fraction(model, cal_x, T):
@@ -59,18 +61,25 @@ def match_activation_distributions(
     quantile: float = 0.99,
     bias_iters: int = 15,
     eta: float = 0.7,
+    probe=None,
+    probe_patience: int | None = None,
 ):
     """Match the deployed TTFS cascade's activation distribution to the teacher ANN's.
 
     Calibrates scale-aware [0,1] boundaries then runs ``bias_iters`` rounds of
-    DFQ per-neuron bias correction. Mutates the model in place (must already be
-    in the deployed single-spike-cascade TTFS state); returns a stats dict.
+    DFQ per-neuron bias correction (keep-best over ``probe`` when given).
+    Mutates the model in place (must already be in the deployed
+    single-spike-cascade TTFS state); returns a stats dict.
     """
     T = int(T)
+    teacher_perceptrons = list(teacher.get_perceptrons())
     n_perceptrons = len(list(model.get_perceptrons()))
 
     ann_samples = _teacher_activation_samples(teacher, cal_x)
-    ann_mean = {k: _channel_mean(v) for k, v in ann_samples.items()}
+    ann_mean = {
+        k: _perceptron_channel_mean(teacher_perceptrons[k], v)
+        for k, v in ann_samples.items()
+    }
     theta_out = [
         max(float(torch.quantile(ann_samples[k].abs().float().flatten(), quantile)), 1e-2)
         if k in ann_samples else 1.0
@@ -86,12 +95,13 @@ def match_activation_distributions(
         lambda: _cascade_channel_means(model, cal_x, T),
         bias_iters=bias_iters,
         eta=eta,
+        probe=probe,
+        probe_patience=probe_patience,
     )
     dead_after = _dead_fraction(model, cal_x, T)
 
     return {
-        "mean_gap_before": gap_stats["mean_gap_before"],
-        "mean_gap_after": gap_stats["mean_gap_after"],
+        **gap_stats,
         "dead_fraction_before": sum(dead_before.values()),
         "dead_fraction_after": sum(dead_after.values()),
         "quantile": float(quantile),

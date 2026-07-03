@@ -163,6 +163,8 @@ class _StubTuner:
 
 class TestRunTeacherDistmatch:
     def test_threads_model_teacher_calx_T_kwargs_and_reports(self):
+        from mimarsinan.tuning.orchestration.tuning_policy import TUNING_POLICY
+
         tuner = _StubTuner()
         seen = {}
 
@@ -179,7 +181,10 @@ class TestRunTeacherDistmatch:
         assert seen["teacher"] is tuner._teacher
         assert seen["cal_x"] == "CAL_X"
         assert seen["T"] == 16
-        assert seen["kw"] == {"bias_iters": 5, "eta": 0.5}
+        kw = dict(seen["kw"])
+        assert callable(kw.pop("probe"))
+        assert kw.pop("probe_patience") == TUNING_POLICY.dfq_keepbest_patience
+        assert kw == {"bias_iters": 5, "eta": 0.5}
         assert tuner.pipeline.reporter.reports == [
             ("Stub Tuner distmatch", {"ok": 1}),
         ]

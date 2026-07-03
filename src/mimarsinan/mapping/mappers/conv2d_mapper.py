@@ -15,6 +15,7 @@ from mimarsinan.mapping.mappers.scale_propagation import (
 )
 from mimarsinan.models.perceptron_mixer.perceptron import Perceptron
 from mimarsinan.transformations.perceptron.perceptron_transformer import PerceptronTransformer
+from mimarsinan.transformations.pruning.committed_masks import commit_layer_pruning
 
 
 class Conv2DPerceptronMapper(Mapper):
@@ -81,6 +82,14 @@ class Conv2DPerceptronMapper(Mapper):
             base_activation_name=base_activation_name,
             name=f"{self.name}_full",
         )
+        # _forward_impl drives the shared perceptron through F.conv2d, so its
+        # activation output is [B, C, H, W] — channels-first.
+        self.perceptron.output_channel_axis = 1
+
+    def __setstate__(self, state):
+        super().__setstate__(state)
+        # Caches saved before the layout declaration: the owner re-declares it.
+        self.perceptron.output_channel_axis = 1
 
     def owned_perceptron_groups(self):
         return [[self.perceptron]]
@@ -122,6 +131,9 @@ class Conv2DPerceptronMapper(Mapper):
 
         x = self.perceptron.input_activation(x)
 
+        # F.conv2d reads raw weights without calling layer.__call__, so the
+        # pruning pre-hooks never fire here; commit the masks directly.
+        commit_layer_pruning(self.perceptron.layer)
         w = self.perceptron.layer.weight.view(
             self.out_channels, self.in_channels, self.kernel_size[0], self.kernel_size[1]
         )

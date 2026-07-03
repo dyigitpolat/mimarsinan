@@ -39,6 +39,10 @@ def enforce_pruning_persistently(perceptrons, row_masks, col_masks):
                 layer.bias.data[pruned_rows] = 0.0
 
         layer.register_forward_pre_hook(pruning_enforce_linear_pre_hook)
+        assert getattr(layer, "prune_mask", None) is not None, (
+            "register_prune_buffers must run before enforce_pruning_persistently "
+            "so the committed masks back the enforcement hooks"
+        )
 
         norm = getattr(p, "normalization", None)
         if norm is None or isinstance(norm, nn.Identity):

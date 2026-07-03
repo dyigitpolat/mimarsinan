@@ -30,11 +30,13 @@ def _lif_cascade_channel_means(model, cal_x, T) -> dict:
 
 def match_lif_activation_distributions(
     model, teacher, cal_x, T, *, bias_iters: int = 10, eta: float = 0.5,
+    probe=None, probe_patience: int | None = None,
 ) -> dict:
     """Match the deployed LIF cascade's per-neuron mean to the teacher ANN's.
 
     Runs ``bias_iters`` rounds of DFQ bias correction over the deployed
-    cycle-accurate cascade. Mutates the model in place; returns a stats dict.
+    cycle-accurate cascade (keep-best over ``probe`` when given). Mutates the
+    model in place; returns a stats dict.
     """
     T = int(T)
     ann_mean = teacher_channel_means(teacher, cal_x)
@@ -44,6 +46,8 @@ def match_lif_activation_distributions(
         lambda: _lif_cascade_channel_means(model, cal_x, T),
         bias_iters=bias_iters,
         eta=eta,
+        probe=probe,
+        probe_patience=probe_patience,
     )
     stats.update({
         "bias_iters": int(bias_iters),

@@ -24,6 +24,7 @@ class _FakePerceptron:
     def __init__(self, out_features):
         self.layer = nn.Linear(out_features, out_features)
         self.layer.bias.data.zero_()
+        self.output_channel_axis = -1
 
 
 class _FakeModel:
@@ -52,11 +53,17 @@ def _targets(model, value=1.0):
 
 
 class TestChannelMean:
-    def test_mean_over_all_but_last_dim(self):
+    def test_channels_last_means_over_all_but_last_dim(self):
         t = torch.arange(2 * 3 * 4, dtype=torch.float32).reshape(2, 3, 4)
-        cm = channel_mean(t)
+        cm = channel_mean(t, -1)
         assert cm.shape == (4,)
         torch.testing.assert_close(cm, t.reshape(-1, 4).mean(0))
+
+    def test_channels_first_means_per_channel(self):
+        t = torch.arange(2 * 3 * 4 * 4, dtype=torch.float32).reshape(2, 3, 4, 4)
+        cm = channel_mean(t, 1)
+        assert cm.shape == (3,)
+        torch.testing.assert_close(cm, t.mean(dim=(0, 2, 3)))
 
 
 class TestDfqShrinksGap:
@@ -65,11 +72,15 @@ class TestDfqShrinksGap:
         model = _FakeModel(out_features=4, n_perceptrons=3, offset=0.5)
         ann_mean = _targets(model, value=1.0)
 
-        gap_before = mean_abs_gap(ann_mean, model.cascade_means())
+        gap_before = mean_abs_gap(
+            model.get_perceptrons(), ann_mean, model.cascade_means(),
+        )
         stats = dfq_correct_biases(
             model, ann_mean, model.cascade_means, bias_iters=15, eta=0.7,
         )
-        gap_after = mean_abs_gap(ann_mean, model.cascade_means())
+        gap_after = mean_abs_gap(
+            model.get_perceptrons(), ann_mean, model.cascade_means(),
+        )
 
         assert gap_after < gap_before
         assert stats["mean_gap_after"] < stats["mean_gap_before"]

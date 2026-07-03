@@ -23,6 +23,10 @@ from mimarsinan.mapping.weight_reuse import (
 )
 from mimarsinan.models.nn.activations.ttfs_spiking import refresh_perceptron_bias_references
 from mimarsinan.spiking.scale_aware_boundaries import propagate_boundary_input_scales
+from mimarsinan.transformations.pruning.committed_masks import (
+    commit_perceptron_pruning,
+    verify_committed_pruning,
+)
 from mimarsinan.transformations.quantization_bounds import quantization_bounds
 
 from mimarsinan.pipelining.core.engine.pipeline_helpers import run_optional_viz
@@ -110,6 +114,10 @@ class SoftCoreMappingStep(PipelineStep):
 
         apply_structured_pruning_if_enabled(self, model, "SoftCoreMappingStep")
 
+        # W-CAL-2: pruning must hold in the committed raw parameters at mapping
+        # time — the deployed executor never fires the enforcement hooks.
+        self._commit_pruning_to_raw_params(model)
+
         if self.pipeline.config.get("generate_visualizations", False):
             def _flowchart():
                 from mimarsinan.visualization.softcore_flowchart_dot import write_softcore_flowchart_dot
@@ -172,6 +180,9 @@ class SoftCoreMappingStep(PipelineStep):
         compute_per_source_scales(mapper_repr)
         # Re-propagate boundary input scales here so a retuned upstream theta cannot leave the segment-entry grid-snap normalizing by a stale scale; idempotent in activation_scales.
         propagate_boundary_input_scales(model, input_data_scale=1.0)
+        # Fail loud if any bias/weight write since the commit above broke the
+        # committed-pruning contract (mask * param == param) about to be mapped.
+        self._verify_pruning_committed(model)
         with _phase("ir_mapping.map"):
             ir_graph = ir_mapping.map(mapper_repr)
 
@@ -235,6 +246,17 @@ class SoftCoreMappingStep(PipelineStep):
             )
         self._soft_core_spiking_metric = float(acc)
         print(f"[SoftCoreMappingStep] Soft-core (identity-mapped) Spiking Simulation Test: {acc}")
+
+    def _commit_pruning_to_raw_params(self, model) -> None:
+        """Commit every perceptron's prune masks into its raw parameters."""
+        for perceptron in model.get_perceptrons():
+            commit_perceptron_pruning(perceptron)
+
+    def _verify_pruning_committed(self, model) -> None:
+        """Fail-loud committed-pruning contract check at soft-core-mapping time."""
+        verify_committed_pruning(
+            model.get_perceptrons(), where="SoftCoreMappingStep pre-IR-mapping",
+        )
 
     def _run_onchip_majority_gate(self, model, ir_graph) -> None:
         """Params-based FLOOR gate: raise only BELOW the on-chip floor; VALID_FLAGGED mappings between floor and 50% majority still deploy."""

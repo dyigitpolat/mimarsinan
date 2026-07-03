@@ -43,6 +43,7 @@ EXPECTED_POLICY_VALUES = {
     "use_paired_sensor": False,
     "k_commit": 2.0,
     "global_budget": 0.0,
+    "dfq_keepbest_patience": 5,
 }
 
 COLLAPSED_CONFIG_KEYS = frozenset({

@@ -25,7 +25,7 @@ remaining ANN→SNN conversion gap on the deployed cascade.
 | `chip_aligned_nf.py` | `chip_aligned_segment_forward` — thin LIF wrapper (driver + `LifSegmentPolicy`, `run_cycle_accurate` fallback); the torch mirror of HCM `_forward_rate`. |
 | `lif_utils.py` | Unwrap wrapped `LIFActivation`s; toggle `use_cycle_accurate_trains` model-wide. |
 | `scale_aware_boundaries.py` | Set per-block `activation_scale` (theta_out, encoding layer pinned) and forward-propagate `input_activation_scale` via the polymorphic mapper walk. |
-| `dfq_bias_correction.py` | Mode-agnostic DFQ core: teacher channel-mean capture (forward hooks) and the per-neuron `bias += eta*(ann − cascade)` loop with gap stats. |
+| `dfq_bias_correction.py` | Mode-agnostic DFQ core: teacher channel-mean capture (forward hooks) reduced on the perceptron's declared channel axis, the mask-aware per-neuron `bias += eta*(ann − cascade)` loop, and keep-best/early-stop over an injected deployed-behavior probe. |
 | `distribution_matching.py` | TTFS distribution matching: quantile scale-aware boundaries + the DFQ loop over the deployed single-spike cascade; returns gap/dead-fraction stats. |
 | `lif_distribution_matching.py` | LIF DFQ bias correction over the deployed cycle-accurate cascade (read via the `node_value_recorder` side-channel); no boundary retune. |
 | `gain_correction.py` | Per-cascade-depth theta trim (`gamma^d`, encoding/entry pinned) inverting the TTFS ramp-decode death cascade; `apply_gain_at_rate` for ramped tuning. |
@@ -33,7 +33,8 @@ remaining ANN→SNN conversion gap on the deployed cascade.
 
 ## Dependencies
 - `mapping` — IR types (`ComputeOp`, `IRSource`) and `HybridHardCoreMapping`/`HybridStage` for boundary encode; mapper classes (`InputMapper`, `ComputeOpMapper`, `Conv1D/2DPerceptronMapper`) for node classification; `scale_propagation.walk_out_scales` for boundary-scale propagation.
-- `models` — `LIFActivation`, `run_cycle_accurate`, `TTFSActivation`, `TransformedActivation` (neuron dynamics + unwrap); `effective_preactivation_bias` (norm-folded TTFS bias); lazily `TTFSSegmentForward` as the DFQ cascade readout.
+- `models` — `LIFActivation`, `run_cycle_accurate`, `TTFSActivation`, `TransformedActivation` (neuron dynamics + unwrap); `effective_preactivation_bias` (norm-folded TTFS bias); `activation_channel_axis` (owner-declared DFQ channel-axis ground truth); lazily `TTFSSegmentForward` as the DFQ cascade readout.
+- `transformations` — `pruning.committed_masks.commit_perceptron_pruning`: DFQ starts from the committed-pruning raw-parameter state (the deployed executor never fires enforcement hooks).
 - `chip_simulation` — `spike_modes` spike-timing encoders (Uniform / TTFS), shared with the simulators so encode timing cannot drift.
 - `tuning` — lazily `LIFBlendActivation` in `lif_utils` (unwrap/toggle during the blend ramp; deferred import avoids a cycle).
 

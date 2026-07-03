@@ -1,11 +1,30 @@
 import torch
 import torch.nn as nn
 
+from mimarsinan.transformations.pruning.committed_masks import (
+    commit_perceptron_pruning,
+)
+
 
 class PerceptronTransformer:
     def __init__(self):
         pass
-    
+
+    def _commit_raw_write(self, perceptron, param, new_value, what: str):
+        """Write an effective->raw inversion result: re-commit the perceptron's
+        prune masks (pruned rows stay exactly zero — the degenerate-``u``
+        inversion must not poison them) and fail loud on non-finite values."""
+        with torch.no_grad():
+            param.data[:] = new_value
+        commit_perceptron_pruning(perceptron)
+        if not torch.isfinite(param.data).all():
+            raise RuntimeError(
+                f"PerceptronTransformer wrote non-finite raw {what} into "
+                f"perceptron {getattr(perceptron, 'name', '<unnamed>')!r} "
+                "(degenerate normalization fold factor u = gamma/sigma on a "
+                "live row?)."
+            )
+
     def get_effective_parameters(self, perceptron):
         return self.get_effective_weight(perceptron), self.get_effective_bias(perceptron)
     
@@ -62,21 +81,27 @@ class PerceptronTransformer:
         act = self._activation_scale_for_weight(perceptron)
 
         if isinstance(perceptron.normalization, nn.Identity):
-            perceptron.layer.weight.data[:] = (weight_transform(effective_weight) * act) / scale
+            new_weight = (weight_transform(effective_weight) * act) / scale
         else:
             u, beta, mean = self._get_u_beta_mean(perceptron.normalization)
-            perceptron.layer.weight.data[:] = ((weight_transform(effective_weight) * act) / scale) / u.unsqueeze(-1)
+            new_weight = ((weight_transform(effective_weight) * act) / scale) / u.unsqueeze(-1)
+        self._commit_raw_write(
+            perceptron, perceptron.layer.weight, new_weight, "weight",
+        )
 
     def apply_effective_bias_transform(self, perceptron, bias_transform):
         if perceptron.layer.bias is None:
             return
         effective_bias = self.get_effective_bias(perceptron)
-        
+
         if isinstance(perceptron.normalization, nn.Identity):
-            perceptron.layer.bias.data[:] = bias_transform(effective_bias) * perceptron.activation_scale
+            new_bias = bias_transform(effective_bias) * perceptron.activation_scale
         else:
             u, beta, mean = self._get_u_beta_mean(perceptron.normalization)
-            perceptron.layer.bias.data[:] = (((bias_transform(effective_bias) * perceptron.activation_scale - beta) / u) + mean)
+            new_bias = ((bias_transform(effective_bias) * perceptron.activation_scale - beta) / u) + mean
+        self._commit_raw_write(
+            perceptron, perceptron.layer.bias, new_bias, "bias",
+        )
 
     def _get_u_beta_mean(self, bn_layer):
         from mimarsinan.models.nn.layers import norm_affine_params
