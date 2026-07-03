@@ -1,5 +1,7 @@
 import atexit
+import multiprocessing as _mp
 import os
+import sys
 
 from mimarsinan.data_handling.data_provider import DataProvider
 
@@ -9,19 +11,13 @@ import torch.multiprocessing as torch_mp
 
 _RESOURCE_DEBUG = os.environ.get("MIMARSINAN_RESOURCE_DEBUG") == "1"
 
-# DataLoader workers never touch CUDA in the parent's device context, so we
-# avoid the global ``spawn`` start method (set in ``src/init.py`` for
-# NevresimDriver / CUDA-aware ProcessPoolExecutors). ``forkserver`` forks from
-# a clean, CUDA-free helper process, which bypasses the ~170 MiB-per-worker
-# dataset pickle-over-pipe path that was failing with truncated pickles under
-# accumulated resource pressure.
+# DataLoader workers use forkserver (not the global spawn start method) to fork from a clean CUDA-free process, avoiding truncated dataset pickles under resource pressure.
 _DATALOADER_MP_CONTEXT = torch_mp.get_context("forkserver")
 
 
 def _resource_snapshot(tag):
     if not _RESOURCE_DEBUG:
         return
-    import sys
     try:
         pid = os.getpid()
         try:
@@ -44,7 +40,6 @@ def _resource_snapshot(tag):
                         break
         except OSError:
             pass
-        import multiprocessing as _mp
         children = len(_mp.active_children())
         print(
             f"[resource] {tag} pid={pid} rss_kb={rss_kb} "
@@ -57,19 +52,9 @@ def _resource_snapshot(tag):
 
 
 def _unregister_dataloader_atexit_handlers(it):
-    """Remove PyTorch's atexit worker cleanup callbacks so they don't run at process exit.
+    """Unregister PyTorch's per-worker atexit cleanup callbacks for fast, quiet exit.
 
-    When persistent_workers and pin_memory are True, PyTorch registers one atexit
-    callback per worker. We already shut down workers in _shutdown_workers(); if we
-    leave those callbacks registered, process exit runs them and causes slow exit
-    (many join timeouts) and/or "Exception ignored in atexit callback" on Ctrl+C.
-
-    We use the public atexit.unregister(func) API. On CPython 3.10+ the atexit
-    module is a C built-in and does not expose _exithandlers, so the previous
-    approach of mutating _exithandlers never removed any handlers. unregister(func)
-    removes all registrations of that function, which is correct because we shut
-    down all our loaders before process exit and we are the only user of
-    multi-worker DataLoaders in this process. Best-effort: never raises.
+    Best-effort: never raises.
     """
     try:
         workers = getattr(it, "_workers", None)
@@ -77,22 +62,15 @@ def _unregister_dataloader_atexit_handlers(it):
             return
         from torch.utils.data.dataloader import _MultiProcessingDataLoaderIter
         cleanup_func = _MultiProcessingDataLoaderIter._clean_up_worker
-        # Prefer public API: works on all Python versions (incl. 3.10+ C atexit).
-        # Removes all registrations of _clean_up_worker; we shut down all loaders
-        # we create, so this is safe.
         atexit.unregister(cleanup_func)
     except Exception:
         pass
 
 
 def shutdown_data_loader(loader):
-    """Shut down a multi-worker DataLoader's worker processes and queues.
+    """Shut down a multi-worker DataLoader's workers/queues before process exit.
 
-    Call this when done with a DataLoader that uses num_workers > 0 so that
-    workers and IPC are cleaned up before process exit. Also unregisters
-    PyTorch's atexit worker cleanup callbacks so process exit is fast and
-    Ctrl+C does not produce atexit callback exceptions. Idempotent and
-    best-effort: never raises.
+    Idempotent and best-effort: never raises.
     """
     if loader is None:
         return
@@ -118,7 +96,7 @@ class DataLoaderFactory:
 
         self._persistent_workers = num_workers > 0
         self._pin_memory = True
-        self._ffcv_factory = None  # cached on first opt-in call
+        self._ffcv_factory = None
 
     @classmethod
     def for_pipeline(cls, pipeline) -> "DataLoaderFactory":
@@ -131,9 +109,8 @@ class DataLoaderFactory:
     def _ffcv_loader(self, kind: str, batch_size, data_provider):
         """Return an FFCV loader iff the provider opts in; else ``None``.
 
-        FFCV is a hard requirement when the provider opts in: a missing
-        FFCV install raises ImportError, and any FFCV-side error from the
-        spec / writer / loader propagates unchanged. No silent fallback.
+        When the provider opts in FFCV is a hard requirement: import and
+        FFCV-side errors propagate unchanged, with no silent fallback.
         """
         if not data_provider.enable_ffcv():
             return None

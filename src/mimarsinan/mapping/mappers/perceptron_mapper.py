@@ -1,20 +1,18 @@
-"""PerceptronMapper, ComputeOpMapper, ModuleMapper."""
+"""PerceptronMapper: map a Perceptron to IR FC cores (or an encoding ComputeOp)."""
 
 from __future__ import annotations
 
-from typing import Any, Sequence
-
 import numpy as np
-import torch
-import torch.nn as nn
 
+from mimarsinan.mapping.layout.layout_source_view_ops import stack_source_views
 from mimarsinan.mapping.mappers.base import Mapper, resolve_activation_type
-from mimarsinan.mapping.support.compute_modules import ScaleNormalizingWrapper
-from mimarsinan.mapping.support.shape_probe import probe_module_io_shapes
+from mimarsinan.mapping.mappers.flowchart import FlowchartFCSpec, FlowchartNodeEstimate
+from mimarsinan.mapping.mappers.scale_propagation import (
+    perceptron_boundary_scale,
+    perceptron_per_source_scale,
+)
 from mimarsinan.transformations.perceptron.perceptron_transformer import PerceptronTransformer
 
-
-from mimarsinan.mapping.mappers.base import Mapper
 
 class PerceptronMapper(Mapper):
     def __init__(self, source_mapper, perceptron):
@@ -58,7 +56,6 @@ class PerceptronMapper(Mapper):
         in_features = int(layer_weights.shape[1])
         out_features = int(layer_weights.shape[0])
 
-        from mimarsinan.mapping.layout.layout_source_view_ops import stack_source_views
         src_arr = layer_sources
         if src_arr.ndim == 2 and src_arr.shape[1] > 1:
             num_instances = int(src_arr.shape[1])
@@ -98,25 +95,12 @@ class PerceptronMapper(Mapper):
         return [[self.perceptron]]
 
     def propagate_source_scale(self, deps, out_scales):
-        from mimarsinan.mapping.mappers.scale_propagation import (
-            perceptron_per_source_scale,
-        )
-
         return perceptron_per_source_scale(self, deps, out_scales)
 
     def propagate_boundary_scale(self, deps, out_scales, default):
-        from mimarsinan.mapping.mappers.scale_propagation import (
-            perceptron_boundary_scale,
-        )
-
         return perceptron_boundary_scale(self, deps, out_scales, default)
 
     def flowchart_node_estimate(self, out_shape):
-        from mimarsinan.mapping.mappers.flowchart import (
-            FlowchartFCSpec,
-            FlowchartNodeEstimate,
-        )
-
         p = self.perceptron
         in_f = int(p.layer.weight.shape[1])
         out_f = int(p.layer.weight.shape[0])

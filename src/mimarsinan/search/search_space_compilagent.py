@@ -4,6 +4,13 @@ from __future__ import annotations
 
 from typing import Any, List, Tuple
 
+from compilagent import (
+    DerivationEvidence,
+    EnumChoice,
+    IntFreeform,
+    Lever,
+)
+
 from .search_space_description import CORE_DIM_GRANULARITY, SearchSpaceDescription
 
 
@@ -14,13 +21,6 @@ def to_compilagent_levers(
     backend_id: str,
 ) -> Tuple[Any, ...]:
     """Render the search space as a tuple of compilagent ``Lever``s."""
-    from compilagent import (
-        DerivationEvidence,
-        EnumChoice,
-        IntFreeform,
-        Lever,
-    )
-
     levers: List[Any] = []
 
     if description.searches_model:

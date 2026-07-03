@@ -1,13 +1,4 @@
-"""Bias-delivery mode shared by the spiking activation nodes.
-
-A deployment delivers a neuron's bias either via an on-chip per-neuron register
-(``"on_chip"``, mode A) or as the weight on an always-on axon (``"param_encoded"``,
-mode B). The two are **dynamically equivalent** in the differentiable forward: both
-contribute a cumulative ``bias·(t_local+1)`` to the membrane (the always-on TTFS bias
-spike fires once at the core's local window start and is ramp-integrated; the on-chip
-register adds the bias every active cycle). So the activation nodes store the mode for
-config fidelity / simulator dispatch but do **not** branch their dynamics on it.
-"""
+"""Bias-delivery mode (``on_chip`` / ``param_encoded``) shared by the spiking activation nodes."""
 
 from __future__ import annotations
 

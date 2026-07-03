@@ -1,16 +1,4 @@
-"""``LayoutPlan`` -- the single shape-only artifact tying segmentation, soft-core
-specs, packing, and stats together.
-
-A ``LayoutPlan`` can be built two ways and both feed the *same*
-``LayoutVerificationStats`` computation, so the wizard miniview and the
-deployed hybrid mapping can never report divergent placement statistics:
-
-- :func:`build_layout_plan` -- from a shape-only verification result + hardware
-  core types (the wizard / NAS / snapshot "planned" path).
-- :meth:`LayoutPlan.from_hybrid_mapping` -- from a compiled
-  ``HybridHardCoreMapping`` by deriving each used hardcore's snapshot and the
-  coalescing / split groups from placement provenance (the deployment path).
-"""
+"""``LayoutPlan`` -- shape-only placement plan tying segmentation, specs, packing, and stats together."""
 
 from __future__ import annotations
 
@@ -20,11 +8,15 @@ from typing import Any, Dict, List, Optional, Tuple
 from mimarsinan.mapping.layout.layout_types import (
     LayoutCoreSnapshot,
     LayoutPackingResult,
-    LayoutSoftCoreSpec,
+)
+from mimarsinan.mapping.verification.layout_verification_packing import (
+    _empty_stats,
+    build_stats_from_packing_result,
 )
 from mimarsinan.mapping.verification.layout_verification_types import (
     LayoutVerificationStats,
 )
+from mimarsinan.mapping.verification.verifier import verify_hardware_config
 
 
 @dataclass(frozen=True)
@@ -42,19 +34,9 @@ class LayoutPlan:
 
     @classmethod
     def from_hybrid_mapping(cls, mapping: Any) -> Optional["LayoutPlan"]:
-        """Derive a ``LayoutPlan`` from a compiled ``HybridHardCoreMapping``.
-
-        Snapshots come from each neural segment's *used* hardcores; coalescing
-        and split distributions come from the per-softcore placement provenance
-        recorded by ``HardCoreMapping.merge_softcore_into``.  The resulting
-        ``LayoutPackingResult`` is fed through the shared
-        :func:`build_stats_from_packing_result`, so deployment stats use the
-        identical formulas as the wizard layout path.
-        """
-        from mimarsinan.mapping.verification.layout_verification_packing import (
-            build_stats_from_packing_result,
-        )
-
+        """Derive a ``LayoutPlan`` from a compiled ``HybridHardCoreMapping``, feeding
+        its per-softcore placement provenance through the shared stats builder so
+        deployment and wizard layout stats use identical formulas."""
         stages = getattr(mapping, "stages", None)
         if not stages:
             return None
@@ -112,7 +94,6 @@ class LayoutPlan:
                     sg = p.get("split_group_id")
                     if sg is not None:
                         key = (p.get("ir_node_id"), p.get("split_group_id"))
-                        # Count fragments per original split softcore (by ir node).
                         node_key = p.get("ir_node_id")
                         split_fragments_per_sc[node_key] = (
                             split_fragments_per_sc.get(node_key, 0) + 1
@@ -124,7 +105,6 @@ class LayoutPlan:
         coalescing_group_sizes = tuple(
             c for c in coalescing_counts.values() if c > 1
         )
-        # A softcore split into N fragments was split N-1 times.
         split_counts_per_sc = tuple(
             n - 1 for n in split_fragments_per_sc.values() if n > 1
         )
@@ -161,9 +141,6 @@ class LayoutPlan:
         )
         stats_dict = stats.to_dict()
 
-        # Hybrid-specific fields the shape-only packing cannot know.
-        # No core_types are available from a compiled mapping, so chip-level
-        # accounting falls back to the used-core total (legacy behaviour).
         stats_dict["total_hw_cores"] = cores_used
         stats_dict["neural_segment_count"] = len(mapping.get_neural_segments())
         if schedule_pass_present:
@@ -194,8 +171,6 @@ def build_layout_plan(
     stats via the shared ``build_stats_from_packing_result``), so the wizard
     miniview consumes exactly the same stats engine as the deployment path.
     """
-    from mimarsinan.mapping.verification.verifier import verify_hardware_config
-
     hw = verify_hardware_config(
         verification.softcores,
         core_types,
@@ -225,6 +200,4 @@ _STATS_FIELDS = set(LayoutVerificationStats.__dataclass_fields__.keys())
 
 
 def _empty_layout_stats() -> LayoutVerificationStats:
-    from mimarsinan.mapping.verification.layout_verification_packing import _empty_stats
-
     return _empty_stats(feasible=False)

@@ -1,17 +1,4 @@
-"""
-Search mode resolution from pipeline config.
-
-Two independent toggles combine into one of four internal search modes:
-
-=========== ============ ==========
-model_cfg   hw_cfg       mode
-=========== ============ ==========
-user        fixed        fixed
-search      fixed        model
-user        search       hardware
-search      search       joint
-=========== ============ ==========
-"""
+"""Search mode resolution from pipeline config."""
 
 from __future__ import annotations
 

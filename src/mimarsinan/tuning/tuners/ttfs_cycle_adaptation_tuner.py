@@ -1,69 +1,8 @@
-"""TTFS-cycle fine-tuning: gradual value-domain ramp, genuine cascade at finalize.
-
-By default both schedules ramp the per-perceptron ``TTFSActivation`` blend in
-the value domain (the plain class forward through ``BlendActivation``), exactly
-the golden LIF non-destructive ramp: rate 0 reproduces the continuous teacher,
-rate 1 is the pointwise on-chip staircase composition. The blend ramps
-naturally under the rate scheduler's uniform ladder (no rate pin), with KD
-recovery against the frozen pre-step teacher.
-
-By default the genuine cross-layer dynamics are installed only at **finalize**:
-
-- **cascaded** ``ttfs_cycle_based`` is a single-spike, ramp-integrate, fire-once
-  cascade — the per-perceptron staircase blend cannot stay bit-identical to the
-  intra-segment sub-window spike timing, so (like LIF's chip-aligned forward)
-  finalize installs :class:`TTFSSegmentForward` via ``_finalize_forward`` and
-  keeps it, so the committed metric, recovery, and every downstream step run
-  the exact deployed single-spike dynamics.
-- **synchronized** composes per-group analytical staircases — the ramped class
-  forward already *is* that deployed composition, so no instance forward is
-  installed; the wire contract's stage-input grid snap q(x) is trained through
-  an STE on each segment entry.
-
-The opt-in ``ttfs_genuine_blend_ramp`` (default off, cascaded only) calibrates
-the deployed cascade to the teacher ANN's activation distribution
-(``match_activation_distributions``: scale-aware [0,1] boundaries + DFQ per-neuron
-bias correction), then installs a ``BlendedGenuineForward`` as the WHOLE-ramp
-forward (``out = (1-rate)*teacher + rate*genuine``). The committed rate drives
-the blend live via ``GenuineBlendAxis`` (rate 0 = the frozen continuous teacher,
-rate 1 = the genuine cascade exactly), with KD recovery against the same teacher;
-finalize deploys the PURE genuine cascade (the teacher is dropped, so the cliff is
-0 by construction).
-
-The EXPERIMENTAL ``ttfs_genuine_blend_fast`` (default off, requires the blend ramp)
-SKIPS the heavy SmoothAdaptation controller: ``run`` overrides the scheduler flow to
-walk a FIXED rate schedule (``ttfs_blend_fast_rates``) a FIXED number of steps each
-(``ttfs_blend_fast_steps_per_rate``) with ONE Adam optimizer + warmup/cosine LR, loss
-``CE((1-R)*teacher + R*genuine) + 0.3*CE(genuine)`` (the validated prototype), then
-runs the same finalize (pure genuine cascade). No adaptation cycles, no RecoveryEngine,
-no rollback clone/restore, no stabilization pass, no per-cycle LR find.
-
-INVARIANT CORE vs OPTIONAL CONTROLLER (the line the fast hack must not cross).
-The genuine gradual-tuning *contract* (pinned in
-``tests/unit/tuning/test_genuine_gradual_invariants.py``: inert@low-rate, smooth
-degradation, r=1 == deployment bit-exact, tuning lifts the r=1 endpoint, rounds
-converge) is a property of the MECHANISM, not the controller — so the mechanism is
-installed in ``KDBlendAdaptationTuner.__init__`` (``_install_blend`` →
-``_make_kd_loss`` → ``_after_install_blend``) and is therefore ACTIVE UNDER BOTH
-paths, fast and slow:
-
-  INVARIANT CORE (always on, even under fast) — DO NOT gate behind the fast flag:
-    * scale-aware [0,1] boundaries + DFQ distribution matching
-      (``_calibrate_to_teacher_distribution``)
-    * the teacher<->genuine ``BlendedGenuineForward`` (rate 0 == teacher, rate 1 ==
-      deployed cascade bit-exact)
-    * the genuine-CE objective (``_BlendGenuineKDLoss`` / the fast loop's
-      ``+ 0.3*CE(genuine)``) — this is what lifts the r=1 endpoint
-    * the pure-genuine finalize (``_finalize``)
-
-  OPTIONAL CONTROLLER (the SmoothAdaptation machinery; disabled under the fast hack):
-    adaptive rate scheduler + bisect, recover-to-target, rollback clone/restore,
-    stabilization pass, per-cycle LR finder, catastrophic gate, target adjuster.
-    These add robustness/quality (the slow path), not invariant-correctness. The
-    fast hack trades them for ~30-60s; the proper controller keeps them.
-"""
+"""TTFS-cycle fine-tuning: gradual value-domain ramp, genuine cascade at finalize."""
 
 from __future__ import annotations
+
+import dataclasses
 
 import torch
 import torch.nn as nn
@@ -110,9 +49,8 @@ class _SegmentSpikeForward(LazyExecutorForward):
 class _Rung2TeacherFlow(nn.Module):
     """Frozen KD teacher evaluating the identity-mapped contract semantics.
 
-    Wraps an identity-mapped ``SpikingHybridCoreFlow`` built from the frozen
-    pre-step snapshot; outputs are normalized back from the flow's count-scaled
-    logits (÷T) and restored to the value domain via per-output node scales.
+    Wraps an identity-mapped ``SpikingHybridCoreFlow``; count-scaled logits (÷T) are
+    restored to the value domain via per-output node scales.
     """
 
     def __init__(self, flow, simulation_length: int, output_scales):
@@ -134,15 +72,8 @@ class _Rung2TeacherFlow(nn.Module):
 class _BlendGenuineKDLoss(_KDClassificationLoss):
     """KD (vs frozen teacher) on the blend output + a CE on the PURE genuine logits.
 
-    Reproduces the validated genuine-blend recipe: the base KD+CE distills the
-    teacher onto the ramping ``BlendedGenuineForward`` output (``model(x)``), while
-    an extra ``genuine_ce_alpha · CE(genuine_logits, y)`` term sharpens the pure
-    cascade so training at intermediate rates lifts the rate-1 endpoint. The blend
-    forward is resolved through ``blend_forward_provider`` (a tuner-owned reference,
-    NOT ``model.__dict__``), so the term is decoupled from the install mechanism;
-    when the provider returns ``None`` (e.g. finalize/stabilization on the pure
-    cascade) ``model(x)`` IS the genuine cascade, so the base CE already covers it
-    and the extra term is skipped.
+    The extra ``genuine_ce_alpha · CE(genuine_logits, y)`` term sharpens the pure cascade
+    so intermediate-rate training lifts the rate-1 endpoint; skipped when no blend forward.
     """
 
     def __init__(self, teacher, *, genuine_ce_alpha: float, blend_forward_provider,
@@ -215,9 +146,6 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
 
     def _configure(self) -> None:
         self.name = "TTFS Cycle Fine-Tuning"
-        # self._T is the deployment S (== simulation_steps): the deployed forward, node
-        # build, gain stats, and the contract.simulation_steps that parity/mapping read.
-        # The genuine cascade trains and deploys at the same S.
         self._T = int(self.pipeline.config["simulation_steps"])
         self._thresholding_mode = str(self.pipeline.config.get("thresholding_mode", "<="))
         self._firing_mode = str(self.pipeline.config.get("firing_mode", "TTFS"))
@@ -232,27 +160,11 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
         self._synchronized = contract.training_forward_kind() != "segment_spike"
         self._entry_perceptron_ids = None
         self.adaptation_manager.ttfs_active = True
-        # The adaptation flag-thicket (ramp strategy × optimization driver × fast-ladder
-        # rung) is resolved ONCE, declaratively: TtfsAdaptationPlan owns the precedence /
-        # compatibility rules (genuine_blend_fast ⊂ the blend ramp, proxy_fast excludes
-        # the genuine blend ramp + synchronized unless sync-QAT opts in, the fast-ladder
-        # rung). _configure just binds the validated plan to the tuner's fields, so the
-        # dispatch is read in one tested place, not re-derived.
         from mimarsinan.tuning.orchestration.ttfs_adaptation_plan import (
             TtfsAdaptationPlan,
         )
-
-        # EF1: read the controller-vs-fast decision from the pipeline-wide axis
-        # (DeploymentPlan.optimization_driver via DeploymentPlan.of(pipeline)) and
-        # thread it into the plan as the GATE over TTFS's three-way fast fork; the
-        # per-`ttfs_*`-flag selectors still pick WHICH fast variant. Default
-        # `controller` ⇒ no fast variant ⇒ byte-identical.
         from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 
-        # EF3: the (firing × sync) E3 CalibrationPipeline is CONSULTED through the
-        # contract seam, not resolved off the tuner's booleans — calibration_resolver
-        # routes the conversion-health resolution through `contract.calibration_pipeline`
-        # (the pipeline-wide seam), keyed by the (firing × sync) policy.
         def _calibration_resolver(config, *, synchronized, distmatch_driven):
             return contract.calibration_pipeline(
                 config, distmatch_driven=distmatch_driven,
@@ -271,9 +183,6 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
         self._blend_fast_rates = plan.blend_fast_rates
         self._blend_fast_steps_per_rate = plan.blend_fast_steps_per_rate
         self._fast_stabilize_steps = plan.fast_stabilize_steps
-        # The optimization-driver concern (controller vs fast-ladder rung) is owned by
-        # the plan's OptimizationDriver; the controller is the default (fast_ladder
-        # False → _setup_fast_ladder disables the fixed_ladder policy).
         driver = plan.driver
         self._optimization_driver = driver
         self._setup_fast_ladder(
@@ -283,67 +192,31 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
             eta_min_factor=driver.fast_ladder_eta_min_factor,
         )
         self._fast_full_transform_log = []
-        # The installed teacher<->genuine blend forward (owned reference so the
-        # genuine-CE loss + the fast attempt resolve it without introspecting
-        # model.__dict__); set in _ramp_forward, cleared in _remove_forward.
         self._blend_forward = None
-        # Single read of the genuine-CE weight (canonical default in defaults.py);
-        # both the KD loss and the fast loop consume this one value.
         self._genuine_ce_alpha = float(
             self.pipeline.config.get("ttfs_genuine_blend_ce_alpha", 0.3)
         )
         self._distmatch_stats = None
-        # The conversion-health calibration steps (gain-correction / theta-cotrain /
-        # distmatch / boundary-STE) + their compatibility (theta ⊥ gain-ramp, gain-ramp
-        # ⊐ gain-cold, all cascaded-only) are resolved ONCE by the CalibrationPipeline
-        # the plan carries; _configure binds the resolved decisions instead of
-        # re-deriving the per-flag guards. The parity-critical APPLICATION order stays
-        # here (gain trim before node build, theta promotion after scalar-theta calib).
         cal = plan.calibration
         self._calibration = cal
-        # Offload-boundary straight-through estimator (default OFF, cascaded only):
-        # when set, the genuine single-spike cascade backward flows through the
-        # round-based re-encode at offload/host-ComputeOp segment boundaries (a soft
-        # spike-time STE), so EVERY neural segment trains on the deployed dynamics
-        # instead of only the last (the §7 gradient-severance root cause). Forward
-        # is byte-identical, so NF↔SCM parity and the deployed metric are unchanged.
         self._boundary_surrogate_temp = cal.boundary_surrogate_temp
         self._gain_correction_stats = None
         self._maybe_apply_gain_correction()
-        # Per-channel TRAINABLE theta co-training (default OFF, cascaded only): promote
-        # each non-encoding perceptron's activation_scale to a per-output-channel
-        # requires_grad Parameter (in _after_install_blend, after any scalar-theta
-        # distmatch/gain calibration) so the genuine fine-tune co-trains the firing-gain
-        # with the weights. Mutually exclusive with the per-depth gain ramp (both manage
-        # theta; the ramp's scalar set would clobber the per-channel param) — gain wins.
         self._theta_cotrain = cal.theta_cotrain
         self._theta_cotrain_stats = None
-        # The promoted per-channel theta Parameters (set in _maybe_promote_theta_cotrain);
-        # the model optimiser co-trains them with the weights.
         self._theta_cotrain_params = None
 
     def _maybe_apply_gain_correction(self) -> None:
-        """Per-cascade-depth activation_scale trim that inverts the deployed ramp
-        decode's depth attenuation (the death cascade). Two modes (cascaded only; a
-        pure calibration change -> decode bit-exact -> NF<->SCM parity holds):
+        """Per-cascade-depth activation_scale trim inverting the ramp decode's depth attenuation.
 
-        * COLD (``ttfs_gain_correction``): apply the full trim once before node build.
-        * RATE-GATED RAMP (``ttfs_gain_correction_ramp``, wins if both set): capture
-          the base scales + target factors and ramp ``theta_d -> base*g_d**rate`` on
-          every ``_set_rate`` so the correction co-adapts WITH the KD blend (the model
-          learns the calibration and the spiking dynamics together) instead of being a
-          cold init a downstream fine-tune absorbs at the readout.
-
-        Which mode is active (and its cascaded-only / ramp-wins-over-cold compatibility)
-        is resolved by the CalibrationPipeline; this method only applies the body."""
+        A pure calibration change (decode bit-exact, NF↔SCM parity holds); COLD applies the
+        full trim once, RATE-GATED RAMP co-adapts ``theta_d`` with the KD blend on each rate.
+        """
         cal = self._calibration
         rule, c = cal.gain_rule, cal.gain_c
         self._gain_ramp = cal.gain_ramp
 
         if cal.gain_ramp:
-            # Base scales + factors are captured in _after_install_blend (AFTER any
-            # genuine-blend scale-aware-boundary calibration that also sets the
-            # scales), so the gain ramp multiplies the SETTLED scales by g_d**rate.
             self._gain_ramp_rule = rule
             self._gain_ramp_c = c
             self._gain_ramp_base = None
@@ -373,27 +246,15 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
             self._apply_gain_at_rate(rate)
 
     def _invalidate_lr_cache(self):
-        """Genuine controller perf: the LR finder is the dominant cost on the
-        cascade (~55s/call — 8 probes × 30 steps through the S-step blend forward
-        that computes teacher AND genuine), and the base loop re-finds it on every
-        target relaxation (measured: 3-4 re-finds eating ~4-5 min before the rate
-        left 0.125). The LR is stable across the blend ramp — the fast hack proves
-        ONE LR suffices — so the genuine ramp finds it ONCE and never re-finds.
-        Scoped to the opt-in genuine ramp → golden-safe for every other tuner."""
+        """The genuine ramp finds the LR once and never re-finds (it is stable across the ramp)."""
         if getattr(self, "_genuine_blend_ramp", False):
             return
         super()._invalidate_lr_cache()
 
     def _find_lr(self):
-        """Genuine controller perf: a coarse 3×10 LR sweep instead of the default
-        8×30. Each probe step runs the expensive blend forward (teacher+genuine),
-        so the full 8×30 sweep costs ~55s — most of a <2-min budget — for a fine
-        LR that barely matters (the fast hack converges on the bare recipe LR).
-        Three probes around the anchor are enough to reject a destructive LR.
-        Scoped to the opt-in genuine ramp → golden-safe."""
+        """Genuine ramp uses a coarse 3×10 LR sweep instead of the default 8×30 (perf)."""
         if not getattr(self, "_genuine_blend_ramp", False):
             return super()._find_lr()
-        import dataclasses
         steps = min(10, self._budget.lr_steps_per_probe)
         saved = self._budget
         self._budget = dataclasses.replace(
@@ -417,7 +278,6 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
             bias_mode=self._bias_mode,
         )
 
-    # -- genuine ramps (default OFF) -------------------------------------------
     def _make_ramp_strategy(self) -> RampStrategy:
         """Pick the ramp strategy from the flags settled in ``_configure`` — the
         genuine teacher↔cascade blend ramp (cascaded only) or the base value-domain
@@ -427,30 +287,26 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
         return super()._make_ramp_strategy()
 
     def _after_install_blend(self) -> None:
-        """Strategy pre-step (genuine rebuild / blend distmatch), then the
-        rate-gated gain base capture, the ramp forward install, and finally the
-        per-channel theta promotion (after every scalar-theta calibration). The
-        ordering is parity-critical; the calibration wrapper stays here (P1)."""
+        """Strategy pre-step, gain base capture, ramp-forward install, theta promotion.
+
+        The ordering is parity-critical (theta promotion must follow scalar-theta calibration).
+        """
         self._ramp.after_install_blend_pre(self)
         self._capture_gain_ramp_base()
         self._install_ramp_forward()
         self._maybe_promote_theta_cotrain()
 
     def _maybe_promote_theta_cotrain(self) -> None:
-        """Promote per-channel TRAINABLE theta AFTER any scalar-theta calibration
-        (distmatch / gain base capture, which call ``float(activation_scale)`` and
-        ``propagate_boundary_input_scales`` — both scalar-only). The bare-cascade or
-        blend nodes already reference ``perceptron.activation_scale`` by identity, so
-        rebinding it to a per-channel param (on the perceptron AND its nodes) routes
-        the optimiser's gradient into the deployed forward."""
+        """Rebind ``activation_scale`` to a per-channel trainable param after scalar-theta calibration.
+
+        Routes the optimiser's gradient into the deployed forward (which references it by identity).
+        """
         if not self._theta_cotrain:
             return
         self._promote_per_channel_theta()
 
     def _capture_gain_ramp_base(self) -> None:
-        """Capture the (post-calibration) per-perceptron base scales + target gain
-        factors for the rate-gated ramp, and set rate 0 (= base). Runs after any
-        distmatch scale-aware-boundary calibration so the gain ramp composes on top."""
+        """Capture post-calibration base scales + target gain factors for the rate-gated ramp, and set rate 0."""
         if not getattr(self, "_gain_ramp", False):
             return
         from mimarsinan.spiking.gain_correction import cascaded_gain_factors
@@ -472,12 +328,11 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
         )
 
     def _calibrate_to_teacher_distribution(self) -> None:
-        """Distribution-match the deployed cascade to the frozen teacher ANN:
-        scale-aware [0,1] boundaries from the teacher's per-perceptron activation
-        quantile + DFQ per-neuron bias correction. Runs on the deployed-TTFS model
-        (after ``_finalize_rebuild``) over a few concatenated validation batches,
-        turning the full transform into a smoothly recoverable teacher->genuine
-        ramp. Stats are stashed on ``self._distmatch_stats`` and reported."""
+        """Distribution-match the deployed cascade to the frozen teacher ANN.
+
+        Scale-aware [0,1] boundaries from the teacher's activation quantile + DFQ per-neuron
+        bias correction, turning the full transform into a smoothly recoverable teacher→genuine ramp.
+        """
         from mimarsinan.spiking.distribution_matching import (
             match_activation_distributions,
         )
@@ -498,11 +353,6 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
         )
 
     def _wrap_encoding_input(self, perceptron) -> None:
-        # Synchronized wire contract: every hybrid stage input is grid-quantized
-        # q(x); train through it via an STE on each segment-entry perceptron
-        # (the first on-chip core of a segment — NOT ``is_encoding_layer``,
-        # which is inert under offload and the wrong seam under subsume).
-        # Cascaded NF feeds genuine spike trains (the segment walk encodes).
         if self._synchronized and id(perceptron) in self._segment_entry_ids():
             quantizer = TTFSInputGridQuantizer(
                 T=self._T,
@@ -522,13 +372,8 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
             }
         return self._entry_perceptron_ids
 
-    # -- KD teacher: optional rung-2 (identity-mapped contract) target ---------
     def _make_kd_loss(self):
-        """Synchronized + ``ttfs_finetune_kd_against_rung2``: distill against the
-        frozen teacher evaluated under rung-2 semantics (identity-mapped contract
-        flow) instead of its torch forward (design doc §6.1, default off). The
-        genuine loss is owned by its ramp strategy (the base delegation);
-        synchronized always rides the value-domain proxy ramp."""
+        """Synchronized + ``ttfs_finetune_kd_against_rung2`` distills against the rung-2 teacher flow."""
         if self._synchronized and bool(
             self.pipeline.config.get("ttfs_finetune_kd_against_rung2", False)
         ):
@@ -593,16 +438,7 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
         quantize_ir_graph(ir_graph, bits, weight_quantization=False)
         return ir_graph
 
-    # -- Fast fixed-ladder genuine-blend ramp: TTFS-specific hooks -------------
-    # The shared fixed-ladder machinery (run-reset / _driver_attempt routing /
-    # _ensure_fast_optimizer / _fast_rate_attempt / _record_fast_cycle /
-    # _stabilization_budget→0) lives in KDBlendAdaptationTuner. TTFS supplies the
-    # validated genuine objective (plain CE on the blend + ce_alpha·CE on the PURE
-    # genuine logits — lifts the r=1 endpoint, invariants 4/5) and the deployed-r=1
-    # convergence probe via these two hooks.
     def _fast_loss(self, x, y):
-        # Proxy fast path: use the installed KD loss (distil the teacher onto the
-        # value-domain blend) — there is no BlendedGenuineForward to read.
         if not self._genuine_blend_ramp:
             return super()._fast_loss(x, y)
         logits = self.model(x)
@@ -613,16 +449,10 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
         return loss
 
     def _fast_probe(self, rate) -> None:
-        # The genuine-blend probe reads the installed BlendedGenuineForward; the
-        # proxy path has none (its deployed cascade is installed only at finalize).
         if self._genuine_blend_ramp:
             self._probe_fast_full_transform(rate)
 
     def _post_stabilization_hook(self):
-        # Proxy fast: the value-domain ramp leaves the deployed genuine cascade
-        # untrained (the proxy↔genuine cliff). A short bounded stabilization on the
-        # deployed _SegmentSpikeForward closes it (LIF pattern). The genuine blend
-        # trains through the cascade for the whole ramp (cliff≈0) → no stab needed.
         if not getattr(self, "_proxy_fast", False):
             return
         steps = getattr(self, "_fast_stabilize_steps", 0)
@@ -635,11 +465,10 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
         return blend.genuine_logits if blend is not None else None
 
     def _probe_fast_full_transform(self, rate) -> None:
-        """Observability for invariant 5 (default off, ``tuning_full_transform_probe``):
-        after a fast-ramp round, record the r=1 full-transform (deployed) accuracy so
-        the convergence is visible even without the controller's per-cycle probe. The
-        installed blend forward at rate 1.0 IS the deployed cascade, so no deepcopy or
-        finalize-rebuild is needed — set 1.0, evaluate, restore the round's rate."""
+        """Record the r=1 full-transform (deployed) accuracy after a fast-ramp round (default off).
+
+        The installed blend forward at rate 1.0 IS the deployed cascade, so no rebuild is needed.
+        """
         if not getattr(self, "_full_transform_probe", False):
             return
         blend = self._blend_forward
@@ -663,7 +492,6 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
             {"rate": round(float(rate), 4), "full_transform_acc": round(acc, 4)},
         )
 
-    # -- finalize / ramp forward (R2 two-residual S) ---------------------------
     def _segment_spike_forward_at(self, model, T):
         """The genuine single-spike cascade forward bound to ``model`` at sim-length
         ``T`` (``None`` synchronized — the class analytical staircase IS its forward)."""
@@ -680,11 +508,6 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
         return self._segment_spike_forward_at(model, self._T)
 
     def _finalize_forward_for(self, model):
-        """Cascaded builds the genuine single-spike cascade forward bound to
-        ``model`` at DEPLOY_S (``_T``) — kept at finalize, so the committed metric,
-        recovery, and every downstream step — WQ/NormFusion/SCM — run the exact
-        deployed single-spike dynamics; built on a clone for the genuine probe.
-        Synchronized returns ``None`` — the class-level analytical staircase forward IS
-        its deployment. Both ramp the value-domain blend (``_ramp_forward`` stays
-        ``None``)."""
+        """Cascaded keeps the deployed single-spike cascade forward at finalize so every
+        downstream step runs the exact dynamics; synchronized returns ``None`` (its class forward)."""
         return self._segment_spike_forward_at(model, self._T)

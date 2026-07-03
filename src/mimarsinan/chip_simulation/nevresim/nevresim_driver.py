@@ -16,7 +16,7 @@ from mimarsinan.chip_simulation.nevresim.connectivity import (
 )
 
 import numpy as np
-import json
+import shutil
 
 
 def _python_to_cpp_type_name(py_type) -> str:
@@ -136,7 +136,6 @@ class NevresimDriver:
         if cached is None:
             return None
         if output_path is not None:
-            import shutil
             prepare_containing_directory(output_path)
             shutil.copy2(cached, output_path)
             return output_path
@@ -242,11 +241,9 @@ class NevresimDriver:
         self, input_loader, simulation_length, latency,
         max_input_count=None, num_proc=1,
     ):
-        """Run a recording build and return ``(raw, spike_records)``.
-
-        ``spike_records`` is the per-sample list of ``{core: {"in","out"}}`` counts
-        windowed to ``[lat, lat+T)`` per core — the nevresim analogue of HCM's
-        ``CoreSpikeCounts``. Single-process by default to keep sample order simple."""
+        """Run a recording build and return ``(raw, spike_records)`` — per-sample
+        ``{core: {"in","out"}}`` counts windowed to ``[lat, lat+T)``, the nevresim
+        analogue of HCM ``CoreSpikeCounts`` (single-process to keep sample order)."""
         if max_input_count is None:
             max_input_count = len(input_loader)
         binary = self.emit_main_and_compile_recording(

@@ -1,20 +1,4 @@
-"""Selectable per-layer activation-scale calibration policies (ANN->SNN).
-
-The activation scale is both the LIF/TTFS decode scale and the clamp ceiling.
-This module exposes the calibration of that scale from observed activations as
-a set of interchangeable, default-OFF policies so published ANN->SNN baselines
-can be benchmarked head-to-head against the framework default.
-
-Policies:
-- ``count_quantile`` -- the framework DEFAULT. A count-based quantile over the
-  POSITIVE (non-pruned) activations; byte-identical to the legacy
-  ``scale_from_activations`` path.
-- ``percentile_norm`` -- Rueckauer et al. (2017) robust normalization: the
-  p-th percentile of the FULL activation distribution (``p=100`` recovers the
-  classic max-norm). Reduces sensitivity to a few outlier activations.
-- ``max_norm`` -- the textbook max-norm baseline (== ``percentile_norm`` at
-  ``p=100``).
-"""
+"""Selectable per-layer activation-scale calibration policies (ANN->SNN)."""
 
 from __future__ import annotations
 
@@ -22,8 +6,6 @@ from abc import ABC, abstractmethod
 
 import torch
 
-# Mirrors the legacy constants in activation_analysis_step so policies stay a
-# drop-in for scale_from_activations without importing the pipeline step.
 PRUNED_THRESHOLD = 1e-9
 MIN_SCALE = 1e-6
 DEFAULT_SCALE_QUANTILE = 0.99
@@ -47,8 +29,7 @@ class ActivationScalePolicy(ABC):
 class CountQuantilePolicy(ActivationScalePolicy):
     """Framework DEFAULT: count quantile over positive (non-pruned) activations.
 
-    Byte-identical to the legacy ``scale_from_activations``: same torch ops,
-    same ``interpolation="higher"``, same pruned-mask + min-scale handling.
+    Byte-identical to the legacy ``scale_from_activations`` path.
     """
 
     def __init__(
@@ -80,14 +61,8 @@ class CountQuantilePolicy(ActivationScalePolicy):
 
 
 class PercentileNormPolicy(ActivationScalePolicy):
-    """Rueckauer et al. (2017) robust-norm: p-th percentile of all activations.
-
-    Unlike :class:`CountQuantilePolicy`, the percentile is taken over the WHOLE
-    distribution (including near-zero values), matching the published baseline.
-    ``percentile=100`` recovers the classic max-norm. Lower percentiles clamp
-    outlier activations so they do not inflate the scale and crush the dynamic
-    range of the remaining neurons.
-    """
+    """Rueckauer et al. (2017) robust-norm: p-th percentile of the whole
+    activation distribution (``percentile=100`` recovers classic max-norm)."""
 
     def __init__(
         self,
@@ -137,11 +112,7 @@ _POLICY_FACTORIES = {
 def make_activation_scale_policy(
     name: str = DEFAULT_ACTIVATION_SCALE_POLICY, **kwargs
 ) -> ActivationScalePolicy:
-    """Construct a named activation-scale policy.
-
-    ``name`` defaults to the framework default (``count_quantile``), so the
-    factory is a drop-in for the legacy path. Unknown names raise ``ValueError``.
-    """
+    """Construct a named activation-scale policy; unknown names raise ``ValueError``."""
     try:
         factory = _POLICY_FACTORIES[name]
     except KeyError:

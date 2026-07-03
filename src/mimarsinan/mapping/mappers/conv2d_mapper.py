@@ -3,26 +3,23 @@
 from __future__ import annotations
 
 import numpy as np
-import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
 from mimarsinan.mapping.ir import IRSource
 from mimarsinan.mapping.mappers.base import Mapper, resolve_activation_type
+from mimarsinan.mapping.mappers.conv_helpers import _chunk_sizes
+from mimarsinan.mapping.mappers.flowchart import FlowchartFCSpec, FlowchartNodeEstimate
+from mimarsinan.mapping.mappers.scale_propagation import (
+    perceptron_boundary_scale,
+    perceptron_per_source_scale,
+)
 from mimarsinan.models.perceptron_mixer.perceptron import Perceptron
 from mimarsinan.transformations.perceptron.perceptron_transformer import PerceptronTransformer
 
 
-from mimarsinan.mapping.mappers.base import Mapper
-from mimarsinan.mapping.mappers.conv_helpers import _chunk_sizes
-
 class Conv2DPerceptronMapper(Mapper):
-    """
-    Convolution implemented as:
-    - Forward: efficient nn.Conv2d
-    - Mapping: shared-weight Perceptron (im2col + matmul), tiled as needed.
-    - owned_perceptron_groups(): only chip-targeted perceptrons (not Identity).
-    """
+    """2D convolution: efficient nn.Conv2d forward; shared-weight Perceptron (im2col+matmul) in IR, tiled as needed."""
 
     def __init__(
         self,
@@ -90,25 +87,12 @@ class Conv2DPerceptronMapper(Mapper):
         return [[self.perceptron]]
 
     def propagate_source_scale(self, deps, out_scales):
-        from mimarsinan.mapping.mappers.scale_propagation import (
-            perceptron_per_source_scale,
-        )
-
         return perceptron_per_source_scale(self, deps, out_scales)
 
     def propagate_boundary_scale(self, deps, out_scales, default):
-        from mimarsinan.mapping.mappers.scale_propagation import (
-            perceptron_boundary_scale,
-        )
-
         return perceptron_boundary_scale(self, deps, out_scales, default)
 
     def flowchart_node_estimate(self, out_shape):
-        from mimarsinan.mapping.mappers.flowchart import (
-            FlowchartFCSpec,
-            FlowchartNodeEstimate,
-        )
-
         k_h, k_w = self.kernel_size
         in_f = int(self.in_channels * k_h * k_w)
         out_f = int(self.out_channels)
@@ -236,23 +220,15 @@ class Conv2DPerceptronMapper(Mapper):
             bank_ids.append(bank_id)
             start_idx = end_idx
 
-        # Vectorize patch extraction: build all (h_out*w_out) patches as a
-        # single (n_positions, patch_size) object ndarray, replacing a
-        # four-deep Python for-loop. For ViT-B/16 @ 224×224 this collapses
-        # 196 * (3*16*16) = 150,528 list appends into one numpy advanced-
-        # indexing call.
-        h_base = np.arange(h_out) * s_h          # (h_out,)
-        w_base = np.arange(w_out) * s_w          # (w_out,)
-        kh_off = np.arange(k_h) * d_h            # (k_h,)
-        kw_off = np.arange(k_w) * d_w            # (k_w,)
-        # Shape the index grids so that the final broadcast is (h_out, w_out, c_in, k_h, k_w)
+        h_base = np.arange(h_out) * s_h
+        w_base = np.arange(w_out) * s_w
+        kh_off = np.arange(k_h) * d_h
+        kw_off = np.arange(k_w) * d_w
         h_idx = (h_base[:, None, None, None, None] + kh_off[None, None, None, :, None])
         w_idx = (w_base[None, :, None, None, None] + kw_off[None, None, None, None, :])
         c_idx = np.arange(self.in_channels)[None, None, :, None, None]
         h_idx_b, w_idx_b, c_idx_b = np.broadcast_arrays(h_idx, w_idx, c_idx)
-        # (h_out, w_out, c_in, k_h, k_w) of IRSource objects
         patches = input_sources[c_idx_b, h_idx_b, w_idx_b]
-        # Flatten per-position to (h_out*w_out, patch_size)
         n_positions = h_out * w_out
         patch_size = self.in_channels * k_h * k_w
         patches_flat = patches.reshape(n_positions, patch_size)

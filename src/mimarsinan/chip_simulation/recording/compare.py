@@ -3,13 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, List, Optional
+from typing import List, Optional
 
 import numpy as np
 
 from mimarsinan.chip_simulation.recording.records import CoreSpikeCounts, RunRecord, SegmentSpikeRecord
-
-# Diffing
 
 
 @dataclass
@@ -20,7 +18,7 @@ class Diff:
     stage_name: str
     schedule_segment_index: Optional[int]
     schedule_pass_index: Optional[int]
-    layer: str       # one of: "seg_input", "core_input", "core_output", "seg_output"
+    layer: str
     core_index: Optional[int]
     has_hardware_bias: Optional[bool]
     n_always_on_axons: Optional[int]
@@ -48,9 +46,6 @@ def _diff(
 ) -> Optional[Diff]:
     """Return a ``Diff`` if ``expected`` and ``actual`` disagree, else None."""
     if expected.shape != actual.shape:
-        # Shape mismatch is a structural bug, not a count bug.  Surface it
-        # with a synthetic empty-array diff so the report still names the
-        # site clearly.
         return Diff(
             stage_index=seg.stage_index,
             stage_name=seg.stage_name,
@@ -84,21 +79,11 @@ def _diff(
 
 
 def compare_records(ref: RunRecord, actual: RunRecord) -> List[Diff]:
-    """Walk every segment in stage order, comparing in this layer order:
-
-      1. ``seg_input_spike_count`` — encoder/uniform-rate disagreement.
-      2. Per-core ``input_spike_count`` — axon span/routing/always-on bug.
-      3. Per-core ``output_spike_count`` — LIF dynamics, threshold,
-         weights, hardware bias.
-      4. ``seg_output_spike_count`` — output_sources gather bug.
-
-    Returns the list of all diffs found, in the order they were
-    detected.  An empty list means the two records agree exactly.
-    """
+    """Walk every segment in stage order, diffing seg-input, per-core input/output,
+    then seg-output counts. Returns all diffs in detection order; empty ⇒ exact match."""
     diffs: List[Diff] = []
 
     if ref.T != actual.T:
-        # T mismatch is a global config bug; reported once, not per-stage.
         diffs.append(
             Diff(
                 stage_index=-1, stage_name="<root>",
@@ -138,8 +123,6 @@ def compare_records(ref: RunRecord, actual: RunRecord) -> List[Diff]:
         if d is not None:
             diffs.append(d)
 
-        # Walk cores in the segment.  Reference and actual must enumerate
-        # cores in the same allocation order — they share the mapping.
         if len(rseg.cores) != len(aseg.cores):
             diffs.append(
                 Diff(
@@ -213,8 +196,6 @@ def format_first_diff(diffs: List[Diff]) -> str:
                 f"    expected[{first_idx}]={exp[first_idx]}  "
                 f"actual[{first_idx}]={act[first_idx]}"
             )
-            # Also show the absolute totals so we know whether it's a
-            # systematic over/undercount or a localised flip.
             parts.append(
                 f"    Σ expected={int(np.asarray(exp).sum())}  "
                 f"Σ actual={int(np.asarray(act).sum())}"

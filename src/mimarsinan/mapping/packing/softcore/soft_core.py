@@ -57,7 +57,6 @@ class SoftCore:
         self.split_fragment_index = None
         self.split_original_neurons = None
 
-        # Provenance back to the source Perceptron (per-neuron NF<->HCM correspondence).
         self.perceptron_index = None
         self.perceptron_output_slice = None
 

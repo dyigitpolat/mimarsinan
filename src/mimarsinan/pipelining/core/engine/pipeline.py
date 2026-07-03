@@ -16,13 +16,13 @@ class Pipeline:
     def __init__(self, working_directory) -> None:
         self.steps = []
         self.cache = PipelineCache()
-        self.key_translations = {} # key_translations[step_name][virtual_entry_key] : real_entry_key
+        self.key_translations = {}
 
         self.working_directory = working_directory
         prepare_containing_directory(self.working_directory)
 
         self.tolerance = 0.95
-        self.step_tolerances = {}  # step name -> retention factor override
+        self.step_tolerances = {}
 
         self.load_cache()
         if '__target_metric' not in self.cache.keys():

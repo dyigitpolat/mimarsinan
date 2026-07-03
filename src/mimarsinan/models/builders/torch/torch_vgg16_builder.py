@@ -25,7 +25,6 @@ def _adapt_vgg_for_input(model: nn.Module, input_shape) -> nn.Module:
     c, h, w = parse_image_input_shape(input_shape, model_name="VGG16")
     model.features[0] = adapt_conv_in_channels(model.features[0], c)
 
-    # Drop trailing pools when a small input would otherwise collapse below 1x1.
     max_pool_indices = [
         idx for idx, mod in enumerate(model.features) if isinstance(mod, nn.MaxPool2d)
     ]

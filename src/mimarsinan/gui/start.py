@@ -11,6 +11,7 @@ from mimarsinan.gui.runtime.persistence import (
     load_persisted_steps,
     write_persisted_steps_replace,
 )
+from mimarsinan.gui.server import start_server
 from mimarsinan.gui.snapshot import build_step_snapshot
 
 
@@ -21,8 +22,6 @@ def start_gui(
     host: str = "0.0.0.0",
     start_step: str | None = None,
 ) -> GUIHandle:
-    from mimarsinan.gui.server import start_server
-
     collector = DataCollector()
     collector.set_resource_store(ResourceStore())
 

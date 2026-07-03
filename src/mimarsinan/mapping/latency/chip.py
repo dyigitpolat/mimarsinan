@@ -12,7 +12,7 @@ class ChipLatency:
             if abs(w) == 0:
                 continue
             src = core.axon_sources[axon_idx]
-            # Skip off axons: IR may mark is_off_ without zeroing core_matrix; treating them as inputs gave delay 0 and under-scheduled sources (see mapping/ARCHITECTURE.md).
+            # Skip off axons: IR may mark is_off_ without zeroing core_matrix; counting them as inputs under-schedules sources.
             if getattr(src, "is_off_", False):
                 continue
             non_zero_axon_sources.append(src)
@@ -97,7 +97,7 @@ class ChipLatency:
                     continue
                 live = list(self._live_cross_core_sources(core))
                 if not live:
-                    continue  # caught above; defensive
+                    continue
                 if all(int(src.core_) in shiftable for _, src in live):
                     shiftable.add(core_idx)
                     changed = True

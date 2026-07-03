@@ -1,35 +1,4 @@
-"""Semantic-axis equivalence-SCREEN instrument (Wave-9 A2).
-
-The MEASURED resolution of whether a SEMANTIC knob (pruning, regime, quantization)
-COLLAPSES or stays ENUMERATED for the coverage denominator. Distinct from
-``cross_sim_parity`` (B1): a faithfulness axis is bit-exact and collapses on a
-PARITY artifact, but a semantic knob CHANGES the trained result — so this screen
-measures whether two cell-populations are EQUIVALENT (same validity tier AND
-deployed accuracy within a tolerance band), not whether two simulators of one
-contract agree.
-
-Three outcome states per (axis, paired cell-group), keyed by the OTHER coordinates:
-
-* ``EQUIVALENT`` — ``|Δacc| <= tol_pp`` AND the two cells share a validity tier;
-  the semantic value does not move the deployed result → COLLAPSIBLE, with the
-  MEASURED ``delta_pp`` recorded.
-* ``INTERACTING`` — the band is exceeded OR the tier flips → STAYS ENUMERATED, with
-  the MEASURED ``delta_pp`` (an upgrade from ``ASSERTED_UNSCREENED`` — the value is
-  measured, not asserted).
-* ``INSUFFICIENT_DATA`` — fewer than two distinct axis values are present in the
-  group (no counterpart to pair against) → honestly unscreened.
-
-The semantic axes are DERIVED from the ledger's own ``ScreeningStatus``
-(``ASSERTED_UNSCREENED``) so this instrument never invents which knobs are
-semantic. Rows are mapped to cells via ``coverage_ledger.row_to_cells`` and tiers
-via ``classify_validity_tier`` — the cell/tier math is CONSUMED, not duplicated.
-
-``write_semantic_screen`` emits a JSON-able artifact with NO wall-clock timestamp
-(deterministic/diffable). ``assert_semantic_screen_sound`` is the honesty gate the
-coverage screen calls before it may trust the artifact for a collapse: a collapse
-claim REQUIRES an EQUIVALENT outcome with a recorded ``delta_pp``, a minimum cell
-count, and no MEASURED interaction.
-"""
+"""Measured equivalence screen deciding whether a semantic knob collapses or stays enumerated."""
 
 from __future__ import annotations
 
@@ -71,10 +40,6 @@ class SemanticAxisState(Enum):
 
 _VALID_STATE_VALUES = frozenset(s.value for s in SemanticAxisState)
 
-# The SEMANTIC axes — DERIVED from the ledger's own classification so this
-# instrument never decides which knobs are semantic. A semantic knob CHANGES the
-# trained result (it cannot collapse on a fidelity/parity artifact), so the ledger
-# tags it ``ASSERTED_UNSCREENED`` until a measured equivalence screen earns better.
 SEMANTIC_AXES: Tuple[str, ...] = tuple(
     axis.name
     for axis in AXES
@@ -86,12 +51,8 @@ SEMANTIC_AXES: Tuple[str, ...] = tuple(
 class SemanticPairOutcome:
     """One screened (axis, paired cell-group) result.
 
-    ``group_key`` pins the OTHER coordinates the pair shares; ``value_a``/``value_b``
-    are the two semantic-axis values compared. ``delta_pp`` is the MEASURED
-    ``|Δacc|`` in percentage points (mandatory for EQUIVALENT and INTERACTING; ``None``
-    for INSUFFICIENT_DATA — nothing was paired). ``reason`` carries the INTERACTING
-    cause (band exceeded / tier flip, with the measured number) or the
-    INSUFFICIENT_DATA cause; ``None`` for a plain EQUIVALENT.
+    ``delta_pp`` is the MEASURED ``|Δacc|`` in pp (``None`` for INSUFFICIENT_DATA);
+    ``reason`` carries the INTERACTING / INSUFFICIENT_DATA cause (``None`` for EQUIVALENT).
     """
 
     axis: str
@@ -120,8 +81,6 @@ class SemanticPairOutcome:
         }
 
 
-# Per-sync deployed-accuracy field for a dual-schedule arch_dataset row; the single
-# value falls back to the per-row keys, in priority order.
 _SYNC_DEPLOYED_KEY = {
     "cascaded": "cascaded_deployed_mean",
     "synchronized": "synchronized_deployed_mean",
@@ -130,12 +89,7 @@ _SINGLE_DEPLOYED_KEYS = ("deployed_acc", "deployed_acc_mean")
 
 
 def _deployed_acc_for_cell(row: Mapping[str, Any], sync: Optional[str]) -> Optional[float]:
-    """The deployed accuracy a row reports for one of its cells (its ``sync``).
-
-    A dual-schedule row carries a per-sync mean; a single-schedule row carries one
-    of ``_SINGLE_DEPLOYED_KEYS``. Returns ``None`` when no deployed number is present
-    (the cell cannot be screened on accuracy).
-    """
+    """The deployed accuracy a row reports for one of its cells (``None`` when absent)."""
     if sync in _SYNC_DEPLOYED_KEY:
         per_sync = row.get(_SYNC_DEPLOYED_KEY[sync])
         if per_sync is not None:
@@ -158,12 +112,7 @@ class _Sample:
 
 
 def _group_key_without_axis(cell, axis: str) -> str:
-    """The cell's canonical key with the screened axis dropped — the pairing key.
-
-    Two cells differing ONLY in the screened semantic axis share this key, so they
-    land in the same pair group. Reuses the cell's own ``cell_key`` segments (the
-    SSOT key) and strips the ``<axis>=<value>`` segment.
-    """
+    """The cell's canonical key with the screened axis segment dropped — the pairing key."""
     field_name = "S" if axis == "S" else axis
     parts = []
     for segment in cell.cell_key.split("|"):
@@ -174,13 +123,7 @@ def _group_key_without_axis(cell, axis: str) -> str:
 
 
 def _samples_for_axis(rows: Sequence[Mapping[str, Any]], axis: str) -> List[_Sample]:
-    """Map science-valid rows to ``_Sample`` points for the screened ``axis``.
-
-    Each row expands to its cell(s) (``row_to_cells`` — a dual-schedule row → both
-    sync cells); a cell with no validity tier or no deployed accuracy is skipped. The
-    axis value is read from the cell's own coordinate so it matches the ledger's
-    normalization (defaults included).
-    """
+    """Map science-valid rows to ``_Sample`` points for the screened ``axis`` (skipping cells with no tier/accuracy)."""
     field_name = "s" if axis == "S" else axis
     samples: List[_Sample] = []
     for row in rows:
@@ -205,13 +148,10 @@ def _samples_for_axis(rows: Sequence[Mapping[str, Any]], axis: str) -> List[_Sam
 def _screen_group(
     axis: str, group_key: str, samples: Sequence[_Sample], *, tol_pp: float
 ) -> SemanticPairOutcome:
-    """Screen one pairing group into a 3-state outcome.
+    """Screen one pairing group into a 3-state outcome (EQUIVALENT / INTERACTING / INSUFFICIENT_DATA).
 
-    A group with fewer than two distinct axis values has no counterpart to pair →
-    INSUFFICIENT_DATA. Otherwise the two extreme axis-value populations are compared
-    on the WORST observed ``|Δacc|`` and tier agreement: EQUIVALENT iff the gap is
-    within ``tol_pp`` AND both cells share a canonical validity tier, else INTERACTING
-    with the measured gap and the cause.
+    Compares the two extreme axis-value populations on the WORST ``|Δacc|`` and tier
+    agreement; EQUIVALENT iff within ``tol_pp`` AND same canonical tier.
     """
     distinct = sorted({s.axis_value for s in samples})
     if len(distinct) < 2:
@@ -235,8 +175,6 @@ def _screen_group(
     value_a, value_b = distinct[0], distinct[-1]
     pop_a = [s for s in samples if s.axis_value == value_a]
     pop_b = [s for s in samples if s.axis_value == value_b]
-    # The screen is conservative: take the WORST (largest) accuracy gap and report a
-    # tier flip if ANY representative tier differs across the two populations.
     worst = max(
         (abs(a.deployed_acc - b.deployed_acc), a, b) for a in pop_a for b in pop_b
     )
@@ -285,16 +223,10 @@ def _screen_group(
 def screen_semantic_axis(
     axis: str, rows: Sequence[Mapping[str, Any]], *, tol_pp: float
 ) -> List[SemanticPairOutcome]:
-    """Pair ledger rows ACROSS a semantic ``axis`` by the OTHER coordinates → outcomes.
+    """Pair ledger rows ACROSS a semantic ``axis`` by the OTHER coordinates → 3-state outcomes.
 
-    Each science-valid row maps to its cell(s); cells are grouped by every coordinate
-    EXCEPT ``axis`` and each group is screened into a 3-state outcome. A group with no
-    counterpart on the axis is reported INSUFFICIENT_DATA (never silently dropped). With
-    no rows at all, one INSUFFICIENT_DATA outcome is returned so the artifact is honest.
-
-    ``axis`` MUST be a SEMANTIC axis (``ASSERTED_UNSCREENED`` in the ledger) — a
-    faithfulness axis (backend / mapping_strategy) collapses on ``cross_sim_parity``,
-    not here, so passing one RAISES.
+    A group with no counterpart is INSUFFICIENT_DATA (never dropped). ``axis`` MUST be a
+    SEMANTIC axis (``ASSERTED_UNSCREENED``) — passing a faithfulness axis RAISES.
     """
     if axis not in SEMANTIC_AXES:
         raise SemanticScreenError(
@@ -338,13 +270,10 @@ def write_semantic_screen(
     justifies_collapse: bool = False,
     min_equivalent_cells: int = 1,
 ) -> Dict[str, Any]:
-    """Build the JSON-able semantic-screen artifact dict.
+    """Build the JSON-able semantic-screen artifact dict (deterministic/diffable — no timestamp).
 
-    Deterministic / diffable: NO wall-clock timestamp. ``justifies_collapse`` records
-    whether this artifact CLAIMS it supports collapsing ``axis`` (the soundness gate
-    enforces that such a claim cannot coexist with a MEASURED interaction, missing Δ,
-    or too few EQUIVALENT cells). ``min_equivalent_cells`` is the minimum EQUIVALENT
-    cell count a collapse claim must clear.
+    ``justifies_collapse`` records whether it claims collapsing ``axis``; ``min_equivalent_cells``
+    is the EQUIVALENT count such a claim must clear.
     """
     counts: Dict[str, int] = {s.value: 0 for s in SemanticAxisState}
     for outcome in outcomes:
@@ -364,15 +293,8 @@ def write_semantic_screen(
 def assert_semantic_screen_sound(artifact: Mapping[str, Any]) -> None:
     """The honesty gate the coverage screen calls before trusting the artifact.
 
-    RAISES :class:`SemanticScreenError` if:
-
-    * any outcome state is malformed (not one of the 3 known states);
-    * any EQUIVALENT or INTERACTING lacks a recorded ``delta_pp`` (an equivalence /
-      interaction claim without a measured number is not honest);
-    * the artifact claims ``justifies_collapse`` while it contains ANY MEASURED
-      INTERACTING outcome (a semantic collapse cannot rest on a measured interaction);
-    * the artifact claims ``justifies_collapse`` with fewer than ``min_equivalent_cells``
-      EQUIVALENT outcomes (a collapse needs enough measured-equivalent evidence).
+    RAISES on a malformed state, an EQUIVALENT/INTERACTING without a measured ``delta_pp``,
+    or a collapse claim over any INTERACTING outcome or below ``min_equivalent_cells``.
     """
     outcomes = artifact.get("outcomes")
     if not isinstance(outcomes, list):
@@ -407,7 +329,7 @@ def assert_semantic_screen_sound(artifact: Mapping[str, Any]) -> None:
                     f"has no recorded delta_pp — a measured interaction must be "
                     f"quantified (the upgrade from ASSERTED_UNSCREENED IS the number)"
                 )
-        else:  # INSUFFICIENT_DATA
+        else:
             if delta_pp is not None:
                 raise SemanticScreenError(
                     f"semantic screen malformed: INSUFFICIENT_DATA outcome for group "
@@ -438,13 +360,7 @@ def assert_semantic_screen_sound(artifact: Mapping[str, Any]) -> None:
 def _screen_live_axis(
     axis: str, rows: Sequence[Mapping[str, Any]], *, tol_pp: float, methodology: str
 ) -> Dict[str, Any]:
-    """Apply the screen to the LIVE ledger for one semantic axis (never claims collapse).
-
-    Records the MEASURED state — INSUFFICIENT_DATA while the paired rows are draining,
-    or the measured EQUIVALENT/INTERACTING per group. This is the INSTRUMENT step; it
-    does NOT flip the axis in ``coverage_ledger`` (that is the later consume step once
-    real paired data exists), so ``justifies_collapse`` is always ``False`` here.
-    """
+    """Apply the screen to the LIVE ledger for one semantic axis; ``justifies_collapse`` is always ``False`` here."""
     outcomes = screen_semantic_axis(axis, rows, tol_pp=tol_pp)
     return write_semantic_screen(
         axis,
@@ -458,13 +374,7 @@ def _screen_live_axis(
 def screen_live_regime(
     rows: Sequence[Mapping[str, Any]], *, tol_pp: float = 1.0
 ) -> Dict[str, Any]:
-    """Screen the LIVE ledger for the ``regime`` axis (from_scratch ↔ pretrained).
-
-    The F3 dual-regime rows are draining: while too few paired cells exist the
-    outcomes are honestly INSUFFICIENT_DATA; once both regimes are present per group
-    the MEASURED Δ/tier outcome is recorded. Never claims collapse (the AXIS flip is
-    the later consume step).
-    """
+    """Screen the LIVE ledger for the ``regime`` axis (from_scratch ↔ pretrained); never claims collapse."""
     return _screen_live_axis(
         "regime",
         rows,
@@ -481,12 +391,7 @@ def screen_live_regime(
 def screen_live_pruning(
     rows: Sequence[Mapping[str, Any]], *, tol_pp: float = 1.0
 ) -> Dict[str, Any]:
-    """Screen the LIVE ledger for the ``pruning`` axis (dense ↔ pruned).
-
-    No pruned rows exist yet, so every group is honestly INSUFFICIENT_DATA. The
-    instrument ships now; once a P3 pruning campaign emits pruned rows the same screen
-    measures the Δ/tier outcome. Never claims collapse.
-    """
+    """Screen the LIVE ledger for the ``pruning`` axis (dense ↔ pruned); never claims collapse."""
     return _screen_live_axis(
         "pruning",
         rows,

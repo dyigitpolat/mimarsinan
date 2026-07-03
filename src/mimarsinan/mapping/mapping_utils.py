@@ -5,6 +5,7 @@ from mimarsinan.transformations.weight_quantization import *
 
 from mimarsinan.transformations.perceptron.perceptron_transformer import PerceptronTransformer
 from mimarsinan.models.perceptron_mixer.perceptron import Perceptron
+from mimarsinan.mapping.ir import IRSource
 
 import einops
 import numpy as np
@@ -13,7 +14,6 @@ import torch
 import torch.nn.functional as F
 
 def _get_ir_types():
-    from mimarsinan.mapping.ir import IRSource
     return IRSource
 
 def _create_ir_input_source(idx):

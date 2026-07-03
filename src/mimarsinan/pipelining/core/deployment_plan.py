@@ -1,20 +1,4 @@
-"""One contract-resolution layer for the whole deployment_parameters config.
-
-``DeploymentPlan.resolve`` generalises the ``TtfsAdaptationPlan`` /
-``SpikingDeploymentContract`` pattern to EVERY deployment axis: it is the single
-place the scattered ``config.get(...)`` reads of a deployment flag are resolved,
-so the rest of the pipeline reads the resolved decision instead of re-deriving it.
-
-The spiking-semantics sub-part stays the ``SpikingDeploymentContract`` (the SSOT
-for schedule/firing/wire questions); the plan composes it lazily via
-``spiking_contract`` so a plan can be resolved from a config that has not yet had
-``simulation_steps`` filled in (e.g. at pipeline-step-ordering time). The
-schedule-derived booleans the step planner needs (``requires_ttfs_firing``,
-``is_synchronized``) are resolved directly from the taxonomy, no sim length needed.
-
-Behaviour is moved VERBATIM from the former inline reads; the inline defaults are
-preserved key-for-key so the resolved plan is byte-identical to the old reads.
-"""
+"""Single contract-resolution layer for the deployment config; the pipeline reads the resolved decision."""
 
 from __future__ import annotations
 
@@ -26,21 +10,18 @@ from mimarsinan.chip_simulation.spiking_semantics import (
     is_ttfs_cycle_based,
     requires_ttfs_firing,
     ttfs_cycle_schedule,
+    uses_ttfs_floor_ceil_convention as _uses_ttfs_floor_ceil_convention,
 )
 from mimarsinan.pipelining.core.registry.model_registry import ModelRegistry
 from mimarsinan.pipelining.core.search_mode import derive_search_mode
 from mimarsinan.tuning.orchestration.temporal_allocation import (
+    TemporalAllocationResolver,
     resolve_s_allocation_mode,
 )
 
 OPTIMIZATION_DRIVER_CONTROLLER = "controller"
 OPTIMIZATION_DRIVER_FAST = "fast"
 
-# The per-family fast switches that selected the fast ladder BEFORE E2 unbound the
-# driver into a single axis. The pipeline-wide `optimization_driver` key (default
-# `controller`) wins when set; otherwise the axis reflects whichever legacy switch a
-# config still carries, so a plan resolved from an existing config reports the SAME
-# driver the tuner runs (byte-identical: all default off ⇒ `controller`).
 _LEGACY_FAST_SWITCHES = (
     "lif_blend_fast",
     "ttfs_genuine_blend_fast",
@@ -49,13 +30,7 @@ _LEGACY_FAST_SWITCHES = (
 
 
 def resolve_optimization_driver(config: dict[str, Any]) -> str:
-    """The pipeline-wide ``controller | fast`` driver axis (E2). Explicit
-    ``optimization_driver`` wins; else derived from any legacy per-family fast
-    switch; else ``controller`` (default ⇒ byte-identical).
-
-    Public so the consuming half (EF1) can resolve the axis directly from a config
-    dict — e.g. ``TtfsAdaptationPlan.resolve``'s back-compat path — without holding a
-    ``DeploymentPlan`` instance."""
+    """The pipeline-wide ``controller | fast`` driver axis: explicit ``optimization_driver`` wins, else a legacy fast switch, else ``controller``."""
     explicit = config.get("optimization_driver")
     if explicit:
         value = str(explicit).lower()
@@ -71,13 +46,8 @@ def resolve_optimization_driver(config: dict[str, Any]) -> str:
     return OPTIMIZATION_DRIVER_CONTROLLER
 
 
-# Back-compat private alias (the dataclass body below referenced the old name).
 _resolve_optimization_driver = resolve_optimization_driver
 
-# F3 dual-regime axis: ``preload_weights`` is the publication-batch boolean for
-# the pretrained regime. An EXPLICIT ``weight_source`` always wins; the flag only
-# derives the default torchvision-pretrained source when no source is set, so an
-# unset flag is byte-identical (``weight_source`` unchanged => from_scratch).
 PRETRAINED_WEIGHT_SOURCE = "torchvision"
 
 
@@ -97,60 +67,46 @@ class DeploymentPlan:
 
     config: dict[str, Any]
 
-    # ── workload / search ──────────────────────────────────────────────────
     search_mode: str
     model_type: str
     model_category: str | None
     weight_source: Any
 
-    # ── spiking semantics (schedule-derived; full contract is lazy) ────────
     spiking_mode: str
     ttfs_cycle_schedule: str
     requires_ttfs_firing: bool
     is_synchronized_ttfs: bool
     is_ttfs_cycle_based: bool
 
-    # ── conversion process ─────────────────────────────────────────────────
     activation_quantization: bool
     weight_quantization: bool
     enable_training_noise: bool
     cycle_accurate_lif_forward: bool
 
-    # ── optimization driver (E2: how the rate is driven 0→1, pipeline-wide) ──
     optimization_driver: str
 
-    # ── per-layer-S temporal allocation (EW1: declared intent; map RESERVED) ──
     s_allocation: str
 
-    # ── pruning ────────────────────────────────────────────────────────────
     pruning: bool
     pruning_fraction: float
     pruning_enabled: bool
-    # D4: structured magnitude-pruning fraction applied BEFORE mapping (default
-    # 0.0 ⇒ no structural pruning ⇒ byte-identical). Distinct from the in-loop
-    # ``pruning``/``pruning_fraction`` mask machinery above; this is the deployment
-    # knob the coverage ledger enumerates as ``pruning=dense`` vs ``pruning=pruned``.
     prune_sparsity: float
 
-    # ── deployment targets ─────────────────────────────────────────────────
     enable_nevresim_simulation: bool
     enable_loihi_simulation: bool
     enable_sanafe_simulation: bool
 
-    # ── tolerances / budget ────────────────────────────────────────────────
     degradation_tolerance: float
     scm_degradation_tolerance: float | None
     degradation_budget_total: float
     cuda_debug: bool
 
-    # ── deployment metric sampling ─────────────────────────────────────────
     deployment_metric_full_eval: bool
     max_simulation_samples: int
     simulation_batch_count: Any
     simulation_batch_size: int
     seed: int
 
-    # ── identity ───────────────────────────────────────────────────────────
     model_name: str
 
     @classmethod
@@ -216,9 +172,7 @@ class DeploymentPlan:
 
     @staticmethod
     def _require_chip_faithful_lif_forward(config: dict[str, Any], spiking: str) -> None:
-        """LIF-family capability gate (V3): a Novena deployment must run the
-        chip-faithful cycle-accurate forward. Skipped for the TTFS family (firing
-        is TTFS there); the FiringStrategy owns the (firing × cycle-accurate) rule."""
+        """LIF-family gate: a Novena deployment must run the chip-faithful cycle-accurate forward (skipped for TTFS)."""
         if requires_ttfs_firing(spiking):
             return
         from mimarsinan.chip_simulation.firing_strategy import FiringStrategyFactory
@@ -228,9 +182,6 @@ class DeploymentPlan:
             "firing_mode": config.get("firing_mode", "Default"),
             "thresholding_mode": config.get("thresholding_mode", "<="),
         })
-        # Absent ⇒ the LIF default (chip-faithful cascade) the pipeline setdefaults
-        # to True; only an EXPLICIT opt-out trips the gate. Keeps a config that
-        # merely omits the key (relying on the default) resolvable.
         strategy.require_chip_faithful_lif_forward(
             cycle_accurate_lif_forward=bool(
                 config.get("cycle_accurate_lif_forward", True)
@@ -243,12 +194,7 @@ class DeploymentPlan:
         return cls.resolve(pipeline.config)
 
     def mode_policy(self):
-        """The behavior-carrying ``SpikingModePolicy`` (V2) for this plan.
-
-        Resolved directly from the schedule-derived axes — no ``simulation_steps``
-        needed — so the step planner can compose with the policy at
-        pipeline-step-ordering time (the full contract is lazy via
-        ``spiking_contract``)."""
+        """The behavior-carrying ``SpikingModePolicy`` for this plan (resolved without ``simulation_steps``)."""
         from mimarsinan.chip_simulation.spiking_mode_policy import (
             policy_for_spiking_mode,
         )
@@ -257,11 +203,7 @@ class DeploymentPlan:
 
     @property
     def conversion_recipe(self):
-        """The ConversionPolicy SSOT recipe for this plan's resolved deployment mode.
-
-        The deterministic ``(spiking_mode, schedule) → ConversionRecipe`` table:
-        the fast-ladder driver, the per-mode knob set, the capability-derived
-        sim-enable set, and the special-case marker for the divergent rows."""
+        """The ConversionPolicy SSOT recipe for this plan's resolved ``(spiking_mode, schedule)`` mode."""
         from mimarsinan.tuning.orchestration.conversion_policy import ConversionPolicy
 
         return ConversionPolicy.derive(self.spiking_mode, self.ttfs_cycle_schedule)
@@ -274,17 +216,10 @@ class DeploymentPlan:
     def optimization_driver_for_family(
         self, *, rates, steps_per_rate, eta_min_factor=0.0,
     ):
-        """The family's ``controller | fast`` ``OptimizationDriver``, READ from the
-        pipeline-wide axis (EF1, the consuming half).
+        """The family's ``controller | fast`` ``OptimizationDriver``, read from the pipeline-wide axis.
 
-        The single-switch families (LIF + the analytical clamp/shift/activation-quant/
-        activation-adaptation chain + the manager-rate family) resolve their driver
-        through THIS one seam instead of each reading a hard-coded per-family fast
-        switch (or, for the analytical/manager families, never reading the axis at
-        all). ``fast`` is the pipeline-wide ``is_fast_driver`` decision; the family
-        supplies its uniform value-domain ladder. Default ``controller`` ⇒ the ladder
-        is carried but disabled (``_setup_fast_ladder(enabled=False)``) ⇒
-        byte-identical."""
+        ``fast`` is the plan's ``is_fast_driver`` decision; the family supplies its ladder.
+        """
         from mimarsinan.tuning.orchestration.optimization_driver import (
             OptimizationDriver,
         )
@@ -298,23 +233,14 @@ class DeploymentPlan:
 
     @property
     def is_cascaded_ttfs(self) -> bool:
-        """ttfs_cycle_based on the greedy pipelined (cascaded) schedule.
-
-        The complement of ``is_synchronized_ttfs`` within the cycle family — the
-        cell that installs the genuine ceil segment driver (TTFS Cycle Fine-Tuning),
-        as opposed to the synchronized cell, which now trains the ttfs_quantized
-        floor recovery and skips that install."""
+        """ttfs_cycle_based on the cascaded schedule (the complement of ``is_synchronized_ttfs``)."""
         return self.is_ttfs_cycle_based and not self.is_synchronized_ttfs
 
     @property
     def uses_ttfs_floor_ceil_convention(self) -> bool:
         """Whether the NF trains the floor + half-step-bias convention and deploys
         the ceil TTFS kernel (ttfs_quantized and the synchronized floor-collapse)."""
-        from mimarsinan.chip_simulation.spiking_semantics import (
-            uses_ttfs_floor_ceil_convention,
-        )
-
-        return uses_ttfs_floor_ceil_convention(
+        return _uses_ttfs_floor_ceil_convention(
             self.spiking_mode, self.ttfs_cycle_schedule
         )
 
@@ -351,14 +277,7 @@ class DeploymentPlan:
         return SpikingDeploymentContract.from_pipeline_config(self.config)
 
     def calibration_pipeline(self, *, distmatch_driven=False):
-        """The conversion-health ``CalibrationPipeline`` for this plan's (firing ×
-        sync) cell (E3).
-
-        Pipeline-wide: every conversion tuner reads ITS calibration through this one
-        contract-keyed resolver. Resolved from the schedule-derived policy (no
-        ``simulation_steps`` needed) and the plan's config; the cascaded cycle opts
-        into the conversion-health steps, LIF / analytical / synchronized get the
-        inert pipeline (default-off ⇒ byte-identical)."""
+        """The conversion-health ``CalibrationPipeline`` for this plan's (firing × sync) cell."""
         from mimarsinan.tuning.orchestration.calibration_pipeline import (
             CalibrationPipeline,
         )
@@ -370,18 +289,9 @@ class DeploymentPlan:
         )
 
     def temporal_allocation(self, *, depth: int):
-        """The EW1 per-depth temporal-allocation map for a model of ``depth`` cascade
-        depths / latency groups — the RESERVED per-layer-S axis seam.
+        """The per-depth temporal-allocation map (the reserved per-layer-S axis seam).
 
-        DEFAULT-OFF / byte-identical: ``s_allocation='uniform'`` (the default) returns
-        the SAME global ``simulation_steps`` for every depth, so nothing threads a
-        non-uniform map. ``explicit`` validates a declared per-depth list; ``budget`` is
-        a no-op that returns uniform + a ``derivation_deferred`` marker (the budget
-        allocator's derivation is deferred to research, not on this branch).
-        ``depth`` is supplied by the caller (this layer does not introspect the model).
-        Gated by the ``allow_per_layer_s`` chip capability; nothing reads the map yet."""
-        from mimarsinan.tuning.orchestration.temporal_allocation import (
-            TemporalAllocationResolver,
-        )
-
+        ``s_allocation='uniform'`` (default) returns the global ``simulation_steps`` for
+        every depth; ``depth`` is supplied by the caller.
+        """
         return TemporalAllocationResolver.from_config(self.config).resolve(depth=depth)

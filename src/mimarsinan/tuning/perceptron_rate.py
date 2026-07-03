@@ -1,13 +1,8 @@
-"""SSOT for applying a transformation rate across a model's perceptrons.
-
-Every tuner that drives an ``AdaptationManager`` rate field repeats the same two
-micro-steps: set the global rate, then rebuild each perceptron's decorator stack
-via ``update_activation``. Centralizing them gives one place for device/NaN
-safety and the per-perceptron rate seam, and lets the higher-level
-``Transformation`` axis objects share one application path.
-"""
+"""SSOT for applying a transformation rate across a model's perceptrons."""
 
 from __future__ import annotations
+
+from mimarsinan.models.nn.activations.ttfs_spiking import TTFSActivation
 
 
 def rebuild_activations(model, adaptation_manager, config) -> None:
@@ -38,11 +33,8 @@ def set_blend_rate(model, rate: float) -> None:
 def set_surrogate_alpha(model, a: float) -> None:
     """Set the spike-surrogate sharpness on every ``TTFSActivation`` under ``model``.
 
-    The SSOT for the genuine-cascade anneal: ``alpha`` shapes only the ATan
-    backward, never the exact ``pre > 0`` fire forward, so this is a pure
-    gradient-conditioning knob (the ``TTFSGenuineAxis`` schedule drives it)."""
-    from mimarsinan.models.nn.activations.ttfs_spiking import TTFSActivation
-
+    ``alpha`` shapes only the ATan backward, never the ``pre > 0`` fire forward.
+    """
     alpha = float(a)
     for module in model.modules():
         if isinstance(module, TTFSActivation):

@@ -1,17 +1,13 @@
 from __future__ import annotations
 
-import math
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 import numpy as np
 
-from mimarsinan.mapping.ir import IRSource
 from mimarsinan.mapping.layout.layout_source_view import LayoutSourceView
 from mimarsinan.mapping.layout.layout_source_view_ops import (
-    concat_source_views,
     node_ids_of,
-    stack_source_views,
     total_size,
 )
 from mimarsinan.mapping.layout.layout_types import LayoutSoftCoreSpec
@@ -22,33 +18,14 @@ from mimarsinan.mapping.platform.mapping_structure import compute_core_input_cou
 
 @dataclass
 class LayoutIRMapping(_LayoutIRMappingFinalize, _LayoutIRMappingFC):
-    """Shape-only mapping backend — the single source of truth for all
-    softcore emission decisions (tiling mode, psum decomposition, coalescing,
-    bias-axon counting, shared-bank wiring).
-
-    Both the wizard/architecture-search flow and the real ``IRMapping`` build
-    on top of this class.  Shape-only callers use it directly; ``IRMapping``
-    subclasses it and overrides the emission hooks (``add_neural_core``,
-    ``add_shared_neural_core``, ``register_weight_bank``, ``add_compute_op``)
-    to additionally attach weight material and build an ``IRGraph``.
-
-    Threshold groups are assigned from ``perceptron_index``: all softcores
-    produced by a single perceptron (output-tiling, psum fragments, conv
-    positions) share one integer group id, matching the real packer's
-    behavior for shared-weight cores (they end up with identical quantization
-    scales and thus identical float thresholds within 10% tolerance).
-
-    Softcores without a ``perceptron_index`` (e.g. synthesised accumulator
-    cores) fall back to a unique per-node id so they are never misjudged as
-    "shareable" with unrelated cores.
-    """
+    """Shape-only mapping backend: the single source of truth for softcore
+    emission decisions (tiling mode, psum decomposition, coalescing, bias-axon
+    counting, shared-bank wiring). ``IRMapping`` subclasses it to attach weights."""
 
     max_axons: Optional[int]
     max_neurons: Optional[int]
     allow_coalescing: bool = False
     hardware_bias: bool = False
-    # Tier-1 residual: lower a param-free equal-width add to an on-chip signed-IF
-    # identity-merge core (default off → host ComputeOp add, byte-identical).
     onchip_residual_merge: bool = False
 
     def __post_init__(self):
@@ -68,32 +45,21 @@ class LayoutIRMapping(_LayoutIRMappingFinalize, _LayoutIRMappingFC):
         self.host_side_segment_count: int = 0
         self.layout_preview: Dict[str, Any] | None = None
 
-        # Dependency tracking for latency / segment computation
         self._node_input_node_ids: Dict[int, Set[int]] = {}
         self._node_id_to_softcore_idx: Dict[int, int] = {}
         self._node_is_neural: Dict[int, bool] = {}
         self._sc_idx_to_perceptron_index: Dict[int, Optional[int]] = {}
 
-        # Shared weight-bank shape registry
-        # bank_id -> (in_features_with_bias, out_features)
         self._layout_weight_banks: Dict[int, Tuple[int, int]] = {}
         self._sc_idx_to_bank_id: Dict[int, int] = {}
-
-    # Node id allocation
 
     def _alloc_node_id(self) -> int:
         node_id = self._next_node_id
         self._next_node_id += 1
         return node_id
 
-    # Dependency / shape helpers
-
     def _extract_input_node_ids(self, input_sources) -> Set[int]:
-        """Set of producer node ids feeding ``input_sources``.
-
-        Fast path: a ``LayoutSourceView`` carries the producer set as metadata
-        and we avoid scanning per-cell.
-        """
+        """Set of producer node ids feeding ``input_sources``."""
         return node_ids_of(input_sources)
 
     def _emit_softcore_record(
@@ -117,7 +83,6 @@ class LayoutIRMapping(_LayoutIRMappingFinalize, _LayoutIRMappingFC):
             int(perceptron_index) if perceptron_index is not None else None
         )
 
-        # threshold_group_id / latency_tag / segment_id are finalised later
         self.layout_softcores.append(
             LayoutSoftCoreSpec(
                 input_count=int(input_count),
@@ -132,18 +97,11 @@ class LayoutIRMapping(_LayoutIRMappingFinalize, _LayoutIRMappingFC):
             shape=(int(output_count),),
         )
 
-    # Public mapping protocol (called by Mapper.map_to_ir)
-
     def map(self, model_representation) -> np.ndarray:
         """Run ``map_to_ir`` over the mapper graph and finalise metadata.
 
-        Returns the graph's output sources.  ``IRMapping`` subclasses this to
-        wrap the result in an ``IRGraph``.
-
-        When ``onchip_residual_merge`` is set, every param-free equal-width
-        residual add is first lowered onto the crossbar as a signed-IF merge core
-        (Tier-1); the default (off) path leaves the host ComputeOp add untouched
-        and is byte-identical.
+        ``onchip_residual_merge`` on lowers each param-free residual add to an
+        on-chip signed-IF merge core (Tier-1); off keeps the byte-identical host add.
         """
         if self.onchip_residual_merge:
             from mimarsinan.mapping.support.residual_merge import (
@@ -308,5 +266,3 @@ class LayoutIRMapping(_LayoutIRMappingFinalize, _LayoutIRMappingFC):
         )
         self._sc_idx_to_bank_id[sc_idx] = weight_bank_id
         return result
-
-    # Shared FC tiling dispatch

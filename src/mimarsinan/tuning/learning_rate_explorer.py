@@ -1,16 +1,7 @@
-"""Validation-accuracy-aware LR range search.
-
-Each candidate LR is tested over ``steps_per_probe`` gradient steps (using
-``trainer.train_n_steps``), then evaluated by **validation accuracy** (via
-a caller-supplied ``validate_fn``).  This avoids the failure mode where a
-high LR minimises training-batch loss by overfitting a single batch while
-destroying generalisation -- the validation accuracy criterion rejects
-such LRs automatically.
-"""
+"""Validation-accuracy-aware LR range search."""
 
 from __future__ import annotations
 
-import copy
 from typing import Any, Callable
 
 import torch
@@ -40,10 +31,8 @@ def restore_state_for_trainer(trainer, state: Any) -> None:
 class LRRangeFinder:
     """Exponential sweep selecting the largest non-destructive LR.
 
-    The heuristic picks the highest LR whose validation accuracy does not
-    drop below ``baseline - margin`` (where *margin* is typically the
-    accuracy standard error from the tuning budget).  This maximises
-    recovery speed while staying within the noise floor.
+    Picks the highest LR whose validation accuracy stays at or above
+    ``baseline - margin``, maximising recovery speed within the noise floor.
     """
 
     def __init__(
@@ -122,12 +111,8 @@ class LRRangeFinder:
     def _find_best_lr_coarse(self) -> float:
         """Cheap loss-slope coarse pass; full validation only for the top-K.
 
-        Every probe is scored by ``coarse_signal`` (lower = better, a
-        training-loss / loss-slope signal); only the ``coarse_top_k`` best
-        candidates by that signal pay a full ``validate_fn`` call.  The
-        final selection reuses the largest-non-destructive heuristic over
-        the validated candidates.  Restore-after-probe and the lr range
-        are identical to the full-validation path.
+        Every probe is scored by ``coarse_signal`` (lower = better); only the
+        ``coarse_top_k`` best candidates pay a full ``validate_fn`` call.
         """
         state = self.clone_state()
         try:
@@ -170,10 +155,8 @@ class LRRangeFinder:
 def make_loss_slope_signal(trainer):
     """Cheap 'lower is better' coarse LR score: training-batch loss.
 
-    Ranks LR probes by a single forward-pass loss (no validation sweep); reads one
-    fresh training batch per call, never touches the test set. Returns ``None`` for
-    trainers that cannot evaluate a training-batch loss (some stubs), so the LR
-    finder falls back to full-validation scoring.
+    Reads one fresh training batch per call, never the test set. Returns ``None``
+    when the trainer cannot score a training-batch loss (falls back to validation).
     """
     if not (hasattr(trainer, "evaluate_loss_on_batch")
             and hasattr(trainer, "next_training_batch")):
@@ -196,15 +179,8 @@ def find_lr_range_for_trainer(
 ) -> float:
     """Run :class:`LRRangeFinder` with budget-derived probe parameters.
 
-    When *anchor_lr* is provided the sweep range is centred on that LR
-    (one order of magnitude each direction) instead of spanning the full
-    config range.  This keeps probes relevant when ``pipeline_lr`` is far
-    from the default ``[1e-5, 1e-1]`` band (e.g. ImageNet at 1e-4).
-
-    When *coarse_signal* is provided the sweep scores every probe by that
-    cheap signal and reserves full ``validate_fn`` scoring for the top
-    candidates (see :meth:`LRRangeFinder._find_best_lr_coarse`); ``None``
-    keeps the full-validation behavior unchanged.
+    *anchor_lr* centres the sweep on that LR (one decade each way) instead of the full
+    config range; *coarse_signal* enables the cheap top-K scoring path (``None`` = off).
     """
     cfg = pipeline.config
     if anchor_lr is not None:

@@ -1,18 +1,10 @@
-"""
-WeightPreloadingStep -- load pretrained weights into the model.
-
-Replaces PretrainingStep when pretrained weights are available.
-Supports torchvision pretrained weights, local checkpoints, and URLs.
-Optionally fine-tunes for a configurable number of epochs after loading.
-"""
+"""WeightPreloadingStep -- load pretrained weights into the model and optionally fine-tune."""
 
 from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 from mimarsinan.pipelining.core.registry.trainer_factory import make_basic_trainer
 from mimarsinan.pipelining.core.steps.trainer_pipeline_step import TrainerPipelineStep
 from mimarsinan.model_training.training_recipe import build_recipe
 from mimarsinan.model_training.weight_loading import resolve_weight_strategy
-
-import torch
 
 
 class WeightPreloadingStep(TrainerPipelineStep):

@@ -14,9 +14,7 @@ class SVHN_DataProvider(DataProvider):
     def __init__(self, datasets_path, *, seed: int | None = 0, preprocessing=None, batch_size=None):
         super().__init__(datasets_path, seed=seed, preprocessing=preprocessing, batch_size=batch_size)
 
-        # SVHN uses split= ("train"/"test") rather than train=, and the digit
-        # 0 is labelled 0 (the original MAT files use 10 for 0, but torchvision
-        # already remaps it), so this is a stock 10-class classification.
+        # torchvision already remaps SVHN's MAT label 10 -> class 0, so this is a stock 10-class problem.
         full_train = torchvision.datasets.SVHN(
             root=self.datasets_path, split="train", download=True, transform=None,
         )

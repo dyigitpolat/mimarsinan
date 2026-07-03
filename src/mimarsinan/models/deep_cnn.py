@@ -9,7 +9,7 @@ import torch.nn as nn
 _MIN_DEPTH = 4
 _MAX_DEPTH = 16
 _CHANNEL_CAP = 128
-_SPATIAL_FLOOR = 2  # a k3-pad1 conv block always needs at least 2x2 to operate on
+_SPATIAL_FLOOR = 2
 
 
 def _get_activation(name: str) -> nn.Module:
@@ -23,11 +23,7 @@ def _get_activation(name: str) -> nn.Module:
 
 
 def allowed_pool_count(spatial_size: int) -> int:
-    """Max number of /2 MaxPools that keep the feature map at >= _SPATIAL_FLOOR.
-
-    A 28x28 (or 32x32) input never collapses below 1x1 because we stop pooling
-    while the size still has room for a k3-pad1 conv block.
-    """
+    """Max number of /2 MaxPools that keep the feature map at >= _SPATIAL_FLOOR."""
     n = 0
     size = int(spatial_size)
     while size // 2 >= _SPATIAL_FLOOR:
@@ -41,7 +37,6 @@ def _pool_after_block(depth: int, n_pools: int) -> set[int]:
     if n_pools <= 0:
         return set()
     n_pools = min(n_pools, depth)
-    # Evenly space the pools so they fall in the interior, never after the final block.
     step = depth / (n_pools + 1)
     return {min(depth - 1, int(round(step * (i + 1))) - 1) for i in range(n_pools)}
 
@@ -61,14 +56,8 @@ def _stage_channels(depth: int, width: int, n_pools: int) -> list[int]:
 class DeepCNN(nn.Module):
     """[Conv(k3,pad1) -> BatchNorm -> ReLU] x depth (periodic MaxPool) -> AdaptiveAvgPool -> Linear.
 
-    Plain sequential deep conv stack — no grouped/depthwise conv, no residual connections —
-    so it maps fully on-chip (SAME padding keeps the multi-channel convs off the
-    LayoutSourceView no-pad limitation). CNNs train far deeper than the plain deep_mlp,
-    so this is the vehicle for the deep cascaded single-spike firing-gain probe.
-
-    ``depth`` is the number of Conv-BN-ReLU blocks (4..16); ``width`` is the base channel
-    count (channels double at each pool boundary, capped at 128). Pools are capped from the
-    input spatial size so a 28x28 or 32x32 input never collapses below 1x1.
+    Plain sequential deep conv stack (SAME padding, no grouped/depthwise/residual) that maps
+    fully on-chip; the depth-probe vehicle for the cascaded single-spike firing-gain probe.
     """
 
     def __init__(

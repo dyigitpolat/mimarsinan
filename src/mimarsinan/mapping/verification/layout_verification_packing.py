@@ -16,13 +16,8 @@ def _stats_from_packing(
 ) -> LayoutVerificationStats:
     """Build stats from a successful packing result.
 
-    When *core_types* is provided, percentage metrics are computed against
-    the **entire chip** (all hardware cores, including idle ones).  Without
-    it, metrics cover only the actively-used cores (legacy behaviour).
-
-    Packing is always performed against **real** hardware (the partitioner
-    handles fragment expansion), so ``len(snaps) <= chip_total_cores`` is
-    guaranteed.
+    With ``core_types``, percentage metrics are computed against the entire chip
+    (including idle cores); without it, only actively-used cores.
     """
     snaps = packing.used_core_snapshots or ()
 
@@ -52,8 +47,6 @@ def _stats_from_packing(
     per_core_neu_pct = [_pct(s.wasted_neurons, s.neurons_per_core) for s in snaps]
     per_core_param_pct = [_pct(s.used_area, s.capacity) for s in snaps]
 
-    # Idle-core per-type accounting: compute how many cores of each type
-    # are idle and append per-core stats using that type's dimensions.
     if core_types and chip_total_cores > len(snaps):
         used_per_type: dict[tuple[int, int], int] = {}
         for s in snaps:
@@ -69,8 +62,6 @@ def _stats_from_packing(
                 per_core_neu_pct.extend([100.0] * idle)
                 per_core_param_pct.extend([0.0] * idle)
 
-    # Neural segment / latency summary and threshold groups from the original
-    # softcores list.
     (
         neural_segment_count,
         segment_latency_min,
@@ -79,7 +70,6 @@ def _stats_from_packing(
         threshold_group_count,
     ) = _latency_stats(softcores)
 
-    # Coalescing group distribution.
     coal_sizes = list(packing.coalescing_group_sizes or ())
     coalescing_group_count = len(coal_sizes)
     coal_sizes_f = [float(x) for x in coal_sizes]
@@ -87,7 +77,6 @@ def _stats_from_packing(
     coalescing_frags_per_group_median = _safe_median(coal_sizes_f)
     coalescing_frags_per_group_max = float(max(coal_sizes_f)) if coal_sizes_f else 0.0
 
-    # Split distribution.
     split_counts = list(packing.split_counts_per_sc or ())
     split_softcore_count = len(split_counts)
     split_counts_f = [float(x) for x in split_counts]
@@ -182,11 +171,7 @@ def build_layout_verification_stats(
     allow_neuron_splitting: bool = False,
     allow_coalescing: bool = False,
 ) -> LayoutVerificationStats:
-    """Pack softcores and compute verification statistics.
-
-    This is the primary public entry point.  It runs ``pack_layout`` internally
-    and derives all metrics from the packing result.
-    """
+    """Pack softcores via ``pack_layout`` and derive all verification metrics (primary public entry point)."""
     if not softcores or not core_types:
         return _empty_stats(feasible=False, num_softcores=len(softcores))
 
@@ -216,10 +201,8 @@ def build_stats_from_packing_result(
 ) -> LayoutVerificationStats:
     """Build stats from an already-computed packing result.
 
-    Use when the caller already has a ``LayoutPackingResult`` (e.g. from
-    ``verify_hardware_config``).  Pass ``softcores`` to include latency and
-    threshold-group metrics.  Pass ``core_types`` to compute metrics against
-    the full chip (including idle cores).
+    Pass ``softcores`` to include latency/threshold-group metrics; pass
+    ``core_types`` to compute metrics against the full chip (including idle cores).
     """
     if not packing.feasible:
         total_hw = sum(int(ct.count) for ct in core_types) if core_types else 0

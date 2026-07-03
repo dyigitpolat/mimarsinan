@@ -1,13 +1,4 @@
-"""Polymorphic per-node scale propagation for the mapper graph.
-
-Both :func:`compute_per_source_scales` (weight-quantization per-input scales) and
-:func:`propagate_boundary_input_scales` (TTFS theta-out boundary scales) walk the
-mapper exec graph in topological order and, at each node, derive an out-scale from
-the node's source out-scales — branching on the *kind* of mapper. This module owns
-the single graph walk (:func:`walk_out_scales`) and routes the per-node decision to
-a polymorphic ``Mapper`` method, so a new mapper kind overrides ONE method instead
-of being added to two (formerly three) ``isinstance`` chains.
-"""
+"""Polymorphic per-node scale propagation for the mapper graph."""
 
 from __future__ import annotations
 
@@ -21,12 +12,9 @@ from mimarsinan.mapping.support.scale_broadcast import (
 
 
 def walk_out_scales(model_repr, visit: Callable[[Any, list, dict], Any]) -> dict:
-    """Topological walk of the mapper graph, accumulating per-node out-scales.
+    """Topological walk of the mapper graph accumulating per-node out-scales.
 
-    ``visit(node, deps, out_scales)`` returns this node's out-scale (or ``None`` to
-    record nothing). The returned dict maps node -> out-scale for nodes that
-    produced one. Side effects (e.g. assigning ``per_input_scales``) happen inside
-    ``visit``; this helper only owns the traversal + accumulation.
+    visit(node, deps, out_scales) returns this node's out-scale (or None to record nothing); side effects happen inside visit.
     """
     model_repr._ensure_exec_graph()
     out_scales: dict = {}
@@ -60,11 +48,7 @@ def mean_source_scale(deps, out_scales, default):
 
 
 def perceptron_source_out_scale(perceptron) -> torch.Tensor:
-    """Per-output-channel out-scale carried by a perceptron's ``activation_scale``.
-
-    A per-channel theta (e.g. ttfs_theta_cotrain) is carried verbatim when its
-    length matches the output width; mean-folded only on a length mismatch.
-    """
+    """Per-output-channel out-scale from a perceptron's activation_scale; a per-channel theta is carried verbatim when its length matches output width, else mean-folded."""
     n_out = perceptron.output_channels
     act = perceptron.activation_scale
     if isinstance(act, torch.Tensor) and act.dim() > 0:
@@ -94,8 +78,6 @@ def assign_per_input_scales(perceptron, source_scales) -> None:
         perceptron.per_input_scales = source_scales.repeat_interleave(spatial)
         return
 
-    # Dimension mismatch (e.g. after EinopsRearrange transposes axes):
-    # fall back to mean; correct when all sources share the same scale.
     mean_scale = source_scales.mean().item()
     perceptron.per_input_scales = torch.full((in_features,), mean_scale)
 

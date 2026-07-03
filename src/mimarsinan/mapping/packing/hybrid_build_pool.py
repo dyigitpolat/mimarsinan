@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import copy
-from collections import defaultdict
 from typing import Sequence
 
 import numpy as np
@@ -10,12 +9,11 @@ from mimarsinan.mapping.support.activation_scales import (
     compute_node_input_scales as _compute_node_input_activation_scales,
     compute_node_output_scales as _compute_node_activation_scales,
 )
-from mimarsinan.mapping.ir import ComputeOp, IRGraph, IRSource, NeuralCore
+from mimarsinan.mapping.ir import IRGraph, NeuralCore
 from mimarsinan.mapping.packing.softcore import HardCore
 from mimarsinan.mapping.packing.hybrid_segment import (
     _apply_reindex_to_ir_sources,
     _flush_neural_segment,
-    _flush_scheduled_segment,
     _make_available_hardware_cores,
     _reindex_nodes,
 )
@@ -26,7 +24,6 @@ from mimarsinan.mapping.platform.mapping_structure import (
     MappingStrategy,
 )
 from mimarsinan.mapping.layout.segmentation import (
-    HostSegment,
     NeuralSegment,
     partition_ir_graph,
 )
@@ -40,12 +37,9 @@ def build_hybrid_hard_core_mapping(
 ) -> HybridHardCoreMapping:
     """Compile a unified IRGraph into a HybridHardCoreMapping.
 
-    The packing decisions (coalesce / split / schedule passes) are governed by
-    a resolved :class:`MappingStrategy`. When *strategy* is not supplied the
-    all-permissions-off strategy is used (no coalesce / split / schedule), so
-    the dispatch reads the resolved strategy's permissions, never raw flags.
+    Coalesce / split / schedule passes are governed by the resolved
+    :class:`MappingStrategy`; when omitted, the all-permissions-off strategy is used.
     """
-
     from mimarsinan.mapping.pruning.ir_segmentation import build_ir_consumed_by
 
     if strategy is None:
@@ -96,11 +90,10 @@ def build_hybrid_hard_core_mapping(
 
 
 def build_identity_hybrid_mapping(*, ir_graph: IRGraph) -> HybridHardCoreMapping:
-    """Compile an IRGraph into a 1:1 NeuralCore→HardCore hybrid program.
+    """Compile an IRGraph into a 1:1 NeuralCore→HardCore hybrid program (no pool/pad/reindex/coalesce/split).
 
-    No pool, padding, reindexing-by-placement, coalescing, or splitting — the
-    mapping carries pure IR semantics. This is the rung-2 SCM gate executor;
-    the packed builder (rung 3) must be value-preserving relative to it.
+    Carries pure IR semantics; the rung-2 SCM gate executor the packed builder
+    must be value-preserving against.
     """
     from mimarsinan.mapping.pruning.ir_segmentation import build_ir_consumed_by
 
@@ -143,7 +136,7 @@ def _build_single_pool(
     allow_coalescing: bool = True,
     identity: bool = False,
 ) -> None:
-    """Original single-shared-pool compilation path (``identity=True``: no pool)."""
+    """Single-shared-pool compilation path (``identity=True``: no pool)."""
     shared_pool: list[HardCore] = (
         [] if identity else _make_available_hardware_cores(cores_config)
     )

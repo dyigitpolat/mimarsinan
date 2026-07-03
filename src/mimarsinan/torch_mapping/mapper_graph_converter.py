@@ -1,34 +1,23 @@
-"""
-Convert a traced torch.fx graph into a mimarsinan Mapper DAG.
-
-Walks the FX graph in topological order, creates Mapper nodes for each
-operation, absorbs BatchNorm / activation into preceding Perceptrons,
-and transfers trained weights.
-"""
+"""Convert a traced torch.fx graph into a mimarsinan Mapper DAG."""
 
 from __future__ import annotations
 
 import copy
 import operator
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, Set, Tuple
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import torch.fx as fx
 
-from mimarsinan.mapping.support.compute_modules import ComputeAdapter
 from mimarsinan.mapping.mapping_utils import (
     ComputeOpMapper,
     InputMapper,
     ModelRepresentation,
     PermuteMapper,
     ReshapeMapper,
-    SubscriptMapper,
 )
-from mimarsinan.mapping.mappers.base import Mapper
 from mimarsinan.torch_mapping.representability_analyzer import (
-    RepresentabilityAnalyzer,
     RepresentabilityReport,
     RepresentabilityError,
 )
@@ -156,12 +145,8 @@ class MapperGraphConverter(
         elif fn is operator.getitem and not self._getitem_looks_like_real_slice(node):
             source_mapper = self._get_source_mapper(node)
             if getattr(source_mapper, "output_index", None) is not None:
-                # The source mapper already selects its tuple element
-                # (e.g. attention emitted with output_index=0): pure alias.
                 self._node_to_mapper[node] = source_mapper
             else:
-                # Element selection over a container-returning module
-                # (LSTM (out, (h, c)), chunk/split): keep the index.
                 self._emit_generic_compute_op(node, fn)
         else:
             self._emit_generic_compute_op(node, fn)

@@ -1,33 +1,4 @@
-"""Standing cost-extractor (Frontier EW3 / R3): mine the cost record a sim already emits.
-
-R3's worktree scout mined ``generated/*`` + SANA-FE energy reports into the real
-accuracy×energy×latency×area scatter (the headline novelty: ``energy ≈ Σ_d
-neurons_d · S_d`` ⇒ per-layer-S is the lever). This module promotes that ad-hoc
-mining into STANDING infra: on any sim run it READS what the sims already report
-(SANA-FE energy/spikes; nevresim/HCM latency; per-core neuron counts = the area
-proxy) and emits a :class:`CostRecord` keyed to the E6 :class:`CertificationCell`
-(``mode[/schedule]@backend``). It writes a cost record ALONGSIDE the run artifacts.
-
-It is purely additive instrumentation — it changes NO sim behavior (byte-identical);
-it only projects the numbers the SANA-FE step report / deployed-metric already carry
-into a stable cost tuple, plus a reader/aggregator (:class:`CostScatter`) that builds
-the accuracy×cost Pareto scatter across runs keyed to cert cells (the standing Pareto
-data infra the per-layer-S frontier consumes).
-
-Three pieces:
-
-* :class:`CostRecord` — the cost tuple ``{acc_deploy, mJ_per_sample, spikes,
-  latency_steps, cores, mode, S, depth}`` keyed to a :class:`CertificationCell`.
-  ``energy_proxy_neuron_steps`` carries ``Σ_d neurons_d · S_d`` so the cost-model
-  cross-check (energy ∝ that sum) is reproducible off the record alone.
-* :func:`extract_cost_record` — builds a record from a SANA-FE snapshot dict (the
-  ``SanafeStepReport.to_snapshot_dict()`` projection the step already persists) +
-  the deployed accuracy + the (firing × sync) cell. :func:`extract_cost_record_from_run`
-  reads a generated-run directory's persisted artifacts.
-* :class:`CostScatter` — the reader/aggregator: a bag of records, grouped by cell,
-  with :meth:`pareto_front` (the accuracy↑ × cost↓ non-dominated set) so the standing
-  Pareto data is queryable across runs.
-"""
+"""Mine the cost record a sim already emits into a cell-keyed accuracy×cost scatter."""
 
 from __future__ import annotations
 
@@ -58,12 +29,6 @@ __all__ = [
 ]
 
 
-# The cost-record FORMAT version. A run writes this into the JSON so a future
-# format change fails loud instead of silently mis-reading an old record. Bumped
-# to 2 when the per-fine-tuning-PASS wall (AC5: ``max_ft_pass_wall_s`` + the
-# per-pass breakdown) was added to the record. Bumped to 3 when the weight-reuse
-# scheduling phase fields (``reprogram_passes`` / ``reuse_passes`` /
-# ``params_reloaded`` / ``activation_bytes_moved``) were added.
 COST_RECORD_FORMAT_VERSION = 3
 
 
@@ -74,48 +39,23 @@ def weight_reuse_mj(
     mj_per_reprogram: float = 0.0,
     mj_per_sync: float = 0.0,
 ) -> float:
-    """The weight-reuse scheduling mJ term (GAP-R): reprogram reload + sync movement.
+    """The weight-reuse scheduling mJ term: reprogram param reload + sync byte movement.
 
-    ``mj_per_reprogram`` is charged per PARAMETER RELOADED (``params_reloaded`` =
-    Σ over the N reprogram passes of the resident bank's weight count; a reuse pass
-    reloads nothing). ``mj_per_sync`` is charged per ACTIVATION BYTE moved at the sync
-    barriers (``activation_bytes_moved`` = Σ over the ``total_passes - 1`` barriers of
-    the gathered slice size). Both chip coefficients default 0.0 ⇒ the term is 0.0 ⇒
-    byte-identical. This is the ONE thing that makes a reuse phase cheaper than a
-    reprogram phase (today both cost 0).
-
-    These two opaque coefficients are made DEFENSIBLE (decomposed into named physical
-    units with cited ranges + a low/nominal/high uncertainty band) in
-    ``weight_reuse_cost_model`` (GAP-R P2): ``mj_per_reprogram =
-    bytes_per_param · E_dma_per_byte`` and ``mj_per_sync = E_dma_per_byte``. Pass that
-    module's ``DmaCostCoefficients.mj_per_reprogrammed_param`` / ``.mj_per_activation_byte``
-    here for a grounded number, or call ``weight_reuse_cost_model.phase_cost_band`` for
-    a RANGE.
+    ``mj_per_reprogram`` charges per reloaded param, ``mj_per_sync`` per moved activation
+    byte; both default 0.0 ⇒ the term is 0.0 (byte-identical). See ``weight_reuse_cost_model``
+    for the defensible decomposed coefficients + uncertainty band.
     """
     return (
         float(mj_per_reprogram) * float(params_reloaded)
         + float(mj_per_sync) * float(activation_bytes_moved)
     )
 
-# The canonical filename a run writes its cost record under, alongside the run
-# artifacts (next to ``metadata.json`` in a generated run directory).
 COST_RECORD_FILENAME = "cost_record.json"
-
-# The canonical filename the tuning step writes the AC5 per-fine-tuning-PASS wall
-# bundle under (``{"max_ft_pass_wall_s", "passes"}``), alongside the run artifacts;
-# :func:`extract_cost_record_from_run` mines it into the cost record.
 FT_PASS_WALLS_FILENAME = "ft_pass_walls.json"
 
 
 def _neuron_steps_from_sanafe_snapshot(snapshot: Mapping[str, Any]) -> Tuple[int, int]:
-    """``(Σ_d neurons_d · S_d, total cores)`` over a SANA-FE snapshot's segments.
-
-    Reads the first per-sample record's segments (one deployed forward); each
-    segment contributes ``(Σ_core n_neurons) · timesteps_executed`` to the energy
-    proxy and its core count to the area. The cost model the R3 scout confirmed is
-    ``energy ∝ Σ_d neurons_d · S_d`` (soma-dominated), so the proxy is the
-    per-segment temporal-resolution-weighted neuron count.
-    """
+    """``(Σ_d neurons_d · S_d, total cores)`` over a SANA-FE snapshot's segments."""
     per_sample = snapshot.get("per_sample") or []
     if not per_sample:
         return 0, 0
@@ -132,12 +72,7 @@ def _neuron_steps_from_sanafe_snapshot(snapshot: Mapping[str, Any]) -> Tuple[int
 
 
 def _latency_steps_from_sanafe_snapshot(snapshot: Mapping[str, Any]) -> int:
-    """The deployed latency in temporal steps: ``Σ_d timesteps_executed_d``.
-
-    The cascade runs each latency group / segment for its own window, so the
-    end-to-end latency is the sum of the per-segment executed timesteps (the same
-    quantity the R3 scout reported as ``latency_steps``).
-    """
+    """The deployed latency in temporal steps: ``Σ_d timesteps_executed_d``."""
     per_sample = snapshot.get("per_sample") or []
     if not per_sample:
         return 0
@@ -164,8 +99,7 @@ def _depth_from_sanafe_snapshot(snapshot: Mapping[str, Any]) -> int:
 def _coerce_ft_pass_walls(
     walls: Sequence[Mapping[str, Any]]
 ) -> Tuple[Mapping[str, Any], ...]:
-    """Normalize an FT-pass breakdown to a hashable tuple of ``{label, wall_s}``
-    dicts (frozen-dataclass equality / JSON round-trip need an immutable shape)."""
+    """Normalize an FT-pass breakdown to a hashable tuple of ``{label, wall_s}`` dicts."""
     return tuple(
         {"label": str(p.get("label", "")), "wall_s": float(p.get("wall_s", 0.0))}
         for p in (walls or ())
@@ -176,38 +110,9 @@ def _coerce_ft_pass_walls(
 class CostRecord:
     """The cost tuple a sim run emits, keyed to its E6 (firing × sync × backend) cell.
 
-    ``cell_key`` is the canonical ``mode[/schedule]@backend`` string (the SAME named
-    coordinate the certification floor / E4 proposer use), so a cost record names the
-    same cell across the program. The tuple is the R3 scatter axes:
-
-    * ``acc_deploy`` — the deployed-forward, full-test, parity-gated accuracy (the
-      only number of record per R6 / E5);
-    * ``mj_per_sample`` — total SANA-FE energy / sample, in millijoules;
-    * ``spikes`` — total chip spikes;
-    * ``latency_steps`` — the deployed latency, ``Σ_d timesteps_executed_d``;
-    * ``cores`` — the deployed core count (the area proxy);
-    * ``mode`` — the canonical ``mode[/schedule]`` (firing × sync) name;
-    * ``s_global`` — the global temporal resolution S;
-    * ``depth`` — the cascade depth (number of latency groups / neural segments).
-
-    ``energy_proxy_neuron_steps`` carries ``Σ_d neurons_d · S_d`` so the cost-model
-    cross-check (``mj_per_sample`` ∝ this sum) is reproducible off the record alone;
-    ``provenance`` records the run that emitted it.
-
-    ``max_ft_pass_wall_s`` is the worst single fine-tuning PASS wall (AC5: judged
-    PER fine-tuning pass, NOT on the end-to-end pipeline wall which is dominated by
-    the non-FT Soft-Core-Mapping / Weight-Quantization / Simulation steps); 0.0 when
-    the run surfaced no FT-pass timing. ``ft_pass_walls`` is the per-pass breakdown
-    (``({"label", "wall_s"}, ...)``) the verdict can drill into.
-
-    The weight-reuse scheduling fields classify the deployment schedule's passes
-    (round-1 GAP-R): ``reprogram_passes`` (N) = #weight-distinct passes (full param
-    reloads); ``reuse_passes`` (M) = the cheap passes that time-multiplex through an
-    already-resident weight bank; ``params_reloaded`` = Σ over the N reprogram passes
-    of the resident weight count; ``activation_bytes_moved`` = Σ over the sync barriers
-    of the gathered activation slice size. All default 0 (every pass implicitly a
-    reprogram, no data-movement charge) ⇒ byte-identical to a pre-mode record. The mJ
-    term :meth:`reuse_mj` they feed is 0.0 at the default 0.0 chip coefficients.
+    Axes: ``acc_deploy`` / ``mj_per_sample`` / ``spikes`` / ``latency_steps`` /
+    ``cores`` / ``s_global`` / ``depth``. The weight-reuse scheduling fields and
+    ``max_ft_pass_wall_s`` all default 0 ⇒ byte-identical to a pre-mode record.
     """
 
     cell_key: str
@@ -269,16 +174,7 @@ class CostRecord:
     def reuse_mj_band(
         self, coeffs: CoefficientBand = DEFAULT_COEFFICIENT_BAND
     ) -> Tuple[float, float, float]:
-        """The GROUNDED weight-reuse mJ as a ``(low, nominal, high)`` RANGE.
-
-        Sources the defensible banded number from ``weight_reuse_cost_model``: it
-        evaluates :func:`weight_reuse_cost_model.phase_cost_band` over this record's
-        weight-reuse phase plan (``reprogram_passes`` / ``reuse_passes`` /
-        ``params_reloaded`` / ``activation_bytes_moved``) at the cited
-        :data:`DEFAULT_COEFFICIENT_BAND` (or a supplied band). Unlike the opaque
-        :meth:`reuse_mj` (default 0.0), this carries the named-physical-unit cost as a
-        range; ``(0.0, 0.0, 0.0)`` when the record has no scheduled passes.
-        """
+        """The GROUNDED weight-reuse mJ as a ``(low, nominal, high)`` RANGE (0.0s when no passes)."""
         band = phase_cost_band(
             reprogram_passes=self.reprogram_passes,
             reuse_passes=self.reuse_passes,
@@ -333,28 +229,11 @@ def extract_cost_record(
     activation_bytes_moved: int = 0,
     coefficient_band: Optional[CoefficientBand] = None,
 ) -> CostRecord:
-    """Build a :class:`CostRecord` from what a SANA-FE run already reports.
+    """Build a :class:`CostRecord` from a SANA-FE snapshot dict — a pure read, runs nothing.
 
-    ``sanafe_snapshot`` is the ``SanafeStepReport.to_snapshot_dict()`` projection the
-    SANA-FE step already persists (``aggregate`` headline + ``per_sample`` segment/
-    per-core breakdown). This is a PURE READ of those numbers — it runs nothing and
-    changes no sim behavior. ``deployed_accuracy`` is the parity-gated deployed-forward
-    number (R6 / E5). The cell supplies the canonical ``mode[/schedule]`` and backend.
-
-    ``max_ft_pass_wall_s`` / ``ft_pass_walls`` carry the AC5 per-fine-tuning-PASS wall
-    the tuning step measured (the worst single pass + the per-pass breakdown) — judged
-    PER fine-tuning pass, not on the end-to-end pipeline wall.
-
-    ``reprogram_passes`` / ``reuse_passes`` / ``params_reloaded`` /
-    ``activation_bytes_moved`` are the weight-reuse scheduling classification (from
-    ``mimarsinan.mapping.weight_reuse``); all default 0 ⇒ byte-identical.
-
-    ``coefficient_band`` is the OPT-IN cost-coefficient config (the cited
-    :data:`DEFAULT_COEFFICIENT_BAND` or a caller band): when supplied, the emitted
-    record carries the GROUNDED weight-reuse mJ RANGE (``reuse_mj_band``) under
-    ``provenance['reuse_cost_band_mj'] = [low, nominal, high]`` so cost records are
-    comparable per backend. When ``None`` (the default) NOTHING is attached and the
-    record is byte-identical to a pre-band record (``reuse_mj`` stays 0.0).
+    ``coefficient_band`` is opt-in: when supplied the record carries the grounded
+    weight-reuse mJ range under ``provenance['reuse_cost_band_mj']``; ``None`` (default)
+    attaches nothing and stays byte-identical to a pre-band record.
     """
     aggregate = sanafe_snapshot.get("aggregate") or {}
     mj_per_sample = float(aggregate.get("total_energy_mj", 0.0))
@@ -398,11 +277,7 @@ def _with_grounded_cost_band(
 ) -> CostRecord:
     """Attach the grounded weight-reuse mJ band to ``record`` ONLY when configured.
 
-    Idempotency / byte-identity rule: ``coefficient_band is None`` (the default)
-    returns ``record`` UNCHANGED ⇒ the emitted record is byte-identical to a
-    pre-band record. A supplied band stamps ``provenance['reuse_cost_band_mj'] =
-    [low, nominal, high]`` (a JSON list, since the record round-trips through JSON)
-    ALONGSIDE any caller provenance.
+    ``coefficient_band is None`` (the default) returns ``record`` UNCHANGED, byte-identical.
     """
     if coefficient_band is None:
         return record
@@ -426,13 +301,7 @@ def _deployed_accuracy_from_run(run_dir: str) -> float:
 
 
 def _sanafe_snapshot_from_run(run_dir: str) -> Optional[Mapping[str, Any]]:
-    """The persisted SANA-FE snapshot dict from a generated-run GUI state.
-
-    Reads ``_GUI_STATE/steps.json`` (the standing per-run artifact the GUI state
-    persists) and returns the SANA-FE step's ``sanafe_simulation`` snapshot — the
-    same dict :func:`extract_cost_record` consumes. ``None`` when the run carried no
-    SANA-FE step (a non-SANA-FE backend run).
-    """
+    """The persisted SANA-FE snapshot dict (``None`` when the run carried no SANA-FE step)."""
     steps_path = os.path.join(run_dir, "_GUI_STATE", "steps.json")
     if not os.path.exists(steps_path):
         return None
@@ -443,12 +312,7 @@ def _sanafe_snapshot_from_run(run_dir: str) -> Optional[Mapping[str, Any]]:
 
 
 def _ft_pass_walls_from_run(run_dir: str) -> Tuple[float, Tuple[Mapping[str, Any], ...]]:
-    """The AC5 per-fine-tuning-PASS wall bundle a run persisted, if any.
-
-    Reads ``ft_pass_walls.json`` (``{"max_ft_pass_wall_s", "passes"}``) the tuning
-    step writes alongside the run artifacts; returns ``(max_ft_pass_wall_s, passes)``
-    — ``(0.0, ())`` when the run wrote none (a run without instrumented FT passes).
-    """
+    """The AC5 per-fine-tuning-PASS wall bundle a run persisted (``(0.0, ())`` when none)."""
     path = os.path.join(run_dir, FT_PASS_WALLS_FILENAME)
     if not os.path.exists(path):
         return 0.0, ()
@@ -460,13 +324,7 @@ def _ft_pass_walls_from_run(run_dir: str) -> Tuple[float, Tuple[Mapping[str, Any
 
 
 def _cell_from_run_config(run_dir: str, *, backend: str) -> Optional[CertificationCell]:
-    """The (firing × sync) cell declared by a generated run's ``_RUN_CONFIG``.
-
-    Resolves the firing × sync coordinate through the ``DeploymentPlan`` SSOT (its
-    ``mode_policy()``) rather than reading the raw ``spiking_mode`` /
-    ``ttfs_cycle_schedule`` keys here — the same (firing × sync) cell the E3/E4/E6
-    layers key on.
-    """
+    """The (firing × sync) cell declared by a generated run's ``_RUN_CONFIG``, via the ``DeploymentPlan`` SSOT."""
     config_path = os.path.join(run_dir, "_RUN_CONFIG", "config.json")
     if not os.path.exists(config_path):
         return None
@@ -481,13 +339,7 @@ def _cell_from_run_config(run_dir: str, *, backend: str) -> Optional[Certificati
 def extract_cost_record_from_run(
     run_dir: str, *, backend: str = "sanafe"
 ) -> Optional[CostRecord]:
-    """Mine a generated-run directory into a :class:`CostRecord` (the standing path).
-
-    Reads ONLY the persisted run artifacts (``__target_metric.json`` for the deployed
-    accuracy, ``_RUN_CONFIG/config.json`` for the (firing × sync) cell, and the
-    SANA-FE snapshot under ``_GUI_STATE/steps.json``). Returns ``None`` when the run
-    has no SANA-FE cost data (nothing to cost). Pure read of what is already on disk.
-    """
+    """Mine a generated-run directory's persisted artifacts into a :class:`CostRecord` (``None`` when no SANA-FE cost data)."""
     snapshot = _sanafe_snapshot_from_run(run_dir)
     if snapshot is None:
         return None
@@ -507,12 +359,7 @@ def extract_cost_record_from_run(
 
 
 def save_cost_record(record: CostRecord, run_dir: str) -> str:
-    """Write a cost record alongside the run artifacts; return the written path.
-
-    Additive: writes ``cost_record.json`` next to the run's other artifacts (it never
-    touches a sim output), so a standing run can drop its cost tuple without changing
-    any deployment number.
-    """
+    """Write a cost record alongside the run artifacts; return the written path."""
     os.makedirs(run_dir, exist_ok=True)
     path = os.path.join(run_dir, COST_RECORD_FILENAME)
     with open(path, "w", encoding="utf-8") as fh:
@@ -527,12 +374,7 @@ def load_cost_record(path: str) -> CostRecord:
 
 
 def _dominates(a: CostRecord, b: CostRecord) -> bool:
-    """Whether ``a`` Pareto-dominates ``b`` (accuracy↑, every cost axis↓).
-
-    ``a`` dominates ``b`` iff it is no worse on accuracy and on every cost axis, and
-    strictly better on at least one axis. Higher accuracy is better; lower cost is
-    better on each of ``(mj_per_sample, spikes, latency_steps, cores)``.
-    """
+    """Whether ``a`` Pareto-dominates ``b`` (accuracy↑, every cost axis↓; strictly better on one)."""
     a_obj = (a.acc_deploy, -a.mj_per_sample, -a.spikes, -a.latency_steps, -a.cores)
     b_obj = (b.acc_deploy, -b.mj_per_sample, -b.spikes, -b.latency_steps, -b.cores)
     no_worse = all(x >= y for x, y in zip(a_obj, b_obj))
@@ -542,12 +384,7 @@ def _dominates(a: CostRecord, b: CostRecord) -> bool:
 
 @dataclass
 class CostScatter:
-    """The reader/aggregator: the accuracy×cost scatter across runs, keyed to cells.
-
-    A bag of :class:`CostRecord`s with cell-keyed grouping and Pareto queries — the
-    standing Pareto data infra the per-layer-S frontier reads. It runs nothing; it
-    aggregates already-extracted records (each emitted by :func:`extract_cost_record`).
-    """
+    """A bag of :class:`CostRecord`s with cell-keyed grouping and Pareto queries."""
 
     records: List[CostRecord] = field(default_factory=list)
 
@@ -587,13 +424,7 @@ class CostScatter:
     def pareto_front(
         self, *, cell: Optional[CertificationCell] = None
     ) -> List[CostRecord]:
-        """The non-dominated (accuracy↑ × cost↓) records.
-
-        Restricted to ``cell`` when given (the per-cell front), else over all records
-        (the cross-cell front — the headline R3 scatter, e.g. rate-ttfs dominating
-        genuine-synchronized at fixed accuracy). A record is on the front iff no other
-        record :func:`_dominates` it.
-        """
+        """The non-dominated (accuracy↑ × cost↓) records, restricted to ``cell`` when given."""
         pool = self.for_cell(cell) if cell is not None else list(self.records)
         front = [
             candidate

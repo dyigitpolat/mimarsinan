@@ -1,15 +1,4 @@
-"""Adapters for the ``AdaptationManager`` rate-field family.
-
-``RateAdjustedDecorator``-backed rates (``quantization_rate`` / ``clamp_rate`` /
-``activation_adaptation_rate``) drive a shared in-place ``RateBuffer``: the decorator
-stack is built once, then a ramp step is an O(1) buffer write (the report's W9 fix).
-This path is output- and RNG-conformant with a full per-step rebuild (see
-``test_rate_buffer``). State carriage is the single buffer float.
-
-``NoisyDropout``-backed rates (``noise_rate``) are not decorator-driven, so they keep
-the rebuild path: ``set_rate`` delegates to the ``perceptron_rate.apply_manager_rate``
-SSOT (set one manager field, rebuild every perceptron's decorator stack).
-"""
+"""Adapters for the ``AdaptationManager`` rate-field family."""
 
 from __future__ import annotations
 
@@ -21,12 +10,10 @@ from mimarsinan.tuning.axes.adaptation_axis import AdaptationAxisBase
 from mimarsinan.tuning.perceptron_rate import apply_manager_rate, rebuild_activations
 
 
-# Rates whose decorator is a RateAdjustedDecorator (read a live RateBuffer).
 _INPLACE_ELIGIBLE_RATES = frozenset(
     {"quantization_rate", "clamp_rate", "activation_adaptation_rate"}
 )
 
-# Containers walked to reach the stochastic decision objects in an activation.
 _DECISION_CHILD_ATTRS = ("base_activation", "decorator", "adjustment_strategy", "target_activation")
 _DECISION_SEQ_ATTRS = ("decorators", "strategies")
 
@@ -68,14 +55,9 @@ class ManagerRateAxis(AdaptationAxisBase):
 
     def attach(self, model, adaptation_manager, config) -> None:
         super().attach(model, adaptation_manager, config)
-        # A fresh attach targets a manager with no buffer bound yet, so the
-        # one-time stack install must run again.
         self._inplace_installed = False
 
     def _inplace_enabled(self) -> bool:
-        # RateAdjustedDecorator-backed rates drive a shared in-place RateBuffer
-        # (build the decorator stack once, then O(1) writes); NoisyDropout-backed
-        # rates (noise_rate) are not decorator-driven, so they keep the rebuild path.
         return self.rate_attr in _INPLACE_ELIGIBLE_RATES
 
     def set_rate(self, alpha: float) -> None:
@@ -86,8 +68,6 @@ class ManagerRateAxis(AdaptationAxisBase):
             apply_manager_rate(
                 self._model, self._manager, self._config, self.rate_attr, alpha
             )
-        # Rebuilds (or the one-time in-place install) create fresh decorator
-        # objects; re-wire the seeded generator into them. No-op when unseeded.
         self._wire_decision_generators()
 
     def set_decision_seed(self, seed: int) -> None:
@@ -123,9 +103,8 @@ class ManagerRateAxis(AdaptationAxisBase):
     def _set_rate_inplace(self, alpha: float) -> None:
         """Write the shared ``RateBuffer`` in place; build the stack once.
 
-        The decorators read the buffer live (the O(1) ramp step), so the manager
-        field is no longer load-bearing — but it is kept in sync as a write-through
-        so state queries (and the pickled manager) never see a stale rate."""
+        The manager field is kept in sync as a write-through so state queries never see a stale rate.
+        """
         buffer = self._manager.bind_rate_buffer(self.rate_attr)
         first_install = getattr(self, "_inplace_installed", False) is False
         buffer.set(alpha)

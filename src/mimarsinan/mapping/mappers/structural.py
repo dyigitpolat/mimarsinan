@@ -10,6 +10,11 @@ import einops
 from mimarsinan.mapping.ir import IRSource
 
 from mimarsinan.mapping.mappers.base import Mapper
+from mimarsinan.mapping.mappers.flowchart import FlowchartNodeEstimate
+from mimarsinan.mapping.mappers.scale_propagation import (
+    mean_source_scale,
+    present_source_scales,
+)
 
 
 def _create_ir_input_source(idx: int):
@@ -96,8 +101,6 @@ class StackMapper(Mapper):
         return torch.stack(outputs, dim=1).squeeze(1)
 
     def flowchart_node_estimate(self, out_shape):
-        from mimarsinan.mapping.mappers.flowchart import FlowchartNodeEstimate
-
         return FlowchartNodeEstimate(sw_text="SW stack (host-side)")
 
 
@@ -119,14 +122,10 @@ class ConcatMapper(Mapper):
         return torch.cat(tuple(x), dim=self.dim)
 
     def propagate_source_scale(self, deps, out_scales):
-        from mimarsinan.mapping.mappers.scale_propagation import present_source_scales
-
         parts = present_source_scales(deps, out_scales)
         return torch.cat(parts) if parts else None
 
     def propagate_boundary_scale(self, deps, out_scales, default):
-        from mimarsinan.mapping.mappers.scale_propagation import mean_source_scale
-
         return mean_source_scale(deps, out_scales, float(default))
 
 
@@ -143,12 +142,7 @@ class SubscriptMapper(Mapper):
 
 
 class PermuteMapper(Mapper):
-    """``tensor.permute(*dims)`` / ``tensor.transpose(d0, d1)``.
-
-    ``dims`` includes batch axis 0 (e.g. ``(0, 2, 1)`` for 3-D batch-first).
-    Forward applies the true permutation; IR mapping uses batch-stripped
-    ``np.transpose`` so IRSource arrays reorder correctly for hardware layout.
-    """
+    """tensor.permute/transpose; dims includes batch axis 0. IR mapping uses batch-stripped np.transpose to reorder IRSource arrays for hardware layout."""
 
     def __init__(self, source_mapper, dims):
         super(PermuteMapper, self).__init__(source_mapper)

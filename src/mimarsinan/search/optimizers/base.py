@@ -10,9 +10,7 @@ ConfigT = TypeVar("ConfigT")
 
 
 class SearchOptimizer(Generic[ConfigT]):
-    """
-    Search backend interface.
-    """
+    """Search backend interface."""
 
     def optimize(self, problem: SearchProblem[ConfigT], reporter=None) -> SearchResult[ConfigT]:
         raise NotImplementedError

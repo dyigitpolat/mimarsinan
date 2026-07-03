@@ -45,8 +45,6 @@ class CIFAR100_DataProvider(DataProvider):
         }
 
     def ffcv_transforms(self) -> dict:
-        # CIFAR-100 has no HFlip (mirror-asymmetric classes); same
-        # structural tail synthesis as CIFAR-10.
         return {
             "splits": {
                 "train": [

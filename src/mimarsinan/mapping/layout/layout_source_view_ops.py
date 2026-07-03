@@ -1,16 +1,15 @@
 from __future__ import annotations
 
+from typing import Sequence
+
 import numpy as np
 
 from mimarsinan.mapping.ir import IRSource
 from mimarsinan.mapping.layout.layout_source_view import LayoutSourceView
 
 def node_ids_of(input_sources) -> set[int]:
-    """Set of *real* producer node ids feeding ``input_sources``.
-
-    Skips IRSource sentinels with ``node_id < 0`` (off/input/always-on).
-    Fast path for ``LayoutSourceView`` (no iteration).
-    """
+    """Set of real producer node ids feeding ``input_sources``; skips
+    sentinel IRSources with ``node_id < 0`` (off/input/always-on)."""
     if input_sources is None:
         return set()
     if isinstance(input_sources, LayoutSourceView):
@@ -34,12 +33,8 @@ def stack_source_views(
     inputs: Sequence,
     axis: int = 0,
 ) -> "LayoutSourceView | np.ndarray":
-    """View-aware ``np.stack``.
-
-    When every input is a ``LayoutSourceView`` of identical shape, returns a
-    merged view with a new axis inserted at ``axis`` (no materialisation).
-    Otherwise falls back to materialised ``np.stack``.
-    """
+    """View-aware ``np.stack``: returns a merged view (no materialisation) when all
+    inputs are same-shape ``LayoutSourceView``s, else falls back to ``np.stack``."""
     if not inputs:
         raise ValueError("stack_source_views: empty input list")
     if not all(isinstance(x, LayoutSourceView) for x in inputs):
@@ -72,13 +67,8 @@ def concat_source_views(
     inputs: Sequence,
     axis: int = 0,
 ) -> "LayoutSourceView | np.ndarray":
-    """Concatenate views or arrays along ``axis``.
-
-    Returns a ``LayoutSourceView`` when every input is a ``LayoutSourceView``
-    of compatible shape (no materialisation).  When any input is already a
-    materialised numpy array, falls back to ``np.concatenate`` on materialised
-    arrays.
-    """
+    """Concatenate along ``axis``: returns a ``LayoutSourceView`` (no materialisation)
+    when all inputs are compatible views, else falls back to ``np.concatenate``."""
     if not inputs:
         raise ValueError("concat_source_views: empty input list")
 

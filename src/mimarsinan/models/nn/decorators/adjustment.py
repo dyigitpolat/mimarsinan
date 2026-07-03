@@ -9,9 +9,7 @@ from mimarsinan.models.nn.decorators.rate_buffer import RateBuffer
 
 
 class RandomMaskAdjustmentStrategy:
-    # ``generator`` (default None) makes the per-element mask reproducible: an
-    # axis that called ``set_decision_seed`` wires a seeded ``torch.Generator``
-    # here. None preserves the legacy global-RNG draw bit-for-bit.
+    # ``generator=None`` preserves the legacy global-RNG draw bit-for-bit; a seeded generator makes the mask reproducible.
     def __init__(self, generator=None):
         self._generator = generator
 
@@ -40,22 +38,11 @@ class RateAdjustedDecorator:
         self.decorator = decorator
         self.adjustment_strategy = adjustment_strategy
 
-    # ``rate`` may be a plain float or a shared ``RateBuffer`` (in-place ramp).
-    # The buffer carries one scalar ``alpha`` read live at transform time so the
-    # rate advances without rebuilding the decorator stack; resolving it to a
-    # float here keeps the 0/1 short-circuits and the adjust call bit-identical.
     def _resolved_rate(self):
         if isinstance(self.rate, RateBuffer):
             return float(self.rate.alpha)
         return self.rate
 
-    # Rate=0 is the identity (all strategies reduce to "return base"), so skip
-    # the inner decorator call and the adjustment tensor ops. Rate=1 with
-    # Mix/RandomMask/Nested strategies collapses to "return target" (mask is
-    # fully 1 everywhere: rand() < 1.0 is always True since rand() is [0,1)).
-    # Note: rate=0 short-circuit with RandomMask-based strategies skips a
-    # torch.rand() call that the un-optimized path would consume; this shifts
-    # global RNG state slightly but has no semantic effect on outputs.
     def input_transform(self, x):
         rate = self._resolved_rate()
         if rate == 0.0:
@@ -109,12 +96,8 @@ class MixAdjustmentStrategy:
 
 
 class ActivationReplacementDecorator:
-    """Blends the base activation output with a target activation (e.g. ReLU).
-
-    At rate 0 the output is entirely from the base activation; at rate 1
-    it is entirely from the target activation.  Uses MixAdjustmentStrategy
-    for a smooth linear blend.
-    """
+    """Blends the base activation output with a target activation (e.g. ReLU):
+    rate 0 is entirely the base activation, rate 1 entirely the target."""
 
     def __init__(self, target_activation):
         self.target_activation = target_activation

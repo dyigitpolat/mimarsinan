@@ -14,12 +14,7 @@ __all__ = ["write_search_report_png"]
 
 
 def write_search_report_png(result_json: Dict[str, Any], out_path: str) -> None:
-    """
-    Single-file report (PNG):
-    - Per-generation objective history (subplots)
-    - 2D Pareto projections (subplots)
-    - Multiple normalized 3D Pareto surfaces/views (grid, higher=better)
-    """
+    """Single-file PNG report: objective history, 2D Pareto projections, and normalized 3D Pareto views."""
     os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
 
     objectives = result_json.get("objectives", []) or []
@@ -66,7 +61,6 @@ def write_search_report_png(result_json: Dict[str, Any], out_path: str) -> None:
             norm = [0.5 if v is not None else None for v in vals]
         else:
             norm = [((float(v) - vmin) / (vmax - vmin)) if v is not None else None for v in vals]
-        # Flip minimization so higher is better for all axes
         if goal == "min":
             norm = [(1.0 - v) if v is not None else None for v in norm]
         return norm
@@ -84,7 +78,6 @@ def write_search_report_png(result_json: Dict[str, Any], out_path: str) -> None:
 
     scatter_pairs = list(combinations(metric_names, 2))
 
-    # Build 3D triplets from the first 3 objectives (if available), rotating axes
     triplets = []
     if len(metric_names) >= 3:
         first3 = metric_names[:3]
@@ -123,7 +116,6 @@ def write_search_report_png(result_json: Dict[str, Any], out_path: str) -> None:
 
     current_row = 0
 
-    # History block
     if n_hist:
         hist_gs = gs[current_row, 0:4].subgridspec(1, n_hist, wspace=0.25)
         for i, name in enumerate(metric_names[:n_hist]):
@@ -138,7 +130,6 @@ def write_search_report_png(result_json: Dict[str, Any], out_path: str) -> None:
             ax.grid(True, alpha=0.25)
         current_row += 1
 
-    # 2D Pareto block
     if n_scatter:
         p2_gs = gs[current_row, 0:4].subgridspec(1, n_scatter, wspace=0.25)
         for i, (na, nb) in enumerate(scatter_pairs[:n_scatter]):
@@ -153,7 +144,6 @@ def write_search_report_png(result_json: Dict[str, Any], out_path: str) -> None:
             ax.grid(True, alpha=0.25)
         current_row += 1
 
-    # 3D block: normalized (higher=better)
     def _collect_xyz(xv, yv, zv, cv):
         X, Y, Z, C = [], [], [], []
         for a, b, c, d in zip(xv, yv, zv, cv):

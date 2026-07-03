@@ -1,25 +1,4 @@
-"""Backend interface + capability-validated registry (Vector V3).
-
-A deployment ``Backend`` is a named target whose *capabilities* are declared in
-the ``_BACKEND_CAPS`` matrix (``spiking_semantics.py``). Until V3 that matrix was
-**informational**: backend selection happened through ``enable_*`` flags and
-validation was reactive inside ``step.process()`` (the path the SANA-FE C++
-incompatibility took before it core-dumped). V3 makes selection + validation
-*consult the matrix up-front at pipeline assembly*:
-
-- ``Backend.supports(contract)`` answers "does this backend support this spiking
-  mode" by reading the same ``_BACKEND_CAPS`` matrix.
-- ``Backend.require_supported(contract, context=...)`` raises an actionable error
-  at assembly for an unsupported backend×mode — never reactively mid-run.
-- ``Backend.build`` / ``run`` / ``parity_gate`` are the documented per-target
-  driver seam; the existing simulation *step classes* (nevresim / SANA-FE /
-  Loihi) remain the implementations the runner drives, registered here.
-
-``BackendRegistry`` maps backend name → ``Backend`` and resolves which backends
-a ``DeploymentPlan`` enables (the verbatim ``enable_*`` precedence). The pipeline
-step planner consults it to validate-then-append, so adding a backend is one
-registry entry, not scattered ``if enable_*`` edits.
-"""
+"""Backend interface + capability-validated registry keyed by name."""
 
 from __future__ import annotations
 
@@ -43,14 +22,7 @@ def _spiking_mode_of(contract: Any) -> str:
 
 
 class Backend(ABC):
-    """A capability-declared deployment target.
-
-    Concrete backends declare a ``name`` (the key in the ``_BACKEND_CAPS``
-    capability matrix) and implement the build/run/parity-gate driver seam.
-    ``supports`` / ``require_supported`` consult the matrix; the registry calls
-    ``require_supported`` at assembly so an unsupported backend×mode fails loud
-    before any expensive setup.
-    """
+    """A capability-declared deployment target with a build/run/parity-gate driver seam."""
 
     name: str
 
@@ -80,13 +52,10 @@ class Backend(ABC):
 
 
 class SimulationBackend(Backend):
-    """A pipeline simulation backend backed by an existing PipelineStep class.
+    """A simulation backend backed by an existing PipelineStep class.
 
-    The step class IS the build+run+parity driver (verbatim, unchanged): V3 keeps
-    them as the implementations and only routes *selection + up-front validation*
-    through the registry. ``applies`` carries the backend's enable predicate (the
-    former ``if plan.enable_*`` condition) so the step planner reads data, not a
-    per-backend ``if``.
+    The step class IS the build+run+parity driver; the registry only routes
+    selection + up-front validation. ``applies`` carries the enable predicate.
     """
 
     def __init__(
@@ -128,7 +97,6 @@ class SimulationBackend(Backend):
         """The ``(step_name, step_class)`` this backend contributes."""
         return (self.step_name, self.step_class)
 
-    # ── driver seam (implemented by the step class, delegated for the ABC) ──
     def build(self, *args: Any, **kwargs: Any) -> Any:
         raise NotImplementedError(
             f"{self.name} build is driven by {self.step_class.__name__}"
@@ -168,16 +136,10 @@ class BackendRegistry:
         return tuple(b for b in self._backends if isinstance(b, SimulationBackend))
 
     def selected_step_specs(self, plan: Any) -> list[tuple[str, type]]:
-        """Validate every enabled backend up-front, then return its step specs.
+        """Validate every enabled backend against the capability matrix, then return its step specs.
 
-        Mirrors the pre-V3 ``if plan.enable_*: specs.append(...)`` block but with
-        the capability matrix consulted *first*: an enabled backend that does not
-        support the plan's spiking mode raises here (at assembly), in registry
-        order, before any step is appended — instead of crashing mid-run.
-
-        Only the plan's ``spiking_mode`` is needed to gate against the capability
-        matrix, so the plan is consulted directly — the full spiking contract
-        (which needs ``simulation_steps``) is not built at step-ordering time.
+        An enabled backend that does not support the plan's spiking mode raises here
+        (at assembly, in registry order) before any step is appended.
         """
         for backend in self.simulation_backends():
             if backend.enabled(plan):
@@ -210,8 +172,7 @@ def _build_default_registry() -> BackendRegistry:
             step_name="Simulation",
             step_class=SimulationStep,
             enabled_for=lambda plan: plan.enable_nevresim_simulation,
-            # nevresim runs the genuine fire-once-latch cascade, but has no
-            # genuine synchronized-window backend yet — skip it only there.
+            # nevresim has no genuine synchronized-window backend, so skip it only there.
             applies_for=lambda plan: not plan.is_synchronized_ttfs,
         ),
         SimulationBackend(
@@ -233,9 +194,8 @@ def _build_default_registry() -> BackendRegistry:
 class _LazyBackendRegistry:
     """Registry proxy that defers step-class imports until first use.
 
-    The default registry references pipeline step classes; building it eagerly at
-    import time would create an import cycle (chip_simulation ← pipelining ←
-    chip_simulation). This proxy resolves the concrete registry on first access.
+    Building the default registry eagerly would create an import cycle
+    (chip_simulation ← pipelining ← chip_simulation); this resolves it on first access.
     """
 
     def __init__(self) -> None:

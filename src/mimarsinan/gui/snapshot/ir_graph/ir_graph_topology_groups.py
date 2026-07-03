@@ -4,21 +4,8 @@ from __future__ import annotations
 
 import logging
 from collections import defaultdict
-from typing import Any
-
-import numpy as np
 
 logger = logging.getLogger("mimarsinan.gui")
-
-from mimarsinan.gui.snapshot.util.helpers import _t, _histogram, _safe_scalar, _safe_dict, _CACHE_KEY_TO_SNAPSHOT_KEY
-from mimarsinan.common.layer_key import layer_key_from_node_name
-from mimarsinan.gui.resources import ResourceDescriptor
-from mimarsinan.gui.snapshot.heatmap import (
-    _detect_neural_core_liveness,
-    _make_bias_strip_producer,
-    _make_heatmap_producer,
-)
-
 
 from mimarsinan.gui.snapshot.ir_graph.ir_graph_resources import (
     LIVENESS_BIAS_ONLY,

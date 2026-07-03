@@ -46,7 +46,6 @@ def compact_soft_core_mapping(cores, output_sources):
 
         if len(keep_rows) < n_axons or len(keep_cols) < n_neurons:
             n_compacted += 1
-            # Bank-backed: IR pruning must already match bank shape; else drop bank ref.
             if getattr(core, "weight_bank_id", None) is not None:
                 core.weight_bank_id = None
                 core.bank_axon_slice = None
@@ -61,23 +60,13 @@ def compact_soft_core_mapping(cores, output_sources):
                     core.hardware_bias, keep_cols
                 )
             elif keep_cols:
-                # BIAS_ONLY core: every axon is dead but some neurons spike
-                # from ``hardware_bias`` alone. Collapse to a single
-                # OFF-source axon while preserving the live bias-driven
-                # columns; collapsing to (1, 1) would silently delete live
-                # neurons whose consumers still reference them.
+                # BIAS_ONLY core: collapse to a single OFF-source axon but keep the live bias-driven columns; collapsing to (1,1) would silently delete live neurons still referenced downstream.
                 core.core_matrix = np.zeros((1, len(keep_cols)), dtype=np.float64)
                 core.axon_sources = [SpikeSource(-1, 0, False, True)]
                 core.hardware_bias = compact_hardware_bias_columns(
                     core.hardware_bias, keep_cols
                 )
             else:
-                # No surviving columns -> the core has no live neuron and
-                # would have been deleted by ``compute_liveness +
-                # IRGraph.remove_nodes`` in ``prune_ir_graph``. Reaching
-                # this point means an upstream stage produced a dead-math
-                # core that was not classified DEAD; fail loudly so the
-                # regression is visible.
                 raise AssertionError(
                     f"compact_soft_core_mapping: SoftCore id={core.id} has "
                     f"no surviving neurons (keep_cols={keep_cols}). "

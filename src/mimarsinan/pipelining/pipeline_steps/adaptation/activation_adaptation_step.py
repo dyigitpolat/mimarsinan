@@ -1,6 +1,5 @@
 """Activation Adaptation: gradual non-ReLU → ReLU replacement."""
 
-from mimarsinan.pipelining.core.steps.pipeline_step import PipelineStep
 from mimarsinan.pipelining.pipeline_steps.activation_utils import has_non_relu_activations
 from mimarsinan.pipelining.core.steps.tuner_pipeline_step import TunerPipelineStep
 from mimarsinan.mapping.mappers.base import resolve_activation_type

@@ -1,31 +1,13 @@
-"""IRMapping: full-weight mapping that produces an ``IRGraph`` with concrete
-``NeuralCore`` / ``ComputeOp`` / ``WeightBank`` nodes.
-
-All structural decisions (tiling mode, psum decomposition, coalescing,
-bias-axon counting, shared-bank wiring) live in the base class
-``LayoutIRMapping``.  This subclass only attaches weight material and builds
-the graph, guaranteeing the emitted softcore shapes are byte-identical to
-what the wizard / architecture-search path predicts.
-"""
+"""IRMappingEmitMixin: emit concrete NeuralCore IR nodes alongside shape tracking."""
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import numpy as np
 import torch
 
-from mimarsinan.code_generation.cpp_chip_model import SpikeSource
-from mimarsinan.mapping.ir import (
-    ComputeOp,
-    IRGraph,
-    IRNode,
-    IRSource,
-    NeuralCore,
-    WeightBank,
-    spike_source_to_ir_source,
-)
-from mimarsinan.mapping.layout.layout_ir_mapping import LayoutIRMapping
+from mimarsinan.mapping.ir import IRSource, NeuralCore
 
 
 class IRMappingEmitMixin:
@@ -80,8 +62,6 @@ class IRMappingEmitMixin:
 
             hardware_bias_arr: np.ndarray | None = None
             if w_np is None:
-                # Safety net — the base class still emitted a shape; this path is
-                # not exercised by the current mappers but kept for robustness.
                 out_features = int(result.flatten().shape[0])
                 core_matrix = np.zeros((in_features, out_features), dtype=float)
             else:

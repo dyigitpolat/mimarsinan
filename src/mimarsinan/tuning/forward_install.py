@@ -1,9 +1,4 @@
-"""Install/remove a cross-layer NF forward as a ``model.forward`` override.
-
-A leaf module (no tuner imports) so both the KD-blend tuners and the higher-level
-``Transformation`` axis objects can install a deployed cross-layer forward without
-importing each other.
-"""
+"""Install/remove a cross-layer NF forward as a ``model.forward`` override."""
 
 from __future__ import annotations
 
@@ -11,10 +6,8 @@ from __future__ import annotations
 class LazyExecutorForward:
     """Picklable ``model.forward`` override running a cross-layer NF forward.
 
-    Subclasses implement :meth:`_run`. A lazily-built executor (e.g. a segment
-    driver) can be cached per instance via :meth:`_ensure_executor` and is dropped
-    on pickling so checkpoints / teacher snapshots stay light. One shape for the
-    cycle-accurate LIF ramp, the chip-aligned LIF finalize, and the TTFS cascade.
+    Subclasses implement :meth:`_run`; the per-instance executor is built lazily via
+    :meth:`_ensure_executor` and dropped on pickling so snapshots stay light.
     """
 
     def __init__(self, model, T: int):
@@ -47,11 +40,8 @@ class LazyExecutorForward:
 class CascadeForwardInstall:
     """Symmetric, single-owner install/remove of an instance ``model.forward``.
 
-    The cascade / cycle-accurate NF forwards are installed as an instance
-    attribute that shadows the class forward. This mixin guarantees no
-    double-patch (an unremoved prior wrapper would silently shadow the new one)
-    and an idempotent unpatch, so downstream pipeline stages always see the
-    pristine class forward.
+    Guarantees no double-patch (an unremoved prior wrapper would silently shadow the
+    new one) and an idempotent unpatch, so downstream stages see the class forward.
     """
 
     _patched_forward = False

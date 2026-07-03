@@ -10,11 +10,7 @@ from mimarsinan.chip_simulation.spiking_mode_policy import (
 
 
 def resolve_compare_policy(thresholding_mode: str) -> str:
-    """Map ``thresholding_mode`` to the nevresim compare policy type.
-
-    Shared by every spiking fire decision (LIF and genuine TTFS) so the
-    strict-``<`` vs inclusive-``<=`` comparator is config-driven, never hardcoded.
-    """
+    """Map ``thresholding_mode`` to the nevresim compare policy type."""
     return "InclusiveCompare" if thresholding_mode == "<=" else "StrictCompare"
 
 
@@ -48,14 +44,8 @@ def resolve_exec_policy(
 ) -> ExecPolicySpec:
     """Return the (ComputePolicy, Execution) C++ types for nevresim main.
 
-    The firing × sync → codegen choice lives on ``SpikingModePolicy``
-    (``chip_simulation/spiking_mode_policy.py``); this delegates to it so a new
-    spiking mode updates the policy, not this dispatch. The comparator (``compare``)
-    and LIF reset/fire policy strings are selected here (the thresholding/firing
-    SSOT) and handed to the policy as data.
-
-    nevresim never runs the synchronized ``ttfs_cycle_based`` schedule (it disables
-    nevresim), so any ``ttfs_cycle_based`` here resolves to the cascaded policy.
+    Delegates the firing × sync → codegen choice to ``SpikingModePolicy`` and
+    selects the comparator and LIF reset/fire strings as the thresholding/firing SSOT.
     """
     params = NevresimExecParams(
         compare=resolve_compare_policy(thresholding_mode),
@@ -108,9 +98,6 @@ def get_config(
     threshold_type=None,
     thresholding_mode="<=",
 ):
-    # threshold_type defaults to weight_type: single-type (LIF / rate-coded,
-    # hardware-accurate integer arithmetic) is the historic behaviour.
-    # TTFS callers should set threshold_type="double" explicitly.
     if threshold_type is None:
         threshold_type = weight_type
     return {
@@ -174,19 +161,19 @@ def generate_main_function(
     )
 
     main_cpp_code = cpp_code_template.format(
-        generated_files_path,   # {0}
-        input_count,            # {1}
-        simulation_length,      # {2}
-        simulation_config["spike_gen_mode"],   # {3}
-        simulation_config["firing_mode"],      # {4}
-        simulation_config["weight_type"],      # {5}
-        output_count,           # {6}
-        latency,                # {7}
-        chip_exec_decl,         # {8}  ← chip + exec declarations
-        simulation_config["threshold_type"],   # {9}  ← threshold_t typedef
+        generated_files_path,
+        input_count,
+        simulation_length,
+        simulation_config["spike_gen_mode"],
+        simulation_config["firing_mode"],
+        simulation_config["weight_type"],
+        output_count,
+        latency,
+        chip_exec_decl,
+        simulation_config["threshold_type"],
         _input_load_statement(
             simulation_config["spike_gen_mode"], generated_files_path,
-        ),  # {10}
+        ),
     )
 
     main_cpp_filename = "{}/main/main.cpp".format(generated_files_path)

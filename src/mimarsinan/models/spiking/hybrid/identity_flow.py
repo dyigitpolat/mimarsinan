@@ -4,6 +4,13 @@ from __future__ import annotations
 
 import torch.nn as nn
 
+from mimarsinan.mapping.latency.ir import IRLatency
+from mimarsinan.mapping.packing.hybrid_hardcore_mapping import (
+    build_identity_hybrid_mapping,
+)
+from mimarsinan.mapping.support.neg_shift_bias import (
+    propagate_negative_shifts_to_hybrid,
+)
 from mimarsinan.models.spiking.hybrid.flow import SpikingHybridCoreFlow
 
 
@@ -21,23 +28,12 @@ def build_identity_spiking_flow(
 ) -> SpikingHybridCoreFlow:
     """Run an IRGraph through the hybrid executor on a 1:1 identity mapping.
 
-    Drop-in replacement for the retired ``SpikingUnifiedCoreFlow``: same
-    positional signature, but one executor (the hybrid flow) carries the
-    semantics. Latencies are computed only when the graph has none preset.
+    Latencies are computed only when the graph has none preset.
     """
-    from mimarsinan.mapping.packing.hybrid_hardcore_mapping import (
-        build_identity_hybrid_mapping,
-    )
-    from mimarsinan.mapping.support.neg_shift_bias import (
-        propagate_negative_shifts_to_hybrid,
-    )
-
     if any(
         getattr(node, "latency", None) is None
         for node in ir_graph.get_neural_cores()
     ):
-        from mimarsinan.mapping.latency.ir import IRLatency
-
         IRLatency(ir_graph).calculate()
 
     mapping = build_identity_hybrid_mapping(ir_graph=ir_graph)

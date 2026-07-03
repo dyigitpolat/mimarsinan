@@ -3,18 +3,14 @@
 from __future__ import annotations
 
 import logging
-from collections import defaultdict
 from typing import Any
 
 import numpy as np
 
+from mimarsinan.gui.heatmap_renderer import render_heatmap_png_bytes
+
 logger = logging.getLogger("mimarsinan.gui")
 
-from mimarsinan.gui.snapshot.util.helpers import _t, _histogram, _safe_scalar, _safe_dict, _CACHE_KEY_TO_SNAPSHOT_KEY
-from mimarsinan.common.layer_key import layer_key_from_node_name
-from mimarsinan.gui.resources import ResourceDescriptor
-
-# Bump cautiously: frontend URL builders hard-code these.
 RESOURCE_KIND_IR_CORE_HEATMAP = "ir_core_heatmap"
 RESOURCE_KIND_IR_CORE_PRE_PRUNING = "ir_core_pre_pruning"
 RESOURCE_KIND_IR_CORE_BIAS = "ir_core_bias"
@@ -23,29 +19,14 @@ RESOURCE_KIND_HARD_CORE_HEATMAP = "hard_core_heatmap"
 RESOURCE_KIND_CONNECTIVITY = "connectivity"
 RESOURCE_KIND_PRUNING_LAYER_HEATMAP = "pruning_layer_heatmap"
 
-
-# Per-NeuralCore liveness tags surfaced in the GUI (must match
-# ``mimarsinan.mapping.pruning.ir_liveness.NodeLiveness`` for current runs).
 LIVENESS_LIVE = "live"
 LIVENESS_BIAS_ONLY = "bias_only"
-LIVENESS_DEAD_LEGACY = "dead_legacy"  # only for old pickles still containing (1,1) placeholders
+LIVENESS_DEAD_LEGACY = "dead_legacy"
 
 def _detect_neural_core_liveness(node: Any, mat: Any) -> str:
     """Classify a NeuralCore's liveness for the GUI snapshot.
 
-    Returns one of:
-
-    - :data:`LIVENESS_DEAD_LEGACY` for old pickles that still contain
-      ``(1, 1)`` zero placeholders -- detected by an all-True
-      ``pre_pruning_*_mask`` (or a fully-pruned post-compaction mask
-      when no pre-pruning data was stored).
-    - :data:`LIVENESS_BIAS_ONLY` for cores whose every original axon was
-      pruned but live columns remain (the post-compaction shape is
-      ``(1, N)`` with a single OFF-source axon).
-    - :data:`LIVENESS_LIVE` otherwise.
-
-    The function is best-effort: when masks are missing or inconsistent
-    we fall back to ``LIVE`` rather than fail the snapshot build.
+    Best-effort: falls back to LIVE when masks are missing or inconsistent.
     """
     from mimarsinan.mapping.ir import IRSource
 
@@ -111,7 +92,6 @@ def _make_heatmap_producer(
     cc = list(pruned_col_mask) if pruned_col_mask is not None else None
 
     def produce() -> bytes:
-        from mimarsinan.gui.heatmap_renderer import render_heatmap_png_bytes
         return render_heatmap_png_bytes(
             matrix_copy,
             pruned_row_mask=rr,
@@ -122,18 +102,13 @@ def _make_heatmap_producer(
 
 
 def _make_bias_strip_producer(bias: Any):
-    """Render a ``hardware_bias`` vector as a 1-row colormap PNG.
-
-    Used for BIAS_ONLY cores so the UI can show that the core fires from
-    bias drive even though its weight matrix is empty.
-    """
+    """Render a ``hardware_bias`` vector as a 1-row colormap PNG (for BIAS_ONLY cores)."""
     try:
         bias_copy: Any = np.asarray(bias, dtype=np.float64).copy()
     except Exception:
         bias_copy = bias
 
     def produce() -> bytes:
-        from mimarsinan.gui.heatmap_renderer import render_heatmap_png_bytes
         arr = np.asarray(bias_copy)
         if arr.ndim == 1:
             arr = arr.reshape(1, -1)

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 from mimarsinan.mapping.layout.layout_types import LayoutSoftCoreSpec
 from mimarsinan.mapping.layout.segmentation import (
@@ -122,17 +122,13 @@ class _LayoutIRMappingFinalize:
         }
 
     def _finalize_softcores(self) -> None:
-        """Compute latencies / segment ids and rewrite each softcore with
-        its finalised ``latency_tag``, ``segment_id``, and
-        ``threshold_group_id = perceptron_index`` (falling back to a unique
-        id when ``perceptron_index`` is ``None``).
-        """
+        """Rewrite each softcore with its finalised latency_tag, segment_id, and
+        threshold_group_id (= perceptron_index, or a unique fallback when None)."""
         latencies = self._compute_latencies()
         segment_ids = self._compute_segment_ids()
         self.host_side_segment_count = self._compute_host_side_segment_count(segment_ids)
 
-        # Unique, stable, negative ids for non-perceptron cores so they
-        # never collide with perceptron indices (which are >= 0).
+        # Non-perceptron cores get unique negative ids so they never collide with perceptron indices (>= 0).
         for node_id, sc_idx in self._node_id_to_softcore_idx.items():
             latency = latencies.get(node_id, 0)
             segment_id = segment_ids.get(node_id, 0)

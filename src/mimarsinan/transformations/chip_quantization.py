@@ -14,8 +14,6 @@ class ChipQuantization:
         assert np.min(np.round(core.core_matrix * scale)) >= self.quantizer.q_min, \
             f"{np.min(np.round(core.core_matrix * scale))} < {self.quantizer.q_min}"
         
-        #print(core.core_matrix * scale)
-        
         assert np.allclose(
             core.core_matrix * scale, np.round(core.core_matrix * scale),
             atol=1e-3, rtol=1e-3)

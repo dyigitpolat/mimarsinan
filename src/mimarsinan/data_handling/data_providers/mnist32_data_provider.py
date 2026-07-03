@@ -18,9 +18,6 @@ class MNIST32_DataProvider(DataProvider):
     """
 
     def __init__(self, datasets_path, *, seed: int | None = 0, preprocessing=None, batch_size=None):
-        # MNIST32 is defined by its 28→32 upscale; if no preprocessing was
-        # passed in, inject ``resize_to=32`` so the base class's
-        # preprocessing wrap upscales for the torch path.
         if preprocessing is None:
             preprocessing = {"resize_to": 32}
         super().__init__(datasets_path, seed=seed, preprocessing=preprocessing, batch_size=batch_size)
@@ -50,6 +47,3 @@ class MNIST32_DataProvider(DataProvider):
             "val":   [transforms.ToTensor()],
             "test":  [transforms.ToTensor()],
         }
-
-    # No FFCV opt-in: FFCV's RGBImageField requires 3 channels and there is
-    # no stock op to collapse back to 1.

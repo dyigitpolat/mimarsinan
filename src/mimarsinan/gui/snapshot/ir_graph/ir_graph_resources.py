@@ -3,23 +3,11 @@
 from __future__ import annotations
 
 import logging
-from collections import defaultdict
+import threading
 from typing import Any
-
-import numpy as np
 
 logger = logging.getLogger("mimarsinan.gui")
 
-from mimarsinan.gui.snapshot.util.helpers import _t, _histogram, _safe_scalar, _safe_dict, _CACHE_KEY_TO_SNAPSHOT_KEY
-from mimarsinan.common.layer_key import layer_key_from_node_name
-from mimarsinan.gui.resources import ResourceDescriptor
-from mimarsinan.gui.snapshot.heatmap import (
-    _detect_neural_core_liveness,
-    _make_bias_strip_producer,
-    _make_heatmap_producer,
-)
-
-# Bump cautiously: frontend URL builders hard-code these.
 RESOURCE_KIND_IR_CORE_HEATMAP = "ir_core_heatmap"
 RESOURCE_KIND_IR_CORE_PRE_PRUNING = "ir_core_pre_pruning"
 RESOURCE_KIND_IR_CORE_BIAS = "ir_core_bias"
@@ -28,12 +16,9 @@ RESOURCE_KIND_HARD_CORE_HEATMAP = "hard_core_heatmap"
 RESOURCE_KIND_CONNECTIVITY = "connectivity"
 RESOURCE_KIND_PRUNING_LAYER_HEATMAP = "pruning_layer_heatmap"
 
-
-# Per-NeuralCore liveness tags surfaced in the GUI (must match
-# ``mimarsinan.mapping.pruning.ir_liveness.NodeLiveness`` for current runs).
 LIVENESS_LIVE = "live"
 LIVENESS_BIAS_ONLY = "bias_only"
-LIVENESS_DEAD_LEGACY = "dead_legacy"  # only for old pickles still containing (1,1) placeholders
+LIVENESS_DEAD_LEGACY = "dead_legacy"
 
 
 def make_resource_ref(source_step_name: str | None, kind: str, rid: str) -> dict:
@@ -69,8 +54,7 @@ def _extract_core_connectivity(hcm: Any, segment_index: int) -> list[dict]:
                     "length": sp.length, "kind": "input",
                     "segment": segment_index,
                 })
-    
-    # Extract output buffer spans
+
     try:
         from mimarsinan.mapping.support.spike_source_spans import compress_spike_sources
         if hasattr(hcm, "output_sources") and hcm.output_sources is not None:
@@ -82,7 +66,7 @@ def _extract_core_connectivity(hcm: Any, segment_index: int) -> list[dict]:
                         spans_out.append({
                             "src_core": sp.src_core, "src_start": sp.src_start,
                             "src_end": sp.src_end,
-                            "dst_core": -3, "dst_start": sp.dst_start,  # -3 represents output buffer
+                            "dst_core": -3, "dst_start": sp.dst_start,
                             "dst_end": sp.dst_end,
                             "length": sp.length, "kind": "output",
                             "segment": segment_index,
@@ -134,7 +118,6 @@ def _group_consecutive_compute_stages(stages: list[dict]) -> list[dict]:
 
 def _make_segment_spans_extractor(hcm: Any, segment_index: int):
     """Return a memoised zero-arg closure that yields all spans of a segment."""
-    import threading
     state: dict[str, Any] = {"spans": None}
     lock = threading.Lock()
 

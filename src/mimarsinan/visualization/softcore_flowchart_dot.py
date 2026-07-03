@@ -38,16 +38,14 @@ def generate_softcore_flowchart_dot(
     hardware_bias: bool = False,
     allow_coalescing: bool = True,
 ) -> str:
-    """
-    Generate a Graphviz DOT flowchart for the mapper graph, annotated with estimated SoftCoreMapping cost.
+    """Graphviz DOT flowchart for the mapper graph annotated with estimated SoftCoreMapping cost.
 
-    This does NOT require successful mapping (pooling ops can exist); it uses forward shape tracing + estimation.
+    Uses forward shape tracing + estimation; does not require successful mapping.
     """
 
     if device is None:
         device = torch.device("cpu")
 
-    # Trace forward shapes through the mapper graph (single batch)
     mapper_repr._ensure_exec_graph()  # noqa: SLF001
     exec_order: list[Mapper] = list(mapper_repr._exec_order)  # noqa: SLF001
     deps = mapper_repr._deps  # noqa: SLF001
@@ -63,7 +61,6 @@ def generate_softcore_flowchart_dot(
         else:
             values[node] = node.forward(tuple(values[dep] for dep in d))
 
-    # Build DOT
     lines: list[str] = []
     lines.append("digraph SoftCoreFlowchart {")
     lines.append("  rankdir=LR;")
@@ -78,7 +75,6 @@ def generate_softcore_flowchart_dot(
         out_t = values.get(node)
         out_shape = None
         if out_t is not None and hasattr(out_t, "shape"):
-            # drop batch dim if present
             if len(out_t.shape) >= 1:
                 out_shape = tuple(out_t.shape[1:])
 
@@ -92,9 +88,6 @@ def generate_softcore_flowchart_dot(
             allow_coalescing=allow_coalescing,
         )
 
-        # Per-kind SW summary + optional FC estimate spec is the mapper's own
-        # ``flowchart_node_estimate`` (V6 polymorphism): a new mapper kind adds one
-        # method, not a branch here. This layer only turns the FC spec into cores.
         estimate = node.flowchart_node_estimate(out_shape)
         sw_text = estimate.sw_text
         if estimate.fc_spec is not None:
@@ -119,7 +112,6 @@ def generate_softcore_flowchart_dot(
 
         lines.append(f'  {nid} [label="{_dot_escape(label)}"];')
 
-    # Edges
     for node in exec_order:
         for dep in deps.get(node, []):
             lines.append(f"  {node_id[dep]} -> {node_id[node]};")

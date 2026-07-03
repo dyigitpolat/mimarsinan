@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Sequence
 from mimarsinan.mapping.layout.layout_types import LayoutSoftCoreSpec
 from mimarsinan.mapping.verification.suggester.hw_suggestion_helpers import (
     _count_cores_needed_two_types, _count_per_type_usage, _dimension_bounds,
-    _make_two_core_types, _median, _min_hw_coverage, _next_multiple,
+    _make_two_core_types, _min_hw_coverage,
     _occupancy_ok, _pack_with_two_types,
 )
 from mimarsinan.mapping.verification.suggester.hw_suggestion_types import HardwareSuggestion
@@ -74,7 +74,7 @@ def suggest_hardware_config(
     skip_occupancy = allow_neuron_splitting or allow_coalescing
 
     first_feasible_area: int | None = None
-    first_feasible: tuple[tuple[int, int], int] | None = None  # ((h, w), total)
+    first_feasible: tuple[tuple[int, int], int] | None = None
     _no_progress_iters = 0
     _last_used_count: int | None = None
 

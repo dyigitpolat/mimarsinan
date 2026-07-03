@@ -34,11 +34,8 @@ def _wraps_unbounded_raw_linear_or_conv(mapper) -> bool:
 def _is_encoding_segment_start(node) -> bool:
     """True iff the upstream chain starts at raw input or unbounded host output.
 
-    A perceptron whose source produces signed / unbounded values (raw Linear /
-    Conv ComputeOp, or the raw network input) cannot be fed spikes directly —
-    its forward must run host-side as a ComputeOp.  Structural mappers and
-    bounded-output ComputeOps (LayerNorm, pool, GELU, ...) are transparent;
-    upstream perceptrons stop the walk (on-chip spike output is fine).
+    Such a perceptron's source produces signed/unbounded values that cannot be fed
+    as spikes, so its forward must run host-side as a ComputeOp.
     """
     src = node.source_mapper
     while src is not None:
@@ -60,14 +57,8 @@ def mark_encoding_layers(
 ) -> None:
     """Set ``perceptron.is_encoding_layer`` on perceptrons that start a neural segment.
 
-    ``placement="subsume"`` (default): segment-start perceptrons are marked, so the
-    mappers emit them as **host ComputeOps** that generate spike trains for the chip.
-
-    ``placement="offload"``: leave them unmarked, so the mappers emit them as on-chip
-    **NeuralCores** and the segment input is encoded directly (per
-    ``spike_generation_mode`` — Uniform for LIF, TTFS for TTFS), enlarging the
-    hardware-accelerated surface. The first core then reads the raw segment input,
-    which the flow uniform/TTFS-encodes exactly as it does any rate boundary.
+    ``placement="subsume"`` marks segment-start perceptrons as host ComputeOps that
+    generate spike trains; ``"offload"`` clears the mark so they map on-chip as NeuralCores.
     """
     if placement not in _VALID_PLACEMENTS:
         raise ValueError(
@@ -78,8 +69,7 @@ def mark_encoding_layers(
     for node in model_repr._exec_order:
         if not _is_perceptron_holder(node):
             continue
-        # Idempotent per placement: offload clears any prior marking (e.g. the
-        # subsume default applied at conversion time) so the perceptron maps on-chip.
+        # Idempotent per placement: offload clears any prior subsume marking so the perceptron maps on-chip.
         if placement == "offload":
             node.perceptron.is_encoding_layer = False
         elif _is_encoding_segment_start(node):
@@ -89,12 +79,8 @@ def mark_encoding_layers(
 def segment_entry_perceptrons(model_repr: ModelRepresentation) -> list:
     """Perceptrons that are the FIRST on-chip core of a neural segment.
 
-    These read a freshly assembled hybrid stage input — the seam the
-    synchronized TTFS wire contract grid-quantizes (q(x)). The walk treats
-    structural mappers as transparent; the raw input, any ``ComputeOpMapper``
-    (a hybrid stage barrier), and host encoding layers
-    (``is_encoding_layer=True``) start a segment; an upstream on-chip
-    perceptron ends the walk (its output is already grid-valued).
+    These read a freshly assembled hybrid stage input — the seam the synchronized
+    TTFS wire contract grid-quantizes. Structural mappers are transparent in the walk.
     """
     model_repr._ensure_exec_graph()
     entries = []
@@ -102,7 +88,7 @@ def segment_entry_perceptrons(model_repr: ModelRepresentation) -> list:
         if not _is_perceptron_holder(node):
             continue
         if getattr(node.perceptron, "is_encoding_layer", False):
-            continue  # host op: not on-chip, no stage input of its own
+            continue
         src = node.source_mapper
         while src is not None:
             if _is_perceptron_holder(src):

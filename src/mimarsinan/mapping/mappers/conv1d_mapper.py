@@ -3,25 +3,23 @@
 from __future__ import annotations
 
 import numpy as np
-import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
 from mimarsinan.mapping.ir import IRSource
 from mimarsinan.mapping.mappers.base import Mapper, resolve_activation_type
+from mimarsinan.mapping.mappers.conv_helpers import _chunk_sizes
+from mimarsinan.mapping.mappers.flowchart import FlowchartFCSpec, FlowchartNodeEstimate
+from mimarsinan.mapping.mappers.scale_propagation import (
+    perceptron_boundary_scale,
+    perceptron_per_source_scale,
+)
 from mimarsinan.models.perceptron_mixer.perceptron import Perceptron
 from mimarsinan.transformations.perceptron.perceptron_transformer import PerceptronTransformer
 
 
-from mimarsinan.mapping.mappers.base import Mapper
-from mimarsinan.mapping.mappers.conv_helpers import _chunk_sizes
-
 class Conv1DPerceptronMapper(Mapper):
-    """
-    1D Convolution implemented as:
-    - Forward: efficient nn.Conv1d
-    - Mapping: shared-weight Perceptron (unfold + matmul), tiled as needed.
-    """
+    """1D convolution: efficient nn.Conv1d forward; shared-weight Perceptron (unfold+matmul) in IR, tiled as needed."""
 
     def __init__(
         self,
@@ -67,25 +65,12 @@ class Conv1DPerceptronMapper(Mapper):
         return [[self.perceptron]]
 
     def propagate_source_scale(self, deps, out_scales):
-        from mimarsinan.mapping.mappers.scale_propagation import (
-            perceptron_per_source_scale,
-        )
-
         return perceptron_per_source_scale(self, deps, out_scales)
 
     def propagate_boundary_scale(self, deps, out_scales, default):
-        from mimarsinan.mapping.mappers.scale_propagation import (
-            perceptron_boundary_scale,
-        )
-
         return perceptron_boundary_scale(self, deps, out_scales, default)
 
     def flowchart_node_estimate(self, out_shape):
-        from mimarsinan.mapping.mappers.flowchart import (
-            FlowchartFCSpec,
-            FlowchartNodeEstimate,
-        )
-
         in_f = int(self.in_channels * self.kernel_size)
         out_f = int(self.out_channels)
         sw_text = (

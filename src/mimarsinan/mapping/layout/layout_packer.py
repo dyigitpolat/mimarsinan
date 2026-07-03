@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import copy
-import math
 import re
 from typing import Dict, List, Sequence, Tuple
 
@@ -11,6 +10,7 @@ from mimarsinan.mapping.packing.core_packing import (
     canonical_split_softcore,
 )
 from mimarsinan.mapping.packing.placement_engine import run_placement
+from mimarsinan.mapping.platform.coalescing import coalescing_fragment_count
 from mimarsinan.mapping.layout.layout_types import (
     LayoutCoreSnapshot,
     LayoutHardCoreInstance,
@@ -28,12 +28,8 @@ def _split_root(name: str) -> str:
 
 
 class LayoutMaterializer:
-    """Shape-only :class:`~mimarsinan.mapping.packing.placement_engine.Materializer`.
-
-    Mirrors the runtime placement decisions on shape-only ``LayoutSoftCoreSpec``
-    fragments / ``LayoutHardCoreInstance`` cores, and tracks split lineage so the
-    layout packing result can report split-fragment statistics.
-    """
+    """Shape-only ``Materializer`` mirroring runtime placement decisions and
+    tracking split lineage for split-fragment statistics."""
 
     def __init__(self) -> None:
         self.split_counter = 0
@@ -81,14 +77,8 @@ def _make_layout_fragments(
     first_neurons: int,
     remaining_neurons: int,
 ) -> tuple[LayoutSoftCoreSpec, LayoutSoftCoreSpec]:
-    """Construct two layout softcore fragments at a neuron boundary.
-
-    Mirrors the runtime-side ``_make_real_fragments`` in
-    ``softcore_mapping.py`` — both are ``make_fragments`` callbacks for
-    ``canonical_split_softcore``, so the split *decision* (boundary,
-    two-fragment protocol) is identical; only the fragment *construction*
-    differs (layout only needs shape + carried-over group/latency tags).
-    """
+    """Construct two layout softcore fragments at a neuron boundary; the split
+    decision matches runtime ``_make_real_fragments`` (same canonical callback)."""
     frag1 = LayoutSoftCoreSpec(
         input_count=softcore.input_count,
         output_count=first_neurons,
@@ -110,17 +100,8 @@ def _expand_for_axon_coalescing(
     softcores: Sequence[LayoutSoftCoreSpec],
     core_types: Sequence[LayoutHardCoreType],
 ) -> Tuple[List[LayoutSoftCoreSpec], Tuple[int, ...]]:
-    """Expand softcores for axon coalescing.
-
-    A softcore whose input_count exceeds the largest hw core's max_axons is split
-    into K coalescing fragments, each covering a slice of the inputs but all of
-    the output neurons — exactly what IRMapping does at model-building time when
-    coalescing is enabled.  This lets the layout packer correctly verify and count
-    hardware cores for coalescing configurations.
-
-    Returns (expanded_softcores, coalescing_group_sizes) where coalescing_group_sizes
-    contains one entry per softcore that produced more than one coalescing fragment.
-    """
+    """Split each over-wide softcore into axon-coalescing fragments (each carrying
+    all output neurons), mirroring IRMapping's coalescing at model-building time."""
     if not core_types:
         return list(softcores), ()
     max_avail_axons = max(int(ct.max_axons) for ct in core_types)
@@ -133,8 +114,6 @@ def _expand_for_axon_coalescing(
         if sc.input_count <= max_avail_axons:
             result.append(sc)
         else:
-            from mimarsinan.mapping.platform.coalescing import coalescing_fragment_count
-
             k = coalescing_fragment_count(sc.input_count, max_avail_axons)
             base = sc.input_count // k
             rem = sc.input_count - base * k
@@ -158,36 +137,22 @@ def pack_layout(
     allow_neuron_splitting: bool = False,
     allow_coalescing: bool = False,
 ) -> LayoutPackingResult:
-    """
-    Pack layout-only softcores into a limited pool of hardware cores.
+    """Pack layout-only softcores into a limited pool of hardware cores.
 
-    ``allow_neuron_splitting``:
-        Softcores may be split along the neuron (output) dimension across
-        multiple hardware cores.
-
-    ``allow_coalescing``:
-        Softcores whose input count exceeds a single hardware core's max_axons
-        are pre-expanded into axon-coalescing fragments before packing.  Each
-        fragment carries all output neurons of the original softcore, mirroring
-        IRMapping's coalescing behaviour.
-    """
+    ``allow_neuron_splitting`` splits along the neuron dimension; ``allow_coalescing``
+    pre-expands over-wide softcores into axon-coalescing fragments before packing."""
 
     used_hardcores: List[LayoutHardCoreInstance] = []
     unused_hardcores: List[LayoutHardCoreInstance] = _make_instances(core_types)
 
-    # Work on a mutable copy; greedy_pack_softcores removes elements.
     unmapped = list(copy.deepcopy(list(softcores)))
     pre_coalesce_count = len(unmapped)
 
-    # Pre-expand for axon coalescing so the greedy packer sees fragments that
-    # fit within individual hardware cores' axon capacities.
     coalescing_group_sizes: Tuple[int, ...] = ()
     if allow_coalescing:
         unmapped, coalescing_group_sizes = _expand_for_axon_coalescing(unmapped, core_types)
     coalesced_fragment_count = len(unmapped) - pre_coalesce_count
 
-    # Pre-assign temp names to anonymous softcores so split lineage can be tracked
-    # across multiple split calls via the _split_N suffix naming convention.
     for i, sc in enumerate(unmapped):
         if sc.name is None:
             unmapped[i] = LayoutSoftCoreSpec(
@@ -209,7 +174,6 @@ def pack_layout(
             allow_neuron_splitting=allow_neuron_splitting,
         )
     except Exception as e:
-        # Infeasible mapping: return a structured result; search backends can apply penalties.
         return LayoutPackingResult(
             feasible=False,
             cores_used=0,

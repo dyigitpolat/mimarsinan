@@ -1,33 +1,38 @@
-"""PerceptronMapper, ComputeOpMapper, ModuleMapper."""
+"""ComputeOpMapper: host-side ComputeOp mapper for any nn.Module."""
 
 from __future__ import annotations
 
+import operator
 from typing import Any, Sequence
 
-import numpy as np
 import torch
 import torch.nn as nn
 
-from mimarsinan.mapping.mappers.base import Mapper, resolve_activation_type
-from mimarsinan.mapping.support.compute_modules import ScaleNormalizingWrapper
-from mimarsinan.mapping.support.shape_probe import probe_module_io_shapes
-from mimarsinan.transformations.perceptron.perceptron_transformer import PerceptronTransformer
-
-
+from mimarsinan.mapping.layout.layout_source_view_ops import (
+    concat_source_views,
+    stack_source_views,
+)
 from mimarsinan.mapping.mappers.base import Mapper
+from mimarsinan.mapping.mappers.flowchart import FlowchartFCSpec, FlowchartNodeEstimate
+from mimarsinan.mapping.mappers.scale_propagation import (
+    apply_compute_op_scale_policy,
+    mean_source_scale,
+    present_source_scales,
+)
+from mimarsinan.mapping.support.compute_modules import (
+    ComputeAdapter,
+    ScaleNormalizingWrapper,
+)
+from mimarsinan.mapping.support.shape_probe import probe_module_io_shapes
 
 
 class ShapeMismatchError(RuntimeError):
     """Multi-input ComputeOpMapper received broadcast-incompatible inputs."""
 
 class ComputeOpMapper(Mapper):
-    """Unified host-side ComputeOp mapper for any ``nn.Module``.
+    """Unified host-side ComputeOp mapper for any nn.Module; branches on source count and ndim.
 
-    Branches internally on ``len(sources)`` (unary vs. multi-input) and
-    on ``src_arr.ndim`` (multi-column per-instance vs. whole-tensor).
-    Shapes are probed via ``probe_module_io_shapes`` when not supplied.
-    ``compute_per_source_scales`` may populate ``per_source_scales`` /
-    ``output_scale`` to trigger ``ScaleNormalizingWrapper`` at emission.
+    per_source_scales / output_scale, when populated, trigger a ScaleNormalizingWrapper at emission.
     """
 
     def __init__(
@@ -75,29 +80,14 @@ class ComputeOpMapper(Mapper):
         return stacked.mean(dim=0)
 
     def propagate_source_scale(self, deps, out_scales):
-        from mimarsinan.mapping.mappers.scale_propagation import (
-            apply_compute_op_scale_policy,
-            present_source_scales,
-        )
-
         return apply_compute_op_scale_policy(
             self, present_source_scales(deps, out_scales)
         )
 
     def propagate_boundary_scale(self, deps, out_scales, default):
-        from mimarsinan.mapping.mappers.scale_propagation import mean_source_scale
-
         return mean_source_scale(deps, out_scales, float(default))
 
     def flowchart_node_estimate(self, out_shape):
-        import operator
-
-        from mimarsinan.mapping.mappers.flowchart import (
-            FlowchartFCSpec,
-            FlowchartNodeEstimate,
-        )
-        from mimarsinan.mapping.support.compute_modules import ComputeAdapter
-
         is_unbound_add = (
             isinstance(getattr(self, "module", None), ComputeAdapter)
             and getattr(self.module, "fn", None) is operator.add
@@ -106,8 +96,6 @@ class ComputeOpMapper(Mapper):
         if not is_unbound_add:
             return FlowchartNodeEstimate()
 
-        # Add is mapped as a linear op (concat + identity weights). Estimate roughly:
-        # 1 instance, axons=2*features, neurons=features (visualization-only).
         if out_shape is not None and len(out_shape) == 1:
             feat = int(out_shape[0])
             return FlowchartNodeEstimate(
@@ -168,8 +156,6 @@ class ComputeOpMapper(Mapper):
         )
 
     def _emit_unary(self, ir_mapping, src_arr, module):
-        from mimarsinan.mapping.layout.layout_source_view_ops import stack_source_views
-
         if src_arr.ndim == 2 and self._is_per_instance_module(module) and self.input_shapes is None:
             oriented = self._orient_2d_for_columns(src_arr.transpose(), module)
             col_input_shape = (int(oriented.shape[0]),)
@@ -218,8 +204,6 @@ class ComputeOpMapper(Mapper):
         )
 
     def _emit_multi(self, ir_mapping, source_arrays, module):
-        from mimarsinan.mapping.layout.layout_source_view_ops import concat_source_views
-
         flat_sources = [
             arr.flatten() if hasattr(arr, "flatten") else arr
             for arr in source_arrays

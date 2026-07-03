@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, Mapping, Sequence
 
 import torch
+import torch.fx as fx
 import torch.nn as nn
 
 from mimarsinan.mapping.support.scale_broadcast import broadcast_scale_to_dim
@@ -64,7 +65,6 @@ class ComputeAdapter(nn.Module):
         return None
 
     def forward(self, *inputs) -> torch.Tensor:
-        # Inputs may be nested containers (e.g. getitem over an LSTM's (h, c)).
         lead = self._leading_tensor(inputs)
         batch_size = lead.shape[0] if lead is not None else 1
         expanded_bound = [
@@ -76,7 +76,6 @@ class ComputeAdapter(nn.Module):
 
     @classmethod
     def from_fx_node(cls, node, fn) -> "ComputeAdapter":
-        import torch.fx as fx
         extra_args = tuple(a for a in node.args[1:] if not isinstance(a, fx.Node))
         kwargs = {k: v for k, v in node.kwargs.items() if not isinstance(v, fx.Node)}
         return cls(fn, extra_args=extra_args, kwargs=kwargs)

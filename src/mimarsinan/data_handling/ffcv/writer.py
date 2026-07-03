@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import errno
+import fcntl
 import os
 import time
 from pathlib import Path
@@ -24,8 +25,6 @@ def _instantiate_field(field_spec):
 
 def _acquire_lockfile(path: Path, *, timeout: float = 600.0) -> int:
     """Blocking flock on a sibling ``<path>.lock``; concurrent writers wait."""
-    import fcntl
-
     lock_path = path.with_suffix(path.suffix + ".lock")
     lock_path.parent.mkdir(parents=True, exist_ok=True)
     fd = os.open(str(lock_path), os.O_CREAT | os.O_RDWR, 0o644)
@@ -45,8 +44,6 @@ def _acquire_lockfile(path: Path, *, timeout: float = 600.0) -> int:
 
 
 def _release_lockfile(fd: int) -> None:
-    import fcntl
-
     try:
         fcntl.flock(fd, fcntl.LOCK_UN)
     finally:
@@ -62,10 +59,8 @@ def ensure_beton(
 ) -> Path:
     """Return the cached beton path; build it from ``dataset_factory()`` if missing.
 
-    ``dataset_factory`` must return a ``torch.utils.data.Dataset`` whose
-    ``__getitem__`` yields tuples matching ``spec.fields`` in order.
-    Writes go to a sibling tmp file then atomic-rename, so concurrent
-    readers never see a partial beton.
+    Writes to a sibling tmp file then atomic-renames, so concurrent readers
+    never see a partial beton.
     """
     from ffcv.writer import DatasetWriter
 

@@ -12,6 +12,5 @@ class NoiseTuner(AdaptationRateTuner):
         return self.trainer.validate_n_batches(self._budget.progress_eval_batches)
 
     def run(self):
-        # _after_run (inherited) commits rate=1.0 and enforces the pipeline floor.
         super().run()
         return self.trainer.validate()

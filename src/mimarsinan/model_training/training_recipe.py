@@ -1,40 +1,18 @@
-"""Composable training recipe: optimizer + scheduler + grad clip + LLRD.
-
-Separates the fine-tuning policy from :class:`BasicTrainer` so that callers
-(pipeline steps, templates, tuners) can pick an optimizer family, weight-decay
-policy, layer-wise LR decay factor, and warmup/cosine schedule without
-touching the trainer's training loop.
-
-Design constraints:
-
-* Back-compat: if :class:`BasicTrainer` is constructed without a recipe the
-  legacy Adam + CosineAnnealingLR path runs unchanged, preserving existing
-  SNN tuning/adaptation behavior bit-for-bit.
-* Dataset/model agnostic: recipes are declared in config (``training_recipe``
-  block) and consumed uniformly across any dataset or model backbone.
-* Generic layer-wise LR decay: block depth is inferred from param names via
-  regex, covering torchvision ViT (``encoder.layers.N.``), HF/timm ViT
-  (``blocks.N.``), and ResNet-with-blocks (``layerN.blockM.``). Unknown
-  naming -> single group with uniform LR (graceful degradation).
-"""
+"""Composable training recipe: optimizer + scheduler + grad clip + LLRD."""
 
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional, Sequence
 
 import torch
 
 
 _BLOCK_PATTERNS = [
-    # torchvision ViT: "encoder.layers.encoder_layer_<N>..."
     re.compile(r"encoder_layer_(\d+)"),
-    # HF / timm ViT, MLP-Mixer: "blocks.<N>..."
     re.compile(r"(?:^|\.)blocks?\.(\d+)\."),
-    # Generic "encoder.layers.<N>..." / "layers.<N>..."
     re.compile(r"(?:^|\.)layers?\.(\d+)\."),
-    # ResNet-ish: "layer<N>..."
     re.compile(r"(?:^|\.)layer(\d+)(?:\.|_)"),
 ]
 
@@ -66,19 +44,10 @@ DEFAULT_RECIPE_FIELDS = {f.name for f in TrainingRecipe.__dataclass_fields__.val
 
 
 def build_recipe(config: dict, key: str = "training_recipe") -> Optional[TrainingRecipe]:
-    """Return a ``TrainingRecipe`` from ``config[key]``, or ``None``.
+    """Return a ``TrainingRecipe`` from ``config[key]``, or ``None`` for legacy behavior.
 
-    Returning ``None`` signals to trainers that legacy behavior should run --
-    crucial for SNN tuning paths that rely on specific optimizer dynamics
-    when no recipe is explicitly configured.
-
-    The ``key`` parameter lets callers distinguish between multiple recipes
-    in the same config (e.g. ``training_recipe`` for fine-tuning vs.
-    ``tuning_recipe`` for SNN adaptation loops). Each recipe is strictly
-    opt-in -- there is no cross-fallback because a fine-tuning recipe
-    (AdamW + large wd + LLRD) can destabilize rate-based SNN adaptation
-    loops. Callers wanting the same recipe for both stages should set
-    both keys explicitly.
+    Recipes are strictly opt-in with no cross-fallback: a fine-tuning recipe can
+    destabilize rate-based SNN adaptation, so callers set each key explicitly.
     """
     block = config.get(key)
     if not block:
@@ -121,23 +90,10 @@ def build_param_groups(
     base_lr: float,
     recipe: TrainingRecipe,
 ) -> list[dict]:
-    """Split model params into optimizer groups.
+    """Split model params into optimizer groups by weight-decay exclusion and layer-wise LR decay.
 
-    Four dimensions combined:
-
-    * **Weight-decay exclusion**: params whose names match ``no_decay_keywords``
-      get ``weight_decay=0`` (bias, LayerNorm, pos-embed, cls-token).
-    * **Layer-wise LR decay**: when ``layer_wise_lr_decay < 1.0``, each block
-      depth :math:`d` (as inferred from the parameter name) gets
-      ``lr = base_lr * layer_wise_lr_decay ** (max_depth - d + 1)``. The head
-      (depth=None, non-embedding) keeps ``base_lr``; stem/embedding params
-      (depth=None but matching ``pos_embed``/``class_token``/``conv_proj``)
-      get the deepest-decayed LR.
-    * Head and stem heuristics: any param without inferred depth is treated
-      as head unless it matches stem keywords (``conv_proj``, ``patch_embed``,
-      ``stem``, ``embed``, ``cls_token``, ``pos_embed``).
-    * Graceful fallback: if no block depth is found anywhere, a single group
-      (or two, decay/no-decay) is returned with uniform ``base_lr``.
+    Block depth is inferred from param names; params without a depth are treated as
+    head (``base_lr``) unless they match stem/embedding keywords (deepest-decayed LR).
     """
     decay = recipe.weight_decay
     llrd = float(recipe.layer_wise_lr_decay)

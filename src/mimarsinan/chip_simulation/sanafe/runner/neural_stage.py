@@ -2,52 +2,28 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 
 import mimarsinan.chip_simulation.sanafe.runner as _runner
 from mimarsinan.chip_simulation.hybrid_run.hybrid_execution import assemble_segment_input_numpy
-from mimarsinan.chip_simulation.hybrid_run.hybrid_semantics import (
-    NeuralSegmentResult,
-    store_neural_segment_output,
-)
+from mimarsinan.chip_simulation.hybrid_run.hybrid_semantics import NeuralSegmentResult
 from mimarsinan.chip_simulation.sanafe.analysis import (
-    _build_spike_capture_warning,
     _compute_connectivity_edges,
-    _compute_critical_cores,
-    _compute_cycle_energy_breakdown,
-    _compute_noc_traffic_per_cycle,
-    _compute_ttfs_activity_diagnostics,
     _count_cross_tile_connectivity_edges,
-    _flatten_message_trace,
-    _group_name,
     _group_name_to_size,
     _group_row_offsets,
     _lif_and_input_spike_totals,
     _input_spikes_per_core,
-    _pack_potential_trace,
     _pack_spike_trace_matrix,
-    _per_core_energy_sanafe,
     _per_core_packet_counts,
-    _read_ttfs_core_activations,
     _spike_trace_to_group_counts,
     _summarize_message_trace,
-    _aggregate_noc_link_load,
-    _aggregate_noc_links,
-    _compute_cascade_timeline,
 )
 from mimarsinan.chip_simulation.sanafe.net_synth import apply_ttfs_preset_membranes
-from mimarsinan.chip_simulation.sanafe.records import (
-    SanafeCoreRecord,
-    SanafeEnergyBreakdown,
-    SanafeRunRecord,
-    SanafeSegmentRecord,
-    SanafeTileRecord,
-)
+from mimarsinan.chip_simulation.sanafe.records import SanafeSegmentRecord
 from mimarsinan.mapping.latency.chip import ChipLatency
-from mimarsinan.mapping.support.core_geometry import used_axons as _used_axons
-from mimarsinan.mapping.support.core_geometry import used_neurons as _used_neurons
 
 from .constants import _COMPUTE_DTYPE
 
@@ -95,9 +71,6 @@ class SanafeNeuralStageMixin:
         )
 
         is_cascade = is_cascaded_ttfs(self.spiking_mode, self.ttfs_cycle_schedule)
-        # Cascaded greedy TTFS is decoded from spike counts (LIF-style), not the
-        # analytical contract / membrane potential — so it does *not* take the
-        # ``is_ttfs`` contract+preset path; only its input encoding is TTFS-latched.
         is_ttfs = requires_ttfs_firing(self.spiking_mode) and not is_cascade
         is_cycle = is_synchronized_ttfs(self.spiking_mode, self.ttfs_cycle_schedule)
 
@@ -106,8 +79,6 @@ class SanafeNeuralStageMixin:
             for c in hcm.cores
         ) if hcm.cores else 0
         if is_cycle:
-            # Synchronized schedule: input window [0,S) + one S-window per latency
-            # group → total = (num_groups + 1) · S.
             from mimarsinan.chip_simulation.ttfs.ttfs_cycle_genuine import latency_groups
 
             num_groups, _ = latency_groups(
@@ -115,11 +86,8 @@ class SanafeNeuralStageMixin:
             )
             T_eff = (num_groups + 1) * self.T
         elif is_cascade:
-            # Ungated full-window accumulation must match HCM's
-            # ``cycles = ChipLatency + T`` exactly (the count is set directly by
-            # the sim length, not a per-core window). +1 for SANA-FE's one-cycle
-            # input→synapse delivery delay. Use the full ChipLatency (includes the
-            # output hop), not just ``max(core.latency)``.
+            # Cascaded T_eff must equal HCM's ``ChipLatency + T`` (full ChipLatency,
+            # not max core latency) + 1 for SANA-FE's one-cycle input delivery delay.
             try:
                 chip_latency = int(ChipLatency(hcm).calculate())
             except (RecursionError, ValueError):
@@ -153,9 +121,6 @@ class SanafeNeuralStageMixin:
             membrane_V = contract_stage.membrane_voltages
             seg_input_rates = contract_stage.seg_input
             if not is_cycle:
-                # ttfs_quantized: inject the analytical membrane (preset). The
-                # genuine ttfs_cycle soma reconstructs V from incoming spikes, so
-                # it gets no preset.
                 apply_ttfs_preset_membranes(
                     core_to_group, hcm, membrane_V,
                     spiking_mode=self.spiking_mode,
@@ -183,14 +148,8 @@ class SanafeNeuralStageMixin:
                 )
                 encoded_padded = np.concatenate([encoded, pad], axis=2)
             if is_cycle:
-                # Genuine single spikes on the wire: inject the single-shot binary
-                # train via the proven per-cycle mask path (SANA-FE reads "spikes"
-                # as a per-timestep mask), so each input fires at its TTFS cycle.
                 _runner.set_input_spike_trains(core_input_neurons, hcm, encoded_padded)
         elif is_cascade:
-            # Cascaded greedy TTFS: genuine SINGLE spike per input (one event at
-            # its TTFS cycle); the downstream soma's ramp_current reconstructs the
-            # contribution. No held/latched input — only the first spike is real.
             from mimarsinan.chip_simulation.ttfs.ttfs_encoding import (
                 ttfs_single_spike_train,
             )
@@ -216,11 +175,6 @@ class SanafeNeuralStageMixin:
                 )
                 encoded_padded = np.concatenate([encoded, pad], axis=2)
             _runner.set_input_spike_trains(core_input_neurons, hcm, encoded_padded)
-        # Cascaded single-spike TTFS bias must land at each consuming core's gated
-        # window start (soma active_start = core.latency + 1); without per-core
-        # timing a global-cycle-0 spike is gated out of a latency>=1 core. The
-        # analytical/synchronized paths deliver bias via preset membranes, so they
-        # keep the legacy cycle-0 single spike.
         core_latencies = {
             i: (int(c.latency) if getattr(c, "latency", None) is not None else 0)
             for i, c in enumerate(hcm.cores)

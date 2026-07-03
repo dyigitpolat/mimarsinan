@@ -1,8 +1,4 @@
-"""Frozen-teacher snapshots for knowledge-distillation recovery.
-
-A leaf module: the SSOT for capturing an eval-mode, gradient-frozen copy of a
-model to distill against (the KD recovery target in ``KDBlendAdaptationTuner``).
-"""
+"""Frozen-teacher snapshots for knowledge-distillation recovery."""
 
 from __future__ import annotations
 

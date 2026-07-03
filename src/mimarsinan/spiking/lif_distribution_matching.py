@@ -1,16 +1,4 @@
-"""DFQ per-neuron bias correction for the deployed LIF cascade.
-
-The LIF analog of ``distribution_matching.match_activation_distributions``,
-minus the scale-aware boundary calibration: LIF's interior rate code is linear
-and its decode scale is the q-quantile already fixed in Activation Analysis, so
-re-tuning it is a no-op (and the encoding scale is pinned by the input contract).
-What remains is the shared DFQ first-moment correction — match each perceptron's
-deployed cycle-accurate cascade channel-mean to the teacher ANN's by nudging
-``layer.bias`` — which shrinks the systematic ANN→SNN conversion mean shift.
-
-The model must already be in the deployed cycle-accurate LIF state (the caller
-runs the finalize rebuild before calibrating).
-"""
+"""DFQ per-neuron bias correction for the deployed LIF cascade."""
 
 from __future__ import annotations
 
@@ -26,9 +14,8 @@ from mimarsinan.spiking.dfq_bias_correction import (
 def _lif_cascade_channel_means(model, cal_x, T) -> dict:
     """Per-perceptron deployed-cascade decoded value, keyed by perceptron index.
 
-    Reads the decoded values (``rate * activation_scale``) the LIF segment policy
-    records through the forward's ``node_value_recorder`` side-channel — the exact
-    deployed dynamics, not a re-derivation.
+    Reads the values the LIF segment policy records through the forward's
+    ``node_value_recorder`` side-channel — the exact deployed dynamics.
     """
     recorder: dict = {}
     with torch.no_grad():
@@ -46,11 +33,8 @@ def match_lif_activation_distributions(
 ) -> dict:
     """Match the deployed LIF cascade's per-neuron mean to the teacher ANN's.
 
-    Runs ``bias_iters`` rounds of DFQ bias correction (``bias += eta * (ann_mean
-    - cascade_mean)``) over the deployed cycle-accurate cascade. The model is
-    mutated in place and must already be in the deployed LIF state. Returns a
-    small stats dict bracketing the channel-mean ``|gap|`` (``mean_gap_before`` /
-    ``mean_gap_after``).
+    Runs ``bias_iters`` rounds of DFQ bias correction over the deployed
+    cycle-accurate cascade. Mutates the model in place; returns a stats dict.
     """
     T = int(T)
     ann_mean = teacher_channel_means(teacher, cal_x)

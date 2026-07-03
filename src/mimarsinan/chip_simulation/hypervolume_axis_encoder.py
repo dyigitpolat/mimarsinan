@@ -37,12 +37,7 @@ def pruning_axis(
     pruning: Any = False,
     pruning_fraction: Any = 0.0,
 ) -> str:
-    """Encode the deployment pruning axis.
-
-    ``prune_sparsity`` is the structured pre-mapping deployment knob. The legacy
-    in-loop ``pruning``/``pruning_fraction`` pair still maps to ``pruned`` when a
-    row only carries those fields, so old evidence remains readable.
-    """
+    """Encode the deployment pruning axis (structured ``prune_sparsity`` or the legacy ``pruning`` pair)."""
     if float(prune_sparsity or 0.0) > 0.0:
         return "pruned"
     if _truthy(pruning) and float(pruning_fraction or 0.0) > 0.0:

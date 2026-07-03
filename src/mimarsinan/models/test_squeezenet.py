@@ -1,9 +1,4 @@
-"""Unit tests for the SqueezeNet conv vehicle and its honest region descriptor.
-
-The descriptor is MEASURED with the framework's own instruments
-(``classify_validity`` + ``estimate_cores_needed``) on the converted IR graph —
-no hand-rolled core counting, no training, no GPU.
-"""
+"""Unit tests for the SqueezeNet conv vehicle and its MEASURED region descriptor."""
 
 import torch
 import torch.nn as nn
@@ -25,9 +20,6 @@ def _build(input_shape=_MNIST_SHAPE, num_classes=_NUM_CLASSES, width=None):
 
 def _param_count(model):
     return int(sum(p.numel() for p in model.parameters()))
-
-
-# ── Structural / build tests ─────────────────────────────────────────────────
 
 
 def test_builds_for_in_channels_num_classes_input_size():
@@ -55,9 +47,8 @@ def test_fire_module_squeeze_then_expand_concat():
     x = torch.zeros(2, 32, 7, 7)
     with torch.no_grad():
         y = fire(x)
-    # Output channels = expand1x1 + expand3x3; spatial preserved (SAME padding).
     assert y.shape == (2, 32, 7, 7)
-    assert fire.expand3x3.padding == (1, 1)  # SAME padding keeps it on the mappable path
+    assert fire.expand3x3.padding == (1, 1)
     assert fire.squeeze.kernel_size == (1, 1)
     assert fire.expand1x1.kernel_size == (1, 1)
     assert fire.expand3x3.kernel_size == (3, 3)
@@ -66,7 +57,6 @@ def test_fire_module_squeeze_then_expand_concat():
 def test_param_count_in_sane_squeezenet_range():
     """Scaled-down SqueezeNet param count sits in a sane sub-classic range."""
     n = _param_count(_build(_MNIST_SHAPE, 10))
-    # Classic v1.1 ~ 1.2M; this scaled vehicle is smaller but recognisably a CNN.
     assert 100_000 <= n <= 1_200_000, n
 
 
@@ -95,13 +85,9 @@ def test_composed_only_of_mappable_ops():
             continue
         assert not isinstance(module, forbidden), type(module).__name__
         assert isinstance(module, allowed), type(module).__name__
-    # No grouped/depthwise convolution (un-mappable in the soft-core mapper).
     for module in _build().modules():
         if isinstance(module, nn.Conv2d):
             assert module.groups == 1, module
-
-
-# ── MEASURED region descriptor (framework instruments) ───────────────────────
 
 
 def _build_ir_graph(model, input_shape, num_classes, platform_constraints):
@@ -150,11 +136,9 @@ def test_measured_validity_tier_is_valid():
         f"research_gap_ops={verdict.research_gap_ops} "
         f"placement_fixable_ops={verdict.placement_fixable_ops}"
     )
-    # A purely conv/relu/pool/linear model must carry NO research-frontier ops.
     assert verdict.research_gap_ops == []
     assert verdict.tier != TIER_INVALID
     assert verdict.is_valid
-    # MEASURED region descriptor (recorded): fully on-chip under offload placement.
     assert verdict.tier == "VALID"
     assert verdict.param_frac == pytest.approx(1.0, abs=1e-6)
     assert verdict.mac_frac == pytest.approx(1.0, abs=1e-6)
@@ -177,16 +161,12 @@ def test_measured_capacity_estimate():
         f"phase_count={estimate.phase_count} "
         f"peak_phase_cores={estimate.peak_phase_cores}"
     )
-    # A static lower bound is always positive and well-defined.
     assert estimate.cores_needed > 0
     assert estimate.cores_available > 0
     assert estimate.phase_count >= 1
-    # The scaled-down vehicle fits the default 1000-core budget.
     assert estimate.feasible
-    # MEASURED region descriptor (recorded against the default 1000-core budget).
     assert estimate.cores_available == 1000
     assert not estimate.scheduled
     assert estimate.phase_count == 1
     assert estimate.peak_phase_cores == estimate.cores_needed
-    # The static diagonal lower bound is well under the budget (sanity band).
     assert estimate.cores_needed < estimate.cores_available

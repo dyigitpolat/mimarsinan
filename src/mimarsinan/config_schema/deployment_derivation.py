@@ -13,13 +13,10 @@ from mimarsinan.tuning.orchestration.conversion_policy import ConversionPolicy
 
 
 def _fold_conversion_recipe(dp: MutableMapping[str, Any], spiking_mode: str) -> None:
-    """Fold the ConversionPolicy SSOT recipe for ``spiking_mode`` into the config.
+    """Fold the ConversionPolicy SSOT recipe for ``spiking_mode`` into ``dp``.
 
-    The recipe is the SOLE source of these knobs: ``sim_enables``, ``driver`` and the
-    per-mode ``knobs`` are all written AUTHORITATIVELY (a user value for any of them is
-    overwritten by the derived recipe — Pure SSOT). A backend is enabled iff it can run
-    the mode (an infeasible enable raises at assembly; this is where ``nevresim`` is
-    disabled for the synchronized schedule and ``loihi`` for every non-LIF mode).
+    sim_enables, driver, and per-mode knobs are written authoritatively
+    (Pure SSOT): any user value for them is overwritten by the recipe.
     """
     recipe = ConversionPolicy.derive(spiking_mode, dp.get("ttfs_cycle_schedule"))
     for key, value in recipe.sim_enables.items():
@@ -43,8 +40,6 @@ def derive_deployment_parameters(dp: MutableMapping[str, Any]) -> None:
         dp["activation_quantization"] = False
         return
 
-    # Cycle-accurate LIF/TTFS tuning is preconditioned by shift/AQ before the
-    # tuning ramp. Float-weight deployments keep activation quantization off.
     act_quant = forces_activation_quantization(spiking_mode) or is_cycle_based(spiking_mode)
     wt_quant = bool(dp.get("weight_quantization", True))
     dp["activation_quantization"] = act_quant

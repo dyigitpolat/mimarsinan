@@ -1,25 +1,4 @@
-"""Contract-driven step planning (Vector V5).
-
-The deployment step sequence used to be hand-assembled with interleaved
-per-flag ``append``s. V5 makes each step own its applicability —
-``PipelineStep.applies_to(plan)`` — and a ``StepPlan`` filter an ordered
-registry. "Which steps does this config need" becomes data each step owns, not
-an 80-line conditional.
-
-Composition:
-- **V1** ``DeploymentPlan`` is the input every ``applies_to`` reads (resolved
-  decisions, never raw ``config.get``).
-- **V2** ``SpikingModePolicy`` owns the (firing × sync) activation-family
-  decision (``plan.is_lif_style`` delegates to it), so the LIF / TTFS-cycle vs
-  analytical-chain branch lives in the policy, not the planner.
-- **V3** ``BACKEND_REGISTRY`` owns the backend tail: it validates every enabled
-  backend against the capability matrix UP-FRONT (raising on an unsupported
-  backend×mode at assembly) and returns the applicable backend step specs.
-
-The registry order IS the pipeline order; ``resolve`` keeps that order and
-drops the steps whose ``applies_to`` is false — byte-identical to the former
-hand-assembly (locked by the golden-matrix test).
-"""
+"""Contract-driven step planning: an ordered step registry filtered by each step's applicability."""
 
 from __future__ import annotations
 
@@ -37,9 +16,8 @@ class StepPlanContractError(AssertionError):
 class StepSpec:
     """One registry entry: a named step that declares its own applicability.
 
-    ``applies`` defaults to the step class's ``applies_to`` classmethod (the
-    step owns the decision); an explicit override is only for the backend tail,
-    whose applicability + up-front validation live in ``BACKEND_REGISTRY``.
+    ``applies`` defaults to the step class's ``applies_to``; an explicit override
+    is only for the backend tail (validated in ``BACKEND_REGISTRY``).
     """
 
     name: str
@@ -58,9 +36,8 @@ class StepSpec:
 class StepPlan:
     """Ordered registry of pipeline steps, filtered by each step's applicability.
 
-    The registry is either a flat ``StepSpec`` list (each filtered by its own
-    ``applies_to``) or a callable that yields ``(name, class)`` pairs for a plan
-    (the V3 backend tail, which must validate up-front as a side effect).
+    Entries are ``StepSpec`` items or a callable that yields ``(name, class)`` pairs
+    (the backend tail, which validates up-front as a side effect).
     """
 
     def __init__(
@@ -81,21 +58,13 @@ class StepPlan:
         return specs
 
     def validate_data_contract(self, plan: DeploymentPlan) -> list[tuple[str, type]]:
-        """Resolve the step sequence and assert its requires/promises DAG holds.
+        """Resolve the step sequence and assert its requires/promises DAG holds at assembly time.
 
-        Vector V5: each step declares its data contract at the CLASS level
-        (``PipelineStep.declared_contract``), so the satisfiability of the whole
-        DAG — every consumed entry is promised by an EARLIER selected step — can
-        be checked at ASSEMBLY time, before any step is instantiated or run. This
-        mirrors the runtime ``Pipeline.verify`` / ``set_up_requirements``
-        semantics (promises and updates make an entry available downstream;
-        clears retract it) but fails loud with an actionable message naming the
-        missing producer instead of a bare "requires X" assertion deep in a run.
-
-        Returns the resolved ``(name, class)`` sequence (so callers can reuse it).
+        Every consumed entry must be promised by an earlier selected step; fails
+        loud naming the missing producer. Returns the resolved ``(name, class)`` sequence.
         """
         specs = self.resolve(plan)
-        available: dict[str, str] = {}  # entry -> producing step name
+        available: dict[str, str] = {}
         for name, step_class in specs:
             requires, promises, updates, clears = step_class.declared_contract()
             for requirement in requires:

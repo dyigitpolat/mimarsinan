@@ -1,14 +1,4 @@
-"""
-Validation for deployment config JSON (main.py input) and merged flat config.
-
-Validates:
-- Top-level keys and nested deployment_parameters / platform_constraints.
-- User mode: model_type and model_config required when model_config_mode is "user".
-- TTFS: firing_mode and spike_generation_mode must be "TTFS" when spiking_mode is ttfs/ttfs_quantized.
-- Search: arch_search required when any search is active.
-- Per-layer-S (EW2): the ``s_allocation`` intent is a recognized mode; only ``uniform``
-  is wired, so the reserved ``explicit``/``budget`` modes are loud-rejected.
-"""
+"""Validation for deployment config JSON (main.py input) and merged flat config."""
 
 from __future__ import annotations
 
@@ -33,18 +23,8 @@ def s_allocation_config_errors(
 ) -> List[str]:
     """Validate the per-layer-S temporal-allocation declaration (EW2).
 
-    Only ``uniform`` is actually wired into the forwards/sim. ``explicit`` and ``budget``
-    are RESERVED resolver seams that would silently no-op to uniform (the Q2 foot-gun: a
-    user thinks budget/explicit S-allocation works when it does nothing). This loud-rejects
-    them at config-validation time, BEFORE the silent-uniform resolver path is reachable:
-
-    * ``s_allocation`` must be one of {uniform | explicit | budget}.
-    * only ``uniform`` is supported; ``explicit`` / ``budget`` are rejected as
-      reserved/not-implemented (``unsupported_s_allocation_error``).
-
-    ``uniform`` (the default) is always valid and ungated => byte-identical. The
-    ``platform_constraints`` argument is retained for call-site stability; the reserved
-    modes are rejected outright, so no capability gate is consulted.
+    ``s_allocation`` must be uniform/explicit/budget; only ``uniform`` is
+    wired, so the reserved ``explicit``/``budget`` modes are loud-rejected.
     """
     errors: List[str] = []
     dp = deployment_parameters if isinstance(deployment_parameters, Mapping) else {}
@@ -67,11 +47,7 @@ def s_allocation_config_errors(
 
 
 def validate_deployment_config(config: Dict[str, Any]) -> List[str]:
-    """
-    Validate the deployment config JSON shape that main.py expects.
-
-    Returns a list of error messages (empty if valid).
-    """
+    """Validate the deployment config JSON shape main.py expects; return error messages (empty if valid)."""
     errors: List[str] = []
 
     if not isinstance(config, dict):
@@ -90,7 +66,6 @@ def validate_deployment_config(config: Dict[str, Any]) -> List[str]:
         )
     )
 
-    # Top-level required
     for key in ("data_provider_name", "experiment_name", "generated_files_path", "platform_constraints", "deployment_parameters", "start_step"):
         if key not in config:
             errors.append(f"Missing top-level key: {key}")
@@ -114,13 +89,11 @@ def validate_deployment_config(config: Dict[str, Any]) -> List[str]:
             if "arch_search" not in dp or not isinstance(dp.get("arch_search"), dict):
                 errors.append("Search is active but arch_search is missing or not a dict")
 
-        # spiking_mode membership (rejects removed/unknown modes, e.g. 'rate')
         spiking = dp.get("spiking_mode", "lif")
         try:
             require_known_spiking_mode(spiking)
         except ValueError as exc:
             errors.append(str(exc))
-        # TTFS consistency
         if requires_ttfs_firing(spiking):
             if "firing_mode" in dp and dp.get("firing_mode") != "TTFS":
                 errors.append(
@@ -135,11 +108,7 @@ def validate_deployment_config(config: Dict[str, Any]) -> List[str]:
 
 
 def validate_merged_config(flat: Dict[str, Any]) -> List[str]:
-    """
-    Validate the merged flat config (runtime pipeline.config).
-
-    Returns a list of error messages (empty if valid).
-    """
+    """Validate the merged flat config (runtime pipeline.config); return error messages (empty if valid)."""
     errors: List[str] = []
 
     if not isinstance(flat, dict):

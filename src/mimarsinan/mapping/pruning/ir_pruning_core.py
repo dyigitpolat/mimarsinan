@@ -1,11 +1,9 @@
 from __future__ import annotations
-from typing import Dict, List, Sequence, Set, Tuple
-import numpy as np
-from mimarsinan.mapping.ir import IRGraph, IRSource, NeuralCore, WeightBank
+from typing import Dict, Sequence, Tuple
+from mimarsinan.mapping.ir import IRGraph, NeuralCore
 from mimarsinan.mapping.pruning.boundary_policy import assert_unified_ir_for_pruning
 from mimarsinan.mapping.pruning.ir_liveness import NodeLiveness, compute_liveness
 from mimarsinan.mapping.pruning.graph.pruning_graph_core import compute_global_pruned_sets
-from mimarsinan.mapping.pruning.graph.pruning_graph_types import GlobalPruningResult
 from mimarsinan.mapping.pruning.ir_pruning_helpers import (
     _attach_pre_compaction_metadata,
     _boundary_policy_exemptions,
@@ -32,23 +30,9 @@ def prune_ir_graph(
 ) -> IRGraph:
     """Prune and compact ``ir_graph`` in place; return the same instance.
 
-    Pruning is bidirectional and recursive across NeuralCore boundaries.
-    ComputeOp nodes block functional cross-core propagation but structural
-    deadness (pruned upstream neurons) still flows through ComputeOp wiring.
-    Model-level input data axons (``IRSource.node_id == -2``) and model
-    output logits (entries in ``ir_graph.output_sources``) are never pruned.
-
-    After propagation, every NeuralCore is classified by
-    :func:`mimarsinan.mapping.pruning.ir_liveness.compute_liveness` as
-    ``LIVE`` / ``BIAS_ONLY`` / ``DEAD``. ``DEAD`` nodes are deleted via
-    :meth:`IRGraph.remove_nodes` so they no longer consume hardware slots,
-    simulation cycles, or UI surface area. Surviving nodes are physically
-    compacted in place.
-
-    Args:
-        simulation_steps: Integration window for bias-only liveness.
-        spiking_mode: ``lif``, ``ttfs``, or ``ttfs_quantized``; forwarded to
-            :func:`compute_liveness`.
+    Pruning is bidirectional/recursive across NeuralCore boundaries; ComputeOps block
+    functional propagation. Model input data axons and output logits are never pruned;
+    DEAD cores are deleted, surviving cores compacted.
     """
     if not ir_graph.nodes:
         return ir_graph

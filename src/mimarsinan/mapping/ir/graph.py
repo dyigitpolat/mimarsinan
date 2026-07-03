@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass, field
-from typing import Any, Dict, List
+from typing import Any, Dict, Iterable, List
 
 import numpy as np
 
@@ -25,16 +25,13 @@ from mimarsinan.mapping.ir.types import (
 class IRGraph:
     """IR graph of NeuralCores and ComputeOps with shared WeightBanks."""
     nodes: List[IRNode]
-    output_sources: np.ndarray  # Array of IRSource for final outputs
+    output_sources: np.ndarray
     weight_banks: Dict[int, WeightBank] = field(default_factory=dict)
     layout_softcores: List[Any] = field(default_factory=list)
-    # Unique per construction; derived artifacts (the packed hybrid mapping)
-    # record it so cached copies can be detected as stale across resumes.
+    # Unique per construction; derived artifacts record it to detect stale cached copies across resumes.
     build_token: str = field(default_factory=_new_build_token)
 
     def __getattr__(self, name: str):
-        # Backward compat: old pickles lack weight_banks / layout_softcores /
-        # build_token
         if name == "weight_banks":
             self.weight_banks = {}
             return self.weight_banks
@@ -70,35 +67,10 @@ class IRGraph:
         return core.get_core_matrix(self)
 
     def remove_nodes(self, node_ids: Iterable[int]) -> None:
-        """Delete nodes from the graph; rewire dangling references to OFF.
+        """Delete nodes and rewire dangling references to OFF (the canonical whole-node deletion API).
 
-        This is the canonical whole-node deletion API. It enforces the
-        following invariants and raises :class:`ValueError` when any of
-        them would be violated:
-
-        - At least one entry of ``output_sources`` must remain pointing at
-          a surviving NeuralCore (otherwise the graph has no live output).
-        - Every member of a non-trivial ``psum_group_id`` group is removed
-          atomically (all-or-none) -- the partial-positive and
-          partial-negative halves of a partial-sum group cannot be split.
-        - Every member of a non-trivial ``coalescing_group_id`` group is
-          removed atomically (master and slaves come together).
-        - Every requested ``node_id`` must currently exist in the graph.
-
-        Side effects on success:
-
-        - Each removed node disappears from ``self.nodes``.
-        - Every input_source on every surviving node, plus every entry of
-          ``output_sources``, that referenced a removed node is rewired to
-          ``IRSource(node_id=-1, index=0)`` (off). The shape of
-          ``output_sources`` is preserved (entries are rewritten, not
-          dropped) so downstream sinks keep their slot indexing.
-        - Weight banks that have no remaining NeuralCore consumers are
-          removed from ``self.weight_banks``.
-
-        Args:
-            node_ids: Ids of NeuralCore / ComputeOp nodes to delete.
-                Duplicates and an empty iterable are tolerated.
+        Enforces atomic psum/coalescing-group removal and a non-empty output; raises ValueError on violation.
+        Orphaned weight banks are dropped; output_sources shape is preserved (entries rewritten, not removed).
         """
         ids_to_remove = {int(nid) for nid in node_ids}
         if not ids_to_remove:
@@ -154,7 +126,7 @@ class IRGraph:
             self.output_sources = _rewire(self.output_sources)
 
         self._cleanup_orphan_weight_banks()
-        _ = off_source  # kept for readability; flat path uses fresh instance
+        _ = off_source
 
     def _enforce_atomic_group_removal(
         self,
@@ -163,13 +135,7 @@ class IRGraph:
         attr: str,
         label: str,
     ) -> None:
-        """Reject removals that split a non-trivial group along ``attr``.
-
-        A group is *non-trivial* when at least two distinct nodes share the
-        same non-``None`` value for ``attr``.  When some -- but not all --
-        of those members are scheduled for removal, raise ``ValueError``;
-        the caller must include the entire group or none of it.
-        """
+        """Reject removals that split a non-trivial group (>=2 nodes sharing a non-None attr); the whole group must be removed together."""
         groups: Dict[int, List[int]] = {}
         for n in self.nodes:
             gid = getattr(n, attr, None)

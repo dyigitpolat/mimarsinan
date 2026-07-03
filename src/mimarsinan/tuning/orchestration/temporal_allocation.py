@@ -1,27 +1,4 @@
-"""Per-layer-S temporal-allocation axis (EW1) — declare the intent, RESERVE the map.
-
-Per-layer-S = each cascade depth / latency group gets its own temporal resolution
-``S_d`` instead of one global ``simulation_steps``. The Wizard *declares* the intent
-(``s_allocation`` ∈ {uniform | explicit | budget} + the ``allow_per_layer_s``
-capability gate, like ``allow_coalescing``); the actual per-depth S map derivation
-is deferred to research (the keystone that would produce it is not on this branch).
-
-This module is the **resolver seam**, not the derivation. It is DEFAULT-OFF /
-byte-identical:
-
-* ``uniform`` (the default) returns the SAME global ``simulation_steps`` for every
-  depth — so nothing threads a non-uniform map and behavior is unchanged.
-* ``explicit`` parses + validates a declared per-depth list (the escape hatch for a
-  hand-tuned map); it is RESERVED — no consumer threads it into the forwards/sim yet.
-* ``budget`` is a **no-op** that returns uniform and records a ``derivation_deferred``
-  marker (the budget allocator is the research keystone's job — its derivation is
-  deferred to research, not on this branch). It parses + validates the budget body
-  but does not yet derive a map.
-
-The resolver is resolved on :class:`DeploymentPlan` (``plan.s_allocation`` /
-``plan.temporal_allocation(depth=…)``); the per-model depth is supplied by the caller
-(the number of cascade depths / latency groups), which this layer does not own.
-"""
+"""Per-layer-S temporal-allocation axis — declare the intent, reserve the map."""
 
 from __future__ import annotations
 
@@ -38,15 +15,8 @@ S_ALLOCATION_MODES: Tuple[str, ...] = (
     S_ALLOCATION_BUDGET,
 )
 
-# The modes actually WIRED into the forwards/sim. Only ``uniform`` threads a map today;
-# ``explicit``/``budget`` are RESERVED resolver seams (the resolver still understands them
-# so the derivation keystone can land later) but a USER reaching them silently gets uniform.
-# The config-validation layer reads this SSOT to loud-reject the reserved modes.
 S_ALLOCATION_SUPPORTED_MODES: Tuple[str, ...] = (S_ALLOCATION_UNIFORM,)
 
-# The marker a RESERVED (not-yet-derived) mode records on its decision, so a reader
-# can tell "this returned uniform because the derivation is deferred to research"
-# from "this is genuinely uniform". The budget allocator is a no-op keystone seam.
 BUDGET_DERIVATION_DEFERRED = (
     "derivation deferred to research (per-depth S allocator not on this branch)"
 )
@@ -70,11 +40,7 @@ __all__ = [
 
 
 def unsupported_s_allocation_error(mode: str) -> str:
-    """Canonical loud-reject message for a RESERVED (unwired) ``s_allocation`` mode.
-
-    The reserved modes (``explicit``/``budget``) parse + resolve but no consumer threads
-    their map — they would silently no-op to uniform. Validation rejects them with this
-    message so the foot-gun fails loud at config-validation time, not mid-pipeline."""
+    """Canonical loud-reject message for a reserved (unwired) ``s_allocation`` mode."""
     return (
         f"s_allocation={mode!r} is reserved/not implemented; "
         "only 'uniform' is supported"
@@ -82,11 +48,8 @@ def unsupported_s_allocation_error(mode: str) -> str:
 
 
 def resolve_s_allocation_mode(config: Mapping[str, Any]) -> str:
-    """The ``uniform | explicit | budget`` allocation axis. Default ``uniform``.
-
-    Public so the consuming half can resolve the axis directly from a config dict
-    (mirrors ``resolve_optimization_driver``). Unset / ``None`` ⇒ ``uniform`` ⇒
-    byte-identical. An unknown value raises rather than silently falling back."""
+    """The ``uniform | explicit | budget`` allocation axis (default ``uniform``);
+    an unknown value raises rather than silently falling back."""
     raw = config.get("s_allocation")
     if raw is None:
         return S_ALLOCATION_UNIFORM
@@ -100,13 +63,11 @@ def resolve_s_allocation_mode(config: Mapping[str, Any]) -> str:
 
 @dataclass(frozen=True)
 class TemporalAllocation:
-    """The resolved per-depth S map (RESERVED axis) for one model.
+    """The resolved per-depth S map (reserved axis) for one model.
 
-    ``per_depth_steps`` is a tuple of length ``depth`` — ``S_d`` for each cascade
-    depth / latency group. For the byte-identical default it is the global
-    ``simulation_steps`` repeated, so ``is_uniform`` is True and no consumer needs to
-    branch. ``derivation_deferred`` flags a RESERVED mode that returned uniform because
-    its derivation is not landed yet (the budget keystone)."""
+    ``per_depth_steps`` is ``S_d`` for each cascade depth; the default repeats the
+    global ``simulation_steps``. ``derivation_deferred`` flags a reserved mode that
+    returned uniform because its derivation is not landed yet."""
 
     mode: str
     per_depth_steps: Tuple[int, ...]
@@ -132,10 +93,9 @@ class TemporalAllocation:
 class TemporalAllocationResolver:
     """Resolve the per-depth S map from a config + a per-model depth.
 
-    DEFAULT-OFF / byte-identical: ``uniform`` repeats the global ``simulation_steps``;
-    ``explicit`` validates a declared list; ``budget`` is a no-op that returns uniform +
-    the ``derivation_deferred`` marker. NOTHING threads the non-uniform map into the
-    forwards/sim — this is the RESERVED axis + the derivation seam.
+    ``uniform`` repeats the global ``simulation_steps``; ``explicit`` validates a
+    declared list; ``budget`` is a no-op returning uniform + the
+    ``derivation_deferred`` marker. Nothing threads a non-uniform map yet.
     """
 
     mode: str
@@ -145,12 +105,9 @@ class TemporalAllocationResolver:
 
     @classmethod
     def from_config(cls, config: Mapping[str, Any]) -> "TemporalAllocationResolver":
-        """Resolve the resolver from a flat config dict.
-
-        Reads ``s_allocation`` (mode), the global ``simulation_steps``, and the mode's
-        reserved inputs (``s_allocation_explicit`` / ``s_allocation_budget``). The
-        per-depth list / budget body are PARSED + VALIDATED here (so a malformed
-        declaration fails loud) even though no map is threaded yet."""
+        """Resolve the resolver from a flat config dict. The per-depth list / budget
+        body are parsed + validated here (so a malformed declaration fails loud) even
+        though no map is threaded yet."""
         mode = resolve_s_allocation_mode(config)
         global_steps = _resolve_global_steps(config)
         explicit = _parse_explicit(config.get("s_allocation_explicit"))
@@ -163,12 +120,8 @@ class TemporalAllocationResolver:
         )
 
     def resolve(self, *, depth: int) -> TemporalAllocation:
-        """Return the per-depth S map for a model of ``depth`` cascade depths.
-
-        ``depth`` is the number of cascade depths / latency groups; the caller owns it
-        (this layer does not introspect the model). For ``uniform`` the result repeats
-        the global S; for ``explicit`` it is the declared list (validated against
-        ``depth``); for ``budget`` it returns uniform + the deferred marker."""
+        """Return the per-depth S map for a model of ``depth`` cascade depths (the
+        caller owns ``depth``; this layer does not introspect the model)."""
         if depth <= 0:
             raise ValueError(f"depth must be a positive int, got {depth!r}")
 
@@ -177,8 +130,6 @@ class TemporalAllocationResolver:
         if self.mode == S_ALLOCATION_BUDGET:
             return self._resolve_budget(depth)
         return self._uniform(depth)
-
-    # ── per-mode resolution ──────────────────────────────────────────────────
 
     def _uniform(self, depth: int, *, derivation_deferred=None) -> TemporalAllocation:
         return TemporalAllocation(
@@ -209,9 +160,6 @@ class TemporalAllocationResolver:
         )
 
     def _resolve_budget(self, depth: int) -> TemporalAllocation:
-        # RESERVED: the budget allocator is a no-op keystone seam. It validated the
-        # budget body in from_config; here it returns uniform + the deferred marker so
-        # nothing behavioral changes (the real derivation is deferred to research).
         return self._uniform(depth, derivation_deferred=BUDGET_DERIVATION_DEFERRED)
 
 

@@ -7,11 +7,11 @@ from typing import Any
 
 from fastapi.responses import JSONResponse
 
+from mimarsinan.gui.json_util import to_json_safe
+
 
 def sanitize(obj: Any) -> Any:
     """Recursively make values JSON-safe (delegates to ``json_util.to_json_safe``)."""
-    from mimarsinan.gui.json_util import to_json_safe
-
     return to_json_safe(obj)
 
 

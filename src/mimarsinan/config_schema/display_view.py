@@ -15,6 +15,7 @@ from mimarsinan.config_schema import display_view_meta as _meta
 from mimarsinan.config_schema.display_view_build import (
     build_nested_blocks,
     build_pipeline_preview,
+    _ordered_keys,
 )
 
 def build_config_display_view(
@@ -73,7 +74,6 @@ def build_config_display_view(
     skip_in_sections = {"training_recipe", "tuning_recipe", "model_config", "arch_search", "platform_constraints"}
 
     grouped: Dict[str, List[Dict[str, Any]]] = {g["id"]: [] for g in _meta.CONFIG_DISPLAY_GROUPS}
-    from mimarsinan.config_schema.display_view_build import _ordered_keys
     for key in _ordered_keys(flat):
         if key in skip_in_sections:
             continue

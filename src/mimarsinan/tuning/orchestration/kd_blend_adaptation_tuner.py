@@ -1,14 +1,8 @@
-"""Shared KD blend-ramp adaptation.
-
-Ramp each chip-targeted perceptron's ``base_activation`` from its current
-behavior toward a target on-chip activation via a linear ``BlendActivation``
-(rate 0→1), recovering accuracy with knowledge distillation against a frozen
-snapshot taken before the swap. ``LIFAdaptationTuner`` and
-``TTFSCycleAdaptationTuner`` share this machinery and differ only in the target
-activation and the finalize step.
-"""
+"""Shared KD blend-ramp adaptation for the LIF/TTFS conversion tuners."""
 
 from __future__ import annotations
+
+import warnings
 
 import torch
 import torch.nn as nn
@@ -19,11 +13,11 @@ from mimarsinan.tuning.orchestration.genuine_probe import (
     eval_forward_over_val,
     genuine_acc_on_clone,
 )
+from mimarsinan.tuning.orchestration.ramp_strategy import ValueDomainProxyRamp
 from mimarsinan.tuning.orchestration.smooth_adaptation_tuner import SmoothAdaptationTuner
 from mimarsinan.tuning.perceptron_rate import rebuild_activations, set_blend_rate
 from mimarsinan.tuning.teacher import freeze_module, snapshot_frozen_teacher
 
-# Back-compat alias: the LIF/TTFS finalize forwards subclass this name.
 _InstalledForward = LazyExecutorForward
 
 
@@ -90,18 +84,9 @@ class KDBlendAdaptationTuner(CascadeForwardInstall, SmoothAdaptationTuner):
     _target_activation_type = "Target"
     _old_activation_type = "ReLU"
 
-    # Gradual-ramp philosophy: the ANN->SNN activation ramp must be
-    # genuinely gradual — many small committed increments, each recovered by
-    # training DURING the ramp. No one-shot jump to rate 1.0 (which relabels
-    # the recovery as "stabilization"), and a small uniform ladder instead of
-    # the historical 0.5-sized cliffs (each licensed to lose rollback_tolerance).
     _skip_one_shot = True
     _initial_ramp_step = 0.125
     _ramp_step_growth = 1.0
-    # Post-finalize polish at the deployed dynamics: extra stabilization
-    # rounds with LR restarts while validation still improves (the proxy↔
-    # genuine gap means the deployed function needs real training after the
-    # finalize swap; a constant-LR single pass plateaus early).
     _max_stabilization_rounds = 3
 
     def __init__(self, pipeline, model, target_accuracy, lr, adaptation_manager):
@@ -109,30 +94,18 @@ class KDBlendAdaptationTuner(CascadeForwardInstall, SmoothAdaptationTuner):
         self.adaptation_manager = adaptation_manager
         self._final_metric = None
         self._finalize_cliff = None
-        # Per-channel trainable theta (firing-gain) co-training is OPT-IN per family
-        # (ttfs_theta_cotrain / lif_theta_cotrain). The promoted params + stats live
-        # here so the shared fast-ladder optimiser and reporting see them uniformly;
-        # default None ⇒ the scalar-theta path is unchanged.
         self._theta_cotrain_params = None
         self._theta_cotrain_stats = None
 
         self._configure()
-        # The ramp strategy bundles every seam that varies 0→1 (axis / blend /
-        # ramp-forward / KD loss / pre-ramp setup); built from the (flag-derived)
-        # config in _configure, BEFORE the seams below consult it.
         self._ramp = self._make_ramp_strategy()
         self._teacher = self._snapshot_teacher()
         self._install_blend()
         self.trainer.loss_function = self._make_kd_loss()
         self._after_install_blend()
 
-        # Blend-rate application is owned by an axis (delegates to the
-        # set_blend_rate SSOT). finalize stays on this tuner's inherited
-        # _finalize (parity-critical forward-install), never on the axis.
         self._axis = self._make_axis()
         self._axis.attach(self.model, self.adaptation_manager, self.pipeline.config)
-
-    # ── Hooks (subclasses customize) ─────────────────────────────────────────
 
     def _configure(self) -> None:
         """Read config, set names/params, and any adaptation_manager flags."""
@@ -140,8 +113,6 @@ class KDBlendAdaptationTuner(CascadeForwardInstall, SmoothAdaptationTuner):
     def _make_ramp_strategy(self):
         """The ramp strategy bundling the 0→1 seams. Default = the value-domain
         proxy ramp; subclasses pick a strategy from the flags set in ``_configure``."""
-        from mimarsinan.tuning.orchestration.ramp_strategy import ValueDomainProxyRamp
-
         return ValueDomainProxyRamp()
 
     def _make_target_activation(self, perceptron) -> nn.Module:
@@ -186,12 +157,10 @@ class KDBlendAdaptationTuner(CascadeForwardInstall, SmoothAdaptationTuner):
             self._install_forward(fwd)
 
     def _promote_per_channel_theta(self) -> None:
-        """Rebind each non-encoding perceptron's ``activation_scale`` to a per-output-
-        channel trainable Parameter (on the perceptron AND every node that references
-        it) so the model optimiser co-trains the firing-gain theta WITH the weights
-        through the deployed forward. The promoted params are recorded for split-LR
-        optimiser groups; idempotent. Families opt in via their own gate + call site
-        (TTFS after scalar-theta calibration; LIF after the base install)."""
+        """Rebind each perceptron's ``activation_scale`` to a per-output-channel
+        trainable Parameter so the optimiser co-trains the firing-gain theta with the
+        weights through the deployed forward. Idempotent; families opt in per site."""
+        # Lazy: spiking package init pulls chip_simulation, a top-level import cycle.
         from mimarsinan.spiking.theta_cotrain import (
             promote_activation_scale_per_channel,
         )
@@ -209,11 +178,8 @@ class KDBlendAdaptationTuner(CascadeForwardInstall, SmoothAdaptationTuner):
     def _kd_classification_loss(self, teacher):
         """Build the KD+CE blend loss with config-driven weighting.
 
-        SSOT for constructing ``_KDClassificationLoss`` across the LIF + TTFS
-        conversion fine-tune. ``kd_ce_alpha`` (CE weight) / ``kd_temperature``
-        default to the historical 0.3 / 3.0 (KD-heavy), so an unset config is
-        byte-identical; raising ``kd_ce_alpha`` re-weights the objective toward
-        hard-label CE (the lever for datasets where KD-to-ANN under-fits).
+        SSOT for ``_KDClassificationLoss`` across the LIF + TTFS fine-tune;
+        ``kd_ce_alpha`` / ``kd_temperature`` default to 0.3 / 3.0 (KD-heavy).
         """
         cfg = self.pipeline.config
         return _KDClassificationLoss(
@@ -233,11 +199,9 @@ class KDBlendAdaptationTuner(CascadeForwardInstall, SmoothAdaptationTuner):
         return self._ramp.ramp_forward(self, self.model)
 
     def _finalize_forward_for(self, model):
-        """The SHARED genuine-forward builder bound to ``model`` (``None`` for
-        schedules with no separate genuine forward — synchronized TTFS /
-        non-cycle-accurate LIF — which keep the class forward). The probe and the
-        finalize install both route through this, so the probed forward and the
-        deployed forward are identical by construction."""
+        """The shared genuine-forward builder bound to ``model`` (``None`` for
+        schedules with no separate genuine forward). The probe and the finalize
+        install both route through this, so probe ≡ deploy by construction."""
         return None
 
     def _finalize_forward(self):
@@ -250,59 +214,41 @@ class KDBlendAdaptationTuner(CascadeForwardInstall, SmoothAdaptationTuner):
         rebuild_activations(target, self.adaptation_manager, self.pipeline.config)
 
     def _before_finalize_rebuild(self, model=None) -> None:
-        """Set adaptation-manager flags the activation rebuild must see (e.g. LIF
-        sets ``lif_active`` so the rebuilt activations subsume the decorators).
-        ``model`` is the rebuild target (``self.model`` at finalize, the isolated
-        clone during the genuine probe)."""
+        """Set adaptation-manager flags the activation rebuild must see (e.g. LIF sets
+        ``lif_active``). ``model`` is the rebuild target."""
 
     def _after_finalize_rebuild(self, model=None) -> None:
-        """Per-model finalize work after activations are rebuilt, before the
-        deployed forward is installed (e.g. LIF applies cycle-accurate trains).
-        ``model`` is the rebuild target (``self.model`` at finalize, the clone
-        during the genuine probe)."""
+        """Per-model finalize work after activations are rebuilt, before the deployed
+        forward is installed (e.g. LIF applies cycle-accurate trains)."""
 
     def _finalize_rebuild(self, model=None) -> None:
-        """The finalize-style activation rebuild on ``model`` (``self.model`` when
-        omitted): pre-rebuild flags → rebuild → post-rebuild work. Shared by
-        ``_finalize`` (on ``self.model``) and the genuine probe (on an isolated
-        clone), so probe ≡ deploy. The hooks default to ``self.model`` so legacy
-        no-arg patches stay valid."""
+        """The finalize-style activation rebuild on ``model``: pre-rebuild flags →
+        rebuild → post-rebuild work. Shared by ``_finalize`` and the genuine probe
+        (on an isolated clone), so probe ≡ deploy."""
         self._before_finalize_rebuild(model)
         self._update_target_activations(model)
         self._after_finalize_rebuild(model)
 
     def _finalize(self) -> None:
-        """At full rate: rebuild the committed activations, then install the
-        genuine cross-layer forward so the committed metric, recovery, and every
-        downstream step run the exact deployed dynamics. Subclasses customize via
-        the ordered ``_before_finalize_rebuild`` / ``_after_finalize_rebuild``
-        hooks rather than copying this body."""
+        """At full rate: rebuild the committed activations, then install the genuine
+        cross-layer forward so every downstream step runs the deployed dynamics.
+        Subclasses customize via the ordered ``_before/_after_finalize_rebuild``
+        hooks."""
         self._before_finalize_rebuild()
         self._update_target_activations()
         self._after_finalize_rebuild()
         fwd = self._finalize_forward()
-        # A deployed forward distinct from the ramp invalidates the ramp's
-        # cached LR; stabilization must re-find it on the deployed dynamics.
         self._stabilization_refinds_lr = fwd is not None
         if fwd is not None:
             self._install_forward(fwd)
 
-    # ── Genuine full-transform probe ─────────────────────────────────────────
-
-    # Manager flags the finalize-style rebuild may toggle (snapshotted/restored
-    # around the clone rebuild so the shared adaptation_manager survives the
-    # non-destructive probe). ``ttfs_active`` is set in ``_configure`` and never
-    # toggled by the rebuild; ``lif_active`` is set by LIF's pre-rebuild hook.
     _finalize_manager_flags = ("lif_active", "ttfs_active")
 
     def _full_transform_eval(self):
-        """The GENUINE full-transform accuracy: run the deployed finalize forward
-        at rate 1.0 on an isolated clone. Falls back to the value-domain measure
-        for schedules with no separate genuine forward (synchronized TTFS /
-        non-cycle-accurate LIF). Non-destructive to the live model (the deepcopy
-        in ``genuine_acc_on_clone``) AND to the shared adaptation_manager (the
-        finalize-flag snapshot/restore below). The probed forward is built via the
-        SAME ``_finalize_forward_for`` the deploy install uses, so probe ≡ deploy."""
+        """The GENUINE full-transform accuracy: run the deployed finalize forward at
+        rate 1.0 on an isolated clone (falling back to the value-domain measure when
+        there is no separate genuine forward). Non-destructive to the live model and
+        the shared adaptation_manager."""
         if self._finalize_forward_for(self.model) is None:
             return super()._full_transform_eval()
 
@@ -333,8 +279,6 @@ class KDBlendAdaptationTuner(CascadeForwardInstall, SmoothAdaptationTuner):
             for name, value in flag_snapshot.items():
                 setattr(manager, name, value)
 
-    # ── Shared machinery ─────────────────────────────────────────────────────
-
     def _snapshot_teacher(self) -> nn.Module:
         return snapshot_frozen_teacher(self.model, self.pipeline.config["device"])
 
@@ -359,14 +303,6 @@ class KDBlendAdaptationTuner(CascadeForwardInstall, SmoothAdaptationTuner):
 
     def _set_rate(self, rate: float) -> None:
         self._axis.set_rate(rate)
-
-    # ── Fast fixed-ladder path ────────────────────────────────────────────────
-    # The schedule-not-search fast driver now lives in ``FastLadderMixin`` (shared
-    # by EVERY smooth rate tuner via ``SmoothAdaptationTuner``, E2). The KD-blend
-    # family opts in by calling the inherited ``_setup_fast_ladder`` (its
-    # ``_fast_loss`` default = the installed KD loss, the mixin's default). TTFS
-    # overrides ``_fast_loss``/``_fast_probe``/``_fast_rate_attempt`` for its genuine
-    # blend / STE variants; LIF uses the inherited defaults + ``_fast_stabilize``.
 
     def _get_extra_state(self):
         return self._axis.get_extra_state()
@@ -394,10 +330,6 @@ class KDBlendAdaptationTuner(CascadeForwardInstall, SmoothAdaptationTuner):
         self._finalize()
         post_finalize = self._safe_eval()
         if ramp_metric is not None and post_finalize is not None:
-            # Finalize cliff: ramp-end metric (ramp forward at r=1) minus the
-            # metric right after installing the deployed finalize forward. For
-            # the genuine-gradual ramp both run the deployed dynamics, so the
-            # cliff is ~0; the value-domain proxy ramp shows the proxy gap here.
             self._finalize_cliff = ramp_metric - post_finalize
             self.pipeline.reporter.report(
                 f"{self.name} finalize_cliff", self._finalize_cliff,
@@ -408,11 +340,9 @@ class KDBlendAdaptationTuner(CascadeForwardInstall, SmoothAdaptationTuner):
         return self._final_metric
 
     def _report_cliff_probe_consistency(self) -> None:
-        """Drift sentinel: the per-commit genuine probe drop and the once-only
-        finalize cliff measure the same proxy↔genuine gap from different anchors,
-        so the last per-commit ``genuine_drop`` should track ``finalize_cliff``.
-        A large divergence means the probe and the deploy disagree (warn, do not
-        assert — a budget-noise gap on tiny models is expected)."""
+        """Drift sentinel: the last per-commit ``genuine_drop`` and the once-only
+        ``finalize_cliff`` measure the same proxy↔genuine gap, so a large divergence
+        means probe and deploy disagree (warn, do not assert)."""
         log = getattr(self, "_full_transform_log", None)
         if not log:
             return
@@ -428,7 +358,6 @@ class KDBlendAdaptationTuner(CascadeForwardInstall, SmoothAdaptationTuner):
             "abs_diff": round(abs_diff, 4),
         })
         if abs_diff > 0.1:
-            import warnings
             warnings.warn(
                 f"{self.__class__.__name__}: per-commit genuine probe drop "
                 f"({last_genuine_drop:+.4f}) and finalize cliff "

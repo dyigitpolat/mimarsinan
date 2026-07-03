@@ -1,12 +1,4 @@
-"""Adapter for the structured-pruning family.
-
-Rate application is greedy mask selection + apply, and recovery enforces the
-masks during training via forward pre-hooks; both are intertwined with the
-tuner's persistent dict-of-sets state. The axis presents the uniform
-``set_rate`` / ``recovery_hooks`` seam over tuner-provided callables; the
-persistent-prune ``finalize`` stays on the tuner. Monotone (more pruning =
-strictly more masked).
-"""
+"""Adapter for the structured-pruning family."""
 
 from __future__ import annotations
 

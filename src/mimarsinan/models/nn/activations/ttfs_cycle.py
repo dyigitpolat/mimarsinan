@@ -1,14 +1,4 @@
-"""Differentiable single-spike TTFS activation (Stanojevic et al., Nat. Commun. 2024).
-
-Each neuron emits exactly one spike whose timing encodes its value; with the
-bias ramp and per-layer time window this is provably equivalent to a ReLU
-activation, and its ``S``-step quantization decodes to a floor-quantised clamped
-ReLU — i.e. exactly :func:`ttfs_quantized_activation` scaled by ``activation_scale``.
-
-The forward is therefore the analytic kernel itself (so the cycle-based mode
-matches the analytical TTFS numerically); the backward is a straight-through
-clamped-ReLU surrogate so KD fine-tuning can train through the quantiser.
-"""
+"""Differentiable single-spike TTFS activation (Stanojevic et al., Nat. Commun. 2024)."""
 
 from __future__ import annotations
 

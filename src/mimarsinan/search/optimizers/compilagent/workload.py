@@ -1,18 +1,4 @@
-"""Per-process registry of in-flight ``JointArchHwProblem`` instances.
-
-Compilagent's ``OptimizationSession`` resolves a ``WorkloadSpec`` via
-``workload_registry.build(workload_id)`` — the builder closure runs once
-per session and returns a ``WorkloadInstance``. Our backend, however,
-needs a handle to the *live* ``JointArchHwProblem`` (the one
-``CompilagentOptimizer`` constructed) so it can delegate
-``compile`` / ``time_workload`` / ``analyze`` to the existing methods
-without re-instantiating anything heavy.
-
-To bridge those two life-cycles we keep a small process-local map keyed
-by the ``workload_id`` the optimizer minted; the optimizer registers the
-mapping before opening the session and unregisters it on exit. The
-backend looks up the problem on every method call.
-"""
+"""Per-process registry mapping ``workload_id`` to the live ``JointArchHwProblem`` the backend delegates to."""
 
 from __future__ import annotations
 
@@ -34,13 +20,7 @@ _PROBLEMS: Dict[str, Any] = {}
 
 
 def register_problem(workload_id: str, problem: Any) -> None:
-    """Bind ``workload_id`` to a live ``JointArchHwProblem`` instance.
-
-    Idempotent: re-registering the same id with the same instance is a
-    no-op, but registering a different problem under an already-used id
-    raises ``ValueError`` so silently shadowed problems do not corrupt
-    other in-flight sessions in the same process.
-    """
+    """Bind ``workload_id`` to a live ``JointArchHwProblem``; re-registering a different instance under a used id raises ``ValueError``."""
 
     with _LOCK:
         existing = _PROBLEMS.get(workload_id)
@@ -60,12 +40,7 @@ def unregister_problem(workload_id: str) -> None:
 
 
 def lookup_problem(workload_id: str) -> Any:
-    """Return the live ``JointArchHwProblem`` bound to ``workload_id``.
-
-    Raises ``KeyError`` with a helpful message when no problem is
-    registered — callers (the backend) want a hard failure here, since a
-    missing binding means the session is operating on stale state.
-    """
+    """Return the live ``JointArchHwProblem`` bound to ``workload_id``; raises ``KeyError`` if none is registered."""
 
     with _LOCK:
         try:
@@ -90,15 +65,7 @@ def build_workload_spec(
     ),
     metadata: Optional[Dict[str, Any]] = None,
 ) -> WorkloadSpec:
-    """Build a ``WorkloadSpec`` describing the bound problem.
-
-    The session itself never times the candidate (mimarsinan's evaluation
-    is deterministic and runs once per config); we therefore set a small
-    ``BenchmarkBudget`` and a permissive ``ToleranceConfig``. The
-    ``metadata`` field carries the same ``workload_id`` so any sink that
-    cross-references events with workloads can reconstruct the linkage
-    without consulting the registry.
-    """
+    """Build a ``WorkloadSpec`` describing the bound problem, with a small budget and permissive tolerance."""
 
     return WorkloadSpec(
         id=workload_id,

@@ -7,13 +7,14 @@ from mimarsinan.mapping.verification.layout_verification_packing import (
     _empty_stats, _stats_from_packing,
 )
 from mimarsinan.mapping.verification.layout_verification_types import LayoutVerificationStats
-# Unified barrier computation
+from mimarsinan.mapping.support.schedule.schedule_partitioner import (
+    effective_core_budget,
+    estimate_passes_for_layout_validated,
+)
+
 
 def compute_schedule_sync_count(per_segment_passes: Dict[int, int]) -> int:
-    """Compute the number of sync barriers introduced by scheduled passes.
-
-    Each segment with *N* passes requires *N-1* inter-pass sync barriers.
-    """
+    """Sync barriers from scheduled passes: a segment with N passes needs N-1 barriers."""
     return sum(max(n - 1, 0) for n in per_segment_passes.values())
 
 
@@ -27,12 +28,8 @@ def compute_mapping_stats(
 ) -> Tuple[LayoutVerificationStats, Optional[str]]:
     """Pack softcores and compute verification statistics with scheduling support.
 
-    This is the unified entry point for both the search/optimization path and
-    any caller that needs complete mapping metrics including scheduled passes.
-
-    Returns:
-        ``(stats, None)`` on success (single-pass or scheduled).
-        ``(stats, error_message)`` when mapping is infeasible.
+    Returns ``(stats, None)`` on success (single-pass or scheduled) and
+    ``(stats, error_message)`` when mapping is infeasible.
     """
     if not softcores or not core_types:
         return _empty_stats(feasible=False, num_softcores=len(softcores)), \
@@ -51,17 +48,11 @@ def compute_mapping_stats(
             softcores=softcores, core_types=core_types,
         ), None
 
-    # Single-pass packing failed — try scheduling if allowed.
     if not allow_scheduling:
         return _empty_stats(
             feasible=False, num_softcores=len(softcores),
             total_hw_cores=sum(int(ct.count) for ct in core_types),
         ), pack.error or "HW bin-packing infeasible"
-
-    from mimarsinan.mapping.support.schedule.schedule_partitioner import (
-        effective_core_budget,
-        estimate_passes_for_layout_validated,
-    )
 
     core_dicts = [
         {"max_axons": ct.max_axons, "max_neurons": ct.max_neurons, "count": ct.count}
@@ -109,7 +100,6 @@ def compute_mapping_stats(
             total_hw_cores=sum(int(ct.count) for ct in core_types),
         ), "Scheduling infeasible: at least one softcore cannot be packed"
 
-    # Pack the busiest validated pass for representative utilisation stats.
     best_stats = None
     for pass_scs in sorted(all_pass_lists, key=len, reverse=True):
         try:

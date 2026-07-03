@@ -1,8 +1,4 @@
-"""
-Latency calculation for IRGraph.
-
-Similar to ChipLatency but operates on the unified IR representation.
-"""
+"""Latency calculation for IRGraph."""
 
 from __future__ import annotations
 
@@ -11,13 +7,7 @@ from mimarsinan.mapping.latency.upstream import iter_upstream_neural_ids
 
 
 class IRLatency:
-    """
-    Calculate and assign latency values for each NeuralCore in an IRGraph.
-
-    Operates per-core (not per-neuron): the depth of a core is
-    ``1 + max(depth of upstream cores)`` based on graph topology.
-    This is O(nodes) with memoization, independent of per-core matrix size.
-    """
+    """Calculate and assign per-core latency for an IRGraph: core depth = 1 + max(upstream core depths), O(nodes) with memoization."""
 
     def __init__(self, ir_graph: IRGraph):
         self.ir_graph = ir_graph
@@ -53,11 +43,7 @@ class IRLatency:
         return depth
 
     def calculate(self) -> int:
-        """
-        Calculate latencies for all neural cores in the graph.
-
-        Returns the maximum latency (depth of the network).
-        """
+        """Calculate latencies for all neural cores; returns the network's max latency (depth)."""
         self._depth = {}
 
         max_delay = 0

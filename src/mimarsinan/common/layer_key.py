@@ -9,12 +9,7 @@ _RE_FC_TILE = re.compile(r"^(.*)_tile_\d+_\d+$")
 
 
 def layer_key_from_node_name(name: str) -> str:
-    """
-    Best-effort grouping key that collapses per-position/per-tile cores into a layer stack.
-
-    Used by GUI snapshot and visualization (mapping_graphviz) for consistent
-    layer naming in topology views.
-    """
+    """Best-effort grouping key that collapses per-position/per-tile cores into a layer stack."""
     s = str(name)
     m = _RE_CONV_POS.match(s)
     if m:

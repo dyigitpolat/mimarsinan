@@ -12,10 +12,7 @@ class PipelineCache:
 
     def __init__(self):
         self.cache = {}
-        # Track which entries have been added/updated since the last successful
-        # ``store(...)``. Only dirty entries get re-written, which avoids
-        # redundantly re-pickling large upstream ``.pt`` files (20+ GiB each
-        # in the deployment pipeline) at every subsequent step boundary.
+        # Entries modified since the last store(); only these are re-serialized.
         self._dirty: set[str] = set()
 
     def add(self, name, object, load_store_strategy = "basic"):
@@ -24,8 +21,7 @@ class PipelineCache:
 
     @staticmethod
     def _filename_for(name):
-        # Keys may contain '/'; filenames must stay flat. Names without '/'
-        # keep their historical on-disk filename.
+        # Keys may contain '/'; on-disk filenames must stay flat.
         return name.replace("/", "%2F")
 
     def get(self, name):
@@ -52,8 +48,6 @@ class PipelineCache:
         for name, (_, load_store_strategy) in self.cache.items():
             metadata[name] = (load_store_strategy, self._filename_for(name))
 
-        # Only re-serialize entries modified since the last store(). Loaded-
-        # from-disk entries stay on disk untouched.
         for name in list(self._dirty):
             if name not in self.cache:
                 continue

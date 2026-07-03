@@ -1,16 +1,4 @@
-"""Spiking-mode taxonomy and per-backend capability matrix.
-
-Three orthogonal classifications, queried by intent rather than by hardcoded
-mode tuples scattered across the codebase:
-
-- ``ANALYTICAL_TTFS_MODES`` — closed-form, real-valued TTFS forward
-  (``ttfs`` continuous, ``ttfs_quantized``). Cores exchange real activations.
-- ``CYCLE_BASED_MODES`` — genuine per-cycle integrate-and-fire over binary
-  spikes (``lif``, ``ttfs_cycle_based``). Sensitive to spike arrival timing.
-- ``TTFS_FAMILY_MODES`` — every mode that uses TTFS firing/encoding config
-  (``firing_mode='TTFS'``, latched spike encoding); the union of the analytical
-  TTFS modes and ``ttfs_cycle_based``.
-"""
+"""Spiking-mode taxonomy and per-backend capability matrix, queried by intent."""
 
 from __future__ import annotations
 
@@ -18,7 +6,6 @@ from dataclasses import dataclass
 from typing import FrozenSet
 
 ANALYTICAL_TTFS_MODES: FrozenSet[str] = frozenset({"ttfs", "ttfs_quantized"})
-# Backward-compat alias: ``TTFS_MODES`` historically meant the analytical family.
 TTFS_MODES: FrozenSet[str] = ANALYTICAL_TTFS_MODES
 TTFS_FAMILY_MODES: FrozenSet[str] = frozenset(
     {"ttfs", "ttfs_quantized", "ttfs_cycle_based"}
@@ -29,11 +16,6 @@ ALL_SPIKING_MODES: FrozenSet[str] = frozenset(
     {"lif", "ttfs", "ttfs_quantized", "ttfs_cycle_based"}
 )
 
-# Modes removed from the deploy taxonomy, mapped to their replacement so a stale
-# config gets an actionable migration error instead of silent mis-behavior.
-# ``rate`` was the naive analytical rate-coding LIF path (no activation
-# quantization, no cycle-accurate reconciliation) — measured to collapse at Soft
-# Core Mapping; it is subsumed by ``lif`` (see mmixcore_verify_24cell finding).
 _REMOVED_SPIKING_MODES: dict = {"rate": "lif"}
 
 _ACT_QUANT_MODES: FrozenSet[str] = frozenset({"ttfs_quantized", "ttfs_cycle_based"})
@@ -44,11 +26,7 @@ def _norm(spiking_mode: str) -> str:
 
 
 def require_known_spiking_mode(spiking_mode: str) -> str:
-    """Return the normalized mode, or raise ``ValueError`` if it is not deployable.
-
-    The SSOT membership gate: a ``spiking_mode`` outside ``ALL_SPIKING_MODES`` fails
-    loud, with a migration hint when it names a removed mode (e.g. ``rate`` → ``lif``).
-    """
+    """Return the normalized mode, or raise ``ValueError`` if it is not deployable."""
     mode = _norm(spiking_mode)
     if mode in ALL_SPIKING_MODES:
         return mode
@@ -87,9 +65,6 @@ def forces_activation_quantization(spiking_mode: str) -> bool:
     return _norm(spiking_mode) in _ACT_QUANT_MODES
 
 
-# ── ttfs_cycle_based execution schedule ──────────────────────────────────────
-# "synchronized": exact, sequential per-group S-cycle windows (S × groups cycles).
-# "cascaded": greedy, pipelined fire-once-latch (S + groups cycles); nevresim-compatible.
 DEFAULT_TTFS_CYCLE_SCHEDULE = "cascaded"
 TTFS_CYCLE_SCHEDULES: FrozenSet[str] = frozenset({"cascaded", "synchronized"})
 
@@ -111,14 +86,10 @@ def is_synchronized_ttfs(spiking_mode: str, schedule) -> bool:
 
 
 def uses_ttfs_floor_ceil_convention(spiking_mode: str, schedule=None) -> bool:
-    """Modes whose torch NF trains the floor-staircase + half-step-bias convention
-    yet deploy the mode-derived ceil TTFS kernel (``ttfs_quantized`` and the
-    synchronized floor-collapse).
+    """Modes that train the floor-staircase + half-step-bias convention yet deploy the ceil TTFS kernel.
 
-    Both share one deploy convention: sync-deploy == ttfs_quantized-deploy + the
-    free single-spike grid-snap. Per-neuron NF↔SCM equality is NOT their invariant
-    (deploy is bit-exact regardless); they take the half-step bias compensation and
-    are excluded from the bit-exact per-neuron parity gate.
+    ``ttfs_quantized`` and the synchronized floor-collapse; both take the half-step bias
+    compensation and are excluded from the bit-exact per-neuron parity gate.
     """
     return _norm(spiking_mode) == "ttfs_quantized" or is_synchronized_ttfs(
         spiking_mode, schedule

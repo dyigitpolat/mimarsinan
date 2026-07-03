@@ -1,35 +1,4 @@
-"""Build a SANA-FE Network from a single ``HardCoreMapping`` neural segment.
-
-Hardware-faithful mapping (see ``sanafe_per_core_input_neurons`` memory):
-
-* Each mimarsinan ``HardCore`` maps 1:1 to one SANA-FE core.
-* For each axon ``a`` on HardCore ``c``:
-    - if ``is_off_``: skip
-    - if ``is_input_``: emit an input neuron on the **same** SANA-FE core
-      (using that core's local ``inputs[a]`` soma slot).  Multiple
-      HardCores reading the same external input each get their own copy
-      of the input neuron, fed the same spike train.
-    - if ``is_always_on_``: emit an always-on neuron on the same core.
-    - otherwise (cross-core source): connect the upstream HardCore's LIF
-      neuron directly to this HardCore's LIF neurons via NoC.
-* LIF neurons use the mimarsinan ``soma`` plugin (no Loihi compartment
-  cap).  Dendrite uses the mimarsinan ``dendrite`` plugin (no
-  ``accumulator``-style 1024 cap).  See ``arch_synth._render_arch_yaml``.
-
-Returns
--------
-network
-    Freshly built ``sanafe.Network``.
-core_to_group
-    ``{HardCore index → sanafe NeuronGroup (LIF neurons)}``.
-core_input_neurons
-    ``{(HardCore index, axon index within that core) → sanafe Neuron}``
-    map covering every input axon.  The runner uses this to inject the
-    correct rate-encoded spike train per (core, axon) pair.
-core_always_on_neurons
-    ``{HardCore index → sanafe Neuron}`` for cores that reference the
-    always-on bias source.
-"""
+"""Build a SANA-FE Network from a single ``HardCoreMapping`` neural segment."""
 
 from __future__ import annotations
 
@@ -40,8 +9,6 @@ import numpy as np
 import mimarsinan.chip_simulation.sanafe.net_synth as _net_synth
 from mimarsinan.chip_simulation.sanafe.neuron_model import input_neuron_attributes
 from mimarsinan.chip_simulation.sanafe.presets import SOMA_INPUT_RANGE_NAME, SYNAPSE_NAME
-
-
 from mimarsinan.mapping.support.core_geometry import used_axons as _used_axons
 from mimarsinan.mapping.support.core_geometry import used_neurons as _used_neurons
 
@@ -71,16 +38,9 @@ def build_network_for_segment(
 ]:
     """Construct a ``sanafe.Network`` for one neural segment.
 
-    Returns ``(network, core_to_group, core_input_neurons,
-    core_always_on_neurons)``.
-
-    ``simulation_length`` is the HCM's ``T`` (logical sample length, not
-    the padded ``T + max_latency`` the runner asks the chip to simulate).
-    When supplied, each LIF neuron gets a per-core ``active_start = core.latency``
-    and ``active_length = T`` so its soma only integrates during the
-    same cycle window HCM's ``_run_neural_segment_rate`` records into.
-    When ``None`` we fall back to the always-active mode used by the
-    unit tests that predate the gate.
+    Returns ``(network, core_to_group, core_input_neurons, core_always_on_neurons)``.
+    ``simulation_length`` (HCM ``T``), when set, gates each LIF soma to the window
+    ``[core.latency, core.latency+T)``; ``None`` keeps somas active all simulation.
     """
     sanafe = _net_synth._sanafe()
     net = sanafe.Network()
@@ -97,25 +57,18 @@ def build_network_for_segment(
     policy = policy_for_spiking_mode(spiking_mode, ttfs_cycle_schedule)
     soma_hw = policy.soma_hw_name()
     is_ttfs = requires_ttfs_firing(spiking_mode)
-    # ``is_cycle`` is the *synchronized* genuine single-spike schedule (V-recon
-    # soma, S×groups windows). The cascaded schedule is count-based (LIF-style).
     is_cycle = is_synchronized_ttfs(spiking_mode, ttfs_cycle_schedule)
     is_cascade = is_cascaded_ttfs(spiking_mode, ttfs_cycle_schedule)
     is_quantized = (forces_activation_quantization(spiking_mode)
                     and not is_ttfs_cycle_based(spiking_mode))
-    # Cascade is decoded from spike counts, not the membrane potential trace.
     log_potential = policy.log_potential
 
-    # Synchronized schedule for genuine single-spike TTFS: each latency group
-    # owns a non-overlapping S-cycle window after the input window. group g →
-    # active_start = (g+1)·S, active_length = S.
     cycle_core_group = None
     if is_cycle:
         _, cycle_core_group = latency_groups(
             [getattr(c, "latency", None) for c in hcm.cores]
         )
 
-    # 1. One neuron group per HardCore, mapped to its corresponding SANA-FE core.
     core_to_group: Dict[int, Any] = {}
     core_input_neurons: Dict[Tuple[int, int], Any] = {}
     core_always_on_neurons: Dict[int, Any] = {}
@@ -138,23 +91,14 @@ def build_network_for_segment(
             core_latency = (int(core.latency)
                             if getattr(core, "latency", None) is not None
                             else 0)
-            # ``active_start`` / ``active_length`` only when the caller
-            # passed ``simulation_length`` — see docstring for why this
-            # is opt-in.  We shift by +1 because SANA-FE delivers an input
-            # neuron's spike to its consumer's synapse on the NEXT sim
-            # cycle (one-cycle input→synapse pipeline delay) — without
-            # that offset depth-0 cores miss their first integration step.
+            # SANA-FE delivers an input spike to its consumer's synapse one cycle
+            # after emission, so active_start is shifted +1 (else depth-0 cores
+            # miss their first integration step).
             if is_cycle and simulation_length is not None:
-                # Synchronized: latency group g fires in window [(g+1)·S, (g+2)·S);
-                # the input window is [0, S). active_length = S.
                 lat_group = int(cycle_core_group[core_idx])
                 active_start = (lat_group + 1) * int(simulation_length)
                 active_length = int(simulation_length)
             elif is_cascade:
-                # Cascaded greedy TTFS is latency-gated like LIF: each core is
-                # active only in its window [core.latency (+1 for the SANA-FE
-                # input-delivery offset), +S). Its bias/ramp start there and it
-                # fires in-window, where the per-source ramp decode reads it.
                 active_start = ((core_latency + 1)
                                 if simulation_length is not None else None)
                 active_length = (int(simulation_length)
@@ -192,9 +136,6 @@ def build_network_for_segment(
                 neuron.map_to_core(sanafe_core)
             core_to_group[core_idx] = group
 
-        # We only materialise neurons for axons that are actually wired to
-        # an input or always-on source.  Cross-core axons are wired in
-        # step 2 below directly from the upstream LIF neuron.
         input_axon_indices = []
         always_on_axon_indices = []
         for a in range(used_axons):
@@ -223,10 +164,6 @@ def build_network_for_segment(
                 core_input_neurons[(core_idx, a)] = n
 
         if always_on_axon_indices:
-            # One always-on source per HardCore is enough; the multiple
-            # axons that read from "always-on" can all fan out from a single
-            # neuron via separate synapses (collapsed below).  We pick the
-            # first always-on axon's index as the soma slot.
             ao_slot = always_on_axon_indices[0]
             ao_group = net.create_neuron_group(
                 f"core{core_idx}_on", 1, model_attributes={},
@@ -240,8 +177,6 @@ def build_network_for_segment(
             ao_group[0].map_to_core(sanafe_core)
             core_always_on_neurons[core_idx] = ao_group[0]
 
-    # 2. Wire axons.  Per-axon source resolution; collapse duplicate
-    # (src_neuron, dst_neuron) pairs into one summed-weight synapse.
     for core_idx, core in enumerate(hcm.cores):
         dst_group = core_to_group.get(core_idx)
         if dst_group is None:
@@ -251,7 +186,7 @@ def build_network_for_segment(
         if used_neurons <= 0:
             continue
 
-        accum: Dict[Tuple[int, int], float] = {}  # (src_key, dst_idx) → weight
+        accum: Dict[Tuple[int, int], float] = {}
         sources_by_key: Dict[int, Any] = {}
 
         for a in range(used_axons):

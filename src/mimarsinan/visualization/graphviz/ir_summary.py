@@ -2,19 +2,12 @@
 
 from __future__ import annotations
 
-import html
 import os
-import shutil
-import subprocess
-from dataclasses import dataclass
-from typing import Any, Iterable, Sequence
+from typing import Any
 
 import numpy as np
 
-from mimarsinan.code_generation.cpp_chip_model import SpikeSource
-from mimarsinan.mapping.packing.hybrid_hardcore_mapping import HybridHardCoreMapping
 from mimarsinan.mapping.ir import ComputeOp, IRGraph, IRNode, IRSource, NeuralCore
-from mimarsinan.mapping.packing.softcore import HardCoreMapping
 from mimarsinan.common.layer_key import layer_key_from_node_name
 from mimarsinan.common.safe_numeric import safe_float
 
@@ -25,7 +18,6 @@ from mimarsinan.visualization.graphviz.common import (
     _compress_ranges,
     _dot_html_label,
     _dot_html_label_mixed,
-    _percent,
     _stack_sample_lines,
     _truncate,
 )
@@ -40,8 +32,7 @@ def write_ir_graph_summary_dot(
     """Summarized IRGraph visualization with grouped nodes and capped edges."""
     os.makedirs(os.path.dirname(out_dot) or ".", exist_ok=True)
 
-    # Build ordered groups
-    group_order: list[tuple[str, str]] = []  # (group_key, kind)
+    group_order: list[tuple[str, str]] = []
     group_nodes: dict[str, list[IRNode]] = {}
     node_id_to_group: dict[int, str] = {}
 
@@ -65,7 +56,6 @@ def write_ir_graph_summary_dot(
         except Exception:
             pass
 
-    # Assign DOT node ids for groups
     group_key_to_dot: dict[str, str] = {gk: f"g{i}" for i, (gk, _) in enumerate(group_order)}
 
     lines: list[str] = []
@@ -82,7 +72,6 @@ def write_ir_graph_summary_dot(
     lines.append("  const1 [label=< <B>CONST(1)</B> >, shape=plaintext];")
     lines.append("  output [label=< <B>OUTPUT</B> >, shape=plaintext];")
 
-    # Emit group nodes
     for gk, kind in group_order:
         dot_id = group_key_to_dot[gk]
         nodes = group_nodes[gk]
@@ -102,7 +91,6 @@ def write_ir_graph_summary_dot(
             continue
 
         if kind == "neural":
-            # Stack summary
             core_ids = [int(n.id) for n in nodes if hasattr(n, "id")]
             core_names = [str(getattr(n, "name", f"n{getattr(n, 'id', '?')}")) for n in nodes]
 
@@ -136,7 +124,6 @@ def write_ir_graph_summary_dot(
             if latencies:
                 lat_txt = f"{min(latencies)}..{max(latencies)}" if len(latencies) > 1 else str(latencies[0])
 
-            # Best-effort: infer conv grid and group count from names
             pos_coords: list[tuple[int, int]] = []
             g_idxs: set[int] = set()
             for nm in core_names:
@@ -172,13 +159,10 @@ def write_ir_graph_summary_dot(
             lines.append(f"  {dot_id} [label={label}];")
             continue
 
-        # Fallback
         label = _dot_html_label([("kind", kind), ("count", str(len(nodes)))], title=gk, color="#E5E7E9")
         lines.append(f"  {dot_id} [label={label}];")
 
-    # Aggregate edges between groups
     edge_stats: dict[tuple[str, str], dict[str, Any]] = {}
-    # (src_dot, tgt_dot) -> {links:int, src_idx:set[int], src_cores:set[int]}
 
     for gk, kind in group_order:
         tgt_dot = group_key_to_dot[gk]
@@ -211,7 +195,6 @@ def write_ir_graph_summary_dot(
                 if src_core_id >= 0:
                     st["src_cores"].add(src_core_id)
 
-    # Emit edges (cap)
     emitted = 0
     for (src_dot, tgt_dot), st in edge_stats.items():
         if emitted >= max_edges:
@@ -225,7 +208,6 @@ def write_ir_graph_summary_dot(
         lines.append(f"  {src_dot} -> {tgt_dot} [label=\"{_truncate(label, max_chars=200)}\"];")
         emitted += 1
 
-    # Outputs (grouped)
     out_flat = list(ir_graph.output_sources.flatten())
     by_src: dict[str, set[int]] = {}
     for src in out_flat:
@@ -250,7 +232,3 @@ def write_ir_graph_summary_dot(
 
     with open(out_dot, "w", encoding="utf-8") as f:
         f.write("\n".join(lines))
-
-
-# IRGraph visualization (NeuralCore + ComputeOp)
-

@@ -6,6 +6,7 @@ from pathlib import Path
 import torch
 import torchvision
 import torchvision.transforms as transforms
+from torch.utils.data import DataLoader
 
 from mimarsinan.data_handling.data_provider import ClassificationMode, DataProvider
 from mimarsinan.data_handling.data_provider_factory import BasicDataProviderFactory
@@ -54,19 +55,15 @@ def _ensure_imagenet_symlink(datasets_path: str) -> str:
     return link
 
 
-# ImageNet normalization used with pretrained checkpoints.
 _IMAGENET_MEAN = (0.485, 0.456, 0.406)
 _IMAGENET_STD = (0.229, 0.224, 0.225)
 
 
 def _seeded_val_test_indices(n_official_val: int, val_fraction: float, seed: int | None):
-    """Deterministic seeded partition of the OFFICIAL val into (gate-val, test).
+    """Deterministic seeded partition of the official val into disjoint (gate-val, test) slices.
 
-    Both slices come from ``split="val"`` (genuinely held out for BOTH the
-    from_scratch and pretrained regimes — neither slice is ever a train image).
-    Official val is class-sorted, so a contiguous slice is class-starved; a
-    seed-derived permutation makes the gate slice a representative sample over
-    all 1000 classes, disjoint from the test slice, reproducible per seed.
+    A seed-derived permutation makes the class-sorted official val
+    representative across all classes; both slices are reproducible per seed.
     """
     g = torch.Generator()
     g.manual_seed(0 if seed is None else int(seed))
@@ -77,42 +74,18 @@ def _seeded_val_test_indices(n_official_val: int, val_fraction: float, seed: int
 
 @BasicDataProviderFactory.register("ImageNet_DataProvider")
 class ImageNet_DataProvider(DataProvider):
-    """ILSVRC 2012 classification: 1000 classes.
+    """ILSVRC 2012 classification (1000 classes).
 
-    With ``IMAGENET_ROOT`` in ``.env``, creates ``<datasets_path>/imagenet`` as a symlink
-    to that directory and uses it as the torchvision ``ImageNet`` root.
-
-    **Train** is the FULL official ``split="train"`` (all 1000 classes) — used for any
-    from_scratch training / fine-tune.
-
-    **Validation** (the deployment TUNER GATE) is a seeded slice of the OFFICIAL
-    ``split="val"`` (``official_val_fraction``, default 0.2). A train holdout would
-    LEAK: a model trained on the full train (from_scratch) or any pretrained
-    checkpoint has seen every train image, so a train-sourced val scores memorized
-    accuracy. Sourcing the gate from the official val keeps it genuinely held out
-    for BOTH regimes.
-
-    **Test** (the final reported number) is the DISJOINT remaining slice of the
-    OFFICIAL ``split="val"``. val and test are seeded, disjoint partitions of
-    ``split="val"`` — never from train.
+    Train is the full official train; val (the tuner gate) and test are
+    seeded, disjoint slices of the official val — never sourced from train.
     """
 
     DISPLAY_LABEL = "ImageNet (224×224×3, 1000 classes)"
     SUPPORTS_PREPROCESSING = False
 
-    # Fraction of the 50k official val reserved for the tuner GATE; the rest is the
-    # reported-test slice. 0.2 -> ~10k gate (10/class, enough signal to gate
-    # adaptation) + 40k test (robust reported number). Both stay disjoint held-out.
     official_val_fraction = 0.2
 
     def __init__(self, datasets_path, *, seed: int | None = 0, preprocessing=None, batch_size=None):
-        # ImageNet's crop policy is split-asymmetric — train uses
-        # RandomResizedCrop(224), val uses Resize(256)+CenterCrop(224) —
-        # so ``_preprocessing_spec.resize_to`` (single value, shared
-        # across splits) can't express it. The provider declares the
-        # crops itself in ``torch_transforms`` / ``ffcv_image_decoder``.
-        # Normalize is symmetric across splits, so it goes via
-        # ``_preprocessing_spec`` and the base class appends it uniformly.
         super().__init__(
             datasets_path, seed=seed,
             preprocessing={"normalize": {"mean": _IMAGENET_MEAN, "std": _IMAGENET_STD}},
@@ -132,10 +105,6 @@ class ImageNet_DataProvider(DataProvider):
                 f"ImageNet metadata missing: expected {meta!r} or {devkit!r} under {root!r}."
             )
 
-        # Raw datasets (transforms applied via torch_transforms()).
-        # Train = the FULL official train. The tuner GATE (val) and the reported
-        # test are seeded, DISJOINT slices of the OFFICIAL val — never from train,
-        # so the gate is genuinely held out for both from_scratch and pretrained.
         self._train_raw = torchvision.datasets.ImageNet(root=root, split="train", transform=None)
 
         official_val = torchvision.datasets.ImageNet(root=root, split="val", transform=None)
@@ -149,26 +118,16 @@ class ImageNet_DataProvider(DataProvider):
         return {"train": self._train_raw, "val": self._val_raw, "test": self._test_raw}
 
     def full_train_dataset(self):
-        """The FULL official train (all 1000 classes), unwrapping any Subset.
-
-        SSOT for from_scratch training: train is currently the raw train, but
-        callers must not depend on whether it is wrapped.
-        """
+        """The full official train (all 1000 classes), unwrapping any Subset."""
         train = self._train_raw
         return train.dataset if isinstance(train, torch.utils.data.Subset) else train
 
     def full_official_val_dataset(self):
-        """The FULL 50k official val (all 1000 classes), unwrapping the Subset.
-
-        ``val`` and ``test`` are disjoint slices of this; the from_scratch run
-        reports the headline number on the full official val.
-        """
+        """The full 50k official val (all 1000 classes), unwrapping the Subset."""
         val = self._val_raw
         return val.dataset if isinstance(val, torch.utils.data.Subset) else val
 
     def torch_transforms(self) -> dict:
-        # Normalize is appended uniformly by the base class from
-        # ``_preprocessing_spec``; only the crop/resize policy lives here.
         return {
             "train": [
                 transforms.RandomResizedCrop(224),
@@ -188,12 +147,6 @@ class ImageNet_DataProvider(DataProvider):
         }
 
     def ffcv_transforms(self) -> dict:
-        # Per-split decoder carries the split-asymmetric crop policy:
-        # RandomResizedCrop on train (matches torch path's training
-        # recipe), CenterCrop on val/test (matches the deterministic
-        # eval recipe). The decoder is the first FFCV op in each split.
-        # beton_image_size=256 gives the train decoder room to sample
-        # 224-px windows with scale/ratio variety.
         return {
             "beton_image_size": 256,
             "splits": {
@@ -233,18 +186,7 @@ class ImageNet_DataProvider(DataProvider):
         return ClassificationMode(1000)
 
     def fast_fallback_dataloaders(self, *, batch_size: int, num_workers: int = 12):
-        """Optimized torchvision fallback loaders for the fast-recipe trainer.
-
-        The non-FFCV path: builds plain ``torch.utils.data.DataLoader`` over the
-        provider's already-composed (transform-wrapped) splits with the
-        throughput knobs FFCV would otherwise provide — many ``num_workers``,
-        ``pin_memory``, ``persistent_workers``, and ``prefetch_factor``. Train is
-        shuffled; val/test are sequential. This only assembles dataloaders; it is
-        NOT a pipeline step and does not change the torch-DataLoader path used by
-        the rest of the framework.
-        """
-        from torch.utils.data import DataLoader
-
+        """Plain torchvision DataLoaders (shuffled train, sequential val/test) for the fast-recipe trainer."""
         datasets = {
             "train": (self._get_training_dataset(), True),
             "val": (self._get_validation_dataset(), False),

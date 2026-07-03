@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Optional, Tuple
+from typing import Any, Optional
 
 import numpy as np
 
@@ -41,7 +41,6 @@ class _LayoutIRMappingFC:
 
         src_arr = input_tensor_sources
 
-        # Batched FC: (in_features, core_count) -> dispatch column-by-column.
         if src_arr.ndim == 2:
             if src_arr.shape[0] != in_features and src_arr.shape[1] == in_features:
                 src_arr = src_arr.T
@@ -117,7 +116,6 @@ class _LayoutIRMappingFC:
                 coalescing_role=coalescing_role,
             )
 
-        # "single" or non-output-tiled "coalescing"
         fc_input = src_arr.T if src_arr.ndim > 1 else src_arr
         return self.add_neural_core(
             input_sources=fc_input,

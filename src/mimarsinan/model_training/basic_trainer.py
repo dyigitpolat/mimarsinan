@@ -12,7 +12,6 @@ from mimarsinan.model_training import basic_trainer_steps
 from mimarsinan.model_training import basic_trainer_epochs
 from mimarsinan.model_training import basic_trainer_eval
 
-import warmup_scheduler
 import torch
 
 
@@ -24,11 +23,6 @@ class BasicTrainer:
         self.model = model.to(device)
         self.device = device
         self.recipe = recipe
-        # When True AND a recipe is configured, the STEP recovery builds its
-        # optimizer/scheduler from ``recipe`` (optimizer family, weight-decay,
-        # momentum/betas) and schedules the LR (warmup + cosine over the budget,
-        # discovered LR = peak) instead of the hardcoded Adam(wd=5e-5)/constant-LR
-        # path. Default False keeps the step recovery byte-identical.
         self.tuning_recipe_recovery = bool(tuning_recipe_recovery)
 
         self.data_loader_factory = data_loader_factory
@@ -167,9 +161,8 @@ class BasicTrainer:
     def build_step_optimizer(self, lr):
         """Build a fresh step-training optimizer that a caller can own and reuse.
 
-        Mirrors the optimizer built by ``_get_optimizer_and_scheduler_steps`` so
-        persisting moments across recovery calls stays consistent with the
-        per-call fresh-optimizer path (recipe-driven when the flag is on).
+        Mirrors ``_get_optimizer_and_scheduler_steps`` so persisted moments stay
+        consistent with the per-call fresh-optimizer path.
         """
         if self._recipe_step_recovery_enabled():
             return self._build_recipe_step_optimizer(lr)
@@ -182,10 +175,8 @@ class BasicTrainer:
     def _scheduler_and_scaler_for_optimizer(
         self, optimizer, lr, total_steps: int, *, constant_lr: bool = False
     ):
-        """Build the scheduler/scaler around an externally-owned optimizer.
-
-        The scheduler selection mirrors ``_get_optimizer_and_scheduler_steps`` so
-        an owned optimizer follows the same LR schedule as the fresh-built path.
+        """Build the scheduler/scaler around an externally-owned optimizer, mirroring
+        ``_get_optimizer_and_scheduler_steps`` so it follows the same LR schedule.
         """
         if self._recipe_step_recovery_enabled():
             scheduler = self._build_recipe_step_scheduler(optimizer, total_steps)

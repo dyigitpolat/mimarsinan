@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from mimarsinan.common.diagnostics import phase_profiler
+from mimarsinan.mapping.pruning.ir_pruning_core import prune_ir_graph
+from mimarsinan.mapping.pruning.ir_pruning_masks import get_initial_pruning_masks_from_model
 from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 
 
@@ -11,9 +13,6 @@ def apply_ir_pruning_if_enabled(step, model, ir_graph, phase_tag: str):
     plan = DeploymentPlan.of(step.pipeline)
     if not plan.pruning:
         return ir_graph
-
-    from mimarsinan.mapping.pruning.ir_pruning_core import prune_ir_graph
-    from mimarsinan.mapping.pruning.ir_pruning_masks import get_initial_pruning_masks_from_model
 
     try:
         perceptrons_pre = model.get_perceptrons()
@@ -46,8 +45,6 @@ def apply_ir_pruning_if_enabled(step, model, ir_graph, phase_tag: str):
     except Exception:
         pass
 
-    # The pre-pruning heatmap is always stored, subject only to a memory-budget
-    # guard (a heatmap larger than ``pre_pruning_heatmap_budget_bytes`` is skipped).
     store_heatmap = True
     heatmap_budget_bytes = int(step.pipeline.config.get(
         "pre_pruning_heatmap_budget_bytes", 2 * 1024**3,

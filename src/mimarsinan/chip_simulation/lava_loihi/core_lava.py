@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import multiprocessing as mp
+
 import numpy as np
+import torch.multiprocessing as torch_mp
 
 from mimarsinan.chip_simulation.lava_loihi.timing import _LAVA_DTYPE
 
@@ -11,9 +14,6 @@ _SUBTRACTIVE_LIF_CLS = None
 
 def _make_set_start_method_idempotent() -> None:
     """No-op ``set_start_method`` when a multiprocessing context is already set."""
-    import multiprocessing as mp
-    import torch.multiprocessing as torch_mp
-
     def _patch(module) -> None:
         real_set = module.set_start_method
         if getattr(real_set, "_mimarsinan_lava_safe", False):

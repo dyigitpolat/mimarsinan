@@ -6,10 +6,6 @@ from mimarsinan.tuning.axes import ManagerRateAxis
 from mimarsinan.tuning.orchestration.smooth_adaptation_tuner import SmoothAdaptationTuner
 
 
-# Fixed seed for stochastic-axis decisions (ActQuant random masks / Noise). Gives
-# each run a reproducible mask stream instead of one slaved to the global RNG; a
-# no-op for non-stochastic rates (clamp / activation-adaptation have no random
-# decorators), so it stays bit-exact there.
 _DECISION_SEED = 1234
 
 
@@ -21,16 +17,10 @@ class AdaptationRateTuner(SmoothAdaptationTuner):
     def __init__(self, pipeline, model, target_accuracy, lr, adaptation_manager):
         super().__init__(pipeline, model, target_accuracy, lr)
         self.adaptation_manager = adaptation_manager
-        # Rate application is owned by the AdaptationAxis, which delegates
-        # set_rate to the apply_manager_rate SSOT (test_axis_delegation).
         self._axis = ManagerRateAxis(self.rate_attr)
         self._axis.attach(self.model, self.adaptation_manager, self.pipeline.config)
         self._axis.set_decision_seed(_DECISION_SEED)
 
-        # EF1: the manager-rate family READS the pipeline-wide optimization-driver axis
-        # (it had no fast path before). Default `controller` ⇒ the fast ladder is
-        # carried but disabled ⇒ byte-identical; `optimization_driver=fast` drives the
-        # manager rate (`_apply_rate`) through the uniform fixed ladder.
         self._consume_optimization_driver(
             rates=self.pipeline.config.get(
                 "manager_rate_fast_rates", [0.25, 0.5, 0.75, 1.0]
@@ -57,7 +47,5 @@ class AdaptationRateTuner(SmoothAdaptationTuner):
         self._continue_to_full_rate()
         self._apply_rate(1.0)
         self._committed_rate = 1.0
-        # Enforce the pipeline floor for the whole rate-tuner family (the
-        # subclasses used to each re-add this identical safety net).
         self._final_metric = self._ensure_pipeline_threshold()
         return self._final_metric

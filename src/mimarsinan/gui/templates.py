@@ -8,14 +8,15 @@ import re
 from pathlib import Path
 from typing import Any
 
+from mimarsinan.gui.wizard.config_builder import build_deployment_config_from_state
+
 _SAFE_ID_RE = re.compile(r"^[A-Za-z0-9_\-]+$")
 
 
 def name_and_deployment_from_post_body(body: dict[str, Any]) -> tuple[str, dict[str, Any]]:
-    """Split POST ``/api/templates`` JSON into filename stem and deployment config to store.
+    """Split POST ``/api/templates`` JSON into (filename stem, deployment config).
 
-    Clients send ``{\"name\": str, \"config\": <deployment>}`` (wizard, welcome,
-    monitor banner), or a flat deployment object (same keys as run config).
+    Accepts either ``{"name": str, "config": <deployment>}`` or a flat deployment object.
     """
     if not isinstance(body, dict):
         return "template", {}
@@ -77,8 +78,6 @@ def get_template(template_id: str) -> dict[str, Any] | None:
 
 def save_template(name: str, config: dict[str, Any]) -> str:
     """Save a config as a named template. Returns the template ID."""
-    from mimarsinan.gui.wizard.config_builder import build_deployment_config_from_state
-
     display_name = name.strip()
     safe_name = re.sub(r"[^A-Za-z0-9_\-]", "_", display_name)
     if not safe_name:

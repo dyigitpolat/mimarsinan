@@ -1,22 +1,20 @@
-"""Hashable request signature for the wizard / NAS layout-mapping path.
-
-``LayoutMappingRequest`` collapses a wizard request body (or equivalent
-internal call site) into a frozen, hash-stable dataclass.  Used as the key
-for :class:`mimarsinan.mapping.verification.layout_mapping_service.LayoutMappingService`.
-"""
+"""Hashable request signature (key for ``LayoutMappingService``) for the wizard / NAS layout-mapping path."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any
 
+from mimarsinan.mapping.verification.wizard_layout_verify import (
+    resolve_tiling_params_from_body,
+)
+
 
 def _freeze(obj: Any) -> Any:
     """Recursively freeze ``obj`` into a hashable canonical form.
 
-    Dicts become sorted tuples of ``(key, _freeze(value))``; lists / tuples
-    become tuples; scalars pass through.  Two semantically-equal request
-    bodies always produce equal frozen forms regardless of dict-key order.
+    Dicts become sorted tuples of ``(key, _freeze(value))``; lists/tuples become
+    tuples; scalars pass through, so key order never changes the frozen form.
     """
     if isinstance(obj, dict):
         return tuple(sorted((k, _freeze(v)) for k, v in obj.items()))
@@ -29,11 +27,8 @@ def _freeze(obj: Any) -> Any:
 class LayoutMappingRequest:
     """Hashable request key for ``LayoutMappingService``.
 
-    Two distinct slices of the key drive the two cache levels:
-
-    - :meth:`model_identity_key` -- model_repr cache; tiling parameters
-      don't affect the mapper graph, only the per-softcore split.
-    - :meth:`verification_key` -- verification cache; everything matters.
+    ``model_identity_key`` drives the model_repr cache (tiling-independent);
+    ``verification_key`` drives the verification cache (everything matters).
     """
 
     model_type: str
@@ -55,10 +50,6 @@ class LayoutMappingRequest:
         tiling_max_axons: int | None = None,
         tiling_max_neurons: int | None = None,
     ) -> "LayoutMappingRequest":
-        from mimarsinan.mapping.verification.wizard_layout_verify import (
-            resolve_tiling_params_from_body,
-        )
-
         max_ax_default = int(body.get("max_axons", 1024))
         max_neu_default = int(body.get("max_neurons", 1024))
 
@@ -98,13 +89,7 @@ class LayoutMappingRequest:
         )
 
     def model_identity_key(self) -> tuple:
-        """Sub-key for the model-repr cache slot.
-
-        Tiling parameters (``max_axons``, ``max_neurons``, ``allow_coalescing``,
-        ``hardware_bias``) do not change the mapper graph -- only the
-        per-softcore split inside ``LayoutIRMapping`` -- so two requests
-        differing only on these fields share their model_repr.
-        """
+        """Sub-key for the model-repr cache slot; excludes tiling params, which don't change the mapper graph."""
         return (
             self.model_type,
             self.model_config_key,
@@ -125,8 +110,7 @@ class LayoutMappingRequest:
         )
 
     def to_body(self) -> dict:
-        """Reconstruct a wizard-style body dict (for callers that hand off
-        to existing model-repr builders)."""
+        """Reconstruct a wizard-style body dict for existing model-repr builders."""
         return {
             "model_type": self.model_type,
             "input_shape": list(self.input_shape),

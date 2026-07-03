@@ -1,14 +1,4 @@
-"""Static on-chip-fraction pre-check: reproduce the validity gate WITHOUT a run.
-
-The authoritative gate (:mod:`onchip_majority`) needs a fully MAPPED ``IRGraph``
-and a pipeline run. This estimator FX-traces / segments a native model exactly as
-``convert_torch_model`` would, classifies which mapper units are HOST-side (the
-segment-start encoder perceptrons under ``subsume``, plus always-host ComputeOps
-like the classifier readout, attention, LayerNorm, pooling), and sums host vs.
-total. The PARAMS metric reproduces ``count_host_params`` exactly; the MACS metric
-reports the on-chip compute fraction (attention is param-light but MAC-heavy), the
-fork the transformer validity decision needs.
-"""
+"""Static on-chip-fraction pre-check: reproduce the on-chip validity gate from a native model without a pipeline run."""
 
 from __future__ import annotations
 
@@ -39,7 +29,6 @@ TIER_VALID = "VALID"
 TIER_VALID_FLAGGED = "VALID_FLAGGED"
 TIER_INVALID = "INVALID"
 
-# Host op types with NO on-chip SNN mapping yet — the research frontier.
 _UNSUPPORTED_HOST_OP_TYPES = (
     nn.MultiheadAttention,
     nn.LayerNorm,
@@ -66,12 +55,10 @@ class OnchipFractionEstimate:
 
 @dataclass(frozen=True)
 class ValidityVerdict:
-    """Tiered deployment-validity verdict on BOTH the param and MAC on-chip fractions.
+    """Tiered deployment-validity verdict on both the param and MAC on-chip fractions.
 
-    ``tier`` is one of ``VALID`` / ``VALID_FLAGGED`` / ``INVALID``. ``research_gap_ops``
-    names the host ops with no on-chip SNN mapping yet (the future-research frontier);
-    ``placement_fixable_ops`` names supported Linear/Conv host-placed under ``subsume``
-    (fixable by switching to ``offload``).
+    ``research_gap_ops`` are host ops with no on-chip SNN mapping yet;
+    ``placement_fixable_ops`` are supported encoders offloadable via ``offload``.
     """
 
     tier: str
@@ -102,10 +89,8 @@ def _is_encoding_perceptron(node) -> bool:
 def _host_unit(node):
     """Return the host-side ``nn.Module`` of a host mapper node, else ``None``.
 
-    Mirrors ``count_host_params``: a ``ComputeOpMapper`` contributes its wrapped
-    module; a segment-start (``is_encoding_layer``) perceptron is emitted as a host
-    ComputeOp whose module is the perceptron itself. Everything else is on-chip or
-    structural (no host parameters / MACs).
+    Mirrors ``count_host_params``: a ComputeOpMapper contributes its wrapped
+    module; a segment-start encoding perceptron contributes itself.
     """
     if isinstance(node, ComputeOpMapper):
         return node.module
@@ -142,14 +127,10 @@ def _host_op_label(module) -> str:
 
 
 def _classify_host_node(node):
-    """Classify a host-side node into a (category, op_label) pair.
+    """Classify a host-side node into a ``(category, op_label)`` pair.
 
-    ``placement`` — a supported encoding perceptron (Linear/Conv) host-placed under
-    ``subsume``; switching to ``offload`` maps it on-chip. ``unsupported_op`` — a host
-    ComputeOp wrapping a module with no on-chip SNN mapping yet (MultiheadAttention,
-    LayerNorm, GELU): the research frontier. ``supported_host`` — an always-host but
-    supported op (the classifier readout Linear, pooling, structural adapters); neither
-    a placement fix nor a research gap. Returns ``(None, None)`` for non-host nodes.
+    Category is ``placement`` (offloadable encoder), ``unsupported_op`` (research
+    gap), or ``supported_host`` (always-host); ``(None, None)`` for non-host nodes.
     """
     if _is_encoding_perceptron(node):
         return "placement", _perceptron_op_label(node.perceptron)
@@ -205,12 +186,10 @@ def _is_scale_wrapper(module) -> bool:
 
 
 def _module_macs(module: nn.Module, in_shape, out_shape) -> int:
-    """Estimate forward MACs for a host/on-chip unit from its I/O tensor shapes.
+    """Estimate forward MACs for a host/on-chip unit from its full I/O tensor shapes.
 
-    ``in_shape`` / ``out_shape`` are full tensor shapes (incl. batch). Handles the
-    op families that survive conversion: Linear, Conv1d/2d, MultiheadAttention,
-    and the linear ``layer`` inside a ``Perceptron``. Pure element-wise / shape ops
-    (activations, norms, pooling, reshape) carry no MACs in this budget.
+    Covers Linear, Conv1d/2d, MultiheadAttention and a Perceptron's linear layer;
+    pure element-wise/shape ops carry no MACs.
     """
     if _is_scale_wrapper(module):
         return _module_macs(module.module, in_shape, out_shape)
@@ -328,13 +307,8 @@ def estimate_onchip_fraction(
 ) -> OnchipFractionEstimate:
     """Statically estimate the on-chip fraction of a native model under ``metric``.
 
-    Pure-static: FX-traces and segments via ``convert_torch_model`` (no training,
-    no physical core placement, no ``generated/`` run), then classifies host vs.
-    on-chip. ``metric="params"`` reproduces the authoritative ``count_host_params``
-    decomposition exactly; ``metric="macs"`` reports the on-chip forward-compute
-    fraction at the model's input shape. ``encoding_placement`` is the converter's
-    ``encoding_layer_placement`` (``subsume`` offloads segment-start encoders to the
-    host; ``offload`` maps them on-chip).
+    ``metric="params"`` reproduces ``count_host_params`` exactly; ``metric="macs"``
+    reports the on-chip forward-compute fraction at the model's input shape.
     """
     if metric not in _VALID_METRICS:
         raise ValueError(
@@ -374,10 +348,10 @@ def assert_onchip_majority_estimate_or_raise(
     metric: str = "params",
     min_fraction: float = 0.5,
 ) -> OnchipFractionEstimate:
-    """Raise :class:`OnchipMajorityError` when the STATIC on-chip fraction is below floor.
+    """Raise :class:`OnchipMajorityError` when the static on-chip fraction is below floor.
 
-    The static analogue of ``assert_onchip_majority_or_raise`` for callers (the
-    campaign scheduler) that hold a model spec but no mapped IR graph.
+    The static analogue of ``assert_onchip_majority_or_raise`` for callers with a
+    model spec but no mapped IR graph.
     """
     est = estimate_onchip_fraction(
         model,
@@ -400,13 +374,7 @@ def assert_onchip_majority_estimate_or_raise(
 
 
 def _collect_host_op_classes(flow):
-    """Walk the flow once, returning ``(research_gap_ops, placement_fixable_ops)``.
-
-    ``research_gap_ops`` are host ops with no on-chip SNN mapping (the frontier);
-    ``placement_fixable_ops`` are supported encoders host-placed under ``subsume``
-    (offloadable). Always-host supported ops (readout, pooling, adapters) are in
-    neither list. Each host unit is classified once (deduped by identity).
-    """
+    """Walk the flow once, returning ``(research_gap_ops, placement_fixable_ops)`` deduped by identity."""
     seen: set[int] = set()
     research_gap_ops: list[str] = []
     placement_fixable_ops: list[str] = []
@@ -441,15 +409,10 @@ def classify_validity(
     floor: float = _DEFAULT_FLOOR,
     majority: float = _DEFAULT_MAJORITY,
 ) -> ValidityVerdict:
-    """Tiered deployment validity on BOTH the param and MAC on-chip fractions.
+    """Tiered deployment validity on both the param and MAC on-chip fractions.
 
-    ``INVALID`` iff ``min(param_frac, mac_frac) < floor`` (the host does ~everything);
-    ``VALID`` iff both fractions ``>= majority``; ``VALID_FLAGGED`` otherwise (deploys
-    and counts as transferable-tuning evidence while carrying a research gap). The
-    host ops keeping a flagged model below majority are classified into
-    ``research_gap_ops`` (no on-chip mapping yet) vs ``placement_fixable_ops``
-    (supported encoders, fixable via ``offload``). One flow is built and reused for
-    both metrics and the op classification (conversion mutates ``model`` in place).
+    ``INVALID`` iff ``min(param_frac, mac_frac) < floor``; ``VALID`` iff both
+    ``>= majority``; else ``VALID_FLAGGED``. One flow (which mutates ``model``) is reused.
     """
     if encoding_placement not in _VALID_PLACEMENTS:
         raise ValueError(

@@ -4,27 +4,17 @@ from __future__ import annotations
 
 import math
 import os
-import tempfile
 from dataclasses import dataclass, field
 from typing import Any, List, Optional
 
-from mimarsinan.chip_simulation.sanafe.presets import (
-    AXON_IN_NAME, AXON_OUT_NAME, DENDRITE_NAME,
-    PerEventEnergy, PRESETS, SOMA_INPUT_RANGE_NAME, SOMA_LIF_NAME,
-    SOMA_TTFS_CONTINUOUS_NAME, SOMA_TTFS_QUANTIZED_NAME, SYNAPSE_NAME,
-)
+from mimarsinan.chip_simulation.sanafe.presets import PerEventEnergy, PRESETS
 
 
 def _mesh_dims(n_tiles: int) -> tuple[int, int]:
-    """A FULL rectangular ``(width, height)`` mesh with EXACTLY ``n_tiles`` tiles.
+    """Most-square exact factorization ``(width>=height, width*height==n_tiles)``.
 
-    The most-square exact factorization (``width >= height``, ``width*height ==
-    n_tiles``). A ceil-padded mesh (``width*height > n_tiles``) leaves phantom
-    tiles the emitted YAML never defines, and SANA-FE's C++ NoC setup then
-    divides/indexes on the missing tiles → SIGFPE (the 2026-06 mmixcore
-    incident: ``n_tiles=10`` → ``isqrt`` gave ``4×3=12`` → 2 phantom tiles →
-    crash in ``SpikingChip(arch)``). A prime ``n_tiles`` degrades to a line
-    mesh (``n×1``), which is still a full rectangle.
+    Must be exact: a ceil-padded mesh leaves phantom tiles the YAML never defines
+    and SANA-FE's C++ NoC then SIGFPEs indexing them.
     """
     n = max(1, int(n_tiles))
     height = 1
@@ -48,18 +38,14 @@ def _plugin_path(name: str) -> Optional[str]:
 
 _SANAFE_MODULE: Any = None
 
-# The integration (arch YAML, soma model_attributes, the custom plugins) targets
-# this SANA-FE. An unpinned `pip install sanafe` upgraded it to 2.2.x on
-# 2026-06-17, which SIGFPEs (core dump) on arch load — see
-# docs/research_artifacts_for_cascaded_ttfs_tuning/SANAFE_fpe_investigation.md.
+# The integration targets these SANA-FE versions; 2.2.x SIGFPEs on arch load.
 _SUPPORTED_SANAFE_VERSIONS = ("2.1.1",)
 
 
 def _check_sanafe_version(version: Optional[str]) -> None:
-    """Fail LOUD on an unsupported SANA-FE instead of letting it SIGFPE in C++.
+    """Fail loud on an unsupported SANA-FE rather than let it SIGFPE in C++.
 
-    ``None`` (version undeterminable) is permissive — we only block versions we
-    KNOW are incompatible, to avoid false positives on future validated bumps.
+    ``None`` is permissive: only versions known incompatible are blocked.
     """
     if version is not None and version not in _SUPPORTED_SANAFE_VERSIONS:
         supported = _SUPPORTED_SANAFE_VERSIONS[0]
@@ -77,7 +63,7 @@ def _sanafe() -> Any:
     if _SANAFE_MODULE is None:
         try:
             import sanafe  # type: ignore[import-not-found]
-        except ImportError as e:  # pragma: no cover — exercised by integration tests
+        except ImportError as e:  # pragma: no cover
             raise ImportError(
                 "SANA-FE is not installed.  Run scripts/bootstrap_sanafe.sh "
                 "to enable the detailed-stats backend."
@@ -86,7 +72,7 @@ def _sanafe() -> Any:
             import importlib.metadata as _md
 
             _version = _md.version("sanafe")
-        except Exception:  # pragma: no cover — metadata edge cases
+        except Exception:  # pragma: no cover
             _version = getattr(sanafe, "__version__", None)
         _check_sanafe_version(_version)
         _SANAFE_MODULE = sanafe
@@ -189,8 +175,6 @@ def derive_arch_spec(
     last = total_cores - cores_per_tile * (n_tiles - 1)
     n_cores_per_tile.append(last)
 
-    # Exact factorization (no phantom tiles) — a ceil-padded mesh crashes
-    # SANA-FE's C++ NoC with a SIGFPE on the undefined tiles. See _mesh_dims.
     mesh_width, mesh_height = _mesh_dims(n_tiles)
 
     name = f"mimarsinan_{preset_name}_{total_cores}core"

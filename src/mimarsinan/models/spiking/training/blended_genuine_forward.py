@@ -1,13 +1,4 @@
-"""Teacher->genuine output blend: a ramping ``model.forward`` override.
-
-Installs ``out = (1 - rate) * teacher(x) + rate * genuine(x)`` as the model's
-forward, where ``genuine`` is the differentiable single-spike cascade
-(:class:`TTFSSegmentForward`, built lazily from the live model) and ``teacher``
-is a frozen snapshot. Ramping ``rate`` 0->1 walks the output smoothly from the
-continuous teacher (``rate=0`` reads the teacher exactly) to the genuine
-deployed cascade (``rate=1``). Gradients flow into the model's parameters via
-the genuine branch; the teacher branch carries none.
-"""
+"""Teacher->genuine output blend installed as a ramping ``model.forward`` override."""
 
 from __future__ import annotations
 
@@ -17,10 +8,8 @@ from mimarsinan.tuning.forward_install import LazyExecutorForward
 class BlendedGenuineForward(LazyExecutorForward):
     """Picklable ``model.forward`` blending a frozen teacher with the genuine cascade.
 
-    The live ``rate`` (a settable scalar, read each call) drives the blend so an
-    axis can ramp it. ``rate=0`` is the teacher output exactly, ``rate=1`` the
-    freshly built :class:`TTFSSegmentForward` exactly. The lazy genuine executor
-    is dropped on pickle (the teacher snapshot stays light).
+    Live ``rate`` drives the blend: ``rate=0`` is the teacher exactly, ``rate=1``
+    the freshly built :class:`TTFSSegmentForward`. The lazy executor drops on pickle.
     """
 
     def __init__(self, model, teacher, T: int, rate: float = 0.0,
@@ -28,8 +17,6 @@ class BlendedGenuineForward(LazyExecutorForward):
         super().__init__(model, T)
         self.teacher = teacher
         self.rate = float(rate)
-        # STE backward through the offload boundary so the genuine branch trains
-        # every segment (None = severed). Forward is unchanged.
         self.boundary_surrogate_temp = boundary_surrogate_temp
 
     def _build_executor(self):

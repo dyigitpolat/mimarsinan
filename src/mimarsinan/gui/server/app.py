@@ -5,11 +5,13 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import socket
 import threading
 import webbrowser
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable
 
+import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -109,7 +111,6 @@ def schedule_open_browser(url: str) -> None:
 
 
 def port_is_free(host: str, port: int) -> bool:
-    import socket
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         try:
             s.bind((host if host != "0.0.0.0" else "127.0.0.1", port))
@@ -126,8 +127,6 @@ def start_server(
     run_config_fn: Callable[[dict, "DataCollector"], None] | None = None,
 ) -> threading.Thread:
     """Start the FastAPI server in a background daemon thread."""
-    import uvicorn
-
     chosen_port = port
     for offset in range(max_port_attempts):
         candidate = port + offset

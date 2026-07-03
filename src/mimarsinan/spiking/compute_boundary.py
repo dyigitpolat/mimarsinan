@@ -11,6 +11,7 @@ from mimarsinan.mapping.ir import ComputeOp, IRSource
 from mimarsinan.models.nn.activations import LIFActivation
 from mimarsinan.spiking.boundary_config import BoundaryConfig
 from mimarsinan.spiking.lif_utils import unwrap_lif_activation
+from mimarsinan.spiking.spike_trains import uniform_spike_train
 
 
 def _resolve_lif_perceptron(module) -> tuple[object, LIFActivation] | None:
@@ -18,8 +19,7 @@ def _resolve_lif_perceptron(module) -> tuple[object, LIFActivation] | None:
     or ``None`` for wrappers (Conv2DPerceptronMapper) and non-LIF perceptrons."""
     if module is None:
         return None
-    # Wrapper mappers (e.g. Conv2DPerceptronMapper) expose a child ``perceptron``
-    # whose forward differs from the wrapper's; their boundary stays rate-mode.
+    # Wrapper mappers expose a child ``perceptron`` distinct from themselves; their boundary stays rate-mode.
     if hasattr(module, "perceptron") and getattr(module, "perceptron") is not module:
         return None
     if not hasattr(module, "activation"):
@@ -36,8 +36,7 @@ _warned_negative_boundary_ops: set = set()
 def _shifted_rate_slice(rate_slice, src, op, node_output_shifts):
     """Lift a producer rate slice by its ``node_output_shifts`` entry pre-clamp.
 
-    An unshifted negative reaching the clamp is silent information loss
-    (Case B: the subsumed encoder's input boundary) — warn once per op.
+    An unshifted negative reaching the [0,1] clamp is silent information loss; warn once per op.
     """
     shift = (node_output_shifts or {}).get(int(src.node_id))
     if shift is not None:
@@ -97,8 +96,6 @@ def _gather_op_input_train(
     else:
         device = torch.device("cpu")
     out = torch.zeros(T, sample_batch, in_size, dtype=config.compute_dtype, device=device)
-
-    from mimarsinan.spiking.spike_trains import uniform_spike_train
 
     for idx, src in enumerate(sources):
         if not isinstance(src, IRSource):

@@ -37,16 +37,12 @@ class TorchModelLoadStoreStrategy(LoadStoreStrategy):
         if hasattr(object, "device"):
             device = object.device
         else:
-            # Native nn.Module: infer device from first parameter.
             p = next(object.parameters(), None)
             device = p.device if p is not None else torch.device("cpu")
 
         object.cpu()
         torch.save((object, device), f"{cache_directory}/{self.filename}.pt")
-        # Restore original placement. If the originally-recorded device is no
-        # longer visible (e.g. the process was launched with a narrower
-        # CUDA_VISIBLE_DEVICES than when the object was first loaded), fall
-        # back to CPU so cache persistence does not crash mid-save.
+        # If the recorded device is no longer visible (narrower CUDA_VISIBLE_DEVICES) fall back to CPU rather than crash mid-save.
         try:
             object.to(device)
         except Exception:

@@ -1,39 +1,25 @@
-"""Fast ResNet-50 ImageNet-from-scratch recipe (FFCV / fast.ai super-convergence style).
-
-A standalone research vehicle (NOT a pipeline step): one-cycle LR, AMP
-mixed-precision, channels-last, label smoothing, progressive resizing,
-SGD+momentum, large batch. Targets ~67% top-1 in well under an hour on
-4x RTX PRO 6000 Blackwell.
-
-Dataloader policy: PREFER the repo FFCV path
-(:mod:`mimarsinan.data_handling.ffcv`) when ``import ffcv`` succeeds, ELSE fall
-back to an optimized torchvision ``ImageFolder``/``ImageNet`` loader (many
-workers, ``pin_memory``, ``persistent_workers``). FFCV is probed at runtime via
-a guarded import — never a module-top hard requirement.
-"""
+"""Fast ResNet-50 ImageNet-from-scratch recipe (FFCV / fast.ai super-convergence style)."""
 
 from __future__ import annotations
 
 import importlib
 import math
-from dataclasses import dataclass, field
-from typing import Any, Callable, Optional, Sequence
+from dataclasses import dataclass
+from typing import Any, Optional
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from mimarsinan.models.pretrained_bridge import load_pretrained_resnet50
 
-# --------------------------------------------------------------------------- #
-# Recipe config
-# --------------------------------------------------------------------------- #
+
 @dataclass
 class FastImageNetRecipe:
     """Super-convergence ResNet-50 recipe knobs.
 
-    Defaults target ~67% top-1 in <1hr on 4x RTX PRO 6000 Blackwell (FFCV path).
-    ``peak_lr`` is the per-replica peak for the listed ``batch_size`` (global,
-    i.e. summed over GPUs under DDP); scale linearly with batch size.
+    ``peak_lr`` is the peak for the listed (global, DDP-summed) ``batch_size``;
+    scale it linearly with batch size.
     """
 
     num_classes: int = 1000
@@ -44,15 +30,13 @@ class FastImageNetRecipe:
     weight_decay: float = 5e-5
     nesterov: bool = True
 
-    # One-cycle LR (linear warmup -> cosine decay).
-    peak_lr: float = 2.0  # global LR for batch_size=512 (linear-scaling rule)
+    peak_lr: float = 2.0
     warmup_frac: float = 0.10
     final_lr_frac: float = 0.0
 
     label_smoothing: float = 0.1
-    batch_size: int = 512  # global batch (summed across GPUs)
+    batch_size: int = 512
 
-    # Progressive resizing: train small -> end at the eval-matched size.
     start_size: int = 160
     final_size: int = 192
     final_size_epochs: int = 2
@@ -68,9 +52,6 @@ class FastImageNetRecipe:
         return max(0, int(round(self.warmup_frac * total_steps)))
 
 
-# --------------------------------------------------------------------------- #
-# One-cycle LR schedule (linear warmup -> cosine decay)
-# --------------------------------------------------------------------------- #
 def one_cycle_lr_schedule(
     step: int,
     *,
@@ -79,11 +60,8 @@ def one_cycle_lr_schedule(
     peak_lr: float,
     final_lr_frac: float = 0.0,
 ) -> float:
-    """Return the LR for ``step`` under a one-cycle (warmup + cosine) policy.
-
-    ``warmup_steps`` linear steps ramp 0 -> ``peak_lr``; the remainder cosine-anneal
-    ``peak_lr`` -> ``peak_lr * final_lr_frac``. With ``warmup_steps == 0`` step 0 is
-    already at ``peak_lr``.
+    """Return the LR for ``step`` under a one-cycle policy: linear ramp 0→peak over
+    ``warmup_steps``, then cosine anneal peak→``peak*final_lr_frac``.
     """
     if total_steps <= 0:
         raise ValueError(f"total_steps must be > 0, got {total_steps}")
@@ -101,9 +79,6 @@ def one_cycle_lr_schedule(
     return peak_lr * (final_lr_frac + (1.0 - final_lr_frac) * cosine)
 
 
-# --------------------------------------------------------------------------- #
-# Progressive resize schedule
-# --------------------------------------------------------------------------- #
 def progressive_resize_schedule(
     *,
     num_epochs: int,
@@ -112,12 +87,8 @@ def progressive_resize_schedule(
     final_epochs: int,
     multiple: int = 32,
 ) -> list[int]:
-    """Per-epoch training image size: ramp ``start_size`` -> ``final_size``.
-
-    Linear ramp over the first ``num_epochs - final_epochs`` epochs, then hold at
-    ``final_size`` for the last ``final_epochs`` epochs (so the model finishes at
-    the eval-matched resolution). All sizes are rounded to ``multiple`` and the
-    sequence is monotone non-decreasing.
+    """Per-epoch training image size: linear ramp ``start_size``→``final_size`` over the
+    first ``num_epochs - final_epochs`` epochs then hold; sizes snapped to ``multiple``, monotone non-decreasing.
     """
     if num_epochs <= 0:
         raise ValueError(f"num_epochs must be > 0, got {num_epochs}")
@@ -138,7 +109,6 @@ def progressive_resize_schedule(
         snapped = max(start_size, min(final_size, snapped))
         sizes.append(snapped)
 
-    # Enforce monotone non-decreasing after snapping.
     for i in range(1, len(sizes)):
         if sizes[i] < sizes[i - 1]:
             sizes[i] = sizes[i - 1]
@@ -146,41 +116,24 @@ def progressive_resize_schedule(
     return sizes
 
 
-# --------------------------------------------------------------------------- #
-# Label-smoothing cross entropy
-# --------------------------------------------------------------------------- #
 def label_smoothing_cross_entropy(
     logits: torch.Tensor,
     targets: torch.Tensor,
     *,
     smoothing: float = 0.1,
 ) -> torch.Tensor:
-    """Mean label-smoothed CE.
-
-    ``(1 - s) * NLL(target) + s * mean_k(-log_softmax_k)``, the standard
-    smoothing form (matches ``nn.CrossEntropyLoss(label_smoothing=s)``).
-    """
+    """Mean label-smoothed CE, matching ``nn.CrossEntropyLoss(label_smoothing=s)``."""
     return F.cross_entropy(logits, targets, label_smoothing=float(smoothing))
 
 
-# --------------------------------------------------------------------------- #
-# Model
-# --------------------------------------------------------------------------- #
 def build_resnet50_channels_last(num_classes: int = 1000) -> nn.Module:
-    """ResNet-50 (random init) with ``fc`` re-sized, converted to channels-last.
-
-    Reuses the repo's pretrained bridge (random-init path) so the architecture is
-    the SAME deployable trunk the mapping instruments measured.
+    """ResNet-50 (random init, ``fc`` re-sized) in channels-last, via the repo's
+    pretrained bridge so it matches the deployable trunk.
     """
-    from mimarsinan.models.pretrained_bridge import load_pretrained_resnet50
-
     model = load_pretrained_resnet50(num_classes, pretrained=False).train()
     return model.to(memory_format=torch.channels_last)
 
 
-# --------------------------------------------------------------------------- #
-# Train step (one AMP-aware step on a single batch)
-# --------------------------------------------------------------------------- #
 def train_step(
     model: nn.Module,
     batch: tuple[torch.Tensor, torch.Tensor],
@@ -194,8 +147,7 @@ def train_step(
 ) -> float:
     """Run one forward/backward/step on ``batch``; return the scalar loss.
 
-    AMP is used only on CUDA (``use_amp`` and ``device.type == 'cuda'``). On CPU
-    the step is plain fp32 so the loss-decreases unit test stays deterministic.
+    AMP only on CUDA; CPU stays fp32 so the loss-decreases unit test is deterministic.
     """
     x, y = batch
     x = x.to(device, non_blocking=True)
@@ -224,9 +176,6 @@ def train_step(
     return float(loss.detach().item())
 
 
-# --------------------------------------------------------------------------- #
-# Dataloader factory: FFCV-vs-torchvision selection (guarded import)
-# --------------------------------------------------------------------------- #
 def _ffcv_available() -> bool:
     """True iff ``import ffcv`` succeeds in this env. Guarded — never hard-imports."""
     try:
@@ -257,11 +206,8 @@ def _build_ffcv_loaders(provider: Any, **kwargs: Any):
 
 
 def _build_torchvision_loaders(provider: Any, **kwargs: Any):
-    """Optimized torchvision fallback DataLoaders.
-
-    Delegates split assembly to the provider's
-    :meth:`fast_fallback_dataloaders` (many workers, ``pin_memory``,
-    ``persistent_workers``) so the crop/normalize policy stays single-sourced.
+    """Optimized torchvision fallback DataLoaders, delegating split assembly to the
+    provider's ``fast_fallback_dataloaders`` so crop/normalize policy stays single-sourced.
     """
     batch_size = int(kwargs["batch_size"])
     num_workers = int(kwargs.get("num_workers", 12))
@@ -288,11 +234,8 @@ def build_imagenet_dataloaders(
     prefer_ffcv: bool = True,
     device: str = "cuda",
 ):
-    """Return train/val/test loaders, preferring FFCV when available.
-
-    Selection: ``prefer_ffcv and _ffcv_available()`` -> FFCV path; otherwise the
-    optimized torchvision fallback. The FFCV probe is a guarded runtime import so
-    this module imports cleanly with no FFCV installed.
+    """Return train/val/test loaders, preferring FFCV when available (guarded runtime
+    probe) else the optimized torchvision fallback.
     """
     if prefer_ffcv and _ffcv_available():
         return _build_ffcv_loaders(

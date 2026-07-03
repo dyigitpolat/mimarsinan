@@ -17,11 +17,10 @@ def _get_activation(name: str):
 
 
 class TorchMLPMixer(nn.Module):
-    """MLP-Mixer as plain nn.Module: patch embed, 2x (token mixer + channel mixer), pool, classifier.
+    """MLP-Mixer as plain nn.Module: patch embed, 2x (token + channel mixer), pool, classifier.
 
-    Config aligned with the old PerceptronMixerBuilder: patch_n_1, patch_m_1 (patch grid),
-    patch_c_1 (patch channels), fc_w_1 (token mixer hidden), fc_w_2 (channel mixer hidden).
-    Uses only Linear, Conv2d, BatchNorm1d, ReLU/LeakyReLU/GELU, reshape/permute for torch_mapping.
+    Config aligned with the old PerceptronMixerBuilder (patch grid, channels, mixer widths); uses
+    only Linear/Conv2d/BatchNorm1d/activation/reshape so torch_mapping can convert it.
     """
 
     def __init__(
@@ -42,13 +41,11 @@ class TorchMLPMixer(nn.Module):
         num_patches = patch_n_1 * patch_m_1
         self.num_patches = num_patches
         self.patch_channels = patch_c_1
-        # Patch embedding: Conv2d then flatten to (B, num_patches, patch_c_1)
         self.patch_embed = nn.Conv2d(
             c, patch_c_1, kernel_size=(patch_h, patch_w), stride=(patch_h, patch_w)
         )
         self.patch_bn = nn.BatchNorm2d(patch_c_1)
 
-        # Two mixer blocks (token mixer + channel mixer each) — each gets its own activation
         self.token_mix_1 = _TokenMixer(num_patches, patch_c_1, fc_w_1, _get_activation(base_activation))
         self.channel_mix_1 = _ChannelMixer(patch_c_1, fc_w_2, _get_activation(base_activation))
         self.token_mix_2 = _TokenMixer(num_patches, patch_c_1, fc_w_1, _get_activation(base_activation))
@@ -58,16 +55,15 @@ class TorchMLPMixer(nn.Module):
         self.classifier = nn.Linear(patch_c_1, num_classes)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # (B, C, H, W) -> (B, patch_c_1, num_patches) after conv+flatten
         x = self.patch_embed(x)
         x = self.patch_bn(x)
-        x = x.flatten(2).permute(0, 2, 1)  # (B, num_patches, patch_c_1)
+        x = x.flatten(2).permute(0, 2, 1)
         x = self.token_mix_1(x)
         x = self.channel_mix_1(x)
         x = self.token_mix_2(x)
         x = self.channel_mix_2(x)
         x = self.norm(x)
-        x = x.mean(dim=1)  # (B, patch_c_1)
+        x = x.mean(dim=1)
         x = self.classifier(x)
         return x
 
@@ -83,12 +79,11 @@ class _TokenMixer(nn.Module):
         self.act = act
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # x (B, N, D)
         x = self.ln(x)
-        x = x.permute(0, 2, 1)  # (B, D, N)
+        x = x.permute(0, 2, 1)
         x = self.act(self.fc1(x))
         x = self.fc2(x)
-        x = x.permute(0, 2, 1)  # (B, N, D)
+        x = x.permute(0, 2, 1)
         return x
 
 

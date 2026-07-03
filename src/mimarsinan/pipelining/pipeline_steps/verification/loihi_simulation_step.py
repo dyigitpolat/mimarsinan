@@ -1,14 +1,4 @@
-"""Optional Loihi-target spike-parity step.
-
-Added to the pipeline when ``enable_loihi_simulation`` is true in
-``deployment_parameters``.  Runs only for LIF mode (see
-``LavaLoihiRunner`` for the rationale — TTFS does not map onto Loihi's
-LIF dynamics).
-
-Runs *after* :class:`SimulationStep` so users still get the nevresim
-cycle-accurate reference; this step then checks one deterministic sample
-with HCM-vs-Lava spike-count parity for every neural segment.
-"""
+"""Optional Loihi-target HCM-vs-Lava spike-parity step (LIF-only)."""
 
 from mimarsinan.chip_simulation.lava_loihi import LavaLoihiRunner
 from mimarsinan.data_handling.test_sample_loader import load_test_sample_by_index

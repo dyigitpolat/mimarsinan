@@ -1,10 +1,4 @@
-"""Structured decision-trace artifact for adaptation cycles (golden-trace source).
-
-Promotes the ad-hoc ``_cycle_log`` list of per-outcome dicts into a single
-uniformly-shaped, ordered, JSON-round-trippable record stream. ``DecisionTrace``
-iterates as the legacy per-outcome dicts so ``_log_cycle_summary`` is unchanged;
-``to_json``/``from_json`` are the serialized golden contract later phases gate on.
-"""
+"""Structured decision-trace artifact for adaptation cycles (golden-trace source)."""
 
 from __future__ import annotations
 
@@ -13,8 +7,6 @@ import json
 from dataclasses import dataclass
 from typing import Iterator, Optional
 
-# Legacy ``_cycle_log`` dict key sets, per outcome — reproduced exactly by
-# ``as_legacy_dict`` so the existing printer and any reader stay byte-compatible.
 _LEGACY_KEYS = {
     "catastrophic": ("rate", "committed", "instant_acc", "outcome", "elapsed_sec"),
     "rollback": (
@@ -50,10 +42,10 @@ class DecisionRecord:
     seeds: Optional[dict] = None
 
     def as_legacy_dict(self) -> dict:
-        """The historical per-outcome ``_cycle_log`` dict for this record.
+        """The per-outcome ``_cycle_log`` dict for this record.
 
-        ``rate`` and ``committed`` are always numeric: ``_log_cycle_summary``
-        applies ``:.4f`` to them and would crash on a missing/``'?'`` value.
+        ``rate`` and ``committed`` are always numeric — ``_log_cycle_summary``
+        applies ``:.4f`` and would crash on a missing value.
         """
         keys = _LEGACY_KEYS.get(self.outcome, ("rate", "committed", "outcome", "elapsed_sec"))
         out = {k: getattr(self, k) for k in keys}
@@ -65,8 +57,7 @@ class DecisionRecord:
 class DecisionTrace:
     """Ordered, JSON-round-trippable stream of :class:`DecisionRecord`.
 
-    Iterates as legacy per-outcome dicts (``__iter__``/``__getitem__``) so
-    ``_log_cycle_summary`` consumes it unchanged; ``len``/``bool`` mirror a list.
+    Iterates as legacy per-outcome dicts so ``_log_cycle_summary`` consumes it unchanged.
     """
 
     def __init__(self, records: Optional[list] = None):

@@ -166,12 +166,9 @@ def _cost_provenance(row: Mapping[str, Any]) -> dict[str, Any]:
 def normalize_ledger_record(
     row: Mapping[str, Any], *, require_science: bool = True,
 ) -> dict[str, Any]:
-    """Return a normalized science ledger row.
+    """Return a normalized science ledger row, stamped with hypervolume axes, cell key, tier, timing, and provenance.
 
-    The normal form keeps the original measurement fields, but stamps the row with
-    explicit hypervolume axes, a canonical cell key, canonical validity tier,
-    timing sub-record, and provenance. Rows without ``deployment_validity`` can
-    pass through unchanged when ``require_science`` is false.
+    Rows without ``deployment_validity`` pass through unchanged when ``require_science`` is false.
     """
     raw_tier = row.get("deployment_validity")
     tier = classify_validity_tier(raw_tier)

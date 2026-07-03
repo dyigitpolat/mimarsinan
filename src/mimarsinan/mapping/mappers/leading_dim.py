@@ -2,23 +2,11 @@
 
 from __future__ import annotations
 
-import torch
-
 from mimarsinan.mapping.mappers.base import Mapper
 
 
 class MergeLeadingDimsMapper(Mapper):
-    """
-    Flatten all leading dims except the last feature dim.
-
-    Forward:
-      (B, N, F) -> (B*N, F)
-      (B, C, N, F) -> (B*C*N, F)
-      If already 2D, returns as-is.
-
-    Mapping:
-      Usually identity because mapping tensors do not include batch.
-    """
+    """Flatten all leading dims except the last feature dim ((B,N,F)->(B*N,F)); IR mapping is identity."""
 
     def __init__(self, source_mapper):
         super(MergeLeadingDimsMapper, self).__init__(source_mapper)
@@ -33,15 +21,7 @@ class MergeLeadingDimsMapper(Mapper):
 
 
 class SplitLeadingDimMapper(Mapper):
-    """
-    Inverse of MergeLeadingDimsMapper for the common (B*N, F) -> (B, N, F) case.
-
-    Forward:
-      (B*N, F) -> (B, N, F)  where N = second_dim_size
-
-    Mapping:
-      Identity.
-    """
+    """Inverse of MergeLeadingDimsMapper for (B*N,F)->(B,N,F) where N=second_dim_size; IR mapping is identity."""
 
     def __init__(self, source_mapper, second_dim_size: int):
         super(SplitLeadingDimMapper, self).__init__(source_mapper)
@@ -60,18 +40,7 @@ class SplitLeadingDimMapper(Mapper):
 
 
 class Ensure2DMapper(Mapper):
-    """
-    Ensure a 2D (Instances, Features) layout for mapping and a (Batch, Features)
-    layout for forward.
-
-    Mapping:
-      (F,) -> (1, F)
-      (N, F) -> unchanged
-
-    Forward:
-      (B, F) -> unchanged
-      (F,) -> (1, F)
-    """
+    """Ensure a 2D (Instances, Features) mapping layout and a (Batch, Features) forward layout."""
 
     def __init__(self, source_mapper):
         super(Ensure2DMapper, self).__init__(source_mapper)

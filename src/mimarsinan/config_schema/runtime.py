@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Dict, Optional
 
 from mimarsinan.config_schema.defaults import (
     apply_preset,

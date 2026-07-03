@@ -12,7 +12,15 @@ from typing import TYPE_CHECKING, Callable
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
+from mimarsinan.gui.runs import get_runs_root, _validate_run_id
 from mimarsinan.gui.server.json_safe import SafeJSONResponse
+from mimarsinan.gui.templates import (
+    delete_template,
+    get_template,
+    list_templates,
+    name_and_deployment_from_post_body,
+    save_template,
+)
 
 if TYPE_CHECKING:
     from mimarsinan.gui.runtime.collector import DataCollector
@@ -28,15 +36,6 @@ def register_routes(
     run_config_fn: Callable[[dict, "DataCollector"], None] | None,
     process_manager: "ProcessManager | None",
 ) -> None:
-    from mimarsinan.gui.runs import get_runs_root, _validate_run_id
-    from mimarsinan.gui.templates import (
-        delete_template,
-        get_template,
-        list_templates,
-        name_and_deployment_from_post_body,
-        save_template,
-    )
-
     _metadata_cache: dict[tuple, dict] = {}
     _metadata_cache_lock = threading.Lock()
 

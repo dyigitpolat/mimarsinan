@@ -1,25 +1,4 @@
-"""Deployment-faithfulness registry (R6 / Frontier E5): the SSOT for the
-standing gates and external-dependency boundary guards that make the
-deployed-forward number the only number of record.
-
-This module declares — it does not execute. It is a pure-data audit surface
-the tests enforce:
-
-* ``DEPLOYMENT_FAITHFULNESS_GATES`` — the per-run gates that must run on every
-  deployment (torch <-> deployed-sim parity, NF <-> SCM per-neuron/decision),
-  each naming its standing default-on config flag. A gate listed here as
-  ``standing`` must default ON in the config defaults — the test locks it so a
-  gate cannot be quietly demoted to opt-in.
-* ``EXTERNAL_DEPENDENCY_BOUNDARIES`` — every place mimarsinan imports a
-  third-party package that can SIGFPE / drift / break a deployment number
-  silently, with the kind of guard that protects the boundary. A boundary
-  without a declared guard fails the audit checklist loud (the SANA-FE 2.2.x
-  SIGFPE lesson generalized).
-* Drift detection: ``sanafe_supported_versions`` is the SSOT pin; the bootstrap
-  script literal is cross-checked against it so a silent ``pip install sanafe``
-  upgrade (or a one-sided bump) fails loud in CI rather than core-dumping at
-  deploy time.
-"""
+"""Pure-data registry of standing deployment-faithfulness gates and external-dependency boundary guards."""
 
 from __future__ import annotations
 
@@ -28,20 +7,19 @@ import re
 from dataclasses import dataclass
 from typing import Callable, Optional, Tuple
 
+from mimarsinan.chip_simulation.spiking_semantics import (
+    _BACKEND_CAPS,
+    backend_capabilities,
+    require_spiking_mode_supported,
+)
 
-# --------------------------------------------------------------------------- #
-# Standing per-run deployment-faithfulness gates.
-# --------------------------------------------------------------------------- #
 
 @dataclass(frozen=True)
 class FaithfulnessGate:
     """A gate that runs on a deployment run to keep the deployed number honest.
 
-    ``config_flag`` toggles the gate; ``default_on`` records whether the gate
-    is *standing* (runs unless explicitly disabled) — the institutionalized
-    state — versus opt-in. ``standing`` gates are locked default-ON by the audit
-    test, so deployment faithfulness cannot regress to opt-in by a silent
-    defaults edit.
+    ``default_on`` marks a *standing* gate (locked default-ON by the audit test, so it
+    cannot regress to opt-in by a silent defaults edit).
     """
 
     name: str
@@ -81,19 +59,6 @@ def standing_gates() -> Tuple[FaithfulnessGate, ...]:
     return tuple(g for g in DEPLOYMENT_FAITHFULNESS_GATES if g.default_on)
 
 
-# --------------------------------------------------------------------------- #
-# External-dependency integration boundaries + their guards.
-# --------------------------------------------------------------------------- #
-
-# A guard kind classifies how a boundary is protected against a silent break:
-#   "version_pin"     — a pinned/validated version range; an unsupported version
-#                       fails loud (the SANA-FE SIGFPE lesson).
-#   "capability_gate" — a registry declares which (firing x mode) the backend
-#                       supports; an unsupported request fails loud before the
-#                       backend runs.
-#   "lazy_import"     — the dependency is GPL/optional; a missing install fails
-#                       loud with an actionable bootstrap message, and importing
-#                       mimarsinan never requires it.
 GUARD_KINDS = ("version_pin", "capability_gate", "lazy_import")
 
 
@@ -101,11 +66,8 @@ GUARD_KINDS = ("version_pin", "capability_gate", "lazy_import")
 class DependencyBoundary:
     """An external-dependency import site that can break a deployment silently.
 
-    ``guards`` is the non-empty set of guard kinds protecting the boundary.
-    ``verify`` (optional) is a zero-arg callable that asserts the guard is
-    actually present (e.g. the version-check function is importable and rejects
-    a known-bad version); the audit checklist calls it. A boundary with an empty
-    ``guards`` set fails the checklist loud.
+    ``guards`` is the non-empty set of guard kinds protecting it; ``verify`` (optional)
+    asserts the guard is actually present. An empty ``guards`` set fails the checklist loud.
     """
 
     package: str
@@ -123,7 +85,7 @@ def _verify_sanafe_guard() -> None:
 
     if not _SUPPORTED_SANAFE_VERSIONS:
         raise AssertionError("SANA-FE supported-version pin is empty")
-    _check_sanafe_version(_SUPPORTED_SANAFE_VERSIONS[0])  # supported -> no raise
+    _check_sanafe_version(_SUPPORTED_SANAFE_VERSIONS[0])
     bad = _bump_patch(_SUPPORTED_SANAFE_VERSIONS[-1])
     try:
         _check_sanafe_version(bad)
@@ -136,15 +98,6 @@ def _verify_sanafe_guard() -> None:
 
 def _verify_backend_capability_guard(backend: str) -> Callable[[], None]:
     def _verify() -> None:
-        from mimarsinan.chip_simulation.spiking_semantics import (
-            backend_capabilities,
-            require_spiking_mode_supported,
-        )
-
-        # The capability registry must know this backend (not fall through to the
-        # permissive default) and the loud gate must exist.
-        from mimarsinan.chip_simulation.spiking_semantics import _BACKEND_CAPS
-
         if backend not in _BACKEND_CAPS:
             raise AssertionError(
                 f"backend {backend!r} has no declared capabilities in "
@@ -203,10 +156,6 @@ def boundary_for(package: str) -> Optional[DependencyBoundary]:
     return None
 
 
-# --------------------------------------------------------------------------- #
-# Drift detection.
-# --------------------------------------------------------------------------- #
-
 def sanafe_supported_versions() -> Tuple[str, ...]:
     """The SSOT pinned-SANA-FE version tuple (re-exported from the guard)."""
     from mimarsinan.chip_simulation.sanafe.arch_synth.spec import (
@@ -222,12 +171,7 @@ def _project_root() -> str:
 
 
 def bootstrap_pinned_sanafe_version(script_path: Optional[str] = None) -> Optional[str]:
-    """The ``sanafe==X.Y.Z`` version the bootstrap script installs (or ``None``).
-
-    Reading the literal back out of the script makes the script and the code
-    guard a single fact in CI: if one is bumped without the other the drift test
-    fails loud instead of a silent ``pip install sanafe`` reaching a SIGFPE.
-    """
+    """The ``sanafe==X.Y.Z`` version the bootstrap script installs (or ``None``)."""
     if script_path is None:
         script_path = os.path.join(_project_root(), "scripts", "bootstrap_sanafe.sh")
     if not os.path.isfile(script_path):
@@ -239,12 +183,7 @@ def bootstrap_pinned_sanafe_version(script_path: Optional[str] = None) -> Option
 
 
 def assert_sanafe_pin_consistent(script_path: Optional[str] = None) -> str:
-    """Fail loud if the bootstrap-script pin drifts from the code guard's SSOT.
-
-    Returns the agreed pinned version. A drift (one side bumped, the other not)
-    is exactly the silent-upgrade class the SANA-FE incident taught us to fail
-    loud on.
-    """
+    """Fail loud if the bootstrap-script pin drifts from the code guard's SSOT; return the agreed version."""
     supported = sanafe_supported_versions()
     if not supported:
         raise AssertionError("SANA-FE supported-version pin is empty")
@@ -272,15 +211,6 @@ def _bump_patch(version: str) -> str:
     return version + ".999"
 
 
-# --------------------------------------------------------------------------- #
-# Deployed-metric protocol fingerprint (metric-protocol drift).
-# --------------------------------------------------------------------------- #
-
-# The deployed number of record is the identity-mapped spiking-sim accuracy that
-# SoftCoreMappingStep produces via run_scm_identity_metric, guarded by the
-# standing torch<->sim parity gate. This fingerprint pins WHICH entry points
-# constitute that protocol so a silent rename/rewire (a metric-protocol change)
-# fails the lock loud — the deployed metric must stay the number of record.
 DEPLOYED_METRIC_PROTOCOL = {
     "metric_entrypoint": "run_scm_identity_metric",
     "deployed_executor_builder": "build_spiking_hybrid_flow",

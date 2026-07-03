@@ -30,8 +30,7 @@ class BasicDataProviderFactory(DataProviderFactory):
         if self._name not in self._provider_registry:
             raise ValueError(f"Data provider '{self._name}' not registered.")
 
-        # Many code paths (trainers/evaluators/pipeline config) call create() repeatedly.
-        # For NAS, it's critical that train/val splits remain stable across evaluations.
+        # Cache so train/val splits stay stable across repeated create() calls (NAS determinism).
         if self._cache and self._cached_provider is not None:
             return self._cached_provider
 
@@ -63,11 +62,10 @@ class BasicDataProviderFactory(DataProviderFactory):
 
     @classmethod
     def list_registered(cls) -> list[dict]:
-        """Return list of registered provider ids, labels, and static capabilities (for GUI).
+        """Registered provider ids, labels, and static capabilities (for GUI).
 
-        ``input_shape`` / ``num_classes`` are NOT included here because they
-        require instantiating the provider, which may load a non-trivial
-        dataset from disk.  Use :meth:`get_metadata` per-provider for that.
+        Excludes ``input_shape`` / ``num_classes`` (those need instantiation;
+        use :meth:`get_metadata`).
         """
         import mimarsinan.data_handling.data_providers  # noqa: F401 - populate registry
         result = []
@@ -93,10 +91,8 @@ class BasicDataProviderFactory(DataProviderFactory):
     ) -> dict:
         """Instantiate ``name`` with ``preprocessing`` and report its shape / classes.
 
-        Returns ``{"id", "label", "input_shape", "num_classes",
-        "supports_preprocessing"}``.  Raises :class:`ValueError` for unknown
-        providers; instantiation errors (e.g. ImageNet root missing) propagate
-        so the caller can report them.
+        Returns id/label/input_shape/num_classes/supports_preprocessing;
+        unknown providers raise ValueError and instantiation errors propagate.
         """
         import mimarsinan.data_handling.data_providers  # noqa: F401 - populate registry
         if name not in cls._provider_registry:

@@ -8,11 +8,9 @@ from typing import Any, Dict, List, Mapping, Sequence, Tuple
 from mimarsinan.search.search_space_description import SearchSpaceDescription
 
 
-# Stable target-kind strings used in Intervention.target.kind.
 ARCH_KIND = "arch"
 HW_CORE_KIND = "hw.core"
 
-# Allowed dim names for hw.core interventions.
 HW_DIM_NAMES = ("max_axons", "max_neurons", "count")
 
 

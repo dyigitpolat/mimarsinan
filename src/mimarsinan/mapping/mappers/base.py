@@ -4,13 +4,17 @@ from __future__ import annotations
 
 import torch.nn as nn
 
+from mimarsinan.mapping.mappers.flowchart import FlowchartNodeEstimate
+from mimarsinan.mapping.mappers.scale_propagation import (
+    first_source_scale,
+    present_source_scales,
+)
+
 
 def resolve_activation_type(perceptron) -> str | None:
     """Extract the activation_type string from a perceptron for IR metadata.
 
-    Handles both plain activations (nn.ReLU, nn.Identity, etc.) and
-    TransformedActivation wrappers (from AdaptationManager).  Returns a
-    string like ``"LeakyGradReLU"`` or ``"Identity + ClampDecorator"``.
+    Handles plain activations and TransformedActivation wrappers, e.g. "Identity + ClampDecorator".
     """
     activation = getattr(perceptron, "activation", None)
     if activation is None:
@@ -45,38 +49,18 @@ class Mapper(nn.Module):
         return []
 
     def propagate_source_scale(self, deps, out_scales):
-        """Per-node out-scale for weight-quant per-source scales (V6 polymorphism).
-
-        Default (transparent routing: reshape/permute/stack/ensure-2d): pass the
-        first source's out-scale through. Perceptron-bearing / Input / Concat /
-        ComputeOp mappers override. Used by ``compute_per_source_scales``.
-        """
-        from mimarsinan.mapping.mappers.scale_propagation import first_source_scale
-
+        """Per-node out-scale for weight-quant per-source scales; default routes the first source's out-scale through."""
         return first_source_scale(deps, out_scales)
 
     def propagate_boundary_scale(self, deps, out_scales, default):
-        """Per-node out-scale for TTFS theta-out boundary scales (V6 polymorphism).
-
-        Default (transparent routing): mean of present source out-scales, or
-        ``None`` if no source recorded one. Perceptron-bearing / Input mappers
-        override. Used by ``propagate_boundary_input_scales``.
-        """
-        from mimarsinan.mapping.mappers.scale_propagation import present_source_scales
-
+        """Per-node out-scale for TTFS theta-out boundary scales; default is the mean of present source out-scales."""
         present = present_source_scales(deps, out_scales)
         if present:
             return sum(present) / len(present)
         return None
 
     def flowchart_node_estimate(self, out_shape):
-        """Software summary + optional FC estimate spec for the softcore flowchart.
-
-        Default: no perceptrons, no FC estimate. Perceptron / Conv / Add-ComputeOp
-        / Stack mappers override. Used by ``generate_softcore_flowchart_dot`` (V6).
-        """
-        from mimarsinan.mapping.mappers.flowchart import FlowchartNodeEstimate
-
+        """Software summary + optional FC estimate spec for the softcore flowchart; default is neither."""
         return FlowchartNodeEstimate()
 
     @property
@@ -101,15 +85,7 @@ class Mapper(nn.Module):
         )
 
     def forward(self, x):
-        # No caching: ``ModelRepresentation.__call__`` is the only primary entry
-        # point and already memoises node outputs in its local ``values`` dict
-        # (each node visited once per traversal).  A previous ``id(x)``-keyed
-        # cache here was dead code in the primary path AND actively broken when
-        # a Mapper is called as a ComputeOp module from ``SpikingHybridCoreFlow``
-        # — Python recycles tensor ids and the CUDA allocator recycles data
-        # pointers, so across successive ``BasicTrainer.test()`` runs we would
-        # return a prior run's stale cached output (wrong batch dim → crash, or
-        # right batch dim but wrong content → non-deterministic accuracy).
+        # Do not cache here: tensor ids and CUDA data pointers are recycled across runs, so an id(x)-keyed cache returns stale outputs.
         return self._forward_impl(x)
 
     def _forward_impl(self, x):

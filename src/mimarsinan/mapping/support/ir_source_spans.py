@@ -11,14 +11,7 @@ IRSourceKind = Literal["off", "input", "on", "node"]
 
 @dataclass(frozen=True)
 class IRSourceSpan:
-    """
-    A contiguous span of IRSource objects in destination order (axon idx / flat idx),
-    where the source indices are also contiguous (stride=1).
-
-    This enables efficient gather via slicing from:
-      - input spike train (node_id == -2)
-      - another node's spike train cache (node_id >= 0)
-    """
+    """Contiguous span of IRSource objects with stride-1 source indices in destination order."""
 
     kind: IRSourceKind
     src_node_id: int
@@ -71,7 +64,6 @@ def compress_ir_sources(sources: Sequence[IRSource] | Iterable[IRSource]) -> lis
                 if nstart != (prev_src + 1):
                     break
                 prev_src = nstart
-            # "on"/"off" can always extend
             length += 1
 
         spans.append(

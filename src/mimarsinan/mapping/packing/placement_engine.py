@@ -1,12 +1,4 @@
-"""Single greedy placement engine shared by the layout and runtime packers.
-
-``greedy_pack_softcores`` is the shared bin-packing kernel; the only thing that
-differs between the shape-only layout packer (``pack_layout``) and the
-weight-bearing runtime packer (``HardCoreMapping.map``) is *how* a softcore is
-placed, fused, and split.  A :class:`Materializer` bundles those three
-strategy hooks (plus the shared feasibility predicate) so both paths drive the
-exact same assignment kernel and can never diverge on placement decisions.
-"""
+"""Single greedy placement engine shared by the layout and runtime packers."""
 
 from __future__ import annotations
 
@@ -17,14 +9,7 @@ from mimarsinan.mapping.packing.core_packing import greedy_pack_softcores
 
 @runtime_checkable
 class Materializer(Protocol):
-    """Strategy bundling the per-path placement callbacks.
-
-    ``is_mapping_possible(hardcore, softcore)`` -- feasibility predicate
-    (canonical for both paths).
-    ``place(core_idx, hardcore, softcore)`` -- commit a softcore onto a hardcore.
-    ``fuse_hardcores(hardcores)`` -- build one fused hardcore from a list.
-    ``split_softcore(softcore, available_neurons)`` -- split along neurons.
-    """
+    """Strategy bundling the per-path feasibility, place, fuse, and split callbacks."""
 
     def is_mapping_possible(self, hardcore: Any, softcore: Any) -> bool: ...
 
@@ -46,12 +31,8 @@ def run_placement(
 ) -> None:
     """Greedy-pack ``softcores`` onto hardcores using the materializer strategy.
 
-    Mutates ``used_hardcores`` / ``unused_hardcores`` in place exactly as the
-    callers' inline ``greedy_pack_softcores`` invocations did. ``split_softcore``
-    is wired only when ``allow_neuron_splitting`` is set, and ``fuse_hardcores``
-    (combine N cores into one wider crossbar — the coalescing capability) only
-    when ``allow_coalescing`` is set; otherwise a softcore too wide for any single
-    hard core has no placement and the kernel raises.
+    Mutates the hardcore lists in place; ``split_softcore`` is wired only when
+    ``allow_neuron_splitting`` and ``fuse_hardcores`` only when ``allow_coalescing``.
     """
     greedy_pack_softcores(
         softcores=softcores,

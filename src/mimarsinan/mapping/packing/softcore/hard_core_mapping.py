@@ -9,14 +9,7 @@ from mimarsinan.mapping.packing.softcore.soft_core import SoftCore
 
 
 class RuntimeMaterializer:
-    """Weight-bearing :class:`~mimarsinan.mapping.packing.placement_engine.Materializer`.
-
-    Places real ``SoftCore``s onto ``HardCore``s (recording per-neuron
-    ``neuron_mapping`` and placement provenance via
-    ``HardCoreMapping.merge_softcore_into``), fuses physical cores into wider
-    ``HardCore``s, and splits softcores along the neuron dimension by slicing
-    weight / bias / bank state.
-    """
+    """Weight-bearing Materializer: places, fuses, and neuron-splits real SoftCores onto HardCores."""
 
     def __init__(self, hard_core_mapping: "HardCoreMapping") -> None:
         self._hcm = hard_core_mapping
@@ -241,11 +234,7 @@ class HardCoreMapping:
         self._finalize_sources(softcore_mapping)
 
     def map_identity(self, softcore_mapping):
-        """1:1 SoftCore→HardCore placement: no pool, padding, fusion, or splits.
-
-        Each soft core gets an exactly-sized hard core, so the mapping carries
-        pure IR semantics — the rung-2 gate that isolates packing effects.
-        """
+        """1:1 SoftCore→HardCore placement (no pool/pad/fusion/split); carries pure IR semantics as the rung-2 gate."""
         banks = getattr(softcore_mapping, "weight_banks", None)
         if banks:
             self.weight_banks = dict(banks)

@@ -7,7 +7,7 @@ from typing import Any, Dict
 
 from compilagent import EventKind, ObservationEvent
 
-from .sink import CandidateRecord, MultiObjectiveSink
+from .sink import MultiObjectiveSink
 
 
 def observe_event(sink: MultiObjectiveSink, event: ObservationEvent) -> None:

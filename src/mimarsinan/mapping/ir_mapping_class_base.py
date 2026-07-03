@@ -1,21 +1,12 @@
-"""IRMapping: full-weight mapping that produces an ``IRGraph`` with concrete
-``NeuralCore`` / ``ComputeOp`` / ``WeightBank`` nodes.
-
-All structural decisions (tiling mode, psum decomposition, coalescing,
-bias-axon counting, shared-bank wiring) live in the base class
-``LayoutIRMapping``.  This subclass only attaches weight material and builds
-the graph, guaranteeing the emitted softcore shapes are byte-identical to
-what the wizard / architecture-search path predicts.
-"""
+"""IRMappingCore: full-weight mapping producing an IRGraph, on the LayoutIRMapping tiling base."""
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Tuple
 
 import numpy as np
 import torch
 
-from mimarsinan.code_generation.cpp_chip_model import SpikeSource
 from mimarsinan.mapping.ir import (
     ComputeOp,
     IRGraph,
@@ -29,10 +20,7 @@ from mimarsinan.mapping.layout.layout_ir_mapping import LayoutIRMapping
 
 
 class IRMappingCore(LayoutIRMapping):
-    """Unified IR mapping.  Inherits all tiling / dispatch logic from
-    ``LayoutIRMapping`` and overrides the emission hooks to additionally
-    construct concrete ``IRGraph`` nodes.
-    """
+    """Inherits LayoutIRMapping tiling/dispatch; overrides emission hooks to build IRGraph nodes."""
 
     def __init__(
         self,
@@ -61,15 +49,9 @@ class IRMappingCore(LayoutIRMapping):
         self.nodes: List[IRNode] = []
         self._weight_banks: Dict[int, WeightBank] = {}
 
-    # Public mapping entry point
-
     def map(self, model_representation) -> IRGraph:
         output_sources = super().map(model_representation)
-        # Materialise the final output sources -- IRGraph and downstream
-        # consumers (hybrid_hardcore_mapping, simulators) treat
-        # ``output_sources`` as a real numpy object array with ``.flat``,
-        # mutation, etc.  The shape-only ``LayoutSourceView`` lives only
-        # inside the mapper chain.
+        # Downstream consumers require a real numpy object array of IRSource, not the shape-only LayoutSourceView, so materialise here.
         output_sources = np.asarray(output_sources, dtype=object)
         for node in self.nodes:
             if isinstance(node, NeuralCore):
@@ -83,14 +65,8 @@ class IRMappingCore(LayoutIRMapping):
             layout_softcores=list(self.layout_softcores),
         )
 
-    # Source conversion (SpikeSource / IRSource compatibility)
-
     def _convert_sources(self, sources: np.ndarray) -> np.ndarray:
-        """Convert a SpikeSource or IRSource array to an IRSource array.
-
-        Fast path: if every element is already an IRSource we return a shallow
-        copy of the input (object refs, not new IRSource instances).
-        """
+        """Convert a SpikeSource/IRSource array to an IRSource array; already-IRSource input is returned as a shallow copy (object refs)."""
         arr = np.asarray(sources, dtype=object)
         flat = arr.reshape(-1)
         if flat.size == 0:
@@ -116,8 +92,6 @@ class IRMappingCore(LayoutIRMapping):
             return tensor_or_array
         return tensor_or_array.detach().cpu().numpy()
 
-    # Emission hooks — construct real IR nodes in addition to shape tracking
-
     def add_compute_op(
         self,
         input_sources,
@@ -136,9 +110,6 @@ class IRMappingCore(LayoutIRMapping):
             output_shape=output_shape,
             name=name,
         )
-        # Materialise once per emission so the IRMapping path keeps producing
-        # real IRSource arrays end-to-end; downstream mappers and the IR
-        # graph never see a ``LayoutSourceView``.
         result = np.asarray(result, dtype=object)
         node_id = int(result.flat[0].node_id)
         self.nodes.append(ComputeOp(

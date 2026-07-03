@@ -1,6 +1,5 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from einops.layers.torch import Rearrange
 import torchsummary
 
@@ -9,7 +8,6 @@ class MLPMixer(nn.Module):
     def __init__(self,in_channels=3,img_size=32, patch_size=4, hidden_size=512, hidden_s=256, hidden_c=2048, num_layers=8, num_classes=10, drop_p=0., off_act=False, is_cls_token=False):
         super(MLPMixer, self).__init__()
         num_patches = img_size // patch_size * img_size // patch_size
-        # (b, c, h, w) -> (b, d, h//p, w//p) -> (b, h//p*w//p, d)
         self.is_cls_token = is_cls_token
 
         self.patch_emb = nn.Sequential(
@@ -67,7 +65,7 @@ class MLP1(nn.Module):
     def forward(self, x):
         out = self.do1(self.act(self.fc1(self.ln(x))))
         out = self.do2(self.act(self.fc2(out)))
-        return out#+x
+        return out
 
 class MLP2(nn.Module):
     def __init__(self, hidden_size, hidden_c, drop_p, off_act):
@@ -81,7 +79,7 @@ class MLP2(nn.Module):
     def forward(self, x):
         out = self.do1(self.act(self.fc1(self.ln(x))))
         out = self.do2(self.act(self.fc2(out)))
-        return out#+x
+        return out
 
 if __name__ == '__main__':
     net = MLPMixer(

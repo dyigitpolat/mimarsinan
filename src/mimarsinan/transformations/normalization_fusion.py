@@ -5,6 +5,12 @@ from __future__ import annotations
 import torch
 import torch.nn as nn
 
+from mimarsinan.models.nn.activations.ttfs_spiking import (
+    refresh_perceptron_bias_references,
+)
+from mimarsinan.models.perceptron_mixer.perceptron import (
+    effective_preactivation_bias,
+)
 from mimarsinan.transformations.perceptron.perceptron_transformer import PerceptronTransformer
 
 
@@ -12,10 +18,6 @@ def fuse_into_perceptron(perceptron, *, device: torch.device | str) -> None:
     """Fold ``perceptron.normalization`` into ``perceptron.layer``; set norm to Identity."""
     if isinstance(perceptron.normalization, nn.Identity):
         return
-
-    from mimarsinan.models.perceptron_mixer.perceptron import (
-        effective_preactivation_bias,
-    )
 
     perceptron.to(device)
     pt = PerceptronTransformer()
@@ -41,9 +43,5 @@ def fuse_into_perceptron(perceptron, *, device: torch.device | str) -> None:
         perceptron.layer.register_buffer(buf_name, buf_val)
 
     perceptron.normalization = nn.Identity()
-
-    from mimarsinan.models.nn.activations.ttfs_spiking import (
-        refresh_perceptron_bias_references,
-    )
 
     refresh_perceptron_bias_references(perceptron)

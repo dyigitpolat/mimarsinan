@@ -1,16 +1,4 @@
-"""The ``AdaptationAxis`` contract — a rate-driven, orchestration-facing axis.
-
-An ``AdaptationAxis`` is the homotopy α-axis the tuner walks from 0 (original
-behavior) to 1 (full transform). It is the spec's "Transformation" contract
-narrowed to this codebase, renamed to avoid colliding with the existing
-``mimarsinan.transformations`` package (stateless transform *math*). Each axis
-*delegates* its math to ``transformations/`` and its rate application to the
-``perceptron_rate`` SSOT — the axis owns only the control-facing seam
-(attach / set_rate / calibrate / recovery / finalize / state / descriptor).
-
-Axes are transient per-run objects built from config + the adaptation manager;
-they are never stored on the model or the pickled ``adaptation_manager`` cache.
-"""
+"""The ``AdaptationAxis`` contract — a rate-driven, orchestration-facing axis."""
 
 from __future__ import annotations
 
@@ -24,8 +12,8 @@ class AdaptationAxis(Protocol):
     """Control-facing axis contract (see :class:`AdaptationAxisBase` for defaults)."""
 
     name: str
-    interpolation_mode: str  # functional_blend | parameter_path | stochastic_mask
-    monotonicity: str        # guaranteed | expected | none
+    interpolation_mode: str
+    monotonicity: str
     is_stochastic: bool
     supports_smooth: bool
 
@@ -44,9 +32,8 @@ class AdaptationAxis(Protocol):
 class AdaptationAxisBase:
     """Default ``AdaptationAxis`` implementation; subclasses override ``set_rate``.
 
-    ``attach`` records the (model, manager, config) the rate application needs;
-    every other method has a benign default so an adapter only implements the
-    behavior that is genuinely axis-specific.
+    ``attach`` records the (model, manager, config); every other method has a benign
+    default so an adapter only implements what is genuinely axis-specific.
     """
 
     name: str = "axis"

@@ -7,6 +7,8 @@ import math
 import torch
 import torch.nn as nn
 
+from mimarsinan.models.nn.activations.bias_mode import validate_bias_mode
+
 
 def uniform_encode_to_spike_train(rate: torch.Tensor, T: int) -> torch.Tensor:
     """Encode rates in [0, 1] to a uniform-spaced spike train of length T."""
@@ -95,11 +97,7 @@ class LIFActivation(nn.Module):
     ):
         super().__init__()
         self.T = int(T)
-        # LIF integrates the post-bias pre-activation, so on_chip and param_encoded
-        # bias delivery are identical here; bias_mode is stored for config fidelity
-        # only (uniform with TTFSActivation) and never branches the dynamics.
-        from mimarsinan.models.nn.activations.bias_mode import validate_bias_mode
-
+        # LIF integrates the post-bias pre-activation, so bias_mode is stored for config fidelity only and never branches the dynamics.
         self.bias_mode = validate_bias_mode(bias_mode)
         if isinstance(activation_scale, (int, float)):
             activation_scale = nn.Parameter(
@@ -181,12 +179,9 @@ class LIFActivation(nn.Module):
         return spikes
 
     def _forward_single_step(self, x: torch.Tensor) -> torch.Tensor:
-        """One cycle of signed LIF integration; returns spike * scale.
-
-        The membrane integrates the *signed* normalized input (no relu): negative
-        weighted input lowers the membrane and may recover, matching the deployed
-        chip / HCM ``memb += W@s + b`` dynamics.
-        """
+        """One cycle of signed LIF integration; returns spike * scale. The membrane
+        integrates the *signed* normalized input (no relu), matching the deployed
+        chip / HCM ``memb += W@s + b`` dynamics."""
         scale = self.activation_scale
         if isinstance(scale, torch.Tensor):
             safe_scale = scale.to(device=x.device, dtype=x.dtype).clamp(min=1e-12)
@@ -206,15 +201,11 @@ class LIFActivation(nn.Module):
         else:
             safe_scale = max(float(scale), 1e-12)
 
-        # Threshold is 1 inside the IFNode; normalise input by activation_scale.
-        # Signed integration (no relu): the membrane may go negative, matching the
-        # chip / HCM. Constant per-cycle input ⇒ rate output is unchanged for both
-        # signs; only the surrogate gradient differs for negative pre-activations.
         x_norm = x / safe_scale
         x_t = x_norm.unsqueeze(0).expand(self.T, *x_norm.shape).contiguous()
 
         self.if_node.step_mode = "m"
         functional.reset_net(self.if_node)
-        spikes = self.if_node(x_t)  # (T, B, ...)
+        spikes = self.if_node(x_t)
         return spikes, safe_scale
 

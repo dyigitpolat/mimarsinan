@@ -2,26 +2,15 @@
 
 from __future__ import annotations
 
-import html
 import os
-import shutil
-import subprocess
-from dataclasses import dataclass
-from typing import Any, Iterable, Sequence
 
 import numpy as np
 
 from mimarsinan.code_generation.cpp_chip_model import SpikeSource
-from mimarsinan.mapping.packing.hybrid_hardcore_mapping import HybridHardCoreMapping
-from mimarsinan.mapping.ir import ComputeOp, IRGraph, IRNode, IRSource, NeuralCore
 from mimarsinan.mapping.packing.softcore import HardCoreMapping
-from mimarsinan.common.layer_key import layer_key_from_node_name
 from mimarsinan.common.safe_numeric import safe_float
 
-import re
-
-
-from mimarsinan.visualization.graphviz.common import try_render_dot, _embed_svg_images, _percent, _compress_ranges, _truncate, _dot_html_label, _dot_html_label_mixed, _stack_sample_lines
+from mimarsinan.visualization.graphviz.common import _percent, _compress_ranges, _truncate, _dot_html_label
 
 def write_hardcore_mapping_dot(
     hard_core_mapping: HardCoreMapping,
@@ -35,9 +24,7 @@ def write_hardcore_mapping_dot(
     cores = list(hard_core_mapping.cores)
     out_sources = list(hard_core_mapping.output_sources.flatten())
 
-    # Invert neuron_mapping for "packed softcore ids" summary
     packed: dict[int, dict[int, list[int]]] = {}
-    # packed[hard_core_idx][soft_core_id] = [hard_neuron_idxs...]
     for (soft_core_id, soft_neuron), (hard_core_idx, hard_neuron) in hard_core_mapping.neuron_mapping.items():
         packed.setdefault(int(hard_core_idx), {}).setdefault(int(soft_core_id), []).append(int(hard_neuron))
 
@@ -75,10 +62,8 @@ def write_hardcore_mapping_dot(
             ("unusable_space", str(int(getattr(core, "unusable_space", 0)))),
         ]
 
-        # Packed softcores summary (by soft core id -> neuron ranges)
         soft_ids = packed.get(i, {})
         if soft_ids:
-            # Keep it readable.
             items = []
             for sid, hard_neus in sorted(soft_ids.items())[:10]:
                 items.append(f"{sid}:{_compress_ranges(hard_neus, max_ranges=6)}")
@@ -89,7 +74,6 @@ def write_hardcore_mapping_dot(
         label = _dot_html_label(rows, title=f"HardCore {i}", color="#E8DAEF")
         lines.append(f"  {nid} [label={label}];")
 
-    # Edges from axon_sources (compressed)
     for i, core in enumerate(cores):
         tgt = f"h{i}"
         axon_sources: list[SpikeSource] = list(core.axon_sources)
@@ -130,7 +114,6 @@ def write_hardcore_mapping_dot(
             )
             lines.append(f"  {src_node} -> {tgt} [label=\"{_truncate(label, max_chars=220)}\"];")
 
-    # Outputs
     by_src_out: dict[tuple[str, int], dict[str, list[int]]] = {}
     for out_i, src in enumerate(out_sources):
         if src.is_off_:

@@ -119,13 +119,9 @@ def apply_input_shifts_numpy(
     seg_input: np.ndarray,
     node_output_shifts,
 ) -> np.ndarray:
-    """Add the per-producer-channel positive shift to an assembled segment input.
-
-    Numpy mirror of ``HybridLifStepMixin._apply_input_shifts``: keyed by producer
-    ``node_id`` in ``node_output_shifts``; empty/None ⇒ identity (no copy). The
-    consumer core's bias is pre-corrected (``B' = B − W·s``), so this is
-    value-preserving while moving the boundary into the encodable domain.
-    """
+    """Add per-producer-channel positive shift to a segment input (numpy mirror of
+    ``HybridLifStepMixin._apply_input_shifts``). Value-preserving: the consumer bias
+    is pre-corrected ``B' = B − W·s``; empty/None ⇒ identity (no copy)."""
     if not node_output_shifts:
         return seg_input
     out = seg_input

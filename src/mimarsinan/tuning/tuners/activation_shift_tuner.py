@@ -1,8 +1,4 @@
-"""One-shot activation-shift tuner with recovery training.
-
-Applies the full shift once, then recovers accuracy with LR search +
-step-budgeted training. Not a smooth adaptation -- extends TunerBase directly.
-"""
+"""One-shot activation-shift tuner with recovery training."""
 
 import torch
 
@@ -14,10 +10,7 @@ from mimarsinan.tuning.orchestration.smooth_adaptation_tuner import TunerBase
 
 
 class ActivationShiftTuner(OneShotRateTunerSeamMixin, TunerBase):
-    """Apply activation-shift semantics, then recover with step-budgeted training.
-
-    Exposes the uniform ``RateTunerSeam`` over its one-shot controller methods so a
-    driver can drive it through the same three verbs as the smooth family (E1)."""
+    """Apply activation-shift semantics, then recover with step-budgeted training."""
 
     def __init__(self, pipeline, model, target_accuracy, lr, adaptation_manager):
         super().__init__(pipeline, model, target_accuracy, lr)
@@ -25,11 +18,7 @@ class ActivationShiftTuner(OneShotRateTunerSeamMixin, TunerBase):
         from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 
         plan = DeploymentPlan.of(pipeline)
-        # TTFS value-domain modes keep the half-step inside the quantize decorator
-        # (shift_back); the LIF-style branch below (bias mutation + shift_rate) would
-        # double-shift them at mapping-time bias compensation. The synchronized
-        # floor-collapse trains the same convention as ttfs_quantized, so it must
-        # take the TTFS branch (sync_collapse_verify regression: deployed -1.9pp).
+        # TTFS keeps the half-step inside the quantize decorator; the LIF-style bias-shift branch would double-shift it at mapping-time bias compensation.
         self._use_ttfs = (
             plan.spiking_mode == "ttfs" or plan.uses_ttfs_floor_ceil_convention
         )
@@ -38,11 +27,6 @@ class ActivationShiftTuner(OneShotRateTunerSeamMixin, TunerBase):
         self._axis = ActivationShiftAxis(self._apply_shift)
         self._axis.attach(self.model, self.adaptation_manager, self.pipeline.config)
 
-        # EF1: the one-shot shift tuner READS the pipeline-wide optimization-driver
-        # axis to record its resolved decision (`self._optimization_driver`). It has no
-        # smooth fast ladder (one-shot apply-then-recover, not a rate ramp), so the fast
-        # arm is a no-op for this family — it stays the controller path regardless,
-        # byte-identical — but it still consumes the axis like every other family.
         self._optimization_driver = plan.optimization_driver_for_family(
             rates=[1.0], steps_per_rate=0
         )
@@ -93,7 +77,5 @@ class ActivationShiftTuner(OneShotRateTunerSeamMixin, TunerBase):
             min_steps=self._budget.check_interval * 3,
             min_improvement=self._budget.accuracy_se(),
         )
-        # Tuner internals never call ``trainer.test()`` — the pipeline's
-        # ``PipelineStep.pipeline_metric()`` owns the single test() pass.
         self._final_metric = self.trainer.validate()
         return self._final_metric

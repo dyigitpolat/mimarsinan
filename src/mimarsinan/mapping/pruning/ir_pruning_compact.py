@@ -1,7 +1,7 @@
 from __future__ import annotations
-from typing import Dict, Set, Tuple
+from typing import Set
 import numpy as np
-from mimarsinan.mapping.ir import IRGraph, IRSource, NeuralCore, WeightBank
+from mimarsinan.mapping.ir import IRGraph, IRSource, NeuralCore
 from mimarsinan.mapping.pruning.pruning_apply import compact_hardware_bias_columns
 from mimarsinan.mapping.pruning.graph.pruning_graph_types import GlobalPruningResult
 def _validate_outputs_remain(graph: IRGraph) -> None:
@@ -23,14 +23,8 @@ def _compact_node(
 ) -> None:
     """Drop pruned columns (and matching bias entries) then pruned rows.
 
-    Liveness analysis upstream guarantees that no surviving NeuralCore is
-    fully dead: at least one column survives (some neuron is reachable),
-    and at least one row either survives or the surviving columns are
-    bias-only (in which case ``compact_soft_core_mapping`` later collapses
-    the rowless matrix to a single OFF-source axon). So neither
-    ``keep_cols`` nor ``keep_row_idx`` will ever be empty here -- we
-    assert to fail loudly if that invariant is ever violated by an
-    upstream regression.
+    Liveness upstream guarantees a surviving core is never fully dead, so neither
+    ``keep_cols`` nor ``keep_row_idx`` is ever empty; the asserts fail loud otherwise.
     """
     if pruned_cols:
         keep_cols = [c for c in range(node.core_matrix.shape[1]) if c not in pruned_cols]
@@ -57,10 +51,7 @@ def _compact_node(
             node.core_matrix = node.core_matrix[keep_row_idx, :]
             node.input_sources = flat_src[keep_row_idx]
         else:
-            # Every axon is dead but at least one column survives (its
-            # ``hardware_bias`` keeps it alive). This is the legitimate
-            # BIAS_ONLY shape: collapse the row dim to a single
-            # OFF-source axon while preserving the live bias-driven columns.
+            # BIAS_ONLY: all axons dead but bias-driven columns survive; collapse the row dim to a single OFF-source axon.
             node.core_matrix = np.zeros(
                 (1, node.core_matrix.shape[1]),
                 dtype=node.core_matrix.dtype,
@@ -71,19 +62,10 @@ def _compact_node(
 
 
 def _reset_post_compaction_masks(graph: IRGraph) -> None:
-    """Move pre-compaction masks aside and re-derive same-shape post masks.
+    """Move pre-compaction masks aside and re-derive same-shape post-compaction masks.
 
-    Bank-backed cores keep the un-compacted masks (the soft-core mapping
-    stage physically compacts banks later, and the masks must survive
-    until then).
-
-    After dead-node deletion every surviving owned-matrix core is either
-    LIVE (some live row, some live column) or BIAS_ONLY (no live row, the
-    single OFF-source placeholder row standing in for the dead axons,
-    plus live bias-driven columns). For LIVE cores the post-mask is all
-    False; for BIAS_ONLY cores the single row is marked pruned so the
-    heatmap renderer overlays the prune line and dead-math accounting
-    treats it consistently.
+    Bank-backed cores keep the un-compacted masks (compacted physically at the soft-core
+    mapping stage). A BIAS_ONLY core's single placeholder row is marked pruned.
     """
     for node in graph.nodes:
         if not isinstance(node, NeuralCore) or node.core_matrix is None:

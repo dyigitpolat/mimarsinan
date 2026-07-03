@@ -1,9 +1,4 @@
-"""
-Single canonical coalescing flag for layout, packing, and scheduling.
-
-Only ``allow_coalescing`` is accepted in ``platform_constraints`` and merged
-pipeline config. Deprecated names are rejected with a clear error.
-"""
+"""Single canonical coalescing flag for layout, packing, and scheduling."""
 
 from __future__ import annotations
 
@@ -12,7 +7,6 @@ from typing import Any, List, Mapping, MutableMapping, Tuple
 
 CANONICAL_KEY = "allow_coalescing"
 
-# Rejected if present (migration: use CANONICAL_KEY only).
 LEGACY_COALESCING_KEYS: Tuple[str, ...] = (
     "allow_core_coalescing",
     "allow_axon_coalescing",
@@ -36,12 +30,7 @@ def coalescing_config_errors(mapping: Mapping[str, Any]) -> List[str]:
 
 
 def resolve_allow_coalescing(mapping: Mapping[str, Any], *, default: bool = False) -> bool:
-    """
-    Return the effective coalescing bit from ``allow_coalescing`` only.
-
-    If no key is present, returns *default*. Deprecated keys raise
-    :class:`CoalescingConfigError`.
-    """
+    """Return the effective coalescing bit from allow_coalescing only (default if absent); deprecated keys raise CoalescingConfigError."""
     errs = coalescing_config_errors(mapping)
     if errs:
         raise CoalescingConfigError(errs[0])
@@ -49,12 +38,7 @@ def resolve_allow_coalescing(mapping: Mapping[str, Any], *, default: bool = Fals
 
 
 def normalize_coalescing_config(pcfg: MutableMapping[str, Any]) -> bool:
-    """
-    Mutate *pcfg* in place: ensure ``allow_coalescing`` is a bool (default ``False``).
-
-    Returns the resolved boolean. Raises :class:`CoalescingConfigError` if
-    deprecated coalescing keys are present.
-    """
+    """Mutate pcfg in place so allow_coalescing is a bool (default False) and return it; raises CoalescingConfigError on deprecated keys."""
     errs = coalescing_config_errors(pcfg)
     if errs:
         raise CoalescingConfigError("; ".join(errs))

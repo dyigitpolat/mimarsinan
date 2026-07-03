@@ -1,11 +1,35 @@
+import mimarsinan.pipelining.core.nf_scm_parity as nf_scm_parity
 from mimarsinan.pipelining.core.steps.pipeline_step import PipelineStep
 from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 
 from mimarsinan.mapping.ir_mapping_class import IRMapping
 from mimarsinan.mapping.latency.ir import IRLatency
+from mimarsinan.mapping.export.chip_quantize import quantize_ir_graph
+from mimarsinan.mapping.platform.platform_constraints import resolve_platform_mapping_params
+from mimarsinan.mapping.support.neg_shift_bias import (
+    apply_negative_value_shifts,
+    calibration_forward_for_mode,
+    transfer_negative_shifts_to_ir,
+)
+from mimarsinan.mapping.support.per_source_scales import compute_per_source_scales
+from mimarsinan.mapping.support.ttfs_bias import apply_ttfs_quantization_bias_compensation
+from mimarsinan.mapping.verification.capacity import estimate_cores_needed
+from mimarsinan.mapping.verification.onchip_majority import assert_onchip_majority_or_raise
+from mimarsinan.mapping.weight_reuse import (
+    format_weight_reuse_summary,
+    weight_reuse_plan_from_graph,
+)
+from mimarsinan.models.nn.activations.ttfs_spiking import refresh_perceptron_bias_references
+from mimarsinan.spiking.scale_aware_boundaries import propagate_boundary_input_scales
+from mimarsinan.transformations.quantization_bounds import quantization_bounds
 
 from mimarsinan.pipelining.core.engine.pipeline_helpers import run_optional_viz
-from mimarsinan.pipelining.core.simulation_factory import run_scm_identity_metric
+from mimarsinan.pipelining.core.simulation_factory import (
+    build_deployment_contract,
+    build_identity_mapping_for_pipeline,
+    build_spiking_hybrid_flow,
+    run_scm_identity_metric,
+)
 from mimarsinan.pipelining.core.registry.trainer_factory import make_basic_trainer
 from mimarsinan.common.diagnostics import phase_profiler
 from mimarsinan.pipelining.pipeline_steps.mapping.fused_linear import FusedLinear
@@ -56,8 +80,6 @@ class SoftCoreMappingStep(PipelineStep):
         platform_constraints = self.get_entry("platform_constraints_resolved")
 
         cores = platform_constraints.get("cores", [])
-        from mimarsinan.mapping.platform.platform_constraints import resolve_platform_mapping_params
-
         mapping_params = resolve_platform_mapping_params(
             cores,
             allow_coalescing=bool(platform_constraints.get("allow_coalescing", False)),
@@ -67,19 +89,11 @@ class SoftCoreMappingStep(PipelineStep):
         resolved_max_neurons = mapping_params.effective_max_neurons
         resolved_allow_coalescing = mapping_params.allow_coalescing
 
-        from mimarsinan.models.nn.activations.ttfs_spiking import (
-            refresh_perceptron_bias_references,
-        )
-
         for perceptron in model.get_perceptrons():
             if isinstance(perceptron.layer, FusedLinear):
                 perceptron.layer = self.bring_back_bias(perceptron.layer)
                 refresh_perceptron_bias_references(perceptron)
 
-        # D4: opt-in structured magnitude pruning BEFORE mapping. Default-off
-        # (prune_sparsity unset/0.0) ⇒ no-op ⇒ byte-identical. Runs here, after
-        # normalization fusion folded each perceptron's norm into its linear, so
-        # shrinking output rows is structurally sound.
         apply_structured_pruning_if_enabled(self, model, "SoftCoreMappingStep")
 
         if self.pipeline.config.get("generate_visualizations", False):
@@ -125,8 +139,6 @@ class SoftCoreMappingStep(PipelineStep):
         self._apply_ttfs_quantization_bias_compensation(model, act_q)
         self._apply_negative_value_shift_compensation(model)
 
-        from mimarsinan.transformations.quantization_bounds import quantization_bounds
-
         bits = self.pipeline.config['weight_bits']
         _, q_max = quantization_bounds(bits)
 
@@ -142,45 +154,17 @@ class SoftCoreMappingStep(PipelineStep):
         mapper_repr = model.get_mapper_repr()
         if hasattr(mapper_repr, "assign_perceptron_indices"):
             mapper_repr.assign_perceptron_indices()
-        # Per-source input scales bake each layer's upstream activation scale into
-        # the deployed effective weights (PerceptronTransformer.get_effective_weight
-        # reads ``per_input_scales``). This is a mapping-level invariant for EVERY
-        # deployment, but historically only WeightQuantizationStep populated it, so
-        # the no-WQ continuous-ttfs deploy shipped weights missing the input-scale
-        # factor (NF↔SCM diverged by ~upstream-θ). Recompute here so mapping is
-        # self-contained; idempotent (a pure function of the unchanged
-        # activation_scales) ⇒ byte-identical when WeightQuantizationStep ran.
-        from mimarsinan.mapping.support.per_source_scales import (
-            compute_per_source_scales,
-        )
-
+        # Recompute per-source input scales here so mapping is self-contained; idempotent in activation_scales, so byte-identical when WeightQuantizationStep already populated them.
         compute_per_source_scales(mapper_repr)
-        # Boundary input scales (upstream theta_out -> each perceptron's
-        # input_activation_scale) share the SAME staleness hazard: the segment-entry
-        # grid-snap normalizes its input by input_activation_scale, so if the encoding /
-        # upstream theta was retuned AFTER these were last propagated, the snap
-        # normalizes by the wrong scale and saturates -> NF diverges from the SCM (which
-        # decodes at the correct scale) and the error compounds through the network
-        # (mmixcore_verify_synchronized). Re-propagate here so mapping is self-contained;
-        # idempotent (a pure function of the current activation_scales) => byte-identical
-        # when the calibration step already ran with the final scales.
-        from mimarsinan.spiking.scale_aware_boundaries import (
-            propagate_boundary_input_scales,
-        )
-
+        # Re-propagate boundary input scales here so a retuned upstream theta cannot leave the segment-entry grid-snap normalizing by a stale scale; idempotent in activation_scales.
         propagate_boundary_input_scales(model, input_data_scale=1.0)
         with _phase("ir_mapping.map"):
             ir_graph = ir_mapping.map(mapper_repr)
 
         if bool(self.pipeline.config.get("negative_value_shift", False)):
-            from mimarsinan.mapping.support.neg_shift_bias import (
-                transfer_negative_shifts_to_ir,
-            )
             transfer_negative_shifts_to_ir(model, ir_graph)
 
         wt_q = plan.weight_quantization
-        from mimarsinan.mapping.export.chip_quantize import quantize_ir_graph
-
         with _phase("weight_quantization"):
             quantize_ir_graph(ir_graph, bits, weight_quantization=wt_q)
 
@@ -205,10 +189,6 @@ class SoftCoreMappingStep(PipelineStep):
         neural_cores = ir_graph.get_neural_cores()
         print(f"[SoftCoreMappingStep] IR Graph: {len(neural_cores)} neural cores, {len(compute_ops)} compute ops")
         if bool(platform_constraints.get("allow_weight_reuse", False)):
-            from mimarsinan.mapping.weight_reuse import (
-                format_weight_reuse_summary,
-                weight_reuse_plan_from_graph,
-            )
             reuse_plan = weight_reuse_plan_from_graph(ir_graph)
             print(
                 "[SoftCoreMappingStep] Weight-reuse schedule: "
@@ -219,9 +199,7 @@ class SoftCoreMappingStep(PipelineStep):
             for op in compute_ops:
                 print(f"  - {op.name}: {op.op_type}")
 
-        # Run the NF↔SCM gate while the model (incl. mapper-graph compute
-        # modules, which ``model.to("cpu")`` below does not move) is still on
-        # one device.
+        # Run the NF↔SCM gate before model.to("cpu") below, which does not move the mapper-graph compute modules, so the whole model must still be on one device.
         with _phase("nf_scm_parity_gate"):
             self._run_nf_scm_parity_gate(model, ir_graph)
             self._run_torch_sim_parity_check(model, ir_graph)
@@ -247,20 +225,9 @@ class SoftCoreMappingStep(PipelineStep):
         print(f"[SoftCoreMappingStep] Soft-core (identity-mapped) Spiking Simulation Test: {acc}")
 
     def _run_onchip_majority_gate(self, model, ir_graph) -> None:
-        """Tiered-validity FLOOR gate (params-based, defense-in-depth).
-
-        Raises only BELOW the on-chip FLOOR (host does ~everything). Between the
-        floor and the 50% majority a mapping is VALID_FLAGGED — it deploys and must
-        NOT raise here; the full both-metrics tiered decision is the enqueue-time
-        ``classify_validity``. Gated by ``onchip_majority_gate`` (default on); floor
-        via ``onchip_majority_min_fraction`` (default 0.2).
-        """
+        """Params-based FLOOR gate: raise only BELOW the on-chip floor; VALID_FLAGGED mappings between floor and 50% majority still deploy."""
         if not bool(self.pipeline.config.get("onchip_majority_gate", True)):
             return
-        from mimarsinan.mapping.verification.onchip_majority import (
-            assert_onchip_majority_or_raise,
-        )
-
         total_params = int(sum(p.numel() for p in model.parameters()))
         breakdown = assert_onchip_majority_or_raise(
             ir_graph,
@@ -277,23 +244,9 @@ class SoftCoreMappingStep(PipelineStep):
         )
 
     def _run_capacity_gate(self, ir_graph, platform_constraints):
-        """Static placement-capacity gate: reject provably-infeasible IR EARLY.
-
-        Computes the SOUND ``estimate_cores_needed`` lower bound (no placement, no
-        sim) and raises ``CapacityExceededError`` — naming the overflowing segment +
-        counts — when it exceeds the declared core budget, replacing the late greedy
-        packer crash (``"No more hard cores available"``) with a diagnosable up-front
-        verdict. ``allow_scheduling`` is resolved from ``platform_constraints`` (the
-        chip's ``MappingStrategy`` capability): when scheduling is permitted the gate
-        does NOT raise if the PEAK phase fits — only when the peak phase or an atomic
-        coalescing bundle overflows the whole budget. Returns the estimate (``None``
-        when disabled). Opt-out via ``capacity_gate`` (default on)."""
+        """Static placement-capacity gate: raise ``CapacityExceededError`` early when the sound core-count lower bound exceeds the budget (peak-phase-aware when scheduling is allowed)."""
         if not bool(self.pipeline.config.get("capacity_gate", True)):
             return None
-        from mimarsinan.mapping.verification.capacity import (
-            estimate_cores_needed,
-        )
-
         estimate = estimate_cores_needed(ir_graph, platform_constraints)
         if estimate.scheduled:
             print(
@@ -312,30 +265,10 @@ class SoftCoreMappingStep(PipelineStep):
         return estimate
 
     def _run_torch_sim_parity_check(self, model, ir_graph) -> None:
-        """Torch↔DEPLOYED-sim parity (per-run): the NF model's torch forward must
-        agree with the EXACT spiking sim ``run_scm_identity_metric`` deploys
-        (``build_spiking_hybrid_flow``), on ≥ ``scm_torch_sim_parity_min_agreement``
-        of ``scm_torch_sim_parity_samples``. The cascaded decision gate above checks
-        a SIBLING identity executor (``build_identity_spiking_flow``); this checks the
-        DEPLOYED one, so a torch↔sim deployment divergence cannot hide behind the
-        metric's 500-sample subsample. Gated by ``nf_scm_parity_enabled`` OR
-        synchronized (ttfs_quantized skips: not torch-bit-exact by design) +
-        ``scm_torch_sim_parity_check`` (default on)."""
+        """Per-run torch↔deployed-sim parity: the NF torch forward must agree with the exact spiking sim ``run_scm_identity_metric`` deploys, so a deployment divergence cannot hide behind the metric's subsample."""
         if not bool(self.pipeline.config.get("scm_torch_sim_parity_check", True)):
             return
-        import mimarsinan.pipelining.core.nf_scm_parity as nf_scm_parity
-        from mimarsinan.pipelining.core.simulation_factory import (
-            build_deployment_contract,
-            build_identity_mapping_for_pipeline,
-            build_spiking_hybrid_flow,
-        )
-
         contract = build_deployment_contract(self.pipeline)
-        # Synchronized stays gated even though its per-neuron gate moved to the
-        # floor+half-step convention (excluded via nf_scm_parity_enabled): argmax
-        # agreement tolerates the within-one-step floor↔ceil residual, so this
-        # remains sync's standing deployment-lossless protection alongside the
-        # accuracy gates and rung-3/4 parity.
         if not (
             nf_scm_parity.nf_scm_parity_enabled(contract) or contract.is_synchronized()
         ):
@@ -363,23 +296,11 @@ class SoftCoreMappingStep(PipelineStep):
         )
 
     def _run_nf_scm_parity_gate(self, model, ir_graph) -> None:
-        """Rung-1↔rung-2 per-neuron lock for analytic schedules.
-
-        Accuracy tolerance alone is too coarse (the 2026-06-06 incident hid a
-        3.8 pp semantic split under it); this compares NF activations against
-        the identity-mapped contract run neuron-by-neuron and fails loud.
-        """
-        import mimarsinan.pipelining.core.nf_scm_parity as nf_scm_parity
-        from mimarsinan.pipelining.core.simulation_factory import (
-            build_deployment_contract,
-        )
-
+        """Rung-1↔rung-2 per-neuron lock for analytic schedules: compare NF activations against the identity-mapped contract run neuron-by-neuron and fail loud (accuracy tolerance alone is too coarse)."""
         contract = build_deployment_contract(self.pipeline)
         if not nf_scm_parity.nf_scm_parity_enabled(contract):
             return
         if contract.is_cascaded():
-            # Decision-level gate: per-logit atol is meaningless through host
-            # compute ops and WQ tie flips preclude per-neuron exactness.
             n_samples = int(
                 self.pipeline.config.get("nf_scm_parity_samples_cascaded", 64)
             )
@@ -410,10 +331,7 @@ class SoftCoreMappingStep(PipelineStep):
         if not batches:
             return
         samples = batches[0][:n_samples]
-        # Only continuous ttfs reaches this per-neuron path now: ttfs_quantized and
-        # the synchronized floor-collapse train the floor+half-step-bias convention
-        # and are excluded via nf_scm_parity_enabled. Continuous ttfs keeps a loose
-        # default until its residual is calibrated; the wrong-dynamics signature is ~40 %.
+        # Loose default while continuous ttfs (the only mode reaching this per-neuron path) has an uncalibrated residual; its wrong-dynamics signature is ~40%.
         default_budget = 0.25
         fraction = nf_scm_parity.assert_nf_scm_parity_or_raise(
             self.pipeline,
@@ -441,34 +359,18 @@ class SoftCoreMappingStep(PipelineStep):
                 "activation_quantization=True is unsupported for SCM parity; "
                 "use ttfs_quantized or disable activation_quantization.",
             )
-        # The floor+half-step-bias convention (ttfs_quantized AND the synchronized
-        # floor-collapse) bakes the half-step shift that aligns the floor-trained
-        # decode to the deployed ceil kernel. Idempotent per perceptron.
+        # Bakes the half-step shift aligning the floor-trained decode to the deployed ceil kernel; idempotent per perceptron.
         if not plan.uses_ttfs_floor_ceil_convention or not act_q:
             return
-        from mimarsinan.mapping.support.ttfs_bias import (
-            apply_ttfs_quantization_bias_compensation,
-        )
-
         apply_ttfs_quantization_bias_compensation(
             model, self.pipeline.config["target_tq"],
         )
 
     def _apply_negative_value_shift_compensation(self, model) -> None:
-        """Opt-in (``negative_value_shift``): shift negative-producing ComputeOp
-        boundaries into the encodable domain and pre-correct the consuming
-        perceptron's bias, so NF and HCM recover negatives losslessly. Pre-mapping so
-        the mapped core inherits the baked bias; the shift travels on the IR ComputeOps
-        (``transfer_negative_shifts_to_ir``) to the hybrid build."""
+        """Opt-in (``negative_value_shift``): shift negative-producing ComputeOp boundaries into the encodable domain and pre-correct the consumer's bias, so NF and HCM recover negatives losslessly."""
         if not bool(self.pipeline.config.get("negative_value_shift", False)):
             return
         spiking_mode = str(DeploymentPlan.of(self.pipeline).spiking_mode)
-        from mimarsinan.mapping.support.neg_shift_bias import (
-            apply_negative_value_shifts,
-            calibration_forward_for_mode,
-        )
-
-        # Fails loud (NotImplementedError) for unsupported spiking modes.
         forward_fn = calibration_forward_for_mode(spiking_mode)
 
         T = int(self.pipeline.config["simulation_steps"])

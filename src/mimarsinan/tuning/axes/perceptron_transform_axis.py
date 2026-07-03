@@ -1,13 +1,4 @@
-"""Adapter for the stochastic perceptron-transform family (weight quant / NAPQ).
-
-The rate application is a per-parameter Bernoulli mix of prev/new transforms
-applied through ``PerceptronTransformTrainer`` — state intertwined with the
-tuner (the prev/new transform builders and the trainer). The axis therefore
-presents the uniform ``set_rate`` seam over a tuner-provided ``apply_fn`` rather
-than re-owning the mechanism; folding the mechanism into the axis is the P4
-driver refactor. ``set_decision_seed`` is a no-op until the per-decision seeding
-of the stochastic mask lands (P5).
-"""
+"""Adapter for the stochastic perceptron-transform family (weight quant / NAPQ)."""
 
 from __future__ import annotations
 

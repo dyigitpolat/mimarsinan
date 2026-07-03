@@ -8,6 +8,8 @@ from typing import Any
 import numpy as np
 
 from mimarsinan.chip_simulation.firing_strategy import FiringStrategy, FiringStrategyFactory
+from mimarsinan.chip_simulation.recording._spike_encoding import encode_segment_input
+from mimarsinan.chip_simulation.spiking_mode_policy import policy_for_spiking_mode
 from mimarsinan.models.spiking.spiking_config import SPIKE_MODES
 
 
@@ -30,10 +32,6 @@ class NeuralBehaviorConfig:
         )
 
     def _mode_policy(self):
-        from mimarsinan.chip_simulation.spiking_mode_policy import (
-            policy_for_spiking_mode,
-        )
-
         return policy_for_spiking_mode(self.spiking_mode)
 
     @classmethod
@@ -87,8 +85,6 @@ class NeuralBehaviorConfig:
             )
         if self.spike_generation_mode not in SPIKE_MODES:
             raise ValueError(f"Invalid spike_generation_mode: {self.spike_generation_mode!r}")
-        from mimarsinan.chip_simulation.recording._spike_encoding import encode_segment_input
-
         return encode_segment_input(
             rates,
             T,

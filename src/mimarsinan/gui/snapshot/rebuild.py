@@ -1,10 +1,4 @@
-"""Rebuild GUI step snapshots from on-disk pipeline cache.
-
-When the snapshot executor does not drain before process exit, the last
-step(s) in ``steps.json`` can have ``"snapshot": null`` even though the
-pipeline cache was written successfully.  The monitor uses this module to
-reconstruct snapshots on read for known step types.
-"""
+"""Rebuild GUI step snapshots from on-disk pipeline cache for known step types."""
 
 from __future__ import annotations
 
@@ -12,6 +6,8 @@ import logging
 import pickle
 from pathlib import Path
 from typing import Any
+
+from mimarsinan.gui.snapshot.builders import snapshot_sanafe_simulation
 
 logger = logging.getLogger("mimarsinan.gui.snapshot.rebuild")
 
@@ -34,8 +30,6 @@ def _rebuild_sanafe_snapshot(run_dir: Path) -> tuple[dict[str, Any], dict[str, s
     if not pickle_path.is_file():
         return None
     try:
-        from mimarsinan.gui.snapshot.builders import snapshot_sanafe_simulation
-
         with open(pickle_path, "rb") as f:
             report = pickle.load(f)
         snap, _ = snapshot_sanafe_simulation(report)

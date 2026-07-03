@@ -15,6 +15,7 @@ from mimarsinan.gui.runtime.persistence.load import (
     load_run_info,
 )
 from mimarsinan.gui.runtime.process_spawn import ManagedRun
+from mimarsinan.gui.snapshot.rebuild import rebuild_step_snapshot_from_disk
 
 logger = logging.getLogger("mimarsinan.gui")
 
@@ -79,8 +80,7 @@ def cleanup_stale_runs(runs: dict[str, ManagedRun]) -> None:
 def list_active(runs: dict[str, ManagedRun]) -> list[dict]:
     cleanup_stale_runs(runs)
     results: list[dict] = []
-    # Snapshot before iteration: callers should hold a lock, but copying
-    # items avoids RuntimeError if the dict is mutated concurrently.
+    # Snapshot items before iterating so concurrent mutation can't raise RuntimeError.
     for run_id, managed in list(runs.items()):
         info = load_run_info(managed.working_dir)
         steps = load_persisted_steps(managed.working_dir)
@@ -249,8 +249,6 @@ def get_run_step_detail(runs: dict[str, ManagedRun], run_id: str, step_name: str
     snapshot = sd.get("snapshot")
     snapshot_key_kinds = sd.get("snapshot_key_kinds")
     if snapshot is None:
-        from mimarsinan.gui.snapshot.rebuild import rebuild_step_snapshot_from_disk
-
         rebuilt = rebuild_step_snapshot_from_disk(managed.working_dir, step_name)
         if rebuilt is not None:
             snapshot, snapshot_key_kinds = rebuilt

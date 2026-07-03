@@ -1,19 +1,4 @@
-"""FFCV loader subclass: exposes per-batch indices and substitutes labels.
-
-FFCV's stock ``IntDecoder`` is unreliable on ViT-class workloads under any
-fused multi-tensor-apply optimizer state — the label tensor comes back
-filled with CUDA allocator-fill bytes (allocated, never written). We
-bypass it: preload all labels as a ``torch.LongTensor`` once at loader
-construction, capture FFCV's internal per-batch indices via a subclassed
-``EpochIterator``, and look up the real labels in the preloaded tensor.
-
-The loader's iterator yields ``(x.clone(), label_lookup[indices])``
-directly — no separate shim, no torch-DataLoader-compat layer. The clone
-on ``x`` is the contract that owns FFCV's rotating-buffer pool: FFCV
-yields tensor views into a small pre-allocated pool that gets overwritten
-as iteration advances, so downstream consumers that hold a yielded tensor
-across iteration boundaries would silently see corrupted data without it.
-"""
+"""FFCV loader subclass that exposes per-batch indices and substitutes preloaded labels."""
 
 from __future__ import annotations
 
@@ -22,6 +7,7 @@ from typing import Any, Iterator
 
 import numpy as np
 import torch
+from torch.utils.data import Subset
 from ffcv.loader.epoch_iterator import EpochIterator
 from ffcv.loader.loader import Loader
 from ffcv.pipeline.compiler import Compiler
@@ -31,7 +17,7 @@ class _IndexedEpochIterator(EpochIterator):
     """``EpochIterator`` that records ``batch_indices`` for every produced batch."""
 
     def __init__(self, loader: Loader, order):
-        # Queue exists before super().__init__ kicks off the worker thread.
+        # The queue must exist before super().__init__ starts the worker thread that fills it.
         self.batch_index_queue: Queue = Queue()
         super().__init__(loader, order)
 
@@ -44,9 +30,8 @@ class _IndexedEpochIterator(EpochIterator):
 class IndexedLoader(Loader):
     """FFCV ``Loader`` that yields ``(x_clone, lookup[batch_indices])``.
 
-    ``label_lookup`` is the preloaded on-device tensor (one entry per
-    sample in the beton's order). Required; the lookup path is what makes
-    this loader reliable on ViT-class workloads.
+    ``label_lookup`` is the required preloaded on-device label tensor, in the
+    beton's sample order; the lookup path replaces FFCV's unreliable IntDecoder.
     """
 
     def __init__(self, *args, label_lookup: torch.Tensor, **kwargs):
@@ -65,6 +50,7 @@ class IndexedLoader(Loader):
 
     def _yield(self, ep_iter: _IndexedEpochIterator) -> Iterator:
         for batch in ep_iter:
+            # clone: FFCV yields views into a rotating buffer pool overwritten as iteration advances.
             x = batch[0].clone()
             idx_np = ep_iter.batch_index_queue.get_nowait()
             idx_t = torch.as_tensor(idx_np, dtype=torch.long, device=self._label_lookup.device)
@@ -82,13 +68,10 @@ def _unwrap(dataset: Any) -> Any:
 def preload_labels(dataset: Any) -> torch.LongTensor:
     """Return all integer labels of ``dataset`` as a CPU ``torch.LongTensor``.
 
-    Walks ``Subset`` and ``_AsRGB`` wrappers; uses fast ``.targets`` /
-    ``.labels`` metadata when available, falls back to per-sample
-    ``__getitem__`` as a last resort.
+    Walks Subset/_AsRGB wrappers, preferring ``.targets`` / ``.labels``
+    metadata and falling back to per-sample ``__getitem__``.
     """
     dataset = _unwrap(dataset)
-    from torch.utils.data import Subset
-
     if isinstance(dataset, Subset):
         base = _unwrap(dataset.dataset)
         idxs = list(dataset.indices)

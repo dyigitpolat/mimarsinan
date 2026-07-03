@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import numpy as np
-
 from mimarsinan.mapping.latency.chip import ChipLatency
 from mimarsinan.mapping.packing.softcore import HardCoreMapping
 from mimarsinan.chip_simulation.nevresim.nevresim_driver import NevresimDriver

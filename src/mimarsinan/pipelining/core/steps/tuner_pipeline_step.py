@@ -36,9 +36,7 @@ class TunerPipelineStep(PipelineStep):
         self._commit_tuner_entries(model, adaptation_manager)
 
     def _report_ft_pass_wall(self):
-        """A5b: surface the worst single fine-tuning-pass wall (AC5 is judged per
-        FT pass, not on the non-FT-dominated end-to-end wall) into the reported
-        metrics so it persists in steps.json. No-op for tuner families without it."""
+        """Surface the worst single fine-tuning-pass wall into the reported metrics; no-op when absent."""
         if self.tuner is None:
             return
         wall = getattr(self.tuner, "max_ft_pass_wall_s", None)

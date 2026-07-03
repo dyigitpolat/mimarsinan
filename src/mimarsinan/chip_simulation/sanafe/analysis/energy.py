@@ -2,18 +2,13 @@
 
 from __future__ import annotations
 
-import re
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Tuple
 
 import numpy as np
 
 from mimarsinan.chip_simulation.sanafe.records import (
-    SanafeConnectivityEdge,
-    SanafeCriticalCore,
     SanafeCycleEnergyPoint,
     SanafeEnergyBreakdown,
-    SanafeNocLink,
-    SanafeNocLinkLoad,
 )
 
 def _per_core_energy_sanafe(

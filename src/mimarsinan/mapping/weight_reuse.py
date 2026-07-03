@@ -1,25 +1,4 @@
-"""Time-domain weight-reuse phase classification (round-1 keystone, default-off).
-
-A deployment schedule over IR cores currently treats EVERY pass as a REPROGRAM
-(load X params onto Y cores). The weight-reuse mode recognises that a conv kernel's
-banks are loaded ONCE across cores (fixed mapping, max parallelism) and the spatial
-positions are TIME-MULTIPLEXED through the resident banks — so only the FIRST pass
-over a distinct weight bank is a (costly) reprogram and every subsequent pass over
-the SAME resident bank is a (cheap) reuse pass.
-
-The reuse-vs-reprogram boundary is ALREADY in the IR and currently DISCARDED:
-``conv2d_mapper`` registers one :class:`WeightBank` per conv (``max_neurons=None`` ⇒
-one bank) then attaches every spatial-position softcore to that one
-``weight_bank_id``. ``{core.weight_bank_id for core in nodes}`` recovers the grouping
-in O(cores). A NeuralCore with its OWN ``core_matrix`` (no shared bank) cannot be
-time-multiplexed, so it counts as its own reprogram.
-
-This module is a PURE READ of the IR: it changes no mapping/sim/build behaviour. It
-exists so the cost model can tell a reuse phase apart from a reprogram phase (today
-both cost identically — see ``cost_extraction``); the physical replica-fill build and
-cross-pass sim residency that turn the visible savings into REAL on-hardware reuse
-are deferred to later rounds and gated on this classification existing first.
-"""
+"""Time-domain weight-reuse phase classification (round-1 keystone, default-off; pure read of the IR)."""
 
 from __future__ import annotations
 
@@ -53,17 +32,9 @@ def _owned_core_weight_count(core: NeuralCore) -> int:
 
 @dataclass(frozen=True)
 class SegmentReusePhases:
-    """Per-segment phase split: N reprogram + M reuse passes, from bank grouping.
+    """Per-segment phase split: N reprogram + M reuse passes from bank grouping.
 
-    * ``reprogram_passes`` (N) — #distinct resident weights = #distinct shared banks
-      + #owned (non-shared) cores. The FIRST pass over each distinct weight is a full
-      reprogram (load X params onto Y cores).
-    * ``reuse_passes`` (M) — every subsequent pass that resolves to an already-resident
-      bank: ``total_passes - reprogram_passes``. Cost = activation data movement at the
-      sync point, NOT a parameter reload.
-    * ``params_reloaded`` — Σ over the reprogram passes of the resident weight count
-      (each distinct bank / owned core counted ONCE, not once per reused position) —
-      the quantity the cost term charges per reload.
+    params_reloaded counts each distinct bank / owned core ONCE (not once per reused position).
     """
 
     reprogram_passes: int
@@ -88,10 +59,7 @@ def classify_segment_phases(
 ) -> SegmentReusePhases:
     """Classify a segment's NeuralCores into N reprogram + M reuse passes.
 
-    Each core is one pass. Cores that share a ``weight_bank_id`` collapse to ONE
-    reprogram (the resident bank) + the rest as reuse passes; a core with its own
-    ``core_matrix`` (no bank) is always its own reprogram. ``params_reloaded`` sums
-    each distinct bank's / owned core's weight count ONCE.
+    Cores sharing a weight_bank_id collapse to one reprogram + reuse passes; an owned-matrix core is its own reprogram.
     """
     reprogram_passes = 0
     reuse_passes = 0
@@ -122,13 +90,9 @@ def classify_segment_phases(
 
 @dataclass(frozen=True)
 class WeightReusePlan:
-    """Schedule-wide phase split: M weight-reuse + N reprogram phases over a graph.
+    """Schedule-wide phase split: M reuse + N reprogram phases over a graph.
 
-    ``N = reprogram_passes`` = #weight-distinct cores (the unavoidable parameter
-    loads); ``M = reuse_passes`` = ``total_passes - N`` (the cheap time-multiplexed
-    passes). ``sync_barrier_count`` = ``total_passes - 1`` — every pass gathers its
-    positions' outputs at the segment-exit sync point, so there are that many barriers
-    between passes (the design's ``(M + N - 1)``).
+    sync_barrier_count = total_passes - 1 (one activation-gather barrier between passes).
     """
 
     reprogram_passes: int
@@ -173,14 +137,7 @@ def format_weight_reuse_summary(plan: WeightReusePlan) -> str:
 
 
 def weight_reuse_plan_from_graph(graph: IRGraph) -> WeightReusePlan:
-    """Build the schedule-wide :class:`WeightReusePlan` from an IR graph's cores.
-
-    Pure read: groups the graph's NeuralCores by ``weight_bank_id`` (the conv-kernel
-    grouping ``conv2d_mapper`` already emits) and classifies into reprogram vs reuse
-    passes. Runs on the post-pruning IR for free (pruning shrinks the per-core counts
-    that feed the same grouping), so the pruning intersection composes without extra
-    machinery.
-    """
+    """Build the schedule-wide WeightReusePlan from an IR graph's cores (pure read; runs on the post-pruning IR)."""
     cores = graph.get_neural_cores()
     weight_banks: Dict[int, WeightBank] = dict(getattr(graph, "weight_banks", {}) or {})
     phases = classify_segment_phases(cores, weight_banks)

@@ -1,27 +1,18 @@
 from __future__ import annotations
 
 import copy
-from collections import defaultdict
 from typing import Sequence
 
 import numpy as np
 
-from mimarsinan.mapping.support.activation_scales import (
-    compute_node_input_scales as _compute_node_input_activation_scales,
-    compute_node_output_scales as _compute_node_activation_scales,
-)
-from mimarsinan.mapping.ir import ComputeOp, IRGraph, IRSource, NeuralCore
-from mimarsinan.mapping.packing.softcore import HardCore
+from mimarsinan.mapping.ir import IRGraph, NeuralCore
 from mimarsinan.mapping.packing.hybrid_segment import (
     _apply_reindex_to_ir_sources,
-    _flush_neural_segment,
     _flush_scheduled_segment,
-    _make_available_hardware_cores,
     _reindex_nodes,
 )
-from mimarsinan.mapping.packing.hybrid_types import HybridHardCoreMapping, HybridStage
+from mimarsinan.mapping.packing.hybrid_types import HybridStage
 from mimarsinan.mapping.layout.segmentation import (
-    HostSegment,
     NeuralSegment,
     partition_ir_graph,
 )

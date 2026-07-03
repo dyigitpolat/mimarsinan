@@ -1,5 +1,7 @@
 import operator
 
+import torch
+
 from mimarsinan.mapping.support.compute_modules import ComputeAdapter
 from mimarsinan.mapping.mapping_utils import (
     ComputeOpMapper,
@@ -101,10 +103,9 @@ class SkipPerceptronMixer(PerceptronFlow):
     def get_mapper_repr(self):
         out = InputMapper(self.input_shape)
 
-        # First Mixer
         out = EinopsRearrangeMapper(
-            out, 
-            'c (h p1) (w p2) -> (h w) (p1 p2 c)', 
+            out,
+            'c (h p1) (w p2) -> (h w) (p1 p2 c)',
             p1=self.patch_height, p2=self.patch_width)
         
         patch_mappers = []
@@ -122,10 +123,9 @@ class SkipPerceptronMixer(PerceptronFlow):
                 skip = out
         out = ComputeOpMapper([out, skip], ComputeAdapter(operator.add))
 
-        # Second Mixer
         out = EinopsRearrangeMapper(
-            out, 
-            '1 (h p1) -> (h) (p1)', 
+            out,
+            '1 (h p1) -> (h) (p1)',
             p1=self.patch_size_2)
         
         patch_mappers = []
@@ -142,16 +142,14 @@ class SkipPerceptronMixer(PerceptronFlow):
             if skip is None:
                 skip = out
         out = ComputeOpMapper([out, skip], ComputeAdapter(operator.add))
-        
-        # Output Layer
+
         out = PerceptronMapper(out, self.output_layer)
         return ModelRepresentation(out)
 
     def forward(self, x):
-        # First Mixer
         out = einops.einops.rearrange(
-            x, 
-            'b c (h p1) (w p2) -> b (h w) (p1 p2 c)', 
+            x,
+            'b c (h p1) (w p2) -> b (h w) (p1 p2 c)',
             p1=self.patch_height, p2=self.patch_width)
         
         out_tensor = torch.zeros((x.shape[0], self.fc_in), device=x.device)
@@ -167,10 +165,9 @@ class SkipPerceptronMixer(PerceptronFlow):
                 skip = out
         out = out + skip
 
-        # Second Mixer
         out = einops.einops.rearrange(
-            out, 
-            'b (h p1) -> b (h) (p1)', 
+            out,
+            'b (h p1) -> b (h) (p1)',
             p1=self.patch_size_2)
         
         out_tensor = torch.zeros((x.shape[0], self.fc_in_2), device=x.device)

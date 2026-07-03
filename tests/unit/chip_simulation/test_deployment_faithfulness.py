@@ -73,19 +73,19 @@ class TestTorchSimParityIsStanding:
         return step
 
     def test_runs_by_default_without_opting_in(self, monkeypatch):
-        # The gate re-imports its builders from simulation_factory each call, so
-        # patch there (and let nf_scm_parity_enabled run for real: synchronized
-        # ttfs_cycle is gated ON).
-        from mimarsinan.pipelining.core import simulation_factory as sim_factory
+        # Patch the builders where the step looks them up (its own module
+        # globals); nf_scm_parity_enabled runs for real: synchronized
+        # ttfs_cycle is gated ON.
         import mimarsinan.pipelining.core.nf_scm_parity as nf_scm_parity
+        import mimarsinan.pipelining.pipeline_steps.mapping.soft_core_mapping_step as scm_mod
 
         built = []
         monkeypatch.setattr(
-            sim_factory, "build_spiking_hybrid_flow",
+            scm_mod, "build_spiking_hybrid_flow",
             lambda *a, **k: built.append(1) or object(),
         )
         monkeypatch.setattr(
-            sim_factory, "build_identity_mapping_for_pipeline",
+            scm_mod, "build_identity_mapping_for_pipeline",
             lambda *a, **k: object(),
         )
         monkeypatch.setattr(
@@ -99,11 +99,11 @@ class TestTorchSimParityIsStanding:
         assert built == [1], "torch<->sim parity gate must be standing (default-on)"
 
     def test_can_be_explicitly_disabled(self, monkeypatch):
-        from mimarsinan.pipelining.core import simulation_factory as sim_factory
+        import mimarsinan.pipelining.pipeline_steps.mapping.soft_core_mapping_step as scm_mod
 
         built = []
         monkeypatch.setattr(
-            sim_factory, "build_spiking_hybrid_flow",
+            scm_mod, "build_spiking_hybrid_flow",
             lambda *a, **k: built.append(1) or object(),
         )
         step = self._make_step("ttfs_cycle_based")

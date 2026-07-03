@@ -1,29 +1,4 @@
-"""Liveness analysis for unified IR graphs.
-
-A NeuralCore is one of:
-
-- :attr:`NodeLiveness.LIVE` - has at least one live axon weight, and at least
-  one neuron is reachable from a model output.
-- :attr:`NodeLiveness.BIAS_ONLY` - every axon is dead (off-source or zero
-  weight), but ``hardware_bias`` can still drive at least one neuron above
-  threshold within ``simulation_steps`` LIF cycles, and at least one neuron
-  has a downstream live consumer.
-- :attr:`NodeLiveness.DEAD` - either the core cannot emit any spike, or no
-  downstream consumer needs any of its neurons. ``DEAD`` wins over
-  ``BIAS_ONLY``: a bias emitter with nothing to drive is dead.
-
-The reachability half of the analysis reuses
-:func:`mimarsinan.mapping.pruning.graph.compute_global_pruned_sets`,
-which already encodes the "ComputeOps are barriers" rule via persistent
-consumers. A neuron is *reachable* iff the global propagation does **not**
-prune its column.
-
-Bias-can-fire is a sound under-approximation by default
-(``bias_only_emission_check="conservative"``):
-``max(|bias|) * simulation_steps >= threshold``. This matches the simplest
-LIF integration ``v[t+1] = v[t] + bias`` and ignores leak / reset. An exact
-mode is reserved as a future extension behind the same flag.
-"""
+"""Liveness analysis for unified IR graphs: classify each NeuralCore LIVE / BIAS_ONLY / DEAD."""
 
 from __future__ import annotations
 
@@ -55,12 +30,7 @@ class NodeLiveness(Enum):
 
 @dataclass(frozen=True)
 class LivenessResult:
-    """Per-node liveness classifications and human-readable reasons.
-
-    ``per_node`` and ``reasons`` are both keyed by ``NeuralCore.id``.
-    ComputeOp ids are deliberately absent: the analysis does not classify
-    them (they are barriers, never sources of spikes).
-    """
+    """Per-node liveness classifications and reasons, keyed by ``NeuralCore.id`` (ComputeOps absent)."""
 
     per_node: Mapping[int, NodeLiveness]
     reasons: Mapping[int, str]
@@ -78,30 +48,8 @@ def compute_liveness(
 ) -> LivenessResult:
     """Classify every NeuralCore in ``graph`` as LIVE / BIAS_ONLY / DEAD.
 
-    Args:
-        graph: The IR graph to analyze (mutated by neither this function
-            nor the underlying propagation pass).
-        simulation_steps: Integration window for LIF-style bias checks;
-            quantized TTFS uses this as ``S``.
-        spiking_mode: ``lif``, ``rate``, ``ttfs``, or ``ttfs_quantized``; selects
-            bias-only activation predicate (see :mod:`liveness_semantics`).
-        thresholding_mode: Reserved for future use ("<" / "<=" semantics);
-            currently has no effect on the conservative check.
-        bias_only_emission_check: ``"conservative"`` (default) uses the
-            sum bound above. ``"exact"`` is reserved for a precise LIF
-            integration check; not yet implemented.
-        pruning_result: Optional pre-computed
-            :class:`GlobalPruningResult`. When ``None`` we run
-            :func:`compute_global_pruned_sets` ourselves with
-            ``zero_threshold``.
-        zero_threshold: Threshold passed through to the propagation pass
-            when we run it ourselves.
-
-    Returns:
-        :class:`LivenessResult` keyed by NeuralCore id.
-
-    Raises:
-        ValueError: When ``simulation_steps <= 0``.
+    ``spiking_mode`` selects the bias-only activation predicate; ``bias_only_emission_check``
+    is ``"conservative"`` (``"exact"`` reserved). Raises ``ValueError`` if ``simulation_steps <= 0``.
     """
     if simulation_steps <= 0:
         raise ValueError(
@@ -177,10 +125,6 @@ def compute_liveness(
 
         if not bias_can_fire:
             if is_output_protected:
-                # Output-referenced core that cannot emit is still kept
-                # alive: removing it would break the output contract
-                # enforced by ``_validate_outputs_remain``. Surface this
-                # as BIAS_ONLY with a clear reason so the UI can warn.
                 per_node[nid] = NodeLiveness.BIAS_ONLY
                 reasons[nid] = (
                     "output-referenced core has no live axon weight and "
@@ -208,7 +152,6 @@ def compute_liveness(
             f"neurons active from hardware_bias only ({spiking_mode!r})"
         )
 
-    # Sanity: ComputeOps are not in the result. Reserved for symmetry.
     _ = ComputeOp
     _ = IRSource
     return LivenessResult(per_node=per_node, reasons=reasons)
@@ -232,12 +175,7 @@ def _has_live_axon_with_weight(
     pruned_rows,
     zero_threshold: float,
 ) -> bool:
-    """True iff some surviving axon row has a non-negligible weight.
-
-    "Surviving" means: not in ``pruned_rows`` AND its ``IRSource`` is not
-    ``is_off()``. We treat input-data and always-on sources as live (they
-    do supply a non-zero signal at runtime).
-    """
+    """True iff some surviving (not pruned, not off-source) axon row has a non-negligible weight."""
     if mat.size == 0:
         return False
     abs_max_per_row = np.abs(mat).max(axis=1)

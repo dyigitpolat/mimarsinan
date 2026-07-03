@@ -4,8 +4,12 @@ from __future__ import annotations
 
 import torch
 
+from mimarsinan.mapping.mappers.conv1d_mapper import Conv1DPerceptronMapper
+from mimarsinan.mapping.mappers.conv2d_mapper import Conv2DPerceptronMapper
+from mimarsinan.spiking.lif_utils import unwrap_lif_activation
 from mimarsinan.spiking.segment_partition import perceptron_of
 from mimarsinan.spiking.segment_policy_ttfs import TtfsSegmentPolicy
+from mimarsinan.spiking.spike_trains import uniform_spike_train
 
 __all__ = ["AnalyticalSegmentPolicy", "LifSegmentPolicy", "TtfsSegmentPolicy"]
 
@@ -32,8 +36,6 @@ class LifSegmentPolicy:
 
     @staticmethod
     def _lif_of(perceptron):
-        from mimarsinan.spiking.lif_utils import unwrap_lif_activation
-
         return unwrap_lif_activation(getattr(perceptron, "activation", None))
 
     @staticmethod
@@ -41,9 +43,6 @@ class LifSegmentPolicy:
         """Mirror of HCM's ``encode_compute_boundary`` contract: a subsumed
         encoding boundary is cycle-emitted only for a plain LIF perceptron;
         wrapper mappers (Conv1D/Conv2D) stay rate-mode."""
-        from mimarsinan.mapping.mappers.conv1d_mapper import Conv1DPerceptronMapper
-        from mimarsinan.mapping.mappers.conv2d_mapper import Conv2DPerceptronMapper
-
         return lif is not None and not isinstance(
             node, (Conv1DPerceptronMapper, Conv2DPerceptronMapper)
         )
@@ -65,13 +64,12 @@ class LifSegmentPolicy:
 
     def run_segment(self, driver, seg_nodes, values, x):
         from spikingjelly.activation_based import functional
-        from mimarsinan.spiking.spike_trains import uniform_spike_train
 
         T = driver.T
         deps_map = driver._deps
         seg_set = set(seg_nodes)
-        node_train: dict = {}   # node -> (T, B, ...) per-cycle value (real, = spike*scale)
-        node_rate: dict = {}    # node -> rate (real); the inter-stage value
+        node_train: dict = {}
+        node_rate: dict = {}
 
         def rate_of(dep):
             return node_rate[dep] if dep in seg_set else values[dep]
@@ -100,10 +98,6 @@ class LifSegmentPolicy:
                 lif = self._lif_of(p)
                 scale = _safe_scale(getattr(lif, "activation_scale", 1.0), x)
                 if getattr(p, "is_encoding_layer", False):
-                    # Subsumed host encoder: mirror HCM's two outputs — the host
-                    # op's rate-mode *value* (ComputeOp consumers) and the
-                    # cycle-emitted *train* (``encode_compute_boundary``; plain
-                    # LIF perceptrons only — wrappers stay uniform-encoded).
                     if lif is not None:
                         lif.set_cycle_accurate(False)
                     rate_out = forward_node(node, [rate_of(dep) for dep in d])
@@ -132,8 +126,6 @@ class LifSegmentPolicy:
                     node_rate[node] = (train / scale).mean(dim=0)
                 self._record_decoded(driver, p, node_train[node])
             else:
-                # Structural (reshape / permute / concat): transparent. Carry a
-                # train when every dep has one (per-cycle), and always carry a rate.
                 if d and all(node_train.get(dep) is not None for dep in d):
                     dep_trains = [node_train[dep] for dep in d]
                     node_train[node] = torch.stack(

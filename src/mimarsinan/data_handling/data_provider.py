@@ -1,10 +1,12 @@
 import os
 
 import torch
+import torch.nn as nn
+import torchvision.transforms as _T
 
-# Global FFCV kill-switch: set ``MIMARSINAN_DISABLE_FFCV=1`` to force every
-# provider onto the torch dataloader path even when it defines FFCV transforms
-# (e.g. running on a host without the compiled ``ffcv`` package installed).
+from mimarsinan.data_handling.dataset_views import ApplyTransform
+from mimarsinan.data_handling.preprocessing import resolve_preprocessing
+
 FFCV_DISABLE_ENV = "MIMARSINAN_DISABLE_FFCV"
 
 
@@ -16,13 +18,7 @@ class ClassificationMode:
         return "classification"
 
     def create_loss(self):
-        """
-        Create the appropriate loss function for this prediction mode.
-
-        The returned object must be callable as: loss(model, x, y) -> torch.Tensor
-        (see BasicTrainer usage).
-        """
-        # Lazy import to avoid importing training code when only inspecting datasets.
+        """Loss for this mode, callable as ``loss(model, x, y) -> torch.Tensor``."""
         from mimarsinan.model_training.training_utilities import BasicClassificationLoss
         return BasicClassificationLoss()
 
@@ -31,14 +27,7 @@ class RegressionMode:
         return "regression"
 
     def create_loss(self):
-        """
-        Default regression loss.
-
-        Note: Regression training/metrics are not yet fully generalized in BasicTrainer
-        (validate/test currently assume classification accuracy). This loss is provided
-        for future expansion and for evaluators that use only the loss.
-        """
-        import torch.nn as nn
+        """Default MSE regression loss (regression training is not yet generalized)."""
 
         class _MSELossWrapper:
             def __call__(self, model, x, y):
@@ -48,14 +37,9 @@ class RegressionMode:
 
 
 class DataProvider:
-    # Providers whose transforms hard-code the input shape (e.g. ImageNet
-    # uses RandomResizedCrop(224) unconditionally) set this to False so
-    # the wizard disables the resize / normalize controls for them.
     SUPPORTS_PREPROCESSING = True
 
     def __init__(self, datasets_path, *, seed: int | None = 0, preprocessing=None, batch_size=None):
-        from mimarsinan.data_handling.preprocessing import resolve_preprocessing
-
         self.datasets_path = datasets_path
         self.seed = int(seed) if seed is not None else None
         self._preprocessing_spec = resolve_preprocessing(preprocessing)
@@ -65,42 +49,18 @@ class DataProvider:
         self._output_shape = None
 
     def _wrap_with_preprocessing(self, base_transforms):
-        """Wrap a raw transform list with the configured preprocessing.
-
-        Returns a :class:`torchvision.transforms.Compose`. With no
-        preprocessing configured, the list is returned unchanged inside
-        a Compose.
-        """
-        import torchvision.transforms as _T
-
+        """Wrap a raw transform list with the configured preprocessing into a Compose."""
         if self._preprocessing_spec is None:
             return _T.Compose(list(base_transforms))
         return self._preprocessing_spec.compose(base_transforms)
 
     def _get_split_generator(self):
-        """
-        Torch generator to make dataset splits deterministic.
-
-        Providers that use torch.utils.data.random_split should pass this generator to it.
-        """
+        """Seeded torch generator so dataset splits are deterministic (or None if unseeded)."""
         if self.seed is None:
             return None
         g = torch.Generator()
         g.manual_seed(int(self.seed))
         return g
-
-    # ----- Per-split dataset / transform contract -----------------------------
-    # Three method overrides cover the full data surface. Each returns a dict
-    # keyed by split name ("train" / "val" / "test").
-    #   raw_datasets()     - raw datasets, shared by both data paths.
-    #   torch_transforms() - raw transform lists for the torch DataLoader path.
-    #                        The base class wraps each list with the configured
-    #                        preprocessing.
-    #   ffcv_transforms()  - FFCV CPU op chains [(op_name, kwargs), ...] for
-    #                        the FFCV path. Providing a non-empty dict opts
-    #                        the provider into FFCV; the empty default keeps
-    #                        it on the torch path regardless of the global
-    #                        FFCV toggle. enable_ffcv() is derived.
 
     def raw_datasets(self) -> dict:
         return {}
@@ -117,8 +77,6 @@ class DataProvider:
         return bool(self.ffcv_transforms())
 
     def _assemble_split(self, split: str):
-        from mimarsinan.data_handling.dataset_views import ApplyTransform
-
         raw = self.raw_datasets().get(split)
         if raw is None:
             raise NotImplementedError(
@@ -140,15 +98,11 @@ class DataProvider:
         return self._assemble_split("test")
 
     def get_prediction_mode(self):
-        """
-        Returns the classification mode
-        """
+        """Prediction mode for this provider (subclasses must override)."""
         raise NotImplementedError()
 
     def create_loss(self):
-        """
-        Convenience helper: create the loss function for this provider based on its prediction mode.
-        """
+        """Loss function for this provider, from its prediction mode."""
         return self.get_prediction_mode().create_loss()
 
     def get_training_batch_size(self):
@@ -165,13 +119,7 @@ class DataProvider:
         return min(max(1, train_bs), n_val)
 
     def get_test_batch_size(self):
-        """Default to the training batch size, capped at the test-set size.
-
-        The legacy default (full test set in one batch) OOMs on any non-trivial
-        input (e.g. ViT-B/16 at 224x224 -> ~22 GiB for 10k CIFAR-10 test images).
-        The trainer's ``test()`` method iterates the loader, so a sub-full-set
-        batch size is always correct.
-        """
+        """Training batch size, capped at the test-set size (a full-set batch OOMs on large inputs)."""
         train_bs = self.get_training_batch_size()
         n_test = self.get_test_set_size()
         if n_test <= 0:

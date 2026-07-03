@@ -75,14 +75,11 @@ class FiringStrategy:
     def require_chip_faithful_lif_forward(
         self, *, cycle_accurate_lif_forward: bool
     ) -> None:
-        """Novena's zero-reset is arrival-order sensitive, so the analytical rate
-        forward (constant per-cycle input, the ``cycle_accurate_lif_forward=False``
-        NF/committed metric) is NOT chip-faithful: it discards the over-threshold
-        remainder differently than the deployed per-cycle spike-train cascade, so the
-        deployed HCM diverges from the trained metric (≈12pp on mmixcore). The
-        cycle-accurate cascade IS bit-exact NF↔HCM for Novena, so require it. Default
-        (subtractive) reset keeps the rate forward as its long-standing approximation
-        and is unaffected."""
+        """Novena's zero-reset needs the cycle-accurate cascade to stay chip-faithful.
+
+        The analytical rate forward diverges from the deployed HCM under Novena's
+        arrival-order-sensitive zero-reset (≈12pp on mmixcore); Default reset is unaffected.
+        """
         if self.mode == FiringMode.NOVENA and not cycle_accurate_lif_forward:
             raise ValueError(
                 "firing_mode='Novena' requires cycle_accurate_lif_forward=True: "

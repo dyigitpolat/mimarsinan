@@ -1,12 +1,4 @@
-"""SqueezeNet: a Fire-module conv vehicle (squeeze 1x1 -> expand 1x1 + 3x3, concat).
-
-A scaled-down, input-shape-adaptive SqueezeNet for the deployment hypervolume's
-SCALE breadth. Pipeline-native: only Conv2d / ReLU / MaxPool2d / AdaptiveAvgPool2d
-ops (no grouped/depthwise conv, no attention, no LayerNorm). The 3x3 expand convs
-use ``padding=1`` (SAME) so they stay on the soft-core mapper's padded path, and
-the classifier is a 1x1 conv -> AdaptiveAvgPool (classic SqueezeNet head) so the
-readout never explodes into a giant flattened Linear.
-"""
+"""SqueezeNet: a Fire-module conv vehicle (squeeze 1x1 -> expand 1x1 + 3x3, concat)."""
 
 from __future__ import annotations
 
@@ -14,7 +6,7 @@ import torch
 import torch.nn as nn
 
 
-_SPATIAL_FLOOR = 2  # a /2 MaxPool stops while the map still has room to operate
+_SPATIAL_FLOOR = 2
 
 
 def _allowed_pool_count(spatial_size: int) -> int:
@@ -30,10 +22,7 @@ def _allowed_pool_count(spatial_size: int) -> int:
 class FireModule(nn.Module):
     """SqueezeNet Fire module: squeeze 1x1 -> (expand 1x1, expand 3x3) -> concat.
 
-    The squeeze 1x1 conv compresses channels; two parallel expand convs (1x1 and
-    3x3 with SAME padding) widen them again, and their outputs are concatenated
-    along the channel dim. Output channels = ``expand1x1 + expand3x3``; spatial
-    size is preserved.
+    Output channels = ``expand1x1 + expand3x3``; spatial size is preserved.
     """
 
     def __init__(
@@ -62,14 +51,8 @@ class FireModule(nn.Module):
 class SqueezeNet(nn.Module):
     """Scaled, input-adaptive SqueezeNet: stem conv -> Fire modules -> conv readout.
 
-    ``[Conv(k3,pad1)+ReLU] -> MaxPool -> [Fire xN with periodic MaxPool] ->
-    Conv1x1(->classes)+ReLU -> AdaptiveAvgPool -> Flatten``. Channels follow the
-    SqueezeNet squeeze/expand ratio (expand = 4x squeeze, split evenly across the
-    1x1 and 3x3 branches) and grow with the base ``width``. Pools are capped from
-    the input spatial size so a 28x28 / 32x32 input never collapses below 1x1.
-
-    Only mappable ops: Conv2d, ReLU, MaxPool2d, AdaptiveAvgPool2d, torch.cat. No
-    grouped/depthwise conv, no attention, no LayerNorm.
+    Only mappable ops (Conv2d, ReLU, MaxPool2d, AdaptiveAvgPool2d, torch.cat); 3x3 expands use
+    SAME padding and pools are capped so a 28x28/32x32 input never collapses below 1x1.
     """
 
     def __init__(
@@ -102,7 +85,6 @@ class SqueezeNet(nn.Module):
             layers.append(nn.MaxPool2d(kernel_size=2, stride=2))
             pools_used += 1
 
-        # Three Fire stages, each pair of modules followed by a pool while budget remains.
         squeeze_plan = [width, width, width * 2, width * 2, width * 3, width * 3]
         for stage_index, squeeze in enumerate(squeeze_plan):
             expand = squeeze * 2

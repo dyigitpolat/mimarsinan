@@ -1,6 +1,5 @@
 from mimarsinan.models.nn.layers import MaxValueScaler, LeakyGradReLU, norm_affine_params
 
-
 import torch.nn as nn
 import torch
 
@@ -19,9 +18,6 @@ def effective_preactivation_bias(perceptron):
     return (bias - mean) * u + beta
 
 
-# Canonical mapping from string names to activation constructors.
-# "ReLU" maps to LeakyGradReLU (ReLU forward, leaky gradient backward) —
-# the default pipeline activation for SNN training.
 ACTIVATION_REGISTRY = {
     "ReLU": LeakyGradReLU,
     "LeakyReLU": nn.LeakyReLU,
@@ -73,7 +69,6 @@ class Perceptron(nn.Module):
 
         self.per_input_scales = None
 
-        # True for the first perceptron of each neural segment (host-side ComputeOp in IR).
         self.is_encoding_layer = False
 
     def set_parameter_scale(self, new_scale):
@@ -109,9 +104,6 @@ class Perceptron(nn.Module):
         self.scaler = scaler
 
     def forward(self, x):
-        # input_activation and scaler are nn.Identity throughout training/tuning
-        # (only set to something else during soft-core-mapping, post-tuning).
-        # Skip their __call__ + hook machinery when that's the case.
         if not isinstance(self.input_activation, nn.Identity):
             x = self.input_activation(x)
 
@@ -131,19 +123,8 @@ class Perceptron(nn.Module):
     def forward_spiking(self, x):
         """Encoding-layer spiking forward — return ``(T, B, ...)`` spike train.
 
-        Mirrors :meth:`forward` up to the activation, then asks the inner
-        ``LIFActivation`` to emit its actual cycle-by-cycle spike train
-        rather than its mean-rate reduction. The downstream neural
-        segment then consumes the LIF spike timing exactly, instead of
-        having a uniform re-encoding overwrite the LIF firing phases.
-
-        ``self.activation`` may be wrapped after LIF Adaptation:
-        ``TransformedActivation(LIFBlendActivation(LIFActivation, …))``.
-        We walk those wrappers to locate the live ``LIFActivation`` so
-        callers don't need to know about the wrapping order.
-
-        Raises ``ValueError`` when no ``LIFActivation`` is reachable from
-        ``self.activation``: there is no spike-train semantics to expose.
+        Mirrors :meth:`forward` up to the activation, then emits the wrapped
+        ``LIFActivation``'s cycle-by-cycle spike train; raises if none is reachable.
         """
         from mimarsinan.spiking.lif_utils import unwrap_lif_activation
 
@@ -160,5 +141,4 @@ class Perceptron(nn.Module):
             out = self.normalization(out)
         if not isinstance(self.scaler, nn.Identity):
             out = self.scaler(out)
-        # (T, B, ...) binary spike train from the unwrapped LIF neuron.
         return lif.forward_spiking(out)

@@ -11,8 +11,6 @@ from mimarsinan.chip_simulation.sanafe.records import SanafeCoreRecord, SanafeEn
 from mimarsinan.mapping.support.core_geometry import used_axons as _used_axons
 from mimarsinan.mapping.support.spike_source_spans import compress_spike_sources
 
-from .constants import _COMPUTE_DTYPE
-
 
 class SanafeSegmentIOMixin:
     """Derive segment spike counts and tile aggregates."""
@@ -44,8 +42,6 @@ class SanafeSegmentIOMixin:
             if getattr(src, "is_off_", False):
                 continue
             if getattr(src, "is_always_on_", False):
-                # Single-spike (cascaded TTFS) bias fires once at the window start;
-                # LIF / every-cycle delivery counts T. Mirror HCM's traffic count.
                 from mimarsinan.chip_simulation.spiking_semantics import is_cascaded_ttfs
 
                 counts[a] = 1 if is_cascaded_ttfs(
@@ -147,11 +143,9 @@ class SanafeSegmentIOMixin:
         hcm: Any,
         T_eff: int,
     ) -> Dict[int, np.ndarray]:
-        """Per-core ramp value per neuron, decoded from fire timing **within the
-        core's own window**: ``(core.latency + 1 + T) − first_fire``, clamped to
-        ``[0, T]`` (0 if silent). Windowing per-source is essential — a global
-        ``T_eff − fire`` overcounts shallow sources by ``(max_latency − latency)``
-        and saturates everything when latency >> T."""
+        """Per-core ramp value per neuron from fire timing within the core's own window:
+        ``(core.latency + 1 + T) − first_fire`` clamped to ``[0, T]`` (0 if silent).
+        Per-source windowing is essential — a global ``T_eff − fire`` overcounts shallow sources."""
         first = self._collect_first_fire_cycles(
             spike_trace, core_to_group=core_to_group, hcm=hcm,
         )
@@ -159,7 +153,7 @@ class SanafeSegmentIOMixin:
         for core_idx, fires in first.items():
             core = hcm.cores[core_idx]
             core_lat = int(getattr(core, "latency", 0) or 0)
-            window_end = core_lat + 1 + int(self.T)  # +1: SANA-FE delivery offset
+            window_end = core_lat + 1 + int(self.T)
             ramp = np.where(
                 fires >= 0,
                 np.clip(window_end - fires, 0, int(self.T)),
@@ -282,7 +276,7 @@ class SanafeSegmentIOMixin:
             return []
         cpt = max(int(self.cores_per_tile), 0)
         if cpt == 0:
-            cpt = len(per_core_records)  # one tile per segment
+            cpt = len(per_core_records)
         geom = self._arch_geometry
         tiles: Dict[int, List[SanafeCoreRecord]] = {}
         for pos, rec in enumerate(per_core_records):

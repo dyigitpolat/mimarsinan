@@ -1,8 +1,5 @@
 from __future__ import annotations
-from typing import Any, Dict, List, Optional, Tuple
-import numpy as np
 from mimarsinan.mapping.layout.layout_ir_mapping import LayoutIRMapping
-from mimarsinan.mapping.layout.layout_types import LayoutSoftCoreSpec
 from mimarsinan.mapping.verification.verifier.mapping_verifier_types import MappingVerificationResult
 def verify_soft_core_mapping(
     model_repr,
@@ -14,25 +11,8 @@ def verify_soft_core_mapping(
 ) -> MappingVerificationResult:
     """Verify that a mapper-graph model representation can be laid out as soft cores.
 
-    Parameters
-    ----------
-    model_repr:
-        A ``ModelRepresentation`` (or any object exposing ``map_to_ir(mapping)``)
-        for a native mimarsinan model, OR the ``mapper_repr`` obtained from a
-        torch-converted flow via ``get_mapper_repr()`` (e.g. ``ConvertedModelFlow``).
-    max_axons:
-        Maximum axon count per hardware core.
-    max_neurons:
-        Maximum neuron count per hardware core.
-    allow_coalescing:
-        If True, enable layout-level axon tiling via coalescing (wide FC
-        layers keep their full width and hardware fuses physical cores).
-    hardware_bias:
-        If True, bias is in a dedicated register, not an always-on axon row.
-
-    Returns
-    -------
-    MappingVerificationResult
+    ``model_repr`` is a native ``ModelRepresentation`` or a torch-converted
+    ``mapper_repr``; returns feasibility plus the collected softcores.
     """
     try:
         layout = LayoutIRMapping(
@@ -56,8 +36,6 @@ def verify_soft_core_mapping(
         )
 
     if not softcores:
-        # Layout only instantiates softcores for NeuralCore nodes. Encoding layers and
-        # many torch-converted modules map to host ComputeOps only; IR is still valid.
         try:
             from mimarsinan.mapping.ir_mapping_class import IRMapping
 

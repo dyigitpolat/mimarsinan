@@ -6,13 +6,11 @@ import os
 
 import torch
 
+from mimarsinan.chip_simulation.test_subsample import compute_test_subsample_indices
+
 
 def test_on_subsample(trainer, *, max_samples: int, seed: int = 0) -> float:
     """Run test over a deterministic subsample of the test set."""
-    from mimarsinan.chip_simulation.test_subsample import (
-        compute_test_subsample_indices,
-    )
-
     try:
         total_samples = len(trainer.data_provider._get_test_dataset())
     except Exception:

@@ -11,14 +11,17 @@ import torch
 
 from mimarsinan.mapping.ir import ComputeOp
 from mimarsinan.mapping.latency.chip import ChipLatency
-from mimarsinan.mapping.packing.hybrid_hardcore_mapping import HybridHardCoreMapping, HybridStage, SegmentIOSlice
+from mimarsinan.mapping.packing.hybrid_hardcore_mapping import HybridHardCoreMapping, SegmentIOSlice
 from mimarsinan.mapping.packing.softcore import HardCoreMapping
 from mimarsinan.chip_simulation.hybrid_run.hybrid_execution import (
     assemble_segment_input_numpy,
     execute_compute_op_numpy,
     gather_final_output_numpy,
+    resolve_stage_compute_scales,
     store_segment_output_numpy,
 )
+from mimarsinan.chip_simulation.hybrid_run.hybrid_stage_runner import run_hybrid_stages
+from mimarsinan.chip_simulation.spiking_semantics import is_analytical_ttfs, requires_ttfs_firing
 from mimarsinan.chip_simulation.nevresim.nevresim_driver import NevresimDriver
 from mimarsinan.chip_simulation.nevresim.segment_execute import run_binary_raw
 from mimarsinan.chip_simulation.simulation_runner.emit import _PreparedSegment, _emit_and_compile_segment
@@ -43,10 +46,7 @@ class SimulationHybridMixin:
     def _prepare_all_segments(
         self, hybrid: HybridHardCoreMapping
     ) -> Dict[int, _PreparedSegment]:
-        """
-        Emit all segment parameters and compile nevresim binaries in parallel.
-        Returns dict mapping segment_idx -> _PreparedSegment.
-        """
+        """Emit all segment params and compile nevresim binaries in parallel (keyed by segment idx)."""
         stages = hybrid.stages
         num_samples = len(self.test_data)
         original_input = np.stack([d[0] for d in self.test_data])
@@ -178,16 +178,12 @@ class SimulationHybridMixin:
         Analytical TTFS returns real-valued activations directly; LIF and cascaded
         ``ttfs_cycle_based`` return spike counts decoded as ``count / T``.
         """
-        from mimarsinan.chip_simulation.spiking_semantics import is_analytical_ttfs
-
         if is_analytical_ttfs(self.spiking_mode):
             return raw
         return raw / max(int(self.simulation_length), 1)
 
     def _run_hybrid(self, hybrid: HybridHardCoreMapping) -> float:
         """Execute a multi-stage hybrid mapping using the state buffer."""
-        from mimarsinan.chip_simulation.spiking_semantics import requires_ttfs_firing
-
         stages = hybrid.stages
         num_samples = len(self.test_data)
         is_ttfs = requires_ttfs_firing(self.spiking_mode)
@@ -197,9 +193,6 @@ class SimulationHybridMixin:
         state_buffer: Dict[int, np.ndarray] = {-2: original_input}
 
         prepared_segments = self._prepare_all_segments(hybrid)
-
-        from mimarsinan.chip_simulation.hybrid_run.hybrid_execution import resolve_stage_compute_scales
-        from mimarsinan.chip_simulation.hybrid_run.hybrid_stage_runner import run_hybrid_stages
 
         seg_counter = 0
 

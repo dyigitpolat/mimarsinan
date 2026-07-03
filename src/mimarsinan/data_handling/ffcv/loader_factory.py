@@ -7,13 +7,13 @@ from typing import Any, Callable
 import torch
 from ffcv.loader import OrderOption
 
-from mimarsinan.data_handling.ffcv.cache import beton_path_for
 from mimarsinan.data_handling.ffcv.loader import IndexedLoader, preload_labels
 from mimarsinan.data_handling.ffcv.pipeline_spec import (
     PipelineSpec,
     SplitSpec,
     normalize_split_name,
 )
+from mimarsinan.data_handling.ffcv.spec_builder import infer_spec, raw_dataset_for
 from mimarsinan.data_handling.ffcv.writer import ensure_beton
 
 
@@ -89,12 +89,9 @@ class FFCVLoaderFactory:
         return self._data_provider_factory.create()
 
     def _provider_spec(self, provider) -> PipelineSpec:
-        from mimarsinan.data_handling.ffcv.spec_builder import infer_spec
         return infer_spec(provider)
 
     def _loader(self, provider, split: str, batch_size: int) -> IndexedLoader:
-        from mimarsinan.data_handling.ffcv.spec_builder import raw_dataset_for
-
         spec = self._provider_spec(provider)
         split_norm = normalize_split_name(split)
         ds_factory = lambda: raw_dataset_for(provider, split_norm)

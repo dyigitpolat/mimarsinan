@@ -1,27 +1,4 @@
-"""SANA-FE soma attribute mapping for ``SubtractiveLIFReset`` parity.
-
-SANA-FE 2.1.1's ``leaky_integrate_fire`` soma model exposes the knobs we
-need to reproduce mimarsinan's ``SubtractiveLIFReset`` semantics:
-
-* ``leak_decay: 1.0``          — no decay (the soma keeps voltage
-                                  across timesteps; equivalent to dv=0).
-* ``reset_mode: "soft"``       — subtractive reset by the threshold.
-* ``reset: 0.0``               — reset target voltage (unused for soft
-                                  reset but required to be present).
-* ``threshold: <float>``       — firing threshold.
-* ``bias: <float>``            — optional per-neuron bias added each
-                                  timestep.
-
-Active-window gating is handled host-side at the input layer (only
-inject spikes during the active window); with ``leak_decay=1.0`` the
-soma voltage is preserved through zero-input cycles, so soma- and
-input-side gating are equivalent.
-
-Why no ``needs_plugin()``: SANA-FE 2.1.1's built-in soma covers
-everything Strategy A targeted in the plan.  The custom-plugin escape
-hatch is documented in the sub-package ARCHITECTURE.md as the path to
-take if a future SANA-FE release drops one of these knobs.
-"""
+"""SANA-FE soma attribute mapping for ``SubtractiveLIFReset`` parity."""
 
 from __future__ import annotations
 
@@ -45,21 +22,10 @@ def lif_model_attributes(
     active_length: Optional[int] = None,
     firing_mode: str = "Default",
 ) -> dict:
-    """Build the ``model_attributes`` dict for a regular LIF neuron.
+    """``model_attributes`` reproducing ``SubtractiveLIFReset`` (no leak, subtractive reset).
 
-    The returned dict reproduces ``SubtractiveLIFReset`` exactly: no
-    leak, subtractive reset, configurable strict-` <` firing comparator
-    (SANA-FE's ``leaky_integrate_fire`` uses strict ` <` by default).
-
-    ``active_start`` / ``active_length`` are optional per-core gating
-    cycles (0-based).  When the runner pads simulation length to
-    ``T + max_latency`` to flush multi-depth cascades, each core's
-    soma must only integrate during ``[core.latency, T + core.latency)``
-    — exactly the window HCM's ``_run_neural_segment_rate`` accumulates
-    into ``record_in_t`` / ``record_out_t``.  Leaving them unset
-    (``None``) keeps the neuron active for the entire simulation,
-    preserving the pre-window default for tests built before the gate
-    existed.
+    ``active_start``/``active_length`` gate the soma to ``[core.latency, T+core.latency)``
+    (the window HCM records into); ``None`` keeps it active the whole simulation.
     """
     reset_mode = FiringStrategyFactory.from_config(
         {

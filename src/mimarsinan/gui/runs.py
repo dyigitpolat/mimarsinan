@@ -8,18 +8,14 @@ import re
 from pathlib import Path
 from typing import Any
 
-from mimarsinan.gui.runtime.persistence import load_persisted_steps, load_live_metrics, load_console_logs
+from mimarsinan.gui.runtime.persistence import load_persisted_steps, load_console_logs
 from mimarsinan.gui.snapshot.rebuild import rebuild_step_snapshot_from_disk
 
 _SAFE_ID_RE = re.compile(r"^[A-Za-z0-9_\-]+$")
 
 
 def suggest_resume_step(ordered_steps: list[str], completed_steps: set[str]) -> str | None:
-    """Return the first step in canonical order that has not been completed, or None if all are complete.
-
-    This is the server-side equivalent of the edit-continue resume hint logic
-    that the wizard frontend uses to pre-select a restart point.
-    """
+    """Return the first step in canonical order that is not yet completed, or None if all are complete."""
     for step in ordered_steps:
         if step not in completed_steps:
             return step
@@ -97,8 +93,7 @@ def get_run_pipeline(run_id: str) -> dict[str, Any] | None:
     if not steps_data:
         return None
     config = get_run_config(run_id) or {}
-    # config.json stores the full outer config; pipeline specs expect the flat
-    # deployment_parameters dict (same structure as pipeline.config).
+    # config.json stores the full outer config; pipeline specs expect the flat deployment_parameters dict.
     flat_config = config.get("deployment_parameters", config)
     try:
         from mimarsinan.pipelining.core.pipelines.deployment_pipeline import (

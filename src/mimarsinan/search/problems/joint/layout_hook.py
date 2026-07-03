@@ -2,16 +2,19 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import torch
+from torch.nn.parameter import UninitializedParameter
 
 from mimarsinan.mapping.layout.layout_ir_mapping import LayoutIRMapping
 from mimarsinan.mapping.layout.layout_types import LayoutHardCoreType, LayoutSoftCoreSpec
 from mimarsinan.mapping.platform.coalescing import normalize_coalescing_config
 from mimarsinan.mapping.platform.mapping_structure import ChipCapabilities
+from mimarsinan.mapping.platform.platform_constraints import resolve_platform_mapping_params
 from mimarsinan.mapping.verification.layout_verification_scheduling import compute_mapping_stats
+from mimarsinan.torch_mapping.converter import convert_torch_model
 
 from .types import HwOnlyCache
 
@@ -28,8 +31,6 @@ class JointLayoutMixin:
             {**pcfg, "target_tq": int(self.target_tq)},
         )
         model = builder.build(model_config).to(self.device)
-
-        from torch.nn.parameter import UninitializedParameter
 
         model.eval()
         with torch.no_grad():
@@ -50,8 +51,6 @@ class JointLayoutMixin:
         """Convert via torch mapping if the model lacks ``get_mapper_repr``."""
         if hasattr(model, "get_mapper_repr"):
             return model
-        from mimarsinan.torch_mapping.converter import convert_torch_model
-
         return convert_torch_model(
             model,
             input_shape=tuple(self.input_shape),
@@ -72,8 +71,6 @@ class JointLayoutMixin:
         pcfg: Dict,
     ) -> Tuple[List[LayoutSoftCoreSpec], int]:
         """Collect layout softcores and host-side segment count from model."""
-        from mimarsinan.mapping.platform.platform_constraints import resolve_platform_mapping_params
-
         cores = pcfg["cores"]
         pmap = resolve_platform_mapping_params(
             cores,

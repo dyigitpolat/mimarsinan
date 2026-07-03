@@ -1,6 +1,3 @@
-# regions: 2, 8
-# center: -0.15, 0.15
-# exp: 0.5, 2
 def get_region_borders(regions, center, exp, length):
     if(regions == 1):
         return [0, length]

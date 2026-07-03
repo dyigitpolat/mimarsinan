@@ -12,10 +12,8 @@ NodeScale = float | np.ndarray
 def _coerce_node_scale(raw) -> NodeScale | None:
     """Normalize a raw activation_scale to a scalar float or a per-channel vector.
 
-    A scalar (0-D tensor, Python number) or a 1-element tensor collapses to
-    ``float`` so the scalar path stays byte-identical; a multi-element 1-D
-    ``activation_scale`` (a ``ttfs_theta_cotrain`` per-output-channel theta) is
-    surfaced as a contiguous ``float64`` vector. ``None`` when not derivable.
+    A scalar / 1-element scale collapses to ``float`` (byte-identical scalar path);
+    a multi-element 1-D scale surfaces as a contiguous ``float64`` vector.
     """
     if raw is None:
         return None
@@ -56,12 +54,8 @@ def _scalar_node_scale(scale: NodeScale) -> float:
 def _aggregate_source_scales(src_scales: list[NodeScale]) -> float:
     """Combine ComputeOp input-source scales into one scalar rescale factor.
 
-    A ComputeOp rescales its gathered input by ``in_scale`` and divides its
-    output by ``out_scale`` (equal for a value-preserving pool/mean), so the
-    factor cancels only when it is a single consistent scalar — the legacy
-    ``sum / len`` mean. Per-channel (``ttfs_theta_cotrain``) source scales reduce
-    to their own mean before that aggregation, so the all-scalar path stays
-    byte-identical while a per-channel source never crashes the cast.
+    Per-channel source scales reduce to their own mean first; the all-scalar
+    path stays byte-identical to the legacy ``sum / len`` mean.
     """
     if not src_scales:
         return 1.0

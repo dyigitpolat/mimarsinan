@@ -26,7 +26,6 @@ def get_ntk(input_data, network, device, recalbn=0, train_mode=False, num_batch=
     network.eval()
     network.to(device)
 
-    ######
     grads = [[]]
     network.zero_grad()
     logit = network(input_data)
@@ -41,7 +40,6 @@ def get_ntk(input_data, network, device, recalbn=0, train_mode=False, num_batch=
                 grad.append(W.grad.view(-1).to(device))
         grads[0].append(torch.cat(grad, -1).to(device))
         network.zero_grad()
-    ######
     grads = [torch.stack(_grads, 0) for _grads in grads]
     ntks = [torch.einsum('nc,mc->nm', [_grads, _grads]) for _grads in grads]
     conds = []

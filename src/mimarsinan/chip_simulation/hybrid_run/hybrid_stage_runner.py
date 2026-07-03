@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, Optional
 
@@ -63,8 +64,6 @@ def run_hybrid_stages(
 
 
 def _invoke_cb(cb: Callable, ctx: HybridStageContext) -> None:
-    import inspect
-
     sig = inspect.signature(cb)
     params = list(sig.parameters.values())
     if not params:

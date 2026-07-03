@@ -10,6 +10,8 @@ import torch
 from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory
 from mimarsinan.chip_simulation.behavior_config import NeuralBehaviorConfig
 from mimarsinan.chip_simulation.deployment_contract import SpikingDeploymentContract
+from mimarsinan.chip_simulation.recording.spike_recorder import compare_records, format_first_diff
+from mimarsinan.chip_simulation.ttfs.ttfs_executor import run_ttfs_hybrid_contract
 from mimarsinan.mapping.packing.hybrid_hardcore_mapping import (
     build_hybrid_hard_core_mapping,
     build_identity_hybrid_mapping,
@@ -19,9 +21,11 @@ from mimarsinan.mapping.platform.mapping_structure import (
     ChipCapabilities,
     MappingStrategy,
 )
+from mimarsinan.mapping.support.neg_shift_bias import propagate_negative_shifts_to_hybrid
 from mimarsinan.model_training.basic_trainer import BasicTrainer
 from mimarsinan.models.spiking.hybrid.flow import SpikingHybridCoreFlow
 from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
+from mimarsinan.spiking.lif_utils import apply_cycle_accurate_trains_to_model
 
 
 def build_neural_behavior_config(pipeline) -> NeuralBehaviorConfig:
@@ -46,12 +50,8 @@ def build_hybrid_mapping_for_pipeline(
         cores_config=platform_constraints["cores"],
         strategy=strategy,
     )
-    # Install negative-value shifts carried on the IR ComputeOps (no-op when none).
-    from mimarsinan.mapping.support.neg_shift_bias import propagate_negative_shifts_to_hybrid
-
     propagate_negative_shifts_to_hybrid(ir_graph, hybrid_mapping)
-    # Provenance stamp: lets cached copies be detected as stale when the
-    # ir_graph is regenerated (e.g. a resumed run).
+    # Provenance stamp for staleness detection when the ir_graph is regenerated.
     hybrid_mapping.source_ir_build_token = getattr(ir_graph, "build_token", None)
     return hybrid_mapping
 
@@ -81,8 +81,6 @@ def build_spiking_hybrid_flow(
         ttfs_cycle_schedule=contract.ttfs_cycle_schedule,
     )
     if plan.cycle_accurate_lif_forward and model is not None:
-        from mimarsinan.spiking.lif_utils import apply_cycle_accurate_trains_to_model
-
         apply_cycle_accurate_trains_to_model(model, True)
     return flow.to(cfg["device"])
 
@@ -95,8 +93,6 @@ def build_identity_mapping_for_pipeline(
     """1:1 NeuralCore→HardCore mapping with the same wire effects as the packed
     build (negative-value shifts propagated)."""
     identity_mapping = build_identity_hybrid_mapping(ir_graph=ir_graph)
-    from mimarsinan.mapping.support.neg_shift_bias import propagate_negative_shifts_to_hybrid
-
     propagate_negative_shifts_to_hybrid(ir_graph, identity_mapping)
     return identity_mapping
 
@@ -121,14 +117,7 @@ def run_trainer_metric(
             trainer.set_test_batch_size(
                 min(int(trainer.test_batch_size), int(max_batch_cap))
             )
-        # The deployment accuracy metric must be evaluated on the SAME test set as
-        # its torch reference (the NF step's full-set ``trainer.test()``); otherwise
-        # comparing a full-set NF number to a small ``max_simulation_samples``
-        # subsample manufactures a spurious "NF↔SCM drop" that is pure sampling
-        # variance (the sim is bit-exact to the torch cascade per-sample — see the
-        # torch↔deployed-sim parity check). Default to the full test set so the
-        # reported deployed accuracy is honest and comparable; ``max_simulation_samples``
-        # only subsamples when ``deployment_metric_full_eval`` is explicitly off.
+        # Evaluate on the SAME (full) test set as the torch reference; a subsample-vs-full-set comparison manufactures spurious NF↔SCM drop.
         plan = DeploymentPlan.of(pipeline)
         max_samples = 0 if plan.deployment_metric_full_eval else plan.max_simulation_samples
         if max_samples > 0:
@@ -201,8 +190,6 @@ def record_ttfs_hcm_reference(
     sample_index: int = 0,
 ):
     """Build HCM TTFS reference ``TtfsRunRecord`` for one sample (B=1)."""
-    from mimarsinan.chip_simulation.ttfs.ttfs_executor import run_ttfs_hybrid_contract
-
     if sample.shape[0] != 1:
         raise ValueError("record_ttfs_hcm_reference requires batch_size == 1")
 
@@ -356,8 +343,6 @@ def run_scm_identity_metric(
 
 def assert_spike_parity_or_raise(ref, actual) -> None:
     """Raise ``AssertionError`` with ``format_first_diff`` when records diverge."""
-    from mimarsinan.chip_simulation.recording.spike_recorder import compare_records, format_first_diff
-
     diffs = compare_records(ref, actual)
     if diffs:
         raise AssertionError(format_first_diff(diffs))

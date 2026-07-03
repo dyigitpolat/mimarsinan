@@ -5,19 +5,13 @@ from mimarsinan.models.nn.layers import SavedTensorDecorator, TransformedActivat
 
 import torch
 
-# Epsilon below which activations are treated as pruned (zero) and excluded.
 PRUNED_THRESHOLD = 1e-9
 DEFAULT_SCALE_QUANTILE = 0.99
 MIN_SCALE = 1e-6
 MIN_ANALYSIS_BATCHES = 2
 MAX_ANALYSIS_BATCHES = 32
 MAX_SAMPLES_PER_BATCH = 8192
-# The SavedTensorDecorator stores a reference to every perceptron's full
-# forward-pass output tensor simultaneously. On large-input backbones
-# (e.g. ViT-B/16 at 224x224) this snowballs: ~12 encoder blocks with
-# several perceptrons each * batch * seq_len * hidden_dim easily exceeds
-# 20 GiB when the training batch size is carried over. Cap the batch
-# here so the step stays memory-safe regardless of the training recipe.
+# Cap the analysis batch: per-perceptron saved-tensor decorators pin every full output tensor in VRAM and OOM on large-input backbones (e.g. ViT-B/16).
 ANALYSIS_BATCH_SIZE_CAP = 16
 
 
@@ -49,11 +43,7 @@ def scale_from_activations(
     quantile=DEFAULT_SCALE_QUANTILE,
     min_scale=MIN_SCALE,
 ):
-    """Compute a count-based activation quantile over positive activations.
-
-    Only non-pruned activations (above pruned_threshold) are included so that
-    post-pruning statistics are not skewed and clamping does not over-degrade.
-    """
+    """Count-based activation quantile over non-pruned positives, so post-pruning stats stay unskewed."""
     active_mask = flat_acts > pruned_threshold
     active_acts = flat_acts[active_mask]
 
@@ -123,10 +113,8 @@ def _activation_scale_stats(
 def _attach_saved_tensor_decorator(perceptron):
     """Attach a sampling ``SavedTensorDecorator`` and return a cleanup callback.
 
-    ``sample_to_cpu=True`` pushes the subsampling + CPU transfer into the
-    decorator itself so the GPU activation is released immediately after
-    ``output_transform`` runs -- essential to avoid OOM when attaching
-    decorators to every perceptron of a large-input backbone.
+    ``sample_to_cpu`` subsamples + moves to CPU inside the decorator so the GPU
+    activation frees immediately (avoids OOM on large-input backbones).
     """
     decorator = SavedTensorDecorator(sample_to_cpu=True, max_samples=MAX_SAMPLES_PER_BATCH)
     activation = perceptron.activation
@@ -158,11 +146,6 @@ class ActivationAnalysisStep(TrainerPipelineStep):
         model = self.get_entry("model")
         self.trainer = make_basic_trainer(self.pipeline, model)
 
-        # Shrink the validation batch below the pipeline default for this
-        # step only: decorators pin every perceptron's full output tensor
-        # in VRAM until after the forward pass completes. An explicit
-        # ``activation_analysis_batch_size`` override wins; otherwise cap
-        # at ANALYSIS_BATCH_SIZE_CAP. Never upsize.
         override = self.pipeline.config.get("activation_analysis_batch_size")
         current_val_bs = self.trainer.validation_batch_size
         target_bs = int(override) if override else min(current_val_bs, ANALYSIS_BATCH_SIZE_CAP)
@@ -201,11 +184,7 @@ class ActivationAnalysisStep(TrainerPipelineStep):
             for cleanup in reversed(cleanup_callbacks):
                 cleanup()
 
-        # The per-perceptron activation_scale is both the LIF/TTFS decode scale AND
-        # the clamp ceiling: the top (1-q) of every layer's activations is clipped
-        # down to the q quantile — a systematic, S-independent downward bias. Expose
-        # the quantile so it can be raised toward 1.0 to trade rate-resolution for
-        # less saturation clipping (default 0.99 = byte-identical to the prior path).
+        # activation_scale is BOTH the LIF/TTFS decode scale and the clamp ceiling, so raising the quantile toward 1.0 trades rate-resolution for less saturation clipping.
         quantile = float(
             self.pipeline.config.get("activation_scale_quantile", DEFAULT_SCALE_QUANTILE)
         )

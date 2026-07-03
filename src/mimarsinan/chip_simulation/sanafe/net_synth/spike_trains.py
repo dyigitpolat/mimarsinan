@@ -11,8 +11,6 @@ from mimarsinan.chip_simulation.sanafe.neuron_model import (
 )
 from mimarsinan.mapping.support.core_geometry import used_neurons as _used_neurons
 
-# Per-sample spike-train injection used by the runner
-
 
 def set_input_spike_trains(
     core_input_neurons: Dict[Tuple[int, int], Any],
@@ -21,14 +19,8 @@ def set_input_spike_trains(
 ) -> None:
     """Inject spike trains into every per-core input neuron.
 
-    For each ``(core_idx, axon_idx) → neuron`` entry in
-    ``core_input_neurons``, looks up the axon's logical input index
-    ``k = hcm.cores[core_idx].axon_sources[axon_idx].neuron_`` and feeds
-    the row ``encoded[0, k, :]`` as the neuron's ``spikes`` attribute.
-
-    ``encoded`` is the ``(1, seg_in_size, T)`` binary tensor produced by
-    ``uniform_rate_encode``.  Multiple per-core input neurons sharing the
-    same logical index ``k`` get the same spike train.
+    Feeds ``encoded[0, k, :]`` (the ``(1, seg_in_size, T)`` binary tensor) to the
+    neuron for axon logical index ``k``; per-core copies of ``k`` share the train.
     """
     for (core_idx, axon_idx), neuron in core_input_neurons.items():
         src = hcm.cores[core_idx].axon_sources[axon_idx]
@@ -49,17 +41,10 @@ def set_always_on_spike_trains(
     spiking_mode: str = "lif",
     core_latencies: Dict[int, int] | None = None,
 ) -> None:
-    """Inject always-on (bias) input spikes.
+    """Inject always-on (bias) input spikes as a per-timestep binary mask.
 
-    ``"spikes"`` is a per-timestep binary mask (1 = fire that cycle). rate/LIF:
-    fire every cycle. Single-spike TTFS: one spike placed so it lands at the
-    consuming core's gated window start. The soma gates cycles before
-    ``active_start = core_latency + 1`` and SANA-FE delivers an input spike one
-    cycle after emission, so a spike emitted at mask position ``core_latency``
-    arrives exactly at ``active_start`` — a latency>=1 core then integrates its
-    bias instead of having a cycle-0 spike gated out. When ``core_latencies`` is
-    omitted (analytical/synchronized TTFS, which bias via preset membranes) the
-    legacy cycle-0 spike is kept.
+    rate/LIF fire every cycle; single-spike TTFS places one spike at ``core_latency``
+    so SANA-FE's one-cycle input delay lands it at the soma's gated ``active_start``.
     """
     from mimarsinan.chip_simulation.spiking_semantics import requires_ttfs_firing
 
@@ -139,9 +124,8 @@ def set_ttfs_input_spike_trains(
 ) -> None:
     """Inject latched TTFS spike times from segment input rates ``(1, D)``.
 
-    Used by ``ttfs``/``ttfs_quantized`` (which also inject preset membranes).
-    ``ttfs_cycle_based`` instead uses the binary single-spike train via
-    :func:`set_input_spike_trains` so the spike *timing* reaches the genuine soma.
+    Used by ``ttfs``/``ttfs_quantized``; ``ttfs_cycle_based`` instead injects the
+    binary single-spike train so the spike *timing* reaches the genuine soma.
     """
     from mimarsinan.chip_simulation.ttfs.ttfs_encoding import ttfs_input_spike_times_1based
 

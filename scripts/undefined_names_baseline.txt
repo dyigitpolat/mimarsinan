@@ -1,19 +1,2 @@
 # One entry per line: relative/path.py:lineno: SymbolName
 # Regenerate: python scripts/check_undefined_names.py --update-baseline
-src/mimarsinan/chip_simulation/sanafe/records/run.py:193: TtfsRunRecord
-src/mimarsinan/chip_simulation/sanafe/records/run.py:244: TtfsRunRecord
-src/mimarsinan/chip_simulation/sanafe/records/run.py:250: TtfsRunRecord
-src/mimarsinan/chip_simulation/sanafe/records/run.py:256: TtfsRunRecord
-src/mimarsinan/config_schema/display_view_build.py:156: Tuple
-src/mimarsinan/mapping/ir/graph.py:72: Iterable
-src/mimarsinan/mapping/ir/types.py:119: IRGraph
-src/mimarsinan/mapping/layout/layout_ir_mapping_finalize.py:75: List
-src/mimarsinan/mapping/layout/layout_source_view_ops.py:34: Sequence
-src/mimarsinan/mapping/layout/layout_source_view_ops.py:72: Sequence
-src/mimarsinan/mapping/verification/verifier/mapping_verifier_types.py:10: LayoutSoftCoreSpec
-src/mimarsinan/models/perceptron_mixer/skip_perceptron_mixer.py:157: torch
-src/mimarsinan/models/perceptron_mixer/skip_perceptron_mixer.py:176: torch
-src/mimarsinan/models/spiking/hybrid/stage_io.py:133: SpikeSourceSpan
-src/mimarsinan/models/spiking/hybrid/stage_io.py:64: decref_consumers
-src/mimarsinan/models/spiking/hybrid/stage_io.py:85: spike_modes
-src/mimarsinan/visualization/graphviz/hybrid_segment_dots.py:69: write_hardcore_mapping_dot

@@ -19,12 +19,7 @@ class TorchMLPMixerCoreBuilder:
         self.pipeline_config = pipeline_config
 
     def build(self, configuration):
-        # The wizard's ``_buildHwApiBody`` may fire a layout probe before the
-        # model_config form has rendered (async schema load), in which case
-        # ``configuration`` arrives without the architecture keys. Fall back
-        # to the schema defaults so the probe produces a valid layout
-        # instead of raising a KeyError. All user-facing paths (template
-        # load, explicit run) populate the full dict before calling build.
+        # A layout probe can fire before the config form renders (async schema load), so configuration may lack architecture keys.
         schema_defaults = {f["key"]: f.get("default") for f in self.get_config_schema()}
         cfg = {**schema_defaults, **(configuration or {})}
         return TorchMLPMixerCore(

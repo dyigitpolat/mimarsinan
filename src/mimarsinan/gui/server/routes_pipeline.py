@@ -10,6 +10,15 @@ from typing import TYPE_CHECKING
 from fastapi import FastAPI, Request, Response, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 
+from mimarsinan.gui.runs import (
+    list_runs,
+    get_run_config,
+    get_run_pipeline,
+    get_run_step_detail as hist_step_detail,
+    get_run_console_logs,
+)
+from mimarsinan.gui.runtime.active_run_hub import ActiveRunHub
+from mimarsinan.gui.runtime.persistence import load_console_logs
 from mimarsinan.gui.server.json_safe import SafeJSONResponse
 
 if TYPE_CHECKING:
@@ -25,15 +34,6 @@ def register_routes(
     collector: "DataCollector",
     process_manager: "ProcessManager | None",
 ) -> None:
-    from mimarsinan.gui.runs import (
-        list_runs,
-        get_run_config,
-        get_run_pipeline,
-        get_run_step_detail as hist_step_detail,
-        get_run_console_logs,
-    )
-    from mimarsinan.gui.runtime.persistence import load_console_logs
-
     @app.get("/api/pipeline")
     def pipeline_overview():
         return collector.get_pipeline_overview()
@@ -160,8 +160,6 @@ def register_routes(
             collector.remove_ws_listener(ws)
 
     if process_manager is not None:
-        from mimarsinan.gui.runtime.active_run_hub import ActiveRunHub
-
         def _active_overview(run_id: str):
             try:
                 return process_manager.get_run_detail(run_id)

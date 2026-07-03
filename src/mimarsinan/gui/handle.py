@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
+import json as _json
 import logging
 import sys
 import time
 from typing import Any
 
 from mimarsinan.gui.reporter import GUIReporter
-from mimarsinan.gui.resources import ResourceStore
 from mimarsinan.gui.runtime.collector import DataCollector
 from mimarsinan.gui.runtime.persistence import (
     append_console_log,
@@ -176,7 +176,6 @@ class GUIHandle:
                             bytes(payload), media_type=desc.media_type,
                         )
                 elif desc.media_type == "application/json":
-                    import json as _json
                     try:
                         encoded = _json.dumps(payload).encode("utf-8")
                     except (TypeError, ValueError):

@@ -22,16 +22,10 @@ def _conv_output_size(size: int, kernel_size: int, stride: int, padding: int) ->
 
 
 class LeNet5(nn.Module):
-    """Classic LeNet-5: Conv(1->6,k5)->act->pool->Conv(6->16,k5)->act->pool->FC120->act->FC84->act->FC.
+    """Classic LeNet-5: two k5 conv+pool stages then FC120 -> FC84 -> FC, adapted to input_shape.
 
-    Pipeline-native: uses only on-chip-or-structural ops (Conv2d, ReLU, MaxPool2d, Linear).
-    No grouped/depthwise convolutions. Input channels and the flattened FC size are
-    derived from ``input_shape`` so the model adapts to e.g. MNIST 1x28x28.
-
-    The k5 convs use ``padding=2`` (SAME): this is the canonical "pad the 28x28 MNIST
-    image so the k5 stages fit" framing, and it keeps the second multi-channel conv on
-    the mappable (padded) path — valid (no-pad) multi-channel convs hit a LayoutSourceView
-    symbolic-index limitation in the soft-core mapper.
+    Pipeline-native ops only (Conv2d, ReLU, MaxPool2d, Linear); the k5 convs use SAME padding=2
+    so the second multi-channel conv stays on the mapper's padded path.
     """
 
     def __init__(

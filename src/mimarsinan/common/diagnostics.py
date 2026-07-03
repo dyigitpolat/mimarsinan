@@ -1,9 +1,4 @@
-"""CUDA debugging helpers.
-
-Enabled on-demand via ``--debug`` on ``run.py`` or ``cuda_debug: true`` in a
-deployment config. All entry points are no-ops when CUDA is unavailable or
-debug mode is off, so importing this module has no cost on the hot path.
-"""
+"""CUDA debugging helpers; all entry points are no-ops when CUDA is unavailable or debug mode is off."""
 
 from __future__ import annotations
 
@@ -17,9 +12,8 @@ import traceback
 def enable_cuda_debug() -> None:
     """Set the env vars that force synchronous CUDA kernel launches.
 
-    Must be called before any CUDA context is created: once a kernel has
-    launched, ``CUDA_LAUNCH_BLOCKING`` is effectively ignored. ``run.py``
-    calls this before importing ``mimarsinan``.
+    Must be called before any CUDA context is created, else ``CUDA_LAUNCH_BLOCKING``
+    is effectively ignored.
     """
     os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
     os.environ["TORCH_USE_CUDA_DSA"] = "1"
@@ -62,11 +56,8 @@ def _rss_mib() -> float:
 def phase_profiler(tag: str, name: str, *, sink=None):
     """Time a block and print peak CPU RSS delta + CUDA peak allocation.
 
-    Intended for instrumenting large pipeline steps so the dominant sub-phase
-    is self-identifying. ``tag`` is a prefix shown in the log line (e.g. the
-    step name); ``name`` is the sub-phase label. ``sink`` is an optional
-    callable that receives the fully-formatted line; when ``None`` the line
-    is printed.
+    ``sink`` is an optional callable that receives the formatted line; when
+    ``None`` the line is printed.
     """
     import torch
 
@@ -105,12 +96,8 @@ def phase_profiler(tag: str, name: str, *, sink=None):
 
 @contextlib.contextmanager
 def cuda_guard(name: str, *, enabled: bool = True):
-    """Bracket a block of work with ``torch.cuda.synchronize()`` calls.
-
-    When a CUDA assertion trips inside ``name``, the post-sync will raise at
-    the boundary rather than later in an unrelated kernel, so tracebacks
-    actually point at the offending step. On exception, prints ``name`` and
-    a short memory summary before re-raising.
+    """Bracket a block with ``torch.cuda.synchronize()`` so a CUDA assertion raises
+    at the boundary (accurate traceback) instead of in a later unrelated kernel.
     """
     import torch
 

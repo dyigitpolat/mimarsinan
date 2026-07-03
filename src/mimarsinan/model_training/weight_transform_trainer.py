@@ -60,9 +60,6 @@ class WeightTransformTrainer(BasicTrainer):
         return optimizer, scheduler, torch.amp.GradScaler("cuda")
 
     def _get_optimizer_and_scheduler_steps(self, lr, total_steps: int, *, constant_lr: bool = False):
-        # ``tuning_recipe_recovery`` routes the STEP recovery through the recipe
-        # (over the aux model) regardless of ``constant_lr``; the discovered LR is
-        # the peak. The historical ``not constant_lr`` recipe routing is preserved.
         if self._recipe_step_recovery_enabled():
             optimizer = self._build_recipe_step_optimizer(lr)
             scheduler = self._build_recipe_step_scheduler(optimizer, total_steps)

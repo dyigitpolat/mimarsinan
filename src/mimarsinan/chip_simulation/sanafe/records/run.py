@@ -1,26 +1,14 @@
-"""SANA-FE run-record dataclasses.
-
-These records carry SANA-FE's *full* output for a single sample — per-tile
-and per-core energy breakdowns, latency (``sim_time``), NoC packet counts,
-optional per-neuron spike + potential traces, and the spike-count subset
-that overlaps with HCM's ``spike_recorder.RunRecord``.
-
-Why our own record types
-------------------------
-HCM's ``RunRecord`` is a spike-count-only shape sized for the diff-based
-parity gate.  SANA-FE produces a richer, multi-dimensional output; bolting
-the rich fields onto ``RunRecord`` would mix two simulators' contracts.
-Instead, we keep the rich record native to SANA-FE and expose a single
-lossless projection — :meth:`SanafeRunRecord.to_hcm_subset` — to bridge
-back to the HCM shape when the parity gate runs.
-"""
+"""SANA-FE run-record dataclasses."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 import numpy as np
+
+if TYPE_CHECKING:
+    from mimarsinan.chip_simulation.ttfs.ttfs_recorder import TtfsRunRecord
 
 from mimarsinan.chip_simulation.recording.spike_recorder import (
     CoreSpikeCounts,
@@ -44,11 +32,7 @@ from mimarsinan.chip_simulation.sanafe.records.hardware import (
 class SanafeCoreDiff:
     """Per-core parity-gate delta (HCM expected vs SANA-FE actual).
 
-    Only populated when ``sanafe_simulation_step`` ran with parity
-    checking on and the diff was non-empty; otherwise the floorplan
-    diff overlay is disabled.  ``input_delta`` and ``output_delta``
-    are absolute deltas; positive means SANA-FE over-reported, negative
-    means under-reported.
+    Deltas are absolute: positive means SANA-FE over-reported, negative under.
     """
 
     core_index: int
@@ -73,53 +57,36 @@ class SanafeSegmentRecord:
     neurons_updated: int
     neurons_fired: int
 
-    # Parity-gate fields ------------------------------------------------------
-    seg_input_rates: np.ndarray            # (1, seg_in_size) float32
-    seg_input_spike_count: np.ndarray      # (seg_in_size,) int64
-    seg_output_spike_count: np.ndarray     # (seg_out_size,) int64
+    seg_input_rates: np.ndarray
+    seg_input_spike_count: np.ndarray
+    seg_output_spike_count: np.ndarray
     per_core: List[SanafeCoreRecord] = field(default_factory=list)
 
-    # Rich-only fields --------------------------------------------------------
     per_tile: List[SanafeTileRecord] = field(default_factory=list)
     per_neuron_spike_counts: Optional[np.ndarray] = None
-    per_neuron_spike_trace: Optional[np.ndarray] = None       # (n_neurons, T)
-    per_neuron_potential_trace: Optional[np.ndarray] = None   # (n_neurons, T)
+    per_neuron_spike_trace: Optional[np.ndarray] = None
+    per_neuron_potential_trace: Optional[np.ndarray] = None
     message_trace: Optional[List[Dict[str, Any]]] = None
-    # GUI floorplan + NoC overlay ---------------------------------------------
     arch_geometry: Optional["SanafeArchGeometry"] = None
     noc_links: List["SanafeNocLink"] = field(default_factory=list)
-    # NoC link-level congestion (per single mesh edge, XY-routed).
     noc_link_load: List["SanafeNocLinkLoad"] = field(default_factory=list)
-    # Reconstructed per-cycle energy breakdown for the waterfall chart.
     cycle_energy: List["SanafeCycleEnergyPoint"] = field(default_factory=list)
-    # Per-(cycle, depth) firing counts for the cascade-timeline view.
     cascade: List["SanafeCascadePoint"] = field(default_factory=list)
-    # Per-cycle critical-core series for the critical-core highlight.
     critical_cores: List["SanafeCriticalCore"] = field(default_factory=list)
-    # Static connectivity edges (independent of activity) for the overlay.
     connectivity: List["SanafeConnectivityEdge"] = field(default_factory=list)
-    # Optional HCM↔SF parity-gate deltas, attached by the pipeline step.
     hcm_diff: List["SanafeCoreDiff"] = field(default_factory=list)
-    # TTFS contract layer: TtfsAnalyticalExecutor on segment inputs (no SANA-FE core).
     contract_ttfs_cores: List[Any] = field(default_factory=list)
     contract_ttfs_seg_output: Optional[np.ndarray] = None
-    # Per-cycle compact NoC traffic for the animated playback view.
-    # Each cycle is a list of ``[src_x, src_y, dst_x, dst_y, count]``;
-    # empty when ``log_message_trace=False``.
     noc_traffic_per_cycle: List[List[List[int]]] = field(default_factory=list)
-    # Per-cycle packet count per destination tile_index (intra+inter); GUI playback fallback.
     tile_packets_per_cycle: List[Dict[int, int]] = field(default_factory=list)
-    # Message-trace taxonomy (non-placeholder events only).
     inter_tile_packets: int = 0
     intra_tile_packets: int = 0
     input_path_packets: int = 0
     cross_tile_connectivity_edges: int = 0
-    # Spike-trace diagnostics (chip aggregate vs attributed LIF / input groups).
     chip_spike_count: int = 0
     lif_spike_count: int = 0
     spike_trace_parse_skipped: int = 0
     spike_capture_warning: Optional[str] = None
-    # Expected vs observed NoC / TTFS activity (segment-level diagnostics).
     mapped_cross_tile_axons: int = 0
     ttfs_contract_active_cores: int = 0
     ttfs_hardware_active_cores: int = 0
@@ -152,9 +119,8 @@ class SanafeRunRecord:
     def to_hcm_subset(self) -> RunRecord:
         """Project to ``spike_recorder.RunRecord`` for parity diffing.
 
-        Drops energy, latency, NoC and trace fields; preserves the spike-count
-        layers (segment input / per-core input / per-core output / segment
-        output) plus the bookkeeping fields the diff cause-suggestion uses.
+        Drops energy/latency/NoC/trace fields; keeps the spike-count layers plus
+        the bookkeeping fields the diff cause-suggestion uses.
         """
         out = RunRecord(sample_index=self.sample_index, T=self.T)
         for stage_index, seg in self.segments.items():
@@ -180,7 +146,6 @@ class SanafeRunRecord:
                     for c in seg.per_core
                 ],
             )
-        # compute_outputs flow through verbatim (host-side ComputeOp outputs).
         for k, v in self.compute_outputs.items():
             out.compute_outputs[k] = v
         return out
@@ -193,7 +158,7 @@ class SanafeRunRecord:
     ) -> "TtfsRunRecord":
         """Build ``TtfsRunRecord`` from per-segment TTFS core lists.
 
-        ``core_source`` is ``"hardware"`` (``output_activation`` / trace) or
+        ``core_source`` is ``"hardware"`` (``output_activation``/trace) or
         ``"contract"`` (``contract_ttfs_*`` from ``TtfsAnalyticalExecutor``).
         """
         from mimarsinan.chip_simulation.ttfs.ttfs_recorder import (

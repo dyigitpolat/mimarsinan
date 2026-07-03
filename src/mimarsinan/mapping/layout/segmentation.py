@@ -1,20 +1,4 @@
-"""Single source of truth for neural/host segmentation of a mapper graph.
-
-Two complementary views of the same "neural regions separated by host
-ComputeOps" structure live here so both the deployment packer and the
-shape-only layout finalizer agree by construction:
-
-- :func:`partition_ir_graph` -- the ordered neural/host segmentation used by
-  the HCM build to flush neural runs and interleave ComputeOp barriers.
-- :func:`compute_segment_ids` / :func:`compute_node_latencies` /
-  :func:`compute_host_side_segment_count` -- the dependency-graph view used by
-  ``LayoutIRMapping`` finalize for per-softcore ``segment_id`` / ``latency_tag``
-  and the wizard ``host_side_segment_count``.
-
-The two views coincide on segment membership for topologically-ordered emission
-(the normal case); ``tests/unit/mapping/test_segmentation.py`` pins that
-agreement on the representative config matrix.
-"""
+"""Single source of truth for neural/host segmentation of a mapper graph."""
 
 from __future__ import annotations
 
@@ -23,8 +7,6 @@ from typing import Dict, List, Union
 
 from mimarsinan.mapping.ir import ComputeOp, NeuralCore
 
-
-# ── Ordered neural/host partition (deployment packer view) ─────────────────
 
 @dataclass
 class NeuralSegment:
@@ -45,15 +27,9 @@ Segment = Union[NeuralSegment, HostSegment]
 
 
 def partition_ir_graph(ir_graph) -> List[Segment]:
-    """Partition ``ir_graph.nodes`` into ordered neural / host segments.
-
-    Consecutive ``NeuralCore`` nodes group into one :class:`NeuralSegment`;
-    each ``ComputeOp`` becomes a :class:`HostSegment` barrier.  A neural
-    segment is emitted immediately before the barrier that terminates it, and
-    a trailing :class:`NeuralSegment` (label ``"neural_segment_final"``) closes
-    the graph.  This is the exact grouping the single-pool / scheduled HCM
-    builders relied on inline.
-    """
+    """Partition ``ir_graph.nodes`` into ordered neural / host segments: consecutive
+    ``NeuralCore`` runs become ``NeuralSegment``s, each ``ComputeOp`` a ``HostSegment``
+    barrier, with a trailing ``neural_segment_final`` run closing the graph."""
     segments: List[Segment] = []
     current: List[NeuralCore] = []
     for node in ir_graph.nodes:
@@ -79,8 +55,6 @@ def partition_ir_graph(ir_graph) -> List[Segment]:
         segments.append(NeuralSegment(nodes=current, label="neural_segment_final"))
     return segments
 
-
-# ── Dependency-graph view (layout finalize) ────────────────────────────────
 
 def compute_node_latencies(
     node_input_node_ids: Dict[int, set],

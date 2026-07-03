@@ -6,16 +6,7 @@ from mimarsinan.pipelining.core.platform_constraints_resolver import (
 
 
 class ModelConfigurationStep(PipelineStep):
-    """
-    Resolve model configuration and platform constraints from pipeline config.
-
-    Used when ``search_mode == "fixed"`` (no architecture search).
-    Takes model_config directly from ``pipeline.config['model_config']``.
-
-    Emits ``platform_constraints_resolved``. Simulation length is read
-    directly from ``pipeline.config['simulation_steps']`` by every
-    downstream consumer — there is no separate "scaled" version.
-    """
+    """Resolve model_config and platform_constraints from pipeline config (search_mode == "fixed", no architecture search)."""
 
     PROMISES = (
         "model_config",

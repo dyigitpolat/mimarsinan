@@ -12,14 +12,7 @@ from mimarsinan.data_handling.data_provider_factory import DataProviderFactory
 
 @dataclass
 class FastAccuracyEvaluator:
-    """
-    Fast per-candidate training+validation loop for NAS.
-
-    Schedule (as requested):
-    - 1 epoch total over the full training set
-    - LR warmup over the first warmup_fraction of batches
-    - validate once after the epoch
-    """
+    """One-epoch train + single validation per candidate, with LR warmup, for NAS."""
 
     data_provider_factory: DataProviderFactory
     device: torch.device
@@ -30,7 +23,6 @@ class FastAccuracyEvaluator:
     seed: int = 0
 
     def evaluate(self, model) -> float:
-        # Deterministic-ish evaluation (controls shuffle order + any stochastic ops)
         torch.manual_seed(int(self.seed))
         np.random.seed(int(self.seed))
 
@@ -66,12 +58,10 @@ class FastAccuracyEvaluator:
             total_batches = max(1, len(train_loader))
             warmup_batches = max(1, int(total_batches * float(self.warmup_fraction)))
 
-            # Train 1 epoch
             for step_idx, (x, y) in enumerate(train_loader):
                 x = x.to(self.device)
                 y = y.to(self.device)
 
-                # batch-level warmup over first 10% of steps
                 if step_idx < warmup_batches:
                     lr_now = float(self.lr) * float(step_idx + 1) / float(warmup_batches)
                 else:
@@ -86,7 +76,6 @@ class FastAccuracyEvaluator:
                 scaler.step(optimizer)
                 scaler.update()
 
-            # Validate once (full validation set for providers that define it that way)
             model.eval()
             correct = 0.0
             total = 0.0

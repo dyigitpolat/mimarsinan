@@ -1,17 +1,14 @@
 from __future__ import annotations
-from typing import Dict, List, Sequence, Set, Tuple
-import numpy as np
-from mimarsinan.mapping.ir import IRGraph, IRSource, NeuralCore, WeightBank
+import logging
+from typing import Dict, Sequence, Tuple
+import torch
+from mimarsinan.mapping.ir import IRGraph, NeuralCore
 def get_initial_pruning_masks_from_model(model, ir_graph: IRGraph):
-    """Collect per-node and per-bank pruning masks from the model layers.
+    """Collect per-node and per-bank ``(row_mask, col_mask)`` pruning masks from the model layers.
 
-    Returns ``(initial_pruned_per_node, initial_pruned_per_bank)`` where each
-    map is keyed by the IR node / bank id and holds ``(row_mask, col_mask)``
-    booleans aligned to that core's IR ``(axons, neurons)`` convention.
-    ``True`` means *pruned*; bias rows are appended where present.
+    Keyed by IR node / bank id, aligned to each core's IR ``(axons, neurons)`` convention;
+    ``True`` means pruned, bias rows appended where present.
     """
-    import torch
-
     initial_pruned_per_node: Dict[int, Tuple[Sequence[bool], Sequence[bool]]] = {}
     initial_pruned_per_bank: Dict[int, Tuple[Sequence[bool], Sequence[bool]]] = {}
     neural_cores = [n for n in ir_graph.nodes if isinstance(n, NeuralCore)]
@@ -71,14 +68,13 @@ def get_initial_pruning_masks_from_model(model, ir_graph: IRGraph):
             continue
         ir_row_mask = [bool(col_pruned[j]) for j in range(in_f)]
         if nr > in_f:
-            ir_row_mask.append(False)  # bias axon
+            ir_row_mask.append(False)
         ir_row_mask = (ir_row_mask + [False] * nr)[:nr]
         ir_col_mask = [bool(row_pruned[j]) for j in range(out_f)]
         ir_col_mask = (ir_col_mask + [False] * nc)[:nc]
         if len(ir_row_mask) == nr and len(ir_col_mask) == nc:
             initial_pruned_per_node[node.id] = (ir_row_mask, ir_col_mask)
         else:
-            import logging
             logging.getLogger(__name__).debug(
                 "get_initial_pruning_masks_from_model: skip node_id=%s shape mismatch "
                 "nr=%s nc=%s len(ir_row_mask)=%s len(ir_col_mask)=%s",

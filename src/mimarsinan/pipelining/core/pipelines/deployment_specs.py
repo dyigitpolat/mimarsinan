@@ -31,17 +31,14 @@ def select_device() -> torch.device:
 
 
 _STEP_PLAN = StepPlan([
-    # ── configuration: search vs fixed (mutually exclusive on applies_to) ──
     StepSpec("Architecture Search",            ArchitectureSearchStep),
     StepSpec("Model Configuration",            ModelConfigurationStep),
     StepSpec("Model Building",                 ModelBuildingStep),
-    # ── weights: preload vs pretrain (mutually exclusive on applies_to) ──
     StepSpec("Weight Preloading",              WeightPreloadingStep),
     StepSpec("Pretraining",                    PretrainingStep),
     StepSpec("Torch Mapping",                  TorchMappingStep),
     StepSpec("Pruning Adaptation",             PruningAdaptationStep),
     StepSpec("Activation Analysis",            ActivationAnalysisStep),
-    # ── activation preconditioning, then cycle-accurate tuning when applicable ──
     StepSpec("Activation Adaptation",          ActivationAdaptationStep),
     StepSpec("Clamp Adaptation",               ClampAdaptationStep),
     StepSpec("Activation Shifting",            ActivationShiftStep),
@@ -49,16 +46,12 @@ _STEP_PLAN = StepPlan([
     StepSpec("LIF Adaptation",                 LIFAdaptationStep),
     StepSpec("TTFS Cycle Fine-Tuning",         TTFSCycleAdaptationStep),
     StepSpec("Noise Adaptation",               NoiseAdaptationStep),
-    # ── weight quantization ──
     StepSpec("Weight Quantization",            WeightQuantizationStep),
     StepSpec("Quantization Verification",      QuantizationVerificationStep),
-    # ── mapping ──
     StepSpec("Normalization Fusion",           NormalizationFusionStep),
     StepSpec("Soft Core Mapping",              SoftCoreMappingStep),
     StepSpec("Core Quantization Verification", CoreQuantizationVerificationStep),
     StepSpec("Hard Core Mapping",              HardCoreMappingStep),
-    # ── deployment backends (V3): validate every enabled backend against the
-    #    capability matrix UP-FRONT, then append the applicable backend steps ──
     lambda plan: BACKEND_REGISTRY.selected_step_specs(plan),
 ])
 
@@ -100,18 +93,10 @@ def get_pipeline_semantic_group_by_step_name(config: dict) -> dict[str, str]:
 
 
 def get_pipeline_step_specs(config: dict) -> list[tuple[str, type]]:
-    """Return ordered (step_name, step_class) list for the given config.
+    """Return the ordered ``(name, class)`` list for the config.
 
-    Vector V5: the ordered ``_STEP_PLAN`` registry filters itself by each step's
-    ``applies_to(plan)`` (the per-flag conditions now live on the steps). The
-    backend tail still routes through ``BACKEND_REGISTRY`` so an enabled but
-    unsupported backend×mode raises at assembly (V3), not mid-run.
-
-    The resolved sequence's requires/promises DAG is validated UP-FRONT
-    (``StepPlan.validate_data_contract``): every consumed cache entry must be
-    promised by an earlier selected step (read off the steps' CLASS-level
-    contract declarations), failing loud with the missing producer named —
-    instead of surfacing as a bare ``requires`` assertion deep in a run.
+    The ``_STEP_PLAN`` registry filters itself by each step's ``applies_to``; the
+    requires/promises DAG is validated up-front, failing loud with the missing producer named.
     """
     plan = DeploymentPlan.resolve(config)
     return _STEP_PLAN.validate_data_contract(plan)

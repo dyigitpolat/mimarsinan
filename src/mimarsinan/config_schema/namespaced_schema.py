@@ -1,24 +1,4 @@
-"""Namespaced config schema: §2 concern groups + flat<->namespaced translation shim.
-
-V8 (docs/DESIGN_GOALS_and_refactoring_vectors.md): the runtime config stays a FLAT
-dict (the byte-identical SSOT every pipeline step reads), but each flat deployment
-key is given an owning concern (the §2 input-axis groups) and recorded provenance
-(owner / derivation). A single ``LEGACY_KEY_TABLE`` is the one translation table:
-``to_namespaced`` projects a flat dict into the nested concern groups and ``to_flat``
-inverts it. The pair round-trips byte-identically for every registered key, so
-existing flat configs resolve identically while new code can read the concern view.
-
-Strangler-fig status: the translation shim + provenance registry are the new seam;
-the ``hardware`` group is migrated end-to-end (its keys carry namespaced paths and a
-byte-identical accessor); the remaining groups are registered with provenance but
-still consumed flat by their owners. **Consumer-side resolution is owned by V1's
-``DeploymentPlan``, not this module** — this is the REGISTRY/PROVENANCE layer (it
-records each key's owner + derivation and gives the concern view); ``DeploymentPlan``
-is where steps read resolved decisions. Provenance is real: derived keys (written by
-``deployment_derivation`` / ``DeploymentPipeline``) and runtime keys (device / data
-provider) are tagged ``derived`` / ``runtime``; only declared defaults are
-``default``. See ARCHITECTURE.md.
-"""
+"""Namespaced config schema: concern groups + flat<->namespaced translation shim."""
 
 from __future__ import annotations
 
@@ -30,9 +10,6 @@ from mimarsinan.config_schema.defaults import (
     DEFAULT_PLATFORM_CONSTRAINTS,
 )
 
-# ── Concern groups (the §2 input-axis groups) ───────────────────────────────
-# Each id is the top-level namespace a key projects under; the title mirrors the
-# §2 group label so the schema reads like the spec.
 CONCERN_GROUPS: Tuple[Dict[str, str], ...] = (
     {"id": "workload", "title": "Workload",
      "subtitle": "Model, dataset, weight init, pruning"},
@@ -54,18 +31,8 @@ CONCERN_GROUPS: Tuple[Dict[str, str], ...] = (
 
 _VALID_GROUP_IDS = frozenset(g["id"] for g in CONCERN_GROUPS)
 
-# Derivation provenance: where a key's resolved value comes from.
-#   "default"  — DEFAULT_DEPLOYMENT_PARAMETERS / DEFAULT_PLATFORM_CONSTRAINTS
-#   "preset"   — injected by a PIPELINE_MODE_PRESETS preset (setdefault)
-#   "derived"  — computed by derive_deployment_parameters from other keys
-#   "runtime"  — resolved by the pipeline at start (device / input shape / …)
 _VALID_DERIVATIONS = frozenset({"default", "preset", "derived", "runtime"})
 
-# Persistence exposure: whether a key belongs in saved user-facing config.
-#   "user"     — a value the wizard exposes as a user-editable knob
-#   "derived"  — computed from user/system inputs; never persisted as user config
-#   "system"   — internal default / policy / constant, resolved by runtime defaults
-#   "runtime"  — live environment value resolved by the pipeline
 _VALID_EXPOSURES = frozenset({"user", "derived", "system", "runtime"})
 
 
@@ -73,10 +40,8 @@ _VALID_EXPOSURES = frozenset({"user", "derived", "system", "runtime"})
 class KeySpec:
     """Provenance + namespacing for one flat deployment/platform key.
 
-    ``flat_key`` is the legacy runtime key (the SSOT every step reads today).
-    ``group`` / ``name`` give the namespaced path ``group.name``. ``owner`` records
-    the subsystem that consumes the resolved value; ``derivation`` records where the
-    value comes from (see _VALID_DERIVATIONS).
+    ``flat_key`` is the runtime SSOT key; ``group.name`` is the namespaced
+    path; ``owner``/``derivation`` record the consumer and value source.
     """
 
     flat_key: str
@@ -116,22 +81,17 @@ def _spec(flat_key: str, group: str, owner: str, derivation: str = "default",
     )
 
 
-# ── The provenance registry: one KeySpec per flat key ───────────────────────
-# Owner strings name the consuming subsystem (grep target for the next reviewer).
 _KEY_SPECS: Tuple[KeySpec, ...] = (
-    # Workload ──────────────────────────────────────────────────────────────
     _spec("model_config_mode", "workload", "deployment_specs/search_mode",
           exposure="user"),
     _spec("hw_config_mode", "workload", "deployment_specs/search_mode",
           exposure="user"),
     _spec("spike_encoding_seed", "workload", "spike_generation"),
-    # Spiking semantics ──────────────────────────────────────────────────────
     _spec("spiking_mode", "spiking", "SpikingDeploymentContract", exposure="user"),
     _spec("ttfs_cycle_schedule", "spiking", "SpikingDeploymentContract",
           exposure="user"),
     _spec("cycle_accurate_lif_forward", "spiking", "lif_adaptation",
           exposure="user"),
-    # Hardware platform / capabilities (MIGRATED group) ──────────────────────
     _spec("cores", "hardware", "ChipCapabilities/mapping", exposure="user"),
     _spec("target_tq", "hardware", "activation_quantization", exposure="user"),
     _spec("simulation_steps", "hardware", "SimulationRunner", exposure="user"),
@@ -145,11 +105,9 @@ _KEY_SPECS: Tuple[KeySpec, ...] = (
           exposure="user"),
     _spec("max_schedule_passes", "hardware", "schedule_partitioner"),
     _spec("scheduling_latency_weight", "hardware", "schedule_partitioner"),
-    # Conversion process — activation quant + calibration health + driver ─────
     _spec("activation_scale_quantile", "conversion", "activation_analysis"),
     _spec("ttfs_genuine_blend_ce_alpha", "conversion", "ttfs_adaptation"),
     _spec("enable_training_noise", "conversion", "noise_adaptation"),
-    # Adaptation & tuning controller ──────────────────────────────────────────
     _spec("tuning_budget_scale", "tuning", "AdaptationManager", exposure="user"),
     _spec("tuning_budget_scale_ramp_steps", "tuning", "AdaptationManager",
           exposure="user"),
@@ -161,14 +119,11 @@ _KEY_SPECS: Tuple[KeySpec, ...] = (
     _spec("k_commit", "tuning", "rollback_sensor"),
     _spec("paired_confirm_batches", "tuning", "rollback_sensor"),
     _spec("global_budget", "tuning", "rollback_sensor"),
-    # Per-layer-S temporal allocation (EW1 RESERVED): the Wizard declares the intent;
-    # the per-depth S map derivation (TemporalAllocation) is deferred to research.
     _spec("s_allocation", "conversion", "TemporalAllocation", exposure="user"),
     _spec("s_allocation_explicit", "conversion", "TemporalAllocation",
           exposure="user"),
     _spec("s_allocation_budget", "conversion", "TemporalAllocation",
           exposure="user"),
-    # Training ────────────────────────────────────────────────────────────────
     _spec("lr", "training", "training_loop", exposure="user"),
     _spec("lr_range_min", "training", "lr_finder"),
     _spec("lr_range_max", "training", "lr_finder"),
@@ -177,7 +132,6 @@ _KEY_SPECS: Tuple[KeySpec, ...] = (
     _spec("training_epochs", "training", "training_loop", exposure="user"),
     _spec("training_recipe", "training", "training_loop", exposure="user"),
     _spec("tuning_recipe", "training", "AdaptationManager", exposure="user"),
-    # Deployment target — backends + acceptance gates ─────────────────────────
     _spec("enable_nevresim_simulation", "deployment_target", "backend_registry",
           exposure="user"),
     _spec("nevresim_connectivity_mode", "deployment_target", "nevresim_backend"),
@@ -195,14 +149,6 @@ _KEY_SPECS: Tuple[KeySpec, ...] = (
           exposure="user"),
 )
 
-# ── Derived keys: written by a derivation pass, NOT in the defaults dict ──────
-# These have no default value of their own — their value is *computed* from other
-# keys. ``deployment_derivation.derive_deployment_parameters`` (wizard parity)
-# writes ``pipeline_mode`` / ``activation_quantization`` / ``weight_quantization``
-# from ``spiking_mode`` × ``weight_quantization``; ``DeploymentPipeline.__init__``
-# resolves ``firing_mode`` / ``spike_generation_mode`` / ``thresholding_mode`` from
-# the spiking mode via ``setdefault``. Tagged ``derived`` so provenance is real.
-# (The SSOT for the conversion-trio matches ``display_view_meta.DERIVED_KEYS``.)
 _DERIVED_KEY_SPECS: Tuple[KeySpec, ...] = (
     _spec("pipeline_mode", "run", "deployment_derivation", derivation="derived",
           exposure="derived"),
@@ -220,10 +166,6 @@ _DERIVED_KEY_SPECS: Tuple[KeySpec, ...] = (
           exposure="derived"),
 )
 
-# ── Runtime keys: resolved by the pipeline at start (device / data-provider) ──
-# No default and not derivable from config alone — they need the live environment
-# (device probe) or the data provider (input shape / class count). Tagged
-# ``runtime`` (mirrors ``display_view_meta.RUNTIME_KEYS``).
 _RUNTIME_KEY_SPECS: Tuple[KeySpec, ...] = (
     _spec("device", "run", "DeploymentPipeline/select_device", derivation="runtime",
           exposure="runtime"),
@@ -239,15 +181,13 @@ _ALL_KEY_SPECS: Tuple[KeySpec, ...] = (
     _KEY_SPECS + _DERIVED_KEY_SPECS + _RUNTIME_KEY_SPECS
 )
 
-# flat_key -> KeySpec
 KEY_SPECS: Dict[str, KeySpec] = {s.flat_key: s for s in _ALL_KEY_SPECS}
 
-# ── The one translation table: legacy flat key <-> namespaced (group, name) ──
 LEGACY_KEY_TABLE: Dict[str, str] = {
     s.flat_key: s.namespaced_path for s in _ALL_KEY_SPECS
 }
 
-# Inverse, validated for uniqueness at import (the shim must be a bijection).
+# The flat<->namespaced shim must be a bijection; the inverse is validated for uniqueness at import.
 NAMESPACED_KEY_TABLE: Dict[str, str] = {}
 for _flat, _path in LEGACY_KEY_TABLE.items():
     if _path in NAMESPACED_KEY_TABLE:
@@ -261,9 +201,8 @@ for _flat, _path in LEGACY_KEY_TABLE.items():
 def to_namespaced(flat: Mapping[str, Any]) -> Dict[str, Dict[str, Any]]:
     """Project a flat config into nested concern groups.
 
-    Registered keys land under ``group -> name``; unregistered keys are passed
-    through unchanged under the ``run`` group so no data is dropped (round-trips
-    via ``to_flat``).
+    Registered keys land under ``group -> name``; unregistered keys pass
+    through under ``run`` so nothing is dropped (round-trips via ``to_flat``).
     """
     nested: Dict[str, Dict[str, Any]] = {}
     for key, value in flat.items():
@@ -285,7 +224,6 @@ def to_flat(nested: Mapping[str, Mapping[str, Any]]) -> Dict[str, Any]:
             path = f"{group}.{name}"
             flat_key = NAMESPACED_KEY_TABLE.get(path)
             if flat_key is None:
-                # Pass-through (unregistered) key — restore under its bare name.
                 if name in flat:
                     raise ValueError(f"Flatten collision on pass-through key {name!r}")
                 flat[name] = value

@@ -2,26 +2,15 @@
 
 from __future__ import annotations
 
-import html
 import os
-import shutil
-import subprocess
-from dataclasses import dataclass
-from typing import Any, Iterable, Sequence
+from typing import Any
 
 import numpy as np
 
 from mimarsinan.code_generation.cpp_chip_model import SpikeSource
-from mimarsinan.mapping.packing.hybrid_hardcore_mapping import HybridHardCoreMapping
-from mimarsinan.mapping.ir import ComputeOp, IRGraph, IRNode, IRSource, NeuralCore
-from mimarsinan.mapping.packing.softcore import HardCoreMapping
-from mimarsinan.common.layer_key import layer_key_from_node_name
 from mimarsinan.common.safe_numeric import safe_float
 
-import re
-
-
-from mimarsinan.visualization.graphviz.common import try_render_dot, _embed_svg_images, _percent, _compress_ranges, _truncate, _dot_html_label, _dot_html_label_mixed, _stack_sample_lines
+from mimarsinan.visualization.graphviz.common import _percent, _compress_ranges, _truncate, _dot_html_label
 
 def write_softcore_mapping_dot(
     soft_core_mapping: Any,
@@ -51,7 +40,6 @@ def write_softcore_mapping_dot(
     lines.append("  const1 [label=< <B>CONST(1)</B> >, shape=plaintext];")
     lines.append("  output [label=< <B>OUTPUT</B> >, shape=plaintext];")
 
-    # Optional cluster by psum_group_id
     by_group: dict[int | None, list[Any]] = {}
     for c in cores:
         by_group.setdefault(getattr(c, "psum_group_id", None), []).append(c)
@@ -82,7 +70,6 @@ def write_softcore_mapping_dot(
         if psum:
             rows.append(("psum", psum))
 
-        # Color by psum_role (if present)
         role = getattr(c, "psum_role", None)
         if role == "partial_pos":
             color = "#D5F5E3"
@@ -112,7 +99,6 @@ def write_softcore_mapping_dot(
         for c in cores:
             _emit_core_node(c)
 
-    # Edges from axon_sources (compressed by source core_)
     for c in cores:
         cid = int(getattr(c, "id"))
         tgt = f"c{cid}"
@@ -154,7 +140,6 @@ def write_softcore_mapping_dot(
             )
             lines.append(f"  {src_node} -> {tgt} [label=\"{_truncate(label, max_chars=220)}\"];")
 
-    # Outputs
     by_src_out: dict[tuple[str, int], dict[str, list[int]]] = {}
     for out_i, src in enumerate(out_sources):
         if src.is_off_:
@@ -186,8 +171,3 @@ def write_softcore_mapping_dot(
 
     with open(out_dot, "w", encoding="utf-8") as f:
         f.write("\n".join(lines))
-
-
-# HardCoreMapping visualization (physical cores)
-
-

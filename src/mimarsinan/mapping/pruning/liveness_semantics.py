@@ -1,9 +1,4 @@
-"""Spiking-mode predicates for IR liveness / bias-only activation checks.
-
-Single source of truth for whether ``hardware_bias`` can make a core
-contributing when all axon weights are dead. Used by :mod:`ir_liveness` and
-:mod:`ir_pruning` so pruning matches HCM / TTFS analytical semantics.
-"""
+"""Spiking-mode predicates for IR liveness / bias-only activation checks."""
 
 from __future__ import annotations
 

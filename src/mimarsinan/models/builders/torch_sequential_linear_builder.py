@@ -8,12 +8,10 @@ from mimarsinan.pipelining.core.registry.model_registry import ModelRegistry
 
 @ModelRegistry.register("torch_sequential_linear", label="Torch Seq. Linear", category="torch")
 class TorchSequentialLinearBuilder:
-    """Builds a plain nn.Module: Sequential(Flatten, Linear, ReLU, ..., Linear).
+    """Builds Sequential(Flatten, Linear, ReLU, ..., Linear); the last layer is the logits.
 
-    The model is a stack of linear layers with ReLU between them; the last
-    layer is the logits (no activation). Compatible with TorchMappingStep
-    (torch 2 repr flow). Configuration must provide "hidden_dims": list of
-    int (hidden layer sizes). Input size and num_classes come from pipeline.
+    Compatible with TorchMappingStep (torch repr flow). ``configuration`` requires ``hidden_dims``
+    (non-empty list of hidden sizes); input size and num_classes come from the pipeline.
     """
 
     def __init__(
@@ -43,7 +41,6 @@ class TorchSequentialLinearBuilder:
         input_size = int(torch.Size(self.input_shape).numel())
         dims = [input_size] + list(hidden_dims) + [self.num_classes]
         layers = []
-        # Flatten
         layers.append(nn.Flatten())
         for i in range(len(dims) - 1):
             layers.append(nn.Linear(dims[i], dims[i + 1]))

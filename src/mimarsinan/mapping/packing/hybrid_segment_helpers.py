@@ -5,9 +5,9 @@ from typing import Sequence
 
 import numpy as np
 
-from mimarsinan.mapping.ir import ComputeOp, IRGraph, IRSource, NeuralCore
-from mimarsinan.mapping.packing.softcore import HardCore, HardCoreMapping, compact_soft_core_mapping
-from mimarsinan.mapping.packing.hybrid_types import HybridStage, SegmentIOSlice
+from mimarsinan.mapping.ir import IRGraph, IRSource, NeuralCore
+from mimarsinan.mapping.packing.softcore import HardCore
+from mimarsinan.mapping.packing.hybrid_types import SegmentIOSlice
 
 
 def _make_available_hardware_cores(cores_config: Sequence[dict]) -> list[HardCore]:
@@ -91,13 +91,7 @@ def _remap_external_sources_to_segment_inputs(
 
 
 def _check_no_split_coalescing_groups(nodes: list) -> None:
-    """Assert that no coalescing group is split at a segment boundary.
-
-    Each coalescing group that has partial cores in this segment must also
-    have its accumulator core in this segment.  A missing accumulator means
-    a ComputeOp was inserted between a partial core and its accumulator,
-    which would break the coalescing semantics.
-    """
+    """Assert every coalescing group with partial cores in this segment also has its accumulator here."""
     group_roles: dict[int, list[str]] = {}
     for n in nodes:
         if isinstance(n, NeuralCore):
@@ -108,7 +102,7 @@ def _check_no_split_coalescing_groups(nodes: list) -> None:
 
     for gid, roles in group_roles.items():
         if "master" in roles:
-            continue # Unified wide core, no psums needed.
+            continue
 
         if "accum" not in roles:
             raise ValueError(
@@ -146,11 +140,10 @@ def _apply_reindex_to_ir_sources(
             continue
         remap = reindex_maps.get(src.node_id)
         if remap is None:
-            continue  # core not in any compacted segment
+            continue
         new_idx = remap.get(src.index)
         if new_idx is not None:
             sources.flat[i] = IRSource(node_id=src.node_id, index=new_idx)
         else:
-            # Neuron was pruned — replace with off-source
             sources.flat[i] = IRSource(node_id=-1, index=0)
 

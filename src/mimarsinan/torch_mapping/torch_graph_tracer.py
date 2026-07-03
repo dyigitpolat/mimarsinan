@@ -1,14 +1,9 @@
-"""
-FX-based graph extraction with shape propagation for native PyTorch models.
-
-Uses ``torch.fx.symbolic_trace`` to produce a flat computational graph and
-``ShapeProp`` to annotate every node with concrete tensor shapes.
-"""
+"""FX-based graph extraction with shape propagation for native PyTorch models."""
 
 from __future__ import annotations
 
 import threading
-from typing import Any, Dict, Tuple
+from typing import Tuple
 
 import torch
 import torch.nn as nn
@@ -16,8 +11,6 @@ import torch.fx as fx
 from torch.fx.passes.shape_prop import ShapeProp
 
 
-# Modules that should never be traced into -- they are kept as opaque
-# call_module nodes so the analyzer / converter can handle them explicitly.
 _LEAF_MODULES: Tuple[type, ...] = (
     nn.MultiheadAttention,
     nn.LSTM,
@@ -41,16 +34,7 @@ class TracingError(Exception):
     """Raised when a model cannot be symbolically traced."""
 
 
-# FX's symbolic tracer patches ``nn.Module.__call__`` and ``__getattr__`` with a
-# per-tracer wrapper. The patcher is a context manager that restores the
-# originals on exit, but the patching itself is not thread-safe. When two
-# concurrent traces interleave (e.g. overlapping GUI requests), one thread can
-# capture the OTHER thread's wrapper as the "original" and then restore it on
-# exit, leaving ``nn.Module.__call__`` permanently wrapped with a dead tracer's
-# closure. The next ``ShapeProp`` then hits the stale wrapper, which raises
-# ``NameError: module is not installed as a submodule`` from ``path_of_module``.
-#
-# Capture the true originals at import time and serialize tracing with a lock.
+# FX patches nn.Module.__call__/__getattr__ non-atomically; capture the true originals at import time and serialize tracing so a stale cross-thread wrapper cannot leak.
 _TRACE_LOCK = threading.Lock()
 _ORIG_MODULE_CALL = nn.Module.__call__
 _ORIG_MODULE_GETATTR = nn.Module.__getattr__
@@ -71,21 +55,10 @@ def trace_model(
     input_shape: Tuple[int, ...],
     device: torch.device | str = "cpu",
 ) -> fx.GraphModule:
-    """Trace a native PyTorch model and annotate shapes.
+    """Trace a native PyTorch model and annotate node shapes via ShapeProp.
 
-    Args:
-        model: The model to trace.  Must be symbolically traceable
-            (no data-dependent control flow).
-        input_shape: Shape of a single input sample *without* batch dim,
-            e.g. ``(3, 32, 32)`` for CIFAR images.
-        device: Device used for the shape-propagation forward pass.
-
-    Returns:
-        A ``torch.fx.GraphModule`` whose nodes carry ``meta['tensor_meta']``
-        with shape / dtype information from ShapeProp.
-
-    Raises:
-        TracingError: If the model cannot be symbolically traced.
+    ``input_shape`` excludes the batch dim, e.g. ``(3, 32, 32)``.
+    Raises ``TracingError`` if the model is not symbolically traceable.
     """
     model = model.eval().to(device)
 

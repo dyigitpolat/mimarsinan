@@ -1,23 +1,4 @@
-"""Distribution-matching calibration for the genuine TTFS single-spike cascade.
-
-Two stages, both grounded in the teacher ANN's activation distribution:
-
-1. **Scale-aware boundaries** — each interior block's ``theta_out`` is the
-   teacher's per-perceptron activation quantile, so the [0,1] TTFS window
-   normalizes that block's output (and the downstream input un-normalizes it).
-   The ENCODING block is excluded (pinned to the data scale): its scale is fixed
-   by the input spike-encoding contract, and retuning it breaks NF↔SCM
-   deployment parity (see ``calibrate_scale_aware_boundaries``).
-2. **DFQ per-neuron bias correction** — a few rounds of matching each
-   perceptron's *cascade* channel-mean to the ANN's by nudging ``layer.bias``.
-   Raising a starved neuron's membrane baseline revives it (reversing the
-   death-cascade collapse) while matching the first moment.
-
-Together they shrink the cascade↔ANN first-moment gap, turning the full TTFS
-transform into a smoothly recoverable teacher->genuine ramp. The model must
-already be in the deployed single-spike-cascade TTFS state (the caller runs the
-finalize rebuild before calibrating).
-"""
+"""Distribution-matching calibration for the genuine TTFS single-spike cascade."""
 
 from __future__ import annotations
 
@@ -35,8 +16,7 @@ from mimarsinan.spiking.segment_partition import perceptron_of
 
 def _cascade_channel_means(model, cal_x, T):
     """Per-perceptron cascade decoded value, keyed by perceptron index."""
-    # Imported lazily: ``ttfs_segment_forward`` pulls in ``mimarsinan.spiking``,
-    # so a module-level import here would close an import cycle.
+    # Lazy: ttfs_segment_forward imports mimarsinan.spiking, so a top-level import is circular.
     from mimarsinan.models.spiking.training.ttfs_segment_forward import (
         TTFSSegmentForward,
     )
@@ -82,17 +62,9 @@ def match_activation_distributions(
 ):
     """Match the deployed TTFS cascade's activation distribution to the teacher ANN's.
 
-    Calibrates scale-aware [0,1] boundaries from the teacher's per-perceptron
-    activation ``quantile``, then runs ``bias_iters`` rounds of DFQ per-neuron
-    bias correction so each perceptron's cascade channel-mean tracks the ANN's
-    (``bias += eta * (ann_mean - cascade_mean)``). The model is mutated in place
-    and must already be in the deployed single-spike-cascade TTFS state.
-
-    Returns a small stats dict. ``mean_gap_before``/``mean_gap_after`` bracket
-    the DFQ loop (both measured after boundary calibration, the prototype's
-    "pre-correction" anchor): the cascade↔ANN channel-mean ``|gap|`` shrinks as
-    the per-neuron means converge. ``dead_fraction_before``/``after`` are the
-    matching total %dead over the same window.
+    Calibrates scale-aware [0,1] boundaries then runs ``bias_iters`` rounds of
+    DFQ per-neuron bias correction. Mutates the model in place (must already be
+    in the deployed single-spike-cascade TTFS state); returns a stats dict.
     """
     T = int(T)
     n_perceptrons = len(list(model.get_perceptrons()))
@@ -107,9 +79,6 @@ def match_activation_distributions(
 
     calibrate_scale_aware_boundaries(model, theta_out)
 
-    # Boundary calibration is TTFS-only (the [0,1] window per block); the shared
-    # DFQ loop then matches the first moment. ``dead_fraction`` brackets it so the
-    # death-cascade revival the bias loop produces is reported.
     dead_before = _dead_fraction(model, cal_x, T)
     gap_stats = dfq_correct_biases(
         model,

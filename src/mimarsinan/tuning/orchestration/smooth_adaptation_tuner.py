@@ -30,11 +30,9 @@ class SmoothAdaptationTuner(
 ):
     """Orchestration loop for smooth rate-based adaptation.
 
-    Exposes the uniform ``RateTunerSeam`` (``ramp`` / ``recover_to`` / ``probe``)
-    so an ``OptimizationDriver`` (``controller | fast``) can drive any smooth tuner
-    generically (E1/E2). ``FastLadderMixin`` carries the schedule-not-search fast
-    driver, opt-in via ``_setup_fast_ladder`` (default-off ⇒ controller ⇒
-    byte-identical)."""
+    Exposes the uniform ``RateTunerSeam`` so an ``OptimizationDriver`` can drive any
+    smooth tuner generically; ``FastLadderMixin`` carries the opt-in fast driver.
+    """
 
 
 UnifiedPerceptronTuner = SmoothAdaptationTuner

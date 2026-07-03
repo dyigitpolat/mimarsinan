@@ -1,14 +1,4 @@
-"""Per-fine-tuning-PASS wall log (AC5): monotonic-clock walls + the worst pass.
-
-AC5 = "no fine-tuning step exceeds 5 min" is judged PER fine-tuning PASS, not on
-the end-to-end pipeline wall (which is dominated by non-FT steps — Soft Core
-Mapping, Weight Quantization, Simulation). Each adaptation PASS (the
-recover_to / ramp / stabilize passes inside the SmoothAdaptation cycle) is timed
-here with a MONOTONIC clock (immune to wall-clock / NTP jumps), and the MAX single
-pass is surfaced as ``max_ft_pass_wall_s`` (the exact field A4's AC5 verdict reads).
-
-Timing only — recording a pass changes no numerics.
-"""
+"""Per-fine-tuning-PASS wall log (AC5): monotonic-clock walls + the worst pass."""
 
 from __future__ import annotations
 
@@ -20,9 +10,7 @@ from typing import Dict, Iterator, List
 class FtPassWallLog:
     """Ordered log of fine-tuning-pass walls, with the worst-pass max.
 
-    ``record(label, wall_s)`` appends a ``{"label", "wall_s"}`` entry; ``time_pass``
-    is the context-manager form that times a block on ``time.monotonic`` (the wall
-    is recorded even when the block raises). ``max_wall_s`` is the worst single pass
+    Walls are timed on ``time.monotonic``; ``max_wall_s`` is the worst single pass
     (0.0 when empty — AC5 reads a float, never ``None``)."""
 
     def __init__(self) -> None:

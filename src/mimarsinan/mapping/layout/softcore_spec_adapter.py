@@ -1,20 +1,11 @@
-"""Adapters that derive a shape-only ``LayoutSoftCoreSpec`` from concrete cores.
-
-These let the placement engine build a layout plan from cores that already
-exist in a different representation:
-
-- :func:`spec_from_neural_core` -- from an IR ``NeuralCore`` (pre-flush, used by
-  scheduled capacity splitting).
-- :func:`spec_from_softcore` -- from a compacted runtime ``SoftCore`` (post
-  pruning compaction), so the deployment placement plan is derived from the
-  exact shapes the runtime packer will see.
-"""
+"""Adapters deriving a shape-only ``LayoutSoftCoreSpec`` from an IR ``NeuralCore`` or a runtime ``SoftCore``."""
 
 from __future__ import annotations
 
 from typing import Any
 
 from mimarsinan.mapping.layout.layout_types import LayoutSoftCoreSpec
+from mimarsinan.mapping.platform.mapping_structure import compute_core_input_count
 
 
 def spec_from_neural_core(
@@ -23,13 +14,8 @@ def spec_from_neural_core(
     hardware_bias: bool,
     fallback_threshold_group_id: int,
 ) -> LayoutSoftCoreSpec:
-    """Reconstruct a ``LayoutSoftCoreSpec`` from an IR ``NeuralCore``.
-
-    ``fallback_threshold_group_id`` is used when the core has no
-    ``perceptron_index`` (synthesised accumulator cores, etc.).
-    """
-    from mimarsinan.mapping.platform.mapping_structure import compute_core_input_count
-
+    """Reconstruct a ``LayoutSoftCoreSpec`` from an IR ``NeuralCore``;
+    ``fallback_threshold_group_id`` applies when the core has no ``perceptron_index``."""
     lat = int(core.latency) if core.latency is not None else 0
     pi = getattr(core, "perceptron_index", None)
     tg = int(pi) if pi is not None else int(fallback_threshold_group_id)
@@ -59,12 +45,8 @@ def spec_from_softcore(
     *,
     fallback_threshold_group_id: int,
 ) -> LayoutSoftCoreSpec:
-    """Reconstruct a ``LayoutSoftCoreSpec`` from a (compacted) runtime ``SoftCore``.
-
-    The runtime core already carries its physical axon/neuron counts, so the
-    spec mirrors exactly what the runtime packer will pack -- including any
-    pruning compaction already applied.
-    """
+    """Reconstruct a ``LayoutSoftCoreSpec`` from a compacted runtime ``SoftCore``,
+    mirroring the exact axon/neuron counts the runtime packer will pack."""
     pi = getattr(softcore, "perceptron_index", None)
     tg = int(pi) if pi is not None else int(fallback_threshold_group_id)
     lat = (

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any, Callable, Dict, List
 
 ConfigT = Dict[str, Any]
@@ -212,7 +213,6 @@ def parse_candidates(
             parsed.append(c)
         elif isinstance(c, str):
             try:
-                import json
                 parsed.append(json.loads(c))
             except Exception:
                 log_fn(f"Warning: Could not parse candidate string: {c[:100]}")

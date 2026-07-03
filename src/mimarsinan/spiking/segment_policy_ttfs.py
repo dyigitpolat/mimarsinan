@@ -4,38 +4,21 @@ from __future__ import annotations
 
 import torch
 
+from mimarsinan.chip_simulation.recording import spike_modes
+from mimarsinan.models.nn.activations.ttfs_spiking import TTFSActivation
+from mimarsinan.models.perceptron_mixer.perceptron import effective_preactivation_bias
 from mimarsinan.spiking.segment_partition import is_encoding_perceptron, perceptron_of
 
 
 class TtfsSegmentPolicy:
-    """Single-spike TTFS: latency-windowed segment sim with arrival latch and
-    ramp decode; entry (encoding) perceptrons fire from the decoded value.
-
-    ``node_value_recorder``: optional dict; when set, every perceptron node's
-    decoded value (latch-accumulated over its own window, scaled like a segment
-    output) is stored per node — the NF side of the cascaded NF↔SCM parity
-    comparison and the per-layer bisect instrument.
-    """
+    """Single-spike TTFS: latency-windowed segment sim with arrival latch and ramp
+    decode; entry (encoding) perceptrons fire from the decoded value."""
 
     node_value_recorder: dict | None = None
-    # Straight-through surrogate temperature for the offload-boundary re-encode.
-    # None (default) = the historical contract: the round-based re-encode severs
-    # the genuine backward at offload/host-ComputeOp boundaries, so only the last
-    # neural segment trains on the deployed cascade. A float >0 enables an STE
-    # whose forward is the bit-exact hard train and whose backward flows through a
-    # soft spike-time, so the genuine cascade gradient reaches EVERY segment.
-    # Forward (hence NF↔SCM parity and deployed accuracy) is unchanged either way.
+    # A float >0 swaps in an STE at offload boundaries; forward (NF↔SCM parity) is unchanged either way.
     boundary_surrogate_temp: float | None = None
 
     def prepare(self, driver):
-        # The walk feeds each node norm(W s_t + b) per cycle; the additive
-        # constant of that pre-activation is the norm-folded effective bias,
-        # so install it (differentiable, recomputed fresh every drive — no
-        # stale references across layer-replacing steps).
-        from mimarsinan.models.perceptron_mixer.perceptron import (
-            effective_preactivation_bias,
-        )
-
         for p, mods in self._ttfs_perceptrons(driver._seg_of.keys()):
             bias = effective_preactivation_bias(p)
             for m in mods:
@@ -43,8 +26,7 @@ class TtfsSegmentPolicy:
                 m.set_bias(bias)
 
     def finalize(self, driver):
-        # Restore the raw layer.bias reference: the picklable stored contract
-        # (a drive-time effective bias may carry an autograd graph).
+        # Restore the raw layer.bias reference: the stored bias must stay picklable (no autograd graph).
         for p, mods in self._ttfs_perceptrons(driver._seg_of.keys()):
             bias = getattr(p.layer, "bias", None)
             for m in mods:
@@ -54,8 +36,6 @@ class TtfsSegmentPolicy:
 
     @staticmethod
     def _ttfs_perceptrons(nodes):
-        from mimarsinan.models.nn.activations.ttfs_spiking import TTFSActivation
-
         out = []
         seen = set()
         for n in nodes:
@@ -83,12 +63,8 @@ class TtfsSegmentPolicy:
         return 1.0
 
     def segment_depths(self, driver, seg_nodes):
-        """Per-node cascade latency = perceptron-hops from the segment entry.
-
-        Each perceptron core adds one cycle of propagation delay; transparent
-        routing (reshape/permute/...) adds none. Matches ``ChipLatency`` within a
-        segment (a core's latency = max source-core latency + 1).
-        """
+        """Per-node cascade latency = perceptron-hops from the segment entry
+        (each perceptron core adds one cycle; transparent routing adds none)."""
         seg_set = set(seg_nodes)
         depth: dict = {}
         for n in seg_nodes:  # exec/topological order
@@ -125,17 +101,10 @@ class TtfsSegmentPolicy:
         return zeros
 
     def _boundary_single_spike_train(self, value, T: int, n_cycles: int) -> torch.Tensor:
-        """Single-spike TTFS train of a decoded boundary value, at the rising
-        edge of HCM's latched encode (``spike_time = round(T(1 - clamp(v)))``).
-        The cascade neuron's ramp reconstruction turns the single spike into the
-        same linear membrane growth HCM's greedy core gets from the latch.
-
-        The forward train is the exact hard (``round``-based) encode. When
-        ``boundary_surrogate_temp`` is set, a straight-through estimator attaches a
-        backward path through a soft spike-time so the genuine cascade gradient
-        reaches the upstream segment; the forward value is byte-identical."""
-        from mimarsinan.chip_simulation.recording import spike_modes
-
+        """Single-spike TTFS train of a decoded boundary value at the rising edge of
+        HCM's latched encode (``spike_time = round(T(1 - clamp(v)))``). The forward
+        train is the exact hard encode; ``boundary_surrogate_temp`` adds an STE backward.
+        """
         v = value.clamp(0.0, 1.0)
         latched = torch.stack(
             [spike_modes.to_spikes(v, c, simulation_length=T, spike_mode="TTFS")
@@ -152,11 +121,7 @@ class TtfsSegmentPolicy:
     @staticmethod
     def _straight_through(train_hard, v, T, n_cycles, temp):
         """STE: forward == ``train_hard`` exactly; backward flows through a soft
-        spike-time. The hard latch is a Heaviside in cycle index at
-        ``tau = T(1 - v)`` (the spike has arrived by cycle ``c`` iff ``c >= tau``);
-        softening it to ``sigmoid((c - tau)/temp)`` makes ``d train / d v`` nonzero
-        (a larger ``v`` lowers ``tau``, so the spike arrives earlier and the
-        downstream ramp integrates a higher decoded value — the correct sign)."""
+        spike-time ``sigmoid((c - tau)/temp)`` with ``tau = T(1 - v)``."""
         cycles = torch.arange(n_cycles, device=v.device, dtype=v.dtype)
         cycles = cycles.reshape((n_cycles,) + (1,) * v.dim())
         tau = float(T) * (1.0 - v)
@@ -185,15 +150,12 @@ class TtfsSegmentPolicy:
 
         def read(src, out, perc_prev, t, consumer):
             if src not in seg_set:
-                # A subsumed value-encoding entry charges the ideal value directly
-                # (bias-mode-agnostic — it mirrors HCM's host ComputeOp); an offload/
-                # interior cascade core reads the TTFS-encoded boundary train.
                 if is_encoding_perceptron(consumer):
-                    return values[src]                  # value->spike entry (ideal value)
-                return boundary_spikes(src, t)          # spike entry: TTFS-encoded boundary
+                    return values[src]
+                return boundary_spikes(src, t)
             if perceptron_of(src) is not None:
-                return perc_prev.get(src, zeros[src])   # core output, 1-cycle delayed
-            return out[src]                             # transparent routing, this cycle
+                return perc_prev.get(src, zeros[src])
+            return out[src]
 
         watch = list(ext)
         if self.node_value_recorder is not None:
@@ -209,8 +171,7 @@ class TtfsSegmentPolicy:
         for t in range(n_cycles):
             out: dict = {}
             for n in seg_nodes:
-                # Latency-gated: a core integrates only inside its own window
-                # [depth, depth+T); outside it emits nothing (no premature bias firing).
+                # Latency-gated: a core integrates only inside its window [depth, depth+T).
                 if t < depth[n] or t >= depth[n] + T:
                     out[n] = zeros[n]
                     continue
@@ -225,7 +186,7 @@ class TtfsSegmentPolicy:
             for n in seg_nodes:
                 if perceptron_of(n) is not None:
                     perc_prev[n] = out[n]
-            for n in watch:                             # per-source window [lat, lat+T)
+            for n in watch:
                 if depth[n] <= t < depth[n] + T:
                     s = out[n]
                     latched[n] = s if n not in latched else torch.maximum(latched[n], s)

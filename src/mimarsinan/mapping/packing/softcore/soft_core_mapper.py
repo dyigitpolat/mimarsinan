@@ -1,10 +1,4 @@
-"""SoftCoreMapping container for packed soft cores (IR → simulation / hard-core packing).
-
-This module is separate from mapping_utils to break the cycle: ir.py imports
-SoftCoreMapping only lazily (inside ir_graph_to_soft_core_mapping). This module
-uses lazy imports for compress_spike_sources so it does not pull in mapping.ir
-at load time.
-"""
+"""SoftCoreMapping container for packed soft cores (IR → simulation / hard-core packing)."""
 
 from __future__ import annotations
 
@@ -28,10 +22,6 @@ class SoftCoreMapping:
 
         assert firing_mode in ["Default", "Novena", "TTFS"]
 
-        # Raw bank matrices keyed by bank_id.  Populated by
-        # ``ir_graph_to_soft_core_mapping`` / ``neural_segment_to_soft_core_mapping``
-        # for bank-backed IR graphs so the downstream ``HardCoreMapping`` can share
-        # a single GPU tensor per bank across many placements at simulation time.
         self.weight_banks: dict[int, "object"] = {}
 
         self._psum_group_counter = 0

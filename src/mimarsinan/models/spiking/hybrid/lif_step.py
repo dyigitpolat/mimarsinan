@@ -10,6 +10,7 @@ import torch
 from mimarsinan.chip_simulation.recording.spike_recorder import CoreSpikeCounts, SegmentSpikeRecord
 from mimarsinan.mapping.latency.chip import ChipLatency
 from mimarsinan.mapping.packing.hybrid_hardcore_mapping import HybridStage
+from mimarsinan.spiking.segment_boundary import encode_segment_input
 from mimarsinan.models.spiking.cycle_policy import cycle_neuron_policy
 from mimarsinan.models.spiking.spiking_config import COMPUTE_DTYPE
 
@@ -94,31 +95,18 @@ class HybridLifStepMixin:
         single_spike = getattr(policy, "single_spike_io", False)
 
         if single_spike:
-            # Single-spike TTFS: each input fires once (at its arrival cycle). The
-            # encoded train is latched, so the per-cycle arrival is its rising edge.
             shifted = torch.zeros_like(input_spike_train)
             shifted[1:] = input_spike_train[:-1]
             input_spike_train = (input_spike_train - shifted).clamp_min_(0.0)
 
-        # Single-spike output decode: per-output-column arrival latch whose running
-        # sum over the window reconstructs the ramp value (= count for count/T).
         out_arrival = (torch.zeros(batch_size, len(output_sources),
                                    device=device, dtype=COMPUTE_DTYPE)
                        if single_spike else None)
 
         for cycle in range(cycles):
-            # Segment-output passthrough of a raw input is gathered at the segment
-            # boundary (latency 0), so its presentation stays the global [0, T).
             input_spikes = input_spike_train[cycle] if cycle < T else zeros_in
 
             for core_idx, core in enumerate(cores):
-                # The raw input is read inside THIS core's own latency window:
-                # a core at latency L sees input local cycle (cycle - L), zero
-                # outside [0, T). This mirrors the always-on bias (fires at
-                # cycle == latency) and the neuron-source [lat, lat+T) windowing,
-                # so a raw-input skip into a latency>0 merge integrates the FULL
-                # train (not a one-cycle-short [L, L+T) slice of a global [0, T)
-                # presentation). No-op when L == 0 (every non-residual model).
                 local_cycle = cycle - int(core.latency or 0)
                 core_input_spikes = (
                     input_spike_train[local_cycle]
@@ -156,19 +144,13 @@ class HybridLifStepMixin:
                     record_out_t[core_idx] += buffers[core_idx][0].to(torch.int64).detach()
 
             if single_spike:
-                # Single-spike decode: count each source's latched output ONLY
-                # within its own window [src_lat, src_lat+T), so the value is
-                # (src_lat + T - fire)/T ∈ [0,1] — the genuine TTFS value. Full-
-                # window accumulation would overcount shallow sources by
-                # (chip_latency - src_lat)/T, which saturates everything when
-                # latency >> T.
+                # Single-spike decode: count each latched source only within its own [src_lat, src_lat+T) window, else shallow sources overcount and saturate.
                 for sp in output_spans:
                     d0 = int(sp.dst_start)
                     d1 = int(sp.dst_end)
                     if sp.kind == "off":
                         continue
                     if sp.kind == "on":
-                        # value 1.0 → fires at its window start; counts T over [0, T).
                         if cycle < T:
                             output_counts[:, d0:d1] += 1.0
                         continue
@@ -200,7 +182,6 @@ class HybridLifStepMixin:
                 if sp.kind == "off":
                     continue
                 if sp.kind == "on":
-                    # Always-on axon: one spike per input cycle [0, T).
                     if cycle < T:
                         output_counts[:, d0:d1] += 1.0
                     continue
@@ -211,7 +192,6 @@ class HybridLifStepMixin:
                 src_lat = cores[int(sp.src_core)].latency
                 if src_lat is None:
                     continue
-                # Accumulate only inside source core's active window [lat, lat+T).
                 if cycle < int(src_lat) or cycle >= int(src_lat) + T:
                     continue
                 output_counts[:, d0:d1] += buffers[int(sp.src_core)][:, int(sp.src_start):int(sp.src_end)]
@@ -248,8 +228,6 @@ class HybridLifStepMixin:
         device: torch.device,
     ) -> torch.Tensor:
         """Build ``(T, B, in_size)`` spike train; prefer cached LIF trains over uniform encoding."""
-        from mimarsinan.spiking.segment_boundary import encode_segment_input
-
         return encode_segment_input(
             stage,
             seg_input_rates_clamped,
@@ -264,10 +242,8 @@ class HybridLifStepMixin:
     def _apply_input_shifts(self, input_map, seg_input_rates: torch.Tensor) -> torch.Tensor:
         """Add the Round-2a per-producer-channel positive shift before the [0,1] clamp.
 
-        Keyed by producer ``node_id`` in ``hybrid_mapping.node_output_shifts``; empty
-        ⇒ identity. The consumer core's bias is pre-corrected (B' = B − W·s), so this
-        is value-preserving on the chip while making negative-producing boundaries
-        lossless for spike encoding.
+        Keyed by producer ``node_id`` in ``hybrid_mapping.node_output_shifts`` (empty
+        ⇒ identity); value-preserving because the consumer bias is pre-corrected (B'=B−W·s).
         """
         shifts = getattr(self.hybrid_mapping, "node_output_shifts", None)
         if not shifts:

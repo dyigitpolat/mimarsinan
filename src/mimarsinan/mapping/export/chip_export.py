@@ -1,10 +1,4 @@
-"""
-Convert HardCoreMapping to ChipModel for nevresim.
-
-Provides hard_cores_to_chip and its helpers (generate_core_weights,
-generate_core_connection_info, to_numpy). Single external consumer:
-chip_simulation.nevresim_driver.
-"""
+"""Convert HardCoreMapping to ChipModel for nevresim."""
 
 from __future__ import annotations
 
@@ -69,28 +63,9 @@ def hard_cores_to_chip(
     weight_type,
     threshold_type=None,
 ):
-    """
-    Convert a HardCoreMapping into a ChipModel for nevresim.
+    """Convert a HardCoreMapping into a ChipModel for nevresim, padding heterogeneous cores to uniform axons/neurons.
 
-    When the mapping contains heterogeneous core sizes, each core's weight
-    matrix and axon-source list are padded with zeros / off-sources to the
-    uniform axons_per_core x neurons_per_core dimensions required by the
-    C++ template.
-
-    Bias handling modes (checked in priority order):
-
-    1. **hardware_bias field** — When a HardCore carries an explicit
-       hardware_bias array (set during packing from NeuralCores that
-       used IRMapping's hardware_bias mode), that array is emitted as
-       per-neuron bias directly. No always-on axon row exists.
-
-    2. **Legacy always-on row** — When has_bias_capability=True and no
-       hardware_bias is present, the last row of core_matrix is assumed
-       to be the always-on bias row. It is folded into per-neuron bias
-       and the always-on axon connection is converted to off.
-
-    3. **No bias** — When has_bias_capability=False and no hardware_bias,
-       the core_matrix is used as-is.
+    Bias handling, in priority order: explicit hardware_bias array, else legacy always-on bias row (folded to per-neuron bias), else no bias.
     """
     output_sources = hardcore_mapping.output_sources
 
@@ -114,10 +89,7 @@ def hard_cores_to_chip(
                 )
             )
         elif has_bias_cap:
-            # Parameter-encoded bias: the last core_matrix row is the weight on an
-            # always-on axon. Honor that mode (like HCM / SANA-FE) — keep the row as
-            # a weight and the always-on axon ON; do NOT fold into on-chip bias_,
-            # which silently switches the declared mode and breaks spike parity.
+            # Parameter-encoded bias: keep the last core_matrix row as an always-on-axon weight; do NOT fold it into on-chip bias_, which breaks spike parity.
             weight_tensor = hardcore.core_matrix.transpose()
             hardcores.append(
                 generate_core_weights(

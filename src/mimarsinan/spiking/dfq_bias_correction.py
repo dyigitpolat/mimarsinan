@@ -1,13 +1,4 @@
-"""Mode-agnostic DFQ per-neuron bias-correction core.
-
-A handful of rounds matching each perceptron's *cascade* channel-mean to the
-teacher ANN's by nudging ``layer.bias`` (``bias += eta * (ann_mean -
-cascade_mean)``) shrink the deployed-cascade↔ANN first-moment gap — the
-systematic mean shift the rate/spike code introduces during conversion. The
-cascade readout differs per spiking mode (TTFS single-spike cascade vs LIF
-cycle-accurate cascade), so it is injected as ``cascade_means_fn``; the loop,
-the teacher-mean capture, and the gap measurement are shared here.
-"""
+"""Mode-agnostic DFQ per-neuron bias-correction core."""
 
 from __future__ import annotations
 
@@ -62,9 +53,7 @@ def dfq_correct_biases(
     """Run ``bias_iters`` rounds of DFQ per-neuron bias correction in place.
 
     ``cascade_means_fn()`` returns a fresh ``{perceptron_index: decoded_value}``
-    map (re-measured each round, since the biases move). Each round nudges every
-    perceptron's ``layer.bias`` by ``eta * (ann_mean - cascade_mean)``. Returns
-    ``{mean_gap_before, mean_gap_after}`` bracketing the loop.
+    map, re-measured each round since the biases move.
     """
     bias_iters = max(0, int(bias_iters))
     eta = float(eta)

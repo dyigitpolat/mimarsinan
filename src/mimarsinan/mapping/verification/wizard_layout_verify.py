@@ -11,14 +11,19 @@ from mimarsinan.mapping.verification.verifier import (
     verify_soft_core_mapping,
 )
 from mimarsinan.mapping.platform.mapping_structure import ChipCapabilities
-from mimarsinan.mapping.platform.platform_constraints import resolve_platform_mapping_params
+from mimarsinan.mapping.platform.platform_constraints import (
+    resolve_platform_mapping_params,
+    resolve_scalar_mapping_params,
+)
+from mimarsinan.mapping.layout.layout_plan import build_layout_plan
+from mimarsinan.models.builders import BUILDERS_REGISTRY
+from mimarsinan.torch_mapping.converter import convert_torch_model
+from mimarsinan.torch_mapping.encoding_layers import mark_encoding_layers
 from mimarsinan.pipelining.core.registry.model_registry import ModelRegistry
 
 
 def model_repr_from_wizard_body(body: dict) -> Any:
     """Build mapper repr from a wizard-style request body."""
-    from mimarsinan.models.builders import BUILDERS_REGISTRY
-
     model_type = body.get("model_type", "simple_mlp")
     input_shape = tuple(int(x) for x in body.get("input_shape", [1, 28, 28]))
     num_classes = int(body.get("num_classes", 10))
@@ -43,8 +48,6 @@ def model_repr_from_wizard_body(body: dict) -> Any:
     category = ModelRegistry.get_category(model_type)
 
     if category == "torch":
-        from mimarsinan.torch_mapping.converter import convert_torch_model
-
         raw_model.eval()
         with torch.no_grad():
             try:
@@ -67,8 +70,6 @@ def model_repr_from_wizard_body(body: dict) -> Any:
             except Exception:
                 pass
         model_repr = raw_model.get_mapper_repr()
-        from mimarsinan.torch_mapping.encoding_layers import mark_encoding_layers
-
         mark_encoding_layers(model_repr, placement=placement)
 
     if hasattr(model_repr, "assign_perceptron_indices"):
@@ -89,8 +90,6 @@ def model_repr_from_model(
         else:
             if input_shape is None:
                 return None
-            from mimarsinan.torch_mapping.converter import convert_torch_model
-
             supermodel = convert_torch_model(
                 model,
                 input_shape=tuple(input_shape),
@@ -115,8 +114,6 @@ def resolve_tiling_params_from_body(
     tiling_max_neurons: int | None = None,
 ):
     """Return ``(effective_max_axons, effective_max_neurons, hardware_bias, allow_coalescing)``."""
-    from mimarsinan.mapping.platform.platform_constraints import resolve_scalar_mapping_params
-
     allow_coalescing = bool(body.get("allow_coalescing", False))
     core_types = body.get("core_types") or body.get("cores")
     if core_types:
@@ -189,8 +186,6 @@ def verify_planned_mapping_performance(
     )
     if not soft.feasible:
         return {"feasible": False}
-
-    from mimarsinan.mapping.layout.layout_plan import build_layout_plan
 
     core_types_dicts = [
         {

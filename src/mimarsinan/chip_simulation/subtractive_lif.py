@@ -1,26 +1,7 @@
-"""Subtractive-reset LIF process + float model for Lava.
+"""Subtractive-reset LIF process + float model for Lava."""
 
-Must live in its own module: Lava's compiler discovers ``ProcessModel``
-implementations by scanning the ``__module__`` of the ``Process`` class
-(see ``ProcGroupDiGraphs._find_proc_models``).  Closures and dynamic class
-bodies inside a function cannot be imported back by Lava, so this file is
-kept at top level and imported lazily by :mod:`lava_loihi_runner` once the
-Lava submodule has been verified to load on the current interpreter.
-
-Semantics
----------
-``du = 1``, ``dv = 0`` produce pure integrate-and-fire: current equals the
-synaptic input for that cycle (no persistence), voltage accumulates across
-cycles (no leak).  ``spiking_activation`` selects between strict (``v > vth``)
-and inclusive (``v >= vth``) firing based on ``thresholding_mode`` to
-mirror HCM/nevresim's configured comparator.  ``reset_voltage`` subtracts
-``vth`` (subtractive reset) so above-threshold charge carries into the
-next cycle — again matching nevresim ``firing_mode='Default'``.
-
-A periodic state reset is applied every ``reset_interval`` timesteps so
-many input samples can be processed sequentially by a single Lava graph;
-this amortises graph-compile overhead across samples.
-"""
+# Must stay a top-level module because Lava's compiler discovers ProcessModels by scanning
+# the Process class's __module__, so closures/dynamic class bodies cannot be imported back.
 
 from __future__ import annotations
 
@@ -36,22 +17,10 @@ from lava.proc.lif.process import LIFReset
 
 
 class SubtractiveLIFReset(LIFReset):
-    """LIFReset variant with subtractive-reset semantics.
+    """LIFReset variant with subtractive-reset semantics, matching nevresim ``firing_mode='Default'``.
 
-    Matches nevresim ``firing_mode='Default'`` exactly and the subtractive
-    SpikingJelly ``IFNode(v_reset=None)`` used during training.
-
-    ``thresholding_mode`` controls the firing comparator and must mirror
-    what ``SpikingHybridCoreFlow`` / nevresim use for the same run:
-
-    * ``"<"``  → strict (``self.v > self.vth``)  — matches HCM ``ops['<']``
-      (``torch.lt(thresh, memb)``).
-    * ``"<="`` → inclusive (``self.v >= self.vth``) — matches HCM
-      ``ops['<=']`` (``torch.le(thresh, memb)``).
-
-    Hard-coding the comparator in the model class previously discarded
-    the pipeline config and silently broke parity in any run that used
-    inclusive thresholding.
+    ``thresholding_mode`` picks the firing comparator (``"<"`` strict / ``"<="`` inclusive)
+    and must mirror what ``SpikingHybridCoreFlow`` / nevresim use for the same run.
     """
 
     def __init__(

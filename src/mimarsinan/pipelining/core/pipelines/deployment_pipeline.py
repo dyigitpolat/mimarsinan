@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-import sys
 
 from mimarsinan.pipelining.core.engine.pipeline import Pipeline
 from mimarsinan.data_handling.data_provider_factory import DataProviderFactory
@@ -105,8 +104,6 @@ class DeploymentPipeline(Pipeline):
             self.config.setdefault("cycle_accurate_lif_forward", True)
 
         self.tolerance = 1.0 - plan.degradation_tolerance
-        # Opt-in rung-2 budget: with NF and SCM sharing semantics, the honest
-        # residual is the mapping-level wire effect, so ~0.02 is a sane value.
         if plan.scm_degradation_tolerance is not None:
             self.step_tolerances["Soft Core Mapping"] = (
                 1.0 - plan.scm_degradation_tolerance

@@ -3,37 +3,31 @@
 from __future__ import annotations
 
 import numpy as np
-import torch
 import torch.nn as nn
 
 from mimarsinan.chip_simulation.test_subsample import compute_test_subsample_indices
+from mimarsinan.chip_simulation.nevresim.connectivity import resolve_nevresim_connectivity_mode
+from mimarsinan.chip_simulation.spiking_semantics import requires_ttfs_firing
 from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory, shutdown_data_loader
 from mimarsinan.chip_simulation.simulation_runner.flat import SimulationFlatMixin
 from mimarsinan.chip_simulation.simulation_runner.hybrid import SimulationHybridMixin
+from mimarsinan.mapping.packing.hybrid_hardcore_mapping import HybridHardCoreMapping
+from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 
 
 class SimulationRunner(SimulationFlatMixin, SimulationHybridMixin):
     def __init__(self, pipeline, mapping, simulation_length, preprocessor=None):
         self._preprocessor = preprocessor if preprocessor is not None else nn.Identity()
-        from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
-
         plan = DeploymentPlan.of(pipeline)
         self.spike_generation_mode = pipeline.config["spike_generation_mode"]
         self.firing_mode = pipeline.config["firing_mode"]
         self.thresholding_mode = pipeline.config.get("thresholding_mode", "<=")
         self.spiking_mode = plan.spiking_mode
-        from mimarsinan.chip_simulation.nevresim.connectivity import resolve_nevresim_connectivity_mode
-
         self.nevresim_connectivity_mode = resolve_nevresim_connectivity_mode(pipeline.config)
 
-        # NB: this runner defaults weight_quantization to True (legacy "quantized
-        # unless told otherwise"), which differs from DeploymentPlan's False
-        # default; for a vanilla config that omits the key the two disagree, so
-        # this read is deliberately NOT routed through the plan (byte-identity).
+        # Deliberately not routed through DeploymentPlan: this runner keeps the legacy weight_quantization default of True, which diverges from the plan's False default for a config that omits the key.
         wt_q = pipeline.config.get("weight_quantization", True)
         self.weight_type = int if wt_q else float
-
-        from mimarsinan.chip_simulation.spiking_semantics import requires_ttfs_firing
 
         is_ttfs = requires_ttfs_firing(self.spiking_mode)
         self.threshold_type = float if is_ttfs else self.weight_type
@@ -75,8 +69,6 @@ class SimulationRunner(SimulationFlatMixin, SimulationHybridMixin):
             print(f"  [SimulationRunner] Subsampled {max_samples} / {total_samples} test samples")
 
     def _evaluate_chip_output(self, predictions):
-        import numpy as np
-
         confusion_matrix = np.zeros((self.num_classes, self.num_classes), dtype=int)
         for y, p in zip(self.test_targets, predictions):
             confusion_matrix[y.item()][p] += 1
@@ -91,8 +83,6 @@ class SimulationRunner(SimulationFlatMixin, SimulationHybridMixin):
         return float(correct) / total
 
     def run(self) -> float:
-        from mimarsinan.mapping.packing.hybrid_hardcore_mapping import HybridHardCoreMapping
-
         if isinstance(self.mapping, HybridHardCoreMapping):
             segments = self.mapping.get_neural_segments()
             compute_ops = self.mapping.get_compute_ops()

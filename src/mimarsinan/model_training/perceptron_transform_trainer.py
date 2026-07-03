@@ -7,7 +7,6 @@ from mimarsinan.models.perceptron_mixer.perceptron import Perceptron
 
 import copy
 import torch
-import torch.nn as nn
 import functools
 
 
@@ -20,11 +19,6 @@ class PerceptronTransformTrainer(BasicTrainer):
         self.aux_model = copy.deepcopy(self.model).to(self.device)
         self.perceptron_transformation = perceptron_transformation
 
-        # Pre-allocate one reusable "temp" Perceptron per slot. Each training step
-        # copies aux params/buffers into temp, runs the (possibly non-differentiable)
-        # transformation on temp in-place, then copies transformed params back into
-        # main. This replaces four per-step deep-copies (two state_dict clones plus
-        # per-perceptron module clones plus a final load_state_dict-with-deepcopy).
         self._perceptron_slots = []
         for name, module in self.model.named_modules():
             if isinstance(module, Perceptron):
@@ -47,17 +41,12 @@ class PerceptronTransformTrainer(BasicTrainer):
 
     def _update_and_transform_model(self):
         for main_p, aux_p, temp_p in self._perceptron_slots:
-            # Refresh temp from aux (latent weights). Include buffers so the
-            # transformation sees the same state a deepcopy(aux_p) would have.
             self._copy_tensors(aux_p.named_parameters(), temp_p.named_parameters())
             self._copy_tensors(aux_p.named_buffers(), temp_p.named_buffers())
 
-            # Apply transformation in-place on temp. Transformations only mutate
-            # tensor values — no structural changes — so reusing temp is safe.
+            # Transformations only mutate tensor values (no structural changes), so reusing ``temp_p`` in-place is safe.
             self.perceptron_transformation(temp_p)
 
-            # Write transformed params (only params, matching original semantics)
-            # back into the main model.
             self._copy_tensors(temp_p.named_parameters(), main_p.named_parameters())
 
 
@@ -65,16 +54,12 @@ class PerceptronTransformTrainer(BasicTrainer):
         for param, aux_param in zip(self.model.parameters(), self.aux_model.parameters()):
             if aux_param.requires_grad and param.grad is not None:
                 grad = param.grad.clone()
-                # Replace NaN/Inf gradients with zero to prevent aux_model corruption
                 grad = torch.nan_to_num(grad, nan=0.0, posinf=0.0, neginf=0.0)
                 if aux_param.grad is None:
                     aux_param.grad = grad
                 else:
                     aux_param.grad.copy_(grad)
-            # optimizer.zero_grad() only clears aux_model grads (optimizer is on
-            # aux). self.model.grad is never zeroed elsewhere, so without this
-            # line backward() accumulates a running sum across every step and
-            # the effective LR grows linearly — catastrophic at LR ≳ 1e-3.
+            # ``optimizer.zero_grad()`` only clears aux grads, so ``self.model`` grads must be cleared here or backward() accumulates across steps and inflates the effective LR.
             param.grad = None
 
     def _backward_pass_on_loss(self, x, y, scaler):
@@ -90,9 +75,6 @@ class PerceptronTransformTrainer(BasicTrainer):
         return loss
 
     def _params_to_optimize(self):
-        # The optimizer steps aux_model, so gradient clipping must target its
-        # parameters (gradients are transferred from self.model -> self.aux_model
-        # in _backward_pass_on_loss).
         return self.aux_model.parameters()
 
     def _get_optimizer_and_scheduler(self, lr, epochs):

@@ -61,11 +61,9 @@ class TtfsDiff:
     actual_value: float
 
 
-# Contract-vs-contract: same numpy/float64 analytical runner on both sides.
 TTFS_CONTRACT_ATOL = 1e-12
 TTFS_CONTRACT_RTOL = 1e-9
 
-# Hardware/plugin readout: float32 compute-op gather and plugin trace ULP drift.
 TTFS_HARDWARE_ATOL = 1e-6
 TTFS_HARDWARE_RTOL = 1e-5
 

@@ -1,8 +1,4 @@
-"""Backend heatmap image generation for GUI snapshots.
-
-Renders weight matrices as PNG images (with optional pruned row/col lines)
-so the frontend receives only image data URIs, not raw matrices.
-"""
+"""Backend heatmap image generation for GUI snapshots."""
 
 from __future__ import annotations
 
@@ -21,17 +17,7 @@ def render_heatmap_png_bytes(
     max_size: int = 1024,
     dpi: int = 150,
 ) -> bytes:
-    """Render a 2D weight matrix as a PNG heatmap and return raw PNG bytes.
-
-    This is the transport-friendly variant used by the lazy
-    :class:`~mimarsinan.gui.resources.ResourceStore`: the GUI server streams
-    the bytes directly with ``Content-Type: image/png`` instead of embedding
-    a multi-megabyte base64 data URI inside a JSON snapshot.
-
-    See :func:`render_heatmap_png_data_uri` for the colormap / pruning-line
-    contract — both functions share the same implementation and differ only
-    in the returned representation.
-    """
+    """Render a 2D weight matrix as a PNG heatmap and return raw PNG bytes."""
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -40,7 +26,6 @@ def render_heatmap_png_bytes(
         return _empty_image_bytes()
 
     h, w = matrix.shape
-    # Preserve aspect ratio when capping: scale so the longer side is max_size
     max_side = max(h, w, 1)
     scale = max_size / max_side
     out_w = max(1, round(w * scale))
@@ -57,7 +42,6 @@ def render_heatmap_png_bytes(
     p98_idx = max(0, int(round(0.98 * len(flat))) - 1)
     scale = max(flat[p98_idx] if len(flat) > 0 else 0, np.abs(matrix).max() * 0.05, 1e-12)
 
-    # Diverging colormap without red (red is reserved for pruned lines): blue (neg) -> white -> brown (pos)
     im = ax.imshow(
         matrix,
         aspect="auto",
@@ -71,8 +55,6 @@ def render_heatmap_png_bytes(
     ax.set_ylim(h - 0.5, -0.5)
     ax.axis("off")
 
-    # Pruned row/col lines (red): thickness = one row height or one column width in the output image
-    # Row line thickness in points: (out_h / h) pixels -> 72 * (out_h / h) / dpi pt. Column likewise.
     row_lw_pt = 72.0 * out_h / (h * dpi) if h else 1.0
     col_lw_pt = 72.0 * out_w / (w * dpi) if w else 1.0
     if pruned_row_mask is not None:
@@ -86,8 +68,7 @@ def render_heatmap_png_bytes(
 
     plt.tight_layout(pad=0)
     buf = io.BytesIO()
-    # Do not use bbox_inches='tight' so output dimensions stay exactly (out_w, out_h)
-    # and match the frontend mini-view frame aspect (neurons/axons).
+    # Avoid bbox_inches='tight' so output stays exactly (out_w, out_h) to match the frontend mini-view aspect.
     plt.savefig(
         buf,
         format="png",
@@ -108,13 +89,7 @@ def render_heatmap_png_data_uri(
     max_size: int = 1024,
     dpi: int = 150,
 ) -> str:
-    """Render a 2D weight matrix as a PNG heatmap and return a base64 data URI.
-
-    Kept for callers (and legacy tests) that still want an inline
-    ``data:image/png;base64,...`` string. New code should prefer
-    :func:`render_heatmap_png_bytes` + the
-    :class:`~mimarsinan.gui.resources.ResourceStore`.
-    """
+    """Render a 2D weight matrix as a PNG heatmap and return a base64 data URI."""
     png = render_heatmap_png_bytes(
         matrix,
         pruned_row_mask=pruned_row_mask,

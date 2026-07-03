@@ -1,13 +1,4 @@
-"""Segment-aware TTFS spike-train forward — thin wrapper over the unified segment driver.
-
-The cascaded ``ttfs_cycle_based`` deployment runs each neural segment as a
-single-spike, ramp-integrate, fire-once simulation, with value-domain compute
-ops between segments and a host-side *encoding layer* (value -> TTFS spike) at
-each segment entry. :class:`TTFSSegmentForward` reproduces that on the trainable
-model (differentiable) by driving :class:`SegmentForwardDriver` with the
-:class:`TtfsSegmentPolicy` — see ``mimarsinan/spiking/segment_forward.py`` for
-the shared walk and the TTFS latency-window/latch semantics.
-"""
+"""Segment-aware TTFS spike-train forward — thin wrapper over the unified segment driver."""
 
 from __future__ import annotations
 
@@ -30,17 +21,14 @@ __all__ = [
 class TTFSSegmentForward:
     """Differentiable segment-aware TTFS spike forward over a ``ModelRepresentation``.
 
-    Install as ``model.forward`` during TTFS-cycle fine-tuning (the analog of
-    LIF's ``run_cycle_accurate`` install). Perceptron activations must be
-    ``TTFSActivation`` with ``encoding`` set to match ``is_encoding_layer``.
+    Install as ``model.forward`` during TTFS-cycle fine-tuning; perceptron activations
+    must be ``TTFSActivation`` with ``encoding`` matching ``is_encoding_layer``.
     """
 
     def __init__(self, mapper_repr, T: int, *, boundary_surrogate_temp: float | None = None):
         self.repr = mapper_repr
         self.T = int(T)
         policy = TtfsSegmentPolicy()
-        # STE backward through the offload-boundary re-encode (None = severed,
-        # the historical contract). Forward is unchanged either way.
         policy.boundary_surrogate_temp = boundary_surrogate_temp
         self._driver = SegmentForwardDriver(mapper_repr, self.T, policy)
 

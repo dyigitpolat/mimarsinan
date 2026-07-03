@@ -12,7 +12,6 @@ from mimarsinan.chip_simulation.hybrid_run.hybrid_execution import (
     assemble_segment_input_numpy,
     execute_compute_op_numpy,
     resolve_stage_compute_scales,
-    store_segment_output_numpy,
 )
 from mimarsinan.chip_simulation.hybrid_run.hybrid_semantics import (
     NeuralSegmentResult,
@@ -25,10 +24,17 @@ from mimarsinan.chip_simulation.spiking_semantics import (
 )
 from mimarsinan.chip_simulation.ttfs.ttfs_encoding import ttfs_input_grid_quantize
 from mimarsinan.chip_simulation.hybrid_run.hybrid_stage_runner import run_hybrid_stages
+from mimarsinan.chip_simulation.ttfs.ttfs_recorder import (
+    CoreTtfsActivations,
+    SegmentTtfsRecord,
+    TtfsRunRecord,
+    normalize_core_output_activation,
+)
 from mimarsinan.chip_simulation.ttfs.ttfs_segment import (
     run_ttfs_continuous_segment,
     run_ttfs_quantized_segment,
     segment_ttfs_arrays_from_mapping,
+    ttfs_core_membrane_voltages,
 )
 from mimarsinan.mapping.support.core_geometry import used_neurons
 
@@ -40,7 +46,7 @@ _CONTRACT_DTYPE = np.float64
 class TtfsContractNeuralStageResult:
     """Contract outputs for one hybrid neural stage (analytical TTFS only)."""
 
-    segment_record: Any  # SegmentTtfsRecord
+    segment_record: Any
     neural_result: NeuralSegmentResult
     membrane_voltages: List[np.ndarray]
     seg_input: np.ndarray
@@ -50,7 +56,7 @@ class TtfsContractNeuralStageResult:
 class TtfsContractRunResult:
     """Full hybrid TTFS contract run (numpy/float64 compute path)."""
 
-    record: Any  # TtfsRunRecord
+    record: Any
     state_buffer: Dict[int, np.ndarray]
 
 
@@ -113,8 +119,6 @@ class TtfsAnalyticalExecutor:
         spiking_mode: str,
     ) -> List[np.ndarray]:
         """Per-core ``V = W @ a + b`` before activation (SANA-FE preset injection)."""
-        from mimarsinan.chip_simulation.ttfs.ttfs_segment import ttfs_core_membrane_voltages
-
         seg_arrays = segment_ttfs_arrays_from_mapping(hcm)
         return ttfs_core_membrane_voltages(
             seg_arrays,
@@ -131,11 +135,6 @@ def _segment_record_from_neural_result(
     hcm: Any,
     result: NeuralSegmentResult,
 ) -> Any:
-    from mimarsinan.chip_simulation.ttfs.ttfs_recorder import (
-        CoreTtfsActivations,
-        SegmentTtfsRecord,
-    )
-
     cores_rec = []
     per_core = result.per_core_activations or []
     for ci, core in enumerate(hcm.cores):
@@ -147,10 +146,6 @@ def _segment_record_from_neural_result(
         act = per_core[ci]
         if act is None or act.size == 0:
             continue
-        from mimarsinan.chip_simulation.ttfs.ttfs_recorder import (
-            normalize_core_output_activation,
-        )
-
         cores_rec.append(CoreTtfsActivations(
             core_index=ci,
             n_out_used=n_out,
@@ -183,10 +178,8 @@ def run_ttfs_contract_neural_stage(
 ) -> TtfsContractNeuralStageResult:
     """Run one neural stage on the shared TTFS contract path (float64 numpy).
 
-    ``quantize_input_to_ttfs_grid`` snaps the assembled stage input to the
-    single-spike timing grid — the synchronized schedule's hardware boundary
-    (every axon is spike-time encoded, so off-grid values cannot cross it).
-    """
+    ``quantize_input_to_ttfs_grid`` snaps the assembled input to the single-spike
+    timing grid — the synchronized schedule's hardware boundary."""
     hcm = stage.hard_core_mapping
     assert hcm is not None
     exec_ = executor or TtfsAnalyticalExecutor()
@@ -261,11 +254,7 @@ def run_ttfs_hybrid_contract(
     """Execute the full hybrid mapping on the canonical TTFS contract path.
 
     Pass a ``SpikingDeploymentContract`` to derive ``simulation_length`` /
-    ``spiking_mode`` / the wire grid-snap rule from the SSOT; the loose kwargs
-    remain honored for callers below the contract boundary.
-    """
-    from mimarsinan.chip_simulation.ttfs.ttfs_recorder import TtfsRunRecord
-
+    ``spiking_mode`` / grid-snap from the SSOT; loose kwargs remain honored."""
     if contract is not None:
         if simulation_length is None:
             simulation_length = contract.simulation_steps

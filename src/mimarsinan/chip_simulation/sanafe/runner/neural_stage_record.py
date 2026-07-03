@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional
 
 import numpy as np
 
@@ -24,7 +24,6 @@ from mimarsinan.chip_simulation.sanafe.analysis import (
     _compute_ttfs_activity_diagnostics,
     _flatten_message_trace,
     _group_name,
-    _group_row_offsets,
     _pack_potential_trace,
     _pack_spike_trace_matrix,
     _per_core_energy_sanafe,
@@ -166,9 +165,6 @@ class SanafeNeuralStageRecordMixin:
             hcm=hcm,
         )
 
-        # Single-spike cascade: the per-core spike count is single-spike *traffic*;
-        # the decoded segment-output *value* is the ramp reconstructed from each
-        # output neuron's fire timing (T_eff − first_fire).
         from mimarsinan.chip_simulation.spiking_semantics import is_cascaded_ttfs
 
         cascade_override = None
@@ -263,10 +259,8 @@ class SanafeNeuralStageRecordMixin:
 
         cascade = is_cascaded_ttfs(self.spiking_mode, self.ttfs_cycle_schedule)
         if cascade or not _runner.is_ttfs_spiking_mode(self.spiking_mode):
-            # Count-based decode (count / T), shared by LIF and cascaded greedy
-            # TTFS. Cascaded counts can exceed T (the lossy ``+latency`` offset),
-            # exactly as HCM/nevresim produce — consistency across backends, not
-            # agreement with the analytical reference, is the contract.
+            # Cross-backend contract: cascaded counts may exceed T (lossy +latency),
+            # matching HCM/nevresim — consistency across backends, not analytical agreement.
             seg_output_rates = decode_segment_output(
                 seg_out_count, self.T, dtype=_COMPUTE_DTYPE,
             )

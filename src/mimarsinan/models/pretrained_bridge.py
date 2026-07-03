@@ -1,34 +1,4 @@
-"""Pretrained bridge: import stock pretrained CNN classifiers as deployable regions.
-
-Lands the ``regime=pretrained`` REGION as a capability (no training, no GPU
-deployment). It imports stock ImageNet-pretrained torchvision residual nets
-(ResNet-18, ResNet-50) and re-sizes the classifier head to ``num_classes`` so the
-SAME conversion + verification instruments B4/SqueezeNet used
-(``classify_validity`` + ``estimate_cores_needed``) can produce an HONEST
-pretrained-regime region descriptor. The native 3-channel stem and residual
-structure are kept exactly as pretrained -- the bridge does NOT rewrite the
-architecture; it only swaps the final ``fc`` Linear so the readout matches the
-target task.
-
-Pipeline-native op set: Conv2d / BatchNorm2d (absorbed into conv) / ReLU /
-MaxPool2d / AdaptiveAvgPool2d / Linear plus residual ``add`` (host ComputeOp).
-No grouped/depthwise conv, no attention, no LayerNorm -- so it carries NO
-research-frontier op. The residual ``add`` segment boundaries are what make the
-MEASURED verdict param-minority/MAC-majority (VALID_FLAGGED) for the BasicBlock
-ResNet-18, the honest cost of mapping a stock residual net. The BottleneckBlock
-ResNet-50 keeps the param MAJORITY on-chip (its 1x1/3x3 trunk convs outweigh the
-residual-boundary downsample shortcuts) -- so the param-minority verdict is
-architecture-dependent, not an intrinsic residual-net property.
-
-Beyond the static validity/capacity descriptor, ``deploy_and_eval`` actually
-DEPLOYS a (small) bridge model through the real SNN pipeline -- convert -> IR map
--> hybrid hard-core pack -> deployed ``SpikingHybridCoreFlow`` sim -- and reports
-the DEPLOYED accuracy on a caller-supplied (small) eval set. It consumes the
-convert/map/deploy primitives verbatim (no reimplementation, no test-helper
-import); the heavy full-ImageNet deploy is a supervised Group-2 GPU run, this
-path is the fast/subset deploy bridge that unblocks the dual-regime and
-pretrained-ImageNet-deploy follow-ups.
-"""
+"""Pretrained bridge: import stock pretrained CNN classifiers as deployable regions."""
 
 from __future__ import annotations
 
@@ -52,15 +22,8 @@ def load_pretrained_resnet18(
 ) -> nn.Module:
     """Return a torchvision ResNet-18 with its ``fc`` head re-sized to ``num_classes``.
 
-    ``pretrained=True`` loads the stock ImageNet1K_V1 weights (downloaded/cached by
-    torchvision; needs network on first call); ``pretrained=False`` builds the same
-    architecture with random weights (offline-safe, for structural checks). Only the
-    final ``fc`` Linear is replaced -- the pretrained convolutional trunk is kept
-    verbatim, including its native 3-channel stem and residual blocks.
-
-    Raises:
-        ImportError: if torchvision is not importable in the environment (reported
-            verbatim so the missing dependency is an honest, precise blocker).
+    ``pretrained=True`` loads stock ImageNet1K_V1 weights (needs network); only the ``fc``
+    Linear is replaced. Raises ImportError verbatim if torchvision is not importable.
     """
     if int(num_classes) < 1:
         raise ValueError(f"num_classes must be >= 1, got {num_classes}.")
@@ -84,13 +47,8 @@ def load_pretrained_resnet50(
 ) -> nn.Module:
     """Return a torchvision ResNet-50 with its ``fc`` head re-sized to ``num_classes``.
 
-    The bottleneck-block sibling of :func:`load_pretrained_resnet18`: same residual
-    op set (conv/bn/relu/pool/linear + residual add, all ``groups==1``), but the
-    1x1->3x3->1x1 bottleneck trunk holds the param majority on-chip. ``pretrained``,
-    head-resize, and the ``ImportError`` contract match ``load_pretrained_resnet18``.
-
-    Raises:
-        ImportError: if torchvision is not importable (reported verbatim).
+    Bottleneck-block sibling of :func:`load_pretrained_resnet18`; same head-resize and
+    ImportError contract. Raises ImportError verbatim if torchvision is not importable.
     """
     if int(num_classes) < 1:
         raise ValueError(f"num_classes must be >= 1, got {num_classes}.")
@@ -107,18 +65,11 @@ def load_pretrained_resnet50(
     return _resize_head(tvm.resnet50(weights=weights), num_classes)
 
 
-# ── DEPLOY-and-EVAL: convert -> map -> deployed spiking sim -> deployed accuracy ──
-
-
 @dataclass(frozen=True)
 class DeployedEval:
     """Result of deploying a bridge model through the SNN pipeline and evaluating it.
 
-    Fields are MEASURED on the deployed ``SpikingHybridCoreFlow`` sim, not the
-    torch model: ``accuracy`` is deployed-on-chip-sim top-1 over ``num_samples``;
-    ``logits`` are the rate-decoded deployed logits ``(num_samples, num_classes)``;
-    ``neural_segments`` / ``hard_cores`` are the packed mapping fingerprint;
-    ``simulation_length`` is the spiking window T the sim ran.
+    All fields are MEASURED on the deployed ``SpikingHybridCoreFlow`` sim, not the torch model.
     """
 
     accuracy: float
@@ -169,37 +120,8 @@ def deploy_and_eval(
 ) -> DeployedEval:
     """Deploy ``model`` through the real SNN pipeline and report DEPLOYED accuracy.
 
-    Pipeline (consumed verbatim, no reimplementation):
-        1. ``convert_torch_model`` -- native torch -> ``ConvertedModelFlow`` (IR).
-        2. install deployable LIF activations + ``mark_encoding_layers``.
-        3. ``IRMapping.map`` -> ``build_hybrid_hard_core_mapping`` -- IR -> packed HCM.
-        4. ``SpikingHybridCoreFlow`` -- the deployed on-chip spiking simulator.
-        5. run the sim on ``eval_inputs``, rate-decode (``/T``), argmax, score.
-
-    This is the FAST/SUBSET deploy bridge: keep ``model`` small and ``eval_inputs``
-    a tiny subset so the deployed spiking sim stays cheap (full ImageNet deploy is a
-    supervised Group-2 GPU run, NOT this path). The returned accuracy is the genuine
-    deployed-sim top-1 -- the same executor ``SimulationRunner`` uses in production.
-
-    Args:
-        model: A bridge model (e.g. ``load_pretrained_resnet18``) or any
-            pipeline-native ``nn.Module``.
-        input_shape: Input shape without batch, e.g. ``(3, 16, 16)``.
-        num_classes: Number of output classes.
-        eval_inputs: ``(N, *input_shape)`` eval batch (a SMALL subset).
-        eval_targets: ``(N,)`` integer class labels aligned with ``eval_inputs``.
-        simulation_length: Spiking window ``T`` (small for a fast deploy).
-        spiking_mode: Deployment mode; ``"lif"`` is the lossless-capable default.
-        max_axons / max_neurons: IR-level core budgets (generous = no splitting).
-        device: Device for conversion + sim.
-
-    Returns:
-        A :class:`DeployedEval` with the deployed accuracy and mapping fingerprint.
-
-    Raises:
-        ValueError: if ``eval_inputs`` / ``eval_targets`` shapes are inconsistent.
-        Any conversion/mapping error (``RepresentabilityError`` etc.) propagates
-            verbatim so an un-deployable model is an honest, precise blocker.
+    Fast/subset bridge: keep ``model`` and ``eval_inputs`` small so the deployed spiking sim
+    stays cheap. Only ``spiking_mode='lif'`` is wired; conversion/mapping errors propagate verbatim.
     """
     from mimarsinan.torch_mapping.converter import convert_torch_model
     from mimarsinan.torch_mapping.encoding_layers import mark_encoding_layers

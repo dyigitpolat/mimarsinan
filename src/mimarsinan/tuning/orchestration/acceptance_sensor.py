@@ -1,13 +1,4 @@
-"""AcceptanceSensor — the statistical accept/reject/recovered decision service.
-
-Owns every accept/reject decision the cycle loop makes: baseline calibration,
-the catastrophic probe gate, the dual (relative + baseline-anchored absolute)
-rollback gate, and the reached-target test. This is a pure, bit-exact extraction
-of the math previously inlined in ``SmoothAdaptationCycleMixin._adaptation`` and
-``SmoothAdaptationRunMixin.run`` — the existing decision tests and the P0 golden
-traces are its equivalence contract. The paired-McNemar estimator (P2b) is a
-separate, flagged, Monte-Carlo-calibrated change layered on top of this surface.
-"""
+"""AcceptanceSensor — the statistical accept/reject/recovered decision service."""
 
 from __future__ import annotations
 
@@ -35,9 +26,8 @@ class AcceptanceSensor:
     def calibrate_baseline(self, validate_fn, eval_n_batches) -> BaselineRef:
         """Two reference evaluations → SE, empirical noise, tolerance, baseline.
 
-        Reproduces ``run()``'s baseline block exactly: two consecutive
-        ``validate_fn`` calls at rate 0.0, ``rollback_tolerance`` clamped to
-        ``[0.005, 0.05]`` around ``max(3·SE, 3·noise)``.
+        Two consecutive ``validate_fn`` calls at rate 0.0; ``rollback_tolerance``
+        clamped to ``[0.005, 0.05]`` around ``max(3·SE, 3·noise)``.
         """
         se = self._budget.accuracy_se()
         val_a = validate_fn(eval_n_batches)
@@ -51,15 +41,10 @@ class AcceptanceSensor:
     def absolute_floor(baseline, pipeline_tolerance, pipeline_hard_floor):
         """Baseline-anchored absolute floor (the cumulative-drift guard).
 
-        Robustness: the pipeline hard floor (a DEPLOYMENT target) is a valid
-        per-cycle rollback trigger only when it is ACHIEVABLE — i.e. not above the
-        rate-0 baseline the model can actually reach. A hard floor above the
-        baseline can never be met by any transform, so using it would roll back
-        every cycle and stall the ramp to rate 0 (it makes zero gradual progress);
-        the deployment shortfall is instead reported at finalize. Such an
-        unachievable hard floor is dropped here so the achievable baseline-anchored
-        floor governs the per-cycle gate. No-op when the floor is achievable (the
-        normal / golden-trace case)."""
+        A hard floor above the rate-0 baseline is unachievable by any transform, so
+        it is dropped here (it would roll back every cycle); the baseline-anchored
+        floor then governs the per-cycle gate.
+        """
         floors = []
         if baseline is not None and pipeline_tolerance is not None:
             floors.append(float(baseline) * (1.0 - float(pipeline_tolerance)))
@@ -72,11 +57,9 @@ class AcceptanceSensor:
 
     @staticmethod
     def is_catastrophic(instant_acc, target, factor=CATASTROPHIC_DROP_FACTOR) -> bool:
-        """Pre-recovery fast-fail: the *instant* (pre-recovery) accuracy has
-        collapsed below ``target·factor``. ``factor`` defaults to the coarse
-        ``CATASTROPHIC_DROP_FACTOR`` — a deliberately loose margin, not an SE gate
-        (see its definition): the instant drop precedes recovery and is expected
-        to be large, so the gate only catches unrecoverable collapse."""
+        """Pre-recovery fast-fail: the instant accuracy has collapsed below
+        ``target·factor`` (a coarse margin, not an SE gate — the pre-recovery drop
+        is expected to be large, so only unrecoverable collapse is caught)."""
         return instant_acc is not None and float(instant_acc) < target * factor
 
     @staticmethod
@@ -97,13 +80,9 @@ class AcceptanceSensor:
     ):
         """Non-stalling ratchet: the MAX of three lower bounds.
 
-        Keeps the per-step RELATIVE gate (``pre_cycle_acc - rollback_tolerance``)
-        so each step may give back a little and the ramp keeps climbing — no
-        stall — while capping the CUMULATIVE drift below the best-committed
-        high-water mark (``best_committed_acc - cumulative_bound``) so a sequence
-        of sub-margin slips can never accumulate more than ``cumulative_bound``
-        below the best; that bound TIGHTENS as the best ratchets up. The absolute
-        baseline floor is the third, hard lower bound.
+        The per-step relative gate keeps the ramp climbing; the cumulative bound
+        (``best_committed_acc - cumulative_bound``) caps accumulated drift below the
+        best high-water mark; the absolute baseline floor is the hard third bound.
         """
         bounds = [pre_cycle_acc - rollback_tolerance]
         if best_committed_acc is not None:
@@ -120,19 +99,13 @@ class AcceptanceSensor:
     def reached_target(post_acc, target, rollback_tolerance) -> bool:
         return post_acc >= target - rollback_tolerance
 
-    # ── Paired McNemar gate (P2b, behind tuning_use_paired_sensor) ────────────
-    # Reference and candidate are evaluated on the SAME fixed examples, so only
-    # discordant pairs carry information — a several-fold tighter SE than the
-    # marginal 0.5/sqrt(n), which lets the rollback tolerance shrink (spec §6.2).
-
     @staticmethod
     def paired_drop_se(ref_correct, cand_correct):
         """McNemar drop estimate and its SE from per-example correctness.
 
-        ``ref_correct``/``cand_correct`` are length-N boolean sequences over the
-        same examples. Returns ``(delta_hat, se)`` where positive ``delta_hat``
-        is the candidate's accuracy drop: ``(b10 - b01)/N``, ``sqrt(b10+b01)/N``
-        with ``b10`` = ref-right-cand-wrong, ``b01`` = ref-wrong-cand-right.
+        Length-N boolean sequences over the same examples. Returns ``(delta_hat,
+        se)``, positive ``delta_hat`` = the candidate's drop ``(b10 - b01)/N``,
+        ``sqrt(b10+b01)/N`` (b10 = ref-right-cand-wrong, b01 = ref-wrong-cand-right).
         """
         ref = [bool(v) for v in ref_correct]
         cand = [bool(v) for v in cand_correct]
@@ -148,13 +121,7 @@ class AcceptanceSensor:
     @classmethod
     def paired_is_rollback(cls, ref_correct, cand_correct, k_commit, min_effect=0.0):
         """Reject iff the paired drop is BOTH statistically significant (exceeds
-        ``k_commit`` SEs) AND practically meaningful (exceeds ``min_effect``).
-
-        ``min_effect`` is the global budget (spec §8.2): the paired SE is several-
-        fold smaller than the marginal SE, so a pure ``k·SE`` gate against the
-        fixed baseline rolls back negligible sub-budget drift and thrashes. The
-        budget floor keeps the more-powerful test from over-rejecting drops the
-        tuner is willing to tolerate, while still catching real budget breaches.
-        """
+        ``k_commit`` SEs) AND practically meaningful (exceeds ``min_effect``, the
+        global budget floor that keeps the tight paired SE from thrashing)."""
         delta, se = cls.paired_drop_se(ref_correct, cand_correct)
         return delta > k_commit * se and delta > min_effect

@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, Optional
 
 from compilagent import ObservationEvent, ObservationSink
+from compilagent import ObservationEvent as OE
 
 from mimarsinan.search.optimizers.llm.trace import emit_search_event
 
@@ -149,7 +150,6 @@ class MultiObjectiveSink:
             run_id=run_id,
             candidate_id=candidate_id,
         )
-        from compilagent import ObservationEvent as OE
         from ..sink.sink_events import observe_event
 
         paths_tuple = tuple(str(p) for p in (artifact_paths or ()))

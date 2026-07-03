@@ -14,14 +14,7 @@ def chip_aligned_segment_forward(
     *, compute_min_recorder: dict | None = None,
     node_value_recorder: dict | None = None,
 ) -> torch.Tensor:
-    """Segment-aware chip-aligned NF forward (matches HCM ``_forward_rate``).
-
-    Runs the unified :class:`SegmentForwardDriver` with the LIF policy:
-    perceptrons cascade per-cycle (signed-IF) inside neural segments, each
-    ComputeOp runs once on the decoded rate (with optional per-channel min
-    recording and ``_negative_shift`` application), and downstream segments
-    re-encode — the decode->compute->re-encode HCM performs at each boundary.
-    """
+    """Segment-aware chip-aligned NF forward (matches HCM ``_forward_rate``)."""
     if not hasattr(model, "get_mapper_repr"):
         return run_cycle_accurate(model, x, T)
     mapper_repr = model.get_mapper_repr()

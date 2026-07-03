@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from collections import Counter
-from typing import Callable, List, Protocol, TypeVar
+from typing import List, Protocol, TypeVar
 
 
 class SoftCoreLike(Protocol):
@@ -26,10 +25,7 @@ def _capacity(hc: HardCoreLike) -> int:
 
 
 def _read_latency(obj) -> int | None:
-    """Read latency from a softcore or hardcore, tolerating either the
-    runtime-side ``latency`` attribute or the layout-side ``latency_tag``
-    attribute.  Returns ``None`` if neither is set.
-    """
+    """Read latency tolerating runtime ``latency`` or layout ``latency_tag``; None if neither."""
     lat = getattr(obj, "latency", None)
     if lat is not None:
         return int(lat)
@@ -38,15 +34,7 @@ def _read_latency(obj) -> int | None:
 
 
 def _read_threshold_group(obj, *, fallback_id: int | None = None) -> int:
-    """Canonical threshold-group id read.
-
-    Uses the object's ``threshold_group_id`` when set; otherwise falls
-    back to ``-(fallback_id + 1)`` (or ``-(id + 1)`` when the object has
-    an ``id`` attribute).  Both are unique-per-object, consistent with
-    how ``LayoutIRMapping._finalize_softcores`` and
-    how ``LayoutIRMapping._finalize_softcores`` have historically disambiguated
-    ungrouped softcores.
-    """
+    """Canonical threshold-group id read; ungrouped objects get a unique ``-(id+1)`` fallback."""
     tg = getattr(obj, "threshold_group_id", None)
     if tg is not None:
         return int(tg)
@@ -60,16 +48,10 @@ def canonical_fuse_hardcores(
     *,
     make_fused,
 ) -> HardT:
-    """Shared fusion protocol used by both the layout packer and the real
-    hard-core mapper.
+    """Shared fusion protocol: sum axons across fused cores, keep the first core's neuron width.
 
-    The algorithm is identical — sum axons across the fused cores, keep
-    the first core's neuron width.  Only the *construction* of the fused
-    instance is type-specific (real ``HardCore`` must carry over
-    ``threshold``/``activation_scale``/``hardware_bias``/``fused_component_axons``;
-    the layout ``LayoutHardCoreInstance`` only needs dimensions).  That
-    work is delegated to ``make_fused`` so both paths take the same
-    branching decisions inside ``greedy_pack_softcores``.
+    Type-specific instance construction is delegated to ``make_fused`` so the
+    layout and runtime packers take identical branching decisions.
     """
     if not hcs:
         raise ValueError("Cannot fuse empty list of hardcores")
@@ -89,17 +71,10 @@ def canonical_split_softcore(
     *,
     make_fragments,
 ) -> tuple[SoftT, SoftT]:
-    """Shared neuron-dimension split protocol.
+    """Shared neuron-dimension split: fragments of shape ``(axons, available_neurons)`` and the remainder.
 
-    Produces fragment shapes ``(axons, available_neurons)`` and
-    ``(axons, remaining)`` where ``remaining = total_neurons - available_neurons``.
-    Both the layout packer and the runtime packer cut at the same
-    boundary (the caller's ``available_neurons``).  ``make_fragments`` is
-    type-specific: layout builds two ``LayoutSoftCoreSpec``s with shape
-    + carried-over group/latency, runtime builds two ``SoftCore``s that
-    additionally carry sliced ``core_matrix`` / ``axon_sources`` /
-    ``hardware_bias`` / bank metadata.  The split *decision* stays in one
-    place so the downstream packing order is identical in both paths.
+    Both packers cut at the same boundary; ``make_fragments`` builds the
+    type-specific fragment instances.
     """
     total_neurons = int(softcore.get_output_count())
     remaining = total_neurons - int(available_neurons)
@@ -116,29 +91,10 @@ def canonical_split_softcore(
 
 
 def canonical_is_mapping_possible(softcore: SoftCoreLike, hardcore: HardCoreLike) -> bool:
-    """Single-source-of-truth feasibility predicate for bin-packing.
+    """Single-source-of-truth feasibility predicate shared by the layout and runtime packers.
 
-    Both the layout-level ``pack_layout`` and the runtime-level
-    hard-core mapper call this via the shared
-    ``greedy_pack_softcores`` algorithm, so the wizard's feasibility
-    estimate and the pipeline's real packing decision follow identical
-    rules:
-
-    * **Threshold-group**: once a hardcore is claimed by a softcore's
-      threshold group, it may only accept softcores from the same group.
-      Empty hardcores (``hardcore.threshold_group_id is None``) accept
-      any softcore.  The softcore group id is read canonically
-      (``_read_threshold_group``); ungrouped softcores get a per-object
-      unique fallback so they never mistakenly share a hardcore.
-    * **Latency**: once a hardcore is pinned to a latency, it accepts
-      only softcores with that same latency.  Read tolerates either
-      ``.latency`` (runtime) or ``.latency_tag`` (layout) attribute
-      names so both types flow through the same check.
-    * **Dimensions**: the softcore's input/output counts must fit the
-      hardcore's remaining axon/neuron budget (``available_axons`` /
-      ``available_neurons`` on runtime HardCore, or the full dimensions
-      reported by ``LayoutHardCoreInstance.get_input_count()`` /
-      ``get_output_count()`` which already reflect remaining capacity).
+    A hardcore accepts a softcore only when threshold-group, latency, and the
+    remaining axon/neuron budget all match.
     """
     hc_tg = getattr(hardcore, "threshold_group_id", None)
     if hc_tg is not None:
@@ -165,21 +121,7 @@ def canonical_is_mapping_possible(softcore: SoftCoreLike, hardcore: HardCoreLike
 
 
 def _placement_waste(soft: SoftCoreLike, hard: HardCoreLike) -> int:
-    """
-    Estimate the area wasted by placing *soft* into *hard*.
-
-    In diagonal packing each softcore occupies a block of axons × neurons
-    along the diagonal.  The dead zone for a single placement is the
-    L-shaped region that neither the softcore nor any future placement
-    can use::
-
-        waste = (h_a − s_a) · s_n + s_a · (h_n − s_n)
-              = h_a · s_n + s_a · h_n − 2 · s_a · s_n
-
-    This naturally penalises aspect-ratio mismatches: a softcore that is
-    narrow in axons but wide in neurons will score much lower on a
-    narrow-axon core type than on a square core of the same total area.
-    """
+    """L-shaped diagonal-packing dead-zone area ``h_a·s_n + s_a·h_n − 2·s_a·s_n``; penalises aspect-ratio mismatch."""
     s_a = int(soft.get_input_count())
     s_n = int(soft.get_output_count())
     h_a = int(hard.get_input_count())
@@ -188,15 +130,7 @@ def _placement_waste(soft: SoftCoreLike, hard: HardCoreLike) -> int:
 
 
 def _remaining_capacity(soft: SoftCoreLike, hard: HardCoreLike) -> int:
-    """
-    Remaining usable area after placing *soft* into *hard*.
-
-    Uses ``available_axons`` / ``available_neurons`` when present (used
-    cores), otherwise falls back to the full core dimensions (unused cores).
-
-    A lower value indicates a tighter fit — the softcore fills up the
-    remaining space more completely, reducing fragmentation.
-    """
+    """Remaining usable area after placing *soft* into *hard*; lower means a tighter fit."""
     avail_a = getattr(hard, "available_axons", int(hard.get_input_count()))
     avail_n = getattr(hard, "available_neurons", int(hard.get_output_count()))
     s_a = int(soft.get_input_count())
@@ -205,16 +139,10 @@ def _remaining_capacity(soft: SoftCoreLike, hard: HardCoreLike) -> int:
 
 
 def pick_best_softcore(unmapped_cores: List[SoftT]) -> SoftT:
-    """
-    Heuristic used by the existing HardCoreMapping:
-    - pick the core with max input count
-    - pick the core with max output count
-    - choose whichever is more extreme
-    """
+    """Pick the core whose max input/output count is most extreme."""
     if not unmapped_cores:
         raise ValueError("unmapped_cores is empty")
 
-    # Single linear scan is O(n) vs two full sorts O(n log n) — same winner.
     core_a = max(unmapped_cores, key=lambda c: c.get_input_count())
     core_b = max(unmapped_cores, key=lambda c: c.get_output_count())
 

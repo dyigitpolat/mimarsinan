@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, List, Sequence
+from typing import Any, List
 
 import numpy as np
 
 from mimarsinan.mapping.support.core_geometry import used_axons, used_neurons
 from mimarsinan.mapping.support.spike_source_spans import SpikeSourceSpan, compress_spike_sources
-from mimarsinan.models.spiking.ttfs_kernels import ttfs_quantized_activation_np
 
 
 @dataclass
@@ -71,11 +70,7 @@ def segment_ttfs_arrays_from_mapping(mapping: Any) -> SegmentTtfsArrays:
                 if bank_mat is not None:
                     ba0, ba1 = pd.get("bank_axon_range") or (0, a)
                     bn0, bn1 = pd.get("bank_neuron_range") or (0, n)
-                    # ``bank.core_matrix`` is stored ``(axons, neurons)`` (see
-                    # ``register_weight_bank``); slice axons with the axon range
-                    # and neurons with the neuron range, then transpose to the
-                    # ``(neurons, axons)`` core_params layout. (Equal for square
-                    # cores, which is why the swapped form went unnoticed.)
+                    # bank.core_matrix is (axons, neurons); slice by axon/neuron range then transpose to the (neurons, axons) core_params layout.
                     core_weight = np.asarray(
                         bank_mat[int(ba0):int(ba1), int(bn0):int(bn1)],
                         dtype=np.float64,

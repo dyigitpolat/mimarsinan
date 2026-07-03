@@ -1,10 +1,4 @@
-"""
-Weight loading strategies for pretrained model initialization.
-
-Provides a strategy pattern for loading weights from various sources
-(torchvision pretrained, local checkpoints, URLs) into native PyTorch
-models before or instead of training from scratch.
-"""
+"""Weight loading strategies for pretrained model initialization."""
 
 from __future__ import annotations
 
@@ -19,11 +13,7 @@ import torch.nn as nn
 def _filter_compatible(
     model: nn.Module, src_sd: Dict[str, Any]
 ) -> tuple[Dict[str, Any], list[str]]:
-    """Return only state-dict entries whose shapes match the model's parameters.
-
-    Returns ``(compatible_sd, skipped_keys)`` where *skipped_keys* lists
-    the names of parameters dropped due to shape mismatch.
-    """
+    """Return state-dict entries compatible with the model, and the list of shape-mismatched keys skipped."""
     model_sd = model.state_dict()
     compatible = {}
     skipped = []
@@ -43,29 +33,15 @@ class WeightLoadingStrategy(ABC):
 
     @abstractmethod
     def load(self, model: nn.Module, **kwargs) -> tuple[nn.Module, Dict[str, Any]]:
-        """Load weights into *model* and return ``(model, info)``.
-
-        *info* is a dict with metadata about what was loaded, e.g.
-        ``{"matched": 150, "missing": 2, "unexpected": 0, "source": "..."}``.
-        """
+        """Load weights into *model* and return ``(model, info)``; *info* holds load metadata."""
 
 
 class TorchvisionWeightStrategy(WeightLoadingStrategy):
-    """Load pretrained weights from a torchvision model factory.
-
-    The strategy creates a fresh pretrained instance using the provided
-    factory, extracts its ``state_dict``, and loads compatible parameters
-    into the target model.  Shape-mismatched parameters (e.g. a classifier
-    head with different ``num_classes``) are silently skipped so the target
-    model keeps its randomly-initialised values for those layers.
+    """Load pretrained weights from a torchvision model factory; shape-mismatched
+    params (e.g. a differently-sized head) are skipped so the target keeps its init.
     """
 
     def __init__(self, pretrained_factory):
-        """
-        Args:
-            pretrained_factory: Callable that returns a pretrained nn.Module.
-                E.g. ``lambda: torchvision.models.vgg16_bn(weights="DEFAULT")``.
-        """
         self._factory = pretrained_factory
 
     def load(self, model: nn.Module, **kwargs) -> tuple[nn.Module, Dict[str, Any]]:
@@ -147,22 +123,17 @@ class URLWeightStrategy(WeightLoadingStrategy):
 
 
 class UnsupportedPreloadError(ValueError):
-    """A pretrained-regime deploy was requested for a builder with no pretrained source.
+    """Raised when a pretrained deploy is requested for a builder with no pretrained source.
 
-    Typed so the pipeline / campaign can record a CLEAN ``UNSUPPORTED`` skip instead
-    of an opaque mid-pipeline ``rc=1``: a from-scratch native builder (deep_cnn,
-    deep_mlp, lenet5, mlp_mixer_core) has no ``get_pretrained_factory()``, so a
-    ``weight_source='torchvision'`` request for it is ill-posed (there is no
-    pretrained deep_cnn). Subclasses ``ValueError`` for back-compat.
+    Typed so the pipeline records a clean ``UNSUPPORTED`` skip instead of an opaque
+    ``rc=1``; subclasses ``ValueError`` for back-compat.
     """
 
 
 def torchvision_source_supported(model_builder=None) -> bool:
     """Whether a ``weight_source='torchvision'`` preload can resolve for this builder.
 
-    Non-raising predicate (the campaign generator queries it to decide whether a
-    vehicle gets a pretrained arm); the raising path lives in
-    ``resolve_weight_strategy``.
+    Non-raising predicate; the raising path lives in ``resolve_weight_strategy``.
     """
     return model_builder is not None and hasattr(
         model_builder, "get_pretrained_factory"
@@ -173,22 +144,10 @@ def resolve_weight_strategy(
     weight_source: str,
     model_builder=None,
 ) -> Optional[WeightLoadingStrategy]:
-    """Resolve a ``weight_source`` config string into a loading strategy.
+    """Resolve a ``weight_source`` string (``'torchvision'``, a checkpoint path, or an http(s) URL) into a strategy, or ``None`` if falsy.
 
-    Args:
-        weight_source: One of:
-            - ``"torchvision"`` -- use the builder's pretrained factory
-            - A file path ending in ``.pt``, ``.pth``, ``.ckpt`` -- checkpoint
-            - A string starting with ``http://`` or ``https://`` -- URL download
-        model_builder: The model builder (must have ``get_pretrained_factory()``
-            when ``weight_source="torchvision"``).
-
-    Returns:
-        A ``WeightLoadingStrategy``, or ``None`` if ``weight_source`` is falsy.
-
-    Raises:
-        UnsupportedPreloadError: ``weight_source='torchvision'`` on a builder that
-            has no ``get_pretrained_factory()`` (raised EARLY, before any load).
+    Raises ``UnsupportedPreloadError`` early when torchvision is requested for a
+    builder without ``get_pretrained_factory()``.
     """
     if not weight_source:
         return None

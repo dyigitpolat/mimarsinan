@@ -1,21 +1,8 @@
-"""Frontier P1 CI guard — the self-auditing checks that keep the instrument honest.
-
-The coverage instrument is only trustworthy if its INVARIANTS are mechanically
-enforced. These guards FAIL LOUD on each way the instrument could lie:
-
-* :func:`assert_axes_screening_sound` — every ``SCREENED_COLLAPSED`` axis carries a
-  non-empty ``screening_artifact`` (collapse-on-a-hunch is forbidden);
-* :func:`assert_no_merged_valid_tiers` — a report headline NEVER fuses VALID +
-  VALID_FLAGGED into one covered total (a flagged cell is never claimed plainly valid);
-* :func:`assert_no_aged_unowned_flags` — a flag aged past the threshold MUST have an
-  owner (a flag does not rot silently).
-
-:func:`audit_coverage_instrument` runs all three over the live axes + a report.
-"""
+"""CI guards that fail loud on each way the coverage instrument could lie."""
 
 from __future__ import annotations
 
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Any, Mapping, Sequence
 
 from mimarsinan.chip_simulation.coverage_ledger import (
     AXES,
@@ -35,13 +22,9 @@ __all__ = [
 ]
 
 
-# The default age (days) past which an UNOWNED flag is a CI violation.
 DEFAULT_FLAG_AGE_DAYS = 90
 
 
-# Headline keys that would FUSE the two valid tiers into one covered total — forbidden,
-# because a VALID_FLAGGED cell owes a research gap and must never be reported as plainly
-# valid. The report's ``to_dict`` deliberately emits NONE of these.
 _MERGED_VALID_TIER_KEYS = (
     "valid_total",
     "covered_valid_total",
@@ -58,12 +41,7 @@ class CoverageGuardError(AssertionError):
 def assert_axes_screening_sound(
     axes: Sequence[HypervolumeAxis] = AXES,
 ) -> None:
-    """FAIL if any axis is ``SCREENED_COLLAPSED`` without a ``screening_artifact``.
-
-    The dataclass already raises at construction; this guard catches a status tampered
-    AFTER construction (the defense-in-depth CI check) so a collapse can never reach the
-    denominator without a linked artifact.
-    """
+    """FAIL if any axis is ``SCREENED_COLLAPSED`` without a ``screening_artifact`` (catches post-construction tampering)."""
     offenders = [
         a.name
         for a in axes
@@ -79,13 +57,7 @@ def assert_axes_screening_sound(
 
 
 def assert_no_merged_valid_tiers(report_dict: Mapping[str, Any]) -> None:
-    """FAIL if a report dict carries a headline that merges VALID + VALID_FLAGGED.
-
-    Accepts either a :class:`CoverageReport` (its ``to_dict`` is taken) or a raw dict.
-    A merged-tier key (``valid_total`` / ``covered_valid_total`` / …) is forbidden: the
-    two valid tiers must always be reported separately so a flagged cell is never
-    claimed as plainly valid.
-    """
+    """FAIL if a report (or its dict) carries a headline key that merges VALID + VALID_FLAGGED."""
     data = report_dict.to_dict() if isinstance(report_dict, CoverageReport) else report_dict
     merged = [key for key in _MERGED_VALID_TIER_KEYS if key in data]
     if merged:
@@ -100,12 +72,7 @@ def assert_no_aged_unowned_flags(
     report: CoverageReport,
     max_age_days: int = DEFAULT_FLAG_AGE_DAYS,
 ) -> None:
-    """FAIL if any flag is older than ``max_age_days`` AND has no owner.
-
-    A fresh unowned flag is fine (someone may pick it up); an OWNED aged flag is fine
-    (it has a driver); but an UNOWNED flag aged past the threshold is rot — the guard
-    fails so the flag gets an owner or gets resolved.
-    """
+    """FAIL if any flag is older than ``max_age_days`` AND has no owner."""
     offenders = [
         m
         for m in report.flag_metadata

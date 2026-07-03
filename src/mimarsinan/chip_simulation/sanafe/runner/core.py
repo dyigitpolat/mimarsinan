@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-import re
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Optional
 
 import numpy as np
 
@@ -17,17 +16,9 @@ from mimarsinan.chip_simulation.sanafe.runner.constants import _COMPUTE_DTYPE, _
 from mimarsinan.chip_simulation.sanafe.presets import PRESETS
 from mimarsinan.chip_simulation.sanafe.records import (
     SanafeArchGeometry,
-    SanafeCascadePoint,
-    SanafeConnectivityEdge,
-    SanafeCoreRecord,
-    SanafeCriticalCore,
-    SanafeCycleEnergyPoint,
     SanafeEnergyBreakdown,
-    SanafeNocLink,
-    SanafeNocLinkLoad,
     SanafeRunRecord,
     SanafeSegmentRecord,
-    SanafeTileRecord,
 )
 
 
@@ -52,7 +43,6 @@ class SanafeRunner(SanafeNeuralStageMixin, SanafeNeuralStageRecordMixin, SanafeS
         cores_per_tile: int = 0,
     ):
         if contract is not None:
-            # SpikingDeploymentContract supersedes the loose semantic kwargs.
             behavior = contract.behavior
             ttfs_cycle_schedule = contract.ttfs_cycle_schedule
         if behavior is None:
@@ -94,7 +84,7 @@ class SanafeRunner(SanafeNeuralStageMixin, SanafeNeuralStageRecordMixin, SanafeS
         self._arch_built_for_T: Optional[int] = None
         self._arch_name: str = "<unbuilt>"
         self._arch_geometry: Optional[SanafeArchGeometry] = None
-        self._last_chip: Optional[Any] = None  # test hook
+        self._last_chip: Optional[Any] = None
 
 
     def run(self, sample_input: np.ndarray, sample_index: int) -> SanafeRunRecord:

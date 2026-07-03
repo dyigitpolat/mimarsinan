@@ -1,13 +1,11 @@
 from __future__ import annotations
-from typing import Any, Dict, List, Sequence
+from typing import Sequence
 from mimarsinan.mapping.layout.layout_types import LayoutSoftCoreSpec
-from mimarsinan.mapping.verification.suggester.hw_suggestion_helpers import (
-    _count_cores_needed_two_types, _count_per_type_usage, _dimension_bounds,
-    _make_two_core_types, _median, _min_hw_coverage, _next_multiple,
-    _occupancy_ok, _pack_with_two_types,
-)
+from mimarsinan.mapping.support.schedule.schedule_partitioner import estimate_passes_for_layout
+from mimarsinan.mapping.verification.suggester.hw_suggestion_helpers import _dimension_bounds
 from mimarsinan.mapping.verification.suggester.hw_suggestion_types import HardwareSuggestion
 from mimarsinan.mapping.verification.suggester.hw_config_suggester import suggest_hardware_config
+from mimarsinan.mapping.verification.verifier import verify_soft_core_mapping
 
 def suggest_hardware_config_scheduled(
     softcores: Sequence[LayoutSoftCoreSpec],
@@ -22,8 +20,6 @@ def suggest_hardware_config_scheduled(
     allow_neuron_splitting: bool = False,
 ) -> HardwareSuggestion:
     """Suggest hardware config minimizing core area × pass count (scheduled mapping)."""
-    from mimarsinan.mapping.support.schedule.schedule_partitioner import estimate_passes_for_layout
-
     if not softcores:
         return HardwareSuggestion(
             core_types=[], total_cores=0,
@@ -116,8 +112,6 @@ def suggest_hardware_config_for_model(
     allow_neuron_splitting: bool = False,
 ) -> HardwareSuggestion:
     """Convenience wrapper: run layout mapping then suggest hardware config."""
-    from mimarsinan.mapping.verification.verifier import verify_soft_core_mapping
-
     result = verify_soft_core_mapping(
         model_repr,
         max_axons=max_axons,

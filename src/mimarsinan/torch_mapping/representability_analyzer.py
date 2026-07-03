@@ -1,20 +1,13 @@
-"""
-Representability analysis for torch.fx graphs.
-
-Walks an FX graph, classifies every node as supported / absorbable /
-unsupported, and produces a ``RepresentabilityReport``.
-"""
+"""Representability analysis for torch.fx graphs."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Set
+from typing import Dict, List, Optional
 
 import torch.nn as nn
 import torch.fx as fx
 
-
-# ── Data types ───────────────────────────────────────────────────────────────
 
 @dataclass
 class OpInfo:
@@ -55,18 +48,13 @@ class RepresentabilityError(Exception):
         super().__init__(report.summary())
 
 
-# ── Module classification tables ─────────────────────────────────────────────
-
-# Modules representable as NeuralCore (via Perceptron / Conv mappers)
 _NEURAL_CORE_MODULES: set[type] = {
     nn.Linear,
     nn.Conv2d,
     nn.Conv1d,
 }
 
-# Modules that get absorbed into the preceding Perceptron.
-# nn.Identity is absorbable so that chains like mm → Identity → BN → act
-# can be normalized into a single Perceptron package.
+# nn.Identity is absorbable so mm → Identity → BN → act chains fold into one Perceptron.
 _ABSORBABLE_MODULES: set[type] = {
     nn.BatchNorm1d,
     nn.BatchNorm2d,
@@ -76,8 +64,6 @@ _ABSORBABLE_MODULES: set[type] = {
     nn.Identity,
 }
 
-
-# ── Analyzer ─────────────────────────────────────────────────────────────────
 
 class RepresentabilityAnalyzer:
     """Analyse an FX graph for mimarsinan representability."""
@@ -135,9 +121,6 @@ class RepresentabilityAnalyzer:
                     )
                     return
 
-        # Everything is supported: neural-core candidates become Perceptrons,
-        # absorbable modules get folded into preceding Perceptrons,
-        # and everything else becomes a generic ComputeOp or passthrough.
         report.supported_ops.append(
             OpInfo(node.name, "call_module", mod_type.__name__)
         )
@@ -147,8 +130,6 @@ class RepresentabilityAnalyzer:
     ) -> None:
         fn = node.target
         fn_name = getattr(fn, "__name__", str(fn))
-        # All functions are supported: the converter handles them generically
-        # (structural ops, passthrough, or ModuleComputeMapper).
         report.supported_ops.append(
             OpInfo(node.name, "call_function", fn_name)
         )
@@ -157,8 +138,6 @@ class RepresentabilityAnalyzer:
         self, node: fx.Node, report: RepresentabilityReport
     ) -> None:
         method_name = node.target
-        # All tensor methods are supported: the converter handles them
-        # (view, reshape, permute, mean, etc. or passthrough for unknown).
         report.supported_ops.append(
             OpInfo(node.name, "call_method", method_name)
         )
@@ -178,7 +157,6 @@ class RepresentabilityAnalyzer:
             if not isinstance(mod, (*_ABSORBABLE_MODULES,)):
                 continue
 
-            # Check if the single input comes from a neural-core module
             if len(node.args) < 1:
                 continue
             input_node = node.args[0]

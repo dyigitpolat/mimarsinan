@@ -23,7 +23,6 @@ class ECG_DataProvider(DataProvider):
         train_x = torch.FloatTensor(f['x_train']).reshape(-1, 1, 180, 1)
         train_y = torch.LongTensor(f['y_train'])
 
-        # Class-balance the training set.
         train_x_new = []
         train_y_new = []
         c0_count = 0
@@ -88,8 +87,6 @@ class ECG_DataProvider(DataProvider):
             "val":   [],
             "test":  [],
         }
-
-    # No FFCV opt-in: ECG is 1D signal data; FFCV's RGBImageField doesn't apply.
 
     def get_test_batch_size(self):
         return 10000

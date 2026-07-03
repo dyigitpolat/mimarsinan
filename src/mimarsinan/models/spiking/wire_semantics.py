@@ -1,10 +1,4 @@
-"""Wire-op kernel pairs: each TTFS wire op defined once, with torch+numpy twins.
-
-Every pair keeps the exact same operation order in both frameworks so the twins
-agree bit-for-bit in float64 (cross-twin tests sweep ±1 ULP around the S-grid).
-C++ backends (nevresim, SANA-FE somas) cannot share code; they stay parity-locked
-against these twins via the existing integration harnesses.
-"""
+"""Wire-op kernel pairs: each TTFS wire op defined once with parity-locked torch+numpy twins."""
 
 from __future__ import annotations
 
@@ -14,7 +8,6 @@ import numpy as np
 import torch
 
 
-# ── D1: quantized TTFS staircase (deployment ceil form, inclusive compare) ──
 def ttfs_quantized_staircase_np(
     v: np.ndarray,
     threshold,
@@ -64,7 +57,6 @@ def _ttfs_strict_staircase(V, threshold, simulation_length: int) -> torch.Tensor
     return torch.where(fires, (S - k_fire) / S, torch.zeros_like(k_fire))
 
 
-# ── Generic floor staircase (act-quant; supports non-integer levels) ────────
 def floor_staircase(x: torch.Tensor, levels) -> torch.Tensor:
     return torch.floor(x * levels) / levels
 
@@ -73,7 +65,6 @@ def floor_staircase_np(x: np.ndarray, levels) -> np.ndarray:
     return np.floor(x * levels) / levels
 
 
-# ── D2: value→spike-time encode and the grid-snap round trip ────────────────
 def ttfs_spike_time_np(rate: np.ndarray, simulation_length: int) -> np.ndarray:
     """Per-element spike time ``round(S * (1 - clamp(rate, 0, 1)))`` (numpy)."""
     s = int(simulation_length)
@@ -108,10 +99,8 @@ def ttfs_grid_quantize(rates: torch.Tensor, simulation_length: int) -> torch.Ten
 class WireSemantics:
     """Wire-op bundle for one deployment: ``(S, compare_mode)``.
 
-    ``compare_mode`` mirrors nevresim's Compare policies: ``"<="`` inclusive
-    (the parity-locked default) vs ``"<"`` strict (exact grid ties fire one
-    cycle later). C++ ``"<"`` parity is not yet harness-covered; the Python
-    twins define the intended tie semantics.
+    ``compare_mode`` mirrors nevresim Compare: ``"<="`` inclusive (parity default)
+    vs ``"<"`` strict (exact grid ties fire one cycle later).
     """
 
     simulation_steps: int

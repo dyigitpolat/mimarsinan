@@ -1,54 +1,23 @@
-"""Single source of truth for describing the joint NAS + HW search space.
-
-The architecture-search step has historically rendered the same
-`(arch_options, core_*_bounds, num_core_types, target_tq, ...)` tuple into
-several slightly-different shapes:
-
-* a pseudo-JSON schema for the AgentEvolve LLM prompt,
-* an example configuration the LLM can imitate,
-* a free-text constraint description for the same LLM,
-
-and a fourth view is needed for the compilagent integration: a tuple of
-`compilagent.Lever`s carrying the same bounds but typed for the
-`SearchSpace` returned by `Backend.derive_search_space(...)`.
-
-To avoid four copies of the same arithmetic, this module exposes one
-`SearchSpaceDescription` dataclass and several `to_*` renderers. Every
-caller (AgentEvolve prompt, compilagent backend, future optimizers) reads
-from the same object, so adding a new dimension to the search space is a
-one-place change.
-"""
+"""Single source of truth for describing the joint NAS + HW search space, with `to_*` renderers."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Dict, List, Sequence, Tuple
 
 
-# The optimizer step rounds core dimensions to multiples of this factor when
-# decoding decision vectors (see `_decode_hw` in `search/problems/joint/problem.py`).
-# It is the same value the wizard's HTML hint advertises to users.
+# Must match the rounding factor `_decode_hw` in search/problems/joint/problem.py applies.
 CORE_DIM_GRANULARITY = 8
 
 
 @dataclass(frozen=True)
 class SearchSpaceDescription:
-    """Declarative snapshot of the full joint search space for one run.
+    """Declarative, pure-function snapshot of the full joint search space for one run."""
 
-    Fields mirror the inputs `_create_optimizer` already collects from
-    `arch_search` config and the deployment `platform_constraints`. All
-    renderer methods are pure functions of these fields — no I/O, no global
-    state — so the same instance can be passed to every optimizer at
-    construction time.
-    """
+    search_mode: str
 
-    search_mode: str  # "model" | "hardware" | "joint"
-
-    # Architecture variables: ordered (key, allowed values) pairs. Same shape
-    # `JointArchHwProblem.arch_options` consumes today.
     arch_options: Tuple[Tuple[str, Tuple[Any, ...]], ...] = ()
 
-    # Hardware variables — same bounds JointArchHwProblem._decode_hw clamps to.
     num_core_types: int = 1
     core_axons_bounds: Tuple[int, int] = (64, 2048)
     core_neurons_bounds: Tuple[int, int] = (64, 2048)
@@ -57,8 +26,6 @@ class SearchSpaceDescription:
     target_tq: int = 32
     weight_bits: int = 8
 
-    # Optional reference example for each core (used by the AgentEvolve
-    # example renderer). When empty, a synthetic default is generated.
     example_core_dims: Tuple[Tuple[int, int], ...] = ()
     example_core_count: int = 200
 
@@ -70,8 +37,6 @@ class SearchSpaceDescription:
     def searches_hw(self) -> bool:
         return self.search_mode in ("hardware", "joint")
 
-    # Construction helpers
-
     @classmethod
     def from_arch_search(
         cls,
@@ -82,12 +47,7 @@ class SearchSpaceDescription:
         target_tq: int,
         weight_bits: int = 8,
     ) -> "SearchSpaceDescription":
-        """Build a description from the loose dicts the search step uses.
-
-        ``arch_cfg`` is the ``arch_search`` block of the deployment config
-        (see ``_parse_deployment_config``); we read the same keys
-        ``_create_optimizer`` reads (`num_core_types`, `core_*_bounds`).
-        """
+        """Build a description from the loose ``arch_search`` config dicts the search step uses."""
 
         normalised_arch = tuple(
             (str(key), tuple(values)) for key, values in arch_options
@@ -106,8 +66,6 @@ class SearchSpaceDescription:
             target_tq=int(target_tq),
             weight_bits=int(weight_bits),
         )
-
-    # Renderer 1: AgentEvolve LLM JSON-ish schema
 
     def to_agent_evolve_schema(self) -> Dict[str, Any]:
         """Configuration schema description for AgentEvolve LLM prompts."""
@@ -131,8 +89,6 @@ class SearchSpaceDescription:
                 "weight_bits": f"{self.weight_bits} (fixed)",
             }
         return schema
-
-    # Renderer 2: AgentEvolve example configuration
 
     def to_agent_evolve_example(self) -> Dict[str, Any]:
         """Example configuration matching ``to_agent_evolve_schema``."""
@@ -159,8 +115,6 @@ class SearchSpaceDescription:
                 "weight_bits": self.weight_bits,
             }
         return example
-
-    # Renderer 3: AgentEvolve constraints free-text
 
     def to_agent_evolve_constraints(self) -> str:
         """Constraint description for AgentEvolve LLM prompts."""

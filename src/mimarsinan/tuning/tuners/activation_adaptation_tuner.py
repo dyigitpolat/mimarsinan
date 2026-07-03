@@ -1,19 +1,6 @@
-"""Tuner for gradual activation adaptation (non-ReLU -> ReLU).
+"""Tuner for gradual activation adaptation (non-ReLU → ReLU)."""
 
-Progressively blends from the original activation (e.g. GELU, LeakyReLU) to
-ReLU under the rate scheduler, following the same pattern as ClampTuner and
-ActivationQuantizationTuner.
-
-Does not apply activation_scales -- that is the responsibility of
-downstream steps (Clamp Adaptation, etc.).
-
-Contract: ``model.get_perceptrons()`` only returns chip-targeted perceptrons
-(Identity host-side perceptrons are excluded by the mapper's
-``owned_perceptron_groups()`` implementation).  This tuner therefore does not
-need to special-case Identity; ``needs_relu_adaptation`` handles only the
-already-ReLU-compatible check.
-"""
-
+from mimarsinan.models.perceptron_mixer.perceptron import make_activation
 from mimarsinan.tuning.axes import ActivationAdaptationAxis
 from mimarsinan.tuning.orchestration.smooth_adaptation_tuner import SmoothAdaptationTuner
 
@@ -30,13 +17,9 @@ class ActivationAdaptationTuner(SmoothAdaptationTuner):
         for perceptron in self.model.get_perceptrons():
             self.adaptation_manager.update_activation(self.pipeline.config, perceptron)
 
-        # Only the rate-application seam is routed through the axis; the tuple
-        # extra-state (rate + saved base activations) stays tuner-managed.
         self._axis = ActivationAdaptationAxis()
         self._axis.attach(self.model, self.adaptation_manager, self.pipeline.config)
 
-        # EF1: READ the pipeline-wide optimization-driver axis (default `controller` ⇒
-        # the fast ladder is carried but disabled ⇒ byte-identical).
         self._consume_optimization_driver(
             rates=self.pipeline.config.get(
                 "activation_adaptation_fast_rates", [0.25, 0.5, 0.75, 1.0]
@@ -70,7 +53,6 @@ class ActivationAdaptationTuner(SmoothAdaptationTuner):
         return self.trainer.validate_n_batches(self._budget.progress_eval_batches)
 
     def _after_run(self):
-        from mimarsinan.models.perceptron_mixer.perceptron import make_activation
         from mimarsinan.pipelining.pipeline_steps.activation_utils import (
             needs_relu_adaptation,
         )

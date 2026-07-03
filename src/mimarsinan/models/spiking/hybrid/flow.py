@@ -10,15 +10,18 @@ import torch.nn as nn
 from mimarsinan.chip_simulation import spike_modes
 from mimarsinan.chip_simulation.hybrid_run.hybrid_execution import decref_consumers
 from mimarsinan.chip_simulation.recording.spike_recorder import RunRecord
+from mimarsinan.chip_simulation.spiking_mode_policy import policy_for_spiking_mode
+from mimarsinan.chip_simulation.spiking_semantics import is_cascaded_ttfs
 from mimarsinan.mapping.ir import IRSource
 from mimarsinan.mapping.packing.hybrid_hardcore_mapping import HybridHardCoreMapping
+from mimarsinan.spiking.segment_boundary import BoundaryConfig
 from mimarsinan.models.spiking.spiking_config import COMPUTE_DTYPE, validate_spiking_init
 from mimarsinan.models.spiking.hybrid.lif_step import HybridLifStepMixin
 from mimarsinan.models.spiking.hybrid.rate_forward import HybridRateForwardMixin
 from mimarsinan.models.spiking.hybrid.stage_io import HybridStageIOMixin
 from mimarsinan.models.spiking.hybrid.ttfs_step import HybridTtfsStepMixin
 
-# Backward compatibility for integration tests.
+# Re-exported by hybrid/__init__ for backward compatibility; keep the alias.
 _COMPUTE_DTYPE = COMPUTE_DTYPE
 
 
@@ -74,7 +77,6 @@ class SpikingHybridCoreFlow(
             thresholding_mode=thresholding_mode,
         )
 
-        from mimarsinan.spiking.segment_boundary import BoundaryConfig
         self._boundary_config = BoundaryConfig(
             simulation_length=self.simulation_length,
             spiking_mode=self.spiking_mode,
@@ -85,7 +87,6 @@ class SpikingHybridCoreFlow(
             compute_dtype=COMPUTE_DTYPE,
         )
 
-        # Single-segment LRU: one segment's weights on GPU at a time (ViT-scale OOM otherwise).
         self._segment_tensor_cache: Dict[int, dict] = {}
         self._segment_tensor_cache_key: int | None = None
 
@@ -159,10 +160,6 @@ class SpikingHybridCoreFlow(
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        from mimarsinan.chip_simulation.spiking_mode_policy import (
-            policy_for_spiking_mode,
-        )
-
         try:
             x = self.preprocessor(x)
             x = x.view(x.shape[0], -1)
@@ -181,12 +178,9 @@ class SpikingHybridCoreFlow(
     ) -> tuple[torch.Tensor, RunRecord]:
         """Forward one sample (B=1) and return output plus spike record.
 
-        Supported for the per-cycle cascade path: ``lif`` and cascaded
-        ``ttfs_cycle_based``. Analytical TTFS modes do not run the recording
-        cascade, so they are rejected.
+        Supported only on the per-cycle cascade path (``lif`` and cascaded
+        ``ttfs_cycle_based``); analytical TTFS modes are rejected.
         """
-        from mimarsinan.chip_simulation.spiking_semantics import is_cascaded_ttfs
-
         assert x.shape[0] == 1, "forward_with_recording requires batch_size == 1"
         assert (
             self.spiking_mode == "lif"

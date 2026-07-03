@@ -6,35 +6,20 @@ class PipelineStep:
 
     @classmethod
     def applies_to(cls, plan):
-        """Whether this step belongs in the pipeline for the resolved ``plan``.
-
-        Vector V5: each step owns its applicability so the step planner
-        (``StepPlan``) filters an ordered registry instead of hand-assembling
-        per-flag ``append``s. The base step always applies; conditional steps
-        override with the verbatim predicate that gated their former ``append``.
-        """
+        """Whether this step belongs in the pipeline for the resolved ``plan`` (base: always)."""
         return True
 
     @classmethod
     def declared_contract(cls) -> tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...], tuple[str, ...]]:
-        """Class-level data contract ``(requires, promises, updates, clears)``.
+        """Class-level data contract ``(requires, promises, updates, clears)`` for assembly-time DAG checks.
 
-        Vector V5: each step declares its data contract at the CLASS level so
-        ``StepPlan`` can validate the requires/promises DAG at *assembly* time —
-        without instantiating any step. ``__init__`` reads these same class
-        attributes (a step's instance contract may extend them for an opt-in
-        case, e.g. ``TTFSCycleAdaptationStep`` adds ``activation_scales`` only
-        when its scale-aware-boundaries flag is on; the DAG check uses the
-        always-present static contract declared here, which is the conservative
-        lower bound — the extra entry is itself always produced earlier).
+        The instance contract may extend this for opt-in cases; the DAG check uses
+        the always-present static contract as the conservative lower bound.
         """
         return (cls.REQUIRES, cls.PROMISES, cls.UPDATES, cls.CLEARS)
 
     def __init__(self, requires, promises, updates, clears, pipeline):
         self.name = self.__class__.__name__
-        # Instance contract stays a list (the class-level declaration is a tuple
-        # of constants; ``list(...)`` keeps the instance attribute byte-identical
-        # to the pre-V5 hand-built lists and isolates it from the class constant).
         self.requires = list(requires)
         self.promises = list(promises)
         self.updates = list(updates)
@@ -59,21 +44,9 @@ class PipelineStep:
         raise NotImplementedError
 
     def pipeline_metric(self):
-        """Definitive metric for pipeline progression — used by ``Pipeline``
-        to set ``__target_metric`` after each step.
+        """Definitive metric for pipeline progression; the ONLY place allowed to call ``trainer.test()``.
 
-        Test-set isolation rule: this is the **one** place in the pipeline
-        that is allowed to call ``trainer.test()``. Tuner internals must
-        NEVER call ``test()`` (any validation / rollback / safety-net
-        decision must use ``validate()`` or ``validate_n_batches``).
-
-        Resolution order:
-        1. If the step exposes a ``tuner`` with a live ``trainer``, call
-           ``trainer.test()`` on the tuner's trainer.
-        2. Else if the step exposes its own ``trainer``, call
-           ``trainer.test()``.
-        3. Else fall back to ``self.validate()`` (tuners that don't own a
-           PyTorch model report their own final metric via ``validate()``).
+        Resolves to the tuner's trainer, else the step's own trainer, else ``self.validate()``.
         """
         tuner = getattr(self, "tuner", None)
         if tuner is not None:
@@ -86,15 +59,9 @@ class PipelineStep:
         return self.validate()
 
     def cleanup(self):
-        """Release resources acquired during process() (e.g. DataLoader workers).
+        """Release resources acquired during process() (closes tuner/trainer DataLoader workers).
 
-        Called by the pipeline after validate(), in a finally block so it runs
-        even if later pipeline logic fails.
-
-        Auto-discovers tuners (via ``self.tuner``) and trainers (via
-        ``self.trainer``) and closes their DataLoader workers to prevent
-        multiprocessing cleanup errors at process exit.
-        Subclasses may override for additional cleanup.
+        Called by the pipeline in a finally block; subclasses may override.
         """
         tuner = getattr(self, "tuner", None)
         if tuner is not None and hasattr(tuner, "close"):

@@ -1,27 +1,11 @@
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
-from typing import Any
-
-import torch
 
 from mimarsinan.mapping.platform.coalescing import coalescing_fragment_count
 from mimarsinan.mapping.platform.mapping_structure import (
     compute_core_input_count,
     compute_fc_tiling_mode,
-)
-import operator
-
-from mimarsinan.mapping.support.compute_modules import ComputeAdapter
-from mimarsinan.mapping.mapping_utils import (
-    ComputeOpMapper,
-    Conv1DPerceptronMapper,
-    Conv2DPerceptronMapper,
-    Mapper,
-    ModelRepresentation,
-    PerceptronMapper,
-    StackMapper,
 )
 
 
@@ -30,7 +14,6 @@ class HWEstimate:
     mappable: bool
     reason: str | None
     cores_total: int
-    # Human-readable summary of core shapes, tiling, etc.
     details: str
 
 
@@ -74,10 +57,7 @@ def _estimate_map_fc(
     hardware_bias: bool = False,
     allow_coalescing: bool = True,
 ) -> HWEstimate:
-    """
-    Estimate hardware cores for an FC layer using ``mapping_structure`` helpers
-    (same tiling mode / psum / coalescing semantics as ``LayoutIRMapping``).
-    """
+    """Estimate hardware cores for an FC layer, matching ``LayoutIRMapping`` tiling/psum/coalescing semantics."""
     required_axons = compute_core_input_count(
         int(in_features), has_bias=has_bias, hardware_bias=hardware_bias
     )
@@ -120,7 +100,6 @@ def _estimate_map_fc(
         )
         return HWEstimate(True, None, cores_total, details)
 
-    # output_tiled (the only remaining mode)
     out_groups = _ceil_div(out_features, max_neurons)
     cores_total = int(instances) * out_groups
     details = (

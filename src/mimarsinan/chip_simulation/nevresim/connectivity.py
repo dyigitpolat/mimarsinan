@@ -6,7 +6,6 @@ from typing import Literal, Mapping
 
 ConnectivityMode = Literal["compile_time", "runtime"]
 
-# Switch deployment default here; pipeline config key ``nevresim_connectivity_mode`` overrides.
 DEFAULT_NEVRESIM_CONNECTIVITY_MODE: ConnectivityMode = "runtime"
 
 _VALID: frozenset[str] = frozenset({"compile_time", "runtime"})

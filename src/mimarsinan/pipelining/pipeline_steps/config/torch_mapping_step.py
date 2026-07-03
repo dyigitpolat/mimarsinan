@@ -1,35 +1,16 @@
-"""
-TorchMappingStep -- convert a native PyTorch model to a mimarsinan PerceptronFlow.
-
-Inserted after Pretraining and before the first adaptation / quantization
-step.  Traces the trained model, validates representability, constructs the
-Mapper DAG with Perceptron wrappers, transfers trained weights, and sets up
-the AdaptationManager.
-
-Per-layer activation types discovered during graph conversion are preserved:
-each Perceptron's base_activation_name is set from the absorbed activation
-module (ReLU → LeakyGradReLU, LeakyReLU → nn.LeakyReLU, GELU → nn.GELU).
-The AdaptationManager then wraps each base_activation in TransformedActivation.
-"""
+"""TorchMappingStep -- convert a native PyTorch model to a mimarsinan PerceptronFlow."""
 
 from mimarsinan.common.diagnostics import phase_profiler
 from mimarsinan.pipelining.core.registry.trainer_factory import make_basic_trainer
 from mimarsinan.pipelining.core.steps.trainer_pipeline_step import TrainerPipelineStep
 from mimarsinan.tuning.orchestration.adaptation_manager_factory import create_adaptation_manager_for_model
+from mimarsinan.torch_mapping.converter import convert_torch_model
+from mimarsinan.torch_mapping.conversion_probe import ConversionProbeError
 import torch
 
 
 class TorchMappingStep(TrainerPipelineStep):
-    """Convert a trained native PyTorch model into a ``ConvertedModelFlow``.
-
-    This step:
-      1. Traces the model with ``torch.fx``.
-      2. Validates that every operation is representable.
-      3. Converts the FX graph to a Mapper DAG, transferring trained weights
-         and preserving per-layer activation types (encoding layers flagged).
-      4. Sets up Perceptron activations via ``AdaptationManager``.
-      5. Optionally verifies forward-pass equivalence with the original model.
-    """
+    """Trace a trained torch model, convert it to a Mapper DAG (weights + activation types), and set up the AdaptationManager."""
 
     REQUIRES = ("model",)
     PROMISES = ("adaptation_manager",)
@@ -43,8 +24,6 @@ class TorchMappingStep(TrainerPipelineStep):
         super().__init__(self.REQUIRES, self.PROMISES, self.UPDATES, self.CLEARS, pipeline)
 
     def process(self):
-        from mimarsinan.torch_mapping.converter import convert_torch_model
-
         tag = "TorchMappingStep"
         if torch.cuda.is_available():
             torch.cuda.reset_peak_memory_stats()
@@ -91,8 +70,6 @@ class TorchMappingStep(TrainerPipelineStep):
 
     def _verify_equivalence(self, native_model, flow):
         """Compare native vs converted output shapes; converted-flow forward failure is fatal."""
-        from mimarsinan.torch_mapping.conversion_probe import ConversionProbeError
-
         device = self.pipeline.config["device"]
         input_shape = tuple(self.pipeline.config["input_shape"])
 

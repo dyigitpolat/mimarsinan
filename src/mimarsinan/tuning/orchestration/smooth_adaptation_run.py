@@ -13,7 +13,6 @@ from mimarsinan.tuning.orchestration.tuning_budget import min_step_for_smooth_ad
 from mimarsinan.tuning.orchestration.tuner_base import (
     TunerBase,
     _RECOVERY_PATIENCE,
-    _STUCK_STREAK_REQUIRED,
 )
 
 
@@ -32,30 +31,20 @@ class SmoothAdaptationRunMixin(TunerBase):
     def _stabilize_at_full_rate(self):
         """Extra training at rate=1.0 after ``_after_run`` has committed.
 
-        Runs up to ``_max_stabilization_rounds`` passes (default 1 — the
-        historical single pass); each extra round restarts from a freshly
-        found LR and only happens while the previous round still improved
-        validation by more than ``accuracy_se()/2`` (constant-LR passes
-        plateau; an LR restart breaks the plateau — the same effect WQ's
-        fresh LR search showed downstream). The pre/post rollback guard
-        brackets ALL rounds, so the phase stays non-destructive.
+        Runs up to ``_max_stabilization_rounds`` passes, each restarting from a fresh
+        LR while validation still improves by more than ``accuracy_se()/2``. The
+        pre/post rollback guard brackets all rounds (non-destructive).
         """
         if self._committed_rate < 1.0 - 1e-6:
             return
         budget = self._stabilization_budget()
         if budget is None or int(budget) <= 0:
-            # A disabled stabilization budget (e.g. the fast genuine-blend path, which
-            # trains through the cascade for the whole ramp) wins over BOTH the
-            # patience pass and the bounded-cosine variant — no off-recipe pass.
             return
         if getattr(self, "_stabilization_bounded", False):
             self._stabilize_bounded_cosine()
             return
         budget = int(budget)
 
-        # When finalize swapped in a deployed forward distinct from the ramp
-        # (KD blend cascaded / cycle-accurate LIF), the cached LR was tuned on
-        # the proxy forward and is stale — re-find it for the deployed dynamics.
         if getattr(self, "_stabilization_refinds_lr", False):
             self._invalidate_lr_cache()
         lr = min(float(self._get_cached_lr()), float(self.pipeline_lr))
@@ -114,11 +103,9 @@ class SmoothAdaptationRunMixin(TunerBase):
                 )
 
     def _stabilize_bounded_cosine(self):
-        """CHANGE 2: a SINGLE bounded stabilization pass of
-        ``N = int(tuning_stabilization_ratio * gradual_train_steps)`` steps with a
-        cosine-decay LR (from the chosen LR down to ~0 over exactly N steps). HARD
-        cutoff — no patience extension, no LR restarts, no extra rounds — bracketed
-        by the same pre/post rollback guard so the phase stays non-destructive."""
+        """A single bounded stabilization pass of ``N = int(stabilization_ratio *
+        gradual_train_steps)`` steps with a cosine-decay LR. Hard cutoff, bracketed
+        by the same pre/post rollback guard (non-destructive)."""
         ratio = float(getattr(self, "_stabilization_ratio", 0.5))
         gradual_steps = int(getattr(self, "_gradual_train_steps", 0))
         n_steps = int(ratio * gradual_steps)
@@ -137,8 +124,8 @@ class SmoothAdaptationRunMixin(TunerBase):
             pre_val = None
 
         hooks = self._recovery_training_hooks(1.0)
-        # ``check_interval = n_steps`` => the only validation is the final step, so
-        # the unreachable target can never break the run early: exactly N steps run.
+        # check_interval = n_steps makes the only validation the final step, so the
+        # unreachable target cannot break the run early: exactly N steps run.
         RecoveryEngine.train_to_target(
             self.trainer,
             lr,
@@ -241,8 +228,6 @@ class SmoothAdaptationRunMixin(TunerBase):
 
         self._validation_baseline = baseline_val
 
-        # P2b: capture the fixed-baseline correctness vector for the paired gate,
-        # on the original (rate-0) model over a shared confirm subsample.
         if getattr(self, "_paired_gate", False):
             n_conf = int(self.pipeline.config.get("paired_confirm_batches", 0)) \
                 or self._budget.eval_n_batches
@@ -267,18 +252,11 @@ class SmoothAdaptationRunMixin(TunerBase):
     def _anchor_relaxation_target(self, baseline_val, real_target):
         """Set the missed-target relaxation anchor (``target_adjuster``) and its floor.
 
-        Legacy (flag off => byte-identical): anchor target/original/floor on the
-        rate-0 ``baseline_val``. On an ANN→LIF conversion that collapses at rate 0
-        this is itself the collapsed read, so the relaxation death-spiral floors at
-        ``baseline_val * (1 - tol)``.
-
-        ``tuning_target_floor_on_real_target`` on AND the real pipeline target
-        (``pipeline.get_target_metric()``, already the constructor's anchor) ABOVE the
-        collapsed baseline: KEEP the real-target anchor and cap the relaxation floor at
-        ``max(baseline_floor, real_target * (1 - tol))`` — bounded below the real
-        target, never down to the collapsed floor — so the model AIMS to recover
-        toward the ANN. Falls back to baseline anchoring when the real target is
-        unavailable / not above the baseline (degenerate)."""
+        Default: anchor target/original/floor on the rate-0 ``baseline_val``. With
+        ``tuning_target_floor_on_real_target`` on and the real target above the
+        collapsed baseline, keep the real-target anchor and cap the floor at
+        ``max(baseline_floor, real_target * (1 - tol))``.
+        """
         tol = self._pipeline_tolerance
         baseline_floor = baseline_val * (1.0 - tol)
         anchor_on_real = (
@@ -290,9 +268,6 @@ class SmoothAdaptationRunMixin(TunerBase):
             real = float(real_target)
             self.target_adjuster.target_metric = real
             self.target_adjuster.original_metric = real
-            # Cap the give-back BELOW the real target but never below the achievable
-            # baseline floor; ``min(.., real)`` keeps the floor strictly under the
-            # anchor so the relaxation can still move.
             self.target_adjuster.floor = min(
                 real, max(baseline_floor, real * (1.0 - tol))
             )
@@ -302,32 +277,20 @@ class SmoothAdaptationRunMixin(TunerBase):
         self.target_adjuster.floor = baseline_floor
 
     def _run_with_scheduler(self):
-        """The single rate-search loop: one RateScheduler replacing the legacy
-        one-shot + grow/halve ramp + continue-to-full-rate loops.
-
-        Greedy-to-1.0 + bisect for the standard axes; a uniform ladder for the
-        ``_skip_one_shot`` (KD-blend) family. The shared finalize + stabilization
-        tail (``_finalize_run``) forces the rate to 1.0 and stabilizes.
+        """The single rate-search loop: greedy-to-1.0 + bisect for the standard axes,
+        a uniform ladder for the ``_skip_one_shot`` (KD-blend) family. The shared
+        ``_finalize_run`` tail forces the rate to 1.0 and stabilizes.
         """
         ms = min_step_for_smooth_adaptation(self.pipeline, self._budget)
         max_cycles = min(30, max(
             10,
             self._budget.max_training_steps // max(1, self._budget.check_interval),
         ))
-        # The ladder uses its intended ramp step directly. The legacy
-        # ``max(ms, …)`` guard (against a no-op step finer than the budget min
-        # step) is no longer needed: the scheduler always attempts the first
-        # jump, so a sub-``epsilon`` ramp step still runs (epsilon only bounds
-        # the bisection). ``ms`` is an absurd ~1/3 for tiny models, which would
-        # otherwise coarsen the KD-blend ramp past its committable foothold.
         initial_step = float(getattr(self, "_initial_ramp_step", 0.5))
         epsilon = ms
         policy_override = None
         rates = None
         if getattr(self, "_fixed_ladder_policy", False):
-            # Schedule-not-search: a well-conditioned transformation (the genuine
-            # blend fast path) walks an explicit rate ladder with no bisection —
-            # the fixed schedule is the policy.
             policy_override = "fixed_ladder"
             rates = getattr(self, "_fixed_ladder_rates", None) or [1.0]
         scheduler = AdaptationDriver.build_scheduler(
@@ -381,13 +344,10 @@ class SmoothAdaptationRunMixin(TunerBase):
         return result
 
     def _restore_best_committed_state(self, finalize_result):
-        """R7d certified non-destructive guard at RUN scope. When
-        ``tuning_keepbest_certified`` is on and the finalized gate metric is worse
-        than the best-committed state's metric (by more than the rollback tolerance),
-        restore that best state so the run can never ship below the best COMMITTED
-        cycle. Mirrors the local stabilization pre/post guard, but brackets the WHOLE
-        ramp + after_run + stabilization. No-op (returns ``finalize_result``
-        unchanged) when the flag is off or no best state was captured."""
+        """Certified non-destructive guard at run scope. When
+        ``tuning_keepbest_certified`` is on and the finalized metric is worse than the
+        best-committed state's (beyond the rollback tolerance), restore that state so
+        the run never ships below the best committed cycle."""
         if not getattr(self, "_keepbest_certified", False):
             return finalize_result
         best_state = getattr(self, "_best_committed_state", None)
@@ -407,13 +367,9 @@ class SmoothAdaptationRunMixin(TunerBase):
         return finalize_result
 
     def _log_full_transform_trend(self):
-        """Report whether the gradual ramp converges toward 1.0-viability. The
-        verdict keys on the GENUINE drop (``committed_acc - genuine_full_acc``,
-        the deployed cliff) — NOT the value-domain proxy. The value↔genuine
-        divergence (``proxy_gap``) is surfaced alongside: when the value drop
-        shrinks while the genuine drop does not, the value-domain probe "was
-        fooled" — the deployed cascade stays as far off as ever
-        (``tuning_full_transform_probe`` exists to surface exactly this)."""
+        """Report whether the gradual ramp converges toward 1.0-viability. The verdict
+        keys on the GENUINE drop (the deployed cliff), not the value-domain proxy;
+        ``proxy_gap`` surfaces when the value drop shrinks but the genuine one does not."""
         log = getattr(self, "_full_transform_log", [])
         if len(log) < 2:
             return

@@ -9,24 +9,17 @@ import torch.nn as nn
 
 
 class NoisyDropout(nn.Module):
-    # ``generator`` (default None) makes the mask + additive noise reproducible
-    # for a stochastic axis that called ``set_decision_seed``; None preserves the
-    # legacy global-RNG draws bit-for-bit. (nn.Dropout itself is identity in eval,
-    # so the seeded generator fully determines the eval-mode forward.)
+    # ``generator=None`` preserves the legacy global-RNG draws bit-for-bit; a seeded generator makes the mask and noise reproducible.
     def __init__(self, dropout_p, rate, noise_radius, generator=None):
         super(NoisyDropout, self).__init__()
         self.dropout_p = dropout_p
         self.rate = rate
         self.noise_radius = noise_radius
         self._generator = generator
-        # Cache the Dropout module instead of instantiating one per forward.
-        # dropout_p may be a 0-d tensor; nn.Dropout wants a float.
         p = float(dropout_p.item()) if isinstance(dropout_p, torch.Tensor) else float(dropout_p)
         self._dropout = nn.Dropout(p)
 
     def forward(self, x):
-        # Rate=0 is the common case during non-noise tuning cycles; skip the
-        # two torch.rand allocations and the dropout + mix ops entirely.
         if self.rate == 0.0:
             return x
 
@@ -46,28 +39,9 @@ class NoisyDropout(nn.Module):
 
 
 class SavedTensorDecorator(nn.Module):
-    """Captures layer I/O for inspection.
-
-    Default mode stores a **reference** to the tensor (fast, zero-copy),
-    which is appropriate when the saved tensor feeds into a differentiable
-    loss (see :class:`CustomClassificationLoss`). For statistics collection
-    -- activation scale estimation, clamp saturation checks, input
-    histograms -- use ``sample_to_cpu=True``. In that mode the decorator
-    immediately detaches, subsamples (deterministic linspace), and moves
-    the tensor to CPU inside the forward pass, so the GPU activation can
-    be freed as soon as the forward continues.
-
-    This is the only sustainable approach for large-input backbones (e.g.
-    ViT-B/16 at 224x224): without sampling, every perceptron's full output
-    tensor stays pinned in VRAM for the whole forward, which compounds to
-    >20 GiB on CIFAR-10 + batch 128 and OOMs any step that attaches saved
-    decorators to all perceptrons simultaneously.
-
-    When ``sample_to_cpu`` is enabled, consumers receive a flat 1-D float32
-    CPU tensor of length ``min(numel, max_samples)``. All distribution-level
-    consumers (quantiles, histograms, saturation ratios) are accurate under
-    subsampling.
-    """
+    """Captures layer I/O for inspection. Default stores a zero-copy reference;
+    ``sample_to_cpu=True`` detaches, subsamples (deterministic linspace), and moves
+    to CPU inside forward so large-backbone activations are freed promptly."""
 
     def __init__(self, *, sample_to_cpu: bool = False, max_samples: int = 8192):
         super(SavedTensorDecorator, self).__init__()
@@ -85,11 +59,7 @@ class SavedTensorDecorator(nn.Module):
         idx = torch.linspace(
             0, flat.numel() - 1, steps=self._max_samples, device=flat.device
         ).round().long()
-        # Belt-and-braces: linspace endpoint is theoretically in-bounds, but
-        # clamp in case of any float32 rounding drift for very large flats.
         idx.clamp_(0, flat.numel() - 1)
-        # Under cuda_debug, sync before the first .cpu() so an async failure
-        # from a prior forward kernel surfaces at its own mapper, not here.
         if os.environ.get("MIMARSINAN_CUDA_DEBUG") == "1" and flat.is_cuda:
             torch.cuda.synchronize()
         return flat.index_select(0, idx).cpu()

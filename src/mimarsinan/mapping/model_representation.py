@@ -1,9 +1,4 @@
-"""
-ModelRepresentation: DAG wrapper for the mapper graph with execution order and perceptron enumeration.
-
-Kept in a separate module so consumers that only need the DAG wrapper do not
-load all mapper classes from mapping_utils.
-"""
+"""ModelRepresentation: DAG wrapper for the mapper graph with execution order and perceptron enumeration."""
 
 from __future__ import annotations
 
@@ -23,21 +18,14 @@ class ModelRepresentation:
         self._peak_live_values = 0
 
     def map_to_ir(self, ir_mapping):
-        """
-        Map this model representation to a unified IR (IRGraph).
-
-        This produces an IRGraph containing both NeuralCore and ComputeOp nodes.
-        """
+        """Map this model representation to a unified IRGraph (NeuralCore + ComputeOp nodes)."""
         return self.output_layer_mapper.map_to_ir(ir_mapping)
 
     def construct_pytorch_module(self, module, next):
         return self.output_layer_mapper.construct_pytorch_module(self.pytorch_module)
 
     def _ensure_exec_graph(self):
-        """
-        Build a reusable topological execution order once (postorder: deps first).
-        Also reused for perceptron enumeration to guarantee consistent ordering.
-        """
+        """Build a reusable postorder execution order once (deps first); also drives perceptron enumeration for consistent ordering."""
         def deps_of(node):
             if hasattr(node, "get_source_mappers"):
                 return node.get_source_mappers()
@@ -81,10 +69,7 @@ class ModelRepresentation:
         self._consumer_count = consumer_count
 
     def get_perceptron_groups(self):
-        """
-        Return perceptron groups in forward-topological order.
-        Groups are used by scale/activation analysis steps to propagate scales.
-        """
+        """Return perceptron groups in forward-topological order (used by scale/activation analysis)."""
         self._ensure_exec_graph()
 
         seen = set()
@@ -113,11 +98,7 @@ class ModelRepresentation:
         return perceptrons
 
     def assign_perceptron_indices(self):
-        """
-        Set perceptron_index on each mapper that owns perceptrons, in the same
-        order as get_perceptrons(), so that map_to_ir can pass pruning provenance
-        to the IR (tiled FC and weight banks).
-        """
+        """Set perceptron_index on each owning mapper in get_perceptrons() order so map_to_ir can pass pruning provenance to the IR."""
         self._ensure_exec_graph()
         idx = 0
         for node in self._exec_order:
@@ -135,9 +116,6 @@ class ModelRepresentation:
         """Execute the mapper graph; frees intermediates once their consumers run."""
         self._ensure_exec_graph()
 
-        # When cuda_debug is on, sync after every node's forward so an async
-        # CUDA assert is attributed to the mapper that triggered it instead of
-        # whichever later op happens to hit the first sync point.
         cuda_debug = (
             os.environ.get("MIMARSINAN_CUDA_DEBUG") == "1" and torch.cuda.is_available()
         )

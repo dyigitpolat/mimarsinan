@@ -16,10 +16,10 @@ def is_encoding_perceptron(node) -> bool:
 
 
 def is_value_boundary(node) -> bool:
-    """Host-side value producer: the raw input and every host ComputeOp.
+    """Host-side value producer (raw input + host ComputeOps).
 
-    Matches deployment (HCM): each ComputeOp runs host-side once on decoded
-    values (decode -> compute -> re-encode), never per-cycle on spikes.
+    Matches deployment (HCM): a ComputeOp runs host-side once on decoded values,
+    never per-cycle on spikes.
     """
     return isinstance(node, (InputMapper, ComputeOpMapper))
 
@@ -27,12 +27,12 @@ def is_value_boundary(node) -> bool:
 def classify_spike_producers(exec_order, deps_map) -> dict:
     """Map each node to whether it carries on-chip spikes (vs host-side values)."""
     produces: dict = {}
-    for node in exec_order:  # topological: deps precede node
+    for node in exec_order:  # exec_order is topological: deps precede node
         if perceptron_of(node) is not None:
             produces[node] = True
         elif is_value_boundary(node):
             produces[node] = False
-        else:  # transparent (structural reshape/permute/concat): inherit from sources
+        else:
             produces[node] = any(produces.get(d, False) for d in deps_map.get(node, []))
     return produces
 
@@ -40,8 +40,7 @@ def classify_spike_producers(exec_order, deps_map) -> dict:
 def partition_spike_segments(exec_order, deps_map):
     """Group spike-producing nodes into segments (maximal connected regions).
 
-    Returns ``({node: segment_root}, produces_spikes)``. Nodes are connected when
-    a spike-producing node depends on another spike-producing node.
+    Returns ``({node: segment_root}, produces_spikes)``.
     """
     produces = classify_spike_producers(exec_order, deps_map)
     parent: dict = {}
@@ -63,9 +62,7 @@ def partition_spike_segments(exec_order, deps_map):
     for n in spike_nodes:
         parent.setdefault(n, n)
     for n in spike_nodes:
-        # An encoding layer consumes a *value* (its upstream spike region is
-        # decoded at this edge), so it starts a fresh segment -- never union it
-        # with its source.
+        # An encoding layer consumes a decoded value, so it starts a fresh segment (never unioned with its source).
         if is_encoding_perceptron(n):
             continue
         for d in deps_map.get(n, []):

@@ -6,11 +6,14 @@ from dataclasses import dataclass
 from typing import Any
 
 from mimarsinan.chip_simulation.behavior_config import NeuralBehaviorConfig
+from mimarsinan.chip_simulation.spiking_mode_policy import policy_for_spiking_mode
 from mimarsinan.chip_simulation.spiking_semantics import (
     is_cascaded_ttfs,
     is_synchronized_ttfs,
     ttfs_cycle_schedule,
+    uses_ttfs_floor_ceil_convention,
 )
+from mimarsinan.models.spiking.wire_semantics import WireSemantics
 
 
 @dataclass(frozen=True)
@@ -28,7 +31,6 @@ class SpikingDeploymentContract:
     encoding_layer_placement: str
     bias_mode: str
 
-    # ── identity axes (delegated to the composed NeuralBehaviorConfig) ──────
     @property
     def spiking_mode(self) -> str:
         return self.behavior.spiking_mode
@@ -65,7 +67,6 @@ class SpikingDeploymentContract:
             bias_mode=resolve_bias_mode(cfg),
         )
 
-    # ── derived behavior (the D4 killer) ────────────────────────────────────
     def is_synchronized(self, *, core: Any = None) -> bool:
         return is_synchronized_ttfs(self.spiking_mode, self.ttfs_cycle_schedule)
 
@@ -73,13 +74,7 @@ class SpikingDeploymentContract:
         return is_cascaded_ttfs(self.spiking_mode, self.ttfs_cycle_schedule)
 
     def uses_ttfs_floor_ceil_convention(self, *, core: Any = None) -> bool:
-        """Modes whose NF trains the floor + half-step-bias convention and deploy the
-        ceil TTFS kernel (ttfs_quantized and the synchronized floor-collapse): the
-        half-step bias compensation applies and the bit-exact per-neuron gate is off."""
-        from mimarsinan.chip_simulation.spiking_semantics import (
-            uses_ttfs_floor_ceil_convention,
-        )
-
+        """Modes that train the floor + half-step-bias convention and deploy the ceil TTFS kernel."""
         return uses_ttfs_floor_ceil_convention(
             self.spiking_mode, self.ttfs_cycle_schedule
         )
@@ -90,8 +85,6 @@ class SpikingDeploymentContract:
 
     def wire(self, *, core: Any = None):
         """Wire-op kernel bundle (staircase / spike-time / grid-snap twins)."""
-        from mimarsinan.models.spiking.wire_semantics import WireSemantics
-
         return WireSemantics(
             simulation_steps=self.simulation_steps,
             compare_mode=self.thresholding_mode,
@@ -99,20 +92,14 @@ class SpikingDeploymentContract:
 
     def mode_policy(self, *, core: Any = None):
         """The behavior-carrying ``SpikingModePolicy`` for this (firing × sync)."""
-        from mimarsinan.chip_simulation.spiking_mode_policy import (
-            policy_for_spiking_mode,
-        )
-
         return policy_for_spiking_mode(self.spiking_mode, self.ttfs_cycle_schedule)
 
     def calibration_pipeline(self, config, *, distmatch_driven=False, core: Any = None):
         """The conversion-health ``CalibrationPipeline`` for this (firing × sync) cell.
 
-        E3: the pipeline-wide resolution every conversion tuner consumes — the
-        ENABLE is the contract's (firing × sync) decision (the cascaded cycle opts
-        in; LIF / analytical / synchronized get the inert pipeline). ``config``
-        carries the ``ttfs_*`` step params for a cell that opts in; ``distmatch_driven``
-        is whether the chosen ramp owns the distribution-matching call."""
+        The ENABLE is the contract's (firing × sync) decision (the cascaded cycle opts
+        in; LIF / analytical / synchronized get the inert pipeline).
+        """
         from mimarsinan.tuning.orchestration.calibration_pipeline import (
             CalibrationPipeline,
         )

@@ -7,6 +7,7 @@ import torch
 
 from mimarsinan.mapping.ir import IRGraph, NeuralCore
 from mimarsinan.transformations.quantization_bounds import quantization_bounds
+from mimarsinan.transformations.quantization_verify import assert_integer_scaled_matrix
 
 
 def quantize_ir_graph(
@@ -71,9 +72,7 @@ def _matrix_scale(matrix, parameter_scale, q_max: int, eps: float) -> float:
 def _scale_hardware_bias(
     node: NeuralCore, scale: float, q_min: int, q_max: int, q_dtype
 ) -> None:
-    """Quantize ``hardware_bias`` with the same ``[q_min, q_max]`` saturation the NF-side
-    NAPQ applies — clamp BEFORE the int cast so an out-of-range bias saturates instead of
-    silently wrapping modulo (NF↔SCM parity, matching ``core_matrix`` handling above)."""
+    """Quantize hardware_bias with the same [q_min, q_max] saturation NAPQ applies — clamp BEFORE the int cast so an out-of-range bias saturates instead of wrapping (NF↔SCM parity)."""
     if node.hardware_bias is not None:
         node.hardware_bias = np.clip(
             np.round(node.hardware_bias * scale), q_min, q_max
@@ -82,8 +81,6 @@ def _scale_hardware_bias(
 
 def verify_ir_graph_quantized(ir_graph: IRGraph, bits: int) -> None:
     """Raise ``AssertionError`` if any NeuralCore / bank fails integer quant checks."""
-    from mimarsinan.transformations.quantization_verify import assert_integer_scaled_matrix
-
     q_min, q_max = quantization_bounds(bits)
     failures: list[str] = []
     bank_checked: set[int] = set()

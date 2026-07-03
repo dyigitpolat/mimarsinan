@@ -8,9 +8,7 @@ __all__ = ["write_final_population_json"]
 
 
 def write_final_population_json(result_json: Dict[str, Any], out_path: str) -> None:
-    """
-    Write a compact list of candidate configurations + objective values for quick inspection.
-    """
+    """Write a compact list of candidate configs + objective values for quick inspection."""
     pop = []
     for c in result_json.get("pareto_front", []):
         row = {}

@@ -1,15 +1,4 @@
-"""SanafeStepReport — what the pipeline step persists and the GUI consumes.
-
-A report aggregates one or more :class:`SanafeRunRecord`s into:
-
-* a flat ``aggregate`` dict of headline numbers for the summary cards,
-* a per-sample list of compact summaries the GUI can render directly.
-
-The full rich records remain on the report (``per_sample`` attribute) so
-downstream code or notebooks can drill into per-tile / per-neuron data
-without re-running SANA-FE.  Only the JSON-safe projection is shipped to
-the frontend.
-"""
+"""SanafeStepReport — pipeline-persisted aggregate of ``SanafeRunRecord``s for the GUI."""
 
 from __future__ import annotations
 
@@ -114,9 +103,6 @@ def _segment_to_dict(seg) -> Dict[str, Any]:
              "output_delta_sum": int(d.output_delta_sum)}
             for d in seg.hcm_diff
         ],
-        # Per-cycle ``[[sx, sy, dx, dy, count], ...]`` quintuples for
-        # the animated NoC playback.  Empty list (not None) when no
-        # message_trace was recorded — keeps the JSON shape stable.
         "noc_traffic_per_cycle": [
             [list(map(int, q)) for q in cycle]
             for cycle in seg.noc_traffic_per_cycle
@@ -135,10 +121,6 @@ def _segment_to_dict(seg) -> Dict[str, Any]:
                 ),
                 "energy_j": float(c.energy.total_j),
                 "energy_breakdown_j": _eb_to_dict(c.energy),
-                # 2D spike raster (n_neurons × T_eff) of 0/1 ints —
-                # ``None`` when the trace was empty; powers the click-
-                # to-raster mini-view per core.  ``.tolist()`` keeps
-                # the snapshot JSON-safe.
                 "spike_raster": (
                     None if c.spike_raster is None else c.spike_raster.tolist()
                 ),
@@ -244,6 +226,6 @@ class SanafeStepReport:
         return {
             "arch_preset": str(self.arch_preset),
             "sample_indices": [int(i) for i in self.sample_indices],
-            "aggregate": dict(self.aggregate),  # shallow copy; values already primitives
+            "aggregate": dict(self.aggregate),
             "per_sample": [_record_summary(r) for r in self.per_sample],
         }

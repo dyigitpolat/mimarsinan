@@ -5,7 +5,6 @@ from mimarsinan.pipelining.core.engine.pipeline_helpers import run_optional_viz
 from mimarsinan.pipelining.core.simulation_factory import run_hcm_mapping_metric
 
 import torch
-import torch.nn as nn
 import os
 
 

@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import List
 
 from mimarsinan.pipelining.core.steps.pipeline_step import PipelineStep
 from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
+from mimarsinan.pipelining.core.model_config_emit import emit_model_config_entries
 from mimarsinan.pipelining.core.registry.model_registry import ModelRegistry
 from mimarsinan.pipelining.core.search_mode import derive_search_mode
 from mimarsinan.mapping.platform.coalescing import CANONICAL_KEY, normalize_coalescing_config
@@ -55,8 +56,6 @@ class ArchitectureSearchStep(PipelineStep):
             self._process_search(search_mode)
 
     def _process_fixed(self):
-        from mimarsinan.pipelining.core.model_config_emit import emit_model_config_entries
-
         emit_model_config_entries(self, self.pipeline.config)
         pcfg = build_fixed_platform_constraints(self.pipeline.config)
         self.add_entry("platform_constraints_resolved", pcfg)

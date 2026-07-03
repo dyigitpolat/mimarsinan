@@ -2,7 +2,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import math
 
-# Target size in inches for the longest side of a single core
 _CORE_LONG_INCH = 4.0
 
 
@@ -29,7 +28,6 @@ class HardCoreMappingVisualizer:
         def core_height(c):
             return scale * c.axons_per_core
 
-        # Per-row heights and per-row column positions so each cell has correct aspect
         row_heights = []
         for r in range(rows):
             row_h = 0.0
@@ -59,14 +57,12 @@ class HardCoreMappingVisualizer:
             i_x = i % cols
             cw = core_width(core)
             ch = core_height(core)
-            # Left: sum of widths of previous cells in this row
             left_in_row = sum(
                 core_width(cores[i_y * cols + j])
                 for j in range(i_x)
                 if i_y * cols + j < num_cores
             )
             bottom = sum(row_heights[k] for k in range(i_y))
-            # Normalized coordinates for add_axes
             left_n = left_in_row / total_width
             bottom_n = bottom / total_height
             w_n = cw / total_width

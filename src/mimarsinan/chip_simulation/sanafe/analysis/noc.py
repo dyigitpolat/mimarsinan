@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-import re
 from typing import Any, Dict, List, Optional, Tuple
-
-import numpy as np
 
 from mimarsinan.chip_simulation.sanafe.records import (
     SanafeArchGeometry,

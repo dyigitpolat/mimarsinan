@@ -5,6 +5,8 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any, Mapping
 
+from mimarsinan.chip_simulation.spiking_mode_policy import policy_for_spiking_mode
+
 __all__ = [
     "ParityContractKind",
     "classify_nf_scm_contract",
@@ -62,8 +64,6 @@ def classify_backend_contract(
     schedule: str | None = None,
 ) -> ParityContractKind:
     """Backend parity against identity SCM / HCM reference."""
-    from mimarsinan.chip_simulation.spiking_mode_policy import policy_for_spiking_mode
-
     policy = policy_for_spiking_mode(spiking_mode, schedule=schedule)
     if not policy.supports_backend(backend):
         return ParityContractKind.INAPPLICABLE

@@ -1,19 +1,4 @@
-"""The ConversionPolicy SSOT — derive the proven recipe for a deployment mode.
-
-:meth:`ConversionPolicy.derive` is the enacted source of truth: a deterministic
-``(spiking_mode, schedule) → ConversionRecipe`` table collapsing the fix-wave
-proven-best recipes (driver + knob set + capability-derived sim-enable set + a
-special-case marker for the divergences). It is what
-:func:`config_schema.deployment_derivation.derive_deployment_parameters` folds
-authoritatively into every config — the resolved config IS the materialized recipe.
-
-The four marked rows (``bn_freeze`` / ``full_quantile_decode`` /
-``fast_only_never_controller`` / ``synchronized_floor_collapse``) are the documented
-divergences from the generic flow; each carries a one-line ``rationale`` citing the
-finding so it stays studyable. Every proven recipe rides the fast ladder — the
-controller path is the one that collapses on the deep cascade, so the SSOT never
-yields it.
-"""
+"""The ConversionPolicy SSOT — derive the proven recipe for a deployment mode."""
 
 from __future__ import annotations
 
@@ -23,12 +8,6 @@ from typing import Any, Mapping, Optional
 OPTIMIZATION_DRIVER_CONTROLLER = "controller"
 OPTIMIZATION_DRIVER_FAST = "fast"
 
-# ── the ConversionPolicy SSOT table (the collapsed fix-wave proven recipes) ───
-# Each deployment mode derives ONE proven recipe via ``ConversionPolicy.derive``:
-# the fast-ladder driver, the per-mode knob set (now internal constants, NOT user
-# config keys), the capability-derived sim-enable set, and a special-case marker +
-# rationale for the rows that DIVERGE from the generic flow (kept studyable). The
-# four marked rows below are exactly those documented divergences.
 _LIF_RECIPE_KNOBS = {
     "lif_blend_fast": True,
     "lif_blend_fast_stabilize_steps": 600,
@@ -85,12 +64,9 @@ __all__ = [
 class ConversionRecipe:
     """The proven recipe derived for one deployment mode by ``ConversionPolicy.derive``.
 
-    ``driver`` is the optimization-driver arm (always the fast ladder — the SSOT
-    never yields the controller). ``knobs`` is the per-mode recipe knob set (internal
-    constants, no longer user config keys). ``sim_enables`` is the capability-derived
-    backend-enable set (a backend is enabled iff it can run the mode).
-    ``special_case`` / ``rationale`` mark and justify the rows that DIVERGE from the
-    generic flow, so each divergence stays studyable.
+    ``driver`` is always the fast ladder; ``knobs`` is the per-mode recipe knob set;
+    ``sim_enables`` is the capability-derived backend-enable set; ``special_case`` /
+    ``rationale`` mark and justify the rows that diverge from the generic flow.
     """
 
     driver: str
@@ -108,12 +84,11 @@ class ConversionPolicy:
         """Derive the proven recipe for a deployment mode — the SSOT mode→recipe table.
 
         Maps ``(spiking_mode, schedule)`` to its empirically-proven recipe: the
-        fast-ladder ``driver`` (the controller path collapses on the deep cascade —
-        the SSOT never yields it), the per-mode ``knobs`` (now internal constants),
-        the capability-derived ``sim_enables`` (a backend is disabled ONLY where it
-        cannot run the mode), and the ``special_case`` marker + ``rationale`` for the
-        rows that diverge from the generic flow.
+        fast-ladder ``driver``, the per-mode ``knobs``, the capability-derived
+        ``sim_enables``, and the ``special_case`` marker + ``rationale``.
         """
+        # Lazy: chip_simulation has a fragile import cycle; a top-level import breaks
+        # when this module loads before chip_simulation finishes initializing.
         from mimarsinan.chip_simulation.spiking_mode_policy import (
             policy_for_spiking_mode,
         )
@@ -137,10 +112,6 @@ class ConversionPolicy:
                 _TTFS_QUANTIZED_RATIONALE,
             )
         elif is_ttfs_cycle_based(mode) and synchronized:
-            # synchronized ≡ ttfs_quantized at deploy (deploy adds the free
-            # single-spike grid-snap): train the well-conditioned ttfs_quantized
-            # floor recovery, deploy the mode-derived ceil kernel. See
-            # _SYNCHRONIZED_RATIONALE.
             knobs, special_case, rationale = (
                 _TTFS_QUANTIZED_RECIPE_KNOBS, "synchronized_floor_collapse",
                 _SYNCHRONIZED_RATIONALE,
@@ -150,7 +121,7 @@ class ConversionPolicy:
                 _CASCADED_RECIPE_KNOBS, "fast_only_never_controller",
                 _CASCADED_RATIONALE,
             )
-        else:  # analytical ``ttfs`` — the generic reference column (plain fast).
+        else:
             knobs, special_case, rationale = {}, None, ""
 
         sim_enables = {

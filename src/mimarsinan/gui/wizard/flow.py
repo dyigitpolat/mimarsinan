@@ -1,17 +1,4 @@
-"""
-Wizard flow: step order and branching.
-
-Steps are identified by string ids. The UI can use this to render the stepper
-and decide which step is next/previous.
-
-Two independent search toggles control branching:
-- model_config_mode: "user" | "search"
-- hw_config_mode: "fixed" | "search"
-
-The search options step (nas_options) is shown whenever either toggle is set
-to "search". The platform_constraints step is shown whenever HW is NOT being
-searched (user provides fixed HW config).
-"""
+"""Wizard flow: step order and branching driven by the model/hw search toggles."""
 
 from __future__ import annotations
 
@@ -21,10 +8,10 @@ from typing import Any, Dict, List, Optional
 WIZARD_STEP_IDS: List[str] = [
     "experiment_basics",
     "pipeline_mode",
-    "search_toggles",       # replaces old "configuration_mode"
-    "user_model",           # model type + model_config
-    "nas_options",          # search parameters (shown when any search is active)
-    "platform_constraints", # HW config (shown when hw_config_mode != "search")
+    "search_toggles",
+    "user_model",
+    "nas_options",
+    "platform_constraints",
     "spiking_quantization",
     "simulation",
     "training",
@@ -62,7 +49,6 @@ def get_next_step_id(state: Dict[str, Any], current_step_id: str) -> Optional[st
         return None
 
     if current_step_id == "search_toggles":
-        # Always go to user_model (need to pick model type)
         return "user_model"
 
     if current_step_id == "user_model":
@@ -72,7 +58,6 @@ def get_next_step_id(state: Dict[str, Any], current_step_id: str) -> Optional[st
 
     if current_step_id == "nas_options":
         if _get_hw_search(state):
-            # HW is being searched — skip platform_constraints
             return "spiking_quantization"
         return "platform_constraints"
 

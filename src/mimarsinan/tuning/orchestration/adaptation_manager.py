@@ -1,4 +1,6 @@
 from mimarsinan.models.nn.layers import *
+from mimarsinan.models.nn.activations import LeakyGradReLU
+from mimarsinan.models.nn.decorators.rate_buffer import RateBuffer
 from mimarsinan.tuning.shift_calculation import calculate_activation_shift
 
 import torch.nn as nn
@@ -16,25 +18,17 @@ class AdaptationManager(nn.Module):
 
         self.noise_rate = 0.0
 
-        # When True, the on-chip activation already applies clamp/quant/shift
-        # internally (LIFActivation / TTFSCycleActivation) — skip duplicate decorators.
         self.lif_active = False
         self.ttfs_active = False
 
-        # In-place rate buffers (P5a, the W9 fix): rate fields bound here drive their
-        # RateAdjustedDecorator from a shared in-place RateBuffer instead of a
-        # float, so a ramp advances without rebuilding every perceptron's stack.
-        # An empty/absent map keeps the float-rebuild behavior (e.g. noise_rate).
         self._rate_buffers = {}
 
     def bind_rate_buffer(self, rate_attr):
         """Return the shared ``RateBuffer`` for ``rate_attr``, creating it once.
 
-        The buffer is seeded from the field's current float so the first rebuild
-        is value-equivalent to the float it replaces.
+        Seeded from the field's current float so the first rebuild is value-
+        equivalent to the float it replaces.
         """
-        from mimarsinan.models.nn.decorators.rate_buffer import RateBuffer
-
         buffers = getattr(self, "_rate_buffers", None)
         if buffers is None:
             buffers = {}
@@ -57,11 +51,9 @@ class AdaptationManager(nn.Module):
     def _rate_is_active(self, rate_attr, float_active):
         """Whether to include ``rate_attr``'s decorator (gates the rebuild stack).
 
-        Flag-off (no bound buffer) this is exactly the legacy float predicate, so
-        the stack is byte-identical. A bound buffer counts as active even at alpha
-        0.0 so the buffer-backed stack is stable across the whole ramp (set(0.0)
-        must not drop a decorator set(0.5) installed — the in-place point is no
-        rebuild at all)."""
+        A bound buffer counts as active even at alpha 0.0 so the buffer-backed
+        stack stays stable across the whole ramp (no rebuild); no buffer falls back
+        to the float predicate (byte-identical)."""
         if self._rate_buffer(rate_attr) is not None:
             return True
         return float_active
@@ -101,7 +93,6 @@ class AdaptationManager(nn.Module):
 
     def get_rate_adjusted_activation_replacement_decorator(self, perceptron):
         """Gradually blend the base activation toward LeakyGradReLU (chip ReLU)."""
-        from mimarsinan.models.nn.activations import LeakyGradReLU
         return RateAdjustedDecorator(
             self._rate_carrier("activation_adaptation_rate"),
             ActivationReplacementDecorator(LeakyGradReLU()),

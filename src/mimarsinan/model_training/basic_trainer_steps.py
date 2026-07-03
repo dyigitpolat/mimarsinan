@@ -5,13 +5,16 @@ from __future__ import annotations
 import warmup_scheduler
 import torch
 
+from mimarsinan.tuning.learning_rate_explorer import (
+    clone_state_for_trainer,
+    restore_state_for_trainer,
+)
+
 
 def _recipe_recovery_enabled(trainer) -> bool:
     """Whether the step recovery routes through ``tuning_recipe`` (warmup+cosine).
 
-    Defaults to ``False`` for duck-typed step trainers that do not implement the
-    predicate (test stubs), so the step API stays usable without the full
-    ``BasicTrainer`` recipe plumbing.
+    Defaults ``False`` for duck-typed step trainers that lack the predicate.
     """
     predicate = getattr(trainer, "_recipe_step_recovery_enabled", None)
     return bool(predicate()) if callable(predicate) else False
@@ -63,24 +66,12 @@ def _rebuild_scheduler_at_reduced_lr(
 ):
     """Drop the optimizer LR and rebuild its scheduler so the reduction sticks.
 
-    Plateau-vs-recipe composition: the recipe schedule (warmup + cosine) is the
-    BASE LR trajectory, and a plateau reduction multiplies its PEAK on top. When
-    the recipe step recovery is on, each param group's LR is scaled by ``factor``
-    (preserving any layer-wise-LR-decay ratios) and the SAME recipe schedule is
-    rebuilt from the reduced peak. Otherwise every group is flattened to the
-    single ``reduced_lr`` and the historical constant schedule is rebuilt.
-
-    The schedulers re-read the stale ``initial_lr`` stamped at the original base
-    and would walk the LR back up on the next ``scheduler.step()``; clearing
-    ``initial_lr`` lets the rebuilt scheduler re-stamp it so the reduction sticks.
+    A plateau reduction scales each group's peak; clearing ``initial_lr`` stops
+    the rebuilt scheduler from re-stamping the stale peak and walking the LR back up.
     """
     use_recipe = _recipe_recovery_enabled(trainer)
     for group in optimizer.param_groups:
         if use_recipe and factor is not None:
-            # The recipe schedule decays the live ``lr`` away from the peak, but
-            # ``initial_lr`` holds the per-group PEAK. Scale that peak by ``factor``
-            # (preserving layer-wise-LR-decay ratios) and re-stamp it so the rebuilt
-            # warmup+cosine restarts from the reduced peak.
             reduced_peak = float(group.get("initial_lr", group["lr"])) * float(factor)
             group["lr"] = reduced_peak
         else:
@@ -110,16 +101,6 @@ def train_steps_until_target(
     return_steps: bool = False,
     cosine_decay: bool = False,
 ):
-    from mimarsinan.tuning.learning_rate_explorer import (
-        clone_state_for_trainer,
-        restore_state_for_trainer,
-    )
-
-    # ``cosine_decay`` (CHANGE 2, bounded stabilization) anneals the LR from ``lr``
-    # down to ~0 over exactly ``max_steps`` via CosineAnnealingLR; the historical
-    # path keeps the constant/linear-warmup schedule (default ``cosine_decay=False``).
-    # ``tuning_recipe_recovery`` drives the recipe (warmup + cosine) schedule: the
-    # step builders then ignore ``constant_lr`` and the discovered ``lr`` is the peak.
     recipe_recovery = _recipe_recovery_enabled(trainer)
     use_constant = (not cosine_decay) and not recipe_recovery
     owns_optimizer = optimizer is None

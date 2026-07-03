@@ -1,15 +1,11 @@
-"""Spike-encoding primitives shared by simulator backends.
-
-``uniform_rate_encode`` was originally a private helper inside
-``lava_loihi_runner.py``; it is reused by the SANA-FE runner to inject
-rate-coded input spike trains into each neural segment.  Lifting it to a
-neutral module keeps both runners pointed at one implementation so a
-behavioural drift can only happen here.
-"""
+"""Spike-encoding primitives shared by simulator backends."""
 
 from __future__ import annotations
 
 import numpy as np
+import torch
+
+from mimarsinan.chip_simulation.recording import spike_modes
 
 
 def uniform_rate_encode(rates: np.ndarray, T: int) -> np.ndarray:
@@ -17,10 +13,6 @@ def uniform_rate_encode(rates: np.ndarray, T: int) -> np.ndarray:
 
     Uses torch ``to_uniform_spikes`` per cycle so batch output matches HCM.
     """
-    import torch
-
-    from mimarsinan.chip_simulation.recording import spike_modes
-
     clipped = np.clip(rates, 0.0, 1.0)
     tensor = torch.tensor(clipped, dtype=torch.float32)
     n_samples, d = tensor.shape
@@ -34,10 +26,6 @@ def uniform_rate_encode(rates: np.ndarray, T: int) -> np.ndarray:
 
 def deterministic_rate_encode(rates: np.ndarray, T: int) -> np.ndarray:
     """Deterministic encoding: fires every cycle when rate > 0.5."""
-    import torch
-
-    from mimarsinan.chip_simulation.recording import spike_modes
-
     clipped = np.clip(rates, 0.0, 1.0)
     tensor = torch.tensor(clipped, dtype=torch.float32)
     n_samples, d = tensor.shape
@@ -78,9 +66,7 @@ def spike_train_rate_encode(rates: np.ndarray, T: int) -> np.ndarray:
     """Materialize a full spike train for ``spike_mode='SpikeTrain'``.
 
     Matches HCM ``materialized_spike_train`` / ``uniform_spike_train`` so host
-    replay (Nevresim ``SpikeTrainSpikeGenerator``, Lava, SANA-FE) sees the same
-    cycle-major train HCM recorded.
-    """
+    replay (Nevresim, Lava, SANA-FE) sees the same cycle-major train HCM recorded."""
     return uniform_rate_encode(rates, T)
 
 

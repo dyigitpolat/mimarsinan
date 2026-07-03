@@ -8,7 +8,6 @@ from mimarsinan.config_schema.namespaced_schema import KEY_SPECS, keys_with_expo
 
 
 _EXTRA_USER_DEPLOYMENT_KEYS = frozenset({
-    # Wizard/model/search keys that are not defaulted in config_schema.defaults.
     "model_type",
     "model_config",
     "arch_search",
@@ -25,7 +24,6 @@ _EXTRA_USER_DEPLOYMENT_KEYS = frozenset({
 })
 
 _EXTRA_USER_PLATFORM_KEYS = frozenset({
-    # Wizard hardware shape helpers emitted alongside the canonical core list.
     "max_axons",
     "max_neurons",
     "has_bias",
@@ -54,7 +52,6 @@ def _minimal_deployment_parameters(raw: Dict[str, Any]) -> Dict[str, Any]:
         if key in user_keys:
             out[key] = value
         elif key not in hidden_keys:
-            # Preserve unknown future/user extension keys rather than losing data.
             out[key] = value
     return out
 
@@ -92,16 +89,13 @@ def _minimal_platform_constraints(raw: Any) -> Dict[str, Any]:
 
 
 def build_deployment_config_from_state(state: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Build a deployment config dict from wizard state (same shape as main.py JSON).
+    """Build a deployment config dict from wizard state (same shape as the deployment JSON).
 
-    The saved shape keeps user-facing knobs only; runtime defaults and derived
-    fields are resolved later by config_schema.runtime / DeploymentPipeline.
+    Keeps user-facing knobs only; runtime/derived fields are resolved later.
     """
     state = state or {}
     out: Dict[str, Any] = {}
 
-    # Top-level
     out["data_provider_name"] = state.get("data_provider_name", "MNIST_DataProvider")
     out["experiment_name"] = state.get("experiment_name", "experiment")
     out["generated_files_path"] = state.get("generated_files_path", "./generated")
@@ -119,7 +113,6 @@ def build_deployment_config_from_state(state: Dict[str, Any]) -> Dict[str, Any]:
         state.get("platform_constraints") or {}
     )
 
-    # Edit & continue: preserve internal keys (not written to saved JSON templates).
     continue_from = state.get("_continue_from_run_id")
     if continue_from:
         out["_continue_from_run_id"] = continue_from

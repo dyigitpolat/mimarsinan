@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import torch
-
 from mimarsinan.models.nn.activations.autograd import DifferentiableClamp, StaircaseFunction
 
 

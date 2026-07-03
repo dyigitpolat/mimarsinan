@@ -14,8 +14,10 @@ from mimarsinan.chip_simulation.hybrid_run.hybrid_execution import (
     assemble_segment_input_numpy,
     execute_compute_op_numpy,
     gather_final_output_numpy,
+    resolve_stage_compute_scales,
     store_segment_output_numpy,
 )
+from mimarsinan.chip_simulation.hybrid_run.hybrid_stage_runner import run_hybrid_stages
 from mimarsinan.chip_simulation.lava_loihi.core_lava import LavaCoreMixin, _subtractive_lif_cls
 from mimarsinan.chip_simulation.lava_loihi.segment_runner import LavaSegmentMixin
 from mimarsinan.chip_simulation.lava_loihi.timing import _RunProfile, _StageTrace
@@ -97,9 +99,6 @@ class LavaLoihiRunner(LavaCoreMixin, LavaSegmentMixin):
 
         x_flat = self._preprocess(x_np)
         state_buffer: Dict[int, np.ndarray] = {-2: x_flat}
-
-        from mimarsinan.chip_simulation.hybrid_run.hybrid_execution import resolve_stage_compute_scales
-        from mimarsinan.chip_simulation.hybrid_run.hybrid_stage_runner import run_hybrid_stages
 
         def _on_neural(_stage_index, stage, state_buffer):
             t0 = time.time()

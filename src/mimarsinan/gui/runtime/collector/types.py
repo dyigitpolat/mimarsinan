@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
+from mimarsinan.gui.json_util import to_json_safe as _to_json_safe
+
 
 class StepStatus(str, Enum):
     PENDING = "pending"
@@ -27,7 +29,7 @@ class MetricEvent:
 @dataclass
 class ConsoleLogEntry:
     seq: int
-    stream: str  # "stdout" or "stderr"
+    stream: str
     line: str
     ts: float
 
@@ -51,6 +53,4 @@ def build_snapshot_etag(rec: StepRecord) -> str:
 
 
 def to_json_safe(value: Any) -> Any:
-    from mimarsinan.gui.json_util import to_json_safe as _to_json_safe
-
     return _to_json_safe(value)

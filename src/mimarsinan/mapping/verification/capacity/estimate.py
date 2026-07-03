@@ -1,30 +1,4 @@
-"""Static placement-capacity estimate: hard cores an IR graph needs, WITHOUT placement.
-
-The greedy ``placement_engine`` raises ``RuntimeError("No more hard cores
-available")`` deep inside the pack when a config does not fit — a late,
-non-diagnosable crash (E3: VGG16@224 needs ~hundreds of thousands of cores on a
-1000-core budget). :func:`estimate_cores_needed` turns that into an EARLY,
-diagnosable capacity verdict: a pure, fast, SOUND lower bound on the hard-core
-count, computed straight from the IR graph and the platform core budget.
-
-The bound mirrors the diagonal packer (``canonical._remaining_capacity``): a hard
-core stacks softcores along the diagonal, consuming both axons and neurons, so a
-neural segment needs at least
-``max(ceil(Σ axons / max_axons), ceil(Σ neurons / max_neurons), max per-core
-frags·groups)`` cores. Because it is a lower bound, the gate rejects only configs
-that PROVABLY cannot fit (no packing strategy could place them).
-
-When ``allow_scheduling`` is set (resolved from the chip's ``MappingStrategy``
-capabilities), the SCHEDULED path re-programs the chip across PHASES on a FRESH
-physical core pool per phase, so only the PEAK per-segment phase must fit the
-budget — NOT the SUM. Feasibility then turns on (1) the peak per-segment bound
-fitting the budget and (2) a hard atomic-unit gate: the largest single coalescing
-bundle (``frags·groups`` of one softcore) cannot split across phases, so it must
-fit the WHOLE budget on its own. ``phase_count`` = Σ ``ceil(segment_bound /
-budget)`` (the reprogramming-pass count). NO weight sharing is assumed: a
-224²-spatial conv genuinely unrolls to its full softcore count; scheduling only
-TIME-MULTIPLEXES that count across reprogramming passes.
-"""
+"""Static SOUND lower bound on the hard cores an IR graph needs on a core budget, without placement."""
 
 from __future__ import annotations
 
@@ -41,13 +15,7 @@ from mimarsinan.mapping.platform.platform_constraints import (
 
 
 class CapacityExceededError(RuntimeError):
-    """Raised when an IR graph provably cannot fit the declared core budget.
-
-    The diagnosable, EARLY replacement for the greedy packer's late
-    ``RuntimeError("No more hard cores available")``: carries the static
-    ``cores_needed`` vs ``cores_available`` counts and the first segment whose
-    cumulative requirement overflows the budget.
-    """
+    """Raised when an IR graph provably cannot fit the declared core budget."""
 
     def __init__(
         self,
@@ -73,14 +41,9 @@ class CapacityExceededError(RuntimeError):
 class CapacityEstimate:
     """Static hard-core capacity verdict for an IR graph on a core budget.
 
-    ``scheduled`` records whether the verdict was decided under the SCHEDULED path
-    (PEAK-phase feasibility) rather than the single-pool SUM. ``peak_phase_cores``
-    is the largest single reprogramming phase's hard-core count (the actual chip
-    occupancy at any instant); ``phase_count`` is the reprogramming-pass count
-    (Σ ``ceil(segment_bound / budget)``, 1 when not scheduled). The two new fields
-    default so that a bare construction (only the original fields) reports a single
-    phase whose size is the whole ``cores_needed`` — byte-identical to the merged
-    SUM verdict.
+    ``scheduled`` records the SCHEDULED (PEAK-phase) path vs single-pool SUM;
+    ``peak_phase_cores`` is the largest phase's occupancy, ``phase_count`` the
+    reprogramming-pass count (1 when not scheduled).
     """
 
     cores_needed: int
@@ -109,9 +72,8 @@ class CapacityEstimate:
 class _SegmentBound:
     """One neural segment's diagonal lower bound plus its atomic-unit cost.
 
-    ``atomic_unit`` is the largest single softcore's ``frags·groups`` (one fused
-    coalescing bundle): it cannot split across reprogramming phases, so it is the
-    hard floor a SCHEDULED phase must accommodate on its own.
+    ``atomic_unit`` (largest softcore's ``frags·groups``) cannot split across
+    reprogramming phases, so it is the hard floor a scheduled phase must fit.
     """
 
     bound: int
@@ -123,12 +85,8 @@ def _segment_lower_bound(
 ) -> _SegmentBound:
     """Diagonal-packing lower bound on hard cores for one neural segment.
 
-    A hard core consumes both axons and neurons along the diagonal, so the
-    segment needs at least ``ceil(Σ axons / max_axons)`` and
-    ``ceil(Σ neurons / max_neurons)`` cores; an oversized softcore additionally
-    forces its own ``frags·groups`` cores (coalescing fragments × neuron groups).
-    The maximum of the three is a sound lower bound; the per-core max is also the
-    segment's atomic-unit cost (the largest non-splittable bundle).
+    max(ceil(Σ axons / max_axons), ceil(Σ neurons / max_neurons), max per-core
+    frags·groups); the per-core max is also the segment's atomic-unit cost.
     """
     total_axons = 0
     total_neurons = 0
@@ -152,13 +110,7 @@ def _segment_lower_bound(
 def _resolve_budget(
     platform_constraints: Mapping[str, Any],
 ) -> tuple[int, int, int]:
-    """Return ``(effective_max_axons, effective_max_neurons, total_core_count)``.
-
-    Uses the same ``resolve_platform_mapping_params`` the mapping step uses so the
-    effective axon width (minus a bias row when no ``has_bias``) matches what the
-    packer actually offers. The budget is the total ``count`` across core types
-    (the single physical pool the packer draws from across all segments).
-    """
+    """Return ``(effective_max_axons, effective_max_neurons, total_core_count)`` via the mapping step's resolver."""
     cores: Sequence[Mapping[str, Any]] = platform_constraints.get("cores") or []
     if not cores:
         raise ValueError(
@@ -178,13 +130,7 @@ def _resolve_allow_scheduling(
     platform_constraints: Mapping[str, Any],
     allow_scheduling: bool | None,
 ) -> bool:
-    """SSOT for the scheduling permission: explicit arg wins, else read the chip.
-
-    Reads the bit through :meth:`ChipCapabilities.from_platform_constraints` — the
-    same resolver the scheduled builder / verifier consult — so the estimate and
-    the path it gates agree on whether time-multiplexing is permitted. Default
-    (absent) ⇒ False ⇒ the SUM verdict, byte-identical to the merged estimate.
-    """
+    """SSOT for the scheduling permission: explicit arg wins, else read the chip capabilities."""
     if allow_scheduling is not None:
         return bool(allow_scheduling)
     return ChipCapabilities.from_platform_constraints(platform_constraints).allow_scheduling
@@ -197,23 +143,8 @@ def estimate_cores_needed(
 ) -> CapacityEstimate:
     """Statically estimate the hard cores ``ir_graph`` needs on the core budget.
 
-    Pure and fast (no placement, no simulation): partitions the IR into neural
-    segments (host ComputeOps are barriers), computes each segment's diagonal
-    lower bound, and reports feasibility. Reproduces the E3 split: VGG16@32 fits a
-    2048-core budget; VGG16@224 needs hundreds of thousands on a 1000-core budget.
-
-    ``allow_scheduling`` (resolved from the chip's ``MappingStrategy`` capabilities
-    when ``None``) selects the verdict model:
-
-    - **OFF (default):** the budget is ONE pool consumed across segments, so
-      ``cores_needed = Σ segment bounds`` and ``feasible = (Σ ≤ budget)``; the
-      first cumulative overflow is named. Byte-identical to the merged estimate.
-    - **ON (scheduled):** the chip reprograms a FRESH pool per phase, so only the
-      PEAK per-segment phase must fit (``peak_phase_cores``), and feasibility ALSO
-      requires the largest single coalescing bundle (``atomic_unit``) to fit the
-      WHOLE budget — it cannot split across phases. ``phase_count = Σ ceil(segment
-      bound / budget)`` is the reprogramming-pass count. NO weight sharing: the
-      softcore count is intrinsic; scheduling only time-multiplexes it.
+    ``allow_scheduling`` OFF ⇒ single-pool SUM verdict; ON ⇒ PEAK per-segment
+    phase must fit and the largest atomic_unit must fit the whole budget.
     """
     max_axons, max_neurons, cores_available = _resolve_budget(platform_constraints)
     scheduled = _resolve_allow_scheduling(platform_constraints, allow_scheduling)
@@ -264,11 +195,8 @@ def _scheduled_estimate(
 ) -> CapacityEstimate:
     """PEAK-phase feasibility under the scheduled (fresh-pool-per-phase) model.
 
-    Feasible iff the largest atomic unit (one non-splittable coalescing bundle)
-    fits the whole budget. The achievable peak phase is then
-    ``min(max_segment_bound, budget)`` (a latency group splits freely below the
-    budget); ``phase_count`` = Σ ``ceil(segment_bound / budget)``. The overflowing
-    segment, when infeasible, is the one carrying the oversized atomic unit.
+    Feasible iff the largest atomic unit fits the whole budget; peak phase is
+    ``min(max_segment_bound, budget)``, ``phase_count`` = Σ ceil(bound / budget).
     """
     max_segment_bound = max((sb.bound for _, sb in bounds), default=0)
     max_atomic = max((sb.atomic_unit for _, sb in bounds), default=0)

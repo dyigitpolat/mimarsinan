@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-from mimarsinan.transformations.pruning import (
-    apply_pruning_masks,
-    collect_activation_stats as _collect_activation_stats,
-)
+from mimarsinan.transformations.pruning import apply_pruning_masks
 from mimarsinan.tuning.axes import PruningAxis
 from mimarsinan.tuning.orchestration.smooth_adaptation_tuner import SmoothAdaptationTuner
 from mimarsinan.tuning.tuners.pruning.pruning_tuner_enforce import (

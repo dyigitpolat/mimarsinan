@@ -13,10 +13,7 @@ def parse_spike_records(stderr: str) -> list[dict[int, dict[str, list[int]]]]:
     """Parse ``SPKREC`` lines (NEVRESIM_RECORD_SPIKES build) into per-sample records.
 
     One ``SPKREC <core> IN ... OUT ...`` line per core; ``SPKREC_END`` closes a
-    sample. Returns a list (sample-major) of ``{core_index: {"in": [...], "out": [...]}}``.
-    The full per-axon / per-neuron arrays are emitted; trimming to used spans is
-    done at projection time against the reference mapping.
-    """
+    sample. Full per-axon/neuron arrays; trimming to used spans happens at projection."""
     samples: list[dict[int, dict[str, list[int]]]] = []
     current: dict[int, dict[str, list[int]]] = {}
     for line in (stderr or "").splitlines():
@@ -28,7 +25,6 @@ def parse_spike_records(stderr: str) -> list[dict[int, dict[str, list[int]]]]:
             current = {}
             continue
         toks = line.split()
-        # SPKREC <core> IN <ints...> OUT <ints...>
         core = int(toks[1])
         in_idx = toks.index("IN")
         out_idx = toks.index("OUT")
@@ -46,17 +42,10 @@ def execute_simulator(
     expected_values: int | None = None,
     record_spikes: bool = False,
 ):
-    """Run the nevresim binary. Supports both absolute and relative paths.
+    """Run the nevresim binary across ``num_proc`` workers (0 ⇒ ``cpu_count() // 2``).
 
-    When *num_proc* is 0 (default), uses ``os.cpu_count() // 2`` workers
-    (at least 1).
-
-    Binary stdout protocol: for each sample in ``[start, end)``, emit
-    ``output_size`` whitespace-separated numbers followed by a newline.
-
-    When *expected_values* is set (typically ``input_count * output_size``),
-    raises ``RuntimeError`` if the parsed token count does not match.
-    """
+    Stdout protocol: per sample in ``[start, end)``, ``output_size`` whitespace-
+    separated numbers then a newline; a mismatch vs ``expected_values`` raises."""
     if num_proc <= 0:
         num_proc = max(1, (os.cpu_count() or 2) // 2)
     num_proc = min(num_proc, input_count) if input_count > 0 else 1

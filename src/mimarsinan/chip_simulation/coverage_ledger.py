@@ -1,35 +1,4 @@
-"""Frontier E1 — the hypervolume coverage ledger: genericity as a MEASURED fraction.
-
-The program plan's review says genericity is *asserted, not measured*: coverage is
-per-run, the hypervolume is unmodeled. This module makes it explicit and measured.
-
-Three pieces:
-
-* the HYPERVOLUME AXIS MODEL (:class:`HypervolumeAxis`, :data:`AXES`) — the typed
-  product of deployment axes (``firing × sync × encoding_placement × quantization ×
-  pruning × backend × mapping_strategy × S × vehicle × dataset × regime``), each
-  classified ORTHOGONAL (covered MARGINALLY — vary one axis with the rest fixed) vs
-  INTERACTING (tested JOINTLY). The classification is justified by cheap screening:
-  ``encoding_placement`` offload≡subsume under signed-IF is one ORTHOGONAL result the
-  checkpoint already found, so that axis COLLAPSES to a single representative value;
-  ``firing × sync`` (the death-cascade law) and ``quantization × firing`` are
-  INTERACTING — they must be tested jointly.
-
-* the FULL-TUPLE :class:`HypervolumeCell` — extends the
-  ``(firing × sync × backend)`` :class:`CertificationCell` (E6) to the full config
-  tuple so each science-valid ledger row maps to exactly one hypervolume cell. Its
-  ``cert_cell`` is the embedded (firing × sync × backend) sub-coordinate.
-
-* :func:`coverage_report` — the GROUP BY over a ledger by cell-key + the
-  ``deployment_validity`` tier, reporting per claimed cell a status in {VALID,
-  VALID_FLAGGED, INVALID, UNTESTED}, the measured COVERAGE FRACTION (covered /
-  claimed), the named UNTESTED frontier (claimed cells with no row), and the
-  RESEARCH-GAP frontier (the union of ``research_gap_ops`` over VALID_FLAGGED cells
-  — the future-conversion targets).
-
-Pure data + a reader: it runs nothing, mutates no sim behavior; it reads ledger rows
-(``runs/campaign/ledger.jsonl``) and tallies.
-"""
+"""Hypervolume coverage ledger: genericity as a measured covered/claimed fraction over ledger rows."""
 
 from __future__ import annotations
 
@@ -79,45 +48,21 @@ __all__ = [
 ]
 
 
-# The per-axis WILDCARD sentinel — the single source of truth for "this axis is not
-# constrained". It is the value ``row_to_cells`` records when a row carries no value
-# for an axis (S/depth unknown), AND the default a ``claimed_subproduct`` gives an
-# UNPINNED axis. In coverage matching a claimed-cell coordinate set to the wildcard
-# matches ANY covered value on that axis, so a claim that does not pin S/depth is
-# covered when the recipe was tested at any S/depth (the deep_cnn rows carry concrete
-# S=4 / depth=8 yet a depth-agnostic claim must still match them).
 AXIS_WILDCARD = "any"
 
 
 class AxisKind(Enum):
-    """How an axis is covered.
-
-    ``ORTHOGONAL`` axes are covered MARGINALLY — vary one value with the rest of the
-    tuple fixed (a cheap screen establishes the axis does not interact). ``INTERACTING``
-    axes must be covered JOINTLY — their cross-product is the real surface (the
-    death-cascade is a (firing × sync) joint result, quantization interacts with the
-    firing law).
-    """
+    """How an axis is covered: ORTHOGONAL (marginally) vs INTERACTING (jointly)."""
 
     ORTHOGONAL = "orthogonal"
     INTERACTING = "interacting"
 
 
 class ScreeningStatus(Enum):
-    """The KEYSTONE classification that gates whether an axis may collapse.
+    """The classification gating whether an axis may collapse from the coverage denominator.
 
-    The coverage DENOMINATOR is a function of this status so collapse-on-a-hunch is
-    structurally impossible:
-
-    * ``SCREENED_COLLAPSED`` — a cheap screen PROVED the axis's values equivalent, so
-      it collapses to one representative and is NOT a cell coordinate. It REQUIRES a
-      non-empty ``screening_artifact`` (a doc / test / result ref); constructing one
-      without an artifact RAISES.
-    * ``ENUMERATED_INTERACTING`` — the axis is PROVEN to interact (the death-cascade
-      firing×sync law, the dual-axis depth×dataset law), so its cross-product is the
-      real surface; counted interacting (enumerated) in the denominator.
-    * ``ASSERTED_UNSCREENED`` — no screen has been run yet; we make NO collapse claim,
-      so it is counted interacting (enumerated) until a screen (P3) earns the collapse.
+    ``SCREENED_COLLAPSED`` (proven equivalent, requires a ``screening_artifact``) collapses
+    to one representative; ``ENUMERATED_INTERACTING`` and ``ASSERTED_UNSCREENED`` both stay enumerated.
     """
 
     SCREENED_COLLAPSED = "screened_collapsed"
@@ -126,15 +71,10 @@ class ScreeningStatus(Enum):
 
 
 class AttributionFidelity(Enum):
-    """How TRUSTWORTHY a covered region's per-neuron attribution is.
+    """How trustworthy a covered region's per-neuron attribution is.
 
-    ``ATTRIBUTION`` — the per-neuron reassembly is bit-exact (the validated corner).
-    ``VALUE_DOMAIN_ONLY`` — only the VALUE-domain (deployed accuracy) is bit-exact; the
-    per-neuron ATTRIBUTION reassembly is not gated in production there (GAP-1: the C3
-    fix makes coalescing+output-tiling bit-exact in the fidelity HARNESS, but the
-    production NF↔SCM gate is identity-mapping-only so the fragment path is unexercised
-    in deployment; the residual Tier-1 merge). Marking these NOW keeps the coverage
-    instrument honest about what it can and cannot attribute.
+    ``ATTRIBUTION`` — bit-exact per-neuron reassembly; ``VALUE_DOMAIN_ONLY`` — only the
+    deployed-accuracy value domain is bit-exact, the attribution reassembly is not gated in production.
     """
 
     ATTRIBUTION = "attribution"
@@ -145,14 +85,8 @@ class AttributionFidelity(Enum):
 class HypervolumeAxis:
     """One typed deployment axis of the hypervolume, with its coverage classification.
 
-    ``name`` is the axis (a ``HypervolumeCell`` field); ``kind`` is the legacy
-    ORTHOGONAL vs INTERACTING tag; ``screening_status`` is the KEYSTONE — it gates
-    collapse and the denominator. ``interacts_with`` names the axes it is tested
-    jointly with; ``values`` is the (small) screened domain; ``representative`` is the
-    single value a SCREENED_COLLAPSED axis drops to; ``screening_artifact`` is the
-    doc/test/result ref that JUSTIFIES the collapse (mandatory for SCREENED_COLLAPSED);
-    ``justification`` is the human-facing reason. ``collapsed`` is DERIVED — it is
-    exactly ``screening_status is SCREENED_COLLAPSED`` (no independent hunch flag).
+    ``screening_status`` gates collapse and the denominator; ``screening_artifact`` is
+    mandatory for SCREENED_COLLAPSED. ``collapsed`` is DERIVED from the status alone.
     """
 
     name: str
@@ -187,28 +121,6 @@ class HypervolumeAxis:
         raise KeyError(f"no hypervolume axis named {name!r}; known: {[a.name for a in AXES]}")
 
 
-# The hypervolume axis model. ``values`` are the cheaply-screened domains (NOT the full
-# combinatorial space — that is what a campaign fills); they anchor the claimed product
-# and the untested frontier. The classification + justification are the load-bearing
-# E1 content:
-#
-#   * firing × sync are INTERACTING — the death-cascade is a (firing × sync) joint law
-#     (cascaded ttfs_cycle collapses where synchronized does not), so they are tested
-#     jointly (the CertificationCell already keys on the pair).
-#   * quantization × firing are INTERACTING — weight/activation quantization interacts
-#     with the firing law (DFQ-for-LIF hurts; q=0.99 optimal for LIF; the cascade ramp
-#     is quantization-sensitive), so quantization is screened per-firing.
-#   * encoding_placement is ORTHOGONAL and COLLAPSED — the checkpoint's cheap screen
-#     found offload≡subsume under signed integrate-and-fire (the segment-boundary
-#     encode/decode is value-preserving either way), so it is dropped to one
-#     representative ("subsume") and is NOT a coordinate of the cell key.
-#   * pruning / mapping_strategy / backend are ORTHOGONAL (a pruned/packed/backend
-#     variant is screened marginally against the dense/identity/nevresim reference);
-#     they remain in the product (not yet proven collapsible) but are covered
-#     marginally, not as a full cross-product.
-#   * S / vehicle / dataset / regime are the campaign breadth axes — covered as the
-#     claimed product demands (S and vehicle interact with the firing law's d_max(S)
-#     budget, but are enumerated, not collapsed).
 AXES: Tuple[HypervolumeAxis, ...] = (
     HypervolumeAxis(
         name="firing",
@@ -408,22 +320,6 @@ AXES: Tuple[HypervolumeAxis, ...] = (
 )
 
 
-# The KNOWN-CRACKED regions whose per-neuron attribution is VALUE_DOMAIN_ONLY (the
-# deployed accuracy is bit-exact, but the per-neuron reassembly is NOT exercised in
-# production): the residual Tier-1 merge is the remaining attribution overcount in the
-# fused-mapping reassembler. Marking them NOW keeps the instrument honest about what it
-# can attribute.
-#
-# GAP-1 STATUS (Wave-2 C3 reconciliation): C3 fixed the fidelity-HARNESS reassembler —
-# the joint ``(perceptron_output_slice, ir_id)`` keying makes coalescing+output-tiling
-# per-neuron attribution bit-exact in ``tests/integration/_split_reassembly.py`` (locked
-# by ``test_coalescing_neuron_split_attribution.py``). But the PRODUCTION NF↔SCM gate
-# (``nf_scm_parity._group_record_by_perceptron``) asserts identity-mapping-only
-# (one placement/core, ``split_group_id is None``) and runs on a freshly-built identity
-# mapping (``build_identity_mapping_for_pipeline``), so the coalesced/output-tiled
-# FRAGMENT attribution path is NOT exercised in deployment — only the harness exercises
-# it. GAP-1 therefore STAYS VALUE_DOMAIN_ONLY: production per-neuron attribution under
-# coalescing+output-tiling is not gated. (See docs/research/HYPERVOLUME.md.)
 KNOWN_CRACKED_REGIONS: Tuple[str, ...] = (
     (
         "GAP-1: coalescing+output-tiling per-neuron attribution at VGG scale — "
@@ -439,15 +335,7 @@ KNOWN_CRACKED_REGIONS: Tuple[str, ...] = (
 def collapse_orthogonal_axes(
     axes: Sequence[HypervolumeAxis],
 ) -> Tuple[HypervolumeAxis, ...]:
-    """Drop every SCREENED_COLLAPSED axis — the active product the cell key is built over.
-
-    Collapse CONSUMES ``screening_status``: ONLY a ``SCREENED_COLLAPSED`` axis (one whose
-    values a cheap screen PROVED equivalent, e.g. ``encoding_placement`` offload≡subsume)
-    contributes a single representative and is therefore NOT a coordinate of the
-    hypervolume cell. ``ENUMERATED_INTERACTING`` and ``ASSERTED_UNSCREENED`` axes are
-    BOTH counted interacting (they survive as coordinates) — an axis cannot collapse
-    without a linked artifact. Returns the axes that remain (the active product).
-    """
+    """Drop every SCREENED_COLLAPSED axis, returning the active product the cell key is built over."""
     return tuple(
         a
         for a in axes
@@ -458,16 +346,7 @@ def collapse_orthogonal_axes(
 def collapsed_axis_representatives(
     axes: Sequence[HypervolumeAxis] = AXES,
 ) -> Dict[str, str]:
-    """The SSOT ``{collapsed axis name → representative}`` map.
-
-    Every ``SCREENED_COLLAPSED`` axis folds to a single representative value (its
-    ``__post_init__`` already guarantees a linked artifact). A collapsed axis is NOT
-    a cell coordinate, so any cell value on it must canonicalize to the representative
-    — this map is the single place that mapping lives, consumed by ``cell_key`` /
-    ``cert_cell`` (fold ``backend``) and ``HypervolumeCell.from_key`` (default a
-    dropped extending axis like ``mapping_strategy``). A collapsed axis with no
-    explicit ``representative`` falls back to its first screened value.
-    """
+    """The SSOT ``{collapsed axis name → representative}`` map (falling back to the first screened value)."""
     reps: Dict[str, str] = {}
     for axis in axes:
         if axis.screening_status is ScreeningStatus.SCREENED_COLLAPSED:
@@ -480,12 +359,7 @@ def collapsed_axis_representatives(
 def interacting_axes(
     axes: Sequence[HypervolumeAxis] = AXES,
 ) -> Tuple[HypervolumeAxis, ...]:
-    """The axes counted INTERACTING (enumerated) in the honest denominator.
-
-    Exactly the non-``SCREENED_COLLAPSED`` axes: ``ENUMERATED_INTERACTING`` (proven to
-    interact) and ``ASSERTED_UNSCREENED`` (no screen yet) are BOTH enumerated, so no
-    axis inflates coverage without a linked artifact.
-    """
+    """The axes counted INTERACTING (enumerated) in the honest denominator — the non-collapsed axes."""
     return collapse_orthogonal_axes(axes)
 
 
@@ -494,29 +368,17 @@ def active_axes() -> Tuple[HypervolumeAxis, ...]:
     return collapse_orthogonal_axes(AXES)
 
 
-# The cell-key coordinate order (collapsed axes excluded). The (firing × sync ×
-# backend) prefix is the embedded CertificationCell; the rest extend it.
 _CELL_AXES: Tuple[str, ...] = tuple(a.name for a in collapse_orthogonal_axes(AXES))
 
-# SSOT: the representative each SCREENED_COLLAPSED axis folds to. ``cell_key`` /
-# ``cert_cell`` fold a collapsed axis's value to its representative so two rows
-# differing ONLY in a collapsed axis (e.g. backend nevresim vs sanafe, or
-# mapping_strategy identity vs packed) map to the SAME cell; ``from_key`` defaults a
-# dropped extending axis (mapping_strategy) to it so the round-trip still works.
 _COLLAPSED_REPRESENTATIVES: Dict[str, str] = collapsed_axis_representatives(AXES)
 
 
 @dataclass(frozen=True)
 class HypervolumeCell:
-    """The FULL-TUPLE coverage cell — extends ``CertificationCell`` to the config tuple.
+    """The FULL-TUPLE coverage cell — extends the (firing × sync × backend) ``CertificationCell`` to the config tuple.
 
-    The (firing × sync × backend) sub-coordinate is exactly an E6
-    :class:`CertificationCell` (``cert_cell``); the remaining fields (vehicle,
-    dataset, regime, quantization, pruning, mapping_strategy, S, depth) extend it so
-    each science-valid ledger row maps to exactly one hypervolume cell. ``depth`` is a
-    real coordinate so a shallow INVALID and a deeper VALID_FLAGGED at the same recipe
-    do not collapse. The collapsed ``encoding_placement`` axis is NOT a field
-    (offload≡subsume).
+    ``depth`` is a real coordinate so a shallow INVALID and a deeper VALID_FLAGGED at the
+    same recipe do not collapse; the collapsed ``encoding_placement`` axis is NOT a field.
     """
 
     firing: str
@@ -533,24 +395,14 @@ class HypervolumeCell:
 
     @property
     def cert_cell(self) -> CertificationCell:
-        """The embedded (firing × sync × backend) E6 cell.
-
-        When ``backend`` is a SCREENED_COLLAPSED axis it folds to its representative
-        so two cells differing ONLY in backend (a faithfulness axis) produce the SAME
-        cert prefix — the collapse must not leak distinct cells through the cert key.
-        """
+        """The embedded (firing × sync × backend) E6 cell, folding a collapsed backend to its representative."""
         sync = None if self.sync in (None, "none", "") else self.sync
         backend = _COLLAPSED_REPRESENTATIVES.get("backend", self.backend)
         return CertificationCell(firing=self.firing, sync=sync, backend=backend)
 
     @property
     def cell_key(self) -> str:
-        """Canonical full-tuple key: ``<cert_key>|vehicle=…|dataset=…|…``.
-
-        Prefixed by the canonical ``mode[/schedule]@backend`` E6 key so the embedded
-        cert cell is the SAME named thing across the program, then the extending axes
-        as ``axis=value`` segments in a stable order.
-        """
+        """Canonical full-tuple key: the ``mode[/schedule]@backend`` cert prefix + ``axis=value`` segments."""
         parts = [self.cert_cell.cell_key]
         for axis in _CELL_AXES:
             if axis in ("firing", "sync", "backend"):
@@ -560,14 +412,7 @@ class HypervolumeCell:
 
     @classmethod
     def from_key(cls, key: str) -> "HypervolumeCell":
-        """Parse a canonical full-tuple key back into a cell.
-
-        A SCREENED_COLLAPSED extending axis (e.g. ``mapping_strategy``) is dropped
-        from the key, so it is absent from the parsed segments; it defaults to its
-        representative (the SSOT ``_COLLAPSED_REPRESENTATIVES``) so the round-trip
-        ``from_key(cell.cell_key)`` reconstructs the canonical cell. ``backend`` is
-        already folded inside the cert prefix.
-        """
+        """Parse a canonical full-tuple key back into a cell (dropped collapsed axes default to their representative)."""
         cert_part, *rest = key.split("|")
         cert = CertificationCell.from_key(cert_part)
         kv = {}
@@ -600,11 +445,9 @@ class HypervolumeCell:
         )
 
 
-# axis-name → HypervolumeCell field name (``S`` is stored as ``s``).
 _FIELD_FOR_AXIS: Dict[str, str] = {a: a for a in _CELL_AXES}
 _FIELD_FOR_AXIS["S"] = "s"
 
-# The HypervolumeCell fields a claimed cell is matched on (every cell coordinate).
 _MATCH_FIELDS: Tuple[str, ...] = tuple(_FIELD_FOR_AXIS[a] for a in _CELL_AXES)
 
 
@@ -617,13 +460,7 @@ def _coord(cell: "HypervolumeCell", field_name: str) -> str:
 
 
 def cell_covers(claimed: "HypervolumeCell", covered: "HypervolumeCell") -> bool:
-    """True iff a COVERED cell satisfies a CLAIMED cell under wildcard semantics.
-
-    A claimed coordinate set to :data:`AXIS_WILDCARD` matches any covered value on that
-    axis (the claim does not constrain it); every other claimed coordinate must EQUAL
-    the covered one. So a depth/S-agnostic claim is covered by a row tested at a
-    concrete depth/S, but a claim that pins an axis is only covered by an exact hit.
-    """
+    """True iff a COVERED cell satisfies a CLAIMED cell — a claimed :data:`AXIS_WILDCARD` matches any covered value, else exact."""
     for field_name in _MATCH_FIELDS:
         claim_value = _coord(claimed, field_name)
         if claim_value == AXIS_WILDCARD:
@@ -634,12 +471,7 @@ def cell_covers(claimed: "HypervolumeCell", covered: "HypervolumeCell") -> bool:
 
 
 class CoverageStatus(Enum):
-    """The per-cell coverage status the GROUP BY assigns.
-
-    VALID / VALID_FLAGGED / INVALID mirror the tiered ``ValidityVerdict`` from
-    ``onchip_fraction`` (a covered cell's worst tier wins); UNTESTED is a claimed cell
-    with NO row.
-    """
+    """The per-cell coverage status: VALID / VALID_FLAGGED / INVALID (worst tier wins) or UNTESTED (no row)."""
 
     VALID = TIER_VALID
     VALID_FLAGGED = TIER_VALID_FLAGGED
@@ -647,10 +479,6 @@ class CoverageStatus(Enum):
     UNTESTED = "UNTESTED"
 
 
-# The worst-tier order (most → least conservative) for collapsing conflicting rows on
-# one cell: INVALID dominates VALID_FLAGGED dominates VALID. A cell tested as both
-# valid and flagged is reported FLAGGED (it owes the research gap); a cell tested
-# valid and invalid is reported INVALID (the conservative read).
 _TIER_SEVERITY: Dict[CoverageStatus, int] = {
     CoverageStatus.INVALID: 3,
     CoverageStatus.VALID_FLAGGED: 2,
@@ -659,15 +487,9 @@ _TIER_SEVERITY: Dict[CoverageStatus, int] = {
 
 
 def classify_validity_tier(raw: Optional[str]) -> Optional[CoverageStatus]:
-    """Normalize a ledger ``deployment_validity`` string to a canonical tier.
+    """Normalize a free-form ledger ``deployment_validity`` string to a canonical tier (``None`` for a non-science row).
 
-    The ledger's tier strings are free-form (``VALID_on_chip_majority``,
-    ``VALID_FLAGGED_placement``, ``INVALID_host_majority``, ``VALID_clean_rc0_…``).
-    Returns the canonical :class:`CoverageStatus` (VALID / VALID_FLAGGED / INVALID) or
-    ``None`` for a row that carries NO validity verdict (a non-science / run-status
-    row like ``FINALIZED_rc0`` or an empty/absent tier) — those do not name a science
-    cell. Order matters: ``VALID_FLAGGED`` and ``INVALID`` are checked before the
-    ``VALID`` prefix.
+    Order matters: ``VALID_FLAGGED`` and ``INVALID`` are checked before the ``VALID`` prefix.
     """
     if not raw:
         return None
@@ -689,13 +511,9 @@ def _cell_with_sync(row: Mapping[str, Any], vehicle: str, sync: str) -> Hypervol
 
 
 def row_to_cells(row: Mapping[str, Any]) -> List[HypervolumeCell]:
-    """Map one science-valid ledger row to the hypervolume cell(s) it covers.
+    """Map one science-valid ledger row to the hypervolume cell(s) it covers (a dual-schedule row → both sync cells).
 
-    Reads the row's deployment axes — ``model`` (vehicle), ``dataset``, ``schedule`` /
-    the per-schedule deployed-mean fields (sync), ``spiking_mode``/``mode`` (firing),
-    ``backend`` — and the extending axes where the row carries them (else the screened
-    default). A dual-schedule ``arch_dataset`` row expands to both sync cells. Returns
-    ``[]`` when the row carries no validity tier (not a science cell) or no model.
+    Returns ``[]`` when the row carries no validity tier or no model.
     """
     if classify_validity_tier(row.get("deployment_validity")) is None:
         return []
@@ -706,23 +524,11 @@ def row_to_cells(row: Mapping[str, Any]) -> List[HypervolumeCell]:
 
 
 def row_to_cell(row: Mapping[str, Any]) -> Optional[HypervolumeCell]:
-    """The first hypervolume cell a row covers (``None`` for a non-science row).
-
-    Convenience over :func:`row_to_cells` for the common single-sync row; a
-    dual-schedule row returns only its first cell (use :func:`row_to_cells` for both).
-    """
+    """The first hypervolume cell a row covers (``None`` for a non-science row)."""
     cells = row_to_cells(row)
     return cells[0] if cells else None
 
 
-# Defaults the claimed-product builder fills for any axis the caller does not pin.
-# These are the SAME per-axis defaults ``row_to_cells`` (via ``_cell_with_sync``)
-# records when a row carries no value for the axis — the single source of truth so a
-# real claim's cells match its covered cells. The breadth axes the rows always carry
-# explicitly (backend/quantization/pruning/mapping_strategy/regime) take their screened
-# representative; ``S`` and ``depth`` take the ``AXIS_WILDCARD`` so an S/depth-agnostic
-# claim is covered when the recipe was tested at any S/depth (the deep_cnn rows carry
-# concrete S=4 / depth=8, but a claim that does not pin them must still match).
 _CLAIMED_DEFAULTS: Dict[str, Tuple[str, ...]] = {
     "firing": ("ttfs_cycle_based",),
     "sync": ("cascaded",),
@@ -738,22 +544,11 @@ _CLAIMED_DEFAULTS: Dict[str, Tuple[str, ...]] = {
 }
 
 
-# The two enumerated-interacting axes whose SSOT default is the WILDCARD (rows carry
-# concrete S/depth and a wildcard claim is covered by any concrete value). They are
-# cell COORDINATES (counted interacting), but the honest denominator keeps them
-# wildcard rather than exploding into untested S/depth values that would be a strictly
-# HARSHER (different) claim than "any S/depth".
 _WILDCARD_DEFAULT_AXES: Tuple[str, ...] = ("S", "depth")
 
 
 def _enumerate_claim(chosen: Mapping[str, Sequence[str]]) -> List[HypervolumeCell]:
-    """Build the deduped cartesian product of per-axis value lists into cells.
-
-    Only the ACTIVE (non-collapsed) axes vary in the product; a SCREENED_COLLAPSED
-    axis (``backend`` / ``mapping_strategy``) is NOT a coordinate, so it folds to its
-    representative on every cell. ``cell_key`` re-folds collapsed coordinates, so even
-    if a caller pins a collapsed axis to several values the cells dedupe to one.
-    """
+    """Build the deduped cartesian product of per-axis value lists into cells (collapsed axes fold to one)."""
     ordered_axes = list(_CELL_AXES)
 
     def field(kv: Dict[str, str], axis: str) -> str:
@@ -781,7 +576,6 @@ def _enumerate_claim(chosen: Mapping[str, Sequence[str]]) -> List[HypervolumeCel
                 depth=field(kv, "depth"),
             )
         )
-    # Dedupe (a collapsed axis pinned to multiple values yields identical cells).
     seen: Dict[str, HypervolumeCell] = {}
     for cell in cells:
         seen.setdefault(cell.cell_key, cell)
@@ -789,16 +583,9 @@ def _enumerate_claim(chosen: Mapping[str, Sequence[str]]) -> List[HypervolumeCel
 
 
 def claimed_subproduct(**axis_values: Sequence[str]) -> List[HypervolumeCell]:
-    """Enumerate a claimed sub-product of the hypervolume as concrete cells.
+    """Enumerate a claimed sub-product as concrete cells; unpinned axes take their single screened default.
 
-    Each keyword pins an axis to a list of values; unpinned axes take their single
-    screened default. A COLLAPSED axis (``encoding_placement``) is IGNORED — pinning
-    it to both values does not double the product (offload≡subsume), so the claimed
-    set is invariant to it. Returns the cartesian product as :class:`HypervolumeCell`s.
-
-    This is the LEGACY single-default claim (an unpinned breadth axis collapses to one
-    screened default). For the HONEST denominator that ENUMERATES every unscreened /
-    interacting axis (so no axis inflates coverage without a linked artifact), use
+    The LEGACY single-default claim — for the honest enumerated denominator use
     :func:`honest_claimed_subproduct`.
     """
     chosen: Dict[str, Tuple[str, ...]] = {}
@@ -811,19 +598,10 @@ def claimed_subproduct(**axis_values: Sequence[str]) -> List[HypervolumeCell]:
 
 
 def honest_claimed_subproduct(**axis_values: Sequence[str]) -> List[HypervolumeCell]:
-    """The HONEST claimed sub-product — the denominator CONSUMES screening status.
+    """The HONEST claimed sub-product whose denominator CONSUMES each unpinned axis's screening status.
 
-    Each keyword pins an axis. For every UNPINNED axis the denominator is built from the
-    axis's ``screening_status``:
-
-    * a ``SCREENED_COLLAPSED`` axis (``encoding_placement``) contributes its single
-      representative — it cannot enlarge the denominator (offload≡subsume, artifact-
-      backed);
-    * an ``ENUMERATED_INTERACTING`` or ``ASSERTED_UNSCREENED`` axis is ENUMERATED over
-      its full screened domain (the ``S`` / ``depth`` wildcard axes excepted — they stay
-      wildcard, a strictly weaker "any S/depth" claim). A bigger denominator = LOWER
-      honest coverage, so collapse-on-a-hunch is impossible: an unscreened axis can only
-      shrink the denominator once a screen (P3) earns the collapse.
+    A SCREENED_COLLAPSED axis contributes one representative; an ENUMERATED_INTERACTING /
+    ASSERTED_UNSCREENED axis is enumerated over its full domain (S / depth stay wildcard).
     """
     chosen: Dict[str, Tuple[str, ...]] = {}
     for axis in _CELL_AXES:
@@ -838,12 +616,7 @@ def honest_claimed_subproduct(**axis_values: Sequence[str]) -> List[HypervolumeC
 
 
 def _parse_ts(value: Any) -> Optional[_dt.date]:
-    """Parse an ISO ``YYYY-MM-DD`` string OR a Unix-epoch number to a date.
-
-    The live ledger writes ``ts`` as a Unix-epoch FLOAT (e.g. ``1782258504.2``), while
-    explicit flag timestamps are ISO strings — both must yield a real date so the aging
-    check has teeth on real data. Returns ``None`` only when truly unparseable.
-    """
+    """Parse an ISO ``YYYY-MM-DD`` string OR a Unix-epoch number (the ledger writes both) to a date."""
     if value is None or value == "":
         return None
     if isinstance(value, (int, float)) and not isinstance(value, bool):
@@ -852,7 +625,6 @@ def _parse_ts(value: Any) -> Optional[_dt.date]:
         except (ValueError, OverflowError, OSError):
             return None
     text = str(value).strip()
-    # A numeric string is also an epoch (the ledger sometimes stringifies ts).
     try:
         return _dt.datetime.utcfromtimestamp(float(text)).date()
     except (ValueError, OverflowError, OSError):
@@ -872,14 +644,8 @@ def _parse_ts(value: Any) -> Optional[_dt.date]:
 class FlagMetadata:
     """Owner + aging metadata for one VALID_FLAGGED cell — the flag-aging schema.
 
-    ``cell_key`` names the flagged cell; ``owner`` is who owns driving the flag to
-    resolution (``None`` ⇒ UNOWNED); ``flag_ts`` is when it was raised; ``age_days`` is
-    its age vs the report's ``now_ts`` (``None`` when either timestamp is missing);
-    ``fix_path`` is the named resolution step when the flag has a KNOWN fix (e.g. a
-    placement-fixable flag's encoding-offload flip), else ``None``. An UNOWNED flag aged
-    past the CI threshold is a guard violation — a flag must not rot without an owner;
-    a placement-fixable flag is auto-assigned the standing placement-offload owner so it
-    is never UNOWNED.
+    ``owner`` ``None`` ⇒ UNOWNED; ``age_days`` is measured vs the report's ``now_ts``;
+    ``fix_path`` is set when the flag has a KNOWN fix (a placement-fixable offload flip).
     """
 
     cell_key: str
@@ -897,21 +663,9 @@ class FlagMetadata:
 class CoverageReport:
     """The measured coverage of a claimed sub-product over a ledger.
 
-    ``cell_status`` is the GROUP BY result: each COVERED cell → its worst tier.
-    ``tier_counts`` tallies the covered cells by tier. When a ``claimed_subproduct``
-    is supplied, ``claimed_cells`` is it, ``covered_claimed_count`` is how many were
-    tested, ``coverage_fraction`` = covered / claimed, ``untested_frontier`` is the
-    claimed cells with NO matching row, and ``status_for`` answers a claimed cell's
-    status (UNTESTED when uncovered). A claimed cell is COVERED when at least one
-    covered cell satisfies it under :func:`cell_covers` wildcard semantics — a claim
-    that leaves S/depth unpinned matches a recipe tested at any S/depth; its status is
-    the WORST tier among the covered cells it matches (conservative). ``research_gap_
-    frontier`` is the sorted, deduped union of ``research_gap_ops`` over the
-    VALID_FLAGGED cells — the future-conversion targets (host ops with NO on-chip SNN
-    mapping yet). ``placement_fixable_frontier`` is the parallel union of
-    ``placement_fixable_ops`` — supported encoders host-placed under ``subsume`` that an
-    ``offload`` flip would map on-chip (un-flagging the cell); those are NOT research
-    gaps, so they are reported separately.
+    ``cell_status`` is the GROUP BY result (each covered cell → its worst tier);
+    ``coverage_fraction`` = covered / claimed. ``research_gap_frontier`` and
+    ``placement_fixable_frontier`` union the respective ops over VALID_FLAGGED cells.
     """
 
     cell_status: Dict[str, CoverageStatus]
@@ -925,12 +679,7 @@ class CoverageReport:
 
     @property
     def claimed_subproduct_size(self) -> int:
-        """The claimed sub-product SIZE — the denominator printed next to the fraction.
-
-        The report ALWAYS surfaces this so a coverage fraction is never a bare ``0.75``
-        with no denominator: ``0.75`` over 4 cells and over 4000 cells are very
-        different honesty claims.
-        """
+        """The claimed sub-product SIZE — the denominator printed next to the fraction."""
         return len(self.claimed_cells)
 
     @property
@@ -975,10 +724,7 @@ class CoverageReport:
         return max(matches, key=lambda s: _TIER_SEVERITY[s])
 
     def to_dict(self) -> Dict[str, Any]:
-        # The two valid tiers are ALWAYS reported separately — there is deliberately no
-        # merged ``valid_total`` / ``covered_valid_total`` headline that fuses VALID and
-        # VALID_FLAGGED (the CI guard fails on such a key; the instrument must never
-        # claim a flagged cell as plainly valid).
+        # No merged valid-tier headline: VALID and VALID_FLAGGED are always reported separately.
         return {
             "covered_cell_count": self.covered_cell_count,
             "claimed_cell_count": self.claimed_cell_count,
@@ -1006,29 +752,14 @@ class CoverageReport:
         }
 
 
-# The tier-suffix back-compat marker the live ledger uses: a ``..._placement`` flag is
-# a placement fix (offloadable encoder), NOT a research gap. Any other flag category is
-# a research gap (an unsupported host op with no on-chip SNN mapping yet).
 _PLACEMENT_FLAG_MARKER = "PLACEMENT"
 
-# The DEFAULT owner + fix-path auto-assigned to a placement-fixable flag that carries no
-# explicit owner. A placement-fixable flag is NOT drift: it has a KNOWN fix (flip the
-# encoding-layer placement to offload, mapping the host-placed encoder on-chip and
-# un-flagging the cell), so it is owned by the standing placement-offload program rather
-# than left UNOWNED to rot. A research-gap flag (an unsupported host op with no on-chip
-# SNN mapping) gets NO default owner — it is a genuine open research target.
 PLACEMENT_FIXABLE_DEFAULT_OWNER = "program:placement-offload"
 PLACEMENT_FIXABLE_FIX_PATH = "set encoding_layer_placement=offload"
 
 
 def _is_placement_fixable_flag(row: Mapping[str, Any]) -> bool:
-    """True iff a VALID_FLAGGED row's flag is PLACEMENT-FIXABLE (a known offload fix).
-
-    A flag is placement-fixable when it names a structured ``placement_fixable_ops``
-    encoder AND names NO ``research_gap_ops`` (a row that ALSO owes a real research gap
-    is not auto-resolvable), or — for a live ledger row that predates those fields —
-    when its ``deployment_validity`` tier carries the ``_placement`` suffix.
-    """
+    """True iff a VALID_FLAGGED row's flag is PLACEMENT-FIXABLE (a placement_fixable_ops encoder with no research gap)."""
     gaps, placement = _mine_flagged_ops(row)
     return bool(placement) and not gaps
 
@@ -1036,12 +767,8 @@ def _is_placement_fixable_flag(row: Mapping[str, Any]) -> bool:
 def _mine_flagged_ops(row: Mapping[str, Any]) -> Tuple[List[str], List[str]]:
     """``(research_gap_ops, placement_fixable_ops)`` named by one VALID_FLAGGED row.
 
-    Primary source is the structured ``research_gap_ops`` / ``placement_fixable_ops``
-    fields ``onchip_fraction.classify_validity`` emits. For a live ledger row that
-    predates those fields (the flag is only in the ``deployment_validity`` tier
-    suffix, e.g. ``VALID_FLAGGED_placement``), the category is derived from the suffix:
-    a ``_placement`` flag yields one placement-fixable encoder, any other flag yields
-    one research-gap op — so the frontier is never silently empty on real data.
+    Prefers the structured fields; falls back to deriving the category from the
+    ``deployment_validity`` tier suffix for a live ledger row that predates them.
     """
     structured_gaps = [str(op) for op in (row.get("research_gap_ops") or ())]
     structured_placement = [str(op) for op in (row.get("placement_fixable_ops") or ())]
@@ -1055,15 +782,7 @@ def _mine_flagged_ops(row: Mapping[str, Any]) -> Tuple[List[str], List[str]]:
 
 
 def _attribution_fidelity_map() -> Dict[str, AttributionFidelity]:
-    """The per-region attribution-fidelity map — mark the KNOWN-CRACKED regions NOW.
-
-    The KNOWN-CRACKED regions (GAP-1 coalescing+output-tiling attribution at VGG scale,
-    fixed in the fidelity harness by C3 but identity-mapping-only in the production
-    gate; the residual Tier-1 merge) are ``VALUE_DOMAIN_ONLY`` — their deployed accuracy
-    is bit-exact but the per-neuron ATTRIBUTION reassembly is not gated in deployment.
-    Every other region is full ``ATTRIBUTION``. The instrument carries this so coverage
-    is never silently claimed as attributable where only the value domain is sound.
-    """
+    """The per-region attribution-fidelity map, marking the KNOWN-CRACKED regions ``VALUE_DOMAIN_ONLY``."""
     return {region: AttributionFidelity.VALUE_DOMAIN_ONLY for region in KNOWN_CRACKED_REGIONS}
 
 
@@ -1087,24 +806,12 @@ def coverage_report(
 ) -> CoverageReport:
     """GROUP BY the ledger by hypervolume cell-key + validity tier → coverage.
 
-    Each science-valid row (one carrying a ``deployment_validity`` tier) is mapped to
-    its cell and tier; a cell's status is the WORST tier of its rows (INVALID >
-    VALID_FLAGGED > VALID, the conservative read). ``research_gap_frontier`` unions the
-    ``research_gap_ops`` of the VALID_FLAGGED cells (the future-conversion targets);
-    ``placement_fixable_frontier`` unions their ``placement_fixable_ops`` (offloadable
-    encoders — NOT research gaps). When ``claimed_subproduct`` is given, the report
-    measures coverage against it: the fraction tested, the named UNTESTED frontier, and
-    each claimed cell's status. Non-science rows (no tier) and rows with no model are
-    skipped.
-
-    ``flag_metadata`` carries each FINAL-VALID_FLAGGED cell's owner + age (vs ``now_ts``,
-    today's date if unset) so an unowned flag cannot rot silently; ``attribution_fidelity``
-    marks the KNOWN-CRACKED regions VALUE_DOMAIN_ONLY.
+    A cell's status is the WORST tier of its rows; the frontiers union the flag ops over
+    VALID_FLAGGED cells. When ``claimed_subproduct`` is given, coverage is measured against it.
     """
     materialized = list(rows)
     now = _parse_ts(now_ts) or _dt.date.today()
 
-    # Pass 1: resolve each cell's FINAL tier (the worst tier of its rows).
     cell_status: Dict[str, CoverageStatus] = {}
     row_cells: List[Tuple[Mapping[str, Any], CoverageStatus, List[HypervolumeCell]]] = []
     for row in materialized:
@@ -1121,8 +828,6 @@ def coverage_report(
             if prior is None or _TIER_SEVERITY[tier] > _TIER_SEVERITY[prior]:
                 cell_status[key] = tier
 
-    # Pass 2: mine the flag ops + owner/aging metadata only from rows whose cell's FINAL
-    # tier is FLAGGED (a cell demoted to INVALID is no longer a flagged-cell target).
     research_gaps: set = set()
     placement_fixable: set = set()
     flag_meta: Dict[str, FlagMetadata] = {}
@@ -1140,9 +845,6 @@ def coverage_report(
         research_gaps.update(gaps)
         placement_fixable.update(placement)
         owner = _flag_owner_of(row)
-        # A placement-fixable flag has a KNOWN fix (the encoding-offload flip), so it is
-        # auto-assigned the standing placement-offload owner + fix-path rather than left
-        # UNOWNED — an explicit owner on the row always wins.
         fix_path = None
         if _is_placement_fixable_flag(row):
             fix_path = PLACEMENT_FIXABLE_FIX_PATH

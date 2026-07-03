@@ -1,31 +1,13 @@
-"""The shared fast fixed-ladder driver — lifted from ``KDBlendAdaptationTuner``.
-
-E2 (Fix A): *how* the rate is driven 0→1 (the optimization driver) is a
-pipeline-wide axis (``controller | fast``), not a KD-blend island. The
-schedule-not-search fast ladder used to live on ``KDBlendAdaptationTuner`` and
-was reachable only by the LIF/TTFS families; this mixin lifts that machinery to
-the shared ``SmoothAdaptationTuner`` base so EVERY rate tuner (the analytical
-clamp/shift/activation-quant chain, the manager-rate family, the KD-blend family)
-can be driven either by the controller (default) or by the fast ladder.
-
-``fixed_ladder`` policy: walk an explicit rate ladder through the ONE
-orchestrator's ``RateScheduler`` (``smooth_adaptation_run._run_with_scheduler``
-selects it from ``_fixed_ladder_policy``) with ONE shared optimizer + spanning
-warmup/cosine LR, no per-cycle rollback / recovery / LR-find / stabilization.
-
-The axis DEFAULTS to controller: ``_setup_fast_ladder`` is opt-in, so a tuner
-that never calls it has ``_fixed_ladder_policy`` False (the ``getattr(..., False)``
-reads in the run loop) and runs the unchanged controller path — byte-identical.
-The verbs below resolve the tuner's rate-setter uniformly (``_set_rate`` for the
-KD-blend / clamp / activation-adaptation families, ``_apply_rate`` for the
-manager-rate family), so the lift does not depend on which family opts in.
-"""
+"""The shared fast fixed-ladder driver mixin for every smooth rate tuner."""
 
 from __future__ import annotations
 
 import time
 
 import torch
+
+from mimarsinan.model_training.training_recipe import build_optimizer, build_recipe
+from mimarsinan.tuning.trace import DecisionRecord
 
 
 def _freeze_batchnorm_modules(model) -> None:
@@ -37,22 +19,18 @@ def _freeze_batchnorm_modules(model) -> None:
 class FastLadderMixin:
     """The schedule-not-search fast ladder, shared by every smooth rate tuner.
 
-    Opt in by calling ``_setup_fast_ladder(enabled=..., rates=..., ...)`` from the
-    tuner's ``__init__``/``_configure``; subclasses may override the per-step
-    ``_fast_loss`` (default = the trainer's installed loss) and the ``_fast_probe``
-    observability hook (default no-op). Default-off ⇒ controller ⇒ byte-identical.
+    Opt in via ``_setup_fast_ladder(...)``; subclasses may override the per-step
+    ``_fast_loss`` and the ``_fast_probe`` hook. Default-off ⇒ controller.
     """
 
     def _consume_optimization_driver(
         self, *, rates, steps_per_rate, eta_min_factor=0.0,
     ):
-        """READ the pipeline-wide ``optimization_driver`` axis (EF1) and configure the
-        fast ladder from it. The single-switch families (the analytical clamp/
-        activation-quant/activation-adaptation chain + the manager-rate family) call
-        this in ``__init__`` so they CONSUME the axis instead of defaulting to the
-        controller with no axis read. The resolved ``OptimizationDriver`` is stashed on
-        ``self._optimization_driver`` (the family's recorded decision). Default
-        ``controller`` ⇒ ``_setup_fast_ladder(enabled=False)`` ⇒ byte-identical."""
+        """Read the pipeline-wide ``optimization_driver`` axis and configure the fast
+        ladder from it, stashing the resolved driver on ``self._optimization_driver``.
+        Default ``controller`` ⇒ ``_setup_fast_ladder(enabled=False)``."""
+        # Lazy: deployment_plan pulls chip_simulation, which cannot be imported at
+        # this module's top without a circular import.
         from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 
         driver = DeploymentPlan.of(self.pipeline).optimization_driver_for_family(
@@ -70,11 +48,8 @@ class FastLadderMixin:
     def _setup_fast_ladder(self, *, enabled, rates, steps_per_rate,
                            eta_min_factor=0.0) -> None:
         """Configure the fixed-ladder fast schedule. ``rates`` is normalized to a
-        trailing 1.0 so the ramp always finishes through the fast attempt (never the
-        heavy ``_continue_to_full_rate`` controller). ``eta_min_factor`` floors the
-        spanning cosine at ``eta_min_factor·lr`` so the final rate-1.0 rung is not
-        starved of LR — 0.0 keeps the decay-to-0; >0 (a value-domain endpoint that
-        needs real recovery) keeps training the deployed dynamics at the end."""
+        trailing 1.0 so the ramp finishes through the fast attempt; ``eta_min_factor``
+        floors the spanning cosine at ``eta_min_factor·lr`` (0.0 decays to ~0)."""
         self._fixed_ladder_policy = bool(enabled)
         ladder = [float(r) for r in (rates or [])] or [1.0]
         if abs(ladder[-1] - 1.0) > 1e-9:
@@ -91,9 +66,8 @@ class FastLadderMixin:
         )
 
     def run(self):
-        """Reset the per-run fast scratch (tuner-owned optimizer + spanning cosine)
-        so a re-run rebuilds them, then drive the ONE orchestrator. NOT a fork — the
-        fixed_ladder policy is selected in ``_run_with_scheduler``."""
+        """Reset the per-run fast scratch so a re-run rebuilds it, then drive the one
+        orchestrator (the fixed_ladder policy is selected in ``_run_with_scheduler``)."""
         if getattr(self, "_fixed_ladder_policy", False):
             self._fast_optimizer = None
             self._fast_lr_schedule = None
@@ -146,11 +120,6 @@ class FastLadderMixin:
         whole ladder so the LR anneals smooth→~0 across ALL rates."""
         if self._fast_optimizer is not None:
             return
-        from mimarsinan.model_training.training_recipe import (
-            build_optimizer,
-            build_recipe,
-        )
-
         device = self.pipeline.config["device"]
         self.model = self.model.to(device)
         lr = float(self.pipeline_lr)
@@ -168,25 +137,17 @@ class FastLadderMixin:
         self._fast_optimizer_steps = 0
 
     def _fast_loss(self, x, y):
-        """Per-step fast-ramp loss. Default = the trainer's installed loss (for the
-        KD-blend family this is the KD loss; subclasses may override, e.g. TTFS to
-        its plain-CE + genuine-CE objective)."""
+        """Per-step fast-ramp loss. Default = the trainer's installed loss; subclasses
+        may override (e.g. TTFS to its plain-CE + genuine-CE objective)."""
         return self.trainer.loss_function(self.model, x, y)
 
     def _fast_probe(self, rate) -> None:
         """Optional per-rung observability hook (default no-op)."""
 
     def _fast_ramp(self, rate) -> None:
-        """The fast-ladder PREDICTOR seam verb: apply T at ``rate`` (the uniform
-        ``_fast_set_rate``) and train the rung's ``steps_per_rate`` steps with the
-        shared optimizer + spanning cosine and ``_fast_loss``.
-
-        This is the fast driver's analogue of the controller seam's ``ramp`` — the
-        controller's ``ramp`` applies T + reads an instant metric (a search needs the
-        read); the fast schedule does NOT search per rung, so its predictor applies T
-        and TRAINS the rung in place, then the universal ``probe`` reads the post
-        accuracy once. Same uniform rate-setter (``_set_rate`` / ``_apply_rate``), so
-        the fast ladder drives any family's rate through one seam."""
+        """The fast-ladder predictor seam verb: apply T at ``rate`` and train the
+        rung's ``steps_per_rate`` steps with the shared optimizer + spanning cosine
+        and ``_fast_loss`` (no per-rung search — ``probe`` reads the post acc once)."""
         device = self.pipeline.config["device"]
         self._fast_set_rate(float(rate))
         for _ in range(self._fast_steps_per_rate):
@@ -220,20 +181,13 @@ class FastLadderMixin:
         return float(target)
 
     def _fast_stabilize(self, steps, loss_fn=None) -> None:
-        """Post-finalize bounded recovery on the DEPLOYED forward, for fast ramps
-        whose value-domain endpoint still needs the deployed dynamics trained (LIF:
-        the cycle-accurate forward; TTFS proxy: refine the revived cascade past the
-        proxy↔genuine cliff). Fresh optimizer + spanning cosine, ``loss_fn`` (default
-        ``_fast_loss``); non-destructive (rolls back on regression)."""
+        """Post-finalize bounded recovery on the deployed forward, for fast ramps
+        whose endpoint still needs the deployed dynamics trained. Fresh optimizer +
+        spanning cosine; non-destructive (rolls back on regression)."""
         loss_fn = loss_fn or self._fast_loss
         steps = max(0, int(steps))
         if steps <= 0:
             return
-        from mimarsinan.model_training.training_recipe import (
-            build_optimizer,
-            build_recipe,
-        )
-
         device = self.pipeline.config["device"]
         self.model = self.model.to(device)
         lr = float(self.pipeline_lr)
@@ -274,8 +228,6 @@ class FastLadderMixin:
         DecisionTrace."""
         if not hasattr(self, "_cycle_log"):
             return
-        from mimarsinan.tuning.trace import DecisionRecord
-
         self._cycle_log.record(DecisionRecord(
             cycle_index=len(self._cycle_log),
             outcome="commit",

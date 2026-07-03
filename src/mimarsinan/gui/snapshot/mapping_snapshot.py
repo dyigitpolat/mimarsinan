@@ -10,8 +10,7 @@ import numpy as np
 
 logger = logging.getLogger("mimarsinan.gui")
 
-from mimarsinan.gui.snapshot.util.helpers import _t, _histogram, _safe_scalar, _safe_dict, _CACHE_KEY_TO_SNAPSHOT_KEY
-from mimarsinan.common.layer_key import layer_key_from_node_name
+from mimarsinan.gui.snapshot.util.helpers import _histogram
 from mimarsinan.gui.resources import ResourceDescriptor
 from mimarsinan.gui.snapshot.heatmap import _make_heatmap_producer
 from mimarsinan.gui.snapshot.ir_graph.ir_graph_resources import (
@@ -20,7 +19,6 @@ from mimarsinan.gui.snapshot.ir_graph.ir_graph_resources import (
     _make_segment_spans_extractor,
 )
 
-# Bump cautiously: frontend URL builders hard-code these.
 RESOURCE_KIND_IR_CORE_HEATMAP = "ir_core_heatmap"
 RESOURCE_KIND_IR_CORE_PRE_PRUNING = "ir_core_pre_pruning"
 RESOURCE_KIND_IR_CORE_BIAS = "ir_core_bias"
@@ -29,12 +27,9 @@ RESOURCE_KIND_HARD_CORE_HEATMAP = "hard_core_heatmap"
 RESOURCE_KIND_CONNECTIVITY = "connectivity"
 RESOURCE_KIND_PRUNING_LAYER_HEATMAP = "pruning_layer_heatmap"
 
-
-# Per-NeuralCore liveness tags surfaced in the GUI (must match
-# ``mimarsinan.mapping.pruning.ir_liveness.NodeLiveness`` for current runs).
 LIVENESS_LIVE = "live"
 LIVENESS_BIAS_ONLY = "bias_only"
-LIVENESS_DEAD_LEGACY = "dead_legacy"  # only for old pickles still containing (1,1) placeholders
+LIVENESS_DEAD_LEGACY = "dead_legacy"
 
 def snapshot_mapping_performance_planned(
     model: Any,

@@ -7,11 +7,22 @@ from typing import Dict
 import numpy as np
 import torch
 
-from mimarsinan.chip_simulation.hybrid_run.hybrid_execution import execute_compute_op_torch
+from mimarsinan.chip_simulation.hybrid_run.hybrid_execution import (
+    execute_compute_op_torch,
+    resolve_stage_compute_scales,
+)
+from mimarsinan.chip_simulation.hybrid_run.hybrid_stage_runner import (
+    HybridStageContext,
+    run_hybrid_stages,
+)
 from mimarsinan.chip_simulation.recording.records import SegmentSpikeRecord
+from mimarsinan.chip_simulation.spiking_semantics import is_cascaded_ttfs
 from mimarsinan.mapping.ir import IRSource
 from mimarsinan.models.spiking.spiking_config import COMPUTE_DTYPE
-from mimarsinan.spiking.segment_boundary import decode_segment_output_torch
+from mimarsinan.spiking.segment_boundary import (
+    decode_segment_output_torch,
+    encode_compute_boundary,
+)
 
 
 class HybridRateForwardMixin:
@@ -26,13 +37,8 @@ class HybridRateForwardMixin:
         x_compute = x.to(COMPUTE_DTYPE)
         state_buffer: Dict[int, torch.Tensor] = {-2: x_compute}
         state_buffer_spikes: Dict[int, torch.Tensor] = {}
-        from mimarsinan.chip_simulation.hybrid_run.hybrid_execution import resolve_stage_compute_scales
 
         remaining = dict(self._build_consumer_counts())
-        from mimarsinan.chip_simulation.hybrid_run.hybrid_stage_runner import (
-            HybridStageContext,
-            run_hybrid_stages,
-        )
 
         def _ctx_factory(stage_index, stage, buf):
             return HybridStageContext(
@@ -62,12 +68,7 @@ class HybridRateForwardMixin:
 
             recorder_seg: SegmentSpikeRecord | None = None
             if ctx.recorder is not None:
-                from mimarsinan.chip_simulation.spiking_semantics import is_cascaded_ttfs
-
                 if is_cascaded_ttfs(self.spiking_mode, self.ttfs_cycle_schedule):
-                    # Single-spike TTFS: the input is one spike per axon (the
-                    # latched train's rising edge), so the traffic count is its
-                    # presence, not the latched sum.
                     seg_input_count = spike_train.amax(dim=0)[0]
                 else:
                     seg_input_count = spike_train.sum(dim=0)[0]
@@ -107,7 +108,6 @@ class HybridRateForwardMixin:
         def _on_compute_rate(ctx: HybridStageContext) -> None:
             op = ctx.stage.compute_op
             assert op is not None
-            # Rate/LIF path: state buffer holds spike rates in [0, 1]; do not apply TTFS scales.
             in_scale, out_scale = resolve_stage_compute_scales(
                 self.hybrid_mapping, op.id, apply_ttfs=False
             )
@@ -119,8 +119,6 @@ class HybridRateForwardMixin:
                 out_scale=out_scale,
             )
             ctx.state_buffer[op.id] = result.to(COMPUTE_DTYPE)
-
-            from mimarsinan.spiking.segment_boundary import encode_compute_boundary
 
             spike_train = encode_compute_boundary(
                 op=op,

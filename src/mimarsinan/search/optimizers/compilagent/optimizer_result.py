@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional
+
+from compilagent import WorkloadInstance
 
 from mimarsinan.search.optimizers.agent_evolve.codec import (
     compute_pareto_front,
@@ -162,8 +164,6 @@ def layout_metadata_for(
 
 
 def build_workload_instance(spec):
-    from compilagent import WorkloadInstance
-
     return WorkloadInstance(
         spec=spec, forward=lambda: None, example_inputs=(),
         metadata={"workload_id": spec.id},

@@ -1,9 +1,4 @@
-"""
-Collect wizard config schema from model builders.
-
-Each builder class exposes WIZARD_SCHEMA (label, description, config_schema).
-This module only aggregates from BUILDERS_REGISTRY; it does not define schemas.
-"""
+"""Collect wizard config schema from model builders (aggregates BUILDERS_REGISTRY)."""
 
 from __future__ import annotations
 
@@ -19,7 +14,6 @@ def get_all_model_type_schemas() -> List[Dict[str, Any]]:
         schema = getattr(builder_cls, "WIZARD_SCHEMA", None)
         
         if schema is None:
-            # Shim for newer builders that don't have WIZARD_SCHEMA attribute
             label = getattr(builder_cls, "label", model_id)
             config_schema = []
             if hasattr(builder_cls, "get_config_schema"):

@@ -4,26 +4,15 @@ from __future__ import annotations
 
 import html
 import os
-import shutil
-import subprocess
-from dataclasses import dataclass
-from typing import Any, Iterable, Sequence
+from typing import Sequence
 
 import numpy as np
 
-from mimarsinan.code_generation.cpp_chip_model import SpikeSource
 from mimarsinan.mapping.packing.hybrid_hardcore_mapping import HybridHardCoreMapping
-from mimarsinan.mapping.ir import ComputeOp, IRGraph, IRNode, IRSource, NeuralCore
+from mimarsinan.mapping.ir import ComputeOp
 from mimarsinan.mapping.packing.softcore import HardCoreMapping
-from mimarsinan.common.layer_key import layer_key_from_node_name
-from mimarsinan.common.safe_numeric import safe_float
 
-import re
-
-
-from mimarsinan.visualization.graphviz.common import try_render_dot, _embed_svg_images, _percent, _compress_ranges, _truncate, _dot_html_label, _dot_html_label_mixed, _stack_sample_lines
-
-from mimarsinan.visualization.graphviz.hybrid_types import HybridVizArtifacts
+from mimarsinan.visualization.graphviz.common import _percent, _truncate, _dot_html_label, _dot_html_label_mixed
 
 
 def write_hybrid_hardcore_mapping_combined_dot(
@@ -80,7 +69,6 @@ def write_hybrid_hardcore_mapping_combined_dot(
         p = os.path.abspath(src_path)
         return f'<IMG SRC="{html.escape(p)}" WIDTH="{int(w)}" HEIGHT="{int(h)}" SCALE="TRUE"/>'
 
-    # Graph
     lines: list[str] = []
     lines.append("digraph HybridCombined {")
     lines.append("  rankdir=LR;")
@@ -92,7 +80,6 @@ def write_hybrid_hardcore_mapping_combined_dot(
     lines.append("  input [label=< <B>INPUT</B> >];")
     lines.append("  output [label=< <B>OUTPUT</B> >];")
 
-    # Walk stages; build nodes and sequential edges.
     neural_idx = 0
     prev = "input"
     last_compute: ComputeOp | None = None
@@ -107,7 +94,6 @@ def write_hybrid_hardcore_mapping_combined_dot(
             else:
                 stats = _mapping_stats(mapping)
 
-            # Find thumbnails (optional)
             heat = None
             if segment_heatmap_pngs is not None and neural_idx < len(segment_heatmap_pngs):
                 heat = segment_heatmap_pngs[neural_idx]
@@ -115,7 +101,6 @@ def write_hybrid_hardcore_mapping_combined_dot(
             if segment_graph_pngs is not None and neural_idx < len(segment_graph_pngs):
                 graph_png = segment_graph_pngs[neural_idx]
 
-            # Edge size label depends on previous stage
             edge_label = ""
             if last_compute is not None:
                 n_out = _shape_prod(last_compute.output_shape)
@@ -125,7 +110,6 @@ def write_hybrid_hardcore_mapping_combined_dot(
                     edge_label = f"{n_out}"
                 last_compute = None
 
-            # Node label: stats + images
             title_txt = f"Neural Segment {neural_idx}: {stage.name}"
 
             rows = []
@@ -141,7 +125,6 @@ def write_hybrid_hardcore_mapping_combined_dot(
                 if k in stats:
                     rows.append((k, stats[k]))
 
-            # Build HTML label with an image row (preserve aspect for heatmap thumbnails)
             img_cells = []
             if graph_png is not None and os.path.exists(graph_png):
                 img_cells.append(_img(graph_png, w=260, h=160))
@@ -173,7 +156,6 @@ def write_hybrid_hardcore_mapping_combined_dot(
 
             label = _dot_html_label_mixed(rows_mixed, title=title_txt, color="#D6EAF8")
 
-            # Click-through to the detailed segment SVG if it exists (same directory as out_dot)
             seg_svg_guess = f"hybrid_hardcore_mapping_segment{neural_idx}.svg"
             attrs = [f"label={label}"]
             if os.path.exists(os.path.join(os.path.dirname(out_dot) or ".", seg_svg_guess)):
@@ -181,7 +163,6 @@ def write_hybrid_hardcore_mapping_combined_dot(
                 attrs.append(f'tooltip="Open detailed connectivity for segment {neural_idx}"')
             lines.append(f"  {sid} [{', '.join(attrs)}];")
 
-            # Edge from prev to this stage
             if edge_label:
                 lines.append(f"  {prev} -> {sid} [label=\"{_truncate(edge_label, max_chars=120)}\"];")
             else:
@@ -210,7 +191,6 @@ def write_hybrid_hardcore_mapping_combined_dot(
             label = _dot_html_label(rows, title=f"SYNC: {op.name}", color="#FAD7A0")
             lines.append(f"  {sid} [label={label}];")
 
-            # Edge from prev to compute: label with compute input size
             edge_label = ""
             if n_in is not None and op.input_shape is not None:
                 edge_label = f"{n_in} ({op.input_shape})"
@@ -226,9 +206,7 @@ def write_hybrid_hardcore_mapping_combined_dot(
 
         raise ValueError(f"Unknown hybrid stage kind: {stage.kind}")
 
-    # Final edge to output (label with last segment output size if possible)
     final_label = ""
-    # Find last neural mapping
     last_neural = None
     for st in reversed(hybrid.stages):
         if st.kind == "neural" and st.hard_core_mapping is not None:

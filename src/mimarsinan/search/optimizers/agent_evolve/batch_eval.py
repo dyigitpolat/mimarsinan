@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from typing import Any, Dict, List, Sequence, Tuple
 
 from mimarsinan.search.optimizers.agent_evolve.schema import (

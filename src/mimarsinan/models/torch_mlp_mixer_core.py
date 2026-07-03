@@ -28,10 +28,10 @@ class _TokenMixerCore(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.ln(x)
-        x = x.permute(0, 2, 1)  # (B, D, N)
+        x = x.permute(0, 2, 1)
         x = self.act(self.fc1(x))
-        x = self.act(self.fc2(x)) # Activation for perceptron packaging
-        x = x.permute(0, 2, 1)  # (B, N, D)
+        x = self.act(self.fc2(x))
+        x = x.permute(0, 2, 1)
         return x
 
 
@@ -47,18 +47,16 @@ class _ChannelMixerCore(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.ln(x)
-        x = self.act(self.fc1(x)) 
-        x = self.act(self.fc2(x)) # Activation for perceptron packaging
+        x = self.act(self.fc1(x))
+        x = self.act(self.fc2(x))
         return x
 
 
 class TorchMLPMixerCore(nn.Module):
-    """MLP-Mixer with activation after every FC so all mixer layers can be packaged as chip perceptrons.
+    """MLP-Mixer with activation after every FC so all mixer layers package as chip perceptrons.
 
-    Same structure as TorchMLPMixer but uses _TokenMixerCore and _ChannelMixerCore,
-    which apply the base activation after both fc1 and fc2. This yields Linear→act
-    for every FC, so the torch_mapping converter creates chip-supported Perceptrons
-    instead of host-side Identity layers for the second FC in each block.
+    Same structure as TorchMLPMixer but applies the base activation after both fc1 and fc2 in each
+    block, yielding Linear->act everywhere so the converter emits Perceptrons, not host Identities.
     """
 
     def __init__(
@@ -88,11 +86,6 @@ class TorchMLPMixerCore(nn.Module):
 
         act = _get_activation(base_activation)
         self.act = act
-        # ``num_blocks`` controls the on-chip cascade DEPTH: each block adds 4 spiking
-        # perceptrons (token fc1/fc2 + channel fc1/fc2). The cascaded single-spike TTFS
-        # depth budget is d_max(S)≈0.56·√S (≈1.6 at S=8), so deep stacks here are the
-        # dominant cascaded-deployment accuracy cost — keep this small (or use
-        # residuals / the synchronized schedule) for cascaded TTFS.
         self.mixer_blocks = nn.ModuleList()
         for _ in range(self.num_blocks):
             self.mixer_blocks.append(_TokenMixerCore(num_patches, patch_c_1, fc_w_1, act))
@@ -104,11 +97,11 @@ class TorchMLPMixerCore(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.patch_embed(x)
         x = self.patch_bn(x)
-        x = self.act(x) # Activation for perceptron packaging
-        x = x.flatten(2).permute(0, 2, 1)  # (B, num_patches, patch_c_1)
+        x = self.act(x)
+        x = x.flatten(2).permute(0, 2, 1)
         for block in self.mixer_blocks:
             x = block(x)
         x = self.norm(x)
-        x = x.mean(dim=1)  # (B, patch_c_1)
+        x = x.mean(dim=1)
         x = self.classifier(x)
         return x

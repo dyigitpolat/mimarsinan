@@ -1,12 +1,9 @@
 from __future__ import annotations
 
-from collections import Counter
 from typing import Callable, List
 
 from mimarsinan.mapping.packing.canonical import (
-    HardCoreLike,
     HardT,
-    SoftCoreLike,
     SoftT,
     _placement_waste,
     _remaining_capacity,
@@ -32,44 +29,11 @@ def greedy_pack_softcores(
     split_softcore: Callable[[SoftT, int], tuple[SoftT, SoftT]] | None = None,
     split_threshold: float = 0.2,
 ) -> None:
-    """
-    Greedy packing loop shared by:
-    - real HardCoreMapping (parameterized mapping)
-    - layout-only packer (shape-only evaluation for search)
+    """Greedy bin-packing loop shared by the runtime and layout-only packers.
 
-    **Used-core selection** — among all feasible already-allocated cores,
-    pick the one with the minimum *remaining capacity* after placement.
-    This concentrates softcores into tightly-fitting cores, leaving other
-    used cores available for differently-shaped softcores.
-
-    **Unused-core selection** — among all feasible un-allocated cores,
-    pick the one with the minimum *scarcity-adjusted waste*.  The raw
-    waste ``h_a · s_n + s_a · h_n − 2 · s_a · s_n`` is divided by the
-    number of remaining instances of that core type.  This naturally
-    preserves scarce hardware types for softcores that have no
-    alternative, while still preferring shape-matched types when
-    abundance is equal.
-
-    **Neuron splitting** (optional) — when ``split_softcore`` is provided
-    and the current soft core's neurons exceed a hardware core's remaining
-    (or total) neuron width, the soft core is split column-wise.  Fragment 1
-    fills the available neurons; Fragment 2 goes back into the unmapped pool.
-    Splitting is only attempted when the available neuron width exceeds
-    ``split_threshold`` × the hardware core's total neuron width (default 20%).
-    This avoids excessive fragmentation and traffic duplication.
-
-    Priority order:
-    1. Exact fit in used core
-    2. Split into used core (remaining neurons > 20% threshold)
-    3. Exact fit in unused core
-    4. Fusion
-    5. Split into unused core (last resort)
-    6. RuntimeError
-
-    This mutates:
-    - used_hardcores (may append newly allocated hardcores)
-    - unused_hardcores (removes allocated hardcores)
-    - softcores (removes packed softcores)
+    Priority per softcore: exact fit in a used core, split into a used core,
+    exact fit in an unused core, fusion, split into an unused core, else raise.
+    Mutates ``softcores``/``used_hardcores``/``unused_hardcores`` in place.
     """
 
     def _core_type_key(hc: HardT) -> tuple[int, int]:
@@ -83,13 +47,7 @@ def greedy_pack_softcores(
         return k
 
     def _identity_remove(lst, target) -> bool:
-        """Remove ``target`` from ``lst`` by *identity* (``is``), not ``__eq__``.
-
-        LayoutHardCoreInstance uses dataclass-generated ``__eq__`` which treats
-        two fresh instances of the same (axons, neurons) as equal until one is
-        mutated.  Using ``list.remove`` would then remove the wrong object when
-        multiple equivalent fresh instances share a pool.
-        """
+        """Remove ``target`` by identity (``is``); dataclass ``__eq__`` would remove the wrong equal-but-distinct instance."""
         for i, x in enumerate(lst):
             if x is target:
                 del lst[i]
@@ -104,33 +62,20 @@ def greedy_pack_softcores(
         tg = getattr(hc, "threshold_group_id", None)
         return int(tg) if tg is not None else None
 
-    # Unused pool organised by type: {type_key: [instances...]}.  Most unused
-    # cores of the same type are interchangeable at decision time, so we only
-    # evaluate one representative per type (one waste/is_mapping_possible call
-    # per type instead of per instance → ~N× speedup at cifar_vit scale).
     unused_by_type: dict[tuple[int, int], list] = {}
     for hc in unused_hardcores:
         unused_by_type.setdefault(_core_type_key(hc), []).append(hc)
 
-    # Used-core index bucketed by threshold_group_id.  Each softcore only
-    # consults cores with a matching tg (plus the "not-yet-pinned" bucket
-    # whose tg is None — empty hw cores that haven't had any softcore
-    # placed yet).  Each entry is the index into used_hardcores so we can
-    # dereference the actual instance.
     used_by_tg: dict[int | None, list[int]] = {}
 
     def _register_used(idx: int, hc) -> None:
         used_by_tg.setdefault(_hard_tg(hc), []).append(idx)
 
-    # Pre-populate from any pre-existing used cores — callers may invoke
-    # greedy_pack_softcores multiple times with an accumulating ``used``
-    # list (e.g. scheduled mapping passes).
     for _i, _hc in enumerate(used_hardcores):
         _register_used(_i, _hc)
 
     def _reindex_used_tg(idx: int) -> None:
-        """Move a used-core index into the tg bucket that matches its current
-        hardcore tg (called after the first softcore is placed and sets it)."""
+        """Move a used-core index into the tg bucket matching its current hardcore tg."""
         hc = used_hardcores[idx]
         new_tg = _hard_tg(hc)
         for key, bucket in used_by_tg.items():
@@ -141,11 +86,6 @@ def greedy_pack_softcores(
                 used_by_tg.setdefault(new_tg, []).append(idx)
                 return
 
-    # Fast path for the default pick heuristic when splitting is off:
-    # pre-sort ascending by max(input, output) and process from the end.
-    # Saves two O(n) max() scans per placement (→ O(n²) per pack), which
-    # dominates on large models.  Disabled when split_softcore is active
-    # because splits append smaller fragments that would break the ordering.
     _use_sort_fast_path = (
         pick_softcore is pick_best_softcore and split_softcore is None
     )
@@ -187,9 +127,6 @@ def greedy_pack_softcores(
             and split_softcore is not None
             and _is_splittable(core)
         ):
-            # Restrict the split-target search to compatible tg buckets
-            # (+ the unassigned bucket) — avoids a full O(|used|) scan
-            # when the used pool is large.
             candidates = list(used_by_tg.get(core_tg, ()))
             candidates.extend(used_by_tg.get(None, ()))
             if _try_split_into_used(
@@ -203,15 +140,13 @@ def greedy_pack_softcores(
             if not unused_hardcores:
                 raise RuntimeError("No more hard cores available")
 
-            # Only evaluate one representative per type — all instances of a
-            # type are interchangeable for the scoring function.
             chosen_type = None
             chosen_score = float("inf")
             chosen_hc = None
             for type_key, bucket in unused_by_type.items():
                 if not bucket:
                     continue
-                hc = bucket[-1]  # representative
+                hc = bucket[-1]
                 if is_mapping_possible(core, hc):
                     waste = _placement_waste(core, hc)
                     abundance = len(bucket)
@@ -239,9 +174,6 @@ def greedy_pack_softcores(
                                 fused_hc = temp_fused
                                 for hc in fusing_hcs:
                                     _identity_remove(unused_hardcores, hc)
-                                # Drop the last ``qty_needed`` slice from bucket
-                                # by identity — matches ``fusing_hcs`` since we
-                                # sliced from the same list.
                                 del bucket[-qty_needed:]
                                 if not bucket:
                                     del unused_by_type[hc_type]
@@ -275,7 +207,6 @@ def greedy_pack_softcores(
             else:
                 _identity_remove(unused_hardcores, chosen_hc)
                 bucket = unused_by_type[chosen_type]
-                # chosen_hc was bucket[-1] (the representative); pop it.
                 if bucket and bucket[-1] is chosen_hc:
                     bucket.pop()
                 else:
@@ -288,9 +219,6 @@ def greedy_pack_softcores(
                 target_idx = new_idx
 
         place(target_idx, used_hardcores[target_idx], core)
-        # The place callback may have just assigned the hardcore's
-        # threshold_group_id (first softcore in this core).  Re-bucket so
-        # subsequent lookups by tg find it.
         _reindex_used_tg(target_idx)
         if _use_sort_fast_path:
             softcores.pop()

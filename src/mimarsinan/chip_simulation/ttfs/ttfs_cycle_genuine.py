@@ -1,26 +1,10 @@
-"""Synchronized genuine single-spike TTFS reference (the spec for the C++ backends).
-
-``ttfs_cycle_based`` runs latency groups (topological depth) **sequentially**: each
-group runs a full ``S``-cycle window to completion before the next starts, so by the
-time a neuron's window runs all its inputs are complete (causal). Total simulation
-time is ``S × num_groups`` (synchronized), not ``S + latency`` (pipelined).
-
-Inter-core signals are **single spikes**: a neuron fires at most once, at cycle
-``k_fire = ⌈S·(1 − V/θ)⌉`` within its group window, encoding its value
-``a = (S − k_fire)/S``. Downstream groups decode incoming spike *timings* back to
-activations — no real values on the wire, no preset membrane. Because ``V`` is
-reconstructed exactly from the completed inputs, the decoded result equals
-``ttfs_quantized_activation(V, θ, S)`` per neuron (parity with the analytical path).
-
-This module is the numerical reference / spec; the nevresim & SANA-FE somas realize
-the same dynamics event-driven over the ``S × num_groups`` cycle timeline.
-"""
+"""Synchronized genuine single-spike TTFS reference (the spec for the C++ backends)."""
 
 from __future__ import annotations
 
 import numpy as np
 
-NO_SPIKE = -1  # sentinel: neuron never fired (encodes activation 0)
+NO_SPIKE = -1
 
 
 def encode_activation_to_spike_time(a: np.ndarray, S: int) -> np.ndarray:
@@ -48,17 +32,15 @@ def ttfs_cycle_fire_step(V: np.ndarray, threshold: float, S: int) -> np.ndarray:
 def run_ttfs_cycle_genuine_layers(layers, input_activations: np.ndarray, S: int):
     """Synchronized genuine sim over a feedforward list of ``(W, bias, threshold)``.
 
-    ``W`` is ``(out, in)``; group g consumes group g-1's single-spike outputs (decoded).
-    Returns ``(output_activations, per_layer_spike_times)`` — the spike times are the
-    genuine single-spike representation propagated between groups.
-    """
+    ``W`` is ``(out, in)``; group g consumes group g-1's single-spike outputs.
+    Returns ``(output_activations, per_layer_spike_times)``."""
     a = np.asarray(input_activations, dtype=np.float64)
     per_layer_spike_times = []
     for (W, bias, threshold) in layers:
         V = a @ np.asarray(W, dtype=np.float64).T + np.asarray(bias, dtype=np.float64)
-        k = ttfs_cycle_fire_step(V, threshold, S)  # single spike per neuron
+        k = ttfs_cycle_fire_step(V, threshold, S)
         per_layer_spike_times.append(k)
-        a = decode_spike_time_to_activation(k, S)  # next group decodes the timings
+        a = decode_spike_time_to_activation(k, S)
     return a, per_layer_spike_times
 
 
@@ -68,13 +50,10 @@ def genuine_total_cycles(num_latency_groups: int, simulation_steps: int) -> int:
 
 
 def latency_groups(latencies) -> tuple[int, list[int]]:
-    """Map per-core latency to topological groups.
+    """Map per-core latency to ascending topological groups (group 0 = input side).
 
-    Cores sharing a latency form one group (they are independent / same depth).
-    Returns ``(num_groups, per_core_group)`` where group ranks ascend with latency
-    (group 0 = latency 0 = closest to input, last group = output). Cores with
-    unknown latency (``None``) are placed in the final group.
-    """
+    Cores sharing a latency form one group; unknown latency (``None``) goes last.
+    Returns ``(num_groups, per_core_group)``."""
     vals = [int(l) for l in latencies if l is not None]
     distinct = sorted(set(vals))
     rank = {v: i for i, v in enumerate(distinct)}

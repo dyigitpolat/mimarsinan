@@ -8,6 +8,8 @@ import numpy as np
 
 from mimarsinan.chip_simulation.recording.spike_recorder import CoreSpikeCounts, SegmentSpikeRecord
 from mimarsinan.mapping.packing.softcore import HardCoreMapping
+from mimarsinan.mapping.support.core_geometry import used_axons, used_neurons
+from mimarsinan.mapping.support.spike_source_spans import compress_spike_sources
 from mimarsinan.chip_simulation.lava_loihi.timing import _LAVA_DTYPE, _SegmentTiming
 
 
@@ -20,8 +22,6 @@ class LavaSegmentMixin:
         recorder_seg: SegmentSpikeRecord | None = None,
     ) -> np.ndarray:
         """Execute a segment with host-scheduled routing and Lava per-core LIF."""
-        from mimarsinan.mapping.support.spike_source_spans import compress_spike_sources
-
         T = self.T
         N = seg_input_rates.shape[0]
         seg_in_size = seg_input_rates.shape[1]
@@ -35,8 +35,6 @@ class LavaSegmentMixin:
 
         core_output_spikes: Dict[int, np.ndarray] = {}
         core_buffer_spikes: Dict[int, np.ndarray] = {}
-
-        from mimarsinan.mapping.support.core_geometry import used_axons, used_neurons
 
         deps = {
             idx: sorted(
@@ -70,7 +68,6 @@ class LavaSegmentMixin:
         ):
             visit(idx)
 
-        import time as _time
         t0 = _time.time()
         verbose = os.environ.get("MIMARSINAN_LOIHI_QUIET") != "1"
         n_cores = len(topo_order)
@@ -184,7 +181,6 @@ class LavaSegmentMixin:
                     int(sp.src_start) : int(sp.src_end), :, :
                 ]
                 continue
-            # Neuron sources: use core_output_spikes (active window only), not held buffers.
             seg_out_spikes[d0:d1, :, :] = core_output_spikes[int(sp.src_core)][
                 int(sp.src_start) : int(sp.src_end), :, :
             ]

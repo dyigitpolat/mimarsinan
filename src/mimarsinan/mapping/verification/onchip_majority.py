@@ -40,12 +40,8 @@ def _numel(value) -> int:
 def count_host_params(ir_graph: IRGraph) -> int:
     """Sum of unique host-side ComputeOp parameters (modules deduped by identity).
 
-    Host-side parameters are the offloaded weights that run OFF the crossbar:
-    the encoding Linear/Conv, the classifier readout, MultiheadAttention, etc.
-    A wrapped ``nn.Module``'s ``parameters()`` already includes any bound
-    constant tensors (``ComputeAdapter`` registers them as parameters), so they
-    are only added separately when an op carries bare ``bound_tensors`` with no
-    module. The same module instance shared across ops is counted once.
+    A wrapped module's ``parameters()`` already includes bound constant tensors,
+    so bare ``bound_tensors`` are only added when the op carries no module.
     """
     seen_modules: set[int] = set()
     total = 0
@@ -67,10 +63,8 @@ def compute_onchip_fraction(
 ) -> OnchipParamBreakdown:
     """Logical on-chip fraction = (total - host) / total.
 
-    On-chip is defined as ``total_params - host_params`` (the LOGICAL
-    unique-parameter remainder), NOT the raw crossbar weight footprint: tiling
-    replicates a perceptron's weights across many cores, so the physical core
-    count over-counts and would exceed ``total_params``.
+    On-chip is the logical unique-parameter remainder, not the raw crossbar
+    footprint, since tiling replicates weights across many cores.
     """
     host_params = count_host_params(ir_graph)
     onchip_params = int(total_params) - host_params
@@ -84,15 +78,10 @@ def compute_onchip_fraction(
 def assert_onchip_majority_or_raise(
     ir_graph: IRGraph, *, total_params: int, min_fraction: float = 0.2
 ) -> OnchipParamBreakdown:
-    """Raise :class:`OnchipMajorityError` when the on-chip fraction is below the FLOOR.
+    """Raise :class:`OnchipMajorityError` when the on-chip fraction is below the floor.
 
-    Defense-in-depth for the tiered validity gate (v2): this params-based check
-    raises only BELOW the 20% floor (host does ~everything). Between the floor and
-    the 50% majority a mapping is VALID_FLAGGED — it deploys and must NOT raise here;
-    the full both-metrics tiered decision lives in
-    :func:`onchip_fraction.classify_validity`. The chip is the deployment vehicle
-    only when at least the floor fraction of parameters is physically placed on its
-    cores; a host-dominated mapping is not a genuine on-chip deployment.
+    Raises only below the floor; between floor and majority a mapping is
+    VALID_FLAGGED (see :func:`onchip_fraction.classify_validity`).
     """
     breakdown = compute_onchip_fraction(ir_graph, total_params=total_params)
     if breakdown.fraction < min_fraction:

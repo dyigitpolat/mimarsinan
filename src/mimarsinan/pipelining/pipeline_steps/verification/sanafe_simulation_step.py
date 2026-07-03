@@ -1,22 +1,9 @@
-"""Optional SANA-FE detailed-stats + hard-parity step.
-
-Added to the pipeline when ``enable_sanafe_simulation`` is true in
-``deployment_parameters``.  Unlike ``LoihiSimulationStep`` (parity-only),
-this step's primary value is the rich per-tile, per-core, per-neuron
-output SANA-FE provides — energy decomposition, latency, NoC packet
-traces, spike + potential traces.
-
-The step also builds an HCM reference for each sample and compares spike
-counts via the shared ``compare_records`` diff machinery; any divergence
-fails the pipeline with ``format_first_diff`` for triage.
-"""
+"""Optional SANA-FE detailed-stats + HCM spike-parity step."""
 
 from __future__ import annotations
 
 import logging
 from typing import List
-
-import torch
 
 from mimarsinan.chip_simulation.certification import CertificationCell
 from mimarsinan.chip_simulation.cost_extraction import (
@@ -26,26 +13,23 @@ from mimarsinan.chip_simulation.cost_extraction import (
 from mimarsinan.chip_simulation.sanafe.runner import SanafeRunner
 from mimarsinan.chip_simulation.sanafe.records import SanafeCoreDiff, SanafeRunRecord
 from mimarsinan.chip_simulation.sanafe.stats import SanafeStepReport
+from mimarsinan.chip_simulation.spiking_semantics import requires_ttfs_firing
+from mimarsinan.chip_simulation.ttfs.ttfs_recorder import (
+    compare_ttfs_contract_records,
+    compare_ttfs_hardware_records,
+    format_first_ttfs_diff,
+)
 
 logger = logging.getLogger("mimarsinan.chip_simulation")
 
 
 def _attach_per_core_deltas(ref: object, sanafe_rec: SanafeRunRecord) -> None:
-    """Stamp per-core HCM↔SF deltas on each segment of ``sanafe_rec``.
-
-    The GUI floorplan "HCM diff" overlay reads ``seg.hcm_diff`` and
-    renders a diverging-colormap layer over the chip floorplan, so
-    spatial drift is visible at a glance — even on runs that pass the
-    parity gate (where all deltas are zero, the overlay just renders
-    transparent everywhere).  Skips segments that don't appear in both
-    records (no common ground to diff against).
-    """
+    """Stamp per-core HCM↔SF deltas on each segment so the GUI floorplan diff overlay can render spatial drift."""
     ref_segs = getattr(ref, "segments", {}) or {}
     for stage_idx, seg in sanafe_rec.segments.items():
         ref_seg = ref_segs.get(stage_idx)
         if ref_seg is None or not ref_seg.cores or not seg.per_core:
             continue
-        # Align by ``core_index`` so split / coalesced cores still match.
         ref_by_idx = {c.core_index: c for c in ref_seg.cores}
         deltas: List[SanafeCoreDiff] = []
         for sf in seg.per_core:
@@ -66,7 +50,6 @@ def _attach_per_core_deltas(ref: object, sanafe_rec: SanafeRunRecord) -> None:
 from mimarsinan.data_handling.test_sample_loader import load_test_samples_by_index
 from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 from mimarsinan.pipelining.core.engine.pipeline_helpers import (
-    require_lif_spiking_mode,
     require_spiking_mode_supported,
 )
 from mimarsinan.pipelining.core.steps.pipeline_step import PipelineStep
@@ -96,8 +79,6 @@ class SanafeSimulationStep(PipelineStep):
 
 
     def process(self):
-        # Read the contract surface and config knobs first so a misconfigured
-        # step fails before any expensive setup.
         self.get_entry("model")
         hard_core_mapping = self.get_entry("hard_core_mapping")
         T = int(self.pipeline.config["simulation_steps"])
@@ -105,15 +86,13 @@ class SanafeSimulationStep(PipelineStep):
         require_spiking_mode_supported(
             self.pipeline, "SanafeSimulationStep", backend="sanafe",
         )
-        from mimarsinan.chip_simulation.spiking_semantics import requires_ttfs_firing
         is_ttfs = requires_ttfs_firing(spiking_mode)
 
-        parity_check = True  # always cross-check SANA-FE against HCM
+        parity_check = True
         arch_preset = self.pipeline.config.get("sanafe_arch_preset", "loihi")
         custom_arch_path = self.pipeline.config.get("sanafe_custom_arch_path") or None
-        # Potential (Vm) trace is heavy, so it stays an opt-in UI knob (default off).
         log_potential = bool(self.pipeline.config.get("sanafe_log_potential_trace", False))
-        log_messages = True   # message trace is the default record
+        log_messages = True
         device = self.pipeline.config["device"]
 
         n = int(self.pipeline.config.get("sanafe_sample_count", 1))
@@ -127,7 +106,6 @@ class SanafeSimulationStep(PipelineStep):
         per_sample: list[SanafeRunRecord] = []
 
         for sample_idx, sample in enumerate(samples):
-            # Build HCM reference for the parity gate (skipped when disabled).
             ref = None
             ttfs_ref = None
             if parity_check:
@@ -147,7 +125,6 @@ class SanafeSimulationStep(PipelineStep):
                         device=device,
                     )
 
-            # Run SANA-FE on the same sample.
             contract = build_deployment_contract(self.pipeline)
             runner = SanafeRunner(
                 mapping=hard_core_mapping,
@@ -167,20 +144,10 @@ class SanafeSimulationStep(PipelineStep):
             sanafe_rec = runner.run(sample_np, sample_index=sample_idx)
             per_sample.append(sanafe_rec)
 
-            # When a HCM reference is available, attach per-core deltas to
-            # each segment so the GUI floorplan "HCM diff" overlay shows
-            # spatial drift even on runs that didn't fail the parity gate.
-            # Always-zero overlays just mean the chip simulates HCM faithfully.
             if ref is not None:
                 _attach_per_core_deltas(ref, sanafe_rec)
 
             if parity_check and is_ttfs and ttfs_ref is not None:
-                from mimarsinan.chip_simulation.ttfs.ttfs_recorder import (
-                    compare_ttfs_contract_records,
-                    compare_ttfs_hardware_records,
-                    format_first_ttfs_diff,
-                )
-
                 contract_diffs = compare_ttfs_contract_records(
                     ttfs_ref,
                     sanafe_rec.to_ttfs_contract_subset(spiking_mode=spiking_mode),
@@ -200,11 +167,9 @@ class SanafeSimulationStep(PipelineStep):
             elif parity_check and ref is not None:
                 assert_spike_parity_or_raise(ref, sanafe_rec.to_hcm_subset())
 
-        # Persist the report for the GUI snapshot builder.
         report = SanafeStepReport.from_records(arch_preset, per_sample)
         self.add_entry("sanafe_simulation_results", report, "pickle")
 
-        # Report headline metrics.
         if parity_check:
             self.pipeline.reporter.report("SANA-FE Parity", 1.0)
         self.pipeline.reporter.report(
@@ -229,21 +194,13 @@ class SanafeSimulationStep(PipelineStep):
             f"{report.aggregate['total_packets']} packets"
         )
 
-        # Emit a MEASURED cost record alongside the run (cost-emit). This is a
-        # pure additive side-effect: it writes an extra ``cost_record.json`` and
-        # NEVER alters the deployment result. It is fully exception-isolated —
-        # a cost-extraction bug must never crash the live campaign runner.
         self._emit_cost_record(report)
 
     def _emit_cost_record(self, report: SanafeStepReport) -> None:
         """Drop a measured ``cost_record.json`` next to the run artifacts.
 
-        Mines the in-memory SANA-FE report (the same ``to_snapshot_dict``
-        projection ``extract_cost_record_from_run`` reads off disk) plus the
-        run's (firing × sync) cell and deployed accuracy, then saves a cost
-        record under ``pipeline.working_directory``. Exception-isolated: any
-        failure is logged and swallowed so cost emission can never crash or
-        alter the deployment.
+        Pure additive side-effect, exception-isolated: any failure is logged and
+        swallowed so cost emission can never crash or alter the deployment.
         """
         try:
             plan = DeploymentPlan.of(self.pipeline)

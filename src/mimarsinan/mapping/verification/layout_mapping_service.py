@@ -1,10 +1,4 @@
-"""Two-tier bounded-LRU cache for the wizard / NAS layout-mapping pipeline.
-
-The returned :class:`MappingVerificationResult.softcores` lists are shared
-across cache hits; downstream ``pack_layout`` already deep-copies its input
-(see ``layout_packer.py``) so the no-mutate rule is safe in practice.  Do
-not mutate the returned softcores in place; if you must, deepcopy first.
-"""
+"""Two-tier bounded-LRU cache for the wizard / NAS layout-mapping pipeline; returned softcore lists are shared across cache hits, so do not mutate them in place."""
 
 from __future__ import annotations
 
@@ -17,15 +11,13 @@ from mimarsinan.mapping.verification.verifier import (
     MappingVerificationResult,
     verify_soft_core_mapping,
 )
+from mimarsinan.mapping.verification.wizard_layout_verify import (
+    model_repr_from_wizard_body,
+)
 
 
 class _BoundedLRU:
-    """Thread-safe ``OrderedDict``-backed bounded LRU.
-
-    ``functools.lru_cache`` is unsuitable here because cached values include
-    unhashable references (model_repr objects, MappingVerificationResult
-    instances) and we want explicit ``invalidate()``.
-    """
+    """Thread-safe ``OrderedDict``-backed bounded LRU with explicit ``invalidate()``."""
 
     def __init__(self, maxsize: int) -> None:
         if maxsize <= 0:
@@ -68,11 +60,8 @@ class _BoundedLRU:
 class LayoutMappingService:
     """Cache-fronted service for the wizard / NAS / snapshot layout calls.
 
-    Two cache levels: ``get_model_repr`` keyed on
-    :meth:`LayoutMappingRequest.model_identity_key`, ``get_verification``
-    keyed on :meth:`LayoutMappingRequest.verification_key`.  Requests that
-    differ only on tiling parameters share their model_repr but get
-    separate verification slots.
+    Two cache levels keyed on ``model_identity_key`` (model_repr) and
+    ``verification_key``, so tiling-only differences share their model_repr.
     """
 
     def __init__(
@@ -85,8 +74,7 @@ class LayoutMappingService:
         self._verification_cache = _BoundedLRU(verification_maxsize)
 
     def get_model_repr(self, request: LayoutMappingRequest) -> Any:
-        """Return the cached mapper repr for ``request``'s model identity;
-        builds it on first access."""
+        """Return the cached mapper repr for ``request``'s model identity, building it on first access."""
         return self._model_repr_cache.get_or_compute(
             request.model_identity_key(),
             lambda: self._build_model_repr(request),
@@ -105,12 +93,7 @@ class LayoutMappingService:
         self._model_repr_cache.clear()
         self._verification_cache.clear()
 
-    # Internal builders
-
     def _build_model_repr(self, request: LayoutMappingRequest) -> Any:
-        from mimarsinan.mapping.verification.wizard_layout_verify import (
-            model_repr_from_wizard_body,
-        )
         return model_repr_from_wizard_body(request.to_body())
 
     def _build_verification(

@@ -1,13 +1,4 @@
-"""Negative-value shift: make negative-producing ComputeOp boundaries lossless.
-
-A ComputeOp ``F`` that emits negatives is shifted by a per-channel
-``s = max(0, −min F)`` so the spike encoder (rates clamped to [0, 1]) is lossless —
-it sees ``F(x) + s ≥ 0``. The shift is applied at the boundary by BOTH the torch NF
-forward (`chip_aligned_segment_forward`, via the ComputeOp's ``_negative_shift``) and
-HCM (`node_output_shifts`); the consuming perceptron's bias is pre-corrected **once**
-(`apply_negative_shift_bias`: ``B' = B − W·s``) so both inherit it through the normal
-mapping. Structurally mirrors `mimarsinan.mapping.support.ttfs_bias`.
-"""
+"""Negative-value shift: make negative-producing ComputeOp boundaries lossless for the spike encoder."""
 
 from __future__ import annotations
 
@@ -33,11 +24,10 @@ def apply_negative_shift_bias(perceptron, shift) -> None:
         return
 
     transformer = PerceptronTransformer()
-    effective_weight = transformer.get_effective_weight(perceptron)  # (neurons, axons)
+    effective_weight = transformer.get_effective_weight(perceptron)
     s = torch.as_tensor(
         shift, dtype=effective_weight.dtype, device=effective_weight.device,
     )
-    # Per neuron j: Σ_axon W_eff[j, axon] · s[axon]. Scalar s broadcasts over axons.
     correction = (effective_weight * s).sum(dim=-1)
 
     transformer.apply_effective_bias_transform(
@@ -71,10 +61,8 @@ def _assert_baked_encoder_feeds_no_compute_op(node, consumers, compute_op_type) 
 
 
 def _bake_consumer_perceptrons(producer, shift, consumers, compute_op_type) -> bool:
-    """Walk structural consumers of ``producer`` to each consuming perceptron, aligning
-    the (per-channel) ``shift`` through each structural node's (linear) forward, and bake
-    its bias. Returns whether any perceptron was baked. Fails loud on a ComputeOp
-    consumer (no perceptron bias to compensate the shift)."""
+    """Bake the negative-shift bias into each consuming perceptron, aligning the per-channel
+    shift through intervening (linear) structural nodes. Fails loud on a ComputeOp consumer."""
     baked = False
     frontier = [(c, shift) for c in consumers.get(id(producer), [])]
     while frontier:
@@ -89,8 +77,6 @@ def _bake_consumer_perceptrons(producer, shift, consumers, compute_op_type) -> b
                 "unsupported (no consuming perceptron bias to compensate the shift)."
             )
         else:
-            # Structural node (reshape/permute/ensure-2d/…): linear, so the shift delta
-            # transforms by running its forward. Multi-input structural (concat) unsupported.
             try:
                 aligned = consumer.forward(sh.unsqueeze(0)).squeeze(0)
             except Exception as exc:  # pragma: no cover - fail loud with context
@@ -144,12 +130,9 @@ def calibration_forward_for_mode(spiking_mode: str):
 def apply_negative_value_shifts(
     model, calibration_x: torch.Tensor, T: int, *, forward_fn=None,
 ) -> dict:
-    """Pre-mapping: calibrate per-ComputeOp output minima on ``calibration_x``, derive
-    positive-domain shifts, bake the consuming perceptron(s), and tag each shifted
-    ``ComputeOpMapper`` with ``_negative_shift`` (consumed by NF + propagated to HCM).
-    ``forward_fn`` is the mode's NF forward (default: LIF chip-aligned); see
-    :func:`calibration_forward_for_mode`. Returns ``{ComputeOpMapper: shift_np}``
-    (empty if no boundary goes negative)."""
+    """Pre-mapping: calibrate per-ComputeOp minima, derive positive shifts, bake the
+    consuming perceptron(s), and tag each shifted ``ComputeOpMapper`` with ``_negative_shift``.
+    Returns ``{ComputeOpMapper: shift_np}`` (empty if no boundary goes negative)."""
     from mimarsinan.mapping.mappers.compute_op_mapper import ComputeOpMapper
 
     if forward_fn is None:
@@ -180,12 +163,9 @@ def apply_negative_value_shifts(
 
 
 def transfer_negative_shifts_to_ir(model, ir_graph) -> None:
-    """Copy each ``ComputeOpMapper._negative_shift`` onto its matching IR ``ComputeOp``
-    (by name), so the shift travels with the (cached/pickled) IR graph to any later
-    hybrid build — the only object that flows from mapping to the hybrid-build sites.
-
-    A per-instance op split over its leading dim emits ``{name}_col{i}`` IR ops;
-    each column receives its leading-index row of the (leading, channels) shift."""
+    """Copy each ``ComputeOpMapper._negative_shift`` onto its matching IR ``ComputeOp`` (by name),
+    so the shift travels with the cached/pickled IR graph to any later hybrid build. A per-instance
+    op split over its leading dim emits ``{name}_col{i}`` ops, each taking its leading-index shift row."""
     from mimarsinan.mapping.ir import ComputeOp
     from mimarsinan.mapping.mappers.compute_op_mapper import ComputeOpMapper
 

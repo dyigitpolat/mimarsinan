@@ -10,7 +10,6 @@ from mimarsinan.models.perceptron_mixer.perceptron import Perceptron
 from mimarsinan.models.perceptron_mixer.perceptron_flow import PerceptronFlow
 
 import torch.nn as nn
-import einops
 
 
 class SimpleMLP(PerceptronFlow):
@@ -53,7 +52,6 @@ class SimpleMLP(PerceptronFlow):
                 )
             )
 
-        # Single source of truth: mapper graph (also used for forward execution)
         inp = InputMapper(self.input_shape)
         self._input_activation_mapper = ModuleMapper(inp, self.input_activation)
         out = EinopsRearrangeMapper(
@@ -69,7 +67,6 @@ class SimpleMLP(PerceptronFlow):
 
     def set_input_activation(self, activation):
         self.input_activation = activation
-        # Keep mapper graph consistent
         self._input_activation_mapper.module = activation
 
     def get_perceptrons(self):

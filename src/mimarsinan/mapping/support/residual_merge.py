@@ -1,24 +1,4 @@
-"""Lower a param-free equal-width residual add to an on-chip signed-IF merge core.
-
-A bare residual ``y = z + F(z)`` (equal width, no projection) normally lands as a
-host ``ComputeAdapter(operator.add)`` ComputeOp (Tier 0). Tier 1 rewrites that node,
-in the mapper graph, to a genuine merge **Perceptron** fed by a ``ConcatMapper`` of
-both branches:
-
-    concat([z, F(z)])  ->  Perceptron(width, 2*width, bias=False, weight=[I | I])
-
-so the sum happens on the crossbar (``W @ [z ; F] = z + F``), the identity-concat
-bank is param-free (frozen, ``requires_grad=False``), and the merge stays on-chip in
-the SAME neural segment as ``F``'s last layer. Because the rewrite mutates the shared
-``ModelRepresentation`` graph, BOTH the torch NF forward and the deployed HCM sim see
-the same merge neuron and quantize it identically.
-
-The rewrite is gated by the ``onchip_residual_merge`` IRMapping flag (default off →
-the host ComputeOp add, byte-identical to the pre-Tier-1 path). The on-chip merge is
-a SELECTABLE deployment mode, NOT bit-exact to the Tier-0 host-add reference: the
-in-segment IF head re-quantizes the merged spike train by a characterized, bounded
-``~1/T`` (one spike) — see ``docs/research/findings/D2_tier1_deployable.md``.
-"""
+"""Lower a param-free equal-width residual add to an on-chip signed-IF merge core."""
 
 from __future__ import annotations
 
@@ -38,12 +18,7 @@ MERGE_NAME_SUFFIX = "_merge"
 
 
 class _ResidualConcatMapper(Mapper):
-    """Concatenate two equal-width branches into one ``2*width`` axon space.
-
-    Flattens each branch's source view to 1-D before concatenation (the branches
-    may arrive with different leading dims), so the merge Perceptron consumes a
-    single ``(2*width,)`` axon vector. Forward concatenates along the channel dim.
-    """
+    """Concatenate two equal-width branches into one ``2*width`` axon space (flattened to 1-D)."""
 
     def __init__(self, source_mappers, name: str = "ResidualConcat"):
         super().__init__()
@@ -101,13 +76,10 @@ def _branch_width(mapper) -> int | None:
 
 
 def _build_merge_perceptron(width: int, name: str) -> Perceptron:
-    """A param-free identity-concat merge: ``y = [I | I] @ [z ; F]`` (signed, no bias).
+    """Param-free identity-concat merge ``y = [I | I] @ [z ; F]`` (signed, no bias, identity activation).
 
-    Identity base activation makes it a signed integrate-and-fire core (no ReLU
-    rectification of the sum). The merge inherits its ``activation_scale`` /
-    ``input_activation_scale`` from the normal scale-propagation pass (so the
-    same scale governs the torch NF and the deployed HCM merge neuron); we only
-    install the frozen identity-concat weight bank here.
+    Installs the frozen identity-concat weight bank; the merge inherits its scales from the
+    normal scale-propagation pass so the same scale governs torch NF and the deployed HCM neuron.
     """
     merge = Perceptron(
         output_channels=width,
@@ -116,7 +88,7 @@ def _build_merge_perceptron(width: int, name: str) -> Perceptron:
         name=name,
     )
     eye = torch.eye(width)
-    weight = torch.cat([eye, eye], dim=1)  # (width, 2*width): [I | I]
+    weight = torch.cat([eye, eye], dim=1)
     merge.layer.weight.data = weight
     merge.layer.weight.requires_grad_(False)
     merge.base_activation = nn.Identity()
@@ -145,12 +117,10 @@ def _rebind_source(consumer, old, new) -> bool:
 
 
 def lower_residual_adds_to_onchip_merge(model_repr) -> int:
-    """Rewrite every param-free equal-width residual add in ``model_repr`` to an
-    on-chip merge Perceptron. Returns the number of adds lowered.
+    """Rewrite every param-free equal-width residual add to an on-chip merge Perceptron; return the count.
 
-    Mutates the mapper graph in place and invalidates the cached exec graph so the
-    next traversal sees the merge neuron. Unequal-width adds (projection residuals)
-    are left as host ComputeOps."""
+    Mutates the mapper graph in place and invalidates the cached exec graph. Unequal-width
+    adds (projection residuals) are left as host ComputeOps."""
     model_repr._ensure_exec_graph()
     exec_order = list(model_repr._exec_order)
     deps = model_repr._deps
@@ -171,7 +141,7 @@ def lower_residual_adds_to_onchip_merge(model_repr) -> int:
             continue
         widths = [_branch_width(b) for b in branches]
         if widths[0] is None or widths[0] != widths[1]:
-            continue  # unequal-width residual is NOT a bare add (needs a projection)
+            continue
         width = widths[0]
 
         base = node.name or "residual"

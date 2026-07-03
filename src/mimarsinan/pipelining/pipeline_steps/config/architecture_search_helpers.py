@@ -5,6 +5,10 @@ from __future__ import annotations
 import os
 from typing import Any, Dict, List, Literal, Sequence, Tuple
 
+from mimarsinan.gui.json_util import to_json_safe
+from mimarsinan.pipelining.core.platform_constraints_resolver import (
+    build_platform_constraints_resolved,
+)
 from mimarsinan.search.search_space_description import SearchSpaceDescription
 from mimarsinan.visualization.search_viz import (
     create_interactive_search_report,
@@ -94,8 +98,6 @@ def create_optimizer(
 
 
 def search_result_to_jsonable(result) -> Dict[str, Any]:
-    from mimarsinan.gui.json_util import to_json_safe
-
     def cand_to_dict(c):
         return {
             "configuration": c.configuration,
@@ -167,10 +169,6 @@ def make_assembler(schema: List[Dict[str, Any]], schema_map: Dict[str, Any]):
 
 
 def build_fixed_platform_constraints(pipeline_config: Dict) -> Dict[str, Any]:
-    from mimarsinan.pipelining.core.platform_constraints_resolver import (
-        build_platform_constraints_resolved,
-    )
-
     return build_platform_constraints_resolved(
         pipeline_config, include_neuron_splitting=False
     )

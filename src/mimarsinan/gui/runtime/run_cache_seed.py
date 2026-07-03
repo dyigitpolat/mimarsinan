@@ -1,9 +1,4 @@
-"""Seed a new run working directory with pipeline cache from a previous run (edit & continue).
-
-The pipeline stores ``metadata.json`` and per-entry files (``.json`` / ``.pt`` / ``.pickle``)
-in the run working directory. A new run starts with an empty directory; without copying
-these files, ``run_from(start_step=...)`` fails with missing cache requirements.
-"""
+"""Seed a new run working directory with pipeline cache from a previous run (edit & continue)."""
 
 from __future__ import annotations
 
@@ -32,7 +27,6 @@ def copy_pipeline_cache_from_previous_run(
     """Copy ``metadata.json`` and cache blob files from a previous run into *dest_working_dir*.
 
     *previous_run_id* is the basename of the run directory under *generated_root*.
-    If the source has no ``metadata.json`` or ``previous_run_id`` is unsafe, log and return.
     """
     if not previous_run_id or not _SAFE_ID_RE.match(previous_run_id):
         logger.warning("Invalid previous_run_id for cache seed: %r", previous_run_id)
@@ -78,12 +72,7 @@ def copy_steps_json_from_previous_run(
     previous_run_id: str,
     dest_working_dir: str,
 ) -> None:
-    """Copy ``_GUI_STATE/steps.json`` from a previous run so backfill can load full snapshots.
-
-    Without this, ``backfill_skipped_steps`` falls back to ``build_step_snapshot`` only,
-    which may omit richer metrics/snapshots from the original run. The headless process
-    then writes a merged ``steps.json`` after backfill (see ``_persist_skipped_steps_to_steps_json``).
-    """
+    """Copy ``_GUI_STATE/steps.json`` from a previous run so backfill can load full snapshots."""
     if not previous_run_id or not _SAFE_ID_RE.match(previous_run_id):
         return
     src = Path(generated_root).resolve() / previous_run_id / "_GUI_STATE" / "steps.json"
@@ -100,21 +89,9 @@ def copy_resources_from_previous_run(
     previous_run_id: str,
     dest_working_dir: str,
 ) -> None:
-    """Copy ``_GUI_STATE/resources/`` (heatmap PNGs, connectivity JSON) from a
-    previous run so the live monitor can serve images for backfilled
-    steps without re-running them.
+    """Copy ``_GUI_STATE/resources/`` (heatmap PNGs, connectivity JSON) from a previous run.
 
-    The snapshot executor writes per-step resources here under
-    ``_GUI_STATE/resources/<step>/<kind>/<rid>.<ext>`` on completion;
-    when the fork starts with an empty in-memory ResourceStore and the
-    server's disk-fallback path (``server.routes_resources.serve_resource_from_disk``)
-    looks here, those files need to be present.  Pipeline cache files
-    cover the model/IR data the next *step* needs; this covers the
-    visual data the *user* expects to keep seeing for the steps they
-    inherited.
-
-    Pure ``shutil.copytree`` so atomicity/locks are not an issue —
-    the source run is read-only by the time we fork from it.
+    Lets the live monitor serve images for backfilled steps without re-running them.
     """
     if not previous_run_id or not _SAFE_ID_RE.match(previous_run_id):
         return
@@ -124,7 +101,6 @@ def copy_resources_from_previous_run(
         return
     dest_dir = Path(dest_working_dir).resolve() / "_GUI_STATE" / "resources"
     try:
-        # ``dirs_exist_ok`` so a partially-warmed dest doesn't error out.
         shutil.copytree(src, dest_dir, dirs_exist_ok=True)
     except (OSError, shutil.Error) as e:
         logger.warning("Failed to seed resources from %s → %s: %s", src, dest_dir, e)

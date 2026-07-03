@@ -1,10 +1,4 @@
-"""
-Wizard schema: delegates model types to builders; NAS schema and pipeline step names.
-
-Used by GET /api/wizard/schema and POST /api/wizard/pipeline-steps so the
-frontend can render full-fidelity forms. Model config schema comes from
-model builders (WIZARD_SCHEMA on each builder class).
-"""
+"""Wizard schema: model-type, NAS, temporal-allocation, and pipeline-step surfaces for the frontend."""
 
 from __future__ import annotations
 
@@ -15,7 +9,6 @@ from mimarsinan.config_schema.defaults import (
     get_default_deployment_parameters,
     get_default_platform_constraints,
 )
-from mimarsinan.pipelining.core.registry.model_registry import ModelRegistry
 from mimarsinan.pipelining.core.pipelines.deployment_pipeline import get_pipeline_step_specs
 from mimarsinan.search.results import ALL_OBJECTIVES, ACCURACY_OBJECTIVE_NAME
 from mimarsinan.tuning.orchestration.temporal_allocation import S_ALLOCATION_MODES
@@ -45,10 +38,8 @@ def get_wizard_defaults() -> Dict[str, Any]:
 def get_wizard_temporal_allocation_schema() -> Dict[str, Any]:
     """Per-layer-S declaration surface (EW2) for the wizard form.
 
-    Declares the ``s_allocation`` axis modes + the reserved per-mode inputs + the
-    ``allow_per_layer_s`` capability gate so the form can render the choice. The
-    per-depth S map derivation is deferred to research (downstream); the wizard
-    only DECLARES the intent. SSOT with config_schema defaults + the resolver modes.
+    Declares the s_allocation modes and the allow_per_layer_s capability gate;
+    the wizard only declares intent, the per-depth S map derivation is downstream.
     """
     dp_defaults = get_default_deployment_parameters()
     return {

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import csv
 import json
 import time
 from dataclasses import asdict, dataclass, field
@@ -124,8 +125,6 @@ def write_profile_rows(rows: list[NevresimCompileProfile], out_path: str | Path)
         path.write_text(json.dumps(payload, indent=2))
         return
     if path.suffix == ".csv":
-        import csv
-
         if not payload:
             path.write_text("")
             return

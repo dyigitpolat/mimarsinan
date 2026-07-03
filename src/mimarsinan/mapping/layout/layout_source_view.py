@@ -1,25 +1,4 @@
-"""Lightweight composable shape descriptor for the shape-only mapping path.
-
-``LayoutSourceView`` duck-types as a numpy object array of ``IRSource`` for
-all numpy-style operations the mapper graph uses (``.shape``, ``.flatten()``,
-``.reshape()``, ``.transpose()``, ``__getitem__``, ``__array__``,
-``concat_source_views``), but stores only ``(shape, node_ids, materialiser)``
-and never allocates per-cell ``IRSource`` instances until something forces
-materialisation via ``np.asarray`` or iteration.
-
-The shape-only ``LayoutIRMapping`` path consumes only ``.shape`` and the set
-of producer node ids, so it never materialises.  The full ``IRMapping``
-subclass converts ``input_sources`` to real ``IRSource`` numpy arrays at the
-IR-graph boundary (via ``np.asarray``) and replaces its own returned values
-with the materialised arrays, so view leakage stops there and downstream
-mappers in the full path see only real arrays.
-
-Materialisation of a from-producer view yields
-``IRSource(producer_node_id, original_flat_index)`` for every cell, matching
-the pre-refactor ``np.array([IRSource(...)...], dtype=object)`` shape.
-Reshape, flatten, transpose, indexing, and concatenation compose lambdas so
-the eventual materialised array obeys the corresponding numpy semantics.
-"""
+"""Deferred-allocation shape descriptor duck-typing as a numpy object-array of ``IRSource``."""
 
 from __future__ import annotations
 
@@ -76,8 +55,6 @@ class LayoutSourceView:
         node_ids = (node_id,) if node_id >= 0 else ()
         return cls(shape_t, node_ids, _materialise)
 
-    # numpy duck-type properties
-
     @property
     def shape(self) -> tuple[int, ...]:
         return self._shape
@@ -102,8 +79,6 @@ class LayoutSourceView:
         if not self._shape:
             raise TypeError("len() of 0-d LayoutSourceView")
         return self._shape[0]
-
-    # Shape-changing view ops (composes materialiser; no eager materialisation)
 
     def reshape(self, *shape) -> "LayoutSourceView":
         if len(shape) == 1 and isinstance(shape[0], (tuple, list)):
@@ -155,8 +130,6 @@ class LayoutSourceView:
             lambda: parent()[idx],
         )
 
-    # Materialisation
-
     def __array__(self, dtype=None) -> np.ndarray:
         arr = self._materialiser()
         if dtype is not None and arr.dtype != dtype:
@@ -170,8 +143,6 @@ class LayoutSourceView:
     def _materialise_cell(self, idx: tuple[int, ...]) -> IRSource:
         arr = self._materialiser()
         return arr[idx]
-
-    # Internal shape helpers
 
     def _resolve_shape(self, shape: Iterable[int]) -> tuple[int, ...]:
         shape_t = tuple(int(d) for d in shape)
@@ -203,11 +174,7 @@ class LayoutSourceView:
         return shape_t[:idx] + (self._size // known,) + shape_t[idx + 1:]
 
     def _resolve_getitem_shape(self, idx) -> tuple[int, ...]:
-        """Compute the shape resulting from ``self[idx]`` without materialising.
-
-        Supports int / slice / None tuples (the subset the mapper graph uses).
-        For anything else we'd have to materialise to discover the shape.
-        """
+        """Shape of ``self[idx]`` without materialising; supports int / slice / None tuples."""
         if not isinstance(idx, tuple):
             idx = (idx,)
         result: list[int] = []
@@ -240,8 +207,6 @@ class LayoutSourceView:
             result.append(remaining)
         return tuple(result)
 
-
-# Module-level helpers (implemented in layout_source_view_ops)
 
 from mimarsinan.mapping.layout.layout_source_view_ops import (
     concat_source_views,

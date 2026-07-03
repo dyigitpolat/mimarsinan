@@ -9,17 +9,8 @@ import os
 import re
 import shutil
 import subprocess
-from dataclasses import dataclass
-from typing import Any, Iterable, Sequence
+from typing import Iterable, Sequence
 
-import numpy as np
-
-from mimarsinan.code_generation.cpp_chip_model import SpikeSource
-from mimarsinan.mapping.packing.hybrid_hardcore_mapping import HybridHardCoreMapping
-from mimarsinan.mapping.ir import ComputeOp, IRGraph, IRNode, IRSource, NeuralCore
-from mimarsinan.mapping.packing.softcore import HardCoreMapping
-from mimarsinan.common.layer_key import layer_key_from_node_name
-from mimarsinan.common.safe_numeric import safe_float
 
 def _percent(n: int, d: int) -> str:
     if d <= 0:
@@ -59,9 +50,7 @@ def _truncate(s: str, *, max_chars: int = 260) -> str:
 
 
 def _dot_html_label(rows: Sequence[tuple[str, str]], *, title: str, color: str) -> str:
-    """
-    Build a Graphviz HTML-like label (safe-escaped).
-    """
+    """Build a Graphviz HTML-like label (safe-escaped)."""
     t = html.escape(str(title))
     c = html.escape(str(color))
     body = []
@@ -82,10 +71,7 @@ def _dot_html_label_mixed(
     title: str,
     color: str,
 ) -> str:
-    """
-    Like _dot_html_label, but allows marking row values as raw HTML.
-    rows: (key, value, value_is_html)
-    """
+    """Like ``_dot_html_label`` but each row's value may be marked as raw HTML."""
     t = html.escape(str(title))
     c = html.escape(str(color))
     body = []
@@ -111,7 +97,6 @@ def _stack_sample_lines(names: list[str], ids: list[int]) -> str:
     if n == 0:
         return "-"
 
-    # Sort by id
     order = sorted(range(n), key=lambda i: ids[i])
     ids_s = [ids[i] for i in order]
     names_s = [names[i] for i in order]
@@ -131,7 +116,6 @@ def _stack_sample_lines(names: list[str], ids: list[int]) -> str:
             f"[{ids_s[-1]}] {_short(names_s[-1])}",
         ]
 
-    # Escape each line and join with HTML breaks.
     return "<BR/>".join(html.escape(l) for l in lines)
 
 

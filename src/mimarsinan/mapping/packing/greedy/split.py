@@ -4,19 +4,13 @@ from collections import Counter
 from typing import Callable, List
 
 from mimarsinan.mapping.packing.canonical import (
-    HardCoreLike,
     HardT,
     SoftCoreLike,
     SoftT,
-    pick_best_softcore,
 )
 
 def _is_splittable(core: SoftCoreLike) -> bool:
-    """Check whether a soft core is eligible for neuron splitting.
-
-    Cores that are part of a coalescing group (axon-split fragments) must
-    not be neuron-split — they are already partial results.
-    """
+    """A soft core is splittable unless it is a coalescing-group fragment (already a partial result)."""
     return getattr(core, "coalescing_group_id", None) is None
 
 
@@ -30,19 +24,10 @@ def _try_split_into_used(
     *,
     candidate_indices: "list[int] | None" = None,
 ) -> bool:
-    """Try to split *core* into a partially-filled used hardware core.
+    """Split *core* into the used core with the most remaining neurons (axons fit, neurons don't, remainder above threshold).
 
-    Picks the used core with the **most** remaining neurons (to maximise
-    the useful fragment size) among cores where:
-    - axons fit
-    - neurons do NOT fit (the whole core is too wide)
-    - remaining neurons > split_threshold × total neurons
-
-    ``candidate_indices`` restricts the scan to a pre-filtered subset
-    (e.g. only cores with a compatible threshold_group_id).  When omitted
-    the full used-core list is scanned.
-
-    Returns True if a split was performed, False otherwise.
+    ``candidate_indices`` restricts the scan to a pre-filtered subset; returns
+    True if a split was performed.
     """
     best_idx = None
     best_avail_n = -1
@@ -101,13 +86,7 @@ def _try_split_into_unused(
     unused_by_type: "dict | None" = None,
     hard_type_key: Callable[[HardT], tuple] | None = None,
 ) -> bool:
-    """Try to split *core* into a fresh unused hardware core.
-
-    Last resort when the core's neurons exceed every core type's total
-    neuron capacity but axons fit.  No threshold is applied here — the
-    fragment size equals the hardware core's neuron capacity, which is
-    always a reasonable size (the hardware designer chose it).
-    """
+    """Last-resort split of *core* into a fresh unused core when its neurons exceed every core type's capacity."""
     best_hc = None
     best_total_n = -1
     for hc in unused_hardcores:
@@ -126,7 +105,6 @@ def _try_split_into_unused(
         return False
 
     frag1, frag2 = split_softcore(core, best_total_n)
-    # Identity-based removal — avoids dataclass __eq__ removing the wrong instance.
     for _i, _x in enumerate(unused_hardcores):
         if _x is best_hc:
             del unused_hardcores[_i]

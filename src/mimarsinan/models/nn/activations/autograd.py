@@ -6,14 +6,19 @@ import torch
 import torch.nn as nn
 from torch.autograd import Function
 
+from mimarsinan.models.spiking.wire_semantics import (
+    floor_staircase,
+    ttfs_grid_quantize,
+    ttfs_quantized_staircase,
+)
+
 
 class LeakyGradReLUFunction(Function):
     @staticmethod
     def forward(ctx, input, negative_slope=1e-8):
         ctx.save_for_backward(input)
         ctx.negative_slope = negative_slope
-        # ``input <= 0`` keeps NaN on the pass-through branch: NaN must
-        # propagate, not silently become 0.
+        # ``input <= 0`` (not ``<``) keeps NaN on the pass-through branch so NaN propagates instead of silently becoming 0.
         return torch.where(input <= 0, torch.zeros_like(input), input)
 
     @staticmethod
@@ -33,17 +38,12 @@ class LeakyGradReLU(nn.Module):
 
 
 class StaircaseFunction(Function):
-    """Generic floor quantiser ``floor(x·Tq)/Tq`` with STE gradient.
-
-    Supports non-integer ``Tq`` (QuantizeDecorator's ``levels/c``); TTFS NF
-    activations use :class:`TTFSStaircaseFunction` (the deployment ceil kernel)
-    instead — the two agree on the unit domain only for integer ``Tq``.
-    """
+    """Generic floor quantiser ``floor(x·Tq)/Tq`` with STE gradient; supports
+    non-integer ``Tq``. TTFS NF activations use :class:`TTFSStaircaseFunction`
+    instead (the two agree on the unit domain only for integer ``Tq``)."""
 
     @staticmethod
     def forward(ctx, x, Tq):
-        from mimarsinan.models.spiking.wire_semantics import floor_staircase
-
         return floor_staircase(x, Tq)
 
     @staticmethod
@@ -53,16 +53,12 @@ class StaircaseFunction(Function):
 
 
 class TTFSStaircaseFunction(Function):
-    """Deployment TTFS staircase on the clamped unit domain with STE gradient.
-
-    Forward is the wire kernel pair's ceil form, so the torch NF quantiser is
-    bit-identical to the float64 contract reference at exact grid ties.
-    """
+    """Deployment TTFS staircase on the clamped unit domain with STE gradient;
+    forward is the wire kernel pair's ceil form, so the torch NF quantiser is
+    bit-identical to the float64 contract reference at exact grid ties."""
 
     @staticmethod
     def forward(ctx, r, S):
-        from mimarsinan.models.spiking.wire_semantics import ttfs_quantized_staircase
-
         one = torch.ones((), dtype=r.dtype, device=r.device)
         return ttfs_quantized_staircase(r, one, int(S))
 
@@ -109,17 +105,12 @@ class ChipInputQuantizer(nn.Module):
 
 
 class TTFSGridSnapFunction(Function):
-    """TTFS encode→decode round trip ``(S - round(S·(1-x)))/S`` with STE gradient.
-
-    Forward is the wire kernel pair's grid quantize (bit-identical to
-    ``ttfs_encoding.ttfs_input_grid_quantize``); differs from a plain
-    ``round(x·S)/S`` at half-step ties.
-    """
+    """TTFS encode→decode round trip ``(S - round(S·(1-x)))/S`` with STE gradient;
+    forward is the wire kernel pair's grid quantize (bit-identical to
+    ``ttfs_encoding.ttfs_input_grid_quantize``), differing at half-step ties."""
 
     @staticmethod
     def forward(ctx, x, S):
-        from mimarsinan.models.spiking.wire_semantics import ttfs_grid_quantize
-
         return ttfs_grid_quantize(x, int(S))
 
     @staticmethod
@@ -162,7 +153,6 @@ class DifferentiableClamp(Function):
             below_grad,
             torch.where(x > b, above_grad, torch.ones_like(x)),
         )
-        # Bounds are scalars; sum grad over the input tensor.
         grad_a = (grad_output * (x < a).to(grad_output.dtype)).sum()
         grad_b = (grad_output * (x > b).to(grad_output.dtype)).sum()
         return grad_output * grad_x, grad_a, grad_b

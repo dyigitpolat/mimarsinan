@@ -1,42 +1,4 @@
-"""E5 — the Pareto DECISION layer: cascaded-vs-synchronized verdict + recipe selector.
-
-This is the program's "automatic genericity" evidence layer. It CONSUMES the campaign's
-per-schedule accuracy rows (``cascaded_deployed_mean`` / ``synchronized_deployed_mean`` /
-``ann_test_acc_mean`` / ``cascaded_to_sync_gap_pp`` keyed by ``model/dataset/depth/S``)
-and a DEFENSIBLE cost PROXY, and emits:
-
-* :func:`pareto_front` — the non-dominated (cost↓ × accuracy↑) subset of decision points;
-* :func:`cascaded_vs_synchronized` — the per-dataset deep_cnn verdict (front schedule,
-  accuracy gap, cost-band assumption, RETIRE-or-REGIME recommendation);
-* :func:`propose_recipe` — the budget-driven recipe selector off the front.
-
-It mutates no simulation state and runs no model. It is a read-only decision layer over
-already-extracted campaign data, so it is byte-identical-by-construction with respect to
-every deployment path.
-
-THE INTEGRITY CRUX — cost is a MODEL-ESTIMATE WITH A BAND, not measured per-sample energy
------------------------------------------------------------------------------------------
-The ledger carries ``cores_count`` but NOT measured per-sample energy/latency per schedule.
-We therefore DO NOT fabricate a cost. Instead:
-
-* **Latency** is derived from the DOCUMENTED genuine-TTFS execution model
-  (see ``ttfs_cycle_synchronized_execution`` / ``ttfs_cascade_latch_erosion``):
-  synchronized runs latency groups sequentially → ``sim_time = S × latency_groups``;
-  cascaded is pipelined → ``sim_time = S + latency_groups``. The only assumption is the
-  ``latency_groups ≈ depth`` mapping; we carry a band on it (``±1`` group for the
-  input/output framing). This axis is a model-estimate but a TIGHT one (the schedule
-  formula is exact given the group count).
-* **Energy** is a proxy ``∝ cores × active_steps`` ONLY when ``cores_count`` is present;
-  it is reported as a (lo, mid, hi) band and LABELED a model-estimate. The ledger has no
-  measured per-sample spike energy per schedule, so absolute per-sample energy is
-  UNINSTRUMENTED — :attr:`CostProxyBand.energy_uninstrumented` flags that gap rather than
-  inventing a number.
-
-The dominance convention mirrors ``cost_extraction._dominates`` (no-worse on every axis,
-strictly better on at least one); :class:`cost_extraction.CostScatter` is the multi-axis
-Pareto over measured ``CostRecord``s — this module is the decision-layer altitude above it,
-operating on scalar (cost, accuracy) points so the verdict is human-auditable.
-"""
+"""Pareto decision layer over campaign rows: cascaded-vs-synchronized verdict + recipe selector."""
 
 from __future__ import annotations
 
@@ -54,10 +16,6 @@ from mimarsinan.chip_simulation.cost_extraction import (
 
 logger = logging.getLogger("mimarsinan.chip_simulation")
 
-# A row-level run-id → run-directory resolver. The ledger row carries the
-# run-id(s) (``run_id`` / ``cascaded_run_ids`` / ``synchronized_run_ids``) but
-# NOT the absolute run directory (it depends on the campaign's
-# ``generated_files_path`` at run time), so the caller supplies the mapping.
 RunDirResolver = Callable[[str], Optional[str]]
 
 
@@ -86,7 +44,6 @@ COST_BAND_DISCLAIMER = (
     "ledger -- a stated remaining instrumentation gap."
 )
 
-# Verdict recommendation tags.
 RETIRE_CASCADED = "RETIRE_CASCADED"
 REGIME_DEPENDENT = "REGIME_DEPENDENT"
 NO_GAP = "NO_GAP"
@@ -95,19 +52,11 @@ _VALID_SCHEDULES = ("cascaded", "synchronized")
 _VALID_BUDGETS = ("accuracy", "latency")
 
 
-# --------------------------------------------------------------------------- #
-# pareto_front — scalar (cost, accuracy) dominance, mirroring _dominates.
-# --------------------------------------------------------------------------- #
-
 ParetoPoint = Dict[str, object]
 
 
 def _point_dominates(a: ParetoPoint, b: ParetoPoint) -> bool:
-    """Whether ``a`` Pareto-dominates ``b`` on (cost↓, accuracy↑).
-
-    Mirrors ``cost_extraction._dominates``: ``a`` dominates ``b`` iff it is no worse on
-    every axis (lower cost, higher accuracy) and strictly better on at least one.
-    """
+    """Whether ``a`` Pareto-dominates ``b`` on (cost↓, accuracy↑; strictly better on one)."""
     a_obj = (-float(a["cost"]), float(a["accuracy"]))
     b_obj = (-float(b["cost"]), float(b["accuracy"]))
     no_worse = all(x >= y for x, y in zip(a_obj, b_obj))
@@ -116,12 +65,7 @@ def _point_dominates(a: ParetoPoint, b: ParetoPoint) -> bool:
 
 
 def pareto_front(points: Sequence[ParetoPoint]) -> List[ParetoPoint]:
-    """The non-dominated (cost↓ × accuracy↑) subset of ``points``.
-
-    Each point is a mapping with at least ``cost`` (lower is better) and ``accuracy``
-    (higher is better); other keys (e.g. ``label``) ride along untouched. A point is on
-    the front iff no OTHER point dominates it (ties keep both — no strict improvement).
-    """
+    """The non-dominated (cost↓ × accuracy↑) subset of ``points`` (ties keep both)."""
     pool = list(points)
     return [
         candidate
@@ -133,18 +77,12 @@ def pareto_front(points: Sequence[ParetoPoint]) -> List[ParetoPoint]:
     ]
 
 
-# --------------------------------------------------------------------------- #
-# schedule_cost_band — the documented latency proxy + energy proxy, with a band.
-# --------------------------------------------------------------------------- #
-
 @dataclass(frozen=True)
 class CostProxyBand:
     """A schedule's cost as a (lo, nominal, hi) BAND of model-estimates, never measured.
 
-    Latency is the documented genuine-TTFS sim-time (exact given the latency-group count,
-    banded ±1 group for input/output framing). Energy is the ``cores × active_steps``
-    proxy, present only when ``cores`` is known; otherwise :attr:`energy_uninstrumented`
-    flags the gap and the energy fields are ``None``.
+    Energy is the ``cores × active_steps`` proxy, present only when ``cores`` is known;
+    otherwise :attr:`energy_uninstrumented` flags the gap and the energy fields are ``None``.
     """
 
     schedule: str
@@ -178,7 +116,7 @@ def _sim_time(schedule: str, s_global: int, groups: int) -> int:
     """The documented sim-time for ``schedule``: sync = S·groups; cascaded = S+groups."""
     if schedule == "synchronized":
         return int(s_global) * int(groups)
-    return int(s_global) + int(groups)  # cascaded pipelined
+    return int(s_global) + int(groups)
 
 
 def schedule_cost_band(
@@ -201,8 +139,6 @@ def schedule_cost_band(
     lat_lo = _sim_time(schedule, s_global, g_lo)
     lat_nom = _sim_time(schedule, s_global, g_nom)
     lat_hi = _sim_time(schedule, s_global, g_hi)
-    # Re-order: cascaded and sync are both monotone increasing in group count, so the
-    # group band maps to an ordered latency band, but guard against the depth==1 floor.
     lat_lo, lat_hi = min(lat_lo, lat_hi), max(lat_lo, lat_hi)
 
     if cores is None:
@@ -212,10 +148,6 @@ def schedule_cost_band(
             lo_energy_proxy=None, nominal_energy_proxy=None, hi_energy_proxy=None,
         )
 
-    # Energy proxy ~ cores x active_steps (the chip is soma-dominated; every active step
-    # charges the resident cores). This is the SAME active-step count as the latency
-    # proxy, so the cascaded/sync energy ratio tracks the latency ratio -- a model
-    # estimate, not measured spike energy.
     e_lo = float(cores) * lat_lo
     e_nom = float(cores) * lat_nom
     e_hi = float(cores) * lat_hi
@@ -226,17 +158,10 @@ def schedule_cost_band(
     )
 
 
-# --------------------------------------------------------------------------- #
-# load_measured_cost — PREFER a measured cost_record over the proxy when one
-# resolves for a row's run_ids (the cost-emit unlock); else None (proxy stays).
-# --------------------------------------------------------------------------- #
-
-# The row run-id fields, in schedule order, a measured record can hang off.
 _RUN_ID_FIELDS_BY_SCHEDULE = {
     "cascaded": ("cascaded_run_ids",),
     "synchronized": ("synchronized_run_ids",),
 }
-# Schedule-agnostic run-id fields tried for ANY schedule (a single-schedule row).
 _RUN_ID_FIELDS_ANY = ("run_id", "run_ids")
 
 
@@ -259,19 +184,10 @@ def load_measured_cost(
     schedule: str,
     run_dir_resolver: Optional[RunDirResolver] = None,
 ) -> Optional[CostRecord]:
-    """The MEASURED :class:`CostRecord` for a row's ``schedule``, or ``None``.
+    """The MEASURED :class:`CostRecord` for a row's ``schedule``, or ``None`` (proxy fallback).
 
-    Resolves the row's run-id(s) for ``schedule`` to run directories via
-    ``run_dir_resolver`` and loads the first resolvable ``cost_record.json``
-    (the measured cost the deployment now emits, cost-emit). Returns ``None``
-    when no resolver is supplied or no record resolves — the caller then falls
-    back to the documented cost PROXY, keeping the proxy path byte-identical.
-
-    THE RESOLUTION GAP (documented, not guessed): the ledger row carries the
-    run-id(s) but NOT the absolute run directory (it depends on the campaign's
-    ``generated_files_path`` at run time). The mapping is therefore the caller's
-    responsibility via ``run_dir_resolver``; without one this returns ``None``
-    and E5 stays on the proxy.
+    Resolves the row's run-id(s) via ``run_dir_resolver`` and loads the first resolvable
+    ``cost_record.json``; without a resolver or record this returns ``None``.
     """
     if run_dir_resolver is None:
         return None
@@ -294,10 +210,6 @@ def load_measured_cost(
     return None
 
 
-# --------------------------------------------------------------------------- #
-# cascaded_vs_synchronized — the per-dataset verdict.
-# --------------------------------------------------------------------------- #
-
 @dataclass
 class ScheduleVerdict:
     """The cascaded-vs-synchronized verdict for ONE deep_cnn dataset cell."""
@@ -309,18 +221,14 @@ class ScheduleVerdict:
     cascaded_accuracy: float
     synchronized_accuracy: float
     ann_accuracy: Optional[float]
-    accuracy_gap_pp: float            # synchronized - cascaded, in percentage points
-    front_schedule: str               # the accuracy-front schedule
-    front_points: List[ParetoPoint]   # (latency-cost, accuracy) points on the front
-    cost_band: CostProxyBand          # the synchronized cost band (the dearer schedule)
+    accuracy_gap_pp: float
+    front_schedule: str
+    front_points: List[ParetoPoint]
+    cost_band: CostProxyBand
     cascaded_cost_band: CostProxyBand
-    recommendation: str               # RETIRE_CASCADED / REGIME_DEPENDENT / NO_GAP
+    recommendation: str
     conditional_on_cost_band: bool
-    # The (cost, accuracy) decision points the front was computed over. The
-    # ``cost`` is the MEASURED ``latency_steps`` when a cost_record resolved for
-    # the schedule's run-id(s), else the documented proxy ``nominal_latency_steps``.
     decision_points: List[ParetoPoint] = field(default_factory=list)
-    # Whether the decision points used a MEASURED cost record (vs the proxy).
     cost_measured: bool = False
     cost_band_assumption: str = COST_BAND_DISCLAIMER
 
@@ -346,17 +254,13 @@ class CascadeVsSyncVerdict:
         return all(v.recommendation == RETIRE_CASCADED for v in self.per_dataset.values())
 
 
-_GAP_NOISE_PP = 0.5  # below this the schedules are tied (small-N read noise floor)
+_GAP_NOISE_PP = 0.5
 
 
 def _cell_rank(row: dict) -> tuple:
     """A reproducible preference key over duplicate-cell measurements (higher wins).
 
-    The ledger is append-only with re-measurements of the same cell. We prefer the most
-    DEFENSIBLE row: (1) energy-instrumented (``cores_count`` present, so the energy axis
-    is real not UNINSTRUMENTED), then (2) the deepest cell (depth stresses the cascade),
-    then (3) the latest timestamp (the reconciled measurement). This lands the verdict on
-    the most-instrumented recent cell deterministically.
+    Prefers the most defensible row: energy-instrumented, then deepest, then latest.
     """
     has_cores = 1 if row.get("cores_count") is not None else 0
     depth = int(row.get("depth") or 0)
@@ -424,10 +328,6 @@ def _verdict_for_cell(
     casc_band = schedule_cost_band("cascaded", s_global=s_global, depth=depth, cores=cores)
     sync_band = schedule_cost_band("synchronized", s_global=s_global, depth=depth, cores=cores)
 
-    # The (latency-cost, accuracy) decision points -- latency is the deterministic
-    # discriminating cost axis (energy tracks it). The cost is the MEASURED
-    # latency_steps when a cost_record resolves for the schedule's run-id(s)
-    # (cost-emit), else the documented proxy band (byte-identical fallback).
     casc_cost, casc_measured = _schedule_cost(row, "cascaded", casc_band, run_dir_resolver)
     sync_cost, sync_measured = _schedule_cost(row, "synchronized", sync_band, run_dir_resolver)
     cost_measured = casc_measured or sync_measured
@@ -439,14 +339,10 @@ def _verdict_for_cell(
     front_labels = {p["label"] for p in front}
 
     if abs(gap_pp) < _GAP_NOISE_PP:
-        front_schedule = "synchronized"  # tie -> name the safe (accuracy) default
+        front_schedule = "synchronized"
         recommendation = NO_GAP
     elif gap_pp > 0:
         front_schedule = "synchronized"
-        # Synchronized wins accuracy. It RETIRES cascaded only if it ALSO dominates on
-        # cost -- i.e. cascaded is NOT on the front. Cascaded's strictly-lower pipelined
-        # latency keeps it on the (cost, accuracy) front, so the honest verdict is a
-        # REGIME (cascaded wins the hard-latency budget), CONDITIONAL on the cost band.
         recommendation = RETIRE_CASCADED if "cascaded" not in front_labels else REGIME_DEPENDENT
     else:
         front_schedule = "cascaded"
@@ -471,19 +367,10 @@ def cascaded_vs_synchronized(
     *,
     run_dir_resolver: Optional[RunDirResolver] = None,
 ) -> CascadeVsSyncVerdict:
-    """The cascaded-vs-synchronized verdict per deep_cnn dataset.
+    """The cascaded-vs-synchronized verdict per deep_cnn dataset, over the deepest measured cell.
 
-    Consumes campaign science rows (any ``kind``) carrying both schedule accuracies;
-    for each dataset it takes the deepest measured cell (depth stresses the cascade) and
-    emits a :class:`ScheduleVerdict`. The verdict is CONDITIONAL on the cost-proxy band:
-    synchronized is RETIRE-worthy only if it dominates on accuracy AND cost; cascaded's
-    lower pipelined latency otherwise keeps the choice REGIME-dependent.
-
-    ``run_dir_resolver`` (cost-emit) optionally maps a row's run-id(s) to run
-    directories so the decision cost prefers the MEASURED ``latency_steps`` of an
-    emitted ``cost_record.json`` over the proxy. When ``None`` (the default) the
-    decision uses the documented cost proxy — byte-identical to the pre-cost-emit
-    path.
+    CONDITIONAL on the cost-proxy band: synchronized is RETIRE-worthy only if it dominates
+    on accuracy AND cost. ``run_dir_resolver`` optionally prefers a MEASURED cost over the proxy.
     """
     deep_cnn_rows = [r for r in rows if r.get("model") == "deep_cnn"]
     best = _best_cell_per_dataset(deep_cnn_rows)
@@ -493,10 +380,6 @@ def cascaded_vs_synchronized(
     }
     return CascadeVsSyncVerdict(per_dataset=per_dataset)
 
-
-# --------------------------------------------------------------------------- #
-# propose_recipe — E5c budget-driven selector off the front.
-# --------------------------------------------------------------------------- #
 
 @dataclass(frozen=True)
 class RecipeProposal:
@@ -517,12 +400,10 @@ def propose_recipe(
     rows: Sequence[dict],
     dataset: str,
 ) -> RecipeProposal:
-    """The E5c recipe selector: pick (firing, schedule, S, placement) for ``budget``.
+    """Pick (firing, schedule, S, placement) for ``budget`` off the front.
 
-    ``accuracy`` budget → synchronized (the accuracy-front schedule). ``latency`` budget
-    → cascaded IF it is on the (latency-cost, accuracy) front, else synchronized (a
-    lower-accuracy AND not-cheaper cascaded is never chosen). The pick is CONDITIONAL on
-    the cost-proxy band (see :data:`COST_BAND_DISCLAIMER`).
+    ``accuracy`` → synchronized; ``latency`` → cascaded iff it is on the front, else
+    synchronized. CONDITIONAL on the cost-proxy band (see :data:`COST_BAND_DISCLAIMER`).
     """
     if budget not in _VALID_BUDGETS:
         raise ValueError(f"unknown budget {budget!r}; expected one of {_VALID_BUDGETS}")
@@ -547,7 +428,6 @@ def propose_recipe(
             ),
         )
 
-    # hard-latency budget
     front_labels = {p["label"] for p in cell.front_points}
     cascaded_on_front = "cascaded" in front_labels
     schedule = "cascaded" if cascaded_on_front else "synchronized"
@@ -567,10 +447,6 @@ def propose_recipe(
         s_global=s_global, placement=placement, rationale=rationale,
     )
 
-
-# --------------------------------------------------------------------------- #
-# load_deep_cnn_rows — read the campaign ledger (own reader; json fallback).
-# --------------------------------------------------------------------------- #
 
 def load_deep_cnn_rows(ledger_path: str) -> List[dict]:
     """Mine the deep_cnn rows carrying BOTH schedule accuracies from a JSONL ledger."""

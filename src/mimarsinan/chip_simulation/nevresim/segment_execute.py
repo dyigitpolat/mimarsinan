@@ -50,10 +50,8 @@ def run_binary_raw(
 ):
     """Run a pre-compiled nevresim binary and return ``(num_samples, output_size)``.
 
-    When ``record_spikes`` is set (a ``NEVRESIM_RECORD_SPIKES`` build), returns
-    ``(raw, spike_records)`` — the per-sample per-core counts from
-    :func:`parse_spike_records`.
-    """
+    With ``record_spikes`` (a ``NEVRESIM_RECORD_SPIKES`` build) returns
+    ``(raw, spike_records)`` — per-sample per-core counts from ``parse_spike_records``."""
     samples = list(input_loader)[:max_input_count]
     if spike_generation_mode == "SpikeTrain":
         expected_flat = int(input_size) * int(simulation_length)

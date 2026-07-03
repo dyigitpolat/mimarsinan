@@ -13,11 +13,7 @@ logger = logging.getLogger("mimarsinan.spiking.spike_trains")
 
 
 def uniform_spike_train(rate: torch.Tensor, T: int) -> torch.Tensor:
-    """Encode rates in [0, 1] to a uniform-spaced spike train of shape ``(T, ...)``.
-
-    For raw pipeline input only (``run_cycle_accurate`` outer loop). Delegates
-    per-cycle semantics to :func:`spike_modes.to_uniform_spikes`.
-    """
+    """Encode rates in [0, 1] to a uniform-spaced spike train of shape ``(T, ...)``."""
     T = int(T)
     rate_c = rate.clamp(0.0, 1.0)
     trains = [
@@ -34,9 +30,7 @@ def lif_spike_train(
 ) -> torch.Tensor:
     """Build ``(T, B, ...)`` spike train via ``T`` single-step IF integrations.
 
-    Matches cycle-accurate semantics (membrane evolves across cycles with one
-    reset at the start). Used by :meth:`LIFActivation.forward_spiking` when
-    ``use_cycle_accurate_trains`` is set.
+    Cycle-accurate: the membrane evolves across cycles with one reset at the start.
     """
     from spikingjelly.activation_based import functional
 
@@ -64,8 +58,7 @@ def lif_spike_train(
 def materialized_spike_train(rate: torch.Tensor, T: int) -> torch.Tensor:
     """Build a full ``(T, ...)`` train upfront for ``spike_mode='SpikeTrain'``.
 
-    When segment inputs are still expressed as rates, materialization uses the
-    same Uniform spacing as the per-cycle encoder so replay matches HCM.
+    Uses the same Uniform spacing as the per-cycle encoder so replay matches HCM.
     """
     return uniform_spike_train(rate, T)
 
@@ -77,10 +70,7 @@ def rates_to_spike_train(
     spike_mode: str,
     log_fallback: bool = True,
 ) -> torch.Tensor:
-    """Legacy fallback: expand clamped rates to a spike train per cycle.
-
-    Not used on the encoding-ComputeOp path when cycle-accurate LIF is enabled.
-    """
+    """Legacy fallback: expand clamped rates to a spike train per cycle."""
     if spike_mode == "SpikeTrain":
         if log_fallback:
             logger.debug(

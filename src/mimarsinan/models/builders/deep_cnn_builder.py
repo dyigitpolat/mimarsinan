@@ -15,9 +15,7 @@ class DeepCNNBuilder:
         self.pipeline_config = pipeline_config
 
     def build(self, configuration):
-        # A layout probe may fire before the model_config form has rendered, in
-        # which case ``configuration`` arrives without the architecture keys.
-        # Fall back to the schema defaults so the probe builds a valid model.
+        # A layout probe can build before the config form renders, so configuration may lack architecture keys.
         schema_defaults = {f["key"]: f.get("default") for f in self.get_config_schema()}
         cfg = {**schema_defaults, **(configuration or {})}
         return DeepCNN(

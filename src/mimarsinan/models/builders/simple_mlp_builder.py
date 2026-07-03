@@ -1,8 +1,6 @@
 from mimarsinan.models.perceptron_mixer.simple_mlp import SimpleMLP
 from mimarsinan.pipelining.core.registry.model_registry import ModelRegistry
 
-import torch.nn as nn
-
 
 @ModelRegistry.register("simple_mlp", label="Simple MLP", category="native")
 class SimpleMLPBuilder:

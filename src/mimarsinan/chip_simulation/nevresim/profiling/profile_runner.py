@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shutil
 import tempfile
 from pathlib import Path
 
@@ -182,7 +183,6 @@ def profile_mapping_compile(
         return row
     finally:
         if cleanup and out_dir is None:
-            import shutil
             shutil.rmtree(work_dir, ignore_errors=True)
 
 

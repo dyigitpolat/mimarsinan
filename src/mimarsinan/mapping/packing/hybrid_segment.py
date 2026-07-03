@@ -1,14 +1,12 @@
 from __future__ import annotations
 
-import copy
 from typing import Sequence
 
 import numpy as np
 
-from mimarsinan.mapping.ir import ComputeOp, IRGraph, IRSource, NeuralCore
+from mimarsinan.mapping.ir import IRSource, NeuralCore
 from mimarsinan.mapping.packing.softcore import HardCore, HardCoreMapping, compact_soft_core_mapping
 from mimarsinan.mapping.packing.hybrid_types import HybridStage, SegmentIOSlice
-
 
 from mimarsinan.mapping.packing.hybrid_segment_helpers import (
     _apply_reindex_to_ir_sources,
@@ -72,7 +70,6 @@ def _flush_neural_segment(
 
     reindex_maps = compact_soft_core_mapping(soft.cores, soft.output_sources)
 
-    # Rebuild output_map from compacted output sizes
     output_map = []
     current_offset = 0
     output_core_ids = [n.id for n in output_nodes]
@@ -132,8 +129,6 @@ def _validate_coalescing_budget(
     allow_neuron_splitting: bool,
 ) -> None:
     """Verify every wide NeuralCore's coalescing group fits in one core type's count."""
-    import math
-
     for core in cores:
         if core.core_matrix is None:
             continue

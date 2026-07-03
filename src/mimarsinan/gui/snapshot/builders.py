@@ -3,15 +3,11 @@
 from __future__ import annotations
 
 import logging
-from collections import defaultdict
 from typing import Any
-
-import numpy as np
 
 logger = logging.getLogger("mimarsinan.gui")
 
-from mimarsinan.gui.snapshot.util.helpers import _t, _histogram, _safe_scalar, _safe_dict, _CACHE_KEY_TO_SNAPSHOT_KEY
-from mimarsinan.common.layer_key import layer_key_from_node_name
+from mimarsinan.gui.snapshot.util.helpers import _t, _safe_dict, _CACHE_KEY_TO_SNAPSHOT_KEY
 from mimarsinan.gui.resources import ResourceDescriptor
 
 from mimarsinan.gui.snapshot.ir_graph.ir_graph_resources import _group_consecutive_compute_stages
@@ -31,11 +27,9 @@ from mimarsinan.gui.snapshot.util.constants import (
 )
 
 
-from mimarsinan.gui.snapshot.heatmap import _make_heatmap_producer, _make_bias_strip_producer
 from mimarsinan.gui.snapshot.model_snapshot import snapshot_model, snapshot_pruning_layers
 from mimarsinan.gui.snapshot.ir_graph import snapshot_ir_graph
 
-# Re-export for tests and legacy import paths.
 __all__ = [
     "LIVENESS_BIAS_ONLY",
     "LIVENESS_DEAD_LEGACY",
@@ -203,18 +197,7 @@ def build_step_snapshot(
             except Exception:
                 logger.debug("Failed to snapshot sanafe_simulation from key %r", key, exc_info=True)
 
-    # Hardware tab needs ir_graph to show soft-core detail pane when clicking
-    # heatmap regions, but the IR-level PNGs (heatmap, pre-pruning, weight
-    # banks) have already been rendered by the step that *promised* ir_graph
-    # (typically Soft Core Mapping). Re-rendering them here both wastes ~30+
-    # seconds of matplotlib work and previously caused
-    # ``GUIHandle.wait_snapshots_idle``'s 30 s budget to expire mid-flush,
-    # leaving missing-image icons for cores past the cut-off in the Hardware
-    # and IR Graph tabs (only ~300/576 PNGs landed on disk for HCM).
-    #
-    # Instead we embed the summary and tag every resource ref with
-    # ``step = <ir_graph promiser>`` so the frontend resolves URLs against
-    # that step's already-persisted resource folder.
+    # Re-rendering the IR-level PNGs here would exceed GUIHandle.wait_snapshots_idle's snapshot-flush budget and drop images, so embed the summary and tag each resource with the ir_graph promiser's step instead.
     if "hard_core_mapping" in snapshot and "ir_graph" not in snapshot:
         ir_source_step = _find_ir_graph_promiser(pipeline)
         for key in cache.keys():
@@ -225,9 +208,6 @@ def build_step_snapshot(
                         cache.get(key), source_step_name=ir_source_step,
                     )
                     snapshot["ir_graph"] = ir_summary
-                    # ir_descs is empty when source_step_name is set; extending
-                    # is a no-op in that case but keeps the contract uniform if
-                    # the lookup ever fails to find an owning step.
                     descriptors.extend(ir_descs)
                     break
                 except Exception:

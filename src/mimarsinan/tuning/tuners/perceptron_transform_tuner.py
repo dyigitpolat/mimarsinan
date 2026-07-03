@@ -1,10 +1,4 @@
-"""Base for tuners using PerceptronTransformTrainer with stochastic mixing.
-
-Extends SmoothAdaptationTuner, overriding _create_trainer to use
-PerceptronTransformTrainer. Adds stochastic parameter mixing between
-"previous" and "new" perceptron transforms. Every perceptron sees the scalar
-``rate`` delivered by the orchestration loop (uniform application).
-"""
+"""Base for tuners using PerceptronTransformTrainer with stochastic mixing."""
 
 import copy
 
@@ -18,8 +12,7 @@ from mimarsinan.tuning.orchestration.smooth_adaptation_tuner import SmoothAdapta
 
 
 class PerceptronTransformTuner(SmoothAdaptationTuner):
-    # The forward applies a per-step parameter transform, so a persisted
-    # optimizer would step tensors that receive no gradients (GradScaler crash).
+    # A persisted optimizer would step transform-produced tensors that receive no gradients (GradScaler crash).
     _supports_persistent_optimizer = False
 
     def __init__(self, pipeline, model, target_accuracy, lr):
@@ -52,19 +45,8 @@ class PerceptronTransformTuner(SmoothAdaptationTuner):
     def _mixed_transform(self, rate):
         """Build the transformation closure for one probe cycle.
 
-        A fresh per-closure ``mask_cache`` is created here and captured by
-        the returned callable. Every invocation of the callable
-        (``PerceptronTransformTrainer`` calls it once per training step
-        and once again on each validation after ``_update_and_evaluate``)
-        will draw masks lazily on first use and reuse them thereafter,
-        so training and evaluation within a single probe see a
-        **deterministic, frozen** stochastic realisation of the
-        prev/new mix. When the orchestration loop probes a new rate it
-        assigns a fresh closure (with a fresh cache) to
-        ``trainer.perceptron_transformation``, so the mask is regenerated
-        per probe -- preserving the intended stochastic-regularisation
-        behaviour across probes while eliminating the moving-target loss
-        surface that the legacy per-step redraw produced.
+        A fresh per-closure ``mask_cache`` freezes the prev/new Bernoulli realisation
+        for this rate, so training and evaluation within one probe see the same mask.
         """
         mask_cache: dict = {}
         return lambda perceptron: self._mixed_perceptron_transform(
@@ -74,11 +56,8 @@ class PerceptronTransformTuner(SmoothAdaptationTuner):
     def _mix_params(self, prev_param, new_param, rate, cache_key=None, cache=None):
         """Return ``mask * new + (1 - mask) * prev`` with a possibly cached mask.
 
-        When ``cache`` is provided, the Bernoulli mask at probability
-        ``rate`` is drawn once per ``cache_key`` and then reused across
-        every subsequent call with the same key. This makes the
-        prev/new mixture stable across training steps and validation
-        within one probe cycle; see :meth:`_mixed_transform`.
+        With ``cache``, the Bernoulli mask is drawn once per ``cache_key`` and reused,
+        keeping the mixture stable across steps within one probe (see :meth:`_mixed_transform`).
         """
         if cache is not None and cache_key is not None:
             mask = cache.get(cache_key)

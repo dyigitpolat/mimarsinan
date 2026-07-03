@@ -9,6 +9,8 @@ from typing import TYPE_CHECKING
 from fastapi import FastAPI, Response
 from fastapi.responses import JSONResponse
 
+from mimarsinan.gui.runs import get_runs_root, _validate_run_id
+from mimarsinan.gui.runtime.persistence import load_resource_from_disk
 from mimarsinan.gui.server.json_safe import SafeJSONResponse
 
 if TYPE_CHECKING:
@@ -32,8 +34,6 @@ def serve_resource_from_disk(
     rid: str,
 ) -> Response:
     """Load a persisted resource file and return it with the correct Content-Type."""
-    from mimarsinan.gui.runtime.persistence import load_resource_from_disk
-
     media_type = RESOURCE_MEDIA_TYPE_BY_KIND.get(kind)
     if media_type is None:
         return JSONResponse(status_code=404, content={"error": f"unknown resource kind {kind!r}"})
@@ -52,8 +52,6 @@ def register_routes(
     collector: "DataCollector",
     process_manager: "ProcessManager | None",
 ) -> None:
-    from mimarsinan.gui.runs import get_runs_root, _validate_run_id
-
     @app.get("/api/steps/{step_name}/resources/{kind}/{rid:path}")
     async def step_resource(step_name: str, kind: str, rid: str):
         store = collector.get_resource_store()

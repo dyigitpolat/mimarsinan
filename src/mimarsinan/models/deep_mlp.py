@@ -6,7 +6,7 @@ import torch
 import torch.nn as nn
 
 
-_RESIDUAL_BLOCK_SIZE = 2  # consecutive hidden layers wrapped by one equal-width skip
+_RESIDUAL_BLOCK_SIZE = 2
 
 
 def _get_activation(name: str) -> nn.Module:
@@ -20,22 +20,11 @@ def _get_activation(name: str) -> nn.Module:
 
 
 class DeepMLP(nn.Module):
-    """Flatten -> [Linear(width) + activation] x depth -> Linear(num_classes).
+    """Flatten -> [Linear(width) + activation] x depth -> Linear(num_classes); the depth-probe vehicle.
 
-    Pure ``nn.Linear`` + activation (no conv/attention) so it converts through the
-    same torch->perceptron path as the MLP-Mixer. ``depth`` is the number of hidden
-    layers and directly sets the on-chip cascade depth; this is the T0 vehicle for
-    the depth x firing-gain probe.
-
-    ``residual`` (opt-in, default off) wraps consecutive pairs of equal-width
-    hidden layers in an additive skip ``z = z + block(z)``. The FIRST hidden layer
-    maps ``input_size -> width`` (a stem/projection), so it is applied plainly; only
-    the equal-width hidden layers that follow are residual-wrapped, making each skip
-    a bare equal-width add. Bare equal-width adds lower to a param-free host
-    ``ComputeAdapter(operator.add)`` ComputeOp (the residual-mapping path) and leave
-    the Linear count and ``hidden.*`` parameter names unchanged, so a plain and a
-    residual model share a state_dict. An odd trailing equal-width hidden layer is
-    applied without a skip.
+    Converts through the same torch->perceptron path as the MLP-Mixer. ``residual`` (opt-in)
+    adds equal-width additive skips that share a state_dict with the plain model, because a
+    bare equal-width add lowers to a param-free host ComputeOp and leaves the Linear names unchanged.
     """
 
     def __init__(
@@ -79,7 +68,7 @@ class DeepMLP(nn.Module):
         if not self.residual:
             return self.classifier(self.hidden(x))
 
-        x = self._hidden_layer(x, 0)  # stem: input_size -> width (not equal-width; no skip)
+        x = self._hidden_layer(x, 0)
         idx = 1
         while idx + _RESIDUAL_BLOCK_SIZE <= self.depth:
             block = x

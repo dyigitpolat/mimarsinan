@@ -32,11 +32,8 @@ from mimarsinan.models.nn.decorators import (
 
 def norm_affine_params(normalization):
     """``(u, beta, mean)`` of a normalization's frozen-stats affine form
-    ``u * (z - mean) + beta`` — differentiable through ``weight``/``bias``.
-
-    Works for ``nn.BatchNorm1d/2d`` and ``FrozenStatsNormalization`` (anything
-    exposing ``weight``, ``bias``, ``running_mean``, ``running_var``, ``eps``).
-    """
+    ``u*(z-mean)+beta`` (differentiable through ``weight``/``bias``); works for
+    ``nn.BatchNorm1d/2d`` and ``FrozenStatsNormalization``."""
     weight = normalization.weight
     var = normalization.running_var.to(weight.device)
     mean = normalization.running_mean.to(weight.device)
@@ -57,11 +54,6 @@ class TransformedActivation(nn.Module):
         return self.decorators.pop()
 
     def forward(self, x):
-        # Flattened equivalent of the previous nested-DecoratedActivation chain:
-        #   DecoratedActivation(DecoratedActivation(base, d0), d1)(x)
-        # The outermost decorator's input_transform runs first, its
-        # output_transform runs last — hence reversed for inputs, forward for
-        # outputs. Avoids N nn.Module wrappers per forward (one per decorator).
         for dec in reversed(self.decorators):
             x = dec.input_transform(x)
         x = self.base_activation(x)
@@ -101,8 +93,7 @@ class MaxValueScaler(nn.Module):
         max_x = torch.max(x)
 
         if self.training:
-            # Floor the EMA at a positive epsilon: an all-negative input stream
-            # would otherwise drive the divisor negative and flip output signs.
+            # Floor the EMA at a positive epsilon so an all-negative input stream cannot drive the divisor negative and flip output signs.
             ema = 0.1 * max_x + 0.9 * self.max_value
             self.max_value.data = torch.clamp(ema, min=1e-6)
 

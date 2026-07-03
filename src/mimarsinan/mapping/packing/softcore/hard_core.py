@@ -9,7 +9,6 @@ class HardCore:
         self.neurons_per_core = neurons_per_core
         self.has_bias_capability = has_bias_capability
 
-        # Lazy zero matrix on first add_softcore (avoids eager float64 per hw core).
         self.core_matrix = None
         self.axon_sources = []
 

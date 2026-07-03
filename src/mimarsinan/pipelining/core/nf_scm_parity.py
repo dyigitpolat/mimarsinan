@@ -15,10 +15,8 @@ _DEBUG_ENV = "MIMARSINAN_NF_SCM_PARITY_DEBUG"
 class NfScmParityError(AssertionError):
     """Per-neuron divergence between the analytical NF and the identity mapping.
 
-    ``mismatch_fraction`` is the measured per-neuron flip fraction when the
-    raise came from the per-neuron budget check (``None`` for the decision-level
-    and structural raises that have no such scalar) — lets callers branch on how
-    far over budget a model landed without re-parsing the message.
+    ``mismatch_fraction`` is the measured per-neuron flip fraction (``None`` for
+    decision-level and structural raises that have no such scalar).
     """
 
     def __init__(self, message: str, *, mismatch_fraction: float | None = None):
@@ -29,12 +27,8 @@ class NfScmParityError(AssertionError):
 def _unify_model_device(model):
     """Place the WHOLE model on one device and return it (``None`` if param-less).
 
-    The mapper graph can leave compute-op modules and perceptrons on different
-    devices across the offload/cache seams, so a full-graph ``model(x)`` hits a
-    cross-device matmul (the 2026-06-19 SCM crash batch). Each gate owns its
-    forward's device contract: unify the model first, then move inputs/peers to
-    match. Prefers a CUDA device when the model holds any CUDA parameter so the
-    gate keeps running on the accelerator rather than dragging the model to CPU.
+    Prevents a cross-device matmul when the mapper graph left modules on different
+    devices; prefers a CUDA device when the model holds any CUDA parameter.
     """
     params = list(model.parameters())
     if not params:
@@ -47,18 +41,10 @@ def _unify_model_device(model):
 
 
 def nf_scm_parity_enabled(contract: Any) -> bool:
-    """Gate the modes whose NF can be held against the deployed executor.
+    """Whether this mode's NF can be held per-neuron against the deployed executor.
 
-    Continuous ttfs shares per-neuron semantics with the contract runner
-    (per-neuron gate). Cascaded gets a decision-level gate (argmax agreement vs
-    the genuine identity executor — 1.0 when healthy; per-logit atol is
-    meaningless through host compute ops). The floor+half-step-bias convention
-    modes (ttfs_quantized AND the synchronized floor-collapse) are excluded
-    entirely: their NF trains the floor-staircase + half-step-bias convention
-    (``apply_ttfs_quantization_bias_compensation``), agreeing with the deployed
-    ceil kernel only within one step per layer (their protections are the
-    accuracy gates plus the bit-exact rung-3/4 parity). synchronized's genuine
-    single-spike DEPLOYMENT stays bit-exact regardless of this gate.
+    Continuous ttfs gets the per-neuron gate; cascaded gets a decision-level gate;
+    the floor+half-step-bias convention modes (ttfs_quantized, synchronized floor-collapse) are excluded.
     """
     if contract.uses_ttfs_floor_ceil_convention():
         return False
@@ -78,13 +64,8 @@ def assert_nf_scm_parity_or_raise(
 ) -> float:
     """Compare per-neuron NF activations against the identity-mapped contract run.
 
-    Both sides are compared in the normalized [0, 1] TTFS value domain; a
-    mismatch beyond ``atol`` is a staircase-step flip or a semantic divergence.
-    ``max_mismatch_fraction`` budgets the honest mapping-level wire residual
-    (psum decomposition, stage-input grid snap, dtype tie flips) — measured at
-    ~14 % per-neuron flips on the 2026-06 incident mixer, vs ~40 % for its
-    wrong-NF-dynamics failure. Returns the measured fraction; raises
-    :class:`NfScmParityError` naming the worst neuron when over budget.
+    Both sides are compared in the normalized [0, 1] TTFS domain; ``max_mismatch_fraction``
+    budgets the honest mapping-level wire residual. Returns the measured fraction.
     """
     from mimarsinan.chip_simulation.deployment_contract import SpikingDeploymentContract
     from mimarsinan.pipelining.core.simulation_factory import (
@@ -106,11 +87,7 @@ def assert_nf_scm_parity_or_raise(
     from mimarsinan.mapping.pruning import derive_deployed_neuron_survival
 
     nf = _capture_nf_normalized(model, samples)
-    # Project the analytical NF (all N original output neurons per perceptron) onto the
-    # neurons ACTUALLY deployed after pruning (M <= N): liveness-dead cores and zeroed
-    # columns are absent from the executor, so a raw per-neuron shape check would
-    # false-fail a lossless pruned deployment. The pruned ir_graph is the survival
-    # authority; identity (no-op) when nothing was pruned.
+    # Project the NF onto neurons actually deployed after pruning (the pruned ir_graph is the survival authority; no-op when nothing was pruned).
     nf = derive_deployed_neuron_survival(ir_graph).project(nf)
     scm = _collect_scm_normalized(identity_mapping, model, samples, contract)
 
@@ -174,14 +151,10 @@ def assert_cascaded_nf_scm_agreement_or_raise(
     *,
     min_agreement: float = 0.98,
 ) -> float:
-    """Decision-level cascaded gate: NF argmax must agree with the genuine
-    identity-mapped cascade executor on at least ``min_agreement`` of samples.
+    """Decision-level cascaded gate: NF argmax must agree with the identity-mapped executor on ``min_agreement`` of samples.
 
-    The NF here is the installed genuine segment driver (cascaded keeps it as
-    ``model.forward``). Healthy agreement is 1.0 (driver==executor bit-exact
-    once bias references stay live — the stale-bias incident measured 0.85);
-    a wrong-NF-dynamics regression craters this. Returns the measured
-    agreement; raises :class:`NfScmParityError` below budget.
+    Healthy agreement is ~1.0 (driver==executor bit-exact once bias references stay
+    live); a wrong-NF-dynamics regression craters it. Returns the measured agreement.
     """
     executor = _build_cascaded_identity_executor(pipeline, model, ir_graph)
     device = _unify_model_device(model)
@@ -209,16 +182,11 @@ def assert_torch_vs_deployed_sim_parity_or_raise(
     *,
     min_agreement: float = 0.98,
 ) -> float:
-    """Torch↔DEPLOYED-sim parity: the NF model's torch forward must agree with the
-    EXACT spiking sim that ``run_scm_identity_metric`` deploys (``build_spiking_hybrid_flow``)
-    on at least ``min_agreement`` of ``samples``.
+    """Torch↔deployed-sim parity: the NF torch forward must agree with the deployed spiking sim on ``min_agreement`` of samples.
 
-    The cascaded decision gate above checks a SIBLING identity executor
-    (``build_identity_spiking_flow``, which omits ``cycle_accurate_lif_forward``);
-    this checks the deployed executor directly so a torch↔sim deployment divergence
-    cannot hide. Healthy agreement is ~1.0 (a single WQ tie-flip per few hundred
-    samples is the only expected residual — a sub-quantization-step effect);
-    a real fidelity regression craters it. Returns the measured agreement."""
+    Healthy agreement is ~1.0 (a single WQ tie-flip per few hundred samples is the
+    only expected residual); a fidelity regression craters it. Returns the measured agreement.
+    """
     device = _unify_model_device(model)
     if device is not None:
         samples = samples.to(device)
@@ -247,16 +215,12 @@ def compare_normalized_records(
 ):
     """Order-insensitive per-perceptron comparison: ``(mismatches, total, worst)``.
 
-    Each (perceptron, sample) row is compared as a sorted multiset: conv core
-    emission order need not match the torch flatten order (measured bit-exact
-    up to a permutation), while positional wiring is enforced transitively —
-    consumers read producers by index, so a cross-wired layer corrupts the next
-    layer's values, and the final outputs are covered by the accuracy and
-    rung-3/4 gates.
+    Each (perceptron, sample) row is compared as a sorted multiset (conv core emission
+    order need not match the torch flatten order); positional wiring is enforced transitively.
     """
     total = 0
     mismatches = 0
-    worst = None  # (abs_diff, perceptron, sample, sorted_rank, nf_value, scm_value)
+    worst = None
     for pi in sorted(set(nf) & set(scm)):
         nf_vals, scm_vals = nf[pi], scm[pi]
         if nf_vals.shape != scm_vals.shape:
@@ -332,10 +296,7 @@ def _collect_scm_normalized(
 ) -> Dict[int, np.ndarray]:
     """Per-perceptron contract-runner outputs on the identity mapping.
 
-    Identity mappings hold exactly one un-split placement per core, so cores
-    group by ``perceptron_index`` and concatenate in IR-id order (the mapper's
-    torch flattening order). Psum partials never equal an NF activation and
-    are excluded.
+    Cores group by ``perceptron_index`` and concatenate in IR-id order; psum partials are excluded.
     """
     from mimarsinan.chip_simulation.ttfs.ttfs_executor import run_ttfs_hybrid_contract
 
@@ -359,11 +320,7 @@ def _collect_scm_normalized(
 
 
 def _group_record_by_perceptron(record, identity_mapping) -> Dict[int, np.ndarray]:
-    # ir_id -> (perceptron_index, tile_offset, values). ``tile_offset`` is the IR
-    # output-tile's start in the original layer (perceptron_output_slice[0]) — the
-    # JOINT (ir_core_id, neuron_range) key that orders a perceptron's tiles. IR-id
-    # assignment is not monotone in the slice once compaction reorders ids, so
-    # sorted(ir_id) would scramble per-neuron attribution under output tiling.
+    # Order a perceptron's tiles by tile_offset (perceptron_output_slice start), not ir_id: id assignment is not monotone in the slice after compaction.
     per_core: Dict[int, tuple[int, int, np.ndarray]] = {}
     for stage_index, segment in record.segments.items():
         stage = identity_mapping.stages[stage_index]

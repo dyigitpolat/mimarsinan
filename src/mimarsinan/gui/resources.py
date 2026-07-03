@@ -1,26 +1,4 @@
-"""Step-scoped lazy resource store for the GUI monitor.
-
-Heavy artifacts (heatmap PNGs, per-core connectivity span lists) are not
-embedded in step snapshots. Instead, snapshot builders emit
-:class:`ResourceDescriptor` objects that carry a zero-argument ``producer``
-closure; the store materialises bytes/JSON on the first HTTP request and
-caches the result for subsequent fetches.
-
-Lifecycle:
-
-* ``step_started(step)`` in the collector should call :meth:`clear_step` so
-  a re-run of the same step does not serve stale bytes.
-* ``step_completed(step, ...)`` registers any resource descriptors via
-  :meth:`put`. The producer is *not* invoked here, which keeps the pipeline
-  thread free of matplotlib calls.
-* ``get_bytes`` / ``get_json`` are called by the FastAPI handlers in
-  ``gui.server``; they run on the event loop's thread pool and are the only
-  places producers execute.
-
-The store is thread-safe and uses per-key locks so concurrent gets for the
-same resource invoke the producer exactly once while independent keys can
-materialise in parallel.
-"""
+"""Step-scoped lazy resource store for the GUI monitor."""
 
 from __future__ import annotations
 
@@ -36,16 +14,8 @@ logger = logging.getLogger("mimarsinan.gui")
 class ResourceDescriptor:
     """Metadata + lazy producer for a single resource.
 
-    Attributes:
-        kind: High-level resource kind (``"heatmap"``, ``"connectivity"``,
-            ``"bank_heatmap"``, ...). Used as part of the URL path.
-        rid: Stable resource id within a step (e.g. ``"core/17"`` or
-            ``"seg/0"``). Used as the trailing URL path segment.
-        producer: Zero-argument closure returning ``bytes`` (for binary
-            resources like PNG) or ``dict`` / JSON-safe values.
-        media_type: HTTP ``Content-Type`` for the response. Binary producers
-            must use ``image/png`` or similar; JSON producers must use
-            ``application/json``.
+    ``kind``/``rid`` compose the URL path; ``producer`` returns bytes (binary)
+    or JSON-safe values, tagged by ``media_type``.
     """
 
     kind: str
@@ -67,18 +37,13 @@ class _Entry:
         self._failed = False
 
     def materialise(self) -> Any:
-        """Invoke the producer at most once (per entry) and return the payload.
-
-        Returns ``None`` if the producer raised. Subsequent calls also return
-        ``None`` — failures are sticky per entry so callers are not charged
-        the matplotlib cost repeatedly for a broken input.
-        """
+        """Invoke the producer at most once and return the payload; failures are sticky (return ``None``)."""
         with self._lock:
             if self._materialised:
                 return self._payload
             try:
                 self._payload = self.descriptor.producer()
-            except Exception:  # pragma: no cover - logged and surfaced as None
+            except Exception:  # pragma: no cover
                 logger.debug(
                     "Resource producer failed for %s/%s",
                     self.descriptor.kind,
@@ -100,11 +65,9 @@ class ResourceStore:
         self._versions: dict[str, int] = {}
 
     def put(self, step: str, desc: ResourceDescriptor) -> None:
-        """Register a resource for *step*. Overwrites any existing entry with the
-        same ``(kind, rid)`` and bumps the step's version counter.
+        """Register a resource for *step*, overwriting any existing ``(kind, rid)`` and bumping the version.
 
-        The producer is **not** invoked here; materialisation happens lazily
-        inside :meth:`get_bytes` / :meth:`get_json`.
+        The producer is not invoked here; materialisation is lazy.
         """
         key = (desc.kind, desc.rid)
         with self._lock:
@@ -113,14 +76,9 @@ class ResourceStore:
             self._versions[step] = self._versions.get(step, 0) + 1
 
     def prewarm(self, step: str, kind: str, rid: str) -> Any:
-        """Force materialisation of an already-registered descriptor.
+        """Force materialisation of an already-registered descriptor off the request thread.
 
-        Returns the materialised payload (or ``None`` on producer failure /
-        missing entry). Used by the snapshot executor to render heatmap
-        PNGs and connectivity JSON off the request thread so the first
-        HTTP fetch from the frontend hits a hot cache instead of waking
-        matplotlib (which holds the GIL and serialises across the FastAPI
-        threadpool, producing the 10+ s pause that motivated this path).
+        Returns the payload (``None`` on failure/missing) so the first HTTP fetch hits a hot cache.
         """
         entry = self._lookup(step, kind, rid)
         if entry is None:
@@ -135,11 +93,7 @@ class ResourceStore:
             return (kind, rid) in bucket
 
     def get_bytes(self, step: str, kind: str, rid: str) -> tuple[bytes, str] | None:
-        """Return ``(bytes, media_type)`` for a binary resource, or ``None``.
-
-        Returns ``None`` when the resource is not registered or when the
-        registered producer returned a non-bytes payload.
-        """
+        """Return ``(bytes, media_type)`` for a binary resource, or ``None`` if unregistered or non-bytes."""
         entry = self._lookup(step, kind, rid)
         if entry is None:
             return None
@@ -149,12 +103,7 @@ class ResourceStore:
         return bytes(payload), entry.descriptor.media_type
 
     def get_json(self, step: str, kind: str, rid: str) -> Any | None:
-        """Return a JSON-safe Python object for a JSON resource, or ``None``.
-
-        Returns ``None`` when the resource is not registered or when the
-        registered producer returned bytes (callers must use
-        :meth:`get_bytes` for binary payloads).
-        """
+        """Return a JSON-safe object for a JSON resource, or ``None`` if unregistered or bytes-valued."""
         entry = self._lookup(step, kind, rid)
         if entry is None:
             return None
@@ -164,23 +113,13 @@ class ResourceStore:
         return payload
 
     def clear_step(self, step: str) -> None:
-        """Evict every resource for *step* and bump the version counter.
-
-        Called on ``step_started`` so a re-run of the same step never serves
-        stale bytes. The version bump invalidates any cached URLs the client
-        may still be holding onto.
-        """
+        """Evict every resource for *step* and bump the version; called on ``step_started`` to avoid stale bytes."""
         with self._lock:
             self._store.pop(step, None)
             self._versions[step] = self._versions.get(step, 0) + 1
 
     def step_version(self, step: str) -> int:
-        """Monotonically increasing version counter for *step*.
-
-        Incremented on every :meth:`put` and :meth:`clear_step`. Used by the
-        collector to compose ETags so a re-run (or late resource registration)
-        invalidates any cached HTTP response.
-        """
+        """Monotonic version counter for *step*, bumped on every :meth:`put`/:meth:`clear_step` for ETag composition."""
         with self._lock:
             return self._versions.get(step, 0)
 

@@ -1,7 +1,7 @@
 from __future__ import annotations
-from typing import Dict, List, Sequence, Set, Tuple
+from typing import Dict, Sequence, Set, Tuple
 import numpy as np
-from mimarsinan.mapping.ir import IRGraph, IRSource, NeuralCore, WeightBank
+from mimarsinan.mapping.ir import IRGraph, IRSource, NeuralCore
 from mimarsinan.mapping.pruning.boundary_policy import compute_model_io_boundary_policy
 from mimarsinan.mapping.pruning.graph.pruning_graph_types import GlobalPruningResult
 def _force_dead_nodes_fully_pruned(
@@ -9,15 +9,8 @@ def _force_dead_nodes_fully_pruned(
     dead_node_ids: Sequence[int],
     result: GlobalPruningResult,
 ) -> None:
-    """Mark every neuron / axon of a DEAD node as pruned.
-
-    This guarantees that
-    :func:`_rewire_sources` turns every consumer reference to the dead
-    node into ``IRSource(-1, 0)`` BEFORE :meth:`IRGraph.remove_nodes`
-    deletes the node itself. Without this the consumer's ``input_sources``
-    would still point at a dangling id between the rewire and the
-    delete passes.
-    """
+    """Mark every neuron / axon of a DEAD node as pruned, so ``_rewire_sources`` rewrites
+    each consumer reference to ``IRSource(-1, 0)`` before the node is removed."""
     if not dead_node_ids:
         return
     dead_set = set(dead_node_ids)
@@ -34,11 +27,6 @@ def _force_dead_nodes_fully_pruned(
                 continue
         result.pruned_rows_per_node[node.id] = set(range(n_axons))
         result.pruned_cols_per_node[node.id] = set(range(n_neurons))
-
-
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
 
 
 def _masks_to_sets(
@@ -139,15 +127,10 @@ def _rewire_sources(
     graph: IRGraph,
     pruned_cols_per_node: Dict[int, Set[int]],
 ) -> None:
-    """Replace pruned-neuron sources with off; reindex surviving neurons.
+    """Replace pruned-neuron sources with off and reindex surviving neurons (owned-matrix cores only).
 
-    Only owned-matrix NeuralCores are physically compacted in this stage, so
-    only their producer-side neuron indices need rewiring. Bank-backed cores
-    keep their neuron indexing untouched (the soft-core mapping stage compacts
-    them later, and rewires consumers at that point).
-
-    Mutates ``input_sources`` of every node and ``output_sources`` of the
-    graph in place.
+    Bank-backed cores keep their indexing (compacted later at the soft-core stage). Mutates
+    every node's ``input_sources`` and the graph's ``output_sources`` in place.
     """
     owned_node_ids = {
         n.id for n in graph.nodes

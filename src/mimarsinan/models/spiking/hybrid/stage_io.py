@@ -8,13 +8,18 @@ import torch
 
 from mimarsinan.chip_simulation.hybrid_run.hybrid_execution import (
     assemble_segment_input_torch,
+    decref_consumers,
     gather_final_output_torch,
     store_segment_output_torch,
 )
-from mimarsinan.mapping.ir import ComputeOp, IRSource
+from mimarsinan.chip_simulation import spike_modes
+from mimarsinan.mapping.ir import IRSource
 from mimarsinan.mapping.packing.hybrid_hardcore_mapping import HybridStage, SegmentIOSlice
 from mimarsinan.mapping.support.core_geometry import used_axons, used_neurons
-from mimarsinan.mapping.support.spike_source_spans import compress_spike_sources
+from mimarsinan.mapping.support.spike_source_spans import (
+    SpikeSourceSpan,
+    compress_spike_sources,
+)
 from mimarsinan.models.spiking.signal_spans import fill_signal_from_spans
 from mimarsinan.models.spiking.spiking_config import COMPUTE_DTYPE
 
@@ -135,10 +140,6 @@ class HybridStageIOMixin:
         single_spike: bool = False,
         latency: int = 0,
     ) -> None:
-        # Single-spike TTFS: an always-on (bias) axon encodes value 1.0, i.e. a
-        # single spike at the core's LOCAL window start (global cycle == latency);
-        # its ramp is held downstream so the bias works for cores at any depth.
-        # Otherwise (LIF / latched) it injects one spike every cycle.
         on_always_on = None
         if single_spike:
             def on_always_on(d0: int, d1: int) -> None:

@@ -38,6 +38,3 @@ class KMNIST_DataProvider(DataProvider):
             "val":   [transforms.ToTensor()],
             "test":  [transforms.ToTensor()],
         }
-
-    # No FFCV opt-in: FFCV's RGBImageField requires 3 channels and there is
-    # no stock op to collapse back to 1.

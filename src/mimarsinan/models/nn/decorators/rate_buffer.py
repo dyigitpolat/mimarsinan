@@ -8,11 +8,8 @@ import torch.nn as nn
 
 class RateBuffer(nn.Module):
     """A shared scalar rate held in a registered buffer; ``set`` fills in place.
-
-    A ``RateAdjustedDecorator`` whose ``rate`` is a ``RateBuffer`` reads the live
-    ``alpha`` at transform time, so advancing the adaptation rate is an O(1)
-    in-place write rather than a full per-perceptron decorator rebuild.
-    """
+    A ``RateAdjustedDecorator`` reads the live ``alpha`` at transform time, so
+    advancing the rate is an O(1) in-place write, not a decorator rebuild."""
 
     def __init__(self) -> None:
         super().__init__()

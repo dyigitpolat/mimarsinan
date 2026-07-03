@@ -1,19 +1,4 @@
-"""SANA-FE run-record dataclasses.
-
-These records carry SANA-FE's *full* output for a single sample — per-tile
-and per-core energy breakdowns, latency (``sim_time``), NoC packet counts,
-optional per-neuron spike + potential traces, and the spike-count subset
-that overlaps with HCM's ``spike_recorder.RunRecord``.
-
-Why our own record types
-------------------------
-HCM's ``RunRecord`` is a spike-count-only shape sized for the diff-based
-parity gate.  SANA-FE produces a richer, multi-dimensional output; bolting
-the rich fields onto ``RunRecord`` would mix two simulators' contracts.
-Instead, we keep the rich record native to SANA-FE and expose a single
-lossless projection — :meth:`SanafeRunRecord.to_hcm_subset` — to bridge
-back to the HCM shape when the parity gate runs.
-"""
+"""SANA-FE per-component energy-breakdown record."""
 
 from __future__ import annotations
 
@@ -26,11 +11,8 @@ from typing import Dict
 class SanafeEnergyBreakdown:
     """Per-component energy in joules.
 
-    SANA-FE reports ``total`` independently of the components so we store
-    both: ``total_j`` is what SANA-FE returns; :meth:`components_sum` is
-    the cross-check.  In practice they agree to numerical precision, but
-    if SANA-FE ever bills overhead components we don't track, the gap is
-    visible rather than papered over.
+    ``total_j`` is SANA-FE's reported total; :meth:`components_sum` cross-checks it
+    (they agree to precision unless SANA-FE bills untracked overhead).
     """
 
     synapse_j: float

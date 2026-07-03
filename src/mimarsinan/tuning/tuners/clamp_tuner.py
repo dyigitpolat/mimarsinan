@@ -38,15 +38,9 @@ class ClampTuner(SmoothAdaptationTuner):
         self.saturation_diagnostics = self._probe_clamp_saturation()
         self._log_scale_diagnostics()
 
-        # Clamp-rate application is owned by a ClampAxis, which delegates to the
-        # apply_manager_rate SSOT (test_axis_delegation / test_perceptron_rate).
         self._axis = ClampAxis()
         self._axis.attach(self.model, self.adaptation_manager, self.pipeline.config)
 
-        # EF1: READ the pipeline-wide optimization-driver axis (the analytical chain had
-        # NO fast path before). Default `controller` ⇒ the fast ladder is carried but
-        # disabled ⇒ byte-identical; an explicit `optimization_driver=fast` drives this
-        # uniform value-domain clamp ladder.
         self._consume_optimization_driver(
             rates=self.pipeline.config.get("clamp_fast_rates", [0.25, 0.5, 0.75, 1.0]),
             steps_per_rate=int(
@@ -118,9 +112,6 @@ class ClampTuner(SmoothAdaptationTuner):
 
         decorators = []
         for perceptron in perceptrons:
-            # sample_to_cpu avoids pinning every perceptron's full output
-            # in VRAM during the forward pass; the saturation ratio is a
-            # distribution statistic that is unbiased under subsampling.
             decorator = SavedTensorDecorator(sample_to_cpu=True)
             perceptron.activation.decorate(decorator)
             decorators.append(decorator)

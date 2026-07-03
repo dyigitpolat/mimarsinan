@@ -1,23 +1,4 @@
-"""Behavior-carrying policy per (firing × sync) spiking mode (Vector V2).
-
-One polymorphic ``SpikingModePolicy`` per (firing × sync) collapses the
-``cascaded``/``synchronized`` predicate-then-branch that callers re-derive:
-
-- ``LifModePolicy`` — LIF family (``lif``).
-- ``TtfsAnalyticalModePolicy`` — closed-form analytical TTFS (``ttfs`` /
-  ``ttfs_quantized``).
-- ``TtfsSyncCycleModePolicy`` — genuine single-spike, synchronized schedule.
-- ``TtfsCascadeModePolicy`` — genuine fire-once-latch, cascaded schedule.
-
-Each carries the behavior callers previously re-derived: ``training_forward_kind``
-(the NF algorithm fine-tuners train through), ``calibration_forward`` (the
-negative-shift NF forward), ``soma_hw_name`` / ``soma_model_attributes`` (the
-SANA-FE soma chain), ``log_potential``, ``decode_mode``, and ``valid_backends``.
-
-Selection (``policy_for_spiking_mode`` / ``SpikingModePolicy.from_contract``)
-is the SSOT for ``(spiking_mode, schedule) → policy``; mirrors
-``spiking/segment_policies.py``.
-"""
+"""One behavior-carrying policy per (firing × sync) spiking mode."""
 
 from __future__ import annotations
 
@@ -27,13 +8,13 @@ from typing import Any, Optional
 from mimarsinan.chip_simulation.spiking_semantics import (
     forces_activation_quantization,
     is_analytical_ttfs,
-    is_cascaded_ttfs,
     is_synchronized_ttfs,
     is_ttfs_cycle_based,
     require_known_spiking_mode,
     require_spiking_mode_supported,
     requires_ttfs_firing,
     supports_spiking_mode,
+    ttfs_cycle_schedule,
 )
 
 __all__ = [
@@ -60,10 +41,8 @@ class ExecPolicySpec:
 class NevresimExecParams:
     """Codegen scalars for one nevresim ``main.cpp`` exec policy.
 
-    These are the comparator/reset strings (selected by the firing-strategy
-    SSOT, never here) plus the chip-shape constants the C++ templates need.
-    The (firing × sync) family — *which* compute/execution template to
-    instantiate — is the policy's decision, not part of this data.
+    Comparator/reset strings (selected by the firing-strategy SSOT, never here)
+    plus the chip-shape constants the C++ templates need.
     """
 
     compare: str
@@ -82,10 +61,9 @@ class NevresimExecParams:
 class SpikingModePolicy:
     """Behavior carried per (firing × sync) deployment mode.
 
-    Concrete subclasses override the firing-/schedule-derived behavior. The
-    base resolves only what is shared (capability gate). ``spiking_mode``
-    captures the sub-variation within a (firing × sync) family (``ttfs`` vs
-    ``ttfs_quantized``); ``schedule`` is the normalized
+    Concrete subclasses override the firing-/schedule-derived behavior; the base
+    resolves only the shared capability gate. ``spiking_mode`` captures the
+    sub-variation (``ttfs`` vs ``ttfs_quantized``); ``schedule`` is the normalized
     ``ttfs_cycle_schedule`` for the TTFS-cycle family (``None`` otherwise).
     """
 
@@ -93,63 +71,43 @@ class SpikingModePolicy:
         self.spiking_mode = spiking_mode
         self.schedule = schedule
 
-    # ── selection (SSOT) ────────────────────────────────────────────────────
     @classmethod
     def from_contract(cls, contract: Any) -> "SpikingModePolicy":
         return policy_for_spiking_mode(
             contract.spiking_mode, contract.ttfs_cycle_schedule
         )
 
-    # ── training ────────────────────────────────────────────────────────────
     def training_forward_kind(self) -> str:
         """NF algorithm the fine-tuners must train through for this deployment."""
         raise NotImplementedError
 
-    # ── calibration (negative-value shift NF forward) ───────────────────────
     def calibration_forward(self):
         """NF forward that produces this mode's boundary values for calibration."""
         raise NotImplementedError
 
-    # ── decode ──────────────────────────────────────────────────────────────
     def decode_mode(self) -> str:
         """How a segment's output is decoded: ``count`` (rate) vs ``timing`` (TTFS)."""
         raise NotImplementedError
 
-    # ── nevresim codegen (firing × sync → C++ compute/execution template) ────
     def nevresim_exec_policy(self, params: "NevresimExecParams") -> "ExecPolicySpec":
-        """The nevresim ``(ComputePolicy, Execution)`` C++ types for this mode.
-
-        The firing × sync → codegen choice lives here (one place per family);
-        ``code_generation.generate_main`` delegates to it. The comparator/reset
-        strings in ``params`` come from the firing-strategy SSOT, not from here.
-        """
+        """The nevresim ``(ComputePolicy, Execution)`` C++ types for this mode."""
         raise NotImplementedError
 
-    # ── activation-adaptation family (Vector V5 step planning) ──────────────
     @property
     def single_step_activation_replacement(self) -> bool:
         """Whether this mode has a dedicated LIF/TTFS-cycle tuning step."""
         return False
 
-    # ── conversion-health calibration family (E3 CalibrationPipeline keying) ──
     @property
     def does_conversion_health_calibration(self) -> bool:
-        """Whether this (firing × sync) cell runs the conversion-health
-        calibration steps (gain-correction / theta-cotrain / distmatch /
-        boundary-STE).
+        """Whether this (firing × sync) cell runs the conversion-health calibration steps.
 
-        The (firing × sync) decision the E3 ``CalibrationPipeline`` reads to
-        pick its active steps — hoisted off the ``ttfs_*`` flag names onto the
-        contract key so EVERY conversion tuner (not just TTFS) resolves its
-        calibration through the same policy. The default is inert (no
-        conversion-health steps); only the cell whose deployed cascade needs the
-        depth-attenuation / distribution correction overrides it. Default-off ⇒
-        the inert pipeline ⇒ byte-identical for LIF, analytical, and the
-        synchronized cycle.
+        Default inert (byte-identical for LIF, analytical, synchronized cycle); only
+        the cell whose deployed cascade needs depth-attenuation/distribution correction
+        overrides it.
         """
         return False
 
-    # ── SANA-FE soma model ──────────────────────────────────────────────────
     def soma_hw_name(self) -> str:
         """Name of the SANA-FE soma plugin for this mode."""
         raise NotImplementedError
@@ -175,7 +133,6 @@ class SpikingModePolicy:
     def requires_ttfs_firing(self) -> bool:
         return requires_ttfs_firing(self.spiking_mode)
 
-    # ── backend capability (the policy is the SSOT; spiking_semantics is its internals) ──
     def supports_backend(self, backend: str) -> bool:
         """Whether ``backend``'s capabilities support this mode."""
         return supports_spiking_mode(backend, self.spiking_mode)
@@ -196,7 +153,6 @@ class LifModePolicy(SpikingModePolicy):
 
     @property
     def single_step_activation_replacement(self) -> bool:
-        # The LIF tuner still runs after activation preconditioning.
         return True
 
     def training_forward_kind(self) -> str:
@@ -332,7 +288,6 @@ class _TtfsCycleModePolicy(SpikingModePolicy):
 
     @property
     def single_step_activation_replacement(self) -> bool:
-        # The TTFS-cycle tuner still runs after activation preconditioning.
         return True
 
     def calibration_forward(self):
@@ -353,8 +308,6 @@ class TtfsSyncCycleModePolicy(_TtfsCycleModePolicy):
         return "timing"
 
     def nevresim_exec_policy(self, params: NevresimExecParams) -> ExecPolicySpec:
-        # The synchronized schedule disables nevresim (it cannot express the
-        # sequential per-group windows), so nevresim codegen never reaches here.
         raise ValueError(
             "nevresim does not run the synchronized ttfs_cycle_based schedule; "
             "any nevresim run of ttfs_cycle_based is the cascaded schedule"
@@ -395,9 +348,6 @@ class TtfsCascadeModePolicy(_TtfsCycleModePolicy):
 
     @property
     def does_conversion_health_calibration(self) -> bool:
-        # The greedy fire-once-latch cascade is the cell whose deployed decode
-        # suffers the depth-attenuation / distribution gap; the gain-correction /
-        # theta-cotrain / distmatch / boundary-STE steps target exactly it.
         return True
 
     def training_forward_kind(self) -> str:
@@ -407,9 +357,6 @@ class TtfsCascadeModePolicy(_TtfsCycleModePolicy):
         return "count"
 
     def nevresim_exec_policy(self, params: NevresimExecParams) -> ExecPolicySpec:
-        # Genuine cascaded single-spike TTFS — its own TTFS compute/execution
-        # path (not the LIF SpikingCompute/SpikingExecution): each neuron fires
-        # once, the downstream ramp reconstructs the value.
         return ExecPolicySpec(
             compute_policy=f"TTFSCascadeCompute<{params.compare}>",
             exec_decl=(
@@ -448,27 +395,20 @@ class TtfsCascadeModePolicy(_TtfsCycleModePolicy):
 
     @property
     def log_potential(self) -> bool:
-        # Cascade decodes from spike counts, not the membrane potential trace.
         return False
 
 
 def policy_for_spiking_mode(
     spiking_mode: str, schedule=None
 ) -> SpikingModePolicy:
-    """Resolve the ``(firing × sync)`` policy for ``(spiking_mode, schedule)``.
+    """SSOT dispatch resolving the ``(firing × sync)`` policy for ``(spiking_mode, schedule)``.
 
-    The single source of truth for the dispatch; downstream callers take the
-    resolved policy instead of re-branching on ``cascaded``/``synchronized``.
     Rejects modes outside ``ALL_SPIKING_MODES`` (incl. the removed ``rate``).
     """
     mode = require_known_spiking_mode(spiking_mode)
     if is_ttfs_cycle_based(mode):
         if is_synchronized_ttfs(mode, schedule):
-            from mimarsinan.chip_simulation.spiking_semantics import ttfs_cycle_schedule
-
             return TtfsSyncCycleModePolicy(mode, ttfs_cycle_schedule(schedule))
-        from mimarsinan.chip_simulation.spiking_semantics import ttfs_cycle_schedule
-
         return TtfsCascadeModePolicy(mode, ttfs_cycle_schedule(schedule))
     if is_analytical_ttfs(mode):
         return TtfsAnalyticalModePolicy(mode)

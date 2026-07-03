@@ -13,8 +13,6 @@ class ObjectiveSpec:
     goal: Goal
 
 
-# Canonical objective catalogue
-
 ALL_OBJECTIVES: Tuple[ObjectiveSpec, ...] = (
     ObjectiveSpec("estimated_accuracy", "max"),
     ObjectiveSpec("total_params", "min"),
@@ -53,7 +51,6 @@ def default_objectives_for_mode(search_mode: str) -> Tuple[str, ...]:
         )
     if search_mode == "model":
         return ("estimated_accuracy", "total_params")
-    # joint
     return (
         "estimated_accuracy",
         "total_params",
@@ -75,7 +72,6 @@ def resolve_active_objectives(
         if n in available and n in _OBJECTIVES_BY_NAME:
             resolved.append(_OBJECTIVES_BY_NAME[n])
     if not resolved:
-        # Fallback: use all defaults for the mode
         for n in default_objectives_for_mode(search_mode):
             resolved.append(_OBJECTIVES_BY_NAME[n])
     return tuple(resolved)
@@ -93,14 +89,7 @@ class Candidate(Generic[ConfigT]):
 
 @dataclass(frozen=True)
 class SearchResult(Generic[ConfigT]):
-    """
-    Generic result container for any search backend.
-
-    - For single-objective search, pareto_front may be empty and best is defined.
-    - For multi-objective search, pareto_front contains the nondominated set and best is the
-      selected tradeoff point.
-    - all_candidates contains every evaluated candidate across all generations.
-    """
+    """Generic result container for any search backend."""
 
     objectives: Sequence[ObjectiveSpec]
     best: Candidate[ConfigT]
@@ -109,17 +98,11 @@ class SearchResult(Generic[ConfigT]):
     history: List[Dict[str, Any]] = field(default_factory=list)
 
 
-# Minimax-rank selection
-
 def _rank_candidates(
     candidates: Sequence[Candidate[ConfigT]],
     objectives: Sequence[ObjectiveSpec],
 ) -> List[List[int]]:
-    """Return ``ranks[i][j]`` — the 1-based rank of candidate *i* on objective *j*.
-
-    Ties receive the same rank (dense ranking).  Rank 1 is *best* for the
-    objective's goal direction.
-    """
+    """Return ``ranks[i][j]`` — the 1-based rank of candidate *i* on objective *j* (dense; rank 1 is best)."""
     n = len(candidates)
     ranks: List[List[int]] = [[0] * len(objectives) for _ in range(n)]
 
@@ -141,18 +124,9 @@ def select_minimax_rank(
     candidates: Sequence[Candidate[ConfigT]],
     objectives: Sequence[ObjectiveSpec],
 ) -> Optional[Candidate[ConfigT]]:
-    """Pick the best-balanced candidate from a Pareto front.
+    """Pick the candidate whose worst rank across all objectives is minimal.
 
-    Algorithm (increasing *N* until a candidate qualifies):
-      N = 1 → is any candidate ranked #1 on **every** objective?
-      N = 2 → is any candidate in the top 2 on every objective?
-      …
-      Stop at the smallest *N* that yields at least one qualifying candidate.
-
-    This is equivalent to selecting the candidate whose *worst rank across
-    all objectives* is minimal (minimax-rank).  Ties are broken by the sum
-    of ranks (prefer the most uniformly strong candidate).
-
+    Ties are broken by the sum of ranks (prefer the most uniformly strong).
     Returns ``None`` when *candidates* is empty.
     """
     if not candidates:
@@ -170,7 +144,6 @@ def select_minimax_rank(
     if len(tied) == 1:
         return candidates[tied[0]]
 
-    # Tiebreaker: smallest sum of ranks (most uniformly strong).
     best_idx = min(tied, key=lambda i: sum(ranks[i]))
     return candidates[best_idx]
 

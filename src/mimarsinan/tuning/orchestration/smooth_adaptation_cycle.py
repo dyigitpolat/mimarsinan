@@ -28,9 +28,6 @@ class SmoothAdaptationCycleMixin(TunerBase):
 
     def __init__(self, pipeline, model, target_accuracy, lr):
         super().__init__(pipeline, model, target_accuracy, lr)
-        # Per-cycle rollback snapshots are owned by CheckpointGuard. The default
-        # scope/location ("full"/"device") delegate verbatim to the trainer-state
-        # clone; "tunable"/"cpu_pinned" are scaling opt-ins (test_checkpoint_guard).
         self._checkpoint_guard = CheckpointGuard(
             self.trainer,
             scope=pipeline.config.get("checkpoint_scope", "full"),
@@ -47,7 +44,6 @@ class SmoothAdaptationCycleMixin(TunerBase):
         self._pipeline_hard_floor = None
         self._pre_relaxation_target = None
         self._validation_baseline = None
-        # Recovery-quality knobs (all default-off → byte-identical, see defaults.py).
         self._refind_lr_on_miss = bool(
             pipeline.config.get("tuning_refind_lr_on_miss", False)
         )
@@ -63,55 +59,32 @@ class SmoothAdaptationCycleMixin(TunerBase):
         self._rollback_ratchet = bool(
             pipeline.config.get("tuning_rollback_ratchet", False)
         )
-        # Max cumulative drift below the best-committed high-water mark that the
-        # non-stalling ratchet tolerates (CHANGE 1); the bound tightens as the
-        # best ratchets up. Only consulted when ``tuning_rollback_ratchet`` is on.
         self._rollback_cumulative_bound = float(
             pipeline.config.get("tuning_rollback_cumulative_bound", 0.05)
         )
-        # High-water mark for the ratcheting rollback gate; seeded on first commit.
         self._best_committed_acc = None
-        # Tighter plateau detection (CHANGE 3): divide the recovery check interval
-        # so the stale-streak patience trips after fewer steps (validation is cheap).
         self._tight_plateau = bool(
             pipeline.config.get("tuning_tight_plateau", False)
         )
         self._recovery_check_divisor = max(
             1, int(pipeline.config.get("tuning_recovery_check_divisor", 1))
         )
-        # CERTIFIED non-destructive controller (R7d, default off → byte-identical):
-        # snapshot the best-committed STATE and restore it at finalize if the run
-        # ends worse. ``_best_committed_state``/``_best_committed_metric`` are the
-        # run-level keep-best record (distinct from ``_best_committed_acc``, the
-        # ratchet's scalar high-water mark — that snapshots no state).
         self._keepbest_certified = bool(
             pipeline.config.get("tuning_keepbest_certified", False)
         )
         self._best_committed_state = None
         self._best_committed_metric = None
-        # Bounded cosine-scheduled stabilization (CHANGE 2): a single hard-cutoff
-        # pass of ``ratio * gradual_train_steps`` steps with a cosine-decay LR.
         self._stabilization_bounded = bool(
             pipeline.config.get("tuning_stabilization_bounded", False)
         )
         self._stabilization_ratio = float(
             pipeline.config.get("tuning_stabilization_ratio", 0.5)
         )
-        # Total gradual recovery steps, accumulated across the ramp cycles so the
-        # bounded stabilization pass can size itself relative to the ramp's cost.
         self._gradual_train_steps = 0
         self._cycle_log = DecisionTrace.new()
         self._cached_lr = None
-        # P2b paired-McNemar rollback gate (vs the fixed baseline correctness
-        # vector on a shared confirm subsample); off unless flagged.
         self._paired_gate = bool(pipeline.config.get("tuning_use_paired_sensor", False))
         self._k_commit = float(pipeline.config.get("k_commit", 2.0))
-        # §8.2 practical-significance floor. The fallback matches the registered
-        # default (0.0) so an absent key never silently diverges. 0.0 = no floor
-        # (the ablation-validated best-accuracy setting; a 0.005 floor was measured
-        # to erase the paired gain — docs/tuning_optimization_flags.md §1); a
-        # positive value trades accuracy for anti-thrash protection. A negative
-        # budget is meaningless and rejected here.
         self._global_budget = float(pipeline.config.get("global_budget", 0.0))
         if self._global_budget < 0.0:
             raise ValueError(
@@ -121,21 +94,12 @@ class SmoothAdaptationCycleMixin(TunerBase):
             )
         self._confirm_indices = None
         self._ref_correct = None
-        # Diagnostic (``tuning_full_transform_probe``, default off): after each
-        # commit, probe BOTH the value-domain and the GENUINE full-transformation
-        # (rate 1.0) accuracy to check whether the gradual ramp pulls the model
-        # toward 1.0-viability — i.e. whether ``genuine_drop`` shrinks as the
-        # committed rate climbs. The value↔genuine divergence (``proxy_gap``)
-        # surfaces the deployed cliff the value-domain proxy hides.
         self._full_transform_probe = bool(
             pipeline.config.get("tuning_full_transform_probe", False)
         )
         self._full_transform_log = []
-        # Cache only the fixed decision subsample on the device — a seeded reservoir
-        # sample (representative + stable across the run) — instead of the whole
-        # validation set (the W8 ImageNet-scale fix).
         self.trainer._val_cache_max_batches = self._budget.eval_n_batches
-        self.trainer._gpu_val_cache = None  # rebuild capped on next eval
+        self.trainer._gpu_val_cache = None
 
     def _update_and_evaluate(self, rate):
         """Apply transformation T at *rate* and return a validation metric."""
@@ -149,11 +113,9 @@ class SmoothAdaptationCycleMixin(TunerBase):
         return self.trainer.validate()
 
     def _recovery_training_hooks(self, rate):
-        """Return a list of hooks to keep active during recovery training.
+        """Hooks to keep active during recovery training (removed when it finishes).
 
-        Subclasses (e.g. PruningTuner) override this to register forward
-        pre-hooks that enforce invariants (e.g. pruning masks) throughout
-        recovery. Hooks are removed after recovery finishes.
+        Subclasses override this to enforce invariants (e.g. pruning masks).
         """
         return []
 
@@ -167,13 +129,8 @@ class SmoothAdaptationCycleMixin(TunerBase):
     def _ft_pass_wall_log(self) -> FtPassWallLog:
         """The per-fine-tuning-PASS wall log (AC5), lazily created per run.
 
-        Each adaptation PASS (the recover / below-floor / stabilize fine-tuning
-        passes) is timed into this log on a MONOTONIC clock; ``max_ft_pass_wall_s``
-        is the worst single pass — the per-FT-step number AC5 is judged on, NOT the
-        end-to-end pipeline wall. The log is keyed to the run's ``_run_t0`` epoch
-        (set by ``run()``) so a re-run on the same instance starts a fresh log
-        instead of accumulating across runs — without the owned cycle code having to
-        hook the un-owned ``run()`` reset."""
+        Keyed to the run's ``_run_t0`` epoch so a re-run on the same instance starts
+        a fresh log instead of accumulating across runs."""
         run_epoch = getattr(self, "_run_t0", None)
         log = getattr(self, "_ft_wall_log", None)
         if log is None or getattr(self, "_ft_wall_log_epoch", None) != run_epoch:
@@ -189,10 +146,8 @@ class SmoothAdaptationCycleMixin(TunerBase):
 
     @property
     def max_ft_pass_wall_s(self) -> float:
-        """The worst single fine-tuning pass wall in seconds (AC5's number).
-
-        0.0 when no FT pass ran — a well-defined float, never ``None`` (A4's AC5
-        verdict reads ``max_ft_pass_wall_s`` as the per-FT-step wall to threshold)."""
+        """The worst single fine-tuning pass wall in seconds (AC5's number); 0.0 when
+        no FT pass ran — a well-defined float, never ``None``."""
         return self._ft_pass_wall_log().max_wall_s
 
     def ft_pass_wall_metrics(self) -> dict:
@@ -257,10 +212,9 @@ class SmoothAdaptationCycleMixin(TunerBase):
         return interval
 
     def _accumulate_gradual_steps(self, recovery_result):
-        """Add the step count a gradual recovery call reported to the running
-        total (CHANGE 2). ``recovery_result`` is ``(accuracy, steps)`` only when
-        ``return_steps`` was requested (bounded stabilization on); otherwise it is
-        the bare accuracy and contributes nothing."""
+        """Add the step count a gradual recovery call reported to the running total.
+        ``recovery_result`` is ``(accuracy, steps)`` only when ``return_steps`` was
+        requested; otherwise the bare accuracy contributes nothing."""
         if isinstance(recovery_result, tuple) and len(recovery_result) == 2:
             self._gradual_train_steps += int(recovery_result[1])
 
@@ -274,12 +228,10 @@ class SmoothAdaptationCycleMixin(TunerBase):
         )
 
     def _certified_gate_metric(self, paired_post_acc=None):
-        """The keep-best gate metric (R7d). Reads the SAME basis the commit gate
-        uses: the paired correctness fraction over the shared confirm subsample when
-        ``tuning_use_paired_sensor`` is on (deployed-anchored where available), else
-        ``probe()`` (``validate_n_batches(eval_n_batches)``). ``paired_post_acc``
-        reuses an already-computed commit-time paired fraction to avoid a second eval
-        pass; ``None`` forces a fresh read (the finalize-time measurement)."""
+        """The keep-best gate metric, reading the same basis the commit gate uses:
+        the paired correctness fraction when ``tuning_use_paired_sensor`` is on, else
+        ``probe()``. ``paired_post_acc`` reuses a commit-time fraction; ``None`` forces
+        a fresh read."""
         if getattr(self, "_paired_gate", False) and self._ref_correct is not None:
             if paired_post_acc is not None:
                 return float(paired_post_acc)
@@ -288,10 +240,9 @@ class SmoothAdaptationCycleMixin(TunerBase):
         return float(self.probe())
 
     def _snapshot_best_committed_if_improved(self, post_acc):
-        """R7d: on a commit whose gate metric STRICTLY beats the running best,
-        clone the model STATE into ``_best_committed_state`` (the run-level keep-best
-        record ``_finalize_run`` restores). No-op unless ``tuning_keepbest_certified``
-        is on, so the default path takes no snapshot."""
+        """On a commit whose gate metric strictly beats the running best, clone the
+        model state into ``_best_committed_state``. No-op unless
+        ``tuning_keepbest_certified`` is on."""
         if not getattr(self, "_keepbest_certified", False):
             return
         metric = self._certified_gate_metric(paired_post_acc=post_acc)
@@ -300,15 +251,11 @@ class SmoothAdaptationCycleMixin(TunerBase):
             self._best_committed_metric = float(metric)
             self._best_committed_state = self._clone_state()
 
-    # Tuners that REPLACE model parameters each cycle (weight-quant /
-    # PerceptronTransform) cannot persist Adam moments — a held optimizer would
-    # step stale tensors. They opt out via this flag.
     _supports_persistent_optimizer = True
 
     def _optimizer_policy(self):
-        """Persist optimizer (Adam) moments across the LR sweep / recovery within a
-        cycle — a near-zero-cost efficiency win (no per-call optimizer rebuild).
-        Tuner families whose recovery replaces the parameter set each cycle
+        """Persist optimizer moments across recovery within a cycle. Families whose
+        recovery replaces the parameter set each cycle
         (``_supports_persistent_optimizer = False``) always reset."""
         if not getattr(self, "_supports_persistent_optimizer", True):
             return RESET_PER_CYCLE
@@ -327,11 +274,9 @@ class SmoothAdaptationCycleMixin(TunerBase):
     def _adaptation(self, rate):
         """Recovery training at a given rate with rollback on regression.
 
-        The per-cycle control flow (predictor → corrector → commit/rollback) is
-        owned by ``AdaptationDriver.run_cycle``; this tuner supplies the phase
-        operations below (``_begin_cycle`` / ``_probe_instant`` / ``_recover`` /
-        ``_measure_post`` / ``_rollback_cycle`` / ``_commit_cycle``) that it
-        drives. The decision math stays in ``AcceptanceSensor``."""
+        The predictor → corrector → commit/rollback flow is owned by
+        ``AdaptationDriver.run_cycle``; this tuner supplies the phase operations.
+        """
         return AdaptationDriver.run_cycle(self, rate)
 
     def _begin_cycle(self, rate) -> CycleContext:
@@ -343,8 +288,6 @@ class SmoothAdaptationCycleMixin(TunerBase):
 
         pre_state = self._clone_state()
         last = getattr(self, "_last_post_acc", None)
-        # EF2: the pre-cycle baseline read goes THROUGH the seam ``probe`` verb
-        # (``probe`` == ``float(validate_n_batches(eval_n_batches))`` — byte-identical).
         pre_cycle_acc = float(last) if last is not None else self.probe()
         return CycleContext(
             rate=float(rate),
@@ -354,11 +297,7 @@ class SmoothAdaptationCycleMixin(TunerBase):
         )
 
     def _probe_instant(self, ctx: CycleContext) -> None:
-        """Apply the transform and read the pre-recovery (instant) accuracy.
-
-        EF2: the predictor goes THROUGH the seam ``ramp`` verb (``ramp(rate)`` ==
-        ``_update_and_evaluate(float(rate))`` — byte-identical), still tagged
-        ``probe`` for the GUI exploratory-trace channel."""
+        """Apply the transform and read the pre-recovery (instant) accuracy."""
         with self.trainer.validation_context("probe"):
             ctx.instant_acc = self.ramp(ctx.rate)
         ctx.is_catastrophic = AcceptanceSensor.is_catastrophic(
@@ -367,11 +306,8 @@ class SmoothAdaptationCycleMixin(TunerBase):
 
     def _recover_to_target(self, target, rate):
         """The corrector primitive: find the cached LR and run recovery training
-        toward ``target`` at the given ramp ``rate``. Returns ``(lr, result)``.
-
-        SSOT for the per-cycle ``_recover`` AND the driver-facing ``recover_to``
-        seam verb (``RateTunerSeamMixin``) — both reach the recovery engine through
-        this one assembly, so the seam is byte-identical to the legacy cycle path.
+        toward ``target`` at ramp ``rate``. Returns ``(lr, result)``. SSOT for the
+        per-cycle ``_recover`` and the ``recover_to`` seam verb.
         """
         t0 = time.time()
         lr = self._get_cached_lr()
@@ -403,12 +339,8 @@ class SmoothAdaptationCycleMixin(TunerBase):
         return lr, recovery_result
 
     def _recover(self, ctx: CycleContext) -> None:
-        """Find the LR and run recovery training toward the target.
-
-        EF2: the corrector goes THROUGH the seam ``recover_to`` verb (which routes
-        the SAME ``_recover_to_target`` SSOT and stashes the discovered LR on
-        ``self._last_recover_lr``); the cycle reads that lr back for the trace
-        record — byte-identical to the prior direct ``(lr, _)`` unpack."""
+        """Find the LR and run recovery training toward the target (through the
+        ``recover_to`` seam verb, reading the discovered LR back for the trace)."""
         self.recover_to(self._get_target(), rate=ctx.rate)
         ctx.lr = self._last_recover_lr
 
@@ -429,10 +361,6 @@ class SmoothAdaptationCycleMixin(TunerBase):
                 ctx.pre_cycle_acc, ctx.noise_margin, ctx.absolute_floor
             )
         if getattr(self, "_paired_gate", False) and self._ref_correct is not None:
-            # D6: a single post-recovery pass. ``post_acc`` is the accuracy of the
-            # SAME paired correctness vector the rollback gate uses — one eval, one
-            # statistical basis (the legacy path ran both ``validate_n_batches`` AND
-            # this correctness pass, part of the paired gate's +139% cost).
             cand_correct = self.trainer.validate_correctness_on_indices(self._confirm_indices)
             ctx.cand_correct = cand_correct
             ctx.post_acc = (
@@ -443,8 +371,6 @@ class SmoothAdaptationCycleMixin(TunerBase):
                 min_effect=self._global_budget,
             )
         else:
-            # EF2: the post-recovery read goes THROUGH the seam ``probe`` verb
-            # (== ``float(validate_n_batches(eval_n_batches))`` — byte-identical).
             ctx.post_acc = self.probe()
             ctx.rolled_back = AcceptanceSensor.is_rollback(ctx.post_acc, ctx.rollback_threshold)
 
@@ -514,10 +440,6 @@ class SmoothAdaptationCycleMixin(TunerBase):
                     self.target_adjuster.target_metric, abs_floor
                 )
             self._missed_target_streak = 0
-            # CHANGE 4: when ``tuning_refind_lr_on_miss`` is on, a miss is the SOLE
-            # LR-cache invalidation trigger (each miss already invalidated it on
-            # the way to the streak); the relaxation does not re-invalidate. Flag
-            # off keeps the historical streak-relaxation invalidation, unchanged.
             if not getattr(self, "_refind_lr_on_miss", False):
                 self._invalidate_lr_cache()
 
@@ -542,9 +464,8 @@ class SmoothAdaptationCycleMixin(TunerBase):
         return ctx.rate
 
     def _value_full_transform_eval(self):
-        """The value-domain rate-1.0 accuracy from the committed state: clone
-        state, apply transformation T at 1.0, evaluate, restore. Always
-        non-destructive (the historical full-transform measurement)."""
+        """The value-domain rate-1.0 accuracy from the committed state: clone, apply
+        T at 1.0, evaluate, restore. Non-destructive."""
         pre = self._clone_state()
         try:
             return float(self._update_and_evaluate(1.0))
@@ -552,20 +473,15 @@ class SmoothAdaptationCycleMixin(TunerBase):
             self._restore_state(pre)
 
     def _full_transform_eval(self):
-        """The GENUINE full-transform accuracy, non-destructive. BASE DEFAULT is
-        the value-domain measurement (tuners with no separate genuine forward →
-        genuine == value); ``KDBlendAdaptationTuner`` overrides this to run the
-        deployed cascade/cycle-accurate forward on an isolated clone."""
+        """The GENUINE full-transform accuracy, non-destructive. Base default is the
+        value-domain measurement; ``KDBlendAdaptationTuner`` overrides it to run the
+        deployed forward on an isolated clone."""
         return self._value_full_transform_eval()
 
     def _probe_full_transform(self, committed_acc):
-        """Diagnostic: per-commit, measure BOTH the value-domain rate-1.0
-        accuracy and the GENUINE full-transform accuracy from the freshly
-        committed state. ``value_drop``/``genuine_drop`` (committed_acc minus the
-        respective full accuracy) show whether the ramp pulls the model toward
-        1.0-viability; ``proxy_gap = value_full_acc - genuine_full_acc`` is the
-        value↔genuine divergence (the "probe was fooled" evidence — the deployed
-        cliff the value-domain proxy hides)."""
+        """Diagnostic: per-commit, measure the value-domain and GENUINE rate-1.0
+        accuracies; ``proxy_gap = value_full_acc - genuine_full_acc`` surfaces the
+        deployed cliff the value-domain proxy hides."""
         if not getattr(self, "_full_transform_probe", False):
             return
         if self._committed_rate >= 1.0 - 1e-6:
@@ -583,7 +499,6 @@ class SmoothAdaptationCycleMixin(TunerBase):
             "value_drop": value_drop,
             "genuine_drop": genuine_drop,
             "proxy_gap": proxy_gap,
-            # Legacy aliases (test_full_transform_probe.py): the value pair.
             "full_acc": value_full_acc,
             "drop": value_drop,
         })
@@ -602,7 +517,6 @@ class SmoothAdaptationCycleMixin(TunerBase):
             "value_drop": round(value_drop, 4),
             "genuine_drop": round(genuine_drop, 4),
             "proxy_gap": round(proxy_gap, 4),
-            # Legacy aliases.
             "full_acc": round(value_full_acc, 4),
             "drop": round(value_drop, 4),
         })
@@ -650,7 +564,6 @@ class SmoothAdaptationCycleMixin(TunerBase):
 
         self._restore_state(best_state)
         if best_val < hard_floor:
-            import warnings
             warnings.warn(
                 f"{self.__class__.__name__}: could not recover validation "
                 f"above pipeline floor after retries "

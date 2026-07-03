@@ -21,8 +21,6 @@ class NeuralSegmentResult:
 
 
 def is_ttfs_spiking_mode(spiking_mode: str) -> bool:
-    # Includes ttfs_cycle_based: it is TTFS-family and (by the ReLU↔TTFS
-    # equivalence) uses the analytical quantized reference in the Python paths.
     return requires_ttfs_firing(spiking_mode)
 
 

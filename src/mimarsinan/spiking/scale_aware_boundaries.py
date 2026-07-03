@@ -1,5 +1,4 @@
-"""Scale-aware TTFS boundaries: theta_out normalizes a block's output to [0,1];
-the downstream input_scale un-normalizes the [0,1] spike train back to values."""
+"""Scale-aware TTFS boundaries: theta_out normalizes a block output to [0,1]; the downstream input_scale un-normalizes it."""
 
 from __future__ import annotations
 
@@ -16,9 +15,8 @@ def _as_model_repr(model_repr_or_model):
 def propagate_boundary_input_scales(model_repr_or_model, input_data_scale: float = 1.0):
     """Forward-propagate theta_out so each perceptron's ``input_activation_scale``
     equals the mean theta_out of its upstream perceptron source(s); the input
-    boundary uses ``input_data_scale``. Shares the polymorphic out-scale walk with
-    :func:`compute_per_source_scales` via each mapper's ``propagate_boundary_scale``
-    (do not duplicate the graph walk)."""
+    boundary uses ``input_data_scale``.
+    """
     model_repr = _as_model_repr(model_repr_or_model)
     default = float(input_data_scale)
     walk_out_scales(
@@ -30,17 +28,10 @@ def propagate_boundary_input_scales(model_repr_or_model, input_data_scale: float
 
 
 def calibrate_scale_aware_boundaries(model, activation_scales, input_data_scale: float = 1.0):
-    """Set each block's ``activation_scale`` to its distribution-grounded theta_out,
-    then propagate so every input un-normalizes from [0,1] (input_scale = upstream
-    theta_out). Generic; no model-specific logic.
-
-    The ENCODING layer is excluded: its output scale is fixed by the hardware
-    input spike-encoding contract (the data→spike generation), not free for
-    distribution matching to retune. Retuning it to a teacher quantile (e.g. 2.17
-    vs the data scale 1.0) silently breaks NF↔SCM deployment parity — the cascade
-    decodes the encoded input at the retuned scale but the hardware executor
-    encodes at the data scale, diverging worst at the shallow layers that consume
-    the encoded input. So the encoding block is pinned to ``input_data_scale``."""
+    """Set each block's ``activation_scale`` to its theta_out, then propagate so
+    every input un-normalizes from [0,1]. The encoding layer is pinned to
+    ``input_data_scale`` (retuning it breaks NF↔SCM deployment parity).
+    """
     perceptrons = list(model.get_perceptrons())
     if len(activation_scales) != len(perceptrons):
         raise ValueError(

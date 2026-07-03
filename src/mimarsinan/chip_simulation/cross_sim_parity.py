@@ -1,34 +1,4 @@
-"""Cross-simulator parity SCREENING instrument (Wave-1 B1).
-
-A denominator-shrinking screening ARTIFACT for the ``backend`` hypervolume axis.
-A later coverage step may flip ``backend`` from ``ASSERTED_UNSCREENED`` to
-``SCREENED_COLLAPSED`` (fidelity-only, like ``encoding_placement``) — but ONLY
-because this instrument RECORDS measured equivalence per (cell, backend-pair); it
-never ASSERTS it.
-
-Three outcome states per (cell, backend-pair):
-
-* ``AGREE`` — the two backends ran the cell and their per-neuron values match
-  within ``tolerance``; the MEASURED ``max_abs_diff`` is recorded.
-* ``DISAGREE`` — they ran the cell but the value gap exceeds ``tolerance``; the
-  quantified gap is recorded (and a ``reason`` if the gap is understood/expected).
-* ``INAPPLICABLE`` — a backend cannot run the cell's spiking mode (DERIVED from the
-  ``_BACKEND_CAPS`` capability registry via ``SpikingModePolicy.supports_backend``).
-  The backend is NEVER executed-to-hang; the reason is recorded.
-
-The nevresim Python sim + the HCM/SCM analytical reference are the FAST,
-already-bit-exact pair (the torch↔sim fidelity lock proves it cell-by-cell). The
-parity MATH is REUSED from ``pipelining.core.nf_scm_parity`` (the order-insensitive
-per-perceptron sorted-multiset comparison), never re-implemented here.
-
-SANA-FE / Lava are screened by CAPABILITY only: their applicability is derived from
-the registry and recorded as INAPPLICABLE-with-reason when a mode is unsupported —
-they are not run by this instrument.
-
-``write_cross_sim_screen`` emits a JSON-able artifact with NO wall-clock timestamp
-(deterministic/diffable). ``assert_cross_sim_screen_sound`` is the honesty gate the
-coverage screen calls before it may trust the artifact for a collapse.
-"""
+"""Cross-simulator parity screening instrument recording measured per-(cell, backend-pair) equivalence."""
 
 from __future__ import annotations
 
@@ -72,10 +42,8 @@ _VALID_STATE_VALUES = frozenset(s.value for s in CrossSimState)
 class CrossSimOutcome:
     """One screened (cell, backend-pair) result.
 
-    ``max_abs_diff`` is the MEASURED per-neuron value gap (mandatory for AGREE and
-    DISAGREE; ``None`` for INAPPLICABLE — nothing was run). ``reason`` carries the
-    INAPPLICABLE cause or a DISAGREE explanation (``None`` for a plain AGREE and for
-    an un-reasoned DISAGREE the soundness gate must catch under a collapse claim).
+    ``max_abs_diff`` is the MEASURED per-neuron gap (``None`` for INAPPLICABLE — nothing
+    was run); ``reason`` carries the INAPPLICABLE cause or a DISAGREE explanation.
     """
 
     cell: str
@@ -99,11 +67,9 @@ class CrossSimOutcome:
 def derive_applicability(
     backend: str, spiking_mode: str
 ) -> Tuple[bool, Optional[str]]:
-    """Whether ``backend`` can run ``spiking_mode`` — DERIVED from the capability
-    registry, never by executing the backend.
+    """Whether ``backend`` can run ``spiking_mode``, derived from the capability registry (never executed).
 
-    Returns ``(applicable, reason)``: a supported pair is ``(True, None)``; an
-    unsupported pair is ``(False, "<backend> cannot run spiking_mode=<mode> ...")``.
+    Returns ``(applicable, reason)`` — ``(True, None)`` when supported, else ``(False, <why>)``.
     """
     policy = policy_for_spiking_mode(spiking_mode)
     if policy.supports_backend(backend):
@@ -120,18 +86,10 @@ def measured_max_abs_diff(
     nf_record: Dict[int, np.ndarray],
     scm_record: Dict[int, np.ndarray],
 ) -> float:
-    """The max per-neuron |Δ| between two per-perceptron records.
+    """The max per-neuron |Δ| between two per-perceptron records, via ``nf_scm_parity`` (wrapped, not duplicated).
 
-    REUSES the order-insensitive sorted-multiset comparison from
-    ``nf_scm_parity.compare_normalized_records`` (atol=0 reports the true worst
-    gap; a permuted-but-equal row reads 0). The parity math is wrapped, not
-    duplicated.
-
-    Records must already share the deployed neuron reality: when one side is a
-    full analytical (NF) record and the other a pruned deployment (M < N neurons),
-    the caller must first project the full record with
-    ``mapping.pruning.DeployedNeuronSurvival.project`` (derived from the pruned
-    ir_graph) — otherwise the shape check fails loud, as it should.
+    Records must already share the deployed neuron reality (a pruned side must first be
+    projected with ``mapping.pruning.DeployedNeuronSurvival.project``), else the shape check fails loud.
     """
     _, _, worst = compare_normalized_records(nf_record, scm_record, atol=0.0)
     if worst is None:
@@ -152,11 +110,8 @@ def screen_cell_pair(
 ) -> CrossSimOutcome:
     """Screen one (cell, backend-pair) into a 3-state outcome.
 
-    Applicability is checked FIRST from the capability registry: if EITHER backend
-    cannot run the mode, the outcome is INAPPLICABLE (the records are not consulted
-    and the backend is never run). Otherwise the supplied per-neuron records are
-    compared: AGREE if the measured ``max_abs_diff <= tolerance``, else DISAGREE
-    (carrying ``disagree_reason`` if the gap is understood).
+    Applicability is checked FIRST: if either backend cannot run the mode → INAPPLICABLE
+    (records not consulted). Otherwise AGREE iff ``max_abs_diff <= tolerance``, else DISAGREE.
     """
     applicable_a, reason_a = derive_applicability(backend_a, spiking_mode)
     applicable_b, reason_b = derive_applicability(backend_b, spiking_mode)
@@ -215,14 +170,10 @@ def write_cross_sim_screen(
     methodology: str,
     justifies_collapse: bool = False,
 ) -> Dict[str, Any]:
-    """Build the JSON-able screening artifact dict.
+    """Build the JSON-able screening artifact dict (deterministic/diffable — no timestamp).
 
-    Deterministic / diffable: NO wall-clock timestamp is embedded. ``methodology``
-    notes WHY the nevresim≡HCM pair is the fast already-bit-exact reference and that
-    SANA-FE/Lava applicability is capability-derived. ``justifies_collapse`` records
-    whether this artifact CLAIMS it supports collapsing the ``backend`` axis (the
-    soundness gate enforces that such a claim cannot coexist with an un-reasoned
-    DISAGREE).
+    ``justifies_collapse`` records whether the artifact claims it supports collapsing the
+    ``backend`` axis (the soundness gate rejects that claim over an un-reasoned DISAGREE).
     """
     return {
         "schema": "cross_sim_parity/v1",
@@ -237,15 +188,8 @@ def write_cross_sim_screen(
 def assert_cross_sim_screen_sound(artifact: Dict[str, Any]) -> None:
     """The honesty gate the coverage screen calls before trusting the artifact.
 
-    RAISES :class:`CrossSimParityError` if:
-
-    * any outcome state is malformed (not one of the 3 known states);
-    * any AGREE or DISAGREE lacks a recorded ``max_abs_diff`` (an equivalence /
-      gap claim without a measured number is not honest);
-    * any INAPPLICABLE carries a ``max_abs_diff`` (nothing was run, so there is no
-      number to record) or lacks a reason;
-    * the artifact claims it ``justifies_collapse`` while containing an un-reasoned
-      DISAGREE (a collapse cannot rest on an unexplained divergence).
+    RAISES on a malformed state, an AGREE/DISAGREE without a measured ``max_abs_diff``, an
+    INAPPLICABLE that carries one or lacks a reason, or a collapse claim over an un-reasoned DISAGREE.
     """
     outcomes = artifact.get("outcomes")
     if not isinstance(outcomes, list):
@@ -280,7 +224,7 @@ def assert_cross_sim_screen_sound(artifact: Dict[str, Any]) -> None:
                 )
             if not (entry.get("reason") and str(entry["reason"]).strip()):
                 unreasoned_disagrees.append(str(cell))
-        else:  # INAPPLICABLE
+        else:
             if max_abs_diff is not None:
                 raise CrossSimParityError(
                     f"cross-sim screen malformed: INAPPLICABLE outcome for cell "

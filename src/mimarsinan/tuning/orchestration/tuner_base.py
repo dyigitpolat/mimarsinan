@@ -2,20 +2,15 @@
 
 from __future__ import annotations
 
-import time
-
 from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory
 from mimarsinan.model_training.basic_trainer import BasicTrainer
 from mimarsinan.model_training.training_recipe import build_recipe
 from mimarsinan.tuning.adaptation_target_adjuster import AdaptationTargetAdjuster
 from mimarsinan.tuning.learning_rate_explorer import (
-    clone_state_for_trainer,
     find_lr_range_for_trainer,
     make_loss_slope_signal,
-    restore_state_for_trainer,
 )
 from mimarsinan.tuning.orchestration.tuning_budget import (
-    min_step_for_smooth_adaptation,
     resolve_tuning_batch_size,
     tuning_budget_from_pipeline,
 )
@@ -24,14 +19,9 @@ from mimarsinan.tuning.orchestration.tuning_budget import (
 CATASTROPHIC_DROP_FACTOR = 0.8
 """Pre-recovery fast-fail margin, as a fraction of the adaptation target.
 
-Deliberately coarse, and NOT a standard-error gate: ``is_catastrophic`` runs on
-the *instant* accuracy right after a transformation step is applied but BEFORE
-recovery training, where a large drop is expected and routinely reclaimed by
-recovery. A statistically tight ``target - k·SE`` threshold would abort almost
-every cycle before recovery could run. 0.8 bails only when the raw post-transform
-accuracy has collapsed past a fifth of target — beyond any recoverable range. It
-is the default ``factor`` of ``AcceptanceSensor.is_catastrophic`` (injectable, so
-a caller may tighten it without mutating this module-level default).
+Deliberately coarse, NOT a standard-error gate: the instant pre-recovery drop is
+expected to be large and routinely reclaimed by recovery, so this bails only on
+collapse beyond any recoverable range (the injectable ``is_catastrophic`` default).
 """
 
 _RECOVERY_PATIENCE = 5
@@ -93,9 +83,6 @@ class TunerBase:
             self.trainer.close()
 
     def _find_lr(self):
-        # Rank the coarse LR sweep by a cheap training loss-slope signal (reserving
-        # full validation for the top few). Trainers without a loss-slope signal
-        # (some stubs) fall back to full-validation scoring.
         coarse_signal = make_loss_slope_signal(self.trainer)
         with self.trainer.validation_context("probe"):
             return find_lr_range_for_trainer(

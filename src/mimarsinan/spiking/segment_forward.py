@@ -36,10 +36,8 @@ __all__ = [
 class SegmentForwardDriver:
     """Segment-aware forward over a ``ModelRepresentation`` exec graph.
 
-    Owns the mode-agnostic walk: spike/value node classification, segment
-    partition, host ComputeOps run once on decoded values (with min-calibration
-    recording and ``_negative_shift`` application), consumer-refcount eviction.
-    The segment-internal spike dynamics are delegated to ``policy.run_segment``.
+    Owns the mode-agnostic walk (classification, partition, host ComputeOps,
+    eviction); segment-internal spike dynamics are delegated to ``policy.run_segment``.
     """
 
     def __init__(self, mapper_repr, T: int, policy):
@@ -83,10 +81,9 @@ class SegmentForwardDriver:
         return ext
 
     def _assert_segment_inputs_precede_segments(self):
-        """A segment runs atomically at its first member; every external input
-        must already be computed there. A host op interleaved inside a neural
-        segment (consuming a mid-segment decode and feeding back in) breaks
-        that and is not supported by the segment-aware forward."""
+        """A segment runs atomically at its first member, so every external input
+        must already be computed there; host ops interleaved inside a neural
+        segment are not supported."""
         for seg_nodes in self._segments.values():
             first = min(self._index[n] for n in seg_nodes)
             seg_set = set(seg_nodes)
@@ -112,9 +109,7 @@ class SegmentForwardDriver:
         compute_min_recorder: dict | None = None,
         node_value_recorder: dict | None = None,
     ):
-        # ``node_value_recorder`` is a pure side-channel: a policy that supports it
-        # writes each perceptron's decoded value into it WITHOUT altering the
-        # forward output (consumed by the DFQ bias-correction calibrators).
+        # node_value_recorder is a pure side-channel: it never alters the forward output.
         self._node_value_recorder = node_value_recorder
         self.policy.prepare(self)
         try:
@@ -140,9 +135,7 @@ class SegmentForwardDriver:
                 compute_min_recorder[node] = (
                     cur if prev is None else torch.minimum(prev, cur)
                 )
-            # Positive-domain shift: added to the ComputeOp's decoded value so it
-            # propagates through downstream structural nodes to the consumer's
-            # re-encode clamp; the consumer perceptron's baked bias compensates.
+            # Positive-domain shift on the decoded value; the consumer perceptron's baked bias compensates.
             shift = getattr(node, "_negative_shift", None)
             if shift is not None:
                 value = value + torch.as_tensor(shift, dtype=value.dtype, device=value.device)

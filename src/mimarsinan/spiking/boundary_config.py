@@ -9,12 +9,7 @@ import torch
 
 @dataclass
 class BoundaryConfig:
-    """Config for boundary encode/decode.
-
-    ``negative_shift`` (per-boundary positive-domain shift of negative-producing
-    ComputeOps) and ``spike_generation_mode`` (subsume vs offload selection) are the
-    Round-2 toggles.
-    """
+    """Runtime config for segment-boundary encode/decode."""
 
     simulation_length: int
     spiking_mode: str

@@ -1,20 +1,11 @@
-"""PerceptronMapper, ComputeOpMapper, ModuleMapper."""
+"""ModuleMapper: forward-only module wrapper (identity in IR mapping)."""
 
 from __future__ import annotations
 
-from typing import Any, Sequence
-
-import numpy as np
-import torch
 import torch.nn as nn
 
-from mimarsinan.mapping.mappers.base import Mapper, resolve_activation_type
-from mimarsinan.mapping.support.compute_modules import ScaleNormalizingWrapper
-from mimarsinan.mapping.support.shape_probe import probe_module_io_shapes
-from mimarsinan.transformations.perceptron.perceptron_transformer import PerceptronTransformer
-
-
 from mimarsinan.mapping.mappers.base import Mapper
+
 
 class ModuleMapper(Mapper):
     """Forward-only module; identity in IR mapping."""

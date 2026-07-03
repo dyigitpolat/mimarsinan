@@ -7,6 +7,16 @@ from typing import Dict
 import numpy as np
 import torch
 
+from mimarsinan.chip_simulation.hybrid_run.hybrid_stage_runner import (
+    HybridStageContext,
+    run_hybrid_stages,
+)
+from mimarsinan.chip_simulation.spiking_semantics import is_synchronized_ttfs
+from mimarsinan.chip_simulation.ttfs.ttfs_executor import (
+    TtfsAnalyticalExecutor,
+    run_ttfs_contract_compute_stage,
+    run_ttfs_contract_neural_stage,
+)
 from mimarsinan.mapping.ir import IRSource
 from mimarsinan.mapping.packing.hybrid_hardcore_mapping import HybridStage
 from mimarsinan.models.spiking.spiking_config import (
@@ -30,8 +40,6 @@ class HybridTtfsStepMixin:
         quantized: bool = False,
     ) -> torch.Tensor:
         """TTFS segment via shared ``TtfsAnalyticalExecutor``."""
-        from mimarsinan.chip_simulation.ttfs.ttfs_executor import TtfsAnalyticalExecutor
-
         mapping = stage.hard_core_mapping
         assert mapping is not None
         device = input_activations.device
@@ -53,13 +61,8 @@ class HybridTtfsStepMixin:
 
         x_compute = x.to(COMPUTE_DTYPE)
         state_buffer: Dict[int, torch.Tensor] = {-2: x_compute}
-        from mimarsinan.chip_simulation.hybrid_run.hybrid_execution import resolve_stage_compute_scales
 
         remaining = dict(self._build_consumer_counts())
-        from mimarsinan.chip_simulation.hybrid_run.hybrid_stage_runner import (
-            HybridStageContext,
-            run_hybrid_stages,
-        )
 
         def _ctx_factory(stage_index, stage, buf):
             return HybridStageContext(
@@ -70,11 +73,6 @@ class HybridTtfsStepMixin:
             )
 
         def _on_neural_ttfs(ctx: HybridStageContext) -> None:
-            from mimarsinan.chip_simulation.spiking_semantics import is_synchronized_ttfs
-            from mimarsinan.chip_simulation.ttfs.ttfs_executor import (
-                run_ttfs_contract_neural_stage,
-            )
-
             state_np = {
                 k: v.detach().cpu().numpy().astype(np.float64)
                 for k, v in ctx.state_buffer.items()
@@ -104,10 +102,6 @@ class HybridTtfsStepMixin:
             )
 
         def _on_compute_ttfs(ctx: HybridStageContext) -> None:
-            from mimarsinan.chip_simulation.ttfs.ttfs_executor import (
-                run_ttfs_contract_compute_stage,
-            )
-
             op = ctx.stage.compute_op
             assert op is not None
             state_np = {
@@ -143,5 +137,4 @@ class HybridTtfsStepMixin:
         )
 
         final = self._gather_final_output(state_buffer, x_compute, batch_size, device)
-        # Hybrid TTFS returns count-scaled logits (× simulation_steps) for HCM legacy.
         return final.to(torch.float32) * float(T)

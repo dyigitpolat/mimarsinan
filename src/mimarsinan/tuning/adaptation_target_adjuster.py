@@ -1,5 +1,7 @@
 import math
 
+from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory
+
 
 def target_decay_from_validation_samples(n_samples: int) -> float:
     """Decay factor from validation set size: ``1 - max(1/√n, 0.001)``, clamped to [0.95, 0.999]."""
@@ -21,13 +23,7 @@ class AdaptationTargetAdjuster:
 
     @classmethod
     def from_pipeline(cls, original_target, pipeline):
-        """Build adjuster using validation-set-sized decay and pipeline-derived floor.
-
-        The floor ratio is ``1 - degradation_tolerance`` so that the target
-        can relax exactly as far as the pipeline allows — no further.
-        """
-        from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory
-
+        """Build adjuster with validation-set-sized decay; floor ratio is ``1 - degradation_tolerance``."""
         dp = DataLoaderFactory.for_pipeline(pipeline).create_data_provider()
         n = dp.get_validation_set_size()
         decay = target_decay_from_validation_samples(n)

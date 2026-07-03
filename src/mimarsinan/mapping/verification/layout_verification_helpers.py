@@ -35,8 +35,6 @@ def _latency_stats(
             seg_id = int(sc.segment_id) if sc.segment_id is not None else int(sc.latency_tag)
             segments_to_latencies.setdefault(seg_id, set()).add(int(sc.latency_tag))
     else:
-        # Backward-compatible fallback for handcrafted tests / old softcore data:
-        # each distinct latency tag is treated as its own single-tier segment.
         for lat in fallback_by_latency_tag:
             segments_to_latencies[lat] = {lat}
 

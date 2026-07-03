@@ -46,11 +46,6 @@ class CIFAR10_DataProvider(DataProvider):
         }
 
     def ffcv_transforms(self) -> dict:
-        # Per-split FFCV op chains; decoder is the first op. Structural
-        # tail (NormalizeImage + ToTensor/ToDevice/ToTorchImage) is
-        # synthesized by spec_builder from _preprocessing_spec.
-        # beton_image_size defaults to _preprocessing_spec.resize_to
-        # (224 for cifar_vit ViT-B input).
         return {
             "splits": {
                 "train": [

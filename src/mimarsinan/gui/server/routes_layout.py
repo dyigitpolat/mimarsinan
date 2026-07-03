@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any, Dict
+from typing import Dict
 
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
@@ -18,12 +18,7 @@ def get_layout_result_from_request(
     tiling_max_axons: int | None = None,
     tiling_max_neurons: int | None = None,
 ):
-    """Build model repr and run layout mapping verification.
-
-    Routes through :data:`DEFAULT_LAYOUT_MAPPING_SERVICE` so repeated wizard
-    edits with identical bodies hit a cached softcore list instead of
-    rebuilding the mapper graph from scratch each time.
-    """
+    """Build model repr and run layout-mapping verification (cached per identical body)."""
     from mimarsinan.mapping.verification.layout_mapping_service import (
         DEFAULT_LAYOUT_MAPPING_SERVICE,
     )

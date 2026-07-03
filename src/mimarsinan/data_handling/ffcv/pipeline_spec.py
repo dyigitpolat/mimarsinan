@@ -9,12 +9,10 @@ from dataclasses import dataclass, field, asdict
 
 @dataclass(frozen=True)
 class FieldSpec:
-    """One serialized field's name + the type-class name used at write time.
+    """One serialized field's name + the write-time type-class name.
 
-    Decoders are not stored on the field — they're the first op in each
-    split's chain (``SplitSpec.transforms``). This lets one field carry
-    split-asymmetric decoders (e.g. ``RandomResizedCrop`` on train vs
-    ``CenterCrop`` on val).
+    Decoders live in each split's chain (``SplitSpec.transforms``), not on the
+    field, so one field can carry split-asymmetric decoders.
     """
 
     name: str

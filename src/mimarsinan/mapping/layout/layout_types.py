@@ -6,22 +6,13 @@ from typing import Optional, Tuple
 
 @dataclass(frozen=True)
 class LayoutSoftCoreSpec:
-    """
-    Shape-only representation of a deployable soft core.
-    """
+    """Shape-only representation of a deployable soft core."""
 
     input_count: int
     output_count: int
 
-    # Soft approximation: different threshold groups cannot share a hardcore.
     threshold_group_id: int = 0
-
-    # Optional latency tag (kept for parity with real mapping constraints).
     latency_tag: Optional[int] = None
-
-    # Optional neural-segment tag. Consecutive neural cores separated by
-    # host-side ComputeOps belong to different segments even if their global
-    # latency tags are consecutive.
     segment_id: Optional[int] = None
 
     name: Optional[str] = None
@@ -46,9 +37,7 @@ class LayoutHardCoreType:
 
 @dataclass
 class LayoutHardCoreInstance:
-    """
-    Shape-only approximation of a hardware core instance.
-    """
+    """Shape-only approximation of a hardware core instance."""
 
     axons_per_core: int
     neurons_per_core: int
@@ -87,7 +76,7 @@ class LayoutHardCoreInstance:
         axon_offset = self.axons_per_core - self.available_axons
         neuron_offset = self.neurons_per_core - self.available_neurons
 
-        # Track packing inefficiency in the same way as HardCore.add_softcore().
+        # Packing-inefficiency formula must stay identical to HardCore.add_softcore().
         self.unusable_space += (neuron_offset * in_c) + (axon_offset * out_c)
 
         self.available_axons -= in_c
@@ -138,7 +127,6 @@ class LayoutPackingResult:
     unused_area_total: int
     avg_unused_area_per_core: float
 
-    # Sum of per-core strip-shaped packing dead zones (mirrors HardCore.unusable_space).
     unusable_space_total: int = 0
     avg_unusable_space_per_core: float = 0.0
 
@@ -149,10 +137,8 @@ class LayoutPackingResult:
     coalesced_fragment_count: int = 0
     split_fragment_count: int = 0
 
-    # Per-coalescing-group fragment counts (one entry per group that had > 1 fragment).
     coalescing_group_sizes: Optional[Tuple[int, ...]] = None
 
-    # Per-split-softcore split counts (one entry per softcore that was split ≥ once).
     split_counts_per_sc: Optional[Tuple[int, ...]] = None
 
 

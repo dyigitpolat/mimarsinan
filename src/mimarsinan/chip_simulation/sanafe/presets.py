@@ -1,14 +1,4 @@
-"""Per-event energy & latency presets for SANA-FE architecture synthesis.
-
-These constants are injected into the YAML that ``arch_synth.build_architecture``
-writes and ``sanafe.load_arch`` parses.  The schema matches SANA-FE's bundled
-``arch/loihi.yaml`` — keys are SANA-FE's expected attribute names (not
-mimarsinan's), so any value here can be flowed verbatim into the YAML.
-
-The Loihi numbers are the public per-event costs from Davies et al. 2018
-("Loihi: a neuromorphic manycore processor with on-chip learning",
-IEEE Micro).  TrueNorth numbers come from Merolla et al. 2014.
-"""
+"""Per-event energy & latency presets for SANA-FE architecture synthesis."""
 
 from __future__ import annotations
 
@@ -17,22 +7,16 @@ from typing import Dict, TypedDict
 
 class PerEventEnergy(TypedDict):
     """SANA-FE-flavoured per-event energy (J) and latency (s) costs."""
-    # Tile NoC hops (one-way per cardinal direction)
     tile_hop_energy_j: float
     tile_hop_latency_s: float
-    # Axon IO (per message)
     axon_in_energy_j: float
     axon_in_latency_s: float
     axon_out_energy_j: float
     axon_out_latency_s: float
-    # Synapse (per spike processed at a synapse unit)
     synapse_energy_j: float
     synapse_latency_s: float
-    # Dendrite (per update)
     dendrite_energy_j: float
     dendrite_latency_s: float
-    # Soma — "access" runs once per neuron updated, "update" per LIF step,
-    # "spike_out" per spike emitted.  All three appear in Loihi's numbers.
     soma_access_energy_j: float
     soma_access_latency_s: float
     soma_update_energy_j: float
@@ -87,15 +71,13 @@ PRESETS: Dict[str, PerEventEnergy] = {
 }
 
 
-# Names of the hardware units we embed into every synthesised architecture.
-# net_synth references these strings to bind neurons / connections to the
-# right hardware unit, so they are public surface — don't rename casually.
+# Hardware-unit names referenced by net_synth/arch_synth as strings — public surface, don't rename.
 SOMA_LIF_NAME = "lif"
 SOMA_TTFS_CONTINUOUS_NAME = "ttfs_continuous"
 SOMA_TTFS_QUANTIZED_NAME = "ttfs_quantized"
-SOMA_TTFS_CYCLE_NAME = "ttfs_cycle"   # genuine single-spike, synchronized schedule
-SOMA_TTFS_CASCADE_NAME = "ttfs_cascade"   # genuine fire-once-latch, cascaded schedule
-SOMA_INPUT_RANGE_NAME = "inputs"   # rendered as "inputs[0..MAX]" in YAML
+SOMA_TTFS_CYCLE_NAME = "ttfs_cycle"
+SOMA_TTFS_CASCADE_NAME = "ttfs_cascade"
+SOMA_INPUT_RANGE_NAME = "inputs"
 SYNAPSE_NAME = "dense_syn"
 DENDRITE_NAME = "dend"
 AXON_IN_NAME = "ax_in"

@@ -1,7 +1,6 @@
 """Module-level forward hooks for persistent pruning enforcement."""
 
 import torch
-import torch.nn as nn
 
 
 def pruning_enforce_linear_pre_hook(module, inputs):

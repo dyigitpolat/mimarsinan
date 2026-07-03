@@ -4,11 +4,14 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, Dict, Iterable, List, Tuple
+from typing import TYPE_CHECKING, Any, Dict, Tuple
 
 import numpy as np
 import torch
 import torch.nn.functional as F
+
+if TYPE_CHECKING:
+    from mimarsinan.mapping.ir.graph import IRGraph
 
 
 @dataclass
@@ -27,7 +30,7 @@ class WeightBank:
 class IRSource:
     """Input source: node output, off (-1), network input (-2), or always-on (-3)."""
     node_id: int
-    index: int  # Which output index from that node
+    index: int
 
     def is_off(self) -> bool:
         return self.node_id == -1
@@ -44,7 +47,7 @@ class IRNode(ABC):
     """Base class for all IR nodes."""
     id: int
     name: str
-    input_sources: np.ndarray  # Array of IRSource objects (shape depends on node type)
+    input_sources: np.ndarray
 
     @abstractmethod
     def execute(
@@ -67,7 +70,7 @@ class IRNode(ABC):
 
         for idx, src in enumerate(sources):
             if src.is_off():
-                continue  # result[:, idx] already zero
+                continue
             elif src.is_input():
                 result[:, idx] = input_tensor[:, src.index]
             elif src.is_always_on():
@@ -81,7 +84,7 @@ class IRNode(ABC):
 @dataclass
 class NeuralCore(IRNode):
     """Crossbar neural core: owned core_matrix or shared WeightBank reference."""
-    core_matrix: np.ndarray | None = None  # (axons, neurons); None when using a bank
+    core_matrix: np.ndarray | None = None
     threshold: float = 1.0
     activation_scale: torch.Tensor = field(default_factory=lambda: torch.tensor(1.0))
     parameter_scale: torch.Tensor = field(default_factory=lambda: torch.tensor(1.0))
@@ -96,15 +99,14 @@ class NeuralCore(IRNode):
     perceptron_input_slice: tuple[int, int] | None = None
 
     psum_group_id: int | None = None
-    psum_role: str | None = None  # "partial_pos", "partial_neg", "accum"
+    psum_role: str | None = None
     coalescing_group_id: int | None = None
-    coalescing_role: str | None = None  # "master", "slave"
+    coalescing_role: str | None = None
     normalization_type: str | None = None
     activation_type: str | None = None
 
     hardware_bias: np.ndarray | None = None
 
-    # Index into ``IRGraph.layout_softcores`` when produced by ``IRMapping``.
     layout_softcore_index: int | None = None
 
     pre_pruning_heatmap: "np.ndarray | None" = None
@@ -243,8 +245,7 @@ class ComputeOp(IRNode):
             out = module(*call_args, **module_kwargs)
         if output_index is not None:
             out = out[output_index]
-        # An explicit feature size keeps the reshape well-defined for empty batches
-        # (``-1`` is ambiguous when the tensor has 0 elements).
+        # Explicit feature size keeps the reshape well-defined for empty batches (-1 is ambiguous at 0 elements).
         features = 1
         for dim in out.shape[1:]:
             features *= dim

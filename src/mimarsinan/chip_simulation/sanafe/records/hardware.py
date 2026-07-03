@@ -7,54 +7,39 @@ import numpy as np
 
 from mimarsinan.chip_simulation.sanafe.records.energy import SanafeEnergyBreakdown
 
-# Hardware-aligned records
-
 
 @dataclass
 class SanafeCoreRecord:
     """Per-``HardCore`` rich record.
 
-    The spike-count fields (``input_spike_count``, ``output_spike_count``)
-    plus the bookkeeping fields (``core_latency``, ``has_hardware_bias``,
-    ``n_always_on_axons``) project losslessly back to a
+    Spike-count + bookkeeping fields project losslessly to
     :class:`spike_recorder.CoreSpikeCounts` in :meth:`to_hcm_subset`.
     """
 
-    core_index: int                 # HardCore index inside its HCM
-    n_neurons: int                  # used neuron count for this core
-    n_axons_used: int               # used axon count for this core
-    core_latency: int               # propagated for parity diff context
+    core_index: int
+    n_neurons: int
+    n_axons_used: int
+    core_latency: int
     has_hardware_bias: bool
     n_always_on_axons: int
     spikes_fired: int
-    input_spike_count: np.ndarray   # (n_axons_used,) int64
-    output_spike_count: np.ndarray  # (n_neurons,) int64
-    energy: SanafeEnergyBreakdown   # per-core energy estimate
-    # Per-core 2D spike raster (n_neurons, T_eff) uint8 — slice of the
-    # segment-wide trace.  Powers the "click a core → see its raster"
-    # mini-view in the GUI; None when log_potential_trace=False or the
-    # group wasn't logged.
+    input_spike_count: np.ndarray
+    output_spike_count: np.ndarray
+    energy: SanafeEnergyBreakdown
     spike_raster: Optional[np.ndarray] = None
     output_activation: Optional[np.ndarray] = None
-    # Spikes on ``core{N}_in`` / ``core{N}_on`` groups (input-path neurons).
     input_neuron_spikes_fired: int = 0
 
 
 @dataclass
 class SanafeTileRecord:
-    """Per-SANA-FE-tile aggregate (energy / spikes / packets).
+    """Per-SANA-FE-tile aggregate (energy/spikes/packets); GUI-only, not the parity gate.
 
-    Tiles are SANA-FE's outer grouping for cores.  This record is *not*
-    used by the parity gate — it exists purely for the GUI / aggregation.
-
-    ``mesh_x`` / ``mesh_y`` are the tile's coordinates in the
-    architecture's NoC mesh (set when the arch synth records the
-    geometry).  Defaults of ``-1`` mean "unknown" — the floorplan view
-    falls back to row-major layout in that case.
+    ``mesh_x``/``mesh_y`` default ``-1`` (unknown → floorplan falls back to row-major).
     """
 
     tile_index: int
-    cores: List[int]                # HardCore indices placed in this tile
+    cores: List[int]
     energy: SanafeEnergyBreakdown
     spikes_fired: int
     packets_sent: int
@@ -64,14 +49,7 @@ class SanafeTileRecord:
 
 @dataclass
 class SanafeNocLink:
-    """Aggregated NoC traffic between a (src_tile, dst_tile) pair.
-
-    Built from SANA-FE's ``message_trace`` after the segment finishes;
-    one entry per **directed** tile pair that carried at least one
-    real (non-placeholder) spike.  Powers the NoC-traffic overlay in
-    the GUI floorplan view — the count / spikes / hops fields each
-    feed a different colormap option.
-    """
+    """Aggregated NoC traffic for one directed ``(src_tile, dst_tile)`` pair."""
 
     src_tile: int
     dst_tile: int
@@ -86,30 +64,16 @@ class SanafeNocLink:
 
 @dataclass
 class SanafeArchGeometry:
-    """Lightweight 2D-mesh description for the GUI floorplan view.
-
-    Captures only what the frontend needs to render cores in their
-    physical positions: total mesh dimensions and per-tile (x, y)
-    placement.  The per-tile core list lives on ``SanafeTileRecord``
-    so each tile carries its own cores explicitly — no need to
-    duplicate it here.
-    """
+    """Lightweight 2D-mesh description (dims + per-tile x,y) for the GUI floorplan."""
 
     width: int
     height: int
-    tiles_xy: List[List[int]] = field(default_factory=list)  # [(x, y)] indexed by tile_index
+    tiles_xy: List[List[int]] = field(default_factory=list)
 
 
 @dataclass
 class SanafeNocLinkLoad:
-    """Per-mesh-edge packet count for the NoC congestion heatmap.
-
-    A "mesh edge" is a single hop between two physically-adjacent tiles
-    in the NoC (north / east / south / west).  Aggregated by routing
-    every packet through XY-routing — first travel along x, then along
-    y — so the load on every intermediate edge is counted, not just
-    the (src_tile, dst_tile) endpoints.
-    """
+    """Per-mesh-edge packet count (XY-routed) for the NoC congestion heatmap."""
 
     from_x: int
     from_y: int
@@ -120,13 +84,7 @@ class SanafeNocLinkLoad:
 
 @dataclass
 class SanafeCycleEnergyPoint:
-    """One row of the energy-waterfall: per-cycle event-driven energy split.
-
-    Reconstructed from per-cycle event counts × preset constants — SANA-FE
-    doesn't itself report per-cycle energy breakdowns, but we have the
-    raw counts (spike trace + message trace) and the YAML constants,
-    so we can produce a faithful breakdown for the GUI.
-    """
+    """One energy-waterfall row: per-cycle energy split reconstructed from counts × preset."""
 
     cycle: int
     synapse_j: float
@@ -138,13 +96,7 @@ class SanafeCycleEnergyPoint:
 
 @dataclass
 class SanafeCascadePoint:
-    """One row of the latency-cascade timeline: per-cycle firings per depth.
-
-    ``depth`` is the HCM core-latency layer (depth-0 = input pool,
-    depth-1 = first consumers, …).  The cascade-timeline view stacks
-    one bar per depth and shows the cycle-by-cycle firing pattern, so
-    users can see the cascade propagating through the network.
-    """
+    """One cascade-timeline row: per-cycle firings at HCM core-latency ``depth``."""
 
     cycle: int
     depth: int
@@ -153,13 +105,7 @@ class SanafeCascadePoint:
 
 @dataclass
 class SanafeCriticalCore:
-    """Per-cycle critical-core: the core whose event load drove sim_time.
-
-    Approximated by per-cycle event count (firings + incoming spikes)
-    — SANA-FE's actual ``sim_time = max(neuron_processing,
-    message_processing)`` is computed from the longest event chain,
-    and the busiest core is the strongest proxy for that.
-    """
+    """Per-cycle critical core (busiest by firings + incoming spikes), a sim_time proxy."""
 
     cycle: int
     core_index: int
@@ -168,13 +114,7 @@ class SanafeCriticalCore:
 
 @dataclass
 class SanafeConnectivityEdge:
-    """Static connectivity edge: ``(src_core, dst_core)`` with summed |w|.
-
-    Built from ``HardCore.axon_sources`` × ``core_matrix`` once per
-    segment; doesn't depend on simulation activity.  Powers the
-    "connectivity overlay" view that shows routing complexity even
-    on idle networks.
-    """
+    """Static ``(src_core, dst_core)`` edge with summed ``|w|`` (activity-independent)."""
 
     src_core: int
     dst_core: int

@@ -1,15 +1,4 @@
-"""Formal verdicts on which attention/LayerNorm sub-ops fit the chip primitive.
-
-The on-chip compute primitive is a single ``NeuralCore`` crossbar:
-``y = clamp(relu(W x + b), 0, theta)`` with STATIC ``W, b`` (see
-``mapping/ir/types.py::NeuralCore.execute``).  A composition of these realizes
-exactly the piecewise-linear, fixed-weight, affine maps of the chip input.
-
-This module records, per transformer sub-op, whether it is realizable as such a
-map and why.  The verdicts are not opinions: each is backed by an executable
-proof in ``test_onchip_attention.py`` (bilinear cross-Hessian, softmax Jacobian
-input-dependence, LayerNorm scale-invariance, centering fixed-matrix identity).
-"""
+"""Formal verdicts on which attention/LayerNorm sub-ops fit the chip crossbar primitive."""
 
 from __future__ import annotations
 
@@ -25,7 +14,6 @@ class AffineRealizability:
     reason_code: str
     explanation: str
 
-    #: Every transformer sub-op the D5 characterization covers.
     KNOWN_OPS = (
         "qk_score",
         "softmax",

@@ -1,32 +1,4 @@
-"""Certification protocol (Frontier E6): the mechanism that REPLACES byte-identity
-as the Fix-B gate.
-
-Fix B breaks every equivalence lock *by design* — it changes the deployed numbers.
-This module is the protocol the review (C3) and the action plan (Fix B requirement
-#1, "the protocol you do not yet have") call for and the refactor did not build: a
-frozen per-cell **regression floor** and a per-cell **Pareto/regression gate** on the
-deployed-forward metric (R6 / E5) plus the wall-clock budget.
-
-It declares and computes; it does **not** run the matrix. The floor is populated by a
-GPU matrix run *before the first Fix-B flip* (see ``docs/CERTIFICATION_PROTOCOL.md``);
-this module is the format + freezing + gating mechanism only — pure additive infra,
-byte-identical (no existing deployment path reads it yet).
-
-Three pieces:
-
-* :class:`CertificationCell` — the matrix coordinate the gate is keyed by:
-  ``(firing × sync × backend)``. ``cell_key`` is the canonical string (it reuses the
-  ``mode[/schedule]`` naming the E4 proposer / E3 calibration already use, suffixed
-  ``@backend``) so a cell names the same thing across the whole program.
-* :class:`RegressionFloor` — the frozen ``{deployed_accuracy, wall_clock_s}`` per cell,
-  with the budget/epsilon the gate compares against. :class:`CertificationFloorBook`
-  is the JSON-serializable book of floors (the FORMAT a matrix run freezes), with
-  :func:`freeze_cell` recording the CURRENT numbers for a cell.
-* :func:`certify` — the GATE: given a cell's new ``(deployed_accuracy, wall_clock_s)``
-  vs the frozen floor, PASS iff ``deployed_accuracy >= floor − ε`` **and**
-  ``wall_clock_s <= budget``. A cell with no frozen floor is :class:`CertificationStatus`
-  ``MISSING_FLOOR`` (cannot certify — freeze the floor first), never a silent pass.
-"""
+"""Per-cell regression-floor freezing + gating on the deployed-forward metric and wall-clock budget."""
 
 from __future__ import annotations
 
@@ -55,16 +27,8 @@ __all__ = [
 ]
 
 
-# The frozen-floor FORMAT version. A matrix run writes this into the JSON so a
-# future format change fails loud instead of silently mis-reading an old book.
 FLOOR_BOOK_FORMAT_VERSION = 1
 
-# The certification tolerances. ``eps`` is the deployed-accuracy slack the Fix-B
-# action plan calls for (``deployed >= floor − ε``); ``wall_clock`` budgets the
-# speed side (``wall_clock <= floor.wall_clock_s × (1 + slack)`` unless an absolute
-# budget is set on the floor). Defaults are conservative placeholders the freezing
-# matrix run / config overrides; they are NOT a behavior change (nothing reads them
-# until Fix B wires the gate).
 DEFAULT_ACCURACY_EPS = 0.0
 DEFAULT_WALL_CLOCK_SLACK = 0.0
 
@@ -73,33 +37,18 @@ DEFAULT_WALL_CLOCK_SLACK = 0.0
 class CertificationCell:
     """The matrix coordinate the per-cell gate is keyed by: (firing × sync × backend).
 
-    ``firing`` is the spiking mode (``lif`` / ``rate`` / ``ttfs`` / ``ttfs_quantized``
-    / ``ttfs_cycle_based``); ``sync`` is the ``ttfs_cycle_schedule``
-    (``cascaded`` / ``synchronized``) or ``None`` for the non-cycle families;
-    ``backend`` is the deployment simulator the number was measured on (``nevresim``
-    / ``sanafe`` / ``lava`` / ``hcm`` …). The triple is exactly the cell granularity
-    Fix B rolls out per (lowest-risk-first), so the floor is keyed by it.
+    ``sync`` is the ``ttfs_cycle_schedule`` (or ``None`` for non-cycle families);
+    ``variant`` optionally separates the floors of two configs sharing a recipe cell.
     """
 
     firing: str
     sync: Optional[str]
     backend: str
-    # An optional per-deployment-config discriminator within a (firing × sync ×
-    # backend) recipe cell. Two configs can share a recipe cell yet have distinct
-    # regression floors (e.g. plain vs pruned LIF, or biased vs no-bias cascaded);
-    # ``variant`` keeps their floors separate. ``None`` (the default) leaves the key
-    # byte-identical to the pre-variant ``mode[/schedule]@backend`` format.
     variant: Optional[str] = None
 
     @property
     def cell_key(self) -> str:
-        """Canonical string key — ``mode[/schedule]@backend[#variant]``.
-
-        Reuses the ``mode[/schedule]`` naming the E4 proposer and E3 calibration
-        already use (so a cell is the SAME named thing across the program), suffixed
-        with the backend it was measured on and, when set, a ``#variant`` tag that
-        distinguishes deployment configs sharing the same recipe cell.
-        """
+        """Canonical string key — ``mode[/schedule]@backend[#variant]``."""
         mode = self.firing if self.sync is None else f"{self.firing}/{self.sync}"
         key = f"{mode}@{self.backend}"
         return key if self.variant is None else f"{key}#{self.variant}"
@@ -129,12 +78,7 @@ class CertificationCell:
     def from_mode_policy(
         cls, mode_policy: Any, *, backend: str, variant: Optional[str] = None
     ) -> "CertificationCell":
-        """Build a cell from a (firing × sync) ``SpikingModePolicy`` + a backend.
-
-        Reuses the policy's ``spiking_mode`` / ``schedule`` so the cell names the
-        same (firing × sync) thing the E3/E4 layers key on. ``variant`` optionally
-        tags the deployment config within that recipe cell.
-        """
+        """Build a cell from a (firing × sync) ``SpikingModePolicy`` + a backend."""
         firing = str(getattr(mode_policy, "spiking_mode", "lif"))
         sync = getattr(mode_policy, "schedule", None)
         sync = None if sync is None else str(sync)
@@ -145,22 +89,9 @@ class CertificationCell:
 class RegressionFloor:
     """The frozen deployed floor for one cell — the regression baseline the gate uses.
 
-    ``deployed_accuracy`` is the deployed-forward, full-test, parity-gated number
-    (the only number of record per R6 / E5) the new run must not regress below by
-    more than ``eps``. ``wall_clock_s`` is the measured per-step wall-clock the new
-    run must not exceed (subject to ``wall_clock_slack`` or an absolute
-    ``wall_clock_budget_s`` override). ``eps`` / ``wall_clock_slack`` /
-    ``wall_clock_budget_s`` are the per-cell tolerances frozen alongside the numbers
-    so the gate is fully self-describing. ``provenance`` records how/when the floor
-    was frozen (commit, date, sample count) for the "this commit changes numbers,
-    here is the new certified baseline" story.
-
-    The F1 **absolute-AC overlay** is optional and orthogonal to the relative gate:
-    ``ac1_target`` is the absolute deployed-accuracy goal (AC1), ``ac2_reference`` is
-    the ANN reference accuracy the deployed forward must match to be *lossless* (AC2),
-    and ``ac5_budget_s`` is the per-FT-step wall budget (AC5). All default ``None`` ⇒
-    the floor round-trips byte-identically and the relative verdict is UNCHANGED; when
-    set they only ADD an absolute sub-verdict alongside the relative PASS/FAIL.
+    ``deployed_accuracy`` / ``wall_clock_s`` are the frozen numbers; ``eps`` /
+    ``wall_clock_slack`` / ``wall_clock_budget_s`` the per-cell tolerances. The
+    optional F1 ``ac*`` targets default ``None`` ⇒ the floor round-trips byte-identically.
     """
 
     deployed_accuracy: float
@@ -188,9 +119,7 @@ class RegressionFloor:
         return float(self.wall_clock_s) * (1.0 + float(self.wall_clock_slack))
 
     def to_dict(self) -> Dict[str, Any]:
-        # Omit the unset F1 absolute-AC fields so a floor frozen WITHOUT them (every
-        # pre-overlay book, e.g. the shipped regression_floor.json) round-trips
-        # byte-identically; they only appear once a target is actually set.
+        # Unset F1 fields are omitted so a floor frozen without them round-trips byte-identically.
         data = asdict(self)
         for key in ("ac1_target", "ac2_reference", "ac5_budget_s"):
             if data.get(key) is None:
@@ -211,14 +140,7 @@ class RegressionFloor:
 
 @dataclass(frozen=True)
 class CertificationFloorBook:
-    """The JSON-serializable book of frozen per-cell floors (the FROZEN FORMAT).
-
-    A mapping ``cell_key → RegressionFloor`` plus a format version. A matrix run
-    freezes one book (one floor per (firing × sync × backend) cell it measured); CI
-    loads it and gates each new run against the matching cell. The book is immutable;
-    :meth:`with_floor` returns a new book with one cell frozen (so freezing is a
-    pure, auditable operation).
-    """
+    """Immutable JSON-serializable book of frozen per-cell floors (``cell_key → RegressionFloor``)."""
 
     floors: Mapping[str, RegressionFloor] = field(default_factory=dict)
     format_version: int = FLOOR_BOOK_FORMAT_VERSION
@@ -271,13 +193,8 @@ class CertificationStatus(Enum):
 class AbsoluteVerdict:
     """The F1 absolute-AC sub-verdict — reported ALONGSIDE the relative gate.
 
-    Orthogonal to the relative non-regression PASS/FAIL: each ``*_ok`` is ``None``
-    when its floor target is unset (or, for AC5, when no measured FT wall is supplied),
-    ``True``/``False`` otherwise. ``ac1_ok`` = deployed ≥ ``ac1_target``;
-    ``ac2_ok`` = deployed ≥ ``ac2_reference`` (lossless vs the ANN); ``ac5_ok`` =
-    ``max_ft_pass_wall_s`` ≤ ``ac5_budget_s``. ``accuracy_gap_pp`` is
-    ``(deployed − ac1_target)`` in percentage points (negative ⇒ the cell *owes* that
-    many pp); ``ac5_gap_s`` is ``(max_ft_pass_wall_s − ac5_budget_s)`` in seconds.
+    Each ``*_ok`` is ``None`` when its floor target is unset. ``accuracy_gap_pp`` is
+    ``(deployed − ac1_target)`` in pp; ``ac5_gap_s`` is ``(max_ft_pass_wall_s − ac5_budget_s)`` in s.
     """
 
     ac1_ok: Optional[bool]
@@ -292,15 +209,10 @@ _ABSOLUTE_NONE = AbsoluteVerdict(None, None, None, None, None)
 
 @dataclass(frozen=True)
 class CertificationVerdict:
-    """The per-cell gate result — the certified/rejected/uncertifiable verdict.
+    """The per-cell gate result — PASS / FAIL / MISSING_FLOOR.
 
-    ``status`` is the trichotomy: PASS (certified), FAIL (regressed accuracy or blew
-    the budget — the gate rejects the change), MISSING_FLOOR (no frozen baseline for
-    this cell — it cannot be certified until the floor is frozen, NEVER a silent
-    pass). ``accuracy_ok`` / ``wall_clock_ok`` decompose a FAIL so the caller can
-    report WHICH side regressed; ``reason`` is the human-facing explanation. The
-    ``absolute`` sub-verdict (F1) reports the ABSOLUTE AC1/AC2/AC5 outcome ALONGSIDE —
-    and independent of — this relative status.
+    ``accuracy_ok`` / ``wall_clock_ok`` decompose a FAIL by side; the ``absolute``
+    F1 sub-verdict reports AC1/AC2/AC5 independent of the relative status.
     """
 
     cell_key: str
@@ -358,18 +270,11 @@ def certify(
     floor_book: CertificationFloorBook,
     max_ft_pass_wall_s: Optional[float] = None,
 ) -> CertificationVerdict:
-    """The Fix-B GATE: certify a cell's new numbers against its frozen floor.
+    """Certify a cell's new numbers against its frozen floor.
 
-    PASS iff ``deployed_accuracy >= floor.accuracy_floor()`` (``floor − ε``) **and**
-    ``wall_clock_s <= floor.wall_clock_budget()``. A FAIL names which side regressed.
-    A cell with no frozen floor is ``MISSING_FLOOR`` — it cannot be certified (freeze
-    the floor first via :func:`freeze_cell`), so the gate never passes a cell it has
-    no baseline for. This replaces the byte-identity equivalence lock for Fix B.
-
-    The returned verdict also carries an ``absolute`` F1 sub-verdict (AC1/AC2/AC5) when
-    the floor sets those targets; it is orthogonal — it NEVER changes the relative
-    PASS/FAIL. ``max_ft_pass_wall_s`` is the measured per-FT-step max wall the AC5
-    budget gates (``ac5_ok`` is ``None`` if it is not supplied).
+    PASS iff ``deployed_accuracy >= floor.accuracy_floor()`` AND
+    ``wall_clock_s <= floor.wall_clock_budget()``; a cell with no floor is MISSING_FLOOR
+    (never a silent pass). The orthogonal ``absolute`` F1 sub-verdict never changes PASS/FAIL.
     """
     floor = floor_book.floor_for(cell)
     measured_accuracy = float(deployed_accuracy)
@@ -451,13 +356,9 @@ def freeze_cell(
 ) -> CertificationFloorBook:
     """Record the CURRENT deployed numbers for ``cell`` as its regression floor.
 
-    Returns a NEW :class:`CertificationFloorBook` with the cell frozen (the book is
-    immutable). This is what the matrix-run freezing script calls per cell to record
-    the current slow/lossy baseline BEFORE the first Fix-B flip. Pure data — it never
-    runs the matrix; the caller supplies the already-measured deployed-metric numbers.
-    The optional F1 absolute targets (``ac1_target`` / ``ac2_reference`` /
-    ``ac5_budget_s``) default ``None`` ⇒ the frozen floor is byte-identical to the
-    pre-overlay format and the relative gate is unchanged.
+    Returns a NEW immutable :class:`CertificationFloorBook` with the cell frozen; the
+    caller supplies the already-measured numbers. The optional F1 ``ac*`` targets
+    default ``None`` ⇒ the frozen floor is byte-identical to the pre-overlay format.
     """
     floor = RegressionFloor(
         deployed_accuracy=float(deployed_accuracy),
@@ -478,14 +379,10 @@ def freeze_cell(
 def floor_is_stale(
     floor: RegressionFloor, controller_commit: Optional[str]
 ) -> bool:
-    """Q6 staleness: True iff the controller-path commit moved since the floor froze.
+    """True iff the controller-path commit moved since the floor froze (a warn, not a hard fail).
 
-    Warn-capable provenance check (NOT a hard fail): a frozen floor records the commit
-    its numbers were measured at in ``provenance['commit']``. If the current
-    ``controller_commit`` differs — or the floor recorded no commit at all (we cannot
-    prove it is fresh) — the floor may no longer describe the live controller path and
-    should be re-frozen. ``controller_commit is None`` (nothing to compare against)
-    never flags, so callers without a commit do not spuriously trip.
+    A floor with no recorded commit is stale (cannot prove freshness);
+    ``controller_commit is None`` (nothing to compare) never flags.
     """
     if controller_commit is None:
         return False

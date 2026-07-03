@@ -7,15 +7,6 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 
-from mimarsinan.chip_simulation.sanafe.records import (
-    SanafeConnectivityEdge,
-    SanafeCriticalCore,
-    SanafeCycleEnergyPoint,
-    SanafeEnergyBreakdown,
-    SanafeNocLink,
-    SanafeNocLinkLoad,
-)
-
 _CORE_GROUP_RE = re.compile(r"^core(\d+)$")
 _LIF_SPIKE_GROUP_RE = re.compile(r"^core(\d+)$")
 _INPUT_SPIKE_GROUP_RE = re.compile(r"^core(\d+)_(in|on)$")

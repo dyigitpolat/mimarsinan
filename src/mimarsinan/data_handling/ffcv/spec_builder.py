@@ -17,12 +17,7 @@ def _provider_id(provider) -> str:
 
 
 class _AsRGB(torch.utils.data.Dataset):
-    """Lift a (grayscale PIL, int) dataset to 3-channel RGB.
-
-    FFCV's stock ``RGBImageField`` requires 3 channels at write time.
-    Applied automatically when the provider's ``get_input_shape()``
-    reports 1 channel.
-    """
+    """Lift a (grayscale PIL, int) dataset to 3-channel RGB for FFCV's RGBImageField."""
 
     def __init__(self, base):
         self._base = base
@@ -43,10 +38,8 @@ _PIL_INTERP = {"bicubic": 3, "bilinear": 2, "nearest": 0}  # PIL.Image constants
 class _PILResize(torch.utils.data.Dataset):
     """Resize the PIL image half of each ``(image, label)`` to a fixed square.
 
-    FFCV's ``RGBImageField.max_resolution`` is an *upper bound* — it
-    downscales images larger than the target but doesn't upscale. To get
-    the beton stored at the size the decoder expects, the writer needs
-    to receive PIL images already at that size.
+    FFCV's ``max_resolution`` only downscales, so the writer must receive
+    PIL images already at the size the decoder expects.
     """
 
     def __init__(self, base, target_size: int, interpolation: str):
@@ -65,18 +58,10 @@ class _PILResize(torch.utils.data.Dataset):
 
 
 def _ffcv_config(provider) -> dict:
-    """Return the provider's FFCV declaration, validated.
+    """Return the provider's validated FFCV declaration (empty means opted out).
 
-    Expected shape::
-
-        {
-            "beton_image_size": int | None,    # optional
-            "splits": {"train": [...], "val": [...], "test": [...]},
-        }
-
-    where each split is a list of ``(ffcv_op_class_name, kwargs)`` tuples
-    starting with the per-split decoder. Empty / missing return value
-    means the provider opted out.
+    Shape: ``{"beton_image_size": int|None, "splits": {train/val/test:
+    [(op_class_name, kwargs), ...]}}``, each split's first op the decoder.
     """
     cfg = provider.ffcv_transforms()
     if not cfg:
@@ -108,15 +93,10 @@ def _beton_image_size(provider) -> int | None:
 
 
 def raw_dataset_for(provider, split: str):
-    """Return the raw dataset that will feed the FFCV writer for ``split``.
+    """Return the raw dataset feeding the FFCV writer for ``split``.
 
-    Applies two structural wraps:
-
-    * :class:`_AsRGB` if ``get_input_shape()`` says 1 channel.
-    * :class:`_PILResize` to ``beton_image_size`` (from
-      ``ffcv_transforms()['beton_image_size']`` if set, else
-      ``_preprocessing_spec.resize_to``) so the beton stores at the size
-      the decoder expects.
+    Wraps with :class:`_AsRGB` (1-channel inputs) and :class:`_PILResize`
+    (to ``beton_image_size``) so the beton is stored at the decoder's size.
     """
     raw = provider.raw_datasets()[split]
     in_shape = provider.get_input_shape()
@@ -134,12 +114,8 @@ def raw_dataset_for(provider, split: str):
 def infer_spec(provider) -> PipelineSpec:
     """Build a :class:`PipelineSpec` from a provider's data surface.
 
-    Provider opts into FFCV by returning a structured ``ffcv_transforms()``
-    config with per-split FFCV op chains (decoder is the first op). The
-    structural tail — ``NormalizeImage`` (from
-    ``_preprocessing_spec.{mean,std}``) and ``ToTensor → ToDevice →
-    ToTorchImage`` — is synthesized here so both data paths consume the
-    same model-input contract uniformly.
+    The structural tail (NormalizeImage from ``_preprocessing_spec`` then
+    ToTensor/ToDevice/ToTorchImage) is synthesized so both data paths match.
     """
     preproc = getattr(provider, "_preprocessing_spec", None)
     cfg = _ffcv_config(provider)
@@ -160,9 +136,7 @@ def infer_spec(provider) -> PipelineSpec:
         return tuple(("image", cls_name, dict(kwargs))
                      for cls_name, kwargs in provider_splits.get(split, []))
 
-    # Structural image tail: NormalizeImage (from preprocessing) then the
-    # standard FFCV plumbing. Normalize runs CPU-side (before ToDevice)
-    # so we don't pull cupy in as a dependency for the GPU path.
+    # Normalize runs CPU-side (before ToDevice) so the GPU path needs no cupy dependency.
     image_tail_ops = []
     if preproc is not None and preproc.mean is not None and preproc.std is not None:
         mean_255 = np.asarray(preproc.mean, dtype=np.float32) * 255.0
@@ -175,9 +149,6 @@ def infer_spec(provider) -> PipelineSpec:
     ])
     image_tail = tuple(("image", cls, kw) for cls, kw in image_tail_ops)
 
-    # Labels are bypassed at consume time (see ffcv/loader.py) but FFCV's
-    # pipeline still has to materialize the label field — IntDecoder is
-    # the first label op, then the standard int-label conversion tail.
     label_tail = (
         ("label", "IntDecoder", {}),
         ("label", "ToTensor", {}),

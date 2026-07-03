@@ -1,13 +1,4 @@
-"""Polymorphic ramp strategy for the KD-blend tuners (LIF/TTFS).
-
-One cohesive class per ramp mode bundles the seams that vary together — the rate
-axis, the per-perceptron blend, the cross-layer ramp forward, the KD loss, and
-the strategy-specific pre-ramp setup / forward-removal cleanup — so the tuner
-holds ONE ``self._ramp`` and delegates instead of dispatching on a flag thicket.
-Mirrors ``spiking/segment_policies.py``. The base must NOT import the concrete
-tuner modules (the TTFS strategies live next to their forwards/losses in
-``tuners/ttfs_cycle_adaptation_tuner.py``), so it stays a leaf the tuner imports.
-"""
+"""Polymorphic ramp strategy for the KD-blend tuners (LIF/TTFS)."""
 
 from __future__ import annotations
 
@@ -26,6 +17,8 @@ class RampStrategy:
         return BlendAxis()
 
     def make_blend(self, tuner, old, target, rate):
+        # Lazy: kd_blend_adaptation_tuner imports this module, so importing it at top
+        # would be a circular import.
         from mimarsinan.tuning.orchestration.kd_blend_adaptation_tuner import (
             BlendActivation,
         )

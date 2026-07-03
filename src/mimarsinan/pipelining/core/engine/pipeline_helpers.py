@@ -7,10 +7,11 @@ from typing import Any
 
 import torch
 
+from mimarsinan.chip_simulation.spiking_mode_policy import policy_for_spiking_mode
+from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
+
 
 def require_lif_spiking_mode(pipeline, step_name: str) -> None:
-    from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
-
     spiking_mode = DeploymentPlan.of(pipeline).spiking_mode
     if spiking_mode != "lif":
         raise ValueError(
@@ -24,9 +25,6 @@ def require_spiking_mode_supported(
     *,
     backend: str,
 ) -> None:
-    from mimarsinan.chip_simulation.spiking_mode_policy import policy_for_spiking_mode
-    from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
-
     plan = DeploymentPlan.of(pipeline)
     policy_for_spiking_mode(
         plan.spiking_mode, plan.ttfs_cycle_schedule
