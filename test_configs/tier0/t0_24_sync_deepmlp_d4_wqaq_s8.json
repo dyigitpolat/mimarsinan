@@ -37,7 +37,7 @@
     "model_type": "deep_mlp",
     "model_config": {
       "depth": 4,
-      "width": 64
+      "width": 128
     },
     "batch_size": 128,
     "max_simulation_samples": 100,

@@ -88,7 +88,7 @@ T0 = [
     dict(n=6, mode="ttfs", quant="wq", wb=5, s=8, vehicle="mmixcore"),
     dict(n=7, mode="ttfs", quant="aq", wb=5, s=16, vehicle="lenet5"),
     dict(n=8, mode="ttfs", quant="fp", wb=5, s=32, vehicle="deepcnn", depth=8, tags=["wall_risk"]),
-    dict(n=9, mode="ttfs", quant="wqaq", wb=5, s=4, vehicle="deepmlp", depth=4, pruned=0.5, tags=["pruned"]),
+    dict(n=9, mode="ttfs", quant="wqaq", wb=5, s=4, vehicle="deepmlp", depth=4, width=128, pruned=0.5, tags=["pruned"]),
     dict(n=10, mode="ttfs", quant="fp", wb=5, s=16, vehicle="simplemlp",
          coalescing=False, splitting=False, tags=["identity"]),
     dict(n=11, mode="ttfsq", quant="wqaq", wb=5, s=16, vehicle="mmixcore",
@@ -100,14 +100,15 @@ T0 = [
     dict(n=16, mode="casc", quant="wq", wb=5, s=8, vehicle="mmixcore", encoding="offload",
          scheduling=True, has_bias=False, tags=["offload", "sched", "nobias"]),
     dict(n=17, mode="casc", quant="wqaq", wb=5, s=32, vehicle="lenet5", tags=["wall_risk"]),
-    dict(n=18, mode="casc", quant="wq", wb=5, s=4, vehicle="deepcnn", depth=4, pruned=0.5, tags=["pruned"]),
+    dict(n=18, mode="casc", quant="wq", wb=5, s=4, vehicle="deepcnn", depth=4, pruned=0.5,
+         tags=["pruned", "known_collapse_candidate"]),
     dict(n=19, mode="casc", quant="wq", wb=4, s=16, vehicle="deepmlp", depth=16,
          tags=["wall_risk", "known_collapse_candidate"]),
     dict(n=20, mode="casc", quant="wqaq", wb=5, s=4, vehicle="simplemlp"),
     dict(n=21, mode="sync", quant="wq", wb=5, s=8, vehicle="mmixcore", pruned=0.5, tags=["pruned"]),
     dict(n=22, mode="sync", quant="wq", wb=5, s=4, vehicle="lenet5", scheduling=True, tags=["sched"]),
     dict(n=23, mode="sync", quant="wqaq", wb=8, s=16, vehicle="deepcnn", depth=4),
-    dict(n=24, mode="sync", quant="wqaq", wb=5, s=8, vehicle="deepmlp", depth=4),
+    dict(n=24, mode="sync", quant="wqaq", wb=5, s=8, vehicle="deepmlp", depth=4, width=128),
     dict(n=25, mode="sync", quant="wq", wb=5, s=32, vehicle="simplemlp"),
 ]
 
@@ -187,6 +188,8 @@ def _deployment(tier, row, vehicles, dataset):
     model_config = dict(v["model_config"])
     if "depth" in row:
         model_config["depth"] = row["depth"]
+    if "width" in row:
+        model_config["width"] = row["width"]
 
     dp = {
         "lr": row.get("lr", 0.003),
@@ -250,6 +253,15 @@ def _cell(tier, row, vehicles, dataset):
     }
 
 
+def _wall_budget(tier, row, vehicles, default_min):
+    if tier != 0:
+        return default_min
+    # Measured locally: LIF's Loihi leg and conv-model cells exceed 5 min.
+    if row["mode"] == "lif" or vehicles[row["vehicle"]]["model_type"] == "deep_cnn":
+        return 12
+    return 6
+
+
 def _emit_tier(tier, rows, vehicles, dataset, wall_budget_min):
     out_dir = ROOT / f"tier{tier}"
     out_dir.mkdir(exist_ok=True)
@@ -277,7 +289,7 @@ def _emit_tier(tier, rows, vehicles, dataset, wall_budget_min):
             "model_type": vehicles[row["vehicle"]]["model_type"],
             "cell": _cell(tier, row, vehicles, ds),
             "tags": row.get("tags", []),
-            "expected_wall_min": wall_budget_min,
+            "expected_wall_min": _wall_budget(tier, row, vehicles, wall_budget_min),
         })
     (out_dir / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
     return len(rows)

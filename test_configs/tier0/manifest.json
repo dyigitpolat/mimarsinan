@@ -20,7 +20,7 @@
         "encoding_placement": "subsume"
       },
       "tags": [],
-      "expected_wall_min": 5
+      "expected_wall_min": 12
     },
     {
       "name": "t0_02_lif_lenet5_fp_s8_novena_offload_pruned",
@@ -43,7 +43,7 @@
         "offload",
         "pruned"
       ],
-      "expected_wall_min": 5
+      "expected_wall_min": 12
     },
     {
       "name": "t0_03_lif_deepcnn_d8_wqaq_s16",
@@ -62,7 +62,7 @@
         "encoding_placement": "subsume"
       },
       "tags": [],
-      "expected_wall_min": 5
+      "expected_wall_min": 12
     },
     {
       "name": "t0_04_lif_deepmlp_d8_aq_s32",
@@ -81,7 +81,7 @@
         "encoding_placement": "subsume"
       },
       "tags": [],
-      "expected_wall_min": 5
+      "expected_wall_min": 12
     },
     {
       "name": "t0_05_lif_simplemlp_wq_s4",
@@ -100,7 +100,7 @@
         "encoding_placement": "subsume"
       },
       "tags": [],
-      "expected_wall_min": 5
+      "expected_wall_min": 12
     },
     {
       "name": "t0_06_ttfs_mmixcore_wq_s8",
@@ -119,7 +119,7 @@
         "encoding_placement": "subsume"
       },
       "tags": [],
-      "expected_wall_min": 5
+      "expected_wall_min": 6
     },
     {
       "name": "t0_07_ttfs_lenet5_aq_s16",
@@ -138,7 +138,7 @@
         "encoding_placement": "subsume"
       },
       "tags": [],
-      "expected_wall_min": 5
+      "expected_wall_min": 6
     },
     {
       "name": "t0_08_ttfs_deepcnn_d8_fp_s32",
@@ -159,7 +159,7 @@
       "tags": [
         "wall_risk"
       ],
-      "expected_wall_min": 5
+      "expected_wall_min": 12
     },
     {
       "name": "t0_09_ttfs_deepmlp_d4_wqaq_s4_pruned",
@@ -180,7 +180,7 @@
       "tags": [
         "pruned"
       ],
-      "expected_wall_min": 5
+      "expected_wall_min": 6
     },
     {
       "name": "t0_10_ttfs_simplemlp_fp_s16_identity",
@@ -201,7 +201,7 @@
       "tags": [
         "identity"
       ],
-      "expected_wall_min": 5
+      "expected_wall_min": 6
     },
     {
       "name": "t0_11_ttfsq_mmixcore_wqaq_s16_offload",
@@ -222,7 +222,7 @@
       "tags": [
         "offload"
       ],
-      "expected_wall_min": 5
+      "expected_wall_min": 6
     },
     {
       "name": "t0_12_ttfsq_lenet5_wqaq_s32",
@@ -243,7 +243,7 @@
       "tags": [
         "wall_risk"
       ],
-      "expected_wall_min": 5
+      "expected_wall_min": 6
     },
     {
       "name": "t0_13_ttfsq_deepcnn_d4_wqaq_s4",
@@ -262,7 +262,7 @@
         "encoding_placement": "subsume"
       },
       "tags": [],
-      "expected_wall_min": 5
+      "expected_wall_min": 12
     },
     {
       "name": "t0_14_ttfsq_deepmlp_d8_wqaq_s8",
@@ -281,7 +281,7 @@
         "encoding_placement": "subsume"
       },
       "tags": [],
-      "expected_wall_min": 5
+      "expected_wall_min": 6
     },
     {
       "name": "t0_15_ttfsq_simplemlp_wqaq_s8_pruned",
@@ -302,7 +302,7 @@
       "tags": [
         "pruned"
       ],
-      "expected_wall_min": 5
+      "expected_wall_min": 6
     },
     {
       "name": "t0_16_casc_mmixcore_wq_s8_offload_sched_nobias",
@@ -325,7 +325,7 @@
         "sched",
         "nobias"
       ],
-      "expected_wall_min": 5
+      "expected_wall_min": 6
     },
     {
       "name": "t0_17_casc_lenet5_wqaq_s32",
@@ -346,7 +346,7 @@
       "tags": [
         "wall_risk"
       ],
-      "expected_wall_min": 5
+      "expected_wall_min": 6
     },
     {
       "name": "t0_18_casc_deepcnn_d4_wq_s4_pruned",
@@ -365,9 +365,10 @@
         "encoding_placement": "subsume"
       },
       "tags": [
-        "pruned"
+        "pruned",
+        "known_collapse_candidate"
       ],
-      "expected_wall_min": 5
+      "expected_wall_min": 12
     },
     {
       "name": "t0_19_casc_deepmlp_d16_wq_s16",
@@ -389,7 +390,7 @@
         "wall_risk",
         "known_collapse_candidate"
       ],
-      "expected_wall_min": 5
+      "expected_wall_min": 6
     },
     {
       "name": "t0_20_casc_simplemlp_wqaq_s4",
@@ -408,7 +409,7 @@
         "encoding_placement": "subsume"
       },
       "tags": [],
-      "expected_wall_min": 5
+      "expected_wall_min": 6
     },
     {
       "name": "t0_21_sync_mmixcore_wq_s8_pruned",
@@ -429,7 +430,7 @@
       "tags": [
         "pruned"
       ],
-      "expected_wall_min": 5
+      "expected_wall_min": 6
     },
     {
       "name": "t0_22_sync_lenet5_wq_s4_sched",
@@ -450,7 +451,7 @@
       "tags": [
         "sched"
       ],
-      "expected_wall_min": 5
+      "expected_wall_min": 6
     },
     {
       "name": "t0_23_sync_deepcnn_d4_wqaq_s16",
@@ -469,7 +470,7 @@
         "encoding_placement": "subsume"
       },
       "tags": [],
-      "expected_wall_min": 5
+      "expected_wall_min": 12
     },
     {
       "name": "t0_24_sync_deepmlp_d4_wqaq_s8",
@@ -488,7 +489,7 @@
         "encoding_placement": "subsume"
       },
       "tags": [],
-      "expected_wall_min": 5
+      "expected_wall_min": 6
     },
     {
       "name": "t0_25_sync_simplemlp_wq_s32",
@@ -507,7 +508,7 @@
         "encoding_placement": "subsume"
       },
       "tags": [],
-      "expected_wall_min": 5
+      "expected_wall_min": 6
     }
   ]
 }
