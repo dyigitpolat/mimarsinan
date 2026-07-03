@@ -75,6 +75,21 @@ class TestModelIOBoundaryPolicy:
         assert producer_map[(1, 0)] == (0, 0)
         assert producer_map[(1, 1)] == (0, 1)
 
+    def test_computeop_producer_map_excludes_non_identity_ops(self):
+        """A general op's output index has no positional correspondence with its
+        inputs; only declared-identity ops may relay deadness 1:1."""
+        graph = _two_segment_graph()
+        op = next(n for n in graph.nodes if isinstance(n, ComputeOp))
+        op.op_type = "MaxPool2d"
+        assert build_computeop_producer_map(graph) == {}
+
+    def test_computeop_producer_map_excludes_identity_with_mismatched_width(self):
+        """Identity relay requires the flat input count to equal the output count."""
+        graph = _two_segment_graph()
+        op = next(n for n in graph.nodes if isinstance(n, ComputeOp))
+        op.output_shape = (1,)
+        assert build_computeop_producer_map(graph) == {}
+
     def test_computeop_referenced_neurons(self):
         graph = _two_segment_graph()
         refs = build_computeop_referenced_neurons(graph)

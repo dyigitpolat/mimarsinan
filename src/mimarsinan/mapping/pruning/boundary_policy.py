@@ -58,13 +58,36 @@ def compute_model_io_boundary_policy(ir_graph: IRGraph) -> PruningBoundaryPolicy
     )
 
 
+def _computeop_relays_deadness(op: ComputeOp) -> bool:
+    """Whether upstream deadness may relay 1:1 through this op (output i == f(input i), f(0)=0).
+
+    A general op's output index has no positional correspondence with its inputs
+    (pool/linear/conv change shape), so relaying deadness through it drops LIVE
+    signal from the deployed graph. Only declared-identity ops with matching
+    flat input/output widths qualify.
+    """
+    if str(getattr(op, "op_type", "")).lower() != "identity":
+        return False
+    output_shape = getattr(op, "output_shape", None)
+    if output_shape is None:
+        return True
+    n_out = 1
+    for d in output_shape:
+        n_out *= int(d)
+    return n_out == len(op.input_sources.flatten())
+
+
 def build_computeop_producer_map(
     ir_graph: IRGraph,
 ) -> Dict[Tuple[int, int], Tuple[int, int]]:
-    """Map ``(compute_op_id, output_index)`` to upstream ``(neural_id, col)``."""
+    """Map ``(compute_op_id, output_index)`` to upstream ``(neural_id, col)`` for
+    the ops that qualify under :func:`_computeop_relays_deadness` (identity 1:1
+    relays only); every other ComputeOp is a deadness barrier."""
     producer_map: Dict[Tuple[int, int], Tuple[int, int]] = {}
     for node in ir_graph.nodes:
         if not isinstance(node, ComputeOp):
+            continue
+        if not _computeop_relays_deadness(node):
             continue
         for out_idx, src in enumerate(node.input_sources.flatten()):
             if isinstance(src, IRSource) and src.node_id >= 0:

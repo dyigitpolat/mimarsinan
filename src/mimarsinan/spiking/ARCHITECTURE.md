@@ -16,12 +16,12 @@ remaining ANN→SNN conversion gap on the deployed cascade.
 |---|---|
 | `spike_trains.py` | Spike-train constructors: uniform, cycle-accurate signed-IF (`lif_spike_train`), materialized, and the legacy rate fallback. |
 | `boundary_config.py` | `BoundaryConfig` dataclass — runtime knobs for boundary encode/decode (T, spiking mode, cycle accuracy, dtype, negative shift). |
-| `segment_boundary.py` | SSOT boundary encode/decode: `encode_segment_input` (cached trains take precedence; missing non-raw slices are a hard error) and `decode_segment_output(_torch)` (counts / T). |
+| `segment_boundary.py` | SSOT boundary encode/decode: `encode_segment_input` (cached trains take precedence; missing non-raw slices are a hard error), `decode_segment_output(_torch)` (counts / T), and `normalize_ttfs_boundary_value` (the TTFS wire-domain transcode: spike time encodes value / boundary scale). |
 | `compute_boundary.py` | `encode_compute_boundary` — cycle-accurate spike emission for subsumed plain-LIF-Perceptron ComputeOp boundaries; wrapper mappers and non-LIF ops stay rate-mode. |
 | `segment_partition.py` | Exec-graph classification (spike producer vs host value boundary) and union-find partition into maximal spike segments; encoding perceptrons start fresh segments. |
 | `segment_forward.py` | `SegmentForwardDriver` — the mode-agnostic walk: host ComputeOps run once on decoded values (with min recording and `_negative_shift`), spike segments delegate to `policy.run_segment`. |
 | `segment_policies.py` | `LifSegmentPolicy` (per-cycle signed-IF cascade, uniform re-encode at entries, `node_value_recorder` side-channel) and `AnalyticalSegmentPolicy` (every node once on ideal values); re-exports `TtfsSegmentPolicy`. |
-| `segment_policy_ttfs.py` | `TtfsSegmentPolicy` — latency-windowed single-spike sim (arrival latch, ramp decode), drive-time effective-bias install, optional offload-boundary STE (`boundary_surrogate_temp`). |
+| `segment_policy_ttfs.py` | `TtfsSegmentPolicy` — latency-windowed single-spike sim (arrival latch, ramp decode, window-relative wire-normalized boundary trains per consumer input scale), drive-time effective-bias install, optional offload-boundary STE (`boundary_surrogate_temp`). |
 | `chip_aligned_nf.py` | `chip_aligned_segment_forward` — thin LIF wrapper (driver + `LifSegmentPolicy`, `run_cycle_accurate` fallback); the torch mirror of HCM `_forward_rate`. |
 | `lif_utils.py` | Unwrap wrapped `LIFActivation`s; toggle `use_cycle_accurate_trains` model-wide. |
 | `scale_aware_boundaries.py` | Set per-block `activation_scale` (theta_out, encoding layer pinned) and forward-propagate `input_activation_scale` via the polymorphic mapper walk. |

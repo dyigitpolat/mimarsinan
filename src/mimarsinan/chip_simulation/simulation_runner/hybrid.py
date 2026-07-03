@@ -220,7 +220,7 @@ class SimulationHybridMixin(SimulationHostContract):
             print(f"  Executing compute op '{stage.name}' on host")
             op_id = stage.compute_op.id
             ttfs_in_scale, ttfs_out_scale = resolve_stage_compute_scales(
-                hybrid, op_id, apply_ttfs=is_ttfs
+                hybrid, op_id, apply_ttfs=is_ttfs, op=stage.compute_op,
             )
             buf[op_id] = self._execute_compute_op_np(
                 stage.compute_op,

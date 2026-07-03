@@ -9,6 +9,7 @@ import numpy.typing as npt
 import torch
 
 from mimarsinan.mapping.ir import ComputeOp, IRSource
+from mimarsinan.mapping.support.compute_modules import ScaleNormalizingWrapper
 
 
 def assemble_segment_input_torch(
@@ -202,16 +203,34 @@ def execute_compute_op_numpy(
     return result.detach().numpy()
 
 
+def compute_op_owns_scale_domain(op) -> bool:
+    """Whether the op module transcodes rate<->absolute itself (``ScaleNormalizingWrapper``).
+
+    Such an op computes ``f(r_i * s_i) / s_out`` internally; applying the outer
+    stage scales around it would apply the domain transcode twice.
+    """
+    params = getattr(op, "params", None) or {}
+    return isinstance(params.get("module"), ScaleNormalizingWrapper)
+
+
 def resolve_stage_compute_scales(
     mapping,
     op_id: int,
     *,
     apply_ttfs: bool = True,
+    op=None,
 ) -> tuple[float, float]:
-    """Return ``(input_scale, output_scale)`` for a hybrid compute stage."""
+    """Return ``(input_scale, output_scale)`` for a hybrid compute stage.
+
+    ``apply_ttfs`` selects the TTFS value-domain convention: decode the gathered
+    rates by the producer scale, run the op in absolute units, re-normalize by the
+    op's boundary out-scale. Pass ``op`` so wrapper-owned ops keep ``(1, 1)``.
+    """
     out_scales = getattr(mapping, "node_activation_scales", {})
     in_scales = getattr(mapping, "node_input_activation_scales", out_scales)
     if not apply_ttfs:
+        return 1.0, 1.0
+    if op is not None and compute_op_owns_scale_domain(op):
         return 1.0, 1.0
     return float(in_scales.get(op_id, 1.0)), float(out_scales.get(op_id, 1.0))
 

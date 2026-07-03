@@ -226,7 +226,7 @@ def run_ttfs_contract_compute_stage(
     op = stage.compute_op
     assert op is not None
     in_scale, out_scale = resolve_stage_compute_scales(
-        mapping, op.id, apply_ttfs=True,
+        mapping, op.id, apply_ttfs=True, op=op,
     )
     result = execute_compute_op_numpy(
         op,

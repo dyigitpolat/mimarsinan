@@ -349,6 +349,81 @@ class TestComputeOpStructuralRelay:
         # A.col 0 is consumed by ComputeOp -> kept alive.
         assert 0 not in res.pruned_cols_per_node[0]
 
+    def test_shape_changing_compute_op_never_relays_deadness(self):
+        """A -> pool-like op (2 inputs, 1 output) -> B: pruning A.col 0 must NOT kill
+        B's axon — output 0 pools BOTH of A's neurons and A.col 1 is live. The 1:1
+        input-as-output relay through shape-changing ops dropped live signal from
+        the deployed graph (the t0_18 casc-conv 0.2031 incident)."""
+        w_a = np.array([[1.0, 2.0], [3.0, 4.0]], dtype=np.float64)
+        a = NeuralCore(
+            id=0, name="A",
+            input_sources=_src([(-2, 0), (-2, 1)]),
+            core_matrix=w_a, threshold=1.0, latency=0,
+        )
+        op = ComputeOp(
+            id=1, name="pool",
+            input_sources=_src([(0, 0), (0, 1)]),
+            op_type="MaxPool2d",
+            output_shape=(1,),
+        )
+        w_b = np.array([[5.0], [0.1]], dtype=np.float64)
+        b = NeuralCore(
+            id=2, name="B",
+            input_sources=_src([(1, 0), (-3, 0)]),
+            core_matrix=w_b, threshold=1.0, latency=1,
+        )
+        graph = IRGraph(
+            nodes=[a, op, b], output_sources=_src([(2, 0)]),
+        )
+        res = compute_global_pruned_sets(
+            graph,
+            zero_threshold=1e-8,
+            initial_per_node={0: (set(), {0})},
+            initial_per_bank=None,
+            exempt_rows_per_node={0: frozenset({0, 1}), 2: frozenset()},
+            exempt_cols_per_node={0: frozenset(), 2: frozenset({0})},
+        )
+        assert 0 in res.pruned_cols_per_node[0]
+        assert 0 not in res.pruned_rows_per_node[2], (
+            "pool output 0 still receives live A.col 1 — its consumer axon must survive"
+        )
+
+    def test_same_size_non_identity_op_never_relays_deadness(self):
+        """Input/output counts matching is NOT sufficient for the 1:1 relay: a
+        non-identity op's output j is not produced by its input j."""
+        w_a = np.array([[1.0, 2.0], [3.0, 4.0]], dtype=np.float64)
+        a = NeuralCore(
+            id=0, name="A",
+            input_sources=_src([(-2, 0), (-2, 1)]),
+            core_matrix=w_a, threshold=1.0, latency=0,
+        )
+        op = ComputeOp(
+            id=1, name="lin",
+            input_sources=_src([(0, 0), (0, 1)]),
+            op_type="Linear",
+            output_shape=(2,),
+        )
+        w_b = np.array([[5.0, 6.0], [7.0, 8.0], [0.1, 0.1]], dtype=np.float64)
+        b = NeuralCore(
+            id=2, name="B",
+            input_sources=_src([(1, 0), (1, 1), (-3, 0)]),
+            core_matrix=w_b, threshold=1.0, latency=1,
+        )
+        graph = IRGraph(
+            nodes=[a, op, b], output_sources=_src([(2, 0), (2, 1)]),
+        )
+        res = compute_global_pruned_sets(
+            graph,
+            zero_threshold=1e-8,
+            initial_per_node={0: (set(), {0})},
+            initial_per_bank=None,
+            exempt_rows_per_node={0: frozenset({0, 1}), 2: frozenset()},
+            exempt_cols_per_node={0: frozenset(), 2: frozenset({0, 1})},
+        )
+        assert 0 in res.pruned_cols_per_node[0]
+        assert 0 not in res.pruned_rows_per_node[2]
+        assert 1 not in res.pruned_rows_per_node[2]
+
 
 class TestExemptions:
     """Model-level input-data axons and output-logit neurons must never be pruned."""

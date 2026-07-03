@@ -7,6 +7,7 @@ import torch
 from mimarsinan.chip_simulation.recording import spike_modes
 from mimarsinan.models.nn.activations.ttfs_spiking import TTFSActivation
 from mimarsinan.models.perceptron_mixer.perceptron import effective_preactivation_bias
+from mimarsinan.spiking.segment_boundary import normalize_ttfs_boundary_value
 from mimarsinan.spiking.segment_partition import is_encoding_perceptron, perceptron_of
 
 
@@ -62,6 +63,22 @@ class TtfsSegmentPolicy:
                 return self.decode_scale(driver, d)
         return 1.0
 
+    def consumer_wire_scale(self, driver, node):
+        """``input_activation_scale`` of the perceptron this region node feeds into.
+
+        The wire-domain normalizer for boundary spikes read by ``node``: for a
+        perceptron it is its own input scale (what its weight fold multiplies back
+        in); a transparent (non-perceptron) node inherits its in-segment consumer's.
+        """
+        p = perceptron_of(node)
+        if p is not None:
+            return getattr(p, "input_activation_scale", 1.0)
+        seg_root = driver._seg_of.get(node)
+        for c in driver._consumers.get(node, []):
+            if driver._seg_of.get(c) is seg_root:
+                return self.consumer_wire_scale(driver, c)
+        return 1.0
+
     def segment_depths(self, driver, seg_nodes):
         """Per-node cascade latency = perceptron-hops from the segment entry
         (each perceptron core adds one cycle; transparent routing adds none)."""
@@ -100,15 +117,17 @@ class TtfsSegmentPolicy:
             m.reset_state()
         return zeros
 
-    def _boundary_single_spike_train(self, value, T: int, n_cycles: int) -> torch.Tensor:
+    def _boundary_single_spike_train(self, value, boundary_scale, T: int) -> torch.Tensor:
         """Single-spike TTFS train of a decoded boundary value at the rising edge of
-        HCM's latched encode (``spike_time = round(T(1 - clamp(v)))``). The forward
-        train is the exact hard encode; ``boundary_surrogate_temp`` adds an STE backward.
+        HCM's latched encode (``spike_time = round(T(1 - v))`` with the WIRE-normalized
+        ``v = clamp(value / boundary_scale, 0, 1)`` — the transcoding SSOT). The train
+        is window-relative (length ``T``); consumers read it at ``t - depth``. The
+        forward is the exact hard encode; ``boundary_surrogate_temp`` adds an STE backward.
         """
-        v = value.clamp(0.0, 1.0)
+        v = normalize_ttfs_boundary_value(value, boundary_scale)
         latched = torch.stack(
             [spike_modes.to_spikes(v, c, simulation_length=T, spike_mode="TTFS")
-             for c in range(n_cycles)],
+             for c in range(T)],
             dim=0,
         ).to(value.dtype)
         train_hard = torch.cat([latched[:1], latched[1:] - latched[:-1]], dim=0)
@@ -116,14 +135,14 @@ class TtfsSegmentPolicy:
         temp = self.boundary_surrogate_temp
         if temp is None or not torch.is_grad_enabled():
             return train_hard
-        return self._straight_through(train_hard, v, T, n_cycles, float(temp))
+        return self._straight_through(train_hard, v, T, float(temp))
 
     @staticmethod
-    def _straight_through(train_hard, v, T, n_cycles, temp):
+    def _straight_through(train_hard, v, T, temp):
         """STE: forward == ``train_hard`` exactly; backward flows through a soft
         spike-time ``sigmoid((c - tau)/temp)`` with ``tau = T(1 - v)``."""
-        cycles = torch.arange(n_cycles, device=v.device, dtype=v.dtype)
-        cycles = cycles.reshape((n_cycles,) + (1,) * v.dim())
+        cycles = torch.arange(T, device=v.device, dtype=v.dtype)
+        cycles = cycles.reshape((T,) + (1,) * v.dim())
         tau = float(T) * (1.0 - v)
         latched_soft = torch.sigmoid((cycles - tau) / temp)
         train_soft = torch.cat(
@@ -141,18 +160,25 @@ class TtfsSegmentPolicy:
         boundary_trains: dict = {}
         n_cycles = T + max(depth.values(), default=0)
 
-        def boundary_spikes(src, t):
-            train = boundary_trains.get(src)
+        def boundary_spikes(src, k, consumer):
+            scale = self.consumer_wire_scale(driver, consumer)
+            scale_key = (
+                float(scale.float().mean())
+                if isinstance(scale, torch.Tensor) else float(scale)
+            )
+            key = (src, scale_key)
+            train = boundary_trains.get(key)
             if train is None:
-                train = self._boundary_single_spike_train(values[src], T, n_cycles)
-                boundary_trains[src] = train
-            return train[t]
+                train = self._boundary_single_spike_train(values[src], scale, T)
+                boundary_trains[key] = train
+            return train[k]
 
         def read(src, out, perc_prev, t, consumer):
             if src not in seg_set:
                 if is_encoding_perceptron(consumer):
                     return values[src]
-                return boundary_spikes(src, t)
+                # Window-relative arrival, mirroring the executor's per-core input realignment.
+                return boundary_spikes(src, t - depth[consumer], consumer)
             if perceptron_of(src) is not None:
                 return perc_prev.get(src, zeros[src])
             return out[src]

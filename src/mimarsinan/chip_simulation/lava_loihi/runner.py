@@ -125,7 +125,7 @@ class LavaLoihiRunner(LavaCoreMixin, LavaSegmentMixin):
             assert stage.compute_op is not None
             op_id = stage.compute_op.id
             ttfs_in_scale, ttfs_out_scale = resolve_stage_compute_scales(
-                self.mapping, op_id, apply_ttfs=False,
+                self.mapping, op_id, apply_ttfs=False, op=stage.compute_op,
             )
             result = execute_compute_op_numpy(
                 stage.compute_op, x_flat, state_buffer,

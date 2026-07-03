@@ -123,11 +123,25 @@ class TestCascadedDriverExecutorParity:
             input_shape, mapping, S, nn.Identity(), "TTFS", "TTFS", "<=",
             spiking_mode="ttfs_cycle_based", ttfs_cycle_schedule="cascaded",
         ).eval()
+        # The NF drives the value domain; the executor's state is normalized by
+        # each producer's out-scale — convert per output column via the mapping's
+        # own node_activation_scales (theta for cores, boundary scale for host ops).
+        out_scales = torch.tensor(
+            [
+                float(mapping.node_activation_scales.get(int(src.node_id), 1.0))
+                if int(src.node_id) >= 0 else 1.0
+                for src in mapping.output_sources.flatten()
+            ],
+            dtype=torch.float64,
+        )
         with torch.no_grad():
             nf_out = driver(x)
-            scm_out = executor(x).double() / S  # count-scaled -> value domain
+            scm_out = executor(x).double() * out_scales / S
+        # atol 1e-7: the mapping's scale constants are float32 (node_activation_scales,
+        # ScaleNormalizingWrapper buffers), so the value-domain conversion carries
+        # ~1e-8 relative noise; every real defect class here measured >= 1e-1.
         np.testing.assert_allclose(
-            nf_out.numpy(), scm_out.numpy(), rtol=0, atol=1e-9,
+            nf_out.numpy(), scm_out.numpy(), rtol=0, atol=1e-7,
             err_msg="cascaded NF driver diverges from the deployed executor",
         )
 
@@ -177,6 +191,9 @@ class TestCascadedDriverExecutorParity:
 
     def test_multisegment_mixer_offload_nonunit_scales(self):
         from mimarsinan.models.torch_mlp_mixer_core import TorchMLPMixerCore
+        from mimarsinan.spiking.scale_aware_boundaries import (
+            propagate_boundary_input_scales,
+        )
         from mimarsinan.torch_mapping.encoding_layers import mark_encoding_layers
 
         torch.manual_seed(0)
@@ -188,6 +205,9 @@ class TestCascadedDriverExecutorParity:
         mark_encoding_layers(flow.get_mapper_repr(), placement="offload")
         for i, p in enumerate(flow.get_perceptrons()):
             p.set_activation_scale(1.5 + 0.5 * (i % 3))
+        # Production invariant: SoftCoreMappingStep re-propagates boundary input
+        # scales at map time, so every input_activation_scale is fresh vs theta.
+        propagate_boundary_input_scales(flow, input_data_scale=1.0)
         flow = _install_ttfs(flow)
         x = torch.rand(4, 1, 28, 28, dtype=torch.float64)
         self._assert_final_outputs_equal(flow, (1, 28, 28), x)

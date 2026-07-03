@@ -133,6 +133,7 @@ class SanafeRunner(SanafeNeuralStageMixin, SanafeNeuralStageRecordMixin, SanafeS
                     self.mapping,
                     op.id,
                     apply_ttfs=_runner.is_ttfs_spiking_mode(self.spiking_mode),
+                    op=op,
                 )
                 result = _runner.execute_compute_op_numpy(
                     op, sample_input, state_buffer,

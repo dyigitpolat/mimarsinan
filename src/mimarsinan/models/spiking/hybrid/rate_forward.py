@@ -16,7 +16,10 @@ from mimarsinan.chip_simulation.hybrid_run.hybrid_stage_runner import (
     run_hybrid_stages,
 )
 from mimarsinan.chip_simulation.recording.records import SegmentSpikeRecord
-from mimarsinan.chip_simulation.spiking_semantics import is_cascaded_ttfs
+from mimarsinan.chip_simulation.spiking_semantics import (
+    is_cascaded_ttfs,
+    requires_ttfs_firing,
+)
 from mimarsinan.mapping.ir import IRSource
 from mimarsinan.models.spiking.hybrid.host import HybridFlowHost
 from mimarsinan.models.spiking.spiking_config import COMPUTE_DTYPE
@@ -115,8 +118,13 @@ class HybridRateForwardMixin(HybridFlowHost):
             assert op is not None
             spikes_buffer = ctx.state_buffer_spikes
             assert spikes_buffer is not None, "_ctx_factory always supplies state_buffer_spikes"
+            # TTFS host ops run in the value domain, mirroring the deployed
+            # nevresim / SANA-FE runners (apply_ttfs=is_ttfs); LIF stays rate-domain.
             in_scale, out_scale = resolve_stage_compute_scales(
-                self.hybrid_mapping, op.id, apply_ttfs=False
+                self.hybrid_mapping,
+                op.id,
+                apply_ttfs=requires_ttfs_firing(self.spiking_mode),
+                op=op,
             )
             result = execute_compute_op_torch(
                 op,

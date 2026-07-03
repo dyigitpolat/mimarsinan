@@ -13,6 +13,7 @@ from mimarsinan.mapping.packing.hybrid_hardcore_mapping import (
     HybridHardCoreMapping,
     HybridStage,
 )
+from mimarsinan.models.nn.activations.ttfs_spiking import _channel_broadcast_view
 from mimarsinan.spiking.boundary_config import BoundaryConfig
 from mimarsinan.spiking.compute_boundary import (
     _gather_op_input_train as _gather_op_input_train,
@@ -31,7 +32,27 @@ __all__ = [
     "decode_segment_output_torch",
     "encode_compute_boundary",
     "encode_segment_input",
+    "normalize_ttfs_boundary_value",
 ]
+
+
+def normalize_ttfs_boundary_value(value: torch.Tensor, boundary_scale) -> torch.Tensor:
+    """Wire-domain transcode: value-domain boundary tensor -> normalized [0, 1].
+
+    The single-spike TTFS wire contract shared by the torch NF walk, the hybrid
+    executor and HCM: a boundary spike time encodes ``value / boundary_scale``,
+    where ``boundary_scale`` is the consumer's ``input_activation_scale`` (== the
+    source's propagated boundary out-scale); the consumer's weight fold multiplies
+    the same scale back in. Encoding the raw value instead mistimes every boundary
+    spike and saturates values above the scale (bit-exact only at scale 1).
+    """
+    if isinstance(boundary_scale, torch.Tensor):
+        scale = boundary_scale.to(value.device, value.dtype).clamp(min=1e-12)
+        if scale.numel() > 1:
+            scale = _channel_broadcast_view(scale.reshape(-1), value)
+    else:
+        scale = max(float(boundary_scale), 1e-12)
+    return (value / scale).clamp(0.0, 1.0)
 
 
 def decode_segment_output(
