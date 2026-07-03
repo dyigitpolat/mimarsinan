@@ -60,6 +60,11 @@ def is_cycle_based(spiking_mode: str) -> bool:
     return _norm(spiking_mode) in CYCLE_BASED_MODES
 
 
+def is_lif(spiking_mode: str) -> bool:
+    """Mode is the plain rate-coded LIF deployment family."""
+    return _norm(spiking_mode) in LIF_MODES
+
+
 def forces_activation_quantization(spiking_mode: str) -> bool:
     """Mode requires the activation-quantization chain (S-level activations)."""
     return _norm(spiking_mode) in _ACT_QUANT_MODES

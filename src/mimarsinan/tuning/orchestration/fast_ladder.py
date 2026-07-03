@@ -8,7 +8,9 @@ from typing import TYPE_CHECKING
 
 import torch
 
+from mimarsinan.common.env import mbh_gate_enabled
 from mimarsinan.model_training.training_recipe import build_optimizer, build_recipe
+from mimarsinan.tuning.orchestration.mbh_gate import gated_fast_rate_attempt
 from mimarsinan.tuning.orchestration.mbh_ledger import emit_fast_rung_ledger
 from mimarsinan.tuning.trace import DecisionRecord
 
@@ -94,6 +96,7 @@ class FastLadderMixin(_FastLadderHost):
             self._fast_lr_schedule = None
             self._fast_optimizer_steps = 0
             self._mbh_rung_index = -1
+            self._mbh_gate_state = None
         return super().run()
 
     def _driver_attempt(self, target):
@@ -189,10 +192,20 @@ class FastLadderMixin(_FastLadderHost):
             schedule.step()
             self._fast_optimizer_steps += 1
 
+    def _continue_to_full_rate(self):
+        """Under the [MBH-GATE] flag the forced jump to 1.0 does NO training on
+        destructive intermediate rates: skip the adaptive micro-ramp."""
+        if getattr(self, "_fixed_ladder_policy", False) and mbh_gate_enabled():
+            return None
+        return super()._continue_to_full_rate()
+
     def _fast_rate_attempt(self, target):
         """One fast-ladder rung, driven THROUGH the seam verbs (EF2): the fast
         predictor ``_fast_ramp`` (apply T + train) then the universal ``probe`` read.
-        Records a commit into the trace; always commits ``target`` (no rollback)."""
+        Records a commit into the trace; always commits ``target`` (no rollback) —
+        unless the opt-in [MBH-GATE] D-hat trust region is on."""
+        if mbh_gate_enabled():
+            return gated_fast_rate_attempt(self, float(target))
         self._ensure_fast_optimizer()
         t0 = time.time()
         self._fast_ramp(float(target))
@@ -262,9 +275,9 @@ class FastLadderMixin(_FastLadderHost):
         if post_val < pre_val - tol:
             self._restore_state(pre_state)
 
-    def _record_fast_cycle(self, target, post_acc, t0) -> None:
-        """Record one ``commit`` per scheduled rate so the fast path inherits the
-        DecisionTrace."""
+    def _record_fast_cycle(self, target, post_acc, t0, outcome="commit") -> None:
+        """Record one decision per attempted rate so the fast path inherits the
+        DecisionTrace (``outcome`` != commit only on [MBH-GATE] rejects)."""
         if not hasattr(self, "_cycle_log"):
             return
         optimizer = self._fast_optimizer
@@ -273,7 +286,7 @@ class FastLadderMixin(_FastLadderHost):
         )
         self._cycle_log.record(DecisionRecord(
             cycle_index=len(self._cycle_log),
-            outcome="commit",
+            outcome=str(outcome),
             rate=float(target),
             committed=float(self._committed_rate),
             elapsed_sec=time.time() - t0,

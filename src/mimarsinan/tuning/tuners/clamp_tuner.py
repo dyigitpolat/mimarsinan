@@ -6,6 +6,9 @@ import torch
 
 from mimarsinan.models.nn.layers import SavedTensorDecorator
 from mimarsinan.tuning.axes import ClampAxis
+from mimarsinan.tuning.orchestration.adaptation_manager import (
+    mbh_lif_realloc_ladder_steps,
+)
 from mimarsinan.tuning.orchestration.genuine_probe import iter_val_batches
 from mimarsinan.tuning.orchestration.smooth_adaptation_tuner import SmoothAdaptationTuner
 
@@ -44,8 +47,10 @@ class ClampTuner(SmoothAdaptationTuner):
 
         self._consume_optimization_driver(
             rates=self.pipeline.config.get("clamp_fast_rates", [0.25, 0.5, 0.75, 1.0]),
-            steps_per_rate=int(
-                self.pipeline.config.get("clamp_fast_steps_per_rate", 120)
+            steps_per_rate=mbh_lif_realloc_ladder_steps(
+                self.pipeline.config,
+                "clamp_rate",
+                int(self.pipeline.config.get("clamp_fast_steps_per_rate", 120)),
             ),
         )
 

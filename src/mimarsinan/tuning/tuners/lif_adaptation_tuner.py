@@ -6,6 +6,7 @@ from typing import cast
 
 import torch.nn as nn
 
+from mimarsinan.common.env import mbh_lif_realloc_enabled
 from mimarsinan.models.nn.activations import (
     ChipInputQuantizer,
     LIFActivation,
@@ -50,6 +51,9 @@ class LIFBlendActivation(BlendActivation):
         return cast(LIFActivation, self.target_activation)
 
 
+_MBH_REALLOC_STABILIZE_STEPS = 2000
+
+
 class LIFAdaptationTuner(KDBlendAdaptationTuner):
     """Ramp base_activation to LIFActivation with KD recovery."""
 
@@ -77,6 +81,10 @@ class LIFAdaptationTuner(KDBlendAdaptationTuner):
         self._fast_stabilize_steps = int(
             self.pipeline.config.get("lif_blend_fast_stabilize_steps", 0)
         )
+        if mbh_lif_realloc_enabled():
+            # [MBH X2/E2] the budget reclaimed from the inert clamp/AQ ladders
+            # moves into the deployed-forward stabilize.
+            self._fast_stabilize_steps = _MBH_REALLOC_STABILIZE_STEPS
         self._lif_distmatch = bool(self.pipeline.config.get("lif_distmatch", False))
         self._lif_distmatch_bias_iters = int(
             self.pipeline.config.get("lif_distmatch_bias_iters", 10)

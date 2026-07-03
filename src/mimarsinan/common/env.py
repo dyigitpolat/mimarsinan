@@ -20,6 +20,8 @@ TEMPLATES_DIR_VAR = "MIMARSINAN_TEMPLATES_DIR"
 TEST_CUDA_VAR = "MIMARSINAN_TEST_CUDA"
 MP_START_METHOD_VAR = "MIMARSINAN_MP_START_METHOD"
 MBH_LEDGER_VAR = "MIMARSINAN_MBH_LEDGER"
+MBH_GATE_VAR = "MIMARSINAN_MBH_GATE"
+MBH_LIF_REALLOC_VAR = "MIMARSINAN_MBH_LIF_REALLOC"
 IMAGENET_ROOT_VAR = "IMAGENET_ROOT"
 
 
@@ -89,6 +91,16 @@ def test_cuda_enabled() -> bool:
 def mbh_ledger_enabled() -> bool:
     """The measurement-only per-rung [MBH] fast-ladder ledger is on (value exactly "1")."""
     return os.environ.get(MBH_LEDGER_VAR) == "1"
+
+
+def mbh_gate_enabled() -> bool:
+    """The [MBH-GATE] D-hat-gated fast ladder (X2/E1) is on (value exactly "1")."""
+    return os.environ.get(MBH_GATE_VAR) == "1"
+
+
+def mbh_lif_realloc_enabled() -> bool:
+    """The MBH LIF wall-reallocation experiment (X2/E2) is on (value exactly "1")."""
+    return os.environ.get(MBH_LIF_REALLOC_VAR) == "1"
 
 
 def mp_start_method() -> str | None:

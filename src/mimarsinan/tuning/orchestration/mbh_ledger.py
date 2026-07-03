@@ -1,14 +1,15 @@
-"""Measurement-only per-rung [MBH] ledger for the shared fast ladder (MBH X1)."""
+"""Gate-grade MBH measurement helpers + per-rung [MBH] ledger for the fast ladder."""
 
 from __future__ import annotations
 
+import contextlib
 import copy
 import math
 
 import torch
 import torch.nn.functional as F
 
-from mimarsinan.common.env import mbh_ledger_enabled
+from mimarsinan.common.env import mbh_gate_enabled, mbh_ledger_enabled
 from mimarsinan.tuning.orchestration.genuine_probe import (
     eval_forward_over_val,
     genuine_acc_on_clone,
@@ -17,46 +18,105 @@ from mimarsinan.tuning.orchestration.genuine_probe import (
 _RHO_DENOM_EPS = 1e-12
 
 
-def emit_fast_rung_ledger(tuner, *, rate, blended_acc):
-    """Emit one ``[MBH]`` stdout line for a completed fast-ladder rung.
+def _autocast_disabled(device):
+    """E0: every MBH read is fp32 — like-for-like with D-hat, even inside an
+    ambient autocast region (the live probe convention is fp16 under CUDA)."""
+    device_type = torch.device(device).type
+    if device_type not in ("cuda", "cpu"):
+        return contextlib.nullcontext()
+    return torch.autocast(device_type=device_type, enabled=False)
 
-    Gated by ``MIMARSINAN_MBH_LEDGER`` (env SSOT). Every measurement runs on
-    deepcopies inside ``fork_rng`` with the trainer's validation cursor restored,
-    so the live model/optimizer/RNG trajectory is bit-identical to flag-OFF.
-    """
-    if not mbh_ledger_enabled():
-        return None
-    rung = int(getattr(tuner, "_mbh_rung_index", -1)) + 1
-    tuner._mbh_rung_index = rung
-    trainer = tuner.trainer
+
+def fp32_eval_forward_over_val(trainer, forward_obj, model, n_batches, device) -> float:
+    """Accuracy of ``forward_obj`` over ``n_batches`` val batches, autocast-disabled."""
+    with _autocast_disabled(device):
+        return eval_forward_over_val(trainer, forward_obj, model, n_batches, device)
+
+
+@contextlib.contextmanager
+def _measurement_guard(trainer):
+    """Isolation for every MBH measurement: fork the RNG (CUDA included) and
+    restore the trainer's validation cursor, so the live trajectory is untouched."""
     cursor = getattr(trainer, "_gpu_val_cursor", None)
     devices = list(range(torch.cuda.device_count())) if torch.cuda.is_available() else []
     try:
         with torch.random.fork_rng(devices=devices):
-            full_acc = full_transform_acc_on_clone(tuner)
-            rho, grad_norm_t = transfer_alignment(tuner)
+            yield
     finally:
         if cursor is not None:
             trainer._gpu_val_cursor = cursor
+
+
+def rung_measurements(tuner) -> dict:
+    """One rung's isolated fp32 reads: blended_fp32, full_acc (D-hat), rho, ||g_t||."""
+    with _measurement_guard(tuner.trainer):
+        blended_fp32 = blended_acc_fp32(tuner)
+        full_acc = full_transform_acc_on_clone(tuner)
+        rho, grad_norm_t = transfer_alignment(tuner)
+    return {
+        "blended_fp32": blended_fp32,
+        "full_acc": full_acc,
+        "rho": rho,
+        "grad_norm_t": grad_norm_t,
+    }
+
+
+def full_transform_measurement(tuner) -> float:
+    """D-hat alone under the same isolation guard (the gate's entry read)."""
+    with _measurement_guard(tuner.trainer):
+        return full_transform_acc_on_clone(tuner)
+
+
+def emit_fast_rung_ledger(tuner, *, rate, blended_acc, measurements=None):
+    """Emit one ``[MBH]`` stdout line for a completed fast-ladder rung attempt.
+
+    Active when ``MIMARSINAN_MBH_LEDGER`` or ``MIMARSINAN_MBH_GATE`` is on (the
+    gate implies the ledger measurements). ``measurements`` reuses a dict already
+    produced by ``rung_measurements`` (the gate's path) instead of re-measuring.
+    """
+    if not (mbh_ledger_enabled() or mbh_gate_enabled()):
+        return None
+    rung = int(getattr(tuner, "_mbh_rung_index", -1)) + 1
+    tuner._mbh_rung_index = rung
+    if measurements is None:
+        measurements = rung_measurements(tuner)
     line = (
         f"[MBH] tuner={type(tuner).__name__} rung={rung} rate={float(rate):.6f} "
-        f"blended_acc={float(blended_acc):.6f} full_acc={full_acc:.6f} "
-        f"rho={rho:.6f} grad_norm_t={grad_norm_t:.6f}"
+        f"blended_acc={float(blended_acc):.6f} "
+        f"blended_fp32={float(measurements['blended_fp32']):.6f} "
+        f"full_acc={float(measurements['full_acc']):.6f} "
+        f"rho={float(measurements['rho']):.6f} "
+        f"grad_norm_t={float(measurements['grad_norm_t']):.6f}"
     )
     print(line, flush=True)
     return line
 
 
+def blended_acc_fp32(tuner) -> float:
+    """The CURRENT blended model's fp32 accuracy on an isolated deepcopy — the
+    gate-grade counterpart of the live (autocast) rung probe."""
+    device = tuner.pipeline.config["device"]
+    return genuine_acc_on_clone(
+        tuner.model,
+        device,
+        prepare=lambda clone: None,
+        build_forward=lambda clone: clone,
+        evaluate=lambda forward, clone: fp32_eval_forward_over_val(
+            tuner.trainer, forward, clone, tuner._budget.eval_n_batches, device,
+        ),
+    )
+
+
 def full_transform_acc_on_clone(tuner) -> float:
-    """D-hat: the deployed full-transformation (rate 1.0) accuracy, measured on an
-    isolated deepcopy over the tuner's eval batches (the probe's sample set)."""
+    """D-hat: the deployed full-transformation (rate 1.0) fp32 accuracy, measured on
+    an isolated deepcopy over the tuner's eval batches (the probe's sample set)."""
     device = tuner.pipeline.config["device"]
     return genuine_acc_on_clone(
         tuner.model,
         device,
         prepare=lambda clone: None,
         build_forward=tuner._mbh_full_transform_forward,
-        evaluate=lambda forward, clone: eval_forward_over_val(
+        evaluate=lambda forward, clone: fp32_eval_forward_over_val(
             tuner.trainer, forward, clone, tuner._budget.eval_n_batches, device,
         ),
     )
@@ -65,9 +125,9 @@ def full_transform_acc_on_clone(tuner) -> float:
 def transfer_alignment(tuner) -> tuple:
     """(rho, ||g_t||) on one fixed validation batch, on one isolated deepcopy.
 
-    rho = <g_1, g_t> / ||g_t||^2 with plain-CE gradients: g_t under the CURRENT
-    blended behavior, g_1 on the same clone forced to the full transformation.
-    ||g_t||^2 below 1e-12 yields rho = nan.
+    rho = <g_1, g_t> / ||g_t||^2 with plain-CE fp32 gradients: g_t under the
+    CURRENT blended behavior, g_1 on the same clone forced to the full
+    transformation. ||g_t||^2 below 1e-12 yields rho = nan.
     """
     batch = _fixed_validation_batch(tuner.trainer)
     if batch is None:
@@ -75,9 +135,9 @@ def transfer_alignment(tuner) -> tuple:
     device = tuner.pipeline.config["device"]
     x, y = (t.to(device) for t in batch)
     clone = copy.deepcopy(tuner.model).to(device)
-    grads_t = _ce_parameter_grads(clone, clone, x, y)
+    grads_t = _ce_parameter_grads(clone, clone, x, y, device)
     full_forward = tuner._mbh_full_transform_forward(clone)
-    grads_1 = _ce_parameter_grads(clone, full_forward, x, y)
+    grads_1 = _ce_parameter_grads(clone, full_forward, x, y, device)
     norm_t_sq = sum(float((g * g).sum()) for g in grads_t.values())
     grad_norm_t = math.sqrt(norm_t_sq)
     if norm_t_sq < _RHO_DENOM_EPS:
@@ -90,8 +150,8 @@ def transfer_alignment(tuner) -> tuple:
     return dot / norm_t_sq, grad_norm_t
 
 
-def _ce_parameter_grads(clone, forward, x, y) -> dict:
-    """Named plain-CE parameter gradients of ``forward`` on the eval-mode clone.
+def _ce_parameter_grads(clone, forward, x, y, device) -> dict:
+    """Named plain-CE fp32 parameter gradients of ``forward`` on the eval-mode clone.
 
     A gradient-free forward (a bare staircase kernel, zero gradient a.e. — the
     theory's §2a case) yields the empty dict, i.e. an identically-zero gradient.
@@ -99,7 +159,7 @@ def _ce_parameter_grads(clone, forward, x, y) -> dict:
     clone.eval()
     for param in clone.parameters():
         param.grad = None
-    with torch.enable_grad():
+    with torch.enable_grad(), _autocast_disabled(device):
         loss = F.cross_entropy(forward(x), y)
         if loss.grad_fn is None:
             return {}

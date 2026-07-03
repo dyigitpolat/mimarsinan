@@ -1,24 +1,28 @@
-"""Measurement-only [MBH] fast-ladder rung ledger (MBH theory, experiment X1).
+"""Measurement-only [MBH] fast-ladder rung ledger (MBH theory, experiments X1/X2).
 
 Gated by ``MIMARSINAN_MBH_LEDGER`` through the env SSOT. Per fast-ladder rung the
 shared seam emits exactly one stdout line::
 
-    [MBH] tuner=<cls> rung=<i> rate=<r> blended_acc=<a> full_acc=<d> rho=<rho> grad_norm_t=<g>
+    [MBH] tuner=<cls> rung=<i> rate=<r> blended_acc=<a> blended_fp32=<b> full_acc=<d> rho=<rho> grad_norm_t=<g>
 
-where ``blended_acc`` reuses the rung's existing probe, ``full_acc`` (D-hat) is the
-full-transformation (rate 1.0) accuracy on an isolated deepcopy, and ``rho`` is the
-transfer alignment <g1, gt>/||gt||^2 from plain-CE gradients on one fixed validation
-batch. HARD INVARIANT: ledger ON == OFF bit-identical training trajectory; all
-measurement runs on deepcopies inside ``fork_rng`` with live model/optimizer/RNG
-untouched.
+where ``blended_acc`` reuses the rung's existing probe, ``blended_fp32`` re-reads the
+blended model gate-grade (fp32, autocast-disabled — X2/E0), ``full_acc`` (D-hat) is
+the full-transformation (rate 1.0) accuracy on an isolated deepcopy, and ``rho`` is
+the transfer alignment <g1, gt>/||gt||^2 from plain-CE gradients on one fixed
+validation batch. HARD INVARIANT: ledger ON == OFF bit-identical training
+trajectory; all measurement runs on deepcopies inside ``fork_rng`` with live
+model/optimizer/RNG untouched.
 """
 
 from __future__ import annotations
 
 import math
 import re
+from types import SimpleNamespace
 
 import torch
+import torch.nn as nn
+import torch.nn.functional as F
 
 from conftest import (
     MockPipeline,
@@ -34,8 +38,8 @@ from mimarsinan.tuning.orchestration.adaptation_manager_factory import (
 
 _LEDGER_RE = re.compile(
     r"^\[MBH\] tuner=(?P<tuner>\S+) rung=(?P<rung>\d+) rate=(?P<rate>[0-9.]+) "
-    r"blended_acc=(?P<blended>[0-9.]+) full_acc=(?P<full>[0-9.]+) "
-    r"rho=(?P<rho>\S+) grad_norm_t=(?P<grad>\S+)$"
+    r"blended_acc=(?P<blended>[0-9.]+) blended_fp32=(?P<blended_fp32>[0-9.]+) "
+    r"full_acc=(?P<full>[0-9.]+) rho=(?P<rho>\S+) grad_norm_t=(?P<grad>\S+)$"
 )
 
 
@@ -44,6 +48,7 @@ def _ledger_lines(text):
 
 
 def _set_flag(monkeypatch, enabled):
+    monkeypatch.delenv(env.MBH_GATE_VAR, raising=False)
     if enabled:
         monkeypatch.setenv(env.MBH_LEDGER_VAR, "1")
     else:
@@ -335,3 +340,101 @@ class TestProbeNonDestructive:
             assert not _ledger_lines(capsys.readouterr().out)
         finally:
             tuner.close()
+
+
+# -- (d) X2/E0: gate-grade probe precision — every MBH read is fp32 ---------------
+
+class _BinEdgeModel(nn.Module):
+    """Staircase whose bin flips under reduced-precision autocast.
+
+    fp32: F.linear lands at 1 - 2**-10 (just below the floor edge at 1.0);
+    bf16 rounds the weight up to 1.0, crossing the edge and flipping the argmax.
+    """
+
+    def __init__(self):
+        super().__init__()
+        self.w = nn.Parameter(torch.full((1, 1), 1.0 - 2**-10))
+
+    def forward(self, x):
+        h = F.linear(x, self.w)
+        stair = torch.floor(h)
+        return torch.cat([torch.full_like(stair, 0.5), stair], dim=1)
+
+
+class _OneBatchTrainer:
+    """Minimal trainer surface for the MBH eval helpers: one cached val batch."""
+
+    def __init__(self, x, y):
+        self._gpu_val_cache = [(x, y)]
+        self._gpu_val_cursor = 0
+
+    def iter_validation_batches(self, n):
+        for _ in range(int(n)):
+            yield self._gpu_val_cache[self._gpu_val_cursor % len(self._gpu_val_cache)]
+            self._gpu_val_cursor += 1
+
+
+class _StubTuner:
+    """Just enough tuner surface for ``rung_measurements``; blend == deploy."""
+
+    def __init__(self, model, trainer):
+        self.model = model
+        self.trainer = trainer
+        self.pipeline = SimpleNamespace(config={"device": "cpu"})
+        self._budget = SimpleNamespace(eval_n_batches=1)
+        self._mbh_rung_index = -1
+
+    def _mbh_full_transform_forward(self, clone):
+        return clone
+
+
+def _bin_edge_fixture():
+    x = torch.ones(4, 1)
+    y = torch.zeros(4, dtype=torch.long)
+    model = _BinEdgeModel()
+    return model, _OneBatchTrainer(x, y)
+
+
+class TestGateGradeFp32Precision:
+    def test_ambient_autocast_flips_the_staircase_bin(self):
+        # Control: the X1 skew mechanism — the same eval under autocast flips a bin.
+        from mimarsinan.tuning.orchestration.genuine_probe import eval_forward_over_val
+
+        model, trainer = _bin_edge_fixture()
+        assert eval_forward_over_val(trainer, model, model, 1, "cpu") == 1.0
+        with torch.autocast("cpu", dtype=torch.bfloat16):
+            assert eval_forward_over_val(trainer, model, model, 1, "cpu") == 0.0
+
+    def test_fp32_eval_is_ambient_autocast_proof(self):
+        from mimarsinan.tuning.orchestration.mbh_ledger import (
+            fp32_eval_forward_over_val,
+        )
+
+        model, trainer = _bin_edge_fixture()
+        assert fp32_eval_forward_over_val(trainer, model, model, 1, "cpu") == 1.0
+        with torch.autocast("cpu", dtype=torch.bfloat16):
+            assert fp32_eval_forward_over_val(trainer, model, model, 1, "cpu") == 1.0
+
+    def test_mbh_rung_reads_agree_fp32_vs_fp32_under_ambient_autocast(self):
+        # Blended and D-hat must be like-for-like: both fp32, even when the
+        # surrounding code runs an autocast region.
+        from mimarsinan.tuning.orchestration.mbh_ledger import rung_measurements
+
+        model, trainer = _bin_edge_fixture()
+        tuner = _StubTuner(model, trainer)
+        with torch.autocast("cpu", dtype=torch.bfloat16):
+            m = rung_measurements(tuner)
+        assert m["blended_fp32"] == 1.0
+        assert m["full_acc"] == 1.0
+        assert m["blended_fp32"] == m["full_acc"]
+
+    def test_full_transform_measurement_is_fp32(self):
+        from mimarsinan.tuning.orchestration.mbh_ledger import (
+            full_transform_measurement,
+        )
+
+        model, trainer = _bin_edge_fixture()
+        tuner = _StubTuner(model, trainer)
+        with torch.autocast("cpu", dtype=torch.bfloat16):
+            assert full_transform_measurement(tuner) == 1.0
+        assert trainer._gpu_val_cursor == 0, "measurement must restore the cursor"

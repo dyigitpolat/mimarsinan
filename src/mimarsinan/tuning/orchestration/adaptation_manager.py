@@ -1,9 +1,34 @@
+from mimarsinan.common.env import mbh_lif_realloc_enabled
 from mimarsinan.models.nn.layers import *
 from mimarsinan.models.nn.activations import LeakyGradReLU
 from mimarsinan.models.nn.decorators.rate_buffer import RateBuffer
 from mimarsinan.tuning.shift_calculation import calculate_activation_shift
 
 import torch.nn as nn
+
+# The rate ladders whose decorators the LIF spiking node subsumes (see
+# ``update_activation``) — behaviorally inert in LIF mode, measured in MBH X1.
+_MBH_LIF_SUBSUMED_RATE_ATTRS = frozenset({"clamp_rate", "quantization_rate"})
+
+
+def mbh_lif_realloc_ladder_steps(pipeline_config, rate_attr, steps):
+    """[MBH X2/E2] Fast-ladder training steps under the LIF wall-reallocation flag.
+
+    When ``MIMARSINAN_MBH_LIF_REALLOC`` is on and the LIF node subsumes
+    ``rate_attr``'s decorator, the ladder's rungs train 0 steps (the rung walk,
+    probes, and finalize contracts still run); otherwise ``steps`` unchanged.
+    """
+    if not mbh_lif_realloc_enabled():
+        return int(steps)
+    if rate_attr not in _MBH_LIF_SUBSUMED_RATE_ATTRS:
+        return int(steps)
+    # Lazy: chip_simulation has a fragile import cycle with tuning at init time.
+    from mimarsinan.chip_simulation.spiking_semantics import is_lif
+
+    if not is_lif(pipeline_config.get("spiking_mode", "lif")):
+        return int(steps)
+    return 0
+
 
 class AdaptationManager(nn.Module):
     def __init__(self):
@@ -59,14 +84,17 @@ class AdaptationManager(nn.Module):
         return float_active
 
     def update_activation(self, pipeline_config, perceptron):
-        from mimarsinan.chip_simulation.spiking_semantics import requires_ttfs_firing
+        from mimarsinan.chip_simulation.spiking_semantics import (
+            is_lif,
+            requires_ttfs_firing,
+        )
 
         spiking_mode = pipeline_config.get("spiking_mode", "lif")
         use_ttfs = requires_ttfs_firing(spiking_mode)
         subsumes_decorators = (
             getattr(self, "lif_active", False)
             or getattr(self, "ttfs_active", False)
-            or spiking_mode == "lif"
+            or is_lif(spiking_mode)
         )
         decorators = []
         if self._rate_is_active("activation_adaptation_rate", self.activation_adaptation_rate > 0):
