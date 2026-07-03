@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from mimarsinan.tuning.axes.adaptation_axis import AdaptationAxisBase
 from mimarsinan.tuning.perceptron_rate import set_blend_rate, set_surrogate_alpha
 
@@ -16,7 +18,8 @@ class BlendAxis(AdaptationAxisBase):
     def set_rate(self, alpha: float) -> None:
         set_blend_rate(self._model, float(alpha))
 
-    def get_extra_state(self):
+    # Extra state is opaque per the AdaptationAxis contract (subclasses reshape it).
+    def get_extra_state(self) -> Any:
         return [p.base_activation.rate for p in self._model.get_perceptrons()]
 
     def set_extra_state(self, extra) -> None:

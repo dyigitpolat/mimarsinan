@@ -22,6 +22,7 @@ MP_START_METHOD_VAR = "MIMARSINAN_MP_START_METHOD"
 MBH_LEDGER_VAR = "MIMARSINAN_MBH_LEDGER"
 MBH_GATE_VAR = "MIMARSINAN_MBH_GATE"
 MBH_LIF_REALLOC_VAR = "MIMARSINAN_MBH_LIF_REALLOC"
+MBH_LIF_TANNEAL_VAR = "MIMARSINAN_MBH_LIF_TANNEAL"
 IMAGENET_ROOT_VAR = "IMAGENET_ROOT"
 
 
@@ -101,6 +102,11 @@ def mbh_gate_enabled() -> bool:
 def mbh_lif_realloc_enabled() -> bool:
     """The MBH LIF wall-reallocation experiment (X2/E2) is on (value exactly "1")."""
     return os.environ.get(MBH_LIF_REALLOC_VAR) == "1"
+
+
+def mbh_lif_tanneal_enabled() -> bool:
+    """The MBH LIF T-annealing realizable family (X2b, T1/P1') is on (value exactly "1")."""
+    return os.environ.get(MBH_LIF_TANNEAL_VAR) == "1"
 
 
 def mp_start_method() -> str | None:

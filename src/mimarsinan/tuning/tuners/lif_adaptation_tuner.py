@@ -6,7 +6,7 @@ from typing import cast
 
 import torch.nn as nn
 
-from mimarsinan.common.env import mbh_lif_realloc_enabled
+from mimarsinan.common.env import mbh_lif_realloc_enabled, mbh_lif_tanneal_enabled
 from mimarsinan.models.nn.activations import (
     ChipInputQuantizer,
     LIFActivation,
@@ -18,6 +18,11 @@ from mimarsinan.tuning.orchestration.blend_ramp import (
 from mimarsinan.tuning.orchestration.kd_blend_adaptation_tuner import (
     KDBlendAdaptationTuner,
     _InstalledForward,
+)
+from mimarsinan.tuning.orchestration.mbh_tanneal import (
+    TAnnealRealizableRamp,
+    TAnnealSchedule,
+    apply_simulation_steps,
 )
 
 
@@ -54,6 +59,22 @@ class LIFBlendActivation(BlendActivation):
 _MBH_REALLOC_STABILIZE_STEPS = 2000
 
 
+def derive_lif_tanneal_schedule(config, *, ladder_rates) -> TAnnealSchedule | None:
+    """[MBH X2b] The T-anneal schedule when ``MIMARSINAN_MBH_LIF_TANNEAL`` is on
+    and the mode is lif, else None (the value-blend recipe stays bit-identical)."""
+    if not mbh_lif_tanneal_enabled():
+        return None
+    # Lazy: chip_simulation has a fragile import cycle with tuning at init time.
+    from mimarsinan.chip_simulation.spiking_semantics import is_lif
+
+    if not is_lif(config.get("spiking_mode", "lif")):
+        return None
+    return TAnnealSchedule(
+        target_T=int(config["simulation_steps"]),
+        ladder_rates=tuple(float(r) for r in ladder_rates),
+    )
+
+
 class LIFAdaptationTuner(KDBlendAdaptationTuner):
     """Ramp base_activation to LIFActivation with KD recovery."""
 
@@ -78,6 +99,11 @@ class LIFAdaptationTuner(KDBlendAdaptationTuner):
                 self.pipeline.config.get("lif_blend_fast_lr_eta_min", 0.1)
             ),
         )
+        # [MBH X2b] opt-in realizable T-anneal over the SAME normalized ladder
+        # (equal budget); None keeps the value-blend recipe bit-identical.
+        self._tanneal = derive_lif_tanneal_schedule(
+            self.pipeline.config, ladder_rates=self._fixed_ladder_rates,
+        )
         self._fast_stabilize_steps = int(
             self.pipeline.config.get("lif_blend_fast_stabilize_steps", 0)
         )
@@ -100,6 +126,17 @@ class LIFAdaptationTuner(KDBlendAdaptationTuner):
             self.pipeline.config.get("lif_theta_cotrain", False)
         )
         self._theta_cotrain = self._lif_theta_cotrain
+
+    def _make_ramp_strategy(self):
+        if self._tanneal is not None:
+            return TAnnealRealizableRamp(self._tanneal)
+        return super()._make_ramp_strategy()
+
+    def _force_full_transform_on_clone(self, clone) -> None:
+        super()._force_full_transform_on_clone(clone)
+        if self._tanneal is not None:
+            # D-hat is the FULL target behavior at target_T, not the rung's T.
+            apply_simulation_steps(clone, self._tanneal.target_T)
 
     def _post_stabilization_hook(self):
         if self._lif_distmatch:
