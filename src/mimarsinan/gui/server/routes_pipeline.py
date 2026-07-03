@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 from fastapi import FastAPI, Request, Response, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 
+from mimarsinan.common.best_effort import best_effort
 from mimarsinan.gui.runs import (
     list_runs,
     get_run_config,
@@ -144,15 +145,17 @@ def register_routes(
         try:
             while True:
                 raw = await ws.receive_text()
-                try:
+                msg = None
+                parsed = False
+                with best_effort("parse WS message", logger=logger):
                     msg = json.loads(raw)
-                except Exception:
+                    parsed = True
+                if not parsed:
                     continue
                 if isinstance(msg, dict) and msg.get("type") == "resume":
-                    try:
+                    last_seq = 0
+                    with best_effort("parse WS resume last_seq", logger=logger):
                         last_seq = int(msg.get("last_seq", 0) or 0)
-                    except Exception:
-                        last_seq = 0
                     collector.replay_events_since(ws, last_seq)
         except WebSocketDisconnect:
             pass
@@ -161,10 +164,10 @@ def register_routes(
 
     if process_manager is not None:
         def _active_overview(run_id: str):
-            try:
-                return process_manager.get_run_detail(run_id)
-            except Exception:
-                return None
+            overview = None
+            with best_effort(f"get run detail for active overview {run_id}", logger=logger):
+                overview = process_manager.get_run_detail(run_id)
+            return overview
 
         active_hub = ActiveRunHub(
             get_working_dir=process_manager.get_working_dir,
@@ -178,10 +181,8 @@ def register_routes(
             loop = asyncio.get_event_loop()
 
             def _send(msg: dict) -> None:
-                try:
+                with best_effort("schedule active-run WS send", logger=logger):
                     asyncio.run_coroutine_threadsafe(ws.send_json(msg), loop)
-                except Exception:
-                    logger.debug("Failed to schedule active-run WS send", exc_info=True)
 
             subscribed = active_hub.subscribe(run_id, ws, _send)
             if not subscribed:

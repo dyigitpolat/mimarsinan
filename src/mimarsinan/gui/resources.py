@@ -7,6 +7,8 @@ import threading
 from dataclasses import dataclass
 from typing import Any, Callable
 
+from mimarsinan.common.best_effort import best_effort
+
 logger = logging.getLogger("mimarsinan.gui")
 
 
@@ -41,15 +43,13 @@ class _Entry:
         with self._lock:
             if self._materialised:
                 return self._payload
-            try:
+            produced = False
+            with best_effort(
+                f"resource producer for {self.descriptor.kind}/{self.descriptor.rid}", logger=logger,
+            ):
                 self._payload = self.descriptor.producer()
-            except Exception:  # pragma: no cover
-                logger.debug(
-                    "Resource producer failed for %s/%s",
-                    self.descriptor.kind,
-                    self.descriptor.rid,
-                    exc_info=True,
-                )
+                produced = True
+            if not produced:
                 self._payload = None
                 self._failed = True
             self._materialised = True

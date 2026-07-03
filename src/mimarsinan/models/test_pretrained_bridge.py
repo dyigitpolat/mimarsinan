@@ -269,7 +269,7 @@ def test_loads_real_imagenet_weights():
     """The bridge imports GENUINE ImageNet1K pretrained weights (network-gated skip)."""
     try:
         model = load_pretrained_resnet18(_NUM_CLASSES, pretrained=True)
-    except Exception as exc:  # noqa: BLE001 - any download/transport failure is a skip
+    except (OSError, RuntimeError) as exc:  # download/transport failure is a skip
         pytest.skip(f"pretrained weights unavailable in this environment: {exc}")
 
     stem_w = model.conv1.weight.detach()
@@ -285,7 +285,7 @@ def test_loads_real_imagenet_weights_resnet50():
     """The ResNet-50 bridge imports GENUINE ImageNet1K weights (network-gated skip)."""
     try:
         model = load_pretrained_resnet50(_NUM_CLASSES, pretrained=True)
-    except Exception as exc:  # noqa: BLE001 - any download/transport failure is a skip
+    except (OSError, RuntimeError) as exc:  # download/transport failure is a skip
         pytest.skip(f"pretrained weights unavailable in this environment: {exc}")
 
     stem_w = model.conv1.weight.detach()

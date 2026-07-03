@@ -11,6 +11,7 @@ from mimarsinan.chip_simulation.cost_extraction import (
     save_cost_record,
 )
 from mimarsinan.chip_simulation.sanafe.runner import SanafeRunner
+from mimarsinan.common.best_effort import best_effort
 from mimarsinan.chip_simulation.sanafe.records import SanafeCoreDiff, SanafeRunRecord
 from mimarsinan.chip_simulation.sanafe.stats import SanafeStepReport
 from mimarsinan.chip_simulation.spiking_semantics import requires_ttfs_firing
@@ -199,10 +200,10 @@ class SanafeSimulationStep(PipelineStep):
     def _emit_cost_record(self, report: SanafeStepReport) -> None:
         """Drop a measured ``cost_record.json`` next to the run artifacts.
 
-        Pure additive side-effect, exception-isolated: any failure is logged and
-        swallowed so cost emission can never crash or alter the deployment.
+        Pure additive side-effect, best-effort: failure is logged and degraded
+        so cost emission can never crash or alter the deployment.
         """
-        try:
+        with best_effort("SANA-FE cost-record emission", logger=logger):
             plan = DeploymentPlan.of(self.pipeline)
             cell = CertificationCell.from_mode_policy(
                 plan.mode_policy(), backend="sanafe",
@@ -214,5 +215,3 @@ class SanafeSimulationStep(PipelineStep):
                 provenance={"run_dir": self.pipeline.working_directory},
             )
             save_cost_record(record, self.pipeline.working_directory)
-        except Exception:
-            logger.exception("SANA-FE cost-record emission failed; skipping")

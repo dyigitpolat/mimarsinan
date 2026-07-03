@@ -13,7 +13,7 @@ pluggable serialization strategies.
 ## Dependencies
 
 - **Internal**: None.
-- **External**: `torch`, `json`, `pickle`, `os`.
+- **External**: `torch`, `json`, `pickle`, `logging`, `os`.
 
 ## Dependents
 

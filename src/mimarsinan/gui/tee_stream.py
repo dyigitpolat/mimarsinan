@@ -3,8 +3,13 @@
 from __future__ import annotations
 
 import io
+import logging
 import threading
 from typing import Any
+
+from mimarsinan.common.best_effort import best_effort
+
+logger = logging.getLogger("mimarsinan.gui")
 
 
 class TeeStream(io.RawIOBase):
@@ -24,34 +29,26 @@ class TeeStream(io.RawIOBase):
             text = s.decode("utf-8", errors="replace")
         else:
             text = str(s)
-        try:
+        with best_effort("tee write-through to original stream", logger=logger):
             self._original.write(s)
             self._original.flush()
-        except Exception:
-            pass
         with self._lock:
             self._buf += text
             while "\n" in self._buf:
                 line, self._buf = self._buf.split("\n", 1)
-                try:
+                with best_effort("tee console callback", logger=logger):
                     self._callback(line)
-                except Exception:
-                    pass
         return len(s)
 
     def flush(self) -> None:
-        try:
+        with best_effort("tee flush original stream", logger=logger):
             self._original.flush()
-        except Exception:
-            pass
 
     def flush_remaining(self) -> None:
         with self._lock:
             if self._buf:
-                try:
+                with best_effort("tee flush remaining console callback", logger=logger):
                     self._callback(self._buf)
-                except Exception:
-                    pass
                 self._buf = ""
 
     def __getattr__(self, name: str) -> Any:

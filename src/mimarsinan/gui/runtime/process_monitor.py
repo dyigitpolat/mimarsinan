@@ -9,6 +9,7 @@ import signal
 import time
 from pathlib import Path
 
+from mimarsinan.common.best_effort import best_effort
 from mimarsinan.gui.runtime.persistence.load import (
     load_live_metrics,
     load_persisted_steps,
@@ -186,13 +187,12 @@ def get_run_detail(runs: dict[str, ManagedRun], run_id: str) -> dict | None:
 
     outer_config = config or {}
     flat_config = outer_config.get("deployment_parameters", outer_config)
-    try:
+    groups: dict = {}
+    with best_effort(f"build semantic groups for run {run_id}", logger=logger):
         from mimarsinan.pipelining.core.pipelines.deployment_pipeline import (
             get_pipeline_semantic_group_by_step_name,
         )
         groups = get_pipeline_semantic_group_by_step_name(flat_config)
-    except Exception:
-        groups = {}
     for s in steps:
         s["semantic_group"] = groups.get(s["name"])
 
@@ -210,11 +210,9 @@ def get_run_detail(runs: dict[str, ManagedRun], run_id: str) -> dict | None:
         "error": run_error,
     }
     if config:
-        try:
+        with best_effort(f"build config_view for run {run_id}", logger=logger):
             from mimarsinan.config_schema.display_view import build_config_display_view
             result["config_view"] = build_config_display_view(config, saved_config=config)
-        except Exception:
-            pass
     return result
 
 

@@ -8,6 +8,8 @@ from typing import Any
 
 logger = logging.getLogger("mimarsinan.gui")
 
+from mimarsinan.common.best_effort import best_effort
+
 RESOURCE_KIND_IR_CORE_HEATMAP = "ir_core_heatmap"
 RESOURCE_KIND_IR_CORE_PRE_PRUNING = "ir_core_pre_pruning"
 RESOURCE_KIND_IR_CORE_BIAS = "ir_core_bias"
@@ -31,9 +33,10 @@ def _extract_core_connectivity(hcm: Any, segment_index: int) -> list[dict]:
     """Extract inter-core connectivity spans from axon_sources."""
     spans_out: list[dict] = []
     for ci, core in enumerate(hcm.cores):
-        try:
+        axon_spans = None
+        with best_effort(f"get axon source spans for core {ci}", logger=logger):
             axon_spans = core.get_axon_source_spans()
-        except Exception:
+        if axon_spans is None:
             continue
         for sp in axon_spans:
             if sp.kind == "core":
@@ -55,7 +58,7 @@ def _extract_core_connectivity(hcm: Any, segment_index: int) -> list[dict]:
                     "segment": segment_index,
                 })
 
-    try:
+    with best_effort(f"extract output-source connectivity spans for segment {segment_index}", logger=logger):
         from mimarsinan.mapping.support.spike_source_spans import compress_spike_sources
         if hasattr(hcm, "output_sources") and hcm.output_sources is not None:
             out_srcs = hcm.output_sources.flatten().tolist()
@@ -71,8 +74,6 @@ def _extract_core_connectivity(hcm: Any, segment_index: int) -> list[dict]:
                             "length": sp.length, "kind": "output",
                             "segment": segment_index,
                         })
-    except Exception:
-        pass
 
     return spans_out
 
@@ -128,15 +129,9 @@ def _make_segment_spans_extractor(hcm: Any, segment_index: int):
         with lock:
             if state["spans"] is not None:
                 return state["spans"]
-            try:
+            spans: list[dict] = []
+            with best_effort(f"lazy connectivity extraction for segment {segment_index}", logger=logger):
                 spans = _extract_core_connectivity(hcm, segment_index)
-            except Exception:
-                logger.debug(
-                    "Lazy connectivity extraction failed for segment %d",
-                    segment_index,
-                    exc_info=True,
-                )
-                spans = []
             state["spans"] = spans
             return spans
 

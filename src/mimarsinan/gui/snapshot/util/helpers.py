@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 import numpy as np
+
+from mimarsinan.common.best_effort import best_effort
+
+logger = logging.getLogger("mimarsinan.gui")
 
 
 def _t(val: Any) -> float:
@@ -23,13 +28,12 @@ def _histogram(arr: np.ndarray, bins: int = 50) -> dict:
 
 
 def _safe_scalar(obj: Any, attr: str) -> float | None:
-    try:
+    result: float | None = None
+    with best_effort(f"read scalar attribute {attr!r}", logger=logger):
         val = getattr(obj, attr, None)
-        if val is None:
-            return None
-        return _t(val)
-    except Exception:
-        return None
+        if val is not None:
+            result = _t(val)
+    return result
 
 
 def _safe_dict(obj: Any) -> Any:

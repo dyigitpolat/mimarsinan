@@ -7,6 +7,7 @@ from typing import Any
 
 logger = logging.getLogger("mimarsinan.gui")
 
+from mimarsinan.common.best_effort import best_effort
 from mimarsinan.gui.resources import ResourceDescriptor
 
 RESOURCE_KIND_IR_CORE_HEATMAP = "ir_core_heatmap"
@@ -37,15 +38,12 @@ def _find_ir_graph_promiser(pipeline: Any) -> str | None:
 
     Callers must treat None as "register descriptors locally", not drop them.
     """
-    try:
+    steps = ()
+    with best_effort("get pipeline steps for ir_graph promiser lookup", logger=logger):
         steps = getattr(pipeline, "steps", ())
-    except Exception:
-        return None
     for name, s in steps:
-        try:
+        with best_effort(f"check promises for step {name!r}", logger=logger):
             if "ir_graph" in set(getattr(s, "promises", ())):
                 return str(name)
-        except Exception:
-            continue
     return None
 

@@ -1,6 +1,9 @@
 import torch
 import json
+import logging
 import pickle
+
+logger = logging.getLogger(__name__)
 
 class LoadStoreStrategy:
     def __init__(self, filename):
@@ -45,8 +48,11 @@ class TorchModelLoadStoreStrategy(LoadStoreStrategy):
         # If the recorded device is no longer visible (narrower CUDA_VISIBLE_DEVICES) fall back to CPU rather than crash mid-save.
         try:
             object.to(device)
-        except Exception:
-            pass
+        except RuntimeError:
+            logger.warning(
+                "could not restore %s to %s after save; leaving on CPU",
+                self.filename, device, exc_info=True,
+            )
 
 class PickleLoadStoreStrategy(LoadStoreStrategy):
     def __init__(self, filename):

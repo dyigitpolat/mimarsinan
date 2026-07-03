@@ -54,10 +54,7 @@ def _compute_connectivity_edges(hcm: Any) -> List[SanafeConnectivityEdge]:
             if getattr(src, "is_input_", False) or getattr(src, "is_always_on_", False):
                 continue
             src_core = int(src.core_)
-            try:
-                w_col = cm[a, :]
-            except Exception:
-                continue
+            w_col = cm[a, :]
             w_abs = float(np.abs(np.asarray(w_col, dtype=np.float64)).sum())
             if w_abs == 0.0:
                 continue

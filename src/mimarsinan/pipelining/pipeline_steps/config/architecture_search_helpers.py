@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from typing import Any, Dict, List, Literal, Sequence, Tuple
 
+from mimarsinan.common.best_effort import best_effort
 from mimarsinan.gui.json_util import to_json_safe
 from mimarsinan.pipelining.core.platform_constraints_resolver import (
     build_platform_constraints_resolved,
@@ -175,7 +176,7 @@ def build_fixed_platform_constraints(pipeline_config: Dict) -> Dict[str, Any]:
 
 
 def write_search_visualizations(result_json: Dict[str, Any], out_dir: str) -> None:
-    try:
+    with best_effort("architecture-search visualization report"):
         write_final_population_json(result_json, os.path.join(out_dir, "final_population.json"))
         report_html = os.path.join(out_dir, "search_report.html")
         create_interactive_search_report(result_json, report_html)
@@ -183,9 +184,5 @@ def write_search_visualizations(result_json: Dict[str, Any], out_dir: str) -> No
         for legacy in ["search_report.pdf", "search_report.png"]:
             legacy_path = os.path.join(out_dir, legacy)
             if os.path.exists(legacy_path):
-                try:
+                with best_effort(f"remove legacy report {legacy}"):
                     os.remove(legacy_path)
-                except Exception:
-                    pass
-    except Exception as e:
-        print(f"[ArchitectureSearchStep] Visualization failed (non-fatal): {e}")

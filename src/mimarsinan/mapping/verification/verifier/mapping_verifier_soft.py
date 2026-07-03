@@ -1,6 +1,11 @@
 from __future__ import annotations
+import logging
 from mimarsinan.mapping.layout.layout_ir_mapping import LayoutIRMapping
 from mimarsinan.mapping.verification.verifier.mapping_verifier_types import MappingVerificationResult
+
+_logger = logging.getLogger(__name__)
+
+
 def verify_soft_core_mapping(
     model_repr,
     max_axons: int,
@@ -23,6 +28,11 @@ def verify_soft_core_mapping(
         )
         softcores = layout.collect_layout_softcores(model_repr)
     except Exception as exc:
+        _logger.warning(
+            "verify_soft_core_mapping: layout mapping failed; reporting infeasible "
+            "(max_axons=%s, max_neurons=%s)",
+            max_axons, max_neurons, exc_info=True,
+        )
         return MappingVerificationResult(
             feasible=False,
             softcores=[],
@@ -63,7 +73,11 @@ def verify_soft_core_mapping(
                     error=None,
                 )
         except Exception:
-            pass
+            _logger.warning(
+                "verify_soft_core_mapping: compute-op probe (IRMapping) failed; "
+                "reporting infeasible with the no-neural-cores message",
+                exc_info=True,
+            )
 
         return MappingVerificationResult(
             feasible=False,

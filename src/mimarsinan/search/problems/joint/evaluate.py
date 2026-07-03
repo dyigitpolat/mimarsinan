@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import traceback
+import logging
 from typing import Any, Dict
 
 import numpy as np
@@ -14,6 +14,18 @@ from mimarsinan.search.evaluators.fast_accuracy_evaluator import FastAccuracyEva
 from mimarsinan.search.results import ACCURACY_OBJECTIVE_NAME
 
 from .types import ValidationEntry, json_key
+
+logger = logging.getLogger(__name__)
+
+
+def _warn_penalized(
+    stage: str, exc: Exception, configuration: Any, penalty_desc: str,
+) -> None:
+    logger.warning(
+        "[JointArchHwProblem] %s failed (%s: %s) for candidate %.500s; %s",
+        stage, type(exc).__name__, exc, configuration, penalty_desc,
+        exc_info=True,
+    )
 
 
 class JointEvaluateMixin:
@@ -35,11 +47,10 @@ class JointEvaluateMixin:
             try:
                 obj = self._evaluate_from_cache(vc, configuration)
             except Exception as exc:
-                print(
-                    f"[JointArchHwProblem] _evaluate_from_cache failed: "
-                    f"{type(exc).__name__}: {exc}"
+                _warn_penalized(
+                    "_evaluate_from_cache", exc, configuration,
+                    "recording full penalty objectives",
                 )
-                traceback.print_exc()
                 obj = self._penalty_objectives()
         else:
             mc = configuration["model_config"]
@@ -49,11 +60,10 @@ class JointEvaluateMixin:
             try:
                 obj = self._evaluate_inner(mc, pcfg)
             except Exception as exc:
-                print(
-                    f"[JointArchHwProblem] _evaluate_inner failed: "
-                    f"{type(exc).__name__}: {exc}"
+                _warn_penalized(
+                    "_evaluate_inner", exc, configuration,
+                    "recording full penalty objectives",
                 )
-                traceback.print_exc()
                 obj = self._penalty_objectives()
 
         self._cache[key] = obj
@@ -77,11 +87,10 @@ class JointEvaluateMixin:
                 try:
                     obj[ACCURACY_OBJECTIVE_NAME] = self._evaluate_accuracy(vc.model)
                 except Exception as exc:
-                    print(
-                        f"[JointArchHwProblem] Accuracy evaluation failed: "
-                        f"{type(exc).__name__}: {exc}"
+                    _warn_penalized(
+                        "Accuracy evaluation", exc, configuration,
+                        "recording penalty accuracy 0.0",
                     )
-                    traceback.print_exc()
                     obj[ACCURACY_OBJECTIVE_NAME] = 0.0
                 finally:
                     vc.model = None
@@ -94,11 +103,10 @@ class JointEvaluateMixin:
                     raw_model, _ = self._build_raw_model(mc, pcfg)
                     obj[ACCURACY_OBJECTIVE_NAME] = self._evaluate_accuracy(raw_model)
                 except Exception as exc:
-                    print(
-                        f"[JointArchHwProblem] Accuracy evaluation failed: "
-                        f"{type(exc).__name__}: {exc}"
+                    _warn_penalized(
+                        "Accuracy evaluation", exc, configuration,
+                        "recording penalty accuracy 0.0",
                     )
-                    traceback.print_exc()
                     obj[ACCURACY_OBJECTIVE_NAME] = 0.0
 
         return obj
@@ -141,11 +149,11 @@ class JointEvaluateMixin:
                     if k in active_names:
                         obj[k] = v
             except Exception as exc:
-                print(
-                    f"[JointArchHwProblem] HW objective computation failed: "
-                    f"{type(exc).__name__}: {exc}"
+                _warn_penalized(
+                    "HW objective computation", exc,
+                    {"model_config": mc, "platform_constraints": pcfg},
+                    "recording full penalty objectives",
                 )
-                traceback.print_exc()
                 return self._penalty_objectives()
 
         if needs_accuracy:
@@ -153,11 +161,11 @@ class JointEvaluateMixin:
                 accuracy = self._evaluate_accuracy(raw_model)
                 obj[ACCURACY_OBJECTIVE_NAME] = accuracy
             except Exception as exc:
-                print(
-                    f"[JointArchHwProblem] Accuracy evaluation failed: "
-                    f"{type(exc).__name__}: {exc}"
+                _warn_penalized(
+                    "Accuracy evaluation", exc,
+                    {"model_config": mc, "platform_constraints": pcfg},
+                    "recording penalty accuracy 0.0",
                 )
-                traceback.print_exc()
                 obj[ACCURACY_OBJECTIVE_NAME] = 0.0
 
         return obj

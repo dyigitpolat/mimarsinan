@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Sequence
 from typing import Any, Dict, List
 
@@ -9,6 +10,8 @@ from mimarsinan.mapping.layout.layout_types import LayoutHardCoreType, LayoutSof
 from mimarsinan.mapping.platform.mapping_structure import ChipCapabilities
 from mimarsinan.mapping.verification.layout_verification_scheduling import compute_mapping_stats
 from mimarsinan.search.problems.joint.problem import json_key
+
+logger = logging.getLogger(__name__)
 
 
 def collect_layout_payload(
@@ -45,6 +48,11 @@ def collect_layout_payload(
             vc = getattr(problem, "_validation_cache", {}).get(key)
             if vc is None:
                 raise
+            logger.warning(
+                "Model rebuild failed for candidate %.500s; serving degraded "
+                "layout payload (hw_objectives only) from validation cache",
+                key, exc_info=True,
+            )
             hw_obj = vc.hw_objectives
             return {
                 "softcore_count": 0,

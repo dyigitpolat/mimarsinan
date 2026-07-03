@@ -6,8 +6,8 @@ from typing import Any
 
 
 def safe_float(value: Any, default: float | None = None) -> float | None:
-    """Convert value to float for display/serialization; return default on failure."""
+    """Convert value to float for display/serialization; return default when unconvertible."""
     try:
         return float(value)
-    except Exception:
+    except (ValueError, TypeError, OverflowError, ZeroDivisionError):
         return default

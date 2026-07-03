@@ -11,7 +11,9 @@ experiment-tracking utilities. No mimarsinan-internal imports.
 | `build_utils.py` | `find_cpp20_compiler` | Discovers a C++20-capable compiler (Clang >= 17 preferred, g++-11 fallback) |
 | `reporter.py` | `Reporter` (Protocol), `DefaultReporter` | Reporter protocol used by Pipeline; DefaultReporter provides throttled console output |
 | `layer_key.py` | `layer_key_from_node_name` | Display/serialization: grouping key from IR or mapper node names (conv/fc/psum collapse); used by gui.snapshot and visualization.mapping_graphviz |
-| `safe_numeric.py` | `safe_float` | Display/serialization: safe float conversion for plots/labels; used by visualization.search_visualization and visualization.mapping_graphviz |
+| `safe_numeric.py` | `safe_float` | Display/serialization: safe float conversion for plots/labels (narrow conversion-error catch; unexpected errors propagate); used by visualization.search_visualization and visualization.mapping_graphviz |
+| `best_effort.py` | `best_effort` | The single sanctioned log-and-degrade seam: context manager that logs non-exit exceptions at debug and continues; only for telemetry/rendering side work |
+| `diagnostics.py` | `enable_cuda_debug`, `describe_tensor`, `phase_profiler`, `cuda_guard` | CUDA debugging/profiling helpers; telemetry failures degrade via `best_effort` |
 
 ## Dependencies
 

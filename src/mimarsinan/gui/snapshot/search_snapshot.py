@@ -7,6 +7,7 @@ from typing import Any
 
 logger = logging.getLogger("mimarsinan.gui")
 
+from mimarsinan.common.best_effort import best_effort
 from mimarsinan.gui.snapshot.util.helpers import _safe_dict
 
 RESOURCE_KIND_IR_CORE_HEATMAP = "ir_core_heatmap"
@@ -31,41 +32,33 @@ def snapshot_search_result(result: Any) -> dict:
 def _snapshot_search_result_dict(d: dict) -> dict:
     """Handle the dict-serialized SearchResult form."""
     best = None
-    try:
+    with best_effort("extract best from dict search result", logger=logger):
         b = d["best"]
         best = {
             "config": _safe_dict(b.get("configuration", b.get("config", {}))),
             "objectives": _safe_dict(b.get("objectives", {})),
         }
-    except Exception:
-        logger.debug("Failed to extract best from dict search result", exc_info=True)
 
     pareto = []
-    try:
+    with best_effort("extract pareto_front from dict search result", logger=logger):
         for c in d.get("pareto_front", []):
             pareto.append({
                 "config": _safe_dict(c.get("configuration", c.get("config", {}))),
                 "objectives": _safe_dict(c.get("objectives", {})),
             })
-    except Exception:
-        logger.debug("Failed to extract pareto_front from dict search result", exc_info=True)
 
     history = []
-    try:
+    with best_effort("extract history from dict search result", logger=logger):
         for h in d.get("history", []):
             history.append(_safe_dict(h))
-    except Exception:
-        logger.debug("Failed to extract history from dict search result", exc_info=True)
 
     objectives = []
-    try:
+    with best_effort("extract objectives from dict search result", logger=logger):
         for obj in d.get("objectives", []):
             if isinstance(obj, dict):
                 objectives.append({"name": obj.get("name", "?"), "goal": obj.get("goal", "?")})
             else:
                 objectives.append({"name": getattr(obj, "name", "?"), "goal": getattr(obj, "goal", "?")})
-    except Exception:
-        logger.debug("Failed to extract objectives from dict search result", exc_info=True)
 
     all_candidates = d.get("all_candidates", [])
     return {
@@ -79,37 +72,30 @@ def _snapshot_search_result_dict(d: dict) -> dict:
 
 def _snapshot_search_result_obj(result: Any) -> dict:
     """Handle the original SearchResult dataclass form."""
-    try:
+    best = None
+    with best_effort("extract best from search result object", logger=logger):
         best = {
             "config": _safe_dict(result.best.config if hasattr(result.best, 'config') else result.best.configuration),
             "objectives": _safe_dict(result.best.objectives),
         }
-    except Exception:
-        best = None
 
     pareto = []
-    try:
+    with best_effort("extract pareto_front from search result object", logger=logger):
         for c in result.pareto_front:
             pareto.append({
                 "config": _safe_dict(c.config if hasattr(c, 'config') else c.configuration),
                 "objectives": _safe_dict(c.objectives),
             })
-    except Exception:
-        pass
 
     history = []
-    try:
+    with best_effort("extract history from search result object", logger=logger):
         for h in result.history:
             history.append(_safe_dict(h))
-    except Exception:
-        pass
 
     objectives = []
-    try:
+    with best_effort("extract objectives from search result object", logger=logger):
         for obj in result.objectives:
             objectives.append({"name": obj.name, "goal": obj.goal})
-    except Exception:
-        pass
 
     return {
         "best": best,

@@ -140,16 +140,13 @@ def estimate_passes_for_layout_validated(
         if not sub_segments:
             continue
         for sub in sub_segments:
-            try:
-                pr = pack_layout(
-                    softcores=sub,
-                    core_types=hw_types,
-                    allow_neuron_splitting=allow_splitting,
-                    allow_coalescing=allow_coalescing,
-                )
-                if not pr.feasible:
-                    all_ok = False
-            except Exception:
+            pr = pack_layout(
+                softcores=sub,
+                core_types=hw_types,
+                allow_neuron_splitting=allow_splitting,
+                allow_coalescing=allow_coalescing,
+            )
+            if not pr.feasible:
                 all_ok = False
         all_pass_lists.extend(sub_segments)
 

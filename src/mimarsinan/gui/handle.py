@@ -8,6 +8,7 @@ import sys
 import time
 from typing import Any
 
+from mimarsinan.common.best_effort import best_effort
 from mimarsinan.gui.reporter import GUIReporter
 from mimarsinan.gui.runtime.collector import DataCollector
 from mimarsinan.gui.runtime.persistence import (
@@ -91,11 +92,10 @@ class GUIHandle:
             append_live_metric(working_dir, step_name, metric_name, value, seq, timestamp)
 
     def on_step_end(self, step_name: str, step: Any) -> None:
-        try:
+        target_metric = None
+        with best_effort(f"read target metric for step {step_name}", logger=logger):
             raw = self.pipeline.get_target_metric()
             target_metric = float(raw) if raw is not None else None
-        except Exception:
-            target_metric = None
 
         try:
             snapshot, snapshot_key_kinds, resource_descriptors = build_step_snapshot(
@@ -121,7 +121,7 @@ class GUIHandle:
         if working_dir:
             detail = self.collector.get_step_detail(step_name)
             if detail:
-                try:
+                with best_effort(f"synchronous snapshot write for {step_name}", logger=logger):
                     save_step_to_persisted(
                         working_dir,
                         step_name,
@@ -133,23 +133,13 @@ class GUIHandle:
                         detail.get("snapshot_key_kinds"),
                         status="completed",
                     )
-                except Exception:
-                    logger.debug(
-                        "Synchronous snapshot write failed for %s", step_name,
-                        exc_info=True,
-                    )
-            try:
+            with best_effort(f"synchronous status=completed write for {step_name}", logger=logger):
                 save_step_status(
                     working_dir,
                     step_name,
                     status="completed",
                     end_time=end_time_now,
                     target_metric=target_metric,
-                )
-            except Exception:
-                logger.debug(
-                    "Synchronous status=completed write failed for %s", step_name,
-                    exc_info=True,
                 )
 
         def _persist_resources() -> None:
@@ -159,13 +149,11 @@ class GUIHandle:
                 if store is not None:
                     payload = store.prewarm(step_name, desc.kind, desc.rid)
                 if payload is None:
-                    try:
+                    produced = False
+                    with best_effort(f"resource producer for {desc.kind}/{desc.rid}", logger=logger):
                         payload = desc.producer()
-                    except Exception:
-                        logger.debug(
-                            "Resource producer failed for %s/%s", desc.kind, desc.rid,
-                            exc_info=True,
-                        )
+                        produced = True
+                    if not produced:
                         continue
                 if not working_dir:
                     continue

@@ -145,3 +145,52 @@ class TestBuildConfigDisplayView:
         assert "run" in ids
         assert "pipeline" in ids
         assert "hardware" in ids
+
+
+class TestBuilderErrorContract:
+    """Builder failures surface config-view corruption instead of being swallowed."""
+
+    def test_model_config_schema_errors_propagate(self, monkeypatch):
+        import mimarsinan.pipelining.core.registry.model_registry as registry
+        from mimarsinan.config_schema.display_view_build import build_model_config_fields
+
+        def boom(model_type):
+            raise RuntimeError("registry corrupted")
+
+        monkeypatch.setattr(registry, "get_model_config_schema", boom)
+        with pytest.raises(RuntimeError, match="registry corrupted"):
+            build_model_config_fields("some_model", {"width": 4})
+
+    def test_unknown_model_type_still_renders_without_schema(self):
+        from mimarsinan.config_schema.display_view_build import build_model_config_fields
+
+        fields = build_model_config_fields("definitely_not_a_model_type", {"width": 4})
+        assert [f["key"] for f in fields] == ["width"]
+
+    def test_arch_search_schema_errors_propagate(self, monkeypatch):
+        import mimarsinan.gui.wizard.schema as wizard_schema
+        from mimarsinan.config_schema.display_view_build import build_arch_search_block
+
+        def boom():
+            raise RuntimeError("wizard schema broken")
+
+        monkeypatch.setattr(wizard_schema, "get_wizard_nas_schema", boom)
+        with pytest.raises(RuntimeError, match="wizard schema broken"):
+            build_arch_search_block({"pop_size": 4})
+
+    def test_pipeline_preview_unresolvable_config_logs_warning(self, monkeypatch, caplog):
+        import logging
+
+        import mimarsinan.pipelining.core.pipelines.deployment_specs as specs
+        from mimarsinan.config_schema.display_view_build import build_pipeline_preview
+
+        def boom(config):
+            raise ValueError("plan does not resolve")
+
+        monkeypatch.setattr(specs, "get_pipeline_step_specs", boom)
+        with caplog.at_level(
+                logging.WARNING,
+                logger="mimarsinan.config_schema.display_view_build"):
+            preview = build_pipeline_preview({"experiment_name": "x"})
+        assert preview == {"steps": [], "semantic_groups": []}
+        assert any("pipeline preview" in r.getMessage().lower() for r in caplog.records)

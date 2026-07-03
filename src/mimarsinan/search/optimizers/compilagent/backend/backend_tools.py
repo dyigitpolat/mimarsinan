@@ -8,6 +8,7 @@ from typing import Any, Dict
 
 from compilagent import PassEvent
 
+from mimarsinan.common.best_effort import best_effort
 from mimarsinan.search.search_space_description import SearchSpaceDescription
 
 
@@ -36,7 +37,7 @@ def description_for(problem: Any) -> SearchSpaceDescription:
 
 
 def fire_pass(callback: Any, stage: str, name: str, started_at: float) -> None:
-    try:
+    with best_effort("deliver compilagent pass event"):
         callback(
             PassEvent(
                 stage=stage,
@@ -44,8 +45,6 @@ def fire_pass(callback: Any, stage: str, name: str, started_at: float) -> None:
                 duration_ms=(time.perf_counter() - started_at) * 1000.0,
             )
         )
-    except Exception:
-        pass
 
 
 def list_introspection_tools(backend: Any):

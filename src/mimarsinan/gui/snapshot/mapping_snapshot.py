@@ -10,6 +10,7 @@ import numpy as np
 
 logger = logging.getLogger("mimarsinan.gui")
 
+from mimarsinan.common.best_effort import best_effort
 from mimarsinan.gui.snapshot.util.helpers import _histogram
 from mimarsinan.gui.resources import ResourceDescriptor
 from mimarsinan.gui.snapshot.heatmap import _make_heatmap_producer
@@ -44,13 +45,14 @@ def snapshot_mapping_performance_planned(
     cores = platform_constraints.get("cores") or []
     if not cores:
         return None
-    try:
+    model_repr_from_model = None
+    verify_planned_mapping_performance = None
+    with best_effort("import wizard_layout_verify", logger=logger):
         from mimarsinan.mapping.verification.wizard_layout_verify import (
             model_repr_from_model,
             verify_planned_mapping_performance,
         )
-    except Exception:
-        logger.debug("wizard_layout_verify not importable", exc_info=True)
+    if model_repr_from_model is None or verify_planned_mapping_performance is None:
         return None
 
     model_repr = model_repr_from_model(
@@ -58,11 +60,11 @@ def snapshot_mapping_performance_planned(
     )
     if model_repr is None:
         return None
-    try:
-        return verify_planned_mapping_performance(model_repr, platform_constraints)
-    except Exception:
-        logger.debug("verify_planned_mapping_performance failed", exc_info=True)
-        return None
+
+    result = None
+    with best_effort("verify_planned_mapping_performance", logger=logger):
+        result = verify_planned_mapping_performance(model_repr, platform_constraints)
+    return result
 
 
 def snapshot_mapping_performance_real(mapping: Any) -> dict | None:
@@ -113,7 +115,7 @@ def snapshot_hard_core_mapping(mapping: Any) -> tuple[dict, list[ResourceDescrip
                     "threshold": float(core.threshold) if core.threshold is not None else None,
                     "latency": core.latency,
                 }
-                try:
+                with best_effort(f"register heatmap for hard core {ci}", logger=logger):
                     mat = core.core_matrix
                     rid = f"seg/{seg_idx}/core/{ci}"
                     core_d["has_heatmap"] = True
@@ -129,8 +131,6 @@ def snapshot_hard_core_mapping(mapping: Any) -> tuple[dict, list[ResourceDescrip
                         producer=_make_heatmap_producer(mat, copy=False),
                         media_type="image/png",
                     ))
-                except Exception:
-                    logger.debug("Failed to register heatmap for hard core %d", ci, exc_info=True)
                 conn_rid = f"seg/{seg_idx}/core/{ci}"
                 core_d["has_connectivity"] = True
                 core_d["connectivity_resource"] = {
@@ -177,7 +177,7 @@ def snapshot_hard_core_mapping(mapping: Any) -> tuple[dict, list[ResourceDescrip
             stage_info["cores"] = cores_detail
             stage_info["has_connectivity"] = True
 
-            try:
+            with best_effort(f"extract io_map for stage {i}", logger=logger):
                 stage_info["input_map"] = [
                     {"node_id": s.node_id, "offset": s.offset, "size": s.size}
                     for s in stage.input_map
@@ -186,8 +186,6 @@ def snapshot_hard_core_mapping(mapping: Any) -> tuple[dict, list[ResourceDescrip
                     {"node_id": s.node_id, "offset": s.offset, "size": s.size}
                     for s in stage.output_map
                 ]
-            except Exception:
-                logger.debug("Failed to extract io_map for stage %d", i, exc_info=True)
 
         elif stage.kind == "compute" and stage.compute_op is not None:
             stage_info["op_type"] = stage.compute_op.op_type

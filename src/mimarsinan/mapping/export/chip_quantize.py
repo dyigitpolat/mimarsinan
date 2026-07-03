@@ -86,10 +86,7 @@ def verify_ir_graph_quantized(ir_graph: IRGraph, bits: int) -> None:
     bank_checked: set[int] = set()
     for core in ir_graph.get_neural_cores():
         ps = core.parameter_scale
-        try:
-            scale = float(ps.item())
-        except Exception:
-            scale = float(ps)
+        scale = float(ps.item() if hasattr(ps, "item") else ps)
         bank_id = getattr(core, "weight_bank_id", None)
         if bank_id is not None:
             if bank_id in bank_checked:

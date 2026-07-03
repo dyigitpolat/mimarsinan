@@ -31,7 +31,7 @@ management, data contract verification, and performance tolerance enforcement.
 
 ## Dependencies
 
-- **Internal**: `common.file_utils` (`prepare_containing_directory`), `pipelining.cache`.
+- **Internal**: `common.file_utils` (`prepare_containing_directory`), `common.best_effort` (`best_effort` — the sanctioned log-and-degrade seam for viz/telemetry side work), `pipelining.cache`.
 - **External**: `os`, `json`.
 
 ## Dependents

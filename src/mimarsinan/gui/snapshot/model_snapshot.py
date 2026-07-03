@@ -10,6 +10,7 @@ import torch.nn as nn
 
 logger = logging.getLogger("mimarsinan.gui")
 
+from mimarsinan.common.best_effort import best_effort
 from mimarsinan.gui.snapshot.util.helpers import _histogram, _safe_scalar
 from mimarsinan.gui.resources import ResourceDescriptor
 from mimarsinan.gui.snapshot.heatmap import _make_heatmap_producer
@@ -35,7 +36,8 @@ def snapshot_model(model: Any) -> dict:
 
     for idx, p in enumerate(perceptrons):
         layer_info: dict = {"index": idx, "name": getattr(p, "name", f"perceptron_{idx}")}
-        try:
+        layer_info["weight"] = None
+        with best_effort(f"extract weight stats for layer {idx}", logger=logger):
             w = p.layer.weight.data.detach().cpu().numpy()
             layer_info["weight"] = {
                 "shape": list(w.shape),
@@ -47,10 +49,9 @@ def snapshot_model(model: Any) -> dict:
                 "sparsity": float(np.mean(np.abs(w) < 1e-8)),
             }
             total_params += w.size
-        except Exception:
-            layer_info["weight"] = None
 
-        try:
+        layer_info["bias"] = None
+        with best_effort(f"extract bias stats for layer {idx}", logger=logger):
             b = p.layer.bias.data.detach().cpu().numpy()
             layer_info["bias"] = {
                 "shape": list(b.shape),
@@ -61,18 +62,15 @@ def snapshot_model(model: Any) -> dict:
                 "histogram": _histogram(b),
             }
             total_params += b.size
-        except Exception:
-            layer_info["bias"] = None
 
         layer_info["activation_scale"] = _safe_scalar(p, "activation_scale")
         layer_info["parameter_scale"] = _safe_scalar(p, "parameter_scale")
 
         layers.append(layer_info)
 
-    try:
+    total_params_torch = total_params
+    with best_effort("sum model.parameters() for total_params", logger=logger):
         total_params_torch = sum(p.numel() for p in model.parameters())
-    except Exception:
-        total_params_torch = total_params
 
     return {
         "total_params": int(total_params_torch),
@@ -83,20 +81,16 @@ def snapshot_model(model: Any) -> dict:
 
 def _get_model_perceptrons(model: Any) -> list:
     """Try multiple strategies to extract layer-like objects from the model."""
-    try:
+    with best_effort("model.get_perceptrons() lookup", logger=logger):
         perceptrons = model.get_perceptrons()
         if perceptrons:
             return perceptrons
-    except Exception:
-        pass
 
-    try:
+    with best_effort("model.perceptrons attribute lookup", logger=logger):
         if hasattr(model, "perceptrons"):
             return list(model.perceptrons)
-    except Exception:
-        pass
 
-    try:
+    with best_effort("model.children() nn.Linear fallback lookup", logger=logger):
         children = list(model.children())
         if children:
             linear_layers = []
@@ -108,8 +102,6 @@ def _get_model_perceptrons(model: Any) -> list:
                     linear_layers.append(wrapper)
             if linear_layers:
                 return linear_layers
-    except Exception:
-        pass
 
     logger.debug("Could not extract perceptrons/layers from model %s", type(model).__name__)
     return []

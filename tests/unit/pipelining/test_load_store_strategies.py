@@ -1,5 +1,7 @@
 """Tests for individual load/store strategies."""
 
+import logging
+
 import pytest
 import torch
 import torch.nn as nn
@@ -67,6 +69,38 @@ class TestTorchModelLoadStoreStrategy:
         s.store(str(tmp_path), model)
         loaded = s.load(str(tmp_path))
         assert next(loaded.parameters()).device == torch.device("cpu")
+
+
+class _RestoreFailModel(nn.Module):
+    """Model whose ``.to()`` raises, simulating a vanished CUDA device after save."""
+
+    def __init__(self, exc_type):
+        super().__init__()
+        self.lin = nn.Linear(2, 2)
+        self._exc_type = exc_type
+
+    def to(self, *args, **kwargs):
+        raise self._exc_type("restore failed")
+
+
+class TestTorchModelStoreDeviceRestore:
+    def test_runtime_error_falls_back_to_cpu_with_warning(self, tmp_path, caplog):
+        model = _RestoreFailModel(RuntimeError)
+        s = TorchModelLoadStoreStrategy("m_restore")
+        with caplog.at_level(
+            logging.WARNING,
+            logger="mimarsinan.pipelining.cache.load_store_strategies",
+        ):
+            s.store(str(tmp_path), model)
+        assert (tmp_path / "m_restore.pt").exists()
+        assert any("leaving on CPU" in r.getMessage() for r in caplog.records)
+        assert next(model.parameters()).device == torch.device("cpu")
+
+    def test_unexpected_error_propagates(self, tmp_path):
+        model = _RestoreFailModel(ValueError)
+        s = TorchModelLoadStoreStrategy("m_restore2")
+        with pytest.raises(ValueError, match="restore failed"):
+            s.store(str(tmp_path), model)
 
 
 class TestPickleLoadStoreStrategy:

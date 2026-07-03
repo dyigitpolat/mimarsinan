@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import os
 
+from mimarsinan.common.best_effort import best_effort
+
 
 def write_ir_graph_visualizations(step, model, ir_graph) -> None:
     if not step.pipeline.config.get("generate_visualizations", False):
         return
-    try:
+    with best_effort("IRGraph visualization"):
         from mimarsinan.visualization.graphviz import (
             try_render_dot,
             write_ir_graph_dot,
@@ -44,5 +46,3 @@ def write_ir_graph_visualizations(step, model, ir_graph) -> None:
             print(f"[SoftCoreMappingStep] Wrote IRGraph summary: {out_sum} (+ {', '.join(rendered_sum)})")
         else:
             print(f"[SoftCoreMappingStep] Wrote IRGraph summary: {out_sum} (render skipped: graphviz 'dot' not found)")
-    except Exception as e:
-        print(f"[SoftCoreMappingStep] IRGraph visualization failed (non-fatal): {e}")

@@ -214,7 +214,7 @@ def parse_candidates(
         elif isinstance(c, str):
             try:
                 parsed.append(json.loads(c))
-            except Exception:
+            except json.JSONDecodeError:
                 log_fn(f"Warning: Could not parse candidate string: {c[:100]}")
 
     if len(parsed) != expected_count:

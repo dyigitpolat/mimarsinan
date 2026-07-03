@@ -77,7 +77,7 @@ def compute_mapping_stats(
         max_hw_neurons=max_hw_neu,
         allow_coalescing=allow_coalescing,
         allow_splitting=allow_neuron_splitting,
-        core_types=core_dicts,
+        core_types=core_types,
     )
 
     for sid in sorted(seg_softcores.keys()):
@@ -102,21 +102,18 @@ def compute_mapping_stats(
 
     best_stats = None
     for pass_scs in sorted(all_pass_lists, key=len, reverse=True):
-        try:
-            pr = pack_layout(
-                softcores=pass_scs,
-                core_types=core_types,
-                allow_neuron_splitting=allow_neuron_splitting,
-                allow_coalescing=allow_coalescing,
+        pr = pack_layout(
+            softcores=pass_scs,
+            core_types=core_types,
+            allow_neuron_splitting=allow_neuron_splitting,
+            allow_coalescing=allow_coalescing,
+        )
+        if pr.feasible:
+            best_stats = _stats_from_packing(
+                pr, num_original_softcores=len(softcores),
+                softcores=softcores, core_types=core_types,
             )
-            if pr.feasible:
-                best_stats = _stats_from_packing(
-                    pr, num_original_softcores=len(softcores),
-                    softcores=softcores, core_types=core_types,
-                )
-                break
-        except Exception:
-            continue
+            break
 
     if best_stats is None:
         return _empty_stats(

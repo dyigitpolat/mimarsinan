@@ -20,11 +20,8 @@ def _force_dead_nodes_fully_pruned(
         if node.core_matrix is not None:
             n_axons, n_neurons = node.core_matrix.shape
         else:
-            try:
-                mat = node.get_core_matrix(graph)
-                n_axons, n_neurons = mat.shape
-            except Exception:
-                continue
+            mat = node.get_core_matrix(graph)
+            n_axons, n_neurons = mat.shape
         result.pruned_rows_per_node[node.id] = set(range(n_axons))
         result.pruned_cols_per_node[node.id] = set(range(n_neurons))
 

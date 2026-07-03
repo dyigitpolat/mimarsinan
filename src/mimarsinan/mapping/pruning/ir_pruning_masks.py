@@ -12,10 +12,7 @@ def get_initial_pruning_masks_from_model(model, ir_graph: IRGraph):
     initial_pruned_per_node: Dict[int, Tuple[Sequence[bool], Sequence[bool]]] = {}
     initial_pruned_per_bank: Dict[int, Tuple[Sequence[bool], Sequence[bool]]] = {}
     neural_cores = [n for n in ir_graph.nodes if isinstance(n, NeuralCore)]
-    try:
-        perceptrons = model.get_perceptrons()
-    except Exception:
-        return initial_pruned_per_node, initial_pruned_per_bank
+    perceptrons = model.get_perceptrons()
 
     def _perceptron_masks(p):
         layer = getattr(p, "layer", None)
@@ -61,11 +58,8 @@ def get_initial_pruning_masks_from_model(model, ir_graph: IRGraph):
             col_pruned = col_pruned[start:end]
         in_f = len(col_pruned)
         out_f = len(row_pruned)
-        try:
-            mat = node.get_core_matrix(ir_graph)
-            nr, nc = mat.shape
-        except Exception:
-            continue
+        mat = node.get_core_matrix(ir_graph)
+        nr, nc = mat.shape
         ir_row_mask = [bool(col_pruned[j]) for j in range(in_f)]
         if nr > in_f:
             ir_row_mask.append(False)
@@ -109,11 +103,8 @@ def get_initial_pruning_masks_from_model(model, ir_graph: IRGraph):
             if row_pruned is None:
                 continue
             in_f, out_f = len(col_pruned), len(row_pruned)
-            try:
-                mat = node.get_core_matrix(ir_graph)
-                nr, nc = mat.shape
-            except Exception:
-                continue
+            mat = node.get_core_matrix(ir_graph)
+            nr, nc = mat.shape
             if nr == in_f + 1 and nc == out_f:
                 ir_row_mask = [bool(col_pruned[j]) for j in range(in_f)] + [False]
                 ir_col_mask = [bool(row_pruned[j]) for j in range(out_f)]

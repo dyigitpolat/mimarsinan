@@ -1,4 +1,5 @@
 from __future__ import annotations
+import logging
 from typing import Sequence
 from mimarsinan.mapping.layout.layout_types import LayoutSoftCoreSpec
 from mimarsinan.mapping.support.schedule.schedule_partitioner import estimate_passes_for_layout
@@ -6,6 +7,9 @@ from mimarsinan.mapping.verification.suggester.hw_suggestion_helpers import _dim
 from mimarsinan.mapping.verification.suggester.hw_suggestion_types import HardwareSuggestion
 from mimarsinan.mapping.verification.suggester.hw_config_suggester import suggest_hardware_config
 from mimarsinan.mapping.verification.verifier import verify_soft_core_mapping
+
+_logger = logging.getLogger(__name__)
+
 
 def suggest_hardware_config_scheduled(
     softcores: Sequence[LayoutSoftCoreSpec],
@@ -79,6 +83,11 @@ def suggest_hardware_config_scheduled(
         try:
             suggestion = suggest_hardware_config(largest_pass, **common_kwargs)
         except Exception:
+            _logger.warning(
+                "suggest_hardware_config_scheduled: candidate budget=%s "
+                "(est_passes=%s) failed; skipping candidate and keeping best-so-far",
+                budget, est_passes, exc_info=True,
+            )
             continue
         if not suggestion.core_types:
             continue

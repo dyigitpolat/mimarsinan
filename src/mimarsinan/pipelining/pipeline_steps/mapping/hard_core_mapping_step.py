@@ -1,5 +1,6 @@
 from mimarsinan.pipelining.core.steps.pipeline_step import PipelineStep
 
+from mimarsinan.common.best_effort import best_effort
 from mimarsinan.pipelining.core.hybrid_mapping_consumer import load_hybrid_mapping_for_step
 from mimarsinan.pipelining.core.engine.pipeline_helpers import run_optional_viz
 from mimarsinan.pipelining.core.simulation_factory import run_hcm_mapping_metric
@@ -12,11 +13,10 @@ def _vram_probe(tag: str) -> None:
     """Opt-in VRAM/RSS probe when ``MIMARSINAN_VRAM_PROBE=1``."""
     if os.environ.get("MIMARSINAN_VRAM_PROBE") != "1":
         return
-    try:
+    rss = 0
+    with best_effort("read process RSS via psutil"):
         import psutil
         rss = psutil.Process(os.getpid()).memory_info().rss
-    except Exception:
-        rss = 0
     if torch.cuda.is_available():
         torch.cuda.synchronize()
         alc = torch.cuda.memory_allocated()

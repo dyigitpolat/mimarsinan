@@ -7,6 +7,7 @@ from typing import Any
 
 import numpy as np
 
+from mimarsinan.common.best_effort import best_effort
 from mimarsinan.gui.heatmap_renderer import render_heatmap_png_bytes
 
 logger = logging.getLogger("mimarsinan.gui")
@@ -41,16 +42,13 @@ def _detect_neural_core_liveness(node: Any, mat: Any) -> str:
     if pre_row_all_true and pre_col is not None and not pre_col_all_true:
         return LIVENESS_BIAS_ONLY
 
-    try:
+    shape = None
+    with best_effort("read core matrix shape for liveness detection", logger=logger):
         shape = tuple(int(d) for d in mat.shape)
-    except Exception:
-        shape = None
 
     flat_src = None
-    try:
+    with best_effort("flatten input_sources for liveness detection", logger=logger):
         flat_src = node.input_sources.flatten()
-    except Exception:
-        pass
 
     rmask = getattr(node, "pruned_row_mask", None)
     cmask = getattr(node, "pruned_col_mask", None)
@@ -81,13 +79,9 @@ def _make_heatmap_producer(
     copy: bool = True,
 ):
     """Build a zero-arg closure that renders *matrix* to PNG bytes lazily."""
-    try:
-        if copy:
-            matrix_copy: Any = np.asarray(matrix).copy()
-        else:
-            matrix_copy = np.asarray(matrix)
-    except Exception:
-        matrix_copy = matrix
+    matrix_copy: Any = matrix
+    with best_effort("prepare heatmap matrix", logger=logger):
+        matrix_copy = np.asarray(matrix).copy() if copy else np.asarray(matrix)
     rr = list(pruned_row_mask) if pruned_row_mask is not None else None
     cc = list(pruned_col_mask) if pruned_col_mask is not None else None
 
@@ -103,10 +97,9 @@ def _make_heatmap_producer(
 
 def _make_bias_strip_producer(bias: Any):
     """Render a ``hardware_bias`` vector as a 1-row colormap PNG (for BIAS_ONLY cores)."""
-    try:
-        bias_copy: Any = np.asarray(bias, dtype=np.float64).copy()
-    except Exception:
-        bias_copy = bias
+    bias_copy: Any = bias
+    with best_effort("prepare bias strip array", logger=logger):
+        bias_copy = np.asarray(bias, dtype=np.float64).copy()
 
     def produce() -> bytes:
         arr = np.asarray(bias_copy)

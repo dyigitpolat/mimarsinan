@@ -173,7 +173,7 @@ def pack_layout(
             materializer=materializer,
             allow_neuron_splitting=allow_neuron_splitting,
         )
-    except Exception as e:
+    except RuntimeError as e:
         return LayoutPackingResult(
             feasible=False,
             cores_used=0,

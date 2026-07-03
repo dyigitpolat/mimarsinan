@@ -1,9 +1,12 @@
 """Tests for shutdown_data_loader helper."""
 
+import logging
+
 import pytest
 
 from mimarsinan.data_handling.data_loader_factory import (
     DataLoaderFactory,
+    _unregister_dataloader_atexit_handlers,
     shutdown_data_loader,
 )
 
@@ -44,3 +47,42 @@ class TestShutdownDataLoader:
         shutdown_data_loader(loader)
         shutdown_data_loader(loader)
         # Second call must not raise
+
+
+class TestShutdownDegradesViaBestEffort:
+    """Shutdown-path failures degrade through the best_effort seam (logged, never raised)."""
+
+    def test_worker_shutdown_failure_degrades_and_logs(self, caplog):
+        class FakeIter:
+            def _shutdown_workers(self):
+                raise RuntimeError("worker pipe broken")
+
+        class FakeLoader:
+            num_workers = 2
+            _iterator = FakeIter()
+
+        with caplog.at_level(logging.DEBUG, logger="mimarsinan.best_effort"):
+            shutdown_data_loader(FakeLoader())
+        assert any("shutdown" in r.getMessage() for r in caplog.records)
+
+    def test_unregister_with_exploding_iterator_degrades_and_logs(self, caplog):
+        class Weird:
+            @property
+            def _workers(self):
+                raise RuntimeError("boom")
+
+        with caplog.at_level(logging.DEBUG, logger="mimarsinan.best_effort"):
+            _unregister_dataloader_atexit_handlers(Weird())
+        assert any("atexit" in r.getMessage() for r in caplog.records)
+
+    def test_resource_snapshot_failure_degrades_and_logs(self, monkeypatch, caplog):
+        import mimarsinan.data_handling.data_loader_factory as dlf_mod
+
+        def exploding_children():
+            raise RuntimeError("mp broken")
+
+        monkeypatch.setattr(dlf_mod, "_RESOURCE_DEBUG", True)
+        monkeypatch.setattr(dlf_mod._mp, "active_children", exploding_children)
+        with caplog.at_level(logging.DEBUG, logger="mimarsinan.best_effort"):
+            dlf_mod._resource_snapshot("test-tag")
+        assert any("snapshot" in r.getMessage() for r in caplog.records)

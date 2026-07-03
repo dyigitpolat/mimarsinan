@@ -8,6 +8,8 @@ import threading
 from pathlib import Path
 from typing import Callable, Optional
 
+from mimarsinan.common.best_effort import best_effort
+
 logger = logging.getLogger("mimarsinan.gui.runtime.active_run_tailers")
 
 POLL_INTERVAL_S = 0.05
@@ -38,10 +40,8 @@ class MetricsTailer:
 
     def _run(self) -> None:
         while not self._stop.is_set():
-            try:
+            with best_effort(f"metrics tailer tick for {self._path}", logger=logger):
                 self._tick()
-            except Exception:
-                logger.debug("Metrics tailer tick failed for %s", self._path, exc_info=True)
             self._stop.wait(POLL_INTERVAL_S)
 
     def _tick(self) -> None:
@@ -73,10 +73,8 @@ class MetricsTailer:
                 record = json.loads(line.decode("utf-8"))
             except (UnicodeDecodeError, json.JSONDecodeError):
                 continue
-            try:
+            with best_effort("metrics tailer callback", logger=logger):
                 self._callback({"type": "metric", **record})
-            except Exception:
-                logger.debug("Metrics callback raised", exc_info=True)
 
 
 class StepsFileWatcher:
@@ -106,10 +104,8 @@ class StepsFileWatcher:
 
     def _run(self) -> None:
         while not self._stop.is_set():
-            try:
+            with best_effort(f"steps watcher tick for {self._path}", logger=logger):
                 self._tick()
-            except Exception:
-                logger.debug("Steps watcher tick failed for %s", self._path, exc_info=True)
             self._stop.wait(POLL_INTERVAL_S)
 
     def _tick(self) -> None:
@@ -125,7 +121,5 @@ class StepsFileWatcher:
         overview = self._build_overview()
         if overview is None:
             return
-        try:
+        with best_effort("steps overview callback", logger=logger):
             self._callback({"type": "pipeline_overview", **overview})
-        except Exception:
-            logger.debug("Steps overview callback raised", exc_info=True)

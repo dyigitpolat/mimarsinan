@@ -34,7 +34,7 @@ and the decision services the refactor is extracting from the loop.
 
 ## Dependencies
 
-- **Internal**: `tuning.trace` (decision artifact), `tuning.axes` (rate application), `tuning.learning_rate_explorer`, `tuning.adaptation_target_adjuster`, `tuning.perceptron_rate`, `tuning.forward_install`, `tuning.teacher`, `model_training` (trainers).
+- **Internal**: `tuning.trace` (decision artifact), `tuning.axes` (rate application), `tuning.learning_rate_explorer`, `tuning.adaptation_target_adjuster`, `tuning.perceptron_rate`, `tuning.forward_install`, `tuning.teacher`, `model_training` (trainers), `common.best_effort` (the sanctioned log-and-degrade seam for the finalize-cliff diagnostic eval).
 - **External**: `torch`.
 
 ## Dependents

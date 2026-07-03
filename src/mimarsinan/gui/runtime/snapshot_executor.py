@@ -8,6 +8,8 @@ import threading
 import time as _time
 from typing import Callable
 
+from mimarsinan.common.best_effort import best_effort
+
 logger = logging.getLogger("mimarsinan.gui.runtime.snapshot_executor")
 
 Job = Callable[[], None]
@@ -64,9 +66,7 @@ class SnapshotExecutor:
             try:
                 if job is None:
                     return
-                try:
+                with best_effort("SnapshotExecutor job", logger=logger):
                     job()
-                except Exception:
-                    logger.exception("SnapshotExecutor job raised")
             finally:
                 self._queue.task_done()

@@ -3,6 +3,7 @@ import multiprocessing as _mp
 import os
 import sys
 
+from mimarsinan.common.best_effort import best_effort
 from mimarsinan.data_handling.data_provider import DataProvider
 
 import torch
@@ -18,7 +19,7 @@ _DATALOADER_MP_CONTEXT = torch_mp.get_context("forkserver")
 def _resource_snapshot(tag):
     if not _RESOURCE_DEBUG:
         return
-    try:
+    with best_effort("resource snapshot"):
         pid = os.getpid()
         try:
             fd_count = len(os.listdir(f"/proc/{pid}/fd"))
@@ -47,8 +48,6 @@ def _resource_snapshot(tag):
             file=sys.stderr,
             flush=True,
         )
-    except Exception:
-        pass
 
 
 def _unregister_dataloader_atexit_handlers(it):
@@ -56,15 +55,13 @@ def _unregister_dataloader_atexit_handlers(it):
 
     Best-effort: never raises.
     """
-    try:
+    with best_effort("unregister dataloader atexit handlers"):
         workers = getattr(it, "_workers", None)
         if not workers:
             return
         from torch.utils.data.dataloader import _MultiProcessingDataLoaderIter
         cleanup_func = _MultiProcessingDataLoaderIter._clean_up_worker
         atexit.unregister(cleanup_func)
-    except Exception:
-        pass
 
 
 def shutdown_data_loader(loader):
@@ -77,15 +74,13 @@ def shutdown_data_loader(loader):
     if getattr(loader, "num_workers", 0) == 0:
         return
     _resource_snapshot("shutdown:enter")
-    try:
+    with best_effort("dataloader worker shutdown"):
         it = getattr(loader, "_iterator", None)
         if it is not None and hasattr(it, "_shutdown_workers"):
             it._shutdown_workers()
             _unregister_dataloader_atexit_handlers(it)
         if hasattr(loader, "_iterator"):
             loader._iterator = None
-    except Exception:
-        pass
     _resource_snapshot("shutdown:exit")
 
 

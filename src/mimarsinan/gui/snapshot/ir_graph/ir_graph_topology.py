@@ -7,6 +7,7 @@ from typing import Any
 
 import numpy as np
 
+from mimarsinan.common.best_effort import best_effort
 from mimarsinan.gui.resources import ResourceDescriptor
 from mimarsinan.gui.snapshot.heatmap import _make_heatmap_producer
 from mimarsinan.gui.snapshot.util.helpers import _histogram
@@ -40,9 +41,9 @@ def snapshot_ir_graph(
     compute_ops: list[dict] = []
 
     weight_banks: dict = {}
-    try:
+    with best_effort("iterate ir_graph weight_banks", logger=logger):
         for bank_id, bank in getattr(ir_graph, "weight_banks", {}).items():
-            try:
+            with best_effort(f"register heatmap for weight bank {bank_id}", logger=logger):
                 rid = f"bank/{int(bank_id)}"
                 weight_banks[int(bank_id)] = {
                     "has_heatmap": True,
@@ -57,12 +58,6 @@ def snapshot_ir_graph(
                         producer=_make_heatmap_producer(bank.core_matrix, copy=False),
                         media_type="image/png",
                     ))
-            except Exception:
-                logger.debug(
-                    "Failed to register heatmap for weight bank %s", bank_id, exc_info=True,
-                )
-    except Exception:
-        pass
 
     for topo_idx, node in enumerate(ir_graph.nodes):
         process_ir_graph_node(
@@ -79,12 +74,10 @@ def snapshot_ir_graph(
             edges=edges,
         )
 
-    try:
+    with best_effort("extract output_sources from ir_graph", logger=logger):
         for src in ir_graph.output_sources.flatten():
             if src.node_id >= 0:
                 edges.append({"from": int(src.node_id), "to": "output"})
-    except Exception:
-        logger.debug("Failed to extract output_sources from ir_graph", exc_info=True)
 
     deduped_edges = _deduplicate_edges(edges)
 

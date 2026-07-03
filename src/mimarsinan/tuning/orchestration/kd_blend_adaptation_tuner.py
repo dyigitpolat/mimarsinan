@@ -8,6 +8,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from mimarsinan.common.best_effort import best_effort
 from mimarsinan.tuning.forward_install import CascadeForwardInstall, LazyExecutorForward
 from mimarsinan.tuning.orchestration.genuine_probe import (
     eval_forward_over_val,
@@ -315,10 +316,13 @@ class KDBlendAdaptationTuner(CascadeForwardInstall, SmoothAdaptationTuner):
         return self.trainer.validate_n_batches(self._budget.progress_eval_batches)
 
     def _safe_eval(self):
-        try:
-            return float(self.trainer.validate_n_batches(self._budget.eval_n_batches))
-        except Exception:
-            return None
+        """Best-effort validation read for the finalize-cliff diagnostic only."""
+        metric = None
+        with best_effort("finalize-cliff validation eval"):
+            metric = float(
+                self.trainer.validate_n_batches(self._budget.eval_n_batches)
+            )
+        return metric
 
     def _after_run(self):
         try:

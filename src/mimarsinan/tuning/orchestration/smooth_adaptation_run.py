@@ -51,10 +51,7 @@ class SmoothAdaptationRunMixin(TunerBase):
 
         n_eval = self._budget.eval_n_batches
         pre_state = self._clone_state()
-        try:
-            pre_val = float(self.trainer.validate_n_batches(n_eval))
-        except Exception:
-            pre_val = None
+        pre_val = float(self.trainer.validate_n_batches(n_eval))
 
         progress_n = max(
             self._budget.progress_eval_batches,
@@ -77,30 +74,23 @@ class SmoothAdaptationRunMixin(TunerBase):
                 min_improvement=self._budget.accuracy_se() / 2,
                 hooks=hooks,
             )
-            if round_idx == rounds - 1 or last_val is None:
+            if round_idx == rounds - 1:
                 break
-            try:
-                round_val = float(self.trainer.validate_n_batches(n_eval))
-            except Exception:
-                break
+            round_val = float(self.trainer.validate_n_batches(n_eval))
             if round_val - last_val <= self._budget.accuracy_se() / 2:
                 break
             last_val = round_val
             self._invalidate_lr_cache()
             lr = min(float(self._get_cached_lr()), float(self.pipeline_lr))
 
-        if pre_val is not None:
-            try:
-                post_val = float(self.trainer.validate_n_batches(n_eval))
-            except Exception:
-                post_val = None
-            if post_val is not None and post_val < pre_val - self._rollback_tolerance:
-                self._restore_state(pre_state)
-                self._invalidate_lr_cache()
-                self.pipeline.reporter.report(
-                    f"{self.name} stabilization rollback",
-                    {"pre": pre_val, "post": post_val},
-                )
+        post_val = float(self.trainer.validate_n_batches(n_eval))
+        if post_val < pre_val - self._rollback_tolerance:
+            self._restore_state(pre_state)
+            self._invalidate_lr_cache()
+            self.pipeline.reporter.report(
+                f"{self.name} stabilization rollback",
+                {"pre": pre_val, "post": post_val},
+            )
 
     def _stabilize_bounded_cosine(self):
         """A single bounded stabilization pass of ``N = int(stabilization_ratio *
@@ -118,10 +108,7 @@ class SmoothAdaptationRunMixin(TunerBase):
 
         n_eval = self._budget.eval_n_batches
         pre_state = self._clone_state()
-        try:
-            pre_val = float(self.trainer.validate_n_batches(n_eval))
-        except Exception:
-            pre_val = None
+        pre_val = float(self.trainer.validate_n_batches(n_eval))
 
         hooks = self._recovery_training_hooks(1.0)
         # check_interval = n_steps makes the only validation the final step, so the
@@ -140,18 +127,14 @@ class SmoothAdaptationRunMixin(TunerBase):
             cosine_decay=True,
         )
 
-        if pre_val is not None:
-            try:
-                post_val = float(self.trainer.validate_n_batches(n_eval))
-            except Exception:
-                post_val = None
-            if post_val is not None and post_val < pre_val - self._rollback_tolerance:
-                self._restore_state(pre_state)
-                self._invalidate_lr_cache()
-                self.pipeline.reporter.report(
-                    f"{self.name} stabilization rollback",
-                    {"pre": pre_val, "post": post_val},
-                )
+        post_val = float(self.trainer.validate_n_batches(n_eval))
+        if post_val < pre_val - self._rollback_tolerance:
+            self._restore_state(pre_state)
+            self._invalidate_lr_cache()
+            self.pipeline.reporter.report(
+                f"{self.name} stabilization rollback",
+                {"pre": pre_val, "post": post_val},
+            )
 
     def _continue_to_full_rate(self):
         """Continue gradual adaptation from committed rate toward 1.0."""

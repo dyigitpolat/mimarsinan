@@ -8,6 +8,8 @@ import sys
 import time
 import traceback
 
+from mimarsinan.common.best_effort import best_effort
+
 
 def enable_cuda_debug() -> None:
     """Set the env vars that force synchronous CUDA kernel launches.
@@ -44,12 +46,11 @@ def describe_tensor(t) -> str:
 
 def _rss_mib() -> float:
     """Current resident-set size in MiB, or 0.0 if unavailable."""
-    try:
+    with best_effort("read /proc/self/statm rss"):
         with open("/proc/self/statm") as f:
             rss_pages = int(f.read().split()[1])
         return rss_pages * (os.sysconf("SC_PAGE_SIZE") / (1 << 20))
-    except Exception:
-        return 0.0
+    return 0.0
 
 
 @contextlib.contextmanager
@@ -71,10 +72,8 @@ def phase_profiler(tag: str, name: str, *, sink=None):
         yield
     finally:
         if cuda_ok:
-            try:
+            with best_effort("cuda synchronize (phase_profiler)"):
                 torch.cuda.synchronize()
-            except Exception:
-                pass
         elapsed = time.perf_counter() - t0
         rss_delta = _rss_mib() - rss0
         if cuda_ok:
@@ -105,19 +104,15 @@ def cuda_guard(name: str, *, enabled: bool = True):
         yield
         return
 
-    try:
+    with best_effort("cuda pre-sync (cuda_guard)"):
         torch.cuda.synchronize()
-    except Exception:
-        pass
 
     try:
         yield
         torch.cuda.synchronize()
     except Exception:
         print(f"[cuda_guard:{name}] exception; CUDA memory summary:", file=sys.stderr)
-        try:
+        with best_effort("cuda memory summary print (cuda_guard)"):
             print(torch.cuda.memory_summary(abbreviated=True), file=sys.stderr)
-        except Exception:
-            pass
         traceback.print_exc()
         raise

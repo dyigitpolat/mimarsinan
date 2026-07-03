@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Callable
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
+from mimarsinan.common.best_effort import best_effort
 from mimarsinan.gui.runs import get_runs_root, _validate_run_id
 from mimarsinan.gui.server.json_safe import SafeJSONResponse
 from mimarsinan.gui.templates import (
@@ -158,12 +159,13 @@ def register_routes(
         pop_path = os.path.join(run_dir, "final_population.json")
         if not os.path.isfile(pop_path):
             return SafeJSONResponse(content={"discovered": False})
-        try:
+        result = SafeJSONResponse(content={"discovered": False})
+        with best_effort(f"read discovered population for run {run_id}", logger=logger):
             with open(pop_path, encoding="utf-8") as f:
                 data = json.load(f)
             best = data.get("best", {})
             cfg = best.get("configuration", {})
-            return SafeJSONResponse(content={
+            result = SafeJSONResponse(content={
                 "discovered": True,
                 "search_mode_used": data.get("search_mode_used"),
                 "discovered_model_config": data.get("discovered_model_config") or cfg.get("model_config"),
@@ -171,8 +173,7 @@ def register_routes(
                 "active_objectives": data.get("active_objectives", []),
                 "best_objectives": best.get("objectives", {}),
             })
-        except Exception:
-            return SafeJSONResponse(content={"discovered": False})
+        return result
 
     @app.get("/api/templates")
     def api_list_templates():

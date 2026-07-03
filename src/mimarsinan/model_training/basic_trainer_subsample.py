@@ -13,7 +13,7 @@ def test_on_subsample(trainer, *, max_samples: int, seed: int = 0) -> float:
     """Run test over a deterministic subsample of the test set."""
     try:
         total_samples = len(trainer.data_provider._get_test_dataset())
-    except Exception:
+    except (TypeError, NotImplementedError):
         total_samples = None
 
     if total_samples is None or total_samples <= 0:

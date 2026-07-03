@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Dict, List, Sequence, Tuple
 
 from mimarsinan.search.optimizers.agent_evolve.schema import (
@@ -11,6 +12,8 @@ from mimarsinan.search.optimizers.agent_evolve.schema import (
 from mimarsinan.search.optimizers.llm.trace import emit_search_event
 from mimarsinan.search.problem import SearchProblem
 from mimarsinan.search.results import ObjectiveSpec
+
+logger = logging.getLogger(__name__)
 
 
 class BatchEvalMixin:
@@ -96,6 +99,12 @@ class BatchEvalMixin:
                     "failure_phase": None,
                 })
             except Exception as e:
+                logger.warning(
+                    "Candidate evaluation raised (%s: %s) for config %.500s; "
+                    "recording penalty objectives %s",
+                    type(e).__name__, e, config, dict(penalty_obj),
+                    exc_info=True,
+                )
                 if self.verbose:
                     self._log(f"    -> EXCEPTION: {e}")
                 failed_results.append(CandidateResult(

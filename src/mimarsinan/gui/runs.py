@@ -3,13 +3,17 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 from pathlib import Path
 from typing import Any
 
+from mimarsinan.common.best_effort import best_effort
 from mimarsinan.gui.runtime.persistence import load_persisted_steps, load_console_logs
 from mimarsinan.gui.snapshot.rebuild import rebuild_step_snapshot_from_disk
+
+logger = logging.getLogger("mimarsinan.gui")
 
 _SAFE_ID_RE = re.compile(r"^[A-Za-z0-9_\-]+$")
 
@@ -95,13 +99,12 @@ def get_run_pipeline(run_id: str) -> dict[str, Any] | None:
     config = get_run_config(run_id) or {}
     # config.json stores the full outer config; pipeline specs expect the flat deployment_parameters dict.
     flat_config = config.get("deployment_parameters", config)
-    try:
+    groups: dict = {}
+    with best_effort(f"build semantic groups for run {run_id}", logger=logger):
         from mimarsinan.pipelining.core.pipelines.deployment_pipeline import (
             get_pipeline_semantic_group_by_step_name,
         )
         groups = get_pipeline_semantic_group_by_step_name(flat_config)
-    except Exception:
-        groups = {}
     steps = []
     for name, sd in steps_data.items():
         start_t = sd.get("start_time")
@@ -126,11 +129,11 @@ def get_run_pipeline(run_id: str) -> dict[str, Any] | None:
 def _build_run_config_view(config: dict) -> dict | None:
     if not config:
         return None
-    try:
+    result = None
+    with best_effort("build run config display view", logger=logger):
         from mimarsinan.config_schema.display_view import build_config_display_view
-        return build_config_display_view(config, saved_config=config)
-    except Exception:
-        return None
+        result = build_config_display_view(config, saved_config=config)
+    return result
 
 
 def get_run_console_logs(run_id: str, offset: int = 0) -> list[dict[str, Any]]:

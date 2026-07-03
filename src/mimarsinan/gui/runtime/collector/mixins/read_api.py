@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from mimarsinan.common.best_effort import best_effort
 from mimarsinan.gui.runtime.collector.types import StepRecord, build_snapshot_etag
 
 logger = logging.getLogger("mimarsinan.gui")
@@ -25,20 +26,17 @@ class ReadApiMixin:
         with self._lock:
             config = self._pipeline_config or {}
             working_dir = self._working_directory
-        try:
+        groups: dict = {}
+        with best_effort("build semantic groups for pipeline overview", logger=logger):
             from mimarsinan.pipelining.core.pipelines.deployment_pipeline import (
                 get_pipeline_semantic_group_by_step_name,
             )
             groups = get_pipeline_semantic_group_by_step_name(config)
-        except Exception:
-            groups = {}
         config_view = None
         if config:
-            try:
+            with best_effort("build config_view for pipeline overview", logger=logger):
                 from mimarsinan.config_schema.display_view import build_pipeline_config_view
                 config_view = build_pipeline_config_view(config, working_dir=working_dir)
-            except Exception:
-                logger.debug("Failed to build config_view for pipeline overview", exc_info=True)
         with self._lock:
             steps = []
             for name in self._step_names:
@@ -107,9 +105,11 @@ class ReadApiMixin:
             return build_snapshot_etag(rec)
 
     def _broadcast_pipeline_overview(self) -> None:
-        try:
+        overview = None
+        built = False
+        with best_effort("build pipeline overview for broadcast", logger=logger):
             overview = self.get_pipeline_overview()
-        except Exception:
-            logger.debug("Failed to build pipeline overview for broadcast", exc_info=True)
+            built = True
+        if not built:
             return
         self._broadcast({"type": "pipeline_overview", **overview})

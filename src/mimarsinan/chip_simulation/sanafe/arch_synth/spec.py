@@ -68,11 +68,11 @@ def _sanafe() -> Any:
                 "SANA-FE is not installed.  Run scripts/bootstrap_sanafe.sh "
                 "to enable the detailed-stats backend."
             ) from e
-        try:
-            import importlib.metadata as _md
+        import importlib.metadata as _md
 
+        try:
             _version = _md.version("sanafe")
-        except Exception:  # pragma: no cover
+        except _md.PackageNotFoundError:
             _version = getattr(sanafe, "__version__", None)
         _check_sanafe_version(_version)
         _SANAFE_MODULE = sanafe

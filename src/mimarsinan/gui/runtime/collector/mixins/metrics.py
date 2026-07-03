@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 import time
 from typing import Any
 
+from mimarsinan.common.best_effort import best_effort
 from mimarsinan.gui.runtime.collector.types import MetricEvent, to_json_safe
+
+logger = logging.getLogger("mimarsinan.gui")
 
 
 class MetricsMixin:
@@ -40,10 +44,8 @@ class MetricsMixin:
             "timestamp": evt.timestamp,
         })
         if cb is not None:
-            try:
+            with best_effort("metric callback", logger=logger):
                 cb(current, metric_name, evt.value, evt.seq, evt.timestamp)
-            except Exception:
-                pass
 
     def get_step_metrics(self, step_name: str) -> list[dict]:
         with self._lock:

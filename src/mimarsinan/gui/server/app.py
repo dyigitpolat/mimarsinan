@@ -16,6 +16,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
+from mimarsinan.common.best_effort import best_effort
 from mimarsinan.gui.server import routes_layout, routes_pipeline, routes_resources, routes_wizard
 from mimarsinan.gui.server.json_safe import SafeJSONResponse
 
@@ -102,10 +103,8 @@ def schedule_open_browser(url: str) -> None:
         return
 
     def _open() -> None:
-        try:
+        with best_effort(f"open browser for {url}", logger=logger):
             webbrowser.open(url)
-        except Exception:
-            logger.debug("Could not open browser for %s", url, exc_info=True)
 
     threading.Timer(0.6, _open).start()
 

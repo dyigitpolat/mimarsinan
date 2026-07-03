@@ -24,7 +24,7 @@ alongside `NSGA2Optimizer` and `AgentEvolveOptimizer`.
 
 ## Dependencies
 
-- **Internal**: `mimarsinan.search.problems.joint`, `mimarsinan.search.results`, `mimarsinan.search.search_space_description`, `mimarsinan.search.optimizers.agent_evolve.codec`, `mimarsinan.search.optimizers.llm.trace`, `mimarsinan.mapping.layout`, `mimarsinan.mapping.verification.layout_verification_stats`.
+- **Internal**: `mimarsinan.search.problems.joint`, `mimarsinan.search.results`, `mimarsinan.search.search_space_description`, `mimarsinan.search.optimizers.agent_evolve.codec`, `mimarsinan.search.optimizers.llm.trace`, `mimarsinan.mapping.layout`, `mimarsinan.mapping.verification.layout_verification_stats`, `mimarsinan.common.best_effort` (pass-event delivery to the compilagent host is best-effort; compile/analyze fallbacks log a warning).
 - **External**: `compilagent>=0.2.0`.
 
 ## Exported API (`__init__.py`)

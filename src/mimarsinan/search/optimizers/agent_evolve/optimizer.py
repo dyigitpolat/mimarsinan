@@ -6,6 +6,7 @@ import asyncio
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
+from mimarsinan.common.best_effort import best_effort
 from mimarsinan.search.optimizers.agent_evolve.batch_eval import BatchEvalMixin
 from mimarsinan.search.optimizers.agent_evolve.llm_trace import LLMTraceMixin
 from mimarsinan.search.optimizers.agent_evolve.prompting import PromptingMixin
@@ -128,12 +129,10 @@ class AgentEvolveOptimizer(
     ) -> None:
         if not reporter:
             return
-        try:
+        with best_effort("report generation metrics"):
             reporter("Search generation", gen)
             reporter("Search valid count", valid_count)
             reporter("Search Pareto size", pareto_size)
-        except Exception:
-            pass
 
     async def _optimize_inner(
         self,

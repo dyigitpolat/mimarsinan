@@ -31,6 +31,7 @@ from mimarsinan.pipelining.core.simulation_factory import (
     run_scm_identity_metric,
 )
 from mimarsinan.pipelining.core.registry.trainer_factory import make_basic_trainer
+from mimarsinan.common.best_effort import best_effort
 from mimarsinan.common.diagnostics import phase_profiler
 from mimarsinan.pipelining.pipeline_steps.mapping.fused_linear import FusedLinear
 from mimarsinan.pipelining.pipeline_steps.mapping.soft_core_mapping_ir_pruning import (
@@ -205,10 +206,8 @@ class SoftCoreMappingStep(PipelineStep):
             self._run_torch_sim_parity_check(model, ir_graph)
 
         device = self.pipeline.config["device"]
-        try:
+        with best_effort("move model to cpu before identity-metric run"):
             model.to("cpu")
-        except Exception:
-            pass
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 

@@ -7,6 +7,7 @@ import threading
 from pathlib import Path
 from typing import Any, Callable, Optional
 
+from mimarsinan.common.best_effort import best_effort
 from mimarsinan.gui.runtime.active_run_tailers import MetricsTailer, StepsFileWatcher
 from mimarsinan.gui.runtime.persistence.paths import (
     GUI_STATE_DIR,
@@ -99,11 +100,9 @@ class ActiveRunHub:
             if remaining > 0:
                 return
             self._runs.pop(run_id, None)
-        try:
+        with best_effort(f"stop tailers for run {run_id}", logger=logger):
             record.metrics.stop()
             record.steps.stop()
-        except Exception:
-            logger.debug("Failed to stop tailers for run %s", run_id, exc_info=True)
 
     def shutdown(self) -> None:
         with self._lock:
@@ -111,11 +110,9 @@ class ActiveRunHub:
             self._runs.clear()
             self._send_fns.clear()
         for rec in records:
-            try:
+            with best_effort("stop tailers on shutdown", logger=logger):
                 rec.metrics.stop()
                 rec.steps.stop()
-            except Exception:
-                logger.debug("Failed to stop tailers on shutdown", exc_info=True)
 
     def _broadcast(self, run_id: str, message: dict) -> None:
         with self._lock:
@@ -128,7 +125,5 @@ class ActiveRunHub:
             fn = send_fns.get(sub)
             if fn is None:
                 continue
-            try:
+            with best_effort("subscriber send_fn", logger=logger):
                 fn(message)
-            except Exception:
-                logger.debug("Subscriber send_fn raised", exc_info=True)

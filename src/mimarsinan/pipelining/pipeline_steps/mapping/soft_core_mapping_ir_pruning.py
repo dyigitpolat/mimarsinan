@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from mimarsinan.common.best_effort import best_effort
 from mimarsinan.common.diagnostics import phase_profiler
 from mimarsinan.mapping.pruning.ir_pruning_core import prune_ir_graph
 from mimarsinan.mapping.pruning.ir_pruning_masks import get_initial_pruning_masks_from_model
@@ -14,7 +15,7 @@ def apply_ir_pruning_if_enabled(step, model, ir_graph, phase_tag: str):
     if not plan.pruning:
         return ir_graph
 
-    try:
+    with best_effort("report first-perceptron prune-mask buffers"):
         perceptrons_pre = model.get_perceptrons()
         if perceptrons_pre:
             layer0 = getattr(perceptrons_pre[0], "layer", None)
@@ -24,11 +25,9 @@ def apply_ir_pruning_if_enabled(step, model, ir_graph, phase_tag: str):
                 f"[SoftCoreMappingStep] Pruning: before mask extraction — first perceptron layer "
                 f"prune_row_mask={has_row} prune_col_mask={has_col}"
             )
-    except Exception as e:
-        print(f"[SoftCoreMappingStep] Pruning: could not check first perceptron buffers: {e}")
 
     initial_node, initial_bank = get_initial_pruning_masks_from_model(model, ir_graph)
-    try:
+    with best_effort("report pruning-mask diagnostics"):
         perceptrons = model.get_perceptrons()
         neural_cores = ir_graph.get_neural_cores()
         n_banks = len(getattr(ir_graph, "weight_banks", {}))
@@ -42,8 +41,6 @@ def apply_ir_pruning_if_enabled(step, model, ir_graph, phase_tag: str):
                 "[SoftCoreMappingStep] Pruning: no model masks applied (neural_cores != perceptrons; "
                 "ensure mapper assigns perceptron_index for tiled IR)."
             )
-    except Exception:
-        pass
 
     store_heatmap = True
     heatmap_budget_bytes = int(step.pipeline.config.get(

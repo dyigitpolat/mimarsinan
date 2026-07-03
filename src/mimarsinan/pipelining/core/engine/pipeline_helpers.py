@@ -8,6 +8,7 @@ from typing import Any
 import torch
 
 from mimarsinan.chip_simulation.spiking_mode_policy import policy_for_spiking_mode
+from mimarsinan.common.best_effort import best_effort
 from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 
 
@@ -32,17 +33,13 @@ def require_spiking_mode_supported(
 
 
 def run_optional_viz(step_name: str, fn: Callable[[], Any]) -> None:
-    try:
+    with best_effort(f"{step_name} visualization"):
         fn()
-    except Exception as exc:
-        print(f"[{step_name}] Visualization failed (non-fatal): {exc}")
 
 
 def safe_warmup_forward(model, input_shape, device) -> None:
-    try:
+    with best_effort("warmup forward"):
         model.eval()
         dummy = torch.zeros((1, *tuple(input_shape)), device=device)
         with torch.no_grad():
             model(dummy)
-    except Exception as exc:
-        print(f"[safe_warmup_forward] Warmup forward failed (non-fatal): {exc}")

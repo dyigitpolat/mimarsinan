@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 from mimarsinan.config_schema.display_view_meta import (
@@ -17,6 +18,9 @@ from mimarsinan.config_schema.defaults import (
     get_default_training_recipe,
     get_default_tuning_recipe,
 )
+
+logger = logging.getLogger(__name__)
+
 
 def build_recipe_fields(recipe: Mapping[str, Any], defaults: Mapping[str, Any]) -> List[Dict[str, Any]]:
     keys = list(defaults.keys())
@@ -42,12 +46,9 @@ def build_model_config_fields(model_type: Optional[str], model_config: Any) -> L
         return []
     schema_by_key: Dict[str, Dict[str, Any]] = {}
     if model_type:
-        try:
-            from mimarsinan.pipelining.core.registry.model_registry import get_model_config_schema
-            for entry in get_model_config_schema(model_type):
-                schema_by_key[entry["key"]] = entry
-        except Exception:
-            pass
+        from mimarsinan.pipelining.core.registry.model_registry import get_model_config_schema
+        for entry in get_model_config_schema(model_type):
+            schema_by_key[entry["key"]] = entry
     fields: List[Dict[str, Any]] = []
     for key, value in model_config.items():
         schema = schema_by_key.get(key, {})
@@ -66,11 +67,8 @@ def build_model_config_fields(model_type: Optional[str], model_config: Any) -> L
 def build_arch_search_block(arch_search: Any) -> Optional[Dict[str, Any]]:
     if not isinstance(arch_search, Mapping) or not arch_search:
         return None
-    try:
-        from mimarsinan.gui.wizard.schema import get_wizard_nas_schema
-        nas = get_wizard_nas_schema()
-    except Exception:
-        nas = {}
+    from mimarsinan.gui.wizard.schema import get_wizard_nas_schema
+    nas = get_wizard_nas_schema()
     common = nas.get("common_fields", {})
     fields: List[Dict[str, Any]] = []
     for key, value in arch_search.items():
@@ -129,6 +127,8 @@ def build_nested_blocks(flat: Mapping[str, Any], model_type: Optional[str]) -> D
 
 
 def build_pipeline_preview(flat: Mapping[str, Any]) -> Dict[str, Any]:
+    """Preview the pipeline plan; degrades to an empty preview for unresolvable
+    (e.g. legacy-schema) configs so the rest of the view still renders."""
     try:
         from mimarsinan.pipelining.core.pipelines.deployment_specs import (
             get_pipeline_step_specs,
@@ -140,6 +140,12 @@ def build_pipeline_preview(flat: Mapping[str, Any]) -> Dict[str, Any]:
         semantic_groups = [groups_map.get(name, "other") for name in steps]
         return {"steps": steps, "semantic_groups": semantic_groups}
     except Exception:
+        logger.warning(
+            "pipeline preview unavailable: config (experiment_name=%r) does "
+            "not resolve a pipeline plan",
+            flat.get("experiment_name"),
+            exc_info=True,
+        )
         return {"steps": [], "semantic_groups": []}
 
 

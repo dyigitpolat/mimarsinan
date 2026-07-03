@@ -6,6 +6,8 @@ import multiprocessing
 import os
 import sys
 
+from mimarsinan.common.best_effort import best_effort
+
 _RESOURCE_DEBUG = os.environ.get("MIMARSINAN_RESOURCE_DEBUG") == "1"
 
 
@@ -13,7 +15,7 @@ def log_resource_snapshot(tag: str) -> None:
     """One-line stderr snapshot of process resources. No-op unless MIMARSINAN_RESOURCE_DEBUG=1."""
     if not _RESOURCE_DEBUG:
         return
-    try:
+    with best_effort("resource snapshot"):
         pid = os.getpid()
         try:
             fd_count = len(os.listdir(f"/proc/{pid}/fd"))
@@ -42,5 +44,3 @@ def log_resource_snapshot(tag: str) -> None:
             file=sys.stderr,
             flush=True,
         )
-    except Exception:
-        pass

@@ -7,6 +7,8 @@ import re
 from types import SimpleNamespace
 from typing import Any, Dict, List, Tuple, get_args, get_origin
 
+from mimarsinan.common.best_effort import best_effort
+
 
 TRACE_MAX_SECTION_CHARS = 4000
 TRACE_MAX_SECTIONS = 12
@@ -31,10 +33,22 @@ def emit_search_event(reporter: Any, event: Dict[str, Any]) -> None:
     """Emit a structured search event via the reporter."""
     if reporter is None:
         return
-    try:
+    with best_effort("emit search_event"):
         reporter("search_event", json.dumps(event, default=str))
-    except Exception:
-        pass
+
+
+def parse_json_object(raw: str) -> Any:
+    """Parse a JSON object out of raw LLM text; degrade to {} on malformed JSON."""
+    try:
+        return json.loads(raw.strip())
+    except json.JSONDecodeError:
+        m = re.search(r"\{.*\}", raw, re.DOTALL)
+        if m:
+            try:
+                return json.loads(m.group())
+            except json.JSONDecodeError:
+                return {}
+    return {}
 
 
 def schema_has_dict_type(output_schema: Dict[str, type]) -> bool:
@@ -181,7 +195,7 @@ class LLMTraceMixin:
         self._trace_seq += 1
         sections, truncated, total_chars = self._split_prompt_for_trace(prompt_sent)
         schema_keys = list(output_schema.keys())
-        try:
+        with best_effort("emit llm_trace search_event"):
             self._report_search_event(rep, {
                 "type": "llm_trace",
                 "gen": self._trace_gen,
@@ -195,8 +209,6 @@ class LLMTraceMixin:
                 },
                 "response": self._trace_response_summary(call_kind, result),
             })
-        except Exception:
-            pass
 
     async def _llm_call(
         self,
@@ -218,16 +230,7 @@ class LLMTraceMixin:
                 result = await agent.run(augmented, output_type=str)
                 raw = getattr(result, "output", "") or ""
 
-                data: Dict[str, Any] = {}
-                try:
-                    data = json.loads(raw.strip())
-                except json.JSONDecodeError:
-                    m = re.search(r"\{.*\}", raw, re.DOTALL)
-                    if m:
-                        try:
-                            data = json.loads(m.group())
-                        except Exception:
-                            data = {}
+                data = parse_json_object(raw)
 
                 ns: Dict[str, Any] = {}
                 for k, v in output_schema.items():

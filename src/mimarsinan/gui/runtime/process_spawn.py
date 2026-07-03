@@ -12,6 +12,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from mimarsinan.common.best_effort import best_effort
 from mimarsinan.gui.runtime.persistence.store import append_console_log
 from mimarsinan.gui.runtime.run_cache_seed import (
     copy_pipeline_cache_from_previous_run,
@@ -30,17 +31,12 @@ def start_console_reader(proc: subprocess.Popen, working_dir: str) -> None:
     """Drain stdout/stderr from *proc* into console.jsonl."""
 
     def _drain(pipe, stream_name: str) -> None:
-        try:
+        with best_effort(f"console reader drain for {stream_name}", logger=logger):
             for raw in pipe:
                 line = raw.decode("utf-8", errors="replace").rstrip("\n").rstrip("\r")
                 append_console_log(working_dir, stream_name, line, time.time())
-        except Exception:
-            pass
-        finally:
-            try:
-                pipe.close()
-            except Exception:
-                pass
+        with best_effort(f"console reader pipe close for {stream_name}", logger=logger):
+            pipe.close()
 
     for pipe, name in ((proc.stdout, "stdout"), (proc.stderr, "stderr")):
         if pipe is None:

@@ -6,6 +6,7 @@ from typing import Any
 
 import torch
 
+from mimarsinan.common.best_effort import best_effort
 from mimarsinan.mapping.verification.verifier import (
     MappingVerificationResult,
     verify_soft_core_mapping,
@@ -49,11 +50,8 @@ def model_repr_from_wizard_body(body: dict) -> Any:
 
     if category == "torch":
         raw_model.eval()
-        with torch.no_grad():
-            try:
-                raw_model(torch.randn(1, *input_shape))
-            except Exception:
-                pass
+        with torch.no_grad(), best_effort("wizard torch-model warm-up forward"):
+            raw_model(torch.randn(1, *input_shape))
         supermodel = convert_torch_model(
             raw_model,
             input_shape=input_shape,
@@ -64,11 +62,8 @@ def model_repr_from_wizard_body(body: dict) -> Any:
         model_repr = supermodel.get_mapper_repr()
     else:
         raw_model.eval()
-        with torch.no_grad():
-            try:
-                raw_model(torch.randn(2, *input_shape))
-            except Exception:
-                pass
+        with torch.no_grad(), best_effort("wizard native-model warm-up forward"):
+            raw_model(torch.randn(2, *input_shape))
         model_repr = raw_model.get_mapper_repr()
         mark_encoding_layers(model_repr, placement=placement)
 
@@ -83,8 +78,9 @@ def model_repr_from_model(
     input_shape: tuple | list | None = None,
     num_classes: int = 10,
 ) -> Any | None:
-    """Extract mapper repr from a built model (native or torch)."""
-    try:
+    """Extract mapper repr from a built model (native or torch); None when extraction fails."""
+    model_repr = None
+    with best_effort("snapshot mapper-repr extraction"):
         if hasattr(model, "get_mapper_repr"):
             model_repr = model.get_mapper_repr()
         else:
@@ -97,13 +93,11 @@ def model_repr_from_model(
                 device="cpu",
             )
             model_repr = supermodel.get_mapper_repr()
-    except Exception:
+    if model_repr is None:
         return None
     if hasattr(model_repr, "assign_perceptron_indices"):
-        try:
+        with best_effort("snapshot perceptron-index assignment"):
             model_repr.assign_perceptron_indices()
-        except Exception:
-            pass
     return model_repr
 
 

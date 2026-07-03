@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Any, Dict, List, Set, Tuple
 
@@ -11,9 +12,12 @@ from pymoo.core.problem import ElementwiseProblem
 from pymoo.optimize import minimize
 from pymoo.termination import get_termination
 
+from mimarsinan.common.best_effort import best_effort
 from mimarsinan.search.optimizers.base import SearchOptimizer
 from mimarsinan.search.problems.encoded_problem import EncodedProblem
 from mimarsinan.search.results import Candidate, SearchResult, select_minimax_rank
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -69,7 +73,14 @@ class NSGA2Optimizer(SearchOptimizer[Dict[str, Any]]):
                     obj = problem.evaluate(cfg)
                     all_evaluated.append((x.copy(), obj, current_gen[0]))
                     out["F"] = to_minimization(obj)
-                except Exception:
+                except Exception as exc:
+                    logger.warning(
+                        "NSGA2 candidate evaluation failed (%s: %s) for x=%s; "
+                        "recording penalty objectives",
+                        type(exc).__name__, exc,
+                        np.array(x, dtype=float).tolist(),
+                        exc_info=True,
+                    )
                     obj = {s.name: (0.0 if s.goal == "max" else self_outer.invalid_penalty) for s in specs}
                     all_evaluated.append((x.copy(), obj, current_gen[0]))
                     out["F"] = np.full((n_obj,), self_outer.invalid_penalty, dtype=float)
@@ -88,7 +99,7 @@ class NSGA2Optimizer(SearchOptimizer[Dict[str, Any]]):
                 current_gen[0] = algorithm.n_gen
                 if _reporter is None:
                     return
-                try:
+                with best_effort("nsga2 generation metrics report", logger=logger):
                     _reporter("Search generation", algorithm.n_gen)
                     F = np.array(algorithm.opt.get("F"))
                     for i, spec in enumerate(_specs):
@@ -96,8 +107,6 @@ class NSGA2Optimizer(SearchOptimizer[Dict[str, Any]]):
                         val = -v if spec.goal == "max" else v
                         _reporter(f"Search best {spec.name}", val)
                     _reporter("Search Pareto size", len(F))
-                except Exception:
-                    pass
 
         res = minimize(
             _PymooProblem(),
@@ -135,19 +144,19 @@ class NSGA2Optimizer(SearchOptimizer[Dict[str, Any]]):
 
         best = select_minimax_rank(pareto, specs) or Candidate(configuration={}, objectives={}, metadata={})
 
-        history = []
+        history: List[Dict[str, Any]] = []
         if getattr(res, "history", None):
             for gen_idx, h in enumerate(res.history):
-                try:
+                entry: Dict[str, Any] = {"gen": gen_idx}
+                with best_effort("nsga2 history best-values extraction", logger=logger):
                     F = np.array(getattr(h, "opt").get("F"))
                     f_min = np.min(F, axis=0)
                     best_vals = {}
                     for i, spec in enumerate(specs):
                         v = float(f_min[i])
                         best_vals[spec.name] = float(-v) if spec.goal == "max" else float(v)
-                    history.append({"gen": gen_idx, "best": best_vals})
-                except Exception:
-                    history.append({"gen": gen_idx})
+                    entry["best"] = best_vals
+                history.append(entry)
 
         return SearchResult(objectives=specs, best=best, pareto_front=pareto, all_candidates=all_candidates, history=history)
 

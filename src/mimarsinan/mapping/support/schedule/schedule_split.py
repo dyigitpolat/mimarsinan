@@ -78,16 +78,13 @@ def split_softcores_by_capacity(
     def _packs(batch: Sequence[LayoutSoftCoreSpec]) -> bool:
         if not batch:
             return True
-        try:
-            pr = pack_layout(
-                softcores=list(batch),
-                core_types=hw_types,
-                allow_neuron_splitting=allow_splitting,
-                allow_coalescing=allow_coalescing,
-            )
-            return bool(pr.feasible)
-        except Exception:
-            return False
+        pr = pack_layout(
+            softcores=list(batch),
+            core_types=hw_types,
+            allow_neuron_splitting=allow_splitting,
+            allow_coalescing=allow_coalescing,
+        )
+        return bool(pr.feasible)
 
     def _halve_until_packs(group: List[LayoutSoftCoreSpec]) -> List[List[LayoutSoftCoreSpec]]:
         """Binary-halve a single latency group until each piece packs."""

@@ -278,8 +278,6 @@ def run_hcm_mapping_metric(
             if not outer_oom_retry or not is_oom or attempt >= 1:
                 raise
             attempt_cap = DeploymentPlan.of(pipeline).simulation_batch_size
-        except Exception:
-            raise
 
     if last_exc is not None:
         raise last_exc

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import time
 from collections.abc import Sequence
 from pathlib import Path
@@ -40,6 +41,8 @@ from ..lever_factory import levers_from_description
 from ..plan_codec import CodecDefaults, PlanCodecError, decode_plan
 from ..workload import lookup_problem
 from .backend_validate import validate_intervention as _validate_intervention
+
+logger = logging.getLogger(__name__)
 
 
 class MimarsinanLayoutBackend(BackendBase):
@@ -105,6 +108,11 @@ class MimarsinanLayoutBackend(BackendBase):
                 },
             )
         except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "Baseline layout payload collection failed for workload %s; "
+                "recording baseline_error in analysis",
+                workload.id, exc_info=True,
+            )
             extra["baseline_error"] = repr(exc)
         else:
             summary["softcore_count_baseline"] = baseline_payload["softcore_count"]
@@ -192,6 +200,11 @@ class MimarsinanLayoutBackend(BackendBase):
         try:
             payload = collect_layout_payload(problem, configuration)
         except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "Layout payload collection failed for workload %s config %.500s; "
+                "returning failed CompileResult",
+                workload.id, configuration, exc_info=True,
+            )
             elapsed = (time.perf_counter() - compile_started) * 1000.0
             return CompileResult(
                 ok=False,

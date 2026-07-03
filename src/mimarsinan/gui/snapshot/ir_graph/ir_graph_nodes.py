@@ -8,6 +8,7 @@ import numpy as np
 
 logger = logging.getLogger("mimarsinan.gui")
 
+from mimarsinan.common.best_effort import best_effort
 from mimarsinan.gui.snapshot.util.helpers import _t, _histogram
 from mimarsinan.common.layer_key import layer_key_from_node_name
 from mimarsinan.gui.resources import ResourceDescriptor
@@ -84,7 +85,7 @@ def process_ir_graph_node(
 
             bias_arr = getattr(node, "hardware_bias", None)
             if bias_arr is not None:
-                try:
+                with best_effort(f"extract hardware_bias stats for core {node.id}", logger=logger):
                     bias_np = np.asarray(bias_arr, dtype=np.float64)
                     if bias_np.size:
                         info["hardware_bias_stats"] = {
@@ -94,8 +95,6 @@ def process_ir_graph_node(
                             "abs_max": float(np.max(np.abs(bias_np))),
                             "nonzero": int(np.count_nonzero(bias_np)),
                         }
-                except Exception:
-                    pass
 
             core_rid = f"core/{int(node.id)}"
             info["has_heatmap"] = True
@@ -127,11 +126,11 @@ def process_ir_graph_node(
             row_mask = getattr(node, "pre_pruning_row_mask", None) or getattr(node, "pruned_row_mask", None)
             col_mask = getattr(node, "pre_pruning_col_mask", None) or getattr(node, "pruned_col_mask", None)
             if pre is not None and row_mask is not None and col_mask is not None:
-                try:
+                with best_effort(f"register pre-pruning heatmap for core {node.id}", logger=logger):
                     pre_arr = np.array(pre, dtype=np.float64)
                     if pre_arr.shape[0] == len(row_mask) and pre_arr.shape[1] == len(col_mask):
                         info["has_pre_pruning"] = True
-                        info["pre_pruning_resource"] = make_resource_ref(source_step_name, 
+                        info["pre_pruning_resource"] = make_resource_ref(source_step_name,
                             RESOURCE_KIND_IR_CORE_PRE_PRUNING, core_rid,
                         )
                         info["pre_pruning_axons"] = int(pre_arr.shape[0])
@@ -148,24 +147,18 @@ def process_ir_graph_node(
                                 ),
                                 media_type="image/png",
                             ))
-                except Exception:
-                    logger.debug("Failed to register pre-pruning heatmap for core %s", node.id, exc_info=True)
             neural_cores.append(info)
     else:
             info["layer_group"] = node.name
             info["op_type"] = node.op_type
             info["input_shape"] = list(node.input_shape) if node.input_shape else None
             info["output_shape"] = list(node.output_shape) if node.output_shape else None
-            try:
+            with best_effort(f"read latency for compute op {node.name!r}", logger=logger):
                 info["latency"] = node.latency
-            except Exception:
-                pass
-            try:
+            with best_effort(f"read params for compute op {node.name!r}", logger=logger):
                 params = node.params
                 if params is not None:
                     info["params"] = str(params)[:200]
-            except Exception:
-                pass
             compute_ops.append(info)
 
     nodes_info.append(info)

@@ -131,19 +131,16 @@ def verify_hardware_config(
         best_pass_softcores = all_softcores
         if sched_feasible:
             for pass_scs in sorted(all_pass_lists, key=len, reverse=True):
-                try:
-                    pr = pack_layout(
-                        softcores=pass_scs,
-                        core_types=hw_types,
-                        allow_neuron_splitting=allow_neuron_splitting,
-                        allow_coalescing=allow_coalescing,
-                    )
-                    if pr.feasible:
-                        best_pass_result = pr
-                        best_pass_softcores = pass_scs
-                        break
-                except Exception:
-                    continue
+                pr = pack_layout(
+                    softcores=pass_scs,
+                    core_types=hw_types,
+                    allow_neuron_splitting=allow_neuron_splitting,
+                    allow_coalescing=allow_coalescing,
+                )
+                if pr.feasible:
+                    best_pass_result = pr
+                    best_pass_softcores = pass_scs
+                    break
 
         schedule_info = {
             "scheduled_feasible": sched_feasible,

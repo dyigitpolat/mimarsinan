@@ -17,7 +17,7 @@ tuning, and evaluation subsystems.
 
 ## Dependencies
 
-- **Internal**: `model_training.training_utilities.BasicClassificationLoss` (lazy import in `ClassificationMode`).
+- **Internal**: `model_training.training_utilities.BasicClassificationLoss` (lazy import in `ClassificationMode`); `common.best_effort` (log-and-degrade seam for loader shutdown/telemetry helpers).
 - **External**: `torch`, `torchvision`.
 
 ## Dependents

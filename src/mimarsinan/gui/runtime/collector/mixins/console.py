@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 import time
 from typing import Any
 
+from mimarsinan.common.best_effort import best_effort
 from mimarsinan.gui.runtime.collector.types import ConsoleLogEntry
+
+logger = logging.getLogger("mimarsinan.gui")
 
 
 class ConsoleMixin:
@@ -35,10 +39,8 @@ class ConsoleMixin:
             "seq": entry.seq,
         })
         if cb is not None:
-            try:
+            with best_effort("console log callback", logger=logger):
                 cb(stream, line, entry.ts)
-            except Exception:
-                pass
 
     def get_console_logs(self, offset: int = 0) -> list[dict]:
         with self._lock:

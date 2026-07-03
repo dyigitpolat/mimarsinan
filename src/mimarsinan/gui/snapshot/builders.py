@@ -7,6 +7,7 @@ from typing import Any
 
 logger = logging.getLogger("mimarsinan.gui")
 
+from mimarsinan.common.best_effort import best_effort
 from mimarsinan.gui.snapshot.util.helpers import _t, _safe_dict, _CACHE_KEY_TO_SNAPSHOT_KEY
 from mimarsinan.gui.resources import ResourceDescriptor
 
@@ -93,18 +94,16 @@ def build_step_snapshot(
             kind = "edited"
 
         if short in ("model", "fused_model"):
-            try:
+            with best_effort(f"snapshot model from key {key!r}", logger=logger):
                 snapshot["model"] = snapshot_model(cache.get(key))
                 if step is not None:
                     snapshot_key_kinds["model"] = kind
-            except Exception:
-                logger.debug("Failed to snapshot model from key %r", key, exc_info=True)
             promises_model = (
                 step is not None
                 and short in set(getattr(step, "promises", ()))
             )
             if promises_model:
-                try:
+                with best_effort("compute planned mapping_performance", logger=logger):
                     pcfg = None
                     for k2 in cache.keys():
                         short2 = k2.split(".", 1)[-1] if "." in k2 else k2
@@ -122,80 +121,62 @@ def build_step_snapshot(
                         snapshot["mapping_performance"] = planned
                         snapshot["mapping_performance_mode"] = "planned"
                         snapshot_key_kinds["mapping_performance"] = "new"
-                except Exception:
-                    logger.debug("Failed to compute planned mapping_performance", exc_info=True)
 
         elif short == "ir_graph":
-            try:
+            with best_effort(f"snapshot ir_graph from key {key!r}", logger=logger):
                 ir_summary, ir_descs = snapshot_ir_graph(cache.get(key))
                 snapshot["ir_graph"] = ir_summary
                 descriptors.extend(ir_descs)
                 if step is not None:
                     snapshot_key_kinds["ir_graph"] = kind
-            except Exception:
-                logger.debug("Failed to snapshot ir_graph from key %r", key, exc_info=True)
 
         elif short == "hard_core_mapping":
-            try:
+            with best_effort(f"snapshot hard_core_mapping from key {key!r}", logger=logger):
                 hcm_summary, hcm_descs = snapshot_hard_core_mapping(cache.get(key))
                 snapshot["hard_core_mapping"] = hcm_summary
                 descriptors.extend(hcm_descs)
                 if step is not None:
                     snapshot_key_kinds["hard_core_mapping"] = kind
-            except Exception:
-                logger.debug("Failed to snapshot hard_core_mapping from key %r", key, exc_info=True)
-            try:
+            with best_effort("compute real mapping_performance", logger=logger):
                 real_stats = snapshot_mapping_performance_real(cache.get(key))
                 if real_stats is not None:
                     snapshot["mapping_performance"] = real_stats
                     snapshot["mapping_performance_mode"] = "real"
                     if step is not None:
                         snapshot_key_kinds["mapping_performance"] = kind
-            except Exception:
-                logger.debug("Failed to compute real mapping_performance", exc_info=True)
 
         elif short == "architecture_search_result":
-            try:
+            with best_effort(f"snapshot search_result from key {key!r}", logger=logger):
                 snapshot["search_result"] = snapshot_search_result(cache.get(key))
                 if step is not None:
                     snapshot_key_kinds["search_result"] = kind
-            except Exception:
-                logger.debug("Failed to snapshot search_result from key %r", key, exc_info=True)
 
         elif short == "adaptation_manager":
-            try:
+            with best_effort(f"snapshot adaptation_manager from key {key!r}", logger=logger):
                 snapshot["adaptation_manager"] = snapshot_adaptation_manager(cache.get(key))
                 if step is not None:
                     snapshot_key_kinds["adaptation_manager"] = kind
-            except Exception:
-                logger.debug("Failed to snapshot adaptation_manager from key %r", key, exc_info=True)
 
         elif short == "activation_scales":
-            try:
+            with best_effort(f"snapshot activation_scales from key {key!r}", logger=logger):
                 scales = cache.get(key)
                 snapshot["activation_scales"] = [_t(s) for s in scales]
                 if step is not None:
                     snapshot_key_kinds["activation_scales"] = kind
-            except Exception:
-                logger.debug("Failed to snapshot activation_scales from key %r", key, exc_info=True)
 
         elif short == "platform_constraints_resolved":
-            try:
+            with best_effort(f"snapshot platform_constraints from key {key!r}", logger=logger):
                 snapshot["platform_constraints"] = _safe_dict(cache.get(key))
                 if step is not None:
                     snapshot_key_kinds["platform_constraints"] = kind
-            except Exception:
-                logger.debug("Failed to snapshot platform_constraints from key %r", key, exc_info=True)
 
         elif short == "sanafe_simulation_results":
-            try:
+            with best_effort(f"snapshot sanafe_simulation from key {key!r}", logger=logger):
                 sf_summary, sf_descs = snapshot_sanafe_simulation(cache.get(key))
                 snapshot["sanafe_simulation"] = sf_summary
                 descriptors.extend(sf_descs)
                 if step is not None:
                     snapshot_key_kinds["sanafe_simulation"] = kind
-            except Exception:
-                logger.debug("Failed to snapshot sanafe_simulation from key %r", key, exc_info=True)
 
     # Re-rendering the IR-level PNGs here would exceed GUIHandle.wait_snapshots_idle's snapshot-flush budget and drop images, so embed the summary and tag each resource with the ir_graph promiser's step instead.
     if "hard_core_mapping" in snapshot and "ir_graph" not in snapshot:
@@ -203,29 +184,25 @@ def build_step_snapshot(
         for key in cache.keys():
             short = key.split(".", 1)[-1] if "." in key else key
             if short == "ir_graph":
-                try:
+                with best_effort(f"snapshot ir_graph for hardware tab from key {key!r}", logger=logger):
                     ir_summary, ir_descs = snapshot_ir_graph(
                         cache.get(key), source_step_name=ir_source_step,
                     )
                     snapshot["ir_graph"] = ir_summary
                     descriptors.extend(ir_descs)
                     break
-                except Exception:
-                    logger.debug("Failed to snapshot ir_graph for hardware tab from key %r", key, exc_info=True)
 
     if step_name == "Pruning Adaptation" and "model" in snapshot:
         for key in cache.keys():
             short = key.split(".", 1)[-1] if "." in key else key
             if short in ("model", "fused_model"):
-                try:
+                with best_effort(f"snapshot pruning layers from key {key!r}", logger=logger):
                     model_obj = cache.get(key)
                     pr_summary, pr_descs = snapshot_pruning_layers(model_obj)
                     snapshot["pruning_layers"] = pr_summary
                     descriptors.extend(pr_descs)
                     if step is not None:
                         snapshot_key_kinds["pruning_layers"] = "new"
-                except Exception:
-                    logger.debug("Failed to snapshot pruning layers from key %r", key, exc_info=True)
                 break
 
     cache_keys = [k.split(".", 1)[-1] if "." in k else k for k in cache.keys() if not k.startswith("__")]

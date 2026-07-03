@@ -8,6 +8,8 @@ import math
 from collections import deque
 from typing import Any
 
+from mimarsinan.common.best_effort import best_effort
+
 logger = logging.getLogger("mimarsinan.gui")
 
 
@@ -47,23 +49,25 @@ class WebSocketMixin:
         if loop is None or not loop.is_running():
             return
         for evt in pending:
-            try:
+            sent = False
+            with best_effort("WS resume replay", logger=logger):
                 fut = asyncio.run_coroutine_threadsafe(ws.send_json(evt), loop)
                 fut.result(timeout=2.0)
-            except Exception:
-                logger.warning("WS resume replay failed; aborting", exc_info=True)
+                sent = True
+            if not sent:
                 return
-        try:
+        overview = None
+        built = False
+        with best_effort("build pipeline overview for WS resume", logger=logger):
             overview = self.get_pipeline_overview()
-        except Exception:
+            built = True
+        if not built:
             return
-        try:
+        with best_effort("WS resume overview push", logger=logger):
             fut = asyncio.run_coroutine_threadsafe(
                 ws.send_json({"type": "pipeline_overview", **overview}), loop,
             )
             fut.result(timeout=2.0)
-        except Exception:
-            logger.warning("WS resume overview push failed", exc_info=True)
 
     def _broadcast(self, message: dict) -> None:
         def _ws_sanitize(obj):
@@ -81,27 +85,19 @@ class WebSocketMixin:
             listeners = list(self._ws_listeners)
         dead: list[Any] = []
         for ws in listeners:
-            try:
+            delivered = False
+            with best_effort("broadcast to WebSocket listener", logger=logger):
                 loop = ws._loop if hasattr(ws, "_loop") else None
                 if loop is not None and loop.is_running():
                     fut = asyncio.run_coroutine_threadsafe(
                         ws.send_json(safe_message), loop,
                     )
-                    try:
-                        fut.result(timeout=2.0)
-                    except Exception:
-                        logger.warning(
-                            "WebSocket send timed out or failed; dropping listener",
-                            exc_info=True,
-                        )
-                        dead.append(ws)
+                    fut.result(timeout=2.0)
+                    delivered = True
                 else:
                     dead.append(ws)
-            except Exception:
-                logger.warning(
-                    "Failed to broadcast to WebSocket, removing listener",
-                    exc_info=True,
-                )
+                    delivered = True
+            if not delivered:
                 dead.append(ws)
         if dead:
             with self._lock:

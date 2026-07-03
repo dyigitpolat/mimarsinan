@@ -8,7 +8,7 @@ scenarios.
 | File | Symbols | Purpose |
 |------|---------|---------|
 | `encoded_problem.py` | `EncodedProblem` | Protocol extending `SearchProblem` with continuous variable encoding for evolutionary optimizers |
-| `joint/` | `JointArchHwProblem`, `effective_max_dims`, `json_key` | Joint architecture + hardware co-search (`problem.py`, `validate.py`, `layout_hook.py`, `evaluate.py`, `types.py`). Normalizes `platform_constraints` via `mapping.coalescing.normalize_coalescing_config`. Full feasibility in `validate_detailed()`; built model and HW objectives cached so `evaluate()` only runs accuracy training on validated candidates. |
+| `joint/` | `JointArchHwProblem`, `effective_max_dims`, `json_key` | Joint architecture + hardware co-search (`problem.py`, `validate.py`, `layout_hook.py`, `evaluate.py`, `types.py`). Normalizes `platform_constraints` via `mapping.coalescing.normalize_coalescing_config`. Full feasibility in `validate_detailed()`; built model and HW objectives cached so `evaluate()` only runs accuracy training on validated candidates. Error contract: candidate-scoped failures (build/convert/pack/accuracy for a given config) degrade to explicit invalid/penalty results with a `logging` warning; candidate-independent failures (e.g. the fixed model of a `hardware`-mode search failing to build) propagate. |
 
 ## Dependencies
 

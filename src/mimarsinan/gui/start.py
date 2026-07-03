@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
+from mimarsinan.common.best_effort import best_effort
 from mimarsinan.gui.handle import GUIHandle
 from mimarsinan.gui.resources import ResourceStore
 from mimarsinan.gui.runtime.collector import DataCollector, to_json_safe
@@ -13,6 +15,8 @@ from mimarsinan.gui.runtime.persistence import (
 )
 from mimarsinan.gui.server import start_server
 from mimarsinan.gui.snapshot import build_step_snapshot
+
+logger = logging.getLogger("mimarsinan.gui")
 
 
 def start_gui(
@@ -69,14 +73,13 @@ def backfill_skipped_steps(
             )
         else:
             step = step_by_name.get(step_name)
-            try:
+            snapshot = None
+            snapshot_key_kinds = None
+            resource_descriptors = []
+            with best_effort(f"build backfill snapshot for {step_name}", logger=logger):
                 snapshot, snapshot_key_kinds, resource_descriptors = build_step_snapshot(
                     pipeline, step_name, step=step
                 )
-            except Exception:
-                snapshot = None
-                snapshot_key_kinds = None
-                resource_descriptors = []
             collector.step_completed(
                 step_name,
                 target_metric=None,

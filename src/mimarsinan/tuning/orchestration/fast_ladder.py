@@ -199,10 +199,7 @@ class FastLadderMixin:
         sched = self._build_fast_lr_schedule(opt, steps, eta_min=0.0)
         n_eval = self._budget.eval_n_batches
         pre_state = self._clone_state()
-        try:
-            pre_val = float(self.trainer.validate_n_batches(n_eval))
-        except Exception:
-            pre_val = None
+        pre_val = float(self.trainer.validate_n_batches(n_eval))
         for _ in range(steps):
             x, y = self.trainer.next_training_batch()
             x, y = x.to(device), y.to(device)
@@ -214,14 +211,10 @@ class FastLadderMixin:
             loss.backward()
             opt.step()
             sched.step()
-        if pre_val is not None:
-            try:
-                post_val = float(self.trainer.validate_n_batches(n_eval))
-            except Exception:
-                post_val = None
-            tol = float(getattr(self, "_rollback_tolerance", 0.0))
-            if post_val is not None and post_val < pre_val - tol:
-                self._restore_state(pre_state)
+        post_val = float(self.trainer.validate_n_batches(n_eval))
+        tol = float(getattr(self, "_rollback_tolerance", 0.0))
+        if post_val < pre_val - tol:
+            self._restore_state(pre_state)
 
     def _record_fast_cycle(self, target, post_acc, t0) -> None:
         """Record one ``commit`` per scheduled rate so the fast path inherits the
