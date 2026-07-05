@@ -30,8 +30,8 @@ class SmoothAdaptationCycleMixin(TunerBase):
 
     if TYPE_CHECKING:
         # Host contract: the seam verbs come from RateTunerSeamMixin in the
-        # composed SmoothAdaptationTuner.
-        _last_recover_lr: float
+        # composed SmoothAdaptationTuner. None = the LR sweep refused (fix C).
+        _last_recover_lr: float | None
 
         def ramp(self, rate: float) -> float: ...
         def recover_to(self, target: float, rate: float | None = None) -> Any: ...
@@ -300,7 +300,7 @@ class SmoothAdaptationCycleMixin(TunerBase):
             ctx.instant_acc, self._get_target()
         )
 
-    def _recover_to_target(self, target, rate):
+    def _recover_to_target(self, target, rate) -> tuple[float | None, Any]:
         """The corrector primitive: find the cached LR and run recovery training
         toward ``target`` at ramp ``rate``. Returns ``(lr, result)``. SSOT for the
         per-cycle ``_recover`` and the ``recover_to`` seam verb.
@@ -347,7 +347,9 @@ class SmoothAdaptationCycleMixin(TunerBase):
         """Find the LR and run recovery training toward the target (through the
         ``recover_to`` seam verb, reading the discovered LR back for the trace)."""
         self.recover_to(self._get_target(), rate=ctx.rate)
-        ctx.lr = self._last_recover_lr
+        recovered_lr = self._last_recover_lr
+        # [LR-REFUSE] a refused sweep trains nothing: record lr=0.0 in the trace.
+        ctx.lr = 0.0 if recovered_lr is None else recovered_lr
 
     def _measure_post(self, ctx: CycleContext) -> None:
         """Post-recovery accuracy + the rollback decision (marginal or paired)."""

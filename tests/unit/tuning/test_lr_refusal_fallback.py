@@ -85,3 +85,30 @@ class TestOneShotSeamRefusal:
     def test_recover_to_skips_training_and_returns_entry_probe(self):
         seam = _RefusingOneShot()
         assert seam.recover_to(0.95) == pytest.approx(0.87)
+
+
+class TestSmoothCycleRefusalTrace:
+    def test_recover_coalesces_refused_lr_for_the_decision_trace(self):
+        """A refused sweep leaves _last_recover_lr = None; the trace records
+        read float(ctx.lr), so the cycle must coalesce it to 0.0 (no training)."""
+        import time
+
+        from mimarsinan.tuning.orchestration.adaptation_driver import CycleContext
+        from mimarsinan.tuning.orchestration.smooth_adaptation_cycle import (
+            SmoothAdaptationCycleMixin,
+        )
+
+        class _Host:
+            def __init__(self):
+                self._last_recover_lr = None
+
+            def recover_to(self, target, rate=None):
+                return 0.5
+
+            def _get_target(self):
+                return 0.9
+
+        ctx = CycleContext(rate=1.0, t_cycle_start=time.time())
+        SmoothAdaptationCycleMixin._recover(_Host(), ctx)
+        assert ctx.lr == 0.0
+        float(ctx.lr)  # the DecisionRecord contract
