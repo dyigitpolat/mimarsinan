@@ -2,6 +2,7 @@ from contextlib import contextmanager
 from typing import Any
 
 from mimarsinan.model_training.training_utilities import AccuracyTracker
+from mimarsinan.models.nn.layers import freeze_batchnorm_running_stats
 from mimarsinan.data_handling.data_loader_factory import shutdown_data_loader
 from mimarsinan.model_training.training_recipe import (
     TrainingRecipe,
@@ -45,6 +46,10 @@ class BasicTrainer:
 
         self.report_function = None
         self.loss_function = loss_function
+
+        # [P2] frozen-BN-stats contract: tuner-owned trainers set this so
+        # recovery/probe training cannot drift BN running statistics.
+        self.freeze_bn_stats_in_training = False
 
         self.val_iter: Any = iter(self.validation_loader)
         self.train_iter: Any = iter(self.train_loader)
@@ -210,6 +215,8 @@ class BasicTrainer:
 
     def _backward_pass_on_loss(self, x, y, scaler):
         self.model.train()
+        if self.freeze_bn_stats_in_training:
+            freeze_batchnorm_running_stats(self.model)
         with autocast("cuda"):
             loss = self.loss_function(self.model, x, y)
         scaler.scale(loss).backward()

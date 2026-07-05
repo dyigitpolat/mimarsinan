@@ -30,6 +30,14 @@ from mimarsinan.models.nn.decorators import (
 )
 
 
+def freeze_batchnorm_running_stats(model) -> None:
+    """Hold every BatchNorm in eval mode so training forwards cannot mutate
+    running statistics (call after ``model.train()``)."""
+    for module in model.modules():
+        if isinstance(module, nn.modules.batchnorm._BatchNorm):
+            module.eval()
+
+
 def norm_affine_params(normalization):
     """``(u, beta, mean)`` of a normalization's frozen-stats affine form
     ``u*(z-mean)+beta`` (differentiable through ``weight``/``bias``); works for

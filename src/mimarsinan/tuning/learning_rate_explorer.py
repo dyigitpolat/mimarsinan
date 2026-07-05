@@ -33,6 +33,9 @@ class LRRangeFinder:
 
     Picks the highest LR whose validation accuracy stays at or above
     ``baseline - margin``, maximising recovery speed within the noise floor.
+    When EVERY candidate is destructive the finder REFUSES (returns ``None``)
+    instead of handing back the least-bad destructive LR; callers fall back to
+    the entry state (W2 fix C).
     """
 
     def __init__(
@@ -69,16 +72,23 @@ class LRRangeFinder:
             i / max(1, self.num_probes - 1)
         )
 
-    def _select(self, lrs, accs, baseline) -> float:
+    def _select(self, lrs, accs, baseline) -> float | None:
         threshold = baseline - self.margin
         non_destructive = [
             (lr, acc) for lr, acc in zip(lrs, accs) if acc >= threshold
         ]
         if non_destructive:
             return max(non_destructive, key=lambda x: x[0])[0]
-        return max(zip(lrs, accs), key=lambda x: x[1])[0]
+        print(
+            f"[LR-REFUSE] every probed LR is destructive "
+            f"(baseline={baseline:.4f}, margin={self.margin:.4f}, best probe "
+            f"acc={max(accs) if accs else float('nan'):.4f}); refusing to hand "
+            "recovery a destructive LR.",
+            flush=True,
+        )
+        return None
 
-    def find_best_lr(self) -> float:
+    def find_best_lr(self) -> float | None:
         coarse_signal = self.coarse_signal
         if coarse_signal is not None:
             return self._find_best_lr_coarse(coarse_signal)
@@ -109,7 +119,7 @@ class LRRangeFinder:
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
 
-    def _find_best_lr_coarse(self, coarse_signal: Callable[[], float]) -> float:
+    def _find_best_lr_coarse(self, coarse_signal: Callable[[], float]) -> float | None:
         """Cheap loss-slope coarse pass; full validation only for the top-K.
 
         Every probe is scored by ``coarse_signal`` (lower = better); only the
@@ -177,11 +187,12 @@ def find_lr_range_for_trainer(
     validate_fn: Callable[[], float],
     anchor_lr: float | None = None,
     coarse_signal: Callable[[], float] | None = None,
-) -> float:
+) -> float | None:
     """Run :class:`LRRangeFinder` with budget-derived probe parameters.
 
     *anchor_lr* centres the sweep on that LR (one decade each way) instead of the full
     config range; *coarse_signal* enables the cheap top-K scoring path (``None`` = off).
+    Returns ``None`` when the finder refuses (every candidate destructive).
     """
     cfg = pipeline.config
     if anchor_lr is not None:

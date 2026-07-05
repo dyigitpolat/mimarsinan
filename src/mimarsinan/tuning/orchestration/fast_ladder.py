@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 import torch
 
 from mimarsinan.model_training.training_recipe import build_optimizer, build_recipe
+from mimarsinan.models.nn.layers import freeze_batchnorm_running_stats
 from mimarsinan.tuning.orchestration.mbh_gate import gated_fast_rate_attempt
 from mimarsinan.tuning.trace import DecisionRecord
 
@@ -25,12 +26,6 @@ if TYPE_CHECKING:
 
 else:
     _FastLadderHost = object
-
-
-def _freeze_batchnorm_modules(model) -> None:
-    for module in model.modules():
-        if isinstance(module, torch.nn.modules.batchnorm._BatchNorm):
-            module.eval()
 
 
 class FastLadderMixin(_FastLadderHost):
@@ -182,7 +177,7 @@ class FastLadderMixin(_FastLadderHost):
             x, y = x.to(device), y.to(device)
             self.model.train()
             if getattr(self, "_fast_freeze_batchnorm", False):
-                _freeze_batchnorm_modules(self.model)
+                freeze_batchnorm_running_stats(self.model)
             loss = self._fast_loss(x, y)
             optimizer.zero_grad()
             loss.backward()

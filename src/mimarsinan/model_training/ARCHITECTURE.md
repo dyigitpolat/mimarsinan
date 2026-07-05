@@ -28,7 +28,7 @@ paths and the opt-in recipe-driven step recovery consume.
 - `chip_simulation` — `compute_test_subsample_indices` so `test_on_subsample` picks the exact indices the simulator runners use.
 - `common` — `vram_probe_enabled` env flag gating VRAM logging during subsample evaluation.
 - `tuning` — `clone_state_for_trainer` / `restore_state_for_trainer` for best-state snapshot and rollback in `train_steps_until_target`.
-- `models` — `SavedTensorDecorator` (activation capture in `CustomClassificationLoss`) and `Perceptron` (module slots in `PerceptronTransformTrainer`).
+- `models` — `SavedTensorDecorator` (activation capture in `CustomClassificationLoss`), `Perceptron` (module slots in `PerceptronTransformTrainer`), and `freeze_batchnorm_running_stats` (the frozen-BN-stats contract for tuner-owned trainers).
 
 ## Dependents
 - `pipelining` — trainer construction and reuse across pipeline steps (`trainer_pipeline_step`, `trainer_factory`, `simulation_factory`, mapping steps) and pretrained preloading (`weight_preloading_step` uses `build_recipe` + `resolve_weight_strategy`).

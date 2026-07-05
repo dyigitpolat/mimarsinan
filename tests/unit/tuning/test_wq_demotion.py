@@ -13,6 +13,8 @@ The demotion knobs ride EVERY mode's recipe.
 
 from __future__ import annotations
 
+import itertools
+
 import pytest
 import torch
 
@@ -169,6 +171,14 @@ class TestEndpointRecoveryThroughTheTransformTrainer:
             pre_aux = {
                 k: v.clone() for k, v in tuner.trainer.aux_model.state_dict().items()
             }
+            # Fix C anchors keep-best at the entry probe: make the recovery
+            # probes improve so the TRAINED state commits and the aux-model
+            # gradient routing stays observable.
+            rising = itertools.count()
+            monkeypatch.setattr(
+                tuner.trainer, "validate_n_batches",
+                lambda n: min(0.5 + 0.1 * next(rising), 0.98),
+            )
             report = run_endpoint_recovery(tuner, base_steps=3)
             assert report.engaged is True
             assert report.steps_used > 0

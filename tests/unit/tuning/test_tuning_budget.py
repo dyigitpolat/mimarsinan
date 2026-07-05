@@ -202,7 +202,9 @@ class TestLRRangeFinderHeuristic:
         best = finder.find_best_lr()
         assert best == pytest.approx(0.01)
 
-    def test_fallback_to_best_acc_when_all_destructive(self):
+    def test_refuses_when_all_destructive(self):
+        """Every candidate below baseline - margin: the finder must refuse
+        (return None), never hand back the least-bad destructive LR (W2 fix C)."""
         from mimarsinan.tuning.learning_rate_explorer import LRRangeFinder
 
         current_acc = [0.90]
@@ -226,8 +228,7 @@ class TestLRRangeFinderHeuristic:
             validate_fn=lambda: current_acc[0],
             margin=0.02,
         )
-        best = finder.find_best_lr()
-        assert best == pytest.approx(0.001)
+        assert finder.find_best_lr() is None
 
     def test_anchor_lr_narrows_range(self):
         from mimarsinan.tuning.learning_rate_explorer import find_lr_range_for_trainer

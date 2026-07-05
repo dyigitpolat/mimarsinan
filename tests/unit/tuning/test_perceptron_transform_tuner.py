@@ -218,10 +218,11 @@ class TestActivationShiftTunerMinImprovement:
         assert tuner._budget.accuracy_se() > 0
 
     def test_uses_budget_eval_batches_not_validation_steps(self):
-        source = inspect.getsource(ActivationShiftTuner.run)
+        # run() delegates to the one-shot seam's _train_recovery (the fix-C refusal seam).
+        source = inspect.getsource(ActivationShiftTuner._train_recovery)
         assert "progress_eval_batches" in source or "eval_n_batches" in source
         assert "validation_steps" not in source
 
     def test_passes_min_improvement(self):
-        source = inspect.getsource(ActivationShiftTuner.run)
+        source = inspect.getsource(ActivationShiftTuner._train_recovery)
         assert "min_improvement" in source

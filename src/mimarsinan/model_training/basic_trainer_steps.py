@@ -127,8 +127,12 @@ def train_steps_until_target(
     plateau_enabled = plateau_factor < 1.0 and plateau_reductions_left > 0
     current_base_lr = float(lr)
 
-    best_acc = 0.0
-    best_state = None
+    # [M-guard] keep-best anchors at the ENTRY state and metric, never 0.0: a
+    # run that never beats entry restores entry exactly (full state_dict incl.
+    # buffers), so a wrecked recovery becomes a no-op step, not a committed wreck.
+    entry_state = clone_state_for_trainer(trainer)
+    best_acc = float(trainer.validate_n_batches(n_val))
+    best_state = entry_state
     stale_checks = 0
     steps_run = 0
 
@@ -171,7 +175,7 @@ def train_steps_until_target(
 
     if best_state is not None:
         restore_state_for_trainer(trainer, best_state)
-    del scheduler, scaler, best_state
+    del scheduler, scaler, best_state, entry_state
     if owns_optimizer:
         del optimizer
     # A4 eval consolidation: callers that re-measure with their own basis skip

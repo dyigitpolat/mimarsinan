@@ -139,8 +139,9 @@ class TestBasicTrainer:
         )
         assert result is None
         assert steps == 4
-        # Only the two in-loop checks ran (steps 2 and 4); no trailing eval.
-        assert len(calls) == 2
+        # The entry-anchor probe plus the two in-loop checks (steps 2 and 4)
+        # ran; no trailing eval.
+        assert len(calls) == 3
 
     def test_train_one_step_can_return_post_update_probe_loss(self):
         trainer = _make_trainer()

@@ -55,6 +55,12 @@ class TunerBase:
         )
 
         self.trainer = self._create_trainer()
+        # [P2] frozen-BN-stats contract: tuner-internal training (recovery, LR
+        # probes) must not drift BN running statistics — the committed metric
+        # would be measured on stats the mapped artifact does not have, and
+        # train-mode BN over a poisoned activation was the W2 shift-crater
+        # kill condition.
+        self.trainer.freeze_bn_stats_in_training = True
         self.trainer.report_function = pipeline.reporter.report
 
     def _tuning_recipe(self):
@@ -82,10 +88,12 @@ class TunerBase:
         if hasattr(self, "trainer") and self.trainer is not None:
             self.trainer.close()
 
-    def _find_lr(self):
+    def _find_lr(self) -> float | None:
+        """Explorer LR for recovery; ``None`` = all-destructive refusal (fix C):
+        the caller must fall back to the entry state instead of training."""
         coarse_signal = make_loss_slope_signal(self.trainer)
         with self.trainer.validation_context("probe"):
-            return find_lr_range_for_trainer(
+            lr = find_lr_range_for_trainer(
                 self.trainer,
                 self.pipeline,
                 self._budget,
@@ -95,16 +103,40 @@ class TunerBase:
                 anchor_lr=self.pipeline_lr,
                 coarse_signal=coarse_signal,
             )
+        if lr is None:
+            print(
+                f"[LR-REFUSE] {type(self).__name__} ({self.name}): the LR "
+                "explorer found every candidate destructive; recovery training "
+                "is skipped and the entry state is preserved.",
+                flush=True,
+            )
+            self.pipeline.reporter.report(f"{self.name} lr_refusal", 1.0)
+        return lr
 
-    def _get_cached_lr(self) -> float:
+    def _get_cached_lr(self) -> float | None:
+        if getattr(self, "_lr_search_refused", False):
+            return None
         cached = getattr(self, "_cached_lr", None)
         if cached is None:
             cached = self._find_lr()
+            if cached is None:
+                # Sticky until invalidation: re-probing an unchanged state
+                # would re-burn the sweep budget for the same refusal.
+                self._lr_search_refused = True
+                return None
             self._cached_lr = cached
         return cached
 
+    def _capped_cached_lr(self) -> float | None:
+        """Cached explorer LR capped at the pipeline LR; ``None`` on refusal."""
+        lr = self._get_cached_lr()
+        if lr is None:
+            return None
+        return min(float(lr), float(self.pipeline_lr))
+
     def _invalidate_lr_cache(self):
         self._cached_lr = None
+        self._lr_search_refused = False
 
     def _get_target(self):
         return self.target_adjuster.get_target()

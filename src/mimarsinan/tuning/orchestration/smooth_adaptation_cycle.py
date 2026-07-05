@@ -308,6 +308,15 @@ class SmoothAdaptationCycleMixin(TunerBase):
         t0 = time.time()
         lr = self._get_cached_lr()
         t_lr = time.time() - t0
+        if lr is None:
+            # [LR-REFUSE] all-destructive sweep: skip recovery training this
+            # cycle; the entry state is preserved (fix C).
+            probe = float(
+                self.trainer.validate_n_batches(self._budget.progress_eval_batches)
+            )
+            if getattr(self, "_stabilization_bounded", False):
+                return None, (probe, 0)
+            return None, probe
         self.pipeline.reporter.report("LR_found", lr)
         self.pipeline.reporter.report("T_find_lr_sec", t_lr)
 
@@ -531,7 +540,9 @@ class SmoothAdaptationCycleMixin(TunerBase):
         best_state = self._clone_state()
 
         def _attempt_lrs():
-            yield self._get_cached_lr()
+            cached = self._get_cached_lr()
+            if cached is not None:  # [LR-REFUSE] fall through to the pipeline LR
+                yield cached
             yield self.pipeline_lr
 
         for attempt, lr_to_use in enumerate(_attempt_lrs()):

@@ -91,9 +91,14 @@ class OneShotRateTunerSeamMixin:
         self._axis.set_rate(float(rate))
         return None
 
-    def recover_to(self, target: float, rate: float | None = None):
-        """Step-budgeted recovery toward ``target`` — the tuner's ``run`` recovery."""
+    def _train_recovery(self, target: float, *, final_validation: bool = True):
+        """The one-shot recovery invocation, with the fix-C refusal fallback:
+        a refused LR search skips training and returns the entry probe."""
         lr = self._find_lr()
+        if lr is None:
+            return self.trainer.validate_n_batches(
+                self._budget.progress_eval_batches
+            )
         return self.trainer.train_steps_until_target(
             lr,
             self._budget.max_training_steps,
@@ -104,7 +109,12 @@ class OneShotRateTunerSeamMixin:
             patience=5,
             min_steps=self._budget.check_interval * 3,
             min_improvement=self._budget.accuracy_se(),
+            final_validation=final_validation,
         )
+
+    def recover_to(self, target: float, rate: float | None = None):
+        """Step-budgeted recovery toward ``target`` — the tuner's ``run`` recovery."""
+        return self._train_recovery(float(target))
 
     def probe(self) -> float:
         return float(self.trainer.validate())

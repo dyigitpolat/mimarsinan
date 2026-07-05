@@ -42,7 +42,8 @@ class TestLRRangeFinder:
             validate_fn=lambda: tr.validate_n_batches(1),
         )
         lr = finder.find_best_lr()
-        assert 1e-4 <= lr <= 1e-2
+        # On a noisy tiny fixture the sweep may legitimately refuse (None).
+        assert lr is None or 1e-4 <= lr <= 1e-2
         w1 = tr.model.state_dict()
         for k in w0:
             assert torch.allclose(w0[k].cpu(), w1[k].cpu())
@@ -141,8 +142,11 @@ class TestLRRangeFinder:
         for _, steps in calls:
             assert steps == 3
 
-    def test_all_lrs_destructive_picks_smallest(self):
-        """When every LR degrades accuracy, the smallest (least harmful) wins."""
+    def test_all_destructive_sweep_refuses(self):
+        """When EVERY candidate LR is destructive the finder must REFUSE
+        (return None) instead of handing back the least-bad destructive LR
+        (W2 fix C: the t0_18 explorer picked 1.12e-2 and recovery committed
+        the wreck)."""
 
         class MockTrainer:
             def __init__(self):
@@ -168,13 +172,10 @@ class TestLRRangeFinder:
             steps_per_probe=3,
             validate_fn=mock_validate,
         )
-        lr = finder.find_best_lr()
-        assert lr == pytest.approx(1e-3), (
-            f"When all LRs degrade, smallest should win; got {lr}"
-        )
+        assert finder.find_best_lr() is None
 
-    def test_baseline_sanity_returns_lr_min_when_all_probes_degrade(self):
-        """When best probe accuracy is < 90% of baseline, lr_min is returned."""
+    def test_all_probes_catastrophic_refuses(self):
+        """Baseline 0.80, every probe 0.05: no LR is handed to recovery."""
         call_idx = [0]
 
         class MockTrainer:
@@ -200,7 +201,33 @@ class TestLRRangeFinder:
             steps_per_probe=3,
             validate_fn=mock_validate,
         )
-        lr = finder.find_best_lr()
-        assert lr == pytest.approx(1e-5), (
-            f"When all probes degrade below 90% baseline, should return lr_min; got {lr}"
+        assert finder.find_best_lr() is None
+
+    def test_coarse_path_all_destructive_refuses(self):
+        """The coarse (loss-slope top-K) path shares the refusal contract."""
+        call_idx = [0]
+
+        class MockTrainer:
+            def train_n_steps(self, lr, steps, **kwargs):
+                pass
+
+        tr = MockTrainer()
+
+        def mock_validate():
+            idx = call_idx[0]
+            call_idx[0] += 1
+            return 0.80 if idx == 0 else 0.05
+
+        finder = LRRangeFinder(
+            trainer=tr,
+            clone_state=lambda: None,
+            restore_state=lambda s: None,
+            lr_min=1e-5,
+            lr_max=1e-1,
+            num_probes=5,
+            steps_per_probe=3,
+            validate_fn=mock_validate,
+            coarse_signal=lambda: 1.0,
+            coarse_top_k=2,
         )
+        assert finder.find_best_lr() is None

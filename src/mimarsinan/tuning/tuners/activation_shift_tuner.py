@@ -65,18 +65,6 @@ class ActivationShiftTuner(OneShotRateTunerSeamMixin, TunerBase):
         self.pipeline.reporter.report(self.name, 1.0)
         self.pipeline.reporter.report("Adaptation target", self._get_target())
 
-        lr = self._find_lr()
-        self.trainer.train_steps_until_target(
-            lr,
-            self._budget.max_training_steps,
-            self._get_target(),
-            0,
-            validation_n_batches=self._budget.progress_eval_batches,
-            check_interval=self._budget.check_interval,
-            patience=5,
-            min_steps=self._budget.check_interval * 3,
-            min_improvement=self._budget.accuracy_se(),
-            final_validation=False,
-        )
+        self._train_recovery(self._get_target(), final_validation=False)
         self._final_metric = self.trainer.validate()
         return self._final_metric

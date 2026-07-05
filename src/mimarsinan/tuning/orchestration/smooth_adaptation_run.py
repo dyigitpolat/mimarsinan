@@ -59,7 +59,9 @@ class SmoothAdaptationRunMixin(TunerBase):
 
         if getattr(self, "_stabilization_refinds_lr", False):
             self._invalidate_lr_cache()
-        lr = min(float(self._get_cached_lr()), float(self.pipeline_lr))
+        lr = self._capped_cached_lr()
+        if lr is None:
+            return  # [LR-REFUSE] optional stabilization is skipped (fix C)
 
         n_eval = self._budget.eval_n_batches
         pre_state = self._clone_state()
@@ -94,7 +96,9 @@ class SmoothAdaptationRunMixin(TunerBase):
                 break
             last_val = round_val
             self._invalidate_lr_cache()
-            lr = min(float(self._get_cached_lr()), float(self.pipeline_lr))
+            lr = self._capped_cached_lr()
+            if lr is None:
+                break  # [LR-REFUSE] no further stabilization rounds (fix C)
 
         post_val = float(self.trainer.validate_n_batches(n_eval))
         if post_val < pre_val - self._rollback_tolerance:
@@ -117,7 +121,9 @@ class SmoothAdaptationRunMixin(TunerBase):
 
         if getattr(self, "_stabilization_refinds_lr", False):
             self._invalidate_lr_cache()
-        lr = min(float(self._get_cached_lr()), float(self.pipeline_lr))
+        lr = self._capped_cached_lr()
+        if lr is None:
+            return  # [LR-REFUSE] optional stabilization is skipped (fix C)
 
         n_eval = self._budget.eval_n_batches
         pre_state = self._clone_state()

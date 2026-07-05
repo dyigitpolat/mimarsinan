@@ -163,18 +163,19 @@ def force_to_full_rate(tuner):
         hooks = tuner._recovery_training_hooks(target)
         try:
             lr = tuner._find_lr()
-            tuner.trainer.train_steps_until_target(
-                lr,
-                tuner._budget.max_training_steps,
-                tuner._get_target(),
-                0,
-                validation_n_batches=tuner._budget.progress_eval_batches,
-                check_interval=tuner._budget.check_interval,
-                patience=_RECOVERY_PATIENCE,
-                min_steps=tuner._budget.check_interval * 3,
-                min_improvement=tuner._budget.accuracy_se() / 2,
-                final_validation=False,
-            )
+            if lr is not None:  # [LR-REFUSE] skip this increment's training (fix C)
+                tuner.trainer.train_steps_until_target(
+                    lr,
+                    tuner._budget.max_training_steps,
+                    tuner._get_target(),
+                    0,
+                    validation_n_batches=tuner._budget.progress_eval_batches,
+                    check_interval=tuner._budget.check_interval,
+                    patience=_RECOVERY_PATIENCE,
+                    min_steps=tuner._budget.check_interval * 3,
+                    min_improvement=tuner._budget.accuracy_se() / 2,
+                    final_validation=False,
+                )
         finally:
             for h in hooks:
                 h.remove()
