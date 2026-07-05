@@ -31,14 +31,21 @@ def _invalidate_boundary_cache(tuner) -> None:
         tuner._boundary_exemption_cache = None
 
 
-def get_masks(tuner, rate):
+def get_masks(tuner, rate, *, commit=True):
+    """Monotone masks for ``rate``; ``commit=False`` computes them without
+    growing the tuner's persistent pruned sets (probe-replica reads)."""
     perceptrons = tuner.model.get_perceptrons()
     n_layers = len(perceptrons)
     exempt_input_layers, exempt_output_layers = _boundary_exemption_layers(tuner)
 
-    if len(tuner._persistent_pruned_rows) != n_layers:
-        tuner._persistent_pruned_rows = [set() for _ in range(n_layers)]
-        tuner._persistent_pruned_cols = [set() for _ in range(n_layers)]
+    persistent_rows = tuner._persistent_pruned_rows
+    persistent_cols = tuner._persistent_pruned_cols
+    if len(persistent_rows) != n_layers:
+        persistent_rows = [set() for _ in range(n_layers)]
+        persistent_cols = [set() for _ in range(n_layers)]
+        if commit:
+            tuner._persistent_pruned_rows = persistent_rows
+            tuner._persistent_pruned_cols = persistent_cols
 
     row_masks = []
     col_masks = []
@@ -49,14 +56,15 @@ def get_masks(tuner, rate):
         k_r = int(math.floor(rate * tuner.pruning_fraction * out_f))
         if i in exempt_output_layers:
             k_r = 0
-        pruned_r = set(tuner._persistent_pruned_rows[i])
+        pruned_r = set(persistent_rows[i])
         if len(pruned_r) < k_r and i < len(tuner.base_row_imp):
             _, idx = tuner.base_row_imp[i].to(device).sort()
             for j in idx.tolist():
                 if len(pruned_r) >= k_r:
                     break
                 pruned_r.add(int(j))
-        tuner._persistent_pruned_rows[i] = pruned_r
+        if commit:
+            persistent_rows[i] = pruned_r
         rm = torch.ones(out_f, dtype=torch.bool, device=device)
         if pruned_r:
             rm[list(pruned_r)] = False
@@ -65,14 +73,15 @@ def get_masks(tuner, rate):
         k_c = int(math.floor(rate * tuner.pruning_fraction * in_f))
         if i in exempt_input_layers:
             k_c = 0
-        pruned_c = set(tuner._persistent_pruned_cols[i])
+        pruned_c = set(persistent_cols[i])
         if len(pruned_c) < k_c and i < len(tuner.base_col_imp):
             _, idx = tuner.base_col_imp[i].to(device).sort()
             for j in idx.tolist():
                 if len(pruned_c) >= k_c:
                     break
                 pruned_c.add(int(j))
-        tuner._persistent_pruned_cols[i] = pruned_c
+        if commit:
+            persistent_cols[i] = pruned_c
         cm = torch.ones(in_f, dtype=torch.bool, device=device)
         if pruned_c:
             cm[list(pruned_c)] = False

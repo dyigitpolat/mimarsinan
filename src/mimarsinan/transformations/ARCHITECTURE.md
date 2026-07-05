@@ -21,7 +21,7 @@ and `pipelining` modules consume the results when emitting IR and hard cores.
 | `weight_quantization.py` | `TensorQuantization`: symmetric N-bit quantization (`quantize`, `scaled_quantize`) for torch tensors and numpy arrays. |
 | `parameter_transforms/` | `SequentialTransform`: composable chains of parameter transforms applied in sequence. |
 | `perceptron/` | `PerceptronTransformer`: computes effective weights/biases by fusing normalization, `per_input_scales`, and (possibly per-channel) `activation_scale`; applies transforms in effective-parameter space — every effective→raw write re-commits the layer's prune masks and fails loud on non-finite results. |
-| `pruning/` | Pruning suite: mask computation from weight-L1 or activation importance with cross-layer propagation and IR-derived I/O exemptions (`masks.py`, `activation.py`), rate-adaptive mask application (`apply.py`), structured magnitude channel pruning that shrinks layer shapes and core counts (`magnitude.py`, default-off deployment knob), and the committed-raw-parameter pruning contract (`committed_masks.py`: commit/verify helpers backing the enforcement hooks, transformer writes, DFQ entry, and the soft-core-mapping gate). |
+| `pruning/` | Pruning suite: mask computation from weight-L1 or activation importance with cross-layer propagation and IR-derived I/O exemptions (`masks.py`, `activation.py`), rate-adaptive mask application (`apply.py`), structured magnitude channel pruning that shrinks layer shapes and core counts (`magnitude.py`, default-off deployment knob), and the committed-raw-parameter pruning contract (`committed_masks.py`: per-layer and module-tree commit/verify helpers backing the enforcement hooks, transformer writes, DFQ entry, the soft-core-mapping gate, and the pipeline-cache store/load boundary). |
 
 ## Dependencies
 - `models` — `normalization_fusion.py` uses `models.nn.activations.ttfs_spiking.refresh_perceptron_bias_references` and `models.perceptron_mixer.perceptron.effective_preactivation_bias`; `perceptron/perceptron_transformer.py` lazily imports `models.nn.layers.norm_affine_params` to read normalization affine parameters.
@@ -29,7 +29,7 @@ and `pipelining` modules consume the results when emitting IR and hard cores.
 
 ## Dependents
 - `mapping` — `PerceptronTransformer` (perceptron/conv1d/conv2d mappers, bias compensation), `TensorQuantization` (`mapping_utils`), `quantization_bounds` and `assert_integer_scaled_matrix` (`export.chip_quantize`, `pruning.boundary_policy`).
-- `pipelining` — `fuse_into_perceptron` (normalization-fusion step), `PerceptronTransformer` (quantization-verification step), `quantization_bounds` and `pruning.committed_masks` commit/verify (soft-core mapping step), `prune_perceptron_chain` (soft-core structured-pruning step).
+- `pipelining` — `fuse_into_perceptron` (normalization-fusion step), `PerceptronTransformer` (quantization-verification step), `quantization_bounds` and `pruning.committed_masks` commit/verify (soft-core mapping step and the cache store/load boundary), `prune_perceptron_chain` (soft-core structured-pruning step).
 - `spiking` — `pruning.committed_masks.commit_perceptron_pruning` (DFQ starts from the committed-pruning state).
 - `tuning` — `NormalizationAwarePerceptronQuantization` (quantization tuner), `apply_pruning_masks` and `collect_activation_stats` (pruning tuner), `pruning.committed_masks` (the pruning enforcement hooks), `PerceptronTransformer` (activation-shift tuner), `quantization_bounds` (TTFS cycle-adaptation tuner).
 

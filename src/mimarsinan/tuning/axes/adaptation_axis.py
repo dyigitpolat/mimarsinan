@@ -95,3 +95,36 @@ class AdaptationAxisBase:
 
     def descriptor(self) -> str:
         return self.name
+
+
+class ClosureApplyAxisBase(AdaptationAxisBase):
+    """Base for axes driving a live-bound apply closure (NAPQ / pruning / shift).
+
+    The live closure targets the owning tuner's model and trainer, so a probe
+    replica must NEVER fire it: replicas dispatch to the model-targeted
+    ``replica_apply_fn(model, rate)`` against the attach target, and fail loud
+    when the tuner provides none.
+    """
+
+    def __init__(self, apply_fn, *, replica_apply_fn=None):
+        super().__init__()
+        self._apply_fn = apply_fn
+        self._replica_apply_fn = replica_apply_fn
+        self._is_probe_replica = False
+
+    def _reset_replica_state(self) -> None:
+        self._is_probe_replica = True
+
+    def set_rate(self, alpha: float) -> None:
+        alpha = float(alpha)
+        if not self._is_probe_replica:
+            self._apply_fn(alpha)
+            return
+        if self._replica_apply_fn is None:
+            raise RuntimeError(
+                f"{type(self).__name__} has no replica_apply_fn: its live-bound "
+                "apply closure would mutate the LIVE model from a probe replica. "
+                "Pass a model-targeted replica_apply_fn(model, rate) at "
+                "construction to make this axis probe-safe."
+            )
+        self._replica_apply_fn(self._model, alpha)

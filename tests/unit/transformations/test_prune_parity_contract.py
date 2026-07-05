@@ -397,3 +397,63 @@ class TestSoftCoreMappingPruneContract:
         model = SimpleNamespace(get_perceptrons=lambda: [p])
         with pytest.raises(RuntimeError, match="prun"):
             step._verify_pruning_committed(model)
+
+
+# ── the module-tree commit/verify pair (cache-boundary form of the SSOT) ───────
+
+
+class TestModelTreeCommitVerify:
+    """``commit_model_pruning`` / ``verify_model_pruning`` walk the module tree
+    directly, so seams without ``get_perceptrons()`` (the pipeline cache) share
+    the exact enforcement mechanism."""
+
+    def _model(self):
+        p, pruned = _pruned_perceptron()
+        return nn.Sequential(p), pruned
+
+    def test_commit_zeroes_layer_and_norm_entries(self):
+        from mimarsinan.transformations.pruning.committed_masks import (
+            commit_model_pruning,
+        )
+
+        model, pruned = self._model()
+        p = model[0]
+        with torch.no_grad():
+            p.layer.weight[pruned] = 5.0
+            p.layer.bias[pruned] = 5.0
+            p.normalization.running_mean[pruned] = 5.0
+            p.normalization.bias[pruned] = 5.0
+        commit_model_pruning(model)
+        assert torch.equal(
+            p.layer.weight.detach()[p.layer.prune_mask],
+            torch.zeros(int(p.layer.prune_mask.sum())),
+        )
+        assert torch.equal(
+            p.layer.bias.detach()[pruned], torch.zeros(int(pruned.sum())),
+        )
+        assert torch.equal(
+            p.normalization.running_mean.detach()[pruned],
+            torch.zeros(int(pruned.sum())),
+        )
+        assert torch.equal(
+            p.normalization.bias.detach()[pruned], torch.zeros(int(pruned.sum())),
+        )
+
+    def test_verify_passes_clean_and_names_the_module_on_poison(self):
+        from mimarsinan.transformations.pruning.committed_masks import (
+            verify_model_pruning,
+        )
+
+        model, pruned = self._model()
+        verify_model_pruning(model, where="test")
+        with torch.no_grad():
+            model[0].layer.weight[list(PRUNED_ROWS)[0], 0] = 3.0
+        with pytest.raises(RuntimeError, match="0.layer"):
+            verify_model_pruning(model, where="test")
+
+    def test_verify_is_a_no_op_without_masks(self):
+        from mimarsinan.transformations.pruning.committed_masks import (
+            verify_model_pruning,
+        )
+
+        verify_model_pruning(nn.Sequential(nn.Linear(4, 4)), where="test")

@@ -12,7 +12,7 @@ concrete `PipelineStep` implementations live under `pipeline_steps/`.
 | File | Purpose |
 |---|---|
 | `session.py` | Composition root: `parse_deployment_config` → `ParsedDeploymentConfig`, and `PipelineSession` owning one configured `DeploymentPipeline` (presets, GUI attach, start/stop-step resolution, run lifecycle). |
-| `cache/` | `PipelineCache` — persisted step-output store keyed per step, with pluggable `LoadStoreStrategy` serializers (basic/JSON, torch model, pickle). |
+| `cache/` | `PipelineCache` — persisted step-output store keyed per step, with pluggable `LoadStoreStrategy` serializers (basic/JSON, torch model, pickle). The torch-model strategy enforces the prune-parity contract at the boundary: commit + verify on store, fail-loud verify on load. |
 | `core/` | Engine and planning: `engine/` (`Pipeline` execution engine, resume/debug helpers), `steps/` (`PipelineStep` base with class-level `REQUIRES`/`PROMISES` contracts plus trainer/tuner step bases), `deployment_plan.py` (`DeploymentPlan` — the single config-resolution layer for every deployment axis), `step_plan.py` (`StepPlan` ordered registry filtered by each step's `applies_to(plan)`, contract-validated at assembly), `pipelines/` (`DeploymentPipeline`, `get_pipeline_step_specs` step ordering), `registry/` (`ModelRegistry`, trainer factory), plus `simulation_factory.py`, `nf_scm_parity.py` (NF↔SCM parity gates), `accuracy_budget.py`, `platform_constraints_resolver.py`, `hybrid_mapping_consumer.py`, `search_mode.py`, `model_config_emit.py`. |
 | `pipeline_steps/` | Concrete step implementations grouped by phase: `config/` (architecture search, model configuration/building, torch mapping, weight preloading), `training/` (pretraining), `adaptation/` (activation/clamp/shift/pruning/LIF/TTFS-cycle/noise tuner steps), `quantization/` (normalization fusion, activation/weight quantization, verification), `mapping/` (soft/hard core mapping, core quantization verification), `verification/` (nevresim, Loihi, SANA-FE simulation steps). |
 
@@ -24,7 +24,7 @@ concrete `PipelineStep` implementations live under `pipeline_steps/`.
 - `model_training` — `BasicTrainer` construction (`registry/trainer_factory.py`), training recipes, weight-loading strategies.
 - `data_handling` — data provider/loader factories for the session and steps; test-sample loading for simulation metrics.
 - `models` — model layers and decorators used by steps, `SpikingHybridCoreFlow`, perceptron bias-reference refresh.
-- `transformations` — normalization fusion, `PerceptronTransformer`, magnitude pruning, quantization bounds.
+- `transformations` — normalization fusion, `PerceptronTransformer`, magnitude pruning, quantization bounds, `pruning.committed_masks` commit/verify at the cache store/load boundary.
 - `spiking` — cycle-accurate LIF train application and scale-aware boundary calibration.
 - `search` — joint arch/HW search problem and result types for `ArchitectureSearchStep`.
 - `config_schema` — config defaults and deployment derivation folded into pipeline configs.

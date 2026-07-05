@@ -2,22 +2,20 @@
 
 from __future__ import annotations
 
-from mimarsinan.tuning.axes.adaptation_axis import AdaptationAxisBase
+from mimarsinan.tuning.axes.adaptation_axis import ClosureApplyAxisBase
 
 
-class ActivationShiftAxis(AdaptationAxisBase):
-    """Uniform seam over the one-shot shift application."""
+class ActivationShiftAxis(ClosureApplyAxisBase):
+    """Uniform seam over the one-shot shift application (rate-independent)."""
 
     name = "activation_shift"
     interpolation_mode = "parameter_path"
     supports_smooth = False
 
-    def __init__(self, apply_fn):
-        super().__init__()
-        self._apply_fn = apply_fn
-
-    def set_rate(self, alpha: float) -> None:
-        self._apply_fn()
+    def __init__(self, apply_fn, *, replica_apply_fn=None):
+        super().__init__(
+            lambda _alpha: apply_fn(), replica_apply_fn=replica_apply_fn,
+        )
 
     def descriptor(self) -> str:
         return self.name

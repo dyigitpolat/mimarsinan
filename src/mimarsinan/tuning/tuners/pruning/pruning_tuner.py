@@ -47,12 +47,14 @@ class PruningTuner(SmoothAdaptationTuner):
         self._persistent_pruned_cols: list[set] = []
 
         self._axis = PruningAxis(
-            self._apply_masks, recovery_hooks_fn=self._recovery_training_hooks
+            self._apply_masks,
+            recovery_hooks_fn=self._recovery_training_hooks,
+            replica_apply_fn=self._apply_masks_to,
         )
         self._axis.attach(self.model, self.adaptation_manager, self.pipeline.config)
 
-    def _get_masks(self, rate):
-        return get_masks(self, rate)
+    def _get_masks(self, rate, *, commit=True):
+        return get_masks(self, rate, commit=commit)
 
     def _get_extra_state(self):
         return {
@@ -76,9 +78,17 @@ class PruningTuner(SmoothAdaptationTuner):
         self._refresh_pruning_importance()
 
     def _apply_masks(self, rate):
+        self._apply_masks_to(self.model, rate, commit=True)
+
+    def _apply_masks_to(self, model, rate, *, commit=False):
+        """Apply the rate's masks to ``model``'s perceptrons. Probe replicas pass
+        an isolated clone (``commit=False``: live persistent sets stay untouched)."""
         rate = min(max(rate, 0.0), 1.0)
-        perceptrons = self.model.get_perceptrons()
-        target_row_masks, target_col_masks = self._get_masks(rate)
+        perceptrons = model.get_perceptrons()
+        assert len(self.original_weights) == len(perceptrons), (
+            "PruningTuner mask apply before _init_original_weights()"
+        )
+        target_row_masks, target_col_masks = self._get_masks(rate, commit=commit)
         for i, p in enumerate(perceptrons):
             apply_pruning_masks(
                 p, target_row_masks[i], target_col_masks[i],

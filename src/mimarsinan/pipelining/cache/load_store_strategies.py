@@ -3,6 +3,11 @@ import json
 import logging
 import pickle
 
+from mimarsinan.transformations.pruning.committed_masks import (
+    commit_model_pruning,
+    verify_model_pruning,
+)
+
 logger = logging.getLogger(__name__)
 
 class LoadStoreStrategy:
@@ -34,6 +39,11 @@ class TorchModelLoadStoreStrategy(LoadStoreStrategy):
     def load(self, cache_directory):
         (object, device) = torch.load(f"{cache_directory}/{self.filename}.pt", map_location=torch.device('cpu'), weights_only=False)
         object._cached_original_device = device
+        if isinstance(object, torch.nn.Module):
+            # Round-trip half of the prune-parity contract: an artifact whose raw
+            # params violate its committed masks must fail loud, never silently
+            # reproduce different metrics than the live run (theory §5g-v (i)).
+            verify_model_pruning(object, where=f"cache-load:{self.filename}")
         return object  # stay on CPU; consumers move to device as needed
 
     def store(self, cache_directory, object):
@@ -42,6 +52,12 @@ class TorchModelLoadStoreStrategy(LoadStoreStrategy):
         else:
             p = next(object.parameters(), None)
             device = p.device if p is not None else torch.device("cpu")
+
+        if isinstance(object, torch.nn.Module):
+            # The store boundary is an enforcement point like any hooked forward:
+            # masks must hold in committed raw params before the artifact is written.
+            commit_model_pruning(object)
+            verify_model_pruning(object, where=f"cache-store:{self.filename}")
 
         object.cpu()
         torch.save((object, device), f"{cache_directory}/{self.filename}.pt")

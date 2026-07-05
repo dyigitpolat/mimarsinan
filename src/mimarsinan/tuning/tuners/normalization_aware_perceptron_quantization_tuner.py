@@ -14,7 +14,9 @@ class NormalizationAwarePerceptronQuantizationTuner(PerceptronTransformTuner):
         super().__init__(pipeline, model, target_accuracy, lr)
         self.quantization_bits = quantization_bits
         self.adaptation_manager = adaptation_manager
-        self._axis = NAPQAxis(self._apply_rate)
+        self._axis = NAPQAxis(
+            self._apply_rate, replica_apply_fn=self._apply_rate_to,
+        )
         self._axis.attach(self.model, self.adaptation_manager, self.pipeline.config)
 
     def _get_previous_perceptron_transform(self, rate):
@@ -33,6 +35,14 @@ class NormalizationAwarePerceptronQuantizationTuner(PerceptronTransformTuner):
         self.trainer.perceptron_transformation = self._mixed_transform(rate)
         with torch.no_grad():
             self.trainer._update_and_transform_model()
+
+    def _apply_rate_to(self, model, rate):
+        """Probe-replica apply: transform ``model``'s perceptrons directly, leaving
+        the live trainer wiring and the live model untouched."""
+        transform = self._mixed_transform(rate)
+        with torch.no_grad():
+            for perceptron in model.get_perceptrons():
+                transform(perceptron)
 
     def _update_and_evaluate(self, rate):
         self._axis.set_rate(rate)

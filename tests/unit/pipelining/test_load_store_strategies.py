@@ -1,15 +1,21 @@
 """Tests for individual load/store strategies."""
 
+import copy
 import logging
 
 import pytest
 import torch
 import torch.nn as nn
 
+from conftest import make_tiny_supermodel
 from mimarsinan.pipelining.cache.load_store_strategies import (
     BasicLoadStoreStrategy,
     TorchModelLoadStoreStrategy,
     PickleLoadStoreStrategy,
+)
+from mimarsinan.tuning.tuners.pruning.pruning_tuner_enforce import (
+    enforce_pruning_persistently,
+    register_prune_buffers,
 )
 
 
@@ -101,6 +107,112 @@ class TestTorchModelStoreDeviceRestore:
         s = TorchModelLoadStoreStrategy("m_restore2")
         with pytest.raises(ValueError, match="restore failed"):
             s.store(str(tmp_path), model)
+
+
+def _pruned_supermodel():
+    """A tiny supermodel with committed prune masks + enforcement hooks."""
+    torch.manual_seed(0)
+    model = make_tiny_supermodel()
+    perceptrons = model.get_perceptrons()
+    row_masks, col_masks = [], []
+    for p in perceptrons:
+        out_f, in_f = p.layer.weight.shape
+        row_keep = torch.ones(out_f, dtype=torch.bool)
+        row_keep[0] = False
+        col_keep = torch.ones(in_f, dtype=torch.bool)
+        row_masks.append(row_keep)
+        col_masks.append(col_keep)
+    register_prune_buffers(perceptrons, row_masks, col_masks)
+    enforce_pruning_persistently(perceptrons, row_masks, col_masks)
+    return model
+
+
+def _dirty_pruned_rows(model):
+    """Simulate pruned-row regrowth in raw params (no forward fires afterwards)."""
+    with torch.no_grad():
+        for p in model.get_perceptrons():
+            p.layer.weight[p.layer.prune_mask] = 3.0
+            if p.layer.bias is not None:
+                p.layer.bias[p.layer.prune_bias_mask] = 3.0
+
+
+def _accuracy(model, x, y):
+    model.eval()
+    with torch.no_grad():
+        return float(model(x).argmax(dim=1).eq(y).float().mean())
+
+
+class TestTorchModelPrunedCacheRoundTrip:
+    """W-CAL prune-parity at the cache boundary (theory §5g-v incidental (i)).
+
+    Old pruned artifacts reloaded 4.8-11.2 pp below their shipped live metrics:
+    raw weights carried fewer zero rows than the persisted masks enforce. The
+    store boundary must COMMIT the masks into raw params (mask.param == param
+    holds in the artifact) and the load boundary must fail-loud VERIFY, mirroring
+    the mapping-time verify in SoftCoreMappingStep.
+    """
+
+    def test_store_commits_regrown_rows_and_roundtrip_preserves_metric(self, tmp_path):
+        model = _pruned_supermodel()
+        x = torch.randn(8, 1, 8, 8)
+        y = torch.randint(0, 4, (8,))
+        reference = copy.deepcopy(model)
+        reference.eval()
+        with torch.no_grad():
+            y_expected = reference(x).clone()
+        expected_acc = _accuracy(reference, x, y)
+
+        _dirty_pruned_rows(model)
+        s = TorchModelLoadStoreStrategy("pruned_model")
+        s.store(str(tmp_path), model)
+
+        raw, _device = torch.load(
+            str(tmp_path / "pruned_model.pt"),
+            map_location="cpu", weights_only=False,
+        )
+        for i, p in enumerate(raw.get_perceptrons()):
+            masked = p.layer.weight.detach()[p.layer.prune_mask]
+            assert torch.equal(masked, torch.zeros_like(masked)), (
+                f"stored artifact perceptron {i}: mask.param == param must hold "
+                "in the raw file, before any forward fires the hooks"
+            )
+
+        loaded = s.load(str(tmp_path))
+        loaded.eval()
+        with torch.no_grad():
+            y_loaded = loaded(x)
+        assert torch.equal(y_loaded, y_expected), (
+            "reloaded model must reproduce the live (mask-enforced) behavior"
+        )
+        assert _accuracy(loaded, x, y) == expected_acc
+
+    def test_store_commits_on_the_live_object_too(self, tmp_path):
+        model = _pruned_supermodel()
+        _dirty_pruned_rows(model)
+        TorchModelLoadStoreStrategy("live_commit").store(str(tmp_path), model)
+        for p in model.get_perceptrons():
+            masked = p.layer.weight.detach()[p.layer.prune_mask]
+            assert torch.equal(masked, torch.zeros_like(masked))
+
+    def test_load_fails_loud_on_poisoned_artifact(self, tmp_path):
+        model = _pruned_supermodel()
+        _dirty_pruned_rows(model)
+        # Bypass the store-side commit: a pre-contract (poisoned) artifact.
+        torch.save((model, torch.device("cpu")), str(tmp_path / "poisoned.pt"))
+        with pytest.raises(RuntimeError, match="prun"):
+            TorchModelLoadStoreStrategy("poisoned").load(str(tmp_path))
+
+    def test_maskless_model_roundtrip_untouched(self, tmp_path):
+        torch.manual_seed(0)
+        model = make_tiny_supermodel()
+        before = {k: v.clone() for k, v in model.state_dict().items()}
+        s = TorchModelLoadStoreStrategy("maskless")
+        s.store(str(tmp_path), model)
+        loaded = s.load(str(tmp_path))
+        after = loaded.state_dict()
+        assert before.keys() == after.keys()
+        for key in before:
+            assert torch.equal(before[key], after[key])
 
 
 class TestPickleLoadStoreStrategy:
