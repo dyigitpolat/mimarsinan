@@ -5,6 +5,7 @@ from mimarsinan.mapping.verification.capacity.dryrun import (
     dryrun_pack_feasible,
 )
 from mimarsinan.mapping.verification.capacity.estimate import (
+    PACKER_DIVERGENCE_MARGIN,
     CapacityEstimate,
     CapacityExceededError,
     estimate_cores_needed,
@@ -13,6 +14,7 @@ from mimarsinan.mapping.verification.capacity.estimate import (
 __all__ = [
     "CapacityEstimate",
     "CapacityExceededError",
+    "PACKER_DIVERGENCE_MARGIN",
     "estimate_cores_needed",
     "PackFeasibility",
     "dryrun_pack_feasible",

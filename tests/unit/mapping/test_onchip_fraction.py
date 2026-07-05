@@ -343,3 +343,41 @@ class TestClassifyValidity:
         model = _build("deep_mlp", {"depth": 4, "width": 64}, (1, 28, 28), 10)
         with pytest.raises(ValueError):
             classify_validity(model, (1, 28, 28), 10, encoding_placement="nowhere")
+
+
+def _tier0_model_specs():
+    import json
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[3] / "test_configs" / "tier0"
+    specs = []
+    for path in sorted(root.glob("t0_*.json")):
+        cfg = json.loads(path.read_text())
+        dp = cfg["deployment_parameters"]
+        specs.append(pytest.param(
+            dp["model_type"],
+            dp["model_config"],
+            dp.get("encoding_layer_placement", "subsume"),
+            id=path.stem,
+        ))
+    return specs
+
+
+class TestTier0MatrixClearsTheStaticFloor:
+    """The Model Building fail-fast twin must not fire on ANY current tier-0
+    cell (the mandate for landing it in the pipeline; W2 Q3)."""
+
+    @pytest.mark.parametrize(
+        "model_type,model_config,placement", _tier0_model_specs()
+    )
+    def test_cell_clears_the_20pct_floor(self, model_type, model_config, placement):
+        input_shape, num_classes = (1, 28, 28), 10
+        model = _build(model_type, model_config, input_shape, num_classes)
+        # ModelBuildingStep warms up before the gate (materializes Lazy modules).
+        with torch.no_grad():
+            model(torch.randn(2, *input_shape))
+        est = assert_onchip_majority_estimate_or_raise(
+            model, input_shape, num_classes,
+            encoding_placement=placement, min_fraction=0.2,
+        )
+        assert est.fraction >= 0.2

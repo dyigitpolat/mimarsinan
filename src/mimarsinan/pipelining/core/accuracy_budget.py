@@ -7,6 +7,31 @@ from dataclasses import dataclass
 from typing import Optional
 
 
+class PretrainEnvelopeError(ValueError):
+    """The FIRST seeded pipeline metric fell below the absolute chance-multiple
+    floor: the backbone never trained, so every downstream relative retention
+    check would be 'consistent' with garbage (the zombie-pass class)."""
+
+    def __init__(
+        self, step_name: str, metric: float, floor: float, num_classes: int,
+        chance_multiple: float,
+    ) -> None:
+        self.step_name = step_name
+        self.metric = float(metric)
+        self.floor = float(floor)
+        self.num_classes = int(num_classes)
+        self.chance_multiple = float(chance_multiple)
+        super().__init__(
+            f"[{step_name}] pretrain envelope violated: the first seeded test "
+            f"metric {self.metric:.4f} is below the absolute floor "
+            f"{self.floor:.4f} = {self.chance_multiple:g} x chance "
+            f"(1/{self.num_classes} classes). The backbone is untrained; "
+            "aborting before the relative retention gates zombie-pass it. "
+            "Tune via deployment_parameters.pretrain_floor_chance_multiple "
+            "(0 disables)."
+        )
+
+
 @dataclass
 class AccuracyBudget:
     """Tracks cumulative test-accuracy drop across a pipeline run.

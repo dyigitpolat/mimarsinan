@@ -4,7 +4,10 @@ import time as _time
 
 import torch
 
-from mimarsinan.pipelining.core.accuracy_budget import AccuracyBudget
+from mimarsinan.pipelining.core.accuracy_budget import (
+    AccuracyBudget,
+    PretrainEnvelopeError,
+)
 from mimarsinan.pipelining.cache.pipeline_cache import PipelineCache
 from mimarsinan.common.file_utils import prepare_containing_directory
 from mimarsinan.common.diagnostics import cuda_guard, phase_profiler
@@ -208,8 +211,33 @@ class Pipeline:
     def _record_step_metric(self, step):
         step_metric = step.pipeline_metric()
         self.set_target_metric(step_metric)
+        seeded_before = self.accuracy_budget.seeded()
         self.accuracy_budget.observe(step_metric)
+        if not seeded_before and self.accuracy_budget.seeded():
+            self._assert_pretrain_envelope(step.name, step_metric)
         self.accuracy_budget.warn_if_over_budget(step.name)
+
+    def _pretrain_envelope_chance_multiple(self) -> float:
+        config = getattr(self, "config", None)
+        if not isinstance(config, dict):
+            return 0.0
+        return float(config.get("pretrain_floor_chance_multiple", 5.0))
+
+    def _assert_pretrain_envelope(self, step_name: str, metric: float) -> None:
+        """Absolute floor on the FIRST seeded metric (classification only):
+        every relative gate downstream is blind to a chance-level backbone."""
+        config = getattr(self, "config", None)
+        num_classes = config.get("num_classes") if isinstance(config, dict) else None
+        if not num_classes or int(num_classes) <= 1:
+            return
+        multiple = self._pretrain_envelope_chance_multiple()
+        if multiple <= 0.0:
+            return
+        floor = multiple / float(num_classes)
+        if float(metric) < floor:
+            raise PretrainEnvelopeError(
+                step_name, float(metric), floor, int(num_classes), multiple
+            )
 
     def _persist_step_outputs(self, name, step):
         with phase_profiler(f"Pipeline::{name}", "save_cache"):

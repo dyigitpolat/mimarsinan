@@ -73,3 +73,63 @@ class TestModelBuildingStep:
         assert am.clamp_rate == 0.0
         assert am.quantization_rate == 0.0
         assert am.shift_rate == 0.0
+
+class TestStaticOnchipMajorityGate:
+    """W2 Q3: the t0_09-class majority-floor abort moves from post-pretrain
+    SCM (~minutes) to Model Building (seconds) via the closed-form static
+    twin. deep_mlp d4 subsume: fraction(w) = 3(w^2+w) / (3(w^2+w) + 795w + 10),
+    so w=64 sits 0.29 pp below the 20% floor (w >= 67 required) and the
+    committed w=128 respec clears it at 32.74%."""
+
+    def _make_deepmlp_step(self, mock_pipeline, width):
+        from mimarsinan.models.builders.deep_mlp_builder import DeepMLPBuilder
+
+        cfg = mock_pipeline.config
+        cfg["input_shape"] = (1, 28, 28)
+        cfg["num_classes"] = 10
+        builder = DeepMLPBuilder(
+            cfg["device"], cfg["input_shape"], cfg["num_classes"], cfg,
+        )
+        mock_pipeline.seed("model_config", {"depth": 4, "width": width})
+        mock_pipeline.seed("model_builder", builder)
+        step = ModelBuildingStep(mock_pipeline)
+        step.name = "ModelBuilding"
+        mock_pipeline.prepare_step(step)
+        return step
+
+    def test_t0_09_w64_spec_fails_fast_at_build(self, mock_pipeline):
+        from mimarsinan.mapping.verification.onchip_majority import (
+            OnchipMajorityError,
+        )
+
+        step = self._make_deepmlp_step(mock_pipeline, width=64)
+        with pytest.raises(OnchipMajorityError):
+            step.run()
+
+    def test_t0_09_committed_w128_respec_passes(self, mock_pipeline):
+        step = self._make_deepmlp_step(mock_pipeline, width=128)
+        step.run()
+        assert "ModelBuilding.model" in mock_pipeline.cache
+
+    def test_gate_opt_out_admits_host_majority_spec(self, mock_pipeline):
+        mock_pipeline.config["onchip_majority_gate"] = False
+        step = self._make_deepmlp_step(mock_pipeline, width=64)
+        step.run()
+        assert "ModelBuilding.model" in mock_pipeline.cache
+
+    def test_floor_honors_config_min_fraction(self, mock_pipeline):
+        from mimarsinan.mapping.verification.onchip_majority import (
+            OnchipMajorityError,
+        )
+
+        mock_pipeline.config["onchip_majority_min_fraction"] = 0.5
+        step = self._make_deepmlp_step(mock_pipeline, width=128)
+        with pytest.raises(OnchipMajorityError):
+            step.run()
+
+    def test_supermodel_counts_on_its_own_mapper_repr(self, mock_pipeline):
+        """SimpleMLP is already a perceptron flow (encoder on chip, readout the
+        only host op): it is on-chip-majority and must never FX-trace."""
+        step = TestModelBuildingStep()._make_step(mock_pipeline)
+        step.run()
+        assert "ModelBuilding.model" in mock_pipeline.cache

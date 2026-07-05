@@ -1,3 +1,6 @@
+from mimarsinan.mapping.verification.onchip_fraction import (
+    assert_onchip_majority_estimate_or_raise,
+)
 from mimarsinan.pipelining.core.engine.pipeline_helpers import safe_warmup_forward
 from mimarsinan.pipelining.core.steps.pipeline_step import PipelineStep
 from mimarsinan.tuning.orchestration.adaptation_manager_factory import create_adaptation_manager_for_model
@@ -31,5 +34,32 @@ class ModelBuildingStep(PipelineStep):
             self.pipeline.config["device"],
         )
 
+        self._run_static_onchip_majority_gate(init_model)
+
         self.add_entry("adaptation_manager", adaptation_manager, 'pickle')
         self.add_entry("model", (init_model), "torch_model")
+
+    def _run_static_onchip_majority_gate(self, model) -> None:
+        """Static fail-fast twin of the SCM on-chip-majority floor gate: a
+        host-majority model SPEC dies in seconds at build instead of after
+        pretraining (W2 Q3; same floor, same opt-out knob)."""
+        config = self.pipeline.config
+        if not bool(config.get("onchip_majority_gate", True)):
+            return
+        num_classes = config.get("num_classes")
+        if not num_classes:
+            return
+        estimate = assert_onchip_majority_estimate_or_raise(
+            model,
+            config["input_shape"],
+            int(num_classes),
+            encoding_placement=str(
+                config.get("encoding_layer_placement", "subsume")
+            ),
+            min_fraction=float(config.get("onchip_majority_min_fraction", 0.2)),
+        )
+        print(
+            f"[ModelBuildingStep] static on-chip parameter majority: "
+            f"{estimate.fraction:.2%} on chip (on-chip={estimate.onchip}, "
+            f"host={estimate.host}, total={estimate.total})"
+        )

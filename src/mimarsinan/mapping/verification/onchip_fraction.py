@@ -143,6 +143,11 @@ def _classify_host_node(node):
 
 
 def _build_flow(model, input_shape, num_classes, placement):
+    if hasattr(model, "get_mapper_repr"):
+        # Already a perceptron flow: count on its own mapper repr (its encoding
+        # placement is baked at build; FX re-tracing is neither possible for
+        # einops-based flows nor needed).
+        return model
     from mimarsinan.torch_mapping.converter import convert_torch_model
 
     return convert_torch_model(

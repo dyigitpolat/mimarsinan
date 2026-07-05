@@ -14,6 +14,11 @@ from mimarsinan.mapping.platform.platform_constraints import (
 )
 
 
+PACKER_DIVERGENCE_MARGIN = 0.45
+"""Measured estimator-vs-packer optimism (W2): the static lower bound sat
+>= 43% below the real greedy pack on deepcnn-d8 vehicles."""
+
+
 class CapacityExceededError(RuntimeError):
     """Raised when an IR graph provably cannot fit the declared core budget."""
 
@@ -66,6 +71,16 @@ class CapacityEstimate:
                 self.cores_needed, self.cores_available, self.overflowing_segment
             )
         return self
+
+    def within_packer_divergence_band(
+        self, margin: float = PACKER_DIVERGENCE_MARGIN
+    ) -> bool:
+        """Feasible-but-close UNSCHEDULED verdicts: the real greedy packer may
+        still exhaust the pool when the sound lower bound sits within its
+        measured divergence band (``needed * (1 + margin) > budget``)."""
+        if self.scheduled or not self.feasible:
+            return False
+        return self.cores_needed * (1.0 + float(margin)) > self.cores_available
 
 
 @dataclass(frozen=True)

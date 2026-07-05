@@ -371,3 +371,40 @@ class TestSchedulingFieldDefaults:
         assert est.scheduled is False
         assert est.peak_phase_cores == 830
         assert est.phase_count == 1
+
+
+class TestPackerDivergenceBand:
+    """W2: the static lower bound was measured >=43% optimistic vs the real
+    greedy packer on deepcnn-d8 vehicles; feasible-but-close UNSCHEDULED
+    verdicts must flag the divergence band."""
+
+    def _estimate(self, needed, available, *, feasible=True, scheduled=False):
+        return CapacityEstimate(
+            cores_needed=needed, cores_available=available, feasible=feasible,
+            overflowing_segment=None, scheduled=scheduled,
+        )
+
+    def test_t0_03_fingerprint_is_within_band(self):
+        # needs >= 252 on a 360 budget passed the gate, then the packer
+        # exhausted the pool: 252 * 1.45 = 365.4 > 360.
+        assert self._estimate(252, 360).within_packer_divergence_band() is True
+
+    def test_comfortable_margin_is_outside_band(self):
+        assert self._estimate(100, 360).within_packer_divergence_band() is False
+
+    def test_boundary_is_exclusive(self):
+        # 200 * 1.45 == 290 exactly: not strictly greater -> outside the band.
+        assert self._estimate(200, 290).within_packer_divergence_band() is False
+
+    def test_scheduled_verdicts_are_exempt(self):
+        assert (
+            self._estimate(252, 360, scheduled=True).within_packer_divergence_band()
+            is False
+        )
+
+    def test_infeasible_verdicts_are_exempt(self):
+        # raise_if_infeasible owns that path; the band is a feasible-only warning.
+        assert (
+            self._estimate(500, 360, feasible=False).within_packer_divergence_band()
+            is False
+        )

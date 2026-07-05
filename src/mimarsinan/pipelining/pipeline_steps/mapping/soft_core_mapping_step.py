@@ -1,3 +1,4 @@
+import warnings
 from typing import Iterable, cast
 
 import mimarsinan.pipelining.core.nf_scm_parity as nf_scm_parity
@@ -15,7 +16,10 @@ from mimarsinan.mapping.support.bias_compensation import (
     transfer_negative_shifts_to_ir,
 )
 from mimarsinan.mapping.support.per_source_scales import compute_per_source_scales
-from mimarsinan.mapping.verification.capacity import estimate_cores_needed
+from mimarsinan.mapping.verification.capacity import (
+    PACKER_DIVERGENCE_MARGIN,
+    estimate_cores_needed,
+)
 from mimarsinan.mapping.verification.onchip_majority import assert_onchip_majority_or_raise
 from mimarsinan.mapping.weight_reuse import (
     format_weight_reuse_summary,
@@ -299,6 +303,16 @@ class SoftCoreMappingStep(PipelineStep):
                 f"{estimate.cores_available} (feasible={estimate.feasible})"
             )
         estimate.raise_if_infeasible()
+        if estimate.within_packer_divergence_band():
+            warnings.warn(
+                f"[SoftCoreMappingStep] static capacity bound "
+                f"{estimate.cores_needed} is within the packer divergence band "
+                f"of the {estimate.cores_available}-core budget (the estimator "
+                f"has measured >= {PACKER_DIVERGENCE_MARGIN:.0%} optimism on "
+                "conv vehicles) — expect possible packing failure; enable "
+                "allow_scheduling or grow the platform.",
+                stacklevel=2,
+            )
         return estimate
 
     def _run_torch_sim_parity_check(self, model, ir_graph) -> None:

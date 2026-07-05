@@ -163,3 +163,30 @@ def test_scheduled_atomic_overflow_still_raises():
     }
     with pytest.raises(CapacityExceededError):
         step._run_capacity_gate(_infeasible_ir(), budget)
+
+
+class TestPackerDivergenceBandWarning:
+    """Feasible-but-within-band unscheduled estimates warn loud (W2 Q2a)."""
+
+    def _band_ir(self):
+        # Two 8-axon cores on a 2-core budget: needed == budget == 2, and
+        # 2 * 1.45 > 2 puts the verdict inside the divergence band.
+        a = _core(0, "A", in_count=8, out_count=8)
+        b = _core(1, "B", in_count=8, out_count=8)
+        b.input_sources = _src([(0, i) for i in range(8)])
+        return IRGraph(nodes=[a, b], output_sources=_src([(1, 0)]))
+
+    def test_within_band_estimate_warns(self):
+        step = _step()
+        with pytest.warns(UserWarning, match="divergence band"):
+            est = step._run_capacity_gate(self._band_ir(), _TINY_BUDGET)
+        assert est.feasible is True
+
+    def test_comfortable_estimate_does_not_warn(self):
+        import warnings as _warnings
+
+        step = _step()
+        with _warnings.catch_warnings():
+            _warnings.simplefilter("error")
+            est = step._run_capacity_gate(_feasible_ir(), _TINY_BUDGET)
+        assert est.feasible is True
