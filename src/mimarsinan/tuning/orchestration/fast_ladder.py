@@ -224,42 +224,6 @@ class FastLadderMixin(_FastLadderHost):
         replica.set_rate(1.0)
         return clone
 
-    def _fast_stabilize(self, steps, loss_fn=None) -> None:
-        """Post-finalize bounded recovery on the deployed forward, for fast ramps
-        whose endpoint still needs the deployed dynamics trained. Fresh optimizer +
-        spanning cosine; non-destructive (rolls back on regression)."""
-        loss_fn = loss_fn or self._fast_loss
-        steps = max(0, int(steps))
-        if steps <= 0:
-            return
-        device = self.pipeline.config["device"]
-        self.model = self.model.to(device)
-        lr = float(self.pipeline_lr)
-        recipe = build_recipe(self.pipeline.config, key="tuning_recipe")
-        opt = (
-            build_optimizer(self.model, lr, recipe) if recipe is not None
-            else self.trainer.build_step_optimizer(lr)
-        )
-        sched = self._build_fast_lr_schedule(opt, steps, eta_min=0.0)
-        n_eval = self._budget.eval_n_batches
-        pre_state = self._clone_state()
-        pre_val = float(self.trainer.validate_n_batches(n_eval))
-        for _ in range(steps):
-            x, y = self.trainer.next_training_batch()
-            x, y = x.to(device), y.to(device)
-            self.model.train()
-            if getattr(self, "_fast_freeze_batchnorm", False):
-                _freeze_batchnorm_modules(self.model)
-            loss = loss_fn(x, y)
-            opt.zero_grad()
-            loss.backward()
-            opt.step()
-            sched.step()
-        post_val = float(self.trainer.validate_n_batches(n_eval))
-        tol = float(getattr(self, "_rollback_tolerance", 0.0))
-        if post_val < pre_val - tol:
-            self._restore_state(pre_state)
-
     def _record_fast_cycle(self, target, post_acc, t0, outcome="commit") -> None:
         """Record one decision per attempted rate so the fast path inherits the
         DecisionTrace (``outcome`` != commit only on [MBH-GATE] rejects)."""

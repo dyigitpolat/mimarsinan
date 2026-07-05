@@ -3,7 +3,9 @@
 from mimarsinan.tuning.adaptation_rate_tuner import AdaptationRateTuner
 from mimarsinan.tuning.orchestration.adaptation_manager import (
     install_sync_entry_grid_snap,
+    sync_exact_qat_active,
 )
+from mimarsinan.tuning.orchestration.endpoint_recovery import run_endpoint_recovery
 
 
 class ActivationQuantizationTuner(AdaptationRateTuner):
@@ -19,7 +21,23 @@ class ActivationQuantizationTuner(AdaptationRateTuner):
         install_sync_entry_grid_snap(self.model, self.pipeline.config)
 
     def _stabilization_budget(self):
+        if sync_exact_qat_active(self.pipeline.config):
+            # The sync AQ endpoint IS the conversion endpoint: the bounded
+            # P1'' stage below replaces the open-ended stabilize.
+            return 0
         return 4 * int(self._budget.max_training_steps)
+
+    def _post_stabilization_hook(self):
+        if not sync_exact_qat_active(self.pipeline.config):
+            return
+        if not getattr(self, "_fixed_ladder_policy", False):
+            return
+        # P1'' for sync: rate 1.0 through the ceil kernel + grid snap IS the
+        # exact deployed composition (T6) — train it to the D-hat high-water.
+        run_endpoint_recovery(
+            self,
+            base_steps=int(self.pipeline.config.get("endpoint_recovery_steps", 0)),
+        )
 
     def validate(self):
         if self._final_metric is not None:

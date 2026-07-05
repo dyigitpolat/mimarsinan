@@ -23,8 +23,9 @@ from mimarsinan.tuning.orchestration.conversion_policy import (
 _EXPECTED_KNOBS = {
     ("lif", None): {
         "lif_blend_fast": True,
-        "lif_blend_fast_stabilize_steps": 600,
         "lif_tanneal": True,
+        # P1'' budget = dropped inert Clamp/AQ ladders (960) + retired stabilize (600).
+        "endpoint_recovery_steps": 1560,
         "cycle_accurate_lif_forward": True,
         "fast_ladder_freeze_bn": True,
         "kd_ce_alpha": 0.5,
@@ -39,7 +40,8 @@ _EXPECTED_KNOBS = {
     ("ttfs_cycle_based", "cascaded"): {
         "ttfs_genuine_blend_ramp": True,
         "ttfs_genuine_blend_fast": True,
-        "ttfs_blend_fast_stabilize_steps": 300,
+        # P1'' budget = the retired 300-step stabilize (+ freed stall steps at runtime).
+        "endpoint_recovery_steps": 300,
         "tuning_full_transform_probe": True,
     },
     # synchronized rides the ttfs_quantized ladder shape but TRAINS the exact
@@ -51,6 +53,8 @@ _EXPECTED_KNOBS = {
         "manager_rate_fast_rates": [0.25, 0.5, 0.75, 1.0],
         "manager_rate_fast_steps_per_rate": 120,
         "sync_exact_qat": True,
+        # P1'' budget at the sync AQ endpoint (replaces the open-ended stabilize).
+        "endpoint_recovery_steps": 600,
     },
 }
 

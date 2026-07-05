@@ -33,7 +33,7 @@ def _make_tuner(tmp_path, *, fast=True, steps_per_rate=3, stabilize=0, rates=Non
     cfg["simulation_steps"] = 16
     cfg["ttfs_blend_fast"] = fast
     cfg["ttfs_blend_fast_steps_per_rate"] = steps_per_rate
-    cfg["ttfs_blend_fast_stabilize_steps"] = stabilize
+    cfg["endpoint_recovery_steps"] = stabilize
     if rates is not None:
         cfg["ttfs_blend_fast_rates"] = rates
     pipeline = MockPipeline(config=cfg, working_directory=str(tmp_path))

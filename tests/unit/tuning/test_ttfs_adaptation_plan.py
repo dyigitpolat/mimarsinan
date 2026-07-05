@@ -207,7 +207,7 @@ class TestOptimizationDriverAxis:
 class TestNumericPassThrough:
     def test_numeric_params_carried(self):
         p = _resolve(
-            ttfs_blend_fast_steps_per_rate=99, ttfs_blend_fast_stabilize_steps=321,
+            ttfs_blend_fast_steps_per_rate=99, endpoint_recovery_steps=321,
         )
         assert p.blend_fast_steps_per_rate == 99
-        assert p.fast_stabilize_steps == 321
+        assert p.endpoint_recovery_steps == 321

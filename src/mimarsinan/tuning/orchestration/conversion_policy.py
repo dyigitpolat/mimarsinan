@@ -10,8 +10,10 @@ OPTIMIZATION_DRIVER_FAST = "fast"
 
 _LIF_RECIPE_KNOBS = {
     "lif_blend_fast": True,
-    "lif_blend_fast_stabilize_steps": 600,
     "lif_tanneal": True,
+    # P1'' budget: the dropped inert Clamp/AQ ladders (2 x 4 x 120) plus the
+    # retired 600-step post-finalize stabilize.
+    "endpoint_recovery_steps": 1560,
     "cycle_accurate_lif_forward": True,
     "fast_ladder_freeze_bn": True,
     "kd_ce_alpha": 0.5,
@@ -25,11 +27,16 @@ _TTFS_QUANTIZED_RECIPE_KNOBS = {
 _SYNCHRONIZED_RECIPE_KNOBS = {
     **_TTFS_QUANTIZED_RECIPE_KNOBS,
     "sync_exact_qat": True,
+    # P1'' budget at the AQ endpoint (the sync conversion endpoint), replacing
+    # the open-ended AQ stabilize; stalls add their freed ladder steps.
+    "endpoint_recovery_steps": 600,
 }
 _CASCADED_RECIPE_KNOBS = {
     "ttfs_genuine_blend_ramp": True,
     "ttfs_genuine_blend_fast": True,
-    "ttfs_blend_fast_stabilize_steps": 300,
+    # P1'' budget: the retired 300-step stabilize; FT stalls add their freed
+    # ladder steps.
+    "endpoint_recovery_steps": 300,
     "tuning_full_transform_probe": True,
 }
 

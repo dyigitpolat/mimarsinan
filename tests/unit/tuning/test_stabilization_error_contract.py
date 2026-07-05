@@ -145,47 +145,84 @@ def _clamp_tuner(tmp_path):
     return ClampTuner(pipeline, model, 0.5, 0.001, manager, scales, stats)
 
 
-class TestFastStabilizePropagates:
-    def _script(self, t, script):
+class TestEndpointRecoveryPropagates:
+    """The P1'' endpoint stage's fp32 guard reads must fail loud, never swallow."""
+
+    def _prep(self, t, script):
+        from mimarsinan.tuning.orchestration import dhat_highwater, endpoint_recovery
+
+        dhat_highwater.observe(t.pipeline, 0.99)
+        t._phase_seconds = {}
+        t._fast_optimizer_steps = 0
+        t._rollback_tolerance = 0.02
         items = iter(script)
 
-        def _val(n=None):
+        def _read(tuner):
             item = next(items)
             if isinstance(item, Exception):
                 raise item
             return item
 
-        t.trainer.validate_n_batches = _val
+        return endpoint_recovery, _read
 
-    def test_pre_eval_error_propagates(self, tmp_path):
+    def test_entry_read_error_propagates(self, tmp_path, monkeypatch):
+        from mimarsinan.tuning.orchestration.endpoint_recovery import (
+            run_endpoint_recovery,
+        )
+
         t = _clamp_tuner(tmp_path)
         try:
-            self._script(t, [RuntimeError("val boom")])
+            module, read = self._prep(t, [RuntimeError("val boom")])
+            monkeypatch.setattr(module, "_fp32_deployed_read", read)
             with pytest.raises(RuntimeError, match="val boom"):
-                t._fast_stabilize(1)
+                run_endpoint_recovery(t, base_steps=1)
         finally:
             t.close()
 
-    def test_post_eval_error_propagates(self, tmp_path):
+    def test_exit_read_error_propagates(self, tmp_path, monkeypatch):
+        from mimarsinan.tuning.orchestration.endpoint_recovery import (
+            run_endpoint_recovery,
+        )
+        from mimarsinan.tuning.orchestration.recovery_engine import RecoveryEngine
+
         torch.manual_seed(0)
         t = _clamp_tuner(tmp_path)
         try:
-            self._script(t, [0.5, RuntimeError("val boom")])
+            module, read = self._prep(t, [0.5, RuntimeError("val boom")])
+            monkeypatch.setattr(module, "_fp32_deployed_read", read)
+            monkeypatch.setattr(
+                RecoveryEngine, "train_to_target",
+                staticmethod(lambda *a, **k: (0.5, 1)),
+            )
             with pytest.raises(RuntimeError, match="val boom"):
-                t._fast_stabilize(1)
+                run_endpoint_recovery(t, base_steps=1)
         finally:
             t.close()
 
-    def test_rollback_still_restores_on_regression(self, tmp_path):
+    def test_rollback_still_restores_on_regression(self, tmp_path, monkeypatch):
+        from mimarsinan.tuning.orchestration.endpoint_recovery import (
+            run_endpoint_recovery,
+        )
+        from mimarsinan.tuning.orchestration.recovery_engine import RecoveryEngine
+
         torch.manual_seed(0)
         t = _clamp_tuner(tmp_path)
         try:
-            t._rollback_tolerance = 0.02
+            module, read = self._prep(t, [0.85, 0.40])
+            monkeypatch.setattr(module, "_fp32_deployed_read", read)
             pre_snapshot = {k: v.clone() for k, v in t.model.state_dict().items()}
-            self._script(t, [0.85, 0.40])
-            t._fast_stabilize(1, loss_fn=lambda x, y: (
-                sum(p.sum() for p in t.model.parameters()) * 1e6
-            ))
+
+            def _corrupting_train(*a, **k):
+                with torch.no_grad():
+                    for p in t.model.parameters():
+                        p.fill_(999.0)
+                return 0.4, 1
+
+            monkeypatch.setattr(
+                RecoveryEngine, "train_to_target", staticmethod(_corrupting_train),
+            )
+            report = run_endpoint_recovery(t, base_steps=1)
+            assert report.rolled_back is True
             for k, pre in pre_snapshot.items():
                 assert torch.allclose(t.model.state_dict()[k], pre, atol=1e-6), k
         finally:

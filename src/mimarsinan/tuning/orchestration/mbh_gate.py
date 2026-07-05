@@ -7,7 +7,7 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
-from mimarsinan.tuning.orchestration import mbh_ledger
+from mimarsinan.tuning.orchestration import dhat_highwater, mbh_ledger
 
 ACCEPT_TOLERANCE = 0.01
 MAX_REFINEMENTS = 3
@@ -48,6 +48,7 @@ def gated_fast_rate_attempt(tuner, target: float) -> float:
             tuner, rate=rate, blended_acc=post_acc, measurements=measurements,
         )
         full_acc = float(measurements["full_acc"])
+        dhat_highwater.observe(tuner.pipeline, full_acc)
         if full_acc >= state.best_full_acc - ACCEPT_TOLERANCE:
             _accept(tuner, state, rate, post_acc, full_acc, t0)
             return rate
@@ -82,6 +83,7 @@ def _ensure_gate_state(tuner) -> MBHGateState:
     state = getattr(tuner, "_mbh_gate_state", None)
     if state is None:
         entry = float(mbh_ledger.full_transform_measurement(tuner))
+        dhat_highwater.observe(tuner.pipeline, entry)
         state = MBHGateState(best_full_acc=entry, best_state=tuner._clone_state())
         tuner._mbh_gate_state = state
         _log(tuner, f"entry best_full_acc={entry:.6f}")

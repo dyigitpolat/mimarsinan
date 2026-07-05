@@ -18,7 +18,7 @@ class TtfsAdaptationPlan:
     genuine_blend_fast: bool
     blend_fast_rates: list
     blend_fast_steps_per_rate: int
-    fast_stabilize_steps: int
+    endpoint_recovery_steps: int
     blend_fast_lr_eta_min: float
     driver: OptimizationDriver
     calibration: CalibrationPipeline
@@ -102,7 +102,7 @@ class TtfsAdaptationPlan:
             genuine_blend_fast=blend_fast,
             blend_fast_rates=blend_fast_rates,
             blend_fast_steps_per_rate=blend_fast_steps,
-            fast_stabilize_steps=int(get("ttfs_blend_fast_stabilize_steps", 0)),
+            endpoint_recovery_steps=int(get("endpoint_recovery_steps", 0)),
             blend_fast_lr_eta_min=eta_min,
             driver=driver,
             calibration=calibration,

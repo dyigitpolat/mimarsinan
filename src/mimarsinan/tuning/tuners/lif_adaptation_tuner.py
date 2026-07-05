@@ -14,6 +14,7 @@ from mimarsinan.tuning.orchestration.blend_ramp import (
     BlendActivation,
     run_teacher_distmatch,
 )
+from mimarsinan.tuning.orchestration.endpoint_recovery import run_endpoint_recovery
 from mimarsinan.tuning.orchestration.kd_blend_adaptation_tuner import (
     KDBlendAdaptationTuner,
     _InstalledForward,
@@ -100,8 +101,8 @@ class LIFAdaptationTuner(KDBlendAdaptationTuner):
         self._tanneal = derive_lif_tanneal_schedule(
             self.pipeline.config, ladder_rates=self._fixed_ladder_rates,
         )
-        self._fast_stabilize_steps = int(
-            self.pipeline.config.get("lif_blend_fast_stabilize_steps", 0)
+        self._endpoint_recovery_steps = int(
+            self.pipeline.config.get("endpoint_recovery_steps", 0)
         )
         self._lif_distmatch = bool(self.pipeline.config.get("lif_distmatch", False))
         self._lif_distmatch_bias_iters = int(
@@ -134,7 +135,9 @@ class LIFAdaptationTuner(KDBlendAdaptationTuner):
         if self._lif_distmatch:
             self._calibrate_to_teacher_distribution()
         if getattr(self, "_fixed_ladder_policy", False):
-            self._fast_stabilize(getattr(self, "_fast_stabilize_steps", 0))
+            # P1'': the chip-aligned NF forward is installed at finalize, so the
+            # endpoint stage trains the deployed composition itself.
+            run_endpoint_recovery(self, base_steps=self._endpoint_recovery_steps)
 
     def _calibrate_to_teacher_distribution(self) -> None:
         """DFQ-match the deployed LIF cascade's per-neuron mean to the frozen teacher ANN's.

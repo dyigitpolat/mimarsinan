@@ -20,6 +20,7 @@ from mimarsinan.tuning.orchestration.blend_ramp import (
     KDClassificationLoss,
     run_teacher_distmatch,
 )
+from mimarsinan.tuning.orchestration.endpoint_recovery import run_endpoint_recovery
 from mimarsinan.tuning.orchestration.genuine_probe import iter_val_batches
 from mimarsinan.tuning.orchestration.kd_blend_adaptation_tuner import (
     KDBlendAdaptationTuner,
@@ -194,7 +195,7 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
         self._proxy_fast = plan.proxy_fast
         self._blend_fast_rates = plan.blend_fast_rates
         self._blend_fast_steps_per_rate = plan.blend_fast_steps_per_rate
-        self._fast_stabilize_steps = plan.fast_stabilize_steps
+        self._endpoint_recovery_steps = plan.endpoint_recovery_steps
         self._adopt_optimization_driver(plan.driver)
         self._fast_full_transform_log = []
         self._blend_forward = None
@@ -458,10 +459,11 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
             self._probe_fast_full_transform(rate)
 
     def _post_stabilization_hook(self):
-        if not getattr(self, "_proxy_fast", False):
+        if not getattr(self, "_fixed_ladder_policy", False):
             return
-        steps = getattr(self, "_fast_stabilize_steps", 0)
-        self._fast_stabilize(steps)
+        # P1'': the genuine segment forward (cascaded) or the class analytical
+        # forward (proxy) is the deployed composition at this point.
+        run_endpoint_recovery(self, base_steps=self._endpoint_recovery_steps)
 
     def _installed_genuine_branch(self):
         """The PURE genuine-cascade branch of the owned ``BlendedGenuineForward``

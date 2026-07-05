@@ -112,7 +112,6 @@ class TestStructure:
             "_ensure_fast_optimizer",
             "_record_fast_cycle",
             "_build_fast_lr_schedule",
-            "_fast_stabilize",
         ):
             assert name not in KDBlendAdaptationTuner.__dict__, name
             assert name in FastLadderMixin.__dict__, name
@@ -121,7 +120,7 @@ class TestStructure:
         t = _clamp_tuner(tmp_path)
         try:
             for name in ("_setup_fast_ladder", "_fast_rate_attempt",
-                         "_fast_set_rate", "_fast_stabilize"):
+                         "_fast_set_rate"):
                 assert callable(getattr(t, name)), name
         finally:
             t.close()
