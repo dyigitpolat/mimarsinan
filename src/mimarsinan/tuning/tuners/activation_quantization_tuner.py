@@ -1,6 +1,9 @@
 """Tuner for gradual activation quantization."""
 
 from mimarsinan.tuning.adaptation_rate_tuner import AdaptationRateTuner
+from mimarsinan.tuning.orchestration.adaptation_manager import (
+    install_sync_entry_grid_snap,
+)
 
 
 class ActivationQuantizationTuner(AdaptationRateTuner):
@@ -11,6 +14,9 @@ class ActivationQuantizationTuner(AdaptationRateTuner):
         super().__init__(pipeline, model, target_accuracy, lr, adaptation_manager)
         self.target_tq = target_tq
         self._final_metric = None
+        # [MBH T6] exact-endpoint QAT also trains through the deployed per-stage
+        # input grid snap (no-op unless MIMARSINAN_MBH_SYNC_EXACT + synchronized).
+        install_sync_entry_grid_snap(self.model, self.pipeline.config)
 
     def _stabilization_budget(self):
         return 4 * int(self._budget.max_training_steps)

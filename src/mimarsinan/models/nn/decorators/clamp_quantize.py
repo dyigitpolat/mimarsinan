@@ -2,7 +2,13 @@
 
 from __future__ import annotations
 
-from mimarsinan.models.nn.activations.autograd import DifferentiableClamp, StaircaseFunction
+import torch
+
+from mimarsinan.models.nn.activations.autograd import (
+    DifferentiableClamp,
+    StaircaseFunction,
+    TTFSStaircaseFunction,
+)
 
 
 class ClampDecorator:
@@ -19,6 +25,28 @@ class ClampDecorator:
         self.clamp_min = self.clamp_min.to(x.device)
         self.clamp_max = self.clamp_max.to(x.device)
         return DifferentiableClamp.apply(x, self.clamp_min, self.clamp_max)
+
+
+class TTFSCeilStaircaseDecorator:
+    """The deployed TTFS ceil kernel ``y = θ·ceil_staircase(x/θ, S)`` with STE.
+
+    The exact synchronized/ttfs_quantized deployment activation (MBH T6
+    endpoint) — replaces the floor staircase + half-step shift QAT proxy."""
+
+    def __init__(self, simulation_steps, activation_scale):
+        self.simulation_steps = int(simulation_steps)
+        self.activation_scale = activation_scale
+
+    def input_transform(self, x):
+        return x
+
+    def output_transform(self, x):
+        scale = self.activation_scale
+        if not isinstance(scale, torch.Tensor):
+            scale = torch.tensor(float(scale))
+        scale = scale.to(device=x.device, dtype=x.dtype)
+        safe_scale = scale.clamp(min=1e-12)
+        return TTFSStaircaseFunction.apply(x / safe_scale, self.simulation_steps) * safe_scale
 
 
 class QuantizeDecorator:

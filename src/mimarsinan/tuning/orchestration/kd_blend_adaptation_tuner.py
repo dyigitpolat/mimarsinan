@@ -95,12 +95,7 @@ class KDBlendAdaptationTuner(CascadeForwardInstall, SmoothAdaptationTuner):
 
     def _append_encoding_input_module(self, perceptron, module: nn.Module) -> None:
         """Append a wire op (e.g. an STE input quantizer) after input_activation."""
-        if isinstance(perceptron.input_activation, nn.Identity):
-            perceptron.input_activation = module
-        else:
-            perceptron.input_activation = nn.Sequential(
-                perceptron.input_activation, module,
-            )
+        perceptron.append_input_wire_op(module)
 
     def _after_install_blend(self) -> None:
         """Strategy pre-step, the pre-install hook, the ramp forward, then the opt-in

@@ -1,6 +1,7 @@
-from mimarsinan.common.env import mbh_lif_realloc_enabled
+from mimarsinan.common.env import mbh_lif_realloc_enabled, mbh_sync_exact_enabled
 from mimarsinan.models.nn.layers import *
 from mimarsinan.models.nn.activations import LeakyGradReLU
+from mimarsinan.models.nn.decorators.clamp_quantize import TTFSCeilStaircaseDecorator
 from mimarsinan.models.nn.decorators.rate_buffer import RateBuffer
 from mimarsinan.tuning.shift_calculation import calculate_activation_shift
 
@@ -28,6 +29,76 @@ def mbh_lif_realloc_ladder_steps(pipeline_config, rate_attr, steps):
     if not is_lif(pipeline_config.get("spiking_mode", "lif")):
         return int(steps)
     return 0
+
+
+_SYNC_EXACT_QAT_ATTR = "_mbh_sync_exact_qat"
+_SYNC_GRID_SNAP_ATTR = "_mbh_sync_grid_snap_installed"
+
+
+def sync_exact_qat_active(pipeline_config) -> bool:
+    """[MBH T6] ``MIMARSINAN_MBH_SYNC_EXACT`` is on AND the resolved mode is synchronized ttfs_cycle."""
+    if not mbh_sync_exact_enabled():
+        return False
+    # Lazy: chip_simulation has a fragile import cycle with tuning at init time.
+    from mimarsinan.chip_simulation.deployment_contract import (
+        SpikingDeploymentContract,
+    )
+
+    return SpikingDeploymentContract.from_pipeline_config(pipeline_config).is_synchronized()
+
+
+def mark_sync_exact_qat(perceptron) -> None:
+    """Persistently mark ``perceptron`` as trained through the exact deployed ceil kernel."""
+    setattr(perceptron, _SYNC_EXACT_QAT_ATTR, True)
+
+
+def model_trained_sync_exact(model) -> bool:
+    """[MBH T6] Whether the model's QAT endpoint was the exact deployed ceil kernel (all-or-none).
+
+    Mixed marking fails loud: the mapping-time half-step bias compensation is a
+    per-model decision, so a partially exact-trained model has no sound bake."""
+    flags = [
+        bool(getattr(p, _SYNC_EXACT_QAT_ATTR, False)) for p in model.get_perceptrons()
+    ]
+    if not flags or not any(flags):
+        return False
+    assert all(flags), (
+        "MBH sync-exact QAT marker is inconsistent: "
+        f"{sum(flags)}/{len(flags)} perceptrons are marked; the exact-kernel "
+        "endpoint must cover every perceptron or none."
+    )
+    return True
+
+
+def install_sync_entry_grid_snap(model, pipeline_config) -> int:
+    """[MBH T6] Install the deployed per-stage input grid snap on segment-entry perceptrons.
+
+    Boundary input scales are propagated first so each snap normalizes by the
+    deployed consumer scale; the quantizer keeps the live ``input_activation_scale``
+    Parameter, so later re-propagation stays coherent. Idempotent; returns the
+    number of quantizers installed (0 when the flag/mode gate is off)."""
+    if not sync_exact_qat_active(pipeline_config):
+        return 0
+    from mimarsinan.models.nn.activations.autograd import TTFSInputGridQuantizer
+    # Lazy: the spiking package init pulls chip_simulation (import cycle).
+    from mimarsinan.spiking.scale_aware_boundaries import (
+        propagate_boundary_input_scales,
+    )
+    from mimarsinan.torch_mapping.encoding_layers import segment_entry_perceptrons
+
+    propagate_boundary_input_scales(model, input_data_scale=1.0)
+    installed = 0
+    for perceptron in segment_entry_perceptrons(model.get_mapper_repr()):
+        if getattr(perceptron, _SYNC_GRID_SNAP_ATTR, False):
+            continue
+        quantizer = TTFSInputGridQuantizer(
+            T=int(pipeline_config["simulation_steps"]),
+            activation_scale=perceptron.input_activation_scale,
+        )
+        perceptron.append_input_wire_op(quantizer)
+        setattr(perceptron, _SYNC_GRID_SNAP_ATTR, True)
+        installed += 1
+    return installed
 
 
 class AdaptationManager(nn.Module):
@@ -138,6 +209,20 @@ class AdaptationManager(nn.Module):
     
     def get_rate_adjusted_quantization_decorator(self, pipeline_config, perceptron):
         from mimarsinan.chip_simulation.spiking_semantics import requires_ttfs_firing
+
+        if sync_exact_qat_active(pipeline_config):
+            # [MBH T6] The QAT endpoint is the deployed ceil kernel itself; the
+            # floor + half-step proxy (and its mapping-time bias compensation)
+            # is bypassed for models trained this way.
+            mark_sync_exact_qat(perceptron)
+            return RateAdjustedDecorator(
+                self._rate_carrier("quantization_rate"),
+                TTFSCeilStaircaseDecorator(
+                    pipeline_config["simulation_steps"], perceptron.activation_scale
+                ),
+                NestedAdjustmentStrategy(
+                    [RandomMaskAdjustmentStrategy(), MixAdjustmentStrategy()]
+                ))
 
         use_ttfs = requires_ttfs_firing(pipeline_config.get("spiking_mode", "lif"))
         shift = calculate_activation_shift(

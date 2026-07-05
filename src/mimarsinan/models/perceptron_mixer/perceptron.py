@@ -123,6 +123,13 @@ class Perceptron(nn.Module):
             new_scale = torch.tensor(new_scale)
         self.input_activation_scale.data = new_scale.data
 
+    def append_input_wire_op(self, module):
+        """Append a wire op (e.g. an STE input quantizer) after ``input_activation``."""
+        if isinstance(self.input_activation, nn.Identity):
+            self.input_activation = module
+        else:
+            self.input_activation = nn.Sequential(self.input_activation, module)
+
     def set_scale_factor(self, new_scale):
         if isinstance(new_scale, float):
             new_scale = torch.tensor(new_scale)

@@ -19,6 +19,7 @@ EXACT_ONE_FLAGS = [
     (env.test_cuda_enabled, "MIMARSINAN_TEST_CUDA"),
     (env.mbh_ledger_enabled, "MIMARSINAN_MBH_LEDGER"),
     (env.mbh_lif_tanneal_enabled, "MIMARSINAN_MBH_LIF_TANNEAL"),
+    (env.mbh_sync_exact_enabled, "MIMARSINAN_MBH_SYNC_EXACT"),
 ]
 _FLAG_IDS = [var for _, var in EXACT_ONE_FLAGS]
 

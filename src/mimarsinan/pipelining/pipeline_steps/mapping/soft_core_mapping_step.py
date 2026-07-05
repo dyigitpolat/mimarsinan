@@ -27,6 +27,9 @@ from mimarsinan.transformations.pruning.committed_masks import (
     commit_perceptron_pruning,
     verify_committed_pruning,
 )
+from mimarsinan.tuning.orchestration.adaptation_manager import (
+    model_trained_sync_exact,
+)
 from mimarsinan.transformations.quantization_bounds import quantization_bounds
 
 from mimarsinan.pipelining.core.engine.pipeline_helpers import run_optional_viz
@@ -395,6 +398,19 @@ class SoftCoreMappingStep(PipelineStep):
             )
         # Bakes the half-step shift aligning the floor-trained decode to the deployed ceil kernel; idempotent per perceptron.
         if not plan.uses_ttfs_floor_ceil_convention or not act_q:
+            return
+        if model_trained_sync_exact(model):
+            # [MBH T6] The exact-kernel QAT endpoint already trains the deployed
+            # ceil convention; the half-step compensation exists solely to
+            # reconcile the floor proxy and would double-shift here.
+            assert plan.is_synchronized_ttfs, (
+                "sync-exact QAT marker on a non-synchronized plan: the exact-kernel "
+                "endpoint is only defined for the synchronized schedule."
+            )
+            print(
+                "[SoftCoreMappingStep] sync-exact QAT endpoint detected: "
+                "skipping TTFS half-step bias compensation."
+            )
             return
         apply_ttfs_quantization_bias_compensation(
             model, self.pipeline.config["target_tq"],
