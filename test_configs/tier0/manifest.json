@@ -46,8 +46,8 @@
       "expected_wall_min": 12
     },
     {
-      "name": "t0_03_lif_deepcnn_d8_wqaq_s16",
-      "config": "t0_03_lif_deepcnn_d8_wqaq_s16.json",
+      "name": "t0_03_lif_deepcnn_d8_wqaq_s16_sched",
+      "config": "t0_03_lif_deepcnn_d8_wqaq_s16_sched.json",
       "model_type": "deep_cnn",
       "cell": {
         "firing": "lif",
@@ -61,7 +61,9 @@
         "pruning": "dense",
         "encoding_placement": "subsume"
       },
-      "tags": [],
+      "tags": [
+        "sched"
+      ],
       "expected_wall_min": 12
     },
     {
@@ -372,8 +374,8 @@
       "expected_wall_min": 12
     },
     {
-      "name": "t0_19_casc_deepmlp_d16_wq_s16",
-      "config": "t0_19_casc_deepmlp_d16_wq_s16.json",
+      "name": "t0_19_casc_deepmlp_d16_wq_s16_residual",
+      "config": "t0_19_casc_deepmlp_d16_wq_s16_residual.json",
       "model_type": "deep_mlp",
       "cell": {
         "firing": "ttfs_cycle_based",
@@ -389,7 +391,8 @@
       },
       "tags": [
         "wall_risk",
-        "known_collapse_candidate"
+        "known_collapse_candidate",
+        "residual"
       ],
       "expected_wall_min": 6
     },

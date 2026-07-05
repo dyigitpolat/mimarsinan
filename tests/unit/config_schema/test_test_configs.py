@@ -166,3 +166,31 @@ class TestTier1Coverage:
         modes = {(c["firing"], c["sync"]) for c in cells}
         assert len(modes) == 5
         assert {c["regime"] for c in cells} == {"from_scratch", "pretrained"}
+
+
+class TestW2Respecs:
+    """W2 verdicts: t0_03 needs scheduling (packer-verified both ways) and
+    plain deep_mlp d16 is recipe-unreachable (residual is the trainable
+    backbone). USER DECISION 2026-07-06: residual respec, depth kept at 16."""
+
+    def test_t0_03_is_scheduled(self):
+        path = TEST_CONFIGS / "tier0" / "t0_03_lif_deepcnn_d8_wqaq_s16_sched.json"
+        cfg = json.loads(path.read_text())
+        assert cfg["deployment_parameters"]["allow_scheduling"] is True
+
+    def test_t0_19_is_residual_d16(self):
+        path = TEST_CONFIGS / "tier0" / "t0_19_casc_deepmlp_d16_wq_s16_residual.json"
+        cfg = json.loads(path.read_text())
+        model_config = cfg["deployment_parameters"]["model_config"]
+        assert model_config["residual"] is True
+        assert model_config["depth"] == 16
+
+    def test_old_unscheduled_and_plain_specs_are_gone(self):
+        tier0 = TEST_CONFIGS / "tier0"
+        assert not (tier0 / "t0_03_lif_deepcnn_d8_wqaq_s16.json").exists()
+        assert not (tier0 / "t0_19_casc_deepmlp_d16_wq_s16.json").exists()
+
+    def test_manifest_tags_carry_the_respec(self):
+        runs = {r["name"]: r for r in _manifest(0)["runs"]}
+        assert "sched" in runs["t0_03_lif_deepcnn_d8_wqaq_s16_sched"]["tags"]
+        assert "residual" in runs["t0_19_casc_deepmlp_d16_wq_s16_residual"]["tags"]

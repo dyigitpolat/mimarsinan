@@ -82,7 +82,9 @@ T0 = [
     dict(n=1, mode="lif", quant="wq", wb=5, s=4, vehicle="mmixcore"),
     dict(n=2, mode="lif", quant="fp", wb=5, s=8, vehicle="lenet5", firing="Novena",
          encoding="offload", pruned=0.5, tags=["novena", "offload", "pruned"]),
-    dict(n=3, mode="lif", quant="wqaq", wb=4, s=16, vehicle="deepcnn", depth=8),
+    # W2: the 360-core pool packs t0_03 only scheduled (111/360 peak over 4 phases).
+    dict(n=3, mode="lif", quant="wqaq", wb=4, s=16, vehicle="deepcnn", depth=8,
+         scheduling=True, tags=["sched"]),
     dict(n=4, mode="lif", quant="aq", wb=5, s=32, vehicle="deepmlp", depth=8),
     dict(n=5, mode="lif", quant="wq", wb=5, s=4, vehicle="simplemlp", seed=1),
     dict(n=6, mode="ttfs", quant="wq", wb=5, s=8, vehicle="mmixcore"),
@@ -103,8 +105,10 @@ T0 = [
     dict(n=17, mode="casc", quant="wqaq", wb=5, s=32, vehicle="lenet5", tags=["wall_risk"]),
     dict(n=18, mode="casc", quant="wq", wb=5, s=4, vehicle="deepcnn", depth=4, pruned=0.5,
          tags=["pruned", "known_collapse_candidate"]),
+    # W2: plain d16 is recipe-unreachable (5/5 runs at chance); residual is the
+    # trainable deep backbone (USER DECISION 2026-07-06: residual, depth kept).
     dict(n=19, mode="casc", quant="wq", wb=4, s=16, vehicle="deepmlp", depth=16,
-         tags=["wall_risk", "known_collapse_candidate"]),
+         residual=True, tags=["wall_risk", "known_collapse_candidate", "residual"]),
     dict(n=20, mode="casc", quant="wqaq", wb=5, s=4, vehicle="simplemlp"),
     dict(n=21, mode="sync", quant="wq", wb=5, s=8, vehicle="mmixcore", pruned=0.5, tags=["pruned"]),
     dict(n=22, mode="sync", quant="wq", wb=5, s=4, vehicle="lenet5", scheduling=True, tags=["sched"]),
@@ -163,7 +167,8 @@ def _name(tier, row, vehicles):
     v = row["vehicle"]
     depth = f"_d{row['depth']}" if "depth" in row else ""
     tags = "".join(f"_{t}" for t in row.get("tags", []) if t in
-                   ("offload", "sched", "nobias", "pruned", "novena", "identity"))
+                   ("offload", "sched", "nobias", "pruned", "novena", "identity",
+                    "residual"))
     return f"t{tier}_{row['n']:02d}_{row['mode']}_{v}{depth}_{row['quant']}_s{row['s']}{tags}"
 
 
@@ -191,6 +196,8 @@ def _deployment(tier, row, vehicles, dataset):
         model_config["depth"] = row["depth"]
     if "width" in row:
         model_config["width"] = row["width"]
+    if "residual" in row:
+        model_config["residual"] = row["residual"]
 
     dp = {
         "lr": row.get("lr", 0.003),

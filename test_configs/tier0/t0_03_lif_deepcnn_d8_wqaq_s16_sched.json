@@ -1,25 +1,25 @@
 {
   "seed": 0,
   "pipeline_mode": "phased",
-  "experiment_name": "t0_19_casc_deepmlp_d16_wq_s16",
+  "experiment_name": "t0_03_lif_deepcnn_d8_wqaq_s16_sched",
   "generated_files_path": "./generated",
   "data_provider_name": "MNIST_DataProvider",
   "platform_constraints": {
     "cores": [
       {
-        "max_axons": 784,
+        "max_axons": 1024,
         "max_neurons": 512,
-        "count": 60,
+        "count": 180,
         "has_bias": true
       },
       {
         "max_axons": 512,
         "max_neurons": 256,
-        "count": 60,
+        "count": 180,
         "has_bias": true
       }
     ],
-    "max_axons": 784,
+    "max_axons": 1024,
     "max_neurons": 512,
     "has_bias": true,
     "target_tq": 16,
@@ -30,28 +30,27 @@
   },
   "deployment_parameters": {
     "lr": 0.003,
-    "tuning_budget_scale": 0.5,
+    "tuning_budget_scale": 0.25,
     "degradation_tolerance": 0.15,
     "model_config_mode": "user",
     "hw_config_mode": "fixed",
-    "model_type": "deep_mlp",
+    "model_type": "deep_cnn",
     "model_config": {
-      "depth": 16,
-      "width": 64
+      "depth": 8,
+      "width": 16
     },
     "batch_size": 128,
     "max_simulation_samples": 100,
     "sanafe_arch_preset": "loihi",
     "sanafe_sample_count": 1,
-    "allow_scheduling": false,
-    "spiking_mode": "ttfs_cycle_based",
-    "firing_mode": "TTFS",
-    "spike_generation_mode": "TTFS",
-    "thresholding_mode": "<=",
+    "allow_scheduling": true,
+    "spiking_mode": "lif",
+    "firing_mode": "Default",
+    "spike_generation_mode": "Uniform",
+    "thresholding_mode": "<",
     "encoding_layer_placement": "subsume",
     "weight_quantization": true,
-    "activation_quantization": false,
-    "ttfs_cycle_schedule": "cascaded",
+    "activation_quantization": true,
     "training_epochs": 2,
     "training_recipe": {
       "optimizer": "adamw",
