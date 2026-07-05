@@ -113,6 +113,31 @@ class TestEnablement:
         assert nf_scm_parity_enabled(contract) is enabled
 
 
+class TestTorchSimParityEnablement:
+    """Decision-level torch↔deployed-sim gate arms for every mode with a
+    faithful identity executor — including LIF (the t0_03 blind spot: its
+    NF↔SCM divergence surfaced as a retention abort, never a parity error)."""
+
+    @pytest.mark.parametrize("mode,schedule,enabled", [
+        ("ttfs", None, True),
+        ("ttfs_cycle_based", "cascaded", True),
+        ("ttfs_cycle_based", "synchronized", True),
+        ("lif", None, True),
+        ("ttfs_quantized", None, False),
+    ])
+    def test_torch_sim_parity_enabled(self, mode, schedule, enabled):
+        from mimarsinan.chip_simulation.deployment_contract import (
+            SpikingDeploymentContract,
+        )
+        from mimarsinan.pipelining.core.nf_scm_parity import (
+            torch_sim_parity_enabled,
+        )
+
+        cfg = _pipeline(schedule, spiking_mode=mode).config
+        contract = SpikingDeploymentContract.from_pipeline_config(cfg)
+        assert torch_sim_parity_enabled(contract) is enabled
+
+
 class TestCascadedDecisionAgreement:
     """The cascaded gate compares decisions (argmax) against the genuine
     identity executor; per-neuron exactness is unattainable on WQ'd real models
@@ -320,6 +345,38 @@ class TestStepWiring:
         step = self._make_step(spiking_mode="ttfs", nf_scm_parity_samples=0)
         step._run_nf_scm_parity_gate(model=object(), ir_graph=object())
         assert calls == []
+
+    def test_lif_invokes_torch_sim_parity_gate(self, monkeypatch):
+        """LIF arms the decision-level torch↔deployed-sim gate (same threshold
+        discipline as casc/sync; the t0_03 defect must name itself as a parity
+        error, not a retention abort)."""
+        import mimarsinan.pipelining.core.nf_scm_parity as parity_mod
+        import mimarsinan.pipelining.pipeline_steps.mapping.soft_core_mapping_step as step_mod
+
+        calls = []
+
+        def _record(reference, flow, samples, *, min_agreement):
+            calls.append((reference, flow, samples, min_agreement))
+            return 1.0
+
+        monkeypatch.setattr(
+            parity_mod, "assert_torch_vs_deployed_sim_parity_or_raise", _record,
+        )
+        monkeypatch.setattr(parity_mod, "torch_parity_reference", lambda m: m)
+        monkeypatch.setattr(
+            step_mod, "build_identity_mapping_for_pipeline",
+            lambda ir_graph, pipeline_config=None: object(),
+        )
+        monkeypatch.setattr(
+            step_mod, "build_spiking_hybrid_flow",
+            lambda pipeline, mapping, model=None: object(),
+        )
+        step = self._make_step(spiking_mode="lif")
+        step.pipeline.config["firing_mode"] = "Default"
+        step.pipeline.config["thresholding_mode"] = "<"
+        step._run_torch_sim_parity_check(model=object(), ir_graph=object())
+        assert len(calls) == 1
+        assert calls[0][3] == pytest.approx(0.98)
 
 
 class TestParityGate:

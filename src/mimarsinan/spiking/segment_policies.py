@@ -23,15 +23,21 @@ class LifSegmentPolicy:
     (encoding) perceptrons run once on the decoded value and emit the uniform
     wire train of ``clamp(value / theta)`` (the deployed boundary contract)."""
 
+    _boundary_scales: dict | None = None
+
     def prepare(self, driver):
         from spikingjelly.activation_based import functional
+
+        from mimarsinan.spiking.scale_aware_boundaries import read_boundary_out_scales
 
         for p in driver.repr.get_perceptrons():
             functional.reset_net(p)
         self._set_all_cycle_accurate(driver, False)
+        self._boundary_scales = read_boundary_out_scales(driver.repr)
 
     def finalize(self, driver):
         self._set_all_cycle_accurate(driver, False)
+        self._boundary_scales = None
 
     @staticmethod
     def _lif_of(perceptron):
@@ -58,6 +64,8 @@ class LifSegmentPolicy:
         T = driver.T
         deps_map = driver._deps
         seg_set = set(seg_nodes)
+        boundary_scales = self._boundary_scales
+        assert boundary_scales is not None, "prepare() must run before run_segment()"
         node_train: dict = {}
         node_rate: dict = {}
 
@@ -65,11 +73,19 @@ class LifSegmentPolicy:
             return node_rate[dep] if dep in seg_set else values[dep]
 
         def train_of(dep):
-            """Per-cycle train for ``dep``; encode (uniform, clamped) if only a rate exists."""
+            """Per-cycle train for ``dep``; encode (uniform, clamped) if only a rate exists.
+
+            A rate-only boundary re-encode is value-domain: ``uniform(rate) *
+            producer out-scale`` — the deployed IR fold bakes the same scale into
+            the consumer's weights (the W1c t0_03 host-op-boundary contract).
+            """
             t = node_train.get(dep)
             if t is not None:
                 return t
             t = uniform_spike_train(rate_of(dep).clamp(0.0, 1.0), T)
+            scale = boundary_scales.get(dep, 1.0)
+            if scale != 1.0:
+                t = t * scale
             node_train[dep] = t
             return t
 

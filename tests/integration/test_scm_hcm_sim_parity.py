@@ -50,6 +50,9 @@ def _tiny_setup(platform_constraints):
     # test checks sim-path parity, not deployment validity, so skip the
     # on-chip-majority gate (same opt-out as the other tiny-fixture SCM tests).
     cfg["onchip_majority_gate"] = False
+    # The raw toy NF is not the LIF-adapted chip-aligned forward the W1c parity
+    # gate holds against the sim (gate covered by test_nf_scm_parity_gate.py).
+    cfg["scm_torch_sim_parity_check"] = False
 
     model = make_tiny_supermodel()
     for p in model.get_perceptrons():

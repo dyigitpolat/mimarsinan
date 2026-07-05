@@ -42,6 +42,9 @@ def _run_soft_core_mapping_then_verification(
     # is offloaded); this fixture exercises core-weight quantization, not the
     # on-chip-majority gate (covered by test_onchip_majority.py).
     mock_pipeline.config["onchip_majority_gate"] = False
+    # The raw toy NF is not the LIF-adapted chip-aligned forward the W1c parity
+    # gate holds against the sim (gate covered by test_nf_scm_parity_gate.py).
+    mock_pipeline.config["scm_torch_sim_parity_check"] = False
 
     mock_pipeline.seed("fused_model", fused_model, step_name="Normalization Fusion")
     mock_pipeline.seed(

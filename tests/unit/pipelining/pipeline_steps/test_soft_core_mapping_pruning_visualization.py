@@ -76,6 +76,9 @@ def _run_soft_core_mapping(mock_pipeline, fused_model, platform_constraints_dict
     # is host-majority by construction; the on-chip-majority gate is a separate
     # concern (covered by test_onchip_majority.py) and is muted here.
     mock_pipeline.config["onchip_majority_gate"] = False
+    # The raw toy NF is not the LIF-adapted chip-aligned forward the W1c parity
+    # gate holds against the sim (gate covered by test_nf_scm_parity_gate.py).
+    mock_pipeline.config["scm_torch_sim_parity_check"] = False
 
     mock_pipeline.seed("fused_model", fused_model, step_name="Normalization Fusion")
     mock_pipeline.seed(

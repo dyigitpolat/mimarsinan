@@ -320,9 +320,7 @@ class SoftCoreMappingStep(PipelineStep):
         if not bool(self.pipeline.config.get("scm_torch_sim_parity_check", True)):
             return
         contract = build_deployment_contract(self.pipeline)
-        if not (
-            nf_scm_parity.nf_scm_parity_enabled(contract) or contract.is_synchronized()
-        ):
+        if not nf_scm_parity.torch_sim_parity_enabled(contract):
             return
         n = int(self.pipeline.config.get("scm_torch_sim_parity_samples", 256))
         if n <= 0:

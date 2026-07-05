@@ -53,6 +53,22 @@ def nf_scm_parity_enabled(contract: Any) -> bool:
     return contract.training_forward_kind() == "analytical_staircase"
 
 
+def torch_sim_parity_enabled(contract: Any) -> bool:
+    """Whether the decision-level torch↔deployed-sim gate arms for this mode.
+
+    Every mode with a faithful identity executor gets it: analytic/cascaded TTFS,
+    the synchronized grid-snap, and LIF rate cascades (W1c: the LIF gap let the
+    t0_03 NF↔SCM defect surface as a retention abort instead of a parity error).
+    """
+    from mimarsinan.chip_simulation.spiking_semantics import is_lif
+
+    return (
+        nf_scm_parity_enabled(contract)
+        or contract.is_synchronized()
+        or is_lif(contract.spiking_mode)
+    )
+
+
 def assert_nf_scm_parity_or_raise(
     pipeline,
     model,

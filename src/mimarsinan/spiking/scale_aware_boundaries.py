@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
-from mimarsinan.mapping.mappers.scale_propagation import walk_out_scales
+import torch
+
+from mimarsinan.mapping.mappers.scale_propagation import (
+    mean_source_scale,
+    walk_out_scales,
+)
 
 
 def _as_model_repr(model_repr_or_model):
@@ -10,6 +15,29 @@ def _as_model_repr(model_repr_or_model):
     if hasattr(model_repr_or_model, "_ensure_exec_graph"):
         return model_repr_or_model
     return model_repr_or_model.get_mapper_repr()
+
+
+def read_boundary_out_scales(model_repr_or_model, input_data_scale: float = 1.0) -> dict:
+    """Pure (no-mutation) twin of :func:`propagate_boundary_input_scales`.
+
+    Per-node scalar out-scales: a perceptron-bearing node yields its
+    activation_scale (mean-collapsed), every other node passes through the mean
+    of its sources' scales — the same aggregation the deployed IR fold bakes
+    into consumer weights (per_input_scales).
+    """
+    model_repr = _as_model_repr(model_repr_or_model)
+    default = float(input_data_scale)
+
+    def visit(node, deps, out_scales):
+        perceptron = getattr(node, "perceptron", None)
+        if perceptron is not None:
+            scale = perceptron.activation_scale
+            if isinstance(scale, torch.Tensor):
+                return float(scale.detach().to(torch.float64).mean())
+            return float(scale)
+        return mean_source_scale(deps, out_scales, default)
+
+    return walk_out_scales(model_repr, visit)
 
 
 def propagate_boundary_input_scales(model_repr_or_model, input_data_scale: float = 1.0):
