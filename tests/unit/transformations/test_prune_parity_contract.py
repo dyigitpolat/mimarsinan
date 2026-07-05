@@ -97,16 +97,24 @@ class TestEffectiveBiasTransformGuard:
             eff[pruned], torch.zeros(int(pruned.sum())), rtol=0, atol=1e-6,
         )
 
-    def test_non_finite_raw_bias_fails_loud(self):
-        """A LIVE row with an exactly-zero fold factor inverts to inf; the
-        transform must raise instead of committing a non-finite parameter."""
+    def test_zero_fold_factor_live_row_is_handled_totally(self):
+        """A LIVE row with an exactly-zero fold factor used to invert to inf
+        (guarded by a raise); the total inversion now realizes the delta through
+        the normalization beta with bounded, finite raw params (W2 fix A)."""
         p, _ = _pruned_perceptron()
         with torch.no_grad():
             p.normalization.weight[0] = 0.0  # unpruned row, u == 0
-        with pytest.raises(RuntimeError, match="non-finite"):
-            PerceptronTransformer().apply_effective_bias_transform(
-                p, lambda b: b + 0.125,
-            )
+        raw_before = p.layer.bias.detach().clone()
+        eff_before = PerceptronTransformer().get_effective_bias(p).detach().clone()
+        PerceptronTransformer().apply_effective_bias_transform(
+            p, lambda b: b + 0.125,
+        )
+        assert torch.isfinite(p.layer.bias.detach()).all()
+        assert torch.equal(p.layer.bias.detach()[0], raw_before[0])
+        eff = PerceptronTransformer().get_effective_bias(p).detach()
+        torch.testing.assert_close(
+            eff[0], eff_before[0] + 0.125, rtol=1e-5, atol=1e-6,
+        )
 
 
 class TestEffectiveWeightTransformGuard:
@@ -121,14 +129,19 @@ class TestEffectiveWeightTransformGuard:
             torch.zeros(int(prune_mask.sum())),
         )
 
-    def test_non_finite_raw_weight_fails_loud(self):
+    def test_zero_fold_factor_live_row_keeps_raw_weights(self):
+        """A LIVE row with u == 0 used to invert to inf (guarded by a raise);
+        the total inversion keeps its raw weights unchanged (its effective
+        weight is ~0 and stays so; W2 fix A)."""
         p, _ = _pruned_perceptron()
         with torch.no_grad():
             p.normalization.weight[0] = 0.0
-        with pytest.raises(RuntimeError, match="non-finite"):
-            PerceptronTransformer().apply_effective_weight_transform(
-                p, lambda w: w + 1.0,
-            )
+        w_before = p.layer.weight.detach().clone()
+        PerceptronTransformer().apply_effective_weight_transform(
+            p, lambda w: w + 1.0,
+        )
+        assert torch.isfinite(p.layer.weight.detach()).all()
+        assert torch.equal(p.layer.weight.detach()[0], w_before[0])
 
 
 # ── the committed-mask SSOT helpers (hooks + direct form share one mechanism) ──

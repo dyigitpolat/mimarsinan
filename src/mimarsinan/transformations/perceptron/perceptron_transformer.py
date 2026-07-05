@@ -5,6 +5,15 @@ from mimarsinan.transformations.pruning.committed_masks import (
     commit_perceptron_pruning,
 )
 
+_DEGENERATE_U_EPS = 1e-6
+"""Below this |u| = |gamma/sigma| a channel is structurally dead: its raw
+parameter is unobservable through the normalization, so effective->raw
+division is numerically meaningless."""
+
+_RAW_WRITE_AMPLIFICATION_BOUND = 1e3
+"""Max tolerated |raw write| / |effective delta| before the bias inversion
+routes the delta through the normalization affine instead of dividing by u."""
+
 
 class PerceptronTransformer:
     def __init__(self):
@@ -84,7 +93,16 @@ class PerceptronTransformer:
             new_weight = (weight_transform(effective_weight) * act) / scale
         else:
             u, beta, mean = self._get_u_beta_mean(perceptron.normalization)
-            new_weight = ((weight_transform(effective_weight) * act) / scale) / u.unsqueeze(-1)
+            raw = perceptron.layer.weight.data
+            dead = (u.abs() < _DEGENERATE_U_EPS).unsqueeze(-1)
+            u_bc = u.unsqueeze(-1)
+            while u_bc.dim() < raw.dim():
+                u_bc = u_bc.unsqueeze(-1)
+                dead = dead.unsqueeze(-1)
+            safe_u = torch.where(dead, torch.ones_like(u_bc), u_bc)
+            inverted = ((weight_transform(effective_weight) * act) / scale) / safe_u
+            # Dead channels keep their raw weights: their effective weight is ~0 and stays so.
+            new_weight = torch.where(dead, raw, inverted)
         self._commit_raw_write(
             perceptron, perceptron.layer.weight, new_weight, "weight",
         )
@@ -93,14 +111,49 @@ class PerceptronTransformer:
         if perceptron.layer.bias is None:
             return
         effective_bias = self.get_effective_bias(perceptron)
+        target = bias_transform(effective_bias)
+        act = perceptron.activation_scale
 
         if isinstance(perceptron.normalization, nn.Identity):
-            new_bias = bias_transform(effective_bias) * perceptron.activation_scale
-        else:
-            u, beta, mean = self._get_u_beta_mean(perceptron.normalization)
-            new_bias = ((bias_transform(effective_bias) * perceptron.activation_scale - beta) / u) + mean
+            self._commit_raw_write(
+                perceptron, perceptron.layer.bias, target * act, "bias",
+            )
+            return
+
+        u, beta, mean = self._get_u_beta_mean(perceptron.normalization)
+        raw = perceptron.layer.bias.data
+        structurally_dead = u.abs() < _DEGENERATE_U_EPS
+        safe_u = torch.where(structurally_dead, torch.ones_like(u), u)
+        inverted = ((target * act - beta) / safe_u) + mean
+        delta_effective = (target - effective_bias) * act
+        amplified = (
+            (inverted - raw).abs()
+            > _RAW_WRITE_AMPLIFICATION_BOUND * delta_effective.abs()
+        ) & (delta_effective.abs() > 0)
+        degenerate = structurally_dead | amplified
+        if bool(degenerate.any()):
+            self._realize_effective_bias_through_normalization(
+                perceptron, degenerate, target, act, raw, u, mean
+            )
+        new_bias = torch.where(degenerate, raw, inverted)
         self._commit_raw_write(
             perceptron, perceptron.layer.bias, new_bias, "bias",
+        )
+
+    def _realize_effective_bias_through_normalization(
+        self, perceptron, degenerate, target, act, raw, u, mean
+    ):
+        """On degenerate channels the raw bias is unobservable through the fold
+        factor u, so write the requested effective bias EXACTLY into the
+        normalization affine (beta_new = target*act - (raw-mean)*u; raw unchanged)."""
+        norm_bias = perceptron.normalization.bias
+        new_beta = target * act - (raw - mean) * u
+        with torch.no_grad():
+            norm_bias.data = torch.where(degenerate, new_beta, norm_bias.data)
+        print(
+            f"[PerceptronTransformer] {getattr(perceptron, 'name', '<unnamed>')}: "
+            f"routed {int(degenerate.sum())} degenerate-channel bias delta(s) "
+            "through normalization beta (total inversion)"
         )
 
     def _get_u_beta_mean(self, bn_layer):
