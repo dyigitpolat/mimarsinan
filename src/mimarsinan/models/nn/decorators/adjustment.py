@@ -7,6 +7,30 @@ import torch.nn as nn
 
 from mimarsinan.models.nn.decorators.rate_buffer import RateBuffer
 
+_ACTIVATION_TREE_CHILD_ATTRS = (
+    "base_activation", "decorator", "adjustment_strategy", "target_activation",
+)
+_ACTIVATION_TREE_SEQ_ATTRS = ("decorators", "strategies")
+
+
+def iter_activation_tree(node, seen=None):
+    """Yield every object reachable from an activation ``node`` through the
+    decorator/strategy containers (the shared walk under the stochastic-decision
+    and shift-neutralization traversals)."""
+    if seen is None:
+        seen = set()
+    if node is None or id(node) in seen:
+        return
+    seen.add(id(node))
+    yield node
+    for attr in _ACTIVATION_TREE_CHILD_ATTRS:
+        yield from iter_activation_tree(getattr(node, attr, None), seen)
+    for attr in _ACTIVATION_TREE_SEQ_ATTRS:
+        seq = getattr(node, attr, None)
+        if isinstance(seq, (list, tuple)):
+            for child in seq:
+                yield from iter_activation_tree(child, seen)
+
 
 class RandomMaskAdjustmentStrategy:
     # ``generator=None`` preserves the legacy global-RNG draw bit-for-bit; a seeded generator makes the mask reproducible.

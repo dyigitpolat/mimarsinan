@@ -8,6 +8,9 @@ import torch
 from mimarsinan.transformations.perceptron.perceptron_transformer import PerceptronTransformer
 from mimarsinan.tuning.shift_calculation import calculate_activation_shift
 
+TTFS_COMP_BAKED_FLAG = "_ttfs_shift_baked_into_bias"
+"""Perceptron marker: the TTFS half-step compensation is baked into its bias."""
+
 
 def apply_additive_effective_bias_shift(perceptron, shift, *, baked_flag: str) -> bool:
     """Idempotently add ``shift`` to the effective bias; True when baked by this call."""
@@ -54,7 +57,7 @@ def apply_ttfs_quantization_bias_compensation(model, target_tq: int) -> None:
         apply_additive_effective_bias_shift(
             perceptron,
             shift / perceptron.activation_scale,
-            baked_flag="_ttfs_shift_baked_into_bias",
+            baked_flag=TTFS_COMP_BAKED_FLAG,
         )
 
 

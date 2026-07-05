@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 from collections import defaultdict
 from typing import Any, Dict, List
 
@@ -173,6 +174,43 @@ def assert_cascaded_nf_scm_agreement_or_raise(
             f"wrong-NF-dynamics incident class craters this)"
         )
     return agreement
+
+
+def torch_parity_reference(model):
+    """The torch side of the deployed-sim parity check, corrected for the
+    floor-convention double shift (T6 Part A).
+
+    The mapping-time half-step bias compensation is baked BEFORE this gate runs,
+    while the trained activation stack still carries the training-time half-step
+    ShiftDecorator — the raw reference would read half a level high. Neutralize
+    the trained shift on the comp-baked perceptrons of a DEEPCOPY (encoders keep
+    their trained convention: they deploy as host ops running the trained torch
+    module). Returns ``model`` itself when nothing is baked.
+    """
+    # Lazy: mapping.support pulls transformations/tuning; keep this module's
+    # import surface minimal like its chip_simulation imports.
+    from mimarsinan.mapping.support.bias_compensation import TTFS_COMP_BAKED_FLAG
+
+    perceptrons = list(model.get_perceptrons())
+    baked = [bool(getattr(p, TTFS_COMP_BAKED_FLAG, False)) for p in perceptrons]
+    if not any(baked):
+        return model
+    reference = copy.deepcopy(model)
+    for perceptron, is_baked in zip(reference.get_perceptrons(), baked):
+        if is_baked:
+            _neutralize_trained_halfstep(perceptron)
+    return reference
+
+
+def _neutralize_trained_halfstep(perceptron) -> None:
+    """Zero every ShiftDecorator in the perceptron's activation stack (on the
+    floor path the only shift is the quantize decorator's trained half-step)."""
+    from mimarsinan.models.nn.decorators.adjustment import iter_activation_tree
+    from mimarsinan.models.nn.decorators.transforms import ShiftDecorator
+
+    for node in iter_activation_tree(perceptron.activation):
+        if isinstance(node, ShiftDecorator):
+            node.shift = torch.zeros_like(torch.as_tensor(node.shift))
 
 
 def assert_torch_vs_deployed_sim_parity_or_raise(

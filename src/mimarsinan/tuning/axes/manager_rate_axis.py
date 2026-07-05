@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import torch
 
-from mimarsinan.models.nn.decorators.adjustment import RandomMaskAdjustmentStrategy
+from mimarsinan.models.nn.decorators.adjustment import (
+    RandomMaskAdjustmentStrategy,
+    iter_activation_tree,
+)
 from mimarsinan.models.nn.decorators.transforms import NoisyDropout
 from mimarsinan.tuning.axes.adaptation_axis import AdaptationAxisBase
 from mimarsinan.tuning.perceptron_rate import apply_manager_rate, rebuild_activations
@@ -14,28 +17,14 @@ _INPLACE_ELIGIBLE_RATES = frozenset(
     {"quantization_rate", "clamp_rate", "activation_adaptation_rate"}
 )
 
-_DECISION_CHILD_ATTRS = ("base_activation", "decorator", "adjustment_strategy", "target_activation")
-_DECISION_SEQ_ATTRS = ("decorators", "strategies")
 
-
-def _iter_decision_objects(node, seen=None):
+def _iter_decision_objects(node):
     """Yield the stochastic-decision objects (``RandomMaskAdjustmentStrategy`` /
     ``NoisyDropout``) reachable from an activation node through its decorator and
     strategy containers."""
-    if seen is None:
-        seen = set()
-    if node is None or id(node) in seen:
-        return
-    seen.add(id(node))
-    if isinstance(node, (RandomMaskAdjustmentStrategy, NoisyDropout)):
-        yield node
-    for attr in _DECISION_CHILD_ATTRS:
-        yield from _iter_decision_objects(getattr(node, attr, None), seen)
-    for attr in _DECISION_SEQ_ATTRS:
-        seq = getattr(node, attr, None)
-        if isinstance(seq, (list, tuple)):
-            for child in seq:
-                yield from _iter_decision_objects(child, seen)
+    for obj in iter_activation_tree(node):
+        if isinstance(obj, (RandomMaskAdjustmentStrategy, NoisyDropout)):
+            yield obj
 
 
 class ManagerRateAxis(AdaptationAxisBase):

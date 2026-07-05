@@ -10,6 +10,8 @@ of record and the four "the torch metric lied" failure modes fail LOUD:
     metric-protocol rewire fail loud.
 """
 
+from types import SimpleNamespace
+
 import pytest
 import torch
 
@@ -95,7 +97,8 @@ class TestTorchSimParityIsStanding:
 
         step = self._make_step("ttfs_cycle_based")
         assert "scm_torch_sim_parity_check" not in step.pipeline.config
-        step._run_torch_sim_parity_check(model=object(), ir_graph=object())
+        model = SimpleNamespace(get_perceptrons=lambda: [])
+        step._run_torch_sim_parity_check(model=model, ir_graph=object())
         assert built == [1], "torch<->sim parity gate must be standing (default-on)"
 
     def test_can_be_explicitly_disabled(self, monkeypatch):

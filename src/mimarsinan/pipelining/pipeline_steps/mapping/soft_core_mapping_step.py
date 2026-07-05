@@ -321,8 +321,12 @@ class SoftCoreMappingStep(PipelineStep):
             ir_graph, pipeline_config=self.pipeline.config,
         )
         flow = build_spiking_hybrid_flow(self.pipeline, identity_mapping, model=model)
+        # The torch reference is corrected for the floor-convention double shift
+        # (comp baked above while the trained ShiftDecorator is still installed);
+        # the deployed flow keeps the real artifact and the threshold is unchanged.
+        reference = nf_scm_parity.torch_parity_reference(model)
         agreement = nf_scm_parity.assert_torch_vs_deployed_sim_parity_or_raise(
-            model, flow, samples,
+            reference, flow, samples,
             min_agreement=float(
                 self.pipeline.config.get("scm_torch_sim_parity_min_agreement", 0.98)
             ),
