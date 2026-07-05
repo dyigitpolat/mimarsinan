@@ -43,9 +43,10 @@ _SYNCHRONIZED_RECIPE_KNOBS = {
 _CASCADED_RECIPE_KNOBS = {
     "ttfs_genuine_blend_ramp": True,
     "ttfs_genuine_blend_fast": True,
-    # P1'' budget: the retired 300-step stabilize; FT stalls add their freed
-    # ladder steps.
-    "endpoint_recovery_steps": 300,
+    # P1'' budget: W3 reinvests reclaimed eval wall here — the only endpoint
+    # bound that BINDS while still improving (X3: t0_20/t0_16 FT 300/300,
+    # t0_18 294/300, all climbing at cutoff); patience stops saturated cells.
+    "endpoint_recovery_steps": 600,
     "tuning_full_transform_probe": True,
 }
 

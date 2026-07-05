@@ -47,8 +47,9 @@ _MODE_KNOBS = {
     ("ttfs_cycle_based", "cascaded"): {
         "ttfs_genuine_blend_ramp": True,
         "ttfs_genuine_blend_fast": True,
-        # P1'' budget = the retired 300-step stabilize (+ freed stall steps at runtime).
-        "endpoint_recovery_steps": 300,
+        # P1'' budget = W3 reinvestment of reclaimed eval wall: the FT endpoint
+        # was the only bound binding while still improving (X3 300/300 cutoffs).
+        "endpoint_recovery_steps": 600,
         "tuning_full_transform_probe": True,
     },
     # synchronized rides the ttfs_quantized ladder shape but TRAINS the exact

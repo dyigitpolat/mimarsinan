@@ -171,7 +171,8 @@ def test_cascaded_folds_genuine_blend_fast():
     assert dp["optimization_driver"] == "fast"
     assert dp["ttfs_genuine_blend_ramp"] is True
     assert dp["ttfs_genuine_blend_fast"] is True
-    assert dp["endpoint_recovery_steps"] == 300
+    # W3 reinvestment: reclaimed eval wall flows to the binding FT endpoint.
+    assert dp["endpoint_recovery_steps"] == 600
     assert dp["tuning_full_transform_probe"] is True
     assert dp["enable_loihi_simulation"] is False
 
