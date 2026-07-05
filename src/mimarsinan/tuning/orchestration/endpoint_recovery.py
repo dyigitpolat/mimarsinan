@@ -81,6 +81,7 @@ def run_endpoint_recovery(tuner, *, base_steps) -> EndpointRecoveryReport:
             min_improvement=tuner._budget.accuracy_se(),
             cosine_decay=True,
             return_steps=True,
+            final_validation=False,
         )
         exit_read = _fp32_deployed_read(tuner)
         tol = float(getattr(tuner, "_rollback_tolerance", 0.0))

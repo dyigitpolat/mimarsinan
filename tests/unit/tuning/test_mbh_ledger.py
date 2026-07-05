@@ -416,11 +416,12 @@ class TestGateGradeFp32Precision:
         with torch.autocast("cpu", dtype=torch.bfloat16):
             assert fp32_eval_forward_over_val(trainer, model, model, 1, "cpu") == 1.0
 
-    def test_mbh_rung_reads_agree_fp32_vs_fp32_under_ambient_autocast(self):
+    def test_mbh_rung_reads_agree_fp32_vs_fp32_under_ambient_autocast(self, monkeypatch):
         # Blended and D-hat must be like-for-like: both fp32, even when the
-        # surrounding code runs an autocast region.
+        # surrounding code runs an autocast region (ledger on: blended measured).
         from mimarsinan.tuning.orchestration.mbh_ledger import rung_measurements
 
+        _set_flag(monkeypatch, True)
         model, trainer = _bin_edge_fixture()
         tuner = _StubTuner(model, trainer)
         with torch.autocast("cpu", dtype=torch.bfloat16):
@@ -444,9 +445,10 @@ class TestGateGradeFp32Precision:
 # -- (e) the alignment probe is verbose diagnostics only ---------------------------
 
 class TestAlignmentIsLedgerOnly:
-    def test_rho_skipped_without_the_flag(self, monkeypatch):
+    def test_rho_and_blended_skipped_without_the_flag(self, monkeypatch):
         # The default gate consumes full_acc only; rho costs an extra clone and
-        # two backward passes, so it runs only under the ledger flag.
+        # two backward passes, and blended_fp32 a full extra probe eval, so both
+        # run only under the ledger flag (A4 eval consolidation).
         from mimarsinan.tuning.orchestration.mbh_ledger import rung_measurements
 
         _set_flag(monkeypatch, False)
@@ -454,9 +456,10 @@ class TestAlignmentIsLedgerOnly:
         tuner = _StubTuner(model, trainer)
         m = rung_measurements(tuner)
         assert math.isnan(m["rho"]) and math.isnan(m["grad_norm_t"])
-        assert m["blended_fp32"] == 1.0 and m["full_acc"] == 1.0
+        assert math.isnan(m["blended_fp32"])
+        assert m["full_acc"] == 1.0
 
-    def test_rho_computed_with_the_flag(self, monkeypatch):
+    def test_rho_and_blended_computed_with_the_flag(self, monkeypatch):
         from mimarsinan.tuning.orchestration.mbh_ledger import rung_measurements
 
         _set_flag(monkeypatch, True)
@@ -464,3 +467,4 @@ class TestAlignmentIsLedgerOnly:
         tuner = _StubTuner(model, trainer)
         m = rung_measurements(tuner)
         assert not math.isnan(m["grad_norm_t"])
+        assert m["blended_fp32"] == 1.0

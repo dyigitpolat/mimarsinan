@@ -80,7 +80,7 @@ class TestGradualContract:
 
 
 class TestLIFGradualRamp:
-    def test_lif_adaptation_ramps_gradually(self, mock_pipeline):
+    def test_lif_adaptation_ramps_gradually(self, mock_pipeline, deterministic_rng):
         _seed(
             mock_pipeline, spiking_mode="lif",
             cycle_accurate_lif_forward=True,
@@ -90,7 +90,7 @@ class TestLIFGradualRamp:
 
 
 class TestTTFSCycleGradualRamp:
-    def test_ttfs_cycle_cascaded_ramps_gradually(self, mock_pipeline):
+    def test_ttfs_cycle_cascaded_ramps_gradually(self, mock_pipeline, deterministic_rng):
         _seed(
             mock_pipeline, spiking_mode="ttfs_cycle_based",
             ttfs_cycle_schedule="cascaded",

@@ -85,6 +85,7 @@ class SmoothAdaptationRunMixin(TunerBase):
                 min_steps=budget,
                 min_improvement=self._budget.accuracy_se() / 2,
                 hooks=hooks,
+                final_validation=False,
             )
             if round_idx == rounds - 1:
                 break
@@ -137,6 +138,7 @@ class SmoothAdaptationRunMixin(TunerBase):
             min_improvement=self._budget.accuracy_se() / 2,
             hooks=hooks,
             cosine_decay=True,
+            final_validation=False,
         )
 
         post_val = float(self.trainer.validate_n_batches(n_eval))

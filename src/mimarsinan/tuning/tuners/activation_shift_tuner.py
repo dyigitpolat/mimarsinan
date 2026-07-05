@@ -76,6 +76,7 @@ class ActivationShiftTuner(OneShotRateTunerSeamMixin, TunerBase):
             patience=5,
             min_steps=self._budget.check_interval * 3,
             min_improvement=self._budget.accuracy_se(),
+            final_validation=False,
         )
         self._final_metric = self.trainer.validate()
         return self._final_metric

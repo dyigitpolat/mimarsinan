@@ -114,6 +114,34 @@ class TestBasicTrainer:
             lr=0.01, max_steps=2, target_accuracy=1.0, warmup_steps=0, validation_n_batches=1
         )
 
+    def test_train_steps_until_target_default_returns_final_validation(self):
+        trainer = _make_trainer()
+        acc = trainer.train_steps_until_target(
+            lr=0.01, max_steps=2, target_accuracy=1.0, warmup_steps=0,
+            validation_n_batches=1,
+        )
+        assert isinstance(acc, float)
+        assert 0.0 <= acc <= 1.0
+
+    def test_train_steps_until_target_can_skip_the_discarded_final_validation(self):
+        """Callers that re-measure with their own basis opt out of the trailing
+        eval; the training trajectory (steps, keep-best restore) is unchanged."""
+        trainer = _make_trainer()
+        calls = []
+        original = trainer.validate_n_batches
+        trainer.validate_n_batches = (  # type: ignore[method-assign]
+            lambda n: (calls.append(n), original(n))[1]
+        )
+        result, steps = trainer.train_steps_until_target(
+            lr=0.01, max_steps=4, target_accuracy=2.0, warmup_steps=0,
+            validation_n_batches=1, check_interval=2, patience=99,
+            final_validation=False, return_steps=True,
+        )
+        assert result is None
+        assert steps == 4
+        # Only the two in-loop checks ran (steps 2 and 4); no trailing eval.
+        assert len(calls) == 2
+
     def test_train_one_step_can_return_post_update_probe_loss(self):
         trainer = _make_trainer()
         batch = trainer.next_training_batch()

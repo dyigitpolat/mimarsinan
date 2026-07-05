@@ -173,6 +173,7 @@ def force_to_full_rate(tuner):
                 patience=_RECOVERY_PATIENCE,
                 min_steps=tuner._budget.check_interval * 3,
                 min_improvement=tuner._budget.accuracy_se() / 2,
+                final_validation=False,
             )
         finally:
             for h in hooks:

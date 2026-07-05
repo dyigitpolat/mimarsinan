@@ -35,6 +35,7 @@ def test_activation_shift_step_uses_step_budgeted_training(monkeypatch, mock_pip
         patience=3,
         min_steps=0,
         min_improvement=1e-3,
+        final_validation=True,
     ):
         calls["lr"] = lr
         calls["max_steps"] = max_steps
@@ -45,7 +46,8 @@ def test_activation_shift_step_uses_step_budgeted_training(monkeypatch, mock_pip
         calls["patience"] = patience
         calls["min_steps"] = min_steps
         calls["min_improvement"] = min_improvement
-        return target_accuracy
+        calls["final_validation"] = final_validation
+        return target_accuracy if final_validation else None
 
     monkeypatch.setattr(BasicTrainer, "train_until_target_accuracy", fail_epoch_path)
     monkeypatch.setattr(BasicTrainer, "train_steps_until_target", record_step_path)
@@ -58,6 +60,8 @@ def test_activation_shift_step_uses_step_budgeted_training(monkeypatch, mock_pip
 
     assert calls["max_steps"] > 0
     assert calls["validation_n_batches"] > 0
+    # The tuner re-measures with its own validate(); the trailing eval is skipped.
+    assert calls["final_validation"] is False
 
 
 class TestShiftConventionFollowsFloorCeilSSOT:

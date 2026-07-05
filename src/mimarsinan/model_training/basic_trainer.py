@@ -313,6 +313,7 @@ class BasicTrainer:
         plateau_lr_reductions: int = 0,
         return_steps: bool = False,
         cosine_decay: bool = False,
+        final_validation: bool = True,
     ):
         return basic_trainer_steps.train_steps_until_target(
             self,
@@ -330,6 +331,7 @@ class BasicTrainer:
             plateau_lr_reductions=plateau_lr_reductions,
             return_steps=return_steps,
             cosine_decay=cosine_decay,
+            final_validation=final_validation,
         )
 
     def train_one_step(

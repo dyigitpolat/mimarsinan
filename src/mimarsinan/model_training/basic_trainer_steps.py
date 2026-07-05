@@ -100,6 +100,7 @@ def train_steps_until_target(
     plateau_lr_reductions: int = 0,
     return_steps: bool = False,
     cosine_decay: bool = False,
+    final_validation: bool = True,
 ):
     recipe_recovery = _recipe_recovery_enabled(trainer)
     use_constant = (not cosine_decay) and not recipe_recovery
@@ -173,7 +174,9 @@ def train_steps_until_target(
     del scheduler, scaler, best_state
     if owns_optimizer:
         del optimizer
-    final_acc = trainer.validate_n_batches(n_val)
+    # A4 eval consolidation: callers that re-measure with their own basis skip
+    # the trailing eval; the keep-best restore above is unaffected.
+    final_acc = trainer.validate_n_batches(n_val) if final_validation else None
     if return_steps:
         return final_acc, steps_run
     return final_acc

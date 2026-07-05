@@ -50,15 +50,18 @@ def _measurement_guard(trainer):
 def rung_measurements(tuner) -> dict:
     """One rung's isolated fp32 reads: blended_fp32, full_acc (D-hat), rho, ||g_t||.
 
-    The alignment pair (rho, ||g_t||) is verbose diagnostics the gate never
-    consumes: it is measured only under the ledger flag (nan otherwise).
+    The gate consumes full_acc only; blended_fp32 and the alignment pair
+    (rho, ||g_t||) are verbose diagnostics measured only under the ledger flag
+    (nan otherwise — A4 eval consolidation: one gate probe per rung by default).
     """
     with _measurement_guard(tuner.trainer):
-        blended_fp32 = blended_acc_fp32(tuner)
-        full_acc = full_transform_acc_on_clone(tuner)
         if mbh_ledger_enabled():
+            blended_fp32 = blended_acc_fp32(tuner)
+            full_acc = full_transform_acc_on_clone(tuner)
             rho, grad_norm_t = transfer_alignment(tuner)
         else:
+            blended_fp32 = float("nan")
+            full_acc = full_transform_acc_on_clone(tuner)
             rho, grad_norm_t = float("nan"), float("nan")
     return {
         "blended_fp32": blended_fp32,

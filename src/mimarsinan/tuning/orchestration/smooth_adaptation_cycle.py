@@ -549,6 +549,7 @@ class SmoothAdaptationCycleMixin(TunerBase):
                     patience=_RECOVERY_PATIENCE,
                     min_steps=self._budget.check_interval * 3,
                     min_improvement=self._budget.accuracy_se() / 2,
+                    final_validation=False,
                 )
             val_acc = float(self.trainer.validate_n_batches(n_eval))
             if val_acc > best_val:
