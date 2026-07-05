@@ -19,8 +19,15 @@ from mimarsinan.tuning.orchestration.conversion_policy import (
     ConversionRecipe,
 )
 
+# WQ demotion knobs ride EVERY mode's recipe (mode-independent, theory 5g-v).
+_WQ_KNOBS = {
+    "wq_fast_rates": [0.5, 1.0],
+    "wq_fast_steps_per_rate": 0,
+    "wq_endpoint_recovery_steps": 600,
+}
+
 # (spiking_mode, schedule) -> proven recipe knobs (the SSOT constants).
-_EXPECTED_KNOBS = {
+_MODE_KNOBS = {
     ("lif", None): {
         "lif_blend_fast": True,
         "lif_tanneal": True,
@@ -56,6 +63,10 @@ _EXPECTED_KNOBS = {
         # P1'' budget at the sync AQ endpoint (replaces the open-ended stabilize).
         "endpoint_recovery_steps": 600,
     },
+}
+
+_EXPECTED_KNOBS = {
+    cell: {**_WQ_KNOBS, **knobs} for cell, knobs in _MODE_KNOBS.items()
 }
 
 # (spiking_mode, schedule) -> capability-derived sim-enable set (from _BACKEND_CAPS).
@@ -126,9 +137,10 @@ class TestDeriveKnobs:
             ("ttfs_cycle_based", "cascaded")
         ]
 
-    def test_ttfs_reference_carries_no_knobs(self):
-        # The analytical TTFS column is the generic reference (plain fast).
-        assert dict(ConversionPolicy.derive("ttfs").knobs) == {}
+    def test_ttfs_reference_carries_only_the_wq_demotion(self):
+        # The analytical TTFS column is the generic reference (plain fast);
+        # only the mode-independent WQ demotion rides it.
+        assert dict(ConversionPolicy.derive("ttfs").knobs) == _WQ_KNOBS
 
 
 class TestDeriveSimEnables:

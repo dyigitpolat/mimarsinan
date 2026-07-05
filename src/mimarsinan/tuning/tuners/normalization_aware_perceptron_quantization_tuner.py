@@ -6,10 +6,18 @@ from mimarsinan.transformations.normalization_aware_perceptron_quantization impo
     NormalizationAwarePerceptronQuantization,
 )
 from mimarsinan.tuning.axes import NAPQAxis
+from mimarsinan.tuning.orchestration.endpoint_recovery import run_endpoint_recovery
 from mimarsinan.tuning.tuners.perceptron_transform_tuner import PerceptronTransformTuner
 
 
 class NormalizationAwarePerceptronQuantizationTuner(PerceptronTransformTuner):
+    """Projection at the recipe rates + the bounded P1'' endpoint recovery.
+
+    Demoted from its accidental-controller role (theory 5g-v): the gated fixed
+    ladder walks projection-only rungs (0 training steps) and the generic
+    endpoint stage owns the bounded, high-water-anchored recovery.
+    """
+
     def __init__(self, pipeline, model, quantization_bits, target_accuracy, lr, adaptation_manager):
         super().__init__(pipeline, model, target_accuracy, lr)
         self.quantization_bits = quantization_bits
@@ -18,6 +26,12 @@ class NormalizationAwarePerceptronQuantizationTuner(PerceptronTransformTuner):
             self._apply_rate, replica_apply_fn=self._apply_rate_to,
         )
         self._axis.attach(self.model, self.adaptation_manager, self.pipeline.config)
+        self._consume_optimization_driver(
+            rates=self.pipeline.config.get("wq_fast_rates", [0.5, 1.0]),
+            steps_per_rate=int(
+                self.pipeline.config.get("wq_fast_steps_per_rate", 0)
+            ),
+        )
 
     def _get_previous_perceptron_transform(self, rate):
         return lambda perceptron: None
@@ -47,6 +61,18 @@ class NormalizationAwarePerceptronQuantizationTuner(PerceptronTransformTuner):
     def _update_and_evaluate(self, rate):
         self._axis.set_rate(rate)
         return self.trainer.validate_n_batches(self._budget.eval_n_batches)
+
+    def _post_stabilization_hook(self):
+        if not getattr(self, "_fixed_ladder_policy", False):
+            return
+        # P1'' through the transform trainer: recovery trains the float aux
+        # model and reprojects, so the shipped model stays chip-quantized.
+        run_endpoint_recovery(
+            self,
+            base_steps=int(
+                self.pipeline.config.get("wq_endpoint_recovery_steps", 0)
+            ),
+        )
 
     def run(self):
         return super().run()

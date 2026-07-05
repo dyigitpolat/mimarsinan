@@ -8,6 +8,15 @@ from typing import Any, Mapping, Optional
 OPTIMIZATION_DRIVER_CONTROLLER = "controller"
 OPTIMIZATION_DRIVER_FAST = "fast"
 
+# WQ demotion (mode-independent, theory 5g-v): NAPQ rides the same gated fixed
+# ladder as everything else with projection-only rungs; its bounded recovery is
+# the P1'' endpoint stage anchored at the D-hat high-water mark.
+_WQ_RECIPE_KNOBS = {
+    "wq_fast_rates": [0.5, 1.0],
+    "wq_fast_steps_per_rate": 0,
+    "wq_endpoint_recovery_steps": 600,
+}
+
 _LIF_RECIPE_KNOBS = {
     "lif_blend_fast": True,
     "lif_tanneal": True,
@@ -141,6 +150,7 @@ class ConversionPolicy:
             )
         else:
             knobs, special_case, rationale = {}, None, ""
+        knobs = {**_WQ_RECIPE_KNOBS, **knobs}
 
         sim_enables = {
             "enable_nevresim_simulation": (
