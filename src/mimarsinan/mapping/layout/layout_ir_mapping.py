@@ -115,8 +115,18 @@ class LayoutIRMapping(_LayoutIRMappingFinalize, _LayoutIRMappingFC):
         return output_sources
 
     def collect_layout_softcores(self, model_representation) -> List[LayoutSoftCoreSpec]:
-        """Back-compat entry point for shape-only callers (wizard / search)."""
-        self.map(model_representation)
+        """Back-compat entry point for shape-only callers (wizard / search).
+
+        Side-effect-free on the model: the walk-scoped IR memos are cleared so
+        estimate/telemetry callers (GUI step snapshot) cannot pin un-picklable
+        LayoutSourceView closures on a live pipeline model.
+        """
+        try:
+            self.map(model_representation)
+        finally:
+            clear = getattr(model_representation, "clear_ir_caches", None)
+            if callable(clear):
+                clear()
         return list(self.layout_softcores)
 
     def add_compute_op(

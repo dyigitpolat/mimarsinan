@@ -21,6 +21,18 @@ class ModelRepresentation:
         """Map this model representation to a unified IRGraph (NeuralCore + ComputeOp nodes)."""
         return self.output_layer_mapper.map_to_ir(ir_mapping)
 
+    def clear_ir_caches(self) -> None:
+        """Drop every mapper node's walk-scoped IR memo (``_ir_sources``).
+
+        The memo only dedupes within one ``map_to_ir`` traversal; retained, it
+        pins un-picklable LayoutSourceView closures on the live model.
+        """
+        exec_order, _, _ = self._ensure_exec_graph()
+        for node in exec_order:
+            clear = getattr(node, "clear_cache", None)
+            if callable(clear):
+                clear()
+
     def construct_pytorch_module(self, module, next):
         return self.output_layer_mapper.construct_pytorch_module(self.pytorch_module)
 
