@@ -24,27 +24,56 @@ def _to_device(trainer, x, y):
             y.to(trainer.device, non_blocking=True).clone())
 
 
+def _shared_eval_cache_key(trainer, max_batches):
+    return (
+        "val",
+        int(trainer.validation_batch_size),
+        str(trainer.device),
+        None if max_batches is None else int(max_batches),
+    )
+
+
+def _shared_eval_cache_seam(trainer):
+    """(get, put) on the trainer's factory pool, or ``None`` outside pooled mode.
+
+    The cached batches are inputs only (model-independent) and the val loader is
+    unshuffled, so pooled content is bit-identical to a per-trainer rebuild.
+    """
+    factory = getattr(trainer, "data_loader_factory", None)
+    owns = getattr(factory, "owns_loaders", None)
+    if not (callable(owns) and owns()):
+        return None
+    return factory
+
+
 def _build_gpu_val_cache(trainer):
     # Caps the on-device cache to a seeded reservoir subsample so the full validation set is never materialized on the device.
     max_batches = getattr(trainer, "_val_cache_max_batches", None)
-    if max_batches is None:
-        trainer._gpu_val_cache = [
-            _to_device(trainer, x, y) for x, y in trainer.validation_loader
-        ]
-        trainer._gpu_val_cursor = 0
-        return
+    factory = _shared_eval_cache_seam(trainer)
+    key = None if factory is None else _shared_eval_cache_key(trainer, max_batches)
+    if factory is not None:
+        shared = factory.get_eval_cache(key)
+        if shared is not None:
+            trainer._gpu_val_cache = shared
+            trainer._gpu_val_cursor = 0
+            return
 
-    cap = int(max_batches)
-    rng = random.Random(_VAL_SUBSAMPLE_SEED)
-    reservoir = []
-    for i, (x, y) in enumerate(trainer.validation_loader):
-        if i < cap:
-            reservoir.append(_to_device(trainer, x, y))
-        else:
-            j = rng.randint(0, i)
-            if j < cap:
-                reservoir[j] = _to_device(trainer, x, y)
-    trainer._gpu_val_cache = reservoir
+    if max_batches is None:
+        cache = [_to_device(trainer, x, y) for x, y in trainer.validation_loader]
+    else:
+        cap = int(max_batches)
+        rng = random.Random(_VAL_SUBSAMPLE_SEED)
+        cache = []
+        for i, (x, y) in enumerate(trainer.validation_loader):
+            if i < cap:
+                cache.append(_to_device(trainer, x, y))
+            else:
+                j = rng.randint(0, i)
+                if j < cap:
+                    cache[j] = _to_device(trainer, x, y)
+    if factory is not None:
+        factory.put_eval_cache(key, cache)
+    trainer._gpu_val_cache = cache
     trainer._gpu_val_cursor = 0
 
 

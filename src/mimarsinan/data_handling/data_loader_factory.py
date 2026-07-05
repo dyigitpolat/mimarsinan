@@ -84,21 +84,81 @@ def shutdown_data_loader(loader):
 
 
 class DataLoaderFactory:
-    def __init__(self, data_provider_factory, num_workers=4):
+    _PIPELINE_ATTR = "_shared_data_loader_factory"
+
+    def __init__(self, data_provider_factory, num_workers=4, *, shared=False):
         self._data_provider_factory = data_provider_factory
         self._num_workers = num_workers
 
         self._persistent_workers = num_workers > 0
         self._pin_memory = True
         self._ffcv_factory = None
+        self._shared = bool(shared)
+        self._loader_cache: dict = {}
+        self._eval_cache: dict = {}
 
     @classmethod
     def for_pipeline(cls, pipeline) -> "DataLoaderFactory":
-        """The single pipeline-facing seam: honors config ``num_workers``."""
-        return cls(
-            pipeline.data_provider_factory,
-            num_workers=pipeline.config.get("num_workers", 4),
+        """The single pipeline-facing seam: honors config ``num_workers``.
+
+        Returns one SHARED factory per pipeline (cached on the pipeline object):
+        loaders and device-side eval caches are pooled across every trainer of the
+        run, so per-step trainer construction stops re-spawning workers.
+        """
+        num_workers = pipeline.config.get("num_workers", 4)
+        cached = getattr(pipeline, cls._PIPELINE_ATTR, None)
+        if (
+            cached is not None
+            and cached._num_workers == num_workers
+            and cached._data_provider_factory is pipeline.data_provider_factory
+        ):
+            return cached
+        factory = cls(
+            pipeline.data_provider_factory, num_workers=num_workers, shared=True,
         )
+        setattr(pipeline, cls._PIPELINE_ATTR, factory)
+        return factory
+
+    def owns_loaders(self) -> bool:
+        """Shared factories own their pooled loaders; trainers must not shut them down."""
+        return self._shared
+
+    def _cached_loader(self, kind: str, batch_size, data_provider, build):
+        if not self._shared:
+            return build()
+        key = (kind, int(batch_size), id(data_provider))
+        loader = self._loader_cache.get(key)
+        if loader is None:
+            loader = build()
+            self._loader_cache[key] = loader
+        return loader
+
+    def get_eval_cache(self, key):
+        """Pooled device-side eval batch list for ``key`` (``None`` when absent/unshared)."""
+        if not self._shared:
+            return None
+        return self._eval_cache.get(key)
+
+    def put_eval_cache(self, key, batches) -> None:
+        """Pool a device-side eval batch list; no-op on unshared factories."""
+        if self._shared:
+            self._eval_cache[key] = batches
+
+    def close_cached_loaders(self) -> None:
+        """Shut down and drop every pooled loader and eval cache."""
+        for loader in self._loader_cache.values():
+            shutdown_data_loader(loader)
+        self._loader_cache.clear()
+        self._eval_cache.clear()
+
+    def __getstate__(self):
+        # Live loaders (worker processes) and device tensors never travel through
+        # pickle; a restored factory rebuilds its pools lazily.
+        state = self.__dict__.copy()
+        state["_loader_cache"] = {}
+        state["_eval_cache"] = {}
+        state["_ffcv_factory"] = None
+        return state
 
     def _ffcv_loader(self, kind: str, batch_size, data_provider):
         """Return an FFCV loader iff the provider opts in; else ``None``.
@@ -144,6 +204,12 @@ class DataLoaderFactory:
         return self._data_provider_factory.create()
 
     def create_training_loader(self, batch_size, data_provider):
+        return self._cached_loader(
+            "train", batch_size, data_provider,
+            lambda: self._build_training_loader(batch_size, data_provider),
+        )
+
+    def _build_training_loader(self, batch_size, data_provider):
         ffcv = self._ffcv_loader("train", batch_size, data_provider)
         if ffcv is not None:
             return ffcv
@@ -152,6 +218,12 @@ class DataLoaderFactory:
             batch_size=batch_size, shuffle=True, mp_safe=data_provider.is_mp_safe())
 
     def create_validation_loader(self, batch_size, data_provider):
+        return self._cached_loader(
+            "val", batch_size, data_provider,
+            lambda: self._build_validation_loader(batch_size, data_provider),
+        )
+
+    def _build_validation_loader(self, batch_size, data_provider):
         ffcv = self._ffcv_loader("val", batch_size, data_provider)
         if ffcv is not None:
             return ffcv
@@ -160,6 +232,12 @@ class DataLoaderFactory:
             batch_size=batch_size, shuffle=False, mp_safe=data_provider.is_mp_safe())
 
     def create_test_loader(self, batch_size, data_provider):
+        return self._cached_loader(
+            "test", batch_size, data_provider,
+            lambda: self._build_test_loader(batch_size, data_provider),
+        )
+
+    def _build_test_loader(self, batch_size, data_provider):
         ffcv = self._ffcv_loader("test", batch_size, data_provider)
         if ffcv is not None:
             return ffcv

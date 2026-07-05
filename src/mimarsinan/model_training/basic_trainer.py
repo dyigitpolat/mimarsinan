@@ -73,9 +73,11 @@ class BasicTrainer:
             self.test_batch_size, self.data_provider)
 
     def close(self):
-        shutdown_data_loader(self.train_loader)
-        shutdown_data_loader(self.validation_loader)
-        shutdown_data_loader(self.test_loader)
+        factory_owns = getattr(self.data_loader_factory, "owns_loaders", None)
+        if not (callable(factory_owns) and factory_owns()):
+            shutdown_data_loader(self.train_loader)
+            shutdown_data_loader(self.validation_loader)
+            shutdown_data_loader(self.test_loader)
         self.train_loader = None
         self.validation_loader = None
         self.test_loader = None
