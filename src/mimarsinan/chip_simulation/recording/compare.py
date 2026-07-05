@@ -29,7 +29,7 @@ class Diff:
 
 
 _LAYER_TO_CAUSE = {
-    "seg_input": "encoding drift (uniform rate encoder mismatch)",
+    "seg_input": "encoding drift (value-vs-wire domain at a boundary, or uniform rate encoder mismatch)",
     "core_input": "axon span / routing wiring (or upstream output diverged)",
     "core_output": "LIF dynamics: threshold, weights, hardware bias, or reset semantics",
     "seg_output": "output_sources gather (compress_spike_sources path)",
@@ -156,6 +156,36 @@ def compare_records(ref: RunRecord, actual: RunRecord) -> List[Diff]:
     return diffs
 
 
+def _first_diff_summary(d: Diff) -> str:
+    """One self-contained line: where, how much, and the suggested cause.
+
+    It is the first line of ``AssertionError`` messages, so run-status dashboards
+    and ledger summaries must be able to render it alone.
+    """
+    where = f"stage {d.stage_index} ({d.stage_name!r}) {d.layer}"
+    if d.core_index is not None:
+        where += f" core {d.core_index}"
+    exp = np.atleast_1d(d.expected)
+    act = np.atleast_1d(d.actual)
+    if exp.shape != act.shape:
+        extent = f"shape {tuple(exp.shape)} vs {tuple(act.shape)}"
+    else:
+        n_diff = int((exp != act).sum())
+        extent = (
+            f"{n_diff}/{int(exp.size)} differ, "
+            f"Σ exp={int(exp.sum())} act={int(act.sum())}"
+        )
+    return f"spike parity FAIL @ {where}: {extent} — {d.suggested_cause}"
+
+
+def _remaining_diffs_tally(diffs: List[Diff]) -> str:
+    """Per-layer tally of the diffs after the first, in detection order."""
+    counts: dict[str, int] = {}
+    for d in diffs:
+        counts[d.layer] = counts.get(d.layer, 0) + 1
+    return ", ".join(f"{layer}×{n}" for layer, n in counts.items())
+
+
 def format_first_diff(diffs: List[Diff]) -> str:
     """Pretty-print the first diff with enough context for triage."""
     if not diffs:
@@ -163,7 +193,7 @@ def format_first_diff(diffs: List[Diff]) -> str:
 
     d = diffs[0]
     parts = [
-        "",
+        _first_diff_summary(d),
         f"  stage           : {d.stage_index} ({d.stage_name!r})",
     ]
     if d.schedule_segment_index is not None:
@@ -180,8 +210,8 @@ def format_first_diff(diffs: List[Diff]) -> str:
         )
     parts.append(f"  suggested cause : {d.suggested_cause}")
 
-    exp = d.expected
-    act = d.actual
+    exp = np.atleast_1d(d.expected)
+    act = np.atleast_1d(d.actual)
     if exp.shape == act.shape and exp.ndim <= 1:
         n_total = int(exp.size)
         diff_mask = exp != act
@@ -197,14 +227,14 @@ def format_first_diff(diffs: List[Diff]) -> str:
                 f"actual[{first_idx}]={act[first_idx]}"
             )
             parts.append(
-                f"    Σ expected={int(np.asarray(exp).sum())}  "
-                f"Σ actual={int(np.asarray(act).sum())}"
+                f"    Σ expected={int(exp.sum())}  "
+                f"Σ actual={int(act.sum())}"
             )
     else:
         parts.append(f"  expected shape  : {tuple(exp.shape)}")
         parts.append(f"  actual shape    : {tuple(act.shape)}")
 
     if len(diffs) > 1:
-        parts.append(f"  (+{len(diffs) - 1} more diffs not shown)")
+        parts.append(f"  remaining diffs : {_remaining_diffs_tally(diffs[1:])}")
 
     return "\n".join(parts)

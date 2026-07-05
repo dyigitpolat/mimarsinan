@@ -10,7 +10,14 @@ if TYPE_CHECKING:
     from mimarsinan.chip_simulation.behavior_config import NeuralBehaviorConfig
 
 import mimarsinan.chip_simulation.sanafe.runner as _runner
-from mimarsinan.chip_simulation.hybrid_run.hybrid_execution import assemble_segment_input_numpy
+from mimarsinan.chip_simulation.hybrid_run.hybrid_execution import (
+    apply_input_shifts_numpy,
+    assemble_segment_input_numpy,
+)
+from mimarsinan.spiking.segment_boundary import (
+    boundary_normalization_scales,
+    normalize_boundary_slices_numpy,
+)
 from mimarsinan.chip_simulation.hybrid_run.hybrid_semantics import NeuralSegmentResult
 from mimarsinan.chip_simulation.sanafe.analysis import (
     _compute_connectivity_edges,
@@ -72,6 +79,17 @@ class SanafeNeuralStageMixin:
             stage.input_map, state_buffer, num_samples=1,
             dtype=_COMPUTE_DTYPE,
         )
+        if not _runner.is_ttfs_spiking_mode(self.spiking_mode):
+            # Rate/LIF host buffers are value-domain at ComputeOp boundaries;
+            # the TTFS contract path builds its own wire-domain seg_input below.
+            seg_input_rates = normalize_boundary_slices_numpy(
+                stage.input_map, seg_input_rates,
+                boundary_normalization_scales(self.mapping),
+            )
+            seg_input_rates = apply_input_shifts_numpy(
+                stage.input_map, seg_input_rates,
+                getattr(self.mapping, "node_output_shifts", None),
+            )
         seg_in_size = int(seg_input_rates.shape[1])
 
         (net, core_to_group, core_input_neurons,

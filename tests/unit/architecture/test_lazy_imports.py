@@ -99,7 +99,6 @@ ALLOWLIST = {
     "search/optimizers/compilagent/tools.py",
     "search/optimizers/llm/trace.py",
     "search/search_space_description.py",
-    "spiking/compute_boundary.py",
     "spiking/distribution_matching.py",
     "spiking/lif_utils.py",
     "spiking/segment_policies.py",

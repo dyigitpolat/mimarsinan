@@ -11,7 +11,9 @@ import torch.nn as nn
 
 from mimarsinan.chip_simulation.behavior_config import NeuralBehaviorConfig
 from mimarsinan.chip_simulation.hybrid_run.hybrid_execution import (
+    apply_input_shifts_numpy,
     assemble_segment_input_numpy,
+    compute_input_state_with_shifts,
     execute_compute_op_numpy,
     gather_final_output_numpy,
     resolve_stage_compute_scales,
@@ -24,6 +26,10 @@ from mimarsinan.chip_simulation.lava_loihi.timing import _RunProfile, _StageTrac
 from mimarsinan.chip_simulation.recording.spike_recorder import RunRecord, SegmentSpikeRecord
 from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory, shutdown_data_loader
 from mimarsinan.mapping.packing.hybrid_hardcore_mapping import HybridHardCoreMapping
+from mimarsinan.spiking.segment_boundary import (
+    boundary_normalization_scales,
+    normalize_boundary_slices_numpy,
+)
 
 
 class LavaLoihiRunner(LavaCoreMixin, LavaSegmentMixin):
@@ -102,12 +108,22 @@ class LavaLoihiRunner(LavaCoreMixin, LavaSegmentMixin):
 
         x_flat = self._preprocess(x_np)
         state_buffer: Dict[int, np.ndarray] = {-2: x_flat}
+        # Lava runs host ComputeOps with (1, 1) scales (rate/LIF semantics), so
+        # boundary slices carry value-domain results until normalized here.
+        wire_divisors = boundary_normalization_scales(self.mapping)
+        node_output_shifts = getattr(self.mapping, "node_output_shifts", None)
 
         def _on_neural(_stage_index, stage, state_buffer):
             t0 = time.time()
             seg = stage.hard_core_mapping
             assert seg is not None
             seg_input = assemble_segment_input_numpy(stage.input_map, state_buffer, N)
+            seg_input = normalize_boundary_slices_numpy(
+                stage.input_map, seg_input, wire_divisors,
+            )
+            seg_input = apply_input_shifts_numpy(
+                stage.input_map, seg_input, node_output_shifts,
+            )
             seg_output = self._run_neural_segment(seg, seg_input)
             store_segment_output_numpy(stage.output_map, state_buffer, seg_output)
             self._profile.stages.append(
@@ -128,7 +144,10 @@ class LavaLoihiRunner(LavaCoreMixin, LavaSegmentMixin):
                 self.mapping, op_id, apply_ttfs=False, op=stage.compute_op,
             )
             result = execute_compute_op_numpy(
-                stage.compute_op, x_flat, state_buffer,
+                stage.compute_op, x_flat,
+                compute_input_state_with_shifts(
+                    stage.compute_op, state_buffer, node_output_shifts,
+                ),
                 in_scale=ttfs_in_scale, out_scale=ttfs_out_scale,
             )
             state_buffer[op_id] = result

@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import torch
 
-from mimarsinan.mapping.mappers.conv1d_mapper import Conv1DPerceptronMapper
-from mimarsinan.mapping.mappers.conv2d_mapper import Conv2DPerceptronMapper
 from mimarsinan.spiking.lif_utils import unwrap_lif_activation
 from mimarsinan.spiking.segment_partition import perceptron_of
 from mimarsinan.spiking.segment_policy_ttfs import TtfsSegmentPolicy
@@ -22,7 +20,8 @@ def _safe_scale(scale, ref: torch.Tensor):
 
 class LifSegmentPolicy:
     """Signed-IF cascade: perceptrons run per-cycle off upstream trains; entry
-    (encoding) perceptrons run once on the decoded value and uniform-encode."""
+    (encoding) perceptrons run once on the decoded value and emit the uniform
+    wire train of ``clamp(value / theta)`` (the deployed boundary contract)."""
 
     def prepare(self, driver):
         from spikingjelly.activation_based import functional
@@ -37,15 +36,6 @@ class LifSegmentPolicy:
     @staticmethod
     def _lif_of(perceptron):
         return unwrap_lif_activation(getattr(perceptron, "activation", None))
-
-    @staticmethod
-    def _boundary_runs_per_cycle(node, lif) -> bool:
-        """Mirror of HCM's ``encode_compute_boundary`` contract: a subsumed
-        encoding boundary is cycle-emitted only for a plain LIF perceptron;
-        wrapper mappers (Conv1D/Conv2D) stay rate-mode."""
-        return lif is not None and not isinstance(
-            node, (Conv1DPerceptronMapper, Conv2DPerceptronMapper)
-        )
 
     def _set_all_cycle_accurate(self, driver, mode: bool):
         for p in driver.repr.get_perceptrons():
@@ -103,18 +93,9 @@ class LifSegmentPolicy:
                     rate_out = forward_node(node, [rate_of(dep) for dep in d])
                     rate_norm = (rate_out / scale).clamp(0.0, 1.0)
                     node_rate[node] = rate_norm
-                    if lif is not None and self._boundary_runs_per_cycle(node, lif):
-                        lif.set_cycle_accurate(True)
-                        functional.reset_net(lif.if_node)
-                        dep_trains = [train_of(dep) for dep in d]
-                        outs = [
-                            forward_node(node, [dt[t] for dt in dep_trains])
-                            for t in range(T)
-                        ]
-                        lif.set_cycle_accurate(False)
-                        node_train[node] = torch.stack(outs, dim=0)
-                    else:
-                        node_train[node] = uniform_spike_train(rate_norm, T) * scale
+                    # Mirror of encode_compute_boundary: the deployed boundary is
+                    # a uniform wire train; *scale keeps NF value-domain magnitudes.
+                    node_train[node] = uniform_spike_train(rate_norm, T) * scale
                 else:
                     assert lif is not None, (
                         "LifSegmentPolicy: non-encoding perceptron must carry a LIF activation"

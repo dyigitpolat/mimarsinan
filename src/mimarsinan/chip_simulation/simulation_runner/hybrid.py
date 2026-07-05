@@ -14,7 +14,9 @@ from mimarsinan.mapping.latency.chip import ChipLatency
 from mimarsinan.mapping.packing.hybrid_hardcore_mapping import HybridHardCoreMapping, SegmentIOSlice
 from mimarsinan.mapping.packing.softcore import HardCoreMapping
 from mimarsinan.chip_simulation.hybrid_run.hybrid_execution import (
+    apply_input_shifts_numpy,
     assemble_segment_input_numpy,
+    compute_input_state_with_shifts,
     execute_compute_op_numpy,
     gather_final_output_numpy,
     resolve_stage_compute_scales,
@@ -26,6 +28,10 @@ from mimarsinan.chip_simulation.nevresim.nevresim_driver import NevresimDriver
 from mimarsinan.chip_simulation.nevresim.segment_execute import run_binary_raw
 from mimarsinan.chip_simulation.simulation_runner.emit import _PreparedSegment, _emit_and_compile_segment
 from mimarsinan.chip_simulation.simulation_runner.host_contract import SimulationHostContract
+from mimarsinan.spiking.segment_boundary import (
+    boundary_normalization_scales,
+    normalize_boundary_slices_numpy,
+)
 
 
 class SimulationHybridMixin(SimulationHostContract):
@@ -195,6 +201,11 @@ class SimulationHybridMixin(SimulationHostContract):
 
         prepared_segments = self._prepare_all_segments(hybrid)
 
+        # Rate/LIF host ComputeOps run with (1, 1) scales (value-domain buffers);
+        # TTFS transcodes via resolve_stage_compute_scales instead.
+        wire_divisors = {} if is_ttfs else boundary_normalization_scales(hybrid)
+        node_output_shifts = getattr(hybrid, "node_output_shifts", None)
+
         seg_counter = 0
 
         def on_neural(_idx, stage, buf):
@@ -204,6 +215,13 @@ class SimulationHybridMixin(SimulationHostContract):
             seg_input = self._assemble_segment_input_np(
                 stage.input_map, buf, num_samples
             )
+            if not is_ttfs:
+                seg_input = normalize_boundary_slices_numpy(
+                    stage.input_map, seg_input, wire_divisors,
+                )
+                seg_input = apply_input_shifts_numpy(
+                    stage.input_map, seg_input, node_output_shifts,
+                )
             input_size = seg_input.shape[1]
             seg_data = [(seg_input[i], np.zeros(1)) for i in range(num_samples)]
             print(
@@ -213,7 +231,7 @@ class SimulationHybridMixin(SimulationHostContract):
             raw_output = self._run_neural_segment_precompiled(prepared, seg_data)
             seg_counter += 1
             rates = self._raw_to_rates(raw_output)
-            self._store_segment_output_np(stage.output_map, buf, rates)
+            store_segment_output_numpy(stage.output_map, buf, rates)
 
         def on_compute(_idx, stage, buf):
             assert stage.compute_op is not None
@@ -222,17 +240,23 @@ class SimulationHybridMixin(SimulationHostContract):
             ttfs_in_scale, ttfs_out_scale = resolve_stage_compute_scales(
                 hybrid, op_id, apply_ttfs=is_ttfs, op=stage.compute_op,
             )
-            buf[op_id] = self._execute_compute_op_np(
+            gather_buf = (
+                buf if is_ttfs
+                else compute_input_state_with_shifts(
+                    stage.compute_op, buf, node_output_shifts,
+                )
+            )
+            buf[op_id] = execute_compute_op_numpy(
                 stage.compute_op,
                 original_input,
-                buf,
-                ttfs_in_scale=ttfs_in_scale,
-                ttfs_out_scale=ttfs_out_scale,
+                gather_buf,
+                in_scale=ttfs_in_scale,
+                out_scale=ttfs_out_scale,
             )
 
         run_hybrid_stages(hybrid, state_buffer, on_neural=on_neural, on_compute=on_compute)
 
-        final_output = self._gather_final_output_np(
+        final_output = gather_final_output_numpy(
             hybrid.output_sources, state_buffer, original_input, num_samples
         )
         predictions = np.argmax(final_output, axis=1)
@@ -248,37 +272,3 @@ class SimulationHybridMixin(SimulationHostContract):
     ) -> np.ndarray:
         return assemble_segment_input_numpy(input_map, state_buffer, num_samples)
 
-    @staticmethod
-    def _store_segment_output_np(
-        output_map: list[SegmentIOSlice],
-        state_buffer: Dict[int, np.ndarray],
-        output: np.ndarray,
-    ) -> None:
-        store_segment_output_numpy(output_map, state_buffer, output)
-
-    @staticmethod
-    def _execute_compute_op_np(
-        op: ComputeOp,
-        original_input: np.ndarray,
-        state_buffer: Dict[int, np.ndarray],
-        ttfs_in_scale: float = 1.0,
-        ttfs_out_scale: float | None = None,
-    ) -> np.ndarray:
-        return execute_compute_op_numpy(
-            op,
-            original_input,
-            state_buffer,
-            in_scale=ttfs_in_scale,
-            out_scale=ttfs_out_scale,
-        )
-
-    @staticmethod
-    def _gather_final_output_np(
-        output_sources: np.ndarray,
-        state_buffer: Dict[int, np.ndarray],
-        original_input: np.ndarray,
-        num_samples: int,
-    ) -> np.ndarray:
-        return gather_final_output_numpy(
-            output_sources, state_buffer, original_input, num_samples,
-        )

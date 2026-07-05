@@ -140,6 +140,43 @@ def apply_input_shifts_numpy(
     return out
 
 
+def compute_input_state_with_shifts(
+    op: ComputeOp,
+    state_buffer,
+    node_output_shifts,
+):
+    """State-buffer view with producer ``node_output_shifts`` added to ``op``'s inputs.
+
+    The NF driver lifts a shifted producer's value once at production; a compute-op
+    consumer's baked bias (``B' = B − W·s``) expects lifted inputs, so the host
+    value path must gather them lifted too (rate/LIF domain; TTFS transcodes via
+    compute scales). No shifted inputs => identity (no copy). Works on torch and
+    numpy buffers alike.
+    """
+    if not node_output_shifts:
+        return state_buffer
+    shifted_ids = {
+        int(src.node_id)
+        for src in op.input_sources.flatten()
+        if isinstance(src, IRSource) and src.node_id >= 0
+    } & set(node_output_shifts)
+    shifted_ids = {nid for nid in shifted_ids if nid in state_buffer}
+    if not shifted_ids:
+        return state_buffer
+    view = dict(state_buffer)
+    for nid in shifted_ids:
+        buf = state_buffer[nid]
+        shift = node_output_shifts[nid]
+        if isinstance(buf, torch.Tensor):
+            sh = torch.as_tensor(
+                shift, dtype=buf.dtype, device=buf.device,
+            ).reshape(1, -1)
+        else:
+            sh = np.asarray(shift, dtype=buf.dtype).reshape(1, -1)
+        view[nid] = buf + sh
+    return view
+
+
 def store_segment_output_numpy(
     output_map,
     state_buffer: Dict[int, np.ndarray],

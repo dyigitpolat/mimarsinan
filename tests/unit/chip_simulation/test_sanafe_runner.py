@@ -523,7 +523,10 @@ def test_run_walks_stages_in_order(monkeypatch):
     s1 = _fake_stage("neural", name="s1", hcm=_fake_hcm(core),
                      input_map=[_seg_io_slice(-2, 0, 1)],
                      output_map=[_seg_io_slice(0, 0, 1)])
-    op = SimpleNamespace(id=99)
+    # The neural-stage seam derives wire divisors from compute ops, so the
+    # fake must carry the runtime contract fields (params, input_sources).
+    op = SimpleNamespace(id=99, params={},
+                         input_sources=np.array([], dtype=object))
     s2 = _fake_stage("compute", name="op", compute_op=op,
                      input_map=[], output_map=[])
     s3 = _fake_stage("neural", name="s3", hcm=_fake_hcm(core),

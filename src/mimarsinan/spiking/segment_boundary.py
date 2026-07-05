@@ -9,16 +9,20 @@ import numpy as np
 import numpy.typing as npt
 import torch
 
+from mimarsinan.mapping.ir import IRSource
 from mimarsinan.mapping.packing.hybrid_hardcore_mapping import (
     HybridHardCoreMapping,
     HybridStage,
 )
-from mimarsinan.models.nn.activations.ttfs_spiking import _channel_broadcast_view
+from mimarsinan.mapping.support.activation_scales import (
+    perceptron_wrapped_activation_scale,
+)
+from mimarsinan.mapping.support.compute_modules import ScaleNormalizingWrapper
 from mimarsinan.spiking.boundary_config import BoundaryConfig
 from mimarsinan.spiking.compute_boundary import (
-    _gather_op_input_train as _gather_op_input_train,
     _resolve_lif_perceptron as _resolve_lif_perceptron,
     encode_compute_boundary,
+    normalize_boundary_value,
 )
 from mimarsinan.spiking.spike_trains import (
     materialized_spike_train,
@@ -28,31 +32,125 @@ from mimarsinan.spiking.spike_trains import (
 
 __all__ = [
     "BoundaryConfig",
+    "boundary_normalization_scales",
     "decode_segment_output",
     "decode_segment_output_torch",
     "encode_compute_boundary",
     "encode_segment_input",
+    "normalize_boundary_slices_numpy",
+    "normalize_boundary_slices_torch",
+    "normalize_boundary_value",
     "normalize_ttfs_boundary_value",
+    "warn_once_lossy_negative_clamp",
 ]
 
+# W1-era name; same transcode (the TTFS spike time encodes the same wire rate).
+normalize_ttfs_boundary_value = normalize_boundary_value
 
-def normalize_ttfs_boundary_value(value: torch.Tensor, boundary_scale) -> torch.Tensor:
-    """Wire-domain transcode: value-domain boundary tensor -> normalized [0, 1].
 
-    The single-spike TTFS wire contract shared by the torch NF walk, the hybrid
-    executor and HCM: a boundary spike time encodes ``value / boundary_scale``,
-    where ``boundary_scale`` is the consumer's ``input_activation_scale`` (== the
-    source's propagated boundary out-scale); the consumer's weight fold multiplies
-    the same scale back in. Encoding the raw value instead mistimes every boundary
-    spike and saturates values above the scale (bit-exact only at scale 1).
+def boundary_normalization_scales(
+    hybrid_mapping: HybridHardCoreMapping,
+) -> dict[int, float | np.ndarray]:
+    """Per-producer wire divisors for rate/LIF host state buffers:
+    ``wire rate = buffer value / divisor``.
+
+    Host ComputeOps run with ``(1, 1)`` scales on the rate/LIF paths, so an op
+    whose module carries a perceptron ``activation_scale`` (plain encoders AND
+    wrapper mappers) leaves its *value-domain* result in the state buffer; a
+    structural op inherits its compute sources' divisors (scale-homogeneous
+    pass-through). Neural producers (``counts / T``) and ScaleNormalizingWrapper
+    ops are already wire-domain and are skipped.
     """
-    if isinstance(boundary_scale, torch.Tensor):
-        scale = boundary_scale.to(value.device, value.dtype).clamp(min=1e-12)
-        if scale.numel() > 1:
-            scale = _channel_broadcast_view(scale.reshape(-1), value)
-    else:
-        scale = max(float(boundary_scale), 1e-12)
-    return (value / scale).clamp(0.0, 1.0)
+    divisors: dict[int, float | np.ndarray] = {}
+    for stage in hybrid_mapping.stages:
+        op = stage.compute_op
+        if stage.kind != "compute" or op is None:
+            continue
+        module = (op.params or {}).get("module") if op.params else None
+        if isinstance(module, ScaleNormalizingWrapper):
+            continue
+        divisor: float | np.ndarray
+        wrapped = perceptron_wrapped_activation_scale(module)
+        if wrapped is not None:
+            divisor = wrapped
+        else:
+            src_divisors = [
+                float(np.mean(divisors.get(int(src.node_id), 1.0)))
+                for src in op.input_sources.flatten()
+                if isinstance(src, IRSource) and src.node_id >= 0
+            ]
+            if not src_divisors:
+                continue
+            divisor = sum(src_divisors) / len(src_divisors)
+        if isinstance(divisor, float) and abs(divisor - 1.0) < 1e-12:
+            continue
+        divisors[int(op.id)] = divisor
+    return divisors
+
+
+def normalize_boundary_slices_numpy(
+    input_map,
+    seg_input: np.ndarray,
+    boundary_scales: dict[int, float | np.ndarray],
+) -> np.ndarray:
+    """Rescale each producer slice of an assembled segment input to the wire
+    domain (numpy twin; empty divisors => identity, no copy)."""
+    if not boundary_scales:
+        return seg_input
+    out = seg_input
+    copied = False
+    for s in input_map:
+        divisor = boundary_scales.get(int(s.node_id))
+        if divisor is None:
+            continue
+        if not copied:
+            out = seg_input.copy()
+            copied = True
+        d = np.maximum(np.asarray(divisor, dtype=out.dtype).reshape(-1), 1e-12)
+        out[:, s.offset : s.offset + s.size] /= (d if d.size > 1 else d[0])
+    return out
+
+
+def normalize_boundary_slices_torch(
+    input_map,
+    seg_input: torch.Tensor,
+    boundary_scales: dict[int, float | np.ndarray],
+) -> torch.Tensor:
+    """Torch twin of :func:`normalize_boundary_slices_numpy`."""
+    if not boundary_scales:
+        return seg_input
+    out = seg_input
+    cloned = False
+    for s in input_map:
+        divisor = boundary_scales.get(int(s.node_id))
+        if divisor is None:
+            continue
+        if not cloned:
+            out = seg_input.clone()
+            cloned = True
+        d = torch.as_tensor(
+            divisor, dtype=out.dtype, device=out.device,
+        ).reshape(-1).clamp(min=1e-12)
+        out[:, s.offset : s.offset + s.size] /= (d if d.numel() > 1 else d[0])
+    return out
+
+
+_warned_negative_boundary_stages: set = set()
+
+
+def warn_once_lossy_negative_clamp(stage_name: str, seg_input: torch.Tensor) -> None:
+    """An unshifted negative reaching the [0,1] boundary clamp is silent
+    information loss; warn once per stage."""
+    if stage_name in _warned_negative_boundary_stages:
+        return
+    if float(seg_input.min()) < -1e-6:
+        _warned_negative_boundary_stages.add(stage_name)
+        print(
+            f"[segment_boundary] Warning: neural stage {stage_name!r} receives "
+            f"negative boundary values (min {float(seg_input.min()):.4f}) that the "
+            "[0,1] spike-encode clamp will drop; enable negative_value_shift to "
+            "make this boundary lossless."
+        )
 
 
 def decode_segment_output(

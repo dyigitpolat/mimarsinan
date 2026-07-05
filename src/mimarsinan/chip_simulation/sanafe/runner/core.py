@@ -105,7 +105,10 @@ class SanafeRunner(SanafeNeuralStageMixin, SanafeNeuralStageRecordMixin, SanafeS
         segments: Dict[int, SanafeSegmentRecord] = {}
         compute_outputs: Dict[int, np.ndarray] = {}
 
-        from mimarsinan.chip_simulation.hybrid_run.hybrid_execution import resolve_stage_compute_scales
+        from mimarsinan.chip_simulation.hybrid_run.hybrid_execution import (
+            compute_input_state_with_shifts,
+            resolve_stage_compute_scales,
+        )
         from mimarsinan.chip_simulation.hybrid_run.hybrid_stage_runner import run_hybrid_stages
 
         def _on_neural(stage_index, stage, state_buffer):
@@ -136,7 +139,11 @@ class SanafeRunner(SanafeNeuralStageMixin, SanafeNeuralStageRecordMixin, SanafeS
                     op=op,
                 )
                 result = _runner.execute_compute_op_numpy(
-                    op, sample_input, state_buffer,
+                    op, sample_input,
+                    compute_input_state_with_shifts(
+                        op, state_buffer,
+                        getattr(self.mapping, "node_output_shifts", None),
+                    ),
                     in_scale=in_scale, out_scale=out_scale,
                     dtype=_COMPUTE_DTYPE,
                 )

@@ -1,9 +1,11 @@
 """Case B: subsumed encoding perceptron fed by an unbounded negative ComputeOp.
 
-The subsumed encoder runs cycle-accurately in HCM on uniform-encoded input
-trains, so its input rate is clamped to [0, 1] (``_gather_op_input_train``).
-A bare signed Linear feeding it loses its negatives there — silently, unless
-the negative-value shift lifts the boundary (producer shift + encoder bias bake).
+Under the wire contract the encoder's boundary train is emitted from its host
+*value* (uniform train of ``clamp(value / theta)``), and the host value path
+gathers a shifted producer LIFTED (``compute_input_state_with_shifts``) so the
+encoder's baked bias ``B' = B − W·s`` stays value-preserving. The host→host
+handoff is therefore lossless with or without the negative-value shift: the
+shift must be a no-op on results, and NF == HCM must hold in both flows.
 """
 
 from __future__ import annotations
@@ -90,7 +92,7 @@ def _build(T, *, shift: bool, calib_x=None):
     return flow, hcm
 
 
-def test_case_b_shift_restores_nf_hcm_parity_and_recovers_negatives():
+def test_case_b_shift_is_value_preserving_and_nf_hcm_parity_holds():
     T = 8
     torch.manual_seed(3)
     x = torch.rand(4, 2, 4)
@@ -102,26 +104,15 @@ def test_case_b_shift_restores_nf_hcm_parity_and_recovers_negatives():
         nf_s, hc_s = chip_aligned_segment_forward(flow_s, x, T), hcm_s(x) / T
         nf_n, hc_n = chip_aligned_segment_forward(flow_n, x, T), hcm_n(x) / T
 
-    # With the shift, the subsumed encoder's input boundary is lossless: NF == HCM.
+    # The subsumed encoder's host boundary is lossless: NF == HCM, both flows.
     torch.testing.assert_close(nf_s, hc_s, atol=1e-6, rtol=0.0)
-    # The clamp would have silenced negatives: shifted HCM differs from unshifted.
-    assert not torch.allclose(hc_s, hc_n, atol=1e-6)
+    torch.testing.assert_close(nf_n, hc_n, atol=1e-6, rtol=0.0)
+    # The shift is value-preserving (B' = B − W·s against lifted inputs), and
+    # the host value path preserves negatives by construction, so the shifted
+    # flow must equal the unshifted one.
+    torch.testing.assert_close(hc_s, hc_n, atol=1e-6, rtol=0.0)
     # Non-vacuous: the bare Linear genuinely produced negatives on this input.
     recorder: dict = {}
     with torch.no_grad():
         chip_aligned_segment_forward(flow_n, x, T, compute_min_recorder=recorder)
     assert min(float(v.min()) for v in recorder.values()) < 0.0
-
-
-def test_case_b_unshifted_nf_mirrors_hcm_clamp():
-    """Without the shift, NF mirrors HCM's encoder-input clamp (the loss is
-    consistent across both — and announced by the boundary warning), so
-    NF == HCM holds either way; only the *information* differs (see the
-    recovery assertion in the shifted test)."""
-    T = 8
-    torch.manual_seed(3)
-    x = torch.rand(4, 2, 4)
-    flow_n, hcm_n = _build(T, shift=False)
-    with torch.no_grad():
-        nf_n, hc_n = chip_aligned_segment_forward(flow_n, x, T), hcm_n(x) / T
-    torch.testing.assert_close(nf_n, hc_n, atol=1e-6, rtol=0.0)

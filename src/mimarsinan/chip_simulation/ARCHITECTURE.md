@@ -54,7 +54,7 @@ Pareto decision layer.
 - **`common`** — file utilities, C++20 compiler discovery, `loihi_quiet` env helper.
 - **`pipelining`** — `DeploymentPlan` (firing-strategy enforcement) and `nf_scm_parity` record comparison (lazy imports avoid the cycle).
 - **`data_handling`** — `DataLoaderFactory` for simulation input providers.
-- **`spiking`** — `decode_segment_output`, the inter-stage segment-boundary decode SSOT.
+- **`spiking`** — the inter-stage segment-boundary SSOT: `decode_segment_output` plus the rate/LIF wire-domain transcode (`boundary_normalization_scales`, `normalize_boundary_slices_numpy`) applied at every runner's segment-input assembly.
 
 ## Dependents
 - **`models`** — hybrid core-flow stage loop/semantics, spike recording, spiking-mode predicates and policies, TTFS encoding, firing strategies.

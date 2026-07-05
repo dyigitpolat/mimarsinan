@@ -10,8 +10,9 @@ from mimarsinan.mapping.ir_mapping_class import IRMapping
 from mimarsinan.mapping.mappers.structural import InputMapper
 from mimarsinan.mapping.mappers.perceptron_mapper import PerceptronMapper
 from mimarsinan.mapping.model_representation import ModelRepresentation
-from mimarsinan.models.nn.activations import LIFActivation, run_cycle_accurate
+from mimarsinan.models.nn.activations import LIFActivation
 from mimarsinan.models.spiking.hybrid.flow import SpikingHybridCoreFlow
+from mimarsinan.spiking.chip_aligned_nf import chip_aligned_segment_forward
 from mimarsinan.models.perceptron_mixer.perceptron import Perceptron
 from mimarsinan.pipelining.core.simulation_factory import run_trainer_metric
 from mimarsinan.torch_mapping.encoding_layers import mark_encoding_layers
@@ -66,9 +67,12 @@ def _build_cycle_accurate_lif_model():
             self.preprocessor = torch.nn.Identity()
             self._repr = repr_
             # Register perceptrons as submodules so ``model.modules()`` reaches
-            # their LIFActivations (needed by ``run_cycle_accurate``).
+            # their LIFActivations.
             self.p1 = p1
             self.p2 = p2
+
+        def get_mapper_repr(self):
+            return self._repr
 
         def forward(self, x):
             return self._repr(x)
@@ -91,7 +95,9 @@ def test_nf_scm_subsample_parity_cycle_accurate() -> None:
             self._inner = inner
 
         def forward(self, x):
-            return run_cycle_accurate(self._inner, x, T)
+            # The chip-aligned NF (segment driver) is the SCM twin: boundary
+            # emission follows the deployed uniform wire contract.
+            return chip_aligned_segment_forward(self._inner, x, T)
 
     nf_model = _CAWrapper(model)
     nf_acc = run_trainer_metric(pipeline, nf_model)
@@ -155,6 +161,6 @@ def test_nf_scm_per_sample_output_parity_cycle_accurate() -> None:
 
     x = torch.rand(8, 8)
     with torch.no_grad():
-        nf_out = run_cycle_accurate(model, x, T)
+        nf_out = chip_aligned_segment_forward(model, x, T)
         scm_out = flow(x) / float(T)
     torch.testing.assert_close(nf_out, scm_out.to(torch.float32), atol=1e-6, rtol=0.0)

@@ -8,6 +8,7 @@ import numpy as np
 import torch
 
 from mimarsinan.chip_simulation.hybrid_run.hybrid_execution import (
+    compute_input_state_with_shifts,
     execute_compute_op_torch,
     resolve_stage_compute_scales,
 )
@@ -24,8 +25,11 @@ from mimarsinan.mapping.ir import IRSource
 from mimarsinan.models.spiking.hybrid.host import HybridFlowHost
 from mimarsinan.models.spiking.spiking_config import COMPUTE_DTYPE
 from mimarsinan.spiking.segment_boundary import (
+    boundary_normalization_scales,
     decode_segment_output_torch,
     encode_compute_boundary,
+    normalize_boundary_slices_torch,
+    warn_once_lossy_negative_clamp,
 )
 
 
@@ -43,6 +47,15 @@ class HybridRateForwardMixin(HybridFlowHost):
         state_buffer_spikes: Dict[int, torch.Tensor] = {}
 
         remaining = dict(self._build_consumer_counts())
+        node_output_shifts = getattr(self.hybrid_mapping, "node_output_shifts", None)
+        is_ttfs_family = requires_ttfs_firing(self.spiking_mode)
+        # Rate/LIF host ComputeOps run with (1, 1) scales, leaving value-domain
+        # results in the state buffer; TTFS host ops already transcode to wire
+        # via resolve_stage_compute_scales.
+        wire_divisors = (
+            {} if is_ttfs_family
+            else boundary_normalization_scales(self.hybrid_mapping)
+        )
 
         def _ctx_factory(stage_index, stage, buf):
             return HybridStageContext(
@@ -61,7 +74,11 @@ class HybridRateForwardMixin(HybridFlowHost):
             seg_input_rates = self._assemble_segment_input(
                 stage.input_map, ctx.state_buffer, batch_size, device
             )
+            seg_input_rates = normalize_boundary_slices_torch(
+                stage.input_map, seg_input_rates, wire_divisors,
+            )
             seg_input_rates = self._apply_input_shifts(stage.input_map, seg_input_rates)
+            warn_once_lossy_negative_clamp(stage.name, seg_input_rates)
             seg_input_rates_clamped = seg_input_rates.clamp(0.0, 1.0)
             spike_train = self._encode_segment_input(
                 stage,
@@ -126,10 +143,16 @@ class HybridRateForwardMixin(HybridFlowHost):
                 apply_ttfs=requires_ttfs_firing(self.spiking_mode),
                 op=op,
             )
+            gather_buffer = (
+                ctx.state_buffer if is_ttfs_family
+                else compute_input_state_with_shifts(
+                    op, ctx.state_buffer, node_output_shifts,
+                )
+            )
             result = execute_compute_op_torch(
                 op,
                 x,
-                ctx.state_buffer,
+                gather_buffer,
                 in_scale=in_scale,
                 out_scale=out_scale,
             )

@@ -1,4 +1,4 @@
-"""Boundary spike-train encoding: cycle-accurate emission + cache consumption."""
+"""Boundary spike-train encoding: uniform wire-train emission + cache consumption."""
 
 from __future__ import annotations
 
@@ -77,9 +77,9 @@ def test_boundary_config_use_cycle_accurate_trains() -> None:
     assert rate_cfg.use_cycle_accurate_trains is False
 
 
-def test_encode_compute_boundary_matches_nf_for_encoding_perceptron() -> None:
-    """Boundary emission must replay NF's per-cycle pattern, divided by activation_scale
-    (chip's binary-input convention)."""
+def test_encode_compute_boundary_is_uniform_wire_train_of_op_value() -> None:
+    """Boundary emission is the uniform wire train of the op's already computed
+    value, normalized by activation_scale (chip's binary-input convention)."""
     torch.manual_seed(0)
     T = 4
     hybrid, p1 = _tiny_lif_model(T=T)
@@ -89,34 +89,46 @@ def test_encode_compute_boundary_matches_nf_for_encoding_perceptron() -> None:
     x = torch.rand(2, 8).to(cfg.compute_dtype)
 
     from spikingjelly.activation_based import functional
+    from mimarsinan.spiking.segment_boundary import normalize_boundary_value
     from mimarsinan.spiking.spike_trains import uniform_spike_train
 
-    spike_train_in = uniform_spike_train(x.to(torch.float32), T)
     lif = p1.activation
-    lif.set_cycle_accurate(True)
-    functional.reset_net(lif)
-    nf_per_cycle_scaled = torch.stack([p1(spike_train_in[t]) for t in range(T)], dim=0)
     lif.set_cycle_accurate(False)
-
-    safe_scale = lif.activation_scale.clamp(min=1e-12)
-    nf_per_cycle_binary = nf_per_cycle_scaled / safe_scale
+    functional.reset_net(lif)
+    with torch.no_grad():
+        value = p1(x.to(torch.float32)).to(cfg.compute_dtype)
 
     emitted = encode_compute_boundary(
+        op=op,
+        state_buffer={-2: x, int(op.id): value},
+        state_buffer_spikes={},
+        config=cfg,
+        hybrid_mapping=hybrid,
+    )
+    assert emitted is not None
+    expected = uniform_spike_train(
+        normalize_boundary_value(value, lif.activation_scale), T,
+    ).to(cfg.compute_dtype)
+    torch.testing.assert_close(emitted, expected, atol=0.0, rtol=0.0)
+    unique = set(emitted.unique().tolist())
+    assert unique.issubset({0.0, 1.0}), f"expected binary spikes; got {unique}"
+
+
+def test_encode_compute_boundary_without_op_value_returns_none() -> None:
+    """The op's value is computed by the compute stage before emission; a missing
+    value falls back to rate-mode uniform encoding at the consumer."""
+    hybrid, _ = _tiny_lif_model()
+    cfg = _config()
+    op = next(s.compute_op for s in hybrid.stages if s.kind == "compute")
+    x = torch.rand(2, 8).to(cfg.compute_dtype)
+    out = encode_compute_boundary(
         op=op,
         state_buffer={-2: x},
         state_buffer_spikes={},
         config=cfg,
         hybrid_mapping=hybrid,
     )
-    assert emitted is not None
-    assert emitted.shape == nf_per_cycle_binary.shape
-    torch.testing.assert_close(
-        emitted.to(torch.float32),
-        nf_per_cycle_binary.to(torch.float32),
-        atol=1e-6, rtol=0.0,
-    )
-    unique = set(emitted.unique().tolist())
-    assert unique.issubset({0.0, 1.0}), f"expected binary spikes; got {unique}"
+    assert out is None
 
 
 def test_encode_compute_boundary_returns_none_in_rate_mode() -> None:
@@ -254,43 +266,18 @@ def test_build_segment_input_partial_cache_raises() -> None:
         )
 
 
-def test_gather_op_input_train_applies_producer_shift() -> None:
-    """A negative producer rate is lifted by its ``node_output_shifts`` entry
-    before the [0,1] clamp (Case B: subsumed encoder fed by a negative-producing
-    ComputeOp); unshifted channels are untouched."""
-    import numpy as np
-    from mimarsinan.mapping.ir import ComputeOp, IRSource
-    from mimarsinan.spiking.segment_boundary import _gather_op_input_train
+def test_warn_once_on_unshifted_negative_boundary(capsys) -> None:
+    """An unshifted negative reaching the [0,1] boundary clamp is announced
+    (once per stage) — enable negative_value_shift to make it lossless."""
+    from mimarsinan.spiking.segment_boundary import warn_once_lossy_negative_clamp
 
-    T = 4
-    cfg = _config(T=T)
-    sources = np.array(
-        [IRSource(node_id=5, index=0), IRSource(node_id=5, index=1)], dtype=object,
-    ).reshape(1, 2)
-    op = ComputeOp(id=9, name="enc", op_type="Perceptron", input_sources=sources)
-    rate = torch.tensor([[-0.5, 0.5]], dtype=cfg.compute_dtype)
-
-    train_no = _gather_op_input_train(op, {5: rate}, {}, T, cfg)
-    assert float(train_no[:, 0, 0].sum()) == 0.0          # clamped to silence
-    assert float(train_no[:, 0, 1].sum()) == T * 0.5
-
-    train_s = _gather_op_input_train(
-        op, {5: rate}, {}, T, cfg,
-        node_output_shifts={5: np.array([1.0, 0.0])},
-    )
-    assert float(train_s[:, 0, 0].sum()) == T * 0.5       # -0.5 + 1.0 recovered
-    assert float(train_s[:, 0, 1].sum()) == T * 0.5
-
-
-def test_gather_op_input_train_warns_on_unshifted_negative(capsys) -> None:
-    import numpy as np
-    from mimarsinan.mapping.ir import ComputeOp, IRSource
-    from mimarsinan.spiking.segment_boundary import _gather_op_input_train
-
-    cfg = _config(T=4)
-    sources = np.array([IRSource(node_id=6, index=0)], dtype=object).reshape(1, 1)
-    op = ComputeOp(id=11, name="enc2", op_type="Perceptron", input_sources=sources)
-    rate = torch.tensor([[-0.3]], dtype=cfg.compute_dtype)
-    _gather_op_input_train(op, {6: rate}, {}, 4, cfg)
+    rates = torch.tensor([[-0.3, 0.5]])
+    warn_once_lossy_negative_clamp("stage_under_test", rates)
     captured = capsys.readouterr()
     assert "negative" in captured.out.lower()
+
+    warn_once_lossy_negative_clamp("stage_under_test", rates)
+    assert capsys.readouterr().out == ""
+
+    warn_once_lossy_negative_clamp("all_positive_stage", torch.tensor([[0.2]]))
+    assert capsys.readouterr().out == ""
