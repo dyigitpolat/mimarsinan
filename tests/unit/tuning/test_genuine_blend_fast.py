@@ -103,7 +103,7 @@ class TestFastPathFlag:
 
 
 class TestFastRunTakesFastPath:
-    def test_run_routes_through_driver_and_records_one_commit_per_rate(self, tmp_path):
+    def test_run_routes_through_driver_and_records_one_commit_per_rate(self, tmp_path, accepting_gate):
         torch.manual_seed(0)
         tuner, _, _ = _make_tuner(tmp_path, fast=True, steps_per_rate=3)
         tuner.run()
@@ -178,7 +178,7 @@ class TestFastRunTakesFastPath:
         tuner.run()
         assert "fast_blend" in tuner._phase_seconds
 
-    def test_custom_rates_never_invoke_heavy_controller(self, tmp_path):
+    def test_custom_rates_never_invoke_heavy_controller(self, tmp_path, accepting_gate):
         """A custom ladder NOT ending in 1.0 is normalized to a trailing 1.0, so the
         ramp finishes through the fixed_ladder fast attempt — never the heavy
         ``_adaptation`` controller (LR-find/recovery/rollback), which would run
@@ -194,7 +194,7 @@ class TestFastRunTakesFastPath:
         # one fast commit per normalized rate, no extra heavy cycles
         assert len(tuner._cycle_log) == len(tuner._fixed_ladder_rates)
 
-    def test_rerun_resets_fast_scratch(self, tmp_path):
+    def test_rerun_resets_fast_scratch(self, tmp_path, accepting_gate):
         """Re-running ``run()`` on one instance rebuilds the optimizer + spanning
         cosine and resets the step counter (re-run faithfulness vs the old loop that
         built a fresh optimizer each call); otherwise a re-run re-steps an exhausted

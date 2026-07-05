@@ -8,10 +8,8 @@ from typing import TYPE_CHECKING
 
 import torch
 
-from mimarsinan.common.env import mbh_gate_enabled
 from mimarsinan.model_training.training_recipe import build_optimizer, build_recipe
 from mimarsinan.tuning.orchestration.mbh_gate import gated_fast_rate_attempt
-from mimarsinan.tuning.orchestration.mbh_ledger import emit_fast_rung_ledger
 from mimarsinan.tuning.trace import DecisionRecord
 
 if TYPE_CHECKING:
@@ -193,32 +191,19 @@ class FastLadderMixin(_FastLadderHost):
             self._fast_optimizer_steps += 1
 
     def _continue_to_full_rate(self):
-        """Under the [MBH-GATE] flag the forced jump to 1.0 does NO training on
-        destructive intermediate rates: skip the adaptive micro-ramp."""
-        if getattr(self, "_fixed_ladder_policy", False) and mbh_gate_enabled():
+        """The gated fixed ladder never trains destructive intermediate rates:
+        the forced jump to 1.0 skips the adaptive micro-ramp (finalize applies
+        the full rate without training)."""
+        if getattr(self, "_fixed_ladder_policy", False):
             return None
         return super()._continue_to_full_rate()
 
     def _fast_rate_attempt(self, target):
-        """One fast-ladder rung, driven THROUGH the seam verbs (EF2): the fast
-        predictor ``_fast_ramp`` (apply T + train) then the universal ``probe`` read.
-        Records a commit into the trace; always commits ``target`` (no rollback) —
-        unless the opt-in [MBH-GATE] D-hat trust region is on."""
-        if mbh_gate_enabled():
-            return gated_fast_rate_attempt(self, float(target))
-        self._ensure_fast_optimizer()
-        t0 = time.time()
-        self._fast_ramp(float(target))
-        self._committed_rate = float(target)
-        post_acc = self.probe()
-        self._record_fast_cycle(float(target), post_acc, t0)
-        self._last_post_acc = post_acc
-        self._fast_probe(float(target))
-        self._phase_seconds["fast_blend"] = (
-            self._phase_seconds.get("fast_blend", 0.0) + (time.time() - t0)
-        )
-        emit_fast_rung_ledger(self, rate=float(target), blended_acc=float(post_acc))
-        return float(target)
+        """One fast-ladder rung, driven THROUGH the seam verbs (EF2) by the
+        default [MBH-GATE] D-hat trust region: the fast predictor ``_fast_ramp``
+        (apply T + train), the deployed full-transform read, then
+        accept / midpoint-refine / constructive stall (X3 recipe promotion)."""
+        return gated_fast_rate_attempt(self, float(target))
 
     def _mbh_full_transform_forward(self, clone):
         """[MBH] Force the deployed full transformation (rate 1.0) on an isolated

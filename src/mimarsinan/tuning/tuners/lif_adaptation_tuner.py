@@ -6,7 +6,6 @@ from typing import cast
 
 import torch.nn as nn
 
-from mimarsinan.common.env import mbh_lif_realloc_enabled, mbh_lif_tanneal_enabled
 from mimarsinan.models.nn.activations import (
     ChipInputQuantizer,
     LIFActivation,
@@ -56,13 +55,10 @@ class LIFBlendActivation(BlendActivation):
         return cast(LIFActivation, self.target_activation)
 
 
-_MBH_REALLOC_STABILIZE_STEPS = 2000
-
-
 def derive_lif_tanneal_schedule(config, *, ladder_rates) -> TAnnealSchedule | None:
-    """[MBH X2b] The T-anneal schedule when ``MIMARSINAN_MBH_LIF_TANNEAL`` is on
-    and the mode is lif, else None (the value-blend recipe stays bit-identical)."""
-    if not mbh_lif_tanneal_enabled():
+    """The T-anneal schedule when the ``lif_tanneal`` recipe knob is on and the
+    mode is lif, else None (the value-blend recipe stays bit-identical)."""
+    if not bool(config.get("lif_tanneal", False)):
         return None
     # Lazy: chip_simulation has a fragile import cycle with tuning at init time.
     from mimarsinan.chip_simulation.spiking_semantics import is_lif
@@ -99,7 +95,7 @@ class LIFAdaptationTuner(KDBlendAdaptationTuner):
                 self.pipeline.config.get("lif_blend_fast_lr_eta_min", 0.1)
             ),
         )
-        # [MBH X2b] opt-in realizable T-anneal over the SAME normalized ladder
+        # The LIF recipe's realizable T-anneal over the SAME normalized ladder
         # (equal budget); None keeps the value-blend recipe bit-identical.
         self._tanneal = derive_lif_tanneal_schedule(
             self.pipeline.config, ladder_rates=self._fixed_ladder_rates,
@@ -107,10 +103,6 @@ class LIFAdaptationTuner(KDBlendAdaptationTuner):
         self._fast_stabilize_steps = int(
             self.pipeline.config.get("lif_blend_fast_stabilize_steps", 0)
         )
-        if mbh_lif_realloc_enabled():
-            # [MBH X2/E2] the budget reclaimed from the inert clamp/AQ ladders
-            # moves into the deployed-forward stabilize.
-            self._fast_stabilize_steps = _MBH_REALLOC_STABILIZE_STEPS
         self._lif_distmatch = bool(self.pipeline.config.get("lif_distmatch", False))
         self._lif_distmatch_bias_iters = int(
             self.pipeline.config.get("lif_distmatch_bias_iters", 10)

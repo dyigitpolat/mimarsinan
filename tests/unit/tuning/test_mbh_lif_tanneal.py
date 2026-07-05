@@ -1,17 +1,17 @@
-"""[MBH X2b] LIF T-annealing realizable family (theory T1/P1', experiment X2b).
+"""LIF T-annealing realizable family — the default LIF recipe (MBH X3, from X2b).
 
-Gated by ``MIMARSINAN_MBH_LIF_TANNEAL`` through the env SSOT, default OFF (OFF ==
-bit-identical to the value-blend recipe). When ON and the mode is lif
-(spiking_semantics predicate), the LIF adaptation tuner replaces the value-blend
-ladder with a T-annealing ladder: the LIF spiking activation is installed FULLY
-from the first rung (blend rate pinned at 1.0 — no old/target mixture) and the
-ladder rate instead anneals the node simulation-step count T (and the encoding
-``ChipInputQuantizer`` grid) down a pow2-snapped geometric schedule that
-terminates EXACTLY at ``simulation_steps`` (P1' endpoint exactness). Every rung
-is a genuine deployable LIF network at the rung's T. Budget, KD loss, optimizer
-and rung count are the value-blend recipe's (equal-budget T1 comparison); D-hat
-stays the FULL target behavior at target_T; the [MBH] ledger and [MBH-GATE]
-compose unchanged.
+Driven by the ConversionPolicy recipe knob ``lif_tanneal`` (folded into the
+config for lif mode; knob off keeps the value-blend ramp bit-identical). When on
+and the mode is lif (spiking_semantics predicate), the LIF adaptation tuner
+replaces the value-blend ladder with a T-annealing ladder: the LIF spiking
+activation is installed FULLY from the first rung (blend rate pinned at 1.0 —
+no old/target mixture) and the ladder rate instead anneals the node
+simulation-step count T (and the encoding ``ChipInputQuantizer`` grid) down a
+pow2-snapped geometric schedule that terminates EXACTLY at ``simulation_steps``
+(P1' endpoint exactness). Every rung is a genuine deployable LIF network at the
+rung's T. Budget, KD loss, optimizer and rung count are the value-blend
+recipe's (equal-budget T1 comparison); D-hat stays the FULL target behavior at
+target_T; the [MBH] ledger and the default D-hat gate compose unchanged.
 """
 
 from __future__ import annotations
@@ -31,20 +31,7 @@ from mimarsinan.tuning.orchestration.adaptation_manager import AdaptationManager
 _LEDGER_RE = re.compile(r"^\[MBH\] tuner=\S+ rung=\d+ rate=[0-9.]+ ")
 
 
-def _set_flag(monkeypatch, enabled, *, gate=False, ledger=False):
-    monkeypatch.delenv(env.MBH_GATE_VAR, raising=False)
-    monkeypatch.delenv(env.MBH_LEDGER_VAR, raising=False)
-    if enabled:
-        monkeypatch.setenv(env.MBH_LIF_TANNEAL_VAR, "1")
-    else:
-        monkeypatch.delenv(env.MBH_LIF_TANNEAL_VAR, raising=False)
-    if gate:
-        monkeypatch.setenv(env.MBH_GATE_VAR, "1")
-    if ledger:
-        monkeypatch.setenv(env.MBH_LEDGER_VAR, "1")
-
-
-def _lif_tuner(tmp_path, *, steps_per_rate=2, rates=(0.25, 0.5, 0.75, 1.0),
+def _lif_tuner(tmp_path, *, tanneal, steps_per_rate=2, rates=(0.25, 0.5, 0.75, 1.0),
                simulation_steps=4, target_metric=0.0):
     from mimarsinan.tuning.tuners.lif_adaptation_tuner import LIFAdaptationTuner
 
@@ -56,6 +43,7 @@ def _lif_tuner(tmp_path, *, steps_per_rate=2, rates=(0.25, 0.5, 0.75, 1.0),
     cfg["lif_blend_fast"] = True
     cfg["lif_blend_fast_steps_per_rate"] = steps_per_rate
     cfg["lif_blend_fast_rates"] = list(rates)
+    cfg["lif_tanneal"] = bool(tanneal)
     pipeline = MockPipeline(config=cfg, working_directory=str(tmp_path))
     pipeline._target_metric = target_metric
     model = make_tiny_supermodel()
@@ -77,10 +65,24 @@ def _input_quantizers(model):
     return [m for m in model.modules() if isinstance(m, ChipInputQuantizer)]
 
 
-def _run_seeded(tmp_path, monkeypatch, enabled, **kw):
-    _set_flag(monkeypatch, enabled)
+def _inject_accepting_gate(monkeypatch):
+    """Never-regressing D-hat measurements: the default gate rides the accept path."""
+    monkeypatch.setattr(
+        mbh_ledger, "rung_measurements",
+        lambda tuner: {
+            "blended_fp32": 0.5, "full_acc": 0.5,
+            "rho": 1.0, "grad_norm_t": 0.0,
+        },
+    )
+    monkeypatch.setattr(
+        mbh_ledger, "full_transform_measurement", lambda tuner: 0.5,
+    )
+
+
+def _run_seeded(tmp_path, monkeypatch, tanneal, **kw):
+    _inject_accepting_gate(monkeypatch)
     torch.manual_seed(0)
-    tuner = _lif_tuner(tmp_path, **kw)
+    tuner = _lif_tuner(tmp_path, tanneal=tanneal, **kw)
     try:
         tuner.run()
     finally:
@@ -88,21 +90,24 @@ def _run_seeded(tmp_path, monkeypatch, enabled, **kw):
     return tuner
 
 
-# -- the env SSOT accessor -----------------------------------------------------
+# -- the recipe carries the knob ---------------------------------------------------
 
-class TestEnvFlag:
-    def test_default_off(self, monkeypatch):
-        monkeypatch.delenv(env.MBH_LIF_TANNEAL_VAR, raising=False)
-        assert env.mbh_lif_tanneal_enabled() is False
+class TestRecipeKnob:
+    def test_lif_recipe_turns_tanneal_on(self):
+        from mimarsinan.tuning.orchestration.conversion_policy import ConversionPolicy
 
-    def test_exactly_one_enables(self, monkeypatch):
-        monkeypatch.setenv(env.MBH_LIF_TANNEAL_VAR, "1")
-        assert env.mbh_lif_tanneal_enabled() is True
+        assert ConversionPolicy.derive("lif").knobs["lif_tanneal"] is True
 
-    def test_other_values_stay_off(self, monkeypatch):
-        for value in ("0", "true", "yes", ""):
-            monkeypatch.setenv(env.MBH_LIF_TANNEAL_VAR, value)
-            assert env.mbh_lif_tanneal_enabled() is False
+    def test_non_lif_recipes_carry_no_tanneal_knob(self):
+        from mimarsinan.tuning.orchestration.conversion_policy import ConversionPolicy
+
+        for mode, schedule in (
+            ("ttfs", None),
+            ("ttfs_quantized", None),
+            ("ttfs_cycle_based", "cascaded"),
+            ("ttfs_cycle_based", "synchronized"),
+        ):
+            assert "lif_tanneal" not in ConversionPolicy.derive(mode, schedule).knobs
 
 
 # -- schedule math (the rate -> T SSOT) ------------------------------------------
@@ -199,47 +204,43 @@ class TestSchedule:
 
 
 class TestDerive:
-    def test_flag_off_is_none(self, monkeypatch):
+    def test_knob_off_is_none(self):
         from mimarsinan.tuning.tuners.lif_adaptation_tuner import (
             derive_lif_tanneal_schedule,
         )
 
-        _set_flag(monkeypatch, False)
         cfg = {"spiking_mode": "lif", "simulation_steps": 4}
         assert derive_lif_tanneal_schedule(cfg, ladder_rates=[0.5, 1.0]) is None
+        cfg["lif_tanneal"] = False
+        assert derive_lif_tanneal_schedule(cfg, ladder_rates=[0.5, 1.0]) is None
 
-    def test_flag_on_lif_derives_from_simulation_steps(self, monkeypatch):
+    def test_knob_on_lif_derives_from_simulation_steps(self):
         from mimarsinan.tuning.tuners.lif_adaptation_tuner import (
             derive_lif_tanneal_schedule,
         )
 
-        _set_flag(monkeypatch, True)
-        cfg = {"spiking_mode": "lif", "simulation_steps": 4}
+        cfg = {"spiking_mode": "lif", "simulation_steps": 4, "lif_tanneal": True}
         schedule = derive_lif_tanneal_schedule(cfg, ladder_rates=[0.5, 1.0])
         assert schedule is not None
         assert schedule.target_T == 4
         assert schedule.ladder_rates == (0.5, 1.0)
 
-    def test_flag_on_non_lif_modes_are_none(self, monkeypatch):
+    def test_knob_on_non_lif_modes_are_none(self):
         from mimarsinan.tuning.tuners.lif_adaptation_tuner import (
             derive_lif_tanneal_schedule,
         )
 
-        _set_flag(monkeypatch, True)
         for mode in ("ttfs", "ttfs_quantized", "ttfs_cycle_based"):
-            cfg = {"spiking_mode": mode, "simulation_steps": 4}
+            cfg = {"spiking_mode": mode, "simulation_steps": 4, "lif_tanneal": True}
             assert derive_lif_tanneal_schedule(cfg, ladder_rates=[0.5, 1.0]) is None
 
 
 # -- every rung is a genuine deployable LIF network -------------------------------
 
 class TestEveryRungRealizable:
-    def test_each_ladder_rate_installs_full_lif_at_the_rung_T(
-        self, tmp_path, monkeypatch,
-    ):
-        _set_flag(monkeypatch, True)
+    def test_each_ladder_rate_installs_full_lif_at_the_rung_T(self, tmp_path):
         torch.manual_seed(0)
-        tuner = _lif_tuner(tmp_path)
+        tuner = _lif_tuner(tmp_path, tanneal=True)
         try:
             expected = dict(zip((0.25, 0.5, 0.75, 1.0), (32, 16, 8, 4)))
             for rate, rung_T in expected.items():
@@ -259,10 +260,9 @@ class TestEveryRungRealizable:
         finally:
             tuner.close()
 
-    def test_rung_forward_is_bitwise_the_bare_lif_target(self, tmp_path, monkeypatch):
-        _set_flag(monkeypatch, True)
+    def test_rung_forward_is_bitwise_the_bare_lif_target(self, tmp_path):
         torch.manual_seed(0)
-        tuner = _lif_tuner(tmp_path)
+        tuner = _lif_tuner(tmp_path, tanneal=True)
         try:
             tuner._set_rate(0.5)
             x = torch.linspace(-1.0, 2.0, 23).unsqueeze(0)
@@ -274,10 +274,9 @@ class TestEveryRungRealizable:
         finally:
             tuner.close()
 
-    def test_full_rate_lands_exactly_on_target_T(self, tmp_path, monkeypatch):
-        _set_flag(monkeypatch, True)
+    def test_full_rate_lands_exactly_on_target_T(self, tmp_path):
         torch.manual_seed(0)
-        tuner = _lif_tuner(tmp_path)
+        tuner = _lif_tuner(tmp_path, tanneal=True)
         try:
             tuner._set_rate(1.0)
             for lif in _lif_targets(tuner.model):
@@ -287,10 +286,9 @@ class TestEveryRungRealizable:
         finally:
             tuner.close()
 
-    def test_extra_state_roundtrips_blend_rates_and_T(self, tmp_path, monkeypatch):
-        _set_flag(monkeypatch, True)
+    def test_extra_state_roundtrips_blend_rates_and_T(self, tmp_path):
         torch.manual_seed(0)
-        tuner = _lif_tuner(tmp_path)
+        tuner = _lif_tuner(tmp_path, tanneal=True)
         try:
             tuner._set_rate(0.5)
             snapshot = tuner._get_extra_state()
@@ -311,11 +309,10 @@ class TestEveryRungRealizable:
 
 class TestDhatUsesTargetT:
     def test_full_transform_clone_is_at_target_T_live_stays_at_rung_T(
-        self, tmp_path, monkeypatch,
+        self, tmp_path,
     ):
-        _set_flag(monkeypatch, True)
         torch.manual_seed(0)
-        tuner = _lif_tuner(tmp_path)
+        tuner = _lif_tuner(tmp_path, tanneal=True)
         try:
             tuner._set_rate(0.25)
             clone = copy.deepcopy(tuner.model)
@@ -334,59 +331,56 @@ class TestDhatUsesTargetT:
             tuner.close()
 
 
-# -- tuner wiring and flag-off bit-identity ---------------------------------------
+# -- tuner wiring and knob-off bit-identity ---------------------------------------
 
 class TestTunerWiring:
-    def test_flag_on_swaps_axis_and_ramp_strategy(self, tmp_path, monkeypatch):
+    def test_knob_on_swaps_axis_and_ramp_strategy(self, tmp_path):
         from mimarsinan.tuning.orchestration.mbh_tanneal import (
             LIFTAnnealAxis,
             TAnnealRealizableRamp,
         )
 
-        _set_flag(monkeypatch, True)
-        tuner = _lif_tuner(tmp_path)
+        tuner = _lif_tuner(tmp_path, tanneal=True)
         try:
             assert isinstance(tuner._ramp, TAnnealRealizableRamp)
             assert isinstance(tuner._axis, LIFTAnnealAxis)
         finally:
             tuner.close()
 
-    def test_flag_off_keeps_the_value_blend_recipe(self, tmp_path, monkeypatch):
+    def test_knob_off_keeps_the_value_blend_recipe(self, tmp_path):
         from mimarsinan.tuning.axes.blend_axis import BlendAxis
         from mimarsinan.tuning.orchestration.mbh_tanneal import LIFTAnnealAxis
         from mimarsinan.tuning.orchestration.ramp_strategy import ValueDomainProxyRamp
 
-        _set_flag(monkeypatch, False)
-        tuner = _lif_tuner(tmp_path)
+        tuner = _lif_tuner(tmp_path, tanneal=False)
         try:
             assert type(tuner._ramp) is ValueDomainProxyRamp
             assert isinstance(tuner._axis, BlendAxis)
             assert not isinstance(tuner._axis, LIFTAnnealAxis)
             tuner._set_rate(0.5)
             rates = {float(p.base_activation.rate) for p in tuner.model.get_perceptrons()}
-            assert rates == {0.5}, "flag OFF must ramp the value blend as before"
+            assert rates == {0.5}, "knob OFF must ramp the value blend as before"
         finally:
             tuner.close()
 
-    def test_kd_loss_is_the_recipe_loss_in_both_modes(self, tmp_path, monkeypatch):
+    def test_kd_loss_is_the_recipe_loss_in_both_modes(self, tmp_path):
         from mimarsinan.tuning.orchestration.blend_ramp import KDClassificationLoss
 
-        for enabled, sub in ((False, "off"), (True, "on")):
-            _set_flag(monkeypatch, enabled)
-            tuner = _lif_tuner(tmp_path / sub)
+        for tanneal, sub in ((False, "off"), (True, "on")):
+            tuner = _lif_tuner(tmp_path / sub, tanneal=tanneal)
             try:
                 assert isinstance(tuner.trainer.loss_function, KDClassificationLoss)
             finally:
                 tuner.close()
 
-    def test_equal_budget_flag_on_vs_off(self, tmp_path, monkeypatch):
+    def test_equal_budget_knob_on_vs_off(self, tmp_path, monkeypatch):
         t_off = _run_seeded(tmp_path / "off", monkeypatch, False)
         t_on = _run_seeded(tmp_path / "on", monkeypatch, True)
         assert t_on._fast_optimizer_steps == t_off._fast_optimizer_steps
         assert t_on._fast_optimizer_steps == \
             len(t_on._fixed_ladder_rates) * t_on._fast_steps_per_rate
 
-    def test_flag_on_run_completes_at_target_T(self, tmp_path, monkeypatch, capsys):
+    def test_knob_on_run_completes_at_target_T(self, tmp_path, monkeypatch, capsys):
         tuner = _run_seeded(tmp_path, monkeypatch, True)
         assert tuner._committed_rate == pytest.approx(1.0)
         for lif in _lif_targets(tuner.model):
@@ -396,34 +390,19 @@ class TestTunerWiring:
         assert [e["outcome"] for e in tuner._cycle_log] == \
             ["commit"] * len(tuner._fixed_ladder_rates)
         out = capsys.readouterr().out
-        assert not [l for l in out.splitlines() if l.startswith("[MBH]")], (
+        assert not [l for l in out.splitlines() if l.startswith("[MBH] ")], (
             "no [MBH] ledger lines without the ledger flag"
         )
 
-    def test_flag_off_matches_unset_bitwise(self, tmp_path, monkeypatch):
-        t_unset = _run_seeded(tmp_path / "unset", monkeypatch, False)
-        monkeypatch.setenv(env.MBH_LIF_TANNEAL_VAR, "0")
-        torch.manual_seed(0)
-        t_zero = _lif_tuner(tmp_path / "zero")
-        try:
-            t_zero.run()
-        finally:
-            t_zero.close()
-        sd_a, sd_b = t_unset.model.state_dict(), t_zero.model.state_dict()
-        assert sd_a.keys() == sd_b.keys()
-        for key in sd_a:
-            assert torch.equal(sd_a[key], sd_b[key]), key
-        assert [e["post_acc"] for e in t_unset._cycle_log] == \
-            [e["post_acc"] for e in t_zero._cycle_log]
 
-
-# -- composition with the [MBH] ledger and the [MBH-GATE] --------------------------
+# -- composition with the [MBH] ledger and the default D-hat gate -------------------
 
 class TestLedgerComposition:
     def test_one_ledger_line_per_rung(self, tmp_path, monkeypatch, capsys):
-        _set_flag(monkeypatch, True, ledger=True)
+        monkeypatch.setenv(env.MBH_LEDGER_VAR, "1")
+        _inject_accepting_gate(monkeypatch)
         torch.manual_seed(0)
-        tuner = _lif_tuner(tmp_path, rates=(0.5, 1.0))
+        tuner = _lif_tuner(tmp_path, tanneal=True, rates=(0.5, 1.0))
         try:
             tuner.run()
         finally:
@@ -457,10 +436,9 @@ class TestGateComposition:
         )
 
     def test_accepting_gate_walks_the_T_ladder(self, tmp_path, monkeypatch, capsys):
-        _set_flag(monkeypatch, True, gate=True)
         self._inject_measurements(monkeypatch, entry=0.1, full_accs=[0.2, 0.3])
         torch.manual_seed(0)
-        tuner = _lif_tuner(tmp_path, rates=(0.5, 1.0))
+        tuner = _lif_tuner(tmp_path, tanneal=True, rates=(0.5, 1.0))
         try:
             tuner.run()
             assert tuner._committed_rate == pytest.approx(1.0)
@@ -475,10 +453,9 @@ class TestGateComposition:
     def test_rejecting_gate_stalls_and_still_finalizes_at_target_T(
         self, tmp_path, monkeypatch, capsys,
     ):
-        _set_flag(monkeypatch, True, gate=True)
         self._inject_measurements(monkeypatch, entry=0.9, full_accs=[0.1])
         torch.manual_seed(0)
-        tuner = _lif_tuner(tmp_path, rates=(0.5, 1.0))
+        tuner = _lif_tuner(tmp_path, tanneal=True, rates=(0.5, 1.0))
         try:
             with pytest.warns(UserWarning, match="natural adaptation reached only"):
                 tuner.run()

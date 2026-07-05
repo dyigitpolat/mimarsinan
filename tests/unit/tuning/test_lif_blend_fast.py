@@ -58,7 +58,7 @@ class TestLifFastFlag:
 
 
 class TestLifFastRun:
-    def test_run_commits_one_and_records_one_trace_per_rate(self, tmp_path):
+    def test_run_commits_one_and_records_one_trace_per_rate(self, tmp_path, accepting_gate):
         torch.manual_seed(0)
         tuner, _, _ = _make_tuner(tmp_path, fast=True, steps_per_rate=3, rates=[0.5, 1.0])
         tuner.run()
@@ -119,7 +119,7 @@ class TestLifFastRun:
         assert seen
         assert any(seen)
 
-    def test_rerun_resets_fast_scratch(self, tmp_path):
+    def test_rerun_resets_fast_scratch(self, tmp_path, accepting_gate):
         torch.manual_seed(0)
         tuner, _, _ = _make_tuner(tmp_path, fast=True, steps_per_rate=2, rates=[0.5, 1.0])
         tuner.run()

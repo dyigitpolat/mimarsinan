@@ -1,14 +1,15 @@
-"""[MBH-GATE] probe-gated fast ladder (MBH theory, experiment X2/E1, prediction T3).
+"""The D-hat-gated fast ladder — the DEFAULT ladder driver (MBH X3, from X2/T3).
 
-Gated by ``MIMARSINAN_MBH_GATE`` through the env SSOT, default OFF (flag off ==
-today's no-reject fast ladder, bit-identical). When ON, every fast-ladder rung
-becomes a D-hat trust-region attempt: snapshot -> train -> measure the deployed
-full-transform accuracy (fp32, clone-based) -> ACCEPT iff D-hat >= best - 0.01,
-else restore and retry the midpoint rate (max 3 refinements), then CONSTRUCTIVE
-STALL: stop consuming rungs and restore the best-D-hat snapshot. The pipeline's
-force-to-1.0 finalize contract stays intact; the ``_continue_to_full_rate``
-micro-ramp is skipped under the flag (no training on destructive intermediate
-rates); gate ON implies the [MBH] ledger measurements (both line families emit).
+Every fast-ladder rung is a D-hat trust-region attempt: snapshot -> train ->
+measure the deployed full-transform accuracy (fp32, clone-based) -> ACCEPT iff
+D-hat >= best - 0.01, else restore and retry the midpoint rate (max 3
+refinements), then CONSTRUCTIVE STALL: stop consuming rungs and restore the
+best-D-hat snapshot. There is no ungated fast path anymore: the recipe IS the
+gate. The pipeline's force-to-1.0 finalize contract stays intact; the
+``_continue_to_full_rate`` micro-ramp is always skipped on the fixed ladder (no
+training on destructive intermediate rates). ``MIMARSINAN_MBH_LEDGER`` is the
+verbose-diagnostics flag only: gate probes run regardless; per-rung [MBH] lines
+print only under the flag.
 """
 
 from __future__ import annotations
@@ -38,17 +39,6 @@ def _gate_lines(text):
 
 def _ledger_lines(text):
     return [line for line in text.splitlines() if line.startswith("[MBH] ")]
-
-
-def _set_gate(monkeypatch, enabled, *, ledger=False):
-    if enabled:
-        monkeypatch.setenv(env.MBH_GATE_VAR, "1")
-    else:
-        monkeypatch.delenv(env.MBH_GATE_VAR, raising=False)
-    if ledger:
-        monkeypatch.setenv(env.MBH_LEDGER_VAR, "1")
-    else:
-        monkeypatch.delenv(env.MBH_LEDGER_VAR, raising=False)
 
 
 # -- fixtures (mirror test_mbh_ledger) -------------------------------------------
@@ -130,129 +120,79 @@ def _assert_state_equal(sd_a, sd_b):
         assert torch.equal(sd_a[key], sd_b[key]), key
 
 
-# -- the env SSOT accessor --------------------------------------------------------
-
-class TestEnvFlag:
-    def test_default_off(self, monkeypatch):
-        monkeypatch.delenv(env.MBH_GATE_VAR, raising=False)
-        assert env.mbh_gate_enabled() is False
-
-    def test_exactly_one_enables(self, monkeypatch):
-        monkeypatch.setenv(env.MBH_GATE_VAR, "1")
-        assert env.mbh_gate_enabled() is True
-
-    def test_other_values_stay_off(self, monkeypatch):
-        for value in ("0", "true", "yes", ""):
-            monkeypatch.setenv(env.MBH_GATE_VAR, value)
-            assert env.mbh_gate_enabled() is False
+def _ungated_ladder_replay(tuner):
+    """The pre-X3 (flag-off) fast ladder, replayed through the same seam verbs:
+    train every rung, commit unconditionally. The equivalence reference for the
+    all-accepts trajectory."""
+    _prepare_direct_attempts(tuner)
+    for target in tuner._fixed_ladder_rates:
+        tuner._ensure_fast_optimizer()
+        tuner._fast_ramp(float(target))
+        tuner._committed_rate = float(target)
+        post_acc = tuner.probe()
+        tuner._last_post_acc = post_acc
+        tuner._fast_probe(float(target))
+    return tuner
 
 
-# -- flag OFF == today ------------------------------------------------------------
+# -- default equivalence: all-accepts == the historical ungated ladder --------------
 
-class TestGateOffBitIdentity:
-    def test_off_matches_unset_and_emits_nothing(self, tmp_path, monkeypatch, capsys):
-        _set_gate(monkeypatch, False)
-        torch.manual_seed(0)
-        t_unset = _clamp_tuner(tmp_path / "unset")
-        try:
-            t_unset.run()
-        finally:
-            t_unset.close()
-        out_unset = capsys.readouterr().out
-
-        monkeypatch.setenv(env.MBH_GATE_VAR, "0")
-        torch.manual_seed(0)
-        t_zero = _clamp_tuner(tmp_path / "zero")
-        try:
-            t_zero.run()
-        finally:
-            t_zero.close()
-        out_zero = capsys.readouterr().out
-
-        assert not _gate_lines(out_unset) and not _gate_lines(out_zero)
-        assert not _ledger_lines(out_unset) and not _ledger_lines(out_zero)
-        _assert_state_equal(
-            t_unset.model.state_dict(), t_zero.model.state_dict()
-        )
-
-    def test_off_continue_to_full_rate_delegates_to_run_mixin(
-        self, tmp_path, monkeypatch,
+class TestDefaultEquivalence:
+    def test_all_accepts_match_the_ungated_ladder_bitwise(
+        self, tmp_path, monkeypatch, capsys,
     ):
-        from mimarsinan.tuning.orchestration.smooth_adaptation_run import (
-            SmoothAdaptationRunMixin,
-        )
-
-        _set_gate(monkeypatch, False)
-        calls = []
-        monkeypatch.setattr(
-            SmoothAdaptationRunMixin, "_continue_to_full_rate",
-            lambda self: calls.append(True),
-        )
-        tuner = _clamp_tuner(tmp_path)
+        # With a never-regressing D-hat the gated trajectory is bit-identical to
+        # the historical ungated ladder: measurements are isolated, snapshots are
+        # read-only. This is the recipe-default form of the old flag-off==flag-on
+        # equivalence proof.
+        torch.manual_seed(0)
+        t_ref = _clamp_tuner(tmp_path / "ref")
         try:
-            tuner._continue_to_full_rate()
-            assert calls == [True]
+            _ungated_ladder_replay(t_ref)
         finally:
-            tuner.close()
+            t_ref.close()
+        capsys.readouterr()
 
-    def test_on_skips_continue_to_full_rate(self, tmp_path, monkeypatch):
-        from mimarsinan.tuning.orchestration.smooth_adaptation_run import (
-            SmoothAdaptationRunMixin,
-        )
-
-        _set_gate(monkeypatch, True)
-        calls = []
-        monkeypatch.setattr(
-            SmoothAdaptationRunMixin, "_continue_to_full_rate",
-            lambda self: calls.append(True),
-        )
-        tuner = _clamp_tuner(tmp_path)
+        _inject_measurements(monkeypatch, entry=0.4, full_accs=[0.5, 0.6])
+        torch.manual_seed(0)
+        t_gated = _clamp_tuner(tmp_path / "gated")
         try:
-            tuner._committed_rate = 0.5
-            tuner._continue_to_full_rate()
-            assert calls == []
+            _prepare_direct_attempts(t_gated)
+            for target in t_gated._fixed_ladder_rates:
+                t_gated._driver_attempt(target)
         finally:
-            tuner.close()
+            t_gated.close()
+        out = capsys.readouterr().out
+
+        _assert_state_equal(t_ref.model.state_dict(), t_gated.model.state_dict())
+        assert t_gated._fast_optimizer_steps == t_ref._fast_optimizer_steps
+        assert t_gated._committed_rate == pytest.approx(1.0)
+        gate = _gate_lines(out)
+        assert gate[0].startswith("[MBH-GATE] tuner=ClampTuner entry best_full_acc=")
+        assert all(" accept " in line for line in gate[1:])
 
 
 # -- accept path -------------------------------------------------------------------
 
 class TestAcceptPath:
-    def test_all_accepts_match_flag_off_bitwise(self, tmp_path, monkeypatch, capsys):
-        # With a never-regressing D-hat, the gated trajectory is bit-identical to
-        # the ungated one: measurements are isolated, snapshots are read-only.
-        _set_gate(monkeypatch, False)
-        torch.manual_seed(0)
-        t_off = _clamp_tuner(tmp_path / "off")
-        try:
-            t_off.run()
-        finally:
-            t_off.close()
-        capsys.readouterr()
-
-        _set_gate(monkeypatch, True)
+    def test_full_run_commits_every_rung(self, tmp_path, monkeypatch, capsys):
         _inject_measurements(monkeypatch, entry=0.4, full_accs=[0.5, 0.6])
         torch.manual_seed(0)
-        t_on = _clamp_tuner(tmp_path / "on")
+        tuner = _clamp_tuner(tmp_path)
         try:
-            t_on.run()
+            tuner.run()
         finally:
-            t_on.close()
-        out_on = capsys.readouterr().out
+            tuner.close()
+        out = capsys.readouterr().out
 
-        _assert_state_equal(t_off.model.state_dict(), t_on.model.state_dict())
-        assert [e["post_acc"] for e in t_off._cycle_log] == \
-            [e["post_acc"] for e in t_on._cycle_log]
-        assert t_on._committed_rate == pytest.approx(1.0)
-        assert [e["outcome"] for e in t_on._cycle_log] == ["commit", "commit"]
-
-        gate = _gate_lines(out_on)
+        assert tuner._committed_rate == pytest.approx(1.0)
+        assert [e["outcome"] for e in tuner._cycle_log] == ["commit", "commit"]
+        gate = _gate_lines(out)
         assert len(gate) == 3
         assert gate[0].startswith("[MBH-GATE] tuner=ClampTuner entry best_full_acc=")
         assert all(" accept " in line for line in gate[1:])
 
     def test_within_tolerance_dip_is_accepted(self, tmp_path, monkeypatch, capsys):
-        _set_gate(monkeypatch, True)
         _inject_measurements(monkeypatch, entry=0.5, full_accs=[0.495, 0.505])
         torch.manual_seed(0)
         tuner = _clamp_tuner(tmp_path)
@@ -265,21 +205,8 @@ class TestAcceptPath:
         assert tuner._committed_rate == pytest.approx(1.0)
         assert tuner._mbh_gate_state.best_full_acc == pytest.approx(0.505)
 
-    def test_gate_implies_ledger_lines(self, tmp_path, monkeypatch, capsys):
-        _set_gate(monkeypatch, True, ledger=False)
-        _inject_measurements(monkeypatch, entry=0.4, full_accs=[0.5, 0.6])
-        torch.manual_seed(0)
-        tuner = _clamp_tuner(tmp_path)
-        try:
-            tuner.run()
-        finally:
-            tuner.close()
-        out = capsys.readouterr().out
-        assert len(_ledger_lines(out)) == 2, "gate ON must emit [MBH] lines too"
-
     def test_real_measurements_smoke(self, tmp_path, monkeypatch, capsys):
         # No injection: the actual clone-based D-hat plumbing drives the gate.
-        _set_gate(monkeypatch, True)
         torch.manual_seed(0)
         tuner = _clamp_tuner(tmp_path)
         try:
@@ -295,13 +222,83 @@ class TestAcceptPath:
         )
 
 
+# -- the ledger flag is verbose diagnostics only ------------------------------------
+
+class TestLedgerFlagIsVerboseOnly:
+    def test_default_emits_gate_lines_but_no_ledger_lines(
+        self, tmp_path, monkeypatch, capsys,
+    ):
+        monkeypatch.delenv(env.MBH_LEDGER_VAR, raising=False)
+        _inject_measurements(monkeypatch, entry=0.4, full_accs=[0.5, 0.6])
+        torch.manual_seed(0)
+        tuner = _clamp_tuner(tmp_path)
+        try:
+            tuner.run()
+        finally:
+            tuner.close()
+        out = capsys.readouterr().out
+        assert _gate_lines(out), "gate decisions always print"
+        assert not _ledger_lines(out), "[MBH] rung lines are ledger-flag-only"
+
+    def test_ledger_flag_adds_rung_lines(self, tmp_path, monkeypatch, capsys):
+        monkeypatch.setenv(env.MBH_LEDGER_VAR, "1")
+        _inject_measurements(monkeypatch, entry=0.4, full_accs=[0.5, 0.6])
+        torch.manual_seed(0)
+        tuner = _clamp_tuner(tmp_path)
+        try:
+            tuner.run()
+        finally:
+            tuner.close()
+        out = capsys.readouterr().out
+        assert len(_ledger_lines(out)) == 2, "one [MBH] line per attempted rung"
+
+
+# -- the fixed ladder always skips the forced-jump micro-ramp -----------------------
+
+class TestContinueToFullRate:
+    def test_fixed_ladder_skips_the_micro_ramp(self, tmp_path, monkeypatch):
+        from mimarsinan.tuning.orchestration.smooth_adaptation_run import (
+            SmoothAdaptationRunMixin,
+        )
+
+        calls = []
+        monkeypatch.setattr(
+            SmoothAdaptationRunMixin, "_continue_to_full_rate",
+            lambda self: calls.append(True),
+        )
+        tuner = _clamp_tuner(tmp_path)
+        try:
+            tuner._committed_rate = 0.5
+            tuner._continue_to_full_rate()
+            assert calls == []
+        finally:
+            tuner.close()
+
+    def test_controller_path_delegates_to_run_mixin(self, tmp_path, monkeypatch):
+        from mimarsinan.tuning.orchestration.smooth_adaptation_run import (
+            SmoothAdaptationRunMixin,
+        )
+
+        calls = []
+        monkeypatch.setattr(
+            SmoothAdaptationRunMixin, "_continue_to_full_rate",
+            lambda self: calls.append(True),
+        )
+        tuner = _clamp_tuner(tmp_path)
+        try:
+            tuner._fixed_ladder_policy = False
+            tuner._continue_to_full_rate()
+            assert calls == [True]
+        finally:
+            tuner.close()
+
+
 # -- reject-restore path -----------------------------------------------------------
 
 class TestRejectRestore:
     def test_reject_restores_and_bisects_then_stalls(
         self, tmp_path, monkeypatch, capsys,
     ):
-        _set_gate(monkeypatch, True)
         # rung 0 (rate 0.5) improves past the entry; rung 1 regresses on every
         # attempt: 1.0 -> midpoints 0.75, 0.625, 0.5625 -> constructive stall.
         _inject_measurements(
@@ -341,16 +338,14 @@ class TestRejectRestore:
                 "best_full_acc=0.950000"
             ]
 
-            # stalled: further rungs are not consumed (no training, no lines)
+            # stalled: further rungs are not consumed (no training, no attempts)
             committed = tuner._driver_attempt(1.0)
             assert committed == pytest.approx(0.5)
             assert rates_seen == [0.5, 1.0, 0.75, 0.625, 0.5625]
-            assert not _ledger_lines(capsys.readouterr().out)
         finally:
             tuner.close()
 
     def test_reject_restores_optimizer_state(self, tmp_path, monkeypatch):
-        _set_gate(monkeypatch, True)
         _inject_measurements(monkeypatch, entry=0.9, full_accs=[0.1])
         torch.manual_seed(0)
         tuner = _clamp_tuner(tmp_path)
@@ -377,7 +372,6 @@ class TestStallRun:
     def test_stall_run_completes_and_forces_full_rate(
         self, tmp_path, monkeypatch, capsys,
     ):
-        _set_gate(monkeypatch, True)
         _inject_measurements(monkeypatch, entry=0.9, full_accs=[0.1])
         torch.manual_seed(0)
         tuner = _clamp_tuner(tmp_path, target_metric=0.0)
@@ -392,7 +386,7 @@ class TestStallRun:
             # forced to 1.0 by _after_run; the finalize assertion held
             assert tuner._committed_rate == pytest.approx(1.0)
             assert tuner._natural_rate == pytest.approx(0.0)
-            # no _continue_to_full_rate micro-ramp cycles under the gate
+            # no _continue_to_full_rate micro-ramp cycles on the fixed ladder
             assert adaptation_calls == []
             # every rejected attempt was rolled back (optimizer steps restored)
             assert tuner._fast_optimizer_steps == 0
@@ -401,13 +395,10 @@ class TestStallRun:
         out = capsys.readouterr().out
         stalls = [l for l in _gate_lines(out) if "constructive_stall" in l]
         assert len(stalls) == 1
-        # only rung 0's 4 attempts were measured; the second rung was not consumed
-        assert len(_ledger_lines(out)) == 4
 
     def test_kd_blend_stall_finalizes_on_best_state(
         self, tmp_path, monkeypatch, capsys,
     ):
-        _set_gate(monkeypatch, True)
         _inject_measurements(monkeypatch, entry=0.9, full_accs=[0.1])
         torch.manual_seed(0)
         tuner = _lif_tuner(tmp_path)

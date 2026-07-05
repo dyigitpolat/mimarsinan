@@ -97,7 +97,7 @@ class TestThetaPromotionContract:
 
 
 class TestThetaTrainedByFastLadder:
-    def test_promoted_theta_in_fast_optimizer_and_changes(self, tmp_path):
+    def test_promoted_theta_in_fast_optimizer_and_changes(self, tmp_path, accepting_gate):
         torch.manual_seed(0)
         tuner, model, _ = _make_tuner(
             tmp_path, theta=True, steps_per_rate=3, rates=[0.5, 1.0],

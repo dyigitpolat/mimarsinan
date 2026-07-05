@@ -350,7 +350,7 @@ def test_fast_hack_keeps_invariant_core(trained_model, val_data):
     )
 
 
-def test_fast_hack_observes_convergence(trained_model):
+def test_fast_hack_observes_convergence(trained_model, accepting_gate):
     """Invariant 5 OBSERVABILITY under fast: with the probe flag on, the fast path
     records the r=1 full-transform accuracy after each higher-rate round, so the
     trajectory is VISIBLE. Asserted here as a meaningful, lifted endpoint + NET

@@ -1,4 +1,3 @@
-from mimarsinan.common.env import mbh_lif_realloc_enabled, mbh_sync_exact_enabled
 from mimarsinan.models.nn.layers import *
 from mimarsinan.models.nn.activations import LeakyGradReLU
 from mimarsinan.models.nn.decorators.clamp_quantize import TTFSCeilStaircaseDecorator
@@ -12,15 +11,14 @@ import torch.nn as nn
 _MBH_LIF_SUBSUMED_RATE_ATTRS = frozenset({"clamp_rate", "quantization_rate"})
 
 
-def mbh_lif_realloc_ladder_steps(pipeline_config, rate_attr, steps):
-    """[MBH X2/E2] Fast-ladder training steps under the LIF wall-reallocation flag.
+def lif_subsumed_ladder_steps(pipeline_config, rate_attr, steps):
+    """Fast-ladder training steps, with the LIF-subsumed ladders dropped (X3 default).
 
-    When ``MIMARSINAN_MBH_LIF_REALLOC`` is on and the LIF node subsumes
-    ``rate_attr``'s decorator, the ladder's rungs train 0 steps (the rung walk,
-    probes, and finalize contracts still run); otherwise ``steps`` unchanged.
+    In lif mode the spiking node subsumes ``rate_attr``'s decorator, so its
+    ladder is behaviorally inert (measured, X1/X2): the rungs train 0 steps
+    while the rung walk, probes, and finalize contracts still run — the freed
+    budget funds the LIF endpoint-recovery stage. Otherwise ``steps`` unchanged.
     """
-    if not mbh_lif_realloc_enabled():
-        return int(steps)
     if rate_attr not in _MBH_LIF_SUBSUMED_RATE_ATTRS:
         return int(steps)
     # Lazy: chip_simulation has a fragile import cycle with tuning at init time.
@@ -36,8 +34,8 @@ _SYNC_GRID_SNAP_ATTR = "_mbh_sync_grid_snap_installed"
 
 
 def sync_exact_qat_active(pipeline_config) -> bool:
-    """[MBH T6] ``MIMARSINAN_MBH_SYNC_EXACT`` is on AND the resolved mode is synchronized ttfs_cycle."""
-    if not mbh_sync_exact_enabled():
+    """The ``sync_exact_qat`` recipe knob is on AND the resolved mode is synchronized ttfs_cycle (T6)."""
+    if not bool(pipeline_config.get("sync_exact_qat", False)):
         return False
     # Lazy: chip_simulation has a fragile import cycle with tuning at init time.
     from mimarsinan.chip_simulation.deployment_contract import (
@@ -76,7 +74,7 @@ def install_sync_entry_grid_snap(model, pipeline_config) -> int:
     Boundary input scales are propagated first so each snap normalizes by the
     deployed consumer scale; the quantizer keeps the live ``input_activation_scale``
     Parameter, so later re-propagation stays coherent. Idempotent; returns the
-    number of quantizers installed (0 when the flag/mode gate is off)."""
+    number of quantizers installed (0 when the knob/mode gate is off)."""
     if not sync_exact_qat_active(pipeline_config):
         return 0
     from mimarsinan.models.nn.activations.autograd import TTFSInputGridQuantizer

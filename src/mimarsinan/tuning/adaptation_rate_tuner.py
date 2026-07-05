@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from mimarsinan.tuning.axes import ManagerRateAxis
 from mimarsinan.tuning.orchestration.adaptation_manager import (
-    mbh_lif_realloc_ladder_steps,
+    lif_subsumed_ladder_steps,
 )
 from mimarsinan.tuning.orchestration.smooth_adaptation_tuner import SmoothAdaptationTuner
 
@@ -28,7 +28,7 @@ class AdaptationRateTuner(SmoothAdaptationTuner):
             rates=self.pipeline.config.get(
                 "manager_rate_fast_rates", [0.25, 0.5, 0.75, 1.0]
             ),
-            steps_per_rate=mbh_lif_realloc_ladder_steps(
+            steps_per_rate=lif_subsumed_ladder_steps(
                 self.pipeline.config,
                 self.rate_attr,
                 int(self.pipeline.config.get("manager_rate_fast_steps_per_rate", 120)),

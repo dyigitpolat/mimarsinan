@@ -22,7 +22,7 @@ search, rate application, decision tracing — are shared by all tuner families.
 | `teacher.py` | `snapshot_frozen_teacher` / `freeze_module`: eval-mode, gradient-frozen deepcopy of a model for KD recovery (deepcopy on CPU). |
 | `trace.py` | `DecisionRecord` / `DecisionTrace`: JSON-round-trippable per-cycle decision trace; iterates as legacy `_cycle_log` dicts and backs the golden-trace tests. |
 | `axes/` | `AdaptationAxis` contract plus concrete axes (manager-rate family, blend/LIF/TTFS, perceptron-transform/NAPQ, pruning, activation shift); each delegates math to `transformations` and rate application to `perceptron_rate`. Closure-apply axes dispatch `probe_replica` rate application to a model-targeted replica apply (never the live-bound closure), failing loud when none exists. |
-| `orchestration/` | The smooth-adaptation machinery: `TunerBase`/`SmoothAdaptationTuner` (cycle/run mixins), `AdaptationManager` + factory, `TuningBudget`, `ConversionPolicy` SSOT, temporal allocation, rate scheduler / recovery engine / acceptance sensor / checkpoint guard, optimization driver + fast ladder (with the flag-gated MBH experiments: measurement-only `mbh_ledger`, D-hat-gated `mbh_gate`, LIF wall-reallocation and sync exact-kernel QAT-endpoint helpers in `adaptation_manager`, the LIF T-annealing realizable family `mbh_tanneal`), blend-ramp strategy, KD-blend tuner, and the uniform `RateTunerSeam`. |
+| `orchestration/` | The smooth-adaptation machinery: `TunerBase`/`SmoothAdaptationTuner` (cycle/run mixins), `AdaptationManager` + factory, `TuningBudget`, `ConversionPolicy` SSOT, temporal allocation, rate scheduler / recovery engine / acceptance sensor / checkpoint guard, optimization driver + fast ladder (driven by the default D-hat trust-region gate `mbh_gate` with its gate-grade measurements and verbose-flag `[MBH]` ledger in `mbh_ledger`; the LIF T-annealing realizable family `mbh_tanneal`; LIF subsumed-ladder drop and sync exact-kernel QAT-endpoint helpers in `adaptation_manager`), blend-ramp strategy, KD-blend tuner, and the uniform `RateTunerSeam`. |
 | `tuners/` | Concrete tuners: clamp, activation adaptation/quantization/shift, normalization-aware weight quantization, noise, LIF, TTFS cycle, perceptron transform, and `pruning/`. |
 
 ## Dependencies
@@ -31,7 +31,7 @@ search, rate application, decision tracing — are shared by all tuner families.
 - `transformations` — normalization-aware perceptron quantization, `PerceptronTransformer`, pruning mask application and activation-stat collection.
 - `data_handling` — `DataLoaderFactory`/`DataProvider` for validation-set sizes that derive budgets and decay factors.
 - `mapping` — pruning boundary policy for the pruning tuner.
-- `common` — `best_effort` error containment; `env` for the `MIMARSINAN_MBH_LEDGER` / `MIMARSINAN_MBH_GATE` / `MIMARSINAN_MBH_LIF_REALLOC` flags.
+- `common` — `best_effort` error containment; `env` for the `MIMARSINAN_MBH_LEDGER` verbose-diagnostics flag.
 
 ## Dependents
 - `pipelining` — pipeline steps construct the tuners, the adaptation-manager factory, and `tuning_budget_from_pipeline`; `deployment_plan` consumes `temporal_allocation`, `ConversionPolicy`, the optimization driver, and the calibration pipeline.

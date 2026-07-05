@@ -9,7 +9,7 @@ import math
 import torch
 import torch.nn.functional as F
 
-from mimarsinan.common.env import mbh_gate_enabled, mbh_ledger_enabled
+from mimarsinan.common.env import mbh_ledger_enabled
 from mimarsinan.tuning.orchestration.genuine_probe import (
     eval_forward_over_val,
     genuine_acc_on_clone,
@@ -48,11 +48,18 @@ def _measurement_guard(trainer):
 
 
 def rung_measurements(tuner) -> dict:
-    """One rung's isolated fp32 reads: blended_fp32, full_acc (D-hat), rho, ||g_t||."""
+    """One rung's isolated fp32 reads: blended_fp32, full_acc (D-hat), rho, ||g_t||.
+
+    The alignment pair (rho, ||g_t||) is verbose diagnostics the gate never
+    consumes: it is measured only under the ledger flag (nan otherwise).
+    """
     with _measurement_guard(tuner.trainer):
         blended_fp32 = blended_acc_fp32(tuner)
         full_acc = full_transform_acc_on_clone(tuner)
-        rho, grad_norm_t = transfer_alignment(tuner)
+        if mbh_ledger_enabled():
+            rho, grad_norm_t = transfer_alignment(tuner)
+        else:
+            rho, grad_norm_t = float("nan"), float("nan")
     return {
         "blended_fp32": blended_fp32,
         "full_acc": full_acc,
@@ -70,11 +77,12 @@ def full_transform_measurement(tuner) -> float:
 def emit_fast_rung_ledger(tuner, *, rate, blended_acc, measurements=None):
     """Emit one ``[MBH]`` stdout line for a completed fast-ladder rung attempt.
 
-    Active when ``MIMARSINAN_MBH_LEDGER`` or ``MIMARSINAN_MBH_GATE`` is on (the
-    gate implies the ledger measurements). ``measurements`` reuses a dict already
-    produced by ``rung_measurements`` (the gate's path) instead of re-measuring.
+    Prints only under ``MIMARSINAN_MBH_LEDGER`` (verbose diagnostics; the
+    default gate's probes run regardless). ``measurements`` reuses a dict
+    already produced by ``rung_measurements`` (the gate's path) instead of
+    re-measuring.
     """
-    if not (mbh_ledger_enabled() or mbh_gate_enabled()):
+    if not mbh_ledger_enabled():
         return None
     rung = int(getattr(tuner, "_mbh_rung_index", -1)) + 1
     tuner._mbh_rung_index = rung

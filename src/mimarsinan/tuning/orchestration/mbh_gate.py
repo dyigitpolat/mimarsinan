@@ -1,4 +1,4 @@
-"""[MBH-GATE] D-hat-gated fast ladder — opt-in trust-region ratchet (X2/E1, T3)."""
+"""[MBH-GATE] D-hat-gated fast ladder — the default trust-region driver (X3, from X2/T3)."""
 
 from __future__ import annotations
 

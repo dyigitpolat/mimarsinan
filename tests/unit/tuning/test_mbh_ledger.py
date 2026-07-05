@@ -9,9 +9,11 @@ where ``blended_acc`` reuses the rung's existing probe, ``blended_fp32`` re-read
 blended model gate-grade (fp32, autocast-disabled — X2/E0), ``full_acc`` (D-hat) is
 the full-transformation (rate 1.0) accuracy on an isolated deepcopy, and ``rho`` is
 the transfer alignment <g1, gt>/||gt||^2 from plain-CE gradients on one fixed
-validation batch. HARD INVARIANT: ledger ON == OFF bit-identical training
+validation batch (computed only under the ledger flag — the default D-hat gate
+does not consume it). HARD INVARIANT: ledger ON == OFF bit-identical training
 trajectory; all measurement runs on deepcopies inside ``fork_rng`` with live
-model/optimizer/RNG untouched.
+model/optimizer/RNG untouched. One [MBH] line prints per fast-ladder ATTEMPT
+(the default gate's rejects included), flag-gated.
 """
 
 from __future__ import annotations
@@ -48,7 +50,6 @@ def _ledger_lines(text):
 
 
 def _set_flag(monkeypatch, enabled):
-    monkeypatch.delenv(env.MBH_GATE_VAR, raising=False)
     if enabled:
         monkeypatch.setenv(env.MBH_LEDGER_VAR, "1")
     else:
@@ -177,8 +178,8 @@ class TestTrajectoryInvariance:
 
         assert not _ledger_lines(out_off), "flag OFF must emit no [MBH] lines"
         lines = _ledger_lines(out_on)
-        assert len(lines) == len(t_on._fixed_ladder_rates), (
-            "flag ON must emit exactly one [MBH] line per fast rung"
+        assert len(lines) == len(t_on._cycle_log), (
+            "flag ON must emit exactly one [MBH] line per fast-ladder attempt"
         )
 
         sd_off, sd_on = t_off.model.state_dict(), t_on.model.state_dict()
@@ -214,7 +215,7 @@ class TestLedgerFormat:
         finally:
             tuner.close()
         lines = _ledger_lines(capsys.readouterr().out)
-        assert len(lines) == 3
+        assert len(lines) == len(tuner._cycle_log)
         for rung, line in enumerate(lines):
             match = _LEDGER_RE.match(line)
             assert match is not None, f"unparseable ledger line: {line!r}"
@@ -226,7 +227,7 @@ class TestLedgerFormat:
             assert math.isfinite(float(match["rho"])), line
             assert math.isfinite(float(match["grad"])), line
         rates = [float(_LEDGER_RE.match(line)["rate"]) for line in lines]
-        assert rates == [0.25, 0.5, 1.0]
+        assert rates == [e["rate"] for e in tuner._cycle_log]
 
     def test_lif_line_names_the_tuner_class(self, tmp_path, monkeypatch, capsys):
         _set_flag(monkeypatch, True)
@@ -438,3 +439,28 @@ class TestGateGradeFp32Precision:
         with torch.autocast("cpu", dtype=torch.bfloat16):
             assert full_transform_measurement(tuner) == 1.0
         assert trainer._gpu_val_cursor == 0, "measurement must restore the cursor"
+
+
+# -- (e) the alignment probe is verbose diagnostics only ---------------------------
+
+class TestAlignmentIsLedgerOnly:
+    def test_rho_skipped_without_the_flag(self, monkeypatch):
+        # The default gate consumes full_acc only; rho costs an extra clone and
+        # two backward passes, so it runs only under the ledger flag.
+        from mimarsinan.tuning.orchestration.mbh_ledger import rung_measurements
+
+        _set_flag(monkeypatch, False)
+        model, trainer = _bin_edge_fixture()
+        tuner = _StubTuner(model, trainer)
+        m = rung_measurements(tuner)
+        assert math.isnan(m["rho"]) and math.isnan(m["grad_norm_t"])
+        assert m["blended_fp32"] == 1.0 and m["full_acc"] == 1.0
+
+    def test_rho_computed_with_the_flag(self, monkeypatch):
+        from mimarsinan.tuning.orchestration.mbh_ledger import rung_measurements
+
+        _set_flag(monkeypatch, True)
+        model, trainer = _bin_edge_fixture()
+        tuner = _StubTuner(model, trainer)
+        m = rung_measurements(tuner)
+        assert not math.isnan(m["grad_norm_t"])

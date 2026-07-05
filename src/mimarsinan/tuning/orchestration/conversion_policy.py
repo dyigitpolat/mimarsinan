@@ -11,6 +11,7 @@ OPTIMIZATION_DRIVER_FAST = "fast"
 _LIF_RECIPE_KNOBS = {
     "lif_blend_fast": True,
     "lif_blend_fast_stabilize_steps": 600,
+    "lif_tanneal": True,
     "cycle_accurate_lif_forward": True,
     "fast_ladder_freeze_bn": True,
     "kd_ce_alpha": 0.5,
@@ -21,6 +22,10 @@ _TTFS_QUANTIZED_RECIPE_KNOBS = {
     "manager_rate_fast_rates": [0.25, 0.5, 0.75, 1.0],
     "manager_rate_fast_steps_per_rate": 120,
 }
+_SYNCHRONIZED_RECIPE_KNOBS = {
+    **_TTFS_QUANTIZED_RECIPE_KNOBS,
+    "sync_exact_qat": True,
+}
 _CASCADED_RECIPE_KNOBS = {
     "ttfs_genuine_blend_ramp": True,
     "ttfs_genuine_blend_fast": True,
@@ -30,11 +35,17 @@ _CASCADED_RECIPE_KNOBS = {
 
 _LIF_RATIONALE = (
     "BN-freeze makes the QAT train-forward bit-exact to the deployed eval-forward; "
-    "the faithful LIF levers cap ~0.95-0.96 (mnist_mixer_fix_wave / per_channel_theta)."
+    "the value-blend ramp measures near-zero transfer alignment (rho 0.014-0.167, X1) "
+    "while the realizable T-anneal family is >= it everywhere and has no hidden debt "
+    "at S=32 (X2b), so the LIF ramp anneals T on genuine LIF members; the Clamp/AQ "
+    "ladders are behaviorally inert under the spiking node (X1) and train 0 steps "
+    "(mnist_mixer_fix_wave / per_channel_theta / mbh_x2b_lif_tanneal_readout)."
 )
 _TTFS_QUANTIZED_RATIONALE = (
     "Full-quantile (q=1.0) per-perceptron decode helps the quantized timing path; it "
-    "is harmful for LIF, whose decode scale is per-channel (per_channel_theta)."
+    "is harmful for LIF, whose decode scale is per-channel (per_channel_theta). Green "
+    "family: stays on the floor+half-step proxy; the exact-kernel endpoint promotion "
+    "is an X4 follow-up (mbh_t6_sync_exact_kernel)."
 )
 _CASCADED_RATIONALE = (
     "The controller collapses on the deep genuine cascade (rate stalls then drops to "
@@ -43,13 +54,13 @@ _CASCADED_RATIONALE = (
 )
 _SYNCHRONIZED_RATIONALE = (
     "synchronized IS ttfs_quantized at deploy: sync-deploy = ttfs_quantized-deploy + the "
-    "free segment-input single-spike grid-snap (decision-level exact). So it TRAINS the "
-    "well-conditioned ttfs_quantized floor recovery (floor+half-step-bias QAT + full "
-    "recovery) rather than the harder ceil-staircase genuine QAT, and DEPLOYS the "
-    "mode-derived single-spike ceil kernel + grid-snap (unchanged: SANA-FE parity 1.0, "
-    "bit-exact). Its per-neuron NF↔SCM parity therefore uses the honest ttfs_quantized "
-    "tolerance — excluded from the bit-exact per-neuron gate. nevresim has no "
-    "synchronized-window backend (mnist_mixer_fix_wave / synchronized_floor_collapse)."
+    "free segment-input single-spike grid-snap. It rides the ttfs_quantized ladder shape "
+    "but TRAINS the exact deployed composition — the ceil TTFS kernel under STE + the "
+    "per-stage entry grid snap — as the QAT endpoint (T6: parity 0.9180/0.8633-abort -> "
+    "1.0000/256 on t0_22/t0_21), and the mapping-time +0.5/Tq bias compensation is "
+    "skipped for models so trained (marker-asserted). Its per-neuron NF↔SCM parity "
+    "stays excluded from the bit-exact per-neuron gate; nevresim has no "
+    "synchronized-window backend (mbh_t6_sync_exact_kernel)."
 )
 
 __all__ = [
@@ -113,7 +124,7 @@ class ConversionPolicy:
             )
         elif is_ttfs_cycle_based(mode) and synchronized:
             knobs, special_case, rationale = (
-                _TTFS_QUANTIZED_RECIPE_KNOBS, "synchronized_floor_collapse",
+                _SYNCHRONIZED_RECIPE_KNOBS, "sync_exact_endpoint",
                 _SYNCHRONIZED_RATIONALE,
             )
         elif is_ttfs_cycle_based(mode):
