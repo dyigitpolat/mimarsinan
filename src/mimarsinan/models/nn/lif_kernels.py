@@ -15,12 +15,18 @@ def lif_fire_and_reset(
     firing_mode: str,
     output_dtype: torch.dtype | None = None,
 ) -> torch.Tensor:
-    """Threshold ``memb``, return spike tensor, apply Novena/Default reset in-place."""
+    """Threshold ``memb``, return spike tensor, apply Novena/Default reset in-place.
+
+    Masked arithmetic instead of boolean fancy indexing: ``memb[fired]`` lowers
+    through ``nonzero`` and forces a host-device sync per call (the dominant
+    cycle-loop wall cost); ``fired * threshold`` is bit-exact for finite
+    thresholds since ``fired`` is exactly 0 or 1.
+    """
     fired = _THRESHOLD_OPS[thresholding_mode](threshold, memb)
     if firing_mode == "Novena":
-        memb[fired] = 0.0
+        memb.masked_fill_(fired, 0.0)
     elif firing_mode == "Default":
-        memb[fired] -= threshold
+        memb.sub_(fired.to(memb.dtype) * threshold)
     if output_dtype is not None:
         return fired.to(output_dtype)
     return fired.float()

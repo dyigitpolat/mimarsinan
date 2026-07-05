@@ -40,10 +40,14 @@ class HybridLifStepMixin(HybridFlowHost):
         if recording:
             assert batch_size == 1, "Spike recording requires batch_size == 1"
 
-        latency = ChipLatency(mapping).calculate()
-        cycles = int(latency) + T
-
         seg = self._get_segment_tensors(stage, device)
+        # Memoized with the segment tensors: calculate() is idempotent (fixed
+        # point over core latencies) and the mapping does not change per forward.
+        latency = seg.get("latency")
+        if latency is None:
+            latency = int(ChipLatency(mapping).calculate())
+            seg["latency"] = latency
+        cycles = int(latency) + T
         cores = seg["cores"]
         output_sources = seg["output_sources"]
         axon_spans = seg["axon_spans"]

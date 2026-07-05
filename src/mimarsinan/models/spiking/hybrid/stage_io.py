@@ -22,6 +22,10 @@ from mimarsinan.mapping.support.spike_source_spans import (
     compress_spike_sources,
 )
 from mimarsinan.models.spiking.hybrid.host import HybridFlowHost
+from mimarsinan.models.spiking.hybrid.segment_cache import (
+    SEGMENT_CACHE_MAX_BYTES as _SEGMENT_CACHE_MAX_BYTES,
+    segment_entry_nbytes as _segment_entry_nbytes,
+)
 from mimarsinan.models.spiking.signal_spans import fill_signal_from_spans
 from mimarsinan.models.spiking.spiking_config import COMPUTE_DTYPE
 
@@ -71,22 +75,21 @@ class HybridStageIOMixin(HybridFlowHost):
         decref_consumers(state_buffer, remaining, src_ids)
 
     def _evict_segment_cache(self) -> None:
-        """Drop the cached segment's GPU tensors (no ``empty_cache`` here)."""
-        prev_key = self._segment_tensor_cache_key
-        if prev_key is None:
+        """Trim the segment tensor cache to the byte budget.
+
+        Under budget the uploaded weights and memoized latencies are RETAINED
+        across stages and forwards (re-upload was the rate path's second wall
+        cost); over budget the whole cache drops, restoring the one-live-segment
+        VRAM profile for large vehicles.
+        """
+        total = sum(
+            int(entry.get("nbytes", 0))
+            for entry in self._segment_tensor_cache.values()
+        )
+        if total <= _SEGMENT_CACHE_MAX_BYTES:
             return
-        prev = self._segment_tensor_cache.pop(prev_key, None)
+        self._segment_tensor_cache.clear()
         self._segment_tensor_cache_key = None
-        if prev is None:
-            return
-        for k in ("core_params", "hw_biases", "thresholds"):
-            v = prev.get(k)
-            if v is not None:
-                v.clear()
-        bt = prev.get("bank_tensors")
-        if bt is not None:
-            bt.clear()
-        prev.clear()
 
     def to_spikes(self, tensor: torch.Tensor, cycle: int) -> torch.Tensor:
         return spike_modes.to_spikes(
@@ -172,8 +175,6 @@ class HybridStageIOMixin(HybridFlowHost):
         cached = self._segment_tensor_cache.get(key)
         if cached is not None and cached.get("device") == device:
             return cached
-
-        self._evict_segment_cache()
 
         cores = mapping.cores
         output_sources = mapping.output_sources
@@ -276,7 +277,10 @@ class HybridStageIOMixin(HybridFlowHost):
             core_params=core_params,
             thresholds=thresholds,
             hw_biases=hw_biases,
+            nbytes=0,
         )
+        cached["nbytes"] = _segment_entry_nbytes(cached)
         self._segment_tensor_cache[key] = cached
         self._segment_tensor_cache_key = key
+        self._evict_segment_cache()
         return cached
