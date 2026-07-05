@@ -7,6 +7,9 @@ from typing import Dict
 import numpy as np
 import torch
 
+from mimarsinan.chip_simulation.hybrid_run.hybrid_execution import (
+    gather_final_output_numpy,
+)
 from mimarsinan.chip_simulation.hybrid_run.hybrid_stage_runner import (
     HybridStageContext,
     run_hybrid_stages,
@@ -54,14 +57,20 @@ class HybridTtfsStepMixin(HybridFlowHost):
         return torch.tensor(result.inter_stage, dtype=COMPUTE_DTYPE, device=device)
 
     def _forward_ttfs(self, x: torch.Tensor) -> torch.Tensor:
-        """TTFS forward via state buffer; rescales ComputeOp bias via ``node_activation_scales``."""
+        """TTFS forward on a float64 NUMPY state buffer (the analytical executor's
+        native domain): one host conversion in, one device conversion out — no
+        per-stage torch round-trips (W3 wall)."""
         T = self.simulation_length
         batch_size = x.shape[0]
         device = x.device
         quantized = self.spiking_mode != "ttfs"
+        mode = "ttfs_quantized" if quantized else "ttfs"
+        quantize_input = is_synchronized_ttfs(
+            self.spiking_mode, self.ttfs_cycle_schedule,
+        )
 
-        x_compute = x.to(COMPUTE_DTYPE)
-        state_buffer: Dict[int, torch.Tensor] = {-2: x_compute}
+        x_np = x.detach().to(COMPUTE_DTYPE).cpu().numpy()
+        state_buffer: Dict[int, np.ndarray] = {-2: x_np}
 
         remaining = dict(self._build_consumer_counts())
 
@@ -74,26 +83,15 @@ class HybridTtfsStepMixin(HybridFlowHost):
             )
 
         def _on_neural_ttfs(ctx: HybridStageContext) -> None:
-            state_np = {
-                k: v.detach().cpu().numpy().astype(np.float64)
-                for k, v in ctx.state_buffer.items()
-            }
-            mode = "ttfs_quantized" if quantized else "ttfs"
             run_ttfs_contract_neural_stage(
                 self.hybrid_mapping,
                 ctx.stage,
                 ctx.stage_index,
-                state_np,
+                ctx.state_buffer,
                 simulation_length=self.simulation_length,
                 spiking_mode=mode,
-                quantize_input_to_ttfs_grid=is_synchronized_ttfs(
-                    self.spiking_mode, self.ttfs_cycle_schedule,
-                ),
+                quantize_input_to_ttfs_grid=quantize_input,
             )
-            for s in ctx.stage.output_map:
-                ctx.state_buffer[s.node_id] = torch.tensor(
-                    state_np[s.node_id], dtype=COMPUTE_DTYPE, device=device,
-                )
 
         def _after_neural_ttfs(ctx: HybridStageContext) -> None:
             remaining_counts = ctx.remaining
@@ -107,16 +105,9 @@ class HybridTtfsStepMixin(HybridFlowHost):
         def _on_compute_ttfs(ctx: HybridStageContext) -> None:
             op = ctx.stage.compute_op
             assert op is not None
-            state_np = {
-                k: v.detach().cpu().numpy().astype(np.float64)
-                for k, v in ctx.state_buffer.items()
-            }
-            sample = x_compute.detach().cpu().numpy()
-            result = run_ttfs_contract_compute_stage(
-                self.hybrid_mapping, ctx.stage, state_np, sample,
-            )
-            ctx.state_buffer[op.id] = torch.tensor(
-                result.output, dtype=COMPUTE_DTYPE, device=device,
+            # The contract stage stores its float64 output into the buffer itself.
+            run_ttfs_contract_compute_stage(
+                self.hybrid_mapping, ctx.stage, ctx.state_buffer, x_np,
             )
 
         def _after_compute_ttfs(ctx: HybridStageContext) -> None:
@@ -141,5 +132,8 @@ class HybridTtfsStepMixin(HybridFlowHost):
             context_factory=_ctx_factory,
         )
 
-        final = self._gather_final_output(state_buffer, x_compute, batch_size, device)
-        return final.to(torch.float32) * float(T)
+        final_np = gather_final_output_numpy(
+            self.hybrid_mapping.output_sources, state_buffer, x_np, batch_size,
+        )
+        final = torch.from_numpy(final_np).to(device=device, dtype=torch.float32)
+        return final * float(T)

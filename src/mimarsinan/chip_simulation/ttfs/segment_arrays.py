@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import weakref
 from dataclasses import dataclass
 from typing import Any, List
 
@@ -24,8 +25,31 @@ class SegmentTtfsArrays:
     n_neurons_per_core: List[int]
 
 
+# Keyed by mapping identity: a HardCoreMapping is not mutated after packing, so
+# the derived arrays are reused across stages/batches instead of re-extracted per
+# call (W3 wall); WeakKey keeps pickles clean and lets mappings be collected.
+_ARRAYS_CACHE: "weakref.WeakKeyDictionary[Any, SegmentTtfsArrays]" = (
+    weakref.WeakKeyDictionary()
+)
+
+
 def segment_ttfs_arrays_from_mapping(mapping: Any) -> SegmentTtfsArrays:
-    """Extract numpy segment arrays from a ``HardCoreMapping``."""
+    """Extract numpy segment arrays from a ``HardCoreMapping`` (cached per mapping)."""
+    try:
+        cached = _ARRAYS_CACHE.get(mapping)
+    except TypeError:
+        cached = None
+    if cached is not None:
+        return cached
+    arrays = _segment_ttfs_arrays_from_mapping_uncached(mapping)
+    try:
+        _ARRAYS_CACHE[mapping] = arrays
+    except TypeError:
+        pass
+    return arrays
+
+
+def _segment_ttfs_arrays_from_mapping_uncached(mapping: Any) -> SegmentTtfsArrays:
     cores = mapping.cores
     axon_spans = []
     for c in cores:

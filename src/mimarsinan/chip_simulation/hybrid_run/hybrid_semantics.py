@@ -18,6 +18,9 @@ class NeuralSegmentResult:
     inter_stage: np.ndarray
     per_core_activations: Optional[List[np.ndarray]] = None
     per_core_spike_counts: Optional[List[np.ndarray]] = None
+    # Per-core V = W @ a + b from the SAME execution (TTFS analytical path), so
+    # SANA-FE preset injection never re-runs the segment.
+    membrane_voltages: Optional[List[np.ndarray]] = None
 
 
 def is_ttfs_spiking_mode(spiking_mode: str) -> bool:

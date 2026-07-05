@@ -197,6 +197,22 @@ def ttfs_core_membrane_voltages(
     return membrane
 
 
+def run_ttfs_segment(
+    seg: SegmentTtfsArrays,
+    input_activations: np.ndarray,
+    *,
+    simulation_length: int,
+    spiking_mode: str,
+) -> tuple[np.ndarray, List[np.ndarray], List[np.ndarray]]:
+    """One execution returning ``(out, per-core buffers, per-core membrane V)``."""
+    return _run_ttfs_segment_ordered(
+        seg,
+        input_activations,
+        simulation_length=simulation_length,
+        spiking_mode=spiking_mode,
+    )
+
+
 def run_ttfs_continuous_segment(
     seg: SegmentTtfsArrays,
     input_activations: np.ndarray,

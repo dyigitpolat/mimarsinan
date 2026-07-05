@@ -18,10 +18,7 @@ from mimarsinan.chip_simulation.hybrid_run.hybrid_semantics import (
     is_ttfs_spiking_mode,
     store_neural_segment_output,
 )
-from mimarsinan.chip_simulation.spiking_semantics import (
-    forces_activation_quantization,
-    is_synchronized_ttfs,
-)
+from mimarsinan.chip_simulation.spiking_semantics import is_synchronized_ttfs
 from mimarsinan.chip_simulation.ttfs.ttfs_encoding import ttfs_input_grid_quantize
 from mimarsinan.chip_simulation.hybrid_run.hybrid_stage_runner import run_hybrid_stages
 from mimarsinan.chip_simulation.ttfs.ttfs_recorder import (
@@ -31,8 +28,7 @@ from mimarsinan.chip_simulation.ttfs.ttfs_recorder import (
     normalize_core_output_activation,
 )
 from mimarsinan.chip_simulation.ttfs.ttfs_segment import (
-    run_ttfs_continuous_segment,
-    run_ttfs_quantized_segment,
+    run_ttfs_segment,
     segment_ttfs_arrays_from_mapping,
     ttfs_core_membrane_voltages,
 )
@@ -87,13 +83,12 @@ class TtfsAnalyticalExecutor:
         if seg_in.ndim != 2:
             raise ValueError(f"seg_input must be 2-D; got shape {seg_in.shape}")
         seg_arrays = segment_ttfs_arrays_from_mapping(hcm)
-        quantized = forces_activation_quantization(spiking_mode)
-        if quantized:
-            seg_out, bufs = run_ttfs_quantized_segment(
-                seg_arrays, seg_in, int(simulation_length),
-            )
-        else:
-            seg_out, bufs = run_ttfs_continuous_segment(seg_arrays, seg_in)
+        seg_out, bufs, membrane = run_ttfs_segment(
+            seg_arrays,
+            seg_in,
+            simulation_length=int(simulation_length),
+            spiking_mode=spiking_mode,
+        )
 
         per_core: List[np.ndarray] = []
         for ci, core in enumerate(hcm.cores):
@@ -108,6 +103,7 @@ class TtfsAnalyticalExecutor:
         return NeuralSegmentResult(
             inter_stage=np.asarray(seg_out, dtype=np.float64),
             per_core_activations=per_core,
+            membrane_voltages=membrane,
         )
 
     def membrane_voltages(
@@ -199,8 +195,9 @@ def run_ttfs_contract_neural_stage(
     result = exec_.run_segment(
         hcm, seg_in, simulation_length=simulation_length, spiking_mode=spiking_mode,
     )
-    membrane_V = exec_.membrane_voltages(
-        hcm, seg_in, simulation_length=simulation_length, spiking_mode=spiking_mode,
+    membrane_V = result.membrane_voltages
+    assert membrane_V is not None, (
+        "run_segment must carry membrane voltages from its single execution"
     )
     segment_record = _segment_record_from_neural_result(
         stage_index=stage_index, stage=stage, hcm=hcm, result=result,
