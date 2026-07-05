@@ -168,7 +168,26 @@ def _module_params(module: nn.Module) -> int:
     return int(sum(p.numel() for p in module.parameters()))
 
 
+def _assert_materialized(flow) -> None:
+    from torch.nn.parameter import UninitializedParameter
+
+    lazy = [
+        name
+        for name, p in flow.named_parameters()
+        if isinstance(p, UninitializedParameter)
+    ]
+    if lazy:
+        raise ValueError(
+            "estimate_onchip_fraction: the model still carries uninitialized "
+            f"lazy parameters {lazy[:4]}{'...' if len(lazy) > 4 else ''} — the "
+            "Model Building warmup forward did not materialize this model "
+            "(builder/device placement mismatch?). Run a real forward before "
+            "the static on-chip-majority gate."
+        )
+
+
 def _params_breakdown(flow):
+    _assert_materialized(flow)
     total = int(sum(p.numel() for p in flow.parameters()))
     seen: set[int] = set()
     host = 0

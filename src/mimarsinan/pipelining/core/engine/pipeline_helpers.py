@@ -38,8 +38,17 @@ def run_optional_viz(step_name: str, fn: Callable[[], Any]) -> None:
 
 
 def safe_warmup_forward(model, input_shape, device) -> None:
+    """Materialize Lazy modules with a throwaway forward.
+
+    The dummy follows the MODEL's own parameter device (builders may leave a
+    freshly built model on CPU regardless of the config device — a mismatched
+    dummy would silently skip materialization); ``device`` is the param-less
+    fallback.
+    """
     with best_effort("warmup forward"):
         model.eval()
-        dummy = torch.zeros((1, *tuple(input_shape)), device=device)
+        param = next(iter(model.parameters()), None)
+        target = param.device if param is not None else device
+        dummy = torch.zeros((1, *tuple(input_shape)), device=target)
         with torch.no_grad():
             model(dummy)

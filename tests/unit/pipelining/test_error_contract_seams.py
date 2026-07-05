@@ -46,6 +46,37 @@ def test_safe_warmup_forward_suppresses_and_logs(caplog):
     assert any("warmup" in r.getMessage() for r in caplog.records)
 
 
+def test_safe_warmup_forward_follows_model_device():
+    """The dummy runs on the MODEL's parameter device: a builder may leave a
+    freshly-built model on CPU regardless of the config device, and a
+    device-mismatched warmup silently leaves Lazy modules unmaterialized (the
+    t0_20 Model-Building gate crash)."""
+    from torch.nn.parameter import UninitializedParameter
+
+    model = nn.Sequential(nn.Linear(3, 4), nn.LazyBatchNorm1d())
+    assert any(
+        isinstance(p, UninitializedParameter) for p in model.parameters()
+    )
+    # Config device says "cuda" but the model (and this CPU-only test host)
+    # live on cpu; the warmup must still materialize the lazy modules.
+    safe_warmup_forward(model, (3,), "cuda")
+    assert not any(
+        isinstance(p, UninitializedParameter) for p in model.parameters()
+    )
+
+
+def test_safe_warmup_forward_paramless_uses_passed_device():
+    calls = []
+
+    class _Probe(nn.Module):
+        def forward(self, x):
+            calls.append(str(x.device))
+            return x
+
+    safe_warmup_forward(_Probe(), (3,), "cpu")
+    assert calls == ["cpu"]
+
+
 def test_resource_snapshot_reads_env_at_call_time(monkeypatch, capsys):
     monkeypatch.delenv("MIMARSINAN_RESOURCE_DEBUG", raising=False)
     pipeline_resource_debug.log_resource_snapshot("disabled-tag")

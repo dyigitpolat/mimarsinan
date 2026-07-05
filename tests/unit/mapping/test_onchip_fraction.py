@@ -345,6 +345,22 @@ class TestClassifyValidity:
             classify_validity(model, (1, 28, 28), 10, encoding_placement="nowhere")
 
 
+class TestLazyModelGuard:
+    """A model reaching the static gate with unmaterialized Lazy modules must
+    fail with a named, actionable error — not torch's bare numel ValueError
+    (the t0_20 crash: a device-mismatched warmup silently skipped
+    materialization)."""
+
+    def test_unmaterialized_lazy_model_raises_named_error(self):
+        model = _build(
+            "simple_mlp", {"mlp_width_1": 256, "mlp_width_2": 128}, (1, 28, 28), 10,
+        )
+        with pytest.raises(ValueError, match="warmup forward"):
+            assert_onchip_majority_estimate_or_raise(
+                model, (1, 28, 28), 10, encoding_placement="subsume",
+            )
+
+
 def _tier0_model_specs():
     import json
     from pathlib import Path
