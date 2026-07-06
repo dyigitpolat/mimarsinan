@@ -132,6 +132,16 @@ def temporal_window_gauge(delays_by_depth, window: int) -> TemporalWindowGauge:
     )
 
 
+def needs_quantile_deflation(
+    per_channel_q99: Sequence[float], theta: float, levels: int
+) -> bool:
+    """A6-driven quantile arbitration: a hop whose theta starves the grid
+    (median effective levels < 2) must not keep the full-quantile scale."""
+    return median_effective_levels(per_channel_q99, theta, levels) < (
+        MIN_MEDIAN_EFFECTIVE_LEVELS
+    )
+
+
 def value_grid_levels(spiking_mode: str, config) -> Optional[int]:
     """The value-kernel grid an install will commit (``None`` = continuous).
 

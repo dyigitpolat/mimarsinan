@@ -285,3 +285,96 @@ class TestA6InstallResolutionGauge:
         gauge = pipeline.cache["ActivationAnalysis.install_resolution_gauge"]
         assert gauge["levels"] is None
         assert gauge["fails"] is False
+
+
+class TestStarvationAwareQuantile:
+    """[5v B1(i)] the sync full-quantile special-case becomes starvation-aware:
+    a hop whose full-quantile theta leaves under 2 usable grid levels per live
+    channel deflates to the mode-generic 0.99 quantile (t0_21 measured: q99
+    alone lifts the AQ entry 0.10 -> 0.50)."""
+
+    def _pipeline(self, tmp_path, cfg):
+        return MockPipeline(
+            config=cfg,
+            working_directory=str(tmp_path / "pipeline_cache"),
+            data_provider_factory=MockDataProviderFactory(size=64),
+        )
+
+    def _sync_cfg(self):
+        cfg = default_config()
+        cfg["spiking_mode"] = "ttfs_cycle_based"
+        cfg["ttfs_cycle_schedule"] = "synchronized"
+        cfg["activation_quantization"] = True
+        cfg["activation_scale_quantile"] = 1.0
+        cfg["starvation_aware_scale_quantile"] = True
+        return cfg
+
+    def _run(self, tmp_path, cfg, model=None):
+        pipeline = self._pipeline(tmp_path, cfg)
+        model = model or make_tiny_supermodel()
+        pipeline.seed("model", model)
+        step = ActivationAnalysisStep(pipeline)
+        step.name = "ActivationAnalysis"
+        pipeline.prepare_step(step)
+        step.run()
+        return pipeline, model
+
+    def test_starved_hop_deflates_to_the_generic_quantile(
+        self, tmp_path, monkeypatch, capsys,
+    ):
+        # Force the gauge to read every hop as starved at the full-quantile
+        # theta: every scale must then equal the 0.99-quantile scale.
+        import mimarsinan.pipelining.pipeline_steps.adaptation.activation_analysis_step as step_mod
+
+        monkeypatch.setattr(
+            step_mod, "needs_quantile_deflation", lambda *a, **k: True,
+        )
+        cfg = self._sync_cfg()
+        pipeline, model = self._run(tmp_path, cfg)
+        out = capsys.readouterr().out
+        assert "[MBH-A6] quantile-deflate" in out
+        stats = pipeline.cache["ActivationAnalysis.activation_scale_stats"]
+        assert len(stats["deflated_layers"]) == len(
+            pipeline.cache["ActivationAnalysis.activation_scales"]
+        )
+
+    def test_healthy_hops_keep_the_full_quantile(self, tmp_path, monkeypatch):
+        import mimarsinan.pipelining.pipeline_steps.adaptation.activation_analysis_step as step_mod
+
+        monkeypatch.setattr(
+            step_mod, "needs_quantile_deflation", lambda *a, **k: False,
+        )
+        cfg = self._sync_cfg()
+        pipeline, _ = self._run(tmp_path, cfg)
+        stats = pipeline.cache["ActivationAnalysis.activation_scale_stats"]
+        assert stats["deflated_layers"] == []
+        assert stats["quantile"] == pytest.approx(1.0)
+
+    def test_knob_off_is_bit_identical(self, tmp_path):
+        cfg = self._sync_cfg()
+        cfg["starvation_aware_scale_quantile"] = False
+        torch.manual_seed(7)
+        pipeline_off, _ = self._run(tmp_path, cfg)
+        scales_off = pipeline_off.cache["ActivationAnalysis.activation_scales"]
+
+        cfg2 = self._sync_cfg()
+        cfg2["starvation_aware_scale_quantile"] = False
+        torch.manual_seed(7)
+        pipeline_ref, _ = self._run(tmp_path, cfg2)
+        assert scales_off == pipeline_ref.cache["ActivationAnalysis.activation_scales"]
+        stats = pipeline_off.cache["ActivationAnalysis.activation_scale_stats"]
+        assert "deflated_layers" not in stats or stats["deflated_layers"] == []
+
+    def test_non_sync_modes_never_deflate(self, tmp_path, monkeypatch):
+        # The knob rides only the sync recipe; a lif config with the knob
+        # accidentally on must not deflate (mode-gated, not knob-gated alone).
+        import mimarsinan.pipelining.pipeline_steps.adaptation.activation_analysis_step as step_mod
+
+        monkeypatch.setattr(
+            step_mod, "needs_quantile_deflation", lambda *a, **k: True,
+        )
+        cfg = default_config()  # lif
+        cfg["starvation_aware_scale_quantile"] = True
+        pipeline, _ = self._run(tmp_path, cfg)
+        stats = pipeline.cache["ActivationAnalysis.activation_scale_stats"]
+        assert stats.get("deflated_layers", []) == []

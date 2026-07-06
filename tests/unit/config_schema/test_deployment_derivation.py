@@ -208,6 +208,14 @@ def test_synchronized_folds_exact_endpoint_and_disables_nevresim():
     assert dp["optimization_driver"] == "fast"
     assert dp["sync_exact_qat"] is True
     assert dp["endpoint_recovery_steps"] == 600
+    # [5v B1] the sync crater levers ride the recipe; ttfs_quantized does NOT
+    # get them (its full-quantile decode is the proven green-family shape).
+    assert dp["starvation_aware_scale_quantile"] is True
+    assert dp["sync_entry_half_step"] is True
+    dp_q = {"spiking_mode": "ttfs_quantized", "weight_quantization": True}
+    derive_deployment_parameters(dp_q)
+    assert "starvation_aware_scale_quantile" not in dp_q
+    assert "sync_entry_half_step" not in dp_q
     # the old genuine-QAT knobs are no longer folded for synchronized.
     assert "ttfs_sync_genuine_qat" not in dp
     assert dp["enable_nevresim_simulation"] is False  # no sync-window backend

@@ -141,3 +141,54 @@ class TestApplyTtfsQuantizationBiasCompensation:
         model = _Model([_perceptron()])
         apply_ttfs_quantized_bias_shift(model, 4)
         _assert_bias_exact(model.get_perceptrons()[0], [0.625, -1.375, 2.125])
+
+
+class TestApplySyncExactEntryHalfStep:
+    """[5v B1] the sync exact-QAT ENTRY half-step: same +0.5/S bake math as the
+    TTFS mapping-time compensation, folded BEFORE training so the ceil-kernel
+    QAT enters through the half-step (entry 0.10 -> 0.85 measured with the
+    deflated quantile) and can train it away (bias stays a live parameter)."""
+
+    def test_plus_half_step_entry_fold_exact(self):
+        from mimarsinan.mapping.support.bias_compensation import (
+            apply_sync_exact_entry_half_step,
+        )
+
+        model = _Model([_perceptron()])
+        folded = apply_sync_exact_entry_half_step(model, 4)
+        assert folded == 1
+        _assert_bias_exact(model.get_perceptrons()[0], [0.625, -1.375, 2.125])
+        assert model.get_perceptrons()[0]._sync_entry_half_step_folded is True
+
+    def test_idempotent_no_double_fold(self):
+        from mimarsinan.mapping.support.bias_compensation import (
+            apply_sync_exact_entry_half_step,
+        )
+
+        model = _Model([_perceptron()])
+        apply_sync_exact_entry_half_step(model, 4)
+        folded_again = apply_sync_exact_entry_half_step(model, 4)
+        assert folded_again == 0
+        _assert_bias_exact(model.get_perceptrons()[0], [0.625, -1.375, 2.125])
+
+    def test_encoding_layer_skipped(self):
+        from mimarsinan.mapping.support.bias_compensation import (
+            apply_sync_exact_entry_half_step,
+        )
+
+        encoder = _perceptron()
+        encoder.is_encoding_layer = True
+        model = _Model([encoder])
+        assert apply_sync_exact_entry_half_step(model, 4) == 0
+        _assert_bias_exact(encoder, [0.5, -1.5, 2.0])
+
+    def test_distinct_flag_from_the_mapping_time_bake(self):
+        # The entry fold and the mapping-time bake are different decisions:
+        # a model that got the entry fold must still be foldable by (or skip)
+        # the mapping-time path on ITS marker alone.
+        from mimarsinan.mapping.support.bias_compensation import (
+            SYNC_ENTRY_HALF_STEP_FLAG,
+            TTFS_COMP_BAKED_FLAG,
+        )
+
+        assert SYNC_ENTRY_HALF_STEP_FLAG != TTFS_COMP_BAKED_FLAG

@@ -50,6 +50,12 @@ _SYNCHRONIZED_RECIPE_KNOBS = {
     # P1'' budget at the AQ endpoint (the sync conversion endpoint), replacing
     # the open-ended AQ stabilize; stalls add their freed ladder steps.
     "endpoint_recovery_steps": 600,
+    # [5v B1] the sync crater's two measured scalar levers (t0_21 AQ entry
+    # 0.10 -> 0.85 combined): the full-quantile theta deflates per-hop where
+    # the A6 gauge reads starvation, and the exact-ceil endpoint is entered
+    # through the +0.5/S half-step folded as trainable entry bias.
+    "starvation_aware_scale_quantile": True,
+    "sync_entry_half_step": True,
 }
 _CASCADED_RECIPE_KNOBS = {
     "ttfs_genuine_blend_ramp": True,

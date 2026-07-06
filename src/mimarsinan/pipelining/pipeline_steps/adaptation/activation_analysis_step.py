@@ -10,6 +10,7 @@ from mimarsinan.tuning.orchestration.install_resolution import (
     build_value_install_gauge,
     emit_value_gauge,
     gauge_summary,
+    needs_quantile_deflation,
     value_grid_levels,
 )
 from mimarsinan.tuning.orchestration.tuning_budget import tuning_budget_from_pipeline
@@ -218,6 +219,11 @@ class ActivationAnalysisStep(TrainerPipelineStep):
                 )
             )
 
+        deflated_layers = self._deflate_starved_scales(
+            perceptrons, channel_accumulators, merged_samples, activation_scales,
+            quantile=quantile,
+        )
+
         activation_scale_stats = _activation_scale_stats(
             perceptrons,
             merged_samples,
@@ -226,6 +232,8 @@ class ActivationAnalysisStep(TrainerPipelineStep):
             quantile=quantile,
             max_samples_per_batch=MAX_SAMPLES_PER_BATCH,
         )
+        if deflated_layers is not None:
+            activation_scale_stats["deflated_layers"] = deflated_layers
         scale_summary = activation_scale_stats["summary"]
         print(
             "[ActivationAnalysisStep] "
@@ -244,6 +252,35 @@ class ActivationAnalysisStep(TrainerPipelineStep):
         self.add_entry("activation_scales", activation_scales)
         self.add_entry("activation_scale_stats", activation_scale_stats)
         self.add_entry("install_resolution_gauge", gauge_summary(gauge))
+
+    def _deflate_starved_scales(
+        self, perceptrons, accumulators, merged_samples, scales, *, quantile,
+    ):
+        """[5v B1(i)] sync-recipe-gated starvation-aware quantile: a hop whose
+        ``quantile`` theta starves the grid recomputes its scale at 0.99."""
+        plan = DeploymentPlan.of(self.pipeline)
+        armed = bool(
+            self.pipeline.config.get("starvation_aware_scale_quantile", False)
+        ) and plan.is_synchronized_ttfs
+        if not armed:
+            return None
+        levels = value_grid_levels(plan.spiking_mode, self.pipeline.config)
+        if levels is None or quantile <= DEFAULT_SCALE_QUANTILE:
+            return []
+        deflated = []
+        for idx, (perceptron, acc) in enumerate(zip(perceptrons, accumulators)):
+            if not needs_quantile_deflation(acc.per_channel_q99(), scales[idx], levels):
+                continue
+            scales[idx] = scale_from_activations(
+                merged_samples[idx], quantile=DEFAULT_SCALE_QUANTILE, min_scale=MIN_SCALE,
+            )
+            deflated.append(perceptron.name)
+            print(
+                f"[MBH-A6] quantile-deflate hop={perceptron.name} {quantile} -> "
+                f"{DEFAULT_SCALE_QUANTILE} (starved at the {levels}-step grid)",
+                flush=True,
+            )
+        return deflated
 
     def _a6_value_gauge(self, model, perceptrons, accumulators, scales):
         """[MBH-A6] the pre-flight value-starvation gauge at the install grid

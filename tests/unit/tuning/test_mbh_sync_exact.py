@@ -369,3 +369,68 @@ class TestComposition:
         assert tuner is not None
         _, entry = list(model.get_perceptrons())
         assert isinstance(entry.input_activation, TTFSInputGridQuantizer)
+
+
+class TestSyncEntryHalfStepCallSite:
+    """[5v B1(ii)] the AQ tuner folds the entry half-step exactly once, only
+    for sync exact-QAT runs with the recipe knob on."""
+
+    def _tuner(self, tmp_path, cfg):
+        from mimarsinan.tuning.orchestration.adaptation_manager_factory import (
+            create_adaptation_manager_for_model,
+        )
+        from mimarsinan.tuning.tuners.activation_quantization_tuner import (
+            ActivationQuantizationTuner,
+        )
+
+        pipeline = MockPipeline(config=cfg, working_directory=str(tmp_path))
+        pipeline._target_metric = 0.0
+        model = make_tiny_supermodel()
+        manager = create_adaptation_manager_for_model(cfg, model)
+        return ActivationQuantizationTuner(pipeline, model, 4, 0.5, cfg["lr"], manager)
+
+    def test_knob_on_folds_non_encoding_hops(self, tmp_path, capsys):
+        cfg = _sync_cfg()
+        cfg["sync_entry_half_step"] = True
+        tuner = self._tuner(tmp_path, cfg)
+        try:
+            assert "[MBH-B1] sync entry half-step folded" in capsys.readouterr().out
+            flags = [
+                bool(getattr(p, "_sync_entry_half_step_folded", False))
+                for p in tuner.model.get_perceptrons()
+            ]
+            encoders = [
+                bool(getattr(p, "is_encoding_layer", False))
+                for p in tuner.model.get_perceptrons()
+            ]
+            for flag, is_enc in zip(flags, encoders):
+                assert flag != is_enc
+        finally:
+            tuner.close()
+
+    def test_knob_off_is_bit_identical(self, tmp_path):
+        cfg = _sync_cfg()
+        assert "sync_entry_half_step" not in cfg
+        tuner = self._tuner(tmp_path, cfg)
+        try:
+            assert not any(
+                getattr(p, "_sync_entry_half_step_folded", False)
+                for p in tuner.model.get_perceptrons()
+            )
+        finally:
+            tuner.close()
+
+    def test_non_sync_mode_never_folds(self, tmp_path):
+        cfg = default_config()
+        cfg["spiking_mode"] = "ttfs_quantized"
+        cfg["activation_quantization"] = True
+        cfg["optimization_driver"] = "fast"
+        cfg["sync_entry_half_step"] = True  # accidental knob: mode gate wins
+        tuner = self._tuner(tmp_path, cfg)
+        try:
+            assert not any(
+                getattr(p, "_sync_entry_half_step_folded", False)
+                for p in tuner.model.get_perceptrons()
+            )
+        finally:
+            tuner.close()

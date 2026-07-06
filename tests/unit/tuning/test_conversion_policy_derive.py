@@ -72,6 +72,11 @@ _MODE_KNOBS = {
         "sync_exact_qat": True,
         # P1'' budget at the sync AQ endpoint (replaces the open-ended stabilize).
         "endpoint_recovery_steps": 600,
+        # [5v B1] the two scalar crater levers: the A6-gauge-driven quantile
+        # (full-quantile theta deflates where it starves the grid) and the
+        # half-step ENTRY fold into bias (trainable; the exact-kernel QAT owns it).
+        "starvation_aware_scale_quantile": True,
+        "sync_entry_half_step": True,
     },
 }
 

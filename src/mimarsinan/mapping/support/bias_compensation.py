@@ -66,6 +66,30 @@ def apply_ttfs_quantized_bias_shift(model, target_tq: int) -> None:
     apply_ttfs_quantization_bias_compensation(model, target_tq)
 
 
+SYNC_ENTRY_HALF_STEP_FLAG = "_sync_entry_half_step_folded"
+
+
+def apply_sync_exact_entry_half_step(model, simulation_steps: int) -> int:
+    """[5v B1] Fold the +0.5/S half-step as TRAINABLE entry bias before the sync
+    exact-ceil QAT (same bake math as the TTFS compensation, different decision:
+    the QAT owns and may train the fold away). Idempotent; returns folds applied.
+    """
+    folded = 0
+    for perceptron in model.get_perceptrons():
+        if getattr(perceptron, "is_encoding_layer", False):
+            continue
+        shift = calculate_activation_shift(
+            simulation_steps, perceptron.activation_scale
+        )
+        if apply_additive_effective_bias_shift(
+            perceptron,
+            shift / perceptron.activation_scale,
+            baked_flag=SYNC_ENTRY_HALF_STEP_FLAG,
+        ):
+            folded += 1
+    return folded
+
+
 def _is_perceptron(node) -> bool:
     return getattr(node, "perceptron", None) is not None
 

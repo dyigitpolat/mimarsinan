@@ -1,5 +1,8 @@
 """Tuner for gradual activation quantization."""
 
+from mimarsinan.mapping.support.bias_compensation import (
+    apply_sync_exact_entry_half_step,
+)
 from mimarsinan.tuning.adaptation_rate_tuner import AdaptationRateTuner
 from mimarsinan.tuning.orchestration.adaptation_manager import (
     install_sync_entry_grid_snap,
@@ -19,6 +22,15 @@ class ActivationQuantizationTuner(AdaptationRateTuner):
         # [MBH T6] exact-endpoint QAT also trains through the deployed per-stage
         # input grid snap (no-op unless the sync_exact_qat recipe knob + synchronized).
         install_sync_entry_grid_snap(self.model, self.pipeline.config)
+        # [5v B1(ii)] enter the exact-ceil endpoint through the half-step: the
+        # fold is trainable bias, applied once, and the QAT may train it away.
+        if sync_exact_qat_active(self.pipeline.config) and bool(
+            self.pipeline.config.get("sync_entry_half_step", False)
+        ):
+            folded = apply_sync_exact_entry_half_step(
+                self.model, int(self.pipeline.config["simulation_steps"])
+            )
+            print(f"[MBH-B1] sync entry half-step folded on {folded} hops", flush=True)
 
     def _stabilization_budget(self):
         if sync_exact_qat_active(self.pipeline.config):
