@@ -1,7 +1,7 @@
 {
   "seed": 0,
   "pipeline_mode": "phased",
-  "experiment_name": "t0_11_ttfsq_mmixcore_wqaq_s16_offload",
+  "experiment_name": "t0_11_ttfsq_mmixcore_wq_s16_offload",
   "generated_files_path": "./generated",
   "data_provider_name": "MNIST_DataProvider",
   "platform_constraints": {
@@ -54,7 +54,6 @@
     "thresholding_mode": "<=",
     "encoding_layer_placement": "offload",
     "weight_quantization": true,
-    "activation_quantization": true,
     "training_epochs": 2,
     "training_recipe": {
       "optimizer": "adamw",

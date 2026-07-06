@@ -4,8 +4,8 @@
   "wall_budget_minutes_per_run": 360,
   "runs": [
     {
-      "name": "t2_01_lif_resnet50_wqaq_s32_sched",
-      "config": "t2_01_lif_resnet50_wqaq_s32_sched.json",
+      "name": "t2_01_lif_resnet50_wq_s32_sched",
+      "config": "t2_01_lif_resnet50_wq_s32_sched.json",
       "model_type": "torch_resnet50",
       "cell": {
         "firing": "lif",
@@ -25,8 +25,8 @@
       "expected_wall_min": 360
     },
     {
-      "name": "t2_02_ttfsq_vit_wqaq_s32_sched_pruned",
-      "config": "t2_02_ttfsq_vit_wqaq_s32_sched_pruned.json",
+      "name": "t2_02_ttfsq_vit_wq_s32_sched_pruned",
+      "config": "t2_02_ttfsq_vit_wq_s32_sched_pruned.json",
       "model_type": "torch_vit",
       "cell": {
         "firing": "ttfs_quantized",
@@ -53,7 +53,7 @@
       "cell": {
         "firing": "ttfs_cycle_based",
         "sync": "cascaded",
-        "quantization": "wq",
+        "quantization": "wq_aq",
         "S": "32",
         "depth": "any",
         "vehicle": "vit_b",

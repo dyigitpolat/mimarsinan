@@ -71,60 +71,83 @@ MODES = {
              "axis": ("ttfs_cycle_based", "synchronized")},
 }
 
+# Quant axis reflects RUNTIME truth (SSOT: config_schema/deployment_derivation.py):
+# activation quantization is derived from the mode (ON for lif/casc/sync/ttfsq,
+# OFF for analytical ttfs), so configs carry only the WQ declaration and never pin
+# activation_quantization. fp = the vanilla float assembly (pipeline_mode vanilla).
 QUANT = {
-    "fp": {"weight_quantization": False, "activation_quantization": False, "axis": "none"},
-    "wq": {"weight_quantization": True, "activation_quantization": False, "axis": "wq"},
-    "aq": {"weight_quantization": False, "activation_quantization": True, "axis": "aq"},
-    "wqaq": {"weight_quantization": True, "activation_quantization": True, "axis": "wq_aq"},
+    "fp": {"weight_quantization": False},
+    "wq": {"weight_quantization": True},
 }
+AQ_DERIVED_MODES = {"lif", "ttfsq", "casc", "sync"}
+
+
+def _quant_axis(row):
+    """Resolved hypervolume quantization coordinate (runtime truth, not config fiction)."""
+    if not QUANT[row["quant"]]["weight_quantization"]:
+        return "none"
+    return "wq_aq" if row["mode"] in AQ_DERIVED_MODES else "wq"
 
 T0 = [
     dict(n=1, mode="lif", quant="wq", wb=5, s=4, vehicle="mmixcore"),
     dict(n=2, mode="lif", quant="fp", wb=5, s=8, vehicle="lenet5", firing="Novena",
          encoding="offload", pruned=0.5, tags=["novena", "offload", "pruned"]),
     # W2: the 360-core pool packs t0_03 only scheduled (111/360 peak over 4 phases).
-    dict(n=3, mode="lif", quant="wqaq", wb=4, s=16, vehicle="deepcnn", depth=8,
+    dict(n=3, mode="lif", quant="wq", wb=4, s=16, vehicle="deepcnn", depth=8,
          scheduling=True, tags=["sched"]),
-    dict(n=4, mode="lif", quant="aq", wb=5, s=32, vehicle="deepmlp", depth=8),
+    # W3c respec: was the fictional aq form (wq=False + weight_bits ran as a de-facto
+    # float deployment, X4 passed that form); now a real WQ deployment.
+    dict(n=4, mode="lif", quant="wq", wb=5, s=32, vehicle="deepmlp", depth=8,
+         note="W3c respec 2026-07-06: fictional aq form (weight_quantization=false + "
+              "weight_bits ran float) -> real WQ deployment; X4 passed the old form."),
     dict(n=5, mode="lif", quant="wq", wb=5, s=4, vehicle="simplemlp", seed=1),
     dict(n=6, mode="ttfs", quant="wq", wb=5, s=8, vehicle="mmixcore"),
-    dict(n=7, mode="ttfs", quant="aq", wb=5, s=16, vehicle="lenet5"),
+    # W3c respec: same fictional-aq class as t0_04.
+    dict(n=7, mode="ttfs", quant="wq", wb=5, s=16, vehicle="lenet5",
+         note="W3c respec 2026-07-06: fictional aq form (weight_quantization=false + "
+              "weight_bits ran float) -> real WQ deployment; X4 passed the old form."),
     dict(n=8, mode="ttfs", quant="fp", wb=5, s=32, vehicle="deepcnn", depth=8,
          scheduling=True, tags=["wall_risk", "sched"]),
-    dict(n=9, mode="ttfs", quant="wqaq", wb=5, s=4, vehicle="deepmlp", depth=4, width=128, pruned=0.5, tags=["pruned"]),
+    dict(n=9, mode="ttfs", quant="wq", wb=5, s=4, vehicle="deepmlp", depth=4, width=128, pruned=0.5, tags=["pruned"]),
     dict(n=10, mode="ttfs", quant="fp", wb=5, s=16, vehicle="simplemlp",
          coalescing=False, splitting=False, tags=["identity"]),
-    dict(n=11, mode="ttfsq", quant="wqaq", wb=5, s=16, vehicle="mmixcore",
+    dict(n=11, mode="ttfsq", quant="wq", wb=5, s=16, vehicle="mmixcore",
          encoding="offload", tags=["offload"]),
-    dict(n=12, mode="ttfsq", quant="wqaq", wb=8, s=32, vehicle="lenet5", tags=["wall_risk"]),
-    dict(n=13, mode="ttfsq", quant="wqaq", wb=5, s=4, vehicle="deepcnn", depth=4),
-    dict(n=14, mode="ttfsq", quant="wqaq", wb=5, s=8, vehicle="deepmlp", depth=8),
-    dict(n=15, mode="ttfsq", quant="wqaq", wb=5, s=8, vehicle="simplemlp", pruned=0.5, tags=["pruned"]),
+    dict(n=12, mode="ttfsq", quant="wq", wb=8, s=32, vehicle="lenet5", tags=["wall_risk"]),
+    dict(n=13, mode="ttfsq", quant="wq", wb=5, s=4, vehicle="deepcnn", depth=4),
+    dict(n=14, mode="ttfsq", quant="wq", wb=5, s=8, vehicle="deepmlp", depth=8),
+    dict(n=15, mode="ttfsq", quant="wq", wb=5, s=8, vehicle="simplemlp", pruned=0.10,
+         tags=["pruned10"],
+         note="W3c respec 2026-07-06: pruning 0.5 -> 0.10 (user-directed; 50% is "
+              "too strong for this cell)."),
     dict(n=16, mode="casc", quant="wq", wb=5, s=8, vehicle="mmixcore", encoding="offload",
          scheduling=True, has_bias=False, tags=["offload", "sched", "nobias"]),
-    dict(n=17, mode="casc", quant="wqaq", wb=5, s=32, vehicle="lenet5", tags=["wall_risk"]),
+    dict(n=17, mode="casc", quant="wq", wb=5, s=32, vehicle="lenet5", tags=["wall_risk"]),
     dict(n=18, mode="casc", quant="wq", wb=5, s=4, vehicle="deepcnn", depth=4, pruned=0.5,
          tags=["pruned", "known_collapse_candidate"]),
     # W2: plain d16 is recipe-unreachable (5/5 runs at chance); residual is the
     # trainable deep backbone (USER DECISION 2026-07-06: residual, depth kept).
     dict(n=19, mode="casc", quant="wq", wb=4, s=16, vehicle="deepmlp", depth=16,
          residual=True, tags=["wall_risk", "known_collapse_candidate", "residual"]),
-    dict(n=20, mode="casc", quant="wqaq", wb=5, s=4, vehicle="simplemlp"),
-    dict(n=21, mode="sync", quant="wq", wb=5, s=8, vehicle="mmixcore", pruned=0.5, tags=["pruned"]),
+    dict(n=20, mode="casc", quant="wq", wb=5, s=4, vehicle="simplemlp"),
+    dict(n=21, mode="sync", quant="wq", wb=5, s=8, vehicle="mmixcore", pruned=0.10,
+         tags=["pruned10"],
+         note="W3c respec 2026-07-06: pruning 0.5 -> 0.10 (user-directed; 50% is "
+              "too strong for this cell)."),
     dict(n=22, mode="sync", quant="wq", wb=5, s=4, vehicle="lenet5", scheduling=True, tags=["sched"]),
-    dict(n=23, mode="sync", quant="wqaq", wb=8, s=16, vehicle="deepcnn", depth=4),
-    dict(n=24, mode="sync", quant="wqaq", wb=5, s=8, vehicle="deepmlp", depth=4, width=128),
+    dict(n=23, mode="sync", quant="wq", wb=8, s=16, vehicle="deepcnn", depth=4),
+    dict(n=24, mode="sync", quant="wq", wb=5, s=8, vehicle="deepmlp", depth=4, width=128),
     dict(n=25, mode="sync", quant="wq", wb=5, s=32, vehicle="simplemlp"),
 ]
 
 T1 = [
-    dict(n=1, mode="lif", quant="wqaq", wb=8, s=16, vehicle="squeezenet", regime="pretrained"),
+    dict(n=1, mode="lif", quant="wq", wb=8, s=16, vehicle="squeezenet", regime="pretrained"),
     dict(n=2, mode="ttfs", quant="wq", wb=8, s=32, vehicle="vit", regime="pretrained", tags=["wall_risk"]),
-    dict(n=3, mode="ttfsq", quant="wqaq", wb=8, s=32, vehicle="vit", regime="pretrained",
+    dict(n=3, mode="ttfsq", quant="wq", wb=8, s=32, vehicle="vit", regime="pretrained",
          pruned=0.05, tags=["wall_risk", "pruned"]),
     dict(n=4, mode="casc", quant="wq", wb=5, s=8, vehicle="deepcnn32", depth=8, regime="from_scratch"),
     dict(n=5, mode="sync", quant="wq", wb=5, s=8, vehicle="deepcnn32", depth=4, regime="from_scratch"),
-    dict(n=6, mode="lif", quant="wqaq", wb=8, s=32, vehicle="deepcnn32", depth=8, regime="from_scratch"),
+    dict(n=6, mode="lif", quant="wq", wb=8, s=32, vehicle="deepcnn32", depth=8, regime="from_scratch"),
     dict(n=7, mode="casc", quant="wq", wb=8, s=16, vehicle="squeezenet", regime="pretrained",
          scheduling=True, tags=["sched"]),
     dict(n=8, mode="ttfs", quant="fp", wb=8, s=16, vehicle="mixerc10", regime="from_scratch"),
@@ -145,9 +168,9 @@ T1_VEHICLES = {
 }
 
 T2 = [
-    dict(n=1, mode="lif", quant="wqaq", wb=8, s=32, vehicle="resnet50", dataset="ImageNet",
+    dict(n=1, mode="lif", quant="wq", wb=8, s=32, vehicle="resnet50", dataset="ImageNet",
          regime="pretrained", scheduling=True, lr=0.0001, finetune_epochs=0, budget=0.5, tags=["sched"]),
-    dict(n=2, mode="ttfsq", quant="wqaq", wb=8, s=32, vehicle="vit", dataset="CIFAR100",
+    dict(n=2, mode="ttfsq", quant="wq", wb=8, s=32, vehicle="vit", dataset="CIFAR100",
          regime="pretrained", scheduling=True, pruned=0.05, tags=["sched", "pruned"]),
     dict(n=3, mode="casc", quant="wq", wb=8, s=32, vehicle="squeezenet", dataset="CIFAR100",
          regime="pretrained", scheduling=True, tags=["sched", "wall_risk"]),
@@ -167,8 +190,8 @@ def _name(tier, row, vehicles):
     v = row["vehicle"]
     depth = f"_d{row['depth']}" if "depth" in row else ""
     tags = "".join(f"_{t}" for t in row.get("tags", []) if t in
-                   ("offload", "sched", "nobias", "pruned", "novena", "identity",
-                    "residual"))
+                   ("offload", "sched", "nobias", "pruned", "pruned10", "novena",
+                    "identity", "residual"))
     return f"t{tier}_{row['n']:02d}_{row['mode']}_{v}{depth}_{row['quant']}_s{row['s']}{tags}"
 
 
@@ -220,7 +243,6 @@ def _deployment(tier, row, vehicles, dataset):
         "thresholding_mode": mode["thresholding_mode"],
         "encoding_layer_placement": row.get("encoding", "subsume"),
         "weight_quantization": quant["weight_quantization"],
-        "activation_quantization": quant["activation_quantization"],
     }
     if "ttfs_cycle_schedule" in mode:
         dp["ttfs_cycle_schedule"] = mode["ttfs_cycle_schedule"]
@@ -250,7 +272,7 @@ def _cell(tier, row, vehicles, dataset):
     return {
         "firing": firing,
         "sync": sync,
-        "quantization": QUANT[row["quant"]]["axis"],
+        "quantization": _quant_axis(row),
         "S": str(row["s"]),
         "depth": str(row["depth"]) if "depth" in row else "any",
         "vehicle": v["axis"],
@@ -270,11 +292,32 @@ def _wall_budget(tier, row, vehicles, default_min):
     return 6
 
 
+COVERAGE_NOTES = {
+    0: [
+        "Quantization axis is RUNTIME truth (SSOT: config_schema/"
+        "deployment_derivation.py): activation quantization is derived from the "
+        "mode (ON for lif/casc/sync/ttfsq, OFF for analytical ttfs); configs "
+        "never pin activation_quantization. Names use wq (bits-quantized) or fp "
+        "(float/vanilla) only.",
+        "W3c respec 2026-07-06: t0_04/t0_07 were the fictional aq class "
+        "(weight_quantization=false + weight_bits ran as de-facto float; X4 "
+        "passed those forms) -> respecced to real WQ deployments.",
+        "W3c respec 2026-07-06: t0_15/t0_21 pruning 0.5 -> 0.10 (user-directed). "
+        "t0_02/t0_09/t0_18 stay at 0.5: they pass and keep the heavy-pruning "
+        "stressor coverage.",
+    ],
+}
+
+
 def _emit_tier(tier, rows, vehicles, dataset, wall_budget_min):
     out_dir = ROOT / f"tier{tier}"
     out_dir.mkdir(exist_ok=True)
+    for stale in out_dir.glob("t*.json"):
+        stale.unlink()
     manifest = {"tier": tier, "dataset": dataset,
                 "wall_budget_minutes_per_run": wall_budget_min, "runs": []}
+    if tier in COVERAGE_NOTES:
+        manifest["coverage_notes"] = COVERAGE_NOTES[tier]
     for row in rows:
         ds = row.get("dataset", dataset)
         name = _name(tier, row, vehicles)
@@ -291,14 +334,17 @@ def _emit_tier(tier, rows, vehicles, dataset, wall_budget_min):
             "stop_step": None,
         }
         (out_dir / f"{name}.json").write_text(json.dumps(config, indent=2) + "\n")
-        manifest["runs"].append({
+        entry = {
             "name": name,
             "config": f"{name}.json",
             "model_type": vehicles[row["vehicle"]]["model_type"],
             "cell": _cell(tier, row, vehicles, ds),
             "tags": row.get("tags", []),
             "expected_wall_min": _wall_budget(tier, row, vehicles, wall_budget_min),
-        })
+        }
+        if "note" in row:
+            entry["note"] = row["note"]
+        manifest["runs"].append(entry)
     (out_dir / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
     return len(rows)
 

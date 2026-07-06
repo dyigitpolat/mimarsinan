@@ -1,7 +1,7 @@
 {
   "seed": 0,
   "pipeline_mode": "phased",
-  "experiment_name": "t0_24_sync_deepmlp_d4_wqaq_s8",
+  "experiment_name": "t0_20_casc_simplemlp_wq_s4",
   "generated_files_path": "./generated",
   "data_provider_name": "MNIST_DataProvider",
   "platform_constraints": {
@@ -22,8 +22,8 @@
     "max_axons": 784,
     "max_neurons": 512,
     "has_bias": true,
-    "target_tq": 8,
-    "simulation_steps": 8,
+    "target_tq": 4,
+    "simulation_steps": 4,
     "weight_bits": 5,
     "allow_coalescing": true,
     "allow_neuron_splitting": true
@@ -34,10 +34,10 @@
     "degradation_tolerance": 0.15,
     "model_config_mode": "user",
     "hw_config_mode": "fixed",
-    "model_type": "deep_mlp",
+    "model_type": "simple_mlp",
     "model_config": {
-      "depth": 4,
-      "width": 128
+      "mlp_width_1": 256,
+      "mlp_width_2": 128
     },
     "batch_size": 128,
     "max_simulation_samples": 100,
@@ -50,8 +50,7 @@
     "thresholding_mode": "<=",
     "encoding_layer_placement": "subsume",
     "weight_quantization": true,
-    "activation_quantization": true,
-    "ttfs_cycle_schedule": "synchronized",
+    "ttfs_cycle_schedule": "cascaded",
     "training_epochs": 2,
     "training_recipe": {
       "optimizer": "adamw",

@@ -1,9 +1,9 @@
 {
   "seed": 0,
   "pipeline_mode": "phased",
-  "experiment_name": "t1_02_ttfs_vit_wq_s32",
+  "experiment_name": "t2_02_ttfsq_vit_wq_s32_sched_pruned",
   "generated_files_path": "./generated",
-  "data_provider_name": "CIFAR10_DataProvider",
+  "data_provider_name": "CIFAR100_DataProvider",
   "platform_constraints": {
     "cores": [
       {
@@ -40,13 +40,15 @@
     "max_simulation_samples": 100,
     "sanafe_arch_preset": "loihi",
     "sanafe_sample_count": 1,
-    "allow_scheduling": false,
-    "spiking_mode": "ttfs",
+    "allow_scheduling": true,
+    "spiking_mode": "ttfs_quantized",
     "firing_mode": "TTFS",
     "spike_generation_mode": "TTFS",
     "thresholding_mode": "<=",
     "encoding_layer_placement": "subsume",
     "weight_quantization": true,
+    "pruning": true,
+    "pruning_fraction": 0.05,
     "tuning_batch_size": 128,
     "preprocessing": {
       "interpolation": "bicubic",

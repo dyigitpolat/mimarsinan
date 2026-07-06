@@ -4,8 +4,8 @@
   "wall_budget_minutes_per_run": 120,
   "runs": [
     {
-      "name": "t1_01_lif_squeezenet_wqaq_s16",
-      "config": "t1_01_lif_squeezenet_wqaq_s16.json",
+      "name": "t1_01_lif_squeezenet_wq_s16",
+      "config": "t1_01_lif_squeezenet_wq_s16.json",
       "model_type": "torch_squeezenet11",
       "cell": {
         "firing": "lif",
@@ -44,8 +44,8 @@
       "expected_wall_min": 120
     },
     {
-      "name": "t1_03_ttfsq_vit_wqaq_s32_pruned",
-      "config": "t1_03_ttfsq_vit_wqaq_s32_pruned.json",
+      "name": "t1_03_ttfsq_vit_wq_s32_pruned",
+      "config": "t1_03_ttfsq_vit_wq_s32_pruned.json",
       "model_type": "torch_vit",
       "cell": {
         "firing": "ttfs_quantized",
@@ -72,7 +72,7 @@
       "cell": {
         "firing": "ttfs_cycle_based",
         "sync": "cascaded",
-        "quantization": "wq",
+        "quantization": "wq_aq",
         "S": "8",
         "depth": "8",
         "vehicle": "deep_cnn",
@@ -91,7 +91,7 @@
       "cell": {
         "firing": "ttfs_cycle_based",
         "sync": "synchronized",
-        "quantization": "wq",
+        "quantization": "wq_aq",
         "S": "8",
         "depth": "4",
         "vehicle": "deep_cnn",
@@ -104,8 +104,8 @@
       "expected_wall_min": 120
     },
     {
-      "name": "t1_06_lif_deepcnn32_d8_wqaq_s32",
-      "config": "t1_06_lif_deepcnn32_d8_wqaq_s32.json",
+      "name": "t1_06_lif_deepcnn32_d8_wq_s32",
+      "config": "t1_06_lif_deepcnn32_d8_wq_s32.json",
       "model_type": "deep_cnn",
       "cell": {
         "firing": "lif",
@@ -129,7 +129,7 @@
       "cell": {
         "firing": "ttfs_cycle_based",
         "sync": "cascaded",
-        "quantization": "wq",
+        "quantization": "wq_aq",
         "S": "16",
         "depth": "any",
         "vehicle": "vit_b",

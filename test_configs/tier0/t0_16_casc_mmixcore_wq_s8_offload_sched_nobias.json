@@ -54,7 +54,6 @@
     "thresholding_mode": "<=",
     "encoding_layer_placement": "offload",
     "weight_quantization": true,
-    "activation_quantization": false,
     "ttfs_cycle_schedule": "cascaded",
     "training_epochs": 2,
     "training_recipe": {

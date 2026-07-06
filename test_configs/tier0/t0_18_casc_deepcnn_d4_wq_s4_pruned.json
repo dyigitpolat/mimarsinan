@@ -50,7 +50,6 @@
     "thresholding_mode": "<=",
     "encoding_layer_placement": "subsume",
     "weight_quantization": true,
-    "activation_quantization": false,
     "ttfs_cycle_schedule": "cascaded",
     "pruning": true,
     "pruning_fraction": 0.5,

@@ -1,7 +1,7 @@
 {
   "seed": 0,
   "pipeline_mode": "phased",
-  "experiment_name": "t0_21_sync_mmixcore_wq_s8_pruned",
+  "experiment_name": "t0_21_sync_mmixcore_wq_s8_pruned10",
   "generated_files_path": "./generated",
   "data_provider_name": "MNIST_DataProvider",
   "platform_constraints": {
@@ -54,10 +54,9 @@
     "thresholding_mode": "<=",
     "encoding_layer_placement": "subsume",
     "weight_quantization": true,
-    "activation_quantization": false,
     "ttfs_cycle_schedule": "synchronized",
     "pruning": true,
-    "pruning_fraction": 0.5,
+    "pruning_fraction": 0.1,
     "training_epochs": 2,
     "training_recipe": {
       "optimizer": "adamw",

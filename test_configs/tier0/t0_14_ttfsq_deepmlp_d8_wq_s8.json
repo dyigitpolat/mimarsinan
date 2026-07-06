@@ -1,7 +1,7 @@
 {
   "seed": 0,
   "pipeline_mode": "phased",
-  "experiment_name": "t0_14_ttfsq_deepmlp_d8_wqaq_s8",
+  "experiment_name": "t0_14_ttfsq_deepmlp_d8_wq_s8",
   "generated_files_path": "./generated",
   "data_provider_name": "MNIST_DataProvider",
   "platform_constraints": {
@@ -50,7 +50,6 @@
     "thresholding_mode": "<=",
     "encoding_layer_placement": "subsume",
     "weight_quantization": true,
-    "activation_quantization": true,
     "training_epochs": 2,
     "training_recipe": {
       "optimizer": "adamw",

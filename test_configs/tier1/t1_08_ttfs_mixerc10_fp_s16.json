@@ -54,7 +54,6 @@
     "thresholding_mode": "<=",
     "encoding_layer_placement": "subsume",
     "weight_quantization": false,
-    "activation_quantization": false,
     "training_epochs": 20
   },
   "target_metric_override": null,

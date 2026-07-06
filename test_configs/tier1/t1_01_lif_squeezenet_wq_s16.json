@@ -1,7 +1,7 @@
 {
   "seed": 0,
   "pipeline_mode": "phased",
-  "experiment_name": "t1_01_lif_squeezenet_wqaq_s16",
+  "experiment_name": "t1_01_lif_squeezenet_wq_s16",
   "generated_files_path": "./generated",
   "data_provider_name": "CIFAR10_DataProvider",
   "platform_constraints": {
@@ -47,7 +47,6 @@
     "thresholding_mode": "<",
     "encoding_layer_placement": "subsume",
     "weight_quantization": true,
-    "activation_quantization": true,
     "weight_source": "torchvision",
     "finetune_epochs": 2
   },

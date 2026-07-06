@@ -49,7 +49,6 @@
     "thresholding_mode": "<",
     "encoding_layer_placement": "offload",
     "weight_quantization": false,
-    "activation_quantization": false,
     "pruning": true,
     "pruning_fraction": 0.5,
     "training_epochs": 2,

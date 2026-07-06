@@ -96,9 +96,27 @@ class TestConfigValidity:
             dp = json.loads(path.read_text())["deployment_parameters"]
             if dp["spiking_mode"] in QUANT_REQUIRED_MODES:
                 assert dp["weight_quantization"] is True, path.name
-            if dp["spiking_mode"] == "ttfs_quantized":
-                assert dp["activation_quantization"] is True, path.name
             assert dp["max_simulation_samples"] == 100, path.name
+
+    @pytest.mark.parametrize("tier", [0, 1, 2])
+    def test_activation_quantization_left_to_derivation(self, tier):
+        """AQ is a derived pipeline-assembly mode; configs must never pin it."""
+        for path in _tier_configs(tier):
+            dp = json.loads(path.read_text())["deployment_parameters"]
+            assert "activation_quantization" not in dp, path.name
+
+    @pytest.mark.parametrize("tier", [0, 1, 2])
+    def test_quant_tags_are_runtime_truth(self, tier):
+        """Names carry only wq/fp; no fictional aq/wqaq tags anywhere."""
+        for path in _tier_configs(tier):
+            assert "_aq_" not in path.name, path.name
+            assert "_wqaq_" not in path.name, path.name
+            cfg = json.loads(path.read_text())
+            wq = cfg["deployment_parameters"]["weight_quantization"]
+            expected_tag = "_wq_" if wq else "_fp_"
+            assert expected_tag in path.name, path.name
+            expected_mode = "phased" if wq else "vanilla"
+            assert cfg["pipeline_mode"] == expected_mode, path.name
 
     @pytest.mark.parametrize("tier", [0, 1, 2])
     def test_configs_resolve_through_derivation(self, tier):
@@ -174,7 +192,7 @@ class TestW2Respecs:
     backbone). USER DECISION 2026-07-06: residual respec, depth kept at 16."""
 
     def test_t0_03_is_scheduled(self):
-        path = TEST_CONFIGS / "tier0" / "t0_03_lif_deepcnn_d8_wqaq_s16_sched.json"
+        path = TEST_CONFIGS / "tier0" / "t0_03_lif_deepcnn_d8_wq_s16_sched.json"
         cfg = json.loads(path.read_text())
         assert cfg["deployment_parameters"]["allow_scheduling"] is True
 
@@ -192,5 +210,60 @@ class TestW2Respecs:
 
     def test_manifest_tags_carry_the_respec(self):
         runs = {r["name"]: r for r in _manifest(0)["runs"]}
-        assert "sched" in runs["t0_03_lif_deepcnn_d8_wqaq_s16_sched"]["tags"]
+        assert "sched" in runs["t0_03_lif_deepcnn_d8_wq_s16_sched"]["tags"]
         assert "residual" in runs["t0_19_casc_deepmlp_d16_wq_s16_residual"]["tags"]
+
+
+class TestW3cRespecs:
+    """W3c matrix-truth respec (2026-07-06): the fictional aq axis is gone;
+    t0_04/t0_07 became real WQ deployments; t0_15/t0_21 pruning 0.5 -> 0.10
+    (user-directed); t0_02/t0_09/t0_18 keep the 0.5 heavy-pruning stressors."""
+
+    def test_t0_04_and_t0_07_are_real_wq_deployments(self):
+        for name in ("t0_04_lif_deepmlp_d8_wq_s32", "t0_07_ttfs_lenet5_wq_s16"):
+            cfg = json.loads((TEST_CONFIGS / "tier0" / f"{name}.json").read_text())
+            assert cfg["deployment_parameters"]["weight_quantization"] is True, name
+            assert cfg["pipeline_mode"] == "phased", name
+
+    def test_t0_15_and_t0_21_pruned_at_10_percent(self):
+        for name in ("t0_15_ttfsq_simplemlp_wq_s8_pruned10",
+                     "t0_21_sync_mmixcore_wq_s8_pruned10"):
+            cfg = json.loads((TEST_CONFIGS / "tier0" / f"{name}.json").read_text())
+            assert cfg["deployment_parameters"]["pruning_fraction"] == 0.10, name
+
+    def test_heavy_pruning_stressors_kept_at_50_percent(self):
+        runs = {r["name"]: r for r in _manifest(0)["runs"]}
+        heavy = [n for n in runs if n.startswith(("t0_02_", "t0_09_", "t0_18_"))]
+        assert len(heavy) == 3
+        for name in heavy:
+            cfg = json.loads((TEST_CONFIGS / "tier0" / f"{name}.json").read_text())
+            assert cfg["deployment_parameters"]["pruning_fraction"] == 0.5, name
+
+    def test_old_fictional_forms_are_gone(self):
+        tier0 = TEST_CONFIGS / "tier0"
+        assert not (tier0 / "t0_04_lif_deepmlp_d8_aq_s32.json").exists()
+        assert not (tier0 / "t0_07_ttfs_lenet5_aq_s16.json").exists()
+        assert not (tier0 / "t0_15_ttfsq_simplemlp_wqaq_s8_pruned.json").exists()
+        assert not (tier0 / "t0_21_sync_mmixcore_wq_s8_pruned.json").exists()
+
+    def test_manifest_notes_carry_the_respecs(self):
+        manifest = _manifest(0)
+        assert manifest.get("coverage_notes"), "tier0 manifest must carry coverage notes"
+        runs = {r["name"]: r for r in manifest["runs"]}
+        for name in ("t0_04_lif_deepmlp_d8_wq_s32", "t0_07_ttfs_lenet5_wq_s16",
+                     "t0_15_ttfsq_simplemlp_wq_s8_pruned10",
+                     "t0_21_sync_mmixcore_wq_s8_pruned10"):
+            assert "respec" in runs[name].get("note", ""), name
+
+    def test_manifest_quant_axis_is_runtime_truth(self):
+        aq_on = {"lif", "ttfs_quantized", "ttfs_cycle_based"}
+        for run in _manifest(0)["runs"]:
+            cell = run["cell"]
+            cfg = json.loads((TEST_CONFIGS / "tier0" / run["config"]).read_text())
+            wq = cfg["deployment_parameters"]["weight_quantization"]
+            if not wq:
+                assert cell["quantization"] == "none", run["name"]
+            elif cell["firing"] in aq_on:
+                assert cell["quantization"] == "wq_aq", run["name"]
+            else:
+                assert cell["quantization"] == "wq", run["name"]

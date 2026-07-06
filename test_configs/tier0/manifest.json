@@ -10,7 +10,7 @@
       "cell": {
         "firing": "lif",
         "sync": "none",
-        "quantization": "wq",
+        "quantization": "wq_aq",
         "S": "4",
         "depth": "any",
         "vehicle": "mlp_mixer_core",
@@ -46,8 +46,8 @@
       "expected_wall_min": 12
     },
     {
-      "name": "t0_03_lif_deepcnn_d8_wqaq_s16_sched",
-      "config": "t0_03_lif_deepcnn_d8_wqaq_s16_sched.json",
+      "name": "t0_03_lif_deepcnn_d8_wq_s16_sched",
+      "config": "t0_03_lif_deepcnn_d8_wq_s16_sched.json",
       "model_type": "deep_cnn",
       "cell": {
         "firing": "lif",
@@ -67,13 +67,13 @@
       "expected_wall_min": 12
     },
     {
-      "name": "t0_04_lif_deepmlp_d8_aq_s32",
-      "config": "t0_04_lif_deepmlp_d8_aq_s32.json",
+      "name": "t0_04_lif_deepmlp_d8_wq_s32",
+      "config": "t0_04_lif_deepmlp_d8_wq_s32.json",
       "model_type": "deep_mlp",
       "cell": {
         "firing": "lif",
         "sync": "none",
-        "quantization": "aq",
+        "quantization": "wq_aq",
         "S": "32",
         "depth": "8",
         "vehicle": "deep_mlp",
@@ -83,7 +83,8 @@
         "encoding_placement": "subsume"
       },
       "tags": [],
-      "expected_wall_min": 12
+      "expected_wall_min": 12,
+      "note": "W3c respec 2026-07-06: fictional aq form (weight_quantization=false + weight_bits ran float) -> real WQ deployment; X4 passed the old form."
     },
     {
       "name": "t0_05_lif_simplemlp_wq_s4",
@@ -92,7 +93,7 @@
       "cell": {
         "firing": "lif",
         "sync": "none",
-        "quantization": "wq",
+        "quantization": "wq_aq",
         "S": "4",
         "depth": "any",
         "vehicle": "deep_mlp",
@@ -124,13 +125,13 @@
       "expected_wall_min": 6
     },
     {
-      "name": "t0_07_ttfs_lenet5_aq_s16",
-      "config": "t0_07_ttfs_lenet5_aq_s16.json",
+      "name": "t0_07_ttfs_lenet5_wq_s16",
+      "config": "t0_07_ttfs_lenet5_wq_s16.json",
       "model_type": "lenet5",
       "cell": {
         "firing": "ttfs",
         "sync": "none",
-        "quantization": "aq",
+        "quantization": "wq",
         "S": "16",
         "depth": "any",
         "vehicle": "lenet5",
@@ -140,7 +141,8 @@
         "encoding_placement": "subsume"
       },
       "tags": [],
-      "expected_wall_min": 6
+      "expected_wall_min": 6,
+      "note": "W3c respec 2026-07-06: fictional aq form (weight_quantization=false + weight_bits ran float) -> real WQ deployment; X4 passed the old form."
     },
     {
       "name": "t0_08_ttfs_deepcnn_d8_fp_s32_sched",
@@ -165,13 +167,13 @@
       "expected_wall_min": 12
     },
     {
-      "name": "t0_09_ttfs_deepmlp_d4_wqaq_s4_pruned",
-      "config": "t0_09_ttfs_deepmlp_d4_wqaq_s4_pruned.json",
+      "name": "t0_09_ttfs_deepmlp_d4_wq_s4_pruned",
+      "config": "t0_09_ttfs_deepmlp_d4_wq_s4_pruned.json",
       "model_type": "deep_mlp",
       "cell": {
         "firing": "ttfs",
         "sync": "none",
-        "quantization": "wq_aq",
+        "quantization": "wq",
         "S": "4",
         "depth": "4",
         "vehicle": "deep_mlp",
@@ -207,8 +209,8 @@
       "expected_wall_min": 6
     },
     {
-      "name": "t0_11_ttfsq_mmixcore_wqaq_s16_offload",
-      "config": "t0_11_ttfsq_mmixcore_wqaq_s16_offload.json",
+      "name": "t0_11_ttfsq_mmixcore_wq_s16_offload",
+      "config": "t0_11_ttfsq_mmixcore_wq_s16_offload.json",
       "model_type": "mlp_mixer_core",
       "cell": {
         "firing": "ttfs_quantized",
@@ -228,8 +230,8 @@
       "expected_wall_min": 6
     },
     {
-      "name": "t0_12_ttfsq_lenet5_wqaq_s32",
-      "config": "t0_12_ttfsq_lenet5_wqaq_s32.json",
+      "name": "t0_12_ttfsq_lenet5_wq_s32",
+      "config": "t0_12_ttfsq_lenet5_wq_s32.json",
       "model_type": "lenet5",
       "cell": {
         "firing": "ttfs_quantized",
@@ -249,8 +251,8 @@
       "expected_wall_min": 6
     },
     {
-      "name": "t0_13_ttfsq_deepcnn_d4_wqaq_s4",
-      "config": "t0_13_ttfsq_deepcnn_d4_wqaq_s4.json",
+      "name": "t0_13_ttfsq_deepcnn_d4_wq_s4",
+      "config": "t0_13_ttfsq_deepcnn_d4_wq_s4.json",
       "model_type": "deep_cnn",
       "cell": {
         "firing": "ttfs_quantized",
@@ -268,8 +270,8 @@
       "expected_wall_min": 12
     },
     {
-      "name": "t0_14_ttfsq_deepmlp_d8_wqaq_s8",
-      "config": "t0_14_ttfsq_deepmlp_d8_wqaq_s8.json",
+      "name": "t0_14_ttfsq_deepmlp_d8_wq_s8",
+      "config": "t0_14_ttfsq_deepmlp_d8_wq_s8.json",
       "model_type": "deep_mlp",
       "cell": {
         "firing": "ttfs_quantized",
@@ -287,8 +289,8 @@
       "expected_wall_min": 6
     },
     {
-      "name": "t0_15_ttfsq_simplemlp_wqaq_s8_pruned",
-      "config": "t0_15_ttfsq_simplemlp_wqaq_s8_pruned.json",
+      "name": "t0_15_ttfsq_simplemlp_wq_s8_pruned10",
+      "config": "t0_15_ttfsq_simplemlp_wq_s8_pruned10.json",
       "model_type": "simple_mlp",
       "cell": {
         "firing": "ttfs_quantized",
@@ -303,9 +305,10 @@
         "encoding_placement": "subsume"
       },
       "tags": [
-        "pruned"
+        "pruned10"
       ],
-      "expected_wall_min": 6
+      "expected_wall_min": 6,
+      "note": "W3c respec 2026-07-06: pruning 0.5 -> 0.10 (user-directed; 50% is too strong for this cell)."
     },
     {
       "name": "t0_16_casc_mmixcore_wq_s8_offload_sched_nobias",
@@ -314,7 +317,7 @@
       "cell": {
         "firing": "ttfs_cycle_based",
         "sync": "cascaded",
-        "quantization": "wq",
+        "quantization": "wq_aq",
         "S": "8",
         "depth": "any",
         "vehicle": "mlp_mixer_core",
@@ -331,8 +334,8 @@
       "expected_wall_min": 6
     },
     {
-      "name": "t0_17_casc_lenet5_wqaq_s32",
-      "config": "t0_17_casc_lenet5_wqaq_s32.json",
+      "name": "t0_17_casc_lenet5_wq_s32",
+      "config": "t0_17_casc_lenet5_wq_s32.json",
       "model_type": "lenet5",
       "cell": {
         "firing": "ttfs_cycle_based",
@@ -358,7 +361,7 @@
       "cell": {
         "firing": "ttfs_cycle_based",
         "sync": "cascaded",
-        "quantization": "wq",
+        "quantization": "wq_aq",
         "S": "4",
         "depth": "4",
         "vehicle": "deep_cnn",
@@ -380,7 +383,7 @@
       "cell": {
         "firing": "ttfs_cycle_based",
         "sync": "cascaded",
-        "quantization": "wq",
+        "quantization": "wq_aq",
         "S": "16",
         "depth": "16",
         "vehicle": "deep_mlp",
@@ -397,8 +400,8 @@
       "expected_wall_min": 6
     },
     {
-      "name": "t0_20_casc_simplemlp_wqaq_s4",
-      "config": "t0_20_casc_simplemlp_wqaq_s4.json",
+      "name": "t0_20_casc_simplemlp_wq_s4",
+      "config": "t0_20_casc_simplemlp_wq_s4.json",
       "model_type": "simple_mlp",
       "cell": {
         "firing": "ttfs_cycle_based",
@@ -416,13 +419,13 @@
       "expected_wall_min": 6
     },
     {
-      "name": "t0_21_sync_mmixcore_wq_s8_pruned",
-      "config": "t0_21_sync_mmixcore_wq_s8_pruned.json",
+      "name": "t0_21_sync_mmixcore_wq_s8_pruned10",
+      "config": "t0_21_sync_mmixcore_wq_s8_pruned10.json",
       "model_type": "mlp_mixer_core",
       "cell": {
         "firing": "ttfs_cycle_based",
         "sync": "synchronized",
-        "quantization": "wq",
+        "quantization": "wq_aq",
         "S": "8",
         "depth": "any",
         "vehicle": "mlp_mixer_core",
@@ -432,9 +435,10 @@
         "encoding_placement": "subsume"
       },
       "tags": [
-        "pruned"
+        "pruned10"
       ],
-      "expected_wall_min": 6
+      "expected_wall_min": 6,
+      "note": "W3c respec 2026-07-06: pruning 0.5 -> 0.10 (user-directed; 50% is too strong for this cell)."
     },
     {
       "name": "t0_22_sync_lenet5_wq_s4_sched",
@@ -443,7 +447,7 @@
       "cell": {
         "firing": "ttfs_cycle_based",
         "sync": "synchronized",
-        "quantization": "wq",
+        "quantization": "wq_aq",
         "S": "4",
         "depth": "any",
         "vehicle": "lenet5",
@@ -458,8 +462,8 @@
       "expected_wall_min": 6
     },
     {
-      "name": "t0_23_sync_deepcnn_d4_wqaq_s16",
-      "config": "t0_23_sync_deepcnn_d4_wqaq_s16.json",
+      "name": "t0_23_sync_deepcnn_d4_wq_s16",
+      "config": "t0_23_sync_deepcnn_d4_wq_s16.json",
       "model_type": "deep_cnn",
       "cell": {
         "firing": "ttfs_cycle_based",
@@ -477,8 +481,8 @@
       "expected_wall_min": 12
     },
     {
-      "name": "t0_24_sync_deepmlp_d4_wqaq_s8",
-      "config": "t0_24_sync_deepmlp_d4_wqaq_s8.json",
+      "name": "t0_24_sync_deepmlp_d4_wq_s8",
+      "config": "t0_24_sync_deepmlp_d4_wq_s8.json",
       "model_type": "deep_mlp",
       "cell": {
         "firing": "ttfs_cycle_based",
@@ -502,7 +506,7 @@
       "cell": {
         "firing": "ttfs_cycle_based",
         "sync": "synchronized",
-        "quantization": "wq",
+        "quantization": "wq_aq",
         "S": "32",
         "depth": "any",
         "vehicle": "deep_mlp",
@@ -514,5 +518,10 @@
       "tags": [],
       "expected_wall_min": 6
     }
+  ],
+  "coverage_notes": [
+    "Quantization axis is RUNTIME truth (SSOT: config_schema/deployment_derivation.py): activation quantization is derived from the mode (ON for lif/casc/sync/ttfsq, OFF for analytical ttfs); configs never pin activation_quantization. Names use wq (bits-quantized) or fp (float/vanilla) only.",
+    "W3c respec 2026-07-06: t0_04/t0_07 were the fictional aq class (weight_quantization=false + weight_bits ran as de-facto float; X4 passed those forms) -> respecced to real WQ deployments.",
+    "W3c respec 2026-07-06: t0_15/t0_21 pruning 0.5 -> 0.10 (user-directed). t0_02/t0_09/t0_18 stay at 0.5: they pass and keep the heavy-pruning stressor coverage."
   ]
 }
