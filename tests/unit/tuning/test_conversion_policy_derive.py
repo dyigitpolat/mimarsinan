@@ -37,6 +37,8 @@ _MODE_KNOBS = {
         "fast_ladder_freeze_bn": True,
         "kd_ce_alpha": 0.5,
         "kd_temperature": 4.0,
+        # [5v B3] the LIF half-step head-start (mapping-time theta/(2T) fold).
+        "lif_half_step_bias": True,
     },
     # [5u] the analytical reference is the bit-parity-lossless family: its
     # endpoint may chase the acceptance target (preservation ≡ stagnation at

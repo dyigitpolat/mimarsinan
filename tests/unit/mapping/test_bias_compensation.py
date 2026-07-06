@@ -192,3 +192,122 @@ class TestApplySyncExactEntryHalfStep:
         )
 
         assert SYNC_ENTRY_HALF_STEP_FLAG != TTFS_COMP_BAKED_FLAG
+
+
+class TestApplyLifHalfStepBiasCompensation:
+    """[5v B3] the LIF analogue of the TTFS half-step bake: the deployed LIF
+    rate grid is theta/T (floor), so folding +theta/(2T) per cycle turns the
+    floor into nearest over the window AND head-starts every hop's first fire
+    (t0_01: +13 pp value-domain measured; t0_05 control +1.2 pp)."""
+
+    def test_plus_half_step_fold_exact(self):
+        from mimarsinan.mapping.support.bias_compensation import (
+            apply_lif_half_step_bias_compensation,
+        )
+
+        model = _Model([_perceptron()])
+        folded = apply_lif_half_step_bias_compensation(model, 4)
+        assert folded == 1
+        # theta=1, T=4: shift/theta = 0.125 — identical math to the TTFS bake.
+        _assert_bias_exact(model.get_perceptrons()[0], [0.625, -1.375, 2.125])
+        assert model.get_perceptrons()[0]._lif_half_step_baked_into_bias is True
+
+    def test_idempotent_no_double_fold(self):
+        from mimarsinan.mapping.support.bias_compensation import (
+            apply_lif_half_step_bias_compensation,
+        )
+
+        model = _Model([_perceptron()])
+        apply_lif_half_step_bias_compensation(model, 4)
+        assert apply_lif_half_step_bias_compensation(model, 4) == 0
+        _assert_bias_exact(model.get_perceptrons()[0], [0.625, -1.375, 2.125])
+
+    def test_encoding_layer_skipped(self):
+        from mimarsinan.mapping.support.bias_compensation import (
+            apply_lif_half_step_bias_compensation,
+        )
+
+        encoder = _perceptron()
+        encoder.is_encoding_layer = True
+        model = _Model([encoder])
+        assert apply_lif_half_step_bias_compensation(model, 4) == 0
+        _assert_bias_exact(encoder, [0.5, -1.5, 2.0])
+
+    def test_uses_the_window_not_target_tq(self):
+        # The LIF grid is theta/T (simulation window), NOT theta/Tq: at T=8
+        # the fold halves relative to T=4.
+        from mimarsinan.mapping.support.bias_compensation import (
+            apply_lif_half_step_bias_compensation,
+        )
+
+        model = _Model([_perceptron()])
+        apply_lif_half_step_bias_compensation(model, 8)
+        _assert_bias_exact(model.get_perceptrons()[0], [0.5625, -1.4375, 2.0625])
+
+
+class TestLifHalfStepMappingGate:
+    """The mapping-step gate: recipe knob x lif mode x activation quantization."""
+
+    def _run_gate(self, model, cfg, act_q=True):
+        from types import SimpleNamespace
+
+        from conftest import MockPipeline
+        from mimarsinan.pipelining.pipeline_steps.mapping.soft_core_mapping_step import (
+            SoftCoreMappingStep,
+        )
+
+        pipeline = MockPipeline(config=cfg)
+        fake_step = SimpleNamespace(pipeline=pipeline)
+        SoftCoreMappingStep._apply_lif_half_step_bias_compensation(
+            fake_step, model, act_q
+        )
+
+    def _lif_cfg(self, *, knob=True):
+        from conftest import default_config
+
+        cfg = default_config()
+        cfg["spiking_mode"] = "lif"
+        cfg["simulation_steps"] = 4
+        if knob:
+            cfg["lif_half_step_bias"] = True
+        return cfg
+
+    def _model(self):
+        from conftest import make_tiny_supermodel
+
+        return make_tiny_supermodel()
+
+    def test_applied_for_lif_with_knob(self):
+        model = self._model()
+        self._run_gate(model, self._lif_cfg())
+        non_encoders = [
+            p for p in model.get_perceptrons()
+            if not getattr(p, "is_encoding_layer", False)
+        ]
+        assert all(
+            getattr(p, "_lif_half_step_baked_into_bias", False)
+            for p in non_encoders
+        )
+
+    def test_knob_off_is_bit_identical(self):
+        model = self._model()
+        before = [p.layer.bias.detach().clone() for p in model.get_perceptrons()]
+        self._run_gate(model, self._lif_cfg(knob=False))
+        for p, b in zip(model.get_perceptrons(), before):
+            assert torch.equal(p.layer.bias.detach(), b)
+
+    def test_non_lif_mode_never_folds(self):
+        model = self._model()
+        cfg = self._lif_cfg()
+        cfg["spiking_mode"] = "ttfs_quantized"
+        before = [p.layer.bias.detach().clone() for p in model.get_perceptrons()]
+        self._run_gate(model, cfg)
+        for p, b in zip(model.get_perceptrons(), before):
+            assert torch.equal(p.layer.bias.detach(), b)
+
+    def test_no_aq_never_folds(self):
+        model = self._model()
+        before = [p.layer.bias.detach().clone() for p in model.get_perceptrons()]
+        self._run_gate(model, self._lif_cfg(), act_q=False)
+        for p, b in zip(model.get_perceptrons(), before):
+            assert torch.equal(p.layer.bias.detach(), b)
