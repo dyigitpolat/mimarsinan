@@ -56,6 +56,10 @@ _SYNCHRONIZED_RECIPE_KNOBS = {
     # through the +0.5/S half-step folded as trainable entry bias.
     "starvation_aware_scale_quantile": True,
     "sync_entry_half_step": True,
+    # [5v B1] the P4 frontier below segments: when the A6 gauge fails on a
+    # chain past the proven-recovery depth, the AQ ladder walks one hop level
+    # per rung (per-hop keep-best re-affine) instead of a monolithic install.
+    "sync_hop_staged_install": True,
 }
 _CASCADED_RECIPE_KNOBS = {
     "ttfs_genuine_blend_ramp": True,

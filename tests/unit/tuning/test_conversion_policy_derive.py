@@ -77,6 +77,8 @@ _MODE_KNOBS = {
         # half-step ENTRY fold into bias (trainable; the exact-kernel QAT owns it).
         "starvation_aware_scale_quantile": True,
         "sync_entry_half_step": True,
+        # [5v B1(iii)] the hop frontier (arms only on A6-FAIL x deep chains).
+        "sync_hop_staged_install": True,
     },
 }
 

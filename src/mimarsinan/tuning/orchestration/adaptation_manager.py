@@ -4,6 +4,8 @@ from mimarsinan.models.nn.decorators.clamp_quantize import TTFSCeilStaircaseDeco
 from mimarsinan.models.nn.decorators.rate_buffer import RateBuffer
 from mimarsinan.tuning.shift_calculation import calculate_activation_shift
 
+import math
+
 import torch.nn as nn
 
 # The rate ladders whose decorators the LIF spiking node subsumes (see
@@ -31,6 +33,19 @@ def lif_subsumed_ladder_steps(pipeline_config, rate_attr, steps):
 
 _SYNC_EXACT_QAT_ATTR = "_mbh_sync_exact_qat"
 _SYNC_GRID_SNAP_ATTR = "_mbh_sync_grid_snap_installed"
+
+HOP_DEPTH_ATTR = "_mbh_aq_hop_depth"
+"""Per-perceptron cascade-hop depth stamped for the staged AQ install ([5v B1])."""
+
+
+def hop_frontier(rate, n_levels: int) -> int:
+    """Installed hop-depth count at ``rate``: ``ceil(rate * n)`` clamped.
+
+    Ceil is load-bearing (mirrors ``prefix_length_for_rate``): a gate midpoint
+    retry between rungs must never round the frontier below an accepted stage.
+    """
+    n = max(0, int(n_levels))
+    return max(0, min(n, math.ceil(float(rate) * n)))
 
 
 def sync_exact_qat_active(pipeline_config) -> bool:
@@ -115,6 +130,10 @@ class AdaptationManager(nn.Module):
         self.lif_active = False
         self.ttfs_active = False
 
+        # [5v B1] hop-staged sync AQ install: None = monolithic; an int arms
+        # the depth frontier (hops below ceil(rate*n) install at full rate).
+        self.quantization_hop_levels = None
+
         self._rate_buffers = {}
 
     def bind_rate_buffer(self, rate_attr):
@@ -141,6 +160,11 @@ class AdaptationManager(nn.Module):
         """The decorator's rate source: the bound buffer if any, else the float."""
         buffer = self._rate_buffer(rate_attr)
         return buffer if buffer is not None else getattr(self, rate_attr)
+
+    def _rate_value(self, rate_attr) -> float:
+        """The current rate as a float (reads through a bound buffer)."""
+        carrier = self._rate_carrier(rate_attr)
+        return float(carrier)
 
     def _rate_is_active(self, rate_attr, float_active):
         """Whether to include ``rate_attr``'s decorator (gates the rebuild stack).
@@ -172,8 +196,10 @@ class AdaptationManager(nn.Module):
         if not subsumes_decorators and self._rate_is_active("clamp_rate", self.clamp_rate != 0.0):
             decorators.append(self.get_rate_adjusted_clamp_decorator(perceptron))
         if not subsumes_decorators and self._rate_is_active("quantization_rate", self.quantization_rate != 0.0):
-            decorators.append(
-                self.get_rate_adjusted_quantization_decorator(pipeline_config, perceptron))
+            quant_decorator = self.get_rate_adjusted_quantization_decorator(
+                pipeline_config, perceptron)
+            if quant_decorator is not None:
+                decorators.append(quant_decorator)
         if not subsumes_decorators and not use_ttfs and self.shift_rate != 0.0:
             decorators.append(self.get_shift_decorator(pipeline_config, perceptron))
 
@@ -211,10 +237,20 @@ class AdaptationManager(nn.Module):
         if sync_exact_qat_active(pipeline_config):
             # [MBH T6] The QAT endpoint is the deployed ceil kernel itself; the
             # floor + half-step proxy (and its mapping-time bias compensation)
-            # is bypassed for models trained this way.
+            # is bypassed for models trained this way. The marker is per-MODEL
+            # (staged hops beyond the frontier still end exact by rate 1.0).
             mark_sync_exact_qat(perceptron)
+            rate_carrier = self._rate_carrier("quantization_rate")
+            n_levels = getattr(self, "quantization_hop_levels", None)
+            if n_levels:
+                # [5v B1] the hop frontier: convert hops 0..k at FULL rate,
+                # keep hops beyond it float (no decorator).
+                k = hop_frontier(self._rate_value("quantization_rate"), n_levels)
+                if int(getattr(perceptron, HOP_DEPTH_ATTR, 0)) >= k:
+                    return None
+                rate_carrier = 1.0
             return RateAdjustedDecorator(
-                self._rate_carrier("quantization_rate"),
+                rate_carrier,
                 TTFSCeilStaircaseDecorator(
                     pipeline_config["simulation_steps"], perceptron.activation_scale
                 ),

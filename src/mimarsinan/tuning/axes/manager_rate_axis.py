@@ -50,6 +50,13 @@ class ManagerRateAxis(AdaptationAxisBase):
         self._decision_generators = {}
 
     def _inplace_enabled(self) -> bool:
+        # [5v B1] a hop-staged install is STRUCTURAL per rate (the frontier
+        # decides which perceptrons carry the kernel), so the in-place buffer
+        # path is disabled: every set_rate rebuilds the stack.
+        if self.rate_attr == "quantization_rate" and getattr(
+            self._manager, "quantization_hop_levels", None
+        ):
+            return False
         return self.rate_attr in _INPLACE_ELIGIBLE_RATES
 
     def set_rate(self, alpha: float) -> None:

@@ -212,10 +212,12 @@ def test_synchronized_folds_exact_endpoint_and_disables_nevresim():
     # get them (its full-quantile decode is the proven green-family shape).
     assert dp["starvation_aware_scale_quantile"] is True
     assert dp["sync_entry_half_step"] is True
+    assert dp["sync_hop_staged_install"] is True
     dp_q = {"spiking_mode": "ttfs_quantized", "weight_quantization": True}
     derive_deployment_parameters(dp_q)
     assert "starvation_aware_scale_quantile" not in dp_q
     assert "sync_entry_half_step" not in dp_q
+    assert "sync_hop_staged_install" not in dp_q
     # the old genuine-QAT knobs are no longer folded for synchronized.
     assert "ttfs_sync_genuine_qat" not in dp
     assert dp["enable_nevresim_simulation"] is False  # no sync-window backend
