@@ -17,6 +17,8 @@ def segment_entry_nbytes(entry: dict) -> int:
     tensors += [b for b in entry.get("hw_biases", []) or [] if b is not None]
     tensors += list(entry.get("thresholds", []) or [])
     tensors += list((entry.get("bank_tensors", {}) or {}).values())
+    for plan in entry.get("axon_fill_plans", []) or []:
+        tensors += list(plan.tensors())
     for t in tensors:
         if not isinstance(t, torch.Tensor):
             continue

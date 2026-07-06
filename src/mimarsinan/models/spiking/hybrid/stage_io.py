@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Callable, Dict
+from typing import Dict
 
 import numpy as np
 import torch
@@ -17,16 +17,13 @@ from mimarsinan.chip_simulation import spike_modes
 from mimarsinan.mapping.ir import IRSource
 from mimarsinan.mapping.packing.hybrid_hardcore_mapping import HybridStage, SegmentIOSlice
 from mimarsinan.mapping.support.core_geometry import used_axons, used_neurons
-from mimarsinan.mapping.support.spike_source_spans import (
-    SpikeSourceSpan,
-    compress_spike_sources,
-)
+from mimarsinan.mapping.support.spike_source_spans import compress_spike_sources
 from mimarsinan.models.spiking.hybrid.host import HybridFlowHost
 from mimarsinan.models.spiking.hybrid.segment_cache import (
     SEGMENT_CACHE_MAX_BYTES as _SEGMENT_CACHE_MAX_BYTES,
     segment_entry_nbytes as _segment_entry_nbytes,
 )
-from mimarsinan.models.spiking.signal_spans import fill_signal_from_spans
+from mimarsinan.models.spiking.signal_spans import SpanFillPlan
 from mimarsinan.models.spiking.spiking_config import COMPUTE_DTYPE
 
 
@@ -140,32 +137,14 @@ class HybridStageIOMixin(HybridFlowHost):
         *,
         input_spikes: torch.Tensor,
         buffers: list[torch.Tensor],
-        spans: list[SpikeSourceSpan],
+        plan: SpanFillPlan,
         cycle: int = -1,
         single_spike: bool = False,
         latency: int = 0,
     ) -> None:
-        def _single_spike_always_on(d0: int, d1: int) -> None:
-            out[:, d0:d1].fill_(1.0 if cycle == latency else 0.0)
-
-        on_always_on: Callable[[int, int], None] | None = (
-            _single_spike_always_on if single_spike else None
-        )
-
-        fill_signal_from_spans(
-            out,
-            spans,
-            read_input=lambda sp: out.__setitem__(
-                (slice(None), slice(int(sp.dst_start), int(sp.dst_end))),
-                input_spikes[:, int(sp.src_start) : int(sp.src_end)],
-            ),
-            read_upstream=lambda sp: out.__setitem__(
-                (slice(None), slice(int(sp.dst_start), int(sp.dst_end))),
-                buffers[int(sp.src_core)][:, int(sp.src_start) : int(sp.src_end)],
-            ),
-            on_always_on=on_always_on,
-            cycle=cycle,
-        )
+        """One core-cycle axon fill via the precomputed gather plan (W3b)."""
+        on_value = (1.0 if cycle == latency else 0.0) if single_spike else 1.0
+        plan.apply(out, input_spikes=input_spikes, buffers=buffers, on_value=on_value)
 
     def _get_segment_tensors(self, stage: HybridStage, device: torch.device) -> dict:
         """Return cached segment tensors (axon/output spans, weights, thresholds); upload on miss."""
@@ -189,6 +168,9 @@ class HybridStageIOMixin(HybridFlowHost):
                 axon_spans.append(c.get_axon_source_spans())
             else:
                 axon_spans.append(compress_spike_sources(c.axon_sources))
+        # W3b: spans are static per core for the whole simulation, so the
+        # gather plan is precomputed once and reused every core-cycle.
+        axon_fill_plans = [SpanFillPlan(spans, device) for spans in axon_spans]
         if hasattr(mapping, "get_output_source_spans"):
             output_spans = mapping.get_output_source_spans()
         else:
@@ -272,6 +254,7 @@ class HybridStageIOMixin(HybridFlowHost):
             cores=cores,
             output_sources=output_sources,
             axon_spans=axon_spans,
+            axon_fill_plans=axon_fill_plans,
             output_spans=output_spans,
             bank_tensors=bank_tensors,
             core_params=core_params,

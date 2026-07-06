@@ -15,7 +15,7 @@ from mimarsinan.mapping.packing.hybrid_hardcore_mapping import (
     HybridStage,
     SegmentIOSlice,
 )
-from mimarsinan.mapping.support.spike_source_spans import SpikeSourceSpan
+from mimarsinan.models.spiking.signal_spans import SpanFillPlan
 from mimarsinan.spiking.segment_boundary import BoundaryConfig
 
 if TYPE_CHECKING:
@@ -60,7 +60,7 @@ if TYPE_CHECKING:
             *,
             input_spikes: torch.Tensor,
             buffers: list[torch.Tensor],
-            spans: list[SpikeSourceSpan],
+            plan: SpanFillPlan,
             cycle: int = -1,
             single_spike: bool = False,
             latency: int = 0,

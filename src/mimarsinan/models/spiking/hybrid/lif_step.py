@@ -51,6 +51,7 @@ class HybridLifStepMixin(HybridFlowHost):
         cores = seg["cores"]
         output_sources = seg["output_sources"]
         axon_spans = seg["axon_spans"]
+        axon_fill_plans = seg["axon_fill_plans"]
         output_spans = seg["output_spans"]
         core_params = seg["core_params"]
         thresholds = seg["thresholds"]
@@ -122,7 +123,7 @@ class HybridLifStepMixin(HybridFlowHost):
                     input_signals[core_idx],
                     input_spikes=core_input_spikes,
                     buffers=buffers,
-                    spans=axon_spans[core_idx],
+                    plan=axon_fill_plans[core_idx],
                     cycle=cycle,
                     single_spike=single_spike,
                     latency=int(core.latency or 0),
