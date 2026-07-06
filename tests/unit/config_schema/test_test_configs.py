@@ -96,7 +96,13 @@ class TestConfigValidity:
             dp = json.loads(path.read_text())["deployment_parameters"]
             if dp["spiking_mode"] in QUANT_REQUIRED_MODES:
                 assert dp["weight_quantization"] is True, path.name
-            assert dp["max_simulation_samples"] == 100, path.name
+            # N=100 is the pinned acceptance read; a smaller count is legal only
+            # for the sample-bound sim wall respec (t0_08, user-directed
+            # 2026-07-07) and must stay a meaningful binomial read.
+            if "t0_08" in path.name:
+                assert dp["max_simulation_samples"] == 25, path.name
+            else:
+                assert dp["max_simulation_samples"] == 100, path.name
 
     @pytest.mark.parametrize("tier", [0, 1, 2])
     def test_activation_quantization_left_to_derivation(self, tier):

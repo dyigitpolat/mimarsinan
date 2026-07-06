@@ -107,7 +107,10 @@ T0 = [
          note="W3c respec 2026-07-06: fictional aq form (weight_quantization=false + "
               "weight_bits ran float) -> real WQ deployment; X4 passed the old form."),
     dict(n=8, mode="ttfs", quant="fp", wb=5, s=32, vehicle="deepcnn", depth=8,
-         scheduling=True, tags=["wall_risk", "sched"]),
+         scheduling=True, sim_samples=25, tags=["wall_risk", "sched"],
+         note="Sim-sample respec 2026-07-07 (user-directed): the analytic "
+              "per-core GEMM nevresim step is the one sample-bound sim wall "
+              "(~7 s/sample, 712 s at N=100, X4); accuracy read 1.00."),
     dict(n=9, mode="ttfs", quant="wq", wb=5, s=4, vehicle="deepmlp", depth=4, width=128, pruned=0.5, tags=["pruned"]),
     dict(n=10, mode="ttfs", quant="fp", wb=5, s=16, vehicle="simplemlp",
          coalescing=False, splitting=False, tags=["identity"]),
@@ -233,7 +236,7 @@ def _deployment(tier, row, vehicles, dataset):
         "model_type": v["model_type"],
         "model_config": model_config,
         "batch_size": v.get("batch_size", 128),
-        "max_simulation_samples": 100,
+        "max_simulation_samples": row.get("sim_samples", 100),
         "sanafe_arch_preset": "loihi",
         "sanafe_sample_count": 1,
         "allow_scheduling": row.get("scheduling", False),

@@ -164,7 +164,8 @@
         "wall_risk",
         "sched"
       ],
-      "expected_wall_min": 12
+      "expected_wall_min": 12,
+      "note": "Sim-sample respec 2026-07-07 (user-directed): the analytic per-core GEMM nevresim step is the one sample-bound sim wall (~7 s/sample, 712 s at N=100, X4); accuracy read 1.00."
     },
     {
       "name": "t0_09_ttfs_deepmlp_d4_wq_s4_pruned",
