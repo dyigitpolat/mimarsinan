@@ -20,6 +20,7 @@ TEMPLATES_DIR_VAR = "MIMARSINAN_TEMPLATES_DIR"
 TEST_CUDA_VAR = "MIMARSINAN_TEST_CUDA"
 MP_START_METHOD_VAR = "MIMARSINAN_MP_START_METHOD"
 MBH_LEDGER_VAR = "MIMARSINAN_MBH_LEDGER"
+UNSAFE_QUANT_OVERRIDES_VAR = "MIMARSINAN_UNSAFE_QUANT_OVERRIDES"
 IMAGENET_ROOT_VAR = "IMAGENET_ROOT"
 
 
@@ -93,6 +94,15 @@ def mbh_ledger_enabled() -> bool:
     adds the alignment (rho) measurement and the per-attempt stdout lines.
     """
     return os.environ.get(MBH_LEDGER_VAR) == "1"
+
+
+def unsafe_quant_overrides_enabled() -> bool:
+    """Explicit AQ/WQ config values may contradict the mode derivation (value exactly "1").
+
+    Research escape only: contradictions are honored verbatim and logged with a
+    loud [UNSAFE-OVERRIDE] line instead of raising the quantization contract error.
+    """
+    return os.environ.get(UNSAFE_QUANT_OVERRIDES_VAR) == "1"
 
 
 def mp_start_method() -> str | None:

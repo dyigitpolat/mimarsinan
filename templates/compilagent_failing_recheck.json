@@ -17,7 +17,7 @@
     "spiking_mode": "lif", "firing_mode": "Default", "spike_generation_mode": "Uniform",
     "thresholding_mode": "<=",
     "cycle_accurate_lif_forward": true,
-    "activation_quantization": false, "weight_quantization": true,
+    "weight_quantization": true,
     "pruning": true, "pruning_fraction": 0.2, "batch_size": 128,
     "training_recipe": {"optimizer":"adamw","scheduler":"cosine","weight_decay":0.0001,"warmup_ratio":0.05,"grad_clip_norm":1,"layer_wise_lr_decay":1,"label_smoothing":0,"betas":[0.9,0.999]},
     "tuning_recipe": {"optimizer":"adamw","scheduler":"cosine","weight_decay":0.0001,"warmup_ratio":0,"grad_clip_norm":1,"layer_wise_lr_decay":1,"label_smoothing":0,"betas":[0.9,0.999]},

@@ -119,6 +119,20 @@ class TestConfigValidity:
             assert cfg["pipeline_mode"] == expected_mode, path.name
 
     @pytest.mark.parametrize("tier", [0, 1, 2])
+    def test_configs_pass_the_assembly_contract(self, tier):
+        from mimarsinan.config_schema.deployment_derivation import (
+            enforce_quantization_assembly_contract,
+        )
+
+        for path in _tier_configs(tier):
+            cfg = json.loads(path.read_text())
+            enforce_quantization_assembly_contract(
+                cfg["deployment_parameters"],
+                cfg["platform_constraints"],
+                pipeline_mode=cfg.get("pipeline_mode"),
+            )
+
+    @pytest.mark.parametrize("tier", [0, 1, 2])
     def test_configs_resolve_through_derivation(self, tier):
         """Every config must survive the real config derivation pipeline."""
         from mimarsinan.config_schema.defaults import (

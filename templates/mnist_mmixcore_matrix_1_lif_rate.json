@@ -85,7 +85,6 @@
     "thresholding_mode": "<",
     "encoding_layer_placement": "subsume",
     "cycle_accurate_lif_forward": true,
-    "activation_quantization": false,
     "weight_quantization": true
   },
   "target_metric_override": null,

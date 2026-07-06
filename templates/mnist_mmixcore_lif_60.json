@@ -49,7 +49,6 @@
     "spike_generation_mode": "Uniform",
     "thresholding_mode": "<",
     "cycle_accurate_lif_forward": true,
-    "activation_quantization": false,
     "weight_quantization": true,
     "batch_size": 128,
     "training_recipe": {

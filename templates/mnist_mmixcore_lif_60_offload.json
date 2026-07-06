@@ -51,7 +51,6 @@
     "encoding_layer_placement": "offload",
     "cycle_accurate_lif_forward": true,
     "negative_value_shift": false,
-    "activation_quantization": false,
     "weight_quantization": true,
     "batch_size": 128,
     "training_recipe": {

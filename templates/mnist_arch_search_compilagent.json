@@ -54,7 +54,6 @@
     "firing_mode": "Default",
     "spike_generation_mode": "Uniform",
     "thresholding_mode": "<=",
-    "activation_quantization": false,
     "weight_quantization": true,
     "pruning": true,
     "pruning_fraction": 0.2,

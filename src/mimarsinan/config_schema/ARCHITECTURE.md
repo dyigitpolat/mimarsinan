@@ -9,11 +9,29 @@ group and provenance in a namespaced registry, and builds presentation-only conf
 for the GUI monitor. `DeploymentPipeline` and the wizard both build configs through these
 helpers so they stay in sync.
 
+## Quantization assembly
+
+AQ/WQ are derived pipeline-assembly modes, not free config booleans.
+`derive_deployment_parameters` derives `activation_quantization` from the mode:
+ON for `lif`, `ttfs_quantized`, and `ttfs_cycle_based` (cascaded and
+synchronized); OFF for analytical `ttfs` and for every float-weight (vanilla)
+deployment. Weight quantization is bits-driven: `weight_bits` declares a
+quantized artifact, and a float-weight deployment is declared via the vanilla
+mechanism (`pipeline_mode: "vanilla"`, or `weight_quantization: false` without
+`weight_bits`) — `enforce_quantization_assembly_contract` (called at session
+parse) rejects `weight_quantization: false` alongside `weight_bits` under a
+non-vanilla pipeline. An explicit `activation_quantization` that contradicts
+the derivation raises a loud config error; an absent key derives silently.
+`MIMARSINAN_UNSAFE_QUANT_OVERRIDES=1` (accessor in `common/env.py`) is the
+research escape: contradictions are honored verbatim and logged with an
+`[UNSAFE-OVERRIDE]` line. Pipeline-mode presets never inject AQ/WQ — a
+preset-injected value would masquerade as an explicit one under this contract.
+
 ## Key files
 | File | Purpose |
 |---|---|
 | `defaults.py` | `DEFAULT_DEPLOYMENT_PARAMETERS` / `DEFAULT_PLATFORM_CONSTRAINTS` / training+tuning recipes, `PIPELINE_MODE_PRESETS` + `apply_preset`, `CONFIG_KEYS_SET`, and copy-returning getters (incl. user/system splits driven by exposure). |
-| `deployment_derivation.py` | `derive_deployment_parameters` (wizard-parity quantization/pipeline-mode rules; folds the `ConversionPolicy.derive` recipe authoritatively — sim enables, driver, per-mode knobs) and `derive_pipeline_runtime_parameters` (rehydrates firing/spike-generation/thresholding fields). |
+| `deployment_derivation.py` | `derive_deployment_parameters` (wizard-parity quantization/pipeline-mode rules; folds the `ConversionPolicy.derive` recipe authoritatively — sim enables, driver, per-mode knobs), `enforce_quantization_assembly_contract` (bits-driven WQ contract, see “Quantization assembly”), and `derive_pipeline_runtime_parameters` (rehydrates firing/spike-generation/thresholding fields). |
 | `runtime.py` | `build_flat_pipeline_config` — merges defaults + overrides + preset + both derivation passes the same way `DeploymentPipeline` does, without device I/O. |
 | `validation.py` | `validate_deployment_config` (JSON shape, spiking-mode membership, TTFS firing consistency, coalescing-key rejection), `validate_merged_config` (runtime flat config), `s_allocation_config_errors` (loud-rejects reserved `explicit`/`budget` temporal-allocation modes). |
 | `namespaced_schema.py` | Provenance registry: `KeySpec` (group/owner/derivation/exposure per flat key), `CONCERN_GROUPS`, `KEY_SPECS`, `LEGACY_KEY_TABLE`, byte-identical `to_namespaced`/`to_flat` bijection, and `keys_with_derivation` / `keys_with_exposure` / `provenance_table` queries. |

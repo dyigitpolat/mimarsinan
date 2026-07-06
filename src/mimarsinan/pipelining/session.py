@@ -11,6 +11,9 @@ from typing import Any, Optional
 import mimarsinan.data_handling.data_providers  # noqa: F401  # pyright: ignore[reportUnusedImport] — registers built-in providers
 from mimarsinan.common.best_effort import best_effort
 from mimarsinan.common.reporter import DefaultReporter
+from mimarsinan.config_schema.deployment_derivation import (
+    enforce_quantization_assembly_contract,
+)
 from mimarsinan.data_handling.data_provider_factory import BasicDataProviderFactory
 from mimarsinan.gui.runtime.composite_reporter import CompositeReporter
 from mimarsinan.pipelining.core.pipelines.deployment_pipeline import DeploymentPipeline
@@ -49,6 +52,14 @@ def parse_deployment_config(
 
     platform_constraints = _resolve_platform_constraints(
         deployment_config, deployment_parameters
+    )
+
+    enforce_quantization_assembly_contract(
+        deployment_parameters,
+        platform_constraints if isinstance(platform_constraints, dict) else {},
+        pipeline_mode=deployment_config.get(
+            "pipeline_mode", deployment_parameters.get("pipeline_mode")
+        ),
     )
 
     pipeline_mode = deployment_config.get("pipeline_mode", "phased")

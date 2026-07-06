@@ -75,12 +75,11 @@ DEFAULT_PLATFORM_CONSTRAINTS: Dict[str, object] = {
     "scheduling_latency_weight": 1.0,
 }
 
+# Presets must not inject AQ/WQ: derivation owns them, and a preset-injected value
+# would be indistinguishable from an explicit one under the quantization contract.
 PIPELINE_MODE_PRESETS: Dict[str, Dict[str, object]] = {
     "vanilla": {},
-    "phased": {
-        "activation_quantization": True,
-        "weight_quantization": True,
-    },
+    "phased": {},
 }
 
 CONFIG_KEYS_SET: Set[str] = {

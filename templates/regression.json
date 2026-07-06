@@ -29,7 +29,6 @@
     "thresholding_mode": "<=",
     "encoding_layer_placement": "offload",
     "ttfs_cycle_schedule": "synchronized",
-    "activation_quantization": false,
     "weight_quantization": true,
     "batch_size": 128,
     "training_recipe": {

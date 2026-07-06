@@ -84,7 +84,6 @@
     "spike_generation_mode": "TTFS",
     "thresholding_mode": "<=",
     "encoding_layer_placement": "subsume",
-    "activation_quantization": false,
     "weight_quantization": true,
     "ttfs_cycle_schedule": "synchronized"
   },

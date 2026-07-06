@@ -43,18 +43,23 @@ class TestDefaults:
         presets = get_pipeline_mode_presets()
         assert "vanilla" in presets
         assert "phased" in presets
-        assert presets["phased"].get("activation_quantization") is True
-        assert presets["phased"].get("weight_quantization") is True
+
+    def test_presets_never_inject_quant_flags(self):
+        # Derivation owns AQ/WQ; a preset-injected value would masquerade as an
+        # explicit one under the quantization contract.
+        for preset in get_pipeline_mode_presets().values():
+            assert "activation_quantization" not in preset
+            assert "weight_quantization" not in preset
 
 
 class TestApplyPreset:
     """apply_preset merges preset with setdefault semantics."""
 
-    def test_phased_sets_quantization_flags(self):
+    def test_phased_leaves_quant_keys_to_derivation(self):
         params = {}
         apply_preset("phased", params)
-        assert params.get("activation_quantization") is True
-        assert params.get("weight_quantization") is True
+        assert "activation_quantization" not in params
+        assert "weight_quantization" not in params
 
     def test_vanilla_leaves_empty(self):
         params = {"lr": 0.01}
