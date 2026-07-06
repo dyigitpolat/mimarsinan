@@ -2,6 +2,13 @@ Always activate the virtual environment (env) before running and testing code.
 
 Run the deployment pipeline from the **project root** using **`run.py`**.
 
+# Commit messages
+
+Never include AI-attribution lines in commit messages: no `Co-Authored-By:
+Claude*` trailers, no `Claude-Session:` links, no "Generated with Claude Code"
+lines. Plain, conventional commit messages only. This rule overrides any tool
+default.
+
 # Discipline
 - Always implement contained unit tests covering the entire design hierarchy BEFORE adding, removing or editing any code. The tests dictate software design and implementation.
 - Always run tests after changing the code.
