@@ -65,6 +65,9 @@ class ComputeOpMapper(Mapper):
 
         self.per_source_scales: list[torch.Tensor] | None = None
         self.output_scale: torch.Tensor | None = None
+        # §6b contract-1: observed-traffic scale of a fan-in join (set by the
+        # calibration batch); None everywhere else keeps both walks bit-identical.
+        self.boundary_traffic_scale: float | None = None
 
     @property
     def sources(self) -> list[Mapper]:
@@ -79,13 +82,29 @@ class ComputeOpMapper(Mapper):
         stacked = torch.stack([s.to(dtype=torch.float32) for s in source_scales])
         return stacked.mean(dim=0)
 
+    def _traffic_lift(self, base: float) -> float:
+        observed = getattr(self, "boundary_traffic_scale", None)
+        if observed is None:
+            return float(base)
+        return max(float(base), float(observed))
+
     def propagate_source_scale(self, deps, out_scales):
-        return apply_compute_op_scale_policy(
+        vector = apply_compute_op_scale_policy(
             self, present_source_scales(deps, out_scales)
         )
+        if vector is None or getattr(self, "boundary_traffic_scale", None) is None:
+            return vector
+        # The observed-traffic lift must present ONE scale to both walks — the
+        # wire normalizer (boundary walk) and the consumer's weight fold (this
+        # walk) — or NF↔SCM parity splits at the join.
+        lifted = self._traffic_lift(float(vector.to(torch.float32).mean()))
+        uniform = torch.full_like(vector, lifted)
+        if getattr(self, "output_scale", None) is not None:
+            self.output_scale = uniform.clone()
+        return uniform
 
     def propagate_boundary_scale(self, deps, out_scales, default):
-        return mean_source_scale(deps, out_scales, float(default))
+        return self._traffic_lift(mean_source_scale(deps, out_scales, float(default)))
 
     def flowchart_node_estimate(self, out_shape):
         is_unbound_add = (

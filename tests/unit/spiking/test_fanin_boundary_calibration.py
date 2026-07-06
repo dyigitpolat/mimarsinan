@@ -125,6 +125,18 @@ class TestObservedTrafficLift:
         _prepare_ttfs(flow)
         return flow, cal_x
 
+    def _join_node(self, flow):
+        from mimarsinan.mapping.mappers.compute_op_mapper import ComputeOpMapper
+
+        repr_ = flow.get_mapper_repr()
+        repr_._ensure_exec_graph()
+        joins = [
+            n for n in repr_._exec_order
+            if isinstance(n, ComputeOpMapper) and len(repr_._deps.get(n, [])) >= 2
+        ]
+        assert len(joins) == 1
+        return joins[0]
+
     def test_saturating_join_lifts_consumer_scale(self):
         flow, cal_x = self._saturating_flow()
         tail = _consumer(flow, "tail")
@@ -133,16 +145,17 @@ class TestObservedTrafficLift:
         after = float(tail.input_activation_scale)
         assert stats["n_lifted"] == 1
         assert after > before, "under-covered join traffic must lift the wire scale"
-        assert float(tail.boundary_scale_floor) == pytest.approx(after)
+        join = self._join_node(flow)
+        assert float(join.boundary_traffic_scale) == pytest.approx(after)
 
-    def test_floor_survives_repropagation(self):
+    def test_lift_survives_repropagation(self):
         flow, cal_x = self._saturating_flow()
         tail = _consumer(flow, "tail")
         calibrate_fanin_boundary_scales(flow, cal_x, _S)
         lifted = float(tail.input_activation_scale)
         propagate_boundary_input_scales(flow)  # the SCM-step re-propagation
         assert float(tail.input_activation_scale) == pytest.approx(lifted), (
-            "the observed-traffic floor must survive downstream re-propagations"
+            "the observed-traffic lift must survive downstream re-propagations"
         )
 
     def test_non_join_consumers_untouched(self):
@@ -151,6 +164,27 @@ class TestObservedTrafficLift:
         before = float(branch.input_activation_scale)
         calibrate_fanin_boundary_scales(flow, cal_x, _S)
         assert float(branch.input_activation_scale) == pytest.approx(before)
+
+    def test_wire_scale_equals_fold_scale_at_the_lifted_join(self):
+        # §6b: the wire normalizer (boundary walk) and the consumer's weight
+        # fold (source-scale walk) must read ONE scale, or NF↔SCM parity
+        # splits at the join (the third x3b t0_19 wave measured 0.8125).
+        from mimarsinan.mapping.support.per_source_scales import (
+            compute_per_source_scales,
+        )
+
+        flow, cal_x = self._saturating_flow()
+        calibrate_fanin_boundary_scales(flow, cal_x, _S)
+        propagate_boundary_input_scales(flow)
+        compute_per_source_scales(flow.get_mapper_repr())
+        tail = _consumer(flow, "tail")
+        wire = float(tail.input_activation_scale)
+        fold = tail.per_input_scales
+        assert fold is not None
+        fold = fold.to(torch.float32)
+        assert torch.allclose(fold, torch.full_like(fold, wire)), (
+            f"fold scales {fold} must equal the wire scale {wire}"
+        )
 
 
 class TestDistmatchWiresFaninCalibration:
@@ -166,8 +200,6 @@ class TestDistmatchWiresFaninCalibration:
             flow, teacher, cal_x, _S, bias_iters=1,
         )
         assert stats["fanin_joins"] == 1
-        tail = _consumer(flow, "tail")
-        assert getattr(tail, "boundary_scale_floor", None) is not None
 
 
 class TestResidualConcatBoundaryScale:

@@ -18,38 +18,22 @@ from mimarsinan.spiking.scale_aware_boundaries import (
 FANIN_TRAFFIC_QUANTILE = 0.999
 
 
-def _downstream_consumer_perceptrons(driver, join_node) -> list:
-    """Perceptrons that read ``join_node``'s value, walking transparent nodes."""
-    consumers: list = []
-    seen: set = set()
-    frontier = [join_node]
-    while frontier:
-        node = frontier.pop()
-        for consumer in driver._consumers.get(node, []):
-            if id(consumer) in seen:
-                continue
-            seen.add(id(consumer))
-            perceptron = getattr(consumer, "perceptron", None)
-            if perceptron is not None:
-                consumers.append(perceptron)
-            else:
-                frontier.append(consumer)
-    return consumers
-
-
 def calibrate_fanin_boundary_scales(
     model, cal_x, T, *, quantile: float = FANIN_TRAFFIC_QUANTILE,
     input_data_scale: float = 1.0,
 ):
-    """Lift fan-in consumers' wire-scale floors from observed boundary traffic.
+    """Lift fan-in joins' boundary scales from observed traffic (§6b contract-1).
 
-    §6b contract-1: at a multi-source join the traffic range is up to the SUM of
-    the source ranges, so mean-of-producer-θ under-covers and saturates the
-    re-encode clamp. One calibration batch through the mode's genuine forward
-    measures the actual join traffic; consumers get a durable
-    ``boundary_scale_floor`` (max-only — in-range traffic changes nothing).
+    At a multi-source join the traffic range is up to the SUM of the source
+    ranges, so mean-of-producer-θ under-covers and saturates the re-encode
+    clamp. One calibration batch through the mode's genuine forward measures
+    each join's actual traffic; a join whose q-quantile exceeds its propagated
+    out-scale gets a durable ``boundary_traffic_scale`` the JOIN presents to
+    BOTH scale walks (wire normalizer and weight fold — one object, so NF↔SCM
+    parity holds by construction). In-range traffic changes nothing.
     """
     # Lazy: segment_policies pulls chip_simulation (circular at module top).
+    from mimarsinan.spiking.scale_aware_boundaries import read_boundary_out_scales
     from mimarsinan.spiking.segment_forward import (
         SegmentForwardDriver,
         TtfsSegmentPolicy,
@@ -60,16 +44,16 @@ def calibrate_fanin_boundary_scales(
     with torch.no_grad():
         driver(cal_x, join_value_recorder=joins)
 
+    out_scales = read_boundary_out_scales(model, input_data_scale=input_data_scale)
     n_lifted = 0
     for join_node, traffic in joins.items():
         observed = float(
             torch.quantile(traffic.abs().to(torch.float32).flatten(), float(quantile))
         )
-        for perceptron in _downstream_consumer_perceptrons(driver, join_node):
-            current = float(perceptron.input_activation_scale)
-            if observed > current:
-                perceptron.set_boundary_scale_floor(observed)
-                n_lifted += 1
+        current = float(out_scales.get(join_node, input_data_scale))
+        if observed > current:
+            join_node.boundary_traffic_scale = observed
+            n_lifted += 1
 
     if n_lifted:
         propagate_boundary_input_scales(model, input_data_scale=input_data_scale)
