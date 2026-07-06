@@ -47,6 +47,9 @@ _MODE_KNOBS = {
     ("ttfs_cycle_based", "cascaded"): {
         "ttfs_genuine_blend_ramp": True,
         "ttfs_genuine_blend_fast": True,
+        # T4/P4: multi-segment vehicles walk the converted-prefix frontier
+        # (single-segment vehicles keep the blend ramp).
+        "ttfs_prefix_ramp": True,
         # P1'' budget = W3 reinvestment of reclaimed eval wall: the FT endpoint
         # was the only bound binding while still improving (X3 300/300 cutoffs).
         "endpoint_recovery_steps": 600,

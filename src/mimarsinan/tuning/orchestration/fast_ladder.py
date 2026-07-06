@@ -11,6 +11,9 @@ import torch
 from mimarsinan.model_training.training_recipe import build_optimizer, build_recipe
 from mimarsinan.models.nn.layers import freeze_batchnorm_running_stats
 from mimarsinan.tuning.orchestration.mbh_gate import gated_fast_rate_attempt
+from mimarsinan.tuning.orchestration.mbh_ledger import (
+    capture_rung_nonzero_grad_fraction,
+)
 from mimarsinan.tuning.trace import DecisionRecord
 
 if TYPE_CHECKING:
@@ -172,7 +175,8 @@ class FastLadderMixin(_FastLadderHost):
         assert optimizer is not None and schedule is not None, (
             "_ensure_fast_optimizer must run before _fast_ramp"
         )
-        for _ in range(self._fast_steps_per_rate):
+        self._mbh_nonzero_grad_fraction = float("nan")
+        for step_index in range(self._fast_steps_per_rate):
             x, y = self.trainer.next_training_batch()
             x, y = x.to(device), y.to(device)
             self.model.train()
@@ -181,6 +185,9 @@ class FastLadderMixin(_FastLadderHost):
             loss = self._fast_loss(x, y)
             optimizer.zero_grad()
             loss.backward()
+            if step_index == 0:
+                # A5 reach gauge on the rung's FIRST backward (ledger-flag-gated).
+                capture_rung_nonzero_grad_fraction(self)
             optimizer.step()
             schedule.step()
             self._fast_optimizer_steps += 1

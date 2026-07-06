@@ -43,6 +43,9 @@ _SYNCHRONIZED_RECIPE_KNOBS = {
 _CASCADED_RECIPE_KNOBS = {
     "ttfs_genuine_blend_ramp": True,
     "ttfs_genuine_blend_fast": True,
+    # T4/P4: multi-segment vehicles walk the converted-prefix frontier instead
+    # of the output blend (single-segment vehicles keep the blend ramp).
+    "ttfs_prefix_ramp": True,
     # P1'' budget: W3 reinvests reclaimed eval wall here — the only endpoint
     # bound that BINDS while still improving (X3: t0_20/t0_16 FT 300/300,
     # t0_18 294/300, all climbing at cutoff); patience stops saturated cells.
@@ -67,7 +70,10 @@ _TTFS_QUANTIZED_RATIONALE = (
 _CASCADED_RATIONALE = (
     "The controller collapses on the deep genuine cascade (rate stalls then drops to "
     "chance); the fast blend ladder is the ec=0 survivor (0.9396 @ parity 0.9961) "
-    "(per_channel_theta_deployment_fidelity)."
+    "(per_channel_theta_deployment_fidelity). Multi-segment vehicles walk the "
+    "converted-prefix frontier: boundary gradients are severed, so only the P4 "
+    "frontier trains every layer once, at the moment its conversion damage is live "
+    "(T4 shootout: 0.9629 vs 0.9277 post-FT at equal budget, mbh_t4_depth_law)."
 )
 _SYNCHRONIZED_RATIONALE = (
     "synchronized IS ttfs_quantized at deploy: sync-deploy = ttfs_quantized-deploy + the "

@@ -14,10 +14,14 @@ from mimarsinan.models.nn.activations.ttfs_spiking import TTFSActivation
 from mimarsinan.models.spiking.training.blended_genuine_forward import (
     BlendedGenuineForward,
 )
-from mimarsinan.tuning.axes.blend_axis import GenuineBlendAxis
+from mimarsinan.models.spiking.training.prefix_genuine_forward import (
+    PrefixGenuineForward,
+)
+from mimarsinan.tuning.axes.blend_axis import GenuineBlendAxis, PrefixConversionAxis
 from mimarsinan.tuning.forward_install import LazyExecutorForward
 from mimarsinan.tuning.orchestration.blend_ramp import (
     KDClassificationLoss,
+    PlainClassificationLoss,
     run_teacher_distmatch,
 )
 from mimarsinan.tuning.orchestration.endpoint_recovery import run_endpoint_recovery
@@ -25,7 +29,9 @@ from mimarsinan.tuning.orchestration.genuine_probe import iter_val_batches
 from mimarsinan.tuning.orchestration.kd_blend_adaptation_tuner import (
     KDBlendAdaptationTuner,
 )
+from mimarsinan.tuning.orchestration.mbh_ledger import live_model_acc_fp32
 from mimarsinan.tuning.orchestration.ramp_strategy import RampStrategy
+from mimarsinan.tuning.orchestration.tuning_policy import TUNING_POLICY
 
 
 class _SegmentSpikeForward(LazyExecutorForward):
@@ -127,6 +133,91 @@ class _GenuineRamp(RampStrategy):
         tuner._finalize_rebuild()
 
 
+class PrefixConversionRamp(_GenuineRamp):
+    """P4 for multi-segment cascaded vehicles: the axis walks converted-prefix k
+    (``PrefixGenuineForward``), every rung a genuine partial deployment, trained
+    with plain CE (the float suffix hands the frontier segment its gradient — no
+    KD teacher); the D-hat gate reads the k-hybrid, the P1'' endpoint closes at
+    k=n."""
+
+    def make_axis(self, tuner):
+        return PrefixConversionAxis()
+
+    def ramp_forward(self, tuner, model):
+        tuner._prefix_forward = PrefixGenuineForward(
+            model, tuner._T, rate=0.0,
+            boundary_surrogate_temp=tuner._boundary_surrogate_temp,
+        )
+        return tuner._prefix_forward
+
+    def make_kd_loss(self, tuner):
+        return PlainClassificationLoss()
+
+    def after_install_blend_pre(self, tuner) -> None:
+        super().after_install_blend_pre(tuner)
+        tuner._calibrate_to_teacher_distribution()
+
+    def on_remove_forward(self, tuner) -> None:
+        tuner._prefix_forward = None
+
+
+def _prefix_ann_channel_means(tuner) -> tuple:
+    """(teacher per-perceptron channel means, calibration batch), cached per run."""
+    from mimarsinan.spiking.dfq_bias_correction import teacher_channel_means
+
+    cached = getattr(tuner, "_prefix_ann_mean_cache", None)
+    if cached is None:
+        cal_x = tuner._calibration_inputs()
+        cached = (teacher_channel_means(tuner._teacher, cal_x), cal_x)
+        tuner._prefix_ann_mean_cache = cached
+    return cached
+
+
+def run_prefix_stage_reaffine(tuner, rate: float) -> dict:
+    """One P4 stage's keep-best DFQ re-affine measured through the k-hybrid.
+
+    Sets the frontier to ``rate`` first so both the cascade means and the
+    keep-best probe read the genuine partial deployment the rung will train.
+    """
+    from mimarsinan.spiking.dfq_bias_correction import dfq_correct_biases
+    from mimarsinan.spiking.distribution_matching import (
+        node_values_by_perceptron_index,
+    )
+
+    tuner._fast_set_rate(float(rate))
+    forward = tuner._prefix_forward
+    assert forward is not None, (
+        "run_prefix_stage_reaffine requires the installed PrefixGenuineForward"
+    )
+    ann_mean, cal_x = _prefix_ann_channel_means(tuner)
+
+    def hybrid_channel_values() -> dict:
+        with torch.no_grad():
+            _, node_values = forward.forward_with_node_values(cal_x)
+        return node_values_by_perceptron_index(tuner.model, node_values)
+
+    stats = dfq_correct_biases(
+        tuner.model,
+        ann_mean,
+        hybrid_channel_values,
+        bias_iters=int(tuner.pipeline.config.get(
+            "ttfs_prefix_stage_dfq_iters", TUNING_POLICY.prefix_stage_dfq_iters,
+        )),
+        eta=tuner._calibration.distmatch_bias_eta,
+        probe=lambda: live_model_acc_fp32(tuner),
+        probe_patience=TUNING_POLICY.dfq_keepbest_patience,
+    )
+    print(
+        f"[MBH-PREFIX] tuner={type(tuner).__name__} "
+        f"k={forward.prefix_k}/{forward.n_segments} rate={float(rate):.6f} "
+        f"dfq_probe_entry={float(stats.get('probe_entry') or 0.0):.6f} "
+        f"dfq_probe_best={float(stats.get('probe_best') or 0.0):.6f} "
+        f"dfq_iters={int(stats.get('probe_iters_run', 0))}",
+        flush=True,
+    )
+    return stats
+
+
 class GenuineBlendRamp(_GenuineRamp):
     """Ramp a teacher<->genuine OUTPUT blend (``BlendedGenuineForward``, driven by
     ``GenuineBlendAxis``) calibrated to the teacher distribution; finalize deploys
@@ -196,7 +287,8 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
         self._blend_fast_rates = plan.blend_fast_rates
         self._blend_fast_steps_per_rate = plan.blend_fast_steps_per_rate
         self._endpoint_recovery_steps = plan.endpoint_recovery_steps
-        self._adopt_optimization_driver(plan.driver)
+        self._prefix_forward = None
+        self._adopt_optimization_driver(self._resolve_prefix_ramp(plan))
         self._fast_full_transform_log = []
         self._blend_forward = None
         self._genuine_ce_alpha = float(
@@ -209,6 +301,24 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
         self._gain_correction_stats = None
         self._maybe_apply_gain_correction()
         self._theta_cotrain = cal.theta_cotrain
+
+    def _resolve_prefix_ramp(self, plan):
+        """Settle the P4 prefix decision (needs the model's segment count) and,
+        when active, retarget the fast ladder onto the frontier rates i/n."""
+        # Lazy: the spiking package init pulls chip_simulation (import cycle).
+        from mimarsinan.spiking.segment_partition import spike_segment_count
+
+        self._prefix_ramp = False
+        self._n_spike_segments = 0
+        if plan.prefix_ramp:
+            self._n_spike_segments = spike_segment_count(self.model.get_mapper_repr())
+            self._prefix_ramp = self._n_spike_segments > 1
+        if not self._prefix_ramp:
+            return plan.driver
+        n = self._n_spike_segments
+        rates = [i / n for i in range(1, n + 1)]
+        self._blend_fast_rates = rates
+        return dataclasses.replace(plan.driver, fast_ladder_rates=rates)
 
     def _maybe_apply_gain_correction(self) -> None:
         """Per-cascade-depth activation_scale trim inverting the ramp decode's depth attenuation.
@@ -253,7 +363,18 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
 
     def _mbh_full_transform_forward(self, clone):
         """[MBH] The deployed cascade on ``clone``, with the rate-gated gain ramp
-        (keyed by live perceptron ids) re-applied to the clone at rate 1.0."""
+        (keyed by live perceptron ids) re-applied to the clone at rate 1.0.
+
+        Prefix ramp: the gate reads the k-hybrid at the LIVE frontier — an
+        honest genuine partial deployment per rung (rate 1.0 = the deployed
+        cascade when no prefix forward is installed, e.g. the entry distmatch)."""
+        if getattr(self, "_prefix_ramp", False):
+            live = self._prefix_forward
+            rate = float(live.rate) if live is not None else 1.0
+            return PrefixGenuineForward(
+                clone, self._T, rate=rate,
+                boundary_surrogate_temp=self._boundary_surrogate_temp,
+            )
         fwd = super()._mbh_full_transform_forward(clone)
         if getattr(self, "_gain_ramp", False) and self._gain_ramp_base is not None:
             from mimarsinan.spiking.gain_correction import apply_gain_at_rate
@@ -306,11 +427,20 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
 
     def _make_ramp_strategy(self) -> RampStrategy:
         """Pick the ramp strategy from the flags settled in ``_configure`` — the
-        genuine teacher↔cascade blend ramp (cascaded only) or the base value-domain
+        converted-prefix frontier (multi-segment cascaded), the genuine
+        teacher↔cascade blend ramp (cascaded only), or the base value-domain
         proxy ramp."""
+        if self._prefix_ramp:
+            return PrefixConversionRamp()
         if self._genuine_blend_ramp:
             return GenuineBlendRamp()
         return super()._make_ramp_strategy()
+
+    def _fast_ramp(self, rate) -> None:
+        """Prefix rungs run the P2 stage re-affine through the k-hybrid before training."""
+        if self._prefix_ramp:
+            run_prefix_stage_reaffine(self, float(rate))
+        super()._fast_ramp(rate)
 
     def _before_ramp_forward_install(self) -> None:
         """Capture the gain-ramp base after calibration, before the ramp forward (parity-critical order)."""

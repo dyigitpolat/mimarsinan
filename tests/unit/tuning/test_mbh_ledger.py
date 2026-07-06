@@ -20,6 +20,8 @@ from __future__ import annotations
 
 import math
 import re
+
+import pytest
 from types import SimpleNamespace
 
 import torch
@@ -41,7 +43,8 @@ from mimarsinan.tuning.orchestration.adaptation_manager_factory import (
 _LEDGER_RE = re.compile(
     r"^\[MBH\] tuner=(?P<tuner>\S+) rung=(?P<rung>\d+) rate=(?P<rate>[0-9.]+) "
     r"blended_acc=(?P<blended>[0-9.]+) blended_fp32=(?P<blended_fp32>[0-9.]+) "
-    r"full_acc=(?P<full>[0-9.]+) rho=(?P<rho>\S+) grad_norm_t=(?P<grad>\S+)$"
+    r"full_acc=(?P<full>[0-9.]+) rho=(?P<rho>\S+) grad_norm_t=(?P<grad>\S+) "
+    r"nonzero_grad_frac=(?P<nonzero_grad_frac>\S+)$"
 )
 
 
@@ -248,6 +251,70 @@ class TestLedgerFormat:
         # X1 instruments the fast ladder only; the controller path is untouched.
         _run_seeded(_lif_tuner, tmp_path, monkeypatch, True, fast=False)
         assert not _ledger_lines(capsys.readouterr().out)
+
+
+class TestNonzeroGradFraction:
+    """A5 (theory §4): rho is subspace-local — the ledger must also report the
+    fraction of trainable parameter elements with nonzero gradient under the
+    RAMP forward (captured at each rung's first backward), the one number that
+    exposes severed-boundary gradient support (14/16 frozen layers, §5p)."""
+
+    def test_trained_rungs_report_a_fraction_in_unit_interval(
+        self, tmp_path, monkeypatch, capsys,
+    ):
+        _set_flag(monkeypatch, True)
+        torch.manual_seed(0)
+        tuner = _lif_tuner(tmp_path, rates=(0.5, 1.0))
+        try:
+            tuner.run()
+        finally:
+            tuner.close()
+        lines = _ledger_lines(capsys.readouterr().out)
+        assert lines
+        for line in lines:
+            match = _LEDGER_RE.match(line)
+            assert match is not None, line
+            fraction = float(match["nonzero_grad_frac"])
+            assert 0.0 < fraction <= 1.0, line
+
+    def test_projection_only_rungs_report_nan(self, tmp_path, monkeypatch, capsys):
+        # steps_per_rate=0: no backward happens, the field must read nan.
+        _set_flag(monkeypatch, True)
+        torch.manual_seed(0)
+        tuner = _lif_tuner(tmp_path, steps_per_rate=0, rates=(0.5, 1.0))
+        try:
+            tuner.run()
+        finally:
+            tuner.close()
+        lines = _ledger_lines(capsys.readouterr().out)
+        assert lines
+        for line in lines:
+            match = _LEDGER_RE.match(line)
+            assert match is not None, line
+            assert math.isnan(float(match["nonzero_grad_frac"])), line
+
+    def test_helper_counts_missing_grads_as_zero(self):
+        import torch.nn as nn
+
+        from mimarsinan.tuning.orchestration.mbh_ledger import nonzero_grad_fraction
+
+        model = nn.Sequential(nn.Linear(4, 3, bias=False), nn.Linear(3, 2, bias=False))
+        x = torch.randn(2, 4)
+        # Sever the second layer: loss depends only on the first layer's output.
+        model[0](x).sum().backward()
+        fraction = nonzero_grad_fraction(model)
+        expected = 12 / (12 + 6)
+        assert fraction == pytest.approx(expected)
+
+    def test_helper_nan_when_no_trainable_params(self):
+        import torch.nn as nn
+
+        from mimarsinan.tuning.orchestration.mbh_ledger import nonzero_grad_fraction
+
+        model = nn.Linear(2, 2)
+        for p in model.parameters():
+            p.requires_grad_(False)
+        assert math.isnan(nonzero_grad_fraction(model))
 
 
 # -- (c) the D-hat probe is non-destructive ---------------------------------------

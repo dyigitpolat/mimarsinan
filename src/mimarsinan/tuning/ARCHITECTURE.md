@@ -26,7 +26,7 @@ search, rate application, decision tracing — are shared by all tuner families.
 | `tuners/` | Concrete tuners: clamp, activation adaptation/quantization/shift, normalization-aware weight quantization, noise, LIF, TTFS cycle, perceptron transform, and `pruning/`. |
 
 ## Dependencies
-- `models` — activation types (`TTFSActivation`, `LeakyGradReLU`, `make_activation`), decorator layers (`RandomMaskAdjustmentStrategy`, `RateBuffer`, `NoisyDropout`, `SavedTensorDecorator`), and the blended genuine spiking forward the KD-blend tuner installs.
+- `models` — activation types (`TTFSActivation`, `LeakyGradReLU`, `make_activation`), decorator layers (`RandomMaskAdjustmentStrategy`, `RateBuffer`, `NoisyDropout`, `SavedTensorDecorator`), and the blended-genuine / prefix-genuine spiking forwards the KD-blend and prefix-conversion ramps install.
 - `model_training` — `BasicTrainer`, the perceptron-transform trainer, and `build_recipe`/`build_optimizer` for recovery training.
 - `transformations` — normalization-aware perceptron quantization, `PerceptronTransformer`, pruning mask application and activation-stat collection.
 - `data_handling` — `DataLoaderFactory`/`DataProvider` for validation-set sizes that derive budgets and decay factors.

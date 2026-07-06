@@ -81,17 +81,8 @@ def calibrate_fanin_boundary_scales(
 from mimarsinan.spiking.segment_partition import perceptron_of
 
 
-def _cascade_channel_means(model, cal_x, T):
-    """Per-perceptron cascade decoded value, keyed by perceptron index."""
-    # Lazy: ttfs_segment_forward imports mimarsinan.spiking, so a top-level import is circular.
-    from mimarsinan.models.spiking.training.ttfs_segment_forward import (
-        TTFSSegmentForward,
-    )
-
-    with torch.no_grad():
-        _, node_values = TTFSSegmentForward(
-            model.get_mapper_repr(), T
-        ).forward_with_node_values(cal_x)
+def node_values_by_perceptron_index(model, node_values) -> dict:
+    """Re-key a ``{mapper_node: value}`` recording by perceptron index."""
     by_perceptron = {
         id(perceptron_of(node)): value
         for node, value in node_values.items()
@@ -103,6 +94,20 @@ def _cascade_channel_means(model, cal_x, T):
         if value is not None:
             out[k] = value
     return out
+
+
+def _cascade_channel_means(model, cal_x, T):
+    """Per-perceptron cascade decoded value, keyed by perceptron index."""
+    # Lazy: ttfs_segment_forward imports mimarsinan.spiking, so a top-level import is circular.
+    from mimarsinan.models.spiking.training.ttfs_segment_forward import (
+        TTFSSegmentForward,
+    )
+
+    with torch.no_grad():
+        _, node_values = TTFSSegmentForward(
+            model.get_mapper_repr(), T
+        ).forward_with_node_values(cal_x)
+    return node_values_by_perceptron_index(model, node_values)
 
 
 def _mean_abs_gap(model, ann_mean, cal_x, T):

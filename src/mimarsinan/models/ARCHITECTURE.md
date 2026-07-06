@@ -36,7 +36,7 @@ pipeline's `ModelRegistry` so configs can instantiate models by `model_type` id.
 - **`spiking`** — segment-boundary transcoding SSOT (`BoundaryConfig`,
   `encode_segment_input`) and segment-forward helpers for training forwards.
 - **`pipelining`** — `ModelRegistry`, into which every builder registers its model type.
-- **`tuning`** — `LazyExecutorForward` for the blended genuine training forward.
+- **`tuning`** — `LazyExecutorForward` for the blended-genuine and prefix-genuine training forwards.
 - **`common`** — `env.cuda_debug_enabled` debug flag in decorator transforms.
 
 ## Dependents

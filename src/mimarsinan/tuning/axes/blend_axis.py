@@ -92,3 +92,10 @@ class GenuineBlendAxis(AdaptationAxisBase):
 
     def descriptor(self) -> str:
         return self.name
+
+
+class PrefixConversionAxis(GenuineBlendAxis):
+    """P4 converted-prefix ramp: drives the installed ``PrefixGenuineForward``'s
+    ``rate``, which maps to the topological-frontier length ``k = round(rate·n)``."""
+
+    name = "prefix_conversion"

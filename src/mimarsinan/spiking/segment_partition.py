@@ -76,3 +76,10 @@ def partition_perceptron_segments(exec_order, deps_map):
     """Perceptron-only view of :func:`partition_spike_segments` (for tests/introspection)."""
     seg_of, _ = partition_spike_segments(exec_order, deps_map)
     return {n: r for n, r in seg_of.items() if perceptron_of(n) is not None}
+
+
+def spike_segment_count(model_repr) -> int:
+    """Number of neural (spike) segments in a ``ModelRepresentation`` exec graph."""
+    model_repr._ensure_exec_graph()
+    seg_of, _ = partition_spike_segments(model_repr._exec_order, model_repr._deps)
+    return len(set(seg_of.values()))

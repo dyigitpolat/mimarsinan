@@ -42,6 +42,13 @@ class BlendActivation(nn.Module):
         return (1.0 - self.rate) * self.old_activation(x) + self.rate * self.target_activation(x)
 
 
+class PlainClassificationLoss:
+    """Plain CE for ``trainer.loss_function(model, x, y)`` — ramps with no KD teacher."""
+
+    def __call__(self, model: nn.Module, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+        return F.cross_entropy(model(x), y)
+
+
 class KDClassificationLoss:
     """KD + CE loss (T=3, α=0.3) for BasicTrainer.loss_function(model, x, y)."""
 

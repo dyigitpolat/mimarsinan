@@ -11,6 +11,14 @@ from mimarsinan.spiking.segment_boundary import normalize_ttfs_boundary_value
 from mimarsinan.spiking.segment_partition import is_encoding_perceptron, perceptron_of
 
 
+def segment_series_roots(driver) -> list:
+    """Segment roots in execution order — the P4 topological-frontier axis."""
+    return sorted(
+        driver.segments.keys(),
+        key=lambda root: min(driver._index[n] for n in driver.segments[root]),
+    )
+
+
 class TtfsSegmentPolicy:
     """Single-spike TTFS: latency-windowed segment sim with arrival latch and ramp
     decode; entry (encoding) perceptrons fire from the decoded value."""
@@ -18,6 +26,8 @@ class TtfsSegmentPolicy:
     node_value_recorder: dict | None = None
     # A float >0 swaps in an STE at offload boundaries; forward (NF↔SCM parity) is unchanged either way.
     boundary_surrogate_temp: float | None = None
+    # P4 prefix axis: series indices run genuinely; None = all genuine (deployed default).
+    genuine_segments: frozenset | None = None
 
     def prepare(self, driver):
         for p, mods in self._ttfs_perceptrons(driver._seg_of.keys()):
@@ -93,14 +103,17 @@ class TtfsSegmentPolicy:
                                for s in in_src)
         return depth
 
-    def _segment_output_zeros(self, driver, seg_nodes, values, x):
-        """Per-node output shapes (zero tensors) for not-yet-fired delayed sources."""
+    def _value_mode_forward(self, driver, seg_nodes, values, x) -> dict:
+        """Run the segment's nodes in the trained value domain (staircase proxy).
+
+        Returns the per-node value map; TTFS nodes are toggled out of
+        cycle-accurate mode for the walk and restored (state reset) after.
+        """
         seg_set = set(seg_nodes)
         nodes = self._ttfs_nodes(seg_nodes)
         for m in nodes:
             m.set_cycle_accurate(False)
-        zeros: dict = {}
-        with torch.no_grad():
+        try:
             vmode: dict = {}
             for n in seg_nodes:
                 d = driver._deps.get(n, [])
@@ -111,11 +124,39 @@ class TtfsSegmentPolicy:
                 else:
                     inp = tuple(vmode[dep] if dep in seg_set else values[dep] for dep in d)
                 vmode[n] = n.forward(inp)
-                zeros[n] = torch.zeros_like(vmode[n])
-        for m in nodes:
-            m.set_cycle_accurate(True)
-            m.reset_state()
-        return zeros
+        finally:
+            for m in nodes:
+                m.set_cycle_accurate(True)
+                m.reset_state()
+        return vmode
+
+    def _segment_output_zeros(self, driver, seg_nodes, values, x):
+        """Per-node output shapes (zero tensors) for not-yet-fired delayed sources."""
+        with torch.no_grad():
+            vmode = self._value_mode_forward(driver, seg_nodes, values, x)
+        return {n: torch.zeros_like(v) for n, v in vmode.items()}
+
+    def _series_index_of(self, driver, seg_nodes) -> int:
+        """Series index (exec order) of the segment owning ``seg_nodes``."""
+        cache = getattr(self, "_series_index_cache", None)
+        if cache is None or cache[0] is not driver:
+            series = {r: i for i, r in enumerate(segment_series_roots(driver))}
+            cache = (driver, series)
+            self._series_index_cache = cache
+        return cache[1][driver._seg_of[seg_nodes[0]]]
+
+    def _run_segment_value_mode(self, driver, seg_nodes, values, x):
+        """Suffix member of the P4 prefix hybrid: the trained proxy on decoded values."""
+        vmode = self._value_mode_forward(driver, seg_nodes, values, x)
+        for n in driver.external_consumed(seg_nodes):
+            values[n] = vmode[n]
+        if self.node_value_recorder is not None:
+            for n in seg_nodes:
+                if perceptron_of(n) is not None:
+                    self.node_value_recorder[n] = vmode[n].detach()
+        if driver._output in set(seg_nodes):
+            return vmode[driver._output]
+        return None
 
     def _boundary_single_spike_train(self, value, boundary_scale, T: int) -> torch.Tensor:
         """Single-spike TTFS train of a decoded boundary value at the rising edge of
@@ -151,6 +192,9 @@ class TtfsSegmentPolicy:
         return train_hard.detach() + (train_soft - train_soft.detach())
 
     def run_segment(self, driver, seg_nodes, values, x):
+        genuine = self.genuine_segments
+        if genuine is not None and self._series_index_of(driver, seg_nodes) not in genuine:
+            return self._run_segment_value_mode(driver, seg_nodes, values, x)
         T = driver.T
         seg_set = set(seg_nodes)
         ext = driver.external_consumed(seg_nodes)

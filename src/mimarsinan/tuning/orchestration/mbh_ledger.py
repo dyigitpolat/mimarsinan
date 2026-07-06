@@ -47,6 +47,35 @@ def _measurement_guard(trainer):
             trainer._gpu_val_cursor = cursor
 
 
+def nonzero_grad_fraction(model) -> float:
+    """Fraction of trainable parameter ELEMENTS with nonzero ``.grad`` (A5 reach).
+
+    ``grad is None`` counts as all-zero — severed submodules must lower the
+    fraction, not vanish from it. nan when the model has no trainable params.
+    """
+    nonzero = 0
+    total = 0
+    for param in model.parameters():
+        if not param.requires_grad:
+            continue
+        total += param.numel()
+        if param.grad is not None:
+            nonzero += int(torch.count_nonzero(param.grad))
+    if total == 0:
+        return float("nan")
+    return nonzero / total
+
+
+def capture_rung_nonzero_grad_fraction(tuner) -> None:
+    """Stash the A5 reach gauge from the live ``.grad``s (a rung's first backward).
+
+    Ledger-flag-gated (one pass over the grads; the default gate stays lean);
+    consumed by :func:`emit_fast_rung_ledger` via ``_mbh_nonzero_grad_fraction``.
+    """
+    if mbh_ledger_enabled():
+        tuner._mbh_nonzero_grad_fraction = nonzero_grad_fraction(tuner.model)
+
+
 def rung_measurements(tuner) -> dict:
     """One rung's isolated fp32 reads: blended_fp32, full_acc (D-hat), rho, ||g_t||.
 
@@ -77,6 +106,21 @@ def full_transform_measurement(tuner) -> float:
         return full_transform_acc_on_clone(tuner)
 
 
+def live_model_acc_fp32(tuner) -> float:
+    """The LIVE model's fp32 accuracy over the tuner's eval batches, cursor-isolated.
+
+    The installed forward IS the behavior under measurement (e.g. the P4
+    k-hybrid), so this is the honest partial-deployment probe for in-place
+    calibration loops that mutate the live model.
+    """
+    device = tuner.pipeline.config["device"]
+    with _measurement_guard(tuner.trainer):
+        return fp32_eval_forward_over_val(
+            tuner.trainer, tuner.model, tuner.model,
+            tuner._budget.eval_n_batches, device,
+        )
+
+
 def emit_fast_rung_ledger(tuner, *, rate, blended_acc, measurements=None):
     """Emit one ``[MBH]`` stdout line for a completed fast-ladder rung attempt.
 
@@ -91,13 +135,15 @@ def emit_fast_rung_ledger(tuner, *, rate, blended_acc, measurements=None):
     tuner._mbh_rung_index = rung
     if measurements is None:
         measurements = rung_measurements(tuner)
+    nonzero_frac = float(getattr(tuner, "_mbh_nonzero_grad_fraction", float("nan")))
     line = (
         f"[MBH] tuner={type(tuner).__name__} rung={rung} rate={float(rate):.6f} "
         f"blended_acc={float(blended_acc):.6f} "
         f"blended_fp32={float(measurements['blended_fp32']):.6f} "
         f"full_acc={float(measurements['full_acc']):.6f} "
         f"rho={float(measurements['rho']):.6f} "
-        f"grad_norm_t={float(measurements['grad_norm_t']):.6f}"
+        f"grad_norm_t={float(measurements['grad_norm_t']):.6f} "
+        f"nonzero_grad_frac={nonzero_frac:.6f}"
     )
     print(line, flush=True)
     return line

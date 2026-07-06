@@ -18,6 +18,7 @@ from mimarsinan.spiking.segment_policies import (
     LifSegmentPolicy,
     TtfsSegmentPolicy,
 )
+from mimarsinan.spiking.segment_policy_ttfs import segment_series_roots
 
 __all__ = [
     "AnalyticalSegmentPolicy",
@@ -30,6 +31,7 @@ __all__ = [
     "partition_perceptron_segments",
     "partition_spike_segments",
     "perceptron_of",
+    "segment_series_roots",
 ]
 
 

@@ -11,6 +11,7 @@ from mimarsinan.spiking.segment_forward import (
 )
 
 __all__ = [
+    "PrefixTTFSSegmentForward",
     "TTFSSegmentForward",
     "classify_spike_producers",
     "partition_perceptron_segments",
@@ -55,3 +56,24 @@ class TTFSSegmentForward:
         finally:
             self._driver.policy.node_value_recorder = None
         return out, recorder
+
+
+class PrefixTTFSSegmentForward(TTFSSegmentForward):
+    """The P4 k-hybrid: converted-prefix segments run the deployed cascade, the
+    suffix runs the trained proxy on decoded values. ``set_prefix(n)`` IS the
+    deployed forward (``genuine_segments`` collapses to None)."""
+
+    @property
+    def n_segments(self) -> int:
+        return len(self._driver.segments)
+
+    @property
+    def prefix_k(self) -> int:
+        genuine = self._driver.policy.genuine_segments
+        return self.n_segments if genuine is None else len(genuine)
+
+    def set_prefix(self, k: int) -> None:
+        k = int(k)
+        self._driver.policy.genuine_segments = (
+            None if k >= self.n_segments else frozenset(range(max(0, k)))
+        )

@@ -83,6 +83,9 @@ ALLOWLIST = {
     "models/perceptron_mixer/perceptron.py",
     "models/pretrained_bridge.py",
     "models/spiking/training/blended_genuine_forward.py",
+    # Same cycle as its blended sibling: ttfs_segment_forward pulls the spiking
+    # package init, which pulls chip_simulation (top-level import breaks).
+    "models/spiking/training/prefix_genuine_forward.py",
     "pipelining/core/deployment_plan.py",
     "pipelining/core/nf_scm_parity.py",
     "pipelining/core/platform_constraints_resolver.py",

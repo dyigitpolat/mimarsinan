@@ -32,6 +32,9 @@ class TuningPolicy:
     # DFQ keep-best: iterations without a new best deployed-probe read before
     # the calibration loop stops early (W-CAL-3).
     dfq_keepbest_patience: int = 5
+    # P4 per-stage re-affine: short keep-best DFQ measured through the k-hybrid
+    # (T4 arm B absorbed every boundary's damage at 4 iters/stage).
+    prefix_stage_dfq_iters: int = 4
 
 
 TUNING_POLICY = TuningPolicy()
