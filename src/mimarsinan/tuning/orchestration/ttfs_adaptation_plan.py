@@ -15,6 +15,7 @@ class TtfsAdaptationPlan:
     sync_genuine_qat: bool
     genuine_blend_ramp: bool
     prefix_ramp: bool
+    hop_prefix_ramp: bool
     proxy_fast: bool
     genuine_blend_fast: bool
     blend_fast_rates: list
@@ -74,6 +75,9 @@ class TtfsAdaptationPlan:
         # P4 rides the genuine fast ladder; the tuner additionally requires
         # >1 spike segment (single-segment vehicles keep the blend ramp).
         prefix_ramp = bool(get("ttfs_prefix_ramp", False)) and blend_fast
+        # [5v B2] the frontier below segments: the tuner additionally requires
+        # exactly 1 spike segment with a chain past the proven-recovery depth.
+        hop_prefix_ramp = bool(get("ttfs_hop_prefix_ramp", False)) and blend_fast
         proxy_fast = (
             fast_enabled
             and bool(get("ttfs_blend_fast", False))
@@ -103,6 +107,7 @@ class TtfsAdaptationPlan:
             sync_genuine_qat=sync_genuine_qat,
             genuine_blend_ramp=blend,
             prefix_ramp=prefix_ramp,
+            hop_prefix_ramp=hop_prefix_ramp,
             proxy_fast=proxy_fast,
             genuine_blend_fast=blend_fast,
             blend_fast_rates=blend_fast_rates,

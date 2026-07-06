@@ -8,6 +8,7 @@ from mimarsinan.chip_simulation.recording import spike_modes
 from mimarsinan.models.nn.activations.ttfs_spiking import TTFSActivation
 from mimarsinan.models.perceptron_mixer.perceptron import effective_preactivation_bias
 from mimarsinan.spiking.segment_boundary import normalize_ttfs_boundary_value
+from mimarsinan.spiking.segment_hop_frontier import run_segment_hop_hybrid
 from mimarsinan.spiking.segment_partition import is_encoding_perceptron, perceptron_of
 
 
@@ -28,6 +29,9 @@ class TtfsSegmentPolicy:
     boundary_surrogate_temp: float | None = None
     # P4 prefix axis: series indices run genuinely; None = all genuine (deployed default).
     genuine_segments: frozenset | None = None
+    # [5v B2] P4 below segments: hops with cascade depth < k run genuinely,
+    # deeper hops run the trained proxy on decoded values; None = no frontier.
+    genuine_hop_frontier: int | None = None
 
     def prepare(self, driver):
         for p, mods in self._ttfs_perceptrons(driver._seg_of.keys()):
@@ -195,6 +199,12 @@ class TtfsSegmentPolicy:
         genuine = self.genuine_segments
         if genuine is not None and self._series_index_of(driver, seg_nodes) not in genuine:
             return self._run_segment_value_mode(driver, seg_nodes, values, x)
+        k = self.genuine_hop_frontier
+        if k is not None:
+            return run_segment_hop_hybrid(self, driver, seg_nodes, values, x, int(k))
+        return self._run_segment_genuine(driver, seg_nodes, values, x)
+
+    def _run_segment_genuine(self, driver, seg_nodes, values, x):
         T = driver.T
         seg_set = set(seg_nodes)
         ext = driver.external_consumed(seg_nodes)

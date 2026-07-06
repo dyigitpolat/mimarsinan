@@ -147,6 +147,7 @@ class PrefixConversionRamp(_GenuineRamp):
         tuner._prefix_forward = PrefixGenuineForward(
             model, tuner._T, rate=0.0,
             boundary_surrogate_temp=tuner._boundary_surrogate_temp,
+            hop_frontier=bool(getattr(tuner, "_hop_prefix_levels", None)),
         )
         return tuner._prefix_forward
 
@@ -209,7 +210,7 @@ def run_prefix_stage_reaffine(tuner, rate: float) -> dict:
     )
     print(
         f"[MBH-PREFIX] tuner={type(tuner).__name__} "
-        f"k={forward.prefix_k}/{forward.n_segments} rate={float(rate):.6f} "
+        f"k={forward.frontier_k}/{forward.frontier_units} rate={float(rate):.6f} "
         f"dfq_probe_entry={float(stats.get('probe_entry') or 0.0):.6f} "
         f"dfq_probe_best={float(stats.get('probe_best') or 0.0):.6f} "
         f"dfq_iters={int(stats.get('probe_iters_run', 0))}",
@@ -322,18 +323,36 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
 
     def _resolve_prefix_ramp(self, plan):
         """Settle the P4 prefix decision (needs the model's segment count) and,
-        when active, retarget the fast ladder onto the frontier rates i/n."""
+        when active, retarget the fast ladder onto the frontier rates i/n.
+
+        [5v B2] the frontier descends below segments: a SINGLE-segment vehicle
+        whose chain is past the proven-recovery depth walks cascade hops
+        instead of falling back to the blend ramp (the t0_16 crater was
+        exactly that fallback)."""
         # Lazy: the spiking package init pulls chip_simulation (import cycle).
         from mimarsinan.spiking.segment_partition import spike_segment_count
+        from mimarsinan.spiking.gain_correction import per_perceptron_cascade_depth
+        from mimarsinan.tuning.orchestration.hop_staging import HOP_STAGE_MIN_LEVELS
 
         self._prefix_ramp = False
+        self._hop_prefix_levels = None
         self._n_spike_segments = 0
-        if plan.prefix_ramp:
+        if plan.prefix_ramp or plan.hop_prefix_ramp:
             self._n_spike_segments = spike_segment_count(self.model.get_mapper_repr())
+        if plan.prefix_ramp:
             self._prefix_ramp = self._n_spike_segments > 1
-        if not self._prefix_ramp:
+        if self._prefix_ramp:
+            n = self._n_spike_segments
+        elif plan.hop_prefix_ramp and self._n_spike_segments == 1:
+            depths = per_perceptron_cascade_depth(self.model.get_mapper_repr())
+            n_levels = max(depths.values(), default=0) + 1
+            if n_levels < HOP_STAGE_MIN_LEVELS:
+                return plan.driver
+            self._hop_prefix_levels = n_levels
+            self._prefix_ramp = True  # every prefix seam applies at hop granularity
+            n = n_levels
+        else:
             return plan.driver
-        n = self._n_spike_segments
         rates = [i / n for i in range(1, n + 1)]
         self._blend_fast_rates = rates
         return dataclasses.replace(plan.driver, fast_ladder_rates=rates)
@@ -392,6 +411,7 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
             return PrefixGenuineForward(
                 clone, self._T, rate=rate,
                 boundary_surrogate_temp=self._boundary_surrogate_temp,
+                hop_frontier=bool(getattr(self, "_hop_prefix_levels", None)),
             )
         fwd = super()._mbh_full_transform_forward(clone)
         if getattr(self, "_gain_ramp", False) and self._gain_ramp_base is not None:

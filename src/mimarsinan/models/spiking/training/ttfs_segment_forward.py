@@ -77,3 +77,27 @@ class PrefixTTFSSegmentForward(TTFSSegmentForward):
         self._driver.policy.genuine_segments = (
             None if k >= self.n_segments else frozenset(range(max(0, k)))
         )
+
+    @property
+    def n_hop_levels(self) -> int:
+        """Cascade-depth levels of the single spike segment ([5v B2] frontier units)."""
+        driver = self._driver
+        levels = 0
+        for seg_nodes in driver.segments.values():
+            ordered = sorted(seg_nodes, key=lambda n: driver._index[n])
+            depths = driver.policy.segment_depths(driver, ordered)
+            levels = max(levels, max(depths.values(), default=0) + 1)
+        return levels
+
+    def set_hop_prefix(self, k: int) -> None:
+        """[5v B2] the frontier below segments: hops with depth < k run the
+        deployed cascade, deeper hops the trained proxy. ``k >= n_hop_levels``
+        IS the deployed forward (the frontier collapses to None)."""
+        assert self.n_segments == 1, (
+            "the hop frontier is defined for single-segment vehicles; "
+            "multi-segment graphs walk the segment frontier (set_prefix)."
+        )
+        k = int(k)
+        self._driver.policy.genuine_hop_frontier = (
+            None if k >= self.n_hop_levels else max(0, k)
+        )

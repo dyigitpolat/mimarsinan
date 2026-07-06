@@ -72,6 +72,11 @@ _CASCADED_RECIPE_KNOBS = {
     # T4/P4: multi-segment vehicles walk the converted-prefix frontier instead
     # of the output blend (single-segment vehicles keep the blend ramp).
     "ttfs_prefix_ramp": True,
+    # [5v B2] the frontier below segments: a single-segment vehicle whose
+    # chain is past the proven-recovery depth walks cascade hops (per-hop
+    # keep-best re-affine + stage training) instead of the blend fallback —
+    # the t0_16 crater was exactly that fallback. gamma(S) stays off (refuted).
+    "ttfs_hop_prefix_ramp": True,
     # P1'' budget: W3 reinvests reclaimed eval wall here — the only endpoint
     # bound that BINDS while still improving (X3: t0_20/t0_16 FT 300/300,
     # t0_18 294/300, all climbing at cutoff); patience stops saturated cells.

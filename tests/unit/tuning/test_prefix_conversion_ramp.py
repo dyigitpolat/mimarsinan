@@ -320,3 +320,108 @@ class TestGateComposition:
         assert isinstance(forward, _SegmentSpikeForward)
         prefix_lines = [l for l in out.splitlines() if l.startswith("[MBH-PREFIX]")]
         assert len(prefix_lines) >= 3
+
+
+class _DeepSingleSegTorch(nn.Module):
+    """One unfragmented 6-hop chain (no host ops) — the t0_16 shape class."""
+
+    def __init__(self, depth=6):
+        super().__init__()
+        self.flat = nn.Flatten()
+        dims = [64] + [16] * (depth - 1) + [4]
+        self.stages = nn.Sequential(*[
+            nn.Sequential(nn.Linear(a, b), nn.ReLU())
+            for a, b in zip(dims[:-1], dims[1:])
+        ])
+
+    def forward(self, x):
+        return self.stages(self.flat(x))
+
+
+def _deep_single_seg_model(depth=6):
+    torch.manual_seed(0)
+    return convert_torch_model(_DeepSingleSegTorch(depth), (1, 8, 8), 4, device="cpu")
+
+
+class TestHopFrontierArming:
+    """[5v B2] the frontier below segments arms on single-segment deep chains."""
+
+    def test_recipe_carries_the_hop_prefix_knob(self):
+        recipe = ConversionPolicy.derive("ttfs_cycle_based", "cascaded")
+        assert recipe.knobs.get("ttfs_hop_prefix_ramp") is True
+
+    def test_synchronized_never_carries_it(self):
+        recipe = ConversionPolicy.derive("ttfs_cycle_based", "synchronized")
+        assert "ttfs_hop_prefix_ramp" not in recipe.knobs
+
+    def test_deep_single_segment_walks_the_hop_frontier(self, tmp_path):
+        tuner = _make_tuner(
+            tmp_path, model=_deep_single_seg_model(6), ttfs_hop_prefix_ramp=True,
+        )
+        try:
+            assert tuner._n_spike_segments == 1
+            assert tuner._hop_prefix_levels == 6
+            assert tuner._prefix_ramp is True
+            assert tuner._fixed_ladder_rates == pytest.approx(
+                [i / 6 for i in range(1, 7)]
+            )
+            strategy = tuner._make_ramp_strategy()
+            assert isinstance(strategy, PrefixConversionRamp)
+            forward = strategy.ramp_forward(tuner, tuner.model)
+            assert forward.hop_frontier is True
+            assert forward.frontier_units == 6
+        finally:
+            tuner.close()
+
+    def test_shallow_single_segment_keeps_the_blend_ramp(self, tmp_path):
+        tuner = _make_tuner(
+            tmp_path, model=_deep_single_seg_model(3), ttfs_hop_prefix_ramp=True,
+        )
+        try:
+            assert tuner._hop_prefix_levels is None
+            assert tuner._prefix_ramp is False
+            assert isinstance(tuner._make_ramp_strategy(), GenuineBlendRamp)
+        finally:
+            tuner.close()
+
+    def test_knob_off_is_bit_identical_blend_fallback(self, tmp_path):
+        tuner = _make_tuner(
+            tmp_path, model=_deep_single_seg_model(6), ttfs_hop_prefix_ramp=False,
+        )
+        try:
+            assert tuner._hop_prefix_levels is None
+            assert tuner._prefix_ramp is False
+            assert isinstance(tuner._make_ramp_strategy(), GenuineBlendRamp)
+        finally:
+            tuner.close()
+
+    def test_multi_segment_keeps_the_segment_frontier(self, tmp_path):
+        tuner = _make_tuner(tmp_path, ttfs_hop_prefix_ramp=True)
+        try:
+            assert tuner._n_spike_segments == 3
+            assert tuner._hop_prefix_levels is None
+            assert tuner._prefix_ramp is True
+            assert tuner._fixed_ladder_rates == pytest.approx([1 / 3, 2 / 3, 1.0])
+            strategy = tuner._make_ramp_strategy()
+            forward = strategy.ramp_forward(tuner, tuner.model)
+            assert forward.hop_frontier is False
+        finally:
+            tuner.close()
+
+    def test_probe_forward_carries_the_hop_mode(self, tmp_path):
+        import copy
+
+        tuner = _make_tuner(
+            tmp_path, model=_deep_single_seg_model(6), ttfs_hop_prefix_ramp=True,
+        )
+        try:
+            strategy = tuner._make_ramp_strategy()
+            strategy.ramp_forward(tuner, tuner.model)
+            tuner._prefix_forward.rate = 0.5
+            clone = copy.deepcopy(tuner.model)
+            probe_forward = tuner._mbh_full_transform_forward(clone)
+            assert isinstance(probe_forward, PrefixGenuineForward)
+            assert probe_forward.hop_frontier is True
+            assert probe_forward.rate == pytest.approx(0.5)
+        finally:
+            tuner.close()

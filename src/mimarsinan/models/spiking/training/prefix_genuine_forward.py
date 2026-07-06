@@ -29,10 +29,14 @@ class PrefixGenuineForward(LazyExecutorForward):
     """
 
     def __init__(self, model, T: int, rate: float = 0.0,
-                 *, boundary_surrogate_temp: float | None = None):
+                 *, boundary_surrogate_temp: float | None = None,
+                 hop_frontier: bool = False):
         super().__init__(model, T)
         self.rate = float(rate)
         self.boundary_surrogate_temp = boundary_surrogate_temp
+        # [5v B2] frontier units: spike segments (default) or, for a
+        # single-segment deep chain, the cascade hops inside it.
+        self.hop_frontier = bool(hop_frontier)
 
     def _build_executor(self):
         from mimarsinan.models.spiking.training.ttfs_segment_forward import (
@@ -46,12 +50,28 @@ class PrefixGenuineForward(LazyExecutorForward):
 
     def _executor_at_rate(self):
         executor = self._ensure_executor(self._build_executor)
-        executor.set_prefix(prefix_length_for_rate(self.rate, executor.n_segments))
+        if self.hop_frontier:
+            executor.set_hop_prefix(
+                prefix_length_for_rate(self.rate, executor.n_hop_levels)
+            )
+        else:
+            executor.set_prefix(
+                prefix_length_for_rate(self.rate, executor.n_segments)
+            )
         return executor
 
     @property
     def n_segments(self) -> int:
         return self._ensure_executor(self._build_executor).n_segments
+
+    @property
+    def frontier_units(self) -> int:
+        executor = self._ensure_executor(self._build_executor)
+        return executor.n_hop_levels if self.hop_frontier else executor.n_segments
+
+    @property
+    def frontier_k(self) -> int:
+        return prefix_length_for_rate(self.rate, self.frontier_units)
 
     @property
     def prefix_k(self) -> int:
