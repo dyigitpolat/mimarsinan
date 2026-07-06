@@ -74,10 +74,99 @@ class TestRecipeCarriesTheDemotion:
         knobs = ConversionPolicy.derive(mode, schedule).knobs
         assert knobs["wq_fast_rates"] == [0.5, 1.0]
         assert knobs["wq_fast_steps_per_rate"] == 0
-        # [5u] the bit-parity-lossless row funds its endpoint floor at the NAPQ
-        # endpoint from the measured wall headroom; every other mode keeps 600.
-        expected_steps = 16000 if mode == "ttfs" else 600
+        # [5u] the bit-parity-lossless ttfs row AND [5u generalized] the
+        # well-conditioned near-lossless rows (lif/sync/cascaded) fund a lifted
+        # NAPQ endpoint from the wall headroom; only ttfs_quantized keeps 600.
+        floor_lifted_modes = {"lif", "ttfs", "ttfs_cycle_based"}
+        expected_steps = 16000 if mode in floor_lifted_modes else 600
         assert knobs["wq_endpoint_recovery_steps"] == expected_steps
+
+
+class TestGeneralizedEndpointFloor:
+    """[5u generalized] the WQ endpoint carries the well-conditioned floor scoped
+    to itself (wq_endpoint_target_floor); the bit-parity every-endpoint floor
+    (endpoint_target_floor) still flows through unchanged; the effective floor is
+    the max of the two."""
+
+    def _capture_floor(self, monkeypatch):
+        import mimarsinan.tuning.tuners.normalization_aware_perceptron_quantization_tuner as napq_mod
+
+        seen = {}
+        monkeypatch.setattr(
+            napq_mod, "run_endpoint_recovery",
+            lambda tuner, *, base_steps, target_floor=None: seen.update(
+                base_steps=base_steps, target_floor=target_floor,
+            ),
+        )
+        return seen
+
+    def test_wq_scoped_floor_is_passed(self, tmp_path, monkeypatch):
+        seen = self._capture_floor(monkeypatch)
+        tuner = _napq_tuner(tmp_path)
+        try:
+            tuner.pipeline.config["wq_endpoint_target_floor"] = 0.98
+            tuner._post_stabilization_hook()
+            assert seen["target_floor"] == pytest.approx(0.98)
+        finally:
+            tuner.close()
+
+    def test_bit_parity_floor_still_passed(self, tmp_path, monkeypatch):
+        seen = self._capture_floor(monkeypatch)
+        tuner = _napq_tuner(tmp_path)
+        try:
+            tuner.pipeline.config["endpoint_target_floor"] = 0.98
+            tuner._post_stabilization_hook()
+            assert seen["target_floor"] == pytest.approx(0.98)
+        finally:
+            tuner.close()
+
+    def test_effective_floor_is_the_max(self, tmp_path, monkeypatch):
+        seen = self._capture_floor(monkeypatch)
+        tuner = _napq_tuner(tmp_path)
+        try:
+            tuner.pipeline.config["endpoint_target_floor"] = 0.9
+            tuner.pipeline.config["wq_endpoint_target_floor"] = 0.98
+            tuner._post_stabilization_hook()
+            assert seen["target_floor"] == pytest.approx(0.98)
+        finally:
+            tuner.close()
+
+    def test_absent_floors_pass_zero(self, tmp_path, monkeypatch):
+        seen = self._capture_floor(monkeypatch)
+        tuner = _napq_tuner(tmp_path)
+        try:
+            tuner._post_stabilization_hook()
+            assert seen["target_floor"] == pytest.approx(0.0)
+        finally:
+            tuner.close()
+
+
+class TestGeneralizedFloorRecipeKnobs:
+    """[5u generalized] the well-conditioned near-lossless recipes carry the
+    WQ-scoped floor; ttfs_quantized stays off it; bit-parity ttfs keeps its
+    every-endpoint floor."""
+
+    @pytest.mark.parametrize(
+        "mode,schedule",
+        [("lif", None), ("ttfs_cycle_based", "cascaded"),
+         ("ttfs_cycle_based", "synchronized")],
+    )
+    def test_well_conditioned_modes_carry_the_wq_scoped_floor(self, mode, schedule):
+        knobs = ConversionPolicy.derive(mode, schedule).knobs
+        assert knobs["wq_endpoint_target_floor"] == pytest.approx(0.98)
+        # WQ-scoped: the every-endpoint floor stays OFF so only the final
+        # composition lifts (one bounded wall lift).
+        assert "endpoint_target_floor" not in knobs
+
+    def test_ttfs_quantized_stays_off_the_generalized_floor(self):
+        knobs = ConversionPolicy.derive("ttfs_quantized", None).knobs
+        assert "wq_endpoint_target_floor" not in knobs
+        assert "endpoint_target_floor" not in knobs
+
+    def test_bit_parity_ttfs_uses_the_every_endpoint_floor(self):
+        knobs = ConversionPolicy.derive("ttfs", None).knobs
+        assert knobs["endpoint_target_floor"] == pytest.approx(0.98)
+        assert "wq_endpoint_target_floor" not in knobs
 
 
 class TestLadderWiring:
@@ -127,7 +216,7 @@ class TestProjectionRun:
         calls = []
         monkeypatch.setattr(
             napq_mod, "run_endpoint_recovery",
-            lambda tuner, *, base_steps: calls.append(base_steps),
+            lambda tuner, *, base_steps, target_floor=None: calls.append(base_steps),
         )
         _inject_accepting_gate(monkeypatch)
         torch.manual_seed(0)
@@ -144,7 +233,7 @@ class TestProjectionRun:
         calls = []
         monkeypatch.setattr(
             napq_mod, "run_endpoint_recovery",
-            lambda tuner, *, base_steps: calls.append(base_steps),
+            lambda tuner, *, base_steps, target_floor=None: calls.append(base_steps),
         )
         tuner = _napq_tuner(tmp_path, driver="controller", endpoint_steps=600)
         try:

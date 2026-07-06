@@ -37,8 +37,11 @@ _MODE_KNOBS = {
         "fast_ladder_freeze_bn": True,
         "kd_ce_alpha": 0.5,
         "kd_temperature": 4.0,
-        # [5v B3] the LIF half-step head-start (mapping-time theta/(2T) fold).
+        # [5v B3] the LIF half-step head-start (weight-quant QAT entry fold).
         "lif_half_step_bias": True,
+        # [5u generalized] the WQ-scoped well-conditioned endpoint floor.
+        "wq_endpoint_target_floor": 0.98,
+        "wq_endpoint_recovery_steps": 16000,
     },
     # [5u] the analytical reference is the bit-parity-lossless family: its
     # endpoint may chase the acceptance target (preservation ≡ stagnation at
@@ -64,6 +67,9 @@ _MODE_KNOBS = {
         # was the only bound binding while still improving (X3 300/300 cutoffs).
         "endpoint_recovery_steps": 600,
         "tuning_full_transform_probe": True,
+        # [5u generalized] the WQ-scoped well-conditioned endpoint floor.
+        "wq_endpoint_target_floor": 0.98,
+        "wq_endpoint_recovery_steps": 16000,
     },
     # synchronized rides the ttfs_quantized ladder shape but TRAINS the exact
     # deployed composition (ceil kernel + grid snap) as the QAT endpoint (T6);
@@ -83,6 +89,9 @@ _MODE_KNOBS = {
         "sync_entry_half_step": True,
         # [5v B1(iii)] the hop frontier (arms only on A6-FAIL x deep chains).
         "sync_hop_staged_install": True,
+        # [5u generalized] the WQ-scoped well-conditioned endpoint floor.
+        "wq_endpoint_target_floor": 0.98,
+        "wq_endpoint_recovery_steps": 16000,
     },
 }
 

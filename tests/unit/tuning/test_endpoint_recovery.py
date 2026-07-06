@@ -399,6 +399,77 @@ class TestEndpointTargetFloor:
         assert report.exit == pytest.approx(0.6)
 
 
+class TestExplicitTargetFloorAndWallCap:
+    """[5u generalized] a call site may pass an explicit floor (the WQ endpoint
+    scopes the well-conditioned floor to the final composition alone);
+    ``target_floor=None`` keeps the config-read bit-parity every-endpoint path.
+    The floor-lifted wall cap is config-overridable per-cell headroom."""
+
+    def _drive(self, tmp_path, monkeypatch, *, target_floor, config_floor=None,
+               wall_s=None, highwater=0.5, reads=(0.3, 0.6), base_steps=100):
+        tuner = _lif_tuner(tmp_path)
+        if config_floor is not None:
+            tuner.pipeline.config["endpoint_target_floor"] = config_floor
+        if wall_s is not None:
+            tuner.pipeline.config["endpoint_floor_wall_s"] = wall_s
+        _prepare_endpoint_scaffold(tuner)
+        dhat_highwater.observe(tuner.pipeline, highwater)
+        read_iter = iter(reads)
+        monkeypatch.setattr(
+            endpoint_recovery, "_fp32_deployed_read", lambda t: next(read_iter),
+        )
+        seen = {}
+
+        def fake_train(trainer, lr, target, *, max_steps, **kwargs):
+            seen.update(kwargs, target=target, lr=lr, max_steps=max_steps)
+            return reads[-1], 9
+
+        monkeypatch.setattr(
+            RecoveryEngine, "train_to_target", staticmethod(fake_train),
+        )
+        try:
+            report = run_endpoint_recovery(
+                tuner, base_steps=base_steps, target_floor=target_floor,
+            )
+        finally:
+            tuner.close()
+        return report, seen
+
+    def test_explicit_floor_overrides_absent_config(self, tmp_path, monkeypatch):
+        report, seen = self._drive(tmp_path, monkeypatch, target_floor=0.9)
+        assert seen["target"] == pytest.approx(0.9)
+        assert report.floor_lifted is True
+        assert report.target_floor == pytest.approx(0.9)
+
+    def test_explicit_floor_overrides_a_lower_config_floor(self, tmp_path, monkeypatch):
+        report, seen = self._drive(
+            tmp_path, monkeypatch, target_floor=0.9, config_floor=0.4,
+        )
+        assert seen["target"] == pytest.approx(0.9)
+
+    def test_none_target_floor_reads_config(self, tmp_path, monkeypatch):
+        report, seen = self._drive(
+            tmp_path, monkeypatch, target_floor=None, config_floor=0.9,
+        )
+        assert seen["target"] == pytest.approx(0.9)
+        assert report.floor_lifted is True
+
+    def test_zero_explicit_floor_does_not_lift(self, tmp_path, monkeypatch):
+        report, seen = self._drive(
+            tmp_path, monkeypatch, target_floor=0.0, highwater=0.77,
+        )
+        assert seen["target"] == pytest.approx(0.77)
+        assert report.floor_lifted is False
+
+    def test_wall_cap_defaults_to_policy(self, tmp_path, monkeypatch):
+        _, seen = self._drive(tmp_path, monkeypatch, target_floor=0.9)
+        assert seen["max_seconds"] == pytest.approx(150.0)
+
+    def test_wall_cap_reads_config_override(self, tmp_path, monkeypatch):
+        _, seen = self._drive(tmp_path, monkeypatch, target_floor=0.9, wall_s=90.0)
+        assert seen["max_seconds"] == pytest.approx(90.0)
+
+
 class TestNeverBelowEntry:
     def test_regression_restores_the_entry_state(self, tmp_path, monkeypatch, capsys):
         tuner = _lif_tuner(tmp_path)

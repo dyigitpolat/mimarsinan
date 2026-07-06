@@ -28,6 +28,19 @@ _BIT_PARITY_LOSSLESS_RECIPE_KNOBS = {
     "wq_endpoint_recovery_steps": 16000,
 }
 
+# [5u generalized] the endpoint target floor extends past the bit-parity family
+# to every well-conditioned near-lossless conversion (lif/sync/cascaded): a
+# gate-accepted, crater-free conversion whose deployed forward sits at the
+# pretrain envelope (below the acceptance bar, not below by a conversion crater)
+# may chase the bar. Scoped to the FINAL weight-quant endpoint alone
+# (wq_endpoint_target_floor, never the intermediate mode endpoint via
+# endpoint_target_floor) so the wall funds ONE lift; keep-best + the fp32 entry
+# guard keep it monotone-safe and A1-A6 untouched (the endpoint is not a ramp).
+_WELL_CONDITIONED_ENDPOINT_FLOOR_KNOBS = {
+    "wq_endpoint_target_floor": 0.98,
+    "wq_endpoint_recovery_steps": 16000,
+}
+
 _LIF_RECIPE_KNOBS = {
     "lif_blend_fast": True,
     "lif_tanneal": True,
@@ -45,6 +58,7 @@ _LIF_RECIPE_KNOBS = {
     # the quantized deployed sim stay bit-exact (mapping-time injection broke
     # that parity identity: t0_01 0.9336, t0_05 0.9883).
     "lif_half_step_bias": True,
+    **_WELL_CONDITIONED_ENDPOINT_FLOOR_KNOBS,
 }
 _TTFS_QUANTIZED_RECIPE_KNOBS = {
     "activation_scale_quantile": 1.0,
@@ -67,6 +81,7 @@ _SYNCHRONIZED_RECIPE_KNOBS = {
     # chain past the proven-recovery depth, the AQ ladder walks one hop level
     # per rung (per-hop keep-best re-affine) instead of a monolithic install.
     "sync_hop_staged_install": True,
+    **_WELL_CONDITIONED_ENDPOINT_FLOOR_KNOBS,
 }
 _CASCADED_RECIPE_KNOBS = {
     "ttfs_genuine_blend_ramp": True,
@@ -84,6 +99,7 @@ _CASCADED_RECIPE_KNOBS = {
     # t0_18 294/300, all climbing at cutoff); patience stops saturated cells.
     "endpoint_recovery_steps": 600,
     "tuning_full_transform_probe": True,
+    **_WELL_CONDITIONED_ENDPOINT_FLOOR_KNOBS,
 }
 
 _LIF_RATIONALE = (

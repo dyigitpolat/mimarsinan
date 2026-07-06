@@ -49,14 +49,16 @@ def _fp32_deployed_read(tuner) -> float:
     ))
 
 
-def run_endpoint_recovery(tuner, *, base_steps) -> EndpointRecoveryReport:
+def run_endpoint_recovery(tuner, *, base_steps, target_floor=None) -> EndpointRecoveryReport:
     """The generic P1'' endpoint stage: after a conversion tuner reaches rate 1.0
     and finalizes, train the DEPLOYED-COMPOSITION forward to the pipeline D-hat
     high-water target, bounded and rollback-guarded (never ends below entry).
 
-    - target: max(D-hat high-water SSOT, the recipe's [5u] target floor) — the
-      floor rides only bit-parity-lossless recipes, where preservation would
-      otherwise stagnate at the float envelope.
+    - target: max(D-hat high-water SSOT, the [5u] target floor). ``target_floor``
+      lets a call site pass an explicit floor (the WQ endpoint scopes the [5u
+      generalized] well-conditioned floor to the FINAL composition only); when
+      ``None`` the floor reads ``endpoint_target_floor`` from config — the
+      bit-parity-lossless family's every-endpoint floor.
     - budget: ``base_steps`` (the recipe's freed stabilize/ladder budget) plus
       whatever this tuner's own gated ladder left untrained.
     - geometry: a floor-LIFTED target trains the probe-validated arm (lr capped
@@ -67,7 +69,10 @@ def run_endpoint_recovery(tuner, *, base_steps) -> EndpointRecoveryReport:
       outer fp32 entry guard makes the whole stage non-destructive.
     """
     highwater = dhat_highwater.require(tuner.pipeline)
-    floor = float(tuner.pipeline.config.get("endpoint_target_floor", 0.0))
+    if target_floor is None:
+        floor = float(tuner.pipeline.config.get("endpoint_target_floor", 0.0))
+    else:
+        floor = float(target_floor)
     target = max(highwater, floor)
     floor_lifted = target > highwater
     budget = int(base_steps) + freed_ladder_steps(tuner)
@@ -86,7 +91,9 @@ def run_endpoint_recovery(tuner, *, base_steps) -> EndpointRecoveryReport:
         if floor_lifted:
             lr = min(lr, TUNING_POLICY.endpoint_floor_lr)
             min_steps = budget
-            max_seconds = TUNING_POLICY.endpoint_floor_wall_s
+            max_seconds = float(tuner.pipeline.config.get(
+                "endpoint_floor_wall_s", TUNING_POLICY.endpoint_floor_wall_s,
+            ))
         _, steps_used = RecoveryEngine.train_to_target(
             tuner.trainer,
             lr,

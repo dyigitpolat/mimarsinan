@@ -67,11 +67,20 @@ class NormalizationAwarePerceptronQuantizationTuner(PerceptronTransformTuner):
             return
         # P1'' through the transform trainer: recovery trains the float aux
         # model and reprojects, so the shipped model stays chip-quantized.
+        # [5u generalized] the WQ endpoint is the FINAL, quantized conversion
+        # composition, so it carries the well-conditioned floor
+        # (wq_endpoint_target_floor) scoped to itself alone — the intermediate
+        # mode endpoints never lift it (one lift, bounded wall). The bit-parity
+        # family's endpoint_target_floor still lifts every endpoint via config.
+        cfg = self.pipeline.config
+        target_floor = max(
+            float(cfg.get("endpoint_target_floor", 0.0)),
+            float(cfg.get("wq_endpoint_target_floor", 0.0)),
+        )
         run_endpoint_recovery(
             self,
-            base_steps=int(
-                self.pipeline.config.get("wq_endpoint_recovery_steps", 0)
-            ),
+            base_steps=int(cfg.get("wq_endpoint_recovery_steps", 0)),
+            target_floor=target_floor,
         )
 
     def run(self):

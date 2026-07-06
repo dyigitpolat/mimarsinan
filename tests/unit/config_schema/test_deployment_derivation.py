@@ -159,7 +159,9 @@ def test_ttfs_folds_fast_driver_endpoint_floor_loihi_off():
     assert dp["wq_endpoint_recovery_steps"] == 16000
 
 
-def test_endpoint_floor_folds_only_for_the_lossless_mode():
+def test_bit_parity_every_endpoint_floor_folds_only_for_the_lossless_mode():
+    # The bit-parity every-endpoint floor (endpoint_target_floor, read by every
+    # run_endpoint_recovery) rides only analytical ttfs; no other mode gets it.
     for mode, schedule in [
         ("lif", None),
         ("ttfs_quantized", None),
@@ -171,7 +173,27 @@ def test_endpoint_floor_folds_only_for_the_lossless_mode():
             dp["ttfs_cycle_schedule"] = schedule
         derive_deployment_parameters(dp)
         assert "endpoint_target_floor" not in dp, (mode, schedule)
-        assert dp["wq_endpoint_recovery_steps"] == 600, (mode, schedule)
+
+
+def test_generalized_wq_scoped_floor_folds_for_well_conditioned_modes():
+    # [5u generalized] lif/sync/cascaded carry the WQ-scoped floor
+    # (wq_endpoint_target_floor + a lifted wq budget); ttfs_quantized stays off it.
+    for mode, schedule in [
+        ("lif", None),
+        ("ttfs_cycle_based", "cascaded"),
+        ("ttfs_cycle_based", "synchronized"),
+    ]:
+        dp = {"spiking_mode": mode, "weight_quantization": True}
+        if schedule is not None:
+            dp["ttfs_cycle_schedule"] = schedule
+        derive_deployment_parameters(dp)
+        assert dp["wq_endpoint_target_floor"] == 0.98, (mode, schedule)
+        assert dp["wq_endpoint_recovery_steps"] == 16000, (mode, schedule)
+
+    dp = {"spiking_mode": "ttfs_quantized", "weight_quantization": True}
+    derive_deployment_parameters(dp)
+    assert "wq_endpoint_target_floor" not in dp
+    assert dp["wq_endpoint_recovery_steps"] == 600
 
 
 def test_ttfs_quantized_folds_full_quantile_decode():
