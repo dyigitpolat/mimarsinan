@@ -47,6 +47,8 @@ EXPECTED_POLICY_VALUES = {
     "prefix_stage_dfq_iters": 4,
     "prefix_stage_keepbest_interval": 25,
     "prefix_stage_lr": 1e-3,
+    # [5u] floor-lifted endpoint LR ceiling (the probe-validated arm).
+    "endpoint_floor_lr": 2e-3,
 }
 
 COLLAPSED_CONFIG_KEYS = frozenset({

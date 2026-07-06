@@ -74,7 +74,10 @@ class TestRecipeCarriesTheDemotion:
         knobs = ConversionPolicy.derive(mode, schedule).knobs
         assert knobs["wq_fast_rates"] == [0.5, 1.0]
         assert knobs["wq_fast_steps_per_rate"] == 0
-        assert knobs["wq_endpoint_recovery_steps"] == 600
+        # [5u] the bit-parity-lossless row funds its endpoint floor at the NAPQ
+        # endpoint from the measured wall headroom; every other mode keeps 600.
+        expected_steps = 16000 if mode == "ttfs" else 600
+        assert knobs["wq_endpoint_recovery_steps"] == expected_steps
 
 
 class TestLadderWiring:

@@ -141,3 +141,20 @@ class TestFiringModePredicates:
         assert is_novena_firing_mode(FiringMode.NOVENA)
         assert not is_novena_firing_mode(FiringMode.DEFAULT)
         assert not is_default_firing_mode(FiringMode.TTFS)
+
+
+class TestBitParityLosslessConversion:
+    """[5u] the analytic BIT_PARITY family: trained forward ≡ deployed executor
+    per-neuron, so the endpoint target floor is licensed for exactly these modes."""
+
+    def test_analytical_ttfs_is_the_only_lossless_mode(self):
+        from mimarsinan.chip_simulation.spiking_semantics import (
+            is_bit_parity_lossless_conversion,
+        )
+
+        assert is_bit_parity_lossless_conversion("ttfs") is True
+        # near-lossless (endpoint gap real, sub-SE unverified): never the floor.
+        assert is_bit_parity_lossless_conversion("lif") is False
+        assert is_bit_parity_lossless_conversion("ttfs_quantized") is False
+        # cycle-based (cascaded/synchronized) trains a different composition.
+        assert is_bit_parity_lossless_conversion("ttfs_cycle_based") is False

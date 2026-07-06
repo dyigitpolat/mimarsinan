@@ -38,7 +38,13 @@ _MODE_KNOBS = {
         "kd_ce_alpha": 0.5,
         "kd_temperature": 4.0,
     },
-    ("ttfs", None): {},
+    # [5u] the analytical reference is the bit-parity-lossless family: its
+    # endpoint may chase the acceptance target (preservation ≡ stagnation at
+    # the float envelope otherwise), funded by the measured wall headroom.
+    ("ttfs", None): {
+        "endpoint_target_floor": 0.98,
+        "wq_endpoint_recovery_steps": 16000,
+    },
     ("ttfs_quantized", None): {
         "activation_scale_quantile": 1.0,
         "manager_rate_fast_rates": [0.25, 0.5, 0.75, 1.0],
@@ -104,7 +110,8 @@ _EXPECTED_SIM_ENABLES = {
 
 _EXPECTED_SPECIAL_CASE = {
     ("lif", None): "bn_freeze",
-    ("ttfs", None): None,
+    # [5u] the endpoint target floor: the one divergence the lossless row carries.
+    ("ttfs", None): "endpoint_target_floor",
     ("ttfs_quantized", None): "full_quantile_decode",
     ("ttfs_cycle_based", "cascaded"): "fast_only_never_controller",
     # synchronized trains the exact deployed ceil kernel as the QAT endpoint (T6).
@@ -141,10 +148,27 @@ class TestDeriveKnobs:
             ("ttfs_cycle_based", "cascaded")
         ]
 
-    def test_ttfs_reference_carries_only_the_wq_demotion(self):
-        # The analytical TTFS column is the generic reference (plain fast);
-        # only the mode-independent WQ demotion rides it.
-        assert dict(ConversionPolicy.derive("ttfs").knobs) == _WQ_KNOBS
+    def test_ttfs_reference_carries_the_wq_demotion_plus_the_floor(self):
+        # The analytical TTFS column rides the plain fast ladder; beyond the
+        # mode-independent WQ demotion it carries ONLY the [5u] endpoint floor
+        # (lossless ⇒ preservation would otherwise stagnate at the envelope).
+        knobs = dict(ConversionPolicy.derive("ttfs").knobs)
+        assert knobs == {
+            **_WQ_KNOBS,
+            "endpoint_target_floor": 0.98,
+            "wq_endpoint_recovery_steps": 16000,
+        }
+
+    def test_floor_rides_only_the_bit_parity_lossless_row(self):
+        # [5u scope] near-lossless modes (lif, ttfs_quantized, synchronized) and
+        # lossy modes (cascaded) must NOT get the floor: their endpoint gap is
+        # real, and the high-water target is already the honest anchor.
+        for mode, schedule in _CELLS:
+            recipe = ConversionPolicy.derive(mode, schedule)
+            expected = mode == "ttfs"
+            assert ("endpoint_target_floor" in recipe.knobs) is expected, (
+                f"{mode}/{schedule}"
+            )
 
 
 class TestDeriveSimEnables:
@@ -191,9 +215,10 @@ class TestDeriveSpecialCases:
         else:
             assert recipe.rationale, f"{mode}/{schedule} special case must cite a finding"
 
-    def test_generic_reference_has_no_special_case(self):
+    def test_lossless_reference_marks_the_floor_as_its_special_case(self):
         recipe = ConversionPolicy.derive("ttfs")
-        assert recipe.special_case is None
+        assert recipe.special_case == "endpoint_target_floor"
+        assert recipe.rationale, "the [5u] divergence must cite its finding"
 
 
 class TestRemovedModeRejected:

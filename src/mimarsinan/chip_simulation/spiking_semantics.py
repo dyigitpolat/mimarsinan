@@ -70,6 +70,18 @@ def forces_activation_quantization(spiking_mode: str) -> bool:
     return _norm(spiking_mode) in _ACT_QUANT_MODES
 
 
+def is_bit_parity_lossless_conversion(spiking_mode: str) -> bool:
+    """Mode whose trained forward is per-neuron bit-equivalent to its deployed executor.
+
+    Exactly the analytic BIT_PARITY family (5u): analytical ``ttfs``. The
+    near-lossless modes (lif, ttfs_quantized, synchronized) keep a real endpoint
+    gap and join only after that gap is verified sub-SE; cascaded is lossy.
+    """
+    return is_analytical_ttfs(spiking_mode) and not forces_activation_quantization(
+        spiking_mode
+    )
+
+
 DEFAULT_TTFS_CYCLE_SCHEDULE = "cascaded"
 TTFS_CYCLE_SCHEDULES: FrozenSet[str] = frozenset({"cascaded", "synchronized"})
 

@@ -197,6 +197,192 @@ class TestEngagement:
             tuner.close()
 
 
+class TestEndpointTargetFloor:
+    """[5u] the endpoint target floor for bit-parity-lossless recipes.
+
+    For a lossless mode every controller target anchors at a past deployed read,
+    so preservation ≡ stagnation at the float envelope; the floor lets the
+    endpoint chase the acceptance target. When the floor LIFTS the target above
+    the high-water, the stage must also switch to the probe-validated geometry
+    (lr ≤ 2e-3, cosine over the FULL funded budget) — the default patience
+    window sits entirely inside the lr transient and would be sterile.
+    """
+
+    def _run(self, tmp_path, monkeypatch, *, floor, highwater, reads, base_steps=100):
+        tuner = _lif_tuner(tmp_path)
+        tuner.pipeline.config["endpoint_target_floor"] = floor
+        _prepare_endpoint_scaffold(tuner)
+        tuner._fast_optimizer_steps = len(tuner._fixed_ladder_rates) * 2
+        dhat_highwater.observe(tuner.pipeline, highwater)
+        read_iter = iter(reads)
+        monkeypatch.setattr(
+            endpoint_recovery, "_fp32_deployed_read", lambda t: next(read_iter),
+        )
+        seen = {}
+
+        def fake_train(trainer, lr, target, *, max_steps, **kwargs):
+            seen.update(kwargs, lr=lr, target=target, max_steps=max_steps)
+            return reads[-1], 9
+
+        monkeypatch.setattr(
+            RecoveryEngine, "train_to_target", staticmethod(fake_train),
+        )
+        try:
+            report = run_endpoint_recovery(tuner, base_steps=base_steps)
+        finally:
+            tuner.close()
+        return report, seen
+
+    def test_floor_lifts_the_target_above_the_high_water(self, tmp_path, monkeypatch):
+        report, seen = self._run(
+            tmp_path, monkeypatch, floor=0.9, highwater=0.5, reads=[0.3, 0.6],
+        )
+        assert seen["target"] == pytest.approx(0.9)
+        assert report.target == pytest.approx(0.9)
+        assert report.floor_lifted is True
+
+    def test_floor_below_high_water_keeps_the_mark_and_geometry(
+        self, tmp_path, monkeypatch,
+    ):
+        # Sterile-window regression guard for the DEFAULT path: when the floor
+        # does not lift the target, geometry is bit-identical to the pre-floor
+        # stage (pipeline lr, min_steps=0, patience armed).
+        report, seen = self._run(
+            tmp_path, monkeypatch, floor=0.4, highwater=0.77, reads=[0.3, 0.6],
+        )
+        assert seen["target"] == pytest.approx(0.77)
+        assert seen["min_steps"] == 0
+        assert seen["lr"] == pytest.approx(0.001)
+        assert report.floor_lifted is False
+
+    def test_absent_floor_is_bit_identical_to_the_pre_floor_stage(
+        self, tmp_path, monkeypatch,
+    ):
+        tuner = _lif_tuner(tmp_path)
+        assert "endpoint_target_floor" not in tuner.pipeline.config
+        _prepare_endpoint_scaffold(tuner)
+        dhat_highwater.observe(tuner.pipeline, 0.77)
+        reads = iter([0.3, 0.6])
+        monkeypatch.setattr(
+            endpoint_recovery, "_fp32_deployed_read", lambda t: next(reads),
+        )
+        seen = {}
+
+        def fake_train(trainer, lr, target, *, max_steps, **kwargs):
+            seen.update(kwargs, lr=lr, target=target)
+            return 0.6, 9
+
+        monkeypatch.setattr(
+            RecoveryEngine, "train_to_target", staticmethod(fake_train),
+        )
+        try:
+            report = run_endpoint_recovery(tuner, base_steps=10)
+        finally:
+            tuner.close()
+        assert seen["target"] == pytest.approx(0.77)
+        assert seen["min_steps"] == 0
+        assert report.floor_lifted is False and report.target_floor == 0.0
+
+    def test_lifted_floor_disarms_the_sterile_patience_window(
+        self, tmp_path, monkeypatch,
+    ):
+        # [5u geometry] min_steps == the full funded budget: stale checks accrued
+        # inside the lr-transient dip must not stop the stage (keep-best still
+        # floors at entry; the target-reach early exit remains).
+        report, seen = self._run(
+            tmp_path, monkeypatch, floor=0.9, highwater=0.5, reads=[0.3, 0.6],
+            base_steps=300,
+        )
+        assert seen["max_steps"] == 300
+        assert seen["min_steps"] == 300
+        assert seen["cosine_decay"] is True
+
+    def test_lifted_floor_caps_the_lr_at_the_probe_validated_arm(
+        self, tmp_path, monkeypatch,
+    ):
+        tuner = _lif_tuner(tmp_path)
+        tuner.pipeline_lr = 0.003  # the tier-0 pipeline lr; dip ~1.6k steps
+        tuner.pipeline.config["endpoint_target_floor"] = 0.9
+        _prepare_endpoint_scaffold(tuner)
+        dhat_highwater.observe(tuner.pipeline, 0.5)
+        reads = iter([0.3, 0.6])
+        monkeypatch.setattr(
+            endpoint_recovery, "_fp32_deployed_read", lambda t: next(reads),
+        )
+        seen = {}
+
+        def fake_train(trainer, lr, target, *, max_steps, **kwargs):
+            seen["lr"] = lr
+            return 0.6, 9
+
+        monkeypatch.setattr(
+            RecoveryEngine, "train_to_target", staticmethod(fake_train),
+        )
+        try:
+            run_endpoint_recovery(tuner, base_steps=10)
+        finally:
+            tuner.close()
+        assert seen["lr"] == pytest.approx(2e-3)
+
+    def test_gentler_pipeline_lr_is_never_raised_to_the_floor_lr(
+        self, tmp_path, monkeypatch,
+    ):
+        report, seen = self._run(
+            tmp_path, monkeypatch, floor=0.9, highwater=0.5, reads=[0.3, 0.6],
+        )
+        assert seen["lr"] == pytest.approx(0.001)
+
+    def test_entry_at_or_above_floor_does_not_engage(self, tmp_path, monkeypatch):
+        report, seen = self._run(
+            tmp_path, monkeypatch, floor=0.9, highwater=0.5, reads=[0.95],
+        )
+        assert report.engaged is False
+        assert report.exit == pytest.approx(0.95)
+        assert "target" not in seen
+
+    def test_m_safety_exit_never_below_entry_under_the_floor(
+        self, tmp_path, monkeypatch,
+    ):
+        # The floor changes how far ABOVE entry the stage may chase, never the
+        # never-below-entry contract: a wrecked floor-chase rolls back to entry.
+        tuner = _lif_tuner(tmp_path)
+        tuner.pipeline.config["endpoint_target_floor"] = 0.98
+        _prepare_endpoint_scaffold(tuner)
+        dhat_highwater.observe(tuner.pipeline, 0.5)
+        pre_sd = {k: v.clone() for k, v in tuner.model.state_dict().items()}
+        reads = iter([0.6, 0.2])
+
+        def corrupting_train(trainer, lr, target, **kwargs):
+            with torch.no_grad():
+                for p in trainer.model.parameters():
+                    p.add_(1.0)
+            return 0.2, 5
+
+        monkeypatch.setattr(
+            endpoint_recovery, "_fp32_deployed_read", lambda t: next(reads),
+        )
+        monkeypatch.setattr(
+            RecoveryEngine, "train_to_target", staticmethod(corrupting_train),
+        )
+        try:
+            report = run_endpoint_recovery(tuner, base_steps=10)
+        finally:
+            tuner.close()
+        assert report.rolled_back is True
+        assert report.exit == pytest.approx(0.6)
+        post_sd = tuner.model.state_dict()
+        for key in pre_sd:
+            assert torch.equal(pre_sd[key], post_sd[key]), key
+
+    def test_reached_false_is_a_legal_floor_outcome(self, tmp_path, monkeypatch):
+        # The floor target ceases to be a reachability certificate.
+        report, _ = self._run(
+            tmp_path, monkeypatch, floor=0.98, highwater=0.5, reads=[0.3, 0.6],
+        )
+        assert report.reached is False
+        assert report.exit == pytest.approx(0.6)
+
+
 class TestNeverBelowEntry:
     def test_regression_restores_the_entry_state(self, tmp_path, monkeypatch, capsys):
         tuner = _lif_tuner(tmp_path)

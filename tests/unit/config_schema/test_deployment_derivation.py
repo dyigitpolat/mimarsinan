@@ -147,12 +147,31 @@ def test_lif_folds_the_proven_recipe_and_enables_loihi():
     assert dp["enable_nevresim_simulation"] is True
 
 
-def test_ttfs_folds_fast_driver_no_knobs_loihi_off():
+def test_ttfs_folds_fast_driver_endpoint_floor_loihi_off():
     dp = {"spiking_mode": "ttfs", "weight_quantization": True}
     derive_deployment_parameters(dp)
     assert dp["optimization_driver"] == "fast"
     assert dp["enable_loihi_simulation"] is False  # loihi caps are LIF-only
-    assert "lif_blend_fast" not in dp  # the analytical reference carries no knobs
+    assert "lif_blend_fast" not in dp  # the analytical reference carries no mode knobs
+    # [5u] bit-parity-lossless ⇒ the endpoint chases the acceptance target,
+    # funded at the NAPQ endpoint by the measured wall headroom.
+    assert dp["endpoint_target_floor"] == 0.98
+    assert dp["wq_endpoint_recovery_steps"] == 16000
+
+
+def test_endpoint_floor_folds_only_for_the_lossless_mode():
+    for mode, schedule in [
+        ("lif", None),
+        ("ttfs_quantized", None),
+        ("ttfs_cycle_based", "cascaded"),
+        ("ttfs_cycle_based", "synchronized"),
+    ]:
+        dp = {"spiking_mode": mode, "weight_quantization": True}
+        if schedule is not None:
+            dp["ttfs_cycle_schedule"] = schedule
+        derive_deployment_parameters(dp)
+        assert "endpoint_target_floor" not in dp, (mode, schedule)
+        assert dp["wq_endpoint_recovery_steps"] == 600, (mode, schedule)
 
 
 def test_ttfs_quantized_folds_full_quantile_decode():

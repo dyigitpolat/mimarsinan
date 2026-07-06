@@ -17,6 +17,17 @@ _WQ_RECIPE_KNOBS = {
     "wq_endpoint_recovery_steps": 600,
 }
 
+# [5u] endpoint target floor for bit-parity-lossless modes: every controller
+# target anchors at a past deployed read, so for a lossless mode preservation
+# is stagnation at the float envelope; the P1'' endpoint may instead chase the
+# internal acceptance target (0.98 true ⇒ a reliable >=0.97 read at N=100).
+# The budget is the measured ~180 s artifact-wall headroom (probe-validated:
+# 16k steps at lr 2e-3 / cosine-over-budget lifted 0.9663 -> 0.9761 keep-best).
+_BIT_PARITY_LOSSLESS_RECIPE_KNOBS = {
+    "endpoint_target_floor": 0.98,
+    "wq_endpoint_recovery_steps": 16000,
+}
+
 _LIF_RECIPE_KNOBS = {
     "lif_blend_fast": True,
     "lif_tanneal": True,
@@ -75,6 +86,14 @@ _CASCADED_RATIONALE = (
     "frontier trains every layer once, at the moment its conversion damage is live "
     "(T4 shootout: 0.9629 vs 0.9277 post-FT at equal budget, mbh_t4_depth_law)."
 )
+_BIT_PARITY_LOSSLESS_RATIONALE = (
+    "Analytical ttfs deploys bit-exactly (parity 0.0000% per-neuron mismatch), so "
+    "sup(controller targets) <= float envelope + noise and the endpoint patience-stops "
+    "at exactly patience x check_interval with the budget unspent (the stagnation "
+    "theorem, mbh_analytical_ttfs_stagnation). The floor = the internal acceptance "
+    "target lets the endpoint spend the measured wall headroom; keep-best and the "
+    "entry guard keep the stage non-destructive, and reached=False stays legal."
+)
 _SYNCHRONIZED_RATIONALE = (
     "synchronized IS ttfs_quantized at deploy: sync-deploy = ttfs_quantized-deploy + the "
     "free segment-input single-spike grid-snap. It rides the ttfs_quantized ladder shape "
@@ -127,6 +146,7 @@ class ConversionPolicy:
             policy_for_spiking_mode,
         )
         from mimarsinan.chip_simulation.spiking_semantics import (
+            is_bit_parity_lossless_conversion,
             is_synchronized_ttfs,
             is_ttfs_cycle_based,
             require_known_spiking_mode,
@@ -158,6 +178,12 @@ class ConversionPolicy:
         else:
             knobs, special_case, rationale = {}, None, ""
         knobs = {**_WQ_RECIPE_KNOBS, **knobs}
+        if is_bit_parity_lossless_conversion(mode):
+            # [5u] the floor rides EXACTLY the analytic BIT_PARITY family; the
+            # predicate (not a mode literal) is the audit.
+            knobs = {**knobs, **_BIT_PARITY_LOSSLESS_RECIPE_KNOBS}
+            special_case = special_case or "endpoint_target_floor"
+            rationale = rationale or _BIT_PARITY_LOSSLESS_RATIONALE
 
         sim_enables = {
             "enable_nevresim_simulation": (
