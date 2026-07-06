@@ -9,6 +9,7 @@ import numpy.typing as npt
 import torch
 
 from mimarsinan.mapping.ir import ComputeOp, IRSource
+from mimarsinan.mapping.ir.gather_plan import gather_plan_for
 from mimarsinan.mapping.support.compute_modules import ScaleNormalizingWrapper
 
 
@@ -226,8 +227,10 @@ def execute_compute_op_numpy(
     torch_dtype = (torch.float64 if np.dtype(dtype) == np.float64
                    else torch.float32)
     x_torch = torch.tensor(original_input, dtype=torch_dtype)
+    # Convert only the producer buffers this op's gather actually reads.
+    referenced = gather_plan_for(op).referenced_node_ids
     buffers_torch = {
-        k: torch.tensor(v, dtype=torch_dtype) for k, v in state_buffer.items()
+        k: torch.tensor(state_buffer[k], dtype=torch_dtype) for k in referenced
     }
     result = execute_compute_op_torch(
         op,

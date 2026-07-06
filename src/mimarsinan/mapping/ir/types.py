@@ -10,6 +10,8 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
+from mimarsinan.mapping.ir.gather_plan import gather_plan_for
+
 if TYPE_CHECKING:
     from mimarsinan.mapping.ir.graph import IRGraph
 
@@ -63,22 +65,12 @@ class IRNode(ABC):
         input_tensor: torch.Tensor,
         buffers: Dict[int, torch.Tensor],
     ) -> torch.Tensor:
-        """Gather inputs from sources into a 1D tensor (override for special cases)."""
-        batch_size = input_tensor.shape[0]
-        sources = self.input_sources.flatten()
-        result = torch.zeros(batch_size, len(sources), device=input_tensor.device)
+        """Gather inputs from sources into a 1D tensor (override for special cases).
 
-        for idx, src in enumerate(sources):
-            if src.is_off():
-                continue
-            elif src.is_input():
-                result[:, idx] = input_tensor[:, src.index]
-            elif src.is_always_on():
-                result[:, idx] = 1.0
-            else:
-                result[:, idx] = buffers[src.node_id][:, src.index]
-
-        return result
+        Runs a weakly-cached :class:`GatherPlan` (sources are static); bit-equal
+        to the reference walk kept in ``mapping.ir.gather_plan``.
+        """
+        return gather_plan_for(self).gather(input_tensor, buffers)
 
 
 @dataclass

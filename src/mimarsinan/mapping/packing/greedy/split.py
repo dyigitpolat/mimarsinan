@@ -8,6 +8,15 @@ from mimarsinan.mapping.packing.canonical import (
     SoftCoreLike,
     SoftT,
 )
+from mimarsinan.mapping.packing.pick_index import PickBestIndex
+
+
+def _swap_in_pick_index(pick_index, removed, added) -> None:
+    """Keep the incremental pick index in lockstep with a split's remove+append."""
+    if pick_index is None:
+        return
+    pick_index.discard(removed)
+    pick_index.add(added)
 
 def _is_splittable(core: SoftCoreLike) -> bool:
     """A soft core is splittable unless it is a coalescing-group fragment (already a partial result)."""
@@ -23,6 +32,7 @@ def _try_split_into_used(
     softcores: List[SoftT],
     *,
     candidate_indices: "list[int] | None" = None,
+    pick_index: "PickBestIndex | None" = None,
 ) -> bool:
     """Split *core* into the used core with the most remaining neurons (axons fit, neurons don't, remainder above threshold).
 
@@ -69,6 +79,7 @@ def _try_split_into_used(
     place(best_idx, used_hardcores[best_idx], frag1)
     softcores.remove(core)
     softcores.append(frag2)
+    _swap_in_pick_index(pick_index, core, frag2)
     return True
 
 
@@ -85,6 +96,7 @@ def _try_split_into_unused(
     type_key: Callable[[HardT], tuple] | None = None,
     unused_by_type: "dict | None" = None,
     hard_type_key: Callable[[HardT], tuple] | None = None,
+    pick_index: "PickBestIndex | None" = None,
 ) -> bool:
     """Last-resort split of *core* into a fresh unused core when its neurons exceed every core type's capacity."""
     best_hc = None
@@ -126,5 +138,6 @@ def _try_split_into_unused(
     place(new_idx, used_hardcores[new_idx], frag1)
     softcores.remove(core)
     softcores.append(frag2)
+    _swap_in_pick_index(pick_index, core, frag2)
     return True
 

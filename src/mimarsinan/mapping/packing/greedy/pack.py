@@ -7,13 +7,13 @@ from mimarsinan.mapping.packing.canonical import (
     SoftT,
     _placement_waste,
     _remaining_capacity,
-    pick_best_softcore,
 )
 from mimarsinan.mapping.packing.greedy.split import (
     _is_splittable,
     _try_split_into_used,
     _try_split_into_unused,
 )
+from mimarsinan.mapping.packing.pick_index import PickBestIndex
 
 __all__ = ["greedy_pack_softcores"]
 
@@ -24,7 +24,7 @@ def greedy_pack_softcores(
     unused_hardcores: List[HardT],
     is_mapping_possible: Callable[[SoftT, HardT], bool],
     place: Callable[[int, HardT, SoftT], None],
-    pick_softcore: Callable[[List[SoftT]], SoftT] = pick_best_softcore,
+    pick_softcore: Callable[[List[SoftT]], SoftT] | None = None,
     fuse_hardcores: Callable[[List[HardT]], HardT] | None = None,
     split_softcore: Callable[[SoftT, int], tuple[SoftT, SoftT]] | None = None,
     split_threshold: float = 0.2,
@@ -34,6 +34,10 @@ def greedy_pack_softcores(
     Priority per softcore: exact fit in a used core, split into a used core,
     exact fit in an unused core, fusion, split into an unused core, else raise.
     Mutates ``softcores``/``used_hardcores``/``unused_hardcores`` in place.
+    ``pick_softcore=None`` (the default) keeps the canonical
+    ``pick_best_softcore`` order, accelerated (sorted fast path without
+    splitting, incremental ``PickBestIndex`` with it); passing a callable runs
+    the O(n) reference scan per pick.
     """
 
     def _core_type_key(hc: HardT) -> tuple[int, int]:
@@ -86,11 +90,14 @@ def greedy_pack_softcores(
                 used_by_tg.setdefault(new_tg, []).append(idx)
                 return
 
-    _use_sort_fast_path = (
-        pick_softcore is pick_best_softcore and split_softcore is None
-    )
+    _use_sort_fast_path = pick_softcore is None and split_softcore is None
     if _use_sort_fast_path:
         softcores.sort(key=lambda c: max(c.get_input_count(), c.get_output_count()))
+    pick_index = (
+        PickBestIndex(softcores)
+        if pick_softcore is None and split_softcore is not None
+        else None
+    )
 
     def _pop_unused_of_type(type_key: tuple[int, int]):
         bucket = unused_by_type.get(type_key)
@@ -104,7 +111,10 @@ def greedy_pack_softcores(
     while softcores:
         if _use_sort_fast_path:
             core = softcores[-1]
+        elif pick_index is not None:
+            core = pick_index.pick()
         else:
+            assert pick_softcore is not None
             core = pick_softcore(softcores)
 
         core_tg = _soft_tg(core)
@@ -133,6 +143,7 @@ def greedy_pack_softcores(
                 core, used_hardcores, split_softcore, split_threshold,
                 place, softcores,
                 candidate_indices=candidates,
+                pick_index=pick_index,
             ):
                 continue
 
@@ -188,6 +199,7 @@ def greedy_pack_softcores(
                         type_counts=None, type_key=None,
                         unused_by_type=unused_by_type,
                         hard_type_key=_core_type_key,
+                        pick_index=pick_index,
                     ):
                         continue
 
@@ -223,3 +235,5 @@ def greedy_pack_softcores(
             softcores.pop()
         else:
             softcores.remove(core)
+            if pick_index is not None:
+                pick_index.discard(core)
