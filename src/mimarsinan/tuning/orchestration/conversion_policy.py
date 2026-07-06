@@ -39,9 +39,11 @@ _LIF_RECIPE_KNOBS = {
     "kd_ce_alpha": 0.5,
     "kd_temperature": 4.0,
     # [5v B3] the LIF analogue of the TTFS half-step bake (never existed for
-    # LIF): +theta/(2T) folded at mapping turns the floor rate grid into
-    # nearest over the window and head-starts every hop's first fire
-    # (t0_01 +13 pp value-domain; t0_05 control +1.2 pp — both measured).
+    # LIF): +theta/(2T) folded as a TRAINABLE entry bias before the weight-quant
+    # QAT turns the floor rate grid into nearest over the window and head-starts
+    # every hop's first fire; the QAT owns and reconciles it so the float NF and
+    # the quantized deployed sim stay bit-exact (mapping-time injection broke
+    # that parity identity: t0_01 0.9336, t0_05 0.9883).
     "lif_half_step_bias": True,
 }
 _TTFS_QUANTIZED_RECIPE_KNOBS = {

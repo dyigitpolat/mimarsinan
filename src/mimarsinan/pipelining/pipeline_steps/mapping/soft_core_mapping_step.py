@@ -2,7 +2,6 @@ import warnings
 from typing import Iterable, cast
 
 import mimarsinan.pipelining.core.nf_scm_parity as nf_scm_parity
-from mimarsinan.chip_simulation.spiking_semantics import is_lif
 from mimarsinan.pipelining.core.steps.pipeline_step import PipelineStep
 from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 
@@ -11,7 +10,6 @@ from mimarsinan.mapping.latency.ir import IRLatency
 from mimarsinan.mapping.export.chip_quantize import quantize_ir_graph
 from mimarsinan.mapping.platform.platform_constraints import resolve_platform_mapping_params
 from mimarsinan.mapping.support.bias_compensation import (
-    apply_lif_half_step_bias_compensation,
     apply_negative_value_shifts,
     apply_ttfs_quantization_bias_compensation,
     calibration_forward_for_mode,
@@ -168,7 +166,6 @@ class SoftCoreMappingStep(PipelineStep):
             )
 
         self._apply_ttfs_quantization_bias_compensation(model, act_q)
-        self._apply_lif_half_step_bias_compensation(model, act_q)
         self._apply_negative_value_shift_compensation(model)
 
         bits = self.pipeline.config['weight_bits']
@@ -433,23 +430,6 @@ class SoftCoreMappingStep(PipelineStep):
             return
         apply_ttfs_quantization_bias_compensation(
             model, self.pipeline.config["target_tq"],
-        )
-
-    def _apply_lif_half_step_bias_compensation(self, model, act_q: bool) -> None:
-        """[5v B3] the LIF theta/(2T) head-start fold (recipe-knob-gated): floor
-        becomes nearest over the window; idempotent per perceptron."""
-        plan = DeploymentPlan.of(self.pipeline)
-        if not is_lif(plan.spiking_mode) or not act_q:
-            return
-        if not bool(self.pipeline.config.get("lif_half_step_bias", False)):
-            return
-        folded = apply_lif_half_step_bias_compensation(
-            model, int(self.pipeline.config["simulation_steps"]),
-        )
-        print(
-            f"[SoftCoreMappingStep] LIF half-step head-start folded on "
-            f"{folded} perceptrons (theta/(2T), T="
-            f"{int(self.pipeline.config['simulation_steps'])}).",
         )
 
     def _apply_negative_value_shift_compensation(self, model) -> None:

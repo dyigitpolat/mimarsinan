@@ -258,3 +258,114 @@ class TestApplyLifHalfStepBiasCompensation:
         assert p.layer.bias.requires_grad
         apply_lif_half_step_bias_compensation(model, 4)
         assert p.layer.bias.requires_grad
+
+
+class TestHalfStepEntryFoldUnification:
+    """The LIF and sync entry folds share one bake core (identical shift math);
+    only the idempotency marker differs."""
+
+    def test_lif_sync_and_core_write_identical_bias(self):
+        from mimarsinan.mapping.support.bias_compensation import (
+            apply_half_step_entry_fold,
+            apply_lif_half_step_bias_compensation,
+            apply_sync_exact_entry_half_step,
+        )
+
+        lif_model = _Model([_perceptron()])
+        sync_model = _Model([_perceptron()])
+        core_model = _Model([_perceptron()])
+        assert apply_lif_half_step_bias_compensation(lif_model, 4) == 1
+        assert apply_sync_exact_entry_half_step(sync_model, 4) == 1
+        assert apply_half_step_entry_fold(core_model, 4, baked_flag="_probe") == 1
+        lif_b = lif_model.get_perceptrons()[0].layer.bias.data
+        sync_b = sync_model.get_perceptrons()[0].layer.bias.data
+        core_b = core_model.get_perceptrons()[0].layer.bias.data
+        assert torch.equal(lif_b, sync_b)
+        assert torch.equal(lif_b, core_b)
+
+    def test_markers_are_distinct(self):
+        from mimarsinan.mapping.support.bias_compensation import (
+            LIF_HALF_STEP_FLAG,
+            SYNC_ENTRY_HALF_STEP_FLAG,
+        )
+
+        assert LIF_HALF_STEP_FLAG != SYNC_ENTRY_HALF_STEP_FLAG
+
+
+class TestLifHalfStepEntryFoldGate:
+    """[5v B3 relocation] the LIF half-step fold enters the weight-quant QAT
+    (before quantization) so the QAT reconciles it — NOT at soft-core mapping,
+    where the post-QAT injection broke the parity identity (t0_01 0.9336)."""
+
+    def _run_gate(self, model, cfg):
+        from types import SimpleNamespace
+
+        from conftest import MockPipeline
+        from mimarsinan.pipelining.pipeline_steps.quantization.weight_quantization_step import (
+            WeightQuantizationStep,
+        )
+
+        pipeline = MockPipeline(config=cfg)
+        fake_step = SimpleNamespace(pipeline=pipeline)
+        WeightQuantizationStep._apply_lif_half_step_entry_fold(fake_step, model)
+
+    def _lif_cfg(self, *, knob=True, act_q=True):
+        from conftest import default_config
+
+        cfg = default_config()
+        cfg["spiking_mode"] = "lif"
+        cfg["simulation_steps"] = 4
+        cfg["activation_quantization"] = act_q
+        if knob:
+            cfg["lif_half_step_bias"] = True
+        return cfg
+
+    def _model(self):
+        from conftest import make_tiny_supermodel
+
+        return make_tiny_supermodel()
+
+    def test_applied_for_lif_with_knob(self):
+        model = self._model()
+        self._run_gate(model, self._lif_cfg())
+        non_encoders = [
+            p for p in model.get_perceptrons()
+            if not getattr(p, "is_encoding_layer", False)
+        ]
+        assert non_encoders
+        assert all(
+            getattr(p, "_lif_half_step_baked_into_bias", False)
+            for p in non_encoders
+        )
+
+    def test_knob_off_is_bit_identical(self):
+        model = self._model()
+        before = [p.layer.bias.detach().clone() for p in model.get_perceptrons()]
+        self._run_gate(model, self._lif_cfg(knob=False))
+        for p, b in zip(model.get_perceptrons(), before):
+            assert torch.equal(p.layer.bias.detach(), b)
+
+    def test_non_lif_mode_never_folds(self):
+        model = self._model()
+        cfg = self._lif_cfg()
+        cfg["spiking_mode"] = "ttfs_quantized"
+        before = [p.layer.bias.detach().clone() for p in model.get_perceptrons()]
+        self._run_gate(model, cfg)
+        for p, b in zip(model.get_perceptrons(), before):
+            assert torch.equal(p.layer.bias.detach(), b)
+
+    def test_no_activation_quantization_never_folds(self):
+        model = self._model()
+        before = [p.layer.bias.detach().clone() for p in model.get_perceptrons()]
+        self._run_gate(model, self._lif_cfg(act_q=False))
+        for p, b in zip(model.get_perceptrons(), before):
+            assert torch.equal(p.layer.bias.detach(), b)
+
+    def test_mapping_step_no_longer_folds_lif(self):
+        from mimarsinan.pipelining.pipeline_steps.mapping.soft_core_mapping_step import (
+            SoftCoreMappingStep,
+        )
+
+        assert not hasattr(
+            SoftCoreMappingStep, "_apply_lif_half_step_bias_compensation"
+        )

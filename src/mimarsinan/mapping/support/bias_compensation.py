@@ -67,37 +67,15 @@ def apply_ttfs_quantized_bias_shift(model, target_tq: int) -> None:
 
 
 LIF_HALF_STEP_FLAG = "_lif_half_step_baked_into_bias"
-
-
-def apply_lif_half_step_bias_compensation(model, simulation_steps: int) -> int:
-    """[5v B3] The LIF analogue of the TTFS half-step bake, which the LIF path
-    never got: the deployed rate grid is theta/T (floor), so +theta/(2T) per
-    cycle turns floor into nearest over the window and head-starts every hop's
-    first fire. Idempotent; returns folds applied.
-    """
-    folded = 0
-    for perceptron in model.get_perceptrons():
-        if getattr(perceptron, "is_encoding_layer", False):
-            continue
-        shift = calculate_activation_shift(
-            simulation_steps, perceptron.activation_scale
-        )
-        if apply_additive_effective_bias_shift(
-            perceptron,
-            shift / perceptron.activation_scale,
-            baked_flag=LIF_HALF_STEP_FLAG,
-        ):
-            folded += 1
-    return folded
-
-
 SYNC_ENTRY_HALF_STEP_FLAG = "_sync_entry_half_step_folded"
 
 
-def apply_sync_exact_entry_half_step(model, simulation_steps: int) -> int:
-    """[5v B1] Fold the +0.5/S half-step as TRAINABLE entry bias before the sync
-    exact-ceil QAT (same bake math as the TTFS compensation, different decision:
-    the QAT owns and may train the fold away). Idempotent; returns folds applied.
+def apply_half_step_entry_fold(model, simulation_steps: int, *, baked_flag: str) -> int:
+    """Fold the +theta/(2T) deployed-convention half-step as a TRAINABLE entry
+    bias (identical bake math as the TTFS compensation; the QAT owns and may
+    train the fold): +theta/(2T) per cycle turns the floor rate grid into
+    nearest over the window and head-starts every hop's first fire. Encoders
+    skipped, idempotent per ``baked_flag``; returns folds applied.
     """
     folded = 0
     for perceptron in model.get_perceptrons():
@@ -109,10 +87,27 @@ def apply_sync_exact_entry_half_step(model, simulation_steps: int) -> int:
         if apply_additive_effective_bias_shift(
             perceptron,
             shift / perceptron.activation_scale,
-            baked_flag=SYNC_ENTRY_HALF_STEP_FLAG,
+            baked_flag=baked_flag,
         ):
             folded += 1
     return folded
+
+
+def apply_lif_half_step_bias_compensation(model, simulation_steps: int) -> int:
+    """[5v B3] The LIF half-step entry fold: injected before the weight-quant QAT
+    so the QAT reconciles the shifted operating point (float NF <-> quantized
+    deployed stay bit-exact). Idempotent; returns folds applied."""
+    return apply_half_step_entry_fold(
+        model, simulation_steps, baked_flag=LIF_HALF_STEP_FLAG,
+    )
+
+
+def apply_sync_exact_entry_half_step(model, simulation_steps: int) -> int:
+    """[5v B1] The sync half-step entry fold before the exact-ceil QAT. Idempotent;
+    returns folds applied."""
+    return apply_half_step_entry_fold(
+        model, simulation_steps, baked_flag=SYNC_ENTRY_HALF_STEP_FLAG,
+    )
 
 
 def _is_perceptron(node) -> bool:
