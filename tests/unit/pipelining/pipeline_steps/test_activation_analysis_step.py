@@ -79,6 +79,7 @@ class TestActivationAnalysisStep:
         metric = step.validate()
         assert isinstance(metric, float)
 
+
     def test_cleanup_closes_trainer(self, mock_pipeline):
         """cleanup() releases the step's trainer (DataLoader workers)."""
         step = self._make_step(mock_pipeline)
@@ -235,3 +236,52 @@ class TestActivationAnalysisTorchConcatRegression:
         assert len(stats["layers"]) == len(scales)
         assert stats["num_batches"] >= 2
         assert all(layer["name"] for layer in stats["layers"])
+
+
+class TestA6InstallResolutionGauge:
+    """[MBH-A6] the pre-flight value gauge is computed where theta is decided."""
+
+    def _run_step(self, tmp_path, cfg):
+        pipeline = MockPipeline(
+            config=cfg,
+            working_directory=str(tmp_path / "pipeline_cache"),
+            data_provider_factory=MockDataProviderFactory(size=64),
+        )
+        model = make_tiny_supermodel()
+        pipeline.seed("model", model)
+        step = ActivationAnalysisStep(pipeline)
+        step.name = "ActivationAnalysis"
+        pipeline.prepare_step(step)
+        step.run()
+        return pipeline
+
+    def test_lif_emits_value_gauge_at_the_simulation_grid(self, tmp_path, capsys):
+        cfg = default_config()  # lif, simulation_steps=4
+        pipeline = self._run_step(tmp_path, cfg)
+        out = capsys.readouterr().out
+        assert "[MBH-A6] kind=value" in out
+        assert "levels=4" in out
+        gauge = pipeline.cache["ActivationAnalysis.install_resolution_gauge"]
+        assert gauge["levels"] == 4
+        assert isinstance(gauge["fails"], bool)
+        assert isinstance(gauge["starved_hops"], list)
+        assert len(gauge["median_effective_levels"]) == len(
+            pipeline.cache["ActivationAnalysis.activation_scales"]
+        )
+
+    def test_aq_mode_uses_the_target_tq_grid(self, tmp_path, capsys):
+        cfg = default_config()
+        cfg["spiking_mode"] = "ttfs_quantized"
+        cfg["target_tq"] = 8
+        pipeline = self._run_step(tmp_path, cfg)
+        assert "levels=8" in capsys.readouterr().out
+        assert pipeline.cache["ActivationAnalysis.install_resolution_gauge"]["levels"] == 8
+
+    def test_analytic_ttfs_has_no_value_grid(self, tmp_path, capsys):
+        cfg = default_config()
+        cfg["spiking_mode"] = "ttfs"
+        pipeline = self._run_step(tmp_path, cfg)
+        assert "[MBH-A6]" not in capsys.readouterr().out
+        gauge = pipeline.cache["ActivationAnalysis.install_resolution_gauge"]
+        assert gauge["levels"] is None
+        assert gauge["fails"] is False

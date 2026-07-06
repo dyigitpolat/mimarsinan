@@ -1,9 +1,19 @@
 from typing import Iterable, cast
 
+from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 from mimarsinan.pipelining.core.registry.trainer_factory import make_basic_trainer
 from mimarsinan.pipelining.core.steps.trainer_pipeline_step import TrainerPipelineStep
+from mimarsinan.spiking.gain_correction import per_perceptron_cascade_depth
+from mimarsinan.tuning.orchestration.install_resolution import (
+    ChannelStatsAccumulator,
+    attach_activation_decorator,
+    build_value_install_gauge,
+    emit_value_gauge,
+    gauge_summary,
+    value_grid_levels,
+)
 from mimarsinan.tuning.orchestration.tuning_budget import tuning_budget_from_pipeline
-from mimarsinan.models.nn.layers import SavedTensorDecorator, TransformedActivation
+from mimarsinan.models.nn.layers import SavedTensorDecorator
 
 import torch
 
@@ -119,27 +129,17 @@ def _attach_saved_tensor_decorator(perceptron):
     activation frees immediately (avoids OOM on large-input backbones).
     """
     decorator = SavedTensorDecorator(sample_to_cpu=True, max_samples=MAX_SAMPLES_PER_BATCH)
-    activation = perceptron.activation
-    if hasattr(activation, "decorate") and hasattr(activation, "pop_decorator"):
-        activation.decorate(decorator)
-
-        def cleanup():
-            activation.pop_decorator()
-
-        return decorator, cleanup
-
-    wrapped_activation = TransformedActivation(activation, [decorator])
-    perceptron.set_activation(wrapped_activation)
-
-    def cleanup():
-        perceptron.set_activation(activation)
-
+    cleanup = attach_activation_decorator(perceptron, decorator)
     return decorator, cleanup
 
 
 class ActivationAnalysisStep(TrainerPipelineStep):
     REQUIRES = ("model",)
-    PROMISES = ("activation_scales", "activation_scale_stats")
+    PROMISES = (
+        "activation_scales",
+        "activation_scale_stats",
+        "install_resolution_gauge",
+    )
 
     def __init__(self, pipeline):
         super().__init__(self.REQUIRES, self.PROMISES, self.UPDATES, self.CLEARS, pipeline)
@@ -156,11 +156,18 @@ class ActivationAnalysisStep(TrainerPipelineStep):
 
         perceptrons = list(model.get_perceptrons())
         decorators = []
+        channel_accumulators = []
         cleanup_callbacks = []
         for perceptron in perceptrons:
             decorator, cleanup = _attach_saved_tensor_decorator(perceptron)
             decorators.append(decorator)
             cleanup_callbacks.append(cleanup)
+            # [MBH-A6] channel-resolved capture rides the same forward pass.
+            accumulator = ChannelStatsAccumulator()
+            channel_accumulators.append(accumulator)
+            cleanup_callbacks.append(
+                attach_activation_decorator(perceptron, accumulator)
+            )
 
         n_batches = _analysis_batch_count(self.pipeline)
         sampled_activations = [[] for _ in perceptrons]
@@ -230,5 +237,25 @@ class ActivationAnalysisStep(TrainerPipelineStep):
         assert validation_loader is not None, "trainer was closed during analysis"
         self.trainer.val_iter = iter(validation_loader)
 
+        gauge = self._a6_value_gauge(
+            model, perceptrons, channel_accumulators, activation_scales,
+        )
+
         self.add_entry("activation_scales", activation_scales)
         self.add_entry("activation_scale_stats", activation_scale_stats)
+        self.add_entry("install_resolution_gauge", gauge_summary(gauge))
+
+    def _a6_value_gauge(self, model, perceptrons, accumulators, scales):
+        """[MBH-A6] the pre-flight value-starvation gauge at the install grid
+        (warn-only: thresholds need matrix-wide calibration before gating)."""
+        levels = value_grid_levels(
+            DeploymentPlan.of(self.pipeline).spiking_mode, self.pipeline.config,
+        )
+        if levels is None:
+            return None
+        depths = per_perceptron_cascade_depth(model.get_mapper_repr())
+        gauge = build_value_install_gauge(
+            list(zip(perceptrons, accumulators)), scales, depths, levels,
+        )
+        emit_value_gauge(type(self).__name__, gauge)
+        return gauge

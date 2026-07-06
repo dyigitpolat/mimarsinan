@@ -301,6 +301,24 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
         self._gain_correction_stats = None
         self._maybe_apply_gain_correction()
         self._theta_cotrain = cal.theta_cotrain
+        if not self._synchronized:
+            self._emit_a6_chain_gauge()
+
+    def _emit_a6_chain_gauge(self) -> None:
+        """[MBH-A6] name the cascade's hop-chain depth at the install anchor
+        (5v: the compounding exponent of every install kernel; warn-only)."""
+        from mimarsinan.spiking.gain_correction import per_perceptron_cascade_depth
+        from mimarsinan.tuning.orchestration.install_resolution import (
+            emit_chain_gauge,
+        )
+
+        depths = per_perceptron_cascade_depth(self.model.get_mapper_repr())
+        emit_chain_gauge(
+            type(self).__name__,
+            max_intra_segment_depth=max(depths.values(), default=0),
+            s=self._T,
+            n_segments=max(1, int(self._n_spike_segments or 1)),
+        )
 
     def _resolve_prefix_ramp(self, plan):
         """Settle the P4 prefix decision (needs the model's segment count) and,
