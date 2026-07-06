@@ -45,9 +45,11 @@ class _ResidualConcatMapper(Mapper):
         return torch.cat(parts) if parts else None
 
     def propagate_boundary_scale(self, deps, out_scales, default):
-        from mimarsinan.mapping.mappers.scale_propagation import mean_source_scale
+        # Lane-parallel concat: the scalar wire scale must cover the widest
+        # branch (§6b contract-1); equal-θ branches reduce to the old mean.
+        from mimarsinan.mapping.mappers.scale_propagation import max_source_scale
 
-        return mean_source_scale(deps, out_scales, float(default))
+        return max_source_scale(deps, out_scales, float(default))
 
 
 def _is_unbound_add(mapper) -> bool:

@@ -6,6 +6,23 @@ from dataclasses import dataclass
 from typing import Any
 
 
+def encoder_scale_pin(config) -> float | None:
+    """The deployed encoder decode scale when the plan pins it, else ``None``.
+
+    Cascaded TTFS deploys the subsumed encoder at ``input_data_scale`` (the FT
+    rebuild enforces it), so QAT must train under the same pin — P1'
+    trained-parameter conservation (§6b contract-2); other modes carry theta_enc
+    through mapping and keep the measured quantile.
+    """
+    # Lazy: chip_simulation has a fragile import cycle; a top-level import breaks
+    # when this module loads before chip_simulation finishes initializing.
+    from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
+
+    if DeploymentPlan.resolve(config).is_cascaded_ttfs:
+        return 1.0
+    return None
+
+
 @dataclass(frozen=True)
 class CalibrationPipeline:
     """The resolved, composable calibration steps for a TTFS-cycle adaptation run."""

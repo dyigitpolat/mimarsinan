@@ -96,6 +96,10 @@ class Perceptron(nn.Module):
 
         self.per_input_scales = None
 
+        # §6b contract-1: observed-traffic wire-scale floor for fan-in consumers;
+        # None everywhere else so the mean-of-θ propagation stays bit-identical.
+        self.boundary_scale_floor = None
+
         # nn.Linear puts output channels on the LAST dim; conv mappers driving
         # this perceptron through F.conv override this to 1 (channels-first).
         self.output_channel_axis = -1
@@ -107,6 +111,7 @@ class Perceptron(nn.Module):
         # Caches saved before the layout declaration carry the nn.Linear
         # channels-last layout; conv mappers re-stamp channels-first on load.
         self.__dict__.setdefault("output_channel_axis", -1)
+        self.__dict__.setdefault("boundary_scale_floor", None)
 
     def set_parameter_scale(self, new_scale):
         if isinstance(new_scale, float):
@@ -122,6 +127,9 @@ class Perceptron(nn.Module):
         if isinstance(new_scale, float):
             new_scale = torch.tensor(new_scale)
         self.input_activation_scale.data = new_scale.data
+
+    def set_boundary_scale_floor(self, floor):
+        self.boundary_scale_floor = None if floor is None else float(floor)
 
     def append_input_wire_op(self, module):
         """Append a wire op (e.g. an STE input quantizer) after ``input_activation``."""

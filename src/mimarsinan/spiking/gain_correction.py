@@ -43,6 +43,24 @@ def per_perceptron_cascade_depth(model_repr) -> dict:
     return depths
 
 
+def require_intra_segment_depth(depths: dict) -> None:
+    """Fail loud when gain correction is requested on a boundary-dominated graph.
+
+    gamma(S)^d inverts INTRA-segment ramp attenuation; with all intra-segment
+    depths <= 1 the graph's composition cost lives at decode/re-encode boundaries
+    where the per-hop drift is inflation — the trim is mis-signed there (§5p).
+    """
+    max_depth = max(depths.values(), default=0)
+    if max_depth <= 1:
+        raise ValueError(
+            "gain correction requested on a boundary-dominated graph "
+            f"(max intra-segment depth {max_depth} <= 1): gamma(S)^d is "
+            "mis-signed there (per-hop drift is inflation, not attenuation); "
+            "disable ttfs_gain_correction / ttfs_gain_correction_ramp for this "
+            "vehicle"
+        )
+
+
 def cascaded_gain_factors(model, T: int, *, rule: str = "relative", c: float = 1.9) -> dict:
     """Per-perceptron target gain factor ``g_d`` keyed by ``id(perceptron)`` (no mutation).
 
@@ -54,6 +72,7 @@ def cascaded_gain_factors(model, T: int, *, rule: str = "relative", c: float = 1
     gfn = _RULES[rule]
     S = int(T)
     depths = per_perceptron_cascade_depth(model.get_mapper_repr())
+    require_intra_segment_depth(depths)
     out: dict = {}
     for perceptron in model.get_perceptrons():
         if getattr(perceptron, "is_encoding_layer", False):

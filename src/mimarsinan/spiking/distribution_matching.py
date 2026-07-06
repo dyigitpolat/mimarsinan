@@ -10,7 +10,74 @@ from mimarsinan.spiking.dfq_bias_correction import (
     perceptron_channel_mean as _perceptron_channel_mean,
     teacher_activation_samples as _teacher_activation_samples,
 )
-from mimarsinan.spiking.scale_aware_boundaries import calibrate_scale_aware_boundaries
+from mimarsinan.spiking.scale_aware_boundaries import (
+    calibrate_scale_aware_boundaries,
+    propagate_boundary_input_scales,
+)
+
+FANIN_TRAFFIC_QUANTILE = 0.999
+
+
+def _downstream_consumer_perceptrons(driver, join_node) -> list:
+    """Perceptrons that read ``join_node``'s value, walking transparent nodes."""
+    consumers: list = []
+    seen: set = set()
+    frontier = [join_node]
+    while frontier:
+        node = frontier.pop()
+        for consumer in driver._consumers.get(node, []):
+            if id(consumer) in seen:
+                continue
+            seen.add(id(consumer))
+            perceptron = getattr(consumer, "perceptron", None)
+            if perceptron is not None:
+                consumers.append(perceptron)
+            else:
+                frontier.append(consumer)
+    return consumers
+
+
+def calibrate_fanin_boundary_scales(
+    model, cal_x, T, *, quantile: float = FANIN_TRAFFIC_QUANTILE,
+    input_data_scale: float = 1.0,
+):
+    """Lift fan-in consumers' wire-scale floors from observed boundary traffic.
+
+    §6b contract-1: at a multi-source join the traffic range is up to the SUM of
+    the source ranges, so mean-of-producer-θ under-covers and saturates the
+    re-encode clamp. One calibration batch through the mode's genuine forward
+    measures the actual join traffic; consumers get a durable
+    ``boundary_scale_floor`` (max-only — in-range traffic changes nothing).
+    """
+    # Lazy: segment_policies pulls chip_simulation (circular at module top).
+    from mimarsinan.spiking.segment_forward import (
+        SegmentForwardDriver,
+        TtfsSegmentPolicy,
+    )
+
+    driver = SegmentForwardDriver(model.get_mapper_repr(), int(T), TtfsSegmentPolicy())
+    joins: dict = {}
+    with torch.no_grad():
+        driver(cal_x, join_value_recorder=joins)
+
+    n_lifted = 0
+    for join_node, traffic in joins.items():
+        observed = float(
+            torch.quantile(traffic.abs().to(torch.float32).flatten(), float(quantile))
+        )
+        for perceptron in _downstream_consumer_perceptrons(driver, join_node):
+            current = float(perceptron.input_activation_scale)
+            if observed > current:
+                perceptron.set_boundary_scale_floor(observed)
+                n_lifted += 1
+
+    if n_lifted:
+        propagate_boundary_input_scales(model, input_data_scale=input_data_scale)
+    return {
+        "n_joins": len(joins),
+        "n_lifted": n_lifted,
+        "quantile": float(quantile),
+    }
 from mimarsinan.spiking.segment_partition import perceptron_of
 
 
@@ -87,6 +154,7 @@ def match_activation_distributions(
     ]
 
     calibrate_scale_aware_boundaries(model, theta_out)
+    fanin_stats = calibrate_fanin_boundary_scales(model, cal_x, T)
 
     dead_before = _dead_fraction(model, cal_x, T)
     gap_stats = dfq_correct_biases(
@@ -108,4 +176,6 @@ def match_activation_distributions(
         "bias_iters": int(bias_iters),
         "eta": float(eta),
         "num_perceptrons": n_perceptrons,
+        "fanin_joins": int(fanin_stats["n_joins"]),
+        "fanin_lifted": int(fanin_stats["n_lifted"]),
     }

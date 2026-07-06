@@ -9,6 +9,7 @@ from mimarsinan.tuning.axes import ClampAxis
 from mimarsinan.tuning.orchestration.adaptation_manager import (
     lif_subsumed_ladder_steps,
 )
+from mimarsinan.tuning.orchestration.calibration_pipeline import encoder_scale_pin
 from mimarsinan.tuning.orchestration.genuine_probe import iter_val_batches
 from mimarsinan.tuning.orchestration.smooth_adaptation_tuner import SmoothAdaptationTuner
 
@@ -58,6 +59,7 @@ class ClampTuner(SmoothAdaptationTuner):
         self._axis.set_rate(rate)
 
     def _calculate_activation_scales(self, scales, activation_scale_stats=None):
+        encoder_pin = encoder_scale_pin(self.pipeline.config)
         perceptrons = list(self.model.get_perceptrons())
         if len(scales) != len(perceptrons):
             raise ValueError(
@@ -94,6 +96,8 @@ class ClampTuner(SmoothAdaptationTuner):
                         f"layer '{perceptron.name}': {act_scale} != {expected_scale}"
                     )
 
+            if encoder_pin is not None and getattr(perceptron, "is_encoding_layer", False):
+                act_scale = encoder_pin
             perceptron.set_activation_scale(float(act_scale))
             diagnostics.append(
                 {

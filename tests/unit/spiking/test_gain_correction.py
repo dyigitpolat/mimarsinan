@@ -205,3 +205,37 @@ class TestRevivesDeepLayers:
             f"deep-layer firing rate must rise after correction (revival): "
             f"{before} -> {after}"
         )
+
+
+class TestBoundaryDominatedGuard:
+    """gamma(S)^d models INTRA-segment ramp attenuation; on a boundary-dominated
+    graph (all intra-segment depths <= 1) the per-hop drift is inflation, not
+    attenuation, and the trim is mis-signed (T4 SS2b: -0.4/-1.6 pp measured).
+    Requesting gain correction there must fail loud, both cold and ramp."""
+
+    def test_host_op_graph_rejects_cold_correction(self):
+        flow, _ = build_cascade_flow(host_ops=True, depth=4, S=8, seed=0)
+        depths = per_perceptron_cascade_depth(flow.get_mapper_repr())
+        assert max(depths.values()) <= 1  # fixture is boundary-dominated
+        with pytest.raises(ValueError, match="boundary-dominated"):
+            apply_cascaded_gain_correction(flow, 8, rule="relative")
+
+    def test_host_op_graph_rejects_ramp_factors(self):
+        flow, _ = build_cascade_flow(host_ops=True, depth=4, S=8, seed=0)
+        with pytest.raises(ValueError, match="boundary-dominated"):
+            cascaded_gain_factors(flow, 8, rule="relative")
+
+    def test_two_layer_chain_rejects(self):
+        model = make_tiny_supermodel()  # depths [0, 1]
+        with pytest.raises(ValueError, match="boundary-dominated"):
+            cascaded_gain_factors(model, 8, rule="relative")
+
+    def test_deep_intra_segment_graph_still_corrects(self):
+        flow, _ = build_cascade_flow(host_ops=False, depth=4, S=8, seed=0)
+        stats = apply_cascaded_gain_correction(flow, 8, rule="relative")
+        assert stats["n_corrected"] >= 1
+
+    def test_guard_names_the_depths(self):
+        flow, _ = build_cascade_flow(host_ops=True, depth=3, S=8, seed=0)
+        with pytest.raises(ValueError, match="max intra-segment depth"):
+            cascaded_gain_factors(flow, 8, rule="relative")

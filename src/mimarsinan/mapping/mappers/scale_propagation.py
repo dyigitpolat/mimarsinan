@@ -47,6 +47,18 @@ def mean_source_scale(deps, out_scales, default):
     return sum(present) / len(present)
 
 
+def max_source_scale(deps, out_scales, default):
+    """Max of a node's recorded source out-scales (``default`` if none).
+
+    The fan-in coverage rule for lane-parallel joins (§6b contract-1): a scalar
+    wire scale must cover the widest lane; equal-θ fan-ins reduce to the mean.
+    """
+    present = present_source_scales(deps, out_scales)
+    if not present:
+        return default
+    return max(float(s) for s in present)
+
+
 def perceptron_source_out_scale(perceptron) -> torch.Tensor:
     """Per-output-channel out-scale from a perceptron's activation_scale; a per-channel theta is carried verbatim when its length matches output width, else mean-folded."""
     n_out = perceptron.output_channels
@@ -91,9 +103,20 @@ def perceptron_per_source_scale(node, deps, out_scales) -> torch.Tensor:
 
 
 def perceptron_boundary_scale(node, deps, out_scales, default) -> float:
-    """Shared ``propagate_boundary_scale`` body for perceptron-bearing mappers."""
+    """Shared ``propagate_boundary_scale`` body for perceptron-bearing mappers.
+
+    An observed-traffic ``boundary_scale_floor`` (fan-in calibration, §6b
+    contract-1) survives every re-propagation by folding into the walk here.
+    """
     perceptron = node.perceptron
     in_scale = mean_source_scale(deps, out_scales, default)
+    floor = getattr(perceptron, "boundary_scale_floor", None)
+    if floor is not None:
+        floor = float(floor)
+        if isinstance(in_scale, torch.Tensor):
+            in_scale = in_scale.clamp(min=floor)
+        else:
+            in_scale = max(float(in_scale), floor)
     perceptron.set_input_activation_scale(in_scale)
     return float(perceptron.activation_scale)
 

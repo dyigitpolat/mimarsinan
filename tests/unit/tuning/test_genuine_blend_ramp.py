@@ -115,7 +115,8 @@ class TestGainCorrectionFlag:
         pipeline = _make_pipeline(tmp_path)
         pipeline.config["ttfs_gain_correction"] = on
         pipeline.config["ttfs_gain_correction_rule"] = rule
-        model = make_tiny_supermodel()
+        # depths [0, 1, 2]: deep enough that the boundary-dominated guard admits it
+        model = make_tiny_supermodel(hidden_layers=2)
         before = [float(p.activation_scale) for p in model.get_perceptrons()]
         am = AdaptationManager()
         tuner = TTFSCycleAdaptationTuner(
@@ -137,6 +138,17 @@ class TestGainCorrectionFlag:
         assert after[0] == pytest.approx(before[0])
         assert any(a < b - 1e-9 for a, b in zip(after, before))
 
+    def test_boundary_dominated_graph_fails_loud(self, tmp_path):
+        # depths [0, 1]: gamma is mis-signed there (§5p) — requesting it must raise.
+        pipeline = _make_pipeline(tmp_path)
+        pipeline.config["ttfs_gain_correction"] = True
+        model = make_tiny_supermodel()
+        with pytest.raises(ValueError, match="boundary-dominated"):
+            TTFSCycleAdaptationTuner(
+                pipeline, model=model, target_accuracy=0.5,
+                lr=pipeline.config["lr"], adaptation_manager=AdaptationManager(),
+            )
+
 
 class TestGainCorrectionRamp:
     """Rate-gated gain correction: scales ramp base -> base*g_d with _set_rate, so
@@ -149,7 +161,7 @@ class TestGainCorrectionRamp:
         pipeline = _make_pipeline(tmp_path, blend=False)
         pipeline.config["ttfs_gain_correction_ramp"] = True
         pipeline.config["ttfs_gain_correction_rule"] = rule
-        model = make_tiny_supermodel()
+        model = make_tiny_supermodel(hidden_layers=2)
         base = [float(p.activation_scale) for p in model.get_perceptrons()]
         am = AdaptationManager()
         tuner = TTFSCycleAdaptationTuner(

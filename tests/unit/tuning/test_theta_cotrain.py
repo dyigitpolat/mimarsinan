@@ -34,7 +34,8 @@ def _make(tmp_path, *, theta_cotrain, schedule="cascaded", gain_ramp=False, blen
         cfg["ttfs_distmatch_bias_iters"] = 3
     pipeline = MockPipeline(config=cfg, working_directory=str(tmp_path))
     pipeline._target_metric = 0.5
-    model = make_tiny_supermodel()
+    # Gain correction requires intra-segment depth >= 2 (boundary-dominated guard).
+    model = make_tiny_supermodel(hidden_layers=2 if gain_ramp else 1)
     am = AdaptationManager()
     tuner = TTFSCycleAdaptationTuner(
         pipeline, model=model, target_accuracy=0.5,

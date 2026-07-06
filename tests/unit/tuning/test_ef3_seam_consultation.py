@@ -126,9 +126,11 @@ def _make_tuner(tmp_path, *, schedule="cascaded", **extra):
     cfg.update(extra)
     pipeline = MockPipeline(config=cfg, working_directory=str(tmp_path))
     pipeline._target_metric = 0.5
+    # Gain flags require intra-segment depth >= 2 (boundary-dominated guard).
+    deep = bool(extra.get("ttfs_gain_correction") or extra.get("ttfs_gain_correction_ramp"))
     tuner = TTFSCycleAdaptationTuner(
         pipeline,
-        model=make_tiny_supermodel(),
+        model=make_tiny_supermodel(hidden_layers=2 if deep else 1),
         target_accuracy=0.5,
         lr=cfg["lr"],
         adaptation_manager=AdaptationManager(),

@@ -240,9 +240,9 @@ def default_config():
 # ---------------------------------------------------------------------------
 
 class TinyPerceptronFlow(PerceptronFlow):
-    """Two-perceptron MLP for testing (64 -> 16 -> 4)."""
+    """Tiny MLP chain for testing (64 -> 16 x hidden_layers -> 4)."""
 
-    def __init__(self, input_shape=(1, 8, 8), num_classes=4):
+    def __init__(self, input_shape=(1, 8, 8), num_classes=4, hidden_layers=1):
         super().__init__("cpu")
         in_features = 1
         for d in input_shape:
@@ -250,6 +250,9 @@ class TinyPerceptronFlow(PerceptronFlow):
 
         self.input_activation = nn.Identity()
         self.p1 = Perceptron(16, in_features, normalization=nn.BatchNorm1d(16))
+        self.hidden = nn.ModuleList(
+            Perceptron(16, 16) for _ in range(max(0, hidden_layers - 1))
+        )
         self.p2 = Perceptron(num_classes, 16)
 
         inp = InputMapper(input_shape)
@@ -257,6 +260,8 @@ class TinyPerceptronFlow(PerceptronFlow):
         out = EinopsRearrangeMapper(self._in_act_mapper, "... c h w -> ... (c h w)")
         out = Ensure2DMapper(out)
         out = PerceptronMapper(out, self.p1)
+        for perceptron in self.hidden:
+            out = PerceptronMapper(out, perceptron)
         out = PerceptronMapper(out, self.p2)
         self._mapper_repr = ModelRepresentation(out)
 
@@ -280,11 +285,11 @@ class TinyPerceptronFlow(PerceptronFlow):
         return self._mapper_repr(x)
 
 
-def make_tiny_supermodel(input_shape=(1, 8, 8), num_classes=4, tq=4):
+def make_tiny_supermodel(input_shape=(1, 8, 8), num_classes=4, tq=4, hidden_layers=1):
     """Build a minimal PerceptronFlow for testing, with proper activation setup."""
     from mimarsinan.tuning.orchestration.adaptation_manager import AdaptationManager
 
-    model = TinyPerceptronFlow(input_shape, num_classes)
+    model = TinyPerceptronFlow(input_shape, num_classes, hidden_layers)
     for p in model.get_perceptrons():
         p.is_encoding_layer = True
         break

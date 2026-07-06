@@ -108,15 +108,18 @@ class SegmentForwardDriver:
         self, x, *,
         compute_min_recorder: dict | None = None,
         node_value_recorder: dict | None = None,
+        join_value_recorder: dict | None = None,
     ):
-        # node_value_recorder is a pure side-channel: it never alters the forward output.
+        # The recorders are pure side-channels: they never alter the forward output.
         self._node_value_recorder = node_value_recorder
+        self._join_value_recorder = join_value_recorder
         self.policy.prepare(self)
         try:
             return self._run(x, compute_min_recorder)
         finally:
             self.policy.finalize(self)
             self._node_value_recorder = None
+            self._join_value_recorder = None
 
     def _forward_node(self, node, values, x):
         d = self._deps.get(node, [])
@@ -139,6 +142,10 @@ class SegmentForwardDriver:
             shift = getattr(node, "_negative_shift", None)
             if shift is not None:
                 value = value + torch.as_tensor(shift, dtype=value.dtype, device=value.device)
+            join_recorder = getattr(self, "_join_value_recorder", None)
+            if join_recorder is not None and len(self._deps.get(node, [])) >= 2:
+                # Post-shift: this is the value the boundary re-encode normalizes.
+                join_recorder[node] = value.detach()
         values[node] = value
 
     def _run(self, x, compute_min_recorder):
