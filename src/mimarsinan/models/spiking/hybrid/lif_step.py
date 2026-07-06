@@ -109,32 +109,45 @@ class HybridLifStepMixin(HybridFlowHost):
                                    device=device, dtype=COMPUTE_DTYPE)
                        if single_spike else None)
 
+        # A gated core only consumes its axon fill inside [latency, latency+T);
+        # filling outside that window is dead work (input_signals feed nothing),
+        # so both loops walk precomputed per-cycle active sets. Static per stage.
+        core_latencies = [int(c.latency or 0) for c in cores]
+        stepable = [i for i, c in enumerate(cores) if c.latency is not None]
+        if latency_gated:
+            active_by_cycle = seg.get("active_by_cycle")
+            if active_by_cycle is None or len(active_by_cycle) < cycles:
+                active_by_cycle = [
+                    [i for i in stepable if cores[i].latency <= cycle < T + cores[i].latency]
+                    for cycle in range(cycles)
+                ]
+                seg["active_by_cycle"] = active_by_cycle
+            fill_by_cycle = active_by_cycle
+        else:
+            # An ungated policy steps every core every cycle; fill everything.
+            active_by_cycle = [stepable] * cycles
+            fill_by_cycle = [list(range(len(cores)))] * cycles
+
         for cycle in range(cycles):
             input_spikes = input_spike_train[cycle] if cycle < T else zeros_in
 
-            for core_idx, core in enumerate(cores):
-                local_cycle = cycle - int(core.latency or 0)
-                core_input_spikes = (
-                    input_spike_train[local_cycle]
-                    if 0 <= local_cycle < T
-                    else zeros_in
-                )
+            for core_idx in fill_by_cycle[cycle]:
+                local_cycle = cycle - core_latencies[core_idx]
                 self._fill_signal_tensor_from_spans(
                     input_signals[core_idx],
-                    input_spikes=core_input_spikes,
+                    input_spikes=(
+                        input_spike_train[local_cycle]
+                        if 0 <= local_cycle < T
+                        else zeros_in
+                    ),
                     buffers=buffers,
                     plan=axon_fill_plans[core_idx],
                     cycle=cycle,
                     single_spike=single_spike,
-                    latency=int(core.latency or 0),
+                    latency=core_latencies[core_idx],
                 )
 
-            for core_idx, core in enumerate(cores):
-                if core.latency is None:
-                    continue
-                if latency_gated and not (cycle >= core.latency and cycle < T + core.latency):
-                    continue
-
+            for core_idx in active_by_cycle[cycle]:
                 buffers[core_idx] = policy.step(
                     neuron_states[core_idx],
                     core_params[core_idx],

@@ -26,7 +26,12 @@ def lif_fire_and_reset(
     if firing_mode == "Novena":
         memb.masked_fill_(fired, 0.0)
     elif firing_mode == "Default":
-        memb.sub_(fired.to(memb.dtype) * threshold)
+        fired_typed = fired.to(memb.dtype)
+        memb.sub_(fired_typed * threshold)
+        # The reset conversion doubles as the output when dtypes agree (the
+        # hybrid cycle loop's hot path) — same values, one fewer kernel.
+        if output_dtype == memb.dtype or (output_dtype is None and memb.dtype == torch.float32):
+            return fired_typed
     if output_dtype is not None:
         return fired.to(output_dtype)
     return fired.float()
