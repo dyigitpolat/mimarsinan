@@ -245,3 +245,82 @@ class TestHopStageReaffine:
             assert calls == [("reaffine", 0.5), ("train", 0.5)]
         finally:
             tuner.close()
+
+
+class TestStagedHalfStepDeferral:
+    """[fbb1 finding] the entry fold assumes the ceil kernel: applied at init it
+    poisons the k-hybrid's FLOAT suffix (t0_21: live k=1 read 0.25, the rung's
+    training dragged D-hat 0.68 -> 0.54, the gate refused every staged rung).
+    Under hop staging the fold defers to the conversion endpoint, where the
+    kernel is fully installed and the fold is literally the QAT's entry bias."""
+
+    def _tuner(self, tmp_path, monkeypatch, *, gauge_fails):
+        monkeypatch.setattr(
+            hop_staging, "_install_gauge_fails",
+            lambda tuner, levels: gauge_fails,
+        )
+        cfg = _sync_cfg()
+        cfg["sync_entry_half_step"] = True
+        from mimarsinan.tuning.orchestration.adaptation_manager_factory import (
+            create_adaptation_manager_for_model,
+        )
+        from mimarsinan.tuning.tuners.activation_quantization_tuner import (
+            ActivationQuantizationTuner,
+        )
+
+        pipeline = MockPipeline(config=cfg, working_directory=str(tmp_path))
+        pipeline._target_metric = 0.0
+        model = _deep_model()
+        manager = create_adaptation_manager_for_model(cfg, model)
+        return ActivationQuantizationTuner(
+            pipeline, model, cfg["target_tq"], 0.5, cfg["lr"], manager,
+        )
+
+    def test_staged_run_defers_the_fold_past_init(self, tmp_path, monkeypatch):
+        tuner = self._tuner(tmp_path, monkeypatch, gauge_fails=True)
+        try:
+            assert tuner._hop_stage_levels == 6
+            assert not any(
+                getattr(p, "_sync_entry_half_step_folded", False)
+                for p in tuner.model.get_perceptrons()
+            ), "the float suffix must never carry the kernel's half-step"
+        finally:
+            tuner.close()
+
+    def test_deferred_fold_lands_at_the_conversion_endpoint(
+        self, tmp_path, monkeypatch,
+    ):
+        import mimarsinan.tuning.tuners.activation_quantization_tuner as aq_mod
+
+        tuner = self._tuner(tmp_path, monkeypatch, gauge_fails=True)
+        try:
+            monkeypatch.setattr(
+                aq_mod, "run_endpoint_recovery",
+                lambda t, *, base_steps: None,
+            )
+            tuner._post_stabilization_hook()
+            non_encoders = [
+                p for p in tuner.model.get_perceptrons()
+                if not getattr(p, "is_encoding_layer", False)
+            ]
+            assert all(
+                getattr(p, "_sync_entry_half_step_folded", False)
+                for p in non_encoders
+            )
+        finally:
+            tuner.close()
+
+    def test_monolithic_run_still_folds_at_init(self, tmp_path, monkeypatch):
+        tuner = self._tuner(tmp_path, monkeypatch, gauge_fails=False)
+        try:
+            assert tuner._hop_stage_levels is None
+            non_encoders = [
+                p for p in tuner.model.get_perceptrons()
+                if not getattr(p, "is_encoding_layer", False)
+            ]
+            assert all(
+                getattr(p, "_sync_entry_half_step_folded", False)
+                for p in non_encoders
+            )
+        finally:
+            tuner.close()

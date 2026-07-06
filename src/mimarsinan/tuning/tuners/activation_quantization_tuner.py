@@ -30,15 +30,6 @@ class ActivationQuantizationTuner(AdaptationRateTuner):
         # [MBH T6] exact-endpoint QAT also trains through the deployed per-stage
         # input grid snap (no-op unless the sync_exact_qat recipe knob + synchronized).
         install_sync_entry_grid_snap(self.model, self.pipeline.config)
-        # [5v B1(ii)] enter the exact-ceil endpoint through the half-step: the
-        # fold is trainable bias, applied once, and the QAT may train it away.
-        if sync_exact_qat_active(self.pipeline.config) and bool(
-            self.pipeline.config.get("sync_entry_half_step", False)
-        ):
-            folded = apply_sync_exact_entry_half_step(
-                self.model, int(self.pipeline.config["simulation_steps"])
-            )
-            print(f"[MBH-B1] sync entry half-step folded on {folded} hops", flush=True)
         # [5v B1(iii)] the hop frontier arms only when the A6 gauge fails on a
         # chain past the proven-recovery depth; the ladder then walks one hop
         # level per rung with a keep-best re-affine at each frontier step.
@@ -50,6 +41,22 @@ class ActivationQuantizationTuner(AdaptationRateTuner):
                 self._optimization_driver,
                 fast_ladder_rates=frontier_rates(self._hop_stage_levels),
             ))
+        # [5v B1(ii)] enter the exact-ceil endpoint through the half-step: the
+        # fold assumes the CEIL KERNEL, so a hop-staged run defers it to the
+        # conversion endpoint (rate 1.0) — applied at init it poisons the
+        # k-hybrid's float suffix (fbb1: live k=1 read 0.25, every staged rung
+        # refused). Monolithic runs fold at init as before.
+        self._half_step_armed = sync_exact_qat_active(self.pipeline.config) and bool(
+            self.pipeline.config.get("sync_entry_half_step", False)
+        )
+        if self._half_step_armed and not self._hop_stage_levels:
+            self._fold_entry_half_step()
+
+    def _fold_entry_half_step(self) -> None:
+        folded = apply_sync_exact_entry_half_step(
+            self.model, int(self.pipeline.config["simulation_steps"])
+        )
+        print(f"[MBH-B1] sync entry half-step folded on {folded} hops", flush=True)
 
     def _fast_ramp(self, rate) -> None:
         if getattr(self, "_hop_stage_levels", None):
@@ -68,6 +75,12 @@ class ActivationQuantizationTuner(AdaptationRateTuner):
             return
         if not getattr(self, "_fixed_ladder_policy", False):
             return
+        if getattr(self, "_hop_stage_levels", None) and getattr(
+            self, "_half_step_armed", False
+        ):
+            # [5v B1(ii)] the deferred fold: the kernel is fully installed at
+            # rate 1.0, so this IS the exact-kernel QAT's entry bias.
+            self._fold_entry_half_step()
         # P1'' for sync: rate 1.0 through the ceil kernel + grid snap IS the
         # exact deployed composition (T6) — train it to the D-hat high-water.
         run_endpoint_recovery(
