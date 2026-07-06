@@ -35,6 +35,8 @@ class TuningPolicy:
     # P4 per-stage re-affine: short keep-best DFQ measured through the k-hybrid
     # (T4 arm B absorbed every boundary's damage at 4 iters/stage).
     prefix_stage_dfq_iters: int = 4
+    # P4 stage recovery keep-best cadence (arm B probed every 25 steps).
+    prefix_stage_keepbest_interval: int = 25
 
 
 TUNING_POLICY = TuningPolicy()

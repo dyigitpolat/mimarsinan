@@ -231,6 +231,47 @@ class TestStageReaffine:
         assert "[MBH-PREFIX]" not in out
 
 
+class TestStageKeepBest:
+    """Arm-B stage semantics: rung training keeps the best k-hybrid probe state
+    (never ends below its post-DFQ entry) and clips gradients — a destructive
+    stage degenerates to its calibrated entry instead of poisoning the gate."""
+
+    def _train_with_probe_script(self, tmp_path, monkeypatch, script):
+        import itertools
+
+        import mimarsinan.tuning.tuners.ttfs_cycle_adaptation_tuner as tuner_mod
+
+        tuner = _make_tuner(tmp_path)
+        tuner._ensure_fast_optimizer()
+        tuner._fast_steps_per_rate = 2
+        values = itertools.chain(script, itertools.repeat(script[-1]))
+        monkeypatch.setattr(
+            tuner_mod, "live_model_acc_fp32", lambda _tuner: next(values),
+        )
+        entry_state = {
+            k: v.detach().clone() for k, v in tuner.model.state_dict().items()
+        }
+        tuner._prefix_stage_train(1 / 3)
+        return tuner, entry_state
+
+    def test_degrading_stage_restores_entry_state(self, tmp_path, monkeypatch):
+        tuner, entry_state = self._train_with_probe_script(
+            tmp_path, monkeypatch, [0.9, 0.1],
+        )
+        final = tuner.model.state_dict()
+        for key, saved in entry_state.items():
+            assert torch.equal(final[key], saved), key
+
+    def test_improving_stage_keeps_the_trained_state(self, tmp_path, monkeypatch):
+        tuner, entry_state = self._train_with_probe_script(
+            tmp_path, monkeypatch, [0.1, 0.9],
+        )
+        final = tuner.model.state_dict()
+        assert any(
+            not torch.equal(final[key], saved) for key, saved in entry_state.items()
+        ), "an improving stage must keep its trained parameters"
+
+
 class TestGateComposition:
     def test_run_walks_the_frontier_and_finalizes_at_k_n(self, tmp_path, capsys):
         tuner = _make_tuner(tmp_path)

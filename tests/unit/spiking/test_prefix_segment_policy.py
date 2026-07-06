@@ -203,12 +203,25 @@ class TestPrefixLengthForRate:
         (1.0, 8, 8),
         (1.0 / 3.0, 3, 1),
         (2.0 / 3.0, 3, 2),
-        (0.4999 / 8, 8, 0),
         (-0.5, 8, 0),
         (1.5, 8, 8),
     ])
     def test_ladder_rates_map_exactly(self, rate, n, expected):
         assert prefix_length_for_rate(rate, n) == expected
+
+    @pytest.mark.parametrize("committed,target,n", [
+        (0.0, 1.0 / 8.0, 8),
+        (3.0 / 8.0, 4.0 / 8.0, 8),
+        (0.0, 1.0 / 3.0, 3),
+    ])
+    def test_gate_midpoint_retries_retrain_the_target_frontier(
+        self, committed, target, n,
+    ):
+        # The gate bisects (committed + rate)/2 on reject; a frontier cannot go
+        # below the segment being converted, so the midpoint must map back to
+        # the TARGET k (ceiling semantics), never to the already-committed one.
+        midpoint = (committed + target) / 2.0
+        assert prefix_length_for_rate(midpoint, n) == prefix_length_for_rate(target, n)
 
 
 class TestPrefixGenuineForward:
