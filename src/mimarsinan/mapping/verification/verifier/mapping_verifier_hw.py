@@ -1,11 +1,71 @@
 from __future__ import annotations
+import copy
 import math
-from typing import Any, Dict, List
+from collections import OrderedDict
+from typing import Any, Dict, List, Tuple
 from mimarsinan.mapping.layout.layout_types import LayoutHardCoreType, LayoutSoftCoreSpec
 from mimarsinan.mapping.layout.layout_packer import pack_layout
 from mimarsinan.mapping.verification.layout_verification_packing import build_stats_from_packing_result
 from mimarsinan.mapping.verification.layout_verification_scheduling import compute_schedule_sync_count
+
+# One layout question is asked several times per run (build-time capacity gate,
+# per-model-update GUI snapshots, wizard previews) on identical shape-only
+# inputs; packing is pure in those inputs, so the answer is memoized exactly.
+_MEMO: "OrderedDict[Tuple, Dict[str, Any]]" = OrderedDict()
+_MEMO_MAX = 8
+
+
+def clear_verify_hardware_config_memo() -> None:
+    _MEMO.clear()
+
+
+def _memo_key(softcores, core_types, splitting, coalescing, scheduling) -> Tuple:
+    return (
+        tuple(
+            (
+                int(sc.input_count), int(sc.output_count),
+                sc.threshold_group_id, sc.latency_tag, sc.segment_id, sc.name,
+            )
+            for sc in softcores
+        ),
+        tuple(
+            (int(ct.get("max_axons", 0)), int(ct.get("max_neurons", 0)), int(ct.get("count", 0)))
+            for ct in core_types
+        ),
+        bool(splitting), bool(coalescing), bool(scheduling),
+    )
+
+
 def verify_hardware_config(
+    softcores: List[LayoutSoftCoreSpec],
+    core_types: List[Dict[str, Any]],
+    *,
+    allow_neuron_splitting: bool = False,
+    allow_coalescing: bool = False,
+    allow_scheduling: bool = False,
+) -> Dict[str, Any]:
+    """Memoizing front of :func:`_verify_hardware_config_uncached` (LRU, deep-copied)."""
+    key = _memo_key(
+        softcores, core_types, allow_neuron_splitting, allow_coalescing, allow_scheduling
+    )
+    hit = _MEMO.get(key)
+    if hit is None:
+        hit = _verify_hardware_config_uncached(
+            softcores,
+            core_types,
+            allow_neuron_splitting=allow_neuron_splitting,
+            allow_coalescing=allow_coalescing,
+            allow_scheduling=allow_scheduling,
+        )
+        _MEMO[key] = copy.deepcopy(hit)
+        while len(_MEMO) > _MEMO_MAX:
+            _MEMO.popitem(last=False)
+        return hit
+    _MEMO.move_to_end(key)
+    return copy.deepcopy(hit)
+
+
+def _verify_hardware_config_uncached(
     softcores: List[LayoutSoftCoreSpec],
     core_types: List[Dict[str, Any]],
     *,

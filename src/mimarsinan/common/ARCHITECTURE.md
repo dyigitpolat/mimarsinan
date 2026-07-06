@@ -16,6 +16,7 @@ shared across the pipeline.
 | `diagnostics.py` | CUDA debugging/profiling helpers: `enable_cuda_debug`, `describe_tensor`, `phase_profiler` (time/RSS/CUDA-peak), `cuda_guard` (synchronize-bracketed blocks) |
 | `env.py` | Single source of truth for `MIMARSINAN_*` (and `IMAGENET_ROOT`) environment variables; one call-time accessor per flag so tests can monkeypatch |
 | `file_utils.py` | Writers for pipeline artifacts: directory prep, per-sample simulator input files (scalar and spike-train), and chip weights/code emission (`save_weights_and_chip_code`) |
+| `instance_memo.py` | `InstanceMemo`: per-instance derived-value memo for unhashable hosts (id-keyed, finalizer-evicted); caches precomputed plans keyed on IR/segment objects |
 | `layer_key.py` | `layer_key_from_node_name`: display/serialization grouping key that collapses per-position/per-tile/psum core names into one layer stack |
 | `reporter.py` | `Reporter` protocol for pipeline metric reporting and `DefaultReporter`, an in-tree implementation with throttled console output |
 | `safe_numeric.py` | `safe_float`: safe conversion to float for plots and labels; returns a default when unconvertible |

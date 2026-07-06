@@ -10,15 +10,14 @@ construction (pure copies into the same default-dtype zeros tensor).
 
 from __future__ import annotations
 
-import weakref
 from dataclasses import dataclass, field
 from typing import Dict, List, Tuple
 
 import torch
 
-# Keyed by id(node): IR dataclasses are unhashable (eq=True); the finalizer
-# evicts the entry during the node's dealloc, before its id can be reused.
-_PLANS: Dict[int, "GatherPlan"] = {}
+from mimarsinan.common.instance_memo import InstanceMemo
+
+_PLANS: InstanceMemo["GatherPlan"] = InstanceMemo()
 
 
 @dataclass
@@ -110,13 +109,7 @@ def build_gather_plan(node) -> GatherPlan:
 
 def gather_plan_for(node) -> GatherPlan:
     """Weakly-cached plan per node (sources are static after graph construction)."""
-    key = id(node)
-    plan = _PLANS.get(key)
-    if plan is None:
-        plan = build_gather_plan(node)
-        _PLANS[key] = plan
-        weakref.finalize(node, _PLANS.pop, key, None)
-    return plan
+    return _PLANS.get(node, build_gather_plan)
 
 
 def gather_inputs_reference(
