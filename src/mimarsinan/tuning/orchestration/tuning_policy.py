@@ -44,6 +44,10 @@ class TuningPolicy:
     # steps dip below entry, so a floor-chasing stage trains the probe-validated
     # arm (lr 2e-3, cosine over the full funded budget).
     endpoint_floor_lr: float = 2e-3
+    # [5u] the floor's funding is WALL headroom (~180 s measured on t0_06 minus
+    # simulation margin): under pack contention the transform-trainer rate drops
+    # to ~30 steps/s, so a pure step budget would blow the 300 s bar.
+    endpoint_floor_wall_s: float = 150.0
 
 
 TUNING_POLICY = TuningPolicy()

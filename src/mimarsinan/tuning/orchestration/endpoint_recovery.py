@@ -82,9 +82,11 @@ def run_endpoint_recovery(tuner, *, base_steps) -> EndpointRecoveryReport:
         hooks = tuner._recovery_training_hooks(1.0)
         lr = float(tuner.pipeline_lr)
         min_steps = 0
+        max_seconds = None
         if floor_lifted:
             lr = min(lr, TUNING_POLICY.endpoint_floor_lr)
             min_steps = budget
+            max_seconds = TUNING_POLICY.endpoint_floor_wall_s
         _, steps_used = RecoveryEngine.train_to_target(
             tuner.trainer,
             lr,
@@ -99,6 +101,7 @@ def run_endpoint_recovery(tuner, *, base_steps) -> EndpointRecoveryReport:
             cosine_decay=True,
             return_steps=True,
             final_validation=False,
+            max_seconds=max_seconds,
         )
         exit_read = _fp32_deployed_read(tuner)
         tol = float(getattr(tuner, "_rollback_tolerance", 0.0))

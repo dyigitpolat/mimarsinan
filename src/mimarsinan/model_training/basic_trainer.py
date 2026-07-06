@@ -321,6 +321,7 @@ class BasicTrainer:
         return_steps: bool = False,
         cosine_decay: bool = False,
         final_validation: bool = True,
+        max_seconds: float | None = None,
     ):
         return basic_trainer_steps.train_steps_until_target(
             self,
@@ -339,6 +340,7 @@ class BasicTrainer:
             return_steps=return_steps,
             cosine_decay=cosine_decay,
             final_validation=final_validation,
+            max_seconds=max_seconds,
         )
 
     def train_one_step(

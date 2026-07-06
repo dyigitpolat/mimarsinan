@@ -49,6 +49,8 @@ EXPECTED_POLICY_VALUES = {
     "prefix_stage_lr": 1e-3,
     # [5u] floor-lifted endpoint LR ceiling (the probe-validated arm).
     "endpoint_floor_lr": 2e-3,
+    # [5u] the floor funds WALL headroom, not steps (contended rate ~30 steps/s).
+    "endpoint_floor_wall_s": 150.0,
 }
 
 COLLAPSED_CONFIG_KEYS = frozenset({

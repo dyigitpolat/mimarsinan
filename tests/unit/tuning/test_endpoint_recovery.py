@@ -297,6 +297,22 @@ class TestEndpointTargetFloor:
         assert seen["min_steps"] == 300
         assert seen["cosine_decay"] is True
 
+    def test_lifted_floor_funds_wall_headroom_not_steps(
+        self, tmp_path, monkeypatch,
+    ):
+        # [5u amendment, fba wave] the contended transform-trainer rate is
+        # ~30 steps/s (12k steps cost 402 s), so the funded budget is WALL:
+        # the stage passes the policy's headroom cap; the default path never
+        # carries a cap.
+        report, seen = self._run(
+            tmp_path, monkeypatch, floor=0.9, highwater=0.5, reads=[0.3, 0.6],
+        )
+        assert seen["max_seconds"] == pytest.approx(150.0)
+        report, seen = self._run(
+            tmp_path, monkeypatch, floor=0.4, highwater=0.77, reads=[0.3, 0.6],
+        )
+        assert seen["max_seconds"] is None
+
     def test_lifted_floor_caps_the_lr_at_the_probe_validated_arm(
         self, tmp_path, monkeypatch,
     ):

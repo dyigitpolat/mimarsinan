@@ -112,3 +112,64 @@ class TestHealthyPathUnchanged:
         assert tr.steps_trained == 1, (
             "the target-reaching checkpoint commits (bonus steps are restored away)"
         )
+
+
+class TestWallCap:
+    """[5u amendment] ``max_seconds``: the floor-lifted endpoint funds a WALL
+    budget, not a step count — under pack contention the same steps cost 3-4x
+    (measured 402 s for 12k steps on the fba wave), so the stage must stop at
+    its funded headroom and keep the best state reached by then."""
+
+    def _fake_clock(self, monkeypatch, seconds_per_tick=1.0):
+        import mimarsinan.model_training.basic_trainer_steps as steps_mod
+
+        state = {"t": 0.0}
+
+        def monotonic():
+            state["t"] += seconds_per_tick
+            return state["t"]
+
+        monkeypatch.setattr(steps_mod.time, "monotonic", monotonic)
+        return state
+
+    def test_wall_cap_stops_an_improving_run_and_keeps_best(self, monkeypatch):
+        # The clock ticks once per checkpoint; a 5 s cap stops well before the
+        # 100-step budget, and keep-best commits the last improved state.
+        self._fake_clock(monkeypatch)
+        tr = _ScriptedTrainer(lambda steps: min(0.5 + 0.01 * steps, 0.8))
+        final, steps = _run(
+            tr, target=0.99, max_steps=100, patience=100,
+            min_steps=100, max_seconds=5.0, return_steps=True,
+        )
+        assert steps < 100
+        assert final == pytest.approx(0.5 + 0.01 * steps)
+        assert tr.steps_trained == steps
+
+    def test_wall_cap_never_ends_below_entry(self, monkeypatch):
+        self._fake_clock(monkeypatch)
+        tr = _ScriptedTrainer(lambda steps: 0.9 if steps == 0 else 0.1)
+        final = _run(
+            tr, target=0.99, max_steps=100, patience=100,
+            min_steps=100, max_seconds=5.0,
+        )
+        assert final == pytest.approx(0.9)
+        assert tr.steps_trained == 0
+
+    def test_no_cap_runs_the_full_budget(self, monkeypatch):
+        self._fake_clock(monkeypatch)
+        tr = _ScriptedTrainer(lambda steps: min(0.5 + 0.01 * steps, 0.8))
+        final, steps = _run(
+            tr, target=0.99, max_steps=8, patience=100,
+            min_steps=8, max_seconds=None, return_steps=True,
+        )
+        assert steps == 8
+
+    def test_target_reach_still_exits_before_the_cap(self, monkeypatch):
+        self._fake_clock(monkeypatch)
+        tr = _ScriptedTrainer(lambda steps: 0.5 if steps == 0 else 0.96)
+        final, steps = _run(
+            tr, target=0.95, max_steps=100, patience=100,
+            min_steps=100, max_seconds=50.0, return_steps=True,
+        )
+        assert final == pytest.approx(0.96)
+        assert steps <= 4
