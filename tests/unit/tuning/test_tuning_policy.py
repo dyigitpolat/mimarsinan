@@ -46,6 +46,7 @@ EXPECTED_POLICY_VALUES = {
     "dfq_keepbest_patience": 5,
     "prefix_stage_dfq_iters": 4,
     "prefix_stage_keepbest_interval": 25,
+    "prefix_stage_lr": 1e-3,
 }
 
 COLLAPSED_CONFIG_KEYS = frozenset({

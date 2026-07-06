@@ -136,6 +136,10 @@ class FastLadderMixin(_FastLadderHost):
             optimizer, schedulers=[warmup, cosine], milestones=[warmup_steps],
         )
 
+    def _fast_ladder_lr(self) -> float:
+        """LR for the shared fast optimizer (tuners may cap it per ramp strategy)."""
+        return float(self.pipeline_lr)
+
     def _ensure_fast_optimizer(self) -> None:
         """Build the single optimizer + spanning warmup/cosine LR once, sized to the
         whole ladder so the LR anneals smooth→~0 across ALL rates."""
@@ -143,7 +147,7 @@ class FastLadderMixin(_FastLadderHost):
             return
         device = self.pipeline.config["device"]
         self.model = self.model.to(device)
-        lr = float(self.pipeline_lr)
+        lr = self._fast_ladder_lr()
         recipe = build_recipe(self.pipeline.config, key="tuning_recipe")
         if recipe is not None:
             self._fast_optimizer = build_optimizer(self.model, lr, recipe)

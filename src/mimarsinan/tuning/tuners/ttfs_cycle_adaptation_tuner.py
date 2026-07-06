@@ -436,6 +436,14 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
             return GenuineBlendRamp()
         return super()._make_ramp_strategy()
 
+    def _fast_ladder_lr(self) -> float:
+        """Prefix ladders cap the shared optimizer at the arm-B stage LR: the
+        spanning pipeline LR measured destructive through the genuine k-hybrid
+        (every stage's plain-CE training discarded by keep-best)."""
+        if self._prefix_ramp:
+            return min(float(self.pipeline_lr), TUNING_POLICY.prefix_stage_lr)
+        return super()._fast_ladder_lr()
+
     def _fast_ramp(self, rate) -> None:
         """Prefix rungs: P2 stage re-affine through the k-hybrid, then keep-best training."""
         if not self._prefix_ramp:

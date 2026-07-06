@@ -37,6 +37,9 @@ class TuningPolicy:
     prefix_stage_dfq_iters: int = 4
     # P4 stage recovery keep-best cadence (arm B probed every 25 steps).
     prefix_stage_keepbest_interval: int = 25
+    # P4 stage LR ceiling (arm B trained at 1e-3; hotter pipeline LRs measured
+    # destructive through the genuine k-hybrid on the first x3b wave).
+    prefix_stage_lr: float = 1e-3
 
 
 TUNING_POLICY = TuningPolicy()

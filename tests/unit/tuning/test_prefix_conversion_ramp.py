@@ -231,6 +231,34 @@ class TestStageReaffine:
         assert "[MBH-PREFIX]" not in out
 
 
+class TestStageLR:
+    """The spanning pipeline LR (3e-3) measured destructive through the genuine
+    k-hybrid (first-wave t0_19: every stage's training discarded by keep-best);
+    prefix ladders build the shared fast optimizer at the arm-B stage LR."""
+
+    def test_prefix_fast_optimizer_uses_arm_b_stage_lr(self, tmp_path):
+        tuner = _make_tuner(tmp_path)
+        assert tuner.pipeline.config["lr"] == pytest.approx(0.001)
+        tuner.pipeline_lr = 0.003  # a hotter pipeline LR must be capped
+        tuner._fast_optimizer = None
+        tuner._ensure_fast_optimizer()
+        assert tuner._fast_optimizer.defaults["lr"] == pytest.approx(0.001)
+
+    def test_cooler_pipeline_lr_wins(self, tmp_path):
+        tuner = _make_tuner(tmp_path)
+        tuner.pipeline_lr = 0.0005
+        tuner._fast_optimizer = None
+        tuner._ensure_fast_optimizer()
+        assert tuner._fast_optimizer.defaults["lr"] == pytest.approx(0.0005)
+
+    def test_blend_ramp_keeps_the_pipeline_lr(self, tmp_path):
+        tuner = _make_tuner(tmp_path, ttfs_prefix_ramp=False)
+        tuner.pipeline_lr = 0.003
+        tuner._fast_optimizer = None
+        tuner._ensure_fast_optimizer()
+        assert tuner._fast_optimizer.defaults["lr"] == pytest.approx(0.003)
+
+
 class TestStageKeepBest:
     """Arm-B stage semantics: rung training keeps the best k-hybrid probe state
     (never ends below its post-DFQ entry) and clips gradients — a destructive
