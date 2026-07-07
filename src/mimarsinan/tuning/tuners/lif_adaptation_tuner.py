@@ -15,19 +15,18 @@ from mimarsinan.tuning.orchestration.blend_ramp import (
     run_teacher_distmatch,
 )
 from mimarsinan.spiking.gain_correction import per_perceptron_cascade_depth
-from mimarsinan.tuning.orchestration.frontier.endpoint_recovery import run_endpoint_recovery
-from mimarsinan.tuning.orchestration.install_gauge_report import (
-    emit_temporal_gauge,
+from mimarsinan.tuning.orchestration.frontier.endpoint_recovery import (
+    run_endpoint_recovery,
 )
 from mimarsinan.tuning.orchestration.install_resolution import (
-    collect_channel_stats,
+    capture_install_stats,
+    emit_temporal_gauge,
     lif_temporal_gauge,
 )
 from mimarsinan.tuning.orchestration.kd_blend_adaptation_tuner import (
     KDBlendAdaptationTuner,
     _InstalledForward,
 )
-from mimarsinan.tuning.orchestration.mbh_ledger import _measurement_guard
 from mimarsinan.tuning.orchestration.mbh_tanneal import (
     TAnnealRealizableRamp,
     TAnnealSchedule,
@@ -133,17 +132,7 @@ class LIFAdaptationTuner(KDBlendAdaptationTuner):
     def _emit_a6_temporal_gauge(self) -> None:
         """[MBH-A6(ii)] the lockstep window pre-flight at the LIF install anchor
         (warn-only); the capture is cursor-isolated so the trajectory is untouched."""
-        # A fresh trainer has no cursor yet; the cache content is deterministic,
-        # so pre-building it and rewinding to 0 is bit-invariant for consumers.
-        prev_cursor = getattr(self.trainer, "_gpu_val_cursor", None)
-        with _measurement_guard(self.trainer):
-            batches = [
-                x for x, _ in self.trainer.iter_validation_batches(2)
-            ]
-            stats = collect_channel_stats(
-                self.model, batches, self.pipeline.config["device"],
-            )
-        self.trainer._gpu_val_cursor = 0 if prev_cursor is None else prev_cursor
+        stats = capture_install_stats(self)
         depths = per_perceptron_cascade_depth(self.model.get_mapper_repr())
         gauge = lif_temporal_gauge(stats, depths, window=self._T)
         emit_temporal_gauge(type(self).__name__, gauge)

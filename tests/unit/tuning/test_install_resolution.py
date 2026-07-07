@@ -13,17 +13,16 @@ from __future__ import annotations
 import torch
 
 from conftest import make_tiny_supermodel
-from mimarsinan.tuning.orchestration.install_gauge_report import (
+from mimarsinan.tuning.orchestration.install_resolution import (
     emit_temporal_gauge,
     emit_value_gauge,
-)
-from mimarsinan.tuning.orchestration.install_resolution import (
     MIN_MEDIAN_EFFECTIVE_LEVELS,
     STARVED_MASS_WARN,
     ChannelStatsAccumulator,
     HopValueGauge,
     TemporalWindowGauge,
     ValueInstallGauge,
+    capture_install_stats,
     collect_channel_stats,
     first_fire_delay,
     hop_value_gauge,
@@ -180,6 +179,37 @@ class TestCollectChannelStats:
         for _, acc in stats:
             assert len(acc.per_channel_q99()) > 0
 
+    def test_capture_install_stats_is_cursor_isolated(self):
+        from types import SimpleNamespace
+
+        class FakeTrainer:
+            def __init__(self):
+                self._gpu_val_cursor = None
+
+            def iter_validation_batches(self, n):
+                self._gpu_val_cursor = 7  # a real iteration moves the cursor
+                return [
+                    (torch.randn(4, 1, 8, 8), torch.zeros(4, dtype=torch.long))
+                    for _ in range(int(n))
+                ]
+
+        model = make_tiny_supermodel()
+        tuner = SimpleNamespace(
+            model=model,
+            trainer=FakeTrainer(),
+            pipeline=SimpleNamespace(config={"device": "cpu"}),
+        )
+        stats = capture_install_stats(tuner)
+        assert len(stats) == len(list(model.get_perceptrons()))
+        assert tuner.trainer._gpu_val_cursor == 0, (
+            "a fresh (cursor-less) trainer must be rewound to 0"
+        )
+        tuner.trainer._gpu_val_cursor = 3
+        capture_install_stats(tuner)
+        assert tuner.trainer._gpu_val_cursor == 3, (
+            "an existing cursor must be restored exactly"
+        )
+
     def test_restores_activations_when_the_forward_raises(self):
         model = make_tiny_supermodel()
         before = [id(p.activation) for p in model.get_perceptrons()]
@@ -306,7 +336,7 @@ class TestCorpusConditioning:
         assert gauge.fails is True
 
     def test_chain_gauge_fails_single_segment_deep_chains_only(self):
-        from mimarsinan.tuning.orchestration.install_gauge_report import (
+        from mimarsinan.tuning.orchestration.install_resolution import (
             chain_gauge_fails,
         )
 

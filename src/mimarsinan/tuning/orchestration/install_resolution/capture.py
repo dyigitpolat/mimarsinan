@@ -7,6 +7,7 @@ from typing import Iterable, List
 import torch
 
 from mimarsinan.models.nn.layers import TransformedActivation
+from mimarsinan.tuning.orchestration.mbh_ledger import _measurement_guard
 
 _MAX_ROWS_PER_BATCH = 4096
 
@@ -78,6 +79,26 @@ def attach_activation_decorator(perceptron, decorator):
     wrapped = TransformedActivation(activation, [decorator])
     perceptron.set_activation(wrapped)
     return lambda: perceptron.set_activation(activation)
+
+
+def capture_install_stats(tuner, n_batches: int = 2) -> List[tuple]:
+    """Cursor-isolated channel-stats capture of the tuner's LIVE model at the
+    install anchor: RNG is forked and the trainer's validation cursor restored,
+    so the live trajectory is untouched.
+
+    A fresh trainer has no cursor yet; the cache content is deterministic, so
+    pre-building it and rewinding to 0 is bit-invariant for consumers.
+    """
+    prev_cursor = getattr(tuner.trainer, "_gpu_val_cursor", None)
+    with _measurement_guard(tuner.trainer):
+        batches = [
+            x for x, _ in tuner.trainer.iter_validation_batches(int(n_batches))
+        ]
+        stats = collect_channel_stats(
+            tuner.model, batches, tuner.pipeline.config["device"],
+        )
+    tuner.trainer._gpu_val_cursor = 0 if prev_cursor is None else prev_cursor
+    return stats
 
 
 def collect_channel_stats(

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from mimarsinan.tuning.orchestration.install_resolution import (
+from mimarsinan.tuning.orchestration.install_resolution.gauges import (
     PROVEN_RECOVERY_DEPTH,
     TemporalWindowGauge,
     ValueInstallGauge,

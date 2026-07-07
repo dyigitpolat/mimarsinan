@@ -13,9 +13,9 @@ from mimarsinan.tuning.orchestration.adaptation_manager import (
     sync_exact_qat_active,
 )
 from mimarsinan.tuning.orchestration.frontier.reaffine import frontier_reaffine
-from mimarsinan.tuning.orchestration.install_capture import collect_channel_stats
 from mimarsinan.tuning.orchestration.install_resolution import (
     build_value_install_gauge,
+    capture_install_stats,
     value_grid_levels,
 )
 from mimarsinan.tuning.orchestration.mbh_ledger import (
@@ -47,13 +47,7 @@ def stamp_hop_depths(model) -> int:
 def _install_gauge_fails(tuner, levels: int) -> bool:
     """A6(i) at the install anchor: measure the LIVE pre-install model
     (cursor-isolated) against the target grid."""
-    prev_cursor = getattr(tuner.trainer, "_gpu_val_cursor", None)
-    with _measurement_guard(tuner.trainer):
-        batches = [x for x, _ in tuner.trainer.iter_validation_batches(2)]
-        stats = collect_channel_stats(
-            tuner.model, batches, tuner.pipeline.config["device"],
-        )
-    tuner.trainer._gpu_val_cursor = 0 if prev_cursor is None else prev_cursor
+    stats = capture_install_stats(tuner)
     depths = {
         id(p): int(getattr(p, HOP_DEPTH_ATTR, 0)) for p, _ in stats
     }

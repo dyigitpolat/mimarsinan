@@ -1,4 +1,4 @@
-"""[MBH-A6] install-resolution pre-flight gauges: static, warn-only (5v)."""
+"""[MBH-A6] the static warn-only gauge math and its corpus-conditioned thresholds."""
 
 from __future__ import annotations
 
@@ -10,12 +10,6 @@ from mimarsinan.chip_simulation.spiking_semantics import (
     forces_activation_quantization,
     is_lif,
 )
-from mimarsinan.tuning.orchestration.install_capture import (
-    ChannelStatsAccumulator as ChannelStatsAccumulator,
-    attach_activation_decorator as attach_activation_decorator,
-    collect_channel_stats as collect_channel_stats,
-)
-
 MIN_MEDIAN_EFFECTIVE_LEVELS = 2.0
 """A6(i): a hop needs a median of >= 2 usable grid levels per live channel."""
 

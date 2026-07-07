@@ -158,7 +158,7 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
         """[MBH-A6] name the cascade's hop-chain depth at the install anchor
         (5v: the compounding exponent of every install kernel; warn-only)."""
         from mimarsinan.spiking.gain_correction import per_perceptron_cascade_depth
-        from mimarsinan.tuning.orchestration.install_gauge_report import (
+        from mimarsinan.tuning.orchestration.install_resolution import (
             emit_chain_gauge,
         )
 

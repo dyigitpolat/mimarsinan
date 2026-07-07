@@ -4,14 +4,12 @@ from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 from mimarsinan.pipelining.core.registry.trainer_factory import make_basic_trainer
 from mimarsinan.pipelining.core.steps.trainer_pipeline_step import TrainerPipelineStep
 from mimarsinan.spiking.gain_correction import per_perceptron_cascade_depth
-from mimarsinan.tuning.orchestration.install_gauge_report import (
-    emit_value_gauge,
-    gauge_summary,
-)
 from mimarsinan.tuning.orchestration.install_resolution import (
     ChannelStatsAccumulator,
     attach_activation_decorator,
     build_value_install_gauge,
+    emit_value_gauge,
+    gauge_summary,
     needs_quantile_deflation,
     value_gauge_thresholds,
     value_grid_levels,
