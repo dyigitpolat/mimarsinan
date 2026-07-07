@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 
-from mimarsinan.tuning.orchestration import dhat_highwater
+from mimarsinan.tuning.orchestration import dhat_highwater, endpoint_wall
 from mimarsinan.tuning.orchestration.mbh_ledger import fp32_eval_forward_over_val
 from mimarsinan.tuning.orchestration.recovery_engine import RecoveryEngine
 from mimarsinan.tuning.orchestration.tuner_base import _RECOVERY_PATIENCE
 from mimarsinan.tuning.orchestration.tuning_policy import TUNING_POLICY
+
+_monotonic = time.monotonic
 
 
 @dataclass(frozen=True)
@@ -97,11 +100,19 @@ def run_endpoint_recovery(tuner, *, base_steps, target_floor=None) -> EndpointRe
         min_steps = 0
         max_seconds = None
         if floor_lifted or entry_gap_armed:
-            lr = min(lr, TUNING_POLICY.endpoint_floor_lr)
-            min_steps = budget
-            max_seconds = float(tuner.pipeline.config.get(
+            # ``endpoint_floor_wall_s`` is the RUN total, shared by every armed
+            # endpoint stage through the wall ledger (per-stage caps burned
+            # cap x N stages on multi-endpoint cells); an exhausted budget
+            # falls back to the default patience geometry (cheap stop).
+            total_wall = float(tuner.pipeline.config.get(
                 "endpoint_floor_wall_s", TUNING_POLICY.endpoint_floor_wall_s,
             ))
+            wall_left = endpoint_wall.remaining(tuner.pipeline, total_wall)
+            if wall_left > 0.0:
+                lr = min(lr, TUNING_POLICY.endpoint_floor_lr)
+                min_steps = budget
+                max_seconds = wall_left
+        train_started = _monotonic()
         _, steps_used = RecoveryEngine.train_to_target(
             tuner.trainer,
             lr,
@@ -118,6 +129,8 @@ def run_endpoint_recovery(tuner, *, base_steps, target_floor=None) -> EndpointRe
             final_validation=False,
             max_seconds=max_seconds,
         )
+        if max_seconds is not None:
+            endpoint_wall.consume(tuner.pipeline, _monotonic() - train_started)
         exit_read = _fp32_deployed_read(tuner)
         tol = float(getattr(tuner, "_rollback_tolerance", 0.0))
         if exit_read < entry - tol:
