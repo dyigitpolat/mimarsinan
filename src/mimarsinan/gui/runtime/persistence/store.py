@@ -169,20 +169,29 @@ def append_live_metric(
     seq: int,
     timestamp: float,
 ) -> None:
-    path = live_metrics_path(working_directory)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    record = {
+    append_live_metrics(working_directory, [{
         "step": step_name,
         "name": metric_name,
         "value": value,
         "seq": seq,
         "timestamp": timestamp,
-    }
+    }])
+
+
+def append_live_metrics(working_directory: str, records: list) -> None:
+    """Append a BATCH of metric records with one open/write (the trainer
+    reports every optimizer step; per-record appends on a network filesystem
+    cost more wall than the training itself)."""
+    if not records:
+        return
+    path = live_metrics_path(working_directory)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = "".join(json.dumps(record) + "\n" for record in records)
     try:
         with open(path, "a", encoding="utf-8") as f:
-            f.write(json.dumps(record) + "\n")
+            f.write(payload)
     except OSError as e:
-        logger.debug("Failed to append metric to %s: %s", path, e)
+        logger.debug("Failed to append %d metrics to %s: %s", len(records), path, e)
 
 
 def append_console_log(

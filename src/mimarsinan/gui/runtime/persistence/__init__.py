@@ -23,6 +23,7 @@ from mimarsinan.gui.runtime.persistence.resource_paths import (
 from mimarsinan.gui.runtime.persistence.store import (
     append_console_log,
     append_live_metric,
+    append_live_metrics,
     save_resource_to_disk,
     save_run_info,
     save_step_status,
@@ -39,6 +40,7 @@ __all__ = [
     "STEPS_FILENAME",
     "append_console_log",
     "append_live_metric",
+    "append_live_metrics",
     "load_console_logs",
     "load_live_metrics",
     "load_persisted_steps",

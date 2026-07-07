@@ -12,8 +12,8 @@ from mimarsinan.common.best_effort import best_effort
 from mimarsinan.gui.reporter import GUIReporter
 from mimarsinan.gui.runtime.collector import DataCollector
 from mimarsinan.gui.runtime.persistence import (
+    append_live_metrics,
     append_console_log,
-    append_live_metric,
     save_resource_to_disk,
     save_step_status,
     save_step_to_persisted,
@@ -41,6 +41,12 @@ class GUIHandle:
         self.reporter = GUIReporter(collector)
         self._persist_metrics = persist_metrics
         self._capture_stdio = capture_stdio
+        # Buffered live-metric persistence: the trainer reports EVERY optimizer
+        # step, and a per-record open/append/close on a network filesystem
+        # throttles training itself (measured 12-16 steps/s vs ~118). Records
+        # flush in batches; step end and shutdown flush the tail.
+        self._metric_buffer: list = []
+        self._metric_flushed_at = time.monotonic()
         self._owns_snapshot_executor = snapshot_executor is None
         self._snapshot_executor = snapshot_executor or SnapshotExecutor()
 
@@ -82,16 +88,35 @@ class GUIHandle:
                 snapshot_key_kinds=None, status="running",
             )
 
+    _METRIC_FLUSH_COUNT = 256
+    _METRIC_FLUSH_SECONDS = 2.0
+
     def on_metric(
         self, step_name: str, metric_name: str, value: float, seq: int, timestamp: float,
     ) -> None:
         if not self._persist_metrics:
             return
+        self._metric_buffer.append({
+            "step": step_name, "name": metric_name, "value": value,
+            "seq": seq, "timestamp": timestamp,
+        })
+        if (
+            len(self._metric_buffer) >= self._METRIC_FLUSH_COUNT
+            or time.monotonic() - self._metric_flushed_at >= self._METRIC_FLUSH_SECONDS
+        ):
+            self._flush_live_metrics()
+
+    def _flush_live_metrics(self) -> None:
+        records, self._metric_buffer = self._metric_buffer, []
+        self._metric_flushed_at = time.monotonic()
+        if not records:
+            return
         working_dir = getattr(self.pipeline, "working_directory", None)
         if working_dir:
-            append_live_metric(working_dir, step_name, metric_name, value, seq, timestamp)
+            append_live_metrics(working_dir, records)
 
     def on_step_end(self, step_name: str, step: Any) -> None:
+        self._flush_live_metrics()
         target_metric = None
         with best_effort(f"read target metric for step {step_name}", logger=logger):
             raw = self.pipeline.get_target_metric()
@@ -176,6 +201,7 @@ class GUIHandle:
         self._snapshot_executor.submit(_persist_resources)
 
     def shutdown(self) -> None:
+        self._flush_live_metrics()
         if self._owns_snapshot_executor:
             self._snapshot_executor.shutdown()
 
