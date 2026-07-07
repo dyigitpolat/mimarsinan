@@ -13,9 +13,9 @@ class TunerPipelineStep(PipelineStep):
     """Shared validate/process/update pattern for tuner-backed steps."""
 
     DRAW_SELECTED = False
-    """Opt-in for the [MBH-DRAWS] best-of-N conversion harness: the mode's
-    variance-carrying ramp/endpoint stages select it; every other tuner step
-    stays single-draw (``conversion_draws`` is then inert)."""
+    """Opt-in for the best-of-N conversion harness: the mode's variance-carrying
+    ramp/endpoint stages select it; every other tuner step stays single-draw
+    (``conversion_draws`` is then inert)."""
 
     def __init__(self, requires, promises, updates, clears, pipeline):
         super().__init__(requires, promises, updates, clears, pipeline)

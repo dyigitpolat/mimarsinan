@@ -44,21 +44,9 @@ def run_conversion_draws(
 ):
     """Run a conversion stage best-of-N; returns ``(tuner, model, manager)``.
 
-    ``draws == 1`` (the default) is bit-identical to a plain
-    ``build(model, adaptation_manager).run()``: no reseeding, no copies, no
-    extra eval reads. For N > 1, every draw runs on its own deep copy of the
-    (model, adaptation-manager) object graph and its own run-ledger scope,
-    with the torch RNG seeded ``seed + k`` — the whole search is deterministic
-    given the config seed. Each draw is independently keep-best/entry-floored
-    inside the tuner, and selection takes the max full-transform fp32 D-hat,
-    so the harness can only improve D-hat (monotone-safe). A raising draw is a
-    measured outcome (logged, workers released); the harness fails loud when
-    every draw raised.
-
-    ``target``: best-of-N is a FALLBACK for the crater distribution, not a
-    mandate — a draw whose full-transform D-hat reaches ``target`` (the
-    stage's entry pipeline metric: conversion at no measured loss) ends the
-    search immediately; healthy cells pay for exactly one draw.
+    ``draws == 1`` is bit-identical to a plain ``build(...).run()``. For N > 1,
+    each draw runs on its own deep copy seeded ``seed + k`` (deterministic),
+    and selection takes the max full-transform fp32 D-hat.
     """
     n = configured_draws(pipeline) if draws is None else max(1, int(draws))
     if n == 1:

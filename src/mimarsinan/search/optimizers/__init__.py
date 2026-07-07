@@ -1,13 +1,4 @@
-"""
-Search optimizers for multi-objective optimization.
-
-Available optimizers:
-- NSGA2Optimizer: Genetic algorithm-based optimizer using pymoo's NSGA-II
-- AgentEvolveOptimizer: LLM-based optimizer using pydantic-ai for agentic evolution
-- CompilagentOptimizer: LLM-driven session via the compilagent integration
-  (registers ``MimarsinanLayoutBackend`` so layout-mapping internals are
-  exposed to the agent and the leaderboard becomes truly multi-objective).
-"""
+"""Search optimizers for multi-objective optimization: NSGA2Optimizer, AgentEvolveOptimizer, CompilagentOptimizer."""
 
 from mimarsinan.search.optimizers.base import SearchOptimizer
 from mimarsinan.search.optimizers.nsga2_optimizer import NSGA2Optimizer

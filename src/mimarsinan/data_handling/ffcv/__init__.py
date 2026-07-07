@@ -1,10 +1,4 @@
-"""FFCV-backed fast data loading.
-
-Reachable iff a provider opts in by overriding ``ffcv_transforms()`` with
-non-empty content. FFCV is then a hard requirement at runtime — there is
-no global toggle and no silent fallback. If FFCV isn't importable the
-ImportError surfaces normally.
-"""
+"""FFCV-backed fast data loading: opt-in per-provider via ``ffcv_transforms()``; no global toggle, no silent fallback."""
 
 from __future__ import annotations
 

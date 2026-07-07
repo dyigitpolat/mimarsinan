@@ -12,11 +12,10 @@ class SimulationStep(PipelineStep):
         self.probe_accuracy = None
 
     def validate(self):
-        # Sim-role respec (user directive 2026-07-07): nevresim is a
-        # decision-parity PROBE on a small subsample; its binomial-noise
-        # accuracy is reported, never the pipeline metric — the accuracy
-        # verdict is the SCM identity read (retention-gated there). Loihi
-        # and SANA-FE follow the same metric-neutral contract.
+        # nevresim is a decision-parity PROBE on a small subsample; its
+        # binomial-noise accuracy is reported, never the pipeline metric —
+        # the accuracy verdict is the SCM identity read (retention-gated
+        # there). Loihi and SANA-FE follow the same metric-neutral contract.
         return self.pipeline.get_target_metric()
 
     def _report_probe(self, accuracy) -> None:

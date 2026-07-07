@@ -1,12 +1,4 @@
-"""Precomputed gather plans for IR nodes: one indexed copy per source group.
-
-The per-source Python walk in ``IRNode.gather_inputs`` cost one torch indexing
-op per axon per forward (the W3b span-fill wall class). Sources are static per
-node, so the walk collapses into index arrays built once and cached weakly per
-node: one advanced-index copy for network inputs, one fill for always-on lanes,
-and one copy per referenced producer buffer. Bit-equal to the reference walk by
-construction (pure copies into the same default-dtype zeros tensor).
-"""
+"""Precomputed, weakly-cached gather plans for IR nodes: bit-equal to the per-source ``IRNode.gather_inputs`` walk but built once as index arrays instead of one torch op per axon per forward."""
 
 from __future__ import annotations
 

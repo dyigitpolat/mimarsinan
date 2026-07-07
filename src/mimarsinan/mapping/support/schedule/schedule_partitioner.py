@@ -1,23 +1,4 @@
-"""Segment-level pass accounting and capacity-driven splitting.
-
-The hard-core mapper runs exactly one flush per *sub-segment*, where a
-sub-segment is the largest prefix of a layout segment's latency groups
-that still fits the hardware pool.  When the full segment doesn't fit,
-``split_softcores_by_capacity`` cuts it at the first overflowing latency
-boundary and a fresh sub-segment starts with the offending group.  The
-rate-level handoff between adjacent ``HybridStage(kind="neural")``
-entries (state_buffer read/write on shared node ids) is the sync
-barrier at the simulator level — no synthetic ComputeOp is inserted.
-
-A single latency group whose softcores cannot pack alone is genuine
-infeasibility: ``estimate_passes_for_layout_validated`` reports
-``all_feasible = False``, and the hard-core mapper lets the packer's
-``RuntimeError`` propagate.  No silent retry.
-
-``effective_core_budget`` retains the 0.8× heterogeneous-discount
-semantics so the wizard and the hard-core mapper quote identical
-available-core numbers.
-"""
+"""Segment-level pass accounting: re-exports the schedule split/budget helpers plus layout-level pass estimation on top of them."""
 
 from __future__ import annotations
 
@@ -44,21 +25,13 @@ def partition_segment_into_passes(
     allow_coalescing: bool = False,
     allow_splitting: bool = False,
 ) -> list[list[NeuralCore]]:
-    """Return the segment as a single pass.
-
-    The old latency-group split produced multiple passes which the
-    simulator subsequently treated as sync barriers, breaking
-    cycle-accurate LIF semantics.  Segmentation is now exclusively the
-    layout mapper's responsibility; this function is the identity
-    function on the segment's cores, preserved only because the unused
-    kwargs were part of the historical public signature.
-    """
+    """Identity on the segment's cores: multi-pass splitting would break
+    cycle-accurate LIF sync barriers, so segmentation is the layout
+    mapper's sole responsibility. Kwargs kept for signature stability."""
     if not cores:
         return []
     return [list(cores)]
 
-
-# Layout-level estimator — packs each layout segment whole
 
 def estimate_passes_for_layout(
     softcores: Sequence[LayoutSoftCoreSpec],

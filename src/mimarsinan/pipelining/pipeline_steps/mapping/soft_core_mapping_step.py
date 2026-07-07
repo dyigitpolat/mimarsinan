@@ -416,7 +416,7 @@ class SoftCoreMappingStep(PipelineStep):
         if not plan.uses_ttfs_floor_ceil_convention or not act_q:
             return
         if model_trained_sync_exact(model):
-            # [MBH T6] The exact-kernel QAT endpoint already trains the deployed
+            # The exact-kernel QAT endpoint already trains the deployed
             # ceil convention; the half-step compensation exists solely to
             # reconcile the floor proxy and would double-shift here.
             assert plan.is_synchronized_ttfs, (

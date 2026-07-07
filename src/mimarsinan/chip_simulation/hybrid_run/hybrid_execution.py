@@ -148,11 +148,8 @@ def compute_input_state_with_shifts(
 ):
     """State-buffer view with producer ``node_output_shifts`` added to ``op``'s inputs.
 
-    The NF driver lifts a shifted producer's value once at production; a compute-op
-    consumer's baked bias (``B' = B − W·s``) expects lifted inputs, so the host
-    value path must gather them lifted too (rate/LIF domain; TTFS transcodes via
-    compute scales). No shifted inputs => identity (no copy). Works on torch and
-    numpy buffers alike.
+    A compute-op's baked bias (``B' = B − W·s``) expects lifted inputs, so the
+    host value path must gather them lifted too. No shifted inputs => identity.
     """
     if not node_output_shifts:
         return state_buffer

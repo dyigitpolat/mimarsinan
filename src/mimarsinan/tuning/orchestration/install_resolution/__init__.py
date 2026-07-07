@@ -1,10 +1,4 @@
-"""[MBH-A6] install-resolution pre-flight gauges: capture → math → report.
-
-One warn-only concept in three layers: `capture` (channel-resolved activation
-stats at the install anchor, cursor/RNG-isolated), `gauges` (the static A6
-value/temporal/chain starvation math with its corpus-conditioned thresholds),
-and `report` (the loud ``[MBH-A6]`` emit + cache-summary seams).
-"""
+"""[MBH-A6] install-resolution pre-flight gauges: capture → math → report."""
 
 from mimarsinan.tuning.orchestration.install_resolution.capture import (
     ChannelStatsAccumulator,

@@ -74,17 +74,10 @@ def canonicalize_starved_bias_outliers(
     ceiling: float = 1.0,
     margin: float = _EMPIRICAL_MARGIN,
 ) -> dict:
-    """Guarded, VERIFIED canonicalization of grid-starving bias outliers the
-    provable clip cannot reach (the t01_16/rep3 class: empirically-constant
-    channels whose |b_eff| still sets the NAPQ scale).
+    """Guarded, VERIFIED canonicalization of grid-starving bias outliers the provable clip cannot reach.
 
-    Arms only perceptrons whose predicted weight-zero fraction at the target
-    grid is >= 0.8 after the provable OFF-clip. Three guarded rungs, each
-    VERIFIED (any decision flip on the calibration batches restores the state
-    exactly): (2) shrink empirically-saturated channels to their observed
-    slack; (3) for a still-starved grid, remove grid-dominating nuisance
-    channels whose removal is decision-invariant. Returns
-    ``{"clipped", "restored", "removed", "removal_restored"}`` counts.
+    Arms only perceptrons whose predicted weight-zero fraction at the target grid
+    is >= 0.8; each guarded rung is VERIFIED (a decision flip restores state exactly).
     """
     report = {"clipped": 0, "restored": 0, "removed": 0, "removal_restored": 0}
     batches = [x for x in calibration_batches]

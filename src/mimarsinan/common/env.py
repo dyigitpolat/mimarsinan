@@ -1,7 +1,4 @@
-"""Single source of truth for MIMARSINAN_* (and IMAGENET_ROOT) environment variables.
-
-Every accessor reads ``os.environ`` at call time so tests can monkeypatch it.
-"""
+"""Single source of truth for MIMARSINAN_* (and IMAGENET_ROOT) environment variables; every accessor reads ``os.environ`` at call time so tests can monkeypatch it."""
 
 from __future__ import annotations
 

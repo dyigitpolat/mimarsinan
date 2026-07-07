@@ -1,14 +1,4 @@
-"""Dataset-agnostic input preprocessing (resize + normalization).
-
-A ``PreprocessingSpec`` is constructed from a config dict (``preprocessing``
-block under ``deployment_parameters``) and consumed by every ``DataProvider``
-to wrap its native transforms with a consistent resize + normalize policy.
-
-This keeps preprocessing a dataset/pipeline concern rather than a per-provider
-hardcoded choice, so any model/dataset combination can dictate input shape
-(e.g. ViT pretrained weights expect 224x224 + ImageNet normalization) without
-editing provider code.
-"""
+"""Dataset-agnostic input preprocessing (resize + normalization) shared by every ``DataProvider``."""
 
 from __future__ import annotations
 

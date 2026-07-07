@@ -83,7 +83,6 @@ class DeploymentPipeline(Pipeline):
         if os.environ.get("MIMARSINAN_CUDA_DEBUG") == "1":
             self.config.setdefault("cuda_debug", True)
 
-        # The single plan resolution for this pipeline instance.
         self.plan = DeploymentPlan.resolve(self.config)
         self.cuda_debug = self.plan.cuda_debug
 

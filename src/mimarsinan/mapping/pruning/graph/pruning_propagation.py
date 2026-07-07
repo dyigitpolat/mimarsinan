@@ -1,12 +1,4 @@
-"""Centralized propagative pruning for a single weight matrix.
-
-Given a matrix and an initial set of pruned rows/columns (or derived from
-zero-threshold), runs the fixpoint: a row that only feeds pruned columns is
-pruned; a column that only receives from pruned rows is pruned. Exempt indices
-are never added to the pruned set (at init or in the fixpoint). Used by
-ir_pruning for both owned-weight cores and weight banks so the logic lives
-in one place.
-"""
+"""Centralized propagative fixpoint pruning for a single weight matrix, shared by ir_pruning for both owned-weight cores and weight banks."""
 
 from __future__ import annotations
 
@@ -52,10 +44,6 @@ def compute_propagated_pruned_rows_cols(
     Returns:
         (pruned_rows_set, pruned_cols_set) both as sets of indices.
     """
-    # Work in float32 for the magnitude comparisons. Int8 weight matrices (post
-    # quantization) are cheap to upcast once; float32 is plenty of headroom for
-    # a sum-of-abs comparison against a small threshold and uses half the memory
-    # of float64.
     mat = np.asarray(matrix)
     if mat.dtype != np.float32 and mat.dtype != np.float64:
         mat_f = mat.astype(np.float32, copy=False)
@@ -65,7 +53,6 @@ def compute_propagated_pruned_rows_cols(
     if conn_eps is None:
         conn_eps = min(1e-12, zero_threshold * 1e-4)
 
-    # Boolean exempt masks
     exempt_row_mask = np.zeros(n_axons, dtype=bool)
     if exempt_rows:
         idx = np.fromiter(
@@ -81,10 +68,9 @@ def compute_propagated_pruned_rows_cols(
         )
         exempt_col_mask[idx] = True
 
-    # Out-of-matrix live source per column (e.g. hardware bias). When set, the
-    # column is treated as having an alive source for the within-matrix
-    # col-death check, which prevents propagation from killing it. Such
-    # columns can still be pruned via the initial seed (e.g. model mask).
+    # An out-of-matrix live source (e.g. non-zero hardware_bias) marks a column
+    # as never killed by within-matrix propagation, though it can still be
+    # pruned via the initial seed.
     implicit_col_alive_mask = np.zeros(n_neurons, dtype=bool)
     if cols_with_implicit_source:
         idx = np.fromiter(
@@ -95,9 +81,7 @@ def compute_propagated_pruned_rows_cols(
 
     # When explicit seeds are provided for both axes, treat them as the full
     # initial pruned set (the caller is expected to have already incorporated
-    # value-based deadness, e.g. the global propagation solver does this
-    # exactly once per node before the fixpoint). Otherwise, fall back to
-    # value-based init and union in whatever seed is provided.
+    # value-based deadness exactly once, before the fixpoint).
     if initial_zero_rows is not None and initial_zero_cols is not None:
         zero_row_mask = _set_to_mask(initial_zero_rows, n_axons)
         zero_col_mask = _set_to_mask(initial_zero_cols, n_neurons)
@@ -112,20 +96,15 @@ def compute_propagated_pruned_rows_cols(
         if initial_zero_cols is not None:
             zero_col_mask |= _set_to_mask(initial_zero_cols, n_neurons)
 
-    # Exempt indices are never pruned.
     zero_row_mask &= ~exempt_row_mask
     zero_col_mask &= ~exempt_col_mask
 
-    # Connectivity mask: which (i,j) entries are above the "has connection" threshold.
-    # Using float32 abs is fine; result is a bool matrix of shape (n_axons, n_neurons).
     abs_conn = np.abs(mat_f) >= conn_eps
     has_any_conn_row = abs_conn.any(axis=1)
     has_any_conn_col = abs_conn.any(axis=0)
 
-    # Fixpoint: a row dies if all its connections are to already-dead cols;
-    # a col dies if all its connections are from already-dead rows. Exempt
-    # indices never die. Rows/cols with no connection at all are handled by
-    # the initial phase only.
+    # Fixpoint: a row dies once all its connections target dead cols; a col
+    # dies once all its connections come from dead rows. Exempt indices never die.
     while True:
         alive_cols = ~zero_col_mask
         # For each row, does it still have any connection to an alive col?
@@ -139,10 +118,6 @@ def compute_propagated_pruned_rows_cols(
 
         alive_rows = ~zero_row_mask
         col_has_alive_source = (abs_conn & alive_rows[:, None]).any(axis=0)
-        # Cols with an implicit out-of-matrix live source (e.g. non-zero
-        # hardware_bias) are never killed by within-matrix propagation:
-        # they spike from that out-of-matrix source even when every axon
-        # feeding them is dead.
         col_has_alive_source = col_has_alive_source | implicit_col_alive_mask
         col_dies = (
             ~col_has_alive_source

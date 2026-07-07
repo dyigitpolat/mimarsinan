@@ -1,25 +1,4 @@
-"""Structured magnitude pruning as a selectable, default-off deployment transform (D4).
-
-This is the deployment knob the coverage ledger enumerates as ``pruning=dense`` vs
-``pruning=pruned``. Unlike the in-loop mask-and-rescale pruning in
-:mod:`mimarsinan.transformations.pruning.apply` (which zeros/down-scales weights but
-keeps every channel resident, so the mapped softcore shapes are unchanged), this
-transform *structurally removes* the lowest-magnitude OUTPUT channels of each
-perceptron and propagates the removal into the next layer's INPUT columns. That
-shrinks ``out_features`` (neurons) and the downstream ``in_features`` (axons), which
-is exactly what :func:`mimarsinan.mapping.verification.capacity.estimate_cores_needed`
-counts — so a pruned model maps to FEWER hard cores and therefore fewer reprogram
-phases (the 80% weight-DMA cost term D4 attacks).
-
-DEFAULT-OFF / BYTE-IDENTICAL: ``sparsity == 0.0`` returns the input perceptron chain
-untouched (``pruned=False``); the dense default path is provably unchanged.
-
-EXEMPTIONS (structural soundness, mirroring the boundary policy of the in-loop
-pruner): the LAST perceptron's output channels are never pruned (they are the model
-logits — their count is fixed), and the FIRST perceptron's input columns are never
-pruned by this pass (they are the network input; only *intermediate* axon counts can
-drop, and they drop as a consequence of the upstream layer's output pruning).
-"""
+"""Structured magnitude pruning (D4): default-off, byte-identical at sparsity 0; structurally shrinks out/in feature counts (unlike the in-loop mask-and-rescale pruner), exempting the first and last perceptron's boundary channels."""
 
 from __future__ import annotations
 
@@ -125,17 +104,10 @@ def prune_perceptron_chain(
     perceptrons: Sequence[nn.Module],
     sparsity: float,
 ) -> ChannelPruningResult:
-    """Structurally prune output neurons of each perceptron and propagate downstream.
+    """Structurally prune output neurons of each perceptron in place and propagate downstream.
 
-    Mutates each perceptron IN PLACE, replacing ``perceptron.layer`` with a smaller
-    ``nn.Linear`` (output rows for the pruned-out neurons removed; input columns
-    removed to track the upstream layer's pruned outputs). The chain is assumed
-    sequential and dense (``perceptron[i].layer.out_features ==
-    perceptron[i+1].layer.in_features``); when that adjacency does not hold the
-    downstream input shrink is skipped for that boundary (no-op, structurally safe).
-
-    ``sparsity == 0.0`` is the BYTE-IDENTICAL default: returns immediately, leaving
-    every ``nn.Linear`` object (and its parameter tensors) untouched.
+    Assumes a sequential dense chain; a non-adjacent boundary skips the downstream
+    shrink (no-op, structurally safe). ``sparsity == 0.0`` is the BYTE-IDENTICAL default.
     """
     layers = [cast(nn.Linear, cast(Any, p).layer) for p in perceptrons]
     if sparsity == 0.0 or not layers:

@@ -57,12 +57,9 @@ class WeightQuantizationStep(TunerPipelineStep):
         )
 
     def _apply_lif_half_step_entry_fold(self, model) -> None:
-        """[5v B3] Fold the LIF theta/(2T) half-step as a TRAINABLE entry bias
-        BEFORE the weight-quantization QAT, so the QAT reconciles the shifted
-        operating point and the float NF stays bit-exact with the quantized
-        deployed sim. Injected post-QAT at soft-core mapping it broke the LIF
-        parity identity (t0_01 0.9336, t0_05 0.9883). Recipe-knob-gated on
-        lif x activation_quantization; idempotent per perceptron."""
+        """Fold the LIF theta/(2T) half-step as a TRAINABLE entry bias BEFORE the
+        weight-quantization QAT, so the QAT reconciles the shifted operating point
+        and the float NF stays bit-exact with the quantized deployed sim. Idempotent per perceptron."""
         plan = DeploymentPlan.of(self.pipeline)
         if not is_lif(plan.spiking_mode) or not plan.activation_quantization:
             return
@@ -78,12 +75,10 @@ class WeightQuantizationStep(TunerPipelineStep):
         )
 
     def _canonicalize_starved_bias_outliers(self, model) -> None:
-        """[fix-round] Guarded empirical bias canonicalization at the QAT entry:
-        outlier bias mass the provable OFF-clip cannot reach (empirically
-        constant channels) is shrunk to its observed saturation slack and
-        VERIFIED (decision agreement on the calibration batches; restored on
-        any flip). Without it a starved grid zeroes the layer's weights at the
-        full-rate projection and the QAT cannot recover (t01_16 abort)."""
+        """Guarded empirical bias canonicalization at the QAT entry: outlier bias
+        mass the provable OFF-clip cannot reach (empirically constant channels) is
+        shrunk to its observed saturation slack and VERIFIED (decision agreement
+        on the calibration batches; restored on any flip)."""
         trainer = make_basic_trainer(self.pipeline, model)
         device = self.pipeline.config["device"]
         val_batches = cast(

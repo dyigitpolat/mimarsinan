@@ -13,8 +13,6 @@ class InstanceMemo(Generic[T]):
 
     Keyed by id(host): IR/segment dataclasses are unhashable (eq=True); the
     finalizer evicts the entry during the host's dealloc, before id reuse.
-    Each derived-value kind owns its own ``InstanceMemo`` — no cross-kind
-    collisions on a shared host.
     """
 
     def __init__(self) -> None:

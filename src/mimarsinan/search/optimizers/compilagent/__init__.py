@@ -1,23 +1,4 @@
-"""Compilagent integration for mimarsinan's architecture search.
-
-Wraps `JointArchHwProblem` as a compilagent ``Backend`` so an LLM-driven
-``OptimizationSession`` can search the same NAS + hardware space the
-NSGA2 / AgentEvolve optimizers explore, while exposing every
-layout-mapping signal (per-softcore counts, latency tiers, full
-``LayoutVerificationStats``, multi-objective values) through compilagent's
-analysis / artifact / introspection-tool / leaderboard surfaces.
-
-Public entry points:
-
-* ``CompilagentOptimizer`` — the ``SearchOptimizer`` implementation
-  exposed alongside ``NSGA2Optimizer`` / ``AgentEvolveOptimizer``.
-* ``MimarsinanLayoutBackend`` — the compilagent ``Backend`` the session
-  drives; ``entrypoint.register_backend()`` advertises it under the id
-  ``"mimarsinan_layout"``.
-
-Importing the package triggers backend registration so callers that load
-the optimizer directly do not have to remember the registry side effect.
-"""
+"""Compilagent integration: wraps `JointArchHwProblem` as a compilagent ``Backend`` for LLM-driven architecture search."""
 
 from __future__ import annotations
 

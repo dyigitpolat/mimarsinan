@@ -1,23 +1,4 @@
-"""Segment-level pass accounting and capacity-driven splitting.
-
-The hard-core mapper runs exactly one flush per *sub-segment*, where a
-sub-segment is the largest prefix of a layout segment's latency groups
-that still fits the hardware pool.  When the full segment doesn't fit,
-``split_softcores_by_capacity`` cuts it at the first overflowing latency
-boundary and a fresh sub-segment starts with the offending group.  The
-rate-level handoff between adjacent ``HybridStage(kind="neural")``
-entries (state_buffer read/write on shared node ids) is the sync
-barrier at the simulator level — no synthetic ComputeOp is inserted.
-
-A single latency group whose softcores cannot pack alone is genuine
-infeasibility: ``estimate_passes_for_layout_validated`` reports
-``all_feasible = False``, and the hard-core mapper lets the packer's
-``RuntimeError`` propagate.  No silent retry.
-
-``effective_core_budget`` retains the 0.8× heterogeneous-discount
-semantics so the wizard and the hard-core mapper quote identical
-available-core numbers.
-"""
+"""Capacity-driven splitting of a layout segment's latency groups into sub-segments that fit the hardware pool, cutting at the first overflowing boundary."""
 
 from __future__ import annotations
 
@@ -139,6 +120,3 @@ def split_softcores_by_capacity(
         sub_segments.append(running)
 
     return sub_segments
-
-
-# NeuralCore partitioner — kept for API stability, always returns 1 pass

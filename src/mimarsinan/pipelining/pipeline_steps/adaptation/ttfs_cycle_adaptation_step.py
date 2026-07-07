@@ -10,7 +10,7 @@ class TTFSCycleAdaptationStep(TunerPipelineStep):
     REQUIRES = ("model", "adaptation_manager")
     UPDATES = ("model", "adaptation_manager")
 
-    # [MBH-DRAWS] the cascade FT ramp+endpoint is a variance-carrying stage.
+    # The cascade FT ramp+endpoint is a variance-carrying stage.
     DRAW_SELECTED = True
 
     @classmethod

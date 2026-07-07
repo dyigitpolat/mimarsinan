@@ -1,13 +1,4 @@
-"""
-Config schema and validation for deployment pipeline configuration.
-
-Single source of truth for default deployment parameters, platform constraints,
-pipeline-mode presets, and validation of both the JSON shape (main.py input)
-and the merged flat config (pipeline.config at runtime).
-
-Pipeline code (DeploymentPipeline) should use these defaults so wizard and
-pipeline stay in sync.
-"""
+"""Config schema SSOT: default deployment parameters, presets, and validation for both JSON input and the merged runtime config."""
 
 from mimarsinan.config_schema.defaults import (
     DEFAULT_DEPLOYMENT_PARAMETERS,

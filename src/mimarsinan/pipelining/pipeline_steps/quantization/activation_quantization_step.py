@@ -6,7 +6,7 @@ class ActivationQuantizationStep(TunerPipelineStep):
     REQUIRES = ("model", "adaptation_manager")
     UPDATES = ("model", "adaptation_manager")
 
-    # [MBH-DRAWS] the staged AQ install (sync's conversion endpoint) carries
+    # The staged AQ install (sync's conversion endpoint) carries
     # the measured rung-2 training-draw variance.
     DRAW_SELECTED = True
 

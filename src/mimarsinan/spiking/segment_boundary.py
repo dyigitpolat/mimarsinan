@@ -44,7 +44,7 @@ __all__ = [
     "warn_once_lossy_negative_clamp",
 ]
 
-# W1-era name; same transcode (the TTFS spike time encodes the same wire rate).
+# Alias: the TTFS spike time encodes the same wire rate as the shared transcode.
 normalize_ttfs_boundary_value = normalize_boundary_value
 
 

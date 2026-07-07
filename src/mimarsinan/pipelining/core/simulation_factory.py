@@ -99,9 +99,8 @@ def build_identity_mapping_for_pipeline(
 
 _SIM_EVAL_BATCH_SIZE = 1024
 """Cycle-accurate flow evals amortize their per-core launch overhead over the
-batch: 1024 measured 2.47x faster than 128 on the d8 identity flow with
-BIT-EQUAL per-sample decisions (fix-round Phase 3a); an OOM retry re-enters
-with ``max_batch_cap`` = the plan's ``simulation_batch_size``."""
+batch with BIT-EQUAL per-sample decisions; an OOM retry re-enters with
+``max_batch_cap`` = the plan's ``simulation_batch_size``."""
 
 
 def run_trainer_metric(

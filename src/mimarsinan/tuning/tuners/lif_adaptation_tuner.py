@@ -60,7 +60,6 @@ class LIFBlendActivation(BlendActivation):
 
     @property
     def lif_activation(self) -> LIFActivation:
-        # The constructor only accepts a LIFActivation target.
         return cast(LIFActivation, self.target_activation)
 
 
@@ -147,7 +146,6 @@ class LIFAdaptationTuner(KDBlendAdaptationTuner):
         )
 
     def _make_blend(self, old, target, rate):
-        # ``_make_target_activation`` above builds the LIFActivation target.
         return LIFBlendActivation(old, cast(LIFActivation, target), rate)
 
     def _after_make_target(self, perceptron, target) -> None:
