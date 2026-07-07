@@ -70,6 +70,7 @@ def run_conversion_draws(
     adaptation_manager,
     *,
     draws: int | None = None,
+    target: float | None = None,
 ):
     """Run a conversion stage best-of-N; returns ``(tuner, model, manager)``.
 
@@ -83,6 +84,11 @@ def run_conversion_draws(
     so the harness can only improve D-hat (monotone-safe). A raising draw is a
     measured outcome (logged, workers released); the harness fails loud when
     every draw raised.
+
+    ``target``: best-of-N is a FALLBACK for the crater distribution, not a
+    mandate — a draw whose full-transform D-hat reaches ``target`` (the
+    stage's entry pipeline metric: conversion at no measured loss) ends the
+    search immediately; healthy cells pay for exactly one draw.
     """
     n = configured_draws(pipeline) if draws is None else max(1, int(draws))
     if n == 1:
@@ -122,6 +128,13 @@ def run_conversion_draws(
             )
         else:
             tuner.close()
+        if target is not None and dhat >= float(target):
+            print(
+                f"[MBH-DRAWS] k={k} reached target={float(target):.6f}: "
+                "skipping remaining draws",
+                flush=True,
+            )
+            break
     if best is None:
         assert last_error is not None
         raise last_error

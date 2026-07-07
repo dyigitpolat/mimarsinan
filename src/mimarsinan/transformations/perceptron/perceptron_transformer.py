@@ -1,3 +1,5 @@
+import contextlib
+
 import torch
 import torch.nn as nn
 
@@ -17,7 +19,44 @@ routes the delta through the normalization affine instead of dividing by u."""
 
 class PerceptronTransformer:
     def __init__(self):
-        pass
+        self._pending_finite: list = []
+        self._defer_finite = False
+
+    @contextlib.contextmanager
+    def deferred_finite_checks(self, perceptron):
+        """Batch this transform's finite checks into ONE device sync at exit.
+
+        The per-write sync throttled the per-step QAT reprojection (26 syncs
+        per optimizer step); deferral keeps the fail-loud contract — a
+        non-finite write still raises, naming the write, before control
+        returns to training."""
+        self._defer_finite = True
+        try:
+            yield self
+            self._flush_finite_checks()
+        finally:
+            self._defer_finite = False
+            self._pending_finite = []
+
+    def _flush_finite_checks(self):
+        pending, self._pending_finite = self._pending_finite, []
+        if not pending:
+            return
+        flags = torch.stack([flag for _, _, flag in pending])
+        if bool(flags.all()):
+            return
+        for perceptron, what, flag in pending:
+            if not bool(flag):
+                self._raise_non_finite(perceptron, what)
+
+    @staticmethod
+    def _raise_non_finite(perceptron, what: str):
+        raise RuntimeError(
+            f"PerceptronTransformer wrote non-finite raw {what} into "
+            f"perceptron {getattr(perceptron, 'name', '<unnamed>')!r} "
+            "(degenerate normalization fold factor u = gamma/sigma on a "
+            "live row?)."
+        )
 
     def _commit_raw_write(self, perceptron, param, new_value, what: str):
         """Write an effective->raw inversion result: re-commit the perceptron's
@@ -26,13 +65,12 @@ class PerceptronTransformer:
         with torch.no_grad():
             param.data[:] = new_value
         commit_perceptron_pruning(perceptron)
-        if not torch.isfinite(param.data).all():
-            raise RuntimeError(
-                f"PerceptronTransformer wrote non-finite raw {what} into "
-                f"perceptron {getattr(perceptron, 'name', '<unnamed>')!r} "
-                "(degenerate normalization fold factor u = gamma/sigma on a "
-                "live row?)."
-            )
+        finite = torch.isfinite(param.data).all()
+        if self._defer_finite:
+            self._pending_finite.append((perceptron, what, finite))
+            return
+        if not bool(finite):
+            self._raise_non_finite(perceptron, what)
 
     def get_effective_parameters(self, perceptron):
         return self.get_effective_weight(perceptron), self.get_effective_bias(perceptron)
@@ -45,7 +83,9 @@ class PerceptronTransformer:
         """Return broadcastable input scale: per-channel tensor or scalar 1.0."""
         pis = getattr(perceptron, 'per_input_scales', None)
         if pis is not None:
-            pis = pis.to(perceptron.layer.weight.data.device)
+            device = perceptron.layer.weight.data.device
+            if pis.device != device:
+                pis = pis.to(device)
             extra = perceptron.layer.weight.data.dim() - 2  # 0 for FC, 2 for Conv2D
             return pis.view(1, -1, *([1] * extra))
         return 1.0

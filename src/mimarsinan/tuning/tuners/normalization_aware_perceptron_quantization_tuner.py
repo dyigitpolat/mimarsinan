@@ -18,6 +18,10 @@ class NormalizationAwarePerceptronQuantizationTuner(PerceptronTransformTuner):
     endpoint stage owns the bounded, high-water-anchored recovery.
     """
 
+    # The previous-transform is a no-op below: the mixing path may clone
+    # parameter tensors instead of deep-copying the module per step.
+    _prev_transform_is_identity = True
+
     def __init__(self, pipeline, model, quantization_bits, target_accuracy, lr, adaptation_manager):
         super().__init__(pipeline, model, target_accuracy, lr)
         self.quantization_bits = quantization_bits

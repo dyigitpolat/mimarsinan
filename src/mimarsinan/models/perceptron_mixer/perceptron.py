@@ -94,7 +94,9 @@ class Perceptron(nn.Module):
         self.input_activation_scale = nn.Parameter(torch.tensor(1.0), requires_grad=False)
         self.activation_scale = nn.Parameter(torch.tensor(1.0), requires_grad=False)
 
-        self.per_input_scales = None
+        # Non-persistent buffer: moves with .to()/offload, absent from
+        # state_dict (cache/golden/parity layouts unchanged).
+        self.register_buffer("per_input_scales", None, persistent=False)
 
         # nn.Linear puts output channels on the LAST dim; conv mappers driving
         # this perceptron through F.conv override this to 1 (channels-first).
@@ -107,6 +109,12 @@ class Perceptron(nn.Module):
         # Caches saved before the layout declaration carry the nn.Linear
         # channels-last layout; conv mappers re-stamp channels-first on load.
         self.__dict__.setdefault("output_channel_axis", -1)
+        # Caches saved before the buffer registration carry per_input_scales
+        # as a plain attr that .to()/offload cannot move; migrate it.
+        if "per_input_scales" not in self._buffers:
+            self._buffers["per_input_scales"] = self.__dict__.pop(
+                "per_input_scales", None,
+            )
 
     def set_parameter_scale(self, new_scale):
         if isinstance(new_scale, float):

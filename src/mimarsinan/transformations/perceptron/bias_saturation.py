@@ -27,7 +27,7 @@ def off_saturation_bias_bound(effective_weight: torch.Tensor) -> torch.Tensor:
     return -w.clamp(min=0).sum(dim=1)
 
 
-def clip_off_saturated_effective_bias(perceptron) -> int:
+def clip_off_saturated_effective_bias(perceptron, transformer=None) -> int:
     """Clip constant-OFF channels' effective bias to the saturation bound.
 
     A channel with ``b + pos_reach <= 0`` outputs the activation floor (0) for
@@ -41,7 +41,8 @@ def clip_off_saturated_effective_bias(perceptron) -> int:
     """
     if getattr(perceptron, "is_encoding_layer", False):
         return 0
-    transformer = PerceptronTransformer()
+    if transformer is None:
+        transformer = PerceptronTransformer()
     bound = off_saturation_bias_bound(
         transformer.get_effective_weight(perceptron).detach()
     )

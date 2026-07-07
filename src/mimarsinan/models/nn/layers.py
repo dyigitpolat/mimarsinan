@@ -43,8 +43,14 @@ def norm_affine_params(normalization):
     ``u*(z-mean)+beta`` (differentiable through ``weight``/``bias``); works for
     ``nn.BatchNorm1d/2d`` and ``FrozenStatsNormalization``."""
     weight = normalization.weight
-    var = normalization.running_var.to(weight.device)
-    mean = normalization.running_mean.to(weight.device)
+    var = normalization.running_var
+    mean = normalization.running_mean
+    # Transfer only on a measured mismatch: this runs per perceptron per
+    # optimizer step, and a blocking H2D copy per call throttles the QAT.
+    if var.device != weight.device:
+        var = var.to(weight.device)
+    if mean.device != weight.device:
+        mean = mean.to(weight.device)
     u = weight / torch.sqrt(var + normalization.eps)
     return u, normalization.bias, mean
 
@@ -73,19 +79,34 @@ class TransformedActivation(nn.Module):
 class FrozenStatsNormalization(nn.Module):
     def __init__(self, normalization):
         super(FrozenStatsNormalization, self).__init__()
-        self.running_mean = normalization.running_mean.clone().detach()
-        self.running_var = normalization.running_var.clone().detach()
+        # Non-persistent buffers: move with .to()/offload, absent from
+        # state_dict (cache/golden/parity layouts unchanged).
+        self.register_buffer(
+            "running_mean", normalization.running_mean.clone().detach(),
+            persistent=False,
+        )
+        self.register_buffer(
+            "running_var", normalization.running_var.clone().detach(),
+            persistent=False,
+        )
         self.weight = normalization.weight
         self.bias = normalization.bias
         self.eps = normalization.eps
 
         self.affine = normalization.affine
 
+    def __setstate__(self, state):
+        super().__setstate__(state)
+        # Caches saved before the buffer registration carry the stats as
+        # plain attrs that .to()/offload cannot move; migrate them.
+        for name in ("running_mean", "running_var"):
+            if name not in self._buffers:
+                self._buffers[name] = self.__dict__.pop(name, None)
+
     def forward(self, x):
-        self.weight = self.weight.to(x.device)
-        self.bias = self.bias.to(x.device)
-        self.running_mean = self.running_mean.to(x.device)
-        self.running_var = self.running_var.to(x.device)
+        if self.running_mean.device != x.device:
+            self.running_mean = self.running_mean.to(x.device)
+            self.running_var = self.running_var.to(x.device)
 
         return nn.functional.batch_norm(
             x, self.running_mean, self.running_var, self.weight, self.bias, False, 0, self.eps

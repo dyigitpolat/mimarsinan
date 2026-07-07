@@ -46,6 +46,7 @@ class TunerPipelineStep(PipelineStep):
         draws = configured_draws(self.pipeline) if self.DRAW_SELECTED else 1
         self.tuner, model, adaptation_manager = run_conversion_draws(
             self.pipeline, build, model, adaptation_manager, draws=draws,
+            target=self.pipeline.get_target_metric(),
         )
         self._report_ft_pass_wall()
         self._commit_tuner_entries(model, adaptation_manager)

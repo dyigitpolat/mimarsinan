@@ -163,6 +163,58 @@ class TestBestOfNSelection:
         tuner, _, _ = run_conversion_draws(pipeline, build, _Model(), object())
         assert tuner is tuners[0], "deterministic tie-break: lowest k wins"
 
+    def test_target_reached_skips_remaining_draws(self, monkeypatch, capsys):
+        # Best-of-N is a fallback for the crater distribution, not a mandate:
+        # a lossless first draw ends the search (healthy cells pay one draw).
+        pipeline = _Pipeline({"conversion_draws": 3})
+        reads = _script_reads(monkeypatch, [0.98])
+        tuners = []
+
+        def build(m, am):
+            tuner = _FakeTuner(m, am)
+            tuners.append(tuner)
+            return tuner
+
+        tuner, _, _ = run_conversion_draws(
+            pipeline, build, _Model(), object(), target=0.97,
+        )
+        assert len(tuners) == 1
+        assert tuner is tuners[0]
+        assert len(reads) == 1
+        assert "skipping remaining draws" in capsys.readouterr().out
+
+    def test_below_target_draws_run_out_the_budget(self, monkeypatch):
+        pipeline = _Pipeline({"conversion_draws": 3})
+        _script_reads(monkeypatch, [0.5, 0.9, 0.7])
+        tuners = []
+
+        def build(m, am):
+            tuner = _FakeTuner(m, am)
+            tuners.append(tuner)
+            return tuner
+
+        tuner, _, _ = run_conversion_draws(
+            pipeline, build, _Model(), object(), target=0.97,
+        )
+        assert len(tuners) == 3
+        assert tuner is tuners[1]
+
+    def test_mid_search_target_reach_keeps_the_reaching_draw(self, monkeypatch):
+        pipeline = _Pipeline({"conversion_draws": 3})
+        _script_reads(monkeypatch, [0.5, 0.98])
+        tuners = []
+
+        def build(m, am):
+            tuner = _FakeTuner(m, am)
+            tuners.append(tuner)
+            return tuner
+
+        tuner, _, _ = run_conversion_draws(
+            pipeline, build, _Model(), object(), target=0.97,
+        )
+        assert len(tuners) == 2
+        assert tuner is tuners[1]
+
     def test_draw_seeds_are_seed_plus_k(self, monkeypatch):
         pipeline = _Pipeline({"conversion_draws": 3})
         seeds = _spy_seeds(monkeypatch)

@@ -15,6 +15,12 @@ class PerceptronTransformTuner(SmoothAdaptationTuner):
     # A persisted optimizer would step transform-produced tensors that receive no gradients (GradScaler crash).
     _supports_persistent_optimizer = False
 
+    # Subclasses whose previous-transform is a declared no-op (NAPQ: projection
+    # rungs) set True: the per-step mixing then clones parameter TENSORS instead
+    # of deep-copying the whole perceptron module (bit-identical — same values,
+    # same RNG draws; the deepcopy was 78% of the WQ endpoint's step wall).
+    _prev_transform_is_identity = False
+
     trainer: PerceptronTransformTrainer
 
     def __init__(self, pipeline, model, target_accuracy, lr):
@@ -75,15 +81,22 @@ class PerceptronTransformTuner(SmoothAdaptationTuner):
         return mask * new_param + (1 - mask) * prev_param
 
     def _mixed_perceptron_transform(self, perceptron, rate, mask_cache=None):
-        temp_prev_perceptron = copy.deepcopy(perceptron).to(self._device)
-
-        self._get_previous_perceptron_transform(rate)(temp_prev_perceptron)
-        self._get_new_perceptron_transform(rate)(perceptron)
+        if self._prev_transform_is_identity:
+            prev_named = [
+                (name, param.detach().clone())
+                for name, param in perceptron.named_parameters()
+            ]
+            self._get_new_perceptron_transform(rate)(perceptron)
+        else:
+            temp_prev_perceptron = copy.deepcopy(perceptron).to(self._device)
+            self._get_previous_perceptron_transform(rate)(temp_prev_perceptron)
+            self._get_new_perceptron_transform(rate)(perceptron)
+            prev_named = list(temp_prev_perceptron.named_parameters())
 
         perceptron_key = id(perceptron)
         for (name, param), (_, prev_param) in zip(
             perceptron.named_parameters(),
-            temp_prev_perceptron.named_parameters(),
+            prev_named,
         ):
             cache_key = (
                 (perceptron_key, name) if mask_cache is not None else None
