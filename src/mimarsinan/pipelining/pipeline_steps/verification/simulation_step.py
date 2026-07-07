@@ -9,10 +9,19 @@ class SimulationStep(PipelineStep):
     def __init__(self, pipeline):
         super().__init__(self.REQUIRES, self.PROMISES, self.UPDATES, self.CLEARS, pipeline)
 
-        self.accuracy = None
+        self.probe_accuracy = None
 
     def validate(self):
-        return self.accuracy
+        # Sim-role respec (user directive 2026-07-07): nevresim is a
+        # decision-parity PROBE on a small subsample; its binomial-noise
+        # accuracy is reported, never the pipeline metric — the accuracy
+        # verdict is the SCM identity read (retention-gated there). Loihi
+        # and SANA-FE follow the same metric-neutral contract.
+        return self.pipeline.get_target_metric()
+
+    def _report_probe(self, accuracy) -> None:
+        print("Simulation accuracy: ", accuracy)
+        self.pipeline.reporter.report("nevresim_probe_accuracy", float(accuracy))
 
     def process(self):
         runner = SimulationRunner(
@@ -20,6 +29,6 @@ class SimulationStep(PipelineStep):
             self.get_entry('hard_core_mapping'),
             int(self.pipeline.config["simulation_steps"]),
         )
-        
-        self.accuracy = runner.run()
-        print("Simulation accuracy: ", self.accuracy)
+
+        self.probe_accuracy = runner.run()
+        self._report_probe(self.probe_accuracy)
