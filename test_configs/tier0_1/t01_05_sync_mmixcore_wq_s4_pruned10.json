@@ -58,7 +58,7 @@
     "pruning": true,
     "pruning_fraction": 0.1,
     "endpoint_floor_steps": 16600,
-    "training_epochs": 2,
+    "training_epochs": 4,
     "training_recipe": {
       "optimizer": "adamw",
       "scheduler": "cosine",

@@ -115,8 +115,21 @@ def _endpoint_floor_steps(row):
     """The run-total endpoint step budget for one tier-0/0.1 row (steps)."""
     return ENDPOINT_FLOOR_STEPS_BASE + ENDPOINT_MODE_EXTRA_STEPS.get(row["mode"], 0)
 
+# [M1 mixer-e4 respec 2026-07-07, user-mandated] every mmixcore cell in both
+# matrices trains 4 pretrain epochs. Evidence: t01_07 (ttfs mixer, e4 + full
+# floor) passed 0.9712 on a dedicated node — envelope and training budget were
+# JOINTLY binding on the mixer column (the B family's e2-anchored refutation
+# tested e4 against STARVED floors; with step-denominated budgets the floor
+# is always full).
+MIXER_E4_NOTE = (
+    "M1 mixer-e4 respec 2026-07-07 (user-mandated): training_epochs 2 -> 4 "
+    "on every mmixcore cell; evidence t01_07 (e4 + full floor = 0.9712 "
+    "dedicated) — envelope and budget jointly binding."
+)
+
 T0 = [
-    dict(n=1, mode="lif", quant="wq", wb=5, s=4, vehicle="mmixcore"),
+    dict(n=1, mode="lif", quant="wq", wb=5, s=4, vehicle="mmixcore", epochs=4,
+         note=MIXER_E4_NOTE),
     dict(n=2, mode="lif", quant="fp", wb=5, s=8, vehicle="lenet5", firing="Novena",
          encoding="offload", pruned=0.5, tags=["novena", "offload", "pruned"]),
     # W2: the 360-core pool packs t0_03 only scheduled (111/360 peak over 4 phases).
@@ -128,7 +141,8 @@ T0 = [
          note="W3c respec 2026-07-06: fictional aq form (weight_quantization=false + "
               "weight_bits ran float) -> real WQ deployment; X4 passed the old form."),
     dict(n=5, mode="lif", quant="wq", wb=5, s=4, vehicle="simplemlp", seed=1),
-    dict(n=6, mode="ttfs", quant="wq", wb=5, s=8, vehicle="mmixcore"),
+    dict(n=6, mode="ttfs", quant="wq", wb=5, s=8, vehicle="mmixcore", epochs=4,
+         note=MIXER_E4_NOTE),
     # W3c respec: same fictional-aq class as t0_04.
     dict(n=7, mode="ttfs", quant="wq", wb=5, s=16, vehicle="lenet5",
          note="W3c respec 2026-07-06: fictional aq form (weight_quantization=false + "
@@ -142,7 +156,7 @@ T0 = [
     dict(n=10, mode="ttfs", quant="fp", wb=5, s=16, vehicle="simplemlp",
          coalescing=False, splitting=False, tags=["identity"]),
     dict(n=11, mode="ttfsq", quant="wq", wb=5, s=16, vehicle="mmixcore",
-         encoding="offload", tags=["offload"]),
+         encoding="offload", tags=["offload"], epochs=4, note=MIXER_E4_NOTE),
     dict(n=12, mode="ttfsq", quant="wq", wb=8, s=32, vehicle="lenet5", tags=["wall_risk"]),
     dict(n=13, mode="ttfsq", quant="wq", wb=5, s=4, vehicle="deepcnn", depth=4),
     dict(n=14, mode="ttfsq", quant="wq", wb=5, s=8, vehicle="deepmlp", depth=8),
@@ -151,7 +165,8 @@ T0 = [
          note="W3c respec 2026-07-06: pruning 0.5 -> 0.10 (user-directed; 50% is "
               "too strong for this cell)."),
     dict(n=16, mode="casc", quant="wq", wb=5, s=8, vehicle="mmixcore", encoding="offload",
-         scheduling=True, has_bias=False, tags=["offload", "sched", "nobias"]),
+         scheduling=True, has_bias=False, tags=["offload", "sched", "nobias"],
+         epochs=4, note=MIXER_E4_NOTE),
     dict(n=17, mode="casc", quant="wq", wb=5, s=32, vehicle="lenet5", tags=["wall_risk"]),
     dict(n=18, mode="casc", quant="wq", wb=5, s=4, vehicle="deepcnn", depth=4, pruned=0.5,
          tags=["pruned", "known_collapse_candidate"]),
@@ -161,9 +176,9 @@ T0 = [
          residual=True, tags=["wall_risk", "known_collapse_candidate", "residual"]),
     dict(n=20, mode="casc", quant="wq", wb=5, s=4, vehicle="simplemlp"),
     dict(n=21, mode="sync", quant="wq", wb=5, s=8, vehicle="mmixcore", pruned=0.10,
-         tags=["pruned10"],
+         tags=["pruned10"], epochs=4,
          note="W3c respec 2026-07-06: pruning 0.5 -> 0.10 (user-directed; 50% is "
-              "too strong for this cell)."),
+              "too strong for this cell). " + MIXER_E4_NOTE),
     dict(n=22, mode="sync", quant="wq", wb=5, s=4, vehicle="lenet5", scheduling=True, tags=["sched"]),
     dict(n=23, mode="sync", quant="wq", wb=8, s=16, vehicle="deepcnn", depth=4),
     dict(n=24, mode="sync", quant="wq", wb=5, s=8, vehicle="deepmlp", depth=4, width=128),
@@ -177,36 +192,38 @@ T0_1 = [
     # A - install-resolution law calibration (A6, theory 5v): sweep S per mode
     # on the L=9 mixer chain to make the resolution x chain-depth boundary visible.
     dict(n=1, family="A", mode="lif", quant="wq", wb=5, s=8, vehicle="mmixcore",
+         epochs=4, note=MIXER_E4_NOTE,
          anchor="t0_01_lif_mmixcore_wq_s4", axes=["S: 4 -> 8"],
          hypothesis="t0_01's binding failure is the T=4 window back-loading crater "
                     "(frozen-weights NF 0.32@T4 -> 0.82@T8): at S=8 the entry crater "
                     "clears and deployed reaches >= 0.97."),
     dict(n=2, family="A", mode="lif", quant="wq", wb=5, s=16, vehicle="mmixcore",
+         epochs=4, note=MIXER_E4_NOTE,
          anchor="t0_01_lif_mmixcore_wq_s4", axes=["S: 4 -> 16"],
          hypothesis="Deployed accuracy is monotone along the T-healing curve "
                     "(NF 0.90@T16 frozen-weights): S=16 lands at or above the S=8 "
                     "read, isolating the temporal kernel from the envelope."),
     dict(n=3, family="A", mode="casc", quant="wq", wb=5, s=4, vehicle="mmixcore",
          encoding="offload", scheduling=True, has_bias=False,
-         tags=["offload", "sched", "nobias"],
+         tags=["offload", "sched", "nobias"], epochs=4, note=MIXER_E4_NOTE,
          anchor="t0_16_casc_mmixcore_wq_s8_offload_sched_nobias", axes=["S: 8 -> 4"],
          hypothesis="Cascaded per-hop attenuation GROWS with S (genuine forward "
                     "0.57@S8 -> 0.31@S64 frozen-weights): at S=4 the conversion gap "
                     "shrinks and deployed exceeds the anchor's ~0.90 ceiling."),
     dict(n=4, family="A", mode="sync", quant="wq", wb=5, s=16, vehicle="mmixcore",
-         pruned=0.10, tags=["pruned10"],
+         pruned=0.10, tags=["pruned10"], epochs=4, note=MIXER_E4_NOTE,
          anchor="t0_21_sync_mmixcore_wq_s8_pruned10", axes=["S: 8 -> 16"],
          hypothesis="Sync level starvation shrinks with grid resolution (entry "
                     "0.10@S8 -> 0.19@S16 -> 0.69@S32 pre-fix-stack): at S=16 the fix "
                     "stack plus WQ endpoint clear 0.97."),
     dict(n=5, family="A", mode="sync", quant="wq", wb=5, s=4, vehicle="mmixcore",
-         pruned=0.10, tags=["pruned10"],
+         pruned=0.10, tags=["pruned10"], epochs=4, note=MIXER_E4_NOTE,
          anchor="t0_21_sync_mmixcore_wq_s8_pruned10", axes=["S: 8 -> 4"],
          hypothesis="At S=4 starvation deepens beyond the quantile+half-step+staging "
                     "stack's recovery on the L=9 chain: deployed lands below the "
                     "anchor's 0.9677 (the boundary probed from the failing side)."),
     dict(n=6, family="A", mode="ttfsq", quant="wq", wb=5, s=8, vehicle="mmixcore",
-         encoding="offload", tags=["offload"],
+         encoding="offload", tags=["offload"], epochs=4, note=MIXER_E4_NOTE,
          anchor="t0_11_ttfsq_mmixcore_wq_s16_offload", axes=["S: 16 -> 8"],
          hypothesis="ttfsq's dense nearest-rounding install keeps per-hop error small "
                     "at any resolution: halving S from 16 to 8 stays crater-free and "
@@ -215,29 +232,38 @@ T0_1 = [
     # (all else identical); the extra pretrain is accounted in the wall honestly.
     dict(n=7, family="B", mode="ttfs", quant="wq", wb=5, s=8, vehicle="mmixcore",
          epochs=4, tags=["e4"], wall_min=10,
-         anchor="t0_06_ttfs_mmixcore_wq_s8", axes=["training_epochs: 2 -> 4"],
-         hypothesis="t0_06 is purely envelope-bound (conversion loss-free, ceiling "
-                    "0.9711 at e2): 4-epoch pretrain lifts the envelope past 0.97 "
-                    "and the cell passes."),
+         anchor="t0_06_ttfs_mmixcore_wq_s8", axes=[],
+         note="M1 respec 2026-07-07: the anchor was lifted to e4 on this "
+              "cell's own evidence (0.9712 dedicated); now a replication clone.",
+         hypothesis="Replication clone of t0_06 post-M1 (this cell WAS the "
+                    "e4 evidence: envelope+budget jointly binding); reads "
+                    "calibrate the mixer column's draw variance."),
     dict(n=8, family="B", mode="lif", quant="wq", wb=5, s=4, vehicle="mmixcore",
          epochs=4, tags=["e4"], wall_min=16,
-         anchor="t0_01_lif_mmixcore_wq_s4", axes=["training_epochs: 2 -> 4"],
-         hypothesis="The 0.948 pretrain envelope, not the S=4 install crater, is "
-                    "t0_01's binding constraint: at 4 epochs the cell clears 0.97."),
+         anchor="t0_01_lif_mmixcore_wq_s4", axes=[],
+         note="M1 respec 2026-07-07: the anchor was lifted to e4 (evidence "
+              "t01_07); now a replication clone.",
+         hypothesis="Replication clone of t0_01 post-M1 (the B2 diagnostic "
+                    "showed e4 alone re-opens the S=4 crater at entry 0.276); "
+                    "reads calibrate the mixer column's draw variance."),
     dict(n=9, family="B", mode="sync", quant="wq", wb=5, s=8, vehicle="mmixcore",
          pruned=0.10, epochs=4, tags=["pruned10", "e4"], wall_min=10,
-         anchor="t0_21_sync_mmixcore_wq_s8_pruned10", axes=["training_epochs: 2 -> 4"],
-         hypothesis="t0_21's residual gap is envelope+WQ, not conversion: at 4 epochs "
-                    "the float envelope rises above 0.9735 and the deployed near-miss "
-                    "(0.9677) converts to a pass."),
+         anchor="t0_21_sync_mmixcore_wq_s8_pruned10", axes=[],
+         note="M1 respec 2026-07-07: the anchor was lifted to e4 (evidence "
+              "t01_07); now a replication clone.",
+         hypothesis="Replication clone of t0_21 post-M1 (the B3 diagnostic "
+                    "showed the sync AQ crater unchanged by e4); reads "
+                    "calibrate the sync mixer's draw variance."),
     dict(n=10, family="B", mode="casc", quant="wq", wb=5, s=8, vehicle="mmixcore",
          encoding="offload", scheduling=True, has_bias=False, epochs=4,
          tags=["offload", "sched", "nobias", "e4"], wall_min=10,
          anchor="t0_16_casc_mmixcore_wq_s8_offload_sched_nobias",
-         axes=["training_epochs: 2 -> 4"],
-         hypothesis="If t0_16's ~0.90 ceiling is envelope-dominated, 4 epochs push "
-                    "deployed past 0.97; a plateau near 0.90 instead pins the "
-                    "casc-mixer conversion gap as the binder."),
+         axes=[],
+         note="M1 respec 2026-07-07: the anchor was lifted to e4 (evidence "
+              "t01_07); now a replication clone.",
+         hypothesis="Replication clone of t0_16 post-M1 (the B4 diagnostic "
+                    "showed e4 arms the retention gate against the casc "
+                    "conversion crater); reads calibrate casc draw variance."),
     dict(n=11, family="B", mode="casc", quant="wq", wb=4, s=16, vehicle="deepmlp",
          depth=16, residual=True, epochs=4, tags=["residual", "e4"], wall_min=12,
          anchor="t0_19_casc_deepmlp_d16_wq_s16_residual",
@@ -248,13 +274,14 @@ T0_1 = [
     # C - cascade structure isolation: which axis of t0_16/t0_18/t0_19 carries
     # the cascade gap - the tag stack, bias axons, depth, or boundaries?
     dict(n=12, family="C", mode="casc", quant="wq", wb=5, s=8, vehicle="mmixcore",
+         epochs=4, note=MIXER_E4_NOTE,
          anchor="t0_16_casc_mmixcore_wq_s8_offload_sched_nobias",
          axes=["tag stack: offload+sched+nobias -> plain"],
          hypothesis="t0_16's conversion gap survives the removal of "
                     "offload+sched+nobias: the gap is intrinsic to casc x L=9 "
                     "(deployed stays ~0.90), not tag-induced."),
     dict(n=13, family="C", mode="casc", quant="wq", wb=5, s=8, vehicle="mmixcore",
-         has_bias=False, tags=["nobias"],
+         has_bias=False, tags=["nobias"], epochs=4, note=MIXER_E4_NOTE,
          anchor="t0_16_casc_mmixcore_wq_s8_offload_sched_nobias",
          axes=["tag stack: offload+sched+nobias -> nobias only"],
          hypothesis="Bias-axon removal alone does not reproduce the anchor's gap: "
@@ -302,12 +329,12 @@ T0_1 = [
                     "near the bar."),
     # E - quantization-resolution / WQ gap: move only weight_bits.
     dict(n=20, family="E", mode="sync", quant="wq", wb=8, s=8, vehicle="mmixcore",
-         pruned=0.10, tags=["pruned10", "wb8"],
+         pruned=0.10, tags=["pruned10", "wb8"], epochs=4, note=MIXER_E4_NOTE,
          anchor="t0_21_sync_mmixcore_wq_s8_pruned10", axes=["weight_bits: 5 -> 8"],
          hypothesis="t0_21's 0.9677 is a pure WQ gap (float 0.9735): 8-bit weights "
                     "close the ~0.6 pp and the cell passes."),
     dict(n=21, family="E", mode="lif", quant="wq", wb=8, s=4, vehicle="mmixcore",
-         tags=["wb8"],
+         tags=["wb8"], epochs=4, note=MIXER_E4_NOTE,
          anchor="t0_01_lif_mmixcore_wq_s4", axes=["weight_bits: 5 -> 8"],
          hypothesis="t0_01's sub-bar residual has no WQ component: wb8 leaves "
                     "deployed at the ~0.948 envelope; a lift would relocate the "
@@ -325,7 +352,7 @@ T0_1 = [
     # draw-variant 0.9441). They stay as replication clones of their anchors
     # (draw-variance controls for the conversion-draws mechanism).
     dict(n=23, family="F", mode="ttfs", quant="wq", wb=5, s=8, vehicle="mmixcore",
-         tags=["floor"], wall_min=18,
+         epochs=4, tags=["floor"], wall_min=18,
          anchor="t0_06_ttfs_mmixcore_wq_s8",
          axes=[],
          note="Reproducibility respec 2026-07-07: the 600 s floor-room "
@@ -335,7 +362,7 @@ T0_1 = [
                     "floor budget-complete: full 16k steps => the 0.97 fbu "
                     "ceiling, now the default); reads calibrate draw variance."),
     dict(n=24, family="F", mode="sync", quant="wq", wb=5, s=8, vehicle="mmixcore",
-         pruned=0.10, tags=["pruned10", "floor"], wall_min=18,
+         pruned=0.10, epochs=4, tags=["pruned10", "floor"], wall_min=18,
          anchor="t0_21_sync_mmixcore_wq_s8_pruned10",
          axes=[],
          note="Reproducibility respec 2026-07-07: the 600 s floor-room "
@@ -536,6 +563,10 @@ COVERAGE_NOTES = {
         "identity read (full test set, torch<->deployed parity-certified). "
         "Historical N=100 simulator accuracy columns are not comparable to "
         "the SCM-based accuracy column.",
+        "M1 mixer-e4 respec 2026-07-07 (user-mandated): every mmixcore cell "
+        "trains 4 pretrain epochs (evidence t01_07: e4 + full floor passed "
+        "0.9712 dedicated — envelope and training budget jointly binding on "
+        "the mixer column).",
         "Reproducibility respec 2026-07-07 (user-directed): training budgets "
         "are STEP-denominated — endpoint_floor_steps is the RUN-total step "
         "budget shared by armed endpoint stages (endpoint_steps ledger), "
@@ -562,6 +593,9 @@ COVERAGE_NOTES = {
         "Sim-role respec 2026-07-07 (user-directed): identical to tier-0 — "
         "simulators are parity probes (nevresim N=25 default); the accuracy "
         "verdict is the SCM identity read.",
+        "M1 mixer-e4 respec 2026-07-07 (user-mandated): every mmixcore cell "
+        "trains 4 epochs, matching the lifted tier-0 anchors; the B-family "
+        "mixer diagnostics (t01_07-t01_10) are replication clones now.",
         "Reproducibility respec 2026-07-07 (user-directed): step-denominated "
         "endpoint budgets exactly as tier-0's (endpoint_floor_steps = 16000 "
         "+ mode extra; wall-seconds budgets gone). The F-family 600 s "

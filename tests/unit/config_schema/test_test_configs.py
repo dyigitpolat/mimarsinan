@@ -308,6 +308,27 @@ class TestW3cRespecs:
                 assert cell["quantization"] == "wq", run["name"]
 
 
+class TestM1MixerE4Respec:
+    """M1 mixer-e4 respec (2026-07-07, user-mandated): every mmixcore cell in
+    both matrices trains 4 pretrain epochs. Evidence: t01_07 (ttfs mixer, e4 +
+    full floor) passed 0.9712 on a dedicated node — the envelope and the
+    training budget were JOINTLY binding on the mixer column."""
+
+    def test_tier0_mixer_cells_train_four_epochs(self):
+        for run in _manifest(0)["runs"]:
+            dp = json.loads(
+                (TEST_CONFIGS / "tier0" / run["config"]).read_text()
+            )["deployment_parameters"]
+            expected = 4 if "mmixcore" in run["name"] else 2
+            assert dp["training_epochs"] == expected, run["name"]
+
+    def test_tier0_mixer_cells_carry_the_respec_note(self):
+        runs = {r["name"]: r for r in _manifest(0)["runs"]}
+        for name, run in runs.items():
+            if "mmixcore" in name:
+                assert "t01_07" in run.get("note", ""), name
+
+
 def _flatten(node, prefix=""):
     """Flatten a JSON tree into {dotted/indexed key-path: leaf value}."""
     if isinstance(node, dict):
@@ -348,12 +369,15 @@ TIER01_EXPECTED_DELTAS = {
     "t01_04_sync_mmixcore_wq_s16_pruned10": ("t0_21_sync_mmixcore_wq_s8_pruned10", _S_MOVE),
     "t01_05_sync_mmixcore_wq_s4_pruned10": ("t0_21_sync_mmixcore_wq_s8_pruned10", _S_MOVE),
     "t01_06_ttfsq_mmixcore_wq_s8_offload": ("t0_11_ttfsq_mmixcore_wq_s16_offload", _S_MOVE),
-    # B - pretrain envelope (training_epochs 2 -> 4)
-    "t01_07_ttfs_mmixcore_wq_s8_e4": ("t0_06_ttfs_mmixcore_wq_s8", _E4_MOVE),
-    "t01_08_lif_mmixcore_wq_s4_e4": ("t0_01_lif_mmixcore_wq_s4", _E4_MOVE),
-    "t01_09_sync_mmixcore_wq_s8_pruned10_e4": ("t0_21_sync_mmixcore_wq_s8_pruned10", _E4_MOVE),
+    # B - pretrain envelope (training_epochs 2 -> 4). The M1 mixer-e4 respec
+    # (2026-07-07, evidence t01_07: e4 + full floor passed 0.9712 dedicated)
+    # lifted every mmixcore ANCHOR to e4, so the mixer B cells are replication
+    # clones now; the deepmlp B cell keeps its e4 delta (t0_19 stays e2).
+    "t01_07_ttfs_mmixcore_wq_s8_e4": ("t0_06_ttfs_mmixcore_wq_s8", set()),
+    "t01_08_lif_mmixcore_wq_s4_e4": ("t0_01_lif_mmixcore_wq_s4", set()),
+    "t01_09_sync_mmixcore_wq_s8_pruned10_e4": ("t0_21_sync_mmixcore_wq_s8_pruned10", set()),
     "t01_10_casc_mmixcore_wq_s8_offload_sched_nobias_e4":
-        ("t0_16_casc_mmixcore_wq_s8_offload_sched_nobias", _E4_MOVE),
+        ("t0_16_casc_mmixcore_wq_s8_offload_sched_nobias", set()),
     "t01_11_casc_deepmlp_d16_wq_s16_residual_e4":
         ("t0_19_casc_deepmlp_d16_wq_s16_residual", _E4_MOVE),
     # C - cascade structure isolation
@@ -408,6 +432,10 @@ TIER01_EXPECTED_DELTAS = {
 # user-directed respec (they re-read their anchor's distribution — the
 # draw-variance controls) plus the pure green control.
 TIER01_REPLICATION_CLONES = {
+    "t01_07_ttfs_mmixcore_wq_s8_e4",
+    "t01_08_lif_mmixcore_wq_s4_e4",
+    "t01_09_sync_mmixcore_wq_s8_pruned10_e4",
+    "t01_10_casc_mmixcore_wq_s8_offload_sched_nobias_e4",
     "t01_23_ttfs_mmixcore_wq_s8_floor",
     "t01_24_sync_mmixcore_wq_s8_pruned10_floor",
     "t01_25_ttfsq_lenet5_wq_s32",
@@ -454,10 +482,13 @@ class TestTier01DiagnosticMatrix:
             counts[run["family"]] = counts.get(run["family"], 0) + 1
         assert counts == TIER01_FAMILY_SIZES
 
-    def test_envelope_cells_train_four_epochs_and_others_two(self):
+    def test_mixer_and_envelope_cells_train_four_epochs_and_others_two(self):
+        # M1 mixer-e4 respec (2026-07-07): every mmixcore cell trains 4 epochs
+        # (evidence t01_07); the non-mixer B diagnostic keeps its e4 axis.
         for run in self._runs():
             dp = self._load("0_1", run["name"])["deployment_parameters"]
-            expected = 4 if run["family"] == "B" else 2
+            mixer = "mmixcore" in run["name"]
+            expected = 4 if (mixer or run["family"] == "B") else 2
             assert dp["training_epochs"] == expected, run["name"]
 
     def test_every_cell_carries_the_step_denominated_floor_budget(self):
