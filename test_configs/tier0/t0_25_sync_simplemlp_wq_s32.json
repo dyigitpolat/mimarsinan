@@ -51,7 +51,7 @@
     "encoding_layer_placement": "subsume",
     "weight_quantization": true,
     "ttfs_cycle_schedule": "synchronized",
-    "endpoint_floor_wall_s": 140,
+    "endpoint_floor_wall_s": 440,
     "training_epochs": 2,
     "training_recipe": {
       "optimizer": "adamw",

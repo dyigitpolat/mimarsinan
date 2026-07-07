@@ -94,12 +94,15 @@ def _quant_axis(row):
 # clamp(TARGET_ART_S - base, MIN_S, MAX_S), where base is the cell's measured
 # UNCONTENDED artifact wall MINUS endpoint-stage overheads (fix-round wave,
 # slurm runs 20260707-0744*/0751*, one 65-CPU h100-47 pack per node, ctrl band
-# 107-117 s). MAX_S = the uncontended full-16k-step floor cost (~135 s at
-# ~118 steps/s) + margin; MIN_S keeps a small recovery allowance on
+# 107-117 s). TARGET_ART_S tracks the acceptance wall bar (soft 600 s):
+# endpoint budgets convert wall headroom into deployed-forward training, so a
+# tighter bar starves the floor stages that carry crater/envelope recovery.
+# MAX_S admits the full 16k-step floor even at contended trainer rates
+# (~30 steps/s -> ~530 s); MIN_S keeps a small recovery allowance on
 # identity-sim-bound cells whose accuracy is already solved at entry.
-ENDPOINT_WALL_TARGET_ART_S = 280
+ENDPOINT_WALL_TARGET_ART_S = 580
 ENDPOINT_WALL_MIN_S = 40
-ENDPOINT_WALL_MAX_S = 150
+ENDPOINT_WALL_MAX_S = 480
 # Measured bases by (vehicle[, mode][, depth-bucket]) class; the worst
 # measured member of each class (see the manifest note for provenance).
 ENDPOINT_WALL_CLASS_BASE_S = {

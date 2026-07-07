@@ -10,6 +10,19 @@ import pytest
 ROOT = Path(__file__).resolve().parents[3]
 TEST_CONFIGS = ROOT / "test_configs"
 
+
+def _generator():
+    """Import test_configs/generate.py by path (it is a script, not a package)."""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "test_configs_generate", TEST_CONFIGS / "generate.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    return module
+
 # "0_1" is the tier-0.1 diagnostic matrix (minimal pairs of tier-0 anchors).
 TIERS = (0, "0_1", 1, 2)
 
@@ -440,9 +453,12 @@ class TestTier01DiagnosticMatrix:
             assert dp["training_epochs"] == expected, run["name"]
 
     def test_floor_cells_carry_the_overridable_wall_knob(self):
-        # Fix-round item 5: every cell carries the sized RUN-total endpoint
-        # wall budget (clamp(280 - measured class base, 40, 150)); the two
+        # Fix-round item 5, resized to the soft-600 acceptance bar: every cell
+        # carries the sized RUN-total endpoint wall budget
+        # (clamp(TARGET_ART_S - measured class base, MIN_S, MAX_S)); the two
         # F-family diagnostics keep their explicit 600 s override.
+        gen = _generator()
+
         floor_cells = {"t01_23_ttfs_mmixcore_wq_s8_floor",
                        "t01_24_sync_mmixcore_wq_s8_pruned10_floor"}
         for run in self._runs():
@@ -450,22 +466,40 @@ class TestTier01DiagnosticMatrix:
             if run["name"] in floor_cells:
                 assert dp["endpoint_floor_wall_s"] == 600, run["name"]
             else:
-                assert 40 <= dp["endpoint_floor_wall_s"] <= 150, run["name"]
+                assert (
+                    gen.ENDPOINT_WALL_MIN_S
+                    <= dp["endpoint_floor_wall_s"]
+                    <= gen.ENDPOINT_WALL_MAX_S
+                ), run["name"]
 
     def test_endpoint_wall_budgets_follow_the_measured_arithmetic(self):
-        # Spot checks of the manifest-documented sizing on both matrices.
+        # Spot checks: budget == clamp(TARGET - class base, MIN, MAX) with the
+        # documented class bases (t0_03 base 340 -> 240; t0_12 base 130 ->
+        # capped at MAX; t0_21/t01_14 base 180 -> 400).
+        gen = _generator()
+
         assert self._load(
             0, "t0_03_lif_deepcnn_d8_wq_s16_sched",
-        )["deployment_parameters"]["endpoint_floor_wall_s"] == 40
+        )["deployment_parameters"]["endpoint_floor_wall_s"] == (
+            gen.ENDPOINT_WALL_TARGET_ART_S
+            - gen.ENDPOINT_WALL_CLASS_BASE_S[("deepcnn", "deep")]
+        )
         assert self._load(
             0, "t0_12_ttfsq_lenet5_wq_s32",
-        )["deployment_parameters"]["endpoint_floor_wall_s"] == 150
+        )["deployment_parameters"]["endpoint_floor_wall_s"] == (
+            gen.ENDPOINT_WALL_TARGET_ART_S
+            - gen.ENDPOINT_WALL_CLASS_BASE_S[("lenet5", "ttfsq")]
+        )
         assert self._load(
             0, "t0_21_sync_mmixcore_wq_s8_pruned10",
-        )["deployment_parameters"]["endpoint_floor_wall_s"] == 100
+        )["deployment_parameters"]["endpoint_floor_wall_s"] == (
+            gen.ENDPOINT_WALL_TARGET_ART_S - 180
+        )
         assert self._load(
             "0_1", "t01_14_casc_deepmlp_d8_wq_s16_residual",
-        )["deployment_parameters"]["endpoint_floor_wall_s"] == 100
+        )["deployment_parameters"]["endpoint_floor_wall_s"] == (
+            gen.ENDPOINT_WALL_TARGET_ART_S - 180
+        )
 
     def test_green_control_is_a_pure_t0_12_clone(self):
         cfg = self._load("0_1", "t01_25_ttfsq_lenet5_wq_s32")
