@@ -154,6 +154,261 @@ class TestClipOffSaturatedEffectiveBias:
         assert clip_off_saturated_effective_bias(p) == 0
 
 
+class TestEmpiricalBiasBounds:
+    """Guarded canonicalization math: shrink |b| on EMPIRICALLY saturated
+    channels only as far as the observed pre-activation range proves harmless
+    (margin-guarded); never grow |b|, never flip its sign."""
+
+    def test_empirically_on_channel_shrinks_to_observed_slack(self):
+        from mimarsinan.transformations.bias_saturation import (
+            empirical_bias_shift,
+        )
+
+        b = torch.tensor([21.0])
+        v_min = torch.tensor([19.0])
+        v_max = torch.tensor([21.4])
+        delta = empirical_bias_shift(b, v_min, v_max, ceiling=1.0, margin=0.25)
+        assert torch.allclose(delta, torch.tensor([-17.75]))
+        assert float(v_min + delta) >= 1.0
+
+    def test_empirically_off_channel_shrinks_toward_zero(self):
+        from mimarsinan.transformations.bias_saturation import (
+            empirical_bias_shift,
+        )
+
+        b = torch.tensor([-52.0])
+        v_min = torch.tensor([-55.0])
+        v_max = torch.tensor([-49.0])
+        delta = empirical_bias_shift(b, v_min, v_max, ceiling=1.0, margin=0.25)
+        assert torch.allclose(delta, torch.tensor([48.75]))
+        assert float(v_max + delta) <= 0.0
+
+    def test_unsaturated_channel_is_untouched(self):
+        from mimarsinan.transformations.bias_saturation import (
+            empirical_bias_shift,
+        )
+
+        b = torch.tensor([0.4])
+        delta = empirical_bias_shift(
+            b, torch.tensor([-0.5]), torch.tensor([0.9]), ceiling=1.0, margin=0.25,
+        )
+        assert torch.equal(delta, torch.zeros(1))
+
+    def test_never_grows_the_bias(self):
+        from mimarsinan.transformations.bias_saturation import (
+            empirical_bias_shift,
+        )
+
+        # Slack smaller than the margin: the shift would grow |b|; skip.
+        b = torch.tensor([2.0])
+        delta = empirical_bias_shift(
+            b, torch.tensor([1.1]), torch.tensor([2.5]), ceiling=1.0, margin=0.25,
+        )
+        assert torch.equal(delta, torch.zeros(1))
+
+    def test_never_flips_the_sign(self):
+        from mimarsinan.transformations.bias_saturation import (
+            empirical_bias_shift,
+        )
+
+        # Observed slack exceeds |b|: clamp at zero rather than crossing.
+        b = torch.tensor([0.5])
+        delta = empirical_bias_shift(
+            b, torch.tensor([19.0]), torch.tensor([20.0]), ceiling=1.0, margin=0.25,
+        )
+        assert torch.allclose(b + delta, torch.tensor([0.0]))
+
+
+class TestGuardedCanonicalization:
+    """The t01_16/rep3 residual: an outlier bias that is NOT provably
+    saturated but IS empirically constant. The guarded pass shrinks it using
+    the observed pre-activation range and VERIFIES decision agreement on the
+    calibration batches, restoring the perceptron on any flip."""
+
+    def _chain(self, seed=21):
+        # Production perceptrons at WQ entry clamp at theta (the effective
+        # ceiling); Hardtanh(0, 1) is the theta=1 stand-in the ON-side
+        # canonicalization contract requires.
+        torch.manual_seed(seed)
+        p1 = _make_perceptron(seed=seed)
+        p1.activation = nn.Hardtanh(min_val=0.0, max_val=1.0)
+        p2 = _make_perceptron(seed=seed + 1)
+        p2.activation = nn.Hardtanh(min_val=0.0, max_val=1.0)
+        with torch.no_grad():
+            p2.layer = nn.Linear(4, 4)
+            p2.layer.weight.data = torch.randn(4, 4) * 0.3
+            # The planted channel (2) is decision-relevant downstream, so a
+            # saturation-breaking shift MUST flip decisions (the guard's food):
+            # with ch2 at its saturated 1.0, class 0 wins (+3 > +0.5); with
+            # ch2 broken to ~0, class 1 wins.
+            p2.layer.weight.data[:, 2] = torch.tensor([3.0, -3.0, 1.0, -1.0])
+            p2.layer.bias.data = torch.tensor([0.0, 0.5, 0.0, 0.0])
+
+        class _Chain(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.p1, self.p2 = p1, p2
+
+            def forward(self, x):
+                return self.p2(self.p1(x))
+
+            def get_perceptrons(self):
+                return [self.p1, self.p2]
+
+        return _Chain().eval()
+
+    def test_empirically_on_outlier_is_shrunk_and_verified(self):
+        from mimarsinan.transformations.bias_saturation import (
+            canonicalize_starved_bias_outliers,
+        )
+
+        model = self._chain()
+        p1 = model.get_perceptrons()[0]
+        _set_effective_bias_entry(p1, 2, 21.0)
+        torch.manual_seed(3)
+        batches = [torch.rand(64, 8) for _ in range(3)]
+        with torch.no_grad():
+            before = [model(x).argmax(-1) for x in batches]
+
+        report = canonicalize_starved_bias_outliers(model, batches, bits=4)
+
+        pt = PerceptronTransformer()
+        b = pt.get_effective_bias(p1)
+        assert float(b[2]) < 21.0
+        assert report["clipped"] >= 1 and report["restored"] == 0
+        with torch.no_grad():
+            after = [model(x).argmax(-1) for x in batches]
+        for x, y in zip(before, after):
+            assert torch.equal(x, y)
+
+    def test_grid_step_is_refined_by_an_order_of_magnitude(self):
+        from mimarsinan.transformations.bias_saturation import (
+            canonicalize_starved_bias_outliers,
+        )
+
+        model = self._chain(seed=33)
+        p1 = model.get_perceptrons()[0]
+        _set_effective_bias_entry(p1, 2, 21.0)
+        batches = [torch.rand(64, 8) for _ in range(3)]
+        canonicalize_starved_bias_outliers(model, batches, bits=4)
+        pt = PerceptronTransformer()
+        b = pt.get_effective_bias(p1).abs()
+        # The mechanism's contract: the grid ceiling collapses from the
+        # unobservable 21 to the observed saturation slack (~1.4 here).
+        assert float(b.max()) < 2.0, float(b.max())
+
+    def test_healthy_perceptrons_are_not_touched(self):
+        from mimarsinan.transformations.bias_saturation import (
+            canonicalize_starved_bias_outliers,
+        )
+
+        model = self._chain(seed=5)
+        p1 = model.get_perceptrons()[0]
+        w1 = p1.layer.weight.data.clone()
+        b1 = p1.layer.bias.data.clone()
+        report = canonicalize_starved_bias_outliers(
+            model, [torch.rand(32, 8)], bits=4,
+        )
+        assert report["clipped"] == 0
+        assert torch.equal(p1.layer.weight.data, w1)
+        assert torch.equal(p1.layer.bias.data, b1)
+
+    def _wide_chain(self, seed, downstream_col2):
+        """The rep3/ch43 anatomy: ch2's drive is many small weights with a
+        huge reach, swinging BOTH sides of the ceiling around a +21 bias —
+        unreachable by rungs 1-2. ``downstream_col2`` decides whether its
+        removal is decision-invariant."""
+        torch.manual_seed(seed)
+        p1 = Perceptron(4, 64, normalization=nn.Identity())
+        p1.activation = nn.Hardtanh(min_val=0.0, max_val=1.0)
+        p2 = Perceptron(4, 4, normalization=nn.Identity())
+        p2.activation = nn.Identity()
+        with torch.no_grad():
+            p1.layer.weight.data.mul_(0.3)
+            p1.layer.bias.data.mul_(0.3)
+            p1.layer.weight.data[2] = -0.7
+            p2.layer.weight.data = torch.randn(4, 4) * 0.3
+            p2.layer.weight.data[:, 2] = torch.as_tensor(downstream_col2)
+            p2.layer.bias.data = torch.tensor([0.0, 0.5, 0.0, 0.0])
+        _set_effective_bias_entry(p1, 2, 21.0)
+
+        class _Chain(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.p1, self.p2 = p1, p2
+
+            def forward(self, x):
+                return self.p2(self.p1(x))
+
+            def get_perceptrons(self):
+                return [self.p1, self.p2]
+
+        return _Chain().eval()
+
+    def test_wild_nuisance_channel_is_removed_when_decision_invariant(self):
+        from mimarsinan.transformations.bias_saturation import (
+            canonicalize_starved_bias_outliers,
+        )
+
+        model = self._wide_chain(seed=13, downstream_col2=[0.0, 0.0, 0.0, 0.0])
+        p1 = model.get_perceptrons()[0]
+        batches = [torch.rand(64, 64) for _ in range(3)]
+        with torch.no_grad():
+            before = [model(x).argmax(-1) for x in batches]
+
+        report = canonicalize_starved_bias_outliers(model, batches, bits=4)
+
+        assert report["removed"] >= 1
+        pt = PerceptronTransformer()
+        b = pt.get_effective_bias(p1)
+        w = pt.get_effective_weight(p1)
+        assert float(b[2]) == pytest.approx(0.0, abs=1e-6)
+        assert float(w[2].abs().max()) == pytest.approx(0.0, abs=1e-6)
+        with torch.no_grad():
+            after = [model(x).argmax(-1) for x in batches]
+        for x, y in zip(before, after):
+            assert torch.equal(x, y)
+
+    def test_decision_relevant_wild_channel_is_restored(self):
+        from mimarsinan.transformations.bias_saturation import (
+            canonicalize_starved_bias_outliers,
+        )
+
+        model = self._wide_chain(seed=17, downstream_col2=[3.0, -3.0, 1.0, -1.0])
+        p1 = model.get_perceptrons()[0]
+        b_before = p1.layer.bias.data.clone()
+        w_before = p1.layer.weight.data.clone()
+        batches = [torch.rand(64, 64) for _ in range(3)]
+
+        report = canonicalize_starved_bias_outliers(model, batches, bits=4)
+
+        # Other channels may be legitimately rung-2-canonicalized; the WILD
+        # decision-relevant channel itself must be restored bit-exactly.
+        assert report["removal_restored"] >= 1
+        assert torch.allclose(p1.layer.bias.data[2], b_before[2])
+        assert torch.allclose(p1.layer.weight.data[2], w_before[2])
+
+    def test_decision_flip_restores_the_perceptron(self, monkeypatch):
+        from mimarsinan.transformations import bias_saturation
+
+        model = self._chain(seed=8)
+        p1 = model.get_perceptrons()[0]
+        _set_effective_bias_entry(p1, 2, 21.0)
+        b_before = p1.layer.bias.data.clone()
+        # Force a saturation-breaking shift so the guard must fire.
+        monkeypatch.setattr(
+            bias_saturation, "empirical_bias_shift",
+            lambda b, vmin, vmax, *, ceiling, margin: torch.where(
+                b.abs() > 10.0, -b, torch.zeros_like(b),
+            ),
+        )
+        report = bias_saturation.canonicalize_starved_bias_outliers(
+            model, [torch.rand(64, 8)], bits=4,
+        )
+        assert report["restored"] >= 1
+        assert torch.allclose(p1.layer.bias.data, b_before)
+
+
 class TestNapqScaleIsSaturationAware:
     """The crater regression: NAPQ's shared scale must derive from the
     canonicalized bias, never from unobservable dead-channel bias mass."""
