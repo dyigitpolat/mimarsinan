@@ -8,7 +8,10 @@ abstractions: `GUIHandle` (pipeline hooks that build step snapshots and persist
 them), the thread-safe `DataCollector` (in-memory state + WebSocket broadcast),
 and `ResourceDescriptor`/`ResourceStore` (lazy, step-scoped heavy artefacts —
 heatmap PNGs, connectivity JSON — materialised on first HTTP fetch). The SPA
-assets (HTML/CSS/ES-module JS) live in the non-package `static/` directory.
+assets (HTML/CSS/ES-module JS) live in the non-package `static/` directory;
+third-party runtime assets (Plotly, fonts) are vendored under `static/vendor/`
+so the GUI works offline — a unit ratchet (`test_static_offline.py`) rejects
+any external `src`/`href`/`url()` reference in static assets.
 
 ## Key files
 | File | Purpose |
