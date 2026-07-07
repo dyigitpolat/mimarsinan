@@ -507,42 +507,12 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
         """One P4 stage's bounded recovery (arm B): plain-CE steps through the
         k-hybrid with gradient clipping and a keep-best k-hybrid probe — the
         stage can never end below its post-DFQ entry state."""
-        import copy as _copy
-
-        device = self.pipeline.config["device"]
-        self._fast_set_rate(float(rate))
-        optimizer, schedule = self._fast_optimizer, self._fast_lr_schedule
-        assert optimizer is not None and schedule is not None, (
-            "_ensure_fast_optimizer must run before _prefix_stage_train"
+        self._fast_train_rung(
+            float(rate),
+            grad_clip_norm=TUNING_POLICY.prefix_stage_grad_clip_norm,
+            keep_best_probe=lambda: live_model_acc_fp32(self),
+            keep_best_interval=TUNING_POLICY.prefix_stage_keepbest_interval,
         )
-        best = live_model_acc_fp32(self)
-        best_state = _copy.deepcopy(self.model.state_dict())
-        interval = TUNING_POLICY.prefix_stage_keepbest_interval
-        steps = int(self._fast_steps_per_rate)
-        self._mbh_nonzero_grad_fraction = float("nan")
-        for step_index in range(steps):
-            x, y = self.trainer.next_training_batch()
-            x, y = x.to(device), y.to(device)
-            self.model.train()
-            loss = self._fast_loss(x, y)
-            optimizer.zero_grad()
-            loss.backward()
-            if step_index == 0:
-                from mimarsinan.tuning.orchestration.mbh_ledger import (
-                    capture_rung_nonzero_grad_fraction,
-                )
-
-                capture_rung_nonzero_grad_fraction(self)
-            torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
-            optimizer.step()
-            schedule.step()
-            self._fast_optimizer_steps += 1
-            if (step_index + 1) % interval == 0 or step_index == steps - 1:
-                acc = live_model_acc_fp32(self)
-                if acc > best:
-                    best = acc
-                    best_state = _copy.deepcopy(self.model.state_dict())
-        self.model.load_state_dict(best_state)
 
     def _before_ramp_forward_install(self) -> None:
         """Capture the gain-ramp base after calibration, before the ramp forward (parity-critical order)."""

@@ -173,14 +173,35 @@ class FastLadderMixin(_FastLadderHost):
         """The fast-ladder predictor seam verb: apply T at ``rate`` and train the
         rung's ``steps_per_rate`` steps with the shared optimizer + spanning cosine
         and ``_fast_loss`` (no per-rung search — ``probe`` reads the post acc once)."""
+        self._fast_train_rung(rate)
+
+    def _fast_train_rung(self, rate, *, grad_clip_norm=None, keep_best_probe=None,
+                         keep_best_interval=None) -> None:
+        """The one rung training loop: apply T at ``rate``, then ``steps_per_rate``
+        steps of ``_fast_loss`` under the shared optimizer + spanning cosine.
+
+        ``grad_clip_norm`` clips per step; ``keep_best_probe`` snapshots the entry
+        state, probes on every ``keep_best_interval``-th and the last step, and
+        restores the best probed state — the rung can never end below its entry.
+        """
         device = self.pipeline.config["device"]
         self._fast_set_rate(float(rate))
         optimizer, schedule = self._fast_optimizer, self._fast_lr_schedule
         assert optimizer is not None and schedule is not None, (
-            "_ensure_fast_optimizer must run before _fast_ramp"
+            "_ensure_fast_optimizer must run before _fast_train_rung"
         )
+        best = best_state = None
+        probe_interval = 0
+        if keep_best_probe is not None:
+            assert keep_best_interval is not None, (
+                "keep_best_probe requires a keep_best_interval"
+            )
+            probe_interval = max(1, int(keep_best_interval))
+            best = float(keep_best_probe())
+            best_state = copy.deepcopy(self.model.state_dict())
+        steps = int(self._fast_steps_per_rate)
         self._mbh_nonzero_grad_fraction = float("nan")
-        for step_index in range(self._fast_steps_per_rate):
+        for step_index in range(steps):
             x, y = self.trainer.next_training_batch()
             x, y = x.to(device), y.to(device)
             self.model.train()
@@ -192,9 +213,23 @@ class FastLadderMixin(_FastLadderHost):
             if step_index == 0:
                 # A5 reach gauge on the rung's FIRST backward (ledger-flag-gated).
                 capture_rung_nonzero_grad_fraction(self)
+            if grad_clip_norm is not None:
+                torch.nn.utils.clip_grad_norm_(
+                    self.model.parameters(), float(grad_clip_norm)
+                )
             optimizer.step()
             schedule.step()
             self._fast_optimizer_steps += 1
+            if keep_best_probe is not None and (
+                (step_index + 1) % probe_interval == 0
+                or step_index == steps - 1
+            ):
+                acc = float(keep_best_probe())
+                if best is None or acc > best:
+                    best = acc
+                    best_state = copy.deepcopy(self.model.state_dict())
+        if best_state is not None:
+            self.model.load_state_dict(best_state)
 
     def _continue_to_full_rate(self):
         """The gated fixed ladder never trains destructive intermediate rates:

@@ -299,6 +299,24 @@ class TestStageKeepBest:
             not torch.equal(final[key], saved) for key, saved in entry_state.items()
         ), "an improving stage must keep its trained parameters"
 
+    def test_keep_best_probes_on_the_interval_and_the_last_step(self, tmp_path):
+        # The shared rung loop probes entry, every interval-th step, and the
+        # final step (deduplicated when they coincide).
+        tuner = _make_tuner(tmp_path)
+        tuner._ensure_fast_optimizer()
+        tuner._fast_steps_per_rate = 5
+        probes = []
+
+        def probe():
+            probes.append(len(probes))
+            return 0.5
+
+        tuner._fast_train_rung(
+            1 / 3, keep_best_probe=probe, keep_best_interval=2,
+        )
+        # entry + steps 2, 4 (interval) + step 5 (last) = 4 probes.
+        assert len(probes) == 4
+
 
 class TestGateComposition:
     def test_run_walks_the_frontier_and_finalizes_at_k_n(self, tmp_path, capsys):

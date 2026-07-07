@@ -40,6 +40,8 @@ class TuningPolicy:
     # P4 stage LR ceiling (arm B trained at 1e-3; hotter pipeline LRs measured
     # destructive through the genuine k-hybrid on the first x3b wave).
     prefix_stage_lr: float = 1e-3
+    # P4 stage per-step gradient clip through the genuine k-hybrid (arm B).
+    prefix_stage_grad_clip_norm: float = 1.0
     # [5u] floor-lifted endpoint LR ceiling: at the pipeline LR the first ~1.6k
     # steps dip below entry, so a floor-chasing stage trains the probe-validated
     # arm (lr 2e-3, cosine over the full funded budget).
