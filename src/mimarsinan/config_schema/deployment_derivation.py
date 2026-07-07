@@ -72,7 +72,8 @@ def _resolve_activation_quantization(
 
 
 def derive_deployment_parameters(dp: MutableMapping[str, Any]) -> None:
-    """Apply the same rules as ``gui/static/js/wizard.js`` ``buildConfig()`` in-place."""
+    """Derive AQ/WQ/pipeline_mode in-place — the ONLY derivation implementation
+    (the wizard consumes it via ``/api/config/resolve``; no JS copy exists)."""
     spiking_mode = str(dp.get("spiking_mode", "lif"))
     pipeline_mode = str(dp.get("pipeline_mode", ""))
     explicit_aq = dp.get("activation_quantization")
