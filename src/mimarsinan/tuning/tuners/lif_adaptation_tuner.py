@@ -27,9 +27,9 @@ from mimarsinan.tuning.orchestration.kd_blend_adaptation_tuner import (
     KDBlendAdaptationTuner,
     _InstalledForward,
 )
+from mimarsinan.tuning.orchestration.lif_adaptation_plan import LifAdaptationPlan
 from mimarsinan.tuning.orchestration.mbh_tanneal import (
     TAnnealRealizableRamp,
-    TAnnealSchedule,
     apply_simulation_steps,
 )
 
@@ -64,22 +64,6 @@ class LIFBlendActivation(BlendActivation):
         return cast(LIFActivation, self.target_activation)
 
 
-def derive_lif_tanneal_schedule(config, *, ladder_rates) -> TAnnealSchedule | None:
-    """The T-anneal schedule when the ``lif_tanneal`` recipe knob is on and the
-    mode is lif, else None (the value-blend recipe stays bit-identical)."""
-    if not bool(config.get("lif_tanneal", False)):
-        return None
-    # Lazy: chip_simulation has a fragile import cycle with tuning at init time.
-    from mimarsinan.chip_simulation.spiking_semantics import is_lif
-
-    if not is_lif(config.get("spiking_mode", "lif")):
-        return None
-    return TAnnealSchedule(
-        target_T=int(config["simulation_steps"]),
-        ladder_rates=tuple(float(r) for r in ladder_rates),
-    )
-
-
 class LIFAdaptationTuner(KDBlendAdaptationTuner):
     """Ramp base_activation to LIFActivation with KD recovery."""
 
@@ -89,44 +73,21 @@ class LIFAdaptationTuner(KDBlendAdaptationTuner):
         self.name = "LIF Adaptation"
         self._T = int(self.pipeline.config["simulation_steps"])
         self._thresholding_mode = str(self.pipeline.config.get("thresholding_mode", "<="))
-        self._cycle_accurate = bool(self.pipeline.config.get("cycle_accurate_lif_forward", False))
         from mimarsinan.pipelining.core.platform_constraints_resolver import resolve_bias_mode
 
         self._bias_mode = resolve_bias_mode(self.pipeline.config)
+        plan = LifAdaptationPlan.resolve(self.pipeline.config)
+        self._adaptation_plan = plan
+        self._cycle_accurate = plan.cycle_accurate
         self._consume_optimization_driver(
-            rates=self.pipeline.config.get(
-                "lif_blend_fast_rates", [0.25, 0.5, 0.75, 1.0]
-            ),
-            steps_per_rate=int(
-                self.pipeline.config.get("lif_blend_fast_steps_per_rate", 120)
-            ),
-            eta_min_factor=float(
-                self.pipeline.config.get("lif_blend_fast_lr_eta_min", 0.1)
-            ),
+            rates=plan.blend_fast_rates,
+            steps_per_rate=plan.blend_fast_steps_per_rate,
+            eta_min_factor=plan.blend_fast_lr_eta_min,
         )
-        # The LIF recipe's realizable T-anneal over the SAME normalized ladder
-        # (equal budget); None keeps the value-blend recipe bit-identical.
-        self._tanneal = derive_lif_tanneal_schedule(
-            self.pipeline.config, ladder_rates=self._fixed_ladder_rates,
-        )
-        self._endpoint_recovery_steps = int(
-            self.pipeline.config.get("endpoint_recovery_steps", 0)
-        )
-        self._lif_distmatch = bool(self.pipeline.config.get("lif_distmatch", False))
-        self._lif_distmatch_bias_iters = int(
-            self.pipeline.config.get("lif_distmatch_bias_iters", 10)
-        )
-        self._lif_distmatch_eta = float(
-            self.pipeline.config.get("lif_distmatch_bias_eta", 0.5)
-        )
-        self._lif_distmatch_cal_batches = int(
-            self.pipeline.config.get("lif_distmatch_cal_batches", 8)
-        )
+        self._tanneal = plan.tanneal_schedule(self._fixed_ladder_rates)
+        self._endpoint_recovery_steps = plan.endpoint_recovery_steps
         self._lif_distmatch_stats = None
-        self._lif_theta_cotrain = bool(
-            self.pipeline.config.get("lif_theta_cotrain", False)
-        )
-        self._theta_cotrain = self._lif_theta_cotrain
+        self._theta_cotrain = plan.theta_cotrain
         self._emit_a6_temporal_gauge()
 
     def _emit_a6_temporal_gauge(self) -> None:
@@ -149,7 +110,7 @@ class LIFAdaptationTuner(KDBlendAdaptationTuner):
             apply_simulation_steps(clone, self._tanneal.target_T)
 
     def _post_stabilization_hook(self):
-        if self._lif_distmatch:
+        if self._adaptation_plan.distmatch:
             self._calibrate_to_teacher_distribution()
         if getattr(self, "_fixed_ladder_policy", False):
             # P1'': the chip-aligned NF forward is installed at finalize, so the
@@ -167,12 +128,13 @@ class LIFAdaptationTuner(KDBlendAdaptationTuner):
             match_lif_activation_distributions,
         )
 
+        plan = self._adaptation_plan
         self._lif_distmatch_stats = run_teacher_distmatch(
             self,
             match_lif_activation_distributions,
-            n_batches=self._lif_distmatch_cal_batches,
-            bias_iters=self._lif_distmatch_bias_iters,
-            eta=self._lif_distmatch_eta,
+            n_batches=plan.distmatch_cal_batches,
+            bias_iters=plan.distmatch_bias_iters,
+            eta=plan.distmatch_bias_eta,
         )
 
     def _make_target_activation(self, perceptron) -> LIFActivation:

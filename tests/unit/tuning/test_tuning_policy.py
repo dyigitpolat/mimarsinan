@@ -48,6 +48,9 @@ EXPECTED_POLICY_VALUES = {
     "prefix_stage_keepbest_interval": 25,
     "prefix_stage_lr": 1e-3,
     "prefix_stage_grad_clip_norm": 1.0,
+    # [5v B2 / FAST respec] hop-frontier rung budget: outcome measured
+    # budget-insensitive while every step pays the O(S x depth) forward.
+    "hop_stage_steps_per_rate": 40,
     # [5u] floor-lifted endpoint LR ceiling (the probe-validated arm).
     "endpoint_floor_lr": 2e-3,
     # [reproducibility] the floor's RUN-total funding is a STEP budget (the

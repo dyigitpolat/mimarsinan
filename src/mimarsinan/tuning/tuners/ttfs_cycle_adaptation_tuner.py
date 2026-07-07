@@ -94,10 +94,6 @@ class _ContractCalibration:
         )
 
 
-_HOP_STAGE_STEPS_PER_RATE = 40
-"""Per-rung training budget on the hop frontier (see _resolve_prefix_ramp)."""
-
-
 class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
     """Ramp to the TTFS spike node, training through the schedule's NF dynamics."""
 
@@ -207,15 +203,11 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
         self._blend_fast_rates = rates
         driver = dataclasses.replace(plan.driver, fast_ladder_rates=rates)
         if self._hop_prefix_levels is not None:
-            # FAST respec 2026-07-08: the hop-frontier family's outcome is
-            # measured budget-INSENSITIVE (stage budget x3: NO EFFECT, 0.8904
-            # inside the 0.88-0.90 band) while every rung step pays the
-            # O(S x depth) genuine segment forward; 40 steps/rung holds the
-            # measured band at ~1/3 the FT wall.
             driver = dataclasses.replace(
                 driver,
                 fast_ladder_steps_per_rate=min(
-                    int(driver.fast_ladder_steps_per_rate), _HOP_STAGE_STEPS_PER_RATE
+                    int(driver.fast_ladder_steps_per_rate),
+                    TUNING_POLICY.hop_stage_steps_per_rate,
                 ),
             )
         return driver

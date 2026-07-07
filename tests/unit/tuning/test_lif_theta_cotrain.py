@@ -57,7 +57,7 @@ def _non_encoding(model):
 class TestThetaPromotionContract:
     def test_default_off_leaves_scalar_theta_untrained(self, tmp_path):
         tuner, model, _ = _make_tuner(tmp_path, theta=False)
-        assert tuner._lif_theta_cotrain is False
+        assert tuner._adaptation_plan.theta_cotrain is False
         assert tuner._theta_cotrain_params is None
         assert tuner._theta_cotrain_stats is None
         for p in _non_encoding(model):
@@ -65,7 +65,7 @@ class TestThetaPromotionContract:
 
     def test_on_promotes_non_encoding_to_per_channel_trainable(self, tmp_path):
         tuner, model, _ = _make_tuner(tmp_path, theta=True)
-        assert tuner._lif_theta_cotrain is True
+        assert tuner._adaptation_plan.theta_cotrain is True
         promoted = _non_encoding(model)
         assert len(promoted) >= 1
         for p in promoted:

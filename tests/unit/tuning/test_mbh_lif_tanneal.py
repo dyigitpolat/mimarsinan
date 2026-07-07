@@ -204,35 +204,30 @@ class TestSchedule:
 
 
 class TestDerive:
-    def test_knob_off_is_none(self):
-        from mimarsinan.tuning.tuners.lif_adaptation_tuner import (
-            derive_lif_tanneal_schedule,
+    def _schedule_for(self, cfg, ladder_rates):
+        from mimarsinan.tuning.orchestration.lif_adaptation_plan import (
+            LifAdaptationPlan,
         )
 
+        return LifAdaptationPlan.resolve(cfg).tanneal_schedule(ladder_rates)
+
+    def test_knob_off_is_none(self):
         cfg = {"spiking_mode": "lif", "simulation_steps": 4}
-        assert derive_lif_tanneal_schedule(cfg, ladder_rates=[0.5, 1.0]) is None
+        assert self._schedule_for(cfg, [0.5, 1.0]) is None
         cfg["lif_tanneal"] = False
-        assert derive_lif_tanneal_schedule(cfg, ladder_rates=[0.5, 1.0]) is None
+        assert self._schedule_for(cfg, [0.5, 1.0]) is None
 
     def test_knob_on_lif_derives_from_simulation_steps(self):
-        from mimarsinan.tuning.tuners.lif_adaptation_tuner import (
-            derive_lif_tanneal_schedule,
-        )
-
         cfg = {"spiking_mode": "lif", "simulation_steps": 4, "lif_tanneal": True}
-        schedule = derive_lif_tanneal_schedule(cfg, ladder_rates=[0.5, 1.0])
+        schedule = self._schedule_for(cfg, [0.5, 1.0])
         assert schedule is not None
         assert schedule.target_T == 4
         assert schedule.ladder_rates == (0.5, 1.0)
 
     def test_knob_on_non_lif_modes_are_none(self):
-        from mimarsinan.tuning.tuners.lif_adaptation_tuner import (
-            derive_lif_tanneal_schedule,
-        )
-
         for mode in ("ttfs", "ttfs_quantized", "ttfs_cycle_based"):
             cfg = {"spiking_mode": mode, "simulation_steps": 4, "lif_tanneal": True}
-            assert derive_lif_tanneal_schedule(cfg, ladder_rates=[0.5, 1.0]) is None
+            assert self._schedule_for(cfg, [0.5, 1.0]) is None
 
 
 # -- every rung is a genuine deployable LIF network -------------------------------

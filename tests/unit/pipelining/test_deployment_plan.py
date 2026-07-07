@@ -534,12 +534,12 @@ class TestNoStrayDeploymentFlagReadsAnywhere:
         # ── tuners select their own TRAINING-FORWARD family from spiking_mode /
         #    cycle_accurate_lif_forward (a V2 SpikingModePolicy concern, not a
         #    V1 decision-flag consumer). The read sits on the per-perceptron
-        #    ``pipeline_config`` dict / a tuner's own knob (and ttfs_cycle's read
-        #    defaults to "ttfs_cycle_based", not the plan's "lif"); threading a
-        #    DeploymentPlan through these signatures removes no scattered branch
-        #    and would not be byte-identical — pure churn. Left as-is on purpose.
+        #    ``pipeline_config`` dict / a tuner's own knob (the LIF reads were
+        #    collapsed into the ``LifAdaptationPlan`` resolver layer;
+        #    ttfs_cycle's read defaults to "ttfs_cycle_based", not the plan's
+        #    "lif"); threading a DeploymentPlan through these signatures removes
+        #    no scattered branch and would not be byte-identical — pure churn.
         "tuning/orchestration/adaptation_manager.py",
-        "tuning/tuners/lif_adaptation_tuner.py",
         "tuning/tuners/ttfs_cycle_adaptation_tuner.py",
         # ── byte-identity carve-out (NOT a "this isn't a decision flag" claim) ──
         # ``simulation_runner/core.py`` reads ``weight_quantization`` with a

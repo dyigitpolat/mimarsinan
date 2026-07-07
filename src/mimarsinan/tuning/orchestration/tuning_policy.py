@@ -42,6 +42,11 @@ class TuningPolicy:
     prefix_stage_lr: float = 1e-3
     # P4 stage per-step gradient clip through the genuine k-hybrid (arm B).
     prefix_stage_grad_clip_norm: float = 1.0
+    # Hop-frontier rung budget (FAST respec 2026-07-08): the outcome is
+    # measured budget-INSENSITIVE (stage budget x3: no effect, 0.8904 inside
+    # the 0.88-0.90 band) while every rung step pays the O(S x depth) genuine
+    # segment forward; 40 steps/rung holds the band at ~1/3 the FT wall.
+    hop_stage_steps_per_rate: int = 40
     # [5u] floor-lifted endpoint LR ceiling: at the pipeline LR the first ~1.6k
     # steps dip below entry, so a floor-chasing stage trains the probe-validated
     # arm (lr 2e-3, cosine over the full funded budget).

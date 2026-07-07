@@ -328,9 +328,9 @@ class TestHopFrontierStepCap:
         from mimarsinan.tuning.orchestration.adaptation_manager import (
             AdaptationManager,
         )
+        from mimarsinan.tuning.orchestration.tuning_policy import TUNING_POLICY
         from mimarsinan.tuning.tuners.ttfs_cycle_adaptation_tuner import (
             TTFSCycleAdaptationTuner,
-            _HOP_STAGE_STEPS_PER_RATE,
         )
 
         cfg = default_config()
@@ -350,10 +350,13 @@ class TestHopFrontierStepCap:
         )
         try:
             if getattr(tuner, "_hop_prefix_levels", None):
-                assert tuner._fast_steps_per_rate <= _HOP_STAGE_STEPS_PER_RATE
+                assert (
+                    tuner._fast_steps_per_rate
+                    <= TUNING_POLICY.hop_stage_steps_per_rate
+                )
             else:
                 # The tiny fixture's chain may sit below the staging depth;
                 # the cap constant still binds the armed path.
-                assert _HOP_STAGE_STEPS_PER_RATE == 40
+                assert TUNING_POLICY.hop_stage_steps_per_rate == 40
         finally:
             tuner.close()
