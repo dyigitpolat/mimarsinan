@@ -19,11 +19,37 @@ from mimarsinan.tuning.orchestration.install_capture import (
 MIN_MEDIAN_EFFECTIVE_LEVELS = 2.0
 """A6(i): a hop needs a median of >= 2 usable grid levels per live channel."""
 
+NEAREST_MIN_MEDIAN_EFFECTIVE_LEVELS = 1.0
+"""A6(i) for nearest-rounding installs: rounding error is symmetric (<= half a
+step both ways), so one representable level suffices — the tier-0.1 corpus
+read FAIL on the passing dense ttfsq cells (t01_06 0.97, t01_22 0.99) at the
+ceil-kernel threshold."""
+
 STARVED_MASS_WARN = 0.5
 """A6(i): warn when most of a hop's positive activation mass sits under one grid step."""
 
+TEMPORAL_RECOVERY_HEADROOM = 2.0
+"""A6(ii): the T-anneal recovery family heals chains whose accumulated
+first-fire delay sits below ~2x the window (tier-0.1 corpus: ratios 1.3-1.7
+all recovered — t01_02 0.97, t01_16 0.99; ratios >= 3.3 all failed —
+t01_01 0.91, t0_01 0.947)."""
+
+PROVEN_RECOVERY_DEPTH = 6
+"""Single-segment cascade chains below this depth climbed out of equally-deep
+entry craters (t0_22/t0_18/t0_03 at L <= 4-5); at or past it the compounding
+kernel binds (t01_12 L=9 read 0.88 with a clean value gauge)."""
+
 _DEAD_DRIVE_DELAY = 1e6
 """A6(ii): a hop with no drive never fires — its first-fire delay saturates."""
+
+
+def value_gauge_thresholds(spiking_mode: str) -> tuple:
+    """(min_median_levels, starved_mass_warn | None) conditioned on the install
+    kernel: nearest-rounding (ttfs_quantized) tolerates sub-step mass by
+    construction; ceil/floor kernels keep the study thresholds."""
+    if str(spiking_mode) == "ttfs_quantized":
+        return (NEAREST_MIN_MEDIAN_EFFECTIVE_LEVELS, None)
+    return (MIN_MEDIAN_EFFECTIVE_LEVELS, STARVED_MASS_WARN)
 
 
 def median_effective_levels(
@@ -56,13 +82,14 @@ class HopValueGauge:
     theta: float
     median_effective_levels: float
     starved_mass: float
+    min_levels: float = MIN_MEDIAN_EFFECTIVE_LEVELS
+    mass_warn: Optional[float] = STARVED_MASS_WARN
 
     @property
     def starved(self) -> bool:
-        return (
-            self.median_effective_levels < MIN_MEDIAN_EFFECTIVE_LEVELS
-            or self.starved_mass > STARVED_MASS_WARN
-        )
+        if self.median_effective_levels < self.min_levels:
+            return True
+        return self.mass_warn is not None and self.starved_mass > self.mass_warn
 
 
 def hop_value_gauge(
@@ -73,6 +100,8 @@ def hop_value_gauge(
     positive_values: Sequence[float],
     theta: float,
     levels: int,
+    min_levels: float = MIN_MEDIAN_EFFECTIVE_LEVELS,
+    mass_warn: Optional[float] = STARVED_MASS_WARN,
 ) -> HopValueGauge:
     return HopValueGauge(
         name=str(name),
@@ -80,6 +109,8 @@ def hop_value_gauge(
         theta=float(theta),
         median_effective_levels=median_effective_levels(per_channel_q99, theta, levels),
         starved_mass=starved_mass(positive_values, theta, levels),
+        min_levels=float(min_levels),
+        mass_warn=mass_warn,
     )
 
 
@@ -117,7 +148,8 @@ class TemporalWindowGauge:
 
     @property
     def fails(self) -> bool:
-        return self.total_delay >= self.window
+        # Corpus-conditioned: recovery heals below ~2x the window (tier-0.1).
+        return self.total_delay >= TEMPORAL_RECOVERY_HEADROOM * self.window
 
 
 def temporal_window_gauge(delays_by_depth, window: int) -> TemporalWindowGauge:
@@ -161,6 +193,9 @@ def build_value_install_gauge(
     thetas: Sequence[float],
     depths: dict,
     levels: int,
+    *,
+    min_levels: float = MIN_MEDIAN_EFFECTIVE_LEVELS,
+    mass_warn: Optional[float] = STARVED_MASS_WARN,
 ) -> ValueInstallGauge:
     """Assemble the A6(i) gauge from per-perceptron channel stats + install thetas."""
     hops = []
@@ -172,6 +207,8 @@ def build_value_install_gauge(
             positive_values=acc.positive_values(),
             theta=float(theta),
             levels=levels,
+            min_levels=min_levels,
+            mass_warn=mass_warn,
         ))
     return ValueInstallGauge(hops=tuple(hops), levels=int(levels))
 
@@ -197,64 +234,3 @@ def lif_temporal_gauge(
         depth = int(depths.get(id(perceptron), 0))
         delays_by_depth[depth] = max(delays_by_depth.get(depth, 0.0), delay)
     return temporal_window_gauge(delays_by_depth, window=window)
-
-
-def gauge_summary(gauge: Optional[ValueInstallGauge]) -> dict:
-    """The cache-friendly summary consumed by downstream install policies."""
-    if gauge is None:
-        return {
-            "levels": None,
-            "fails": False,
-            "starved_hops": [],
-            "median_effective_levels": [],
-        }
-    return {
-        "levels": int(gauge.levels),
-        "fails": bool(gauge.fails),
-        "starved_hops": [h.name for h in gauge.starved_hops],
-        "median_effective_levels": [
-            float(h.median_effective_levels) for h in gauge.hops
-        ],
-    }
-
-
-def emit_value_gauge(context: str, gauge: ValueInstallGauge) -> None:
-    """One loud ``[MBH-A6]`` verdict line + one line per starved hop (warn-only)."""
-    starved = gauge.starved_hops
-    verdict = "FAIL" if gauge.fails else "PASS"
-    print(
-        f"[MBH-A6] kind=value context={context} levels={gauge.levels} "
-        f"hops={len(gauge.hops)} starved_hops={len(starved)} verdict={verdict} "
-        f"(pre-flight, warn-only)",
-        flush=True,
-    )
-    for hop in starved:
-        print(
-            f"[MBH-A6]   starved hop={hop.name} depth={hop.depth} "
-            f"theta={hop.theta:.4f} median_levels={hop.median_effective_levels:.2f} "
-            f"starved_mass={hop.starved_mass:.2f}",
-            flush=True,
-        )
-
-
-def emit_temporal_gauge(context: str, gauge: TemporalWindowGauge) -> None:
-    verdict = "FAIL" if gauge.fails else "PASS"
-    delays = ", ".join(f"{d:.2f}" for d in gauge.per_depth_delays)
-    print(
-        f"[MBH-A6] kind=temporal context={context} "
-        f"total_first_fire_delay={gauge.total_delay} window={gauge.window} "
-        f"verdict={verdict} per_depth=[{delays}] (pre-flight, warn-only)",
-        flush=True,
-    )
-
-
-def emit_chain_gauge(
-    context: str, *, max_intra_segment_depth: int, s: int, n_segments: int
-) -> None:
-    """The cascaded install's chain line: hop depth is the compounding exponent."""
-    print(
-        f"[MBH-A6] kind=chain context={context} "
-        f"max_intra_segment_depth={max_intra_segment_depth} S={s} "
-        f"spike_segments={n_segments} (pre-flight, warn-only)",
-        flush=True,
-    )

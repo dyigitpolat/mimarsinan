@@ -16,9 +16,11 @@ from mimarsinan.tuning.orchestration.blend_ramp import (
 )
 from mimarsinan.spiking.gain_correction import per_perceptron_cascade_depth
 from mimarsinan.tuning.orchestration.endpoint_recovery import run_endpoint_recovery
+from mimarsinan.tuning.orchestration.install_gauge_report import (
+    emit_temporal_gauge,
+)
 from mimarsinan.tuning.orchestration.install_resolution import (
     collect_channel_stats,
-    emit_temporal_gauge,
     lif_temporal_gauge,
 )
 from mimarsinan.tuning.orchestration.kd_blend_adaptation_tuner import (

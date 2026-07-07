@@ -4,17 +4,21 @@ from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 from mimarsinan.pipelining.core.registry.trainer_factory import make_basic_trainer
 from mimarsinan.pipelining.core.steps.trainer_pipeline_step import TrainerPipelineStep
 from mimarsinan.spiking.gain_correction import per_perceptron_cascade_depth
+from mimarsinan.tuning.orchestration.install_gauge_report import (
+    emit_value_gauge,
+    gauge_summary,
+)
 from mimarsinan.tuning.orchestration.install_resolution import (
     ChannelStatsAccumulator,
     attach_activation_decorator,
     build_value_install_gauge,
-    emit_value_gauge,
-    gauge_summary,
     needs_quantile_deflation,
+    value_gauge_thresholds,
     value_grid_levels,
 )
 from mimarsinan.tuning.orchestration.tuning_budget import tuning_budget_from_pipeline
 from mimarsinan.models.nn.layers import SavedTensorDecorator
+from mimarsinan.pipelining.pipeline_steps.activation_utils import activation_scale_stats
 
 import torch
 
@@ -69,58 +73,6 @@ def scale_from_activations(
         interpolation="higher",
     ).item()
     return max(float(q), float(min_scale))
-
-
-def _activation_scale_stats(
-    perceptrons,
-    sampled_activations,
-    activation_scales,
-    *,
-    num_batches,
-    quantile,
-    max_samples_per_batch,
-):
-    layer_stats = []
-    for idx, (perceptron, samples, scale) in enumerate(
-        zip(perceptrons, sampled_activations, activation_scales)
-    ):
-        sample_count = int(samples.numel())
-        active_samples = samples[samples > PRUNED_THRESHOLD]
-        if sample_count > 0:
-            sample_min = float(samples.min().item())
-            sample_median = float(torch.quantile(samples, 0.5).item())
-            sample_max = float(samples.max().item())
-        else:
-            sample_min = 0.0
-            sample_median = 0.0
-            sample_max = 0.0
-
-        layer_stats.append(
-            {
-                "index": idx,
-                "name": perceptron.name,
-                "scale": float(scale),
-                "sample_count": sample_count,
-                "active_sample_count": int(active_samples.numel()),
-                "sample_min": sample_min,
-                "sample_median": sample_median,
-                "sample_max": sample_max,
-            }
-        )
-
-    sorted_scales = sorted(float(s) for s in activation_scales) or [1.0]
-    return {
-        "num_batches": int(num_batches),
-        "quantile": float(quantile),
-        "pruned_threshold": float(PRUNED_THRESHOLD),
-        "max_samples_per_batch": int(max_samples_per_batch),
-        "summary": {
-            "min_scale": sorted_scales[0],
-            "median_scale": sorted_scales[len(sorted_scales) // 2],
-            "max_scale": sorted_scales[-1],
-        },
-        "layers": layer_stats,
-    }
 
 
 def _attach_saved_tensor_decorator(perceptron):
@@ -224,17 +176,18 @@ class ActivationAnalysisStep(TrainerPipelineStep):
             quantile=quantile,
         )
 
-        activation_scale_stats = _activation_scale_stats(
+        scale_stats = activation_scale_stats(
             perceptrons,
             merged_samples,
             activation_scales,
             num_batches=n_batches,
             quantile=quantile,
             max_samples_per_batch=MAX_SAMPLES_PER_BATCH,
+            pruned_threshold=PRUNED_THRESHOLD,
         )
         if deflated_layers is not None:
-            activation_scale_stats["deflated_layers"] = deflated_layers
-        scale_summary = activation_scale_stats["summary"]
+            scale_stats["deflated_layers"] = deflated_layers
+        scale_summary = scale_stats["summary"]
         print(
             "[ActivationAnalysisStep] "
             f"batches={n_batches}, q={quantile}, "
@@ -250,7 +203,7 @@ class ActivationAnalysisStep(TrainerPipelineStep):
         )
 
         self.add_entry("activation_scales", activation_scales)
-        self.add_entry("activation_scale_stats", activation_scale_stats)
+        self.add_entry("activation_scale_stats", scale_stats)
         self.add_entry("install_resolution_gauge", gauge_summary(gauge))
 
     def _deflate_starved_scales(
@@ -284,15 +237,17 @@ class ActivationAnalysisStep(TrainerPipelineStep):
 
     def _a6_value_gauge(self, model, perceptrons, accumulators, scales):
         """[MBH-A6] the pre-flight value-starvation gauge at the install grid
-        (warn-only: thresholds need matrix-wide calibration before gating)."""
-        levels = value_grid_levels(
-            DeploymentPlan.of(self.pipeline).spiking_mode, self.pipeline.config,
-        )
+        (warn-only; thresholds conditioned on the install kernel per the
+        tier-0.1 corpus calibration)."""
+        spiking_mode = DeploymentPlan.of(self.pipeline).spiking_mode
+        levels = value_grid_levels(spiking_mode, self.pipeline.config)
         if levels is None:
             return None
+        min_levels, mass_warn = value_gauge_thresholds(spiking_mode)
         depths = per_perceptron_cascade_depth(model.get_mapper_repr())
         gauge = build_value_install_gauge(
             list(zip(perceptrons, accumulators)), scales, depths, levels,
+            min_levels=min_levels, mass_warn=mass_warn,
         )
         emit_value_gauge(type(self).__name__, gauge)
         return gauge

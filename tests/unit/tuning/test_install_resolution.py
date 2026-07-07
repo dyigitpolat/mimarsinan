@@ -13,6 +13,10 @@ from __future__ import annotations
 import torch
 
 from conftest import make_tiny_supermodel
+from mimarsinan.tuning.orchestration.install_gauge_report import (
+    emit_temporal_gauge,
+    emit_value_gauge,
+)
 from mimarsinan.tuning.orchestration.install_resolution import (
     MIN_MEDIAN_EFFECTIVE_LEVELS,
     STARVED_MASS_WARN,
@@ -21,8 +25,6 @@ from mimarsinan.tuning.orchestration.install_resolution import (
     TemporalWindowGauge,
     ValueInstallGauge,
     collect_channel_stats,
-    emit_temporal_gauge,
-    emit_value_gauge,
     first_fire_delay,
     hop_value_gauge,
     median_effective_levels,
@@ -237,6 +239,83 @@ class TestThresholdConstants:
     def test_a6_constants_are_the_study_values(self):
         assert MIN_MEDIAN_EFFECTIVE_LEVELS == 2.0
         assert STARVED_MASS_WARN == 0.5
+
+    def test_corpus_conditioning_constants(self):
+        from mimarsinan.tuning.orchestration.install_resolution import (
+            NEAREST_MIN_MEDIAN_EFFECTIVE_LEVELS,
+            PROVEN_RECOVERY_DEPTH,
+            TEMPORAL_RECOVERY_HEADROOM,
+        )
+
+        assert NEAREST_MIN_MEDIAN_EFFECTIVE_LEVELS == 1.0
+        assert TEMPORAL_RECOVERY_HEADROOM == 2.0
+        assert PROVEN_RECOVERY_DEPTH == 6
+
+
+class TestCorpusConditioning:
+    """The tier-0.1 25-row calibration (theory 5y): warn-only verdicts must
+    match outcomes on the corpus rows that exposed each miscalibration."""
+
+    def test_nearest_kernel_tolerates_sub_step_mass(self):
+        # t01_06 (ttfsq S=8, PASS 0.97) fired FAIL at the ceil thresholds:
+        # median ~1.3 levels with heavy sub-step mass is fine under nearest
+        # rounding (symmetric error), so the conditioned gauge passes it.
+        from mimarsinan.tuning.orchestration.install_resolution import (
+            value_gauge_thresholds,
+        )
+
+        min_levels, mass_warn = value_gauge_thresholds("ttfs_quantized")
+        hop = hop_value_gauge(
+            name="t01_06_fc", depth=3,
+            per_channel_q99=[1.3 * (2.7 / 8)] * 64,
+            positive_values=[0.1] * 70 + [1.0] * 30,
+            theta=2.7, levels=8,
+            min_levels=min_levels, mass_warn=mass_warn,
+        )
+        assert hop.starved is False
+
+    def test_ceil_kernel_keeps_the_study_thresholds(self):
+        from mimarsinan.tuning.orchestration.install_resolution import (
+            value_gauge_thresholds,
+        )
+
+        min_levels, mass_warn = value_gauge_thresholds("ttfs_cycle_based")
+        assert min_levels == 2.0 and mass_warn == 0.5
+        hop = hop_value_gauge(
+            name="t0_21_l1", depth=1,
+            per_channel_q99=[1.3 * (8.19 / 8)] * 64,
+            positive_values=[0.1] * 70 + [8.0] * 30,
+            theta=8.19, levels=8,
+            min_levels=min_levels, mass_warn=mass_warn,
+        )
+        assert hop.starved is True
+
+    def test_temporal_gauge_passes_the_recovered_corpus_band(self):
+        # t01_02 (S=16, PASS 0.97): total ~26.8 over window 16 -> ratio 1.68,
+        # inside the measured recovery headroom.
+        gauge = temporal_window_gauge(
+            {d: 26.8 / 8 for d in range(1, 9)}, window=16,
+        )
+        assert gauge.fails is False
+
+    def test_temporal_gauge_fails_past_the_recovery_headroom(self):
+        # t01_01 (S=8, FAIL 0.91): the same chain against window 8 -> 3.35x.
+        gauge = temporal_window_gauge(
+            {d: 26.8 / 8 for d in range(1, 9)}, window=8,
+        )
+        assert gauge.fails is True
+
+    def test_chain_gauge_fails_single_segment_deep_chains_only(self):
+        from mimarsinan.tuning.orchestration.install_gauge_report import (
+            chain_gauge_fails,
+        )
+
+        # t01_12: L=9 single segment, clean value gauge, outcome 0.88.
+        assert chain_gauge_fails(max_intra_segment_depth=8, n_segments=1)
+        # t0_18-class: shallow chains all recovered.
+        assert not chain_gauge_fails(max_intra_segment_depth=4, n_segments=1)
+        # t0_19: multi-segment graphs walk the P4 frontier instead.
+        assert not chain_gauge_fails(max_intra_segment_depth=8, n_segments=4)
 
 
 class TestLifTunerCallSite:
