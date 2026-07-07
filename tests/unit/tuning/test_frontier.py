@@ -18,7 +18,9 @@ from mimarsinan.tuning.orchestration.adaptation_manager import hop_frontier
 from mimarsinan.tuning.orchestration.frontier import (
     frontier_ladder,
     frontier_position,
+    reaffine,
 )
+from mimarsinan.tuning.orchestration.tuning_policy import TUNING_POLICY
 
 
 class TestFrontierPosition:
@@ -79,3 +81,33 @@ class TestWalkersShareTheGeometry:
         for n in (1, 6, 9, 25, 49):
             for rate in rates:
                 assert hop_frontier(rate, n) == prefix_length_for_rate(rate, n)
+
+
+class TestFrontierReaffine:
+    def test_rung_repair_wires_the_live_probe_and_policy_patience(self, monkeypatch):
+        recorded = {}
+
+        def fake_dfq(model, ann_mean, cascade_means, *, bias_iters, eta,
+                     probe, probe_patience):
+            recorded.update(
+                model=model, ann_mean=ann_mean, cascade_means=cascade_means,
+                bias_iters=bias_iters, eta=eta, probe_read=probe(),
+                probe_patience=probe_patience,
+            )
+            return {"probe_best": probe()}
+
+        monkeypatch.setattr(reaffine, "dfq_correct_biases", fake_dfq)
+        monkeypatch.setattr(
+            reaffine, "live_model_acc_fp32", lambda tuner: 0.625,
+        )
+        tuner = type("Tuner", (), {"model": object()})()
+        means = object()
+        stats = reaffine.frontier_reaffine(
+            tuner, "ann", means, bias_iters="4", eta="0.7",
+        )
+        assert stats == {"probe_best": 0.625}
+        assert recorded["model"] is tuner.model
+        assert recorded["cascade_means"] is means
+        assert recorded["bias_iters"] == 4 and recorded["eta"] == 0.7
+        assert recorded["probe_read"] == 0.625
+        assert recorded["probe_patience"] == TUNING_POLICY.dfq_keepbest_patience

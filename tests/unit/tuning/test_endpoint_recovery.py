@@ -16,9 +16,10 @@ import pytest
 import torch
 
 from conftest import MockPipeline, default_config, make_tiny_supermodel
-from mimarsinan.tuning.orchestration import dhat_highwater, endpoint_recovery
+from mimarsinan.tuning.orchestration import dhat_highwater
+from mimarsinan.tuning.orchestration.frontier import endpoint_recovery
 from mimarsinan.tuning.orchestration.adaptation_manager import AdaptationManager
-from mimarsinan.tuning.orchestration.endpoint_recovery import (
+from mimarsinan.tuning.orchestration.frontier.endpoint_recovery import (
     EndpointRecoveryReport,
     freed_ladder_steps,
     run_endpoint_recovery,

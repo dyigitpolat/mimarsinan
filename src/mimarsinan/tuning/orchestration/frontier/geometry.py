@@ -1,11 +1,4 @@
-"""The monotone conversion-frontier geometry SSOT (P4 segments, [5v B1/B2] hops).
-
-A conversion frontier walks a model 0→1 in discrete units — spike segments
-(the P4 prefix ramp), cascade hops (hop-staged AQ, the hop-prefix ramp) —
-one unit per fast-ladder rung under the D-hat gate, with a keep-best repair
-at each rung and the P1'' endpoint stage at the terminal position. This
-module owns the shared geometry: the rate↔position mapping and the ladder.
-"""
+"""The frontier geometry SSOT: the rate↔position mapping and the unit ladder."""
 
 from __future__ import annotations
 

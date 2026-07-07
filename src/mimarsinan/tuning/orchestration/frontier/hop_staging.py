@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from mimarsinan.spiking.dfq_bias_correction import (
-    dfq_correct_biases,
     teacher_activation_samples,
     teacher_channel_means,
 )
@@ -13,6 +12,7 @@ from mimarsinan.tuning.orchestration.adaptation_manager import (
     hop_frontier,
     sync_exact_qat_active,
 )
+from mimarsinan.tuning.orchestration.frontier.reaffine import frontier_reaffine
 from mimarsinan.tuning.orchestration.install_capture import collect_channel_stats
 from mimarsinan.tuning.orchestration.install_resolution import (
     build_value_install_gauge,
@@ -21,7 +21,6 @@ from mimarsinan.tuning.orchestration.install_resolution import (
 from mimarsinan.tuning.orchestration.mbh_ledger import (
     _fixed_validation_batch,
     _measurement_guard,
-    live_model_acc_fp32,
 )
 from mimarsinan.tuning.orchestration.tuning_policy import TUNING_POLICY
 
@@ -117,14 +116,10 @@ def run_hop_stage_reaffine(tuner, rate):
         with _measurement_guard(tuner.trainer):
             return teacher_activation_samples(tuner.model, cal_x)
 
-    stats = dfq_correct_biases(
-        tuner.model,
-        ann_mean,
-        cascade_means,
+    stats = frontier_reaffine(
+        tuner, ann_mean, cascade_means,
         bias_iters=TUNING_POLICY.prefix_stage_dfq_iters,
         eta=_REAFFINE_ETA,
-        probe=lambda: live_model_acc_fp32(tuner),
-        probe_patience=TUNING_POLICY.dfq_keepbest_patience,
     )
     k = hop_frontier(float(rate), int(tuner._hop_stage_levels or 0))
     print(

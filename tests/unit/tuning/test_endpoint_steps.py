@@ -13,9 +13,10 @@ remains, and an exhausted budget falls back to the default patience geometry
 from __future__ import annotations
 
 from conftest import MockPipeline
-from mimarsinan.tuning.orchestration import dhat_highwater, endpoint_recovery
+from mimarsinan.tuning.orchestration import dhat_highwater
+from mimarsinan.tuning.orchestration.frontier import endpoint_recovery
 from mimarsinan.tuning.orchestration import endpoint_steps
-from mimarsinan.tuning.orchestration.endpoint_recovery import run_endpoint_recovery
+from mimarsinan.tuning.orchestration.frontier.endpoint_recovery import run_endpoint_recovery
 from mimarsinan.tuning.orchestration.recovery_engine import RecoveryEngine
 
 

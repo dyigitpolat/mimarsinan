@@ -6,7 +6,7 @@ from mimarsinan.transformations.normalization_aware_perceptron_quantization impo
     NormalizationAwarePerceptronQuantization,
 )
 from mimarsinan.tuning.axes import NAPQAxis
-from mimarsinan.tuning.orchestration.endpoint_recovery import run_endpoint_recovery
+from mimarsinan.tuning.orchestration.frontier.endpoint_recovery import run_endpoint_recovery
 from mimarsinan.tuning.tuners.perceptron_transform_tuner import PerceptronTransformTuner
 
 

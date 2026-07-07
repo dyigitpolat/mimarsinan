@@ -149,7 +149,8 @@ class TestEndpointRecoveryPropagates:
     """The P1'' endpoint stage's fp32 guard reads must fail loud, never swallow."""
 
     def _prep(self, t, script):
-        from mimarsinan.tuning.orchestration import dhat_highwater, endpoint_recovery
+        from mimarsinan.tuning.orchestration import dhat_highwater
+        from mimarsinan.tuning.orchestration.frontier import endpoint_recovery
 
         dhat_highwater.observe(t.pipeline, 0.99)
         t._phase_seconds = {}
@@ -166,7 +167,7 @@ class TestEndpointRecoveryPropagates:
         return endpoint_recovery, _read
 
     def test_entry_read_error_propagates(self, tmp_path, monkeypatch):
-        from mimarsinan.tuning.orchestration.endpoint_recovery import (
+        from mimarsinan.tuning.orchestration.frontier.endpoint_recovery import (
             run_endpoint_recovery,
         )
 
@@ -180,7 +181,7 @@ class TestEndpointRecoveryPropagates:
             t.close()
 
     def test_exit_read_error_propagates(self, tmp_path, monkeypatch):
-        from mimarsinan.tuning.orchestration.endpoint_recovery import (
+        from mimarsinan.tuning.orchestration.frontier.endpoint_recovery import (
             run_endpoint_recovery,
         )
         from mimarsinan.tuning.orchestration.recovery_engine import RecoveryEngine
@@ -200,7 +201,7 @@ class TestEndpointRecoveryPropagates:
             t.close()
 
     def test_rollback_still_restores_on_regression(self, tmp_path, monkeypatch):
-        from mimarsinan.tuning.orchestration.endpoint_recovery import (
+        from mimarsinan.tuning.orchestration.frontier.endpoint_recovery import (
             run_endpoint_recovery,
         )
         from mimarsinan.tuning.orchestration.recovery_engine import RecoveryEngine

@@ -10,9 +10,11 @@ from mimarsinan.tuning.orchestration.adaptation_manager import (
     install_sync_entry_grid_snap,
     sync_exact_qat_active,
 )
-from mimarsinan.tuning.orchestration.endpoint_recovery import run_endpoint_recovery
 from mimarsinan.tuning.orchestration.frontier import frontier_ladder
-from mimarsinan.tuning.orchestration.hop_staging import (
+from mimarsinan.tuning.orchestration.frontier.endpoint_recovery import (
+    run_endpoint_recovery,
+)
+from mimarsinan.tuning.orchestration.frontier.hop_staging import (
     capture_hop_reference,
     resolve_sync_hop_staging,
     run_hop_stage_reaffine,

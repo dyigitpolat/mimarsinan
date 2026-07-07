@@ -23,9 +23,9 @@ from mimarsinan.tuning.orchestration.adaptation_manager import (
     AdaptationManager,
     hop_frontier,
 )
-from mimarsinan.tuning.orchestration import hop_staging
+from mimarsinan.tuning.orchestration.frontier import hop_staging, reaffine
 from mimarsinan.tuning.orchestration.frontier import frontier_ladder
-from mimarsinan.tuning.orchestration.hop_staging import (
+from mimarsinan.tuning.orchestration.frontier.hop_staging import (
     HOP_STAGE_MIN_LEVELS,
     resolve_sync_hop_staging,
     stamp_hop_depths,
@@ -213,7 +213,7 @@ class TestHopStageReaffine:
         try:
             probe_values = iter([0.5, 0.6, 0.55, 0.55, 0.55, 0.55, 0.55])
             monkeypatch.setattr(
-                hop_staging, "live_model_acc_fp32",
+                reaffine, "live_model_acc_fp32",
                 lambda t: next(probe_values, 0.55),
             )
             stats = hop_staging.run_hop_stage_reaffine(tuner, 0.5)

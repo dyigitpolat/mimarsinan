@@ -15,7 +15,7 @@ from mimarsinan.tuning.orchestration.blend_ramp import (
     run_teacher_distmatch,
 )
 from mimarsinan.spiking.gain_correction import per_perceptron_cascade_depth
-from mimarsinan.tuning.orchestration.endpoint_recovery import run_endpoint_recovery
+from mimarsinan.tuning.orchestration.frontier.endpoint_recovery import run_endpoint_recovery
 from mimarsinan.tuning.orchestration.install_gauge_report import (
     emit_temporal_gauge,
 )

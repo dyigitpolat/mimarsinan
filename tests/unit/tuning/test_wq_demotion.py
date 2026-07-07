@@ -250,7 +250,7 @@ class TestEndpointRecoveryThroughTheTransformTrainer:
         # The endpoint stage's training steps must go through the transform
         # trainer (train aux -> reproject main), so the shipped model stays a
         # projection of the trained float model.
-        from mimarsinan.tuning.orchestration.endpoint_recovery import (
+        from mimarsinan.tuning.orchestration.frontier.endpoint_recovery import (
             run_endpoint_recovery,
         )
 

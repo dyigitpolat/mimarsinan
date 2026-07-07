@@ -24,7 +24,7 @@ from mimarsinan.tuning.orchestration.blend_ramp import (
     PlainClassificationLoss,
     run_teacher_distmatch,
 )
-from mimarsinan.tuning.orchestration.endpoint_recovery import run_endpoint_recovery
+from mimarsinan.tuning.orchestration.frontier.endpoint_recovery import run_endpoint_recovery
 from mimarsinan.tuning.orchestration.genuine_probe import iter_val_batches
 from mimarsinan.tuning.orchestration.kd_blend_adaptation_tuner import (
     KDBlendAdaptationTuner,
@@ -180,10 +180,10 @@ def run_prefix_stage_reaffine(tuner, rate: float) -> dict:
     Sets the frontier to ``rate`` first so both the cascade means and the
     keep-best probe read the genuine partial deployment the rung will train.
     """
-    from mimarsinan.spiking.dfq_bias_correction import dfq_correct_biases
     from mimarsinan.spiking.distribution_matching import (
         node_values_by_perceptron_index,
     )
+    from mimarsinan.tuning.orchestration.frontier.reaffine import frontier_reaffine
 
     tuner._fast_set_rate(float(rate))
     forward = tuner._prefix_forward
@@ -197,16 +197,12 @@ def run_prefix_stage_reaffine(tuner, rate: float) -> dict:
             _, node_values = forward.forward_with_node_values(cal_x)
         return node_values_by_perceptron_index(tuner.model, node_values)
 
-    stats = dfq_correct_biases(
-        tuner.model,
-        ann_mean,
-        hybrid_channel_values,
+    stats = frontier_reaffine(
+        tuner, ann_mean, hybrid_channel_values,
         bias_iters=int(tuner.pipeline.config.get(
             "ttfs_prefix_stage_dfq_iters", TUNING_POLICY.prefix_stage_dfq_iters,
         )),
         eta=tuner._calibration.distmatch_bias_eta,
-        probe=lambda: live_model_acc_fp32(tuner),
-        probe_patience=TUNING_POLICY.dfq_keepbest_patience,
     )
     print(
         f"[MBH-PREFIX] tuner={type(tuner).__name__} "
@@ -337,7 +333,7 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
         from mimarsinan.spiking.segment_partition import spike_segment_count
         from mimarsinan.spiking.gain_correction import per_perceptron_cascade_depth
         from mimarsinan.tuning.orchestration.frontier import frontier_ladder
-        from mimarsinan.tuning.orchestration.hop_staging import HOP_STAGE_MIN_LEVELS
+        from mimarsinan.tuning.orchestration.frontier.hop_staging import HOP_STAGE_MIN_LEVELS
 
         self._prefix_ramp = False
         self._hop_prefix_levels = None
