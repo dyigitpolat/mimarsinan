@@ -89,3 +89,48 @@ def test_soft_core_mapping_step_uses_identity_gate(monkeypatch):
         "SoftCoreMappingStep must no longer run the packed-mapping metric "
         "(that is HardCoreMappingStep's rung-3 gate)"
     )
+
+
+class TestSimEvalBatchAmplification:
+    """[fix-round Phase 3a] the cycle-accurate flow metric amortizes its
+    per-core launch overhead over the eval batch: raise to >= 1024 (measured
+    2.47x, per-sample decisions BIT-EQUAL on the d8 identity flow), while an
+    explicit ``max_batch_cap`` (the OOM retry path) still wins."""
+
+    class _BatchRecorder:
+        def __init__(self, trainer_cls):
+            self.sizes = []
+            self._cls = trainer_cls
+
+        def __call__(self, *args, **kwargs):
+            trainer = self._cls(*args, **kwargs)
+            recorder = self
+
+            original = trainer.set_test_batch_size
+
+            def record(batch_size):
+                recorder.sizes.append(int(batch_size))
+                return original(batch_size)
+
+            trainer.set_test_batch_size = record
+            return trainer
+
+    @staticmethod
+    def _tiny_classifier():
+        import torch.nn as nn
+
+        return nn.Sequential(nn.Flatten(), nn.Linear(64, 4))
+
+    def test_metric_eval_batch_is_amplified(self, pipeline, monkeypatch):
+        recorder = self._BatchRecorder(simulation_factory.BasicTrainer)
+        monkeypatch.setattr(simulation_factory, "BasicTrainer", recorder)
+        simulation_factory.run_trainer_metric(pipeline, self._tiny_classifier())
+        assert recorder.sizes[0] >= 1024
+
+    def test_oom_retry_cap_still_wins(self, pipeline, monkeypatch):
+        recorder = self._BatchRecorder(simulation_factory.BasicTrainer)
+        monkeypatch.setattr(simulation_factory, "BasicTrainer", recorder)
+        simulation_factory.run_trainer_metric(
+            pipeline, self._tiny_classifier(), max_batch_cap=8,
+        )
+        assert recorder.sizes[-1] == 8

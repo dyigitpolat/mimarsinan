@@ -97,6 +97,13 @@ def build_identity_mapping_for_pipeline(
     return identity_mapping
 
 
+_SIM_EVAL_BATCH_SIZE = 1024
+"""Cycle-accurate flow evals amortize their per-core launch overhead over the
+batch: 1024 measured 2.47x faster than 128 on the d8 identity flow with
+BIT-EQUAL per-sample decisions (fix-round Phase 3a); an OOM retry re-enters
+with ``max_batch_cap`` = the plan's ``simulation_batch_size``."""
+
+
 def run_trainer_metric(
     pipeline,
     model,
@@ -113,6 +120,9 @@ def run_trainer_metric(
         None,
     )
     try:
+        trainer.set_test_batch_size(
+            max(int(trainer.test_batch_size), _SIM_EVAL_BATCH_SIZE)
+        )
         if max_batch_cap is not None:
             trainer.set_test_batch_size(
                 min(int(trainer.test_batch_size), int(max_batch_cap))
