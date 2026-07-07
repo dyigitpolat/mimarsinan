@@ -47,20 +47,25 @@ def clip_off_saturated_effective_bias(perceptron) -> int:
         transformer.get_effective_weight(perceptron).detach()
     )
     clipped = 0
+    max_delta = 0.0
 
     def clip(effective_bias):
-        nonlocal clipped
+        nonlocal clipped, max_delta
         limit = bound.to(effective_bias.device, effective_bias.dtype)
         below = effective_bias < limit
         clipped = int(below.sum())
+        if clipped:
+            max_delta = float((limit - effective_bias)[below].max())
         return torch.where(below, limit, effective_bias)
 
     transformer.apply_effective_bias_transform(perceptron, clip)
-    if clipped:
+    # QAT drift re-clips dead channels by epsilons every projection; only a
+    # MATERIAL clip (a real crater canonicalization) is worth a log line.
+    if clipped and max_delta > 1e-3:
         print(
             f"[BiasSaturation] {getattr(perceptron, 'name', '<unnamed>')}: "
             f"clipped {clipped} constant-off channel bias(es) to the "
-            "saturation bound"
+            f"saturation bound (max delta {max_delta:.3f})"
         )
     return clipped
 
