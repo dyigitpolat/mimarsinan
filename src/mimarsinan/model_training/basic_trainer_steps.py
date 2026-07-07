@@ -11,6 +11,12 @@ from mimarsinan.tuning.learning_rate_explorer import (
 )
 
 
+_TARGET_CONFIRM_FACTOR = 4
+"""Confirmation-window multiple for a target-reach read: validation windows
+are not difficulty-uniform, so one easy progress window must not end a stage
+(measured: an armed 16k floor truncated by a single window read)."""
+
+
 def _recipe_recovery_enabled(trainer) -> bool:
     """Whether the step recovery routes through ``tuning_recipe`` (warmup+cosine).
 
@@ -149,14 +155,21 @@ def train_steps_until_target(
         if (step_idx + 1) % interval == 0 or step_idx == total - 1:
             acc = trainer.validate_n_batches(n_val)
             if acc >= target_accuracy:
-                best_state = clone_state_for_trainer(trainer)
-                for _ in range(2):
-                    x, y = trainer.next_training_batch()
-                    x, y = x.to(trainer.device), y.to(trainer.device)
-                    trainer._optimize(x, y, optimizer, scaler)
-                    steps_run += 1
-                    scheduler.step()
-                break
+                # Confirm on a larger independent window before ending the
+                # stage; a refuted reach continues with the better estimate.
+                confirm = trainer.validate_n_batches(
+                    _TARGET_CONFIRM_FACTOR * n_val
+                )
+                if confirm >= target_accuracy:
+                    best_state = clone_state_for_trainer(trainer)
+                    for _ in range(2):
+                        x, y = trainer.next_training_batch()
+                        x, y = x.to(trainer.device), y.to(trainer.device)
+                        trainer._optimize(x, y, optimizer, scaler)
+                        steps_run += 1
+                        scheduler.step()
+                    break
+                acc = confirm
             if acc > best_acc + imp_eps:
                 best_acc = acc
                 best_state = clone_state_for_trainer(trainer)

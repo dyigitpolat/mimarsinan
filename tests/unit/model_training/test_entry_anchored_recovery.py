@@ -132,3 +132,63 @@ class TestStepDenominatedBudget:
             min_steps=8, return_steps=True,
         )
         assert steps == 8
+
+
+class _QueuedEvalTrainer(_ScriptedTrainer):
+    """Trainer whose eval reads come from an explicit queue (window vs confirm)."""
+
+    def __init__(self, reads):
+        super().__init__(lambda steps: 0.0)
+        self._reads = list(reads)
+        self.eval_sizes = []
+
+    def validate_n_batches(self, n):
+        self.eval_sizes.append(n)
+        return self._reads.pop(0) if self._reads else 0.0
+
+
+class TestTargetReachConfirmation:
+    """A target-reach read on the small progress window must be CONFIRMED on a
+    larger independent window before it ends the stage: validation windows are
+    not difficulty-uniform, and one easy window must not truncate an armed
+    16k-step floor (nor commit a noise-read as 'reached')."""
+
+    def test_window_reach_refuted_by_confirmation_keeps_training(self):
+        # entry, w1(no), w2 WINDOW-REACH, confirm REFUTES, w3(no), w4(no) ...
+        tr = _QueuedEvalTrainer([0.5, 0.6, 0.99, 0.61, 0.62, 0.63, 0.64, 0.65])
+        final, steps = train_steps_until_target(
+            tr, 0.1, 6, 0.95, check_interval=1, patience=100,
+            min_steps=6, return_steps=True, final_validation=False,
+        )
+        assert steps == 6, "a refuted window reach must not end the stage"
+
+    def test_confirmed_reach_breaks_with_bonus_steps(self):
+        tr = _QueuedEvalTrainer([0.5, 0.6, 0.99, 0.98])
+        final, steps = train_steps_until_target(
+            tr, 0.1, 10, 0.95, check_interval=1, patience=100,
+            min_steps=10, return_steps=True, final_validation=False,
+        )
+        assert steps == 2 + 2, "confirmed reach commits and takes bonus steps"
+
+    def test_confirmation_reads_a_larger_window(self):
+        tr = _QueuedEvalTrainer([0.5, 0.99, 0.98])
+        train_steps_until_target(
+            tr, 0.1, 4, 0.95, check_interval=1, patience=100,
+            min_steps=4, validation_n_batches=2, return_steps=True,
+            final_validation=False,
+        )
+        assert tr.eval_sizes[0] == 2
+        assert tr.eval_sizes[2] > 2, "the confirmation window must be larger"
+
+    def test_refuted_reach_uses_the_confirm_read_for_keep_best(self):
+        # The inflated window read must not poison best_acc: after refutation
+        # (confirm 0.55), a later genuine 0.7 must register as the best state.
+        tr = _QueuedEvalTrainer([0.5, 0.99, 0.55, 0.7, 0.6, 0.6])
+        final, steps = train_steps_until_target(
+            tr, 0.1, 4, 0.95, check_interval=1, patience=2,
+            min_steps=0, return_steps=True, final_validation=False,
+        )
+        assert tr.steps_trained == 2, (
+            "the step-2 state (0.7 read) is the kept best, so the restored "
+            "model carries exactly 2 optimizer steps"
+        )

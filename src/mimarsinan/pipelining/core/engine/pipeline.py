@@ -4,6 +4,7 @@ import time as _time
 
 import torch
 
+from mimarsinan.tuning.orchestration import dhat_highwater, endpoint_steps
 from mimarsinan.pipelining.core.accuracy_budget import (
     AccuracyBudget,
     PretrainEnvelopeError,
@@ -67,9 +68,18 @@ class Pipeline:
                 if entry in mock_cache:
                     mock_cache.remove(entry)
 
+    def _reset_run_scoped_ledgers(self):
+        """A FRESH full run must not inherit a previous attempt's run-scoped
+        state from a reused cache directory (a stale exhausted endpoint-step
+        ledger silently demotes armed floors to the patience geometry);
+        ``run_from`` keeps them — resumption continues the same run."""
+        self.cache.remove(endpoint_steps.STEPS_CACHE_KEY)
+        self.cache.remove(dhat_highwater.HIGHWATER_CACHE_KEY)
+
     def run(self, *, stop_step: str | None = None):
         self.set_up_requirements()
         self.verify()
+        self._reset_run_scoped_ledgers()
         for name, step in self.steps:
             self._run_step(name, step)
             if stop_step is not None and name == stop_step:
