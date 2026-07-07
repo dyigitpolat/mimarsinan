@@ -26,9 +26,9 @@ from mimarsinan.tuning.orchestration.adaptation_manager import AdaptationManager
 from mimarsinan.tuning.orchestration.blend_ramp import PlainClassificationLoss
 from mimarsinan.tuning.orchestration.conversion_policy import ConversionPolicy
 from mimarsinan.tuning.orchestration.ttfs_adaptation_plan import TtfsAdaptationPlan
+from mimarsinan.tuning.orchestration.frontier.prefix_ramp import PrefixConversionRamp
+from mimarsinan.tuning.orchestration.ramp_strategy import GenuineBlendRamp
 from mimarsinan.tuning.tuners.ttfs_cycle_adaptation_tuner import (
-    GenuineBlendRamp,
-    PrefixConversionRamp,
     TTFSCycleAdaptationTuner,
     _SegmentSpikeForward,
 )
