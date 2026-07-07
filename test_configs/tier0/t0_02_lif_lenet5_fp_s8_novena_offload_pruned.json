@@ -51,6 +51,7 @@
     "weight_quantization": false,
     "pruning": true,
     "pruning_fraction": 0.5,
+    "endpoint_floor_wall_s": 55,
     "training_epochs": 2,
     "training_recipe": {
       "optimizer": "adamw",

@@ -523,6 +523,7 @@
   "coverage_notes": [
     "Quantization axis is RUNTIME truth (SSOT: config_schema/deployment_derivation.py): activation quantization is derived from the mode (ON for lif/casc/sync/ttfsq, OFF for analytical ttfs); configs never pin activation_quantization. Names use wq (bits-quantized) or fp (float/vanilla) only.",
     "W3c respec 2026-07-06: t0_04/t0_07 were the fictional aq class (weight_quantization=false + weight_bits ran as de-facto float; X4 passed those forms) -> respecced to real WQ deployments.",
-    "W3c respec 2026-07-06: t0_15/t0_21 pruning 0.5 -> 0.10 (user-directed). t0_02/t0_09/t0_18 stay at 0.5: they pass and keep the heavy-pruning stressor coverage."
+    "W3c respec 2026-07-06: t0_15/t0_21 pruning 0.5 -> 0.10 (user-directed). t0_02/t0_09/t0_18 stay at 0.5: they pass and keep the heavy-pruning stressor coverage.",
+    "Fix-round 2026-07-07: endpoint_floor_wall_s is the RUN-total wall budget shared by armed endpoint stages (endpoint_wall ledger), sized per cell class as clamp(280 - base, 40, 150) from UNCONTENDED measured base walls (fix-round wave, one 65-CPU h100-47 pack per node, slurm runs 20260707-0744*/0751*; base = artifact wall minus endpoint-stage overheads). Allocation of measured headroom only \u2014 no matrix-semantics change."
   ]
 }

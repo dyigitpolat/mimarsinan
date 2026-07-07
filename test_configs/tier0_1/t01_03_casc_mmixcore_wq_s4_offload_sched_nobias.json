@@ -55,6 +55,7 @@
     "encoding_layer_placement": "offload",
     "weight_quantization": true,
     "ttfs_cycle_schedule": "cascaded",
+    "endpoint_floor_wall_s": 60,
     "training_epochs": 2,
     "training_recipe": {
       "optimizer": "adamw",

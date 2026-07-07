@@ -88,6 +88,57 @@ def _quant_axis(row):
         return "none"
     return "wq_aq" if row["mode"] in AQ_DERIVED_MODES else "wq"
 
+
+# [fix-round item 5] endpoint_floor_wall_s is the RUN-total wall budget shared
+# by every armed endpoint stage (the endpoint_wall ledger). Sized per cell as
+# clamp(TARGET_ART_S - base, MIN_S, MAX_S), where base is the cell's measured
+# UNCONTENDED artifact wall MINUS endpoint-stage overheads (fix-round wave,
+# slurm runs 20260707-0744*/0751*, one 65-CPU h100-47 pack per node, ctrl band
+# 107-117 s). MAX_S = the uncontended full-16k-step floor cost (~135 s at
+# ~118 steps/s) + margin; MIN_S keeps a small recovery allowance on
+# identity-sim-bound cells whose accuracy is already solved at entry.
+ENDPOINT_WALL_TARGET_ART_S = 280
+ENDPOINT_WALL_MIN_S = 40
+ENDPOINT_WALL_MAX_S = 150
+# Measured bases by (vehicle[, mode][, depth-bucket]) class; the worst
+# measured member of each class (see the manifest note for provenance).
+ENDPOINT_WALL_CLASS_BASE_S = {
+    ("mmixcore", "casc"): 220,   # 181-218 measured
+    ("mmixcore", "lif"): 190,    # 164-191
+    ("mmixcore", "sync"): 180,   # 175
+    ("mmixcore", "ttfs"): 145,   # 137
+    ("mmixcore", "ttfsq"): 140,  # 118-137
+    ("lenet5", "lif"): 225,      # t0_02 novena 224
+    ("lenet5", "casc"): 210,     # t01_18 209
+    ("lenet5", "sync"): 160,
+    ("lenet5", "ttfs"): 130,
+    ("lenet5", "ttfsq"): 130,    # 125-133
+    ("simplemlp", None): 140,
+    ("deepcnn", "shallow"): 200,   # d4: 125-199
+    ("deepcnn", "deep"): 300,      # d6/d8: identity-sim-bound (t0_03 base 566)
+    ("deepmlp", "shallow"): 180,   # d4/d8: 108-180
+    ("deepmlp", "deep"): 250,      # d16 residual (t0_19 class)
+}
+
+
+def _endpoint_wall_budget(row):
+    """The run-total endpoint wall budget for one tier-0/0.1 row (seconds)."""
+    depth = row.get("depth")
+    if row["vehicle"] in ("deepcnn", "deepmlp"):
+        # Vehicle-specific deep boundary: deepcnn d6+ is identity-sim-bound;
+        # deepmlp is slow only at the d16 residual class.
+        deep_at = 6 if row["vehicle"] == "deepcnn" else 16
+        key = (row["vehicle"], "deep" if (depth or 0) >= deep_at else "shallow")
+    elif row["vehicle"] == "simplemlp":
+        key = ("simplemlp", None)
+    else:
+        key = (row["vehicle"], row["mode"])
+    base = ENDPOINT_WALL_CLASS_BASE_S[key]
+    return max(
+        ENDPOINT_WALL_MIN_S,
+        min(ENDPOINT_WALL_MAX_S, ENDPOINT_WALL_TARGET_ART_S - base),
+    )
+
 T0 = [
     dict(n=1, mode="lif", quant="wq", wb=5, s=4, vehicle="mmixcore"),
     dict(n=2, mode="lif", quant="fp", wb=5, s=8, vehicle="lenet5", firing="Novena",
@@ -430,6 +481,8 @@ def _deployment(tier, row, vehicles, dataset):
         dp["pruning_fraction"] = row["pruned"]
     if "floor_wall_s" in row:
         dp["endpoint_floor_wall_s"] = row["floor_wall_s"]
+    elif tier == 0:
+        dp["endpoint_floor_wall_s"] = _endpoint_wall_budget(row)
     if "tuning_batch_size" in v:
         dp["tuning_batch_size"] = v["tuning_batch_size"]
     if "preprocessing" in v:
@@ -488,6 +541,13 @@ COVERAGE_NOTES = {
         "W3c respec 2026-07-06: t0_15/t0_21 pruning 0.5 -> 0.10 (user-directed). "
         "t0_02/t0_09/t0_18 stay at 0.5: they pass and keep the heavy-pruning "
         "stressor coverage.",
+        "Fix-round 2026-07-07: endpoint_floor_wall_s is the RUN-total wall "
+        "budget shared by armed endpoint stages (endpoint_wall ledger), sized "
+        "per cell class as clamp(280 - base, 40, 150) from UNCONTENDED "
+        "measured base walls (fix-round wave, one 65-CPU h100-47 pack per "
+        "node, slurm runs 20260707-0744*/0751*; base = artifact wall minus "
+        "endpoint-stage overheads). Allocation of measured headroom only — "
+        "no matrix-semantics change.",
     ],
     "0_1": [
         "Tier-0.1 (2026-07-07, user-directed): a diagnostic matrix of controlled "
@@ -502,6 +562,10 @@ COVERAGE_NOTES = {
         "pinned; t01_17 inherits the t0_08 sim-sample respec), <= 300 s artifact "
         "wall with all simulators excluded; e4 cells account their extra pretrain "
         "in the wall honestly.",
+        "Fix-round 2026-07-07: per-cell endpoint_floor_wall_s (the run-total "
+        "endpoint wall ledger budget) sized exactly as tier-0's — "
+        "clamp(280 - measured class base, 40, 150); the F-family floor cells "
+        "keep their explicit 600 s diagnostic override.",
     ],
 }
 

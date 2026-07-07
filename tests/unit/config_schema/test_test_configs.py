@@ -362,9 +362,12 @@ TIER01_EXPECTED_DELTAS = {
         {"deployment_parameters.encoding_layer_placement",
          "deployment_parameters.allow_scheduling"},
     ),
+    # The endpoint wall budget rides the depth class (fix-round item 5):
+    # deepmlp deep (40 s) -> shallow (100 s) is induced by the depth move.
     "t01_14_casc_deepmlp_d8_wq_s16_residual": (
         "t0_19_casc_deepmlp_d16_wq_s16_residual",
-        {"deployment_parameters.model_config.depth"},
+        {"deployment_parameters.model_config.depth",
+         "deployment_parameters.endpoint_floor_wall_s"},
     ),
     # sched rides the depth axis: W2 proved platform C packs d8 only scheduled.
     "t01_15_casc_deepcnn_d8_wq_s4_sched": (
@@ -372,7 +375,8 @@ TIER01_EXPECTED_DELTAS = {
         {"deployment_parameters.model_config.depth",
          "deployment_parameters.allow_scheduling",
          "deployment_parameters.pruning",
-         "deployment_parameters.pruning_fraction"},
+         "deployment_parameters.pruning_fraction",
+         "deployment_parameters.endpoint_floor_wall_s"},
     ),
     # D - wall / training-ceiling decomposition
     "t01_16_lif_deepcnn_d8_wq_s8_sched": ("t0_03_lif_deepcnn_d8_wq_s16_sched", _S_MOVE),
@@ -440,6 +444,9 @@ class TestTier01DiagnosticMatrix:
             assert dp["training_epochs"] == expected, run["name"]
 
     def test_floor_cells_carry_the_overridable_wall_knob(self):
+        # Fix-round item 5: every cell carries the sized RUN-total endpoint
+        # wall budget (clamp(280 - measured class base, 40, 150)); the two
+        # F-family diagnostics keep their explicit 600 s override.
         floor_cells = {"t01_23_ttfs_mmixcore_wq_s8_floor",
                        "t01_24_sync_mmixcore_wq_s8_pruned10_floor"}
         for run in self._runs():
@@ -447,7 +454,22 @@ class TestTier01DiagnosticMatrix:
             if run["name"] in floor_cells:
                 assert dp["endpoint_floor_wall_s"] == 600, run["name"]
             else:
-                assert "endpoint_floor_wall_s" not in dp, run["name"]
+                assert 40 <= dp["endpoint_floor_wall_s"] <= 150, run["name"]
+
+    def test_endpoint_wall_budgets_follow_the_measured_arithmetic(self):
+        # Spot checks of the manifest-documented sizing on both matrices.
+        assert self._load(
+            0, "t0_03_lif_deepcnn_d8_wq_s16_sched",
+        )["deployment_parameters"]["endpoint_floor_wall_s"] == 40
+        assert self._load(
+            0, "t0_12_ttfsq_lenet5_wq_s32",
+        )["deployment_parameters"]["endpoint_floor_wall_s"] == 150
+        assert self._load(
+            0, "t0_21_sync_mmixcore_wq_s8_pruned10",
+        )["deployment_parameters"]["endpoint_floor_wall_s"] == 100
+        assert self._load(
+            "0_1", "t01_14_casc_deepmlp_d8_wq_s16_residual",
+        )["deployment_parameters"]["endpoint_floor_wall_s"] == 100
 
     def test_green_control_is_a_pure_t0_12_clone(self):
         cfg = self._load("0_1", "t01_25_ttfsq_lenet5_wq_s32")

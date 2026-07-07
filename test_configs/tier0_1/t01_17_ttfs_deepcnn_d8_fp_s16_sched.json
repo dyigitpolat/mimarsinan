@@ -50,6 +50,7 @@
     "thresholding_mode": "<=",
     "encoding_layer_placement": "subsume",
     "weight_quantization": false,
+    "endpoint_floor_wall_s": 40,
     "training_epochs": 2,
     "training_recipe": {
       "optimizer": "adamw",
