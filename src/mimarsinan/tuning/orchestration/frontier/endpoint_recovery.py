@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from mimarsinan.common.reporter import emit_reporter_event
 from mimarsinan.tuning.orchestration import dhat_highwater, endpoint_steps
 from mimarsinan.tuning.orchestration.mbh_ledger import fp32_deployed_read
 from mimarsinan.tuning.orchestration.recovery_engine import RecoveryEngine
@@ -165,6 +166,20 @@ def _emit(tuner, report: EndpointRecoveryReport) -> None:
         f"entry_gap_armed={report.entry_gap_armed}",
         flush=True,
     )
+    emit_reporter_event(tuner.pipeline.reporter, "mbh_endpoint", {
+        "tuner": type(tuner).__name__,
+        "target": report.target,
+        "entry": report.entry,
+        "exit": report.exit,
+        "budget_steps": report.budget_steps,
+        "steps_used": report.steps_used,
+        "engaged": report.engaged,
+        "reached": report.reached,
+        "rolled_back": report.rolled_back,
+        "target_floor": report.target_floor,
+        "floor_lifted": report.floor_lifted,
+        "entry_gap_armed": report.entry_gap_armed,
+    })
     tuner.pipeline.reporter.report(f"{tuner.name} endpoint_recovery", {
         "target": round(report.target, 4),
         "entry": round(report.entry, 4),

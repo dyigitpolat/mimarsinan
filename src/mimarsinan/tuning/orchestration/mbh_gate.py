@@ -7,6 +7,7 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
+from mimarsinan.common.reporter import emit_reporter_event
 from mimarsinan.tuning.orchestration import dhat_highwater, mbh_ledger
 
 ACCEPT_TOLERANCE = 0.01
@@ -66,12 +67,20 @@ def gated_fast_rate_attempt(tuner, target: float) -> float:
             f"full_acc={full_acc:.6f} best_full_acc={state.best_full_acc:.6f} "
             f"{tail}",
         )
+        _event(
+            tuner, "reject", rung=state.rung, attempt=attempt, rate=float(rate),
+            full_acc=float(full_acc), best_full_acc=float(state.best_full_acc),
+        )
         rate = retry
     state.stalled = True
     print(
         f"[MBH-GATE] constructive_stall committed={committed_before:.6f} "
         f"best_full_acc={state.best_full_acc:.6f}",
         flush=True,
+    )
+    _event(
+        tuner, "stall", rung=state.rung, committed=float(committed_before),
+        best_full_acc=float(state.best_full_acc),
     )
     tuner._restore_state(state.best_state)
     return committed_before
@@ -87,6 +96,7 @@ def _ensure_gate_state(tuner) -> MBHGateState:
         state = MBHGateState(best_full_acc=entry, best_state=tuner._clone_state())
         tuner._mbh_gate_state = state
         _log(tuner, f"entry best_full_acc={entry:.6f}")
+        _event(tuner, "entry", best_full_acc=entry)
     return state
 
 
@@ -104,6 +114,10 @@ def _accept(tuner, state, rate, post_acc, full_acc, t0) -> None:
         tuner,
         f"accept rung={state.rung} rate={float(rate):.6f} "
         f"full_acc={full_acc:.6f} best_full_acc={state.best_full_acc:.6f}",
+    )
+    _event(
+        tuner, "accept", rung=state.rung, rate=float(rate),
+        full_acc=float(full_acc), best_full_acc=float(state.best_full_acc),
     )
 
 
@@ -133,3 +147,10 @@ def _add_phase_seconds(tuner, t0) -> None:
 
 def _log(tuner, message: str) -> None:
     print(f"[MBH-GATE] tuner={type(tuner).__name__} {message}", flush=True)
+
+
+def _event(tuner, action: str, **payload) -> None:
+    emit_reporter_event(
+        tuner.pipeline.reporter,
+        "mbh_gate", {"action": action, "tuner": type(tuner).__name__, **payload},
+    )

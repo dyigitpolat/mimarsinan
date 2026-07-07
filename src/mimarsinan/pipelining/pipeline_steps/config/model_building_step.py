@@ -2,7 +2,10 @@ from mimarsinan.mapping.verification.onchip_fraction import (
     assert_onchip_majority_estimate_or_raise,
 )
 from mimarsinan.pipelining.core.engine.pipeline_helpers import safe_warmup_forward
-from mimarsinan.pipelining.core.steps.pipeline_step import PipelineStep
+from mimarsinan.pipelining.core.steps.pipeline_step import (
+    METRIC_CARRIED,
+    PipelineStep,
+)
 from mimarsinan.tuning.orchestration.adaptation_manager_factory import create_adaptation_manager_for_model
 
 
@@ -15,6 +18,9 @@ class ModelBuildingStep(PipelineStep):
 
     def validate(self):
         return self.pipeline.get_target_metric()
+
+    def validate_metric_kind(self) -> str:
+        return METRIC_CARRIED
 
     def _is_supermodel(self, model):
         return hasattr(model, "get_perceptrons") and hasattr(model, "get_mapper_repr")

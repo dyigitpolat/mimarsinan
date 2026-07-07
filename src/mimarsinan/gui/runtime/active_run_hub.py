@@ -8,8 +8,14 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 
 from mimarsinan.common.best_effort import best_effort
-from mimarsinan.gui.runtime.active_run_tailers import MetricsTailer, StepsFileWatcher
+from mimarsinan.gui.runtime.active_run_tailers import (
+    JsonlTailer,
+    StepsFileWatcher,
+    events_tailer,
+    metrics_tailer,
+)
 from mimarsinan.gui.runtime.persistence.paths import (
+    EVENTS_FILENAME,
     GUI_STATE_DIR,
     LIVE_METRICS_FILENAME,
     STEPS_FILENAME,
@@ -19,9 +25,12 @@ logger = logging.getLogger("mimarsinan.gui.runtime.active_run_hub")
 
 
 class _RunSubscribers:
-    def __init__(self, metrics: MetricsTailer, steps: StepsFileWatcher) -> None:
+    def __init__(
+        self, metrics: JsonlTailer, steps: StepsFileWatcher, events: JsonlTailer,
+    ) -> None:
         self.metrics = metrics
         self.steps = steps
+        self.events = events
         self.subscribers: set[Any] = set()
         self.lock = threading.Lock()
 
@@ -70,23 +79,23 @@ class ActiveRunHub:
             state_dir = Path(working_dir) / GUI_STATE_DIR
             metrics_path = state_dir / LIVE_METRICS_FILENAME
             steps_path = state_dir / STEPS_FILENAME
+            events_path = state_dir / EVENTS_FILENAME
 
-            def on_metric(msg: dict) -> None:
+            def on_frame(msg: dict) -> None:
                 self._broadcast(run_id, msg)
 
-            def on_overview(msg: dict) -> None:
-                self._broadcast(run_id, msg)
-
-            metrics_tailer = MetricsTailer(metrics_path, on_metric)
+            metrics = metrics_tailer(metrics_path, on_frame)
+            events = events_tailer(events_path, on_frame)
             steps_watcher = StepsFileWatcher(
                 steps_path,
                 build_overview=lambda rid=run_id: self._build_overview(rid),
-                callback=on_overview,
+                callback=on_frame,
             )
-            record = _RunSubscribers(metrics_tailer, steps_watcher)
+            record = _RunSubscribers(metrics, steps_watcher, events)
             record.add(subscriber)
             self._runs[run_id] = record
-            metrics_tailer.start()
+            metrics.start()
+            events.start()
             steps_watcher.start()
             return True
 
@@ -103,6 +112,7 @@ class ActiveRunHub:
         with best_effort(f"stop tailers for run {run_id}", logger=logger):
             record.metrics.stop()
             record.steps.stop()
+            record.events.stop()
 
     def shutdown(self) -> None:
         with self._lock:
@@ -113,6 +123,7 @@ class ActiveRunHub:
             with best_effort("stop tailers on shutdown", logger=logger):
                 rec.metrics.stop()
                 rec.steps.stop()
+                rec.events.stop()
 
     def _broadcast(self, run_id: str, message: dict) -> None:
         with self._lock:

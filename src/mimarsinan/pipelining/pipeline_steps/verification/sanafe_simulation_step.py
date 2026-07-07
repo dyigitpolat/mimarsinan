@@ -53,7 +53,10 @@ from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 from mimarsinan.pipelining.core.engine.pipeline_helpers import (
     require_spiking_mode_supported,
 )
-from mimarsinan.pipelining.core.steps.pipeline_step import PipelineStep
+from mimarsinan.pipelining.core.steps.pipeline_step import (
+    METRIC_CARRIED,
+    PipelineStep,
+)
 from mimarsinan.pipelining.core.simulation_factory import (
     assert_spike_parity_or_raise,
     build_deployment_contract,
@@ -77,6 +80,10 @@ class SanafeSimulationStep(PipelineStep):
         if self.metric is not None:
             return self.metric
         return self.pipeline.get_target_metric()
+
+    def validate_metric_kind(self) -> str:
+        # self.metric is the stored previous pipeline metric (metric-neutral gate).
+        return METRIC_CARRIED
 
 
     def process(self):
@@ -187,6 +194,17 @@ class SanafeSimulationStep(PipelineStep):
         )
 
         self.metric = self.pipeline.get_target_metric()
+        self._verdict = {
+            "status": "pass",
+            "rule": "SANA-FE parity + energy aggregates",
+            "detail": {
+                "samples": len(per_sample),
+                "total_energy_mj": report.aggregate["total_energy_mj"],
+                "max_sim_time_s": report.aggregate["max_sim_time_s"],
+                "total_spikes": report.aggregate["total_spikes"],
+                "total_packets": report.aggregate["total_packets"],
+            },
+        }
         print(
             f"SANA-FE simulation: {len(per_sample)} sample(s), "
             f"E={report.aggregate['total_energy_mj']:.3f} mJ, "

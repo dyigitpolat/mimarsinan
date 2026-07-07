@@ -164,6 +164,7 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
             max_intra_segment_depth=max(depths.values(), default=0),
             s=self._T,
             n_segments=max(1, int(self._n_spike_segments or 1)),
+            reporter=self.pipeline.reporter,
         )
 
     def _resolve_prefix_ramp(self, plan):

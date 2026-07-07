@@ -18,7 +18,7 @@ shared across the pipeline.
 | `file_utils.py` | Writers for pipeline artifacts: directory prep, per-sample simulator input files (scalar and spike-train), and chip weights/code emission (`save_weights_and_chip_code`) |
 | `instance_memo.py` | `InstanceMemo`: per-instance derived-value memo for unhashable hosts (id-keyed, finalizer-evicted); caches precomputed plans keyed on IR/segment objects |
 | `layer_key.py` | `layer_key_from_node_name`: display/serialization grouping key that collapses per-position/per-tile/psum core names into one layer stack |
-| `reporter.py` | `Reporter` protocol for pipeline metric reporting and `DefaultReporter`, an in-tree implementation with throttled console output |
+| `reporter.py` | `Reporter` protocol for pipeline metric reporting and structured events (`report`/`console_log`/`event`), `DefaultReporter` (throttled console output; events are a GUI concern), and `emit_reporter_event` (event emission tolerant of pre-event reporter implementations) |
 | `safe_numeric.py` | `safe_float`: safe conversion to float for plots and labels; returns a default when unconvertible |
 
 ## Dependencies

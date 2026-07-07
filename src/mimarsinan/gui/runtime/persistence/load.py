@@ -11,6 +11,7 @@ from typing import Any
 
 from mimarsinan.gui.runtime.persistence.paths import (
     console_log_path,
+    events_path,
     live_metrics_path,
     run_info_path,
     steps_path,
@@ -192,6 +193,37 @@ def load_console_logs(
                     continue
                 results.append(record)
                 idx += 1
+    except OSError:
+        pass
+    return results
+
+
+def load_events(
+    working_directory: str,
+    *,
+    since_seq: int = 0,
+    step_name: str | None = None,
+) -> list[dict[str, Any]]:
+    """Read persisted structured events from events.jsonl (empty when absent)."""
+    path = events_path(working_directory)
+    if not path.exists():
+        return []
+    results: list[dict[str, Any]] = []
+    try:
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    record = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if record.get("seq", 0) <= since_seq:
+                    continue
+                if step_name is not None and record.get("step") != step_name:
+                    continue
+                results.append(record)
     except OSError:
         pass
     return results

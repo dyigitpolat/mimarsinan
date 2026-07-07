@@ -33,6 +33,11 @@ class CompositeReporter:
         for r in self._reporters:
             r.console_log(metric_name, metric_value)
 
+    def event(self, kind: str, payload: dict) -> None:
+        for r in self._reporters:
+            if hasattr(r, "event"):
+                r.event(kind, payload)
+
     def finish(self) -> None:
         for r in self._reporters:
             if hasattr(r, "finish"):

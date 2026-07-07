@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from mimarsinan.common.reporter import emit_reporter_event
 from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory
 from mimarsinan.model_training.basic_trainer import BasicTrainer
 from mimarsinan.model_training.training_recipe import build_recipe
@@ -111,6 +112,10 @@ class TunerBase:
                 flush=True,
             )
             self.pipeline.reporter.report(f"{self.name} lr_refusal", 1.0)
+            emit_reporter_event(
+                self.pipeline.reporter,
+                "lr_refusal", {"tuner": type(self).__name__, "name": self.name},
+            )
         return lr
 
     def _get_cached_lr(self) -> float | None:

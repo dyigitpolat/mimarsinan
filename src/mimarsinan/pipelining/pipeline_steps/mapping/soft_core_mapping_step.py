@@ -1,3 +1,4 @@
+from mimarsinan.common.reporter import emit_reporter_event
 import warnings
 from typing import Iterable, cast
 
@@ -347,6 +348,11 @@ class SoftCoreMappingStep(PipelineStep):
             f"[SoftCoreMappingStep] torch↔deployed-sim parity: {agreement:.4f} "
             f"over {int(samples.shape[0])} samples"
         )
+        emit_reporter_event(self.pipeline.reporter, "parity", {
+            "kind": "scm_torch_sim",
+            "agreement": float(agreement),
+            "samples": int(samples.shape[0]),
+        })
 
     def _run_nf_scm_parity_gate(self, model, ir_graph) -> None:
         """Rung-1↔rung-2 per-neuron lock for analytic schedules: compare NF activations against the identity-mapped contract run neuron-by-neuron and fail loud (accuracy tolerance alone is too coarse)."""

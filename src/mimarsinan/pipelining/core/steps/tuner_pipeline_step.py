@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
-from mimarsinan.pipelining.core.steps.pipeline_step import PipelineStep
+from mimarsinan.pipelining.core.steps.pipeline_step import (
+    METRIC_CARRIED,
+    METRIC_MEASURED,
+    PipelineStep,
+)
 from mimarsinan.tuning.orchestration.conversion_draws import (
     configured_draws,
     run_conversion_draws,
@@ -25,6 +29,9 @@ class TunerPipelineStep(PipelineStep):
         if self.tuner is not None:
             return self.tuner.validate()
         return self.pipeline.get_target_metric()
+
+    def validate_metric_kind(self) -> str:
+        return METRIC_MEASURED if self.tuner is not None else METRIC_CARRIED
 
     def _commit_tuner_entries(self, model, adaptation_manager):
         self.update_entry("adaptation_manager", adaptation_manager, "pickle")

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Optional
 
+from mimarsinan.common.reporter import emit_reporter_event
 from mimarsinan.tuning.orchestration.install_resolution.gauges import (
     PROVEN_RECOVERY_DEPTH,
     TemporalWindowGauge,
@@ -30,10 +31,15 @@ def gauge_summary(gauge: Optional[ValueInstallGauge]) -> dict:
     }
 
 
-def emit_value_gauge(context: str, gauge: ValueInstallGauge) -> None:
+def emit_value_gauge(context: str, gauge: ValueInstallGauge, *, reporter=None) -> None:
     """One loud ``[MBH-A6]`` verdict line + one line per starved hop (warn-only)."""
     starved = gauge.starved_hops
     verdict = "FAIL" if gauge.fails else "PASS"
+    if reporter is not None:
+        emit_reporter_event(reporter, "mbh_a6", {
+            "gauge": "value", "context": context, "verdict": verdict,
+            **gauge_summary(gauge),
+        })
     print(
         f"[MBH-A6] kind=value context={context} levels={gauge.levels} "
         f"hops={len(gauge.hops)} starved_hops={len(starved)} verdict={verdict} "
@@ -49,8 +55,14 @@ def emit_value_gauge(context: str, gauge: ValueInstallGauge) -> None:
         )
 
 
-def emit_temporal_gauge(context: str, gauge: TemporalWindowGauge) -> None:
+def emit_temporal_gauge(context: str, gauge: TemporalWindowGauge, *, reporter=None) -> None:
     verdict = "FAIL" if gauge.fails else "PASS"
+    if reporter is not None:
+        emit_reporter_event(reporter, "mbh_a6", {
+            "gauge": "temporal", "context": context, "verdict": verdict,
+            "total_first_fire_delay": gauge.total_delay, "window": gauge.window,
+            "per_depth_delays": list(gauge.per_depth_delays),
+        })
     delays = ", ".join(f"{d:.2f}" for d in gauge.per_depth_delays)
     print(
         f"[MBH-A6] kind=temporal context={context} "
@@ -71,12 +83,19 @@ def chain_gauge_fails(*, max_intra_segment_depth: int, n_segments: int) -> bool:
 
 
 def emit_chain_gauge(
-    context: str, *, max_intra_segment_depth: int, s: int, n_segments: int
+    context: str, *, max_intra_segment_depth: int, s: int, n_segments: int,
+    reporter=None,
 ) -> None:
     """The cascaded install's chain line: hop depth is the compounding exponent."""
     verdict = "FAIL" if chain_gauge_fails(
         max_intra_segment_depth=max_intra_segment_depth, n_segments=n_segments,
     ) else "PASS"
+    if reporter is not None:
+        emit_reporter_event(reporter, "mbh_a6", {
+            "gauge": "chain", "context": context, "verdict": verdict,
+            "max_intra_segment_depth": int(max_intra_segment_depth),
+            "s": int(s), "spike_segments": int(n_segments),
+        })
     print(
         f"[MBH-A6] kind=chain context={context} "
         f"max_intra_segment_depth={max_intra_segment_depth} S={s} "

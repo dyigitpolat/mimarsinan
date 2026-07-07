@@ -1,4 +1,7 @@
-from mimarsinan.pipelining.core.steps.pipeline_step import PipelineStep
+from mimarsinan.pipelining.core.steps.pipeline_step import (
+    METRIC_CARRIED,
+    PipelineStep,
+)
 
 from mimarsinan.chip_simulation.simulation_runner import SimulationRunner
 
@@ -18,6 +21,9 @@ class SimulationStep(PipelineStep):
         # there). Loihi and SANA-FE follow the same metric-neutral contract.
         return self.pipeline.get_target_metric()
 
+    def validate_metric_kind(self) -> str:
+        return METRIC_CARRIED
+
     def _report_probe(self, accuracy) -> None:
         print("Simulation accuracy: ", accuracy)
         self.pipeline.reporter.report("nevresim_probe_accuracy", float(accuracy))
@@ -31,3 +37,8 @@ class SimulationStep(PipelineStep):
 
         self.probe_accuracy = runner.run()
         self._report_probe(self.probe_accuracy)
+        self._verdict = {
+            "status": "pass",
+            "rule": "nevresim decision-parity probe (metric-neutral)",
+            "detail": {"probe_accuracy": float(self.probe_accuracy)},
+        }

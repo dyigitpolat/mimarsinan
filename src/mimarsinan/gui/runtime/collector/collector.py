@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any, Optional
 
 from mimarsinan.gui.runtime.collector.mixins import (
     ConsoleMixin,
+    EventsMixin,
     MetricsMixin,
     ReadApiMixin,
     StepsMixin,
@@ -22,6 +23,7 @@ if TYPE_CHECKING:
 class DataCollector(
     StepsMixin,
     MetricsMixin,
+    EventsMixin,
     ConsoleMixin,
     ReadApiMixin,
     WebSocketMixin,
@@ -45,6 +47,9 @@ class DataCollector(
         self._pipeline_thread: Optional[threading.Thread] = None
         self._metric_callback: Any = None
         self._console_callback: Any = None
+        self._pipeline_events: list = []
+        self._pipeline_event_seq: int = 0
+        self._pipeline_event_callback: Any = None
 
         self._resource_store: Optional["ResourceStore"] = None
         self._working_directory: Optional[str] = None

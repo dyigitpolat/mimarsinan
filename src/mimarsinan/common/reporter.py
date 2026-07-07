@@ -6,6 +6,15 @@ import time
 from typing import Any, Protocol, runtime_checkable
 
 
+def emit_reporter_event(reporter: Any, kind: str, payload: dict) -> None:
+    """Emit a structured event through a reporter, tolerating implementations
+    that predate the event API (test fakes, external reporters): the [TAG]
+    console line at every emit site remains the loud channel."""
+    event = getattr(reporter, "event", None)
+    if event is not None:
+        event(kind, payload)
+
+
 @runtime_checkable
 class Reporter(Protocol):
     """Protocol for pipeline metric reporting. Used by Pipeline and CompositeReporter."""
@@ -15,6 +24,8 @@ class Reporter(Protocol):
     def report(self, metric_name: str, metric_value: Any, step: int | None = None) -> None: ...
 
     def console_log(self, metric_name: str, metric_value: Any) -> None: ...
+
+    def event(self, kind: str, payload: dict) -> None: ...
 
     def finish(self) -> None: ...
 
@@ -48,6 +59,10 @@ class DefaultReporter:
 
     def report(self, metric_name: str, metric_value: Any, step: int | None = None) -> None:
         self.console_log(metric_name, metric_value)
+
+    def event(self, kind: str, payload: dict) -> None:
+        """Structured events are a GUI/persistence concern; the emit sites keep
+        their own [TAG] console prints, so the default reporter stays silent."""
 
     def finish(self) -> None:
         pass

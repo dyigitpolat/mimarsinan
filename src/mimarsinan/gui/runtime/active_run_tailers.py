@@ -17,18 +17,21 @@ POLL_INTERVAL_S = 0.05
 Callback = Callable[[dict], None]
 
 
-class MetricsTailer:
-    """Tail ``live_metrics.jsonl`` and emit per-line metric events."""
+class JsonlTailer:
+    """Tail a JSONL file and emit each record as a typed WS frame."""
 
-    def __init__(self, path: Path, callback: Callback) -> None:
+    def __init__(self, path: Path, callback: Callback, *, frame_type: str) -> None:
         self._path = path
         self._callback = callback
+        self._frame_type = frame_type
         self._stop = threading.Event()
         self._position = 0
         self._last_size = 0
         self._pending = b""
         self._thread = threading.Thread(
-            target=self._run, name=f"MetricsTailer[{path.parent.name}]", daemon=True,
+            target=self._run,
+            name=f"JsonlTailer[{frame_type}:{path.parent.name}]",
+            daemon=True,
         )
 
     def start(self) -> None:
@@ -40,7 +43,7 @@ class MetricsTailer:
 
     def _run(self) -> None:
         while not self._stop.is_set():
-            with best_effort(f"metrics tailer tick for {self._path}", logger=logger):
+            with best_effort(f"{self._frame_type} tailer tick for {self._path}", logger=logger):
                 self._tick()
             self._stop.wait(POLL_INTERVAL_S)
 
@@ -73,8 +76,8 @@ class MetricsTailer:
                 record = json.loads(line.decode("utf-8"))
             except (UnicodeDecodeError, json.JSONDecodeError):
                 continue
-            with best_effort("metrics tailer callback", logger=logger):
-                self._callback({"type": "metric", **record})
+            with best_effort(f"{self._frame_type} tailer callback", logger=logger):
+                self._callback({"type": self._frame_type, **record})
 
 
 class StepsFileWatcher:
@@ -123,3 +126,13 @@ class StepsFileWatcher:
             return
         with best_effort("steps overview callback", logger=logger):
             self._callback({"type": "pipeline_overview", **overview})
+
+
+def metrics_tailer(path: Path, callback: Callback) -> JsonlTailer:
+    """Tailer for ``live_metrics.jsonl`` (``metric`` frames)."""
+    return JsonlTailer(path, callback, frame_type="metric")
+
+
+def events_tailer(path: Path, callback: Callback) -> JsonlTailer:
+    """Tailer for ``events.jsonl`` (``event`` frames)."""
+    return JsonlTailer(path, callback, frame_type="event")

@@ -247,5 +247,5 @@ class ActivationAnalysisStep(TrainerPipelineStep):
             list(zip(perceptrons, accumulators)), scales, depths, levels,
             min_levels=min_levels, mass_warn=mass_warn,
         )
-        emit_value_gauge(type(self).__name__, gauge)
+        emit_value_gauge(type(self).__name__, gauge, reporter=self.pipeline.reporter)
         return gauge

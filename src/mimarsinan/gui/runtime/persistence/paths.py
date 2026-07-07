@@ -15,6 +15,7 @@ STEPS_FILENAME = "steps.json"
 RUN_INFO_FILENAME = "run_info.json"
 LIVE_METRICS_FILENAME = "live_metrics.jsonl"
 CONSOLE_LOG_FILENAME = "console.jsonl"
+EVENTS_FILENAME = "events.jsonl"
 RESOURCES_DIRNAME = "resources"
 
 _STEPS_FILE_LOCKS_LOCK = threading.Lock()
@@ -39,6 +40,10 @@ def live_metrics_path(working_directory: str) -> Path:
 
 def console_log_path(working_directory: str) -> Path:
     return gui_state_dir(working_directory) / CONSOLE_LOG_FILENAME
+
+
+def events_path(working_directory: str) -> Path:
+    return gui_state_dir(working_directory) / EVENTS_FILENAME
 
 
 def steps_file_lock(path: Path) -> threading.Lock:

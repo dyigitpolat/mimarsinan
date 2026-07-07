@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from typing import List
 
-from mimarsinan.pipelining.core.steps.pipeline_step import PipelineStep
+from mimarsinan.pipelining.core.steps.pipeline_step import (
+    METRIC_CARRIED,
+    METRIC_MEASURED,
+    PipelineStep,
+)
 from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 from mimarsinan.pipelining.core.model_config_emit import emit_model_config_entries
 from mimarsinan.pipelining.core.registry.model_registry import ModelRegistry
@@ -46,6 +50,10 @@ class ArchitectureSearchStep(PipelineStep):
     def validate(self):
         m = getattr(self, "_last_metric", None)
         return m if m is not None else self.pipeline.get_target_metric()
+
+    def validate_metric_kind(self) -> str:
+        m = getattr(self, "_last_metric", None)
+        return METRIC_MEASURED if m is not None else METRIC_CARRIED
 
     def process(self):
         search_mode = derive_search_mode(self.pipeline.config)

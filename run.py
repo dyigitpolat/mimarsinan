@@ -53,6 +53,7 @@ def _run_headless(config_path: str) -> None:
     collector.set_resource_store(ResourceStore())
     gui = GUIHandle(session.pipeline, collector, persist_metrics=True, capture_stdio=False)
     collector.set_metric_callback(gui.on_metric)
+    collector.set_event_callback(gui.on_event)
     session.attach_gui(gui)
 
     step_names = [name for name, _ in session.pipeline.steps]

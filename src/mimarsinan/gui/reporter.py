@@ -18,6 +18,9 @@ class GUIReporter:
     def report(self, metric_name: str, metric_value: Any, step: int | None = None) -> None:
         self._collector.record_metric(metric_name, metric_value, step=step)
 
+    def event(self, kind: str, payload: dict) -> None:
+        self._collector.record_event(kind, payload)
+
     def console_log(self, metric_name: str, metric_value: Any) -> None:
         pass
 

@@ -95,7 +95,7 @@ class LIFAdaptationTuner(KDBlendAdaptationTuner):
         stats = capture_install_stats(self)
         depths = per_perceptron_cascade_depth(self.model.get_mapper_repr())
         gauge = lif_temporal_gauge(stats, depths, window=self._T)
-        emit_temporal_gauge(type(self).__name__, gauge)
+        emit_temporal_gauge(type(self).__name__, gauge, reporter=self.pipeline.reporter)
 
     def _make_ramp_strategy(self):
         if self._tanneal is not None:

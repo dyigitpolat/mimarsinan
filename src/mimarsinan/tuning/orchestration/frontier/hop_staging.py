@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from mimarsinan.common.reporter import emit_reporter_event
 from mimarsinan.spiking.dfq_bias_correction import (
     teacher_activation_samples,
     teacher_channel_means,
@@ -123,4 +124,9 @@ def run_hop_stage_reaffine(tuner, rate):
         f"iters={stats.get('probe_iters_run')}",
         flush=True,
     )
+    emit_reporter_event(tuner.pipeline.reporter, "mbh_hop", {
+        "action": "reaffine", "rate": float(rate), "frontier_k": k,
+        "probe_entry": stats.get("probe_entry"),
+        "probe_best": stats.get("probe_best"),
+    })
     return stats

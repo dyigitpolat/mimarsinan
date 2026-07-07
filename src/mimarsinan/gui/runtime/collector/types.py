@@ -45,6 +45,8 @@ class StepRecord:
     snapshot_key_kinds: dict | None = None
     error: str | None = None
     snapshot_version: int = 0
+    metric_kind: str | None = None
+    verdict: dict | None = None
 
 
 def build_snapshot_etag(rec: StepRecord) -> str:

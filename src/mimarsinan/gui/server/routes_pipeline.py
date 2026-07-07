@@ -14,12 +14,13 @@ from mimarsinan.common.best_effort import best_effort
 from mimarsinan.gui.runs import (
     list_runs,
     get_run_config,
+    get_run_events,
     get_run_pipeline,
     get_run_step_detail as hist_step_detail,
     get_run_console_logs,
 )
 from mimarsinan.gui.runtime.active_run_hub import ActiveRunHub
-from mimarsinan.gui.runtime.persistence import load_console_logs
+from mimarsinan.gui.runtime.persistence import load_console_logs, load_events
 from mimarsinan.gui.server.json_safe import SafeJSONResponse
 
 if TYPE_CHECKING:
@@ -68,6 +69,10 @@ def register_routes(
     def api_console_logs(offset: int = 0):
         return collector.get_console_logs(offset=offset)
 
+    @app.get("/api/events")
+    def api_events(since_seq: int = 0, step: str | None = None):
+        return collector.get_events(since_seq=since_seq, step_name=step)
+
     @app.get("/api/runs")
     def api_list_runs(include_steps: bool = False):
         return list_runs(include_steps=include_steps)
@@ -96,6 +101,10 @@ def register_routes(
     @app.get("/api/runs/{run_id}/console")
     def api_run_console(run_id: str, offset: int = 0):
         return get_run_console_logs(run_id, offset=offset)
+
+    @app.get("/api/runs/{run_id}/events")
+    def api_run_events(run_id: str, since_seq: int = 0):
+        return get_run_events(run_id, since_seq=since_seq)
 
     @app.get("/api/active_runs")
     def api_active_runs():
@@ -136,6 +145,15 @@ def register_routes(
         if working_dir is None:
             return JSONResponse(status_code=404, content={"error": "run not found"})
         return load_console_logs(working_dir, offset=offset)
+
+    @app.get("/api/active_runs/{run_id}/events")
+    def api_active_events(run_id: str, since_seq: int = 0):
+        if process_manager is None:
+            return JSONResponse(status_code=404, content={"error": "not found"})
+        working_dir = process_manager.get_working_dir(run_id)
+        if working_dir is None:
+            return JSONResponse(status_code=404, content={"error": "run not found"})
+        return load_events(working_dir, since_seq=since_seq)
 
     @app.websocket("/ws")
     async def websocket_endpoint(ws: WebSocket):

@@ -10,7 +10,12 @@ from typing import Any
 
 from mimarsinan.common.best_effort import best_effort
 from mimarsinan.common.env import runs_root
-from mimarsinan.gui.runtime.persistence import load_persisted_steps, load_console_logs
+from mimarsinan.gui.runtime.persistence import (
+    load_console_logs,
+    load_events,
+    load_persisted_steps,
+)
+from mimarsinan.gui.snapshot.console_events import parse_console_events
 from mimarsinan.gui.snapshot.rebuild import rebuild_step_snapshot_from_disk
 
 logger = logging.getLogger("mimarsinan.gui")
@@ -116,6 +121,8 @@ def get_run_pipeline(run_id: str) -> dict[str, Any] | None:
             "end_time": end_t,
             "duration": (end_t - start_t) if start_t and end_t else None,
             "target_metric": sd.get("target_metric"),
+            "metric_kind": sd.get("metric_kind"),
+            "verdict": sd.get("verdict"),
             "semantic_group": groups.get(name),
         })
     return {
@@ -167,7 +174,22 @@ def get_run_step_detail(run_id: str, step_name: str) -> dict[str, Any] | None:
         "duration": (sd.get("end_time", 0) - sd.get("start_time", 0))
             if sd.get("start_time") and sd.get("end_time") else None,
         "target_metric": sd.get("target_metric"),
+        "metric_kind": sd.get("metric_kind"),
+        "verdict": sd.get("verdict"),
         "metrics": sd.get("metrics", []),
         "snapshot": snapshot,
         "snapshot_key_kinds": snapshot_key_kinds,
     }
+
+
+def get_run_events(run_id: str, *, since_seq: int = 0) -> list[dict[str, Any]]:
+    """Structured events for a past run; legacy runs backfill from console tags."""
+    _validate_run_id(run_id)
+    run_dir = Path(get_runs_root()) / run_id
+    if not run_dir.is_dir():
+        return []
+    events = load_events(str(run_dir), since_seq=since_seq)
+    if events:
+        return events
+    lines = load_console_logs(str(run_dir))
+    return [e for e in parse_console_events(lines) if e.get("seq", 0) > since_seq]

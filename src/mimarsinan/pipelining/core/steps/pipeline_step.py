@@ -1,3 +1,7 @@
+METRIC_MEASURED = "measured"
+METRIC_CARRIED = "carried"
+
+
 class PipelineStep:
     REQUIRES: tuple[str, ...] = ()
     PROMISES: tuple[str, ...] = ()
@@ -27,6 +31,7 @@ class PipelineStep:
         self.pipeline = pipeline
 
         self._accessed_entries = set()
+        self._verdict = None
 
     def run(self):
         self._accessed_entries = set()
@@ -57,6 +62,33 @@ class PipelineStep:
         if trainer is not None and hasattr(trainer, "test"):
             return trainer.test()
         return self.validate()
+
+    def pipeline_metric_kind(self) -> str:
+        """How ``pipeline_metric()`` resolves, without measuring: ``measured``
+        (a fresh trainer/tuner read) or ``carried`` (the previous pipeline
+        metric returned verbatim). Mirrors ``pipeline_metric``'s dispatch."""
+        tuner = getattr(self, "tuner", None)
+        if tuner is not None:
+            trainer = getattr(tuner, "trainer", None)
+            if trainer is not None and hasattr(trainer, "test"):
+                return METRIC_MEASURED
+        trainer = getattr(self, "trainer", None)
+        if trainer is not None and hasattr(trainer, "test"):
+            return METRIC_MEASURED
+        return self.validate_metric_kind()
+
+    def validate_metric_kind(self) -> str:
+        """Metric kind when ``pipeline_metric`` falls through to ``validate()``.
+
+        Steps whose validate returns ``pipeline.get_target_metric()`` declare
+        ``carried`` — a carried value must NEVER be plotted as a measurement.
+        """
+        return METRIC_MEASURED
+
+    def step_verdict(self):
+        """Gate steps record {'status','rule','detail'} during process();
+        None for steps whose outcome is a measurement, not a verdict."""
+        return self._verdict
 
     def cleanup(self):
         """Release resources acquired during process() (closes tuner/trainer DataLoader workers).

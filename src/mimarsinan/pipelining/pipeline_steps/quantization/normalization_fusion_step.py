@@ -1,4 +1,5 @@
 from mimarsinan.pipelining.core.registry.trainer_factory import make_basic_trainer
+from mimarsinan.pipelining.core.steps.pipeline_step import METRIC_CARRIED, METRIC_MEASURED
 from mimarsinan.pipelining.core.steps.trainer_pipeline_step import TrainerPipelineStep
 from mimarsinan.transformations.normalization_fusion import fuse_into_perceptron
 
@@ -15,6 +16,9 @@ class NormalizationFusionStep(TrainerPipelineStep):
         if self.trainer is not None:
             return self.trainer.test()
         return self.pipeline.get_target_metric()
+
+    def validate_metric_kind(self) -> str:
+        return METRIC_MEASURED if self.trainer is not None else METRIC_CARRIED
 
     def process(self):
         model = self.get_entry("model")

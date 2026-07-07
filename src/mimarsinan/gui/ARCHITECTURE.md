@@ -23,7 +23,7 @@ diff-vs-defaults template view, loud unrecognized-keys tray).
 | File | Purpose |
 |---|---|
 | `exports.py` | Flat public re-export surface (`GUIHandle`, `start_gui`, `backfill_skipped_steps`, `DataCollector`, `to_json_safe`) consumed by `__init__.py`. |
-| `handle.py` | `GUIHandle` facade: step start/end and metric hooks, stdio tee, snapshot build, synchronous status writes plus async resource persistence via `SnapshotExecutor`. |
+| `handle.py` | `GUIHandle` facade: step start/end and metric/event hooks, stdio tee, snapshot build, synchronous status writes plus async resource persistence via `SnapshotExecutor`. Records each step's honest `metric_kind` (`measured`/`carried`) and gate `verdict` from the step's own declaration — a carried value is never persisted as a measurement. |
 | `heatmap_renderer.py` | Matplotlib rendering of weight matrices to PNG bytes / data URIs, with red pruned-row/column overlays. |
 | `json_util.py` | `to_json_safe` recursive JSON coercion (NaN/Inf → `None`, numpy → lists/scalars, fallback `str`). |
 | `reporter.py` | `GUIReporter` implementing the `Reporter` protocol; forwards metrics to the `DataCollector`. |
@@ -32,9 +32,9 @@ diff-vs-defaults template view, loud unrecognized-keys tray).
 | `start.py` | `start_gui` bootstrap (collector + resource store + server + handle) and `backfill_skipped_steps` for edit-and-continue: replays cached steps into the collector and rewrites `steps.json`. |
 | `tee_stream.py` | `TeeStream`: line-buffered stdout/stderr tee that forwards complete lines to the console-log callback while writing through to the original stream. |
 | `templates.py` | CRUD for saved deployment-config templates (JSON files under the templates dir), persisted minimally through the wizard config builder. |
-| `runtime/` | Runtime machinery: `DataCollector` (collector/), on-disk persistence of `steps.json`/metrics/console/resources (persistence/), subprocess run management (`ProcessManager`, spawn/monitor), `ActiveRunHub` tailers for active-run WebSockets, `CompositeReporter`, `SnapshotExecutor`, and run-cache seeding. |
+| `runtime/` | Runtime machinery: `DataCollector` (collector/), the structured pipeline-event vocabulary (`events.py`: `PipelineEvent` + kinds mirroring the console `[TAG]`s one-to-one, transported via `reporter.event`, persisted to `events.jsonl`, WS-broadcast as `{"type":"event"}` frames), on-disk persistence of `steps.json`/metrics/events/console/resources (persistence/), subprocess run management (`ProcessManager`, spawn/monitor), `ActiveRunHub` jsonl tailers for active-run WebSockets, `CompositeReporter`, `SnapshotExecutor`, and run-cache seeding. |
 | `server/` | FastAPI app factory and uvicorn startup (`app.py`) plus route modules: pipeline/runs/templates/console APIs, lazy-resource endpoints, wizard and config-schema APIs, and hardware layout verification; `json_safe.py` provides the sanitising JSON response class. |
-| `snapshot/` | Pure per-artifact snapshot builders returning `(summary, ResourceDescriptor list)`: model, IR graph, hardware mapping, adaptation, pruning, search, and SANA-FE snapshots, `RESOURCE_KIND_*` constants, and disk-based snapshot rebuild for legacy runs. |
+| `snapshot/` | Pure per-artifact snapshot builders returning `(summary, ResourceDescriptor list)`: model, IR graph, hardware mapping, adaptation, pruning, search, and SANA-FE snapshots, `RESOURCE_KIND_*` constants, disk-based snapshot rebuild for legacy runs, and the best-effort console `[TAG]` parser (`console_events.py`) that backfills events for runs recorded before `events.jsonl`. |
 | `wizard/` | Configuration wizard application layer: `emit.py` (explicit-keys-only config emission — the ONE builder used by Deploy, templates, and the representability test; unknown keys preserved and reported, never dropped), `build_deployment_config_from_state` (thin alias over emit), `schema_api.py` (`/api/config_schema` payload: serialized registry + recipe/preprocessing/NAS sub-schemas; `/api/config/resolve` payload: resolution + live step preview), wizard schema surfaces (model types, NAS, temporal allocation, pipeline steps), and state validation. |
 
 ## Dependencies

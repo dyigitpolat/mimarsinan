@@ -3,7 +3,10 @@
 from mimarsinan.chip_simulation.lava_loihi import LavaLoihiRunner
 from mimarsinan.data_handling.sample_loader import load_test_sample_by_index
 from mimarsinan.pipelining.core.engine.pipeline_helpers import require_spiking_mode_supported
-from mimarsinan.pipelining.core.steps.pipeline_step import PipelineStep
+from mimarsinan.pipelining.core.steps.pipeline_step import (
+    METRIC_CARRIED,
+    PipelineStep,
+)
 from mimarsinan.pipelining.core.simulation_factory import (
     assert_spike_parity_or_raise,
     build_neural_behavior_config,
@@ -23,6 +26,10 @@ class LoihiSimulationStep(PipelineStep):
         if self.metric is not None:
             return self.metric
         return self.pipeline.get_target_metric()
+
+    def validate_metric_kind(self) -> str:
+        # self.metric is the stored previous pipeline metric (metric-neutral gate).
+        return METRIC_CARRIED
 
     def process(self):
         self.get_entry("model")
@@ -61,6 +68,15 @@ class LoihiSimulationStep(PipelineStep):
         checked_cores = sum(len(seg.cores) for seg in ref.segments.values())
         self.metric = self.pipeline.get_target_metric()
         self.pipeline.reporter.report("Loihi Spike Parity", 1.0)
+        self._verdict = {
+            "status": "pass",
+            "rule": "HCM vs Lava spike parity",
+            "detail": {
+                "segments": checked_segments,
+                "cores": checked_cores,
+                "sample_index": ref.sample_index,
+            },
+        }
         print(
             "Loihi spike parity: PASS "
             f"({checked_segments} neural segment(s), {checked_cores} core(s), "

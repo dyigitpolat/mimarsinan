@@ -9,9 +9,11 @@ import time
 from typing import Any
 
 from mimarsinan.common.best_effort import best_effort
+from mimarsinan.gui.runtime.events import PipelineEvent
 from mimarsinan.gui.reporter import GUIReporter
 from mimarsinan.gui.runtime.collector import DataCollector
 from mimarsinan.gui.runtime.persistence import (
+    append_event,
     append_live_metrics,
     append_console_log,
     save_resource_to_disk,
@@ -115,12 +117,29 @@ class GUIHandle:
         if working_dir:
             append_live_metrics(working_dir, records)
 
+    def on_event(self, event: PipelineEvent) -> None:
+        """Persist one structured pipeline event (events.jsonl); low-rate stream."""
+        if not self._persist_metrics:
+            return
+        working_dir = getattr(self.pipeline, "working_directory", None)
+        if working_dir:
+            append_event(working_dir, event.to_record())
+
     def on_step_end(self, step_name: str, step: Any) -> None:
         self._flush_live_metrics()
         target_metric = None
         with best_effort(f"read target metric for step {step_name}", logger=logger):
             raw = self.pipeline.get_target_metric()
             target_metric = float(raw) if raw is not None else None
+
+        # Honest metric semantics: verdict-only steps carry the previous metric
+        # forward; record the kind so no view ever plots a carried value as a
+        # measurement, and record the step's pass/fail verdict when it has one.
+        metric_kind = None
+        verdict = None
+        with best_effort(f"read metric kind/verdict for step {step_name}", logger=logger):
+            metric_kind = step.pipeline_metric_kind()
+            verdict = step.step_verdict()
 
         try:
             snapshot, snapshot_key_kinds, resource_descriptors = build_step_snapshot(
@@ -140,6 +159,8 @@ class GUIHandle:
             snapshot=snapshot,
             snapshot_key_kinds=snapshot_key_kinds,
             resources=resource_descriptors,
+            metric_kind=metric_kind,
+            verdict=verdict,
         )
 
         end_time_now = time.time()
@@ -157,6 +178,8 @@ class GUIHandle:
                         detail.get("snapshot"),
                         detail.get("snapshot_key_kinds"),
                         status="completed",
+                        metric_kind=metric_kind,
+                        verdict=verdict,
                     )
             with best_effort(f"synchronous status=completed write for {step_name}", logger=logger):
                 save_step_status(
@@ -165,6 +188,8 @@ class GUIHandle:
                     status="completed",
                     end_time=end_time_now,
                     target_metric=target_metric,
+                    metric_kind=metric_kind,
+                    verdict=verdict,
                 )
 
         def _persist_resources() -> None:

@@ -14,6 +14,10 @@ from mimarsinan.common.file_utils import prepare_containing_directory
 from mimarsinan.common.diagnostics import cuda_guard, phase_profiler
 from mimarsinan.pipelining.core.engine.pipeline_resource_debug import log_resource_snapshot
 from mimarsinan.pipelining.core.engine import pipeline_resume
+from mimarsinan.pipelining.core.engine.step_instrumentation import (
+    assert_metric_retention,
+    emit_step_profile,
+)
 
 
 class Pipeline:
@@ -184,13 +188,11 @@ class Pipeline:
             step.cleanup()
             self._release_gpu_memory()
             log_resource_snapshot(f"post:{name}")
-            dt = _time.time() - _t0_step
-            final_metric = self.get_target_metric()
-            delta = final_metric - previous_metric
-            print(
-                f"[PROFILE] step='{name}' wall={dt:7.2f}s "
-                f"metric={final_metric:.4f} "
-                f"Δ={delta:+.4f} (prev={previous_metric:.4f})"
+            emit_step_profile(
+                self, name, step,
+                wall_s=_time.time() - _t0_step,
+                final_metric=self.get_target_metric(),
+                previous_metric=previous_metric,
             )
 
     def _assert_requirements_present(self, step):
@@ -275,9 +277,6 @@ class Pipeline:
         ), "Pipeline error: New values of some updated entries are not found in the cache."
 
     def _assert_metric_retention(self, step, previous_metric):
-        step_tolerance = self._step_tolerance(step.name)
-        assert self.get_target_metric() >= previous_metric * step_tolerance, (
-            f"[{step.name}] step failed to retain performance within tolerable "
-            f"limits: {self.get_target_metric()} < ({previous_metric} * "
-            f"{step_tolerance}) = {previous_metric * step_tolerance}"
+        assert_metric_retention(
+            self, step, previous_metric, self._step_tolerance(step.name)
         )

@@ -10,6 +10,7 @@ from typing import Any
 from mimarsinan.gui.runtime.persistence.paths import (
     atomic_write_json,
     console_log_path,
+    events_path,
     live_metrics_path,
     run_info_path,
     steps_file_lock,
@@ -37,6 +38,8 @@ def save_step_to_persisted(
     snapshot_key_kinds: dict | None,
     *,
     status: str | None = None,
+    metric_kind: str | None = None,
+    verdict: dict | None = None,
 ) -> None:
     path = steps_path(working_directory)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -60,6 +63,10 @@ def save_step_to_persisted(
         }
         if status is not None:
             entry["status"] = status
+        if metric_kind is not None:
+            entry["metric_kind"] = metric_kind
+        if verdict is not None:
+            entry["verdict"] = verdict
 
         existing[step_name] = entry
         atomic_write_json(path, {"steps": existing})
@@ -72,6 +79,8 @@ def save_step_status(
     status: str,
     end_time: float | None = None,
     target_metric: float | None = None,
+    metric_kind: str | None = None,
+    verdict: dict | None = None,
 ) -> None:
     path = steps_path(working_directory)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -91,6 +100,10 @@ def save_step_status(
             entry["end_time"] = end_time
         if target_metric is not None:
             entry["target_metric"] = target_metric
+        if metric_kind is not None:
+            entry["metric_kind"] = metric_kind
+        if verdict is not None:
+            entry["verdict"] = verdict
         existing[step_name] = entry
         atomic_write_json(path, {"steps": existing})
 
@@ -208,3 +221,14 @@ def append_console_log(
             f.write(json.dumps(record) + "\n")
     except OSError as e:
         logger.debug("Failed to append console log to %s: %s", path, e)
+
+
+def append_event(working_directory: str, record: dict) -> None:
+    """Append one structured pipeline event to events.jsonl (low-rate stream)."""
+    path = events_path(working_directory)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(record) + "\n")
+    except OSError as e:
+        logger.debug("Failed to append event to %s: %s", path, e)

@@ -1,5 +1,8 @@
 from mimarsinan.pipelining.core.model_config_emit import emit_model_config_entries
-from mimarsinan.pipelining.core.steps.pipeline_step import PipelineStep
+from mimarsinan.pipelining.core.steps.pipeline_step import (
+    METRIC_CARRIED,
+    PipelineStep,
+)
 from mimarsinan.pipelining.core.platform_constraints_resolver import (
     build_platform_constraints_resolved,
 )
@@ -23,6 +26,9 @@ class ModelConfigurationStep(PipelineStep):
 
     def validate(self):
         return self.pipeline.get_target_metric()
+
+    def validate_metric_kind(self) -> str:
+        return METRIC_CARRIED
 
     def process(self):
         emit_model_config_entries(self, self.pipeline.config)

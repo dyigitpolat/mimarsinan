@@ -51,6 +51,8 @@ class ReadApiMixin:
                     "end_time": rec.end_time,
                     "duration": (rec.end_time - rec.start_time) if rec.start_time and rec.end_time else None,
                     "target_metric": rec.target_metric,
+                    "metric_kind": rec.metric_kind,
+                    "verdict": rec.verdict,
                     "semantic_group": groups.get(rec.name),
                 })
             overview = {
@@ -92,6 +94,8 @@ class ReadApiMixin:
                 "end_time": rec.end_time,
                 "duration": (rec.end_time - rec.start_time) if rec.start_time and rec.end_time else None,
                 "target_metric": rec.target_metric,
+                "metric_kind": rec.metric_kind,
+                "verdict": rec.verdict,
                 "metrics": metrics,
                 "latest_metric_seq": latest_metric_seq,
                 "snapshot": rec.snapshot,

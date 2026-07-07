@@ -42,6 +42,8 @@ class StepsMixin:
             rec.start_time = time.time()
             rec.end_time = None
             rec.target_metric = None
+            rec.metric_kind = None
+            rec.verdict = None
             rec.snapshot = None
             rec.snapshot_key_kinds = None
             rec.snapshot_version += 1
@@ -59,6 +61,8 @@ class StepsMixin:
         snapshot: dict | None = None,
         snapshot_key_kinds: dict | None = None,
         resources: Iterable["ResourceDescriptor"] | None = None,
+        metric_kind: str | None = None,
+        verdict: dict | None = None,
     ) -> None:
         with self._lock:
             rec = self._steps.get(step_name)
@@ -70,6 +74,8 @@ class StepsMixin:
                     rec.snapshot = snapshot
                 if snapshot_key_kinds is not None:
                     rec.snapshot_key_kinds = snapshot_key_kinds
+                rec.metric_kind = metric_kind
+                rec.verdict = verdict
                 rec.snapshot_version += 1
             if self._current_step == step_name:
                 self._current_step = None
@@ -81,6 +87,8 @@ class StepsMixin:
             "type": "step_completed",
             "step": step_name,
             "target_metric": target_metric,
+            "metric_kind": metric_kind,
+            "verdict": verdict,
         })
         self._broadcast_pipeline_overview()
 
@@ -106,6 +114,8 @@ class StepsMixin:
         metrics: list[dict],
         snapshot: dict | None,
         snapshot_key_kinds: dict | None = None,
+        metric_kind: str | None = None,
+        verdict: dict | None = None,
     ) -> None:
         with self._lock:
             rec = self._steps.get(step_name)
@@ -120,6 +130,8 @@ class StepsMixin:
             rec.target_metric = target_metric
             rec.snapshot = snapshot
             rec.snapshot_key_kinds = snapshot_key_kinds
+            rec.metric_kind = metric_kind
+            rec.verdict = verdict
 
             for m in metrics:
                 seq = m.get("seq", 0)
