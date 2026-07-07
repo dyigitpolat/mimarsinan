@@ -143,7 +143,7 @@ class TestBuildConfigDisplayView:
         view = build_config_display_view(saved, saved_config=saved)
         ids = _section_ids(view)
         assert "run" in ids
-        assert "pipeline" in ids
+        assert "spiking" in ids
         assert "hardware" in ids
 
 

@@ -183,6 +183,11 @@ CONFIG_KEYS_SET: Set[str] = {
     # FAST respec: per-cell WQ endpoint step cap (recipe default 16000 stays
     # only for families that pass by the floor climb).
     "wq_endpoint_recovery_steps",
+    # Every-endpoint D-hat target floor (bit-parity-lossless family); read by
+    # endpoint_recovery via config.get, the ConversionPolicy recipe may set it.
+    "endpoint_target_floor",
+    # torch DataLoader worker count; read via config.get with a fallback of 4.
+    "num_workers",
 }
 
 

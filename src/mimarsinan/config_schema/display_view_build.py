@@ -7,13 +7,13 @@ from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 from mimarsinan.config_schema.display_view_meta import (
     CONFIG_DISPLAY_GROUPS,
-    FIELD_DISPLAY_META,
     _RECIPE_FIELD_LABELS,
     _field_meta,
     _infer_type,
     _json_safe,
     _snake_to_label,
 )
+from mimarsinan.config_schema.registry import REGISTRY
 from mimarsinan.config_schema.defaults import (
     get_default_training_recipe,
     get_default_tuning_recipe,
@@ -153,7 +153,7 @@ def _ordered_keys(flat: Mapping[str, Any]) -> List[str]:
     skip_nested_expanded = {"training_recipe", "tuning_recipe", "model_config", "arch_search"}
     keys = [k for k in flat if k not in skip_nested_expanded]
     group_order = [g["id"] for g in CONFIG_DISPLAY_GROUPS]
-    meta_order = list(FIELD_DISPLAY_META.keys())
+    meta_order = list(REGISTRY.keys())
 
     def sort_key(key: str) -> Tuple[int, int, str]:
         meta = _field_meta(key)

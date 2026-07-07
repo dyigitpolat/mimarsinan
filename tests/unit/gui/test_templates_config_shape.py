@@ -31,7 +31,9 @@ def test_name_and_deployment_from_post_body_flat() -> None:
     assert cfg == dep
 
 
-def test_save_template_strips_derived_and_system_defaults(tmp_path, monkeypatch) -> None:
+def test_save_template_keeps_explicit_keys_and_drops_owned_derived(tmp_path, monkeypatch) -> None:
+    """Templates persist explicit keys verbatim (never silent-drop); only the
+    derivation-owned activation_quantization is removed."""
     monkeypatch.setenv("MIMARSINAN_TEMPLATES_DIR", str(tmp_path))
     dp = get_default_deployment_parameters()
     dp.update({
@@ -40,7 +42,6 @@ def test_save_template_strips_derived_and_system_defaults(tmp_path, monkeypatch)
         "model_config": {},
         "spiking_mode": "ttfs_quantized",
         "activation_quantization": True,
-        "pipeline_mode": "phased",
         "firing_mode": "TTFS",
         "spike_generation_mode": "TTFS",
         "thresholding_mode": "<=",
@@ -58,8 +59,8 @@ def test_save_template_strips_derived_and_system_defaults(tmp_path, monkeypatch)
 
     saved = json.loads((tmp_path / f"{template_id}.json").read_text(encoding="utf-8"))
     persisted = saved["deployment_parameters"]
-    assert "pipeline_mode" not in saved
+    assert saved["pipeline_mode"] == "phased"
     assert "activation_quantization" not in persisted
-    assert "firing_mode" not in persisted
-    assert "kd_ce_alpha" not in persisted
+    assert persisted["firing_mode"] == "TTFS"
+    assert persisted["kd_ce_alpha"] == dp["kd_ce_alpha"]
     assert persisted["spiking_mode"] == "ttfs_quantized"

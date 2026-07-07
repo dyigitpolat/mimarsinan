@@ -70,7 +70,7 @@ class TestBuildDeploymentConfigFromState:
             "pipeline_mode": "vanilla",
             "deployment_parameters": {"weight_quantization": False},
         })
-        assert "pipeline_mode" not in out
+        assert out["pipeline_mode"] == "vanilla"
         assert "activation_quantization" not in out["deployment_parameters"]
         assert _resolved_flat(out)["weight_quantization"] is False
         assert _resolved_flat(out)["activation_quantization"] is False
@@ -147,7 +147,11 @@ class TestBuildDeploymentConfigFromState:
         assert out["deployment_parameters"]["enable_nevresim_simulation"] is False
         assert validate_wizard_state(out) == []
 
-    def test_derived_and_system_defaults_are_not_persisted(self):
+    def test_explicit_keys_survive_and_owned_derived_keys_do_not(self):
+        # Explicit-keys-only emission: what the draft declares survives
+        # VERBATIM (declarable derived pins included — dropping them is how
+        # endpoint_floor_wall_s was historically lost); only the keys the
+        # derivation exclusively owns (activation_quantization) are removed.
         dp = get_default_deployment_parameters()
         dp.update({
             "model_config_mode": "user",
@@ -157,7 +161,6 @@ class TestBuildDeploymentConfigFromState:
             "spiking_mode": "ttfs_quantized",
             "weight_quantization": True,
             "activation_quantization": True,
-            "pipeline_mode": "phased",
             "firing_mode": "TTFS",
             "spike_generation_mode": "TTFS",
             "thresholding_mode": "<=",
@@ -169,17 +172,11 @@ class TestBuildDeploymentConfigFromState:
         })
 
         persisted = out["deployment_parameters"]
-        for key in (
-            "activation_quantization",
-            "pipeline_mode",
-            "firing_mode",
-            "spike_generation_mode",
-            "thresholding_mode",
-            "kd_ce_alpha",
-            "kd_temperature",
-        ):
-            assert key not in persisted
-        assert "pipeline_mode" not in out
+        assert "activation_quantization" not in persisted
+        for key in ("firing_mode", "spike_generation_mode", "thresholding_mode",
+                    "kd_ce_alpha", "kd_temperature"):
+            assert persisted[key] == dp[key], key
+        assert out["pipeline_mode"] == "phased"
 
     def test_minimal_persistence_resolves_byte_identical_to_bloated_config(self):
         bloated_dp = get_default_deployment_parameters()
@@ -208,7 +205,7 @@ class TestBuildDeploymentConfigFromState:
             _resolved_flat(bloated), sort_keys=True
         )
 
-    def test_lif_minimal_config_preserves_runtime_threshold_resolution(self):
+    def test_lif_declarable_spiking_fields_survive_with_identical_resolution(self):
         bloated = {
             "pipeline_mode": "phased",
             "deployment_parameters": {
@@ -229,7 +226,9 @@ class TestBuildDeploymentConfigFromState:
 
         minimal = build_deployment_config_from_state(bloated)
 
-        assert "thresholding_mode" not in minimal["deployment_parameters"]
+        # Declarable spiking pins are consistent redundant declarations: kept
+        # verbatim, and the resolved runtime config is byte-identical.
+        assert minimal["deployment_parameters"]["thresholding_mode"] == "<="
         assert _resolved_flat(minimal)["thresholding_mode"] == "<="
         assert json.dumps(_resolved_flat(minimal), sort_keys=True) == json.dumps(
             _resolved_flat(bloated), sort_keys=True

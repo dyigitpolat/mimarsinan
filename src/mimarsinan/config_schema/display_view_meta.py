@@ -1,4 +1,4 @@
-"""Display view metadata and key-resolution helpers."""
+"""Display view metadata resolved from the config-key registry (no hand tables)."""
 
 from __future__ import annotations
 
@@ -12,42 +12,27 @@ from mimarsinan.config_schema.defaults import (
     apply_preset,
 )
 from mimarsinan.config_schema.deployment_derivation import derive_deployment_parameters
+from mimarsinan.config_schema.registry import REGISTRY, Category
+from mimarsinan.config_schema.registry.groups import CONCERN_GROUPS
 
 RUNTIME_KEYS: Set[str] = {
-    "device",
-    "input_shape",
-    "input_size",
-    "num_classes",
+    k for k, e in REGISTRY.items() if e.category is Category.RUNTIME
 }
 
 DERIVED_KEYS: Set[str] = {
-    "activation_quantization",
-    "weight_quantization",
-    "pipeline_mode",
+    k for k, e in REGISTRY.items() if e.category is Category.DERIVED
 }
 
-TOP_LEVEL_RUN_KEYS: Tuple[str, ...] = (
-    "data_provider_name",
-    "experiment_name",
-    "generated_files_path",
-    "seed",
-    "start_step",
-    "stop_step",
-    "target_metric_override",
-    "datasets_path",
+TOP_LEVEL_RUN_KEYS: Tuple[str, ...] = tuple(
+    k for k, e in REGISTRY.items()
+    if e.section == "top" and e.category in (Category.BASIC, Category.ADVANCED)
 )
 
-CONFIG_DISPLAY_GROUPS: Tuple[Dict[str, str], ...] = (
-    {"id": "run", "title": "Run Identity", "subtitle": "Data source and experiment metadata", "accent": "34,211,238"},
-    {"id": "pipeline", "title": "Pipeline & Spiking", "subtitle": "Mode, quantization, and pruning gates", "accent": "168,85,247"},
-    {"id": "model", "title": "Model Architecture", "subtitle": "Network type and hyperparameters", "accent": "91,141,245"},
-    {"id": "training", "title": "Training", "subtitle": "Learning rates, epochs, and recipes", "accent": "74,222,128"},
-    {"id": "hardware", "title": "Hardware", "subtitle": "Cores, precision, and layout constraints", "accent": "249,115,22"},
-    {"id": "tuning", "title": "Adaptation & Tuning", "subtitle": "Tuner budget and degradation tolerance", "accent": "251,191,36"},
-    {"id": "simulation", "title": "Simulation", "subtitle": "Chip and cycle-accurate backends", "accent": "103,232,249"},
-    {"id": "search", "title": "Architecture Search", "subtitle": "NAS optimizer and search space", "accent": "139,92,246"},
-    {"id": "runtime", "title": "Runtime Resolved", "subtitle": "Values resolved when the pipeline starts", "accent": "107,114,128"},
-    {"id": "other", "title": "Other", "subtitle": "Additional configuration keys", "accent": "107,114,128"},
+# Display sections are the concern groups plus a fallback for unregistered
+# keys (e.g. recipe-derived internals surfaced in a resolved runtime config).
+CONFIG_DISPLAY_GROUPS: Tuple[Dict[str, str], ...] = CONCERN_GROUPS + (
+    {"id": "other", "title": "Other",
+     "subtitle": "Additional configuration keys", "accent": "107,114,128"},
 )
 
 _RECIPE_FIELD_LABELS: Dict[str, str] = {
@@ -59,91 +44,6 @@ _RECIPE_FIELD_LABELS: Dict[str, str] = {
     "grad_clip_norm": "Grad clip norm",
     "layer_wise_lr_decay": "Layer-wise LR decay",
     "label_smoothing": "Label smoothing",
-}
-
-FIELD_DISPLAY_META: Dict[str, Dict[str, Any]] = {
-    "data_provider_name": {"group": "run", "type": "str", "label": "Data Provider"},
-    "experiment_name": {"group": "run", "type": "str", "label": "Experiment Name", "important": True},
-    "generated_files_path": {"group": "run", "type": "path", "label": "Generated Files Path"},
-    "seed": {"group": "run", "type": "int", "label": "Random Seed"},
-    "start_step": {"group": "run", "type": "str", "label": "Start Step"},
-    "stop_step": {"group": "run", "type": "str", "label": "Stop Step"},
-    "target_metric_override": {"group": "run", "type": "float", "label": "Target Metric Override"},
-    "datasets_path": {"group": "run", "type": "path", "label": "Datasets Path"},
-    "pipeline_mode": {"group": "pipeline", "type": "enum", "label": "Pipeline Mode", "important": True,
-                      "effect": "Phased enables weight/activation quantization steps"},
-    "spiking_mode": {"group": "pipeline", "type": "enum", "label": "Spiking Mode", "important": True,
-                     "effect": "Selects LIF/TTFS path and simulation backends"},
-    "firing_mode": {"group": "pipeline", "type": "enum", "label": "Firing Mode"},
-    "spike_generation_mode": {"group": "pipeline", "type": "enum", "label": "Spike Generation Mode"},
-    "encoding_layer_placement": {"group": "pipeline", "type": "enum", "label": "Encoding Layer Placement",
-                                 "effect": "Offload maps the encoding-layer neuralOp on-chip"},
-    "negative_value_shift": {"group": "pipeline", "type": "bool", "label": "Negative-value Shift",
-                             "effect": "Shifts negative-producing ComputeOp boundaries into the encodable domain (LIF + TTFS family)"},
-    "spike_encoding_seed": {"group": "pipeline", "type": "int", "label": "Spike Encoding Seed"},
-    "thresholding_mode": {"group": "pipeline", "type": "enum", "label": "Thresholding Mode"},
-    "activation_quantization": {"group": "pipeline", "type": "bool", "label": "Activation Quantization",
-                                "effect": "Gates activation quantization pipeline steps"},
-    "weight_quantization": {"group": "pipeline", "type": "bool", "label": "Weight Quantization",
-                            "effect": "Gates weight quantization pipeline steps"},
-    "pruning": {"group": "pipeline", "type": "bool", "label": "Pruning Enabled"},
-    "pruning_fraction": {"group": "pipeline", "type": "float", "label": "Pruning Fraction"},
-    "cycle_accurate_lif_forward": {"group": "training", "type": "bool", "label": "Cycle-accurate LIF Forward",
-                                   "effect": "Spike-train forward during LIF adaptation training"},
-    "enable_training_noise": {"group": "training", "type": "bool", "label": "Training Noise"},
-    "model_config_mode": {"group": "model", "type": "enum", "label": "Model Config Mode"},
-    "hw_config_mode": {"group": "model", "type": "enum", "label": "Hardware Config Mode"},
-    "model_type": {"group": "model", "type": "str", "label": "Model Type", "important": True},
-    "model_config": {"group": "model", "type": "json", "label": "Model Config"},
-    "model_factory": {"group": "model", "type": "str", "label": "Model Factory"},
-    "weight_source": {"group": "training", "type": "str", "label": "Weight Source"},
-    "lr": {"group": "training", "type": "float", "label": "Learning Rate"},
-    "lr_range_min": {"group": "training", "type": "float", "label": "LR Range Min"},
-    "lr_range_max": {"group": "training", "type": "float", "label": "LR Range Max"},
-    "training_epochs": {"group": "training", "type": "int", "label": "Training Epochs"},
-    "finetune_epochs": {"group": "training", "type": "int", "label": "Fine-tune Epochs"},
-    "finetune_lr": {"group": "training", "type": "float", "label": "Fine-tune LR"},
-    "batch_size": {"group": "training", "type": "int", "label": "Batch Size"},
-    "preprocessing": {"group": "training", "type": "json", "label": "Preprocessing"},
-    "training_recipe": {"group": "training", "type": "recipe", "label": "Training Recipe"},
-    "tuning_recipe": {"group": "tuning", "type": "recipe", "label": "Tuning Recipe"},
-    "tuning_budget_scale": {"group": "tuning", "type": "float", "label": "Tuning Budget Scale"},
-    "tuner_target_floor_ratio": {"group": "tuning", "type": "float", "label": "Tuner Target Floor Ratio"},
-    "degradation_tolerance": {"group": "tuning", "type": "float", "label": "Degradation Tolerance"},
-    "s_allocation": {"group": "tuning", "type": "enum", "label": "S Allocation",
-                     "effect": "Per-cascade-depth temporal resolution: uniform | explicit | budget (gated by allow_per_layer_s)"},
-    "s_allocation_explicit": {"group": "tuning", "type": "json", "label": "S Allocation (explicit per-depth list)"},
-    "s_allocation_budget": {"group": "tuning", "type": "json", "label": "S Allocation (budget body)"},
-    "cores": {"group": "hardware", "type": "cores", "label": "Core Types"},
-    "target_tq": {"group": "hardware", "type": "int", "label": "Target TQ",
-                  "effect": "Activation quantization threshold groups"},
-    "simulation_steps": {"group": "hardware", "type": "int", "label": "Simulation Steps"},
-    "weight_bits": {"group": "hardware", "type": "int", "label": "Weight Bits"},
-    "allow_coalescing": {"group": "hardware", "type": "bool", "label": "Allow Coalescing"},
-    "allow_neuron_splitting": {"group": "hardware", "type": "bool", "label": "Allow Neuron Splitting"},
-    "allow_per_layer_s": {"group": "hardware", "type": "bool", "label": "Allow Per-layer S",
-                          "effect": "Capability gate for per-cascade-depth temporal resolution (s_allocation explicit/budget)"},
-    "allow_scheduling": {"group": "hardware", "type": "bool", "label": "Allow Scheduling",
-                         "effect": "Multi-pass layout scheduling when single-pass packing fails"},
-    "max_schedule_passes": {"group": "hardware", "type": "int", "label": "Max Schedule Passes"},
-    "scheduling_latency_weight": {"group": "hardware", "type": "float", "label": "Scheduling Latency Weight"},
-    "arch_search": {"group": "search", "type": "json", "label": "Architecture Search"},
-    "enable_nevresim_simulation": {"group": "simulation", "type": "bool", "label": "Nevresim Simulation"},
-    "enable_loihi_simulation": {"group": "simulation", "type": "bool", "label": "Loihi Simulation"},
-    "enable_sanafe_simulation": {"group": "simulation", "type": "bool", "label": "SANA-FE Simulation"},
-    "loihi_parity_sample_index": {"group": "simulation", "type": "int", "label": "Loihi Parity Sample Index"},
-    "sanafe_sample_count": {"group": "simulation", "type": "int", "label": "SANA-FE Sample Count"},
-    "sanafe_arch_preset": {"group": "simulation", "type": "str", "label": "SANA-FE Arch Preset"},
-    "sanafe_custom_arch_path": {"group": "simulation", "type": "path", "label": "SANA-FE Custom Arch Path"},
-    "sanafe_log_potential_trace": {"group": "simulation", "type": "bool", "label": "SANA-FE Log Potential Trace"},
-    "max_simulation_samples": {"group": "simulation", "type": "int", "label": "Max Simulation Samples"},
-    "simulation_batch_count": {"group": "simulation", "type": "int", "label": "Simulation Batch Count"},
-    "activation_analysis_batch_size": {"group": "training", "type": "int", "label": "Activation Analysis Batch Size"},
-    "generate_visualizations": {"group": "run", "type": "bool", "label": "Generate Visualizations"},
-    "device": {"group": "runtime", "type": "str", "label": "Device"},
-    "input_shape": {"group": "runtime", "type": "shape", "label": "Input Shape"},
-    "input_size": {"group": "runtime", "type": "int", "label": "Input Size"},
-    "num_classes": {"group": "runtime", "type": "int", "label": "Num Classes"},
 }
 
 
@@ -288,9 +188,19 @@ def _resolve_field_source(
 
 
 def _field_meta(key: str) -> Dict[str, Any]:
-    meta = dict(FIELD_DISPLAY_META.get(key, {}))
-    meta.setdefault("label", _snake_to_label(key))
-    meta.setdefault("group", "other")
+    """Label/group/type/effect/importance for one key, from the registry."""
+    entry = REGISTRY.get(key)
+    if entry is None:
+        return {"label": _snake_to_label(key), "group": "other"}
+    meta: Dict[str, Any] = {
+        "label": entry.label,
+        "group": entry.group,
+        "type": entry.type.value,
+    }
+    if entry.effect:
+        meta["effect"] = entry.effect
+    if entry.important:
+        meta["important"] = True
+    if entry.unit:
+        meta["unit"] = entry.unit
     return meta
-
-

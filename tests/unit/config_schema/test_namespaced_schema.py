@@ -76,20 +76,22 @@ class TestRegistryCoverage:
         assert unregistered_default_keys() == frozenset()
 
     def test_registry_has_no_stray_keys(self):
-        # The registry = defaults ∪ derived ∪ runtime; no other keys may appear.
-        defaults = set(DEFAULT_DEPLOYMENT_PARAMETERS) | set(DEFAULT_PLATFORM_CONSTRAINTS)
-        non_default = set(registered_flat_keys()) - defaults
-        assert non_default == DERIVED_NON_DEFAULT_KEYS | RUNTIME_KEYS
+        # The registry = every pipeline-read key (live CONFIG_KEYS_SET) plus the
+        # top-level document / platform structural keys; nothing else may appear.
+        from mimarsinan.config_schema.defaults import CONFIG_KEYS_SET
+        from mimarsinan.config_schema.registry import NON_PIPELINE_DOC_KEYS
+
+        assert set(registered_flat_keys()) == set(CONFIG_KEYS_SET) | set(NON_PIPELINE_DOC_KEYS)
 
     def test_all_defaults_are_registered_as_default_or_preset(self):
         defaults = set(DEFAULT_DEPLOYMENT_PARAMETERS) | set(DEFAULT_PLATFORM_CONSTRAINTS)
         for key in defaults:
             assert KEY_SPECS[key].derivation in {"default", "preset"}, key
 
-    def test_registered_count_matches_defaults_plus_derived_plus_runtime(self):
+    def test_registry_covers_all_defaults_derived_and_runtime(self):
         defaults = set(DEFAULT_DEPLOYMENT_PARAMETERS) | set(DEFAULT_PLATFORM_CONSTRAINTS)
         expected = defaults | DERIVED_NON_DEFAULT_KEYS | RUNTIME_KEYS
-        assert len(registered_flat_keys()) == len(expected)
+        assert expected <= set(registered_flat_keys())
 
     def test_every_spec_group_is_valid(self):
         valid = {g["id"] for g in CONCERN_GROUPS}

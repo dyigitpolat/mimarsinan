@@ -33,6 +33,13 @@ from mimarsinan.config_schema.namespaced_schema import (
     to_flat,
     to_namespaced,
 )
+from mimarsinan.config_schema.registry import (
+    REGISTRY,
+    ConfigKeySchema,
+    parse_deployment_document,
+    serialize_registry,
+)
+from mimarsinan.config_schema.resolve import Resolution, resolve_draft
 
 __all__ = [
     "DEFAULT_DEPLOYMENT_PARAMETERS",
@@ -63,4 +70,10 @@ __all__ = [
     "provenance_table",
     "to_flat",
     "to_namespaced",
+    "REGISTRY",
+    "ConfigKeySchema",
+    "Resolution",
+    "parse_deployment_document",
+    "resolve_draft",
+    "serialize_registry",
 ]

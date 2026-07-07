@@ -63,7 +63,9 @@ def test_config_builder_pipeline_mode_sync():
         "pipeline_mode": "phased",
         "deployment_parameters": {"spiking_mode": "lif", "weight_quantization": True},
     })
-    assert "pipeline_mode" not in cfg
+    # A declared pipeline_mode is a declarable-derived key: preserved verbatim
+    # (dropping it historically made vanilla configs silently load as phased).
+    assert cfg["pipeline_mode"] == "phased"
     resolved = build_flat_pipeline_config(
         cfg["deployment_parameters"],
         cfg["platform_constraints"],

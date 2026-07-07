@@ -29,7 +29,7 @@ any external `src`/`href`/`url()` reference in static assets.
 | `runtime/` | Runtime machinery: `DataCollector` (collector/), on-disk persistence of `steps.json`/metrics/console/resources (persistence/), subprocess run management (`ProcessManager`, spawn/monitor), `ActiveRunHub` tailers for active-run WebSockets, `CompositeReporter`, `SnapshotExecutor`, and run-cache seeding. |
 | `server/` | FastAPI app factory and uvicorn startup (`app.py`) plus route modules: pipeline/runs/templates/console APIs, lazy-resource endpoints, wizard and config-schema APIs, and hardware layout verification; `json_safe.py` provides the sanitising JSON response class. |
 | `snapshot/` | Pure per-artifact snapshot builders returning `(summary, ResourceDescriptor list)`: model, IR graph, hardware mapping, adaptation, pruning, search, and SANA-FE snapshots, `RESOURCE_KIND_*` constants, and disk-based snapshot rebuild for legacy runs. |
-| `wizard/` | Configuration wizard application layer: `build_deployment_config_from_state` (minimal user-facing persistence), wizard schema surfaces (model types, NAS, temporal allocation, pipeline steps), state validation, and step-flow ordering. |
+| `wizard/` | Configuration wizard application layer: `emit.py` (explicit-keys-only config emission — the ONE builder used by Deploy, templates, and the representability test; unknown keys preserved and reported, never dropped), `build_deployment_config_from_state` (thin alias over emit), wizard schema surfaces (model types, NAS, temporal allocation, pipeline steps), state validation, and step-flow ordering. |
 
 ## Dependencies
 - `common` — `best_effort` error scoping, env-derived paths (`runs_root`, `templates_dir`, `gui_no_browser`), `layer_key` helpers for snapshots.

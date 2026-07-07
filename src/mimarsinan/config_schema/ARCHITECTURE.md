@@ -27,16 +27,35 @@ research escape: contradictions are honored verbatim and logged with an
 `[UNSAFE-OVERRIDE]` line. Pipeline-mode presets never inject AQ/WQ — a
 preset-injected value would masquerade as an explicit one under this contract.
 
+## The configurability SSOT (`registry/`)
+
+`registry/` is the one declarative table of EVERY config key (108 entries:
+the live `CONFIG_KEYS_SET` plus top-level document and platform structural
+keys — coverage is validated at import, both directions, never hand-trusted).
+Each `ConfigKeySchema` carries provenance (group/owner/derivation/exposure,
+the KeySpec heritage), widget knowledge (type/options/bounds/unit), docs
+(label/doc/effect), wizard altitude (`category`: basic/advanced/derived/
+runtime + `declarable`), declarative `Relevance` predicates (JSON-codable so
+the frontend evaluates them without Python), and derived-key `why`
+explanations. The wizard renders entirely from `serialize_registry()`;
+`parse_deployment_document` classifies any config document against it
+(unknown keys are reported as dotted paths, never dropped); the
+representability unit test (`tests/unit/config_schema/test_wizard_representability.py`)
+round-trips every tier-0/0.1/1/2 config through parse -> emit and pins the
+wizard as the configurability SSOT.
+
 ## Key files
 | File | Purpose |
 |---|---|
 | `defaults.py` | `DEFAULT_DEPLOYMENT_PARAMETERS` / `DEFAULT_PLATFORM_CONSTRAINTS` / training+tuning recipes, `PIPELINE_MODE_PRESETS` + `apply_preset`, `CONFIG_KEYS_SET`, and copy-returning getters (incl. user/system splits driven by exposure). |
-| `deployment_derivation.py` | `derive_deployment_parameters` (wizard-parity quantization/pipeline-mode rules; folds the `ConversionPolicy.derive` recipe authoritatively — sim enables, driver, per-mode knobs), `enforce_quantization_assembly_contract` (bits-driven WQ contract, see “Quantization assembly”), and `derive_pipeline_runtime_parameters` (rehydrates firing/spike-generation/thresholding fields). |
+| `deployment_derivation.py` | `derive_deployment_parameters` (quantization/pipeline-mode rules — the ONLY derivation implementation; folds the `ConversionPolicy.derive` recipe authoritatively — sim enables, driver, per-mode knobs), `enforce_quantization_assembly_contract` (bits-driven WQ contract, see “Quantization assembly”), and `derive_pipeline_runtime_parameters` (rehydrates firing/spike-generation/thresholding fields). |
+| `registry/` | The configurability SSOT (see above): `types.py` (`ConfigKeySchema`/`FieldType`/`Category`), `relevance.py` (predicate combinators + JSON codec), `groups.py` (the eight `CONCERN_GROUPS`), `entries_*.py` (the per-key table), `build.py` (assembly, defaults injection from `defaults.py`, import-time coverage validation, `serialize_registry`), `parse.py` (document classification, loud unknown-key report). |
+| `resolve.py` | `resolve_draft(draft) -> Resolution` — one draft resolved the way a run would resolve it: merged flat config, DERIVED keys with WHY, errors attached to their keys (`rule_id`), explicit-key diff vs schema defaults. Powers `/api/config/resolve`. |
 | `runtime.py` | `build_flat_pipeline_config` — merges defaults + overrides + preset + both derivation passes the same way `DeploymentPipeline` does, without device I/O. |
 | `validation.py` | `validate_deployment_config` (JSON shape, spiking-mode membership, TTFS firing consistency, coalescing-key rejection), `validate_merged_config` (runtime flat config), `s_allocation_config_errors` (loud-rejects reserved `explicit`/`budget` temporal-allocation modes). |
-| `namespaced_schema.py` | Provenance registry: `KeySpec` (group/owner/derivation/exposure per flat key), `CONCERN_GROUPS`, `KEY_SPECS`, `LEGACY_KEY_TABLE`, byte-identical `to_namespaced`/`to_flat` bijection, and `keys_with_derivation` / `keys_with_exposure` / `provenance_table` queries. |
+| `namespaced_schema.py` | KeySpec provenance table + byte-identical `to_namespaced`/`to_flat` bijection, DERIVED from the registry (`KeySpec`, `KEY_SPECS`, `LEGACY_KEY_TABLE`, `keys_with_derivation` / `keys_with_exposure` / `provenance_table`, re-exported `CONCERN_GROUPS`). |
 | `display_view.py` | `build_config_display_view` / `build_pipeline_config_view` / `load_saved_config_from_run_dir` — structured, JSON-safe monitor payloads with per-field source annotation (explicit/default/derived/preset/runtime). |
-| `display_view_meta.py` | Display metadata and resolution helpers: `CONFIG_DISPLAY_GROUPS`, `FIELD_DISPLAY_META`, `RUNTIME_KEYS` / `DERIVED_KEYS` / `TOP_LEVEL_RUN_KEYS`, field-source and default-value resolution. |
+| `display_view_meta.py` | Display metadata resolved from the registry (no hand tables): `CONFIG_DISPLAY_GROUPS` (= concern groups + `other`), `RUNTIME_KEYS` / `DERIVED_KEYS` / `TOP_LEVEL_RUN_KEYS` derived from categories, field-source and default-value resolution. |
 | `display_view_build.py` | Nested display-block builders: recipe, model-config (via model registry schema), cores, arch-search blocks, and the pipeline-steps preview. |
 
 ## Dependencies
