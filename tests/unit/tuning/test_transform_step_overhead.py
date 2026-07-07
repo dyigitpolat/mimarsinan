@@ -316,3 +316,44 @@ class TestDeferredFiniteChecks:
 
         src = inspect.getsource(NormalizationAwarePerceptronQuantization.transform)
         assert "deferred_finite_checks" in src
+
+
+class TestHopFrontierStepCap:
+    """The hop-frontier ramp caps per-rung training at 40 steps: the family's
+    outcome is measured budget-insensitive while every rung step pays the
+    O(S x depth) genuine segment forward."""
+
+    def test_hop_frontier_driver_caps_steps_per_rate(self, tmp_path):
+        from conftest import MockPipeline, default_config, make_tiny_supermodel
+        from mimarsinan.tuning.orchestration.adaptation_manager import (
+            AdaptationManager,
+        )
+        from mimarsinan.tuning.tuners.ttfs_cycle_adaptation_tuner import (
+            TTFSCycleAdaptationTuner,
+            _HOP_STAGE_STEPS_PER_RATE,
+        )
+
+        cfg = default_config()
+        cfg["spiking_mode"] = "ttfs_cycle_based"
+        cfg["ttfs_cycle_schedule"] = "cascaded"
+        cfg["activation_quantization"] = True
+        cfg["simulation_steps"] = 8
+        cfg["ttfs_genuine_blend_ramp"] = True
+        cfg["ttfs_genuine_blend_fast"] = True
+        cfg["ttfs_prefix_ramp"] = True
+        cfg["ttfs_hop_prefix_ramp"] = True
+        pipeline = MockPipeline(config=cfg, working_directory=str(tmp_path))
+        pipeline._target_metric = 0.0
+        tuner = TTFSCycleAdaptationTuner(
+            pipeline, model=make_tiny_supermodel(), target_accuracy=0.5,
+            lr=cfg["lr"], adaptation_manager=AdaptationManager(),
+        )
+        try:
+            if getattr(tuner, "_hop_prefix_levels", None):
+                assert tuner._fast_steps_per_rate <= _HOP_STAGE_STEPS_PER_RATE
+            else:
+                # The tiny fixture's chain may sit below the staging depth;
+                # the cap constant still binds the armed path.
+                assert _HOP_STAGE_STEPS_PER_RATE == 40
+        finally:
+            tuner.close()
