@@ -33,12 +33,6 @@ _REAFFINE_ETA = 0.7
 """DFQ step size at the frontier (the distmatch default the prefix stages use)."""
 
 
-def frontier_rates(n_levels: int) -> list:
-    """The ladder rates that walk the hop frontier one depth level per rung."""
-    n = max(1, int(n_levels))
-    return [i / n for i in range(1, n + 1)]
-
-
 def stamp_hop_depths(model) -> int:
     """Stamp each perceptron's cascade-hop depth (survives clone deepcopies);
     returns the number of hop-depth levels."""

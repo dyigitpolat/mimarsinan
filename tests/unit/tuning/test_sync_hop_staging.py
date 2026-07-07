@@ -24,9 +24,9 @@ from mimarsinan.tuning.orchestration.adaptation_manager import (
     hop_frontier,
 )
 from mimarsinan.tuning.orchestration import hop_staging
+from mimarsinan.tuning.orchestration.frontier import frontier_ladder
 from mimarsinan.tuning.orchestration.hop_staging import (
     HOP_STAGE_MIN_LEVELS,
-    frontier_rates,
     resolve_sync_hop_staging,
     stamp_hop_depths,
 )
@@ -72,8 +72,8 @@ class TestFrontierMath:
         assert hop_frontier(1.0, 9) == 9
         assert hop_frontier(1.2, 9) == 9
 
-    def test_frontier_rates_walk_every_hop_level(self):
-        rates = frontier_rates(6)
+    def test_frontier_ladder_walks_every_hop_level(self):
+        rates = frontier_ladder(6)
         assert rates == [i / 6 for i in range(1, 7)]
 
 

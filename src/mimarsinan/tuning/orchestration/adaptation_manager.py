@@ -2,9 +2,8 @@ from mimarsinan.models.nn.layers import *
 from mimarsinan.models.nn.activations import LeakyGradReLU
 from mimarsinan.models.nn.decorators.clamp_quantize import TTFSCeilStaircaseDecorator
 from mimarsinan.models.nn.decorators.rate_buffer import RateBuffer
+from mimarsinan.tuning.orchestration.frontier import frontier_position
 from mimarsinan.tuning.shift_calculation import calculate_activation_shift
-
-import math
 
 import torch.nn as nn
 
@@ -39,13 +38,8 @@ HOP_DEPTH_ATTR = "_mbh_aq_hop_depth"
 
 
 def hop_frontier(rate, n_levels: int) -> int:
-    """Installed hop-depth count at ``rate``: ``ceil(rate * n)`` clamped.
-
-    Ceil is load-bearing (mirrors ``prefix_length_for_rate``): a gate midpoint
-    retry between rungs must never round the frontier below an accepted stage.
-    """
-    n = max(0, int(n_levels))
-    return max(0, min(n, math.ceil(float(rate) * n)))
+    """Installed hop-depth count at ``rate``: the frontier-geometry SSOT mapping."""
+    return frontier_position(rate, n_levels)
 
 
 def sync_exact_qat_active(pipeline_config) -> bool:

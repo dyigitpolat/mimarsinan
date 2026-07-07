@@ -2,22 +2,13 @@
 
 from __future__ import annotations
 
-import math
-
 from mimarsinan.tuning.forward_install import LazyExecutorForward
+from mimarsinan.tuning.orchestration.frontier import frontier_position
 
 
 def prefix_length_for_rate(rate: float, n_segments: int) -> int:
-    """Converted-prefix length for a ladder rate: ``k = ceil(rate * n)``, clamped.
-
-    Ladder rates ``i/n`` map exactly to ``k = i``. CEILING is load-bearing: a
-    gate midpoint retry ``(committed + rate)/2`` must retrain the TARGET
-    frontier from the restored snapshot — a frontier cannot bisect below the
-    segment being converted.
-    """
-    n = int(n_segments)
-    k = math.ceil(float(rate) * n - 1e-9)
-    return max(0, min(n, k))
+    """Converted-prefix length for a ladder rate: the frontier-geometry SSOT mapping."""
+    return frontier_position(rate, n_segments)
 
 
 class PrefixGenuineForward(LazyExecutorForward):

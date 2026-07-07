@@ -336,6 +336,7 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
         # Lazy: the spiking package init pulls chip_simulation (import cycle).
         from mimarsinan.spiking.segment_partition import spike_segment_count
         from mimarsinan.spiking.gain_correction import per_perceptron_cascade_depth
+        from mimarsinan.tuning.orchestration.frontier import frontier_ladder
         from mimarsinan.tuning.orchestration.hop_staging import HOP_STAGE_MIN_LEVELS
 
         self._prefix_ramp = False
@@ -357,7 +358,7 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
             n = n_levels
         else:
             return plan.driver
-        rates = [i / n for i in range(1, n + 1)]
+        rates = frontier_ladder(n)
         self._blend_fast_rates = rates
         driver = dataclasses.replace(plan.driver, fast_ladder_rates=rates)
         if self._hop_prefix_levels is not None:

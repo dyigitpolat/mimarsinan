@@ -11,9 +11,9 @@ from mimarsinan.tuning.orchestration.adaptation_manager import (
     sync_exact_qat_active,
 )
 from mimarsinan.tuning.orchestration.endpoint_recovery import run_endpoint_recovery
+from mimarsinan.tuning.orchestration.frontier import frontier_ladder
 from mimarsinan.tuning.orchestration.hop_staging import (
     capture_hop_reference,
-    frontier_rates,
     resolve_sync_hop_staging,
     run_hop_stage_reaffine,
 )
@@ -39,7 +39,7 @@ class ActivationQuantizationTuner(AdaptationRateTuner):
             capture_hop_reference(self)
             self._adopt_optimization_driver(dataclasses.replace(
                 self._optimization_driver,
-                fast_ladder_rates=frontier_rates(self._hop_stage_levels),
+                fast_ladder_rates=frontier_ladder(self._hop_stage_levels),
             ))
         # [5v B1(ii)] enter the exact-ceil endpoint through the half-step: the
         # fold assumes the CEIL KERNEL, so a hop-staged run defers it to the
