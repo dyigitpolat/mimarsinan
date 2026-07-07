@@ -39,7 +39,7 @@
       "variant": "lenet5"
     },
     "batch_size": 128,
-    "max_simulation_samples": 100,
+    "max_simulation_samples": 25,
     "sanafe_arch_preset": "loihi",
     "sanafe_sample_count": 1,
     "allow_scheduling": true,

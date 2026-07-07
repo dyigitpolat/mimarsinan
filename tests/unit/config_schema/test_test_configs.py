@@ -105,14 +105,10 @@ class TestConfigValidity:
             dp = json.loads(path.read_text())["deployment_parameters"]
             if dp["spiking_mode"] in QUANT_REQUIRED_MODES:
                 assert dp["weight_quantization"] is True, path.name
-            # N=100 is the pinned acceptance read; N=25 is legal only where the
-            # manifest note sanctions the sample-bound sim wall respec (t0_08,
-            # user-directed 2026-07-07, and its tier-0.1 minimal pair) and must
-            # stay a meaningful binomial read.
-            if "sim-sample respec" in notes[path.name].lower():
-                assert dp["max_simulation_samples"] == 25, path.name
-            else:
-                assert dp["max_simulation_samples"] == 100, path.name
+            # Sim-role respec (user-directed 2026-07-07): simulators are
+            # PARITY probes — N=25 decision-parity sample everywhere; the
+            # accuracy verdict is the SCM identity read (full test set).
+            assert dp["max_simulation_samples"] == 25, path.name
 
     @pytest.mark.parametrize("tier", TIERS)
     def test_activation_quantization_left_to_derivation(self, tier):

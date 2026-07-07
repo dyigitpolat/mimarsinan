@@ -682,6 +682,7 @@
     "Tier-0.1 (2026-07-07, user-directed): a diagnostic matrix of controlled minimal pairs derived from tier-0's remaining failure modes (theory 5t-5x, A1-A6, 6b). Every cell moves <= 2 axes off a named tier-0 anchor and carries a falsifiable hypothesis; the wave's purpose is insight - failures are the data, not defects.",
     "Families: A install-resolution law (6), B pretrain envelope e4 (5), C cascade structure isolation (4), D wall/training decomposition (4), E WQ-bit gap (3), F floor mechanics + green control (3).",
     "Acceptance bar unchanged from tier-0: >= 0.97 primary deployed (N=100 pinned; t01_17 inherits the t0_08 sim-sample respec), <= 300 s artifact wall with all simulators excluded; e4 cells account their extra pretrain in the wall honestly.",
+    "Sim-role respec 2026-07-07 (user-directed): identical to tier-0 \u2014 simulators are parity probes (nevresim N=25 default); the accuracy verdict is the SCM identity read.",
     "Fix-round 2026-07-07: per-cell endpoint_floor_wall_s (the run-total endpoint wall ledger budget) sized exactly as tier-0's \u2014 clamp(280 - measured class base, 40, 150); the F-family floor cells keep their explicit 600 s diagnostic override."
   ]
 }

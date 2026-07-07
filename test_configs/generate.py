@@ -463,7 +463,11 @@ def _deployment(tier, row, vehicles, dataset):
         "model_type": v["model_type"],
         "model_config": model_config,
         "batch_size": v.get("batch_size", 128),
-        "max_simulation_samples": row.get("sim_samples", 100),
+        # Simulators are PARITY probes, not accuracy reads (user directive
+        # 2026-07-07): the accuracy verdict is the SCM identity read (full
+        # test set, parity-certified); nevresim runs a small decision-parity
+        # sample (the t0_08 N=25 respec precedent, now the default).
+        "max_simulation_samples": row.get("sim_samples", 25),
         "sanafe_arch_preset": "loihi",
         "sanafe_sample_count": 1,
         "allow_scheduling": row.get("scheduling", False),
@@ -541,6 +545,12 @@ COVERAGE_NOTES = {
         "W3c respec 2026-07-06: t0_15/t0_21 pruning 0.5 -> 0.10 (user-directed). "
         "t0_02/t0_09/t0_18 stay at 0.5: they pass and keep the heavy-pruning "
         "stressor coverage.",
+        "Sim-role respec 2026-07-07 (user-directed): simulators are parity "
+        "probes — nevresim max_simulation_samples defaults to 25 (decision "
+        "parity), SANA-FE/Loihi stay at 1; the ACCURACY verdict is the SCM "
+        "identity read (full test set, torch<->deployed parity-certified). "
+        "Historical N=100 simulator accuracy columns are not comparable to "
+        "the SCM-based accuracy column.",
         "Fix-round 2026-07-07: endpoint_floor_wall_s is the RUN-total wall "
         "budget shared by armed endpoint stages (endpoint_wall ledger), sized "
         "per cell class as clamp(280 - base, 40, 150) from UNCONTENDED "
@@ -562,6 +572,9 @@ COVERAGE_NOTES = {
         "pinned; t01_17 inherits the t0_08 sim-sample respec), <= 300 s artifact "
         "wall with all simulators excluded; e4 cells account their extra pretrain "
         "in the wall honestly.",
+        "Sim-role respec 2026-07-07 (user-directed): identical to tier-0 — "
+        "simulators are parity probes (nevresim N=25 default); the accuracy "
+        "verdict is the SCM identity read.",
         "Fix-round 2026-07-07: per-cell endpoint_floor_wall_s (the run-total "
         "endpoint wall ledger budget) sized exactly as tier-0's — "
         "clamp(280 - measured class base, 40, 150); the F-family floor cells "
