@@ -621,10 +621,9 @@
       "expected_wall_min": 18,
       "family": "F",
       "anchor": "t0_06_ttfs_mmixcore_wq_s8",
-      "axes_moved": [
-        "endpoint_floor_wall_s: 150 -> 600"
-      ],
-      "hypothesis": "The proven 5u floor is wall-starved, not broken: with 600 s of floor room the t0_06 clone trains its full 16k budget and passes (~0.971 fbu ceiling), at an honestly-reported wall."
+      "axes_moved": [],
+      "hypothesis": "Replication clone of t0_06 (the F1 diagnostic proved the floor budget-complete: full 16k steps => the 0.97 fbu ceiling, now the default); reads calibrate draw variance.",
+      "note": "Reproducibility respec 2026-07-07: the 600 s floor-room diagnostic is subsumed \u2014 step-denominated budgets give every cell the full 16k floor; kept as a replication clone."
     },
     {
       "name": "t01_24_sync_mmixcore_wq_s8_pruned10_floor",
@@ -649,10 +648,9 @@
       "expected_wall_min": 18,
       "family": "F",
       "anchor": "t0_21_sync_mmixcore_wq_s8_pruned10",
-      "axes_moved": [
-        "endpoint_floor_wall_s: 150 -> 600"
-      ],
-      "hypothesis": "With full floor room t0_21's clone reproduces the 0.9677 fbu ceiling: the remaining gap is WQ (the wb8 cell's axis), not training budget."
+      "axes_moved": [],
+      "hypothesis": "Replication clone of t0_21 (the F2 diagnostic proved the sync residual draw-variant at full budget: 0.9441 vs the 0.9677 fbu); reads calibrate draw variance.",
+      "note": "Reproducibility respec 2026-07-07: the 600 s floor-room diagnostic is subsumed \u2014 step-denominated budgets give every cell the full 16k floor; kept as a replication clone."
     },
     {
       "name": "t01_25_ttfsq_lenet5_wq_s32",
@@ -683,6 +681,6 @@
     "Families: A install-resolution law (6), B pretrain envelope e4 (5), C cascade structure isolation (4), D wall/training decomposition (4), E WQ-bit gap (3), F floor mechanics + green control (3).",
     "Acceptance bar unchanged from tier-0: >= 0.97 primary deployed (N=100 pinned; t01_17 inherits the t0_08 sim-sample respec), <= 300 s artifact wall with all simulators excluded; e4 cells account their extra pretrain in the wall honestly.",
     "Sim-role respec 2026-07-07 (user-directed): identical to tier-0 \u2014 simulators are parity probes (nevresim N=25 default); the accuracy verdict is the SCM identity read.",
-    "Fix-round 2026-07-07: per-cell endpoint_floor_wall_s (the run-total endpoint wall ledger budget) sized exactly as tier-0's \u2014 clamp(280 - measured class base, 40, 150); the F-family floor cells keep their explicit 600 s diagnostic override."
+    "Reproducibility respec 2026-07-07 (user-directed): step-denominated endpoint budgets exactly as tier-0's (endpoint_floor_steps = 16000 + mode extra; wall-seconds budgets gone). The F-family 600 s floor-room diagnostic is subsumed \u2014 the full 16k floor is now the default \u2014 so t01_23/t01_24 stay as replication clones of their anchors (draw-variance controls)."
   ]
 }

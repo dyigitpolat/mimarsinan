@@ -49,8 +49,10 @@ EXPECTED_POLICY_VALUES = {
     "prefix_stage_lr": 1e-3,
     # [5u] floor-lifted endpoint LR ceiling (the probe-validated arm).
     "endpoint_floor_lr": 2e-3,
-    # [5u] the floor funds WALL headroom, not steps (contended rate ~30 steps/s).
-    "endpoint_floor_wall_s": 150.0,
+    # [reproducibility] the floor's RUN-total funding is a STEP budget (the
+    # endpoint_steps ledger), never wall seconds: 16,000 is the validated
+    # full floor (t01_23). Wall time is a pure measurement.
+    "endpoint_floor_steps": 16000,
 }
 
 COLLAPSED_CONFIG_KEYS = frozenset({

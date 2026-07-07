@@ -2,16 +2,13 @@
 
 from __future__ import annotations
 
-import time
 from dataclasses import dataclass
 
-from mimarsinan.tuning.orchestration import dhat_highwater, endpoint_wall
+from mimarsinan.tuning.orchestration import dhat_highwater, endpoint_steps
 from mimarsinan.tuning.orchestration.mbh_ledger import fp32_eval_forward_over_val
 from mimarsinan.tuning.orchestration.recovery_engine import RecoveryEngine
 from mimarsinan.tuning.orchestration.tuner_base import _RECOVERY_PATIENCE
 from mimarsinan.tuning.orchestration.tuning_policy import TUNING_POLICY
-
-_monotonic = time.monotonic
 
 
 @dataclass(frozen=True)
@@ -64,15 +61,21 @@ def run_endpoint_recovery(tuner, *, base_steps, target_floor=None) -> EndpointRe
       ``None`` the floor reads ``endpoint_target_floor`` from config — the
       bit-parity-lossless family's every-endpoint floor.
     - budget: ``base_steps`` (the recipe's freed stabilize/ladder budget) plus
-      whatever this tuner's own gated ladder left untrained.
+      whatever this tuner's own gated ladder left untrained; an armed stage is
+      additionally clamped to what the run's ``endpoint_floor_steps`` ledger
+      still affords.
     - geometry: a floor-LIFTED target OR a super-SE entry gap trains the
       probe-validated arm (lr capped at ``endpoint_floor_lr``, cosine over the
-      full budget with patience disarmed, wall-capped — the default 210-step
-      window is sterile inside the lr dip); otherwise the stage is
+      full budget with patience disarmed, step-ledger-funded — the default
+      210-step window is sterile inside the lr dip); otherwise the stage is
       bit-identical to the pre-floor behavior. [5y arming gap] the gap arm
       exists because ``floor > high-water`` only fires on lossless/envelope
       cells: a post-crater cell whose PRE-crater high-water beats the floor
       (t01_19) otherwise keeps the sterile patience schedule.
+    - reproducibility: the funding is a STEP budget, never wall seconds —
+      identical configs train identical step counts on any hardware (same
+      config + same seed => same step trajectory, modulo GPU nondeterminism);
+      wall time is a pure measurement.
     - keep-best + early stop live inside ``train_steps_until_target``; the
       outer fp32 entry guard makes the whole stage non-destructive.
     """
@@ -98,21 +101,21 @@ def run_endpoint_recovery(tuner, *, base_steps, target_floor=None) -> EndpointRe
         hooks = tuner._recovery_training_hooks(1.0)
         lr = float(tuner.pipeline_lr)
         min_steps = 0
-        max_seconds = None
+        ledger_funded = False
         if floor_lifted or entry_gap_armed:
-            # ``endpoint_floor_wall_s`` is the RUN total, shared by every armed
-            # endpoint stage through the wall ledger (per-stage caps burned
-            # cap x N stages on multi-endpoint cells); an exhausted budget
+            # ``endpoint_floor_steps`` is the RUN total, shared by every armed
+            # endpoint stage through the step ledger (per-stage budgets burned
+            # budget x N stages on multi-endpoint cells); an exhausted budget
             # falls back to the default patience geometry (cheap stop).
-            total_wall = float(tuner.pipeline.config.get(
-                "endpoint_floor_wall_s", TUNING_POLICY.endpoint_floor_wall_s,
+            total_steps = int(tuner.pipeline.config.get(
+                "endpoint_floor_steps", TUNING_POLICY.endpoint_floor_steps,
             ))
-            wall_left = endpoint_wall.remaining(tuner.pipeline, total_wall)
-            if wall_left > 0.0:
+            steps_left = endpoint_steps.remaining(tuner.pipeline, total_steps)
+            if steps_left > 0:
                 lr = min(lr, TUNING_POLICY.endpoint_floor_lr)
+                budget = min(budget, steps_left)
                 min_steps = budget
-                max_seconds = wall_left
-        train_started = _monotonic()
+                ledger_funded = True
         _, steps_used = RecoveryEngine.train_to_target(
             tuner.trainer,
             lr,
@@ -127,10 +130,9 @@ def run_endpoint_recovery(tuner, *, base_steps, target_floor=None) -> EndpointRe
             cosine_decay=True,
             return_steps=True,
             final_validation=False,
-            max_seconds=max_seconds,
         )
-        if max_seconds is not None:
-            endpoint_wall.consume(tuner.pipeline, _monotonic() - train_started)
+        if ledger_funded:
+            endpoint_steps.consume(tuner.pipeline, steps_used)
         exit_read = _fp32_deployed_read(tuner)
         tol = float(getattr(tuner, "_rollback_tolerance", 0.0))
         if exit_read < entry - tol:

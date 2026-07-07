@@ -336,7 +336,6 @@ def _config_delta(a: dict, b: dict) -> set:
 _S_MOVE = {"platform_constraints.target_tq", "platform_constraints.simulation_steps"}
 _E4_MOVE = {"deployment_parameters.training_epochs"}
 _WB_MOVE = {"platform_constraints.weight_bits"}
-_FLOOR_MOVE = {"deployment_parameters.endpoint_floor_wall_s"}
 
 # The tier-0.1 design table: cell -> (tier-0 anchor, exact config key-paths moved).
 # Every cell is a minimal pair; experiment_name is excluded from the delta.
@@ -371,12 +370,11 @@ TIER01_EXPECTED_DELTAS = {
         {"deployment_parameters.encoding_layer_placement",
          "deployment_parameters.allow_scheduling"},
     ),
-    # The endpoint wall budget rides the depth class (fix-round item 5):
-    # deepmlp deep (40 s) -> shallow (100 s) is induced by the depth move.
+    # Step-denominated endpoint budgets ride the MODE only, so the depth move
+    # induces no budget delta (reproducibility respec 2026-07-07).
     "t01_14_casc_deepmlp_d8_wq_s16_residual": (
         "t0_19_casc_deepmlp_d16_wq_s16_residual",
-        {"deployment_parameters.model_config.depth",
-         "deployment_parameters.endpoint_floor_wall_s"},
+        {"deployment_parameters.model_config.depth"},
     ),
     # sched rides the depth axis: W2 proved platform C packs d8 only scheduled.
     "t01_15_casc_deepcnn_d8_wq_s4_sched": (
@@ -384,8 +382,7 @@ TIER01_EXPECTED_DELTAS = {
         {"deployment_parameters.model_config.depth",
          "deployment_parameters.allow_scheduling",
          "deployment_parameters.pruning",
-         "deployment_parameters.pruning_fraction",
-         "deployment_parameters.endpoint_floor_wall_s"},
+         "deployment_parameters.pruning_fraction"},
     ),
     # D - wall / training-ceiling decomposition
     "t01_16_lif_deepcnn_d8_wq_s8_sched": ("t0_03_lif_deepcnn_d8_wq_s16_sched", _S_MOVE),
@@ -399,10 +396,21 @@ TIER01_EXPECTED_DELTAS = {
     "t01_20_sync_mmixcore_wq_s8_pruned10_wb8": ("t0_21_sync_mmixcore_wq_s8_pruned10", _WB_MOVE),
     "t01_21_lif_mmixcore_wq_s4_wb8": ("t0_01_lif_mmixcore_wq_s4", _WB_MOVE),
     "t01_22_ttfsq_deepcnn_d4_wq_s4_wb4": ("t0_13_ttfsq_deepcnn_d4_wq_s4", _WB_MOVE),
-    # F - floor mechanics + controls
-    "t01_23_ttfs_mmixcore_wq_s8_floor": ("t0_06_ttfs_mmixcore_wq_s8", _FLOOR_MOVE),
-    "t01_24_sync_mmixcore_wq_s8_pruned10_floor": ("t0_21_sync_mmixcore_wq_s8_pruned10", _FLOOR_MOVE),
+    # F - floor mechanics + controls: the 600 s floor-room diagnostic is
+    # subsumed by step-denominated budgets (the full 16k floor is the
+    # default), so both F diagnostics are replication clones now.
+    "t01_23_ttfs_mmixcore_wq_s8_floor": ("t0_06_ttfs_mmixcore_wq_s8", set()),
+    "t01_24_sync_mmixcore_wq_s8_pruned10_floor": ("t0_21_sync_mmixcore_wq_s8_pruned10", set()),
     "t01_25_ttfsq_lenet5_wq_s32": ("t0_12_ttfsq_lenet5_wq_s32", set()),
+}
+
+# Replication clones: cells whose diagnostic axis was subsumed by a later
+# user-directed respec (they re-read their anchor's distribution — the
+# draw-variance controls) plus the pure green control.
+TIER01_REPLICATION_CLONES = {
+    "t01_23_ttfs_mmixcore_wq_s8_floor",
+    "t01_24_sync_mmixcore_wq_s8_pruned10_floor",
+    "t01_25_ttfsq_lenet5_wq_s32",
 }
 
 TIER01_FAMILY_SIZES = {"A": 6, "B": 5, "C": 4, "D": 4, "E": 3, "F": 3}
@@ -433,10 +441,10 @@ class TestTier01DiagnosticMatrix:
         for run in self._runs():
             assert run["family"] in TIER01_FAMILY_SIZES, run["name"]
             assert isinstance(run["axes_moved"], list), run["name"]
-            # Minimal pair: at most 2 axes; 0 only for the pure green control.
+            # Minimal pair: at most 2 axes; 0 only for replication clones.
             assert len(run["axes_moved"]) <= 2, run["name"]
             if not run["axes_moved"]:
-                assert run["name"] == "t01_25_ttfsq_lenet5_wq_s32"
+                assert run["name"] in TIER01_REPLICATION_CLONES, run["name"]
             assert isinstance(run["hypothesis"], str), run["name"]
             assert len(run["hypothesis"]) >= 40, run["name"]
 
@@ -452,54 +460,43 @@ class TestTier01DiagnosticMatrix:
             expected = 4 if run["family"] == "B" else 2
             assert dp["training_epochs"] == expected, run["name"]
 
-    def test_floor_cells_carry_the_overridable_wall_knob(self):
-        # Fix-round item 5, resized to the soft-600 acceptance bar: every cell
-        # carries the sized RUN-total endpoint wall budget
-        # (clamp(TARGET_ART_S - measured class base, MIN_S, MAX_S)); the two
-        # F-family diagnostics keep their explicit 600 s override.
+    def test_every_cell_carries_the_step_denominated_floor_budget(self):
+        # Reproducibility respec 2026-07-07: endpoint budgets are STEPS, never
+        # wall seconds. Every tier-0/0.1 cell carries the run-total
+        # endpoint_floor_steps ledger budget (BASE + the mode's
+        # intermediate-endpoint extra); no wall-seconds knob survives.
         gen = _generator()
 
-        floor_cells = {"t01_23_ttfs_mmixcore_wq_s8_floor",
-                       "t01_24_sync_mmixcore_wq_s8_pruned10_floor"}
-        for run in self._runs():
-            dp = self._load("0_1", run["name"])["deployment_parameters"]
-            if run["name"] in floor_cells:
-                assert dp["endpoint_floor_wall_s"] == 600, run["name"]
-            else:
-                assert (
-                    gen.ENDPOINT_WALL_MIN_S
-                    <= dp["endpoint_floor_wall_s"]
-                    <= gen.ENDPOINT_WALL_MAX_S
-                ), run["name"]
+        for tier in (0, "0_1"):
+            for run in _manifest(tier)["runs"]:
+                dp = self._load(tier, run["name"])["deployment_parameters"]
+                assert "endpoint_floor_wall_s" not in dp, run["name"]
+                assert dp["endpoint_floor_steps"] >= gen.ENDPOINT_FLOOR_STEPS_BASE, (
+                    run["name"]
+                )
 
-    def test_endpoint_wall_budgets_follow_the_measured_arithmetic(self):
-        # Spot checks: budget == clamp(TARGET - class base, MIN, MAX) with the
-        # documented class bases (t0_03 base 340 -> 240; t0_12 base 130 ->
-        # capped at MAX; t0_21/t01_14 base 180 -> 400).
+    def test_endpoint_step_budgets_follow_the_mode_arithmetic(self):
+        # Spot checks: budget == BASE + mode extra (lif 2x1560 for the LIF and
+        # AQ endpoints; casc 2x600 for the TTFS-cycle and AQ endpoints; sync
+        # 600 for the AQ endpoint; ttfs/ttfsq have no intermediate endpoint).
         gen = _generator()
+        base = gen.ENDPOINT_FLOOR_STEPS_BASE
 
         assert self._load(
             0, "t0_03_lif_deepcnn_d8_wq_s16_sched",
-        )["deployment_parameters"]["endpoint_floor_wall_s"] == (
-            gen.ENDPOINT_WALL_TARGET_ART_S
-            - gen.ENDPOINT_WALL_CLASS_BASE_S[("deepcnn", "deep")]
-        )
+        )["deployment_parameters"]["endpoint_floor_steps"] == base + 2 * 1560
         assert self._load(
             0, "t0_12_ttfsq_lenet5_wq_s32",
-        )["deployment_parameters"]["endpoint_floor_wall_s"] == (
-            gen.ENDPOINT_WALL_TARGET_ART_S
-            - gen.ENDPOINT_WALL_CLASS_BASE_S[("lenet5", "ttfsq")]
-        )
+        )["deployment_parameters"]["endpoint_floor_steps"] == base
         assert self._load(
             0, "t0_21_sync_mmixcore_wq_s8_pruned10",
-        )["deployment_parameters"]["endpoint_floor_wall_s"] == (
-            gen.ENDPOINT_WALL_TARGET_ART_S - 180
-        )
+        )["deployment_parameters"]["endpoint_floor_steps"] == base + 600
         assert self._load(
             "0_1", "t01_14_casc_deepmlp_d8_wq_s16_residual",
-        )["deployment_parameters"]["endpoint_floor_wall_s"] == (
-            gen.ENDPOINT_WALL_TARGET_ART_S - 180
-        )
+        )["deployment_parameters"]["endpoint_floor_steps"] == base + 2 * 600
+        assert self._load(
+            "0_1", "t01_23_ttfs_mmixcore_wq_s8_floor",
+        )["deployment_parameters"]["endpoint_floor_steps"] == base
 
     def test_green_control_is_a_pure_t0_12_clone(self):
         cfg = self._load("0_1", "t01_25_ttfsq_lenet5_wq_s32")

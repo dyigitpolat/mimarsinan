@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import time
-
 import warmup_scheduler
 import torch
 
@@ -103,8 +101,9 @@ def train_steps_until_target(
     return_steps: bool = False,
     cosine_decay: bool = False,
     final_validation: bool = True,
-    max_seconds: float | None = None,
 ):
+    # Reproducibility contract: the budget is STEPS only — no wall-clock cap.
+    # Identical configs train identical step counts on any hardware.
     recipe_recovery = _recipe_recovery_enabled(trainer)
     use_constant = (not cosine_decay) and not recipe_recovery
     owns_optimizer = optimizer is None
@@ -129,11 +128,6 @@ def train_steps_until_target(
     plateau_reductions_left = max(0, int(plateau_lr_reductions))
     plateau_enabled = plateau_factor < 1.0 and plateau_reductions_left > 0
     current_base_lr = float(lr)
-
-    # A wall-funded stage (the floor-lifted endpoint) stops at its headroom;
-    # the clock is read at checkpoints only, after keep-best bookkeeping.
-    wall_cap = float(max_seconds) if max_seconds is not None else None
-    wall_start = time.monotonic() if wall_cap is not None else 0.0
 
     # [M-guard] keep-best anchors at the ENTRY state and metric, never 0.0: a
     # run that never beats entry restores entry exactly (full state_dict incl.
@@ -162,10 +156,6 @@ def train_steps_until_target(
                     trainer._optimize(x, y, optimizer, scaler)
                     steps_run += 1
                     scheduler.step()
-                break
-            if wall_cap is not None and time.monotonic() - wall_start >= wall_cap:
-                if acc > best_acc + imp_eps:
-                    best_state = clone_state_for_trainer(trainer)
                 break
             if acc > best_acc + imp_eps:
                 best_acc = acc

@@ -57,7 +57,7 @@
     "ttfs_cycle_schedule": "synchronized",
     "pruning": true,
     "pruning_fraction": 0.1,
-    "endpoint_floor_wall_s": 600,
+    "endpoint_floor_steps": 16600,
     "training_epochs": 2,
     "training_recipe": {
       "optimizer": "adamw",

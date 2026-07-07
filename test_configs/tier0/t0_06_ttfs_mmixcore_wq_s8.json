@@ -54,7 +54,7 @@
     "thresholding_mode": "<=",
     "encoding_layer_placement": "subsume",
     "weight_quantization": true,
-    "endpoint_floor_wall_s": 435,
+    "endpoint_floor_steps": 16000,
     "training_epochs": 2,
     "training_recipe": {
       "optimizer": "adamw",

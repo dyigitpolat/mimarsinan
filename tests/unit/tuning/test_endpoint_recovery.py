@@ -300,22 +300,23 @@ class TestEndpointTargetFloor:
         assert seen["min_steps"] == 300
         assert seen["cosine_decay"] is True
 
-    def test_lifted_floor_funds_wall_headroom_not_steps(
+    def test_lifted_floor_funds_steps_never_wall_seconds(
         self, tmp_path, monkeypatch,
     ):
-        # [5u amendment, fba wave] the contended transform-trainer rate is
-        # ~30 steps/s (12k steps cost 402 s), so the funded budget is WALL:
-        # the stage passes the policy's headroom cap; the default (sub-SE-gap,
-        # unlifted) path never carries a cap.
+        # [reproducibility] the funded budget is STEPS from the run-total
+        # endpoint_steps ledger — no wall-clock cap exists in any geometry:
+        # identical configs train identical step counts on any hardware.
         report, seen = self._run(
             tmp_path, monkeypatch, floor=0.9, highwater=0.5, reads=[0.3, 0.6],
         )
-        assert seen["max_seconds"] == pytest.approx(150.0)
+        assert "max_seconds" not in seen
+        assert seen["min_steps"] == seen["max_steps"]
         report, seen = self._run(
             tmp_path, monkeypatch, floor=0.4, highwater=0.77,
             reads=[0.77 - 1e-4, 0.78],
         )
-        assert seen["max_seconds"] is None
+        assert "max_seconds" not in seen
+        assert seen["min_steps"] == 0
 
     def test_lifted_floor_caps_the_lr_at_the_probe_validated_arm(
         self, tmp_path, monkeypatch,
@@ -403,19 +404,20 @@ class TestEndpointTargetFloor:
         assert report.exit == pytest.approx(0.6)
 
 
-class TestExplicitTargetFloorAndWallCap:
+class TestExplicitTargetFloorAndStepBudget:
     """[5u generalized] a call site may pass an explicit floor (the WQ endpoint
     scopes the well-conditioned floor to the final composition alone);
     ``target_floor=None`` keeps the config-read bit-parity every-endpoint path.
-    The floor-lifted wall cap is config-overridable per-cell headroom."""
+    The floor-lifted STEP budget is config-overridable per cell
+    (``endpoint_floor_steps``, the run-total ledger)."""
 
     def _drive(self, tmp_path, monkeypatch, *, target_floor, config_floor=None,
-               wall_s=None, highwater=0.5, reads=(0.3, 0.6), base_steps=100):
+               floor_steps=None, highwater=0.5, reads=(0.3, 0.6), base_steps=100):
         tuner = _lif_tuner(tmp_path)
         if config_floor is not None:
             tuner.pipeline.config["endpoint_target_floor"] = config_floor
-        if wall_s is not None:
-            tuner.pipeline.config["endpoint_floor_wall_s"] = wall_s
+        if floor_steps is not None:
+            tuner.pipeline.config["endpoint_floor_steps"] = floor_steps
         _prepare_endpoint_scaffold(tuner)
         dhat_highwater.observe(tuner.pipeline, highwater)
         read_iter = iter(reads)
@@ -465,13 +467,22 @@ class TestExplicitTargetFloorAndWallCap:
         assert seen["target"] == pytest.approx(0.77)
         assert report.floor_lifted is False
 
-    def test_wall_cap_defaults_to_policy(self, tmp_path, monkeypatch):
+    def test_step_budget_defaults_to_policy_and_carries_no_wall_cap(
+        self, tmp_path, monkeypatch,
+    ):
+        # Policy default 16,000 >> the stage budget (base 100 + 4 freed
+        # ladder steps): unclamped.
         _, seen = self._drive(tmp_path, monkeypatch, target_floor=0.9)
-        assert seen["max_seconds"] == pytest.approx(150.0)
+        assert seen["max_steps"] == 104
+        assert seen["min_steps"] == 104
+        assert "max_seconds" not in seen
 
-    def test_wall_cap_reads_config_override(self, tmp_path, monkeypatch):
-        _, seen = self._drive(tmp_path, monkeypatch, target_floor=0.9, wall_s=90.0)
-        assert seen["max_seconds"] == pytest.approx(90.0)
+    def test_step_budget_reads_config_override(self, tmp_path, monkeypatch):
+        _, seen = self._drive(
+            tmp_path, monkeypatch, target_floor=0.9, floor_steps=90,
+        )
+        assert seen["max_steps"] == 90
+        assert seen["min_steps"] == 90
 
 
 class TestEntryGapArming:
@@ -484,20 +495,20 @@ class TestEntryGapArming:
     armed-patience geometry and stopped in ~2 x check_interval. When
     target - entry >= the SE threshold (the same ``accuracy_se`` below which
     progress cannot even register), the stage needs the recovery geometry —
-    lr cap, cosine over the full budget, patience disarmed, wall-capped —
-    regardless of how the target was set.
+    lr cap, cosine over the full budget, patience disarmed, step-ledger-funded
+    — regardless of how the target was set.
     """
 
     def _drive(self, tmp_path, monkeypatch, *, highwater, entry,
-               target_floor=None, config_floor=None, wall_s=None,
+               target_floor=None, config_floor=None, floor_steps=None,
                base_steps=100, pipeline_lr=None, train=None):
         tuner = _lif_tuner(tmp_path)
         if pipeline_lr is not None:
             tuner.pipeline_lr = pipeline_lr
         if config_floor is not None:
             tuner.pipeline.config["endpoint_target_floor"] = config_floor
-        if wall_s is not None:
-            tuner.pipeline.config["endpoint_floor_wall_s"] = wall_s
+        if floor_steps is not None:
+            tuner.pipeline.config["endpoint_floor_steps"] = floor_steps
         _prepare_endpoint_scaffold(tuner)
         tuner._fast_optimizer_steps = len(tuner._fixed_ladder_rates) * 2
         dhat_highwater.observe(tuner.pipeline, highwater)
@@ -539,7 +550,7 @@ class TestEntryGapArming:
         assert seen["min_steps"] == seen["max_steps"]
         assert seen["lr"] == pytest.approx(2e-3)
         assert seen["cosine_decay"] is True
-        assert seen["max_seconds"] == pytest.approx(150.0)
+        assert "max_seconds" not in seen
 
     def test_sub_se_gap_keeps_the_default_patience_geometry(
         self, tmp_path, monkeypatch,
@@ -550,7 +561,7 @@ class TestEntryGapArming:
         assert 1e-4 < se, "fixture invariant: the gap must be sub-SE"
         assert report.entry_gap_armed is False
         assert seen["min_steps"] == 0
-        assert seen["max_seconds"] is None
+        assert "max_seconds" not in seen
 
     def test_gap_exactly_at_the_se_threshold_arms(self, tmp_path, monkeypatch):
         probe, _, se = self._drive(
@@ -573,16 +584,17 @@ class TestEntryGapArming:
         assert report.floor_lifted is True
         assert report.entry_gap_armed is True
         assert seen["min_steps"] == seen["max_steps"]
-        assert seen["max_seconds"] == pytest.approx(150.0)
+        assert "max_seconds" not in seen
 
-    def test_wall_cap_reads_config_override_under_gap_arming(
+    def test_step_budget_reads_config_override_under_gap_arming(
         self, tmp_path, monkeypatch,
     ):
         _, seen, _ = self._drive(
             tmp_path, monkeypatch, highwater=0.9937, entry=0.095,
-            target_floor=0.98, wall_s=90.0,
+            target_floor=0.98, floor_steps=90,
         )
-        assert seen["max_seconds"] == pytest.approx(90.0)
+        assert seen["max_steps"] == 90
+        assert seen["min_steps"] == 90
 
     def test_zero_budget_never_arms(self, tmp_path, monkeypatch):
         tuner = _lif_tuner(tmp_path)

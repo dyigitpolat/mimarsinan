@@ -89,58 +89,31 @@ def _quant_axis(row):
     return "wq_aq" if row["mode"] in AQ_DERIVED_MODES else "wq"
 
 
-# [fix-round item 5] endpoint_floor_wall_s is the RUN-total wall budget shared
-# by every armed endpoint stage (the endpoint_wall ledger). Sized per cell as
-# clamp(TARGET_ART_S - base, MIN_S, MAX_S), where base is the cell's measured
-# UNCONTENDED artifact wall MINUS endpoint-stage overheads (fix-round wave,
-# slurm runs 20260707-0744*/0751*, one 65-CPU h100-47 pack per node, ctrl band
-# 107-117 s). TARGET_ART_S tracks the acceptance wall bar (soft 600 s):
-# endpoint budgets convert wall headroom into deployed-forward training, so a
-# tighter bar starves the floor stages that carry crater/envelope recovery.
-# MAX_S admits the full 16k-step floor even at contended trainer rates
-# (~30 steps/s -> ~530 s); MIN_S keeps a small recovery allowance on
-# identity-sim-bound cells whose accuracy is already solved at entry.
-ENDPOINT_WALL_TARGET_ART_S = 580
-ENDPOINT_WALL_MIN_S = 40
-ENDPOINT_WALL_MAX_S = 480
-# Measured bases by (vehicle[, mode][, depth-bucket]) class; the worst
-# measured member of each class (see the manifest note for provenance).
-ENDPOINT_WALL_CLASS_BASE_S = {
-    ("mmixcore", "casc"): 220,   # 181-218 measured
-    ("mmixcore", "lif"): 190,    # 164-191
-    ("mmixcore", "sync"): 180,   # 175
-    ("mmixcore", "ttfs"): 145,   # 137
-    ("mmixcore", "ttfsq"): 140,  # 118-137
-    ("lenet5", "lif"): 225,      # t0_02 novena 224
-    ("lenet5", "casc"): 210,     # t01_18 209
-    ("lenet5", "sync"): 160,
-    ("lenet5", "ttfs"): 130,
-    ("lenet5", "ttfsq"): 130,    # 125-133
-    ("simplemlp", None): 140,
-    ("deepcnn", "shallow"): 200,   # d4: 125-199
-    ("deepcnn", "deep"): 300,      # d6/d8: identity-sim-bound (t0_03 base 566)
-    ("deepmlp", "shallow"): 180,   # d4/d8: 108-180
-    ("deepmlp", "deep"): 250,      # d16 residual (t0_19 class)
+# [reproducibility] endpoint_floor_steps is the RUN-total training-STEP budget
+# shared by every armed endpoint stage (the endpoint_steps ledger). Training
+# budgets are denominated in optimizer steps, NEVER wall seconds: identical
+# configs train identical step counts on any hardware (same config + same
+# seed => same step trajectory, modulo GPU nondeterminism); wall time is a
+# pure MEASUREMENT, judged per hardware context at harvest. BASE is the
+# validated full floor budget (t01_23: full 16k steps => the honest 0.97 fbu
+# ceiling). Modes whose pipelines carry intermediate armed endpoints get the
+# per-mode EXTRA so a crater draw's intermediate recovery cannot starve the
+# final WQ floor: the mode conversion endpoint and the AQ endpoint both fund
+# from the recipe's endpoint_recovery_steps (conversion_policy.py — lif 1560
+# at the LIF and AQ endpoints; casc 600 at the TTFS-cycle and AQ endpoints;
+# sync 600 at the AQ endpoint). Freed-ladder bonuses on stalled rungs may
+# shave the WQ floor by at most one planned ladder (bounded, deterministic).
+ENDPOINT_FLOOR_STEPS_BASE = 16000
+ENDPOINT_MODE_EXTRA_STEPS = {
+    "lif": 2 * 1560,
+    "casc": 2 * 600,
+    "sync": 600,
 }
 
 
-def _endpoint_wall_budget(row):
-    """The run-total endpoint wall budget for one tier-0/0.1 row (seconds)."""
-    depth = row.get("depth")
-    if row["vehicle"] in ("deepcnn", "deepmlp"):
-        # Vehicle-specific deep boundary: deepcnn d6+ is identity-sim-bound;
-        # deepmlp is slow only at the d16 residual class.
-        deep_at = 6 if row["vehicle"] == "deepcnn" else 16
-        key = (row["vehicle"], "deep" if (depth or 0) >= deep_at else "shallow")
-    elif row["vehicle"] == "simplemlp":
-        key = ("simplemlp", None)
-    else:
-        key = (row["vehicle"], row["mode"])
-    base = ENDPOINT_WALL_CLASS_BASE_S[key]
-    return max(
-        ENDPOINT_WALL_MIN_S,
-        min(ENDPOINT_WALL_MAX_S, ENDPOINT_WALL_TARGET_ART_S - base),
-    )
+def _endpoint_floor_steps(row):
+    """The run-total endpoint step budget for one tier-0/0.1 row (steps)."""
+    return ENDPOINT_FLOOR_STEPS_BASE + ENDPOINT_MODE_EXTRA_STEPS.get(row["mode"], 0)
 
 T0 = [
     dict(n=1, mode="lif", quant="wq", wb=5, s=4, vehicle="mmixcore"),
@@ -344,22 +317,33 @@ T0_1 = [
          anchor="t0_13_ttfsq_deepcnn_d4_wq_s4", axes=["weight_bits: 5 -> 4"],
          hypothesis="The ttfsq WQ boundary sits below wb4 on a shallow conv vehicle: "
                     "t0_13's clone at wb4 costs <= 1 pp and still passes."),
-    # F - floor mechanics + controls: the 5u floor given real wall room (the
-    # escalated harness decision, testable as config), plus a green replication.
+    # F - floor mechanics + controls. The 600 s floor-room diagnostic is
+    # SUBSUMED by the reproducibility respec (2026-07-07): endpoint budgets
+    # are step-denominated and every cell now carries the full validated
+    # 16k-step floor by default, which is exactly what these two cells paid
+    # extra wall to prove (t01_23: full 16k => 0.97; t01_24: full budget =>
+    # draw-variant 0.9441). They stay as replication clones of their anchors
+    # (draw-variance controls for the conversion-draws mechanism).
     dict(n=23, family="F", mode="ttfs", quant="wq", wb=5, s=8, vehicle="mmixcore",
-         floor_wall_s=600, tags=["floor"], wall_min=18,
+         tags=["floor"], wall_min=18,
          anchor="t0_06_ttfs_mmixcore_wq_s8",
-         axes=["endpoint_floor_wall_s: 150 -> 600"],
-         hypothesis="The proven 5u floor is wall-starved, not broken: with 600 s of "
-                    "floor room the t0_06 clone trains its full 16k budget and "
-                    "passes (~0.971 fbu ceiling), at an honestly-reported wall."),
+         axes=[],
+         note="Reproducibility respec 2026-07-07: the 600 s floor-room "
+              "diagnostic is subsumed — step-denominated budgets give every "
+              "cell the full 16k floor; kept as a replication clone.",
+         hypothesis="Replication clone of t0_06 (the F1 diagnostic proved the "
+                    "floor budget-complete: full 16k steps => the 0.97 fbu "
+                    "ceiling, now the default); reads calibrate draw variance."),
     dict(n=24, family="F", mode="sync", quant="wq", wb=5, s=8, vehicle="mmixcore",
-         pruned=0.10, floor_wall_s=600, tags=["pruned10", "floor"], wall_min=18,
+         pruned=0.10, tags=["pruned10", "floor"], wall_min=18,
          anchor="t0_21_sync_mmixcore_wq_s8_pruned10",
-         axes=["endpoint_floor_wall_s: 150 -> 600"],
-         hypothesis="With full floor room t0_21's clone reproduces the 0.9677 fbu "
-                    "ceiling: the remaining gap is WQ (the wb8 cell's axis), not "
-                    "training budget."),
+         axes=[],
+         note="Reproducibility respec 2026-07-07: the 600 s floor-room "
+              "diagnostic is subsumed — step-denominated budgets give every "
+              "cell the full 16k floor; kept as a replication clone.",
+         hypothesis="Replication clone of t0_21 (the F2 diagnostic proved the "
+                    "sync residual draw-variant at full budget: 0.9441 vs the "
+                    "0.9677 fbu); reads calibrate draw variance."),
     dict(n=25, family="F", mode="ttfsq", quant="wq", wb=8, s=32, vehicle="lenet5",
          anchor="t0_12_ttfsq_lenet5_wq_s32", axes=[],
          hypothesis="Pure t0_12 replication passes at its X4 numbers; per-pack "
@@ -486,10 +470,8 @@ def _deployment(tier, row, vehicles, dataset):
     if "pruned" in row:
         dp["pruning"] = True
         dp["pruning_fraction"] = row["pruned"]
-    if "floor_wall_s" in row:
-        dp["endpoint_floor_wall_s"] = row["floor_wall_s"]
-    elif tier == 0:
-        dp["endpoint_floor_wall_s"] = _endpoint_wall_budget(row)
+    if tier == 0:
+        dp["endpoint_floor_steps"] = _endpoint_floor_steps(row)
     if "tuning_batch_size" in v:
         dp["tuning_batch_size"] = v["tuning_batch_size"]
     if "preprocessing" in v:
@@ -554,13 +536,15 @@ COVERAGE_NOTES = {
         "identity read (full test set, torch<->deployed parity-certified). "
         "Historical N=100 simulator accuracy columns are not comparable to "
         "the SCM-based accuracy column.",
-        "Fix-round 2026-07-07: endpoint_floor_wall_s is the RUN-total wall "
-        "budget shared by armed endpoint stages (endpoint_wall ledger), sized "
-        "per cell class as clamp(280 - base, 40, 150) from UNCONTENDED "
-        "measured base walls (fix-round wave, one 65-CPU h100-47 pack per "
-        "node, slurm runs 20260707-0744*/0751*; base = artifact wall minus "
-        "endpoint-stage overheads). Allocation of measured headroom only — "
-        "no matrix-semantics change.",
+        "Reproducibility respec 2026-07-07 (user-directed): training budgets "
+        "are STEP-denominated — endpoint_floor_steps is the RUN-total step "
+        "budget shared by armed endpoint stages (endpoint_steps ledger), "
+        "sized 16000 (the validated full floor, t01_23) plus the mode's "
+        "intermediate-endpoint recipe budgets (lif 2x1560, casc 2x600, sync "
+        "600). Wall-seconds budgets are gone: identical configs train "
+        "identical step counts on any hardware (same config + same seed => "
+        "same step trajectory, modulo GPU nondeterminism); wall time is a "
+        "pure measurement judged per hardware context at harvest.",
     ],
     "0_1": [
         "Tier-0.1 (2026-07-07, user-directed): a diagnostic matrix of controlled "
@@ -578,10 +562,12 @@ COVERAGE_NOTES = {
         "Sim-role respec 2026-07-07 (user-directed): identical to tier-0 — "
         "simulators are parity probes (nevresim N=25 default); the accuracy "
         "verdict is the SCM identity read.",
-        "Fix-round 2026-07-07: per-cell endpoint_floor_wall_s (the run-total "
-        "endpoint wall ledger budget) sized exactly as tier-0's — "
-        "clamp(280 - measured class base, 40, 150); the F-family floor cells "
-        "keep their explicit 600 s diagnostic override.",
+        "Reproducibility respec 2026-07-07 (user-directed): step-denominated "
+        "endpoint budgets exactly as tier-0's (endpoint_floor_steps = 16000 "
+        "+ mode extra; wall-seconds budgets gone). The F-family 600 s "
+        "floor-room diagnostic is subsumed — the full 16k floor is now the "
+        "default — so t01_23/t01_24 stay as replication clones of their "
+        "anchors (draw-variance controls).",
     ],
 }
 

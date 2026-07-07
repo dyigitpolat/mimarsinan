@@ -44,10 +44,13 @@ class TuningPolicy:
     # steps dip below entry, so a floor-chasing stage trains the probe-validated
     # arm (lr 2e-3, cosine over the full funded budget).
     endpoint_floor_lr: float = 2e-3
-    # [5u] the floor's funding is WALL headroom (~180 s measured on t0_06 minus
-    # simulation margin): under pack contention the transform-trainer rate drops
-    # to ~30 steps/s, so a pure step budget would blow the 300 s bar.
-    endpoint_floor_wall_s: float = 150.0
+    # [5u + reproducibility] the floor's RUN-total funding is a STEP budget
+    # (the endpoint_steps ledger), never wall seconds: identical configs train
+    # identical step counts on any hardware (same config + same seed => same
+    # step trajectory, modulo GPU nondeterminism). 16,000 is the validated
+    # full floor budget (t01_23: full 16k => the honest 0.97 fbu ceiling);
+    # wall time is a pure measurement, judged per hardware context at harvest.
+    endpoint_floor_steps: int = 16000
 
 
 TUNING_POLICY = TuningPolicy()

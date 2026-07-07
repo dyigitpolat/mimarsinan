@@ -173,9 +173,10 @@ CONFIG_KEYS_SET: Set[str] = {
     "sanafe_custom_arch_path",
     "sanafe_log_potential_trace",
     "simulation_batch_count",
-    # Optional per-cell wall sizing for the 5u endpoint target floor; read by
-    # endpoint_recovery via config.get with the TUNING_POLICY value as fallback.
-    "endpoint_floor_wall_s",
+    # Optional per-cell RUN-total STEP budget for the 5u endpoint target floor
+    # (the endpoint_steps ledger); read by endpoint_recovery via config.get
+    # with the TUNING_POLICY value as fallback. Steps, never wall seconds.
+    "endpoint_floor_steps",
 }
 
 

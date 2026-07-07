@@ -1,21 +1,20 @@
-"""The run-scoped endpoint wall ledger: one wall budget shared by every armed
-endpoint stage.
+"""The run-scoped endpoint STEP ledger: one training-step budget shared by every
+armed endpoint stage.
 
-Item-1's entry-gap arming made every gapped endpoint train up to the wall cap;
-with per-stage caps a mixer run burns cap x N stages (measured 380-540 s
-artifact walls). The ledger makes ``endpoint_floor_wall_s`` the RUN total:
-each armed stage gets what remains, and an exhausted budget falls back to the
-default patience geometry (cheap stop, keep-best intact).
+Reproducibility contract: training budgets are denominated in optimizer steps,
+never wall seconds — identical configs train identical step counts on any
+hardware (same config + same seed => same step trajectory, modulo GPU
+nondeterminism). Wall time is a pure measurement evaluated at harvest. The
+ledger makes ``endpoint_floor_steps`` the RUN total: each armed stage gets what
+remains, and an exhausted budget falls back to the default patience geometry
+(cheap stop, keep-best intact).
 """
 
 from __future__ import annotations
 
-import pytest
-import torch
-
 from conftest import MockPipeline
 from mimarsinan.tuning.orchestration import dhat_highwater, endpoint_recovery
-from mimarsinan.tuning.orchestration import endpoint_wall
+from mimarsinan.tuning.orchestration import endpoint_steps
 from mimarsinan.tuning.orchestration.endpoint_recovery import run_endpoint_recovery
 from mimarsinan.tuning.orchestration.recovery_engine import RecoveryEngine
 
@@ -23,23 +22,23 @@ from mimarsinan.tuning.orchestration.recovery_engine import RecoveryEngine
 class TestLedger:
     def test_fresh_pipeline_has_zero_consumed(self):
         pipeline = MockPipeline()
-        assert endpoint_wall.consumed(pipeline) == 0.0
+        assert endpoint_steps.consumed(pipeline) == 0
 
     def test_consume_accumulates(self):
         pipeline = MockPipeline()
-        endpoint_wall.consume(pipeline, 40.0)
-        endpoint_wall.consume(pipeline, 25.5)
-        assert endpoint_wall.consumed(pipeline) == pytest.approx(65.5)
+        endpoint_steps.consume(pipeline, 4000)
+        endpoint_steps.consume(pipeline, 2550)
+        assert endpoint_steps.consumed(pipeline) == 6550
 
     def test_remaining_floors_at_zero(self):
         pipeline = MockPipeline()
-        endpoint_wall.consume(pipeline, 200.0)
-        assert endpoint_wall.remaining(pipeline, 150.0) == 0.0
+        endpoint_steps.consume(pipeline, 20000)
+        assert endpoint_steps.remaining(pipeline, 16000) == 0
 
     def test_negative_consumption_is_ignored(self):
         pipeline = MockPipeline()
-        endpoint_wall.consume(pipeline, -5.0)
-        assert endpoint_wall.consumed(pipeline) == 0.0
+        endpoint_steps.consume(pipeline, -5)
+        assert endpoint_steps.consumed(pipeline) == 0
 
 
 class TestEndpointStagesShareTheBudget:
@@ -67,7 +66,7 @@ class TestEndpointStagesShareTheBudget:
             adaptation_manager=AdaptationManager(),
         )
 
-    def _drive(self, tuner, monkeypatch, *, clock, elapsed_per_call,
+    def _drive(self, tuner, monkeypatch, *, base_steps=12000, steps_trained=None,
                entry=0.095, highwater=0.9937):
         tuner._phase_seconds = {}
         tuner._mbh_rung_index = -1
@@ -83,63 +82,68 @@ class TestEndpointStagesShareTheBudget:
 
         def fake_train(trainer, lr, target, *, max_steps, **kwargs):
             seen.update(kwargs, max_steps=max_steps, lr=lr)
-            clock[0] += elapsed_per_call
-            return entry + 0.01, 9
+            used = max_steps if steps_trained is None else steps_trained
+            return entry + 0.01, used
 
         monkeypatch.setattr(
             RecoveryEngine, "train_to_target", staticmethod(fake_train),
         )
-        monkeypatch.setattr(
-            endpoint_recovery, "_monotonic", lambda: clock[0],
+        report = run_endpoint_recovery(
+            tuner, base_steps=base_steps, target_floor=0.98,
         )
-        report = run_endpoint_recovery(tuner, base_steps=100, target_floor=0.98)
         return report, seen
 
-    def test_successive_stages_get_the_remaining_budget(
+    def test_successive_stages_get_the_remaining_step_budget(
         self, tmp_path, monkeypatch,
     ):
         tuner = self._make_tuner(tmp_path)
-        clock = [1000.0]
         try:
-            _, seen1 = self._drive(
-                tuner, monkeypatch, clock=clock, elapsed_per_call=100.0,
-            )
-            assert seen1["max_seconds"] == pytest.approx(150.0)
-            # Overruns past the cap (checkpoint-granularity) are consumed too.
-            _, seen2 = self._drive(
-                tuner, monkeypatch, clock=clock, elapsed_per_call=60.0,
-            )
-            assert seen2["max_seconds"] == pytest.approx(50.0)
+            # Stage 1: a 12k stage budget fits inside the 16k default ledger.
+            report1, seen1 = self._drive(tuner, monkeypatch, base_steps=12000)
+            assert seen1["max_steps"] == 12000
+            assert seen1["min_steps"] == 12000
+            assert endpoint_steps.consumed(tuner.pipeline) == 12000
+            assert report1.budget_steps == 12000
+            # Stage 2: only 4,000 ledger steps remain; the stage budget clamps.
+            report2, seen2 = self._drive(tuner, monkeypatch, base_steps=12000)
+            assert seen2["max_steps"] == 4000
+            assert seen2["min_steps"] == 4000
+            assert report2.budget_steps == 4000
+            # Stage 3: ledger exhausted — fall back to the default patience
+            # geometry (cheap stop) instead of burning another full budget.
             report3, seen3 = self._drive(
-                tuner, monkeypatch, clock=clock, elapsed_per_call=1.0,
+                tuner, monkeypatch, base_steps=12000, steps_trained=9,
             )
-            # Budget exhausted: the stage falls back to the default patience
-            # geometry (cheap stop) instead of burning another cap.
-            assert seen3["max_seconds"] is None
             assert seen3["min_steps"] == 0
+            assert seen3["max_steps"] == 12000
             assert report3.entry_gap_armed is True
         finally:
             tuner.close()
 
     def test_config_total_still_overrides(self, tmp_path, monkeypatch):
         tuner = self._make_tuner(tmp_path)
-        tuner.pipeline.config["endpoint_floor_wall_s"] = 600.0
-        clock = [0.0]
+        tuner.pipeline.config["endpoint_floor_steps"] = 20000
         try:
-            _, seen1 = self._drive(
-                tuner, monkeypatch, clock=clock, elapsed_per_call=250.0,
-            )
-            assert seen1["max_seconds"] == pytest.approx(600.0)
-            _, seen2 = self._drive(
-                tuner, monkeypatch, clock=clock, elapsed_per_call=10.0,
-            )
-            assert seen2["max_seconds"] == pytest.approx(350.0)
+            _, seen1 = self._drive(tuner, monkeypatch, base_steps=16000)
+            assert seen1["max_steps"] == 16000
+            _, seen2 = self._drive(tuner, monkeypatch, base_steps=16000)
+            assert seen2["max_steps"] == 4000
+        finally:
+            tuner.close()
+
+    def test_consumption_is_the_steps_actually_trained(self, tmp_path, monkeypatch):
+        tuner = self._make_tuner(tmp_path)
+        try:
+            # An early target-reach stop consumes only the steps it trained.
+            self._drive(tuner, monkeypatch, base_steps=12000, steps_trained=926)
+            assert endpoint_steps.consumed(tuner.pipeline) == 926
+            _, seen2 = self._drive(tuner, monkeypatch, base_steps=16000)
+            assert seen2["max_steps"] == 16000 - 926
         finally:
             tuner.close()
 
     def test_untrained_stage_consumes_nothing(self, tmp_path, monkeypatch):
         tuner = self._make_tuner(tmp_path)
-        clock = [0.0]
         try:
             tuner._phase_seconds = {}
             tuner._mbh_rung_index = -1
@@ -152,6 +156,6 @@ class TestEndpointStagesShareTheBudget:
             )
             report = run_endpoint_recovery(tuner, base_steps=100)
             assert report.engaged is False
-            assert endpoint_wall.consumed(tuner.pipeline) == 0.0
+            assert endpoint_steps.consumed(tuner.pipeline) == 0
         finally:
             tuner.close()
