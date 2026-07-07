@@ -47,6 +47,25 @@ def _decisions(model, batches, device):
     return [model(x.to(device)).argmax(-1).cpu() for x in batches]
 
 
+def _apply_decision_verified(perceptron, model, batches, device, reference, apply) -> bool:
+    """Run ``apply()`` and verify decision-invariance on the calibration batches;
+    any flip restores the perceptron's weight/bias/normalization state exactly.
+    Returns True when the change is kept."""
+    snapshot = (
+        perceptron.layer.weight.data.clone(),
+        perceptron.layer.bias.data.clone(),
+        {k: v.clone() for k, v in perceptron.normalization.state_dict().items()},
+    )
+    apply()
+    verified = _decisions(model, batches, device)
+    if all(torch.equal(a, b) for a, b in zip(reference, verified)):
+        return True
+    perceptron.layer.weight.data.copy_(snapshot[0])
+    perceptron.layer.bias.data.copy_(snapshot[1])
+    perceptron.normalization.load_state_dict(snapshot[2])
+    return False
+
+
 def canonicalize_starved_bias_outliers(
     model,
     calibration_batches,
@@ -96,10 +115,6 @@ def canonicalize_starved_bias_outliers(
                 continue
             lo: torch.Tensor = v_min
             hi: torch.Tensor = v_max
-            snapshot = (
-                perceptron.layer.bias.data.clone(),
-                {k: v.clone() for k, v in perceptron.normalization.state_dict().items()},
-            )
 
             # The pre-activation range is in the RAW (theta) domain while the
             # transform runs in the effective (normalized) domain: the clamp
@@ -124,11 +139,13 @@ def canonicalize_starved_bias_outliers(
                 moved = int((delta.abs() > 0).sum())
                 return effective_bias + delta
 
-            transformer.apply_effective_bias_transform(perceptron, shift)
+            kept = _apply_decision_verified(
+                perceptron, model, batches, device, reference,
+                lambda: transformer.apply_effective_bias_transform(perceptron, shift),
+            )
             if moved == 0:
                 continue
-            verified = _decisions(model, batches, device)
-            if all(torch.equal(a, b) for a, b in zip(reference, verified)):
+            if kept:
                 report["clipped"] += moved
                 print(
                     f"[BiasSaturation] {getattr(perceptron, 'name', '<unnamed>')}: "
@@ -136,8 +153,6 @@ def canonicalize_starved_bias_outliers(
                     "outlier(s) (decision agreement verified)"
                 )
             else:
-                perceptron.layer.bias.data.copy_(snapshot[0])
-                perceptron.normalization.load_state_dict(snapshot[1])
                 report["restored"] += 1
                 print(
                     f"[BiasSaturation] {getattr(perceptron, 'name', '<unnamed>')}: "
@@ -173,21 +188,19 @@ def _remove_nuisance_grid_dominators(
         c = int(b.abs().argmax())
         if float(b.abs()[c]) <= w_max:
             return
-        snapshot = (
-            perceptron.layer.weight.data.clone(),
-            perceptron.layer.bias.data.clone(),
-            {k: v.clone() for k, v in perceptron.normalization.state_dict().items()},
-        )
 
         def zero_channel(t, c=c):
             out = t.clone()
             out[c] = 0.0
             return out
 
-        transformer.apply_effective_weight_transform(perceptron, zero_channel)
-        transformer.apply_effective_bias_transform(perceptron, zero_channel)
-        verified = _decisions(model, batches, device)
-        if all(torch.equal(a, v) for a, v in zip(reference, verified)):
+        def remove_channel(zero_channel=zero_channel):
+            transformer.apply_effective_weight_transform(perceptron, zero_channel)
+            transformer.apply_effective_bias_transform(perceptron, zero_channel)
+
+        if _apply_decision_verified(
+            perceptron, model, batches, device, reference, remove_channel,
+        ):
             report["removed"] += 1
             print(
                 f"[BiasSaturation] {getattr(perceptron, 'name', '<unnamed>')}: "
@@ -195,9 +208,6 @@ def _remove_nuisance_grid_dominators(
                 "(decision agreement verified)"
             )
         else:
-            perceptron.layer.weight.data.copy_(snapshot[0])
-            perceptron.layer.bias.data.copy_(snapshot[1])
-            perceptron.normalization.load_state_dict(snapshot[2])
             report["removal_restored"] += 1
             print(
                 f"[BiasSaturation] {getattr(perceptron, 'name', '<unnamed>')}: "
