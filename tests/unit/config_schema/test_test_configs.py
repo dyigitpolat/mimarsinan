@@ -330,20 +330,39 @@ class TestM1MixerE4Respec:
 
 
 class TestM2ConversionDraws:
-    """M2 (2026-07-07, user-approved): mixer cells run best-of-3
-    D-hat-selected conversion draws (deterministic: draw seeds = seed + k);
-    every other cell stays single-draw (the knob is absent = default 1)."""
+    """M2 + FAST respec (2026-07-08): draws only where the draw distribution
+    measurably crosses the bar — sync mixers run best-of-2; every other cell
+    is single-draw (casc's ceiling is physical, lif/ttfsq spreads sub-pp)."""
 
-    def test_mixer_cells_run_three_draws_and_others_none(self):
+    def test_sync_mixers_run_two_draws_and_others_none(self):
         for tier in (0, "0_1"):
             for run in _manifest(tier)["runs"]:
                 dp = json.loads(
                     (TEST_CONFIGS / f"tier{tier}" / run["config"]).read_text()
                 )["deployment_parameters"]
-                if "mmixcore" in run["name"]:
-                    assert dp["conversion_draws"] == 3, run["name"]
+                if "mmixcore" in run["name"] and "sync" in run["name"]:
+                    assert dp["conversion_draws"] == 2, run["name"]
                 else:
                     assert "conversion_draws" not in dp, run["name"]
+
+    def test_wq_endpoint_caps_follow_the_pass_by_floor_evidence(self):
+        # FAST respec: the 16k recipe floor stays only for ttfs/sync mixers
+        # (the families that measurably pass by the climb); every other WQ
+        # cell caps at 2000 (2x the largest measured healthy reach; lif/casc
+        # mixer ceilings sit below the floor target, so grinding cannot pass).
+        for tier in (0, "0_1"):
+            for run in _manifest(tier)["runs"]:
+                dp = json.loads(
+                    (TEST_CONFIGS / f"tier{tier}" / run["config"]).read_text()
+                )["deployment_parameters"]
+                wq = dp["weight_quantization"]
+                floor_family = "mmixcore" in run["name"] and (
+                    "ttfs_mmixcore" in run["name"] or "sync_mmixcore" in run["name"]
+                )
+                if wq and not floor_family:
+                    assert dp["wq_endpoint_recovery_steps"] == 2000, run["name"]
+                else:
+                    assert "wq_endpoint_recovery_steps" not in dp, run["name"]
 
 
 def _flatten(node, prefix=""):
@@ -524,7 +543,7 @@ class TestTier01DiagnosticMatrix:
                 )
 
     def test_endpoint_step_budgets_follow_the_mode_arithmetic(self):
-        # Spot checks: budget == BASE + mode extra (lif 2x1560 for the LIF and
+        # Spot checks: budget == BASE + mode extra (lif 2x600 for the LIF and
         # AQ endpoints; casc 2x600 for the TTFS-cycle and AQ endpoints; sync
         # 600 for the AQ endpoint; ttfs/ttfsq have no intermediate endpoint).
         gen = _generator()
@@ -532,7 +551,7 @@ class TestTier01DiagnosticMatrix:
 
         assert self._load(
             0, "t0_03_lif_deepcnn_d8_wq_s16_sched",
-        )["deployment_parameters"]["endpoint_floor_steps"] == base + 2 * 1560
+        )["deployment_parameters"]["endpoint_floor_steps"] == base + 2 * 600
         assert self._load(
             0, "t0_12_ttfsq_lenet5_wq_s32",
         )["deployment_parameters"]["endpoint_floor_steps"] == base

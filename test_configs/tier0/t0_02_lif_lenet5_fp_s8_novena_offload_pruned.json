@@ -51,7 +51,7 @@
     "weight_quantization": false,
     "pruning": true,
     "pruning_fraction": 0.5,
-    "endpoint_floor_steps": 19120,
+    "endpoint_floor_steps": 17200,
     "training_epochs": 2,
     "training_recipe": {
       "optimizer": "adamw",

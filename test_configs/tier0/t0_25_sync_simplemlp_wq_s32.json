@@ -52,6 +52,7 @@
     "weight_quantization": true,
     "ttfs_cycle_schedule": "synchronized",
     "endpoint_floor_steps": 16600,
+    "wq_endpoint_recovery_steps": 2000,
     "training_epochs": 2,
     "training_recipe": {
       "optimizer": "adamw",

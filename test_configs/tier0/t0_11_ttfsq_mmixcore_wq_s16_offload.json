@@ -55,7 +55,7 @@
     "encoding_layer_placement": "offload",
     "weight_quantization": true,
     "endpoint_floor_steps": 16000,
-    "conversion_draws": 3,
+    "wq_endpoint_recovery_steps": 2000,
     "training_epochs": 4,
     "training_recipe": {
       "optimizer": "adamw",

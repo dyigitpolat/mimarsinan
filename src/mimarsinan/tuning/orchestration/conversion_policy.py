@@ -44,9 +44,11 @@ _WELL_CONDITIONED_ENDPOINT_FLOOR_KNOBS = {
 _LIF_RECIPE_KNOBS = {
     "lif_blend_fast": True,
     "lif_tanneal": True,
-    # P1'' budget: the dropped inert Clamp/AQ ladders (2 x 4 x 120) plus the
-    # retired 600-step post-finalize stabilize.
-    "endpoint_recovery_steps": 1560,
+    # P1'' budget, convergence-grounded (FAST respec 2026-07-08): healthy
+    # endpoint reaches measure 250-930 steps; 600 = the shared endpoint cap
+    # (the old 1560 was ladder-accounting, not convergence, and each armed
+    # step pays the O(S) cycle-accurate LIF forward).
+    "endpoint_recovery_steps": 600,
     "cycle_accurate_lif_forward": True,
     "fast_ladder_freeze_bn": True,
     "kd_ce_alpha": 0.5,

@@ -105,7 +105,7 @@ def _quant_axis(row):
 # shave the WQ floor by at most one planned ladder (bounded, deterministic).
 ENDPOINT_FLOOR_STEPS_BASE = 16000
 ENDPOINT_MODE_EXTRA_STEPS = {
-    "lif": 2 * 1560,
+    "lif": 2 * 600,
     "casc": 2 * 600,
     "sync": 600,
 }
@@ -499,12 +499,28 @@ def _deployment(tier, row, vehicles, dataset):
         dp["pruning_fraction"] = row["pruned"]
     if tier == 0:
         dp["endpoint_floor_steps"] = _endpoint_floor_steps(row)
-        if row["vehicle"] == "mmixcore":
-            # [MBH-DRAWS] the mixer column's conversion quality is a measured
-            # high-variance distribution whose upper tail crosses the bar
-            # (0.9711/0.99 artifacts): best-of-3 D-hat-selected draws on the
-            # variance-carrying stages; deterministic (draw seeds = seed + k).
-            dp["conversion_draws"] = 3
+        can_pass_by_floor = (
+            row["vehicle"] == "mmixcore" and row["mode"] in ("ttfs", "sync")
+        )
+        if quant["weight_quantization"] and not can_pass_by_floor:
+            # FAST respec 2026-07-08: the 16k floor stays ONLY where the
+            # family measurably passes by the climb (ttfs mixers 0.9722-0.9748,
+            # sync mixers at-bar). Non-mixer endpoints reach/flatten in
+            # 250-930 steps, and the lif (0.947 envelope ceiling) and casc
+            # (0.88-0.91 kernel ceiling) mixer families cannot reach 0.97 by
+            # grinding — their floor target is above the family ceiling, so
+            # the cap was the de-facto budget. Cap = ~2x the largest healthy
+            # reach; accuracy on capped families is owned by draws/respec,
+            # not wall.
+            dp["wq_endpoint_recovery_steps"] = 2000
+        if row["vehicle"] == "mmixcore" and row["mode"] == "sync":
+            # [MBH-DRAWS] FAST respec 2026-07-08: draws only where the draw
+            # distribution measurably crosses the bar — the sync mixer family
+            # (full-budget singles read 0.944-0.968 around the 0.97 bar).
+            # casc's ceiling is physical (0.88-0.91: selection cannot reach
+            # the bar) and lif/ttfsq spreads are sub-pp; those families pay
+            # walls without pass probability, so they stay single-draw.
+            dp["conversion_draws"] = 2
     if "tuning_batch_size" in v:
         dp["tuning_batch_size"] = v["tuning_batch_size"]
     if "preprocessing" in v:
@@ -573,6 +589,12 @@ COVERAGE_NOTES = {
         "trains 4 pretrain epochs (evidence t01_07: e4 + full floor passed "
         "0.9712 dedicated — envelope and training budget jointly binding on "
         "the mixer column).",
+        "FAST respec 2026-07-08 (user-directed, <5 min clean / 5-10 min "
+        "soft / >15 min invalid): lif endpoint cap 1560 -> 600 "
+        "(convergence-grounded; healthy reaches 250-930 steps), non-mixer "
+        "WQ endpoint cap 2000, draws only for the sync mixer family "
+        "(best-of-2; the one family whose draw distribution crosses the "
+        "bar), target-reach confirmation + fresh-run ledger reset.",
         "M2 conversion-draws 2026-07-07 (user-approved): mmixcore cells run "
         "best-of-3 D-hat-selected conversion draws on the variance-carrying "
         "stages (LIF/TTFS-cycle/AQ), torch RNG streams seed+k — the search "
