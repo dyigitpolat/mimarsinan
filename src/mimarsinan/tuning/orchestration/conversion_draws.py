@@ -8,17 +8,8 @@ from typing import Any, Callable
 
 import torch
 
-from mimarsinan.tuning.orchestration import dhat_highwater, endpoint_steps
+from mimarsinan.tuning.orchestration import run_ledger
 from mimarsinan.tuning.orchestration.mbh_ledger import fp32_deployed_read
-
-# Run-ledger cache scope each draw must enter fresh (and the kept draw's exit
-# scope is what persists): the D-hat high-water anchor and the endpoint step
-# ledger — otherwise draw k+1's targets/budgets would ride draw k's trajectory
-# and the draws would not be independent.
-_DRAW_SCOPED_CACHE_KEYS = (
-    dhat_highwater.HIGHWATER_CACHE_KEY,
-    endpoint_steps.STEPS_CACHE_KEY,
-)
 
 
 def configured_draws(pipeline) -> int:
@@ -40,27 +31,6 @@ def _seed_draw(base_seed: int, index: int) -> None:
     torch.manual_seed(base_seed + index)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(base_seed + index)
-
-
-def _cache_snapshot(cache) -> dict:
-    return {key: cache.get(key) for key in _DRAW_SCOPED_CACHE_KEYS}
-
-
-def _cache_restore(cache, snapshot: dict) -> None:
-    # PipelineCache exposes add/remove; the test pipelines carry plain dicts.
-    for key, value in snapshot.items():
-        if value is None:
-            remove = getattr(cache, "remove", None)
-            if remove is not None:
-                remove(key)
-            else:
-                cache.pop(key, None)
-        else:
-            add = getattr(cache, "add", None)
-            if add is not None:
-                add(key, value)
-            else:
-                cache[key] = value
 
 
 def run_conversion_draws(
@@ -97,11 +67,14 @@ def run_conversion_draws(
         return tuner, model, adaptation_manager
 
     base_seed = int(pipeline.config.get("seed", 0))
-    entry_cache = _cache_snapshot(pipeline.cache)
+    # Each draw enters the run-scoped ledger scope fresh (and the kept draw's
+    # exit scope is what persists) — otherwise draw k+1's targets/budgets would
+    # ride draw k's trajectory and the draws would not be independent.
+    entry_cache = run_ledger.snapshot(pipeline.cache)
     best: _Draw | None = None
     last_error: Exception | None = None
     for k in range(n):
-        _cache_restore(pipeline.cache, entry_cache)
+        run_ledger.restore(pipeline.cache, entry_cache)
         _seed_draw(base_seed, k)
         draw_model, draw_manager = copy.deepcopy((model, adaptation_manager))
         tuner = build(draw_model, draw_manager)
@@ -124,7 +97,7 @@ def run_conversion_draws(
                 best.tuner.close()
             best = _Draw(
                 k, tuner, draw_model, draw_manager, dhat,
-                _cache_snapshot(pipeline.cache),
+                run_ledger.snapshot(pipeline.cache),
             )
         else:
             tuner.close()
@@ -138,7 +111,7 @@ def run_conversion_draws(
     if best is None:
         assert last_error is not None
         raise last_error
-    _cache_restore(pipeline.cache, best.post_cache)
+    run_ledger.restore(pipeline.cache, best.post_cache)
     print(
         f"[MBH-DRAWS] selected k={best.index} full_acc={best.dhat:.6f} n={n}",
         flush=True,

@@ -4,7 +4,7 @@ import time as _time
 
 import torch
 
-from mimarsinan.tuning.orchestration import dhat_highwater, endpoint_steps
+from mimarsinan.tuning.orchestration import run_ledger
 from mimarsinan.pipelining.core.accuracy_budget import (
     AccuracyBudget,
     PretrainEnvelopeError,
@@ -73,8 +73,7 @@ class Pipeline:
         state from a reused cache directory (a stale exhausted endpoint-step
         ledger silently demotes armed floors to the patience geometry);
         ``run_from`` keeps them — resumption continues the same run."""
-        self.cache.remove(endpoint_steps.STEPS_CACHE_KEY)
-        self.cache.remove(dhat_highwater.HIGHWATER_CACHE_KEY)
+        run_ledger.reset(self.cache)
 
     def run(self, *, stop_step: str | None = None):
         self.set_up_requirements()

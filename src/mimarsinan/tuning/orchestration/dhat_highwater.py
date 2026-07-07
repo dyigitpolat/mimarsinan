@@ -2,16 +2,10 @@
 
 from __future__ import annotations
 
-HIGHWATER_CACHE_KEY = "__mbh_dhat_highwater"
-
-
-def _cache_write(cache, value: float) -> None:
-    # PipelineCache exposes ``add``; the test MockPipeline cache is a plain dict.
-    add = getattr(cache, "add", None)
-    if add is not None:
-        add(HIGHWATER_CACHE_KEY, float(value))
-    else:
-        cache[HIGHWATER_CACHE_KEY] = float(value)
+from mimarsinan.tuning.orchestration.run_ledger import (
+    HIGHWATER_CACHE_KEY as HIGHWATER_CACHE_KEY,
+    cache_write,
+)
 
 
 def peek(pipeline) -> float | None:
@@ -29,7 +23,7 @@ def observe(pipeline, dhat: float) -> float:
     current = peek(pipeline)
     value = float(dhat)
     if current is None or value > current:
-        _cache_write(pipeline.cache, value)
+        cache_write(pipeline.cache, HIGHWATER_CACHE_KEY, value)
         return value
     return current
 
