@@ -20,7 +20,7 @@ import torch.nn as nn
 
 from mimarsinan.models.nn.activations.autograd import LeakyGradReLU
 from mimarsinan.models.perceptron_mixer.perceptron import Perceptron
-from mimarsinan.transformations.bias_saturation import (
+from mimarsinan.transformations.perceptron.bias_saturation import (
     clip_off_saturated_effective_bias,
     off_saturation_bias_bound,
 )
@@ -160,7 +160,7 @@ class TestEmpiricalBiasBounds:
     (margin-guarded); never grow |b|, never flip its sign."""
 
     def test_empirically_on_channel_shrinks_to_observed_slack(self):
-        from mimarsinan.transformations.bias_saturation import (
+        from mimarsinan.transformations.perceptron.bias_saturation import (
             empirical_bias_shift,
         )
 
@@ -172,7 +172,7 @@ class TestEmpiricalBiasBounds:
         assert float(v_min + delta) >= 1.0
 
     def test_empirically_off_channel_shrinks_toward_zero(self):
-        from mimarsinan.transformations.bias_saturation import (
+        from mimarsinan.transformations.perceptron.bias_saturation import (
             empirical_bias_shift,
         )
 
@@ -184,7 +184,7 @@ class TestEmpiricalBiasBounds:
         assert float(v_max + delta) <= 0.0
 
     def test_unsaturated_channel_is_untouched(self):
-        from mimarsinan.transformations.bias_saturation import (
+        from mimarsinan.transformations.perceptron.bias_saturation import (
             empirical_bias_shift,
         )
 
@@ -195,7 +195,7 @@ class TestEmpiricalBiasBounds:
         assert torch.equal(delta, torch.zeros(1))
 
     def test_never_grows_the_bias(self):
-        from mimarsinan.transformations.bias_saturation import (
+        from mimarsinan.transformations.perceptron.bias_saturation import (
             empirical_bias_shift,
         )
 
@@ -207,7 +207,7 @@ class TestEmpiricalBiasBounds:
         assert torch.equal(delta, torch.zeros(1))
 
     def test_never_flips_the_sign(self):
-        from mimarsinan.transformations.bias_saturation import (
+        from mimarsinan.transformations.perceptron.bias_saturation import (
             empirical_bias_shift,
         )
 
@@ -258,7 +258,7 @@ class TestGuardedCanonicalization:
         return _Chain().eval()
 
     def test_empirically_on_outlier_is_shrunk_and_verified(self):
-        from mimarsinan.transformations.bias_saturation import (
+        from mimarsinan.transformations.perceptron.bias_canonicalization import (
             canonicalize_starved_bias_outliers,
         )
 
@@ -282,7 +282,7 @@ class TestGuardedCanonicalization:
             assert torch.equal(x, y)
 
     def test_grid_step_is_refined_by_an_order_of_magnitude(self):
-        from mimarsinan.transformations.bias_saturation import (
+        from mimarsinan.transformations.perceptron.bias_canonicalization import (
             canonicalize_starved_bias_outliers,
         )
 
@@ -298,7 +298,7 @@ class TestGuardedCanonicalization:
         assert float(b.max()) < 2.0, float(b.max())
 
     def test_healthy_perceptrons_are_not_touched(self):
-        from mimarsinan.transformations.bias_saturation import (
+        from mimarsinan.transformations.perceptron.bias_canonicalization import (
             canonicalize_starved_bias_outliers,
         )
 
@@ -346,7 +346,7 @@ class TestGuardedCanonicalization:
         return _Chain().eval()
 
     def test_wild_nuisance_channel_is_removed_when_decision_invariant(self):
-        from mimarsinan.transformations.bias_saturation import (
+        from mimarsinan.transformations.perceptron.bias_canonicalization import (
             canonicalize_starved_bias_outliers,
         )
 
@@ -370,7 +370,7 @@ class TestGuardedCanonicalization:
             assert torch.equal(x, y)
 
     def test_decision_relevant_wild_channel_is_restored(self):
-        from mimarsinan.transformations.bias_saturation import (
+        from mimarsinan.transformations.perceptron.bias_canonicalization import (
             canonicalize_starved_bias_outliers,
         )
 
@@ -389,7 +389,7 @@ class TestGuardedCanonicalization:
         assert torch.allclose(p1.layer.weight.data[2], w_before[2])
 
     def test_decision_flip_restores_the_perceptron(self, monkeypatch):
-        from mimarsinan.transformations import bias_saturation
+        from mimarsinan.transformations.perceptron import bias_canonicalization
 
         model = self._chain(seed=8)
         p1 = model.get_perceptrons()[0]
@@ -397,12 +397,12 @@ class TestGuardedCanonicalization:
         b_before = p1.layer.bias.data.clone()
         # Force a saturation-breaking shift so the guard must fire.
         monkeypatch.setattr(
-            bias_saturation, "empirical_bias_shift",
+            bias_canonicalization, "empirical_bias_shift",
             lambda b, vmin, vmax, *, ceiling, margin: torch.where(
                 b.abs() > 10.0, -b, torch.zeros_like(b),
             ),
         )
-        report = bias_saturation.canonicalize_starved_bias_outliers(
+        report = bias_canonicalization.canonicalize_starved_bias_outliers(
             model, [torch.rand(64, 8)], bits=4,
         )
         assert report["restored"] >= 1

@@ -50,7 +50,7 @@ class TestRateAwareQuantization:
         # Canonicalize first: transform() clips constant-OFF saturated bias
         # (function-preserving) at every rate before deriving the scale, so
         # rate=0 identity holds on the canonicalized parameter content.
-        from mimarsinan.transformations.bias_saturation import (
+        from mimarsinan.transformations.perceptron.bias_saturation import (
             clip_off_saturated_effective_bias,
         )
 

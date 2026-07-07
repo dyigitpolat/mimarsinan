@@ -1,6 +1,6 @@
 from mimarsinan.transformations.transformation_utils import *
 
-from mimarsinan.transformations.bias_saturation import (
+from mimarsinan.transformations.perceptron.bias_saturation import (
     clip_off_saturated_effective_bias,
 )
 from mimarsinan.transformations.perceptron.perceptron_transformer import PerceptronTransformer

@@ -11,7 +11,7 @@ from mimarsinan.pipelining.core.registry.trainer_factory import make_basic_train
 from mimarsinan.pipelining.core.steps.tuner_pipeline_step import TunerPipelineStep
 from mimarsinan.mapping.support.per_source_scales import compute_per_source_scales
 from mimarsinan.models.nn.layers import FrozenStatsNormalization
-from mimarsinan.transformations.bias_saturation import (
+from mimarsinan.transformations.perceptron.bias_canonicalization import (
     canonicalize_starved_bias_outliers,
 )
 from mimarsinan.tuning.tuners.normalization_aware_perceptron_quantization_tuner import (
