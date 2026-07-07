@@ -33,6 +33,16 @@ def fp32_eval_forward_over_val(trainer, forward_obj, model, n_batches, device) -
         return eval_forward_over_val(trainer, forward_obj, model, n_batches, device)
 
 
+def fp32_deployed_read(tuner) -> float:
+    """fp32 accuracy of a tuner's LIVE model (the deployed composition) over its
+    eval batches — like-for-like with the gate's D-hat reads."""
+    device = tuner.pipeline.config["device"]
+    return float(fp32_eval_forward_over_val(
+        tuner.trainer, tuner.model, tuner.model,
+        tuner._budget.eval_n_batches, device,
+    ))
+
+
 @contextlib.contextmanager
 def _measurement_guard(trainer):
     """Isolation for every MBH measurement: fork the RNG (CUDA included) and

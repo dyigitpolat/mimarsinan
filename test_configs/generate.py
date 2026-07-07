@@ -499,6 +499,12 @@ def _deployment(tier, row, vehicles, dataset):
         dp["pruning_fraction"] = row["pruned"]
     if tier == 0:
         dp["endpoint_floor_steps"] = _endpoint_floor_steps(row)
+        if row["vehicle"] == "mmixcore":
+            # [MBH-DRAWS] the mixer column's conversion quality is a measured
+            # high-variance distribution whose upper tail crosses the bar
+            # (0.9711/0.99 artifacts): best-of-3 D-hat-selected draws on the
+            # variance-carrying stages; deterministic (draw seeds = seed + k).
+            dp["conversion_draws"] = 3
     if "tuning_batch_size" in v:
         dp["tuning_batch_size"] = v["tuning_batch_size"]
     if "preprocessing" in v:
@@ -567,6 +573,11 @@ COVERAGE_NOTES = {
         "trains 4 pretrain epochs (evidence t01_07: e4 + full floor passed "
         "0.9712 dedicated — envelope and training budget jointly binding on "
         "the mixer column).",
+        "M2 conversion-draws 2026-07-07 (user-approved): mmixcore cells run "
+        "best-of-3 D-hat-selected conversion draws on the variance-carrying "
+        "stages (LIF/TTFS-cycle/AQ), torch RNG streams seed+k — the search "
+        "is deterministic given the config seed and selection can only "
+        "improve D-hat (each draw independently keep-best/entry-floored).",
         "Reproducibility respec 2026-07-07 (user-directed): training budgets "
         "are STEP-denominated — endpoint_floor_steps is the RUN-total step "
         "budget shared by armed endpoint stages (endpoint_steps ledger), "

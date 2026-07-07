@@ -329,6 +329,23 @@ class TestM1MixerE4Respec:
                 assert "t01_07" in run.get("note", ""), name
 
 
+class TestM2ConversionDraws:
+    """M2 (2026-07-07, user-approved): mixer cells run best-of-3
+    D-hat-selected conversion draws (deterministic: draw seeds = seed + k);
+    every other cell stays single-draw (the knob is absent = default 1)."""
+
+    def test_mixer_cells_run_three_draws_and_others_none(self):
+        for tier in (0, "0_1"):
+            for run in _manifest(tier)["runs"]:
+                dp = json.loads(
+                    (TEST_CONFIGS / f"tier{tier}" / run["config"]).read_text()
+                )["deployment_parameters"]
+                if "mmixcore" in run["name"]:
+                    assert dp["conversion_draws"] == 3, run["name"]
+                else:
+                    assert "conversion_draws" not in dp, run["name"]
+
+
 def _flatten(node, prefix=""):
     """Flatten a JSON tree into {dotted/indexed key-path: leaf value}."""
     if isinstance(node, dict):

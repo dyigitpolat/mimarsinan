@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from mimarsinan.tuning.orchestration import dhat_highwater, endpoint_steps
-from mimarsinan.tuning.orchestration.mbh_ledger import fp32_eval_forward_over_val
+from mimarsinan.tuning.orchestration.mbh_ledger import fp32_deployed_read
 from mimarsinan.tuning.orchestration.recovery_engine import RecoveryEngine
 from mimarsinan.tuning.orchestration.tuner_base import _RECOVERY_PATIENCE
 from mimarsinan.tuning.orchestration.tuning_policy import TUNING_POLICY
@@ -40,14 +40,9 @@ def freed_ladder_steps(tuner) -> int:
     return max(0, planned - used)
 
 
-def _fp32_deployed_read(tuner) -> float:
-    """fp32 accuracy of the LIVE model (the deployed composition at an endpoint)
-    over the tuner's eval batches — like-for-like with the gate's D-hat reads."""
-    device = tuner.pipeline.config["device"]
-    return float(fp32_eval_forward_over_val(
-        tuner.trainer, tuner.model, tuner.model,
-        tuner._budget.eval_n_batches, device,
-    ))
+# Module-level alias: tests monkeypatch this seam; the shared implementation
+# lives in mbh_ledger (also the [MBH-DRAWS] selection read).
+_fp32_deployed_read = fp32_deployed_read
 
 
 def run_endpoint_recovery(tuner, *, base_steps, target_floor=None) -> EndpointRecoveryReport:

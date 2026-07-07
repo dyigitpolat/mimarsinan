@@ -8,6 +8,9 @@ class LIFAdaptationStep(TunerPipelineStep):
     REQUIRES = ("model", "adaptation_manager")
     UPDATES = ("model", "adaptation_manager")
 
+    # [MBH-DRAWS] the LIF ramp+endpoint is a variance-carrying conversion stage.
+    DRAW_SELECTED = True
+
     @classmethod
     def applies_to(cls, plan):
         return plan.spiking_mode == "lif"

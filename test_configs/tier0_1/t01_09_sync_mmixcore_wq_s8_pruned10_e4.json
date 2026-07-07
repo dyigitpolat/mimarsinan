@@ -58,6 +58,7 @@
     "pruning": true,
     "pruning_fraction": 0.1,
     "endpoint_floor_steps": 16600,
+    "conversion_draws": 3,
     "training_epochs": 4,
     "training_recipe": {
       "optimizer": "adamw",

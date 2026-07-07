@@ -35,6 +35,10 @@ ALLOWLIST = {
     "search/optimizers/nsga2_optimizer.py": 1,
     "search/problems/joint/evaluate.py": 6,
     "search/problems/joint/validate.py": 5,
+    # [MBH-DRAWS] re-raising boundary: a failed conversion draw is a measured
+    # outcome (logged, workers released, independent redraw); the harness
+    # re-raises when EVERY draw failed - nothing degrades silently.
+    "tuning/orchestration/conversion_draws.py": 1,
     "torch_mapping/conversion_probe.py": 1,
     "torch_mapping/torch_graph_tracer.py": 2,
     "visualization/graphviz/common.py": 1,

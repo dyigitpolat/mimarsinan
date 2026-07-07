@@ -56,6 +56,7 @@
     "weight_quantization": true,
     "ttfs_cycle_schedule": "cascaded",
     "endpoint_floor_steps": 17200,
+    "conversion_draws": 3,
     "training_epochs": 4,
     "training_recipe": {
       "optimizer": "adamw",

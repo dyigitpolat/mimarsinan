@@ -177,6 +177,9 @@ CONFIG_KEYS_SET: Set[str] = {
     # (the endpoint_steps ledger); read by endpoint_recovery via config.get
     # with the TUNING_POLICY value as fallback. Steps, never wall seconds.
     "endpoint_floor_steps",
+    # [MBH-DRAWS] best-of-N conversion draws on the variance-carrying stages
+    # (default 1 = single-draw, bit-identical); draws seed torch at seed+k.
+    "conversion_draws",
 }
 
 
