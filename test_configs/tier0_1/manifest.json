@@ -1,0 +1,686 @@
+{
+  "tier": "0_1",
+  "dataset": "MNIST",
+  "wall_budget_minutes_per_run": 5,
+  "runs": [
+    {
+      "name": "t01_01_lif_mmixcore_wq_s8",
+      "config": "t01_01_lif_mmixcore_wq_s8.json",
+      "model_type": "mlp_mixer_core",
+      "cell": {
+        "firing": "lif",
+        "sync": "none",
+        "quantization": "wq_aq",
+        "S": "8",
+        "depth": "any",
+        "vehicle": "mlp_mixer_core",
+        "dataset": "mnist",
+        "regime": "from_scratch",
+        "pruning": "dense",
+        "encoding_placement": "subsume"
+      },
+      "tags": [],
+      "expected_wall_min": 12,
+      "family": "A",
+      "anchor": "t0_01_lif_mmixcore_wq_s4",
+      "axes_moved": [
+        "S: 4 -> 8"
+      ],
+      "hypothesis": "t0_01's binding failure is the T=4 window back-loading crater (frozen-weights NF 0.32@T4 -> 0.82@T8): at S=8 the entry crater clears and deployed reaches >= 0.97."
+    },
+    {
+      "name": "t01_02_lif_mmixcore_wq_s16",
+      "config": "t01_02_lif_mmixcore_wq_s16.json",
+      "model_type": "mlp_mixer_core",
+      "cell": {
+        "firing": "lif",
+        "sync": "none",
+        "quantization": "wq_aq",
+        "S": "16",
+        "depth": "any",
+        "vehicle": "mlp_mixer_core",
+        "dataset": "mnist",
+        "regime": "from_scratch",
+        "pruning": "dense",
+        "encoding_placement": "subsume"
+      },
+      "tags": [],
+      "expected_wall_min": 12,
+      "family": "A",
+      "anchor": "t0_01_lif_mmixcore_wq_s4",
+      "axes_moved": [
+        "S: 4 -> 16"
+      ],
+      "hypothesis": "Deployed accuracy is monotone along the T-healing curve (NF 0.90@T16 frozen-weights): S=16 lands at or above the S=8 read, isolating the temporal kernel from the envelope."
+    },
+    {
+      "name": "t01_03_casc_mmixcore_wq_s4_offload_sched_nobias",
+      "config": "t01_03_casc_mmixcore_wq_s4_offload_sched_nobias.json",
+      "model_type": "mlp_mixer_core",
+      "cell": {
+        "firing": "ttfs_cycle_based",
+        "sync": "cascaded",
+        "quantization": "wq_aq",
+        "S": "4",
+        "depth": "any",
+        "vehicle": "mlp_mixer_core",
+        "dataset": "mnist",
+        "regime": "from_scratch",
+        "pruning": "dense",
+        "encoding_placement": "offload"
+      },
+      "tags": [
+        "offload",
+        "sched",
+        "nobias"
+      ],
+      "expected_wall_min": 6,
+      "family": "A",
+      "anchor": "t0_16_casc_mmixcore_wq_s8_offload_sched_nobias",
+      "axes_moved": [
+        "S: 8 -> 4"
+      ],
+      "hypothesis": "Cascaded per-hop attenuation GROWS with S (genuine forward 0.57@S8 -> 0.31@S64 frozen-weights): at S=4 the conversion gap shrinks and deployed exceeds the anchor's ~0.90 ceiling."
+    },
+    {
+      "name": "t01_04_sync_mmixcore_wq_s16_pruned10",
+      "config": "t01_04_sync_mmixcore_wq_s16_pruned10.json",
+      "model_type": "mlp_mixer_core",
+      "cell": {
+        "firing": "ttfs_cycle_based",
+        "sync": "synchronized",
+        "quantization": "wq_aq",
+        "S": "16",
+        "depth": "any",
+        "vehicle": "mlp_mixer_core",
+        "dataset": "mnist",
+        "regime": "from_scratch",
+        "pruning": "pruned",
+        "encoding_placement": "subsume"
+      },
+      "tags": [
+        "pruned10"
+      ],
+      "expected_wall_min": 6,
+      "family": "A",
+      "anchor": "t0_21_sync_mmixcore_wq_s8_pruned10",
+      "axes_moved": [
+        "S: 8 -> 16"
+      ],
+      "hypothesis": "Sync level starvation shrinks with grid resolution (entry 0.10@S8 -> 0.19@S16 -> 0.69@S32 pre-fix-stack): at S=16 the fix stack plus WQ endpoint clear 0.97."
+    },
+    {
+      "name": "t01_05_sync_mmixcore_wq_s4_pruned10",
+      "config": "t01_05_sync_mmixcore_wq_s4_pruned10.json",
+      "model_type": "mlp_mixer_core",
+      "cell": {
+        "firing": "ttfs_cycle_based",
+        "sync": "synchronized",
+        "quantization": "wq_aq",
+        "S": "4",
+        "depth": "any",
+        "vehicle": "mlp_mixer_core",
+        "dataset": "mnist",
+        "regime": "from_scratch",
+        "pruning": "pruned",
+        "encoding_placement": "subsume"
+      },
+      "tags": [
+        "pruned10"
+      ],
+      "expected_wall_min": 6,
+      "family": "A",
+      "anchor": "t0_21_sync_mmixcore_wq_s8_pruned10",
+      "axes_moved": [
+        "S: 8 -> 4"
+      ],
+      "hypothesis": "At S=4 starvation deepens beyond the quantile+half-step+staging stack's recovery on the L=9 chain: deployed lands below the anchor's 0.9677 (the boundary probed from the failing side)."
+    },
+    {
+      "name": "t01_06_ttfsq_mmixcore_wq_s8_offload",
+      "config": "t01_06_ttfsq_mmixcore_wq_s8_offload.json",
+      "model_type": "mlp_mixer_core",
+      "cell": {
+        "firing": "ttfs_quantized",
+        "sync": "none",
+        "quantization": "wq_aq",
+        "S": "8",
+        "depth": "any",
+        "vehicle": "mlp_mixer_core",
+        "dataset": "mnist",
+        "regime": "from_scratch",
+        "pruning": "dense",
+        "encoding_placement": "offload"
+      },
+      "tags": [
+        "offload"
+      ],
+      "expected_wall_min": 6,
+      "family": "A",
+      "anchor": "t0_11_ttfsq_mmixcore_wq_s16_offload",
+      "axes_moved": [
+        "S: 16 -> 8"
+      ],
+      "hypothesis": "ttfsq's dense nearest-rounding install keeps per-hop error small at any resolution: halving S from 16 to 8 stays crater-free and passes - the install-resolution law's negative control."
+    },
+    {
+      "name": "t01_07_ttfs_mmixcore_wq_s8_e4",
+      "config": "t01_07_ttfs_mmixcore_wq_s8_e4.json",
+      "model_type": "mlp_mixer_core",
+      "cell": {
+        "firing": "ttfs",
+        "sync": "none",
+        "quantization": "wq",
+        "S": "8",
+        "depth": "any",
+        "vehicle": "mlp_mixer_core",
+        "dataset": "mnist",
+        "regime": "from_scratch",
+        "pruning": "dense",
+        "encoding_placement": "subsume"
+      },
+      "tags": [
+        "e4"
+      ],
+      "expected_wall_min": 10,
+      "family": "B",
+      "anchor": "t0_06_ttfs_mmixcore_wq_s8",
+      "axes_moved": [
+        "training_epochs: 2 -> 4"
+      ],
+      "hypothesis": "t0_06 is purely envelope-bound (conversion loss-free, ceiling 0.9711 at e2): 4-epoch pretrain lifts the envelope past 0.97 and the cell passes."
+    },
+    {
+      "name": "t01_08_lif_mmixcore_wq_s4_e4",
+      "config": "t01_08_lif_mmixcore_wq_s4_e4.json",
+      "model_type": "mlp_mixer_core",
+      "cell": {
+        "firing": "lif",
+        "sync": "none",
+        "quantization": "wq_aq",
+        "S": "4",
+        "depth": "any",
+        "vehicle": "mlp_mixer_core",
+        "dataset": "mnist",
+        "regime": "from_scratch",
+        "pruning": "dense",
+        "encoding_placement": "subsume"
+      },
+      "tags": [
+        "e4"
+      ],
+      "expected_wall_min": 16,
+      "family": "B",
+      "anchor": "t0_01_lif_mmixcore_wq_s4",
+      "axes_moved": [
+        "training_epochs: 2 -> 4"
+      ],
+      "hypothesis": "The 0.948 pretrain envelope, not the S=4 install crater, is t0_01's binding constraint: at 4 epochs the cell clears 0.97."
+    },
+    {
+      "name": "t01_09_sync_mmixcore_wq_s8_pruned10_e4",
+      "config": "t01_09_sync_mmixcore_wq_s8_pruned10_e4.json",
+      "model_type": "mlp_mixer_core",
+      "cell": {
+        "firing": "ttfs_cycle_based",
+        "sync": "synchronized",
+        "quantization": "wq_aq",
+        "S": "8",
+        "depth": "any",
+        "vehicle": "mlp_mixer_core",
+        "dataset": "mnist",
+        "regime": "from_scratch",
+        "pruning": "pruned",
+        "encoding_placement": "subsume"
+      },
+      "tags": [
+        "pruned10",
+        "e4"
+      ],
+      "expected_wall_min": 10,
+      "family": "B",
+      "anchor": "t0_21_sync_mmixcore_wq_s8_pruned10",
+      "axes_moved": [
+        "training_epochs: 2 -> 4"
+      ],
+      "hypothesis": "t0_21's residual gap is envelope+WQ, not conversion: at 4 epochs the float envelope rises above 0.9735 and the deployed near-miss (0.9677) converts to a pass."
+    },
+    {
+      "name": "t01_10_casc_mmixcore_wq_s8_offload_sched_nobias_e4",
+      "config": "t01_10_casc_mmixcore_wq_s8_offload_sched_nobias_e4.json",
+      "model_type": "mlp_mixer_core",
+      "cell": {
+        "firing": "ttfs_cycle_based",
+        "sync": "cascaded",
+        "quantization": "wq_aq",
+        "S": "8",
+        "depth": "any",
+        "vehicle": "mlp_mixer_core",
+        "dataset": "mnist",
+        "regime": "from_scratch",
+        "pruning": "dense",
+        "encoding_placement": "offload"
+      },
+      "tags": [
+        "offload",
+        "sched",
+        "nobias",
+        "e4"
+      ],
+      "expected_wall_min": 10,
+      "family": "B",
+      "anchor": "t0_16_casc_mmixcore_wq_s8_offload_sched_nobias",
+      "axes_moved": [
+        "training_epochs: 2 -> 4"
+      ],
+      "hypothesis": "If t0_16's ~0.90 ceiling is envelope-dominated, 4 epochs push deployed past 0.97; a plateau near 0.90 instead pins the casc-mixer conversion gap as the binder."
+    },
+    {
+      "name": "t01_11_casc_deepmlp_d16_wq_s16_residual_e4",
+      "config": "t01_11_casc_deepmlp_d16_wq_s16_residual_e4.json",
+      "model_type": "deep_mlp",
+      "cell": {
+        "firing": "ttfs_cycle_based",
+        "sync": "cascaded",
+        "quantization": "wq_aq",
+        "S": "16",
+        "depth": "16",
+        "vehicle": "deep_mlp",
+        "dataset": "mnist",
+        "regime": "from_scratch",
+        "pruning": "dense",
+        "encoding_placement": "subsume"
+      },
+      "tags": [
+        "residual",
+        "e4"
+      ],
+      "expected_wall_min": 12,
+      "family": "B",
+      "anchor": "t0_19_casc_deepmlp_d16_wq_s16_residual",
+      "axes_moved": [
+        "training_epochs: 2 -> 4"
+      ],
+      "hypothesis": "t0_19 is budget/envelope-starved (float 0.973, deployed 0.942): 4 epochs of pretrain buy the envelope and the frontier ladder converts it to a pass."
+    },
+    {
+      "name": "t01_12_casc_mmixcore_wq_s8",
+      "config": "t01_12_casc_mmixcore_wq_s8.json",
+      "model_type": "mlp_mixer_core",
+      "cell": {
+        "firing": "ttfs_cycle_based",
+        "sync": "cascaded",
+        "quantization": "wq_aq",
+        "S": "8",
+        "depth": "any",
+        "vehicle": "mlp_mixer_core",
+        "dataset": "mnist",
+        "regime": "from_scratch",
+        "pruning": "dense",
+        "encoding_placement": "subsume"
+      },
+      "tags": [],
+      "expected_wall_min": 6,
+      "family": "C",
+      "anchor": "t0_16_casc_mmixcore_wq_s8_offload_sched_nobias",
+      "axes_moved": [
+        "tag stack: offload+sched+nobias -> plain"
+      ],
+      "hypothesis": "t0_16's conversion gap survives the removal of offload+sched+nobias: the gap is intrinsic to casc x L=9 (deployed stays ~0.90), not tag-induced."
+    },
+    {
+      "name": "t01_13_casc_mmixcore_wq_s8_nobias",
+      "config": "t01_13_casc_mmixcore_wq_s8_nobias.json",
+      "model_type": "mlp_mixer_core",
+      "cell": {
+        "firing": "ttfs_cycle_based",
+        "sync": "cascaded",
+        "quantization": "wq_aq",
+        "S": "8",
+        "depth": "any",
+        "vehicle": "mlp_mixer_core",
+        "dataset": "mnist",
+        "regime": "from_scratch",
+        "pruning": "dense",
+        "encoding_placement": "subsume"
+      },
+      "tags": [
+        "nobias"
+      ],
+      "expected_wall_min": 6,
+      "family": "C",
+      "anchor": "t0_16_casc_mmixcore_wq_s8_offload_sched_nobias",
+      "axes_moved": [
+        "tag stack: offload+sched+nobias -> nobias only"
+      ],
+      "hypothesis": "Bias-axon removal alone does not reproduce the anchor's gap: this cell reads within noise of the plain clone; a materially lower read isolates nobias as the load-bearing tag."
+    },
+    {
+      "name": "t01_14_casc_deepmlp_d8_wq_s16_residual",
+      "config": "t01_14_casc_deepmlp_d8_wq_s16_residual.json",
+      "model_type": "deep_mlp",
+      "cell": {
+        "firing": "ttfs_cycle_based",
+        "sync": "cascaded",
+        "quantization": "wq_aq",
+        "S": "16",
+        "depth": "8",
+        "vehicle": "deep_mlp",
+        "dataset": "mnist",
+        "regime": "from_scratch",
+        "pruning": "dense",
+        "encoding_placement": "subsume"
+      },
+      "tags": [
+        "residual"
+      ],
+      "expected_wall_min": 6,
+      "family": "C",
+      "anchor": "t0_19_casc_deepmlp_d16_wq_s16_residual",
+      "axes_moved": [
+        "depth: 16 -> 8"
+      ],
+      "hypothesis": "The boundary law is linear (~0.3-0.5 pp per boundary): halving t0_19's depth to d8 (~half the seams) plus the lighter training bulk yields a pass."
+    },
+    {
+      "name": "t01_15_casc_deepcnn_d8_wq_s4_sched",
+      "config": "t01_15_casc_deepcnn_d8_wq_s4_sched.json",
+      "model_type": "deep_cnn",
+      "cell": {
+        "firing": "ttfs_cycle_based",
+        "sync": "cascaded",
+        "quantization": "wq_aq",
+        "S": "4",
+        "depth": "8",
+        "vehicle": "deep_cnn",
+        "dataset": "mnist",
+        "regime": "from_scratch",
+        "pruning": "dense",
+        "encoding_placement": "subsume"
+      },
+      "tags": [
+        "sched"
+      ],
+      "expected_wall_min": 12,
+      "family": "C",
+      "anchor": "t0_18_casc_deepcnn_d4_wq_s4_pruned",
+      "axes_moved": [
+        "depth: 4 -> 8 (sched on: the W2-proven d8 packing prerequisite)",
+        "pruning: 0.5 -> dense"
+      ],
+      "hypothesis": "Conv cascades carry no intra-segment compounding (segment depth 0): doubling t0_18's depth to d8 unpruned stays green - the depth cost is boundary-linear, not exponential."
+    },
+    {
+      "name": "t01_16_lif_deepcnn_d8_wq_s8_sched",
+      "config": "t01_16_lif_deepcnn_d8_wq_s8_sched.json",
+      "model_type": "deep_cnn",
+      "cell": {
+        "firing": "lif",
+        "sync": "none",
+        "quantization": "wq_aq",
+        "S": "8",
+        "depth": "8",
+        "vehicle": "deep_cnn",
+        "dataset": "mnist",
+        "regime": "from_scratch",
+        "pruning": "dense",
+        "encoding_placement": "subsume"
+      },
+      "tags": [
+        "sched"
+      ],
+      "expected_wall_min": 12,
+      "family": "D",
+      "anchor": "t0_03_lif_deepcnn_d8_wq_s16_sched",
+      "axes_moved": [
+        "S: 16 -> 8"
+      ],
+      "hypothesis": "t0_03's wall is training-bulk scaling with S: at S=8 the artifact wall drops below 300 s at unchanged accuracy (~0.98)."
+    },
+    {
+      "name": "t01_17_ttfs_deepcnn_d8_fp_s16_sched",
+      "config": "t01_17_ttfs_deepcnn_d8_fp_s16_sched.json",
+      "model_type": "deep_cnn",
+      "cell": {
+        "firing": "ttfs",
+        "sync": "none",
+        "quantization": "none",
+        "S": "16",
+        "depth": "8",
+        "vehicle": "deep_cnn",
+        "dataset": "mnist",
+        "regime": "from_scratch",
+        "pruning": "dense",
+        "encoding_placement": "subsume"
+      },
+      "tags": [
+        "sched"
+      ],
+      "expected_wall_min": 12,
+      "family": "D",
+      "anchor": "t0_08_ttfs_deepcnn_d8_fp_s32_sched",
+      "axes_moved": [
+        "S: 32 -> 16"
+      ],
+      "hypothesis": "Analytic-TTFS deployment is S-invariant (SCM bit-identical across S): at S=16 accuracy stays 1.00 while the training and sim walls shrink - wall scales with S, semantics do not.",
+      "note": "Inherits the t0_08 sim-sample respec (per-core GEMM sim is sample-bound; N=25 keeps the exclusion arithmetic comparable)."
+    },
+    {
+      "name": "t01_18_casc_lenet5_wq_s16",
+      "config": "t01_18_casc_lenet5_wq_s16.json",
+      "model_type": "lenet5",
+      "cell": {
+        "firing": "ttfs_cycle_based",
+        "sync": "cascaded",
+        "quantization": "wq_aq",
+        "S": "16",
+        "depth": "any",
+        "vehicle": "lenet5",
+        "dataset": "mnist",
+        "regime": "from_scratch",
+        "pruning": "dense",
+        "encoding_placement": "subsume"
+      },
+      "tags": [],
+      "expected_wall_min": 10,
+      "family": "D",
+      "anchor": "t0_17_casc_lenet5_wq_s32",
+      "axes_moved": [
+        "S: 32 -> 16"
+      ],
+      "hypothesis": "t0_17's wall scales with S: at S=16 the artifact wall fits 300 s and accuracy holds >= 0.97."
+    },
+    {
+      "name": "t01_19_lif_deepcnn_d6_wq_s16_sched",
+      "config": "t01_19_lif_deepcnn_d6_wq_s16_sched.json",
+      "model_type": "deep_cnn",
+      "cell": {
+        "firing": "lif",
+        "sync": "none",
+        "quantization": "wq_aq",
+        "S": "16",
+        "depth": "6",
+        "vehicle": "deep_cnn",
+        "dataset": "mnist",
+        "regime": "from_scratch",
+        "pruning": "dense",
+        "encoding_placement": "subsume"
+      },
+      "tags": [
+        "sched"
+      ],
+      "expected_wall_min": 12,
+      "family": "D",
+      "anchor": "t0_03_lif_deepcnn_d8_wq_s16_sched",
+      "axes_moved": [
+        "depth: 8 -> 6"
+      ],
+      "hypothesis": "The lif deepcnn wall frontier lies between d6 and d8: at d6/S=16 the artifact wall lands materially below t0_03's, within or near the bar."
+    },
+    {
+      "name": "t01_20_sync_mmixcore_wq_s8_pruned10_wb8",
+      "config": "t01_20_sync_mmixcore_wq_s8_pruned10_wb8.json",
+      "model_type": "mlp_mixer_core",
+      "cell": {
+        "firing": "ttfs_cycle_based",
+        "sync": "synchronized",
+        "quantization": "wq_aq",
+        "S": "8",
+        "depth": "any",
+        "vehicle": "mlp_mixer_core",
+        "dataset": "mnist",
+        "regime": "from_scratch",
+        "pruning": "pruned",
+        "encoding_placement": "subsume"
+      },
+      "tags": [
+        "pruned10",
+        "wb8"
+      ],
+      "expected_wall_min": 6,
+      "family": "E",
+      "anchor": "t0_21_sync_mmixcore_wq_s8_pruned10",
+      "axes_moved": [
+        "weight_bits: 5 -> 8"
+      ],
+      "hypothesis": "t0_21's 0.9677 is a pure WQ gap (float 0.9735): 8-bit weights close the ~0.6 pp and the cell passes."
+    },
+    {
+      "name": "t01_21_lif_mmixcore_wq_s4_wb8",
+      "config": "t01_21_lif_mmixcore_wq_s4_wb8.json",
+      "model_type": "mlp_mixer_core",
+      "cell": {
+        "firing": "lif",
+        "sync": "none",
+        "quantization": "wq_aq",
+        "S": "4",
+        "depth": "any",
+        "vehicle": "mlp_mixer_core",
+        "dataset": "mnist",
+        "regime": "from_scratch",
+        "pruning": "dense",
+        "encoding_placement": "subsume"
+      },
+      "tags": [
+        "wb8"
+      ],
+      "expected_wall_min": 12,
+      "family": "E",
+      "anchor": "t0_01_lif_mmixcore_wq_s4",
+      "axes_moved": [
+        "weight_bits: 5 -> 8"
+      ],
+      "hypothesis": "t0_01's sub-bar residual has no WQ component: wb8 leaves deployed at the ~0.948 envelope; a lift would relocate the binder to quantization."
+    },
+    {
+      "name": "t01_22_ttfsq_deepcnn_d4_wq_s4_wb4",
+      "config": "t01_22_ttfsq_deepcnn_d4_wq_s4_wb4.json",
+      "model_type": "deep_cnn",
+      "cell": {
+        "firing": "ttfs_quantized",
+        "sync": "none",
+        "quantization": "wq_aq",
+        "S": "4",
+        "depth": "4",
+        "vehicle": "deep_cnn",
+        "dataset": "mnist",
+        "regime": "from_scratch",
+        "pruning": "dense",
+        "encoding_placement": "subsume"
+      },
+      "tags": [
+        "wb4"
+      ],
+      "expected_wall_min": 12,
+      "family": "E",
+      "anchor": "t0_13_ttfsq_deepcnn_d4_wq_s4",
+      "axes_moved": [
+        "weight_bits: 5 -> 4"
+      ],
+      "hypothesis": "The ttfsq WQ boundary sits below wb4 on a shallow conv vehicle: t0_13's clone at wb4 costs <= 1 pp and still passes."
+    },
+    {
+      "name": "t01_23_ttfs_mmixcore_wq_s8_floor",
+      "config": "t01_23_ttfs_mmixcore_wq_s8_floor.json",
+      "model_type": "mlp_mixer_core",
+      "cell": {
+        "firing": "ttfs",
+        "sync": "none",
+        "quantization": "wq",
+        "S": "8",
+        "depth": "any",
+        "vehicle": "mlp_mixer_core",
+        "dataset": "mnist",
+        "regime": "from_scratch",
+        "pruning": "dense",
+        "encoding_placement": "subsume"
+      },
+      "tags": [
+        "floor"
+      ],
+      "expected_wall_min": 18,
+      "family": "F",
+      "anchor": "t0_06_ttfs_mmixcore_wq_s8",
+      "axes_moved": [
+        "endpoint_floor_wall_s: 150 -> 600"
+      ],
+      "hypothesis": "The proven 5u floor is wall-starved, not broken: with 600 s of floor room the t0_06 clone trains its full 16k budget and passes (~0.971 fbu ceiling), at an honestly-reported wall."
+    },
+    {
+      "name": "t01_24_sync_mmixcore_wq_s8_pruned10_floor",
+      "config": "t01_24_sync_mmixcore_wq_s8_pruned10_floor.json",
+      "model_type": "mlp_mixer_core",
+      "cell": {
+        "firing": "ttfs_cycle_based",
+        "sync": "synchronized",
+        "quantization": "wq_aq",
+        "S": "8",
+        "depth": "any",
+        "vehicle": "mlp_mixer_core",
+        "dataset": "mnist",
+        "regime": "from_scratch",
+        "pruning": "pruned",
+        "encoding_placement": "subsume"
+      },
+      "tags": [
+        "pruned10",
+        "floor"
+      ],
+      "expected_wall_min": 18,
+      "family": "F",
+      "anchor": "t0_21_sync_mmixcore_wq_s8_pruned10",
+      "axes_moved": [
+        "endpoint_floor_wall_s: 150 -> 600"
+      ],
+      "hypothesis": "With full floor room t0_21's clone reproduces the 0.9677 fbu ceiling: the remaining gap is WQ (the wb8 cell's axis), not training budget."
+    },
+    {
+      "name": "t01_25_ttfsq_lenet5_wq_s32",
+      "config": "t01_25_ttfsq_lenet5_wq_s32.json",
+      "model_type": "lenet5",
+      "cell": {
+        "firing": "ttfs_quantized",
+        "sync": "none",
+        "quantization": "wq_aq",
+        "S": "32",
+        "depth": "any",
+        "vehicle": "lenet5",
+        "dataset": "mnist",
+        "regime": "from_scratch",
+        "pruning": "dense",
+        "encoding_placement": "subsume"
+      },
+      "tags": [],
+      "expected_wall_min": 6,
+      "family": "F",
+      "anchor": "t0_12_ttfsq_lenet5_wq_s32",
+      "axes_moved": [],
+      "hypothesis": "Pure t0_12 replication passes at its X4 numbers; per-pack replicas of this cell calibrate node contention for the wave."
+    }
+  ],
+  "coverage_notes": [
+    "Tier-0.1 (2026-07-07, user-directed): a diagnostic matrix of controlled minimal pairs derived from tier-0's remaining failure modes (theory 5t-5x, A1-A6, 6b). Every cell moves <= 2 axes off a named tier-0 anchor and carries a falsifiable hypothesis; the wave's purpose is insight - failures are the data, not defects.",
+    "Families: A install-resolution law (6), B pretrain envelope e4 (5), C cascade structure isolation (4), D wall/training decomposition (4), E WQ-bit gap (3), F floor mechanics + green control (3).",
+    "Acceptance bar unchanged from tier-0: >= 0.97 primary deployed (N=100 pinned; t01_17 inherits the t0_08 sim-sample respec), <= 300 s artifact wall with all simulators excluded; e4 cells account their extra pretrain in the wall honestly."
+  ]
+}

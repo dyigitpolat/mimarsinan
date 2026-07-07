@@ -66,7 +66,9 @@ def run_one(config_path: Path, budget_s: float) -> dict:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("tier", type=int, choices=(0, 1, 2))
+    parser.add_argument("tier", type=lambda t: t.replace(".", "_"),
+                        choices=("0", "0_1", "1", "2"),
+                        help="tier directory suffix; 0.1 and 0_1 both address tier0_1")
     parser.add_argument("--only", nargs="*", help="run-name substrings to filter on")
     parser.add_argument("--budget-scale", type=float, default=1.5,
                         help="wall budget = manifest expected_wall_min × this")

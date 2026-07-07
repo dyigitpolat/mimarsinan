@@ -43,3 +43,10 @@ class TestConfigKeysInventory:
         )
 
         assert set(DEFAULT_DEPLOYMENT_PARAMETERS) <= CONFIG_KEYS_SET
+
+    def test_endpoint_floor_wall_knob_is_a_known_config_key(self):
+        """Per-cell wall sizing for the 5u endpoint floor (read by
+        endpoint_recovery via config.get, TUNING_POLICY fallback)."""
+        from mimarsinan.config_schema.defaults import CONFIG_KEYS_SET
+
+        assert "endpoint_floor_wall_s" in CONFIG_KEYS_SET

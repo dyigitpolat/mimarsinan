@@ -143,6 +143,175 @@ T0 = [
     dict(n=25, mode="sync", quant="wq", wb=5, s=32, vehicle="simplemlp"),
 ]
 
+# Tier-0.1: 25 controlled diagnostics derived from tier-0's remaining failure
+# modes. Every cell is a MINIMAL PAIR of a named tier-0 anchor (<=2 axes moved,
+# enforced by test) and carries a falsifiable hypothesis; failures are the data.
+T0_1 = [
+    # A - install-resolution law calibration (A6, theory 5v): sweep S per mode
+    # on the L=9 mixer chain to make the resolution x chain-depth boundary visible.
+    dict(n=1, family="A", mode="lif", quant="wq", wb=5, s=8, vehicle="mmixcore",
+         anchor="t0_01_lif_mmixcore_wq_s4", axes=["S: 4 -> 8"],
+         hypothesis="t0_01's binding failure is the T=4 window back-loading crater "
+                    "(frozen-weights NF 0.32@T4 -> 0.82@T8): at S=8 the entry crater "
+                    "clears and deployed reaches >= 0.97."),
+    dict(n=2, family="A", mode="lif", quant="wq", wb=5, s=16, vehicle="mmixcore",
+         anchor="t0_01_lif_mmixcore_wq_s4", axes=["S: 4 -> 16"],
+         hypothesis="Deployed accuracy is monotone along the T-healing curve "
+                    "(NF 0.90@T16 frozen-weights): S=16 lands at or above the S=8 "
+                    "read, isolating the temporal kernel from the envelope."),
+    dict(n=3, family="A", mode="casc", quant="wq", wb=5, s=4, vehicle="mmixcore",
+         encoding="offload", scheduling=True, has_bias=False,
+         tags=["offload", "sched", "nobias"],
+         anchor="t0_16_casc_mmixcore_wq_s8_offload_sched_nobias", axes=["S: 8 -> 4"],
+         hypothesis="Cascaded per-hop attenuation GROWS with S (genuine forward "
+                    "0.57@S8 -> 0.31@S64 frozen-weights): at S=4 the conversion gap "
+                    "shrinks and deployed exceeds the anchor's ~0.90 ceiling."),
+    dict(n=4, family="A", mode="sync", quant="wq", wb=5, s=16, vehicle="mmixcore",
+         pruned=0.10, tags=["pruned10"],
+         anchor="t0_21_sync_mmixcore_wq_s8_pruned10", axes=["S: 8 -> 16"],
+         hypothesis="Sync level starvation shrinks with grid resolution (entry "
+                    "0.10@S8 -> 0.19@S16 -> 0.69@S32 pre-fix-stack): at S=16 the fix "
+                    "stack plus WQ endpoint clear 0.97."),
+    dict(n=5, family="A", mode="sync", quant="wq", wb=5, s=4, vehicle="mmixcore",
+         pruned=0.10, tags=["pruned10"],
+         anchor="t0_21_sync_mmixcore_wq_s8_pruned10", axes=["S: 8 -> 4"],
+         hypothesis="At S=4 starvation deepens beyond the quantile+half-step+staging "
+                    "stack's recovery on the L=9 chain: deployed lands below the "
+                    "anchor's 0.9677 (the boundary probed from the failing side)."),
+    dict(n=6, family="A", mode="ttfsq", quant="wq", wb=5, s=8, vehicle="mmixcore",
+         encoding="offload", tags=["offload"],
+         anchor="t0_11_ttfsq_mmixcore_wq_s16_offload", axes=["S: 16 -> 8"],
+         hypothesis="ttfsq's dense nearest-rounding install keeps per-hop error small "
+                    "at any resolution: halving S from 16 to 8 stays crater-free and "
+                    "passes - the install-resolution law's negative control."),
+    # B - pretrain envelope: clone each envelope-tail cell at training_epochs=4
+    # (all else identical); the extra pretrain is accounted in the wall honestly.
+    dict(n=7, family="B", mode="ttfs", quant="wq", wb=5, s=8, vehicle="mmixcore",
+         epochs=4, tags=["e4"], wall_min=10,
+         anchor="t0_06_ttfs_mmixcore_wq_s8", axes=["training_epochs: 2 -> 4"],
+         hypothesis="t0_06 is purely envelope-bound (conversion loss-free, ceiling "
+                    "0.9711 at e2): 4-epoch pretrain lifts the envelope past 0.97 "
+                    "and the cell passes."),
+    dict(n=8, family="B", mode="lif", quant="wq", wb=5, s=4, vehicle="mmixcore",
+         epochs=4, tags=["e4"], wall_min=16,
+         anchor="t0_01_lif_mmixcore_wq_s4", axes=["training_epochs: 2 -> 4"],
+         hypothesis="The 0.948 pretrain envelope, not the S=4 install crater, is "
+                    "t0_01's binding constraint: at 4 epochs the cell clears 0.97."),
+    dict(n=9, family="B", mode="sync", quant="wq", wb=5, s=8, vehicle="mmixcore",
+         pruned=0.10, epochs=4, tags=["pruned10", "e4"], wall_min=10,
+         anchor="t0_21_sync_mmixcore_wq_s8_pruned10", axes=["training_epochs: 2 -> 4"],
+         hypothesis="t0_21's residual gap is envelope+WQ, not conversion: at 4 epochs "
+                    "the float envelope rises above 0.9735 and the deployed near-miss "
+                    "(0.9677) converts to a pass."),
+    dict(n=10, family="B", mode="casc", quant="wq", wb=5, s=8, vehicle="mmixcore",
+         encoding="offload", scheduling=True, has_bias=False, epochs=4,
+         tags=["offload", "sched", "nobias", "e4"], wall_min=10,
+         anchor="t0_16_casc_mmixcore_wq_s8_offload_sched_nobias",
+         axes=["training_epochs: 2 -> 4"],
+         hypothesis="If t0_16's ~0.90 ceiling is envelope-dominated, 4 epochs push "
+                    "deployed past 0.97; a plateau near 0.90 instead pins the "
+                    "casc-mixer conversion gap as the binder."),
+    dict(n=11, family="B", mode="casc", quant="wq", wb=4, s=16, vehicle="deepmlp",
+         depth=16, residual=True, epochs=4, tags=["residual", "e4"], wall_min=12,
+         anchor="t0_19_casc_deepmlp_d16_wq_s16_residual",
+         axes=["training_epochs: 2 -> 4"],
+         hypothesis="t0_19 is budget/envelope-starved (float 0.973, deployed 0.942): "
+                    "4 epochs of pretrain buy the envelope and the frontier ladder "
+                    "converts it to a pass."),
+    # C - cascade structure isolation: which axis of t0_16/t0_18/t0_19 carries
+    # the cascade gap - the tag stack, bias axons, depth, or boundaries?
+    dict(n=12, family="C", mode="casc", quant="wq", wb=5, s=8, vehicle="mmixcore",
+         anchor="t0_16_casc_mmixcore_wq_s8_offload_sched_nobias",
+         axes=["tag stack: offload+sched+nobias -> plain"],
+         hypothesis="t0_16's conversion gap survives the removal of "
+                    "offload+sched+nobias: the gap is intrinsic to casc x L=9 "
+                    "(deployed stays ~0.90), not tag-induced."),
+    dict(n=13, family="C", mode="casc", quant="wq", wb=5, s=8, vehicle="mmixcore",
+         has_bias=False, tags=["nobias"],
+         anchor="t0_16_casc_mmixcore_wq_s8_offload_sched_nobias",
+         axes=["tag stack: offload+sched+nobias -> nobias only"],
+         hypothesis="Bias-axon removal alone does not reproduce the anchor's gap: "
+                    "this cell reads within noise of the plain clone; a materially "
+                    "lower read isolates nobias as the load-bearing tag."),
+    dict(n=14, family="C", mode="casc", quant="wq", wb=4, s=16, vehicle="deepmlp",
+         depth=8, residual=True, tags=["residual"],
+         anchor="t0_19_casc_deepmlp_d16_wq_s16_residual", axes=["depth: 16 -> 8"],
+         hypothesis="The boundary law is linear (~0.3-0.5 pp per boundary): halving "
+                    "t0_19's depth to d8 (~half the seams) plus the lighter training "
+                    "bulk yields a pass."),
+    dict(n=15, family="C", mode="casc", quant="wq", wb=5, s=4, vehicle="deepcnn",
+         depth=8, scheduling=True, tags=["sched"],
+         anchor="t0_18_casc_deepcnn_d4_wq_s4_pruned",
+         axes=["depth: 4 -> 8 (sched on: the W2-proven d8 packing prerequisite)",
+               "pruning: 0.5 -> dense"],
+         hypothesis="Conv cascades carry no intra-segment compounding (segment depth "
+                    "0): doubling t0_18's depth to d8 unpruned stays green - the "
+                    "depth cost is boundary-linear, not exponential."),
+    # D - wall / training-ceiling decomposition: the three wall cells' time is
+    # load-bearing training scaling with S and depth; map the passable frontier.
+    dict(n=16, family="D", mode="lif", quant="wq", wb=4, s=8, vehicle="deepcnn",
+         depth=8, scheduling=True, tags=["sched"],
+         anchor="t0_03_lif_deepcnn_d8_wq_s16_sched", axes=["S: 16 -> 8"],
+         hypothesis="t0_03's wall is training-bulk scaling with S: at S=8 the "
+                    "artifact wall drops below 300 s at unchanged accuracy (~0.98)."),
+    dict(n=17, family="D", mode="ttfs", quant="fp", wb=5, s=16, vehicle="deepcnn",
+         depth=8, scheduling=True, sim_samples=25, tags=["sched"],
+         anchor="t0_08_ttfs_deepcnn_d8_fp_s32_sched", axes=["S: 32 -> 16"],
+         note="Inherits the t0_08 sim-sample respec (per-core GEMM sim is "
+              "sample-bound; N=25 keeps the exclusion arithmetic comparable).",
+         hypothesis="Analytic-TTFS deployment is S-invariant (SCM bit-identical "
+                    "across S): at S=16 accuracy stays 1.00 while the training and "
+                    "sim walls shrink - wall scales with S, semantics do not."),
+    dict(n=18, family="D", mode="casc", quant="wq", wb=5, s=16, vehicle="lenet5",
+         wall_min=10,
+         anchor="t0_17_casc_lenet5_wq_s32", axes=["S: 32 -> 16"],
+         hypothesis="t0_17's wall scales with S: at S=16 the artifact wall fits "
+                    "300 s and accuracy holds >= 0.97."),
+    dict(n=19, family="D", mode="lif", quant="wq", wb=4, s=16, vehicle="deepcnn",
+         depth=6, scheduling=True, tags=["sched"],
+         anchor="t0_03_lif_deepcnn_d8_wq_s16_sched", axes=["depth: 8 -> 6"],
+         hypothesis="The lif deepcnn wall frontier lies between d6 and d8: at d6/S=16 "
+                    "the artifact wall lands materially below t0_03's, within or "
+                    "near the bar."),
+    # E - quantization-resolution / WQ gap: move only weight_bits.
+    dict(n=20, family="E", mode="sync", quant="wq", wb=8, s=8, vehicle="mmixcore",
+         pruned=0.10, tags=["pruned10", "wb8"],
+         anchor="t0_21_sync_mmixcore_wq_s8_pruned10", axes=["weight_bits: 5 -> 8"],
+         hypothesis="t0_21's 0.9677 is a pure WQ gap (float 0.9735): 8-bit weights "
+                    "close the ~0.6 pp and the cell passes."),
+    dict(n=21, family="E", mode="lif", quant="wq", wb=8, s=4, vehicle="mmixcore",
+         tags=["wb8"],
+         anchor="t0_01_lif_mmixcore_wq_s4", axes=["weight_bits: 5 -> 8"],
+         hypothesis="t0_01's sub-bar residual has no WQ component: wb8 leaves "
+                    "deployed at the ~0.948 envelope; a lift would relocate the "
+                    "binder to quantization."),
+    dict(n=22, family="E", mode="ttfsq", quant="wq", wb=4, s=4, vehicle="deepcnn",
+         depth=4, tags=["wb4"],
+         anchor="t0_13_ttfsq_deepcnn_d4_wq_s4", axes=["weight_bits: 5 -> 4"],
+         hypothesis="The ttfsq WQ boundary sits below wb4 on a shallow conv vehicle: "
+                    "t0_13's clone at wb4 costs <= 1 pp and still passes."),
+    # F - floor mechanics + controls: the 5u floor given real wall room (the
+    # escalated harness decision, testable as config), plus a green replication.
+    dict(n=23, family="F", mode="ttfs", quant="wq", wb=5, s=8, vehicle="mmixcore",
+         floor_wall_s=600, tags=["floor"], wall_min=18,
+         anchor="t0_06_ttfs_mmixcore_wq_s8",
+         axes=["endpoint_floor_wall_s: 150 -> 600"],
+         hypothesis="The proven 5u floor is wall-starved, not broken: with 600 s of "
+                    "floor room the t0_06 clone trains its full 16k budget and "
+                    "passes (~0.971 fbu ceiling), at an honestly-reported wall."),
+    dict(n=24, family="F", mode="sync", quant="wq", wb=5, s=8, vehicle="mmixcore",
+         pruned=0.10, floor_wall_s=600, tags=["pruned10", "floor"], wall_min=18,
+         anchor="t0_21_sync_mmixcore_wq_s8_pruned10",
+         axes=["endpoint_floor_wall_s: 150 -> 600"],
+         hypothesis="With full floor room t0_21's clone reproduces the 0.9677 fbu "
+                    "ceiling: the remaining gap is WQ (the wb8 cell's axis), not "
+                    "training budget."),
+    dict(n=25, family="F", mode="ttfsq", quant="wq", wb=8, s=32, vehicle="lenet5",
+         anchor="t0_12_ttfsq_lenet5_wq_s32", axes=[],
+         hypothesis="Pure t0_12 replication passes at its X4 numbers; per-pack "
+                    "replicas of this cell calibrate node contention for the wave."),
+]
+
 T1 = [
     dict(n=1, mode="lif", quant="wq", wb=8, s=16, vehicle="squeezenet", regime="pretrained"),
     dict(n=2, mode="ttfs", quant="wq", wb=8, s=32, vehicle="vit", regime="pretrained", tags=["wall_risk"]),
@@ -190,12 +359,13 @@ DATASET_AXIS = {"MNIST": "mnist", "CIFAR10": "cifar10", "CIFAR100": "cifar100", 
 
 
 def _name(tier, row, vehicles):
+    prefix = f"t{tier}".replace("_", "")
     v = row["vehicle"]
     depth = f"_d{row['depth']}" if "depth" in row else ""
     tags = "".join(f"_{t}" for t in row.get("tags", []) if t in
                    ("offload", "sched", "nobias", "pruned", "pruned10", "novena",
-                    "identity", "residual"))
-    return f"t{tier}_{row['n']:02d}_{row['mode']}_{v}{depth}_{row['quant']}_s{row['s']}{tags}"
+                    "identity", "residual", "e4", "wb8", "wb4", "floor"))
+    return f"{prefix}_{row['n']:02d}_{row['mode']}_{v}{depth}_{row['quant']}_s{row['s']}{tags}"
 
 
 def _platform(row, vehicles):
@@ -213,7 +383,13 @@ def _platform(row, vehicles):
     return plat
 
 
+def _policy_tier(tier):
+    """Tier-0.1 rows inherit tier-0's budget/recipe policy (minimal pairs)."""
+    return 0 if tier == "0_1" else tier
+
+
 def _deployment(tier, row, vehicles, dataset):
+    tier = _policy_tier(tier)
     v = vehicles[row["vehicle"]]
     mode = MODES[row["mode"]]
     quant = QUANT[row["quant"]]
@@ -252,6 +428,8 @@ def _deployment(tier, row, vehicles, dataset):
     if "pruned" in row:
         dp["pruning"] = True
         dp["pruning_fraction"] = row["pruned"]
+    if "floor_wall_s" in row:
+        dp["endpoint_floor_wall_s"] = row["floor_wall_s"]
     if "tuning_batch_size" in v:
         dp["tuning_batch_size"] = v["tuning_batch_size"]
     if "preprocessing" in v:
@@ -262,7 +440,7 @@ def _deployment(tier, row, vehicles, dataset):
         dp["weight_source"] = "torchvision"
         dp["finetune_epochs"] = row.get("finetune_epochs", 2)
     else:
-        dp["training_epochs"] = 2 if tier == 0 else 20
+        dp["training_epochs"] = row.get("epochs", 2 if tier == 0 else 20)
         if tier == 0:
             dp["training_recipe"] = TRAINING_RECIPE
             dp["tuning_recipe"] = TUNING_RECIPE
@@ -287,7 +465,9 @@ def _cell(tier, row, vehicles, dataset):
 
 
 def _wall_budget(tier, row, vehicles, default_min):
-    if tier != 0:
+    if "wall_min" in row:
+        return row["wall_min"]
+    if _policy_tier(tier) != 0:
         return default_min
     # Measured locally: LIF's Loihi leg and conv-model cells exceed 5 min.
     if row["mode"] == "lif" or vehicles[row["vehicle"]]["model_type"] == "deep_cnn":
@@ -309,14 +489,35 @@ COVERAGE_NOTES = {
         "t0_02/t0_09/t0_18 stay at 0.5: they pass and keep the heavy-pruning "
         "stressor coverage.",
     ],
+    "0_1": [
+        "Tier-0.1 (2026-07-07, user-directed): a diagnostic matrix of controlled "
+        "minimal pairs derived from tier-0's remaining failure modes (theory 5t-5x, "
+        "A1-A6, 6b). Every cell moves <= 2 axes off a named tier-0 anchor and "
+        "carries a falsifiable hypothesis; the wave's purpose is insight - "
+        "failures are the data, not defects.",
+        "Families: A install-resolution law (6), B pretrain envelope e4 (5), "
+        "C cascade structure isolation (4), D wall/training decomposition (4), "
+        "E WQ-bit gap (3), F floor mechanics + green control (3).",
+        "Acceptance bar unchanged from tier-0: >= 0.97 primary deployed (N=100 "
+        "pinned; t01_17 inherits the t0_08 sim-sample respec), <= 300 s artifact "
+        "wall with all simulators excluded; e4 cells account their extra pretrain "
+        "in the wall honestly.",
+    ],
 }
+
+
+def _write_json(path, payload: str) -> None:
+    """Atomic write: concurrent readers (the parallel test suite) never see a
+    missing or partial file while the SSOT test regenerates."""
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(payload)
+    tmp.replace(path)
 
 
 def _emit_tier(tier, rows, vehicles, dataset, wall_budget_min):
     out_dir = ROOT / f"tier{tier}"
     out_dir.mkdir(exist_ok=True)
-    for stale in out_dir.glob("t*.json"):
-        stale.unlink()
+    produced = set()
     manifest = {"tier": tier, "dataset": dataset,
                 "wall_budget_minutes_per_run": wall_budget_min, "runs": []}
     if tier in COVERAGE_NOTES:
@@ -336,7 +537,8 @@ def _emit_tier(tier, rows, vehicles, dataset, wall_budget_min):
             "start_step": None,
             "stop_step": None,
         }
-        (out_dir / f"{name}.json").write_text(json.dumps(config, indent=2) + "\n")
+        _write_json(out_dir / f"{name}.json", json.dumps(config, indent=2) + "\n")
+        produced.add(f"{name}.json")
         entry = {
             "name": name,
             "config": f"{name}.json",
@@ -345,18 +547,29 @@ def _emit_tier(tier, rows, vehicles, dataset, wall_budget_min):
             "tags": row.get("tags", []),
             "expected_wall_min": _wall_budget(tier, row, vehicles, wall_budget_min),
         }
+        # Tier-0.1 diagnostic fields: the minimal-pair provenance and the claim
+        # the cell's pass/fail arbitrates.
+        if "anchor" in row:
+            entry["family"] = row["family"]
+            entry["anchor"] = row["anchor"]
+            entry["axes_moved"] = row["axes"]
+            entry["hypothesis"] = row["hypothesis"]
         if "note" in row:
             entry["note"] = row["note"]
         manifest["runs"].append(entry)
-    (out_dir / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+    _write_json(out_dir / "manifest.json", json.dumps(manifest, indent=2) + "\n")
+    for stale in out_dir.glob("t*.json"):
+        if stale.name not in produced:
+            stale.unlink()
     return len(rows)
 
 
 def main():
     n0 = _emit_tier(0, T0, VEHICLES, "MNIST", 5)
+    n01 = _emit_tier("0_1", T0_1, VEHICLES, "MNIST", 5)
     n1 = _emit_tier(1, T1, T1_VEHICLES, "CIFAR10", 120)
     n2 = _emit_tier(2, T2, T2_VEHICLES, "ImageNet", 360)
-    print(f"tier0={n0} tier1={n1} tier2={n2}")
+    print(f"tier0={n0} tier0_1={n01} tier1={n1} tier2={n2}")
 
 
 if __name__ == "__main__":

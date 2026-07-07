@@ -10,6 +10,9 @@ import pytest
 ROOT = Path(__file__).resolve().parents[3]
 TEST_CONFIGS = ROOT / "test_configs"
 
+# "0_1" is the tier-0.1 diagnostic matrix (minimal pairs of tier-0 anchors).
+TIERS = (0, "0_1", 1, 2)
+
 TOP_LEVEL_KEYS = {
     "seed", "pipeline_mode", "experiment_name", "generated_files_path",
     "data_provider_name", "platform_constraints", "deployment_parameters",
@@ -28,6 +31,10 @@ def _tier_configs(tier):
 
 def _manifest(tier):
     return json.loads((TEST_CONFIGS / f"tier{tier}" / "manifest.json").read_text())
+
+
+def _notes(tier):
+    return {r["config"]: r.get("note", "") for r in _manifest(tier)["runs"]}
 
 
 class TestGeneratorIsTheSSOT:
@@ -51,11 +58,12 @@ class TestGeneratorIsTheSSOT:
 class TestTierShapes:
     def test_run_counts(self):
         assert len(_tier_configs(0)) == 25
+        assert len(_tier_configs("0_1")) == 25
         assert len(_tier_configs(1)) == 8
         assert len(_tier_configs(2)) == 3
 
     def test_manifest_matches_files(self):
-        for tier in (0, 1, 2):
+        for tier in TIERS:
             manifest = _manifest(tier)
             names = {r["config"] for r in manifest["runs"]}
             files = {p.name for p in _tier_configs(tier)}
@@ -63,7 +71,7 @@ class TestTierShapes:
 
 
 class TestConfigValidity:
-    @pytest.mark.parametrize("tier", [0, 1, 2])
+    @pytest.mark.parametrize("tier", TIERS)
     def test_keys_are_known(self, tier):
         from mimarsinan.config_schema.defaults import (
             CONFIG_KEYS_SET,
@@ -83,35 +91,37 @@ class TestConfigValidity:
             unknown_pc = set(cfg["platform_constraints"]) - platform_keys
             assert not unknown_pc, f"{path.name}: unknown platform keys {unknown_pc}"
 
-    @pytest.mark.parametrize("tier", [0, 1, 2])
+    @pytest.mark.parametrize("tier", TIERS)
     def test_sim_enables_left_to_derivation(self, tier):
         """Sim backends are ConversionPolicy-derived; configs must not pin them."""
         for path in _tier_configs(tier):
             cfg = json.loads(path.read_text())
             assert not (set(cfg["deployment_parameters"]) & SIM_ENABLE_KEYS), path.name
 
-    @pytest.mark.parametrize("tier", [0, 1, 2])
+    @pytest.mark.parametrize("tier", TIERS)
     def test_legality_rules(self, tier):
+        notes = _notes(tier)
         for path in _tier_configs(tier):
             dp = json.loads(path.read_text())["deployment_parameters"]
             if dp["spiking_mode"] in QUANT_REQUIRED_MODES:
                 assert dp["weight_quantization"] is True, path.name
-            # N=100 is the pinned acceptance read; a smaller count is legal only
-            # for the sample-bound sim wall respec (t0_08, user-directed
-            # 2026-07-07) and must stay a meaningful binomial read.
-            if "t0_08" in path.name:
+            # N=100 is the pinned acceptance read; N=25 is legal only where the
+            # manifest note sanctions the sample-bound sim wall respec (t0_08,
+            # user-directed 2026-07-07, and its tier-0.1 minimal pair) and must
+            # stay a meaningful binomial read.
+            if "sim-sample respec" in notes[path.name].lower():
                 assert dp["max_simulation_samples"] == 25, path.name
             else:
                 assert dp["max_simulation_samples"] == 100, path.name
 
-    @pytest.mark.parametrize("tier", [0, 1, 2])
+    @pytest.mark.parametrize("tier", TIERS)
     def test_activation_quantization_left_to_derivation(self, tier):
         """AQ is a derived pipeline-assembly mode; configs must never pin it."""
         for path in _tier_configs(tier):
             dp = json.loads(path.read_text())["deployment_parameters"]
             assert "activation_quantization" not in dp, path.name
 
-    @pytest.mark.parametrize("tier", [0, 1, 2])
+    @pytest.mark.parametrize("tier", TIERS)
     def test_quant_tags_are_runtime_truth(self, tier):
         """Names carry only wq/fp; no fictional aq/wqaq tags anywhere."""
         for path in _tier_configs(tier):
@@ -124,7 +134,7 @@ class TestConfigValidity:
             expected_mode = "phased" if wq else "vanilla"
             assert cfg["pipeline_mode"] == expected_mode, path.name
 
-    @pytest.mark.parametrize("tier", [0, 1, 2])
+    @pytest.mark.parametrize("tier", TIERS)
     def test_configs_pass_the_assembly_contract(self, tier):
         from mimarsinan.config_schema.deployment_derivation import (
             enforce_quantization_assembly_contract,
@@ -138,7 +148,7 @@ class TestConfigValidity:
                 pipeline_mode=cfg.get("pipeline_mode"),
             )
 
-    @pytest.mark.parametrize("tier", [0, 1, 2])
+    @pytest.mark.parametrize("tier", TIERS)
     def test_configs_resolve_through_derivation(self, tier):
         """Every config must survive the real config derivation pipeline."""
         from mimarsinan.config_schema.defaults import (
@@ -287,3 +297,175 @@ class TestW3cRespecs:
                 assert cell["quantization"] == "wq_aq", run["name"]
             else:
                 assert cell["quantization"] == "wq", run["name"]
+
+
+def _flatten(node, prefix=""):
+    """Flatten a JSON tree into {dotted/indexed key-path: leaf value}."""
+    if isinstance(node, dict):
+        out = {}
+        for key, value in node.items():
+            out.update(_flatten(value, f"{prefix}.{key}" if prefix else key))
+        return out
+    if isinstance(node, list):
+        out = {}
+        for i, value in enumerate(node):
+            out.update(_flatten(value, f"{prefix}[{i}]"))
+        return out
+    return {prefix: node}
+
+
+def _config_delta(a: dict, b: dict) -> set:
+    """Key-paths whose leaf values differ between two configs (missing != equal)."""
+    fa, fb = _flatten(a), _flatten(b)
+    missing = object()
+    return {
+        path for path in set(fa) | set(fb)
+        if fa.get(path, missing) != fb.get(path, missing)
+    }
+
+
+_S_MOVE = {"platform_constraints.target_tq", "platform_constraints.simulation_steps"}
+_E4_MOVE = {"deployment_parameters.training_epochs"}
+_WB_MOVE = {"platform_constraints.weight_bits"}
+_FLOOR_MOVE = {"deployment_parameters.endpoint_floor_wall_s"}
+
+# The tier-0.1 design table: cell -> (tier-0 anchor, exact config key-paths moved).
+# Every cell is a minimal pair; experiment_name is excluded from the delta.
+TIER01_EXPECTED_DELTAS = {
+    # A - install-resolution law calibration (A6, section 5v)
+    "t01_01_lif_mmixcore_wq_s8": ("t0_01_lif_mmixcore_wq_s4", _S_MOVE),
+    "t01_02_lif_mmixcore_wq_s16": ("t0_01_lif_mmixcore_wq_s4", _S_MOVE),
+    "t01_03_casc_mmixcore_wq_s4_offload_sched_nobias":
+        ("t0_16_casc_mmixcore_wq_s8_offload_sched_nobias", _S_MOVE),
+    "t01_04_sync_mmixcore_wq_s16_pruned10": ("t0_21_sync_mmixcore_wq_s8_pruned10", _S_MOVE),
+    "t01_05_sync_mmixcore_wq_s4_pruned10": ("t0_21_sync_mmixcore_wq_s8_pruned10", _S_MOVE),
+    "t01_06_ttfsq_mmixcore_wq_s8_offload": ("t0_11_ttfsq_mmixcore_wq_s16_offload", _S_MOVE),
+    # B - pretrain envelope (training_epochs 2 -> 4)
+    "t01_07_ttfs_mmixcore_wq_s8_e4": ("t0_06_ttfs_mmixcore_wq_s8", _E4_MOVE),
+    "t01_08_lif_mmixcore_wq_s4_e4": ("t0_01_lif_mmixcore_wq_s4", _E4_MOVE),
+    "t01_09_sync_mmixcore_wq_s8_pruned10_e4": ("t0_21_sync_mmixcore_wq_s8_pruned10", _E4_MOVE),
+    "t01_10_casc_mmixcore_wq_s8_offload_sched_nobias_e4":
+        ("t0_16_casc_mmixcore_wq_s8_offload_sched_nobias", _E4_MOVE),
+    "t01_11_casc_deepmlp_d16_wq_s16_residual_e4":
+        ("t0_19_casc_deepmlp_d16_wq_s16_residual", _E4_MOVE),
+    # C - cascade structure isolation
+    "t01_12_casc_mmixcore_wq_s8": (
+        "t0_16_casc_mmixcore_wq_s8_offload_sched_nobias",
+        {"deployment_parameters.encoding_layer_placement",
+         "deployment_parameters.allow_scheduling",
+         "platform_constraints.has_bias",
+         "platform_constraints.cores[0].has_bias",
+         "platform_constraints.cores[1].has_bias"},
+    ),
+    "t01_13_casc_mmixcore_wq_s8_nobias": (
+        "t0_16_casc_mmixcore_wq_s8_offload_sched_nobias",
+        {"deployment_parameters.encoding_layer_placement",
+         "deployment_parameters.allow_scheduling"},
+    ),
+    "t01_14_casc_deepmlp_d8_wq_s16_residual": (
+        "t0_19_casc_deepmlp_d16_wq_s16_residual",
+        {"deployment_parameters.model_config.depth"},
+    ),
+    # sched rides the depth axis: W2 proved platform C packs d8 only scheduled.
+    "t01_15_casc_deepcnn_d8_wq_s4_sched": (
+        "t0_18_casc_deepcnn_d4_wq_s4_pruned",
+        {"deployment_parameters.model_config.depth",
+         "deployment_parameters.allow_scheduling",
+         "deployment_parameters.pruning",
+         "deployment_parameters.pruning_fraction"},
+    ),
+    # D - wall / training-ceiling decomposition
+    "t01_16_lif_deepcnn_d8_wq_s8_sched": ("t0_03_lif_deepcnn_d8_wq_s16_sched", _S_MOVE),
+    "t01_17_ttfs_deepcnn_d8_fp_s16_sched": ("t0_08_ttfs_deepcnn_d8_fp_s32_sched", _S_MOVE),
+    "t01_18_casc_lenet5_wq_s16": ("t0_17_casc_lenet5_wq_s32", _S_MOVE),
+    "t01_19_lif_deepcnn_d6_wq_s16_sched": (
+        "t0_03_lif_deepcnn_d8_wq_s16_sched",
+        {"deployment_parameters.model_config.depth"},
+    ),
+    # E - quantization-resolution / WQ gap
+    "t01_20_sync_mmixcore_wq_s8_pruned10_wb8": ("t0_21_sync_mmixcore_wq_s8_pruned10", _WB_MOVE),
+    "t01_21_lif_mmixcore_wq_s4_wb8": ("t0_01_lif_mmixcore_wq_s4", _WB_MOVE),
+    "t01_22_ttfsq_deepcnn_d4_wq_s4_wb4": ("t0_13_ttfsq_deepcnn_d4_wq_s4", _WB_MOVE),
+    # F - floor mechanics + controls
+    "t01_23_ttfs_mmixcore_wq_s8_floor": ("t0_06_ttfs_mmixcore_wq_s8", _FLOOR_MOVE),
+    "t01_24_sync_mmixcore_wq_s8_pruned10_floor": ("t0_21_sync_mmixcore_wq_s8_pruned10", _FLOOR_MOVE),
+    "t01_25_ttfsq_lenet5_wq_s32": ("t0_12_ttfsq_lenet5_wq_s32", set()),
+}
+
+TIER01_FAMILY_SIZES = {"A": 6, "B": 5, "C": 4, "D": 4, "E": 3, "F": 3}
+
+
+class TestTier01DiagnosticMatrix:
+    """Tier-0.1: 25 controlled minimal pairs probing tier-0's failure modes."""
+
+    def _runs(self):
+        return _manifest("0_1")["runs"]
+
+    def _load(self, tier, name):
+        return json.loads((TEST_CONFIGS / f"tier{tier}" / f"{name}.json").read_text())
+
+    def test_every_cell_is_a_minimal_pair_of_its_anchor(self):
+        tier0_names = {r["name"] for r in _manifest(0)["runs"]}
+        runs = {r["name"]: r for r in self._runs()}
+        assert set(runs) == set(TIER01_EXPECTED_DELTAS)
+        for name, (anchor, expected_delta) in TIER01_EXPECTED_DELTAS.items():
+            assert runs[name]["anchor"] == anchor, name
+            assert anchor in tier0_names, name
+            cfg = self._load("0_1", name)
+            anchor_cfg = self._load(0, anchor)
+            delta = _config_delta(cfg, anchor_cfg) - {"experiment_name"}
+            assert delta == expected_delta, (name, sorted(delta))
+
+    def test_manifest_carries_falsifiable_diagnostics(self):
+        for run in self._runs():
+            assert run["family"] in TIER01_FAMILY_SIZES, run["name"]
+            assert isinstance(run["axes_moved"], list), run["name"]
+            # Minimal pair: at most 2 axes; 0 only for the pure green control.
+            assert len(run["axes_moved"]) <= 2, run["name"]
+            if not run["axes_moved"]:
+                assert run["name"] == "t01_25_ttfsq_lenet5_wq_s32"
+            assert isinstance(run["hypothesis"], str), run["name"]
+            assert len(run["hypothesis"]) >= 40, run["name"]
+
+    def test_family_sizes(self):
+        counts = {}
+        for run in self._runs():
+            counts[run["family"]] = counts.get(run["family"], 0) + 1
+        assert counts == TIER01_FAMILY_SIZES
+
+    def test_envelope_cells_train_four_epochs_and_others_two(self):
+        for run in self._runs():
+            dp = self._load("0_1", run["name"])["deployment_parameters"]
+            expected = 4 if run["family"] == "B" else 2
+            assert dp["training_epochs"] == expected, run["name"]
+
+    def test_floor_cells_carry_the_overridable_wall_knob(self):
+        floor_cells = {"t01_23_ttfs_mmixcore_wq_s8_floor",
+                       "t01_24_sync_mmixcore_wq_s8_pruned10_floor"}
+        for run in self._runs():
+            dp = self._load("0_1", run["name"])["deployment_parameters"]
+            if run["name"] in floor_cells:
+                assert dp["endpoint_floor_wall_s"] == 600, run["name"]
+            else:
+                assert "endpoint_floor_wall_s" not in dp, run["name"]
+
+    def test_green_control_is_a_pure_t0_12_clone(self):
+        cfg = self._load("0_1", "t01_25_ttfsq_lenet5_wq_s32")
+        anchor = self._load(0, "t0_12_ttfsq_lenet5_wq_s32")
+        assert _config_delta(cfg, anchor) == {"experiment_name"}
+
+    def test_manifest_quant_axis_is_runtime_truth(self):
+        aq_on = {"lif", "ttfs_quantized", "ttfs_cycle_based"}
+        for run in self._runs():
+            cell = run["cell"]
+            wq = self._load("0_1", run["name"])["deployment_parameters"]["weight_quantization"]
+            if not wq:
+                assert cell["quantization"] == "none", run["name"]
+            elif cell["firing"] in aq_on:
+                assert cell["quantization"] == "wq_aq", run["name"]
+            else:
+                assert cell["quantization"] == "wq", run["name"]
+
+    def test_sim_sample_respec_is_note_sanctioned(self):
+        notes = _notes("0_1")
+        assert "sim-sample respec" in notes["t01_17_ttfs_deepcnn_d8_fp_s16_sched.json"].lower()
