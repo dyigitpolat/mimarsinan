@@ -12,7 +12,6 @@ from mimarsinan.common.best_effort import best_effort
 from mimarsinan.tuning.forward_install import CascadeForwardInstall, LazyExecutorForward
 from mimarsinan.tuning.orchestration.blend_ramp import (
     BlendActivation,
-    KDClassificationLoss,
     kd_loss_from_config,
 )
 from mimarsinan.tuning.orchestration.genuine_probe import (
@@ -29,9 +28,6 @@ from mimarsinan.tuning.perceptron_rate import rebuild_activations, set_blend_rat
 from mimarsinan.tuning.teacher import snapshot_frozen_teacher
 
 __all__ = ["BlendActivation", "KDBlendAdaptationTuner"]
-
-_InstalledForward = LazyExecutorForward
-_KDClassificationLoss = KDClassificationLoss
 
 
 class KDBlendAdaptationTuner(CascadeForwardInstall, SmoothAdaptationTuner):

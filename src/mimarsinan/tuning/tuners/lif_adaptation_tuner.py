@@ -23,9 +23,9 @@ from mimarsinan.tuning.orchestration.install_resolution import (
     emit_temporal_gauge,
     lif_temporal_gauge,
 )
+from mimarsinan.tuning.forward_install import LazyExecutorForward
 from mimarsinan.tuning.orchestration.kd_blend_adaptation_tuner import (
     KDBlendAdaptationTuner,
-    _InstalledForward,
 )
 from mimarsinan.tuning.orchestration.lif_adaptation_plan import LifAdaptationPlan
 from mimarsinan.tuning.orchestration.mbh_tanneal import (
@@ -34,7 +34,7 @@ from mimarsinan.tuning.orchestration.mbh_tanneal import (
 )
 
 
-class _ChipAlignedNFForward(_InstalledForward):
+class _ChipAlignedNFForward(LazyExecutorForward):
     """Picklable ``model.forward`` override installed post-blend (rate==1.0).
 
     Routes NF through ``chip_aligned_segment_forward`` so downstream calibrators see

@@ -290,4 +290,3 @@ def test_kd_blend_module_reexports_mechanism_symbols():
     from mimarsinan.tuning.orchestration import kd_blend_adaptation_tuner as m
 
     assert m.BlendActivation is BlendActivation
-    assert m._KDClassificationLoss is KDClassificationLoss

@@ -86,6 +86,3 @@ class NormalizationAwarePerceptronQuantizationTuner(PerceptronTransformTuner):
             base_steps=int(cfg.get("wq_endpoint_recovery_steps", 0)),
             target_floor=target_floor,
         )
-
-    def run(self):
-        return super().run()

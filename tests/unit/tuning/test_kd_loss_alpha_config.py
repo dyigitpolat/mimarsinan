@@ -1,6 +1,6 @@
 """The KD-blend fine-tune loss weighting (CE alpha / KD temperature) is config-driven.
 
-Both LIF and TTFS conversion fine-tuning share ``_KDClassificationLoss`` =
+Both LIF and TTFS conversion fine-tuning share ``KDClassificationLoss`` =
 ``alpha*CE + (1-alpha)*KD`` via ``KDBlendAdaptationTuner``. The historical hardcode
 is alpha=0.3 / T=3.0 (KD-heavy). These were not configurable, so a KD-heavy objective
 could not be re-weighted toward hard-label CE for harder datasets where it under-fits.
@@ -19,9 +19,9 @@ from mimarsinan.config_schema.defaults import (
     DEFAULT_DEPLOYMENT_PARAMETERS as DEFAULTS,
     CONFIG_KEYS_SET,
 )
+from mimarsinan.tuning.orchestration.blend_ramp import KDClassificationLoss
 from mimarsinan.tuning.orchestration.kd_blend_adaptation_tuner import (
     KDBlendAdaptationTuner,
-    _KDClassificationLoss,
 )
 
 
@@ -35,7 +35,7 @@ def _stub_tuner(config):
 
 class TestDefaultsArePreserved:
     def test_default_loss_is_the_historical_hardcode(self):
-        loss = _KDClassificationLoss(nn.Linear(4, 3))
+        loss = KDClassificationLoss(nn.Linear(4, 3))
         assert loss.alpha == 0.3
         assert loss.temperature == 3.0
 
@@ -68,7 +68,7 @@ class TestConfigThreadsThrough:
         model = nn.Linear(4, 3)
         x = torch.randn(8, 4)
         y = torch.randint(0, 3, (8,))
-        loss_fn = _KDClassificationLoss(teacher, temperature=3.0, alpha=1.0)
+        loss_fn = KDClassificationLoss(teacher, temperature=3.0, alpha=1.0)
         got = loss_fn(model, x, y)
         ce = torch.nn.functional.cross_entropy(model(x), y)
         assert torch.allclose(got, ce, atol=1e-6)  # alpha=1 => KD term drops out
@@ -80,7 +80,7 @@ class TestConfigThreadsThrough:
         x = torch.randn(8, 4)
         y = torch.randint(0, 3, (8,))
         a = 0.6
-        blended = _KDClassificationLoss(teacher, temperature=3.0, alpha=a)(model, x, y)
-        ce_only = _KDClassificationLoss(teacher, temperature=3.0, alpha=1.0)(model, x, y)
-        kd_only = _KDClassificationLoss(teacher, temperature=3.0, alpha=0.0)(model, x, y)
+        blended = KDClassificationLoss(teacher, temperature=3.0, alpha=a)(model, x, y)
+        ce_only = KDClassificationLoss(teacher, temperature=3.0, alpha=1.0)(model, x, y)
+        kd_only = KDClassificationLoss(teacher, temperature=3.0, alpha=0.0)(model, x, y)
         assert torch.allclose(blended, a * ce_only + (1.0 - a) * kd_only, atol=1e-6)

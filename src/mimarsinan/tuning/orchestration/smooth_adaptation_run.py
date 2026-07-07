@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import time
 import warnings
 from typing import TYPE_CHECKING, Any
@@ -40,6 +41,31 @@ class SmoothAdaptationRunMixin(TunerBase):
         deployment-aware post-training calibration here (it must only commit
         validation-improving changes — no training follows to undo them)."""
 
+    def _stabilization_lr(self):
+        """The stabilization pass LR: optionally re-found, capped at the pipeline
+        LR; ``None`` = the sweep refused and the optional pass is skipped (fix C)."""
+        if getattr(self, "_stabilization_refinds_lr", False):
+            self._invalidate_lr_cache()
+        return self._capped_cached_lr()
+
+    @contextlib.contextmanager
+    def _stabilization_rollback_guard(self):
+        """Pre/post validation bracket shared by every stabilization shape:
+        restore + report when the pass ends below entry - tolerance
+        (non-destructive). Yields the entry validation read."""
+        n_eval = self._budget.eval_n_batches
+        pre_state = self._clone_state()
+        pre_val = float(self.trainer.validate_n_batches(n_eval))
+        yield pre_val
+        post_val = float(self.trainer.validate_n_batches(n_eval))
+        if post_val < pre_val - self._rollback_tolerance:
+            self._restore_state(pre_state)
+            self._invalidate_lr_cache()
+            self.pipeline.reporter.report(
+                f"{self.name} stabilization rollback",
+                {"pre": pre_val, "post": post_val},
+            )
+
     def _stabilize_at_full_rate(self):
         """Extra training at rate=1.0 after ``_after_run`` has committed.
 
@@ -57,57 +83,44 @@ class SmoothAdaptationRunMixin(TunerBase):
             return
         budget = int(budget)
 
-        if getattr(self, "_stabilization_refinds_lr", False):
-            self._invalidate_lr_cache()
-        lr = self._capped_cached_lr()
+        lr = self._stabilization_lr()
         if lr is None:
             return  # [LR-REFUSE] optional stabilization is skipped (fix C)
 
         n_eval = self._budget.eval_n_batches
-        pre_state = self._clone_state()
-        pre_val = float(self.trainer.validate_n_batches(n_eval))
-
         progress_n = max(
             self._budget.progress_eval_batches,
             self._budget.eval_n_batches,
         )
         max_patience = max(_RECOVERY_PATIENCE, budget // max(1, self._budget.check_interval))
         rounds = max(1, int(getattr(self, "_max_stabilization_rounds", 1)))
-        last_val = pre_val
-        for round_idx in range(rounds):
-            hooks = self._recovery_training_hooks(1.0)
-            RecoveryEngine.train_to_target(
-                self.trainer,
-                lr,
-                self._get_target(),
-                max_steps=budget,
-                validation_n_batches=progress_n,
-                check_interval=self._budget.check_interval,
-                patience=max_patience,
-                min_steps=budget,
-                min_improvement=self._budget.accuracy_se() / 2,
-                hooks=hooks,
-                final_validation=False,
-            )
-            if round_idx == rounds - 1:
-                break
-            round_val = float(self.trainer.validate_n_batches(n_eval))
-            if round_val - last_val <= self._budget.accuracy_se() / 2:
-                break
-            last_val = round_val
-            self._invalidate_lr_cache()
-            lr = self._capped_cached_lr()
-            if lr is None:
-                break  # [LR-REFUSE] no further stabilization rounds (fix C)
-
-        post_val = float(self.trainer.validate_n_batches(n_eval))
-        if post_val < pre_val - self._rollback_tolerance:
-            self._restore_state(pre_state)
-            self._invalidate_lr_cache()
-            self.pipeline.reporter.report(
-                f"{self.name} stabilization rollback",
-                {"pre": pre_val, "post": post_val},
-            )
+        with self._stabilization_rollback_guard() as pre_val:
+            last_val = pre_val
+            for round_idx in range(rounds):
+                hooks = self._recovery_training_hooks(1.0)
+                RecoveryEngine.train_to_target(
+                    self.trainer,
+                    lr,
+                    self._get_target(),
+                    max_steps=budget,
+                    validation_n_batches=progress_n,
+                    check_interval=self._budget.check_interval,
+                    patience=max_patience,
+                    min_steps=budget,
+                    min_improvement=self._budget.accuracy_se() / 2,
+                    hooks=hooks,
+                    final_validation=False,
+                )
+                if round_idx == rounds - 1:
+                    break
+                round_val = float(self.trainer.validate_n_batches(n_eval))
+                if round_val - last_val <= self._budget.accuracy_se() / 2:
+                    break
+                last_val = round_val
+                self._invalidate_lr_cache()
+                lr = self._capped_cached_lr()
+                if lr is None:
+                    break  # [LR-REFUSE] no further stabilization rounds (fix C)
 
     def _stabilize_bounded_cosine(self):
         """A single bounded stabilization pass of ``N = int(stabilization_ratio *
@@ -119,41 +132,27 @@ class SmoothAdaptationRunMixin(TunerBase):
         if n_steps <= 0:
             return
 
-        if getattr(self, "_stabilization_refinds_lr", False):
-            self._invalidate_lr_cache()
-        lr = self._capped_cached_lr()
+        lr = self._stabilization_lr()
         if lr is None:
             return  # [LR-REFUSE] optional stabilization is skipped (fix C)
 
-        n_eval = self._budget.eval_n_batches
-        pre_state = self._clone_state()
-        pre_val = float(self.trainer.validate_n_batches(n_eval))
-
-        hooks = self._recovery_training_hooks(1.0)
-        # check_interval = n_steps makes the only validation the final step, so the
-        # unreachable target cannot break the run early: exactly N steps run.
-        RecoveryEngine.train_to_target(
-            self.trainer,
-            lr,
-            self._get_target() + 1.0,
-            max_steps=n_steps,
-            validation_n_batches=self._budget.progress_eval_batches,
-            check_interval=n_steps,
-            patience=1,
-            min_steps=n_steps,
-            min_improvement=self._budget.accuracy_se() / 2,
-            hooks=hooks,
-            cosine_decay=True,
-            final_validation=False,
-        )
-
-        post_val = float(self.trainer.validate_n_batches(n_eval))
-        if post_val < pre_val - self._rollback_tolerance:
-            self._restore_state(pre_state)
-            self._invalidate_lr_cache()
-            self.pipeline.reporter.report(
-                f"{self.name} stabilization rollback",
-                {"pre": pre_val, "post": post_val},
+        with self._stabilization_rollback_guard():
+            hooks = self._recovery_training_hooks(1.0)
+            # check_interval = n_steps makes the only validation the final step, so
+            # the unreachable target cannot break the run early: exactly N steps run.
+            RecoveryEngine.train_to_target(
+                self.trainer,
+                lr,
+                self._get_target() + 1.0,
+                max_steps=n_steps,
+                validation_n_batches=self._budget.progress_eval_batches,
+                check_interval=n_steps,
+                patience=1,
+                min_steps=n_steps,
+                min_improvement=self._budget.accuracy_se() / 2,
+                hooks=hooks,
+                cosine_decay=True,
+                final_validation=False,
             )
 
     def _continue_to_full_rate(self):
