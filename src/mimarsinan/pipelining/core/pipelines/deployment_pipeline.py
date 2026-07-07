@@ -30,6 +30,28 @@ from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 from mimarsinan.pipelining.core.search_mode import derive_search_mode as derive_search_mode  # noqa: F401 — re-export
 
 
+def merge_pipeline_config(
+    deployment_parameters: dict, platform_constraints: dict
+) -> dict:
+    """The exact ``_initialize_config`` merge + derivation, sans provider facts
+    and device I/O (shared with the golden-resolution harness)."""
+    config: dict = {}
+    config.update(get_default_deployment_parameters())
+    config.update(deployment_parameters)
+    config.update(get_default_platform_constraints())
+    config.update(platform_constraints)
+    derive_deployment_parameters(config)
+    derive_pipeline_runtime_parameters(config)
+    return config
+
+
+def apply_provider_facts(config: dict, data_provider) -> None:
+    """Copy the measured dataset facts from the provider contract into config."""
+    config["input_shape"] = data_provider.get_input_shape()
+    config["input_size"] = int(np.prod(config["input_shape"]))
+    config["num_classes"] = data_provider.get_prediction_mode().num_classes
+
+
 class DeploymentPipeline(Pipeline):
     """Unified deployment pipeline with configurable quantization."""
 
@@ -65,19 +87,13 @@ class DeploymentPipeline(Pipeline):
         *,
         data_provider=None,
     ):
-        self.config.update(get_default_deployment_parameters())
-        self.config.update(deployment_parameters)
-
-        self.config.update(get_default_platform_constraints())
-        self.config.update(platform_constraints)
-        derive_deployment_parameters(self.config)
-        derive_pipeline_runtime_parameters(self.config)
+        self.config.update(
+            merge_pipeline_config(deployment_parameters, platform_constraints)
+        )
 
         if data_provider is None:
             data_provider = self.data_provider_factory.create()
-        self.config["input_shape"] = data_provider.get_input_shape()
-        self.config["input_size"] = int(np.prod(self.config["input_shape"]))
-        self.config["num_classes"] = data_provider.get_prediction_mode().num_classes
+        apply_provider_facts(self.config, data_provider)
         self.config["device"] = select_device()
 
         if os.environ.get("MIMARSINAN_CUDA_DEBUG") == "1":

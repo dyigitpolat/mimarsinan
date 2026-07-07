@@ -171,6 +171,12 @@ suite enforces:
   anything beyond loopback raises. Use local fixtures or an integration tier.
 - Slow/multi-module tests carry the `slow` / `integration` markers; opt in
   with `pytest -m slow`.
+- **Golden resolution snapshot** — `tests/unit/config_schema/
+  test_golden_resolution_snapshot.py` pins the full resolved numeric surface
+  (config, plan, budgets, recipe/policy tables) of every tier config against a
+  checked-in snapshot; regenerate deliberately with
+  `scripts/regen_golden_resolution_snapshot.py` and audit the diff (a changed
+  line = a changed resolved value).
 
 ### Architecture ratchets (`tests/unit/architecture/`)
 
