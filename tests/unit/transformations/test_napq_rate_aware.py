@@ -47,6 +47,14 @@ class TestRateAwareQuantization:
 
     def test_rate_zero_is_identity(self):
         p = _make_perceptron(seed=0)
+        # Canonicalize first: transform() clips constant-OFF saturated bias
+        # (function-preserving) at every rate before deriving the scale, so
+        # rate=0 identity holds on the canonicalized parameter content.
+        from mimarsinan.transformations.bias_saturation import (
+            clip_off_saturated_effective_bias,
+        )
+
+        clip_off_saturated_effective_bias(p)
         orig_w = p.layer.weight.data.clone()
         orig_b = None if p.layer.bias is None else p.layer.bias.data.clone()
 

@@ -1,5 +1,8 @@
 from mimarsinan.transformations.transformation_utils import *
 
+from mimarsinan.transformations.bias_saturation import (
+    clip_off_saturated_effective_bias,
+)
 from mimarsinan.transformations.perceptron.perceptron_transformer import PerceptronTransformer
 
 import torch
@@ -20,6 +23,10 @@ class NormalizationAwarePerceptronQuantization:
         self.rate = rate
 
     def transform(self, perceptron):
+        # The scale must never be set by functionally-unobservable bias mass:
+        # a constant-OFF channel's outlier bias starves the shared weight grid
+        # (the t01_19/t0_03 WQ-entry crater). Idempotent, function-preserving.
+        clip_off_saturated_effective_bias(perceptron)
         w = PerceptronTransformer().get_effective_weight(perceptron)
         b = PerceptronTransformer().get_effective_bias(perceptron)
 

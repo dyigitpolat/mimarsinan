@@ -11,6 +11,7 @@ and `pipelining` modules consume the results when emitting IR and hard cores.
 | File | Purpose |
 |---|---|
 | `activation_scale_policy.py` | Selectable per-layer ANN-to-SNN activation-scale calibration policies (`count_quantile` default, `percentile_norm`, `max_norm`) behind `make_activation_scale_policy`. |
+| `bias_saturation.py` | `clip_off_saturated_effective_bias`: canonicalizes constant-OFF channels' effective bias to the saturation bound `-pos_reach` (function-preserving, idempotent, encoders skipped) so unobservable bias mass never sets the shared NAPQ weight/bias scale (the t01_19/t0_03 WQ-entry crater class). |
 | `chip_quantization.py` | Legacy chip-level core-matrix quantization/verification (`ChipQuantization`); the production IR path uses `mapping.export.chip_quantize` instead. |
 | `normalization_aware_perceptron_quantization.py` | `NormalizationAwarePerceptronQuantization`: per-perceptron quantization of effective weights/biases; `rate` interpolates between FP (`0`) and fully quantized (`1`), and `parameter_scale` is always the full-range scale. |
 | `normalization_fusion.py` | `fuse_into_perceptron`: folds `perceptron.normalization` into `perceptron.layer` (fused bias = `effective_preactivation_bias`), sets normalization to Identity, and refreshes TTFS bias references. |
