@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 
 from mimarsinan.common.best_effort import best_effort
 from mimarsinan.gui.runtime.events import PipelineEvent
+from mimarsinan.gui.viewmodel.events_vm import decorate
 from mimarsinan.gui.runtime.collector.types import to_json_safe
 
 logger = logging.getLogger("mimarsinan.gui")
@@ -37,7 +38,7 @@ class EventsMixin:
             )
             self._pipeline_events.append(event)
             callback = self._pipeline_event_callback
-        self._broadcast({"type": "event", **event.to_record()})
+        self._broadcast({"type": "event", **decorate(event.to_record())})
         if callback is not None:
             with best_effort("pipeline event callback", logger=logger):
                 callback(event)
@@ -49,7 +50,7 @@ class EventsMixin:
     def get_events(self, *, since_seq: int = 0, step_name: str | None = None) -> list[dict]:
         with self._lock:
             return [
-                e.to_record()
+                decorate(e.to_record())
                 for e in self._pipeline_events
                 if e.seq > since_seq and (step_name is None or e.step_name == step_name)
             ]

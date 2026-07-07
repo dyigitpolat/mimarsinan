@@ -7,6 +7,12 @@ from typing import TYPE_CHECKING, Any
 
 from mimarsinan.common.best_effort import best_effort
 from mimarsinan.gui.runtime.collector.types import StepRecord, build_snapshot_etag
+from mimarsinan.gui.viewmodel import (
+    annotations_for_step,
+    build_overview_chart,
+    categories_for,
+    step_bar_badge,
+)
 
 logger = logging.getLogger("mimarsinan.gui")
 
@@ -55,10 +61,13 @@ class ReadApiMixin:
                     "verdict": rec.verdict,
                     "semantic_group": groups.get(rec.name),
                 })
+            for step in steps:
+                step["badge"] = step_bar_badge(step)
             overview = {
                 "steps": steps,
                 "current_step": self._current_step,
                 "config": self._pipeline_config,
+                "overview_chart": build_overview_chart(steps),
             }
             if config_view is not None:
                 overview["config_view"] = config_view
@@ -76,6 +85,11 @@ class ReadApiMixin:
                 return None
             step_metrics = [m for m in self._metrics if m.step_name == step_name]
             latest_metric_seq = max((m.seq for m in step_metrics), default=0)
+            metric_categories = categories_for({m.metric_name for m in step_metrics})
+            annotations = annotations_for_step(
+                [e.to_record() for e in getattr(self, "_pipeline_events", [])],
+                step_name, rec.start_time,
+            )
             metrics = [
                 {
                     "seq": m.seq,
@@ -97,6 +111,8 @@ class ReadApiMixin:
                 "metric_kind": rec.metric_kind,
                 "verdict": rec.verdict,
                 "metrics": metrics,
+                "metric_categories": metric_categories,
+                "annotations": annotations,
                 "latest_metric_seq": latest_metric_seq,
                 "snapshot": rec.snapshot,
                 "snapshot_key_kinds": rec.snapshot_key_kinds,

@@ -16,7 +16,7 @@ _GATE_ACTION_RE = re.compile(r"\[MBH-GATE\]\s+(?:tuner=(\S+)\s+)?(\w+)")
 
 
 def _coerce(raw: str) -> Any:
-    text = raw.strip().strip("'\"")
+    text = raw.strip().strip("'\"").rstrip("),")
     if text in ("True", "False"):
         return text == "True"
     try:

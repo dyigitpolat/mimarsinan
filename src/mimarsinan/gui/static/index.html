@@ -39,6 +39,7 @@
   <!-- Top-level tabs -->
   <div class="tabs main-tabs" id="main-tabs">
     <button class="tab-btn active" data-main-tab="overview">Overview</button>
+    <button class="tab-btn" data-main-tab="analysis">Analysis</button>
     <button class="tab-btn" data-main-tab="config">Configuration</button>
     <button class="tab-btn" data-main-tab="console">Console</button>
   </div>
@@ -57,6 +58,25 @@
     </div>
     <div id="step-detail" class="step-detail">
       <div class="empty-state">Select a pipeline step above to view details</div>
+    </div>
+  </div>
+
+  <!-- Analysis pane: D-hat ratchet staircase, step timeline, A6 gauges -->
+  <div id="main-tab-analysis" class="main-tab-content">
+    <div class="card" style="margin-bottom:24px">
+      <div class="card-header">D&#770; Ratchet Staircase <span style="color:var(--text-muted);font-weight:400;font-size:11px">accepted best-D&#770; only ever rises — the M-invariant, visible</span></div>
+      <div class="card-body no-pad"><div id="chart-staircase"></div></div>
+    </div>
+    <div class="card" style="margin-bottom:24px">
+      <div class="card-header" style="display:flex;justify-content:space-between;align-items:center">
+        <span>Step Timeline</span>
+        <span id="gantt-wall-summary" style="font-size:11px;color:var(--text-muted)"></span>
+      </div>
+      <div class="card-body no-pad"><div id="chart-gantt"></div></div>
+    </div>
+    <div class="card" style="margin-bottom:24px">
+      <div class="card-header">A6 Install-Resolution Gauges <span style="color:var(--text-muted);font-weight:400;font-size:11px">pre-flight, warn-only</span></div>
+      <div class="card-body" id="a6-gauges"></div>
     </div>
   </div>
 

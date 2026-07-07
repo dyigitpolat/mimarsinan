@@ -1,5 +1,7 @@
-/* Pipeline bar + overview charts (target metric, step timing, config). */
+/* Pipeline bar + overview charts (measured points, verdict markers, timing). */
 import { esc, fmtDuration, elapsedFromStepStart, safeReact, emptyAnnotation } from './util.js';
+
+const TONE_COLORS = { pass: '#4ade80', fail: '#f87171' };
 
 // ── Pipeline bar ─────────────────────────────────────────────────────────
 export function renderPipelineBar(pipeline, selectedStep) {
@@ -11,14 +13,26 @@ export function renderPipelineBar(pipeline, selectedStep) {
     const tooltip = `${s.name}${dur} [${i + 1}/${steps.length}]`;
     const selected = selectedStep === s.name ? ' selected' : '';
     const group = s.semantic_group || 'other';
-    const metric = s.status === 'running' && s.target_metric != null
-      ? `<span class="psb-metric">${s.target_metric.toFixed(3)}</span>` : '';
+    const badge = badgeHtml(s);
     return `<div class="psb-col${selected}" data-status="${esc(s.status)}" data-group="${esc(group)}" data-step="${esc(s.name)}" title="${esc(tooltip)}">
-      <div class="psb-bar">${metric}</div>
+      <div class="psb-bar">${badge}</div>
       <span class="psb-label">${esc(s.name)}</span>
     </div>`;
   });
   bar.innerHTML = `<div class="psb-list">${cols.join('')}</div>`;
+}
+
+// The bar cell shows a VERDICT for gate steps and a metric only while a
+// measured step is running — a carried value is never displayed as a number.
+function badgeHtml(step) {
+  const badge = step.badge;
+  if (badge && badge.kind === 'verdict') {
+    return `<span class="psb-metric psb-verdict-${esc(badge.status)}">${esc(badge.text)}</span>`;
+  }
+  if (step.status === 'running' && badge && badge.kind === 'metric') {
+    return `<span class="psb-metric">${esc(badge.text)}</span>`;
+  }
+  return '';
 }
 
 // ── Overview cards ───────────────────────────────────────────────────────
@@ -33,37 +47,64 @@ export function renderOverviewCards(pipeline) {
   const progEl = document.getElementById('progress-text');
   if (progEl) progEl.textContent = `${completed.length} / ${steps.length}`;
 
-  renderMetricProgression(steps);
+  renderMetricProgression(steps, pipeline.overview_chart);
   renderStepTiming(steps);
 }
 
-function renderMetricProgression(steps) {
-  const pts = steps.filter(s =>
-    s.target_metric != null && (s.status === 'completed' || s.end_time != null)
-  );
-  const lastPt = pts.length > 0 ? pts[pts.length - 1] : null;
-  const annotations = pts.length === 0 ? emptyAnnotation('No metrics yet') : [];
+function renderMetricProgression(steps, chart) {
+  const points = (chart && chart.points) || [];
+  const markers = (chart && chart.markers) || [];
+  const annotations = points.length === 0 && markers.length === 0
+    ? emptyAnnotation('No measured metrics yet') : [];
+  const shapes = [];
+
+  const lastPt = points.length > 0 ? points[points.length - 1] : null;
   if (lastPt) {
     annotations.push({
-      x: lastPt.name, y: lastPt.target_metric,
-      text: lastPt.target_metric.toFixed(4),
+      x: lastPt.step, y: lastPt.value,
+      text: lastPt.value.toFixed(4),
       showarrow: true, arrowhead: 2, ax: 30, ay: -25,
       font: { size: 11, color: '#22d3ee' },
       bgcolor: 'rgba(15,17,23,0.85)', bordercolor: '#22d3ee', borderwidth: 1,
     });
   }
-  const traces = pts.length > 0 ? [{
-    x: pts.map(s => s.name), y: pts.map(s => s.target_metric),
+
+  // Verdict/failed steps: labeled vertical lines with a pass/fail glyph —
+  // never a fabricated data point at the carried metric.
+  const categories = steps.filter(s =>
+    points.some(p => p.step === s.name) || markers.some(m => m.step === s.name)
+  ).map(s => s.name);
+  for (const marker of markers) {
+    const color = TONE_COLORS[marker.status] || TONE_COLORS.pass;
+    shapes.push({
+      type: 'line', xref: 'x', yref: 'paper',
+      x0: marker.step, x1: marker.step, y0: 0, y1: 1,
+      line: { color, width: 1.5, dash: 'dot' },
+    });
+    annotations.push({
+      x: marker.step, y: 1.04, yref: 'paper',
+      text: marker.glyph, showarrow: false,
+      font: { size: 13, color },
+      hovertext: `${marker.glyph} ${marker.label || ''}`,
+    });
+  }
+
+  const traces = points.length > 0 ? [{
+    x: points.map(p => p.step), y: points.map(p => p.value),
     type: 'scatter', mode: 'lines+markers',
     marker: { size: 8, color: '#22d3ee' }, line: { width: 2, color: '#5b8af5' },
+    name: 'measured',
   }] : [];
-  const allMetrics = pts.map(s => s.target_metric);
-  const maxY = allMetrics.length > 0 ? Math.max(1, ...allMetrics) * 1.05 : 1;
+  const values = points.map(p => p.value);
+  const maxY = values.length > 0 ? Math.max(1, ...values) * 1.05 : 1;
   safeReact('chart-metric-progression', traces, {
     margin: { t: 40, r: 30, b: 100, l: 60 },
-    xaxis: { tickangle: -45, automargin: true, tickfont: { size: 10 } },
-    yaxis: { title: 'Target Metric', automargin: true, range: [0, maxY] },
-    height: 260, annotations,
+    xaxis: {
+      tickangle: -45, automargin: true, tickfont: { size: 10 },
+      type: 'category', categoryorder: 'array', categoryarray: categories,
+    },
+    yaxis: { title: 'Measured Metric', automargin: true, range: [0, maxY] },
+    height: 260, annotations, shapes,
   });
 }
 

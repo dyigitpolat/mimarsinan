@@ -142,4 +142,5 @@ class TestConsoleBackfill:
         profile = events[5]
         assert profile["step"] == "Pretraining"
         assert profile["payload"]["wall_s"] == 12.3
+        assert profile["payload"]["prev"] == 0.0  # trailing ')' stripped
         assert all(e["backfilled"] for e in events)

@@ -22,12 +22,35 @@ from mimarsinan.gui.runs import (
 from mimarsinan.gui.runtime.active_run_hub import ActiveRunHub
 from mimarsinan.gui.runtime.persistence import load_console_logs, load_events
 from mimarsinan.gui.server.json_safe import SafeJSONResponse
+from mimarsinan.gui.viewmodel import (
+    StaircaseMonotonicityError,
+    build_a6_gauges,
+    build_gantt,
+    build_staircase,
+    decorate,
+    highwater,
+)
 
 if TYPE_CHECKING:
     from mimarsinan.gui.runtime.collector import DataCollector
     from mimarsinan.gui.runtime.process_manager import ProcessManager
 
 logger = logging.getLogger("mimarsinan.gui")
+
+
+def _analysis_payload(steps: list, events: list, flat_config: dict) -> dict:
+    """Compose the Analysis-tab panels; a broken D-hat ratchet is surfaced
+    loudly instead of rendered as a lie."""
+    try:
+        staircase = build_staircase(events)
+    except StaircaseMonotonicityError as exc:
+        staircase = {"tuners": [], "invariant_violation": str(exc)}
+    return {
+        "staircase": staircase,
+        "highwater": highwater(events),
+        "gantt": build_gantt(steps, events, flat_config),
+        "a6": build_a6_gauges(events),
+    }
 
 
 def register_routes(
@@ -73,6 +96,15 @@ def register_routes(
     def api_events(since_seq: int = 0, step: str | None = None):
         return collector.get_events(since_seq=since_seq, step_name=step)
 
+    @app.get("/api/analysis")
+    def api_analysis():
+        overview = collector.get_pipeline_overview()
+        return _analysis_payload(
+            overview.get("steps", []),
+            collector.get_events(),
+            collector.pipeline_config or {},
+        )
+
     @app.get("/api/runs")
     def api_list_runs(include_steps: bool = False):
         return list_runs(include_steps=include_steps)
@@ -104,7 +136,19 @@ def register_routes(
 
     @app.get("/api/runs/{run_id}/events")
     def api_run_events(run_id: str, since_seq: int = 0):
-        return get_run_events(run_id, since_seq=since_seq)
+        return [decorate(e) for e in get_run_events(run_id, since_seq=since_seq)]
+
+    @app.get("/api/runs/{run_id}/analysis")
+    def api_run_analysis(run_id: str):
+        data = get_run_pipeline(run_id)
+        if data is None:
+            return JSONResponse(status_code=404, content={"error": "run not found"})
+        config = data.get("config") or {}
+        return _analysis_payload(
+            data.get("steps", []),
+            get_run_events(run_id),
+            dict(config.get("deployment_parameters") or {}),
+        )
 
     @app.get("/api/active_runs")
     def api_active_runs():
@@ -153,7 +197,7 @@ def register_routes(
         working_dir = process_manager.get_working_dir(run_id)
         if working_dir is None:
             return JSONResponse(status_code=404, content={"error": "run not found"})
-        return load_events(working_dir, since_seq=since_seq)
+        return [decorate(e) for e in load_events(working_dir, since_seq=since_seq)]
 
     @app.websocket("/ws")
     async def websocket_endpoint(ws: WebSocket):

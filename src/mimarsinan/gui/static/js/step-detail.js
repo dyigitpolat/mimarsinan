@@ -30,6 +30,11 @@ import { setResourceContext } from './resource-urls.js';
 const _etagCache = {};
 const _sinceSeqCache = {};
 const _detailCache = {};
+// Server-provided view-model state: metric-name -> chart category (the
+// grouping rule table lives in Python, gui/viewmodel/step_metrics_vm.py)
+// and per-step event annotations for the annotation lanes.
+const _categoryMaps = {};
+const _annotationCache = {};
 
 export async function refreshStepDetail(stepName, state, fetchJSON) {
   const panel = document.getElementById('step-detail');
@@ -89,6 +94,10 @@ export async function refreshStepDetail(stepName, state, fetchJSON) {
   }
   if (detail.error) { panel.innerHTML = `<div class="empty-state">${esc(detail.error)}</div>`; return; }
   _detailCache[stepName] = detail;
+  if (detail.metric_categories) {
+    _categoryMaps[stepName] = { ..._categoryMaps[stepName], ...detail.metric_categories };
+  }
+  if (Array.isArray(detail.annotations)) _annotationCache[stepName] = detail.annotations;
 
   // Advance the cursor so the next poll asks only for newer metrics.
   if (typeof detail.latest_metric_seq === 'number') {
@@ -136,7 +145,7 @@ export async function refreshStepDetail(stepName, state, fetchJSON) {
       <span class="badge ${detail.status}">${detail.status}</span>
       ${stepCountLabel}
       ${detail.duration ? `<span class="detail-meta">${fmtDuration(detail.duration)}</span>` : ''}
-      ${detail.target_metric != null ? `<span class="detail-metric">Metric: ${detail.target_metric.toFixed(4)}</span>` : ''}
+      ${headerMetricHtml(detail)}
     </div>
     <div class="tabs" id="step-tabs"></div>
     <div id="step-tab-content"></div>`;
@@ -163,7 +172,7 @@ export function updateLiveCharts(stepName, state) {
   if (plottableNames.length === 0) return;
   const stepStartTime = state.pipeline?.steps?.find(s => s.name === stepName)?.start_time;
   const stepStartSec = stepStartTime != null ? (stepStartTime > 1e12 ? stepStartTime / 1000 : stepStartTime) : null;
-  const groups = groupMetricsByCategory(plottableNames);
+  const groups = groupMetricsByCategory(plottableNames, stepName);
 
   // First-metric scaffold: when the metrics tab was previously rendered
   // with an empty buffer, ``renderMetricsTab`` emitted a "No metrics
@@ -181,7 +190,7 @@ export function updateLiveCharts(stepName, state) {
   if (anyMissing) {
     const content = document.getElementById('step-tab-content');
     if (content) {
-      renderMetricsTab(metrics, content, stepStartSec);
+      renderMetricsTab(metrics, content, stepStartSec, _detailCache[stepName]);
       // ``renderMetricsTab`` freshly plots every group, so bookkeeping
       // on the previous chart DOMs is already reset inside
       // ``plotMetricGroup``. Nothing more to do this tick.
@@ -385,7 +394,7 @@ function renderTabContent(stepName, tab, detail, metrics, container, state) {
   const snap = detail.snapshot || {};
   const stepStartTime = detail.start_time != null ? (detail.start_time > 1e12 ? detail.start_time / 1000 : detail.start_time) : null;
   switch (tab) {
-    case 'metrics': renderMetricsTab(metrics, container, stepStartTime); break;
+    case 'metrics': renderMetricsTab(metrics, container, stepStartTime, detail); break;
     case 'live_search': renderLiveSearchTab(stepName, detail, container, state); break;
     case 'model':
       // The planned Mapping Performance panel now lives in its own tab
@@ -463,20 +472,61 @@ function renderLiveSearchTab(stepName, detail, container, state) {
   }
 }
 
+// ── Honest header + verdict card ─────────────────────────────────────────
+// A carried metric is the previous step's value; showing it as "Metric:"
+// fabricates a measurement, so it renders as a labeled chip instead.
+function headerMetricHtml(detail) {
+  const parts = [];
+  if (detail.verdict) {
+    const status = detail.verdict.status || 'pass';
+    parts.push(`<span class="badge ${status === 'pass' ? 'completed' : 'failed'}" title="${esc(detail.verdict.rule || '')}">${status === 'pass' ? 'PASS' : 'FAIL'}</span>`);
+  }
+  if (detail.target_metric != null) {
+    if (detail.metric_kind === 'carried') {
+      parts.push(`<span class="detail-meta" title="This step measures nothing; the pipeline metric is carried from the previous step.">carried: ${detail.target_metric.toFixed(4)}</span>`);
+    } else {
+      parts.push(`<span class="detail-metric">Metric: ${detail.target_metric.toFixed(4)}</span>`);
+    }
+  }
+  return parts.join('\n      ');
+}
+
+function verdictCardHtml(verdict) {
+  const status = verdict.status || 'pass';
+  const rows = Object.entries(verdict.detail || {})
+    .map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(String(v))}</td></tr>`).join('');
+  return `<div class="card verdict-card verdict-${esc(status)}">
+    <div class="card-header">Gate Verdict — ${status === 'pass' ? '✓ PASS' : '✖ FAIL'}</div>
+    <div class="card-body">
+      <p class="verdict-rule">${esc(verdict.rule || '')}</p>
+      ${rows ? `<table class="config-table">${rows}</table>` : ''}
+    </div>
+  </div>`;
+}
+
 // ── Metrics tab ──────────────────────────────────────────────────────────
-function renderMetricsTab(metrics, container, stepStartTime) {
+function renderMetricsTab(metrics, container, stepStartTime, detail) {
   const names = Object.keys(metrics).filter(n => n !== 'search_event');
-  if (names.length === 0) { container.innerHTML = '<div class="empty-state">No metrics recorded</div>'; return; }
-  const groups = groupMetricsByCategory(names);
-  let html = '<div class="grid-2">';
+  const verdict = detail && detail.verdict;
+  if (names.length === 0) {
+    container.innerHTML = verdict
+      ? verdictCardHtml(verdict)
+      : '<div class="empty-state">No metrics recorded</div>';
+    return;
+  }
+  const stepName = detail ? detail.name : null;
+  const groups = groupMetricsByCategory(names, stepName);
+  let html = verdict ? verdictCardHtml(verdict) : '';
+  html += '<div class="grid-2">';
   for (const group of Object.keys(groups))
     html += `<div class="card"><div class="card-header">${esc(group)}</div><div class="card-body"><div id="mc-${cssId(group)}" style="min-height:200px"></div></div></div>`;
   html += '</div>';
   container.innerHTML = html;
-  for (const [group, metricNames] of Object.entries(groups)) plotMetricGroup(group, metricNames, metrics, stepStartTime);
+  for (const [group, metricNames] of Object.entries(groups))
+    plotMetricGroup(group, metricNames, metrics, stepStartTime, stepName);
 }
 
-function plotMetricGroup(group, metricNames, metrics, stepStartTime) {
+function plotMetricGroup(group, metricNames, metrics, stepStartTime, stepName) {
   const el = document.getElementById(`mc-${cssId(group)}`);
   if (!el) return;
   const allTraces = metricNames.map(name => {
@@ -507,6 +557,11 @@ function plotMetricGroup(group, metricNames, metrics, stepStartTime) {
   if (group === 'Accuracy' || group === 'Adaptation') {
     layoutOpts.yaxis = { range: [0, 1] };
   }
+  const lane = annotationLane(stepName, group);
+  if (lane.shapes.length) {
+    layoutOpts.shapes = lane.shapes;
+    layoutOpts.annotations = lane.annotations;
+  }
   safeReact(el, traces, layoutOpts);
   // Record trace layout so the WS-driven fast path (updateLiveCharts)
   // can extendTraces incrementally instead of rebuilding the chart.
@@ -528,18 +583,60 @@ function computeGroupXMax(traces) {
   return null;
 }
 
-function groupMetricsByCategory(names) {
+// ── Annotation lanes ─────────────────────────────────────────────────────
+// Structured pipeline events (gate accepts/rejects/stalls, LR refusals,
+// endpoint reports) render as labeled vertical lines on the charts whose
+// category they declare. Colors follow the event tone.
+const TONE_LINE_COLORS = { good: '#4ade80', warn: '#fbbf24', bad: '#f87171', neutral: '#8494a7' };
+
+export function bufferLiveAnnotation(stepName, frame) {
+  // A decorated WS event frame -> one annotation entry (server ships the
+  // display hints, the client never interprets payloads).
+  const display = frame.display || {};
+  if (!display.categories || !display.categories.length) return;
+  if (!_annotationCache[stepName]) _annotationCache[stepName] = [];
+  const startTime = frame._step_start;
+  _annotationCache[stepName].push({
+    x: startTime != null && frame.timestamp != null
+      ? Math.max(0, frame.timestamp - startTime) : null,
+    kind: frame.kind,
+    label: display.label,
+    tone: display.tone,
+    categories: display.categories,
+  });
+}
+
+function annotationLane(stepName, group) {
+  const shapes = [];
+  const annotations = [];
+  const entries = (stepName && _annotationCache[stepName]) || [];
+  for (const entry of entries) {
+    if (!entry.categories.includes(group) || entry.x == null) continue;
+    const color = TONE_LINE_COLORS[entry.tone] || TONE_LINE_COLORS.neutral;
+    shapes.push({
+      type: 'line', xref: 'x', yref: 'paper',
+      x0: entry.x, x1: entry.x, y0: 0, y1: 1,
+      line: { color, width: 1, dash: 'dot' },
+    });
+    annotations.push({
+      x: entry.x, y: 1, yref: 'paper', yanchor: 'bottom',
+      text: '·', showarrow: false, font: { size: 14, color },
+      hovertext: entry.label,
+    });
+  }
+  return { shapes, annotations };
+}
+
+// Categories come from the server view-model (step_metrics_vm.py — the one
+// rule table); names that arrive over WS before the next detail fetch land
+// in 'Other' until the map refreshes.
+function groupMetricsByCategory(names, stepName) {
+  const map = (stepName && _categoryMaps[stepName]) || {};
   const groups = {};
-  const add = (cat, name) => { if (!groups[cat]) groups[cat] = []; groups[cat].push(name); };
   for (const name of names) {
-    const l = name.toLowerCase();
-    if (l.includes('loss')) add('Loss', name);
-    else if (l.includes('adaptation target')) add('Accuracy', name);
-    else if (l.includes('accuracy') || l.includes('acc')) add('Accuracy', name);
-    else if (l === 'lr' || l.includes('learning rate')) add('Learning Rate', name);
-    else if (l.includes('adaptation') || l.includes('tuning rate')) add('Adaptation', name);
-    else if (l.includes('search')) add(`Search: ${name}`, name);  // one plot per search metric (different scales)
-    else add('Other', name);
+    const cat = map[name] || 'Other';
+    if (!groups[cat]) groups[cat] = [];
+    groups[cat].push(name);
   }
   return groups;
 }

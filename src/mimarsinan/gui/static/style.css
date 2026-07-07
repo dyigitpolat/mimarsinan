@@ -1524,3 +1524,28 @@ body {
 /* Big-metric chip on SANA-FE summary cards — give the value a soft
    neon glow so the page feels less like a spreadsheet. */
 .card .big-metric .value { text-shadow: 0 0 12px currentColor; }
+
+/* ─── Honest verdict rendering + analysis panels ─────────────────────── */
+
+.psb-verdict-pass { color: #4ade80; }
+.psb-verdict-fail { color: #f87171; }
+
+.verdict-card { margin-bottom: 20px; }
+.verdict-card .verdict-rule { color: var(--text-secondary); font-size: 13px; margin-bottom: 10px; }
+.verdict-pass .card-header { color: #4ade80; }
+.verdict-fail .card-header { color: #f87171; }
+
+.a6-card-row { display: flex; gap: 16px; flex-wrap: wrap; }
+.a6-card {
+  flex: 1 1 260px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  background: var(--bg-card, rgba(255,255,255,0.02));
+}
+.a6-card-head { display: flex; justify-content: space-between; margin-bottom: 4px; }
+.a6-kind { font-weight: 600; text-transform: uppercase; font-size: 11px; letter-spacing: 0.06em; }
+.a6-verdict { font-size: 12px; font-weight: 600; }
+.a6-pass .a6-verdict { color: #4ade80; }
+.a6-warn .a6-verdict { color: #fbbf24; }
+.a6-context { color: var(--text-muted); font-size: 11px; margin-bottom: 8px; }

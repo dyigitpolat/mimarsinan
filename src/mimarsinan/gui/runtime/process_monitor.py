@@ -10,7 +10,15 @@ import time
 from pathlib import Path
 
 from mimarsinan.common.best_effort import best_effort
+from mimarsinan.gui.viewmodel import (
+    annotations_for_step,
+    build_overview_chart,
+    categories_for,
+    persisted_step_view,
+    step_bar_badge,
+)
 from mimarsinan.gui.runtime.persistence.load import (
+    load_events,
     load_live_metrics,
     load_persisted_steps,
     load_run_info,
@@ -165,16 +173,7 @@ def get_run_detail(runs: dict[str, ManagedRun], run_id: str) -> dict | None:
             status = "failed"
         if status == "running":
             current_step = sn
-        start_t = sd.get("start_time")
-        end_t = sd.get("end_time")
-        steps.append({
-            "name": sn,
-            "status": status,
-            "start_time": start_t,
-            "end_time": end_t,
-            "duration": (end_t - start_t) if start_t and end_t else None,
-            "target_metric": sd.get("target_metric"),
-        })
+        steps.append(persisted_step_view(sn, sd, status=status))
 
     config = (info or {}).get("config_summary")
     config_path = os.path.join(managed.working_dir, "_RUN_CONFIG", "config.json")
@@ -201,6 +200,8 @@ def get_run_detail(runs: dict[str, ManagedRun], run_id: str) -> dict | None:
     if not alive and run_status == "running":
         run_status = "failed"
 
+    for s in steps:
+        s["badge"] = step_bar_badge(s)
     result = {
         "steps": steps,
         "current_step": current_step,
@@ -208,6 +209,7 @@ def get_run_detail(runs: dict[str, ManagedRun], run_id: str) -> dict | None:
         "is_alive": alive,
         "status": run_status,
         "error": run_error,
+        "overview_chart": build_overview_chart(steps),
     }
     if config:
         with best_effort(f"build config_view for run {run_id}", logger=logger):
@@ -244,6 +246,12 @@ def get_run_step_detail(runs: dict[str, ManagedRun], run_id: str, step_name: str
     if step_status == "pending" and sd.get("end_time") is not None:
         step_status = "completed"
 
+    metric_categories = categories_for({m.get("name", "") for m in metrics})
+    annotations = annotations_for_step(
+        load_events(managed.working_dir, step_name=step_name),
+        step_name, sd.get("start_time"),
+    )
+
     snapshot = sd.get("snapshot")
     snapshot_key_kinds = sd.get("snapshot_key_kinds")
     if snapshot is None:
@@ -252,14 +260,10 @@ def get_run_step_detail(runs: dict[str, ManagedRun], run_id: str, step_name: str
             snapshot, snapshot_key_kinds = rebuilt
 
     return {
-        "name": step_name,
-        "status": step_status,
-        "start_time": sd.get("start_time"),
-        "end_time": sd.get("end_time"),
-        "duration": (sd.get("end_time", 0) - sd.get("start_time", 0))
-            if sd.get("start_time") and sd.get("end_time") else None,
-        "target_metric": sd.get("target_metric"),
+        **persisted_step_view(step_name, sd, status=step_status),
         "metrics": metrics,
+        "metric_categories": metric_categories,
+        "annotations": annotations,
         "snapshot": snapshot,
         "snapshot_key_kinds": snapshot_key_kinds,
     }

@@ -16,6 +16,13 @@ from mimarsinan.gui.runtime.persistence import (
     load_persisted_steps,
 )
 from mimarsinan.gui.snapshot.console_events import parse_console_events
+from mimarsinan.gui.viewmodel import (
+    annotations_for_step,
+    build_overview_chart,
+    categories_for,
+    persisted_step_view,
+    step_bar_badge,
+)
 from mimarsinan.gui.snapshot.rebuild import rebuild_step_snapshot_from_disk
 
 logger = logging.getLogger("mimarsinan.gui")
@@ -112,24 +119,20 @@ def get_run_pipeline(run_id: str) -> dict[str, Any] | None:
         groups = get_pipeline_semantic_group_by_step_name(flat_config)
     steps = []
     for name, sd in steps_data.items():
-        start_t = sd.get("start_time")
-        end_t = sd.get("end_time")
         steps.append({
-            "name": name,
-            "status": "completed" if end_t else "pending",
-            "start_time": start_t,
-            "end_time": end_t,
-            "duration": (end_t - start_t) if start_t and end_t else None,
-            "target_metric": sd.get("target_metric"),
-            "metric_kind": sd.get("metric_kind"),
-            "verdict": sd.get("verdict"),
+            **persisted_step_view(
+                name, sd, status="completed" if sd.get("end_time") else "pending",
+            ),
             "semantic_group": groups.get(name),
         })
+    for step in steps:
+        step["badge"] = step_bar_badge(step)
     return {
         "steps": steps,
         "current_step": None,
         "config": config,
         "config_view": _build_run_config_view(config),
+        "overview_chart": build_overview_chart(steps),
     }
 
 
@@ -166,17 +169,16 @@ def get_run_step_detail(run_id: str, step_name: str) -> dict[str, Any] | None:
         rebuilt = rebuild_step_snapshot_from_disk(str(run_dir), step_name)
         if rebuilt is not None:
             snapshot, snapshot_key_kinds = rebuilt
+    metrics = sd.get("metrics", [])
     return {
-        "name": step_name,
-        "status": "completed" if sd.get("end_time") else "pending",
-        "start_time": sd.get("start_time"),
-        "end_time": sd.get("end_time"),
-        "duration": (sd.get("end_time", 0) - sd.get("start_time", 0))
-            if sd.get("start_time") and sd.get("end_time") else None,
-        "target_metric": sd.get("target_metric"),
-        "metric_kind": sd.get("metric_kind"),
-        "verdict": sd.get("verdict"),
-        "metrics": sd.get("metrics", []),
+        **persisted_step_view(
+            step_name, sd, status="completed" if sd.get("end_time") else "pending",
+        ),
+        "metric_categories": categories_for({m.get("name", "") for m in metrics}),
+        "annotations": annotations_for_step(
+            get_run_events(run_id), step_name, sd.get("start_time"),
+        ),
+        "metrics": metrics,
         "snapshot": snapshot,
         "snapshot_key_kinds": snapshot_key_kinds,
     }

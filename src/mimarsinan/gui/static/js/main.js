@@ -3,7 +3,8 @@
 import { esc, fmtDuration, elapsedFromStepStart } from './util.js';
 import { renderPipelineBar, renderOverviewCards } from './overview.js';
 import { renderConfigTab } from './config-tab.js';
-import { refreshStepDetail, updateLiveCharts } from './step-detail.js';
+import { refreshStepDetail, updateLiveCharts, bufferLiveAnnotation } from './step-detail.js';
+import { renderAnalysisTab } from './analysis-tab.js';
 import { syncActiveLiveSearch } from './live-search-sync.js';
 import { appendConsoleLogs, clearConsoleLogs } from './console-tab.js';
 
@@ -121,6 +122,7 @@ function applyPipelineOverviewFromWS(overview) {
     steps: overview.steps || [],
     current_step: overview.current_step,
     config: overview.config ?? state.pipeline?.config,
+    overview_chart: overview.overview_chart,
     is_alive: true,
   };
   renderPipelineBar(state.pipeline, state.selectedStep);
@@ -306,6 +308,14 @@ function handleWSMessage(msg) {
     state.consoleOffset++;
     if (state.activeMainTab === 'console') appendConsoleLogs([msg]);
   }
+  if (msg.type === 'event') {
+    // Structured pipeline event: annotate the live charts of its step.
+    const startTime = state.pipeline?.steps?.find(s => s.name === msg.step)?.start_time;
+    msg._step_start = startTime != null ? (startTime > 1e12 ? startTime / 1000 : startTime) : null;
+    bufferLiveAnnotation(msg.step, msg);
+    if (state.selectedStep === msg.step) scheduleStepDetailRefresh();
+    if (state.activeMainTab === 'analysis') renderAnalysisTab(state, apiUrl, fetchJSON);
+  }
 }
 
 function bufferMetric(step, name, value, seq, timestamp) {
@@ -382,24 +392,28 @@ function updateElapsedTimer() {
 
 function setupMainTabs() {
   const tabBar = document.getElementById('main-tabs');
-  const overviewPane = document.getElementById('main-tab-overview');
-  const configPane = document.getElementById('main-tab-config');
-  const consolePane = document.getElementById('main-tab-console');
-  if (!tabBar || !overviewPane || !configPane) return;
+  const panes = {
+    overview: document.getElementById('main-tab-overview'),
+    config: document.getElementById('main-tab-config'),
+    console: document.getElementById('main-tab-console'),
+    analysis: document.getElementById('main-tab-analysis'),
+  };
+  if (!tabBar || !panes.overview || !panes.config) return;
   tabBar.addEventListener('click', (e) => {
     const btn = e.target.closest('.tab-btn[data-main-tab]');
     if (!btn) return;
     const tab = btn.dataset.mainTab;
-    if (tab !== 'overview' && tab !== 'config' && tab !== 'console') return;
+    if (!(tab in panes)) return;
     state.activeMainTab = tab;
     tabBar.querySelectorAll('.tab-btn').forEach(b => {
       b.classList.toggle('active', b.dataset.mainTab === tab);
     });
-    overviewPane.classList.toggle('active', tab === 'overview');
-    configPane.classList.toggle('active', tab === 'config');
-    if (consolePane) consolePane.classList.toggle('active', tab === 'console');
+    for (const [name, pane] of Object.entries(panes)) {
+      if (pane) pane.classList.toggle('active', name === tab);
+    }
     if (tab === 'config') renderConfigTab(state.pipeline);
     if (tab === 'console') refreshConsoleLogs();
+    if (tab === 'analysis') renderAnalysisTab(state, apiUrl, fetchJSON);
   });
 }
 
