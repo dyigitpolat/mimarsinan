@@ -167,7 +167,7 @@
         "S: 16 -> 8"
       ],
       "hypothesis": "ttfsq's dense nearest-rounding install keeps per-hop error small at any resolution: halving S from 16 to 8 stays crater-free and passes - the install-resolution law's negative control.",
-      "note": "M1 mixer-e4 respec 2026-07-07 (user-mandated): training_epochs 2 -> 4 on every mmixcore cell; evidence t01_07 (e4 + full floor = 0.9712 dedicated) \u2014 envelope and budget jointly binding."
+      "note": "ttfsq e4 revert 2026-07-08: e4 measurably hurt this family (0.9441/0.9599 vs the 0.9656 e2 read); reverted with t0_11."
     },
     {
       "name": "t01_07_ttfs_mmixcore_wq_s8_e4",

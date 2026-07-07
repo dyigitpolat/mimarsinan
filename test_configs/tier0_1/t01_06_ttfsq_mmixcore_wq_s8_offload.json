@@ -56,7 +56,7 @@
     "weight_quantization": true,
     "endpoint_floor_steps": 16000,
     "wq_endpoint_recovery_steps": 2000,
-    "training_epochs": 4,
+    "training_epochs": 2,
     "training_recipe": {
       "optimizer": "adamw",
       "scheduler": "cosine",

@@ -156,7 +156,11 @@ T0 = [
     dict(n=10, mode="ttfs", quant="fp", wb=5, s=16, vehicle="simplemlp",
          coalescing=False, splitting=False, tags=["identity"]),
     dict(n=11, mode="ttfsq", quant="wq", wb=5, s=16, vehicle="mmixcore",
-         encoding="offload", tags=["offload"], epochs=4, note=MIXER_E4_NOTE),
+         encoding="offload", tags=["offload"],
+         note="ttfsq e4 revert 2026-07-08: the M1 mixer-e4 respec (evidence "
+              "t01_07, ttfs-specific) measurably HURT the ttfsq mixer family "
+              "(t0_11 0.9282/0.9533 vs its green e2 history; t01_06 "
+              "0.9441/0.9599 vs 0.9656) - reverted to e2."),
     dict(n=12, mode="ttfsq", quant="wq", wb=8, s=32, vehicle="lenet5", tags=["wall_risk"]),
     dict(n=13, mode="ttfsq", quant="wq", wb=5, s=4, vehicle="deepcnn", depth=4),
     dict(n=14, mode="ttfsq", quant="wq", wb=5, s=8, vehicle="deepmlp", depth=8),
@@ -223,7 +227,9 @@ T0_1 = [
                     "stack's recovery on the L=9 chain: deployed lands below the "
                     "anchor's 0.9677 (the boundary probed from the failing side)."),
     dict(n=6, family="A", mode="ttfsq", quant="wq", wb=5, s=8, vehicle="mmixcore",
-         encoding="offload", tags=["offload"], epochs=4, note=MIXER_E4_NOTE,
+         encoding="offload", tags=["offload"],
+         note="ttfsq e4 revert 2026-07-08: e4 measurably hurt this family "
+              "(0.9441/0.9599 vs the 0.9656 e2 read); reverted with t0_11.",
          anchor="t0_11_ttfsq_mmixcore_wq_s16_offload", axes=["S: 16 -> 8"],
          hypothesis="ttfsq's dense nearest-rounding install keeps per-hop error small "
                     "at any resolution: halving S from 16 to 8 stays crater-free and "

@@ -231,7 +231,7 @@
         "offload"
       ],
       "expected_wall_min": 6,
-      "note": "M1 mixer-e4 respec 2026-07-07 (user-mandated): training_epochs 2 -> 4 on every mmixcore cell; evidence t01_07 (e4 + full floor = 0.9712 dedicated) \u2014 envelope and budget jointly binding."
+      "note": "ttfsq e4 revert 2026-07-08: the M1 mixer-e4 respec (evidence t01_07, ttfs-specific) measurably HURT the ttfsq mixer family (t0_11 0.9282/0.9533 vs its green e2 history; t01_06 0.9441/0.9599 vs 0.9656) - reverted to e2."
     },
     {
       "name": "t0_12_ttfsq_lenet5_wq_s32",

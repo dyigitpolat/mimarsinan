@@ -315,11 +315,14 @@ class TestM1MixerE4Respec:
     training budget were JOINTLY binding on the mixer column."""
 
     def test_tier0_mixer_cells_train_four_epochs(self):
+        # ttfsq mixers reverted to e2 (2026-07-08): e4 measurably hurt them
+        # (t0_11 0.9282/0.9533 vs its green e2 history).
         for run in _manifest(0)["runs"]:
             dp = json.loads(
                 (TEST_CONFIGS / "tier0" / run["config"]).read_text()
             )["deployment_parameters"]
-            expected = 4 if "mmixcore" in run["name"] else 2
+            mixer = "mmixcore" in run["name"] and "ttfsq" not in run["name"]
+            expected = 4 if mixer else 2
             assert dp["training_epochs"] == expected, run["name"]
 
     def test_tier0_mixer_cells_carry_the_respec_note(self):
@@ -519,11 +522,12 @@ class TestTier01DiagnosticMatrix:
         assert counts == TIER01_FAMILY_SIZES
 
     def test_mixer_and_envelope_cells_train_four_epochs_and_others_two(self):
-        # M1 mixer-e4 respec (2026-07-07): every mmixcore cell trains 4 epochs
-        # (evidence t01_07); the non-mixer B diagnostic keeps its e4 axis.
+        # M1 mixer-e4 respec (2026-07-07, evidence t01_07) minus the ttfsq
+        # revert (2026-07-08: e4 measurably hurt that family — 0.9441/0.9599
+        # vs the 0.9656 e2 read); the non-mixer B diagnostic keeps its e4 axis.
         for run in self._runs():
             dp = self._load("0_1", run["name"])["deployment_parameters"]
-            mixer = "mmixcore" in run["name"]
+            mixer = "mmixcore" in run["name"] and "ttfsq" not in run["name"]
             expected = 4 if (mixer or run["family"] == "B") else 2
             assert dp["training_epochs"] == expected, run["name"]
 
