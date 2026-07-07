@@ -20,7 +20,7 @@ ALLOWLIST = {
     "config_schema/display_view_build.py": 1,
     "gui/handle.py": 1,
     "gui/server/routes_layout.py": 2,
-    "gui/server/routes_wizard.py": 4,
+    "gui/server/routes_wizard.py": 3,
     "mapping/model_representation.py": 1,
     "mapping/support/bias_compensation.py": 1,
     "mapping/verification/suggester/hw_config_suggester_scheduled.py": 1,

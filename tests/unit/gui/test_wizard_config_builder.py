@@ -12,12 +12,6 @@ from mimarsinan.config_schema.defaults import (
 )
 from mimarsinan.gui.runs import suggest_resume_step
 from mimarsinan.gui.wizard import build_deployment_config_from_state, validate_wizard_state
-from mimarsinan.gui.wizard.flow import (
-    WIZARD_STEP_IDS,
-    get_step_index,
-    get_next_step_id,
-    get_previous_step_id,
-)
 from mimarsinan.gui.wizard.schema import (
     get_pipeline_step_names_for_config,
     get_wizard_defaults,
@@ -297,47 +291,6 @@ class TestValidateWizardState:
             "start_step": None,
         }
         assert any("firing_mode" in e for e in validate_wizard_state(state))
-
-
-class TestWizardFlow:
-    def test_step_ids_ordered(self):
-        assert len(WIZARD_STEP_IDS) >= 5
-        assert WIZARD_STEP_IDS[0] == "experiment_basics"
-        assert "review" in WIZARD_STEP_IDS
-        assert "simulation" in WIZARD_STEP_IDS
-
-    def test_get_step_index(self):
-        assert get_step_index("experiment_basics") == 0
-        assert get_step_index("review") == len(WIZARD_STEP_IDS) - 1
-        assert get_step_index("nonexistent") == -1
-
-    def test_next_after_search_toggles_goes_to_user_model(self):
-        state = {"deployment_parameters": {"model_config_mode": "user"}}
-        assert get_next_step_id(state, "search_toggles") == "user_model"
-
-    def test_next_after_user_model_no_search(self):
-        state = {"deployment_parameters": {"model_config_mode": "user", "hw_config_mode": "fixed"}}
-        assert get_next_step_id(state, "user_model") == "platform_constraints"
-
-    def test_next_after_user_model_with_model_search(self):
-        state = {"deployment_parameters": {"model_config_mode": "search", "hw_config_mode": "fixed"}}
-        assert get_next_step_id(state, "user_model") == "nas_options"
-
-    def test_next_after_nas_options_hw_search_skips_platform(self):
-        state = {"deployment_parameters": {"model_config_mode": "search", "hw_config_mode": "search"}}
-        assert get_next_step_id(state, "nas_options") == "spiking_quantization"
-
-    def test_next_after_nas_options_model_only_goes_to_platform(self):
-        state = {"deployment_parameters": {"model_config_mode": "search", "hw_config_mode": "fixed"}}
-        assert get_next_step_id(state, "nas_options") == "platform_constraints"
-
-    def test_previous_from_user_model_goes_to_search_toggles(self):
-        state = {"deployment_parameters": {"model_config_mode": "user"}}
-        assert get_previous_step_id(state, "user_model") == "search_toggles"
-
-    def test_previous_from_nas_options_goes_to_user_model(self):
-        state = {"deployment_parameters": {"model_config_mode": "search"}}
-        assert get_previous_step_id(state, "nas_options") == "user_model"
 
 
 class TestWizardSchema:

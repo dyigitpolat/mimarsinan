@@ -9,843 +9,99 @@
   <link href="/static/wizard.css" rel="stylesheet">
   <link href="/static/pipeline-step-bar.css" rel="stylesheet">
   <link href="/static/hw-stats-panel.css" rel="stylesheet">
-  <!-- Shared Mapping-Performance renderer. Loaded as a module so its
-       ESM `export`s parse cleanly; the file also attaches a
-       window.HwStatsPanel bridge that wizard.js (a classic script with
-       inline HTML handlers, hence not module-loadable) calls into.
-       Modules are implicitly deferred, so wizard.js below MUST also be
-       `defer`red to keep the same execution order — otherwise wizard.js
-       might run its `init()` before the bridge is attached. -->
-  <script type="module" src="/static/js/hw-stats-panel.js"></script>
 </head>
 
 <body>
 
   <div class="app-shell" id="appShell">
 
-    <!-- Header + Pipeline steps (sticky at top together) -->
     <div class="app-shell-top">
-    <!-- ═══ HEADER ═══ -->
-    <header class="header">
-      <div class="logo-group">
-        <div class="logo-mark">M</div>
-        <div class="logo-text">Mimarsinan <span>Deployment Configurator</span></div>
-      </div>
-      <div class="header-actions">
-        <a href="/"><button type="button" class="btn-sm">Home</button></a>
-        <button class="btn-run" id="runBtn" onclick="runPipeline()">RUN</button>
-        <button class="btn-sm" id="saveTemplateBtn" onclick="saveAsTemplate()">Save as template</button>
-        <button class="btn-sm" onclick="resetAll()">Reset</button>
-        <div class="toggle-row" id="showJsonToggle" onclick="toggleShowJson(this)" style="padding:6px 12px">
-          <span class="toggle-label" style="font-size:0.78rem">Show generated JSON</span>
-          <div class="toggle-switch"></div>
+      <!-- ═══ HEADER ═══ -->
+      <header class="header">
+        <div class="logo-group">
+          <div class="logo-mark">M</div>
+          <div class="logo-text">Mimarsinan <span>Deployment Configurator</span></div>
         </div>
-        <button class="btn-sm primary" id="copyJsonBtn" onclick="copyJson()" style="display:none">Copy JSON</button>
-      </div>
-    </header>
+        <div class="header-actions">
+          <a href="/"><button type="button" class="btn-sm">Home</button></a>
+          <button class="btn-run" id="runBtn">RUN</button>
+          <button class="btn-sm" id="saveTemplateBtn">Save as template</button>
+          <button class="btn-sm" id="resetBtn">Reset</button>
+          <div class="toggle-row" id="showJsonToggle" style="padding:6px 12px">
+            <span class="toggle-label">JSON</span>
+            <div class="toggle-switch"></div>
+          </div>
+          <button class="btn-sm primary" id="copyJsonBtn" style="display:none">Copy JSON</button>
+          <button class="btn-sm" id="downloadJsonBtn" style="display:none">Download</button>
+        </div>
+      </header>
 
-    <!-- Pipeline steps (same top band as header) -->
-    <div class="pipeline-steps-bar" id="pipelineStepsBar">
-      <div class="pipeline-steps-top-row">
-        <span class="pipeline-steps-label">Pipeline</span>
-        <span class="pipeline-steps-hint">Edit &amp; Continue — click a step to restart from it; completed earlier steps will be replayed from cache. Click again to deselect.</span>
-      </div>
-      <div class="pipeline-steps-scroll">
-        <div class="pipeline-steps-list" id="pipelineStepsList"></div>
+      <!-- ═══ PIPELINE STEP PREVIEW (edit & continue selects start step here) ═══ -->
+      <div class="pipeline-steps-bar" id="pipelineStepsBar">
+        <div class="pipeline-steps-top-row">
+          <span class="pipeline-steps-label">Pipeline</span>
+          <span class="pipeline-steps-hint" id="pipelineStepsHint"></span>
+        </div>
+        <div class="pipeline-steps-scroll">
+          <div class="pipeline-steps-list" id="pipelineStepsList"></div>
+        </div>
       </div>
     </div>
-    </div><!-- /.app-shell-top -->
 
-    <!-- ═══ WIZARD ═══ -->
+    <!-- ═══ WIZARD BODY (all sections render from /api/config_schema) ═══ -->
     <main class="wizard-panel" id="wizard">
 
-      <!-- Search Strategy — full-width banner, top of wizard -->
-      <div class="section section-hidden section-search-banner" data-section="search" id="searchSection">
-        <div class="section-header" onclick="toggleSection(this)">
-          <div class="section-icon violet">◎</div>
-          <div class="section-title-group">
-            <div class="section-title">Search Strategy</div>
-            <div class="section-subtitle">Optimizer, population, and evaluation</div>
-          </div>
-          <span class="section-badge badge-auto">Active</span>
-          <span class="section-chevron">▾</span>
+      <!-- Template / edit-&-continue banner + diff-vs-defaults view -->
+      <div id="templateBanner" class="template-banner" style="display:none"></div>
+
+      <!-- Global (non-keyed) validation errors -->
+      <div id="globalErrors" class="global-errors" style="display:none"></div>
+
+      <div class="wizard-columns">
+        <div class="wizard-column">
+          <!-- 1 INTENT: workload / spiking / training / tuning knobs -->
+          <div id="altitude-intent" data-altitude="intent"></div>
         </div>
-        <div class="section-body">
-          <div class="field" style="margin-bottom:14px">
-            <label class="field-label">Search Optimizer</label>
-            <div class="seg-control" id="optimizer">
-              <div class="seg-btn active violet" data-val="nsga2" onclick="setSegment(this)">NSGA-II</div>
-              <div class="seg-btn" data-val="agent_evolve" onclick="setSegment(this)">Agentic Evolution</div>
-              <div class="seg-btn" data-val="compilagent" onclick="setSegment(this)">Compilagent</div>
-            </div>
-          </div>
+        <div class="wizard-column">
+          <!-- 2 PLATFORM: hardware grid + deployment target -->
+          <div id="altitude-platform" data-altitude="platform"></div>
 
-          <div class="field-grid cols-3" style="margin-bottom:14px">
-            <div class="field">
-              <label class="field-label">Population Size</label>
-              <input type="number" id="popSize" value="12" min="2" oninput="update()">
-            </div>
-            <div class="field">
-              <label class="field-label">Generations</label>
-              <input type="number" id="generations" value="5" min="1" oninput="update()">
-            </div>
-            <div class="field">
-              <label class="field-label">Search Seed</label>
-              <input type="number" id="searchSeed" value="42" min="0" oninput="update()">
-            </div>
-          </div>
+          <!-- Mapping feasibility (verify / auto-suggest) -->
+          <div class="hw-validation-banner hide" id="hwValidationBanner"></div>
+          <div id="hwStatsPanel" class="hw-stats-panel"></div>
 
-          <div class="sub-section">
-            <div class="sub-section-title">Accuracy Evaluation</div>
-            <div class="field-grid">
-              <div class="field">
-                <label class="field-label">Evaluator</label>
-                <select id="accuracyEvaluator" onchange="update()">
-                  <option value="extrapolating" selected>Extrapolating</option>
-                  <option value="fast">Fast</option>
-                </select>
-              </div>
-              <div class="field">
-                <label class="field-label">Warmup Fraction</label>
-                <input type="number" id="warmupFraction" value="0.1" step="0.05" min="0" max="1" oninput="update()">
-              </div>
-              <div class="field">
-                <label class="field-label">Extrap. Train Epochs</label>
-                <input type="number" id="extrapTrainEpochs" value="1" min="1" oninput="update()">
-              </div>
-              <div class="field">
-                <label class="field-label">Extrap. Checkpoints</label>
-                <input type="number" id="extrapCheckpoints" value="5" min="1" oninput="update()">
-              </div>
-              <div class="field">
-                <label class="field-label">Extrap. Target Epochs</label>
-                <input type="number" id="extrapTargetEpochs" value="10" min="1" oninput="update()">
-              </div>
-              <div class="field">
-                <label class="field-label">Training Batch Size</label>
-                <input type="number" id="searchBatchSize" value="" placeholder="auto" min="1" oninput="update()">
+          <!-- 3 REVIEW: derived chips, diff, unknown keys, deploy -->
+          <div class="section open" data-section="review" id="reviewSection">
+            <div class="section-header">
+              <div class="section-icon cyan">✓</div>
+              <div class="section-title-group">
+                <div class="section-title">Review</div>
+                <div class="section-subtitle">Derived values, differences, and deploy</div>
               </div>
             </div>
-          </div>
-
-          <!-- Optimization Objectives -->
-          <div class="sub-section" style="margin-top:14px">
-            <div class="sub-section-title">Optimization Objectives</div>
-            <div class="objective-checkboxes" id="objectiveCheckboxes">
-              <!-- Populated dynamically by JS from /api/wizard/schema objective_options -->
-            </div>
-          </div>
-
-          <!-- Agentic Evolution-specific -->
-          <div id="agentEvolveConfig" class="cond hidden">
-            <div class="sub-section" style="margin-top:14px">
-              <div class="sub-section-title">Agentic Evolution LLM Configuration</div>
-              <div class="field-grid">
-                <div class="field">
-                  <label class="field-label">LLM Model</label>
-                  <input type="text" id="agentModel" value="openai:gpt-4o" oninput="update()">
-                </div>
-                <div class="field">
-                  <label class="field-label">Candidates / Batch</label>
-                  <input type="number" id="agentCandidates" value="5" min="1" oninput="update()">
-                </div>
-                <div class="field">
-                  <label class="field-label">Max Regen Rounds</label>
-                  <input type="number" id="agentRegenRounds" value="10" min="1" oninput="update()">
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Compilagent-specific -->
-          <div id="compilagentConfig" class="cond hidden">
-            <div class="sub-section" style="margin-top:14px">
-              <div class="sub-section-title">Compilagent Session Configuration</div>
-              <div class="field-grid">
-                <div class="field">
-                  <label class="field-label">LLM Model</label>
-                  <input type="text" id="compilagentModel" value="openai:gpt-4o" oninput="update()">
-                </div>
-                <div class="field">
-                  <label class="field-label">Harness</label>
-                  <select id="compilagentHarness" onchange="update()">
-                    <option value="pydantic_ai" selected>pydantic-ai</option>
-                    <option value="claude_agent_sdk">Claude Agent SDK</option>
-                  </select>
-                </div>
-                <div class="field">
-                  <label class="field-label">Max Candidates</label>
-                  <input type="number" id="compilagentMaxCandidates" value="8" min="1" oninput="update()">
-                </div>
-                <div class="field">
-                  <label class="field-label">Max Continuations</label>
-                  <input type="number" id="compilagentMaxContinuations" value="4" min="0" oninput="update()">
-                </div>
-              </div>
-              <div class="field" style="margin-top:8px">
-                <label class="field-label">System Prompt (extra)</label>
-                <textarea id="compilagentSystemPrompt" rows="3"
-                          placeholder="Additional instructions appended to the default system prompt..."
-                          oninput="update()"></textarea>
-              </div>
+            <div class="section-body">
+              <div class="sub-section-title">Derived</div>
+              <div id="derivedChips" class="dep-bar"></div>
+              <div class="sub-section-title">Differs from defaults</div>
+              <div id="diffPanel" class="diff-panel"><div class="note">Nothing differs yet.</div></div>
+              <div id="unknownTray" class="unknown-tray" style="display:none"></div>
             </div>
           </div>
         </div>
       </div>
-
-      <!-- Mapping Performance Stats — always visible, full-width -->
-      <div id="hwStatsPanel" class="hw-stats-panel"></div>
-
-      <!-- Two-column grid: software left, hardware/deployment right -->
-      <div class="wizard-columns">
-      <!-- Left column: software (dataset, model, training) -->
-      <div class="wizard-column wizard-column-left">
-        <!-- ① Dataset ────────────────────────────────────── -->
-        <div class="section open" data-section="dataset">
-          <div class="section-header" onclick="toggleSection(this)">
-            <div class="section-icon cyan">⬡</div>
-            <div class="section-title-group">
-              <div class="section-title">Dataset</div>
-              <div class="section-subtitle">Data source and experiment identity</div>
-            </div>
-            <span class="section-chevron">▾</span>
-          </div>
-          <div class="section-body">
-            <div class="field-grid cols-1">
-              <div class="field">
-                <label class="field-label">Data Provider</label>
-                <select id="dataProvider" onchange="update()">
-                  <option value="">Loading...</option>
-                </select>
-              </div>
-              <div class="field-grid">
-                <div class="field">
-                  <label class="field-label">Experiment Name</label>
-                  <input type="text" id="experimentName" value="my_deployment" oninput="update()">
-                </div>
-                <div class="field">
-                  <label class="field-label">Random Seed</label>
-                  <input type="number" id="seed" value="0" min="0" oninput="update()">
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- ② Model ──────────────────────────────────────── -->
-        <div class="section" data-section="model">
-          <div class="section-header" onclick="toggleSection(this)">
-            <div class="section-icon blue">◈</div>
-            <div class="section-title-group">
-              <div class="section-title">Model Architecture</div>
-              <div class="section-subtitle">Network structure and configuration mode</div>
-            </div>
-            <span class="section-chevron">▾</span>
-          </div>
-          <div class="section-body">
-            <div class="field" style="margin-bottom:14px">
-              <label class="field-label">Model Type</label>
-              <!-- TODO:BACKEND — Populate from /api/model_types -->
-              <div class="chip-grid" id="modelTypeChips"></div>
-            </div>
-
-            <div class="field" style="margin-bottom:14px">
-              <label class="field-label">Model Configuration</label>
-              <div class="seg-control" id="configMode">
-                <div class="seg-btn active" data-val="user" onclick="setSegment(this)">User-defined</div>
-                <div class="seg-btn" data-val="search" onclick="setSegment(this)">Search</div>
-              </div>
-            </div>
-
-            <div id="userModelConfig" class="cond visible">
-              <div class="sub-section">
-                <div class="sub-section-title">Model Parameters</div>
-                <!-- TODO:BACKEND — Generate dynamically from /api/model_config_schema/{model_type} -->
-                <div class="field-grid" id="modelConfigFields"></div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- ③ Training ───────────────────────────────────── -->
-        <div class="section" data-section="training">
-          <div class="section-header" onclick="toggleSection(this)">
-            <div class="section-icon green">▶</div>
-            <div class="section-title-group">
-              <div class="section-title">Training</div>
-              <div class="section-subtitle">Pretraining, weight loading, and learning rates</div>
-            </div>
-            <span class="section-chevron">▾</span>
-          </div>
-          <div class="section-body">
-            <div class="field" style="margin-bottom:14px">
-              <label class="field-label">Weight Source</label>
-              <div class="seg-control" id="weightSourceMode">
-                <div class="seg-btn active green" data-val="train" onclick="setSegment(this)">Train from scratch</div>
-                <div class="seg-btn" data-val="pretrained" onclick="setSegment(this)">Pretrained</div>
-              </div>
-            </div>
-
-            <div id="trainFromScratch" class="cond visible">
-              <div class="field-grid">
-                <div class="field">
-                  <label class="field-label">Learning Rate</label>
-                  <input type="number" id="lr" value="0.001" step="0.0001" min="0" oninput="update()">
-                </div>
-                <div class="field">
-                  <label class="field-label">Training Epochs</label>
-                  <input type="number" id="trainingEpochs" value="20" min="1" oninput="update()">
-                </div>
-              </div>
-            </div>
-
-            <div id="pretrainedConfig" class="cond hidden">
-              <div class="field-grid">
-                <div class="field">
-                  <label class="field-label">Weight Source <span class="hint">torchvision / path / URL</span></label>
-                  <input type="text" id="weightSource" value="torchvision" oninput="update()">
-                </div>
-                <div class="field">
-                  <label class="field-label">Learning Rate</label>
-                  <input type="number" id="lrPretrained" value="0.0001" step="0.0001" min="0" oninput="update()">
-                </div>
-                <div class="field">
-                  <label class="field-label">Fine-tune Epochs</label>
-                  <input type="number" id="finetuneEpochs" value="5" min="0" oninput="update()">
-                </div>
-                <div class="field">
-                  <label class="field-label">Fine-tune LR <span class="hint">(blank=same)</span></label>
-                  <input type="number" id="finetuneLr" value="" step="0.0001" min="0" oninput="update()"
-                    placeholder="auto">
-                </div>
-              </div>
-            </div>
-
-            <div class="divider"></div>
-            <div class="sub-section-title">Batch & Input Preprocessing</div>
-            <div class="field-grid">
-              <div class="field">
-                <label class="field-label">Batch size <span class="hint">(blank = auto)</span></label>
-                <input type="number" id="batchSize" value="" min="1" step="1" oninput="update()" placeholder="auto">
-              </div>
-              <div class="field">
-                <label class="field-label">Resize input to <span class="hint">square px; blank = native</span></label>
-                <input type="number" id="preprocessResizeTo" value="" min="1" step="1" oninput="update()" placeholder="none">
-              </div>
-              <div class="field">
-                <label class="field-label">Resize interpolation</label>
-                <select id="preprocessInterpolation" onchange="update()">
-                  <option value="bicubic" selected>bicubic</option>
-                  <option value="bilinear">bilinear</option>
-                  <option value="nearest">nearest</option>
-                </select>
-              </div>
-              <div class="field">
-                <label class="field-label">Normalize</label>
-                <select id="preprocessNormalize" onchange="update()">
-                  <option value="" selected>none</option>
-                  <option value="imagenet">imagenet</option>
-                  <option value="cifar">cifar</option>
-                  <option value="cifar10">cifar10</option>
-                  <option value="cifar100">cifar100</option>
-                </select>
-              </div>
-            </div>
-
-            <div class="divider"></div>
-            <div class="sub-section-title">Training Recipe <span class="hint">(AdamW + cosine + warmup + LLRD + label smoothing defaults)</span></div>
-            <div class="field-grid">
-              <div class="field">
-                <label class="field-label">Optimizer</label>
-                <select id="recipeOptimizer" onchange="update()">
-                  <option value="">default (legacy)</option>
-                  <option value="adam">adam</option>
-                  <option value="adamw" selected>adamw</option>
-                  <option value="sgd">sgd</option>
-                </select>
-              </div>
-              <div class="field">
-                <label class="field-label">Scheduler</label>
-                <select id="recipeScheduler" onchange="update()">
-                  <option value="cosine" selected>cosine</option>
-                  <option value="constant">constant</option>
-                </select>
-              </div>
-              <div class="field">
-                <label class="field-label">Weight decay</label>
-                <input type="number" id="recipeWeightDecay" value="0.05" step="0.001" min="0" oninput="update()" placeholder="0.05">
-              </div>
-              <div class="field">
-                <label class="field-label">Warmup ratio <span class="hint">fraction of total epochs</span></label>
-                <input type="number" id="recipeWarmupRatio" value="0.1" step="0.01" min="0" max="1" oninput="update()" placeholder="0.1">
-              </div>
-              <div class="field">
-                <label class="field-label">Grad clip norm <span class="hint">0 = off</span></label>
-                <input type="number" id="recipeGradClipNorm" value="1.0" step="0.1" min="0" oninput="update()" placeholder="1.0">
-              </div>
-              <div class="field">
-                <label class="field-label">Layer-wise LR decay <span class="hint">1.0 = off</span></label>
-                <input type="number" id="recipeLayerwiseLrDecay" value="0.75" step="0.05" min="0" max="1" oninput="update()" placeholder="0.75">
-              </div>
-              <div class="field">
-                <label class="field-label">Label smoothing</label>
-                <input type="number" id="recipeLabelSmoothing" value="0.1" step="0.01" min="0" max="1" oninput="update()" placeholder="0.1">
-              </div>
-              <div class="field">
-                <label class="field-label">Beta1 / Beta2</label>
-                <div style="display:flex;gap:6px">
-                  <input type="number" id="recipeBeta1" value="0.9" step="0.001" min="0" max="1" oninput="update()" placeholder="0.9" style="flex:1">
-                  <input type="number" id="recipeBeta2" value="0.999" step="0.001" min="0" max="1" oninput="update()" placeholder="0.999" style="flex:1">
-                </div>
-              </div>
-            </div>
-
-            <div class="recipe-reuse-row">
-              <div class="toggle-row" id="recipeApplyToTuningToggle" onclick="toggleClick(this)">
-                <span class="toggle-label">Reuse training recipe for tuning phase</span>
-                <div class="toggle-switch"></div>
-              </div>
-              <div id="tuningRecipeDrawer" class="recipe-drawer">
-                <div class="sub-section-title" style="margin-top:0;">Tuning Recipe <span class="hint">applied during clamp / shift / quantization tuners</span></div>
-                <div class="field-grid">
-                  <div class="field">
-                    <label class="field-label">Optimizer</label>
-                    <select id="tuningRecipeOptimizer" onchange="update()">
-                      <option value="">default (legacy)</option>
-                      <option value="adam">adam</option>
-                      <option value="adamw" selected>adamw</option>
-                      <option value="sgd">sgd</option>
-                    </select>
-                  </div>
-                  <div class="field">
-                    <label class="field-label">Scheduler</label>
-                    <select id="tuningRecipeScheduler" onchange="update()">
-                      <option value="cosine" selected>cosine</option>
-                      <option value="constant">constant</option>
-                    </select>
-                  </div>
-                  <div class="field">
-                    <label class="field-label">Weight decay</label>
-                    <input type="number" id="tuningRecipeWeightDecay" value="" step="0.001" min="0" oninput="update()" placeholder="0.01">
-                  </div>
-                  <div class="field">
-                    <label class="field-label">Warmup ratio</label>
-                    <input type="number" id="tuningRecipeWarmupRatio" value="" step="0.01" min="0" max="1" oninput="update()" placeholder="0.0">
-                  </div>
-                  <div class="field">
-                    <label class="field-label">Grad clip norm <span class="hint">0 = off</span></label>
-                    <input type="number" id="tuningRecipeGradClipNorm" value="" step="0.1" min="0" oninput="update()" placeholder="1.0">
-                  </div>
-                  <div class="field">
-                    <label class="field-label">Layer-wise LR decay</label>
-                    <input type="number" id="tuningRecipeLayerwiseLrDecay" value="" step="0.05" min="0" max="1" oninput="update()" placeholder="1.0">
-                  </div>
-                  <div class="field">
-                    <label class="field-label">Label smoothing</label>
-                    <input type="number" id="tuningRecipeLabelSmoothing" value="" step="0.01" min="0" max="1" oninput="update()" placeholder="0.0">
-                  </div>
-                  <div class="field">
-                    <label class="field-label">Beta1 / Beta2</label>
-                    <div style="display:flex;gap:6px">
-                      <input type="number" id="tuningRecipeBeta1" value="" step="0.001" min="0" max="1" oninput="update()" placeholder="0.9" style="flex:1">
-                      <input type="number" id="tuningRecipeBeta2" value="" step="0.001" min="0" max="1" oninput="update()" placeholder="0.999" style="flex:1">
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div class="divider"></div>
-            <div class="field-grid">
-              <div class="field">
-                <label class="field-label">Tuning budget scale <span class="hint">√(steps/epoch) multiplier</span></label>
-                <input type="number" id="tuningBudgetScale" value="1" step="0.1" min="0.1" oninput="update()">
-              </div>
-              <div class="field">
-                <label class="field-label">Degradation Tolerance</label>
-                <input type="number" id="degradationTolerance" value="0.1" step="0.01" min="0" max="1"
-                  oninput="update()">
-              </div>
-            </div>
-
-            <div id="lifTrainingBlock" class="sub-section" style="margin-top:14px">
-              <div class="sub-section-title">LIF Training Alignment</div>
-              <div class="field">
-                <label class="field-label">Cycle-accurate LIF <span class="hint">close NF→SCM gap</span></label>
-                <div class="toggle-row on" id="cycleAccurateLifToggle" onclick="toggleClick(this)">
-                  <span class="toggle-label" style="font-size:0.78rem">Spike-train forward</span>
-                  <div class="toggle-switch"></div>
-                </div>
-              </div>
-              <div class="note">Threads (T,B,…) spike trains through the mapper DAG during LIF Adaptation training; ~T× slower but closes the rate↔cycle mismatch for deep single-segment workloads.</div>
-              <div class="field" style="margin-top:12px">
-                <label class="field-label">Negative-value Shift <span class="hint">LIF, opt-in</span></label>
-                <div class="toggle-row" id="negativeValueShiftToggle" onclick="toggleClick(this)">
-                  <span class="toggle-label" style="font-size:0.78rem">Recover negative ComputeOp boundaries</span>
-                  <div class="toggle-switch"></div>
-                </div>
-              </div>
-              <div class="note">Shifts negative-producing ComputeOp outputs (e.g. LayerNorm/GELU) into the [0,1] encodable domain and pre-corrects the consuming perceptron's bias, so NF and the chip recover them losslessly.</div>
-            </div>
-          </div>
-        </div>
-
-      </div><!-- /.wizard-column-left -->
-
-      <!-- Right column: hardware, deployment, search strategy -->
-      <div class="wizard-column wizard-column-right">
-        <!-- Hardware ──────────────────────────────────────── -->
-        <div class="section" data-section="hardware" id="hwSection">
-          <div class="section-header" onclick="toggleSection(this)">
-            <div class="section-icon amber">⬢</div>
-            <div class="section-title-group">
-              <div class="section-title">Hardware Configuration</div>
-              <div class="section-subtitle">Core types, dimensions, and quantization precision</div>
-            </div>
-            <div class="hw-auto-toggle on" id="hwAutoSuggestToggle" onclick="event.stopPropagation();toggleHwAutoSuggest(this)" title="Auto-suggest hardware based on model settings">
-              <span class="hw-auto-toggle-label">Auto</span>
-              <div class="hw-auto-toggle-switch"></div>
-            </div>
-            <span class="section-chevron">▾</span>
-          </div>
-          <!-- Validation banner: shown when HW config cannot satisfy model requirements -->
-          <div id="hwValidationBanner" class="hw-validation-banner hide"></div>
-          <div class="section-body">
-            <div class="field" style="margin-bottom:14px">
-              <label class="field-label">Hardware Config Mode</label>
-              <div class="seg-control" id="hwMode">
-                <div class="seg-btn active amber" data-val="fixed" onclick="setSegment(this)">Fixed</div>
-                <div class="seg-btn" data-val="search" onclick="setSegment(this)">Search</div>
-              </div>
-            </div>
-
-            <!-- Shared HW parameters (both modes) -->
-            <div class="field-grid field-grid-hw-row" style="margin-bottom:14px">
-              <div class="field">
-                <label class="field-label">Weight Bits <span class="hint">parameter precision</span></label>
-                <div class="weight-bits-float-row">
-                  <input type="number" id="weightBits" value="8" min="1" max="32" class="weight-bits-input"
-                    oninput="onWeightBitsChange(); update()">
-                  <div class="toggle-row" id="floatWeightsToggle" onclick="toggleClick(this)">
-                    <span class="toggle-label" style="font-size:0.78rem">Float</span>
-                    <div class="toggle-switch"></div>
-                  </div>
-                </div>
-              </div>
-              <div class="field">
-                <label class="field-label">Hardware bias</label>
-                <div class="toggle-row" id="hardwareBiasToggle" onclick="toggleClick(this)">
-                  <span class="toggle-label" style="font-size:0.78rem">Bias in HW</span>
-                  <div class="toggle-switch"></div>
-                </div>
-              </div>
-              <div class="field">
-                <label class="field-label">Core Coalescing <span class="hint">wide layers</span></label>
-                <div class="toggle-row" id="coreCoalescingToggle" onclick="toggleClick(this)">
-                  <span class="toggle-label" style="font-size:0.78rem">Coalescing</span>
-                  <div class="toggle-switch"></div>
-                </div>
-              </div>
-              <div class="field">
-                <label class="field-label">Neuron Splitting <span class="hint">fill partial cores</span></label>
-                <div class="toggle-row" id="neuronSplittingToggle" onclick="toggleClick(this)">
-                  <span class="toggle-label" style="font-size:0.78rem">Splitting</span>
-                  <div class="toggle-switch"></div>
-                </div>
-              </div>
-            </div>
-
-            <div class="dep-bar" id="hwDeps"></div>
-
-            <!-- Core Types — always visible; locked when Auto is on -->
-            <div id="hwFixed">
-              <div class="sub-section">
-                <div class="sub-section-title" style="display:flex;align-items:center;justify-content:space-between">
-                  Core Types
-                  <span id="coreTypesAutoLabel" class="hw-auto-badge" style="display:none">Auto-managed</span>
-                  <button id="addCoreTypeBtn" class="btn-sm" onclick="addCoreType()" style="font-size:0.65rem;padding:3px 10px">+ Add Core Type</button>
-                </div>
-                <div id="coreTypesList"></div>
-              </div>
-            </div>
-
-            <!-- Auto search HW -->
-            <div id="hwAuto" class="cond hidden">
-              <div class="sub-section">
-                <div class="sub-section-title">Search Space Bounds</div>
-                <div class="field-grid">
-                  <div class="field">
-                    <label class="field-label">Num Core Types</label>
-                    <input type="number" id="numCoreTypes" value="2" min="1" max="8" oninput="update()">
-                  </div>
-                  <div class="field">
-                    <label class="field-label">Core Counts <span class="hint">comma-sep</span></label>
-                    <input type="text" id="coreTypeCounts" value="150, 150" oninput="update()">
-                  </div>
-                  <div class="field">
-                    <label class="field-label">Axon Bounds <span class="hint">min, max</span></label>
-                    <input type="text" id="coreAxonBounds" value="128, 2048" oninput="update()">
-                  </div>
-                  <div class="field">
-                    <label class="field-label">Neuron Bounds <span class="hint">min, max</span></label>
-                    <input type="text" id="coreNeuronBounds" value="128, 2048" oninput="update()">
-                  </div>
-                  <div class="field">
-                    <label class="field-label">Max Threshold Groups</label>
-                    <input type="number" id="maxThresholdGroups" value="4" min="1" max="8" oninput="update()">
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Deployment Mode ────────────────────────────── -->
-        <div class="section" data-section="spiking">
-          <div class="section-header" onclick="toggleSection(this)">
-            <div class="section-icon rose">⚡</div>
-            <div class="section-title-group">
-              <div class="section-title">Deployment Mode</div>
-              <div class="section-subtitle">Spiking encoding, cycles, quantization, pruning, and mapping</div>
-            </div>
-            <span class="section-chevron">▾</span>
-          </div>
-          <div class="section-body">
-            <div class="field" style="margin-bottom:14px">
-              <label class="field-label">Spiking Mode</label>
-              <div class="seg-control" id="spikingMode">
-                <div class="seg-btn active rose" data-val="lif" onclick="setSegment(this)">LIF</div>
-                <div class="seg-btn" data-val="ttfs" onclick="setSegment(this)">TTFS</div>
-                <div class="seg-btn" data-val="ttfs_quantized" onclick="setSegment(this)">TTFS Quantized</div>
-                <div class="seg-btn" data-val="ttfs_cycle_based" onclick="setSegment(this)">TTFS Cycle-Based</div>
-              </div>
-            </div>
-
-            <div class="dep-bar" id="spikingDeps"></div>
-
-            <!-- TTFS Cycle-Based execution schedule (shown only for that mode) -->
-            <div class="field" id="ttfsCycleScheduleField" style="margin-bottom:14px; display:none">
-              <label class="field-label">Cycle Schedule
-                <span class="hint">cascaded = greedy S+groups cycles (all backends); synchronized = exact S×groups (SANA-FE only)</span>
-              </label>
-              <select id="ttfsCycleSchedule" onchange="applySpikingDeps(); update()">
-                <option value="cascaded">Cascaded (greedy, fewer cycles)</option>
-                <option value="synchronized">Synchronized (exact, more cycles)</option>
-              </select>
-            </div>
-
-            <!-- Row 1: Cycles, Target Tq — Row 2: Scheduled mapping -->
-            <div class="field-grid" style="margin-bottom:10px">
-              <div class="field">
-                <label class="field-label">Cycles <span class="hint">discrete-time deployment depth</span></label>
-                <input type="number" id="simCycles" value="32" min="1" oninput="onCyclesChange(); update()">
-              </div>
-              <div class="field">
-                <label class="field-label">Target Tq <span class="hint">activation quantization levels</span></label>
-                <input type="number" id="targetTq" value="32" min="1" oninput="onTqChange(); update()">
-              </div>
-            </div>
-            <div class="field-grid" style="margin-bottom:14px">
-              <div class="field">
-                <label class="field-label">Scheduled Mapping <span class="hint">reuse cores over time</span></label>
-                <div class="toggle-row" id="scheduledMappingToggle" onclick="toggleClick(this)">
-                  <span class="toggle-label" style="font-size:0.78rem">Scheduling</span>
-                  <div class="toggle-switch"></div>
-                </div>
-              </div>
-            </div>
-            <div class="note warn hide" id="tqWarn"></div>
-
-            <!-- Quantization toggles -->
-            <div class="field-grid" style="margin-bottom:14px; margin-top:14px">
-              <div class="field">
-                <div class="toggle-row" id="actQuantToggle" onclick="toggleClick(this)">
-                  <span class="toggle-label">Activation Quantization</span>
-                  <div class="toggle-switch"></div>
-                </div>
-              </div>
-              <div class="field">
-                <div class="toggle-row" id="wtQuantToggle" onclick="toggleClick(this)">
-                  <span class="toggle-label">Weight Quantization</span>
-                  <div class="toggle-switch"></div>
-                </div>
-              </div>
-            </div>
-
-            <div class="divider"></div>
-
-            <!-- Pruning -->
-            <div class="field-grid" style="margin-bottom:14px">
-              <div class="field">
-                <div class="toggle-row" id="pruningToggle" onclick="toggleClick(this)">
-                  <span class="toggle-label">Pruning</span>
-                  <div class="toggle-switch"></div>
-                </div>
-              </div>
-              <div class="field">
-                <label class="field-label">Pruning Fraction <span id="pruningFractionValue" class="hint">0.50</span></label>
-                <input type="range" id="pruningFraction" value="0.5" min="0" max="0.99" step="0.01" oninput="onPruningFractionChange(); update()"
-                  disabled class="pruning-slider">
-              </div>
-            </div>
-            <div class="note warn hide" id="pruningWarn"></div>
-
-            <div class="divider"></div>
-
-            <!-- Advanced SNN params -->
-            <div class="sub-section">
-              <div class="sub-section-title">Advanced SNN Parameters <span class="badge-locked section-badge"
-                  style="margin-left:6px">auto-derived</span></div>
-              <div class="field-grid cols-3">
-                <div class="field">
-                  <label class="field-label">Firing Mode</label>
-                  <select id="firingMode" onchange="update()">
-                    <option value="Default">Subtractive (Default)</option>
-                    <option value="Novena">Zero-reset (Novena)</option>
-                    <option value="TTFS">TTFS</option>
-                  </select>
-                </div>
-                <div class="field">
-                  <label class="field-label">Spike Gen Mode</label>
-                  <select id="spikeGenMode" onchange="update()">
-                    <option value="Uniform">Uniform</option>
-                    <option value="Deterministic">Deterministic</option>
-                    <option value="Stochastic">Stochastic</option>
-                    <option value="TTFS">TTFS</option>
-                  </select>
-                </div>
-                <div class="field">
-                  <label class="field-label">Threshold Mode</label>
-                  <select id="thresholdMode" onchange="update()">
-                    <option value="<=">&le; (inclusive)</option>
-                    <option value="<">&lt; (strict)</option>
-                  </select>
-                </div>
-              </div>
-              <div class="note">Auto-set by spiking mode. Override only for advanced experiments.</div>
-              <div class="field" style="margin-top:12px">
-                <label class="field-label">Encoding Layer Placement</label>
-                <select id="encodingPlacement" onchange="update()">
-                  <option value="subsume">Subsume (host-side encoder)</option>
-                  <option value="offload">Offload (on-chip)</option>
-                </select>
-              </div>
-              <div class="note">Offload maps the encoding-layer neuralOp on-chip for a larger hardware-accelerated surface; functionally identical to subsume.</div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Simulation ───────────────────────────────────── -->
-        <div class="section" data-section="simulation">
-          <div class="section-header" onclick="toggleSection(this)">
-            <div class="section-icon cyan">◎</div>
-            <div class="section-title-group">
-              <div class="section-title">Simulation</div>
-              <div class="section-subtitle">Chip verification backends and test-set subsampling</div>
-            </div>
-            <span class="section-chevron">▾</span>
-          </div>
-          <div class="section-body">
-            <div class="field" style="margin-bottom:14px">
-              <label class="field-label">Max simulation samples <span class="hint">leave empty for full test set</span></label>
-              <input type="number" id="maxSimulationSamples" value="" min="0" placeholder="all" oninput="update()">
-            </div>
-
-            <div class="sim-backend-card" id="nevresimSimCard">
-              <div class="sim-backend-header">
-                <div class="sim-backend-title-group">
-                  <div class="sim-backend-name">Nevresim</div>
-                  <div class="sim-backend-hint">Primary chip-accuracy verification via NevresimDriver</div>
-                </div>
-                <div class="toggle-row on" id="nevresimSimulationToggle" onclick="toggleClick(this)">
-                  <span class="toggle-label" style="font-size:0.78rem">Enable</span>
-                  <div class="toggle-switch"></div>
-                </div>
-              </div>
-            </div>
-
-            <div class="sim-backend-card" id="loihiSimCard">
-              <div class="sim-backend-header">
-                <div class="sim-backend-title-group">
-                  <div class="sim-backend-name">Loihi <span class="sim-backend-badge">LIF only</span></div>
-                  <div class="sim-backend-hint">Lava-based Loihi parity pass after hard-core mapping</div>
-                </div>
-                <div class="toggle-row" id="loihiSimulationToggle" onclick="toggleClick(this)">
-                  <span class="toggle-label" style="font-size:0.78rem">Enable</span>
-                  <div class="toggle-switch"></div>
-                </div>
-              </div>
-            </div>
-
-            <div class="sim-backend-card" id="sanafeSimCard">
-              <div class="sim-backend-header">
-                <div class="sim-backend-title-group">
-                  <div class="sim-backend-name">SANA-FE</div>
-                  <div class="sim-backend-hint">Detailed energy, latency, NoC stats + optional HCM parity</div>
-                </div>
-                <div class="toggle-row" id="sanafeSimulationToggle" onclick="toggleClick(this)">
-                  <span class="toggle-label" style="font-size:0.78rem">Enable</span>
-                  <div class="toggle-switch"></div>
-                </div>
-              </div>
-              <div id="sanafeSettingsDrawer" class="sim-backend-drawer">
-                <div class="field-grid">
-                  <div class="field">
-                    <label class="field-label">Arch Preset</label>
-                    <select id="sanafeArchPreset" onchange="update()">
-                      <option value="loihi">Loihi</option>
-                      <option value="truenorth">TrueNorth</option>
-                      <option value="custom">Custom (YAML)</option>
-                    </select>
-                  </div>
-                  <div class="field">
-                    <label class="field-label">Samples <span class="hint">deterministic test indices 0..N-1</span></label>
-                    <input type="number" id="sanafeSampleCount" value="1" min="1" oninput="update()">
-                  </div>
-                  <div class="field">
-                    <label class="field-label">Custom Arch YAML <span class="hint">absolute path; preset = custom</span></label>
-                    <input type="text" id="sanafeCustomArchPath" value="" placeholder="(leave blank for preset)" oninput="update()">
-                  </div>
-                  <div class="field">
-                    <label class="field-label">Potential Trace <span class="hint">log per-neuron Vm (heavy)</span></label>
-                    <div class="toggle-row" id="sanafeLogPotentialTraceToggle" onclick="toggleClick(this)">
-                      <span class="toggle-label" style="font-size:0.78rem">Vm trace</span>
-                      <div class="toggle-switch"></div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-      </div><!-- /.wizard-column-right -->
-
-      </div><!-- /.wizard-columns -->
-
     </main>
 
-    <!-- ═══ JSON OUTPUT ═══ -->
+    <!-- ═══ JSON PREVIEW PANEL ═══ -->
     <aside class="output-panel">
       <div class="output-header">
-        <div class="output-title">Generated Configuration</div>
-        <div class="output-actions">
-          <button class="btn-sm" onclick="copyJson()">Copy</button>
-          <button class="btn-sm" onclick="downloadJson()">Download</button>
-        </div>
+        <span class="output-title">Deployment Config</span>
       </div>
-      <div class="json-scroll">
-        <div id="jsonOutput"></div>
-      </div>
+      <div class="json-scroll"><pre id="jsonOutput"></pre></div>
     </aside>
 
   </div>
 
-  <!-- ``defer`` keeps wizard.js in sync with the module-loaded
-       hw-stats-panel.js bridge above: both run after DOM-ready, in
-       source order, so window.HwStatsPanel is guaranteed to exist by
-       the time wizard.js's init() reads from it. -->
-  <script defer src="/static/js/wizard.js"></script>
+  <script type="module" src="/static/js/wizard/main.js"></script>
 </body>
 
 </html>

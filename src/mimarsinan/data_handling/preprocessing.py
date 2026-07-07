@@ -23,6 +23,11 @@ _INTERPOLATION_MODES = {
 }
 
 
+def interpolation_mode_names() -> tuple:
+    """The declared interpolation option names (wizard schema surface)."""
+    return tuple(_INTERPOLATION_MODES)
+
+
 @dataclass(frozen=True)
 class PreprocessingSpec:
     """Resolved preprocessing policy. Apply via :meth:`compose`."""

@@ -48,6 +48,16 @@ def register_routes(
             "defaults": get_wizard_defaults(),
         }
 
+    @app.get("/api/config_schema")
+    def api_config_schema():
+        from mimarsinan.gui.wizard.schema_api import config_schema_payload
+        return config_schema_payload()
+
+    @app.post("/api/config/resolve")
+    def api_config_resolve(body: dict):
+        from mimarsinan.gui.wizard.schema_api import resolve_payload
+        return resolve_payload(body or {})
+
     @app.get("/api/data_providers")
     def api_data_providers():
         from mimarsinan.data_handling.data_provider_factory import BasicDataProviderFactory
@@ -199,33 +209,3 @@ def register_routes(
             return JSONResponse(status_code=404, content={"error": "template not found"})
         return {"deleted": True}
 
-    @app.post("/api/pipeline_steps")
-    def api_pipeline_steps(body: dict):
-        from mimarsinan.config_schema import build_flat_pipeline_config
-        from mimarsinan.pipelining.core.pipelines.deployment_pipeline import (
-            DeploymentPipeline,
-            get_pipeline_step_specs,
-            get_pipeline_semantic_group_by_step_name,
-        )
-        try:
-            deployment_parameters = dict(body.get("deployment_parameters", {}))
-            pipeline_mode = body.get("pipeline_mode", "vanilla")
-            DeploymentPipeline.apply_preset(pipeline_mode, deployment_parameters)
-            platform = body.get("platform_constraints") or {}
-            config = build_flat_pipeline_config(
-                deployment_parameters,
-                platform if isinstance(platform, dict) else None,
-                pipeline_mode=pipeline_mode,
-            )
-            specs = get_pipeline_step_specs(config)
-            groups = get_pipeline_semantic_group_by_step_name(config)
-            return {
-                "steps": [name for name, _ in specs],
-                "semantic_groups": [groups.get(name, "other") for name, _ in specs],
-            }
-        except Exception as e:
-            logger.debug("pipeline_steps failed: %s", e)
-            return JSONResponse(
-                status_code=400,
-                content={"error": str(e)},
-            )

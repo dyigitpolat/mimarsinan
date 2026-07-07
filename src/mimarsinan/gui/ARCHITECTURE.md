@@ -11,7 +11,13 @@ heatmap PNGs, connectivity JSON — materialised on first HTTP fetch). The SPA
 assets (HTML/CSS/ES-module JS) live in the non-package `static/` directory;
 third-party runtime assets (Plotly, fonts) are vendored under `static/vendor/`
 so the GUI works offline — a unit ratchet (`test_static_offline.py`) rejects
-any external `src`/`href`/`url()` reference in static assets.
+any external `src`/`href`/`url()` reference in static assets. The wizard
+frontend (`static/js/wizard/`) renders ENTIRELY from `GET /api/config_schema`
+(the config-key registry) — the HTML is layout chrome with zero field
+knowledge, the draft state IS the config document (explicit keys only), and
+derivation runs exclusively server-side via `POST /api/config/resolve`
+(derived chips with WHY, keyed inline errors with rule-prescribed remedies,
+diff-vs-defaults template view, loud unrecognized-keys tray).
 
 ## Key files
 | File | Purpose |
@@ -29,7 +35,7 @@ any external `src`/`href`/`url()` reference in static assets.
 | `runtime/` | Runtime machinery: `DataCollector` (collector/), on-disk persistence of `steps.json`/metrics/console/resources (persistence/), subprocess run management (`ProcessManager`, spawn/monitor), `ActiveRunHub` tailers for active-run WebSockets, `CompositeReporter`, `SnapshotExecutor`, and run-cache seeding. |
 | `server/` | FastAPI app factory and uvicorn startup (`app.py`) plus route modules: pipeline/runs/templates/console APIs, lazy-resource endpoints, wizard and config-schema APIs, and hardware layout verification; `json_safe.py` provides the sanitising JSON response class. |
 | `snapshot/` | Pure per-artifact snapshot builders returning `(summary, ResourceDescriptor list)`: model, IR graph, hardware mapping, adaptation, pruning, search, and SANA-FE snapshots, `RESOURCE_KIND_*` constants, and disk-based snapshot rebuild for legacy runs. |
-| `wizard/` | Configuration wizard application layer: `emit.py` (explicit-keys-only config emission — the ONE builder used by Deploy, templates, and the representability test; unknown keys preserved and reported, never dropped), `build_deployment_config_from_state` (thin alias over emit), wizard schema surfaces (model types, NAS, temporal allocation, pipeline steps), state validation, and step-flow ordering. |
+| `wizard/` | Configuration wizard application layer: `emit.py` (explicit-keys-only config emission — the ONE builder used by Deploy, templates, and the representability test; unknown keys preserved and reported, never dropped), `build_deployment_config_from_state` (thin alias over emit), `schema_api.py` (`/api/config_schema` payload: serialized registry + recipe/preprocessing/NAS sub-schemas; `/api/config/resolve` payload: resolution + live step preview), wizard schema surfaces (model types, NAS, temporal allocation, pipeline steps), and state validation. |
 
 ## Dependencies
 - `common` — `best_effort` error scoping, env-derived paths (`runs_root`, `templates_dir`, `gui_no_browser`), `layer_key` helpers for snapshots.
@@ -37,7 +43,7 @@ any external `src`/`href`/`url()` reference in static assets.
 - `mapping` — IR types and spike-source span compression for snapshots; layout verification service, request types, and hardware-config suggesters behind `/api/hw_config_verify` and auto-suggest (lazy imports).
 - `models` — `builders.wizard_schema` model-type schemas for the wizard form.
 - `pipelining` — deployment pipeline step specs and semantic groups for step previews; model registry for model-type/config-schema APIs (lazy imports).
-- `data_handling` — `BasicDataProviderFactory` for the data-provider listing/metadata endpoints (lazy import).
+- `data_handling` — `BasicDataProviderFactory` for the data-provider listing/metadata endpoints (lazy import); `preprocessing` normalization/interpolation option surfaces for the wizard schema payload.
 - `search` — `ALL_OBJECTIVES` / `ACCURACY_OBJECTIVE_NAME` for the wizard NAS schema.
 - `tuning` — `S_ALLOCATION_MODES` for the wizard temporal-allocation schema.
 
