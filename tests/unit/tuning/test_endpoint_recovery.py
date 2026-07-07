@@ -245,10 +245,13 @@ class TestEndpointTargetFloor:
         self, tmp_path, monkeypatch,
     ):
         # Sterile-window regression guard for the DEFAULT path: when the floor
-        # does not lift the target, geometry is bit-identical to the pre-floor
-        # stage (pipeline lr, min_steps=0, patience armed).
+        # does not lift the target AND the entry gap is sub-SE, geometry is
+        # bit-identical to the pre-floor stage (pipeline lr, min_steps=0,
+        # patience armed). A super-SE gap arms the floor geometry instead
+        # (TestEntryGapArming).
         report, seen = self._run(
-            tmp_path, monkeypatch, floor=0.4, highwater=0.77, reads=[0.3, 0.6],
+            tmp_path, monkeypatch, floor=0.4, highwater=0.77,
+            reads=[0.77 - 1e-4, 0.78],
         )
         assert seen["target"] == pytest.approx(0.77)
         assert seen["min_steps"] == 0
@@ -262,7 +265,7 @@ class TestEndpointTargetFloor:
         assert "endpoint_target_floor" not in tuner.pipeline.config
         _prepare_endpoint_scaffold(tuner)
         dhat_highwater.observe(tuner.pipeline, 0.77)
-        reads = iter([0.3, 0.6])
+        reads = iter([0.77 - 1e-4, 0.78])
         monkeypatch.setattr(
             endpoint_recovery, "_fp32_deployed_read", lambda t: next(reads),
         )
@@ -270,7 +273,7 @@ class TestEndpointTargetFloor:
 
         def fake_train(trainer, lr, target, *, max_steps, **kwargs):
             seen.update(kwargs, lr=lr, target=target)
-            return 0.6, 9
+            return 0.78, 9
 
         monkeypatch.setattr(
             RecoveryEngine, "train_to_target", staticmethod(fake_train),
@@ -302,14 +305,15 @@ class TestEndpointTargetFloor:
     ):
         # [5u amendment, fba wave] the contended transform-trainer rate is
         # ~30 steps/s (12k steps cost 402 s), so the funded budget is WALL:
-        # the stage passes the policy's headroom cap; the default path never
-        # carries a cap.
+        # the stage passes the policy's headroom cap; the default (sub-SE-gap,
+        # unlifted) path never carries a cap.
         report, seen = self._run(
             tmp_path, monkeypatch, floor=0.9, highwater=0.5, reads=[0.3, 0.6],
         )
         assert seen["max_seconds"] == pytest.approx(150.0)
         report, seen = self._run(
-            tmp_path, monkeypatch, floor=0.4, highwater=0.77, reads=[0.3, 0.6],
+            tmp_path, monkeypatch, floor=0.4, highwater=0.77,
+            reads=[0.77 - 1e-4, 0.78],
         )
         assert seen["max_seconds"] is None
 
@@ -468,6 +472,175 @@ class TestExplicitTargetFloorAndWallCap:
     def test_wall_cap_reads_config_override(self, tmp_path, monkeypatch):
         _, seen = self._drive(tmp_path, monkeypatch, target_floor=0.9, wall_s=90.0)
         assert seen["max_seconds"] == pytest.approx(90.0)
+
+
+class TestEntryGapArming:
+    """[5y arming gap] the floor geometry arms on the ENTRY GAP, not only on a
+    floor-lifted target.
+
+    ``floor_lifted`` (floor > high-water) only fires on lossless/envelope
+    cells; a post-crater cell whose PRE-crater high-water beats the floor
+    (t01_19: high-water 0.9937, floor 0.98, NAPQ entry 0.095) kept the sterile
+    armed-patience geometry and stopped in ~2 x check_interval. When
+    target - entry >= the SE threshold (the same ``accuracy_se`` below which
+    progress cannot even register), the stage needs the recovery geometry —
+    lr cap, cosine over the full budget, patience disarmed, wall-capped —
+    regardless of how the target was set.
+    """
+
+    def _drive(self, tmp_path, monkeypatch, *, highwater, entry,
+               target_floor=None, config_floor=None, wall_s=None,
+               base_steps=100, pipeline_lr=None, train=None):
+        tuner = _lif_tuner(tmp_path)
+        if pipeline_lr is not None:
+            tuner.pipeline_lr = pipeline_lr
+        if config_floor is not None:
+            tuner.pipeline.config["endpoint_target_floor"] = config_floor
+        if wall_s is not None:
+            tuner.pipeline.config["endpoint_floor_wall_s"] = wall_s
+        _prepare_endpoint_scaffold(tuner)
+        tuner._fast_optimizer_steps = len(tuner._fixed_ladder_rates) * 2
+        dhat_highwater.observe(tuner.pipeline, highwater)
+        reads = iter([entry, min(1.0, entry + 0.05)])
+        monkeypatch.setattr(
+            endpoint_recovery, "_fp32_deployed_read", lambda t: next(reads),
+        )
+        seen = {}
+
+        def fake_train(trainer, lr, target, *, max_steps, **kwargs):
+            seen.update(kwargs, target=target, lr=lr, max_steps=max_steps)
+            return min(1.0, entry + 0.05), 9
+
+        monkeypatch.setattr(
+            RecoveryEngine, "train_to_target",
+            staticmethod(train if train is not None else fake_train),
+        )
+        try:
+            report = run_endpoint_recovery(
+                tuner, base_steps=base_steps, target_floor=target_floor,
+            )
+        finally:
+            se = tuner._budget.accuracy_se()
+            tuner.close()
+        return report, seen, se
+
+    def test_crater_entry_arms_the_floor_geometry_without_a_floor_lift(
+        self, tmp_path, monkeypatch,
+    ):
+        # The t01_19 anatomy: explicit WQ floor 0.98 BELOW the 0.9937 pre-crater
+        # high-water (floor_lifted False), NAPQ entry cratered at 0.095.
+        report, seen, _ = self._drive(
+            tmp_path, monkeypatch, highwater=0.9937, entry=0.095,
+            target_floor=0.98, pipeline_lr=0.003,
+        )
+        assert report.floor_lifted is False
+        assert report.entry_gap_armed is True
+        assert seen["target"] == pytest.approx(0.9937)
+        assert seen["min_steps"] == seen["max_steps"]
+        assert seen["lr"] == pytest.approx(2e-3)
+        assert seen["cosine_decay"] is True
+        assert seen["max_seconds"] == pytest.approx(150.0)
+
+    def test_sub_se_gap_keeps_the_default_patience_geometry(
+        self, tmp_path, monkeypatch,
+    ):
+        report, seen, se = self._drive(
+            tmp_path, monkeypatch, highwater=0.77, entry=0.77 - 1e-4,
+        )
+        assert 1e-4 < se, "fixture invariant: the gap must be sub-SE"
+        assert report.entry_gap_armed is False
+        assert seen["min_steps"] == 0
+        assert seen["max_seconds"] is None
+
+    def test_gap_exactly_at_the_se_threshold_arms(self, tmp_path, monkeypatch):
+        probe, _, se = self._drive(
+            tmp_path, monkeypatch, highwater=0.77, entry=0.77 - 1e-4,
+        )
+        report, seen, _ = self._drive(
+            tmp_path, monkeypatch, highwater=0.77, entry=0.77 - se,
+        )
+        assert report.entry_gap_armed is True
+        assert seen["min_steps"] == seen["max_steps"]
+
+    def test_floor_lifted_geometry_is_unchanged_by_gap_arming(
+        self, tmp_path, monkeypatch,
+    ):
+        # A lossless/envelope cell (floor lifts the target) keeps exactly the
+        # [5u] geometry; the gap flag is reported but changes nothing.
+        report, seen, _ = self._drive(
+            tmp_path, monkeypatch, highwater=0.5, entry=0.3, config_floor=0.9,
+        )
+        assert report.floor_lifted is True
+        assert report.entry_gap_armed is True
+        assert seen["min_steps"] == seen["max_steps"]
+        assert seen["max_seconds"] == pytest.approx(150.0)
+
+    def test_wall_cap_reads_config_override_under_gap_arming(
+        self, tmp_path, monkeypatch,
+    ):
+        _, seen, _ = self._drive(
+            tmp_path, monkeypatch, highwater=0.9937, entry=0.095,
+            target_floor=0.98, wall_s=90.0,
+        )
+        assert seen["max_seconds"] == pytest.approx(90.0)
+
+    def test_zero_budget_never_arms(self, tmp_path, monkeypatch):
+        tuner = _lif_tuner(tmp_path)
+        try:
+            _prepare_endpoint_scaffold(tuner)
+            tuner._fast_optimizer_steps = len(tuner._fixed_ladder_rates) * 2
+            dhat_highwater.observe(tuner.pipeline, 0.9937)
+            monkeypatch.setattr(
+                endpoint_recovery, "_fp32_deployed_read", lambda t: 0.095,
+            )
+            report = run_endpoint_recovery(tuner, base_steps=0)
+            assert report.engaged is False
+            assert report.entry_gap_armed is False
+        finally:
+            tuner.close()
+
+    def test_m_safety_rollback_intact_under_gap_arming(
+        self, tmp_path, monkeypatch,
+    ):
+        tuner = _lif_tuner(tmp_path)
+        _prepare_endpoint_scaffold(tuner)
+        dhat_highwater.observe(tuner.pipeline, 0.9937)
+        pre_sd = {k: v.clone() for k, v in tuner.model.state_dict().items()}
+        reads = iter([0.6, 0.2])
+
+        def corrupting_train(trainer, lr, target, **kwargs):
+            with torch.no_grad():
+                for p in trainer.model.parameters():
+                    p.add_(1.0)
+            return 0.2, 5
+
+        monkeypatch.setattr(
+            endpoint_recovery, "_fp32_deployed_read", lambda t: next(reads),
+        )
+        monkeypatch.setattr(
+            RecoveryEngine, "train_to_target", staticmethod(corrupting_train),
+        )
+        try:
+            report = run_endpoint_recovery(
+                tuner, base_steps=10, target_floor=0.98,
+            )
+        finally:
+            tuner.close()
+        assert report.entry_gap_armed is True
+        assert report.rolled_back is True
+        assert report.exit == pytest.approx(0.6)
+        post_sd = tuner.model.state_dict()
+        for key in pre_sd:
+            assert torch.equal(pre_sd[key], post_sd[key]), key
+
+    def test_emit_line_carries_the_gap_flag(self, tmp_path, monkeypatch, capsys):
+        self._drive(
+            tmp_path, monkeypatch, highwater=0.9937, entry=0.095,
+            target_floor=0.98,
+        )
+        line = _endpoint_lines(capsys.readouterr().out)[0]
+        assert "entry_gap_armed=True" in line
+        assert "floor_lifted=False" in line
 
 
 class TestNeverBelowEntry:

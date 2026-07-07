@@ -25,6 +25,7 @@ class EndpointRecoveryReport:
     rolled_back: bool
     target_floor: float = 0.0
     floor_lifted: bool = False
+    entry_gap_armed: bool = False
 
 
 def freed_ladder_steps(tuner) -> int:
@@ -61,10 +62,14 @@ def run_endpoint_recovery(tuner, *, base_steps, target_floor=None) -> EndpointRe
       bit-parity-lossless family's every-endpoint floor.
     - budget: ``base_steps`` (the recipe's freed stabilize/ladder budget) plus
       whatever this tuner's own gated ladder left untrained.
-    - geometry: a floor-LIFTED target trains the probe-validated arm (lr capped
-      at ``endpoint_floor_lr``, cosine over the full budget with patience
-      disarmed — the default 210-step window is sterile inside the lr dip);
-      otherwise the stage is bit-identical to the pre-floor behavior.
+    - geometry: a floor-LIFTED target OR a super-SE entry gap trains the
+      probe-validated arm (lr capped at ``endpoint_floor_lr``, cosine over the
+      full budget with patience disarmed, wall-capped — the default 210-step
+      window is sterile inside the lr dip); otherwise the stage is
+      bit-identical to the pre-floor behavior. [5y arming gap] the gap arm
+      exists because ``floor > high-water`` only fires on lossless/envelope
+      cells: a post-crater cell whose PRE-crater high-water beats the floor
+      (t01_19) otherwise keeps the sterile patience schedule.
     - keep-best + early stop live inside ``train_steps_until_target``; the
       outer fp32 entry guard makes the whole stage non-destructive.
     """
@@ -77,6 +82,9 @@ def run_endpoint_recovery(tuner, *, base_steps, target_floor=None) -> EndpointRe
     floor_lifted = target > highwater
     budget = int(base_steps) + freed_ladder_steps(tuner)
     entry = _fp32_deployed_read(tuner)
+    entry_gap_armed = (
+        budget > 0 and (target - entry) >= float(tuner._budget.accuracy_se())
+    )
 
     engaged = budget > 0 and entry < target
     steps_used = 0
@@ -88,7 +96,7 @@ def run_endpoint_recovery(tuner, *, base_steps, target_floor=None) -> EndpointRe
         lr = float(tuner.pipeline_lr)
         min_steps = 0
         max_seconds = None
-        if floor_lifted:
+        if floor_lifted or entry_gap_armed:
             lr = min(lr, TUNING_POLICY.endpoint_floor_lr)
             min_steps = budget
             max_seconds = float(tuner.pipeline.config.get(
@@ -129,6 +137,7 @@ def run_endpoint_recovery(tuner, *, base_steps, target_floor=None) -> EndpointRe
         rolled_back=bool(rolled_back),
         target_floor=float(floor),
         floor_lifted=bool(floor_lifted),
+        entry_gap_armed=bool(entry_gap_armed),
     )
     _emit(tuner, report)
     return report
@@ -142,7 +151,8 @@ def _emit(tuner, report: EndpointRecoveryReport) -> None:
         f"steps_used={report.steps_used} engaged={report.engaged} "
         f"reached={report.reached} rolled_back={report.rolled_back} "
         f"target_floor={report.target_floor:.6f} "
-        f"floor_lifted={report.floor_lifted}",
+        f"floor_lifted={report.floor_lifted} "
+        f"entry_gap_armed={report.entry_gap_armed}",
         flush=True,
     )
     tuner.pipeline.reporter.report(f"{tuner.name} endpoint_recovery", {
@@ -156,4 +166,5 @@ def _emit(tuner, report: EndpointRecoveryReport) -> None:
         "rolled_back": report.rolled_back,
         "target_floor": round(report.target_floor, 4),
         "floor_lifted": report.floor_lifted,
+        "entry_gap_armed": report.entry_gap_armed,
     })
