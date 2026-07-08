@@ -32,11 +32,12 @@ NOC_RUN = "fal_t01_04_sync_mmixcore_wq_s16_pruned10_phased_deployment_run"
 SECTION_IDS = ("overview", "steps", "analysis", "noc", "artifacts", "config", "console")
 
 STEP_PAGES = (
-    ("Pretraining", "pretraining"),
-    ("Activation Analysis", "activation_analysis"),
-    ("Soft Core Mapping", "soft_core_mapping"),
-    ("Hard Core Mapping", "hard_core_mapping"),
-    ("SANA-FE Simulation", "sanafe_simulation"),
+    ("Pretraining", "pretraining", None),
+    ("Activation Analysis", "activation_analysis", "Activations"),
+    ("LIF Adaptation", "lif_adaptation", "Gate Story"),
+    ("Soft Core Mapping", "soft_core_mapping", None),
+    ("Hard Core Mapping", "hard_core_mapping", None),
+    ("SANA-FE Simulation", "sanafe_simulation", None),
 )
 
 
@@ -108,10 +109,12 @@ def flow_replay(page, base_url: str, out_dir: Path, shots: list[str]) -> None:
 
     # Enriched step pages.
     _goto_section(page, "steps")
-    for step_name, slug in STEP_PAGES:
+    for step_name, slug, tab in STEP_PAGES:
         if page.locator(f'.step-item[data-step="{step_name}"]').count() == 0:
             continue
         _select_step(page, step_name)
+        if tab:
+            _click_tab(page, tab)
         _shot(page, out_dir, f"step_{slug}", shots, full=True)
 
     # Legacy-backfill run (pre-events.jsonl): overview + analysis keep working.
@@ -204,17 +207,36 @@ def _synthetic_feed(collector) -> None:
     collector.step_started("LIF Adaptation")
     collector.record_event("mbh_gate", {"action": "entry", "tuner": "LIF Adaptation",
                                         "best_full_acc": 0.985})
+    best = 0.985
     for rung in range(6):
         rate = min(1.0, (rung + 1) / 6)
         acc = 0.985 - 0.02 * math.sin(rung)
         collector.record_metric("LIF Adaptation", rate)
         collector.record_metric("Adaptation target", acc)
+        accepted = rung % 3 != 2
+        if accepted:
+            best = max(best, acc)
         collector.record_event("mbh_gate", {
-            "action": "accept" if rung % 3 != 2 else "reject",
+            "action": "accept" if accepted else "reject",
             "tuner": "LIF Adaptation", "rung": rung, "rate": rate,
-            "full_acc": acc, "best_full_acc": max(0.985, acc),
+            "full_acc": acc, "best_full_acc": best,
         })
         time.sleep(0.8)
+    collector.record_event("mbh_endpoint", {
+        "tuner": "LIF Adaptation", "entry": 0.985, "exit": best,
+        "budget_steps": 800, "steps_used": 420, "engaged": True,
+        "reached": True,
+    })
+    collector.record_event("quantization_report", {
+        "bits": 5, "q_max": 15,
+        "layers": [
+            {"index": i, "name": f"features_{i}", "parameter_scale": 12.0 + i,
+             "n_weights": 4000, "q_max": 15, "zero_frac": 0.15 + 0.05 * i,
+             "clip_frac": 0.02 * i, "effective_levels": 31 - 2 * i,
+             "int_min": -15, "int_max": 15}
+            for i in range(4)
+        ],
+    })
     # leaves the step RUNNING — live rail should show it in flight
 
 
@@ -232,8 +254,12 @@ def flow_live(page, base_url: str, out_dir: Path, shots: list[str], collector) -
     feeder.join(timeout=30)
     page.wait_for_timeout(2500)
     _shot(page, out_dir, "live_4_adaptation_events", shots, full=True)
+    if _click_tab(page, "Gate Story"):
+        _shot(page, out_dir, "live_5_gate_story", shots, full=True)
+    if _click_tab(page, "Quantization"):
+        _shot(page, out_dir, "live_6_quantization_report", shots, full=True)
     _goto_section(page, "analysis")
-    _shot(page, out_dir, "live_5_analysis_staircase", shots, full=True)
+    _shot(page, out_dir, "live_7_analysis_staircase", shots, full=True)
 
 
 def main() -> int:

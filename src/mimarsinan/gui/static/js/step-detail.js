@@ -21,6 +21,14 @@ import {
   syncActiveLiveSearch,
 } from './live-search-sync.js';
 import { setResourceContext } from './resource-urls.js';
+import {
+  renderStepContextStrip,
+  hasGateStory,
+  renderGateStoryTab,
+  quantizationReport,
+  renderQuantizationTab,
+  wilsonRowHtml,
+} from './step-insights.js';
 
 // ── Public API ───────────────────────────────────────────────────────────
 // Per-step ETag + metric-cursor cache shared across refreshStepDetail
@@ -116,12 +124,17 @@ export async function refreshStepDetail(stepName, state, fetchJSON) {
     ? state.searchEvents[stepName].length : 0;
 
   // Only rebuild DOM when structure changes (NOT when duration updates)
+  const annots = _annotationCache[stepName] || [];
   const sig = JSON.stringify({
     name: detail.name,
     status: detail.status,
     snapKeys: detail.snapshot ? Object.keys(detail.snapshot).sort() : [],
     snapshotKeyKinds: detail.snapshot_key_kinds ? Object.keys(detail.snapshot_key_kinds).sort() : [],
     metricNames: Object.keys(getStepMetrics(stepName, state)).sort(),
+    // Insight tabs mount from events (gate story, quantization report), so
+    // their arrival must rebuild the tab bar even when the snapshot is
+    // unchanged.
+    insights: [hasGateStory(annots), !!quantizationReport(annots), annots.length],
   });
 
   if (state.lastDetailJSON === sig && panel.querySelector('.step-detail-header')) {
@@ -147,8 +160,14 @@ export async function refreshStepDetail(stepName, state, fetchJSON) {
       ${detail.duration ? `<span class="detail-meta">${fmtDuration(detail.duration)}</span>` : ''}
       ${headerMetricHtml(detail)}
     </div>
+    <div id="step-context-strip"></div>
     <div class="tabs" id="step-tabs"></div>
     <div id="step-tab-content"></div>`;
+
+  renderStepContextStrip(
+    document.getElementById('step-context-strip'),
+    detail, _annotationCache[stepName] || [], state.pipeline,
+  );
 
   const copyBtn = panel.querySelector('.step-copy-name');
   if (copyBtn) copyBtn.addEventListener('click', () => {
@@ -159,7 +178,7 @@ export async function refreshStepDetail(stepName, state, fetchJSON) {
   const searchEvts = (state.searchEvents && state.searchEvents[stepName]) || [];
   if (searchEvts.length > 0) detail._hasSearchEvents = true;
   detail._searchEvents = searchEvts;
-  const tabs = determineTabs(detail, metrics);
+  const tabs = determineTabs(detail, metrics, _annotationCache[stepName] || []);
   if (!state.activeTab || !tabs.includes(state.activeTab)) state.activeTab = tabs[0];
   renderTabs(stepName, tabs, detail, metrics, state);
 }
@@ -321,9 +340,11 @@ function getStepMetrics(stepName, state) {
 }
 
 // ── Tab system ───────────────────────────────────────────────────────────
-function determineTabs(detail, metrics) {
+function determineTabs(detail, metrics, annotations = []) {
   const tabs = [];
   if (Object.keys(metrics).length > 0) tabs.push('metrics');
+  if (hasGateStory(annotations)) tabs.push('gate_story');
+  if (quantizationReport(annotations)) tabs.push('quantization');
   if (metrics['search_event'] || detail._hasSearchEvents) tabs.push('live_search');
   const snap = detail.snapshot || {};
   if (snap.model) tabs.push('model');
@@ -338,7 +359,7 @@ function determineTabs(detail, metrics) {
   if (snap.ir_graph) tabs.push('ir_graph');
   if (snap.hard_core_mapping) tabs.push('hardware');
   if (snap.search_result) tabs.push('search');
-  const hasScaleData = snap.activation_scales || (snap.model?.layers?.some(l => l.activation_scale != null || l.parameter_scale != null));
+  const hasScaleData = snap.activation_scales || snap.activation_scale_stats || (snap.model?.layers?.some(l => l.activation_scale != null || l.parameter_scale != null));
   if (hasScaleData) tabs.push('activations');
   if (snap.adaptation_manager) tabs.push('adaptation');
   if (snap.platform_constraints) tabs.push('constraints');
@@ -350,7 +371,8 @@ function determineTabs(detail, metrics) {
 }
 
 const TAB_LABELS = {
-  metrics: 'Metrics', live_search: 'Live Search', model: 'Model', mapping: 'Mapping',
+  metrics: 'Metrics', gate_story: 'Gate Story', quantization: 'Quantization',
+  live_search: 'Live Search', model: 'Model', mapping: 'Mapping',
   ir_graph: 'IR Graph', hardware: 'Hardware', search: 'Search', activations: 'Activations',
   adaptation: 'Adaptation', constraints: 'Constraints', pruning: 'Pruning',
   sanafe: 'SANA-FE', summary: 'Summary',
@@ -395,6 +417,10 @@ function renderTabContent(stepName, tab, detail, metrics, container, state) {
   const stepStartTime = detail.start_time != null ? (detail.start_time > 1e12 ? detail.start_time / 1000 : detail.start_time) : null;
   switch (tab) {
     case 'metrics': renderMetricsTab(metrics, container, stepStartTime, detail); break;
+    case 'gate_story': renderGateStoryTab(_annotationCache[stepName] || [], container); break;
+    case 'quantization':
+      renderQuantizationTab(quantizationReport(_annotationCache[stepName] || []), container);
+      break;
     case 'live_search': renderLiveSearchTab(stepName, detail, container, state); break;
     case 'model':
       // The planned Mapping Performance panel now lives in its own tab
@@ -420,7 +446,7 @@ function renderTabContent(stepName, tab, detail, metrics, container, state) {
       );
       break;
     case 'search': renderSearchTab(snap.search_result, container); break;
-    case 'activations': renderActivationsTab(snap.activation_scales, snap.model, container); break;
+    case 'activations': renderActivationsTab(snap.activation_scales, snap.model, container, snap.activation_scale_stats); break;
     case 'adaptation': renderAdaptationTab(snap.adaptation_manager, snap.model, metrics, container); break;
     case 'constraints': renderConstraintsTab(snap.platform_constraints, container); break;
     case 'pruning': renderPruningTab(snap.pruning_layers, container); break;
@@ -494,7 +520,8 @@ function headerMetricHtml(detail) {
 function verdictCardHtml(verdict) {
   const status = verdict.status || 'pass';
   const rows = Object.entries(verdict.detail || {})
-    .map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(String(v))}</td></tr>`).join('');
+    .map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(String(v))}</td></tr>`).join('')
+    + wilsonRowHtml(verdict.detail);
   return `<div class="card verdict-card verdict-${esc(status)}">
     <div class="card-header">Gate Verdict — ${status === 'pass' ? '✓ PASS' : '✖ FAIL'}</div>
     <div class="card-body">
@@ -591,9 +618,10 @@ const TONE_LINE_COLORS = { good: '#4ade80', warn: '#fbbf24', bad: '#f87171', neu
 
 export function bufferLiveAnnotation(stepName, frame) {
   // A decorated WS event frame -> one annotation entry (server ships the
-  // display hints, the client never interprets payloads).
+  // display hints, the client never interprets payloads). Category-less
+  // events still land here: the annotation LANES filter by category while
+  // the timeline strip and insight panels consume everything.
   const display = frame.display || {};
-  if (!display.categories || !display.categories.length) return;
   if (!_annotationCache[stepName]) _annotationCache[stepName] = [];
   const startTime = frame._step_start;
   _annotationCache[stepName].push({
@@ -602,7 +630,8 @@ export function bufferLiveAnnotation(stepName, frame) {
     kind: frame.kind,
     label: display.label,
     tone: display.tone,
-    categories: display.categories,
+    categories: display.categories || [],
+    payload: frame.payload || {},
   });
 }
 

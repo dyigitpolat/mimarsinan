@@ -26,6 +26,8 @@ _KIND_DISPLAY = {
     "retention": {"categories": ("Accuracy",), "label": "retention gate FAILED", "tone": "bad"},
     "parity": {"categories": ("Accuracy",), "label": "parity", "tone": "good"},
     "profile": {"categories": (), "label": "step boundary", "tone": "neutral"},
+    "quantization_report": {"categories": (), "label": "quantization report",
+                            "tone": "neutral"},
 }
 
 
@@ -69,14 +71,19 @@ def annotations_for_step(
     step_name: str,
     step_start: Optional[float],
 ) -> List[Dict[str, Any]]:
-    """Chart annotations for one step: x = elapsed seconds since step start."""
+    """One step's events as timeline/annotation entries (x = elapsed seconds).
+
+    Every event of the step is included — the chart annotation LANES filter by
+    ``categories`` client-side, while the step timeline strip and the per-step
+    insight panels (gate story, quantization report) consume all of them via
+    the attached ``payload``.
+    """
     annotations: List[Dict[str, Any]] = []
     for record in events:
         if record.get("step") != step_name:
             continue
-        hints = display_hints(str(record.get("kind", "")), record.get("payload") or {})
-        if not hints["categories"]:
-            continue
+        payload = record.get("payload") or {}
+        hints = display_hints(str(record.get("kind", "")), payload)
         timestamp = record.get("timestamp")
         x = None
         if timestamp is not None and step_start is not None:
@@ -87,5 +94,6 @@ def annotations_for_step(
             "label": hints["label"],
             "tone": hints["tone"],
             "categories": hints["categories"],
+            "payload": dict(payload),
         })
     return annotations

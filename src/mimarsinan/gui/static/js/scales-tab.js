@@ -1,14 +1,16 @@
 /* Activations + Adaptation tabs. */
 import { esc, safeReact } from './util.js';
+import { renderActivationScaleStats } from './step-insights.js';
 
 // ── Activations tab ──────────────────────────────────────────────────────
-export function renderActivationsTab(scales, model, container) {
+export function renderActivationsTab(scales, model, container, scaleStats = null) {
   const hasScales = scales?.length > 0;
   const layers = model?.layers || [];
   const hasAct = layers.some(l => l.activation_scale != null);
   const hasParam = layers.some(l => l.parameter_scale != null);
+  const hasStats = scaleStats?.layers?.length > 0;
 
-  if (!hasScales && !hasAct && !hasParam) {
+  if (!hasScales && !hasAct && !hasParam && !hasStats) {
     container.innerHTML = '<div class="empty-state">No activation or scale data available.<br><span style="font-size:12px;color:var(--text-muted)">Scales are computed during the Activation Analysis step.</span></div>';
     return;
   }
@@ -30,6 +32,7 @@ export function renderActivationsTab(scales, model, container) {
     html += '</tbody></table></div></div>';
   }
   container.innerHTML = html;
+  if (hasStats) renderActivationScaleStats(scaleStats, container);
 
   if (hasScales) safeReact('act-s', [{ x: scales.map((_, i) => `L${i}`), y: scales, type: 'bar', marker: { color: '#ff9800' } }], { height: 260, yaxis: { title: 'Scale' } });
   if (hasAct) { const f = layers.filter(l => l.activation_scale != null); safeReact('act-la', [{ x: f.map(l => `L${l.index}`), y: f.map(l => l.activation_scale), type: 'bar', marker: { color: '#4caf50' } }], { height: 260, yaxis: { title: 'Activation Scale' } }); }

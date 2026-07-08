@@ -17,6 +17,7 @@ EVENT_LR_REFUSAL = "lr_refusal"      # destructive-LR refusal
 EVENT_PROFILE = "profile"            # per-step wall + metric delta
 EVENT_PARITY = "parity"              # torch<->deployed-sim agreement reads
 EVENT_RETENTION = "retention"        # step retention-gate failure
+EVENT_QUANTIZATION_REPORT = "quantization_report"  # per-layer integer-grid stats
 
 KNOWN_EVENT_KINDS = frozenset({
     EVENT_MBH_GATE,
@@ -28,6 +29,7 @@ KNOWN_EVENT_KINDS = frozenset({
     EVENT_PROFILE,
     EVENT_PARITY,
     EVENT_RETENTION,
+    EVENT_QUANTIZATION_REPORT,
 })
 
 

@@ -134,6 +134,28 @@ class TestAnnotations:
         assert "reached" in record["display"]["label"]
         assert record["seq"] == 1
 
+    def test_category_less_events_still_reach_the_step_timeline(self):
+        """Events without chart categories (e.g. profile) are timeline
+        entries — the annotation LANES filter by category client-side."""
+        events = [
+            {"step": "Pretraining", "kind": "profile", "timestamp": 105.0,
+             "payload": {"step": "Pretraining", "wall_s": 5.0}},
+        ]
+        annotations = annotations_for_step(events, "Pretraining", step_start=100.0)
+        assert len(annotations) == 1
+        assert annotations[0]["categories"] == []
+        assert annotations[0]["x"] == 5.0
+
+    def test_annotations_carry_the_event_payload_for_step_insights(self):
+        events = [
+            {"step": "LIF Adaptation", "kind": "mbh_gate", "timestamp": 110.0,
+             "payload": {"action": "accept", "rung": 2, "rate": 0.5,
+                         "full_acc": 0.93, "best_full_acc": 0.93}},
+        ]
+        annotations = annotations_for_step(events, "LIF Adaptation", step_start=100.0)
+        assert annotations[0]["payload"]["full_acc"] == 0.93
+        assert annotations[0]["payload"]["rung"] == 2
+
 
 class TestStaircase:
     _EVENTS = [

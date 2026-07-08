@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import Any
 
 from fastapi import FastAPI
 from fastapi.responses import FileResponse, JSONResponse
@@ -16,18 +16,14 @@ from mimarsinan.gui.runs import (
     resolve_artifact_file,
 )
 
-if TYPE_CHECKING:
-    from mimarsinan.gui.runtime.collector import DataCollector
-    from mimarsinan.gui.runtime.process_manager import ProcessManager
-
 logger = logging.getLogger("mimarsinan.gui")
 
 
 def register_routes(
     app: FastAPI,
     *,
-    collector: "DataCollector",
-    process_manager: "ProcessManager | None",
+    collector: Any,  # DataCollector (duck-typed: avoids the lazy-import cycle break)
+    process_manager: Any,  # ProcessManager | None
 ) -> None:
     @app.get("/api/artifacts")
     def api_artifacts():

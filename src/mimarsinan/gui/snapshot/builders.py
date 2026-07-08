@@ -168,6 +168,12 @@ def build_step_snapshot(
                 if step is not None:
                     snapshot_key_kinds["activation_scales"] = kind
 
+        elif short == "activation_scale_stats":
+            with best_effort(f"snapshot activation_scale_stats from key {key!r}", logger=logger):
+                snapshot["activation_scale_stats"] = _safe_dict(cache.get(key))
+                if step is not None:
+                    snapshot_key_kinds["activation_scale_stats"] = kind
+
         elif short == "platform_constraints_resolved":
             with best_effort(f"snapshot platform_constraints from key {key!r}", logger=logger):
                 snapshot["platform_constraints"] = _safe_dict(cache.get(key))

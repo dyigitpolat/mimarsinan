@@ -67,6 +67,36 @@ def test_hard_core_mapping_snapshot_embeds_ir_graph_without_name_error():
     assert "snapshot_error" not in snap
 
 
+class _ActivationAnalysisStep:
+    promises = ("activation_scales", "activation_scale_stats")
+    updates = ()
+
+
+def test_activation_scale_stats_pass_through_to_the_snapshot():
+    """The Activation Analysis distribution stats are cached AND snapshotted —
+    the step page renders per-layer scale distributions from them."""
+    stats = {
+        "num_batches": 4,
+        "quantile": 0.99,
+        "summary": {"min_scale": 1.0, "median_scale": 2.0, "max_scale": 3.0},
+        "layers": [
+            {"index": 0, "name": "features_0", "scale": 1.0,
+             "sample_count": 128, "active_sample_count": 60,
+             "sample_min": 0.0, "sample_median": 0.4, "sample_max": 2.5},
+        ],
+    }
+    cache = _Cache({
+        "activation_scales": [1.0],
+        "activation_scale_stats": stats,
+    })
+    pipeline = SimpleNamespace(cache=cache, steps=(), config={})
+    snap, kinds, _descs = build_step_snapshot(
+        pipeline, "Activation Analysis", step=_ActivationAnalysisStep()
+    )
+    assert snap["activation_scale_stats"]["layers"][0]["name"] == "features_0"
+    assert kinds["activation_scale_stats"] == "new"
+
+
 def test_builders_imports_find_ir_graph_promiser():
     """``builders`` must bind helpers used at runtime, not only via star-import side effects."""
     import mimarsinan.gui.snapshot.builders as builders_mod
