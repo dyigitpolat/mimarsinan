@@ -65,6 +65,50 @@ export function groupHasKeys(groupId) {
   );
 }
 
+/** Ownership transfer (registry provided_by): keys of this group whose value
+    another concern currently produces — the card renders an ownership chip
+    where the hand field would be, instead of silently dropping the concern. */
+export function providedAwayKeys(groupId, cfg) {
+  return Object.values(schema().keys)
+    .filter((k) => k.group === groupId && k.provided_by && !relevant(k.relevant, cfg))
+    .map((k) => k.key);
+}
+
+function collectAssignments(tree, out) {
+  if (!tree) return;
+  switch (tree.op) {
+    case 'in':
+      for (const value of tree.values || []) out.push({ key: tree.key, value });
+      break;
+    case 'true':
+      out.push({ key: tree.key, value: true });
+      break;
+    case 'all':
+    case 'any':
+      for (const item of tree.items || []) collectAssignments(item, out);
+      break;
+    default: break; // 'set'/'always' carry no single enabling assignment
+  }
+}
+
+/** The enable path of a dormant group, derived from its keys' relevance
+    trees: the (key, value) assignments under which the group's keys would
+    exist. Powers the quiet "off" card's actions — no per-group JS lists. */
+export function enableAssignments(groupId, cfg) {
+  const raw = [];
+  for (const k of Object.values(schema().keys)) {
+    if (k.group !== groupId || relevant(k.relevant, cfg)) continue;
+    collectAssignments(k.relevant, raw);
+  }
+  const seen = new Set();
+  return raw.filter(({ key, value }) => {
+    const id = key + ' ' + String(value);
+    if (seen.has(id) || cfg[key] === value) return false;
+    seen.add(id);
+    return true;
+  });
+}
+
 export function derivedKeys() {
   return Object.values(schema().keys).filter((k) => k.category === 'derived');
 }

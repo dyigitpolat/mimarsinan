@@ -57,6 +57,15 @@ def _validate(entries: Tuple[ConfigKeySchema, ...]) -> Dict[str, ConfigKeySchema
             raise ValueError(f"duplicate registry entry {entry.flat_key!r}")
         if entry.group not in VALID_GROUP_IDS:
             raise ValueError(f"{entry.flat_key!r}: unknown group {entry.group!r}")
+        if entry.provided_by is not None:
+            if entry.provided_by not in VALID_GROUP_IDS:
+                raise ValueError(
+                    f"{entry.flat_key!r}: unknown provided_by group {entry.provided_by!r}"
+                )
+            if entry.provided_by == entry.group:
+                raise ValueError(
+                    f"{entry.flat_key!r}: provided_by must name a DIFFERENT group"
+                )
         table[entry.flat_key] = entry
 
     expected = set(CONFIG_KEYS_SET) | NON_PIPELINE_DOC_KEYS
@@ -115,6 +124,7 @@ def serialize_registry() -> Dict[str, Any]:
                 entry.promote_when.to_json() if entry.promote_when is not None else None
             ),
             "empty_means": entry.empty_means,
+            "provided_by": entry.provided_by,
             "derived_from": list(entry.derived_from),
             "declarable": entry.declarable,
             "important": entry.important,

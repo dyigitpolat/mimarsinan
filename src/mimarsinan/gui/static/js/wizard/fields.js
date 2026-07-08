@@ -2,7 +2,9 @@
    Widget quality rules (all generic, from the schema record alone):
    - numerics with finite bounds render as slider + numeric combos;
    - enums with ≤ 5 options render as segmented buttons, larger as dropdowns;
-   - every empty control states what empty means (empty_means / default / owner). */
+   - empty semantics live INSIDE the control: a faded placeholder states the
+     default (or the empty_means derivation) and vanishes once the user types;
+     under-field text is reserved for docs/units. */
 
 import { clearKey, effectiveValue, getKey, isExplicit, setKey, state } from './state.js';
 
@@ -40,6 +42,7 @@ function helpText(ks) {
   if (ks.unit) parts.push('Unit: ' + ks.unit);
   const bounds = boundsText(ks);
   if (bounds) parts.push(bounds);
+  parts.push('Empty → ' + emptyMeansText(ks));
   parts.push('Consumed by: ' + ks.owner);
   return parts.filter(Boolean).join('\n');
 }
@@ -51,6 +54,17 @@ export function emptyMeansText(ks) {
     return `default (${formatValue(ks.default)})`;
   }
   return `unset — ${ks.owner} decides at resolve`;
+}
+
+/** Faded in-field statement of the empty behavior: the concrete default
+    where one exists, else the registry's empty_means compressed to fit
+    (the full sentence stays in the field's tooltip). */
+export function placeholderText(ks) {
+  if ('default' in ks && ks.default !== null && ks.default !== undefined) {
+    return formatValue(ks.default);
+  }
+  const meaning = ks.empty_means || `${ks.owner} decides at resolve`;
+  return meaning.length > 36 ? meaning.slice(0, 35).trimEnd() + '…' : meaning;
 }
 
 function formatValue(value) {
@@ -91,15 +105,6 @@ function fieldDoc(ks) {
   return doc;
 }
 
-/** The "empty = X" line: shown while the key has no explicit value.
-    Defaulted enums skip it — the active segment/option already shows the
-    effective state. */
-function emptyHint(ks) {
-  if (isExplicit(ks.key) && getKey(ks.key) !== null) return null;
-  if (ks.type === 'enum' && 'default' in ks && ks.default !== null) return null;
-  return el('div', 'field-empty-hint', 'empty → ' + emptyMeansText(ks));
-}
-
 function markExplicit(ks, marker, rerender) {
   marker.replaceChildren();
   if (isExplicit(ks.key)) marker.append(revertButton(ks, rerender));
@@ -134,7 +139,7 @@ function numberBox(ks) {
   }
   const value = effectiveValue(ks.key);
   input.value = value === undefined || value === null ? '' : String(value);
-  if ('default' in ks && ks.default !== null) input.placeholder = String(ks.default);
+  input.placeholder = placeholderText(ks);
   return input;
 }
 
@@ -274,11 +279,9 @@ function textInput(ks, marker, rerender, parse, format) {
   input.type = 'text';
   const value = getKey(ks.key);
   input.value = value === undefined || value === null ? '' : format(value);
-  if ('default' in ks && ks.default !== null && ks.default !== undefined) {
-    input.placeholder = format(ks.default);
-  } else if (ks.empty_means) {
-    input.placeholder = ks.empty_means;
-  }
+  /* Type-faithful default text: what the placeholder shows must parse back. */
+  input.placeholder = 'default' in ks && ks.default !== null && ks.default !== undefined
+    ? format(ks.default) : placeholderText(ks);
   input.addEventListener('change', () => {
     const raw = input.value.trim();
     if (raw === '') {
@@ -352,10 +355,24 @@ export function renderField(ks) {
     control = el('div', 'note', `unsupported field type: ${ks.type}`);
   }
   field.append(control, fieldDoc(ks));
-  if (ks.type !== 'bool') {
-    const hint = emptyHint(ks);
-    if (hint) field.append(hint);
-  }
   markExplicit(ks, marker, rerender);
+  return field;
+}
+
+/** Ownership cell: renders where a hand field would be while another
+    concern (registry provided_by) produces the key's value — the card
+    states WHO owns the value instead of silently dropping the concern. */
+export function renderOwnershipCell(ks, provider, reason) {
+  const { field } = fieldShell(ks);
+  field.classList.add('field-owned');
+  const chip = el('div', 'ownership-chip');
+  if (provider && provider.accent) {
+    chip.style.setProperty('--owner-accent', provider.accent);
+  }
+  chip.append(el('span', 'ownership-chip-icon', '⌖'));
+  chip.append(el('span', 'ownership-chip-text',
+    `${provider ? provider.title : ks.provided_by} owns this`));
+  chip.title = [reason, ks.doc].filter(Boolean).join('\n\n');
+  field.append(chip, fieldDoc(ks));
   return field;
 }

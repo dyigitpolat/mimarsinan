@@ -28,11 +28,19 @@ re-rendered from every resolve, a compact mapping summary mirroring the
 Co-Design panel, and Launch with strong disabled/blocked semantics). The
 flagship Co-Design section shows model architecture, the core grid, and the
 full mapping-performance panel on one screen so both can be tuned against
-live mapping feedback ("Suggest hardware" included). Field rendering is
+live mapping feedback ("Suggest hardware" included). The search concern is
+its OWN sibling card there (the registry `co_search` group — it co-optimizes
+model AND hardware, so it never nests under either): dormant it renders as
+one quiet line with an enable path derived from its keys' relevance trees;
+active its keys render primary, and the Model/Hardware cards show ownership
+chips (registry `provided_by`) exactly where their search-owned hand fields
+would be. Field rendering is
 schema-driven and generic: relevance predicates control field EXISTENCE,
 `promote_when` makes mode-defining knobs primary in their mode, bounded
 numerics render as slider+numeric combos, small enums as segmented buttons,
-and every empty control states what empty resolves to (`empty_means`).
+and empty semantics render INSIDE the control as a faded placeholder (the
+default value or the `empty_means` derivation) that vanishes once the user
+types — under-field text is reserved for docs/units.
 Policy-derived keys (simulator enables, core maxima) render as status/chips,
 never as knobs. A fresh draft is seeded from `GET /api/config/starter`.
 `scripts/wizard_screenshots.py` (dev-only, browser-driven) captures the

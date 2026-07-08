@@ -84,6 +84,12 @@ def _shot(page, out_dir: Path, name: str, shots: list[str], full: bool = False) 
     shots.append(str(path.relative_to(REPO_ROOT)))
 
 
+def _shot_element(locator, out_dir: Path, name: str, shots: list[str]) -> None:
+    path = out_dir / f"{name}.png"
+    locator.screenshot(path=str(path))
+    shots.append(str(path.relative_to(REPO_ROOT)))
+
+
 def _shoot_sections(page, base_url: str, out_dir: Path, flow: str,
                     shots: list[str], query: str = "") -> None:
     page.goto(base_url + "/wizard" + query)
@@ -118,9 +124,48 @@ def _shoot_codesign_sequence(page, base_url: str, out_dir: Path, shots: list[str
     _shot(page, out_dir, "codesign_4_arch_edit_mapping_updates", shots, full=True)
 
 
+def _shoot_cosearch_and_placeholders(page, base_url: str, out_dir: Path,
+                                     shots: list[str]) -> None:
+    """User-amendment evidence: the co-search panel is its OWN card spanning
+    model and hardware (off → quiet affordance; active → primary fields with
+    ownership chips on the hand cards), and empty semantics render as faded
+    in-field placeholders (no under-field hint lines)."""
+    page.goto(base_url + "/wizard")
+    _settle(page, 2200)
+    _goto_section(page, "codesign")
+    # Both config modes hand-specified: one quiet off affordance, zero
+    # search fields anywhere on the screen.
+    _shot(page, out_dir, "cosearch_1_off", shots, full=True)
+
+    # The off card's derived enable path activates model search: the panel
+    # renders its keys primary, sibling to Model and Hardware.
+    page.click('.section-off .btn-sm:text-is("Model Config Mode → search")')
+    _settle(page, 1400)
+    _shot(page, out_dir, "cosearch_2_model_search_active", shots, full=True)
+
+    # Model-card honesty: the hand field slot states that the co-search owns
+    # model_config now.
+    _shot_element(page.locator('.section[data-section="model"]'),
+                  out_dir, "cosearch_3_model_card_search_owned", shots)
+
+    # Hardware search too: the core-grid hand editor gives way to its
+    # ownership chip and the HW search space joins the co-search panel.
+    _click_segment(page, "hw_config_mode", "search")
+    _shot(page, out_dir, "cosearch_4_joint_search_hw_owned", shots, full=True)
+
+    # Placeholder discipline: the empty behavior lives INSIDE the input as
+    # faded blue text (default value or derived phrase), no hint lines.
+    page.goto(base_url + "/wizard")
+    _settle(page, 2200)
+    _goto_section(page, "tuning")
+    page.locator('.wb-section[data-section-id="tuning"] .advanced-toggle').first.click()
+    _settle(page, 500)
+    _shot(page, out_dir, "placeholders_1_tuning_advanced", shots, full=True)
+
+
 def _shoot_defect_evidence(page, base_url: str, out_dir: Path, shots: list[str]) -> None:
     """Targeted evidence: search-mode prominence, the pruning slider knob,
-    and the empty-hint discipline inside an Advanced drawer."""
+    and the in-field placeholder discipline inside an Advanced drawer."""
     page.goto(base_url + "/wizard")
     _settle(page, 2200)
 
@@ -222,6 +267,7 @@ def main() -> None:
         page.on("pageerror", lambda err: print(f"[pageerror] {err}"))
         _shoot_sections(page, base_url, out_dir, "fresh", shots)
         _shoot_codesign_sequence(page, base_url, out_dir, shots)
+        _shoot_cosearch_and_placeholders(page, base_url, out_dir, shots)
         _shoot_defect_evidence(page, base_url, out_dir, shots)
         _shoot_mode_switches(page, base_url, out_dir, shots)
         _shoot_sections(page, base_url, out_dir, "template", shots,

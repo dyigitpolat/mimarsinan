@@ -30,7 +30,7 @@ class TestConfigSchemaEndpoint:
     def test_serves_the_full_registry(self, client):
         payload = client.get("/api/config_schema").json()
         assert set(payload["keys"]) == set(REGISTRY)
-        assert len(payload["groups"]) == 9
+        assert len(payload["groups"]) == 10
 
     def test_serves_sub_schema_surfaces(self, client):
         payload = client.get("/api/config_schema").json()

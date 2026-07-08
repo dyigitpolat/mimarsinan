@@ -1,4 +1,8 @@
-"""The nine concern groups every config key belongs to (one taxonomy, one home)."""
+"""The concern groups every config key belongs to (one taxonomy, one home).
+
+A group may declare ``empty_state``: the quiet one-line status its card shows
+when none of its keys exist under the current config (instead of vanishing).
+"""
 
 from __future__ import annotations
 
@@ -8,14 +12,18 @@ CONCERN_GROUPS: Tuple[Dict[str, str], ...] = (
     {"id": "workload", "title": "Workload",
      "subtitle": "Dataset, preprocessing, input encoding", "accent": "91,141,245"},
     {"id": "model", "title": "Model",
-     "subtitle": "Architecture builder, weight init, pruning, NAS",
-     "accent": "45,212,191"},
+     "subtitle": "Architecture builder, weight init", "accent": "45,212,191"},
     {"id": "spiking", "title": "Spiking semantics",
      "subtitle": "Firing/sync/encoding/thresholding/spike-gen/bias modes",
      "accent": "168,85,247"},
     {"id": "hardware", "title": "Hardware platform / capabilities",
      "subtitle": "Core grid, weight quantization, capability gates",
      "accent": "249,115,22"},
+    {"id": "co_search", "title": "Co-search",
+     "subtitle": "Automated co-design: the search discovers model and/or "
+                 "hardware configs",
+     "accent": "244,114,182",
+     "empty_state": "off — model and hardware are hand-specified"},
     {"id": "conversion", "title": "Conversion process",
      "subtitle": "Activation quant, calibration health, optimization driver",
      "accent": "139,92,246"},

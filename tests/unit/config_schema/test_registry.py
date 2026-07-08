@@ -105,9 +105,10 @@ class TestRelevance:
 
 class TestTaxonomy:
     """Dataset-side facts live in 'workload'; architecture-side in 'model';
-    deployment-side conversion knobs in 'conversion'; the hardware-search
-    switch with the hardware it searches. The wizard's workbench sections
-    host whole groups, so this split IS the section assignment."""
+    deployment-side conversion knobs in 'conversion'; the search concern in
+    'co_search' (it co-optimizes BOTH model and hardware — nesting it under
+    either card misleads). The wizard's workbench sections host whole
+    groups, so this split IS the section assignment."""
 
     def test_workload_group_is_dataset_side(self):
         for key in ("data_provider_name", "datasets_path", "preprocessing",
@@ -116,7 +117,7 @@ class TestTaxonomy:
 
     def test_model_group_is_architecture_side(self):
         for key in ("model_config_mode", "model_type", "model_config",
-                    "model_factory", "arch_search", "weight_source",
+                    "model_factory", "weight_source",
                     "preload_weights", "pretrained_weight_source",
                     "clamp_cuda_assert_prone"):
             assert REGISTRY[key].group == "model", key
@@ -127,8 +128,23 @@ class TestTaxonomy:
         for key in ("pruning", "pruning_fraction", "prune_sparsity"):
             assert REGISTRY[key].group == "conversion", key
 
-    def test_hw_search_switch_lives_with_hardware(self):
+    def test_co_search_group_hosts_the_search_concern(self):
+        """The search settings drive model AND hardware co-search, so they
+        live in their own concern group, never under Model or Hardware."""
+        for key in ("arch_search", "search_space"):
+            assert REGISTRY[key].group == "co_search", key
+
+    def test_config_mode_switches_live_with_the_concern_they_declare(self):
+        """The mode selectors are per-concern provenance switches (hand vs
+        search) — each stays on the card whose config source it declares;
+        their 'search' position is what activates the co-search panel."""
+        assert REGISTRY["model_config_mode"].group == "model"
         assert REGISTRY["hw_config_mode"].group == "hardware"
+
+    def test_co_search_group_declares_its_off_state(self):
+        group = next(g for g in serialize_registry()["groups"]
+                     if g["id"] == "co_search")
+        assert group["empty_state"]
 
 
 class TestModeHonesty:
@@ -176,6 +192,38 @@ class TestModeHonesty:
                 promote_when=Relevance.when_true("pruning"),
             )
 
+    def test_search_owned_hand_fields_declare_their_provider(self):
+        """When a search mode makes a hand field irrelevant, the card must
+        say WHO owns it instead of silently dropping it: the keys the
+        co-search discovers carry provided_by='co_search'."""
+        for key in ("model_config", "cores"):
+            entry = REGISTRY[key]
+            assert entry.provided_by == "co_search", key
+            assert entry.relevant.op != "always", key
+
+    def test_model_type_is_consumed_in_every_search_mode(self):
+        """ArchitectureSearchStep reads model_type unconditionally (it is
+        the builder family whose space the search explores), so the key is
+        always relevant — hiding it under search would be a lie."""
+        entry = REGISTRY["model_type"]
+        assert entry.relevant.evaluate({"model_config_mode": "search"})
+        assert entry.relevant.evaluate({"model_config_mode": "user"})
+
+    def test_cores_are_search_owned_under_hw_search(self):
+        """The hardware co-search discovers the core grid, so the hand
+        editor only exists while hw_config_mode='fixed'."""
+        entry = REGISTRY["cores"]
+        assert entry.relevant.evaluate({"hw_config_mode": "fixed"})
+        assert not entry.relevant.evaluate({"hw_config_mode": "search"})
+
+    def test_provided_by_requires_a_conditional_relevance(self):
+        with pytest.raises(ValueError):
+            ConfigKeySchema(
+                flat_key="bogus", group="run", owner="x", type=FieldType.BOOL,
+                category=Category.BASIC, label="Bogus", doc="A bogus basic key.",
+                provided_by="co_search",
+            )
+
     def test_no_default_user_keys_state_what_empty_means(self):
         """Every empty box must say what empty does; the flagship
         workload-profile keys carry an explicit empty_means."""
@@ -194,11 +242,17 @@ class TestSerialization:
     def test_payload_is_json_safe_and_complete(self):
         payload = serialize_registry()
         json.dumps(payload)
-        assert len(payload["groups"]) == 9
+        assert len(payload["groups"]) == 10
         assert set(payload["keys"]) == set(REGISTRY)
         record = payload["keys"]["endpoint_floor_steps"]
         assert record["unit"] == "steps"
         assert record["category"] == "advanced"
+
+    def test_provided_by_is_serialized(self):
+        payload = serialize_registry()
+        assert payload["keys"]["model_config"]["provided_by"] == "co_search"
+        assert payload["keys"]["cores"]["provided_by"] == "co_search"
+        assert payload["keys"]["lr"]["provided_by"] is None
 
     def test_relevance_trees_are_serialized(self):
         payload = serialize_registry()

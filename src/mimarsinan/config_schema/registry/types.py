@@ -81,6 +81,10 @@ class ConfigKeySchema:
     # What an empty/absent value means, shown verbatim next to the widget
     # (only for keys without a schema default; defaulted keys show the default).
     empty_means: Optional[str] = None
+    # Ownership transfer: while this key is NOT relevant, its value is
+    # produced by this other concern group — cards render an ownership chip
+    # where the hand field would be instead of silently dropping the concern.
+    provided_by: Optional[str] = None
     derived_from: Tuple[str, ...] = ()
     why: Optional[Callable[[dict], str]] = None
     declarable: bool = True
@@ -101,6 +105,11 @@ class ConfigKeySchema:
             raise ValueError(f"{self.flat_key!r}: derived keys must name derived_from inputs")
         if self.promote_when is not None and self.category is not Category.ADVANCED:
             raise ValueError(f"{self.flat_key!r}: promote_when only applies to ADVANCED keys")
+        if self.provided_by is not None and self.relevant.op == "always":
+            raise ValueError(
+                f"{self.flat_key!r}: provided_by requires a conditional relevance "
+                "(an always-relevant key is never owned elsewhere)"
+            )
 
     def resolved_options(self) -> Optional[Tuple[str, ...]]:
         """Options with any registry-derived callable resolved to a tuple."""

@@ -9,7 +9,7 @@ export const SECTIONS = [
   { id: 'workload', title: 'Workload', hint: 'Dataset & preprocessing',
     icon: '◈', groups: ['workload'] },
   { id: 'codesign', title: 'Co-Design', hint: 'Model × hardware, live mapping',
-    icon: '⧉', groups: ['model', 'hardware'] },
+    icon: '⧉', groups: ['model', 'hardware', 'co_search'] },
   { id: 'semantics', title: 'Deployment semantics', hint: 'Mode · conversion · vehicles',
     icon: '⚡', groups: ['spiking', 'conversion', 'deployment_target'] },
   { id: 'tuning', title: 'Tuning & Budgets', hint: 'Controller & training',

@@ -88,6 +88,11 @@ def validate_deployment_config(config: Dict[str, Any]) -> List[str]:
         if any_search:
             if "arch_search" not in dp or not isinstance(dp.get("arch_search"), dict):
                 errors.append("Search is active but arch_search is missing or not a dict")
+            if "model_type" not in dp:
+                errors.append(
+                    "Search is active but model_type is missing (the builder "
+                    "family whose config space the search explores)"
+                )
 
         spiking = dp.get("spiking_mode", "lif")
         try:

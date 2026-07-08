@@ -3,12 +3,15 @@
    sections (workbench.js) host whole concern groups; the live rail renders the
    honest assembly + mapping from every resolve round-trip. */
 
-import { groups, keySchema, loadSchema, schema, visibleKeys } from './schema.js';
+import {
+  enableAssignments, groups, keySchema, loadSchema, providedAwayKeys, schema,
+  unavailabilityReason, visibleKeys,
+} from './schema.js';
 import {
   differsFromDefault, effectiveConfig, effectiveValue, isExplicit,
-  loadDraftFromConfig, resetDraft, state,
+  loadDraftFromConfig, resetDraft, setKey, state,
 } from './state.js';
-import { el, renderField } from './fields.js';
+import { el, notifyChange, renderField, renderOwnershipCell } from './fields.js';
 import { defaultModelConfig, ensureModelSchema, installStructuredWidgets } from './structured.js';
 import {
   renderAssemblyRail, renderDerivedChips, renderDiffPanel, renderErrors,
@@ -21,6 +24,7 @@ import { goToFirstError, goToSection, renderSectionNav } from './workbench.js';
 const GROUP_ICONS = {
   run: '⬡', workload: '◈', model: '▣', spiking: '⚡', conversion: '◎',
   tuning: '☈', training: '▶', hardware: '▦', deployment_target: '✈',
+  co_search: '⌖',
 };
 
 /* ── Section rendering ─────────────────────────────────────────────────── */
@@ -30,22 +34,78 @@ function fieldList(groupId, category, cfg) {
   return visibleKeys(groupId, category, cfg).map((key) => keySchema(key));
 }
 
-function renderGroupSection(group, cfg) {
-  const basic = fieldList(group.id, 'basic', cfg);
-  const advanced = fieldList(group.id, 'advanced', cfg);
-  if (!basic.length && !advanced.length) return null;
+/** The group's primary grid cells in registry order: hand fields where keys
+    exist, ownership chips where another concern (provided_by) produces the
+    value — the chip renders exactly where the hand field would be. */
+function primaryCells(group, cfg, basicKeys, ownedKeys) {
+  const byId = Object.fromEntries(groups().map((g) => [g.id, g]));
+  const basic = new Set(basicKeys);
+  const owned = new Set(ownedKeys);
+  const cells = [];
+  for (const ks of Object.values(schema().keys)) {
+    if (ks.group !== group.id) continue;
+    if (basic.has(ks.key)) cells.push(renderField(ks));
+    else if (owned.has(ks.key)) {
+      cells.push(renderOwnershipCell(
+        ks, byId[ks.provided_by], unavailabilityReason(ks.relevant, cfg),
+      ));
+    }
+  }
+  return cells;
+}
 
-  const section = el('div', 'section');
-  section.dataset.section = group.id;
-  section.style.setProperty('--section-accent', group.accent || '91,141,245');
-
+function sectionHeader(group) {
   const header = el('div', 'section-header');
   header.append(el('div', 'section-icon', GROUP_ICONS[group.id] || '◇'));
   const titles = el('div', 'section-title-group');
   titles.append(el('div', 'section-title', group.title));
   titles.append(el('div', 'section-subtitle', group.subtitle || ''));
   header.append(titles);
-  if (group.id === 'hardware') {
+  return header;
+}
+
+/** The quiet dormant-group card (registry empty_state): one status line plus
+    the enable path derived from the group's own relevance predicates. */
+function renderGroupOffCard(group, cfg) {
+  const section = el('div', 'section section-off');
+  section.dataset.section = group.id;
+  section.style.setProperty('--section-accent', group.accent || '91,141,245');
+  const row = el('div', 'section-off-row');
+  row.append(el('div', 'section-icon', GROUP_ICONS[group.id] || '◇'));
+  row.append(el('span', 'section-off-title', group.title));
+  row.append(el('span', 'section-off-state', group.empty_state));
+  const actions = el('span', 'section-off-actions');
+  for (const { key, value } of enableAssignments(group.id, cfg)) {
+    const ks = keySchema(key);
+    const btn = el('button', 'btn-sm', `${ks ? ks.label : key} → ${value}`);
+    btn.type = 'button';
+    btn.addEventListener('click', () => {
+      setKey(key, value);
+      notifyChange(key);
+    });
+    actions.append(btn);
+  }
+  row.append(actions);
+  section.append(row);
+  return section;
+}
+
+function renderGroupSection(group, cfg) {
+  const basicKeys = visibleKeys(group.id, 'basic', cfg);
+  const advanced = fieldList(group.id, 'advanced', cfg);
+  const ownedKeys = providedAwayKeys(group.id, cfg);
+  if (!basicKeys.length && !advanced.length && !ownedKeys.length) {
+    return group.empty_state ? renderGroupOffCard(group, cfg) : null;
+  }
+
+  const section = el('div', 'section');
+  section.dataset.section = group.id;
+  section.style.setProperty('--section-accent', group.accent || '91,141,245');
+
+  const header = sectionHeader(group);
+  if (group.id === 'hardware' && basicKeys.includes('cores')) {
+    /* The suggester writes the hand core grid — it only exists while the
+       grid is hand-owned. */
     const suggest = el('button', 'btn-sm primary suggest-hw', '⚙ Suggest hardware for this model');
     suggest.type = 'button';
     suggest.addEventListener('click', () => autoSuggestHardware());
@@ -55,7 +115,7 @@ function renderGroupSection(group, cfg) {
 
   const body = el('div', 'section-body');
   const grid = el('div', 'field-grid cols-2');
-  for (const ks of basic) grid.append(renderField(ks));
+  for (const cell of primaryCells(group, cfg, basicKeys, ownedKeys)) grid.append(cell);
   body.append(grid);
 
   if (advanced.length) {

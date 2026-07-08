@@ -32,7 +32,9 @@ def _why_backend_enable(backend: str, off_reason: str):
 ENTRIES = (
     _E("cores", section=_PC, group="hardware", owner="ChipCapabilities/mapping",
        type=T.CORES, category=Category.BASIC, exposure="user", label="Core Types",
-       doc="Core-type grid: per type max_axons x max_neurons x count (+ has_bias)."),
+       doc="Core-type grid: per type max_axons x max_neurons x count (+ has_bias). "
+           "Under hw_config_mode='search' the co-search discovers the grid.",
+       relevant=R.when("hw_config_mode", in_=("fixed",)), provided_by="co_search"),
     _E("max_axons", section=_PC, group="hardware", owner="mapping/packing",
        type=T.INT, category=Category.DERIVED, derivation="derived", exposure="user",
        label="Max Axons",
@@ -80,7 +82,7 @@ ENTRIES = (
        label="Scheduling Latency Weight",
        doc="Latency term weight in the schedule-partitioner objective.",
        bounds=(0.0, None), relevant=R.when_true("allow_scheduling")),
-    _E("search_space", section=_PC, group="hardware", owner="search/hw_search_space",
+    _E("search_space", section=_PC, group="co_search", owner="search/hw_search_space",
        type=T.JSON, category=Category.ADVANCED, exposure="user", label="HW Search Space",
        doc="Hardware co-search bounds (core type counts, axon/neuron bounds, "
            "threshold groups).", relevant=R.when("hw_config_mode", in_=("search",)),

@@ -134,6 +134,24 @@ class TestValidateDeploymentConfig:
         errors = validate_deployment_config(cfg)
         assert any("arch_search" in str(e).lower() for e in errors)
 
+    def test_search_mode_requires_model_type(self):
+        """ArchitectureSearchStep reads model_type unconditionally (the
+        builder family whose space the search explores) — a search config
+        without it must fail at validation, not at step 1 of the run."""
+        cfg = {
+            "data_provider_name": "MNIST_DataProvider",
+            "experiment_name": "test",
+            "generated_files_path": "./out",
+            "platform_constraints": {},
+            "deployment_parameters": {
+                "model_config_mode": "search",
+                "arch_search": {"optimizer": "nsga2"},
+            },
+            "start_step": None,
+        }
+        errors = validate_deployment_config(cfg)
+        assert any("model_type" in str(e) for e in errors)
+
     def test_deprecated_coalescing_key_in_platform_constraints_fails(self):
         cfg = {
             "data_provider_name": "MNIST_DataProvider",
