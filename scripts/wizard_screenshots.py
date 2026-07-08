@@ -1,5 +1,5 @@
 """Dev-mode workbench review: drive the real configurator in a real browser and
-save the round-4 evidence set to generated/_wizard_review/round4/:
+save the round-5 evidence set to generated/_wizard_review/round5/:
 fresh per-section shots, the co-design interaction sequence (mapping updating
 while arch + grid are edited), the mapping-strategy panel ABOVE the full-width
 mapping panel, the merged side-by-side Training & Tuning section with the
@@ -262,7 +262,9 @@ def _shoot_round3_evidence(page, base_url: str, out_dir: Path, shots: list[str])
     page.goto(base_url + "/wizard")
     _settle(page, 2200)
     _goto_section(page, "training")
-    page.hover('.field[data-key="weight_source"] input')
+    page.locator('.wb-section[data-section-id="training"] .advanced-toggle').last.click()
+    _settle(page, 500)
+    page.hover('.field[data-key="eval_subsample_target"] input')
     page.wait_for_timeout(250)
     _shot(page, out_dir, "tooltip_1_immediate_placeholder_reveal", shots, full=True)
 
@@ -292,8 +294,8 @@ def _shoot_round4_evidence(page, base_url: str, out_dir: Path, broken_id: str,
     page.locator('.wb-section[data-section-id="training"] .advanced-toggle').last.click()
     _settle(page, 500)
     _shot(page, out_dir, "round4_green_derived_placeholders", shots, full=True)
-    _goto_section(page, "semantics")
-    _shot_element(page.locator("#deploymentDerived"), out_dir,
+    _goto_section(page, "review")
+    _shot_element(page.locator('[data-section="derived"]'), out_dir,
                   "round4_green_derived_chips", shots)
 
     # Item 5: vehicle toggles stay live while an unrelated contract error is
@@ -316,6 +318,93 @@ def _shoot_round4_evidence(page, base_url: str, out_dir: Path, broken_id: str,
     _goto_section(page, "codesign")
     _shot_element(page.locator(".codesign-strategy"), out_dir,
                   "round4_mapping_strategy_panel", shots)
+
+
+def _shoot_round5_evidence(page, base_url: str, out_dir: Path,
+                           shots: list[str]) -> None:
+    """Round-5 evidence: the Model→Mapping-strategy left column beside
+    Hardware with the mapping panel full-width beneath; the derived-but-
+    overridable spiking knobs with their SSOT provenance; negative_value_shift
+    back as a mapping-strategy knob; the deduped builder-provided weight
+    source; derived chips only in Review."""
+    page.goto(base_url + "/wizard")
+    _settle(page, 2200)
+
+    # Item 1: left column = Model then Mapping strategy; right = Hardware;
+    # mapping performance spans the full width beneath both.
+    _goto_section(page, "codesign")
+    _shot(page, out_dir, "round5_1_layout_strategy_below_model", shots, full=True)
+    _shot_element(page.locator('.wb-section[data-section-id="codesign"] .wb-cols'),
+                  out_dir, "round5_1_layout_columns", shots)
+
+    # Item 2a: negative_value_shift is a mapping-strategy knob again (default
+    # on = the calibrated shift; off = the mapper's subsume-forward path).
+    _shot_element(page.locator(".codesign-strategy"), out_dir,
+                  "round5_2_negative_value_shift_knob", shots)
+    page.click('.field[data-key="negative_value_shift"] .toggle-row')
+    _settle(page, 1200)
+    _shot_element(page.locator(".codesign-strategy"), out_dir,
+                  "round5_2_negative_value_shift_off", shots)
+    page.click('.field[data-key="negative_value_shift"] .toggle-row')
+    _settle(page, 800)
+
+    # Item 2b: firing/spike-generation/thresholding are declarable again and
+    # show their derived default in green until an explicit value wins.
+    _goto_section(page, "semantics")
+    page.locator('.wb-section[data-section-id="semantics"] .advanced-toggle').first.click()
+    _settle(page, 600)
+    _shot(page, out_dir, "round5_2_spiking_modes_derived_overridable", shots, full=True)
+    page.click('.field[data-key="firing_mode"] .seg-btn:text-is("Novena")')
+    _settle(page, 1200)
+    _shot(page, out_dir, "round5_2_spiking_mode_explicit_wins", shots, full=True)
+
+    # Item 3: every derived-by-default value names its SSOT source.
+    page.goto(base_url + "/wizard")
+    _settle(page, 2200)
+    _goto_section(page, "training")
+    for toggle in page.locator(
+            '.wb-section[data-section-id="training"] .advanced-toggle').all():
+        toggle.click()
+    _settle(page, 800)
+    _shot(page, out_dir, "round5_3_provenance_badges_training_tuning", shots, full=True)
+
+    # Item 4: ONE weight-source concept — preload_weights is the hand knob and
+    # the source itself derives from the model builder's registration.
+    _shot_element(page.locator('[data-section="training"]'), out_dir,
+                  "round5_4_preload_weights_hand_knob", shots)
+
+    # lenet5 registers no pretrained source: the regime fails LOUD (the same
+    # error DeploymentPlan raises), keyed to the derived weight_source.
+    page.click('.field[data-key="preload_weights"] .toggle-row')
+    _settle(page, 1600)
+    _shot(page, out_dir, "round5_4_preload_without_registration_is_loud", shots,
+          full=True)
+
+    # A builder that DOES register one (torch_vit) resolves the source to a
+    # green derived value; no hand field for it exists anywhere.
+    page.goto(base_url + "/wizard")
+    _settle(page, 2200)
+    _goto_section(page, "codesign")
+    page.select_option('.field[data-key="model_type"] select', "torch_vit")
+    _settle(page, 2000)
+    _goto_section(page, "training")
+    page.click('.field[data-key="preload_weights"] .toggle-row')
+    _settle(page, 1600)
+    _shot(page, out_dir, "round5_4_builder_provided_weight_source", shots, full=True)
+    _goto_section(page, "review")
+    _shot_element(page.locator('[data-section="derived"]'), out_dir,
+                  "round5_4_weight_source_derived_chip", shots)
+
+    # Item 5: derived chips render ONLY in the Review "Derived values" panel —
+    # every other section page stays clean.
+    page.goto(base_url + "/wizard")
+    _settle(page, 2200)
+    _goto_section(page, "semantics")
+    _shot(page, out_dir, "round5_5_semantics_page_has_no_chips", shots, full=True)
+    _goto_section(page, "review")
+    _shot_element(page.locator('[data-section="derived"]'), out_dir,
+                  "round5_5_derived_values_panel_with_provenance", shots)
+    _shot(page, out_dir, "round5_5_review_section", shots, full=True)
 
 
 def _shoot_mode_switches(page, base_url: str, out_dir: Path, shots: list[str]) -> None:
@@ -358,7 +447,7 @@ def _save_template(base_url: str, name: str, config: dict) -> str:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--out", default=str(REPO_ROOT / "generated" / "_wizard_review" / "round4"))
+    parser.add_argument("--out", default=str(REPO_ROOT / "generated" / "_wizard_review" / "round5"))
     args = parser.parse_args()
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -399,6 +488,7 @@ def main() -> None:
         _shoot_defect_evidence(page, base_url, out_dir, shots)
         _shoot_round3_evidence(page, base_url, out_dir, shots)
         _shoot_round4_evidence(page, base_url, out_dir, broken_id, shots)
+        _shoot_round5_evidence(page, base_url, out_dir, shots)
         _shoot_mode_switches(page, base_url, out_dir, shots)
         _shoot_sections(page, base_url, out_dir, "template", shots,
                         query="?template_id=" + template_id)

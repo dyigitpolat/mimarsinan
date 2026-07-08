@@ -168,6 +168,41 @@ class TestRunEndpoint:
         assert "cdn.plot.ly" not in html
 
 
+class TestRound5WorkbenchLayout:
+    """Round-5 items 1 and 5, structural half: the mapping-strategy panel is a
+    Model-column sibling and derived chips render ONLY in Review."""
+
+    def _codesign(self, client):
+        html = client.get("/wizard").text
+        start = html.index('data-section-id="codesign"')
+        return html[start:html.index("</section>", start)]
+
+    def test_mapping_strategy_sits_below_model_in_the_left_column(self, client):
+        section = self._codesign(client)
+        left = section[section.index('class="wb-col"'):]
+        left = left[: left.index("</div>\n            <div class=\"wb-col\"")] \
+            if '</div>\n            <div class="wb-col"' in left else left
+        model = section.index('data-groups="model"')
+        strategy = section.index('data-groups="mapping_strategy"')
+        hardware = section.index('data-groups="hardware"')
+        # Left column: Model then Mapping strategy; Hardware opens the right one.
+        assert model < strategy < hardware
+
+    def test_the_mapping_panel_spans_the_full_width_beneath(self, client):
+        section = self._codesign(client)
+        assert section.index('data-groups="mapping_strategy"') < section.index(
+            'id="hwStatsPanel"'
+        )
+        assert 'class="codesign-mapping"' in section
+
+    def test_only_review_hosts_derived_chips(self, client):
+        html = client.get("/wizard").text
+        assert html.count('id="derivedChips"') == 1
+        # The deployment-semantics derived strip is gone: section pages stay clean.
+        assert 'id="deploymentDerived"' not in html
+        assert "derived-strip" not in self._codesign(client)
+
+
 class TestVehiclesAlwaysServed:
     """Round-4 defect 5 (server half): the resolve payload serves the vehicle
     rows UNCONDITIONALLY — unrelated draft errors must never remove the
@@ -270,7 +305,11 @@ class TestWeightSourceIsBuilderProvided:
         body = client.post("/api/config/resolve", json=draft).json()
         assert body["errors"] == []
         assert body["resolved"]["weight_source"] == "torchvision"
-        assert body["derived"]["weight_source"]["value"] == "torchvision"
+        row = body["derived"]["weight_source"]
+        assert row["value"] == "torchvision"
+        # The WHY must credit the REGISTRATION, not pretend the user declared it.
+        assert "registration" in row["why"]
+        assert "explicit" not in row["why"]
 
     def test_regime_without_a_registration_is_a_keyed_error(self, client, monkeypatch):
         from mimarsinan.pipelining.core.registry.model_registry import ModelRegistry
@@ -305,6 +344,7 @@ class TestWeightSourceIsBuilderProvided:
         body = client.post("/api/config/resolve", json=draft).json()
         assert body["errors"] == []
         assert body["resolved"]["weight_source"] == "/ckpt/best.pt"
+        assert "explicit" in body["derived"]["weight_source"]["why"]
 
     def test_no_regime_no_source(self, client):
         draft = client.get("/api/config/starter").json()

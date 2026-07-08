@@ -53,6 +53,7 @@ export function effectiveCategory(ks, cfg) {
 export function visibleKeys(groupId, category, cfg) {
   return Object.values(schema().keys)
     .filter((k) => k.group === groupId
+      && !k.hidden
       && (k.category === 'basic' || k.category === 'advanced')
       && effectiveCategory(k, cfg) === category
       && relevant(k.relevant, cfg))
@@ -109,8 +110,12 @@ export function enableAssignments(groupId, cfg) {
   });
 }
 
+/** Derivation-owned keys the UI may render. `hidden` keys (pipeline_mode, the
+    builder's pretrained-weight-source injection contract) are derivation-owned
+    AND useless as configuration — they render on no surface at all. */
 export function derivedKeys() {
-  return Object.values(schema().keys).filter((k) => k.category === 'derived');
+  return Object.values(schema().keys)
+    .filter((k) => k.category === 'derived' && !k.hidden);
 }
 
 /** Whether a relevance tree references `key` anywhere (generic gating probe). */

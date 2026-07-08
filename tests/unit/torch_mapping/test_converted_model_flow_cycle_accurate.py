@@ -94,9 +94,15 @@ def test_run_cycle_accurate_restores_lif_modes() -> None:
             assert m.if_node.step_mode == "m"
 
 
-def test_run_cycle_accurate_backward_flows_to_weights() -> None:
+def test_run_cycle_accurate_backward_flows_to_weights(deterministic_rng) -> None:
     """Gradients must flow through the full T-loop to every trainable
     parameter — Linear weights, LIF surrogate, the lot.
+
+    Seeded: the assertion is only meaningful for an init that actually fires.
+    Unseeded, the random init inherited whatever RNG state the worker's
+    preceding tests left (``--dist worksteal``), and roughly 1 seed in 24
+    (e.g. 19) produces a net where no neuron fires within T=4 — every gradient
+    is then legitimately zero and the test failed for the wrong reason.
 
     This is the load-bearing integration test: it proves the
     cycle-accurate driver works inside a trainable setup (the loss

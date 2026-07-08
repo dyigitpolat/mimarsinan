@@ -65,8 +65,14 @@
             <p>Edit the architecture and the core grid together; the mapping
               below re-plans live.</p>
           </div>
+          <!-- Left column: Model then Mapping strategy (what we CHOOSE when
+               mapping the model we just edited); right column: Hardware (what
+               the hardware CAN do). -->
           <div class="wb-cols">
-            <div class="wb-col" data-groups="model"></div>
+            <div class="wb-col">
+              <div data-groups="model"></div>
+              <div class="codesign-strategy" data-groups="mapping_strategy"></div>
+            </div>
             <div class="wb-col">
               <div data-groups="hardware"></div>
             </div>
@@ -74,11 +80,9 @@
           <!-- Co-search: automated co-design — a sibling panel spanning both
                concerns (its keys search model AND hardware configs). -->
           <div class="codesign-cosearch" data-groups="co_search"></div>
-          <!-- Mapping strategy (what we CHOOSE when mapping) sits ABOVE the
-               live mapping panel — the mapping panel spans full width and
-               strategy edits re-plan visibly beneath. -->
+          <!-- Mapping performance spans the full co-design width beneath both
+               columns; model, strategy and grid edits re-plan visibly here. -->
           <div class="codesign-lower">
-            <div class="codesign-strategy" data-groups="mapping_strategy"></div>
             <div class="codesign-mapping">
               <div class="hw-validation-banner hide" id="hwValidationBanner"></div>
               <div id="hwStatsPanel" class="hw-stats-panel"></div>
@@ -93,7 +97,6 @@
             <p>Spiking mode, conversion process, and the simulation vehicles the
               mode's proven recipe runs.</p>
           </div>
-          <div id="deploymentDerived" class="derived-strip"></div>
           <div class="wb-cols">
             <div class="wb-col" data-groups="spiking,conversion"></div>
             <div class="wb-col">

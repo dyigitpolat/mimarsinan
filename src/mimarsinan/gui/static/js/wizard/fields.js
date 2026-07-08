@@ -48,6 +48,7 @@ function helpText(ks) {
   const bounds = boundsText(ks);
   if (bounds) parts.push(bounds);
   parts.push('Empty → ' + emptyMeansText(ks));
+  if (ks.provenance) parts.push('SSOT source: ' + ks.provenance);
   parts.push('Consumed by: ' + ks.owner);
   return parts.filter(Boolean).join('\n');
 }
@@ -89,6 +90,21 @@ export function placeholderIsDerived(ks) {
     && resolvedValue(ks.key) !== undefined;
 }
 
+/** The SSOT that OWNS this key's value while the draft stays silent — the
+    registry's provenance, shown verbatim beside the derived value. An explicit
+    declaration takes ownership back, so the badge disappears. */
+export function sourceBadgeText(ks) {
+  if (!ks.provenance || isExplicit(ks.key)) return '';
+  return ks.provenance;
+}
+
+function syncSourceBadge(node, ks) {
+  const text = sourceBadgeText(ks);
+  node.textContent = text;
+  node.style.display = text ? '' : 'none';
+  node.title = text ? `Default owned by the ${text} (SSOT)` : '';
+}
+
 /** Refresh every rendered placeholder from the latest resolve payload —
     called after each resolve round-trip so derived placeholders show the
     CURRENT concrete value without a disruptive full re-render. */
@@ -99,6 +115,14 @@ export function refreshPlaceholders() {
     input.placeholder = placeholderText(ks);
     input.classList.toggle('placeholder-derived', placeholderIsDerived(ks));
     attachPlaceholderReveal(input, ks);
+  });
+  document.querySelectorAll('[data-source-key]').forEach((node) => {
+    const ks = keySchema(node.dataset.sourceKey);
+    if (ks) syncSourceBadge(node, ks);
+  });
+  document.querySelectorAll('[data-derived-enum-key]').forEach((row) => {
+    const ks = keySchema(row.dataset.derivedEnumKey);
+    if (ks) syncDerivedSegment(row, ks);
   });
 }
 
@@ -148,6 +172,12 @@ function fieldShell(ks) {
   const label = el('label', 'field-label');
   label.append(el('span', 'field-label-text', ks.label));
   if (ks.unit) label.append(el('span', 'field-unit', ks.unit));
+  if (ks.provenance) {
+    const source = el('span', 'field-source');
+    source.dataset.sourceKey = ks.key;
+    syncSourceBadge(source, ks);
+    label.append(source);
+  }
   const marker = el('span', 'field-explicit-slot');
   label.append(marker);
   field.append(label);
@@ -298,6 +328,10 @@ function segmentedEnum(ks, marker, rerender) {
   const row = el('div', 'seg-control');
   const value = displayValue(ks);
   const base = wizardDefault(ks);
+  /* A derivation-owned enum has no wizard default to pre-fill, so the segment
+     the derivation currently resolves to renders as a GREEN ghost — the user
+     sees the derived value, and an explicit click takes ownership. */
+  if (!base.has) row.dataset.derivedEnumKey = ks.key;
   for (const option of ks.options || []) {
     const btn = el('button', 'seg-btn', option);
     btn.type = 'button';
@@ -316,7 +350,26 @@ function segmentedEnum(ks, marker, rerender) {
     });
     row.append(btn);
   }
+  syncDerivedSegment(row, ks);
   return row;
+}
+
+/** A derivation-owned enum has no wizard default to pre-fill, so the segment
+    the derivation CURRENTLY resolves to renders as a green ghost — the user
+    sees the derived value, and an explicit click takes ownership. Re-synced on
+    every resolve round-trip, so a mode switch moves the ghost. */
+function syncDerivedSegment(row, ks) {
+  const derived = wizardDefault(ks).has ? undefined : resolvedValue(ks.key);
+  const explicit = isExplicit(ks.key);
+  row.querySelectorAll('.seg-btn').forEach((btn) => {
+    const isDerived = !explicit && derived !== undefined
+      && String(derived) === btn.textContent;
+    btn.classList.toggle('is-derived', isDerived);
+    if (isDerived) {
+      btn.title = `${btn.textContent} (derived`
+        + `${ks.provenance ? ' — ' + ks.provenance : ''})`;
+    }
+  });
 }
 
 function enumSelect(ks, marker, rerender) {

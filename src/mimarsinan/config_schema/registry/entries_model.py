@@ -23,11 +23,18 @@ _PRETRAINED_REGIME = R.any_of(
 
 
 def _why_weight_source(cfg: dict) -> str:
-    if cfg.get("weight_source"):
-        return f"explicit declaration ({cfg.get('weight_source')!r}) — wins over the registration"
+    """WHY against the RESOLVED config: the resolution already folded the
+    builder registration in, so credit whichever input actually won."""
+    resolved = cfg.get("weight_source")
+    registered = cfg.get("pretrained_weight_source")
     if cfg.get("preload_weights"):
-        return ("resolves to the builder-registered pretrained source "
-                "(ModelWorkloadProfile); no registration fails loud")
+        if registered is not None and (resolved is None or resolved == registered):
+            return f"the model builder's registration ({registered!r})"
+        if registered is None and resolved is None:
+            return "unresolved — the model builder registers no pretrained source"
+        return f"explicit declaration ({resolved!r}) — wins over the registration"
+    if resolved:
+        return f"explicit declaration ({resolved!r})"
     return "none — from-scratch pretraining"
 
 ENTRIES = (

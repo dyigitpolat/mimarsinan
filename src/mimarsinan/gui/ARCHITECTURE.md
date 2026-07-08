@@ -38,9 +38,24 @@ frontend (`static/js/wizard/`) renders ENTIRELY from `GET /api/config_schema`
 (the config-key registry) — the HTML is layout chrome with zero field
 knowledge, the draft state IS the config document (explicit keys only), and
 derivation runs exclusively server-side via `POST /api/config/resolve`
-(derived chips with WHY, keyed inline errors with rule-prescribed remedies,
-diff-vs-defaults template view, loud unrecognized-keys tray, the emitted
-document the review pane shows verbatim). The configurator is a CAD-style
+(derived chips with WHY + their registry `provenance` — rendered ONLY in the
+Review "Derived values" panel, so section pages stay clean — keyed inline
+errors with rule-prescribed remedies, diff-vs-defaults template view, loud
+unrecognized-keys tray, the emitted document the review pane shows verbatim).
+Every derived-by-default value NAMES its SSOT source: the registry
+`provenance` field renders as a green badge beside the field label (and on the
+Review chip), and disappears the moment an explicit declaration takes
+ownership back. Registry `hidden` keys (`pipeline_mode`,
+`pretrained_weight_source`) render on NO surface at all. A derivation-owned
+enum with no wizard default pre-fills nothing; instead the segment the
+derivation currently resolves to renders as a green ghost, re-synced on every
+resolve round-trip (`firing_mode` / `spike_generation_mode` /
+`thresholding_mode`: derived default shown, explicit click wins). The
+pretrained-weight source is ONE concept: `preload_weights` is the hand knob and
+`weight_source` derives from the model builder's `ModelWorkloadProfile`
+registration (`resolve_payload` folds it in through the DeploymentPlan's own
+`resolve_weight_source`, and surfaces its fail-loud as a keyed
+`weight_source_regime` error instead of a 500). The configurator is a CAD-style
 WORKBENCH (`static/js/wizard/workbench.js`): a left section rail with free
 navigation (Workload · Co-Design · Deployment semantics · Training & Tuning
 — ONE section, the pretraining and adaptation-controller panels side-by-side
@@ -55,9 +70,10 @@ disabled/blocked semantics). The flagship Co-Design section shows model
 architecture, the core grid (a modern aligned grid editor: per-row type
 labels, per-core bias toggles, add/remove affordances), the registry
 `mapping_strategy` panel (what we CHOOSE when mapping — scheduling, encoding
-placement, pruning, temporal allocation) sitting ABOVE the full-width
-mapping-performance panel so
-strategy edits re-plan visibly, and weight precision as a first-class
+placement, the negative-boundary policy, pruning, temporal allocation)
+sitting BELOW the Model card in the SAME left column while Hardware holds the
+right one, with the mapping-performance panel spanning the full width beneath
+both so strategy edits re-plan visibly, and weight precision as a first-class
 float-vs-quantized-N-bits choice (float authors the tier-config fp form:
 pipeline_mode 'vanilla' + weight_quantization false, bits kept inert;
 "Suggest hardware" included). The search concern is

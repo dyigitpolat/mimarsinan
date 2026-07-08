@@ -204,9 +204,9 @@ button { font-family: inherit; }
 
 .codesign-mapping { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 
-/* Mapping strategy (what we CHOOSE when mapping) sits ABOVE the live
-   mapping panel; the mapping panel spans the full co-design width
-   (round-4 defect 1). */
+/* The mapping-performance panel spans the full co-design width beneath both
+   columns (round-4 defect 1), while Mapping strategy became a Model-column
+   sibling (round-5 item 1) — strategy edits re-plan visibly below. */
 .codesign-lower {
   margin-top: 12px;
   display: flex;
@@ -214,9 +214,10 @@ button { font-family: inherit; }
   gap: 16px;
 }
 
-/* Full-width strategy card: pack its knobs in responsive columns. */
+/* Column-width strategy card: it shares the Model column, so its knobs pack
+   two-up like the Model card's rather than across the whole screen. */
 .codesign-strategy .field-grid.cols-2 {
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
 }
 
 /* The co-search panel: a sibling card spanning both co-design columns.
@@ -233,7 +234,7 @@ button { font-family: inherit; }
 /* Co-Design density: arch + grid + mapping on one 1600×900 screen. The
    hardware card packs its scalar knobs three-up and docs clamp to one line. */
 .wb-section[data-section-id="codesign"] .wb-cols {
-  grid-template-columns: minmax(320px, 5fr) minmax(420px, 7fr);
+  grid-template-columns: minmax(340px, 6fr) minmax(400px, 6fr);
 }
 
 .wb-section[data-section-id="codesign"] [data-section="hardware"] .field-grid.cols-2 {
@@ -543,6 +544,32 @@ button.launch-status-line.error {
 
 .field-explicit-slot { margin-left: auto; }
 
+/* SSOT provenance badge: names WHO owns this key's default while the draft is
+   silent (green = derivation-owned, matching the derived placeholder). It
+   disappears the moment an explicit declaration takes ownership back. */
+.field-source {
+  font-size: 10px;
+  font-weight: 500;
+  font-family: 'JetBrains Mono', monospace;
+  /* The label row is uppercase + tracked; a source NAME must read verbatim. */
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--accent-green);
+  opacity: 0.75;
+  background: rgba(52, 211, 153, 0.08);
+  border: 1px solid rgba(52, 211, 153, 0.18);
+  border-radius: 3px;
+  padding: 0 5px;
+  margin-left: auto;
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+
+/* The badge sits at the end of the label row; when the label is long they
+   stack rather than truncating the source name. */
+.field-label { flex-wrap: wrap; }
+.field-source + .field-explicit-slot { margin-left: 4px; }
+
 .field-revert {
   background: none;
   border: 1px solid var(--border-strong);
@@ -719,6 +746,14 @@ input.field-invalid { border-color: var(--accent-rose); }
 
 .seg-btn:hover { color: var(--text-primary); }
 
+/* Derivation-owned enum: the segment the derivation currently resolves to,
+   shown as a green ghost until an explicit click takes ownership. */
+.seg-btn.is-derived:not(.active) {
+  color: var(--accent-green);
+  background: rgba(16, 185, 129, 0.08);
+  box-shadow: inset 0 0 0 1px rgba(16, 185, 129, 0.28);
+}
+
 .seg-btn.active {
   background: rgba(59, 130, 246, 0.22);
   color: #cfe3ff;
@@ -784,7 +819,16 @@ input.field-invalid { border-color: var(--accent-rose); }
 }
 
 .derived-chip-lock { color: var(--accent-green); }
-.derived-chip-key { color: var(--text-secondary); font-weight: 600; }
+.derived-chip-source {
+  font-size: var(--font-caption);
+  color: var(--accent-green);
+  opacity: 0.7;
+  border-left: 1px solid var(--border);
+  padding-left: 6px;
+  margin-left: 2px;
+  white-space: nowrap;
+}
+.derived-chip-key { color: var(--text-secondary); font-weight: 600; white-space: nowrap; }
 .derived-chip-value { font-family: 'JetBrains Mono', monospace; color: var(--accent-green); font-weight: 600; }
 .derived-chip-why {
   color: var(--text-dim);

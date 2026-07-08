@@ -35,8 +35,13 @@ function derivedChip(key, info) {
   chip.append(el('span', 'derived-chip-key', ks ? ks.label : key));
   chip.append(el('span', 'derived-chip-value', formatDerivedValue(info.value)));
   if (info.why) chip.append(el('span', 'derived-chip-why', info.why));
+  /* SSOT provenance: the chip names WHO owns this value, from the registry. */
+  if (ks && ks.provenance) {
+    chip.append(el('span', 'derived-chip-source', ks.provenance));
+  }
   chip.title = [
     info.why || '',
+    ks && ks.provenance ? 'SSOT source: ' + ks.provenance : '',
     info.derived_from && info.derived_from.length
       ? 'derived from: ' + info.derived_from.join(', ') : '',
     ks ? ks.doc : '',
@@ -44,38 +49,35 @@ function derivedChip(key, info) {
   return chip;
 }
 
-/** Simulator enables render in the vehicles card, core maxima inline in the
-    hardware section; the review strip shows the remaining semantics. */
-function chipHostKeys(hostId, derived) {
+/** Simulator enables render in the vehicles card and core maxima inline in the
+    hardware section; `hidden` keys render nowhere. Everything else that the
+    derivation owns renders ONLY in the Review "Derived values" panel — section
+    pages stay clean (round-5 item 5). */
+function chipHostKeys(derived) {
   const vehicles = new Set(vehicleKeys());
-  const entries = Object.entries(derived)
-    .filter(([key]) => !vehicles.has(key));
-  if (hostId === 'deploymentDerived') {
-    return entries.filter(([key]) => {
-      const ks = keySchema(key);
-      return ks && (ks.group === 'spiking' || ks.group === 'conversion' || ks.group === 'run');
-    });
-  }
-  return entries;
+  return Object.entries(derived).filter(([key]) => {
+    if (vehicles.has(key)) return false;
+    const ks = keySchema(key);
+    return ks && !ks.hidden;
+  });
 }
 
 export function renderDerivedChips() {
   const derived = (state.resolve && state.resolve.derived) || {};
   const errors = resolveErrors();
-  for (const hostId of ['derivedChips', 'deploymentDerived']) {
-    const host = document.getElementById(hostId);
-    if (!host) continue;
+  const host = document.getElementById('derivedChips');
+  if (host) {
     host.replaceChildren();
     if (errors.length) {
       /* Never show hypothetical derived values while the draft is invalid. */
       host.append(el('span', 'derived-blocked',
         `derivation blocked — fix ${errors.length} error${errors.length > 1 ? 's' : ''} to see derived values`));
-      continue;
-    }
-    const entries = chipHostKeys(hostId, derived);
-    for (const [key, info] of entries) host.append(derivedChip(key, info));
-    if (!entries.length) {
-      host.append(el('span', 'note', 'Derived values appear once the draft resolves.'));
+    } else {
+      const entries = chipHostKeys(derived);
+      for (const [key, info] of entries) host.append(derivedChip(key, info));
+      if (!entries.length) {
+        host.append(el('span', 'note', 'Derived values appear once the draft resolves.'));
+      }
     }
   }
   renderVehiclesStatus();
