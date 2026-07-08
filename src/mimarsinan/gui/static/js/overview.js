@@ -1,5 +1,11 @@
 /* Overview charts (measured points, verdict/carried markers, timing). */
 import { esc, fmtDuration, elapsedFromStepStart, safeReact, emptyAnnotation, groupAccent } from './util.js';
+import {
+  planTraceExtension,
+  applyStreamPlan,
+  readStreamState,
+  markStreamState,
+} from './stream-plot.js';
 
 const TONE_COLORS = { pass: '#4ade80', fail: '#f87171', carried: '#8494a7' };
 
@@ -22,10 +28,59 @@ export function renderOverviewCards(pipeline) {
 function renderMetricProgression(steps, chart) {
   const points = (chart && chart.points) || [];
   const markers = (chart && chart.markers) || [];
-  const annotations = points.length === 0 && markers.length === 0
-    ? emptyAnnotation('No measured metrics yet') : [];
-  const shapes = [];
+  // The x axis is the FULL step sequence so no step is ever invisible.
+  const categories = steps.map(s => s.name);
+  const { shapes, annotations } = _progressionOverlays(points, markers);
+  const values = points.map(p => p.value);
+  const maxY = values.length > 0 ? Math.max(1, ...values) * 1.05 : 1;
 
+  // The measured line is append-only: a completed measured step adds one real
+  // point and never mutates a prior one. Extend just the new tail and relayout
+  // the event lines/labels so the line GROWS smoothly instead of the whole
+  // plot flashing on every step-completion frame. A structural change or a
+  // reconcile-shrink (REST snapshot after a reconnect) falls back to a redraw.
+  const el = document.getElementById('chart-metric-progression');
+  const nextTraces = points.length > 0
+    ? [{ name: 'measured', x: points.map(p => p.step), y: values }]
+    : [];
+  if (el && el.data) {
+    const plan = planTraceExtension(readStreamState(el), nextTraces);
+    if (applyStreamPlan(el, plan)) {
+      Plotly.relayout(el, {
+        shapes, annotations,
+        'yaxis.range': [0, maxY],
+        'xaxis.categoryarray': categories,
+      });
+      return;
+    }
+  }
+
+  const traces = points.length > 0 ? [{
+    x: points.map(p => p.step), y: values,
+    type: 'scatter', mode: 'lines+markers',
+    marker: { size: 8, color: '#22d3ee' }, line: { width: 2, color: '#5b8af5' },
+    name: 'measured',
+  }] : [];
+  safeReact('chart-metric-progression', traces, {
+    margin: { t: 40, r: 30, b: 100, l: 60 },
+    xaxis: {
+      tickangle: -45, automargin: true, tickfont: { size: 10 },
+      type: 'category', categoryorder: 'array', categoryarray: categories,
+    },
+    yaxis: { title: 'Measured Metric', automargin: true, range: [0, maxY] },
+    height: 300, annotations, shapes,
+  });
+  markStreamState(document.getElementById('chart-metric-progression'),
+    { names: nextTraces.map(t => t.name), counts: nextTraces.map(t => t.x.length) });
+}
+
+// Event lines (verdict/failed/carried) + the last-point value label. Carried
+// steps become a neutral labeled line — NEVER a fabricated data point at the
+// carried metric (the server already split points vs markers honestly).
+function _progressionOverlays(points, markers) {
+  const shapes = [];
+  const annotations = (points.length === 0 && markers.length === 0)
+    ? emptyAnnotation('No measured metrics yet') : [];
   const lastPt = points.length > 0 ? points[points.length - 1] : null;
   if (lastPt) {
     annotations.push({
@@ -36,11 +91,6 @@ function renderMetricProgression(steps, chart) {
       bgcolor: 'rgba(15,17,23,0.85)', bordercolor: '#22d3ee', borderwidth: 1,
     });
   }
-
-  // Verdict/failed/carried steps: labeled vertical lines with a glyph —
-  // never a fabricated data point at the carried metric. The x axis is the
-  // FULL step sequence so no step is invisible.
-  const categories = steps.map(s => s.name);
   for (const marker of markers) {
     const color = TONE_COLORS[marker.status] || TONE_COLORS.pass;
     shapes.push({
@@ -55,24 +105,7 @@ function renderMetricProgression(steps, chart) {
       hovertext: `${marker.glyph} ${marker.label || ''}`,
     });
   }
-
-  const traces = points.length > 0 ? [{
-    x: points.map(p => p.step), y: points.map(p => p.value),
-    type: 'scatter', mode: 'lines+markers',
-    marker: { size: 8, color: '#22d3ee' }, line: { width: 2, color: '#5b8af5' },
-    name: 'measured',
-  }] : [];
-  const values = points.map(p => p.value);
-  const maxY = values.length > 0 ? Math.max(1, ...values) * 1.05 : 1;
-  safeReact('chart-metric-progression', traces, {
-    margin: { t: 40, r: 30, b: 100, l: 60 },
-    xaxis: {
-      tickangle: -45, automargin: true, tickfont: { size: 10 },
-      type: 'category', categoryorder: 'array', categoryarray: categories,
-    },
-    yaxis: { title: 'Measured Metric', automargin: true, range: [0, maxY] },
-    height: 300, annotations, shapes,
-  });
+  return { shapes, annotations };
 }
 
 function renderStepTiming(steps) {
@@ -82,18 +115,35 @@ function renderStepTiming(steps) {
     if (s.duration != null) timed.push({ ...s, duration: s.duration, running: false });
     else if (s.status === 'running' && s.start_time != null) timed.push({ ...s, duration: elapsedFromStepStart(s.start_time, now), running: true });
   }
-  const anno = timed.length === 0 ? emptyAnnotation('No timing data yet') : [];
   const total = timed.reduce((acc, s) => acc + s.duration, 0);
   const pct = d => total > 0 ? ` · ${((d / total) * 100).toFixed(1)}% of run` : '';
+  const durations = timed.map(s => s.duration);
+  const colors = timed.map(s => s.running ? '#ff9800' : `rgba(${groupAccent(s.semantic_group)},0.85)`);
+  const texts = timed.map(s => fmtDuration(s.duration) + (s.running ? ' ●' : ''));
+  const hover = timed.map(s => `${s.name} — ${fmtDuration(s.duration)}${s.running ? ' (running)' : pct(s.duration)}`);
+
+  // Drop-to-latest fast path: when the bar SET is unchanged (only the running
+  // bar's length + total grew) restyle the single trace's values in place —
+  // no flash, no re-layout. A new or just-finished bar changes the set (and
+  // the chart height), so that falls through to a full redraw.
+  const el = document.getElementById('chart-step-timing');
+  const key = timed.map(s => s.name).join('|');
+  if (el && el.data && el._timingKey === key && timed.length > 0) {
+    Plotly.restyle(el, {
+      x: [durations], text: [texts], hovertext: [hover], 'marker.color': [colors],
+    }, [0]);
+    Plotly.relayout(el, { 'xaxis.autorange': true });
+    return;
+  }
+
+  const anno = timed.length === 0 ? emptyAnnotation('No timing data yet') : [];
   const traces = timed.length > 0 ? [{
-    x: timed.map(s => s.duration), y: timed.map(s => s.name),
+    x: durations, y: timed.map(s => s.name),
     type: 'bar', orientation: 'h',
-    marker: {
-      color: timed.map(s => s.running ? '#ff9800' : `rgba(${groupAccent(s.semantic_group)},0.85)`),
-    },
-    text: timed.map(s => fmtDuration(s.duration) + (s.running ? ' ●' : '')),
+    marker: { color: colors },
+    text: texts,
     textposition: 'auto', textfont: { size: 10, color: '#e8eaed' },
-    hovertext: timed.map(s => `${s.name} — ${fmtDuration(s.duration)}${s.running ? ' (running)' : pct(s.duration)}`),
+    hovertext: hover,
     hoverinfo: 'text',
   }] : [];
   safeReact('chart-step-timing', traces, {
@@ -102,6 +152,7 @@ function renderStepTiming(steps) {
     yaxis: { autorange: 'reversed', automargin: true, tickfont: { size: 11 } },
     height: Math.max(200, timed.length * 26 + 70), annotations: anno,
   });
+  if (el) el._timingKey = key;
 }
 
 export function renderConfig(config) {

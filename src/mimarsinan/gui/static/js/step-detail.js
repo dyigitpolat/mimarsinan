@@ -1,5 +1,11 @@
 /* Step detail panel: tab routing, metrics tab, and simple tabs. */
 import { esc, fmtDuration, cssId, safeReact, legendBelow } from './util.js';
+import {
+  planTraceExtension,
+  applyStreamPlan,
+  readStreamState,
+  markStreamState,
+} from './stream-plot.js';
 import { renderModelTab } from './model-tab.js';
 import { buildHwStatsPanelHtml } from './hw-stats-panel.js';
 import { renderIRGraphTab } from './ir-graph-tab.js';
@@ -44,7 +50,13 @@ const _detailCache = {};
 const _categoryMaps = {};
 const _annotationCache = {};
 
-export async function refreshStepDetail(stepName, state, fetchJSON) {
+// ``force`` bypasses the conditional-request (ETag/304) fast path so the
+// response is a full body: used on WS (re)connect to RECONCILE any metrics
+// that streamed while disconnected, and on a first-seen metric name to pull
+// its server-assigned category. The snapshot ETag is intentionally
+// metric-stable, so without force a live reconcile fetch would 304 and lose
+// the missed points / freeze the metric in the 'Other' catch-all.
+export async function refreshStepDetail(stepName, state, fetchJSON, force = false) {
   const panel = document.getElementById('step-detail');
   if (!panel) return;
 
@@ -64,7 +76,7 @@ export async function refreshStepDetail(stepName, state, fetchJSON) {
   // Historical and active-run mirrors keep the plain path for now.
   // Skip the conditional request when the panel was cleared (step
   // switch / tab reset): we need the full body to rebuild DOM.
-  const canUseEtag = stepsBase === '/api/steps' && state.lastDetailJSON != null;
+  const canUseEtag = stepsBase === '/api/steps' && state.lastDetailJSON != null && !force;
   const ifNoneMatch = canUseEtag ? _etagCache[stepName] : null;
 
   let detail;
@@ -233,78 +245,54 @@ export function updateLiveCharts(stepName, state) {
     const el = document.getElementById(`mc-${cssId(group)}`);
     if (!el || !el.data) continue;
 
-    // Incremental fast path: if this chart has the same trace layout
-    // we last drew, we can call Plotly.extendTraces with only the new
-    // points per trace. This is orders of magnitude cheaper than
-    // Plotly.react for high-frequency metrics (training loss at
-    // batch granularity can flood at hundreds of Hz).
-    const trackedNames = el._mimarsinanTraceNames;
-    const structureMatches =
-      Array.isArray(trackedNames) &&
-      trackedNames.length === metricNames.length &&
-      trackedNames.every((n, i) => n === metricNames[i]);
-
-    if (structureMatches) {
-      const lastCounts = el._mimarsinanTraceCounts || [];
-      const newXs = [];
-      const newYs = [];
-      const traceIndices = [];
-      let grew = false;
-      for (let i = 0; i < metricNames.length; i++) {
-        const name = metricNames[i];
-        let points = metrics[name] || [];
-        if (stepStartSec != null) points = points.filter(p => p.timestamp >= stepStartSec);
-        const prev = lastCounts[i] || 0;
-        if (points.length > prev) {
-          grew = true;
-          const slice = points.slice(prev);
-          newXs.push(stepStartSec != null
-            ? slice.map(p => p.timestamp - stepStartSec)
-            : slice.map((_, j) => prev + j));
-          newYs.push(slice.map(p => p.value));
-          traceIndices.push(i);
-          lastCounts[i] = points.length;
-        }
-      }
-      if (grew) {
-        try {
-          Plotly.extendTraces(el, { x: newXs, y: newYs }, traceIndices);
-        } catch (_) {
-          // Fall through to full redraw if Plotly state desynced.
-          _fullRedraw(el, group, metricNames, metrics, stepStartSec);
-          continue;
-        }
-        el._mimarsinanTraceCounts = lastCounts;
-      }
-      continue;
+    // Incremental fast path: when the trace layout is unchanged we
+    // extendTraces only the new tail per trace (orders of magnitude cheaper
+    // than Plotly.react for high-frequency metrics — training loss at batch
+    // granularity can flood at hundreds of Hz). A structural change or a
+    // shrink makes applyStreamPlan return false and we redraw.
+    const nextTraces = _buildGroupTraces(metricNames, metrics, stepStartSec);
+    const plan = planTraceExtension(readStreamState(el), nextTraces);
+    if (!applyStreamPlan(el, plan)) {
+      _fullRedraw(el, group, metricNames, metrics, stepStartSec);
     }
-
-    _fullRedraw(el, group, metricNames, metrics, stepStartSec);
   }
 }
 
-function _fullRedraw(el, group, metricNames, metrics, stepStartSec) {
-  const allTraces = metricNames.map(name => {
+// Raw per-trace real points for a metric group (before any single-point
+// synthetic expansion). Filtering to samples at/after the step start keeps a
+// step's curve from inheriting the previous step's tail. Shared by the live
+// fast path, the full redraw, and the first full render so their stream
+// bookkeeping stays consistent.
+function _buildGroupTraces(metricNames, metrics, stepStartSec) {
+  return metricNames.map(name => {
     let points = metrics[name] || [];
     if (stepStartSec != null) points = points.filter(p => p.timestamp >= stepStartSec);
-    const x = stepStartSec != null ? points.map(p => (p.timestamp - stepStartSec)) : points.map((_, i) => i);
+    const x = stepStartSec != null
+      ? points.map(p => p.timestamp - stepStartSec)
+      : points.map((_, i) => i);
     const y = points.map(p => p.value);
-    return { x, y, name, pointCount: points.length };
+    return { name, x, y };
   });
-  const xMax = computeGroupXMax(allTraces);
-  const traces = allTraces.map(({ x, y, name }) => {
-    let xOut = x, yOut = y;
-    if (x.length === 1 && xMax != null) {
-      xOut = [x[0], xMax];
-      yOut = [y[0], y[0]];
-    }
-    return { x: xOut, y: yOut, name, type: 'scatter', mode: 'lines', line: { width: 1.5 } };
-  });
+}
+
+function _fullRedraw(el, group, metricNames, metrics, stepStartSec) {
+  const raw = _buildGroupTraces(metricNames, metrics, stepStartSec);
+  const traces = _metricTraces(raw);
   const layout = { ...el.layout };
   if (group === 'Accuracy' || group === 'Adaptation') layout.yaxis = { ...(layout.yaxis || {}), range: [0, 1] };
   Plotly.react(el, traces, layout, { displayModeBar: false, responsive: true });
-  el._mimarsinanTraceNames = metricNames.slice();
-  el._mimarsinanTraceCounts = allTraces.map(t => t.pointCount);
+  markStreamState(el, { names: metricNames.slice(), counts: raw.map(t => t.x.length) });
+}
+
+// Real (x, y) series as a line with light per-sample markers, so a lone or
+// just-started point is visible as a DOT — never a fabricated flat segment to
+// an arbitrary x. The extend fast path then appends the true tail cleanly, so
+// a streamed curve never inherits a synthetic anchor point.
+function _metricTraces(raw) {
+  return raw.map(({ x, y, name }) => ({
+    x, y, name, type: 'scatter', mode: 'lines+markers',
+    line: { width: 1.5 }, marker: { size: 3 },
+  }));
 }
 
 // ── Metrics ingestion ────────────────────────────────────────────────────
@@ -590,24 +578,8 @@ function renderMetricsTab(metrics, container, stepStartTime, detail) {
 function plotMetricGroup(group, metricNames, metrics, stepStartTime, stepName) {
   const el = document.getElementById(`mc-${cssId(group)}`);
   if (!el) return;
-  const allTraces = metricNames.map(name => {
-    let points = metrics[name] || [];
-    if (stepStartTime != null) {
-      points = points.filter(p => p.timestamp >= stepStartTime);
-    }
-    const x = stepStartTime != null ? points.map(p => (p.timestamp - stepStartTime)) : points.map((_, i) => i);
-    const y = points.map(p => p.value);
-    return { x, y, name, pointCount: points.length };
-  });
-  const xMax = computeGroupXMax(allTraces);
-  const traces = allTraces.map(({ x, y, name }) => {
-    let xOut = x, yOut = y;
-    if (x.length === 1 && xMax != null) {
-      xOut = [x[0], xMax];
-      yOut = [y[0], y[0]];
-    }
-    return { x: xOut, y: yOut, name, type: 'scatter', mode: 'lines', line: { width: 1.5 } };
-  });
+  const raw = _buildGroupTraces(metricNames, metrics, stepStartTime);
+  const traces = _metricTraces(raw);
   const layoutOpts = {
     ...legendBelow(metricNames, el),
     xaxis: { title: stepStartTime != null ? 'Elapsed (s)' : 'Index' },
@@ -623,22 +595,7 @@ function plotMetricGroup(group, metricNames, metrics, stepStartTime, stepName) {
   safeReact(el, traces, layoutOpts);
   // Record trace layout so the WS-driven fast path (updateLiveCharts)
   // can extendTraces incrementally instead of rebuilding the chart.
-  el._mimarsinanTraceNames = metricNames.slice();
-  el._mimarsinanTraceCounts = allTraces.map(t => t.pointCount);
-}
-
-function computeGroupXMax(traces) {
-  let max = null;
-  for (const t of traces) {
-    if (t.x.length > 0) {
-      const m = Math.max(...t.x);
-      if (max == null || m > max) max = m;
-    }
-  }
-  if (max != null && typeof max === 'number') {
-    return max + (max === 0 ? 1 : Math.max(1, max * 0.1));
-  }
-  return null;
+  markStreamState(el, { names: metricNames.slice(), counts: raw.map(t => t.x.length) });
 }
 
 // ── Annotation lanes ─────────────────────────────────────────────────────

@@ -164,13 +164,19 @@ document.addEventListener('DOMContentLoaded', async () => {
 const _DETAIL_COOLDOWN_MS = 200;
 let _detailLastRunAt = 0;
 let _detailTrailingTimer = null;
-function scheduleStepDetailRefresh() {
+// A ``force`` request (reconnect reconcile / new metric name) latches until the
+// next actual refetch consumes it, so a forced call coalesced into the trailing
+// timer still bypasses the ETag.
+let _detailForcePending = false;
+function scheduleStepDetailRefresh({ force = false } = {}) {
   if (!state.selectedStep) return;
+  if (force) _detailForcePending = true;
   const now = performance.now();
   const since = now - _detailLastRunAt;
   if (since >= _DETAIL_COOLDOWN_MS && !_detailTrailingTimer) {
     _detailLastRunAt = now;
-    refreshStepDetail(state.selectedStep, state, fetchJSON).catch(() => {});
+    const f = _detailForcePending; _detailForcePending = false;
+    refreshStepDetail(state.selectedStep, state, fetchJSON, f).catch(() => {});
     return;
   }
   if (_detailTrailingTimer) return;
@@ -179,7 +185,8 @@ function scheduleStepDetailRefresh() {
     _detailTrailingTimer = null;
     _detailLastRunAt = performance.now();
     if (state.selectedStep) {
-      refreshStepDetail(state.selectedStep, state, fetchJSON).catch(() => {});
+      const f = _detailForcePending; _detailForcePending = false;
+      refreshStepDetail(state.selectedStep, state, fetchJSON, f).catch(() => {});
     }
   }, wait);
 }
@@ -198,8 +205,14 @@ async function refreshAnalysisForRail() {
 }
 
 function renderShell() {
-  renderOverviewCards(state.pipeline);
-  renderOverviewFacts(state.pipeline, state.historicalRunId);
+  // Overview charts only render while their section is visible — activating it
+  // re-renders (activateSection), so drawing them on every WS frame behind a
+  // display:none panel is wasted work that also desyncs the incremental
+  // stream state against a zero-width layout.
+  if (currentSection() === 'overview') {
+    renderOverviewCards(state.pipeline);
+    renderOverviewFacts(state.pipeline, state.historicalRunId);
+  }
   renderStepList(state.pipeline, state.selectedStep, selectStep);
   renderLiveRail(state, name => selectStep(name));
   updateFailureBadges(state.pipeline);
@@ -314,6 +327,10 @@ function connectWebSocket() {
     try {
       ws.send(JSON.stringify({ type: 'resume', last_seq: _lastWsEventSeq }));
     } catch (e) { /* send may race onopen — harmless to skip */ }
+    // Reconcile the selected step's metric curve against REST: a forced
+    // (full-body) refetch delivers any points that streamed while we were
+    // disconnected. seenSeqs dedups, so nothing is doubled.
+    if (state.selectedStep) scheduleStepDetailRefresh({ force: true });
   };
   ws.onclose = () => { state.connected = false; updateConnectionDot(); setTimeout(connectWebSocket, 3000); };
   ws.onmessage = (evt) => { try { handleWSMessage(JSON.parse(evt.data)); } catch (e) { /* ignore parse errors */ } };
@@ -327,7 +344,11 @@ function connectActiveRunWebSocket(runId) {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   const url = `${proto}://${location.host}/ws/active_runs/${encodeURIComponent(runId)}`;
   const ws = new WebSocket(url);
-  ws.onopen = () => { state.connected = true; state.ws = ws; updateConnectionDot(); };
+  ws.onopen = () => {
+    state.connected = true; state.ws = ws; updateConnectionDot();
+    // Reconcile the selected step's metric curve after a (re)connect.
+    if (state.selectedStep) scheduleStepDetailRefresh({ force: true });
+  };
   ws.onclose = () => {
     state.connected = false;
     updateConnectionDot();
@@ -361,16 +382,19 @@ function handleWSMessage(msg) {
   }
   if (msg.type === 'step_completed' || msg.type === 'step_failed') scheduleStepDetailRefresh();
   if (msg.type === 'metric') {
+    const knownName = !!(state.metricBuffers[msg.step] && state.metricBuffers[msg.step][msg.name]);
     bufferMetric(msg.step, msg.name, msg.value, msg.seq, msg.timestamp);
     if (state.selectedStep === msg.step) {
       scheduleLiveChartUpdate(msg.step);
-      // If the step-detail panel hasn't rendered yet (i.e. the metrics
-      // tab DOM scaffold isn't in place), buffered metrics would be
-      // invisible until the next refresh. Kick a leading-edge refresh
-      // right now so the user sees points the moment they arrive.
+      // A brand-new metric NAME needs the server's category (which chart it
+      // belongs on, from step_metrics_vm) — otherwise a live curve is stuck
+      // in the 'Other' catch-all. A forced (ETag-bypassing) refetch on first
+      // sighting moves it onto its proper axis. A missing scaffold just needs
+      // a refetch (updateLiveCharts also rebuilds it from the live buffers).
       const panel = document.getElementById('step-detail');
-      if (!panel || !panel.querySelector('.step-detail-header')) {
-        scheduleStepDetailRefresh();
+      const needsScaffold = !panel || !panel.querySelector('.step-detail-header');
+      if (!knownName || needsScaffold) {
+        scheduleStepDetailRefresh({ force: !knownName });
       }
     }
   }

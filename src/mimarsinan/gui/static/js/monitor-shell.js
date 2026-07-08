@@ -249,6 +249,12 @@ function renderRailSparkline(pipeline) {
   const value = document.getElementById('rail-spark-value');
   if (!svg) return;
   const points = (pipeline.overview_chart && pipeline.overview_chart.points) || [];
+  // Backpressure: the measured series is append-only, so the deployed-metric
+  // sparkline only changes when a point is ADDED. Skip the redundant SVG
+  // rewrite on the many frames (metrics, step lifecycle, the 1 s tick) that
+  // don't add one.
+  if (svg._sparkCount === points.length) return;
+  svg._sparkCount = points.length;
   if (!points.length) {
     svg.innerHTML = '';
     if (label) label.textContent = 'no measurements yet';

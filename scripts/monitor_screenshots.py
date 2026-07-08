@@ -344,10 +344,93 @@ def flow_live(page, base_url: str, out_dir: Path, shots: list[str], collector) -
     _shot(page, out_dir, "live_7_analysis_staircase", shots, full=True)
 
 
+# ── Flow: incremental WS streaming — curves grow at several positions ─────
+# Drives the in-process collector INLINE (same thread as the screenshots) so the
+# feed and the captures are deterministically coordinated: emit a burst, let the
+# browser's rAF coalesce + repaint, then capture. Proves the live Overview line
+# and a live tuner step advance by extendTraces/restyle (not a full re-plot) —
+# the growth is visible across positions, honestly (measured points only; the
+# carried preamble never plots a point).
+def flow_streaming(page, base_url: str, out_dir: Path, shots: list[str], collector) -> None:
+    import math
+
+    steps = [
+        "Model Configuration", "Model Building", "Pretraining", "Torch Mapping",
+        "Activation Analysis", "Clamp Adaptation", "Weight Quantization",
+        "LIF Adaptation",
+    ]
+    collector.set_pipeline_info(steps, {
+        "experiment_name": "live_streaming", "pipeline_mode": "phased",
+        "spiking_mode": "lif", "weight_bits": 5,
+    })
+    page.goto(f"{base_url}/monitor")
+    _settle(page, 1200)
+
+    # Carried preamble: contributes event lines, never a plotted point.
+    for name in ("Model Configuration", "Model Building"):
+        collector.step_started(name)
+        collector.step_completed(name, target_metric=0.0, metric_kind="carried")
+
+    # ── A live tuner step: a loss/accuracy/LR curve streaming in ──
+    collector.step_started("Pretraining")
+    _goto_section(page, "steps")  # auto-follow lands on the running step
+    page.wait_for_timeout(500)
+
+    def _pretrain_burst(lo: int, hi: int) -> None:
+        # A small per-point delay spaces the metric timestamps like a real
+        # trainer (one report per optimizer step), so the curve spreads over
+        # elapsed time instead of collapsing onto one instant — and it paces
+        # the WS frames so the server's metric_categories reach the client and
+        # the loss/accuracy/LR curves split onto their own axes.
+        for i in range(lo, hi):
+            collector.record_metric("Training loss", 2.2 * math.exp(-i / 60) + 0.05)
+            if i % 8 == 0:
+                collector.record_metric("Validation accuracy", min(0.99, 0.3 + i / 300))
+                collector.record_metric("LR", 0.001 * (0.98 ** (i // 8)))
+            time.sleep(0.015)
+
+    for lo, hi, tag in ((0, 45, "1_early"), (45, 130, "2_mid"), (130, 240, "3_late")):
+        _pretrain_burst(lo, hi)
+        _settle(page, 900)
+        _shot(page, out_dir, f"streaming_tuner_{tag}", shots, full=True)
+    collector.step_completed("Pretraining", target_metric=0.95, metric_kind="measured")
+
+    # ── The live Overview: the measured line grows point by point ──
+    _goto_section(page, "overview")
+    _settle(page, 700)
+    _shot(page, out_dir, "streaming_overview_1_early", shots, full=True)
+
+    # Each entry adds ONE measured point; some carry a gate verdict (a pass/fail
+    # event line slides in alongside the growing line).
+    measured = [
+        ("Torch Mapping", 0.955, None),
+        ("Activation Analysis", 0.958, None),
+        ("Clamp Adaptation", 0.96, None),
+        ("Weight Quantization", 0.965,
+         {"status": "pass", "rule": "weights on the integer grid"}),
+    ]
+    for idx, (name, metric, verdict) in enumerate(measured):
+        collector.step_started(name)
+        page.wait_for_timeout(350)
+        collector.step_completed(name, target_metric=metric, metric_kind="measured",
+                                 verdict=verdict)
+        _settle(page, 650)
+        if idx == 1:
+            _shot(page, out_dir, "streaming_overview_2_mid", shots, full=True)
+    _shot(page, out_dir, "streaming_overview_3_full", shots, full=True)
+
+    # Leave a final tuner in flight so the running timing bar + rail read live.
+    collector.step_started("LIF Adaptation")
+    collector.record_event("mbh_gate", {"action": "entry", "tuner": "LIF Adaptation",
+                                        "best_full_acc": 0.965})
+    _settle(page, 900)
+    _shot(page, out_dir, "streaming_overview_4_running", shots, full=True)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--out", default=str(REPO_ROOT / "generated" / "_monitor_review" / "round1"))
-    parser.add_argument("--flow", default="all", choices=("all", "replay", "noc", "live", "config"))
+    parser.add_argument("--flow", default="all", choices=("all", "replay", "noc", "live", "config", "streaming"))
     args = parser.parse_args()
     out_dir = Path(args.out).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -376,6 +459,9 @@ def main() -> int:
         if args.flow in ("all", "live"):
             print("flow: live")
             flow_live(page, base_url, out_dir, shots, collector)
+        if args.flow in ("all", "streaming"):
+            print("flow: streaming")
+            flow_streaming(page, base_url, out_dir, shots, collector)
         browser.close()
 
     print(f"\n{len(shots)} screenshots -> {out_dir}")
