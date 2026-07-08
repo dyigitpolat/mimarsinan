@@ -10,7 +10,12 @@ from mimarsinan.config_schema.deployment_derivation import (
     legal_values_for,
     legality_bearing_keys,
 )
-from mimarsinan.config_schema.registry import Category, REGISTRY
+from mimarsinan.config_schema.registry import (
+    Category,
+    FieldType,
+    REGISTRY,
+    parse_deployment_document,
+)
 from mimarsinan.mapping.platform.coalescing import coalescing_config_errors
 from mimarsinan.tuning.orchestration.temporal_allocation import (
     S_ALLOCATION_MODES,
@@ -97,6 +102,88 @@ def legality_errors(
     return errors
 
 
+# Registry types whose declared domain (scalar type + bounds/options) the
+# field validator can judge; complex-valued keys (recipe/cores/json/…) carry
+# their own shape checks in the document parser.
+_DOMAIN_CHECKED_TYPES = frozenset({
+    FieldType.INT, FieldType.FLOAT, FieldType.BOOL,
+    FieldType.STR, FieldType.ENUM, FieldType.PATH,
+})
+
+
+def _type_matches(field_type: FieldType, value: Any) -> bool:
+    """Does ``value`` match the registry-declared scalar type? Python conflates
+    bool with int; the registry declares them distinct, so bool is not an int."""
+    if field_type is FieldType.BOOL:
+        return isinstance(value, bool)
+    if field_type is FieldType.INT:
+        return isinstance(value, int) and not isinstance(value, bool)
+    if field_type is FieldType.FLOAT:
+        return isinstance(value, (int, float)) and not isinstance(value, bool)
+    return isinstance(value, str)  # STR / ENUM / PATH are string-valued
+
+
+def _field_domain_error(flat_key: str, message: str) -> Dict[str, Any]:
+    """A keyed, remediable field-domain row (same shape as the legality errors):
+    the universal remedy is to clear the value and accept the derived/default."""
+    label = REGISTRY[flat_key].label
+    return {
+        "key": flat_key,
+        "message": message,
+        "rule_id": "field_domain",
+        "remedies": [{
+            "label": f"Clear {label} (remove the invalid value)",
+            "action": "clear", "key": flat_key,
+        }],
+    }
+
+
+def validate_against_registry(flat: Mapping[str, Any]) -> List[Dict[str, Any]]:
+    """Judge every present, registry-known key against its DECLARED domain:
+    scalar type (int/float/bool/str/enum), inclusive numeric ``bounds``, and enum
+    ``options`` membership. Keyed, remediable rows in the same error channel as
+    the legal-value-set law — generic over the registry, no per-key ladder.
+
+    Legality-bearing keys are owned wholesale by ``legality_errors`` (their
+    admissible set is STATE-dependent), so they are skipped here; unknown keys are
+    reported by the document parser, not duplicated; an absent/``None`` value is
+    'unset' and never judged.
+    """
+    legality_owned = set(legality_bearing_keys())
+    errors: List[Dict[str, Any]] = []
+    for flat_key, value in flat.items():
+        if flat_key not in REGISTRY or value is None or flat_key in legality_owned:
+            continue
+        entry = REGISTRY[flat_key]
+        if entry.type not in _DOMAIN_CHECKED_TYPES:
+            continue
+        if not _type_matches(entry.type, value):
+            errors.append(_field_domain_error(
+                flat_key,
+                f"{flat_key} must be {entry.type.value}, got "
+                f"{type(value).__name__} ({value!r})",
+            ))
+            continue
+        if entry.type is FieldType.ENUM:
+            options = entry.resolved_options()
+            if options is not None and value not in options:
+                errors.append(_field_domain_error(
+                    flat_key,
+                    f"{flat_key}={value!r} is not a valid option; choose one of "
+                    f"{list(options)}",
+                ))
+            continue
+        if entry.bounds is not None:
+            low, high = entry.bounds
+            if low is not None and value < low:
+                errors.append(_field_domain_error(
+                    flat_key, f"{flat_key}={value!r} is below the minimum {low}"))
+            elif high is not None and value > high:
+                errors.append(_field_domain_error(
+                    flat_key, f"{flat_key}={value!r} is above the maximum {high}"))
+    return errors
+
+
 def non_declarable_key_errors(config: Mapping[str, Any]) -> List[str]:
     """Reject document declarations of keys the derivation/runtime owns.
 
@@ -147,6 +234,9 @@ def validate_deployment_config(config: Dict[str, Any]) -> List[str]:
             pc if isinstance(pc, Mapping) else {},
         )
     )
+
+    flat_view = parse_deployment_document(config).known_flat_keys()
+    errors.extend(row["message"] for row in validate_against_registry(flat_view))
 
     for key in ("data_provider_name", "experiment_name", "generated_files_path", "platform_constraints", "deployment_parameters", "start_step"):
         if key not in config:
@@ -202,5 +292,7 @@ def validate_merged_config(flat: Dict[str, Any]) -> List[str]:
         errors.append(str(exc))
     else:
         errors.extend(row["message"] for row in legality_errors(flat, flat))
+
+    errors.extend(row["message"] for row in validate_against_registry(flat))
 
     return errors

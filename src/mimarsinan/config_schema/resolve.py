@@ -20,6 +20,7 @@ from mimarsinan.config_schema.registry import (
 from mimarsinan.config_schema.runtime import build_flat_pipeline_config
 from mimarsinan.config_schema.validation import (
     legality_errors,
+    validate_against_registry,
     validate_deployment_config,
 )
 
@@ -192,6 +193,15 @@ def resolve_draft(draft: Mapping[str, Any]) -> Resolution:
     illegal_keys = {row["key"] for row in illegal}
     errors = [error for error in errors if error["key"] not in illegal_keys]
     errors.extend(illegal)
+
+    # Field-domain errors (type/bounds/options) are keyed, remediable rows too;
+    # they supersede the plain structural message for the same key, exactly like
+    # the legality rows. Legality-bearing keys are skipped inside the validator,
+    # so these key sets never overlap.
+    field_errors = validate_against_registry(parsed.known_flat_keys())
+    field_keys = {row["key"] for row in field_errors}
+    errors = [error for error in errors if error["key"] not in field_keys]
+    errors.extend(field_errors)
 
     pipeline_mode = str(draft.get("pipeline_mode", _SESSION_DEFAULT_PIPELINE_MODE))
     resolved: Dict[str, Any] = {}
