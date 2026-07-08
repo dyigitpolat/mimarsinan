@@ -175,4 +175,40 @@ ENTRIES = (
        doc="[MBH-DRAWS] best-of-N draws on variance-carrying conversion stages "
            "(1 = single-draw, bit-identical); draw k seeds torch at seed+k.",
        bounds=(1, None)),
+    _E("eval_subsample_target", group="tuning", owner="workload_profile/tuning_budget",
+       type=T.INT, category=Category.ADVANCED, unit="samples",
+       label="Eval Subsample Target",
+       doc="Target evaluation-subset size for tuner accuracy reads. Providers "
+           "register it via DataWorkloadProfile; explicit value wins; absent = "
+           "the frozen generic 5000.", bounds=(1, None)),
+    _E("tuning_step_cap_epochs", group="tuning", owner="workload_profile/tuning_budget",
+       type=T.FLOAT, category=Category.ADVANCED, unit="epochs",
+       label="Tuning Step Cap (epochs)",
+       doc="Cap on per-tuner training steps expressed in dataset epochs. "
+           "Providers register it via DataWorkloadProfile; explicit value wins; "
+           "absent = the frozen 4000-step cap.", bounds=(0.0, None)),
+    _E("calibration_set_policy", group="conversion", owner="workload_profile/calibration",
+       type=T.JSON, category=Category.ADVANCED, label="Calibration Set Policy",
+       doc="Calibration-set extents by purpose (distmatch_bias_iters, "
+           "distmatch_cal_batches, gauge_batches, stat_batches, "
+           "analysis_batches_max, analysis_batch_size_cap). Field-wise merge: "
+           "explicit fields win over provider registrations; absent fields use "
+           "the consumers' frozen defaults."),
+    _E("prefix_stage_lr", group="tuning", owner="workload_profile/tuning_policy",
+       type=T.FLOAT, category=Category.ADVANCED, label="Prefix Stage LR Ceiling",
+       doc="P4 prefix-stage LR ceiling. Builders register it via "
+           "ModelWorkloadProfile; explicit value wins; absent = the frozen "
+           "TUNING_POLICY value.", bounds=(0.0, None)),
+    _E("endpoint_floor_lr", group="tuning", owner="workload_profile/tuning_policy",
+       type=T.FLOAT, category=Category.ADVANCED, label="Endpoint Floor LR",
+       doc="Floor-chasing endpoint LR ceiling. Builders register it via "
+           "ModelWorkloadProfile; explicit value wins; absent = the frozen "
+           "TUNING_POLICY value.", bounds=(0.0, None)),
+    _E("proven_recovery_depth", group="tuning", owner="workload_profile/install_resolution",
+       type=T.INT, category=Category.ADVANCED, unit="layers",
+       label="Proven Recovery Depth",
+       doc="A6 chain-depth law override for architectures with different "
+           "recovery behavior. Builders register it via ModelWorkloadProfile; "
+           "explicit value wins; absent = the corpus-calibrated 6.",
+       bounds=(1, None)),
 )

@@ -19,7 +19,7 @@ pipeline's `ModelRegistry` so configs can instantiate models by `model_type` id.
 | `torch_mlp_mixer_core.py` | Mixer variant with an activation after every FC so all mixer layers package as perceptrons. |
 | `mlp_mixer_ref.py` | Third-party reference MLP-Mixer (einops-based), kept for architecture comparison; not pipeline-native. |
 | `pretrained_bridge.py` | `load_pretrained_resnet18/50` (torchvision weights, resized `fc` head) + `deploy_and_eval`: run a stock model through the real convert→map→deploy SNN path and return a `DeployedEval`. |
-| `builders/` | Per-architecture builder classes, the canonical `BUILDERS_REGISTRY` (`model_type` id → builder), and wizard config-schema aggregation. |
+| `builders/` | Per-architecture builder classes and wizard config-schema aggregation; `BUILDERS_REGISTRY` is the `ModelRegistry.builder_classes()` view (one SSOT populated by the `@ModelRegistry.register` decorators). Builders may declare a `workload_profile()` classmethod returning a `ModelWorkloadProfile`. |
 | `nn/` | NN building blocks: custom autograd activations (`LIFActivation`, TTFS nodes, STE input quantizers), composable activation decorators, standalone layers (`TransformedActivation`, `norm_affine_params`), and shared LIF/TTFS cycle kernels. |
 | `perceptron_mixer/` | Perceptron-based architectures: `Perceptron`, `PerceptronFlow`, `SimpleMLP` (mapper-repr example), and the skip-connection mixer. |
 | `preprocessing/` | Empty placeholder package (legacy `InputCQ` removed; input encoding now lives in IR encoding layers). |
@@ -35,7 +35,7 @@ pipeline's `ModelRegistry` so configs can instantiate models by `model_type` id.
   `SegmentSpikeRecord`); the TTFS executor.
 - **`spiking`** — segment-boundary transcoding SSOT (`BoundaryConfig`,
   `encode_segment_input`) and segment-forward helpers for training forwards.
-- **`pipelining`** — `ModelRegistry`, into which every builder registers its model type.
+- **`pipelining`** — `ModelRegistry`, into which every builder registers its model type; `BUILDERS_REGISTRY` is its `builder_classes()` view.
 - **`tuning`** — `LazyExecutorForward` for the blended-genuine and prefix-genuine training forwards.
 - **`common`** — `env.cuda_debug_enabled` debug flag in decorator transforms.
 

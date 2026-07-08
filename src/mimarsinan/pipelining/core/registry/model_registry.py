@@ -58,6 +58,23 @@ class ModelRegistry:
         return entry["builder_cls"]
 
     @classmethod
+    def get_workload_profile(cls, model_id: str):
+        """The builder-declared ``ModelWorkloadProfile``, or None when the model
+        type is unknown or the builder declares nothing."""
+        cls._ensure_builders_loaded()
+        entry = cls._registry.get(model_id)
+        if entry is None:
+            return None
+        hook = getattr(entry["builder_cls"], "workload_profile", None)
+        return None if hook is None else hook()
+
+    @classmethod
+    def builder_classes(cls) -> dict[str, type]:
+        """model_type id -> registered builder class (the one builder SSOT view)."""
+        cls._ensure_builders_loaded()
+        return {mid: info["builder_cls"] for mid, info in cls._registry.items()}
+
+    @classmethod
     def get_model_types(cls) -> list[dict[str, Any]]:
         """Return list of model types for the GUI (id, label, category)."""
         cls._ensure_builders_loaded()

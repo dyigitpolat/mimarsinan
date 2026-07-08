@@ -20,6 +20,7 @@ shared across the pipeline.
 | `layer_key.py` | `layer_key_from_node_name`: display/serialization grouping key that collapses per-position/per-tile/psum core names into one layer stack |
 | `reporter.py` | `Reporter` protocol for pipeline metric reporting and structured events (`report`/`console_log`/`event`), `DefaultReporter` (throttled console output; events are a GUI concern), and `emit_reporter_event` (event emission tolerant of pre-event reporter implementations) |
 | `safe_numeric.py` | `safe_float`: safe conversion to float for plots and labels; returns a default when unconvertible |
+| `workload_profile.py` | Workload-profile injection contracts: `DataWorkloadProfile` / `ModelWorkloadProfile` (what a dataset / model architecture may lawfully register), `CalibrationSetPolicy`, `fold_workload_profiles` (explicit config > model > data > frozen default), and the `ResolvedWorkloadProfile` carried by `DeploymentPlan.workload` |
 
 ## Dependencies
 - `chip_simulation` — `file_utils.save_weights_and_chip_code` lazily imports `nevresim.connectivity.default_nevresim_connectivity_mode` to pick the chip-code emission mode.
@@ -31,7 +32,7 @@ Both imports are deferred inside the function body; module import time keeps
 ## Dependents
 - `pipelining` — `best_effort`, `phase_profiler`/`cuda_guard`, env flags (vram probe, resource debug, NF-SCM parity debug), `prepare_containing_directory`, `DefaultReporter`.
 - `gui` — `best_effort`, env accessors (`runs_root`, `templates_dir`, `gui_no_browser`), `layer_key_from_node_name`.
-- `data_handling` — `best_effort`, FFCV/ImageNet/resource-debug env accessors.
+- `data_handling` — `best_effort`, FFCV/ImageNet/resource-debug env accessors, `DataWorkloadProfile` for the provider registration hook.
 - `chip_simulation` — `find_cpp20_compiler`, `file_utils` input/chip-code writers, `loihi_quiet`.
 - `visualization` — `layer_key_from_node_name`, `safe_float`.
 - `search` — `best_effort`.

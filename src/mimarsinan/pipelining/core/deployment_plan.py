@@ -12,6 +12,7 @@ from mimarsinan.chip_simulation.spiking_semantics import (
     ttfs_cycle_schedule,
     uses_ttfs_floor_ceil_convention as _uses_ttfs_floor_ceil_convention,
 )
+from mimarsinan.common.workload_profile import ResolvedWorkloadProfile
 from mimarsinan.pipelining.core.registry.model_registry import ModelRegistry
 from mimarsinan.pipelining.core.search_mode import derive_search_mode
 from mimarsinan.tuning.orchestration.temporal_allocation import (
@@ -45,8 +46,6 @@ def resolve_optimization_driver(config: dict[str, Any]) -> str:
         return OPTIMIZATION_DRIVER_FAST
     return OPTIMIZATION_DRIVER_CONTROLLER
 
-
-_resolve_optimization_driver = resolve_optimization_driver
 
 PRETRAINED_WEIGHT_SOURCE = "torchvision"
 
@@ -108,6 +107,7 @@ class DeploymentPlan:
     seed: int
 
     model_name: str
+    workload: ResolvedWorkloadProfile
 
     @classmethod
     def resolve(cls, config: dict[str, Any]) -> "DeploymentPlan":
@@ -143,7 +143,7 @@ class DeploymentPlan:
             weight_quantization=bool(get("weight_quantization", False)),
             enable_training_noise=bool(get("enable_training_noise", False)),
             cycle_accurate_lif_forward=bool(get("cycle_accurate_lif_forward", False)),
-            optimization_driver=_resolve_optimization_driver(config),
+            optimization_driver=resolve_optimization_driver(config),
             s_allocation=resolve_s_allocation_mode(config),
             pruning=bool(pruning),
             pruning_fraction=pruning_fraction,
@@ -168,6 +168,7 @@ class DeploymentPlan:
             simulation_batch_size=int(get("simulation_batch_size", 8)),
             seed=int(get("seed", 0)),
             model_name=get("model_name") or model_type,
+            workload=ResolvedWorkloadProfile.from_config(config),
         )
 
     @staticmethod

@@ -29,9 +29,13 @@ preset-injected value would masquerade as an explicit one under this contract.
 
 ## The configurability SSOT (`registry/`)
 
-`registry/` is the one declarative table of EVERY config key (108 entries:
-the live `CONFIG_KEYS_SET` plus top-level document and platform structural
-keys — coverage is validated at import, both directions, never hand-trusted).
+`registry/` is the one declarative table of EVERY config key (the live
+`CONFIG_KEYS_SET` plus top-level document and platform structural keys —
+coverage is validated at import, both directions, never hand-trusted).
+Workload-profile-injectable keys (`common/workload_profile.py`) are registered
+here with NO schema default: absence is meaningful — explicit config > model
+registration > data registration > the consumer's frozen workload-neutral
+default.
 Each `ConfigKeySchema` carries provenance (group/owner/derivation/exposure,
 the KeySpec heritage), widget knowledge (type/options/bounds/unit), docs
 (label/doc/effect), wizard altitude (`category`: basic/advanced/derived/

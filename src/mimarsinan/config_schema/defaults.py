@@ -153,25 +153,18 @@ CONFIG_KEYS_SET: Set[str] = {
     "ttfs_cycle_schedule",
     "ttfs_finetune_kd_against_rung2",
     "scm_degradation_tolerance",
-    "nf_scm_parity_samples",
-    "nf_scm_parity_samples_cascaded",
-    "nf_scm_parity_atol",
-    "nf_scm_parity_max_mismatch_fraction",
+    "nf_scm_parity_samples", "nf_scm_parity_samples_cascaded",
+    "nf_scm_parity_atol", "nf_scm_parity_max_mismatch_fraction",
     "nf_scm_parity_min_agreement",
-    "scm_torch_sim_parity_check",
-    "scm_torch_sim_parity_samples",
+    "scm_torch_sim_parity_check", "scm_torch_sim_parity_samples",
     "scm_torch_sim_parity_min_agreement",
-    "onchip_majority_gate",
-    "onchip_majority_min_fraction",
+    "onchip_majority_gate", "onchip_majority_min_fraction",
+    "onchip_min_fraction", "onchip_majority_fraction",
     "pretrain_floor_chance_multiple",
-    "onchip_min_fraction",
-    "onchip_majority_fraction",
     "capacity_gate",
     "loihi_parity_sample_index",
-    "sanafe_sample_count",
-    "sanafe_arch_preset",
-    "sanafe_custom_arch_path",
-    "sanafe_log_potential_trace",
+    "sanafe_sample_count", "sanafe_arch_preset",
+    "sanafe_custom_arch_path", "sanafe_log_potential_trace",
     "simulation_batch_count",
     # Optional per-cell RUN-total STEP budget for the 5u endpoint target floor
     # (the endpoint_steps ledger); read by endpoint_recovery via config.get
@@ -188,6 +181,12 @@ CONFIG_KEYS_SET: Set[str] = {
     "endpoint_target_floor",
     # torch DataLoader worker count; read via config.get with a fallback of 4.
     "num_workers",
+    # Workload-profile-injectable keys (common/workload_profile.py): absence is
+    # meaningful (explicit config > model registration > data registration >
+    # frozen workload-neutral default), so they never get schema defaults here.
+    "input_data_scale", "eval_subsample_target", "tuning_step_cap_epochs",
+    "calibration_set_policy", "prefix_stage_lr", "endpoint_floor_lr",
+    "pretrained_weight_source", "proven_recovery_depth", "clamp_cuda_assert_prone",
 }
 
 

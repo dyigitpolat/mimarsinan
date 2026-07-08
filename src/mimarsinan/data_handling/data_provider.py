@@ -3,6 +3,7 @@ import torch.nn as nn
 import torchvision.transforms as _T
 
 from mimarsinan.common.env import DISABLE_FFCV_VAR, ffcv_disabled
+from mimarsinan.common.workload_profile import DataWorkloadProfile
 
 FFCV_DISABLE_ENV = DISABLE_FFCV_VAR
 from mimarsinan.data_handling.dataset_views import ApplyTransform
@@ -99,6 +100,14 @@ class DataProvider:
     def get_prediction_mode(self):
         """Prediction mode for this provider (subclasses must override)."""
         raise NotImplementedError()
+
+    def workload_profile(self) -> DataWorkloadProfile:
+        """The dataset facts this provider registers with the framework.
+
+        Base contract: the all-None profile (no claims). Providers override to
+        declare what they know; explicit config always wins over registrations.
+        """
+        return DataWorkloadProfile()
 
     def create_loss(self):
         """Loss function for this provider, from its prediction mode."""

@@ -42,7 +42,25 @@
     "spiking_mode": "lif",
     "ttfs_cycle_schedule": "cascaded",
     "weight_quantization": true,
-    "weight_source": null
+    "weight_source": null,
+    "workload": {
+     "calibration": {
+      "analysis_batch_size_cap": null,
+      "analysis_batches_max": null,
+      "distmatch_bias_iters": null,
+      "distmatch_cal_batches": null,
+      "gauge_batches": null,
+      "stat_batches": null
+     },
+     "clamp_cuda_assert_prone": false,
+     "endpoint_floor_lr": null,
+     "eval_subsample_target": null,
+     "input_data_scale": 1.0,
+     "prefix_stage_lr": null,
+     "pretrained_weight_source": null,
+     "proven_recovery_depth": null,
+     "tuning_step_cap_epochs": null
+    }
    },
    "resolved_config": {
     "activation_quantization": true,
@@ -224,7 +242,25 @@
     "spiking_mode": "lif",
     "ttfs_cycle_schedule": "cascaded",
     "weight_quantization": false,
-    "weight_source": null
+    "weight_source": null,
+    "workload": {
+     "calibration": {
+      "analysis_batch_size_cap": null,
+      "analysis_batches_max": null,
+      "distmatch_bias_iters": null,
+      "distmatch_cal_batches": null,
+      "gauge_batches": null,
+      "stat_batches": null
+     },
+     "clamp_cuda_assert_prone": false,
+     "endpoint_floor_lr": null,
+     "eval_subsample_target": null,
+     "input_data_scale": 1.0,
+     "prefix_stage_lr": null,
+     "pretrained_weight_source": null,
+     "proven_recovery_depth": null,
+     "tuning_step_cap_epochs": null
+    }
    },
    "resolved_config": {
     "activation_quantization": false,
@@ -403,7 +439,25 @@
     "spiking_mode": "lif",
     "ttfs_cycle_schedule": "cascaded",
     "weight_quantization": true,
-    "weight_source": null
+    "weight_source": null,
+    "workload": {
+     "calibration": {
+      "analysis_batch_size_cap": null,
+      "analysis_batches_max": null,
+      "distmatch_bias_iters": null,
+      "distmatch_cal_batches": null,
+      "gauge_batches": null,
+      "stat_batches": null
+     },
+     "clamp_cuda_assert_prone": false,
+     "endpoint_floor_lr": null,
+     "eval_subsample_target": null,
+     "input_data_scale": 1.0,
+     "prefix_stage_lr": null,
+     "pretrained_weight_source": null,
+     "proven_recovery_depth": null,
+     "tuning_step_cap_epochs": null
+    }
    },
    "resolved_config": {
     "activation_quantization": true,
@@ -581,7 +635,25 @@
     "spiking_mode": "lif",
     "ttfs_cycle_schedule": "cascaded",
     "weight_quantization": true,
-    "weight_source": null
+    "weight_source": null,
+    "workload": {
+     "calibration": {
+      "analysis_batch_size_cap": null,
+      "analysis_batches_max": null,
+      "distmatch_bias_iters": null,
+      "distmatch_cal_batches": null,
+      "gauge_batches": null,
+      "stat_batches": null
+     },
+     "clamp_cuda_assert_prone": false,
+     "endpoint_floor_lr": null,
+     "eval_subsample_target": null,
+     "input_data_scale": 1.0,
+     "prefix_stage_lr": null,
+     "pretrained_weight_source": null,
+     "proven_recovery_depth": null,
+     "tuning_step_cap_epochs": null
+    }
    },
    "resolved_config": {
     "activation_quantization": true,
@@ -759,7 +831,25 @@
     "spiking_mode": "lif",
     "ttfs_cycle_schedule": "cascaded",
     "weight_quantization": true,
-    "weight_source": null
+    "weight_source": null,
+    "workload": {
+     "calibration": {
+      "analysis_batch_size_cap": null,
+      "analysis_batches_max": null,
+      "distmatch_bias_iters": null,
+      "distmatch_cal_batches": null,
+      "gauge_batches": null,
+      "stat_batches": null
+     },
+     "clamp_cuda_assert_prone": false,
+     "endpoint_floor_lr": null,
+     "eval_subsample_target": null,
+     "input_data_scale": 1.0,
+     "prefix_stage_lr": null,
+     "pretrained_weight_source": null,
+     "proven_recovery_depth": null,
+     "tuning_step_cap_epochs": null
+    }
    },
    "resolved_config": {
     "activation_quantization": true,
@@ -937,7 +1027,25 @@
     "spiking_mode": "ttfs",
     "ttfs_cycle_schedule": "cascaded",
     "weight_quantization": true,
-    "weight_source": null
+    "weight_source": null,
+    "workload": {
+     "calibration": {
+      "analysis_batch_size_cap": null,
+      "analysis_batches_max": null,
+      "distmatch_bias_iters": null,
+      "distmatch_cal_batches": null,
+      "gauge_batches": null,
+      "stat_batches": null
+     },
+     "clamp_cuda_assert_prone": false,
+     "endpoint_floor_lr": null,
+     "eval_subsample_target": null,
+     "input_data_scale": 1.0,
+     "prefix_stage_lr": null,
+     "pretrained_weight_source": null,
+     "proven_recovery_depth": null,
+     "tuning_step_cap_epochs": null
+    }
    },
    "resolved_config": {
     "activation_quantization": false,
@@ -1114,7 +1222,25 @@
     "spiking_mode": "ttfs",
     "ttfs_cycle_schedule": "cascaded",
     "weight_quantization": true,
-    "weight_source": null
+    "weight_source": null,
+    "workload": {
+     "calibration": {
+      "analysis_batch_size_cap": null,
+      "analysis_batches_max": null,
+      "distmatch_bias_iters": null,
+      "distmatch_cal_batches": null,
+      "gauge_batches": null,
+      "stat_batches": null
+     },
+     "clamp_cuda_assert_prone": false,
+     "endpoint_floor_lr": null,
+     "eval_subsample_target": null,
+     "input_data_scale": 1.0,
+     "prefix_stage_lr": null,
+     "pretrained_weight_source": null,
+     "proven_recovery_depth": null,
+     "tuning_step_cap_epochs": null
+    }
    },
    "resolved_config": {
     "activation_quantization": false,
@@ -1286,7 +1412,25 @@
     "spiking_mode": "ttfs",
     "ttfs_cycle_schedule": "cascaded",
     "weight_quantization": false,
-    "weight_source": null
+    "weight_source": null,
+    "workload": {
+     "calibration": {
+      "analysis_batch_size_cap": null,
+      "analysis_batches_max": null,
+      "distmatch_bias_iters": null,
+      "distmatch_cal_batches": null,
+      "gauge_batches": null,
+      "stat_batches": null
+     },
+     "clamp_cuda_assert_prone": false,
+     "endpoint_floor_lr": null,
+     "eval_subsample_target": null,
+     "input_data_scale": 1.0,
+     "prefix_stage_lr": null,
+     "pretrained_weight_source": null,
+     "proven_recovery_depth": null,
+     "tuning_step_cap_epochs": null
+    }
    },
    "resolved_config": {
     "activation_quantization": false,
@@ -1459,7 +1603,25 @@
     "spiking_mode": "ttfs",
     "ttfs_cycle_schedule": "cascaded",
     "weight_quantization": true,
-    "weight_source": null
+    "weight_source": null,
+    "workload": {
+     "calibration": {
+      "analysis_batch_size_cap": null,
+      "analysis_batches_max": null,
+      "distmatch_bias_iters": null,
+      "distmatch_cal_batches": null,
+      "gauge_batches": null,
+      "stat_batches": null
+     },
+     "clamp_cuda_assert_prone": false,
+     "endpoint_floor_lr": null,
+     "eval_subsample_target": null,
+     "input_data_scale": 1.0,
+     "prefix_stage_lr": null,
+     "pretrained_weight_source": null,
+     "proven_recovery_depth": null,
+     "tuning_step_cap_epochs": null
+    }
    },
    "resolved_config": {
     "activation_quantization": false,
@@ -1634,7 +1796,25 @@
     "spiking_mode": "ttfs",
     "ttfs_cycle_schedule": "cascaded",
     "weight_quantization": false,
-    "weight_source": null
+    "weight_source": null,
+    "workload": {
+     "calibration": {
+      "analysis_batch_size_cap": null,
+      "analysis_batches_max": null,
+      "distmatch_bias_iters": null,
+      "distmatch_cal_batches": null,
+      "gauge_batches": null,
+      "stat_batches": null
+     },
+     "clamp_cuda_assert_prone": false,
+     "endpoint_floor_lr": null,
+     "eval_subsample_target": null,
+     "input_data_scale": 1.0,
+     "prefix_stage_lr": null,
+     "pretrained_weight_source": null,
+     "proven_recovery_depth": null,
+     "tuning_step_cap_epochs": null
+    }
    },
    "resolved_config": {
     "activation_quantization": false,
@@ -1807,7 +1987,25 @@
     "spiking_mode": "ttfs_quantized",
     "ttfs_cycle_schedule": "cascaded",
     "weight_quantization": true,
-    "weight_source": null
+    "weight_source": null,
+    "workload": {
+     "calibration": {
+      "analysis_batch_size_cap": null,
+      "analysis_batches_max": null,
+      "distmatch_bias_iters": null,
+      "distmatch_cal_batches": null,
+      "gauge_batches": null,
+      "stat_batches": null
+     },
+     "clamp_cuda_assert_prone": false,
+     "endpoint_floor_lr": null,
+     "eval_subsample_target": null,
+     "input_data_scale": 1.0,
+     "prefix_stage_lr": null,
+     "pretrained_weight_source": null,
+     "proven_recovery_depth": null,
+     "tuning_step_cap_epochs": null
+    }
    },
    "resolved_config": {
     "activation_quantization": true,
@@ -1990,7 +2188,25 @@
     "spiking_mode": "ttfs_quantized",
     "ttfs_cycle_schedule": "cascaded",
     "weight_quantization": true,
-    "weight_source": null
+    "weight_source": null,
+    "workload": {
+     "calibration": {
+      "analysis_batch_size_cap": null,
+      "analysis_batches_max": null,
+      "distmatch_bias_iters": null,
+      "distmatch_cal_batches": null,
+      "gauge_batches": null,
+      "stat_batches": null
+     },
+     "clamp_cuda_assert_prone": false,
+     "endpoint_floor_lr": null,
+     "eval_subsample_target": null,
+     "input_data_scale": 1.0,
+     "prefix_stage_lr": null,
+     "pretrained_weight_source": null,
+     "proven_recovery_depth": null,
+     "tuning_step_cap_epochs": null
+    }
    },
    "resolved_config": {
     "activation_quantization": true,
@@ -2168,7 +2384,25 @@
     "spiking_mode": "ttfs_quantized",
     "ttfs_cycle_schedule": "cascaded",
     "weight_quantization": true,
-    "weight_source": null
+    "weight_source": null,
+    "workload": {
+     "calibration": {
+      "analysis_batch_size_cap": null,
+      "analysis_batches_max": null,
+      "distmatch_bias_iters": null,
+      "distmatch_cal_batches": null,
+      "gauge_batches": null,
+      "stat_batches": null
+     },
+     "clamp_cuda_assert_prone": false,
+     "endpoint_floor_lr": null,
+     "eval_subsample_target": null,
+     "input_data_scale": 1.0,
+     "prefix_stage_lr": null,
+     "pretrained_weight_source": null,
+     "proven_recovery_depth": null,
+     "tuning_step_cap_epochs": null
+    }
    },
    "resolved_config": {
     "activation_quantization": true,
@@ -2347,7 +2581,25 @@
     "spiking_mode": "ttfs_quantized",
     "ttfs_cycle_schedule": "cascaded",
     "weight_quantization": true,
-    "weight_source": null
+    "weight_source": null,
+    "workload": {
+     "calibration": {
+      "analysis_batch_size_cap": null,
+      "analysis_batches_max": null,
+      "distmatch_bias_iters": null,
+      "distmatch_cal_batches": null,
+      "gauge_batches": null,
+      "stat_batches": null
+     },
+     "clamp_cuda_assert_prone": false,
+     "endpoint_floor_lr": null,
+     "eval_subsample_target": null,
+     "input_data_scale": 1.0,
+     "prefix_stage_lr": null,
+     "pretrained_weight_source": null,
+     "proven_recovery_depth": null,
+     "tuning_step_cap_epochs": null
+    }
    },
    "resolved_config": {
     "activation_quantization": true,
@@ -2526,7 +2778,25 @@
     "spiking_mode": "ttfs_quantized",
     "ttfs_cycle_schedule": "cascaded",
     "weight_quantization": true,
-    "weight_source": null
+    "weight_source": null,
+    "workload": {
+     "calibration": {
+      "analysis_batch_size_cap": null,
+      "analysis_batches_max": null,
+      "distmatch_bias_iters": null,
+      "distmatch_cal_batches": null,
+      "gauge_batches": null,
+      "stat_batches": null
+     },
+     "clamp_cuda_assert_prone": false,
+     "endpoint_floor_lr": null,
+     "eval_subsample_target": null,
+     "input_data_scale": 1.0,
+     "prefix_stage_lr": null,
+     "pretrained_weight_source": null,
+     "proven_recovery_depth": null,
+     "tuning_step_cap_epochs": null
+    }
    },
    "resolved_config": {
     "activation_quantization": true,
@@ -2707,7 +2977,25 @@
     "spiking_mode": "ttfs_cycle_based",
     "ttfs_cycle_schedule": "cascaded",
     "weight_quantization": true,
-    "weight_source": null
+    "weight_source": null,
+    "workload": {
+     "calibration": {
+      "analysis_batch_size_cap": null,
+      "analysis_batches_max": null,
+      "distmatch_bias_iters": null,
+      "distmatch_cal_batches": null,
+      "gauge_batches": null,
+      "stat_batches": null
+     },
+     "clamp_cuda_assert_prone": false,
+     "endpoint_floor_lr": null,
+     "eval_subsample_target": null,
+     "input_data_scale": 1.0,
+     "prefix_stage_lr": null,
+     "pretrained_weight_source": null,
+     "proven_recovery_depth": null,
+     "tuning_step_cap_epochs": null
+    }
    },
    "resolved_config": {
     "activation_quantization": true,
@@ -2890,7 +3178,25 @@
     "spiking_mode": "ttfs_cycle_based",
     "ttfs_cycle_schedule": "cascaded",
     "weight_quantization": true,
-    "weight_source": null
+    "weight_source": null,
+    "workload": {
+     "calibration": {
+      "analysis_batch_size_cap": null,
+      "analysis_batches_max": null,
+      "distmatch_bias_iters": null,
+      "distmatch_cal_batches": null,
+      "gauge_batches": null,
+      "stat_batches": null
+     },
+     "clamp_cuda_assert_prone": false,
+     "endpoint_floor_lr": null,
+     "eval_subsample_target": null,
+     "input_data_scale": 1.0,
+     "prefix_stage_lr": null,
+     "pretrained_weight_source": null,
+     "proven_recovery_depth": null,
+     "tuning_step_cap_epochs": null
+    }
    },
    "resolved_config": {
     "activation_quantization": true,
@@ -3068,7 +3374,25 @@
     "spiking_mode": "ttfs_cycle_based",
     "ttfs_cycle_schedule": "cascaded",
     "weight_quantization": true,
-    "weight_source": null
+    "weight_source": null,
+    "workload": {
+     "calibration": {
+      "analysis_batch_size_cap": null,
+      "analysis_batches_max": null,
+      "distmatch_bias_iters": null,
+      "distmatch_cal_batches": null,
+      "gauge_batches": null,
+      "stat_batches": null
+     },
+     "clamp_cuda_assert_prone": false,
+     "endpoint_floor_lr": null,
+     "eval_subsample_target": null,
+     "input_data_scale": 1.0,
+     "prefix_stage_lr": null,
+     "pretrained_weight_source": null,
+     "proven_recovery_depth": null,
+     "tuning_step_cap_epochs": null
+    }
    },
    "resolved_config": {
     "activation_quantization": true,
@@ -3249,7 +3573,25 @@
     "spiking_mode": "ttfs_cycle_based",
     "ttfs_cycle_schedule": "cascaded",
     "weight_quantization": true,
-    "weight_source": null
+    "weight_source": null,
+    "workload": {
+     "calibration": {
+      "analysis_batch_size_cap": null,
+      "analysis_batches_max": null,
+      "distmatch_bias_iters": null,
+      "distmatch_cal_batches": null,
+      "gauge_batches": null,
+      "stat_batches": null
+     },
+     "clamp_cuda_assert_prone": false,
+     "endpoint_floor_lr": null,
+     "eval_subsample_target": null,
+     "input_data_scale": 1.0,
+     "prefix_stage_lr": null,
+     "pretrained_weight_source": null,
+     "proven_recovery_depth": null,
+     "tuning_step_cap_epochs": null
+    }
    },
    "resolved_config": {
     "activation_quantization": true,
@@ -3429,7 +3771,25 @@
     "spiking_mode": "ttfs_cycle_based",
     "ttfs_cycle_schedule": "cascaded",
     "weight_quantization": true,
-    "weight_source": null
+    "weight_source": null,
+    "workload": {
+     "calibration": {
+      "analysis_batch_size_cap": null,
+      "analysis_batches_max": null,
+      "distmatch_bias_iters": null,
+      "distmatch_cal_batches": null,
+      "gauge_batches": null,
+      "stat_batches": null
+     },
+     "clamp_cuda_assert_prone": false,
+     "endpoint_floor_lr": null,
+     "eval_subsample_target": null,
+     "input_data_scale": 1.0,
+     "prefix_stage_lr": null,
+     "pretrained_weight_source": null,
+     "proven_recovery_depth": null,
+     "tuning_step_cap_epochs": null
+    }
    },
    "resolved_config": {
     "activation_quantization": true,
@@ -3608,7 +3968,25 @@
     "spiking_mode": "ttfs_cycle_based",
     "ttfs_cycle_schedule": "synchronized",
     "weight_quantization": true,
-    "weight_source": null
+    "weight_source": null,
+    "workload": {
+     "calibration": {
+      "analysis_batch_size_cap": null,
+      "analysis_batches_max": null,
+      "distmatch_bias_iters": null,
+      "distmatch_cal_batches": null,
+      "gauge_batches": null,
+      "stat_batches": null
+     },
+     "clamp_cuda_assert_prone": false,
+     "endpoint_floor_lr": null,
+     "eval_subsample_target": null,
+     "input_data_scale": 1.0,
+     "prefix_stage_lr": null,
+     "pretrained_weight_source": null,
+     "proven_recovery_depth": null,
+     "tuning_step_cap_epochs": null
+    }
    },
    "resolved_config": {
     "activation_quantization": true,
@@ -3800,7 +4178,25 @@
     "spiking_mode": "ttfs_cycle_based",
     "ttfs_cycle_schedule": "synchronized",
     "weight_quantization": true,
-    "weight_source": null
+    "weight_source": null,
+    "workload": {
+     "calibration": {
+      "analysis_batch_size_cap": null,
+      "analysis_batches_max": null,
+      "distmatch_bias_iters": null,
+      "distmatch_cal_batches": null,
+      "gauge_batches": null,
+      "stat_batches": null
+     },
+     "clamp_cuda_assert_prone": false,
+     "endpoint_floor_lr": null,
+     "eval_subsample_target": null,
+     "input_data_scale": 1.0,
+     "prefix_stage_lr": null,
+     "pretrained_weight_source": null,
+     "proven_recovery_depth": null,
+     "tuning_step_cap_epochs": null
+    }
    },
    "resolved_config": {
     "activation_quantization": true,
@@ -3984,7 +4380,25 @@
     "spiking_mode": "ttfs_cycle_based",
     "ttfs_cycle_schedule": "synchronized",
     "weight_quantization": true,
-    "weight_source": null
+    "weight_source": null,
+    "workload": {
+     "calibration": {
+      "analysis_batch_size_cap": null,
+      "analysis_batches_max": null,
+      "distmatch_bias_iters": null,
+      "distmatch_cal_batches": null,
+      "gauge_batches": null,
+      "stat_batches": null
+     },
+     "clamp_cuda_assert_prone": false,
+     "endpoint_floor_lr": null,
+     "eval_subsample_target": null,
+     "input_data_scale": 1.0,
+     "prefix_stage_lr": null,
+     "pretrained_weight_source": null,
+     "proven_recovery_depth": null,
+     "tuning_step_cap_epochs": null
+    }
    },
    "resolved_config": {
     "activation_quantization": true,
@@ -4169,7 +4583,25 @@
     "spiking_mode": "ttfs_cycle_based",
     "ttfs_cycle_schedule": "synchronized",
     "weight_quantization": true,
-    "weight_source": null
+    "weight_source": null,
+    "workload": {
+     "calibration": {
+      "analysis_batch_size_cap": null,
+      "analysis_batches_max": null,
+      "distmatch_bias_iters": null,
+      "distmatch_cal_batches": null,
+      "gauge_batches": null,
+      "stat_batches": null
+     },
+     "clamp_cuda_assert_prone": false,
+     "endpoint_floor_lr": null,
+     "eval_subsample_target": null,
+     "input_data_scale": 1.0,
+     "prefix_stage_lr": null,
+     "pretrained_weight_source": null,
+     "proven_recovery_depth": null,
+     "tuning_step_cap_epochs": null
+    }
    },
    "resolved_config": {
     "activation_quantization": true,
@@ -4354,7 +4786,25 @@
     "spiking_mode": "ttfs_cycle_based",
     "ttfs_cycle_schedule": "synchronized",
     "weight_quantization": true,
-    "weight_source": null
+    "weight_source": null,
+    "workload": {
+     "calibration": {
+      "analysis_batch_size_cap": null,
+      "analysis_batches_max": null,
+      "distmatch_bias_iters": null,
+      "distmatch_cal_batches": null,
+      "gauge_batches": null,
+      "stat_batches": null
+     },
+     "clamp_cuda_assert_prone": false,
+     "endpoint_floor_lr": null,
+     "eval_subsample_target": null,
+     "input_data_scale": 1.0,
+     "prefix_stage_lr": null,
+     "pretrained_weight_source": null,
+     "proven_recovery_depth": null,
+     "tuning_step_cap_epochs": null
+    }
    },
    "resolved_config": {
     "activation_quantization": true,
@@ -4539,7 +4989,25 @@
     "spiking_mode": "lif",
     "ttfs_cycle_schedule": "cascaded",
     "weight_quantization": true,
-    "weight_source": null
+    "weight_source": null,
+    "workload": {
+     "calibration": {
+      "analysis_batch_size_cap": null,
+      "analysis_batches_max": null,
+      "distmatch_bias_iters": null,
+      "distmatch_cal_batches": null,
+      "gauge_batches": null,
+      "stat_batches": null
+     },
+     "clamp_cuda_assert_prone": false,
+     "endpoint_floor_lr": null,
+     "eval_subsample_target": null,
+     "input_data_scale": 1.0,
+     "prefix_stage_lr": null,
+     "pretrained_weight_source": null,
+     "proven_recovery_depth": null,
+     "tuning_step_cap_epochs": null
+    }
    },
    "resolved_config": {
     "activation_quantization": true,
@@ -4721,7 +5189,25 @@
     "spiking_mode": "lif",
     "ttfs_cycle_schedule": "cascaded",
     "weight_quantization": true,
-    "weight_source": null
+    "weight_source": null,
+    "workload": {
+     "calibration": {
+      "analysis_batch_size_cap": null,
+      "analysis_batches_max": null,
+      "distmatch_bias_iters": null,
+      "distmatch_cal_batches": null,
+      "gauge_batches": null,
+      "stat_batches": null
+     },
+     "clamp_cuda_assert_prone": false,
+     "endpoint_floor_lr": null,
+     "eval_subsample_target": null,
+     "input_data_scale": 1.0,
+     "prefix_stage_lr": null,
+     "pretrained_weight_source": null,
+     "proven_recovery_depth": null,
+     "tuning_step_cap_epochs": null
+    }
    },
    "resolved_config": {
     "activation_quantization": true,
@@ -4903,7 +5389,25 @@
     "spiking_mode": "ttfs_cycle_based",
     "ttfs_cycle_schedule": "cascaded",
     "weight_quantization": true,
-    "weight_source": null
+    "weight_source": null,
+    "workload": {
+     "calibration": {
+      "analysis_batch_size_cap": null,
+      "analysis_batches_max": null,
+      "distmatch_bias_iters": null,
+      "distmatch_cal_batches": null,
+      "gauge_batches": null,
+      "stat_batches": null
+     },
+     "clamp_cuda_assert_prone": false,
+     "endpoint_floor_lr": null,
+     "eval_subsample_target": null,
+     "input_data_scale": 1.0,
+     "prefix_stage_lr": null,
+     "pretrained_weight_source": null,
+     "proven_recovery_depth": null,
+     "tuning_step_cap_epochs": null
+    }
    },
    "resolved_config": {
     "activation_quantization": true,
@@ -5086,7 +5590,25 @@
     "spiking_mode": "ttfs_cycle_based",
     "ttfs_cycle_schedule": "synchronized",
     "weight_quantization": true,
-    "weight_source": null
+    "weight_source": null,
+    "workload": {
+     "calibration": {
+      "analysis_batch_size_cap": null,
+      "analysis_batches_max": null,
+      "distmatch_bias_iters": null,
+      "distmatch_cal_batches": null,
+      "gauge_batches": null,
+      "stat_batches": null
+     },
+     "clamp_cuda_assert_prone": false,
+     "endpoint_floor_lr": null,
+     "eval_subsample_target": null,
+     "input_data_scale": 1.0,
+     "prefix_stage_lr": null,
+     "pretrained_weight_source": null,
+     "proven_recovery_depth": null,
+     "tuning_step_cap_epochs": null
+    }
    },
    "resolved_config": {
     "activation_quantization": true,
@@ -5278,7 +5800,25 @@
     "spiking_mode": "ttfs_cycle_based",
     "ttfs_cycle_schedule": "synchronized",
     "weight_quantization": true,
-    "weight_source": null
+    "weight_source": null,
+    "workload": {
+     "calibration": {
+      "analysis_batch_size_cap": null,
+      "analysis_batches_max": null,
+      "distmatch_bias_iters": null,
+      "distmatch_cal_batches": null,
+      "gauge_batches": null,
+      "stat_batches": null
+     },
+     "clamp_cuda_assert_prone": false,
+     "endpoint_floor_lr": null,
+     "eval_subsample_target": null,
+     "input_data_scale": 1.0,
+     "prefix_stage_lr": null,
+     "pretrained_weight_source": null,
+     "proven_recovery_depth": null,
+     "tuning_step_cap_epochs": null
+    }
    },
    "resolved_config": {
     "activation_quantization": true,
@@ -5470,7 +6010,25 @@
     "spiking_mode": "ttfs_quantized",
     "ttfs_cycle_schedule": "cascaded",
     "weight_quantization": true,
-    "weight_source": null
+    "weight_source": null,
+    "workload": {
+     "calibration": {
+      "analysis_batch_size_cap": null,
+      "analysis_batches_max": null,
+      "distmatch_bias_iters": null,
+      "distmatch_cal_batches": null,
+      "gauge_batches": null,
+      "stat_batches": null
+     },
+     "clamp_cuda_assert_prone": false,
+     "endpoint_floor_lr": null,
+     "eval_subsample_target": null,
+     "input_data_scale": 1.0,
+     "prefix_stage_lr": null,
+     "pretrained_weight_source": null,
+     "proven_recovery_depth": null,
+     "tuning_step_cap_epochs": null
+    }
    },
    "resolved_config": {
     "activation_quantization": true,
@@ -5653,7 +6211,25 @@
     "spiking_mode": "ttfs",
     "ttfs_cycle_schedule": "cascaded",
     "weight_quantization": true,
-    "weight_source": null
+    "weight_source": null,
+    "workload": {
+     "calibration": {
+      "analysis_batch_size_cap": null,
+      "analysis_batches_max": null,
+      "distmatch_bias_iters": null,
+      "distmatch_cal_batches": null,
+      "gauge_batches": null,
+      "stat_batches": null
+     },
+     "clamp_cuda_assert_prone": false,
+     "endpoint_floor_lr": null,
+     "eval_subsample_target": null,
+     "input_data_scale": 1.0,
+     "prefix_stage_lr": null,
+     "pretrained_weight_source": null,
+     "proven_recovery_depth": null,
+     "tuning_step_cap_epochs": null
+    }
    },
    "resolved_config": {
     "activation_quantization": false,
@@ -5830,7 +6406,25 @@
     "spiking_mode": "lif",
     "ttfs_cycle_schedule": "cascaded",
     "weight_quantization": true,
-    "weight_source": null
+    "weight_source": null,
+    "workload": {
+     "calibration": {
+      "analysis_batch_size_cap": null,
+      "analysis_batches_max": null,
+      "distmatch_bias_iters": null,
+      "distmatch_cal_batches": null,
+      "gauge_batches": null,
+      "stat_batches": null
+     },
+     "clamp_cuda_assert_prone": false,
+     "endpoint_floor_lr": null,
+     "eval_subsample_target": null,
+     "input_data_scale": 1.0,
+     "prefix_stage_lr": null,
+     "pretrained_weight_source": null,
+     "proven_recovery_depth": null,
+     "tuning_step_cap_epochs": null
+    }
    },
    "resolved_config": {
     "activation_quantization": true,
@@ -6012,7 +6606,25 @@
     "spiking_mode": "ttfs_cycle_based",
     "ttfs_cycle_schedule": "synchronized",
     "weight_quantization": true,
-    "weight_source": null
+    "weight_source": null,
+    "workload": {
+     "calibration": {
+      "analysis_batch_size_cap": null,
+      "analysis_batches_max": null,
+      "distmatch_bias_iters": null,
+      "distmatch_cal_batches": null,
+      "gauge_batches": null,
+      "stat_batches": null
+     },
+     "clamp_cuda_assert_prone": false,
+     "endpoint_floor_lr": null,
+     "eval_subsample_target": null,
+     "input_data_scale": 1.0,
+     "prefix_stage_lr": null,
+     "pretrained_weight_source": null,
+     "proven_recovery_depth": null,
+     "tuning_step_cap_epochs": null
+    }
    },
    "resolved_config": {
     "activation_quantization": true,
@@ -6204,7 +6816,25 @@
     "spiking_mode": "ttfs_cycle_based",
     "ttfs_cycle_schedule": "cascaded",
     "weight_quantization": true,
-    "weight_source": null
+    "weight_source": null,
+    "workload": {
+     "calibration": {
+      "analysis_batch_size_cap": null,
+      "analysis_batches_max": null,
+      "distmatch_bias_iters": null,
+      "distmatch_cal_batches": null,
+      "gauge_batches": null,
+      "stat_batches": null
+     },
+     "clamp_cuda_assert_prone": false,
+     "endpoint_floor_lr": null,
+     "eval_subsample_target": null,
+     "input_data_scale": 1.0,
+     "prefix_stage_lr": null,
+     "pretrained_weight_source": null,
+     "proven_recovery_depth": null,
+     "tuning_step_cap_epochs": null
+    }
    },
    "resolved_config": {
     "activation_quantization": true,
@@ -6387,7 +7017,25 @@
     "spiking_mode": "ttfs_cycle_based",
     "ttfs_cycle_schedule": "cascaded",
     "weight_quantization": true,
-    "weight_source": null
+    "weight_source": null,
+    "workload": {
+     "calibration": {
+      "analysis_batch_size_cap": null,
+      "analysis_batches_max": null,
+      "distmatch_bias_iters": null,
+      "distmatch_cal_batches": null,
+      "gauge_batches": null,
+      "stat_batches": null
+     },
+     "clamp_cuda_assert_prone": false,
+     "endpoint_floor_lr": null,
+     "eval_subsample_target": null,
+     "input_data_scale": 1.0,
+     "prefix_stage_lr": null,
+     "pretrained_weight_source": null,
+     "proven_recovery_depth": null,
+     "tuning_step_cap_epochs": null
+    }
    },
    "resolved_config": {
     "activation_quantization": true,
@@ -6567,7 +7215,25 @@
     "spiking_mode": "ttfs_cycle_based",
     "ttfs_cycle_schedule": "cascaded",
     "weight_quantization": true,
-    "weight_source": null
+    "weight_source": null,
+    "workload": {
+     "calibration": {
+      "analysis_batch_size_cap": null,
+      "analysis_batches_max": null,
+      "distmatch_bias_iters": null,
+      "distmatch_cal_batches": null,
+      "gauge_batches": null,
+      "stat_batches": null
+     },
+     "clamp_cuda_assert_prone": false,
+     "endpoint_floor_lr": null,
+     "eval_subsample_target": null,
+     "input_data_scale": 1.0,
+     "prefix_stage_lr": null,
+     "pretrained_weight_source": null,
+     "proven_recovery_depth": null,
+     "tuning_step_cap_epochs": null
+    }
    },
    "resolved_config": {
     "activation_quantization": true,
@@ -6750,7 +7416,25 @@
     "spiking_mode": "ttfs_cycle_based",
     "ttfs_cycle_schedule": "cascaded",
     "weight_quantization": true,
-    "weight_source": null
+    "weight_source": null,
+    "workload": {
+     "calibration": {
+      "analysis_batch_size_cap": null,
+      "analysis_batches_max": null,
+      "distmatch_bias_iters": null,
+      "distmatch_cal_batches": null,
+      "gauge_batches": null,
+      "stat_batches": null
+     },
+     "clamp_cuda_assert_prone": false,
+     "endpoint_floor_lr": null,
+     "eval_subsample_target": null,
+     "input_data_scale": 1.0,
+     "prefix_stage_lr": null,
+     "pretrained_weight_source": null,
+     "proven_recovery_depth": null,
+     "tuning_step_cap_epochs": null
+    }
    },
    "resolved_config": {
     "activation_quantization": true,
@@ -6933,7 +7617,25 @@
     "spiking_mode": "ttfs_cycle_based",
     "ttfs_cycle_schedule": "cascaded",
     "weight_quantization": true,
-    "weight_source": null
+    "weight_source": null,
+    "workload": {
+     "calibration": {
+      "analysis_batch_size_cap": null,
+      "analysis_batches_max": null,
+      "distmatch_bias_iters": null,
+      "distmatch_cal_batches": null,
+      "gauge_batches": null,
+      "stat_batches": null
+     },
+     "clamp_cuda_assert_prone": false,
+     "endpoint_floor_lr": null,
+     "eval_subsample_target": null,
+     "input_data_scale": 1.0,
+     "prefix_stage_lr": null,
+     "pretrained_weight_source": null,
+     "proven_recovery_depth": null,
+     "tuning_step_cap_epochs": null
+    }
    },
    "resolved_config": {
     "activation_quantization": true,
@@ -7113,7 +7815,25 @@
     "spiking_mode": "ttfs_cycle_based",
     "ttfs_cycle_schedule": "cascaded",
     "weight_quantization": true,
-    "weight_source": null
+    "weight_source": null,
+    "workload": {
+     "calibration": {
+      "analysis_batch_size_cap": null,
+      "analysis_batches_max": null,
+      "distmatch_bias_iters": null,
+      "distmatch_cal_batches": null,
+      "gauge_batches": null,
+      "stat_batches": null
+     },
+     "clamp_cuda_assert_prone": false,
+     "endpoint_floor_lr": null,
+     "eval_subsample_target": null,
+     "input_data_scale": 1.0,
+     "prefix_stage_lr": null,
+     "pretrained_weight_source": null,
+     "proven_recovery_depth": null,
+     "tuning_step_cap_epochs": null
+    }
    },
    "resolved_config": {
     "activation_quantization": true,
@@ -7292,7 +8012,25 @@
     "spiking_mode": "lif",
     "ttfs_cycle_schedule": "cascaded",
     "weight_quantization": true,
-    "weight_source": null
+    "weight_source": null,
+    "workload": {
+     "calibration": {
+      "analysis_batch_size_cap": null,
+      "analysis_batches_max": null,
+      "distmatch_bias_iters": null,
+      "distmatch_cal_batches": null,
+      "gauge_batches": null,
+      "stat_batches": null
+     },
+     "clamp_cuda_assert_prone": false,
+     "endpoint_floor_lr": null,
+     "eval_subsample_target": null,
+     "input_data_scale": 1.0,
+     "prefix_stage_lr": null,
+     "pretrained_weight_source": null,
+     "proven_recovery_depth": null,
+     "tuning_step_cap_epochs": null
+    }
    },
    "resolved_config": {
     "activation_quantization": true,
@@ -7470,7 +8208,25 @@
     "spiking_mode": "ttfs",
     "ttfs_cycle_schedule": "cascaded",
     "weight_quantization": false,
-    "weight_source": null
+    "weight_source": null,
+    "workload": {
+     "calibration": {
+      "analysis_batch_size_cap": null,
+      "analysis_batches_max": null,
+      "distmatch_bias_iters": null,
+      "distmatch_cal_batches": null,
+      "gauge_batches": null,
+      "stat_batches": null
+     },
+     "clamp_cuda_assert_prone": false,
+     "endpoint_floor_lr": null,
+     "eval_subsample_target": null,
+     "input_data_scale": 1.0,
+     "prefix_stage_lr": null,
+     "pretrained_weight_source": null,
+     "proven_recovery_depth": null,
+     "tuning_step_cap_epochs": null
+    }
    },
    "resolved_config": {
     "activation_quantization": false,
@@ -7643,7 +8399,25 @@
     "spiking_mode": "ttfs_cycle_based",
     "ttfs_cycle_schedule": "cascaded",
     "weight_quantization": true,
-    "weight_source": null
+    "weight_source": null,
+    "workload": {
+     "calibration": {
+      "analysis_batch_size_cap": null,
+      "analysis_batches_max": null,
+      "distmatch_bias_iters": null,
+      "distmatch_cal_batches": null,
+      "gauge_batches": null,
+      "stat_batches": null
+     },
+     "clamp_cuda_assert_prone": false,
+     "endpoint_floor_lr": null,
+     "eval_subsample_target": null,
+     "input_data_scale": 1.0,
+     "prefix_stage_lr": null,
+     "pretrained_weight_source": null,
+     "proven_recovery_depth": null,
+     "tuning_step_cap_epochs": null
+    }
    },
    "resolved_config": {
     "activation_quantization": true,
@@ -7821,7 +8595,25 @@
     "spiking_mode": "lif",
     "ttfs_cycle_schedule": "cascaded",
     "weight_quantization": true,
-    "weight_source": null
+    "weight_source": null,
+    "workload": {
+     "calibration": {
+      "analysis_batch_size_cap": null,
+      "analysis_batches_max": null,
+      "distmatch_bias_iters": null,
+      "distmatch_cal_batches": null,
+      "gauge_batches": null,
+      "stat_batches": null
+     },
+     "clamp_cuda_assert_prone": false,
+     "endpoint_floor_lr": null,
+     "eval_subsample_target": null,
+     "input_data_scale": 1.0,
+     "prefix_stage_lr": null,
+     "pretrained_weight_source": null,
+     "proven_recovery_depth": null,
+     "tuning_step_cap_epochs": null
+    }
    },
    "resolved_config": {
     "activation_quantization": true,
@@ -7999,7 +8791,25 @@
     "spiking_mode": "ttfs_cycle_based",
     "ttfs_cycle_schedule": "synchronized",
     "weight_quantization": true,
-    "weight_source": null
+    "weight_source": null,
+    "workload": {
+     "calibration": {
+      "analysis_batch_size_cap": null,
+      "analysis_batches_max": null,
+      "distmatch_bias_iters": null,
+      "distmatch_cal_batches": null,
+      "gauge_batches": null,
+      "stat_batches": null
+     },
+     "clamp_cuda_assert_prone": false,
+     "endpoint_floor_lr": null,
+     "eval_subsample_target": null,
+     "input_data_scale": 1.0,
+     "prefix_stage_lr": null,
+     "pretrained_weight_source": null,
+     "proven_recovery_depth": null,
+     "tuning_step_cap_epochs": null
+    }
    },
    "resolved_config": {
     "activation_quantization": true,
@@ -8191,7 +9001,25 @@
     "spiking_mode": "lif",
     "ttfs_cycle_schedule": "cascaded",
     "weight_quantization": true,
-    "weight_source": null
+    "weight_source": null,
+    "workload": {
+     "calibration": {
+      "analysis_batch_size_cap": null,
+      "analysis_batches_max": null,
+      "distmatch_bias_iters": null,
+      "distmatch_cal_batches": null,
+      "gauge_batches": null,
+      "stat_batches": null
+     },
+     "clamp_cuda_assert_prone": false,
+     "endpoint_floor_lr": null,
+     "eval_subsample_target": null,
+     "input_data_scale": 1.0,
+     "prefix_stage_lr": null,
+     "pretrained_weight_source": null,
+     "proven_recovery_depth": null,
+     "tuning_step_cap_epochs": null
+    }
    },
    "resolved_config": {
     "activation_quantization": true,
@@ -8373,7 +9201,25 @@
     "spiking_mode": "ttfs_quantized",
     "ttfs_cycle_schedule": "cascaded",
     "weight_quantization": true,
-    "weight_source": null
+    "weight_source": null,
+    "workload": {
+     "calibration": {
+      "analysis_batch_size_cap": null,
+      "analysis_batches_max": null,
+      "distmatch_bias_iters": null,
+      "distmatch_cal_batches": null,
+      "gauge_batches": null,
+      "stat_batches": null
+     },
+     "clamp_cuda_assert_prone": false,
+     "endpoint_floor_lr": null,
+     "eval_subsample_target": null,
+     "input_data_scale": 1.0,
+     "prefix_stage_lr": null,
+     "pretrained_weight_source": null,
+     "proven_recovery_depth": null,
+     "tuning_step_cap_epochs": null
+    }
    },
    "resolved_config": {
     "activation_quantization": true,
@@ -8552,7 +9398,25 @@
     "spiking_mode": "ttfs",
     "ttfs_cycle_schedule": "cascaded",
     "weight_quantization": true,
-    "weight_source": null
+    "weight_source": null,
+    "workload": {
+     "calibration": {
+      "analysis_batch_size_cap": null,
+      "analysis_batches_max": null,
+      "distmatch_bias_iters": null,
+      "distmatch_cal_batches": null,
+      "gauge_batches": null,
+      "stat_batches": null
+     },
+     "clamp_cuda_assert_prone": false,
+     "endpoint_floor_lr": null,
+     "eval_subsample_target": null,
+     "input_data_scale": 1.0,
+     "prefix_stage_lr": null,
+     "pretrained_weight_source": null,
+     "proven_recovery_depth": null,
+     "tuning_step_cap_epochs": null
+    }
    },
    "resolved_config": {
     "activation_quantization": false,
@@ -8729,7 +9593,25 @@
     "spiking_mode": "ttfs_cycle_based",
     "ttfs_cycle_schedule": "synchronized",
     "weight_quantization": true,
-    "weight_source": null
+    "weight_source": null,
+    "workload": {
+     "calibration": {
+      "analysis_batch_size_cap": null,
+      "analysis_batches_max": null,
+      "distmatch_bias_iters": null,
+      "distmatch_cal_batches": null,
+      "gauge_batches": null,
+      "stat_batches": null
+     },
+     "clamp_cuda_assert_prone": false,
+     "endpoint_floor_lr": null,
+     "eval_subsample_target": null,
+     "input_data_scale": 1.0,
+     "prefix_stage_lr": null,
+     "pretrained_weight_source": null,
+     "proven_recovery_depth": null,
+     "tuning_step_cap_epochs": null
+    }
    },
    "resolved_config": {
     "activation_quantization": true,
@@ -8921,7 +9803,25 @@
     "spiking_mode": "ttfs_quantized",
     "ttfs_cycle_schedule": "cascaded",
     "weight_quantization": true,
-    "weight_source": null
+    "weight_source": null,
+    "workload": {
+     "calibration": {
+      "analysis_batch_size_cap": null,
+      "analysis_batches_max": null,
+      "distmatch_bias_iters": null,
+      "distmatch_cal_batches": null,
+      "gauge_batches": null,
+      "stat_batches": null
+     },
+     "clamp_cuda_assert_prone": false,
+     "endpoint_floor_lr": null,
+     "eval_subsample_target": null,
+     "input_data_scale": 1.0,
+     "prefix_stage_lr": null,
+     "pretrained_weight_source": null,
+     "proven_recovery_depth": null,
+     "tuning_step_cap_epochs": null
+    }
    },
    "resolved_config": {
     "activation_quantization": true,
@@ -9099,7 +9999,25 @@
     "spiking_mode": "lif",
     "ttfs_cycle_schedule": "cascaded",
     "weight_quantization": true,
-    "weight_source": "torchvision"
+    "weight_source": "torchvision",
+    "workload": {
+     "calibration": {
+      "analysis_batch_size_cap": null,
+      "analysis_batches_max": null,
+      "distmatch_bias_iters": null,
+      "distmatch_cal_batches": null,
+      "gauge_batches": null,
+      "stat_batches": null
+     },
+     "clamp_cuda_assert_prone": false,
+     "endpoint_floor_lr": null,
+     "eval_subsample_target": null,
+     "input_data_scale": 1.0,
+     "prefix_stage_lr": null,
+     "pretrained_weight_source": null,
+     "proven_recovery_depth": null,
+     "tuning_step_cap_epochs": null
+    }
    },
    "resolved_config": {
     "activation_quantization": true,
@@ -9275,7 +10193,25 @@
     "spiking_mode": "ttfs",
     "ttfs_cycle_schedule": "cascaded",
     "weight_quantization": true,
-    "weight_source": "torchvision"
+    "weight_source": "torchvision",
+    "workload": {
+     "calibration": {
+      "analysis_batch_size_cap": null,
+      "analysis_batches_max": null,
+      "distmatch_bias_iters": null,
+      "distmatch_cal_batches": null,
+      "gauge_batches": null,
+      "stat_batches": null
+     },
+     "clamp_cuda_assert_prone": false,
+     "endpoint_floor_lr": null,
+     "eval_subsample_target": null,
+     "input_data_scale": 1.0,
+     "prefix_stage_lr": null,
+     "pretrained_weight_source": null,
+     "proven_recovery_depth": null,
+     "tuning_step_cap_epochs": null
+    }
    },
    "resolved_config": {
     "activation_quantization": false,
@@ -9452,7 +10388,25 @@
     "spiking_mode": "ttfs_quantized",
     "ttfs_cycle_schedule": "cascaded",
     "weight_quantization": true,
-    "weight_source": "torchvision"
+    "weight_source": "torchvision",
+    "workload": {
+     "calibration": {
+      "analysis_batch_size_cap": null,
+      "analysis_batches_max": null,
+      "distmatch_bias_iters": null,
+      "distmatch_cal_batches": null,
+      "gauge_batches": null,
+      "stat_batches": null
+     },
+     "clamp_cuda_assert_prone": false,
+     "endpoint_floor_lr": null,
+     "eval_subsample_target": null,
+     "input_data_scale": 1.0,
+     "prefix_stage_lr": null,
+     "pretrained_weight_source": null,
+     "proven_recovery_depth": null,
+     "tuning_step_cap_epochs": null
+    }
    },
    "resolved_config": {
     "activation_quantization": true,
@@ -9637,7 +10591,25 @@
     "spiking_mode": "ttfs_cycle_based",
     "ttfs_cycle_schedule": "cascaded",
     "weight_quantization": true,
-    "weight_source": null
+    "weight_source": null,
+    "workload": {
+     "calibration": {
+      "analysis_batch_size_cap": null,
+      "analysis_batches_max": null,
+      "distmatch_bias_iters": null,
+      "distmatch_cal_batches": null,
+      "gauge_batches": null,
+      "stat_batches": null
+     },
+     "clamp_cuda_assert_prone": false,
+     "endpoint_floor_lr": null,
+     "eval_subsample_target": null,
+     "input_data_scale": 1.0,
+     "prefix_stage_lr": null,
+     "pretrained_weight_source": null,
+     "proven_recovery_depth": null,
+     "tuning_step_cap_epochs": null
+    }
    },
    "resolved_config": {
     "activation_quantization": true,
@@ -9815,7 +10787,25 @@
     "spiking_mode": "ttfs_cycle_based",
     "ttfs_cycle_schedule": "synchronized",
     "weight_quantization": true,
-    "weight_source": null
+    "weight_source": null,
+    "workload": {
+     "calibration": {
+      "analysis_batch_size_cap": null,
+      "analysis_batches_max": null,
+      "distmatch_bias_iters": null,
+      "distmatch_cal_batches": null,
+      "gauge_batches": null,
+      "stat_batches": null
+     },
+     "clamp_cuda_assert_prone": false,
+     "endpoint_floor_lr": null,
+     "eval_subsample_target": null,
+     "input_data_scale": 1.0,
+     "prefix_stage_lr": null,
+     "pretrained_weight_source": null,
+     "proven_recovery_depth": null,
+     "tuning_step_cap_epochs": null
+    }
    },
    "resolved_config": {
     "activation_quantization": true,
@@ -9999,7 +10989,25 @@
     "spiking_mode": "lif",
     "ttfs_cycle_schedule": "cascaded",
     "weight_quantization": true,
-    "weight_source": null
+    "weight_source": null,
+    "workload": {
+     "calibration": {
+      "analysis_batch_size_cap": null,
+      "analysis_batches_max": null,
+      "distmatch_bias_iters": null,
+      "distmatch_cal_batches": null,
+      "gauge_batches": null,
+      "stat_batches": null
+     },
+     "clamp_cuda_assert_prone": false,
+     "endpoint_floor_lr": null,
+     "eval_subsample_target": null,
+     "input_data_scale": 1.0,
+     "prefix_stage_lr": null,
+     "pretrained_weight_source": null,
+     "proven_recovery_depth": null,
+     "tuning_step_cap_epochs": null
+    }
    },
    "resolved_config": {
     "activation_quantization": true,
@@ -10176,7 +11184,25 @@
     "spiking_mode": "ttfs_cycle_based",
     "ttfs_cycle_schedule": "cascaded",
     "weight_quantization": true,
-    "weight_source": "torchvision"
+    "weight_source": "torchvision",
+    "workload": {
+     "calibration": {
+      "analysis_batch_size_cap": null,
+      "analysis_batches_max": null,
+      "distmatch_bias_iters": null,
+      "distmatch_cal_batches": null,
+      "gauge_batches": null,
+      "stat_batches": null
+     },
+     "clamp_cuda_assert_prone": false,
+     "endpoint_floor_lr": null,
+     "eval_subsample_target": null,
+     "input_data_scale": 1.0,
+     "prefix_stage_lr": null,
+     "pretrained_weight_source": null,
+     "proven_recovery_depth": null,
+     "tuning_step_cap_epochs": null
+    }
    },
    "resolved_config": {
     "activation_quantization": true,
@@ -10353,7 +11379,25 @@
     "spiking_mode": "ttfs",
     "ttfs_cycle_schedule": "cascaded",
     "weight_quantization": false,
-    "weight_source": null
+    "weight_source": null,
+    "workload": {
+     "calibration": {
+      "analysis_batch_size_cap": null,
+      "analysis_batches_max": null,
+      "distmatch_bias_iters": null,
+      "distmatch_cal_batches": null,
+      "gauge_batches": null,
+      "stat_batches": null
+     },
+     "clamp_cuda_assert_prone": false,
+     "endpoint_floor_lr": null,
+     "eval_subsample_target": null,
+     "input_data_scale": 1.0,
+     "prefix_stage_lr": null,
+     "pretrained_weight_source": null,
+     "proven_recovery_depth": null,
+     "tuning_step_cap_epochs": null
+    }
    },
    "resolved_config": {
     "activation_quantization": false,
@@ -10529,7 +11573,25 @@
     "spiking_mode": "lif",
     "ttfs_cycle_schedule": "cascaded",
     "weight_quantization": true,
-    "weight_source": "torchvision"
+    "weight_source": "torchvision",
+    "workload": {
+     "calibration": {
+      "analysis_batch_size_cap": null,
+      "analysis_batches_max": null,
+      "distmatch_bias_iters": null,
+      "distmatch_cal_batches": null,
+      "gauge_batches": null,
+      "stat_batches": null
+     },
+     "clamp_cuda_assert_prone": false,
+     "endpoint_floor_lr": null,
+     "eval_subsample_target": null,
+     "input_data_scale": 1.0,
+     "prefix_stage_lr": null,
+     "pretrained_weight_source": null,
+     "proven_recovery_depth": null,
+     "tuning_step_cap_epochs": null
+    }
    },
    "resolved_config": {
     "activation_quantization": true,
@@ -10699,7 +11761,25 @@
     "spiking_mode": "ttfs_quantized",
     "ttfs_cycle_schedule": "cascaded",
     "weight_quantization": true,
-    "weight_source": "torchvision"
+    "weight_source": "torchvision",
+    "workload": {
+     "calibration": {
+      "analysis_batch_size_cap": null,
+      "analysis_batches_max": null,
+      "distmatch_bias_iters": null,
+      "distmatch_cal_batches": null,
+      "gauge_batches": null,
+      "stat_batches": null
+     },
+     "clamp_cuda_assert_prone": false,
+     "endpoint_floor_lr": null,
+     "eval_subsample_target": null,
+     "input_data_scale": 1.0,
+     "prefix_stage_lr": null,
+     "pretrained_weight_source": null,
+     "proven_recovery_depth": null,
+     "tuning_step_cap_epochs": null
+    }
    },
    "resolved_config": {
     "activation_quantization": true,
@@ -10884,7 +11964,25 @@
     "spiking_mode": "ttfs_cycle_based",
     "ttfs_cycle_schedule": "cascaded",
     "weight_quantization": true,
-    "weight_source": "torchvision"
+    "weight_source": "torchvision",
+    "workload": {
+     "calibration": {
+      "analysis_batch_size_cap": null,
+      "analysis_batches_max": null,
+      "distmatch_bias_iters": null,
+      "distmatch_cal_batches": null,
+      "gauge_batches": null,
+      "stat_batches": null
+     },
+     "clamp_cuda_assert_prone": false,
+     "endpoint_floor_lr": null,
+     "eval_subsample_target": null,
+     "input_data_scale": 1.0,
+     "prefix_stage_lr": null,
+     "pretrained_weight_source": null,
+     "proven_recovery_depth": null,
+     "tuning_step_cap_epochs": null
+    }
    },
    "resolved_config": {
     "activation_quantization": true,

@@ -26,7 +26,9 @@ from mimarsinan.config_schema.deployment_derivation import (
     derive_deployment_parameters,
     derive_pipeline_runtime_parameters,
 )
+from mimarsinan.common.workload_profile import fold_workload_profiles
 from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
+from mimarsinan.pipelining.core.registry.model_registry import ModelRegistry
 from mimarsinan.pipelining.core.search_mode import derive_search_mode as derive_search_mode  # noqa: F401 — re-export
 
 
@@ -50,6 +52,18 @@ def apply_provider_facts(config: dict, data_provider) -> None:
     config["input_shape"] = data_provider.get_input_shape()
     config["input_size"] = int(np.prod(config["input_shape"]))
     config["num_classes"] = data_provider.get_prediction_mode().num_classes
+
+
+def apply_workload_profiles(config: dict, data_provider) -> None:
+    """Fold the registered data/model workload profiles beneath explicit config
+    keys (explicit > model registration > data registration > framework default)."""
+    fold_workload_profiles(
+        config,
+        model_profile=ModelRegistry.get_workload_profile(
+            str(config.get("model_type") or "")
+        ),
+        data_profile=data_provider.workload_profile(),
+    )
 
 
 class DeploymentPipeline(Pipeline):
@@ -94,6 +108,7 @@ class DeploymentPipeline(Pipeline):
         if data_provider is None:
             data_provider = self.data_provider_factory.create()
         apply_provider_facts(self.config, data_provider)
+        apply_workload_profiles(self.config, data_provider)
         self.config["device"] = select_device()
 
         if os.environ.get("MIMARSINAN_CUDA_DEBUG") == "1":

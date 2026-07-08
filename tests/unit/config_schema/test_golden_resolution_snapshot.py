@@ -25,6 +25,7 @@ from mimarsinan.data_handling.data_provider_factory import BasicDataProviderFact
 from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 from mimarsinan.pipelining.core.pipelines.deployment_pipeline import (
     apply_provider_facts,
+    apply_workload_profiles,
     merge_pipeline_config,
 )
 from mimarsinan.tuning.orchestration.calibration_pipeline import encoder_scale_pin
@@ -133,6 +134,7 @@ def build_config_entry(path: str) -> dict:
         document["data_provider_name"], document["deployment_parameters"]
     )
     apply_provider_facts(config, provider)
+    apply_workload_profiles(config, provider)
     plan = DeploymentPlan.resolve(config)
     fake_pipeline = SimpleNamespace(
         config=config,
@@ -142,7 +144,12 @@ def build_config_entry(path: str) -> dict:
     return _jsonify({
         "resolved_config": config,
         "plan": {
-            f.name: getattr(plan, f.name)
+            f.name: (
+                dataclasses.asdict(value)
+                if dataclasses.is_dataclass(value := getattr(plan, f.name))
+                and not isinstance(value, type)
+                else value
+            )
             for f in dataclasses.fields(plan)
             if f.name != "config"
         },

@@ -104,4 +104,19 @@ ENTRIES = (
     _E("kd_temperature", group="training", owner="training_loop/distillation",
        type=T.FLOAT, category=Category.ADVANCED, label="KD Temperature",
        doc="Softmax temperature for distillation targets.", bounds=(0.0, None)),
+    _E("input_data_scale", group="workload", owner="workload_profile/spike_encoding",
+       type=T.FLOAT, category=Category.ADVANCED, label="Input Data Scale",
+       doc="Deployed input-boundary scale (post-transform upper value bound). "
+           "Providers register it via DataWorkloadProfile.input_value_range; "
+           "explicit value wins; absent = 1.0 (unit-range data).",
+       bounds=(0.0, None)),
+    _E("pretrained_weight_source", group="workload", owner="workload_profile/weight_preloading",
+       type=T.STR, category=Category.ADVANCED, label="Pretrained Weight Source",
+       doc="Weight source the preload_weights regime resolves to. Builders "
+           "register it via ModelWorkloadProfile; explicit value wins."),
+    _E("clamp_cuda_assert_prone", group="workload", owner="workload_profile/deployment_specs",
+       type=T.BOOL, category=Category.ADVANCED, label="Clamp CUDA-assert Prone",
+       doc="Architecture is known to trip CUDA asserts under clamp adaptation "
+           "(warns to enable cuda_debug). Builders register it via "
+           "ModelWorkloadProfile; explicit value wins."),
 )
