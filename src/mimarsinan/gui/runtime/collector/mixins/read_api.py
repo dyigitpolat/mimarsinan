@@ -116,7 +116,7 @@ class ReadApiMixin:
                 "latest_metric_seq": latest_metric_seq,
                 "snapshot": rec.snapshot,
                 "snapshot_key_kinds": rec.snapshot_key_kinds,
-                "snapshot_etag": build_snapshot_etag(rec),
+                "snapshot_etag": build_snapshot_etag(rec, latest_metric_seq),
                 "error": rec.error,
             }
 
@@ -125,7 +125,11 @@ class ReadApiMixin:
             rec = self._steps.get(step_name)
             if rec is None:
                 return None
-            return build_snapshot_etag(rec)
+            latest_metric_seq = max(
+                (m.seq for m in self._metrics if m.step_name == step_name),
+                default=0,
+            )
+            return build_snapshot_etag(rec, latest_metric_seq)
 
     def _broadcast_pipeline_overview(self) -> None:
         overview = None

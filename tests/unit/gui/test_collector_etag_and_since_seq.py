@@ -3,10 +3,16 @@ and the ``pipeline_overview`` broadcast.
 
 These back the /api/steps/{step} HTTP contract:
 
-* ``snapshot_etag`` is a stable, monotonically-advancing token that
-  changes **only** when the step's snapshot (or terminal state) is
-  written; re-reading the same step with no state change yields an
-  identical ETag, so HTTP handlers can return ``304 Not Modified``.
+* ``snapshot_etag`` is a stable, monotonically-advancing token that changes
+  when the step's snapshot (or terminal state) is written OR when the step
+  gains a metric; re-reading the same step with no change yields an identical
+  ETag, so HTTP handlers can return ``304 Not Modified``. Metrics MUST move the
+  ETag: metric VALUES stream to the client over the WebSocket, but a metric's
+  category (which chart it lands on) and any points missed while disconnected
+  only arrive in the REST body — a metric-stable ETag would let the browser
+  cache serve a stale body (empty categories / gapped series) on every
+  revalidation of a live step. The live client refetches rarely (WS is the
+  metric channel), so the ETag moving per metric does not thrash the snapshot.
 
 * ``get_step_detail(step, since_seq=N)`` returns only metrics with
   ``seq > N``, so repeated polls don't re-ship the entire time series.
@@ -76,16 +82,43 @@ class TestSnapshotEtag:
         etag2 = c.get_step_detail("s1")["snapshot_etag"]
         assert etag1 == etag2
 
-    def test_etag_stable_when_only_metrics_append(self) -> None:
-        """Appending metrics must NOT bump the snapshot ETag — metrics are
-        paged separately via since_seq. Bumping on every metric would
-        defeat the whole caching mechanism during live training."""
+    def test_etag_advances_when_metrics_append(self) -> None:
+        """A new metric MUST bump the step's ETag so a live reconcile/category
+        fetch gets a fresh 200 body instead of a browser-cached stale 304. The
+        metric's category and any points missed while disconnected live only in
+        the REST body, so a metric-stable ETag would freeze the live chart's
+        categories and drop reconnect catch-up points."""
+        c = DataCollector()
+        c.set_pipeline_info(["s1"], {})
+        c.step_started("s1")  # running: metrics attribute to s1
+        etag_before = c.get_step_detail("s1")["snapshot_etag"]
+        c.record_metric("train_loss", 0.123)
+        etag_after = c.get_step_detail("s1")["snapshot_etag"]
+        assert etag_before != etag_after
+
+    def test_etag_stable_across_reads_without_new_metrics(self) -> None:
+        """No new metric between reads → identical ETag, so a live poll of a
+        streaming step whose latest point the client already has still 304s."""
         c = DataCollector()
         c.set_pipeline_info(["s1"], {})
         c.step_started("s1")
-        c.step_completed("s1", target_metric=0.5, snapshot={"x": 1})
+        c.record_metric("train_loss", 0.9)
+        etag1 = c.get_step_detail("s1")["snapshot_etag"]
+        etag2 = c.get_step_detail("s1")["snapshot_etag"]
+        assert etag1 == etag2
+
+    def test_step_etag_ignores_other_steps_metrics(self) -> None:
+        """A completed step's ETag must not churn while a DIFFERENT step
+        streams — otherwise viewing it re-ships its (possibly heavy) snapshot on
+        every unrelated metric."""
+        c = DataCollector()
+        c.set_pipeline_info(["s1", "s2"], {})
+        c.step_started("s1")
+        c.record_metric("loss", 0.5)
+        c.step_completed("s1", snapshot={"x": 1})
         etag_before = c.get_step_detail("s1")["snapshot_etag"]
-        c.record_metric("train_loss", 0.123)
+        c.step_started("s2")
+        c.record_metric("loss", 0.4)  # belongs to s2
         etag_after = c.get_step_detail("s1")["snapshot_etag"]
         assert etag_before == etag_after
 

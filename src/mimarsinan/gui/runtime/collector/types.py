@@ -49,9 +49,18 @@ class StepRecord:
     verdict: dict | None = None
 
 
-def build_snapshot_etag(rec: StepRecord) -> str:
-    """Weak HTTP ETag for a step record."""
-    return f'W/"{rec.name}-{rec.status.value}-{rec.snapshot_version}"'
+def build_snapshot_etag(rec: StepRecord, latest_metric_seq: int = 0) -> str:
+    """Weak HTTP ETag for a step's rendered detail.
+
+    Bumps on a snapshot/terminal-state change AND on a new metric
+    (``latest_metric_seq``, scoped to this step). Metric VALUES stream over the
+    WebSocket, but their category assignment and any points a client missed
+    while disconnected only arrive in the REST body — a metric-stable ETag lets
+    the browser cache serve a stale 304 body for a live step. Scoping to the
+    step's own metric seq keeps a completed step's ETag from churning while a
+    different step streams.
+    """
+    return f'W/"{rec.name}-{rec.status.value}-{rec.snapshot_version}-m{latest_metric_seq}"'
 
 
 def to_json_safe(value: Any) -> Any:
