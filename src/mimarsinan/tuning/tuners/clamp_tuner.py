@@ -13,6 +13,7 @@ from mimarsinan.tuning.orchestration.adaptation_manager import (
 from mimarsinan.tuning.orchestration.calibration_pipeline import encoder_scale_pin
 from mimarsinan.tuning.orchestration.genuine_probe import iter_val_batches
 from mimarsinan.tuning.orchestration.smooth_adaptation_tuner import SmoothAdaptationTuner
+from mimarsinan.tuning.orchestration.tuning_policy import FAST_LADDER_STEPS_PER_RATE
 
 
 class ClampTuner(SmoothAdaptationTuner):
@@ -52,7 +53,9 @@ class ClampTuner(SmoothAdaptationTuner):
             steps_per_rate=lif_subsumed_ladder_steps(
                 self.pipeline.config,
                 "clamp_rate",
-                int(self.pipeline.config.get("clamp_fast_steps_per_rate", 120)),
+                int(self.pipeline.config.get(
+                    "clamp_fast_steps_per_rate", FAST_LADDER_STEPS_PER_RATE,
+                )),
             ),
         )
 

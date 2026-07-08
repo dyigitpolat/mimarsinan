@@ -197,6 +197,11 @@ Codebase-shape invariants that only tighten:
   module doc's Key-files table covers exactly its direct children.
 - `test_legacy_imports.py` / `test_no_network_guard.py` — banned legacy import
   paths stay dead; the network guard itself is tested.
+- `test_workload_literals.py` — the purity ratchet: no dataset/model-id string
+  literals framework-side (registrations live in providers/builders; the
+  chip_simulation research instruments are quarantined-but-listed), and the
+  tracked inventory of tier-0-calibrated constants pins each kept value with
+  its validity domain (shrink-only; migrating a constant deletes its row).
 
 ### Type checking
 

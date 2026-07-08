@@ -9,6 +9,11 @@ from typing import Any, Dict, List, Sequence, Tuple
 # Must match the rounding factor `_decode_hw` in search/problems/joint/problem.py applies.
 CORE_DIM_GRANULARITY = 8
 
+# Platform-search bounds defaults (deployment-config seeds; arch_search.* overrides).
+DEFAULT_CORE_AXONS_BOUNDS = (64, 2048)
+DEFAULT_CORE_NEURONS_BOUNDS = (64, 2048)
+DEFAULT_CORE_COUNT_BOUNDS = (50, 500)
+
 
 @dataclass(frozen=True)
 class SearchSpaceDescription:
@@ -19,9 +24,9 @@ class SearchSpaceDescription:
     arch_options: Tuple[Tuple[str, Tuple[Any, ...]], ...] = ()
 
     num_core_types: int = 1
-    core_axons_bounds: Tuple[int, int] = (64, 2048)
-    core_neurons_bounds: Tuple[int, int] = (64, 2048)
-    core_count_bounds: Tuple[int, int] = (50, 500)
+    core_axons_bounds: Tuple[int, int] = DEFAULT_CORE_AXONS_BOUNDS
+    core_neurons_bounds: Tuple[int, int] = DEFAULT_CORE_NEURONS_BOUNDS
+    core_count_bounds: Tuple[int, int] = DEFAULT_CORE_COUNT_BOUNDS
 
     target_tq: int = 32
     weight_bits: int = 8
@@ -53,9 +58,9 @@ class SearchSpaceDescription:
             (str(key), tuple(values)) for key, values in arch_options
         )
         num_core_types = int(arch_cfg.get("num_core_types", 1))
-        ax_bounds = tuple(arch_cfg.get("core_axons_bounds", [64, 1024]))
-        neu_bounds = tuple(arch_cfg.get("core_neurons_bounds", [64, 1024]))
-        cnt_bounds = tuple(arch_cfg.get("core_count_bounds", [50, 500]))
+        ax_bounds = tuple(arch_cfg.get("core_axons_bounds", DEFAULT_CORE_AXONS_BOUNDS))
+        neu_bounds = tuple(arch_cfg.get("core_neurons_bounds", DEFAULT_CORE_NEURONS_BOUNDS))
+        cnt_bounds = tuple(arch_cfg.get("core_count_bounds", DEFAULT_CORE_COUNT_BOUNDS))
         return cls(
             search_mode=str(search_mode),
             arch_options=normalised_arch,

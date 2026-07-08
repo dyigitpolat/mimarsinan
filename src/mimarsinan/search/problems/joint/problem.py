@@ -11,6 +11,11 @@ from mimarsinan.mapping.platform.coalescing import CANONICAL_KEY, normalize_coal
 from mimarsinan.search.problems.encoded_problem import EncodedProblem
 from mimarsinan.search.problem import ValidationResult
 from mimarsinan.search.results import ObjectiveSpec, resolve_active_objectives
+from mimarsinan.search.search_space_description import (
+    DEFAULT_CORE_AXONS_BOUNDS,
+    DEFAULT_CORE_COUNT_BOUNDS,
+    DEFAULT_CORE_NEURONS_BOUNDS,
+)
 
 from .evaluate import JointEvaluateMixin
 from .layout_hook import JointLayoutMixin
@@ -58,9 +63,9 @@ class JointArchHwProblem(
     active_objective_names: Sequence[str] = ()
 
     num_core_types: int = 1
-    core_axons_bounds: Tuple[int, int] = (64, 2048)
-    core_neurons_bounds: Tuple[int, int] = (64, 2048)
-    core_count_bounds: Tuple[int, int] = (50, 500)
+    core_axons_bounds: Tuple[int, int] = DEFAULT_CORE_AXONS_BOUNDS
+    core_neurons_bounds: Tuple[int, int] = DEFAULT_CORE_NEURONS_BOUNDS
+    core_count_bounds: Tuple[int, int] = DEFAULT_CORE_COUNT_BOUNDS
 
     accuracy_seed: int = 0
     warmup_fraction: float = 0.10

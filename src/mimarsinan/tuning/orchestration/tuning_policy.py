@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from mimarsinan.common.workload_profile import ResolvedWorkloadProfile
 
 __all__ = [
+    "FAST_LADDER_STEPS_PER_RATE",
     "TuningPolicy",
     "TUNING_POLICY",
     "effective_prefix_stage_lr",
@@ -66,6 +67,11 @@ class TuningPolicy:
     # wall time is a pure measurement, judged per hardware context at harvest.
     endpoint_floor_steps: int = 16000
 
+
+# The fast ladder's generic per-rung training budget (rate-invariant units;
+# value proven on the tier-0/0.1 MNIST corpus — the former five scattered
+# `120` CFG fallbacks). Workloads override via the *_fast_steps_per_rate keys.
+FAST_LADDER_STEPS_PER_RATE = 120
 
 TUNING_POLICY = TuningPolicy()
 

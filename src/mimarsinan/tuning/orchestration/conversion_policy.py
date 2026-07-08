@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Mapping, Optional
 
+from mimarsinan.tuning.orchestration.tuning_policy import FAST_LADDER_STEPS_PER_RATE
+
 OPTIMIZATION_DRIVER_CONTROLLER = "controller"
 OPTIMIZATION_DRIVER_FAST = "fast"
 
@@ -65,7 +67,7 @@ _LIF_RECIPE_KNOBS = {
 _TTFS_QUANTIZED_RECIPE_KNOBS = {
     "activation_scale_quantile": 1.0,
     "manager_rate_fast_rates": [0.25, 0.5, 0.75, 1.0],
-    "manager_rate_fast_steps_per_rate": 120,
+    "manager_rate_fast_steps_per_rate": FAST_LADDER_STEPS_PER_RATE,
 }
 _SYNCHRONIZED_RECIPE_KNOBS = {
     **_TTFS_QUANTIZED_RECIPE_KNOBS,

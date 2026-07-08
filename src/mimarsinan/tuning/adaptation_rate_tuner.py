@@ -7,6 +7,7 @@ from mimarsinan.tuning.orchestration.adaptation_manager import (
     lif_subsumed_ladder_steps,
 )
 from mimarsinan.tuning.orchestration.smooth_adaptation_tuner import SmoothAdaptationTuner
+from mimarsinan.tuning.orchestration.tuning_policy import FAST_LADDER_STEPS_PER_RATE
 
 
 _DECISION_SEED = 1234
@@ -31,7 +32,11 @@ class AdaptationRateTuner(SmoothAdaptationTuner):
             steps_per_rate=lif_subsumed_ladder_steps(
                 self.pipeline.config,
                 self.rate_attr,
-                int(self.pipeline.config.get("manager_rate_fast_steps_per_rate", 120)),
+                int(
+                    self.pipeline.config.get(
+                        "manager_rate_fast_steps_per_rate", FAST_LADDER_STEPS_PER_RATE,
+                    )
+                ),
             ),
         )
 

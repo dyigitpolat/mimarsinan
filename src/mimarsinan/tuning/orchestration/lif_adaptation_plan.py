@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from mimarsinan.chip_simulation.spiking_semantics import is_lif
 from mimarsinan.common.workload_profile import ResolvedWorkloadProfile
 from mimarsinan.tuning.orchestration.mbh_tanneal import TAnnealSchedule
+from mimarsinan.tuning.orchestration.tuning_policy import FAST_LADDER_STEPS_PER_RATE
 
 _DEFAULT_BLEND_FAST_RATES = [0.25, 0.5, 0.75, 1.0]
 _GENERIC_DISTMATCH_BIAS_ITERS = 10
@@ -49,7 +50,9 @@ class LifAdaptationPlan:
             blend_fast_rates=[
                 float(r) for r in get("lif_blend_fast_rates", _DEFAULT_BLEND_FAST_RATES)
             ],
-            blend_fast_steps_per_rate=int(get("lif_blend_fast_steps_per_rate", 120)),
+            blend_fast_steps_per_rate=int(
+                get("lif_blend_fast_steps_per_rate", FAST_LADDER_STEPS_PER_RATE)
+            ),
             blend_fast_lr_eta_min=float(get("lif_blend_fast_lr_eta_min", 0.1)),
             tanneal=(
                 bool(get("lif_tanneal", False))

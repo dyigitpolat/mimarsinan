@@ -3,6 +3,7 @@
 from mimarsinan.models.perceptron_mixer.perceptron import make_activation
 from mimarsinan.tuning.axes import ActivationAdaptationAxis
 from mimarsinan.tuning.orchestration.smooth_adaptation_tuner import SmoothAdaptationTuner
+from mimarsinan.tuning.orchestration.tuning_policy import FAST_LADDER_STEPS_PER_RATE
 
 
 class ActivationAdaptationTuner(SmoothAdaptationTuner):
@@ -26,7 +27,7 @@ class ActivationAdaptationTuner(SmoothAdaptationTuner):
             ),
             steps_per_rate=int(
                 self.pipeline.config.get(
-                    "activation_adaptation_fast_steps_per_rate", 120
+                    "activation_adaptation_fast_steps_per_rate", FAST_LADDER_STEPS_PER_RATE
                 )
             ),
         )

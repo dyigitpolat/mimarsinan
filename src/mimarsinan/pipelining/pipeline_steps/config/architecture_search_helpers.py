@@ -28,7 +28,7 @@ def create_optimizer(
     seed: int,
     pop_size: int,
     generations: int,
-    target_tq: int = 16,
+    target_tq: int,
     active_objective_names: Sequence[str] = (),
 ):
     description = SearchSpaceDescription.from_arch_search(

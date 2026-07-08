@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 from mimarsinan.tuning.orchestration.calibration_pipeline import CalibrationPipeline
 from mimarsinan.tuning.orchestration.optimization_driver import OptimizationDriver
+from mimarsinan.tuning.orchestration.tuning_policy import FAST_LADDER_STEPS_PER_RATE
 
 _DEFAULT_BLEND_FAST_RATES = [0.5, 0.75, 0.9, 0.97, 1.0]
 
@@ -88,7 +89,9 @@ class TtfsAdaptationPlan:
         blend_fast_rates = [
             float(r) for r in get("ttfs_blend_fast_rates", _DEFAULT_BLEND_FAST_RATES)
         ]
-        blend_fast_steps = int(get("ttfs_blend_fast_steps_per_rate", 120))
+        blend_fast_steps = int(
+        get("ttfs_blend_fast_steps_per_rate", FAST_LADDER_STEPS_PER_RATE)
+    )
         eta_min = float(get("ttfs_blend_fast_lr_eta_min", 0.1))
 
         driver = OptimizationDriver.resolve(
