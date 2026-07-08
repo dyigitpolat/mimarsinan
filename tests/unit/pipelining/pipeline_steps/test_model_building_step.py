@@ -118,11 +118,19 @@ class TestStaticOnchipMajorityGate:
         assert "ModelBuilding.model" in mock_pipeline.cache
 
     def test_floor_honors_config_min_fraction(self, mock_pipeline):
+        """The build-time static gate reads the SAME floor key as the runtime SCM
+        gate (onchip_min_fraction); the retired onchip_majority_min_fraction twin
+        is gone."""
+        from mimarsinan.config_schema.registry import REGISTRY
+        from mimarsinan.config_schema.defaults import CONFIG_KEYS_SET
         from mimarsinan.mapping.verification.onchip_majority import (
             OnchipMajorityError,
         )
 
-        mock_pipeline.config["onchip_majority_min_fraction"] = 0.5
+        assert "onchip_majority_min_fraction" not in REGISTRY
+        assert "onchip_majority_min_fraction" not in CONFIG_KEYS_SET
+
+        mock_pipeline.config["onchip_min_fraction"] = 0.5
         step = self._make_deepmlp_step(mock_pipeline, width=128)
         with pytest.raises(OnchipMajorityError):
             step.run()

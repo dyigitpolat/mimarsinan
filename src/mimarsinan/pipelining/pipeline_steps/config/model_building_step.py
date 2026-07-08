@@ -1,3 +1,4 @@
+from mimarsinan.config_schema.registry import effective_value
 from mimarsinan.mapping.verification.onchip_fraction import (
     assert_onchip_majority_estimate_or_raise,
 )
@@ -48,7 +49,7 @@ class ModelBuildingStep(PipelineStep):
     def _run_static_onchip_majority_gate(self, model) -> None:
         """Static fail-fast twin of the SCM on-chip-majority floor gate: a
         host-majority model SPEC dies in seconds at build instead of after
-        pretraining (W2 Q3; same floor, same opt-out knob)."""
+        pretraining (W2 Q3; SAME floor key onchip_min_fraction, same opt-out knob)."""
         config = self.pipeline.config
         if not bool(config.get("onchip_majority_gate", True)):
             return
@@ -62,7 +63,7 @@ class ModelBuildingStep(PipelineStep):
             encoding_placement=str(
                 config.get("encoding_layer_placement", "subsume")
             ),
-            min_fraction=float(config.get("onchip_majority_min_fraction", 0.2)),
+            min_fraction=float(effective_value(config, "onchip_min_fraction")),
         )
         print(
             f"[ModelBuildingStep] static on-chip parameter majority: "

@@ -655,7 +655,7 @@ class TestRound6DerivedValuesAreConcrete:
         assert values["nf_scm_parity_max_mismatch_fraction"] == 0.25
         assert values["nf_scm_parity_min_agreement"] == 0.98
         assert values["scm_torch_sim_parity_samples"] == 256
-        assert values["onchip_majority_min_fraction"] == 0.2
+        assert values["onchip_min_fraction"] == 0.2
         assert values["capacity_gate"] is True
 
     def test_the_sample_count_follows_the_mode(self, client):

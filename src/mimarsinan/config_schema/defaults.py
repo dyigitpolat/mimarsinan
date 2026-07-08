@@ -162,7 +162,7 @@ CONFIG_KEYS_SET: Set[str] = {
     "nf_scm_parity_min_agreement",
     "scm_torch_sim_parity_check", "scm_torch_sim_parity_samples",
     "scm_torch_sim_parity_min_agreement",
-    "onchip_majority_gate", "onchip_majority_min_fraction",
+    "onchip_majority_gate",
     "onchip_min_fraction", "onchip_majority_fraction",
     "pretrain_floor_chance_multiple",
     "capacity_gate",

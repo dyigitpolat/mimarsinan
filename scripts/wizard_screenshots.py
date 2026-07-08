@@ -500,7 +500,7 @@ def _shoot_round6_visual_language(page, base_url: str, out_dir: Path,
     page.click('.field[data-key="capacity_gate"] .toggle-row')
     page.click('.field[data-key="scm_torch_sim_parity_check"] .toggle-row')
     page.click('.field[data-key="scm_torch_sim_parity_check"] .toggle-row')
-    box = page.locator('.field[data-key="onchip_majority_min_fraction"] .slider-combo-box')
+    box = page.locator('.field[data-key="onchip_min_fraction"] .slider-combo-box')
     box.fill("0.35")
     box.dispatch_event("change")
     _settle(page, 1400)

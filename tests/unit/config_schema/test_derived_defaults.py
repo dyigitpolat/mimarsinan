@@ -110,7 +110,6 @@ class TestProvenanceCoverage:
         "scm_torch_sim_parity_samples": "consumer frozen default",
         "scm_torch_sim_parity_min_agreement": "consumer frozen default",
         "onchip_majority_gate": "consumer frozen default",
-        "onchip_majority_min_fraction": "consumer frozen default",
         "onchip_majority_fraction": "consumer frozen default",
         "onchip_min_fraction": "consumer frozen default",
         "capacity_gate": "consumer frozen default",
@@ -274,7 +273,7 @@ class TestDerivedDefaultsAgreeWithTheConsumers:
         view = derived_values_view(resolution.resolved)
         assert view["nf_scm_parity_samples"] == 2
         assert view["scm_degradation_tolerance"] == 0.15
-        assert view["onchip_majority_min_fraction"] == 0.2
+        assert view["onchip_min_fraction"] == 0.2
 
 
 def test_onchip_threshold_defaults_mirror_the_framework_ssot():

@@ -272,10 +272,6 @@ ENTRIES = (
        type=T.BOOL, category=Category.ADVANCED, label="On-chip Majority Gate",
        doc="Require the on-chip compute fraction to clear the majority gate.",
        provenance="consumer frozen default", derived_default=_frozen(True)),
-    _E("onchip_majority_min_fraction", group="deployment_target", owner="certification",
-       type=T.FLOAT, category=Category.ADVANCED, label="On-chip Majority Min Fraction",
-       doc="Minimum on-chip fraction for the majority gate.", bounds=(0.0, 1.0),
-       provenance="consumer frozen default", derived_default=_frozen(0.2)),
     _E("onchip_majority_fraction", group="deployment_target", owner="onchip validity gate",
        type=T.FLOAT, category=Category.ADVANCED, label="On-chip Majority Fraction",
        doc="On-chip majority threshold for the mapped-IR-graph validity gate: a "
