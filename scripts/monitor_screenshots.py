@@ -26,7 +26,10 @@ sys.path.insert(0, str(REPO_ROOT / "src"))
 
 os.environ.setdefault("MIMARSINAN_RUNS_ROOT", str(REPO_ROOT / "generated"))
 
-MODERN_RUN = "lenet5_baseline_20260708_204201_phased_deployment_run_20260708_204218"
+MODERN_RUN = os.environ.get(
+    "MONITOR_REVIEW_RUN",
+    "lenet5_baseline_20260708_204201_phased_deployment_run_20260708_204218",
+)
 NOC_RUN = "fal_t01_04_sync_mmixcore_wq_s16_pruned10_phased_deployment_run"
 
 SECTION_IDS = ("overview", "steps", "analysis", "noc", "artifacts", "config", "console")
@@ -35,6 +38,7 @@ STEP_PAGES = (
     ("Pretraining", "pretraining", None),
     ("Activation Analysis", "activation_analysis", "Activations"),
     ("LIF Adaptation", "lif_adaptation", "Gate Story"),
+    ("Quantization Verification", "quantization_verification", "Quantization"),
     ("Soft Core Mapping", "soft_core_mapping", None),
     ("Hard Core Mapping", "hard_core_mapping", None),
     ("SANA-FE Simulation", "sanafe_simulation", None),
