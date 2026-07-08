@@ -218,3 +218,30 @@ class TestPipelineOverviewBroadcast:
         assert overviews, "expected at least one pipeline_overview broadcast"
         failed = [s for s in overviews[-1]["steps"] if s["status"] == "failed"]
         assert any(s["name"] == "s1" for s in failed)
+
+    def test_overview_broadcast_carries_config_view(self) -> None:
+        """Every lifecycle overview frame ships the structured config view.
+
+        The Configuration tab renders from ``pipeline.config_view`` and the
+        frontend replaces its pipeline state with each WS overview frame, so
+        a frame without the view would silently downgrade the tab to the raw
+        legacy table.
+        """
+        c = DataCollector()
+        c.set_pipeline_info(["s1"], {
+            "experiment_name": "cv_contract",
+            "pipeline_mode": "phased",
+            "spiking_mode": "lif",
+        })
+        ws = _CapturingWS()
+        c.add_ws_listener(ws)
+        try:
+            c.step_started("s1")
+            ws.wait_messages(2, timeout=1.0)
+        finally:
+            ws.stop()
+        overviews = [m for m in ws.messages if m.get("type") == "pipeline_overview"]
+        assert overviews, "expected at least one pipeline_overview broadcast"
+        view = overviews[-1].get("config_view")
+        assert view is not None, "overview broadcast lost the structured config view"
+        assert view["summary"]["experiment_name"] == "cv_contract"

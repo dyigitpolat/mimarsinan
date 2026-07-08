@@ -13,6 +13,7 @@ import {
   renderLiveRail,
 } from './monitor-shell.js';
 import { renderConfigTab } from './config-tab.js';
+import { mergePipelineOverview } from './pipeline-state.js';
 import { refreshStepDetail, updateLiveCharts, bufferLiveAnnotation, refreshLiveInsights } from './step-detail.js';
 import { renderAnalysisTab } from './analysis-tab.js';
 import { renderNocSection } from './noc-section.js';
@@ -115,6 +116,9 @@ function selectStep(stepName, { follow = false, show = true } = {}) {
 // ── Init ─────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
   buildNav(navigate);
+  // Step-page pager buttons (step-detail.js) select steps without a module
+  // cycle back into this file.
+  window.addEventListener('monitor:select-step', e => selectStep(e.detail.step));
   document.getElementById('auto-follow-btn').addEventListener('click', toggleAutoFollow);
   document.getElementById('console-clear-btn')?.addEventListener('click', () => {
     clearConsoleLogs();
@@ -203,15 +207,7 @@ function renderShell() {
 }
 
 function applyPipelineOverviewFromWS(overview) {
-  // Match the /api/pipeline payload shape so downstream renderers don't
-  // care whether the data came over WS or HTTP.
-  state.pipeline = {
-    steps: overview.steps || [],
-    current_step: overview.current_step,
-    config: overview.config ?? state.pipeline?.config,
-    overview_chart: overview.overview_chart,
-    is_alive: true,
-  };
+  state.pipeline = mergePipelineOverview(state.pipeline, overview);
   renderShell();
   if (currentSection() === 'config') renderConfigTab(state.pipeline);
 
