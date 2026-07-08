@@ -46,7 +46,7 @@ class Resolution:
 _KEY_TOKEN_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 
 
-def _attach_error_key(message: str) -> Optional[str]:
+def attach_error_key(message: str) -> Optional[str]:
     """Attach a validation message to the first registry key it names."""
     for token in _KEY_TOKEN_RE.findall(message):
         if token in REGISTRY:
@@ -56,7 +56,7 @@ def _attach_error_key(message: str) -> Optional[str]:
 
 def _structural_errors(draft: Mapping[str, Any]) -> List[Dict[str, Any]]:
     return [
-        {"key": _attach_error_key(msg), "message": msg, "rule_id": "config_shape"}
+        {"key": attach_error_key(msg), "message": msg, "rule_id": "config_shape"}
         for msg in validate_deployment_config(dict(draft))
     ]
 
@@ -71,6 +71,12 @@ def _contract_errors(
             "key": "weight_quantization",
             "message": str(exc),
             "rule_id": "quantization_assembly",
+            # The rule prescribes its remedies; the frontend only applies them.
+            "remedies": [
+                {"label": "Declare vanilla (float weights)", "action": "set",
+                 "key": "pipeline_mode", "value": "vanilla"},
+                {"label": "Drop weight_bits", "action": "clear", "key": "weight_bits"},
+            ],
         }]
     return []
 
@@ -190,7 +196,7 @@ def resolve_draft(draft: Mapping[str, Any]) -> Resolution:
         except ValueError as exc:
             resolved = {}
             errors.append({
-                "key": _attach_error_key(str(exc)),
+                "key": attach_error_key(str(exc)),
                 "message": str(exc),
                 "rule_id": "derivation",
             })

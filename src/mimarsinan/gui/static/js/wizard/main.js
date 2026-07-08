@@ -183,7 +183,21 @@ async function renderDatasetFacts() {
   host.title = 'Resolved from the data provider; the pipeline reads these at runtime.';
 }
 
+/* The legal-value sets decide which fields LOCK and which options exist, so a
+   change to them is a structural change: the group hosts must re-render. The
+   signature keeps that to the round-trips that actually moved a legal set (a
+   full re-render on every resolve would steal focus mid-typing). */
+let _legalitySignature = null;
+
+function legalityChanged() {
+  const signature = JSON.stringify((state.resolve && state.resolve.legal_values) || null);
+  if (signature === _legalitySignature) return false;
+  _legalitySignature = signature;
+  return true;
+}
+
 function renderResolveViews() {
+  if (legalityChanged()) renderGroupHosts();
   renderDerivedChips();
   renderDiffPanel();
   renderUnknownTray();

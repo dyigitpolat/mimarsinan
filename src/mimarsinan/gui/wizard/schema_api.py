@@ -16,7 +16,14 @@ from mimarsinan.config_schema.registry import (
     parse_deployment_document,
     serialize_registry,
 )
-from mimarsinan.config_schema.resolve import derived_view, resolve_draft
+from mimarsinan.config_schema.resolve import (
+    attach_error_key,
+    derived_values_view,
+    derived_view,
+    effective_view,
+    legal_values_view,
+    resolve_draft,
+)
 from mimarsinan.gui.wizard.emit import emit_deployment_config
 from mimarsinan.gui.wizard.starter import load_starter_baseline
 from mimarsinan.tuning.orchestration.conversion_policy import ConversionPolicy
@@ -151,15 +158,10 @@ def _vehicle_rows(draft: Dict[str, Any]) -> List[Dict[str, Any]]:
     """Per-vehicle state, computable for EVERY draft: unrelated errors must
     never remove the rows the on/off toggles render from."""
     dp = parse_deployment_document(draft or {}).dp
+    effective = effective_view(dp)
 
-    def effective(key: str) -> Any:
-        if dp.get(key) is not None:
-            return dp[key]
-        entry = REGISTRY[key]
-        return entry.default if entry.has_default() else None
-
-    mode = str(effective("spiking_mode"))
-    schedule = effective("ttfs_cycle_schedule")
+    mode = str(effective.get("spiking_mode"))
+    schedule = effective.get("ttfs_cycle_schedule")
     sim_enables: Optional[Dict[str, bool]]
     try:
         sim_enables = dict(ConversionPolicy.derive(mode, schedule).sim_enables)
@@ -218,14 +220,43 @@ def _enriched_config(resolution) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
     return config, []
 
 
+def _pipeline_preview(config: Dict[str, Any]) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
+    """The honest step assembly for a resolved config. Every contract
+    ``DeploymentPlan.resolve`` enforces (driver, temporal allocation, firing
+    strategy, weight-source regime) raises ValueError; the wizard renders those
+    as keyed errors and NEVER 500s on an authorable document."""
+    empty = {"steps": [], "semantic_groups": []}
+    if not config:
+        return empty, []
+    try:
+        specs = get_pipeline_step_specs(config)
+        groups = get_pipeline_semantic_group_by_step_name(config)
+    except ValueError as exc:
+        message = str(exc)
+        return empty, [{
+            "key": attach_error_key(message),
+            "message": message,
+            "rule_id": "pipeline_assembly",
+        }]
+    steps = [name for name, _ in specs]
+    return {
+        "steps": steps,
+        "semantic_groups": [groups.get(name, "other") for name in steps],
+    }, []
+
+
 def resolve_payload(draft: Dict[str, Any]) -> Dict[str, Any]:
     """One round-trip for the wizard: resolution + live pipeline-step preview
     + the emitted document (exactly what Launch submits)."""
-    resolution = resolve_draft(draft or {})
+    draft = draft or {}
+    resolution = resolve_draft(draft)
     config, enrich_errors = _enriched_config(resolution)
-    errors = list(resolution.errors) + enrich_errors
+    pipeline, preview_errors = _pipeline_preview(config)
+    errors = list(resolution.errors) + enrich_errors + preview_errors
+    if preview_errors:
+        config = {}  # a plan that cannot resolve derives no honest values
     resolved = {k: v for k, v in config.items() if k in REGISTRY}
-    out: Dict[str, Any] = {
+    return {
         "ok": not errors,
         # The derived rows re-derive against the ENRICHED config, so a
         # builder-registration-provided value renders its concrete self.
@@ -234,17 +265,16 @@ def resolve_payload(draft: Dict[str, Any]) -> Dict[str, Any]:
         "explicit_keys": resolution.explicit_keys,
         "unknown_keys": resolution.unknown_keys,
         "diff_vs_defaults": _apply_baseline_to_diff(resolution.diff_vs_defaults),
-        "emitted": emit_deployment_config(draft or {}),
+        "emitted": emit_deployment_config(draft),
         "resolved": resolved,
-        "vehicles": _vehicle_rows(draft or {}),
-        "pipeline": {"steps": [], "semantic_groups": []},
+        # The CONCRETE prospective value of every SSOT-sourced key: the wizard's
+        # faded-GREEN in-field text (never prose about where the value comes from).
+        "derived_values": derived_values_view(config),
+        # The legal value set of every legality-bearing key — ALWAYS computable,
+        # like the vehicle rows: |legal|==1 locks the field, |legal|>1 limits it.
+        "legal_values": legal_values_view(
+            effective_view(parse_deployment_document(draft).dp)
+        ),
+        "vehicles": _vehicle_rows(draft),
+        "pipeline": pipeline,
     }
-    if config:
-        specs = get_pipeline_step_specs(config)
-        groups = get_pipeline_semantic_group_by_step_name(config)
-        steps = [name for name, _ in specs]
-        out["pipeline"] = {
-            "steps": steps,
-            "semantic_groups": [groups.get(name, "other") for name in steps],
-        }
-    return out

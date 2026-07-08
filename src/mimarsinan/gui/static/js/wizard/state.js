@@ -53,16 +53,36 @@ export function wizardDefault(ks) {
   return { has: false, value: undefined, fromBaseline: false };
 }
 
-/** The concrete resolved value the SSOT derivation produces for the current
-    draft (server resolve + provider workload facts); undefined while the
-    draft errors — hypothetical values never render. */
+/** The concrete PROSPECTIVE value the SSOT deriver produces for the current
+    draft. Precedence mirrors the run's: a provider/builder registration
+    (workload facts) beats the registry's frozen fallback; the server's
+    `derived_values` carries everything else, already resolved against the draft.
+    Undefined while the draft errors — a hypothetical value never renders. */
 export function resolvedValue(key) {
+  const facts = state.metadata && state.metadata.workload_facts;
+  if (facts && facts[key] !== undefined && facts[key] !== null) return facts[key];
+  const derived = state.resolve && state.resolve.derived_values;
+  if (derived && key in derived && derived[key] !== null) return derived[key];
   const fromResolve = state.resolve && state.resolve.resolved
     ? state.resolve.resolved[key] : undefined;
   if (fromResolve !== undefined && fromResolve !== null) return fromResolve;
-  const facts = state.metadata && state.metadata.workload_facts;
-  if (facts && facts[key] !== undefined && facts[key] !== null) return facts[key];
   return undefined;
+}
+
+/** THE legal value set of `key` under the current config state, as the server's
+    derivation computed it (always served, even while the draft errors).
+    `undefined` = the key's legality does not depend on other config. */
+export function legalValues(key) {
+  const sets = state.resolve && state.resolve.legal_values;
+  return sets && Array.isArray(sets[key]) ? sets[key] : undefined;
+}
+
+/** |legal| == 1 ⇒ the field is LOCKED and this is the value it must hold.
+    `undefined` ⇒ not locked (either no legality rule, or more than one legal
+    value, or the legal set has not arrived yet). */
+export function lockedValue(key) {
+  const legal = legalValues(key);
+  return legal && legal.length === 1 ? legal[0] : undefined;
 }
 
 /** Mirrors the server diff semantics against the WIZARD default (baseline

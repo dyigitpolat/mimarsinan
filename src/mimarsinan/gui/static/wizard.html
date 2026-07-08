@@ -97,8 +97,14 @@
             <p>Spiking mode, conversion process, and the simulation vehicles the
               mode's proven recipe runs.</p>
           </div>
+          <!-- Left column: Spiking semantics then Deployment target (the gates
+               and probes that judge the semantics above them); right column:
+               the simulation vehicles those gates run on. -->
           <div class="wb-cols">
-            <div class="wb-col" data-groups="spiking,conversion"></div>
+            <div class="wb-col">
+              <div data-groups="spiking,conversion"></div>
+              <div class="semantics-target" data-groups="deployment_target"></div>
+            </div>
             <div class="wb-col">
               <div class="section" id="vehiclesCard">
                 <div class="section-header">
@@ -112,7 +118,6 @@
                   <div id="vehiclesStatus" class="vehicles-status"></div>
                 </div>
               </div>
-              <div data-groups="deployment_target"></div>
             </div>
           </div>
         </section>

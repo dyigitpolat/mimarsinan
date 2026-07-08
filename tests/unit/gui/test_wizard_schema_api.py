@@ -424,3 +424,220 @@ class TestMetadataWorkloadFacts:
         assert body["workload_facts"] == {
             "input_data_scale": 2.75, "eval_subsample_target": 4096,
         }
+
+
+class TestRound6LegalValueSetsAreServed:
+    """The resolve payload exposes the legal set of every legality-bearing key
+    for the CURRENT state — the frontend locks/limits from that set alone."""
+
+    def _resolve(self, client, **dp):
+        body = _t0_01()
+        body["deployment_parameters"].update(dp)
+        return client.post("/api/config/resolve", json=body).json()
+
+    def test_legal_values_are_served_for_every_legality_bearing_key(self, client):
+        payload = self._resolve(client)
+        served = payload["legal_values"]
+        expected = {k for k, e in REGISTRY.items() if e.legal_values is not None}
+        assert set(served) == expected
+
+    def test_ttfs_locks_firing_and_spike_generation(self, client):
+        payload = self._resolve(
+            client, spiking_mode="ttfs", firing_mode="TTFS",
+            spike_generation_mode="TTFS", weight_quantization=True,
+        )
+        assert payload["legal_values"]["firing_mode"] == ["TTFS"]
+        assert payload["legal_values"]["spike_generation_mode"] == ["TTFS"]
+
+    def test_lif_offers_only_the_legal_subset(self, client):
+        payload = self._resolve(client)
+        assert payload["legal_values"]["firing_mode"] == ["Default", "Novena"]
+        assert payload["legal_values"]["spike_generation_mode"] == [
+            "Uniform", "Deterministic", "Stochastic",
+        ]
+        assert "TTFS" not in payload["legal_values"]["spike_generation_mode"]
+
+    def test_legal_values_survive_an_erroring_draft(self, client):
+        """Like the vehicle rows: an unrelated error must never remove the sets
+        the widgets render from."""
+        body = _t0_01()
+        body["deployment_parameters"]["weight_quantization"] = False
+        payload = client.post("/api/config/resolve", json=body).json()
+        assert not payload["ok"]
+        assert payload["legal_values"]["firing_mode"]
+
+    def test_an_unknown_mode_still_serves_full_option_sets(self, client):
+        payload = self._resolve(client, spiking_mode="banana")
+        assert not payload["ok"]
+        assert payload["legal_values"]["firing_mode"] == ["Default", "Novena", "TTFS"]
+
+
+class TestRound6NoUncaughtDerivationErrors:
+    """Every authorable document resolves to a keyed error, never a 500."""
+
+    def test_the_reported_bug_returns_a_keyed_remediable_error(self, client):
+        body = _t0_01()
+        body["deployment_parameters"]["spiking_mode"] = "lif"
+        body["deployment_parameters"]["firing_mode"] = "TTFS"
+        response = client.post("/api/config/resolve", json=body)
+        assert response.status_code == 200
+        payload = response.json()
+        row = next(e for e in payload["errors"] if e["key"] == "firing_mode")
+        assert row["rule_id"] == "legal_value_set"
+        assert any(r["action"] == "clear" for r in row["remedies"])
+        assert payload["pipeline"]["steps"] == []
+        assert payload["resolved"] == {}
+
+    @pytest.mark.parametrize("spiking_mode", ["lif", "ttfs", "ttfs_quantized", "ttfs_cycle_based"])
+    @pytest.mark.parametrize("key", ["firing_mode", "spike_generation_mode", "thresholding_mode"])
+    def test_the_whole_legality_matrix_returns_200(self, client, spiking_mode, key):
+        options = REGISTRY[key].resolved_options() or ()
+        legal = set(REGISTRY[key].legal_values({"spiking_mode": spiking_mode}))
+        for value in [o for o in options if o not in legal]:
+            body = _t0_01()
+            body["deployment_parameters"].update(
+                {"spiking_mode": spiking_mode, key: value}
+            )
+            response = client.post("/api/config/resolve", json=body)
+            assert response.status_code == 200, (spiking_mode, key, value)
+            payload = response.json()
+            assert not payload["ok"]
+            assert any(e["key"] == key for e in payload["errors"])
+
+    def test_a_plan_resolution_failure_is_a_keyed_error_not_a_500(self, client):
+        """DeploymentPlan.resolve raises for a bad optimization driver; the
+        pipeline PREVIEW must route it through the error channel."""
+        body = _t0_01()
+        body["deployment_parameters"]["s_allocation"] = "budget"
+        response = client.post("/api/config/resolve", json=body)
+        assert response.status_code == 200
+        payload = response.json()
+        assert not payload["ok"]
+        assert any(e["key"] == "s_allocation" for e in payload["errors"])
+
+    def test_an_unknown_spiking_mode_never_500s(self, client):
+        body = _t0_01()
+        body["deployment_parameters"]["spiking_mode"] = "banana"
+        response = client.post("/api/config/resolve", json=body)
+        assert response.status_code == 200
+        assert not response.json()["ok"]
+
+    def test_a_preload_without_registration_stays_keyed(self, client):
+        body = _t0_01()
+        body["deployment_parameters"]["preload_weights"] = True
+        response = client.post("/api/config/resolve", json=body)
+        assert response.status_code == 200
+
+
+class TestRound6DerivedValuesAreConcrete:
+    """Every SSOT-sourced key serves the CONCRETE value the deriver produces —
+    the wizard's faded-green in-field text is never prose about the source."""
+
+    def _resolve(self, client, **dp):
+        body = _t0_01()
+        body["deployment_parameters"].update(dp)
+        return client.post("/api/config/resolve", json=body).json()
+
+    def test_every_sourced_key_is_served(self, client):
+        payload = self._resolve(client)
+        sourced = {k for k, e in REGISTRY.items() if e.provenance is not None}
+        assert set(payload["derived_values"]) == sourced
+
+    def test_the_deployment_target_family_serves_real_numbers(self, client):
+        values = self._resolve(client)["derived_values"]
+        assert values["nf_scm_parity_samples"] == 2
+        assert values["nf_scm_parity_atol"] == 1e-6
+        assert values["nf_scm_parity_max_mismatch_fraction"] == 0.25
+        assert values["nf_scm_parity_min_agreement"] == 0.98
+        assert values["scm_torch_sim_parity_samples"] == 256
+        assert values["onchip_majority_min_fraction"] == 0.2
+        assert values["capacity_gate"] is True
+
+    def test_the_sample_count_follows_the_mode(self, client):
+        values = self._resolve(
+            client, spiking_mode="ttfs_cycle_based", ttfs_cycle_schedule="cascaded",
+            firing_mode="TTFS", spike_generation_mode="TTFS",
+        )["derived_values"]
+        assert values["nf_scm_parity_samples"] == 64
+
+    def test_no_derived_value_is_its_empty_means_prose(self, client):
+        values = self._resolve(client)["derived_values"]
+        for key, value in values.items():
+            prose = REGISTRY[key].empty_means
+            if prose is not None:
+                assert value != prose, key
+
+    def test_a_recipe_override_beats_the_schema_default(self, client):
+        """kd_ce_alpha's schema default is 0.3; the lif recipe folds 0.5 —
+        rendering the blue default would have been a lie."""
+        values = self._resolve(client)["derived_values"]
+        assert values["kd_ce_alpha"] == 0.5
+        assert REGISTRY["kd_ce_alpha"].default == 0.3
+
+    def test_an_erroring_draft_serves_no_hypothetical_values(self, client):
+        body = _t0_01()
+        body["deployment_parameters"]["weight_quantization"] = False
+        payload = client.post("/api/config/resolve", json=body).json()
+        assert not payload["ok"]
+        assert payload["derived_values"] == {}
+
+
+class TestRound6SemanticsLayout:
+    """Round-6 item 1: the Deployment-target panel moves to the LEFT column,
+    below Spiking semantics; the vehicles card holds the right column."""
+
+    def _semantics(self, client):
+        html = client.get("/wizard").text
+        start = html.index('data-section-id="semantics"')
+        return html[start:html.index("</section>", start)]
+
+    def test_deployment_target_sits_below_spiking_in_the_left_column(self, client):
+        section = self._semantics(client)
+        spiking = section.index('data-groups="spiking,conversion"')
+        target = section.index('data-groups="deployment_target"')
+        vehicles = section.index('id="vehiclesCard"')
+        assert spiking < target < vehicles
+
+    def test_the_left_column_opens_before_the_right_one(self, client):
+        section = self._semantics(client)
+        first_col = section.index('class="wb-col"')
+        target = section.index('data-groups="deployment_target"')
+        second_col = section.index('class="wb-col"', target)
+        assert first_col < target < second_col
+
+
+class TestRound6RemediesAreServedNotHardcoded:
+    """Every rule prescribes its own remedies; the frontend has no rule table."""
+
+    def test_the_quantization_contract_serves_its_remedies(self, client):
+        body = _t0_01()
+        body["deployment_parameters"]["weight_quantization"] = False
+        payload = client.post("/api/config/resolve", json=body).json()
+        row = next(e for e in payload["errors"] if e["rule_id"] == "quantization_assembly")
+        actions = {(r["action"], r["key"]) for r in row["remedies"]}
+        assert ("set", "pipeline_mode") in actions
+        assert ("clear", "weight_bits") in actions
+
+    def test_the_frontend_carries_no_rule_specific_remedy_table(self):
+        review = os.path.join(
+            _REPO_ROOT, "src", "mimarsinan", "gui", "static", "js", "wizard", "review.js"
+        )
+        with open(review, encoding="utf-8") as f:
+            source = f.read()
+        assert "RULE_REMEDIES" not in source
+        assert "quantization_assembly" not in source
+        # Only the two generic actions the server prescribes.
+        assert "REMEDY_ACTIONS" in source
+
+    def test_the_frontend_never_renders_empty_means_for_a_sourced_key(self):
+        """The in-field text of a derivation-owned key is its VALUE; prose about
+        the source lives in the badge/tooltip only (round-6 amendment)."""
+        fields = os.path.join(
+            _REPO_ROOT, "src", "mimarsinan", "gui", "static", "js", "wizard", "fields.js"
+        )
+        with open(fields, encoding="utf-8") as f:
+            source = f.read()
+        body = source[source.index("export function placeholderText("):]
+        body = body[: body.index("\n}")]
+        # The derivation-owned branch returns before any empty_means fallback.
+        assert body.index("isDerivationOwned") < body.index("empty_means")

@@ -213,33 +213,33 @@ export function renderLaunchStatus() {
 
 /* ── Inline + global errors (with rule-prescribed one-click remedies) ──── */
 
-/* Each rule's error text prescribes its remedies; these buttons apply them. */
-const RULE_REMEDIES = {
-  quantization_assembly: [
-    {
-      label: 'Declare vanilla (float weights)',
-      apply: () => { state.draft.pipeline_mode = 'vanilla'; },
-    },
-    {
-      label: 'Drop weight_bits',
-      apply: () => { clearKey('weight_bits'); },
-    },
-  ],
+/* The RULE prescribes its remedies (served with the error row); the frontend
+   only APPLIES them. Two generic actions cover every rule: `set` a key to a
+   value, `clear` a key so its derivation takes the value back. No rule-specific
+   JS table exists — a new rule ships its remedies from the server. */
+const REMEDY_ACTIONS = {
+  set: (remedy) => setKey(remedy.key, remedy.value),
+  clear: (remedy) => clearKey(remedy.key),
 };
+
+function applyRemedy(remedy) {
+  const action = REMEDY_ACTIONS[remedy.action];
+  if (action) action(remedy);
+}
 
 function errorCard(error) {
   const note = el('div', 'field-error', error.message);
   note.dataset.ruleId = error.rule_id || '';
-  const remedies = RULE_REMEDIES[error.rule_id] || [];
+  const remedies = error.remedies || [];
   if (remedies.length) {
     const row = el('div', 'error-remedies');
     for (const remedy of remedies) {
       const btn = el('button', 'btn-sm', remedy.label);
       btn.type = 'button';
       btn.addEventListener('click', () => {
-        remedy.apply();
+        applyRemedy(remedy);
         document.dispatchEvent(new CustomEvent('wizard:rerender'));
-        notifyChange(error.key || '');
+        notifyChange(remedy.key || error.key || '');
       });
       row.append(btn);
     }

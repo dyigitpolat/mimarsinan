@@ -220,6 +220,10 @@ button { font-family: inherit; }
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
 }
 
+/* Deployment target sits BELOW Spiking semantics in the same left column: the
+   gates and probes that judge the semantics above them (round-6 item 1). */
+.semantics-target { margin-top: var(--space-4, 16px); }
+
 /* The co-search panel: a sibling card spanning both co-design columns.
    Its configurator packs THREE columns (round-3 defect 10). */
 .codesign-cosearch { margin-top: 16px; }
@@ -609,6 +613,37 @@ textarea::placeholder { color: rgba(96, 165, 250, 0.55); }
 
 input.placeholder-derived::placeholder,
 textarea.placeholder-derived::placeholder { color: rgba(52, 211, 153, 0.6); }
+
+/* Controls with no text surface state the DERIVED value itself (a toggle
+   rendering "off" for a key the run resolves to "on" would be a lie); green
+   marks the value as derivation-owned until an explicit click takes it over. */
+.toggle-row.is-derived .toggle-label { color: rgba(52, 211, 153, 0.75); }
+.toggle-row.is-derived .toggle-switch { border-color: rgba(52, 211, 153, 0.35); }
+.toggle-row.is-derived.on .toggle-switch { background: rgba(16, 185, 129, 0.35); }
+.slider-combo.is-derived .slider { accent-color: rgba(52, 211, 153, 0.8); }
+
+/* |legal| == 1: the field is LOCKED. Its CONTENT is the derived value (not a
+   placeholder) — read-only, because editing it could only produce an error. */
+.field-locked .locked-value {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1px dashed rgba(52, 211, 153, 0.28);
+  border-radius: var(--radius-sm, 4px);
+  background: rgba(16, 185, 129, 0.06);
+  cursor: default;
+}
+
+.locked-value-icon { color: var(--accent-green); opacity: 0.7; font-size: 11px; }
+
+.locked-value-text {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: var(--font-body, 13px);
+  color: var(--accent-green);
+  opacity: 0.9;
+}
 
 input:focus, select:focus, textarea:focus { outline: none; border-color: var(--border-focus); }
 

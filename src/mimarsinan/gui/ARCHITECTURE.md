@@ -40,17 +40,42 @@ knowledge, the draft state IS the config document (explicit keys only), and
 derivation runs exclusively server-side via `POST /api/config/resolve`
 (derived chips with WHY + their registry `provenance` — rendered ONLY in the
 Review "Derived values" panel, so section pages stay clean — keyed inline
-errors with rule-prescribed remedies, diff-vs-defaults template view, loud
-unrecognized-keys tray, the emitted document the review pane shows verbatim).
+errors whose REMEDIES the rule itself prescribes and serves (`{action: set|clear,
+key, value}`; the frontend only applies them, it holds no rule table),
+diff-vs-defaults template view, loud unrecognized-keys tray, the emitted
+document the review pane shows verbatim).
 Every derived-by-default value NAMES its SSOT source: the registry
 `provenance` field renders as a green badge beside the field label (and on the
 Review chip), and disappears the moment an explicit declaration takes
 ownership back. Registry `hidden` keys (`pipeline_mode`,
-`pretrained_weight_source`) render on NO surface at all. A derivation-owned
-enum with no wizard default pre-fills nothing; instead the segment the
-derivation currently resolves to renders as a green ghost, re-synced on every
-resolve round-trip (`firing_mode` / `spike_generation_mode` /
-`thresholding_mode`: derived default shown, explicit click wins). The
+`pretrained_weight_source`) render on NO surface at all.
+
+THE IN-FIELD TEXT IS THE VALUE. A key the registry marks derivation-owned (it
+names a `provenance` source) renders, in faded GREEN, the CONCRETE PROSPECTIVE
+value its SSOT deriver produces for the CURRENT config state — served per
+resolve as `derived_values` (registry `derived_default`, provider/builder
+workload facts winning where they register one), recomputed on every round-trip
+(the nf_scm parity sample count moves 2 → 64 when the schedule turns cascaded),
+and a muted "—" when an active contract error blocks the derivation. Prose about
+WHERE the value comes from is never the field text: the badge and the immediate
+tooltip carry it. Faded BLUE is reserved for a plain concrete DEFAULT on a
+non-derived key. Controls with no text surface have no empty state either — a
+toggle or a slider thumb on a derivation-owned key renders PRE-FILLED with the
+derived value (an `off` toggle on a key the run resolves to `true` would be a
+lie), re-synced on every resolve.
+
+THE LEGAL-VALUE-SET LAW (`static/js/wizard/state.js`: `legalValues` /
+`lockedValue`). The resolve payload's ALWAYS-served `legal_values[key]` drives
+rendering by its SIZE alone: `|legal| == 1` LOCKS the field (read-only, the
+derived value as its CONTENT, not a placeholder — `spiking_mode='ttfs'` locks
+`firing_mode` and `spike_generation_mode` to `TTFS`; `s_allocation` locks to
+`uniform`), `|legal| > 1` renders a widget offering ONLY those options (under
+`lif` the rate encoder's refusal of `TTFS` removes that segment entirely, and
+`firing_mode` offers Default/Novena) with the derived default as a green ghost
+that an explicit click takes over. Nothing here special-cases a mode; a change
+to the served sets re-renders the group hosts (a signature guard keeps that off
+the typing path). An illegal value in a loaded document is a keyed inline error
+with its one-click remedy — never an uncaught exception. The
 pretrained-weight source is ONE concept: `preload_weights` is the hand knob and
 `weight_source` derives from the model builder's `ModelWorkloadProfile`
 registration (`resolve_payload` folds it in through the DeploymentPlan's own
@@ -66,7 +91,10 @@ the taxonomy is the placement, with per-section error badges) and a
 persistent sticky right live rail (resolve verdict, the honest vertical
 pipeline-assembly list re-rendered from every resolve, a compact mapping
 summary mirroring the Co-Design panel, and Launch with strong
-disabled/blocked semantics). The flagship Co-Design section shows model
+disabled/blocked semantics). The Deployment-semantics section stacks Spiking semantics then the
+Deployment-target panel (the gates and probes that judge those semantics) in the
+LEFT column, with the Simulation vehicles card holding the right one.
+The flagship Co-Design section shows model
 architecture, the core grid (a modern aligned grid editor: per-row type
 labels, per-core bias toggles, add/remove affordances), the registry
 `mapping_strategy` panel (what we CHOOSE when mapping — scheduling, encoding
@@ -111,7 +139,8 @@ keys (core maxima, the recipe-owned correctness mechanisms) render as
 status/chips, never as knobs. A fresh draft is seeded from `GET /api/config/starter`.
 `scripts/wizard_screenshots.py` (dev-only, browser-driven) captures the
 review evidence set: per-section shots, the Co-Design interaction sequence,
-per-mode switches, the template flow, and the error/remedy flow.
+per-mode switches, the locked/legal-subset fields, the concrete green derived
+values, the template flow, and both error/remedy flows.
 
 ## Key files
 | File | Purpose |
@@ -130,7 +159,7 @@ per-mode switches, the template flow, and the error/remedy flow.
 | `server/` | FastAPI app factory and uvicorn startup (`app.py`) plus route modules: pipeline/runs/templates/console APIs, artifact listing/downloads (`routes_artifacts.py`), lazy-resource endpoints, wizard and config-schema APIs, and hardware layout verification; `json_safe.py` provides the sanitising JSON response class. |
 | `snapshot/` | Pure per-artifact snapshot builders returning `(summary, ResourceDescriptor list)`: model, IR graph, hardware mapping, adaptation, pruning, search, and SANA-FE snapshots, `RESOURCE_KIND_*` constants, disk-based snapshot rebuild for legacy runs, and the best-effort console `[TAG]` parser (`console_events.py`) that backfills events for runs recorded before `events.jsonl`. |
 | `viewmodel/` | Pure, I/O-free view-models (parsed run artifacts in, chart-ready JSON out; unit-tested against synthetic streams): `overview_vm` (measured points + verdict markers — a carried metric NEVER plots), `step_metrics_vm` (the one metric-categorization rule table), `events_vm` (per-kind display hints + annotation lanes), `staircase_vm` (the D-hat ratchet staircase; raises on a falling ratchet), `gantt_vm` (step timeline + endpoint step-budget ledger + artifact/total wall split), `a6_vm` (install-resolution gauge cards). |
-| `wizard/` | Configuration workbench application layer: `emit.py` (explicit-keys-only config emission — the ONE builder used by Deploy, templates, and the representability test; unknown keys preserved and reported, never dropped; non-declarable derived keys — `activation_quantization`, the correctness mechanisms — are removed), `build_deployment_config_from_state` (thin alias over emit), `schema_api.py` (`/api/config_schema` payload: serialized registry + the per-key starter `baseline` overlay + recipe/preprocessing/hw-search-space/NAS sub-schemas; `/api/config/resolve` payload: resolution + live step preview + the ALWAYS-served `vehicles` rows + the concrete `resolved` values + the baseline-rebased diff), `starter.py` + `starter_baseline.json` (the fresh-state contract: `GET /api/config/starter` serves the packaged baseline DOCUMENT — the lenet5 vehicle, the only tier-0 family green in all five modes, with a fresh experiment name and no pinned derived mode keys — pinned resolvable/emittable/mappable per mode switch by `test_wizard_starter.py`; workload facts live in the document, never in framework code; the baseline doubles as the wizard's diff-defaults document, experiment_name excluded), wizard schema surfaces (model types, NAS, temporal allocation, pipeline steps), and state validation. |
+| `wizard/` | Configuration workbench application layer: `schema_api.resolve_payload` guards EVERY contract `DeploymentPlan.resolve` enforces (driver, temporal allocation, firing strategy, weight-source regime) so an authorable document yields a keyed `pipeline_assembly` error instead of a 500; `emit.py` (explicit-keys-only config emission — the ONE builder used by Deploy, templates, and the representability test; unknown keys preserved and reported, never dropped; non-declarable derived keys — `activation_quantization`, the correctness mechanisms — are removed), `build_deployment_config_from_state` (thin alias over emit), `schema_api.py` (`/api/config_schema` payload: serialized registry + the per-key starter `baseline` overlay + recipe/preprocessing/hw-search-space/NAS sub-schemas; `/api/config/resolve` payload: resolution + live step preview + the ALWAYS-served `vehicles` rows and `legal_values` sets + the concrete `resolved` + `derived_values` maps + the baseline-rebased diff), `starter.py` + `starter_baseline.json` (the fresh-state contract: `GET /api/config/starter` serves the packaged baseline DOCUMENT — the lenet5 vehicle, the only tier-0 family green in all five modes, with a fresh experiment name and no pinned derived mode keys — pinned resolvable/emittable/mappable per mode switch by `test_wizard_starter.py`; workload facts live in the document, never in framework code; the baseline doubles as the wizard's diff-defaults document, experiment_name excluded), wizard schema surfaces (model types, NAS, temporal allocation, pipeline steps), and state validation. |
 
 ## Dependencies
 - `common` — `best_effort` error scoping, env-derived paths (`runs_root`, `templates_dir`, `gui_no_browser`), `layer_key` helpers for snapshots.

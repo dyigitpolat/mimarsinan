@@ -1,5 +1,5 @@
 """Dev-mode workbench review: drive the real configurator in a real browser and
-save the round-5 evidence set to generated/_wizard_review/round5/:
+save the round-6 evidence set to generated/_wizard_review/round6/:
 fresh per-section shots, the co-design interaction sequence (mapping updating
 while arch + grid are edited), the mapping-strategy panel ABOVE the full-width
 mapping panel, the merged side-by-side Training & Tuning section with the
@@ -407,6 +407,70 @@ def _shoot_round5_evidence(page, base_url: str, out_dir: Path,
     _shot(page, out_dir, "round5_5_review_section", shots, full=True)
 
 
+def _open_advanced(page, group: str) -> None:
+    """Open a group card's Advanced drawer (closed unless a knob is edited)."""
+    drawer = page.locator(f'.section[data-section="{group}"] .advanced-drawer')
+    if not drawer.first.evaluate("node => node.classList.contains('open')"):
+        page.locator(f'.section[data-section="{group}"] .advanced-toggle').first.click()
+    _settle(page, 500)
+
+
+def _shoot_round6_evidence(page, base_url: str, out_dir: Path, illegal_id: str,
+                           shots: list[str]) -> None:
+    """Round-6: the Deployment-target panel in the LEFT column below Spiking
+    semantics; the legal-value-set law (locked TTFS fields, legal-subset
+    options); the CONCRETE green derived values with their provenance badges;
+    and an illegal document surfacing as a keyed error with a one-click remedy."""
+    # Item 1 — layout: Spiking semantics then Deployment target, same column.
+    page.goto(base_url + "/wizard")
+    _settle(page, 2200)
+    _goto_section(page, "semantics")
+    _shot(page, out_dir, "round6_1_layout_deployment_target_left_column", shots, full=True)
+
+    # Item 3 — |legal| > 1: the widget offers ONLY the legal options. Under lif
+    # the rate encoder refuses 'TTFS', so that segment does not render at all.
+    _open_advanced(page, "spiking")
+    _shot_element(page.locator('.section[data-section="spiking"]'), out_dir,
+                  "round6_3_legal_subset_options_lif", shots)
+
+    # Item 2 + amendment — the Deployment-target knobs render the CONCRETE value
+    # their SSOT deriver produces, in faded green, with the source badge.
+    _open_advanced(page, "deployment_target")
+    _shot_element(page.locator('.section[data-section="deployment_target"]'), out_dir,
+                  "round6_derived_infield_green_values", shots)
+    _shot(page, out_dir, "round6_2_provenance_badges_deployment_target", shots, full=True)
+
+    # Item 3 — |legal| == 1: spiking_mode='ttfs' forces firing_mode='TTFS' and
+    # spike_generation_mode='TTFS'; both fields LOCK, read-only, showing the
+    # derived value. thresholding_mode keeps two legal values and stays editable.
+    _click_segment(page, "spiking_mode", "ttfs")
+    _settle(page, 1200)
+    _open_advanced(page, "spiking")
+    _shot_element(page.locator('.section[data-section="spiking"]'), out_dir,
+                  "round6_3_locked_ttfs_fields", shots)
+    _shot(page, out_dir, "round6_3_locked_ttfs_fields_full", shots, full=True)
+
+    # The cascaded schedule moves the nf_scm sample count from 2 to 64: the
+    # green value is re-derived per resolve, not a static string.
+    _click_segment(page, "spiking_mode", "ttfs_cycle_based")
+    _settle(page, 1200)
+    _open_advanced(page, "deployment_target")
+    _shot_element(page.locator('.section[data-section="deployment_target"]'), out_dir,
+                  "round6_derived_infield_mode_aware_cascaded", shots)
+
+    # Item 4 — an illegal document (spiking_mode=lif, firing_mode=TTFS) used to
+    # raise ValueError out of DeploymentPlan.resolve. It is now a keyed error.
+    page.goto(base_url + "/wizard?template_id=" + illegal_id)
+    _settle(page, 2400)
+    _goto_section(page, "semantics")
+    _shot(page, out_dir, "round6_4_illegal_document_keyed_error", shots, full=True)
+    _shot_element(page.locator('.field[data-key="firing_mode"]'), out_dir,
+                  "round6_4_keyed_error_with_remedy", shots)
+    page.click('.error-remedies .btn-sm:has-text("Clear Firing Mode")')
+    _settle(page, 1600)
+    _shot(page, out_dir, "round6_4_after_one_click_remedy", shots, full=True)
+
+
 def _shoot_mode_switches(page, base_url: str, out_dir: Path, shots: list[str]) -> None:
     """Starter + each single mode switch: semantics + rail stay green."""
     for mode, schedule in MODE_SWITCHES:
@@ -447,7 +511,7 @@ def _save_template(base_url: str, name: str, config: dict) -> str:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--out", default=str(REPO_ROOT / "generated" / "_wizard_review" / "round5"))
+    parser.add_argument("--out", default=str(REPO_ROOT / "generated" / "_wizard_review" / "round6"))
     args = parser.parse_args()
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -474,6 +538,14 @@ def main() -> None:
     broken["platform_constraints"]["weight_bits"] = 5
     broken_id = _save_template(base_url, "wq_contract_demo", broken)
 
+    # A deliberately ILLEGAL document for the legal-value-set error flow: the
+    # rate-coded LIF family admits firing_mode in {Default, Novena}.
+    illegal = json.loads(json.dumps(tier_config))
+    illegal["experiment_name"] = "illegal_firing_mode_demo"
+    illegal["deployment_parameters"]["spiking_mode"] = "lif"
+    illegal["deployment_parameters"]["firing_mode"] = "TTFS"
+    illegal_id = _save_template(base_url, "illegal_firing_mode_demo", illegal)
+
     from playwright.sync_api import sync_playwright
 
     shots: list[str] = []
@@ -489,6 +561,7 @@ def main() -> None:
         _shoot_round3_evidence(page, base_url, out_dir, shots)
         _shoot_round4_evidence(page, base_url, out_dir, broken_id, shots)
         _shoot_round5_evidence(page, base_url, out_dir, shots)
+        _shoot_round6_evidence(page, base_url, out_dir, illegal_id, shots)
         _shoot_mode_switches(page, base_url, out_dir, shots)
         _shoot_sections(page, base_url, out_dir, "template", shots,
                         query="?template_id=" + template_id)
