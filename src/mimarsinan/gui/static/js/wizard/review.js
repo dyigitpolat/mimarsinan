@@ -1,7 +1,7 @@
 /* Review surfaces: derived chips, inline errors, diff-vs-defaults, unknown tray,
    pipeline step bar, and the JSON preview. All render from /api/config/resolve. */
 
-import { keySchema } from './schema.js';
+import { groups, keySchema } from './schema.js';
 import { clearKey, state } from './state.js';
 import { el, notifyChange } from './fields.js';
 
@@ -11,25 +11,67 @@ function escapeHtml(s) {
   return div.innerHTML;
 }
 
-/* ── Derived chips with WHY ────────────────────────────────────────────── */
+/* ── Derived chips with WHY (read-only, never editable) ────────────────── */
+
+function formatDerivedValue(value) {
+  if (value === true) return 'on';
+  if (value === false) return 'off';
+  if (value === null || value === undefined) return '—';
+  return String(value);
+}
+
+function derivedChip(key, info) {
+  const ks = keySchema(key);
+  const chip = el('span', 'derived-chip');
+  chip.append(el('span', 'derived-chip-lock', '⛭'));
+  chip.append(el('span', 'derived-chip-key', ks ? ks.label : key));
+  chip.append(el('span', 'derived-chip-value', formatDerivedValue(info.value)));
+  if (info.why) chip.append(el('span', 'derived-chip-why', info.why));
+  chip.title = [
+    info.why || '',
+    info.derived_from && info.derived_from.length
+      ? 'derived from: ' + info.derived_from.join(', ') : '',
+    ks ? ks.doc : '',
+  ].filter(Boolean).join('\n\n');
+  return chip;
+}
 
 export function renderDerivedChips() {
-  const host = document.getElementById('derivedChips');
+  const derived = (state.resolve && state.resolve.derived) || {};
+  for (const hostId of ['derivedChips', 'deploymentDerived']) {
+    const host = document.getElementById(hostId);
+    if (!host) continue;
+    host.replaceChildren();
+    for (const [key, info] of Object.entries(derived)) {
+      host.append(derivedChip(key, info));
+    }
+    if (!Object.keys(derived).length) {
+      host.append(el('span', 'note', 'Derived values appear once the draft resolves.'));
+    }
+  }
+}
+
+/* ── Launch status (review step) ───────────────────────────────────────── */
+
+export function renderLaunchStatus() {
+  const host = document.getElementById('launchStatus');
   if (!host) return;
   host.replaceChildren();
-  const derived = (state.resolve && state.resolve.derived) || {};
-  for (const [key, info] of Object.entries(derived)) {
-    const ks = keySchema(key);
-    const chip = el('span', 'dep-chip triggered');
-    chip.append(el('span', 'dot'));
-    const label = ks ? ks.label : key;
-    chip.append(`${label}: ${JSON.stringify(info.value)}`);
-    chip.title = (info.why ? info.why + '\n\n' : '') + (ks ? ks.doc : '');
-    host.append(chip);
+  if (!state.resolve) {
+    host.append(el('span', 'note', 'Resolving the draft…'));
+    return;
   }
-  if (!Object.keys(derived).length) {
-    host.append(el('span', 'note', 'Derived values appear after the draft resolves.'));
+  const errors = state.resolve.errors || [];
+  const steps = (state.resolve.pipeline && state.resolve.pipeline.steps) || [];
+  if (errors.length) {
+    host.append(el('div', 'launch-status-line error',
+      `✖ ${errors.length} validation error${errors.length > 1 ? 's' : ''} — fix before launch`));
+  } else {
+    host.append(el('div', 'launch-status-line ok',
+      `✓ Resolves to a ${steps.length}-step pipeline`));
   }
+  const name = state.draft.experiment_name;
+  if (name) host.append(el('div', 'launch-status-sub', `experiment: ${name}`));
 }
 
 /* ── Inline + global errors (with rule-prescribed one-click remedies) ──── */
@@ -106,19 +148,28 @@ export function renderDiffPanel() {
     host.append(el('div', 'note', 'Nothing differs from defaults.'));
     return;
   }
+  /* Compact group tags for the table column; the full title is the tooltip. */
+  const groupTitles = Object.fromEntries(groups().map(
+    (g) => [g.id, g.id.replace(/_/g, ' ').replace('deployment target', 'target')],
+  ));
   const count = el('div', 'note', `${rows.length} knob(s) differ from defaults`);
   host.append(count);
   const table = el('div', 'diff-table');
   for (const row of rows) {
     const line = el('div', 'diff-row');
-    line.append(el('span', 'diff-group', row.group));
+    line.append(el('span', 'diff-group', groupTitles[row.group] || row.group));
     const link = el('span', 'diff-key', row.label);
     link.title = row.key;
     line.append(link);
-    line.append(el('span', 'diff-value', JSON.stringify(row.value)));
-    if (row.default !== null && row.default !== undefined) {
-      line.append(el('span', 'diff-default', `(default: ${JSON.stringify(row.default)})`));
-    }
+    const valueText = JSON.stringify(row.value);
+    const value = el('span', 'diff-value', valueText);
+    value.title = valueText;
+    line.append(value);
+    const hasDefault = row.default !== null && row.default !== undefined;
+    line.append(el(
+      'span', 'diff-default',
+      hasDefault ? `default: ${JSON.stringify(row.default)}` : '',
+    ));
     const revert = el('button', 'field-revert', '↺');
     revert.type = 'button';
     revert.title = 'Revert to default';
@@ -219,7 +270,11 @@ function highlightJson(obj) {
 
 export function renderJsonPreview() {
   const host = document.getElementById('jsonOutput');
-  if (host) host.innerHTML = highlightJson(state.draft);
+  if (!host) return;
+  /* The server-emitted document (explicit keys only, canonical order) —
+     exactly what Launch submits; the raw draft is the pre-resolve fallback. */
+  const doc = (state.resolve && state.resolve.emitted) || state.draft;
+  host.innerHTML = highlightJson(doc);
 }
 
 /* ── Template banner ───────────────────────────────────────────────────── */

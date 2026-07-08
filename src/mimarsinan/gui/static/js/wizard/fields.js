@@ -21,12 +21,23 @@ export function el(tag, className, text) {
   return node;
 }
 
+function boundsText(ks) {
+  if (!ks.bounds) return '';
+  const [lo, hi] = ks.bounds;
+  if (lo !== null && hi !== null) return `Range: ${lo} – ${hi}`;
+  if (lo !== null) return `Min: ${lo}`;
+  if (hi !== null) return `Max: ${hi}`;
+  return '';
+}
+
 function helpText(ks) {
   const parts = [ks.doc];
   if (ks.effect) parts.push('Effect: ' + ks.effect);
   if (ks.unit) parts.push('Unit: ' + ks.unit);
+  const bounds = boundsText(ks);
+  if (bounds) parts.push(bounds);
   parts.push('Consumed by: ' + ks.owner);
-  return parts.join('\n');
+  return parts.filter(Boolean).join('\n');
 }
 
 function revertButton(ks, rerender) {
@@ -44,18 +55,21 @@ function revertButton(ks, rerender) {
 }
 
 function fieldShell(ks) {
-  const field = el('div', 'field');
+  const field = el('div', 'field' + (ks.important ? ' field-important' : ''));
   field.dataset.key = ks.key;
   const label = el('label', 'field-label');
-  label.append(ks.label);
-  if (ks.unit) label.append(el('span', 'field-unit', ` (${ks.unit})`));
-  const help = el('span', 'field-help', '?');
-  help.title = helpText(ks);
-  label.append(help);
+  label.append(el('span', 'field-label-text', ks.label));
+  if (ks.unit) label.append(el('span', 'field-unit', ks.unit));
   const marker = el('span', 'field-explicit-slot');
   label.append(marker);
   field.append(label);
   return { field, marker };
+}
+
+function fieldDoc(ks) {
+  const doc = el('div', 'field-doc', ks.effect || ks.doc);
+  doc.title = helpText(ks);
+  return doc;
 }
 
 function markExplicit(ks, marker, rerender) {
@@ -209,7 +223,7 @@ export function renderField(ks) {
   } else {
     control = el('div', 'note', `unsupported field type: ${ks.type}`);
   }
-  field.append(control);
+  field.append(control, fieldDoc(ks));
   markExplicit(ks, marker, rerender);
   return field;
 }

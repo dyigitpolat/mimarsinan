@@ -11,6 +11,7 @@ from mimarsinan.config_schema.defaults import (
 import mimarsinan.data_handling.data_providers  # noqa: F401  # pyright: ignore[reportUnusedImport] — registers providers + their normalization presets
 from mimarsinan.config_schema.registry import serialize_registry
 from mimarsinan.config_schema.resolve import resolve_draft
+from mimarsinan.gui.wizard.emit import emit_deployment_config
 from mimarsinan.data_handling.preprocessing import (
     NORMALIZATION_PRESETS,
     interpolation_mode_names,
@@ -72,7 +73,8 @@ def config_schema_payload() -> Dict[str, Any]:
 
 
 def resolve_payload(draft: Dict[str, Any]) -> Dict[str, Any]:
-    """One round-trip for the wizard: resolution + live pipeline-step preview."""
+    """One round-trip for the wizard: resolution + live pipeline-step preview
+    + the emitted document (exactly what Launch submits)."""
     resolution = resolve_draft(draft or {})
     out: Dict[str, Any] = {
         "ok": resolution.ok,
@@ -81,6 +83,7 @@ def resolve_payload(draft: Dict[str, Any]) -> Dict[str, Any]:
         "explicit_keys": resolution.explicit_keys,
         "unknown_keys": resolution.unknown_keys,
         "diff_vs_defaults": resolution.diff_vs_defaults,
+        "emitted": emit_deployment_config(draft or {}),
         "pipeline": {"steps": [], "semantic_groups": []},
     }
     if resolution.ok:

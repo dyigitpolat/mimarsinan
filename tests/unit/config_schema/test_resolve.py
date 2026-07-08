@@ -40,6 +40,18 @@ class TestResolveTierConfig:
         assert by_key["lr"]["default"] == 0.001
         assert by_key["sanafe_arch_preset"]["differs"] is False
 
+    def test_explicit_null_means_unset_not_a_diff(self):
+        """Tier configs declare start_step/stop_step/target_metric_override as
+        null; null against no-default (or a null default) is 'unset', never a
+        differing knob — the review diff must not list it."""
+        res = resolve_draft(_t0_01())
+        by_key = {row["key"]: row for row in res.diff_vs_defaults}
+        assert by_key["start_step"]["differs"] is False
+        assert by_key["stop_step"]["differs"] is False
+        assert by_key["target_metric_override"]["differs"] is False
+        # A REAL value against no default still differs.
+        assert by_key["max_axons"]["differs"] is True
+
 
 class TestResolveErrors:
     def test_contradicting_aq_is_a_keyed_error(self):

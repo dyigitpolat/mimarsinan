@@ -1,25 +1,24 @@
 /* Wizard controller: schema-driven rendering, resolve loop, deploy actions.
-   The draft IS the config document; every widget renders from /api/config_schema. */
+   The draft IS the config document; every widget renders from /api/config_schema;
+   the step flow (stepper.js) maps whole concern groups to steps. */
 
-import { editableKeys, groups, keySchema, loadSchema, relevant } from './schema.js';
+import { editableKeys, groups, keySchema, loadSchema, relevant, schema } from './schema.js';
 import {
-  effectiveConfig, isExplicit, loadDraftFromConfig, resetDraft, state,
+  differsFromDefault, effectiveConfig, effectiveValue, isExplicit,
+  loadDraftFromConfig, resetDraft, state,
 } from './state.js';
 import { el, renderField } from './fields.js';
 import { ensureModelSchema, installStructuredWidgets } from './structured.js';
 import {
   bindStepsBar, renderDerivedChips, renderDiffPanel, renderErrors,
-  renderJsonPreview, renderStepsBar, renderTemplateBanner, renderUnknownTray,
+  renderJsonPreview, renderLaunchStatus, renderStepsBar, renderTemplateBanner,
+  renderUnknownTray,
 } from './review.js';
-import { autoSuggestHardware, scheduleHwVerify } from './hw.js';
-
-const ALTITUDES = {
-  intent: ['run', 'workload', 'spiking', 'conversion', 'training', 'tuning'],
-  platform: ['hardware', 'deployment_target'],
-};
+import { autoSuggestHardware, fetchMetadata, scheduleHwVerify } from './hw.js';
+import { bindStepNav, goToFirstError, goToStep, renderStepper } from './stepper.js';
 
 const GROUP_ICONS = {
-  run: '⬡', workload: '◈', spiking: '⚡', conversion: '◎',
+  run: '⬡', workload: '◈', model: '▣', spiking: '⚡', conversion: '◎',
   tuning: '☈', training: '▶', hardware: '▦', deployment_target: '✈',
 };
 
@@ -38,14 +37,14 @@ function renderGroupSection(group, cfg) {
 
   const section = el('div', 'section open');
   section.dataset.section = group.id;
+  section.style.setProperty('--section-accent', group.accent || '91,141,245');
 
-  const header = el('div', 'section-header');
-  header.append(el('div', 'section-icon', GROUP_ICONS[group.id] || '◇'));
+  const header = el('div', 'section-header static');
+  header.append(el('div', 'section-icon accent', GROUP_ICONS[group.id] || '◇'));
   const titles = el('div', 'section-title-group');
   titles.append(el('div', 'section-title', group.title));
   titles.append(el('div', 'section-subtitle', group.subtitle || ''));
-  header.append(titles, el('span', 'section-chevron', '▾'));
-  header.addEventListener('click', () => section.classList.toggle('open'));
+  header.append(titles);
   section.append(header);
 
   const body = el('div', 'section-body');
@@ -54,17 +53,22 @@ function renderGroupSection(group, cfg) {
   body.append(grid);
 
   if (group.id === 'hardware') {
-    const suggest = el('button', 'btn-sm', 'Suggest hardware for this model');
+    const suggest = el('button', 'btn-sm suggest-hw', '⚙ Suggest hardware for this model');
     suggest.type = 'button';
     suggest.addEventListener('click', () => autoSuggestHardware());
     body.append(suggest);
   }
 
   if (advanced.length) {
-    const hasExplicit = advanced.some((ks) => isExplicit(ks.key));
-    const drawer = el('div', 'advanced-drawer' + (hasExplicit ? ' open' : ''));
-    const toggle = el('button', 'advanced-toggle', `⚙ Advanced (${advanced.length})`);
+    const edited = advanced.filter((ks) => differsFromDefault(ks.key)).length;
+    const drawer = el('div', 'advanced-drawer' + (edited ? ' open' : ''));
+    const toggle = el('button', 'advanced-toggle');
     toggle.type = 'button';
+    toggle.append(
+      el('span', 'advanced-toggle-chevron', '▸'),
+      el('span', '', `Advanced (${advanced.length})`),
+      edited ? el('span', 'advanced-toggle-explicit', `${edited} edited`) : '',
+    );
     toggle.addEventListener('click', () => drawer.classList.toggle('open'));
     const drawerBody = el('div', 'advanced-drawer-body field-grid cols-2');
     for (const ks of advanced) drawerBody.append(renderField(ks));
@@ -76,22 +80,45 @@ function renderGroupSection(group, cfg) {
   return section;
 }
 
-function renderAltitudes() {
+function renderGroupHosts() {
   const cfg = effectiveConfig();
-  for (const [altitude, groupIds] of Object.entries(ALTITUDES)) {
-    const host = document.getElementById('altitude-' + altitude);
-    if (!host) continue;
+  const byId = Object.fromEntries(groups().map((g) => [g.id, g]));
+  document.querySelectorAll('[data-groups]').forEach((host) => {
     host.replaceChildren();
-    for (const group of groups()) {
-      if (!groupIds.includes(group.id)) continue;
+    for (const groupId of host.dataset.groups.split(',')) {
+      const group = byId[groupId.trim()];
+      if (!group) continue;
       const section = renderGroupSection(group, cfg);
       if (section) host.append(section);
     }
+  });
+}
+
+/* ── Dataset facts (workload step) ─────────────────────────────────────── */
+
+async function renderDatasetFacts() {
+  const host = document.getElementById('datasetFacts');
+  if (!host) return;
+  const provider = effectiveValue('data_provider_name');
+  const md = provider ? await fetchMetadata() : null;
+  state.metadata = md;
+  if (!md || !Array.isArray(md.input_shape)) {
+    host.style.display = 'none';
+    return;
   }
+  host.style.display = '';
+  host.replaceChildren();
+  host.append(el('span', 'dataset-facts-label', md.label || provider));
+  const dims = md.input_shape.join(' × ');
+  host.append(el('span', 'dataset-fact', `input ${dims}`));
+  if (Number.isFinite(md.num_classes)) {
+    host.append(el('span', 'dataset-fact', `${md.num_classes} classes`));
+  }
+  host.title = 'Resolved from the data provider; the pipeline reads these at runtime.';
 }
 
 function renderAll() {
-  renderAltitudes();
+  renderGroupHosts();
   renderTemplateBanner();
   renderDerivedChips();
   renderDiffPanel();
@@ -99,6 +126,31 @@ function renderAll() {
   renderStepsBar();
   renderErrors();
   renderJsonPreview();
+  renderLaunchStatus();
+  renderStepper((state.resolve && state.resolve.errors) || []);
+  renderStatusPill();
+  renderDatasetFacts();
+}
+
+/* ── Header status pill ────────────────────────────────────────────────── */
+
+function renderStatusPill() {
+  const pill = document.getElementById('statusPill');
+  if (!pill) return;
+  if (!state.resolve) {
+    pill.className = 'status-pill pending';
+    pill.textContent = 'resolving…';
+    return;
+  }
+  const errors = state.resolve.errors || [];
+  if (errors.length) {
+    pill.className = 'status-pill error';
+    pill.textContent = `${errors.length} error${errors.length > 1 ? 's' : ''}`;
+  } else {
+    const n = (state.resolve.pipeline && state.resolve.pipeline.steps.length) || 0;
+    pill.className = 'status-pill ok';
+    pill.textContent = `ready · ${n} steps`;
+  }
 }
 
 /* ── Resolve loop ──────────────────────────────────────────────────────── */
@@ -128,6 +180,10 @@ async function runResolve() {
       renderUnknownTray();
       renderStepsBar();
       renderErrors();
+      renderJsonPreview();
+      renderLaunchStatus();
+      renderStepper(state.resolve.errors || []);
+      renderStatusPill();
     }
   } catch (_) { /* transient network failure; next change retries */ }
   _resolveInFlight = false;
@@ -136,8 +192,14 @@ async function runResolve() {
 
 /* ── Actions ───────────────────────────────────────────────────────────── */
 
+function emittedConfig() {
+  return (state.resolve && state.resolve.emitted) || state.draft;
+}
+
 function bindActions() {
   document.getElementById('runBtn')?.addEventListener('click', async () => {
+    const errors = (state.resolve && state.resolve.errors) || [];
+    if (errors.length) { goToFirstError(errors); renderStepper(errors); return; }
     const btn = document.getElementById('runBtn');
     btn.disabled = true;
     try {
@@ -160,6 +222,11 @@ function bindActions() {
     }
   });
 
+  document.getElementById('statusPill')?.addEventListener('click', () => {
+    goToStep('review');
+    renderStepper((state.resolve && state.resolve.errors) || []);
+  });
+
   document.getElementById('saveTemplateBtn')?.addEventListener('click', async () => {
     const name = window.prompt('Template name:', state.draft.experiment_name || 'config');
     if (!name || !name.trim()) return;
@@ -168,6 +235,7 @@ function bindActions() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: name.trim(), config: state.draft }),
     });
+    if (res.ok) await loadTemplateOptions();
     alert(res.ok ? 'Template saved.' : 'Failed to save template');
   });
 
@@ -183,23 +251,19 @@ function bindActions() {
     scheduleHwVerify();
   });
 
-  const showJson = document.getElementById('showJsonToggle');
-  showJson?.addEventListener('click', () => {
-    showJson.classList.toggle('on');
-    const on = showJson.classList.contains('on');
-    document.getElementById('appShell').classList.toggle('show-json', on);
-    document.getElementById('copyJsonBtn').style.display = on ? '' : 'none';
-    document.getElementById('downloadJsonBtn').style.display = on ? '' : 'none';
+  document.getElementById('templateSelect')?.addEventListener('change', (event) => {
+    const id = event.target.value;
+    if (id) window.location.href = '/wizard?template_id=' + encodeURIComponent(id);
   });
 
   document.getElementById('copyJsonBtn')?.addEventListener('click', () => {
-    navigator.clipboard.writeText(JSON.stringify(state.draft, null, 2));
+    navigator.clipboard.writeText(JSON.stringify(emittedConfig(), null, 2));
   });
 
   document.getElementById('downloadJsonBtn')?.addEventListener('click', () => {
     const anchor = document.createElement('a');
     anchor.href = URL.createObjectURL(new Blob(
-      [JSON.stringify(state.draft, null, 2)], { type: 'application/json' },
+      [JSON.stringify(emittedConfig(), null, 2)], { type: 'application/json' },
     ));
     anchor.download = (state.draft.experiment_name || 'config') + '.json';
     anchor.click();
@@ -214,10 +278,11 @@ function bindChangeEvents() {
     if (key === 'model_type') {
       await ensureModelSchema(state.draft.deployment_parameters?.model_type);
     }
-    renderAltitudes();
+    renderGroupHosts();
     renderJsonPreview();
     scheduleResolve();
     scheduleHwVerify();
+    if (key === 'data_provider_name' || key === 'preprocessing') renderDatasetFacts();
   });
   document.addEventListener('wizard:rerender', () => {
     renderAll();
@@ -229,16 +294,27 @@ function bindChangeEvents() {
 /* ── Boot ──────────────────────────────────────────────────────────────── */
 
 async function loadDynamicOptions() {
-  const [providers, modelTypes] = await Promise.all([
-    fetch('/api/data_providers').then((r) => r.json()).catch(() => []),
-    fetch('/api/model_types').then((r) => r.json()).catch(() => []),
-  ]);
-  state.dynamicOptions.data_provider_name = providers.map(
-    (p) => ({ id: p.id, label: p.label }),
-  );
-  state.dynamicOptions.model_type = modelTypes.map(
-    (m) => ({ id: m.id, label: m.label || m.id }),
-  );
+  /* Which keys are registry-served (and from where) comes from the schema
+     payload itself — no endpoint knowledge is hardcoded here. */
+  const endpoints = schema().dynamic_options || {};
+  await Promise.all(Object.entries(endpoints).map(async ([key, url]) => {
+    const items = await fetch(url).then((r) => (r.ok ? r.json() : [])).catch(() => []);
+    state.dynamicOptions[key] = items.map(
+      (item) => ({ id: item.id, label: item.label || item.id }),
+    );
+  }));
+}
+
+async function loadTemplateOptions() {
+  const select = document.getElementById('templateSelect');
+  if (!select) return;
+  const templates = await fetch('/api/templates')
+    .then((r) => (r.ok ? r.json() : [])).catch(() => []);
+  while (select.options.length > 1) select.remove(1);
+  for (const template of templates) {
+    select.append(new Option(template.name || template.id, template.id));
+  }
+  select.style.display = templates.length ? '' : 'none';
 }
 
 /** Seed the fresh wizard with the server's ready-to-launch baseline draft
@@ -273,6 +349,8 @@ async function loadFromUrlParams() {
           pipeline.steps.filter((s) => s.status === 'completed').map((s) => s.name),
         );
       }
+    } else {
+      await seedStarterDraft();
     }
   } else if (templateId) {
     const config = await fetch('/api/templates/' + encodeURIComponent(templateId))
@@ -291,6 +369,9 @@ async function boot() {
   bindActions();
   bindChangeEvents();
   bindStepsBar();
+  bindStepNav(() => renderStepper((state.resolve && state.resolve.errors) || []));
+  goToStep('workload');
+  loadTemplateOptions();
   renderAll();
   scheduleResolve();
   scheduleHwVerify();

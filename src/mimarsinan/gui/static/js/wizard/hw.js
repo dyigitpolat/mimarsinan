@@ -6,7 +6,7 @@ import { el, notifyChange } from './fields.js';
 
 const _metadataCache = {};
 
-async function fetchMetadata() {
+export async function fetchMetadata() {
   const providerId = effectiveValue('data_provider_name');
   if (!providerId) return null;
   const pp = state.draft.deployment_parameters?.preprocessing || {};
@@ -28,15 +28,22 @@ async function fetchMetadata() {
   }
 }
 
+/** True when the resolved provider metadata carries the workload facts the
+    layout API requires — the framework never invents a dataset shape. */
+export function hasWorkloadMetadata() {
+  const md = state.metadata;
+  return !!(md && Array.isArray(md.input_shape) && md.input_shape.length
+    && Number.isFinite(md.num_classes));
+}
+
 function hwApiBody() {
   const dp = state.draft.deployment_parameters || {};
   const cores = state.draft.platform_constraints?.cores || [];
   const md = state.metadata;
   return {
     model_type: dp.model_type,
-    input_shape: md && Array.isArray(md.input_shape) && md.input_shape.length
-      ? md.input_shape.slice() : [1, 28, 28],
-    num_classes: md && Number.isFinite(md.num_classes) ? md.num_classes : 10,
+    input_shape: md.input_shape.slice(),
+    num_classes: md.num_classes,
     model_config: dp.model_config || {},
     max_axons: cores.length ? Math.max(...cores.map((c) => c.max_axons || 1)) : 1024,
     max_neurons: cores.length ? Math.max(...cores.map((c) => c.max_neurons || 1)) : 1024,
@@ -101,6 +108,11 @@ async function runHwVerify() {
     return;
   }
   state.metadata = await fetchMetadata();
+  if (!hasWorkloadMetadata()) {
+    showBanner(null, []);
+    renderStats(null, 'No Dataset Metadata');
+    return;
+  }
   const body = hwApiBody();
   try {
     const res = await fetch('/api/hw_config_verify', {
@@ -131,6 +143,10 @@ async function runHwVerify() {
 
 export async function autoSuggestHardware() {
   state.metadata = await fetchMetadata();
+  if (!hasWorkloadMetadata()) {
+    showBanner(false, ['Dataset metadata unavailable — pick a data provider first.']);
+    return;
+  }
   const res = await fetch('/api/hw_config_auto', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

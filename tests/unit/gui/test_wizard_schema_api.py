@@ -30,7 +30,7 @@ class TestConfigSchemaEndpoint:
     def test_serves_the_full_registry(self, client):
         payload = client.get("/api/config_schema").json()
         assert set(payload["keys"]) == set(REGISTRY)
-        assert len(payload["groups"]) == 8
+        assert len(payload["groups"]) == 9
 
     def test_serves_sub_schema_surfaces(self, client):
         payload = client.get("/api/config_schema").json()
@@ -74,6 +74,12 @@ class TestResolveEndpoint:
             for e in body["errors"]
         )
         assert body["pipeline"]["steps"] == []
+
+    def test_resolve_serves_the_emitted_document(self, client):
+        """The review pane shows EXACTLY what Launch submits: the emitted
+        document rides the resolve payload (lossless for tier configs)."""
+        body = client.post("/api/config/resolve", json=_t0_01()).json()
+        assert body["emitted"] == _t0_01()
 
     def test_unknown_keys_reported(self, client):
         draft = _t0_01()

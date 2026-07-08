@@ -16,7 +16,7 @@ def _why_pipeline_mode(cfg: dict) -> str:
 
 
 ENTRIES = (
-    _E("data_provider_name", section="top", group="run", owner="PipelineSession/data_provider",
+    _E("data_provider_name", section="top", group="workload", owner="PipelineSession/data_provider",
        type=T.STR, category=Category.BASIC, exposure="user", label="Data Provider",
        doc="Registered dataset provider id (see /api/data_providers)."),
     _E("experiment_name", section="top", group="run", owner="PipelineSession",
@@ -25,7 +25,7 @@ ENTRIES = (
     _E("generated_files_path", section="top", group="run", owner="PipelineSession",
        type=T.PATH, category=Category.ADVANCED, exposure="user", label="Generated Files Path",
        doc="Root directory for run working directories (configs, caches, artifacts)."),
-    _E("datasets_path", section="top", group="run", owner="DataProviderFactory",
+    _E("datasets_path", section="top", group="workload", owner="DataProviderFactory",
        type=T.PATH, category=Category.ADVANCED, exposure="user", label="Datasets Path",
        doc="Directory datasets are downloaded to / loaded from."),
     _E("seed", section="top", group="run", owner="PipelineSession/determinism",

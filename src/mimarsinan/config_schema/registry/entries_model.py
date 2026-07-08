@@ -1,4 +1,4 @@
-"""Registry entries: workload (model/data/pruning/weights) and training keys."""
+"""Registry entries: model architecture, dataset-side workload, and training keys."""
 
 from __future__ import annotations
 
@@ -15,49 +15,49 @@ _SEARCH_ACTIVE = R.any_of(
 )
 
 ENTRIES = (
-    _E("model_config_mode", group="workload", owner="deployment_specs/search_mode",
+    _E("model_config_mode", group="model", owner="deployment_specs/search_mode",
        type=T.ENUM, options=("user", "search"), category=Category.BASIC, exposure="user",
        label="Model Config Mode",
        doc="user: declare model_type/model_config; search: NAS discovers the architecture."),
-    _E("hw_config_mode", group="workload", owner="deployment_specs/search_mode",
+    _E("hw_config_mode", group="hardware", owner="deployment_specs/search_mode",
        type=T.ENUM, options=("fixed", "search"), category=Category.BASIC, exposure="user",
        label="Hardware Config Mode",
        doc="fixed: declare the core grid; search: hardware co-search discovers it."),
-    _E("model_type", group="workload", owner="model_registry/builders",
+    _E("model_type", group="model", owner="model_registry/builders",
        type=T.STR, category=Category.BASIC, exposure="user", label="Model Type", important=True,
        doc="Registered model builder id (see /api/model_types).",
        relevant=R.when("model_config_mode", in_=("user",))),
-    _E("model_config", group="workload", owner="model_registry/builders",
+    _E("model_config", group="model", owner="model_registry/builders",
        type=T.JSON, category=Category.BASIC, exposure="user", label="Model Config",
        doc="Per-builder architecture hyperparameters; the field schema comes from "
            "the builder (see /api/model_config_schema/{model_type}).",
        relevant=R.when("model_config_mode", in_=("user",))),
-    _E("model_factory", group="workload", owner="model_registry",
+    _E("model_factory", group="model", owner="model_registry",
        type=T.STR, category=Category.ADVANCED, label="Model Factory",
        doc="Explicit model factory override (research escape; normally absent)."),
-    _E("arch_search", group="workload", owner="search/architecture_search",
+    _E("arch_search", group="model", owner="search/architecture_search",
        type=T.JSON, category=Category.ADVANCED, exposure="user", label="Architecture Search",
        doc="NAS optimizer, budget, and objective declaration (see /api/wizard/schema).",
        relevant=_SEARCH_ACTIVE),
     _E("preprocessing", group="workload", owner="data_handling/preprocessing",
        type=T.JSON, category=Category.ADVANCED, exposure="user", label="Preprocessing",
        doc="Input preprocessing spec: resize_to, normalize (imagenet/cifar/...), interpolation."),
-    _E("pruning", group="workload", owner="pruning_adaptation",
+    _E("pruning", group="model", owner="pruning_adaptation",
        type=T.BOOL, category=Category.BASIC, exposure="user", label="Pruning Enabled",
        effect="Adds the Pruning Adaptation step", doc="Enable magnitude pruning adaptation."),
-    _E("pruning_fraction", group="workload", owner="pruning_adaptation",
+    _E("pruning_fraction", group="model", owner="pruning_adaptation",
        type=T.FLOAT, category=Category.BASIC, exposure="user", label="Pruning Fraction",
        doc="Fraction of weights pruned by the adaptation.", bounds=(0.0, 1.0),
        relevant=R.when_true("pruning")),
-    _E("prune_sparsity", group="workload", owner="pruning_adaptation",
+    _E("prune_sparsity", group="model", owner="pruning_adaptation",
        type=T.FLOAT, category=Category.ADVANCED, label="Prune Sparsity",
        doc="Legacy sparsity knob consumed by the pruning tuner mask builder.",
        bounds=(0.0, 1.0), relevant=R.when_true("pruning")),
-    _E("weight_source", group="workload", owner="weight_preloading",
+    _E("weight_source", group="model", owner="weight_preloading",
        type=T.STR, category=Category.ADVANCED, exposure="user", label="Weight Source",
        doc="Pretrained weight source id/path; presence selects the fine-tune path "
            "(finetune_epochs/finetune_lr) instead of from-scratch pretraining."),
-    _E("preload_weights", group="workload", owner="weight_preloading",
+    _E("preload_weights", group="model", owner="weight_preloading",
        type=T.BOOL, category=Category.ADVANCED, label="Preload Weights",
        doc="Load cached weights when available instead of pretraining."),
     _E("spike_encoding_seed", group="workload", owner="spike_generation",
@@ -110,11 +110,11 @@ ENTRIES = (
            "Providers register it via DataWorkloadProfile.input_value_range; "
            "explicit value wins; absent = 1.0 (unit-range data).",
        bounds=(0.0, None)),
-    _E("pretrained_weight_source", group="workload", owner="workload_profile/weight_preloading",
+    _E("pretrained_weight_source", group="model", owner="workload_profile/weight_preloading",
        type=T.STR, category=Category.ADVANCED, label="Pretrained Weight Source",
        doc="Weight source the preload_weights regime resolves to. Builders "
            "register it via ModelWorkloadProfile; explicit value wins."),
-    _E("clamp_cuda_assert_prone", group="workload", owner="workload_profile/deployment_specs",
+    _E("clamp_cuda_assert_prone", group="model", owner="workload_profile/deployment_specs",
        type=T.BOOL, category=Category.ADVANCED, label="Clamp CUDA-assert Prone",
        doc="Architecture is known to trip CUDA asserts under clamp adaptation "
            "(warns to enable cuda_debug). Builders register it via "

@@ -48,7 +48,7 @@ function coresWidget(ks) {
   function render() {
     host.replaceChildren();
     cores().forEach((core, i) => {
-      const row = el('div', 'field-grid cols-3 cores-editor-row');
+      const row = el('div', 'cores-editor-row');
       for (const dim of ['max_axons', 'max_neurons', 'count']) {
         const input = numeric(core[dim], (v) => {
           const next = cores().map((c) => ({ ...c }));

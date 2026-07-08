@@ -103,11 +103,34 @@ class TestRelevance:
         assert not Relevance.when_set("weight_source").evaluate({"weight_source": None})
 
 
+class TestTaxonomy:
+    """Dataset-side facts live in 'workload'; architecture-side in 'model';
+    the hardware-search switch with the hardware it searches. The wizard's
+    step flow (Workload -> Model -> Deployment -> Tuning -> Review) maps
+    whole groups to steps, so this split IS the step assignment."""
+
+    def test_workload_group_is_dataset_side(self):
+        for key in ("data_provider_name", "datasets_path", "preprocessing",
+                    "input_data_scale", "spike_encoding_seed"):
+            assert REGISTRY[key].group == "workload", key
+
+    def test_model_group_is_architecture_side(self):
+        for key in ("model_config_mode", "model_type", "model_config",
+                    "model_factory", "arch_search", "pruning",
+                    "pruning_fraction", "prune_sparsity", "weight_source",
+                    "preload_weights", "pretrained_weight_source",
+                    "clamp_cuda_assert_prone"):
+            assert REGISTRY[key].group == "model", key
+
+    def test_hw_search_switch_lives_with_hardware(self):
+        assert REGISTRY["hw_config_mode"].group == "hardware"
+
+
 class TestSerialization:
     def test_payload_is_json_safe_and_complete(self):
         payload = serialize_registry()
         json.dumps(payload)
-        assert len(payload["groups"]) == 8
+        assert len(payload["groups"]) == 9
         assert set(payload["keys"]) == set(REGISTRY)
         record = payload["keys"]["endpoint_floor_steps"]
         assert record["unit"] == "steps"

@@ -41,6 +41,17 @@ export function isExplicit(key) {
   return getKey(key) !== undefined;
 }
 
+/** Mirrors the server diff semantics: explicit null against no default (or a
+    null default) is "unset"; a real value against no default differs. */
+export function differsFromDefault(key) {
+  if (!isExplicit(key)) return false;
+  const value = getKey(key);
+  const ks = keySchema(key);
+  const hasDefault = !!ks && 'default' in ks;
+  if (value === null) return hasDefault && ks.default !== null;
+  return !hasDefault || JSON.stringify(value) !== JSON.stringify(ks.default);
+}
+
 export function setKey(key, value) {
   container(key, true)[key] = value;
 }

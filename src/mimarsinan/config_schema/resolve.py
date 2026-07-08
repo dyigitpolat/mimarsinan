@@ -88,13 +88,19 @@ def _diff_vs_defaults(explicit: Mapping[str, Any]) -> List[Dict[str, Any]]:
     for flat_key, value in explicit.items():
         entry = REGISTRY[flat_key]
         default = entry.default if entry.has_default() else None
+        # An explicit null against no default (or a null default) is "unset",
+        # never a differing knob; a real value against no default differs.
+        if value is None:
+            differs = entry.has_default() and entry.default is not None
+        else:
+            differs = (not entry.has_default()) or value != entry.default
         diff.append({
             "key": flat_key,
             "group": entry.group,
             "label": entry.label,
             "value": value,
             "default": default,
-            "differs": (not entry.has_default()) or value != entry.default,
+            "differs": differs,
         })
     return diff
 

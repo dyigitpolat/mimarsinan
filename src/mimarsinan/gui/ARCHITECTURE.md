@@ -17,7 +17,14 @@ frontend (`static/js/wizard/`) renders ENTIRELY from `GET /api/config_schema`
 knowledge, the draft state IS the config document (explicit keys only), and
 derivation runs exclusively server-side via `POST /api/config/resolve`
 (derived chips with WHY, keyed inline errors with rule-prescribed remedies,
-diff-vs-defaults template view, loud unrecognized-keys tray).
+diff-vs-defaults template view, loud unrecognized-keys tray, the emitted
+document the review pane shows verbatim). The wizard is a five-step flow
+(`static/js/wizard/stepper.js`: Workload → Model → Deployment → Tuning &
+Budgets → Review & Launch) whose steps host whole registry concern GROUPS —
+the taxonomy is the step assignment — with per-step error badges, a live
+pipeline preview bar, and a fresh draft seeded from `GET /api/config/starter`.
+`scripts/wizard_screenshots.py` (dev-only, browser-driven) captures per-step
+screenshots of both the fresh and template flows for design review.
 
 ## Key files
 | File | Purpose |

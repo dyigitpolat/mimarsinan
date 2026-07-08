@@ -1,4 +1,4 @@
-"""The eight concern groups every config key belongs to (one taxonomy, one home)."""
+"""The nine concern groups every config key belongs to (one taxonomy, one home)."""
 
 from __future__ import annotations
 
@@ -6,7 +6,10 @@ from typing import Dict, Tuple
 
 CONCERN_GROUPS: Tuple[Dict[str, str], ...] = (
     {"id": "workload", "title": "Workload",
-     "subtitle": "Model, dataset, weight init, pruning", "accent": "91,141,245"},
+     "subtitle": "Dataset, preprocessing, input encoding", "accent": "91,141,245"},
+    {"id": "model", "title": "Model",
+     "subtitle": "Architecture builder, weight init, pruning, NAS",
+     "accent": "45,212,191"},
     {"id": "spiking", "title": "Spiking semantics",
      "subtitle": "Firing/sync/encoding/thresholding/spike-gen/bias modes",
      "accent": "168,85,247"},

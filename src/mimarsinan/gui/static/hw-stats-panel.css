@@ -379,13 +379,20 @@
   font-size: 0.80rem;
   font-weight: 600;
   color: var(--text-primary);
-  min-width: 96px;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .hw-detail-stat-label {
   font-size: 0.62rem;
   color: var(--text-secondary);
   margin-right: 0;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .hw-detail-chip {
