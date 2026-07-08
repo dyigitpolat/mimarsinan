@@ -3,8 +3,10 @@
    diff-vs-defaults, unknown tray, JSON preview. All render from
    /api/config/resolve — nothing here is a static copy of the pipeline. */
 
-import { groups, keySchema, keysGatedBy, vehicleEnableKeys } from './schema.js';
-import { clearKey, setKey, state } from './state.js';
+import {
+  groups, keySchema, keysGatedBy, relevant, vehicleEnableKeys,
+} from './schema.js';
+import { clearKey, effectiveConfig, setKey, state } from './state.js';
 import { el, notifyChange, renderField } from './fields.js';
 
 function escapeHtml(s) {
@@ -111,13 +113,15 @@ function supportedVehicleRow(key, ks, info) {
   row.append(head);
   if (info.why) row.append(el('div', 'vehicle-why', info.why));
   if (on) {
-    const gatedKeys = keysGatedBy(key);
-    if (gatedKeys.length) {
+    /* Relevance still controls EXISTENCE inside the row (a preset-gated
+       sub-key only renders while its predicate holds). */
+    const cfg = effectiveConfig();
+    const gatedSchemas = keysGatedBy(key)
+      .map((gatedKey) => keySchema(gatedKey))
+      .filter((ks2) => ks2 && relevant(ks2.relevant, cfg));
+    if (gatedSchemas.length) {
       const settings = el('div', 'vehicle-settings field-grid cols-2');
-      for (const gatedKey of gatedKeys) {
-        const gatedSchema = keySchema(gatedKey);
-        if (gatedSchema) settings.append(renderField(gatedSchema));
-      }
+      for (const gatedSchema of gatedSchemas) settings.append(renderField(gatedSchema));
       row.append(settings);
     }
   }

@@ -1,8 +1,11 @@
 """Dev-mode workbench review: drive the real configurator in a real browser and
-save the round-2 evidence set to generated/_wizard_review/round2/:
+save the round-3 evidence set to generated/_wizard_review/round3/:
 fresh per-section shots, the co-design interaction sequence (mapping updating
-while arch + grid are edited), each of the five mode switches, the template
-flow, and the error/remedy flow.
+while arch + grid are edited), the mapping-strategy panel, float-weights
+authoring, the vehicle toggles with co-located settings, the 3-column
+co-search with the structured search-space editor, the immediate-tooltip
+demo, each of the five mode switches, the template flow, and the
+error/remedy flow.
 
 Usage (from the repo root, venv active; playwright + chromium required):
     python scripts/wizard_screenshots.py [--out DIR]
@@ -25,7 +28,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
-SECTION_IDS = ("workload", "codesign", "semantics", "tuning", "review")
+SECTION_IDS = ("workload", "codesign", "semantics", "training", "tuning", "review")
 TEMPLATE_TIER_CONFIG = REPO_ROOT / "test_configs" / "tier0" / "t0_02_lif_lenet5_fp_s8_novena_offload_pruned.json"
 
 MODE_SWITCHES = (
@@ -175,11 +178,12 @@ def _shoot_defect_evidence(page, base_url: str, out_dir: Path, shots: list[str])
     _shot(page, out_dir, "defect1_search_mode_promotes_nas", shots, full=True)
     _click_segment(page, "model_config_mode", "user")
 
-    # Defect 3: pruning is deployment-side and opens a slider knob.
-    _goto_section(page, "semantics")
+    # Defect 3 (round-2) + round-3 item 5: pruning is a mapping-strategy
+    # choice on the Co-Design panel and opens a slider knob there.
+    _goto_section(page, "codesign")
     page.click('.field[data-key="pruning"] .toggle-row')
     _settle(page, 900)
-    _shot(page, out_dir, "defect3_pruning_slider_in_semantics", shots, full=True)
+    _shot(page, out_dir, "defect3_pruning_slider_in_mapping_strategy", shots, full=True)
     page.click('.field[data-key="pruning"] .toggle-row')
     _settle(page, 600)
 
@@ -188,6 +192,78 @@ def _shoot_defect_evidence(page, base_url: str, out_dir: Path, shots: list[str])
     page.locator('.wb-section[data-section-id="tuning"] .advanced-toggle').first.click()
     _settle(page, 500)
     _shot(page, out_dir, "defect2_empty_hints_advanced_drawer", shots, full=True)
+
+
+def _shoot_round3_evidence(page, base_url: str, out_dir: Path, shots: list[str]) -> None:
+    """Round-3 defect evidence: mapping-strategy panel, float authoring,
+    vehicle toggles + co-located settings, 3-col co-search + structured
+    search space, cores editor, immediate tooltips."""
+    page.goto(base_url + "/wizard")
+    _settle(page, 2200)
+
+    # Item 5: the mapping-strategy panel sits beside the live mapping panel.
+    _goto_section(page, "codesign")
+    _shot_element(page.locator(".codesign-lower"), out_dir,
+                  "mapping_strategy_1_panel_beside_mapping", shots)
+    page.click('.field[data-key="allow_scheduling"] .toggle-row')
+    _settle(page, 1400)
+    _shot(page, out_dir, "mapping_strategy_2_strategy_edit_replans", shots, full=True)
+    page.click('.field[data-key="allow_scheduling"] .toggle-row')
+    _settle(page, 600)
+
+    # Item 2: the modernized core-types editor.
+    _shot_element(page.locator('.section[data-section="hardware"]'), out_dir,
+                  "cores_editor_modernized", shots)
+
+    # Item 3: float weights are first-class; the assembly drops the WQ steps
+    # and the emitted document carries the tier-config fp form.
+    page.click('.field[data-key="weight_bits"] .seg-btn:text-is("float")')
+    _settle(page, 1400)
+    _shot(page, out_dir, "float_1_authoring_codesign", shots, full=True)
+    _goto_section(page, "review")
+    _shot(page, out_dir, "float_2_emitted_vanilla_document", shots, full=True)
+    _goto_section(page, "codesign")
+    page.click('.field[data-key="weight_bits"] .seg-btn:text-is("quantized")')
+    _settle(page, 900)
+
+    # Item 6: supported vehicles are honest toggles with co-located settings;
+    # switching one off removes its step and stores an explicit off.
+    _goto_section(page, "semantics")
+    _shot_element(page.locator("#vehiclesCard"), out_dir,
+                  "vehicles_1_toggles_colocated_settings", shots)
+    page.locator(".vehicle-row .vehicle-toggle").last.click()
+    _settle(page, 1400)
+    _shot(page, out_dir, "vehicles_2_user_off_step_removed", shots, full=True)
+    _goto_section(page, "review")
+    _shot(page, out_dir, "vehicles_3_explicit_off_in_document", shots, full=True)
+
+    # Unsupported stays a muted line (sync mode: nevresim unavailable).
+    page.goto(base_url + "/wizard")
+    _settle(page, 2200)
+    _goto_section(page, "semantics")
+    _click_segment(page, "spiking_mode", "ttfs_cycle_based")
+    _click_segment(page, "ttfs_cycle_schedule", "synchronized")
+    _shot_element(page.locator("#vehiclesCard"), out_dir,
+                  "vehicles_4_unsupported_muted_line", shots)
+
+    # Item 10: the co-search configurator packs 3 columns and search_space
+    # renders as the structured bounds editor.
+    page.goto(base_url + "/wizard")
+    _settle(page, 2200)
+    _goto_section(page, "codesign")
+    _click_segment(page, "hw_config_mode", "search")
+    _settle(page, 900)
+    _shot_element(page.locator(".codesign-cosearch"), out_dir,
+                  "cosearch_5_three_columns_structured_search_space", shots)
+
+    # Item 9: immediate tooltip — a truncated faded placeholder reveals its
+    # full empty semantics on hover, with zero delay.
+    page.goto(base_url + "/wizard")
+    _settle(page, 2200)
+    _goto_section(page, "training")
+    page.hover('.field[data-key="weight_source"] input')
+    page.wait_for_timeout(250)
+    _shot(page, out_dir, "tooltip_1_immediate_placeholder_reveal", shots, full=True)
 
 
 def _shoot_mode_switches(page, base_url: str, out_dir: Path, shots: list[str]) -> None:
@@ -230,7 +306,7 @@ def _save_template(base_url: str, name: str, config: dict) -> str:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--out", default=str(REPO_ROOT / "generated" / "_wizard_review" / "round2"))
+    parser.add_argument("--out", default=str(REPO_ROOT / "generated" / "_wizard_review" / "round3"))
     args = parser.parse_args()
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -269,6 +345,7 @@ def main() -> None:
         _shoot_codesign_sequence(page, base_url, out_dir, shots)
         _shoot_cosearch_and_placeholders(page, base_url, out_dir, shots)
         _shoot_defect_evidence(page, base_url, out_dir, shots)
+        _shoot_round3_evidence(page, base_url, out_dir, shots)
         _shoot_mode_switches(page, base_url, out_dir, shots)
         _shoot_sections(page, base_url, out_dir, "template", shots,
                         query="?template_id=" + template_id)
