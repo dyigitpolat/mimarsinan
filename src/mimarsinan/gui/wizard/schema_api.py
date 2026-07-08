@@ -32,6 +32,7 @@ from mimarsinan.pipelining.core.pipelines.deployment_pipeline import (
     get_pipeline_semantic_group_by_step_name,
     get_pipeline_step_specs,
 )
+from mimarsinan.pipelining.core.registry.model_registry import ModelRegistry
 from mimarsinan.search.search_space_description import (
     CORE_DIM_GRANULARITY,
     DEFAULT_CORE_AXONS_BOUNDS,
@@ -200,8 +201,6 @@ def _resolved_view(resolution) -> Dict[str, Any]:
     if not resolution.ok:
         return {}
     view = {k: v for k, v in resolution.resolved.items() if k in REGISTRY}
-    from mimarsinan.pipelining.core.registry.model_registry import ModelRegistry
-
     profile = ModelRegistry.get_workload_profile(str(view.get("model_type") or ""))
     if profile is not None:
         for key, value in profile.config_updates().items():
