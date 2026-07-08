@@ -498,6 +498,28 @@ function renderLiveSearchTab(stepName, detail, container, state) {
   }
 }
 
+// The 304/ETag fast path deliberately skips DOM rebuilds (metrics/events
+// stream over WS), so WS event frames drive the insight surfaces directly:
+// refresh the context strip and mount annotation-driven tabs (gate story,
+// quantization) the moment their first event arrives.
+export function refreshLiveInsights(stepName, state) {
+  if (state.selectedStep !== stepName) return;
+  const detail = _detailCache[stepName];
+  if (!detail) return;
+  const annots = _annotationCache[stepName] || [];
+  const strip = document.getElementById('step-context-strip');
+  if (strip) renderStepContextStrip(strip, detail, annots, state.pipeline);
+  const tabBar = document.getElementById('step-tabs');
+  if (!tabBar) return;
+  const metrics = getStepMetrics(stepName, state);
+  const tabs = determineTabs(detail, metrics, annots);
+  const current = Array.from(tabBar.querySelectorAll('.tab-btn')).map(b => b.dataset.tab);
+  if (JSON.stringify(current) !== JSON.stringify(tabs)) {
+    if (!state.activeTab || !tabs.includes(state.activeTab)) state.activeTab = tabs[0];
+    renderTabs(stepName, tabs, detail, metrics, state);
+  }
+}
+
 // ── Honest header + verdict card ─────────────────────────────────────────
 // A carried metric is the previous step's value; showing it as "Metric:"
 // fabricates a measurement, so it renders as a labeled chip instead.

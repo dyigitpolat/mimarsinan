@@ -13,7 +13,7 @@ import {
   renderLiveRail,
 } from './monitor-shell.js';
 import { renderConfigTab } from './config-tab.js';
-import { refreshStepDetail, updateLiveCharts, bufferLiveAnnotation } from './step-detail.js';
+import { refreshStepDetail, updateLiveCharts, bufferLiveAnnotation, refreshLiveInsights } from './step-detail.js';
 import { renderAnalysisTab } from './analysis-tab.js';
 import { renderNocSection } from './noc-section.js';
 import { renderArtifactsSection } from './artifacts-section.js';
@@ -387,7 +387,10 @@ function handleWSMessage(msg) {
     const startTime = state.pipeline?.steps?.find(s => s.name === msg.step)?.start_time;
     msg._step_start = startTime != null ? (startTime > 1e12 ? startTime / 1000 : startTime) : null;
     bufferLiveAnnotation(msg.step, msg);
-    if (state.selectedStep === msg.step) scheduleStepDetailRefresh();
+    if (state.selectedStep === msg.step) {
+      refreshLiveInsights(msg.step, state);
+      scheduleStepDetailRefresh();
+    }
     if (currentSection() === 'analysis') renderAnalysisTab(state, apiUrl, fetchJSON);
   }
 }
