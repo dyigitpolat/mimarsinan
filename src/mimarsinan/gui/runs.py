@@ -21,6 +21,7 @@ from mimarsinan.gui.viewmodel import (
     build_overview_chart,
     categories_for,
     persisted_step_view,
+    semantic_groups_from_config_view,
     step_bar_badge,
 )
 from mimarsinan.gui.snapshot.rebuild import rebuild_step_snapshot_from_disk
@@ -109,14 +110,8 @@ def get_run_pipeline(run_id: str) -> dict[str, Any] | None:
     if not steps_data:
         return None
     config = get_run_config(run_id) or {}
-    # config.json stores the full outer config; pipeline specs expect the flat deployment_parameters dict.
-    flat_config = config.get("deployment_parameters", config)
-    groups: dict = {}
-    with best_effort(f"build semantic groups for run {run_id}", logger=logger):
-        from mimarsinan.pipelining.core.pipelines.deployment_pipeline import (
-            get_pipeline_semantic_group_by_step_name,
-        )
-        groups = get_pipeline_semantic_group_by_step_name(flat_config)
+    config_view = _build_run_config_view(config)
+    groups = semantic_groups_from_config_view(config_view)
     steps = []
     for name, sd in steps_data.items():
         steps.append({
@@ -131,7 +126,7 @@ def get_run_pipeline(run_id: str) -> dict[str, Any] | None:
         "steps": steps,
         "current_step": None,
         "config": config,
-        "config_view": _build_run_config_view(config),
+        "config_view": config_view,
         "overview_chart": build_overview_chart(steps),
     }
 

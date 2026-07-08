@@ -10,6 +10,7 @@ from mimarsinan.gui.viewmodel.gantt_vm import build_gantt
 from mimarsinan.gui.viewmodel.overview_vm import (
     build_overview_chart,
     persisted_step_view,
+    semantic_groups_from_config_view,
     step_bar_badge,
 )
 from mimarsinan.gui.viewmodel.staircase_vm import (
@@ -32,5 +33,6 @@ __all__ = [
     "highwater",
     "metric_category",
     "persisted_step_view",
+    "semantic_groups_from_config_view",
     "step_bar_badge",
 ]

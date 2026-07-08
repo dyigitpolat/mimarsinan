@@ -15,6 +15,7 @@ from mimarsinan.gui.viewmodel import (
     build_overview_chart,
     categories_for,
     persisted_step_view,
+    semantic_groups_from_config_view,
     step_bar_badge,
 )
 from mimarsinan.gui.runtime.persistence.load import (
@@ -184,14 +185,12 @@ def get_run_detail(runs: dict[str, ManagedRun], run_id: str) -> dict | None:
         except (OSError, json.JSONDecodeError):
             pass
 
-    outer_config = config or {}
-    flat_config = outer_config.get("deployment_parameters", outer_config)
-    groups: dict = {}
-    with best_effort(f"build semantic groups for run {run_id}", logger=logger):
-        from mimarsinan.pipelining.core.pipelines.deployment_pipeline import (
-            get_pipeline_semantic_group_by_step_name,
-        )
-        groups = get_pipeline_semantic_group_by_step_name(flat_config)
+    config_view = None
+    if config:
+        with best_effort(f"build config_view for run {run_id}", logger=logger):
+            from mimarsinan.config_schema.display_view import build_config_display_view
+            config_view = build_config_display_view(config, saved_config=config)
+    groups = semantic_groups_from_config_view(config_view)
     for s in steps:
         s["semantic_group"] = groups.get(s["name"])
 
@@ -211,10 +210,8 @@ def get_run_detail(runs: dict[str, ManagedRun], run_id: str) -> dict | None:
         "error": run_error,
         "overview_chart": build_overview_chart(steps),
     }
-    if config:
-        with best_effort(f"build config_view for run {run_id}", logger=logger):
-            from mimarsinan.config_schema.display_view import build_config_display_view
-            result["config_view"] = build_config_display_view(config, saved_config=config)
+    if config_view is not None:
+        result["config_view"] = config_view
     return result
 
 

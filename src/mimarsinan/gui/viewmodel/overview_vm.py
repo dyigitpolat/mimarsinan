@@ -55,6 +55,17 @@ def build_overview_chart(steps: Sequence[Mapping[str, Any]]) -> Dict[str, Any]:
     return {"points": points, "markers": markers}
 
 
+def semantic_groups_from_config_view(config_view: Mapping[str, Any] | None) -> Dict[str, str]:
+    """Step name -> pipeline phase, read off the config view's pipeline preview.
+
+    A saved ``config.json`` records only explicitly-set keys, so resolving a plan
+    straight from one drops every defaulted step; the display view applies the
+    defaults + derivations first, making its preview the SSOT for a step's phase.
+    """
+    preview = (config_view or {}).get("pipeline_preview") or {}
+    return dict(zip(preview.get("steps") or [], preview.get("semantic_groups") or []))
+
+
 def persisted_step_view(name: str, sd: Mapping[str, Any], *, status: str) -> Dict[str, Any]:
     """One steps.json entry -> the step view dict every overview shares."""
     start_t = sd.get("start_time")
