@@ -471,6 +471,55 @@ def _shoot_round6_evidence(page, base_url: str, out_dir: Path, illegal_id: str,
     _shot(page, out_dir, "round6_4_after_one_click_remedy", shots, full=True)
 
 
+def _shoot_round6_visual_language(page, base_url: str, out_dir: Path,
+                                  shots: list[str]) -> None:
+    """Round-6 items 6+7: provenance occupies NO layout (it is tooltip text),
+    and ONE green language marks derivation-owned values on EVERY widget type —
+    inputs, toggles, slider thumbs + numeric boxes, segmented ghosts, locked
+    fields — while a user-OWNED value reads the normal active theme."""
+    page.goto(base_url + "/wizard")
+    _settle(page, 2200)
+    _goto_section(page, "semantics")
+    _open_advanced(page, "deployment_target")
+
+    # Item 6: the source chips are gone from the layout; hovering the field
+    # reveals the doc + bounds + what empty resolves to + the SSOT source.
+    page.hover('.field[data-key="nf_scm_parity_samples"]')
+    page.wait_for_timeout(400)
+    _shot(page, out_dir, "round6_6_provenance_in_tooltip", shots)
+
+    # Item 7: toggles and sliders carrying derived values read green, and the
+    # numeric boxes state the concrete value.
+    _shot_element(page.locator('.section[data-section="deployment_target"]'), out_dir,
+                  "round6_7_derived_language_toggles_sliders", shots)
+
+    # Owned vs derived on the SAME widget types. capacity_gate takes an explicit
+    # OFF; scm_torch_sim_parity_check is clicked twice to an explicit ON (the
+    # user's cyan, beside the derivation's green ON above it); one slider gets a
+    # hand value through its numeric box.
+    page.click('.field[data-key="capacity_gate"] .toggle-row')
+    page.click('.field[data-key="scm_torch_sim_parity_check"] .toggle-row')
+    page.click('.field[data-key="scm_torch_sim_parity_check"] .toggle-row')
+    box = page.locator('.field[data-key="onchip_majority_min_fraction"] .slider-combo-box')
+    box.fill("0.35")
+    box.dispatch_event("change")
+    _settle(page, 1400)
+    _shot_element(page.locator('.section[data-section="deployment_target"]'), out_dir,
+                  "round6_7_owned_vs_derived_contrast", shots)
+
+    # Tuning sliders + Hardware capability toggles: the same language, no card
+    # and no key opts out.
+    page.goto(base_url + "/wizard")
+    _settle(page, 2200)
+    _goto_section(page, "training")
+    _open_advanced(page, "tuning")
+    _shot_element(page.locator('.section[data-section="tuning"]'), out_dir,
+                  "round6_7_derived_language_tuning_sliders", shots)
+    _goto_section(page, "codesign")
+    _shot_element(page.locator('.section[data-section="hardware"]'), out_dir,
+                  "round6_7_derived_language_hardware_toggles", shots)
+
+
 def _shoot_mode_switches(page, base_url: str, out_dir: Path, shots: list[str]) -> None:
     """Starter + each single mode switch: semantics + rail stay green."""
     for mode, schedule in MODE_SWITCHES:
@@ -562,6 +611,7 @@ def main() -> None:
         _shoot_round4_evidence(page, base_url, out_dir, broken_id, shots)
         _shoot_round5_evidence(page, base_url, out_dir, shots)
         _shoot_round6_evidence(page, base_url, out_dir, illegal_id, shots)
+        _shoot_round6_visual_language(page, base_url, out_dir, shots)
         _shoot_mode_switches(page, base_url, out_dir, shots)
         _shoot_sections(page, base_url, out_dir, "template", shots,
                         query="?template_id=" + template_id)

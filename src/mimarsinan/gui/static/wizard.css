@@ -548,32 +548,6 @@ button.launch-status-line.error {
 
 .field-explicit-slot { margin-left: auto; }
 
-/* SSOT provenance badge: names WHO owns this key's default while the draft is
-   silent (green = derivation-owned, matching the derived placeholder). It
-   disappears the moment an explicit declaration takes ownership back. */
-.field-source {
-  font-size: 10px;
-  font-weight: 500;
-  font-family: 'JetBrains Mono', monospace;
-  /* The label row is uppercase + tracked; a source NAME must read verbatim. */
-  text-transform: none;
-  letter-spacing: 0;
-  color: var(--accent-green);
-  opacity: 0.75;
-  background: rgba(52, 211, 153, 0.08);
-  border: 1px solid rgba(52, 211, 153, 0.18);
-  border-radius: 3px;
-  padding: 0 5px;
-  margin-left: auto;
-  white-space: nowrap;
-  flex: 0 0 auto;
-}
-
-/* The badge sits at the end of the label row; when the label is long they
-   stack rather than truncating the source name. */
-.field-label { flex-wrap: wrap; }
-.field-source + .field-explicit-slot { margin-left: 4px; }
-
 .field-revert {
   background: none;
   border: 1px solid var(--border-strong);
@@ -604,46 +578,76 @@ textarea {
   min-height: 30px;
 }
 
+/* ── ONE DERIVED VISUAL LANGUAGE ───────────────────────────────────────────
+   `.field-derived` is stamped on the field ROOT by the single `isDerivedNow`
+   predicate (the registry names an SSOT source AND the draft has not taken
+   ownership). Every rule below turns that one class into GREEN for one widget
+   type; a user-OWNED value keeps the normal active theme everywhere. No widget
+   opts out and no rule below names a key. Provenance itself occupies no layout
+   — the source is tooltip text on the field. */
+
 /* Empty semantics live INSIDE the control: a faded BLUE statement of the
-   wizard default (baseline first) that vanishes once the user types; a
-   derivation-owned value renders as faded GREEN "derived: <value>" —
-   green = derivation-owned, blue = default (round-4 defect 8). */
+   wizard default (baseline first) that vanishes once the user types. */
 input::placeholder,
 textarea::placeholder { color: rgba(96, 165, 250, 0.55); }
 
-input.placeholder-derived::placeholder,
-textarea.placeholder-derived::placeholder { color: rgba(52, 211, 153, 0.6); }
+/* 1 · text / number inputs — the concrete derived value, faded green. */
+.field-derived input::placeholder,
+.field-derived textarea::placeholder { color: rgba(52, 211, 153, 0.62); }
+.field-derived input,
+.field-derived textarea,
+.field-derived select { border-color: rgba(52, 211, 153, 0.22); }
 
-/* Controls with no text surface state the DERIVED value itself (a toggle
-   rendering "off" for a key the run resolves to "on" would be a lie); green
-   marks the value as derivation-owned until an explicit click takes it over. */
-.toggle-row.is-derived .toggle-label { color: rgba(52, 211, 153, 0.75); }
-.toggle-row.is-derived .toggle-switch { border-color: rgba(52, 211, 153, 0.35); }
-.toggle-row.is-derived.on .toggle-switch { background: rgba(16, 185, 129, 0.35); }
-.slider-combo.is-derived .slider { accent-color: rgba(52, 211, 153, 0.8); }
+/* 2 · toggles — the derived state, distinct from a user-set ON (which is cyan). */
+.field-derived .toggle-row { border-color: rgba(52, 211, 153, 0.22); }
+.field-derived .toggle-row .toggle-label { color: rgba(52, 211, 153, 0.7); }
+.field-derived .toggle-row.on { border-color: rgba(52, 211, 153, 0.45); }
+.field-derived .toggle-row.on .toggle-label { color: var(--accent-green); }
+.field-derived .toggle-row.on .toggle-switch { background: rgba(16, 185, 129, 0.38); }
+.field-derived .toggle-row.on .toggle-switch::after { background: var(--accent-green); }
 
-/* |legal| == 1: the field is LOCKED. Its CONTENT is the derived value (not a
-   placeholder) — read-only, because editing it could only produce an error. */
+/* 3 · sliders — green thumb; the numeric box states the value in green. */
+.field-derived .slider { accent-color: var(--accent-green); }
+.field-derived .slider-combo-box { color: var(--accent-green); }
+
+/* 4 · segmented buttons — the segment the derivation resolves to is a ghost. */
+.seg-btn.is-derived:not(.active) {
+  color: var(--accent-green);
+  background: rgba(16, 185, 129, 0.08);
+  box-shadow: inset 0 0 0 1px rgba(16, 185, 129, 0.28);
+}
+.field-derived .seg-control { border-color: rgba(52, 211, 153, 0.22); }
+
+/* 5 · structured editors — a registered widget inherits the language for free. */
+.field-derived .cores-editor,
+.field-derived .recipe-grid,
+.field-derived .structured-grid { border-color: rgba(52, 211, 153, 0.22); }
+
+/* 6 · locked fields (|legal| == 1): the CONTENT is the value, read-only —
+   green while the derivation owns it, normal theme when the document pins it. */
 .field-locked .locked-value {
   display: flex;
   align-items: center;
   gap: 6px;
   min-height: 32px;
   padding: 0 10px;
-  border: 1px dashed rgba(52, 211, 153, 0.28);
+  border: 1px dashed var(--border-strong);
   border-radius: var(--radius-sm, 4px);
-  background: rgba(16, 185, 129, 0.06);
+  background: var(--bg-input);
   cursor: default;
 }
-
-.locked-value-icon { color: var(--accent-green); opacity: 0.7; font-size: 11px; }
-
+.locked-value-icon { color: var(--text-dim); font-size: 11px; }
 .locked-value-text {
   font-family: 'JetBrains Mono', monospace;
   font-size: var(--font-body, 13px);
-  color: var(--accent-green);
-  opacity: 0.9;
+  color: var(--text-primary);
 }
+.field-derived.field-locked .locked-value {
+  border-color: rgba(52, 211, 153, 0.28);
+  background: rgba(16, 185, 129, 0.06);
+}
+.field-derived.field-locked .locked-value-icon { color: var(--accent-green); opacity: 0.7; }
+.field-derived.field-locked .locked-value-text { color: var(--accent-green); opacity: 0.9; }
 
 input:focus, select:focus, textarea:focus { outline: none; border-color: var(--border-focus); }
 
@@ -780,14 +784,6 @@ input.field-invalid { border-color: var(--accent-rose); }
 }
 
 .seg-btn:hover { color: var(--text-primary); }
-
-/* Derivation-owned enum: the segment the derivation currently resolves to,
-   shown as a green ghost until an explicit click takes ownership. */
-.seg-btn.is-derived:not(.active) {
-  color: var(--accent-green);
-  background: rgba(16, 185, 129, 0.08);
-  box-shadow: inset 0 0 0 1px rgba(16, 185, 129, 0.28);
-}
 
 .seg-btn.active {
   background: rgba(59, 130, 246, 0.22);

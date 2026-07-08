@@ -12,7 +12,16 @@
    - THE LEGAL-VALUE-SET LAW: the resolve payload's `legal_values[key]` drives
      rendering by its SIZE alone. |legal| == 1 → the field is LOCKED (read-only,
      rendered as the derived value); |legal| > 1 → the widget offers ONLY those
-     options. No per-mode special case exists here. */
+     options. No per-mode special case exists here.
+   - ONE DERIVED VISUAL LANGUAGE. `isDerivedNow(ks)` — the registry names an
+     SSOT source AND the draft has not taken ownership — is the SINGLE predicate
+     every widget hangs off. It stamps `.field-derived` on the field root, and
+     the stylesheet turns that into green for EVERY widget type (in-field value,
+     toggle, slider thumb + numeric box, segmented ghost, locked content,
+     structured editor). A user-OWNED value reads the normal active theme
+     everywhere. No widget opts out and no per-key CSS exists.
+   - PROVENANCE OCCUPIES NO LAYOUT. The SSOT source is tooltip text (helpText),
+     never a chip: chrome above every field was noise. */
 
 import { keySchema } from './schema.js';
 import {
@@ -60,15 +69,16 @@ function helpText(ks) {
   return parts.filter(Boolean).join('\n');
 }
 
+/** Whether the registry says an SSOT source produces this key's value while the
+    draft is silent. `isDerivedNow` adds "and the draft still is silent". */
+
 /** What an empty value means for this key — always answerable (tooltip text,
     the ONE place the registry's empty_means prose is allowed to surface). */
 export function emptyMeansText(ks) {
   if (isDerivationOwned(ks)) {
     const derived = resolvedValue(ks.key);
     const value = derived === undefined ? 'blocked by an active error' : formatValue(derived);
-    return `derived: ${value}`
-      + (ks.provenance ? ` (source: ${ks.provenance})` : '')
-      + (ks.empty_means ? ` — ${ks.empty_means}` : '');
+    return `derived: ${value}` + (ks.empty_means ? ` — ${ks.empty_means}` : '');
   }
   if (ks.empty_means) return ks.empty_means;
   const base = wizardDefault(ks);
@@ -101,24 +111,18 @@ export function placeholderText(ks) {
   return meaning.length > 36 ? meaning.slice(0, 35).trimEnd() + '…' : meaning;
 }
 
-/** Whether this key's placeholder is derivation-owned (green, not blue). */
-export function placeholderIsDerived(ks) {
-  return isDerivationOwned(ks);
+/** THE predicate: the derivation currently owns this key's value — the registry
+    names an SSOT source and the draft has not declared one. Every widget type
+    reads its green treatment from this, and only from this; an explicit
+    declaration takes ownership back and the field returns to the normal theme. */
+export function isDerivedNow(ks) {
+  return isDerivationOwned(ks) && !isExplicit(ks.key);
 }
 
-/** The SSOT that OWNS this key's value while the draft stays silent — the
-    registry's provenance, shown verbatim beside the derived value. An explicit
-    declaration takes ownership back, so the badge disappears. */
-export function sourceBadgeText(ks) {
-  if (!ks.provenance || isExplicit(ks.key)) return '';
-  return ks.provenance;
-}
-
-function syncSourceBadge(node, ks) {
-  const text = sourceBadgeText(ks);
-  node.textContent = text;
-  node.style.display = text ? '' : 'none';
-  node.title = text ? `Default owned by the ${text} (SSOT)` : '';
+/** Stamp the one derived-state class on a field root (works for the generic
+    widgets and for any registered structured editor alike). */
+function markDerived(node, ks) {
+  if (node && node.classList) node.classList.toggle('field-derived', isDerivedNow(ks));
 }
 
 /** Refresh every rendered placeholder from the latest resolve payload —
@@ -129,18 +133,19 @@ export function refreshPlaceholders() {
     const ks = keySchema(input.dataset.placeholderKey);
     if (!ks) return;
     input.placeholder = placeholderText(ks);
-    input.classList.toggle('placeholder-derived', placeholderIsDerived(ks));
     attachPlaceholderReveal(input, ks);
   });
-  document.querySelectorAll('[data-source-key]').forEach((node) => {
-    const ks = keySchema(node.dataset.sourceKey);
-    if (ks) syncSourceBadge(node, ks);
+  /* helpText carries the doc, the bounds, what empty resolves to and the SSOT
+     source. It quotes the derived value, so it goes stale exactly like a
+     placeholder does — refresh it (on the field root AND its doc line) on the
+     same round-trip, and re-stamp the one derived-state class. */
+  document.querySelectorAll('.field[data-key]').forEach((field) => {
+    const ks = keySchema(field.dataset.key);
+    if (ks) { markDerived(field, ks); setTip(field, helpText(ks)); }
   });
-  /* helpText quotes the derived value, so it goes stale exactly like a
-     placeholder does — refresh it on the same round-trip. */
   document.querySelectorAll('[data-doc-key]').forEach((doc) => {
     const ks = keySchema(doc.dataset.docKey);
-    if (ks) doc.title = helpText(ks);
+    if (ks) setTip(doc, helpText(ks));
   });
   document.querySelectorAll('[data-derived-enum-key]').forEach((row) => {
     const ks = keySchema(row.dataset.derivedEnumKey);
@@ -158,10 +163,13 @@ export function refreshPlaceholders() {
 
 /** The value a TEXT control displays when the draft is silent: the wizard
     default (baseline first). A derivation-owned key stays empty here — its
-    concrete value renders as the green placeholder that vanishes on typing. */
+    concrete RESOLVED value renders as the green placeholder that vanishes on
+    typing. Prefilling the schema default would be a lie whenever the deriver
+    overrides it (kd_ce_alpha's default is 0.3; the lif recipe folds 0.5). */
 function displayValue(ks) {
   const explicit = getKey(ks.key);
   if (explicit !== undefined) return explicit;
+  if (isDerivationOwned(ks)) return undefined;
   const base = wizardDefault(ks);
   return base.has ? base.value : undefined;
 }
@@ -173,14 +181,7 @@ function displayValue(ks) {
 function prefillValue(ks) {
   const value = displayValue(ks);
   if (value !== undefined && value !== null) return value;
-  return isDerivationOwned(ks) ? resolvedValue(ks.key) : undefined;
-}
-
-/** Whether a no-text-surface control is showing the derivation's value rather
-    than an explicit or default one (renders green, like a placeholder). */
-function prefillIsDerived(ks) {
-  return !isExplicit(ks.key) && !wizardDefault(ks).has
-    && isDerivationOwned(ks) && resolvedValue(ks.key) !== undefined;
+  return isDerivedNow(ks) ? resolvedValue(ks.key) : undefined;
 }
 
 function formatValue(value) {
@@ -217,15 +218,13 @@ export function revertToWizardDefault(key) {
 function fieldShell(ks) {
   const field = el('div', 'field' + (ks.important ? ' field-important' : ''));
   field.dataset.key = ks.key;
+  /* The SSOT source lives in the field's IMMEDIATE tooltip beside the doc,
+     effect, bounds and empty-semantics text — provenance occupies no layout. */
+  field.title = helpText(ks);
+  markDerived(field, ks);
   const label = el('label', 'field-label');
   label.append(el('span', 'field-label-text', ks.label));
   if (ks.unit) label.append(el('span', 'field-unit', ks.unit));
-  if (ks.provenance) {
-    const source = el('span', 'field-source');
-    source.dataset.sourceKey = ks.key;
-    syncSourceBadge(source, ks);
-    label.append(source);
-  }
   const marker = el('span', 'field-explicit-slot');
   label.append(marker);
   field.append(label);
@@ -239,15 +238,18 @@ export function fieldDoc(ks) {
   return doc;
 }
 
-/** A derivation-owned control always reveals what "empty" resolves to; a
-    truncated faded placeholder reveals its FULL text (through the immediate app
-    tooltip). Both are re-read on every resolve — a stale derived value in a
-    tooltip is the same lie as a stale one in the field. */
+/** Every hover surface of a field reveals the one help text: doc, effect,
+    bounds, what empty resolves to, the SSOT source, the consumer. It quotes the
+    derived value, so it is re-read on every resolve — a stale value in a tooltip
+    is the same lie as a stale one in the field. */
 function attachPlaceholderReveal(input, ks) {
-  const truncated = input.placeholder
-    && (input.placeholder.endsWith('…') || input.placeholder.length > 36);
-  input.title = (isDerivationOwned(ks) || truncated)
-    ? 'Empty → ' + emptyMeansText(ks) : '';
+  setTip(input, helpText(ks));
+}
+
+/** Write a tooltip through whichever attribute tooltip.js has claimed. */
+function setTip(node, text) {
+  if (node.dataset.tip !== undefined) node.dataset.tip = text;
+  else node.title = text;
 }
 
 /** The revert affordance marks TRUE user deltas: an explicit value equal to
@@ -288,7 +290,6 @@ function numberBox(ks) {
   input.value = value === undefined || value === null ? '' : String(value);
   input.dataset.placeholderKey = ks.key;
   input.placeholder = placeholderText(ks);
-  input.classList.toggle('placeholder-derived', placeholderIsDerived(ks));
   attachPlaceholderReveal(input, ks);
   return input;
 }
@@ -321,7 +322,7 @@ function sliderCombo(ks, marker, rerender) {
 
   slider.addEventListener('input', () => {
     box.value = slider.value;
-    wrap.classList.remove('unset', 'is-derived');
+    wrap.classList.remove('unset');
   });
   slider.addEventListener('change', () => {
     commitNumeric(ks, slider.value, marker, rerender);
@@ -340,16 +341,15 @@ function sliderCombo(ks, marker, rerender) {
 }
 
 /** The thumb states the value the run will use: explicit, default, or the
-    derivation's concrete value (green). Only a key with none of those is unset. */
+    derivation's concrete value. Only a key with none of those is unset; the
+    green treatment comes from the field root's one derived-state class. */
 function syncSlider(wrap, ks) {
   const slider = wrap.querySelector('.slider');
   if (!slider) return;
   const current = prefillValue(ks);
   const unset = current === undefined || current === null;
-  if (!unset) slider.value = String(current);
-  else slider.value = slider.min;
+  slider.value = unset ? slider.min : String(current);
   wrap.classList.toggle('unset', unset);
-  wrap.classList.toggle('is-derived', prefillIsDerived(ks));
 }
 
 export function numberInput(ks, marker, rerender) {
@@ -379,13 +379,14 @@ function boolToggle(ks, marker, rerender) {
 }
 
 function syncToggle(row, ks) {
-  const on = !!prefillValue(ks);
-  const derived = prefillIsDerived(ks);
-  row.classList.toggle('on', on);
-  row.classList.toggle('is-derived', derived);
+  const value = prefillValue(ks);
+  const blocked = isDerivedNow(ks) && value === undefined;
+  row.classList.toggle('on', !!value);
   const label = row.querySelector('.toggle-label');
-  if (label) label.textContent = on ? 'on' : 'off';
-  row.title = derived ? 'Empty → ' + emptyMeansText(ks) : '';
+  /* An active error blocks the derivation: a toggle cannot honestly read
+     "off" for a key whose resolved state is unknown. */
+  if (label) label.textContent = blocked ? '—' : (value ? 'on' : 'off');
+  setTip(row, helpText(ks));
 }
 
 /* ── Enum widgets: segmented for ≤ 5 options, dropdown beyond ──────────── */
@@ -405,10 +406,9 @@ function segmentedEnum(ks, marker, rerender) {
   const row = el('div', 'seg-control');
   const value = displayValue(ks);
   const base = wizardDefault(ks);
-  /* A derivation-owned enum has no wizard default to pre-fill, so the segment
-     the derivation currently resolves to renders as a GREEN ghost — the user
-     sees the derived value, and an explicit click takes ownership. */
-  if (!base.has) row.dataset.derivedEnumKey = ks.key;
+  /* The segment the derivation currently resolves to renders as a GREEN ghost —
+     the user sees the derived value, and an explicit click takes ownership. */
+  row.dataset.derivedEnumKey = ks.key;
   for (const option of offeredOptions(ks)) {
     const btn = el('button', 'seg-btn', option);
     btn.type = 'button';
@@ -431,21 +431,16 @@ function segmentedEnum(ks, marker, rerender) {
   return row;
 }
 
-/** A derivation-owned enum has no wizard default to pre-fill, so the segment
-    the derivation CURRENTLY resolves to renders as a green ghost — the user
-    sees the derived value, and an explicit click takes ownership. Re-synced on
-    every resolve round-trip, so a mode switch moves the ghost. */
+/** The segment the derivation CURRENTLY resolves to renders as a green ghost —
+    the user sees the derived value, and an explicit click takes ownership.
+    Re-synced on every resolve round-trip, so a mode switch moves the ghost.
+    Generic: any derivation-owned enum, with or without a schema default. */
 function syncDerivedSegment(row, ks) {
-  const derived = wizardDefault(ks).has ? undefined : resolvedValue(ks.key);
-  const explicit = isExplicit(ks.key);
+  const derived = isDerivedNow(ks) ? resolvedValue(ks.key) : undefined;
   row.querySelectorAll('.seg-btn').forEach((btn) => {
-    const isDerived = !explicit && derived !== undefined
-      && String(derived) === btn.textContent;
-    btn.classList.toggle('is-derived', isDerived);
-    if (isDerived) {
-      btn.title = `${btn.textContent} (derived`
-        + `${ks.provenance ? ' — ' + ks.provenance : ''})`;
-    }
+    const ghost = derived !== undefined && String(derived) === btn.textContent;
+    btn.classList.toggle('is-derived', ghost);
+    if (ghost) btn.title = `${btn.textContent} (derived — ${ks.provenance})`;
   });
 }
 
@@ -487,7 +482,6 @@ function textInput(ks, marker, rerender, parse, format) {
   input.placeholder = base.has && base.value !== null && base.value !== undefined
     ? format(base.value) : placeholderText(ks);
   input.dataset.placeholderKey = ks.key;
-  input.classList.toggle('placeholder-derived', placeholderIsDerived(ks));
   attachPlaceholderReveal(input, ks);
   input.addEventListener('change', () => {
     const raw = input.value.trim();
@@ -549,11 +543,14 @@ const _FORMAT = {
 function renderLockedField(ks, value) {
   const { field, marker } = fieldShell(ks);
   field.classList.add('field-locked');
+  /* A locked value the DOCUMENT pins is user-owned (normal theme + revert);
+     otherwise the derivation owns it and it reads green, like every other
+     derivation-owned widget. */
   const cell = el('div', 'locked-value');
   cell.append(el('span', 'locked-value-icon', '⛭'));
   cell.append(el('span', 'locked-value-text', formatValue(value)));
   cell.title = `Locked: the current config admits only ${formatValue(value)}.\n`
-    + emptyMeansText(ks);
+    + helpText(ks);
   field.append(cell, fieldDoc(ks));
   markExplicit(ks, marker, () => {});
   return field;
@@ -562,7 +559,14 @@ function renderLockedField(ks, value) {
 /** Render one key's field row (or its registered structured widget). */
 export function renderField(ks) {
   const custom = customRenderers.get(ks.key);
-  if (custom) return custom(ks);
+  if (custom) {
+    /* A structured editor builds its own shell; the ONE derived-state class is
+       still stamped on it, so it reads the same green language as every other
+       widget without knowing anything about provenance. */
+    const node = custom(ks);
+    markDerived(node, ks);
+    return node;
+  }
 
   const locked = lockedValue(ks.key);
   if (locked !== undefined) return renderLockedField(ks, locked);

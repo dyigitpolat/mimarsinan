@@ -641,3 +641,101 @@ class TestRound6RemediesAreServedNotHardcoded:
         body = body[: body.index("\n}")]
         # The derivation-owned branch returns before any empty_means fallback.
         assert body.index("isDerivationOwned") < body.index("empty_means")
+
+
+def _static(*parts) -> str:
+    path = os.path.join(_REPO_ROOT, "src", "mimarsinan", "gui", "static", *parts)
+    with open(path, encoding="utf-8") as f:
+        return f.read()
+
+
+class TestProvenanceOccupiesNoLayout:
+    """Round-6 item 6: the SSOT source is TOOLTIP text, never a chip. The only
+    surface that renders it inline is the Review 'Derived values' panel, whose
+    entire PURPOSE is provenance (the source is that panel's payload, not chrome)."""
+
+    def test_no_provenance_chip_element_is_created(self):
+        fields = _static("js", "wizard", "fields.js")
+        assert "field-source" not in fields
+        assert "data-source-key" not in fields
+        assert "sourceBadgeText" not in fields
+
+    def test_no_provenance_chip_is_styled(self):
+        assert ".field-source" not in _static("wizard.css")
+
+    def test_the_source_rides_the_immediate_field_tooltip(self):
+        fields = _static("js", "wizard", "fields.js")
+        help_text = fields[fields.index("function helpText("):]
+        help_text = help_text[: help_text.index("\n}")]
+        # The source sits beside the doc/effect/bounds/empty text already served.
+        assert "'SSOT source: ' + ks.provenance" in help_text
+        # ...and helpText is what the field root hands to the immediate tooltip.
+        shell = fields[fields.index("function fieldShell("):]
+        shell = shell[: shell.index("\n}")]
+        assert "field.title = helpText(ks)" in shell
+
+    def test_every_hover_surface_of_a_field_shows_the_same_help(self):
+        """Field root, input and toggle all hand tooltip.js the one helpText —
+        the source is stated exactly once, never duplicated per surface."""
+        fields = _static("js", "wizard", "fields.js")
+        assert "setTip(input, helpText(ks))" in fields
+        assert "setTip(row, helpText(ks))" in fields
+        empty = fields[fields.index("export function emptyMeansText("):]
+        empty = empty[: empty.index("\n}")]
+        assert "ks.provenance" not in empty, "the source belongs to helpText, once"
+
+    def test_review_keeps_its_inline_sources(self):
+        """The panel whose purpose IS provenance still names each source."""
+        assert "derived-chip-source" in _static("js", "wizard", "review.js")
+
+
+class TestOneDerivedVisualLanguage:
+    """Round-6 item 7: derived-ness is ONE predicate and ONE class; every widget
+    type reads its green treatment from it, and no widget opts out."""
+
+    WIDGET_RULES = (
+        ".field-derived input::placeholder",   # text / number inputs
+        ".field-derived .toggle-row",          # toggles
+        ".field-derived .slider",              # slider thumb
+        ".field-derived .slider-combo-box",    # slider numeric box
+        ".seg-btn.is-derived",                 # segmented ghost
+        ".field-derived .cores-editor",        # structured editors
+        ".field-derived.field-locked .locked-value",  # locked fields
+    )
+
+    def test_one_predicate_drives_every_widget(self):
+        fields = _static("js", "wizard", "fields.js")
+        assert "export function isDerivedNow(ks)" in fields
+        # The single stamp, applied to the field root (generic + structured).
+        assert "classList.toggle('field-derived', isDerivedNow(ks))" in fields
+        # No widget carries a private derived flag any more.
+        assert "placeholderIsDerived" not in fields
+        assert "prefillIsDerived" not in fields
+        assert "'is-derived'" not in fields.replace("btn.classList.toggle('is-derived', ghost)", "")
+
+    def test_every_widget_type_has_a_derived_rule(self):
+        css = _static("wizard.css")
+        for rule in self.WIDGET_RULES:
+            assert rule in css, rule
+
+    def test_the_derived_language_names_no_key(self):
+        """Generic off the registry state, never per-key CSS."""
+        css = _static("wizard.css")
+        block = css[css.index("ONE DERIVED VISUAL LANGUAGE"):css.index("input:focus, select:focus")]
+        for key in ("firing_mode", "spike_generation_mode", "nf_scm", "onchip", "capacity_gate"):
+            assert key not in block, key
+
+    def test_a_structured_editor_is_stamped_too(self):
+        fields = _static("js", "wizard", "fields.js")
+        custom = fields[fields.index("const custom = customRenderers.get(ks.key);"):]
+        custom = custom[: custom.index("const locked =")]
+        assert "markDerived(node, ks)" in custom
+
+    def test_a_derivation_owned_key_never_prefills_its_schema_default(self):
+        """kd_ce_alpha's schema default is 0.3 while the lif recipe folds 0.5 —
+        a prefilled box would state the wrong number in the normal theme."""
+        fields = _static("js", "wizard", "fields.js")
+        body = fields[fields.index("function displayValue(ks) {"):]
+        body = body[: body.index("\n}")]
+        assert body.index("isDerivationOwned(ks)") < body.index("wizardDefault(ks)")
+        assert REGISTRY["kd_ce_alpha"].provenance and REGISTRY["kd_ce_alpha"].has_default()

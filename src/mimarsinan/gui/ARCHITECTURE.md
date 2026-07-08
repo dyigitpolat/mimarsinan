@@ -44,14 +44,30 @@ errors whose REMEDIES the rule itself prescribes and serves (`{action: set|clear
 key, value}`; the frontend only applies them, it holds no rule table),
 diff-vs-defaults template view, loud unrecognized-keys tray, the emitted
 document the review pane shows verbatim).
-Every derived-by-default value NAMES its SSOT source: the registry
-`provenance` field renders as a green badge beside the field label (and on the
-Review chip), and disappears the moment an explicit declaration takes
-ownership back. Registry `hidden` keys (`pipeline_mode`,
-`pretrained_weight_source`) render on NO surface at all.
+Every derived-by-default value NAMES its SSOT source, and provenance occupies
+NO LAYOUT: the registry `provenance` field is TOOLTIP text, served through the
+one immediate field tooltip (`helpText`: doc · effect · unit · bounds · what
+empty resolves to · SSOT source · consumer) that the field root, its control and
+its doc line all hand to `static/js/tooltip.js`. The only surface that renders a
+source inline is the Review "Derived values" panel, whose PURPOSE is provenance —
+there the source is the payload, not chrome. Registry `hidden` keys
+(`pipeline_mode`, `pretrained_weight_source`) render on NO surface at all.
 
-THE IN-FIELD TEXT IS THE VALUE. A key the registry marks derivation-owned (it
-names a `provenance` source) renders, in faded GREEN, the CONCRETE PROSPECTIVE
+ONE DERIVED VISUAL LANGUAGE. `isDerivedNow(ks)` — the registry names an SSOT
+source AND the draft has not taken ownership — is the SINGLE predicate the whole
+frontend hangs derived-ness off. It stamps `.field-derived` on the field ROOT
+(generic widgets through `fieldShell`, registered structured editors through
+`renderField`), and the stylesheet turns that one class into GREEN for every
+widget type: in-field value (placeholder), toggle (green state, distinct from a
+user-set ON's cyan), slider (green thumb + green numeric box), segmented button
+(green ghost segment), locked field (green content + lock glyph), structured
+editor. A user-OWNED value reads the normal active theme on every widget. No
+widget opts out and no rule names a key. A derivation-owned key therefore never
+pre-fills its SCHEMA default either — `kd_ce_alpha`'s default is 0.3 while the
+lif recipe folds 0.5, and the blue default would have stated the wrong number.
+
+THE IN-FIELD TEXT IS THE VALUE. A key the registry marks derivation-owned
+renders, in faded GREEN, the CONCRETE PROSPECTIVE
 value its SSOT deriver produces for the CURRENT config state — served per
 resolve as `derived_values` (registry `derived_default`, provider/builder
 workload facts winning where they register one), recomputed on every round-trip
@@ -62,7 +78,8 @@ tooltip carry it. Faded BLUE is reserved for a plain concrete DEFAULT on a
 non-derived key. Controls with no text surface have no empty state either — a
 toggle or a slider thumb on a derivation-owned key renders PRE-FILLED with the
 derived value (an `off` toggle on a key the run resolves to `true` would be a
-lie), re-synced on every resolve.
+lie; a toggle whose derivation an active error BLOCKS reads `—`), re-synced on
+every resolve.
 
 THE LEGAL-VALUE-SET LAW (`static/js/wizard/state.js`: `legalValues` /
 `lockedValue`). The resolve payload's ALWAYS-served `legal_values[key]` drives
