@@ -1,0 +1,38 @@
+{
+  "experiment_name": "baseline",
+  "generated_files_path": "./generated",
+  "data_provider_name": "MNIST_DataProvider",
+  "seed": 0,
+  "start_step": null,
+  "deployment_parameters": {
+    "model_type": "mlp_mixer_core",
+    "model_config": {
+      "base_activation": "ReLU",
+      "patch_n_1": 4,
+      "patch_m_1": 4,
+      "patch_c_1": 32,
+      "fc_w_1": 64,
+      "fc_w_2": 64
+    },
+    "lr": 0.003,
+    "training_epochs": 4,
+    "batch_size": 128,
+    "tuning_budget_scale": 0.25,
+    "degradation_tolerance": 0.15,
+    "max_simulation_samples": 25
+  },
+  "platform_constraints": {
+    "cores": [
+      { "max_axons": 256, "max_neurons": 512, "count": 60, "has_bias": true },
+      { "max_axons": 512, "max_neurons": 256, "count": 60, "has_bias": true }
+    ],
+    "max_axons": 512,
+    "max_neurons": 512,
+    "has_bias": true,
+    "target_tq": 4,
+    "simulation_steps": 4,
+    "weight_bits": 5,
+    "allow_coalescing": true,
+    "allow_neuron_splitting": true
+  }
+}

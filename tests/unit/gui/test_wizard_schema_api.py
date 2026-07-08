@@ -82,6 +82,24 @@ class TestResolveEndpoint:
         assert body["unknown_keys"] == ["deployment_parameters.endpoint_floor_wall_s"]
 
 
+class TestStarterEndpoint:
+    def test_starter_is_served_and_resolves_clean(self, client):
+        draft = client.get("/api/config/starter").json()
+        body = client.post("/api/config/resolve", json=draft).json()
+        assert body["ok"] is True
+        assert body["errors"] == []
+        assert body["unknown_keys"] == []
+        assert len(body["pipeline"]["steps"]) >= 10
+
+    def test_starter_names_are_fresh(self, client):
+        first = client.get("/api/config/starter").json()
+        second = client.get("/api/config/starter").json()
+        assert first["experiment_name"]
+        # Same-second calls may collide on the timestamp; the counter suffix
+        # must still separate them.
+        assert first["experiment_name"] != second["experiment_name"]
+
+
 class TestRunEndpoint:
     def test_validation_failure_is_a_400(self, client):
         res = client.post("/api/run?validate=1", json={

@@ -58,6 +58,11 @@ def register_routes(
         from mimarsinan.gui.wizard.schema_api import resolve_payload
         return resolve_payload(body or {})
 
+    @app.get("/api/config/starter")
+    def api_config_starter():
+        from mimarsinan.gui.wizard.starter import starter_draft
+        return starter_draft()
+
     @app.get("/api/data_providers")
     def api_data_providers():
         from mimarsinan.data_handling.data_provider_factory import BasicDataProviderFactory

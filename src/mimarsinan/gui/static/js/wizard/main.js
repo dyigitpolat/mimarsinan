@@ -171,14 +171,16 @@ function bindActions() {
     alert(res.ok ? 'Template saved.' : 'Failed to save template');
   });
 
-  document.getElementById('resetBtn')?.addEventListener('click', () => {
-    if (!window.confirm('Reset all configuration to defaults?')) return;
-    resetDraft();
+  document.getElementById('resetBtn')?.addEventListener('click', async () => {
+    if (!window.confirm('Reset to the baseline pipeline?')) return;
+    await seedStarterDraft();
     window.history.replaceState({}, '', '/wizard');
     state.editContinueRunId = null;
     state.prevCompleted = null;
+    await ensureModelSchema(state.draft.deployment_parameters?.model_type);
     renderAll();
     scheduleResolve();
+    scheduleHwVerify();
   });
 
   const showJson = document.getElementById('showJsonToggle');
@@ -239,10 +241,23 @@ async function loadDynamicOptions() {
   );
 }
 
+/** Seed the fresh wizard with the server's ready-to-launch baseline draft
+    (the fresh-state contract); an empty draft is the offline fallback. */
+async function seedStarterDraft() {
+  const starter = await fetch('/api/config/starter')
+    .then((r) => (r.ok ? r.json() : null)).catch(() => null);
+  if (starter) loadDraftFromConfig(starter);
+  else resetDraft();
+}
+
 async function loadFromUrlParams() {
   const params = new URLSearchParams(window.location.search);
   const runId = params.get('run_id');
   const templateId = params.get('template_id');
+  if (!runId && !templateId) {
+    await seedStarterDraft();
+    return;
+  }
   if (runId) {
     const config = await fetch('/api/runs/' + encodeURIComponent(runId) + '/config')
       .then((r) => (r.ok ? r.json() : null)).catch(() => null);
@@ -263,6 +278,7 @@ async function loadFromUrlParams() {
     const config = await fetch('/api/templates/' + encodeURIComponent(templateId))
       .then((r) => (r.ok ? r.json() : null)).catch(() => null);
     if (config) loadDraftFromConfig(config, { templateName: templateId });
+    else await seedStarterDraft();
   }
 }
 
@@ -271,11 +287,6 @@ async function boot() {
   installStructuredWidgets();
   await loadDynamicOptions();
   await loadFromUrlParams();
-  const modelType = state.draft.deployment_parameters?.model_type
-    || state.dynamicOptions.model_type[0]?.id;
-  if (modelType && !state.draft.deployment_parameters?.model_type) {
-    state.draft.deployment_parameters.model_type = modelType;
-  }
   await ensureModelSchema(state.draft.deployment_parameters?.model_type);
   bindActions();
   bindChangeEvents();
