@@ -112,6 +112,21 @@
   white-space: nowrap;
 }
 
+/* Two-column masonry: sections fill the first column top-to-bottom, then
+   the second; a section never splits across columns. */
+.cv-sections {
+  columns: 2;
+  column-gap: 16px;
+}
+.cv-sections .cv-section {
+  break-inside: avoid;
+  margin-bottom: 16px;
+}
+
+@media (max-width: 1100px) {
+  .cv-sections { columns: 1; }
+}
+
 /* Sections */
 .cv-section {
   --g: 107, 114, 128;

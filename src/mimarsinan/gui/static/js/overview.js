@@ -1,5 +1,5 @@
 /* Overview charts (measured points, verdict/carried markers, timing). */
-import { esc, fmtDuration, elapsedFromStepStart, safeReact, emptyAnnotation } from './util.js';
+import { esc, fmtDuration, elapsedFromStepStart, safeReact, emptyAnnotation, groupAccent } from './util.js';
 
 const TONE_COLORS = { pass: '#4ade80', fail: '#f87171', carried: '#8494a7' };
 
@@ -71,7 +71,7 @@ function renderMetricProgression(steps, chart) {
       type: 'category', categoryorder: 'array', categoryarray: categories,
     },
     yaxis: { title: 'Measured Metric', automargin: true, range: [0, maxY] },
-    height: 260, annotations, shapes,
+    height: 300, annotations, shapes,
   });
 }
 
@@ -79,22 +79,28 @@ function renderStepTiming(steps) {
   const now = Date.now() / 1000;
   const timed = [];
   for (const s of steps) {
-    if (s.duration != null) timed.push({ name: s.name, duration: s.duration, running: false });
-    else if (s.status === 'running' && s.start_time != null) timed.push({ name: s.name, duration: elapsedFromStepStart(s.start_time, now), running: true });
+    if (s.duration != null) timed.push({ ...s, duration: s.duration, running: false });
+    else if (s.status === 'running' && s.start_time != null) timed.push({ ...s, duration: elapsedFromStepStart(s.start_time, now), running: true });
   }
   const anno = timed.length === 0 ? emptyAnnotation('No timing data yet') : [];
+  const total = timed.reduce((acc, s) => acc + s.duration, 0);
+  const pct = d => total > 0 ? ` · ${((d / total) * 100).toFixed(1)}% of run` : '';
   const traces = timed.length > 0 ? [{
     x: timed.map(s => s.duration), y: timed.map(s => s.name),
     type: 'bar', orientation: 'h',
-    marker: { color: timed.map(s => s.running ? '#ff9800' : '#5b8af5') },
+    marker: {
+      color: timed.map(s => s.running ? '#ff9800' : `rgba(${groupAccent(s.semantic_group)},0.85)`),
+    },
     text: timed.map(s => fmtDuration(s.duration) + (s.running ? ' ●' : '')),
-    textposition: 'inside', textfont: { size: 10, color: '#e8eaed' },
+    textposition: 'auto', textfont: { size: 10, color: '#e8eaed' },
+    hovertext: timed.map(s => `${s.name} — ${fmtDuration(s.duration)}${s.running ? ' (running)' : pct(s.duration)}`),
+    hoverinfo: 'text',
   }] : [];
   safeReact('chart-step-timing', traces, {
-    margin: { t: 40, r: 30, b: 50, l: 180 },
+    margin: { t: 16, r: 30, b: 50, l: 8 },
     xaxis: { title: 'Duration (s)', automargin: true },
-    yaxis: { autorange: 'reversed', automargin: true, tickfont: { size: 10 } },
-    height: Math.max(200, timed.length * 32 + 60), annotations: anno,
+    yaxis: { autorange: 'reversed', automargin: true, tickfont: { size: 11 } },
+    height: Math.max(200, timed.length * 26 + 70), annotations: anno,
   });
 }
 
@@ -106,12 +112,14 @@ export function renderConfig(config) {
     'training_epochs', 'lr', 'simulation_steps', 'max_simulation_samples', 'input_shape', 'num_classes', 'device'];
   const all = Object.keys(config);
   const sorted = [...priority.filter(k => k in config), ...all.filter(k => !priority.includes(k)).sort()];
-  let html = '<table class="config-table">';
+  let html = '<div class="card"><div class="card-header">Deployment parameters'
+    + '<span class="note">flat fallback — no structured view for this run</span></div>'
+    + '<div class="card-body no-pad"><table class="config-table">';
   for (const key of sorted) {
     const val = config[key];
     const display = typeof val === 'object' ? JSON.stringify(val) : String(val);
     html += `<tr><td>${esc(key)}</td><td>${esc(display)}</td></tr>`;
   }
-  html += '</table>';
+  html += '</table></div></div>';
   el.innerHTML = html;
 }

@@ -1,5 +1,5 @@
 /* Activations + Adaptation tabs. */
-import { esc, safeReact } from './util.js';
+import { esc, safeReact, legendBelow } from './util.js';
 import { renderActivationScaleStats } from './step-insights.js';
 
 // ── Activations tab ──────────────────────────────────────────────────────
@@ -83,14 +83,14 @@ export function renderAdaptationTab(adaptMgr, model, metrics, container) {
     safeReact('ad-timeline', adaptMetrics.map(name => ({
       y: (metrics[name] || []).map(p => p.value), x: (metrics[name] || []).map((_, i) => i),
       name, type: 'scatter', mode: 'lines', line: { width: 2 },
-    })), { height: 260, showlegend: true, legend: { x: 1.02, y: 1, xanchor: 'left', orientation: 'v', font: { size: 10 } }, margin: { r: 100 }, xaxis: { title: 'Step' }, yaxis: { title: 'Rate', range: [0, 1] } });
+    })), { ...legendBelow(adaptMetrics, 'ad-timeline', { height: 260 }), xaxis: { title: 'Step' }, yaxis: { title: 'Rate', range: [0, 1] } });
   }
 
   if (hasAct || hasParam) {
     const traces = [];
     if (hasAct) { const f = layers.filter(l => l.activation_scale != null); traces.push({ x: f.map(l => `L${l.index}`), y: f.map(l => l.activation_scale), name: 'Activation', type: 'bar', marker: { color: '#4caf50' } }); }
     if (hasParam) { const f = layers.filter(l => l.parameter_scale != null); traces.push({ x: f.map(l => `L${l.index}`), y: f.map(l => l.parameter_scale), name: 'Parameter', type: 'bar', marker: { color: '#9c27b0' } }); }
-    safeReact('ad-scales', traces, { barmode: 'group', height: 280, showlegend: true, legend: { x: 1.02, y: 1, xanchor: 'left', orientation: 'v', font: { size: 10 } }, margin: { r: 100 }, xaxis: { title: 'Layer' }, yaxis: { title: 'Scale Value' } });
+    safeReact('ad-scales', traces, { barmode: 'group', ...legendBelow(traces.map(t => t.name), 'ad-scales', { height: 280 }), xaxis: { title: 'Layer' }, yaxis: { title: 'Scale Value' } });
   }
 
   const dLayers = layers.filter(l => l.weight?.histogram);
@@ -99,18 +99,19 @@ export function renderAdaptationTab(adaptMgr, model, metrics, container) {
       const h = l.weight.histogram;
       const mids = h.bin_edges.slice(0, -1).map((e, j) => (e + h.bin_edges[j + 1]) / 2);
       return { x: mids, y: h.counts, name: `L${l.index}`, type: 'bar', opacity: 0.6 };
-    }), { barmode: 'overlay', height: 300, showlegend: true, legend: { x: 1.02, y: 1, xanchor: 'left', orientation: 'v', font: { size: 10 } }, margin: { r: 100 }, xaxis: { title: 'Weight Value' }, yaxis: { title: 'Count' } });
+    }), { barmode: 'overlay', ...legendBelow(dLayers.map(l => `L${l.index}`), 'ad-dist', { height: 300 }), xaxis: { title: 'Weight Value' }, yaxis: { title: 'Count' } });
   }
 
   if (hasParam) {
     const f = layers.filter(l => l.parameter_scale != null && l.parameter_scale > 0);
     if (f.length > 0) {
-      safeReact('ad-quant', f.map(l => {
+      const traces = f.map(l => {
         const s = l.parameter_scale, levels = Math.round(2 * s);
         const xs = [], ys = [];
         for (let v = -levels; v <= levels; v++) { xs.push(v / s); ys.push(v); }
         return { x: xs, y: ys, name: `L${l.index} (s=${s.toFixed(2)})`, type: 'scatter', mode: 'lines+markers', line: { width: 1, shape: 'hv' }, marker: { size: 3 } };
-      }), { height: 280, showlegend: true, legend: { x: 1.02, y: 1, xanchor: 'left', orientation: 'v', font: { size: 10 } }, margin: { r: 100 }, xaxis: { title: 'Continuous Weight' }, yaxis: { title: 'Quantized Level' } });
+      });
+      safeReact('ad-quant', traces, { ...legendBelow(traces.map(t => t.name), 'ad-quant', { height: 280 }), xaxis: { title: 'Continuous Weight' }, yaxis: { title: 'Quantized Level' } });
     }
   }
 }

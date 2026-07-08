@@ -9,9 +9,10 @@ them), the thread-safe `DataCollector` (in-memory state + WebSocket broadcast),
 and `ResourceDescriptor`/`ResourceStore` (lazy, step-scoped heavy artefacts —
 heatmap PNGs, connectivity JSON — materialised on first HTTP fetch). The SPA
 assets (HTML/CSS/ES-module JS) live in the non-package `static/` directory;
-third-party runtime assets (Plotly, fonts) are vendored under `static/vendor/`
-so the GUI works offline — a unit ratchet (`test_static_offline.py`) rejects
-any external `src`/`href`/`url()` reference in static assets. The MONITOR
+third-party runtime assets (Plotly, fonts, and the `marked` + `DOMPurify` pair
+behind `renderMarkdown`) are vendored under `static/vendor/` so the GUI works
+offline — a unit ratchet (`test_static_offline.py`) rejects any external
+`src`/`href`/`url()` reference *or ES-module import* in static assets. The MONITOR
 (`static/index.html` + `static/js/main.js`) speaks the same workbench design
 language as the configurator via the shared token sheet
 (`static/css/tokens.css` — the design-token SSOT the wizard migrates onto
@@ -20,9 +21,12 @@ later; `static/css/monitor.css` is the monitor shell): a left section rail
 Console, built by `static/js/monitor-shell.js`) and a persistent sticky right
 live rail (run verdict pill, current/latest step, a measured-only metric
 sparkline, artifact-vs-total wall clock with the endpoint step budget, gate
-verdicts, progress). The Steps section is a vertical step list with
-group-accented status dots and honest flags (measured value · `carried` ·
-PASS/FAIL) opening per-step instrument pages; the Hardware/NoC section
+verdicts, progress). The pipeline steps hang off the rail's Steps entry as
+collapsible sub-items with group-accented status dots and honest flags
+(measured value · `carried` · PASS/FAIL), so the Steps section itself is all
+instruments; `static/js/pipeline-state.js` reduces WS `pipeline_overview`
+frames onto the page state key-agnostically, since the in-process collector and
+the active-run tailer emit different key sets. The Hardware/NoC section
 (`static/js/noc-section.js`) renders the SANA-FE spike-traffic records as a
 per-tile mesh heatmap with a time scrubber + playback, per-cycle src→dst flow
 arrows and XY-routed mesh-link load (falling back to segment totals — with an

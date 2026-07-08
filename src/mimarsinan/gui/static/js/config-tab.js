@@ -1,24 +1,6 @@
 /* Pipeline configuration tab — structured server-driven display. */
-import { esc } from './util.js';
+import { esc, groupAccent } from './util.js';
 import { renderConfig as renderConfigLegacy } from './overview.js';
-
-const GROUP_GLOW = {
-  configuration: '168,85,247',
-  model_building: '139,92,246',
-  pretraining: '56,189,248',
-  torch_mapping: '14,165,233',
-  pruning: '244,63,94',
-  activation: '74,222,128',
-  activation_quantization: '52,211,153',
-  weight_quantization: '251,191,36',
-  normalization: '34,211,238',
-  soft_mapping: '96,165,250',
-  core_verification: '129,140,248',
-  coreflow_tuning: '99,102,241',
-  hardware: '249,115,22',
-  simulation: '103,232,249',
-  other: '107,114,128',
-};
 
 let _uiState = {
   hideDefaults: false,
@@ -69,11 +51,13 @@ function buildConfigViewHtml(view) {
 
   html += buildPipelinePreviewHtml(view.pipeline_preview);
 
+  // Sections pack into two masonry columns on wide screens (config-tab.css).
+  html += '<div class="cv-sections">';
   for (const section of view.sections || []) {
     html += buildSectionHtml(section, view.nested || {});
   }
-
   html += buildNestedStandaloneHtml(view.nested || {}, view.sections || []);
+  html += '</div>';
   html += buildRawJsonFooter(view.raw_resolved);
   html += '</div>';
   return html;
@@ -84,8 +68,7 @@ function buildPipelinePreviewHtml(preview) {
   let html = '<div class="cv-preview"><div class="cv-preview-label">Pipeline path from config</div><div class="cv-preview-chips">';
   preview.steps.forEach((step, i) => {
     const group = (preview.semantic_groups || [])[i] || 'other';
-    const glow = GROUP_GLOW[group] || GROUP_GLOW.other;
-    html += `<span class="cv-chip" data-group="${esc(group)}" style="--g:${glow}" title="${esc(step)}">${esc(shortStepName(step))}</span>`;
+    html += `<span class="cv-chip" data-group="${esc(group)}" style="--g:${groupAccent(group)}" title="${esc(step)}">${esc(shortStepName(step))}</span>`;
   });
   html += '</div></div>';
   return html;

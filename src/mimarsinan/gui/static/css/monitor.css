@@ -93,7 +93,7 @@
 .wb-body {
   flex: 1 1 auto;
   display: grid;
-  grid-template-columns: 216px minmax(0, 1fr) 312px;
+  grid-template-columns: 240px minmax(0, 1fr) 312px;
   align-items: start;
 }
 
@@ -114,6 +114,7 @@
 
 .wb-nav-item {
   display: flex;
+  flex: 0 0 auto;
   align-items: center;
   gap: 10px;
   padding: 8px 10px;
@@ -166,6 +167,38 @@
 }
 
 .wb-nav-spacer { flex: 1 1 auto; }
+
+.wb-nav-expander {
+  margin-left: auto;
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-sm);
+  color: var(--text-dim);
+  font-size: 10px;
+}
+.wb-nav-expander:hover { background: rgba(132, 148, 167, 0.15); color: var(--text-primary); }
+
+/* ── Step navigator: sub-items under Steps ── */
+
+/* The step navigator absorbs the rail's overflow — it scrolls internally so a
+   long pipeline never pushes the section links below the fold. */
+.nav-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 0 0 6px 19px;
+  padding-left: 7px;
+  border-left: 1px solid var(--border);
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+.nav-steps.collapsed { display: none; }
+.nav-steps-empty { color: var(--text-dim); font-size: var(--font-caption); padding: 4px 6px; }
 
 /* ═══ Main sections ═════════════════════════════════════════════════════ */
 
@@ -270,28 +303,7 @@
 
 .rail-empty { color: var(--text-dim); font-size: 12px; padding: 2px 0; }
 
-/* ═══ Steps section: vertical list + step page ══════════════════════════ */
-
-.steps-layout {
-  display: grid;
-  grid-template-columns: 248px minmax(0, 1fr);
-  gap: 16px;
-  align-items: start;
-}
-
-.step-list {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  position: sticky;
-  top: calc(var(--header-h) + 16px);
-  max-height: calc(100vh - var(--header-h) - 32px);
-  overflow-y: auto;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg-card);
-  padding: 6px;
-}
+/* ═══ Step items (rendered inside .nav-steps) ═══════════════════════════ */
 
 .step-item {
   display: flex;
@@ -368,6 +380,10 @@
   flex-wrap: wrap;
 }
 .step-detail-header h2 { font-size: 16px; font-weight: 700; letter-spacing: -0.01em; }
+
+.step-pager { margin-left: auto; display: flex; gap: 4px; }
+.step-pager .step-nav-btn { min-width: 26px; padding: 2px 8px; }
+.step-pager .step-nav-btn[disabled] { opacity: 0.35; cursor: default; }
 .detail-meta { font-size: var(--font-caption); color: var(--text-dim); }
 .detail-metric {
   font-family: var(--font-mono);
@@ -714,9 +730,11 @@
 
 /* ═══ Responsive ════════════════════════════════════════════════════════ */
 
+/* Icon-only rail: the step navigator hides with the titles; the step page
+   header's prev/next controls keep step navigation available. */
 @media (max-width: 1280px) {
   .wb-body { grid-template-columns: 64px minmax(0, 1fr) 280px; }
-  .wb-nav-titles, .wb-nav-badge { display: none; }
+  .wb-nav-titles, .wb-nav-badge, .wb-nav-expander, .nav-steps { display: none; }
   .wb-nav-item { justify-content: center; }
 }
 
@@ -724,6 +742,4 @@
   .wb-body { display: flex; flex-direction: column; }
   .wb-nav { flex-direction: row; border-right: none; border-bottom: 1px solid var(--border); height: auto; position: static; }
   .wb-rail { border-left: none; border-top: 1px solid var(--border); height: auto; position: static; }
-  .steps-layout { grid-template-columns: 1fr; }
-  .step-list { position: static; max-height: 40vh; }
 }

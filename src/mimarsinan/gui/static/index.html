@@ -54,17 +54,17 @@
           <span class="wb-section-head-sub">run health &amp; the headline deployed metric</span>
         </div>
         <div id="overview-facts" class="overview-facts" style="display:none"></div>
-        <div class="grid-2">
-          <div class="card">
-            <div class="card-header">Target metric across steps
-              <span class="note">measured points · verdict / carried event lines</span>
-            </div>
-            <div class="card-body no-pad"><div id="chart-metric-progression"></div></div>
+        <div class="card" style="margin-bottom:16px">
+          <div class="card-header">Target metric across steps
+            <span class="note">measured points · verdict / carried event lines</span>
           </div>
-          <div class="card">
-            <div class="card-header">Step timing</div>
-            <div class="card-body no-pad"><div id="chart-step-timing"></div></div>
+          <div class="card-body no-pad"><div id="chart-metric-progression"></div></div>
+        </div>
+        <div class="card">
+          <div class="card-header">Step timing
+            <span class="note">wall seconds per step · colored by pipeline phase</span>
           </div>
+          <div class="card-body no-pad"><div id="chart-step-timing"></div></div>
         </div>
       </section>
 
@@ -74,13 +74,10 @@
           <h2>Steps</h2>
           <span class="wb-section-head-sub">per-step instrument pages</span>
         </div>
-        <div class="steps-layout">
-          <div class="step-list" id="step-list">
-            <div class="empty-state">Loading pipeline steps…</div>
-          </div>
-          <div id="step-detail" class="step-detail">
-            <div class="empty-state">Select a pipeline step to view details</div>
-          </div>
+        <!-- The step navigator lives in the left section rail (sub-items
+             under Steps); the page is all instruments. -->
+        <div id="step-detail" class="step-detail">
+          <div class="empty-state">Select a pipeline step to view details</div>
         </div>
       </section>
 
@@ -139,10 +136,10 @@
           <h2>Configuration</h2>
           <span class="wb-section-head-sub">the emitted deployment config this run executes</span>
         </div>
-        <div class="card" style="margin-bottom:16px">
-          <div class="card-body" id="config-body">
-            <div class="empty-state">Loading config…</div>
-          </div>
+        <!-- No outer card: the config view's sections are cards themselves,
+             packed into two masonry columns. -->
+        <div id="config-body">
+          <div class="empty-state">Loading config…</div>
         </div>
       </section>
 

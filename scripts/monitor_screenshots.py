@@ -37,6 +37,7 @@ SECTION_IDS = ("overview", "steps", "analysis", "noc", "artifacts", "config", "c
 STEP_PAGES = (
     ("Pretraining", "pretraining", None),
     ("Activation Analysis", "activation_analysis", "Activations"),
+    ("Weight Quantization", "weight_quantization", "Adaptation"),
     ("LIF Adaptation", "lif_adaptation", "Gate Story"),
     ("Quantization Verification", "quantization_verification", "Quantization"),
     ("Soft Core Mapping", "soft_core_mapping", None),
@@ -83,6 +84,11 @@ def _goto_section(page, section_id: str) -> None:
 
 
 def _shot(page, out_dir: Path, name: str, shots: list[str], full: bool = False) -> None:
+    # A native `title` tooltip from whatever the last click left under the
+    # cursor renders into the screenshot; park the cursor on the (title-less)
+    # logo mark and let the tooltip fade before capturing.
+    page.mouse.move(8, 8)
+    page.wait_for_timeout(250)
     path = out_dir / f"{name}.png"
     page.screenshot(path=str(path), full_page=full)
     shots.append(str(path.relative_to(REPO_ROOT)))
@@ -103,6 +109,37 @@ def _click_tab(page, label: str) -> bool:
     return True
 
 
+# The step navigator moved into the section rail, so the rail must stay
+# navigable on a long pipeline: every section link reachable without scrolling,
+# arrow keys walking the steps, and the chevron collapsing the sub-list.
+def _check_step_navigator(page, out_dir: Path, shots: list[str]) -> None:
+    hidden = page.evaluate("""() => {
+      const nav = document.querySelector('.wb-nav').getBoundingClientRect();
+      return [...document.querySelectorAll('.wb-nav-item')]
+        .filter(el => el.getBoundingClientRect().bottom > nav.bottom + 1)
+        .map(el => el.dataset.sectionId);
+    }""")
+    print(f"  section links pushed out of the rail: {hidden or 'none'}")
+
+    walked = page.evaluate("""() => {
+      const items = [...document.querySelectorAll('.step-item')];
+      items[0].focus();
+      const first = document.activeElement.dataset.step;
+      for (const key of ['ArrowDown', 'ArrowDown']) {
+        document.getElementById('nav-step-list')
+          .dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
+      }
+      return [first, document.activeElement.dataset.step];
+    }""")
+    print(f"  arrow-key walk: {walked[0]!r} -> {walked[1]!r}")
+
+    page.click('.wb-nav-item[data-section-id="steps"] .wb-nav-expander')
+    _settle(page, 500)
+    _shot(page, out_dir, "replay_8_steps_navigator_collapsed", shots)
+    page.click('.wb-nav-item[data-section-id="steps"] .wb-nav-expander')
+    _settle(page, 400)
+
+
 # ── Flow: replay of a real finished run (every section + step pages) ──────
 def flow_replay(page, base_url: str, out_dir: Path, shots: list[str]) -> None:
     page.goto(f"{base_url}/monitor?run_id={MODERN_RUN}")
@@ -120,6 +157,8 @@ def flow_replay(page, base_url: str, out_dir: Path, shots: list[str]) -> None:
         if tab:
             _click_tab(page, tab)
         _shot(page, out_dir, f"step_{slug}", shots, full=True)
+
+    _check_step_navigator(page, out_dir, shots)
 
     # Legacy-backfill run (pre-events.jsonl): overview + analysis keep working.
     page.goto(f"{base_url}/monitor?run_id={NOC_RUN}")
@@ -178,6 +217,45 @@ def flow_noc(page, base_url: str, out_dir: Path, shots: list[str]) -> None:
         tiles.nth(min(2, tiles.count() - 1)).click()
         _settle(page, 900)
         _shot(page, out_dir, "noc_6_flow_inspector", shots, full=True)
+
+
+# ── Flow: the Configuration tab across WS overview frames ─────────────────
+# Reproduces (and, now, proves fixed) the fallback-to-raw-config bug: every step
+# lifecycle event pushes a pipeline_overview frame, and the client used to
+# rebuild its pipeline state from a hand-listed literal that omitted
+# ``config_view`` — downgrading the Configuration tab to the legacy raw table.
+def _config_feed(collector) -> None:
+    steps = ["Model Configuration", "Model Building", "Pretraining"]
+    collector.set_pipeline_info(steps, {
+        "experiment_name": "config_ws_repro",
+        "pipeline_mode": "phased",
+        "spiking_mode": "lif",
+        "weight_bits": 5,
+    })
+    time.sleep(3.0)
+    for step in steps:
+        collector.step_started(step)
+        time.sleep(0.8)
+        collector.step_completed(step, target_metric=0.0, metric_kind="carried")
+        time.sleep(0.8)
+
+
+def flow_config(page, base_url: str, out_dir: Path, shots: list[str], collector) -> bool:
+    feeder = threading.Thread(target=_config_feed, args=(collector,), daemon=True)
+    feeder.start()
+    page.goto(f"{base_url}/monitor")
+    _settle(page, 1200)
+    _goto_section(page, "config")
+    structured_before = page.locator("#config-body .config-view").count()
+    _shot(page, out_dir, "config_ws_1_before_lifecycle_frames", shots, full=True)
+    feeder.join(timeout=30)
+    _settle(page, 1200)
+    structured_after = page.locator("#config-body .config-view").count()
+    _shot(page, out_dir, "config_ws_2_after_lifecycle_frames", shots, full=True)
+    ok = bool(structured_before) and bool(structured_after)
+    print(f"  structured config view: before={bool(structured_before)} after={bool(structured_after)}"
+          + ("" if ok else "  << BUG: Configuration tab downgraded to the raw table"))
+    return ok
 
 
 # ── Flow: live mode via a synthetic in-process feed over /ws ──────────────
@@ -269,7 +347,7 @@ def flow_live(page, base_url: str, out_dir: Path, shots: list[str], collector) -
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--out", default=str(REPO_ROOT / "generated" / "_monitor_review" / "round1"))
-    parser.add_argument("--flow", default="all", choices=("all", "replay", "noc", "live"))
+    parser.add_argument("--flow", default="all", choices=("all", "replay", "noc", "live", "config"))
     args = parser.parse_args()
     out_dir = Path(args.out).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -281,6 +359,7 @@ def main() -> int:
     base_url = f"http://127.0.0.1:{port}"
     shots: list[str] = []
 
+    config_ok = True
     with sync_playwright() as pw:
         browser = pw.chromium.launch()
         page = browser.new_page(viewport={"width": 1600, "height": 900})
@@ -291,13 +370,16 @@ def main() -> int:
         if args.flow in ("all", "noc"):
             print("flow: noc")
             flow_noc(page, base_url, out_dir, shots)
+        if args.flow in ("all", "config"):
+            print("flow: config")
+            config_ok = flow_config(page, base_url, out_dir, shots, collector)
         if args.flow in ("all", "live"):
             print("flow: live")
             flow_live(page, base_url, out_dir, shots, collector)
         browser.close()
 
     print(f"\n{len(shots)} screenshots -> {out_dir}")
-    return 0
+    return 0 if config_ok else 1
 
 
 if __name__ == "__main__":

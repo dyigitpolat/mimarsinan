@@ -13,6 +13,10 @@ export const SECTIONS = [
 ];
 
 let _currentSection = SECTIONS[0].id;
+// The step navigator (sub-items under Steps) starts expanded; the chevron
+// on the Steps item is the only collapse affordance, so scripted clicks on
+// the item itself always navigate.
+let _stepsExpanded = true;
 
 export function currentSection() { return _currentSection; }
 
@@ -33,12 +37,52 @@ export function buildNav(onNavigate) {
       </span>`;
     item.addEventListener('click', () => onNavigate(section.id));
     nav.appendChild(item);
+    if (section.id === 'steps') {
+      const expander = document.createElement('span');
+      expander.className = 'wb-nav-expander';
+      expander.title = 'Collapse step list';
+      expander.textContent = '▾';
+      expander.addEventListener('click', (e) => {
+        e.stopPropagation();
+        setStepsExpanded(!_stepsExpanded);
+      });
+      item.appendChild(expander);
+      const sub = document.createElement('div');
+      sub.className = 'nav-steps' + (_stepsExpanded ? '' : ' collapsed');
+      sub.id = 'nav-step-list';
+      sub.setAttribute('aria-label', 'Pipeline steps');
+      sub.addEventListener('keydown', onStepListKeydown);
+      nav.appendChild(sub);
+    }
   }
+}
+
+function setStepsExpanded(expanded) {
+  _stepsExpanded = expanded;
+  const sub = document.getElementById('nav-step-list');
+  if (sub) sub.classList.toggle('collapsed', !expanded);
+  const expander = document.querySelector('.wb-nav-item[data-section-id="steps"] .wb-nav-expander');
+  if (expander) {
+    expander.textContent = expanded ? '▾' : '▸';
+    expander.title = expanded ? 'Collapse step list' : 'Expand step list';
+  }
+}
+
+// Arrow keys walk the navigator; Enter/Space activate (native button).
+function onStepListKeydown(e) {
+  if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+  const items = Array.from(e.currentTarget.querySelectorAll('.step-item'));
+  const idx = items.indexOf(document.activeElement);
+  if (idx === -1) return;
+  e.preventDefault();
+  const next = items[idx + (e.key === 'ArrowDown' ? 1 : -1)];
+  if (next) next.focus();
 }
 
 export function goToSection(sectionId) {
   if (!SECTIONS.some(s => s.id === sectionId)) return;
   _currentSection = sectionId;
+  if (sectionId === 'steps' && !_stepsExpanded) setStepsExpanded(true);
   document.querySelectorAll('.wb-section').forEach(panel => {
     panel.classList.toggle('active', panel.dataset.sectionId === sectionId);
   });
@@ -61,7 +105,7 @@ export function setNavBadge(sectionId, count) {
   badge.textContent = String(count);
 }
 
-// ── Step list (the Steps section's vertical rail) ────────────────────────
+// ── Step list (sub-items under Steps in the section rail) ────────────────
 
 function stepFlagHtml(step) {
   const badge = step.badge || {};
@@ -79,13 +123,14 @@ function stepFlagHtml(step) {
 }
 
 export function renderStepList(pipeline, selectedStep, onSelect) {
-  const host = document.getElementById('step-list');
+  const host = document.getElementById('nav-step-list');
   if (!host || !pipeline) return;
   const steps = pipeline.steps || [];
   if (!steps.length) {
-    host.innerHTML = '<div class="empty-state">No pipeline steps yet</div>';
+    host.innerHTML = '<div class="nav-steps-empty">no steps yet</div>';
     return;
   }
+  const hadFocus = host.contains(document.activeElement);
   host.innerHTML = steps.map((s, i) => {
     const dur = s.duration != null ? ` · ${fmtDuration(s.duration)}` : '';
     const title = `${s.name} [${i + 1}/${steps.length}]${dur}`;
@@ -103,6 +148,8 @@ export function renderStepList(pipeline, selectedStep, onSelect) {
   host.querySelectorAll('.step-item').forEach(btn => {
     btn.addEventListener('click', () => onSelect(btn.dataset.step));
   });
+  // Live re-renders replace the buttons; keep keyboard walkers anchored.
+  if (hadFocus) host.querySelector('.step-item.selected')?.focus();
 }
 
 // ── Overview facts strip ─────────────────────────────────────────────────

@@ -1,5 +1,5 @@
 /* Step detail panel: tab routing, metrics tab, and simple tabs. */
-import { esc, fmtDuration, cssId, safeReact } from './util.js';
+import { esc, fmtDuration, cssId, safeReact, legendBelow } from './util.js';
 import { renderModelTab } from './model-tab.js';
 import { buildHwStatsPanelHtml } from './hw-stats-panel.js';
 import { renderIRGraphTab } from './ir-graph-tab.js';
@@ -146,10 +146,15 @@ export async function refreshStepDetail(stepName, state, fetchJSON) {
   }
   state.lastDetailJSON = sig;
 
-  const stepIdx = state.pipeline && state.pipeline.steps
-    ? state.pipeline.steps.findIndex(s => s.name === stepName) : -1;
-  const stepCountLabel = stepIdx >= 0 && state.pipeline
-    ? `<span class="detail-meta" style="font-size:11px;color:var(--text-muted)">Step ${stepIdx + 1} of ${state.pipeline.steps.length}</span>` : '';
+  const pipelineSteps = (state.pipeline && state.pipeline.steps) || [];
+  const stepIdx = pipelineSteps.findIndex(s => s.name === stepName);
+  const stepCountLabel = stepIdx >= 0
+    ? `<span class="detail-meta" style="font-size:11px;color:var(--text-muted)">Step ${stepIdx + 1} of ${pipelineSteps.length}</span>` : '';
+  const prevStep = stepIdx > 0 ? pipelineSteps[stepIdx - 1].name : null;
+  const nextStep = stepIdx >= 0 && stepIdx < pipelineSteps.length - 1
+    ? pipelineSteps[stepIdx + 1].name : null;
+  const pagerBtn = (step, glyph, label) => `<button type="button" class="btn-sm step-nav-btn"
+    ${step ? `data-step="${esc(step)}" title="${esc(label + ': ' + step)}"` : 'disabled'}>${glyph}</button>`;
 
   panel.innerHTML = `
     <div class="step-detail-header">
@@ -159,10 +164,17 @@ export async function refreshStepDetail(stepName, state, fetchJSON) {
       ${stepCountLabel}
       ${detail.duration ? `<span class="detail-meta">${fmtDuration(detail.duration)}</span>` : ''}
       ${headerMetricHtml(detail)}
+      <span class="step-pager">${pagerBtn(prevStep, '‹', 'Previous step')}${pagerBtn(nextStep, '›', 'Next step')}</span>
     </div>
     <div id="step-context-strip"></div>
     <div class="tabs" id="step-tabs"></div>
     <div id="step-tab-content"></div>`;
+
+  panel.querySelectorAll('.step-nav-btn[data-step]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      window.dispatchEvent(new CustomEvent('monitor:select-step', { detail: { step: btn.dataset.step } }));
+    });
+  });
 
   renderStepContextStrip(
     document.getElementById('step-context-strip'),
@@ -597,10 +609,7 @@ function plotMetricGroup(group, metricNames, metrics, stepStartTime, stepName) {
     return { x: xOut, y: yOut, name, type: 'scatter', mode: 'lines', line: { width: 1.5 } };
   });
   const layoutOpts = {
-    showlegend: metricNames.length > 1,
-    legend: { x: 1.02, y: 1, xanchor: 'left', orientation: 'v', font: { size: 10 } },
-    margin: { r: 100 },
-    height: 240,
+    ...legendBelow(metricNames, el),
     xaxis: { title: stepStartTime != null ? 'Elapsed (s)' : 'Index' },
   };
   if (group === 'Accuracy' || group === 'Adaptation') {
