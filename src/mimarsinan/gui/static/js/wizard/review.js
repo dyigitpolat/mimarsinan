@@ -3,9 +3,9 @@
    diff-vs-defaults, unknown tray, JSON preview. All render from
    /api/config/resolve — nothing here is a static copy of the pipeline. */
 
-import { derivedKeys, groups, keySchema } from './schema.js';
-import { clearKey, state } from './state.js';
-import { el, notifyChange } from './fields.js';
+import { groups, keySchema, keysGatedBy, vehicleEnableKeys } from './schema.js';
+import { clearKey, setKey, state } from './state.js';
+import { el, notifyChange, renderField } from './fields.js';
 
 function escapeHtml(s) {
   const div = document.createElement('div');
@@ -79,12 +79,63 @@ export function renderDerivedChips() {
   renderVehiclesStatus();
 }
 
-/* ── Simulation vehicles (policy-derived status, never knobs) ──────────── */
+/* ── Simulation vehicles (recipe-defaulted toggles; unsupported = muted) ── */
 
 function vehicleKeys() {
-  return derivedKeys()
-    .filter((ks) => ks.group === 'deployment_target' && ks.type === 'bool')
-    .map((ks) => ks.key);
+  return vehicleEnableKeys('deployment_target');
+}
+
+/** Supported vehicle: an honest toggle — ON is the recipe default, clicking
+    stores an explicit off (a legitimate declarable override); OFF clears
+    back to the recipe default. Its gated settings co-locate with the row. */
+function supportedVehicleRow(key, ks, info) {
+  const on = !!info.value;
+  const row = el('div', 'vehicle-row' + (on ? ' on' : ' user-off'));
+  const head = el('div', 'vehicle-head');
+  head.append(el('span', 'vehicle-dot'));
+  const name = el('span', 'vehicle-name', ks ? ks.label : key);
+  name.title = ks ? ks.doc : '';
+  head.append(name);
+  const toggle = el('div', 'toggle-row vehicle-toggle' + (on ? ' on' : ''));
+  toggle.append(el('span', 'toggle-label', on ? 'runs' : 'off'));
+  toggle.append(el('div', 'toggle-switch'));
+  toggle.title = on
+    ? 'Switch off for this run (stored as an explicit off in the config)'
+    : 'Switch back on (returns to the recipe default)';
+  toggle.addEventListener('click', () => {
+    if (on) setKey(key, false);
+    else clearKey(key);
+    notifyChange(key);
+  });
+  head.append(toggle);
+  row.append(head);
+  if (info.why) row.append(el('div', 'vehicle-why', info.why));
+  if (on) {
+    const gatedKeys = keysGatedBy(key);
+    if (gatedKeys.length) {
+      const settings = el('div', 'vehicle-settings field-grid cols-2');
+      for (const gatedKey of gatedKeys) {
+        const gatedSchema = keySchema(gatedKey);
+        if (gatedSchema) settings.append(renderField(gatedSchema));
+      }
+      row.append(settings);
+    }
+  }
+  return row;
+}
+
+/** Unsupported vehicle: one muted unavailability line, never a knob. */
+function unsupportedVehicleRow(key, ks, info) {
+  const row = el('div', 'vehicle-row unsupported');
+  const head = el('div', 'vehicle-head');
+  head.append(el('span', 'vehicle-dot'));
+  const name = el('span', 'vehicle-name', ks ? ks.label : key);
+  name.title = ks ? ks.doc : '';
+  head.append(name);
+  head.append(el('span', 'vehicle-state', 'unavailable'));
+  row.append(head);
+  if (info.why) row.append(el('div', 'vehicle-why', info.why));
+  return row;
 }
 
 export function renderVehiclesStatus() {
@@ -101,14 +152,11 @@ export function renderVehiclesStatus() {
   const derived = state.resolve.derived || {};
   for (const key of vehicleKeys()) {
     const ks = keySchema(key);
-    const info = derived[key] || { value: null, why: null };
-    const row = el('div', 'vehicle-row' + (info.value ? ' on' : ' off'));
-    row.append(el('span', 'vehicle-dot'));
-    row.append(el('span', 'vehicle-name', ks ? ks.label : key));
-    row.append(el('span', 'vehicle-state', info.value ? 'runs' : 'unavailable'));
-    if (info.why) row.append(el('span', 'vehicle-why', info.why));
-    row.title = ks ? ks.doc : '';
-    host.append(row);
+    const info = derived[key] || { value: null, why: null, meta: null };
+    const supported = !info.meta || info.meta.supported !== false;
+    host.append(supported
+      ? supportedVehicleRow(key, ks, info)
+      : unsupportedVehicleRow(key, ks, info));
   }
 }
 

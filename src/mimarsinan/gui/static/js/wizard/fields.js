@@ -99,10 +99,20 @@ function fieldShell(ks) {
   return { field, marker };
 }
 
-function fieldDoc(ks) {
+export function fieldDoc(ks) {
   const doc = el('div', 'field-doc', ks.effect || ks.doc);
   doc.title = helpText(ks);
   return doc;
+}
+
+/** A truncated faded placeholder reveals its FULL text on hover (through the
+    immediate app tooltip); short placeholders need no tooltip. */
+function attachPlaceholderReveal(input, ks) {
+  const full = emptyMeansText(ks);
+  if (input.placeholder && (input.placeholder.endsWith('…')
+      || input.placeholder.length > 36)) {
+    input.title = 'Empty → ' + full;
+  }
 }
 
 function markExplicit(ks, marker, rerender) {
@@ -140,6 +150,7 @@ function numberBox(ks) {
   const value = effectiveValue(ks.key);
   input.value = value === undefined || value === null ? '' : String(value);
   input.placeholder = placeholderText(ks);
+  attachPlaceholderReveal(input, ks);
   return input;
 }
 
@@ -190,7 +201,7 @@ function sliderCombo(ks, marker, rerender) {
   return wrap;
 }
 
-function numberInput(ks, marker, rerender) {
+export function numberInput(ks, marker, rerender) {
   if (sliderEligible(ks)) return sliderCombo(ks, marker, rerender);
   const input = numberBox(ks);
   input.addEventListener('change', () => {
@@ -282,6 +293,7 @@ function textInput(ks, marker, rerender, parse, format) {
   /* Type-faithful default text: what the placeholder shows must parse back. */
   input.placeholder = 'default' in ks && ks.default !== null && ks.default !== undefined
     ? format(ks.default) : placeholderText(ks);
+  attachPlaceholderReveal(input, ks);
   input.addEventListener('change', () => {
     const raw = input.value.trim();
     if (raw === '') {

@@ -2,8 +2,8 @@
    hardcoded field list (cores, recipes, model_config, arch_search, preprocessing). */
 
 import { schema } from './schema.js';
-import { clearKey, getKey, setKey, state } from './state.js';
-import { el, notifyChange, registerCustomRenderer } from './fields.js';
+import { clearKey, effectiveValue, getKey, setKey, state } from './state.js';
+import { el, fieldDoc, notifyChange, numberInput, registerCustomRenderer } from './fields.js';
 
 function subField(labelText, control) {
   const field = el('div', 'field');
@@ -26,24 +26,35 @@ function numeric(value, onChange, { step = 'any', min = null, placeholder = '' }
   return input;
 }
 
-/* ── cores: the core-type grid editor ─────────────────────────────────── */
+/* ── cores: the core-type grid editor (aligned columns, per-row labels) ── */
 
 const CORE_DIMS = [
-  ['max_axons', 'axons'],
-  ['max_neurons', 'neurons'],
-  ['count', 'count'],
+  ['max_axons', 'Axons'],
+  ['max_neurons', 'Neurons'],
+  ['count', 'Count'],
 ];
 
+function coreBiasToggle(core, onChange) {
+  const effective = core.has_bias !== undefined
+    ? core.has_bias
+    : state.draft.platform_constraints?.has_bias !== false;
+  const toggle = el('button', 'cores-bias' + (effective ? ' on' : ''), effective ? 'B' : '–');
+  toggle.type = 'button';
+  toggle.title = (effective ? 'Bias lane: on' : 'Bias lane: off')
+    + ' — click to flip this core type\'s bias lane';
+  toggle.addEventListener('click', () => onChange(!effective));
+  return toggle;
+}
+
 function coresWidget(ks) {
-  const field = el('div', 'field');
+  const field = el('div', 'field span-2');
   field.dataset.key = ks.key;
   const label = el('label', 'field-label');
   label.append(el('span', 'field-label-text', ks.label));
   field.append(label);
   const host = el('div', 'cores-editor');
   field.append(host);
-  const doc = el('div', 'field-doc', ks.doc);
-  field.append(doc);
+  field.append(fieldDoc(ks));
 
   const cores = () => {
     const list = getKey('cores');
@@ -54,34 +65,44 @@ function coresWidget(ks) {
     render();
     notifyChange('cores');
   };
+  const patch = (i, mutate) => {
+    const next = cores().map((c) => ({ ...c }));
+    mutate(next[i]);
+    write(next);
+  };
 
   function render() {
     host.replaceChildren();
     if (cores().length) {
       const head = el('div', 'cores-editor-head');
+      head.append(el('span', 'cores-col-label', 'Type'));
       for (const [, title] of CORE_DIMS) head.append(el('span', 'cores-col-label', title));
+      head.append(el('span', 'cores-col-label cores-col-center', 'Bias'));
       head.append(el('span', 'cores-col-label', ''));
       host.append(head);
     }
     cores().forEach((core, i) => {
       const row = el('div', 'cores-editor-row');
-      for (const [dim] of CORE_DIMS) {
+      row.append(el('span', 'cores-row-label', `T${i + 1}`));
+      for (const [dim, title] of CORE_DIMS) {
         const input = numeric(core[dim], (v) => {
-          const next = cores().map((c) => ({ ...c }));
-          if (v === undefined) delete next[i][dim];
-          else next[i][dim] = Math.round(v);
-          write(next);
+          patch(i, (c) => {
+            if (v === undefined) delete c[dim];
+            else c[dim] = Math.round(v);
+          });
         }, { step: '1', min: 1 });
+        input.title = `${title} for core type ${i + 1}`;
         row.append(input);
       }
+      row.append(coreBiasToggle(core, (on) => patch(i, (c) => { c.has_bias = on; })));
       const remove = el('button', 'btn-sm cores-remove', '✕');
       remove.type = 'button';
-      remove.title = 'Remove core type';
+      remove.title = `Remove core type ${i + 1}`;
       remove.addEventListener('click', () => write(cores().filter((_, j) => j !== i)));
       row.append(remove);
       host.append(row);
     });
-    const add = el('button', 'btn-sm', '+ core type');
+    const add = el('button', 'btn-sm cores-add', '+ Add core type');
     add.type = 'button';
     add.addEventListener('click', () => {
       const bias = state.draft.platform_constraints?.has_bias;
@@ -92,6 +113,141 @@ function coresWidget(ks) {
     host.append(add);
   }
   render();
+  return field;
+}
+
+/* ── weight precision: float vs quantized-N-bits (the fp/WQ contract) ──── */
+
+function floatWeightsActive() {
+  return state.draft.pipeline_mode === 'vanilla'
+    || state.draft.deployment_parameters?.weight_quantization === false;
+}
+
+/** First-class weight precision, authoring exactly the tier-config fp form:
+    float = pipeline_mode 'vanilla' + weight_quantization false (weight_bits
+    stays in the document, inert); quantized = bits-driven WQ (the explicit
+    float declarations are cleared so the derivation owns the flags). */
+function weightPrecisionWidget(ks) {
+  const field = el('div', 'field');
+  field.dataset.key = ks.key;
+  const label = el('label', 'field-label');
+  label.append(el('span', 'field-label-text', ks.label));
+  field.append(label);
+
+  const marker = el('span', 'field-explicit-slot');
+  label.append(marker);
+  const isFloat = floatWeightsActive();
+  const seg = el('div', 'seg-control');
+  const mkBtn = (text, active, title, apply) => {
+    const btn = el('button', 'seg-btn' + (active ? ' active' : ''), text);
+    btn.type = 'button';
+    btn.title = title;
+    btn.addEventListener('click', () => {
+      if (active) return;
+      apply();
+      notifyChange('weight_quantization');
+    });
+    return btn;
+  };
+  seg.append(mkBtn('quantized', !isFloat,
+    'Quantized artifact: weight_bits declares the precision (bits-driven WQ contract)',
+    () => {
+      clearKey('weight_quantization');
+      if (state.draft.pipeline_mode === 'vanilla') clearKey('pipeline_mode');
+    }));
+  seg.append(mkBtn('float', isFloat,
+    'Float weights: the vanilla assembly (pipeline_mode=\'vanilla\' + '
+    + 'weight_quantization=false; no quantization steps run)',
+    () => {
+      setKey('weight_quantization', false);
+      setKey('pipeline_mode', 'vanilla');
+    }));
+  field.append(seg);
+
+  if (isFloat) {
+    const hint = el('div', 'precision-float-hint',
+      'float32 — vanilla assembly, no quantization steps');
+    hint.title = 'The document keeps weight_bits (inert under the vanilla '
+      + 'assembly), matching the tier-config fp form.';
+    field.append(hint);
+  } else {
+    const bits = numberInput(ks, marker, () => notifyChange('weight_bits'));
+    bits.classList.add('precision-bits');
+    field.append(bits);
+  }
+  field.append(fieldDoc(ks));
+  return field;
+}
+
+/* ── search_space: the structured hw co-search bounds editor ───────────── */
+
+function rangePair(spec, current, onChange) {
+  const wrap = el('div', 'range-pair');
+  const mk = (idx, ph) => {
+    const input = el('input');
+    input.type = 'number';
+    input.step = spec.step ? String(spec.step) : '1';
+    input.min = '1';
+    input.placeholder = String(ph);
+    const value = Array.isArray(current) ? current[idx] : undefined;
+    input.value = value === undefined || value === null ? '' : String(value);
+    input.addEventListener('change', () => {
+      const raw = [wrap.children[0].value.trim(), wrap.children[2].value.trim()];
+      if (raw[0] === '' && raw[1] === '') { onChange(undefined); return; }
+      const lo = raw[0] === '' ? spec.default[0] : parseInt(raw[0], 10);
+      const hi = raw[1] === '' ? spec.default[1] : parseInt(raw[1], 10);
+      if (Number.isNaN(lo) || Number.isNaN(hi)) return;
+      onChange([lo, hi]);
+    });
+    return input;
+  };
+  wrap.append(mk(0, spec.default[0]));
+  wrap.append(el('span', 'range-pair-sep', '–'));
+  wrap.append(mk(1, spec.default[1]));
+  return wrap;
+}
+
+/** Structured editor for the hw co-search bounds (never a plain-text field);
+    the field schema is served by /api/config_schema (hw_search_space_fields). */
+function searchSpaceWidget(ks) {
+  const fieldsSchema = schema().hw_search_space_fields || {};
+  const field = el('div', 'field span-full');
+  field.dataset.key = ks.key;
+  const label = el('label', 'field-label');
+  label.append(el('span', 'field-label-text', ks.label));
+  field.append(label);
+  const grid = el('div', 'search-space-editor');
+  field.append(grid);
+  field.append(fieldDoc(ks));
+
+  const current = () => ({ ...(getKey('search_space') || {}) });
+  const write = (ss) => {
+    if (Object.keys(ss).length === 0) clearKey('search_space');
+    else setKey('search_space', ss);
+    notifyChange('search_space');
+  };
+
+  for (const [name, spec] of Object.entries(fieldsSchema)) {
+    let control;
+    if (spec.type === 'int_range') {
+      control = rangePair(spec, current()[name], (value) => {
+        const ss = current();
+        if (value === undefined) delete ss[name];
+        else ss[name] = value;
+        write(ss);
+      });
+    } else {
+      control = numeric(current()[name], (v) => {
+        const ss = current();
+        if (v === undefined) delete ss[name];
+        else ss[name] = Math.round(v);
+        write(ss);
+      }, { step: '1', min: spec.min ?? 1, placeholder: String(spec.default ?? '') });
+    }
+    const sub = subField(name.replace(/_/g, ' '), control);
+    sub.title = spec.doc || '';
+    grid.append(sub);
+  }
   return field;
 }
 
@@ -390,4 +546,6 @@ export function installStructuredWidgets() {
   registerCustomRenderer('model_config', modelConfigWidget);
   registerCustomRenderer('preprocessing', preprocessingWidget);
   registerCustomRenderer('arch_search', archSearchWidget);
+  registerCustomRenderer('weight_bits', weightPrecisionWidget);
+  registerCustomRenderer('search_space', searchSpaceWidget);
 }

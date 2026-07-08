@@ -39,6 +39,21 @@ class TestConfigSchemaEndpoint:
         assert payload["nas"]["optimizer_options"]
         assert payload["dynamic_options"]["model_type"] == "/api/model_types"
 
+    def test_serves_the_hw_search_space_sub_schema(self, client):
+        """Round-3 defect 10: search_space renders as a STRUCTURED editor —
+        the field schema is served from the search-space SSOT, never
+        hardcoded in JS."""
+        payload = client.get("/api/config_schema").json()
+        fields = payload["hw_search_space_fields"]
+        assert fields["num_core_types"]["type"] == "int"
+        for key in ("core_axons_bounds", "core_neurons_bounds",
+                    "core_count_bounds"):
+            spec = fields[key]
+            assert spec["type"] == "int_range", key
+            lo, hi = spec["default"]
+            assert 0 < lo < hi, key
+            assert spec["doc"], key
+
     def test_every_key_record_is_renderable(self, client):
         payload = client.get("/api/config_schema").json()
         for key, record in payload["keys"].items():

@@ -113,6 +113,38 @@ export function derivedKeys() {
   return Object.values(schema().keys).filter((k) => k.category === 'derived');
 }
 
+/** Whether a relevance tree references `key` anywhere (generic gating probe). */
+export function treeReferencesKey(tree, key) {
+  if (!tree) return false;
+  if (tree.key === key) return true;
+  return (tree.items || []).some((item) => treeReferencesKey(item, key));
+}
+
+/** A group's vehicle rows: its DERIVED bool keys (policy-defaulted enables). */
+export function vehicleEnableKeys(groupId) {
+  return derivedKeys()
+    .filter((ks) => ks.group === groupId && ks.type === 'bool')
+    .map((ks) => ks.key);
+}
+
+/** Keys whose EXISTENCE is gated by `enableKey` — they co-locate with its
+    vehicle row instead of rendering in the group card. */
+export function keysGatedBy(enableKey) {
+  return Object.values(schema().keys)
+    .filter((k) => (k.category === 'basic' || k.category === 'advanced')
+      && treeReferencesKey(k.relevant, enableKey))
+    .map((k) => k.key);
+}
+
+/** Every key of a group that co-locates with one of its vehicle rows. */
+export function vehicleGatedKeySet(groupId) {
+  const gated = new Set();
+  for (const enableKey of vehicleEnableKeys(groupId)) {
+    for (const key of keysGatedBy(enableKey)) gated.add(key);
+  }
+  return gated;
+}
+
 /** Human sentence for why a key is unavailable, derived from its relevance
     tree against the current config (generic; no per-key text in JS). */
 export function unavailabilityReason(tree, cfg) {

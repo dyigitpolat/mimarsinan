@@ -3,9 +3,10 @@
    sections (workbench.js) host whole concern groups; the live rail renders the
    honest assembly + mapping from every resolve round-trip. */
 
+import '../tooltip.js';
 import {
   enableAssignments, groups, keySchema, loadSchema, providedAwayKeys, schema,
-  unavailabilityReason, visibleKeys,
+  unavailabilityReason, vehicleGatedKeySet, visibleKeys,
 } from './schema.js';
 import {
   differsFromDefault, effectiveConfig, effectiveValue, isExplicit,
@@ -30,8 +31,12 @@ const GROUP_ICONS = {
 /* ── Section rendering ─────────────────────────────────────────────────── */
 
 function fieldList(groupId, category, cfg) {
-  /* Relevance controls EXISTENCE; promote_when controls prominence. */
-  return visibleKeys(groupId, category, cfg).map((key) => keySchema(key));
+  /* Relevance controls EXISTENCE; promote_when controls prominence.
+     Vehicle-gated keys co-locate with their vehicle row, never the card. */
+  const gated = vehicleGatedKeySet(groupId);
+  return visibleKeys(groupId, category, cfg)
+    .filter((key) => !gated.has(key))
+    .map((key) => keySchema(key));
 }
 
 /** The group's primary grid cells in registry order: hand fields where keys
@@ -91,7 +96,7 @@ function renderGroupOffCard(group, cfg) {
 }
 
 function renderGroupSection(group, cfg) {
-  const basicKeys = visibleKeys(group.id, 'basic', cfg);
+  const basicKeys = fieldList(group.id, 'basic', cfg).map((ks) => ks.key);
   const advanced = fieldList(group.id, 'advanced', cfg);
   const ownedKeys = providedAwayKeys(group.id, cfg);
   if (!basicKeys.length && !advanced.length && !ownedKeys.length) {

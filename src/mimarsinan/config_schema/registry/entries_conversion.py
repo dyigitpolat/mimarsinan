@@ -65,7 +65,7 @@ ENTRIES = (
            "spiking_mode; a consistent explicit value is accepted.",
        derived_from=("spiking_mode",), why=_why_ttfs_firing, declarable=True),
     _E("encoding_layer_placement", group="mapping_strategy", owner="mapping/encoding_layer",
-       type=T.ENUM, options=("subsume", "offload"), category=Category.ADVANCED,
+       type=T.ENUM, options=("subsume", "offload"), category=Category.BASIC,
        exposure="user", label="Encoding Layer Placement",
        effect="Offload maps the encoding-layer neuralOp on-chip",
        doc="subsume: host-side encoder; offload: encoding layer mapped on-chip "

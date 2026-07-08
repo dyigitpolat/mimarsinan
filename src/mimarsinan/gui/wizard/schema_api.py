@@ -24,6 +24,12 @@ from mimarsinan.pipelining.core.pipelines.deployment_pipeline import (
     get_pipeline_semantic_group_by_step_name,
     get_pipeline_step_specs,
 )
+from mimarsinan.search.search_space_description import (
+    CORE_DIM_GRANULARITY,
+    DEFAULT_CORE_AXONS_BOUNDS,
+    DEFAULT_CORE_COUNT_BOUNDS,
+    DEFAULT_CORE_NEURONS_BOUNDS,
+)
 
 
 def _recipe_field_schema() -> Dict[str, Any]:
@@ -54,6 +60,33 @@ def _preprocessing_field_schema() -> Dict[str, Any]:
     }
 
 
+def _hw_search_space_field_schema() -> Dict[str, Any]:
+    """Structured-editor schema for ``search_space``, from the search-space SSOT."""
+    return {
+        "num_core_types": {
+            "type": "int", "default": 1, "min": 1,
+            "doc": "Distinct core types the hardware co-search may allocate.",
+        },
+        "core_axons_bounds": {
+            "type": "int_range", "default": list(DEFAULT_CORE_AXONS_BOUNDS),
+            "step": CORE_DIM_GRANULARITY,
+            "doc": "Per-core axon-count bounds the search explores "
+                   f"(multiples of {CORE_DIM_GRANULARITY}).",
+        },
+        "core_neurons_bounds": {
+            "type": "int_range", "default": list(DEFAULT_CORE_NEURONS_BOUNDS),
+            "step": CORE_DIM_GRANULARITY,
+            "doc": "Per-core neuron-count bounds the search explores "
+                   f"(multiples of {CORE_DIM_GRANULARITY}).",
+        },
+        "core_count_bounds": {
+            "type": "int_range", "default": list(DEFAULT_CORE_COUNT_BOUNDS),
+            "step": 1,
+            "doc": "Core-count bounds per core type.",
+        },
+    }
+
+
 # STR keys whose option lists are served by a live endpoint (registries).
 _DYNAMIC_OPTION_ENDPOINTS = {
     "model_type": "/api/model_types",
@@ -66,6 +99,7 @@ def config_schema_payload() -> Dict[str, Any]:
     payload = serialize_registry()
     payload["recipe_fields"] = _recipe_field_schema()
     payload["preprocessing_fields"] = _preprocessing_field_schema()
+    payload["hw_search_space_fields"] = _hw_search_space_field_schema()
     payload["dynamic_options"] = dict(_DYNAMIC_OPTION_ENDPOINTS)
     payload["nas"] = get_wizard_nas_schema()
     payload["temporal_allocation"] = get_wizard_temporal_allocation_schema()

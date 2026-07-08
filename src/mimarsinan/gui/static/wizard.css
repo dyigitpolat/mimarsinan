@@ -202,10 +202,32 @@ button { font-family: inherit; }
 .wb-col { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
 .wb-col > [data-groups], [data-groups] { display: flex; flex-direction: column; gap: 16px; }
 
-.codesign-mapping { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
+.codesign-mapping { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 
-/* The co-search panel: a sibling card spanning both co-design columns. */
+/* Mapping strategy (what we CHOOSE when mapping) sits beside the live
+   mapping panel so strategy edits re-plan visibly. */
+.codesign-lower {
+  margin-top: 12px;
+  display: grid;
+  grid-template-columns: minmax(300px, 4fr) minmax(420px, 8fr);
+  gap: 16px;
+  align-items: start;
+}
+
+@media (max-width: 1100px) {
+  .codesign-lower { grid-template-columns: 1fr; }
+}
+
+/* The co-search panel: a sibling card spanning both co-design columns.
+   Its configurator packs THREE columns (round-3 defect 10). */
 .codesign-cosearch { margin-top: 16px; }
+
+.codesign-cosearch .field-grid.cols-2 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.codesign-cosearch .field.span-2,
+.codesign-cosearch .field.span-full { grid-column: 1 / -1; }
 
 /* Co-Design density: arch + grid + mapping on one 1600×900 screen. The
    hardware card packs its scalar knobs three-up and docs clamp to one line. */
@@ -493,6 +515,7 @@ button.launch-status-line.error {
 
 .field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .field.span-2 { grid-column: span 2; }
+.field.span-full { grid-column: 1 / -1; }
 
 .field-label {
   display: flex;
@@ -817,36 +840,53 @@ input.field-invalid { border-color: var(--accent-rose); }
   flex-wrap: wrap;
 }
 
-.vehicles-status { display: flex; flex-direction: column; gap: 6px; }
+.vehicles-status { display: flex; flex-direction: column; gap: 8px; }
 
 .vehicle-row {
   display: flex;
-  align-items: baseline;
-  gap: 8px;
-  padding: 6px 8px;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--bg-input);
   font-size: 12px;
-  flex-wrap: wrap;
 }
 
-.vehicle-dot { width: 7px; height: 7px; border-radius: 50%; align-self: center; }
+.vehicle-head { display: flex; align-items: center; gap: 8px; }
+
+.vehicle-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
 .vehicle-row.on .vehicle-dot { background: var(--accent-green); box-shadow: 0 0 6px rgba(16, 185, 129, 0.4); }
-.vehicle-row.off .vehicle-dot { background: var(--text-dim); }
+.vehicle-row.user-off .vehicle-dot,
+.vehicle-row.unsupported .vehicle-dot { background: var(--text-dim); }
 
 .vehicle-name { font-weight: 600; }
-.vehicle-row.off .vehicle-name { color: var(--text-dim); }
+.vehicle-row.unsupported .vehicle-name { color: var(--text-dim); }
+.vehicle-row.user-off .vehicle-name { color: var(--text-secondary); }
 
-.vehicle-state { font-size: var(--font-caption); font-weight: 600; }
-.vehicle-row.on .vehicle-state { color: var(--accent-green); }
-.vehicle-row.off .vehicle-state { color: var(--text-dim); }
+.vehicle-state { font-size: var(--font-caption); font-weight: 600; color: var(--text-dim); margin-left: auto; }
+
+/* Supported vehicles carry a compact toggle at the row end. */
+.vehicle-toggle {
+  margin-left: auto;
+  padding: 2px 8px;
+  gap: 6px;
+  flex: none;
+}
 
 .vehicle-why {
-  flex-basis: 100%;
   font-size: var(--font-caption);
   color: var(--text-dim);
 }
+
+/* Co-located per-vehicle settings (the keys gated by this enable). */
+.vehicle-settings {
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+  margin-top: 2px;
+}
+
+.vehicle-row.unsupported { opacity: 0.75; background: none; border-style: dashed; }
 
 /* ═══ Errors ════════════════════════════════════════════════════════════ */
 
@@ -959,15 +999,77 @@ input.field-invalid { border-color: var(--accent-rose); }
 
 /* ═══ Cores editor ══════════════════════════════════════════════════════ */
 
-.cores-editor { display: flex; flex-direction: column; gap: 6px; }
+.cores-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+}
 
 .cores-editor-head,
 .cores-editor-row {
   display: grid;
-  grid-template-columns: repeat(3, minmax(56px, 1fr)) 26px;
-  gap: 6px;
+  grid-template-columns: 32px repeat(3, minmax(56px, 1fr)) 32px 26px;
+  gap: 8px;
   align-items: center;
 }
+
+.cores-row-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: var(--font-caption);
+  font-weight: 600;
+  color: var(--text-dim);
+}
+
+.cores-col-center { text-align: center; }
+
+.cores-bias {
+  width: 100%;
+  height: 26px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-dim);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  cursor: pointer;
+  transition: color var(--motion), border-color var(--motion);
+}
+.cores-bias.on { color: var(--accent-cyan); border-color: rgba(34, 211, 238, 0.4); }
+.cores-bias:hover { border-color: var(--border-focus); }
+
+.cores-add {
+  border-style: dashed;
+  width: 100%;
+  text-align: center;
+}
+
+/* ═══ Weight precision (float vs quantized-N-bits) ══════════════════════ */
+
+.precision-float-hint {
+  padding: 6px 10px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-sm);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--accent-cyan);
+  background: rgba(34, 211, 238, 0.05);
+}
+
+/* ═══ HW search-space structured editor ═════════════════════════════════ */
+
+.search-space-editor {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 12px 16px;
+}
+
+.range-pair { display: flex; align-items: center; gap: 6px; }
+.range-pair input { min-width: 0; flex: 1; }
+.range-pair-sep { color: var(--text-dim); flex: none; }
 
 /* Compact numeric boxes: no spinners (CAD instrument, digits first). */
 .cores-editor-row input::-webkit-inner-spin-button,

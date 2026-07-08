@@ -74,9 +74,14 @@
           <!-- Co-search: automated co-design — a sibling panel spanning both
                concerns (its keys search model AND hardware configs). -->
           <div class="codesign-cosearch" data-groups="co_search"></div>
-          <div class="codesign-mapping">
-            <div class="hw-validation-banner hide" id="hwValidationBanner"></div>
-            <div id="hwStatsPanel" class="hw-stats-panel"></div>
+          <!-- Mapping strategy (what we CHOOSE when mapping) sits WITH the
+               live mapping panel so strategy edits re-plan visibly. -->
+          <div class="codesign-lower">
+            <div class="codesign-strategy" data-groups="mapping_strategy"></div>
+            <div class="codesign-mapping">
+              <div class="hw-validation-banner hide" id="hwValidationBanner"></div>
+              <div id="hwStatsPanel" class="hw-stats-panel"></div>
+            </div>
           </div>
         </section>
 
@@ -96,7 +101,7 @@
                   <div class="section-icon" style="--section-accent:103,232,249">✈</div>
                   <div class="section-title-group">
                     <div class="section-title">Simulation vehicles</div>
-                    <div class="section-subtitle">Derived per mode by the proven recipe — status, not knobs</div>
+                    <div class="section-subtitle">Recipe default on where supported — switch off per run; unsupported stays muted</div>
                   </div>
                 </div>
                 <div class="section-body">
@@ -108,20 +113,31 @@
           </div>
         </section>
 
-        <!-- 4 · TUNING & BUDGETS -->
-        <section class="wb-section" data-section-id="tuning">
+        <!-- 4 · TRAINING -->
+        <section class="wb-section" data-section-id="training">
           <div class="wb-section-head">
-            <h2>Tuning &amp; Budgets</h2>
-            <p>The adaptation controller's budget and tolerance, plus the
-              training loop.</p>
+            <h2>Training</h2>
+            <p>The pretraining loop: learning rate, epochs, pretrained
+              weights, and the training recipe.</p>
           </div>
-          <div class="wb-cols">
-            <div class="wb-col" data-groups="tuning"></div>
+          <div class="wb-cols narrow">
             <div class="wb-col" data-groups="training"></div>
           </div>
         </section>
 
-        <!-- 5 · REVIEW & LAUNCH -->
+        <!-- 5 · TUNING & BUDGETS -->
+        <section class="wb-section" data-section-id="tuning">
+          <div class="wb-section-head">
+            <h2>Tuning &amp; Budgets</h2>
+            <p>The adaptation controller's budget, tolerance, and tuning
+              recipe.</p>
+          </div>
+          <div class="wb-cols narrow">
+            <div class="wb-col" data-groups="tuning"></div>
+          </div>
+        </section>
+
+        <!-- 6 · REVIEW & LAUNCH -->
         <section class="wb-section" data-section-id="review">
           <div class="wb-section-head">
             <h2>Review &amp; Launch</h2>
@@ -204,6 +220,7 @@
     </div>
   </div>
 
+  <script type="module" src="/static/js/tooltip.js"></script>
   <script type="module" src="/static/js/wizard/main.js"></script>
 </body>
 

@@ -8,12 +8,14 @@ import { el } from './fields.js';
 export const SECTIONS = [
   { id: 'workload', title: 'Workload', hint: 'Dataset & preprocessing',
     icon: '◈', groups: ['workload'] },
-  { id: 'codesign', title: 'Co-Design', hint: 'Model × hardware, live mapping',
-    icon: '⧉', groups: ['model', 'hardware', 'co_search'] },
+  { id: 'codesign', title: 'Co-Design', hint: 'Model × hardware × mapping',
+    icon: '⧉', groups: ['model', 'hardware', 'mapping_strategy', 'co_search'] },
   { id: 'semantics', title: 'Deployment semantics', hint: 'Mode · conversion · vehicles',
     icon: '⚡', groups: ['spiking', 'conversion', 'deployment_target'] },
-  { id: 'tuning', title: 'Tuning & Budgets', hint: 'Controller & training',
-    icon: '☈', groups: ['tuning', 'training'] },
+  { id: 'training', title: 'Training', hint: 'Pretraining & weights',
+    icon: '▶', groups: ['training'] },
+  { id: 'tuning', title: 'Tuning & Budgets', hint: 'Adaptation controller',
+    icon: '☈', groups: ['tuning'] },
   { id: 'review', title: 'Review & Launch', hint: 'Verify & deploy',
     icon: '⬡', groups: ['run'] },
 ];

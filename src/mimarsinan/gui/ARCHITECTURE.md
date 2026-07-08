@@ -20,15 +20,21 @@ derivation runs exclusively server-side via `POST /api/config/resolve`
 diff-vs-defaults template view, loud unrecognized-keys tray, the emitted
 document the review pane shows verbatim). The configurator is a CAD-style
 WORKBENCH (`static/js/wizard/workbench.js`): a left section rail with free
-navigation (Workload · Co-Design · Deployment semantics · Tuning & Budgets ·
-Review & Launch — sections host whole registry concern GROUPS, the taxonomy
-is the placement, with per-section error badges) and a persistent sticky
-right live rail (resolve verdict, the honest vertical pipeline-assembly list
-re-rendered from every resolve, a compact mapping summary mirroring the
-Co-Design panel, and Launch with strong disabled/blocked semantics). The
-flagship Co-Design section shows model architecture, the core grid, and the
-full mapping-performance panel on one screen so both can be tuned against
-live mapping feedback ("Suggest hardware" included). The search concern is
+navigation (Workload · Co-Design · Deployment semantics · Training · Tuning
+& Budgets · Review & Launch — sections host whole registry concern GROUPS,
+the taxonomy is the placement, with per-section error badges) and a
+persistent sticky right live rail (resolve verdict, the honest vertical
+pipeline-assembly list re-rendered from every resolve, a compact mapping
+summary mirroring the Co-Design panel, and Launch with strong
+disabled/blocked semantics). The flagship Co-Design section shows model
+architecture, the core grid (a modern aligned grid editor: per-row type
+labels, per-core bias toggles, add/remove affordances), the registry
+`mapping_strategy` panel (what we CHOOSE when mapping — scheduling, encoding
+placement, pruning) sitting beside the full mapping-performance panel so
+strategy edits re-plan visibly, and weight precision as a first-class
+float-vs-quantized-N-bits choice (float authors the tier-config fp form:
+pipeline_mode 'vanilla' + weight_quantization false, bits kept inert;
+"Suggest hardware" included). The search concern is
 its OWN sibling card there (the registry `co_search` group — it co-optimizes
 model AND hardware, so it never nests under either): dormant it renders as
 one quiet line with an enable path derived from its keys' relevance trees;
@@ -40,9 +46,20 @@ schema-driven and generic: relevance predicates control field EXISTENCE,
 numerics render as slider+numeric combos, small enums as segmented buttons,
 and empty semantics render INSIDE the control as a faded placeholder (the
 default value or the `empty_means` derivation) that vanishes once the user
-types — under-field text is reserved for docs/units.
-Policy-derived keys (simulator enables, core maxima) render as status/chips,
-never as knobs. A fresh draft is seeded from `GET /api/config/starter`.
+types — under-field text is reserved for docs/units; a truncated placeholder
+reveals its full text on hover through `static/js/tooltip.js`, the
+IMMEDIATE app-wide tooltip component (every `title` renders with zero hover
+delay; wired into the wizard, monitor, and welcome pages). The Simulation
+vehicles card renders SUPPORTED simulators as honest toggles (recipe default
+on; switching off stores an explicit `enable_*_simulation: false` the
+emission preserves) with each vehicle's gated settings co-located under its
+row (generic: keys whose relevance references the enable key), and
+UNSUPPORTED ones as one muted unavailability line (`meta.supported` from the
+resolve payload). The co-search configurator packs three columns and
+`search_space` renders as a structured bounds editor from the served
+`hw_search_space_fields` sub-schema (never plain text). Other policy-derived
+keys (core maxima, the recipe-owned correctness mechanisms) render as
+status/chips, never as knobs. A fresh draft is seeded from `GET /api/config/starter`.
 `scripts/wizard_screenshots.py` (dev-only, browser-driven) captures the
 review evidence set: per-section shots, the Co-Design interaction sequence,
 per-mode switches, the template flow, and the error/remedy flow.
@@ -64,7 +81,7 @@ per-mode switches, the template flow, and the error/remedy flow.
 | `server/` | FastAPI app factory and uvicorn startup (`app.py`) plus route modules: pipeline/runs/templates/console APIs, lazy-resource endpoints, wizard and config-schema APIs, and hardware layout verification; `json_safe.py` provides the sanitising JSON response class. |
 | `snapshot/` | Pure per-artifact snapshot builders returning `(summary, ResourceDescriptor list)`: model, IR graph, hardware mapping, adaptation, pruning, search, and SANA-FE snapshots, `RESOURCE_KIND_*` constants, disk-based snapshot rebuild for legacy runs, and the best-effort console `[TAG]` parser (`console_events.py`) that backfills events for runs recorded before `events.jsonl`. |
 | `viewmodel/` | Pure, I/O-free view-models (parsed run artifacts in, chart-ready JSON out; unit-tested against synthetic streams): `overview_vm` (measured points + verdict markers — a carried metric NEVER plots), `step_metrics_vm` (the one metric-categorization rule table), `events_vm` (per-kind display hints + annotation lanes), `staircase_vm` (the D-hat ratchet staircase; raises on a falling ratchet), `gantt_vm` (step timeline + endpoint step-budget ledger + artifact/total wall split), `a6_vm` (install-resolution gauge cards). |
-| `wizard/` | Configuration workbench application layer: `emit.py` (explicit-keys-only config emission — the ONE builder used by Deploy, templates, and the representability test; unknown keys preserved and reported, never dropped; non-declarable derived keys — the ConversionPolicy-owned sim enables, `activation_quantization` — are removed), `build_deployment_config_from_state` (thin alias over emit), `schema_api.py` (`/api/config_schema` payload: serialized registry + recipe/preprocessing/NAS sub-schemas; `/api/config/resolve` payload: resolution + live step preview), `starter.py` + `starter_baseline.json` (the fresh-state contract: `GET /api/config/starter` serves the packaged baseline DOCUMENT — the lenet5 vehicle, the only tier-0 family green in all five modes, with a fresh experiment name and no pinned derived mode keys — pinned resolvable/emittable/mappable per mode switch by `test_wizard_starter.py`; workload facts live in the document, never in framework code), wizard schema surfaces (model types, NAS, temporal allocation, pipeline steps), and state validation. |
+| `wizard/` | Configuration workbench application layer: `emit.py` (explicit-keys-only config emission — the ONE builder used by Deploy, templates, and the representability test; unknown keys preserved and reported, never dropped; non-declarable derived keys — the ConversionPolicy-owned sim enables, `activation_quantization` — are removed), `build_deployment_config_from_state` (thin alias over emit), `schema_api.py` (`/api/config_schema` payload: serialized registry + recipe/preprocessing/hw-search-space/NAS sub-schemas; `/api/config/resolve` payload: resolution + live step preview), `starter.py` + `starter_baseline.json` (the fresh-state contract: `GET /api/config/starter` serves the packaged baseline DOCUMENT — the lenet5 vehicle, the only tier-0 family green in all five modes, with a fresh experiment name and no pinned derived mode keys — pinned resolvable/emittable/mappable per mode switch by `test_wizard_starter.py`; workload facts live in the document, never in framework code), wizard schema surfaces (model types, NAS, temporal allocation, pipeline steps), and state validation. |
 
 ## Dependencies
 - `common` — `best_effort` error scoping, env-derived paths (`runs_root`, `templates_dir`, `gui_no_browser`), `layer_key` helpers for snapshots.
