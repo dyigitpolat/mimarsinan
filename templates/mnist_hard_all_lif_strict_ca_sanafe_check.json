@@ -81,8 +81,7 @@
     },
     "max_simulation_samples": 500,
     "allow_scheduling": true,
-    "enable_loihi_simulation": false,
-    "enable_sanafe_simulation": true
+    "enable_loihi_simulation": false
   },
   "target_metric_override": null,
   "start_step": "SANA-FE Simulation",

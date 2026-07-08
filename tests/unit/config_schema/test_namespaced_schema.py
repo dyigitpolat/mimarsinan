@@ -42,6 +42,7 @@ from mimarsinan.config_schema.deployment_derivation import derive_deployment_par
 # value), and the cores-derived platform maxima.
 DERIVED_NON_DEFAULT_KEYS = {
     "pipeline_mode",
+    "cycle_accurate_lif_forward",
     "activation_quantization",
     "weight_quantization",
     "firing_mode",
@@ -322,11 +323,26 @@ class TestByteIdenticalOnResolvedConfigs:
 
 
 class TestHardwareGroupMigrated:
-    """The hardware concern is migrated end-to-end (declared owners + bijection)."""
+    """The hardware concern is migrated end-to-end (declared owners + bijection).
 
-    def test_platform_constraint_keys_are_in_hardware_group(self):
+    Round-3 amendment: the platform section splits by the capability-vs-
+    strategy principle — capabilities (what the hardware CAN do) stay in
+    'hardware'; scheduling knobs (what we CHOOSE when mapping) live in
+    'mapping_strategy'.
+    """
+
+    _SCHEDULING_STRATEGY_KEYS = frozenset(
+        {"max_schedule_passes", "scheduling_latency_weight"}
+    )
+
+    def test_platform_constraint_keys_split_capability_vs_strategy(self):
         for key in DEFAULT_PLATFORM_CONSTRAINTS:
-            assert KEY_SPECS[key].group == "hardware", key
+            expected = (
+                "mapping_strategy"
+                if key in self._SCHEDULING_STRATEGY_KEYS
+                else "hardware"
+            )
+            assert KEY_SPECS[key].group == expected, key
 
     def test_weight_bits_is_a_hardware_capability(self):
         assert KEY_SPECS["weight_bits"].group == "hardware"
@@ -334,7 +350,7 @@ class TestHardwareGroupMigrated:
     def test_platform_constraints_roundtrip_byte_identical(self):
         pc = get_default_platform_constraints()
         nested = to_namespaced(pc)
-        assert set(nested) == {"hardware"}
+        assert set(nested) == {"hardware", "mapping_strategy"}
         assert to_flat(nested) == pc
 
     def test_capability_gates_owned_by_mapping_strategy(self):

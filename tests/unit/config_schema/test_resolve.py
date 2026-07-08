@@ -148,6 +148,45 @@ class TestPolicyOwnedSimulatorEnables:
         assert derived["enable_sanafe_simulation"]["value"] is True
 
 
+class TestVehicleToggleSemantics:
+    """Round-3 defect 6: derived vehicle rows carry machine-readable support
+    meta; a declared OFF on a supported vehicle resolves honestly (value off,
+    zero errors); a declared ON on an unsupported one is a keyed error."""
+
+    def test_derived_rows_carry_support_meta(self):
+        res = resolve_draft(_minimal_draft(
+            deployment_parameters={"spiking_mode": "ttfs"}))
+        assert res.ok, res.errors
+        assert res.derived["enable_nevresim_simulation"]["meta"]["supported"] is True
+        assert res.derived["enable_loihi_simulation"]["meta"]["supported"] is False
+
+    def test_user_off_on_a_supported_vehicle_resolves_clean(self):
+        res = resolve_draft(_minimal_draft(deployment_parameters={
+            "spiking_mode": "lif", "enable_sanafe_simulation": False}))
+        assert res.ok, res.errors
+        row = res.derived["enable_sanafe_simulation"]
+        assert row["value"] is False
+        assert row["meta"]["supported"] is True
+        assert "disabled" in row["why"]
+
+    def test_user_off_removes_the_vehicle_step_from_the_preview(self):
+        from mimarsinan.gui.wizard.schema_api import resolve_payload
+
+        on = resolve_payload(_minimal_draft(
+            deployment_parameters={"spiking_mode": "lif"}))
+        off = resolve_payload(_minimal_draft(deployment_parameters={
+            "spiking_mode": "lif", "enable_sanafe_simulation": False}))
+        assert on["ok"] and off["ok"]
+        assert "SANA-FE Simulation" in on["pipeline"]["steps"]
+        assert "SANA-FE Simulation" not in off["pipeline"]["steps"]
+
+    def test_user_on_of_an_unsupported_vehicle_is_a_keyed_error(self):
+        res = resolve_draft(_minimal_draft(deployment_parameters={
+            "spiking_mode": "ttfs", "enable_loihi_simulation": True}))
+        assert not res.ok
+        assert any(e["key"] == "enable_loihi_simulation" for e in res.errors)
+
+
 class TestDerivedCoreMaxima:
     """max_axons/max_neurons derive from the core grid at resolve."""
 

@@ -8,6 +8,7 @@ from mimarsinan.config_schema.registry.types import (
     ConfigKeySchema as _E,
     FieldType as T,
 )
+from mimarsinan.tuning.orchestration.conversion_policy import ConversionPolicy
 
 _PC = "platform_constraints"
 
@@ -18,15 +19,32 @@ def _why_core_maximum(dim: str):
     return why
 
 
+def _backend_supported(cfg: dict, backend: str) -> bool:
+    """Mode capability from the ConversionPolicy SSOT."""
+    recipe = ConversionPolicy.derive(
+        str(cfg.get("spiking_mode", "lif")), cfg.get("ttfs_cycle_schedule")
+    )
+    return bool(recipe.sim_enables.get(f"enable_{backend}_simulation", False))
+
+
 def _why_backend_enable(backend: str, off_reason: str):
-    """WHY text for a ConversionPolicy-owned backend enable."""
+    """WHY text for a recipe-defaulted backend enable (user-off aware)."""
     def why(cfg: dict) -> str:
         key = f"enable_{backend}_simulation"
         mode = cfg.get("spiking_mode")
         if cfg.get(key):
             return f"on — ConversionPolicy runs the {backend} gate for {mode!r}"
+        if _backend_supported(cfg, backend):
+            return f"off — disabled in this config (recipe default for {mode!r}: on)"
         return f"off — {off_reason} (spiking_mode={mode!r})"
     return why
+
+
+def _meta_backend_enable(backend: str):
+    """Machine-readable support flag so the wizard renders toggle vs muted line."""
+    def meta(cfg: dict) -> dict:
+        return {"supported": _backend_supported(cfg, backend)}
+    return meta
 
 
 ENTRIES = (
@@ -59,9 +77,13 @@ ENTRIES = (
        type=T.INT, category=Category.BASIC, exposure="user", label="Simulation Steps",
        doc="Temporal resolution S: spiking cycles per forward.", bounds=(1, None)),
     _E("weight_bits", section=_PC, group="hardware", owner="weight_quantization",
-       type=T.INT, category=Category.BASIC, exposure="user", label="Weight Bits",
+       type=T.INT, category=Category.BASIC, exposure="user", label="Weight Precision",
        effect="Declares a quantized artifact (bits-driven WQ contract)",
-       doc="Weight precision of the deployed artifact.", bounds=(1, 32)),
+       doc="Weight precision of the deployed artifact: quantized-N-bits "
+           "(weight_bits declares a quantized artifact) or float weights "
+           "(the vanilla assembly: pipeline_mode='vanilla' + "
+           "weight_quantization=false, weight_bits then inert).",
+       bounds=(1, 32)),
     _E("allow_coalescing", section=_PC, group="hardware", owner="MappingStrategy",
        type=T.BOOL, category=Category.BASIC, exposure="user", label="Allow Coalescing",
        doc="Capability: coalesce compatible soft cores into shared hard cores."),
@@ -73,11 +95,12 @@ ENTRIES = (
        category=Category.ADVANCED, exposure="user", label="Allow Per-layer S",
        effect="Capability gate for s_allocation explicit/budget",
        doc="Capability: per-cascade-depth temporal resolution."),
-    _E("max_schedule_passes", section=_PC, group="hardware", owner="schedule_partitioner",
+    _E("max_schedule_passes", section=_PC, group="mapping_strategy",
+       owner="schedule_partitioner",
        type=T.INT, category=Category.ADVANCED, label="Max Schedule Passes",
        doc="Upper bound on multi-pass scheduling when single-pass packing fails.",
        bounds=(1, None), relevant=R.when_true("allow_scheduling")),
-    _E("scheduling_latency_weight", section=_PC, group="hardware",
+    _E("scheduling_latency_weight", section=_PC, group="mapping_strategy",
        owner="schedule_partitioner", type=T.FLOAT, category=Category.ADVANCED,
        label="Scheduling Latency Weight",
        doc="Latency term weight in the schedule-partitioner objective.",
@@ -88,21 +111,23 @@ ENTRIES = (
            "threshold groups).", relevant=R.when("hw_config_mode", in_=("search",)),
        promote_when=R.when("hw_config_mode", in_=("search",)),
        empty_means="the co-search's default bounds"),
-    _E("allow_scheduling", group="hardware", owner="MappingStrategy/scheduler",
+    _E("allow_scheduling", group="mapping_strategy", owner="MappingStrategy/scheduler",
        type=T.BOOL, category=Category.BASIC, exposure="user", label="Allow Scheduling",
        effect="Multi-pass layout scheduling when single-pass packing fails",
-       doc="Capability: time-multiplex core passes when the model exceeds the grid."),
+       doc="Deployment option: time-multiplex core passes when the model "
+           "exceeds the grid (how we choose to deploy, not a chip capability)."),
     _E("enable_nevresim_simulation", group="deployment_target",
        owner="ConversionPolicy/backend_registry", type=T.BOOL,
        category=Category.DERIVED, derivation="derived", exposure="derived",
        label="Nevresim Simulation",
        doc="Whether the nevresim C++ cycle-simulator decision-parity probe "
-           "runs. Owned by the ConversionPolicy mode recipe (capability-"
-           "derived); an explicit value is overwritten, so none is stored.",
+           "runs. Recipe default: on where the backend supports the mode; "
+           "declare false to skip the vehicle (a stored override); an "
+           "explicit on for an unsupported mode is rejected.",
        derived_from=("spiking_mode", "ttfs_cycle_schedule"),
        why=_why_backend_enable(
            "nevresim", "nevresim has no synchronized-window backend"),
-       declarable=False),
+       meta=_meta_backend_enable("nevresim")),
     _E("nevresim_connectivity_mode", group="deployment_target", owner="nevresim_backend",
        type=T.ENUM, options=("runtime", "codegen"), category=Category.ADVANCED,
        label="Nevresim Connectivity Mode",
@@ -112,13 +137,14 @@ ENTRIES = (
        owner="ConversionPolicy/backend_registry", type=T.BOOL,
        category=Category.DERIVED, derivation="derived", exposure="derived",
        label="Loihi Simulation",
-       doc="Whether the Lava Loihi spike-parity gate runs. Owned by the "
-           "ConversionPolicy mode recipe (capability-derived); an explicit "
-           "value is overwritten, so none is stored.",
+       doc="Whether the Lava Loihi spike-parity gate runs. Recipe default: on "
+           "where the backend supports the mode; declare false to skip the "
+           "vehicle (a stored override); an explicit on for an unsupported "
+           "mode is rejected.",
        derived_from=("spiking_mode", "ttfs_cycle_schedule"),
        why=_why_backend_enable(
            "loihi", "Loihi/Lava only implements LIF dynamics"),
-       declarable=False),
+       meta=_meta_backend_enable("loihi")),
     _E("loihi_parity_sample_index", group="deployment_target", owner="loihi_backend",
        type=T.INT, category=Category.ADVANCED, label="Loihi Parity Sample Index",
        doc="Test-set sample index for the HCM-vs-Lava spike-parity check.",
@@ -128,12 +154,13 @@ ENTRIES = (
        category=Category.DERIVED, derivation="derived", exposure="derived",
        label="SANA-FE Simulation",
        doc="Whether the SANA-FE simulator (parity + energy/latency aggregates) "
-           "runs. Owned by the ConversionPolicy mode recipe (capability-"
-           "derived); an explicit value is overwritten, so none is stored.",
+           "runs. Recipe default: on where the backend supports the mode; "
+           "declare false to skip the vehicle (a stored override); an "
+           "explicit on for an unsupported mode is rejected.",
        derived_from=("spiking_mode", "ttfs_cycle_schedule"),
        why=_why_backend_enable(
            "sanafe", "SANA-FE does not support this mode"),
-       declarable=False),
+       meta=_meta_backend_enable("sanafe")),
     _E("sanafe_sample_count", group="deployment_target", owner="sanafe_backend",
        type=T.INT, category=Category.ADVANCED, exposure="user", label="SANA-FE Sample Count",
        doc="Deterministic test samples run through SANA-FE.", bounds=(1, None),

@@ -47,6 +47,19 @@ class TestEmit:
         assert "stop_step" not in out
         assert "pipeline_mode" not in out
 
+    def test_declared_vehicle_off_survives_emission(self):
+        # Round-3 defect 6: user-off on a supported simulator is a legitimate
+        # declarable override — the emitted document must carry it.
+        out = emit_deployment_config({
+            "deployment_parameters": {
+                "spiking_mode": "lif",
+                "enable_sanafe_simulation": False,
+            },
+        })
+        assert out["deployment_parameters"]["enable_sanafe_simulation"] is False
+        # The non-declarable derived key still never survives.
+        assert "activation_quantization" not in out["deployment_parameters"]
+
     def test_meta_keys_survive(self):
         out = emit_deployment_config({"_continue_from_run_id": "run_9"})
         assert out["_continue_from_run_id"] == "run_9"

@@ -42,7 +42,9 @@ def merge_pipeline_config(
     config.update(deployment_parameters)
     config.update(get_default_platform_constraints())
     config.update(platform_constraints)
-    derive_deployment_parameters(config)
+    derive_deployment_parameters(
+        config, explicit_keys=set(deployment_parameters) | set(platform_constraints)
+    )
     derive_pipeline_runtime_parameters(config)
     return config
 

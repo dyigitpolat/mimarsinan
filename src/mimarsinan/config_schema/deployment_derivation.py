@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Mapping, MutableMapping, Optional
+from typing import Any, Iterable, Mapping, MutableMapping, Optional, Set
 
 from mimarsinan.chip_simulation.spiking_semantics import (
     forces_activation_quantization,
@@ -13,6 +13,7 @@ from mimarsinan.common.env import (
     UNSAFE_QUANT_OVERRIDES_VAR,
     unsafe_quant_overrides_enabled,
 )
+from mimarsinan.config_schema.defaults import CONFIG_KEYS_SET
 from mimarsinan.tuning.orchestration.conversion_policy import ConversionPolicy
 
 _AQ_RULE = (
@@ -36,17 +37,60 @@ def _unsafe_override_log(detail: str) -> None:
     print(f"[UNSAFE-OVERRIDE] {detail} ({UNSAFE_QUANT_OVERRIDES_VAR}=1)")
 
 
-def _fold_conversion_recipe(dp: MutableMapping[str, Any], spiking_mode: str) -> None:
+# Registry keys the recipe owns OUTRIGHT (correctness mechanisms, never
+# knobs): an explicit value is overwritten, so none is ever honored/stored.
+_RECIPE_OWNED_CORRECTNESS_KEYS = frozenset({"cycle_accurate_lif_forward"})
+
+
+def _fold_sim_enables(
+    dp: MutableMapping[str, Any],
+    sim_enables: Mapping[str, bool],
+    spiking_mode: str,
+    explicit_keys: Set[str],
+) -> None:
+    """Backend enables: capability off is authoritative (an explicit ON is
+    rejected loudly); a supported backend defaults ON per the recipe and a
+    declared OFF is honored — a legitimate, stored override."""
+    for key, supported in sim_enables.items():
+        declared = dp.get(key) if key in explicit_keys else None
+        if not supported:
+            if declared is True:
+                raise ValueError(
+                    f"{key}=true contradicts the mode capability: the backend "
+                    f"cannot run spiking_mode={spiking_mode!r} (schedule="
+                    f"{dp.get('ttfs_cycle_schedule')!r}). Remove the explicit "
+                    f"key to accept the capability derivation."
+                )
+            dp[key] = False
+        else:
+            dp[key] = declared is not False
+
+
+def _fold_conversion_recipe(
+    dp: MutableMapping[str, Any],
+    spiking_mode: str,
+    explicit_keys: Optional[Iterable[str]] = None,
+) -> None:
     """Fold the ConversionPolicy SSOT recipe for ``spiking_mode`` into ``dp``.
 
-    sim_enables, driver, and per-mode knobs are written authoritatively
-    (Pure SSOT): any user value for them is overwritten by the recipe.
+    Two-tier contract: INTERNAL recipe knobs (non-config keys) and the
+    recipe-owned correctness keys are written authoritatively; REGISTRY
+    knobs take the recipe value as their mode-aware default — an explicit
+    document value wins (the registry's 'explicit value wins' contract).
+    ``explicit_keys`` names the document-declared keys; ``None`` treats every
+    present key as declared (dict-as-document callers).
     """
+    explicit: Set[str] = set(dp) if explicit_keys is None else set(explicit_keys)
     recipe = ConversionPolicy.derive(spiking_mode, dp.get("ttfs_cycle_schedule"))
-    for key, value in recipe.sim_enables.items():
-        dp[key] = value
+    _fold_sim_enables(dp, recipe.sim_enables, spiking_mode, explicit)
     dp["optimization_driver"] = recipe.driver
     for key, value in recipe.knobs.items():
+        if (
+            key in CONFIG_KEYS_SET
+            and key in explicit
+            and key not in _RECIPE_OWNED_CORRECTNESS_KEYS
+        ):
+            continue
         dp[key] = value
 
 
@@ -71,15 +115,23 @@ def _resolve_activation_quantization(
     raise _contract_error(detail, _AQ_RULE)
 
 
-def derive_deployment_parameters(dp: MutableMapping[str, Any]) -> None:
+def derive_deployment_parameters(
+    dp: MutableMapping[str, Any],
+    explicit_keys: Optional[Iterable[str]] = None,
+) -> None:
     """Derive AQ/WQ/pipeline_mode in-place — the ONLY derivation implementation
-    (the wizard consumes it via ``/api/config/resolve``; no JS copy exists)."""
+    (the wizard consumes it via ``/api/config/resolve``; no JS copy exists).
+
+    ``explicit_keys`` names the keys the source DOCUMENT declared (so merged
+    defaults don't masquerade as declarations); ``None`` treats every present
+    key as declared.
+    """
     spiking_mode = str(dp.get("spiking_mode", "lif"))
     pipeline_mode = str(dp.get("pipeline_mode", ""))
     explicit_aq = dp.get("activation_quantization")
     float_weights = pipeline_mode == "vanilla" or not bool(dp.get("weight_quantization", True))
 
-    _fold_conversion_recipe(dp, spiking_mode)
+    _fold_conversion_recipe(dp, spiking_mode, explicit_keys)
 
     if float_weights:
         dp["pipeline_mode"] = "vanilla"
@@ -203,4 +255,6 @@ def derive_pipeline_runtime_parameters(dp: MutableMapping[str, Any]) -> None:
         dp.setdefault("firing_mode", "Default")
         dp.setdefault("spike_generation_mode", "Uniform")
         dp.setdefault("thresholding_mode", "<=")
-        dp.setdefault("cycle_accurate_lif_forward", True)
+    # Recipe-owned correctness mechanism (LIF trains the deployed forward);
+    # inert for TTFS modes but always resolved, never a knob.
+    dp.setdefault("cycle_accurate_lif_forward", True)

@@ -64,7 +64,7 @@ ENTRIES = (
        doc="Membrane-threshold comparison (strict or inclusive). Derived from "
            "spiking_mode; a consistent explicit value is accepted.",
        derived_from=("spiking_mode",), why=_why_ttfs_firing, declarable=True),
-    _E("encoding_layer_placement", group="spiking", owner="mapping/encoding_layer",
+    _E("encoding_layer_placement", group="mapping_strategy", owner="mapping/encoding_layer",
        type=T.ENUM, options=("subsume", "offload"), category=Category.ADVANCED,
        exposure="user", label="Encoding Layer Placement",
        effect="Offload maps the encoding-layer neuralOp on-chip",
@@ -75,11 +75,21 @@ ENTRIES = (
        effect="Shifts negative-producing ComputeOp boundaries into the encodable domain",
        doc="Enable the deployed-bias negative shift (LIF + TTFS family)."),
     _E("cycle_accurate_lif_forward", group="spiking", owner="lif_adaptation",
-       type=T.BOOL, category=Category.ADVANCED, exposure="user",
-       label="Cycle-accurate LIF Forward",
+       type=T.BOOL, category=Category.DERIVED, derivation="derived",
+       exposure="derived", label="Cycle-accurate LIF Forward",
        effect="Spike-train forward during LIF adaptation training",
-       doc="Train LIF adaptation against the cycle-accurate spiking forward instead "
-           "of the rate surrogate.", relevant=R.when("spiking_mode", in_=("lif",))),
+       doc="LIF adaptation trains against the cycle-accurate spiking forward "
+           "(the deployed forward) — the correctness mechanism that keeps the "
+           "QAT train-forward bit-exact to the deployed eval-forward. The LIF "
+           "recipe always folds it ON; it is never a knob.",
+       derived_from=("spiking_mode",),
+       why=lambda cfg: (
+           "on — LIF adaptation trains the deployed cycle-accurate forward "
+           "(train/eval bit-exactness)"
+           if cfg.get("spiking_mode") == "lif"
+           else f"inert — no LIF adaptation for spiking_mode={cfg.get('spiking_mode')!r}"
+       ),
+       declarable=False),
     _E("activation_quantization", group="conversion",
        owner="deployment_derivation/activation_analysis", type=T.BOOL,
        category=Category.DERIVED, derivation="derived", exposure="derived",
@@ -99,17 +109,17 @@ ENTRIES = (
            "weights via pipeline_mode='vanilla' or weight_quantization=false.",
        derived_from=("weight_bits", "pipeline_mode"),
        why=_why_weight_quantization, declarable=True),
-    _E("pruning", group="conversion", owner="pruning_adaptation",
+    _E("pruning", group="mapping_strategy", owner="pruning_adaptation",
        type=T.BOOL, category=Category.BASIC, exposure="user", label="Pruning Enabled",
        effect="Adds the Pruning Adaptation step",
        doc="Enable magnitude pruning adaptation (a deployment-side conversion "
            "step, not an architecture property)."),
-    _E("pruning_fraction", group="conversion", owner="pruning_adaptation",
+    _E("pruning_fraction", group="mapping_strategy", owner="pruning_adaptation",
        type=T.FLOAT, category=Category.BASIC, exposure="user", label="Pruning Fraction",
        doc="Fraction of weights pruned by the adaptation.", bounds=(0.0, 1.0),
        relevant=R.when_true("pruning"),
        empty_means="0 — pruning stays inert (no Pruning Adaptation step)"),
-    _E("prune_sparsity", group="conversion", owner="pruning_adaptation",
+    _E("prune_sparsity", group="mapping_strategy", owner="pruning_adaptation",
        type=T.FLOAT, category=Category.ADVANCED, label="Prune Sparsity",
        doc="Legacy sparsity knob consumed by the pruning tuner mask builder.",
        bounds=(0.0, 1.0), relevant=R.when_true("pruning")),

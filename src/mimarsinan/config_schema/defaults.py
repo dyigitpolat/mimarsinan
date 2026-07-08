@@ -47,10 +47,12 @@ DEFAULT_DEPLOYMENT_PARAMETERS: Dict[str, object] = {
     "hw_config_mode": "fixed",
     # The enable_*_simulation flags carry NO defaults: the ConversionPolicy
     # recipe derives them per mode and overwrites any value (Pure SSOT).
+    # cycle_accurate_lif_forward carries NO default: it is recipe-owned
+    # (the LIF recipe folds it ON; the runtime derivation writes it) — a
+    # correctness mechanism, never a knob.
     "spiking_mode": "lif",
     "allow_scheduling": False,
     "nevresim_connectivity_mode": "runtime",
-    "cycle_accurate_lif_forward": True,
     "enable_training_noise": False,
     "ttfs_cycle_schedule": "cascaded",
     "sanafe_sample_count": 1,

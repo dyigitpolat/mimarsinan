@@ -80,8 +80,7 @@
       ]
     },
     "max_simulation_samples": 500,
-    "allow_scheduling": true,
-    "enable_loihi_simulation": true
+    "allow_scheduling": true
   },
   "target_metric_override": null,
   "start_step": null,

@@ -28,7 +28,9 @@ def build_flat_pipeline_config(
         dp.update(deployment_parameters)
     apply_preset(pipeline_mode, dp)
     dp.setdefault("pipeline_mode", pipeline_mode)
-    derive_deployment_parameters(dp)
+    derive_deployment_parameters(
+        dp, explicit_keys=set(deployment_parameters or {})
+    )
     derive_pipeline_runtime_parameters(dp)
 
     pc = dict(get_default_platform_constraints())

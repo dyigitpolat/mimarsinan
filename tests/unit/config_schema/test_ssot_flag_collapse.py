@@ -98,7 +98,6 @@ KEPT_GENERAL_KNOBS = frozenset({
     "kd_ce_alpha",
     "kd_temperature",
     "ttfs_genuine_blend_ce_alpha",
-    "cycle_accurate_lif_forward",
 })
 
 
@@ -126,23 +125,36 @@ class TestCollapsedKeysAreGone:
 
 
 class TestFoldIsAuthoritative:
-    """A user value for a recipe knob is OVERWRITTEN by the derived recipe."""
+    """Two-tier fold contract (round-3 honesty fix): INTERNAL recipe knobs —
+    the collapsed non-config keys — are overwritten by the derived recipe;
+    REGISTRY-DECLARABLE knobs take the recipe value only as their mode-aware
+    default (an explicit document value wins, per the registry's documented
+    'explicit value wins' contract — the FAST-respec per-cell caps depend on
+    it)."""
 
-    def test_lif_recipe_overrides_injected_user_values(self):
+    def test_lif_recipe_overrides_injected_internal_values(self):
         dp = {
             "spiking_mode": "lif",
             "weight_quantization": True,
-            # Adversarial user overrides that the Pure-SSOT fold must overwrite.
+            # Adversarial injections of INTERNAL recipe constants: overwritten.
             "lif_blend_fast": False,
             "optimization_driver": "controller",
-            "kd_ce_alpha": 0.1,
             "fast_ladder_freeze_bn": False,
         }
         derive_deployment_parameters(dp)
         assert dp["optimization_driver"] == "fast"
         assert dp["lif_blend_fast"] is True
         assert dp["fast_ladder_freeze_bn"] is True
-        assert dp["kd_ce_alpha"] == 0.5
+
+    def test_registry_knobs_take_the_recipe_default_but_honor_explicit(self):
+        unset = {"spiking_mode": "lif", "weight_quantization": True}
+        derive_deployment_parameters(unset)
+        assert unset["kd_ce_alpha"] == 0.5  # recipe default for the mode
+
+        declared = {"spiking_mode": "lif", "weight_quantization": True,
+                    "kd_ce_alpha": 0.1}
+        derive_deployment_parameters(declared)
+        assert declared["kd_ce_alpha"] == 0.1  # explicit wins
 
     def test_cascaded_recipe_writes_genuine_blend_not_stale_proxy(self):
         # The cascaded recipe is the GENUINE blend ramp; a stale proxy override

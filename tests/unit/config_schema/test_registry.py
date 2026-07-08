@@ -112,21 +112,63 @@ class TestTaxonomy:
 
     def test_workload_group_is_dataset_side(self):
         for key in ("data_provider_name", "datasets_path", "preprocessing",
-                    "input_data_scale", "spike_encoding_seed"):
+                    "input_data_scale", "spike_encoding_seed", "num_workers"):
             assert REGISTRY[key].group == "workload", key
+
+    def test_data_loading_settings_render_primary_in_workload(self):
+        """Round-3 defect 1: data-loading settings are NOT advanced — the
+        preprocessing spec and the datasets path are primary Workload fields."""
+        for key in ("data_provider_name", "preprocessing", "datasets_path"):
+            assert REGISTRY[key].category is Category.BASIC, key
 
     def test_model_group_is_architecture_side(self):
         for key in ("model_config_mode", "model_type", "model_config",
-                    "model_factory", "weight_source",
-                    "preload_weights", "pretrained_weight_source",
-                    "clamp_cuda_assert_prone"):
+                    "model_factory", "clamp_cuda_assert_prone"):
             assert REGISTRY[key].group == "model", key
 
-    def test_pruning_is_a_deployment_side_conversion_concern(self):
-        """Pruning is a deployment option (an adaptation step in the
-        conversion chain), never an architecture property."""
+    def test_pretrained_model_config_lives_in_training(self):
+        """Round-3 defect 4: the pretrained-weight regime configures the
+        TRAINING path (fine-tune instead of from-scratch), so its keys live
+        in the training group with the weight source primary."""
+        for key in ("weight_source", "preload_weights", "pretrained_weight_source"):
+            assert REGISTRY[key].group == "training", key
+        assert REGISTRY["weight_source"].category is Category.BASIC
+        for key in ("finetune_epochs", "finetune_lr"):
+            entry = REGISTRY[key]
+            assert entry.group == "training", key
+            # Fine-tune knobs are the point of the pretrained regime: primary
+            # exactly while a weight source is declared.
+            assert entry.promote_when is not None, key
+            assert entry.promote_when.evaluate({"weight_source": "torchvision"}), key
+            assert not entry.promote_when.evaluate({"weight_source": None}), key
+
+    def test_mapping_strategy_hosts_the_mapping_choices(self):
+        """Round-3 defect 5 (amended): capability = what the hardware CAN do
+        (Hardware card); strategy = what we CHOOSE when mapping (the
+        Mapping-strategy panel in Co-Design): scheduling, encoding placement,
+        the pruning family."""
+        for key in ("allow_scheduling", "max_schedule_passes",
+                    "scheduling_latency_weight", "encoding_layer_placement",
+                    "pruning", "pruning_fraction", "prune_sparsity"):
+            assert REGISTRY[key].group == "mapping_strategy", key
+
+    def test_capabilities_stay_on_the_hardware_card(self):
+        for key in ("allow_coalescing", "allow_neuron_splitting",
+                    "allow_per_layer_s", "has_bias", "cores"):
+            assert REGISTRY[key].group == "hardware", key
+
+    def test_tuning_recipe_lives_with_the_tuning_controller(self):
+        """Round-3 defect 7: the tuning recipe configures the adaptation
+        tuners, not pretraining — it belongs to the tuning group."""
+        assert REGISTRY["tuning_recipe"].group == "tuning"
+        assert REGISTRY["training_recipe"].group == "training"
+
+    def test_pruning_is_a_mapping_strategy_never_an_architecture_property(self):
+        """Pruning is something we CHOOSE when mapping (it shrinks the mapped
+        weight surface), never an architecture property — it lives on the
+        Co-Design Mapping-strategy panel (round-3 amendment)."""
         for key in ("pruning", "pruning_fraction", "prune_sparsity"):
-            assert REGISTRY[key].group == "conversion", key
+            assert REGISTRY[key].group == "mapping_strategy", key
 
     def test_co_search_group_hosts_the_search_concern(self):
         """The search settings drive model AND hardware co-search, so they
@@ -150,17 +192,32 @@ class TestTaxonomy:
 class TestModeHonesty:
     """Keys a policy or derivation owns must never render as knobs."""
 
-    def test_simulator_enables_are_policy_derived_not_knobs(self):
-        """ConversionPolicy folds sim_enables authoritatively (any user value
-        is overwritten), so the registry must present them as DERIVED and
-        non-declarable — a toggle here would be a lie."""
+    def test_simulator_enables_are_derived_with_a_declarable_off(self):
+        """Round-3 defect 6: a supported vehicle defaults ON per the mode
+        recipe and the user may declare it OFF (a legitimate, stored
+        override); an unsupported vehicle stays capability-off. The keys are
+        DERIVED (the recipe owns the default) but DECLARABLE (user-off
+        survives emission), and they expose machine-readable support meta."""
         for key in ("enable_nevresim_simulation", "enable_loihi_simulation",
                     "enable_sanafe_simulation"):
             entry = REGISTRY[key]
             assert entry.category is Category.DERIVED, key
-            assert entry.declarable is False, key
+            assert entry.declarable is True, key
             assert "spiking_mode" in entry.derived_from, key
             assert entry.why is not None, key
+            assert entry.meta is not None, key
+            assert entry.meta({"spiking_mode": "lif"}).keys() >= {"supported"}, key
+
+    def test_cycle_accurate_lif_forward_is_recipe_owned_not_a_knob(self):
+        """Round-3 defect 8 (defaults audit): the cycle-accurate LIF forward
+        is what makes the QAT train-forward bit-exact to the deployed eval
+        forward — a correctness mechanism the LIF recipe always folds ON.
+        It must not render as a knob."""
+        entry = REGISTRY["cycle_accurate_lif_forward"]
+        assert entry.category is Category.DERIVED
+        assert entry.declarable is False
+        assert entry.derived_from == ("spiking_mode",)
+        assert entry.why is not None
 
     def test_core_maxima_are_derived_from_the_core_grid(self):
         """max_axons/max_neurons are derivable from cores; they render as
@@ -242,7 +299,7 @@ class TestSerialization:
     def test_payload_is_json_safe_and_complete(self):
         payload = serialize_registry()
         json.dumps(payload)
-        assert len(payload["groups"]) == 10
+        assert len(payload["groups"]) == 11
         assert set(payload["keys"]) == set(REGISTRY)
         record = payload["keys"]["endpoint_floor_steps"]
         assert record["unit"] == "steps"

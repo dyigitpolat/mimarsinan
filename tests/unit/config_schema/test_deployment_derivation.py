@@ -26,12 +26,21 @@ def test_ttfs_cycle_based_finetune_enables_activation_quant():
     assert dp["activation_quantization"] is True
 
 
-def test_ttfs_cycle_based_synchronized_disables_nevresim():
-    # No genuine synchronized-window nevresim backend yet → forced off.
+def test_ttfs_cycle_based_synchronized_has_no_nevresim():
+    # No genuine synchronized-window nevresim backend yet → capability off.
     dp = {"spiking_mode": "ttfs_cycle_based", "weight_quantization": True,
-          "ttfs_cycle_schedule": "synchronized", "enable_nevresim_simulation": True}
+          "ttfs_cycle_schedule": "synchronized"}
     derive_deployment_parameters(dp)
     assert dp["enable_nevresim_simulation"] is False
+
+
+def test_explicit_enable_of_an_unsupported_backend_is_rejected():
+    # An explicit ON for a backend that cannot run the mode is a contract
+    # violation (never silently overwritten — that would be a lie).
+    dp = {"spiking_mode": "ttfs_cycle_based", "weight_quantization": True,
+          "ttfs_cycle_schedule": "synchronized", "enable_nevresim_simulation": True}
+    with pytest.raises(ValueError, match="enable_nevresim_simulation"):
+        derive_deployment_parameters(dp)
 
 
 def test_ttfs_cycle_based_cascaded_keeps_nevresim():
@@ -91,9 +100,18 @@ def test_config_builder_lif_derives_quant_flags():
     assert resolved["activation_quantization"] is True
 
 
-def test_default_cycle_accurate_lif_forward_is_true():
+def test_cycle_accurate_lif_forward_always_resolves_true():
+    # Recipe-owned (never a knob, no schema default): the derivation writes it
+    # for every mode — ON for lif by the recipe, inert-but-resolved for TTFS.
+    for mode in ("lif", "ttfs", "ttfs_quantized", "ttfs_cycle_based"):
+        resolved = build_flat_pipeline_config(
+            {"spiking_mode": mode, "weight_quantization": True},
+            {},
+            pipeline_mode="phased",
+        )
+        assert resolved["cycle_accurate_lif_forward"] is True, mode
     dp = get_default_deployment_parameters()
-    assert dp["cycle_accurate_lif_forward"] is True
+    assert "cycle_accurate_lif_forward" not in dp
 
 
 def test_legacy_ramp_switches_removed():
@@ -254,13 +272,111 @@ def test_synchronized_folds_exact_endpoint_and_disables_nevresim():
     assert dp["enable_loihi_simulation"] is False
 
 
-def test_sim_enables_are_capability_authoritative():
-    # loihi + a non-LIF mode RAISES at assembly, so the policy MUST override an
-    # explicit enable rather than ship an infeasible config.
+def test_explicit_loihi_on_a_non_lif_mode_is_rejected():
+    # loihi + a non-LIF mode RAISES at assembly, so the derivation rejects the
+    # explicit enable loudly (with the remove-the-key remedy) instead of
+    # silently shipping a config that contradicts its declaration.
     dp = {"spiking_mode": "ttfs", "weight_quantization": True,
           "enable_loihi_simulation": True}
-    derive_deployment_parameters(dp)
-    assert dp["enable_loihi_simulation"] is False
+    with pytest.raises(ValueError, match="enable_loihi_simulation"):
+        derive_deployment_parameters(dp)
+
+
+class TestVehicleUserOff:
+    """Round-3 defect 6: a SUPPORTED vehicle defaults ON per the recipe and a
+    declared OFF is honored — a legitimate override, never overwritten."""
+
+    def test_user_off_disables_a_supported_vehicle(self):
+        dp = {"spiking_mode": "lif", "weight_quantization": True,
+              "enable_sanafe_simulation": False}
+        derive_deployment_parameters(dp)
+        assert dp["enable_sanafe_simulation"] is False
+
+    def test_user_off_nevresim_is_honored_for_lif(self):
+        dp = {"spiking_mode": "lif", "weight_quantization": True,
+              "enable_nevresim_simulation": False}
+        derive_deployment_parameters(dp)
+        assert dp["enable_nevresim_simulation"] is False
+
+    def test_unset_supported_vehicles_default_on(self):
+        dp = {"spiking_mode": "lif", "weight_quantization": True}
+        derive_deployment_parameters(dp)
+        assert dp["enable_nevresim_simulation"] is True
+        assert dp["enable_loihi_simulation"] is True
+        assert dp["enable_sanafe_simulation"] is True
+
+    def test_explicit_on_of_a_supported_vehicle_is_accepted(self):
+        dp = {"spiking_mode": "lif", "weight_quantization": True,
+              "enable_loihi_simulation": True}
+        derive_deployment_parameters(dp)
+        assert dp["enable_loihi_simulation"] is True
+
+    def test_explicit_off_of_an_unsupported_vehicle_is_consistent(self):
+        # Declaring OFF where the capability is already off is consistent —
+        # accepted, and the resolved value stays False.
+        dp = {"spiking_mode": "ttfs", "weight_quantization": True,
+              "enable_loihi_simulation": False}
+        derive_deployment_parameters(dp)
+        assert dp["enable_loihi_simulation"] is False
+
+
+class TestRecipeKnobExplicitWins:
+    """Registry-declarable recipe knobs: the recipe is the MODE-AWARE DEFAULT
+    and an explicit document value wins (the registry's documented contract —
+    'explicit value wins'). Internal recipe constants stay recipe-owned."""
+
+    def test_explicit_wq_endpoint_recovery_steps_wins_over_the_recipe(self):
+        # The FAST-respec per-cell cap (tier configs declare 2000) must reach
+        # the runtime — the recipe 16000 is only the unset default.
+        dp = {"spiking_mode": "lif", "weight_quantization": True,
+              "wq_endpoint_recovery_steps": 2000}
+        derive_deployment_parameters(dp)
+        assert dp["wq_endpoint_recovery_steps"] == 2000
+
+    def test_explicit_kd_ce_alpha_wins_over_the_lif_recipe(self):
+        dp = {"spiking_mode": "lif", "weight_quantization": True,
+              "kd_ce_alpha": 0.1}
+        derive_deployment_parameters(dp)
+        assert dp["kd_ce_alpha"] == 0.1
+
+    def test_unset_registry_knobs_take_the_recipe_value_over_the_generic_default(self):
+        # The merged pipeline path carries the GENERIC defaults (kd_ce_alpha
+        # 0.3); without an explicit declaration the recipe's mode value must
+        # still win over the merged-in generic default.
+        resolved = build_flat_pipeline_config(
+            {"spiking_mode": "lif", "weight_quantization": True},
+            {},
+            pipeline_mode="phased",
+        )
+        assert resolved["kd_ce_alpha"] == 0.5
+        assert resolved["wq_endpoint_recovery_steps"] == 16000
+
+    def test_explicit_knob_wins_through_the_merged_pipeline_path(self):
+        resolved = build_flat_pipeline_config(
+            {"spiking_mode": "lif", "weight_quantization": True,
+             "wq_endpoint_recovery_steps": 2000, "kd_ce_alpha": 0.1},
+            {},
+            pipeline_mode="phased",
+        )
+        assert resolved["wq_endpoint_recovery_steps"] == 2000
+        assert resolved["kd_ce_alpha"] == 0.1
+
+    def test_internal_recipe_constants_stay_recipe_owned(self):
+        # Non-registry recipe internals (lif_blend_fast, optimization_driver)
+        # are not user keys; the recipe overwrites any injected value.
+        dp = {"spiking_mode": "lif", "weight_quantization": True,
+              "lif_blend_fast": False, "optimization_driver": "controller"}
+        derive_deployment_parameters(dp)
+        assert dp["lif_blend_fast"] is True
+        assert dp["optimization_driver"] == "fast"
+
+    def test_cycle_accurate_lif_forward_is_recipe_owned(self):
+        # Correctness mechanism (train/eval bit-exactness): the LIF recipe
+        # always folds it ON; an explicit off is overwritten, never stored.
+        dp = {"spiking_mode": "lif", "weight_quantization": True,
+              "cycle_accurate_lif_forward": False}
+        derive_deployment_parameters(dp)
+        assert dp["cycle_accurate_lif_forward"] is True
 
 
 def test_vanilla_float_still_gets_driver_and_sim_enables():

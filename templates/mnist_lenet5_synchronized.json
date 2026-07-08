@@ -69,8 +69,6 @@
     },
     "max_simulation_samples": 50,
     "allow_scheduling": false,
-    "enable_nevresim_simulation": true,
-    "enable_loihi_simulation": false,
     "enable_sanafe_simulation": false,
     "sanafe_arch_preset": "loihi",
     "sanafe_sample_count": 1,

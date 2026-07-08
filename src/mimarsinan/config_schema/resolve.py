@@ -75,11 +75,14 @@ def _derived_view(resolved: Mapping[str, Any]) -> Dict[str, Dict[str, Any]]:
         if entry.category is not Category.DERIVED:
             continue
         value = resolved.get(flat_key)
-        derived[flat_key] = {
+        row: Dict[str, Any] = {
             "value": value,
             "why": entry.why(dict(resolved)) if entry.why is not None else None,
             "derived_from": list(entry.derived_from),
         }
+        if entry.meta is not None:
+            row["meta"] = entry.meta(dict(resolved))
+        derived[flat_key] = row
     return derived
 
 

@@ -179,7 +179,7 @@
     },
     "weight_bits": 5,
     "weight_quantization": true,
-    "wq_endpoint_recovery_steps": 16000,
+    "wq_endpoint_recovery_steps": 2000,
     "wq_endpoint_target_floor": 0.98,
     "wq_fast_rates": [
      0.5,
@@ -574,7 +574,7 @@
     },
     "weight_bits": 4,
     "weight_quantization": true,
-    "wq_endpoint_recovery_steps": 16000,
+    "wq_endpoint_recovery_steps": 2000,
     "wq_endpoint_target_floor": 0.98,
     "wq_fast_rates": [
      0.5,
@@ -771,7 +771,7 @@
     },
     "weight_bits": 5,
     "weight_quantization": true,
-    "wq_endpoint_recovery_steps": 16000,
+    "wq_endpoint_recovery_steps": 2000,
     "wq_endpoint_target_floor": 0.98,
     "wq_fast_rates": [
      0.5,
@@ -968,7 +968,7 @@
     },
     "weight_bits": 5,
     "weight_quantization": true,
-    "wq_endpoint_recovery_steps": 16000,
+    "wq_endpoint_recovery_steps": 2000,
     "wq_endpoint_target_floor": 0.98,
     "wq_fast_rates": [
      0.5,
@@ -1356,7 +1356,7 @@
     },
     "weight_bits": 5,
     "weight_quantization": true,
-    "wq_endpoint_recovery_steps": 16000,
+    "wq_endpoint_recovery_steps": 2000,
     "wq_fast_rates": [
      0.5,
      1.0
@@ -1742,7 +1742,7 @@
     },
     "weight_bits": 5,
     "weight_quantization": true,
-    "wq_endpoint_recovery_steps": 16000,
+    "wq_endpoint_recovery_steps": 2000,
     "wq_fast_rates": [
      0.5,
      1.0
@@ -2136,7 +2136,7 @@
     },
     "weight_bits": 5,
     "weight_quantization": true,
-    "wq_endpoint_recovery_steps": 600,
+    "wq_endpoint_recovery_steps": 2000,
     "wq_fast_rates": [
      0.5,
      1.0
@@ -2333,7 +2333,7 @@
     },
     "weight_bits": 8,
     "weight_quantization": true,
-    "wq_endpoint_recovery_steps": 600,
+    "wq_endpoint_recovery_steps": 2000,
     "wq_fast_rates": [
      0.5,
      1.0
@@ -2531,7 +2531,7 @@
     },
     "weight_bits": 5,
     "weight_quantization": true,
-    "wq_endpoint_recovery_steps": 600,
+    "wq_endpoint_recovery_steps": 2000,
     "wq_fast_rates": [
      0.5,
      1.0
@@ -2729,7 +2729,7 @@
     },
     "weight_bits": 5,
     "weight_quantization": true,
-    "wq_endpoint_recovery_steps": 600,
+    "wq_endpoint_recovery_steps": 2000,
     "wq_fast_rates": [
      0.5,
      1.0
@@ -2929,7 +2929,7 @@
     },
     "weight_bits": 5,
     "weight_quantization": true,
-    "wq_endpoint_recovery_steps": 600,
+    "wq_endpoint_recovery_steps": 2000,
     "wq_fast_rates": [
      0.5,
      1.0
@@ -3130,7 +3130,7 @@
     },
     "weight_bits": 5,
     "weight_quantization": true,
-    "wq_endpoint_recovery_steps": 16000,
+    "wq_endpoint_recovery_steps": 2000,
     "wq_endpoint_target_floor": 0.98,
     "wq_fast_rates": [
      0.5,
@@ -3327,7 +3327,7 @@
     },
     "weight_bits": 5,
     "weight_quantization": true,
-    "wq_endpoint_recovery_steps": 16000,
+    "wq_endpoint_recovery_steps": 2000,
     "wq_endpoint_target_floor": 0.98,
     "wq_fast_rates": [
      0.5,
@@ -3527,7 +3527,7 @@
     },
     "weight_bits": 5,
     "weight_quantization": true,
-    "wq_endpoint_recovery_steps": 16000,
+    "wq_endpoint_recovery_steps": 2000,
     "wq_endpoint_target_floor": 0.98,
     "wq_fast_rates": [
      0.5,
@@ -3726,7 +3726,7 @@
     },
     "weight_bits": 4,
     "weight_quantization": true,
-    "wq_endpoint_recovery_steps": 16000,
+    "wq_endpoint_recovery_steps": 2000,
     "wq_endpoint_target_floor": 0.98,
     "wq_fast_rates": [
      0.5,
@@ -3924,7 +3924,7 @@
     },
     "weight_bits": 5,
     "weight_quantization": true,
-    "wq_endpoint_recovery_steps": 16000,
+    "wq_endpoint_recovery_steps": 2000,
     "wq_endpoint_target_floor": 0.98,
     "wq_fast_rates": [
      0.5,
@@ -4338,7 +4338,7 @@
     },
     "weight_bits": 5,
     "weight_quantization": true,
-    "wq_endpoint_recovery_steps": 16000,
+    "wq_endpoint_recovery_steps": 2000,
     "wq_endpoint_target_floor": 0.98,
     "wq_fast_rates": [
      0.5,
@@ -4542,7 +4542,7 @@
     },
     "weight_bits": 8,
     "weight_quantization": true,
-    "wq_endpoint_recovery_steps": 16000,
+    "wq_endpoint_recovery_steps": 2000,
     "wq_endpoint_target_floor": 0.98,
     "wq_fast_rates": [
      0.5,
@@ -4746,7 +4746,7 @@
     },
     "weight_bits": 5,
     "weight_quantization": true,
-    "wq_endpoint_recovery_steps": 16000,
+    "wq_endpoint_recovery_steps": 2000,
     "wq_endpoint_target_floor": 0.98,
     "wq_fast_rates": [
      0.5,
@@ -4950,7 +4950,7 @@
     },
     "weight_bits": 5,
     "weight_quantization": true,
-    "wq_endpoint_recovery_steps": 16000,
+    "wq_endpoint_recovery_steps": 2000,
     "wq_endpoint_target_floor": 0.98,
     "wq_fast_rates": [
      0.5,
@@ -5151,7 +5151,7 @@
     },
     "weight_bits": 5,
     "weight_quantization": true,
-    "wq_endpoint_recovery_steps": 16000,
+    "wq_endpoint_recovery_steps": 2000,
     "wq_endpoint_target_floor": 0.98,
     "wq_fast_rates": [
      0.5,
@@ -5352,7 +5352,7 @@
     },
     "weight_bits": 5,
     "weight_quantization": true,
-    "wq_endpoint_recovery_steps": 16000,
+    "wq_endpoint_recovery_steps": 2000,
     "wq_endpoint_target_floor": 0.98,
     "wq_fast_rates": [
      0.5,
@@ -5554,7 +5554,7 @@
     },
     "weight_bits": 5,
     "weight_quantization": true,
-    "wq_endpoint_recovery_steps": 16000,
+    "wq_endpoint_recovery_steps": 2000,
     "wq_endpoint_target_floor": 0.98,
     "wq_fast_rates": [
      0.5,
@@ -6179,7 +6179,7 @@
     },
     "weight_bits": 5,
     "weight_quantization": true,
-    "wq_endpoint_recovery_steps": 600,
+    "wq_endpoint_recovery_steps": 2000,
     "wq_fast_rates": [
      0.5,
      1.0
@@ -6575,7 +6575,7 @@
     },
     "weight_bits": 5,
     "weight_quantization": true,
-    "wq_endpoint_recovery_steps": 16000,
+    "wq_endpoint_recovery_steps": 2000,
     "wq_endpoint_target_floor": 0.98,
     "wq_fast_rates": [
      0.5,
@@ -6988,7 +6988,7 @@
     },
     "weight_bits": 5,
     "weight_quantization": true,
-    "wq_endpoint_recovery_steps": 16000,
+    "wq_endpoint_recovery_steps": 2000,
     "wq_endpoint_target_floor": 0.98,
     "wq_fast_rates": [
      0.5,
@@ -7187,7 +7187,7 @@
     },
     "weight_bits": 4,
     "weight_quantization": true,
-    "wq_endpoint_recovery_steps": 16000,
+    "wq_endpoint_recovery_steps": 2000,
     "wq_endpoint_target_floor": 0.98,
     "wq_fast_rates": [
      0.5,
@@ -7389,7 +7389,7 @@
     },
     "weight_bits": 5,
     "weight_quantization": true,
-    "wq_endpoint_recovery_steps": 16000,
+    "wq_endpoint_recovery_steps": 2000,
     "wq_endpoint_target_floor": 0.98,
     "wq_fast_rates": [
      0.5,
@@ -7591,7 +7591,7 @@
     },
     "weight_bits": 5,
     "weight_quantization": true,
-    "wq_endpoint_recovery_steps": 16000,
+    "wq_endpoint_recovery_steps": 2000,
     "wq_endpoint_target_floor": 0.98,
     "wq_fast_rates": [
      0.5,
@@ -7790,7 +7790,7 @@
     },
     "weight_bits": 4,
     "weight_quantization": true,
-    "wq_endpoint_recovery_steps": 16000,
+    "wq_endpoint_recovery_steps": 2000,
     "wq_endpoint_target_floor": 0.98,
     "wq_fast_rates": [
      0.5,
@@ -7988,7 +7988,7 @@
     },
     "weight_bits": 5,
     "weight_quantization": true,
-    "wq_endpoint_recovery_steps": 16000,
+    "wq_endpoint_recovery_steps": 2000,
     "wq_endpoint_target_floor": 0.98,
     "wq_fast_rates": [
      0.5,
@@ -8185,7 +8185,7 @@
     },
     "weight_bits": 4,
     "weight_quantization": true,
-    "wq_endpoint_recovery_steps": 16000,
+    "wq_endpoint_recovery_steps": 2000,
     "wq_endpoint_target_floor": 0.98,
     "wq_fast_rates": [
      0.5,
@@ -8574,7 +8574,7 @@
     },
     "weight_bits": 5,
     "weight_quantization": true,
-    "wq_endpoint_recovery_steps": 16000,
+    "wq_endpoint_recovery_steps": 2000,
     "wq_endpoint_target_floor": 0.98,
     "wq_fast_rates": [
      0.5,
@@ -8771,7 +8771,7 @@
     },
     "weight_bits": 4,
     "weight_quantization": true,
-    "wq_endpoint_recovery_steps": 16000,
+    "wq_endpoint_recovery_steps": 2000,
     "wq_endpoint_target_floor": 0.98,
     "wq_fast_rates": [
      0.5,
@@ -9183,7 +9183,7 @@
     },
     "weight_bits": 8,
     "weight_quantization": true,
-    "wq_endpoint_recovery_steps": 16000,
+    "wq_endpoint_recovery_steps": 2000,
     "wq_endpoint_target_floor": 0.98,
     "wq_fast_rates": [
      0.5,
@@ -9382,7 +9382,7 @@
     },
     "weight_bits": 4,
     "weight_quantization": true,
-    "wq_endpoint_recovery_steps": 600,
+    "wq_endpoint_recovery_steps": 2000,
     "wq_fast_rates": [
      0.5,
      1.0
@@ -9986,7 +9986,7 @@
     },
     "weight_bits": 8,
     "weight_quantization": true,
-    "wq_endpoint_recovery_steps": 600,
+    "wq_endpoint_recovery_steps": 2000,
     "wq_fast_rates": [
      0.5,
      1.0

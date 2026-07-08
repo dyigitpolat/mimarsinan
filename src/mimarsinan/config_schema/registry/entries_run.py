@@ -26,7 +26,7 @@ ENTRIES = (
        type=T.PATH, category=Category.ADVANCED, exposure="user", label="Generated Files Path",
        doc="Root directory for run working directories (configs, caches, artifacts)."),
     _E("datasets_path", section="top", group="workload", owner="DataProviderFactory",
-       type=T.PATH, category=Category.ADVANCED, exposure="user", label="Datasets Path",
+       type=T.PATH, category=Category.BASIC, exposure="user", label="Datasets Path",
        doc="Directory datasets are downloaded to / loaded from.",
        empty_means="./datasets"),
     _E("seed", section="top", group="run", owner="PipelineSession/determinism",
@@ -56,7 +56,7 @@ ENTRIES = (
     _E("generate_visualizations", group="run", owner="visualization",
        type=T.BOOL, category=Category.ADVANCED, label="Generate Visualizations",
        doc="Write Graphviz/matplotlib artifact renderings during the run."),
-    _E("num_workers", group="run", owner="DataLoaderFactory",
+    _E("num_workers", group="workload", owner="DataLoaderFactory",
        type=T.INT, category=Category.ADVANCED, label="DataLoader Workers",
        doc="torch DataLoader worker process count.", bounds=(0, None)),
     # Runtime-resolved keys: never declared in a config document; schema-known

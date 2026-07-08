@@ -81,7 +81,6 @@
     },
     "max_simulation_samples": 500,
     "allow_scheduling": true,
-    "enable_loihi_simulation": true,
     "enable_sanafe_simulation": false
   },
   "target_metric_override": null,

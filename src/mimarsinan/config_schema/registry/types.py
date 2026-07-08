@@ -87,6 +87,10 @@ class ConfigKeySchema:
     provided_by: Optional[str] = None
     derived_from: Tuple[str, ...] = ()
     why: Optional[Callable[[dict], str]] = None
+    # Machine-readable companion to ``why`` for DERIVED keys: extra structured
+    # facts about the derivation (e.g. a backend enable's mode-capability
+    # ``supported`` flag) served with the resolve payload's derived rows.
+    meta: Optional[Callable[[dict], dict]] = None
     declarable: bool = True
     important: bool = False
 
