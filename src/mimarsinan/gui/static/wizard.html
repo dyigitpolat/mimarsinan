@@ -7,183 +7,198 @@
   <title>Mimarsinan — Deployment Configurator</title>
   <link href="/static/vendor/fonts.css" rel="stylesheet">
   <link href="/static/wizard.css" rel="stylesheet">
-  <link href="/static/pipeline-step-bar.css" rel="stylesheet">
   <link href="/static/hw-stats-panel.css" rel="stylesheet">
 </head>
 
 <body>
 
-  <div class="app-shell" id="appShell">
+  <div class="wb-shell" id="appShell">
 
-    <div class="app-shell-top">
-      <!-- ═══ HEADER ═══ -->
-      <header class="header">
-        <div class="logo-group">
-          <div class="logo-mark">M</div>
-          <div class="logo-text">Mimarsinan <span>Deployment Configurator</span></div>
-        </div>
-        <div class="header-actions">
-          <span class="status-pill" id="statusPill" title="Go to Review &amp; Launch"></span>
-          <select class="template-select" id="templateSelect">
-            <option value="">Load template…</option>
-          </select>
-          <button type="button" class="btn-sm" id="saveTemplateBtn">Save as template</button>
-          <button type="button" class="btn-sm" id="resetBtn">Reset</button>
-          <a href="/"><button type="button" class="btn-sm">Home</button></a>
-        </div>
-      </header>
-
-      <!-- ═══ STEP FLOW (Workload → Model → Deployment → Tuning → Review) ═══ -->
-      <nav class="stepper" id="stepper" aria-label="Configuration steps"></nav>
-
-      <!-- ═══ PIPELINE PREVIEW (the draft resolves to THIS pipeline) ═══ -->
-      <div class="pipeline-steps-bar" id="pipelineStepsBar">
-        <div class="pipeline-steps-top-row">
-          <span class="pipeline-steps-label">Pipeline</span>
-          <span class="pipeline-steps-hint" id="pipelineStepsHint"></span>
-        </div>
-        <div class="pipeline-steps-scroll">
-          <div class="pipeline-steps-list" id="pipelineStepsList"></div>
-        </div>
+    <!-- ═══ HEADER ═══ -->
+    <header class="wb-header">
+      <div class="logo-group">
+        <div class="logo-mark">M</div>
+        <div class="logo-text">Mimarsinan <span>Deployment Configurator</span></div>
       </div>
-    </div>
+      <div class="header-actions">
+        <select class="template-select" id="templateSelect">
+          <option value="">Load template…</option>
+        </select>
+        <button type="button" class="btn-sm" id="saveTemplateBtn">Save as template</button>
+        <button type="button" class="btn-sm" id="resetBtn">Reset</button>
+        <a href="/"><button type="button" class="btn-sm">Home</button></a>
+      </div>
+    </header>
 
-    <!-- ═══ WIZARD BODY (every field renders from /api/config_schema) ═══ -->
-    <main class="wizard-panel" id="wizard">
+    <div class="wb-body">
 
-      <!-- Template / edit-&-continue banner -->
-      <div id="templateBanner" class="template-banner" style="display:none"></div>
+      <!-- ═══ SECTION RAIL (free navigation; badges from resolve) ═══ -->
+      <nav class="wb-nav" id="sectionNav" aria-label="Configuration sections"></nav>
 
-      <!-- Global (non-keyed) validation errors -->
-      <div id="globalErrors" class="global-errors" style="display:none"></div>
+      <!-- ═══ WORKBENCH MAIN (every field renders from /api/config_schema) ═══ -->
+      <main class="wb-main" id="wizard">
 
-      <!-- 1 · WORKLOAD -->
-      <section class="step-panel" data-step="workload">
-        <div class="step-intro">
-          <h2>Workload</h2>
-          <p>Pick the dataset the deployment is measured on. Preprocessing and
-            encoding facts live behind Advanced.</p>
-        </div>
-        <div class="step-columns narrow">
-          <div class="wizard-column">
-            <div id="datasetFacts" class="dataset-facts" style="display:none"></div>
-            <div data-groups="workload"></div>
+        <!-- Template / edit-&-continue banner -->
+        <div id="templateBanner" class="template-banner" style="display:none"></div>
+
+        <!-- Global (non-keyed) validation errors -->
+        <div id="globalErrors" class="global-errors" style="display:none"></div>
+
+        <!-- 1 · WORKLOAD -->
+        <section class="wb-section" data-section-id="workload">
+          <div class="wb-section-head">
+            <h2>Workload</h2>
+            <p>The dataset the deployment is measured on.</p>
           </div>
-        </div>
-      </section>
+          <div class="wb-cols narrow">
+            <div class="wb-col">
+              <div id="datasetFacts" class="dataset-facts" style="display:none"></div>
+              <div data-groups="workload"></div>
+            </div>
+          </div>
+        </section>
 
-      <!-- 2 · MODEL -->
-      <section class="step-panel" data-step="model">
-        <div class="step-intro">
-          <h2>Model</h2>
-          <p>Declare the architecture (or let search discover one). The builder
-            publishes its own configuration fields.</p>
-        </div>
-        <div class="step-columns narrow">
-          <div class="wizard-column" data-groups="model"></div>
-        </div>
-      </section>
-
-      <!-- 3 · DEPLOYMENT (the hypervolume coordinates) -->
-      <section class="step-panel" data-step="deployment">
-        <div class="step-intro">
-          <h2>Deployment</h2>
-          <p>The hypervolume coordinates: spiking mode, core grid, weight
-            precision, temporal resolution S, and the simulation vehicles.
-            Values derived from these choices appear as read-only chips.</p>
-        </div>
-        <div id="deploymentDerived" class="derived-strip"></div>
-        <div class="step-columns">
-          <div class="wizard-column" data-groups="spiking,conversion,deployment_target"></div>
-          <div class="wizard-column">
-            <div data-groups="hardware"></div>
+        <!-- 2 · CO-DESIGN (model arch × core grid, live mapping beneath) -->
+        <section class="wb-section" data-section-id="codesign">
+          <div class="wb-section-head">
+            <h2>Co-Design <span class="wb-section-head-sub">model × hardware</span></h2>
+            <p>Edit the architecture and the core grid together; the mapping
+              below re-plans live.</p>
+          </div>
+          <div class="wb-cols">
+            <div class="wb-col" data-groups="model"></div>
+            <div class="wb-col">
+              <div data-groups="hardware"></div>
+            </div>
+          </div>
+          <div class="codesign-mapping">
             <div class="hw-validation-banner hide" id="hwValidationBanner"></div>
             <div id="hwStatsPanel" class="hw-stats-panel"></div>
           </div>
-        </div>
-      </section>
+        </section>
 
-      <!-- 4 · TUNING & BUDGETS -->
-      <section class="step-panel" data-step="tuning">
-        <div class="step-intro">
-          <h2>Tuning &amp; Budgets</h2>
-          <p>The adaptation controller's budget and tolerance, plus the training
-            loop. Everything else is recipe-defaulted and lives behind Advanced.</p>
-        </div>
-        <div class="step-columns">
-          <div class="wizard-column" data-groups="tuning"></div>
-          <div class="wizard-column" data-groups="training"></div>
-        </div>
-      </section>
-
-      <!-- 5 · REVIEW & LAUNCH -->
-      <section class="step-panel" data-step="review">
-        <div class="step-intro">
-          <h2>Review &amp; Launch</h2>
-          <p>Derived values with their why, every knob that differs from
-            defaults, and the exact JSON that will be emitted.</p>
-        </div>
-        <div class="step-columns">
-          <div class="wizard-column">
-            <div data-groups="run"></div>
-            <div class="section open" data-section="derived">
-              <div class="section-header static">
-                <div class="section-icon violet">ƒ</div>
-                <div class="section-title-group">
-                  <div class="section-title">Derived values</div>
-                  <div class="section-subtitle">Owned by the derivation — read-only, with their why</div>
+        <!-- 3 · DEPLOYMENT SEMANTICS -->
+        <section class="wb-section" data-section-id="semantics">
+          <div class="wb-section-head">
+            <h2>Deployment semantics</h2>
+            <p>Spiking mode, conversion process, and the simulation vehicles the
+              mode's proven recipe runs.</p>
+          </div>
+          <div id="deploymentDerived" class="derived-strip"></div>
+          <div class="wb-cols">
+            <div class="wb-col" data-groups="spiking,conversion"></div>
+            <div class="wb-col">
+              <div class="section" id="vehiclesCard">
+                <div class="section-header">
+                  <div class="section-icon" style="--section-accent:103,232,249">✈</div>
+                  <div class="section-title-group">
+                    <div class="section-title">Simulation vehicles</div>
+                    <div class="section-subtitle">Derived per mode by the proven recipe — status, not knobs</div>
+                  </div>
+                </div>
+                <div class="section-body">
+                  <div id="vehiclesStatus" class="vehicles-status"></div>
                 </div>
               </div>
-              <div class="section-body">
-                <div id="derivedChips" class="derived-strip in-card"></div>
+              <div data-groups="deployment_target"></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 4 · TUNING & BUDGETS -->
+        <section class="wb-section" data-section-id="tuning">
+          <div class="wb-section-head">
+            <h2>Tuning &amp; Budgets</h2>
+            <p>The adaptation controller's budget and tolerance, plus the
+              training loop.</p>
+          </div>
+          <div class="wb-cols">
+            <div class="wb-col" data-groups="tuning"></div>
+            <div class="wb-col" data-groups="training"></div>
+          </div>
+        </section>
+
+        <!-- 5 · REVIEW & LAUNCH -->
+        <section class="wb-section" data-section-id="review">
+          <div class="wb-section-head">
+            <h2>Review &amp; Launch</h2>
+            <p>Derived values with their why, every knob that differs from
+              defaults, and the exact JSON that will be emitted.</p>
+          </div>
+          <div class="wb-cols">
+            <div class="wb-col">
+              <div data-groups="run"></div>
+              <div class="section" data-section="derived">
+                <div class="section-header">
+                  <div class="section-icon" style="--section-accent:139,92,246">ƒ</div>
+                  <div class="section-title-group">
+                    <div class="section-title">Derived values</div>
+                    <div class="section-subtitle">Owned by the derivation — read-only, with their why</div>
+                  </div>
+                </div>
+                <div class="section-body">
+                  <div id="derivedChips" class="derived-strip in-card"></div>
+                </div>
+              </div>
+              <div class="section" data-section="diff">
+                <div class="section-header">
+                  <div class="section-icon" style="--section-accent:251,191,36">Δ</div>
+                  <div class="section-title-group">
+                    <div class="section-title">Differs from defaults</div>
+                    <div class="section-subtitle">Explicit knobs; each one individually revertible</div>
+                  </div>
+                </div>
+                <div class="section-body">
+                  <div id="diffPanel" class="diff-panel"><div class="note">Nothing differs yet.</div></div>
+                  <div id="unknownTray" class="unknown-tray" style="display:none"></div>
+                </div>
               </div>
             </div>
-            <div class="section open" data-section="diff">
-              <div class="section-header static">
-                <div class="section-icon amber">Δ</div>
-                <div class="section-title-group">
-                  <div class="section-title">Differs from defaults</div>
-                  <div class="section-subtitle">Explicit knobs; each one individually revertible</div>
+            <div class="wb-col">
+              <div class="section" data-section="json">
+                <div class="section-header">
+                  <div class="section-icon" style="--section-accent:34,211,238">{}</div>
+                  <div class="section-title-group">
+                    <div class="section-title">Emitted config</div>
+                    <div class="section-subtitle">Explicit keys only — exactly what Launch submits</div>
+                  </div>
+                  <div class="json-actions">
+                    <button type="button" class="btn-sm" id="copyJsonBtn">Copy</button>
+                    <button type="button" class="btn-sm" id="downloadJsonBtn">Download</button>
+                  </div>
                 </div>
-              </div>
-              <div class="section-body">
-                <div id="diffPanel" class="diff-panel"><div class="note">Nothing differs yet.</div></div>
-                <div id="unknownTray" class="unknown-tray" style="display:none"></div>
+                <div class="section-body">
+                  <div class="json-scroll"><pre id="jsonOutput"></pre></div>
+                </div>
               </div>
             </div>
           </div>
-          <div class="wizard-column">
-            <div class="launch-card" id="launchCard">
-              <div class="launch-status" id="launchStatus"></div>
-              <button class="btn-run large" id="runBtn">▶ &nbsp;Launch pipeline</button>
-            </div>
-            <div class="section open" data-section="json">
-              <div class="section-header static">
-                <div class="section-icon cyan">{}</div>
-                <div class="section-title-group">
-                  <div class="section-title">Emitted config</div>
-                  <div class="section-subtitle">Explicit keys only — exactly what Launch submits</div>
-                </div>
-                <div class="json-actions">
-                  <button type="button" class="btn-sm" id="copyJsonBtn">Copy</button>
-                  <button type="button" class="btn-sm" id="downloadJsonBtn">Download</button>
-                </div>
-              </div>
-              <div class="section-body">
-                <div class="json-scroll"><pre id="jsonOutput"></pre></div>
-              </div>
-            </div>
+        </section>
+
+      </main>
+
+      <!-- ═══ LIVE RAIL (sticky: verdict · assembly · mapping · launch) ═══ -->
+      <aside class="wb-rail" id="liveRail">
+        <button type="button" class="rail-verdict" id="statusPill" title="Go to Review &amp; Launch"></button>
+        <div class="rail-block" id="assemblyBlock">
+          <div class="rail-block-title">Pipeline assembly
+            <span class="rail-block-hint" id="pipelineStepsHint"></span>
           </div>
+          <div class="assembly-rail" id="pipelineStepsList"></div>
         </div>
-      </section>
+        <div class="rail-block" id="railMappingBlock">
+          <div class="rail-block-title">Mapping
+            <button type="button" class="rail-jump" id="railMappingJump">open ↗</button>
+          </div>
+          <div class="rail-mapping" id="railMapping"></div>
+        </div>
+        <div class="rail-launch">
+          <div class="launch-status" id="launchStatus"></div>
+          <button class="btn-run" id="runBtn">▶&nbsp; Launch pipeline</button>
+        </div>
+      </aside>
 
-      <!-- Back / Next -->
-      <div class="step-nav" id="stepNav">
-        <button type="button" class="btn-sm nav-back" id="navBackBtn">← Back</button>
-        <button type="button" class="btn-sm primary nav-next" id="navNextBtn">Next →</button>
-      </div>
-    </main>
-
+    </div>
   </div>
 
   <script type="module" src="/static/js/wizard/main.js"></script>

@@ -28,12 +28,22 @@ function numeric(value, onChange, { step = 'any', min = null, placeholder = '' }
 
 /* ── cores: the core-type grid editor ─────────────────────────────────── */
 
+const CORE_DIMS = [
+  ['max_axons', 'axons'],
+  ['max_neurons', 'neurons'],
+  ['count', 'count'],
+];
+
 function coresWidget(ks) {
   const field = el('div', 'field');
   field.dataset.key = ks.key;
-  field.append(el('label', 'field-label', ks.label));
+  const label = el('label', 'field-label');
+  label.append(el('span', 'field-label-text', ks.label));
+  field.append(label);
   const host = el('div', 'cores-editor');
   field.append(host);
+  const doc = el('div', 'field-doc', ks.doc);
+  field.append(doc);
 
   const cores = () => {
     const list = getKey('cores');
@@ -47,16 +57,22 @@ function coresWidget(ks) {
 
   function render() {
     host.replaceChildren();
+    if (cores().length) {
+      const head = el('div', 'cores-editor-head');
+      for (const [, title] of CORE_DIMS) head.append(el('span', 'cores-col-label', title));
+      head.append(el('span', 'cores-col-label', ''));
+      host.append(head);
+    }
     cores().forEach((core, i) => {
       const row = el('div', 'cores-editor-row');
-      for (const dim of ['max_axons', 'max_neurons', 'count']) {
+      for (const [dim] of CORE_DIMS) {
         const input = numeric(core[dim], (v) => {
           const next = cores().map((c) => ({ ...c }));
           if (v === undefined) delete next[i][dim];
           else next[i][dim] = Math.round(v);
           write(next);
         }, { step: '1', min: 1 });
-        row.append(subField(dim.replace('_', ' '), input));
+        row.append(input);
       }
       const remove = el('button', 'btn-sm cores-remove', '✕');
       remove.type = 'button';
@@ -84,7 +100,7 @@ function coresWidget(ks) {
 function recipeWidget(ks) {
   const fieldsSchema = schema().recipe_fields || {};
   const defaultsKey = ks.key === 'tuning_recipe' ? 'default_tuning' : 'default_training';
-  const field = el('div', 'field');
+  const field = el('div', 'field span-2');
   field.dataset.key = ks.key;
   const label = el('label', 'field-label', ks.label);
   field.append(label);
@@ -150,8 +166,19 @@ export async function ensureModelSchema(modelType) {
   state.modelSchemas[modelType] = res.ok ? await res.json() : [];
 }
 
+/** The builder's default model_config (from its served schema) — the honest
+    draft state after a model_type switch; a stale config from the previous
+    builder would not even build. */
+export function defaultModelConfig(modelType) {
+  const config = {};
+  for (const spec of state.modelSchemas[modelType] || []) {
+    if (spec.default !== undefined && spec.default !== null) config[spec.key] = spec.default;
+  }
+  return config;
+}
+
 function modelConfigWidget(ks) {
-  const field = el('div', 'field');
+  const field = el('div', 'field span-2');
   field.dataset.key = ks.key;
   field.append(el('label', 'field-label', ks.label));
   const grid = el('div', 'field-grid cols-2');
@@ -225,7 +252,7 @@ function modelConfigWidget(ks) {
 
 function preprocessingWidget(ks) {
   const fieldsSchema = schema().preprocessing_fields || {};
-  const field = el('div', 'field');
+  const field = el('div', 'field span-2');
   field.dataset.key = ks.key;
   field.append(el('label', 'field-label', ks.label));
   const grid = el('div', 'field-grid cols-3');
@@ -268,7 +295,7 @@ function preprocessingWidget(ks) {
 
 function archSearchWidget(ks) {
   const nas = schema().nas || {};
-  const field = el('div', 'field');
+  const field = el('div', 'field span-2');
   field.dataset.key = ks.key;
   field.append(el('label', 'field-label', ks.label));
 
@@ -291,7 +318,7 @@ function archSearchWidget(ks) {
   }
   field.append(optimizerRow);
 
-  const grid = el('div', 'field-grid cols-3');
+  const grid = el('div', 'field-grid cols-2');
   field.append(grid);
 
   const fieldGroups = { ...(nas.common_fields || {}) };

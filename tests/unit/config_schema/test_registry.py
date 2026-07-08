@@ -184,7 +184,8 @@ class TestModeHonesty:
                     "proven_recovery_depth", "endpoint_floor_steps",
                     "wq_endpoint_recovery_steps", "conversion_draws",
                     "weight_source", "finetune_lr", "tuning_batch_size",
-                    "start_step", "stop_step", "input_data_scale"):
+                    "start_step", "stop_step", "input_data_scale",
+                    "pruning_fraction"):
             entry = REGISTRY[key]
             assert entry.empty_means, key
 

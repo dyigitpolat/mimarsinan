@@ -1,21 +1,22 @@
-/* Wizard controller: schema-driven rendering, resolve loop, deploy actions.
+/* Workbench controller: schema-driven rendering, resolve loop, deploy actions.
    The draft IS the config document; every widget renders from /api/config_schema;
-   the step flow (stepper.js) maps whole concern groups to steps. */
+   sections (workbench.js) host whole concern groups; the live rail renders the
+   honest assembly + mapping from every resolve round-trip. */
 
-import { editableKeys, groups, keySchema, loadSchema, relevant, schema } from './schema.js';
+import { groups, keySchema, loadSchema, schema, visibleKeys } from './schema.js';
 import {
   differsFromDefault, effectiveConfig, effectiveValue, isExplicit,
   loadDraftFromConfig, resetDraft, state,
 } from './state.js';
 import { el, renderField } from './fields.js';
-import { ensureModelSchema, installStructuredWidgets } from './structured.js';
+import { defaultModelConfig, ensureModelSchema, installStructuredWidgets } from './structured.js';
 import {
-  bindStepsBar, renderDerivedChips, renderDiffPanel, renderErrors,
-  renderJsonPreview, renderLaunchStatus, renderStepsBar, renderTemplateBanner,
-  renderUnknownTray,
+  renderAssemblyRail, renderDerivedChips, renderDiffPanel, renderErrors,
+  renderJsonPreview, renderLaunchStatus, renderRailMapping,
+  renderTemplateBanner, renderUnknownTray,
 } from './review.js';
 import { autoSuggestHardware, fetchMetadata, scheduleHwVerify } from './hw.js';
-import { bindStepNav, goToFirstError, goToStep, renderStepper } from './stepper.js';
+import { goToFirstError, goToSection, renderSectionNav } from './workbench.js';
 
 const GROUP_ICONS = {
   run: '⬡', workload: '◈', model: '▣', spiking: '⚡', conversion: '◎',
@@ -25,9 +26,8 @@ const GROUP_ICONS = {
 /* ── Section rendering ─────────────────────────────────────────────────── */
 
 function fieldList(groupId, category, cfg) {
-  return editableKeys(groupId, category)
-    .map((key) => keySchema(key))
-    .filter((ks) => relevant(ks.relevant, cfg) || isExplicit(ks.key));
+  /* Relevance controls EXISTENCE; promote_when controls prominence. */
+  return visibleKeys(groupId, category, cfg).map((key) => keySchema(key));
 }
 
 function renderGroupSection(group, cfg) {
@@ -35,29 +35,28 @@ function renderGroupSection(group, cfg) {
   const advanced = fieldList(group.id, 'advanced', cfg);
   if (!basic.length && !advanced.length) return null;
 
-  const section = el('div', 'section open');
+  const section = el('div', 'section');
   section.dataset.section = group.id;
   section.style.setProperty('--section-accent', group.accent || '91,141,245');
 
-  const header = el('div', 'section-header static');
-  header.append(el('div', 'section-icon accent', GROUP_ICONS[group.id] || '◇'));
+  const header = el('div', 'section-header');
+  header.append(el('div', 'section-icon', GROUP_ICONS[group.id] || '◇'));
   const titles = el('div', 'section-title-group');
   titles.append(el('div', 'section-title', group.title));
   titles.append(el('div', 'section-subtitle', group.subtitle || ''));
   header.append(titles);
+  if (group.id === 'hardware') {
+    const suggest = el('button', 'btn-sm primary suggest-hw', '⚙ Suggest hardware for this model');
+    suggest.type = 'button';
+    suggest.addEventListener('click', () => autoSuggestHardware());
+    header.append(suggest);
+  }
   section.append(header);
 
   const body = el('div', 'section-body');
   const grid = el('div', 'field-grid cols-2');
   for (const ks of basic) grid.append(renderField(ks));
   body.append(grid);
-
-  if (group.id === 'hardware') {
-    const suggest = el('button', 'btn-sm suggest-hw', '⚙ Suggest hardware for this model');
-    suggest.type = 'button';
-    suggest.addEventListener('click', () => autoSuggestHardware());
-    body.append(suggest);
-  }
 
   if (advanced.length) {
     const edited = advanced.filter((ks) => differsFromDefault(ks.key)).length;
@@ -94,7 +93,7 @@ function renderGroupHosts() {
   });
 }
 
-/* ── Dataset facts (workload step) ─────────────────────────────────────── */
+/* ── Dataset facts (workload section) ──────────────────────────────────── */
 
 async function renderDatasetFacts() {
   const host = document.getElementById('datasetFacts');
@@ -117,50 +116,63 @@ async function renderDatasetFacts() {
   host.title = 'Resolved from the data provider; the pipeline reads these at runtime.';
 }
 
-function renderAll() {
-  renderGroupHosts();
-  renderTemplateBanner();
+function renderResolveViews() {
   renderDerivedChips();
   renderDiffPanel();
   renderUnknownTray();
-  renderStepsBar();
+  renderAssemblyRail();
+  renderRailMapping();
   renderErrors();
   renderJsonPreview();
   renderLaunchStatus();
-  renderStepper((state.resolve && state.resolve.errors) || []);
+  renderSectionNav((state.resolve && state.resolve.errors) || []);
   renderStatusPill();
+}
+
+function renderAll() {
+  renderGroupHosts();
+  renderTemplateBanner();
+  renderResolveViews();
   renderDatasetFacts();
 }
 
-/* ── Header status pill ────────────────────────────────────────────────── */
+/* ── Rail verdict pill ─────────────────────────────────────────────────── */
 
 function renderStatusPill() {
   const pill = document.getElementById('statusPill');
   if (!pill) return;
-  if (!state.resolve) {
-    pill.className = 'status-pill pending';
+  if (!state.resolve || state.resolving) {
+    pill.className = 'rail-verdict pending';
     pill.textContent = 'resolving…';
     return;
   }
   const errors = state.resolve.errors || [];
   if (errors.length) {
-    pill.className = 'status-pill error';
+    pill.className = 'rail-verdict error';
     pill.textContent = `${errors.length} error${errors.length > 1 ? 's' : ''}`;
   } else {
     const n = (state.resolve.pipeline && state.resolve.pipeline.steps.length) || 0;
-    pill.className = 'status-pill ok';
+    pill.className = 'rail-verdict ok';
     pill.textContent = `ready · ${n} steps`;
   }
 }
 
-/* ── Resolve loop ──────────────────────────────────────────────────────── */
+/* ── Resolve loop (debounced; the rail shows stale while pending) ──────── */
 
 let _resolveTimer = null;
 let _resolveInFlight = false;
 let _resolveQueued = false;
 
+function markStale(stale) {
+  state.resolving = stale;
+  const rail = document.getElementById('liveRail');
+  if (rail) rail.classList.toggle('stale', stale);
+}
+
 function scheduleResolve() {
   if (_resolveTimer) clearTimeout(_resolveTimer);
+  markStale(true);
+  renderStatusPill();
   _resolveTimer = setTimeout(runResolve, 250);
 }
 
@@ -175,15 +187,8 @@ async function runResolve() {
     });
     if (res.ok) {
       state.resolve = await res.json();
-      renderDerivedChips();
-      renderDiffPanel();
-      renderUnknownTray();
-      renderStepsBar();
-      renderErrors();
-      renderJsonPreview();
-      renderLaunchStatus();
-      renderStepper(state.resolve.errors || []);
-      renderStatusPill();
+      markStale(false);
+      renderResolveViews();
     }
   } catch (_) { /* transient network failure; next change retries */ }
   _resolveInFlight = false;
@@ -196,10 +201,14 @@ function emittedConfig() {
   return (state.resolve && state.resolve.emitted) || state.draft;
 }
 
+function currentErrors() {
+  return (state.resolve && state.resolve.errors) || [];
+}
+
 function bindActions() {
   document.getElementById('runBtn')?.addEventListener('click', async () => {
-    const errors = (state.resolve && state.resolve.errors) || [];
-    if (errors.length) { goToFirstError(errors); renderStepper(errors); return; }
+    const errors = currentErrors();
+    if (errors.length) { goToFirstError(errors); return; }
     const btn = document.getElementById('runBtn');
     btn.disabled = true;
     try {
@@ -223,8 +232,18 @@ function bindActions() {
   });
 
   document.getElementById('statusPill')?.addEventListener('click', () => {
-    goToStep('review');
-    renderStepper((state.resolve && state.resolve.errors) || []);
+    const errors = currentErrors();
+    if (errors.length) goToFirstError(errors);
+    else goToSection('review');
+  });
+
+  document.getElementById('railMappingJump')?.addEventListener('click', () => {
+    goToSection('codesign');
+    document.getElementById('hwStatsPanel')?.scrollIntoView({ block: 'center' });
+  });
+
+  document.addEventListener('wizard:go-first-error', () => {
+    goToFirstError(currentErrors());
   });
 
   document.getElementById('saveTemplateBtn')?.addEventListener('click', async () => {
@@ -276,7 +295,23 @@ function bindChangeEvents() {
   document.addEventListener('wizard:change', async (event) => {
     const key = event.detail?.key;
     if (key === 'model_type') {
-      await ensureModelSchema(state.draft.deployment_parameters?.model_type);
+      const modelType = state.draft.deployment_parameters?.model_type;
+      await ensureModelSchema(modelType);
+      /* The previous builder's config would not even build — reseed from the
+         new builder's served defaults. */
+      if (modelType) {
+        state.draft.deployment_parameters.model_config = defaultModelConfig(modelType);
+      }
+    }
+    if (key === 'model_config_mode' || key === 'hw_config_mode') {
+      /* Entering a search mode: arch_search must exist (the resolve demands
+         a declaration); seed the served schema's first optimizer. */
+      const dp = state.draft.deployment_parameters;
+      const searchActive = dp?.model_config_mode === 'search' || dp?.hw_config_mode === 'search';
+      const optimizers = (schema().nas || {}).optimizer_options || [];
+      if (searchActive && !dp.arch_search && optimizers.length) {
+        dp.arch_search = { optimizer: optimizers[0].id };
+      }
     }
     renderGroupHosts();
     renderJsonPreview();
@@ -368,9 +403,7 @@ async function boot() {
   await ensureModelSchema(state.draft.deployment_parameters?.model_type);
   bindActions();
   bindChangeEvents();
-  bindStepsBar();
-  bindStepNav(() => renderStepper((state.resolve && state.resolve.errors) || []));
-  goToStep('workload');
+  goToSection('codesign');
   loadTemplateOptions();
   renderAll();
   scheduleResolve();

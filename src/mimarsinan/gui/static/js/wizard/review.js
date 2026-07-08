@@ -1,7 +1,9 @@
-/* Review surfaces: derived chips, inline errors, diff-vs-defaults, unknown tray,
-   pipeline step bar, and the JSON preview. All render from /api/config/resolve. */
+/* Live-rail + review surfaces: verdict, honest pipeline assembly, compact
+   mapping, launch; derived chips with WHY, vehicle status, inline errors,
+   diff-vs-defaults, unknown tray, JSON preview. All render from
+   /api/config/resolve — nothing here is a static copy of the pipeline. */
 
-import { groups, keySchema } from './schema.js';
+import { derivedKeys, groups, keySchema } from './schema.js';
 import { clearKey, state } from './state.js';
 import { el, notifyChange } from './fields.js';
 
@@ -9,6 +11,10 @@ function escapeHtml(s) {
   const div = document.createElement('div');
   div.textContent = s;
   return div.innerHTML;
+}
+
+function resolveErrors() {
+  return (state.resolve && state.resolve.errors) || [];
 }
 
 /* ── Derived chips with WHY (read-only, never editable) ────────────────── */
@@ -36,42 +42,110 @@ function derivedChip(key, info) {
   return chip;
 }
 
+/** Simulator enables render in the vehicles card, core maxima inline in the
+    hardware section; the review strip shows the remaining semantics. */
+function chipHostKeys(hostId, derived) {
+  const vehicles = new Set(vehicleKeys());
+  const entries = Object.entries(derived)
+    .filter(([key]) => !vehicles.has(key));
+  if (hostId === 'deploymentDerived') {
+    return entries.filter(([key]) => {
+      const ks = keySchema(key);
+      return ks && (ks.group === 'spiking' || ks.group === 'conversion' || ks.group === 'run');
+    });
+  }
+  return entries;
+}
+
 export function renderDerivedChips() {
   const derived = (state.resolve && state.resolve.derived) || {};
+  const errors = resolveErrors();
   for (const hostId of ['derivedChips', 'deploymentDerived']) {
     const host = document.getElementById(hostId);
     if (!host) continue;
     host.replaceChildren();
-    for (const [key, info] of Object.entries(derived)) {
-      host.append(derivedChip(key, info));
+    if (errors.length) {
+      /* Never show hypothetical derived values while the draft is invalid. */
+      host.append(el('span', 'derived-blocked',
+        `derivation blocked — fix ${errors.length} error${errors.length > 1 ? 's' : ''} to see derived values`));
+      continue;
     }
-    if (!Object.keys(derived).length) {
+    const entries = chipHostKeys(hostId, derived);
+    for (const [key, info] of entries) host.append(derivedChip(key, info));
+    if (!entries.length) {
       host.append(el('span', 'note', 'Derived values appear once the draft resolves.'));
     }
   }
+  renderVehiclesStatus();
 }
 
-/* ── Launch status (review step) ───────────────────────────────────────── */
+/* ── Simulation vehicles (policy-derived status, never knobs) ──────────── */
+
+function vehicleKeys() {
+  return derivedKeys()
+    .filter((ks) => ks.group === 'deployment_target' && ks.type === 'bool')
+    .map((ks) => ks.key);
+}
+
+export function renderVehiclesStatus() {
+  const host = document.getElementById('vehiclesStatus');
+  if (!host) return;
+  host.replaceChildren();
+  const errors = resolveErrors();
+  if (!state.resolve || errors.length) {
+    host.append(el('div', 'note', errors.length
+      ? 'Vehicle selection appears once the draft resolves.'
+      : 'Resolving…'));
+    return;
+  }
+  const derived = state.resolve.derived || {};
+  for (const key of vehicleKeys()) {
+    const ks = keySchema(key);
+    const info = derived[key] || { value: null, why: null };
+    const row = el('div', 'vehicle-row' + (info.value ? ' on' : ' off'));
+    row.append(el('span', 'vehicle-dot'));
+    row.append(el('span', 'vehicle-name', ks ? ks.label : key));
+    row.append(el('span', 'vehicle-state', info.value ? 'runs' : 'unavailable'));
+    if (info.why) row.append(el('span', 'vehicle-why', info.why));
+    row.title = ks ? ks.doc : '';
+    host.append(row);
+  }
+}
+
+/* ── Launch (persistent rail: status + strong disabled semantics) ──────── */
 
 export function renderLaunchStatus() {
   const host = document.getElementById('launchStatus');
+  const runBtn = document.getElementById('runBtn');
   if (!host) return;
   host.replaceChildren();
+  const errors = resolveErrors();
   if (!state.resolve) {
-    host.append(el('span', 'note', 'Resolving the draft…'));
+    host.append(el('div', 'launch-status-line pending', 'Resolving the draft…'));
+    if (runBtn) runBtn.disabled = true;
     return;
   }
-  const errors = state.resolve.errors || [];
   const steps = (state.resolve.pipeline && state.resolve.pipeline.steps) || [];
   if (errors.length) {
-    host.append(el('div', 'launch-status-line error',
-      `✖ ${errors.length} validation error${errors.length > 1 ? 's' : ''} — fix before launch`));
+    const line = el('button', 'launch-status-line error',
+      `✖ ${errors.length} error${errors.length > 1 ? 's' : ''} `
+      + `block${errors.length > 1 ? '' : 's'} launch — review`);
+    line.type = 'button';
+    line.addEventListener('click', () => {
+      document.dispatchEvent(new CustomEvent('wizard:go-first-error'));
+    });
+    host.append(line);
   } else {
     host.append(el('div', 'launch-status-line ok',
-      `✓ Resolves to a ${steps.length}-step pipeline`));
+      `✓ ${steps.length}-step pipeline ready`));
+    if (state.hwStats && state.hwStats.status === 'infeasible') {
+      host.append(el('div', 'launch-status-line warn',
+        '⚠ planned mapping does not fit — the run will fail at Hard Core Mapping'));
+    }
   }
   const name = state.draft.experiment_name;
-  if (name) host.append(el('div', 'launch-status-sub', `experiment: ${name}`));
+  if (name) host.append(el('div', 'launch-status-sub', name));
+  if (runBtn) runBtn.disabled = errors.length > 0;
 }
 
 /* ── Inline + global errors (with rule-prescribed one-click remedies) ──── */
@@ -115,7 +189,7 @@ export function renderErrors() {
   document.querySelectorAll('.field-error').forEach((node) => node.remove());
   document.querySelectorAll('.field.has-error').forEach((node) => node.classList.remove('has-error'));
   const global = document.getElementById('globalErrors');
-  const errors = (state.resolve && state.resolve.errors) || [];
+  const errors = resolveErrors();
   const unattached = [];
   for (const error of errors) {
     const host = error.key
@@ -132,8 +206,6 @@ export function renderErrors() {
     global.style.display = unattached.length ? '' : 'none';
     global.replaceChildren(...unattached.map(errorCard));
   }
-  const runBtn = document.getElementById('runBtn');
-  if (runBtn) runBtn.disabled = errors.length > 0;
 }
 
 /* ── Diff-vs-defaults (the template exposure mechanism) ────────────────── */
@@ -198,21 +270,25 @@ export function renderUnknownTray() {
   for (const path of unknown) host.append(el('div', 'unknown-tray-item', path));
 }
 
-/* ── Pipeline step bar (+ edit-&-continue start-step selection) ────────── */
+/* ── Pipeline assembly rail (honest vertical list from the resolve) ────── */
 
-export function renderStepsBar() {
+export function renderAssemblyRail() {
   const list = document.getElementById('pipelineStepsList');
   const hint = document.getElementById('pipelineStepsHint');
   if (!list) return;
   const pipeline = (state.resolve && state.resolve.pipeline) || { steps: [], semantic_groups: [] };
   const steps = pipeline.steps || [];
+  const errors = resolveErrors();
   if (hint) {
     hint.textContent = steps.length
-      ? `${steps.length} steps` + (state.editContinueRunId ? ' — click a step to restart from it' : '')
+      ? `${steps.length} steps` + (state.editContinueRunId ? ' · click to restart from' : '')
       : '';
   }
+  list.replaceChildren();
   if (!steps.length) {
-    list.innerHTML = '<span class="pipeline-steps-error-msg">No resolvable pipeline yet</span>';
+    list.append(el('div', 'assembly-empty', errors.length
+      ? 'No resolvable pipeline — fix the flagged errors'
+      : 'Resolving…'));
     return;
   }
   const selectable = !!state.editContinueRunId;
@@ -223,37 +299,81 @@ export function renderStepsBar() {
   }
   const startStep = state.draft.start_step || null;
 
-  const cols = steps.map((name, i) => {
+  steps.forEach((name, i) => {
     const group = pipeline.semantic_groups[i] || 'other';
     const isStart = selectable && startStep === name;
-    let status = 'pending';
     let clickable = false;
+    let status = '';
     if (selectable && completed) {
-      if (isStart) { status = 'running'; clickable = true; }
+      if (isStart) { status = 'start'; clickable = true; }
       else if (completed.has(name)) { status = 'completed'; clickable = true; }
-      else if (i === suggestedIdx) { status = 'pending'; clickable = true; }
+      else if (i === suggestedIdx) { status = 'suggested'; clickable = true; }
     }
-    const cls = 'psb-col' + (isStart ? ' selected' : '') + (clickable ? ' psb-col--ec-selectable' : '');
-    const data = clickable ? ` data-start-step="${encodeURIComponent(name)}"` : '';
-    return `<div class="${cls}" data-status="${status}" data-group="${escapeHtml(group)}"${data}>` +
-      '<div class="psb-bar"></div>' +
-      `<span class="psb-label">${escapeHtml(name)}</span></div>`;
+    const row = el(clickable ? 'button' : 'div',
+      'assembly-step' + (isStart ? ' selected' : '') + (clickable ? ' selectable' : ''));
+    if (clickable) row.type = 'button';
+    row.dataset.group = group;
+    if (status) row.dataset.status = status;
+    row.append(el('span', 'assembly-dot'));
+    row.append(el('span', 'assembly-name', name));
+    if (isStart) row.append(el('span', 'assembly-flag', 'start'));
+    else if (status === 'completed') row.append(el('span', 'assembly-flag done', '✓'));
+    if (clickable) {
+      row.addEventListener('click', () => {
+        if (state.draft.start_step === name) delete state.draft.start_step;
+        else state.draft.start_step = name;
+        renderAssemblyRail();
+        notifyChange('start_step');
+      });
+    }
+    list.append(row);
   });
-  list.innerHTML = `<div class="psb-list psb-list--preview">${cols.join('')}</div>`;
 }
 
-export function bindStepsBar() {
-  const list = document.getElementById('pipelineStepsList');
-  if (!list) return;
-  list.addEventListener('click', (event) => {
-    const col = event.target.closest('[data-start-step]');
-    if (!col) return;
-    const name = decodeURIComponent(col.getAttribute('data-start-step'));
-    if (state.draft.start_step === name) delete state.draft.start_step;
-    else state.draft.start_step = name;
-    renderStepsBar();
-    notifyChange('start_step');
-  });
+/* ── Compact mapping summary (rail mirror of the co-design panel) ──────── */
+
+function railStat(value, label) {
+  const cell = el('div', 'rail-stat');
+  cell.append(el('div', 'rail-stat-value', value));
+  cell.append(el('div', 'rail-stat-label', label));
+  return cell;
+}
+
+export function renderRailMapping() {
+  const host = document.getElementById('railMapping');
+  if (!host) return;
+  host.replaceChildren();
+  const mapping = state.hwStats;
+  if (!mapping || mapping.status === 'pending') {
+    host.append(el('div', 'note', 'Awaiting a mapping plan…'));
+    return;
+  }
+  if (mapping.status === 'search') {
+    host.append(el('div', 'note', 'Search mode — hardware co-search plans the mapping.'));
+    return;
+  }
+  if (mapping.status === 'no-metadata') {
+    host.append(el('div', 'note', 'Pick a data provider to plan the mapping.'));
+    return;
+  }
+  if (mapping.status === 'infeasible') {
+    host.append(el('div', 'rail-mapping-verdict bad', '✖ does not fit the core grid'));
+    return;
+  }
+  if (mapping.status === 'error') {
+    host.append(el('div', 'rail-mapping-verdict bad', '✖ mapping check failed — see Co-Design'));
+    return;
+  }
+  const stats = mapping.stats || {};
+  const grid = el('div', 'rail-stats');
+  grid.append(railStat(String(Math.round(stats.total_cores ?? 0)), 'cores'));
+  const barriers = (stats.host_side_segment_count || 0)
+    + (stats.schedule_sync_count || (stats.layout_preview && stats.layout_preview.schedule_sync_count) || 0);
+  grid.append(railStat(String(barriers), 'barriers'));
+  grid.append(railStat(`${(stats.total_wasted_axons_pct ?? 0).toFixed(0)}%`, 'axon waste'));
+  grid.append(railStat(`${(stats.total_wasted_neurons_pct ?? 0).toFixed(0)}%`, 'neuron waste'));
+  host.append(el('div', 'rail-mapping-verdict ok', '✓ fits the core grid'));
+  host.append(grid);
 }
 
 /* ── JSON preview ──────────────────────────────────────────────────────── */
@@ -295,3 +415,5 @@ export function renderTemplateBanner() {
   banner.append(el('span', 'note',
     ' — every differing knob is listed under Review; unknown keys land in the tray.'));
 }
+
+export { escapeHtml };

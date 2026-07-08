@@ -5,6 +5,8 @@ import { keySchema, schema } from './schema.js';
 export const state = {
   draft: { deployment_parameters: {}, platform_constraints: {} },
   resolve: null,          // last /api/config/resolve payload
+  resolving: false,       // a resolve round-trip is pending (stale shimmer)
+  hwStats: null,          // last mapping verdict: {status, stats} (hw.js)
   templateName: null,     // banner label when a template/run config is loaded
   editContinueRunId: null,
   prevCompleted: null,    // Set<string> of completed steps (edit & continue)

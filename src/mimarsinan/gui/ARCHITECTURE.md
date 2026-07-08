@@ -1,9 +1,9 @@
-# gui/ — Browser-based pipeline monitor, run manager, and configuration wizard
+# gui/ — Browser-based pipeline monitor, run manager, and configuration workbench
 
 Real-time dashboard served alongside every pipeline run: a FastAPI/uvicorn server
 (daemon thread) streams step lifecycle, metrics, and console output to a Plotly
 single-page frontend, and (with `run.py --ui`) also serves the deployment
-configuration wizard and spawns headless pipeline subprocesses. Central
+configuration workbench and spawns headless pipeline subprocesses. Central
 abstractions: `GUIHandle` (pipeline hooks that build step snapshots and persist
 them), the thread-safe `DataCollector` (in-memory state + WebSocket broadcast),
 and `ResourceDescriptor`/`ResourceStore` (lazy, step-scoped heavy artefacts —
@@ -11,20 +11,33 @@ heatmap PNGs, connectivity JSON — materialised on first HTTP fetch). The SPA
 assets (HTML/CSS/ES-module JS) live in the non-package `static/` directory;
 third-party runtime assets (Plotly, fonts) are vendored under `static/vendor/`
 so the GUI works offline — a unit ratchet (`test_static_offline.py`) rejects
-any external `src`/`href`/`url()` reference in static assets. The wizard
+any external `src`/`href`/`url()` reference in static assets. The configurator
 frontend (`static/js/wizard/`) renders ENTIRELY from `GET /api/config_schema`
 (the config-key registry) — the HTML is layout chrome with zero field
 knowledge, the draft state IS the config document (explicit keys only), and
 derivation runs exclusively server-side via `POST /api/config/resolve`
 (derived chips with WHY, keyed inline errors with rule-prescribed remedies,
 diff-vs-defaults template view, loud unrecognized-keys tray, the emitted
-document the review pane shows verbatim). The wizard is a five-step flow
-(`static/js/wizard/stepper.js`: Workload → Model → Deployment → Tuning &
-Budgets → Review & Launch) whose steps host whole registry concern GROUPS —
-the taxonomy is the step assignment — with per-step error badges, a live
-pipeline preview bar, and a fresh draft seeded from `GET /api/config/starter`.
-`scripts/wizard_screenshots.py` (dev-only, browser-driven) captures per-step
-screenshots of both the fresh and template flows for design review.
+document the review pane shows verbatim). The configurator is a CAD-style
+WORKBENCH (`static/js/wizard/workbench.js`): a left section rail with free
+navigation (Workload · Co-Design · Deployment semantics · Tuning & Budgets ·
+Review & Launch — sections host whole registry concern GROUPS, the taxonomy
+is the placement, with per-section error badges) and a persistent sticky
+right live rail (resolve verdict, the honest vertical pipeline-assembly list
+re-rendered from every resolve, a compact mapping summary mirroring the
+Co-Design panel, and Launch with strong disabled/blocked semantics). The
+flagship Co-Design section shows model architecture, the core grid, and the
+full mapping-performance panel on one screen so both can be tuned against
+live mapping feedback ("Suggest hardware" included). Field rendering is
+schema-driven and generic: relevance predicates control field EXISTENCE,
+`promote_when` makes mode-defining knobs primary in their mode, bounded
+numerics render as slider+numeric combos, small enums as segmented buttons,
+and every empty control states what empty resolves to (`empty_means`).
+Policy-derived keys (simulator enables, core maxima) render as status/chips,
+never as knobs. A fresh draft is seeded from `GET /api/config/starter`.
+`scripts/wizard_screenshots.py` (dev-only, browser-driven) captures the
+review evidence set: per-section shots, the Co-Design interaction sequence,
+per-mode switches, the template flow, and the error/remedy flow.
 
 ## Key files
 | File | Purpose |
@@ -43,7 +56,7 @@ screenshots of both the fresh and template flows for design review.
 | `server/` | FastAPI app factory and uvicorn startup (`app.py`) plus route modules: pipeline/runs/templates/console APIs, lazy-resource endpoints, wizard and config-schema APIs, and hardware layout verification; `json_safe.py` provides the sanitising JSON response class. |
 | `snapshot/` | Pure per-artifact snapshot builders returning `(summary, ResourceDescriptor list)`: model, IR graph, hardware mapping, adaptation, pruning, search, and SANA-FE snapshots, `RESOURCE_KIND_*` constants, disk-based snapshot rebuild for legacy runs, and the best-effort console `[TAG]` parser (`console_events.py`) that backfills events for runs recorded before `events.jsonl`. |
 | `viewmodel/` | Pure, I/O-free view-models (parsed run artifacts in, chart-ready JSON out; unit-tested against synthetic streams): `overview_vm` (measured points + verdict markers — a carried metric NEVER plots), `step_metrics_vm` (the one metric-categorization rule table), `events_vm` (per-kind display hints + annotation lanes), `staircase_vm` (the D-hat ratchet staircase; raises on a falling ratchet), `gantt_vm` (step timeline + endpoint step-budget ledger + artifact/total wall split), `a6_vm` (install-resolution gauge cards). |
-| `wizard/` | Configuration wizard application layer: `emit.py` (explicit-keys-only config emission — the ONE builder used by Deploy, templates, and the representability test; unknown keys preserved and reported, never dropped), `build_deployment_config_from_state` (thin alias over emit), `schema_api.py` (`/api/config_schema` payload: serialized registry + recipe/preprocessing/NAS sub-schemas; `/api/config/resolve` payload: resolution + live step preview), `starter.py` + `starter_baseline.json` (the fresh-state contract: `GET /api/config/starter` serves the packaged baseline DOCUMENT — the tier-0 anchor family with a fresh experiment name — pinned resolvable/emittable/mappable by `test_wizard_starter.py`; workload facts live in the document, never in framework code), wizard schema surfaces (model types, NAS, temporal allocation, pipeline steps), and state validation. |
+| `wizard/` | Configuration workbench application layer: `emit.py` (explicit-keys-only config emission — the ONE builder used by Deploy, templates, and the representability test; unknown keys preserved and reported, never dropped; non-declarable derived keys — the ConversionPolicy-owned sim enables, `activation_quantization` — are removed), `build_deployment_config_from_state` (thin alias over emit), `schema_api.py` (`/api/config_schema` payload: serialized registry + recipe/preprocessing/NAS sub-schemas; `/api/config/resolve` payload: resolution + live step preview), `starter.py` + `starter_baseline.json` (the fresh-state contract: `GET /api/config/starter` serves the packaged baseline DOCUMENT — the lenet5 vehicle, the only tier-0 family green in all five modes, with a fresh experiment name and no pinned derived mode keys — pinned resolvable/emittable/mappable per mode switch by `test_wizard_starter.py`; workload facts live in the document, never in framework code), wizard schema surfaces (model types, NAS, temporal allocation, pipeline steps), and state validation. |
 
 ## Dependencies
 - `common` — `best_effort` error scoping, env-derived paths (`runs_root`, `templates_dir`, `gui_no_browser`), `layer_key` helpers for snapshots.

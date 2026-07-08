@@ -1,6 +1,9 @@
-/* Hardware feasibility: dataset metadata, verify (debounced), one-shot auto-suggest. */
+/* Hardware feasibility: dataset metadata, verify (debounced), one-shot
+   auto-suggest. Publishes the mapping verdict to state.hwStats so the live
+   rail mirrors the co-design panel. */
 
 import { buildHwStatsPanelHtml } from '../hw-stats-panel.js';
+import { renderLaunchStatus, renderRailMapping } from './review.js';
 import { effectiveValue, setKey, state } from './state.js';
 import { el, notifyChange } from './fields.js';
 
@@ -59,6 +62,12 @@ function hwApiBody() {
   };
 }
 
+function publishMapping(status, stats) {
+  state.hwStats = { status, stats: stats || null };
+  renderRailMapping();
+  renderLaunchStatus();
+}
+
 function showBanner(feasible, messages) {
   const banner = document.getElementById('hwValidationBanner');
   if (!banner) return;
@@ -76,6 +85,24 @@ function showBanner(feasible, messages) {
   }
 }
 
+/** Planning guidance for red waste bars: the plan is editable here, so high
+    waste gets a remedy pointer instead of a bare number. */
+function wasteGuidance(stats) {
+  if (!stats || stats.feasible === false) return null;
+  const worst = Math.max(
+    stats.total_wasted_axons_pct ?? 0, stats.total_wasted_neurons_pct ?? 0);
+  if (worst <= 60) return null;
+  const dim = (stats.total_wasted_axons_pct ?? 0) >= (stats.total_wasted_neurons_pct ?? 0)
+    ? 'axons' : 'neurons';
+  const hint = el('div', 'hw-waste-hint');
+  hint.append(el('span', 'hw-waste-hint-icon', '◆'));
+  hint.append(el('span', '',
+    `${worst.toFixed(0)}% of ${dim} idle — the core types are much larger than `
+    + 'the mapped layers. Try "Suggest hardware for this model", smaller core '
+    + 'types, or enable coalescing.'));
+  return hint;
+}
+
 function renderStats(stats, note) {
   const panel = document.getElementById('hwStatsPanel');
   if (!panel) return;
@@ -89,13 +116,17 @@ function renderStats(stats, note) {
   panel.className = stats.feasible === false
     ? 'hw-stats-panel hw-stats-state-error' : 'hw-stats-panel';
   panel.innerHTML = buildHwStatsPanelHtml(stats, 'planned');
+  const guidance = wasteGuidance(stats);
+  if (guidance) panel.append(guidance);
 }
 
 let _verifyTimer = null;
 
 export function scheduleHwVerify() {
   if (_verifyTimer) clearTimeout(_verifyTimer);
-  _verifyTimer = setTimeout(runHwVerify, 800);
+  const panel = document.getElementById('hwStatsPanel');
+  if (panel) panel.classList.add('stale');
+  _verifyTimer = setTimeout(runHwVerify, 500);
 }
 
 async function runHwVerify() {
@@ -105,12 +136,14 @@ async function runHwVerify() {
   if (searchActive || !dp.model_type || !cores.length) {
     showBanner(null, []);
     renderStats(null, searchActive ? 'Search Mode' : 'Not Verified');
+    publishMapping(searchActive ? 'search' : 'pending');
     return;
   }
   state.metadata = await fetchMetadata();
   if (!hasWorkloadMetadata()) {
     showBanner(null, []);
     renderStats(null, 'No Dataset Metadata');
+    publishMapping('no-metadata');
     return;
   }
   const body = hwApiBody();
@@ -128,17 +161,30 @@ async function runHwVerify() {
         allow_scheduling: body.allow_scheduling,
       }),
     });
-    if (!res.ok) return;
-    const data = await res.json();
-    if (data.error) return;
-    if (data.schedule_info && data.schedule_info.scheduled_feasible) {
-      showBanner(true, [data.schedule_info.message]);
+    const data = res.ok ? await res.json() : null;
+    if (!data || data.error) {
+      /* Never keep an outdated plan on screen: a failed check is a state. */
+      showBanner(false, [(data && data.error)
+        || 'Mapping check failed for this draft (the model may not build with the current config).']);
+      renderStats(null, 'Check Failed');
+      publishMapping('error');
     } else {
-      showBanner(data.feasible, data.errors || []);
+      if (data.schedule_info && data.schedule_info.scheduled_feasible) {
+        showBanner(true, [data.schedule_info.message]);
+      } else if (data.feasible) {
+        /* A clean fit needs no banner — the panel + rail already say it. */
+        showBanner(null, []);
+      } else {
+        showBanner(false, data.errors || []);
+      }
+      renderStats(data.feasible ? data.stats : null,
+        data.feasible ? null : 'Infeasible');
+      publishMapping(data.feasible ? 'ok' : 'infeasible',
+        data.feasible ? data.stats : null);
     }
-    renderStats(data.feasible ? data.stats : null,
-      data.feasible ? null : 'Infeasible');
   } catch (_) { /* network errors: verification is advisory */ }
+  const panel = document.getElementById('hwStatsPanel');
+  if (panel) panel.classList.remove('stale');
 }
 
 export async function autoSuggestHardware() {
