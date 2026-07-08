@@ -102,11 +102,21 @@ def register_routes(
             return hit
 
         def _load():
-            return BasicDataProviderFactory.get_metadata(
+            md = BasicDataProviderFactory.get_metadata(
                 provider_id,
                 datasets_path or "./datasets",
                 preprocessing=preprocessing,
             )
+            # The registered workload facts (input scale, eval subsample, …):
+            # the UI renders these as concrete derived values, never prose.
+            factory = BasicDataProviderFactory(
+                provider_id, datasets_path or "./datasets",
+                seed=0, cache=False, preprocessing=preprocessing,
+            )
+            md["workload_facts"] = (
+                factory.create().workload_profile().config_updates()
+            )
+            return md
 
         try:
             result = await asyncio.to_thread(_load)

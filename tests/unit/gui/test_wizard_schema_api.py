@@ -166,3 +166,155 @@ class TestRunEndpoint:
         html = client.get("/wizard").text
         assert "/static/js/wizard/main.js" in html
         assert "cdn.plot.ly" not in html
+
+
+class TestVehiclesAlwaysServed:
+    """Round-4 defect 5 (server half): the resolve payload serves the vehicle
+    rows UNCONDITIONALLY — unrelated draft errors must never remove the
+    vehicle state the toggles render from."""
+
+    _ENABLES = (
+        "enable_nevresim_simulation", "enable_loihi_simulation",
+        "enable_sanafe_simulation",
+    )
+
+    def test_starter_serves_all_vehicle_rows(self, client):
+        draft = client.get("/api/config/starter").json()
+        body = client.post("/api/config/resolve", json=draft).json()
+        rows = {r["key"]: r for r in body["vehicles"]}
+        assert set(rows) == set(self._ENABLES)
+        for key in self._ENABLES:
+            assert rows[key]["supported"] is True, key
+            assert rows[key]["on"] is True, key
+            assert rows[key]["declared"] is False, key
+            assert rows[key]["why"], key
+
+    def test_vehicles_survive_unrelated_errors(self, client):
+        draft = client.get("/api/config/starter").json()
+        draft["deployment_parameters"]["s_allocation"] = "explicit"
+        body = client.post("/api/config/resolve", json=draft).json()
+        assert body["ok"] is False and body["errors"]
+        rows = {r["key"]: r for r in body["vehicles"]}
+        assert set(rows) == set(self._ENABLES)
+        assert rows["enable_sanafe_simulation"]["on"] is True
+
+    def test_declared_off_is_reported(self, client):
+        draft = client.get("/api/config/starter").json()
+        draft["deployment_parameters"]["enable_sanafe_simulation"] = False
+        body = client.post("/api/config/resolve", json=draft).json()
+        row = {r["key"]: r for r in body["vehicles"]}["enable_sanafe_simulation"]
+        assert row["supported"] is True
+        assert row["on"] is False
+        assert row["declared"] is True
+
+    def test_unsupported_backend_is_reported(self, client):
+        draft = client.get("/api/config/starter").json()
+        draft["deployment_parameters"]["spiking_mode"] = "ttfs"
+        body = client.post("/api/config/resolve", json=draft).json()
+        row = {r["key"]: r for r in body["vehicles"]}["enable_loihi_simulation"]
+        assert row["supported"] is False
+        assert row["on"] is False
+
+    def test_unknown_mode_degrades_without_dropping_rows(self, client):
+        draft = client.get("/api/config/starter").json()
+        draft["deployment_parameters"]["spiking_mode"] = "not_a_mode"
+        body = client.post("/api/config/resolve", json=draft).json()
+        assert body["ok"] is False
+        rows = {r["key"]: r for r in body["vehicles"]}
+        assert set(rows) == set(self._ENABLES)
+        for row in rows.values():
+            assert row["supported"] is None
+            assert row["why"]
+
+
+class TestResolvedValuesServed:
+    """Round-4 defect 8 (server half): the payload carries the CONCRETE
+    resolved value for every registry key, so the UI renders 'derived: <x>'
+    instead of prose."""
+
+    def test_starter_resolved_values(self, client):
+        draft = client.get("/api/config/starter").json()
+        body = client.post("/api/config/resolve", json=draft).json()
+        resolved = body["resolved"]
+        assert resolved["firing_mode"] == "Default"
+        # Recipe-folded mode-aware default: concrete, not prose.
+        assert isinstance(resolved["wq_endpoint_recovery_steps"], int)
+        assert isinstance(resolved["tuning_recipe"], dict)
+        assert set(resolved) <= set(REGISTRY)
+
+    def test_erroring_draft_serves_no_hypothetical_values(self, client):
+        draft = client.get("/api/config/starter").json()
+        draft["deployment_parameters"]["spiking_mode"] = "not_a_mode"
+        body = client.post("/api/config/resolve", json=draft).json()
+        assert body["resolved"] == {}
+
+
+class TestBaselineIsTheDiffBaseline:
+    """Round-4 defect 7: 'differs from defaults' means differs from the
+    STARTER baseline document (the wizard's data-layer default); framework
+    defaults stay workload-neutral. Exception: experiment_name is always a
+    user delta (its fresh name has no default)."""
+
+    def _differs(self, body):
+        return {r["key"] for r in body["diff_vs_defaults"] if r["differs"]}
+
+    def test_pristine_starter_shows_only_the_experiment_name(self, client):
+        draft = client.get("/api/config/starter").json()
+        body = client.post("/api/config/resolve", json=draft).json()
+        assert self._differs(body) == {"experiment_name"}
+
+    def test_a_true_user_delta_differs_against_the_baseline_value(self, client):
+        draft = client.get("/api/config/starter").json()
+        draft["deployment_parameters"]["lr"] = 0.004
+        body = client.post("/api/config/resolve", json=draft).json()
+        rows = {r["key"]: r for r in body["diff_vs_defaults"]}
+        assert rows["lr"]["differs"] is True
+        assert rows["lr"]["default"] == 0.003  # the baseline, not the framework 0.001
+
+    def test_experiment_name_derives_from_the_baseline_vehicle(self, client):
+        draft = client.get("/api/config/starter").json()
+        assert draft["experiment_name"].startswith("lenet5_")
+
+    def test_schema_payload_serves_the_baseline_overlay(self, client):
+        keys = client.get("/api/config_schema").json()["keys"]
+        assert keys["lr"]["baseline"] == 0.003
+        assert keys["training_epochs"]["baseline"] == 2
+        assert keys["encoding_layer_placement"]["baseline"] == "subsume"
+        assert "baseline" not in keys["experiment_name"]
+        # Framework defaults stay untouched next to the overlay.
+        assert keys["lr"]["default"] == 0.001
+
+
+class TestMetadataWorkloadFacts:
+    """Round-4 defect 8 (data side): the provider metadata carries the
+    registered workload facts so the UI can render concrete derived values
+    for the profile-injected keys."""
+
+    def test_metadata_carries_workload_facts(self, client, monkeypatch):
+        from mimarsinan.common.workload_profile import DataWorkloadProfile
+        from mimarsinan.data_handling.data_provider_factory import (
+            BasicDataProviderFactory,
+        )
+
+        class _FakeProvider:
+            def workload_profile(self):
+                return DataWorkloadProfile(
+                    input_value_range=(0.0, 2.75), eval_subsample_target=4096,
+                )
+
+        monkeypatch.setattr(
+            BasicDataProviderFactory, "get_metadata",
+            classmethod(lambda cls, name, datasets_path="./datasets", *, preprocessing=None: {
+                "id": name, "label": name, "input_shape": [1, 28, 28],
+                "num_classes": 10, "supports_preprocessing": True,
+            }),
+        )
+        monkeypatch.setattr(
+            BasicDataProviderFactory, "create", lambda self: _FakeProvider(),
+        )
+        body = client.get(
+            "/api/data_providers/MNIST_DataProvider/metadata?resize_to=28"
+        ).json()
+        assert body["workload_facts"] == {
+            "input_data_scale": 2.75, "eval_subsample_target": 4096,
+        }
