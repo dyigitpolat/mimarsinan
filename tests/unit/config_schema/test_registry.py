@@ -127,20 +127,21 @@ class TestTaxonomy:
             assert REGISTRY[key].group == "model", key
 
     def test_pretrained_model_config_lives_in_training(self):
-        """Round-3 defect 4: the pretrained-weight regime configures the
-        TRAINING path (fine-tune instead of from-scratch), so its keys live
-        in the training group with the weight source primary."""
+        """Round-3 defect 4 + round-5 item 4: the pretrained-weight regime
+        configures the TRAINING path; preload_weights is the one hand knob
+        (the source itself derives from the builder registration)."""
         for key in ("weight_source", "preload_weights", "pretrained_weight_source"):
             assert REGISTRY[key].group == "training", key
-        assert REGISTRY["weight_source"].category is Category.BASIC
+        assert REGISTRY["preload_weights"].category is Category.BASIC
         for key in ("finetune_epochs", "finetune_lr"):
             entry = REGISTRY[key]
             assert entry.group == "training", key
             # Fine-tune knobs are the point of the pretrained regime: primary
-            # exactly while a weight source is declared.
+            # exactly while the regime is active.
             assert entry.promote_when is not None, key
-            assert entry.promote_when.evaluate({"weight_source": "torchvision"}), key
-            assert not entry.promote_when.evaluate({"weight_source": None}), key
+            assert entry.promote_when.evaluate({"preload_weights": True}), key
+            assert not entry.promote_when.evaluate(
+                {"preload_weights": False, "weight_source": None}), key
 
     def test_mapping_strategy_hosts_the_mapping_choices(self):
         """Round-3 defect 5 (amended): capability = what the hardware CAN do
@@ -288,7 +289,7 @@ class TestModeHonesty:
                     "prefix_stage_lr", "endpoint_floor_lr",
                     "proven_recovery_depth", "endpoint_floor_steps",
                     "wq_endpoint_recovery_steps", "conversion_draws",
-                    "weight_source", "finetune_lr", "tuning_batch_size",
+                    "finetune_lr", "tuning_batch_size",
                     "start_step", "stop_step", "input_data_scale",
                     "pruning_fraction"):
             entry = REGISTRY[key]
@@ -475,36 +476,171 @@ class TestNonDeclarableRejection:
         assert not any("not declarable" in e for e in errors)
 
 
-class TestNegativeValueShiftIsACorrectnessMechanism:
-    """§3d verdict: an unshifted negative ComputeOp→neural boundary is
-    SILENTLY CORRUPTED by the [0,1] spike-encode clamp (there is no
-    subsume-forward path in the mapping). The shift is therefore a mandatory
-    correctness mechanism — derived always-on, never a knob; a config that
-    silently corrupts negatives must not be authorable."""
+class TestNegativeValueShiftIsAMappingStrategy:
+    """Round-5 item 2 (supersedes the §3d non-declarability): the knob returns
+    with two CORRECT semantics — ON = calibrated boundary shift with consumer
+    bias pre-correction; OFF = the mapper SUBSUMES FORWARD until a
+    non-negative-value-generating node absorbs the range. Both paths are
+    numerically sound by construction; the silent-clamp corruption of the old
+    OFF remains unauthorable."""
 
-    def test_negative_value_shift_is_derived_and_non_declarable(self):
+    def test_negative_value_shift_is_a_mapping_strategy_knob(self):
         entry = REGISTRY["negative_value_shift"]
-        assert entry.category is Category.DERIVED
-        assert entry.declarable is False
-        assert not entry.has_default()
-        assert entry.derived_from
-        assert entry.why is not None
-        assert "bias" in entry.doc.lower() or "shift" in entry.doc.lower()
+        assert entry.group == "mapping_strategy"
+        assert entry.category is Category.BASIC
+        assert entry.declarable is True
+        assert entry.default is True  # the study's verdict: calibrated shift stays the default
 
-    def test_declaring_it_in_a_document_is_rejected(self):
+    def test_declaring_off_in_a_document_is_accepted(self):
         from mimarsinan.config_schema.validation import validate_deployment_config
 
         errors = validate_deployment_config(
             {"deployment_parameters": {"negative_value_shift": False}}
         )
-        assert any("negative_value_shift" in e and "not declarable" in e
+        assert not any("negative_value_shift" in e for e in errors)
+
+    def test_the_doc_states_both_mechanisms(self):
+        """ON: shift + consumer-bias pre-correction (B − W·s); OFF:
+        subsume-forward host mapping. Neither path may silently clamp."""
+        doc = REGISTRY["negative_value_shift"].doc.lower()
+        assert "shift" in doc
+        assert "subsume" in doc
+        assert "loud" in doc
+
+
+class TestRound5DerivedButOverridable:
+    """Round-5 item 2: the spiking runtime modes are declarable knobs again —
+    the derivation supplies a mode-aware default (green 'derived: <value>' in
+    the UI) and an explicit value wins (honest fold); pipeline_mode stays
+    derivation-owned and is hidden from every UI surface."""
+
+    def test_spiking_runtime_modes_are_declarable_advanced_knobs(self):
+        for key in ("firing_mode", "spike_generation_mode", "thresholding_mode"):
+            entry = REGISTRY[key]
+            assert entry.group == "spiking", key
+            assert entry.category is Category.ADVANCED, key
+            assert entry.declarable is True, key
+            assert not entry.has_default(), key  # the derivation supplies the default
+            assert entry.provenance == "derivation rule", key
+            assert entry.empty_means, key
+
+    def test_explicit_spiking_runtime_mode_wins_the_fold(self):
+        from mimarsinan.config_schema.deployment_derivation import (
+            derive_pipeline_runtime_parameters,
+        )
+
+        dp = {"spiking_mode": "lif", "firing_mode": "Novena"}
+        derive_pipeline_runtime_parameters(dp)
+        assert dp["firing_mode"] == "Novena"
+        assert dp["spike_generation_mode"] == "Uniform"
+
+    def test_pipeline_mode_is_hidden_everywhere(self):
+        entry = REGISTRY["pipeline_mode"]
+        assert entry.category is Category.DERIVED
+        assert entry.hidden is True
+        assert entry.declarable is True  # the vanilla mechanism stays config data
+        record = serialize_registry()["keys"]["pipeline_mode"]
+        assert record["hidden"] is True
+
+    def test_hidden_requires_a_derivation_owned_category(self):
+        with pytest.raises(ValueError):
+            ConfigKeySchema(
+                flat_key="bogus", group="run", owner="x", type=FieldType.BOOL,
+                category=Category.BASIC, label="Bogus", doc="A bogus basic key.",
+                hidden=True,
+            )
+
+
+class TestRound5Provenance:
+    """Round-5 item 3: every derived-by-default value names its SSOT source —
+    a registry field rendered generically, never prose in JS."""
+
+    USER_LISTED_KEYS = {
+        "num_workers": "consumer frozen default",
+        "input_data_scale": "provider registration",
+        "loihi_parity_sample_index": "consumer frozen default",
+        "activation_analysis_batch_size": "consumer frozen default",
+        "pretrain_floor_chance_multiple": "consumer frozen default",
+        "endpoint_floor_steps": "TUNING_POLICY",
+        "endpoint_target_floor": "ConversionPolicy recipe",
+        "eval_subsample_target": "provider registration",
+        "tuning_step_cap_epochs": "provider registration",
+        "calibration_set_policy": "provider registration",
+        "prefix_stage_lr": "builder profile",
+        "endpoint_floor_lr": "builder profile",
+        "proven_recovery_depth": "builder profile",
+    }
+
+    def test_the_missing_list_now_names_its_ssot_source(self):
+        for key, source in self.USER_LISTED_KEYS.items():
+            assert REGISTRY[key].provenance == source, key
+
+    def test_every_derived_key_names_a_provenance_source(self):
+        for key, entry in REGISTRY.items():
+            if entry.category is Category.DERIVED:
+                assert entry.provenance, key
+
+    def test_provenance_values_come_from_the_vocabulary(self):
+        from mimarsinan.config_schema.registry.types import PROVENANCE_SOURCES
+
+        for key, entry in REGISTRY.items():
+            if entry.provenance is not None:
+                assert entry.provenance in PROVENANCE_SOURCES, key
+
+    def test_provenance_is_serialized(self):
+        payload = serialize_registry()
+        assert payload["keys"]["prefix_stage_lr"]["provenance"] == "builder profile"
+        assert payload["keys"]["lr"]["provenance"] is None
+
+    def test_unknown_provenance_is_rejected(self):
+        with pytest.raises(ValueError):
+            ConfigKeySchema(
+                flat_key="bogus", group="run", owner="x", type=FieldType.BOOL,
+                category=Category.BASIC, label="Bogus", doc="A bogus basic key.",
+                provenance="vibes",
+            )
+
+
+class TestRound5PretrainedWeightSourceDedupe:
+    """Round-5 item 4: ONE pretrained-weight-source concept. weight_source is
+    the concept; its value is builder-registration-provided (green derived in
+    the wizard, never a hand field); preload_weights is the one hand knob;
+    the duplicate pretrained_weight_source override key is no longer
+    authorable (the builder ModelWorkloadProfile registration remains the
+    injection contract)."""
+
+    def test_weight_source_is_derived_but_declarable(self):
+        entry = REGISTRY["weight_source"]
+        assert entry.group == "training"
+        assert entry.category is Category.DERIVED
+        assert entry.declarable is True  # config-data escape (checkpoint paths), explicit wins
+        assert entry.provenance == "builder profile"
+        assert entry.why is not None
+
+    def test_preload_weights_is_the_one_hand_knob(self):
+        entry = REGISTRY["preload_weights"]
+        assert entry.category is Category.BASIC
+        assert entry.group == "training"
+
+    def test_pretrained_weight_source_is_not_authorable(self):
+        from mimarsinan.config_schema.validation import validate_deployment_config
+
+        entry = REGISTRY["pretrained_weight_source"]
+        assert entry.category is Category.DERIVED
+        assert entry.declarable is False
+        assert entry.provenance == "builder profile"
+        errors = validate_deployment_config(
+            {"deployment_parameters": {"pretrained_weight_source": "torchvision"}}
+        )
+        assert any("pretrained_weight_source" in e and "not declarable" in e
                    for e in errors)
 
-    def test_the_doc_states_the_mechanism_precisely(self):
-        """The story: shift at the boundary + consumer-bias pre-correction
-        (B − W·s) so the next neural activation absorbs the shift exactly;
-        unsupported topologies fail loud."""
-        entry = REGISTRY["negative_value_shift"]
-        doc = entry.doc
-        assert "clamp" in doc
-        assert "loud" in doc
+    def test_finetune_knobs_follow_the_regime(self):
+        """The fine-tune knobs exist while EITHER the regime flag or an
+        explicit source declares the pretrained path."""
+        for key in ("finetune_epochs", "finetune_lr"):
+            entry = REGISTRY[key]
+            assert entry.relevant.evaluate({"preload_weights": True}), key
+            assert entry.relevant.evaluate({"weight_source": "ckpt.pt"}), key
+            assert not entry.relevant.evaluate(
+                {"preload_weights": False, "weight_source": None}), key

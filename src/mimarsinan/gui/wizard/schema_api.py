@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from mimarsinan.config_schema.defaults import (
     get_default_training_recipe,
@@ -16,7 +16,7 @@ from mimarsinan.config_schema.registry import (
     parse_deployment_document,
     serialize_registry,
 )
-from mimarsinan.config_schema.resolve import resolve_draft
+from mimarsinan.config_schema.resolve import derived_view, resolve_draft
 from mimarsinan.gui.wizard.emit import emit_deployment_config
 from mimarsinan.gui.wizard.starter import load_starter_baseline
 from mimarsinan.tuning.orchestration.conversion_policy import ConversionPolicy
@@ -32,6 +32,7 @@ from mimarsinan.pipelining.core.pipelines.deployment_pipeline import (
     get_pipeline_semantic_group_by_step_name,
     get_pipeline_step_specs,
 )
+from mimarsinan.pipelining.core.deployment_plan import resolve_weight_source
 from mimarsinan.pipelining.core.registry.model_registry import ModelRegistry
 from mimarsinan.search.search_space_description import (
     CORE_DIM_GRANULARITY,
@@ -194,38 +195,51 @@ def _vehicle_rows(draft: Dict[str, Any]) -> List[Dict[str, Any]]:
     return rows
 
 
-def _resolved_view(resolution) -> Dict[str, Any]:
-    """The concrete resolved value per registry key (the 'derived: <x>' data),
-    plus the cheap model-profile registrations; {} while the draft errors —
-    hypothetical values never render."""
+def _enriched_config(resolution) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
+    """The resolved flat config a run would see: the derivation's output plus
+    the model builder's registrations and the weight-source resolution they
+    provide. ``({}, errors)`` while the draft errors — hypothetical values
+    never render, and the regime's fail-loud surfaces as a keyed error."""
     if not resolution.ok:
-        return {}
-    view = {k: v for k, v in resolution.resolved.items() if k in REGISTRY}
-    profile = ModelRegistry.get_workload_profile(str(view.get("model_type") or ""))
+        return {}, []
+    config = dict(resolution.resolved)
+    profile = ModelRegistry.get_workload_profile(str(config.get("model_type") or ""))
     if profile is not None:
         for key, value in profile.config_updates().items():
-            view.setdefault(key, value)
-    return view
+            config.setdefault(key, value)
+    try:
+        config["weight_source"] = resolve_weight_source(config)
+    except ValueError as exc:
+        return {}, [{
+            "key": "weight_source",
+            "message": str(exc),
+            "rule_id": "weight_source_regime",
+        }]
+    return config, []
 
 
 def resolve_payload(draft: Dict[str, Any]) -> Dict[str, Any]:
     """One round-trip for the wizard: resolution + live pipeline-step preview
     + the emitted document (exactly what Launch submits)."""
     resolution = resolve_draft(draft or {})
+    config, enrich_errors = _enriched_config(resolution)
+    errors = list(resolution.errors) + enrich_errors
+    resolved = {k: v for k, v in config.items() if k in REGISTRY}
     out: Dict[str, Any] = {
-        "ok": resolution.ok,
-        "derived": resolution.derived,
-        "errors": resolution.errors,
+        "ok": not errors,
+        # The derived rows re-derive against the ENRICHED config, so a
+        # builder-registration-provided value renders its concrete self.
+        "derived": derived_view(config) if config else resolution.derived,
+        "errors": errors,
         "explicit_keys": resolution.explicit_keys,
         "unknown_keys": resolution.unknown_keys,
         "diff_vs_defaults": _apply_baseline_to_diff(resolution.diff_vs_defaults),
         "emitted": emit_deployment_config(draft or {}),
-        "resolved": _resolved_view(resolution),
+        "resolved": resolved,
         "vehicles": _vehicle_rows(draft or {}),
         "pipeline": {"steps": [], "semantic_groups": []},
     }
-    if resolution.ok:
-        config = dict(resolution.resolved)
+    if config:
         specs = get_pipeline_step_specs(config)
         groups = get_pipeline_semantic_group_by_step_name(config)
         steps = [name for name, _ in specs]

@@ -128,6 +128,8 @@ def serialize_registry() -> Dict[str, Any]:
             "derived_from": list(entry.derived_from),
             "declarable": entry.declarable,
             "important": entry.important,
+            "provenance": entry.provenance,
+            "hidden": entry.hidden,
         }
         if entry.has_default():
             record["default"] = entry.default

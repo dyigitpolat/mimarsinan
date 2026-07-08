@@ -46,6 +46,18 @@ NO_DEFAULT = _NoDefault()
 
 SECTIONS = ("top", "deployment_parameters", "platform_constraints")
 
+# SSOT-source vocabulary for derived-by-default values: WHERE the effective
+# value comes from when the document is silent. Rendered generically by the
+# wizard next to every green derived value.
+PROVENANCE_SOURCES = frozenset({
+    "TUNING_POLICY",            # frozen tuning-loop constant table
+    "provider registration",    # DataWorkloadProfile (data-loader contract)
+    "builder profile",          # ModelWorkloadProfile (model-builder contract)
+    "ConversionPolicy recipe",  # the mode -> proven-recipe fold
+    "derivation rule",          # config_schema/deployment_derivation.py
+    "consumer frozen default",  # a named consumer's workload-neutral literal
+})
+
 OptionsSpec = Union[Tuple[str, ...], Callable[[], Tuple[str, ...]], None]
 
 
@@ -93,6 +105,12 @@ class ConfigKeySchema:
     meta: Optional[Callable[[dict], dict]] = None
     declarable: bool = True
     important: bool = False
+    # SSOT source of the derived-by-default value (PROVENANCE_SOURCES); None
+    # for keys whose default is a plain schema default.
+    provenance: Optional[str] = None
+    # Derivation-owned keys the UI must not render on ANY surface (no field,
+    # no chip); they remain config data (declarable escape) where marked.
+    hidden: bool = False
 
     def __post_init__(self) -> None:
         if self.section not in SECTIONS:
@@ -113,6 +131,16 @@ class ConfigKeySchema:
             raise ValueError(
                 f"{self.flat_key!r}: provided_by requires a conditional relevance "
                 "(an always-relevant key is never owned elsewhere)"
+            )
+        if self.provenance is not None and self.provenance not in PROVENANCE_SOURCES:
+            raise ValueError(
+                f"{self.flat_key!r}: unknown provenance {self.provenance!r} "
+                f"(vocabulary: {sorted(PROVENANCE_SOURCES)})"
+            )
+        if self.hidden and self.category is not Category.DERIVED:
+            raise ValueError(
+                f"{self.flat_key!r}: hidden requires a derivation-owned "
+                "(DERIVED) category — a knob must render"
             )
 
     def resolved_options(self) -> Optional[Tuple[str, ...]]:

@@ -47,18 +47,23 @@ ENTRIES = (
        empty_means="the target metric seeds at 0"),
     _E("pipeline_mode", section="top", group="run", owner="deployment_derivation",
        type=T.ENUM, options=("vanilla", "phased"), category=Category.DERIVED,
-       derivation="derived", exposure="derived", label="Pipeline Mode", important=True,
+       derivation="derived", exposure="derived", label="Pipeline Mode",
        doc="Assembly mode: phased enables the quantization/adaptation step chain; "
-           "vanilla is the float-weight assembly.",
+           "vanilla is the float-weight assembly. Derivation-owned and hidden "
+           "from every UI surface; 'vanilla' stays declarable config data "
+           "(the float-weight mechanism).",
        effect="Phased enables weight/activation quantization steps",
        derived_from=("weight_quantization", "activation_quantization"),
-       why=_why_pipeline_mode, declarable=True),
+       why=_why_pipeline_mode, declarable=True, hidden=True,
+       provenance="derivation rule"),
     _E("generate_visualizations", group="run", owner="visualization",
        type=T.BOOL, category=Category.ADVANCED, label="Generate Visualizations",
        doc="Write Graphviz/matplotlib artifact renderings during the run."),
     _E("num_workers", group="workload", owner="DataLoaderFactory",
        type=T.INT, category=Category.ADVANCED, label="DataLoader Workers",
-       doc="torch DataLoader worker process count.", bounds=(0, None)),
+       doc="torch DataLoader worker process count.", bounds=(0, None),
+       provenance="consumer frozen default",
+       empty_means="the DataLoaderFactory frozen worker count (4)"),
     # Runtime-resolved keys: never declared in a config document; schema-known
     # so run views can label them instead of dropping them.
     _E("device", section="top", group="run", owner="DeploymentPipeline/select_device",

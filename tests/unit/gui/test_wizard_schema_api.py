@@ -249,6 +249,71 @@ class TestResolvedValuesServed:
         assert body["resolved"] == {}
 
 
+class TestWeightSourceIsBuilderProvided:
+    """Round-5 item 4: ONE pretrained-weight-source concept. Turning on the
+    regime resolves the source from the model builder's registration (green
+    derived in the wizard); a builder that registers nothing fails LOUD, the
+    same way the pipeline's DeploymentPlan does."""
+
+    def test_regime_resolves_the_builder_registered_source(self, client, monkeypatch):
+        from mimarsinan.common.workload_profile import ModelWorkloadProfile
+        from mimarsinan.pipelining.core.registry.model_registry import ModelRegistry
+
+        monkeypatch.setattr(
+            ModelRegistry, "get_workload_profile",
+            classmethod(lambda cls, model_id: ModelWorkloadProfile(
+                pretrained_weight_source="torchvision",
+            )),
+        )
+        draft = client.get("/api/config/starter").json()
+        draft["deployment_parameters"]["preload_weights"] = True
+        body = client.post("/api/config/resolve", json=draft).json()
+        assert body["errors"] == []
+        assert body["resolved"]["weight_source"] == "torchvision"
+        assert body["derived"]["weight_source"]["value"] == "torchvision"
+
+    def test_regime_without_a_registration_is_a_keyed_error(self, client, monkeypatch):
+        from mimarsinan.pipelining.core.registry.model_registry import ModelRegistry
+
+        monkeypatch.setattr(
+            ModelRegistry, "get_workload_profile",
+            classmethod(lambda cls, model_id: None),
+        )
+        draft = client.get("/api/config/starter").json()
+        draft["deployment_parameters"]["preload_weights"] = True
+        body = client.post("/api/config/resolve", json=draft).json()
+        errors = [e for e in body["errors"] if e["key"] == "weight_source"]
+        assert len(errors) == 1
+        assert errors[0]["rule_id"] == "weight_source_regime"
+        assert "registers no pretrained weight source" in errors[0]["message"]
+        # No hypothetical source value is served while the draft errors.
+        assert body["resolved"] == {}
+
+    def test_explicit_source_wins_over_the_registration(self, client, monkeypatch):
+        from mimarsinan.common.workload_profile import ModelWorkloadProfile
+        from mimarsinan.pipelining.core.registry.model_registry import ModelRegistry
+
+        monkeypatch.setattr(
+            ModelRegistry, "get_workload_profile",
+            classmethod(lambda cls, model_id: ModelWorkloadProfile(
+                pretrained_weight_source="torchvision",
+            )),
+        )
+        draft = client.get("/api/config/starter").json()
+        draft["deployment_parameters"]["preload_weights"] = True
+        draft["deployment_parameters"]["weight_source"] = "/ckpt/best.pt"
+        body = client.post("/api/config/resolve", json=draft).json()
+        assert body["errors"] == []
+        assert body["resolved"]["weight_source"] == "/ckpt/best.pt"
+
+    def test_no_regime_no_source(self, client):
+        draft = client.get("/api/config/starter").json()
+        body = client.post("/api/config/resolve", json=draft).json()
+        assert body["errors"] == []
+        assert body["derived"]["weight_source"]["value"] is None
+        assert "scratch" in body["derived"]["weight_source"]["why"]
+
+
 class TestBaselineIsTheDiffBaseline:
     """Round-4 defect 7: 'differs from defaults' means differs from the
     STARTER baseline document (the wizard's data-layer default); framework

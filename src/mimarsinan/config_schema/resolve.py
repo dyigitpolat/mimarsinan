@@ -69,7 +69,13 @@ def _contract_errors(
     return []
 
 
-def _derived_view(resolved: Mapping[str, Any]) -> Dict[str, Dict[str, Any]]:
+def derived_view(resolved: Mapping[str, Any]) -> Dict[str, Dict[str, Any]]:
+    """Every DERIVED key's value + WHY (+ meta) against a resolved flat config.
+
+    Public so a caller holding an ENRICHED resolved view (e.g. the wizard,
+    which folds the model builder's registrations in) re-derives the rows
+    against the values the run would actually see.
+    """
     derived: Dict[str, Dict[str, Any]] = {}
     for flat_key, entry in REGISTRY.items():
         if entry.category is not Category.DERIVED:
@@ -139,7 +145,7 @@ def resolve_draft(draft: Mapping[str, Any]) -> Resolution:
     else:
         for key, value in parsed.top.items():
             resolved.setdefault(key, value)
-        derived = _derived_view(resolved)
+        derived = derived_view(resolved)
 
     explicit = parsed.known_flat_keys()
     return Resolution(

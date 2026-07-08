@@ -14,6 +14,22 @@ _SEARCH_ACTIVE = R.any_of(
     R.when("hw_config_mode", in_=("search",)),
 )
 
+# The pretrained-weight regime is active while the regime flag is on OR a
+# document pins an explicit source (the config-data escape).
+_PRETRAINED_REGIME = R.any_of(
+    R.when_true("preload_weights"),
+    R.when_set("weight_source"),
+)
+
+
+def _why_weight_source(cfg: dict) -> str:
+    if cfg.get("weight_source"):
+        return f"explicit declaration ({cfg.get('weight_source')!r}) — wins over the registration"
+    if cfg.get("preload_weights"):
+        return ("resolves to the builder-registered pretrained source "
+                "(ModelWorkloadProfile); no registration fails loud")
+    return "none — from-scratch pretraining"
+
 ENTRIES = (
     _E("model_config_mode", group="model", owner="deployment_specs/search_mode",
        type=T.ENUM, options=("user", "search"), category=Category.BASIC, exposure="user",
@@ -48,13 +64,22 @@ ENTRIES = (
        type=T.JSON, category=Category.BASIC, exposure="user", label="Preprocessing",
        doc="Input preprocessing spec: resize_to, normalize (imagenet/cifar/...), interpolation."),
     _E("weight_source", group="training", owner="weight_preloading",
-       type=T.STR, category=Category.BASIC, exposure="user", label="Weight Source",
-       doc="Pretrained weight source id/path; presence selects the fine-tune path "
-           "(finetune_epochs/finetune_lr) instead of from-scratch pretraining.",
-       empty_means="train from scratch (the pretraining path)"),
+       type=T.STR, category=Category.DERIVED, derivation="derived",
+       exposure="user", label="Weight Source",
+       doc="THE pretrained-weight-source concept (one key, round-5 dedupe). "
+           "Builder-registration-provided: preload_weights=true resolves it to "
+           "the builder's ModelWorkloadProfile registration (no registration "
+           "fails loud). A document may still pin an id/path/URL explicitly "
+           "(config-data escape) — explicit wins; presence selects the "
+           "fine-tune path instead of from-scratch pretraining.",
+       derived_from=("preload_weights", "model_type"),
+       why=_why_weight_source, declarable=True, provenance="builder profile",
+       empty_means="preload on: the builder's registered source; off: train from scratch"),
     _E("preload_weights", group="training", owner="weight_preloading",
-       type=T.BOOL, category=Category.ADVANCED, label="Preload Weights",
-       doc="Load cached weights when available instead of pretraining."),
+       type=T.BOOL, category=Category.BASIC, exposure="user", label="Preload Weights",
+       doc="Use pretrained weights: the weight source resolves from the model "
+           "builder's registration and the fine-tune path replaces from-scratch "
+           "pretraining."),
     _E("spike_encoding_seed", group="workload", owner="spike_generation",
        type=T.INT, category=Category.ADVANCED, label="Spike Encoding Seed",
        doc="Seed for stochastic spike-train encoding; null follows the run seed.",
@@ -75,13 +100,13 @@ ENTRIES = (
     _E("finetune_epochs", group="training", owner="weight_preloading",
        type=T.INT, category=Category.ADVANCED, exposure="user", label="Fine-tune Epochs",
        doc="Epochs of fine-tuning after preloading pretrained weights.",
-       unit="epochs", bounds=(0, None), relevant=R.when_set("weight_source"),
-       promote_when=R.when_set("weight_source")),
+       unit="epochs", bounds=(0, None), relevant=_PRETRAINED_REGIME,
+       promote_when=_PRETRAINED_REGIME),
     _E("finetune_lr", group="training", owner="weight_preloading",
        type=T.FLOAT, category=Category.ADVANCED, exposure="user", label="Fine-tune LR",
        doc="Learning rate for the fine-tune path (defaults to lr when absent).",
-       bounds=(0.0, 1.0), relevant=R.when_set("weight_source"),
-       promote_when=R.when_set("weight_source"),
+       bounds=(0.0, 1.0), relevant=_PRETRAINED_REGIME,
+       promote_when=_PRETRAINED_REGIME,
        empty_means="falls back to the base learning rate (lr)"),
     _E("batch_size", group="training", owner="DataLoaderFactory",
        type=T.INT, category=Category.BASIC, exposure="user", label="Batch Size",
@@ -108,27 +133,35 @@ ENTRIES = (
        provided_by="training"),
     _E("kd_ce_alpha", group="training", owner="training_loop/distillation",
        type=T.FLOAT, category=Category.ADVANCED, label="KD CE Alpha",
-       doc="Cross-entropy weight in the knowledge-distillation blend loss.",
-       bounds=(0.0, 1.0)),
+       doc="Cross-entropy weight in the knowledge-distillation blend loss "
+           "(the mode recipe may override the schema default).",
+       bounds=(0.0, 1.0), provenance="ConversionPolicy recipe"),
     _E("kd_temperature", group="training", owner="training_loop/distillation",
        type=T.FLOAT, category=Category.ADVANCED, label="KD Temperature",
-       doc="Softmax temperature for distillation targets.", bounds=(0.0, None)),
+       doc="Softmax temperature for distillation targets (the mode recipe "
+           "may override the schema default).", bounds=(0.0, None),
+       provenance="ConversionPolicy recipe"),
     _E("input_data_scale", group="workload", owner="workload_profile/spike_encoding",
        type=T.FLOAT, category=Category.ADVANCED, label="Input Data Scale",
        doc="Deployed input-boundary scale (post-transform upper value bound). "
            "Providers register it via DataWorkloadProfile.input_value_range; "
            "explicit value wins; absent = 1.0 (unit-range data).",
-       bounds=(0.0, None),
+       bounds=(0.0, None), provenance="provider registration",
        empty_means="the provider's registered range, else 1.0 (unit-range data)"),
     _E("pretrained_weight_source", group="training",
        owner="workload_profile/weight_preloading",
-       type=T.STR, category=Category.ADVANCED, label="Pretrained Weight Source",
-       doc="Weight source the preload_weights regime resolves to. Builders "
-           "register it via ModelWorkloadProfile; explicit value wins.",
-       empty_means="the builder's registered source (if any)"),
+       type=T.STR, category=Category.DERIVED, derivation="derived",
+       exposure="derived", label="Pretrained Weight Source (registration)",
+       doc="The builder ModelWorkloadProfile registration the preload_weights "
+           "regime resolves to — an injection contract, never authorable "
+           "(round-5 dedupe: weight_source is the one declarable concept).",
+       derived_from=("model_type",),
+       why=lambda cfg: "the model builder's ModelWorkloadProfile registration",
+       declarable=False, hidden=True, provenance="builder profile"),
     _E("clamp_cuda_assert_prone", group="model", owner="workload_profile/deployment_specs",
        type=T.BOOL, category=Category.ADVANCED, label="Clamp CUDA-assert Prone",
        doc="Architecture is known to trip CUDA asserts under clamp adaptation "
            "(warns to enable cuda_debug). Builders register it via "
-           "ModelWorkloadProfile; explicit value wins."),
+           "ModelWorkloadProfile; explicit value wins.",
+       provenance="builder profile"),
 )

@@ -26,13 +26,6 @@ def _why_weight_quantization(cfg: dict) -> str:
     return "off — float-weight deployment (vanilla mechanism)"
 
 
-def _why_ttfs_firing(cfg: dict) -> str:
-    mode = cfg.get("spiking_mode")
-    if str(mode).startswith("ttfs"):
-        return f"TTFS — required by spiking_mode={mode!r}"
-    return f"rate-mode default for spiking_mode={mode!r}"
-
-
 ENTRIES = (
     _E("spiking_mode", group="spiking", owner="SpikingDeploymentContract",
        type=T.ENUM, options=SPIKING_MODES, category=Category.BASIC, exposure="user",
@@ -46,24 +39,29 @@ ENTRIES = (
            "S-windowed schedule (more cycles, SANA-FE only).",
        relevant=R.when("spiking_mode", in_=("ttfs_cycle_based",))),
     _E("firing_mode", group="spiking", owner="DeploymentPipeline", type=T.ENUM,
-       options=("Default", "Novena", "TTFS"), category=Category.DERIVED,
-       derivation="derived", exposure="derived", label="Firing Mode",
+       options=("Default", "Novena", "TTFS"), category=Category.ADVANCED,
+       exposure="user", label="Firing Mode",
        doc="Neuron firing semantics: Default (subtractive reset), Novena (zero reset), "
-           "or TTFS. Derived from spiking_mode; a consistent explicit value is accepted.",
-       derived_from=("spiking_mode",), why=_why_ttfs_firing, declarable=True),
+           "or TTFS. Unset derives from spiking_mode; an explicit value wins "
+           "(TTFS modes require 'TTFS' — a contradiction is rejected loudly).",
+       provenance="derivation rule",
+       empty_means="derived from spiking_mode (TTFS modes force 'TTFS')"),
     _E("spike_generation_mode", group="spiking", owner="DeploymentPipeline", type=T.ENUM,
        options=("Uniform", "Deterministic", "Stochastic", "TTFS"),
-       category=Category.DERIVED, derivation="derived", exposure="derived",
+       category=Category.ADVANCED, exposure="user",
        label="Spike Generation Mode",
-       doc="Input spike-train encoding. Derived from spiking_mode; a consistent "
-           "explicit value is accepted.",
-       derived_from=("spiking_mode",), why=_why_ttfs_firing, declarable=True),
+       doc="Input spike-train encoding. Unset derives from spiking_mode; an "
+           "explicit value wins (TTFS modes require 'TTFS' — a contradiction "
+           "is rejected loudly).",
+       provenance="derivation rule",
+       empty_means="derived from spiking_mode (TTFS modes force 'TTFS')"),
     _E("thresholding_mode", group="spiking", owner="DeploymentPipeline", type=T.ENUM,
-       options=("<", "<="), category=Category.DERIVED, derivation="derived",
-       exposure="derived", label="Thresholding Mode",
-       doc="Membrane-threshold comparison (strict or inclusive). Derived from "
-           "spiking_mode; a consistent explicit value is accepted.",
-       derived_from=("spiking_mode",), why=_why_ttfs_firing, declarable=True),
+       options=("<", "<="), category=Category.ADVANCED, exposure="user",
+       label="Thresholding Mode",
+       doc="Membrane-threshold comparison (strict or inclusive). Unset derives "
+           "from spiking_mode; an explicit value wins.",
+       provenance="derivation rule",
+       empty_means="derived from spiking_mode ('<=')"),
     _E("encoding_layer_placement", group="mapping_strategy", owner="mapping/encoding_layer",
        type=T.ENUM, options=("subsume", "offload"), category=Category.BASIC,
        exposure="user", label="Encoding Layer Placement",
@@ -72,27 +70,21 @@ ENTRIES = (
            "(functionally identical, larger hardware-accelerated surface). "
            "An explicit choice — no schema default; configs pin a value as data.",
        empty_means="no default — choose subsume or offload (the starter pins subsume)"),
-    _E("negative_value_shift", group="spiking", owner="bias_compensation",
-       type=T.BOOL, category=Category.DERIVED, derivation="derived",
-       exposure="derived", label="Negative-value Shift",
-       effect="Boundary-lossless requirement: negative ComputeOp boundaries "
-              "shift into the encodable domain",
-       doc="Always on — a correctness mechanism, never a knob. A negative "
-           "ComputeOp output feeding a neural segment would be SILENTLY "
-           "corrupted by the [0,1] spike-encode clamp (no subsume-forward "
-           "path exists); instead, a calibrated positive shift moves the "
-           "boundary into the encodable domain and the consuming perceptron's "
-           "bias is pre-corrected (B − W·s), so the next neural activation "
-           "absorbs the shift exactly. Topologies with no absorbing "
-           "perceptron (ComputeOp→ComputeOp) fail loud at mapping; residual "
-           "negatives beyond the calibration set's coverage warn.",
-       derived_from=("spiking_mode",),
-       why=lambda cfg: (
-           "on — boundary-lossless requirement: negative ComputeOp→neural "
-           "boundaries shift into the encodable domain (consumer bias "
-           "pre-corrected); unshiftable topologies fail loud"
-       ),
-       declarable=False),
+    _E("negative_value_shift", group="mapping_strategy", owner="bias_compensation",
+       type=T.BOOL, category=Category.BASIC, exposure="user",
+       label="Negative-value Shift",
+       effect="How a negative ComputeOp→neural boundary stays lossless: "
+              "calibrated shift (on) or subsume-forward host mapping (off)",
+       doc="Both positions are numerically sound; silent [0,1] clamp "
+           "corruption is not authorable. ON (default): a calibrated positive "
+           "shift moves the boundary into the encodable domain and the "
+           "consuming perceptron's bias is pre-corrected (B − W·s) — mapping "
+           "structure unchanged; topologies with no absorbing perceptron "
+           "(ComputeOp→ComputeOp) fail loud. OFF: the mapper subsumes the "
+           "consuming perceptrons forward onto the host until a non-negative-"
+           "value-generating activation (e.g. ReLU) absorbs the signed range "
+           "— exact value-domain math, a larger host surface; a graph left "
+           "with no on-chip segment fails loud."),
     _E("cycle_accurate_lif_forward", group="spiking", owner="lif_adaptation",
        type=T.BOOL, category=Category.DERIVED, derivation="derived",
        exposure="derived", label="Cycle-accurate LIF Forward",
@@ -108,7 +100,7 @@ ENTRIES = (
            if cfg.get("spiking_mode") == "lif"
            else f"inert — no LIF adaptation for spiking_mode={cfg.get('spiking_mode')!r}"
        ),
-       declarable=False),
+       declarable=False, provenance="ConversionPolicy recipe"),
     _E("activation_quantization", group="conversion",
        owner="deployment_derivation/activation_analysis", type=T.BOOL,
        category=Category.DERIVED, derivation="derived", exposure="derived",
@@ -118,7 +110,8 @@ ENTRIES = (
            "ttfs_cycle_based, OFF for analytical ttfs and float-weight deployments. "
            "Never pin it in a config; derivation owns it.",
        derived_from=("spiking_mode", "weight_quantization", "pipeline_mode"),
-       why=_why_activation_quantization, declarable=False),
+       why=_why_activation_quantization, declarable=False,
+       provenance="derivation rule"),
     _E("weight_quantization", group="conversion",
        owner="deployment_derivation/weight_quantization", type=T.BOOL,
        category=Category.DERIVED, derivation="derived", exposure="user",
@@ -127,7 +120,8 @@ ENTRIES = (
        doc="Bits-driven: weight_bits declares a quantized artifact; declare float "
            "weights via pipeline_mode='vanilla' or weight_quantization=false.",
        derived_from=("weight_bits", "pipeline_mode"),
-       why=_why_weight_quantization, declarable=True),
+       why=_why_weight_quantization, declarable=True,
+       provenance="derivation rule"),
     _E("pruning", group="mapping_strategy", owner="pruning_adaptation",
        type=T.BOOL, category=Category.BASIC, exposure="user", label="Pruning Enabled",
        effect="Adds the Pruning Adaptation step",
@@ -144,11 +138,14 @@ ENTRIES = (
        bounds=(0.0, 1.0), relevant=R.when_true("pruning")),
     _E("activation_scale_quantile", group="tuning", owner="activation_analysis",
        type=T.FLOAT, category=Category.ADVANCED, label="Activation Scale Quantile",
-       doc="Quantile of observed activations used as the per-layer scale.",
-       bounds=(0.0, 1.0)),
+       doc="Quantile of observed activations used as the per-layer scale "
+           "(the mode recipe may override the schema default).",
+       bounds=(0.0, 1.0), provenance="ConversionPolicy recipe"),
     _E("activation_analysis_batch_size", group="tuning", owner="activation_analysis",
        type=T.INT, category=Category.ADVANCED, label="Activation Analysis Batch Size",
-       doc="Batch size for the activation-statistics capture pass.", bounds=(1, None)),
+       doc="Batch size for the activation-statistics capture pass.", bounds=(1, None),
+       provenance="consumer frozen default",
+       empty_means="min(validation batch size, the analysis step's frozen cap 16)"),
     _E("ttfs_genuine_blend_ce_alpha", group="tuning", owner="ttfs_adaptation",
        type=T.FLOAT, category=Category.ADVANCED, label="TTFS Blend CE Alpha",
        doc="CE weight in the genuine-forward blend loss of TTFS adaptation.",
@@ -198,35 +195,42 @@ ENTRIES = (
     _E("pretrain_floor_chance_multiple", group="tuning", owner="engine/pretrain_envelope",
        type=T.FLOAT, category=Category.ADVANCED, label="Pretrain Floor Chance Multiple",
        doc="First seeded metric must exceed this multiple of chance level "
-           "(classification); 0 disables the envelope.", bounds=(0.0, None)),
+           "(classification); 0 disables the envelope.", bounds=(0.0, None),
+       provenance="consumer frozen default",
+       empty_means="the pretrain envelope's frozen multiple 5.0"),
     _E("endpoint_floor_steps", group="tuning", owner="endpoint_recovery/steps_ledger",
        type=T.INT, category=Category.ADVANCED, unit="steps", label="Endpoint Floor Steps",
        doc="Per-cell RUN-total training-step budget for armed 5u endpoint-floor "
            "stages (one ledger shared by every armed endpoint; steps, never wall "
            "seconds — the reproducibility contract).", bounds=(0, None),
-       empty_means="the ConversionPolicy recipe budget for the mode"),
+       provenance="TUNING_POLICY",
+       empty_means="the frozen TUNING_POLICY run-total budget (16000 steps)"),
     _E("endpoint_target_floor", group="tuning", owner="endpoint_recovery",
        type=T.FLOAT, category=Category.ADVANCED, label="Endpoint Target Floor",
        doc="Every-endpoint D-hat target floor (bit-parity-lossless family); the "
            "ConversionPolicy recipe may set it per mode.", bounds=(0.0, 1.0),
+       provenance="ConversionPolicy recipe",
        empty_means="the ConversionPolicy recipe floor for the mode"),
     _E("wq_endpoint_recovery_steps", group="tuning", owner="wq_endpoint_recovery",
        type=T.INT, category=Category.ADVANCED, unit="steps",
        label="WQ Endpoint Recovery Steps",
        doc="Per-cell cap on the WQ endpoint recovery stage (recipe default stays "
            "for families that pass by the floor climb).", bounds=(0, None),
+       provenance="ConversionPolicy recipe",
        empty_means="the ConversionPolicy recipe cap for the mode"),
     _E("conversion_draws", group="tuning", owner="conversion_draws",
        type=T.INT, category=Category.ADVANCED, label="Conversion Draws",
        doc="[MBH-DRAWS] best-of-N draws on variance-carrying conversion stages "
            "(1 = single-draw, bit-identical); draw k seeds torch at seed+k.",
-       bounds=(1, None), empty_means="1 (single-draw, bit-identical)"),
+       bounds=(1, None), provenance="consumer frozen default",
+       empty_means="1 (single-draw, bit-identical)"),
     _E("eval_subsample_target", group="tuning", owner="workload_profile/tuning_budget",
        type=T.INT, category=Category.ADVANCED, unit="samples",
        label="Eval Subsample Target",
        doc="Target evaluation-subset size for tuner accuracy reads. Providers "
            "register it via DataWorkloadProfile; explicit value wins; absent = "
            "the frozen generic 5000.", bounds=(1, None),
+       provenance="provider registration",
        empty_means="the provider's registration, else the frozen generic 5000"),
     _E("tuning_step_cap_epochs", group="tuning", owner="workload_profile/tuning_budget",
        type=T.FLOAT, category=Category.ADVANCED, unit="epochs",
@@ -234,6 +238,7 @@ ENTRIES = (
        doc="Cap on per-tuner training steps expressed in dataset epochs. "
            "Providers register it via DataWorkloadProfile; explicit value wins; "
            "absent = the frozen 4000-step cap.", bounds=(0.0, None),
+       provenance="provider registration",
        empty_means="the provider's registration, else the frozen 4000-step cap"),
     _E("calibration_set_policy", group="tuning", owner="workload_profile/calibration",
        type=T.JSON, category=Category.ADVANCED, label="Calibration Set Policy",
@@ -242,18 +247,21 @@ ENTRIES = (
            "analysis_batches_max, analysis_batch_size_cap). Field-wise merge: "
            "explicit fields win over provider registrations; absent fields use "
            "the consumers' frozen defaults.",
+       provenance="provider registration",
        empty_means="provider registrations, else the consumers' frozen defaults"),
     _E("prefix_stage_lr", group="tuning", owner="workload_profile/tuning_policy",
        type=T.FLOAT, category=Category.ADVANCED, label="Prefix Stage LR Ceiling",
        doc="P4 prefix-stage LR ceiling. Builders register it via "
            "ModelWorkloadProfile; explicit value wins; absent = the frozen "
            "TUNING_POLICY value.", bounds=(0.0, None),
+       provenance="builder profile",
        empty_means="the builder's registration, else the frozen TUNING_POLICY ceiling"),
     _E("endpoint_floor_lr", group="tuning", owner="workload_profile/tuning_policy",
        type=T.FLOAT, category=Category.ADVANCED, label="Endpoint Floor LR",
        doc="Floor-chasing endpoint LR ceiling. Builders register it via "
            "ModelWorkloadProfile; explicit value wins; absent = the frozen "
            "TUNING_POLICY value.", bounds=(0.0, None),
+       provenance="builder profile",
        empty_means="the builder's registration, else the frozen TUNING_POLICY value"),
     _E("proven_recovery_depth", group="tuning", owner="workload_profile/install_resolution",
        type=T.INT, category=Category.ADVANCED, unit="layers",
@@ -262,5 +270,6 @@ ENTRIES = (
            "recovery behavior. Builders register it via ModelWorkloadProfile; "
            "explicit value wins; absent = the corpus-calibrated 6.",
        bounds=(1, None),
+       provenance="builder profile",
        empty_means="the builder's registration, else the corpus-calibrated 6"),
 )

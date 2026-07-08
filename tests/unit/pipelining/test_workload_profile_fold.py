@@ -1,12 +1,17 @@
 """The registry hooks and pipeline fold of workload profiles (plan.workload)."""
 
+import pytest
+
 from mimarsinan.common.workload_profile import (
     DataWorkloadProfile,
     ModelWorkloadProfile,
     ResolvedWorkloadProfile,
 )
 from mimarsinan.data_handling.data_provider import DataProvider
-from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
+from mimarsinan.pipelining.core.deployment_plan import (
+    DeploymentPlan,
+    resolve_weight_source,
+)
 from mimarsinan.pipelining.core.pipelines.deployment_pipeline import (
     apply_workload_profiles,
 )
@@ -122,7 +127,30 @@ class TestPreloadRegimeResolution:
         assert plan.weight_source == "torchvision"
 
     def test_preload_without_a_registered_source_fails_loud(self):
-        import pytest
-
         with pytest.raises(ValueError, match="pretrained_weight_source"):
             DeploymentPlan.resolve({"preload_weights": True})
+
+
+class TestWeightSourceResolution:
+    """Round-5 item 4: ONE resolution of the pretrained-weight-source concept,
+    shared by the DeploymentPlan and the wizard's derived view — explicit
+    declaration > builder registration > from-scratch."""
+
+    def test_explicit_declaration_wins(self):
+        assert resolve_weight_source(
+            {"weight_source": "/ckpt.pt", "preload_weights": True,
+             "pretrained_weight_source": "torchvision"},
+        ) == "/ckpt.pt"
+
+    def test_regime_resolves_the_builder_registration(self):
+        assert resolve_weight_source(
+            {"preload_weights": True, "pretrained_weight_source": "torchvision"},
+        ) == "torchvision"
+
+    def test_no_regime_means_from_scratch(self):
+        assert resolve_weight_source({"pretrained_weight_source": "torchvision"}) is None
+        assert resolve_weight_source({}) is None
+
+    def test_regime_without_a_registration_fails_loud(self):
+        with pytest.raises(ValueError, match="registers no pretrained weight source"):
+            resolve_weight_source({"preload_weights": True})

@@ -51,6 +51,8 @@ DEFAULT_DEPLOYMENT_PARAMETERS: Dict[str, object] = {
     # (the LIF recipe folds it ON; the runtime derivation writes it) — a
     # correctness mechanism, never a knob.
     "spiking_mode": "lif",
+    # Negative-boundary policy: ON = calibrated shift; OFF = subsume-forward.
+    "negative_value_shift": True,
     "allow_scheduling": False,
     "nevresim_connectivity_mode": "runtime",
     "enable_training_noise": False,
@@ -183,9 +185,8 @@ CONFIG_KEYS_SET: Set[str] = {
     "endpoint_target_floor",
     # torch DataLoader worker count; read via config.get with a fallback of 4.
     "num_workers",
-    # Workload-profile-injectable keys (common/workload_profile.py): absence is
-    # meaningful (explicit config > model registration > data registration >
-    # frozen workload-neutral default), so they never get schema defaults here.
+    # Workload-profile-injectable keys (common/workload_profile.py): absence
+    # is meaningful, so they never get schema defaults here.
     "input_data_scale", "eval_subsample_target", "tuning_step_cap_epochs",
     "calibration_set_policy", "prefix_stage_lr", "endpoint_floor_lr",
     "pretrained_weight_source", "proven_recovery_depth", "clamp_cuda_assert_prone",

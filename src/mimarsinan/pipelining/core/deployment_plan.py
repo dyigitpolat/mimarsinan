@@ -20,6 +20,25 @@ from mimarsinan.tuning.orchestration.temporal_allocation import (
     resolve_s_allocation_mode,
 )
 
+def resolve_weight_source(config: dict[str, Any]) -> Any:
+    """THE weight-source resolution: explicit ``weight_source`` > the builder's
+    ``pretrained_weight_source`` registration under ``preload_weights`` > None."""
+    explicit = config.get("weight_source")
+    if explicit:
+        return explicit
+    if bool(config.get("preload_weights", False)):
+        registered = config.get("pretrained_weight_source")
+        if registered is None:
+            raise ValueError(
+                "preload_weights=true but the model builder registers no "
+                "pretrained weight source "
+                "(ModelWorkloadProfile.pretrained_weight_source). Declare "
+                "weight_source explicitly, or turn the preload regime off."
+            )
+        return str(registered)
+    return explicit
+
+
 OPTIMIZATION_DRIVER_CONTROLLER = "controller"
 OPTIMIZATION_DRIVER_FAST = "fast"
 
@@ -42,24 +61,6 @@ def resolve_optimization_driver(config: dict[str, Any]) -> str:
     if any(bool(config.get(switch, False)) for switch in _LEGACY_FAST_SWITCHES):
         return OPTIMIZATION_DRIVER_FAST
     return OPTIMIZATION_DRIVER_CONTROLLER
-
-
-def _resolve_weight_source(config: dict[str, Any], workload: ResolvedWorkloadProfile) -> Any:
-    """``weight_source`` with the F3 ``preload_weights`` regime flag folded in:
-    the regime resolves to the builder-registered ``pretrained_weight_source``
-    (fail-loud when nothing is registered)."""
-    explicit = config.get("weight_source")
-    if explicit:
-        return explicit
-    if bool(config.get("preload_weights", False)):
-        if workload.pretrained_weight_source is None:
-            raise ValueError(
-                "preload_weights=true but no weight_source is set and the model "
-                "builder registers no pretrained_weight_source "
-                "(ModelWorkloadProfile). Declare weight_source explicitly."
-            )
-        return workload.pretrained_weight_source
-    return explicit
 
 
 @dataclass(frozen=True)
@@ -134,7 +135,7 @@ class DeploymentPlan:
             search_mode=derive_search_mode(config),
             model_type=model_type,
             model_category=ModelRegistry.get_category(model_type),
-            weight_source=_resolve_weight_source(config, workload),
+            weight_source=resolve_weight_source(config),
             spiking_mode=spiking,
             ttfs_cycle_schedule=ttfs_cycle_schedule(schedule_raw),
             requires_ttfs_firing=requires_ttfs_firing(spiking),

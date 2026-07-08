@@ -40,20 +40,22 @@ from mimarsinan.config_schema.deployment_derivation import derive_deployment_par
 # the conversion trio + pipeline-init spiking keys (DeploymentPipeline), the
 # ConversionPolicy-owned simulator enables (recipe folding overwrites any
 # value), and the cores-derived platform maxima.
+# Round-5: firing/spike-gen/thresholding became declarable knobs with a
+# derivation-supplied default (honest fold), and negative_value_shift became a
+# mapping-strategy knob; the weight-source concept joined the derived set
+# (builder-registration-provided, item 4).
 DERIVED_NON_DEFAULT_KEYS = {
     "pipeline_mode",
     "cycle_accurate_lif_forward",
-    "negative_value_shift",
     "activation_quantization",
     "weight_quantization",
-    "firing_mode",
-    "spike_generation_mode",
-    "thresholding_mode",
     "enable_nevresim_simulation",
     "enable_loihi_simulation",
     "enable_sanafe_simulation",
     "max_axons",
     "max_neurons",
+    "weight_source",
+    "pretrained_weight_source",
 }
 RUNTIME_KEYS = {"device", "input_shape", "input_size", "num_classes"}
 
@@ -153,10 +155,16 @@ class TestDerivationTagging:
         assert {"pipeline_mode", "activation_quantization",
                 "weight_quantization"} <= keys_with_derivation("derived")
 
-    def test_pipeline_init_derived_keys_are_spiking_semantics(self):
+    def test_pipeline_init_spiking_keys_are_honest_fold_knobs(self):
+        """Round-5 item 2: the pipeline-init spiking keys are declarable knobs
+        whose DEFAULT the derivation supplies (green derived in the UI,
+        explicit wins) — no longer derivation-owned values."""
+        from mimarsinan.config_schema.registry import REGISTRY
+
         for key in ("firing_mode", "spike_generation_mode", "thresholding_mode"):
-            assert KEY_SPECS[key].derivation == "derived", key
+            assert KEY_SPECS[key].derivation == "default", key
             assert KEY_SPECS[key].group == "spiking", key
+            assert REGISTRY[key].provenance == "derivation rule", key
 
     def test_conversion_derived_keys_match_display_view_truth(self):
         from mimarsinan.config_schema.display_view_meta import DERIVED_KEYS
@@ -183,9 +191,7 @@ class TestExposureTaxonomy:
         assert {
             "activation_quantization",
             "pipeline_mode",
-            "firing_mode",
-            "spike_generation_mode",
-            "thresholding_mode",
+            "pretrained_weight_source",
         } <= keys_with_exposure("derived")
 
     def test_policy_owned_simulator_enables_are_derived_exposure(self):
