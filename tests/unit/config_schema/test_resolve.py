@@ -99,3 +99,90 @@ class TestResolveErrors:
         res = resolve_draft({"deployment_parameters": {"spiking_mode": "rate"}})
         assert not res.ok
         assert any(e["key"] == "spiking_mode" for e in res.errors)
+
+
+def _minimal_draft(**parts) -> dict:
+    draft = {
+        "experiment_name": "resolve_test",
+        "data_provider_name": "MNIST_DataProvider",
+        "generated_files_path": "./generated",
+        "start_step": None,
+        "deployment_parameters": {},
+        "platform_constraints": {},
+    }
+    draft.update(parts)
+    dp = draft["deployment_parameters"]
+    dp.setdefault("model_type", "simple_mlp")
+    dp.setdefault("model_config", {})
+    return draft
+
+
+class TestPolicyOwnedSimulatorEnables:
+    """The sim enables are ConversionPolicy-derived per mode; the resolve
+    payload must carry them as derived chips with an honest WHY."""
+
+    def _derived_for(self, mode, schedule=None):
+        dp = {"spiking_mode": mode}
+        if schedule:
+            dp["ttfs_cycle_schedule"] = schedule
+        res = resolve_draft(_minimal_draft(deployment_parameters=dp))
+        assert res.ok, res.errors
+        return res.derived
+
+    def test_lif_runs_all_three_backends(self):
+        derived = self._derived_for("lif")
+        assert derived["enable_nevresim_simulation"]["value"] is True
+        assert derived["enable_loihi_simulation"]["value"] is True
+        assert derived["enable_sanafe_simulation"]["value"] is True
+
+    def test_ttfs_disables_the_lif_only_loihi_backend(self):
+        derived = self._derived_for("ttfs")
+        assert derived["enable_loihi_simulation"]["value"] is False
+        assert "LIF" in derived["enable_loihi_simulation"]["why"]
+        assert derived["enable_nevresim_simulation"]["value"] is True
+
+    def test_synchronized_disables_nevresim(self):
+        derived = self._derived_for("ttfs_cycle_based", "synchronized")
+        assert derived["enable_nevresim_simulation"]["value"] is False
+        assert "synchronized" in derived["enable_nevresim_simulation"]["why"]
+        assert derived["enable_sanafe_simulation"]["value"] is True
+
+
+class TestDerivedCoreMaxima:
+    """max_axons/max_neurons derive from the core grid at resolve."""
+
+    _CORES = [
+        {"max_axons": 784, "max_neurons": 512, "count": 60},
+        {"max_axons": 512, "max_neurons": 256, "count": 60},
+    ]
+
+    def test_absent_scalars_are_derived_from_cores(self):
+        res = resolve_draft(_minimal_draft(
+            platform_constraints={"cores": self._CORES}))
+        assert res.ok, res.errors
+        assert res.resolved["max_axons"] == 784
+        assert res.resolved["max_neurons"] == 512
+        assert res.derived["max_axons"]["value"] == 784
+        assert res.derived["max_axons"]["why"]
+
+    def test_consistent_explicit_scalars_are_accepted(self):
+        res = resolve_draft(_minimal_draft(platform_constraints={
+            "cores": self._CORES, "max_axons": 784, "max_neurons": 512,
+        }))
+        assert res.ok, res.errors
+
+    def test_contradicting_scalar_is_a_keyed_error(self):
+        res = resolve_draft(_minimal_draft(platform_constraints={
+            "cores": self._CORES, "max_axons": 1024,
+        }))
+        assert not res.ok
+        assert any(e["key"] == "max_axons" for e in res.errors)
+
+    def test_scalar_only_documents_keep_their_scalars(self):
+        """The legacy / hardware-search shape declares scalar bounds without
+        a core grid; the derivation must not touch them."""
+        res = resolve_draft(_minimal_draft(platform_constraints={
+            "max_axons": 1024, "max_neurons": 1024,
+        }))
+        assert res.ok, res.errors
+        assert res.resolved["max_axons"] == 1024

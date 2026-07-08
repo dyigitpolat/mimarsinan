@@ -126,7 +126,9 @@ class TestBuildDeploymentConfigFromState:
         assert "enable_nevresim_simulation" not in out["deployment_parameters"]
         assert _resolved_flat(out)["enable_nevresim_simulation"] is True
 
-    def test_enable_nevresim_simulation_false_preserved(self):
+    def test_policy_owned_simulator_enables_are_never_emitted(self):
+        """The ConversionPolicy recipe overwrites any explicit sim enable, so
+        emission drops them — a pinned copy would shadow the derivation."""
         out = build_deployment_config_from_state({
             "data_provider_name": "MNIST_DataProvider",
             "experiment_name": "x",
@@ -138,7 +140,7 @@ class TestBuildDeploymentConfigFromState:
                 "enable_nevresim_simulation": False,
             },
         })
-        assert out["deployment_parameters"]["enable_nevresim_simulation"] is False
+        assert "enable_nevresim_simulation" not in out["deployment_parameters"]
         assert validate_wizard_state(out) == []
 
     def test_explicit_keys_survive_and_owned_derived_keys_do_not(self):

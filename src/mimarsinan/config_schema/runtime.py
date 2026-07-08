@@ -12,6 +12,7 @@ from mimarsinan.config_schema.defaults import (
 from mimarsinan.config_schema.deployment_derivation import (
     derive_deployment_parameters,
     derive_pipeline_runtime_parameters,
+    derive_platform_constraints,
 )
 
 
@@ -33,6 +34,9 @@ def build_flat_pipeline_config(
     pc = dict(get_default_platform_constraints())
     if platform_constraints:
         pc.update(platform_constraints)
+    derive_platform_constraints(
+        pc, cores_declared=bool(platform_constraints and "cores" in platform_constraints)
+    )
 
     config: Dict[str, object] = {}
     config.update(dp)

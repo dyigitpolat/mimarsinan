@@ -99,6 +99,19 @@ ENTRIES = (
            "weights via pipeline_mode='vanilla' or weight_quantization=false.",
        derived_from=("weight_bits", "pipeline_mode"),
        why=_why_weight_quantization, declarable=True),
+    _E("pruning", group="conversion", owner="pruning_adaptation",
+       type=T.BOOL, category=Category.BASIC, exposure="user", label="Pruning Enabled",
+       effect="Adds the Pruning Adaptation step",
+       doc="Enable magnitude pruning adaptation (a deployment-side conversion "
+           "step, not an architecture property)."),
+    _E("pruning_fraction", group="conversion", owner="pruning_adaptation",
+       type=T.FLOAT, category=Category.BASIC, exposure="user", label="Pruning Fraction",
+       doc="Fraction of weights pruned by the adaptation.", bounds=(0.0, 1.0),
+       relevant=R.when_true("pruning")),
+    _E("prune_sparsity", group="conversion", owner="pruning_adaptation",
+       type=T.FLOAT, category=Category.ADVANCED, label="Prune Sparsity",
+       doc="Legacy sparsity knob consumed by the pruning tuner mask builder.",
+       bounds=(0.0, 1.0), relevant=R.when_true("pruning")),
     _E("activation_scale_quantile", group="conversion", owner="activation_analysis",
        type=T.FLOAT, category=Category.ADVANCED, label="Activation Scale Quantile",
        doc="Quantile of observed activations used as the per-layer scale.",
@@ -160,55 +173,64 @@ ENTRIES = (
        type=T.INT, category=Category.ADVANCED, unit="steps", label="Endpoint Floor Steps",
        doc="Per-cell RUN-total training-step budget for armed 5u endpoint-floor "
            "stages (one ledger shared by every armed endpoint; steps, never wall "
-           "seconds — the reproducibility contract).", bounds=(0, None)),
+           "seconds — the reproducibility contract).", bounds=(0, None),
+       empty_means="the ConversionPolicy recipe budget for the mode"),
     _E("endpoint_target_floor", group="tuning", owner="endpoint_recovery",
        type=T.FLOAT, category=Category.ADVANCED, label="Endpoint Target Floor",
        doc="Every-endpoint D-hat target floor (bit-parity-lossless family); the "
-           "ConversionPolicy recipe may set it per mode.", bounds=(0.0, 1.0)),
+           "ConversionPolicy recipe may set it per mode.", bounds=(0.0, 1.0),
+       empty_means="the ConversionPolicy recipe floor for the mode"),
     _E("wq_endpoint_recovery_steps", group="tuning", owner="wq_endpoint_recovery",
        type=T.INT, category=Category.ADVANCED, unit="steps",
        label="WQ Endpoint Recovery Steps",
        doc="Per-cell cap on the WQ endpoint recovery stage (recipe default stays "
-           "for families that pass by the floor climb).", bounds=(0, None)),
+           "for families that pass by the floor climb).", bounds=(0, None),
+       empty_means="the ConversionPolicy recipe cap for the mode"),
     _E("conversion_draws", group="tuning", owner="conversion_draws",
        type=T.INT, category=Category.ADVANCED, label="Conversion Draws",
        doc="[MBH-DRAWS] best-of-N draws on variance-carrying conversion stages "
            "(1 = single-draw, bit-identical); draw k seeds torch at seed+k.",
-       bounds=(1, None)),
+       bounds=(1, None), empty_means="1 (single-draw, bit-identical)"),
     _E("eval_subsample_target", group="tuning", owner="workload_profile/tuning_budget",
        type=T.INT, category=Category.ADVANCED, unit="samples",
        label="Eval Subsample Target",
        doc="Target evaluation-subset size for tuner accuracy reads. Providers "
            "register it via DataWorkloadProfile; explicit value wins; absent = "
-           "the frozen generic 5000.", bounds=(1, None)),
+           "the frozen generic 5000.", bounds=(1, None),
+       empty_means="the provider's registration, else the frozen generic 5000"),
     _E("tuning_step_cap_epochs", group="tuning", owner="workload_profile/tuning_budget",
        type=T.FLOAT, category=Category.ADVANCED, unit="epochs",
        label="Tuning Step Cap (epochs)",
        doc="Cap on per-tuner training steps expressed in dataset epochs. "
            "Providers register it via DataWorkloadProfile; explicit value wins; "
-           "absent = the frozen 4000-step cap.", bounds=(0.0, None)),
+           "absent = the frozen 4000-step cap.", bounds=(0.0, None),
+       empty_means="the provider's registration, else the frozen 4000-step cap"),
     _E("calibration_set_policy", group="conversion", owner="workload_profile/calibration",
        type=T.JSON, category=Category.ADVANCED, label="Calibration Set Policy",
        doc="Calibration-set extents by purpose (distmatch_bias_iters, "
            "distmatch_cal_batches, gauge_batches, stat_batches, "
            "analysis_batches_max, analysis_batch_size_cap). Field-wise merge: "
            "explicit fields win over provider registrations; absent fields use "
-           "the consumers' frozen defaults."),
+           "the consumers' frozen defaults.",
+       empty_means="provider registrations, else the consumers' frozen defaults"),
     _E("prefix_stage_lr", group="tuning", owner="workload_profile/tuning_policy",
        type=T.FLOAT, category=Category.ADVANCED, label="Prefix Stage LR Ceiling",
        doc="P4 prefix-stage LR ceiling. Builders register it via "
            "ModelWorkloadProfile; explicit value wins; absent = the frozen "
-           "TUNING_POLICY value.", bounds=(0.0, None)),
+           "TUNING_POLICY value.", bounds=(0.0, None),
+       empty_means="the builder's registration, else the frozen TUNING_POLICY ceiling"),
     _E("endpoint_floor_lr", group="tuning", owner="workload_profile/tuning_policy",
        type=T.FLOAT, category=Category.ADVANCED, label="Endpoint Floor LR",
        doc="Floor-chasing endpoint LR ceiling. Builders register it via "
            "ModelWorkloadProfile; explicit value wins; absent = the frozen "
-           "TUNING_POLICY value.", bounds=(0.0, None)),
+           "TUNING_POLICY value.", bounds=(0.0, None),
+       empty_means="the builder's registration, else the frozen TUNING_POLICY value"),
     _E("proven_recovery_depth", group="tuning", owner="workload_profile/install_resolution",
        type=T.INT, category=Category.ADVANCED, unit="layers",
        label="Proven Recovery Depth",
        doc="A6 chain-depth law override for architectures with different "
            "recovery behavior. Builders register it via ModelWorkloadProfile; "
            "explicit value wins; absent = the corpus-calibrated 6.",
-       bounds=(1, None)),
+       bounds=(1, None),
+       empty_means="the builder's registration, else the corpus-calibrated 6"),
 )

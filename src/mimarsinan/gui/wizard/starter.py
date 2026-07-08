@@ -10,7 +10,10 @@ from typing import Any, Dict, Optional
 
 # The baseline is a deployment-config DOCUMENT (data, like tier configs and
 # templates) — workload facts live in the document, never in framework code.
-# It mirrors the tier-0 anchor cell: the measured fast-passing family.
+# It rides the lenet5 vehicle family, the only tier-0 family green in ALL FIVE
+# modes (t0_02 lif / t0_07 ttfs / t0_12 ttfsq / t0_17 casc / t0_22 sync), and
+# pins no derived mode keys, so every single-knob mode switch stays resolvable
+# (the per-mode contract in tests/unit/gui/test_wizard_starter.py).
 _BASELINE_PATH = Path(__file__).with_name("starter_baseline.json")
 
 _last_issued_name: Optional[str] = None

@@ -25,7 +25,9 @@ class TestDefaultsMatchPipeline:
 
     def test_sanafe_keys_in_defaults(self):
         d = get_default_deployment_parameters()
-        assert "enable_sanafe_simulation" in d
+        # enable_sanafe_simulation is ConversionPolicy-derived (no default);
+        # the sanafe knobs keep theirs.
+        assert "enable_sanafe_simulation" not in d
         assert "sanafe_arch_preset" in d
 
     def test_platform_defaults_include_scheduling_keys(self):

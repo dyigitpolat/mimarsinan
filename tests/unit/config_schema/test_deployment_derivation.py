@@ -104,9 +104,15 @@ def test_legacy_ramp_switches_removed():
     assert "genuine_gradual_cascade_ramp" not in dp
 
 
-def test_default_enable_nevresim_simulation_is_true():
+def test_simulator_enables_are_recipe_derived_not_defaults():
+    """The ConversionPolicy recipe owns the sim enables per mode; the defaults
+    dict carries none, and the derivation always writes them."""
     dp = get_default_deployment_parameters()
-    assert dp["enable_nevresim_simulation"] is True
+    assert "enable_nevresim_simulation" not in dp
+    derived = {"spiking_mode": "lif"}
+    derive_deployment_parameters(derived)
+    assert derived["enable_nevresim_simulation"] is True
+    assert derived["enable_loihi_simulation"] is True
 
 
 def test_config_builder_cycle_accurate_default_for_lif():

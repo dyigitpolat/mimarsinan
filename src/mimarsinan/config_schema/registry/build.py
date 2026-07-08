@@ -111,6 +111,10 @@ def serialize_registry() -> Dict[str, Any]:
             ),
             "bounds": list(entry.bounds) if entry.bounds is not None else None,
             "relevant": entry.relevant.to_json(),
+            "promote_when": (
+                entry.promote_when.to_json() if entry.promote_when is not None else None
+            ),
+            "empty_means": entry.empty_means,
             "derived_from": list(entry.derived_from),
             "declarable": entry.declarable,
             "important": entry.important,

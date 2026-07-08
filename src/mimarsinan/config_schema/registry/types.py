@@ -74,6 +74,13 @@ class ConfigKeySchema:
     options: OptionsSpec = None
     bounds: Optional[Tuple[Optional[float], Optional[float]]] = None
     relevant: Relevance = field(default_factory=Relevance.always)
+    # Mode-aware prominence: an ADVANCED key renders as PRIMARY while this
+    # predicate holds (a knob that is the point of the current mode is never
+    # "advanced"). None = the declared category always applies.
+    promote_when: Optional[Relevance] = None
+    # What an empty/absent value means, shown verbatim next to the widget
+    # (only for keys without a schema default; defaulted keys show the default).
+    empty_means: Optional[str] = None
     derived_from: Tuple[str, ...] = ()
     why: Optional[Callable[[dict], str]] = None
     declarable: bool = True
@@ -92,6 +99,8 @@ class ConfigKeySchema:
             raise ValueError(f"{self.flat_key!r}: RUNTIME category must pair with derivation='runtime'")
         if self.category is Category.DERIVED and not self.derived_from:
             raise ValueError(f"{self.flat_key!r}: derived keys must name derived_from inputs")
+        if self.promote_when is not None and self.category is not Category.ADVANCED:
+            raise ValueError(f"{self.flat_key!r}: promote_when only applies to ADVANCED keys")
 
     def resolved_options(self) -> Optional[Tuple[str, ...]]:
         """Options with any registry-derived callable resolved to a tuple."""

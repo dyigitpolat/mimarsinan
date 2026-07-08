@@ -36,9 +36,10 @@ from mimarsinan.config_schema.namespaced_schema import (
 )
 from mimarsinan.config_schema.deployment_derivation import derive_deployment_parameters
 
-# Keys produced by a derivation pass that are NOT in the defaults dict. The
-# conversion trio mirrors display_view_meta.DERIVED_KEYS; firing_mode /
-# spike_generation_mode / thresholding_mode are resolved in DeploymentPipeline.
+# Keys produced by a derivation pass that are NOT in the defaults dict:
+# the conversion trio + pipeline-init spiking keys (DeploymentPipeline), the
+# ConversionPolicy-owned simulator enables (recipe folding overwrites any
+# value), and the cores-derived platform maxima.
 DERIVED_NON_DEFAULT_KEYS = {
     "pipeline_mode",
     "activation_quantization",
@@ -46,6 +47,11 @@ DERIVED_NON_DEFAULT_KEYS = {
     "firing_mode",
     "spike_generation_mode",
     "thresholding_mode",
+    "enable_nevresim_simulation",
+    "enable_loihi_simulation",
+    "enable_sanafe_simulation",
+    "max_axons",
+    "max_neurons",
 }
 RUNTIME_KEYS = {"device", "input_shape", "input_size", "num_classes"}
 
@@ -180,6 +186,15 @@ class TestExposureTaxonomy:
             "thresholding_mode",
         } <= keys_with_exposure("derived")
 
+    def test_policy_owned_simulator_enables_are_derived_exposure(self):
+        """The ConversionPolicy recipe overwrites the sim enables per mode;
+        they persist nowhere and render as derived status, never as knobs."""
+        assert {
+            "enable_nevresim_simulation",
+            "enable_loihi_simulation",
+            "enable_sanafe_simulation",
+        } <= keys_with_exposure("derived")
+
     def test_runtime_keys_are_runtime_exposure(self):
         assert keys_with_exposure("runtime") == RUNTIME_KEYS
 
@@ -191,7 +206,6 @@ class TestExposureTaxonomy:
             "target_tq",
             "weight_bits",
             "allow_scheduling",
-            "enable_nevresim_simulation",
         } <= keys_with_exposure("user")
 
     def test_internal_defaults_are_system_exposure(self):

@@ -45,12 +45,11 @@ DEFAULT_DEPLOYMENT_PARAMETERS: Dict[str, object] = {
     "ttfs_genuine_blend_ce_alpha": 0.3,
     "model_config_mode": "user",
     "hw_config_mode": "fixed",
+    # The enable_*_simulation flags carry NO defaults: the ConversionPolicy
+    # recipe derives them per mode and overwrites any value (Pure SSOT).
     "spiking_mode": "lif",
     "allow_scheduling": False,
-    "enable_nevresim_simulation": True,
     "nevresim_connectivity_mode": "runtime",
-    "enable_loihi_simulation": False,
-    "enable_sanafe_simulation": False,
     "cycle_accurate_lif_forward": True,
     "enable_training_noise": False,
     "ttfs_cycle_schedule": "cascaded",

@@ -11,16 +11,40 @@ from mimarsinan.config_schema.registry.types import (
 
 _PC = "platform_constraints"
 
+
+def _why_core_maximum(dim: str):
+    def why(cfg: dict) -> str:
+        return f"largest per-core {dim} across the declared core types"
+    return why
+
+
+def _why_backend_enable(backend: str, off_reason: str):
+    """WHY text for a ConversionPolicy-owned backend enable."""
+    def why(cfg: dict) -> str:
+        key = f"enable_{backend}_simulation"
+        mode = cfg.get("spiking_mode")
+        if cfg.get(key):
+            return f"on — ConversionPolicy runs the {backend} gate for {mode!r}"
+        return f"off — {off_reason} (spiking_mode={mode!r})"
+    return why
+
+
 ENTRIES = (
     _E("cores", section=_PC, group="hardware", owner="ChipCapabilities/mapping",
        type=T.CORES, category=Category.BASIC, exposure="user", label="Core Types",
        doc="Core-type grid: per type max_axons x max_neurons x count (+ has_bias)."),
     _E("max_axons", section=_PC, group="hardware", owner="mapping/packing",
-       type=T.INT, category=Category.ADVANCED, exposure="user", label="Max Axons",
-       doc="Largest per-core axon count (derivable from cores).", bounds=(1, None)),
+       type=T.INT, category=Category.DERIVED, derivation="derived", exposure="user",
+       label="Max Axons",
+       doc="Largest per-core axon count, derived from the core grid; a "
+           "consistent explicit value is accepted, a contradicting one rejected.",
+       derived_from=("cores",), why=_why_core_maximum("axon count")),
     _E("max_neurons", section=_PC, group="hardware", owner="mapping/packing",
-       type=T.INT, category=Category.ADVANCED, exposure="user", label="Max Neurons",
-       doc="Largest per-core neuron count (derivable from cores).", bounds=(1, None)),
+       type=T.INT, category=Category.DERIVED, derivation="derived", exposure="user",
+       label="Max Neurons",
+       doc="Largest per-core neuron count, derived from the core grid; a "
+           "consistent explicit value is accepted, a contradicting one rejected.",
+       derived_from=("cores",), why=_why_core_maximum("neuron count")),
     _E("has_bias", section=_PC, group="hardware", owner="mapping/bias",
        type=T.BOOL, category=Category.BASIC, exposure="user", label="Hardware Bias",
        doc="Whether cores carry a bias lane; biasless platforms use compensation."),
@@ -59,30 +83,55 @@ ENTRIES = (
     _E("search_space", section=_PC, group="hardware", owner="search/hw_search_space",
        type=T.JSON, category=Category.ADVANCED, exposure="user", label="HW Search Space",
        doc="Hardware co-search bounds (core type counts, axon/neuron bounds, "
-           "threshold groups).", relevant=R.when("hw_config_mode", in_=("search",))),
+           "threshold groups).", relevant=R.when("hw_config_mode", in_=("search",)),
+       promote_when=R.when("hw_config_mode", in_=("search",)),
+       empty_means="the co-search's default bounds"),
     _E("allow_scheduling", group="hardware", owner="MappingStrategy/scheduler",
        type=T.BOOL, category=Category.BASIC, exposure="user", label="Allow Scheduling",
        effect="Multi-pass layout scheduling when single-pass packing fails",
        doc="Capability: time-multiplex core passes when the model exceeds the grid."),
-    _E("enable_nevresim_simulation", group="deployment_target", owner="backend_registry",
-       type=T.BOOL, category=Category.BASIC, exposure="user", label="Nevresim Simulation",
-       doc="Run the nevresim C++ cycle simulator decision-parity probe."),
+    _E("enable_nevresim_simulation", group="deployment_target",
+       owner="ConversionPolicy/backend_registry", type=T.BOOL,
+       category=Category.DERIVED, derivation="derived", exposure="derived",
+       label="Nevresim Simulation",
+       doc="Whether the nevresim C++ cycle-simulator decision-parity probe "
+           "runs. Owned by the ConversionPolicy mode recipe (capability-"
+           "derived); an explicit value is overwritten, so none is stored.",
+       derived_from=("spiking_mode", "ttfs_cycle_schedule"),
+       why=_why_backend_enable(
+           "nevresim", "nevresim has no synchronized-window backend"),
+       declarable=False),
     _E("nevresim_connectivity_mode", group="deployment_target", owner="nevresim_backend",
        type=T.ENUM, options=("runtime", "codegen"), category=Category.ADVANCED,
        label="Nevresim Connectivity Mode",
        doc="How chip connectivity reaches nevresim: runtime JSON or generated code.",
        relevant=R.when_true("enable_nevresim_simulation")),
-    _E("enable_loihi_simulation", group="deployment_target", owner="backend_registry",
-       type=T.BOOL, category=Category.BASIC, exposure="user", label="Loihi Simulation",
-       doc="Run the Lava Loihi spike-parity gate (LIF-only backend).",
-       relevant=R.when("spiking_mode", in_=("lif",))),
+    _E("enable_loihi_simulation", group="deployment_target",
+       owner="ConversionPolicy/backend_registry", type=T.BOOL,
+       category=Category.DERIVED, derivation="derived", exposure="derived",
+       label="Loihi Simulation",
+       doc="Whether the Lava Loihi spike-parity gate runs. Owned by the "
+           "ConversionPolicy mode recipe (capability-derived); an explicit "
+           "value is overwritten, so none is stored.",
+       derived_from=("spiking_mode", "ttfs_cycle_schedule"),
+       why=_why_backend_enable(
+           "loihi", "Loihi/Lava only implements LIF dynamics"),
+       declarable=False),
     _E("loihi_parity_sample_index", group="deployment_target", owner="loihi_backend",
        type=T.INT, category=Category.ADVANCED, label="Loihi Parity Sample Index",
        doc="Test-set sample index for the HCM-vs-Lava spike-parity check.",
        bounds=(0, None), relevant=R.when_true("enable_loihi_simulation")),
-    _E("enable_sanafe_simulation", group="deployment_target", owner="backend_registry",
-       type=T.BOOL, category=Category.BASIC, exposure="user", label="SANA-FE Simulation",
-       doc="Run the SANA-FE simulator for parity + energy/latency aggregates."),
+    _E("enable_sanafe_simulation", group="deployment_target",
+       owner="ConversionPolicy/backend_registry", type=T.BOOL,
+       category=Category.DERIVED, derivation="derived", exposure="derived",
+       label="SANA-FE Simulation",
+       doc="Whether the SANA-FE simulator (parity + energy/latency aggregates) "
+           "runs. Owned by the ConversionPolicy mode recipe (capability-"
+           "derived); an explicit value is overwritten, so none is stored.",
+       derived_from=("spiking_mode", "ttfs_cycle_schedule"),
+       why=_why_backend_enable(
+           "sanafe", "SANA-FE does not support this mode"),
+       declarable=False),
     _E("sanafe_sample_count", group="deployment_target", owner="sanafe_backend",
        type=T.INT, category=Category.ADVANCED, exposure="user", label="SANA-FE Sample Count",
        doc="Deterministic test samples run through SANA-FE.", bounds=(1, None),

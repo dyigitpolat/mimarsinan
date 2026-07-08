@@ -146,6 +146,46 @@ def enforce_quantization_assembly_contract(
         raise _contract_error(detail, rule)
 
 
+def derive_platform_constraints(
+    pc: MutableMapping[str, Any], *, cores_declared: bool = True
+) -> None:
+    """Derive the scalar per-core maxima from the core grid (wizard parity).
+
+    ``max_axons``/``max_neurons`` are derivable from ``cores`` (the mapping
+    itself always re-derives them via ``resolve_platform_mapping_params``);
+    an absent scalar is filled, a consistent explicit one accepted, and a
+    contradicting one rejected — a scalar the mapping would ignore must not
+    masquerade as a constraint. When the document declares only scalars (the
+    legacy / hardware-search shape), ``cores_declared=False`` skips the pass:
+    the scalars are the only constraint information there.
+    """
+    if not cores_declared:
+        return
+    cores = pc.get("cores")
+    if not isinstance(cores, list) or not cores:
+        return
+    for dim in ("max_axons", "max_neurons"):
+        values = [
+            int(core[dim]) for core in cores
+            if isinstance(core, dict)
+            and isinstance(core.get(dim), (int, float))
+            and not isinstance(core.get(dim), bool)
+        ]
+        if len(values) != len(cores):
+            continue  # incomplete grid mid-edit; shape validation reports it
+        derived = max(values)
+        explicit = pc.get(dim)
+        if explicit is None:
+            pc[dim] = derived
+        elif int(explicit) != derived:
+            raise ValueError(
+                f"{dim}={explicit} contradicts the cores-derived value {derived} "
+                f"(the largest per-core value across the declared core types; "
+                f"the mapping uses the derived value). Drop {dim} to accept "
+                f"the derivation, or fix the core grid."
+            )
+
+
 def derive_pipeline_runtime_parameters(dp: MutableMapping[str, Any]) -> None:
     """Fill runtime spiking fields that minimal persisted configs may omit."""
     spiking_mode = str(dp.get("spiking_mode", "lif"))

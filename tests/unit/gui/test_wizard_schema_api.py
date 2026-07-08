@@ -88,6 +88,39 @@ class TestResolveEndpoint:
         assert body["unknown_keys"] == ["deployment_parameters.endpoint_floor_wall_s"]
 
 
+class TestPipelinePreviewHonesty:
+    """The step preview IS the assembly: simulator steps appear exactly when
+    the ConversionPolicy recipe enables their backend for the mode."""
+
+    def _steps_for(self, client, mode, schedule=None):
+        draft = client.get("/api/config/starter").json()
+        draft["deployment_parameters"]["spiking_mode"] = mode
+        if schedule:
+            draft["deployment_parameters"]["ttfs_cycle_schedule"] = schedule
+        body = client.post("/api/config/resolve", json=draft).json()
+        assert body["ok"] is True, body["errors"]
+        return body["pipeline"]["steps"], body["derived"]
+
+    def test_lif_preview_carries_all_three_simulators(self, client):
+        steps, derived = self._steps_for(client, "lif")
+        assert "Simulation" in steps
+        assert "Loihi Simulation" in steps
+        assert "SANA-FE Simulation" in steps
+        assert derived["enable_loihi_simulation"]["value"] is True
+
+    def test_ttfs_preview_drops_the_loihi_step(self, client):
+        steps, derived = self._steps_for(client, "ttfs")
+        assert "Loihi Simulation" not in steps
+        assert derived["enable_loihi_simulation"]["value"] is False
+        assert derived["enable_loihi_simulation"]["why"]
+
+    def test_synchronized_preview_drops_the_nevresim_step(self, client):
+        steps, derived = self._steps_for(client, "ttfs_cycle_based", "synchronized")
+        assert "Simulation" not in steps
+        assert "SANA-FE Simulation" in steps
+        assert derived["enable_nevresim_simulation"]["value"] is False
+
+
 class TestStarterEndpoint:
     def test_starter_is_served_and_resolves_clean(self, client):
         draft = client.get("/api/config/starter").json()

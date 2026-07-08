@@ -105,9 +105,9 @@ class TestRelevance:
 
 class TestTaxonomy:
     """Dataset-side facts live in 'workload'; architecture-side in 'model';
-    the hardware-search switch with the hardware it searches. The wizard's
-    step flow (Workload -> Model -> Deployment -> Tuning -> Review) maps
-    whole groups to steps, so this split IS the step assignment."""
+    deployment-side conversion knobs in 'conversion'; the hardware-search
+    switch with the hardware it searches. The wizard's workbench sections
+    host whole groups, so this split IS the section assignment."""
 
     def test_workload_group_is_dataset_side(self):
         for key in ("data_provider_name", "datasets_path", "preprocessing",
@@ -116,14 +116,77 @@ class TestTaxonomy:
 
     def test_model_group_is_architecture_side(self):
         for key in ("model_config_mode", "model_type", "model_config",
-                    "model_factory", "arch_search", "pruning",
-                    "pruning_fraction", "prune_sparsity", "weight_source",
+                    "model_factory", "arch_search", "weight_source",
                     "preload_weights", "pretrained_weight_source",
                     "clamp_cuda_assert_prone"):
             assert REGISTRY[key].group == "model", key
 
+    def test_pruning_is_a_deployment_side_conversion_concern(self):
+        """Pruning is a deployment option (an adaptation step in the
+        conversion chain), never an architecture property."""
+        for key in ("pruning", "pruning_fraction", "prune_sparsity"):
+            assert REGISTRY[key].group == "conversion", key
+
     def test_hw_search_switch_lives_with_hardware(self):
         assert REGISTRY["hw_config_mode"].group == "hardware"
+
+
+class TestModeHonesty:
+    """Keys a policy or derivation owns must never render as knobs."""
+
+    def test_simulator_enables_are_policy_derived_not_knobs(self):
+        """ConversionPolicy folds sim_enables authoritatively (any user value
+        is overwritten), so the registry must present them as DERIVED and
+        non-declarable — a toggle here would be a lie."""
+        for key in ("enable_nevresim_simulation", "enable_loihi_simulation",
+                    "enable_sanafe_simulation"):
+            entry = REGISTRY[key]
+            assert entry.category is Category.DERIVED, key
+            assert entry.declarable is False, key
+            assert "spiking_mode" in entry.derived_from, key
+            assert entry.why is not None, key
+
+    def test_core_maxima_are_derived_from_the_core_grid(self):
+        """max_axons/max_neurons are derivable from cores; they render as
+        derived chips (documents may still declare a consistent value)."""
+        for key in ("max_axons", "max_neurons"):
+            entry = REGISTRY[key]
+            assert entry.category is Category.DERIVED, key
+            assert entry.declarable is True, key
+            assert entry.derived_from == ("cores",), key
+
+    def test_search_settings_are_promoted_in_search_mode(self):
+        """A knob that is the point of the current mode is never 'advanced':
+        promote_when holds exactly in the mode the knob configures."""
+        arch = REGISTRY["arch_search"]
+        assert arch.promote_when is not None
+        assert arch.promote_when.evaluate({"model_config_mode": "search"})
+        assert not arch.promote_when.evaluate(
+            {"model_config_mode": "user", "hw_config_mode": "fixed"})
+        space = REGISTRY["search_space"]
+        assert space.promote_when is not None
+        assert space.promote_when.evaluate({"hw_config_mode": "search"})
+        assert not space.promote_when.evaluate({"hw_config_mode": "fixed"})
+
+    def test_promote_when_requires_an_advanced_category(self):
+        with pytest.raises(ValueError):
+            ConfigKeySchema(
+                flat_key="bogus", group="run", owner="x", type=FieldType.BOOL,
+                category=Category.BASIC, label="Bogus", doc="A bogus basic key.",
+                promote_when=Relevance.when_true("pruning"),
+            )
+
+    def test_no_default_user_keys_state_what_empty_means(self):
+        """Every empty box must say what empty does; the flagship
+        workload-profile keys carry an explicit empty_means."""
+        for key in ("eval_subsample_target", "tuning_step_cap_epochs",
+                    "prefix_stage_lr", "endpoint_floor_lr",
+                    "proven_recovery_depth", "endpoint_floor_steps",
+                    "wq_endpoint_recovery_steps", "conversion_draws",
+                    "weight_source", "finetune_lr", "tuning_batch_size",
+                    "start_step", "stop_step", "input_data_scale"):
+            entry = REGISTRY[key]
+            assert entry.empty_means, key
 
 
 class TestSerialization:
@@ -140,6 +203,14 @@ class TestSerialization:
         payload = serialize_registry()
         tree = payload["keys"]["ttfs_cycle_schedule"]["relevant"]
         assert tree == {"op": "in", "key": "spiking_mode", "values": ["ttfs_cycle_based"]}
+
+    def test_promote_when_and_empty_means_are_serialized(self):
+        payload = serialize_registry()
+        arch = payload["keys"]["arch_search"]
+        assert arch["promote_when"] is not None
+        assert arch["promote_when"]["op"]
+        assert payload["keys"]["lr"]["promote_when"] is None
+        assert payload["keys"]["tuning_batch_size"]["empty_means"]
 
 
 class TestParse:

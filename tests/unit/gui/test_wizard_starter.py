@@ -116,33 +116,99 @@ class TestStarterIdentity:
 
     def test_drafts_are_independent_copies(self):
         a = starter_draft()
-        a["deployment_parameters"]["model_config"]["fc_w_1"] = -1
+        a["deployment_parameters"]["model_config"]["variant"] = "mutated"
         b = starter_draft()
-        assert b["deployment_parameters"]["model_config"]["fc_w_1"] != -1
+        assert b["deployment_parameters"]["model_config"]["variant"] != "mutated"
 
 
 class TestStarterIsRunnable:
     def test_starter_model_maps_feasibly_onto_its_platform(self):
         """The baseline model must fit the baseline core grid (the CPU proxy
         for runnability the wizard's own verify endpoint applies)."""
-        from mimarsinan.mapping.verification.wizard_layout_verify import (
-            model_repr_from_wizard_body,
-            verify_planned_mapping_performance,
-        )
-
-        draft = starter_draft()
-        dp = draft["deployment_parameters"]
-        pc = draft["platform_constraints"]
-        # The baseline workload facts (MNIST): tests own workload literals.
-        model_repr = model_repr_from_wizard_body({
-            "model_type": dp["model_type"],
-            "input_shape": [1, 28, 28],
-            "num_classes": 10,
-            "model_config": dp["model_config"],
-            "target_tq": pc.get("target_tq", 32),
-        })
-        stats = verify_planned_mapping_performance(model_repr, pc)
+        stats = _planned_mapping_stats(starter_draft())
         assert stats is not None and stats["feasible"] is True
+
+    def test_starter_rides_the_all_modes_green_vehicle(self):
+        """The starter's vehicle is the lenet5 family — the tier-0 family
+        that passes ALL FIVE modes — never a failing anchor cell."""
+        baseline = load_starter_baseline()
+        assert baseline["deployment_parameters"]["model_type"] == "lenet5"
+
+    def test_starter_pins_no_derived_mode_keys(self):
+        """Pinned firing/spike-gen/threshold modes would break single-knob
+        mode switches (TTFS modes require TTFS firing); the derivation owns
+        them, so the starter must not declare them."""
+        dp = load_starter_baseline()["deployment_parameters"]
+        for key in ("firing_mode", "spike_generation_mode", "thresholding_mode",
+                    "enable_nevresim_simulation", "enable_loihi_simulation",
+                    "enable_sanafe_simulation"):
+            assert key not in dp, key
+
+
+def _planned_mapping_stats(draft: dict):
+    from mimarsinan.mapping.verification.wizard_layout_verify import (
+        model_repr_from_wizard_body,
+        verify_planned_mapping_performance,
+    )
+
+    dp = draft["deployment_parameters"]
+    pc = draft["platform_constraints"]
+    # The baseline workload facts (MNIST): tests own workload literals.
+    model_repr = model_repr_from_wizard_body({
+        "model_type": dp["model_type"],
+        "input_shape": [1, 28, 28],
+        "num_classes": 10,
+        "model_config": dp["model_config"],
+        "target_tq": pc.get("target_tq", 32),
+    })
+    return verify_planned_mapping_performance(model_repr, pc)
+
+
+_MODE_SWITCHES = (
+    ("lif", None),
+    ("ttfs", None),
+    ("ttfs_quantized", None),
+    ("ttfs_cycle_based", "cascaded"),
+    ("ttfs_cycle_based", "synchronized"),
+)
+
+
+class TestStarterModeSwitchContract:
+    """THE per-mode robustness contract: the starter plus ONE mode switch
+    resolves error-free and maps feasibly, for every deployable mode."""
+
+    @pytest.mark.parametrize(
+        "mode,schedule", _MODE_SWITCHES,
+        ids=[m if s is None else f"{m}_{s}" for m, s in _MODE_SWITCHES],
+    )
+    def test_starter_plus_single_mode_switch_stays_green(self, mode, schedule):
+        draft = starter_draft()
+        draft["deployment_parameters"]["spiking_mode"] = mode
+        if schedule is not None:
+            draft["deployment_parameters"]["ttfs_cycle_schedule"] = schedule
+
+        resolution = resolve_draft(draft)
+        assert resolution.errors == [], (mode, schedule, resolution.errors)
+        assert resolution.unknown_keys == []
+
+        emitted = emit_deployment_config(draft)
+        assert validate_deployment_config(emitted) == []
+        assert resolve_draft(emitted).errors == []
+
+        stats = _planned_mapping_stats(draft)
+        assert stats is not None and stats["feasible"] is True, (mode, schedule)
+
+    def test_every_mode_switch_yields_a_live_pipeline_preview(self):
+        from mimarsinan.gui.wizard.schema_api import resolve_payload
+
+        for mode, schedule in _MODE_SWITCHES:
+            draft = starter_draft()
+            draft["deployment_parameters"]["spiking_mode"] = mode
+            if schedule is not None:
+                draft["deployment_parameters"]["ttfs_cycle_schedule"] = schedule
+            payload = resolve_payload(draft)
+            assert payload["ok"] is True, (mode, schedule)
+            assert len(payload["pipeline"]["steps"]) >= 10, (mode, schedule)
 
 
 @pytest.mark.parametrize(
