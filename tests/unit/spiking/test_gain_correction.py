@@ -66,7 +66,7 @@ class TestApplyCorrection:
     def test_depth0_scale_unchanged_deep_scales_shrink(self):
         flow, _ = self._ttfs_model()
         before = [float(p.activation_scale) for p in flow.get_perceptrons()]
-        stats = apply_cascaded_gain_correction(flow, 8, rule="relative")
+        stats = apply_cascaded_gain_correction(flow, 8, rule="relative", input_data_scale=1.0)
         after = [float(p.activation_scale) for p in flow.get_perceptrons()]
         depths = per_perceptron_cascade_depth(flow.get_mapper_repr())
         for p, b, a in zip(flow.get_perceptrons(), before, after):
@@ -78,7 +78,7 @@ class TestApplyCorrection:
 
     def test_input_scales_repropagated(self):
         flow, _ = self._ttfs_model()
-        apply_cascaded_gain_correction(flow, 8, rule="relative")
+        apply_cascaded_gain_correction(flow, 8, rule="relative", input_data_scale=1.0)
         # After propagation, each non-entry perceptron's input_activation_scale equals
         # the mean activation_scale of its perceptron source(s) — here a chain, so it
         # equals the immediate upstream perceptron's (corrected) activation_scale.
@@ -92,7 +92,7 @@ class TestApplyCorrection:
         flow, x = self._ttfs_model()
         ref = copy.deepcopy(flow)
         out_before = cascade_forward(ref, x, 8)
-        apply_cascaded_gain_correction(flow, 8, rule="relative")
+        apply_cascaded_gain_correction(flow, 8, rule="relative", input_data_scale=1.0)
         out_after = cascade_forward(flow, x, 8)
         assert not torch.allclose(out_before, out_after, atol=1e-6), (
             "the gain correction must change the deployed cascade output (it revives "
@@ -119,7 +119,7 @@ class TestApplyCorrection:
         flow, _ = self._ttfs_model()
         enc = next(p for p in flow.get_perceptrons() if getattr(p, "is_encoding_layer", False))
         before = float(enc.activation_scale)
-        apply_cascaded_gain_correction(flow, 8, rule="geometric")
+        apply_cascaded_gain_correction(flow, 8, rule="geometric", input_data_scale=1.0)
         assert float(enc.activation_scale) == pytest.approx(before)  # pinned
 
 
@@ -142,10 +142,10 @@ class TestRateGated:
         flow = self._flow()
         base = [float(p.activation_scale) for p in flow.get_perceptrons()]
         factors = cascaded_gain_factors(flow, 8, rule="relative")
-        apply_gain_at_rate(flow, base, factors, 0.0)
+        apply_gain_at_rate(flow, base, factors, 0.0, input_data_scale=1.0)
         for p, b in zip(flow.get_perceptrons(), base):
             assert float(p.activation_scale) == pytest.approx(b)            # rate 0 -> base
-        apply_gain_at_rate(flow, base, factors, 1.0)
+        apply_gain_at_rate(flow, base, factors, 1.0, input_data_scale=1.0)
         for p, b in zip(flow.get_perceptrons(), base):
             assert float(p.activation_scale) == pytest.approx(b * factors[id(p)])  # rate 1 -> full
 
@@ -153,7 +153,7 @@ class TestRateGated:
         flow = self._flow()
         base = [float(p.activation_scale) for p in flow.get_perceptrons()]
         factors = cascaded_gain_factors(flow, 8, rule="relative")
-        apply_gain_at_rate(flow, base, factors, 0.5)
+        apply_gain_at_rate(flow, base, factors, 0.5, input_data_scale=1.0)
         for p, b in zip(flow.get_perceptrons(), base):
             assert float(p.activation_scale) == pytest.approx(b * (factors[id(p)] ** 0.5))
 
@@ -164,7 +164,7 @@ class TestRateGated:
         deep = flow.get_perceptrons()[-1]
         seen = []
         for r in (0.0, 0.25, 0.5, 0.75, 1.0):
-            apply_gain_at_rate(flow, base, factors, r)
+            apply_gain_at_rate(flow, base, factors, r, input_data_scale=1.0)
             seen.append(float(deep.activation_scale))
         assert all(a >= b for a, b in zip(seen, seen[1:]))  # non-increasing (shrinks)
 
@@ -199,7 +199,7 @@ class TestRevivesDeepLayers:
     def test_deep_layer_firing_rate_rises(self):
         flow, x = build_cascade_flow(host_ops=False, depth=5, S=8, seed=0)
         before = self._firing_rates(flow, x, 8)
-        apply_cascaded_gain_correction(flow, 8, rule="relative")
+        apply_cascaded_gain_correction(flow, 8, rule="relative", input_data_scale=1.0)
         after = self._firing_rates(flow, x, 8)
         assert after[-1] > before[-1], (
             f"deep-layer firing rate must rise after correction (revival): "
@@ -218,7 +218,7 @@ class TestBoundaryDominatedGuard:
         depths = per_perceptron_cascade_depth(flow.get_mapper_repr())
         assert max(depths.values()) <= 1  # fixture is boundary-dominated
         with pytest.raises(ValueError, match="boundary-dominated"):
-            apply_cascaded_gain_correction(flow, 8, rule="relative")
+            apply_cascaded_gain_correction(flow, 8, rule="relative", input_data_scale=1.0)
 
     def test_host_op_graph_rejects_ramp_factors(self):
         flow, _ = build_cascade_flow(host_ops=True, depth=4, S=8, seed=0)
@@ -232,7 +232,7 @@ class TestBoundaryDominatedGuard:
 
     def test_deep_intra_segment_graph_still_corrects(self):
         flow, _ = build_cascade_flow(host_ops=False, depth=4, S=8, seed=0)
-        stats = apply_cascaded_gain_correction(flow, 8, rule="relative")
+        stats = apply_cascaded_gain_correction(flow, 8, rule="relative", input_data_scale=1.0)
         assert stats["n_corrected"] >= 1
 
     def test_guard_names_the_depths(self):

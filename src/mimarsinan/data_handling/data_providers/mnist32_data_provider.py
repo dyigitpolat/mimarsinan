@@ -10,6 +10,7 @@ import torch
 @BasicDataProviderFactory.register("MNIST32_DataProvider")
 class MNIST32_DataProvider(DataProvider):
     DISPLAY_LABEL = "MNIST-32 (32×32, 10 classes)"
+    RAW_INPUT_VALUE_RANGE = (0.0, 1.0)
 
     """
     MNIST resized to 32x32 (still 1 channel).

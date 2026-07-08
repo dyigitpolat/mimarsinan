@@ -17,7 +17,7 @@ def _as_model_repr(model_repr_or_model):
     return model_repr_or_model.get_mapper_repr()
 
 
-def read_boundary_out_scales(model_repr_or_model, input_data_scale: float = 1.0) -> dict:
+def read_boundary_out_scales(model_repr_or_model, input_data_scale: float) -> dict:
     """Pure (no-mutation) twin of :func:`propagate_boundary_input_scales`.
 
     Per-node scalar out-scales: a perceptron-bearing node yields its
@@ -40,10 +40,14 @@ def read_boundary_out_scales(model_repr_or_model, input_data_scale: float = 1.0)
     return walk_out_scales(model_repr, visit)
 
 
-def propagate_boundary_input_scales(model_repr_or_model, input_data_scale: float = 1.0):
+def propagate_boundary_input_scales(model_repr_or_model, input_data_scale: float):
     """Forward-propagate theta_out so each perceptron's ``input_activation_scale``
     equals the mean theta_out of its upstream perceptron source(s); the input
     boundary uses ``input_data_scale``.
+
+    The scale is also stamped on the repr (``input_boundary_scale``) so pure
+    re-reads (e.g. the LIF segment policy) agree with the propagated values by
+    construction — one value, both walks (the NF↔SCM parity contract).
     """
     model_repr = _as_model_repr(model_repr_or_model)
     default = float(input_data_scale)
@@ -53,9 +57,17 @@ def propagate_boundary_input_scales(model_repr_or_model, input_data_scale: float
             deps, out_scales, default
         ),
     )
+    model_repr.input_boundary_scale = default
 
 
-def calibrate_scale_aware_boundaries(model, activation_scales, input_data_scale: float = 1.0):
+def stamped_input_boundary_scale(model_repr_or_model) -> float:
+    """The scale stamped by the last propagation; 1.0 (unit range) before any."""
+    return float(
+        getattr(_as_model_repr(model_repr_or_model), "input_boundary_scale", 1.0)
+    )
+
+
+def calibrate_scale_aware_boundaries(model, activation_scales, input_data_scale: float):
     """Set each block's ``activation_scale`` to its theta_out, then propagate so
     every input un-normalizes from [0,1]. The encoding layer is pinned to
     ``input_data_scale`` (retuning it breaks NF↔SCM deployment parity).

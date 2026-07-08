@@ -128,7 +128,7 @@ def cal_x():
 class TestReturnsStats:
     def test_returns_stats_dict_with_gap_keys(self, cal_x):
         model, teacher = _deployed_ttfs_model_and_teacher()
-        stats = match_activation_distributions(model, teacher, cal_x, T_STEPS, bias_iters=15)
+        stats = match_activation_distributions(model, teacher, cal_x, T_STEPS, bias_iters=15, input_data_scale=1.0)
         assert isinstance(stats, dict)
         assert "mean_gap_before" in stats
         assert "mean_gap_after" in stats
@@ -141,7 +141,7 @@ class TestDistributionMatchingShrinksGap:
         model, teacher = _deployed_ttfs_model_and_teacher()
 
         gap_before = _mean_abs_gap(model, teacher, cal_x, T_STEPS)
-        stats = match_activation_distributions(model, teacher, cal_x, T_STEPS, bias_iters=15)
+        stats = match_activation_distributions(model, teacher, cal_x, T_STEPS, bias_iters=15, input_data_scale=1.0)
         gap_after = _mean_abs_gap(model, teacher, cal_x, T_STEPS)
 
         assert gap_after < gap_before, (
@@ -173,7 +173,7 @@ class TestDeathCascadeRevival:
         dead_starved = _dead_fraction_per_perceptron(model, cal_x, T_STEPS)[deep_layer]
         assert dead_starved == pytest.approx(1.0), "fixture must be fully starved"
 
-        match_activation_distributions(model, teacher, cal_x, T_STEPS, bias_iters=15)
+        match_activation_distributions(model, teacher, cal_x, T_STEPS, bias_iters=15, input_data_scale=1.0)
         dead_after = _dead_fraction_per_perceptron(model, cal_x, T_STEPS)[deep_layer]
         assert dead_after < dead_starved - 0.1, (
             "DFQ bias correction must revive the starved deep layer (%dead drops)"
@@ -185,7 +185,7 @@ class TestDeathCascadeRevival:
         model, teacher = _deployed_ttfs_model_and_teacher()
         deep_layer = _starve_deep_layer(model)
 
-        match_activation_distributions(model, teacher, cal_x, T_STEPS, bias_iters=0)
+        match_activation_distributions(model, teacher, cal_x, T_STEPS, bias_iters=0, input_data_scale=1.0)
         dead_after = _dead_fraction_per_perceptron(model, cal_x, T_STEPS)[deep_layer]
         assert dead_after == pytest.approx(1.0), (
             "boundary calibration alone must not revive the starved layer "
@@ -201,7 +201,7 @@ class TestBiasesChanged:
             for p in model.get_perceptrons()
             if getattr(p.layer, "bias", None) is not None
         ]
-        match_activation_distributions(model, teacher, cal_x, T_STEPS, bias_iters=15)
+        match_activation_distributions(model, teacher, cal_x, T_STEPS, bias_iters=15, input_data_scale=1.0)
         after = [
             p.layer.bias.detach().clone()
             for p in model.get_perceptrons()
@@ -220,7 +220,7 @@ class TestBiasesChanged:
             for p in model.get_perceptrons()
             if getattr(p.layer, "bias", None) is not None
         ]
-        match_activation_distributions(model, teacher, cal_x, T_STEPS, bias_iters=0)
+        match_activation_distributions(model, teacher, cal_x, T_STEPS, bias_iters=0, input_data_scale=1.0)
         after = [
             p.layer.bias.detach().clone()
             for p in model.get_perceptrons()
@@ -251,7 +251,7 @@ class TestBoundaryCalibrationApplied:
             for k in range(len(ann_samples))
         ]
 
-        match_activation_distributions(model, teacher, cal_x, T_STEPS, bias_iters=15)
+        match_activation_distributions(model, teacher, cal_x, T_STEPS, bias_iters=15, input_data_scale=1.0)
         for p, theta in zip(model.get_perceptrons(), expected_theta):
             # The encoding block is pinned to the data scale (1.0), not its quantile
             # (its scale is fixed by the input spike-encoding contract — retuning it
@@ -261,7 +261,7 @@ class TestBoundaryCalibrationApplied:
 
     def test_downstream_input_scale_equals_upstream_theta_out(self, cal_x):
         model, teacher = _deployed_ttfs_model_and_teacher()
-        match_activation_distributions(model, teacher, cal_x, T_STEPS, bias_iters=15)
+        match_activation_distributions(model, teacher, cal_x, T_STEPS, bias_iters=15, input_data_scale=1.0)
         perceptrons = list(model.get_perceptrons())
         assert float(perceptrons[1].input_activation_scale) == pytest.approx(
             float(perceptrons[0].activation_scale), abs=1e-6
@@ -273,8 +273,8 @@ class TestDeterminism:
         model_a, teacher_a = _deployed_ttfs_model_and_teacher(seed=7)
         model_b, teacher_b = _deployed_ttfs_model_and_teacher(seed=7)
 
-        stats_a = match_activation_distributions(model_a, teacher_a, cal_x, T_STEPS, bias_iters=15)
-        stats_b = match_activation_distributions(model_b, teacher_b, cal_x, T_STEPS, bias_iters=15)
+        stats_a = match_activation_distributions(model_a, teacher_a, cal_x, T_STEPS, bias_iters=15, input_data_scale=1.0)
+        stats_b = match_activation_distributions(model_b, teacher_b, cal_x, T_STEPS, bias_iters=15, input_data_scale=1.0)
 
         assert stats_a["mean_gap_after"] == pytest.approx(stats_b["mean_gap_after"])
         for pa, pb in zip(model_a.get_perceptrons(), model_b.get_perceptrons()):
@@ -293,10 +293,12 @@ class TestQuantileParameter:
         model_lo, teacher_lo = _deployed_ttfs_model_and_teacher(seed=3)
 
         match_activation_distributions(
-            model_hi, teacher_hi, cal_x, T_STEPS, quantile=0.99, bias_iters=0
+            model_hi, teacher_hi, cal_x, T_STEPS, quantile=0.99, bias_iters=0,
+            input_data_scale=1.0,
         )
         match_activation_distributions(
-            model_lo, teacher_lo, cal_x, T_STEPS, quantile=0.5, bias_iters=0
+            model_lo, teacher_lo, cal_x, T_STEPS, quantile=0.5, bias_iters=0,
+            input_data_scale=1.0,
         )
         for p_hi, p_lo in zip(
             model_hi.get_perceptrons(), model_lo.get_perceptrons()

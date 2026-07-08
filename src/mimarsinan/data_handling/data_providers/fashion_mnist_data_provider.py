@@ -9,6 +9,7 @@ import torch
 @BasicDataProviderFactory.register("FashionMNIST_DataProvider")
 class FashionMNIST_DataProvider(DataProvider):
     DISPLAY_LABEL = "Fashion-MNIST (28×28, 10 classes)"
+    RAW_INPUT_VALUE_RANGE = (0.0, 1.0)
 
     def __init__(self, datasets_path, *, seed: int | None = 0, preprocessing=None, batch_size=None):
         super().__init__(datasets_path, seed=seed, preprocessing=preprocessing, batch_size=batch_size)

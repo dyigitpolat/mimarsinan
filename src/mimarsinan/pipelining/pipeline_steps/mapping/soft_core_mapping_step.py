@@ -187,7 +187,9 @@ class SoftCoreMappingStep(PipelineStep):
         # Recompute per-source input scales here so mapping is self-contained; idempotent in activation_scales, so byte-identical when WeightQuantizationStep already populated them.
         compute_per_source_scales(mapper_repr)
         # Re-propagate boundary input scales here so a retuned upstream theta cannot leave the segment-entry grid-snap normalizing by a stale scale; idempotent in activation_scales.
-        propagate_boundary_input_scales(model, input_data_scale=1.0)
+        propagate_boundary_input_scales(
+            model, input_data_scale=plan.workload.input_data_scale
+        )
         # Fail loud if any bias/weight write since the commit above broke the
         # committed-pruning contract (mask * param == param) about to be mapped.
         self._verify_pruning_committed(model)

@@ -39,6 +39,11 @@ class RegressionMode:
 class DataProvider:
     SUPPORTS_PREPROCESSING = True
 
+    # The provider's RAW per-channel value range BEFORE preprocessing (a
+    # dataset fact: (0, 1) for ToTensor image providers). None = unknown, so
+    # the framework makes no range claim for this dataset.
+    RAW_INPUT_VALUE_RANGE: tuple[float, float] | None = None
+
     def __init__(self, datasets_path, *, seed: int | None = 0, preprocessing=None, batch_size=None):
         self.datasets_path = datasets_path
         self.seed = int(seed) if seed is not None else None
@@ -104,10 +109,22 @@ class DataProvider:
     def workload_profile(self) -> DataWorkloadProfile:
         """The dataset facts this provider registers with the framework.
 
-        Base contract: the all-None profile (no claims). Providers override to
-        declare what they know; explicit config always wins over registrations.
+        Base contract: no claims beyond the post-transform input value range
+        derived from ``RAW_INPUT_VALUE_RANGE`` + the preprocessing spec (None
+        when the raw range is unknown). Providers override to declare more;
+        explicit config always wins over registrations.
         """
-        return DataWorkloadProfile()
+        return DataWorkloadProfile(
+            input_value_range=self._post_transform_value_range()
+        )
+
+    def _post_transform_value_range(self) -> tuple[float, float] | None:
+        raw = self.RAW_INPUT_VALUE_RANGE
+        if raw is None:
+            return None
+        if self._preprocessing_spec is None:
+            return (float(raw[0]), float(raw[1]))
+        return self._preprocessing_spec.transform_value_range(raw)
 
     def create_loss(self):
         """Loss function for this provider, from its prediction mode."""

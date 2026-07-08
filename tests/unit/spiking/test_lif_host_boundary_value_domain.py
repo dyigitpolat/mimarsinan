@@ -78,7 +78,7 @@ def test_read_boundary_out_scales_pass_through() -> None:
     theta_enc, theta_hidden, T = 2.185, 0.5, 8
     repr_, _, _, _, _ = _tiny_host_boundary_model(T, theta_enc, theta_hidden)
     repr_._ensure_exec_graph()
-    scales = read_boundary_out_scales(repr_)
+    scales = read_boundary_out_scales(repr_, input_data_scale=1.0)
 
     by_type = {}
     for node in repr_._exec_order:
@@ -94,7 +94,7 @@ def test_read_boundary_out_scales_pass_through() -> None:
 def test_read_boundary_out_scales_does_not_mutate() -> None:
     repr_, _, p1, p2, _ = _tiny_host_boundary_model(8, 2.185)
     before = (float(p1.input_activation_scale), float(p2.input_activation_scale))
-    read_boundary_out_scales(repr_)
+    read_boundary_out_scales(repr_, input_data_scale=1.0)
     after = (float(p1.input_activation_scale), float(p2.input_activation_scale))
     assert before == after
 

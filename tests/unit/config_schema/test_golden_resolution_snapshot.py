@@ -168,10 +168,10 @@ def build_config_entry(path: str) -> dict:
                 fake_pipeline, budget
             ),
             "encoder_scale_pin": encoder_scale_pin(config),
-            # The D1/D2 boundary-scale truth: hard-coded 1.0 at the two call
-            # sites today; the input-scale fix rewires this to the resolved
-            # workload value (MNIST cells must stay at 1.0).
-            "boundary_input_data_scale": 1.0,
+            # The D1/D2 boundary-scale truth: the resolved workload value the
+            # propagation call sites read (1.0 for unit-range datasets; the
+            # provider-registered post-transform bound for normalized ones).
+            "boundary_input_data_scale": plan.workload.input_data_scale,
         },
     })
 

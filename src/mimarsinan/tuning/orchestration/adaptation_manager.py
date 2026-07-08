@@ -1,3 +1,4 @@
+from mimarsinan.common.workload_profile import ResolvedWorkloadProfile
 from mimarsinan.models.nn.layers import *
 from mimarsinan.models.nn.activations import LeakyGradReLU
 from mimarsinan.models.nn.decorators.clamp_quantize import TTFSCeilStaircaseDecorator
@@ -93,7 +94,12 @@ def install_sync_entry_grid_snap(model, pipeline_config) -> int:
     )
     from mimarsinan.torch_mapping.encoding_layers import segment_entry_perceptrons
 
-    propagate_boundary_input_scales(model, input_data_scale=1.0)
+    propagate_boundary_input_scales(
+        model,
+        input_data_scale=ResolvedWorkloadProfile.from_config(
+            pipeline_config
+        ).input_data_scale,
+    )
     installed = 0
     for perceptron in segment_entry_perceptrons(model.get_mapper_repr()):
         if getattr(perceptron, _SYNC_GRID_SNAP_ATTR, False):

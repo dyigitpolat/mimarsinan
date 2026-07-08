@@ -23,8 +23,9 @@ def encoder_scale_pin(config) -> float | None:
     # when this module loads before chip_simulation finishes initializing.
     from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 
-    if DeploymentPlan.resolve(config).is_cascaded_ttfs:
-        return 1.0
+    plan = DeploymentPlan.resolve(config)
+    if plan.is_cascaded_ttfs:
+        return plan.workload.input_data_scale
     return None
 
 

@@ -73,7 +73,7 @@ class TestPropagateInputScale:
     def test_input_scale_equals_upstream_theta_out(self):
         model = make_tiny_supermodel()
         scales = [2.5, 3.0]
-        calibrate_scale_aware_boundaries(model, scales)
+        calibrate_scale_aware_boundaries(model, scales, input_data_scale=1.0)
 
         repr_ = model.get_mapper_repr()
         for node in _perceptron_nodes_in_order(repr_):
@@ -105,7 +105,7 @@ class TestPropagateInputScale:
         model = make_tiny_supermodel()
         for p in model.get_perceptrons():
             p.set_activation_scale(1.5)
-        propagate_boundary_input_scales(model)
+        propagate_boundary_input_scales(model, input_data_scale=1.0)
 
         repr_ = model.get_mapper_repr()
         first = _perceptron_nodes_in_order(repr_)[0]
@@ -115,7 +115,7 @@ class TestPropagateInputScale:
         model = make_tiny_supermodel()
         for p in model.get_perceptrons():
             p.set_activation_scale(2.0)
-        propagate_boundary_input_scales(model.get_mapper_repr())
+        propagate_boundary_input_scales(model.get_mapper_repr(), input_data_scale=1.0)
 
         repr_ = model.get_mapper_repr()
         nodes = _perceptron_nodes_in_order(repr_)
@@ -151,7 +151,7 @@ class TestBoundaryEncodableProperty:
             max(float(captured[id(p)].abs().max()), 1e-6)
             for p in model.get_perceptrons()
         ]
-        calibrate_scale_aware_boundaries(model, scales)
+        calibrate_scale_aware_boundaries(model, scales, input_data_scale=1.0)
 
         eps = 1e-5
         for p in model.get_perceptrons():

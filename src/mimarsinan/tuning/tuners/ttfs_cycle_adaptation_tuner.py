@@ -220,6 +220,12 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
             )
         return driver
 
+    def _workload_input_scale(self) -> float:
+        """The deployed input-boundary scale (workload-registered; 1.0 = unit range)."""
+        return ResolvedWorkloadProfile.from_config(
+            self.pipeline.config
+        ).input_data_scale
+
     def _maybe_apply_gain_correction(self) -> None:
         """Per-cascade-depth activation_scale trim inverting the ramp decode's depth attenuation.
 
@@ -242,6 +248,7 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
 
             self._gain_correction_stats = apply_cascaded_gain_correction(
                 self.model, self._T, rule=rule, c=c,
+                input_data_scale=self._workload_input_scale(),
             )
             self.pipeline.reporter.report(
                 f"{self.name} gain_correction", self._gain_correction_stats,
@@ -254,7 +261,10 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
         assert base is not None and factors is not None, (
             "_capture_gain_ramp_base must run before _apply_gain_at_rate"
         )
-        apply_gain_at_rate(self.model, base, factors, rate)
+        apply_gain_at_rate(
+            self.model, base, factors, rate,
+            input_data_scale=self._workload_input_scale(),
+        )
 
     def _set_rate(self, rate: float) -> None:
         super()._set_rate(rate)
@@ -290,7 +300,10 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
                     self.model.get_perceptrons(), clone.get_perceptrons()
                 )
             }
-            apply_gain_at_rate(clone, self._gain_ramp_base, clone_factors, 1.0)
+            apply_gain_at_rate(
+                clone, self._gain_ramp_base, clone_factors, 1.0,
+                input_data_scale=self._workload_input_scale(),
+            )
         return fwd
 
     def _invalidate_lr_cache(self):
@@ -409,6 +422,7 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
             n_batches=cal.distmatch_cal_batches,
             quantile=cal.distmatch_quantile,
             bias_iters=cal.distmatch_bias_iters,
+            input_data_scale=self._workload_input_scale(),
             eta=cal.distmatch_bias_eta,
         )
 

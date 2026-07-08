@@ -9,6 +9,7 @@ import torch
 @BasicDataProviderFactory.register("KMNIST_DataProvider")
 class KMNIST_DataProvider(DataProvider):
     DISPLAY_LABEL = "KMNIST (28×28, 10 classes)"
+    RAW_INPUT_VALUE_RANGE = (0.0, 1.0)
 
     def __init__(self, datasets_path, *, seed: int | None = 0, preprocessing=None, batch_size=None):
         super().__init__(datasets_path, seed=seed, preprocessing=preprocessing, batch_size=batch_size)

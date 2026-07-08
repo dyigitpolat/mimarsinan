@@ -85,6 +85,7 @@ class ImageNet_DataProvider(DataProvider):
     """
 
     DISPLAY_LABEL = "ImageNet (224×224×3, 1000 classes)"
+    RAW_INPUT_VALUE_RANGE = (0.0, 1.0)
     SUPPORTS_PREPROCESSING = False
 
     official_val_fraction = 0.2

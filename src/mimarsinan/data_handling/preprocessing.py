@@ -63,6 +63,18 @@ class PreprocessingSpec:
             return None
         return transforms.Normalize(list(self.mean), list(self.std))
 
+    def transform_value_range(
+        self, value_range: tuple[float, float]
+    ) -> tuple[float, float]:
+        """Post-normalization envelope of a raw per-channel value range
+        (resize/interpolation is treated as value-preserving)."""
+        lo, hi = float(value_range[0]), float(value_range[1])
+        if self.mean is None or self.std is None:
+            return (lo, hi)
+        lows = [(lo - m) / s for m, s in zip(self.mean, self.std)]
+        highs = [(hi - m) / s for m, s in zip(self.mean, self.std)]
+        return (min(lows), max(highs))
+
     def compose(self, base_transforms: Iterable) -> transforms.Compose:
         """Wrap ``base_transforms`` with resize (before ToTensor) and normalize (after).
 

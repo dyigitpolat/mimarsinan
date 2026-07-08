@@ -81,7 +81,7 @@ def _prepare_ttfs(flow, *, theta_by_name=None):
     for p in flow.get_perceptrons():
         theta = (theta_by_name or {}).get(p.name, 1.0)
         p.set_activation_scale(float(theta))
-    propagate_boundary_input_scales(flow)
+    propagate_boundary_input_scales(flow, input_data_scale=1.0)
     install_ttfs_nodes(flow, _S)
     return flow
 
@@ -98,7 +98,7 @@ class TestEqualThetaBitIdentical:
         flow, cal_x = _build(_ResidualJoinMLP, gain=0.05)
         _prepare_ttfs(flow, theta_by_name=None)  # all θ equal (1.0)
         reference = copy.deepcopy(flow)
-        stats = calibrate_fanin_boundary_scales(flow, cal_x, _S)
+        stats = calibrate_fanin_boundary_scales(flow, cal_x, _S, input_data_scale=1.0)
         assert stats["n_joins"] == 1
         for p_new, p_ref in zip(flow.get_perceptrons(), reference.get_perceptrons()):
             assert float(p_new.input_activation_scale) == float(
@@ -110,7 +110,7 @@ class TestEqualThetaBitIdentical:
         flow, cal_x = _build(_ChainMLP)
         _prepare_ttfs(flow)
         reference = copy.deepcopy(flow)
-        stats = calibrate_fanin_boundary_scales(flow, cal_x, _S)
+        stats = calibrate_fanin_boundary_scales(flow, cal_x, _S, input_data_scale=1.0)
         assert stats["n_joins"] == 0 and stats["n_lifted"] == 0
         for p_new, p_ref in zip(flow.get_perceptrons(), reference.get_perceptrons()):
             assert float(p_new.input_activation_scale) == float(
@@ -141,7 +141,7 @@ class TestObservedTrafficLift:
         flow, cal_x = self._saturating_flow()
         tail = _consumer(flow, "tail")
         before = float(tail.input_activation_scale)
-        stats = calibrate_fanin_boundary_scales(flow, cal_x, _S)
+        stats = calibrate_fanin_boundary_scales(flow, cal_x, _S, input_data_scale=1.0)
         after = float(tail.input_activation_scale)
         assert stats["n_lifted"] == 1
         assert after > before, "under-covered join traffic must lift the wire scale"
@@ -151,9 +151,9 @@ class TestObservedTrafficLift:
     def test_lift_survives_repropagation(self):
         flow, cal_x = self._saturating_flow()
         tail = _consumer(flow, "tail")
-        calibrate_fanin_boundary_scales(flow, cal_x, _S)
+        calibrate_fanin_boundary_scales(flow, cal_x, _S, input_data_scale=1.0)
         lifted = float(tail.input_activation_scale)
-        propagate_boundary_input_scales(flow)  # the SCM-step re-propagation
+        propagate_boundary_input_scales(flow, input_data_scale=1.0)  # the SCM-step re-propagation
         assert float(tail.input_activation_scale) == pytest.approx(lifted), (
             "the observed-traffic lift must survive downstream re-propagations"
         )
@@ -162,7 +162,7 @@ class TestObservedTrafficLift:
         flow, cal_x = self._saturating_flow()
         branch = _consumer(flow, "f1")
         before = float(branch.input_activation_scale)
-        calibrate_fanin_boundary_scales(flow, cal_x, _S)
+        calibrate_fanin_boundary_scales(flow, cal_x, _S, input_data_scale=1.0)
         assert float(branch.input_activation_scale) == pytest.approx(before)
 
     def test_wire_scale_equals_fold_scale_at_the_lifted_join(self):
@@ -174,8 +174,8 @@ class TestObservedTrafficLift:
         )
 
         flow, cal_x = self._saturating_flow()
-        calibrate_fanin_boundary_scales(flow, cal_x, _S)
-        propagate_boundary_input_scales(flow)
+        calibrate_fanin_boundary_scales(flow, cal_x, _S, input_data_scale=1.0)
+        propagate_boundary_input_scales(flow, input_data_scale=1.0)
         compute_per_source_scales(flow.get_mapper_repr())
         tail = _consumer(flow, "tail")
         wire = float(tail.input_activation_scale)
@@ -197,7 +197,7 @@ class TestDistmatchWiresFaninCalibration:
         _prepare_ttfs(flow)
         teacher = copy.deepcopy(flow)
         stats = match_activation_distributions(
-            flow, teacher, cal_x, _S, bias_iters=1,
+            flow, teacher, cal_x, _S, bias_iters=1, input_data_scale=1.0,
         )
         assert stats["fanin_joins"] == 1
 

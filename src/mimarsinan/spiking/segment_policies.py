@@ -28,12 +28,18 @@ class LifSegmentPolicy:
     def prepare(self, driver):
         from spikingjelly.activation_based import functional
 
-        from mimarsinan.spiking.scale_aware_boundaries import read_boundary_out_scales
+        from mimarsinan.spiking.scale_aware_boundaries import (
+            read_boundary_out_scales,
+            stamped_input_boundary_scale,
+        )
 
         for p in driver.repr.get_perceptrons():
             functional.reset_net(p)
         self._set_all_cycle_accurate(driver, False)
-        self._boundary_scales = read_boundary_out_scales(driver.repr)
+        self._boundary_scales = read_boundary_out_scales(
+            driver.repr,
+            input_data_scale=stamped_input_boundary_scale(driver.repr),
+        )
 
     def finalize(self, driver):
         self._set_all_cycle_accurate(driver, False)

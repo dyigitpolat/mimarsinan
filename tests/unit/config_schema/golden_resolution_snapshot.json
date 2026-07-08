@@ -97,6 +97,7 @@
     "firing_mode": "Default",
     "has_bias": true,
     "hw_config_mode": "fixed",
+    "input_data_scale": 1.0,
     "input_shape": [
      1,
      28,
@@ -297,6 +298,7 @@
     "firing_mode": "Novena",
     "has_bias": true,
     "hw_config_mode": "fixed",
+    "input_data_scale": 1.0,
     "input_shape": [
      1,
      28,
@@ -494,6 +496,7 @@
     "firing_mode": "Default",
     "has_bias": true,
     "hw_config_mode": "fixed",
+    "input_data_scale": 1.0,
     "input_shape": [
      1,
      28,
@@ -690,6 +693,7 @@
     "firing_mode": "Default",
     "has_bias": true,
     "hw_config_mode": "fixed",
+    "input_data_scale": 1.0,
     "input_shape": [
      1,
      28,
@@ -886,6 +890,7 @@
     "firing_mode": "Default",
     "has_bias": true,
     "hw_config_mode": "fixed",
+    "input_data_scale": 1.0,
     "input_shape": [
      1,
      28,
@@ -1081,6 +1086,7 @@
     "firing_mode": "TTFS",
     "has_bias": true,
     "hw_config_mode": "fixed",
+    "input_data_scale": 1.0,
     "input_shape": [
      1,
      28,
@@ -1276,6 +1282,7 @@
     "firing_mode": "TTFS",
     "has_bias": true,
     "hw_config_mode": "fixed",
+    "input_data_scale": 1.0,
     "input_shape": [
      1,
      28,
@@ -1466,6 +1473,7 @@
     "firing_mode": "TTFS",
     "has_bias": true,
     "hw_config_mode": "fixed",
+    "input_data_scale": 1.0,
     "input_shape": [
      1,
      28,
@@ -1657,6 +1665,7 @@
     "firing_mode": "TTFS",
     "has_bias": true,
     "hw_config_mode": "fixed",
+    "input_data_scale": 1.0,
     "input_shape": [
      1,
      28,
@@ -1850,6 +1859,7 @@
     "firing_mode": "TTFS",
     "has_bias": true,
     "hw_config_mode": "fixed",
+    "input_data_scale": 1.0,
     "input_shape": [
      1,
      28,
@@ -2040,6 +2050,7 @@
     "firing_mode": "TTFS",
     "has_bias": true,
     "hw_config_mode": "fixed",
+    "input_data_scale": 1.0,
     "input_shape": [
      1,
      28,
@@ -2241,6 +2252,7 @@
     "firing_mode": "TTFS",
     "has_bias": true,
     "hw_config_mode": "fixed",
+    "input_data_scale": 1.0,
     "input_shape": [
      1,
      28,
@@ -2437,6 +2449,7 @@
     "firing_mode": "TTFS",
     "has_bias": true,
     "hw_config_mode": "fixed",
+    "input_data_scale": 1.0,
     "input_shape": [
      1,
      28,
@@ -2634,6 +2647,7 @@
     "firing_mode": "TTFS",
     "has_bias": true,
     "hw_config_mode": "fixed",
+    "input_data_scale": 1.0,
     "input_shape": [
      1,
      28,
@@ -2831,6 +2845,7 @@
     "firing_mode": "TTFS",
     "has_bias": true,
     "hw_config_mode": "fixed",
+    "input_data_scale": 1.0,
     "input_shape": [
      1,
      28,
@@ -3031,6 +3046,7 @@
     "firing_mode": "TTFS",
     "has_bias": false,
     "hw_config_mode": "fixed",
+    "input_data_scale": 1.0,
     "input_shape": [
      1,
      28,
@@ -3232,6 +3248,7 @@
     "firing_mode": "TTFS",
     "has_bias": true,
     "hw_config_mode": "fixed",
+    "input_data_scale": 1.0,
     "input_shape": [
      1,
      28,
@@ -3428,6 +3445,7 @@
     "firing_mode": "TTFS",
     "has_bias": true,
     "hw_config_mode": "fixed",
+    "input_data_scale": 1.0,
     "input_shape": [
      1,
      28,
@@ -3627,6 +3645,7 @@
     "firing_mode": "TTFS",
     "has_bias": true,
     "hw_config_mode": "fixed",
+    "input_data_scale": 1.0,
     "input_shape": [
      1,
      28,
@@ -3825,6 +3844,7 @@
     "firing_mode": "TTFS",
     "has_bias": true,
     "hw_config_mode": "fixed",
+    "input_data_scale": 1.0,
     "input_shape": [
      1,
      28,
@@ -4023,6 +4043,7 @@
     "firing_mode": "TTFS",
     "has_bias": true,
     "hw_config_mode": "fixed",
+    "input_data_scale": 1.0,
     "input_shape": [
      1,
      28,
@@ -4232,6 +4253,7 @@
     "firing_mode": "TTFS",
     "has_bias": true,
     "hw_config_mode": "fixed",
+    "input_data_scale": 1.0,
     "input_shape": [
      1,
      28,
@@ -4434,6 +4456,7 @@
     "firing_mode": "TTFS",
     "has_bias": true,
     "hw_config_mode": "fixed",
+    "input_data_scale": 1.0,
     "input_shape": [
      1,
      28,
@@ -4637,6 +4660,7 @@
     "firing_mode": "TTFS",
     "has_bias": true,
     "hw_config_mode": "fixed",
+    "input_data_scale": 1.0,
     "input_shape": [
      1,
      28,
@@ -4840,6 +4864,7 @@
     "firing_mode": "TTFS",
     "has_bias": true,
     "hw_config_mode": "fixed",
+    "input_data_scale": 1.0,
     "input_shape": [
      1,
      28,
@@ -5044,6 +5069,7 @@
     "firing_mode": "Default",
     "has_bias": true,
     "hw_config_mode": "fixed",
+    "input_data_scale": 1.0,
     "input_shape": [
      1,
      28,
@@ -5244,6 +5270,7 @@
     "firing_mode": "Default",
     "has_bias": true,
     "hw_config_mode": "fixed",
+    "input_data_scale": 1.0,
     "input_shape": [
      1,
      28,
@@ -5443,6 +5470,7 @@
     "firing_mode": "TTFS",
     "has_bias": false,
     "hw_config_mode": "fixed",
+    "input_data_scale": 1.0,
     "input_shape": [
      1,
      28,
@@ -5645,6 +5673,7 @@
     "firing_mode": "TTFS",
     "has_bias": true,
     "hw_config_mode": "fixed",
+    "input_data_scale": 1.0,
     "input_shape": [
      1,
      28,
@@ -5855,6 +5884,7 @@
     "firing_mode": "TTFS",
     "has_bias": true,
     "hw_config_mode": "fixed",
+    "input_data_scale": 1.0,
     "input_shape": [
      1,
      28,
@@ -6063,6 +6093,7 @@
     "firing_mode": "TTFS",
     "has_bias": true,
     "hw_config_mode": "fixed",
+    "input_data_scale": 1.0,
     "input_shape": [
      1,
      28,
@@ -6265,6 +6296,7 @@
     "firing_mode": "TTFS",
     "has_bias": true,
     "hw_config_mode": "fixed",
+    "input_data_scale": 1.0,
     "input_shape": [
      1,
      28,
@@ -6461,6 +6493,7 @@
     "firing_mode": "Default",
     "has_bias": true,
     "hw_config_mode": "fixed",
+    "input_data_scale": 1.0,
     "input_shape": [
      1,
      28,
@@ -6661,6 +6694,7 @@
     "firing_mode": "TTFS",
     "has_bias": true,
     "hw_config_mode": "fixed",
+    "input_data_scale": 1.0,
     "input_shape": [
      1,
      28,
@@ -6870,6 +6904,7 @@
     "firing_mode": "TTFS",
     "has_bias": false,
     "hw_config_mode": "fixed",
+    "input_data_scale": 1.0,
     "input_shape": [
      1,
      28,
@@ -7071,6 +7106,7 @@
     "firing_mode": "TTFS",
     "has_bias": true,
     "hw_config_mode": "fixed",
+    "input_data_scale": 1.0,
     "input_shape": [
      1,
      28,
@@ -7269,6 +7305,7 @@
     "firing_mode": "TTFS",
     "has_bias": true,
     "hw_config_mode": "fixed",
+    "input_data_scale": 1.0,
     "input_shape": [
      1,
      28,
@@ -7470,6 +7507,7 @@
     "firing_mode": "TTFS",
     "has_bias": false,
     "hw_config_mode": "fixed",
+    "input_data_scale": 1.0,
     "input_shape": [
      1,
      28,
@@ -7671,6 +7709,7 @@
     "firing_mode": "TTFS",
     "has_bias": true,
     "hw_config_mode": "fixed",
+    "input_data_scale": 1.0,
     "input_shape": [
      1,
      28,
@@ -7869,6 +7908,7 @@
     "firing_mode": "TTFS",
     "has_bias": true,
     "hw_config_mode": "fixed",
+    "input_data_scale": 1.0,
     "input_shape": [
      1,
      28,
@@ -8067,6 +8107,7 @@
     "firing_mode": "Default",
     "has_bias": true,
     "hw_config_mode": "fixed",
+    "input_data_scale": 1.0,
     "input_shape": [
      1,
      28,
@@ -8262,6 +8303,7 @@
     "firing_mode": "TTFS",
     "has_bias": true,
     "hw_config_mode": "fixed",
+    "input_data_scale": 1.0,
     "input_shape": [
      1,
      28,
@@ -8453,6 +8495,7 @@
     "firing_mode": "TTFS",
     "has_bias": true,
     "hw_config_mode": "fixed",
+    "input_data_scale": 1.0,
     "input_shape": [
      1,
      28,
@@ -8650,6 +8693,7 @@
     "firing_mode": "Default",
     "has_bias": true,
     "hw_config_mode": "fixed",
+    "input_data_scale": 1.0,
     "input_shape": [
      1,
      28,
@@ -8846,6 +8890,7 @@
     "firing_mode": "TTFS",
     "has_bias": true,
     "hw_config_mode": "fixed",
+    "input_data_scale": 1.0,
     "input_shape": [
      1,
      28,
@@ -9056,6 +9101,7 @@
     "firing_mode": "Default",
     "has_bias": true,
     "hw_config_mode": "fixed",
+    "input_data_scale": 1.0,
     "input_shape": [
      1,
      28,
@@ -9254,6 +9300,7 @@
     "firing_mode": "TTFS",
     "has_bias": true,
     "hw_config_mode": "fixed",
+    "input_data_scale": 1.0,
     "input_shape": [
      1,
      28,
@@ -9452,6 +9499,7 @@
     "firing_mode": "TTFS",
     "has_bias": true,
     "hw_config_mode": "fixed",
+    "input_data_scale": 1.0,
     "input_shape": [
      1,
      28,
@@ -9648,6 +9696,7 @@
     "firing_mode": "TTFS",
     "has_bias": true,
     "hw_config_mode": "fixed",
+    "input_data_scale": 1.0,
     "input_shape": [
      1,
      28,
@@ -9856,6 +9905,7 @@
     "firing_mode": "TTFS",
     "has_bias": true,
     "hw_config_mode": "fixed",
+    "input_data_scale": 1.0,
     "input_shape": [
      1,
      28,
@@ -10054,6 +10104,7 @@
     "firing_mode": "Default",
     "has_bias": true,
     "hw_config_mode": "fixed",
+    "input_data_scale": 1.0,
     "input_shape": [
      3,
      32,
@@ -10154,7 +10205,7 @@
   },
   "tier1/t1_02_ttfs_vit_wq_s32.json": {
    "derived": {
-    "boundary_input_data_scale": 1.0,
+    "boundary_input_data_scale": 2.6399999999999997,
     "encoder_scale_pin": null,
     "min_step_for_smooth_adaptation": 0.02043010752688172,
     "test_batch_size": 512,
@@ -10207,7 +10258,7 @@
      "clamp_cuda_assert_prone": true,
      "endpoint_floor_lr": null,
      "eval_subsample_target": null,
-     "input_data_scale": 1.0,
+     "input_data_scale": 2.6399999999999997,
      "prefix_stage_lr": null,
      "pretrained_weight_source": "torchvision",
      "proven_recovery_depth": null,
@@ -10249,6 +10300,7 @@
     "firing_mode": "TTFS",
     "has_bias": true,
     "hw_config_mode": "fixed",
+    "input_data_scale": 2.6399999999999997,
     "input_shape": [
      3,
      224,
@@ -10351,7 +10403,7 @@
   },
   "tier1/t1_03_ttfsq_vit_wq_s32_pruned.json": {
    "derived": {
-    "boundary_input_data_scale": 1.0,
+    "boundary_input_data_scale": 2.6399999999999997,
     "encoder_scale_pin": null,
     "min_step_for_smooth_adaptation": 0.02043010752688172,
     "test_batch_size": 512,
@@ -10404,7 +10456,7 @@
      "clamp_cuda_assert_prone": true,
      "endpoint_floor_lr": null,
      "eval_subsample_target": null,
-     "input_data_scale": 1.0,
+     "input_data_scale": 2.6399999999999997,
      "prefix_stage_lr": null,
      "pretrained_weight_source": "torchvision",
      "proven_recovery_depth": null,
@@ -10445,6 +10497,7 @@
     "firing_mode": "TTFS",
     "has_bias": true,
     "hw_config_mode": "fixed",
+    "input_data_scale": 2.6399999999999997,
     "input_shape": [
      3,
      224,
@@ -10649,6 +10702,7 @@
     "firing_mode": "TTFS",
     "has_bias": true,
     "hw_config_mode": "fixed",
+    "input_data_scale": 1.0,
     "input_shape": [
      3,
      32,
@@ -10845,6 +10899,7 @@
     "firing_mode": "TTFS",
     "has_bias": true,
     "hw_config_mode": "fixed",
+    "input_data_scale": 1.0,
     "input_shape": [
      3,
      32,
@@ -11048,6 +11103,7 @@
     "firing_mode": "Default",
     "has_bias": true,
     "hw_config_mode": "fixed",
+    "input_data_scale": 1.0,
     "input_shape": [
      3,
      32,
@@ -11243,6 +11299,7 @@
     "firing_mode": "TTFS",
     "has_bias": true,
     "hw_config_mode": "fixed",
+    "input_data_scale": 1.0,
     "input_shape": [
      3,
      32,
@@ -11438,6 +11495,7 @@
     "firing_mode": "TTFS",
     "has_bias": true,
     "hw_config_mode": "fixed",
+    "input_data_scale": 1.0,
     "input_shape": [
      3,
      32,
@@ -11539,7 +11597,7 @@
   },
   "tier2/t2_01_lif_resnet50_wq_s32_sched.json": {
    "derived": {
-    "boundary_input_data_scale": 1.0,
+    "boundary_input_data_scale": 2.6399999999999997,
     "encoder_scale_pin": null,
     "min_step_for_smooth_adaptation": 0.001,
     "test_batch_size": 128,
@@ -11592,7 +11650,7 @@
      "clamp_cuda_assert_prone": false,
      "endpoint_floor_lr": null,
      "eval_subsample_target": null,
-     "input_data_scale": 1.0,
+     "input_data_scale": 2.6399999999999997,
      "prefix_stage_lr": null,
      "pretrained_weight_source": "torchvision",
      "proven_recovery_depth": null,
@@ -11628,6 +11686,7 @@
     "firing_mode": "Default",
     "has_bias": true,
     "hw_config_mode": "fixed",
+    "input_data_scale": 2.6399999999999997,
     "input_shape": [
      3,
      224,
@@ -11728,7 +11787,7 @@
   },
   "tier2/t2_02_ttfsq_vit_wq_s32_sched_pruned.json": {
    "derived": {
-    "boundary_input_data_scale": 1.0,
+    "boundary_input_data_scale": 2.6399999999999997,
     "encoder_scale_pin": null,
     "min_step_for_smooth_adaptation": 0.02043010752688172,
     "test_batch_size": 512,
@@ -11781,7 +11840,7 @@
      "clamp_cuda_assert_prone": true,
      "endpoint_floor_lr": null,
      "eval_subsample_target": null,
-     "input_data_scale": 1.0,
+     "input_data_scale": 2.6399999999999997,
      "prefix_stage_lr": null,
      "pretrained_weight_source": "torchvision",
      "proven_recovery_depth": null,
@@ -11822,6 +11881,7 @@
     "firing_mode": "TTFS",
     "has_bias": true,
     "hw_config_mode": "fixed",
+    "input_data_scale": 2.6399999999999997,
     "input_shape": [
      3,
      224,
@@ -12027,6 +12087,7 @@
     "firing_mode": "TTFS",
     "has_bias": true,
     "hw_config_mode": "fixed",
+    "input_data_scale": 1.0,
     "input_shape": [
      3,
      32,

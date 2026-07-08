@@ -20,7 +20,7 @@ FANIN_TRAFFIC_QUANTILE = 0.999
 
 def calibrate_fanin_boundary_scales(
     model, cal_x, T, *, quantile: float = FANIN_TRAFFIC_QUANTILE,
-    input_data_scale: float = 1.0,
+    input_data_scale: float,
 ):
     """Lift fan-in joins' boundary scales from observed traffic (§6b contract-1).
 
@@ -116,6 +116,7 @@ def match_activation_distributions(
     *,
     quantile: float = 0.99,
     bias_iters: int,
+    input_data_scale: float,
     eta: float = 0.7,
     probe=None,
     probe_patience: int | None = None,
@@ -142,8 +143,12 @@ def match_activation_distributions(
         for k in range(n_perceptrons)
     ]
 
-    calibrate_scale_aware_boundaries(model, theta_out)
-    fanin_stats = calibrate_fanin_boundary_scales(model, cal_x, T)
+    calibrate_scale_aware_boundaries(
+        model, theta_out, input_data_scale=input_data_scale
+    )
+    fanin_stats = calibrate_fanin_boundary_scales(
+        model, cal_x, T, input_data_scale=input_data_scale
+    )
 
     dead_before = _dead_fraction(model, cal_x, T)
     gap_stats = dfq_correct_biases(

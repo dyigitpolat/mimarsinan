@@ -84,7 +84,7 @@ def cascaded_gain_factors(model, T: int, *, rule: str = "relative", c: float = 1
 
 
 def apply_gain_at_rate(
-    model, base_scales, factors: dict, rate: float, *, input_data_scale: float = 1.0,
+    model, base_scales, factors: dict, rate: float, *, input_data_scale: float,
 ) -> None:
     """Rate-gated gain correction: set ``activation_scale = base * g_d**rate`` per
     perceptron (rate 0 → base, rate 1 → full) and re-propagate input scales.
@@ -99,7 +99,7 @@ def apply_gain_at_rate(
 
 def apply_cascaded_gain_correction(
     model, T: int, *, rule: str = "relative", c: float = 1.9,
-    input_data_scale: float = 1.0,
+    input_data_scale: float,
 ) -> dict:
     """Trim each perceptron's ``activation_scale`` by its per-depth gain factor and
     re-propagate input scales (encoding/entry layers pinned at g=1.0). Mutates the

@@ -1,5 +1,6 @@
 """TTFS-Cycle Fine-Tuning pipeline step."""
 
+from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 from mimarsinan.pipelining.core.steps.tuner_pipeline_step import TunerPipelineStep
 from mimarsinan.spiking.scale_aware_boundaries import calibrate_scale_aware_boundaries
 from mimarsinan.tuning.tuners.ttfs_cycle_adaptation_tuner import TTFSCycleAdaptationTuner
@@ -30,7 +31,11 @@ class TTFSCycleAdaptationStep(TunerPipelineStep):
         model = self.get_entry("model")
         if self._scale_aware_boundaries:
             calibrate_scale_aware_boundaries(
-                model, self.get_entry("activation_scales")
+                model,
+                self.get_entry("activation_scales"),
+                input_data_scale=DeploymentPlan.of(
+                    self.pipeline
+                ).workload.input_data_scale,
             )
         self.run_tuner(
             TTFSCycleAdaptationTuner,
