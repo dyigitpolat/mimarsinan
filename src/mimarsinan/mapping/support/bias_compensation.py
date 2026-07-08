@@ -201,27 +201,18 @@ def calibration_forward_for_mode(spiking_mode: str):
     return policy_for_spiking_mode(spiking_mode).calibration_forward()
 
 
-def apply_negative_value_shifts(
-    model, calibration_x: torch.Tensor, T: int, *, forward_fn=None,
-) -> dict:
-    """Pre-mapping: calibrate per-ComputeOp minima, derive positive shifts, bake the
-    consuming perceptron(s), and tag each shifted ``ComputeOpMapper`` with ``_negative_shift``.
-    Returns ``{ComputeOpMapper: shift_np}`` (empty if no boundary goes negative).
-    A ComputeOp-free graph skips the calibration forward — a structural no-op."""
+def apply_negative_value_shifts(model, minima: dict) -> dict:
+    """The ON mechanism: derive positive shifts from the calibrated per-ComputeOp
+    ``minima``, bake the consuming perceptron(s) (``B − W·s``), and tag each shifted
+    ``ComputeOpMapper`` with ``_negative_shift``. Returns ``{ComputeOpMapper: shift_np}``
+    (empty when no boundary goes negative). Calibration belongs to the policy caller."""
     from mimarsinan.mapping.mappers.compute_op_mapper import ComputeOpMapper
 
-    if forward_fn is None:
-        forward_fn = calibration_forward_for_mode("lif")
-
+    if not minima:
+        return {}
     mapper_repr = model.get_mapper_repr()
     mapper_repr._ensure_exec_graph()
-    if not any(isinstance(n, ComputeOpMapper) for n in mapper_repr._exec_order):
-        return {}
     deps_map = mapper_repr._deps
-
-    recorder: dict = {}
-    with torch.no_grad():
-        forward_fn(model, calibration_x, T, compute_min_recorder=recorder)
 
     consumers: dict[int, list] = {}
     for node in mapper_repr._exec_order:
@@ -229,7 +220,7 @@ def apply_negative_value_shifts(
             consumers.setdefault(id(dep), []).append(node)
 
     out: dict = {}
-    for compute_op, mins in recorder.items():
+    for compute_op, mins in minima.items():
         s = torch.clamp(-mins, min=0.0)
         if not bool((s > 0).any()):
             continue

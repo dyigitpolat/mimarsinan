@@ -109,11 +109,21 @@ def test_lif_driver_compute_min_recorder_matches_chip_aligned():
 
 def test_lif_driver_applies_negative_shift_like_chip_aligned():
     from mimarsinan.spiking.chip_aligned_nf import chip_aligned_segment_forward
-    from mimarsinan.mapping.support.bias_compensation import apply_negative_value_shifts
+    from mimarsinan.mapping.support.bias_compensation import (
+        apply_negative_value_shifts,
+        calibration_forward_for_mode,
+    )
+    from mimarsinan.mapping.support.negative_boundary import calibrated_compute_op_minima
 
     T = 8
     flow = _lif_flow(_TwoSegLayerNorm(), (8,), 4, T)
-    shifts = apply_negative_value_shifts(flow, torch.rand(16, 8), T)
+    shifts = apply_negative_value_shifts(
+        flow,
+        calibrated_compute_op_minima(
+            flow, torch.rand(16, 8), T,
+            forward_fn=calibration_forward_for_mode("lif"),
+        ),
+    )
     assert shifts, "calibration must derive a shift for the LayerNorm boundary"
     driver = SegmentForwardDriver(flow.get_mapper_repr(), T, LifSegmentPolicy())
     x = torch.rand(4, 8)

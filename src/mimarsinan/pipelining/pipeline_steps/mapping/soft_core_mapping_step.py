@@ -11,11 +11,11 @@ from mimarsinan.mapping.latency.ir import IRLatency
 from mimarsinan.mapping.export.chip_quantize import quantize_ir_graph
 from mimarsinan.mapping.platform.platform_constraints import resolve_platform_mapping_params
 from mimarsinan.mapping.support.bias_compensation import (
-    apply_negative_value_shifts,
     apply_ttfs_quantization_bias_compensation,
     calibration_forward_for_mode,
     transfer_negative_shifts_to_ir,
 )
+from mimarsinan.mapping.support.negative_boundary import apply_negative_boundary_policy
 from mimarsinan.mapping.support.per_source_scales import compute_per_source_scales
 from mimarsinan.mapping.verification.capacity import (
     PACKER_DIVERGENCE_MARGIN,
@@ -167,7 +167,7 @@ class SoftCoreMappingStep(PipelineStep):
             )
 
         self._apply_ttfs_quantization_bias_compensation(model, act_q)
-        self._apply_negative_value_shift_compensation(model)
+        self._apply_negative_boundary_policy(model)
 
         bits = self.pipeline.config['weight_bits']
         _, q_max = quantization_bounds(bits)
@@ -196,7 +196,7 @@ class SoftCoreMappingStep(PipelineStep):
         with _phase("ir_mapping.map"):
             ir_graph = ir_mapping.map(mapper_repr)
 
-        if bool(self.pipeline.config.get("negative_value_shift", False)):
+        if bool(self.pipeline.config.get("negative_value_shift", True)):
             transfer_negative_shifts_to_ir(model, ir_graph)
 
         wt_q = plan.weight_quantization
@@ -440,10 +440,16 @@ class SoftCoreMappingStep(PipelineStep):
             model, self.pipeline.config["target_tq"],
         )
 
-    def _apply_negative_value_shift_compensation(self, model) -> None:
-        """Opt-in (``negative_value_shift``): shift negative-producing ComputeOp boundaries into the encodable domain and pre-correct the consumer's bias, so NF and HCM recover negatives losslessly."""
-        if not bool(self.pipeline.config.get("negative_value_shift", False)):
-            return
+    def _apply_negative_boundary_policy(self, model) -> None:
+        """Make every negative ComputeOp→neural boundary lossless, both ways.
+
+        ``negative_value_shift=true`` shifts the boundary into the encodable
+        domain and pre-corrects the consuming perceptron's bias; ``false``
+        subsumes the consumers forward onto the host until a non-negative
+        activation absorbs the range. Either way the policy re-checks that no
+        negative boundary is left on-chip-encoded, so the [0,1] spike-encode
+        clamp can never silently drop a value.
+        """
         spiking_mode = str(DeploymentPlan.of(self.pipeline).spiking_mode)
         forward_fn = calibration_forward_for_mode(spiking_mode)
 
@@ -453,7 +459,11 @@ class SoftCoreMappingStep(PipelineStep):
         if not batches:
             return
         calibration_x = torch.cat(batches, dim=0).to(device)
-        apply_negative_value_shifts(model, calibration_x, T, forward_fn=forward_fn)
+        apply_negative_boundary_policy(
+            model, calibration_x, T,
+            shift_enabled=bool(self.pipeline.config.get("negative_value_shift", True)),
+            forward_fn=forward_fn,
+        )
 
     def bring_back_bias(self, fused_linear_layer):
         assert isinstance(fused_linear_layer, FusedLinear), 'Input layer must be an instance of LinearWithoutBias'

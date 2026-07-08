@@ -18,6 +18,7 @@ from mimarsinan.mapping.packing.hybrid_hardcore_mapping import build_hybrid_hard
 from mimarsinan.mapping.platform.mapping_structure import MappingStrategy
 from mimarsinan.models.spiking.hybrid.flow import SpikingHybridCoreFlow
 from mimarsinan.models.nn.activations.ttfs_spiking import TTFSActivation
+from mimarsinan.mapping.support.negative_boundary import calibrated_compute_op_minima
 from mimarsinan.mapping.support.bias_compensation import (
     apply_negative_value_shifts,
     calibration_forward_for_mode,
@@ -58,8 +59,11 @@ def _build_cascade(T, *, shift: bool, calib_x=None):
     flow = flow.double()
     if shift:
         apply_negative_value_shifts(
-            flow, calib_x, T,
-            forward_fn=calibration_forward_for_mode("ttfs_cycle_based"),
+            flow,
+            calibrated_compute_op_minima(
+                flow, calib_x, T,
+                forward_fn=calibration_forward_for_mode("ttfs_cycle_based"),
+            ),
         )
     repr_.assign_perceptron_indices()
     ir = IRMapping(q_max=127.0, firing_mode="TTFS", max_axons=64, max_neurons=64).map(repr_)

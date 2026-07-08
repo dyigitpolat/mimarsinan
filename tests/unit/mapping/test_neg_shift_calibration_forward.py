@@ -15,6 +15,15 @@ from mimarsinan.mapping.support.bias_compensation import (
     apply_negative_value_shifts,
     calibration_forward_for_mode,
 )
+from mimarsinan.mapping.support.negative_boundary import calibrated_compute_op_minima
+
+
+def _shifts(flow, x, T, forward_fn):
+    """The ON mechanism over the policy's calibrated minima (round-5 split:
+    the mechanism bakes, the policy calibrates)."""
+    return apply_negative_value_shifts(
+        flow, calibrated_compute_op_minima(flow, x, T, forward_fn=forward_fn),
+    )
 
 
 class _TwoSegLayerNorm(nn.Module):
@@ -84,9 +93,7 @@ def test_apply_shifts_with_ttfs_cycle_based_forward():
     T = 8
     flow = _ttfs_flow(T)
     fwd = calibration_forward_for_mode("ttfs_cycle_based")
-    shifts = apply_negative_value_shifts(
-        flow, torch.rand(16, 8, dtype=torch.float64), T, forward_fn=fwd,
-    )
+    shifts = _shifts(flow, torch.rand(16, 8, dtype=torch.float64), T, fwd)
     assert shifts, "LayerNorm boundary must derive a shift"
     ln = _layernorm_op(flow)
     assert ln in shifts
@@ -100,9 +107,7 @@ def test_apply_shifts_with_analytical_ttfs_forward(mode):
     T = 8
     flow = _ttfs_flow(T)
     fwd = calibration_forward_for_mode(mode)
-    shifts = apply_negative_value_shifts(
-        flow, torch.rand(16, 8, dtype=torch.float64), T, forward_fn=fwd,
-    )
+    shifts = _shifts(flow, torch.rand(16, 8, dtype=torch.float64), T, fwd)
     assert shifts
     ln = _layernorm_op(flow)
     assert ln in shifts
@@ -112,7 +117,7 @@ def test_apply_shifts_with_analytical_ttfs_forward(mode):
 def test_apply_shifts_default_forward_is_lif():
     T = 8
     flow = _lif_flow(T)
-    shifts = apply_negative_value_shifts(flow, torch.rand(16, 8), T)
+    shifts = _shifts(flow, torch.rand(16, 8), T, calibration_forward_for_mode("lif"))
     assert shifts
     assert _layernorm_op(flow) in shifts
 
@@ -130,7 +135,7 @@ def test_shift_value_matches_recorded_min_ttfs():
     expected = torch.clamp(-recorder[ln], min=0.0)
 
     flow2 = _ttfs_flow(T)
-    shifts = apply_negative_value_shifts(flow2, x, T, forward_fn=fwd)
+    shifts = _shifts(flow2, x, T, fwd)
     ln2 = _layernorm_op(flow2)
     torch.testing.assert_close(
         torch.as_tensor(shifts[ln2]), expected, atol=0.0, rtol=0.0,
@@ -138,8 +143,8 @@ def test_shift_value_matches_recorded_min_ttfs():
 
 
 def test_computeop_free_graph_skips_the_calibration_forward():
-    """Structural no-op guard: a mapper graph without ComputeOps needs no
-    shift, so the (always-on) mechanism must not pay a calibration forward."""
+    """Structural no-op guard: a mapper graph without ComputeOps has no value
+    boundary, so neither mechanism may pay a calibration forward."""
 
     class _PlainMLP(nn.Module):
         def __init__(self):
@@ -159,7 +164,8 @@ def test_computeop_free_graph_skips_the_calibration_forward():
     def _must_not_run(model, x, T, compute_min_recorder=None):
         raise AssertionError("calibration forward ran on a ComputeOp-free graph")
 
-    shifts = apply_negative_value_shifts(
+    minima = calibrated_compute_op_minima(
         flow, torch.rand(4, 8), 4, forward_fn=_must_not_run,
     )
-    assert shifts == {}
+    assert minima == {}
+    assert apply_negative_value_shifts(flow, minima) == {}

@@ -81,9 +81,11 @@ def _build_with_lif(T, *, shift: bool):
     negative-value shift applied (pre-mapping bake + tag + HCM propagation)."""
     from mimarsinan.mapping.support.bias_compensation import (
         apply_negative_value_shifts,
+        calibration_forward_for_mode,
         transfer_negative_shifts_to_ir,
         propagate_negative_shifts_to_hybrid,
     )
+    from mimarsinan.mapping.support.negative_boundary import calibrated_compute_op_minima
     torch.manual_seed(0)
     m = _TwoSegLayerNorm().eval()
     flow = convert_torch_model(m, input_shape=(8,), num_classes=4)
@@ -93,7 +95,13 @@ def _build_with_lif(T, *, shift: bool):
         p.activation = lif
     repr_ = flow.get_mapper_repr()
     if shift:
-        apply_negative_value_shifts(flow, torch.rand(16, 8), T)  # bakes consumer + tags ln
+        apply_negative_value_shifts(  # bakes consumer + tags ln
+            flow,
+            calibrated_compute_op_minima(
+                flow, torch.rand(16, 8), T,
+                forward_fn=calibration_forward_for_mode("lif"),
+            ),
+        )
     repr_.assign_perceptron_indices()
     ir = IRMapping(q_max=127.0, firing_mode="Default", max_axons=64, max_neurons=64).map(repr_)
     if shift:

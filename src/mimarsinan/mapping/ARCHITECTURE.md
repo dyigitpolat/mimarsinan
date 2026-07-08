@@ -28,10 +28,37 @@ use when).
 | `pruning/` | IR pruning, liveness semantics, mask/compaction application, boundary policy, graph segmentation |
 | `packing/` | `SoftCore`/`HardCore` bin packing, placement engine, hybrid multi-stage mapping (`HybridHardCoreMapping`) |
 | `latency/` | `IRLatency` (IR topology tiers) and `ChipLatency` (packed-chip cycle scheduling) plus upstream closure |
-| `support/` | Shared mechanisms: activation/per-source scales, bias compensation, core geometry, source spans, residual merge, scheduling |
+| `support/` | Shared mechanisms: activation/per-source scales, bias compensation, core geometry, source spans, residual merge, scheduling, and the negative value-boundary policy (`negative_boundary.py` + the structural non-negativity predicate `value_domain.py`) |
 | `verification/` | Layout verification services, capacity checks, hardware suggester, on-chip fraction/majority metrics, wizard verify |
 | `export/` | Chip export (`cpp_chip_model` emission) and IR quantization verify for simulation |
 | `onchip_attention/` | D5 research frontier: attention/LayerNorm on-chip mappability verdicts; not in the deployment path |
+
+## Negative value boundaries
+
+A host `ComputeOp` feeding a neural segment crosses a value->spike boundary,
+and the `[0,1]` spike-encode clamp is the only lossy operation there. Two
+mechanisms make that boundary lossless, selected by `negative_value_shift`
+(`support/negative_boundary.py`):
+
+- **on (default)** — `apply_negative_value_shifts` derives a calibrated
+  per-channel positive shift `s = max(0, -min)` and pre-corrects the consuming
+  perceptron's bias (`B - W*s`), so the next activation absorbs the shift
+  exactly. Mapping structure is unchanged. A `ComputeOp -> ComputeOp` seam has
+  no bias to correct and fails loud.
+- **off** — `subsume_forward_negative_boundaries` moves the consuming
+  perceptrons onto the host (`is_encoding_layer`) until a node that
+  structurally cannot emit a negative value absorbs the range (ReLU, LIF, a
+  non-negative clamp: `value_domain.produces_nonnegative_values`). It changes
+  no weights; a host op that absorbs nothing is crossed, since it clamps
+  nothing either. Leaving no on-chip segment fails loud.
+
+`apply_negative_boundary_policy` runs the chosen mechanism and then re-checks
+`lossy_negative_boundaries` from the calibrated minima: a negative boundary
+that an on-chip segment would still encode raises. Silent clamp corruption is
+therefore not authorable from either position. Both mechanisms share one
+calibration (`calibrated_compute_op_minima`) and inherit its coverage caveat -
+a boundary that stays non-negative on the calibration set but dips below zero
+on unseen data still warns at runtime (`warn_once_lossy_negative_clamp`).
 
 ## Dependencies
 - `code_generation` — `cpp_chip_model` chip types (`SpikeSource`, chip model) for export, softcore packing, and spike-source spans.

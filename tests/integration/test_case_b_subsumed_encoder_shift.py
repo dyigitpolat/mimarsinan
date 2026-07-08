@@ -21,8 +21,10 @@ from mimarsinan.mapping.packing.hybrid_hardcore_mapping import build_hybrid_hard
 from mimarsinan.mapping.platform.mapping_structure import MappingStrategy
 from mimarsinan.models.spiking.hybrid.flow import SpikingHybridCoreFlow
 from mimarsinan.models.nn.activations import LIFActivation
+from mimarsinan.mapping.support.negative_boundary import calibrated_compute_op_minima
 from mimarsinan.mapping.support.bias_compensation import (
     apply_negative_value_shifts,
+    calibration_forward_for_mode,
     transfer_negative_shifts_to_ir,
     propagate_negative_shifts_to_hybrid,
 )
@@ -67,7 +69,12 @@ def _build(T, *, shift: bool, calib_x=None):
     if shift:
         if calib_x is None:
             calib_x = torch.rand(16, 2, 4)
-        shifts = apply_negative_value_shifts(flow, calib_x, T)
+        shifts = apply_negative_value_shifts(
+            flow,
+            calibrated_compute_op_minima(
+                flow, calib_x, T, forward_fn=calibration_forward_for_mode("lif"),
+            ),
+        )
         assert shifts, "the bare Linear boundary must derive a shift"
         assert getattr(encoder, "_neg_shift_baked", False), (
             "the subsumed encoder's bias must be baked"
