@@ -7,6 +7,7 @@ from mimarsinan.pipelining.core.registry.model_registry import ModelRegistry
 from mimarsinan.models.builders.torch.torchvision_builder_utils import (
     adapt_conv_in_channels,
     parse_image_input_shape,
+    torchvision_workload_profile,
 )
 
 _VGG_MAX_POOL_COUNT = 5
@@ -51,6 +52,8 @@ class TorchVGG16Builder:
     def build(self, configuration):
         model = models.vgg16_bn(num_classes=self.num_classes)
         return _adapt_vgg_for_input(model, self.input_shape)
+
+    workload_profile = staticmethod(torchvision_workload_profile)
 
     def get_pretrained_factory(self):
         """Return a callable that creates a pretrained VGG16-BN (ImageNet weights)."""

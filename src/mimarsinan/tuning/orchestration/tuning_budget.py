@@ -5,7 +5,13 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
+from mimarsinan.common.workload_profile import ResolvedWorkloadProfile
 from mimarsinan.data_handling.data_provider import DataProvider
+
+# Frozen workload-neutral clamps (profile-overridable): the absolute per-tuner
+# step cap and the evaluation-subset target, both tier-0-proven defaults.
+_GENERIC_STEP_CAP = 4000
+_GENERIC_EVAL_SUBSAMPLE_TARGET = 5000
 
 
 @dataclass
@@ -39,19 +45,28 @@ class TuningBudget:
         degradation_tolerance: float = 0.05,
         tuning_batch_size: int | None = None,
         scale_ramp_steps: bool = False,
+        eval_subsample_target: int | None = None,
+        tuning_step_cap_epochs: float | None = None,
     ) -> TuningBudget:
         """Budget derived from the *tuning* batch size.
 
         ``tuning_batch_size`` overrides ``batch_size`` for the tuning phase alone
         (``None`` keeps the training batch size). The sample-count budget
         (≈ 1 epoch × budget_scale) is invariant under the batch-size change.
+        ``eval_subsample_target`` / ``tuning_step_cap_epochs`` are the
+        workload-profile clamps; ``None`` keeps the frozen generic defaults.
         """
         train_bs = max(1, int(batch_size))
         tuning_bs = max(1, int(tuning_batch_size)) if tuning_batch_size is not None else train_bs
         steps_per_epoch = max(1, int(dataset_size) // tuning_bs)
         check_interval = max(1, min(100, int(math.sqrt(float(steps_per_epoch)))))
         spe_budget = int(float(steps_per_epoch) * float(budget_scale))
-        cap = max(4000, spe_budget) if scale_ramp_steps else 4000
+        base_cap = (
+            _GENERIC_STEP_CAP
+            if tuning_step_cap_epochs is None
+            else max(1, int(float(tuning_step_cap_epochs) * steps_per_epoch))
+        )
+        cap = max(base_cap, spe_budget) if scale_ramp_steps else base_cap
         max_training_steps = max(1, min(cap, spe_budget))
         validation_steps = max(1, min(32, check_interval))
 
@@ -62,7 +77,11 @@ class TuningBudget:
         if val_set_size is not None and val_batch_size is not None:
             vbs = max(1, int(val_batch_size))
             total_val_batches = max(1, int(val_set_size) // vbs)
-            target_eval_samples = 5000
+            target_eval_samples = (
+                _GENERIC_EVAL_SUBSAMPLE_TARGET
+                if eval_subsample_target is None
+                else max(1, int(eval_subsample_target))
+            )
             target_batches = max(1, target_eval_samples // vbs)
             min_eval_batches = min(validation_steps, total_val_batches)
             eval_n_batches = max(min_eval_batches, min(target_batches, total_val_batches))
@@ -94,6 +113,8 @@ class TuningBudget:
         *,
         tuning_batch_size: int | None = None,
         scale_ramp_steps: bool = False,
+        eval_subsample_target: int | None = None,
+        tuning_step_cap_epochs: float | None = None,
     ) -> TuningBudget:
         return TuningBudget.from_dataset(
             data_provider.get_training_set_size(),
@@ -104,6 +125,8 @@ class TuningBudget:
             degradation_tolerance=degradation_tolerance,
             tuning_batch_size=tuning_batch_size,
             scale_ramp_steps=scale_ramp_steps,
+            eval_subsample_target=eval_subsample_target,
+            tuning_step_cap_epochs=tuning_step_cap_epochs,
         )
 
 
@@ -123,12 +146,15 @@ def tuning_budget_from_pipeline(pipeline) -> TuningBudget:
     """Build a :class:`TuningBudget` from ``pipeline.config`` and data provider."""
     dp = pipeline.data_provider_factory.create()
     tuning_bs = resolve_tuning_batch_size(pipeline, dp.get_training_batch_size())
+    workload = ResolvedWorkloadProfile.from_config(pipeline.config)
     return TuningBudget.from_data_provider(
         dp,
         float(pipeline.config.get("tuning_budget_scale", 1.0)),
         degradation_tolerance=float(pipeline.config.get("degradation_tolerance", 0.05)),
         tuning_batch_size=tuning_bs,
         scale_ramp_steps=bool(pipeline.config.get("tuning_budget_scale_ramp_steps", False)),
+        eval_subsample_target=workload.eval_subsample_target,
+        tuning_step_cap_epochs=workload.tuning_step_cap_epochs,
     )
 
 

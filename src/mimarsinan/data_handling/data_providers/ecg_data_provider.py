@@ -89,7 +89,11 @@ class ECG_DataProvider(DataProvider):
         }
 
     def get_test_batch_size(self):
-        return 10000
+        """Full-test-set batches by default; an explicit batch_size override
+        must win (the provider batch contract)."""
+        if self._batch_size_override is not None:
+            return super().get_test_batch_size()
+        return min(10000, max(1, self.get_test_set_size()))
 
     def get_prediction_mode(self):
         return ClassificationMode(2)

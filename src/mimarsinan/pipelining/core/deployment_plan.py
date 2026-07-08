@@ -24,9 +24,7 @@ OPTIMIZATION_DRIVER_CONTROLLER = "controller"
 OPTIMIZATION_DRIVER_FAST = "fast"
 
 _LEGACY_FAST_SWITCHES = (
-    "lif_blend_fast",
-    "ttfs_genuine_blend_fast",
-    "ttfs_blend_fast",
+    "lif_blend_fast", "ttfs_genuine_blend_fast", "ttfs_blend_fast",
 )
 
 
@@ -38,25 +36,29 @@ def resolve_optimization_driver(config: dict[str, Any]) -> str:
         if value in (OPTIMIZATION_DRIVER_CONTROLLER, OPTIMIZATION_DRIVER_FAST):
             return value
         raise ValueError(
-            f"optimization_driver must be "
-            f"'{OPTIMIZATION_DRIVER_CONTROLLER}' or '{OPTIMIZATION_DRIVER_FAST}', "
-            f"got {explicit!r}"
+            f"optimization_driver must be '{OPTIMIZATION_DRIVER_CONTROLLER}' "
+            f"or '{OPTIMIZATION_DRIVER_FAST}', got {explicit!r}"
         )
     if any(bool(config.get(switch, False)) for switch in _LEGACY_FAST_SWITCHES):
         return OPTIMIZATION_DRIVER_FAST
     return OPTIMIZATION_DRIVER_CONTROLLER
 
 
-PRETRAINED_WEIGHT_SOURCE = "torchvision"
-
-
-def _resolve_weight_source(config: dict[str, Any]) -> Any:
-    """``weight_source`` with the F3 ``preload_weights`` regime flag folded in."""
+def _resolve_weight_source(config: dict[str, Any], workload: ResolvedWorkloadProfile) -> Any:
+    """``weight_source`` with the F3 ``preload_weights`` regime flag folded in:
+    the regime resolves to the builder-registered ``pretrained_weight_source``
+    (fail-loud when nothing is registered)."""
     explicit = config.get("weight_source")
     if explicit:
         return explicit
     if bool(config.get("preload_weights", False)):
-        return PRETRAINED_WEIGHT_SOURCE
+        if workload.pretrained_weight_source is None:
+            raise ValueError(
+                "preload_weights=true but no weight_source is set and the model "
+                "builder registers no pretrained_weight_source "
+                "(ModelWorkloadProfile). Declare weight_source explicitly."
+            )
+        return workload.pretrained_weight_source
     return explicit
 
 
@@ -123,17 +125,16 @@ class DeploymentPlan:
         degradation_tolerance = float(get("degradation_tolerance", 0.05))
         scm_dt = get("scm_degradation_tolerance")
         default_budget = 2.0 * degradation_tolerance
-
         model_type = get("model_type", "")
-
         cls._require_chip_faithful_lif_forward(config, spiking)
+        workload = ResolvedWorkloadProfile.from_config(config)
 
         return cls(
             config=config,
             search_mode=derive_search_mode(config),
             model_type=model_type,
             model_category=ModelRegistry.get_category(model_type),
-            weight_source=_resolve_weight_source(config),
+            weight_source=_resolve_weight_source(config, workload),
             spiking_mode=spiking,
             ttfs_cycle_schedule=ttfs_cycle_schedule(schedule_raw),
             requires_ttfs_firing=requires_ttfs_firing(spiking),
@@ -168,7 +169,7 @@ class DeploymentPlan:
             simulation_batch_size=int(get("simulation_batch_size", 8)),
             seed=int(get("seed", 0)),
             model_name=get("model_name") or model_type,
-            workload=ResolvedWorkloadProfile.from_config(config),
+            workload=workload,
         )
 
     @staticmethod

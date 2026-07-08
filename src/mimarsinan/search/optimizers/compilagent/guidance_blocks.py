@@ -219,6 +219,17 @@ def under_explored_axes(
     return flagged
 
 
+def arch_lever_names(state: Any, limit: int = 3) -> list[str]:
+    """Arch lever (model_config) key names observed across ran candidates —
+    workload-derived, never a hard-coded knob vocabulary."""
+    names: set[str] = set()
+    for rec in state.sink.records():
+        cfg = rec.configuration or {}
+        model_config = (cfg.get("deployment_parameters") or {}).get("model_config") or {}
+        names.update(str(key) for key in model_config)
+    return sorted(names)[: int(limit)]
+
+
 def suggestions_for(
     rows: list[dict[str, Any]],
     summary: dict[str, dict[str, Any]],
@@ -243,9 +254,15 @@ def suggestions_for(
     if acc:
         spread = acc["best"]["value"] - acc["worst"]["value"]
         if spread < 0.05:
+            levers = arch_lever_names(state)
+            lever_hint = (
+                ", ".join(f"`{name}`" for name in levers)
+                if levers
+                else "the model's arch levers"
+            )
             out.append(
                 "Accuracy is barely moving across candidates. Try a wider "
-                "spread on `fc_w_1`, `fc_w_2`, or `patch_c_1` to learn the "
+                f"spread on {lever_hint} to learn the "
                 "accuracy vs cost trade-off."
             )
 

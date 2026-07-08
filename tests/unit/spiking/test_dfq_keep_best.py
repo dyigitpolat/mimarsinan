@@ -171,7 +171,7 @@ class TestDistmatchWiresDeployedProbe:
             seen.update(kw)
             return {}
 
-        run_teacher_distmatch(tuner, matcher, bias_iters=3, eta=0.5)
+        run_teacher_distmatch(tuner, matcher, n_batches=8, bias_iters=3, eta=0.5)
         assert callable(seen["probe"])
         assert seen["probe_patience"] == TUNING_POLICY.dfq_keepbest_patience
 
@@ -199,5 +199,5 @@ class TestDistmatchWiresDeployedProbe:
             captured["probe"] = kw["probe"]
             return {}
 
-        blend_ramp.run_teacher_distmatch(tuner, matcher)
+        blend_ramp.run_teacher_distmatch(tuner, matcher, n_batches=8)
         assert captured["probe"]() == pytest.approx(0.75)

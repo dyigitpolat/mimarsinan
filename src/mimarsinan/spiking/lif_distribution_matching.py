@@ -29,7 +29,7 @@ def _lif_cascade_channel_means(model, cal_x, T) -> dict:
 
 
 def match_lif_activation_distributions(
-    model, teacher, cal_x, T, *, bias_iters: int = 10, eta: float = 0.5,
+    model, teacher, cal_x, T, *, bias_iters: int, eta: float = 0.5,
     probe=None, probe_patience: int | None = None,
 ) -> dict:
     """Match the deployed LIF cascade's per-neuron mean to the teacher ANN's.

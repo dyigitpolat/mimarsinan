@@ -115,7 +115,7 @@ def match_activation_distributions(
     T,
     *,
     quantile: float = 0.99,
-    bias_iters: int = 15,
+    bias_iters: int,
     eta: float = 0.7,
     probe=None,
     probe_patience: int | None = None,

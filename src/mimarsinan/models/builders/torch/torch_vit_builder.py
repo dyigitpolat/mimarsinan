@@ -9,6 +9,7 @@ import torch.nn.functional as F
 import torchvision.models as models
 from torchvision.models.vision_transformer import VisionTransformer, interpolate_embeddings
 
+from mimarsinan.common.workload_profile import ModelWorkloadProfile
 from mimarsinan.models.builders.torch.torchvision_builder_utils import (
     parse_image_input_shape,
     resize_conv_input_weights,
@@ -147,6 +148,15 @@ class TorchViTBuilder:
             return model
 
         return _factory
+
+    @classmethod
+    def workload_profile(cls) -> ModelWorkloadProfile:
+        """Torchvision preload source + the measured clamp/CUDA-assert proneness
+        (device-side asserts observed under Clamp Adaptation on this backbone)."""
+        return ModelWorkloadProfile(
+            pretrained_weight_source="torchvision",
+            clamp_cuda_assert_prone=True,
+        )
 
     @classmethod
     def get_config_schema(cls):

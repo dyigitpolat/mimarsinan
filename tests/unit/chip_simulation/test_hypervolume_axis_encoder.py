@@ -115,6 +115,9 @@ def test_plan_coordinates_use_deployment_plan_axes():
         "weight_quantization": False,
         "prune_sparsity": 0.2,
         "preload_weights": True,
+        # What the pipeline's workload-profile fold injects for a builder that
+        # registers a pretrained source (resolve alone performs no fold).
+        "pretrained_weight_source": "torchvision",
         "model_config": {"depth": 8},
     }
     plan = DeploymentPlan.resolve(cfg)

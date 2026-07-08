@@ -5,6 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from mimarsinan.common.workload_profile import ResolvedWorkloadProfile
+
+_GENERIC_DISTMATCH_BIAS_ITERS = 15
+_GENERIC_DISTMATCH_CAL_BATCHES = 8
+
 
 def encoder_scale_pin(config) -> float | None:
     """The deployed encoder decode scale when the plan pins it, else ``None``.
@@ -38,6 +43,7 @@ class CalibrationPipeline:
     distmatch_quantile: float
     distmatch_bias_iters: int
     distmatch_bias_eta: float
+    distmatch_cal_batches: int
 
     @property
     def gain_active(self) -> bool:
@@ -58,8 +64,9 @@ class CalibrationPipeline:
             gain_rule="relative",
             gain_c=1.9,
             distmatch_quantile=0.99,
-            distmatch_bias_iters=15,
+            distmatch_bias_iters=_GENERIC_DISTMATCH_BIAS_ITERS,
             distmatch_bias_eta=0.7,
+            distmatch_cal_batches=_GENERIC_DISTMATCH_CAL_BATCHES,
         )
 
     @classmethod
@@ -106,6 +113,17 @@ class CalibrationPipeline:
         """Resolve the active steps + compatibility for a cell that opts into
         conversion-health calibration (the cascaded cycle today)."""
         get = config.get
+        calibration = ResolvedWorkloadProfile.from_config(config).calibration
+        bias_iters_default = (
+            _GENERIC_DISTMATCH_BIAS_ITERS
+            if calibration.distmatch_bias_iters is None
+            else int(calibration.distmatch_bias_iters)
+        )
+        cal_batches = (
+            _GENERIC_DISTMATCH_CAL_BATCHES
+            if calibration.distmatch_cal_batches is None
+            else int(calibration.distmatch_cal_batches)
+        )
 
         gain_ramp = bool(get("ttfs_gain_correction_ramp", False))
         gain_cold = bool(get("ttfs_gain_correction", False)) and not gain_ramp
@@ -127,6 +145,7 @@ class CalibrationPipeline:
             gain_rule=str(get("ttfs_gain_correction_rule", "relative")),
             gain_c=float(get("ttfs_gain_correction_c", 1.9)),
             distmatch_quantile=float(get("ttfs_distmatch_quantile", 0.99)),
-            distmatch_bias_iters=int(get("ttfs_distmatch_bias_iters", 15)),
+            distmatch_bias_iters=int(get("ttfs_distmatch_bias_iters", bias_iters_default)),
             distmatch_bias_eta=float(get("ttfs_distmatch_bias_eta", 0.7)),
+            distmatch_cal_batches=cal_batches,
         )

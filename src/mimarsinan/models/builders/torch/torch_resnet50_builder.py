@@ -5,6 +5,7 @@ import torchvision.models as models
 from mimarsinan.models.builders.torch.torchvision_builder_utils import (
     adapt_conv_in_channels,
     parse_image_input_shape,
+    torchvision_workload_profile,
 )
 from mimarsinan.pipelining.core.registry.model_registry import ModelRegistry
 
@@ -28,6 +29,8 @@ class TorchResNet50Builder:
     def build(self, configuration):
         model = models.resnet50(num_classes=self.num_classes)
         return _adapt_resnet_for_input(model, self.input_shape)
+
+    workload_profile = staticmethod(torchvision_workload_profile)
 
     def get_pretrained_factory(self):
         """Return a callable that creates a pretrained ResNet-50 (ImageNet weights)."""

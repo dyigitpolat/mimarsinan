@@ -9,6 +9,7 @@ import torch
 import torch.nn as nn
 
 from mimarsinan.common.best_effort import best_effort
+from mimarsinan.common.workload_profile import ResolvedWorkloadProfile
 from mimarsinan.tuning.forward_install import CascadeForwardInstall, LazyExecutorForward
 from mimarsinan.tuning.orchestration.blend_ramp import (
     BlendActivation,
@@ -246,9 +247,14 @@ class KDBlendAdaptationTuner(CascadeForwardInstall, SmoothAdaptationTuner):
     def _snapshot_teacher(self) -> nn.Module:
         return snapshot_frozen_teacher(self.model, self.pipeline.config["device"])
 
-    def _calibration_inputs(self, n_batches: int = 8) -> torch.Tensor:
+    def _calibration_inputs(self, n_batches: int | None = None) -> torch.Tensor:
         """A few concatenated validation batches as a calibration anchor (shared by
-        the TTFS/LIF teacher-distribution matchers)."""
+        the TTFS/LIF teacher-distribution matchers). ``None`` = the workload
+        calibration profile's ``distmatch_cal_batches``, else the generic 8."""
+        if n_batches is None:
+            profile = ResolvedWorkloadProfile.from_config(self.pipeline.config)
+            declared = profile.calibration.distmatch_cal_batches
+            n_batches = 8 if declared is None else int(declared)
         device = self.pipeline.config["device"]
         batches = [
             x.to(device)

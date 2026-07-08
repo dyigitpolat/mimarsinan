@@ -8,12 +8,23 @@ from typing import Iterable, Optional, Sequence, Union
 import torchvision.transforms as transforms
 
 
-NORMALIZATION_PRESETS: dict[str, tuple[tuple[float, float, float], tuple[float, float, float]]] = {
-    "imagenet": ((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
-    "cifar": ((0.4914, 0.4822, 0.4465), (0.2470, 0.2435, 0.2616)),
-    "cifar10": ((0.4914, 0.4822, 0.4465), (0.2470, 0.2435, 0.2616)),
-    "cifar100": ((0.5071, 0.4865, 0.4409), (0.2673, 0.2564, 0.2762)),
-}
+# Named normalization presets are PROVIDER-REGISTERED dataset facts: each
+# data-provider module registers its canonical mean/std at import (the
+# data_providers package import guarantees registration before any lookup
+# through the provider factory). The framework ships no dataset constants here.
+NORMALIZATION_PRESETS: dict[str, tuple[tuple[float, ...], tuple[float, ...]]] = {}
+
+
+def register_normalization_preset(
+    name: str,
+    mean: Sequence[float],
+    std: Sequence[float],
+    *,
+    aliases: Sequence[str] = (),
+) -> None:
+    """Register a named canonical normalization (idempotent; providers call this)."""
+    for key in (name, *aliases):
+        NORMALIZATION_PRESETS[str(key).lower()] = (tuple(mean), tuple(std))
 
 
 _INTERPOLATION_MODES = {
@@ -88,7 +99,10 @@ def _resolve_normalize(value) -> tuple[Optional[Sequence[float]], Optional[Seque
         if key not in NORMALIZATION_PRESETS:
             raise ValueError(
                 f"Unknown normalization preset {value!r}. "
-                f"Known presets: {sorted(NORMALIZATION_PRESETS)}"
+                f"Known presets: {sorted(NORMALIZATION_PRESETS)} "
+                f"(presets are provider-registered; importing "
+                f"mimarsinan.data_handling.data_providers registers the "
+                f"shipped ones)"
             )
         mean, std = NORMALIZATION_PRESETS[key]
         return mean, std

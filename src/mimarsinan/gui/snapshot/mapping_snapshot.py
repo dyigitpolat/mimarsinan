@@ -56,7 +56,7 @@ def snapshot_mapping_performance_planned(
         return None
 
     model_repr = model_repr_from_model(
-        model, input_shape=input_shape, num_classes=num_classes or 10
+        model, input_shape=input_shape, num_classes=num_classes
     )
     if model_repr is None:
         return None

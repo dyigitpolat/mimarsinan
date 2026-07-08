@@ -1,11 +1,16 @@
 from mimarsinan.data_handling.data_provider import DataProvider, ClassificationMode
 from mimarsinan.data_handling.data_provider_factory import BasicDataProviderFactory
+from mimarsinan.data_handling.preprocessing import register_normalization_preset
 
 import torchvision.transforms as transforms
 import torchvision
 
 import torch
 import os
+
+CIFAR10_MEAN = (0.4914, 0.4822, 0.4465)
+CIFAR10_STD = (0.2470, 0.2435, 0.2616)
+register_normalization_preset("cifar10", CIFAR10_MEAN, CIFAR10_STD, aliases=("cifar",))
 
 
 @BasicDataProviderFactory.register("CIFAR10_DataProvider")

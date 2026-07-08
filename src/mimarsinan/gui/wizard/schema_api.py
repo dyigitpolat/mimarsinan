@@ -8,6 +8,7 @@ from mimarsinan.config_schema.defaults import (
     get_default_training_recipe,
     get_default_tuning_recipe,
 )
+import mimarsinan.data_handling.data_providers  # noqa: F401  # pyright: ignore[reportUnusedImport] — registers providers + their normalization presets
 from mimarsinan.config_schema.registry import serialize_registry
 from mimarsinan.config_schema.resolve import resolve_draft
 from mimarsinan.data_handling.preprocessing import (

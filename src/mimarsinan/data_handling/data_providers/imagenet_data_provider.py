@@ -12,6 +12,7 @@ from torch.utils.data import DataLoader
 from mimarsinan.common.env import imagenet_root
 from mimarsinan.data_handling.data_provider import ClassificationMode, DataProvider
 from mimarsinan.data_handling.data_provider_factory import BasicDataProviderFactory
+from mimarsinan.data_handling.preprocessing import register_normalization_preset
 
 _IMAGENET_LINK_NAME = "imagenet"
 _REPO_ROOT = Path(__file__).resolve().parents[4]
@@ -59,6 +60,7 @@ def _ensure_imagenet_symlink(datasets_path: str) -> str:
 
 _IMAGENET_MEAN = (0.485, 0.456, 0.406)
 _IMAGENET_STD = (0.229, 0.224, 0.225)
+register_normalization_preset("imagenet", _IMAGENET_MEAN, _IMAGENET_STD)
 
 
 def _seeded_val_test_indices(n_official_val: int, val_fraction: float, seed: int | None):

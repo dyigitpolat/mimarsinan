@@ -9,7 +9,10 @@ from mimarsinan.tuning.orchestration import dhat_highwater, endpoint_steps
 from mimarsinan.tuning.orchestration.mbh_ledger import fp32_deployed_read
 from mimarsinan.tuning.orchestration.recovery_engine import RecoveryEngine
 from mimarsinan.tuning.orchestration.tuner_base import _RECOVERY_PATIENCE
-from mimarsinan.tuning.orchestration.tuning_policy import TUNING_POLICY
+from mimarsinan.tuning.orchestration.tuning_policy import (
+    TUNING_POLICY,
+    effective_endpoint_floor_lr,
+)
 
 
 @dataclass(frozen=True)
@@ -108,7 +111,7 @@ def run_endpoint_recovery(tuner, *, base_steps, target_floor=None) -> EndpointRe
             ))
             steps_left = endpoint_steps.remaining(tuner.pipeline, total_steps)
             if steps_left > 0:
-                lr = min(lr, TUNING_POLICY.endpoint_floor_lr)
+                lr = min(lr, effective_endpoint_floor_lr(tuner.pipeline.config))
                 budget = min(budget, steps_left)
                 min_steps = budget
                 ledger_funded = True

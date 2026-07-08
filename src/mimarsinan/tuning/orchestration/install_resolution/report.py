@@ -72,23 +72,36 @@ def emit_temporal_gauge(context: str, gauge: TemporalWindowGauge, *, reporter=No
     )
 
 
-def chain_gauge_fails(*, max_intra_segment_depth: int, n_segments: int) -> bool:
+def chain_gauge_fails(
+    *,
+    max_intra_segment_depth: int,
+    n_segments: int,
+    proven_recovery_depth: int | None = None,
+) -> bool:
     """A6 chain verdict: a SINGLE-segment cascade whose hop chain reaches the
     proven-recovery depth binds on the compounding kernel (corpus: t01_12's
-    L=9 read 0.88 with a clean value gauge; L <= 4-5 chains all recovered)."""
+    L=9 read 0.88 with a clean value gauge; L <= 4-5 chains all recovered).
+    ``proven_recovery_depth`` is the workload-profile override; ``None`` = the
+    corpus-calibrated constant."""
+    depth_law = (
+        PROVEN_RECOVERY_DEPTH
+        if proven_recovery_depth is None
+        else int(proven_recovery_depth)
+    )
     return (
         int(n_segments) == 1
-        and int(max_intra_segment_depth) + 1 >= PROVEN_RECOVERY_DEPTH
+        and int(max_intra_segment_depth) + 1 >= depth_law
     )
 
 
 def emit_chain_gauge(
     context: str, *, max_intra_segment_depth: int, s: int, n_segments: int,
-    reporter=None,
+    reporter=None, proven_recovery_depth: int | None = None,
 ) -> None:
     """The cascaded install's chain line: hop depth is the compounding exponent."""
     verdict = "FAIL" if chain_gauge_fails(
         max_intra_segment_depth=max_intra_segment_depth, n_segments=n_segments,
+        proven_recovery_depth=proven_recovery_depth,
     ) else "PASS"
     if reporter is not None:
         emit_reporter_event(reporter, "mbh_a6", {

@@ -5,9 +5,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from mimarsinan.chip_simulation.spiking_semantics import is_lif
+from mimarsinan.common.workload_profile import ResolvedWorkloadProfile
 from mimarsinan.tuning.orchestration.mbh_tanneal import TAnnealSchedule
 
 _DEFAULT_BLEND_FAST_RATES = [0.25, 0.5, 0.75, 1.0]
+_GENERIC_DISTMATCH_BIAS_ITERS = 10
+_GENERIC_DISTMATCH_CAL_BATCHES = 8
 
 
 @dataclass(frozen=True)
@@ -30,6 +33,17 @@ class LifAdaptationPlan:
     @classmethod
     def resolve(cls, config) -> "LifAdaptationPlan":
         get = config.get
+        calibration = ResolvedWorkloadProfile.from_config(config).calibration
+        bias_iters_default = (
+            _GENERIC_DISTMATCH_BIAS_ITERS
+            if calibration.distmatch_bias_iters is None
+            else int(calibration.distmatch_bias_iters)
+        )
+        cal_batches_default = (
+            _GENERIC_DISTMATCH_CAL_BATCHES
+            if calibration.distmatch_cal_batches is None
+            else int(calibration.distmatch_cal_batches)
+        )
         return cls(
             cycle_accurate=bool(get("cycle_accurate_lif_forward", False)),
             blend_fast_rates=[
@@ -43,9 +57,9 @@ class LifAdaptationPlan:
             ),
             endpoint_recovery_steps=int(get("endpoint_recovery_steps", 0)),
             distmatch=bool(get("lif_distmatch", False)),
-            distmatch_bias_iters=int(get("lif_distmatch_bias_iters", 10)),
+            distmatch_bias_iters=int(get("lif_distmatch_bias_iters", bias_iters_default)),
             distmatch_bias_eta=float(get("lif_distmatch_bias_eta", 0.5)),
-            distmatch_cal_batches=int(get("lif_distmatch_cal_batches", 8)),
+            distmatch_cal_batches=int(get("lif_distmatch_cal_batches", cal_batches_default)),
             theta_cotrain=bool(get("lif_theta_cotrain", False)),
             simulation_steps=int(config["simulation_steps"]),
         )

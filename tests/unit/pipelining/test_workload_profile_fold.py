@@ -90,3 +90,39 @@ class TestPipelineFold:
         plan = DeploymentPlan.resolve(config)
         assert plan.workload.input_data_scale == 2.5
         assert plan.workload.eval_subsample_target == 10000
+
+
+class TestShippedBuilderRegistrations:
+    def test_torchvision_builders_register_their_preload_source(self):
+        for model_type in (
+            "torch_vgg16", "torch_vit", "torch_squeezenet11", "torch_resnet50",
+        ):
+            profile = ModelRegistry.get_workload_profile(model_type)
+            assert profile is not None, model_type
+            assert profile.pretrained_weight_source == "torchvision", model_type
+
+    def test_vit_registers_the_clamp_cuda_assert_flag(self):
+        profile = ModelRegistry.get_workload_profile("torch_vit")
+        assert profile is not None
+        assert profile.clamp_cuda_assert_prone is True
+
+    def test_native_builders_register_nothing(self):
+        assert ModelRegistry.get_workload_profile("deep_cnn") is None
+
+
+class TestPreloadRegimeResolution:
+    def test_explicit_weight_source_always_wins(self):
+        plan = DeploymentPlan.resolve({"weight_source": "w.pt", "preload_weights": True})
+        assert plan.weight_source == "w.pt"
+
+    def test_preload_resolves_to_the_registered_source(self):
+        plan = DeploymentPlan.resolve(
+            {"preload_weights": True, "pretrained_weight_source": "torchvision"}
+        )
+        assert plan.weight_source == "torchvision"
+
+    def test_preload_without_a_registered_source_fails_loud(self):
+        import pytest
+
+        with pytest.raises(ValueError, match="pretrained_weight_source"):
+            DeploymentPlan.resolve({"preload_weights": True})

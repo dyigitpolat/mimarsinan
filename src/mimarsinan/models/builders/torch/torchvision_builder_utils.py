@@ -7,6 +7,14 @@ from typing import cast
 import torch
 import torch.nn as nn
 
+from mimarsinan.common.workload_profile import ModelWorkloadProfile
+
+
+def torchvision_workload_profile() -> ModelWorkloadProfile:
+    """The registration every torchvision-factory builder shares: the
+    ``preload_weights`` regime resolves to torchvision weights."""
+    return ModelWorkloadProfile(pretrained_weight_source="torchvision")
+
 
 def parse_image_input_shape(input_shape, *, model_name: str) -> tuple[int, int, int]:
     """Validate and normalize a ``(C, H, W)`` input shape."""

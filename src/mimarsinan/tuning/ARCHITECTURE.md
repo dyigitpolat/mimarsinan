@@ -31,7 +31,7 @@ search, rate application, decision tracing — are shared by all tuner families.
 - `transformations` — normalization-aware perceptron quantization, `PerceptronTransformer`, pruning mask application and activation-stat collection.
 - `data_handling` — `DataLoaderFactory`/`DataProvider` for validation-set sizes that derive budgets and decay factors.
 - `mapping` — pruning boundary policy for the pruning tuner.
-- `common` — `best_effort` error containment; `env` for the `MIMARSINAN_MBH_LEDGER` verbose-diagnostics flag.
+- `common` — `best_effort` error containment; `env` for the `MIMARSINAN_MBH_LEDGER` verbose-diagnostics flag; `workload_profile.ResolvedWorkloadProfile` for the profile-overridable clamps (budget caps, eval target, calibration extents, LR ceilings, recovery-depth law) — frozen generic defaults stay at their consumers.
 
 ## Dependents
 - `pipelining` — pipeline steps construct the tuners, the adaptation-manager factory, and `tuning_budget_from_pipeline`; `deployment_plan` consumes `temporal_allocation`, `ConversionPolicy`, the optimization driver, and the calibration pipeline.

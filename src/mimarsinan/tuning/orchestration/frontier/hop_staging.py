@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from mimarsinan.common.reporter import emit_reporter_event
+from mimarsinan.common.workload_profile import ResolvedWorkloadProfile
 from mimarsinan.spiking.dfq_bias_correction import (
     teacher_activation_samples,
     teacher_channel_means,
@@ -71,7 +72,9 @@ def resolve_sync_hop_staging(tuner):
     if not sync_exact_qat_active(config):
         return None
     n_levels = stamp_hop_depths(tuner.model)
-    if n_levels < HOP_STAGE_MIN_LEVELS:
+    declared_depth = ResolvedWorkloadProfile.from_config(config).proven_recovery_depth
+    min_levels = HOP_STAGE_MIN_LEVELS if declared_depth is None else int(declared_depth)
+    if n_levels < min_levels:
         return None
     levels = value_grid_levels("ttfs_cycle_based", config)
     if levels is None or not _install_gauge_fails(tuner, levels):

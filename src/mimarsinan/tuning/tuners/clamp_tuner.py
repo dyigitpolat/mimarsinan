@@ -4,6 +4,7 @@ import math
 
 import torch
 
+from mimarsinan.common.workload_profile import ResolvedWorkloadProfile
 from mimarsinan.models.nn.layers import SavedTensorDecorator
 from mimarsinan.tuning.axes import ClampAxis
 from mimarsinan.tuning.orchestration.adaptation_manager import (
@@ -109,8 +110,16 @@ class ClampTuner(SmoothAdaptationTuner):
 
         return diagnostics
 
-    def _probe_clamp_saturation(self, n_batches: int = 1):
-        """Measure how often outputs hit the clamp ceiling under full clamp."""
+    def _probe_clamp_saturation(self, n_batches: int | None = None):
+        """Measure how often outputs hit the clamp ceiling under full clamp.
+
+        ``None`` = the workload calibration profile's ``gauge_batches``, else 1.
+        """
+        if n_batches is None:
+            declared = ResolvedWorkloadProfile.from_config(
+                self.pipeline.config
+            ).calibration.gauge_batches
+            n_batches = 1 if declared is None else int(declared)
         perceptrons = list(self.model.get_perceptrons())
         old_rate = self.adaptation_manager.clamp_rate
         hit_counts = [0 for _ in perceptrons]

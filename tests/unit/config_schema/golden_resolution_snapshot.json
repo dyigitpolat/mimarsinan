@@ -10014,7 +10014,7 @@
      "eval_subsample_target": null,
      "input_data_scale": 1.0,
      "prefix_stage_lr": null,
-     "pretrained_weight_source": null,
+     "pretrained_weight_source": "torchvision",
      "proven_recovery_depth": null,
      "tuning_step_cap_epochs": null
     }
@@ -10080,6 +10080,7 @@
     "optimization_driver": "fast",
     "paired_confirm_batches": 0,
     "pipeline_mode": "phased",
+    "pretrained_weight_source": "torchvision",
     "s_allocation": "uniform",
     "s_allocation_budget": null,
     "s_allocation_explicit": null,
@@ -10203,12 +10204,12 @@
       "gauge_batches": null,
       "stat_batches": null
      },
-     "clamp_cuda_assert_prone": false,
+     "clamp_cuda_assert_prone": true,
      "endpoint_floor_lr": null,
      "eval_subsample_target": null,
      "input_data_scale": 1.0,
      "prefix_stage_lr": null,
-     "pretrained_weight_source": null,
+     "pretrained_weight_source": "torchvision",
      "proven_recovery_depth": null,
      "tuning_step_cap_epochs": null
     }
@@ -10221,6 +10222,7 @@
     "allow_per_layer_s": false,
     "allow_scheduling": false,
     "batch_size": 512,
+    "clamp_cuda_assert_prone": true,
     "cores": [
      {
       "count": 69,
@@ -10275,6 +10277,7 @@
      "normalize": "imagenet",
      "resize_to": 224
     },
+    "pretrained_weight_source": "torchvision",
     "s_allocation": "uniform",
     "s_allocation_budget": null,
     "s_allocation_explicit": null,
@@ -10398,12 +10401,12 @@
       "gauge_batches": null,
       "stat_batches": null
      },
-     "clamp_cuda_assert_prone": false,
+     "clamp_cuda_assert_prone": true,
      "endpoint_floor_lr": null,
      "eval_subsample_target": null,
      "input_data_scale": 1.0,
      "prefix_stage_lr": null,
-     "pretrained_weight_source": null,
+     "pretrained_weight_source": "torchvision",
      "proven_recovery_depth": null,
      "tuning_step_cap_epochs": null
     }
@@ -10416,6 +10419,7 @@
     "allow_per_layer_s": false,
     "allow_scheduling": false,
     "batch_size": 512,
+    "clamp_cuda_assert_prone": true,
     "cores": [
      {
       "count": 69,
@@ -10476,6 +10480,7 @@
      "normalize": "imagenet",
      "resize_to": 224
     },
+    "pretrained_weight_source": "torchvision",
     "pruning": true,
     "pruning_fraction": 0.05,
     "s_allocation": "uniform",
@@ -11199,7 +11204,7 @@
      "eval_subsample_target": null,
      "input_data_scale": 1.0,
      "prefix_stage_lr": null,
-     "pretrained_weight_source": null,
+     "pretrained_weight_source": "torchvision",
      "proven_recovery_depth": null,
      "tuning_step_cap_epochs": null
     }
@@ -11261,6 +11266,7 @@
     "optimization_driver": "fast",
     "paired_confirm_batches": 0,
     "pipeline_mode": "phased",
+    "pretrained_weight_source": "torchvision",
     "s_allocation": "uniform",
     "s_allocation_budget": null,
     "s_allocation_explicit": null,
@@ -11588,7 +11594,7 @@
      "eval_subsample_target": null,
      "input_data_scale": 1.0,
      "prefix_stage_lr": null,
-     "pretrained_weight_source": null,
+     "pretrained_weight_source": "torchvision",
      "proven_recovery_depth": null,
      "tuning_step_cap_epochs": null
     }
@@ -11648,6 +11654,7 @@
     "optimization_driver": "fast",
     "paired_confirm_batches": 0,
     "pipeline_mode": "phased",
+    "pretrained_weight_source": "torchvision",
     "s_allocation": "uniform",
     "s_allocation_budget": null,
     "s_allocation_explicit": null,
@@ -11771,12 +11778,12 @@
       "gauge_batches": null,
       "stat_batches": null
      },
-     "clamp_cuda_assert_prone": false,
+     "clamp_cuda_assert_prone": true,
      "endpoint_floor_lr": null,
      "eval_subsample_target": null,
      "input_data_scale": 1.0,
      "prefix_stage_lr": null,
-     "pretrained_weight_source": null,
+     "pretrained_weight_source": "torchvision",
      "proven_recovery_depth": null,
      "tuning_step_cap_epochs": null
     }
@@ -11789,6 +11796,7 @@
     "allow_per_layer_s": false,
     "allow_scheduling": true,
     "batch_size": 512,
+    "clamp_cuda_assert_prone": true,
     "cores": [
      {
       "count": 69,
@@ -11849,6 +11857,7 @@
      "normalize": "imagenet",
      "resize_to": 224
     },
+    "pretrained_weight_source": "torchvision",
     "pruning": true,
     "pruning_fraction": 0.05,
     "s_allocation": "uniform",
@@ -11979,7 +11988,7 @@
      "eval_subsample_target": null,
      "input_data_scale": 1.0,
      "prefix_stage_lr": null,
-     "pretrained_weight_source": null,
+     "pretrained_weight_source": "torchvision",
      "proven_recovery_depth": null,
      "tuning_step_cap_epochs": null
     }
@@ -12041,6 +12050,7 @@
     "optimization_driver": "fast",
     "paired_confirm_batches": 0,
     "pipeline_mode": "phased",
+    "pretrained_weight_source": "torchvision",
     "s_allocation": "uniform",
     "s_allocation_budget": null,
     "s_allocation_explicit": null,

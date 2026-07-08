@@ -4,7 +4,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-__all__ = ["TuningPolicy", "TUNING_POLICY"]
+from mimarsinan.common.workload_profile import ResolvedWorkloadProfile
+
+__all__ = [
+    "TuningPolicy",
+    "TUNING_POLICY",
+    "effective_prefix_stage_lr",
+    "effective_endpoint_floor_lr",
+]
 
 
 @dataclass(frozen=True)
@@ -61,3 +68,17 @@ class TuningPolicy:
 
 
 TUNING_POLICY = TuningPolicy()
+
+
+def effective_prefix_stage_lr(config) -> float:
+    """P4 stage LR ceiling: explicit/model-registered workload override, else
+    the frozen policy value (a trainability fact proven on the tier-0 corpus)."""
+    override = ResolvedWorkloadProfile.from_config(config).prefix_stage_lr
+    return TUNING_POLICY.prefix_stage_lr if override is None else float(override)
+
+
+def effective_endpoint_floor_lr(config) -> float:
+    """Floor-chasing endpoint LR: explicit/model-registered workload override,
+    else the frozen probe-validated policy value."""
+    override = ResolvedWorkloadProfile.from_config(config).endpoint_floor_lr
+    return TUNING_POLICY.endpoint_floor_lr if override is None else float(override)

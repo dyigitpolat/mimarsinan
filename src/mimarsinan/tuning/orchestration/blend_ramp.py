@@ -84,7 +84,7 @@ def kd_loss_from_config(config, teacher: nn.Module) -> KDClassificationLoss:
     )
 
 
-def run_teacher_distmatch(tuner, matcher, *, n_batches: int = 8, **matcher_kwargs):
+def run_teacher_distmatch(tuner, matcher, *, n_batches: int, **matcher_kwargs):
     """Distribution-match the deployed model to the tuner's frozen KD teacher, report, return stats.
 
     Supplies the deployed full-transform probe (the gate's D-hat read) so the

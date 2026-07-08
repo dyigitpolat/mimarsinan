@@ -32,7 +32,11 @@ from mimarsinan.tuning.orchestration.ramp_strategy import (
     GenuineBlendRamp,
     RampStrategy,
 )
-from mimarsinan.tuning.orchestration.tuning_policy import TUNING_POLICY
+from mimarsinan.common.workload_profile import ResolvedWorkloadProfile
+from mimarsinan.tuning.orchestration.tuning_policy import (
+    TUNING_POLICY,
+    effective_prefix_stage_lr,
+)
 
 
 class _SegmentSpikeForward(LazyExecutorForward):
@@ -165,6 +169,9 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
             s=self._T,
             n_segments=max(1, int(self._n_spike_segments or 1)),
             reporter=self.pipeline.reporter,
+            proven_recovery_depth=ResolvedWorkloadProfile.from_config(
+                self.pipeline.config
+            ).proven_recovery_depth,
         )
 
     def _resolve_prefix_ramp(self, plan):
@@ -335,7 +342,10 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
         spanning pipeline LR measured destructive through the genuine k-hybrid
         (every stage's plain-CE training discarded by keep-best)."""
         if self._prefix_ramp:
-            return min(float(self.pipeline_lr), TUNING_POLICY.prefix_stage_lr)
+            return min(
+                float(self.pipeline_lr),
+                effective_prefix_stage_lr(self.pipeline.config),
+            )
         return super()._fast_ladder_lr()
 
     def _fast_ramp(self, rate) -> None:
@@ -396,6 +406,7 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
         self._distmatch_stats = run_teacher_distmatch(
             self,
             match_activation_distributions,
+            n_batches=cal.distmatch_cal_batches,
             quantile=cal.distmatch_quantile,
             bias_iters=cal.distmatch_bias_iters,
             eta=cal.distmatch_bias_eta,

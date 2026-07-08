@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from mimarsinan.mapping.verification.wizard_layout_verify import (
+    require_workload_fields,
     resolve_tiling_params_from_body,
 )
 
@@ -73,11 +74,12 @@ class LayoutMappingRequest:
             hw_bias = bool(body.get("hardware_bias", False))
             coalescing = bool(body.get("allow_coalescing", False))
 
+        model_type, input_shape, num_classes = require_workload_fields(body)
         return cls(
-            model_type=str(body.get("model_type", "simple_mlp")),
+            model_type=model_type,
             model_config_key=_freeze(body.get("model_config", {})),
-            input_shape=tuple(int(d) for d in body.get("input_shape", [1, 28, 28])),
-            num_classes=int(body.get("num_classes", 10)),
+            input_shape=input_shape,
+            num_classes=num_classes,
             target_tq=int(body.get("target_tq", 32)),
             max_axons=int(eff_ax),
             max_neurons=int(eff_neu),

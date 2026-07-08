@@ -6,6 +6,7 @@ import math
 
 import torch
 
+from mimarsinan.common.workload_profile import ResolvedWorkloadProfile
 from mimarsinan.mapping.pruning.boundary_policy import (
     build_boundary_ir_graph,
     compute_perceptron_io_exemption_indices,
@@ -95,11 +96,14 @@ def get_masks(tuner, rate, *, commit=True):
 
 def refresh_pruning_importance(tuner):
     perceptrons = tuner.model.get_perceptrons()
+    declared = ResolvedWorkloadProfile.from_config(
+        tuner.pipeline.config
+    ).calibration.stat_batches
     activation_stats = collect_activation_stats(
         tuner.model,
         tuner.trainer.validation_loader,
         tuner._device,
-        num_batches=5,
+        num_batches=5 if declared is None else int(declared),
     )
     tuner.base_row_imp.clear()
     tuner.base_col_imp.clear()

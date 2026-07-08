@@ -84,11 +84,12 @@ def validate_deployment_config(config: dict, *, model_name: str, cuda_debug: boo
     plan = DeploymentPlan.resolve(config)
     clamp_in_play = plan.requires_clamp_preconditioning
 
-    if "vit" in model_name.lower() and clamp_in_play and not cuda_debug:
+    if plan.workload.clamp_cuda_assert_prone and clamp_in_play and not cuda_debug:
         print(
-            "[DeploymentPipeline] ViT + Clamp Adaptation detected without "
-            "cuda_debug. If you hit a CUDA device-side assert, re-run with "
-            "--debug (or set deployment_parameters.cuda_debug=true) to get "
-            "a precise traceback.",
+            f"[DeploymentPipeline] {model_name}: this architecture is "
+            "registered CUDA-assert-prone under Clamp Adaptation and "
+            "cuda_debug is off. If you hit a CUDA device-side assert, re-run "
+            "with --debug (or set deployment_parameters.cuda_debug=true) to "
+            "get a precise traceback.",
             file=sys.stderr,
         )

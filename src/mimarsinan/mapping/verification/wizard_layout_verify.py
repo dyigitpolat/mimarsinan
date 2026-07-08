@@ -23,11 +23,25 @@ from mimarsinan.torch_mapping.encoding_layers import mark_encoding_layers
 from mimarsinan.pipelining.core.registry.model_registry import ModelRegistry
 
 
+def require_workload_fields(body: dict) -> tuple[str, tuple[int, ...], int]:
+    """The workload identity of a layout request; every field must be explicit
+    (the framework assumes no dataset or architecture)."""
+    missing = [key for key in ("model_type", "input_shape", "num_classes") if body.get(key) is None]
+    if missing:
+        raise ValueError(
+            f"layout request is missing workload fields {missing}: pass the "
+            "provider/builder facts explicitly (no framework defaults exist)."
+        )
+    return (
+        str(body["model_type"]),
+        tuple(int(x) for x in body["input_shape"]),
+        int(body["num_classes"]),
+    )
+
+
 def model_repr_from_wizard_body(body: dict) -> Any:
     """Build mapper repr from a wizard-style request body."""
-    model_type = body.get("model_type", "simple_mlp")
-    input_shape = tuple(int(x) for x in body.get("input_shape", [1, 28, 28]))
-    num_classes = int(body.get("num_classes", 10))
+    model_type, input_shape, num_classes = require_workload_fields(body)
     model_config = body.get("model_config", {})
     placement = str(body.get("encoding_layer_placement", "subsume"))
     pipeline_config = {
@@ -76,7 +90,7 @@ def model_repr_from_model(
     model: Any,
     *,
     input_shape: tuple | list | None = None,
-    num_classes: int = 10,
+    num_classes: int | None = None,
 ) -> Any | None:
     """Extract mapper repr from a built model (native or torch); None when extraction fails."""
     model_repr = None
@@ -84,7 +98,7 @@ def model_repr_from_model(
         if hasattr(model, "get_mapper_repr"):
             model_repr = model.get_mapper_repr()
         else:
-            if input_shape is None:
+            if input_shape is None or num_classes is None:
                 return None
             supermodel = convert_torch_model(
                 model,

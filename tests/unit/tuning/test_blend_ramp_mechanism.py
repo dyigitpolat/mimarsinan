@@ -189,10 +189,12 @@ class TestRunTeacherDistmatch:
             ("Stub Tuner distmatch", {"ok": 1}),
         ]
 
-    def test_default_calibration_batches_is_eight(self):
+    def test_calibration_batches_must_be_passed_explicitly(self):
+        """The batch extent is workload-profile-resolved by the CALLER
+        (CalibrationPipeline / LifAdaptationPlan); no framework default here."""
         tuner = _StubTuner()
-        run_teacher_distmatch(tuner, lambda *a, **kw: {})
-        assert tuner.calibration_calls == [8]
+        with pytest.raises(TypeError, match="n_batches"):
+            run_teacher_distmatch(tuner, lambda *a, **kw: {})
 
 
 # ── fast-ladder driver adoption (rate schedule source stays per-tuner) ─────────

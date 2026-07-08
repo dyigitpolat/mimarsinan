@@ -6,6 +6,7 @@ from typing import Iterable, List
 
 import torch
 
+from mimarsinan.common.workload_profile import ResolvedWorkloadProfile
 from mimarsinan.models.nn.layers import TransformedActivation
 from mimarsinan.tuning.orchestration.mbh_ledger import _measurement_guard
 
@@ -81,14 +82,21 @@ def attach_activation_decorator(perceptron, decorator):
     return lambda: perceptron.set_activation(activation)
 
 
-def capture_install_stats(tuner, n_batches: int = 2) -> List[tuple]:
+def capture_install_stats(tuner, n_batches: int | None = None) -> List[tuple]:
     """Cursor-isolated channel-stats capture of the tuner's LIVE model at the
     install anchor: RNG is forked and the trainer's validation cursor restored,
     so the live trajectory is untouched.
 
     A fresh trainer has no cursor yet; the cache content is deterministic, so
     pre-building it and rewinding to 0 is bit-invariant for consumers.
+    ``n_batches=None`` reads the workload calibration profile's
+    ``gauge_batches``, else the generic 2.
     """
+    if n_batches is None:
+        declared = ResolvedWorkloadProfile.from_config(
+            tuner.pipeline.config
+        ).calibration.gauge_batches
+        n_batches = 2 if declared is None else int(declared)
     prev_cursor = getattr(tuner.trainer, "_gpu_val_cursor", None)
     with _measurement_guard(tuner.trainer):
         batches = [
