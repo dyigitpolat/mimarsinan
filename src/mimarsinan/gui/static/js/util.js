@@ -1,8 +1,8 @@
 /* Shared utilities and Plotly safe-wrapper for Mimarsinan GUI.
- * Markdown: pinned ESM from jsDelivr (no import map — works in any document). */
+ * Markdown: pinned ESM vendored under static/vendor/ (offline monitors). */
 
-import { marked } from 'https://cdn.jsdelivr.net/npm/marked@14.1.4/lib/marked.esm.js';
-import DOMPurify from 'https://cdn.jsdelivr.net/npm/dompurify@3.1.7/dist/purify.es.mjs';
+import { marked } from '/static/vendor/marked-14.1.4.esm.js';
+import DOMPurify from '/static/vendor/dompurify-3.1.7.es.mjs';
 
 // ── HTML helpers ─────────────────────────────────────────────────────────
 const _escDiv = document.createElement('div');
@@ -62,6 +62,31 @@ export function fmtNum(n) {
   return String(n);
 }
 
+// Semantic-group accents ("r,g,b") shared by the step navigator (CSS
+// mirror in monitor.css), the config pipeline preview, and the overview
+// timing bars.
+export const GROUP_ACCENTS = {
+  configuration: '168,85,247',
+  model_building: '139,92,246',
+  pretraining: '56,189,248',
+  torch_mapping: '14,165,233',
+  pruning: '244,63,94',
+  activation: '74,222,128',
+  activation_quantization: '52,211,153',
+  weight_quantization: '251,191,36',
+  normalization: '34,211,238',
+  soft_mapping: '96,165,250',
+  core_verification: '129,140,248',
+  coreflow_tuning: '99,102,241',
+  hardware: '249,115,22',
+  simulation: '103,232,249',
+  other: '107,114,128',
+};
+
+export function groupAccent(group) {
+  return GROUP_ACCENTS[group] || GROUP_ACCENTS.other;
+}
+
 // ── Plotly safe wrapper ──────────────────────────────────────────────────
 // Every axis gets a stable uirevision so zoom/pan survives Plotly.react().
 
@@ -72,8 +97,10 @@ const DARK = {
   plot_bgcolor: '#141924',
   font: { color: '#8494a7', size: 11, family: "'Outfit', system-ui, sans-serif" },
   margin: { t: 30, r: 20, b: 40, l: 50 },
-  xaxis: { gridcolor: '#1e2736', zerolinecolor: '#2a3547' },
-  yaxis: { gridcolor: '#1e2736', zerolinecolor: '#2a3547' },
+  // automargin keeps the axis titles clear of their tick labels; it only ever
+  // grows the margins the callers reserve for the below-plot legend.
+  xaxis: { gridcolor: '#1e2736', zerolinecolor: '#2a3547', automargin: true },
+  yaxis: { gridcolor: '#1e2736', zerolinecolor: '#2a3547', automargin: true },
   colorway: ['#3b82f6', '#22d3ee', '#10b981', '#f59e0b', '#f43f5e', '#8b5cf6', '#f97316', '#4ade80'],
 };
 const CFG = { displayModeBar: false, responsive: true };
@@ -98,6 +125,42 @@ export function makeLayout(overrides = {}) {
     yaxis: { ...DARK.yaxis, uirevision: 'persist' },
   };
   return deepMerge(base, overrides);
+}
+
+const LEGEND_FONT_PX = 10;
+const LEGEND_CHAR_PX = 5.6;   // advance width of the 10px UI font
+const LEGEND_ENTRY_PAD = 44;  // colour swatch + inter-entry gutter
+const LEGEND_ROW_H = 18;
+const AXIS_FOOTER_H = 48;     // tick labels + axis title
+
+// Plotly wraps a horizontal legend once it runs out of width, and it does not
+// grow the margin to fit the extra rows.
+function legendRows(names, plotWidth) {
+  const width = Math.max(plotWidth || 0, 240);
+  const total = names.reduce(
+    (acc, name) => acc + String(name).length * LEGEND_CHAR_PX + LEGEND_ENTRY_PAD, 0);
+  return Math.max(1, Math.ceil(total / width));
+}
+
+// Horizontal legend pinned under the x-axis title — never to the right, where
+// it eats plot width. Bottom margin and height both grow with the number of
+// wrapped rows so legend entries never land on the tick labels.
+// (legend.yref 'container' requires the vendored Plotly ≥ 2.26.)
+export function legendBelow(names, elOrId, { height = 240, margin = {} } = {}) {
+  const el = typeof elOrId === 'string' ? document.getElementById(elOrId) : elOrId;
+  const showlegend = names.length > 1;
+  const rows = showlegend ? legendRows(names, el && el.clientWidth) : 0;
+  return {
+    showlegend,
+    legend: {
+      orientation: 'h',
+      x: 0, xanchor: 'left', xref: 'paper',
+      y: 0, yanchor: 'bottom', yref: 'container',
+      font: { size: LEGEND_FONT_PX },
+    },
+    margin: { r: 20, ...margin, b: AXIS_FOOTER_H + rows * LEGEND_ROW_H },
+    height: height + rows * LEGEND_ROW_H,
+  };
 }
 
 export function safeReact(elOrId, traces, layoutOverrides = {}) {

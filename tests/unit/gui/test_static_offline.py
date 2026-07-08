@@ -15,6 +15,11 @@ _EXTERNAL_REF_PATTERNS = (
     re.compile(r"""(?:src|href)\s*=\s*["']https?://""", re.IGNORECASE),
     re.compile(r"""@import\s+(?:url\()?["']?https?://""", re.IGNORECASE),
     re.compile(r"""url\(\s*["']?https?://""", re.IGNORECASE),
+    # ES-module imports (`import … from 'https://…'`, `import 'https://…'`,
+    # dynamic `import('https://…')`): a CDN module import fails the whole
+    # dependent module graph on an air-gapped monitor.
+    re.compile(r"""(?:from|import)\s+["']https?://""", re.IGNORECASE),
+    re.compile(r"""import\(\s*["']https?://""", re.IGNORECASE),
 )
 
 
