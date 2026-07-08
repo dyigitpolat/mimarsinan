@@ -291,6 +291,7 @@ class TestMetadataWorkloadFacts:
     for the profile-injected keys."""
 
     def test_metadata_carries_workload_facts(self, client, monkeypatch):
+        import mimarsinan.data_handling.data_providers  # noqa: F401 — registers providers
         from mimarsinan.common.workload_profile import DataWorkloadProfile
         from mimarsinan.data_handling.data_provider_factory import (
             BasicDataProviderFactory,
