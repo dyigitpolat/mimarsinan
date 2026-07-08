@@ -26,6 +26,7 @@ from mimarsinan.chip_simulation.sanafe.analysis import (
     _compute_cascade_timeline,
     _compute_critical_cores,
     _compute_cycle_energy_breakdown,
+    _compute_noc_link_load_per_cycle,
     _compute_noc_traffic_per_cycle,
     _compute_tile_packets_per_cycle,
     _compute_ttfs_activity_diagnostics,
@@ -252,6 +253,9 @@ class SanafeNeuralStageRecordMixin:
             ),
             connectivity=connectivity_edges,
             noc_traffic_per_cycle=_compute_noc_traffic_per_cycle(
+                results.get("message_trace"),
+            ),
+            noc_link_load_per_cycle=_compute_noc_link_load_per_cycle(
                 results.get("message_trace"),
             ),
             tile_packets_per_cycle=_compute_tile_packets_per_cycle(

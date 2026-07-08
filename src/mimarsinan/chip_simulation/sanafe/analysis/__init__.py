@@ -21,6 +21,7 @@ from mimarsinan.chip_simulation.sanafe.analysis.energy import (
 from mimarsinan.chip_simulation.sanafe.analysis.noc import (
     _aggregate_noc_link_load,
     _aggregate_noc_links,
+    _compute_noc_link_load_per_cycle,
     _compute_noc_traffic_per_cycle,
     _compute_tile_packets_per_cycle,
     _flatten_message_trace,
@@ -48,6 +49,7 @@ __all__ = [
     "_compute_connectivity_edges",
     "_compute_critical_cores",
     "_compute_cycle_energy_breakdown",
+    "_compute_noc_link_load_per_cycle",
     "_compute_noc_traffic_per_cycle",
     "_compute_tile_packets_per_cycle",
     "_compute_ttfs_activity_diagnostics",

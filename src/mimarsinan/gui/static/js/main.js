@@ -1,10 +1,22 @@
 /* Mimarsinan Pipeline Monitor — Entry point.
- * State management, WebSocket, refresh loop, pipeline bar. */
+ * Workbench shell orchestration: state, WebSocket, refresh loop,
+ * section routing, live rail. */
 import { esc, fmtDuration, elapsedFromStepStart } from './util.js';
-import { renderPipelineBar, renderOverviewCards } from './overview.js';
+import { renderOverviewCards } from './overview.js';
+import {
+  buildNav,
+  goToSection,
+  currentSection,
+  setNavBadge,
+  renderStepList,
+  renderOverviewFacts,
+  renderLiveRail,
+} from './monitor-shell.js';
 import { renderConfigTab } from './config-tab.js';
 import { refreshStepDetail, updateLiveCharts, bufferLiveAnnotation } from './step-detail.js';
 import { renderAnalysisTab } from './analysis-tab.js';
+import { renderNocSection } from './noc-section.js';
+import { renderArtifactsSection } from './artifacts-section.js';
 import { syncActiveLiveSearch } from './live-search-sync.js';
 import { appendConsoleLogs, clearConsoleLogs } from './console-tab.js';
 
@@ -17,7 +29,6 @@ const state = {
   pipeline: null,
   selectedStep: null,
   activeTab: null,
-  activeMainTab: 'overview',
   autoFollow: !_historicalRunId,
   ws: null,
   metricBuffers: {},
@@ -28,6 +39,7 @@ const state = {
   historicalRunId: _historicalRunId,
   isActiveRun: false,
   consoleOffset: 0,
+  analysis: null,
 };
 
 let _isActiveRun = false;
@@ -42,10 +54,67 @@ function apiUrl(path) {
 
 async function fetchJSON(url) { return (await fetch(url)).json(); }
 
+// ── Section routing ──────────────────────────────────────────────────────
+// Charts drawn while their section is display:none get zero-width layouts,
+// so every activation re-renders the section it reveals.
+function navigate(sectionId) {
+  goToSection(sectionId);
+  activateSection(sectionId);
+}
+
+function activateSection(sectionId) {
+  switch (sectionId) {
+    case 'overview':
+      renderOverviewCards(state.pipeline);
+      renderOverviewFacts(state.pipeline, state.historicalRunId);
+      break;
+    case 'steps':
+      renderStepList(state.pipeline, state.selectedStep, selectStep);
+      if (state.selectedStep) {
+        state.lastDetailJSON = null;
+        refreshStepDetail(state.selectedStep, state, fetchJSON).catch(() => {});
+      }
+      break;
+    case 'analysis':
+      renderAnalysisTab(state, apiUrl, fetchJSON);
+      break;
+    case 'noc':
+      renderNocSection(state, apiUrl, fetchJSON);
+      break;
+    case 'artifacts':
+      renderArtifactsSection(state, apiUrl, fetchJSON);
+      break;
+    case 'config':
+      renderConfigTab(state.pipeline);
+      break;
+    case 'console':
+      refreshConsoleLogs();
+      break;
+  }
+}
+
+// Select a step and show its page (used by the step list, the live rail,
+// and auto-follow).
+function selectStep(stepName, { follow = false, show = true } = {}) {
+  if (!follow) {
+    state.autoFollow = false;
+    updateAutoFollowBtn();
+  }
+  const changed = state.selectedStep !== stepName;
+  state.selectedStep = stepName;
+  if (changed) {
+    state.activeTab = null;
+    state.lastDetailJSON = null;
+    showStepDetailLoading(stepName);
+  }
+  if (show && currentSection() !== 'steps') navigate('steps');
+  else renderStepList(state.pipeline, state.selectedStep, selectStep);
+  scheduleStepDetailRefresh();
+}
+
 // ── Init ─────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
-  setupPipelineBarClicks();
-  setupMainTabs();
+  buildNav(navigate);
   document.getElementById('auto-follow-btn').addEventListener('click', toggleAutoFollow);
   document.getElementById('console-clear-btn')?.addEventListener('click', () => {
     clearConsoleLogs();
@@ -59,7 +128,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       state.isActiveRun = true;
       state.autoFollow = true;
     }
-    setupHistoricalBanner();
+    setupRunChrome();
   }
 
   await refreshPipeline();
@@ -69,7 +138,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // lifecycle event via WS, so this poll is purely a safety net for
     // cases where the WS connection drops silently.
     setInterval(refreshPipeline, 30000);
-    setInterval(() => { if (state.activeMainTab === 'console') refreshConsoleLogs(); }, 2000);
+    setInterval(() => { if (currentSection() === 'console') refreshConsoleLogs(); }, 2000);
   } else if (_isActiveRun) {
     // Active (subprocess) runs stream metrics + pipeline_overview via
     // /ws/active_runs/{rid} instead of polling, so the charts update at
@@ -77,7 +146,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // the overview in case the WS drops silently.
     connectActiveRunWebSocket(state.historicalRunId);
     setInterval(refreshPipeline, 30000);
-    setInterval(() => { if (state.activeMainTab === 'console') refreshConsoleLogs(); }, 2000);
+    setInterval(() => { if (currentSection() === 'console') refreshConsoleLogs(); }, 2000);
   }
   setInterval(updateElapsedTimer, 1000);
 });
@@ -85,11 +154,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 // ── Refresh loop ─────────────────────────────────────────────────────────
 // Leading-edge throttle for step-detail REST refetches. We *fire
 // immediately* on the first call so step_started -> DOM scaffold latency
-// is dominated by the REST RTT (~50 ms) rather than the old trailing
-// 200 ms debounce. Subsequent calls inside the cooldown window coalesce
-// into at most one trailing refresh — still enough to collapse a burst
-// of WS lifecycle events (step_started -> step_completed) into a single
-// follow-up fetch when metrics keep flooding.
+// is dominated by the REST RTT (~50 ms) rather than a trailing debounce.
+// Subsequent calls inside the cooldown window coalesce into at most one
+// trailing refresh.
 const _DETAIL_COOLDOWN_MS = 200;
 let _detailLastRunAt = 0;
 let _detailTrailingTimer = null;
@@ -102,8 +169,6 @@ function scheduleStepDetailRefresh() {
     refreshStepDetail(state.selectedStep, state, fetchJSON).catch(() => {});
     return;
   }
-  // Inside cooldown — queue exactly one trailing refresh so we don't
-  // miss the last update in a burst.
   if (_detailTrailingTimer) return;
   const wait = Math.max(_DETAIL_COOLDOWN_MS - since, 0);
   _detailTrailingTimer = setTimeout(() => {
@@ -113,6 +178,28 @@ function scheduleStepDetailRefresh() {
       refreshStepDetail(state.selectedStep, state, fetchJSON).catch(() => {});
     }
   }, wait);
+}
+
+// The live rail's endpoint-budget block reads the analysis payload; events
+// are low-rate so a 10 s floor keeps this cheap.
+let _analysisFetchAt = 0;
+async function refreshAnalysisForRail() {
+  const now = Date.now();
+  if (now - _analysisFetchAt < 10000) return;
+  _analysisFetchAt = now;
+  try {
+    state.analysis = await fetchJSON(apiUrl('/analysis'));
+    renderLiveRail(state, name => selectStep(name));
+  } catch (e) { /* analysis is enrichment — the rail renders without it */ }
+}
+
+function renderShell() {
+  renderOverviewCards(state.pipeline);
+  renderOverviewFacts(state.pipeline, state.historicalRunId);
+  renderStepList(state.pipeline, state.selectedStep, selectStep);
+  renderLiveRail(state, name => selectStep(name));
+  updateFailureBadges(state.pipeline);
+  refreshAnalysisForRail();
 }
 
 function applyPipelineOverviewFromWS(overview) {
@@ -125,24 +212,13 @@ function applyPipelineOverviewFromWS(overview) {
     overview_chart: overview.overview_chart,
     is_alive: true,
   };
-  renderPipelineBar(state.pipeline, state.selectedStep);
-  renderOverviewCards(state.pipeline);
-  if (state.activeMainTab === 'config') renderConfigTab(state.pipeline);
+  renderShell();
+  if (currentSection() === 'config') renderConfigTab(state.pipeline);
 
   if (state.autoFollow && state.pipeline.current_step) {
     const cur = state.pipeline.current_step;
     if (state.selectedStep !== cur) {
-      state.selectedStep = cur;
-      state.activeTab = null;
-      state.lastDetailJSON = null;
-      // Give the user immediate visual feedback that we've switched —
-      // without this, the panel keeps showing the *previous* step's
-      // data until the REST fetch returns (one RTT + any throttle
-      // window), which reads as "the step switch is lagging by several
-      // seconds". A lightweight placeholder is far better UX than
-      // stale data.
-      showStepDetailLoading(cur);
-      scheduleStepDetailRefresh();
+      selectStep(cur, { follow: true, show: false });
     }
   }
   updateErrorBanner(state.pipeline);
@@ -156,12 +232,9 @@ function applyPipelineOverviewFromWS(overview) {
 function showStepDetailLoading(stepName) {
   const panel = document.getElementById('step-detail');
   if (!panel) return;
-  const safe = stepName == null ? '' : String(stepName).replace(/[&<>"]/g, c => (
-    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]
-  ));
   panel.innerHTML = `
     <div class="step-detail-header">
-      <h2>${safe}</h2>
+      <h2>${esc(stepName == null ? '' : String(stepName))}</h2>
       <span class="badge running">loading…</span>
     </div>
     <div class="tabs" id="step-tabs"></div>
@@ -173,9 +246,8 @@ let _prevAlive = true;
 async function refreshPipeline() {
   try {
     state.pipeline = await fetchJSON(apiUrl('/pipeline'));
-    renderPipelineBar(state.pipeline, state.selectedStep);
-    renderOverviewCards(state.pipeline);
-    if (state.activeMainTab === 'config') renderConfigTab(state.pipeline);
+    renderShell();
+    if (currentSection() === 'config') renderConfigTab(state.pipeline);
 
     if (state.autoFollow && state.pipeline.current_step) {
       const cur = state.pipeline.current_step;
@@ -184,6 +256,12 @@ async function refreshPipeline() {
         state.activeTab = null;
         state.lastDetailJSON = null;
       }
+    }
+    if (!state.selectedStep) {
+      // Historical runs have no current_step: land on the first step so
+      // the Steps section is never an empty pane.
+      const steps = state.pipeline.steps || [];
+      if (steps.length) state.selectedStep = steps[0].name;
     }
     if (state.selectedStep) await refreshStepDetail(state.selectedStep, state, fetchJSON);
 
@@ -210,12 +288,17 @@ function updateErrorBanner(pipeline) {
   if (!banner) {
     banner = document.createElement('div');
     banner.id = 'pipeline-error-banner';
-    banner.style.cssText = 'padding:10px 32px;background:rgba(248,113,113,0.10);border-bottom:2px solid rgba(248,113,113,0.4);color:var(--error);font-size:0.85rem;font-weight:600;';
-    const header = document.querySelector('.header');
+    banner.className = 'pipeline-error-banner';
+    const header = document.querySelector('.wb-header');
     if (header) header.parentNode.insertBefore(banner, header.nextSibling);
     else document.body.prepend(banner);
   }
   banner.textContent = 'Pipeline failed: ' + pipeline.error;
+}
+
+function updateFailureBadges(pipeline) {
+  const failed = ((pipeline && pipeline.steps) || []).filter(s => s.status === 'failed').length;
+  setNavBadge('steps', failed);
 }
 
 // Highest ``event_seq`` observed on the WS so a reconnect can ask the
@@ -242,8 +325,8 @@ function connectWebSocket() {
 
 // Subprocess-spawned active runs use a dedicated WS endpoint that tails
 // the child's live_metrics.jsonl and steps.json for per-event push,
-// eliminating the 3-second polling jank. The reconnect loop is identical
-// to the in-process /ws channel so a momentary disconnect auto-recovers.
+// eliminating polling jank. The reconnect loop is identical to the
+// in-process /ws channel so a momentary disconnect auto-recovers.
 function connectActiveRunWebSocket(runId) {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   const url = `${proto}://${location.host}/ws/active_runs/${encodeURIComponent(runId)}`;
@@ -263,9 +346,8 @@ function handleWSMessage(msg) {
   }
   if (msg.type === 'pipeline_overview') {
     // The collector piggy-backs a full overview on every step lifecycle
-    // event, so we can update the bar + cards synchronously without
-    // touching the network. This is what lets us drop the 5 s poll to
-    // a 30 s watchdog.
+    // event, so we can update the shell synchronously without touching
+    // the network.
     applyPipelineOverviewFromWS(msg);
     return;
   }
@@ -274,14 +356,7 @@ function handleWSMessage(msg) {
     delete state.seenSeqs[msg.step];
     if (state.searchEvents) delete state.searchEvents[msg.step];
     if (state.autoFollow) {
-      state.selectedStep = msg.step;
-      state.activeTab = null;
-      state.lastDetailJSON = null;
-      // Swap the panel to a loading placeholder right now — otherwise
-      // the previous step's DOM (and its stale empty-state "No metrics
-      // recorded") would remain visible until the REST response lands,
-      // which users perceive as the monitor being frozen for seconds.
-      showStepDetailLoading(msg.step);
+      selectStep(msg.step, { follow: true, show: false });
     }
     // Step detail (metrics, snapshot) still needs a REST fetch — the
     // WS overview only carries step lifecycle state, not the heavy
@@ -296,8 +371,7 @@ function handleWSMessage(msg) {
       // If the step-detail panel hasn't rendered yet (i.e. the metrics
       // tab DOM scaffold isn't in place), buffered metrics would be
       // invisible until the next refresh. Kick a leading-edge refresh
-      // right now so the user sees points the moment they arrive,
-      // instead of waiting for a step_started debounce window.
+      // right now so the user sees points the moment they arrive.
       const panel = document.getElementById('step-detail');
       if (!panel || !panel.querySelector('.step-detail-header')) {
         scheduleStepDetailRefresh();
@@ -306,7 +380,7 @@ function handleWSMessage(msg) {
   }
   if (msg.type === 'console_log') {
     state.consoleOffset++;
-    if (state.activeMainTab === 'console') appendConsoleLogs([msg]);
+    if (currentSection() === 'console') appendConsoleLogs([msg]);
   }
   if (msg.type === 'event') {
     // Structured pipeline event: annotate the live charts of its step.
@@ -314,7 +388,7 @@ function handleWSMessage(msg) {
     msg._step_start = startTime != null ? (startTime > 1e12 ? startTime / 1000 : startTime) : null;
     bufferLiveAnnotation(msg.step, msg);
     if (state.selectedStep === msg.step) scheduleStepDetailRefresh();
-    if (state.activeMainTab === 'analysis') renderAnalysisTab(state, apiUrl, fetchJSON);
+    if (currentSection() === 'analysis') renderAnalysisTab(state, apiUrl, fetchJSON);
   }
 }
 
@@ -342,9 +416,7 @@ function bufferMetric(step, name, value, seq, timestamp) {
 }
 
 // Coalesce bursts of metric messages into a single repaint per animation
-// frame. rAF is the natural rate for smooth UI updates, replaces the old
-// 500 ms debounce which produced visibly jerky lines during heavy
-// training metric rates.
+// frame.
 let _liveRaf = 0;
 let _liveDirtyStep = null;
 function scheduleLiveChartUpdate(stepName) {
@@ -378,43 +450,19 @@ function updateElapsedTimer() {
     if (running?.start_time != null) {
       const elapsed = elapsedFromStepStart(running.start_time);
       el.textContent = fmtDuration(elapsed);
-      el.style.display = 'inline';
+      el.style.display = 'inline-flex';
     } else el.style.display = 'none';
   }
-  // Re-render the overview cards so the running step's bar in the
-  // timing chart grows in real time.  Previously the chart only refreshed
-  // on WS ``pipeline_overview`` events (step lifecycle edges) + a 30 s
-  // poll, so a long-running step looked frozen for up to 30 s.
-  if (running && state.activeMainTab === 'overview') {
-    renderOverviewCards(state.pipeline);
+  const railElapsed = document.getElementById('rail-elapsed');
+  if (railElapsed && running?.start_time != null) {
+    railElapsed.textContent = fmtDuration(elapsedFromStepStart(running.start_time));
   }
-}
-
-function setupMainTabs() {
-  const tabBar = document.getElementById('main-tabs');
-  const panes = {
-    overview: document.getElementById('main-tab-overview'),
-    config: document.getElementById('main-tab-config'),
-    console: document.getElementById('main-tab-console'),
-    analysis: document.getElementById('main-tab-analysis'),
-  };
-  if (!tabBar || !panes.overview || !panes.config) return;
-  tabBar.addEventListener('click', (e) => {
-    const btn = e.target.closest('.tab-btn[data-main-tab]');
-    if (!btn) return;
-    const tab = btn.dataset.mainTab;
-    if (!(tab in panes)) return;
-    state.activeMainTab = tab;
-    tabBar.querySelectorAll('.tab-btn').forEach(b => {
-      b.classList.toggle('active', b.dataset.mainTab === tab);
-    });
-    for (const [name, pane] of Object.entries(panes)) {
-      if (pane) pane.classList.toggle('active', name === tab);
-    }
-    if (tab === 'config') renderConfigTab(state.pipeline);
-    if (tab === 'console') refreshConsoleLogs();
-    if (tab === 'analysis') renderAnalysisTab(state, apiUrl, fetchJSON);
-  });
+  // Re-render the timing chart + wall block so the running step's bar
+  // grows in real time instead of only on lifecycle edges.
+  if (running) {
+    if (currentSection() === 'overview') renderOverviewCards(state.pipeline);
+    renderLiveRail(state, name => selectStep(name));
+  }
 }
 
 async function refreshConsoleLogs() {
@@ -430,32 +478,11 @@ async function refreshConsoleLogs() {
   }
 }
 
-function setupPipelineBarClicks() {
-  document.getElementById('pipeline-bar').addEventListener('click', (e) => {
-    const block = e.target.closest('.psb-col');
-    if (!block) return;
-    const stepName = block.dataset.step;
-    if (!stepName) return;
-    state.autoFollow = false;
-    updateAutoFollowBtn();
-    if (state.selectedStep === stepName) return;
-    state.selectedStep = stepName;
-    state.activeTab = null;
-    state.lastDetailJSON = null;
-    renderPipelineBar(state.pipeline, state.selectedStep);
-    refreshStepDetail(stepName, state, fetchJSON);
-  });
-}
-
 function toggleAutoFollow() {
   state.autoFollow = !state.autoFollow;
   updateAutoFollowBtn();
   if (state.autoFollow && state.pipeline?.current_step) {
-    state.selectedStep = state.pipeline.current_step;
-    state.activeTab = null;
-    state.lastDetailJSON = null;
-    renderPipelineBar(state.pipeline, state.selectedStep);
-    refreshStepDetail(state.selectedStep, state, fetchJSON);
+    selectStep(state.pipeline.current_step, { follow: true, show: false });
   }
 }
 
@@ -464,51 +491,48 @@ function updateAutoFollowBtn() {
   if (btn) { btn.classList.toggle('active', state.autoFollow); btn.textContent = state.autoFollow ? 'Following' : 'Follow'; }
 }
 
-function setupHistoricalBanner() {
-  const header = document.querySelector('.header');
-  if (!header) return;
-  const banner = document.createElement('div');
+// Run identity chip + historical/active header actions (Stop, Save as
+// template) — the workbench header replaces the old banner strip.
+function setupRunChrome() {
   const rid = state.historicalRunId;
-  const eRid = esc(rid);
-  const navLinks = `<a href="/" style="color:var(--text-secondary);font-size:0.78rem;text-decoration:none">Home</a>`;
-  if (_isActiveRun) {
-    banner.style.cssText = 'padding:8px 32px;background:rgba(34,211,238,0.06);border-bottom:1px solid rgba(34,211,238,0.2);font-size:0.82rem;color:var(--accent-cyan);display:flex;align-items:center;gap:12px;';
-    banner.innerHTML = `<span style="font-weight:600">Active run:</span> ${eRid}
-      <span style="margin-left:auto;display:flex;gap:12px;align-items:center">
-        <button id="banner-stop-btn" style="background:rgba(248,113,113,0.12);color:var(--error);border:1px solid rgba(248,113,113,0.3);padding:3px 12px;border-radius:6px;font-size:0.75rem;font-weight:600;cursor:pointer">Stop</button>
-        ${navLinks}
-      </span>`;
-  } else {
-    banner.style.cssText = 'padding:8px 32px;background:rgba(139,92,246,0.06);border-bottom:1px solid rgba(139,92,246,0.2);font-size:0.82rem;color:var(--accent-purple);display:flex;align-items:center;gap:12px;';
-    banner.innerHTML = `<span style="font-weight:600">Historical run:</span> ${eRid}
-      <span style="margin-left:auto;display:flex;gap:12px;align-items:center">
-        <button id="banner-save-tpl-btn" style="background:var(--bg-hover);color:var(--text-primary);border:1px solid var(--border);padding:3px 12px;border-radius:6px;font-size:0.75rem;font-weight:500;cursor:pointer">Save as Template</button>
-        ${navLinks}
-      </span>`;
+  const chip = document.getElementById('run-chip');
+  if (chip) {
+    chip.style.display = 'inline-block';
+    chip.textContent = rid;
+    chip.title = (_isActiveRun ? 'Active run: ' : 'Historical run: ') + rid;
+    chip.classList.add(_isActiveRun ? 'live' : 'historical');
   }
-  header.parentNode.insertBefore(banner, header.nextSibling);
 
-  const stopBtn = document.getElementById('banner-stop-btn');
-  if (stopBtn) stopBtn.addEventListener('click', async () => {
-    if (!confirm('Stop this run?')) return;
-    await fetch('/api/active_runs/' + encodeURIComponent(rid), { method: 'DELETE' });
-    stopBtn.textContent = 'Stopped';
-    stopBtn.disabled = true;
-  });
-
-  const saveTplBtn = document.getElementById('banner-save-tpl-btn');
-  if (saveTplBtn) saveTplBtn.addEventListener('click', async () => {
-    try {
-      const cfg = await fetchJSON('/api/runs/' + encodeURIComponent(rid) + '/config');
-      if (!cfg || cfg.error) { alert('Cannot load config'); return; }
-      const name = prompt('Template name:', cfg.experiment_name || rid);
-      if (!name) return;
-      await fetch('/api/templates', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, config: cfg }),
+  if (_isActiveRun) {
+    const stopBtn = document.getElementById('header-stop-btn');
+    if (stopBtn) {
+      stopBtn.style.display = 'inline-block';
+      stopBtn.addEventListener('click', async () => {
+        if (!confirm('Stop this run?')) return;
+        await fetch('/api/active_runs/' + encodeURIComponent(rid), { method: 'DELETE' });
+        stopBtn.textContent = 'Stopped';
+        stopBtn.disabled = true;
       });
-      alert('Template saved!');
-    } catch (e) { alert('Failed: ' + e.message); }
-  });
+    }
+    return;
+  }
+
+  const saveTplBtn = document.getElementById('header-save-tpl-btn');
+  if (saveTplBtn) {
+    saveTplBtn.style.display = 'inline-block';
+    saveTplBtn.addEventListener('click', async () => {
+      try {
+        const cfg = await fetchJSON('/api/runs/' + encodeURIComponent(rid) + '/config');
+        if (!cfg || cfg.error) { alert('Cannot load config'); return; }
+        const name = prompt('Template name:', cfg.experiment_name || rid);
+        if (!name) return;
+        await fetch('/api/templates', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, config: cfg }),
+        });
+        alert('Template saved!');
+      } catch (e) { alert('Failed: ' + e.message); }
+    });
+  }
 }

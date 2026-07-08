@@ -96,6 +96,30 @@ def _aggregate_noc_links(
     return out
 
 
+def _xy_route_edges(ev: dict) -> List[Tuple[int, int, int, int]]:
+    """Mesh edges one message traverses under XY routing (x first, then y);
+    empty for local or unplaced messages."""
+    sx = int(ev.get("src_x", -1))
+    sy = int(ev.get("src_y", -1))
+    dx = int(ev.get("dest_x", -1))
+    dy = int(ev.get("dest_y", -1))
+    if sx < 0 or sy < 0 or dx < 0 or dy < 0:
+        return []
+    edges: List[Tuple[int, int, int, int]] = []
+    cx, cy = sx, sy
+    step_x = 1 if dx > sx else -1 if dx < sx else 0
+    step_y = 1 if dy > sy else -1 if dy < sy else 0
+    while cx != dx:
+        nx = cx + step_x
+        edges.append((cx, cy, nx, cy))
+        cx = nx
+    while cy != dy:
+        ny = cy + step_y
+        edges.append((cx, cy, cx, ny))
+        cy = ny
+    return edges
+
+
 def _aggregate_noc_link_load(
     message_trace: Any,
     geom: Optional[SanafeArchGeometry],
@@ -108,31 +132,36 @@ def _aggregate_noc_link_load(
         for ev in events:
             if not isinstance(ev, dict) or ev.get("placeholder"):
                 continue
-            sx = int(ev.get("src_x", -1))
-            sy = int(ev.get("src_y", -1))
-            dx = int(ev.get("dest_x", -1))
-            dy = int(ev.get("dest_y", -1))
-            if sx < 0 or sy < 0 or dx < 0 or dy < 0:
-                continue
-            cx, cy = sx, sy
-            step_x = 1 if dx > sx else -1 if dx < sx else 0
-            step_y = 1 if dy > sy else -1 if dy < sy else 0
-            while cx != dx:
-                nx = cx + step_x
-                k = (cx, cy, nx, cy)
+            for k in _xy_route_edges(ev):
                 counts[k] = counts.get(k, 0) + 1
-                cx = nx
-            while cy != dy:
-                ny = cy + step_y
-                k = (cx, cy, cx, ny)
-                counts[k] = counts.get(k, 0) + 1
-                cy = ny
     out: List[SanafeNocLinkLoad] = []
     for (fx, fy, tx, ty), n in sorted(counts.items()):
         out.append(SanafeNocLinkLoad(
             from_x=fx, from_y=fy, to_x=tx, to_y=ty, packet_count=int(n),
         ))
     return out
+
+
+def _compute_noc_link_load_per_cycle(message_trace: Any) -> List[List[List[int]]]:
+    """Per-cycle ``[from_x, from_y, to_x, to_y, count]`` mesh-edge load.
+
+    Same XY walk as :func:`_aggregate_noc_link_load`, binned per timestep so
+    the GUI can scrub congestion over simulated time.
+    """
+    if not message_trace:
+        return []
+    out: List[List[List[int]]] = []
+    for events in message_trace:
+        counts: Dict[Tuple[int, int, int, int], int] = {}
+        for ev in events:
+            if not isinstance(ev, dict) or ev.get("placeholder"):
+                continue
+            for k in _xy_route_edges(ev):
+                counts[k] = counts.get(k, 0) + 1
+        out.append([[fx, fy, tx, ty, n]
+                    for (fx, fy, tx, ty), n in sorted(counts.items())])
+    return out
+
 
 def _compute_noc_traffic_per_cycle(message_trace: Any) -> List[List[List[int]]]:
     """Per-cycle ``[src_x, src_y, dst_x, dst_y, count]`` quintuples."""

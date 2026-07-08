@@ -216,6 +216,24 @@ def test_to_snapshot_dict_per_core_shape():
     assert "energy_j" in core0
 
 
+def test_to_snapshot_dict_carries_per_cycle_link_load_with_legacy_default():
+    """The per-cycle NoC link load projects when present and defaults to []
+    for legacy pickled segments that predate the field."""
+    seg = _segment(0)
+    seg.noc_link_load_per_cycle = [[[0, 0, 1, 0, 3]], []]
+    rec = _run(0, segments=[seg])
+    snap = SanafeStepReport.from_records("loihi", [rec]).to_snapshot_dict()
+    seg0 = snap["per_sample"][0]["segments"][0]
+    assert seg0["noc_link_load_per_cycle"] == [[[0, 0, 1, 0, 3]], []]
+
+    legacy = _segment(1)
+    del legacy.__dict__["noc_link_load_per_cycle"]  # unpickled pre-field record
+    snap2 = SanafeStepReport.from_records(
+        "loihi", [_run(1, segments=[legacy])],
+    ).to_snapshot_dict()
+    assert snap2["per_sample"][0]["segments"][0]["noc_link_load_per_cycle"] == []
+
+
 def test_to_snapshot_dict_arch_preset_propagated():
     rec = _run(0, segments=[_segment(0)])
     snap = SanafeStepReport.from_records("truenorth", [rec]).to_snapshot_dict()

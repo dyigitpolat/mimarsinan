@@ -1,0 +1,292 @@
+/* Mimarsinan shared design tokens — the workbench design language as data.
+   Extracted from wizard.css (the configurator workbench). The monitor
+   consumes this now; the wizard migrates onto it later. One 8px spacing
+   grid, two type sizes + captions, quiet borders, small-radius cards,
+   150ms motion. Density: a CAD instrument. */
+
+*,
+*::before,
+*::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+:root {
+  /* ── Surfaces ── */
+  --bg-deep: #0a0c10;
+  --bg-base: #0f1218;
+  --bg-card: #141924;
+  --bg-input: #101620;
+  /* ── Lines ── */
+  --border: #1e2736;
+  --border-strong: #2a3547;
+  --border-focus: #3b82f6;
+  /* ── Ink ── */
+  --text-primary: #e2e8f0;
+  --text-secondary: #8494a7;
+  --text-dim: #55637a;
+  /* ── Accents ── */
+  --accent-blue: #3b82f6;
+  --accent-cyan: #22d3ee;
+  --accent-green: #10b981;
+  --accent-amber: #f59e0b;
+  --accent-rose: #f43f5e;
+  --accent-violet: #8b5cf6;
+  /* ── Geometry / motion / type ── */
+  --radius: 8px;
+  --radius-sm: 6px;
+  --motion: 150ms ease;
+  --font-body: 13px;
+  --font-caption: 11px;
+  --font-ui: 'Outfit', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+  --header-h: 45px;
+
+  /* ── Legacy monitor aliases (style.css vocabulary → tokens). These keep
+     pre-redesign component sheets (hw workbench, tables, console) on the
+     one palette without a per-rule rewrite; retire them as those sheets
+     migrate to the token names. ── */
+  --bg-primary: var(--bg-deep);
+  --bg-secondary: var(--bg-base);
+  --bg-hover: #1a2230;
+  --text-muted: var(--text-dim);
+  --accent: var(--accent-blue);
+  --accent-dim: #1d4ed8;
+  --accent-purple: var(--accent-violet);
+  --success: var(--accent-green);
+  --success-dim: #065f46;
+  --warning: var(--accent-amber);
+  --error: var(--accent-rose);
+  --running: var(--accent-blue);
+  --pending: var(--text-dim);
+  --stopped: var(--accent-amber);
+  --surface: var(--bg-card);
+  --hover: var(--bg-hover);
+  --radius-lg: 12px;
+  --shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.4);
+  --transition-fast: var(--motion);
+  --transition-med: 0.25s ease;
+}
+
+html {
+  font-size: 15px;
+}
+
+body {
+  font-family: var(--font-ui);
+  font-size: var(--font-body);
+  background: var(--bg-deep);
+  color: var(--text-primary);
+  min-height: 100vh;
+  overflow-x: hidden;
+  line-height: 1.5;
+}
+
+button { font-family: inherit; }
+
+/* ═══ Card (concern-group section) ══════════════════════════════════════ */
+
+.section {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-card);
+  --section-accent: 91, 141, 245;
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.section-icon {
+  width: 26px;
+  height: 26px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  background: rgba(var(--section-accent), 0.12);
+  color: rgb(var(--section-accent));
+}
+
+.section-title-group { min-width: 0; }
+.section-title { font-size: var(--font-body); font-weight: 700; }
+.section-subtitle { font-size: var(--font-caption); color: var(--text-dim); }
+.section-body { padding: 12px; }
+
+/* ═══ Buttons ═══════════════════════════════════════════════════════════ */
+
+.btn-sm {
+  background: var(--bg-input);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: 12px;
+  padding: 5px 10px;
+  cursor: pointer;
+  transition: border-color var(--motion), color var(--motion);
+}
+
+.btn-sm:hover { border-color: var(--border-focus); color: var(--text-primary); }
+
+.btn-sm.primary {
+  border-color: rgba(59, 130, 246, 0.5);
+  color: #cfe3ff;
+  background: rgba(59, 130, 246, 0.12);
+}
+
+/* ═══ Segmented control ═════════════════════════════════════════════════ */
+
+.seg-control {
+  display: flex;
+  flex-wrap: wrap;
+  background: var(--bg-input);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  padding: 2px;
+  gap: 2px;
+}
+
+.seg-btn {
+  flex: 1 1 auto;
+  min-width: max-content;
+  border: none;
+  background: none;
+  border-radius: 4px;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 5px 8px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--motion), color var(--motion);
+}
+
+.seg-btn:hover { color: var(--text-primary); }
+
+.seg-btn.active {
+  background: rgba(59, 130, 246, 0.22);
+  color: #cfe3ff;
+  font-weight: 600;
+}
+
+/* ═══ Rail blocks (the sticky live-rail vocabulary) ═════════════════════ */
+
+.rail-block {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-card);
+  padding: 10px 12px;
+}
+
+.rail-block-title {
+  font-size: var(--font-caption);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.rail-block-hint { font-weight: 400; text-transform: none; letter-spacing: 0; color: var(--text-dim); }
+
+.rail-verdict {
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  font-size: var(--font-body);
+  font-weight: 600;
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: border-color var(--motion), color var(--motion);
+}
+
+.rail-verdict::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-dim);
+  flex: 0 0 auto;
+}
+
+.rail-verdict.ok { color: var(--accent-green); border-color: rgba(16, 185, 129, 0.35); }
+.rail-verdict.ok::before { background: var(--accent-green); }
+.rail-verdict.error { color: var(--accent-rose); border-color: rgba(244, 63, 94, 0.4); }
+.rail-verdict.error::before { background: var(--accent-rose); }
+.rail-verdict.pending { color: var(--text-dim); }
+.rail-verdict.pending::before { animation: tk-pulse 1s ease infinite; }
+.rail-verdict.live { color: var(--accent-cyan); border-color: rgba(34, 211, 238, 0.35); }
+.rail-verdict.live::before { background: var(--accent-cyan); animation: tk-pulse 1s ease infinite; }
+
+@keyframes tk-pulse { 50% { opacity: 0.3; } }
+
+.rail-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.rail-stat {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 6px 8px;
+  background: var(--bg-input);
+}
+
+.rail-stat-value { font-family: var(--font-mono); font-size: 14px; font-weight: 600; }
+.rail-stat-label { font-size: var(--font-caption); color: var(--text-dim); }
+
+/* ═══ Chips ═════════════════════════════════════════════════════════════ */
+
+.tk-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+  color: var(--text-secondary);
+  font-size: var(--font-caption);
+  padding: 2px 8px;
+  white-space: nowrap;
+}
+
+.tk-chip.mono { font-family: var(--font-mono); }
+.tk-chip.good { border-color: rgba(16, 185, 129, 0.4); color: var(--accent-green); }
+.tk-chip.bad { border-color: rgba(244, 63, 94, 0.4); color: var(--accent-rose); }
+.tk-chip.warn { border-color: rgba(245, 158, 11, 0.4); color: var(--accent-amber); }
+.tk-chip.info { border-color: rgba(34, 211, 238, 0.4); color: var(--accent-cyan); }
+.tk-chip.dim { color: var(--text-dim); }
+
+/* ═══ Misc shared primitives ════════════════════════════════════════════ */
+
+.note { color: var(--text-dim); font-size: var(--font-caption); }
+.divider { height: 1px; background: var(--border); margin: 8px 0; }
+
+.sub-section-title {
+  font-size: var(--font-caption);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+  margin: 12px 0 6px;
+}
+
+/* Quiet scrollbars everywhere (CAD instrument, chrome recedes). */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 4px; }

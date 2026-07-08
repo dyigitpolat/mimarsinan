@@ -1,39 +1,7 @@
-/* Pipeline bar + overview charts (measured points, verdict markers, timing). */
+/* Overview charts (measured points, verdict/carried markers, timing). */
 import { esc, fmtDuration, elapsedFromStepStart, safeReact, emptyAnnotation } from './util.js';
 
 const TONE_COLORS = { pass: '#4ade80', fail: '#f87171', carried: '#8494a7' };
-
-// ── Pipeline bar ─────────────────────────────────────────────────────────
-export function renderPipelineBar(pipeline, selectedStep) {
-  const bar = document.getElementById('pipeline-bar');
-  if (!bar || !pipeline) return;
-  const steps = pipeline.steps || [];
-  const cols = steps.map((s, i) => {
-    const dur = s.duration ? ` (${fmtDuration(s.duration)})` : '';
-    const tooltip = `${s.name}${dur} [${i + 1}/${steps.length}]`;
-    const selected = selectedStep === s.name ? ' selected' : '';
-    const group = s.semantic_group || 'other';
-    const badge = badgeHtml(s);
-    return `<div class="psb-col${selected}" data-status="${esc(s.status)}" data-group="${esc(group)}" data-step="${esc(s.name)}" title="${esc(tooltip)}">
-      <div class="psb-bar">${badge}</div>
-      <span class="psb-label">${esc(s.name)}</span>
-    </div>`;
-  });
-  bar.innerHTML = `<div class="psb-list">${cols.join('')}</div>`;
-}
-
-// The bar cell shows a VERDICT for gate steps and a metric only while a
-// measured step is running — a carried value is never displayed as a number.
-function badgeHtml(step) {
-  const badge = step.badge;
-  if (badge && badge.kind === 'verdict') {
-    return `<span class="psb-metric psb-verdict-${esc(badge.status)}">${esc(badge.text)}</span>`;
-  }
-  if (step.status === 'running' && badge && badge.kind === 'metric') {
-    return `<span class="psb-metric">${esc(badge.text)}</span>`;
-  }
-  return '';
-}
 
 // ── Overview cards ───────────────────────────────────────────────────────
 export function renderOverviewCards(pipeline) {

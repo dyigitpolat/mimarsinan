@@ -78,6 +78,7 @@ class SanafeSegmentRecord:
     contract_ttfs_cores: List[Any] = field(default_factory=list)
     contract_ttfs_seg_output: Optional[np.ndarray] = None
     noc_traffic_per_cycle: List[List[List[int]]] = field(default_factory=list)
+    noc_link_load_per_cycle: List[List[List[int]]] = field(default_factory=list)
     tile_packets_per_cycle: List[Dict[int, int]] = field(default_factory=list)
     inter_tile_packets: int = 0
     intra_tile_packets: int = 0

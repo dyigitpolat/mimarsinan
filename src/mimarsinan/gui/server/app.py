@@ -17,7 +17,13 @@ from fastapi.staticfiles import StaticFiles
 
 from mimarsinan.common.best_effort import best_effort
 from mimarsinan.common.env import gui_no_browser
-from mimarsinan.gui.server import routes_layout, routes_pipeline, routes_resources, routes_wizard
+from mimarsinan.gui.server import (
+    routes_artifacts,
+    routes_layout,
+    routes_pipeline,
+    routes_resources,
+    routes_wizard,
+)
 from mimarsinan.gui.server.json_safe import SafeJSONResponse
 
 if TYPE_CHECKING:
@@ -49,6 +55,7 @@ def create_app(
         return response
 
     routes_pipeline.register_routes(app, collector=collector, process_manager=process_manager)
+    routes_artifacts.register_routes(app, collector=collector, process_manager=process_manager)
     routes_wizard.register_routes(
         app,
         collector=collector,

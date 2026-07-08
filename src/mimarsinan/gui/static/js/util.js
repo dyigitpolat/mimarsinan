@@ -65,14 +65,16 @@ export function fmtNum(n) {
 // ── Plotly safe wrapper ──────────────────────────────────────────────────
 // Every axis gets a stable uirevision so zoom/pan survives Plotly.react().
 
+// Workbench design tokens (static/css/tokens.css): card surface, quiet
+// grid lines, the shared accent set.
 const DARK = {
-  paper_bgcolor: '#21242f',
-  plot_bgcolor: '#21242f',
-  font: { color: '#9a9daa', size: 11 },
+  paper_bgcolor: '#141924',
+  plot_bgcolor: '#141924',
+  font: { color: '#8494a7', size: 11, family: "'Outfit', system-ui, sans-serif" },
   margin: { t: 30, r: 20, b: 40, l: 50 },
-  xaxis: { gridcolor: '#2e3140', zerolinecolor: '#2e3140' },
-  yaxis: { gridcolor: '#2e3140', zerolinecolor: '#2e3140' },
-  colorway: ['#5b8af5', '#4caf50', '#ff9800', '#f44336', '#9c27b0', '#00bcd4', '#ff5722', '#8bc34a'],
+  xaxis: { gridcolor: '#1e2736', zerolinecolor: '#2a3547' },
+  yaxis: { gridcolor: '#1e2736', zerolinecolor: '#2a3547' },
+  colorway: ['#3b82f6', '#22d3ee', '#10b981', '#f59e0b', '#f43f5e', '#8b5cf6', '#f97316', '#4ade80'],
 };
 const CFG = { displayModeBar: false, responsive: true };
 

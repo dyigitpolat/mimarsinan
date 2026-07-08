@@ -11,7 +11,25 @@ heatmap PNGs, connectivity JSON — materialised on first HTTP fetch). The SPA
 assets (HTML/CSS/ES-module JS) live in the non-package `static/` directory;
 third-party runtime assets (Plotly, fonts) are vendored under `static/vendor/`
 so the GUI works offline — a unit ratchet (`test_static_offline.py`) rejects
-any external `src`/`href`/`url()` reference in static assets. The configurator
+any external `src`/`href`/`url()` reference in static assets. The MONITOR
+(`static/index.html` + `static/js/main.js`) speaks the same workbench design
+language as the configurator via the shared token sheet
+(`static/css/tokens.css` — the design-token SSOT the wizard migrates onto
+later; `static/css/monitor.css` is the monitor shell): a left section rail
+(Overview · Steps · Analysis · Hardware/NoC · Artifacts · Configuration ·
+Console, built by `static/js/monitor-shell.js`) and a persistent sticky right
+live rail (run verdict pill, current/latest step, a measured-only metric
+sparkline, artifact-vs-total wall clock with the endpoint step budget, gate
+verdicts, progress). The Steps section is a vertical step list with
+group-accented status dots and honest flags (measured value · `carried` ·
+PASS/FAIL) opening per-step instrument pages; the Hardware/NoC section
+(`static/js/noc-section.js`) renders the SANA-FE spike-traffic records as a
+per-tile mesh heatmap with a time scrubber + playback, per-cycle src→dst flow
+arrows and XY-routed mesh-link load (falling back to segment totals — with an
+explicit note — for runs that predate the per-cycle link record), and a
+click-tile-A/tile-B flow inspector with the routed path highlighted; the
+Artifacts section (`static/js/artifacts-section.js`) lists the run directory
+inventory with guarded downloads. The configurator
 frontend (`static/js/wizard/`) renders ENTIRELY from `GET /api/config_schema`
 (the config-key registry) — the HTML is layout chrome with zero field
 knowledge, the draft state IS the config document (explicit keys only), and
@@ -73,12 +91,12 @@ per-mode switches, the template flow, and the error/remedy flow.
 | `json_util.py` | `to_json_safe` recursive JSON coercion (NaN/Inf → `None`, numpy → lists/scalars, fallback `str`). |
 | `reporter.py` | `GUIReporter` implementing the `Reporter` protocol; forwards metrics to the `DataCollector`. |
 | `resources.py` | `ResourceDescriptor` (kind, rid, producer, media_type) and thread-safe `ResourceStore`: lazy once-only materialisation, per-step eviction and version counter for ETags. |
-| `runs.py` | Discovery and loading of historical runs from the generated-files root: run list, config, pipeline overview, step detail (with disk rebuild fallback), console logs, resume-step suggestion. |
+| `runs.py` | Discovery and loading of historical runs from the generated-files root: run list, config, pipeline overview, step detail (with disk rebuild fallback), console logs, resume-step suggestion, and the run-directory artifact inventory (`list_dir_artifacts`, safe-join `resolve_artifact_file`). |
 | `start.py` | `start_gui` bootstrap (collector + resource store + server + handle) and `backfill_skipped_steps` for edit-and-continue: replays cached steps into the collector and rewrites `steps.json`. |
 | `tee_stream.py` | `TeeStream`: line-buffered stdout/stderr tee that forwards complete lines to the console-log callback while writing through to the original stream. |
 | `templates.py` | CRUD for saved deployment-config templates (JSON files under the templates dir), persisted minimally through the wizard config builder. |
 | `runtime/` | Runtime machinery: `DataCollector` (collector/), the structured pipeline-event vocabulary (`events.py`: `PipelineEvent` + kinds mirroring the console `[TAG]`s one-to-one, transported via `reporter.event`, persisted to `events.jsonl`, WS-broadcast as `{"type":"event"}` frames), on-disk persistence of `steps.json`/metrics/events/console/resources (persistence/), subprocess run management (`ProcessManager`, spawn/monitor), `ActiveRunHub` jsonl tailers for active-run WebSockets, `CompositeReporter`, `SnapshotExecutor`, and run-cache seeding. |
-| `server/` | FastAPI app factory and uvicorn startup (`app.py`) plus route modules: pipeline/runs/templates/console APIs, lazy-resource endpoints, wizard and config-schema APIs, and hardware layout verification; `json_safe.py` provides the sanitising JSON response class. |
+| `server/` | FastAPI app factory and uvicorn startup (`app.py`) plus route modules: pipeline/runs/templates/console APIs, artifact listing/downloads (`routes_artifacts.py`), lazy-resource endpoints, wizard and config-schema APIs, and hardware layout verification; `json_safe.py` provides the sanitising JSON response class. |
 | `snapshot/` | Pure per-artifact snapshot builders returning `(summary, ResourceDescriptor list)`: model, IR graph, hardware mapping, adaptation, pruning, search, and SANA-FE snapshots, `RESOURCE_KIND_*` constants, disk-based snapshot rebuild for legacy runs, and the best-effort console `[TAG]` parser (`console_events.py`) that backfills events for runs recorded before `events.jsonl`. |
 | `viewmodel/` | Pure, I/O-free view-models (parsed run artifacts in, chart-ready JSON out; unit-tested against synthetic streams): `overview_vm` (measured points + verdict markers — a carried metric NEVER plots), `step_metrics_vm` (the one metric-categorization rule table), `events_vm` (per-kind display hints + annotation lanes), `staircase_vm` (the D-hat ratchet staircase; raises on a falling ratchet), `gantt_vm` (step timeline + endpoint step-budget ledger + artifact/total wall split), `a6_vm` (install-resolution gauge cards). |
 | `wizard/` | Configuration workbench application layer: `emit.py` (explicit-keys-only config emission — the ONE builder used by Deploy, templates, and the representability test; unknown keys preserved and reported, never dropped; non-declarable derived keys — the ConversionPolicy-owned sim enables, `activation_quantization` — are removed), `build_deployment_config_from_state` (thin alias over emit), `schema_api.py` (`/api/config_schema` payload: serialized registry + recipe/preprocessing/hw-search-space/NAS sub-schemas; `/api/config/resolve` payload: resolution + live step preview), `starter.py` + `starter_baseline.json` (the fresh-state contract: `GET /api/config/starter` serves the packaged baseline DOCUMENT — the lenet5 vehicle, the only tier-0 family green in all five modes, with a fresh experiment name and no pinned derived mode keys — pinned resolvable/emittable/mappable per mode switch by `test_wizard_starter.py`; workload facts live in the document, never in framework code), wizard schema surfaces (model types, NAS, temporal allocation, pipeline steps), and state validation. |

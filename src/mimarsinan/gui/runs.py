@@ -184,6 +184,104 @@ def get_run_step_detail(run_id: str, step_name: str) -> dict[str, Any] | None:
     }
 
 
+_ARTIFACT_KIND_BY_SUFFIX = {
+    ".pt": "torch",
+    ".pth": "torch",
+    ".pickle": "pickle",
+    ".pkl": "pickle",
+    ".json": "json",
+    ".jsonl": "jsonl",
+    ".png": "image",
+    ".npy": "numpy",
+    ".txt": "text",
+    ".log": "text",
+    ".yaml": "yaml",
+}
+
+_ARTIFACT_GROUP_BY_DIR = {
+    "_GUI_STATE": "monitor state",
+    "_RUN_CONFIG": "config",
+}
+
+
+def classify_artifact(name: str) -> dict[str, Any]:
+    """Kind/group/step classification for one run-directory entry name."""
+    suffix = Path(name).suffix.lower()
+    kind = _ARTIFACT_KIND_BY_SUFFIX.get(suffix, "other")
+    group = _ARTIFACT_GROUP_BY_DIR.get(name)
+    step = None
+    if group is None:
+        if name.startswith("segment_"):
+            group = "segments"
+        elif "." in name and not name.startswith((".", "_")):
+            # Pipeline cache files are "<Step Name>.<cache key>.<ext>".
+            head = name.split(".", 1)[0]
+            if " " in head or head[:1].isupper():
+                group, step = "step cache", head
+            else:
+                group = "run outputs"
+        else:
+            group = "run outputs"
+    return {"kind": kind, "group": group, "step": step}
+
+
+def list_dir_artifacts(run_dir: str) -> list[dict[str, Any]]:
+    """Top-level run-directory inventory; directories aggregate recursively."""
+    root = Path(run_dir)
+    if not root.is_dir():
+        return []
+    entries: list[dict[str, Any]] = []
+    for child in sorted(root.iterdir(), key=lambda p: p.name.lower()):
+        record: dict[str, Any] = {"path": child.name, **classify_artifact(child.name)}
+        try:
+            if child.is_dir():
+                size = 0
+                count = 0
+                for f in child.rglob("*"):
+                    if f.is_file():
+                        size += f.stat().st_size
+                        count += 1
+                record.update({"kind": "dir", "size": size, "files": count})
+            else:
+                stat = child.stat()
+                record.update({"size": stat.st_size, "mtime": stat.st_mtime})
+        except OSError:
+            continue
+        entries.append(record)
+    return entries
+
+
+def get_run_artifacts(run_id: str) -> list[dict[str, Any]] | None:
+    """Artifact inventory for a past run, or None when the run is unknown."""
+    _validate_run_id(run_id)
+    run_dir = Path(get_runs_root()) / run_id
+    if not run_dir.is_dir():
+        return None
+    return list_dir_artifacts(str(run_dir))
+
+
+def get_run_artifact_file(run_id: str, rel_path: str) -> Path | None:
+    """Resolve one artifact file of a past run (validated run id + safe join)."""
+    _validate_run_id(run_id)
+    return resolve_artifact_file(str(Path(get_runs_root()) / run_id), rel_path)
+
+
+def resolve_artifact_file(run_dir: str, rel_path: str) -> Path | None:
+    """Resolve one artifact file strictly inside *run_dir*; None otherwise."""
+    root = Path(run_dir).resolve()
+    if not root.is_dir():
+        return None
+    try:
+        candidate = (root / rel_path).resolve()
+    except (OSError, ValueError):
+        return None
+    if not candidate.is_relative_to(root):
+        return None
+    if not candidate.is_file():
+        return None
+    return candidate
+
+
 def get_run_events(run_id: str, *, since_seq: int = 0) -> list[dict[str, Any]]:
     """Structured events for a past run; legacy runs backfill from console tags."""
     _validate_run_id(run_id)

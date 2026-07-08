@@ -4,105 +4,207 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Mimarsinan Pipeline Monitor</title>
+  <link href="/static/vendor/fonts.css" rel="stylesheet">
+  <!-- Legacy component sheets first; the token + monitor sheets win the
+       cascade so every surface speaks the workbench design language. -->
   <link rel="stylesheet" href="/static/style.css">
-  <link rel="stylesheet" href="/static/pipeline-step-bar.css">
   <link rel="stylesheet" href="/static/search-live.css">
   <link rel="stylesheet" href="/static/compilagent-live.css">
   <link rel="stylesheet" href="/static/hw-stats-panel.css">
   <link rel="stylesheet" href="/static/config-tab.css">
-  <link href="/static/vendor/fonts.css" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/tokens.css">
+  <link rel="stylesheet" href="/static/css/monitor.css">
   <script src="/static/vendor/plotly-2.27.0.min.js"></script>
 </head>
 <body>
 
-<div class="header">
-  <div style="display:flex;align-items:center;gap:12px">
-    <a href="/" class="home-link">Home</a>
-    <h1>Mimarsinan Pipeline Monitor</h1>
-    <span id="conn-dot" class="status-dot disconnected"></span>
-  </div>
-  <div style="display:flex;align-items:center;gap:16px">
-    <span style="color:var(--text-muted);font-size:12px" id="current-step-name">Initializing...</span>
-    <span id="elapsed-time" class="elapsed-badge" style="display:none"></span>
-    <span style="color:var(--text-secondary);font-size:13px;font-weight:600" id="progress-text">0 / 0</span>
-    <button id="auto-follow-btn" class="follow-btn active">Following</button>
-  </div>
-</div>
+<div class="wb-shell">
 
-<div class="container">
+  <!-- ═══ HEADER ═══ -->
+  <header class="wb-header">
+    <div class="logo-group">
+      <div class="logo-mark">M</div>
+      <div class="logo-text">Mimarsinan <span>Pipeline Monitor</span></div>
+      <span id="run-chip" class="header-run-chip" style="display:none"></span>
+      <span id="conn-dot" class="status-dot disconnected"></span>
+    </div>
+    <div class="header-actions">
+      <span id="current-step-name" class="note" style="max-width:28ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Initializing…</span>
+      <span id="elapsed-time" class="tk-chip mono info" style="display:none"></span>
+      <span id="progress-text" class="tk-chip mono">0 / 0</span>
+      <button id="auto-follow-btn" class="btn-sm follow-btn active">Following</button>
+      <button id="header-stop-btn" class="btn-sm btn-danger" style="display:none">Stop</button>
+      <button id="header-save-tpl-btn" class="btn-sm" style="display:none">Save as template</button>
+      <a href="/"><button type="button" class="btn-sm">Home</button></a>
+    </div>
+  </header>
 
-  <!-- Pipeline progress bar -->
-  <div id="pipeline-bar" class="pipeline-bar-host">
-    <div class="empty-state" style="width:100%;padding:12px">Loading pipeline steps...</div>
-  </div>
+  <div class="wb-body">
 
-  <!-- Top-level tabs -->
-  <div class="tabs main-tabs" id="main-tabs">
-    <button class="tab-btn active" data-main-tab="overview">Overview</button>
-    <button class="tab-btn" data-main-tab="analysis">Analysis</button>
-    <button class="tab-btn" data-main-tab="config">Configuration</button>
-    <button class="tab-btn" data-main-tab="console">Console</button>
-  </div>
+    <!-- ═══ SECTION RAIL ═══ -->
+    <nav class="wb-nav" id="section-nav" aria-label="Monitor sections"></nav>
 
-  <!-- Overview pane (default) -->
-  <div id="main-tab-overview" class="main-tab-content active">
-    <div class="grid-2">
-      <div class="card">
-        <div class="card-header">Target Metric Across Steps</div>
-        <div class="card-body no-pad"><div id="chart-metric-progression"></div></div>
+    <!-- ═══ MAIN ═══ -->
+    <main class="wb-main" id="monitor-main">
+
+      <!-- 1 · OVERVIEW -->
+      <section class="wb-section active" data-section-id="overview">
+        <div class="wb-section-head">
+          <h2>Overview</h2>
+          <span class="wb-section-head-sub">run health &amp; the headline deployed metric</span>
+        </div>
+        <div id="overview-facts" class="overview-facts" style="display:none"></div>
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-header">Target metric across steps
+              <span class="note">measured points · verdict / carried event lines</span>
+            </div>
+            <div class="card-body no-pad"><div id="chart-metric-progression"></div></div>
+          </div>
+          <div class="card">
+            <div class="card-header">Step timing</div>
+            <div class="card-body no-pad"><div id="chart-step-timing"></div></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 2 · STEPS -->
+      <section class="wb-section" data-section-id="steps">
+        <div class="wb-section-head">
+          <h2>Steps</h2>
+          <span class="wb-section-head-sub">per-step instrument pages</span>
+        </div>
+        <div class="steps-layout">
+          <div class="step-list" id="step-list">
+            <div class="empty-state">Loading pipeline steps…</div>
+          </div>
+          <div id="step-detail" class="step-detail">
+            <div class="empty-state">Select a pipeline step to view details</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 3 · ANALYSIS -->
+      <section class="wb-section" data-section-id="analysis">
+        <div class="wb-section-head">
+          <h2>Analysis</h2>
+          <span class="wb-section-head-sub">ratchet · timeline · install-resolution gauges</span>
+        </div>
+        <div class="card" style="margin-bottom:16px">
+          <div class="card-header">D&#770; Ratchet Staircase
+            <span class="note">accepted best-D&#770; only ever rises — the M-invariant, visible</span>
+          </div>
+          <div class="card-body no-pad"><div id="chart-staircase"></div></div>
+        </div>
+        <div class="card" style="margin-bottom:16px">
+          <div class="card-header">
+            <span>Step Timeline</span>
+            <span id="gantt-wall-summary" class="note"></span>
+          </div>
+          <div class="card-body no-pad"><div id="chart-gantt"></div></div>
+        </div>
+        <div class="card" style="margin-bottom:16px">
+          <div class="card-header">A6 Install-Resolution Gauges
+            <span class="note">pre-flight, warn-only</span>
+          </div>
+          <div class="card-body" id="a6-gauges"></div>
+        </div>
+      </section>
+
+      <!-- 4 · HARDWARE / NoC -->
+      <section class="wb-section" data-section-id="noc">
+        <div class="wb-section-head">
+          <h2>Hardware / NoC</h2>
+          <span class="wb-section-head-sub">spike traffic on the deployed mesh, over simulated time</span>
+        </div>
+        <div id="noc-root">
+          <div class="empty-state">Loading SANA-FE records…</div>
+        </div>
+      </section>
+
+      <!-- 5 · ARTIFACTS -->
+      <section class="wb-section" data-section-id="artifacts">
+        <div class="wb-section-head">
+          <h2>Artifacts</h2>
+          <span class="wb-section-head-sub">everything this run wrote to its directory</span>
+        </div>
+        <div id="artifacts-root">
+          <div class="empty-state">Loading artifacts…</div>
+        </div>
+      </section>
+
+      <!-- 6 · CONFIGURATION -->
+      <section class="wb-section" data-section-id="config">
+        <div class="wb-section-head">
+          <h2>Configuration</h2>
+          <span class="wb-section-head-sub">the emitted deployment config this run executes</span>
+        </div>
+        <div class="card" style="margin-bottom:16px">
+          <div class="card-body" id="config-body">
+            <div class="empty-state">Loading config…</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 7 · CONSOLE -->
+      <section class="wb-section" data-section-id="console">
+        <div class="wb-section-head">
+          <h2>Console</h2>
+          <span class="wb-section-head-sub">stdout / stderr, live</span>
+          <div class="wb-section-head-right">
+            <button id="console-clear-btn" class="btn-sm">Clear</button>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-body no-pad">
+            <div id="console-log-output" class="console-output"></div>
+          </div>
+        </div>
+      </section>
+
+    </main>
+
+    <!-- ═══ LIVE RAIL ═══ -->
+    <aside class="wb-rail" id="live-rail">
+      <div id="rail-status" class="rail-verdict pending">initializing…</div>
+
+      <div class="rail-block">
+        <div class="rail-block-title">Current step</div>
+        <div id="rail-current" class="rail-current-step">
+          <div class="rail-empty">waiting…</div>
+        </div>
       </div>
-      <div class="card">
-        <div class="card-header">Step Timing</div>
-        <div class="card-body no-pad"><div id="chart-step-timing"></div></div>
-      </div>
-    </div>
-    <div id="step-detail" class="step-detail">
-      <div class="empty-state">Select a pipeline step above to view details</div>
-    </div>
-  </div>
 
-  <!-- Analysis pane: D-hat ratchet staircase, step timeline, A6 gauges -->
-  <div id="main-tab-analysis" class="main-tab-content">
-    <div class="card" style="margin-bottom:24px">
-      <div class="card-header">D&#770; Ratchet Staircase <span style="color:var(--text-muted);font-weight:400;font-size:11px">accepted best-D&#770; only ever rises — the M-invariant, visible</span></div>
-      <div class="card-body no-pad"><div id="chart-staircase"></div></div>
-    </div>
-    <div class="card" style="margin-bottom:24px">
-      <div class="card-header" style="display:flex;justify-content:space-between;align-items:center">
-        <span>Step Timeline</span>
-        <span id="gantt-wall-summary" style="font-size:11px;color:var(--text-muted)"></span>
+      <div class="rail-block">
+        <div class="rail-block-title">Deployed metric
+          <span class="rail-block-hint">measured only</span>
+        </div>
+        <svg id="rail-spark" class="rail-spark" viewBox="0 0 288 56" preserveAspectRatio="none"></svg>
+        <div class="rail-spark-caption">
+          <span id="rail-spark-label">no measurements yet</span>
+          <span id="rail-spark-value" class="rail-spark-value"></span>
+        </div>
       </div>
-      <div class="card-body no-pad"><div id="chart-gantt"></div></div>
-    </div>
-    <div class="card" style="margin-bottom:24px">
-      <div class="card-header">A6 Install-Resolution Gauges <span style="color:var(--text-muted);font-weight:400;font-size:11px">pre-flight, warn-only</span></div>
-      <div class="card-body" id="a6-gauges"></div>
-    </div>
-  </div>
 
-  <!-- Configuration pane -->
-  <div id="main-tab-config" class="main-tab-content">
-    <div class="card" style="margin-bottom:24px">
-      <div class="card-header">Pipeline Configuration</div>
-      <div class="card-body" id="config-body">
-        <div class="empty-state">Loading config...</div>
+      <div class="rail-block">
+        <div class="rail-block-title">Wall clock
+          <span class="rail-block-hint">artifact vs total</span>
+        </div>
+        <div id="rail-wall"><div class="rail-empty">no timing yet</div></div>
       </div>
-    </div>
-  </div>
 
-  <!-- Console pane -->
-  <div id="main-tab-console" class="main-tab-content">
-    <div class="card" style="margin-bottom:24px">
-      <div class="card-header" style="display:flex;align-items:center;justify-content:space-between">
-        <span>Console Output</span>
-        <button id="console-clear-btn" style="background:var(--bg-hover);color:var(--text-secondary);border:1px solid var(--border);padding:3px 10px;border-radius:var(--radius-sm);font-size:11px;cursor:pointer">Clear</button>
+      <div class="rail-block">
+        <div class="rail-block-title">Gate verdicts</div>
+        <div id="rail-verdicts"><div class="rail-empty">no gates yet</div></div>
       </div>
-      <div class="card-body no-pad">
-        <div id="console-log-output" class="console-output"></div>
-      </div>
-    </div>
-  </div>
 
+      <div class="rail-block">
+        <div class="rail-block-title">Progress <span class="rail-block-hint" id="rail-progress-label"></span></div>
+        <div class="rail-progress-track"><div class="rail-progress-fill" id="rail-progress-fill" style="width:0%"></div></div>
+      </div>
+    </aside>
+
+  </div>
 </div>
 
 <script type="module" src="/static/js/tooltip.js"></script>

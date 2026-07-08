@@ -107,6 +107,10 @@ def _segment_to_dict(seg) -> Dict[str, Any]:
             [list(map(int, q)) for q in cycle]
             for cycle in seg.noc_traffic_per_cycle
         ],
+        "noc_link_load_per_cycle": [
+            [list(map(int, q)) for q in cycle]
+            for cycle in getattr(seg, "noc_link_load_per_cycle", ())
+        ],
         "per_core": [
             {
                 "core_index": int(c.core_index),
