@@ -116,8 +116,13 @@ def test_plan_coordinates_use_deployment_plan_axes():
         "prune_sparsity": 0.2,
         "preload_weights": True,
         # What the pipeline's workload-profile fold injects for a builder that
-        # registers a pretrained source (resolve alone performs no fold).
-        "pretrained_weight_source": "torchvision",
+        # registers pretrained weight sets (resolve alone performs no fold).
+        "pretrained_weight_sets": [{
+            "id": "imagenet1k_v1", "label": "V1", "task": "t", "dataset": "d",
+            "input_shape": [3, 224, 224], "num_classes": 1000,
+            "source": "torchvision", "adapts_input_shape": True,
+            "adapts_num_classes": True,
+        }],
         "model_config": {"depth": 8},
     }
     plan = DeploymentPlan.resolve(cfg)

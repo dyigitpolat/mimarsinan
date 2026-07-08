@@ -66,7 +66,14 @@ OptionsSpec = Union[Tuple[str, ...], Callable[[], Tuple[str, ...]], None]
 DerivedDefaultFn = Callable[[Mapping[str, Any]], Any]
 # The key's LEGAL VALUE SET for the current config state. |legal| == 1 LOCKS the
 # field; |legal| > 1 offers exactly those options; anything else is a keyed error.
-LegalValuesFn = Callable[[Mapping[str, Any]], Tuple[Any, ...]]
+# ``None`` means "legality does not apply in this state" (the builder was not
+# consulted): the field is neither locked nor judged — it renders as an ordinary
+# widget. The distinction from an EMPTY set (a consulted registration that admits
+# nothing) is load-bearing.
+LegalValuesFn = Callable[[Mapping[str, Any]], Optional[Tuple[Any, ...]]]
+
+# Discrete-valued types whose legal set is a well-defined enumeration.
+_LEGAL_VALUE_TYPES = frozenset({FieldType.ENUM, FieldType.STR, FieldType.BOOL})
 
 
 def frozen_default(value: Any) -> DerivedDefaultFn:
@@ -172,10 +179,11 @@ class ConfigKeySchema:
                 f"{self.flat_key!r}: a derived_default must name the provenance "
                 "source that produces it"
             )
-        if self.legal_values is not None and self.type is not FieldType.ENUM:
+        if self.legal_values is not None and self.type not in _LEGAL_VALUE_TYPES:
             raise ValueError(
-                f"{self.flat_key!r}: legal_values requires an enum type "
-                "(the legal set is a subset of the declared options)"
+                f"{self.flat_key!r}: legal_values requires a discrete type "
+                f"({sorted(t.value for t in _LEGAL_VALUE_TYPES)}) — the legal set "
+                "is an enumeration of concrete values"
             )
         if self.hidden and self.category is not Category.DERIVED:
             raise ValueError(

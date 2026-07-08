@@ -150,6 +150,15 @@ export function vehicleGatedKeySet(groupId) {
   return gated;
 }
 
+/** Keys the dedicated Pretrained-weights panel OWNS (it renders them itself, so
+    the generic grid must not): the fine-tune knobs gated by `preload_weights`
+    (the panel host). Generic over the relevance tree — no per-key JS list. */
+export function pretrainedPanelKeySet(groupId) {
+  if (!Object.values(schema().keys).some(
+    (k) => k.group === groupId && k.key === 'preload_weights')) return new Set();
+  return new Set(keysGatedBy('preload_weights'));
+}
+
 /** Human sentence for why a key is unavailable, derived from its relevance
     tree against the current config (generic; no per-key text in JS). */
 export function unavailabilityReason(tree, cfg) {

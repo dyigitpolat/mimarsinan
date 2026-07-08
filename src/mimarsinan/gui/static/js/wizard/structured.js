@@ -4,6 +4,7 @@
 import { schema } from './schema.js';
 import { clearKey, effectiveValue, getKey, setKey, state } from './state.js';
 import { el, fieldDoc, notifyChange, numberInput, registerCustomRenderer } from './fields.js';
+import { installPretrainedPanel } from './pretrained.js';
 
 function subField(labelText, control) {
   const field = el('div', 'field');
@@ -548,4 +549,5 @@ export function installStructuredWidgets() {
   registerCustomRenderer('arch_search', archSearchWidget);
   registerCustomRenderer('weight_bits', weightPrecisionWidget);
   registerCustomRenderer('search_space', searchSpaceWidget);
+  installPretrainedPanel(registerCustomRenderer);
 }

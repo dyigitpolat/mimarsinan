@@ -5,8 +5,8 @@
 
 import '../tooltip.js';
 import {
-  enableAssignments, groups, keySchema, loadSchema, providedAwayKeys, schema,
-  unavailabilityReason, vehicleGatedKeySet, visibleKeys,
+  enableAssignments, groups, keySchema, loadSchema, pretrainedPanelKeySet,
+  providedAwayKeys, schema, unavailabilityReason, vehicleGatedKeySet, visibleKeys,
 } from './schema.js';
 import {
   clearKey, differsFromDefault, effectiveConfig, effectiveValue, isExplicit,
@@ -34,10 +34,13 @@ const GROUP_ICONS = {
 
 function fieldList(groupId, category, cfg) {
   /* Relevance controls EXISTENCE; promote_when controls prominence.
-     Vehicle-gated keys co-locate with their vehicle row, never the card. */
+     Vehicle-gated keys co-locate with their vehicle row; the fine-tune knobs
+     co-locate inside the Pretrained-weights panel — neither renders in the
+     card's generic grid. */
   const gated = vehicleGatedKeySet(groupId);
+  const pretrainedOwned = pretrainedPanelKeySet(groupId);
   return visibleKeys(groupId, category, cfg)
-    .filter((key) => !gated.has(key))
+    .filter((key) => !gated.has(key) && !pretrainedOwned.has(key))
     .map((key) => keySchema(key));
 }
 

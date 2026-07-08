@@ -4,6 +4,7 @@ import dataclasses
 
 import pytest
 
+from mimarsinan.common.pretrained import PretrainedWeightSet
 from mimarsinan.common.workload_profile import (
     CalibrationSetPolicy,
     DataWorkloadProfile,
@@ -14,20 +15,29 @@ from mimarsinan.common.workload_profile import (
 
 
 class TestProfileDefaultsAreAbsent:
-    """Absent profile == today's behavior: every registration field is None."""
+    """Absent profile == today's behavior: every registration field claims nothing.
+
+    A scalar claims nothing with ``None``; ``pretrained_weight_sets`` is a
+    COLLECTION whose emptiness is itself the claim "this builder registers no
+    pretrained weights" (round-7), so it defaults to an empty tuple."""
+
+    _COLLECTION_FIELDS = {"pretrained_weight_sets"}
 
     @pytest.mark.parametrize(
         "profile_cls",
         [CalibrationSetPolicy, DataWorkloadProfile, ModelWorkloadProfile],
     )
-    def test_all_fields_default_to_none(self, profile_cls):
+    def test_all_fields_default_to_no_claim(self, profile_cls):
         profile = profile_cls()
         for f in dataclasses.fields(profile):
-            assert getattr(profile, f.name) is None, f.name
+            expected = () if f.name in self._COLLECTION_FIELDS else None
+            assert getattr(profile, f.name) == expected, f.name
 
     def test_default_profiles_produce_no_config_updates(self):
         assert DataWorkloadProfile().config_updates() == {}
-        assert ModelWorkloadProfile().config_updates() == {}
+        assert ModelWorkloadProfile().config_updates() == {
+            "pretrained_weight_sets": [],
+        }
 
     def test_profiles_are_frozen(self):
         with pytest.raises(dataclasses.FrozenInstanceError):
@@ -57,17 +67,21 @@ class TestConfigUpdates:
         }
 
     def test_model_profile_maps_its_fields_one_to_one(self):
+        weight_set = PretrainedWeightSet(
+            id="v1", label="V1", task="image classification", dataset="D",
+            input_shape=(3, 8, 8), num_classes=4, source="torchvision",
+        )
         profile = ModelWorkloadProfile(
             prefix_stage_lr=5e-4,
             endpoint_floor_lr=1e-3,
-            pretrained_weight_source="torchvision",
+            pretrained_weight_sets=(weight_set,),
             proven_recovery_depth=9,
             clamp_cuda_assert_prone=True,
         )
         assert profile.config_updates() == {
             "prefix_stage_lr": 5e-4,
             "endpoint_floor_lr": 1e-3,
-            "pretrained_weight_source": "torchvision",
+            "pretrained_weight_sets": [weight_set.as_dict()],
             "proven_recovery_depth": 9,
             "clamp_cuda_assert_prone": True,
         }
@@ -76,14 +90,18 @@ class TestConfigUpdates:
 class TestFoldPrecedence:
     """Explicit config > model profile > data profile > framework default."""
 
-    def test_all_none_profiles_leave_config_untouched(self):
+    def test_all_none_profiles_claim_only_the_empty_weight_registration(self):
+        """The empty model registration still STATES that the builder has no
+        pretrained weights — that claim is what disables the preload regime."""
         config = {"lr": 0.001, "input_data_scale": 3.0}
         fold_workload_profiles(
             config,
             model_profile=ModelWorkloadProfile(),
             data_profile=DataWorkloadProfile(),
         )
-        assert config == {"lr": 0.001, "input_data_scale": 3.0}
+        assert config == {
+            "lr": 0.001, "input_data_scale": 3.0, "pretrained_weight_sets": [],
+        }
 
     def test_explicit_config_beats_the_data_profile(self):
         config = {"input_data_scale": 2.0}
@@ -124,7 +142,9 @@ class TestFoldPrecedence:
             model_profile=ModelWorkloadProfile(prefix_stage_lr=5e-4),
             data_profile=DataWorkloadProfile(eval_subsample_target=10000),
         )
-        assert applied == ["prefix_stage_lr", "eval_subsample_target"]
+        assert applied == [
+            "prefix_stage_lr", "pretrained_weight_sets", "eval_subsample_target",
+        ]
 
     def test_calibration_merge_is_field_wise_with_explicit_winning(self):
         config = {"calibration_set_policy": {"distmatch_bias_iters": 30}}
@@ -153,7 +173,7 @@ class TestResolvedWorkloadProfile:
         assert resolved.tuning_step_cap_epochs is None
         assert resolved.prefix_stage_lr is None
         assert resolved.endpoint_floor_lr is None
-        assert resolved.pretrained_weight_source is None
+        assert resolved.pretrained_weight_sets == ()
         assert resolved.proven_recovery_depth is None
 
     def test_config_keys_resolve_typed(self):
@@ -164,7 +184,7 @@ class TestResolvedWorkloadProfile:
             "calibration_set_policy": {"gauge_batches": 4},
             "prefix_stage_lr": 5e-4,
             "endpoint_floor_lr": 1e-3,
-            "pretrained_weight_source": "torchvision",
+            "pretrained_weight_sets": [{"id": "v1", "source": "torchvision"}],
             "proven_recovery_depth": 9,
             "clamp_cuda_assert_prone": True,
         })
@@ -175,7 +195,7 @@ class TestResolvedWorkloadProfile:
         assert resolved.calibration.distmatch_bias_iters is None
         assert resolved.prefix_stage_lr == 5e-4
         assert resolved.endpoint_floor_lr == 1e-3
-        assert resolved.pretrained_weight_source == "torchvision"
+        assert resolved.pretrained_weight_sets == ({"id": "v1", "source": "torchvision"},)
         assert resolved.proven_recovery_depth == 9
         assert resolved.clamp_cuda_assert_prone is True
 

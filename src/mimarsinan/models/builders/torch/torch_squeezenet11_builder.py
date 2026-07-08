@@ -2,10 +2,12 @@
 
 import torchvision.models as models
 
+from mimarsinan.common.workload_profile import ModelWorkloadProfile
 from mimarsinan.models.builders.torch.torchvision_builder_utils import (
     adapt_conv_in_channels,
     parse_image_input_shape,
-    torchvision_workload_profile,
+    torchvision_weight_set,
+    torchvision_weights,
 )
 from mimarsinan.pipelining.core.registry.model_registry import ModelRegistry
 
@@ -29,15 +31,21 @@ class TorchSqueezeNet11Builder:
         model = models.squeezenet1_1(num_classes=self.num_classes)
         return _adapt_squeezenet_for_input(model, self.input_shape)
 
-    workload_profile = staticmethod(torchvision_workload_profile)
+    @classmethod
+    def workload_profile(cls) -> ModelWorkloadProfile:
+        """The pretrained weight sets torchvision ships for this backbone."""
+        return ModelWorkloadProfile(pretrained_weight_sets=(
+            torchvision_weight_set(models.SqueezeNet1_1_Weights.IMAGENET1K_V1),
+        ))
 
-    def get_pretrained_factory(self):
-        """Return a callable that creates a pretrained SqueezeNet 1.1 (ImageNet weights)."""
+    def get_pretrained_factory(self, weight_set_id: str | None = None):
+        """Return a callable that creates a pretrained SqueezeNet 1.1 for a registered weight set."""
+        weights = torchvision_weights(
+            type(self), models.SqueezeNet1_1_Weights, weight_set_id
+        )
 
         def _factory():
-            model = models.squeezenet1_1(
-                weights=models.SqueezeNet1_1_Weights.IMAGENET1K_V1
-            )
+            model = models.squeezenet1_1(weights=weights)
             return _adapt_squeezenet_for_input(model, self.input_shape)
 
         return _factory

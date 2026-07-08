@@ -2,6 +2,13 @@
 
 from __future__ import annotations
 
+from mimarsinan.common.pretrained import (
+    derived_weight_set_id,
+    legal_preload_values,
+    legal_weight_set_ids,
+    select_weight_set,
+    selected_source,
+)
 from mimarsinan.config_schema.registry.relevance import Relevance as R
 from mimarsinan.config_schema.registry.types import (
     Category,
@@ -27,16 +34,27 @@ def _why_weight_source(cfg: dict) -> str:
     """WHY against the RESOLVED config: the resolution already folded the
     builder registration in, so credit whichever input actually won."""
     resolved = cfg.get("weight_source")
-    registered = cfg.get("pretrained_weight_source")
+    chosen = select_weight_set(cfg)
     if cfg.get("preload_weights"):
-        if registered is not None and (resolved is None or resolved == registered):
-            return f"the model builder's registration ({registered!r})"
-        if registered is None and resolved is None:
-            return "unresolved — the model builder registers no pretrained source"
-        return f"explicit declaration ({resolved!r}) — wins over the registration"
+        if resolved and (chosen is None or resolved != chosen["source"]):
+            return f"explicit declaration ({resolved!r}) — wins over the weight set"
+        if chosen is not None:
+            return f"the chosen weight set {chosen['id']!r} ({chosen['source']!r})"
+        return "unresolved — no applicable pretrained weight set is registered"
     if resolved:
         return f"explicit declaration ({resolved!r})"
     return "none — from-scratch pretraining"
+
+
+def _why_weight_set(cfg: dict) -> str:
+    """WHY the chosen weight set: an explicit id wins, else the builder default."""
+    chosen = select_weight_set(cfg)
+    if chosen is None:
+        return "none — the preload regime is off or nothing is applicable"
+    declared = cfg.get("pretrained_weight_set")
+    if declared:
+        return f"declared weight set {chosen['id']!r}"
+    return f"the builder's default weight set {chosen['id']!r}"
 
 ENTRIES = (
     _E("model_config_mode", group="model", owner="deployment_specs/search_mode",
@@ -74,20 +92,37 @@ ENTRIES = (
     _E("weight_source", group="training", owner="weight_preloading",
        type=T.STR, category=Category.DERIVED, derivation="derived",
        exposure="user", label="Weight Source",
-       doc="THE pretrained-weight-source concept (one key, round-5 dedupe). "
-           "Builder-registration-provided: preload_weights=true resolves it to "
-           "the builder's ModelWorkloadProfile registration (no registration "
-           "fails loud). A document may still pin an id/path/URL explicitly "
-           "(config-data escape) — explicit wins; presence selects the "
-           "fine-tune path instead of from-scratch pretraining.",
-       derived_from=("preload_weights", "model_type"),
+       doc="THE loader-facing pretrained-weight source (one key). Derived from "
+           "the CHOSEN registered weight set's own source under preload_weights; "
+           "a document may still pin an id/path/URL explicitly (config-data "
+           "escape) — explicit wins. Presence selects the fine-tune path instead "
+           "of from-scratch pretraining.",
+       derived_from=("preload_weights", "pretrained_weight_set", "model_type"),
        why=_why_weight_source, declarable=True, provenance="builder profile",
-       empty_means="preload on: the builder's registered source; off: train from scratch"),
+       derived_default=lambda cfg: selected_source(cfg),
+       empty_means="preload on: the chosen weight set's source; off: train from scratch"),
     _E("preload_weights", group="training", owner="weight_preloading",
        type=T.BOOL, category=Category.BASIC, exposure="user", label="Preload Weights",
-       doc="Use pretrained weights: the weight source resolves from the model "
-           "builder's registration and the fine-tune path replaces from-scratch "
-           "pretraining."),
+       doc="Use pretrained weights: the source resolves from the CHOSEN weight "
+           "set the model builder registers and the fine-tune path replaces "
+           "from-scratch pretraining. Disabled when the builder registers no "
+           "applicable pretrained weight set (the legal set admits only off).",
+       legal_values=lambda cfg: legal_preload_values(
+           cfg, source_declared=bool(cfg.get("weight_source"))
+       )),
+    _E("pretrained_weight_set", group="training", owner="weight_preloading",
+       type=T.STR, category=Category.DERIVED, derivation="derived",
+       exposure="user", label="Pretrained Weight Set",
+       doc="WHICH of the model builder's registered pretrained weight sets to "
+           "load (task/dataset/geometry/classes/source). The legal set is the "
+           "ids the current builder + model_config register; a single "
+           "registration LOCKS the choice, several let the user select. "
+           "Builder-declared — the framework never enumerates workloads.",
+       derived_from=("preload_weights", "model_type", "model_config"),
+       why=_why_weight_set, declarable=True, provenance="builder profile",
+       derived_default=lambda cfg: derived_weight_set_id(cfg),
+       legal_values=lambda cfg: legal_weight_set_ids(cfg),
+       relevant=_PRETRAINED_REGIME, empty_means="the builder's default weight set"),
     _E("spike_encoding_seed", group="workload", owner="spike_generation",
        type=T.INT, category=Category.ADVANCED, label="Spike Encoding Seed",
        doc="Seed for stochastic spike-train encoding; null follows the run seed.",
@@ -109,7 +144,8 @@ ENTRIES = (
        type=T.INT, category=Category.ADVANCED, exposure="user", label="Fine-tune Epochs",
        doc="Epochs of fine-tuning after preloading pretrained weights.",
        unit="epochs", bounds=(0, None), relevant=_PRETRAINED_REGIME,
-       promote_when=_PRETRAINED_REGIME),
+       promote_when=_PRETRAINED_REGIME,
+       empty_means="0 — load the weights without fine-tuning"),
     _E("finetune_lr", group="training", owner="weight_preloading",
        type=T.FLOAT, category=Category.ADVANCED, exposure="user", label="Fine-tune LR",
        doc="Learning rate for the fine-tune path (defaults to lr when absent).",
@@ -157,16 +193,18 @@ ENTRIES = (
        bounds=(0.0, None), provenance="provider registration",
        derived_default=_frozen(1.0),
        empty_means="the provider's registered range, else 1.0 (unit-range data)"),
-    _E("pretrained_weight_source", group="training",
+    _E("pretrained_weight_sets", group="training",
        owner="workload_profile/weight_preloading",
-       type=T.STR, category=Category.DERIVED, derivation="derived",
-       exposure="derived", label="Pretrained Weight Source (registration)",
-       doc="The builder ModelWorkloadProfile registration the preload_weights "
-           "regime resolves to — an injection contract, never authorable "
-           "(round-5 dedupe: weight_source is the one declarable concept).",
+       type=T.JSON, category=Category.DERIVED, derivation="derived",
+       exposure="derived", label="Pretrained Weight Sets (registration)",
+       doc="The SET of pretrained weight sets the builder's ModelWorkloadProfile "
+           "registers — the injection contract the wizard reads, never authorable. "
+           "Each record: id/label/task/dataset/input_shape/num_classes/source plus "
+           "expected accuracy, licence, preprocessing and applicability facts.",
        derived_from=("model_type",),
        why=lambda cfg: "the model builder's ModelWorkloadProfile registration",
-       declarable=False, hidden=True, provenance="builder profile"),
+       declarable=False, hidden=True, provenance="builder profile",
+       derived_default=lambda cfg: list(cfg.get("pretrained_weight_sets") or [])),
     _E("clamp_cuda_assert_prone", group="model", owner="workload_profile/deployment_specs",
        type=T.BOOL, category=Category.ADVANCED, label="Clamp CUDA-assert Prone",
        doc="Architecture is known to trip CUDA asserts under clamp adaptation "

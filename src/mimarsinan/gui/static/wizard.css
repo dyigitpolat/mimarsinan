@@ -1338,3 +1338,86 @@ input.field-invalid { border-color: var(--accent-rose); }
   .wb-rail { border-left: none; border-top: 1px solid var(--border); }
   .wb-main { overflow: visible; }
 }
+
+/* ═══ Pretrained-weights panel (Training & Tuning) ══════════════════════ */
+
+.pretrained-panel {
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.015);
+  padding: 10px 12px;
+}
+
+.pretrained-switch-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 10px;
+}
+.pretrained-switch-head { display: flex; flex-direction: column; gap: 1px; }
+.pretrained-switch-title { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+.pretrained-switch-sub {
+  font-size: 11px; color: var(--text-dim);
+  font-family: 'JetBrains Mono', monospace;
+}
+.pretrained-switch-row .toggle-row { width: 62px; }
+.pretrained-switch-row .toggle-row.disabled {
+  opacity: 0.42; cursor: not-allowed; pointer-events: auto;
+}
+.pretrained-switch-row .toggle-row.disabled:hover { border-color: var(--border-strong); }
+/* A derivation-forced switch (locked on by a declared source) reads GREEN. */
+.pretrained-switch-row .toggle-row.is-derived.on { border-color: rgba(52, 211, 153, 0.45); }
+.pretrained-switch-row .toggle-row.is-derived.on .toggle-label { color: var(--accent-green); }
+.pretrained-switch-row .toggle-row.is-derived.on .toggle-switch { background: rgba(16, 185, 129, 0.38); }
+.pretrained-switch-row .toggle-row.is-derived.on .toggle-switch::after { background: var(--accent-green); }
+
+.pretrained-reason {
+  grid-column: 1 / -1;
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--accent-amber, #f5a623);
+  background: rgba(245, 166, 35, 0.08);
+  border: 1px solid rgba(245, 166, 35, 0.2);
+  border-radius: var(--radius-sm);
+  padding: 5px 8px;
+}
+
+.pretrained-body {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Every builder-derived fact reads the GREEN derived language. */
+.pretrained-facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 16px;
+}
+.pretrained-fact { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.pretrained-fact.span-2 { grid-column: 1 / -1; }
+.pretrained-fact-label {
+  font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em;
+  color: var(--text-dim);
+}
+.pretrained-fact-value {
+  font-size: 12px;
+  font-family: 'JetBrains Mono', monospace;
+  color: rgba(52, 211, 153, 0.9);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+.pretrained-selector { display: flex; flex-direction: column; gap: 4px; }
+.pretrained-selector-label {
+  font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em;
+  color: var(--text-dim);
+}
+.pretrained-selector.field-derived.field-locked .locked-value-text { color: var(--accent-green); }
+
+.pretrained-finetune-label {
+  font-size: 11px; font-weight: 600; color: var(--text-secondary);
+  margin-top: 2px;
+}

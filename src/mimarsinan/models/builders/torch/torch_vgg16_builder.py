@@ -3,11 +3,13 @@
 import torch.nn as nn
 import torchvision.models as models
 
+from mimarsinan.common.workload_profile import ModelWorkloadProfile
 from mimarsinan.pipelining.core.registry.model_registry import ModelRegistry
 from mimarsinan.models.builders.torch.torchvision_builder_utils import (
     adapt_conv_in_channels,
     parse_image_input_shape,
-    torchvision_workload_profile,
+    torchvision_weight_set,
+    torchvision_weights,
 )
 
 _VGG_MAX_POOL_COUNT = 5
@@ -53,13 +55,19 @@ class TorchVGG16Builder:
         model = models.vgg16_bn(num_classes=self.num_classes)
         return _adapt_vgg_for_input(model, self.input_shape)
 
-    workload_profile = staticmethod(torchvision_workload_profile)
+    @classmethod
+    def workload_profile(cls) -> ModelWorkloadProfile:
+        """The pretrained weight sets torchvision ships for this backbone."""
+        return ModelWorkloadProfile(pretrained_weight_sets=(
+            torchvision_weight_set(models.VGG16_BN_Weights.IMAGENET1K_V1),
+        ))
 
-    def get_pretrained_factory(self):
-        """Return a callable that creates a pretrained VGG16-BN (ImageNet weights)."""
+    def get_pretrained_factory(self, weight_set_id: str | None = None):
+        """Return a callable that creates a pretrained VGG16-BN for a registered weight set."""
+        weights = torchvision_weights(type(self), models.VGG16_BN_Weights, weight_set_id)
 
         def _factory():
-            model = models.vgg16_bn(weights=models.VGG16_BN_Weights.IMAGENET1K_V1)
+            model = models.vgg16_bn(weights=weights)
             return _adapt_vgg_for_input(model, self.input_shape)
 
         return _factory

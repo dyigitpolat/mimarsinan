@@ -3,7 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, fields
-from typing import Any, Mapping, MutableMapping, Optional, Tuple
+from typing import Any, Dict, Mapping, MutableMapping, Optional, Tuple
+
+from mimarsinan.common.pretrained.weight_sets import (
+    PretrainedWeightSet,
+    registered_weight_sets,
+)
 
 
 @dataclass(frozen=True)
@@ -51,21 +56,35 @@ class DataWorkloadProfile:
         return updates
 
 
+def _as_config_value(value: Any) -> Any:
+    """Config data: a tuple of registered RECORDS becomes a list of JSON dicts."""
+    if not isinstance(value, tuple):
+        return value
+    return [
+        record.as_dict() if hasattr(record, "as_dict") else record for record in value
+    ]
+
+
 @dataclass(frozen=True)
 class ModelWorkloadProfile:
     """What a MODEL ARCHITECTURE may lawfully tell the framework (model-builder
-    registration contract). Every field optional, mapped 1:1 to a config key."""
+    registration contract). Every field optional, mapped 1:1 to a config key.
+
+    ``None`` is "no claim"; an EMPTY ``pretrained_weight_sets`` is the claim
+    "this builder registers no pretrained weights", which is what disables the
+    preload regime instead of crashing it.
+    """
 
     prefix_stage_lr: Optional[float] = None
     endpoint_floor_lr: Optional[float] = None
-    pretrained_weight_source: Optional[str] = None
+    pretrained_weight_sets: Tuple[PretrainedWeightSet, ...] = ()
     proven_recovery_depth: Optional[int] = None
     clamp_cuda_assert_prone: Optional[bool] = None
 
     def config_updates(self) -> dict[str, Any]:
         """The flat config keys this registration declares (absent = no claim)."""
         return {
-            f.name: getattr(self, f.name)
+            f.name: _as_config_value(getattr(self, f.name))
             for f in fields(self)
             if getattr(self, f.name) is not None
         }
@@ -108,7 +127,7 @@ class ResolvedWorkloadProfile:
     calibration: CalibrationSetPolicy = CalibrationSetPolicy()
     prefix_stage_lr: Optional[float] = None
     endpoint_floor_lr: Optional[float] = None
-    pretrained_weight_source: Optional[str] = None
+    pretrained_weight_sets: Tuple[Dict[str, Any], ...] = ()
     proven_recovery_depth: Optional[int] = None
     clamp_cuda_assert_prone: bool = False
 
@@ -137,7 +156,7 @@ class ResolvedWorkloadProfile:
             ),
             prefix_stage_lr=opt("prefix_stage_lr", float),
             endpoint_floor_lr=opt("endpoint_floor_lr", float),
-            pretrained_weight_source=opt("pretrained_weight_source", str),
+            pretrained_weight_sets=registered_weight_sets(config) or (),
             proven_recovery_depth=opt("proven_recovery_depth", int),
             clamp_cuda_assert_prone=bool(config.get("clamp_cuda_assert_prone", False)),
         )

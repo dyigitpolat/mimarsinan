@@ -92,12 +92,20 @@ def effective_view(draft_dp: Mapping[str, Any]) -> Dict[str, Any]:
 
 
 def legal_values_view(cfg: Mapping[str, Any]) -> Dict[str, List[Any]]:
-    """The LEGAL VALUE SET of every legality-bearing key for this config state.
+    """The LEGAL VALUE SET of every legality-bearing key that APPLIES to this
+    config state.
 
     |legal| == 1 ⇒ the field is LOCKED (rendered read-only as the derived value);
-    |legal| > 1 ⇒ derived default + override, offering ONLY these options.
+    |legal| > 1 ⇒ derived default + override, offering ONLY these options; a key
+    whose legality does not apply here (``None``) is omitted, so the UI leaves it
+    an ordinary widget.
     """
-    return {key: list(legal_values_for(key, cfg)) for key in legality_bearing_keys()}
+    view: Dict[str, List[Any]] = {}
+    for key in legality_bearing_keys():
+        legal = legal_values_for(key, cfg)
+        if legal is not None:
+            view[key] = list(legal)
+    return view
 
 
 def derived_values_view(resolved: Mapping[str, Any]) -> Dict[str, Any]:

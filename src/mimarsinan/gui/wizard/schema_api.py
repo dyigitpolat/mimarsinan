@@ -39,6 +39,10 @@ from mimarsinan.pipelining.core.pipelines.deployment_pipeline import (
     get_pipeline_semantic_group_by_step_name,
     get_pipeline_step_specs,
 )
+from mimarsinan.common.pretrained import derived_weight_set_id
+from mimarsinan.gui.wizard.pretrained_panel import (
+    effective_with_builder, pretrained_block, pretrained_legality_errors,
+)
 from mimarsinan.pipelining.core.deployment_plan import resolve_weight_source
 from mimarsinan.pipelining.core.registry.model_registry import ModelRegistry
 from mimarsinan.search.search_space_description import (
@@ -200,8 +204,8 @@ def _vehicle_rows(draft: Dict[str, Any]) -> List[Dict[str, Any]]:
 def _enriched_config(resolution) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
     """The resolved flat config a run would see: the derivation's output plus
     the model builder's registrations and the weight-source resolution they
-    provide. ``({}, errors)`` while the draft errors — hypothetical values
-    never render, and the regime's fail-loud surfaces as a keyed error."""
+    provide. ``({}, errors)`` while the draft errors, so hypothetical values
+    never render and the regime's fail-loud surfaces as a keyed error."""
     if not resolution.ok:
         return {}, []
     config = dict(resolution.resolved)
@@ -209,6 +213,10 @@ def _enriched_config(resolution) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
     if profile is not None:
         for key, value in profile.config_updates().items():
             config.setdefault(key, value)
+    # The chosen set is resolvable only once the builder's sets are folded in.
+    chosen = derived_weight_set_id(config)
+    if chosen is not None:
+        config.setdefault("pretrained_weight_set", chosen)
     try:
         config["weight_source"] = resolve_weight_source(config)
     except ValueError as exc:
@@ -250,9 +258,17 @@ def resolve_payload(draft: Dict[str, Any]) -> Dict[str, Any]:
     + the emitted document (exactly what Launch submits)."""
     draft = draft or {}
     resolution = resolve_draft(draft)
+    effective = effective_with_builder(draft)
+    pretrained_errors = pretrained_legality_errors(effective, draft)
     config, enrich_errors = _enriched_config(resolution)
+    # A pretrained-legality error is the ROOT cause; the weight-source regime
+    # error it triggers downstream is superseded (one keyed row per fault).
+    if any(row["key"] == "pretrained_weight_set" for row in pretrained_errors):
+        enrich_errors = [e for e in enrich_errors if e["key"] != "weight_source"]
     pipeline, preview_errors = _pipeline_preview(config)
-    errors = list(resolution.errors) + enrich_errors + preview_errors
+    errors = (
+        list(resolution.errors) + pretrained_errors + enrich_errors + preview_errors
+    )
     if preview_errors:
         config = {}  # a plan that cannot resolve derives no honest values
     resolved = {k: v for k, v in config.items() if k in REGISTRY}
@@ -272,9 +288,11 @@ def resolve_payload(draft: Dict[str, Any]) -> Dict[str, Any]:
         "derived_values": derived_values_view(config),
         # The legal value set of every legality-bearing key — ALWAYS computable,
         # like the vehicle rows: |legal|==1 locks the field, |legal|>1 limits it.
-        "legal_values": legal_values_view(
-            effective_view(parse_deployment_document(draft).dp)
-        ),
+        # The builder's weight-set registrations are folded in so the pretrained
+        # switch/selector legality survives even while the draft errors.
+        "legal_values": legal_values_view(effective),
         "vehicles": _vehicle_rows(draft),
+        # The dedicated Pretrained-weights panel's always-computable data.
+        "pretrained": pretrained_block(effective),
         "pipeline": pipeline,
     }

@@ -127,10 +127,11 @@ class TestTaxonomy:
             assert REGISTRY[key].group == "model", key
 
     def test_pretrained_model_config_lives_in_training(self):
-        """Round-3 defect 4 + round-5 item 4: the pretrained-weight regime
-        configures the TRAINING path; preload_weights is the one hand knob
-        (the source itself derives from the builder registration)."""
-        for key in ("weight_source", "preload_weights", "pretrained_weight_source"):
+        """Round-3 defect 4 + round-5/7: the pretrained-weight regime configures
+        the TRAINING path; preload_weights is the switch, pretrained_weight_set
+        the choice among the builder's registered sets."""
+        for key in ("weight_source", "preload_weights", "pretrained_weight_set",
+                    "pretrained_weight_sets"):
             assert REGISTRY[key].group == "training", key
         assert REGISTRY["preload_weights"].category is Category.BASIC
         for key in ("finetune_epochs", "finetune_lr"):
@@ -622,17 +623,19 @@ class TestRound5PretrainedWeightSourceDedupe:
         assert entry.category is Category.BASIC
         assert entry.group == "training"
 
-    def test_pretrained_weight_source_is_not_authorable(self):
+    def test_pretrained_weight_sets_is_the_injection_key_not_authorable(self):
         from mimarsinan.config_schema.validation import validate_deployment_config
 
-        entry = REGISTRY["pretrained_weight_source"]
+        assert "pretrained_weight_source" not in REGISTRY  # retired scalar
+        entry = REGISTRY["pretrained_weight_sets"]
         assert entry.category is Category.DERIVED
         assert entry.declarable is False
+        assert entry.hidden is True
         assert entry.provenance == "builder profile"
         errors = validate_deployment_config(
-            {"deployment_parameters": {"pretrained_weight_source": "torchvision"}}
+            {"deployment_parameters": {"pretrained_weight_sets": []}}
         )
-        assert any("pretrained_weight_source" in e and "not declarable" in e
+        assert any("pretrained_weight_sets" in e and "not declarable" in e
                    for e in errors)
 
     def test_finetune_knobs_follow_the_regime(self):

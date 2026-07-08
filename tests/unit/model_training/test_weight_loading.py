@@ -137,11 +137,27 @@ class TestResolveWeightStrategy:
 
     def test_torchvision_with_builder(self):
         class FakeBuilder:
-            def get_pretrained_factory(self):
+            def get_pretrained_factory(self, weight_set_id=None):
                 return lambda: SimpleMLP()
 
         strategy = resolve_weight_strategy("torchvision", model_builder=FakeBuilder())
         assert isinstance(strategy, TorchvisionWeightStrategy)
+
+    def test_the_chosen_weight_set_reaches_the_builder_factory(self):
+        """The builder registers the SETS; the strategy resolution tells it which
+        one to load. Absent = the builder's default set."""
+        asked = []
+
+        class FakeBuilder:
+            def get_pretrained_factory(self, weight_set_id=None):
+                asked.append(weight_set_id)
+                return lambda: SimpleMLP()
+
+        resolve_weight_strategy("torchvision", model_builder=FakeBuilder())
+        resolve_weight_strategy(
+            "torchvision", model_builder=FakeBuilder(), weight_set_id="imagenet1k_v2"
+        )
+        assert asked == [None, "imagenet1k_v2"]
 
     def test_file_path(self, tmp_path):
         p = tmp_path / "weights.pt"

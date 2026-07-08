@@ -2,10 +2,12 @@
 
 import torchvision.models as models
 
+from mimarsinan.common.workload_profile import ModelWorkloadProfile
 from mimarsinan.models.builders.torch.torchvision_builder_utils import (
     adapt_conv_in_channels,
     parse_image_input_shape,
-    torchvision_workload_profile,
+    torchvision_weight_set,
+    torchvision_weights,
 )
 from mimarsinan.pipelining.core.registry.model_registry import ModelRegistry
 
@@ -30,13 +32,20 @@ class TorchResNet50Builder:
         model = models.resnet50(num_classes=self.num_classes)
         return _adapt_resnet_for_input(model, self.input_shape)
 
-    workload_profile = staticmethod(torchvision_workload_profile)
+    @classmethod
+    def workload_profile(cls) -> ModelWorkloadProfile:
+        """The pretrained weight sets torchvision ships for this backbone."""
+        return ModelWorkloadProfile(pretrained_weight_sets=tuple(
+            torchvision_weight_set(models.ResNet50_Weights[name])
+            for name in ("IMAGENET1K_V1", "IMAGENET1K_V2")
+        ))
 
-    def get_pretrained_factory(self):
-        """Return a callable that creates a pretrained ResNet-50 (ImageNet weights)."""
+    def get_pretrained_factory(self, weight_set_id: str | None = None):
+        """Return a callable that creates a pretrained ResNet-50 for a registered weight set."""
+        weights = torchvision_weights(type(self), models.ResNet50_Weights, weight_set_id)
 
         def _factory():
-            model = models.resnet50(weights=models.ResNet50_Weights.IMAGENET1K_V1)
+            model = models.resnet50(weights=weights)
             return _adapt_resnet_for_input(model, self.input_shape)
 
         return _factory

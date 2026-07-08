@@ -59,14 +59,21 @@ class ModelRegistry:
 
     @classmethod
     def get_workload_profile(cls, model_id: str):
-        """The builder-declared ``ModelWorkloadProfile``, or None when the model
-        type is unknown or the builder declares nothing."""
+        """The builder-declared ``ModelWorkloadProfile``; ``None`` only when the
+        model type is UNKNOWN.
+
+        A known builder that declares no hook still has a registration — the EMPTY
+        one — so "this builder registers no pretrained weights" is a claim the
+        framework can read, distinct from "no builder was consulted".
+        """
+        from mimarsinan.common.workload_profile import ModelWorkloadProfile
+
         cls._ensure_builders_loaded()
         entry = cls._registry.get(model_id)
         if entry is None:
             return None
         hook = getattr(entry["builder_cls"], "workload_profile", None)
-        return None if hook is None else hook()
+        return ModelWorkloadProfile() if hook is None else hook()
 
     @classmethod
     def builder_classes(cls) -> dict[str, type]:

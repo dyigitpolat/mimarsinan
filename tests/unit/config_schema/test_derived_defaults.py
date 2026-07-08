@@ -163,7 +163,7 @@ class TestTheConcreteProspectiveValue:
         # Only genuine "absence is the value" keys may resolve to null.
         assert uncomputable <= {
             # "absence IS the value" (no cap / no registration the registry sees)
-            "simulation_batch_count", "weight_source", "pretrained_weight_source",
+            "simulation_batch_count", "weight_source", "pretrained_weight_set",
             "tuning_step_cap_epochs", "calibration_set_policy",
             "proven_recovery_depth", "activation_analysis_batch_size",
             "eval_subsample_target",

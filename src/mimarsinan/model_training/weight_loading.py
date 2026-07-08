@@ -131,9 +131,10 @@ class UnsupportedPreloadError(ValueError):
 
 
 class PretrainedFactoryBuilder(Protocol):
-    """Duck-typed model builder that can supply a pretrained torchvision factory."""
+    """Duck-typed model builder that can supply a pretrained torchvision factory
+    for one of the weight sets it registers (``None`` = its default set)."""
 
-    def get_pretrained_factory(self) -> Any: ...
+    def get_pretrained_factory(self, weight_set_id: Optional[str] = None) -> Any: ...
 
 
 def torchvision_source_supported(model_builder=None) -> TypeGuard[PretrainedFactoryBuilder]:
@@ -149,11 +150,13 @@ def torchvision_source_supported(model_builder=None) -> TypeGuard[PretrainedFact
 def resolve_weight_strategy(
     weight_source: str,
     model_builder=None,
+    weight_set_id: Optional[str] = None,
 ) -> Optional[WeightLoadingStrategy]:
     """Resolve a ``weight_source`` string (``'torchvision'``, a checkpoint path, or an http(s) URL) into a strategy, or ``None`` if falsy.
 
-    Raises ``UnsupportedPreloadError`` early when torchvision is requested for a
-    builder without ``get_pretrained_factory()``.
+    ``weight_set_id`` names which of the builder's registered weight sets to load
+    (``None`` = its default). Raises ``UnsupportedPreloadError`` early when
+    torchvision is requested for a builder without ``get_pretrained_factory()``.
     """
     if not weight_source:
         return None
@@ -164,7 +167,7 @@ def resolve_weight_strategy(
                 "weight_source='torchvision' requires a model builder with "
                 "get_pretrained_factory(). The current builder does not support it."
             )
-        factory = model_builder.get_pretrained_factory()
+        factory = model_builder.get_pretrained_factory(weight_set_id)
         return TorchvisionWeightStrategy(factory)
 
     if weight_source.startswith("http://") or weight_source.startswith("https://"):

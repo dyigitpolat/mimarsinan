@@ -82,7 +82,10 @@ def legality_errors(
         value = declared.get(flat_key)
         if flat_key not in declared or value is None:
             continue
-        legal = list(legal_values_for(flat_key, cfg))
+        legal_tuple = legal_values_for(flat_key, cfg)
+        if legal_tuple is None:  # legality does not apply here — do not judge
+            continue
+        legal = list(legal_tuple)
         if value in legal:
             continue
         errors.append({

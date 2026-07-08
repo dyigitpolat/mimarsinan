@@ -55,7 +55,8 @@ DERIVED_NON_DEFAULT_KEYS = {
     "max_axons",
     "max_neurons",
     "weight_source",
-    "pretrained_weight_source",
+    "pretrained_weight_set",
+    "pretrained_weight_sets",
 }
 RUNTIME_KEYS = {"device", "input_shape", "input_size", "num_classes"}
 
@@ -191,7 +192,7 @@ class TestExposureTaxonomy:
         assert {
             "activation_quantization",
             "pipeline_mode",
-            "pretrained_weight_source",
+            "pretrained_weight_sets",
         } <= keys_with_exposure("derived")
 
     def test_policy_owned_simulator_enables_are_derived_exposure(self):

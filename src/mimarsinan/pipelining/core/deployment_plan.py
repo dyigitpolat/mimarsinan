@@ -12,6 +12,11 @@ from mimarsinan.chip_simulation.spiking_semantics import (
     ttfs_cycle_schedule,
     uses_ttfs_floor_ceil_convention as _uses_ttfs_floor_ceil_convention,
 )
+from mimarsinan.common.pretrained import (
+    preload_regime_error,
+    select_weight_set,
+    selected_source,
+)
 from mimarsinan.common.workload_profile import ResolvedWorkloadProfile
 from mimarsinan.pipelining.core.registry.model_registry import ModelRegistry
 from mimarsinan.pipelining.core.search_mode import derive_search_mode
@@ -21,22 +26,19 @@ from mimarsinan.tuning.orchestration.temporal_allocation import (
 )
 
 def resolve_weight_source(config: dict[str, Any]) -> Any:
-    """THE weight-source resolution: explicit ``weight_source`` > the builder's
-    ``pretrained_weight_source`` registration under ``preload_weights`` > None."""
+    """THE weight-source resolution: an explicit ``weight_source`` > the chosen
+    builder-registered weight set's source > None. The regime with nothing
+    selectable fails LOUD (the configurator locks the switch, so it is
+    unauthorable there and never 500s)."""
     explicit = config.get("weight_source")
     if explicit:
         return explicit
     if bool(config.get("preload_weights", False)):
-        registered = config.get("pretrained_weight_source")
-        if registered is None:
-            raise ValueError(
-                "preload_weights=true but the model builder registers no "
-                "pretrained weight source "
-                "(ModelWorkloadProfile.pretrained_weight_source). Declare "
-                "weight_source explicitly, or turn the preload regime off."
-            )
-        return str(registered)
-    return explicit
+        source = selected_source(config)
+        if source is None:
+            raise preload_regime_error(config)
+        return source
+    return None
 
 
 OPTIMIZATION_DRIVER_CONTROLLER = "controller"
@@ -73,6 +75,7 @@ class DeploymentPlan:
     model_type: str
     model_category: str | None
     weight_source: Any
+    pretrained_weight_set: dict[str, Any] | None
 
     spiking_mode: str
     ttfs_cycle_schedule: str
@@ -136,6 +139,7 @@ class DeploymentPlan:
             model_type=model_type,
             model_category=ModelRegistry.get_category(model_type),
             weight_source=resolve_weight_source(config),
+            pretrained_weight_set=select_weight_set(config),
             spiking_mode=spiking,
             ttfs_cycle_schedule=ttfs_cycle_schedule(schedule_raw),
             requires_ttfs_firing=requires_ttfs_firing(spiking),
@@ -198,9 +202,7 @@ class DeploymentPlan:
 
     def mode_policy(self):
         """The behavior-carrying ``SpikingModePolicy`` for this plan (resolved without ``simulation_steps``)."""
-        from mimarsinan.chip_simulation.spiking_mode_policy import (
-            policy_for_spiking_mode,
-        )
+        from mimarsinan.chip_simulation.spiking_mode_policy import policy_for_spiking_mode
 
         return policy_for_spiking_mode(self.spiking_mode, self.ttfs_cycle_schedule)
 
@@ -292,9 +294,6 @@ class DeploymentPlan:
         )
 
     def temporal_allocation(self, *, depth: int):
-        """The per-depth temporal-allocation map (the reserved per-layer-S axis seam).
-
-        ``s_allocation='uniform'`` (default) returns the global ``simulation_steps`` for
-        every depth; ``depth`` is supplied by the caller.
-        """
+        """The per-depth temporal-allocation map (the reserved per-layer-S seam);
+        ``s_allocation='uniform'`` returns the global ``simulation_steps``."""
         return TemporalAllocationResolver.from_config(self.config).resolve(depth=depth)

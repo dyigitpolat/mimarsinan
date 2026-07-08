@@ -12,13 +12,14 @@ from torchvision.models.vision_transformer import VisionTransformer, interpolate
 from mimarsinan.common.workload_profile import ModelWorkloadProfile
 from mimarsinan.models.builders.torch.torchvision_builder_utils import (
     parse_image_input_shape,
+    registered_weight_set,
     resize_conv_input_weights,
+    torchvision_weight_set,
+    torchvision_weights,
 )
 from mimarsinan.pipelining.core.registry.model_registry import ModelRegistry
 
-_VIT_DEFAULT_IMAGE_SIZE = 224
 _VIT_DEFAULT_PATCH_SIZE = 16
-_VIT_IMAGENET_IN_CHANNELS = 3
 _VIT_B_NUM_LAYERS = 12
 _VIT_B_NUM_HEADS = 12
 _VIT_B_HIDDEN_DIM = 768
@@ -119,25 +120,28 @@ class TorchViTBuilder:
     def build(self, configuration):
         return self._build_model(self.num_classes)
 
-    def get_pretrained_factory(self):
-        """Return a callable that creates a pretrained ViT-B/16 (ImageNet weights)."""
+    def get_pretrained_factory(self, weight_set_id: str | None = None):
+        """Return a callable that creates a pretrained ViT-B/16 for a registered weight set."""
+        chosen = registered_weight_set(type(self), weight_set_id)
+        weights = torchvision_weights(type(self), models.ViT_B_16_Weights, weight_set_id)
+        native_channels, native_size, _ = chosen.input_shape
 
         def _factory():
             c, h, w = parse_image_input_shape(self.input_shape, model_name="ViT")
             patch_size = _resolve_vit_patch_size(h, w)
-            model = self._build_model(num_classes=1000)
-            pretrained = models.vit_b_16(weights=models.ViT_B_16_Weights.IMAGENET1K_V1)
+            model = self._build_model(num_classes=chosen.num_classes)
+            pretrained = models.vit_b_16(weights=weights)
             pretrained_proj = pretrained.conv_proj
             assert isinstance(pretrained_proj, nn.Conv2d), "vit_b_16 patchifies with a single Conv2d"
             state_dict = cast("OrderedDict[str, torch.Tensor]", pretrained.state_dict())
-            if h != _VIT_DEFAULT_IMAGE_SIZE or patch_size != _VIT_DEFAULT_PATCH_SIZE:
+            if h != native_size or patch_size != _VIT_DEFAULT_PATCH_SIZE:
                 state_dict = interpolate_embeddings(
                     image_size=h,
                     patch_size=patch_size,
                     model_state=state_dict,
                     reset_heads=False,
                 )
-            if c != _VIT_IMAGENET_IN_CHANNELS or patch_size != _VIT_DEFAULT_PATCH_SIZE:
+            if c != native_channels or patch_size != _VIT_DEFAULT_PATCH_SIZE:
                 state_dict["conv_proj.weight"] = resize_conv_input_weights(
                     _resize_patch_kernel(pretrained_proj.weight, patch_size),
                     c,
@@ -151,10 +155,14 @@ class TorchViTBuilder:
 
     @classmethod
     def workload_profile(cls) -> ModelWorkloadProfile:
-        """Torchvision preload source + the measured clamp/CUDA-assert proneness
+        """The torchvision weight sets whose native geometry this builder loads
+        (ViT-B/16 at 224px), plus the measured clamp/CUDA-assert proneness
         (device-side asserts observed under Clamp Adaptation on this backbone)."""
         return ModelWorkloadProfile(
-            pretrained_weight_source="torchvision",
+            pretrained_weight_sets=tuple(
+                torchvision_weight_set(models.ViT_B_16_Weights[name])
+                for name in ("IMAGENET1K_V1", "IMAGENET1K_SWAG_LINEAR_V1")
+            ),
             clamp_cuda_assert_prone=True,
         )
 

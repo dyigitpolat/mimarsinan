@@ -115,11 +115,8 @@ def _resolve_activation_quantization(
     """Derived AQ unless a contradicting explicit value raises or is force-honored."""
     if explicit_aq is None or bool(explicit_aq) == derived_aq:
         return derived_aq
-    regime = (
-        "float-weight (vanilla) deployment"
-        if float_weights
-        else f"spiking_mode={spiking_mode!r}"
-    )
+    regime = ("float-weight (vanilla) deployment" if float_weights
+              else f"spiking_mode={spiking_mode!r}")
     detail = (
         f"explicit activation_quantization={bool(explicit_aq)} contradicts the "
         f"derived value {derived_aq} for {regime}."
@@ -136,11 +133,8 @@ def derive_deployment_parameters(
 ) -> None:
     """Derive AQ/WQ/pipeline_mode in-place — the ONLY derivation implementation
     (the wizard consumes it via ``/api/config/resolve``; no JS copy exists).
-
     ``explicit_keys`` names the keys the source DOCUMENT declared (so merged
-    defaults don't masquerade as declarations); ``None`` treats every present
-    key as declared.
-    """
+    defaults don't masquerade as declarations); ``None`` = every present key."""
     spiking_mode = str(dp.get("spiking_mode", "lif"))
     pipeline_mode = str(dp.get("pipeline_mode", ""))
     explicit_aq = dp.get("activation_quantization")
@@ -265,9 +259,12 @@ def legal_value_error(flat_key: str, value: Any, legal: Iterable[Any]) -> ValueE
     )
 
 
-def legal_values_for(flat_key: str, cfg: Mapping[str, Any]) -> Tuple[Any, ...]:
-    """The registry's legal value set for ``flat_key`` under this config state."""
-    return tuple(REGISTRY[flat_key].legal_values(cfg))  # type: ignore[misc]
+def legal_values_for(flat_key: str, cfg: Mapping[str, Any]) -> Optional[Tuple[Any, ...]]:
+    """The registry's legal value set for ``flat_key`` under this config state.
+    ``None`` = legality does not apply here (the rule was not consulted): neither
+    locked nor judged. An EMPTY tuple = consulted and admits nothing."""
+    result = REGISTRY[flat_key].legal_values(cfg)  # type: ignore[misc]
+    return None if result is None else tuple(result)
 
 
 def legality_bearing_keys() -> Tuple[str, ...]:
@@ -288,8 +285,10 @@ def derive_pipeline_runtime_parameters(dp: MutableMapping[str, Any]) -> None:
         if derived is None:
             continue
         if dp.get(flat_key) is None:
-            dp[flat_key] = derived(dp)
-        elif dp[flat_key] not in (legal := legal_values_for(flat_key, dp)):
+            if (value := derived(dp)) is not None:
+                dp[flat_key] = value
+        elif (legal := legal_values_for(flat_key, dp)) is not None and (
+                dp[flat_key] not in legal):
             raise legal_value_error(flat_key, dp[flat_key], legal)
     # Recipe-owned correctness mechanism (LIF trains the deployed forward);
     # inert for TTFS modes but always resolved, never a knob.

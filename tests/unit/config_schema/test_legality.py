@@ -127,13 +127,33 @@ class TestTheLegalValueSets:
         legal = REGISTRY["s_allocation"].legal_values({})
         assert legal == ("uniform",)
 
-    def test_the_view_serves_every_legality_bearing_key(self):
+    def test_the_view_serves_every_applicable_legality_bearing_key(self):
+        """The view serves every legality-bearing key whose legality APPLIES to
+        the state. The spiking keys always apply; the pretrained keys need a
+        builder registration folded in and are omitted (None) without one."""
         view = legal_values_view({"spiking_mode": "ttfs"})
-        assert set(view) == {
-            key for key, entry in REGISTRY.items() if entry.legal_values is not None
+        applicable = {
+            key for key, entry in REGISTRY.items()
+            if entry.legal_values is not None
+            and entry.legal_values({"spiking_mode": "ttfs"}) is not None
         }
+        assert set(view) == applicable
+        assert "preload_weights" not in view  # no registration folded in
         assert view["firing_mode"] == ["TTFS"]
         assert view["thresholding_mode"] == ["<", "<="]
+
+    def test_a_folded_registration_serves_the_pretrained_legal_sets(self):
+        view = legal_values_view({
+            "spiking_mode": "ttfs",
+            "pretrained_weight_sets": [
+                {"id": "imagenet1k_v1", "label": "V1", "task": "t", "dataset": "d",
+                 "input_shape": [3, 224, 224], "num_classes": 1000,
+                 "source": "torchvision", "adapts_input_shape": True,
+                 "adapts_num_classes": True},
+            ],
+        })
+        assert view["preload_weights"] == [False, True]
+        assert view["pretrained_weight_set"] == ["imagenet1k_v1"]
 
     def test_locked_keys_are_exactly_the_singleton_legal_sets(self):
         lif = legal_values_view({"spiking_mode": "lif"})

@@ -24,13 +24,26 @@ class WeightPreloadingStep(TrainerPipelineStep):
         model = self.get_entry("model")
         builder = self.get_entry("model_builder")
 
-        weight_source = DeploymentPlan.of(self.pipeline).weight_source
-        strategy = resolve_weight_strategy(weight_source, model_builder=builder)
+        plan = DeploymentPlan.of(self.pipeline)
+        weight_source = plan.weight_source
+        weight_set = plan.pretrained_weight_set
+        strategy = resolve_weight_strategy(
+            weight_source,
+            model_builder=builder,
+            weight_set_id=None if weight_set is None else str(weight_set["id"]),
+        )
 
         if strategy is None:
             print("[WeightPreloadingStep] No weight_source configured, skipping.")
             self.update_entry("model", model, "torch_model")
             return
+
+        if weight_set is not None:
+            print(
+                f"[WeightPreloadingStep] Weight set: {weight_set['id']} "
+                f"({weight_set['label']}; {weight_set['task']} on "
+                f"{weight_set['dataset']}, {weight_set['num_classes']} classes)"
+            )
 
         device = self.pipeline.config["device"]
         model, info = strategy.load(model)

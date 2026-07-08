@@ -284,39 +284,54 @@ class TestResolvedValuesServed:
         assert body["resolved"] == {}
 
 
-class TestWeightSourceIsBuilderProvided:
-    """Round-5 item 4: ONE pretrained-weight-source concept. Turning on the
-    regime resolves the source from the model builder's registration (green
-    derived in the wizard); a builder that registers nothing fails LOUD, the
-    same way the pipeline's DeploymentPlan does."""
+from mimarsinan.common.workload_profile import ModelWorkloadProfile
+from mimarsinan.common.pretrained import PretrainedWeightSet
 
-    def test_regime_resolves_the_builder_registered_source(self, client, monkeypatch):
-        from mimarsinan.common.workload_profile import ModelWorkloadProfile
-        from mimarsinan.pipelining.core.registry.model_registry import ModelRegistry
 
-        monkeypatch.setattr(
-            ModelRegistry, "get_workload_profile",
-            classmethod(lambda cls, model_id: ModelWorkloadProfile(
-                pretrained_weight_source="torchvision",
-            )),
-        )
+def _weight_set(**kw):
+    base = dict(
+        id="imagenet1k_v1", label="ImageNet-1K · V1", task="image classification",
+        dataset="ImageNet-1K", input_shape=(3, 224, 224), num_classes=1000,
+        source="torchvision", expected_accuracy=0.76, license="BSD-3-Clause",
+        num_parameters=25557032, preprocessing={"resize_to": 256},
+        adapts_input_shape=True, adapts_num_classes=True,
+    )
+    base.update(kw)
+    return PretrainedWeightSet(**base)
+
+
+def _register_sets(monkeypatch, *sets):
+    from mimarsinan.pipelining.core.registry.model_registry import ModelRegistry
+
+    monkeypatch.setattr(
+        ModelRegistry, "get_workload_profile",
+        classmethod(lambda cls, model_id: ModelWorkloadProfile(
+            pretrained_weight_sets=tuple(sets),
+        )),
+    )
+
+
+class TestPretrainedWeightSetsAreBuilderProvided:
+    """Round-7: a builder registers a SET of pretrained weight sets. The switch
+    and the selector are driven by the builder registration folded into resolve;
+    a builder that registers nothing fails LOUD exactly as the pipeline does."""
+
+    def test_regime_resolves_the_chosen_registered_source(self, client, monkeypatch):
+        _register_sets(monkeypatch, _weight_set())
         draft = client.get("/api/config/starter").json()
         draft["deployment_parameters"]["preload_weights"] = True
         body = client.post("/api/config/resolve", json=draft).json()
         assert body["errors"] == []
         assert body["resolved"]["weight_source"] == "torchvision"
-        row = body["derived"]["weight_source"]
-        assert row["value"] == "torchvision"
-        # The WHY must credit the REGISTRATION, not pretend the user declared it.
-        assert "registration" in row["why"]
-        assert "explicit" not in row["why"]
+        assert body["derived"]["weight_source"]["value"] == "torchvision"
+        assert body["derived"]["pretrained_weight_set"]["value"] == "imagenet1k_v1"
 
     def test_regime_without_a_registration_is_a_keyed_error(self, client, monkeypatch):
         from mimarsinan.pipelining.core.registry.model_registry import ModelRegistry
 
         monkeypatch.setattr(
             ModelRegistry, "get_workload_profile",
-            classmethod(lambda cls, model_id: None),
+            classmethod(lambda cls, model_id: ModelWorkloadProfile()),
         )
         draft = client.get("/api/config/starter").json()
         draft["deployment_parameters"]["preload_weights"] = True
@@ -324,20 +339,11 @@ class TestWeightSourceIsBuilderProvided:
         errors = [e for e in body["errors"] if e["key"] == "weight_source"]
         assert len(errors) == 1
         assert errors[0]["rule_id"] == "weight_source_regime"
-        assert "registers no pretrained weight source" in errors[0]["message"]
-        # No hypothetical source value is served while the draft errors.
+        assert "registers no pretrained weights" in errors[0]["message"]
         assert body["resolved"] == {}
 
     def test_explicit_source_wins_over_the_registration(self, client, monkeypatch):
-        from mimarsinan.common.workload_profile import ModelWorkloadProfile
-        from mimarsinan.pipelining.core.registry.model_registry import ModelRegistry
-
-        monkeypatch.setattr(
-            ModelRegistry, "get_workload_profile",
-            classmethod(lambda cls, model_id: ModelWorkloadProfile(
-                pretrained_weight_source="torchvision",
-            )),
-        )
+        _register_sets(monkeypatch, _weight_set())
         draft = client.get("/api/config/starter").json()
         draft["deployment_parameters"]["preload_weights"] = True
         draft["deployment_parameters"]["weight_source"] = "/ckpt/best.pt"
@@ -352,6 +358,105 @@ class TestWeightSourceIsBuilderProvided:
         assert body["errors"] == []
         assert body["derived"]["weight_source"]["value"] is None
         assert "scratch" in body["derived"]["weight_source"]["why"]
+
+
+class TestPretrainedPanelBlock:
+    """The dedicated panel renders from an ALWAYS-served `pretrained` block —
+    like the vehicles block, it survives an erroring draft and carries the
+    switch state, the reason, the registered records and the selection."""
+
+    def test_lenet5_switch_is_disabled_with_a_reason(self, client):
+        draft = client.get("/api/config/starter").json()  # lenet5 registers nothing
+        body = client.post("/api/config/resolve", json=draft).json()
+        pretrained = body["pretrained"]
+        assert pretrained["available"] is False
+        assert pretrained["legal_preload"] == [False]
+        assert "lenet5" in pretrained["reason"] and "no pretrained" in pretrained["reason"]
+        assert pretrained["sets"] == []
+
+    def test_single_set_locks_the_choice(self, client, monkeypatch):
+        _register_sets(monkeypatch, _weight_set())
+        draft = client.get("/api/config/starter").json()
+        draft["deployment_parameters"]["preload_weights"] = True
+        body = client.post("/api/config/resolve", json=draft).json()
+        pretrained = body["pretrained"]
+        assert pretrained["available"] is True
+        assert pretrained["legal_set_ids"] == ["imagenet1k_v1"]
+        assert pretrained["selected"] == "imagenet1k_v1"
+        assert body["legal_values"]["pretrained_weight_set"] == ["imagenet1k_v1"]
+        # The full record is revealed — every declared fact.
+        record = pretrained["sets"][0]
+        assert record["dataset"] == "ImageNet-1K" and record["num_classes"] == 1000
+        assert record["expected_accuracy"] == 0.76 and record["license"]
+
+    def test_multiple_sets_offer_a_selection(self, client, monkeypatch):
+        _register_sets(
+            monkeypatch, _weight_set(),
+            _weight_set(id="imagenet1k_v2", label="V2", source="https://x/y.pt"),
+        )
+        draft = client.get("/api/config/starter").json()
+        draft["deployment_parameters"]["preload_weights"] = True
+        body = client.post("/api/config/resolve", json=draft).json()
+        assert body["legal_values"]["pretrained_weight_set"] == [
+            "imagenet1k_v1", "imagenet1k_v2",
+        ]
+        assert body["pretrained"]["selected"] == "imagenet1k_v1"
+
+    def test_a_chosen_set_supplies_its_source(self, client, monkeypatch):
+        _register_sets(
+            monkeypatch, _weight_set(),
+            _weight_set(id="imagenet1k_v2", label="V2", source="https://x/y.pt"),
+        )
+        draft = client.get("/api/config/starter").json()
+        draft["deployment_parameters"]["preload_weights"] = True
+        draft["deployment_parameters"]["pretrained_weight_set"] = "imagenet1k_v2"
+        body = client.post("/api/config/resolve", json=draft).json()
+        assert body["errors"] == []
+        assert body["resolved"]["weight_source"] == "https://x/y.pt"
+        assert body["pretrained"]["selected"] == "imagenet1k_v2"
+
+    def test_switch_locks_on_when_a_source_is_declared(self, client):
+        draft = client.get("/api/config/starter").json()
+        draft["deployment_parameters"]["weight_source"] = "/ckpt/best.pt"
+        body = client.post("/api/config/resolve", json=draft).json()
+        assert body["legal_values"]["preload_weights"] == [True]
+
+    def test_switch_offers_both_when_a_registration_applies(self, client, monkeypatch):
+        _register_sets(monkeypatch, _weight_set())
+        draft = client.get("/api/config/starter").json()
+        body = client.post("/api/config/resolve", json=draft).json()
+        assert body["legal_values"]["preload_weights"] == [False, True]
+
+    def test_an_unregistered_set_id_is_a_keyed_error_not_a_500(self, client, monkeypatch):
+        _register_sets(monkeypatch, _weight_set())
+        draft = client.get("/api/config/starter").json()
+        draft["deployment_parameters"]["preload_weights"] = True
+        draft["deployment_parameters"]["pretrained_weight_set"] = "imagenet1k_v99"
+        resp = client.post("/api/config/resolve", json=draft)
+        assert resp.status_code == 200
+        body = resp.json()
+        rows = [e for e in body["errors"] if e["key"] == "pretrained_weight_set"]
+        assert rows and rows[0]["rule_id"] == "legal_value_set"
+        assert "imagenet1k_v99" in rows[0]["message"]
+        assert rows[0]["remedies"]
+
+    def test_an_inapplicable_set_is_a_keyed_incompatibility_error(self, client, monkeypatch):
+        """A set requiring a model_config the draft contradicts is filtered from
+        the legal set; pinning it names the mismatch, never loads silently."""
+        gelu = _weight_set(id="gelu_only",
+                           model_config_requires={"base_activation": "GELU"})
+        _register_sets(monkeypatch, gelu)
+        draft = client.get("/api/config/starter").json()
+        draft["deployment_parameters"]["model_config"] = {"base_activation": "ReLU"}
+        draft["deployment_parameters"]["preload_weights"] = True
+        draft["deployment_parameters"]["pretrained_weight_set"] = "gelu_only"
+        resp = client.post("/api/config/resolve", json=draft)
+        assert resp.status_code == 200
+        body = resp.json()
+        rows = [e for e in body["errors"] if e["key"] == "pretrained_weight_set"]
+        assert rows and rows[0]["rule_id"] == "legal_value_set"
+        assert body["pretrained"]["available"] is False
+        assert "base_activation" in body["pretrained"]["reason"]
 
 
 class TestBaselineIsTheDiffBaseline:

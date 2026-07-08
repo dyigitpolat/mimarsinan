@@ -47,9 +47,8 @@ DEFAULT_DEPLOYMENT_PARAMETERS: Dict[str, object] = {
     "hw_config_mode": "fixed",
     # The enable_*_simulation flags carry NO defaults: the ConversionPolicy
     # recipe derives them per mode and overwrites any value (Pure SSOT).
-    # cycle_accurate_lif_forward carries NO default: it is recipe-owned
-    # (the LIF recipe folds it ON; the runtime derivation writes it) — a
-    # correctness mechanism, never a knob.
+    # cycle_accurate_lif_forward carries NO default: it is recipe-owned (the LIF
+    # recipe folds it ON; the runtime derivation writes it) — never a knob.
     "spiking_mode": "lif",
     # Negative-boundary policy: ON = calibrated shift; OFF = subsume-forward.
     "negative_value_shift": True,
@@ -108,6 +107,7 @@ CONFIG_KEYS_SET: Set[str] = {
     "prune_sparsity",
     "weight_source",
     "preload_weights",
+    "pretrained_weight_set", "pretrained_weight_sets",
     "model_type",
     "device",
     "input_shape",
@@ -189,7 +189,7 @@ CONFIG_KEYS_SET: Set[str] = {
     # is meaningful, so they never get schema defaults here.
     "input_data_scale", "eval_subsample_target", "tuning_step_cap_epochs",
     "calibration_set_policy", "prefix_stage_lr", "endpoint_floor_lr",
-    "pretrained_weight_source", "proven_recovery_depth", "clamp_cuda_assert_prone",
+    "proven_recovery_depth", "clamp_cuda_assert_prone",
 }
 
 
