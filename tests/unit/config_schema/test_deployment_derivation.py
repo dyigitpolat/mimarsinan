@@ -463,3 +463,19 @@ class TestMirrorTrainingRecipe:
         dp["mirror_training_recipe"] = True
         derive_deployment_parameters(dp, explicit_keys={"mirror_training_recipe"})
         assert dp["tuning_recipe"] == dp["training_recipe"]
+
+
+class TestNegativeValueShiftAlwaysResolvesOn:
+    """§3d default: the boundary-lossless shift is folded ON for every mode —
+    the deployed pipeline must not silently clamp negative boundaries."""
+
+    @pytest.mark.parametrize(
+        "mode", ["lif", "ttfs", "ttfs_quantized", "ttfs_cycle_based"]
+    )
+    def test_every_mode_resolves_shift_on(self, mode):
+        config = build_flat_pipeline_config({"spiking_mode": mode}, {})
+        assert config["negative_value_shift"] is True
+
+    def test_vanilla_float_assembly_also_resolves_shift_on(self):
+        config = build_flat_pipeline_config({}, {}, pipeline_mode="vanilla")
+        assert config["negative_value_shift"] is True

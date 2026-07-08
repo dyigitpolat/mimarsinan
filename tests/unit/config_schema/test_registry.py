@@ -473,3 +473,38 @@ class TestNonDeclarableRejection:
             },
         })
         assert not any("not declarable" in e for e in errors)
+
+
+class TestNegativeValueShiftIsACorrectnessMechanism:
+    """§3d verdict: an unshifted negative ComputeOp→neural boundary is
+    SILENTLY CORRUPTED by the [0,1] spike-encode clamp (there is no
+    subsume-forward path in the mapping). The shift is therefore a mandatory
+    correctness mechanism — derived always-on, never a knob; a config that
+    silently corrupts negatives must not be authorable."""
+
+    def test_negative_value_shift_is_derived_and_non_declarable(self):
+        entry = REGISTRY["negative_value_shift"]
+        assert entry.category is Category.DERIVED
+        assert entry.declarable is False
+        assert not entry.has_default()
+        assert entry.derived_from
+        assert entry.why is not None
+        assert "bias" in entry.doc.lower() or "shift" in entry.doc.lower()
+
+    def test_declaring_it_in_a_document_is_rejected(self):
+        from mimarsinan.config_schema.validation import validate_deployment_config
+
+        errors = validate_deployment_config(
+            {"deployment_parameters": {"negative_value_shift": False}}
+        )
+        assert any("negative_value_shift" in e and "not declarable" in e
+                   for e in errors)
+
+    def test_the_doc_states_the_mechanism_precisely(self):
+        """The story: shift at the boundary + consumer-bias pre-correction
+        (B − W·s) so the next neural activation absorbs the shift exactly;
+        unsupported topologies fail loud."""
+        entry = REGISTRY["negative_value_shift"]
+        doc = entry.doc
+        assert "clamp" in doc
+        assert "loud" in doc

@@ -278,3 +278,7 @@ def derive_pipeline_runtime_parameters(dp: MutableMapping[str, Any]) -> None:
     # Recipe-owned correctness mechanism (LIF trains the deployed forward);
     # inert for TTFS modes but always resolved, never a knob.
     dp.setdefault("cycle_accurate_lif_forward", True)
+    # Boundary-lossless requirement: a negative ComputeOp→neural boundary
+    # would be silently clamp-corrupted; the shift is always on, never a
+    # knob (ComputeOp-free graphs skip the calibration — structural no-op).
+    dp["negative_value_shift"] = True

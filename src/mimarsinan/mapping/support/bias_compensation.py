@@ -206,7 +206,8 @@ def apply_negative_value_shifts(
 ) -> dict:
     """Pre-mapping: calibrate per-ComputeOp minima, derive positive shifts, bake the
     consuming perceptron(s), and tag each shifted ``ComputeOpMapper`` with ``_negative_shift``.
-    Returns ``{ComputeOpMapper: shift_np}`` (empty if no boundary goes negative)."""
+    Returns ``{ComputeOpMapper: shift_np}`` (empty if no boundary goes negative).
+    A ComputeOp-free graph skips the calibration forward — a structural no-op."""
     from mimarsinan.mapping.mappers.compute_op_mapper import ComputeOpMapper
 
     if forward_fn is None:
@@ -214,6 +215,8 @@ def apply_negative_value_shifts(
 
     mapper_repr = model.get_mapper_repr()
     mapper_repr._ensure_exec_graph()
+    if not any(isinstance(n, ComputeOpMapper) for n in mapper_repr._exec_order):
+        return {}
     deps_map = mapper_repr._deps
 
     recorder: dict = {}

@@ -73,9 +73,26 @@ ENTRIES = (
            "An explicit choice — no schema default; configs pin a value as data.",
        empty_means="no default — choose subsume or offload (the starter pins subsume)"),
     _E("negative_value_shift", group="spiking", owner="bias_compensation",
-       type=T.BOOL, category=Category.ADVANCED, exposure="user", label="Negative-value Shift",
-       effect="Shifts negative-producing ComputeOp boundaries into the encodable domain",
-       doc="Enable the deployed-bias negative shift (LIF + TTFS family)."),
+       type=T.BOOL, category=Category.DERIVED, derivation="derived",
+       exposure="derived", label="Negative-value Shift",
+       effect="Boundary-lossless requirement: negative ComputeOp boundaries "
+              "shift into the encodable domain",
+       doc="Always on — a correctness mechanism, never a knob. A negative "
+           "ComputeOp output feeding a neural segment would be SILENTLY "
+           "corrupted by the [0,1] spike-encode clamp (no subsume-forward "
+           "path exists); instead, a calibrated positive shift moves the "
+           "boundary into the encodable domain and the consuming perceptron's "
+           "bias is pre-corrected (B − W·s), so the next neural activation "
+           "absorbs the shift exactly. Topologies with no absorbing "
+           "perceptron (ComputeOp→ComputeOp) fail loud at mapping; residual "
+           "negatives beyond the calibration set's coverage warn.",
+       derived_from=("spiking_mode",),
+       why=lambda cfg: (
+           "on — boundary-lossless requirement: negative ComputeOp→neural "
+           "boundaries shift into the encodable domain (consumer bias "
+           "pre-corrected); unshiftable topologies fail loud"
+       ),
+       declarable=False),
     _E("cycle_accurate_lif_forward", group="spiking", owner="lif_adaptation",
        type=T.BOOL, category=Category.DERIVED, derivation="derived",
        exposure="derived", label="Cycle-accurate LIF Forward",

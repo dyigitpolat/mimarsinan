@@ -139,17 +139,20 @@ _warned_negative_boundary_stages: set = set()
 
 
 def warn_once_lossy_negative_clamp(stage_name: str, seg_input: torch.Tensor) -> None:
-    """An unshifted negative reaching the [0,1] boundary clamp is silent
-    information loss; warn once per stage."""
+    """A negative value reaching the [0,1] boundary clamp is information loss;
+    warn once per stage. With the always-on negative-value shift, this fires
+    only for residual negatives BEYOND the calibrated shift (calibration-set
+    coverage limit) — never for a config choice."""
     if stage_name in _warned_negative_boundary_stages:
         return
     if float(seg_input.min()) < -1e-6:
         _warned_negative_boundary_stages.add(stage_name)
         print(
             f"[segment_boundary] Warning: neural stage {stage_name!r} receives "
-            f"negative boundary values (min {float(seg_input.min()):.4f}) that the "
-            "[0,1] spike-encode clamp will drop; enable negative_value_shift to "
-            "make this boundary lossless."
+            f"negative boundary values (min {float(seg_input.min()):.4f}) beyond "
+            "the calibrated negative-value shift; the [0,1] spike-encode clamp "
+            "drops the residual (calibration-coverage limit — widen the "
+            "calibration set if this recurs)."
         )
 
 

@@ -43,6 +43,7 @@ from mimarsinan.config_schema.deployment_derivation import derive_deployment_par
 DERIVED_NON_DEFAULT_KEYS = {
     "pipeline_mode",
     "cycle_accurate_lif_forward",
+    "negative_value_shift",
     "activation_quantization",
     "weight_quantization",
     "firing_mode",

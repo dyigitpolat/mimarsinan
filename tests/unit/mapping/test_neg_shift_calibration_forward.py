@@ -135,3 +135,31 @@ def test_shift_value_matches_recorded_min_ttfs():
     torch.testing.assert_close(
         torch.as_tensor(shifts[ln2]), expected, atol=0.0, rtol=0.0,
     )
+
+
+def test_computeop_free_graph_skips_the_calibration_forward():
+    """Structural no-op guard: a mapper graph without ComputeOps needs no
+    shift, so the (always-on) mechanism must not pay a calibration forward."""
+
+    class _PlainMLP(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.fc1 = nn.Linear(8, 6)
+            self.act1 = nn.ReLU()
+
+        def forward(self, x):
+            return self.act1(self.fc1(x))
+
+    torch.manual_seed(0)
+    flow = convert_torch_model(_PlainMLP().eval(), (8,), 6, device="cpu")
+    repr_ = flow.get_mapper_repr()
+    repr_._ensure_exec_graph()
+    assert not any(isinstance(n, ComputeOpMapper) for n in repr_._exec_order)
+
+    def _must_not_run(model, x, T, compute_min_recorder=None):
+        raise AssertionError("calibration forward ran on a ComputeOp-free graph")
+
+    shifts = apply_negative_value_shifts(
+        flow, torch.rand(4, 8), 4, forward_fn=_must_not_run,
+    )
+    assert shifts == {}
