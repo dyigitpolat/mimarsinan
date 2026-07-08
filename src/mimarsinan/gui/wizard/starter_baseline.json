@@ -9,6 +9,7 @@
     "model_config": {
       "variant": "lenet5"
     },
+    "encoding_layer_placement": "subsume",
     "lr": 0.003,
     "training_epochs": 2,
     "batch_size": 128,

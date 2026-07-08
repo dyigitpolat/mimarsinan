@@ -94,6 +94,23 @@ def _fold_conversion_recipe(
         dp[key] = value
 
 
+def _fold_mirror_training_recipe(
+    dp: MutableMapping[str, Any], explicit: Set[str]
+) -> None:
+    """mirror_training_recipe=true reflects the (effective) training recipe
+    as-is into the tuning recipe; a document-declared tuning_recipe conflicts."""
+    if not bool(dp.get("mirror_training_recipe")):
+        return
+    if "tuning_recipe" in explicit:
+        raise ValueError(
+            "mirror_training_recipe=true owns tuning_recipe (the tuning recipe "
+            "reflects the training recipe). Drop the explicit tuning_recipe "
+            "declaration or disable the mirror."
+        )
+    recipe = dp.get("training_recipe")
+    dp["tuning_recipe"] = dict(recipe) if isinstance(recipe, dict) else recipe
+
+
 def _resolve_activation_quantization(
     explicit_aq: Optional[Any], derived_aq: bool, *, spiking_mode: str, float_weights: bool
 ) -> bool:
@@ -132,6 +149,9 @@ def derive_deployment_parameters(
     float_weights = pipeline_mode == "vanilla" or not bool(dp.get("weight_quantization", True))
 
     _fold_conversion_recipe(dp, spiking_mode, explicit_keys)
+    _fold_mirror_training_recipe(
+        dp, set(dp) if explicit_keys is None else set(explicit_keys)
+    )
 
     if float_weights:
         dp["pipeline_mode"] = "vanilla"

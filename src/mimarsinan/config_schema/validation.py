@@ -8,6 +8,7 @@ from mimarsinan.chip_simulation.spiking_semantics import (
     require_known_spiking_mode,
     requires_ttfs_firing,
 )
+from mimarsinan.config_schema.registry import Category, REGISTRY
 from mimarsinan.mapping.platform.coalescing import coalescing_config_errors
 from mimarsinan.tuning.orchestration.temporal_allocation import (
     S_ALLOCATION_MODES,
@@ -46,6 +47,35 @@ def s_allocation_config_errors(
     return errors
 
 
+def non_declarable_key_errors(config: Mapping[str, Any]) -> List[str]:
+    """Reject document declarations of keys the derivation/runtime owns.
+
+    A RUNTIME key or a non-declarable DERIVED key in a config file would
+    shadow its owner (or silently be overwritten) — unexposed knobs must not
+    be settable programmatically either.
+    """
+    containers = {
+        "top": config,
+        "deployment_parameters": config.get("deployment_parameters"),
+        "platform_constraints": config.get("platform_constraints"),
+    }
+    errors: List[str] = []
+    for flat_key, entry in REGISTRY.items():
+        if entry.category is Category.RUNTIME:
+            owner_kind = "the runtime"
+        elif entry.category is Category.DERIVED and not entry.declarable:
+            owner_kind = "the derivation"
+        else:
+            continue
+        container = containers.get(entry.section)
+        if isinstance(container, Mapping) and flat_key in container:
+            errors.append(
+                f"{flat_key} is not declarable in a config document — "
+                f"{owner_kind} ({entry.owner}) owns it. Remove the key."
+            )
+    return errors
+
+
 def validate_deployment_config(config: Dict[str, Any]) -> List[str]:
     """Validate the deployment config JSON shape main.py expects; return error messages (empty if valid)."""
     errors: List[str] = []
@@ -53,6 +83,8 @@ def validate_deployment_config(config: Dict[str, Any]) -> List[str]:
     if not isinstance(config, dict):
         errors.append("Config must be a dict")
         return errors
+
+    errors.extend(non_declarable_key_errors(config))
 
     pc = config.get("platform_constraints")
     if isinstance(pc, dict):

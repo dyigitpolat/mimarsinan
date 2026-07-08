@@ -418,3 +418,48 @@ class TestTtfsFiringValidation:
         dp = {"spiking_mode": "lif", "firing_mode": "Novena"}
         derive_pipeline_runtime_parameters(dp)
         assert dp["firing_mode"] == "Novena"
+
+
+class TestMirrorTrainingRecipe:
+    """Round-4 defect 6: mirror_training_recipe reflects the training recipe
+    as-is into the tuning recipe (default off = byte-identical)."""
+
+    def test_default_off_keeps_the_tuning_recipe(self):
+        from mimarsinan.config_schema.defaults import get_default_tuning_recipe
+
+        config = build_flat_pipeline_config({}, {})
+        assert config["mirror_training_recipe"] is False
+        assert config["tuning_recipe"] == get_default_tuning_recipe()
+
+    def test_mirror_reflects_the_default_training_recipe(self):
+        from mimarsinan.config_schema.defaults import get_default_training_recipe
+
+        config = build_flat_pipeline_config({"mirror_training_recipe": True}, {})
+        assert config["tuning_recipe"] == get_default_training_recipe()
+
+    def test_mirror_reflects_an_explicit_training_recipe(self):
+        recipe = {"optimizer": "sgd", "weight_decay": 0.0}
+        config = build_flat_pipeline_config(
+            {"mirror_training_recipe": True, "training_recipe": recipe}, {}
+        )
+        assert config["tuning_recipe"] == recipe
+        # A reflected copy, never the same object (later mutation isolation).
+        assert config["tuning_recipe"] is not config["training_recipe"]
+
+    def test_mirror_with_an_explicit_tuning_recipe_is_rejected(self):
+        with pytest.raises(ValueError, match="mirror_training_recipe"):
+            build_flat_pipeline_config(
+                {
+                    "mirror_training_recipe": True,
+                    "tuning_recipe": {"optimizer": "sgd"},
+                },
+                {},
+            )
+
+    def test_mirror_fold_respects_explicit_keys(self):
+        """Merged-in defaults never masquerade as declarations: only a
+        DOCUMENT-declared tuning_recipe conflicts with the mirror."""
+        dp = get_default_deployment_parameters()
+        dp["mirror_training_recipe"] = True
+        derive_deployment_parameters(dp, explicit_keys={"mirror_training_recipe"})
+        assert dp["tuning_recipe"] == dp["training_recipe"]

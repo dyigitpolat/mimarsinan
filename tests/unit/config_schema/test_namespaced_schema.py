@@ -368,10 +368,12 @@ class TestHardwareGroupMigrated:
 class TestTemporalAllocationAxisRegistered:
     """EW1 — the per-layer-S declaration keys are registered with provenance."""
 
-    def test_s_allocation_keys_in_conversion_group(self):
+    def test_s_allocation_keys_are_a_mapping_strategy(self):
+        """Round-4 taxonomy: allocating S across cascade depths is a choice we
+        make when deploying (gated by the allow_per_layer_s capability)."""
         for key in ("s_allocation", "s_allocation_explicit", "s_allocation_budget"):
             spec = KEY_SPECS[key]
-            assert spec.group == "conversion"
+            assert spec.group == "mapping_strategy"
             assert spec.owner == "TemporalAllocation"
             assert spec.derivation == "default"
 

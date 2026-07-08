@@ -61,6 +61,7 @@ DEFAULT_DEPLOYMENT_PARAMETERS: Dict[str, object] = {
     "sanafe_log_potential_trace": False,
     "spike_encoding_seed": None,
     "training_recipe": dict(DEFAULT_TRAINING_RECIPE),
+    "mirror_training_recipe": False,
     "tuning_recipe": dict(DEFAULT_TUNING_RECIPE),
 }
 

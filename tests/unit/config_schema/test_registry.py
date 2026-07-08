@@ -366,3 +366,110 @@ class TestParse:
         parsed = parse_deployment_document({"_continue_from_run_id": "run_1"})
         assert parsed.meta == {"_continue_from_run_id": "run_1"}
         assert parsed.unknown == []
+
+
+class TestRound4Taxonomy:
+    """Round-4 defects 2/3/6: the conversion panel dissolves (its knobs
+    re-home by concern), the recipes are basic in a merged Training & Tuning
+    section, and encoding-layer placement carries no schema default."""
+
+    def test_conversion_group_renders_no_panel(self):
+        """Round-4 defect 3: the conversion process IS derived by design —
+        the mode recipe owns it, so NO basic/advanced key may remain in the
+        group (an empty shell with an Advanced drawer is not a panel). The
+        group survives only as the home of the derived AQ/WQ semantics."""
+        leftovers = [
+            k for k, e in REGISTRY.items()
+            if e.group == "conversion"
+            and e.category in (Category.BASIC, Category.ADVANCED)
+        ]
+        assert leftovers == []
+        derived = {k for k, e in REGISTRY.items() if e.group == "conversion"}
+        assert derived == {"activation_quantization", "weight_quantization"}
+
+    def test_temporal_allocation_is_a_mapping_strategy(self):
+        """s_allocation chooses HOW temporal resolution is allocated across
+        cascade depths when deploying — a mapping choice (gated by the
+        allow_per_layer_s hardware capability), not a conversion detail."""
+        for key in ("s_allocation", "s_allocation_explicit", "s_allocation_budget"):
+            assert REGISTRY[key].group == "mapping_strategy", key
+
+    def test_adaptation_and_calibration_knobs_live_with_the_tuning_controller(self):
+        """The re-homed conversion knobs all configure the adaptation/
+        calibration machinery the tuning controller drives."""
+        for key in ("activation_scale_quantile", "activation_analysis_batch_size",
+                    "calibration_set_policy", "enable_training_noise",
+                    "ttfs_genuine_blend_ce_alpha", "ttfs_finetune_kd_against_rung2"):
+            assert REGISTRY[key].group == "tuning", key
+
+    def test_recipes_are_basic_in_both_panels(self):
+        """Round-4 defect 6: recipes are primary content of the merged
+        Training & Tuning section, never advanced-drawer residents."""
+        assert REGISTRY["training_recipe"].category is Category.BASIC
+        assert REGISTRY["tuning_recipe"].category is Category.BASIC
+
+    def test_mirror_training_recipe_mode(self):
+        """Round-4 defect 6: a default-off mirror mode reflects the training
+        recipe into the tuning recipe; while it is on, the training concern
+        owns the tuning recipe (ownership chip, not a hand field)."""
+        mirror = REGISTRY["mirror_training_recipe"]
+        assert mirror.group == "tuning"
+        assert mirror.category is Category.BASIC
+        assert mirror.default is False
+        tuning = REGISTRY["tuning_recipe"]
+        assert tuning.provided_by == "training"
+        assert tuning.relevant.evaluate({"mirror_training_recipe": False})
+        assert not tuning.relevant.evaluate({"mirror_training_recipe": True})
+
+    def test_encoding_layer_placement_has_no_default(self):
+        """Round-4 defect 2: subsume/offload is an explicit choice — the
+        schema serves NO default (a starter/config may pin one as data)."""
+        entry = REGISTRY["encoding_layer_placement"]
+        assert not entry.has_default()
+        assert entry.empty_means
+        record = serialize_registry()["keys"]["encoding_layer_placement"]
+        assert "default" not in record
+
+
+class TestNonDeclarableRejection:
+    """Round-4 defect 4: unexposed knobs must not be settable programmatically
+    — a document declaring a runtime or non-declarable derived key is
+    rejected by validation, not silently absorbed or overwritten."""
+
+    def test_non_declarable_derived_keys_are_rejected(self):
+        from mimarsinan.config_schema.validation import validate_deployment_config
+
+        base = {"deployment_parameters": {"cycle_accurate_lif_forward": True}}
+        errors = validate_deployment_config(base)
+        assert any("cycle_accurate_lif_forward" in e and "not declarable" in e
+                   for e in errors)
+
+    def test_consistent_activation_quantization_pin_is_rejected(self):
+        """Even a CONSISTENT explicit value is rejected: the derivation owns
+        the key, and a pinned copy would shadow it on the next mode switch."""
+        from mimarsinan.config_schema.validation import validate_deployment_config
+
+        errors = validate_deployment_config(
+            {"deployment_parameters": {"activation_quantization": True}}
+        )
+        assert any("activation_quantization" in e and "not declarable" in e
+                   for e in errors)
+
+    def test_runtime_keys_are_rejected_in_documents(self):
+        from mimarsinan.config_schema.validation import validate_deployment_config
+
+        errors = validate_deployment_config({"device": "cuda"})
+        assert any("device" in e and "not declarable" in e for e in errors)
+
+    def test_declarable_keys_are_not_rejected(self):
+        """The declarable derived keys (vehicle offs, firing modes, WQ) stay
+        declarable — the rejection is exactly the declarable=False set."""
+        from mimarsinan.config_schema.validation import validate_deployment_config
+
+        errors = validate_deployment_config({
+            "deployment_parameters": {
+                "enable_sanafe_simulation": False,
+                "weight_quantization": False,
+            },
+        })
+        assert not any("not declarable" in e for e in errors)

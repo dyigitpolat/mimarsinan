@@ -116,6 +116,7 @@
     "max_neurons": 512,
     "max_schedule_passes": 8,
     "max_simulation_samples": 25,
+    "mirror_training_recipe": false,
     "model_config": {
      "base_activation": "ReLU",
      "fc_w_1": 64,
@@ -317,6 +318,7 @@
     "max_neurons": 512,
     "max_schedule_passes": 8,
     "max_simulation_samples": 25,
+    "mirror_training_recipe": false,
     "model_config": {
      "variant": "lenet5"
     },
@@ -515,6 +517,7 @@
     "max_neurons": 512,
     "max_schedule_passes": 8,
     "max_simulation_samples": 25,
+    "mirror_training_recipe": false,
     "model_config": {
      "depth": 8,
      "width": 16
@@ -712,6 +715,7 @@
     "max_neurons": 512,
     "max_schedule_passes": 8,
     "max_simulation_samples": 25,
+    "mirror_training_recipe": false,
     "model_config": {
      "depth": 8,
      "width": 64
@@ -909,6 +913,7 @@
     "max_neurons": 512,
     "max_schedule_passes": 8,
     "max_simulation_samples": 25,
+    "mirror_training_recipe": false,
     "model_config": {
      "mlp_width_1": 256,
      "mlp_width_2": 128
@@ -1102,6 +1107,7 @@
     "max_neurons": 512,
     "max_schedule_passes": 8,
     "max_simulation_samples": 25,
+    "mirror_training_recipe": false,
     "model_config": {
      "base_activation": "ReLU",
      "fc_w_1": 64,
@@ -1298,6 +1304,7 @@
     "max_neurons": 512,
     "max_schedule_passes": 8,
     "max_simulation_samples": 25,
+    "mirror_training_recipe": false,
     "model_config": {
      "variant": "lenet5"
     },
@@ -1489,6 +1496,7 @@
     "max_neurons": 512,
     "max_schedule_passes": 8,
     "max_simulation_samples": 25,
+    "mirror_training_recipe": false,
     "model_config": {
      "depth": 8,
      "width": 16
@@ -1681,6 +1689,7 @@
     "max_neurons": 512,
     "max_schedule_passes": 8,
     "max_simulation_samples": 25,
+    "mirror_training_recipe": false,
     "model_config": {
      "depth": 4,
      "width": 128
@@ -1875,6 +1884,7 @@
     "max_neurons": 512,
     "max_schedule_passes": 8,
     "max_simulation_samples": 25,
+    "mirror_training_recipe": false,
     "model_config": {
      "mlp_width_1": 256,
      "mlp_width_2": 128
@@ -2073,6 +2083,7 @@
     "max_neurons": 512,
     "max_schedule_passes": 8,
     "max_simulation_samples": 25,
+    "mirror_training_recipe": false,
     "model_config": {
      "base_activation": "ReLU",
      "fc_w_1": 64,
@@ -2275,6 +2286,7 @@
     "max_neurons": 512,
     "max_schedule_passes": 8,
     "max_simulation_samples": 25,
+    "mirror_training_recipe": false,
     "model_config": {
      "variant": "lenet5"
     },
@@ -2472,6 +2484,7 @@
     "max_neurons": 512,
     "max_schedule_passes": 8,
     "max_simulation_samples": 25,
+    "mirror_training_recipe": false,
     "model_config": {
      "depth": 4,
      "width": 16
@@ -2670,6 +2683,7 @@
     "max_neurons": 512,
     "max_schedule_passes": 8,
     "max_simulation_samples": 25,
+    "mirror_training_recipe": false,
     "model_config": {
      "depth": 8,
      "width": 64
@@ -2868,6 +2882,7 @@
     "max_neurons": 512,
     "max_schedule_passes": 8,
     "max_simulation_samples": 25,
+    "mirror_training_recipe": false,
     "model_config": {
      "mlp_width_1": 256,
      "mlp_width_2": 128
@@ -3062,6 +3077,7 @@
     "max_neurons": 512,
     "max_schedule_passes": 8,
     "max_simulation_samples": 25,
+    "mirror_training_recipe": false,
     "model_config": {
      "base_activation": "ReLU",
      "fc_w_1": 64,
@@ -3264,6 +3280,7 @@
     "max_neurons": 512,
     "max_schedule_passes": 8,
     "max_simulation_samples": 25,
+    "mirror_training_recipe": false,
     "model_config": {
      "variant": "lenet5"
     },
@@ -3461,6 +3478,7 @@
     "max_neurons": 512,
     "max_schedule_passes": 8,
     "max_simulation_samples": 25,
+    "mirror_training_recipe": false,
     "model_config": {
      "depth": 4,
      "width": 16
@@ -3661,6 +3679,7 @@
     "max_neurons": 512,
     "max_schedule_passes": 8,
     "max_simulation_samples": 25,
+    "mirror_training_recipe": false,
     "model_config": {
      "depth": 16,
      "residual": true,
@@ -3860,6 +3879,7 @@
     "max_neurons": 512,
     "max_schedule_passes": 8,
     "max_simulation_samples": 25,
+    "mirror_training_recipe": false,
     "model_config": {
      "mlp_width_1": 256,
      "mlp_width_2": 128
@@ -4066,6 +4086,7 @@
     "max_neurons": 512,
     "max_schedule_passes": 8,
     "max_simulation_samples": 25,
+    "mirror_training_recipe": false,
     "model_config": {
      "base_activation": "ReLU",
      "fc_w_1": 64,
@@ -4276,6 +4297,7 @@
     "max_neurons": 512,
     "max_schedule_passes": 8,
     "max_simulation_samples": 25,
+    "mirror_training_recipe": false,
     "model_config": {
      "variant": "lenet5"
     },
@@ -4479,6 +4501,7 @@
     "max_neurons": 512,
     "max_schedule_passes": 8,
     "max_simulation_samples": 25,
+    "mirror_training_recipe": false,
     "model_config": {
      "depth": 4,
      "width": 16
@@ -4683,6 +4706,7 @@
     "max_neurons": 512,
     "max_schedule_passes": 8,
     "max_simulation_samples": 25,
+    "mirror_training_recipe": false,
     "model_config": {
      "depth": 4,
      "width": 128
@@ -4887,6 +4911,7 @@
     "max_neurons": 512,
     "max_schedule_passes": 8,
     "max_simulation_samples": 25,
+    "mirror_training_recipe": false,
     "model_config": {
      "mlp_width_1": 256,
      "mlp_width_2": 128
@@ -5088,6 +5113,7 @@
     "max_neurons": 512,
     "max_schedule_passes": 8,
     "max_simulation_samples": 25,
+    "mirror_training_recipe": false,
     "model_config": {
      "base_activation": "ReLU",
      "fc_w_1": 64,
@@ -5289,6 +5315,7 @@
     "max_neurons": 512,
     "max_schedule_passes": 8,
     "max_simulation_samples": 25,
+    "mirror_training_recipe": false,
     "model_config": {
      "base_activation": "ReLU",
      "fc_w_1": 64,
@@ -5486,6 +5513,7 @@
     "max_neurons": 512,
     "max_schedule_passes": 8,
     "max_simulation_samples": 25,
+    "mirror_training_recipe": false,
     "model_config": {
      "base_activation": "ReLU",
      "fc_w_1": 64,
@@ -5696,6 +5724,7 @@
     "max_neurons": 512,
     "max_schedule_passes": 8,
     "max_simulation_samples": 25,
+    "mirror_training_recipe": false,
     "model_config": {
      "base_activation": "ReLU",
      "fc_w_1": 64,
@@ -5907,6 +5936,7 @@
     "max_neurons": 512,
     "max_schedule_passes": 8,
     "max_simulation_samples": 25,
+    "mirror_training_recipe": false,
     "model_config": {
      "base_activation": "ReLU",
      "fc_w_1": 64,
@@ -6116,6 +6146,7 @@
     "max_neurons": 512,
     "max_schedule_passes": 8,
     "max_simulation_samples": 25,
+    "mirror_training_recipe": false,
     "model_config": {
      "base_activation": "ReLU",
      "fc_w_1": 64,
@@ -6312,6 +6343,7 @@
     "max_neurons": 512,
     "max_schedule_passes": 8,
     "max_simulation_samples": 25,
+    "mirror_training_recipe": false,
     "model_config": {
      "base_activation": "ReLU",
      "fc_w_1": 64,
@@ -6512,6 +6544,7 @@
     "max_neurons": 512,
     "max_schedule_passes": 8,
     "max_simulation_samples": 25,
+    "mirror_training_recipe": false,
     "model_config": {
      "base_activation": "ReLU",
      "fc_w_1": 64,
@@ -6717,6 +6750,7 @@
     "max_neurons": 512,
     "max_schedule_passes": 8,
     "max_simulation_samples": 25,
+    "mirror_training_recipe": false,
     "model_config": {
      "base_activation": "ReLU",
      "fc_w_1": 64,
@@ -6920,6 +6954,7 @@
     "max_neurons": 512,
     "max_schedule_passes": 8,
     "max_simulation_samples": 25,
+    "mirror_training_recipe": false,
     "model_config": {
      "base_activation": "ReLU",
      "fc_w_1": 64,
@@ -7122,6 +7157,7 @@
     "max_neurons": 512,
     "max_schedule_passes": 8,
     "max_simulation_samples": 25,
+    "mirror_training_recipe": false,
     "model_config": {
      "depth": 16,
      "residual": true,
@@ -7321,6 +7357,7 @@
     "max_neurons": 512,
     "max_schedule_passes": 8,
     "max_simulation_samples": 25,
+    "mirror_training_recipe": false,
     "model_config": {
      "base_activation": "ReLU",
      "fc_w_1": 64,
@@ -7523,6 +7560,7 @@
     "max_neurons": 512,
     "max_schedule_passes": 8,
     "max_simulation_samples": 25,
+    "mirror_training_recipe": false,
     "model_config": {
      "base_activation": "ReLU",
      "fc_w_1": 64,
@@ -7725,6 +7763,7 @@
     "max_neurons": 512,
     "max_schedule_passes": 8,
     "max_simulation_samples": 25,
+    "mirror_training_recipe": false,
     "model_config": {
      "depth": 8,
      "residual": true,
@@ -7924,6 +7963,7 @@
     "max_neurons": 512,
     "max_schedule_passes": 8,
     "max_simulation_samples": 25,
+    "mirror_training_recipe": false,
     "model_config": {
      "depth": 8,
      "width": 16
@@ -8126,6 +8166,7 @@
     "max_neurons": 512,
     "max_schedule_passes": 8,
     "max_simulation_samples": 25,
+    "mirror_training_recipe": false,
     "model_config": {
      "depth": 8,
      "width": 16
@@ -8319,6 +8360,7 @@
     "max_neurons": 512,
     "max_schedule_passes": 8,
     "max_simulation_samples": 25,
+    "mirror_training_recipe": false,
     "model_config": {
      "depth": 8,
      "width": 16
@@ -8511,6 +8553,7 @@
     "max_neurons": 512,
     "max_schedule_passes": 8,
     "max_simulation_samples": 25,
+    "mirror_training_recipe": false,
     "model_config": {
      "variant": "lenet5"
     },
@@ -8712,6 +8755,7 @@
     "max_neurons": 512,
     "max_schedule_passes": 8,
     "max_simulation_samples": 25,
+    "mirror_training_recipe": false,
     "model_config": {
      "depth": 6,
      "width": 16
@@ -8913,6 +8957,7 @@
     "max_neurons": 512,
     "max_schedule_passes": 8,
     "max_simulation_samples": 25,
+    "mirror_training_recipe": false,
     "model_config": {
      "base_activation": "ReLU",
      "fc_w_1": 64,
@@ -9120,6 +9165,7 @@
     "max_neurons": 512,
     "max_schedule_passes": 8,
     "max_simulation_samples": 25,
+    "mirror_training_recipe": false,
     "model_config": {
      "base_activation": "ReLU",
      "fc_w_1": 64,
@@ -9323,6 +9369,7 @@
     "max_neurons": 512,
     "max_schedule_passes": 8,
     "max_simulation_samples": 25,
+    "mirror_training_recipe": false,
     "model_config": {
      "depth": 4,
      "width": 16
@@ -9515,6 +9562,7 @@
     "max_neurons": 512,
     "max_schedule_passes": 8,
     "max_simulation_samples": 25,
+    "mirror_training_recipe": false,
     "model_config": {
      "base_activation": "ReLU",
      "fc_w_1": 64,
@@ -9719,6 +9767,7 @@
     "max_neurons": 512,
     "max_schedule_passes": 8,
     "max_simulation_samples": 25,
+    "mirror_training_recipe": false,
     "model_config": {
      "base_activation": "ReLU",
      "fc_w_1": 64,
@@ -9928,6 +9977,7 @@
     "max_neurons": 512,
     "max_schedule_passes": 8,
     "max_simulation_samples": 25,
+    "mirror_training_recipe": false,
     "model_config": {
      "variant": "lenet5"
     },
@@ -10123,6 +10173,7 @@
     "max_neurons": 576,
     "max_schedule_passes": 8,
     "max_simulation_samples": 25,
+    "mirror_training_recipe": false,
     "model_config": {},
     "model_config_mode": "user",
     "model_type": "torch_squeezenet11",
@@ -10316,6 +10367,7 @@
     "max_neurons": 3072,
     "max_schedule_passes": 8,
     "max_simulation_samples": 25,
+    "mirror_training_recipe": false,
     "model_config": {},
     "model_config_mode": "user",
     "model_type": "torch_vit",
@@ -10520,6 +10572,7 @@
     "max_neurons": 3072,
     "max_schedule_passes": 8,
     "max_simulation_samples": 25,
+    "mirror_training_recipe": false,
     "model_config": {},
     "model_config_mode": "user",
     "model_type": "torch_vit",
@@ -10718,6 +10771,7 @@
     "max_neurons": 512,
     "max_schedule_passes": 8,
     "max_simulation_samples": 25,
+    "mirror_training_recipe": false,
     "model_config": {
      "depth": 8,
      "width": 32
@@ -10922,6 +10976,7 @@
     "max_neurons": 512,
     "max_schedule_passes": 8,
     "max_simulation_samples": 25,
+    "mirror_training_recipe": false,
     "model_config": {
      "depth": 4,
      "width": 32
@@ -11122,6 +11177,7 @@
     "max_neurons": 512,
     "max_schedule_passes": 8,
     "max_simulation_samples": 25,
+    "mirror_training_recipe": false,
     "model_config": {
      "depth": 8,
      "width": 32
@@ -11315,6 +11371,7 @@
     "max_neurons": 576,
     "max_schedule_passes": 8,
     "max_simulation_samples": 25,
+    "mirror_training_recipe": false,
     "model_config": {},
     "model_config_mode": "user",
     "model_type": "torch_squeezenet11",
@@ -11511,6 +11568,7 @@
     "max_neurons": 512,
     "max_schedule_passes": 8,
     "max_simulation_samples": 25,
+    "mirror_training_recipe": false,
     "model_config": {
      "base_activation": "ReLU",
      "fc_w_1": 128,
@@ -11705,6 +11763,7 @@
     "max_neurons": 2048,
     "max_schedule_passes": 8,
     "max_simulation_samples": 25,
+    "mirror_training_recipe": false,
     "model_config": {},
     "model_config_mode": "user",
     "model_type": "torch_resnet50",
@@ -11904,6 +11963,7 @@
     "max_neurons": 3072,
     "max_schedule_passes": 8,
     "max_simulation_samples": 25,
+    "mirror_training_recipe": false,
     "model_config": {},
     "model_config_mode": "user",
     "model_type": "torch_vit",
@@ -12103,6 +12163,7 @@
     "max_neurons": 576,
     "max_schedule_passes": 8,
     "max_simulation_samples": 25,
+    "mirror_training_recipe": false,
     "model_config": {},
     "model_config_mode": "user",
     "model_type": "torch_squeezenet11",
