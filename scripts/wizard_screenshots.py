@@ -1,11 +1,11 @@
 """Dev-mode workbench review: drive the real configurator in a real browser and
-save the round-3 evidence set to generated/_wizard_review/round3/:
+save the round-4 evidence set to generated/_wizard_review/round4/:
 fresh per-section shots, the co-design interaction sequence (mapping updating
-while arch + grid are edited), the mapping-strategy panel, float-weights
-authoring, the vehicle toggles with co-located settings, the 3-column
-co-search with the structured search-space editor, the immediate-tooltip
-demo, each of the five mode switches, the template flow, and the
-error/remedy flow.
+while arch + grid are edited), the mapping-strategy panel ABOVE the full-width
+mapping panel, the merged side-by-side Training & Tuning section with the
+mirror mode, green derived-value rendering, the vehicle toggles staying live
+under unrelated errors, float-weights authoring, each of the five mode
+switches, the template flow, and the error/remedy flow.
 
 Usage (from the repo root, venv active; playwright + chromium required):
     python scripts/wizard_screenshots.py [--out DIR]
@@ -28,7 +28,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
-SECTION_IDS = ("workload", "codesign", "semantics", "training", "tuning", "review")
+SECTION_IDS = ("workload", "codesign", "semantics", "training", "review")
 TEMPLATE_TIER_CONFIG = REPO_ROOT / "test_configs" / "tier0" / "t0_02_lif_lenet5_fp_s8_novena_offload_pruned.json"
 
 MODE_SWITCHES = (
@@ -160,8 +160,8 @@ def _shoot_cosearch_and_placeholders(page, base_url: str, out_dir: Path,
     # faded blue text (default value or derived phrase), no hint lines.
     page.goto(base_url + "/wizard")
     _settle(page, 2200)
-    _goto_section(page, "tuning")
-    page.locator('.wb-section[data-section-id="tuning"] .advanced-toggle').first.click()
+    _goto_section(page, "training")
+    page.locator('.wb-section[data-section-id="training"] .advanced-toggle').first.click()
     _settle(page, 500)
     _shot(page, out_dir, "placeholders_1_tuning_advanced", shots, full=True)
 
@@ -188,8 +188,8 @@ def _shoot_defect_evidence(page, base_url: str, out_dir: Path, shots: list[str])
     _settle(page, 600)
 
     # Defect 2: empty boxes state what empty means (Advanced drawer).
-    _goto_section(page, "tuning")
-    page.locator('.wb-section[data-section-id="tuning"] .advanced-toggle').first.click()
+    _goto_section(page, "training")
+    page.locator('.wb-section[data-section-id="training"] .advanced-toggle').first.click()
     _settle(page, 500)
     _shot(page, out_dir, "defect2_empty_hints_advanced_drawer", shots, full=True)
 
@@ -201,10 +201,11 @@ def _shoot_round3_evidence(page, base_url: str, out_dir: Path, shots: list[str])
     page.goto(base_url + "/wizard")
     _settle(page, 2200)
 
-    # Item 5: the mapping-strategy panel sits beside the live mapping panel.
+    # Round-4 item 1: the mapping-strategy panel sits ABOVE the live mapping
+    # panel; the mapping panel spans the full co-design width.
     _goto_section(page, "codesign")
     _shot_element(page.locator(".codesign-lower"), out_dir,
-                  "mapping_strategy_1_panel_beside_mapping", shots)
+                  "mapping_strategy_1_panel_above_fullwidth_mapping", shots)
     page.click('.field[data-key="allow_scheduling"] .toggle-row')
     _settle(page, 1400)
     _shot(page, out_dir, "mapping_strategy_2_strategy_edit_replans", shots, full=True)
@@ -266,6 +267,57 @@ def _shoot_round3_evidence(page, base_url: str, out_dir: Path, shots: list[str])
     _shot(page, out_dir, "tooltip_1_immediate_placeholder_reveal", shots, full=True)
 
 
+def _shoot_round4_evidence(page, base_url: str, out_dir: Path, broken_id: str,
+                           shots: list[str]) -> None:
+    """Round-4 evidence: the merged side-by-side Training & Tuning section,
+    the mirror-training-recipe mode, green derived rendering, and vehicle
+    toggles that stay live while unrelated errors are active."""
+    page.goto(base_url + "/wizard")
+    _settle(page, 2200)
+
+    # Item 6: one Training & Tuning section, panels side-by-side, recipes basic.
+    _goto_section(page, "training")
+    _shot(page, out_dir, "round4_training_tuning_side_by_side", shots, full=True)
+
+    # Item 6: mirror mode reflects the training recipe; the tuning recipe slot
+    # becomes a training-owned ownership chip.
+    page.click('.field[data-key="mirror_training_recipe"] .toggle-row')
+    _settle(page, 1200)
+    _shot(page, out_dir, "round4_mirror_training_recipe_on", shots, full=True)
+    page.click('.field[data-key="mirror_training_recipe"] .toggle-row')
+    _settle(page, 600)
+
+    # Item 8: green derived rendering — concrete "derived: <value>"
+    # placeholders in the tuning Advanced drawer + green derived chips.
+    page.locator('.wb-section[data-section-id="training"] .advanced-toggle').last.click()
+    _settle(page, 500)
+    _shot(page, out_dir, "round4_green_derived_placeholders", shots, full=True)
+    _goto_section(page, "semantics")
+    _shot_element(page.locator("#deploymentDerived"), out_dir,
+                  "round4_green_derived_chips", shots)
+
+    # Item 5: vehicle toggles stay live while an unrelated contract error is
+    # active (the broken template violates the WQ contract).
+    page.goto(base_url + "/wizard?template_id=" + broken_id)
+    _settle(page, 2200)
+    _goto_section(page, "semantics")
+    _shot_element(page.locator("#vehiclesCard"), out_dir,
+                  "round4_vehicles_live_under_error_before", shots)
+    page.locator(".vehicle-row .vehicle-toggle").last.click()
+    _settle(page, 1200)
+    _shot_element(page.locator("#vehiclesCard"), out_dir,
+                  "round4_vehicles_live_under_error_toggled", shots)
+    _shot(page, out_dir, "round4_vehicles_live_under_error_full", shots, full=True)
+
+    # Item 2: encoding-layer placement is an explicit choice (baseline-pinned
+    # segmented control on the mapping-strategy panel, no schema default).
+    page.goto(base_url + "/wizard")
+    _settle(page, 2200)
+    _goto_section(page, "codesign")
+    _shot_element(page.locator(".codesign-strategy"), out_dir,
+                  "round4_mapping_strategy_panel", shots)
+
+
 def _shoot_mode_switches(page, base_url: str, out_dir: Path, shots: list[str]) -> None:
     """Starter + each single mode switch: semantics + rail stay green."""
     for mode, schedule in MODE_SWITCHES:
@@ -306,7 +358,7 @@ def _save_template(base_url: str, name: str, config: dict) -> str:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--out", default=str(REPO_ROOT / "generated" / "_wizard_review" / "round3"))
+    parser.add_argument("--out", default=str(REPO_ROOT / "generated" / "_wizard_review" / "round4"))
     args = parser.parse_args()
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -346,6 +398,7 @@ def main() -> None:
         _shoot_cosearch_and_placeholders(page, base_url, out_dir, shots)
         _shoot_defect_evidence(page, base_url, out_dir, shots)
         _shoot_round3_evidence(page, base_url, out_dir, shots)
+        _shoot_round4_evidence(page, base_url, out_dir, broken_id, shots)
         _shoot_mode_switches(page, base_url, out_dir, shots)
         _shoot_sections(page, base_url, out_dir, "template", shots,
                         query="?template_id=" + template_id)

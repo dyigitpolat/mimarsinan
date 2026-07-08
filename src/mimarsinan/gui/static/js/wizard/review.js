@@ -7,7 +7,7 @@ import {
   groups, keySchema, keysGatedBy, relevant, vehicleEnableKeys,
 } from './schema.js';
 import { clearKey, effectiveConfig, setKey, state } from './state.js';
-import { el, notifyChange, renderField } from './fields.js';
+import { el, notifyChange, renderField, revertToWizardDefault } from './fields.js';
 
 function escapeHtml(s) {
   const div = document.createElement('div');
@@ -89,13 +89,16 @@ function vehicleKeys() {
 
 /** Supported vehicle: an honest toggle — ON is the recipe default, clicking
     stores an explicit off (a legitimate declarable override); OFF clears
-    back to the recipe default. Its gated settings co-locate with the row. */
-function supportedVehicleRow(key, ks, info) {
-  const on = !!info.value;
-  const row = el('div', 'vehicle-row' + (on ? ' on' : ' user-off'));
+    back to the recipe default. Its gated settings co-locate with the row.
+    The toggle ALWAYS works: unrelated draft errors never lock it. */
+function supportedVehicleRow(row) {
+  const key = row.key;
+  const ks = keySchema(key);
+  const on = !!row.on;
+  const node = el('div', 'vehicle-row' + (on ? ' on' : ' user-off'));
   const head = el('div', 'vehicle-head');
   head.append(el('span', 'vehicle-dot'));
-  const name = el('span', 'vehicle-name', ks ? ks.label : key);
+  const name = el('span', 'vehicle-name', ks ? ks.label : row.label || key);
   name.title = ks ? ks.doc : '';
   head.append(name);
   const toggle = el('div', 'toggle-row vehicle-toggle' + (on ? ' on' : ''));
@@ -107,11 +110,12 @@ function supportedVehicleRow(key, ks, info) {
   toggle.addEventListener('click', () => {
     if (on) setKey(key, false);
     else clearKey(key);
+    renderVehiclesStatus();
     notifyChange(key);
   });
   head.append(toggle);
-  row.append(head);
-  if (info.why) row.append(el('div', 'vehicle-why', info.why));
+  node.append(head);
+  if (row.why) node.append(el('div', 'vehicle-why', row.why));
   if (on) {
     /* Relevance still controls EXISTENCE inside the row (a preset-gated
        sub-key only renders while its predicate holds). */
@@ -122,45 +126,50 @@ function supportedVehicleRow(key, ks, info) {
     if (gatedSchemas.length) {
       const settings = el('div', 'vehicle-settings field-grid cols-2');
       for (const gatedSchema of gatedSchemas) settings.append(renderField(gatedSchema));
-      row.append(settings);
+      node.append(settings);
     }
   }
-  return row;
+  return node;
 }
 
-/** Unsupported vehicle: one muted unavailability line, never a knob. */
-function unsupportedVehicleRow(key, ks, info) {
-  const row = el('div', 'vehicle-row unsupported');
+/** Unsupported (or mode-unknown) vehicle: one muted line, never a knob. */
+function unsupportedVehicleRow(row, stateText) {
+  const ks = keySchema(row.key);
+  const node = el('div', 'vehicle-row unsupported');
   const head = el('div', 'vehicle-head');
   head.append(el('span', 'vehicle-dot'));
-  const name = el('span', 'vehicle-name', ks ? ks.label : key);
+  const name = el('span', 'vehicle-name', ks ? ks.label : row.label || row.key);
   name.title = ks ? ks.doc : '';
   head.append(name);
-  head.append(el('span', 'vehicle-state', 'unavailable'));
-  row.append(head);
-  if (info.why) row.append(el('div', 'vehicle-why', info.why));
-  return row;
+  head.append(el('span', 'vehicle-state', stateText));
+  node.append(head);
+  if (row.why) node.append(el('div', 'vehicle-why', row.why));
+  return node;
 }
 
+/** The vehicle rows render from the resolve payload's ALWAYS-served
+    `vehicles` block — never gated on the draft being error-free. A locally
+    toggled key overrides its row optimistically until the next round-trip. */
 export function renderVehiclesStatus() {
   const host = document.getElementById('vehiclesStatus');
   if (!host) return;
   host.replaceChildren();
-  const errors = resolveErrors();
-  if (!state.resolve || errors.length) {
-    host.append(el('div', 'note', errors.length
-      ? 'Vehicle selection appears once the draft resolves.'
-      : 'Resolving…'));
+  const rows = (state.resolve && state.resolve.vehicles) || null;
+  if (!rows) {
+    host.append(el('div', 'note', 'Resolving…'));
     return;
   }
-  const derived = state.resolve.derived || {};
-  for (const key of vehicleKeys()) {
-    const ks = keySchema(key);
-    const info = derived[key] || { value: null, why: null, meta: null };
-    const supported = !info.meta || info.meta.supported !== false;
-    host.append(supported
-      ? supportedVehicleRow(key, ks, info)
-      : unsupportedVehicleRow(key, ks, info));
+  const dp = state.draft.deployment_parameters || {};
+  for (const row of rows) {
+    if (row.supported === null) {
+      host.append(unsupportedVehicleRow(row, 'unknown mode'));
+    } else if (!row.supported) {
+      host.append(unsupportedVehicleRow(row, 'unavailable'));
+    } else {
+      const declared = dp[row.key];
+      const local = { ...row, on: declared !== false };
+      host.append(supportedVehicleRow(local));
+    }
   }
 }
 
@@ -289,16 +298,20 @@ export function renderDiffPanel() {
     const value = el('span', 'diff-value', valueText);
     value.title = valueText;
     line.append(value);
+    const ksRow = keySchema(row.key);
+    const fromBaseline = !!(ksRow && 'baseline' in ksRow);
     const hasDefault = row.default !== null && row.default !== undefined;
     line.append(el(
       'span', 'diff-default',
-      hasDefault ? `default: ${JSON.stringify(row.default)}` : '',
+      hasDefault
+        ? `${fromBaseline ? 'baseline' : 'default'}: ${JSON.stringify(row.default)}`
+        : '',
     ));
     const revert = el('button', 'field-revert', '↺');
     revert.type = 'button';
-    revert.title = 'Revert to default';
+    revert.title = fromBaseline ? 'Revert to the baseline value' : 'Revert to default';
     revert.addEventListener('click', () => {
-      clearKey(row.key);
+      revertToWizardDefault(row.key);
       document.dispatchEvent(new CustomEvent('wizard:rerender'));
       notifyChange(row.key);
     });

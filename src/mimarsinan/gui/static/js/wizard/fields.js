@@ -2,11 +2,16 @@
    Widget quality rules (all generic, from the schema record alone):
    - numerics with finite bounds render as slider + numeric combos;
    - enums with ≤ 5 options render as segmented buttons, larger as dropdowns;
-   - empty semantics live INSIDE the control: a faded placeholder states the
-     default (or the empty_means derivation) and vanishes once the user types;
-     under-field text is reserved for docs/units. */
+   - empty semantics live INSIDE the control: a faded BLUE placeholder states
+     the wizard default (baseline first), a faded GREEN "derived: <value>"
+     states the derivation-owned concrete value; under-field text is reserved
+     for docs/units. */
 
-import { clearKey, effectiveValue, getKey, isExplicit, setKey, state } from './state.js';
+import { keySchema } from './schema.js';
+import {
+  clearKey, differsFromDefault, getKey, isExplicit,
+  resolvedValue, setKey, state, wizardDefault,
+} from './state.js';
 
 /* Structured widgets (cores, recipes, model_config, ...) register here;
    everything else renders by type. */
@@ -49,22 +54,61 @@ function helpText(ks) {
 
 /** What an empty value means for this key — always answerable. */
 export function emptyMeansText(ks) {
+  const base = wizardDefault(ks);
+  const derived = resolvedValue(ks.key);
+  if (derived !== undefined && !base.has) {
+    return `derived: ${formatValue(derived)}`
+      + (ks.empty_means ? ` (${ks.empty_means})` : '');
+  }
   if (ks.empty_means) return ks.empty_means;
-  if ('default' in ks && ks.default !== null && ks.default !== undefined) {
-    return `default (${formatValue(ks.default)})`;
+  if (base.has && base.value !== null && base.value !== undefined) {
+    return `${base.fromBaseline ? 'baseline' : 'default'} (${formatValue(base.value)})`;
   }
   return `unset — ${ks.owner} decides at resolve`;
 }
 
-/** Faded in-field statement of the empty behavior: the concrete default
-    where one exists, else the registry's empty_means compressed to fit
+/** Faded in-field statement of the empty behavior: the wizard default where
+    one exists (blue), else the CONCRETE derivation-owned value (green,
+    "derived: <value>"), else the registry's empty_means compressed to fit
     (the full sentence stays in the field's tooltip). */
 export function placeholderText(ks) {
-  if ('default' in ks && ks.default !== null && ks.default !== undefined) {
-    return formatValue(ks.default);
+  const base = wizardDefault(ks);
+  if (base.has && base.value !== null && base.value !== undefined) {
+    return formatValue(base.value);
   }
+  const derived = resolvedValue(ks.key);
+  if (derived !== undefined) return 'derived: ' + formatValue(derived);
   const meaning = ks.empty_means || `${ks.owner} decides at resolve`;
   return meaning.length > 36 ? meaning.slice(0, 35).trimEnd() + '…' : meaning;
+}
+
+/** Whether this key's placeholder is derivation-owned (green, not blue). */
+export function placeholderIsDerived(ks) {
+  const base = wizardDefault(ks);
+  return !(base.has && base.value !== null && base.value !== undefined)
+    && resolvedValue(ks.key) !== undefined;
+}
+
+/** Refresh every rendered placeholder from the latest resolve payload —
+    called after each resolve round-trip so derived placeholders show the
+    CURRENT concrete value without a disruptive full re-render. */
+export function refreshPlaceholders() {
+  document.querySelectorAll('[data-placeholder-key]').forEach((input) => {
+    const ks = keySchema(input.dataset.placeholderKey);
+    if (!ks) return;
+    input.placeholder = placeholderText(ks);
+    input.classList.toggle('placeholder-derived', placeholderIsDerived(ks));
+    attachPlaceholderReveal(input, ks);
+  });
+}
+
+/** The value a control DISPLAYS when the draft is silent: the wizard default
+    (baseline first) — controls with no text surface render pre-filled. */
+function displayValue(ks) {
+  const explicit = getKey(ks.key);
+  if (explicit !== undefined) return explicit;
+  const base = wizardDefault(ks);
+  return base.has ? base.value : undefined;
 }
 
 function formatValue(value) {
@@ -76,15 +120,26 @@ function formatValue(value) {
 function revertButton(ks, rerender) {
   const btn = el('button', 'field-revert', '↺');
   btn.type = 'button';
-  btn.title = 'default' in ks
-    ? `Revert to default (${JSON.stringify(ks.default)})`
+  const base = wizardDefault(ks);
+  btn.title = base.has
+    ? `Revert to ${base.fromBaseline ? 'baseline' : 'default'} (${JSON.stringify(base.value)})`
     : 'Remove explicit value';
   btn.addEventListener('click', () => {
-    clearKey(ks.key);
+    revertToWizardDefault(ks.key);
     rerender();
     notifyChange(ks.key);
   });
   return btn;
+}
+
+/** Revert semantics: a baseline-pinned key is RESTORED to the baseline value
+    (the document stays runnable-equal to the starter); anything else clears
+    so the schema default / derivation applies. */
+export function revertToWizardDefault(key) {
+  const ks = keySchema(key);
+  const base = wizardDefault(ks);
+  if (base.fromBaseline) setKey(key, JSON.parse(JSON.stringify(base.value)));
+  else clearKey(key);
 }
 
 function fieldShell(ks) {
@@ -115,9 +170,11 @@ function attachPlaceholderReveal(input, ks) {
   }
 }
 
+/** The revert affordance marks TRUE user deltas: an explicit value equal to
+    the wizard default (baseline first) is not an edit (defect 7). */
 function markExplicit(ks, marker, rerender) {
   marker.replaceChildren();
-  if (isExplicit(ks.key)) marker.append(revertButton(ks, rerender));
+  if (differsFromDefault(ks.key)) marker.append(revertButton(ks, rerender));
 }
 
 /* ── Numeric widgets ───────────────────────────────────────────────────── */
@@ -147,9 +204,11 @@ function numberBox(ks) {
     if (ks.bounds[0] !== null) input.min = String(ks.bounds[0]);
     if (ks.bounds[1] !== null) input.max = String(ks.bounds[1]);
   }
-  const value = effectiveValue(ks.key);
+  const value = displayValue(ks);
   input.value = value === undefined || value === null ? '' : String(value);
+  input.dataset.placeholderKey = ks.key;
   input.placeholder = placeholderText(ks);
+  input.classList.toggle('placeholder-derived', placeholderIsDerived(ks));
   attachPlaceholderReveal(input, ks);
   return input;
 }
@@ -177,7 +236,7 @@ function sliderCombo(ks, marker, rerender) {
   const box = numberBox(ks);
   box.classList.add('slider-combo-box');
 
-  const current = effectiveValue(ks.key);
+  const current = displayValue(ks);
   slider.value = current === undefined || current === null ? String(lo) : String(current);
   wrap.classList.toggle('unset', current === undefined || current === null);
 
@@ -214,16 +273,16 @@ export function numberInput(ks, marker, rerender) {
 
 function boolToggle(ks, marker, rerender) {
   const row = el('div', 'toggle-row');
-  const label = el('span', 'toggle-label', effectiveValue(ks.key) ? 'on' : 'off');
+  const label = el('span', 'toggle-label', displayValue(ks) ? 'on' : 'off');
   row.append(label, el('div', 'toggle-switch'));
   const sync = () => {
-    const on = !!effectiveValue(ks.key);
+    const on = !!displayValue(ks);
     row.classList.toggle('on', on);
     label.textContent = on ? 'on' : 'off';
   };
   sync();
   row.addEventListener('click', () => {
-    setKey(ks.key, !effectiveValue(ks.key));
+    setKey(ks.key, !displayValue(ks));
     sync();
     markExplicit(ks, marker, rerender);
     notifyChange(ks.key);
@@ -237,12 +296,13 @@ const SEGMENTED_MAX_OPTIONS = 5;
 
 function segmentedEnum(ks, marker, rerender) {
   const row = el('div', 'seg-control');
-  const value = effectiveValue(ks.key);
+  const value = displayValue(ks);
+  const base = wizardDefault(ks);
   for (const option of ks.options || []) {
     const btn = el('button', 'seg-btn', option);
     btn.type = 'button';
-    if ('default' in ks && option === ks.default) {
-      btn.title = `${option} (default)`;
+    if (base.has && option === base.value) {
+      btn.title = `${option} (${base.fromBaseline ? 'baseline' : 'default'})`;
       btn.classList.add('is-default');
     }
     btn.classList.toggle('active', String(value) === option);
@@ -264,15 +324,16 @@ function enumSelect(ks, marker, rerender) {
     return segmentedEnum(ks, marker, rerender);
   }
   const select = el('select');
-  const hasDefault = 'default' in ks;
-  if (!hasDefault && !isExplicit(ks.key)) {
+  const base = wizardDefault(ks);
+  if (!base.has && !isExplicit(ks.key)) {
     select.append(new Option('— unset —', '__unset__'));
   }
   for (const option of ks.options || []) {
-    const label = hasDefault && option === ks.default ? `${option} (default)` : option;
+    const label = base.has && option === base.value
+      ? `${option} (${base.fromBaseline ? 'baseline' : 'default'})` : option;
     select.append(new Option(label, option));
   }
-  const value = effectiveValue(ks.key);
+  const value = displayValue(ks);
   select.value = value === undefined || value === null ? '__unset__' : String(value);
   select.addEventListener('change', () => {
     if (select.value === '__unset__') clearKey(ks.key);
@@ -291,8 +352,11 @@ function textInput(ks, marker, rerender, parse, format) {
   const value = getKey(ks.key);
   input.value = value === undefined || value === null ? '' : format(value);
   /* Type-faithful default text: what the placeholder shows must parse back. */
-  input.placeholder = 'default' in ks && ks.default !== null && ks.default !== undefined
-    ? format(ks.default) : placeholderText(ks);
+  const base = wizardDefault(ks);
+  input.placeholder = base.has && base.value !== null && base.value !== undefined
+    ? format(base.value) : placeholderText(ks);
+  input.dataset.placeholderKey = ks.key;
+  input.classList.toggle('placeholder-derived', placeholderIsDerived(ks));
   attachPlaceholderReveal(input, ks);
   input.addEventListener('change', () => {
     const raw = input.value.trim();
@@ -317,7 +381,7 @@ function dynamicOptionSelect(ks, marker, rerender) {
   const select = el('select');
   const options = state.dynamicOptions[ks.key] || [];
   for (const option of options) select.append(new Option(option.label, option.id));
-  const value = effectiveValue(ks.key);
+  const value = displayValue(ks);
   if (value !== undefined && value !== null) select.value = String(value);
   select.addEventListener('change', () => {
     setKey(ks.key, select.value);

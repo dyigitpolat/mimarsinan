@@ -204,18 +204,19 @@ button { font-family: inherit; }
 
 .codesign-mapping { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 
-/* Mapping strategy (what we CHOOSE when mapping) sits beside the live
-   mapping panel so strategy edits re-plan visibly. */
+/* Mapping strategy (what we CHOOSE when mapping) sits ABOVE the live
+   mapping panel; the mapping panel spans the full co-design width
+   (round-4 defect 1). */
 .codesign-lower {
   margin-top: 12px;
-  display: grid;
-  grid-template-columns: minmax(300px, 4fr) minmax(420px, 8fr);
+  display: flex;
+  flex-direction: column;
   gap: 16px;
-  align-items: start;
 }
 
-@media (max-width: 1100px) {
-  .codesign-lower { grid-template-columns: 1fr; }
+/* Full-width strategy card: pack its knobs in responsive columns. */
+.codesign-strategy .field-grid.cols-2 {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
 }
 
 /* The co-search panel: a sibling card spanning both co-design columns.
@@ -572,10 +573,15 @@ textarea {
   min-height: 30px;
 }
 
-/* Empty semantics live INSIDE the control: a faded blue statement of the
-   default (or the empty_means derivation) that vanishes once the user types. */
+/* Empty semantics live INSIDE the control: a faded BLUE statement of the
+   wizard default (baseline first) that vanishes once the user types; a
+   derivation-owned value renders as faded GREEN "derived: <value>" —
+   green = derivation-owned, blue = default (round-4 defect 8). */
 input::placeholder,
 textarea::placeholder { color: rgba(96, 165, 250, 0.55); }
+
+input.placeholder-derived::placeholder,
+textarea.placeholder-derived::placeholder { color: rgba(52, 211, 153, 0.6); }
 
 input:focus, select:focus, textarea:focus { outline: none; border-color: var(--border-focus); }
 
@@ -763,21 +769,23 @@ input.field-invalid { border-color: var(--accent-rose); }
 .derived-strip.in-card { margin-bottom: 0; }
 .derived-strip:empty { display: none; }
 
+/* Derivation-owned chips are GREEN (vs blue = default): the chip shows the
+   CONCRETE current derived value (round-4 defect 8). */
 .derived-chip {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  border: 1px dashed rgba(139, 92, 246, 0.4);
+  border: 1px dashed rgba(52, 211, 153, 0.35);
   border-radius: var(--radius-sm);
   padding: 4px 8px;
   font-size: var(--font-caption);
-  background: rgba(139, 92, 246, 0.06);
+  background: rgba(52, 211, 153, 0.05);
   max-width: 100%;
 }
 
-.derived-chip-lock { color: var(--accent-violet); }
+.derived-chip-lock { color: var(--accent-green); }
 .derived-chip-key { color: var(--text-secondary); font-weight: 600; }
-.derived-chip-value { font-family: 'JetBrains Mono', monospace; color: var(--accent-violet); font-weight: 600; }
+.derived-chip-value { font-family: 'JetBrains Mono', monospace; color: var(--accent-green); font-weight: 600; }
 .derived-chip-why {
   color: var(--text-dim);
   overflow: hidden;

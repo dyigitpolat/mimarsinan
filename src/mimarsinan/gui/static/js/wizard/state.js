@@ -43,15 +43,37 @@ export function isExplicit(key) {
   return getKey(key) !== undefined;
 }
 
-/** Mirrors the server diff semantics: explicit null against no default (or a
-    null default) is "unset"; a real value against no default differs. */
+/** The wizard's presented default: the starter-baseline pin where one exists
+    (the baseline IS the defaults), else the workload-neutral schema default.
+    Returns { has, value, fromBaseline }. */
+export function wizardDefault(ks) {
+  if (!ks) return { has: false, value: undefined, fromBaseline: false };
+  if ('baseline' in ks) return { has: true, value: ks.baseline, fromBaseline: true };
+  if ('default' in ks) return { has: true, value: ks.default, fromBaseline: false };
+  return { has: false, value: undefined, fromBaseline: false };
+}
+
+/** The concrete resolved value the SSOT derivation produces for the current
+    draft (server resolve + provider workload facts); undefined while the
+    draft errors — hypothetical values never render. */
+export function resolvedValue(key) {
+  const fromResolve = state.resolve && state.resolve.resolved
+    ? state.resolve.resolved[key] : undefined;
+  if (fromResolve !== undefined && fromResolve !== null) return fromResolve;
+  const facts = state.metadata && state.metadata.workload_facts;
+  if (facts && facts[key] !== undefined && facts[key] !== null) return facts[key];
+  return undefined;
+}
+
+/** Mirrors the server diff semantics against the WIZARD default (baseline
+    first): explicit null against no default (or a null default) is "unset";
+    a real value against no default differs. */
 export function differsFromDefault(key) {
   if (!isExplicit(key)) return false;
   const value = getKey(key);
-  const ks = keySchema(key);
-  const hasDefault = !!ks && 'default' in ks;
-  if (value === null) return hasDefault && ks.default !== null;
-  return !hasDefault || JSON.stringify(value) !== JSON.stringify(ks.default);
+  const base = wizardDefault(keySchema(key));
+  if (value === null) return base.has && base.value !== null;
+  return !base.has || JSON.stringify(value) !== JSON.stringify(base.value);
 }
 
 export function setKey(key, value) {

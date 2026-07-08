@@ -74,8 +74,9 @@
           <!-- Co-search: automated co-design — a sibling panel spanning both
                concerns (its keys search model AND hardware configs). -->
           <div class="codesign-cosearch" data-groups="co_search"></div>
-          <!-- Mapping strategy (what we CHOOSE when mapping) sits WITH the
-               live mapping panel so strategy edits re-plan visibly. -->
+          <!-- Mapping strategy (what we CHOOSE when mapping) sits ABOVE the
+               live mapping panel — the mapping panel spans full width and
+               strategy edits re-plan visibly beneath. -->
           <div class="codesign-lower">
             <div class="codesign-strategy" data-groups="mapping_strategy"></div>
             <div class="codesign-mapping">
@@ -113,31 +114,20 @@
           </div>
         </section>
 
-        <!-- 4 · TRAINING -->
+        <!-- 4 · TRAINING & TUNING (one section, panels side-by-side) -->
         <section class="wb-section" data-section-id="training">
           <div class="wb-section-head">
-            <h2>Training</h2>
-            <p>The pretraining loop: learning rate, epochs, pretrained
-              weights, and the training recipe.</p>
+            <h2>Training &amp; Tuning</h2>
+            <p>Pretraining (learning rate, epochs, weights, recipe) beside the
+              adaptation controller (budget, tolerance, tuning recipe).</p>
           </div>
-          <div class="wb-cols narrow">
+          <div class="wb-cols">
             <div class="wb-col" data-groups="training"></div>
-          </div>
-        </section>
-
-        <!-- 5 · TUNING & BUDGETS -->
-        <section class="wb-section" data-section-id="tuning">
-          <div class="wb-section-head">
-            <h2>Tuning &amp; Budgets</h2>
-            <p>The adaptation controller's budget, tolerance, and tuning
-              recipe.</p>
-          </div>
-          <div class="wb-cols narrow">
             <div class="wb-col" data-groups="tuning"></div>
           </div>
         </section>
 
-        <!-- 6 · REVIEW & LAUNCH -->
+        <!-- 5 · REVIEW & LAUNCH -->
         <section class="wb-section" data-section-id="review">
           <div class="wb-section-head">
             <h2>Review &amp; Launch</h2>

@@ -12,10 +12,8 @@ export const SECTIONS = [
     icon: '⧉', groups: ['model', 'hardware', 'mapping_strategy', 'co_search'] },
   { id: 'semantics', title: 'Deployment semantics', hint: 'Mode · conversion · vehicles',
     icon: '⚡', groups: ['spiking', 'conversion', 'deployment_target'] },
-  { id: 'training', title: 'Training', hint: 'Pretraining & weights',
-    icon: '▶', groups: ['training'] },
-  { id: 'tuning', title: 'Tuning & Budgets', hint: 'Adaptation controller',
-    icon: '☈', groups: ['tuning'] },
+  { id: 'training', title: 'Training & Tuning', hint: 'Pretraining × adaptation controller',
+    icon: '▶', groups: ['training', 'tuning'] },
   { id: 'review', title: 'Review & Launch', hint: 'Verify & deploy',
     icon: '⬡', groups: ['run'] },
 ];

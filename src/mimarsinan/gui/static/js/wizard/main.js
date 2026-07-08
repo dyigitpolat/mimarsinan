@@ -9,10 +9,12 @@ import {
   unavailabilityReason, vehicleGatedKeySet, visibleKeys,
 } from './schema.js';
 import {
-  differsFromDefault, effectiveConfig, effectiveValue, isExplicit,
+  clearKey, differsFromDefault, effectiveConfig, effectiveValue, isExplicit,
   loadDraftFromConfig, resetDraft, setKey, state,
 } from './state.js';
-import { el, notifyChange, renderField, renderOwnershipCell } from './fields.js';
+import {
+  el, notifyChange, refreshPlaceholders, renderField, renderOwnershipCell,
+} from './fields.js';
 import { defaultModelConfig, ensureModelSchema, installStructuredWidgets } from './structured.js';
 import {
   renderAssemblyRail, renderDerivedChips, renderDiffPanel, renderErrors,
@@ -25,7 +27,7 @@ import { goToFirstError, goToSection, renderSectionNav } from './workbench.js';
 const GROUP_ICONS = {
   run: '⬡', workload: '◈', model: '▣', spiking: '⚡', conversion: '◎',
   tuning: '☈', training: '▶', hardware: '▦', deployment_target: '✈',
-  co_search: '⌖',
+  co_search: '⌖', mapping_strategy: '⊞',
 };
 
 /* ── Section rendering ─────────────────────────────────────────────────── */
@@ -192,6 +194,8 @@ function renderResolveViews() {
   renderLaunchStatus();
   renderSectionNav((state.resolve && state.resolve.errors) || []);
   renderStatusPill();
+  /* Derived placeholders show the CURRENT concrete resolved value. */
+  refreshPlaceholders();
 }
 
 function renderAll() {
@@ -366,6 +370,13 @@ function bindChangeEvents() {
          new builder's served defaults. */
       if (modelType) {
         state.draft.deployment_parameters.model_config = defaultModelConfig(modelType);
+      }
+    }
+    if (key === 'mirror_training_recipe') {
+      /* Entering mirror mode: the training recipe owns the tuning recipe —
+         an explicit tuning_recipe would conflict loudly, so clear it. */
+      if (state.draft.deployment_parameters?.mirror_training_recipe) {
+        clearKey('tuning_recipe');
       }
     }
     if (key === 'model_config_mode' || key === 'hw_config_mode') {
