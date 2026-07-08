@@ -28,7 +28,37 @@ class TestOverviewChart:
         ]
         chart = build_overview_chart(steps)
         assert [p["step"] for p in chart["points"]] == ["Pretraining", "LIF Adaptation"]
-        assert chart["markers"] == []
+        # The carried step is NEVER a data point, but it is never invisible
+        # either: it renders as a labeled neutral event line.
+        carried = [m for m in chart["markers"] if m["status"] == "carried"]
+        assert [m["step"] for m in carried] == ["Model Building"]
+        assert "carried" in carried[0]["label"]
+
+    def test_every_completed_step_is_visible_as_point_or_marker(self):
+        steps = [
+            {"name": "Model Configuration", "status": "completed",
+             "target_metric": 0.0, "metric_kind": "carried"},
+            {"name": "Pretraining", "status": "completed", "target_metric": 0.95,
+             "metric_kind": "measured"},
+            {"name": "Core Quantization Verification", "status": "completed",
+             "target_metric": 0.95, "metric_kind": "carried",
+             "verdict": {"status": "pass", "rule": "chip-quantized"}},
+            {"name": "Loihi Simulation", "status": "failed", "error": "boom"},
+        ]
+        chart = build_overview_chart(steps)
+        visible = {p["step"] for p in chart["points"]}
+        visible |= {m["step"] for m in chart["markers"]}
+        assert visible == {s["name"] for s in steps}
+
+    def test_carried_step_with_verdict_keeps_the_verdict_marker_only(self):
+        steps = [
+            {"name": "Core Quantization Verification", "status": "completed",
+             "target_metric": 0.95, "metric_kind": "carried",
+             "verdict": {"status": "pass", "rule": "chip-quantized"}},
+        ]
+        chart = build_overview_chart(steps)
+        assert len(chart["markers"]) == 1
+        assert chart["markers"][0]["status"] == "pass"
 
     def test_verdict_steps_render_as_markers_with_glyphs(self):
         steps = [

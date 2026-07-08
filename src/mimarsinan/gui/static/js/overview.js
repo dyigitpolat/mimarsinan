@@ -1,7 +1,7 @@
 /* Pipeline bar + overview charts (measured points, verdict markers, timing). */
 import { esc, fmtDuration, elapsedFromStepStart, safeReact, emptyAnnotation } from './util.js';
 
-const TONE_COLORS = { pass: '#4ade80', fail: '#f87171' };
+const TONE_COLORS = { pass: '#4ade80', fail: '#f87171', carried: '#8494a7' };
 
 // ── Pipeline bar ─────────────────────────────────────────────────────────
 export function renderPipelineBar(pipeline, selectedStep) {
@@ -69,11 +69,10 @@ function renderMetricProgression(steps, chart) {
     });
   }
 
-  // Verdict/failed steps: labeled vertical lines with a pass/fail glyph —
-  // never a fabricated data point at the carried metric.
-  const categories = steps.filter(s =>
-    points.some(p => p.step === s.name) || markers.some(m => m.step === s.name)
-  ).map(s => s.name);
+  // Verdict/failed/carried steps: labeled vertical lines with a glyph —
+  // never a fabricated data point at the carried metric. The x axis is the
+  // FULL step sequence so no step is invisible.
+  const categories = steps.map(s => s.name);
   for (const marker of markers) {
     const color = TONE_COLORS[marker.status] || TONE_COLORS.pass;
     shapes.push({

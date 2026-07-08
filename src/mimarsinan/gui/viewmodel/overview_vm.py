@@ -13,7 +13,9 @@ def build_overview_chart(steps: Sequence[Mapping[str, Any]]) -> Dict[str, Any]:
 
     A carried metric contributes NO y-point (plotting it would fabricate a
     measurement); a step with a verdict (or a failure) renders as a labeled
-    vertical marker with a pass/fail glyph instead.
+    vertical marker with a pass/fail glyph instead. A carried step WITHOUT a
+    verdict still renders — as a neutral labeled event line — so every
+    completed step is visible on the full step sequence.
     """
     points: List[Dict[str, Any]] = []
     markers: List[Dict[str, Any]] = []
@@ -41,6 +43,10 @@ def build_overview_chart(steps: Sequence[Mapping[str, Any]]) -> Dict[str, Any]:
             })
             continue
         if kind == _CARRIED:
+            markers.append({
+                "step": name, "status": "carried", "glyph": "·",
+                "label": f"{name} — carried (no measurement)",
+            })
             continue
         # measured — legacy runs without metric_kind stay plotted (pre-honesty
         # data carries no kind; refusing to plot them would erase history).
