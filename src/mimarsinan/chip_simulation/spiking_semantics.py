@@ -121,6 +121,52 @@ def uses_ttfs_floor_ceil_convention(spiking_mode: str, schedule=None) -> bool:
 DEFAULT_FIRING_MODE = "Default"
 NOVENA_FIRING_MODE = "Novena"
 
+# THE legal-value sets of the mode-dependent spiking knobs. `legal_*` answers
+# "what may this key hold given spiking_mode"; `derived_*` answers "what does it
+# hold when the document is silent". The enforcers (FiringStrategy, the rate
+# encoder) are pinned against these in tests/unit/config_schema/test_legality.py.
+LIF_FIRING_MODES: FrozenSet[str] = frozenset({DEFAULT_FIRING_MODE, NOVENA_FIRING_MODE})
+TTFS_FIRING_MODE = "TTFS"
+RATE_SPIKE_GENERATION_MODES = ("Uniform", "Deterministic", "Stochastic")
+THRESHOLDING_MODES = ("<", "<=")
+DEFAULT_THRESHOLDING_MODE = "<="
+
+
+def _ttfs_or(rate_modes: tuple, spiking_mode: str) -> tuple:
+    """TTFS-family modes admit only the TTFS value; an unknown mode rules
+    nothing out (its own error is the single truth)."""
+    if _norm(spiking_mode) not in ALL_SPIKING_MODES:
+        return rate_modes + (TTFS_FIRING_MODE,)
+    if requires_ttfs_firing(spiking_mode):
+        return (TTFS_FIRING_MODE,)
+    return rate_modes
+
+
+def legal_firing_modes(spiking_mode: str) -> tuple:
+    """Firing modes this spiking mode may declare."""
+    return _ttfs_or((DEFAULT_FIRING_MODE, NOVENA_FIRING_MODE), spiking_mode)
+
+
+def legal_spike_generation_modes(spiking_mode: str) -> tuple:
+    """Input spike-train encodings this spiking mode may declare (the rate
+    encoder refuses TTFS; the TTFS path refuses every rate encoding)."""
+    return _ttfs_or(RATE_SPIKE_GENERATION_MODES, spiking_mode)
+
+
+def legal_thresholding_modes(spiking_mode: str) -> tuple:
+    """Membrane-threshold comparisons (mode-independent, both always legal)."""
+    return THRESHOLDING_MODES
+
+
+def derived_firing_mode(spiking_mode: str) -> str:
+    return TTFS_FIRING_MODE if requires_ttfs_firing(spiking_mode) else DEFAULT_FIRING_MODE
+
+
+def derived_spike_generation_mode(spiking_mode: str) -> str:
+    if requires_ttfs_firing(spiking_mode):
+        return TTFS_FIRING_MODE
+    return RATE_SPIKE_GENERATION_MODES[0]
+
 
 def is_default_firing_mode(firing_mode) -> bool:
     """Firing mode with the Default (subtractive-reset) LIF semantics."""

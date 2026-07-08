@@ -157,7 +157,7 @@ CONFIG_KEYS_SET: Set[str] = {
     "ttfs_cycle_schedule",
     "ttfs_finetune_kd_against_rung2",
     "scm_degradation_tolerance",
-    "nf_scm_parity_samples", "nf_scm_parity_samples_cascaded",
+    "nf_scm_parity_samples",
     "nf_scm_parity_atol", "nf_scm_parity_max_mismatch_fraction",
     "nf_scm_parity_min_agreement",
     "scm_torch_sim_parity_check", "scm_torch_sim_parity_samples",

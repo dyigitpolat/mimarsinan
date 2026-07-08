@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, Optional, Tuple, Union
+from typing import Any, Callable, Mapping, Optional, Tuple, Union
 
 from mimarsinan.config_schema.registry.relevance import Relevance
 
@@ -60,6 +60,26 @@ PROVENANCE_SOURCES = frozenset({
 
 OptionsSpec = Union[Tuple[str, ...], Callable[[], Tuple[str, ...]], None]
 
+# The SSOT deriver of a key's value while the document is silent, evaluated
+# against the current config state (so a mode-aware fallback renders its
+# concrete value). Consumers read it through ``effective_value``.
+DerivedDefaultFn = Callable[[Mapping[str, Any]], Any]
+# The key's LEGAL VALUE SET for the current config state. |legal| == 1 LOCKS the
+# field; |legal| > 1 offers exactly those options; anything else is a keyed error.
+LegalValuesFn = Callable[[Mapping[str, Any]], Tuple[Any, ...]]
+
+
+def frozen_default(value: Any) -> DerivedDefaultFn:
+    """A named consumer's frozen literal, declared once for both readers."""
+    return lambda cfg: value
+
+
+def registered_elsewhere(cfg: Mapping[str, Any]) -> None:
+    """A workload-profile registration (provider/builder) injects this value, or
+    a consumer computes it from state the registry cannot see: the wizard reads
+    the registered facts and renders '—' when nothing registers it."""
+    return None
+
 
 @dataclass(frozen=True)
 class ConfigKeySchema:
@@ -108,6 +128,11 @@ class ConfigKeySchema:
     # SSOT source of the derived-by-default value (PROVENANCE_SOURCES); None
     # for keys whose default is a plain schema default.
     provenance: Optional[str] = None
+    # The value that source produces for a given config state (the CONCRETE
+    # green in-field text, and the number the consumer reads).
+    derived_default: Optional[DerivedDefaultFn] = None
+    # Legality that depends on other config (see LegalValuesFn).
+    legal_values: Optional[LegalValuesFn] = None
     # Derivation-owned keys the UI must not render on ANY surface (no field,
     # no chip); they remain config data (declarable escape) where marked.
     hidden: bool = False
@@ -136,6 +161,21 @@ class ConfigKeySchema:
             raise ValueError(
                 f"{self.flat_key!r}: unknown provenance {self.provenance!r} "
                 f"(vocabulary: {sorted(PROVENANCE_SOURCES)})"
+            )
+        if self.category is Category.DERIVED and self.provenance is None:
+            raise ValueError(
+                f"{self.flat_key!r}: a DERIVED key must name its provenance "
+                f"source (vocabulary: {sorted(PROVENANCE_SOURCES)})"
+            )
+        if self.derived_default is not None and self.provenance is None:
+            raise ValueError(
+                f"{self.flat_key!r}: a derived_default must name the provenance "
+                "source that produces it"
+            )
+        if self.legal_values is not None and self.type is not FieldType.ENUM:
+            raise ValueError(
+                f"{self.flat_key!r}: legal_values requires an enum type "
+                "(the legal set is a subset of the declared options)"
             )
         if self.hidden and self.category is not Category.DERIVED:
             raise ValueError(

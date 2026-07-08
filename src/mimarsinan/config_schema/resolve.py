@@ -8,14 +8,20 @@ from typing import Any, Dict, List, Mapping, Optional
 
 from mimarsinan.config_schema.deployment_derivation import (
     enforce_quantization_assembly_contract,
+    legal_values_for,
+    legality_bearing_keys,
 )
 from mimarsinan.config_schema.registry import (
     Category,
     REGISTRY,
+    effective_value,
     parse_deployment_document,
 )
 from mimarsinan.config_schema.runtime import build_flat_pipeline_config
-from mimarsinan.config_schema.validation import validate_deployment_config
+from mimarsinan.config_schema.validation import (
+    legality_errors,
+    validate_deployment_config,
+)
 
 _SESSION_DEFAULT_PIPELINE_MODE = "phased"
 
@@ -67,6 +73,42 @@ def _contract_errors(
             "rule_id": "quantization_assembly",
         }]
     return []
+
+
+def effective_view(draft_dp: Mapping[str, Any]) -> Dict[str, Any]:
+    """Schema defaults overlaid with the draft's declarations — ALWAYS computable,
+    so legality (like the vehicle rows) survives an erroring draft."""
+    cfg = {
+        key: entry.default for key, entry in REGISTRY.items() if entry.has_default()
+    }
+    cfg.update({k: v for k, v in draft_dp.items() if v is not None})
+    return cfg
+
+
+def legal_values_view(cfg: Mapping[str, Any]) -> Dict[str, List[Any]]:
+    """The LEGAL VALUE SET of every legality-bearing key for this config state.
+
+    |legal| == 1 ⇒ the field is LOCKED (rendered read-only as the derived value);
+    |legal| > 1 ⇒ derived default + override, offering ONLY these options.
+    """
+    return {key: list(legal_values_for(key, cfg)) for key in legality_bearing_keys()}
+
+
+def derived_values_view(resolved: Mapping[str, Any]) -> Dict[str, Any]:
+    """The CONCRETE prospective value of every SSOT-sourced key for this state.
+
+    This is the wizard's green in-field text: what the deriver produces, never
+    prose about where it comes from. ``None`` renders as '—' (uncomputable, or
+    a registration the registry cannot see); ``{}`` while the draft errors, so no
+    hypothetical value ever renders.
+    """
+    if not resolved:
+        return {}
+    return {
+        key: effective_value(resolved, key)
+        for key, entry in REGISTRY.items()
+        if entry.provenance is not None
+    }
 
 
 def derived_view(resolved: Mapping[str, Any]) -> Dict[str, Dict[str, Any]]:
@@ -129,23 +171,33 @@ def resolve_draft(draft: Mapping[str, Any]) -> Resolution:
     )
     errors.extend(_contract_errors(parsed.dp, parsed.pc, declared_mode))
 
+    # An illegal declaration would raise inside the derivation; report it as a
+    # keyed, REMEDIABLE row and never derive a hypothetical config from it. The
+    # remediable row supersedes the plain structural message for the same key.
+    illegal = legality_errors(effective_view(parsed.dp), parsed.dp)
+    illegal_keys = {row["key"] for row in illegal}
+    errors = [error for error in errors if error["key"] not in illegal_keys]
+    errors.extend(illegal)
+
     pipeline_mode = str(draft.get("pipeline_mode", _SESSION_DEFAULT_PIPELINE_MODE))
     resolved: Dict[str, Any] = {}
     derived: Dict[str, Dict[str, Any]] = {}
-    try:
-        resolved = build_flat_pipeline_config(
-            dict(parsed.dp), dict(parsed.pc), pipeline_mode=pipeline_mode
-        )
-    except ValueError as exc:
-        errors.append({
-            "key": _attach_error_key(str(exc)),
-            "message": str(exc),
-            "rule_id": "derivation",
-        })
-    else:
-        for key, value in parsed.top.items():
-            resolved.setdefault(key, value)
-        derived = derived_view(resolved)
+    if not illegal:
+        try:
+            resolved = build_flat_pipeline_config(
+                dict(parsed.dp), dict(parsed.pc), pipeline_mode=pipeline_mode
+            )
+        except ValueError as exc:
+            resolved = {}
+            errors.append({
+                "key": _attach_error_key(str(exc)),
+                "message": str(exc),
+                "rule_id": "derivation",
+            })
+        else:
+            for key, value in parsed.top.items():
+                resolved.setdefault(key, value)
+            derived = derived_view(resolved)
 
     explicit = parsed.known_flat_keys()
     return Resolution(

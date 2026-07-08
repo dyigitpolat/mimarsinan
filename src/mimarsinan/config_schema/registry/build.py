@@ -50,13 +50,24 @@ def _inject_default(entry: ConfigKeySchema) -> ConfigKeySchema:
     return dataclasses.replace(entry, default=source[entry.flat_key])
 
 
-def _validate(entries: Tuple[ConfigKeySchema, ...]) -> Dict[str, ConfigKeySchema]:
+def validate_registry(entries: Tuple[ConfigKeySchema, ...]) -> Dict[str, ConfigKeySchema]:
+    """Registry BUILD-TIME invariants (defaults already injected)."""
     table: Dict[str, ConfigKeySchema] = {}
     for entry in entries:
         if entry.flat_key in table:
             raise ValueError(f"duplicate registry entry {entry.flat_key!r}")
         if entry.group not in VALID_GROUP_IDS:
             raise ValueError(f"{entry.flat_key!r}: unknown group {entry.group!r}")
+        if entry.provenance is not None and not (
+            entry.has_default()
+            or entry.derived_default is not None
+            or entry.category is Category.DERIVED
+        ):
+            raise ValueError(
+                f"{entry.flat_key!r}: provenance {entry.provenance!r} without a way "
+                "to produce a concrete value — declare derived_default (the wizard "
+                "renders the VALUE, never prose about its source)"
+            )
         if entry.provided_by is not None:
             if entry.provided_by not in VALID_GROUP_IDS:
                 raise ValueError(
@@ -80,7 +91,7 @@ def _validate(entries: Tuple[ConfigKeySchema, ...]) -> Dict[str, ConfigKeySchema
     return table
 
 
-_REGISTRY: Dict[str, ConfigKeySchema] = _validate(
+_REGISTRY: Dict[str, ConfigKeySchema] = validate_registry(
     tuple(_inject_default(e) for e in (_RUN + _MODEL + _CONVERSION + _PLATFORM))
 )
 
@@ -90,6 +101,25 @@ REGISTRY: Mapping[str, ConfigKeySchema] = MappingProxyType(_REGISTRY)
 def schema_for(flat_key: str) -> ConfigKeySchema:
     """The schema record for one flat key; raises KeyError for unknown keys."""
     return REGISTRY[flat_key]
+
+
+def effective_value(config: Mapping[str, Any], flat_key: str) -> Any:
+    """THE value a consumer sees for ``flat_key`` under ``config``.
+
+    Explicit declaration (``None`` means absent) > schema default > the
+    registry's ``derived_default`` for this config state. The one accessor for
+    frozen fallbacks, so the number a consumer reads and the number the wizard
+    renders as the derived value cannot drift.
+    """
+    entry = REGISTRY[flat_key]
+    value = config.get(flat_key)
+    if value is not None:
+        return value
+    if entry.has_default():
+        return entry.default
+    if entry.derived_default is not None:
+        return entry.derived_default(config)
+    return None
 
 
 def keys_in_category(category: Category) -> FrozenSet[str]:

@@ -346,6 +346,91 @@ class TestStepWiring:
         step._run_nf_scm_parity_gate(model=object(), ir_graph=object())
         assert calls == []
 
+
+class TestOneSampleCountKeyForBothBranches:
+    """``nf_scm_parity_samples_cascaded`` was a per-mode default written inline,
+    not a second concept: both branches answer 'how many validation inputs does
+    the NF<->SCM gate run on'. One key, one mode-aware derivation — which also
+    repairs the disable sentinel the shadow key made unreachable on cascaded
+    (deployment_faithfulness declares nf_scm_parity_samples as THE gate flag)."""
+
+    _make_step = TestStepWiring._make_step
+    _StubTrainer = TestStepWiring._StubTrainer
+
+    def test_cascaded_takes_its_sample_count_from_the_one_key(self, monkeypatch):
+        import mimarsinan.pipelining.core.nf_scm_parity as parity_mod
+
+        calls = []
+        monkeypatch.setattr(
+            parity_mod, "assert_cascaded_nf_scm_agreement_or_raise",
+            lambda *args, **kwargs: calls.append(args) or 1.0,
+        )
+        step = self._make_step("cascaded", spiking_mode="ttfs_cycle_based")
+        step.trainer = self._StubTrainer(torch.rand(128, 8, dtype=torch.float64))
+        step._run_nf_scm_parity_gate(model=object(), ir_graph=object())
+        assert calls[0][3].shape[0] == 64  # the cascaded derived default
+
+    def test_an_explicit_sample_count_governs_the_cascaded_branch(self, monkeypatch):
+        import mimarsinan.pipelining.core.nf_scm_parity as parity_mod
+
+        calls = []
+        monkeypatch.setattr(
+            parity_mod, "assert_cascaded_nf_scm_agreement_or_raise",
+            lambda *args, **kwargs: calls.append(args) or 1.0,
+        )
+        step = self._make_step(
+            "cascaded", spiking_mode="ttfs_cycle_based", nf_scm_parity_samples=5,
+        )
+        step.trainer = self._StubTrainer(torch.rand(128, 8, dtype=torch.float64))
+        step._run_nf_scm_parity_gate(model=object(), ir_graph=object())
+        assert calls[0][3].shape[0] == 5
+
+    def test_the_disable_sentinel_now_reaches_the_cascaded_branch(self, monkeypatch):
+        """Before unification, nf_scm_parity_samples=0 silently left the
+        cascaded gate armed — the faithfulness flag lied."""
+        import mimarsinan.pipelining.core.nf_scm_parity as parity_mod
+
+        calls = []
+        monkeypatch.setattr(
+            parity_mod, "assert_cascaded_nf_scm_agreement_or_raise",
+            lambda *args, **kwargs: calls.append(1) or 1.0,
+        )
+        step = self._make_step(
+            "cascaded", spiking_mode="ttfs_cycle_based", nf_scm_parity_samples=0,
+        )
+        step._run_nf_scm_parity_gate(model=object(), ir_graph=object())
+        assert calls == []
+
+    def test_the_retired_key_is_no_longer_schema_known(self):
+        from mimarsinan.config_schema.defaults import CONFIG_KEYS_SET
+        from mimarsinan.config_schema.registry import REGISTRY
+
+        assert "nf_scm_parity_samples_cascaded" not in REGISTRY
+        assert "nf_scm_parity_samples_cascaded" not in CONFIG_KEYS_SET
+
+    def test_a_document_pinning_the_retired_key_is_reported_not_dropped(self):
+        from mimarsinan.config_schema.registry import parse_deployment_document
+        from mimarsinan.gui.wizard.emit import emit_deployment_config
+
+        document = {
+            "experiment_name": "retired",
+            "deployment_parameters": {"nf_scm_parity_samples_cascaded": 64},
+        }
+        parsed = parse_deployment_document(document)
+        assert parsed.unknown == [
+            "deployment_parameters.nf_scm_parity_samples_cascaded"
+        ]
+        emitted = emit_deployment_config(document)
+        assert emitted["deployment_parameters"]["nf_scm_parity_samples_cascaded"] == 64
+
+    def test_the_disable_sentinel_is_authorable_through_the_widget_bounds(self):
+        """bounds=(1, None) made the documented 0 opt-out unreachable in the GUI."""
+        from mimarsinan.config_schema.registry import REGISTRY
+
+        for key in ("nf_scm_parity_samples", "scm_torch_sim_parity_samples",
+                    "max_simulation_samples"):
+            assert REGISTRY[key].bounds[0] == 0, key
+
     def test_lif_invokes_torch_sim_parity_gate(self, monkeypatch):
         """LIF arms the decision-level torch↔deployed-sim gate (same threshold
         discipline as casc/sync; the t0_03 defect must name itself as a parity

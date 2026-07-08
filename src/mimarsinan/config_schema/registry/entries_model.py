@@ -7,6 +7,7 @@ from mimarsinan.config_schema.registry.types import (
     Category,
     ConfigKeySchema as _E,
     FieldType as T,
+    frozen_default as _frozen,
 )
 
 _SEARCH_ACTIVE = R.any_of(
@@ -154,6 +155,7 @@ ENTRIES = (
            "Providers register it via DataWorkloadProfile.input_value_range; "
            "explicit value wins; absent = 1.0 (unit-range data).",
        bounds=(0.0, None), provenance="provider registration",
+       derived_default=_frozen(1.0),
        empty_means="the provider's registered range, else 1.0 (unit-range data)"),
     _E("pretrained_weight_source", group="training",
        owner="workload_profile/weight_preloading",
@@ -170,5 +172,5 @@ ENTRIES = (
        doc="Architecture is known to trip CUDA asserts under clamp adaptation "
            "(warns to enable cuda_debug). Builders register it via "
            "ModelWorkloadProfile; explicit value wins.",
-       provenance="builder profile"),
+       provenance="builder profile", derived_default=_frozen(False)),
 )

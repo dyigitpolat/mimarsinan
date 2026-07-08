@@ -3,6 +3,7 @@ import warnings
 from typing import Iterable, cast
 
 import mimarsinan.pipelining.core.nf_scm_parity as nf_scm_parity
+from mimarsinan.config_schema.registry import effective_value as _effective
 from mimarsinan.pipelining.core.steps.pipeline_step import PipelineStep
 from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 
@@ -270,14 +271,14 @@ class SoftCoreMappingStep(PipelineStep):
 
     def _run_onchip_majority_gate(self, model, ir_graph) -> None:
         """Params-based FLOOR gate: raise only BELOW the on-chip floor; VALID_FLAGGED mappings between floor and 50% majority still deploy."""
-        if not bool(self.pipeline.config.get("onchip_majority_gate", True)):
+        if not bool(_effective(self.pipeline.config, "onchip_majority_gate")):
             return
         total_params = int(sum(p.numel() for p in model.parameters()))
         breakdown = assert_onchip_majority_or_raise(
             ir_graph,
             total_params=total_params,
             min_fraction=float(
-                self.pipeline.config.get("onchip_majority_min_fraction", 0.2)
+                _effective(self.pipeline.config, "onchip_majority_min_fraction")
             ),
         )
         print(
@@ -289,7 +290,7 @@ class SoftCoreMappingStep(PipelineStep):
 
     def _run_capacity_gate(self, ir_graph, platform_constraints):
         """Static placement-capacity gate: raise ``CapacityExceededError`` early when the sound core-count lower bound exceeds the budget (peak-phase-aware when scheduling is allowed)."""
-        if not bool(self.pipeline.config.get("capacity_gate", True)):
+        if not bool(_effective(self.pipeline.config, "capacity_gate")):
             return None
         estimate = estimate_cores_needed(ir_graph, platform_constraints)
         if estimate.scheduled:
@@ -320,12 +321,12 @@ class SoftCoreMappingStep(PipelineStep):
 
     def _run_torch_sim_parity_check(self, model, ir_graph) -> None:
         """Per-run torch↔deployed-sim parity: the NF torch forward must agree with the exact spiking sim ``run_scm_identity_metric`` deploys, so a deployment divergence cannot hide behind the metric's subsample."""
-        if not bool(self.pipeline.config.get("scm_torch_sim_parity_check", True)):
+        if not bool(_effective(self.pipeline.config, "scm_torch_sim_parity_check")):
             return
         contract = build_deployment_contract(self.pipeline)
         if not nf_scm_parity.torch_sim_parity_enabled(contract):
             return
-        n = int(self.pipeline.config.get("scm_torch_sim_parity_samples", 256))
+        n = int(_effective(self.pipeline.config, "scm_torch_sim_parity_samples"))
         if n <= 0:
             return
         batches = self._validation_sample_batches(8)
@@ -343,7 +344,7 @@ class SoftCoreMappingStep(PipelineStep):
         agreement = nf_scm_parity.assert_torch_vs_deployed_sim_parity_or_raise(
             reference, flow, samples,
             min_agreement=float(
-                self.pipeline.config.get("scm_torch_sim_parity_min_agreement", 0.98)
+                _effective(self.pipeline.config, "scm_torch_sim_parity_min_agreement")
             ),
         )
         print(
@@ -361,23 +362,23 @@ class SoftCoreMappingStep(PipelineStep):
         contract = build_deployment_contract(self.pipeline)
         if not nf_scm_parity.nf_scm_parity_enabled(contract):
             return
+        # ONE sample-count key for both statistics; 0 disables the gate on either
+        # branch (the deployment-faithfulness flag names this key for both).
+        n_samples = int(_effective(self.pipeline.config, "nf_scm_parity_samples"))
+        if n_samples <= 0:
+            return
+        batches = self._validation_sample_batches(1)
+        if not batches:
+            return
+        samples = batches[0][:n_samples]
         if contract.is_cascaded():
-            n_samples = int(
-                self.pipeline.config.get("nf_scm_parity_samples_cascaded", 64)
-            )
-            if n_samples <= 0:
-                return
-            batches = self._validation_sample_batches(1)
-            if not batches:
-                return
-            samples = batches[0][:n_samples]
             agreement = nf_scm_parity.assert_cascaded_nf_scm_agreement_or_raise(
                 self.pipeline,
                 model,
                 ir_graph,
                 samples,
                 min_agreement=float(
-                    self.pipeline.config.get("nf_scm_parity_min_agreement", 0.98)
+                    _effective(self.pipeline.config, "nf_scm_parity_min_agreement")
                 ),
             )
             print(
@@ -385,25 +386,14 @@ class SoftCoreMappingStep(PipelineStep):
                 f"{agreement:.4f} over {int(samples.shape[0])} samples"
             )
             return
-        n_samples = int(self.pipeline.config.get("nf_scm_parity_samples", 2))
-        if n_samples <= 0:
-            return
-        batches = self._validation_sample_batches(1)
-        if not batches:
-            return
-        samples = batches[0][:n_samples]
-        # Loose default while continuous ttfs (the only mode reaching this per-neuron path) has an uncalibrated residual; its wrong-dynamics signature is ~40%.
-        default_budget = 0.25
         fraction = nf_scm_parity.assert_nf_scm_parity_or_raise(
             self.pipeline,
             model,
             ir_graph,
             samples,
-            atol=float(self.pipeline.config.get("nf_scm_parity_atol", 1e-6)),
+            atol=float(_effective(self.pipeline.config, "nf_scm_parity_atol")),
             max_mismatch_fraction=float(
-                self.pipeline.config.get(
-                    "nf_scm_parity_max_mismatch_fraction", default_budget
-                )
+                _effective(self.pipeline.config, "nf_scm_parity_max_mismatch_fraction")
             ),
         )
         print(

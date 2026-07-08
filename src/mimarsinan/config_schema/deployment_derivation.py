@@ -2,18 +2,18 @@
 
 from __future__ import annotations
 
-from typing import Any, Iterable, Mapping, MutableMapping, Optional, Set
+from typing import Any, Iterable, Mapping, MutableMapping, Optional, Set, Tuple
 
 from mimarsinan.chip_simulation.spiking_semantics import (
     forces_activation_quantization,
     is_cycle_based,
-    requires_ttfs_firing,
 )
 from mimarsinan.common.env import (
     UNSAFE_QUANT_OVERRIDES_VAR,
     unsafe_quant_overrides_enabled,
 )
 from mimarsinan.config_schema.defaults import CONFIG_KEYS_SET
+from mimarsinan.config_schema.registry import REGISTRY
 from mimarsinan.tuning.orchestration.conversion_policy import ConversionPolicy
 
 _AQ_RULE = (
@@ -94,9 +94,7 @@ def _fold_conversion_recipe(
         dp[key] = value
 
 
-def _fold_mirror_training_recipe(
-    dp: MutableMapping[str, Any], explicit: Set[str]
-) -> None:
+def _fold_mirror_training_recipe(dp: MutableMapping[str, Any], explicit: Set[str]) -> None:
     """mirror_training_recipe=true reflects the (effective) training recipe
     as-is into the tuning recipe; a document-declared tuning_recipe conflicts."""
     if not bool(dp.get("mirror_training_recipe")):
@@ -258,28 +256,44 @@ def derive_platform_constraints(
             )
 
 
+def legal_value_error(flat_key: str, value: Any, legal: Iterable[Any]) -> ValueError:
+    """THE canonical illegal-value message (the wizard renders the same text)."""
+    options = ", ".join(repr(option) for option in legal)
+    return ValueError(
+        f"{flat_key}={value!r} is not legal here: the current config admits "
+        f"{{{options}}}. Remove {flat_key} to accept the derived value."
+    )
+
+
+def legal_values_for(flat_key: str, cfg: Mapping[str, Any]) -> Tuple[Any, ...]:
+    """The registry's legal value set for ``flat_key`` under this config state."""
+    return tuple(REGISTRY[flat_key].legal_values(cfg))  # type: ignore[misc]
+
+
+def legality_bearing_keys() -> Tuple[str, ...]:
+    """Keys whose legality depends on other config (registry-declared)."""
+    return tuple(k for k, e in REGISTRY.items() if e.legal_values is not None)
+
+
 def derive_pipeline_runtime_parameters(dp: MutableMapping[str, Any]) -> None:
-    """Fill runtime spiking fields that minimal persisted configs may omit."""
-    spiking_mode = str(dp.get("spiking_mode", "lif"))
-    if requires_ttfs_firing(spiking_mode):
-        dp.setdefault("firing_mode", "TTFS")
-        dp.setdefault("spike_generation_mode", "TTFS")
-        dp.setdefault("thresholding_mode", "<=")
-        for key in ("firing_mode", "spike_generation_mode"):
-            if dp[key] != "TTFS":
-                raise ValueError(
-                    f"spiking_mode='{spiking_mode}' requires {key}='TTFS', "
-                    f"got '{dp[key]}'"
-                )
-    else:
-        dp.setdefault("firing_mode", "Default")
-        dp.setdefault("spike_generation_mode", "Uniform")
-        dp.setdefault("thresholding_mode", "<=")
+    """Fill runtime spiking fields that minimal persisted configs may omit.
+
+    Generic: the registry's ``derived_default`` supplies the mode-aware value of
+    every legality-bearing key, and its ``legal_values`` set judges an explicit
+    one — no per-mode ladder lives here. A legality-bearing key with a SCHEMA
+    default (s_allocation) is never filled here; the validators judge it.
+    """
+    for flat_key in legality_bearing_keys():
+        derived = REGISTRY[flat_key].derived_default
+        if derived is None:
+            continue
+        if dp.get(flat_key) is None:
+            dp[flat_key] = derived(dp)
+        elif dp[flat_key] not in (legal := legal_values_for(flat_key, dp)):
+            raise legal_value_error(flat_key, dp[flat_key], legal)
     # Recipe-owned correctness mechanism (LIF trains the deployed forward);
     # inert for TTFS modes but always resolved, never a knob.
     dp.setdefault("cycle_accurate_lif_forward", True)
-    # Boundary-lossless requirement with TWO sound positions (round-5): ON
-    # (default) = calibrated shift + consumer-bias pre-correction; OFF = the
-    # mapper subsumes consuming perceptrons forward onto the host until a
-    # non-negative activation absorbs the range. Explicit wins (honest fold).
+    # Boundary-lossless requirement with TWO sound positions (round-5): ON =
+    # calibrated shift + bias pre-correction; OFF = the mapper's subsume-forward.
     dp.setdefault("negative_value_shift", True)

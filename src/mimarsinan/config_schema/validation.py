@@ -4,9 +4,11 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Mapping
 
-from mimarsinan.chip_simulation.spiking_semantics import (
-    require_known_spiking_mode,
-    requires_ttfs_firing,
+from mimarsinan.chip_simulation.spiking_semantics import require_known_spiking_mode
+from mimarsinan.config_schema.deployment_derivation import (
+    legal_value_error,
+    legal_values_for,
+    legality_bearing_keys,
 )
 from mimarsinan.config_schema.registry import Category, REGISTRY
 from mimarsinan.mapping.platform.coalescing import coalescing_config_errors
@@ -44,6 +46,51 @@ def s_allocation_config_errors(
     if mode not in S_ALLOCATION_SUPPORTED_MODES:
         errors.append(unsupported_s_allocation_error(mode))
 
+    return errors
+
+
+def _legality_remedies(flat_key: str, legal: List[Any]) -> List[Dict[str, Any]]:
+    """One-click remedies prescribed by the RULE, not by the frontend: a
+    singleton legal set can be applied directly; clearing always works."""
+    label = REGISTRY[flat_key].label
+    remedies: List[Dict[str, Any]] = []
+    if len(legal) == 1:
+        remedies.append({
+            "label": f"Set {label} = {legal[0]}", "action": "set",
+            "key": flat_key, "value": legal[0],
+        })
+    remedies.append({
+        "label": f"Clear {label} (accept the derived value)",
+        "action": "clear", "key": flat_key,
+    })
+    return remedies
+
+
+def legality_errors(
+    cfg: Mapping[str, Any], declared: Mapping[str, Any]
+) -> List[Dict[str, Any]]:
+    """THE legal-value-set check: keyed, remediable rows for DECLARED values
+    outside their legal set under ``cfg``.
+
+    An absent key is legal by construction (the derivation supplies a legal
+    value), so only declarations are judged — and each row names the offending
+    key, never the mode that constrains it. Generic over the registry: no
+    per-mode ladder lives here or anywhere downstream.
+    """
+    errors: List[Dict[str, Any]] = []
+    for flat_key in legality_bearing_keys():
+        value = declared.get(flat_key)
+        if flat_key not in declared or value is None:
+            continue
+        legal = list(legal_values_for(flat_key, cfg))
+        if value in legal:
+            continue
+        errors.append({
+            "key": flat_key,
+            "message": str(legal_value_error(flat_key, value, legal)),
+            "rule_id": "legal_value_set",
+            "remedies": _legality_remedies(flat_key, legal),
+        })
     return errors
 
 
@@ -131,15 +178,8 @@ def validate_deployment_config(config: Dict[str, Any]) -> List[str]:
             require_known_spiking_mode(spiking)
         except ValueError as exc:
             errors.append(str(exc))
-        if requires_ttfs_firing(spiking):
-            if "firing_mode" in dp and dp.get("firing_mode") != "TTFS":
-                errors.append(
-                    f"spiking_mode is '{spiking}' but firing_mode must be 'TTFS', got {dp.get('firing_mode')!r}"
-                )
-            if "spike_generation_mode" in dp and dp.get("spike_generation_mode") != "TTFS":
-                errors.append(
-                    f"spiking_mode is '{spiking}' but spike_generation_mode must be 'TTFS', got {dp.get('spike_generation_mode')!r}"
-                )
+        else:
+            errors.extend(row["message"] for row in legality_errors(dp, dp))
 
     return errors
 
@@ -157,14 +197,7 @@ def validate_merged_config(flat: Dict[str, Any]) -> List[str]:
         require_known_spiking_mode(spiking)
     except ValueError as exc:
         errors.append(str(exc))
-    if requires_ttfs_firing(spiking):
-        if flat.get("firing_mode") != "TTFS":
-            errors.append(
-                f"spiking_mode is '{spiking}' but firing_mode must be 'TTFS', got {flat.get('firing_mode')!r}"
-            )
-        if flat.get("spike_generation_mode") != "TTFS":
-            errors.append(
-                f"spiking_mode is '{spiking}' but spike_generation_mode must be 'TTFS', got {flat.get('spike_generation_mode')!r}"
-            )
+    else:
+        errors.extend(row["message"] for row in legality_errors(flat, flat))
 
     return errors

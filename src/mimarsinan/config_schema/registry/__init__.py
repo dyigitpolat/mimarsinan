@@ -3,6 +3,7 @@
 from mimarsinan.config_schema.registry.build import (
     NON_PIPELINE_DOC_KEYS,
     REGISTRY,
+    effective_value,
     keys_in_category,
     schema_for,
     section_keys,
@@ -28,6 +29,7 @@ __all__ = [
     "ParsedDocument",
     "REGISTRY",
     "Relevance",
+    "effective_value",
     "keys_in_category",
     "parse_deployment_document",
     "schema_for",

@@ -6,6 +6,7 @@ from mimarsinan.config_schema.registry.types import (
     Category,
     ConfigKeySchema as _E,
     FieldType as T,
+    frozen_default as _frozen,
 )
 
 
@@ -62,7 +63,7 @@ ENTRIES = (
     _E("num_workers", group="workload", owner="DataLoaderFactory",
        type=T.INT, category=Category.ADVANCED, label="DataLoader Workers",
        doc="torch DataLoader worker process count.", bounds=(0, None),
-       provenance="consumer frozen default",
+       provenance="consumer frozen default", derived_default=_frozen(4),
        empty_means="the DataLoaderFactory frozen worker count (4)"),
     # Runtime-resolved keys: never declared in a config document; schema-known
     # so run views can label them instead of dropping them.

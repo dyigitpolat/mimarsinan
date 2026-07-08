@@ -2,15 +2,39 @@
 
 from __future__ import annotations
 
+from typing import Any, Mapping, Optional
+
+from mimarsinan.chip_simulation.spiking_semantics import is_cascaded_ttfs
 from mimarsinan.config_schema.registry.relevance import Relevance as R
 from mimarsinan.config_schema.registry.types import (
     Category,
     ConfigKeySchema as _E,
     FieldType as T,
+    frozen_default as _frozen,
 )
 from mimarsinan.tuning.orchestration.conversion_policy import ConversionPolicy
 
 _PC = "platform_constraints"
+
+# The NF<->SCM gate runs ONE question ("how many validation inputs?") on two
+# statistics: a serial per-neuron sweep whose mass comes from neurons (2 inputs
+# suffice) and a batched cascaded decision gate whose mass comes from samples
+# (64 Bernoulli trials tolerate exactly one WQ tie-flip at min_agreement 0.98).
+NF_SCM_PARITY_SAMPLES = 2
+NF_SCM_PARITY_SAMPLES_CASCADED = 64
+
+
+def _nf_scm_parity_samples(cfg: Mapping[str, Any]) -> int:
+    """Mode-aware sample count of the single NF<->SCM parity gate."""
+    if is_cascaded_ttfs(cfg.get("spiking_mode", "lif"), cfg.get("ttfs_cycle_schedule")):
+        return NF_SCM_PARITY_SAMPLES_CASCADED
+    return NF_SCM_PARITY_SAMPLES
+
+
+def _scm_degradation_tolerance(cfg: Mapping[str, Any]) -> Optional[float]:
+    """Absent, the SCM step installs no separate tolerance and the global
+    end-to-end degradation_tolerance governs it."""
+    return cfg.get("degradation_tolerance")
 
 
 def _why_core_maximum(dim: str):
@@ -151,7 +175,7 @@ ENTRIES = (
        type=T.INT, category=Category.ADVANCED, label="Loihi Parity Sample Index",
        doc="Test-set sample index for the HCM-vs-Lava spike-parity check.",
        bounds=(0, None), relevant=R.when_true("enable_loihi_simulation"),
-       provenance="consumer frozen default",
+       provenance="consumer frozen default", derived_default=_frozen(0),
        empty_means="the loihi step's frozen sample index 0"),
     _E("enable_sanafe_simulation", group="deployment_target",
        owner="ConversionPolicy/backend_registry", type=T.BOOL,
@@ -187,57 +211,84 @@ ENTRIES = (
        relevant=R.when_true("enable_sanafe_simulation")),
     _E("max_simulation_samples", group="deployment_target", owner="SimulationRunner",
        type=T.INT, category=Category.BASIC, exposure="user", label="Max Simulation Samples",
-       doc="Sample cap for simulator probes (binomial-noise accuracy reads).",
-       bounds=(1, None)),
+       doc="Sample cap for simulator probes (binomial-noise accuracy reads); 0 = no cap.",
+       bounds=(0, None), provenance="consumer frozen default", derived_default=_frozen(0),
+       empty_means="0 — the runner probes without a sample cap"),
     _E("simulation_batch_count", group="deployment_target", owner="SimulationRunner",
        type=T.INT, category=Category.ADVANCED, label="Simulation Batch Count",
-       doc="Batches per simulator probe run.", bounds=(1, None)),
+       doc="Batches per simulator probe run.", bounds=(1, None),
+       provenance="consumer frozen default", derived_default=_frozen(None),
+       empty_means="every test batch (the runner takes no batch cap)"),
     _E("deployment_metric_full_eval", group="deployment_target", owner="SCM identity read",
        type=T.BOOL, category=Category.ADVANCED, label="Deployment Metric Full Eval",
-       doc="Use the full test set (not the probe subsample) for the deployed metric."),
+       doc="Use the full test set (not the probe subsample) for the deployed metric.",
+       provenance="consumer frozen default", derived_default=_frozen(True)),
     _E("scm_degradation_tolerance", group="deployment_target", owner="soft_core_mapping",
        type=T.FLOAT, category=Category.ADVANCED, label="SCM Degradation Tolerance",
-       doc="Retention tolerance of the SCM identity read.", bounds=(0.0, 1.0)),
+       doc="Retention tolerance of the SCM identity read. Absent, the SCM step "
+           "installs no separate tolerance: the global degradation_tolerance governs.",
+       bounds=(0.0, 1.0), provenance="derivation rule",
+       derived_default=_scm_degradation_tolerance,
+       empty_means="the global degradation_tolerance"),
     _E("nf_scm_parity_samples", group="deployment_target", owner="nf_scm_parity",
        type=T.INT, category=Category.ADVANCED, label="NF-SCM Parity Samples",
-       doc="Samples for the NF<->SCM bit-exactness gate.", bounds=(1, None)),
-    _E("nf_scm_parity_samples_cascaded", group="deployment_target", owner="nf_scm_parity",
-       type=T.INT, category=Category.ADVANCED, label="NF-SCM Parity Samples (cascaded)",
-       doc="Sample count override for the cascaded schedule.", bounds=(1, None)),
+       doc="Validation inputs the NF<->SCM gate runs on; 0 disables the gate. The "
+           "default is mode-aware: the serial per-neuron sweep needs 2, the batched "
+           "cascaded decision gate needs 64 Bernoulli trials.",
+       bounds=(0, None), provenance="derivation rule",
+       derived_default=_nf_scm_parity_samples,
+       empty_means="2, or 64 on the cascaded schedule"),
     _E("nf_scm_parity_atol", group="deployment_target", owner="nf_scm_parity",
        type=T.FLOAT, category=Category.ADVANCED, label="NF-SCM Parity Atol",
-       doc="Absolute tolerance of the NF<->SCM output comparison.", bounds=(0.0, None)),
+       doc="Absolute tolerance of the NF<->SCM output comparison.", bounds=(0.0, None),
+       provenance="consumer frozen default", derived_default=_frozen(1e-6)),
     _E("nf_scm_parity_max_mismatch_fraction", group="deployment_target",
        owner="nf_scm_parity", type=T.FLOAT, category=Category.ADVANCED,
        label="NF-SCM Max Mismatch Fraction",
-       doc="Accepted fraction of mismatching outputs.", bounds=(0.0, 1.0)),
+       doc="Accepted fraction of mismatching outputs (loose while continuous ttfs "
+           "carries an uncalibrated residual; its wrong-dynamics signature is ~40%).",
+       bounds=(0.0, 1.0),
+       provenance="consumer frozen default", derived_default=_frozen(0.25)),
     _E("nf_scm_parity_min_agreement", group="deployment_target", owner="nf_scm_parity",
        type=T.FLOAT, category=Category.ADVANCED, label="NF-SCM Min Agreement",
-       doc="Minimum decision agreement of the NF<->SCM gate.", bounds=(0.0, 1.0)),
+       doc="Minimum decision agreement of the NF<->SCM gate (cascaded schedule).",
+       bounds=(0.0, 1.0),
+       provenance="consumer frozen default", derived_default=_frozen(0.98)),
     _E("scm_torch_sim_parity_check", group="deployment_target", owner="soft_core_mapping",
        type=T.BOOL, category=Category.ADVANCED, label="SCM-Torch Parity Check",
-       doc="Enable the torch-vs-deployed-sim agreement check at SCM."),
+       doc="Enable the torch-vs-deployed-sim agreement check at SCM (a standing "
+           "deployment-faithfulness gate: default on).",
+       provenance="consumer frozen default", derived_default=_frozen(True)),
     _E("scm_torch_sim_parity_samples", group="deployment_target", owner="soft_core_mapping",
        type=T.INT, category=Category.ADVANCED, label="SCM-Torch Parity Samples",
-       doc="Samples for the SCM torch-vs-sim agreement check.", bounds=(1, None)),
+       doc="Samples for the SCM torch-vs-sim agreement check; 0 disables the check.",
+       bounds=(0, None), provenance="consumer frozen default", derived_default=_frozen(256)),
     _E("scm_torch_sim_parity_min_agreement", group="deployment_target",
        owner="soft_core_mapping", type=T.FLOAT, category=Category.ADVANCED,
        label="SCM-Torch Min Agreement",
-       doc="Minimum agreement of the SCM torch-vs-sim check.", bounds=(0.0, 1.0)),
+       doc="Minimum agreement of the SCM torch-vs-sim check.", bounds=(0.0, 1.0),
+       provenance="consumer frozen default", derived_default=_frozen(0.98)),
     _E("onchip_majority_gate", group="deployment_target", owner="certification",
        type=T.BOOL, category=Category.ADVANCED, label="On-chip Majority Gate",
-       doc="Require the on-chip compute fraction to clear the majority gate."),
+       doc="Require the on-chip compute fraction to clear the majority gate.",
+       provenance="consumer frozen default", derived_default=_frozen(True)),
     _E("onchip_majority_min_fraction", group="deployment_target", owner="certification",
        type=T.FLOAT, category=Category.ADVANCED, label="On-chip Majority Min Fraction",
-       doc="Minimum on-chip fraction for the majority gate.", bounds=(0.0, 1.0)),
-    _E("onchip_majority_fraction", group="deployment_target", owner="certification",
+       doc="Minimum on-chip fraction for the majority gate.", bounds=(0.0, 1.0),
+       provenance="consumer frozen default", derived_default=_frozen(0.2)),
+    _E("onchip_majority_fraction", group="deployment_target", owner="campaign validity gate",
        type=T.FLOAT, category=Category.ADVANCED, label="On-chip Majority Fraction",
-       doc="Declared on-chip fraction the majority gate certifies against.",
-       bounds=(0.0, 1.0)),
-    _E("onchip_min_fraction", group="deployment_target", owner="certification",
+       doc="Declared on-chip fraction the campaign enqueue gate certifies against "
+           "(read from the DOCUMENT by the research campaign scheduler, not by the "
+           "pipeline).",
+       bounds=(0.0, 1.0), provenance="consumer frozen default", derived_default=_frozen(0.5)),
+    _E("onchip_min_fraction", group="deployment_target", owner="campaign validity gate",
        type=T.FLOAT, category=Category.ADVANCED, label="On-chip Min Fraction",
-       doc="Validity floor on the on-chip compute fraction.", bounds=(0.0, 1.0)),
+       doc="Validity floor on the on-chip compute fraction (read from the DOCUMENT "
+           "by the research campaign scheduler, not by the pipeline).",
+       bounds=(0.0, 1.0), provenance="consumer frozen default", derived_default=_frozen(0.2)),
     _E("capacity_gate", group="deployment_target", owner="certification",
        type=T.BOOL, category=Category.ADVANCED, label="Capacity Gate",
-       doc="Reject configs whose peak-phase footprint exceeds chip capacity."),
+       doc="Reject configs whose peak-phase footprint exceeds chip capacity.",
+       provenance="consumer frozen default", derived_default=_frozen(True)),
 )
