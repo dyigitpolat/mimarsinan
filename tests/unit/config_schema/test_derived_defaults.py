@@ -275,3 +275,16 @@ class TestDerivedDefaultsAgreeWithTheConsumers:
         assert view["nf_scm_parity_samples"] == 2
         assert view["scm_degradation_tolerance"] == 0.15
         assert view["onchip_majority_min_fraction"] == 0.2
+
+
+def test_onchip_threshold_defaults_mirror_the_framework_ssot():
+    """The registry defaults for the mapped-gate thresholds must equal the
+    framework onchip_thresholds SSOT — one source, no cross-module literal drift
+    (the scheduler imports the SAME constants)."""
+    from mimarsinan.mapping.verification.onchip_majority import (
+        DEFAULT_ONCHIP_FLOOR,
+        DEFAULT_ONCHIP_MAJORITY,
+    )
+
+    assert effective_value({}, "onchip_min_fraction") == DEFAULT_ONCHIP_FLOOR
+    assert effective_value({}, "onchip_majority_fraction") == DEFAULT_ONCHIP_MAJORITY

@@ -22,7 +22,9 @@ from mimarsinan.mapping.verification.capacity import (
     PACKER_DIVERGENCE_MARGIN,
     estimate_cores_needed,
 )
-from mimarsinan.mapping.verification.onchip_majority import assert_onchip_majority_or_raise
+from mimarsinan.mapping.verification.onchip_fraction import (
+    assert_onchip_validity_or_raise,
+)
 from mimarsinan.mapping.weight_reuse import (
     format_weight_reuse_summary,
     weight_reuse_plan_from_graph,
@@ -210,8 +212,8 @@ class SoftCoreMappingStep(PipelineStep):
 
         ir_graph = apply_ir_pruning_if_enabled(self, model, ir_graph, _PHASE_TAG)
 
-        with _phase("onchip_majority_gate"):
-            self._run_onchip_majority_gate(model, ir_graph)
+        with _phase("onchip_validity_gate"):
+            self._run_onchip_validity_gate(model, ir_graph)
 
         with _phase("capacity_gate"):
             self._run_capacity_gate(ir_graph, platform_constraints)
@@ -269,23 +271,36 @@ class SoftCoreMappingStep(PipelineStep):
             model.get_perceptrons(), where="SoftCoreMappingStep pre-IR-mapping",
         )
 
-    def _run_onchip_majority_gate(self, model, ir_graph) -> None:
-        """Params-based FLOOR gate: raise only BELOW the on-chip floor; VALID_FLAGGED mappings between floor and 50% majority still deploy."""
-        if not bool(_effective(self.pipeline.config, "onchip_majority_gate")):
+    def _run_onchip_validity_gate(self, model, ir_graph) -> None:
+        """Authoritative tiered validity gate on the mapped IR graph, over BOTH the
+        on-chip PARAMS fraction (counted from the graph) and the on-chip OPS/MAC
+        fraction (the model's forward-MAC share). Raises only when EITHER metric is
+        below the floor (an erroneous host-majority deployment); a mapping between
+        floor and the 50% majority is VALID_FLAGGED and still deploys. The floor is
+        ``onchip_min_fraction`` and the majority ``onchip_majority_fraction``;
+        ``onchip_majority_gate=false`` (or thresholds of 0) is the intentional-offload
+        escape."""
+        config = self.pipeline.config
+        if not bool(_effective(config, "onchip_majority_gate")):
             return
-        total_params = int(sum(p.numel() for p in model.parameters()))
-        breakdown = assert_onchip_majority_or_raise(
+        report = assert_onchip_validity_or_raise(
             ir_graph,
-            total_params=total_params,
-            min_fraction=float(
-                _effective(self.pipeline.config, "onchip_majority_min_fraction")
-            ),
+            model,
+            config["input_shape"],
+            int(config["num_classes"]),
+            encoding_placement=str(config.get("encoding_layer_placement", "subsume")),
+            floor=float(_effective(config, "onchip_min_fraction")),
+            majority=float(_effective(config, "onchip_majority_fraction")),
         )
+        pb = report.param_breakdown
+        flagged = " [FLAGGED: below the on-chip majority]" if report.is_flagged else ""
         print(
-            f"[SoftCoreMappingStep] on-chip parameter majority: "
-            f"{breakdown.fraction:.2%} on chip "
-            f"(on-chip={breakdown.onchip_params}, host={breakdown.host_params}, "
-            f"total={breakdown.total_params})"
+            f"[SoftCoreMappingStep] on-chip validity {report.tier}{flagged}: "
+            f"params {report.param_frac:.2%} "
+            f"(on-chip={pb.onchip_params}, host={pb.host_params}, total={pb.total_params}), "
+            f"ops {report.mac_frac:.2%} "
+            f"(on-chip={report.mac_estimate.onchip}, host={report.mac_estimate.host}, "
+            f"total={report.mac_estimate.total})"
         )
 
     def _run_capacity_gate(self, ir_graph, platform_constraints):

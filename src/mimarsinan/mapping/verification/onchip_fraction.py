@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import cast
 
 import torch
 import torch.nn as nn
@@ -12,7 +11,15 @@ from mimarsinan.mapping.mappers.compute_op_mapper import ComputeOpMapper
 from mimarsinan.mapping.mappers.conv1d_mapper import Conv1DPerceptronMapper
 from mimarsinan.mapping.mappers.conv2d_mapper import Conv2DPerceptronMapper
 from mimarsinan.mapping.mappers.perceptron_mapper import PerceptronMapper
-from mimarsinan.mapping.verification.onchip_majority import OnchipMajorityError
+from mimarsinan.mapping.verification.onchip_majority import (
+    DEFAULT_ONCHIP_FLOOR,
+    DEFAULT_ONCHIP_MAJORITY,
+    OnchipMajorityError,
+    OnchipParamBreakdown,
+    compute_onchip_fraction,
+    module_macs as _module_macs,
+    unwrap_scale_wrapper as _unwrap_module,
+)
 
 _PERCEPTRON_MAPPER_TYPES = (
     PerceptronMapper,
@@ -23,8 +30,8 @@ _PERCEPTRON_MAPPER_TYPES = (
 _VALID_METRICS = ("params", "macs")
 _VALID_PLACEMENTS = ("subsume", "offload")
 
-_DEFAULT_FLOOR = 0.20
-_DEFAULT_MAJORITY = 0.50
+_DEFAULT_FLOOR = DEFAULT_ONCHIP_FLOOR
+_DEFAULT_MAJORITY = DEFAULT_ONCHIP_MAJORITY
 
 TIER_VALID = "VALID"
 TIER_VALID_FLAGGED = "VALID_FLAGGED"
@@ -107,13 +114,6 @@ def _onchip_unit(node):
     return None
 
 
-def _unwrap_module(module):
-    """Peel a ``ScaleNormalizingWrapper`` to reach the wrapped op module."""
-    while _is_scale_wrapper(module):
-        module = module.module
-    return module
-
-
 def _perceptron_op_label(perceptron) -> str:
     layer = getattr(perceptron, "layer", None)
     return type(layer).__name__ if layer is not None else "Perceptron"
@@ -167,6 +167,12 @@ def _module_params(module: nn.Module) -> int:
     return int(sum(p.numel() for p in module.parameters()))
 
 
+def _flow_device(flow) -> torch.device:
+    for p in flow.parameters():
+        return p.device
+    return torch.device("cpu")
+
+
 def _assert_materialized(flow) -> None:
     from torch.nn.parameter import UninitializedParameter
 
@@ -199,82 +205,6 @@ def _params_breakdown(flow):
     return host, total
 
 
-def _linear_macs(in_features: int, out_features: int, n_positions: int) -> int:
-    return int(in_features) * int(out_features) * int(n_positions)
-
-
-def _is_scale_wrapper(module) -> bool:
-    return type(module).__name__ == "ScaleNormalizingWrapper" and hasattr(
-        module, "module"
-    )
-
-
-def _module_macs(module: nn.Module, in_shape, out_shape) -> int:
-    """Estimate forward MACs for a host/on-chip unit from its full I/O tensor shapes.
-
-    Covers Linear, Conv1d/2d, MultiheadAttention and a Perceptron's linear layer;
-    pure element-wise/shape ops carry no MACs.
-    """
-    if _is_scale_wrapper(module):
-        return _module_macs(cast(nn.Module, module.module), in_shape, out_shape)
-
-    layer = getattr(module, "layer", None)
-    if isinstance(layer, nn.Linear):
-        n_positions = _num_positions(in_shape, layer.in_features)
-        return _linear_macs(layer.in_features, layer.out_features, n_positions)
-
-    if isinstance(module, nn.Linear):
-        n_positions = _num_positions(in_shape, module.in_features)
-        return _linear_macs(module.in_features, module.out_features, n_positions)
-
-    if isinstance(module, (nn.Conv1d, nn.Conv2d)):
-        return _conv_macs(module, out_shape)
-
-    if isinstance(module, nn.MultiheadAttention):
-        return _attention_macs(module, in_shape)
-
-    return 0
-
-
-def _num_positions(in_shape, in_features) -> int:
-    if in_shape is None:
-        return 1
-    numel = 1
-    for d in in_shape:
-        numel *= int(d)
-    if in_features and in_features > 0 and numel % in_features == 0:
-        return max(1, numel // int(in_features))
-    return 1
-
-
-def _conv_macs(module, out_shape) -> int:
-    if out_shape is None:
-        return 0
-    out_spatial = 1
-    for d in out_shape[2:]:
-        out_spatial *= int(d)
-    k = 1
-    for d in module.kernel_size:
-        k *= int(d)
-    in_per_group = int(module.in_channels) // int(module.groups)
-    return int(module.out_channels) * out_spatial * in_per_group * k
-
-
-def _attention_macs(module: nn.MultiheadAttention, in_shape) -> int:
-    """QKV + output projections (3·E·E + E·E per position) plus the
-    scores·values double matmul (2·L·E per position) for self-attention."""
-    if in_shape is None:
-        return 0
-    e = int(module.embed_dim)
-    numel = 1
-    for d in in_shape:
-        numel *= int(d)
-    seq = max(1, numel // e) if e > 0 else 1
-    proj_macs = 4 * e * e * seq
-    score_macs = 2 * seq * seq * e
-    return int(proj_macs + score_macs)
-
-
 def _macs_breakdown(flow, input_shape):
     units: dict[int, tuple[nn.Module, bool]] = {}
     for node in _exec_nodes(flow):
@@ -304,8 +234,11 @@ def _macs_breakdown(flow, input_shape):
 
     try:
         flow.eval()
+        # Probe on the flow's own device so the estimator works whether the
+        # caller holds a CPU model spec (scheduler) or a GPU model mid-pipeline.
+        device = _flow_device(flow)
         with torch.no_grad():
-            flow(torch.zeros(1, *tuple(input_shape)))
+            flow(torch.zeros(1, *tuple(input_shape), device=device))
     finally:
         for h in handles:
             h.remove()
@@ -458,4 +391,85 @@ def classify_validity(
         mac_frac=mac_est.fraction,
         research_gap_ops=research_gap_ops,
         placement_fixable_ops=placement_fixable_ops,
+    )
+
+
+@dataclass(frozen=True)
+class OnchipValidityReport:
+    """Tiered validity verdict on a MAPPED IR graph: params from the graph,
+    ops from the model's forward-MAC decomposition, one tier over both."""
+
+    tier: str
+    param_breakdown: OnchipParamBreakdown
+    mac_estimate: OnchipFractionEstimate
+
+    @property
+    def param_frac(self) -> float:
+        return self.param_breakdown.fraction
+
+    @property
+    def mac_frac(self) -> float:
+        return self.mac_estimate.fraction
+
+    @property
+    def is_valid(self) -> bool:
+        return self.tier != TIER_INVALID
+
+    @property
+    def is_flagged(self) -> bool:
+        return self.tier == TIER_VALID_FLAGGED
+
+
+def assert_onchip_validity_or_raise(
+    ir_graph,
+    model,
+    input_shape,
+    num_classes,
+    *,
+    encoding_placement: str = "subsume",
+    floor: float = _DEFAULT_FLOOR,
+    majority: float = _DEFAULT_MAJORITY,
+) -> OnchipValidityReport:
+    """Authoritative tiered gate on a fully-mapped IR graph, over BOTH metrics.
+
+    The params fraction is the on-chip remainder of the mapped ``ir_graph``
+    (``compute_onchip_fraction``); the ops fraction is the model's forward-MAC
+    on-chip share (``estimate_onchip_fraction`` — robust across conv weight-bank
+    reuse and attention, which the raw crossbar count cannot reproduce). A run is
+    INVALID iff EITHER fraction is below ``floor``; the error names which metric
+    and both actual fractions. Between ``floor`` and ``majority`` the run is
+    VALID_FLAGGED (recorded, non-fatal).
+    """
+    total_params = int(sum(p.numel() for p in model.parameters()))
+    param_breakdown = compute_onchip_fraction(ir_graph, total_params=total_params)
+    mac_estimate = estimate_onchip_fraction(
+        model,
+        input_shape,
+        num_classes,
+        encoding_placement=encoding_placement,
+        metric="macs",
+    )
+    param_frac = param_breakdown.fraction
+    mac_frac = mac_estimate.fraction
+    tier = _tier_for(param_frac, mac_frac, floor, majority)
+    if tier == TIER_INVALID:
+        below = []
+        if param_frac < floor:
+            below.append(f"params ({param_frac:.2%})")
+        if mac_frac < floor:
+            below.append(f"ops ({mac_frac:.2%})")
+        raise OnchipMajorityError(
+            "On-chip validity gate: "
+            f"{' and '.join(below)} below the required {floor:.0%} floor "
+            f"(on-chip params {param_frac:.2%}, ops {mac_frac:.2%}). The host "
+            "holds the majority of that metric, so this deployment cannot "
+            "accelerate a significant fraction of the network — an erroneous "
+            "on-chip deployment. Set deployment_parameters.onchip_majority_gate="
+            "false to deploy an intentionally host-offloaded network, or lower "
+            "onchip_min_fraction."
+        )
+    return OnchipValidityReport(
+        tier=tier,
+        param_breakdown=param_breakdown,
+        mac_estimate=mac_estimate,
     )

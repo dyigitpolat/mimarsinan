@@ -397,3 +397,167 @@ class TestTier0MatrixClearsTheStaticFloor:
             encoding_placement=placement, min_fraction=0.2,
         )
         assert est.fraction >= 0.2
+
+
+def _map_to_ir_graph(model, input_shape, num_classes, placement):
+    """Convert + map a model to a fully-mapped IRGraph (the authoritative gate input)."""
+    from mimarsinan.mapping.ir_mapping_class import IRMapping
+    from mimarsinan.mapping.support.per_source_scales import compute_per_source_scales
+    from mimarsinan.torch_mapping.converter import convert_torch_model
+
+    flow = convert_torch_model(
+        model, input_shape, num_classes, encoding_layer_placement=placement
+    )
+    mapper_repr = flow.get_mapper_repr()
+    if hasattr(mapper_repr, "assign_perceptron_indices"):
+        mapper_repr.assign_perceptron_indices()
+    compute_per_source_scales(mapper_repr)
+    irm = IRMapping(
+        q_max=127, firing_mode="Default", max_axons=None, max_neurons=None,
+        allow_coalescing=False, hardware_bias=True,
+    )
+    return flow, irm.map(mapper_repr)
+
+
+# Feed-forward corpus (no attention/sequence gather): the IRGraph host-op count
+# reproduces the forward-based estimator's MAC decomposition exactly.
+_OPS_REPRO_CASES = [
+    ("deep_mlp", {"depth": 8, "width": 64}, (1, 28, 28), 10, "subsume"),
+    ("deep_mlp", {"depth": 8, "width": 64}, (1, 28, 28), 10, "offload"),
+    ("deep_mlp", {"depth": 4, "width": 64}, (1, 28, 28), 10, "subsume"),
+    ("deep_cnn", {"depth": 8, "width": 16}, (1, 28, 28), 10, "subsume"),
+    ("lenet5", {"variant": "lenet5"}, (1, 28, 28), 10, "subsume"),
+    ("lenet5", {"variant": "lenet5"}, (1, 28, 28), 10, "offload"),
+    (
+        "mlp_mixer_core",
+        {
+            "base_activation": "LeakyReLU",
+            "patch_n_1": 4, "patch_m_1": 4, "patch_c_1": 32,
+            "fc_w_1": 64, "fc_w_2": 64, "num_blocks": 2,
+        },
+        (1, 28, 28), 10, "subsume",
+    ),
+]
+
+
+class TestCountHostOpsReproducesEstimator:
+    """The mandate: IRGraph host-op MACs reproduce the static estimator's MAC
+    decomposition, exactly as count_host_params reproduces its param decomposition."""
+
+    @pytest.mark.parametrize(
+        "model_type,model_config,input_shape,num_classes,placement", _OPS_REPRO_CASES,
+    )
+    def test_host_ops_match_the_forward_estimator(
+        self, model_type, model_config, input_shape, num_classes, placement
+    ):
+        from mimarsinan.mapping.verification.onchip_majority import (
+            compute_onchip_ops_fraction,
+            count_host_ops,
+        )
+
+        _flow, ir_graph = _map_to_ir_graph(
+            _build(model_type, model_config, input_shape, num_classes),
+            input_shape, num_classes, placement,
+        )
+        # rebuild fresh — conversion mutates the model in place
+        est = estimate_onchip_fraction(
+            _build(model_type, model_config, input_shape, num_classes),
+            input_shape, num_classes, encoding_placement=placement, metric="macs",
+        )
+        assert count_host_ops(ir_graph) == est.host
+        ops = compute_onchip_ops_fraction(ir_graph, total_ops=est.total)
+        assert ops.host_ops == est.host
+        assert ops.onchip_ops == est.total - est.host
+        assert ops.fraction == pytest.approx(est.fraction)
+
+
+class _MappableHostMajorityModel(nn.Module):
+    """A tiny on-chip middle feeding a huge host classifier readout: an on-chip
+    MINORITY that still maps (>=1 neural core), for the runtime INVALID case."""
+
+    def __init__(self):
+        super().__init__()
+        self.l1 = nn.Linear(28 * 28, 16)
+        self.a1 = nn.ReLU()
+        self.l2 = nn.Linear(16, 16)
+        self.a2 = nn.ReLU()
+        self.head = nn.Linear(16, 4000)
+
+    def forward(self, x):
+        x = torch.flatten(x, 1)
+        x = self.a1(self.l1(x))
+        x = self.a2(self.l2(x))
+        return self.head(x)
+
+
+class TestAssertOnchipValidity:
+    """The authoritative tiered gate over BOTH metrics on a mapped IR graph."""
+
+    def _report(self, model_type, model_config, num_classes, placement):
+        from mimarsinan.mapping.verification.onchip_fraction import (
+            assert_onchip_validity_or_raise,
+        )
+
+        input_shape = (1, 28, 28)
+        flow, ir_graph = _map_to_ir_graph(
+            _build(model_type, model_config, input_shape, num_classes),
+            input_shape, num_classes, placement,
+        )
+        return assert_onchip_validity_or_raise(
+            ir_graph, flow, input_shape, num_classes, encoding_placement=placement
+        )
+
+    def test_onchip_majority_model_is_valid(self):
+        r = self._report("deep_cnn", {"depth": 8, "width": 16}, 10, "subsume")
+        assert r.tier == "VALID"
+        assert min(r.param_frac, r.mac_frac) >= 0.50
+
+    def test_flagged_model_deploys_without_raising(self):
+        r = self._report("deep_mlp", {"depth": 8, "width": 64}, 10, "subsume")
+        assert r.tier == "VALID_FLAGGED"
+        assert min(r.param_frac, r.mac_frac) >= 0.20
+        assert not (r.param_frac >= 0.50 and r.mac_frac >= 0.50)
+
+    def test_host_majority_mapping_raises_naming_both_metrics(self):
+        from mimarsinan.mapping.verification.onchip_fraction import (
+            assert_onchip_validity_or_raise,
+        )
+
+        input_shape, num_classes = (1, 28, 28), 4000
+        flow, ir_graph = _map_to_ir_graph(
+            _MappableHostMajorityModel(), input_shape, num_classes, "subsume"
+        )
+        with pytest.raises(OnchipMajorityError) as exc:
+            assert_onchip_validity_or_raise(
+                ir_graph, flow, input_shape, num_classes, encoding_placement="subsume"
+            )
+        msg = str(exc.value)
+        assert "ops" in msg and "params" in msg
+        assert "floor" in msg
+        assert "%" in msg  # the actual fractions are named
+
+    def test_zero_floor_is_the_documented_offload_escape(self):
+        from mimarsinan.mapping.verification.onchip_fraction import (
+            assert_onchip_validity_or_raise,
+        )
+
+        input_shape, num_classes = (1, 28, 28), 4000
+        flow, ir_graph = _map_to_ir_graph(
+            _MappableHostMajorityModel(), input_shape, num_classes, "subsume"
+        )
+        # thresholds=0 disables enforcement: an intentionally host-offloaded run
+        # deploys instead of raising.
+        r = assert_onchip_validity_or_raise(
+            ir_graph, flow, input_shape, num_classes,
+            encoding_placement="subsume", floor=0.0, majority=0.0,
+        )
+        assert r.tier == "VALID"
+
+    def test_default_thresholds_are_the_framework_ssot(self):
+        from mimarsinan.mapping.verification.onchip_majority import (
+            DEFAULT_ONCHIP_FLOOR,
+            DEFAULT_ONCHIP_MAJORITY,
+        )
+
+        assert DEFAULT_ONCHIP_FLOOR == 0.20
+        assert DEFAULT_ONCHIP_MAJORITY == 0.50

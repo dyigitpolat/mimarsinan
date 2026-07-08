@@ -276,16 +276,21 @@ ENTRIES = (
        type=T.FLOAT, category=Category.ADVANCED, label="On-chip Majority Min Fraction",
        doc="Minimum on-chip fraction for the majority gate.", bounds=(0.0, 1.0),
        provenance="consumer frozen default", derived_default=_frozen(0.2)),
-    _E("onchip_majority_fraction", group="deployment_target", owner="campaign validity gate",
+    _E("onchip_majority_fraction", group="deployment_target", owner="onchip validity gate",
        type=T.FLOAT, category=Category.ADVANCED, label="On-chip Majority Fraction",
-       doc="Declared on-chip fraction the campaign enqueue gate certifies against "
-           "(read from the DOCUMENT by the research campaign scheduler, not by the "
-           "pipeline).",
+       doc="On-chip majority threshold for the mapped-IR-graph validity gate: a "
+           "mapping clearing the floor but below this on either params or ops is "
+           "VALID_FLAGGED (deploys, recorded). The research campaign scheduler "
+           "mirrors the SAME threshold to pre-flag before a GPU is claimed. "
+           "Default is the framework onchip_thresholds SSOT.",
        bounds=(0.0, 1.0), provenance="consumer frozen default", derived_default=_frozen(0.5)),
-    _E("onchip_min_fraction", group="deployment_target", owner="campaign validity gate",
+    _E("onchip_min_fraction", group="deployment_target", owner="onchip validity gate",
        type=T.FLOAT, category=Category.ADVANCED, label="On-chip Min Fraction",
-       doc="Validity floor on the on-chip compute fraction (read from the DOCUMENT "
-           "by the research campaign scheduler, not by the pipeline).",
+       doc="On-chip validity FLOOR for the mapped-IR-graph gate: a deployment whose "
+           "on-chip params OR ops fraction is below this raises (an erroneous "
+           "host-majority deployment). The research campaign scheduler mirrors the "
+           "SAME floor to reject before a GPU is claimed. Default is the framework "
+           "onchip_thresholds SSOT.",
        bounds=(0.0, 1.0), provenance="consumer frozen default", derived_default=_frozen(0.2)),
     _E("capacity_gate", group="deployment_target", owner="certification",
        type=T.BOOL, category=Category.ADVANCED, label="Capacity Gate",

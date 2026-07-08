@@ -15,9 +15,12 @@ import torch.nn as nn
 from mimarsinan.mapping.ir import ComputeOp, IRGraph, IRSource, NeuralCore
 from mimarsinan.mapping.verification.onchip_majority import (
     OnchipMajorityError,
+    OnchipOpsBreakdown,
     OnchipParamBreakdown,
     assert_onchip_majority_or_raise,
     compute_onchip_fraction,
+    compute_onchip_ops_fraction,
+    count_host_ops,
     count_host_params,
 )
 
@@ -41,13 +44,15 @@ def _neural_core(core_id, axons, neurons, *, bias=False):
     )
 
 
-def _compute_op(op_id, module, n_inputs):
+def _compute_op(op_id, module, n_inputs, *, in_shape=None, out_shape=None):
     return ComputeOp(
         id=op_id,
         name=f"op_{op_id}",
         input_sources=_input_sources(n_inputs),
         op_type=type(module).__name__,
         params={"module": module},
+        input_shape=in_shape,
+        output_shape=out_shape,
     )
 
 
@@ -95,6 +100,72 @@ class TestCountHostParams:
         )
         graph = _graph([op, _neural_core(1, 4, 4)])
         assert count_host_params(graph) == 15 + 7
+
+
+class TestCountHostOps:
+    """The forward-MAC sibling of count_host_params on a mapped IR graph."""
+
+    def test_param_free_compute_ops_count_zero(self):
+        graph = _graph(
+            [
+                _neural_core(0, 8, 8),
+                _compute_op(1, nn.ReLU(), 8),
+                _compute_op(2, nn.MaxPool2d(2), 8),
+            ]
+        )
+        assert count_host_ops(graph) == 0
+
+    def test_sums_linear_macs_single_position(self):
+        # Linear(10, 4) applied to a single position: 10*4*1 = 40 host MACs.
+        graph = _graph(
+            [_compute_op(0, nn.Linear(10, 4), 10, in_shape=(10,)), _neural_core(1, 4, 4)]
+        )
+        assert count_host_ops(graph) == 40
+
+    def test_uses_declared_input_shape_for_positions(self):
+        # A Linear(8, 4) fed 3 positions (input_shape numel 24 = 3*8) does
+        # 8*4*3 = 96 MACs — the per-position multiplicity comes from the shape.
+        graph = _graph(
+            [_compute_op(0, nn.Linear(8, 4), 24, in_shape=(3, 8)), _neural_core(1, 4, 4)]
+        )
+        assert count_host_ops(graph) == 96
+
+    def test_dedups_shared_module_instance(self):
+        shared = nn.Linear(10, 4)  # 40 single-position MACs
+        graph = _graph(
+            [
+                _compute_op(0, shared, 10, in_shape=(10,)),
+                _compute_op(1, shared, 10, in_shape=(10,)),
+                _neural_core(2, 4, 4),
+            ]
+        )
+        assert count_host_ops(graph) == 40
+
+
+class TestComputeOnchipOpsFraction:
+    def test_decomposition_is_exact(self):
+        # host Linear(10,4) = 40 MACs; total forward MACs supplied as a model fact.
+        graph = _graph([_neural_core(0, 8, 8), _compute_op(1, nn.Linear(10, 4), 10, in_shape=(10,))])
+        total_ops = 140  # e.g. 100 on-chip crossbar MACs + 40 host
+        b = compute_onchip_ops_fraction(graph, total_ops=total_ops)
+        assert isinstance(b, OnchipOpsBreakdown)
+        assert b.host_ops == 40
+        assert b.onchip_ops == 100
+        assert b.total_ops == total_ops
+        assert b.onchip_ops + b.host_ops == total_ops
+        assert b.fraction == pytest.approx(100 / total_ops)
+
+    def test_onchip_is_total_minus_host_not_physical_core_count(self):
+        # Conv weight-bank reuse replicates one logical matmul across many cores;
+        # on-chip ops must be total - host, never a per-core MAC sum.
+        graph = _graph(
+            [_neural_core(0, 16, 16), _compute_op(1, nn.Linear(4, 2), 4, in_shape=(4,))]
+        )
+        b = compute_onchip_ops_fraction(graph, total_ops=1008)  # 1000 onchip + 8 host
+        assert b.host_ops == 8
+        assert b.onchip_ops == 1000
+        assert b.fraction == pytest.approx(1000 / 1008)
+        assert 0.0 <= b.fraction <= 1.0
 
 
 class TestComputeOnchipFraction:
