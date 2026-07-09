@@ -7,7 +7,7 @@ import os
 import numpy as np
 
 from mimarsinan.mapping.ir import ComputeOp, IRGraph, IRSource, NeuralCore
-from mimarsinan.common.safe_numeric import safe_float
+from mimarsinan.common.presentation import safe_float
 
 from mimarsinan.visualization.graphviz.common import (
     _compress_ranges,

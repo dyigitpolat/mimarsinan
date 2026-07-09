@@ -8,8 +8,8 @@ from typing import Any
 import numpy as np
 
 from mimarsinan.mapping.ir import ComputeOp, IRGraph, IRNode, IRSource, NeuralCore
-from mimarsinan.common.layer_key import layer_key_from_node_name
-from mimarsinan.common.safe_numeric import safe_float
+from mimarsinan.common.presentation import layer_key_from_node_name
+from mimarsinan.common.presentation import safe_float
 
 import re
 

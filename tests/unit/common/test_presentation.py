@@ -1,8 +1,8 @@
-"""safe_float converts or returns default only on conversion errors; others propagate."""
+"""Display/serialization helpers: safe_float conversion and layer grouping keys."""
 
 import pytest
 
-from mimarsinan.common.safe_numeric import safe_float
+from mimarsinan.common.presentation import layer_key_from_node_name, safe_float
 
 
 class TestSafeFloat:
@@ -27,3 +27,17 @@ class TestSafeFloat:
 
         with pytest.raises(RuntimeError, match="backend exploded"):
             safe_float(Exploding())
+
+
+class TestLayerKeyFromNodeName:
+    def test_collapses_conv_position_cores(self):
+        assert layer_key_from_node_name("conv1_pos3_2_g0") == "conv1"
+
+    def test_collapses_fc_tile_cores(self):
+        assert layer_key_from_node_name("fc2_tile_1_0") == "fc2"
+
+    def test_collapses_psum_cores(self):
+        assert layer_key_from_node_name("conv1_psum_0_1") == "conv1"
+
+    def test_plain_names_pass_through(self):
+        assert layer_key_from_node_name("classifier") == "classifier"

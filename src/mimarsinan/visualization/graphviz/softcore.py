@@ -8,7 +8,7 @@ from typing import Any
 import numpy as np
 
 from mimarsinan.code_generation.cpp_chip_model import SpikeSource
-from mimarsinan.common.safe_numeric import safe_float
+from mimarsinan.common.presentation import safe_float
 
 from mimarsinan.visualization.graphviz.common import _percent, _compress_ranges, _truncate, _dot_html_label
 

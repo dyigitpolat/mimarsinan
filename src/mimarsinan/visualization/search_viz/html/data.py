@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Dict, List
 
-from mimarsinan.common.safe_numeric import safe_float
+from mimarsinan.common.presentation import safe_float
 from mimarsinan.visualization.search_viz.series import (
     PENALTY_CUTOFF,
     best_metric_series,

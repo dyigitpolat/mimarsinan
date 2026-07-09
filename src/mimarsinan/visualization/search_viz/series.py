@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Iterable, List, Tuple
 
-from mimarsinan.common.safe_numeric import safe_float
+from mimarsinan.common.presentation import safe_float
 
 PENALTY_CUTOFF = 1e17
 

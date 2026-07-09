@@ -1,8 +1,18 @@
-"""Display/serialization helper: layer grouping key from IR or mapper node names."""
+"""Display/serialization helpers: safe numeric conversion and layer grouping keys."""
 
 from __future__ import annotations
 
 import re
+from typing import Any
+
+
+def safe_float(value: Any, default: float | None = None) -> float | None:
+    """Convert value to float for display/serialization; return default when unconvertible."""
+    try:
+        return float(value)
+    except (ValueError, TypeError, OverflowError, ZeroDivisionError):
+        return default
+
 
 _RE_CONV_POS = re.compile(r"^(.*)_pos\d+_\d+_g\d+$")
 _RE_FC_TILE = re.compile(r"^(.*)_tile_\d+_\d+$")

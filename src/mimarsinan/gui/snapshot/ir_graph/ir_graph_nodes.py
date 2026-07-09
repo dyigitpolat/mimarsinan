@@ -10,7 +10,7 @@ logger = logging.getLogger("mimarsinan.gui")
 
 from mimarsinan.common.best_effort import best_effort
 from mimarsinan.gui.snapshot.util.helpers import _t, _histogram
-from mimarsinan.common.layer_key import layer_key_from_node_name
+from mimarsinan.common.presentation import layer_key_from_node_name
 from mimarsinan.gui.resources import ResourceDescriptor
 from mimarsinan.gui.snapshot.heatmap import (
     _detect_neural_core_liveness,
