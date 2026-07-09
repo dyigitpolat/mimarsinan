@@ -14,6 +14,7 @@ from mimarsinan.common.reporter import DefaultReporter
 from mimarsinan.config_schema.deployment_derivation import (
     enforce_quantization_assembly_contract,
 )
+from mimarsinan.data_handling.data_loader_factory import close_pipeline_loaders
 from mimarsinan.data_handling.data_provider_factory import BasicDataProviderFactory
 from mimarsinan.gui.runtime.composite_reporter import CompositeReporter
 from mimarsinan.pipelining.core.pipelines.deployment_pipeline import DeploymentPipeline
@@ -161,3 +162,4 @@ class PipelineSession:
     def finish(self) -> None:
         with best_effort("reporter finish"):
             self.reporter.finish()
+        close_pipeline_loaders(self.pipeline)

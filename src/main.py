@@ -41,7 +41,8 @@ def run_pipeline_from_config(deployment_config, collector, gui_port=8501):
             session.finish()
             collector.set_pipeline_thread(None)
 
-    thread = threading.Thread(target=_run, daemon=False, name="pipeline-run")
+    # Daemon: the CLI epilogue's bounded join must be able to give up and exit.
+    thread = threading.Thread(target=_run, daemon=True, name="pipeline-run")
     collector.set_pipeline_thread(thread)
     thread.start()
 
@@ -70,7 +71,7 @@ def main():
     session.run()
     session.finish()
 
-    if gui is not None:
+    if gui is not None and sys.stdin.isatty():
         print("\n────────────────────────────────────────")
         print("Pipeline complete. GUI server still running.")
         print("Press Enter to exit and close the GUI...")

@@ -1,4 +1,3 @@
-import atexit
 import multiprocessing as _mp
 import os
 import sys
@@ -49,20 +48,6 @@ def _resource_snapshot(tag):
         )
 
 
-def _unregister_dataloader_atexit_handlers(it):
-    """Unregister PyTorch's per-worker atexit cleanup callbacks for fast, quiet exit.
-
-    Best-effort: never raises.
-    """
-    with best_effort("unregister dataloader atexit handlers"):
-        workers = getattr(it, "_workers", None)
-        if not workers:
-            return
-        from torch.utils.data.dataloader import _MultiProcessingDataLoaderIter
-        cleanup_func = _MultiProcessingDataLoaderIter._clean_up_worker
-        atexit.unregister(cleanup_func)
-
-
 def shutdown_data_loader(loader):
     """Shut down a multi-worker DataLoader's workers/queues before process exit.
 
@@ -77,10 +62,23 @@ def shutdown_data_loader(loader):
         it = getattr(loader, "_iterator", None)
         if it is not None and hasattr(it, "_shutdown_workers"):
             it._shutdown_workers()
-            _unregister_dataloader_atexit_handlers(it)
         if hasattr(loader, "_iterator"):
             loader._iterator = None
     _resource_snapshot("shutdown:exit")
+
+
+def close_pipeline_loaders(pipeline) -> None:
+    """Close the pipeline's pooled loaders (and their worker processes), if any.
+
+    Idempotent and best-effort: never raises.
+    """
+    if pipeline is None:
+        return
+    factory = getattr(pipeline, DataLoaderFactory._PIPELINE_ATTR, None)
+    if factory is None:
+        return
+    with best_effort("close pooled data loaders"):
+        factory.close_cached_loaders()
 
 
 class DataLoaderFactory:

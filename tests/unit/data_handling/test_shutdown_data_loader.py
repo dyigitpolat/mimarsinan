@@ -6,7 +6,6 @@ import pytest
 
 from mimarsinan.data_handling.data_loader_factory import (
     DataLoaderFactory,
-    _unregister_dataloader_atexit_handlers,
     shutdown_data_loader,
 )
 
@@ -64,16 +63,6 @@ class TestShutdownDegradesViaBestEffort:
         with caplog.at_level(logging.DEBUG, logger="mimarsinan.best_effort"):
             shutdown_data_loader(FakeLoader())
         assert any("shutdown" in r.getMessage() for r in caplog.records)
-
-    def test_unregister_with_exploding_iterator_degrades_and_logs(self, caplog):
-        class Weird:
-            @property
-            def _workers(self):
-                raise RuntimeError("boom")
-
-        with caplog.at_level(logging.DEBUG, logger="mimarsinan.best_effort"):
-            _unregister_dataloader_atexit_handlers(Weird())
-        assert any("atexit" in r.getMessage() for r in caplog.records)
 
     def test_resource_snapshot_reads_env_at_call_time(self, monkeypatch, capsys):
         import mimarsinan.data_handling.data_loader_factory as dlf_mod

@@ -27,6 +27,7 @@ def _run_headless(config_path: str) -> None:
     import signal
 
     from mimarsinan.common.best_effort import best_effort
+    from mimarsinan.common.process_tree import reap_descendants
     from mimarsinan.gui import GUIHandle, backfill_skipped_steps, to_json_safe
     from mimarsinan.gui.resources import ResourceStore
     from mimarsinan.gui.runtime.collector import DataCollector
@@ -45,6 +46,8 @@ def _run_headless(config_path: str) -> None:
     def _sigterm_handler(_signum, _frame):
         with best_effort("record stopped status"):
             update_run_status(working_dir, "stopped")
+        with best_effort("reap child processes"):
+            reap_descendants(term_grace_s=2.0)
         os._exit(143)
 
     signal.signal(signal.SIGTERM, _sigterm_handler)
@@ -96,7 +99,23 @@ def _run_headless(config_path: str) -> None:
             gui.shutdown()
         with best_effort("restore stdio streams"):
             gui.restore_streams()
+        # Leftover forkserver/dataloader processes inherit our stdout/stderr;
+        # they must die before exit or pipe-EOF waiters (run_tier, sbatch) hang.
+        with best_effort("reap child processes"):
+            reap_descendants(term_grace_s=5.0)
         os._exit(exit_code)
+
+
+def _prompt_exit(code: int) -> None:
+    """Kill leftover worker processes, then hard-exit so pipe waiters see EOF."""
+    from mimarsinan.common.best_effort import best_effort
+    from mimarsinan.common.process_tree import reap_descendants
+
+    sys.stdout.flush()
+    sys.stderr.flush()
+    with best_effort("reap child processes"):
+        reap_descendants(term_grace_s=5.0)
+    os._exit(code)
 
 
 if __name__ == "__main__":
@@ -114,7 +133,9 @@ if __name__ == "__main__":
         finally:
             if not collector.join_pipeline_thread(timeout=60.0):
                 print("Pipeline still running; exiting after timeout.")
+            _prompt_exit(0)
     elif len(sys.argv) >= 3 and sys.argv[1] == "--headless":
         _run_headless(sys.argv[2])
     else:
         main()
+        _prompt_exit(0)
