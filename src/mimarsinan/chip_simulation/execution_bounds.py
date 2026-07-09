@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import multiprocessing
 import os
 import signal
 import threading
@@ -12,6 +13,10 @@ from typing import Any, Callable, Dict, Mapping, Tuple, TypeVar
 from mimarsinan.common.env import simulation_step_timeout_override
 
 DEFAULT_SIMULATION_STEP_TIMEOUT_S = 900.0
+
+# Pool workers must not FORK the parent: a run's main process carries live CUDA
+# and OpenMP state by simulation time, and forked children crash abruptly on it.
+_POOL_MP_CONTEXT = multiprocessing.get_context("spawn")
 
 R = TypeVar("R")
 K = TypeVar("K")
@@ -140,6 +145,7 @@ def run_tasks_in_pool_bounded(
         executor = ProcessPoolExecutor(
             max_workers=max(1, min(max_workers, len(pending))),
             initializer=os.setpgrp,
+            mp_context=_POOL_MP_CONTEXT,
         )
         futures: Dict["Future[R]", K] = {
             executor.submit(fn, *args): key for key, args in pending.items()

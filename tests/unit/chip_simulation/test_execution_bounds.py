@@ -219,15 +219,16 @@ class TestPoolBounded:
         marker = tmp_path / "marker"
         marker.touch()
         t0 = time.monotonic()
+        # The cap must outlive spawn-worker startup so the stuck tasks get marked.
         with pytest.raises(SimulationTimeoutError, match="twice"):
             run_tasks_in_pool_bounded(
                 _mark_and_sleep,
-                {0: (str(marker), 0, 60.0), 1: (str(marker), 1, 60.0)},
+                {0: (str(marker), 0, 300.0), 1: (str(marker), 1, 300.0)},
                 max_workers=2,
-                timeout_s=0.75,
+                timeout_s=8.0,
                 description="stuck pool",
             )
-        assert time.monotonic() - t0 < 30.0
+        assert time.monotonic() - t0 < 60.0
         entries = _read_marker(marker)
         # Two tasks x (initial + one retry) = four launches.
         assert sorted(k for k, _ in entries) == [0, 0, 1, 1]
@@ -240,9 +241,9 @@ class TestPoolBounded:
         with pytest.raises(SimulationTimeoutError):
             run_tasks_in_pool_bounded(
                 _mark_and_sleep,
-                {"fast": (str(marker), 7, 0.0), "stuck": (str(marker), 8, 60.0)},
+                {"fast": (str(marker), 7, 0.0), "stuck": (str(marker), 8, 300.0)},
                 max_workers=2,
-                timeout_s=1.0,
+                timeout_s=8.0,
                 description="partial pool",
             )
         keys = sorted(k for k, _ in _read_marker(marker))
@@ -259,6 +260,25 @@ class TestPoolBounded:
                 timeout_s=60.0,
                 description="boom pool",
             )
+
+    def test_pool_workers_never_fork_the_dirty_parent(self):
+        """Workers must start via spawn: forked children inherit the parent's
+        CUDA context and OpenMP state and die abruptly on large segments."""
+        from mimarsinan.chip_simulation import execution_bounds
+
+        method = execution_bounds._POOL_MP_CONTEXT.get_start_method()
+        assert method == "spawn"
+
+    def test_pool_runs_under_spawn_context(self):
+        """End-to-end: results still come back under the spawn start method."""
+        results = run_tasks_in_pool_bounded(
+            _echo_args,
+            {0: ("spawned", 1)},
+            max_workers=1,
+            timeout_s=120.0,
+            description="spawn echo pool",
+        )
+        assert results == {0: ("spawned", 1)}
 
 
 # ---------------------------------------------------------------------------
