@@ -30,6 +30,8 @@ class SpikingDeploymentContract:
     ttfs_cycle_schedule: str
     encoding_layer_placement: str
     bias_mode: str
+    # Ops bound, not semantics: the wall cap simulator backends run under.
+    simulation_step_timeout_s: float | None = None
 
     @property
     def spiking_mode(self) -> str:
@@ -57,6 +59,7 @@ class SpikingDeploymentContract:
             resolve_bias_mode,
         )
 
+        timeout = cfg.get("simulation_step_timeout_s")
         return cls(
             behavior=NeuralBehaviorConfig.from_deployment_config(cfg),
             simulation_steps=int(cfg["simulation_steps"]),
@@ -65,6 +68,7 @@ class SpikingDeploymentContract:
                 cfg.get("encoding_layer_placement", "subsume")
             ),
             bias_mode=resolve_bias_mode(cfg),
+            simulation_step_timeout_s=float(timeout) if timeout is not None else None,
         )
 
     def is_synchronized(self, *, core: Any = None) -> bool:

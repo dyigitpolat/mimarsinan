@@ -7,6 +7,7 @@ from typing import Any, Dict, Optional
 import numpy as np
 
 from mimarsinan.chip_simulation.behavior_config import NeuralBehaviorConfig
+from mimarsinan.chip_simulation.execution_bounds import resolve_simulation_step_timeout_s
 from mimarsinan.chip_simulation.sanafe.runner.neural_stage import SanafeNeuralStageMixin
 from mimarsinan.chip_simulation.sanafe.runner.neural_stage_record import SanafeNeuralStageRecordMixin
 from mimarsinan.chip_simulation.sanafe.runner.segment_io import SanafeSegmentIOMixin
@@ -41,10 +42,15 @@ class SanafeRunner(SanafeNeuralStageMixin, SanafeNeuralStageRecordMixin, SanafeS
         log_potential_trace: bool = False,
         log_message_trace: bool = True,
         cores_per_tile: int = 0,
+        simulation_step_timeout_s: float | None = None,
     ):
         if contract is not None:
             behavior = contract.behavior
             ttfs_cycle_schedule = contract.ttfs_cycle_schedule
+            # getattr: tolerate contracts pickled before this field existed.
+            contract_timeout = getattr(contract, "simulation_step_timeout_s", None)
+            if contract_timeout is not None:
+                simulation_step_timeout_s = contract_timeout
         if behavior is None:
             behavior = NeuralBehaviorConfig(
                 spiking_mode=str(spiking_mode),
@@ -79,6 +85,9 @@ class SanafeRunner(SanafeNeuralStageMixin, SanafeNeuralStageRecordMixin, SanafeS
         self.log_potential_trace = log_potential_trace
         self.log_message_trace = log_message_trace
         self.cores_per_tile = cores_per_tile
+        self._sim_timeout_s = resolve_simulation_step_timeout_s(
+            simulation_step_timeout_s
+        )
 
         self._arch: Optional[Any] = None
         self._arch_built_for_T: Optional[int] = None

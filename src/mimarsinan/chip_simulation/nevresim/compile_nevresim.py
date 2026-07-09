@@ -4,6 +4,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, overload
 
+from mimarsinan.chip_simulation.execution_bounds import (
+    SimulationTimeoutError,
+    kill_process_group,
+    resolve_simulation_step_timeout_s,
+    retry_once_on_timeout,
+)
 from mimarsinan.common.file_utils import prepare_containing_directory
 from mimarsinan.common.build_utils import find_cpp20_compiler
 
@@ -18,6 +24,24 @@ class CompileResult:
     trace_json: str | None = None
 
 
+def _run_compiler_bounded(cmd: list[str], timeout_s: float) -> int:
+    """Run the compiler under the wall cap: kill its process group on expiry, retry once, then fail loud."""
+
+    def attempt(_attempt_index: int) -> int:
+        proc = subprocess.Popen(cmd, start_new_session=True)
+        try:
+            return proc.wait(timeout=timeout_s)
+        except subprocess.TimeoutExpired:
+            kill_process_group(proc.pid)
+            proc.wait(timeout=10.0)
+            raise SimulationTimeoutError(
+                f"nevresim compile exceeded the {timeout_s:.0f}s wall cap "
+                f"({cmd[0]}); killed the compiler process group"
+            ) from None
+
+    return retry_once_on_timeout(attempt, description="nevresim compile")
+
+
 @overload
 def compile_simulator(
     generated_files_path,
@@ -30,6 +54,7 @@ def compile_simulator(
     trace_output_dir: str | Path | None = None,
     extra_flags: list[str] | None = None,
     return_timing: Literal[False] = False,
+    timeout_s: float | None = None,
 ) -> str | None: ...
 
 
@@ -45,6 +70,7 @@ def compile_simulator(
     trace_output_dir: str | Path | None = None,
     extra_flags: list[str] | None = None,
     return_timing: bool = False,
+    timeout_s: float | None = None,
 ) -> CompileResult | str | None: ...
 
 
@@ -59,8 +85,9 @@ def compile_simulator(
     trace_output_dir: str | Path | None = None,
     extra_flags: list[str] | None = None,
     return_timing: bool = False,
+    timeout_s: float | None = None,
 ) -> CompileResult | str | None:
-    """Compile the nevresim simulator.
+    """Compile the nevresim simulator under the resolved wall cap.
 
     Returns CompileResult when *return_timing* or *time_trace* is set;
     otherwise returns binary path string or None for backward compatibility.
@@ -110,8 +137,7 @@ def compile_simulator(
     cmd += ["-o", simulator_filename]
 
     t0 = time.perf_counter()
-    p = subprocess.Popen(cmd)
-    rc = p.wait()
+    rc = _run_compiler_bounded(cmd, resolve_simulation_step_timeout_s(timeout_s))
     compile_s = time.perf_counter() - t0
     success = rc == 0
 

@@ -33,6 +33,7 @@ from mimarsinan.chip_simulation.sanafe.analysis import (
 )
 from mimarsinan.chip_simulation.sanafe.net_synth import apply_ttfs_preset_membranes
 from mimarsinan.chip_simulation.sanafe.records import SanafeSegmentRecord
+from mimarsinan.chip_simulation.sanafe.runner.bounded_sim import simulate_chip_bounded
 from mimarsinan.mapping.latency.chip import ChipLatency
 
 from .constants import _COMPUTE_DTYPE
@@ -46,6 +47,7 @@ class SanafeNeuralStageMixin:
         # sibling mixins (declaration-only; no runtime effect).
         _arch: Any
         _behavior: NeuralBehaviorConfig
+        _sim_timeout_s: float
         mapping: Any
         T: int
         cores_per_tile: int
@@ -223,14 +225,13 @@ class SanafeNeuralStageMixin:
             core_latencies=core_latencies,
         )
 
-        chip = sanafe.SpikingChip(self._arch)
-        chip.load(net)
         need_potential_trace = is_ttfs or self.log_potential_trace
-        results = chip.sim(
-            T_eff,
+        chip, results = simulate_chip_bounded(
+            sanafe, self._arch, net, T_eff,
             spike_trace=True,
             potential_trace=need_potential_trace,
             message_trace=self.log_message_trace,
+            timeout_s=self._sim_timeout_s,
         )
         self._last_chip = chip
 

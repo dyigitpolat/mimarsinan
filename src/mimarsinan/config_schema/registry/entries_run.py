@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from mimarsinan.chip_simulation.execution_bounds import DEFAULT_SIMULATION_STEP_TIMEOUT_S
 from mimarsinan.config_schema.registry.types import (
     Category,
     ConfigKeySchema as _E,
@@ -65,6 +66,15 @@ ENTRIES = (
        doc="torch DataLoader worker process count.", bounds=(0, None),
        provenance="consumer frozen default", derived_default=_frozen(4),
        empty_means="the DataLoaderFactory frozen worker count (4)"),
+    _E("simulation_step_timeout_s", group="deployment_target",
+       owner="chip_simulation/execution_bounds",
+       type=T.FLOAT, category=Category.ADVANCED, label="Simulation Step Timeout (s)",
+       doc="Wall cap in seconds for one external-simulator invocation (nevresim "
+           "compile/execute, the segment emit+compile pool, SANA-FE chip.sim); a "
+           "hung invocation is killed, retried once, then the step fails loud.",
+       bounds=(1.0, None), provenance="consumer frozen default",
+       derived_default=_frozen(DEFAULT_SIMULATION_STEP_TIMEOUT_S),
+       empty_means="900 s per external-simulator invocation"),
     # Runtime-resolved keys: never declared in a config document; schema-known
     # so run views can label them instead of dropping them.
     _E("device", section="top", group="run", owner="DeploymentPipeline/select_device",

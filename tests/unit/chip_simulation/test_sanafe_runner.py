@@ -344,6 +344,52 @@ def test_runner_rejects_unknown_arch_preset():
                      arch_preset="silicon-dreams")
 
 
+def test_runner_sim_wall_cap_defaults_to_900s(monkeypatch):
+    from mimarsinan.common.env import SIMULATION_STEP_TIMEOUT_VAR
+
+    monkeypatch.delenv(SIMULATION_STEP_TIMEOUT_VAR, raising=False)
+    mapping = _fake_mapping(_fake_stage("neural", hcm=_fake_hcm(_fake_hard_core())))
+    runner = SanafeRunner(mapping=mapping, simulation_length=8)
+    assert runner._sim_timeout_s == 900.0
+
+
+def test_runner_sim_wall_cap_honors_ctor_value_and_env_override(monkeypatch):
+    from mimarsinan.common.env import SIMULATION_STEP_TIMEOUT_VAR
+
+    mapping = _fake_mapping(_fake_stage("neural", hcm=_fake_hcm(_fake_hard_core())))
+    monkeypatch.delenv(SIMULATION_STEP_TIMEOUT_VAR, raising=False)
+    runner = SanafeRunner(
+        mapping=mapping, simulation_length=8, simulation_step_timeout_s=123.0,
+    )
+    assert runner._sim_timeout_s == 123.0
+
+    monkeypatch.setenv(SIMULATION_STEP_TIMEOUT_VAR, "77")
+    runner = SanafeRunner(
+        mapping=mapping, simulation_length=8, simulation_step_timeout_s=123.0,
+    )
+    assert runner._sim_timeout_s == 77.0
+
+
+def test_runner_sim_wall_cap_comes_from_the_contract(monkeypatch):
+    from mimarsinan.chip_simulation.deployment_contract import (
+        SpikingDeploymentContract,
+    )
+    from mimarsinan.common.env import SIMULATION_STEP_TIMEOUT_VAR
+
+    monkeypatch.delenv(SIMULATION_STEP_TIMEOUT_VAR, raising=False)
+    contract = SpikingDeploymentContract.from_pipeline_config({
+        "spiking_mode": "lif",
+        "firing_mode": "Default",
+        "thresholding_mode": "<=",
+        "spike_generation_mode": "Uniform",
+        "simulation_steps": 8,
+        "simulation_step_timeout_s": 240,
+    })
+    mapping = _fake_mapping(_fake_stage("neural", hcm=_fake_hcm(_fake_hard_core())))
+    runner = SanafeRunner(mapping=mapping, simulation_length=8, contract=contract)
+    assert runner._sim_timeout_s == 240.0
+
+
 # ---------------------------------------------------------------------------
 # Single neural stage
 # ---------------------------------------------------------------------------

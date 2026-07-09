@@ -36,9 +36,11 @@ class NevresimDriver:
         threshold_type=None, verbose=True,
         connectivity_mode: ConnectivityMode | None = None,
         compile_cache_dir: str | None = None,
+        simulation_step_timeout_s: float | None = None,
     ):
         assert NevresimDriver.nevresim_path is not None, "nevresim path is not set."
 
+        self.simulation_step_timeout_s = simulation_step_timeout_s
         self.spike_generation_mode = spike_generation_mode
         self.firing_mode = firing_mode
         self.thresholding_mode = thresholding_mode
@@ -175,7 +177,9 @@ class NevresimDriver:
 
         self.emit_main(max_input_count, simulation_length, latency)
         simulator_filename = compile_simulator(
-            self.generated_files_path, NevresimDriver.nevresim_path, output_path=output_path
+            self.generated_files_path, NevresimDriver.nevresim_path,
+            output_path=output_path,
+            timeout_s=self.simulation_step_timeout_s,
         )
         if simulator_filename is None:
             raise Exception("Compilation failed.")
@@ -206,6 +210,7 @@ class NevresimDriver:
             spike_generation_mode=self.spike_generation_mode,
             max_input_count=max_input_count,
             num_proc=num_proc,
+            timeout_s=self.simulation_step_timeout_s,
         )
         return raw.reshape(-1).tolist(), max_input_count
 
@@ -232,6 +237,7 @@ class NevresimDriver:
             self.generated_files_path, NevresimDriver.nevresim_path,
             output_path=output_path, verbose=False,
             extra_flags=["-DNEVRESIM_RECORD_SPIKES"],
+            timeout_s=self.simulation_step_timeout_s,
         )
         if binary is None:
             raise Exception("Recording-build compilation failed.")
@@ -260,6 +266,7 @@ class NevresimDriver:
             max_input_count=max_input_count,
             num_proc=num_proc,
             record_spikes=True,
+            timeout_s=self.simulation_step_timeout_s,
         )
         return raw, spike_records
 

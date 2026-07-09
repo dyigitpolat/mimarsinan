@@ -1,6 +1,15 @@
+"""Bounded multi-process execution of a compiled nevresim binary."""
+
 import os
 import subprocess
 import time
+
+from mimarsinan.chip_simulation.execution_bounds import (
+    SimulationTimeoutError,
+    kill_process_group,
+    resolve_simulation_step_timeout_s,
+    retry_once_on_timeout,
+)
 
 
 def _parse_stdout_tokens(stdout: str) -> list[float]:
@@ -34,31 +43,10 @@ def parse_spike_records(stderr: str) -> list[dict[int, dict[str, list[int]]]]:
     return samples
 
 
-def execute_simulator(
-    simulator_filename,
-    input_count,
-    num_proc=0,
-    *,
-    expected_values: int | None = None,
-    record_spikes: bool = False,
-):
-    """Run the nevresim binary across ``num_proc`` workers (0 ⇒ ``cpu_count() // 2``).
-
-    Stdout protocol: per sample in ``[start, end)``, ``output_size`` whitespace-
-    separated numbers then a newline; a mismatch vs ``expected_values`` raises."""
-    if num_proc <= 0:
-        num_proc = max(1, (os.cpu_count() or 2) // 2)
-    num_proc = min(num_proc, input_count) if input_count > 0 else 1
-    print(f"Executing simulator ({num_proc} processes)...")
-
-    start_time = time.time()
-
-    executable = (
-        simulator_filename
-        if os.path.isabs(simulator_filename)
-        else "./{}".format(simulator_filename)
-    )
-
+def _launch_workers(
+    executable: str, input_count: int, num_proc: int,
+) -> list[tuple[int, int, subprocess.Popen]]:
+    """Spawn one simulator process per sample range, each in its own process group."""
     workers: list[tuple[int, int, subprocess.Popen]] = []
     for i in range(num_proc):
         start = i * input_count // num_proc
@@ -72,14 +60,45 @@ def execute_simulator(
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            start_new_session=True,
         )
         workers.append((start, end, proc))
+    return workers
 
+
+def _reap_workers(workers: list[tuple[int, int, subprocess.Popen]]) -> None:
+    """Kill every worker's process group and drain/close its pipes."""
+    for _start, _end, proc in workers:
+        kill_process_group(proc.pid)
+    for _start, _end, proc in workers:
+        try:
+            proc.communicate(timeout=10.0)
+        except subprocess.TimeoutExpired:
+            pass
+
+
+def _collect_worker_outputs(
+    workers: list[tuple[int, int, subprocess.Popen]],
+    *,
+    deadline: float,
+    timeout_s: float,
+    record_spikes: bool,
+) -> tuple[list[float], list[dict]]:
     output_values: list[float] = []
     spike_records: list[dict] = []
     for start, end, proc in workers:
-        stdout, stderr = proc.communicate()
+        remaining = deadline - time.monotonic()
+        try:
+            stdout, stderr = proc.communicate(timeout=max(remaining, 0.001))
+        except subprocess.TimeoutExpired:
+            _reap_workers(workers)
+            raise SimulationTimeoutError(
+                f"nevresim simulator exceeded the {timeout_s:.0f}s wall cap "
+                f"waiting on samples [{start}, {end}); "
+                f"killed {len(workers)} worker(s)"
+            ) from None
         if proc.returncode != 0:
+            _reap_workers(workers)
             err = (stderr or "").strip()
             raise RuntimeError(
                 f"nevresim simulator failed for samples [{start}, {end}) "
@@ -89,6 +108,51 @@ def execute_simulator(
         output_values.extend(_parse_stdout_tokens(stdout))
         if record_spikes:
             spike_records.extend(parse_spike_records(stderr))
+    return output_values, spike_records
+
+
+def execute_simulator(
+    simulator_filename,
+    input_count,
+    num_proc=0,
+    *,
+    expected_values: int | None = None,
+    record_spikes: bool = False,
+    timeout_s: float | None = None,
+):
+    """Run the nevresim binary across ``num_proc`` workers (0 ⇒ ``cpu_count() // 2``).
+
+    Stdout protocol: per sample in ``[start, end)``, ``output_size`` whitespace-
+    separated numbers then a newline; a mismatch vs ``expected_values`` raises.
+    The whole worker batch runs under one wall cap (``timeout_s``, else the
+    resolved step timeout): on expiry the workers' process groups are killed
+    and the batch retries once before failing loud."""
+    if num_proc <= 0:
+        num_proc = max(1, (os.cpu_count() or 2) // 2)
+    num_proc = min(num_proc, input_count) if input_count > 0 else 1
+    print(f"Executing simulator ({num_proc} processes)...")
+
+    start_time = time.time()
+
+    executable = (
+        simulator_filename
+        if os.path.isabs(simulator_filename)
+        else "./{}".format(simulator_filename)
+    )
+    cap = resolve_simulation_step_timeout_s(timeout_s)
+
+    def attempt(_attempt_index: int) -> tuple[list[float], list[dict]]:
+        workers = _launch_workers(executable, input_count, num_proc)
+        return _collect_worker_outputs(
+            workers,
+            deadline=time.monotonic() + cap,
+            timeout_s=cap,
+            record_spikes=record_spikes,
+        )
+
+    output_values, spike_records = retry_once_on_timeout(
+        attempt, description=f"nevresim execute ({executable})",
+    )
 
     end_time = time.time()
     print("  Simulation time:", end_time - start_time)

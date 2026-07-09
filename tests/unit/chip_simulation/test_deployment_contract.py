@@ -62,6 +62,16 @@ class TestFactory:
         with pytest.raises(KeyError):
             SpikingDeploymentContract.from_pipeline_config(cfg)
 
+    def test_simulation_step_timeout_defaults_to_unset(self):
+        contract = SpikingDeploymentContract.from_pipeline_config(_cfg())
+        assert contract.simulation_step_timeout_s is None
+
+    def test_simulation_step_timeout_carries_the_config_value(self):
+        contract = SpikingDeploymentContract.from_pipeline_config(
+            _cfg(simulation_step_timeout_s=300)
+        )
+        assert contract.simulation_step_timeout_s == 300.0
+
 
 class TestDerivedGettersTruthTable:
     """The D4 kill-lock: one expected answer per (mode × schedule)."""

@@ -5,6 +5,7 @@ from __future__ import annotations
 import numpy as np
 import torch.nn as nn
 
+from mimarsinan.chip_simulation.execution_bounds import resolve_simulation_step_timeout_s
 from mimarsinan.chip_simulation.subsample import compute_test_subsample_indices
 from mimarsinan.chip_simulation.nevresim.connectivity import resolve_nevresim_connectivity_mode
 from mimarsinan.chip_simulation.spiking_semantics import requires_ttfs_firing
@@ -24,6 +25,9 @@ class SimulationRunner(SimulationFlatMixin, SimulationHybridMixin):
         self.thresholding_mode = pipeline.config.get("thresholding_mode", "<=")
         self.spiking_mode = plan.spiking_mode
         self.nevresim_connectivity_mode = resolve_nevresim_connectivity_mode(pipeline.config)
+        self.simulation_step_timeout_s = resolve_simulation_step_timeout_s(
+            pipeline.config.get("simulation_step_timeout_s")
+        )
 
         # Deliberately not routed through DeploymentPlan: this runner keeps the legacy weight_quantization default of True, which diverges from the plan's False default for a config that omits the key.
         wt_q = pipeline.config.get("weight_quantization", True)

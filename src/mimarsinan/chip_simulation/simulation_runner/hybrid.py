@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import os
-from concurrent.futures import ProcessPoolExecutor, as_completed
 from typing import Dict, List, Tuple
 
 import numpy as np
 import torch
 
+from mimarsinan.chip_simulation.execution_bounds import run_tasks_in_pool_bounded
 from mimarsinan.mapping.ir import ComputeOp
 from mimarsinan.mapping.latency.chip import ChipLatency
 from mimarsinan.mapping.packing.hybrid_hardcore_mapping import HybridHardCoreMapping, SegmentIOSlice
@@ -93,32 +93,35 @@ class SimulationHybridMixin(SimulationHostContract):
         assert nevresim_path is not None
         sim_length = int(self.simulation_length)
 
-        prepared: Dict[int, _PreparedSegment] = {}
         if num_segs == 0:
-            return prepared
+            return {}
 
         max_workers = min(num_segs, max(1, (os.cpu_count() or 2) // 2))
-        with ProcessPoolExecutor(max_workers=max_workers) as executor:
-            futures = [
-                executor.submit(
-                    _emit_and_compile_segment,
-                    seg_idx, seg_dir, seg_mapping, input_size, latency,
-                    self.weight_type,
-                    self.threshold_type,
-                    self.spike_generation_mode,
-                    self.firing_mode,
-                    self.thresholding_mode,
-                    self.spiking_mode,
-                    num_samples,
-                    sim_length,
-                    nevresim_path,
-                    self.nevresim_connectivity_mode,
-                )
-                for seg_idx, seg_dir, seg_mapping, input_size, latency in segment_specs
-            ]
-            for future in as_completed(futures):
-                seg = future.result()
-                prepared[seg.seg_idx] = seg
+        timeout_s = self.simulation_step_timeout_s
+        task_args = {
+            seg_idx: (
+                seg_idx, seg_dir, seg_mapping, input_size, latency,
+                self.weight_type,
+                self.threshold_type,
+                self.spike_generation_mode,
+                self.firing_mode,
+                self.thresholding_mode,
+                self.spiking_mode,
+                num_samples,
+                sim_length,
+                nevresim_path,
+                self.nevresim_connectivity_mode,
+                timeout_s,
+            )
+            for seg_idx, seg_dir, seg_mapping, input_size, latency in segment_specs
+        }
+        prepared: Dict[int, _PreparedSegment] = run_tasks_in_pool_bounded(
+            _emit_and_compile_segment,
+            task_args,
+            max_workers=max_workers,
+            timeout_s=timeout_s,
+            description="nevresim segment emit+compile pool",
+        )
 
         print(f"  All {num_segs} segment(s) ready")
         return prepared
@@ -145,6 +148,7 @@ class SimulationHybridMixin(SimulationHostContract):
             spike_generation_mode=self.spike_generation_mode,
             max_input_count=max_input_count,
             num_proc=num_proc,
+            timeout_s=self.simulation_step_timeout_s,
         )
 
     def _run_neural_segment(
@@ -172,6 +176,7 @@ class SimulationHybridMixin(SimulationHostContract):
             spiking_mode=self.spiking_mode,
             threshold_type=self.threshold_type,
             connectivity_mode=self.nevresim_connectivity_mode,
+            simulation_step_timeout_s=self.simulation_step_timeout_s,
         )
         return driver.predict_spiking_raw(
             input_data,

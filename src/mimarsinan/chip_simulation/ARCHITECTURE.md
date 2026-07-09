@@ -24,6 +24,7 @@ Pareto decision layer.
 | `cross_sim_parity.py` | Cross-simulator parity screen recording measured per-(cell, backend-pair) equivalence (AGREE/DISAGREE/INAPPLICABLE) |
 | `deployment_contract.py` | `SpikingDeploymentContract`: cross-side deployment-semantics SSOT; the single reader of the deployment config keys |
 | `deployment_faithfulness.py` | Pure-data registry of standing faithfulness gates and external-dependency (sanafe/lava/ffcv) boundary guards |
+| `execution_bounds.py` | Wall-cap SSOT for external-simulator invocations: `simulation_step_timeout_s` resolution (env override > config > 900 s), process-group kill, retry-once-then-fail-loud, bounded process pool, in-process watchdog |
 | `firing_strategy.py` | `FiringStrategy`/factory: SSOT for LIF firing-mode reset+threshold semantics and their backend gates |
 | `hypervolume_axes.py` | Typed hypervolume axis model: deployment axes, screening statuses, and collapse rules |
 | `hypervolume_axis_encoder.py` | Canonical config/plan/ledger-row → hypervolume-coordinate encoding |

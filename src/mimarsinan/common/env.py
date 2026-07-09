@@ -17,6 +17,7 @@ TEMPLATES_DIR_VAR = "MIMARSINAN_TEMPLATES_DIR"
 TEST_CUDA_VAR = "MIMARSINAN_TEST_CUDA"
 MP_START_METHOD_VAR = "MIMARSINAN_MP_START_METHOD"
 MBH_LEDGER_VAR = "MIMARSINAN_MBH_LEDGER"
+SIMULATION_STEP_TIMEOUT_VAR = "MIMARSINAN_SIMULATION_STEP_TIMEOUT_S"
 UNSAFE_QUANT_OVERRIDES_VAR = "MIMARSINAN_UNSAFE_QUANT_OVERRIDES"
 IMAGENET_ROOT_VAR = "IMAGENET_ROOT"
 
@@ -105,6 +106,12 @@ def unsafe_quant_overrides_enabled() -> bool:
 def mp_start_method() -> str | None:
     """Multiprocessing start-method override read by the src/init.py bootstrap."""
     return os.environ.get(MP_START_METHOD_VAR)
+
+
+def simulation_step_timeout_override() -> float | None:
+    """Operator override (seconds) of the external-simulator wall cap; None when unset/blank."""
+    raw = os.environ.get(SIMULATION_STEP_TIMEOUT_VAR, "").strip()
+    return float(raw) if raw else None
 
 
 def imagenet_root() -> str:

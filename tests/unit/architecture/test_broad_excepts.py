@@ -14,6 +14,9 @@ _NARROW = re.compile(
 # file -> number of sanctioned broad catches (documented fallbacks, re-raising
 # wrappers, and best_effort itself). Shrink these counts; never grow them.
 ALLOWLIST = {
+    # Cross-thread exception transport in the run_bounded watchdog: the callee's
+    # exception is re-raised verbatim in the caller thread - nothing degrades.
+    "chip_simulation/execution_bounds.py": 1,
     "chip_simulation/pareto.py": 2,
     "common/best_effort.py": 1,
     "common/diagnostics.py": 1,

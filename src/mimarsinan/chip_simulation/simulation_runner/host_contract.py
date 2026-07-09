@@ -22,6 +22,7 @@ class SimulationHostContract:
     thresholding_mode: str
     spiking_mode: str
     nevresim_connectivity_mode: ConnectivityMode
+    simulation_step_timeout_s: float
     test_data: list[tuple[np.ndarray, np.ndarray]]
 
     if TYPE_CHECKING:

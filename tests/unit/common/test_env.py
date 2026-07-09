@@ -141,6 +141,25 @@ class TestMpStartMethod:
         assert env.mp_start_method() == "spawn"
 
 
+class TestSimulationStepTimeoutOverride:
+    def test_unset_is_none(self, monkeypatch):
+        monkeypatch.delenv("MIMARSINAN_SIMULATION_STEP_TIMEOUT_S", raising=False)
+        assert env.simulation_step_timeout_override() is None
+
+    def test_whitespace_only_is_none(self, monkeypatch):
+        monkeypatch.setenv("MIMARSINAN_SIMULATION_STEP_TIMEOUT_S", "  ")
+        assert env.simulation_step_timeout_override() is None
+
+    def test_set_returns_seconds_as_float(self, monkeypatch):
+        monkeypatch.setenv("MIMARSINAN_SIMULATION_STEP_TIMEOUT_S", "12.5")
+        assert env.simulation_step_timeout_override() == 12.5
+
+    def test_garbage_fails_loud(self, monkeypatch):
+        monkeypatch.setenv("MIMARSINAN_SIMULATION_STEP_TIMEOUT_S", "soon")
+        with pytest.raises(ValueError):
+            env.simulation_step_timeout_override()
+
+
 ALLOWED_DIRECT_READERS = {
     Path("common/env.py"),
     Path("pipelining/core/pipelines/deployment_pipeline.py"),

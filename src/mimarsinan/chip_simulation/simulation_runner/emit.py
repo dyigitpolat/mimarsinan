@@ -35,6 +35,7 @@ def _emit_and_compile_segment(
     sim_length: int,
     nevresim_path: str,
     connectivity_mode: ConnectivityMode,
+    timeout_s: float | None = None,
 ) -> _PreparedSegment:
     """Top-level function for ProcessPoolExecutor: emit chip artifacts and compile."""
     NevresimDriver.nevresim_path = nevresim_path
@@ -63,7 +64,8 @@ def _emit_and_compile_segment(
 
     output_path = os.path.join(seg_dir, "bin", "simulator")
     binary = compile_simulator(
-        seg_dir, nevresim_path, output_path=output_path, verbose=False
+        seg_dir, nevresim_path, output_path=output_path, verbose=False,
+        timeout_s=timeout_s,
     )
     if binary is None:
         raise RuntimeError(f"Compilation failed for segment {seg_idx}")

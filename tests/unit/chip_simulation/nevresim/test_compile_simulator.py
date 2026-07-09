@@ -11,8 +11,9 @@ from mimarsinan.chip_simulation.nevresim.compile_nevresim import CompileResult, 
 class _FakeProc:
     def __init__(self, rc: int) -> None:
         self._rc = rc
+        self.pid = 4242
 
-    def wait(self) -> int:
+    def wait(self, timeout: float | None = None) -> int:
         return self._rc
 
 

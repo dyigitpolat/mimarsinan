@@ -68,6 +68,7 @@ class _HybridSmokeRunner(SimulationHybridMixin):
         self.spiking_mode = "lif"
         self.simulation_length = 4
         self.nevresim_connectivity_mode = "runtime"
+        self.simulation_step_timeout_s = 900.0
 
 
 @pytest.mark.skipif(not _have_nevresim(), reason="nevresim or C++20 compiler unavailable")

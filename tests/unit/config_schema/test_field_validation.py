@@ -71,6 +71,7 @@ CASES = (
     Case("target_tq", 0, "platform_constraints", "bounds"),
     Case("simulation_steps", 3.5, "platform_constraints", "type"),
     Case("sanafe_arch_preset", "quantum", "deployment_parameters", "enum"),
+    Case("simulation_step_timeout_s", 0.5, "deployment_parameters", "bounds"),
 )
 
 
@@ -120,6 +121,7 @@ class TestRegistryWalkingValidator:
         assert validate_against_registry({"nf_scm_parity_samples": 64}) == []
         assert validate_against_registry({"nevresim_connectivity_mode": "codegen"}) == []
         assert validate_against_registry({"weight_bits": 8}) == []
+        assert validate_against_registry({"simulation_step_timeout_s": 300.0}) == []
 
 
 class TestBothDoorsRejectInvalidValues:

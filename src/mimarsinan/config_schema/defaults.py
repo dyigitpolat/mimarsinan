@@ -169,7 +169,7 @@ CONFIG_KEYS_SET: Set[str] = {
     "loihi_parity_sample_index",
     "sanafe_sample_count", "sanafe_arch_preset",
     "sanafe_custom_arch_path", "sanafe_log_potential_trace",
-    "simulation_batch_count",
+    "simulation_batch_count", "simulation_step_timeout_s",
     # Optional per-cell RUN-total STEP budget for the 5u endpoint target floor
     # (the endpoint_steps ledger); read by endpoint_recovery via config.get
     # with the TUNING_POLICY value as fallback. Steps, never wall seconds.

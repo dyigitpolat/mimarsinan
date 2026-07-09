@@ -48,6 +48,7 @@ def run_binary_raw(
     max_input_count: int,
     num_proc: int = 0,
     record_spikes: Literal[False] = False,
+    timeout_s: float | None = None,
 ) -> np.ndarray: ...
 
 
@@ -64,6 +65,7 @@ def run_binary_raw(
     max_input_count: int,
     num_proc: int = 0,
     record_spikes: Literal[True],
+    timeout_s: float | None = None,
 ) -> tuple[np.ndarray, list[dict[int, dict[str, list[int]]]]]: ...
 
 
@@ -79,6 +81,7 @@ def run_binary_raw(
     max_input_count: int,
     num_proc: int = 0,
     record_spikes: bool = False,
+    timeout_s: float | None = None,
 ):
     """Run a pre-compiled nevresim binary and return ``(num_samples, output_size)``.
 
@@ -113,6 +116,7 @@ def run_binary_raw(
         num_proc,
         expected_values=expected_values,
         record_spikes=record_spikes,
+        timeout_s=timeout_s,
     )
     if record_spikes:
         raw, spike_records = result
