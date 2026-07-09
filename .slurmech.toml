@@ -35,9 +35,11 @@ mem = "200G"
 cpus_per_gpu = 40
 nodes = 1
 
+# The de-facto runtime env (the old mimarsinan_slurmech venv was relocated and
+# its activate no longer takes effect; jobs were already running on this one).
 [env]
 mode = "reuse"
-venv = "/home/y/yigit/mimarsinan_slurmech/env"
+venv = "/home/y/yigit/imagenetshaq/env"
 
 [pack]
 parallelism = 1
