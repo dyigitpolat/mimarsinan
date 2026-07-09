@@ -10,6 +10,7 @@ include = [
   "scripts/**",
   "tests/**",
   "templates/**",
+  "test_configs/**",
   "requirements.txt",
   "pytest.ini",
   "datasets/MNIST/**",
