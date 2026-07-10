@@ -13,11 +13,22 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 SLURMECH = [str(REPO / "env/bin/python"), "-c", "from slurmech.cli import main; main()"]
 
-ACC_GATE = 0.97
+# Gate (user revision 2026-07-10): deployed >= max(ACC_FLOOR, RETENTION * pretrain).
+ACC_FLOOR = 0.97
+RETENTION = 0.98
 WALL_GATE_S = 300.0
 
 _HCM_RE = re.compile(r"Hard-core Spiking Simulation Test: ([0-9.]+)")
 _PROFILE_RE = re.compile(r"\[PROFILE\] step='([^']+)' wall=\s*([0-9.]+)s")
+_PROFILE_METRIC_RE = re.compile(
+    r"\[PROFILE\] step='([^']+)' wall=\s*[0-9.]+s metric=([0-9.]+)"
+)
+
+
+def accuracy_gate(pretrain_acc: float | None) -> float:
+    if pretrain_acc is None:
+        return ACC_FLOOR
+    return max(ACC_FLOOR, RETENTION * pretrain_acc)
 
 
 def _run(cmd: list[str], timeout: float = 600.0) -> subprocess.CompletedProcess:
@@ -113,6 +124,9 @@ def harvest_one(name: str, entry: dict, out_dir: Path) -> dict:
     hcm = _HCM_RE.findall(text)
     row["hcm_accuracy"] = float(hcm[-1]) if hcm else None
     row["profile"] = {m.group(1): float(m.group(2)) for m in _PROFILE_RE.finditer(text)}
+    metrics = {m.group(1): float(m.group(2)) for m in _PROFILE_METRIC_RE.finditer(text)}
+    row["pretrain_acc"] = metrics.get("Pretraining")
+    row["acc_gate"] = accuracy_gate(row["pretrain_acc"])
 
     infos = list(artifacts.glob("workspace/generated/*_deployment_run/_GUI_STATE/run_info.json"))
     if infos:
@@ -134,12 +148,13 @@ def harvest_one(name: str, entry: dict, out_dir: Path) -> dict:
 
 
 def print_table(rows: list[dict]) -> int:
-    print(f"\n{'run':52s} {'status':10s} {'acc':>7s} {'wall':>8s}  verdict")
+    print(f"\n{'run':52s} {'status':10s} {'acc':>7s} {'gate':>7s} {'wall':>8s}  verdict")
     failed = 0
     for r in sorted(rows, key=lambda r: r["name"]):
         acc = r.get("hcm_accuracy")
         wall = r.get("wall_s")
-        acc_ok = acc is not None and acc >= ACC_GATE
+        gate = r.get("acc_gate", accuracy_gate(r.get("pretrain_acc")))
+        acc_ok = acc is not None and acc >= gate
         wall_ok = wall is not None and wall <= WALL_GATE_S
         ok = acc_ok and wall_ok and r.get("status") == "completed"
         failed += 0 if ok else 1
@@ -150,9 +165,13 @@ def print_table(rows: list[dict]) -> int:
             ) if bad
         )
         acc_s = f"{acc:.4f}" if acc is not None else "-"
+        gate_s = f"{gate:.4f}"
         wall_s = f"{wall:.0f}s" if wall is not None else "-"
-        print(f"{r['name']:52s} {str(r.get('status')):10s} {acc_s:>7s} {wall_s:>8s}  {verdict}")
-    print(f"\n{len(rows) - failed}/{len(rows)} runs pass (gate: acc>={ACC_GATE}, wall<={WALL_GATE_S:.0f}s)")
+        print(f"{r['name']:52s} {str(r.get('status')):10s} {acc_s:>7s} {gate_s:>7s} {wall_s:>8s}  {verdict}")
+    print(
+        f"\n{len(rows) - failed}/{len(rows)} runs pass "
+        f"(gate: acc >= max({ACC_FLOOR}, {RETENTION} x pretrain), wall <= {WALL_GATE_S:.0f}s)"
+    )
     return failed
 
 
