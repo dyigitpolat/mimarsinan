@@ -79,7 +79,7 @@ class TuningPolicy:
     # off until the Phase-3 measured graduation): a fired dead-run predicate
     # restores the live keep-best, rebuilds the optimizer, and restarts the
     # remaining funded budget once at lr*factor with a warmup ramp.
-    endpoint_floor_divergence_rescue: bool = False
+    endpoint_floor_divergence_rescue: bool = True
     endpoint_floor_rescue_lr_factor: float = 0.3
     endpoint_floor_rescue_warmup_fraction: float = 0.02
 

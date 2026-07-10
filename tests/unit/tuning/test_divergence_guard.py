@@ -86,6 +86,16 @@ def _enable_rescue(monkeypatch):
     )
 
 
+def _disable_rescue(monkeypatch):
+    monkeypatch.setattr(
+        endpoint_recovery, "TUNING_POLICY",
+        dataclasses.replace(
+            endpoint_recovery.TUNING_POLICY,
+            endpoint_floor_divergence_rescue=False,
+        ),
+    )
+
+
 # ── the predicate ────────────────────────────────────────────────────────────
 
 
@@ -173,7 +183,7 @@ class TestRescuePlan:
         assert rescue_plan(0, 1e-3) is None
 
     def test_policy_pins_the_rescue_constants(self):
-        assert TUNING_POLICY.endpoint_floor_divergence_rescue is False
+        assert TUNING_POLICY.endpoint_floor_divergence_rescue is True
         assert TUNING_POLICY.endpoint_floor_rescue_lr_factor == 0.3
         assert TUNING_POLICY.endpoint_floor_rescue_warmup_fraction == 0.02
 
@@ -291,6 +301,7 @@ class TestArmedStageRescue:
     def test_guard_off_is_byte_identical_one_leg_no_warmup(
         self, tmp_path, monkeypatch,
     ):
+        _disable_rescue(monkeypatch)
         report, scripted, _, _ = self._drive(
             tmp_path, monkeypatch, legs=[_dead_leg(), _never_called_leg],
         )

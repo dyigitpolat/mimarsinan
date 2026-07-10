@@ -355,7 +355,16 @@ class TestTrajectoryTelemetry:
     def _endpoint_payloads(self, reporter):
         return [p for kind, p in reporter.events if kind == "mbh_endpoint"]
 
-    def test_engaged_stage_appends_the_per_check_trajectory(self, tmp_path):
+    def test_engaged_stage_appends_the_per_check_trajectory(self, tmp_path, monkeypatch):
+        # C1 telemetry under a single leg: pin the C3 rescue off so a dead
+        # trace cannot append a restarted second leg to the trajectory.
+        monkeypatch.setattr(
+            endpoint_recovery, "TUNING_POLICY",
+            dataclasses.replace(
+                endpoint_recovery.TUNING_POLICY,
+                endpoint_floor_divergence_rescue=False,
+            ),
+        )
         torch.manual_seed(0)
         tuner = _lif_tuner(tmp_path)
         tuner.pipeline.reporter = _EventReporter()

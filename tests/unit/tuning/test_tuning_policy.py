@@ -64,7 +64,7 @@ EXPECTED_POLICY_VALUES = {
     "endpoint_floor_patience_fraction": 0.25,
     # [C3] divergence guard + LR-backoff rescue on the armed floor
     # (default-off until the Phase-3 measured graduation).
-    "endpoint_floor_divergence_rescue": False,
+    "endpoint_floor_divergence_rescue": True,
     "endpoint_floor_rescue_lr_factor": 0.3,
     "endpoint_floor_rescue_warmup_fraction": 0.02,
 }
