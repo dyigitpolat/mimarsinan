@@ -1,0 +1,46 @@
+{
+ "raw_pre": {
+  "floor_S4": 0.0892,
+  "floor_S8": 0.271,
+  "floor_S16": 0.9416,
+  "ceil_ttfs_S4": 0.0892,
+  "ceil_ttfs_S8": 0.271,
+  "ceil_ttfs_S16": 0.9416,
+  "nearest_S4": 0.8679,
+  "nearest_S8": 0.9407,
+  "nearest_S16": 0.9502
+ },
+ "raw_post": {
+  "floor_S4": 0.0892,
+  "floor_S8": 0.4297,
+  "floor_S16": 0.9447,
+  "ceil_ttfs_S4": 0.0892,
+  "ceil_ttfs_S8": 0.4293,
+  "ceil_ttfs_S16": 0.945,
+  "nearest_S4": 0.8943,
+  "nearest_S8": 0.943,
+  "nearest_S16": 0.9487
+ },
+ "ramped_qat": {
+  "S4_pre": [
+   0.4139,
+   0.373,
+   0.4922
+  ],
+  "S4_post": [
+   0.4217,
+   0.5332,
+   0.6005
+  ],
+  "S8_pre": [
+   0.8333,
+   0.9166,
+   0.8864
+  ],
+  "S8_post": [
+   0.9112,
+   0.933,
+   0.9257
+  ]
+ }
+}

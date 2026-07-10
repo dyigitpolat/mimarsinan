@@ -1,0 +1,2204 @@
+{
+ "seed": 0,
+ "thresholding_mode": "<",
+ "twin": {
+  "uniform_encode_exact_count": true,
+  "uniform_encode_all_live_pulse_cycle0": true,
+  "constant_drive_count_law_exact": true,
+  "hop_executor_bit_equal_repo_kernel": true
+ },
+ "vehicles": {
+  "mlp3": {
+   "widths": [
+    784,
+    128,
+    128,
+    10
+   ],
+   "float_acc": 0.9800000190734863,
+   "thetas": [
+    13.6288,
+    11.3182,
+    18.103
+   ],
+   "T4": {
+    "ann_floor_acc": 0.9225000143051147,
+    "ann_nearest_acc": 0.9605000615119934,
+    "a0_floor": {
+     "acc": 0.9205000400543213,
+     "hops": [
+      {
+       "hop": 1,
+       "mad_rate": 0.012997070312500001,
+       "p99_rate": 0.25
+      },
+      {
+       "hop": 2,
+       "mad_rate": 0.005,
+       "p99_rate": 0.25
+      }
+     ],
+     "diag": [
+      {
+       "hop": 0,
+       "overcount_rate": 0.0012724609375,
+       "deficit_rate": 0.0001630859375,
+       "overcount_frac": 0.00508984375,
+       "deficit_frac": 0.00065234375,
+       "mean_overshoot": 0.023702978884899705
+      },
+      {
+       "hop": 1,
+       "overcount_rate": 0.000125,
+       "deficit_rate": 8.75e-05,
+       "overcount_frac": 0.0005,
+       "deficit_frac": 0.00035,
+       "mean_overshoot": 0.022849502714894217
+      }
+     ]
+    },
+    "a1_halfstep": {
+     "acc": 0.9515000581741333,
+     "hops": [
+      {
+       "hop": 1,
+       "mad_rate": 0.016742187500000002,
+       "p99_rate": 0.25
+      },
+      {
+       "hop": 2,
+       "mad_rate": 0.0122875,
+       "p99_rate": 0.25
+      }
+     ],
+     "diag": [
+      {
+       "hop": 0,
+       "overcount_rate": 0.0006611328125,
+       "deficit_rate": 0.00039453125,
+       "overcount_frac": 0.00264453125,
+       "deficit_frac": 0.001578125,
+       "mean_overshoot": 0.014293361219208113
+      },
+      {
+       "hop": 1,
+       "overcount_rate": 0.00055,
+       "deficit_rate": 0.0014125000000000001,
+       "overcount_frac": 0.0022,
+       "deficit_frac": 0.0056500000000000005,
+       "mean_overshoot": 0.03446846163221123
+      }
+     ]
+    },
+    "a2_biasfold": {
+     "acc": 0.9550000429153442,
+     "hops": [
+      {
+       "hop": 1,
+       "mad_rate": 0.016742187500000002,
+       "p99_rate": 0.25
+      },
+      {
+       "hop": 2,
+       "mad_rate": 0.012275000000000001,
+       "p99_rate": 0.25
+      }
+     ]
+    },
+    "a3_affine": {
+     "acc": 0.9515000581741333,
+     "hops": [
+      {
+       "hop": 1,
+       "mad_rate": 0.016742187500000002,
+       "p99_rate": 0.25
+      },
+      {
+       "hop": 2,
+       "mad_rate": 0.014325000000000001,
+       "p99_rate": 0.25
+      }
+     ]
+    },
+    "a4_guard": {
+     "acc": 0.940500020980835,
+     "mean_h": [
+      0.2425231537014788,
+      0.5392178051356668
+     ],
+     "diag": [
+      {
+       "hop": 0,
+       "overcount_rate": 0.0001083984375,
+       "deficit_rate": 0.00013671875,
+       "overcount_frac": 0.00043359375,
+       "deficit_frac": 0.000546875,
+       "mean_overshoot": 0.007566602378840085
+      },
+      {
+       "hop": 1,
+       "overcount_rate": 0.00095,
+       "deficit_rate": 0.000375,
+       "overcount_frac": 0.0038,
+       "deficit_frac": 0.0015,
+       "mean_overshoot": 0.06136817136541523
+      }
+     ]
+    },
+    "a5_membread_on_a1": {
+     "acc": 0.9745000600814819
+    },
+    "a5_membread_on_a3": {
+     "acc": 0.9745000600814819
+    }
+   },
+   "T8": {
+    "ann_floor_acc": 0.9765000343322754,
+    "ann_nearest_acc": 0.9750000238418579,
+    "a0_floor": {
+     "acc": 0.9760000705718994,
+     "hops": [
+      {
+       "hop": 1,
+       "mad_rate": 0.0079814453125,
+       "p99_rate": 0.125
+      },
+      {
+       "hop": 2,
+       "mad_rate": 0.00454375,
+       "p99_rate": 0.125
+      }
+     ],
+     "diag": [
+      {
+       "hop": 0,
+       "overcount_rate": 0.001294921875,
+       "deficit_rate": 0.00016650390625,
+       "overcount_frac": 0.010359375,
+       "deficit_frac": 0.00133203125,
+       "mean_overshoot": 0.03637080788298747
+      },
+      {
+       "hop": 1,
+       "overcount_rate": 0.0005875,
+       "deficit_rate": 0.000125,
+       "overcount_frac": 0.0047,
+       "deficit_frac": 0.001,
+       "mean_overshoot": 0.03865898452601059
+      }
+     ]
+    },
+    "a1_halfstep": {
+     "acc": 0.9720000624656677,
+     "hops": [
+      {
+       "hop": 1,
+       "mad_rate": 0.009028320312500001,
+       "p99_rate": 0.125
+      },
+      {
+       "hop": 2,
+       "mad_rate": 0.006893750000000001,
+       "p99_rate": 0.125
+      }
+     ],
+     "diag": [
+      {
+       "hop": 0,
+       "overcount_rate": 0.00113427734375,
+       "deficit_rate": 0.00022998046875000001,
+       "overcount_frac": 0.00907421875,
+       "deficit_frac": 0.0018359375000000001,
+       "mean_overshoot": 0.030121004902802284
+      },
+      {
+       "hop": 1,
+       "overcount_rate": 0.00106875,
+       "deficit_rate": 0.00055625,
+       "overcount_frac": 0.00855,
+       "deficit_frac": 0.00445,
+       "mean_overshoot": 0.0498049583227382
+      }
+     ]
+    },
+    "a2_biasfold": {
+     "acc": 0.9740000367164612,
+     "hops": [
+      {
+       "hop": 1,
+       "mad_rate": 0.009028320312500001,
+       "p99_rate": 0.125
+      },
+      {
+       "hop": 2,
+       "mad_rate": 0.00685625,
+       "p99_rate": 0.125
+      }
+     ]
+    },
+    "a3_affine": {
+     "acc": 0.9725000262260437,
+     "hops": [
+      {
+       "hop": 1,
+       "mad_rate": 0.009028320312500001,
+       "p99_rate": 0.125
+      },
+      {
+       "hop": 2,
+       "mad_rate": 0.00706875,
+       "p99_rate": 0.125
+      }
+     ]
+    },
+    "a4_guard": {
+     "acc": 0.9720000624656677,
+     "mean_h": [
+      0.3826136585276014,
+      0.6846188389290888
+     ],
+     "diag": [
+      {
+       "hop": 0,
+       "overcount_rate": 0.00028173828125,
+       "deficit_rate": 1.953125e-05,
+       "overcount_frac": 0.00225390625,
+       "deficit_frac": 0.00015625,
+       "mean_overshoot": 0.01957647822632786
+      },
+      {
+       "hop": 1,
+       "overcount_rate": 0.00128125,
+       "deficit_rate": 1.8750000000000002e-05,
+       "overcount_frac": 0.01025,
+       "deficit_frac": 0.00015000000000000001,
+       "mean_overshoot": 0.11432214311296299
+      }
+     ]
+    },
+    "a5_membread_on_a1": {
+     "acc": 0.9760000705718994
+    },
+    "a5_membread_on_a3": {
+     "acc": 0.9765000343322754
+    }
+   },
+   "T16": {
+    "ann_floor_acc": 0.9795000553131104,
+    "ann_nearest_acc": 0.9785000681877136,
+    "a0_floor": {
+     "acc": 0.9785000681877136,
+     "hops": [
+      {
+       "hop": 1,
+       "mad_rate": 0.00446435546875,
+       "p99_rate": 0.0625
+      },
+      {
+       "hop": 2,
+       "mad_rate": 0.002953125,
+       "p99_rate": 0.0625
+      }
+     ],
+     "diag": [
+      {
+       "hop": 0,
+       "overcount_rate": 0.0010244140625,
+       "deficit_rate": 0.000108642578125,
+       "overcount_frac": 0.01638671875,
+       "deficit_frac": 0.001734375,
+       "mean_overshoot": 0.0447640259583343
+      },
+      {
+       "hop": 1,
+       "overcount_rate": 0.000684375,
+       "deficit_rate": 9.062500000000001e-05,
+       "overcount_frac": 0.01095,
+       "deficit_frac": 0.0014,
+       "mean_overshoot": 0.04983993567097121
+      }
+     ]
+    },
+    "a1_halfstep": {
+     "acc": 0.9795000553131104,
+     "hops": [
+      {
+       "hop": 1,
+       "mad_rate": 0.00474560546875,
+       "p99_rate": 0.0625
+      },
+      {
+       "hop": 2,
+       "mad_rate": 0.003715625,
+       "p99_rate": 0.0625
+      }
+     ],
+     "diag": [
+      {
+       "hop": 0,
+       "overcount_rate": 0.00098388671875,
+       "deficit_rate": 0.00013330078125,
+       "overcount_frac": 0.01573828125,
+       "deficit_frac": 0.00212109375,
+       "mean_overshoot": 0.041492355678134744
+      },
+      {
+       "hop": 1,
+       "overcount_rate": 0.00085625,
+       "deficit_rate": 0.00024375000000000002,
+       "overcount_frac": 0.0137,
+       "deficit_frac": 0.0039000000000000003,
+       "mean_overshoot": 0.056363510955345024
+      }
+     ]
+    },
+    "a2_biasfold": {
+     "acc": 0.9795000553131104,
+     "hops": [
+      {
+       "hop": 1,
+       "mad_rate": 0.00474560546875,
+       "p99_rate": 0.0625
+      },
+      {
+       "hop": 2,
+       "mad_rate": 0.003715625,
+       "p99_rate": 0.0625
+      }
+     ]
+    },
+    "a3_affine": {
+     "acc": 0.9780000448226929,
+     "hops": [
+      {
+       "hop": 1,
+       "mad_rate": 0.00474560546875,
+       "p99_rate": 0.0625
+      },
+      {
+       "hop": 2,
+       "mad_rate": 0.0038718750000000003,
+       "p99_rate": 0.0625
+      }
+     ]
+    },
+    "a4_guard": {
+     "acc": 0.9760000705718994,
+     "mean_h": [
+      0.4635862336927591,
+      0.7512914059227042
+     ],
+     "diag": [
+      {
+       "hop": 0,
+       "overcount_rate": 0.000341552734375,
+       "deficit_rate": 7.568359375e-06,
+       "overcount_frac": 0.00546484375,
+       "deficit_frac": 0.00012109375,
+       "mean_overshoot": 0.03363702012757647
+      },
+      {
+       "hop": 1,
+       "overcount_rate": 0.0009125,
+       "deficit_rate": 0.0,
+       "overcount_frac": 0.0146,
+       "deficit_frac": 0.0,
+       "mean_overshoot": 0.13082793165155382
+      }
+     ]
+    },
+    "a5_membread_on_a1": {
+     "acc": 0.9780000448226929
+    },
+    "a5_membread_on_a3": {
+     "acc": 0.9785000681877136
+    }
+   },
+   "T32": {
+    "ann_floor_acc": 0.9790000319480896,
+    "ann_nearest_acc": 0.9795000553131104,
+    "a0_floor": {
+     "acc": 0.9790000319480896,
+     "hops": [
+      {
+       "hop": 1,
+       "mad_rate": 0.0023465576171875,
+       "p99_rate": 0.03125
+      },
+      {
+       "hop": 2,
+       "mad_rate": 0.001690625,
+       "p99_rate": 0.03125
+      }
+     ],
+     "diag": [
+      {
+       "hop": 0,
+       "overcount_rate": 0.0005885009765625,
+       "deficit_rate": 6.35986328125e-05,
+       "overcount_frac": 0.0188125,
+       "deficit_frac": 0.0020234375,
+       "mean_overshoot": 0.0484376044186489
+      },
+      {
+       "hop": 1,
+       "overcount_rate": 0.00042343750000000004,
+       "deficit_rate": 6.562500000000001e-05,
+       "overcount_frac": 0.013550000000000001,
+       "deficit_frac": 0.00205,
+       "mean_overshoot": 0.05502300372776358
+      }
+     ]
+    },
+    "a1_halfstep": {
+     "acc": 0.9785000681877136,
+     "hops": [
+      {
+       "hop": 1,
+       "mad_rate": 0.0024168701171875,
+       "p99_rate": 0.03125
+      },
+      {
+       "hop": 2,
+       "mad_rate": 0.001846875,
+       "p99_rate": 0.03125
+      }
+     ],
+     "diag": [
+      {
+       "hop": 0,
+       "overcount_rate": 0.0005938720703125,
+       "deficit_rate": 7.12890625e-05,
+       "overcount_frac": 0.018984375,
+       "deficit_frac": 0.002265625,
+       "mean_overshoot": 0.04673292413456312
+      },
+      {
+       "hop": 1,
+       "overcount_rate": 0.0004921875,
+       "deficit_rate": 9.687500000000001e-05,
+       "overcount_frac": 0.01575,
+       "deficit_frac": 0.00305,
+       "mean_overshoot": 0.05893609459285383
+      }
+     ]
+    },
+    "a2_biasfold": {
+     "acc": 0.9775000214576721,
+     "hops": [
+      {
+       "hop": 1,
+       "mad_rate": 0.0024168701171875,
+       "p99_rate": 0.03125
+      },
+      {
+       "hop": 2,
+       "mad_rate": 0.001971875,
+       "p99_rate": 0.03125
+      }
+     ]
+    },
+    "a3_affine": {
+     "acc": 0.9790000319480896,
+     "hops": [
+      {
+       "hop": 1,
+       "mad_rate": 0.0024168701171875,
+       "p99_rate": 0.03125
+      },
+      {
+       "hop": 2,
+       "mad_rate": 0.0023453125,
+       "p99_rate": 0.03125
+      }
+     ]
+    },
+    "a4_guard": {
+     "acc": 0.9795000553131104,
+     "mean_h": [
+      0.5030562710745523,
+      0.7428250441548379
+     ],
+     "diag": [
+      {
+       "hop": 0,
+       "overcount_rate": 0.000243896484375,
+       "deficit_rate": 3.0517578125e-06,
+       "overcount_frac": 0.0078046875,
+       "deficit_frac": 9.765625e-05,
+       "mean_overshoot": 0.04217233495433189
+      },
+      {
+       "hop": 1,
+       "overcount_rate": 0.0004890625,
+       "deficit_rate": 0.0,
+       "overcount_frac": 0.01565,
+       "deficit_frac": 0.0,
+       "mean_overshoot": 0.12072267372694806
+      }
+     ]
+    },
+    "a5_membread_on_a1": {
+     "acc": 0.9805000424385071
+    },
+    "a5_membread_on_a3": {
+     "acc": 0.9800000190734863
+    }
+   }
+  },
+  "chain9": {
+   "widths": [
+    784,
+    128,
+    128,
+    128,
+    128,
+    128,
+    128,
+    128,
+    128,
+    10
+   ],
+   "float_acc": 0.9770000576972961,
+   "thetas": [
+    14.4303,
+    8.3193,
+    7.605,
+    8.8962,
+    11.551,
+    12.445,
+    16.0554,
+    15.9605,
+    19.6033
+   ],
+   "T4": {
+    "ann_floor_acc": 0.10100000351667404,
+    "ann_nearest_acc": 0.9460000395774841,
+    "a0_floor": {
+     "acc": 0.10100000351667404,
+     "hops": [
+      {
+       "hop": 1,
+       "mad_rate": 0.0061845703125,
+       "p99_rate": 0.25
+      },
+      {
+       "hop": 2,
+       "mad_rate": 0.006025390625,
+       "p99_rate": 0.25
+      },
+      {
+       "hop": 3,
+       "mad_rate": 0.0042099609375,
+       "p99_rate": 0.25
+      },
+      {
+       "hop": 4,
+       "mad_rate": 0.0015927734375,
+       "p99_rate": 0.0
+      },
+      {
+       "hop": 5,
+       "mad_rate": 0.0005537109375000001,
+       "p99_rate": 0.0
+      },
+      {
+       "hop": 6,
+       "mad_rate": 4.6875e-05,
+       "p99_rate": 0.0
+      },
+      {
+       "hop": 7,
+       "mad_rate": 0.0,
+       "p99_rate": 0.0
+      },
+      {
+       "hop": 8,
+       "mad_rate": 0.0,
+       "p99_rate": 0.0
+      }
+     ],
+     "diag": [
+      {
+       "hop": 0,
+       "overcount_rate": 0.0003193359375,
+       "deficit_rate": 0.0001572265625,
+       "overcount_frac": 0.00127734375,
+       "deficit_frac": 0.00062890625,
+       "mean_overshoot": 0.009025048634603166
+      },
+      {
+       "hop": 1,
+       "overcount_rate": 0.000109375,
+       "deficit_rate": 0.00019921875000000001,
+       "overcount_frac": 0.0004375,
+       "deficit_frac": 0.00078125,
+       "mean_overshoot": 0.007937353955602102
+      },
+      {
+       "hop": 2,
+       "overcount_rate": 1.07421875e-05,
+       "deficit_rate": 0.0001455078125,
+       "overcount_frac": 4.296875e-05,
+       "deficit_frac": 0.000578125,
+       "mean_overshoot": 0.005842636652855997
+      },
+      {
+       "hop": 3,
+       "overcount_rate": 1.953125e-06,
+       "deficit_rate": 5.6640625e-05,
+       "overcount_frac": 7.8125e-06,
+       "deficit_frac": 0.0002265625,
+       "mean_overshoot": 0.002683413571983303
+      },
+      {
+       "hop": 4,
+       "overcount_rate": 0.0,
+       "deficit_rate": 0.0,
+       "overcount_frac": 0.0,
+       "deficit_frac": 0.0,
+       "mean_overshoot": 0.0015190835757735222
+      },
+      {
+       "hop": 5,
+       "overcount_rate": 0.0,
+       "deficit_rate": 0.0,
+       "overcount_frac": 0.0,
+       "deficit_frac": 0.0,
+       "mean_overshoot": 0.00025110425523909243
+      },
+      {
+       "hop": 6,
+       "overcount_rate": 0.0,
+       "deficit_rate": 0.0,
+       "overcount_frac": 0.0,
+       "deficit_frac": 0.0,
+       "mean_overshoot": 2.8976610085413547e-06
+      },
+      {
+       "hop": 7,
+       "overcount_rate": 0.0,
+       "deficit_rate": 0.0,
+       "overcount_frac": 0.0,
+       "deficit_frac": 0.0,
+       "mean_overshoot": 0.0
+      }
+     ]
+    },
+    "a1_halfstep": {
+     "acc": 0.9180000424385071,
+     "hops": [
+      {
+       "hop": 1,
+       "mad_rate": 0.0087646484375,
+       "p99_rate": 0.25
+      },
+      {
+       "hop": 2,
+       "mad_rate": 0.010431640625,
+       "p99_rate": 0.25
+      },
+      {
+       "hop": 3,
+       "mad_rate": 0.0137197265625,
+       "p99_rate": 0.25
+      },
+      {
+       "hop": 4,
+       "mad_rate": 0.0144970703125,
+       "p99_rate": 0.25
+      },
+      {
+       "hop": 5,
+       "mad_rate": 0.0242314453125,
+       "p99_rate": 0.25
+      },
+      {
+       "hop": 6,
+       "mad_rate": 0.0240625,
+       "p99_rate": 0.25
+      },
+      {
+       "hop": 7,
+       "mad_rate": 0.0304990234375,
+       "p99_rate": 0.5
+      },
+      {
+       "hop": 8,
+       "mad_rate": 0.041625,
+       "p99_rate": 0.5
+      }
+     ],
+     "diag": [
+      {
+       "hop": 0,
+       "overcount_rate": 0.00017578125,
+       "deficit_rate": 0.0002568359375,
+       "overcount_frac": 0.000703125,
+       "deficit_frac": 0.00102734375,
+       "mean_overshoot": 0.0069846532024490015
+      },
+      {
+       "hop": 1,
+       "overcount_rate": 0.0001796875,
+       "deficit_rate": 0.00115625,
+       "overcount_frac": 0.00071875,
+       "deficit_frac": 0.00460546875,
+       "mean_overshoot": 0.02152892234723925
+      },
+      {
+       "hop": 2,
+       "overcount_rate": 3.22265625e-05,
+       "deficit_rate": 0.003087890625,
+       "overcount_frac": 0.00012890625,
+       "deficit_frac": 0.01204296875,
+       "mean_overshoot": 0.0534292587072317
+      },
+      {
+       "hop": 3,
+       "overcount_rate": 6.8359375e-06,
+       "deficit_rate": 0.0036552734375,
+       "overcount_frac": 2.734375e-05,
+       "deficit_frac": 0.01383984375,
+       "mean_overshoot": 0.06918842257492787
+      },
+      {
+       "hop": 4,
+       "overcount_rate": 5.859375e-06,
+       "deficit_rate": 0.006046875,
+       "overcount_frac": 2.34375e-05,
+       "deficit_frac": 0.02341015625,
+       "mean_overshoot": 0.0832428649353098
+      },
+      {
+       "hop": 5,
+       "overcount_rate": 6.8359375e-06,
+       "deficit_rate": 0.0036669921875,
+       "overcount_frac": 2.734375e-05,
+       "deficit_frac": 0.014417968750000001,
+       "mean_overshoot": 0.09559196185937134
+      },
+      {
+       "hop": 6,
+       "overcount_rate": 7.2265625e-05,
+       "deficit_rate": 0.0056201171875,
+       "overcount_frac": 0.0002890625,
+       "deficit_frac": 0.02221875,
+       "mean_overshoot": 0.11059094834597485
+      },
+      {
+       "hop": 7,
+       "overcount_rate": 0.0,
+       "deficit_rate": 0.0047,
+       "overcount_frac": 0.0,
+       "deficit_frac": 0.0188,
+       "mean_overshoot": 0.14907023120310411
+      }
+     ]
+    },
+    "a2_biasfold": {
+     "acc": 0.8760000467300415,
+     "hops": [
+      {
+       "hop": 1,
+       "mad_rate": 0.0087646484375,
+       "p99_rate": 0.25
+      },
+      {
+       "hop": 2,
+       "mad_rate": 0.0104697265625,
+       "p99_rate": 0.25
+      },
+      {
+       "hop": 3,
+       "mad_rate": 0.013763671875,
+       "p99_rate": 0.25
+      },
+      {
+       "hop": 4,
+       "mad_rate": 0.014609375,
+       "p99_rate": 0.25
+      },
+      {
+       "hop": 5,
+       "mad_rate": 0.024255859375,
+       "p99_rate": 0.25
+      },
+      {
+       "hop": 6,
+       "mad_rate": 0.02457421875,
+       "p99_rate": 0.25
+      },
+      {
+       "hop": 7,
+       "mad_rate": 0.03123828125,
+       "p99_rate": 0.5
+      },
+      {
+       "hop": 8,
+       "mad_rate": 0.0454125,
+       "p99_rate": 0.5
+      }
+     ]
+    },
+    "a3_affine": {
+     "acc": 0.9340000152587891,
+     "hops": [
+      {
+       "hop": 1,
+       "mad_rate": 0.0087646484375,
+       "p99_rate": 0.25
+      },
+      {
+       "hop": 2,
+       "mad_rate": 0.0113974609375,
+       "p99_rate": 0.25
+      },
+      {
+       "hop": 3,
+       "mad_rate": 0.015177734375,
+       "p99_rate": 0.25
+      },
+      {
+       "hop": 4,
+       "mad_rate": 0.0154453125,
+       "p99_rate": 0.25
+      },
+      {
+       "hop": 5,
+       "mad_rate": 0.023575195312500002,
+       "p99_rate": 0.25
+      },
+      {
+       "hop": 6,
+       "mad_rate": 0.021912109375,
+       "p99_rate": 0.25
+      },
+      {
+       "hop": 7,
+       "mad_rate": 0.0257880859375,
+       "p99_rate": 0.25
+      },
+      {
+       "hop": 8,
+       "mad_rate": 0.0358875,
+       "p99_rate": 0.5
+      }
+     ]
+    },
+    "a4_guard": {
+     "acc": 0.7825000286102295,
+     "mean_h": [
+      0.1619599213195954,
+      0.3426048844618906,
+      0.3132157088316036,
+      0.26786166391668353,
+      0.30301973080844935,
+      0.3415554270868654,
+      0.4571308304186518,
+      0.6646959154392005
+     ],
+     "diag": [
+      {
+       "hop": 0,
+       "overcount_rate": 4.78515625e-05,
+       "deficit_rate": 0.0001357421875,
+       "overcount_frac": 0.00019140625,
+       "deficit_frac": 0.00054296875,
+       "mean_overshoot": 0.00561716670097682
+      },
+      {
+       "hop": 1,
+       "overcount_rate": 0.000197265625,
+       "deficit_rate": 0.000619140625,
+       "overcount_frac": 0.0007890625,
+       "deficit_frac": 0.0024765625,
+       "mean_overshoot": 0.04800576942533359
+      },
+      {
+       "hop": 2,
+       "overcount_rate": 0.0002080078125,
+       "deficit_rate": 0.00509375,
+       "overcount_frac": 0.00083203125,
+       "deficit_frac": 0.019640625000000002,
+       "mean_overshoot": 0.0944500917070954
+      },
+      {
+       "hop": 3,
+       "overcount_rate": 7.6171875e-05,
+       "deficit_rate": 0.0066923828125,
+       "overcount_frac": 0.0003046875,
+       "deficit_frac": 0.02537109375,
+       "mean_overshoot": 0.10712549462365407
+      },
+      {
+       "hop": 4,
+       "overcount_rate": 5.56640625e-05,
+       "deficit_rate": 0.011806640625,
+       "overcount_frac": 0.00022265625,
+       "deficit_frac": 0.042824218750000004,
+       "mean_overshoot": 0.12717420928136006
+      },
+      {
+       "hop": 5,
+       "overcount_rate": 4.58984375e-05,
+       "deficit_rate": 0.007837890625,
+       "overcount_frac": 0.00018359375,
+       "deficit_frac": 0.0286015625,
+       "mean_overshoot": 0.16223165474075216
+      },
+      {
+       "hop": 6,
+       "overcount_rate": 0.0010693359375,
+       "deficit_rate": 0.0095302734375,
+       "overcount_frac": 0.00427734375,
+       "deficit_frac": 0.0337109375,
+       "mean_overshoot": 0.23636887108417778
+      },
+      {
+       "hop": 7,
+       "overcount_rate": 0.004200000000000001,
+       "deficit_rate": 0.01585,
+       "overcount_frac": 0.016800000000000002,
+       "deficit_frac": 0.0634,
+       "mean_overshoot": 0.3655094784078864
+      }
+     ]
+    },
+    "a5_membread_on_a1": {
+     "acc": 0.9440000653266907
+    },
+    "a5_membread_on_a3": {
+     "acc": 0.9475000500679016
+    }
+   },
+   "T8": {
+    "ann_floor_acc": 0.2645000219345093,
+    "ann_nearest_acc": 0.971000075340271,
+    "a0_floor": {
+     "acc": 0.2395000159740448,
+     "hops": [
+      {
+       "hop": 1,
+       "mad_rate": 0.0039013671875,
+       "p99_rate": 0.125
+      },
+      {
+       "hop": 2,
+       "mad_rate": 0.004333984375,
+       "p99_rate": 0.125
+      },
+      {
+       "hop": 3,
+       "mad_rate": 0.00465234375,
+       "p99_rate": 0.125
+      },
+      {
+       "hop": 4,
+       "mad_rate": 0.00345556640625,
+       "p99_rate": 0.125
+      },
+      {
+       "hop": 5,
+       "mad_rate": 0.00397998046875,
+       "p99_rate": 0.125
+      },
+      {
+       "hop": 6,
+       "mad_rate": 0.00260009765625,
+       "p99_rate": 0.125
+      },
+      {
+       "hop": 7,
+       "mad_rate": 0.00216259765625,
+       "p99_rate": 0.125
+      },
+      {
+       "hop": 8,
+       "mad_rate": 0.00139375,
+       "p99_rate": 0.125
+      }
+     ],
+     "diag": [
+      {
+       "hop": 0,
+       "overcount_rate": 0.00038232421875,
+       "deficit_rate": 0.00011279296875,
+       "overcount_frac": 0.00305859375,
+       "deficit_frac": 0.00090234375,
+       "mean_overshoot": 0.014228315174627724
+      },
+      {
+       "hop": 1,
+       "overcount_rate": 0.0001806640625,
+       "deficit_rate": 0.00023974609375,
+       "overcount_frac": 0.0014453125,
+       "deficit_frac": 0.0017578125,
+       "mean_overshoot": 0.012828396703141436
+      },
+      {
+       "hop": 2,
+       "overcount_rate": 9.521484375e-05,
+       "deficit_rate": 0.00028759765625,
+       "overcount_frac": 0.00076171875,
+       "deficit_frac": 0.00215625,
+       "mean_overshoot": 0.011736876729512739
+      },
+      {
+       "hop": 3,
+       "overcount_rate": 3.02734375e-05,
+       "deficit_rate": 0.00025048828125,
+       "overcount_frac": 0.0002421875,
+       "deficit_frac": 0.0018632812500000001,
+       "mean_overshoot": 0.009518965971371694
+      },
+      {
+       "hop": 4,
+       "overcount_rate": 2.392578125e-05,
+       "deficit_rate": 0.00025634765625,
+       "overcount_frac": 0.00019140625,
+       "deficit_frac": 0.00200390625,
+       "mean_overshoot": 0.012237573052800137
+      },
+      {
+       "hop": 5,
+       "overcount_rate": 7.8125e-06,
+       "deficit_rate": 0.00013232421875,
+       "overcount_frac": 6.25e-05,
+       "deficit_frac": 0.0010390625,
+       "mean_overshoot": 0.007692296604687852
+      },
+      {
+       "hop": 6,
+       "overcount_rate": 2.44140625e-06,
+       "deficit_rate": 0.0001103515625,
+       "overcount_frac": 1.953125e-05,
+       "deficit_frac": 0.0008515625,
+       "mean_overshoot": 0.00698207939174867
+      },
+      {
+       "hop": 7,
+       "overcount_rate": 0.0,
+       "deficit_rate": 3.7500000000000003e-05,
+       "overcount_frac": 0.0,
+       "deficit_frac": 0.00030000000000000003,
+       "mean_overshoot": 0.006466870181567083
+      }
+     ]
+    },
+    "a1_halfstep": {
+     "acc": 0.968000054359436,
+     "hops": [
+      {
+       "hop": 1,
+       "mad_rate": 0.0045219726562500005,
+       "p99_rate": 0.125
+      },
+      {
+       "hop": 2,
+       "mad_rate": 0.00560400390625,
+       "p99_rate": 0.125
+      },
+      {
+       "hop": 3,
+       "mad_rate": 0.00706591796875,
+       "p99_rate": 0.125
+      },
+      {
+       "hop": 4,
+       "mad_rate": 0.0072216796875000005,
+       "p99_rate": 0.125
+      },
+      {
+       "hop": 5,
+       "mad_rate": 0.012626953125,
+       "p99_rate": 0.125
+      },
+      {
+       "hop": 6,
+       "mad_rate": 0.01283349609375,
+       "p99_rate": 0.25
+      },
+      {
+       "hop": 7,
+       "mad_rate": 0.01681640625,
+       "p99_rate": 0.25
+      },
+      {
+       "hop": 8,
+       "mad_rate": 0.02078125,
+       "p99_rate": 0.375
+      }
+     ],
+     "diag": [
+      {
+       "hop": 0,
+       "overcount_rate": 0.00034228515625000003,
+       "deficit_rate": 0.00015966796875,
+       "overcount_frac": 0.0027382812500000003,
+       "deficit_frac": 0.0012734375,
+       "mean_overshoot": 0.013323979958995188
+      },
+      {
+       "hop": 1,
+       "overcount_rate": 0.0002578125,
+       "deficit_rate": 0.0005732421875,
+       "overcount_frac": 0.0020625,
+       "deficit_frac": 0.00434765625,
+       "mean_overshoot": 0.025246813419738414
+      },
+      {
+       "hop": 2,
+       "overcount_rate": 0.0001142578125,
+       "deficit_rate": 0.00133056640625,
+       "overcount_frac": 0.0009140625,
+       "deficit_frac": 0.00872265625,
+       "mean_overshoot": 0.052997928410179036
+      },
+      {
+       "hop": 3,
+       "overcount_rate": 7.666015625e-05,
+       "deficit_rate": 0.00151708984375,
+       "overcount_frac": 0.00061328125,
+       "deficit_frac": 0.009347656250000001,
+       "mean_overshoot": 0.07270107222338254
+      },
+      {
+       "hop": 4,
+       "overcount_rate": 0.0001484375,
+       "deficit_rate": 0.003201171875,
+       "overcount_frac": 0.0011875,
+       "deficit_frac": 0.0196953125,
+       "mean_overshoot": 0.08906169126664645
+      },
+      {
+       "hop": 5,
+       "overcount_rate": 0.00012841796875,
+       "deficit_rate": 0.0025512695312500003,
+       "overcount_frac": 0.00102734375,
+       "deficit_frac": 0.0163359375,
+       "mean_overshoot": 0.10528692980184141
+      },
+      {
+       "hop": 6,
+       "overcount_rate": 0.00042724609375,
+       "deficit_rate": 0.00331396484375,
+       "overcount_frac": 0.00341796875,
+       "deficit_frac": 0.021230468750000002,
+       "mean_overshoot": 0.12755420509656235
+      },
+      {
+       "hop": 7,
+       "overcount_rate": 0.0005375,
+       "deficit_rate": 0.0035562500000000004,
+       "overcount_frac": 0.0043,
+       "deficit_frac": 0.02825,
+       "mean_overshoot": 0.17488040055887324
+      }
+     ]
+    },
+    "a2_biasfold": {
+     "acc": 0.9690000414848328,
+     "hops": [
+      {
+       "hop": 1,
+       "mad_rate": 0.0045219726562500005,
+       "p99_rate": 0.125
+      },
+      {
+       "hop": 2,
+       "mad_rate": 0.00562939453125,
+       "p99_rate": 0.125
+      },
+      {
+       "hop": 3,
+       "mad_rate": 0.00708935546875,
+       "p99_rate": 0.125
+      },
+      {
+       "hop": 4,
+       "mad_rate": 0.00740087890625,
+       "p99_rate": 0.125
+      },
+      {
+       "hop": 5,
+       "mad_rate": 0.0131708984375,
+       "p99_rate": 0.125
+      },
+      {
+       "hop": 6,
+       "mad_rate": 0.013921875,
+       "p99_rate": 0.25
+      },
+      {
+       "hop": 7,
+       "mad_rate": 0.018486816406250002,
+       "p99_rate": 0.25
+      },
+      {
+       "hop": 8,
+       "mad_rate": 0.026318750000000002,
+       "p99_rate": 0.375
+      }
+     ]
+    },
+    "a3_affine": {
+     "acc": 0.9720000624656677,
+     "hops": [
+      {
+       "hop": 1,
+       "mad_rate": 0.0045219726562500005,
+       "p99_rate": 0.125
+      },
+      {
+       "hop": 2,
+       "mad_rate": 0.0056904296875,
+       "p99_rate": 0.125
+      },
+      {
+       "hop": 3,
+       "mad_rate": 0.00714404296875,
+       "p99_rate": 0.125
+      },
+      {
+       "hop": 4,
+       "mad_rate": 0.00709521484375,
+       "p99_rate": 0.125
+      },
+      {
+       "hop": 5,
+       "mad_rate": 0.01197705078125,
+       "p99_rate": 0.125
+      },
+      {
+       "hop": 6,
+       "mad_rate": 0.01175341796875,
+       "p99_rate": 0.125
+      },
+      {
+       "hop": 7,
+       "mad_rate": 0.01482861328125,
+       "p99_rate": 0.25
+      },
+      {
+       "hop": 8,
+       "mad_rate": 0.02036875,
+       "p99_rate": 0.25
+      }
+     ]
+    },
+    "a4_guard": {
+     "acc": 0.968500018119812,
+     "mean_h": [
+      0.24443925518517928,
+      0.39989217896888357,
+      0.3429391688359459,
+      0.29333033382551965,
+      0.3365017678244774,
+      0.3735256684377968,
+      0.5153471913838168,
+      0.8340630608289052
+     ],
+     "diag": [
+      {
+       "hop": 0,
+       "overcount_rate": 0.00012451171875,
+       "deficit_rate": 4.150390625e-05,
+       "overcount_frac": 0.00099609375,
+       "deficit_frac": 0.00033203125,
+       "mean_overshoot": 0.012007233343229872
+      },
+      {
+       "hop": 1,
+       "overcount_rate": 0.00038525390625,
+       "deficit_rate": 0.0001337890625,
+       "overcount_frac": 0.00308203125,
+       "deficit_frac": 0.001046875,
+       "mean_overshoot": 0.0857504154822818
+      },
+      {
+       "hop": 2,
+       "overcount_rate": 0.00027783203125000003,
+       "deficit_rate": 0.0014243164062500001,
+       "overcount_frac": 0.0022226562500000002,
+       "deficit_frac": 0.009203125,
+       "mean_overshoot": 0.12950448414494203
+      },
+      {
+       "hop": 3,
+       "overcount_rate": 0.00014892578125,
+       "deficit_rate": 0.00203125,
+       "overcount_frac": 0.00119140625,
+       "deficit_frac": 0.01268359375,
+       "mean_overshoot": 0.13886654376002824
+      },
+      {
+       "hop": 4,
+       "overcount_rate": 0.00023144531250000002,
+       "deficit_rate": 0.0042763671875000004,
+       "overcount_frac": 0.0018515625000000001,
+       "deficit_frac": 0.0250546875,
+       "mean_overshoot": 0.1653001505544001
+      },
+      {
+       "hop": 5,
+       "overcount_rate": 0.000267578125,
+       "deficit_rate": 0.00365234375,
+       "overcount_frac": 0.002140625,
+       "deficit_frac": 0.02061328125,
+       "mean_overshoot": 0.2244244808140763
+      },
+      {
+       "hop": 6,
+       "overcount_rate": 0.00066259765625,
+       "deficit_rate": 0.0039033203125,
+       "overcount_frac": 0.00530078125,
+       "deficit_frac": 0.0232109375,
+       "mean_overshoot": 0.3296507162108369
+      },
+      {
+       "hop": 7,
+       "overcount_rate": 0.0035125,
+       "deficit_rate": 0.0033875000000000003,
+       "overcount_frac": 0.0281,
+       "deficit_frac": 0.027100000000000003,
+       "mean_overshoot": 0.5445355237152207
+      }
+     ]
+    },
+    "a5_membread_on_a1": {
+     "acc": 0.9745000600814819
+    },
+    "a5_membread_on_a3": {
+     "acc": 0.9745000600814819
+    }
+   },
+   "T16": {
+    "ann_floor_acc": 0.8285000324249268,
+    "ann_nearest_acc": 0.9765000343322754,
+    "a0_floor": {
+     "acc": 0.8325000405311584,
+     "hops": [
+      {
+       "hop": 1,
+       "mad_rate": 0.0021865234375,
+       "p99_rate": 0.0625
+      },
+      {
+       "hop": 2,
+       "mad_rate": 0.0025830078125,
+       "p99_rate": 0.0625
+      },
+      {
+       "hop": 3,
+       "mad_rate": 0.0030400390625,
+       "p99_rate": 0.0625
+      },
+      {
+       "hop": 4,
+       "mad_rate": 0.002797119140625,
+       "p99_rate": 0.0625
+      },
+      {
+       "hop": 5,
+       "mad_rate": 0.003925048828125,
+       "p99_rate": 0.0625
+      },
+      {
+       "hop": 6,
+       "mad_rate": 0.0032822265625,
+       "p99_rate": 0.0625
+      },
+      {
+       "hop": 7,
+       "mad_rate": 0.003471923828125,
+       "p99_rate": 0.0625
+      },
+      {
+       "hop": 8,
+       "mad_rate": 0.003290625,
+       "p99_rate": 0.0625
+      }
+     ],
+     "diag": [
+      {
+       "hop": 0,
+       "overcount_rate": 0.000333740234375,
+       "deficit_rate": 8.447265625000001e-05,
+       "overcount_frac": 0.00533984375,
+       "deficit_frac": 0.0013476562500000001,
+       "mean_overshoot": 0.017673758071693194
+      },
+      {
+       "hop": 1,
+       "overcount_rate": 0.0002060546875,
+       "deficit_rate": 0.000167236328125,
+       "overcount_frac": 0.003296875,
+       "deficit_frac": 0.0022343750000000002,
+       "mean_overshoot": 0.015922374435473466
+      },
+      {
+       "hop": 2,
+       "overcount_rate": 0.0001181640625,
+       "deficit_rate": 0.000269775390625,
+       "overcount_frac": 0.001890625,
+       "deficit_frac": 0.00309765625,
+       "mean_overshoot": 0.014459100463723857
+      },
+      {
+       "hop": 3,
+       "overcount_rate": 9.130859375e-05,
+       "deficit_rate": 0.00024780273437500003,
+       "overcount_frac": 0.0014609375,
+       "deficit_frac": 0.0024296875,
+       "mean_overshoot": 0.013623552029447487
+      },
+      {
+       "hop": 4,
+       "overcount_rate": 0.00013769531250000001,
+       "deficit_rate": 0.000289306640625,
+       "overcount_frac": 0.0022031250000000002,
+       "deficit_frac": 0.0033359375,
+       "mean_overshoot": 0.021596700020603703
+      },
+      {
+       "hop": 5,
+       "overcount_rate": 0.00010107421875000001,
+       "deficit_rate": 0.00020458984375,
+       "overcount_frac": 0.0016171875000000001,
+       "deficit_frac": 0.0022460937500000003,
+       "mean_overshoot": 0.0178648059890956
+      },
+      {
+       "hop": 6,
+       "overcount_rate": 0.000121826171875,
+       "deficit_rate": 0.00019921875000000001,
+       "overcount_frac": 0.00194921875,
+       "deficit_frac": 0.00218359375,
+       "mean_overshoot": 0.02297618507880531
+      },
+      {
+       "hop": 7,
+       "overcount_rate": 0.000115625,
+       "deficit_rate": 3.125e-05,
+       "overcount_frac": 0.00185,
+       "deficit_frac": 0.0005,
+       "mean_overshoot": 0.03586480752141781
+      }
+     ]
+    },
+    "a1_halfstep": {
+     "acc": 0.9755000472068787,
+     "hops": [
+      {
+       "hop": 1,
+       "mad_rate": 0.00234814453125,
+       "p99_rate": 0.0625
+      },
+      {
+       "hop": 2,
+       "mad_rate": 0.0028916015625,
+       "p99_rate": 0.0625
+      },
+      {
+       "hop": 3,
+       "mad_rate": 0.0036467285156250003,
+       "p99_rate": 0.0625
+      },
+      {
+       "hop": 4,
+       "mad_rate": 0.0036530761718750002,
+       "p99_rate": 0.0625
+      },
+      {
+       "hop": 5,
+       "mad_rate": 0.00616015625,
+       "p99_rate": 0.0625
+      },
+      {
+       "hop": 6,
+       "mad_rate": 0.006138916015625,
+       "p99_rate": 0.0625
+      },
+      {
+       "hop": 7,
+       "mad_rate": 0.0076135253906250006,
+       "p99_rate": 0.125
+      },
+      {
+       "hop": 8,
+       "mad_rate": 0.00938125,
+       "p99_rate": 0.1875
+      }
+     ],
+     "diag": [
+      {
+       "hop": 0,
+       "overcount_rate": 0.00031127929687500003,
+       "deficit_rate": 0.00010131835937500001,
+       "overcount_frac": 0.0049804687500000005,
+       "deficit_frac": 0.0016015625000000001,
+       "mean_overshoot": 0.01740613427759481
+      },
+      {
+       "hop": 1,
+       "overcount_rate": 0.00023339843750000002,
+       "deficit_rate": 0.00026220703125,
+       "overcount_frac": 0.0037343750000000003,
+       "deficit_frac": 0.0036328125,
+       "mean_overshoot": 0.023806021094793083
+      },
+      {
+       "hop": 2,
+       "overcount_rate": 0.00013867187500000001,
+       "deficit_rate": 0.00058447265625,
+       "overcount_frac": 0.0022187500000000002,
+       "deficit_frac": 0.00641015625,
+       "mean_overshoot": 0.04216103555830277
+      },
+      {
+       "hop": 3,
+       "overcount_rate": 0.000104736328125,
+       "deficit_rate": 0.000640380859375,
+       "overcount_frac": 0.00167578125,
+       "deficit_frac": 0.00579296875,
+       "mean_overshoot": 0.05918444816263761
+      },
+      {
+       "hop": 4,
+       "overcount_rate": 0.00022900390625000001,
+       "deficit_rate": 0.0012177734375,
+       "overcount_frac": 0.0036640625000000002,
+       "deficit_frac": 0.01106640625,
+       "mean_overshoot": 0.07432682428558883
+      },
+      {
+       "hop": 5,
+       "overcount_rate": 0.000211669921875,
+       "deficit_rate": 0.0009794921875000001,
+       "overcount_frac": 0.00338671875,
+       "deficit_frac": 0.0086171875,
+       "mean_overshoot": 0.08769261683735681
+      },
+      {
+       "hop": 6,
+       "overcount_rate": 0.00034814453125,
+       "deficit_rate": 0.001272216796875,
+       "overcount_frac": 0.0055703125,
+       "deficit_frac": 0.0111171875,
+       "mean_overshoot": 0.11202307483587365
+      },
+      {
+       "hop": 7,
+       "overcount_rate": 0.000675,
+       "deficit_rate": 0.0008843750000000001,
+       "overcount_frac": 0.0108,
+       "deficit_frac": 0.01285,
+       "mean_overshoot": 0.14880672794223562
+      }
+     ]
+    },
+    "a2_biasfold": {
+     "acc": 0.9735000729560852,
+     "hops": [
+      {
+       "hop": 1,
+       "mad_rate": 0.00234814453125,
+       "p99_rate": 0.0625
+      },
+      {
+       "hop": 2,
+       "mad_rate": 0.0029365234375,
+       "p99_rate": 0.0625
+      },
+      {
+       "hop": 3,
+       "mad_rate": 0.0037412109375,
+       "p99_rate": 0.0625
+      },
+      {
+       "hop": 4,
+       "mad_rate": 0.003923583984375,
+       "p99_rate": 0.0625
+      },
+      {
+       "hop": 5,
+       "mad_rate": 0.00657763671875,
+       "p99_rate": 0.0625
+      },
+      {
+       "hop": 6,
+       "mad_rate": 0.006931884765625,
+       "p99_rate": 0.0625
+      },
+      {
+       "hop": 7,
+       "mad_rate": 0.008832763671875,
+       "p99_rate": 0.125
+      },
+      {
+       "hop": 8,
+       "mad_rate": 0.011509375,
+       "p99_rate": 0.1875
+      }
+     ]
+    },
+    "a3_affine": {
+     "acc": 0.9765000343322754,
+     "hops": [
+      {
+       "hop": 1,
+       "mad_rate": 0.00234814453125,
+       "p99_rate": 0.0625
+      },
+      {
+       "hop": 2,
+       "mad_rate": 0.003075439453125,
+       "p99_rate": 0.0625
+      },
+      {
+       "hop": 3,
+       "mad_rate": 0.0039287109375,
+       "p99_rate": 0.0625
+      },
+      {
+       "hop": 4,
+       "mad_rate": 0.004044189453125,
+       "p99_rate": 0.0625
+      },
+      {
+       "hop": 5,
+       "mad_rate": 0.00645263671875,
+       "p99_rate": 0.0625
+      },
+      {
+       "hop": 6,
+       "mad_rate": 0.006512451171875,
+       "p99_rate": 0.0625
+      },
+      {
+       "hop": 7,
+       "mad_rate": 0.008202148437500001,
+       "p99_rate": 0.125
+      },
+      {
+       "hop": 8,
+       "mad_rate": 0.010884375,
+       "p99_rate": 0.125
+      }
+     ]
+    },
+    "a4_guard": {
+     "acc": 0.9735000729560852,
+     "mean_h": [
+      0.2935618217221223,
+      0.4136416655096866,
+      0.32841879613653324,
+      0.28498801111015004,
+      0.34086572324999465,
+      0.3761093210718043,
+      0.5516924375275025,
+      0.9320053671151076
+     ],
+     "diag": [
+      {
+       "hop": 0,
+       "overcount_rate": 0.00013989257812500002,
+       "deficit_rate": 2.2705078125e-05,
+       "overcount_frac": 0.0022382812500000003,
+       "deficit_frac": 0.00036328125,
+       "mean_overshoot": 0.016833881772185415
+      },
+      {
+       "hop": 1,
+       "overcount_rate": 0.00030688476562500003,
+       "deficit_rate": 2.734375e-05,
+       "overcount_frac": 0.0049101562500000005,
+       "deficit_frac": 0.00040625000000000004,
+       "mean_overshoot": 0.0857976397052345
+      },
+      {
+       "hop": 2,
+       "overcount_rate": 0.0002099609375,
+       "deficit_rate": 0.00034619140625,
+       "overcount_frac": 0.003359375,
+       "deficit_frac": 0.00406640625,
+       "mean_overshoot": 0.11591743888631512
+      },
+      {
+       "hop": 3,
+       "overcount_rate": 0.000144287109375,
+       "deficit_rate": 0.0005290527343750001,
+       "overcount_frac": 0.00230859375,
+       "deficit_frac": 0.0049414062500000005,
+       "mean_overshoot": 0.12677325387777114
+      },
+      {
+       "hop": 4,
+       "overcount_rate": 0.000263427734375,
+       "deficit_rate": 0.00072412109375,
+       "overcount_frac": 0.00421484375,
+       "deficit_frac": 0.0075,
+       "mean_overshoot": 0.15221071325787838
+      },
+      {
+       "hop": 5,
+       "overcount_rate": 0.000205810546875,
+       "deficit_rate": 0.000989013671875,
+       "overcount_frac": 0.00329296875,
+       "deficit_frac": 0.0073671875000000005,
+       "mean_overshoot": 0.21095553715681975
+      },
+      {
+       "hop": 6,
+       "overcount_rate": 0.0005029296875,
+       "deficit_rate": 0.000597412109375,
+       "overcount_frac": 0.008046875,
+       "deficit_frac": 0.0054609375000000005,
+       "mean_overshoot": 0.3164746414320856
+      },
+      {
+       "hop": 7,
+       "overcount_rate": 0.001196875,
+       "deficit_rate": 0.000296875,
+       "overcount_frac": 0.01915,
+       "deficit_frac": 0.004350000000000001,
+       "mean_overshoot": 0.5873573804390224
+      }
+     ]
+    },
+    "a5_membread_on_a1": {
+     "acc": 0.9760000705718994
+    },
+    "a5_membread_on_a3": {
+     "acc": 0.9760000705718994
+    }
+   },
+   "T32": {
+    "ann_floor_acc": 0.968500018119812,
+    "ann_nearest_acc": 0.9760000705718994,
+    "a0_floor": {
+     "acc": 0.968500018119812,
+     "hops": [
+      {
+       "hop": 1,
+       "mad_rate": 0.0011895751953125001,
+       "p99_rate": 0.03125
+      },
+      {
+       "hop": 2,
+       "mad_rate": 0.00140087890625,
+       "p99_rate": 0.03125
+      },
+      {
+       "hop": 3,
+       "mad_rate": 0.0016832275390625,
+       "p99_rate": 0.03125
+      },
+      {
+       "hop": 4,
+       "mad_rate": 0.00157177734375,
+       "p99_rate": 0.03125
+      },
+      {
+       "hop": 5,
+       "mad_rate": 0.0023955078125,
+       "p99_rate": 0.03125
+      },
+      {
+       "hop": 6,
+       "mad_rate": 0.00215673828125,
+       "p99_rate": 0.03125
+      },
+      {
+       "hop": 7,
+       "mad_rate": 0.0023895263671875,
+       "p99_rate": 0.03125
+      },
+      {
+       "hop": 8,
+       "mad_rate": 0.0025687500000000003,
+       "p99_rate": 0.03125
+      }
+     ],
+     "diag": [
+      {
+       "hop": 0,
+       "overcount_rate": 0.0002047119140625,
+       "deficit_rate": 4.443359375e-05,
+       "overcount_frac": 0.00655078125,
+       "deficit_frac": 0.0013984375,
+       "mean_overshoot": 0.019256156198755432
+      },
+      {
+       "hop": 1,
+       "overcount_rate": 0.0001431884765625,
+       "deficit_rate": 0.000103759765625,
+       "overcount_frac": 0.00458203125,
+       "deficit_frac": 0.00262109375,
+       "mean_overshoot": 0.017590520036400662
+      },
+      {
+       "hop": 2,
+       "overcount_rate": 9.423828125e-05,
+       "deficit_rate": 0.000177734375,
+       "overcount_frac": 0.003015625,
+       "deficit_frac": 0.00343359375,
+       "mean_overshoot": 0.015432260153029802
+      },
+      {
+       "hop": 3,
+       "overcount_rate": 7.53173828125e-05,
+       "deficit_rate": 0.00018310546875,
+       "overcount_frac": 0.00241015625,
+       "deficit_frac": 0.0027070312500000002,
+       "mean_overshoot": 0.014934726889734668
+      },
+      {
+       "hop": 4,
+       "overcount_rate": 0.0001484375,
+       "deficit_rate": 0.000238525390625,
+       "overcount_frac": 0.00475,
+       "deficit_frac": 0.00380078125,
+       "mean_overshoot": 0.024963624413915555
+      },
+      {
+       "hop": 5,
+       "overcount_rate": 0.0001290283203125,
+       "deficit_rate": 0.0001810302734375,
+       "overcount_frac": 0.00412890625,
+       "deficit_frac": 0.00250390625,
+       "mean_overshoot": 0.021943507801749366
+      },
+      {
+       "hop": 6,
+       "overcount_rate": 0.0001812744140625,
+       "deficit_rate": 0.0001822509765625,
+       "overcount_frac": 0.00580078125,
+       "deficit_frac": 0.002765625,
+       "mean_overshoot": 0.03166806607480122
+      },
+      {
+       "hop": 7,
+       "overcount_rate": 0.000278125,
+       "deficit_rate": 3.2812500000000005e-05,
+       "overcount_frac": 0.0089,
+       "deficit_frac": 0.0010500000000000002,
+       "mean_overshoot": 0.05296963454792165
+      }
+     ]
+    },
+    "a1_halfstep": {
+     "acc": 0.9755000472068787,
+     "hops": [
+      {
+       "hop": 1,
+       "mad_rate": 0.0012298583984375001,
+       "p99_rate": 0.03125
+      },
+      {
+       "hop": 2,
+       "mad_rate": 0.0014982910156250001,
+       "p99_rate": 0.03125
+      },
+      {
+       "hop": 3,
+       "mad_rate": 0.001857666015625,
+       "p99_rate": 0.03125
+      },
+      {
+       "hop": 4,
+       "mad_rate": 0.00185986328125,
+       "p99_rate": 0.03125
+      },
+      {
+       "hop": 5,
+       "mad_rate": 0.0030234375,
+       "p99_rate": 0.03125
+      },
+      {
+       "hop": 6,
+       "mad_rate": 0.0028836669921875,
+       "p99_rate": 0.03125
+      },
+      {
+       "hop": 7,
+       "mad_rate": 0.0035246582031250003,
+       "p99_rate": 0.0625
+      },
+      {
+       "hop": 8,
+       "mad_rate": 0.0042328125000000005,
+       "p99_rate": 0.0625
+      }
+     ],
+     "diag": [
+      {
+       "hop": 0,
+       "overcount_rate": 0.000204345703125,
+       "deficit_rate": 5.0781250000000004e-05,
+       "overcount_frac": 0.0065390625,
+       "deficit_frac": 0.0015898437500000001,
+       "mean_overshoot": 0.01911094307259956
+      },
+      {
+       "hop": 1,
+       "overcount_rate": 0.000152099609375,
+       "deficit_rate": 0.0001258544921875,
+       "overcount_frac": 0.0048671875,
+       "deficit_frac": 0.0031796875000000002,
+       "mean_overshoot": 0.021584233597783508
+      },
+      {
+       "hop": 2,
+       "overcount_rate": 0.0001019287109375,
+       "deficit_rate": 0.00026318359375,
+       "overcount_frac": 0.00326171875,
+       "deficit_frac": 0.0049101562500000005,
+       "mean_overshoot": 0.031099814465258994
+      },
+      {
+       "hop": 3,
+       "overcount_rate": 9.2529296875e-05,
+       "deficit_rate": 0.000289306640625,
+       "overcount_frac": 0.0029609375,
+       "deficit_frac": 0.00427734375,
+       "mean_overshoot": 0.04289457330470016
+      },
+      {
+       "hop": 4,
+       "overcount_rate": 0.0001790771484375,
+       "deficit_rate": 0.000499755859375,
+       "overcount_frac": 0.00573046875,
+       "deficit_frac": 0.00715625,
+       "mean_overshoot": 0.05616564678830645
+      },
+      {
+       "hop": 5,
+       "overcount_rate": 0.0001361083984375,
+       "deficit_rate": 0.0004019775390625,
+       "overcount_frac": 0.00435546875,
+       "deficit_frac": 0.005078125,
+       "mean_overshoot": 0.0647634559407233
+      },
+      {
+       "hop": 6,
+       "overcount_rate": 0.0002581787109375,
+       "deficit_rate": 0.0005006103515625,
+       "overcount_frac": 0.00826171875,
+       "deficit_frac": 0.0063593750000000004,
+       "mean_overshoot": 0.08727832080269059
+      },
+      {
+       "hop": 7,
+       "overcount_rate": 0.00040625000000000004,
+       "deficit_rate": 0.00026250000000000004,
+       "overcount_frac": 0.013000000000000001,
+       "deficit_frac": 0.006050000000000001,
+       "mean_overshoot": 0.11640727069918212
+      }
+     ]
+    },
+    "a2_biasfold": {
+     "acc": 0.9745000600814819,
+     "hops": [
+      {
+       "hop": 1,
+       "mad_rate": 0.0012298583984375001,
+       "p99_rate": 0.03125
+      },
+      {
+       "hop": 2,
+       "mad_rate": 0.00156787109375,
+       "p99_rate": 0.03125
+      },
+      {
+       "hop": 3,
+       "mad_rate": 0.0020355224609375,
+       "p99_rate": 0.03125
+      },
+      {
+       "hop": 4,
+       "mad_rate": 0.0022080078125,
+       "p99_rate": 0.03125
+      },
+      {
+       "hop": 5,
+       "mad_rate": 0.0035594482421875,
+       "p99_rate": 0.03125
+      },
+      {
+       "hop": 6,
+       "mad_rate": 0.00360400390625,
+       "p99_rate": 0.03125
+      },
+      {
+       "hop": 7,
+       "mad_rate": 0.0044625244140625,
+       "p99_rate": 0.0625
+      },
+      {
+       "hop": 8,
+       "mad_rate": 0.00548125,
+       "p99_rate": 0.0625
+      }
+     ]
+    },
+    "a3_affine": {
+     "acc": 0.9755000472068787,
+     "hops": [
+      {
+       "hop": 1,
+       "mad_rate": 0.0012298583984375001,
+       "p99_rate": 0.03125
+      },
+      {
+       "hop": 2,
+       "mad_rate": 0.0018824462890625001,
+       "p99_rate": 0.03125
+      },
+      {
+       "hop": 3,
+       "mad_rate": 0.0025333251953125,
+       "p99_rate": 0.03125
+      },
+      {
+       "hop": 4,
+       "mad_rate": 0.0027867431640625,
+       "p99_rate": 0.03125
+      },
+      {
+       "hop": 5,
+       "mad_rate": 0.0042196044921875,
+       "p99_rate": 0.0625
+      },
+      {
+       "hop": 6,
+       "mad_rate": 0.0041507568359375,
+       "p99_rate": 0.0625
+      },
+      {
+       "hop": 7,
+       "mad_rate": 0.0051302490234375,
+       "p99_rate": 0.0625
+      },
+      {
+       "hop": 8,
+       "mad_rate": 0.0068781250000000006,
+       "p99_rate": 0.09375
+      }
+     ]
+    },
+    "a4_guard": {
+     "acc": 0.9735000729560852,
+     "mean_h": [
+      0.31794236947093624,
+      0.3975937842938395,
+      0.29783323351582464,
+      0.26622912931962256,
+      0.3366600885695207,
+      0.3583052836754445,
+      0.5367105364399932,
+      0.893250681823332
+     ],
+     "diag": [
+      {
+       "hop": 0,
+       "overcount_rate": 0.0001055908203125,
+       "deficit_rate": 1.13525390625e-05,
+       "overcount_frac": 0.00337890625,
+       "deficit_frac": 0.00035546875,
+       "mean_overshoot": 0.01894722186199534
+      },
+      {
+       "hop": 1,
+       "overcount_rate": 0.00019140625,
+       "deficit_rate": 1.01318359375e-05,
+       "overcount_frac": 0.006125,
+       "deficit_frac": 0.0003046875,
+       "mean_overshoot": 0.06502893651803643
+      },
+      {
+       "hop": 2,
+       "overcount_rate": 0.00013989257812500002,
+       "deficit_rate": 9.4482421875e-05,
+       "overcount_frac": 0.0044765625000000005,
+       "deficit_frac": 0.0020546875,
+       "mean_overshoot": 0.08063009860101718
+      },
+      {
+       "hop": 3,
+       "overcount_rate": 0.000103515625,
+       "deficit_rate": 0.0001217041015625,
+       "overcount_frac": 0.0033125,
+       "deficit_frac": 0.0021953125,
+       "mean_overshoot": 0.09295068263835148
+      },
+      {
+       "hop": 4,
+       "overcount_rate": 0.000180908203125,
+       "deficit_rate": 0.000133056640625,
+       "overcount_frac": 0.0057890625,
+       "deficit_frac": 0.00248046875,
+       "mean_overshoot": 0.11680030253459234
+      },
+      {
+       "hop": 5,
+       "overcount_rate": 0.00015466308593750002,
+       "deficit_rate": 0.00029833984375,
+       "overcount_frac": 0.0049492187500000005,
+       "deficit_frac": 0.00337890625,
+       "mean_overshoot": 0.15980356060846013
+      },
+      {
+       "hop": 6,
+       "overcount_rate": 0.0002664794921875,
+       "deficit_rate": 0.0001065673828125,
+       "overcount_frac": 0.00852734375,
+       "deficit_frac": 0.0018046875,
+       "mean_overshoot": 0.249570251921733
+      },
+      {
+       "hop": 7,
+       "overcount_rate": 0.000534375,
+       "deficit_rate": 2.5e-05,
+       "overcount_frac": 0.0171,
+       "deficit_frac": 0.00075,
+       "mean_overshoot": 0.46664709583396635
+      }
+     ]
+    },
+    "a5_membread_on_a1": {
+     "acc": 0.9760000705718994
+    },
+    "a5_membread_on_a3": {
+     "acc": 0.9755000472068787
+    }
+   }
+  }
+ },
+ "join_demo": {
+  "T4": {
+   "T": 4,
+   "mad_rate_join_vs_balanced": 0.1015625,
+   "frac_neurons_differ": 0.3154296875,
+   "mean_count_join": 1.1162109375,
+   "mean_count_balanced": 1.0400390625
+  },
+  "T8": {
+   "T": 8,
+   "mad_rate_join_vs_balanced": 0.04541015625,
+   "frac_neurons_differ": 0.294921875,
+   "mean_count_join": 2.4931640625,
+   "mean_count_balanced": 2.3837890625
+  },
+  "T16": {
+   "T": 16,
+   "mad_rate_join_vs_balanced": 0.0218505859375,
+   "frac_neurons_differ": 0.298828125,
+   "mean_count_join": 5.212890625,
+   "mean_count_balanced": 5.06640625
+  }
+ },
+ "wall_seconds": 27.5
+}
