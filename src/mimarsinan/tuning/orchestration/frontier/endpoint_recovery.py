@@ -6,12 +6,17 @@ from dataclasses import dataclass
 
 from mimarsinan.common.reporter import emit_reporter_event
 from mimarsinan.tuning.orchestration import dhat_highwater, endpoint_steps
+from mimarsinan.tuning.orchestration.frontier.divergence_guard import (
+    DivergenceGuard,
+    rescue_plan,
+)
 from mimarsinan.tuning.orchestration.mbh_ledger import fp32_deployed_read
 from mimarsinan.tuning.orchestration.recovery_engine import RecoveryEngine
 from mimarsinan.tuning.orchestration.tuner_base import _RECOVERY_PATIENCE
 from mimarsinan.tuning.orchestration.tuning_policy import (
     TUNING_POLICY,
     effective_endpoint_floor_lr,
+    endpoint_convergence_geometry,
 )
 
 
@@ -29,7 +34,8 @@ class EndpointRecoveryReport:
     rolled_back: bool
     target_floor: float = 0.0
     floor_lifted: bool = False
-    entry_gap_armed: bool = False
+    armed: bool = False
+    divergence_rescued: bool = False
 
 
 def freed_ladder_steps(tuner) -> int:
@@ -63,14 +69,22 @@ def run_endpoint_recovery(tuner, *, base_steps, target_floor=None) -> EndpointRe
       whatever this tuner's own gated ladder left untrained; an armed stage is
       additionally clamped to what the run's ``endpoint_floor_steps`` ledger
       still affords.
-    - geometry: a floor-LIFTED target OR a super-SE entry gap trains the
-      probe-validated arm (lr capped at ``endpoint_floor_lr``, cosine over the
-      full budget with patience disarmed, step-ledger-funded — the default
-      210-step window is sterile inside the lr dip); otherwise the stage is
-      bit-identical to the pre-floor behavior. [5y arming gap] the gap arm
-      exists because ``floor > high-water`` only fires on lossless/envelope
-      cells: a post-crater cell whose PRE-crater high-water beats the floor
-      (t01_19) otherwise keeps the sterile patience schedule.
+    - geometry [C2 arm-when-engaged]: EVERY engaged stage the ledger affords
+      trains the probe-validated funded arm — lr capped at
+      ``endpoint_floor_lr``, cosine, step-ledger-funded, with the [C1]
+      convergence stop (min-cover = max(absolute lr-dip cover, fraction of
+      budget), keep-best patience scaled to the budget) so the budget is a
+      true CEILING, never a mandatory burn. The former >=1xSE entry-gap gate
+      is deleted: it left sub-SE engaged stages sterile (t0_14's 210-step
+      +0.0000 window sits inside the lr dip) and armed razor-edge cells
+      nondeterministically (t01_06 margin 0.000186). Only a stage the
+      exhausted ledger no longer funds keeps the pre-floor patience geometry
+      (cheap stop).
+    - [C3] with ``TUNING_POLICY.endpoint_floor_divergence_rescue`` on, an
+      armed leg is watched by the dead-run predicate (never beat entry+SE /
+      pipeline-hard-floor crater); a fired leg restores its live keep-best,
+      rebuilds the optimizer, and restarts the remaining budget once at
+      lr*0.3 with a warmup ramp. Flag-off is byte-identical.
     - reproducibility: the funding is a STEP budget, never wall seconds —
       identical configs train identical step counts on any hardware (same
       config + same seed => same step trajectory, modulo GPU nondeterminism);
@@ -87,50 +101,41 @@ def run_endpoint_recovery(tuner, *, base_steps, target_floor=None) -> EndpointRe
     floor_lifted = target > highwater
     budget = int(base_steps) + freed_ladder_steps(tuner)
     entry = _fp32_deployed_read(tuner)
-    entry_gap_armed = (
-        budget > 0 and (target - entry) >= float(tuner._budget.accuracy_se())
-    )
 
     engaged = budget > 0 and entry < target
+    armed = False
+    rescued = False
     steps_used = 0
     exit_read = entry
     rolled_back = False
+    trajectory: list[tuple[int, float, float]] = []
     if engaged:
         pre_state = tuner._clone_state()
-        hooks = tuner._recovery_training_hooks(1.0)
         lr = float(tuner.pipeline_lr)
         min_steps = 0
-        ledger_funded = False
-        if floor_lifted or entry_gap_armed:
-            # ``endpoint_floor_steps`` is the RUN total, shared by every armed
-            # endpoint stage through the step ledger (per-stage budgets burned
-            # budget x N stages on multi-endpoint cells); an exhausted budget
-            # falls back to the default patience geometry (cheap stop).
-            total_steps = int(tuner.pipeline.config.get(
-                "endpoint_floor_steps", TUNING_POLICY.endpoint_floor_steps,
-            ))
-            steps_left = endpoint_steps.remaining(tuner.pipeline, total_steps)
-            if steps_left > 0:
-                lr = min(lr, effective_endpoint_floor_lr(tuner.pipeline.config))
-                budget = min(budget, steps_left)
-                min_steps = budget
-                ledger_funded = True
-        _, steps_used = RecoveryEngine.train_to_target(
-            tuner.trainer,
-            lr,
-            target,
-            max_steps=budget,
-            hooks=hooks,
-            validation_n_batches=tuner._budget.progress_eval_batches,
-            check_interval=tuner._budget.check_interval,
-            patience=_RECOVERY_PATIENCE,
-            min_steps=min_steps,
-            min_improvement=tuner._budget.accuracy_se(),
-            cosine_decay=True,
-            return_steps=True,
-            final_validation=False,
+        patience = _RECOVERY_PATIENCE
+        # ``endpoint_floor_steps`` is the RUN total, shared by every armed
+        # endpoint stage through the step ledger (per-stage budgets burned
+        # budget x N stages on multi-endpoint cells); an exhausted budget
+        # falls back to the default patience geometry (cheap stop).
+        total_steps = int(tuner.pipeline.config.get(
+            "endpoint_floor_steps", TUNING_POLICY.endpoint_floor_steps,
+        ))
+        steps_left = endpoint_steps.remaining(tuner.pipeline, total_steps)
+        if steps_left > 0:
+            lr = min(lr, effective_endpoint_floor_lr(tuner.pipeline.config))
+            budget = min(budget, steps_left)
+            geometry = endpoint_convergence_geometry(
+                budget, tuner._budget.check_interval,
+            )
+            min_steps = geometry.min_steps
+            patience = geometry.patience
+            armed = True
+        steps_used, rescued = _train_engaged(
+            tuner, lr=lr, target=target, budget=budget, min_steps=min_steps,
+            patience=patience, armed=armed, trajectory=trajectory,
         )
-        if ledger_funded:
+        if armed:
             endpoint_steps.consume(tuner.pipeline, steps_used)
         exit_read = _fp32_deployed_read(tuner)
         tol = float(getattr(tuner, "_rollback_tolerance", 0.0))
@@ -151,13 +156,82 @@ def run_endpoint_recovery(tuner, *, base_steps, target_floor=None) -> EndpointRe
         rolled_back=bool(rolled_back),
         target_floor=float(floor),
         floor_lifted=bool(floor_lifted),
-        entry_gap_armed=bool(entry_gap_armed),
+        armed=bool(armed),
+        divergence_rescued=bool(rescued),
     )
-    _emit(tuner, report)
+    _emit(tuner, report, trajectory)
     return report
 
 
-def _emit(tuner, report: EndpointRecoveryReport) -> None:
+def _train_engaged(tuner, *, lr, target, budget, min_steps, patience, armed,
+                   trajectory):
+    """One engaged endpoint training leg (+ the [C3] guarded rescue leg when
+    armed and the rescue flag is on); returns ``(steps_used, rescued)``."""
+    def record(step, acc, best_acc, entry_acc):
+        trajectory.append((int(step), float(acc), float(best_acc)))
+        return False
+
+    guard = None
+    if armed and TUNING_POLICY.endpoint_floor_divergence_rescue:
+        guard = DivergenceGuard(
+            accuracy_se=float(tuner._budget.accuracy_se()),
+            hard_floor=getattr(tuner, "_pipeline_hard_floor", None),
+        )
+
+    def on_check(step, acc, best_acc, entry_acc):
+        record(step, acc, best_acc, entry_acc)
+        if guard is None:
+            return False
+        return guard(step, acc, best_acc, entry_acc)
+
+    _, steps_used = RecoveryEngine.train_to_target(
+        tuner.trainer,
+        lr,
+        target,
+        max_steps=budget,
+        hooks=tuner._recovery_training_hooks(1.0),
+        validation_n_batches=tuner._budget.progress_eval_batches,
+        check_interval=tuner._budget.check_interval,
+        patience=patience,
+        min_steps=min_steps,
+        min_improvement=tuner._budget.accuracy_se(),
+        cosine_decay=True,
+        return_steps=True,
+        final_validation=False,
+        on_check=on_check,
+    )
+    steps_used = int(steps_used)
+    if guard is None or not guard.fired:
+        return steps_used, False
+    plan = rescue_plan(budget - steps_used, lr)
+    if plan is None:
+        return steps_used, False
+    # [C3] the fired leg already restored its live keep-best (the loop's
+    # entry-anchored restore); the restart builds a fresh optimizer.
+    geometry = endpoint_convergence_geometry(
+        plan.train_steps, tuner._budget.check_interval,
+    )
+    _, rescue_steps = RecoveryEngine.train_to_target(
+        tuner.trainer,
+        plan.lr,
+        target,
+        max_steps=plan.train_steps,
+        warmup_steps=plan.warmup_steps,
+        hooks=tuner._recovery_training_hooks(1.0),
+        validation_n_batches=tuner._budget.progress_eval_batches,
+        check_interval=tuner._budget.check_interval,
+        patience=geometry.patience,
+        min_steps=geometry.min_steps,
+        min_improvement=tuner._budget.accuracy_se(),
+        cosine_decay=True,
+        return_steps=True,
+        final_validation=False,
+        on_check=record,
+    )
+    return steps_used + int(rescue_steps), True
+
+
+def _emit(tuner, report: EndpointRecoveryReport, trajectory) -> None:
     print(
         f"[MBH-ENDPOINT] tuner={type(tuner).__name__} "
         f"target={report.target:.6f} entry={report.entry:.6f} "
@@ -166,7 +240,8 @@ def _emit(tuner, report: EndpointRecoveryReport) -> None:
         f"reached={report.reached} rolled_back={report.rolled_back} "
         f"target_floor={report.target_floor:.6f} "
         f"floor_lifted={report.floor_lifted} "
-        f"entry_gap_armed={report.entry_gap_armed}",
+        f"armed={report.armed} "
+        f"divergence_rescued={report.divergence_rescued}",
         flush=True,
     )
     emit_reporter_event(tuner.pipeline.reporter, "mbh_endpoint", {
@@ -181,7 +256,9 @@ def _emit(tuner, report: EndpointRecoveryReport) -> None:
         "rolled_back": report.rolled_back,
         "target_floor": report.target_floor,
         "floor_lifted": report.floor_lifted,
-        "entry_gap_armed": report.entry_gap_armed,
+        "armed": report.armed,
+        "divergence_rescued": report.divergence_rescued,
+        "trajectory": list(trajectory),
     })
     tuner.pipeline.reporter.report(f"{tuner.name} endpoint_recovery", {
         "target": round(report.target, 4),
@@ -194,5 +271,6 @@ def _emit(tuner, report: EndpointRecoveryReport) -> None:
         "rolled_back": report.rolled_back,
         "target_floor": round(report.target_floor, 4),
         "floor_lifted": report.floor_lifted,
-        "entry_gap_armed": report.entry_gap_armed,
+        "armed": report.armed,
+        "divergence_rescued": report.divergence_rescued,
     })

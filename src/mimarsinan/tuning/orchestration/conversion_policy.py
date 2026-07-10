@@ -68,6 +68,11 @@ _TTFS_QUANTIZED_RECIPE_KNOBS = {
     "activation_scale_quantile": 1.0,
     "manager_rate_fast_rates": [0.25, 0.5, 0.75, 1.0],
     "manager_rate_fast_steps_per_rate": FAST_LADDER_STEPS_PER_RATE,
+    # [C4] granted 2026-07: the ttfsq proxy→deployed transfer is measured
+    # sub-SE (t0_11 +0.0007 / t0_14 −0.0014 / t01_06 −0.0010 vs SE 0.0092),
+    # so the floor-funded proxy climb survives to the deployed read; the C1
+    # convergence stop bounds the funded burn.
+    **_WELL_CONDITIONED_ENDPOINT_FLOOR_KNOBS,
 }
 _SYNCHRONIZED_RECIPE_KNOBS = {
     **_TTFS_QUANTIZED_RECIPE_KNOBS,
@@ -117,7 +122,10 @@ _LIF_RATIONALE = (
 _TTFS_QUANTIZED_RATIONALE = (
     "Full-quantile (q=1.0) per-perceptron decode helps the quantized timing path; it "
     "is harmful for LIF, whose decode scale is per-channel (per_channel_theta). Green "
-    "family: stays on the floor+half-step proxy; the exact-kernel endpoint promotion "
+    "family: stays on the floor+half-step proxy, and the final-WQ endpoint carries "
+    "the well-conditioned floor (proxy->deployed transfer measured sub-SE: t0_11 "
+    "+0.0007 / t0_14 -0.0014 / t01_06 -0.0010 vs SE 0.0092, so the funded climb "
+    "survives to the deployed read); the exact-kernel endpoint promotion "
     "is an X4 follow-up (mbh_t6_sync_exact_kernel)."
 )
 _CASCADED_RATIONALE = (

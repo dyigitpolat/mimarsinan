@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 from mimarsinan.common.workload_profile import ResolvedWorkloadProfile
@@ -10,8 +11,10 @@ __all__ = [
     "FAST_LADDER_STEPS_PER_RATE",
     "TuningPolicy",
     "TUNING_POLICY",
+    "ConvergenceStopGeometry",
     "effective_prefix_stage_lr",
     "effective_endpoint_floor_lr",
+    "endpoint_convergence_geometry",
 ]
 
 
@@ -66,6 +69,19 @@ class TuningPolicy:
     # full floor budget (t01_23: full 16k => the honest 0.97 fbu ceiling);
     # wall time is a pure measurement, judged per hardware context at harvest.
     endpoint_floor_steps: int = 16000
+    # [C1] armed-endpoint convergence stop: min-cover = max(absolute lr-dip
+    # cover — measured ~1.6k on the t0_21 dip — fraction of the funded budget)
+    # and keep-best patience scaled to the budget instead of disarmed, so the
+    # funded budget is a true CEILING, never a mandatory burn.
+    endpoint_floor_min_cover_steps: int = 2000
+    endpoint_floor_patience_fraction: float = 0.25
+    # [C3] divergence guard + LR-backoff rescue on the armed floor (default
+    # off until the Phase-3 measured graduation): a fired dead-run predicate
+    # restores the live keep-best, rebuilds the optimizer, and restarts the
+    # remaining funded budget once at lr*factor with a warmup ramp.
+    endpoint_floor_divergence_rescue: bool = False
+    endpoint_floor_rescue_lr_factor: float = 0.3
+    endpoint_floor_rescue_warmup_fraction: float = 0.02
 
 
 # The fast ladder's generic per-rung training budget (rate-invariant units;
@@ -88,3 +104,29 @@ def effective_endpoint_floor_lr(config) -> float:
     else the frozen probe-validated policy value."""
     override = ResolvedWorkloadProfile.from_config(config).endpoint_floor_lr
     return TUNING_POLICY.endpoint_floor_lr if override is None else float(override)
+
+
+@dataclass(frozen=True)
+class ConvergenceStopGeometry:
+    """[C1] keep-best geometry for one funded endpoint/stabilize training leg."""
+
+    min_steps: int
+    patience: int
+
+
+def endpoint_convergence_geometry(budget, check_interval) -> ConvergenceStopGeometry:
+    """[C1] convergence-stop geometry for a funded leg: min-cover =
+    max(absolute lr-dip cover, fraction of budget) — the absolute term wins at
+    small residual budgets, keeping them full burns — and patience scaled to
+    the budget instead of disarmed, so the budget stays a true ceiling."""
+    policy = TUNING_POLICY
+    budget = max(0, int(budget))
+    interval = max(1, int(check_interval))
+    fraction = float(policy.endpoint_floor_patience_fraction)
+    return ConvergenceStopGeometry(
+        min_steps=max(
+            int(policy.endpoint_floor_min_cover_steps),
+            math.ceil(fraction * budget),
+        ),
+        patience=max(1, math.ceil(fraction * budget / interval)),
+    )

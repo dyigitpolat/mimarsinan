@@ -202,10 +202,14 @@ def test_bit_parity_every_endpoint_floor_folds_only_for_the_lossless_mode():
 
 
 def test_generalized_wq_scoped_floor_folds_for_well_conditioned_modes():
-    # [5u generalized] lif/sync/cascaded carry the WQ-scoped floor
-    # (wq_endpoint_target_floor + a lifted wq budget); ttfs_quantized stays off it.
+    # [5u generalized + C4] lif/sync/cascaded/ttfs_quantized carry the
+    # WQ-scoped floor (wq_endpoint_target_floor + a lifted wq budget).
+    # [C4 pin flip] ttfs_quantized formerly stayed off it; the grant rides the
+    # measured sub-SE proxy→deployed transfer (t0_11 +0.0007 / t0_14 −0.0014 /
+    # t01_06 −0.0010 vs SE 0.0092) with C1's convergence stop as the bound.
     for mode, schedule in [
         ("lif", None),
+        ("ttfs_quantized", None),
         ("ttfs_cycle_based", "cascaded"),
         ("ttfs_cycle_based", "synchronized"),
     ]:
@@ -216,10 +220,15 @@ def test_generalized_wq_scoped_floor_folds_for_well_conditioned_modes():
         assert dp["wq_endpoint_target_floor"] == 0.98, (mode, schedule)
         assert dp["wq_endpoint_recovery_steps"] == 16000, (mode, schedule)
 
-    dp = {"spiking_mode": "ttfs_quantized", "weight_quantization": True}
+
+def test_explicit_wq_keys_still_beat_the_ttfs_quantized_recipe_floor():
+    # Tier-0 cells pin wq_endpoint_recovery_steps=2000 explicitly until the
+    # Phase-4 regen: explicit config keys always beat recipe knobs.
+    dp = {"spiking_mode": "ttfs_quantized", "weight_quantization": True,
+          "wq_endpoint_recovery_steps": 2000}
     derive_deployment_parameters(dp)
-    assert "wq_endpoint_target_floor" not in dp
-    assert dp["wq_endpoint_recovery_steps"] == 600
+    assert dp["wq_endpoint_recovery_steps"] == 2000
+    assert dp["wq_endpoint_target_floor"] == 0.98
 
 
 def test_ttfs_quantized_folds_full_quantile_decode():

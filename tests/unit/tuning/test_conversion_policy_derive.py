@@ -54,6 +54,11 @@ _MODE_KNOBS = {
         "activation_scale_quantile": 1.0,
         "manager_rate_fast_rates": [0.25, 0.5, 0.75, 1.0],
         "manager_rate_fast_steps_per_rate": 120,
+        # [C4] the WQ-scoped well-conditioned floor: the ttfsq proxy→deployed
+        # transfer is measured sub-SE (t0_11 +0.0007 / t0_14 −0.0014 / t01_06
+        # −0.0010 vs SE 0.0092), so the floor-funded climb survives to hcm.
+        "wq_endpoint_target_floor": 0.98,
+        "wq_endpoint_recovery_steps": 16000,
     },
     ("ttfs_cycle_based", "cascaded"): {
         "ttfs_genuine_blend_ramp": True,

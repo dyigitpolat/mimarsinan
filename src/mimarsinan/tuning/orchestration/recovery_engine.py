@@ -14,7 +14,10 @@ class RecoveryEngine:
     """Train-to-target corrector with recovery-hook lifecycle management."""
 
     @staticmethod
-    def train_to_target(trainer, lr, target, *, max_steps, hooks=None, optimizer=None, **kwargs):
+    def train_to_target(
+        trainer, lr, target, *, max_steps, hooks=None, optimizer=None,
+        warmup_steps=0, **kwargs,
+    ):
         """``train_steps_until_target`` with the hooks removed in ``finally``.
 
         ``optimizer=None`` is the bit-exact fresh-build path; a supplied optimizer is
@@ -23,7 +26,7 @@ class RecoveryEngine:
         active_hooks = list(hooks) if hooks else []
         try:
             return trainer.train_steps_until_target(
-                lr, max_steps, target, 0, optimizer=optimizer, **kwargs
+                lr, max_steps, target, warmup_steps, optimizer=optimizer, **kwargs
             )
         finally:
             for hook in active_hooks:

@@ -74,12 +74,12 @@ class TestRecipeCarriesTheDemotion:
         knobs = ConversionPolicy.derive(mode, schedule).knobs
         assert knobs["wq_fast_rates"] == [0.5, 1.0]
         assert knobs["wq_fast_steps_per_rate"] == 0
-        # [5u] the bit-parity-lossless ttfs row AND [5u generalized] the
-        # well-conditioned near-lossless rows (lif/sync/cascaded) fund a lifted
-        # NAPQ endpoint from the wall headroom; only ttfs_quantized keeps 600.
-        floor_lifted_modes = {"lif", "ttfs", "ttfs_cycle_based"}
-        expected_steps = 16000 if mode in floor_lifted_modes else 600
-        assert knobs["wq_endpoint_recovery_steps"] == expected_steps
+        # [5u] the bit-parity-lossless ttfs row AND [5u generalized + C4] the
+        # well-conditioned rows (lif/sync/cascaded/ttfs_quantized) fund a
+        # lifted NAPQ endpoint from the wall headroom; the C1 convergence stop
+        # makes the funding a ceiling. The generic 600 survives only for modes
+        # outside both families.
+        assert knobs["wq_endpoint_recovery_steps"] == 16000
 
 
 class TestGeneralizedEndpointFloor:
@@ -143,13 +143,13 @@ class TestGeneralizedEndpointFloor:
 
 class TestGeneralizedFloorRecipeKnobs:
     """[5u generalized] the well-conditioned near-lossless recipes carry the
-    WQ-scoped floor; ttfs_quantized stays off it; bit-parity ttfs keeps its
-    every-endpoint floor."""
+    WQ-scoped floor; bit-parity ttfs keeps its every-endpoint floor. [C4]
+    ttfs_quantized joined the well-conditioned family."""
 
     @pytest.mark.parametrize(
         "mode,schedule",
-        [("lif", None), ("ttfs_cycle_based", "cascaded"),
-         ("ttfs_cycle_based", "synchronized")],
+        [("lif", None), ("ttfs_quantized", None),
+         ("ttfs_cycle_based", "cascaded"), ("ttfs_cycle_based", "synchronized")],
     )
     def test_well_conditioned_modes_carry_the_wq_scoped_floor(self, mode, schedule):
         knobs = ConversionPolicy.derive(mode, schedule).knobs
@@ -158,9 +158,16 @@ class TestGeneralizedFloorRecipeKnobs:
         # composition lifts (one bounded wall lift).
         assert "endpoint_target_floor" not in knobs
 
-    def test_ttfs_quantized_stays_off_the_generalized_floor(self):
+    def test_ttfs_quantized_carries_the_generalized_floor(self):
+        """[C4 pin flip] the former ``stays_off_the_generalized_floor`` pin is
+        deliberately inverted: ttfs_quantized's proxy→deployed transfer is
+        measured sub-SE (t0_11 +0.0007, t0_14 −0.0014, t01_06 −0.0010 vs SE
+        0.0092), so a floor-funded proxy climb survives to the deployed read
+        and the mode earns the well-conditioned WQ floor. C1's convergence
+        stop bounds the funded burn."""
         knobs = ConversionPolicy.derive("ttfs_quantized", None).knobs
-        assert "wq_endpoint_target_floor" not in knobs
+        assert knobs["wq_endpoint_target_floor"] == pytest.approx(0.98)
+        assert knobs["wq_endpoint_recovery_steps"] == 16000
         assert "endpoint_target_floor" not in knobs
 
     def test_bit_parity_ttfs_uses_the_every_endpoint_floor(self):

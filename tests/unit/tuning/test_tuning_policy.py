@@ -57,6 +57,16 @@ EXPECTED_POLICY_VALUES = {
     # endpoint_steps ledger), never wall seconds: 16,000 is the validated
     # full floor (t01_23). Wall time is a pure measurement.
     "endpoint_floor_steps": 16000,
+    # [C1] armed-endpoint convergence stop: cover the measured lr dip
+    # (t0_21 dip ~1.6k absolute), then keep-best patience scaled to the
+    # funded budget — budgets are true ceilings, never mandatory burns.
+    "endpoint_floor_min_cover_steps": 2000,
+    "endpoint_floor_patience_fraction": 0.25,
+    # [C3] divergence guard + LR-backoff rescue on the armed floor
+    # (default-off until the Phase-3 measured graduation).
+    "endpoint_floor_divergence_rescue": False,
+    "endpoint_floor_rescue_lr_factor": 0.3,
+    "endpoint_floor_rescue_warmup_fraction": 0.02,
 }
 
 COLLAPSED_CONFIG_KEYS = frozenset({

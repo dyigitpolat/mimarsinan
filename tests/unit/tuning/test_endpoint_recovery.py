@@ -7,7 +7,9 @@ the recipe's freed stabilize/ladder steps plus whatever this tuner's own gated
 ladder left untrained, keep-best + early-stop inside the trainer loop, and an
 fp32 entry guard so the stage never ends below entry. It replaces the old
 ``_fast_stabilize`` / open-ended stabilization at the LIF, TTFS-cycle, and sync
-AQ endpoints.
+AQ endpoints. [C2] every engaged stage the run's step ledger affords trains the
+funded recovery geometry ([C1] cosine + dip cover + budget-scaled patience);
+the pre-floor patience geometry survives only on an exhausted ledger.
 """
 
 from __future__ import annotations
@@ -16,7 +18,7 @@ import pytest
 import torch
 
 from conftest import MockPipeline, default_config, make_tiny_supermodel
-from mimarsinan.tuning.orchestration import dhat_highwater
+from mimarsinan.tuning.orchestration import dhat_highwater, endpoint_steps
 from mimarsinan.tuning.orchestration.frontier import endpoint_recovery
 from mimarsinan.tuning.orchestration.adaptation_manager import AdaptationManager
 from mimarsinan.tuning.orchestration.frontier.endpoint_recovery import (
@@ -25,6 +27,11 @@ from mimarsinan.tuning.orchestration.frontier.endpoint_recovery import (
     run_endpoint_recovery,
 )
 from mimarsinan.tuning.orchestration.recovery_engine import RecoveryEngine
+from mimarsinan.tuning.orchestration.tuner_base import _RECOVERY_PATIENCE
+from mimarsinan.tuning.orchestration.tuning_policy import (
+    TUNING_POLICY,
+    endpoint_convergence_geometry,
+)
 
 
 def _lif_tuner(tmp_path, *, endpoint_steps=0, steps_per_rate=2, rates=(0.5, 1.0)):
@@ -203,10 +210,10 @@ class TestEndpointTargetFloor:
 
     For a lossless mode every controller target anchors at a past deployed read,
     so preservation ≡ stagnation at the float envelope; the floor lets the
-    endpoint chase the acceptance target. When the floor LIFTS the target above
-    the high-water, the stage must also switch to the probe-validated geometry
-    (lr ≤ 2e-3, cosine over the FULL funded budget) — the default patience
-    window sits entirely inside the lr transient and would be sterile.
+    endpoint chase the acceptance target. [C1+C2] every engaged stage the ledger
+    affords trains the probe-validated geometry (lr ≤ 2e-3, cosine, dip-cover
+    min_steps + budget-scaled patience) — the default patience window sits
+    entirely inside the lr transient and would be sterile.
     """
 
     def _run(self, tmp_path, monkeypatch, *, floor, highwater, reads, base_steps=100):
@@ -231,6 +238,7 @@ class TestEndpointTargetFloor:
         try:
             report = run_endpoint_recovery(tuner, base_steps=base_steps)
         finally:
+            self._interval = tuner._budget.check_interval
             tuner.close()
         return report, seen
 
@@ -242,24 +250,23 @@ class TestEndpointTargetFloor:
         assert report.target == pytest.approx(0.9)
         assert report.floor_lifted is True
 
-    def test_floor_below_high_water_keeps_the_mark_and_geometry(
+    def test_floor_below_high_water_keeps_the_mark_and_arms(
         self, tmp_path, monkeypatch,
     ):
-        # Sterile-window regression guard for the DEFAULT path: when the floor
-        # does not lift the target AND the entry gap is sub-SE, geometry is
-        # bit-identical to the pre-floor stage (pipeline lr, min_steps=0,
-        # patience armed). A super-SE gap arms the floor geometry instead
-        # (TestEntryGapArming).
+        # [C2] the floor does not lift the target, but the stage is engaged and
+        # the ledger affords: the funded geometry arms even on a sub-SE gap
+        # (the deleted >=1xSE gate left t0_14's 210-step window sterile).
         report, seen = self._run(
             tmp_path, monkeypatch, floor=0.4, highwater=0.77,
             reads=[0.77 - 1e-4, 0.78],
         )
         assert seen["target"] == pytest.approx(0.77)
-        assert seen["min_steps"] == 0
+        assert seen["min_steps"] == 2000  # absolute dip cover > the 100 budget
         assert seen["lr"] == pytest.approx(0.001)
         assert report.floor_lifted is False
+        assert report.armed is True
 
-    def test_absent_floor_is_bit_identical_to_the_pre_floor_stage(
+    def test_absent_floor_keeps_the_high_water_target_and_arms(
         self, tmp_path, monkeypatch,
     ):
         tuner = _lif_tuner(tmp_path)
@@ -284,22 +291,31 @@ class TestEndpointTargetFloor:
         finally:
             tuner.close()
         assert seen["target"] == pytest.approx(0.77)
-        assert seen["min_steps"] == 0
+        assert seen["min_steps"] == 2000
         assert report.floor_lifted is False and report.target_floor == 0.0
+        assert report.armed is True
 
-    def test_lifted_floor_disarms_the_sterile_patience_window(
+    def test_lifted_floor_stops_by_convergence_not_budget_burn(
         self, tmp_path, monkeypatch,
     ):
-        # [5u geometry] min_steps == the full funded budget: stale checks accrued
-        # inside the lr-transient dip must not stop the stage (keep-best still
-        # floors at entry; the target-reach early exit remains).
+        # [C1] the armed geometry covers the lr dip (absolute at small budgets,
+        # fractional at large ones) and keeps a budget-scaled patience: the
+        # funded budget is a true ceiling, never a mandatory burn.
         report, seen = self._run(
             tmp_path, monkeypatch, floor=0.9, highwater=0.5, reads=[0.3, 0.6],
             base_steps=300,
         )
         assert seen["max_steps"] == 300
-        assert seen["min_steps"] == 300
+        assert seen["min_steps"] == 2000  # absolute cover: no stop inside the dip
         assert seen["cosine_decay"] is True
+        report, seen = self._run(
+            tmp_path, monkeypatch, floor=0.9, highwater=0.5, reads=[0.3, 0.6],
+            base_steps=16000,
+        )
+        assert seen["max_steps"] == 16000
+        expected = endpoint_convergence_geometry(16000, self._interval)
+        assert seen["min_steps"] == expected.min_steps
+        assert seen["patience"] == expected.patience
 
     def test_lifted_floor_funds_steps_never_wall_seconds(
         self, tmp_path, monkeypatch,
@@ -311,13 +327,13 @@ class TestEndpointTargetFloor:
             tmp_path, monkeypatch, floor=0.9, highwater=0.5, reads=[0.3, 0.6],
         )
         assert "max_seconds" not in seen
-        assert seen["min_steps"] == seen["max_steps"]
+        assert seen["min_steps"] == 2000
         report, seen = self._run(
             tmp_path, monkeypatch, floor=0.4, highwater=0.77,
             reads=[0.77 - 1e-4, 0.78],
         )
         assert "max_seconds" not in seen
-        assert seen["min_steps"] == 0
+        assert seen["min_steps"] == 2000
 
     def test_lifted_floor_caps_the_lr_at_the_probe_validated_arm(
         self, tmp_path, monkeypatch,
@@ -472,10 +488,10 @@ class TestExplicitTargetFloorAndStepBudget:
         self, tmp_path, monkeypatch,
     ):
         # Policy default 16,000 >> the stage budget (base 100 + 4 freed
-        # ladder steps): unclamped.
+        # ladder steps): unclamped; min_steps is the [C1] absolute dip cover.
         _, seen = self._drive(tmp_path, monkeypatch, target_floor=0.9)
         assert seen["max_steps"] == 104
-        assert seen["min_steps"] == 104
+        assert seen["min_steps"] == 2000
         assert "max_seconds" not in seen
 
     def test_step_budget_reads_config_override(self, tmp_path, monkeypatch):
@@ -483,21 +499,19 @@ class TestExplicitTargetFloorAndStepBudget:
             tmp_path, monkeypatch, target_floor=0.9, floor_steps=90,
         )
         assert seen["max_steps"] == 90
-        assert seen["min_steps"] == 90
+        assert seen["min_steps"] == 2000
 
 
-class TestEntryGapArming:
-    """[5y arming gap] the floor geometry arms on the ENTRY GAP, not only on a
-    floor-lifted target.
+class TestArmWhenEngaged:
+    """[C2] the funded geometry arms whenever the stage is ENGAGED (entry <
+    target) and the run's step ledger affords — the >=1xSE entry-gap gate is
+    deleted.
 
-    ``floor_lifted`` (floor > high-water) only fires on lossless/envelope
-    cells; a post-crater cell whose PRE-crater high-water beats the floor
-    (t01_19: high-water 0.9937, floor 0.98, NAPQ entry 0.095) kept the sterile
-    armed-patience geometry and stopped in ~2 x check_interval. When
-    target - entry >= the SE threshold (the same ``accuracy_se`` below which
-    progress cannot even register), the stage needs the recovery geometry —
-    lr cap, cosine over the full budget, patience disarmed, step-ledger-funded
-    — regardless of how the target was set.
+    Measured: the gap gate left t0_14's 210-step endpoint sterile (+0.0000
+    exit==entry) and armed t01_06 on a razor-edge margin of 0.000186
+    (nondeterministic across replicas). The worst case — a sub-SE gap arming a
+    16k-family ledger against an unreachable target — is bounded by [C1]'s
+    convergence stop (test_convergence_stop.py), never a full-ledger burn.
     """
 
     def _drive(self, tmp_path, monkeypatch, *, highwater, entry,
@@ -533,10 +547,11 @@ class TestEntryGapArming:
             )
         finally:
             se = tuner._budget.accuracy_se()
+            self._interval = tuner._budget.check_interval
             tuner.close()
         return report, seen, se
 
-    def test_crater_entry_arms_the_floor_geometry_without_a_floor_lift(
+    def test_crater_entry_arms_the_funded_geometry_without_a_floor_lift(
         self, tmp_path, monkeypatch,
     ):
         # The t01_19 anatomy: explicit WQ floor 0.98 BELOW the 0.9937 pre-crater
@@ -546,48 +561,54 @@ class TestEntryGapArming:
             target_floor=0.98, pipeline_lr=0.003,
         )
         assert report.floor_lifted is False
-        assert report.entry_gap_armed is True
+        assert report.armed is True
         assert seen["target"] == pytest.approx(0.9937)
-        assert seen["min_steps"] == seen["max_steps"]
+        assert seen["min_steps"] == 2000
         assert seen["lr"] == pytest.approx(2e-3)
         assert seen["cosine_decay"] is True
         assert "max_seconds" not in seen
 
-    def test_sub_se_gap_keeps_the_default_patience_geometry(
-        self, tmp_path, monkeypatch,
-    ):
+    def test_sub_se_gap_arms_the_funded_geometry(self, tmp_path, monkeypatch):
         report, seen, se = self._drive(
             tmp_path, monkeypatch, highwater=0.77, entry=0.77 - 1e-4,
         )
         assert 1e-4 < se, "fixture invariant: the gap must be sub-SE"
-        assert report.entry_gap_armed is False
-        assert seen["min_steps"] == 0
+        assert report.armed is True
+        assert seen["min_steps"] == 2000
+        assert seen["lr"] == pytest.approx(0.001)
         assert "max_seconds" not in seen
 
-    def test_gap_exactly_at_the_se_threshold_arms(self, tmp_path, monkeypatch):
-        probe, _, se = self._drive(
-            tmp_path, monkeypatch, highwater=0.77, entry=0.77 - 1e-4,
-        )
-        report, seen, _ = self._drive(
-            tmp_path, monkeypatch, highwater=0.77, entry=0.77 - se,
-        )
-        assert report.entry_gap_armed is True
-        assert seen["min_steps"] == seen["max_steps"]
-
-    def test_floor_lifted_geometry_is_unchanged_by_gap_arming(
+    def test_sub_se_unreachable_target_gets_the_convergence_stop_geometry(
         self, tmp_path, monkeypatch,
     ):
-        # A lossless/envelope cell (floor lifts the target) keeps exactly the
-        # [5u] geometry; the gap flag is reported but changes nothing.
+        # [C1 x C2 composition] a sub-SE gap on a 16k family arms with a
+        # finite patience window, so an unreachable target patience-stops
+        # (loop behavior proven in test_convergence_stop.py) instead of
+        # burning the full ledger.
+        report, seen, _ = self._drive(
+            tmp_path, monkeypatch, highwater=0.77, entry=0.77 - 1e-4,
+            base_steps=16000,
+        )
+        expected = endpoint_convergence_geometry(16000, self._interval)
+        assert seen["max_steps"] == 16000
+        assert seen["min_steps"] == expected.min_steps < 16000
+        assert seen["patience"] == expected.patience
+        assert seen["patience"] * self._interval < 16000
+
+    def test_floor_lifted_geometry_is_identical_to_gap_arming(
+        self, tmp_path, monkeypatch,
+    ):
+        # A lossless/envelope cell (floor lifts the target) trains exactly the
+        # same funded geometry; only the target source differs.
         report, seen, _ = self._drive(
             tmp_path, monkeypatch, highwater=0.5, entry=0.3, config_floor=0.9,
         )
         assert report.floor_lifted is True
-        assert report.entry_gap_armed is True
-        assert seen["min_steps"] == seen["max_steps"]
+        assert report.armed is True
+        assert seen["min_steps"] == 2000
         assert "max_seconds" not in seen
 
-    def test_step_budget_reads_config_override_under_gap_arming(
+    def test_step_budget_reads_config_override_under_arming(
         self, tmp_path, monkeypatch,
     ):
         _, seen, _ = self._drive(
@@ -595,7 +616,46 @@ class TestEntryGapArming:
             target_floor=0.98, floor_steps=90,
         )
         assert seen["max_steps"] == 90
-        assert seen["min_steps"] == 90
+        assert seen["min_steps"] == 2000
+
+    def test_ledger_exhausted_stage_keeps_the_pre_floor_patience_geometry(
+        self, tmp_path, monkeypatch,
+    ):
+        # The one surviving non-armed engaged path: an exhausted ledger falls
+        # back to the cheap patience stop, bit-identical to the pre-floor
+        # stage (pipeline lr, min_steps=0, patience armed, no warmup).
+        tuner = _lif_tuner(tmp_path)
+        tuner.pipeline_lr = 0.003
+        _prepare_endpoint_scaffold(tuner)
+        tuner._fast_optimizer_steps = len(tuner._fixed_ladder_rates) * 2
+        endpoint_steps.consume(
+            tuner.pipeline, TUNING_POLICY.endpoint_floor_steps,
+        )
+        dhat_highwater.observe(tuner.pipeline, 0.9937)
+        reads = iter([0.095, 0.145])
+        monkeypatch.setattr(
+            endpoint_recovery, "_fp32_deployed_read", lambda t: next(reads),
+        )
+        seen = {}
+
+        def fake_train(trainer, lr, target, *, max_steps, **kwargs):
+            seen.update(kwargs, lr=lr, max_steps=max_steps)
+            return 0.145, 9
+
+        monkeypatch.setattr(
+            RecoveryEngine, "train_to_target", staticmethod(fake_train),
+        )
+        try:
+            report = run_endpoint_recovery(
+                tuner, base_steps=100, target_floor=0.98,
+            )
+        finally:
+            tuner.close()
+        assert report.armed is False
+        assert seen["min_steps"] == 0
+        assert seen["patience"] == _RECOVERY_PATIENCE
+        assert seen["lr"] == pytest.approx(0.003)
+        assert "warmup_steps" not in seen
 
     def test_zero_budget_never_arms(self, tmp_path, monkeypatch):
         tuner = _lif_tuner(tmp_path)
@@ -608,11 +668,11 @@ class TestEntryGapArming:
             )
             report = run_endpoint_recovery(tuner, base_steps=0)
             assert report.engaged is False
-            assert report.entry_gap_armed is False
+            assert report.armed is False
         finally:
             tuner.close()
 
-    def test_m_safety_rollback_intact_under_gap_arming(
+    def test_m_safety_rollback_intact_under_arming(
         self, tmp_path, monkeypatch,
     ):
         tuner = _lif_tuner(tmp_path)
@@ -639,20 +699,20 @@ class TestEntryGapArming:
             )
         finally:
             tuner.close()
-        assert report.entry_gap_armed is True
+        assert report.armed is True
         assert report.rolled_back is True
         assert report.exit == pytest.approx(0.6)
         post_sd = tuner.model.state_dict()
         for key in pre_sd:
             assert torch.equal(pre_sd[key], post_sd[key]), key
 
-    def test_emit_line_carries_the_gap_flag(self, tmp_path, monkeypatch, capsys):
+    def test_emit_line_carries_the_armed_flag(self, tmp_path, monkeypatch, capsys):
         self._drive(
             tmp_path, monkeypatch, highwater=0.9937, entry=0.095,
             target_floor=0.98,
         )
         line = _endpoint_lines(capsys.readouterr().out)[0]
-        assert "entry_gap_armed=True" in line
+        assert "armed=True" in line
         assert "floor_lifted=False" in line
 
 

@@ -99,16 +99,18 @@ class TestEndpointStagesShareTheBudget:
     ):
         tuner = self._make_tuner(tmp_path)
         try:
-            # Stage 1: a 12k stage budget fits inside the 16k default ledger.
+            # Stage 1: a 12k stage budget fits inside the 16k default ledger;
+            # [C1] min_steps is the convergence cover, never the full budget.
             report1, seen1 = self._drive(tuner, monkeypatch, base_steps=12000)
             assert seen1["max_steps"] == 12000
-            assert seen1["min_steps"] == 12000
+            assert seen1["min_steps"] == 3000
             assert endpoint_steps.consumed(tuner.pipeline) == 12000
             assert report1.budget_steps == 12000
-            # Stage 2: only 4,000 ledger steps remain; the stage budget clamps.
+            # Stage 2: only 4,000 ledger steps remain; the stage budget clamps
+            # and the absolute dip cover takes over.
             report2, seen2 = self._drive(tuner, monkeypatch, base_steps=12000)
             assert seen2["max_steps"] == 4000
-            assert seen2["min_steps"] == 4000
+            assert seen2["min_steps"] == 2000
             assert report2.budget_steps == 4000
             # Stage 3: ledger exhausted — fall back to the default patience
             # geometry (cheap stop) instead of burning another full budget.
@@ -117,7 +119,7 @@ class TestEndpointStagesShareTheBudget:
             )
             assert seen3["min_steps"] == 0
             assert seen3["max_steps"] == 12000
-            assert report3.entry_gap_armed is True
+            assert report3.armed is False
         finally:
             tuner.close()
 

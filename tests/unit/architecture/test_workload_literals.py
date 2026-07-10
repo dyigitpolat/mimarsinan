@@ -150,6 +150,10 @@ CALIBRATED_CONSTANT_INVENTORY = (
      "T2: floor-chasing endpoint LR (t0_06 probe); override: ModelWorkloadProfile.endpoint_floor_lr"),
     ("mimarsinan.tuning.orchestration.tuning_policy", "TUNING_POLICY.endpoint_floor_steps", 16000,
      "5u: run-total endpoint step budget (t01_23); per-cell key endpoint_floor_steps"),
+    ("mimarsinan.tuning.orchestration.tuning_policy", "TUNING_POLICY.endpoint_floor_min_cover_steps", 2000,
+     "C1: absolute lr-dip cover before any armed-endpoint stop (t0_21 dip ~1.6k; Phase-1 probe recalibrates)"),
+    ("mimarsinan.tuning.orchestration.tuning_policy", "TUNING_POLICY.endpoint_floor_patience_fraction", 0.25,
+     "C1: keep-best cover/patience fraction of the funded budget (budget-invariant units)"),
     ("mimarsinan.tuning.orchestration.tuning_policy", "TUNING_POLICY.dfq_keepbest_patience", 5,
      "T4: DFQ keep-best patience (W-CAL-3), iteration units"),
     ("mimarsinan.tuning.orchestration.tuning_policy", "TUNING_POLICY.prefix_stage_dfq_iters", 4,
@@ -228,7 +232,8 @@ CALIBRATED_CONSTANT_INVENTORY = (
     }, "C4/5u: the tier-0 acceptance bar as the endpoint floor + probe-validated budget"),
     ("mimarsinan.tuning.orchestration.conversion_policy", "_WELL_CONDITIONED_ENDPOINT_FLOOR_KNOBS", {
         "wq_endpoint_target_floor": 0.98, "wq_endpoint_recovery_steps": 16000,
-    }, "C4/5u generalized: final-WQ endpoint floor for near-lossless conversions"),
+    }, "C4/5u generalized: final-WQ endpoint floor for near-lossless conversions "
+       "incl. ttfs_quantized (sub-SE proxy→deployed transfer, 2026-07 grant)"),
 )
 
 
@@ -236,7 +241,9 @@ class TestCalibratedConstantInventory:
     def test_inventory_count_is_pinned(self):
         # Shrink-only: lower this when a row is migrated/deleted; growing the
         # inventory needs an audit-level rationale in the same commit.
-        assert len(CALIBRATED_CONSTANT_INVENTORY) == 38
+        # 38 -> 40 (C1): the two new TuningPolicy convergence-stop constants
+        # are tier-0-calibrated and must be pinned like their siblings.
+        assert len(CALIBRATED_CONSTANT_INVENTORY) == 40
 
     @pytest.mark.parametrize(
         "module,attr,expected",

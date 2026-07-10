@@ -107,9 +107,12 @@ def train_steps_until_target(
     return_steps: bool = False,
     cosine_decay: bool = False,
     final_validation: bool = True,
+    on_check=None,
 ):
     # Reproducibility contract: the budget is STEPS only — no wall-clock cap.
     # Identical configs train identical step counts on any hardware.
+    # ``on_check(steps_run, acc, best_acc, entry_acc)`` observes every
+    # validation check; a truthy return aborts the loop (keep-best restores).
     recipe_recovery = _recipe_recovery_enabled(trainer)
     use_constant = (not cosine_decay) and not recipe_recovery
     owns_optimizer = optimizer is None
@@ -139,7 +142,8 @@ def train_steps_until_target(
     # run that never beats entry restores entry exactly (full state_dict incl.
     # buffers), so a wrecked recovery becomes a no-op step, not a committed wreck.
     entry_state = clone_state_for_trainer(trainer)
-    best_acc = float(trainer.validate_n_batches(n_val))
+    entry_acc = float(trainer.validate_n_batches(n_val))
+    best_acc = entry_acc
     best_state = entry_state
     stale_checks = 0
     steps_run = 0
@@ -170,23 +174,29 @@ def train_steps_until_target(
                         scheduler.step()
                     break
                 acc = confirm
+            stop_stale = False
             if acc > best_acc + imp_eps:
                 best_acc = acc
                 best_state = clone_state_for_trainer(trainer)
                 stale_checks = 0
             else:
                 stale_checks += 1
-                if step_idx + 1 >= min_s and stale_checks >= patience:
-                    if plateau_enabled and plateau_reductions_left > 0:
-                        current_base_lr *= plateau_factor
-                        scheduler = _rebuild_scheduler_at_reduced_lr(
-                            trainer, optimizer, current_base_lr, max_steps,
-                            factor=plateau_factor,
-                        )
-                        plateau_reductions_left -= 1
-                        stale_checks = 0
-                        continue
-                    break
+                stop_stale = step_idx + 1 >= min_s and stale_checks >= patience
+            if on_check is not None and on_check(
+                steps_run, float(acc), float(best_acc), entry_acc
+            ):
+                break
+            if stop_stale:
+                if plateau_enabled and plateau_reductions_left > 0:
+                    current_base_lr *= plateau_factor
+                    scheduler = _rebuild_scheduler_at_reduced_lr(
+                        trainer, optimizer, current_base_lr, max_steps,
+                        factor=plateau_factor,
+                    )
+                    plateau_reductions_left -= 1
+                    stale_checks = 0
+                    continue
+                break
 
     if best_state is not None:
         restore_state_for_trainer(trainer, best_state)

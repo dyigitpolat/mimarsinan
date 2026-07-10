@@ -2181,6 +2181,7 @@
     "weight_bits": 5,
     "weight_quantization": true,
     "wq_endpoint_recovery_steps": 2000,
+    "wq_endpoint_target_floor": 0.98,
     "wq_fast_rates": [
      0.5,
      1.0
@@ -2382,6 +2383,7 @@
     "weight_bits": 8,
     "weight_quantization": true,
     "wq_endpoint_recovery_steps": 2000,
+    "wq_endpoint_target_floor": 0.98,
     "wq_fast_rates": [
      0.5,
      1.0
@@ -2584,6 +2586,7 @@
     "weight_bits": 5,
     "weight_quantization": true,
     "wq_endpoint_recovery_steps": 2000,
+    "wq_endpoint_target_floor": 0.98,
     "wq_fast_rates": [
      0.5,
      1.0
@@ -2786,6 +2789,7 @@
     "weight_bits": 5,
     "weight_quantization": true,
     "wq_endpoint_recovery_steps": 2000,
+    "wq_endpoint_target_floor": 0.98,
     "wq_fast_rates": [
      0.5,
      1.0
@@ -2990,6 +2994,7 @@
     "weight_bits": 5,
     "weight_quantization": true,
     "wq_endpoint_recovery_steps": 2000,
+    "wq_endpoint_target_floor": 0.98,
     "wq_fast_rates": [
      0.5,
      1.0
@@ -6304,6 +6309,7 @@
     "weight_bits": 5,
     "weight_quantization": true,
     "wq_endpoint_recovery_steps": 2000,
+    "wq_endpoint_target_floor": 0.98,
     "wq_fast_rates": [
      0.5,
      1.0
@@ -9571,6 +9577,7 @@
     "weight_bits": 4,
     "weight_quantization": true,
     "wq_endpoint_recovery_steps": 2000,
+    "wq_endpoint_target_floor": 0.98,
     "wq_fast_rates": [
      0.5,
      1.0
@@ -10187,6 +10194,7 @@
     "weight_bits": 8,
     "weight_quantization": true,
     "wq_endpoint_recovery_steps": 2000,
+    "wq_endpoint_target_floor": 0.98,
     "wq_fast_rates": [
      0.5,
      1.0
@@ -11151,7 +11159,8 @@
     "weight_bits": 8,
     "weight_quantization": true,
     "weight_source": "torchvision",
-    "wq_endpoint_recovery_steps": 600,
+    "wq_endpoint_recovery_steps": 16000,
+    "wq_endpoint_target_floor": 0.98,
     "wq_fast_rates": [
      0.5,
      1.0
@@ -12916,7 +12925,8 @@
     "weight_bits": 8,
     "weight_quantization": true,
     "weight_source": "torchvision",
-    "wq_endpoint_recovery_steps": 600,
+    "wq_endpoint_recovery_steps": 16000,
+    "wq_endpoint_target_floor": 0.98,
     "wq_fast_rates": [
      0.5,
      1.0
@@ -13304,7 +13314,8 @@
       1.0
      ],
      "manager_rate_fast_steps_per_rate": 120,
-     "wq_endpoint_recovery_steps": 600,
+     "wq_endpoint_recovery_steps": 16000,
+     "wq_endpoint_target_floor": 0.98,
      "wq_fast_rates": [
       0.5,
       1.0
@@ -13341,7 +13352,12 @@
    "checkpoint_location": "device",
    "checkpoint_scope": "full",
    "dfq_keepbest_patience": 5,
+   "endpoint_floor_divergence_rescue": false,
    "endpoint_floor_lr": 0.002,
+   "endpoint_floor_min_cover_steps": 2000,
+   "endpoint_floor_patience_fraction": 0.25,
+   "endpoint_floor_rescue_lr_factor": 0.3,
+   "endpoint_floor_rescue_warmup_fraction": 0.02,
    "endpoint_floor_steps": 16000,
    "global_budget": 0.0,
    "hop_stage_steps_per_rate": 40,

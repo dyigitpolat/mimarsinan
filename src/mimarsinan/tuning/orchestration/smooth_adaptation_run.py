@@ -12,10 +12,10 @@ from mimarsinan.tuning.orchestration.acceptance_sensor import AcceptanceSensor
 from mimarsinan.tuning.orchestration.adaptation_driver import AdaptationDriver
 from mimarsinan.tuning.orchestration.recovery_engine import RecoveryEngine
 from mimarsinan.tuning.orchestration.tuning_budget import min_step_for_smooth_adaptation
-from mimarsinan.tuning.orchestration.tuner_base import (
-    TunerBase,
-    _RECOVERY_PATIENCE,
+from mimarsinan.tuning.orchestration.tuning_policy import (
+    endpoint_convergence_geometry,
 )
+from mimarsinan.tuning.orchestration.tuner_base import TunerBase
 
 
 class SmoothAdaptationRunMixin(TunerBase):
@@ -92,7 +92,11 @@ class SmoothAdaptationRunMixin(TunerBase):
             self._budget.progress_eval_batches,
             self._budget.eval_n_batches,
         )
-        max_patience = max(_RECOVERY_PATIENCE, budget // max(1, self._budget.check_interval))
+        # [C1] the endpoint convergence-stop geometry replaces the disarmed
+        # patience (min_steps=budget): the budget is a ceiling, not a burn.
+        geometry = endpoint_convergence_geometry(
+            budget, self._budget.check_interval,
+        )
         rounds = max(1, int(getattr(self, "_max_stabilization_rounds", 1)))
         with self._stabilization_rollback_guard() as pre_val:
             last_val = pre_val
@@ -105,8 +109,8 @@ class SmoothAdaptationRunMixin(TunerBase):
                     max_steps=budget,
                     validation_n_batches=progress_n,
                     check_interval=self._budget.check_interval,
-                    patience=max_patience,
-                    min_steps=budget,
+                    patience=geometry.patience,
+                    min_steps=geometry.min_steps,
                     min_improvement=self._budget.accuracy_se() / 2,
                     hooks=hooks,
                     final_validation=False,
