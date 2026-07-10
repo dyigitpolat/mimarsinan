@@ -40,7 +40,7 @@ Pareto decision layer.
 | `subtractive_lif.py` | Subtractive-reset LIF process + float model for Lava (top-level so Lava's model scan finds it) |
 | `weight_reuse_cost_model.py` | Defensible per-phase weight-reuse DMA/sync cost model with a low/nominal/high uncertainty band |
 | `hybrid_run/` | Shared hybrid stage loop, segment I/O + compute-op execution, and the inter-stage semantics contract for all hybrid backends |
-| `lava_loihi/` | Host-scheduled Lava Loihi LIF backend: runner, per-segment execution, and timing |
+| `lava_loihi/` | Host-scheduled Lava Loihi LIF backend: runner, wave-parallel per-segment execution (longest-path dependency waves through the bounded spawn pool), and timing |
 | `nevresim/` | Nevresim C++ simulator bridge: driver, compile, execute, segment binaries, compile cache, connectivity mode, profiling |
 | `parity/` | Generic segment-record field-diff comparison utilities |
 | `recording/` | Spike encoding modes plus spike-count recording/diffing shared by HCM and backend parity checks |
@@ -52,7 +52,7 @@ Pareto decision layer.
 - **`mapping`** — `HardCoreMapping`/`HybridHardCoreMapping` inputs, `ChipLatency` scheduling, core geometry and spike-source spans, IR `ComputeOp`, chip export.
 - **`code_generation`** — `ChipModel`/`SpikeSource` C++ chip model and nevresim main-function generation.
 - **`models`** — spiking wire semantics and TTFS/LIF numpy kernels shared with the torch spiking nodes.
-- **`common`** — file utilities, C++20 compiler discovery, `loihi_quiet` env helper.
+- **`common`** — file utilities, C++20 compiler discovery, `loihi_quiet`/`loihi_wave_workers` env helpers.
 - **`pipelining`** — `DeploymentPlan` (firing-strategy enforcement) and `nf_scm_parity` record comparison (lazy imports avoid the cycle).
 - **`data_handling`** — `DataLoaderFactory` for simulation input providers.
 - **`spiking`** — the inter-stage segment-boundary SSOT: `decode_segment_output` plus the rate/LIF wire-domain transcode (`boundary_normalization_scales`, `normalize_boundary_slices_numpy`) applied at every runner's segment-input assembly.

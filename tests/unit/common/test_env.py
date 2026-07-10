@@ -141,6 +141,44 @@ class TestMpStartMethod:
         assert env.mp_start_method() == "spawn"
 
 
+class TestLoihiWaveWorkers:
+    def test_unset_defaults_to_cpu_count(self, monkeypatch):
+        monkeypatch.delenv("MIMARSINAN_LOIHI_WAVE_WORKERS", raising=False)
+        monkeypatch.setattr(os, "cpu_count", lambda: 6)
+        assert env.loihi_wave_workers() == 6
+
+    def test_blank_value_defaults_to_cpu_count(self, monkeypatch):
+        monkeypatch.setenv("MIMARSINAN_LOIHI_WAVE_WORKERS", "  ")
+        monkeypatch.setattr(os, "cpu_count", lambda: 6)
+        assert env.loihi_wave_workers() == 6
+
+    def test_explicit_value_below_cpu_count_is_honored(self, monkeypatch):
+        monkeypatch.setenv("MIMARSINAN_LOIHI_WAVE_WORKERS", "3")
+        monkeypatch.setattr(os, "cpu_count", lambda: 8)
+        assert env.loihi_wave_workers() == 3
+
+    def test_value_above_cpu_count_is_clamped(self, monkeypatch):
+        monkeypatch.setenv("MIMARSINAN_LOIHI_WAVE_WORKERS", "64")
+        monkeypatch.setattr(os, "cpu_count", lambda: 8)
+        assert env.loihi_wave_workers() == 8
+
+    def test_undetectable_cpu_count_defaults_to_one(self, monkeypatch):
+        monkeypatch.delenv("MIMARSINAN_LOIHI_WAVE_WORKERS", raising=False)
+        monkeypatch.setattr(os, "cpu_count", lambda: None)
+        assert env.loihi_wave_workers() == 1
+
+    @pytest.mark.parametrize("value", ["0", "-3"])
+    def test_nonpositive_fails_loud(self, monkeypatch, value):
+        monkeypatch.setenv("MIMARSINAN_LOIHI_WAVE_WORKERS", value)
+        with pytest.raises(ValueError, match="MIMARSINAN_LOIHI_WAVE_WORKERS"):
+            env.loihi_wave_workers()
+
+    def test_garbage_fails_loud(self, monkeypatch):
+        monkeypatch.setenv("MIMARSINAN_LOIHI_WAVE_WORKERS", "many")
+        with pytest.raises(ValueError, match="MIMARSINAN_LOIHI_WAVE_WORKERS"):
+            env.loihi_wave_workers()
+
+
 class TestSimulationStepTimeoutOverride:
     def test_unset_is_none(self, monkeypatch):
         monkeypatch.delenv("MIMARSINAN_SIMULATION_STEP_TIMEOUT_S", raising=False)

@@ -10,6 +10,7 @@ import torch
 import torch.nn as nn
 
 from mimarsinan.chip_simulation.behavior_config import NeuralBehaviorConfig
+from mimarsinan.chip_simulation.execution_bounds import resolve_simulation_step_timeout_s
 from mimarsinan.chip_simulation.hybrid_run.hybrid_execution import (
     apply_input_shifts_numpy,
     assemble_segment_input_numpy,
@@ -56,10 +57,14 @@ class LavaLoihiRunner(LavaCoreMixin, LavaSegmentMixin):
             self.device = None
             self.max_samples = 0
             self._data_loader_factory = None
+            self._simulation_step_timeout_s = resolve_simulation_step_timeout_s(None)
         else:
             self.device = pipeline.config["device"]
             self.max_samples = int(pipeline.config.get("max_loihi_samples", 1))
             self._data_loader_factory = DataLoaderFactory.for_pipeline(pipeline)
+            self._simulation_step_timeout_s = resolve_simulation_step_timeout_s(
+                pipeline.config.get("simulation_step_timeout_s")
+            )
 
         _subtractive_lif_cls()
         self._profile = _RunProfile()

@@ -11,6 +11,7 @@ NF_SCM_PARITY_DEBUG_VAR = "MIMARSINAN_NF_SCM_PARITY_DEBUG"
 DISABLE_FFCV_VAR = "MIMARSINAN_DISABLE_FFCV"
 FFCV_CACHE_DIR_VAR = "MIMARSINAN_FFCV_CACHE_DIR"
 LOIHI_QUIET_VAR = "MIMARSINAN_LOIHI_QUIET"
+LOIHI_WAVE_WORKERS_VAR = "MIMARSINAN_LOIHI_WAVE_WORKERS"
 GUI_NO_BROWSER_VAR = "MIMARSINAN_GUI_NO_BROWSER"
 RUNS_ROOT_VAR = "MIMARSINAN_RUNS_ROOT"
 TEMPLATES_DIR_VAR = "MIMARSINAN_TEMPLATES_DIR"
@@ -63,6 +64,23 @@ def ffcv_cache_dir() -> str | None:
 def loihi_quiet() -> bool:
     """Per-core Lava-Loihi runner logging is silenced (value exactly "1")."""
     return os.environ.get(LOIHI_QUIET_VAR) == "1"
+
+
+def loihi_wave_workers() -> int:
+    """Wave-parallel Lava worker count: defaults to ``os.cpu_count()``, explicit values are clamped to [1, cpu_count], invalid values fail loud."""
+    cpu_cap = max(1, os.cpu_count() or 1)
+    raw = os.environ.get(LOIHI_WAVE_WORKERS_VAR, "").strip()
+    if not raw:
+        return cpu_cap
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise ValueError(
+            f"{LOIHI_WAVE_WORKERS_VAR} must be an integer; got {raw!r}"
+        ) from exc
+    if value < 1:
+        raise ValueError(f"{LOIHI_WAVE_WORKERS_VAR} must be >= 1; got {value}")
+    return min(value, cpu_cap)
 
 
 def gui_no_browser() -> bool:

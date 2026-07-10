@@ -1,12 +1,23 @@
+"""Wave-parallel host-scheduled Lava neural-segment execution."""
+
 from __future__ import annotations
 
 import time as _time
-from typing import TYPE_CHECKING, Dict
+from typing import TYPE_CHECKING, Dict, Tuple
 
 import numpy as np
 
-from mimarsinan.common.env import loihi_quiet
+from mimarsinan.common.env import loihi_quiet, loihi_wave_workers
 
+from mimarsinan.chip_simulation.execution_bounds import run_tasks_in_pool_bounded
+from mimarsinan.chip_simulation.lava_loihi.core_worker import run_lava_core_task
+from mimarsinan.chip_simulation.lava_loihi.segment_assembly import (
+    assemble_core_active_input,
+)
+from mimarsinan.chip_simulation.lava_loihi.wave_schedule import (
+    core_dependency_graph,
+    wave_levels,
+)
 from mimarsinan.chip_simulation.recording.spike_recorder import CoreSpikeCounts, SegmentSpikeRecord
 from mimarsinan.mapping.packing.softcore import HardCoreMapping
 from mimarsinan.mapping.support.core_geometry import used_axons, used_neurons
@@ -14,12 +25,16 @@ from mimarsinan.mapping.support.spike_source_spans import compress_spike_sources
 from mimarsinan.chip_simulation.behavior_config import NeuralBehaviorConfig
 from mimarsinan.chip_simulation.lava_loihi.timing import _LAVA_DTYPE, _SegmentTiming
 
+# (weights, threshold, hardware_bias, input_spikes) — the `_run_core_lava` kwargs.
+_CoreTask = Tuple[np.ndarray, float, "np.ndarray | None", np.ndarray]
+
 
 class LavaSegmentMixin:
-    """Host contract: ``T``/``_behavior`` set by ``LavaLoihiRunner.__init__``; ``_run_core_lava`` from ``LavaCoreMixin``."""
+    """Host contract: ``T``/``_behavior``/``_simulation_step_timeout_s`` set by ``LavaLoihiRunner.__init__``; ``_run_core_lava`` from ``LavaCoreMixin``."""
 
     T: int
     _behavior: NeuralBehaviorConfig
+    _simulation_step_timeout_s: float
 
     if TYPE_CHECKING:
         def _run_core_lava(
@@ -30,6 +45,31 @@ class LavaSegmentMixin:
             hardware_bias: np.ndarray | None,
             input_spikes: np.ndarray,
         ) -> np.ndarray: ...
+
+    def _dispatch_wave(self, wave_tasks: Dict[int, _CoreTask]) -> Dict[int, np.ndarray]:
+        """Run one wave of dependency-free cores; multi-core waves with funded workers go through the bounded spawn pool."""
+        workers = min(loihi_wave_workers(), len(wave_tasks))
+        if workers <= 1:
+            return {
+                idx: self._run_core_lava(
+                    weights=weights,
+                    threshold=threshold,
+                    hardware_bias=hardware_bias,
+                    input_spikes=input_spikes,
+                )
+                for idx, (weights, threshold, hardware_bias, input_spikes)
+                in wave_tasks.items()
+            }
+        return run_tasks_in_pool_bounded(
+            run_lava_core_task,
+            {
+                idx: (self.T, self._behavior, *task)
+                for idx, task in wave_tasks.items()
+            },
+            max_workers=workers,
+            timeout_s=self._simulation_step_timeout_s,
+            description=f"lava wave pool ({len(wave_tasks)} cores)",
+        )
 
     def _run_neural_segment_scheduled(
         self,
@@ -53,123 +93,75 @@ class LavaSegmentMixin:
         core_output_spikes: Dict[int, np.ndarray] = {}
         core_buffer_spikes: Dict[int, np.ndarray] = {}
 
-        deps = {
-            idx: sorted(
-                {
-                    int(sp.src_core)
-                    for sp in core.get_axon_source_spans()
-                    if sp.kind == "core"
-                }
-            )
-            for idx, core in enumerate(seg.cores)
-        }
-        topo_order: list[int] = []
-        visiting: set[int] = set()
-        visited: set[int] = set()
-
-        def visit(idx: int) -> None:
-            if idx in visited:
-                return
-            if idx in visiting:
-                raise RuntimeError(f"Cycle detected in neural segment at core {idx}")
-            visiting.add(idx)
-            for dep in deps[idx]:
-                visit(dep)
-            visiting.remove(idx)
-            visited.add(idx)
-            topo_order.append(idx)
-
-        for idx in sorted(
-            range(len(seg.cores)),
-            key=lambda i: (timing.core_latency(seg.cores[i]), i),
-        ):
-            visit(idx)
+        waves = wave_levels(core_dependency_graph(seg.cores))
 
         t0 = _time.time()
         verbose = not loihi_quiet()
-        n_cores = len(topo_order)
+        n_cores = len(seg.cores)
         if verbose:
             print(
-                f"  [LavaLoihiRunner] segment with {n_cores} cores; T={T}, N={N} "
-                f"— per-core timing follows",
+                f"  [LavaLoihiRunner] segment with {n_cores} cores in "
+                f"{len(waves)} waves; T={T}, N={N} — per-wave timing follows",
                 flush=True,
             )
-        for step_idx, core_idx in enumerate(topo_order):
-            t_core = _time.time()
-            core = seg.cores[core_idx]
-            latency = timing.core_latency(core)
-            used_ax = used_axons(core, min_one=True)
-            used_neu = used_neurons(core, min_one=True)
-            active_input = np.zeros((used_ax, N, T), dtype=_LAVA_DTYPE)
+        for wave_idx, wave in enumerate(waves):
+            t_wave = _time.time()
+            wave_tasks: Dict[int, _CoreTask] = {}
+            for core_idx in wave:
+                core = seg.cores[core_idx]
+                latency = timing.core_latency(core)
+                used_ax = used_axons(core, min_one=True)
+                used_neu = used_neurons(core, min_one=True)
+                active_input = assemble_core_active_input(
+                    core,
+                    core_idx=core_idx,
+                    N=N,
+                    T=T,
+                    latency=latency,
+                    used_ax=used_ax,
+                    seg_input_logical=seg_input_logical,
+                    core_buffer_spikes=core_buffer_spikes,
+                )
+                weights = np.asarray(
+                    core.core_matrix[:used_ax, :used_neu], dtype=_LAVA_DTYPE,
+                ).T
+                hardware_bias = (
+                    np.asarray(core.hardware_bias[:used_neu], dtype=_LAVA_DTYPE)
+                    if getattr(core, "hardware_bias", None) is not None
+                    else None
+                )
+                wave_tasks[core_idx] = (
+                    weights,
+                    float(core.threshold),
+                    hardware_bias,
+                    active_input.reshape(used_ax, N * T),
+                )
 
-            for sp in core.get_axon_source_spans():
-                d0 = int(sp.dst_start)
-                if d0 >= used_ax:
-                    continue
-                end = min(int(sp.dst_end), used_ax)
-                take = end - d0
-                if sp.kind == "off":
-                    continue
-                if sp.kind == "on":
-                    active_input[d0:end, :, :] = 1.0
-                    continue
-                if sp.kind == "input":
-                    s0 = int(sp.src_start)
-                    active_input[d0:end, :, :] = seg_input_logical[
-                        s0:s0 + take, :, latency:latency + T,
-                    ]
-                    continue
+            wave_outputs = self._dispatch_wave(wave_tasks)
 
-                src_core_id = int(sp.src_core)
-                if src_core_id not in core_buffer_spikes:
-                    raise RuntimeError(
-                        f"Core {core_idx} depends on core {src_core_id}, "
-                        "but the source has not been scheduled yet."
-                    )
-                s0 = int(sp.src_start)
-                for local_cycle in range(T):
-                    src_cycle = latency + local_cycle - 1
-                    if src_cycle < 0:
-                        continue
-                    active_input[d0:end, :, local_cycle] = core_buffer_spikes[
-                        src_core_id
-                    ][s0:s0 + take, :, src_cycle]
+            for core_idx in wave:
+                core = seg.cores[core_idx]
+                latency = timing.core_latency(core)
+                used_neu = used_neurons(core, min_one=True)
+                active_output = wave_outputs[core_idx].reshape(used_neu, N, T)
 
-            weights = np.asarray(
-                core.core_matrix[:used_ax, :used_neu], dtype=_LAVA_DTYPE,
-            ).T
-            hardware_bias = (
-                np.asarray(core.hardware_bias[:used_neu], dtype=_LAVA_DTYPE)
-                if getattr(core, "hardware_bias", None) is not None
-                else None
-            )
-            t_lava = _time.time()
-            active_output = self._run_core_lava(
-                weights=weights,
-                threshold=float(core.threshold),
-                hardware_bias=hardware_bias,
-                input_spikes=active_input.reshape(used_ax, N * T),
-            ).reshape(used_neu, N, T)
-            lava_dt = _time.time() - t_lava
+                full_output = np.zeros(
+                    (int(core.neurons_per_core), N, timing.sample_stride),
+                    dtype=_LAVA_DTYPE,
+                )
+                full_output[:used_neu, :, latency:latency + T] = active_output
+                core_output_spikes[core_idx] = full_output
 
-            full_output = np.zeros(
-                (int(core.neurons_per_core), N, timing.sample_stride),
-                dtype=_LAVA_DTYPE,
-            )
-            full_output[:used_neu, :, latency:latency + T] = active_output
-            core_output_spikes[core_idx] = full_output
-
-            buffered = full_output.copy()
-            hold_start = latency + T
-            if hold_start < timing.sample_stride:
-                buffered[:, :, hold_start:] = buffered[:, :, hold_start - 1:hold_start]
-            core_buffer_spikes[core_idx] = buffered
+                buffered = full_output.copy()
+                hold_start = latency + T
+                if hold_start < timing.sample_stride:
+                    buffered[:, :, hold_start:] = buffered[:, :, hold_start - 1:hold_start]
+                core_buffer_spikes[core_idx] = buffered
             if verbose:
                 print(
-                    f"    core {step_idx + 1:>4}/{n_cores} "
-                    f"(idx={core_idx}, ax={used_ax}, neu={used_neu}, "
-                    f"lat={latency}): lava={lava_dt*1000:7.1f}ms  "
-                    f"core_total={(_time.time() - t_core)*1000:7.1f}ms",
+                    f"    wave {wave_idx + 1:>3}/{len(waves)}: "
+                    f"{len(wave)} core(s) (idx={wave}) "
+                    f"{_time.time() - t_wave:7.1f}s",
                     flush=True,
                 )
 
