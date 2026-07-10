@@ -167,6 +167,7 @@ class LayoutIRMapping(_LayoutIRMappingFinalize, _LayoutIRMappingFC):
         parameter_scale=None,
         input_activation_scale=None,
         perceptron_index: Optional[int] = None,
+        bias_scale: Any = None,
     ) -> int:
         """Register a shared weight bank (shape only) and return its ID."""
         bank_id = self._next_bank_id
@@ -196,6 +197,7 @@ class LayoutIRMapping(_LayoutIRMappingFinalize, _LayoutIRMappingFC):
         activation_scale: Any = None,
         parameter_scale: Any = None,
         input_activation_scale: Any = None,
+        bias_scale: Any = None,
         name: Optional[str] = None,
         normalization_type: Optional[str] = None,
         activation_type: Optional[str] = None,

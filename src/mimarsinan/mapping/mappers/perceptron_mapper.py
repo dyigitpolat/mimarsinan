@@ -44,6 +44,7 @@ class PerceptronMapper(Mapper):
             self.perceptron.activation_scale,
             self.perceptron.parameter_scale,
             self.perceptron.input_activation_scale,
+            bias_scale=getattr(self.perceptron, "bias_scale", None),
             name=getattr(self.perceptron, "name", None),
             normalization_type=normalization_type,
             activation_type=activation_type,

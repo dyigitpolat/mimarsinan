@@ -20,6 +20,38 @@ def integer_grid_stats(ints: torch.Tensor, q_max: int) -> dict:
     }
 
 
+def _assert_integer_lattice(scaled: torch.Tensor, what: str) -> torch.Tensor:
+    rounded = torch.round(scaled)
+    assert torch.allclose(scaled, rounded, atol=1e-3, rtol=1e-3), f"{what}: {scaled}"
+    return rounded
+
+
+def assert_effective_parameters_on_chip_grid(perceptron, q_max: int) -> None:
+    """The WQ install contract, both projection modes: effective weights are
+    integer on the ``parameter_scale`` grid; the effective bias is integer on
+    its OWN ``bias_scale`` grid within the ±q_max register range AND on the
+    weight-grid lattice (``bias * parameter_scale = r * bias_int`` — what the
+    chip export emits, so both parity sides see the same semantics)."""
+    transformer = PerceptronTransformer()
+    fused_w = transformer.get_effective_weight(perceptron)
+    fused_b = transformer.get_effective_bias(perceptron)
+    param_scale = perceptron.parameter_scale
+    bias_scale = getattr(perceptron, "bias_scale", None)
+    if bias_scale is None:
+        bias_scale = param_scale
+
+    _assert_integer_lattice(fused_w * param_scale, "weights off the chip grid")
+    _assert_integer_lattice(
+        fused_b * param_scale, "bias off the weight-grid lattice"
+    )
+    bias_ints = _assert_integer_lattice(
+        fused_b * bias_scale, "bias off its own grid"
+    )
+    assert float(bias_ints.abs().max()) <= q_max + 0.5, (
+        f"bias outside its ±{q_max} register range: {bias_ints}"
+    )
+
+
 def quantization_grid_report(perceptrons, q_max: int) -> list[dict]:
     """Per-perceptron integer-grid rows following the verification convention
     (``round(fused_w * parameter_scale)`` lies on the ±q_max grid)."""
@@ -55,21 +87,7 @@ class QuantizationVerificationStep(TrainerPipelineStep):
             print(perceptron.parameter_scale)
             print(perceptron.scale_factor)
             perceptron.to(self.pipeline.config["device"])
-            _fused_w = PerceptronTransformer().get_effective_weight(perceptron)
-            _fused_b = PerceptronTransformer().get_effective_bias(perceptron)
-            param_scale = perceptron.parameter_scale
-            assert torch.allclose(
-                _fused_w * param_scale,
-                torch.round(_fused_w * param_scale),
-                atol=1e-3,
-                rtol=1e-3,
-            ), f"{_fused_w * param_scale}"
-            assert torch.allclose(
-                _fused_b * param_scale,
-                torch.round(_fused_b * param_scale),
-                atol=1e-3,
-                rtol=1e-3,
-            ), f"{_fused_b * param_scale}"
+            assert_effective_parameters_on_chip_grid(perceptron, self.q_max)
 
         # The asserts above ARE the gate; surviving them is the verdict. The
         # per-layer grid diagnostics ship as one low-rate structured event.

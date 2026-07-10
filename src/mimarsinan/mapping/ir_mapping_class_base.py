@@ -19,6 +19,33 @@ from mimarsinan.mapping.ir import (
 from mimarsinan.mapping.layout.layout_ir_mapping import LayoutIRMapping
 
 
+def _scale_ratio(bias_scale, parameter_scale) -> float:
+    def _as_float(value):
+        return float(value.item() if hasattr(value, "item") else value)
+
+    bs = _as_float(bias_scale)
+    if bs == 0.0:
+        return 1.0
+    return _as_float(parameter_scale) / bs
+
+
+def assert_bias_scale_param_encodable(bias_scale, parameter_scale, name) -> None:
+    """A platform without an on-chip bias register encodes the bias as an
+    always-on core-matrix ROW bound by the ±q_max weight-register contract on
+    the weight grid; a two-scale (coarser) bias grid is not representable there."""
+    if bias_scale is None:
+        return
+    if abs(_scale_ratio(bias_scale, parameter_scale) - 1.0) <= 1e-6:
+        return
+    raise ValueError(
+        f"IRMapping: {name or '<unnamed>'} carries a two-scale quantized bias "
+        f"(bias_scale != parameter_scale) but the platform has no hardware "
+        f"bias; a parameter-encoded bias row must live on the shared weight "
+        f"grid. Disable wq_two_scale_projection for this platform (the "
+        f"WeightQuantizationStep capability gate does this automatically)."
+    )
+
+
 class IRMappingCore(LayoutIRMapping):
     """Inherits LayoutIRMapping tiling/dispatch; overrides emission hooks to build IRGraph nodes."""
 
@@ -131,6 +158,7 @@ class IRMappingCore(LayoutIRMapping):
         parameter_scale: torch.Tensor = torch.tensor(1.0),
         input_activation_scale: torch.Tensor = torch.tensor(1.0),
         perceptron_index: int | None = None,
+        bias_scale: torch.Tensor | None = None,
     ) -> int:
         bank_id = super().register_weight_bank(
             weights=weights,
@@ -139,6 +167,7 @@ class IRMappingCore(LayoutIRMapping):
             parameter_scale=parameter_scale,
             input_activation_scale=input_activation_scale,
             perceptron_index=perceptron_index,
+            bias_scale=bias_scale,
         )
 
         w = self._to_numpy(weights)
@@ -153,6 +182,9 @@ class IRMappingCore(LayoutIRMapping):
             if self.hardware_bias:
                 bank_hw_bias = b
             else:
+                assert_bias_scale_param_encodable(
+                    bias_scale, parameter_scale, f"weight bank {bank_id}"
+                )
                 core_matrix = np.zeros((in_features + 1, out_features), dtype=float)
                 core_matrix[:in_features, :] = w.T
                 core_matrix[-1, :] = b
@@ -165,5 +197,6 @@ class IRMappingCore(LayoutIRMapping):
             input_activation_scale=input_activation_scale,
             perceptron_index=perceptron_index,
             hardware_bias=bank_hw_bias,
+            bias_scale=bias_scale,
         )
         return bank_id

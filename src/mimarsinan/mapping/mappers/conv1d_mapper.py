@@ -189,6 +189,7 @@ class Conv1DPerceptronMapper(Mapper):
                 parameter_scale=self.perceptron.parameter_scale,
                 input_activation_scale=self.perceptron.input_activation_scale,
                 perceptron_index=getattr(self, "perceptron_index", None),
+                bias_scale=getattr(self.perceptron, "bias_scale", None),
             )
             bank_ids.append(bank_id)
             start_idx = end_idx

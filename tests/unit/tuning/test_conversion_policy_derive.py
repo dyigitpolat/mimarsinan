@@ -72,6 +72,10 @@ _MODE_KNOBS = {
         # was the only bound binding while still improving (X3 300/300 cutoffs).
         "endpoint_recovery_steps": 600,
         "tuning_full_transform_probe": True,
+        # [M2] two-scale WQ projection: the shared max(|w|,|b|) grid is set by
+        # the bias on the fc perceptrons and craters the first-crossing forward
+        # (wq_cascade_crater_repair.md); weight grid from max|w| alone.
+        "wq_two_scale_projection": True,
         # [5u generalized] the WQ-scoped well-conditioned endpoint floor.
         "wq_endpoint_target_floor": 0.98,
         "wq_endpoint_recovery_steps": 16000,
@@ -94,6 +98,10 @@ _MODE_KNOBS = {
         "sync_entry_half_step": True,
         # [5v B1(iii)] the hop frontier (arms only on A6-FAIL x deep chains).
         "sync_hop_staged_install": True,
+        # [M2] the value-domain forward craters from the same bias-set shared
+        # grid (wq_cascade_crater_repair.md §4.4 value-forward control), so the
+        # whole ttfs_cycle_based family carries the two-scale projection.
+        "wq_two_scale_projection": True,
         # [5u generalized] the WQ-scoped well-conditioned endpoint floor.
         "wq_endpoint_target_floor": 0.98,
         "wq_endpoint_recovery_steps": 16000,
@@ -183,6 +191,20 @@ class TestDeriveKnobs:
             "endpoint_target_floor": 0.98,
             "wq_endpoint_recovery_steps": 16000,
         }
+
+    def test_two_scale_projection_rides_only_the_cycle_based_family(self):
+        # [M2 scope] the two-scale WQ grid repairs the first-crossing (and the
+        # sync value) forward; ttfsq/analytic neither need it and LIF's WQ
+        # craters are training-recoverable in-campaign — those rows stay on
+        # the shared grid for byte-identity (wq_cascade_crater_repair.md §6).
+        for mode, schedule in _CELLS:
+            recipe = ConversionPolicy.derive(mode, schedule)
+            expected = mode == "ttfs_cycle_based"
+            assert ("wq_two_scale_projection" in recipe.knobs) is expected, (
+                f"{mode}/{schedule}"
+            )
+            if expected:
+                assert recipe.knobs["wq_two_scale_projection"] is True
 
     def test_floor_rides_only_the_bit_parity_lossless_row(self):
         # [5u scope] near-lossless modes (lif, ttfs_quantized, synchronized) and

@@ -26,6 +26,8 @@ class WeightBank:
     input_activation_scale: torch.Tensor = field(default_factory=lambda: torch.tensor(1.0))
     perceptron_index: int | None = None
     hardware_bias: np.ndarray | None = None
+    # Two-scale WQ bias grid (parameter_scale / integer r); None == shared grid.
+    bias_scale: torch.Tensor | None = None
 
 
 @dataclass
@@ -98,6 +100,8 @@ class NeuralCore(IRNode):
     activation_type: str | None = None
 
     hardware_bias: np.ndarray | None = None
+    # Two-scale WQ bias grid (parameter_scale / integer r); None == shared grid.
+    bias_scale: torch.Tensor | None = None
 
     layout_softcore_index: int | None = None
 

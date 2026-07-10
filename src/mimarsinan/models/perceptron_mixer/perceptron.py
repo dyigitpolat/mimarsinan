@@ -91,6 +91,9 @@ class Perceptron(nn.Module):
         self.regularization = nn.Identity()
 
         self.parameter_scale = nn.Parameter(torch.tensor(1.0), requires_grad=False)
+        # Bias-grid scale of the WQ install; equals parameter_scale on the
+        # shared grid and parameter_scale / r (integer r) under two-scale.
+        self.bias_scale = nn.Parameter(torch.tensor(1.0), requires_grad=False)
         self.input_activation_scale = nn.Parameter(torch.tensor(1.0), requires_grad=False)
         self.activation_scale = nn.Parameter(torch.tensor(1.0), requires_grad=False)
 
@@ -115,12 +118,28 @@ class Perceptron(nn.Module):
             self._buffers["per_input_scales"] = self.__dict__.pop(
                 "per_input_scales", None,
             )
+        # Caches saved before the two-scale WQ projection carry no bias_scale;
+        # every pre-two-scale artifact is shared-grid (bias_scale == parameter_scale).
+        if "bias_scale" not in self._parameters:
+            source = self._parameters.get("parameter_scale")
+            data = source.data.clone() if source is not None else torch.tensor(1.0)
+            self._parameters["bias_scale"] = nn.Parameter(data, requires_grad=False)
 
     def set_parameter_scale(self, new_scale):
+        """Declare the (shared) quantization grid; ``bias_scale`` follows so
+        legacy single-scale callers stay coherent — a two-scale install calls
+        ``set_bias_scale`` afterwards to refine the bias grid."""
         if isinstance(new_scale, float):
             new_scale = torch.tensor(new_scale)
         self.parameter_scale.data = new_scale.data
-    
+        self.bias_scale.data = new_scale.data.clone()
+
+    def set_bias_scale(self, new_scale):
+        if isinstance(new_scale, float):
+            new_scale = torch.tensor(new_scale)
+        self.bias_scale.data = new_scale.data
+
+
     def set_activation_scale(self, new_scale):
         if isinstance(new_scale, float):
             new_scale = torch.tensor(new_scale)

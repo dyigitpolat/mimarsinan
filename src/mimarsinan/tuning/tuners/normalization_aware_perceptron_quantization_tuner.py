@@ -22,10 +22,17 @@ class NormalizationAwarePerceptronQuantizationTuner(PerceptronTransformTuner):
     # parameter tensors instead of deep-copying the module per step.
     _prev_transform_is_identity = True
 
-    def __init__(self, pipeline, model, quantization_bits, target_accuracy, lr, adaptation_manager):
+    def __init__(
+        self, pipeline, model, quantization_bits, target_accuracy, lr,
+        adaptation_manager, two_scale_projection=False,
+    ):
         super().__init__(pipeline, model, target_accuracy, lr)
         self.quantization_bits = quantization_bits
         self.adaptation_manager = adaptation_manager
+        # Resolved by WeightQuantizationStep (config key AND the platform's
+        # on-chip bias capability); every projection this tuner applies —
+        # rungs, probe replicas, endpoint reprojection — must share it.
+        self.two_scale_projection = bool(two_scale_projection)
         self._axis = NAPQAxis(
             self._apply_rate, replica_apply_fn=self._apply_rate_to,
         )
@@ -46,6 +53,7 @@ class NormalizationAwarePerceptronQuantizationTuner(PerceptronTransformTuner):
                 self.quantization_bits,
                 self.pipeline.config["device"],
                 rate,
+                two_scale=self.two_scale_projection,
             ).transform(perceptron)
         return transform
 

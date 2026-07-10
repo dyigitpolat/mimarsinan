@@ -3205,7 +3205,8 @@
      0.5,
      1.0
     ],
-    "wq_fast_steps_per_rate": 0
+    "wq_fast_steps_per_rate": 0,
+    "wq_two_scale_projection": true
    },
    "tuning_budget": {
     "accuracy_se": 0.009215122259681071,
@@ -3406,7 +3407,8 @@
      0.5,
      1.0
     ],
-    "wq_fast_steps_per_rate": 0
+    "wq_fast_steps_per_rate": 0,
+    "wq_two_scale_projection": true
    },
    "tuning_budget": {
     "accuracy_se": 0.009215122259681071,
@@ -3610,7 +3612,8 @@
      0.5,
      1.0
     ],
-    "wq_fast_steps_per_rate": 0
+    "wq_fast_steps_per_rate": 0,
+    "wq_two_scale_projection": true
    },
    "tuning_budget": {
     "accuracy_se": 0.009215122259681071,
@@ -3813,7 +3816,8 @@
      0.5,
      1.0
     ],
-    "wq_fast_steps_per_rate": 0
+    "wq_fast_steps_per_rate": 0,
+    "wq_two_scale_projection": true
    },
    "tuning_budget": {
     "accuracy_se": 0.009215122259681071,
@@ -4015,7 +4019,8 @@
      0.5,
      1.0
     ],
-    "wq_fast_steps_per_rate": 0
+    "wq_fast_steps_per_rate": 0,
+    "wq_two_scale_projection": true
    },
    "tuning_budget": {
     "accuracy_se": 0.009215122259681071,
@@ -4230,7 +4235,8 @@
      0.5,
      1.0
     ],
-    "wq_fast_steps_per_rate": 0
+    "wq_fast_steps_per_rate": 0,
+    "wq_two_scale_projection": true
    },
    "tuning_budget": {
     "accuracy_se": 0.009215122259681071,
@@ -4437,7 +4443,8 @@
      0.5,
      1.0
     ],
-    "wq_fast_steps_per_rate": 0
+    "wq_fast_steps_per_rate": 0,
+    "wq_two_scale_projection": true
    },
    "tuning_budget": {
     "accuracy_se": 0.009215122259681071,
@@ -4645,7 +4652,8 @@
      0.5,
      1.0
     ],
-    "wq_fast_steps_per_rate": 0
+    "wq_fast_steps_per_rate": 0,
+    "wq_two_scale_projection": true
    },
    "tuning_budget": {
     "accuracy_se": 0.009215122259681071,
@@ -4853,7 +4861,8 @@
      0.5,
      1.0
     ],
-    "wq_fast_steps_per_rate": 0
+    "wq_fast_steps_per_rate": 0,
+    "wq_two_scale_projection": true
    },
    "tuning_budget": {
     "accuracy_se": 0.009215122259681071,
@@ -5061,7 +5070,8 @@
      0.5,
      1.0
     ],
-    "wq_fast_steps_per_rate": 0
+    "wq_fast_steps_per_rate": 0,
+    "wq_two_scale_projection": true
    },
    "tuning_budget": {
     "accuracy_se": 0.009215122259681071,
@@ -5677,7 +5687,8 @@
      0.5,
      1.0
     ],
-    "wq_fast_steps_per_rate": 0
+    "wq_fast_steps_per_rate": 0,
+    "wq_two_scale_projection": true
    },
    "tuning_budget": {
     "accuracy_se": 0.009215122259681071,
@@ -5892,7 +5903,8 @@
      0.5,
      1.0
     ],
-    "wq_fast_steps_per_rate": 0
+    "wq_fast_steps_per_rate": 0,
+    "wq_two_scale_projection": true
    },
    "tuning_budget": {
     "accuracy_se": 0.009215122259681071,
@@ -6107,7 +6119,8 @@
      0.5,
      1.0
     ],
-    "wq_fast_steps_per_rate": 0
+    "wq_fast_steps_per_rate": 0,
+    "wq_two_scale_projection": true
    },
    "tuning_budget": {
     "accuracy_se": 0.009215122259681071,
@@ -6934,7 +6947,8 @@
      0.5,
      1.0
     ],
-    "wq_fast_steps_per_rate": 0
+    "wq_fast_steps_per_rate": 0,
+    "wq_two_scale_projection": true
    },
    "tuning_budget": {
     "accuracy_se": 0.009215122259681071,
@@ -7140,7 +7154,8 @@
      0.5,
      1.0
     ],
-    "wq_fast_steps_per_rate": 0
+    "wq_fast_steps_per_rate": 0,
+    "wq_two_scale_projection": true
    },
    "tuning_budget": {
     "accuracy_se": 0.009215122259681071,
@@ -7343,7 +7358,8 @@
      0.5,
      1.0
     ],
-    "wq_fast_steps_per_rate": 0
+    "wq_fast_steps_per_rate": 0,
+    "wq_two_scale_projection": true
    },
    "tuning_budget": {
     "accuracy_se": 0.009215122259681071,
@@ -7549,7 +7565,8 @@
      0.5,
      1.0
     ],
-    "wq_fast_steps_per_rate": 0
+    "wq_fast_steps_per_rate": 0,
+    "wq_two_scale_projection": true
    },
    "tuning_budget": {
     "accuracy_se": 0.009215122259681071,
@@ -7755,7 +7772,8 @@
      0.5,
      1.0
     ],
-    "wq_fast_steps_per_rate": 0
+    "wq_fast_steps_per_rate": 0,
+    "wq_two_scale_projection": true
    },
    "tuning_budget": {
     "accuracy_se": 0.009215122259681071,
@@ -7958,7 +7976,8 @@
      0.5,
      1.0
     ],
-    "wq_fast_steps_per_rate": 0
+    "wq_fast_steps_per_rate": 0,
+    "wq_two_scale_projection": true
    },
    "tuning_budget": {
     "accuracy_se": 0.009215122259681071,
@@ -8160,7 +8179,8 @@
      0.5,
      1.0
     ],
-    "wq_fast_steps_per_rate": 0
+    "wq_fast_steps_per_rate": 0,
+    "wq_two_scale_projection": true
    },
    "tuning_budget": {
     "accuracy_se": 0.009215122259681071,
@@ -8758,7 +8778,8 @@
      0.5,
      1.0
     ],
-    "wq_fast_steps_per_rate": 0
+    "wq_fast_steps_per_rate": 0,
+    "wq_two_scale_projection": true
    },
    "tuning_budget": {
     "accuracy_se": 0.009215122259681071,
@@ -9174,7 +9195,8 @@
      0.5,
      1.0
     ],
-    "wq_fast_steps_per_rate": 0
+    "wq_fast_steps_per_rate": 0,
+    "wq_two_scale_projection": true
    },
    "tuning_budget": {
     "accuracy_se": 0.009215122259681071,
@@ -9997,7 +10019,8 @@
      0.5,
      1.0
     ],
-    "wq_fast_steps_per_rate": 0
+    "wq_fast_steps_per_rate": 0,
+    "wq_two_scale_projection": true
    },
    "tuning_budget": {
     "accuracy_se": 0.009215122259681071,
@@ -11366,7 +11389,8 @@
      0.5,
      1.0
     ],
-    "wq_fast_steps_per_rate": 0
+    "wq_fast_steps_per_rate": 0,
+    "wq_two_scale_projection": true
    },
    "tuning_budget": {
     "accuracy_se": 0.010138838820672659,
@@ -11573,7 +11597,8 @@
      0.5,
      1.0
     ],
-    "wq_fast_steps_per_rate": 0
+    "wq_fast_steps_per_rate": 0,
+    "wq_two_scale_projection": true
    },
    "tuning_budget": {
     "accuracy_se": 0.010138838820672659,
@@ -12045,7 +12070,8 @@
      0.5,
      1.0
     ],
-    "wq_fast_steps_per_rate": 0
+    "wq_fast_steps_per_rate": 0,
+    "wq_two_scale_projection": true
    },
    "tuning_budget": {
     "accuracy_se": 0.010138838820672659,
@@ -13203,7 +13229,8 @@
      0.5,
      1.0
     ],
-    "wq_fast_steps_per_rate": 0
+    "wq_fast_steps_per_rate": 0,
+    "wq_two_scale_projection": true
    },
    "tuning_budget": {
     "accuracy_se": 0.010138838820672659,
@@ -13263,7 +13290,8 @@
       0.5,
       1.0
      ],
-     "wq_fast_steps_per_rate": 0
+     "wq_fast_steps_per_rate": 0,
+     "wq_two_scale_projection": true
     },
     "sim_enables": {
      "enable_loihi_simulation": false,
@@ -13294,7 +13322,8 @@
       0.5,
       1.0
      ],
-     "wq_fast_steps_per_rate": 0
+     "wq_fast_steps_per_rate": 0,
+     "wq_two_scale_projection": true
     },
     "sim_enables": {
      "enable_loihi_simulation": false,

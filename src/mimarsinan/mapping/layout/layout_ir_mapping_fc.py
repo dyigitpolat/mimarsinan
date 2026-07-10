@@ -43,6 +43,7 @@ class _LayoutIRMappingFC:
         psum_role: Optional[str] = None,
         coalescing_group_id: Optional[int] = None,
         coalescing_role: Optional[str] = None,
+        bias_scale: Any = None,
     ) -> "np.ndarray | LayoutSourceView":
         """Decide tiling mode and dispatch to ``add_neural_core`` (or the
         psum / output-tiled helpers).  All structural decisions live here."""
@@ -82,6 +83,7 @@ class _LayoutIRMappingFC:
                         psum_role=psum_role,
                         coalescing_group_id=coalescing_group_id,
                         coalescing_role=coalescing_role,
+                        bias_scale=bias_scale,
                     ).flatten()
                 )
             out = stack_source_views(outs, axis=1)
@@ -124,6 +126,7 @@ class _LayoutIRMappingFC:
                 psum_role=psum_role,
                 coalescing_group_id=coalescing_group_id,
                 coalescing_role=coalescing_role,
+                bias_scale=bias_scale,
             )
 
         fc_input = src_arr.T if src_arr.ndim > 1 else src_arr
@@ -134,6 +137,7 @@ class _LayoutIRMappingFC:
             activation_scale=activation_scale,
             parameter_scale=parameter_scale,
             input_activation_scale=input_activation_scale,
+            bias_scale=bias_scale,
             name=name,
             normalization_type=normalization_type,
             activation_type=activation_type,
@@ -161,6 +165,7 @@ class _LayoutIRMappingFC:
         psum_role: Optional[str],
         coalescing_group_id: Optional[int],
         coalescing_role: Optional[str],
+        bias_scale: Any = None,
     ) -> "np.ndarray | LayoutSourceView":
         out_features = int(getattr(fc_weights, "shape", [0, 0])[0])
         assert self.max_neurons is not None, (
@@ -182,6 +187,7 @@ class _LayoutIRMappingFC:
                 activation_scale=activation_scale,
                 parameter_scale=parameter_scale,
                 input_activation_scale=input_activation_scale,
+                bias_scale=bias_scale,
                 name=(f"{name}_tile_{start}_{end}" if name else None),
                 normalization_type=normalization_type,
                 activation_type=activation_type,

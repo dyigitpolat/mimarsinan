@@ -8,7 +8,10 @@ import numpy as np
 import torch
 
 from mimarsinan.mapping.ir import IRSource, NeuralCore
-from mimarsinan.mapping.ir_mapping_class_base import IRMappingCore
+from mimarsinan.mapping.ir_mapping_class_base import (
+    IRMappingCore,
+    assert_bias_scale_param_encodable,
+)
 
 
 class IRMappingEmitMixin(IRMappingCore):
@@ -23,6 +26,7 @@ class IRMappingEmitMixin(IRMappingCore):
             activation_scale: torch.Tensor = torch.tensor(1.0),
             parameter_scale: torch.Tensor = torch.tensor(1.0),
             input_activation_scale: torch.Tensor = torch.tensor(1.0),
+            bias_scale: torch.Tensor | None = None,
             name: str | None = None,
             normalization_type: str | None = None,
             activation_type: str | None = None,
@@ -43,6 +47,7 @@ class IRMappingEmitMixin(IRMappingCore):
                 activation_scale=activation_scale,
                 parameter_scale=parameter_scale,
                 input_activation_scale=input_activation_scale,
+                bias_scale=bias_scale,
                 name=name,
                 normalization_type=normalization_type,
                 activation_type=activation_type,
@@ -73,6 +78,9 @@ class IRMappingEmitMixin(IRMappingCore):
                         core_matrix = np.ascontiguousarray(w_np.T, dtype=float)
                         hardware_bias_arr = self._to_numpy(biases).flatten()
                     else:
+                        assert_bias_scale_param_encodable(
+                            bias_scale, parameter_scale, name
+                        )
                         core_matrix = np.empty((in_features + 1, out_features), dtype=float)
                         core_matrix[:in_features, :] = w_np.T
                         core_matrix[-1, :] = self._to_numpy(biases).flatten()
@@ -90,6 +98,7 @@ class IRMappingEmitMixin(IRMappingCore):
                 activation_scale=activation_scale,
                 parameter_scale=parameter_scale,
                 input_activation_scale=input_activation_scale,
+                bias_scale=bias_scale,
                 normalization_type=normalization_type,
                 activation_type=activation_type,
                 perceptron_index=perceptron_index,
@@ -163,6 +172,7 @@ class IRMappingEmitMixin(IRMappingCore):
                 activation_scale=bank.activation_scale,
                 parameter_scale=bank.parameter_scale,
                 input_activation_scale=bank.input_activation_scale,
+                bias_scale=bank.bias_scale,
                 weight_bank_id=weight_bank_id,
                 weight_row_slice=weight_row_slice,
                 normalization_type=normalization_type,

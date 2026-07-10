@@ -90,6 +90,10 @@ _SYNCHRONIZED_RECIPE_KNOBS = {
     # chain past the proven-recovery depth, the AQ ladder walks one hop level
     # per rung (per-hop keep-best re-affine) instead of a monolithic install.
     "sync_hop_staged_install": True,
+    # [M2] the sync value-domain forward craters from the same bias-set shared
+    # grid (wq_cascade_crater_repair.md §4.4 value-forward control), so the
+    # whole ttfs_cycle_based family carries the two-scale projection.
+    "wq_two_scale_projection": True,
     **_WELL_CONDITIONED_ENDPOINT_FLOOR_KNOBS,
 }
 _CASCADED_RECIPE_KNOBS = {
@@ -108,6 +112,12 @@ _CASCADED_RECIPE_KNOBS = {
     # t0_18 294/300, all climbing at cutoff); patience stops saturated cells.
     "endpoint_recovery_steps": 600,
     "tuning_full_transform_probe": True,
+    # [M2] two-scale WQ projection: the shared max(|w|,|b|) grid is set BY THE
+    # BIAS on the fc perceptrons (58-95% of weights round to exactly zero) and
+    # craters the first-crossing forward; the weight grid from max|w| alone
+    # with the bias on its own integer-ratio-snapped grid recovers float
+    # exactly (wq_cascade_crater_repair.md §3-4).
+    "wq_two_scale_projection": True,
     **_WELL_CONDITIONED_ENDPOINT_FLOOR_KNOBS,
 }
 

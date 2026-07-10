@@ -177,9 +177,9 @@ CONFIG_KEYS_SET: Set[str] = {
     # [MBH-DRAWS] best-of-N conversion draws on the variance-carrying stages
     # (default 1 = single-draw, bit-identical); draws seed torch at seed+k.
     "conversion_draws",
-    # FAST respec: per-cell WQ endpoint step cap (recipe default 16000 stays
-    # only for families that pass by the floor climb).
-    "wq_endpoint_recovery_steps",
+    # WQ knobs, both ConversionPolicy-recipe-defaulted: the endpoint step cap
+    # (FAST respec) and the [M2] two-scale projection grids (ttfs_cycle_based).
+    "wq_endpoint_recovery_steps", "wq_two_scale_projection",
     # Every-endpoint D-hat target floor (bit-parity-lossless family); read by
     # endpoint_recovery via config.get, the ConversionPolicy recipe may set it.
     "endpoint_target_floor",
