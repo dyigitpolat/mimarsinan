@@ -299,13 +299,13 @@ class TestStagedHalfStepDeferral:
                 lambda t, *, base_steps: None,
             )
             tuner._post_stabilization_hook()
-            non_encoders = [
-                p for p in tuner.model.get_perceptrons()
-                if not getattr(p, "is_encoding_layer", False)
-            ]
+            perceptrons = list(tuner.model.get_perceptrons())
+            # [E1] the subsumed encoder is a ceil-staircase hop: the deferred
+            # fold covers it exactly like every on-chip core.
+            assert any(getattr(p, "is_encoding_layer", False) for p in perceptrons)
             assert all(
                 getattr(p, "_sync_entry_half_step_folded", False)
-                for p in non_encoders
+                for p in perceptrons
             )
         finally:
             tuner.close()
@@ -314,13 +314,11 @@ class TestStagedHalfStepDeferral:
         tuner = self._tuner(tmp_path, monkeypatch, gauge_fails=False)
         try:
             assert tuner._hop_stage_levels is None
-            non_encoders = [
-                p for p in tuner.model.get_perceptrons()
-                if not getattr(p, "is_encoding_layer", False)
-            ]
+            perceptrons = list(tuner.model.get_perceptrons())
+            assert any(getattr(p, "is_encoding_layer", False) for p in perceptrons)
             assert all(
                 getattr(p, "_sync_entry_half_step_folded", False)
-                for p in non_encoders
+                for p in perceptrons
             )
         finally:
             tuner.close()

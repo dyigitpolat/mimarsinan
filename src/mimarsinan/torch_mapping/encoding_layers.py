@@ -52,6 +52,21 @@ def _is_encoding_segment_start(node) -> bool:
 _VALID_PLACEMENTS = ("subsume", "offload")
 
 
+def encoder_deploys_as_staircase_hop(placement: str) -> bool:
+    """True when marked encoders deploy as host ops running their own staircased module.
+
+    ``subsume`` runs the encoder perceptron itself host-side — installed ceil
+    staircase included — a floor-quantizer hop like every on-chip core;
+    ``offload`` host-encodes raw input with the mid-tread round (``ttfs_spike_time``).
+    """
+    if placement not in _VALID_PLACEMENTS:
+        raise ValueError(
+            f"encoder_deploys_as_staircase_hop placement must be one of "
+            f"{_VALID_PLACEMENTS!r}; got {placement!r}"
+        )
+    return placement == "subsume"
+
+
 def mark_encoding_layers(
     model_repr: ModelRepresentation, *, placement: str = "subsume",
 ) -> None:

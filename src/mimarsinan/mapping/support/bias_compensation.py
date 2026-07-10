@@ -70,16 +70,23 @@ LIF_HALF_STEP_FLAG = "_lif_half_step_baked_into_bias"
 SYNC_ENTRY_HALF_STEP_FLAG = "_sync_entry_half_step_folded"
 
 
-def apply_half_step_entry_fold(model, simulation_steps: int, *, baked_flag: str) -> int:
+def apply_half_step_entry_fold(
+    model,
+    simulation_steps: int,
+    *,
+    baked_flag: str,
+    encoders_run_staircase: bool = False,
+) -> int:
     """Fold the +theta/(2T) deployed-convention half-step as a TRAINABLE entry
     bias (identical bake math as the TTFS compensation; the QAT owns and may
     train the fold): +theta/(2T) per cycle turns the floor rate grid into
     nearest over the window and head-starts every hop's first fire. Encoders
-    skipped, idempotent per ``baked_flag``; returns folds applied.
+    fold only when ``encoders_run_staircase`` (their deployed form runs the
+    staircase kernel); idempotent per ``baked_flag``; returns folds applied.
     """
     folded = 0
     for perceptron in model.get_perceptrons():
-        if getattr(perceptron, "is_encoding_layer", False):
+        if not encoders_run_staircase and getattr(perceptron, "is_encoding_layer", False):
             continue
         shift = calculate_activation_shift(
             simulation_steps, perceptron.activation_scale
@@ -102,11 +109,25 @@ def apply_lif_half_step_bias_compensation(model, simulation_steps: int) -> int:
     )
 
 
-def apply_sync_exact_entry_half_step(model, simulation_steps: int) -> int:
-    """[5v B1] The sync half-step entry fold before the exact-ceil QAT. Idempotent;
-    returns folds applied."""
+def apply_sync_exact_entry_half_step(
+    model, simulation_steps: int, *, encoding_layer_placement: str,
+) -> int:
+    """[5v B1 + E1] The sync half-step entry fold before the exact-ceil QAT.
+
+    Placement-aware: a SUBSUMED encoder deploys as a ceil-staircase hop (the
+    host ComputeOp runs the perceptron module itself) and receives the fold;
+    an OFFLOADED encoder is host-encoded by the mid-tread round and keeps the
+    skip. Idempotent; returns folds applied."""
+    # Lazy: the torch_mapping package init pulls the converter stack (mapping <-> torch_mapping cycle).
+    from mimarsinan.torch_mapping.encoding_layers import encoder_deploys_as_staircase_hop
+
     return apply_half_step_entry_fold(
-        model, simulation_steps, baked_flag=SYNC_ENTRY_HALF_STEP_FLAG,
+        model,
+        simulation_steps,
+        baked_flag=SYNC_ENTRY_HALF_STEP_FLAG,
+        encoders_run_staircase=encoder_deploys_as_staircase_hop(
+            encoding_layer_placement
+        ),
     )
 
 

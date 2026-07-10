@@ -389,22 +389,39 @@ class TestSyncEntryHalfStepCallSite:
         manager = create_adaptation_manager_for_model(cfg, model)
         return ActivationQuantizationTuner(pipeline, model, 4, 0.5, cfg["lr"], manager)
 
-    def test_knob_on_folds_non_encoding_hops(self, tmp_path, capsys):
+    def test_knob_on_folds_every_hop_including_the_subsumed_encoder(
+        self, tmp_path, capsys,
+    ):
+        # [E1] default placement is subsume: the encoder deploys as a
+        # ceil-staircase hop (the host op runs the perceptron module itself)
+        # and must enter through the same half-step as every on-chip core.
         cfg = _sync_cfg()
         cfg["sync_entry_half_step"] = True
         tuner = self._tuner(tmp_path, cfg)
         try:
             assert "[MBH-B1] sync entry half-step folded" in capsys.readouterr().out
-            flags = [
-                bool(getattr(p, "_sync_entry_half_step_folded", False))
-                for p in tuner.model.get_perceptrons()
-            ]
-            encoders = [
-                bool(getattr(p, "is_encoding_layer", False))
-                for p in tuner.model.get_perceptrons()
-            ]
-            for flag, is_enc in zip(flags, encoders):
-                assert flag != is_enc
+            perceptrons = list(tuner.model.get_perceptrons())
+            assert any(getattr(p, "is_encoding_layer", False) for p in perceptrons)
+            assert all(
+                getattr(p, "_sync_entry_half_step_folded", False)
+                for p in perceptrons
+            )
+        finally:
+            tuner.close()
+
+    def test_offload_placement_keeps_the_encoder_skip(self, tmp_path):
+        # Offloaded encoders are host-encoded by the mid-tread round
+        # (ttfs_spike_time), already unbiased: no half-step for them.
+        cfg = _sync_cfg()
+        cfg["sync_entry_half_step"] = True
+        cfg["encoding_layer_placement"] = "offload"
+        tuner = self._tuner(tmp_path, cfg)
+        try:
+            perceptrons = list(tuner.model.get_perceptrons())
+            assert any(getattr(p, "is_encoding_layer", False) for p in perceptrons)
+            for p in perceptrons:
+                folded = bool(getattr(p, "_sync_entry_half_step_folded", False))
+                assert folded != bool(getattr(p, "is_encoding_layer", False))
         finally:
             tuner.close()
 
@@ -434,3 +451,118 @@ class TestSyncEntryHalfStepCallSite:
             )
         finally:
             tuner.close()
+
+
+class TestSubsumedEncoderEntryHopCentering:
+    """[E1] The subsumed encoder IS a ceil-staircase hop (Identity 1: a floor
+    quantizer in value space): without the fold its entry-hop error mean is the
+    floor bias -theta/(2S); the placement-aware fold centers it exactly.
+    Composition measured through the repo wire-kernel twins on an exact binary
+    lattice (no ceil/round ties, every value f32/f64-exact)."""
+
+    S = 8
+
+    def _encoder(self):
+        from mimarsinan.models.perceptron_mixer.perceptron import Perceptron
+
+        p = Perceptron(1, 1, normalization=nn.Identity())
+        with torch.no_grad():
+            p.layer.weight.data = torch.tensor([[1.0]])
+            p.layer.bias.data = torch.tensor([0.0])
+        p.set_activation_scale(1.0)
+        p.is_encoding_layer = True
+        manager = AdaptationManager()
+        manager.quantization_rate = 1.0
+        manager.update_activation(_sync_cfg(steps=self.S), p)
+        p.eval()
+        return p
+
+    def _lattice(self):
+        # x = (16k + 2j + 1)/128: 8 offsets per grid cell over [0, 1), all
+        # exactly representable and never on a staircase tie pre- or post-fold.
+        ks, js = np.meshgrid(np.arange(self.S), np.arange(8), indexing="ij")
+        return ((16 * ks + 2 * js + 1) / 128.0).reshape(-1)
+
+    def _forward(self, p, x):
+        with torch.no_grad():
+            y = p(torch.tensor(x, dtype=torch.float32).unsqueeze(1))
+        return y.squeeze(1).double().numpy()
+
+    def test_pre_fold_entry_hop_error_mean_is_the_floor_bias(self):
+        p = self._encoder()
+        x = self._lattice()
+        y = self._forward(p, x)
+        np.testing.assert_array_equal(
+            y, ttfs_quantized_staircase_np(x, 1.0, self.S),
+        )
+        assert np.isclose((y - x).mean(), -1.0 / (2 * self.S), atol=1e-12)
+
+    def test_post_fold_entry_hop_error_mean_is_centered(self):
+        from mimarsinan.mapping.support.bias_compensation import (
+            apply_sync_exact_entry_half_step,
+        )
+
+        p = self._encoder()
+        model = SimpleNamespace(get_perceptrons=lambda: [p])
+        folded = apply_sync_exact_entry_half_step(
+            model, self.S, encoding_layer_placement="subsume",
+        )
+        assert folded == 1
+        x = self._lattice()
+        y = self._forward(p, x)
+        # Train forward == the deployed wire kernel over the folded bias
+        # (Identity 2: floor + half-step == mid-tread round).
+        np.testing.assert_array_equal(
+            y, ttfs_quantized_staircase_np(x + 1.0 / (2 * self.S), 1.0, self.S),
+        )
+        assert abs((y - x).mean()) < 1e-12
+
+
+class TestSubsumedEncoderTrainDeployIdentity:
+    """The fold reaches deployment through the SAME module the QAT trains: the
+    encoding ComputeOp emitted by the subsume mapping carries the folded
+    perceptron itself, so train and deploy see one arithmetic (Theorem 1)."""
+
+    def test_encoding_compute_op_carries_the_folded_module(self):
+        from mimarsinan.mapping.ir import ComputeOp
+        from mimarsinan.mapping.ir_mapping_class import IRMapping
+        from mimarsinan.mapping.support.bias_compensation import (
+            apply_sync_exact_entry_half_step,
+        )
+        from mimarsinan.mapping.support.per_source_scales import (
+            compute_per_source_scales,
+        )
+
+        cfg = _sync_cfg(steps=4)
+        model = make_tiny_supermodel()
+        manager = AdaptationManager()
+        manager.quantization_rate = 1.0
+        for p in model.get_perceptrons():
+            manager.update_activation(cfg, p)
+        folded = apply_sync_exact_entry_half_step(
+            model, 4, encoding_layer_placement="subsume",
+        )
+        assert folded == len(list(model.get_perceptrons()))
+
+        mapper_repr = model.get_mapper_repr()
+        if hasattr(mapper_repr, "assign_perceptron_indices"):
+            mapper_repr.assign_perceptron_indices()
+        compute_per_source_scales(mapper_repr)
+        ir_mapping = IRMapping(
+            q_max=127.0, firing_mode="Default", max_axons=1024, max_neurons=1024,
+        )
+        ir_mapping.map(mapper_repr)
+
+        encoder = model.get_perceptrons()[0]
+        assert encoder.is_encoding_layer
+        encoding_ops = [
+            n for n in ir_mapping.nodes
+            if isinstance(n, ComputeOp) and n.params.get("module") is encoder
+        ]
+        assert len(encoding_ops) == 1, (
+            "the subsumed encoder must deploy as exactly one host ComputeOp "
+            "running the trained perceptron module itself"
+        )
+        assert getattr(
+            encoding_ops[0].params["module"], "_sync_entry_half_step_folded", False,
+        ), "the deployed encoder module must carry the trained half-step fold"

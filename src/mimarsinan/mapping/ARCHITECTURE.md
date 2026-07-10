@@ -18,7 +18,7 @@ use when).
 | `ir_mapping_class_base.py` | `IRMappingCore` — mapping walk producing an `IRGraph`, built on the shape-only `LayoutIRMapping` tiling base |
 | `ir_mapping_class_emit.py` | `IRMappingEmitMixin` — emits concrete `NeuralCore` nodes with materialized weights alongside the shape walk |
 | `map_model_to_ir.py` | `map_model_to_ir` — one-call convenience wrapper around `IRMapping.map` |
-| `model_representation.py` | `ModelRepresentation` — mapper-graph DAG with a memory-frugal refcounted topological executor and perceptron enumeration |
+| `model_representation.py` | `ModelRepresentation` — mapper-graph DAG with a memory-frugal refcounted topological executor, perceptron enumeration, and the public graph accessors `execution_order()` / `consumer_map()` (used by the negative-boundary policy and channel-scale equalization) |
 | `mapping_utils.py` | Legacy star re-export facade; import from the concrete modules in new code |
 | `weight_reuse.py` | Time-domain weight-reuse phase classification of segments by `weight_bank_id` (default-off, pure read of the IR) |
 | `ir/` | Unified IR: `IRGraph` container, node types (`NeuralCore`, `ComputeOp`, `WeightBank`, `IRSource`), legacy conversions |
@@ -27,7 +27,7 @@ use when).
 | `platform/` | `ChipCapabilities`, `MappingStrategy`, platform constraints, tiling/coalescing structure |
 | `pruning/` | IR pruning, liveness semantics, mask/compaction application, boundary policy, graph segmentation |
 | `packing/` | `SoftCore`/`HardCore` bin packing, placement engine, hybrid multi-stage mapping (`HybridHardCoreMapping`) |
-| `latency/` | `IRLatency` (IR topology tiers) and `ChipLatency` (packed-chip cycle scheduling) plus upstream closure |
+| `latency/` | `IRLatency` (IR topology tiers) and `ChipLatency` (packed-chip cycle scheduling) plus upstream closure; `depth_balancing` [C5] inserts identity relay chains on gap>1 intra-segment edges (unequal-depth fan-in, V6) with the loud gap-1 and dead-relay (strict-'<' exact-theta lattice, V9) guards |
 | `support/` | Shared mechanisms: activation/per-source scales, bias compensation, core geometry, source spans, residual merge, scheduling, and the negative value-boundary policy (`negative_boundary.py` + the structural non-negativity predicate `value_domain.py`) |
 | `verification/` | Layout verification services, capacity checks, hardware suggester, on-chip fraction/majority metrics, wizard verify |
 | `export/` | Chip export (`cpp_chip_model` emission) and IR quantization verify for simulation |
@@ -64,7 +64,7 @@ on unseen data still warns at runtime (`warn_once_lossy_negative_clamp`).
 - `code_generation` — `cpp_chip_model` chip types (`SpikeSource`, chip model) for export, softcore packing, and spike-source spans.
 - `models` — `Perceptron` and nn layers consumed by mappers; builders registry for the wizard layout verify.
 - `transformations` — `PerceptronTransformer` weight/bias extraction; weight quantization and quantization bounds/verify for export; `pruning.committed_masks.commit_layer_pruning` in the conv mappers' forward (F.conv bypasses layer hooks).
-- `torch_mapping` — `convert_torch_model` and encoding-layer marking in the wizard layout verify.
+- `torch_mapping` — `convert_torch_model` and encoding-layer marking in the wizard layout verify; `encoder_deploys_as_staircase_hop` in the placement-aware sync entry half-step fold (`support/bias_compensation.py`).
 - `pipelining` — `ModelRegistry` model loading in the wizard layout verify.
 - `chip_simulation` — spiking-semantics constants for pruning liveness.
 - `tuning` — activation-shift calculation for bias compensation.
@@ -80,7 +80,7 @@ on unseen data still warns at runtime (`warn_once_lossy_negative_clamp`).
 - `search` — architecture search over shape-only layout estimates.
 - `spiking` — spiking-node interplay with IR types.
 - `torch_mapping` — builds the mapper graph that this module consumes.
-- `transformations` — transformations parameterized by mapping structures.
+- `transformations` — transformations parameterized by mapping structures; `channel_scale_equalization` walks the mapper node types and `ModelRepresentation` graph accessors.
 - `tuning` — tuning stages that consult mapping/latency info.
 - `visualization` — plots of IR graphs and core layouts.
 

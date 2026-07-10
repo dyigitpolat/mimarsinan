@@ -56,7 +56,11 @@ class ActivationQuantizationTuner(AdaptationRateTuner):
 
     def _fold_entry_half_step(self) -> None:
         folded = apply_sync_exact_entry_half_step(
-            self.model, int(self.pipeline.config["simulation_steps"])
+            self.model,
+            int(self.pipeline.config["simulation_steps"]),
+            encoding_layer_placement=str(
+                self.pipeline.config.get("encoding_layer_placement", "subsume")
+            ),
         )
         print(f"[MBH-B1] sync entry half-step folded on {folded} hops", flush=True)
 

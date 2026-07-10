@@ -16,7 +16,7 @@ mappers; every other op flows through one generic host `ComputeOpMapper` path.
 | `converted_model_flow.py` | `ConvertedModelFlow`: PerceptronFlow subclass wrapping the converted `ModelRepresentation`; registers all perceptrons and graph-node modules so `.to()`/`state_dict()`/`parameters()` reach every one |
 | `converter.py` | Public facade: `check_representability` and `convert_torch_model` (trace → normalize → analyze → convert → mark encoding layers → probe); `strict=True` default, `encoding_layer_placement="subsume"/"offload"` |
 | `converter_handlers/` | Mixins for `MapperGraphConverter`: `LinearConvertMixin`/`ConvConvertMixin` package Perceptrons with absorbed BN/activation (string conv padding rejected), `StructuralConvertMixin` holds cat/flatten shortcuts and absorption helpers, `converter_contract.py` is the typing-only host contract |
-| `encoding_layers.py` | `mark_encoding_layers` (subsume marks segment-start perceptrons as host spike-train ComputeOps; offload clears the mark so they map on-chip) and `segment_entry_perceptrons` (first on-chip perceptron per neural segment — the TTFS wire-contract seam) |
+| `encoding_layers.py` | `mark_encoding_layers` (subsume marks segment-start perceptrons as host spike-train ComputeOps; offload clears the mark so they map on-chip), `encoder_deploys_as_staircase_hop` (placement→arithmetic SSOT: subsumed encoders run their own staircased module and take the sync entry half-step), and `segment_entry_perceptrons` (first on-chip perceptron per neural segment — the TTFS wire-contract seam) |
 | `fx_shape_utils.py` | Shared FX `tensor_meta` extraction (`node_input_shapes`, `node_output_shape`, `strip_batch`) plus `fx_literal_int` literal coercion and `node_target_str` |
 | `graph_normalization.py` | `normalize_fx_graph`: in-place fusion of consecutive Linears (walking through Identity/BN and folding BN into the preceding Linear) followed by dead-code elimination |
 | `mapper_graph_converter.py` | `MapperGraphConverter`: walks the FX graph emitting mappers — dedicated handlers for Linear/Conv/LayerNorm/MultiheadAttention, structural shortcuts (`ReshapeMapper`/`PermuteMapper`/`ConcatMapper`) for view/reshape/flatten/permute/transpose/cat, generic ComputeOp fallback for everything else |
@@ -42,7 +42,9 @@ mappers; every other op flows through one generic host `ComputeOpMapper` path.
   `convert_torch_model` + `mark_encoding_layers`.
 - **mapping** — `verification/wizard_layout_verify.py` and
   `verification/onchip_fraction.py` convert models for layout verification
-  and on-chip-fraction analysis.
+  and on-chip-fraction analysis; `support/bias_compensation.py` consults
+  `encoder_deploys_as_staircase_hop` for the placement-aware sync entry
+  half-step fold.
 - **search** — `problems/joint/layout_hook.py` converts candidate models
   during joint architecture search.
 - **tuning** — `tuners/ttfs_cycle_adaptation_tuner.py` uses

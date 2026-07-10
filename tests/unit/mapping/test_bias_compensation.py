@@ -144,43 +144,84 @@ class TestApplyTtfsQuantizationBiasCompensation:
 
 
 class TestApplySyncExactEntryHalfStep:
-    """[5v B1] the sync exact-QAT ENTRY half-step: same +0.5/S bake math as the
-    TTFS mapping-time compensation, folded BEFORE training so the ceil-kernel
+    """[5v B1 + E1] the sync exact-QAT ENTRY half-step: same +0.5/S bake math as
+    the TTFS mapping-time compensation, folded BEFORE training so the ceil-kernel
     QAT enters through the half-step (entry 0.10 -> 0.85 measured with the
-    deflated quantile) and can train it away (bias stays a live parameter)."""
+    deflated quantile) and can train it away (bias stays a live parameter).
+    Placement-aware: a SUBSUMED encoder deploys as a ceil-staircase hop (the host
+    op runs the perceptron module itself) and MUST receive the fold; an OFFLOADED
+    encoder is host-encoded by the mid-tread round and keeps the skip."""
 
-    def test_plus_half_step_entry_fold_exact(self):
+    @staticmethod
+    def _fold(model, steps=4, placement="subsume"):
         from mimarsinan.mapping.support.bias_compensation import (
             apply_sync_exact_entry_half_step,
         )
 
+        return apply_sync_exact_entry_half_step(
+            model, steps, encoding_layer_placement=placement,
+        )
+
+    def test_plus_half_step_entry_fold_exact(self):
         model = _Model([_perceptron()])
-        folded = apply_sync_exact_entry_half_step(model, 4)
+        folded = self._fold(model)
         assert folded == 1
         _assert_bias_exact(model.get_perceptrons()[0], [0.625, -1.375, 2.125])
         assert model.get_perceptrons()[0]._sync_entry_half_step_folded is True
 
     def test_idempotent_no_double_fold(self):
-        from mimarsinan.mapping.support.bias_compensation import (
-            apply_sync_exact_entry_half_step,
-        )
-
         model = _Model([_perceptron()])
-        apply_sync_exact_entry_half_step(model, 4)
-        folded_again = apply_sync_exact_entry_half_step(model, 4)
+        self._fold(model)
+        folded_again = self._fold(model)
         assert folded_again == 0
         _assert_bias_exact(model.get_perceptrons()[0], [0.625, -1.375, 2.125])
 
-    def test_encoding_layer_skipped(self):
+    def test_subsumed_encoder_receives_the_half_step(self):
+        # [E1] under subsume the encoder ComputeOp runs the perceptron module,
+        # ceil staircase included: skipping it leaves a -theta/(2S) floor bias
+        # at every network entry (measured +15.9/+29.8/+4.8 pp, mixer S=4/8/16).
+        encoder = _perceptron()
+        encoder.is_encoding_layer = True
+        model = _Model([encoder])
+        assert self._fold(model, placement="subsume") == 1
+        _assert_bias_exact(encoder, [0.625, -1.375, 2.125])
+        assert encoder._sync_entry_half_step_folded is True
+
+    def test_offloaded_encoder_keeps_the_skip(self):
+        # Offload host-encodes raw input with the mid-tread round
+        # (ttfs_spike_time): already unbiased, no half-step to fold.
+        encoder = _perceptron()
+        encoder.is_encoding_layer = True
+        model = _Model([encoder])
+        assert self._fold(model, placement="offload") == 0
+        _assert_bias_exact(encoder, [0.5, -1.5, 2.0])
+        assert not getattr(encoder, "_sync_entry_half_step_folded", False)
+
+    def test_offload_still_folds_non_encoder_hops(self):
+        encoder = _perceptron()
+        encoder.is_encoding_layer = True
+        plain = _perceptron()
+        model = _Model([encoder, plain])
+        assert self._fold(model, placement="offload") == 1
+        _assert_bias_exact(encoder, [0.5, -1.5, 2.0])
+        _assert_bias_exact(plain, [0.625, -1.375, 2.125])
+
+    def test_unknown_placement_fails_loud(self):
+        import pytest
+
+        model = _Model([_perceptron()])
+        with pytest.raises(ValueError, match="placement"):
+            self._fold(model, placement="Subsume")
+
+    def test_placement_is_a_required_decision(self):
+        import pytest
+
         from mimarsinan.mapping.support.bias_compensation import (
             apply_sync_exact_entry_half_step,
         )
 
-        encoder = _perceptron()
-        encoder.is_encoding_layer = True
-        model = _Model([encoder])
-        assert apply_sync_exact_entry_half_step(model, 4) == 0
-        _assert_bias_exact(encoder, [0.5, -1.5, 2.0])
+        with pytest.raises(TypeError):
+            apply_sync_exact_entry_half_step(_Model([_perceptron()]), 4)
 
     def test_distinct_flag_from_the_mapping_time_bake(self):
         # The entry fold and the mapping-time bake are different decisions:
@@ -262,7 +303,7 @@ class TestApplyLifHalfStepBiasCompensation:
 
 class TestHalfStepEntryFoldUnification:
     """The LIF and sync entry folds share one bake core (identical shift math);
-    only the idempotency marker differs."""
+    only the idempotency marker and the encoder-inclusion decision differ."""
 
     def test_lif_sync_and_core_write_identical_bias(self):
         from mimarsinan.mapping.support.bias_compensation import (
@@ -275,13 +316,36 @@ class TestHalfStepEntryFoldUnification:
         sync_model = _Model([_perceptron()])
         core_model = _Model([_perceptron()])
         assert apply_lif_half_step_bias_compensation(lif_model, 4) == 1
-        assert apply_sync_exact_entry_half_step(sync_model, 4) == 1
+        assert apply_sync_exact_entry_half_step(
+            sync_model, 4, encoding_layer_placement="subsume",
+        ) == 1
         assert apply_half_step_entry_fold(core_model, 4, baked_flag="_probe") == 1
         lif_b = lif_model.get_perceptrons()[0].layer.bias.data
         sync_b = sync_model.get_perceptrons()[0].layer.bias.data
         core_b = core_model.get_perceptrons()[0].layer.bias.data
         assert torch.equal(lif_b, sync_b)
         assert torch.equal(lif_b, core_b)
+
+    def test_core_fold_encoder_inclusion_is_explicit(self):
+        # The core skips encoders by default (LIF contract); a caller whose
+        # encoders deploy as staircase hops opts them in, identical bake math.
+        from mimarsinan.mapping.support.bias_compensation import (
+            apply_half_step_entry_fold,
+        )
+
+        def _encoder_model():
+            encoder = _perceptron()
+            encoder.is_encoding_layer = True
+            return _Model([encoder])
+
+        skipped = _encoder_model()
+        folded = _encoder_model()
+        assert apply_half_step_entry_fold(skipped, 4, baked_flag="_probe") == 0
+        _assert_bias_exact(skipped.get_perceptrons()[0], [0.5, -1.5, 2.0])
+        assert apply_half_step_entry_fold(
+            folded, 4, baked_flag="_probe", encoders_run_staircase=True,
+        ) == 1
+        _assert_bias_exact(folded.get_perceptrons()[0], [0.625, -1.375, 2.125])
 
     def test_markers_are_distinct(self):
         from mimarsinan.mapping.support.bias_compensation import (
