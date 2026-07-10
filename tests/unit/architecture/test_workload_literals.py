@@ -209,7 +209,7 @@ CALIBRATED_CONSTANT_INVENTORY = (
      "S4: LIF distmatch DFQ iters; same profile override"),
     ("mimarsinan.tuning.orchestration.lif_adaptation_plan", "_GENERIC_DISTMATCH_CAL_BATCHES", 8,
      "S4: LIF distmatch calibration batches; same profile override"),
-    ("mimarsinan.pipelining.pipeline_steps.adaptation.activation_analysis_step", "MAX_ANALYSIS_BATCHES", 32,
+    ("mimarsinan.pipelining.pipeline_steps.activation_utils", "MAX_ANALYSIS_BATCHES", 32,
      "S3: activation-analysis batch ceiling; override: calibration_set_policy.analysis_batches_max"),
     ("mimarsinan.pipelining.pipeline_steps.adaptation.activation_analysis_step", "ANALYSIS_BATCH_SIZE_CAP", 16,
      "S3: VRAM guard on the analysis batch (saved-tensor decorators pin outputs); override: analysis_batch_size_cap / activation_analysis_batch_size"),

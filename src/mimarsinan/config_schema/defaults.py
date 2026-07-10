@@ -102,22 +102,15 @@ CONFIG_KEYS_SET: Set[str] = {
     "kd_temperature",
     "activation_quantization",
     "weight_quantization",
-    "pruning",
-    "pruning_fraction",
-    "prune_sparsity",
-    "weight_source",
-    "preload_weights",
+    "pruning", "pruning_fraction", "prune_sparsity",
+    "scale_migration", "scale_migration_clip_ratio",
+    "weight_source", "preload_weights",
     "pretrained_weight_set", "pretrained_weight_sets",
-    "model_type",
-    "device",
-    "input_shape",
-    "input_size",
-    "num_classes",
+    "model_type", "device",
+    "input_shape", "input_size", "num_classes",
     "model_config",
     "model_factory",
-    "lr",
-    "lr_range_min",
-    "lr_range_max",
+    "lr", "lr_range_min", "lr_range_max",
     "cores",
     "simulation_steps",
     "arch_search",
@@ -180,6 +173,11 @@ CONFIG_KEYS_SET: Set[str] = {
     # WQ knobs, both ConversionPolicy-recipe-defaulted: the endpoint step cap
     # (FAST respec) and the [M2] two-scale projection grids (ttfs_cycle_based).
     "wq_endpoint_recovery_steps", "wq_two_scale_projection",
+    # LIF deployment-exactness promotions (lif_deployment_exactness.md §7):
+    # the recipe arms the C2/C4/C5 corrections for lif; per-hop re-timing (C3)
+    # stays a mapping-level choice. All default OFF.
+    "lif_membrane_readout", "lif_affine_fold",
+    "lif_per_hop_retiming", "lif_depth_balancing_relays",
     # Every-endpoint D-hat target floor (bit-parity-lossless family); read by
     # endpoint_recovery via config.get, the ConversionPolicy recipe may set it.
     "endpoint_target_floor",

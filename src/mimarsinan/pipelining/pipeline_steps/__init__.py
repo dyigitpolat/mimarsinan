@@ -9,7 +9,9 @@ from .adaptation.activation_adaptation_step import ActivationAdaptationStep as A
 from .adaptation.clamp_adaptation_step import ClampAdaptationStep as ClampAdaptationStep
 from .adaptation.activation_shift_step import ActivationShiftStep as ActivationShiftStep
 from .adaptation.pruning_adaptation_step import PruningAdaptationStep as PruningAdaptationStep
+from .adaptation.scale_migration_step import ScaleMigrationStep as ScaleMigrationStep
 from .adaptation.lif_adaptation_step import LIFAdaptationStep as LIFAdaptationStep
+from .adaptation.lif_affine_fold_step import LIFAffineFoldStep as LIFAffineFoldStep
 from .adaptation.ttfs_cycle_adaptation_step import TTFSCycleAdaptationStep as TTFSCycleAdaptationStep
 from .adaptation.noise_adaptation_step import NoiseAdaptationStep as NoiseAdaptationStep
 from .quantization.activation_quantization_step import ActivationQuantizationStep as ActivationQuantizationStep

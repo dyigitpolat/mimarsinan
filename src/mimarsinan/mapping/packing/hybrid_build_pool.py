@@ -34,11 +34,14 @@ def build_hybrid_hard_core_mapping(
     ir_graph: IRGraph,
     cores_config: Sequence[dict],
     strategy: MappingStrategy | None = None,
+    per_hop_neural_segments: bool = False,
 ) -> HybridHardCoreMapping:
     """Compile a unified IRGraph into a HybridHardCoreMapping.
 
     Coalesce / split / schedule passes are governed by the resolved
-    :class:`MappingStrategy`; when omitted, the all-permissions-off strategy is used.
+    :class:`MappingStrategy`; when omitted, the all-permissions-off strategy is
+    used. ``per_hop_neural_segments`` splits neural runs per depth level (C3
+    count-exact re-timing).
     """
     from mimarsinan.mapping.pruning.ir_segmentation import build_ir_consumed_by
 
@@ -60,6 +63,7 @@ def build_hybrid_hard_core_mapping(
             all_reindex_maps=all_reindex_maps,
             allow_neuron_splitting=strategy.allow_neuron_splitting,
             allow_coalescing=strategy.allow_coalescing,
+            per_hop_neural_segments=per_hop_neural_segments,
         )
     else:
         _build_single_pool(
@@ -70,6 +74,7 @@ def build_hybrid_hard_core_mapping(
             all_reindex_maps=all_reindex_maps,
             allow_neuron_splitting=strategy.allow_neuron_splitting,
             allow_coalescing=strategy.allow_coalescing,
+            per_hop_neural_segments=per_hop_neural_segments,
         )
 
     if not stages:
@@ -89,11 +94,14 @@ def build_hybrid_hard_core_mapping(
     )
 
 
-def build_identity_hybrid_mapping(*, ir_graph: IRGraph) -> HybridHardCoreMapping:
+def build_identity_hybrid_mapping(
+    *, ir_graph: IRGraph, per_hop_neural_segments: bool = False,
+) -> HybridHardCoreMapping:
     """Compile an IRGraph into a 1:1 NeuralCore→HardCore hybrid program (no pool/pad/reindex/coalesce/split).
 
     Carries pure IR semantics; the rung-2 SCM gate executor the packed builder
-    must be value-preserving against.
+    must be value-preserving against (so it shares the per-hop segmentation
+    decision with the packed build).
     """
     from mimarsinan.mapping.pruning.ir_segmentation import build_ir_consumed_by
 
@@ -109,6 +117,7 @@ def build_identity_hybrid_mapping(*, ir_graph: IRGraph) -> HybridHardCoreMapping
         all_reindex_maps=all_reindex_maps,
         allow_neuron_splitting=False,
         identity=True,
+        per_hop_neural_segments=per_hop_neural_segments,
     )
 
     if not stages:
@@ -135,13 +144,14 @@ def _build_single_pool(
     allow_neuron_splitting: bool,
     allow_coalescing: bool = True,
     identity: bool = False,
+    per_hop_neural_segments: bool = False,
 ) -> None:
     """Single-shared-pool compilation path (``identity=True``: no pool)."""
     shared_pool: list[HardCore] = (
         [] if identity else _make_available_hardware_cores(cores_config)
     )
 
-    for segment in partition_ir_graph(ir_graph):
+    for segment in partition_ir_graph(ir_graph, per_hop=per_hop_neural_segments):
         if isinstance(segment, NeuralSegment):
             current_neural = segment.nodes
             if all_reindex_maps:

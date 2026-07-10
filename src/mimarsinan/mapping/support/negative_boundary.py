@@ -47,15 +47,6 @@ def _is_host_node(node) -> bool:
     )
 
 
-def _consumer_map(mapper_repr) -> Dict[int, list]:
-    mapper_repr._ensure_exec_graph()
-    consumers: Dict[int, list] = {}
-    for node in mapper_repr._exec_order:
-        for dep in mapper_repr._deps.get(node, []):
-            consumers.setdefault(id(dep), []).append(node)
-    return consumers
-
-
 def boundary_consumers(node, consumers: Dict[int, list]) -> list:
     """The first non-structural consumers of ``node``.
 
@@ -86,8 +77,9 @@ def calibrated_compute_op_minima(
     calibration forward entirely — a structural no-op for both mechanisms.
     """
     mapper_repr = model.get_mapper_repr()
-    mapper_repr._ensure_exec_graph()
-    if not any(isinstance(n, ComputeOpMapper) for n in mapper_repr._exec_order):
+    if not any(
+        isinstance(n, ComputeOpMapper) for n in mapper_repr.execution_order()
+    ):
         return {}
     recorder: Dict[Any, torch.Tensor] = {}
     with torch.no_grad():
@@ -111,7 +103,7 @@ def lossy_negative_boundaries(model, minima: Dict[Any, torch.Tensor]) -> list:
     Host-only consumers (another ComputeOp, a subsumed perceptron) run in the
     value domain and clamp nothing, so they are never a lossy boundary.
     """
-    consumers = _consumer_map(model.get_mapper_repr())
+    consumers = model.get_mapper_repr().consumer_map()
     lossy = []
     for op, mins in minima.items():
         if float(_effective_minimum(op, mins).min()) >= -NEGATIVE_TOLERANCE:
@@ -138,8 +130,8 @@ def subsume_forward_negative_boundaries(
     perceptrons, in exec order. Idempotent.
     """
     mapper_repr = model.get_mapper_repr()
-    consumers = _consumer_map(mapper_repr)
-    order = {id(n): i for i, n in enumerate(mapper_repr._exec_order)}
+    consumers = mapper_repr.consumer_map()
+    order = {id(n): i for i, n in enumerate(mapper_repr.execution_order())}
 
     subsumed = []
     for op in lossy_negative_boundaries(model, minima):

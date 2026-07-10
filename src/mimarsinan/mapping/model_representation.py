@@ -85,6 +85,21 @@ class ModelRepresentation:
         self._consumer_count = consumer_count
         return order, deps_map, consumer_count
 
+    def execution_order(self) -> list:
+        """Postorder (deps-first) execution order of the mapper graph."""
+        exec_order, _, _ = self._ensure_exec_graph()
+        return list(exec_order)
+
+    def consumer_map(self) -> dict:
+        """``id(node) -> [consumer nodes]``: the reverse dependency edges."""
+        exec_order, deps_map, _ = self._ensure_exec_graph()
+        consumers: dict = {}
+        for node in exec_order:
+            for dep in deps_map.get(node, []):
+                if dep is not None:
+                    consumers.setdefault(id(dep), []).append(node)
+        return consumers
+
     def get_perceptron_groups(self):
         """Return perceptron groups in forward-topological order (used by scale/activation analysis)."""
         exec_order, _, _ = self._ensure_exec_graph()

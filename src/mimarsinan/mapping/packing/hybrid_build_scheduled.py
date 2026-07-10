@@ -77,11 +77,12 @@ def _build_scheduled(
     all_reindex_maps: dict[int, dict[int, int]],
     allow_neuron_splitting: bool,
     allow_coalescing: bool = False,
+    per_hop_neural_segments: bool = False,
 ) -> None:
     """Scheduled compilation: fresh core pool per pass."""
     segment_index = 0
 
-    for segment in partition_ir_graph(ir_graph):
+    for segment in partition_ir_graph(ir_graph, per_hop=per_hop_neural_segments):
         if isinstance(segment, NeuralSegment):
             segment_index = _flush_scheduled_subsegments(
                 cores=segment.nodes,

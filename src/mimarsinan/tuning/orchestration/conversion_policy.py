@@ -62,6 +62,17 @@ _LIF_RECIPE_KNOBS = {
     # the quantized deployed sim stay bit-exact (mapping-time injection broke
     # that parity identity: t0_01 0.9336, t0_05 0.9883).
     "lif_half_step_bias": True,
+    # [lif_deployment_exactness §7] the exact/statistical correction ladder on
+    # top of the half-step: C2 membrane-augmented readout (Q = theta*c + m
+    # recovers the sign-carrying unquantized logits at final-only output
+    # cores, +2.6pp at S=4), C4 per-channel FULL affine fold (dead-zone bias
+    # absorption, calibration-only; bias-only folds refuted at -4.2pp; Novena
+    # arm gated S>=8 in the step), C5 depth-balancing relays (exact V6 join
+    # fix, no-op on gap-free graphs). C3 per-hop re-timing stays a mapping
+    # choice (mixers get it free at ComputeOp boundaries).
+    "lif_membrane_readout": True,
+    "lif_affine_fold": True,
+    "lif_depth_balancing_relays": True,
     **_WELL_CONDITIONED_ENDPOINT_FLOOR_KNOBS,
 }
 _TTFS_QUANTIZED_RECIPE_KNOBS = {

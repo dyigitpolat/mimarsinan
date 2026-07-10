@@ -26,24 +26,31 @@ class HostSegment:
 Segment = Union[NeuralSegment, HostSegment]
 
 
-def partition_ir_graph(ir_graph) -> List[Segment]:
+def partition_ir_graph(ir_graph, *, per_hop: bool = False) -> List[Segment]:
     """Partition ``ir_graph.nodes`` into ordered neural / host segments: consecutive
     ``NeuralCore`` runs become ``NeuralSegment``s, each ``ComputeOp`` a ``HostSegment``
-    barrier, with a trailing ``neural_segment_final`` run closing the graph."""
+    barrier, with a trailing ``neural_segment_final`` run closing the graph.
+
+    ``per_hop=True`` (C3 re-timing) further splits every ``NeuralSegment`` into
+    one segment per intra-segment depth level: each hop boundary becomes a
+    count-preserving decode/re-encode that resets arrival timing."""
     segments: List[Segment] = []
     current: List[NeuralCore] = []
+
+    def _flush(label: str) -> None:
+        seg = NeuralSegment(nodes=current, label=label)
+        if per_hop:
+            segments.extend(_split_segment_per_hop(seg))
+        else:
+            segments.append(seg)
+
     for node in ir_graph.nodes:
         if isinstance(node, NeuralCore):
             current.append(node)
             continue
         if isinstance(node, ComputeOp):
             if current:
-                segments.append(
-                    NeuralSegment(
-                        nodes=current,
-                        label=f"neural_segment_until:{node.name}",
-                    )
-                )
+                _flush(f"neural_segment_until:{node.name}")
                 current = []
             segments.append(HostSegment(compute_op=node))
             continue
@@ -52,8 +59,41 @@ def partition_ir_graph(ir_graph) -> List[Segment]:
         )
 
     if current:
-        segments.append(NeuralSegment(nodes=current, label="neural_segment_final"))
+        _flush("neural_segment_final")
     return segments
+
+
+def _split_segment_per_hop(segment: NeuralSegment) -> List[NeuralSegment]:
+    """One ``NeuralSegment`` per intra-segment depth level, topological order.
+
+    Coalescing / psum groups transfer membrane partial sums (NOT decodable
+    counts), so a segment carrying any group stays whole."""
+    if len(segment.nodes) <= 1:
+        return [segment]
+    if any(
+        getattr(n, "coalescing_group_id", None) is not None
+        or getattr(n, "psum_group_id", None) is not None
+        for n in segment.nodes
+    ):
+        return [segment]
+
+    ids = {node.id for node in segment.nodes}
+    depth: Dict[int, int] = {}
+    for node in segment.nodes:
+        upstream = [
+            depth[src.node_id]
+            for src in node.input_sources.flatten()
+            if getattr(src, "node_id", -1) in ids and src.node_id in depth
+        ]
+        depth[node.id] = (max(upstream) + 1) if upstream else 0
+
+    groups: Dict[int, List[NeuralCore]] = {}
+    for node in segment.nodes:
+        groups.setdefault(depth[node.id], []).append(node)
+    return [
+        NeuralSegment(nodes=groups[d], label=f"{segment.label}_hop{d}")
+        for d in sorted(groups)
+    ]
 
 
 def compute_node_latencies(

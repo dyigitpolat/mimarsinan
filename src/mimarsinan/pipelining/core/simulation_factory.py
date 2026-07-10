@@ -11,6 +11,7 @@ from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory
 from mimarsinan.chip_simulation.behavior_config import NeuralBehaviorConfig
 from mimarsinan.chip_simulation.deployment_contract import SpikingDeploymentContract
 from mimarsinan.chip_simulation.recording.spike_recorder import compare_records, format_first_diff
+from mimarsinan.chip_simulation.spiking_semantics import is_lif
 from mimarsinan.chip_simulation.ttfs.ttfs_executor import run_ttfs_hybrid_contract
 from mimarsinan.mapping.packing.hybrid_hardcore_mapping import (
     build_hybrid_hard_core_mapping,
@@ -36,6 +37,15 @@ def build_deployment_contract(pipeline) -> SpikingDeploymentContract:
     return SpikingDeploymentContract.from_pipeline_config(pipeline.config)
 
 
+def _per_hop_retiming_enabled(pipeline_config: dict[str, Any] | None) -> bool:
+    """[C3] the lif per-hop count-exact re-timing knob (mapping-level choice)."""
+    if pipeline_config is None:
+        return False
+    if not bool(pipeline_config.get("lif_per_hop_retiming", False)):
+        return False
+    return is_lif(DeploymentPlan.resolve(pipeline_config).spiking_mode)
+
+
 def build_hybrid_mapping_for_pipeline(
     ir_graph: IRGraph,
     platform_constraints: dict[str, Any],
@@ -49,6 +59,7 @@ def build_hybrid_mapping_for_pipeline(
         ir_graph=ir_graph,
         cores_config=platform_constraints["cores"],
         strategy=strategy,
+        per_hop_neural_segments=_per_hop_retiming_enabled(pipeline_config),
     )
     propagate_negative_shifts_to_hybrid(ir_graph, hybrid_mapping)
     # Provenance stamp (dynamic attribute) for staleness detection when the ir_graph is regenerated.
@@ -79,6 +90,11 @@ def build_spiking_hybrid_flow(
         spiking_mode=contract.spiking_mode,
         cycle_accurate_lif_forward=plan.cycle_accurate_lif_forward,
         ttfs_cycle_schedule=contract.ttfs_cycle_schedule,
+        membrane_readout=(
+            is_lif(contract.spiking_mode)
+            and bool(cfg.get("lif_membrane_readout", False))
+        ),
+        membrane_readout_half_step=bool(cfg.get("lif_half_step_bias", False)),
     )
     if plan.cycle_accurate_lif_forward and model is not None:
         apply_cycle_accurate_trains_to_model(model, True)
@@ -91,8 +107,11 @@ def build_identity_mapping_for_pipeline(
     pipeline_config: dict[str, Any] | None = None,
 ) -> Any:
     """1:1 NeuralCore→HardCore mapping with the same wire effects as the packed
-    build (negative-value shifts propagated)."""
-    identity_mapping = build_identity_hybrid_mapping(ir_graph=ir_graph)
+    build (negative-value shifts propagated, per-hop segmentation shared)."""
+    identity_mapping = build_identity_hybrid_mapping(
+        ir_graph=ir_graph,
+        per_hop_neural_segments=_per_hop_retiming_enabled(pipeline_config),
+    )
     propagate_negative_shifts_to_hybrid(ir_graph, identity_mapping)
     return identity_mapping
 

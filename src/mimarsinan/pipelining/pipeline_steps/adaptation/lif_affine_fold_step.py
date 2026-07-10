@@ -1,0 +1,91 @@
+"""LIF per-channel affine fold pipeline step (C4, pre-weight-quantization)."""
+
+from __future__ import annotations
+
+from typing import Iterable, cast
+
+import torch
+
+from mimarsinan.chip_simulation.spiking_semantics import is_lif
+from mimarsinan.mapping.support.bias_compensation import (
+    apply_lif_half_step_bias_compensation,
+)
+from mimarsinan.mapping.support.per_source_scales import compute_per_source_scales
+from mimarsinan.pipelining.core.registry.trainer_factory import make_basic_trainer
+from mimarsinan.pipelining.core.steps.trainer_pipeline_step import TrainerPipelineStep
+from mimarsinan.tuning.lif_affine_fold import apply_lif_affine_fold
+
+_CALIBRATION_BATCHES = 4
+
+# The Novena affine repair overfits the 5-level grid at S=4 (0.9010 -> 0.8845);
+# the memo gates it at S >= 8 (lif_deployment_exactness.md §4 C4).
+_NOVENA_MIN_STEPS = 8
+
+
+class LIFAffineFoldStep(TrainerPipelineStep):
+    REQUIRES = ("model",)
+    UPDATES = ("model",)
+
+    @classmethod
+    def applies_to(cls, plan):
+        return (
+            is_lif(plan.spiking_mode)
+            and plan.activation_quantization
+            and bool(plan.config.get("lif_affine_fold", False))
+        )
+
+    def __init__(self, pipeline):
+        super().__init__(self.REQUIRES, self.PROMISES, self.UPDATES, self.CLEARS, pipeline)
+
+    def process(self):
+        model = self.get_entry("model")
+        config = self.pipeline.config
+        simulation_steps = int(config["simulation_steps"])
+        firing_mode = str(config.get("firing_mode", "Default"))
+
+        if firing_mode == "Novena" and simulation_steps < _NOVENA_MIN_STEPS:
+            print(
+                f"[LIFAffineFoldStep] Novena affine repair is gated at S >= "
+                f"{_NOVENA_MIN_STEPS} (overfits the coarse grid); "
+                f"S={simulation_steps} — skipping the fold."
+            )
+            self.update_entry("model", model)
+            return
+
+        # The estimator is fitted on the nearest (half-step) chain; the fold is
+        # idempotent, so the WeightQuantizationStep's own bake stays a no-op.
+        if bool(config.get("lif_half_step_bias", False)):
+            folded = apply_lif_half_step_bias_compensation(model, simulation_steps)
+            if folded:
+                print(
+                    f"[LIFAffineFoldStep] LIF half-step entry fold applied on "
+                    f"{folded} perceptrons ahead of the affine calibration."
+                )
+        # Effective weights must be wire-domain (rate inputs) for the fold
+        # currency; idempotent in activation_scales.
+        compute_per_source_scales(model.get_mapper_repr())
+
+        self.trainer = make_basic_trainer(self.pipeline, model)
+        batches = cast(
+            "Iterable[tuple[torch.Tensor, torch.Tensor]]",
+            self.trainer.iter_validation_batches(_CALIBRATION_BATCHES),
+        )
+        device = config["device"]
+        cal_x = torch.cat([x.to(device) for x, _ in batches], dim=0)
+
+        report = apply_lif_affine_fold(model, cal_x, simulation_steps)
+        print(
+            f"[LIFAffineFoldStep] affine folds: {report['consumer_folds']} "
+            f"consumer, {report['readout_folds']} readout; skipped: "
+            f"{report['skipped'] or 'none'}"
+        )
+        self.pipeline.reporter.report(
+            "lif_affine_fold",
+            {
+                "folded": report["folded"],
+                "consumer_folds": report["consumer_folds"],
+                "readout_folds": report["readout_folds"],
+                "skipped": dict(report["skipped"]),
+            },
+        )
+        self.update_entry("model", model)

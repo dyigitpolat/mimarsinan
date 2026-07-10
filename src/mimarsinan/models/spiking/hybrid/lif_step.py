@@ -13,6 +13,7 @@ from mimarsinan.mapping.packing.hybrid_hardcore_mapping import HybridStage
 from mimarsinan.spiking.segment_boundary import encode_segment_input
 from mimarsinan.models.spiking.cycle_policy import cycle_neuron_policy
 from mimarsinan.models.spiking.hybrid.host import HybridFlowHost
+from mimarsinan.models.spiking.hybrid.membrane_readout import apply_membrane_readout
 from mimarsinan.models.spiking.spiking_config import COMPUTE_DTYPE
 
 
@@ -215,6 +216,17 @@ class HybridLifStepMixin(HybridFlowHost):
                 if cycle < int(src_lat) or cycle >= int(src_lat) + T:
                     continue
                 output_counts[:, d0:d1] += buffers[int(sp.src_core)][:, int(sp.src_start):int(sp.src_end)]
+
+        apply_membrane_readout(
+            self,
+            seg=seg,
+            stage=stage,
+            output_counts=output_counts,
+            output_spans=output_spans,
+            neuron_states=neuron_states,
+            thresholds=thresholds,
+            single_spike=single_spike,
+        )
 
         if recorder_seg is not None:
             assert record_in_t is not None and record_out_t is not None

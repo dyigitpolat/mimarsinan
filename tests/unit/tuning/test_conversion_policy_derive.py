@@ -39,6 +39,14 @@ _MODE_KNOBS = {
         "kd_temperature": 4.0,
         # [5v B3] the LIF half-step head-start (weight-quant QAT entry fold).
         "lif_half_step_bias": True,
+        # [lif_deployment_exactness §7] the exactness ladder above the
+        # half-step: C2 membrane-augmented readout (exact, +2.6pp at S=4),
+        # C4 per-channel FULL affine fold (calibration-only), C5
+        # depth-balancing relays (exact V6 join fix, no-op on gap-free
+        # graphs). C3 per-hop re-timing stays a mapping-level choice.
+        "lif_membrane_readout": True,
+        "lif_affine_fold": True,
+        "lif_depth_balancing_relays": True,
         # [5u generalized] the WQ-scoped well-conditioned endpoint floor.
         "wq_endpoint_target_floor": 0.98,
         "wq_endpoint_recovery_steps": 16000,

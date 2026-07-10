@@ -20,6 +20,7 @@ from mimarsinan.common.pretrained import (
 from mimarsinan.common.workload_profile import ResolvedWorkloadProfile
 from mimarsinan.pipelining.core.registry.model_registry import ModelRegistry
 from mimarsinan.pipelining.core.search_mode import derive_search_mode
+from mimarsinan.transformations.channel_scale_equalization import DEFAULT_CLIP_RATIO
 from mimarsinan.tuning.orchestration.temporal_allocation import (
     TemporalAllocationResolver,
     resolve_s_allocation_mode,
@@ -96,6 +97,8 @@ class DeploymentPlan:
     pruning_fraction: float
     pruning_enabled: bool
     prune_sparsity: float
+    scale_migration_enabled: bool
+    scale_migration_clip_ratio: float
 
     enable_nevresim_simulation: bool
     enable_loihi_simulation: bool
@@ -125,7 +128,6 @@ class DeploymentPlan:
         pruning = get("pruning", False)
         pruning_fraction = float(get("pruning_fraction", 0.0))
         prune_sparsity = float(get("prune_sparsity", 0.0) or 0.0)
-
         degradation_tolerance = float(get("degradation_tolerance", 0.05))
         scm_dt = get("scm_degradation_tolerance")
         default_budget = 2.0 * degradation_tolerance
@@ -155,20 +157,18 @@ class DeploymentPlan:
             pruning_fraction=pruning_fraction,
             pruning_enabled=bool(pruning) and pruning_fraction > 0,
             prune_sparsity=prune_sparsity,
+            scale_migration_enabled=bool(get("scale_migration", False)),
+            scale_migration_clip_ratio=float(
+                get("scale_migration_clip_ratio", DEFAULT_CLIP_RATIO)),
             enable_nevresim_simulation=bool(get("enable_nevresim_simulation", True)),
             enable_loihi_simulation=bool(get("enable_loihi_simulation", False)),
             enable_sanafe_simulation=bool(get("enable_sanafe_simulation", False)),
             degradation_tolerance=degradation_tolerance,
-            scm_degradation_tolerance=(
-                None if scm_dt is None else float(scm_dt)
-            ),
+            scm_degradation_tolerance=None if scm_dt is None else float(scm_dt),
             degradation_budget_total=float(
-                get("degradation_budget_total", default_budget)
-            ),
+                get("degradation_budget_total", default_budget)),
             cuda_debug=bool(get("cuda_debug", False)),
-            deployment_metric_full_eval=bool(
-                get("deployment_metric_full_eval", True)
-            ),
+            deployment_metric_full_eval=bool(get("deployment_metric_full_eval", True)),
             max_simulation_samples=int(get("max_simulation_samples", 0) or 0),
             simulation_batch_count=get("simulation_batch_count", None),
             simulation_batch_size=int(get("simulation_batch_size", 8)),

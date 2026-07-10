@@ -50,6 +50,8 @@ class SpikingHybridCoreFlow(
         spiking_mode: str = "lif",
         cycle_accurate_lif_forward: bool = False,
         ttfs_cycle_schedule: str = "cascaded",
+        membrane_readout: bool = False,
+        membrane_readout_half_step: bool = True,
     ):
         super().__init__()
 
@@ -67,6 +69,10 @@ class SpikingHybridCoreFlow(
         self._use_cycle_accurate_trains = (
             spiking_mode == "lif" and self.cycle_accurate_lif_forward
         )
+        # [C2] membrane-augmented readout: final-only LIF output cores decode
+        # counts + m_T/theta (half-step charge removed when it was baked).
+        self.membrane_readout = bool(membrane_readout)
+        self.membrane_readout_half_step = bool(membrane_readout_half_step)
 
         validate_spiking_init(
             firing_mode=firing_mode,

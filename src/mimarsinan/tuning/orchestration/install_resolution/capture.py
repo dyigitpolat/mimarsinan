@@ -17,11 +17,18 @@ class ChannelStatsAccumulator:
     """Duck-typed activation decorator accumulating channel-resolved positives.
 
     Rows are deterministically subsampled per batch; values live on CPU so the
-    capture never pins GPU activations.
+    capture never pins GPU activations. ``channel_axis`` selects the channel
+    axis of the captured tensor (default: the legacy dim-1 convention; pass the
+    perceptron's owner-declared ``output_channel_axis`` for channels-last hops).
     """
 
-    def __init__(self, max_rows_per_batch: int = _MAX_ROWS_PER_BATCH):
+    def __init__(
+        self,
+        max_rows_per_batch: int = _MAX_ROWS_PER_BATCH,
+        channel_axis: int = 1,
+    ):
         self._max_rows = int(max_rows_per_batch)
+        self._channel_axis = int(channel_axis)
         self._chunks: List[torch.Tensor] = []
 
     def input_transform(self, x):
@@ -29,7 +36,11 @@ class ChannelStatsAccumulator:
 
     def output_transform(self, x):
         if x.dim() > 1:
-            rows = x.detach().to(torch.float32).moveaxis(1, -1).reshape(-1, x.shape[1])
+            axis = self._channel_axis % x.dim()
+            rows = (
+                x.detach().to(torch.float32)
+                .moveaxis(axis, -1).reshape(-1, x.shape[axis])
+            )
             if rows.shape[0] > self._max_rows:
                 idx = torch.linspace(
                     0, rows.shape[0] - 1, steps=self._max_rows, device=rows.device
@@ -109,16 +120,23 @@ def capture_install_stats(tuner, n_batches: int | None = None) -> List[tuple]:
     return stats
 
 
+def _default_accumulator(_perceptron) -> ChannelStatsAccumulator:
+    return ChannelStatsAccumulator()
+
+
 def collect_channel_stats(
-    model, input_batches: Iterable, device
+    model, input_batches: Iterable, device, accumulator_factory=None
 ) -> List[tuple]:
     """Run ``input_batches`` through ``model`` with per-perceptron accumulators.
 
     Returns ``[(perceptron, ChannelStatsAccumulator), ...]``; the activation
-    stack is restored even when the forward raises.
+    stack is restored even when the forward raises. ``accumulator_factory``
+    builds one accumulator per perceptron (default: the legacy dim-1 capture).
     """
+    if accumulator_factory is None:
+        accumulator_factory = _default_accumulator
     perceptrons = list(model.get_perceptrons())
-    accumulators = [ChannelStatsAccumulator() for _ in perceptrons]
+    accumulators = [accumulator_factory(perceptron) for perceptron in perceptrons]
     cleanups = [
         attach_activation_decorator(perceptron, acc)
         for perceptron, acc in zip(perceptrons, accumulators)

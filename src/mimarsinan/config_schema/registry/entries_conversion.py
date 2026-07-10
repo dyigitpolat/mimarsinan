@@ -19,6 +19,9 @@ from mimarsinan.config_schema.registry.types import (
     FieldType as T,
     frozen_default as _frozen,
 )
+from mimarsinan.transformations.channel_scale_equalization import (
+    DEFAULT_CLIP_RATIO as DEFAULT_SCALE_MIGRATION_CLIP_RATIO,
+)
 from mimarsinan.tuning.orchestration.temporal_allocation import (
     S_ALLOCATION_SUPPORTED_MODES,
 )
@@ -100,6 +103,44 @@ ENTRIES = (
            "non-negative-value-generating activation (e.g. ReLU) absorbs the signed "
            "range — exact value-domain math, larger host surface; a graph left with "
            "no on-chip segment fails loud."),
+    _E("lif_membrane_readout", group="spiking", owner="lif_deployment_exactness",
+       type=T.BOOL, category=Category.ADVANCED, label="LIF Membrane Readout",
+       effect="Final-only LIF output cores decode counts + residual membrane",
+       doc="[C2] Membrane-augmented readout: by the charge identity "
+           "Q_T = theta*c_T + m_T, decoding output cores as counts + m_T/theta "
+           "(half-step charge removed when baked) recovers the exact, "
+           "sign-carrying, unquantized pre-activation. Claimed ONLY for cores "
+           "whose value feeds nothing but the network output (a host-side "
+           "read); parity records keep the count decode. The LIF recipe arms "
+           "it (lif_deployment_exactness.md).",
+       provenance="ConversionPolicy recipe", derived_default=_frozen(False),
+       relevant=R.when("spiking_mode", in_=("lif",)),
+       empty_means="the lif recipe arms it; other modes stay off"),
+    _E("lif_per_hop_retiming", group="mapping_strategy", owner="layout/segmentation",
+       type=T.BOOL, category=Category.ADVANCED, label="LIF Per-hop Re-timing",
+       effect="Splits deep neural segments into per-hop segments",
+       doc="[C3] Count-exact re-timing: every hop boundary becomes a "
+           "decode/re-encode (round((c/T)*T) = c), resetting arrival timing "
+           "and killing the back-loading deficit on deep single-segment "
+           "chains at S <= 8. Mixer-class vehicles already re-time at their "
+           "ComputeOp boundaries. A mapping-level choice — never recipe-armed.",
+       provenance="consumer frozen default", derived_default=_frozen(False),
+       relevant=R.when("spiking_mode", in_=("lif",)),
+       empty_means="off — single maximal-run neural segments"),
+    _E("lif_depth_balancing_relays", group="mapping_strategy",
+       owner="latency/depth_balancing",
+       type=T.BOOL, category=Category.ADVANCED, label="LIF Depth-balancing Relays",
+       effect="Inserts identity relay cores on gap>1 intra-segment edges",
+       doc="[C5] Unequal-depth fan-in inside a neural segment both drops the "
+           "shallow branch's early spikes and re-reads its stale final buffer "
+           "(V6). The exact remedy inserts identity relay chains so every "
+           "live intra-segment edge is gap-1; a loud mapping-time guard "
+           "rejects dead relays (an exact-theta identity weight never fires "
+           "under the strict '<' comparator — the integer-lattice hazard). "
+           "No-op on gap-free graphs; the LIF recipe arms it.",
+       provenance="ConversionPolicy recipe", derived_default=_frozen(False),
+       relevant=R.when("spiking_mode", in_=("lif",)),
+       empty_means="the lif recipe arms it; other modes stay off"),
     _E("cycle_accurate_lif_forward", group="spiking", owner="lif_adaptation",
        type=T.BOOL, category=Category.DERIVED, derivation="derived",
        exposure="derived", label="Cycle-accurate LIF Forward",
@@ -139,6 +180,25 @@ ENTRIES = (
                         if cfg.get("weight_quantization")
                         else "off — float-weight deployment (vanilla mechanism)"),
        provenance="derivation rule"),
+    _E("scale_migration", group="mapping_strategy", owner="scale_migration_step",
+       type=T.BOOL, category=Category.ADVANCED, exposure="user",
+       label="Scale Migration",
+       effect="Adds the Scale Migration step before Activation Analysis",
+       doc="Exact cross-layer per-channel scale migration across ReLU-adjacent "
+           "affine pairs (function-preserving by positive homogeneity); repairs "
+           "per-hop scalar-theta grid starvation on unnormalized deep chains.",
+       provenance="consumer frozen default", derived_default=_frozen(False),
+       empty_means="off — weights pass through byte-identical"),
+    _E("scale_migration_clip_ratio", group="mapping_strategy", owner="scale_migration_step",
+       type=T.FLOAT, category=Category.ADVANCED, exposure="user",
+       label="Scale Migration Clip Ratio",
+       doc="Per-channel migration scales are clipped to [1/r, r]: unclipped "
+           "migration amplifies near-dead channels onto NAPQ's shared weight "
+           "grid (measured 5-bit WQ collapse to chance).",
+       bounds=(1.0, None), relevant=R.when_true("scale_migration"),
+       provenance="consumer frozen default",
+       derived_default=_frozen(DEFAULT_SCALE_MIGRATION_CLIP_RATIO),
+       empty_means="the mechanism default r=4 (measured to hold 5-bit WQ)"),
     _E("pruning", group="mapping_strategy", owner="pruning_adaptation",
        type=T.BOOL, category=Category.BASIC, exposure="user", label="Pruning Enabled",
        effect="Adds the Pruning Adaptation step",

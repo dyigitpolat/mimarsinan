@@ -16,6 +16,7 @@ search, rate application, decision tracing — are shared by all tuner families.
 | `adaptation_rate_tuner.py` | `AdaptationRateTuner`: `SmoothAdaptationTuner` driving one `AdaptationManager` rate field through a seeded `ManagerRateAxis`; base for the clamp/act-quant/noise family. |
 | `adaptation_target_adjuster.py` | `AdaptationTargetAdjuster`: proportional target decay/growth with validation-set-sized decay and a `1 - degradation_tolerance` floor. |
 | `forward_install.py` | `LazyExecutorForward` (picklable lazy cross-layer NF `model.forward` override) and `CascadeForwardInstall` (single-owner install/remove mixin). |
+| `lif_affine_fold.py` | [C4, `lif_deployment_exactness.md`] calibration-derived per-channel FULL affine (closed-form LS, layer-sequential) absorbing the LIF dead-zone bias: deployed chip-aligned rates fitted against the float envelope, folded into consumer effective-weight columns/bias (the negative-shift fold family) or the terminal perceptron's rows; consumed by `LIFAffineFoldStep` before the WQ QAT. |
 | `learning_rate_explorer.py` | `LRRangeFinder`: exponential LR sweep selecting the largest non-destructive LR, with optional coarse loss-slope pre-scoring; `find_lr_range_for_trainer` derives probe parameters from the `TuningBudget`. |
 | `perceptron_rate.py` | SSOT for applying a rate model-wide: `rebuild_activations`, `apply_manager_rate`, `set_blend_rate`, `set_surrogate_alpha`. |
 | `shift_calculation.py` | `calculate_activation_shift`: activation-space shift for quantization alignment. |

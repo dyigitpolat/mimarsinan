@@ -2,10 +2,29 @@
 
 import torch
 
+from mimarsinan.common.workload_profile import ResolvedWorkloadProfile
+from mimarsinan.tuning.orchestration.tuning_budget import tuning_budget_from_pipeline
+
 RELU_COMPATIBLE_TYPES = (
     "LeakyGradReLU",  # forward is pure ReLU; leaky only in backward
     "ReLU",
 )
+
+MIN_ANALYSIS_BATCHES = 2
+MAX_ANALYSIS_BATCHES = 32
+
+
+def calibration_policy(pipeline):
+    """The resolved workload calibration profile for a live pipeline."""
+    return ResolvedWorkloadProfile.from_config(pipeline.config).calibration
+
+
+def analysis_batch_count(pipeline) -> int:
+    """Bound activation-stat collection cost while avoiding single-batch calibration."""
+    budget = tuning_budget_from_pipeline(pipeline)
+    profile_max = calibration_policy(pipeline).analysis_batches_max
+    max_batches = MAX_ANALYSIS_BATCHES if profile_max is None else int(profile_max)
+    return max(MIN_ANALYSIS_BATCHES, min(max_batches, budget.validation_steps))
 
 
 def activation_scale_stats(

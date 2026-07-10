@@ -7,7 +7,12 @@ from mimarsinan.config_schema.registry import effective_value as _effective
 from mimarsinan.pipelining.core.steps.pipeline_step import PipelineStep
 from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 
+from mimarsinan.chip_simulation.spiking_semantics import is_lif
 from mimarsinan.mapping.ir_mapping_class import IRMapping
+from mimarsinan.mapping.latency.depth_balancing import (
+    assert_relays_alive,
+    insert_depth_balancing_relays,
+)
 from mimarsinan.mapping.latency.ir import IRLatency
 from mimarsinan.mapping.export.chip_quantize import quantize_ir_graph
 from mimarsinan.mapping.platform.platform_constraints import resolve_platform_mapping_params
@@ -202,9 +207,20 @@ class SoftCoreMappingStep(PipelineStep):
         if bool(self.pipeline.config.get("negative_value_shift", True)):
             transfer_negative_shifts_to_ir(model, ir_graph)
 
+        relays_enabled = self._apply_depth_balancing_relays(ir_graph, plan)
+
         wt_q = plan.weight_quantization
         with _phase("weight_quantization"):
             quantize_ir_graph(ir_graph, bits, weight_quantization=wt_q)
+        if relays_enabled:
+            # [C5/V9] the strict-'<' exact-theta dead-relay lattice guard, on
+            # the QUANTIZED graph (threshold = scale after integerization).
+            assert_relays_alive(
+                ir_graph,
+                thresholding_mode=build_deployment_contract(
+                    self.pipeline
+                ).thresholding_mode,
+            )
 
         with _phase("ir_latency"):
             max_latency = IRLatency(ir_graph).calculate()
@@ -270,6 +286,29 @@ class SoftCoreMappingStep(PipelineStep):
         verify_committed_pruning(
             model.get_perceptrons(), where="SoftCoreMappingStep pre-IR-mapping",
         )
+
+    def _apply_depth_balancing_relays(self, ir_graph, plan) -> bool:
+        """[C5] pre-quantize relay insertion for unequal-depth intra-segment
+        fan-in (gated OFF by default; the pass is a no-op on gap-free graphs).
+        Returns whether the pass is enabled (arms the post-quantize guard)."""
+        enabled = (
+            is_lif(plan.spiking_mode)
+            and bool(self.pipeline.config.get("lif_depth_balancing_relays", False))
+        )
+        if not enabled:
+            return False
+        inserted = insert_depth_balancing_relays(
+            ir_graph,
+            thresholding_mode=build_deployment_contract(
+                self.pipeline
+            ).thresholding_mode,
+        )
+        if inserted:
+            print(
+                f"[SoftCoreMappingStep] depth-balancing relays: {inserted} "
+                f"identity relay core(s) inserted (unequal-depth fan-in, V6)."
+            )
+        return True
 
     def _run_onchip_validity_gate(self, model, ir_graph) -> None:
         """Authoritative tiered validity gate on the mapped IR graph, over BOTH the

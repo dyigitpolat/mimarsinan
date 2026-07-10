@@ -34,6 +34,8 @@ if TYPE_CHECKING:
         thresholding_mode: str
         spiking_mode: str
         ttfs_cycle_schedule: str
+        membrane_readout: bool
+        membrane_readout_half_step: bool
         _boundary_config: BoundaryConfig
         _segment_tensor_cache: Dict[int, dict]
         _segment_tensor_cache_key: int | None

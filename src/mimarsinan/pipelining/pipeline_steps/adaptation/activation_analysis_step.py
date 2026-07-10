@@ -1,6 +1,5 @@
 from typing import Iterable, cast
 
-from mimarsinan.common.workload_profile import ResolvedWorkloadProfile
 from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 from mimarsinan.pipelining.core.registry.trainer_factory import make_basic_trainer
 from mimarsinan.pipelining.core.steps.trainer_pipeline_step import TrainerPipelineStep
@@ -15,34 +14,23 @@ from mimarsinan.tuning.orchestration.install_resolution import (
     value_gauge_thresholds,
     value_grid_levels,
 )
-from mimarsinan.tuning.orchestration.tuning_budget import tuning_budget_from_pipeline
 from mimarsinan.models.nn.layers import SavedTensorDecorator
-from mimarsinan.pipelining.pipeline_steps.activation_utils import activation_scale_stats
+from mimarsinan.pipelining.pipeline_steps.activation_utils import (
+    activation_scale_stats,
+    analysis_batch_count,
+    calibration_policy,
+)
 
 import torch
 
 PRUNED_THRESHOLD = 1e-9
 DEFAULT_SCALE_QUANTILE = 0.99
 MIN_SCALE = 1e-6
-MIN_ANALYSIS_BATCHES = 2
-MAX_ANALYSIS_BATCHES = 32
 MAX_SAMPLES_PER_BATCH = 8192
 # Cap the analysis batch: per-perceptron saved-tensor decorators pin every full
 # output tensor in VRAM, so large-input backbones OOM without a cap. Explicit
 # activation_analysis_batch_size wins, then the calibration profile, then this.
 ANALYSIS_BATCH_SIZE_CAP = 16
-
-
-def _calibration_policy(pipeline):
-    return ResolvedWorkloadProfile.from_config(pipeline.config).calibration
-
-
-def _analysis_batch_count(pipeline) -> int:
-    """Bound activation-stat collection cost while avoiding single-batch calibration."""
-    budget = tuning_budget_from_pipeline(pipeline)
-    profile_max = _calibration_policy(pipeline).analysis_batches_max
-    max_batches = MAX_ANALYSIS_BATCHES if profile_max is None else int(profile_max)
-    return max(MIN_ANALYSIS_BATCHES, min(max_batches, budget.validation_steps))
 
 
 def _sample_activation_values(flat_acts, max_samples=MAX_SAMPLES_PER_BATCH):
@@ -109,7 +97,7 @@ class ActivationAnalysisStep(TrainerPipelineStep):
         self.trainer = make_basic_trainer(self.pipeline, model)
 
         override = self.pipeline.config.get("activation_analysis_batch_size")
-        profile_cap = _calibration_policy(self.pipeline).analysis_batch_size_cap
+        profile_cap = calibration_policy(self.pipeline).analysis_batch_size_cap
         cap = ANALYSIS_BATCH_SIZE_CAP if profile_cap is None else int(profile_cap)
         current_val_bs = self.trainer.validation_batch_size
         target_bs = int(override) if override else min(current_val_bs, cap)
@@ -131,7 +119,7 @@ class ActivationAnalysisStep(TrainerPipelineStep):
                 attach_activation_decorator(perceptron, accumulator)
             )
 
-        n_batches = _analysis_batch_count(self.pipeline)
+        n_batches = analysis_batch_count(self.pipeline)
         sampled_activations = [[] for _ in perceptrons]
 
         try:

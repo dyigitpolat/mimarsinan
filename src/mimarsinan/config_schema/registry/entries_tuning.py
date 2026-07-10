@@ -93,6 +93,18 @@ ENTRIES = (
            "register fall back to the shared grid (capability gate).",
        provenance="ConversionPolicy recipe", derived_default=_frozen(False),
        empty_means="the mode recipe (ON for ttfs_cycle_based), else off"),
+    _E("lif_affine_fold", group="tuning", owner="lif_affine_fold",
+       type=T.BOOL, category=Category.ADVANCED, label="LIF Affine Fold",
+       effect="Adds the pre-WQ LIF Affine Fold calibration step",
+       doc="[C4] Calibration-derived per-channel FULL affine (gain + bias) "
+           "absorbing the LIF dead-zone/saturation bias: layer-sequential "
+           "closed-form LS fits of deployed rates against the float envelope, "
+           "folded into consumer weight columns/bias (the negative-shift fold "
+           "family) before the weight-quantization QAT. Full affine only — "
+           "bias-only folds are refuted (-4.2pp); the Novena arm is gated at "
+           "S >= 8. The LIF recipe arms it (lif_deployment_exactness.md).",
+       provenance="ConversionPolicy recipe", derived_default=_frozen(False),
+       empty_means="the lif recipe arms it; other modes stay off"),
     _E("conversion_draws", group="tuning", owner="conversion_draws",
        type=T.INT, category=Category.ADVANCED, label="Conversion Draws",
        doc="[MBH-DRAWS] best-of-N draws on variance-carrying conversion stages (1 = "
