@@ -6,16 +6,19 @@ import contextlib
 import random
 
 import torch
-from torch.amp.autocast_mode import autocast
 
 # Fixed so the decision subsample is identical across every validation in a run and reproducible across runs.
 _VAL_SUBSAMPLE_SEED = 1234
 
 
-def _eval_autocast(device):
-    if torch.device(device).type == "cuda":
-        return autocast("cuda")
-    return contextlib.nullcontext()
+def metric_grade_eval(device):
+    """fp32 measurement seam: disables any ambient autocast on ``device`` so
+    reported/gate metrics never inherit fp16/bf16 kernels from a surrounding
+    training region (docs/research/findings/numerical_boundary_consistency.md §2 RC2)."""
+    device_type = torch.device(device).type
+    if device_type not in ("cuda", "cpu"):
+        return contextlib.nullcontext()
+    return torch.autocast(device_type=device_type, enabled=False)
 
 
 def _to_device(trainer, x, y):
@@ -101,7 +104,7 @@ def validate_correctness_on_indices(trainer, batch_indices):
         return []
     trainer.model.eval()
     correct: list[bool] = []
-    with torch.no_grad(), _eval_autocast(trainer.device):
+    with torch.no_grad(), metric_grade_eval(trainer.device):
         for idx in batch_indices:
             x, y = cache[idx % len(cache)]
             x, y = x.to(trainer.device), y.to(trainer.device)
@@ -113,7 +116,7 @@ def validate_correctness_on_indices(trainer, batch_indices):
 def test(trainer, max_batches: int | None = None):
     total = 0
     correct = 0
-    with torch.no_grad(), _eval_autocast(trainer.device):
+    with torch.no_grad(), metric_grade_eval(trainer.device):
         for batch_idx, (x, y) in enumerate(trainer.test_loader):
             if max_batches is not None and batch_idx >= int(max_batches):
                 break
@@ -134,7 +137,7 @@ def test(trainer, max_batches: int | None = None):
 def validate_on_loader(trainer, x, y):
     total = 0
     correct = 0
-    with torch.no_grad():
+    with torch.no_grad(), metric_grade_eval(trainer.device):
         trainer.model = trainer.model.to(trainer.device)
         x, y = x.to(trainer.device), y.to(trainer.device)
         _, predicted = trainer.model(x).max(1)
@@ -157,7 +160,7 @@ def validate_n_batches(trainer, n_batches: int) -> float:
     trainer.model.eval()
     total = 0
     correct = 0
-    with torch.no_grad(), _eval_autocast(trainer.device):
+    with torch.no_grad(), metric_grade_eval(trainer.device):
         for x, y in trainer.iter_validation_batches(int(n_batches)):
             x, y = x.to(trainer.device), y.to(trainer.device)
             _, predicted = trainer.model(x).max(1)

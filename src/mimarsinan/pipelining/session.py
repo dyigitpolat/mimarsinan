@@ -5,8 +5,12 @@ from __future__ import annotations
 import copy
 import json
 import os
+import random
 from dataclasses import dataclass
 from typing import Any, Optional
+
+import numpy as np
+import torch
 
 import mimarsinan.data_handling.data_providers  # noqa: F401  # pyright: ignore[reportUnusedImport] — registers built-in providers
 from mimarsinan.common.best_effort import best_effort
@@ -35,12 +39,30 @@ class ParsedDeploymentConfig:
     target_metric_override: Optional[float]
 
 
+def apply_determinism(seed: int) -> None:
+    """Sole owner of the registry's ``PipelineSession/determinism`` contract:
+    seed every RNG family and pin deterministic fp32 math, once per session and
+    before any step runs (docs/research/findings/numerical_boundary_consistency.md §5a/§5c)."""
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.use_deterministic_algorithms(True, warn_only=True)
+    torch.backends.cudnn.benchmark = False
+    # TF32 rounds matmul/conv inputs to 10-bit mantissas and flips staircase boundaries; fp32 evaluation is flip-free on the probed stacks.
+    torch.backends.cuda.matmul.allow_tf32 = False
+    torch.backends.cudnn.allow_tf32 = False
+    torch.set_float32_matmul_precision("highest")
+
+
 def parse_deployment_config(
     deployment_config: dict, *, data_provider_factory: Any = None
 ) -> ParsedDeploymentConfig:
     """Parse a deployment-config dict and persist it under ``_RUN_CONFIG/``."""
     deployment_name = deployment_config["experiment_name"]
     deployment_parameters = dict(deployment_config["deployment_parameters"])
+    # The top-level seed must reach the merged pipeline config so DeploymentPlan.seed (and every config.get("seed") consumer) sees the configured value, not the fallback 0.
+    deployment_parameters.setdefault("seed", int(deployment_config.get("seed", 0)))
 
     if data_provider_factory is None:
         data_provider_factory = BasicDataProviderFactory(
@@ -125,6 +147,7 @@ class PipelineSession:
             reporter=self.reporter,
             working_directory=parsed.working_directory,
         )
+        apply_determinism(self.pipeline.plan.seed)
         if parsed.target_metric_override is not None:
             self.pipeline.set_target_metric(parsed.target_metric_override)
 

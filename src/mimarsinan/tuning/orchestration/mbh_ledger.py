@@ -10,6 +10,7 @@ import torch
 import torch.nn.functional as F
 
 from mimarsinan.common.env import mbh_ledger_enabled
+from mimarsinan.model_training.basic_trainer_eval import metric_grade_eval
 from mimarsinan.tuning.orchestration.genuine_probe import (
     eval_forward_over_val,
     genuine_acc_on_clone,
@@ -18,18 +19,10 @@ from mimarsinan.tuning.orchestration.genuine_probe import (
 _RHO_DENOM_EPS = 1e-12
 
 
-def _autocast_disabled(device):
-    """E0: every MBH read is fp32 — like-for-like with D-hat, even inside an
-    ambient autocast region (the live probe convention is fp16 under CUDA)."""
-    device_type = torch.device(device).type
-    if device_type not in ("cuda", "cpu"):
-        return contextlib.nullcontext()
-    return torch.autocast(device_type=device_type, enabled=False)
-
-
 def fp32_eval_forward_over_val(trainer, forward_obj, model, n_batches, device) -> float:
-    """Accuracy of ``forward_obj`` over ``n_batches`` val batches, autocast-disabled."""
-    with _autocast_disabled(device):
+    """E0: every MBH read is fp32 — like-for-like with D-hat via the shared
+    metric-grade seam, even inside an ambient autocast region."""
+    with metric_grade_eval(device):
         return eval_forward_over_val(trainer, forward_obj, model, n_batches, device)
 
 
@@ -226,7 +219,7 @@ def _ce_parameter_grads(clone, forward, x, y, device) -> dict:
     clone.eval()
     for param in clone.parameters():
         param.grad = None
-    with torch.enable_grad(), _autocast_disabled(device):
+    with torch.enable_grad(), metric_grade_eval(device):
         loss = F.cross_entropy(forward(x), y)
         if loss.grad_fn is None:
             return {}

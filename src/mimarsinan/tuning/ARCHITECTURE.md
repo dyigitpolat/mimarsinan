@@ -27,7 +27,7 @@ search, rate application, decision tracing — are shared by all tuner families.
 
 ## Dependencies
 - `models` — activation types (`TTFSActivation`, `LeakyGradReLU`, `make_activation`), decorator layers (`RandomMaskAdjustmentStrategy`, `RateBuffer`, `NoisyDropout`, `SavedTensorDecorator`), and the blended-genuine / prefix-genuine spiking forwards the KD-blend and prefix-conversion ramps install.
-- `model_training` — `BasicTrainer`, the perceptron-transform trainer, and `build_recipe`/`build_optimizer` for recovery training.
+- `model_training` — `BasicTrainer`, the perceptron-transform trainer, `build_recipe`/`build_optimizer` for recovery training, and the `metric_grade_eval` fp32 measurement seam (`mbh_ledger`).
 - `transformations` — normalization-aware perceptron quantization, `PerceptronTransformer`, pruning mask application and activation-stat collection.
 - `data_handling` — `DataLoaderFactory`/`DataProvider` for validation-set sizes that derive budgets and decay factors.
 - `mapping` — pruning boundary policy for the pruning tuner.
