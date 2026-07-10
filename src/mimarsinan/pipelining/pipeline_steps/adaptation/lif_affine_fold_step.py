@@ -49,7 +49,7 @@ class LIFAffineFoldStep(TrainerPipelineStep):
                 f"{_NOVENA_MIN_STEPS} (overfits the coarse grid); "
                 f"S={simulation_steps} — skipping the fold."
             )
-            self.update_entry("model", model)
+            self.update_entry("model", model, "torch_model")
             return
 
         # The estimator is fitted on the nearest (half-step) chain; the fold is
@@ -88,4 +88,4 @@ class LIFAffineFoldStep(TrainerPipelineStep):
                 "skipped": dict(report["skipped"]),
             },
         )
-        self.update_entry("model", model)
+        self.update_entry("model", model, "torch_model")
