@@ -10,7 +10,11 @@ import torch.nn as nn
 import torch.fx as fx
 from torch.fx.passes.shape_prop import ShapeProp
 
+from mimarsinan.models.nn.layers import ChannelsLastBatchNorm1d
 
+
+# ChannelsLastBatchNorm1d must stay a call_module node (not traced through) so
+# the absorption plan can fold Linear -> BN -> act into one Perceptron.
 _LEAF_MODULES: Tuple[type, ...] = (
     nn.MultiheadAttention,
     nn.LSTM,
@@ -18,6 +22,7 @@ _LEAF_MODULES: Tuple[type, ...] = (
     nn.RNN,
     nn.TransformerEncoderLayer,
     nn.TransformerDecoderLayer,
+    ChannelsLastBatchNorm1d,
 )
 
 

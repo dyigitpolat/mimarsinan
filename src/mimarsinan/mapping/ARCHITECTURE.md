@@ -19,6 +19,7 @@ use when).
 | `ir_mapping_class_emit.py` | `IRMappingEmitMixin` — emits concrete `NeuralCore` nodes with materialized weights alongside the shape walk |
 | `map_model_to_ir.py` | `map_model_to_ir` — one-call convenience wrapper around `IRMapping.map` |
 | `model_representation.py` | `ModelRepresentation` — mapper-graph DAG with a memory-frugal refcounted topological executor, perceptron enumeration, and the public graph accessors `execution_order()` / `consumer_map()` (used by the negative-boundary policy and channel-scale equalization) |
+| `channel_axis_walk.py` | Shared channel-axis walk SSOT: `channel_aligned_consumer_targets` follows `consumer_map()` edges through permute/leading-dim/mean-over-non-channel nodes (fan-out closure — one unalignable path voids the producer) to the perceptrons / host-Linear modules whose columns consume a producer's channel axis unmediated (`consumer_columns_unmediated`); behind M4 scale migration and the LIF affine fold's consumer discovery |
 | `mapping_utils.py` | Legacy star re-export facade; import from the concrete modules in new code |
 | `weight_reuse.py` | Time-domain weight-reuse phase classification of segments by `weight_bank_id` (default-off, pure read of the IR) |
 | `ir/` | Unified IR: `IRGraph` container, node types (`NeuralCore`, `ComputeOp`, `WeightBank`, `IRSource`), legacy conversions |
@@ -80,8 +81,8 @@ on unseen data still warns at runtime (`warn_once_lossy_negative_clamp`).
 - `search` — architecture search over shape-only layout estimates.
 - `spiking` — spiking-node interplay with IR types.
 - `torch_mapping` — builds the mapper graph that this module consumes.
-- `transformations` — transformations parameterized by mapping structures; `channel_scale_equalization` walks the mapper node types and `ModelRepresentation` graph accessors.
-- `tuning` — tuning stages that consult mapping/latency info.
+- `transformations` — transformations parameterized by mapping structures; `channel_scale_equalization` discovers migratable pairs via `channel_axis_walk` over the `ModelRepresentation` graph accessors.
+- `tuning` — tuning stages that consult mapping/latency info; `lif_affine_fold` discovers fold consumers via `channel_axis_walk`.
 - `visualization` — plots of IR graphs and core layouts.
 
 ## Exported API

@@ -6,6 +6,7 @@ from typing import Dict
 
 import torch
 
+from mimarsinan.mapping.channel_axis_walk import channel_aligned_consumer_targets
 from mimarsinan.mapping.mappers.compute_op_mapper import ComputeOpMapper
 from mimarsinan.models.nn.activations.lif import LIFActivation
 from mimarsinan.spiking.chip_aligned_nf import chip_aligned_segment_forward
@@ -87,7 +88,9 @@ def _safe_theta(perceptron, ref: torch.Tensor) -> torch.Tensor:
 
 
 def _normalized(perceptron, value: torch.Tensor) -> torch.Tensor | None:
-    flat = value.detach().reshape(value.shape[0], -1)
+    """Channels-last per-channel rate view: leading axes (batch, patches, ...)
+    pool as samples so the per-channel affine matches the consumer's columns."""
+    flat = value.detach().reshape(-1, value.shape[-1])
     theta = _safe_theta(perceptron, flat)
     if theta.numel() not in (1, flat.shape[1]):
         return None
@@ -169,21 +172,19 @@ def _only_reaches_host_output(node, consumers_map) -> bool:
     return True
 
 
-def _direct_perceptron_consumers(node, consumers_map, deps_map):
-    """Consumer perceptron nodes fed DIRECTLY and SOLELY by ``node`` (the only
-    seam the lab estimator measured); None when any consumer breaks the shape."""
-    consumers = consumers_map.get(id(node), [])
-    resolved = []
-    for consumer in consumers:
-        p = perceptron_of(consumer)
-        if p is None:
-            return None
-        if deps_map.get(consumer, []) != [node]:
-            return None
-        if p.layer.weight.dim() != 2:
-            return None
-        resolved.append(p)
-    return resolved
+def _foldable_perceptron_consumers(node, consumers_map):
+    """Consumer perceptrons whose weight columns see the producer's channel
+    axis unmediated, discovered by the shared mapper-DAG walk (the M4 SSOT);
+    ``(consumers, skip_reason)`` — a reason means the fold is voided."""
+    targets = channel_aligned_consumer_targets(node, consumers_map)
+    if targets is None:
+        return None, "channel_axis_not_preserved"
+    perceptron_targets, _module_targets = targets
+    if not perceptron_targets:
+        # Host-side modules decode at a different currency (theta-scaled
+        # values, not normalized rates); the fold honestly leaves them alone.
+        return None, "host_compute_consumer"
+    return list(perceptron_targets), None
 
 
 def apply_lif_affine_fold(model, cal_x: torch.Tensor, simulation_steps: int) -> dict:
@@ -195,22 +196,22 @@ def apply_lif_affine_fold(model, cal_x: torch.Tensor, simulation_steps: int) -> 
     their own rows. Idempotent per producer. Returns a summary report.
     """
     mapper_repr = model.get_mapper_repr()
-    mapper_repr._ensure_exec_graph()
-    deps_map = mapper_repr._deps
-    consumers_map: dict[int, list] = {}
-    for node in mapper_repr._exec_order:
-        for dep in deps_map.get(node, []):
-            consumers_map.setdefault(id(dep), []).append(node)
+    exec_order = mapper_repr.execution_order()
+    consumers_map = mapper_repr.consumer_map()
 
     targets = float_envelope_rates_by_perceptron(model, cal_x)
 
     report: dict = {"folded": 0, "consumer_folds": 0, "readout_folds": 0, "skipped": {}}
 
-    for node in mapper_repr._exec_order:
+    for node in exec_order:
         producer = perceptron_of(node)
         if producer is None or getattr(producer, "is_encoding_layer", False):
             continue
-        name = getattr(node, "name", None) or f"perceptron@{id(producer):x}"
+        name = (
+            getattr(node, "name", None)
+            or getattr(producer, "name", None)
+            or f"perceptron@{id(producer):x}"
+        )
         if getattr(producer, AFFINE_FOLD_FLAG, False):
             report["skipped"][name] = "already_folded"
             continue
@@ -223,9 +224,9 @@ def apply_lif_affine_fold(model, cal_x: torch.Tensor, simulation_steps: int) -> 
             kind = "readout"
             consumers = []
         else:
-            resolved = _direct_perceptron_consumers(node, consumers_map, deps_map)
-            if not resolved:
-                report["skipped"][name] = "non_direct_or_compute_consumer"
+            resolved, skip_reason = _foldable_perceptron_consumers(node, consumers_map)
+            if resolved is None:
+                report["skipped"][name] = skip_reason
                 continue
             if any(
                 p.layer.weight.shape[1] != target.shape[1] for p in resolved

@@ -22,6 +22,7 @@ from mimarsinan.models.nn.layers import (
     RandomMaskAdjustmentStrategy,
     NestedDecoration,
     MaxValueScaler,
+    ChannelsLastBatchNorm1d,
     FrozenStatsNormalization,
 )
 
@@ -253,3 +254,95 @@ class TestMaxValueScaler:
         old_max = scaler.max_value.item()
         _ = scaler(torch.tensor([100.0]))
         assert scaler.max_value.item() == old_max
+
+
+# ---------------------------------------------------------------------------
+# Channels-last BatchNorm (mixer feature-axis normalization)
+# ---------------------------------------------------------------------------
+
+class TestChannelsLastBatchNorm1d:
+    def test_is_batchnorm1d_subclass(self):
+        """The torch-mapping absorption plan matches BN via isinstance(nn.BatchNorm1d)."""
+        bn = ChannelsLastBatchNorm1d(8)
+        assert isinstance(bn, nn.BatchNorm1d)
+
+    def test_2d_matches_plain_batchnorm(self):
+        torch.manual_seed(0)
+        bn = ChannelsLastBatchNorm1d(8)
+        ref = nn.BatchNorm1d(8)
+        ref.load_state_dict(bn.state_dict())
+        x = torch.randn(16, 8)
+        bn.train(); ref.train()
+        assert torch.allclose(bn(x), ref(x), atol=1e-6)
+        assert torch.allclose(bn.running_mean, ref.running_mean, atol=1e-6)
+        assert torch.allclose(bn.running_var, ref.running_var, atol=1e-6)
+
+    def test_3d_normalizes_last_axis(self):
+        """(B, L, C) input: statistics are per-feature over (B, L), like a plain
+        BN1d over the flattened (B*L, C) rows."""
+        torch.manual_seed(0)
+        bn = ChannelsLastBatchNorm1d(6)
+        ref = nn.BatchNorm1d(6)
+        ref.load_state_dict(bn.state_dict())
+        x = torch.randn(4, 5, 6)
+        bn.train(); ref.train()
+        out = bn(x)
+        ref_out = ref(x.reshape(-1, 6)).reshape(4, 5, 6)
+        assert out.shape == (4, 5, 6)
+        assert torch.allclose(out, ref_out, atol=1e-5)
+        assert torch.allclose(bn.running_mean, ref.running_mean, atol=1e-5)
+
+    def test_3d_eval_uses_running_stats(self):
+        torch.manual_seed(0)
+        bn = ChannelsLastBatchNorm1d(6)
+        bn.train()
+        for _ in range(3):
+            bn(torch.randn(4, 5, 6) * 2.0 + 1.0)
+        bn.eval()
+        x = torch.randn(2, 5, 6)
+        out = bn(x)
+        expected = (
+            (x - bn.running_mean) / torch.sqrt(bn.running_var + bn.eps)
+        ) * bn.weight + bn.bias
+        assert torch.allclose(out, expected, atol=1e-5)
+
+
+class TestFrozenStatsNormalizationChannelsLast:
+    def _trained_channels_last_bn(self, features=6):
+        torch.manual_seed(0)
+        bn = ChannelsLastBatchNorm1d(features)
+        bn.train()
+        for _ in range(3):
+            bn(torch.randn(4, 5, features) * 3.0 - 0.5)
+        bn.eval()
+        return bn
+
+    def test_flag_set_from_channels_last_source(self):
+        fsn = FrozenStatsNormalization(self._trained_channels_last_bn())
+        assert fsn.channels_last is True
+
+    def test_flag_unset_for_plain_bn(self):
+        bn = nn.BatchNorm1d(6)
+        fsn = FrozenStatsNormalization(bn)
+        assert fsn.channels_last is False
+
+    def test_3d_forward_matches_eval_source(self):
+        bn = self._trained_channels_last_bn()
+        fsn = FrozenStatsNormalization(bn)
+        x = torch.randn(3, 5, 6)
+        assert torch.allclose(fsn(x), bn(x), atol=1e-6)
+
+    def test_2d_forward_matches_eval_source(self):
+        bn = self._trained_channels_last_bn()
+        fsn = FrozenStatsNormalization(bn)
+        x = torch.randn(7, 6)
+        assert torch.allclose(fsn(x), bn(x), atol=1e-6)
+
+    def test_setstate_backcompat_defaults_channels_last_false(self):
+        """Caches saved before the flag existed must load as the plain layout."""
+        fsn = FrozenStatsNormalization(nn.BatchNorm1d(4))
+        state = fsn.__dict__.copy()
+        state.pop("channels_last")
+        revived = FrozenStatsNormalization.__new__(FrozenStatsNormalization)
+        revived.__setstate__(state)
+        assert revived.channels_last is False

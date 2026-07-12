@@ -22,7 +22,7 @@ mappers; every other op flows through one generic host `ComputeOpMapper` path.
 | `mapper_graph_converter.py` | `MapperGraphConverter`: walks the FX graph emitting mappers — dedicated handlers for Linear/Conv/LayerNorm/MultiheadAttention, structural shortcuts (`ReshapeMapper`/`PermuteMapper`/`ConcatMapper`) for view/reshape/flatten/permute/transpose/cat, generic ComputeOp fallback for everything else |
 | `mapper_graph_fx.py` | `MapperGraphFxMixin`: `_partition_fx_args` splits FX args into mapper sources / bound tensors / extra args / kwargs; `_emit_generic_compute_op` builds a `ComputeOpMapper` over a `ComputeAdapter`; bound tensors are squeezed of a leading singleton dim |
 | `representability_analyzer.py` | `RepresentabilityAnalyzer` classifies every FX node (grouped convs are the unsupported case) and builds the BN/activation absorption plan; `RepresentabilityReport`, `OpInfo`, `RepresentabilityError` |
-| `torch_graph_tracer.py` | `trace_model`: FX symbolic tracing (MultiheadAttention/RNN/Transformer layers as leaves) + ShapeProp annotation; lock-serialized with stale-FX-patch restoration; raises `TracingError` |
+| `torch_graph_tracer.py` | `trace_model`: FX symbolic tracing (MultiheadAttention/RNN/Transformer layers and `ChannelsLastBatchNorm1d` as leaves) + ShapeProp annotation; lock-serialized with stale-FX-patch restoration; raises `TracingError` |
 
 ## Dependencies
 - **mapping** — the target IR: Mapper classes from `mapping.mapping_utils` and
@@ -32,8 +32,10 @@ mappers; every other op flows through one generic host `ComputeOpMapper` path.
   as the converted graph container, and `mapping.support.compute_modules`
   (`ComputeAdapter`, `_cat_along`) for generic host compute ops.
 - **models** — `models.perceptron_mixer.perceptron` (`Perceptron`, the packaged
-  MM+BN+activation unit) and `models.perceptron_mixer.perceptron_flow`
-  (`PerceptronFlow`, base class of `ConvertedModelFlow`).
+  MM+BN+activation unit), `models.perceptron_mixer.perceptron_flow`
+  (`PerceptronFlow`, base class of `ConvertedModelFlow`), and
+  `models.nn.layers` (`ChannelsLastBatchNorm1d`, registered as a tracer leaf
+  so `Linear -> BN -> act` absorbs into one Perceptron).
 
 ## Dependents
 - **pipelining** — `pipeline_steps/config/torch_mapping_step.py` calls

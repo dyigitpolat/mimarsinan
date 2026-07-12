@@ -16,7 +16,7 @@ search, rate application, decision tracing — are shared by all tuner families.
 | `adaptation_rate_tuner.py` | `AdaptationRateTuner`: `SmoothAdaptationTuner` driving one `AdaptationManager` rate field through a seeded `ManagerRateAxis`; base for the clamp/act-quant/noise family. |
 | `adaptation_target_adjuster.py` | `AdaptationTargetAdjuster`: proportional target decay/growth with validation-set-sized decay and a `1 - degradation_tolerance` floor. |
 | `forward_install.py` | `LazyExecutorForward` (picklable lazy cross-layer NF `model.forward` override) and `CascadeForwardInstall` (single-owner install/remove mixin). |
-| `lif_affine_fold.py` | [C4, `lif_deployment_exactness.md`] calibration-derived per-channel FULL affine (closed-form LS, layer-sequential) absorbing the LIF dead-zone bias: deployed chip-aligned rates fitted against the float envelope, folded into consumer effective-weight columns/bias (the negative-shift fold family) or the terminal perceptron's rows; consumed by `LIFAffineFoldStep` before the WQ QAT. |
+| `lif_affine_fold.py` | [C4, `lif_deployment_exactness.md`] calibration-derived per-channel FULL affine (closed-form LS, layer-sequential) absorbing the LIF dead-zone bias: deployed chip-aligned rates fitted against the float envelope, folded into consumer effective-weight columns/bias (the negative-shift fold family) or the terminal perceptron's rows; consumers discovered via the shared `mapping.channel_axis_walk` mapper-DAG traversal (real converted graphs have no direct perceptron→perceptron edges); consumed by `LIFAffineFoldStep` before the WQ QAT. |
 | `learning_rate_explorer.py` | `LRRangeFinder`: exponential LR sweep selecting the largest non-destructive LR, with optional coarse loss-slope pre-scoring; `find_lr_range_for_trainer` derives probe parameters from the `TuningBudget`. |
 | `perceptron_rate.py` | SSOT for applying a rate model-wide: `rebuild_activations`, `apply_manager_rate`, `set_blend_rate`, `set_surrogate_alpha`. |
 | `shift_calculation.py` | `calculate_activation_shift`: activation-space shift for quantization alignment. |
@@ -31,7 +31,7 @@ search, rate application, decision tracing — are shared by all tuner families.
 - `model_training` — `BasicTrainer`, the perceptron-transform trainer, `build_recipe`/`build_optimizer` for recovery training, and the `metric_grade_eval` fp32 measurement seam (`mbh_ledger`).
 - `transformations` — normalization-aware perceptron quantization, `PerceptronTransformer`, pruning mask application and activation-stat collection.
 - `data_handling` — `DataLoaderFactory`/`DataProvider` for validation-set sizes that derive budgets and decay factors.
-- `mapping` — pruning boundary policy for the pruning tuner.
+- `mapping` — pruning boundary policy for the pruning tuner; `channel_axis_walk.channel_aligned_consumer_targets` for the LIF affine fold's consumer discovery.
 - `common` — `best_effort` error containment; `env` for the `MIMARSINAN_MBH_LEDGER` verbose-diagnostics flag; `workload_profile.ResolvedWorkloadProfile` for the profile-overridable clamps (budget caps, eval target, calibration extents, LR ceilings, recovery-depth law) — frozen generic defaults stay at their consumers.
 
 ## Dependents

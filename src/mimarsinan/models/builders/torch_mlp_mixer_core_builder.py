@@ -32,12 +32,14 @@ class TorchMLPMixerCoreBuilder:
             fc_w_2=int(cfg["fc_w_2"]),
             base_activation=cfg.get("base_activation", "ReLU"),
             num_blocks=int(cfg.get("num_blocks", 2)),
+            normalization=str(cfg.get("normalization", "none")),
         )
 
     @classmethod
     def get_config_schema(cls):
         return [
             {"key": "base_activation", "type": "select", "label": "Activation", "options": ["LeakyReLU", "ReLU", "GELU"], "default": "LeakyReLU"},
+            {"key": "normalization", "type": "select", "label": "Normalization", "options": ["none", "batch"], "default": "none"},
             {"key": "patch_n_1", "type": "number", "label": "Patch Rows", "default": 4},
             {"key": "patch_m_1", "type": "number", "label": "Patch Cols", "default": 4},
             {"key": "patch_c_1", "type": "number", "label": "Patch Channels", "default": 32},

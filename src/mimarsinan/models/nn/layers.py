@@ -76,6 +76,17 @@ class TransformedActivation(nn.Module):
         return x
 
 
+class ChannelsLastBatchNorm1d(nn.BatchNorm1d):
+    """BatchNorm1d over the LAST axis: accepts (N, C) or (N, L, C) channels-last
+    input, unlike ``nn.BatchNorm1d`` whose 3D layout is channels-first.
+    Registered as an FX leaf so Linear -> this -> activation absorbs into one
+    Perceptron (see ``torch_mapping.torch_graph_tracer``)."""
+
+    def forward(self, input: torch.Tensor) -> torch.Tensor:
+        # transpose(1, -1) is a no-op on 2D input, so both layouts share one path.
+        return super().forward(input.transpose(1, -1)).transpose(1, -1)
+
+
 class FrozenStatsNormalization(nn.Module):
     def __init__(self, normalization):
         super(FrozenStatsNormalization, self).__init__()
@@ -94,6 +105,7 @@ class FrozenStatsNormalization(nn.Module):
         self.eps = normalization.eps
 
         self.affine = normalization.affine
+        self.channels_last = isinstance(normalization, ChannelsLastBatchNorm1d)
 
     def __setstate__(self, state):
         super().__setstate__(state)
@@ -102,15 +114,22 @@ class FrozenStatsNormalization(nn.Module):
         for name in ("running_mean", "running_var"):
             if name not in self._buffers:
                 self._buffers[name] = self.__dict__.pop(name, None)
+        # Caches saved before the channels-last flag carry only plain-layout BN.
+        self.__dict__.setdefault("channels_last", False)
 
     def forward(self, x):
         if self.running_mean.device != x.device:
             self.running_mean = self.running_mean.to(x.device)
             self.running_var = self.running_var.to(x.device)
 
-        return nn.functional.batch_norm(
+        if self.channels_last:
+            x = x.transpose(1, -1)
+        out = nn.functional.batch_norm(
             x, self.running_mean, self.running_var, self.weight, self.bias, False, 0, self.eps
         )
+        if self.channels_last:
+            out = out.transpose(1, -1)
+        return out
 
 
 class MaxValueScaler(nn.Module):
