@@ -50,6 +50,7 @@ from mimarsinan.pipelining.core.simulation_factory import (
     build_deployment_contract,
     build_identity_mapping_for_pipeline,
     build_spiking_hybrid_flow,
+    run_membrane_readout_diagnostic,
     run_scm_identity_metric,
 )
 from mimarsinan.model_training.basic_trainer import BasicTrainer
@@ -257,6 +258,7 @@ class SoftCoreMappingStep(PipelineStep):
         with _phase("nf_scm_parity_gate"):
             self._run_nf_scm_parity_gate(model, ir_graph)
             self._run_torch_sim_parity_check(model, ir_graph)
+            self._run_membrane_readout_diagnostic(model, ir_graph)
 
         device = self.pipeline.config["device"]
         with best_effort("move model to cpu before identity-metric run"):
@@ -410,6 +412,25 @@ class SoftCoreMappingStep(PipelineStep):
             "agreement": float(agreement),
             "samples": int(samples.shape[0]),
         })
+
+    def _run_membrane_readout_diagnostic(self, model, ir_graph) -> None:
+        """[C2/R8] Engagement report for the armed membrane readout: torch-side
+        diagnostic decode only — every deployed read keeps the counts decode
+        because the chip exports spike counts, not membranes."""
+        if not (
+            is_lif(DeploymentPlan.of(self.pipeline).spiking_mode)
+            and bool(self.pipeline.config.get("lif_membrane_readout", False))
+        ):
+            return
+        batches = self._validation_sample_batches(1)
+        if not batches:
+            return
+        identity_mapping = build_identity_mapping_for_pipeline(
+            ir_graph, pipeline_config=self.pipeline.config,
+        )
+        run_membrane_readout_diagnostic(
+            self.pipeline, identity_mapping, batches[0], model=model,
+        )
 
     def _run_nf_scm_parity_gate(self, model, ir_graph) -> None:
         """Rung-1↔rung-2 per-neuron lock for analytic schedules: compare NF activations against the identity-mapped contract run neuron-by-neuron and fail loud (accuracy tolerance alone is too coarse)."""

@@ -17,10 +17,14 @@ gathers and cross-sim comparisons remain bit-identical readout-on vs off.
 from __future__ import annotations
 
 import numpy as np
+import pytest
 import torch
 import torch.nn as nn
 
+from conftest import MockPipeline
+
 from mimarsinan.chip_simulation.recording.spike_recorder import compare_records
+from mimarsinan.pipelining.core import simulation_factory
 from mimarsinan.code_generation.cpp_chip_model import SpikeSource
 from mimarsinan.mapping.ir import IRSource
 from mimarsinan.mapping.packing.hybrid_hardcore_mapping import (
@@ -261,6 +265,149 @@ class TestSpikeCountCurrencySeparation:
                 flow.hybrid_mapping.stages[0], input_spike_train=train,
             )
         assert torch.equal(counts[0].to(DTYPE), _raw_clamp_counts())
+
+
+def _lif_pipeline(T: int, **config_overrides) -> "MockPipeline":
+    pipeline = MockPipeline()
+    pipeline.config.update({
+        "spiking_mode": "lif",
+        "firing_mode": "Default",
+        "spike_generation_mode": "Uniform",
+        "thresholding_mode": "<=",
+        "input_shape": (1,),
+        "simulation_steps": T,
+        "device": "cpu",
+        "cycle_accurate_lif_forward": True,
+        "lif_membrane_readout": True,
+        "lif_half_step_bias": True,
+    })
+    pipeline.config.update(config_overrides)
+    return pipeline
+
+
+class TestDeployedDecodeDomainParity:
+    """R8 verdict lock: the chip exports spike counts ONLY (nevresim's
+    ``SpikingExecution`` returns the accumulated output buffer; the membrane
+    has no read port), so every deployed-read flow built by the metric factory
+    keeps the counts decode even when ``lif_membrane_readout`` is armed. The
+    membrane decode exists solely as the explicit torch-side diagnostic.
+    Decode-domain parity: NF (counts) == SCM (counts) == HCM (counts)."""
+
+    def _forward_logits(self, flow) -> torch.Tensor:
+        x = torch.ones(1, 1, dtype=torch.float32)
+        with torch.no_grad():
+            return flow(x)[0].to(DTYPE)
+
+    def test_deployed_metric_flow_keeps_counts_decode_when_armed(self):
+        pipeline = _lif_pipeline(T)
+        flow = simulation_factory.build_spiking_hybrid_flow(
+            pipeline, _constant_drive_mapping(WEIGHTS),
+        )
+        assert flow.membrane_readout is False
+        assert torch.equal(self._forward_logits(flow), _raw_clamp_counts())
+
+    def test_diagnostic_flow_carries_membrane_decode(self):
+        pipeline = _lif_pipeline(T)
+        flow = simulation_factory.build_spiking_hybrid_flow(
+            pipeline, _constant_drive_mapping(WEIGHTS),
+            membrane_readout_diagnostic=True,
+        )
+        assert flow.membrane_readout is True
+        want = torch.tensor(WEIGHTS, dtype=DTYPE) * T - 0.5
+        assert torch.allclose(self._forward_logits(flow), want, atol=1e-6)
+
+    def test_diagnostic_flow_respects_half_step_flag(self):
+        pipeline = _lif_pipeline(T, lif_half_step_bias=False)
+        flow = simulation_factory.build_spiking_hybrid_flow(
+            pipeline, _constant_drive_mapping(WEIGHTS),
+            membrane_readout_diagnostic=True,
+        )
+        want = torch.tensor(WEIGHTS, dtype=DTYPE) * T
+        assert torch.allclose(self._forward_logits(flow), want, atol=1e-6)
+
+    def test_diagnostic_request_is_inert_off_lif(self):
+        """The diagnostic decode is LIF-only; other modes never arm it."""
+        pipeline = _lif_pipeline(
+            T,
+            spiking_mode="ttfs_quantized",
+            firing_mode="TTFS",
+            spike_generation_mode="TTFS",
+        )
+        flow = simulation_factory.build_spiking_hybrid_flow(
+            pipeline, _constant_drive_mapping(WEIGHTS),
+            membrane_readout_diagnostic=True,
+        )
+        assert flow.membrane_readout is False
+
+
+class _RecordingReporter:
+    def __init__(self):
+        self.events = []
+
+    def event(self, kind, payload):
+        self.events.append((kind, payload))
+
+
+class TestMembraneReadoutDiagnostic:
+    """The engagement reporter (R8 defect 1): an armed readout must announce
+    itself — eligible nodes, measured logit delta, prediction flips — and say
+    plainly that deployed reads exclude it."""
+
+    def _stats(self, pipeline, samples=None):
+        if samples is None:
+            samples = torch.ones(4, 1, dtype=torch.float32)
+        return simulation_factory.run_membrane_readout_diagnostic(
+            pipeline, _constant_drive_mapping(WEIGHTS), samples,
+        )
+
+    def test_gated_off_when_knob_unarmed(self):
+        pipeline = _lif_pipeline(T, lif_membrane_readout=False)
+        assert self._stats(pipeline) is None
+
+    def test_gated_off_for_non_lif_modes(self):
+        pipeline = _lif_pipeline(
+            T,
+            spiking_mode="ttfs_quantized",
+            firing_mode="TTFS",
+            spike_generation_mode="TTFS",
+        )
+        assert self._stats(pipeline) is None
+
+    def test_engagement_stats_measure_the_decode_delta(self):
+        pipeline = _lif_pipeline(T)
+        stats = self._stats(pipeline)
+        assert stats is not None
+        assert stats["eligible_nodes"] == 1
+        assert stats["samples"] == 4
+        assert stats["engaged"] is True
+        want_delta = float(
+            (torch.tensor(WEIGHTS, dtype=DTYPE) * T - 0.5 - _raw_clamp_counts())
+            .abs().max()
+        )
+        assert stats["max_abs_correction"] == pytest.approx(want_delta, abs=1e-6)
+        assert isinstance(stats["pred_flips"], int)
+
+    def test_engagement_line_and_reporter_event_emitted(self, capsys):
+        pipeline = _lif_pipeline(T)
+        reporter = _RecordingReporter()
+        pipeline.reporter = reporter
+        stats = self._stats(pipeline)
+        out = capsys.readouterr().out
+        assert "[C2] membrane-readout diagnostic" in out
+        assert "counts decode" in out
+        assert [(k, p) for k, p in reporter.events
+                if k == "membrane_readout_diagnostic"] == [
+            ("membrane_readout_diagnostic", stats),
+        ]
+
+    def test_diagnostic_never_mutates_deployed_decode(self):
+        """Running the diagnostic must not flip the deployed flow's decode."""
+        pipeline = _lif_pipeline(T)
+        self._stats(pipeline)
+        flow = simulation_factory.build_spiking_hybrid_flow(
+            pipeline, _constant_drive_mapping(WEIGHTS),
+        )
+        assert flow.membrane_readout is False
 
 
 class TestTheorem0OnExecutorState:

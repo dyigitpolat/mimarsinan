@@ -375,6 +375,11 @@ through the repo kernels; the twins are closed-form and kernel-verified.
    final-potential read of output neurons (simulator-side state, chip-
    plausible readout); gate `is_lif` only, output cores only, and keep the
    count decode for parity gates until cross-sim carries the same read.
+   *R8 adjudication (2026-07-13, measured): nevresim exports counts only
+   (no membrane read port), so the shipped decode is a torch-side DIAGNOSTIC
+   excluded from every deployed-read metric — deployed claims may not include
+   C2 until a backend exports final membrane; see
+   `lossless_refinement_ledger.md` §2F.1.*
 2. **C4 affine folds**: a calibration pass in `tuning/`, same fold family as
    the negative-shift bake (`mapping/support/bias_compensation.py:204-230`)
    and the mixer memo's consumer-column scaling; must run BEFORE weight

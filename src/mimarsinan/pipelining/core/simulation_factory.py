@@ -23,8 +23,10 @@ from mimarsinan.mapping.platform.mapping_structure import (
     MappingStrategy,
 )
 from mimarsinan.mapping.support.bias_compensation import propagate_negative_shifts_to_hybrid
+from mimarsinan.common.reporter import emit_reporter_event
 from mimarsinan.model_training.basic_trainer import BasicTrainer
 from mimarsinan.models.spiking.hybrid.flow import SpikingHybridCoreFlow
+from mimarsinan.models.spiking.hybrid.membrane_readout import final_only_output_nodes
 from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 from mimarsinan.spiking.lif_utils import apply_cycle_accurate_trains_to_model
 
@@ -73,7 +75,17 @@ def build_spiking_hybrid_flow(
     *,
     preprocessor=None,
     model=None,
+    membrane_readout_diagnostic: bool = False,
 ) -> SpikingHybridCoreFlow:
+    """Build the deployed-read executor; counts decode ALWAYS.
+
+    [C2/R8] The chip exports spike counts only (nevresim's ``SpikingExecution``
+    returns the accumulated output buffer; the membrane has no read port), so
+    deployed-read metrics, parity gates, and record flows keep the counts
+    decode regardless of ``lif_membrane_readout``. The membrane decode is
+    reachable solely via ``membrane_readout_diagnostic=True`` — the torch-side
+    diagnostic of ``run_membrane_readout_diagnostic``, never a deployed metric.
+    """
     cfg = pipeline.config
     plan = DeploymentPlan.of(pipeline)
     contract = build_deployment_contract(pipeline)
@@ -91,14 +103,70 @@ def build_spiking_hybrid_flow(
         cycle_accurate_lif_forward=plan.cycle_accurate_lif_forward,
         ttfs_cycle_schedule=contract.ttfs_cycle_schedule,
         membrane_readout=(
-            is_lif(contract.spiking_mode)
-            and bool(cfg.get("lif_membrane_readout", False))
+            membrane_readout_diagnostic and is_lif(contract.spiking_mode)
         ),
         membrane_readout_half_step=bool(cfg.get("lif_half_step_bias", False)),
     )
     if plan.cycle_accurate_lif_forward and model is not None:
         apply_cycle_accurate_trains_to_model(model, True)
     return flow.to(cfg["device"])
+
+
+def run_membrane_readout_diagnostic(
+    pipeline,
+    hybrid_mapping,
+    samples: torch.Tensor,
+    *,
+    model=None,
+) -> dict[str, Any] | None:
+    """[C2/R8] Torch-side membrane-readout engagement report; never a metric.
+
+    Measures the counts-decode vs membrane-decode logit delta on ``samples``,
+    prints the engagement line, and emits a reporter event. Returns None when
+    the knob is unarmed or the mode is not LIF.
+    """
+    cfg = pipeline.config
+    contract = build_deployment_contract(pipeline)
+    if not (
+        is_lif(contract.spiking_mode)
+        and bool(cfg.get("lif_membrane_readout", False))
+    ):
+        return None
+
+    device = cfg["device"]
+    counts_flow = build_spiking_hybrid_flow(
+        pipeline, hybrid_mapping, model=model,
+    ).eval()
+    diagnostic_flow = build_spiking_hybrid_flow(
+        pipeline, hybrid_mapping, model=model, membrane_readout_diagnostic=True,
+    ).eval()
+    x = samples.to(device)
+    with torch.no_grad():
+        counts_logits = counts_flow(x)
+        membrane_logits = diagnostic_flow(x)
+    delta = membrane_logits - counts_logits
+    stats: dict[str, Any] = {
+        "eligible_nodes": len(final_only_output_nodes(hybrid_mapping)),
+        "samples": int(x.shape[0]),
+        "engaged": bool(delta.abs().max().item() > 0.0),
+        "pred_flips": int(
+            (membrane_logits.argmax(dim=1) != counts_logits.argmax(dim=1))
+            .sum().item()
+        ),
+        "max_abs_correction": float(delta.abs().max().item()),
+    }
+    print(
+        "[C2] membrane-readout diagnostic (torch-side decode only; deployed "
+        "reads keep the counts decode — the chip exports spike counts, not "
+        f"membranes): eligible_nodes={stats['eligible_nodes']}, "
+        f"engaged={stats['engaged']}, "
+        f"pred_flips={stats['pred_flips']}/{stats['samples']}, "
+        f"max|dlogit|={stats['max_abs_correction']:.4f}"
+    )
+    emit_reporter_event(
+        pipeline.reporter, "membrane_readout_diagnostic", stats,
+    )
+    return stats
 
 
 def build_identity_mapping_for_pipeline(

@@ -7,7 +7,9 @@ from mimarsinan.mapping.support.bias_compensation import (
     apply_lif_half_step_bias_compensation,
 )
 from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
-from mimarsinan.pipelining.core.platform_constraints_resolver import resolve_bias_mode
+from mimarsinan.pipelining.core.platform_constraints_resolver import (
+    resolve_wq_two_scale_projection as resolve_wq_two_scale_projection,
+)
 from mimarsinan.pipelining.core.registry.trainer_factory import make_basic_trainer
 from mimarsinan.pipelining.core.steps.tuner_pipeline_step import TunerPipelineStep
 from mimarsinan.mapping.support.per_source_scales import compute_per_source_scales
@@ -22,17 +24,6 @@ from mimarsinan.tuning.tuners.normalization_aware_perceptron_quantization_tuner 
 import torch.nn as nn
 
 _CANONICALIZATION_BATCHES = 4
-
-
-def resolve_wq_two_scale_projection(config) -> bool:
-    """Effective two-scale WQ flag: the ``wq_two_scale_projection`` key AND the
-    platform's on-chip bias capability — a parameter-encoded bias rides the
-    core matrix as an always-on axon row and must obey the ±q_max
-    weight-register contract on the weight grid, so two-scale is not mappable
-    there (``wq_cascade_crater_repair.md`` §5, backend audit)."""
-    if not bool(config.get("wq_two_scale_projection", False)):
-        return False
-    return resolve_bias_mode(config) == "on_chip"
 
 
 class WeightQuantizationStep(TunerPipelineStep):

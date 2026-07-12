@@ -230,6 +230,45 @@ pretrain read; §4 states the re-referencing decision.
 - **Clamp:** ClampTuner constructive-stalls everywhere (inert by design); the
   one negative clamp read (t01_05, −0.49) folds into term A's S=4 regime.
 
+### F.1 R8 resolution (2026-07-13, measured) — C2 is torch-side only
+
+**Chip-export adjudication.** nevresim exports spike counts ONLY:
+`SpikingExecution::execute` returns the per-cycle-accumulated output buffer
+(`nevresim/include/simulator/execution/spiking_execution.hpp`) and
+`membrane_potential_` is a private member with no read port
+(`.../compute_policy/neuron/spiking_neuron_compute.hpp`). SANA-FE's plugin
+somas expose `get_potential` but no accuracy/parity path consumes it; Lava
+reads spike parity. **The C2 membrane decode is not chip-realizable under the
+current deployment contract.**
+
+**Both t0_05 anomalies are one defect — decode-domain asymmetry.** The armed
+`lif_membrane_readout` engaged ONLY in the torch-hybrid flow logits decode
+(`rate_forward.py`), which `run_scm_identity_metric` / `run_hcm_mapping_metric`
+deploy; the NF torch forward and the cross-sim backends decode counts.
+Cached-resume isolation on t0_05 (local rerun, weights held fixed, knob
+toggled): readout ON → NF 0.9741, SCM/HCM 0.9751 (the "SCM gain"),
+torch↔deployed-sim agreement 0.9922; readout OFF → SCM == HCM == NF ==
+0.9741 exactly, agreement 1.0000. The "+0.25 SCM gain" was never a mapping
+deviation — mapping is read-exact; the accuracy delta was the C2 decode
+applied on one side of the seam only. The −0.43 "armed but below staircase"
+contradiction dissolves the same way: the memo's +2.3 pp was measured on an
+UNADAPTED conversion, while on-pipeline the LIF adaptation trains the
+composition against the counts decode (absorbing most of V2), leaving C2 a
+small logits-side residual that the deployed claim may not include anyway.
+
+**Fix (landed with R8):** deployed-read flows are counts-decode ALWAYS
+(`simulation_factory.build_spiking_hybrid_flow` no longer consumes the knob);
+the membrane decode survives as an explicit torch-side diagnostic
+(`run_membrane_readout_diagnostic`, engagement line `[C2] membrane-readout
+diagnostic ...` + reporter event at SoftCoreMappingStep). Deployed-read
+claims EXCLUDE C2 until a backend actually exports final membrane; the R8
+row's "unlocks up to +2 where C2 is armed-but-inert" is void for deployed
+reads — that value is only reachable via a chip-side final-potential export
+(a nevresim/SANA-FE feature, not a pipeline lever). Post-fix deployed reads
+for armed-LIF cells drop by exactly the former decode asymmetry (t0_05:
+−0.10 pp locally; −0.25 pp in the wave artifacts) — this is honesty, not
+regression: the counts read is what every backend can produce.
+
 ---
 
 ## 3. Ranked refinement plan toward lossless
