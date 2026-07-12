@@ -63,16 +63,29 @@ _LIF_RECIPE_KNOBS = {
     # that parity identity: t0_01 0.9336, t0_05 0.9883).
     "lif_half_step_bias": True,
     # [lif_deployment_exactness §7] the exact/statistical correction ladder on
-    # top of the half-step: C2 membrane-augmented readout (Q = theta*c + m
-    # recovers the sign-carrying unquantized logits at final-only output
-    # cores, +2.6pp at S=4), C4 per-channel FULL affine fold (dead-zone bias
+    # top of the half-step: C2 membrane-augmented readout (torch-side
+    # DIAGNOSTIC only — the chip exports counts; deployed reads exclude it,
+    # ledger §2F.1), C4 per-channel FULL affine fold (dead-zone bias
     # absorption, calibration-only; bias-only folds refuted at -4.2pp; Novena
     # arm gated S>=8 in the step), C5 depth-balancing relays (exact V6 join
-    # fix, no-op on gap-free graphs). C3 per-hop re-timing stays a mapping
-    # choice (mixers get it free at ComputeOp boundaries).
+    # fix, no-op on gap-free graphs).
     "lif_membrane_readout": True,
     "lif_affine_fold": True,
     "lif_depth_balancing_relays": True,
+    # [R5/C3, lossless_refinement_ledger §2B] per-hop re-timing: boundary
+    # decode + count-preserving re-encode is value-exact (round((c/T)*T) = c)
+    # and kills the V3 back-loading deficit exactly where the ledger's
+    # temporal-A6 gauge FAILs (S<=8: +1.9pp at S=4 chain9, +0.5pp at S=8;
+    # nil at S>=16 — the latency/energy cost stays mapping-visible).
+    "lif_per_hop_retiming": True,
+    # [R1/M2, lossless_refinement_ledger §2C] two-scale WQ projection for LIF:
+    # four frozen WQ endpoints (entry == exit, divergence_rescued) prove the
+    # WQ residual is shared-grid arithmetic the QAT cannot express (t01_19
+    # -0.57pp, t0_05 -0.52pp, t0_03 -0.24pp; wb8 control +1.25pp deployed at
+    # S=4) — and the armed lif_half_step_bias itself adds bias mass to the
+    # grid-setting row, worst at low S. Exact identity at the same bit budget;
+    # the resolver gate falls back to the shared grid on nobias platforms.
+    "wq_two_scale_projection": True,
     **_WELL_CONDITIONED_ENDPOINT_FLOOR_KNOBS,
 }
 _TTFS_QUANTIZED_RECIPE_KNOBS = {

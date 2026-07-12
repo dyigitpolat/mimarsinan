@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+from dataclasses import dataclass
 from typing import Dict
 
 import torch
@@ -196,34 +198,34 @@ def _foldable_perceptron_consumers(node, consumers_map):
     return list(perceptron_targets), None
 
 
-def crater_premise_holds(model, cal_x, cal_y) -> bool:
-    """The fold repairs deployed-below-envelope craters only: when the deployed
-    forward already scores at or above the float envelope (the P1'' endpoint
-    trains the deployed composition past it), the envelope is a worse teacher
-    and sequential folds compound destructively (measured 0.9574 -> 0.7684)."""
+@dataclass(frozen=True)
+class CraterPremiseVerdict:
+    """Premise decision plus the reads kept as the per-cell witness (ledger G7)."""
 
-    def _bypass(module, inputs, _output):
-        z = inputs[0]
-        theta = torch.as_tensor(
-            module.activation_scale, device=z.device, dtype=z.dtype,
-        ).clamp(min=1e-12)
-        return torch.minimum(z.clamp(min=0.0), theta)
+    holds: bool
+    deployed_read: float
+    reference_read: float
+    standard_error: float
 
+
+def evaluate_crater_premise(
+    model, cal_x, cal_y, reference_read: float,
+) -> CraterPremiseVerdict:
+    """Fold only genuine craters: deployed calibration read < reference − binomial SE.
+    The teacher is the post-AQ, PRE-adaptation reference — adaptation trains PAST the
+    clamp envelope, so an envelope teacher never fires (11/11 skips, ledger §2D)."""
     with torch.no_grad():
         deployed = model(cal_x).argmax(dim=-1)
-        handles = [
-            m.register_forward_hook(_bypass)
-            for m in model.modules()
-            if isinstance(m, LIFActivation)
-        ]
-        try:
-            envelope = model(cal_x).argmax(dim=-1)
-        finally:
-            for handle in handles:
-                handle.remove()
-    deployed_acc = (deployed == cal_y).float().mean().item()
-    envelope_acc = (envelope == cal_y).float().mean().item()
-    return deployed_acc < envelope_acc
+    deployed_read = float((deployed == cal_y).float().mean().item())
+    reference = min(max(float(reference_read), 0.0), 1.0)
+    samples = max(int(cal_y.numel()), 1)
+    standard_error = math.sqrt(reference * (1.0 - reference) / samples)
+    return CraterPremiseVerdict(
+        holds=deployed_read < reference - standard_error,
+        deployed_read=deployed_read,
+        reference_read=reference,
+        standard_error=standard_error,
+    )
 
 
 def apply_lif_affine_fold(model, cal_x: torch.Tensor, simulation_steps: int) -> dict:

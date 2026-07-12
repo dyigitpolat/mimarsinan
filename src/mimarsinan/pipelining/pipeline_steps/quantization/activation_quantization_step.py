@@ -4,6 +4,7 @@ from mimarsinan.tuning.tuners.activation_quantization_tuner import ActivationQua
 
 class ActivationQuantizationStep(TunerPipelineStep):
     REQUIRES = ("model", "adaptation_manager")
+    PROMISES = ("aq_reference_read",)
     UPDATES = ("model", "adaptation_manager")
 
     # The staged AQ install (sync's conversion endpoint) carries
@@ -26,3 +27,10 @@ class ActivationQuantizationStep(TunerPipelineStep):
             adaptation_manager,
             target_tq=self.pipeline.config["target_tq"],
         )
+        # [R2b] the post-AQ, PRE-adaptation staircase reference for the LIF
+        # affine-fold premise (lossless_refinement_ledger.md §2D): a plain
+        # float in the VALIDATION domain, because the premise differences it
+        # against a validation-batch calibration read and test reads are never
+        # differenced against eval-subset reads (ledger conventions).
+        assert self.tuner is not None, "run_tuner must set the tuner"
+        self.add_entry("aq_reference_read", float(self.tuner.validate()))

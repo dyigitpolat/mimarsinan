@@ -105,14 +105,17 @@ ENTRIES = (
            "no on-chip segment fails loud."),
     _E("lif_membrane_readout", group="spiking", owner="lif_deployment_exactness",
        type=T.BOOL, category=Category.ADVANCED, label="LIF Membrane Readout",
-       effect="Final-only LIF output cores decode counts + residual membrane",
-       doc="[C2] Membrane-augmented readout: by the charge identity "
+       effect="Torch-side membrane-decode DIAGNOSTIC at the SCM gate; "
+              "deployed reads always keep the counts decode",
+       doc="[C2/R8] Membrane-augmented readout: by the charge identity "
            "Q_T = theta*c_T + m_T, decoding output cores as counts + m_T/theta "
            "(half-step charge removed when baked) recovers the exact, "
-           "sign-carrying, unquantized pre-activation. Claimed ONLY for cores "
-           "whose value feeds nothing but the network output (a host-side "
-           "read); parity records keep the count decode. The LIF recipe arms "
-           "it (lif_deployment_exactness.md).",
+           "sign-carrying, unquantized pre-activation at final-only output "
+           "cores. The chip exports spike counts only (nevresim has no "
+           "membrane read port), so this decode NEVER reaches a deployed-read "
+           "metric: arming it runs the SoftCoreMappingStep engagement "
+           "diagnostic ([C2] line + reporter event) and nothing else "
+           "(lossless_refinement_ledger.md §2F.1). The LIF recipe arms it.",
        provenance="ConversionPolicy recipe", derived_default=_frozen(False),
        relevant=R.when("spiking_mode", in_=("lif",)),
        empty_means="the lif recipe arms it; other modes stay off"),
@@ -123,10 +126,13 @@ ENTRIES = (
            "decode/re-encode (round((c/T)*T) = c), resetting arrival timing "
            "and killing the back-loading deficit on deep single-segment "
            "chains at S <= 8. Mixer-class vehicles already re-time at their "
-           "ComputeOp boundaries. A mapping-level choice — never recipe-armed.",
-       provenance="consumer frozen default", derived_default=_frozen(False),
+           "ComputeOp boundaries. The LIF recipe arms it per R5 — the "
+           "transcode is value-exact and the ledger's temporal-A6 FAIL cells "
+           "are its targets (lossless_refinement_ledger.md §2B); the "
+           "latency/energy cost stays mapping-visible.",
+       provenance="ConversionPolicy recipe", derived_default=_frozen(False),
        relevant=R.when("spiking_mode", in_=("lif",)),
-       empty_means="off — single maximal-run neural segments"),
+       empty_means="the lif recipe arms it; other modes stay off"),
     _E("lif_depth_balancing_relays", group="mapping_strategy",
        owner="latency/depth_balancing",
        type=T.BOOL, category=Category.ADVANCED, label="LIF Depth-balancing Relays",
@@ -141,6 +147,21 @@ ENTRIES = (
        provenance="ConversionPolicy recipe", derived_default=_frozen(False),
        relevant=R.when("spiking_mode", in_=("lif",)),
        empty_means="the lif recipe arms it; other modes stay off"),
+    _E("comparator_half_step", group="spiking", owner="deployment_contract",
+       type=T.BOOL, category=Category.ADVANCED, label="Comparator-side Half-step",
+       effect="Staircase hops carry the +theta/(2S) mid-tread offset in the "
+              "compare ladder instead of the bias",
+       doc="[E3/G6/R7] The exact zero-bit-cost half-step placement: every "
+           "per-cycle compare level theta*(S-k)/S drops by theta/(2S) "
+           "(ceil(S*(1-v/theta) - 1/2)) — a ladder shift, never a theta "
+           "rescale — so the two-scale WQ bias lattice cannot erode the "
+           "mid-tread compensation (arm when g_b/(1/(2S)) >= ~0.5 at "
+           "projection; blanket refolds measured -1.6pp). Both NF and SCM "
+           "read the flag from the SpikingDeploymentContract, so the parity "
+           "twins shift together (sync_deployment_exactness.md §5/§7).",
+       provenance="consumer frozen default", derived_default=_frozen(False),
+       relevant=R.when("spiking_mode", in_=("ttfs_cycle_based",)),
+       empty_means="off — the half-step stays a bias fold"),
     _E("cycle_accurate_lif_forward", group="spiking", owner="lif_adaptation",
        type=T.BOOL, category=Category.DERIVED, derivation="derived",
        exposure="derived", label="Cycle-accurate LIF Forward",
@@ -199,6 +220,21 @@ ENTRIES = (
        provenance="consumer frozen default",
        derived_default=_frozen(DEFAULT_SCALE_MIGRATION_CLIP_RATIO),
        empty_means="the mechanism default r=4 (measured to hold 5-bit WQ)"),
+    _E("per_channel_theta", group="tuning", owner="per_channel_theta",
+       type=T.BOOL, category=Category.ADVANCED, exposure="user",
+       label="Per-channel Theta",
+       effect="Eligible matching-axis hops calibrate a per-channel decode theta",
+       doc="[S2/R3] Exact scale-space level reallocation: Q_S(z/theta) depends "
+           "only on z/theta, so a per-channel theta with per-channel decode "
+           "refines the grid per channel — the one lever that beats the 1/S "
+           "law. Promoted ONLY where the producer's channel axis is consumed "
+           "as linear feature axes through structural mappers (the M4 "
+           "matching-axis condition); weight-shared / axis-flipped hops and "
+           "segment-entry consumers keep the scalar (sync memo §4.2-4.3, "
+           "mixer memo §6). Capable modes: lif and synchronized ttfs_cycle.",
+       provenance="consumer frozen default", derived_default=_frozen(False),
+       relevant=R.when("spiking_mode", in_=("lif", "ttfs_cycle_based")),
+       empty_means="off — every hop keeps its pooled scalar theta"),
     _E("pruning", group="mapping_strategy", owner="pruning_adaptation",
        type=T.BOOL, category=Category.BASIC, exposure="user", label="Pruning Enabled",
        effect="Adds the Pruning Adaptation step",

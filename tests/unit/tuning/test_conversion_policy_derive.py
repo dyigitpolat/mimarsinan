@@ -40,13 +40,25 @@ _MODE_KNOBS = {
         # [5v B3] the LIF half-step head-start (weight-quant QAT entry fold).
         "lif_half_step_bias": True,
         # [lif_deployment_exactness §7] the exactness ladder above the
-        # half-step: C2 membrane-augmented readout (exact, +2.6pp at S=4),
+        # half-step: C2 membrane-augmented readout (torch-side DIAGNOSTIC
+        # only — deployed reads keep the counts decode, ledger §2F.1),
         # C4 per-channel FULL affine fold (calibration-only), C5
         # depth-balancing relays (exact V6 join fix, no-op on gap-free
-        # graphs). C3 per-hop re-timing stays a mapping-level choice.
+        # graphs).
         "lif_membrane_readout": True,
         "lif_affine_fold": True,
         "lif_depth_balancing_relays": True,
+        # [R5/C3, lossless ledger §2B] per-hop re-timing: the transcode is
+        # value-exact (round((c/T)*T) = c) and kills the V3 back-loading on
+        # the temporal-A6 FAIL cells at S<=8 (+1.9pp at S=4 chain9, +0.5pp at
+        # S=8; nil at S>=16); the latency cost stays mapping-visible.
+        "lif_per_hop_retiming": True,
+        # [R1/M2, lossless ledger §2C] two-scale WQ grid for LIF: four frozen
+        # WQ endpoints prove the residual is grid arithmetic the QAT cannot
+        # express (t01_19 -0.57pp WQ residual, t0_05 -0.52pp, t0_03 -0.24pp;
+        # wb8 control +1.25pp deployed at S=4). Exact identity, same bits;
+        # the resolver capability-gates nobias platforms.
+        "wq_two_scale_projection": True,
         # [5u generalized] the WQ-scoped well-conditioned endpoint floor.
         "wq_endpoint_target_floor": 0.98,
         "wq_endpoint_recovery_steps": 16000,
@@ -200,14 +212,17 @@ class TestDeriveKnobs:
             "wq_endpoint_recovery_steps": 16000,
         }
 
-    def test_two_scale_projection_rides_only_the_cycle_based_family(self):
-        # [M2 scope] the two-scale WQ grid repairs the first-crossing (and the
-        # sync value) forward; ttfsq/analytic neither need it and LIF's WQ
-        # craters are training-recoverable in-campaign — those rows stay on
-        # the shared grid for byte-identity (wq_cascade_crater_repair.md §6).
+    def test_two_scale_projection_scope_is_cycle_based_plus_lif(self):
+        # [M2 + R1 scope] the two-scale WQ grid repairs the first-crossing
+        # (and the sync value) forward, and — measured-refuting the old
+        # "training-recoverable" premise — LIF's WQ residual: four frozen WQ
+        # endpoints (entry == exit, divergence_rescued) prove the loss is grid
+        # arithmetic no recovery step expresses (t01_19 -0.57pp, t0_05
+        # -0.52pp; lossless_refinement_ledger.md §2C, G5). ttfsq/analytic
+        # stay on the shared grid for byte-identity.
         for mode, schedule in _CELLS:
             recipe = ConversionPolicy.derive(mode, schedule)
-            expected = mode == "ttfs_cycle_based"
+            expected = mode in ("ttfs_cycle_based", "lif")
             assert ("wq_two_scale_projection" in recipe.knobs) is expected, (
                 f"{mode}/{schedule}"
             )

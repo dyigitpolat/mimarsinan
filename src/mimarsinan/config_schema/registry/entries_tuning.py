@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from mimarsinan.config_schema.registry.relevance import Relevance as R
 from mimarsinan.config_schema.registry.types import (
     Category,
     ConfigKeySchema as _E,
@@ -18,6 +19,18 @@ ENTRIES = (
        doc="Quantile of observed activations used as the per-layer scale (the mode "
            "recipe may override the schema default).", bounds=(0.0, 1.0),
        provenance="ConversionPolicy recipe"),
+    _E("s_aware_theta_quantile", group="tuning", owner="activation_analysis",
+       type=T.BOOL, category=Category.ADVANCED, exposure="user",
+       label="S-aware Theta Quantile",
+       effect="The theta calibration quantile follows the value grid",
+       doc="[S1/R4] Quantile descent: the effective calibration quantile is "
+           "min(activation_scale_quantile, policy(levels)) with the memo's "
+           "measured anchors (S=4 -> 0.95, S=8 -> 0.99, S=16 -> 0.995, "
+           "S>=32 -> 1.0; sync_deployment_exactness.md §3.3) — the optimal "
+           "theta loading falls as the grid coarsens. Only ever deflates the "
+           "base; continuous modes are untouched.",
+       provenance="consumer frozen default", derived_default=_frozen(False),
+       empty_means="off — the mode's configured quantile stands at every S"),
     _E("activation_analysis_batch_size", group="tuning", owner="activation_analysis",
        type=T.INT, category=Category.ADVANCED, label="Activation Analysis Batch Size",
        doc="Batch size for the activation-statistics capture pass.", bounds=(1, None),
@@ -92,7 +105,22 @@ ENTRIES = (
            "(wq_cascade_crater_repair.md). Platforms without an on-chip bias "
            "register fall back to the shared grid (capability gate).",
        provenance="ConversionPolicy recipe", derived_default=_frozen(False),
-       empty_means="the mode recipe (ON for ttfs_cycle_based), else off"),
+       empty_means="the mode recipe (ON for ttfs_cycle_based and lif), else off"),
+    _E("sync_first_moment_fold", group="tuning",
+       owner="activation_quantization_tuner",
+       type=T.BOOL, category=Category.ADVANCED, label="Sync First-moment Fold",
+       effect="Sequential closed-form per-hop bias fold at the sync AQ "
+              "endpoint, before endpoint recovery",
+       doc="[S3/R6] Per hop (input->output), the deployed-vs-float "
+           "pre-activation mean gap — measured through the already-folded "
+           "prefix, with the hop's OWN +theta/(2S) half-step EXCLUDED — is "
+           "folded out of the effective bias. The exclusion is load-bearing: "
+           "folding the raw gap cancels the mid-tread compensation "
+           "(0.93->0.59 measured, sync_deployment_exactness.md §3.2). "
+           "Calibration-only; never spends training budget.",
+       provenance="consumer frozen default", derived_default=_frozen(False),
+       relevant=R.when("spiking_mode", in_=("ttfs_cycle_based",)),
+       empty_means="off — no first-moment fold at the AQ endpoint"),
     _E("lif_affine_fold", group="tuning", owner="lif_affine_fold",
        type=T.BOOL, category=Category.ADVANCED, label="LIF Affine Fold",
        effect="Adds the pre-WQ LIF Affine Fold calibration step",

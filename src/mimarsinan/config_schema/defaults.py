@@ -45,10 +45,8 @@ DEFAULT_DEPLOYMENT_PARAMETERS: Dict[str, object] = {
     "ttfs_genuine_blend_ce_alpha": 0.3,
     "model_config_mode": "user",
     "hw_config_mode": "fixed",
-    # The enable_*_simulation flags carry NO defaults: the ConversionPolicy
-    # recipe derives them per mode and overwrites any value (Pure SSOT).
-    # cycle_accurate_lif_forward carries NO default: it is recipe-owned (the LIF
-    # recipe folds it ON; the runtime derivation writes it) — never a knob.
+    # enable_*_simulation and cycle_accurate_lif_forward carry NO defaults:
+    # the ConversionPolicy recipe / runtime derivation owns them (Pure SSOT).
     "spiking_mode": "lif",
     # Negative-boundary policy: ON = calibrated shift; OFF = subsume-forward.
     "negative_value_shift": True,
@@ -78,8 +76,7 @@ DEFAULT_PLATFORM_CONSTRAINTS: Dict[str, object] = {
     "scheduling_latency_weight": 1.0,
 }
 
-# Presets must not inject AQ/WQ: derivation owns them, and a preset-injected value
-# would be indistinguishable from an explicit one under the quantization contract.
+# Presets must not inject AQ/WQ: derivation owns them (a preset value reads as explicit).
 PIPELINE_MODE_PRESETS: Dict[str, Dict[str, object]] = {
     "vanilla": {},
     "phased": {},
@@ -163,28 +160,33 @@ CONFIG_KEYS_SET: Set[str] = {
     "sanafe_sample_count", "sanafe_arch_preset",
     "sanafe_custom_arch_path", "sanafe_log_potential_trace",
     "simulation_batch_count", "simulation_step_timeout_s",
-    # Optional per-cell RUN-total STEP budget for the 5u endpoint target floor
-    # (the endpoint_steps ledger); read by endpoint_recovery via config.get
-    # with the TUNING_POLICY value as fallback. Steps, never wall seconds.
+    # Per-cell RUN-total STEP budget for the 5u endpoint floor (steps, never
+    # wall seconds; endpoint_recovery falls back to the TUNING_POLICY value).
     "endpoint_floor_steps",
-    # [MBH-DRAWS] best-of-N conversion draws on the variance-carrying stages
-    # (default 1 = single-draw, bit-identical); draws seed torch at seed+k.
+    # [MBH-DRAWS] best-of-N conversion draws (1 = single-draw, bit-identical).
     "conversion_draws",
     # WQ knobs, both ConversionPolicy-recipe-defaulted: the endpoint step cap
-    # (FAST respec) and the [M2] two-scale projection grids (ttfs_cycle_based).
+    # and the [M2/R1] two-scale projection grids (ttfs_cycle_based + lif).
     "wq_endpoint_recovery_steps", "wq_two_scale_projection",
     # LIF deployment-exactness promotions (lif_deployment_exactness.md §7):
-    # the recipe arms the C2/C4/C5 corrections for lif; per-hop re-timing (C3)
-    # stays a mapping-level choice. All default OFF.
+    # the recipe arms the C2/C3/C4/C5 corrections for lif (C3 per R5,
+    # lossless_refinement_ledger.md §2B). All default OFF here.
     "lif_membrane_readout", "lif_affine_fold",
     "lif_per_hop_retiming", "lif_depth_balancing_relays",
-    # Every-endpoint D-hat target floor (bit-parity-lossless family); read by
-    # endpoint_recovery via config.get, the ConversionPolicy recipe may set it.
+    # Sync deployment-exactness promotions (sync_deployment_exactness.md §7):
+    # the [S3/R6] sequential first-moment fold at the AQ endpoint and the
+    # [E3/R7] comparator-side half-step contract flag. Both default OFF
+    # (mechanism landed; arming is a recipe decision).
+    "sync_first_moment_fold", "comparator_half_step",
+    # [S2/R3] per-channel theta (lif + sync matching-axis hops) and [S1/R4]
+    # S-aware quantile descent; default OFF, arming is a recipe decision.
+    "per_channel_theta", "s_aware_theta_quantile",
+    # Every-endpoint D-hat target floor (bit-parity-lossless family); the
+    # ConversionPolicy recipe may set it.
     "endpoint_target_floor",
     # torch DataLoader worker count; read via config.get with a fallback of 4.
     "num_workers",
-    # Workload-profile-injectable keys (common/workload_profile.py): absence
-    # is meaningful, so they never get schema defaults here.
+    # Workload-profile-injectable keys (absence is meaningful — no defaults).
     "input_data_scale", "eval_subsample_target", "tuning_step_cap_epochs",
     "calibration_set_policy", "prefix_stage_lr", "endpoint_floor_lr",
     "proven_recovery_depth", "clamp_cuda_assert_prone",

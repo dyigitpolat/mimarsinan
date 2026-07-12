@@ -415,41 +415,74 @@ class TestRealConvertedGraphDiscovery:
         assert report["readout_folds"] == 0, report
 
 
+class _LogitsPassthrough(torch.nn.Module):
+    """Deployed forward stub: the input rows ARE the logits."""
+
+    def forward(self, x):
+        return x
+
+
+def _premise_fixture():
+    """16 samples with deployed accuracy exactly 0.75 (12/16 argmax hits)."""
+    x = torch.eye(4).repeat(4, 1)
+    y = torch.tensor([0, 1, 2, 3] * 4)
+    y[:4] = torch.tensor([1, 2, 3, 0])  # first block all wrong -> 12/16
+    return x, y
+
+
 class TestCraterPremiseGate:
-    """The fold repairs deployed-below-envelope craters only (measured
-    0.9574 -> 0.7684 on t0_04 when applied with the premise inverted)."""
+    """[R2b] the premise teacher is the post-AQ, PRE-adaptation reference read:
+    the LIF-adaptation endpoint trains the deployed composition PAST the clamp
+    envelope, so an envelope teacher never fires post-adaptation (11/11 skips,
+    lossless_refinement_ledger.md §2D). Premise: deployed < reference - SE."""
 
-    def test_premise_false_when_deployed_matches_envelope(self):
-        from mimarsinan.tuning.lif_affine_fold import crater_premise_holds
-        flow = _converted_deep_mlp(depth=4)
-        x = _cal_x()
-        with torch.no_grad():
-            y = flow(x).argmax(dim=-1)  # labels = deployed argmax: deployed is perfect
-        assert crater_premise_holds(flow, x, y) is False
+    def test_holds_when_deployed_reads_below_reference_minus_se(self):
+        from mimarsinan.tuning.lif_affine_fold import evaluate_crater_premise
 
-    def test_premise_true_when_deployed_cratered(self):
-        from mimarsinan.tuning.lif_affine_fold import crater_premise_holds, LIFActivation
+        x, y = _premise_fixture()
+        # SE at p=0.95, n=16 is ~0.0545 -> bar ~0.8955 > 0.75.
+        verdict = evaluate_crater_premise(_LogitsPassthrough(), x, y, 0.95)
+        assert verdict.holds is True
+        assert abs(verdict.deployed_read - 0.75) < 1e-9
+        assert abs(verdict.reference_read - 0.95) < 1e-9
+        assert abs(verdict.standard_error - (0.95 * 0.05 / 16) ** 0.5) < 1e-9
 
-        class _Stub(torch.nn.Module):
-            """Deployed forward: LIF node output as-is (cratered to 0 by a huge
-            theta at spike time is emulated by the node returning 0); envelope
-            bypass replaces the node output with clamp(z, 0, theta) (healthy)."""
+    def test_skips_when_deployed_is_within_se_of_the_reference(self):
+        from mimarsinan.tuning.lif_affine_fold import evaluate_crater_premise
 
-            def __init__(self):
-                super().__init__()
-                self.lif = LIFActivation.__new__(LIFActivation)
-                torch.nn.Module.__init__(self.lif)
-                self.lif.activation_scale = 1.0
+        x, y = _premise_fixture()
+        # SE at p=0.8, n=16 is exactly 0.1 -> bar 0.7 <= 0.75: within noise.
+        verdict = evaluate_crater_premise(_LogitsPassthrough(), x, y, 0.8)
+        assert verdict.holds is False
+        assert abs(verdict.standard_error - 0.1) < 1e-12
 
+    def test_skips_when_deployed_matches_the_reference(self):
+        from mimarsinan.tuning.lif_affine_fold import evaluate_crater_premise
+
+        x = torch.eye(4)
+        y = torch.arange(4)  # deployed is perfect
+        verdict = evaluate_crater_premise(_LogitsPassthrough(), x, y, 1.0)
+        assert verdict.holds is False
+        assert verdict.deployed_read == 1.0
+
+    def test_starved_deployed_forward_fires_the_premise(self):
+        from mimarsinan.tuning.lif_affine_fold import evaluate_crater_premise
+
+        class _Starved(torch.nn.Module):
             def forward(self, x):
-                # The LIF node's deployed output is zeros (a starved node);
-                # the premise gate's bypass hook overrides this with the
-                # float envelope min(x+, theta), which recovers the signal.
-                z = self.lif(x)
-                return z
+                return torch.zeros_like(x)  # argmax collapses to class 0
 
-        stub = _Stub()
-        stub.lif.forward = lambda z: torch.zeros_like(z)  # deployed: starved
-        x = torch.eye(4)  # envelope argmax = identity classes
-        y = torch.arange(4)
-        assert crater_premise_holds(stub, x, y) is True
+        x = torch.eye(4)
+        y = torch.arange(4)  # deployed accuracy 0.25
+        verdict = evaluate_crater_premise(_Starved(), x, y, 1.0)
+        assert verdict.holds is True
+        assert verdict.deployed_read == 0.25
+
+    def test_reference_is_clamped_to_probability_range(self):
+        from mimarsinan.tuning.lif_affine_fold import evaluate_crater_premise
+
+        x, y = _premise_fixture()
+        verdict = evaluate_crater_premise(_LogitsPassthrough(), x, y, 1.7)
+        assert verdict.reference_read == 1.0
+        assert verdict.standard_error == 0.0
+        assert verdict.holds is True  # 0.75 < 1.0

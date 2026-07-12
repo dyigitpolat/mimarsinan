@@ -114,6 +114,7 @@
     "lif_depth_balancing_relays": true,
     "lif_half_step_bias": true,
     "lif_membrane_readout": true,
+    "lif_per_hop_retiming": true,
     "lif_tanneal": true,
     "lr": 0.003,
     "lr_range_max": 0.1,
@@ -196,7 +197,8 @@
      0.5,
      1.0
     ],
-    "wq_fast_steps_per_rate": 0
+    "wq_fast_steps_per_rate": 0,
+    "wq_two_scale_projection": true
    },
    "tuning_budget": {
     "accuracy_se": 0.009215122259681071,
@@ -326,6 +328,7 @@
     "lif_depth_balancing_relays": true,
     "lif_half_step_bias": true,
     "lif_membrane_readout": true,
+    "lif_per_hop_retiming": true,
     "lif_tanneal": true,
     "lr": 0.003,
     "lr_range_max": 0.1,
@@ -403,7 +406,8 @@
      0.5,
      1.0
     ],
-    "wq_fast_steps_per_rate": 0
+    "wq_fast_steps_per_rate": 0,
+    "wq_two_scale_projection": true
    },
    "tuning_budget": {
     "accuracy_se": 0.009215122259681071,
@@ -533,6 +537,7 @@
     "lif_depth_balancing_relays": true,
     "lif_half_step_bias": true,
     "lif_membrane_readout": true,
+    "lif_per_hop_retiming": true,
     "lif_tanneal": true,
     "lr": 0.003,
     "lr_range_max": 0.1,
@@ -610,7 +615,8 @@
      0.5,
      1.0
     ],
-    "wq_fast_steps_per_rate": 0
+    "wq_fast_steps_per_rate": 0,
+    "wq_two_scale_projection": true
    },
    "tuning_budget": {
     "accuracy_se": 0.009215122259681071,
@@ -740,6 +746,7 @@
     "lif_depth_balancing_relays": true,
     "lif_half_step_bias": true,
     "lif_membrane_readout": true,
+    "lif_per_hop_retiming": true,
     "lif_tanneal": true,
     "lr": 0.003,
     "lr_range_max": 0.1,
@@ -817,7 +824,8 @@
      0.5,
      1.0
     ],
-    "wq_fast_steps_per_rate": 0
+    "wq_fast_steps_per_rate": 0,
+    "wq_two_scale_projection": true
    },
    "tuning_budget": {
     "accuracy_se": 0.009215122259681071,
@@ -947,6 +955,7 @@
     "lif_depth_balancing_relays": true,
     "lif_half_step_bias": true,
     "lif_membrane_readout": true,
+    "lif_per_hop_retiming": true,
     "lif_tanneal": true,
     "lr": 0.003,
     "lr_range_max": 0.1,
@@ -1024,7 +1033,8 @@
      0.5,
      1.0
     ],
-    "wq_fast_steps_per_rate": 0
+    "wq_fast_steps_per_rate": 0,
+    "wq_two_scale_projection": true
    },
    "tuning_budget": {
     "accuracy_se": 0.009215122259681071,
@@ -4256,6 +4266,7 @@
     "lif_depth_balancing_relays": true,
     "lif_half_step_bias": true,
     "lif_membrane_readout": true,
+    "lif_per_hop_retiming": true,
     "lif_tanneal": true,
     "lr": 0.003,
     "lr_range_max": 0.1,
@@ -4338,7 +4349,8 @@
      0.5,
      1.0
     ],
-    "wq_fast_steps_per_rate": 0
+    "wq_fast_steps_per_rate": 0,
+    "wq_two_scale_projection": true
    },
    "tuning_budget": {
     "accuracy_se": 0.009215122259681071,
@@ -4468,6 +4480,7 @@
     "lif_depth_balancing_relays": true,
     "lif_half_step_bias": true,
     "lif_membrane_readout": true,
+    "lif_per_hop_retiming": true,
     "lif_tanneal": true,
     "lr": 0.003,
     "lr_range_max": 0.1,
@@ -4550,7 +4563,8 @@
      0.5,
      1.0
     ],
-    "wq_fast_steps_per_rate": 0
+    "wq_fast_steps_per_rate": 0,
+    "wq_two_scale_projection": true
    },
    "tuning_budget": {
     "accuracy_se": 0.009215122259681071,
@@ -5535,6 +5549,7 @@
     "lif_depth_balancing_relays": true,
     "lif_half_step_bias": true,
     "lif_membrane_readout": true,
+    "lif_per_hop_retiming": true,
     "lif_tanneal": true,
     "lr": 0.003,
     "lr_range_max": 0.1,
@@ -5617,7 +5632,8 @@
      0.5,
      1.0
     ],
-    "wq_fast_steps_per_rate": 0
+    "wq_fast_steps_per_rate": 0,
+    "wq_two_scale_projection": true
    },
    "tuning_budget": {
     "accuracy_se": 0.009215122259681071,
@@ -5967,6 +5983,7 @@
     "lif_depth_balancing_relays": true,
     "lif_half_step_bias": true,
     "lif_membrane_readout": true,
+    "lif_per_hop_retiming": true,
     "lif_tanneal": true,
     "lr": 0.003,
     "lr_range_max": 0.1,
@@ -6044,7 +6061,8 @@
      0.5,
      1.0
     ],
-    "wq_fast_steps_per_rate": 0
+    "wq_fast_steps_per_rate": 0,
+    "wq_two_scale_projection": true
    },
    "tuning_budget": {
     "accuracy_se": 0.009215122259681071,
@@ -6372,6 +6390,7 @@
     "lif_depth_balancing_relays": true,
     "lif_half_step_bias": true,
     "lif_membrane_readout": true,
+    "lif_per_hop_retiming": true,
     "lif_tanneal": true,
     "lr": 0.003,
     "lr_range_max": 0.1,
@@ -6449,7 +6468,8 @@
      0.5,
      1.0
     ],
-    "wq_fast_steps_per_rate": 0
+    "wq_fast_steps_per_rate": 0,
+    "wq_two_scale_projection": true
    },
    "tuning_budget": {
     "accuracy_se": 0.009215122259681071,
@@ -6799,6 +6819,7 @@
     "lif_depth_balancing_relays": true,
     "lif_half_step_bias": true,
     "lif_membrane_readout": true,
+    "lif_per_hop_retiming": true,
     "lif_tanneal": true,
     "lr": 0.003,
     "lr_range_max": 0.1,
@@ -6881,7 +6902,8 @@
      0.5,
      1.0
     ],
-    "wq_fast_steps_per_rate": 0
+    "wq_fast_steps_per_rate": 0,
+    "wq_two_scale_projection": true
    },
    "tuning_budget": {
     "accuracy_se": 0.009215122259681071,
@@ -7882,6 +7904,7 @@
     "lif_depth_balancing_relays": true,
     "lif_half_step_bias": true,
     "lif_membrane_readout": true,
+    "lif_per_hop_retiming": true,
     "lif_tanneal": true,
     "lr": 0.003,
     "lr_range_max": 0.1,
@@ -7993,7 +8016,8 @@
      0.5,
      1.0
     ],
-    "wq_fast_steps_per_rate": 0
+    "wq_fast_steps_per_rate": 0,
+    "wq_two_scale_projection": true
    },
    "tuning_budget": {
     "accuracy_se": 0.010138838820672659,
@@ -9239,6 +9263,7 @@
     "lif_depth_balancing_relays": true,
     "lif_half_step_bias": true,
     "lif_membrane_readout": true,
+    "lif_per_hop_retiming": true,
     "lif_tanneal": true,
     "lr": 0.003,
     "lr_range_max": 0.1,
@@ -9316,7 +9341,8 @@
      0.5,
      1.0
     ],
-    "wq_fast_steps_per_rate": 0
+    "wq_fast_steps_per_rate": 0,
+    "wq_two_scale_projection": true
    },
    "tuning_budget": {
     "accuracy_se": 0.010138838820672659,
@@ -9988,6 +10014,7 @@
     "lif_depth_balancing_relays": true,
     "lif_half_step_bias": true,
     "lif_membrane_readout": true,
+    "lif_per_hop_retiming": true,
     "lif_tanneal": true,
     "lr": 0.0001,
     "lr_range_max": 0.1,
@@ -10134,7 +10161,8 @@
      0.5,
      1.0
     ],
-    "wq_fast_steps_per_rate": 0
+    "wq_fast_steps_per_rate": 0,
+    "wq_two_scale_projection": true
    },
    "tuning_budget": {
     "accuracy_se": 0.007076731463403723,
@@ -10797,6 +10825,7 @@
      "lif_depth_balancing_relays": true,
      "lif_half_step_bias": true,
      "lif_membrane_readout": true,
+     "lif_per_hop_retiming": true,
      "lif_tanneal": true,
      "wq_endpoint_recovery_steps": 16000,
      "wq_endpoint_target_floor": 0.98,
@@ -10804,7 +10833,8 @@
       0.5,
       1.0
      ],
-     "wq_fast_steps_per_rate": 0
+     "wq_fast_steps_per_rate": 0,
+     "wq_two_scale_projection": true
     },
     "sim_enables": {
      "enable_loihi_simulation": true,

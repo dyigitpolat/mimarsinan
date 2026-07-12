@@ -1,8 +1,9 @@
 """The LIF exactness-promotion knobs (lif_deployment_exactness.md §7).
 
 Registry-validated keys, default OFF; the LIF recipe turns the exact/statistical
-corrections ON (membrane readout C2, affine fold C4, depth-balancing relays C5)
-while per-hop re-timing (C3) stays a mapping-level choice.
+corrections ON: membrane readout C2, per-hop re-timing C3 (armed per R5 — the
+temporal-A6 FAIL cells at S<=8, lossless_refinement_ledger.md §2B), affine fold
+C4, depth-balancing relays C5.
 """
 
 from __future__ import annotations
@@ -19,11 +20,7 @@ KNOBS = (
     "lif_depth_balancing_relays",
 )
 
-RECIPE_ON = (
-    "lif_membrane_readout",
-    "lif_affine_fold",
-    "lif_depth_balancing_relays",
-)
+RECIPE_ON = KNOBS
 
 
 class TestRegistry:
@@ -43,7 +40,6 @@ class TestRecipeFold:
         knobs = ConversionPolicy.derive("lif").knobs
         for key in RECIPE_ON:
             assert knobs.get(key) is True, key
-        assert "lif_per_hop_retiming" not in knobs
 
     def test_non_lif_recipes_never_arm_them(self):
         for mode in ("ttfs", "ttfs_quantized", "ttfs_cycle_based"):
@@ -57,13 +53,13 @@ class TestRecipeFold:
         derive_deployment_parameters(dp)
         for key in RECIPE_ON:
             assert dp[key] is True, key
-        assert "lif_per_hop_retiming" not in dp
 
     def test_explicit_off_wins_over_the_recipe(self):
         dp = {"spiking_mode": "lif", "weight_quantization": True,
               "activation_quantization": True,
               "lif_membrane_readout": False,
               "lif_affine_fold": False,
+              "lif_per_hop_retiming": False,
               "lif_depth_balancing_relays": False}
         derive_deployment_parameters(dp)
         for key in RECIPE_ON:

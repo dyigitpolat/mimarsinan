@@ -13,7 +13,10 @@ from mimarsinan.mapping.support.bias_compensation import (
 from mimarsinan.mapping.support.per_source_scales import compute_per_source_scales
 from mimarsinan.pipelining.core.registry.trainer_factory import make_basic_trainer
 from mimarsinan.pipelining.core.steps.trainer_pipeline_step import TrainerPipelineStep
-from mimarsinan.tuning.lif_affine_fold import apply_lif_affine_fold, crater_premise_holds
+from mimarsinan.tuning.lif_affine_fold import (
+    apply_lif_affine_fold,
+    evaluate_crater_premise,
+)
 
 _CALIBRATION_BATCHES = 4
 
@@ -23,15 +26,28 @@ _NOVENA_MIN_STEPS = 8
 
 
 class LIFAffineFoldStep(TrainerPipelineStep):
-    REQUIRES = ("model",)
+    # [R2b] aq_reference_read is the premise teacher (a plain float): AQ
+    # preconditioning applies to every LIF plan, so the assembly DAG check
+    # enforces AQ-before-fold on every admitted cell.
+    REQUIRES = ("model", "aq_reference_read")
     UPDATES = ("model",)
 
     @classmethod
     def applies_to(cls, plan):
+        # [R2c] Novena cells are admitted regardless of the AQ flag — the C4
+        # affine is the only sanctioned repair for the V7 zero-reset discard
+        # and the t0_02-class fp cells never scheduled it (ledger §2D). The
+        # fold math holds without AQ grids: the estimator fits deployed
+        # counts/T against the clamp(z/theta,0,1) envelope and lands in
+        # PerceptronTransformer effective (wire) params — no AQ staircase
+        # appears anywhere in its currency.
         return (
             is_lif(plan.spiking_mode)
-            and plan.activation_quantization
             and bool(plan.config.get("lif_affine_fold", False))
+            and (
+                plan.activation_quantization
+                or str(plan.config.get("firing_mode", "Default")) == "Novena"
+            )
         )
 
     def __init__(self, pipeline):
@@ -39,6 +55,7 @@ class LIFAffineFoldStep(TrainerPipelineStep):
 
     def process(self):
         model = self.get_entry("model")
+        aq_reference = float(self.get_entry("aq_reference_read"))
         config = self.pipeline.config
         simulation_steps = int(config["simulation_steps"])
         firing_mode = str(config.get("firing_mode", "Default"))
@@ -48,6 +65,38 @@ class LIFAffineFoldStep(TrainerPipelineStep):
                 f"[LIFAffineFoldStep] Novena affine repair is gated at S >= "
                 f"{_NOVENA_MIN_STEPS} (overfits the coarse grid); "
                 f"S={simulation_steps} — skipping the fold."
+            )
+            self.update_entry("model", model, "torch_model")
+            return
+
+        self.trainer = make_basic_trainer(self.pipeline, model)
+        batches = cast(
+            "Iterable[tuple[torch.Tensor, torch.Tensor]]",
+            self.trainer.iter_validation_batches(_CALIBRATION_BATCHES),
+        )
+        device = config["device"]
+        pairs = [(x.to(device), y.to(device)) for x, y in batches]
+        cal_x = torch.cat([x for x, _ in pairs], dim=0)
+        cal_y = torch.cat([y for _, y in pairs], dim=0)
+
+        verdict = evaluate_crater_premise(model, cal_x, cal_y, aq_reference)
+        premise_witness = {
+            "deployed_read": verdict.deployed_read,
+            "aq_reference": verdict.reference_read,
+            "premise_se": verdict.standard_error,
+        }
+        if not verdict.holds:
+            # [R2a] a premise-skip is a TRUE no-op: every model mutation
+            # (half-step entry fold included) lives behind this gate.
+            print(
+                f"[LIFAffineFoldStep] deployed calibration read "
+                f"{verdict.deployed_read:.4f} >= AQ reference "
+                f"{verdict.reference_read:.4f} - SE {verdict.standard_error:.4f}: "
+                "no crater; skipping — the model leaves this step untouched."
+            )
+            self.pipeline.reporter.report(
+                "lif_affine_fold",
+                {"folded": 0, "skipped_premise": True, **premise_witness},
             )
             self.update_entry("model", model, "torch_model")
             return
@@ -65,27 +114,6 @@ class LIFAffineFoldStep(TrainerPipelineStep):
         # currency; idempotent in activation_scales.
         compute_per_source_scales(model.get_mapper_repr())
 
-        self.trainer = make_basic_trainer(self.pipeline, model)
-        batches = cast(
-            "Iterable[tuple[torch.Tensor, torch.Tensor]]",
-            self.trainer.iter_validation_batches(_CALIBRATION_BATCHES),
-        )
-        device = config["device"]
-        pairs = [(x.to(device), y.to(device)) for x, y in batches]
-        cal_x = torch.cat([x for x, _ in pairs], dim=0)
-        cal_y = torch.cat([y for _, y in pairs], dim=0)
-
-        if not crater_premise_holds(model, cal_x, cal_y):
-            print(
-                "[LIFAffineFoldStep] deployed read >= float envelope: the fold "
-                "premise does not hold; skipping (the envelope is a worse teacher)."
-            )
-            self.pipeline.reporter.report(
-                "lif_affine_fold", {"folded": 0, "skipped_premise": True},
-            )
-            self.update_entry("model", model, "torch_model")
-            return
-
         report = apply_lif_affine_fold(model, cal_x, simulation_steps)
         print(
             f"[LIFAffineFoldStep] affine folds: {report['consumer_folds']} "
@@ -99,6 +127,7 @@ class LIFAffineFoldStep(TrainerPipelineStep):
                 "consumer_folds": report["consumer_folds"],
                 "readout_folds": report["readout_folds"],
                 "skipped": dict(report["skipped"]),
+                **premise_witness,
             },
         )
         self.update_entry("model", model, "torch_model")
