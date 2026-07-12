@@ -125,7 +125,9 @@ def harvest_one(name: str, entry: dict, out_dir: Path) -> dict:
     row["hcm_accuracy"] = float(hcm[-1]) if hcm else None
     row["profile"] = {m.group(1): float(m.group(2)) for m in _PROFILE_RE.finditer(text)}
     metrics = {m.group(1): float(m.group(2)) for m in _PROFILE_METRIC_RE.finditer(text)}
-    row["pretrain_acc"] = metrics.get("Pretraining")
+    # The lossless reference is the ANN that actually deploys: for pruned runs
+    # that is the post-pruning-adaptation read, not the dense pretrain.
+    row["pretrain_acc"] = metrics.get("Pruning Adaptation", metrics.get("Pretraining"))
     row["acc_gate"] = accuracy_gate(row["pretrain_acc"])
 
     infos = list(artifacts.glob("workspace/generated/*_deployment_run/_GUI_STATE/run_info.json"))
@@ -137,7 +139,13 @@ def harvest_one(name: str, entry: dict, out_dir: Path) -> dict:
             row["wall_s"] = round(finished - started, 1)
         row["error"] = info.get("error")
     else:
-        row["status"] = "no-run-info"
+        # run_info fetch can glitch; fall back to log-derived truth.
+        row["status"] = (
+            "completed" if hcm and (exit_ := (artifacts / "exitcode")).exists()
+            and exit_.read_text().strip() == "0" else "no-run-info"
+        )
+        if row["profile"]:
+            row["wall_s"] = round(sum(row["profile"].values()), 1)
 
     exitcode = artifacts / "exitcode"
     row["exitcode"] = exitcode.read_text().strip() if exitcode.exists() else None
