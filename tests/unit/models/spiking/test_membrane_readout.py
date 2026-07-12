@@ -6,6 +6,12 @@ exact, unquantized, sign-carrying pre-activation. Realizability: the residual
 membrane is claimable ONLY for output cores whose decoded value feeds nothing
 but the network output (a host-side read); anything re-consumed on-chip keeps
 the count decode.
+
+Currency contract: the correction is a HOST-READ decode applied strictly at
+the flow's decode-to-logits boundary. The per-neuron spike-count currency —
+segment ``output_counts``, ``seg_output_spike_count`` records, per-core
+records — must stay the raw clamp counts (nonnegative integers) so parity
+gathers and cross-sim comparisons remain bit-identical readout-on vs off.
 """
 
 from __future__ import annotations
@@ -14,6 +20,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
+from mimarsinan.chip_simulation.recording.spike_recorder import compare_records
 from mimarsinan.code_generation.cpp_chip_model import SpikeSource
 from mimarsinan.mapping.ir import IRSource
 from mimarsinan.mapping.packing.hybrid_hardcore_mapping import (
@@ -171,6 +178,89 @@ class TestRealizabilityGating:
             got = flow(x)[0].to(DTYPE)
         # Raw-input passthrough: rate 0.5 * T, untouched by the readout.
         assert float(got[1]) == 0.5 * T
+
+
+def _raw_clamp_counts() -> torch.Tensor:
+    """Deployed count law for the constant-drive fixture: clamp(floor(T*w), 0, T)."""
+    return torch.clamp(
+        staircase(torch.tensor(WEIGHTS, dtype=DTYPE) * T, "<="), 0.0, float(T),
+    )
+
+
+class TestSpikeCountCurrencySeparation:
+    """The readout must never leak into the spike-count currency (the measured
+    cluster failure: negative seg_output values on the compress_spike_sources
+    output_sources gather path tripping the SANA-FE/Loihi parity gate)."""
+
+    def test_seg_output_record_is_raw_clamp_counts_when_armed(self):
+        """With the readout armed, ``seg_output_spike_count`` equals the raw
+        clamp counts (nonnegative, integer) while the logits carry the
+        membrane term."""
+        flow = make_flow(
+            _constant_drive_mapping(WEIGHTS), T=T,
+            membrane_readout=True, membrane_readout_half_step=True,
+        )
+        x = torch.ones(1, 1, dtype=torch.float32)
+        with torch.no_grad():
+            out, record = flow.forward_with_recording(x)
+
+        seg = record.segments[0]
+        want_counts = _raw_clamp_counts().numpy().astype(np.int64)
+        np.testing.assert_array_equal(seg.seg_output_spike_count, want_counts)
+        assert (seg.seg_output_spike_count >= 0).all()
+
+        want_logits = torch.tensor(WEIGHTS, dtype=DTYPE) * T - 0.5
+        assert torch.allclose(out[0].to(DTYPE), want_logits, atol=1e-6)
+
+    def test_records_bit_identical_armed_vs_off(self):
+        """The full parity gathering path (seg input/output, per-core counts)
+        is bit-identical readout-on vs readout-off."""
+        x = torch.ones(1, 1, dtype=torch.float32)
+        records = {}
+        for armed in (False, True):
+            flow = make_flow(
+                _constant_drive_mapping(WEIGHTS), T=T, membrane_readout=armed,
+            )
+            with torch.no_grad():
+                _, records[armed] = flow.forward_with_recording(x)
+        assert compare_records(records[False], records[True]) == []
+
+    def test_segment_runner_counts_untouched_correction_stashed(self):
+        """``_run_neural_segment_rate`` returns raw clamp counts even when
+        armed; the membrane term travels the side channel keyed by node id."""
+        flow = make_flow(
+            _constant_drive_mapping(WEIGHTS), T=T,
+            membrane_readout=True, membrane_readout_half_step=True,
+        )
+        batch = 3
+        train = torch.ones(T, batch, 1, dtype=torch.float64)
+        corrections: dict[int, torch.Tensor] = {}
+        with torch.no_grad():
+            counts = flow._run_neural_segment_rate(
+                flow.hybrid_mapping.stages[0],
+                input_spike_train=train,
+                readout_corrections=corrections,
+            )
+        assert set(corrections) == {0}
+        want_counts = _raw_clamp_counts()
+        want_decoded = torch.tensor(WEIGHTS, dtype=DTYPE) * T - 0.5
+        for b in range(batch):
+            assert torch.equal(counts[b].to(DTYPE), want_counts)
+            decoded = counts[b].to(DTYPE) + corrections[0][b].to(DTYPE)
+            assert torch.allclose(decoded, want_decoded, atol=1e-6)
+
+    def test_segment_runner_without_side_channel_keeps_raw_counts(self):
+        """A caller that does not opt into the decode side channel gets pure
+        counts — never a silently mutated currency."""
+        flow = make_flow(
+            _constant_drive_mapping(WEIGHTS), T=T, membrane_readout=True,
+        )
+        train = torch.ones(T, 1, 1, dtype=torch.float64)
+        with torch.no_grad():
+            counts = flow._run_neural_segment_rate(
+                flow.hybrid_mapping.stages[0], input_spike_train=train,
+            )
+        assert torch.equal(counts[0].to(DTYPE), _raw_clamp_counts())
 
 
 class TestTheorem0OnExecutorState:

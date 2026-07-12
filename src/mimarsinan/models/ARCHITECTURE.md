@@ -23,7 +23,7 @@ pipeline's `ModelRegistry` so configs can instantiate models by `model_type` id.
 | `nn/` | NN building blocks: custom autograd activations (`LIFActivation`, TTFS nodes, STE input quantizers), composable activation decorators, standalone layers (`TransformedActivation`, `norm_affine_params`), and shared LIF/TTFS cycle kernels. |
 | `perceptron_mixer/` | Perceptron-based architectures: `Perceptron`, `PerceptronFlow`, `SimpleMLP` (mapper-repr example), and the skip-connection mixer. |
 | `preprocessing/` | Empty placeholder package (legacy `InputCQ` removed; input encoding now lives in IR encoding layers). |
-| `spiking/` | The deployable spiking simulator: `SpikingHybridCoreFlow` (`hybrid/` stage-IO/LIF/rate/TTFS mixins plus the [C2] `membrane_readout` charge decode for final-only LIF output cores), per-cycle neuron policies, TTFS wire-semantics kernel pairs (torch+numpy twins), spiking config constants, and differentiable spike-train training forwards. |
+| `spiking/` | The deployable spiking simulator: `SpikingHybridCoreFlow` (`hybrid/` stage-IO/LIF/rate/TTFS mixins plus the [C2] `membrane_readout` charge decode for final-only LIF output cores, applied only at the decode-to-logits boundary — spike-count records stay raw), per-cycle neuron policies, TTFS wire-semantics kernel pairs (torch+numpy twins), spiking config constants, and differentiable spike-train training forwards. |
 
 ## Dependencies
 - **`mapping`** — `HybridHardCoreMapping`/`HybridStage` and `IRSource` consumed by the

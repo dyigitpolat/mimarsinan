@@ -13,7 +13,7 @@ from mimarsinan.mapping.packing.hybrid_hardcore_mapping import HybridStage
 from mimarsinan.spiking.segment_boundary import encode_segment_input
 from mimarsinan.models.spiking.cycle_policy import cycle_neuron_policy
 from mimarsinan.models.spiking.hybrid.host import HybridFlowHost
-from mimarsinan.models.spiking.hybrid.membrane_readout import apply_membrane_readout
+from mimarsinan.models.spiking.hybrid.membrane_readout import stash_membrane_readout_correction
 from mimarsinan.models.spiking.spiking_config import COMPUTE_DTYPE
 
 
@@ -26,8 +26,11 @@ class HybridLifStepMixin(HybridFlowHost):
         *,
         input_spike_train: torch.Tensor,
         recorder_seg: SegmentSpikeRecord | None = None,
+        readout_corrections: Dict[int, torch.Tensor] | None = None,
     ) -> torch.Tensor:
-        """Rate-coded segment: cycle loop over cores; returns spike counts ``(B, out_dim)``."""
+        """Rate-coded segment: returns raw clamp spike counts ``(B, out_dim)`` —
+        the currency parity gathers read. The [C2] membrane term goes into
+        ``readout_corrections`` (never the counts) for the logits decode."""
         mapping = stage.hard_core_mapping
         assert mapping is not None
 
@@ -217,7 +220,7 @@ class HybridLifStepMixin(HybridFlowHost):
                     continue
                 output_counts[:, d0:d1] += buffers[int(sp.src_core)][:, int(sp.src_start):int(sp.src_end)]
 
-        apply_membrane_readout(
+        stash_membrane_readout_correction(
             self,
             seg=seg,
             stage=stage,
@@ -226,6 +229,7 @@ class HybridLifStepMixin(HybridFlowHost):
             neuron_states=neuron_states,
             thresholds=thresholds,
             single_spike=single_spike,
+            readout_corrections=readout_corrections,
         )
 
         if recorder_seg is not None:

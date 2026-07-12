@@ -23,6 +23,9 @@ from mimarsinan.chip_simulation.spiking_semantics import (
 )
 from mimarsinan.mapping.ir import IRSource
 from mimarsinan.models.spiking.hybrid.host import HybridFlowHost
+from mimarsinan.models.spiking.hybrid.membrane_readout import (
+    apply_membrane_corrections_to_logits,
+)
 from mimarsinan.models.spiking.spiking_config import COMPUTE_DTYPE
 from mimarsinan.spiking.segment_boundary import (
     boundary_normalization_scales,
@@ -45,6 +48,9 @@ class HybridRateForwardMixin(HybridFlowHost):
         x_compute = x.to(COMPUTE_DTYPE)
         state_buffer: Dict[int, torch.Tensor] = {-2: x_compute}
         state_buffer_spikes: Dict[int, torch.Tensor] = {}
+        # [C2] host-read decode side channel: per-node membrane terms for the
+        # final logits only; the count currency below never carries them.
+        readout_corrections: Dict[int, torch.Tensor] = {}
 
         remaining = dict(self._build_consumer_counts())
         node_output_shifts = getattr(self.hybrid_mapping, "node_output_shifts", None)
@@ -108,7 +114,10 @@ class HybridRateForwardMixin(HybridFlowHost):
                 )
 
             counts = self._run_neural_segment_rate(
-                stage, input_spike_train=spike_train, recorder_seg=recorder_seg,
+                stage,
+                input_spike_train=spike_train,
+                recorder_seg=recorder_seg,
+                readout_corrections=readout_corrections,
             )
             seg_output_rates = decode_segment_output_torch(counts, T)
             self._store_segment_output(
@@ -196,4 +205,7 @@ class HybridRateForwardMixin(HybridFlowHost):
         )
 
         final = self._gather_final_output(state_buffer, x_compute, batch_size, device)
-        return final.to(torch.float32) * float(T)
+        logits = final.to(torch.float32) * float(T)
+        return apply_membrane_corrections_to_logits(
+            logits, readout_corrections, self.hybrid_mapping.output_sources,
+        )

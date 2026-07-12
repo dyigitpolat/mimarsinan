@@ -97,6 +97,7 @@ if TYPE_CHECKING:
             *,
             input_spike_train: torch.Tensor,
             recorder_seg: SegmentSpikeRecord | None = None,
+            readout_corrections: Dict[int, torch.Tensor] | None = None,
         ) -> torch.Tensor: ...
 
         def _encode_segment_input(
