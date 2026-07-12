@@ -203,7 +203,7 @@ class TestTheHeadlineCase:
 
 
 class TestEveryTierConfigValidatesCleanThroughBothDoors:
-    """All 61 tier configs + the starter carry only in-domain values."""
+    """All 48 tier configs + the starter carry only in-domain values."""
 
     @pytest.mark.parametrize(
         "path", TIER_CONFIG_PATHS, ids=lambda p: os.path.basename(p)
@@ -227,8 +227,9 @@ class TestEveryTierConfigValidatesCleanThroughBothDoors:
         resolution = resolve_draft(document)
         assert [e for e in resolution.errors if e["rule_id"] == "field_domain"] == []
 
-    def test_the_tier_matrix_is_the_expected_61(self):
-        assert len(TIER_CONFIG_PATHS) == 61
+    def test_the_tier_matrix_is_the_expected_48(self):
+        # 48 after the 2026-07-12 casc removal from the tier-0 family.
+        assert len(TIER_CONFIG_PATHS) == 48
 
     def test_starter_is_clean_through_both_doors(self):
         document = load_starter_baseline()

@@ -101,13 +101,13 @@ def _quant_axis(row):
 # per-mode EXTRA so a crater draw's intermediate recovery cannot starve the
 # final WQ floor: the mode conversion endpoint and the AQ endpoint both fund
 # from the recipe's endpoint_recovery_steps (conversion_policy.py — lif 1560
-# at the LIF and AQ endpoints; casc 600 at the TTFS-cycle and AQ endpoints;
-# sync 600 at the AQ endpoint). Freed-ladder bonuses on stalled rungs may
-# shave the WQ floor by at most one planned ladder (bounded, deterministic).
+# at the LIF and AQ endpoints; sync 600 at the AQ endpoint). Freed-ladder
+# bonuses on stalled rungs may shave the WQ floor by at most one planned
+# ladder (bounded, deterministic). The casc extra (2x600) left with the
+# 2026-07-12 casc removal from the tier-0 family.
 ENDPOINT_FLOOR_STEPS_BASE = 16000
 ENDPOINT_MODE_EXTRA_STEPS = {
     "lif": 2 * 600,
-    "casc": 2 * 600,
     "sync": 600,
 }
 
@@ -168,17 +168,11 @@ T0 = [
          tags=["pruned10"],
          note="W3c respec 2026-07-06: pruning 0.5 -> 0.10 (user-directed; 50% is "
               "too strong for this cell)."),
-    dict(n=16, mode="casc", quant="wq", wb=5, s=8, vehicle="mmixcore", encoding="offload",
-         scheduling=True, has_bias=False, tags=["offload", "sched", "nobias"],
-         epochs=8, note=MIXER_BN_NOTE),
-    dict(n=17, mode="casc", quant="wq", wb=5, s=32, vehicle="lenet5", tags=["wall_risk"]),
-    dict(n=18, mode="casc", quant="wq", wb=5, s=4, vehicle="deepcnn", depth=4, pruned=0.5,
-         tags=["pruned", "known_collapse_candidate"]),
-    # W2: plain d16 is recipe-unreachable (5/5 runs at chance); residual is the
-    # trainable deep backbone (USER DECISION 2026-07-06: residual, depth kept).
-    dict(n=19, mode="casc", quant="wq", wb=4, s=16, vehicle="deepmlp", depth=16,
-         residual=True, tags=["wall_risk", "known_collapse_candidate", "residual"]),
-    dict(n=20, mode="casc", quant="wq", wb=5, s=4, vehicle="simplemlp"),
+    # casc removed from tier-0 2026-07-12 (user directive): mode marked
+    # not-fully-supported pending the cascaded-gap research program; casc
+    # coverage continues in tier1/2 and the advisory framework warns on
+    # selection. The five casc rows (t0_16-t0_20) are gone; survivors keep
+    # their load-bearing names (no renumbering).
     dict(n=21, mode="sync", quant="wq", wb=5, s=8, vehicle="mmixcore", pruned=0.10,
          tags=["pruned10"], epochs=8,
          note="W3c respec 2026-07-06: pruning 0.5 -> 0.10 (user-directed; 50% is "
@@ -189,9 +183,14 @@ T0 = [
     dict(n=25, mode="sync", quant="wq", wb=5, s=32, vehicle="simplemlp"),
 ]
 
-# Tier-0.1: 25 controlled diagnostics derived from tier-0's remaining failure
+# Tier-0.1: 17 controlled diagnostics derived from tier-0's remaining failure
 # modes. Every cell is a MINIMAL PAIR of a named tier-0 anchor (<=2 axes moved,
 # enforced by test) and carries a falsifiable hypothesis; failures are the data.
+# casc removed from tier-0 2026-07-12 (user directive): mode marked
+# not-fully-supported pending the cascaded-gap research program; casc coverage
+# continues in tier1/2 and the advisory framework warns on selection. The casc
+# anchors left with their clones — t01_03 (A), t01_10/t01_11 (B), the whole C
+# cascade-structure family (t01_12-t01_15), and t01_18 (D); no renumbering.
 T0_1 = [
     # A - install-resolution law calibration (A6, theory 5v): sweep S per mode
     # on the L=9 mixer chain to make the resolution x chain-depth boundary visible.
@@ -207,13 +206,6 @@ T0_1 = [
          hypothesis="Deployed accuracy is monotone along the T-healing curve "
                     "(NF 0.90@T16 frozen-weights): S=16 lands at or above the S=8 "
                     "read, isolating the temporal kernel from the envelope."),
-    dict(n=3, family="A", mode="casc", quant="wq", wb=5, s=4, vehicle="mmixcore",
-         encoding="offload", scheduling=True, has_bias=False,
-         tags=["offload", "sched", "nobias"], epochs=8, note=MIXER_BN_NOTE,
-         anchor="t0_16_casc_mmixcore_wq_s8_offload_sched_nobias", axes=["S: 8 -> 4"],
-         hypothesis="Cascaded per-hop attenuation GROWS with S (genuine forward "
-                    "0.57@S8 -> 0.31@S64 frozen-weights): at S=4 the conversion gap "
-                    "shrinks and deployed exceeds the anchor's ~0.90 ceiling."),
     dict(n=4, family="A", mode="sync", quant="wq", wb=5, s=16, vehicle="mmixcore",
          pruned=0.10, tags=["pruned10"], epochs=8, note=MIXER_BN_NOTE,
          anchor="t0_21_sync_mmixcore_wq_s8_pruned10", axes=["S: 8 -> 16"],
@@ -260,54 +252,7 @@ T0_1 = [
          hypothesis="Replication clone of t0_21 post-M1 (the B3 diagnostic "
                     "showed the sync AQ crater unchanged by e4); reads "
                     "calibrate the sync mixer's draw variance."),
-    dict(n=10, family="B", mode="casc", quant="wq", wb=5, s=8, vehicle="mmixcore",
-         encoding="offload", scheduling=True, has_bias=False, epochs=8,
-         tags=["offload", "sched", "nobias", "e4"], wall_min=10,
-         anchor="t0_16_casc_mmixcore_wq_s8_offload_sched_nobias",
-         axes=[],
-         note="M1 respec 2026-07-07: the anchor was lifted to e4 (evidence "
-              "t01_07); now a replication clone. " + MIXER_BN_NOTE,
-         hypothesis="Replication clone of t0_16 post-M1 (the B4 diagnostic "
-                    "showed e4 arms the retention gate against the casc "
-                    "conversion crater); reads calibrate casc draw variance."),
-    dict(n=11, family="B", mode="casc", quant="wq", wb=4, s=16, vehicle="deepmlp",
-         depth=16, residual=True, epochs=4, tags=["residual", "e4"], wall_min=12,
-         anchor="t0_19_casc_deepmlp_d16_wq_s16_residual",
-         axes=["training_epochs: 2 -> 4"],
-         hypothesis="t0_19 is budget/envelope-starved (float 0.973, deployed 0.942): "
-                    "4 epochs of pretrain buy the envelope and the frontier ladder "
-                    "converts it to a pass."),
-    # C - cascade structure isolation: which axis of t0_16/t0_18/t0_19 carries
-    # the cascade gap - the tag stack, bias axons, depth, or boundaries?
-    dict(n=12, family="C", mode="casc", quant="wq", wb=5, s=8, vehicle="mmixcore",
-         epochs=8, note=MIXER_BN_NOTE,
-         anchor="t0_16_casc_mmixcore_wq_s8_offload_sched_nobias",
-         axes=["tag stack: offload+sched+nobias -> plain"],
-         hypothesis="t0_16's conversion gap survives the removal of "
-                    "offload+sched+nobias: the gap is intrinsic to casc x L=9 "
-                    "(deployed stays ~0.90), not tag-induced."),
-    dict(n=13, family="C", mode="casc", quant="wq", wb=5, s=8, vehicle="mmixcore",
-         has_bias=False, tags=["nobias"], epochs=8, note=MIXER_BN_NOTE,
-         anchor="t0_16_casc_mmixcore_wq_s8_offload_sched_nobias",
-         axes=["tag stack: offload+sched+nobias -> nobias only"],
-         hypothesis="Bias-axon removal alone does not reproduce the anchor's gap: "
-                    "this cell reads within noise of the plain clone; a materially "
-                    "lower read isolates nobias as the load-bearing tag."),
-    dict(n=14, family="C", mode="casc", quant="wq", wb=4, s=16, vehicle="deepmlp",
-         depth=8, residual=True, tags=["residual"],
-         anchor="t0_19_casc_deepmlp_d16_wq_s16_residual", axes=["depth: 16 -> 8"],
-         hypothesis="The boundary law is linear (~0.3-0.5 pp per boundary): halving "
-                    "t0_19's depth to d8 (~half the seams) plus the lighter training "
-                    "bulk yields a pass."),
-    dict(n=15, family="C", mode="casc", quant="wq", wb=5, s=4, vehicle="deepcnn",
-         depth=8, scheduling=True, tags=["sched"],
-         anchor="t0_18_casc_deepcnn_d4_wq_s4_pruned",
-         axes=["depth: 4 -> 8 (sched on: the W2-proven d8 packing prerequisite)",
-               "pruning: 0.5 -> dense"],
-         hypothesis="Conv cascades carry no intra-segment compounding (segment depth "
-                    "0): doubling t0_18's depth to d8 unpruned stays green - the "
-                    "depth cost is boundary-linear, not exponential."),
-    # D - wall / training-ceiling decomposition: the three wall cells' time is
+    # D - wall / training-ceiling decomposition: the wall cells' time is
     # load-bearing training scaling with S and depth; map the passable frontier.
     dict(n=16, family="D", mode="lif", quant="wq", wb=4, s=8, vehicle="deepcnn",
          depth=8, scheduling=True, tags=["sched"],
@@ -322,11 +267,6 @@ T0_1 = [
          hypothesis="Analytic-TTFS deployment is S-invariant (SCM bit-identical "
                     "across S): at S=16 accuracy stays 1.00 while the training and "
                     "sim walls shrink - wall scales with S, semantics do not."),
-    dict(n=18, family="D", mode="casc", quant="wq", wb=5, s=16, vehicle="lenet5",
-         wall_min=10,
-         anchor="t0_17_casc_lenet5_wq_s32", axes=["S: 32 -> 16"],
-         hypothesis="t0_17's wall scales with S: at S=16 the artifact wall fits "
-                    "300 s and accuracy holds >= 0.97."),
     dict(n=19, family="D", mode="lif", quant="wq", wb=4, s=16, vehicle="deepcnn",
          depth=6, scheduling=True, tags=["sched"],
          anchor="t0_03_lif_deepcnn_d8_wq_s16_sched", axes=["depth: 8 -> 6"],
@@ -575,6 +515,13 @@ M4_ARMING_NOTE = (
     "per-channel spread is small (landed 96c74e42)."
 )
 
+CASC_REMOVAL_NOTE = (
+    "casc removed from tier-0 2026-07-12 (user directive): mode marked "
+    "not-fully-supported pending the cascaded-gap research program; casc "
+    "coverage continues in tier1/2 and the advisory framework warns on "
+    "selection."
+)
+
 COVERAGE_NOTES = {
     0: [
         "Quantization axis is RUNTIME truth (SSOT: config_schema/"
@@ -586,8 +533,8 @@ COVERAGE_NOTES = {
         "(weight_quantization=false + weight_bits ran as de-facto float; X4 "
         "passed those forms) -> respecced to real WQ deployments.",
         "W3c respec 2026-07-06: t0_15/t0_21 pruning 0.5 -> 0.10 (user-directed). "
-        "t0_02/t0_09/t0_18 stay at 0.5: they pass and keep the heavy-pruning "
-        "stressor coverage.",
+        "t0_02/t0_09 stay at 0.5: they pass and keep the heavy-pruning "
+        "stressor coverage (t0_18 left with the 2026-07-12 casc removal).",
         "Sim-role respec 2026-07-07 (user-directed): simulators are parity "
         "probes — nevresim max_simulation_samples defaults to 25 (decision "
         "parity), SANA-FE/Loihi stay at 1; the ACCURACY verdict is the SCM "
@@ -613,7 +560,7 @@ COVERAGE_NOTES = {
         "are STEP-denominated — endpoint_floor_steps is the RUN-total step "
         "budget shared by armed endpoint stages (endpoint_steps ledger), "
         "sized 16000 (the validated full floor, t01_23) plus the mode's "
-        "intermediate-endpoint recipe budgets (lif 2x1560, casc 2x600, sync "
+        "intermediate-endpoint recipe budgets (lif 2x1560, sync "
         "600). Wall-seconds budgets are gone: identical configs train "
         "identical step counts on any hardware (same config + same seed => "
         "same step trajectory, modulo GPU nondeterminism); wall time is a "
@@ -633,6 +580,7 @@ COVERAGE_NOTES = {
         "replaces the flat cap and step budgets self-limit; the "
         "endpoint_floor_steps ledger budgets stay.",
         M4_ARMING_NOTE,
+        CASC_REMOVAL_NOTE,
     ],
     "0_1": [
         "Tier-0.1 (2026-07-07, user-directed): a diagnostic matrix of controlled "
@@ -640,9 +588,10 @@ COVERAGE_NOTES = {
         "A1-A6, 6b). Every cell moves <= 2 axes off a named tier-0 anchor and "
         "carries a falsifiable hypothesis; the wave's purpose is insight - "
         "failures are the data, not defects.",
-        "Families: A install-resolution law (6), B pretrain envelope e4 (5), "
-        "C cascade structure isolation (4), D wall/training decomposition (4), "
-        "E WQ-bit gap (3), F floor mechanics + green control (3).",
+        "Families: A install-resolution law (5), B pretrain envelope e4 (3), "
+        "D wall/training decomposition (3), E WQ-bit gap (3), F floor "
+        "mechanics + green control (3). The C cascade-structure family left "
+        "whole with the 2026-07-12 casc removal.",
         "Acceptance bar unchanged from tier-0: >= 0.97 primary deployed (N=100 "
         "pinned; t01_17 inherits the t0_08 sim-sample respec), <= 300 s artifact "
         "wall with all simulators excluded; e4 cells account their extra pretrain "
@@ -652,7 +601,7 @@ COVERAGE_NOTES = {
         "verdict is the SCM identity read.",
         "M1 mixer-e4 respec 2026-07-07 (user-mandated): every mmixcore cell "
         "trains 4 epochs, matching the lifted tier-0 anchors; the B-family "
-        "mixer diagnostics (t01_07-t01_10) are replication clones now.",
+        "mixer diagnostics (t01_07-t01_09) are replication clones now.",
         "Reproducibility respec 2026-07-07 (user-directed): step-denominated "
         "endpoint budgets exactly as tier-0's (endpoint_floor_steps = 16000 "
         "+ mode extra; wall-seconds budgets gone). The F-family 600 s "
@@ -670,6 +619,7 @@ COVERAGE_NOTES = {
         "removed; the C1 convergence-stop (landed 91eacc01) makes step "
         "budgets self-limiting under the recipe's 16k ceiling.",
         M4_ARMING_NOTE,
+        CASC_REMOVAL_NOTE,
     ],
     1: [M4_ARMING_NOTE],
     2: [M4_ARMING_NOTE],

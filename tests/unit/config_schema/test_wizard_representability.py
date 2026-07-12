@@ -37,7 +37,7 @@ def _load(path: str) -> dict:
 
 
 def test_the_tier_matrix_is_present() -> None:
-    assert len(_CONFIG_PATHS) >= 61, "tier configs missing; representability undefined"
+    assert len(_CONFIG_PATHS) >= 48, "tier configs missing; representability undefined"
 
 
 @pytest.mark.parametrize("path", _CONFIG_PATHS, ids=_config_id)

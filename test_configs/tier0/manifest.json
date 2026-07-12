@@ -315,115 +315,6 @@
       "note": "W3c respec 2026-07-06: pruning 0.5 -> 0.10 (user-directed; 50% is too strong for this cell)."
     },
     {
-      "name": "t0_16_casc_mmixcore_wq_s8_offload_sched_nobias",
-      "config": "t0_16_casc_mmixcore_wq_s8_offload_sched_nobias.json",
-      "model_type": "mlp_mixer_core",
-      "cell": {
-        "firing": "ttfs_cycle_based",
-        "sync": "cascaded",
-        "quantization": "wq_aq",
-        "S": "8",
-        "depth": "any",
-        "vehicle": "mlp_mixer_core",
-        "dataset": "mnist",
-        "regime": "from_scratch",
-        "pruning": "dense",
-        "encoding_placement": "offload"
-      },
-      "tags": [
-        "offload",
-        "sched",
-        "nobias"
-      ],
-      "expected_wall_min": 6,
-      "note": "BN-mixer respec 2026-07-12, probe env_probe_bn_fc128_e8 (user-authorized): every mmixcore cell runs normalization=batch, fc_w_1/fc_w_2 64 -> 128, training_epochs 8 \u2014 supersedes the M1 mixer-e4 respec and the ttfsq e2 revert (the BN+width envelope is a different regime; the e4/e2 evidence does not carry over). Measured basis: envelope probes saturate 0.954-0.981 without BN+width (fc64 e4 0.970; fc128_c48 e12 0.9785; fc192 e8 0.9805) vs BN+fc128 e8 = 0.982."
-    },
-    {
-      "name": "t0_17_casc_lenet5_wq_s32",
-      "config": "t0_17_casc_lenet5_wq_s32.json",
-      "model_type": "lenet5",
-      "cell": {
-        "firing": "ttfs_cycle_based",
-        "sync": "cascaded",
-        "quantization": "wq_aq",
-        "S": "32",
-        "depth": "any",
-        "vehicle": "lenet5",
-        "dataset": "mnist",
-        "regime": "from_scratch",
-        "pruning": "dense",
-        "encoding_placement": "subsume"
-      },
-      "tags": [
-        "wall_risk"
-      ],
-      "expected_wall_min": 6
-    },
-    {
-      "name": "t0_18_casc_deepcnn_d4_wq_s4_pruned",
-      "config": "t0_18_casc_deepcnn_d4_wq_s4_pruned.json",
-      "model_type": "deep_cnn",
-      "cell": {
-        "firing": "ttfs_cycle_based",
-        "sync": "cascaded",
-        "quantization": "wq_aq",
-        "S": "4",
-        "depth": "4",
-        "vehicle": "deep_cnn",
-        "dataset": "mnist",
-        "regime": "from_scratch",
-        "pruning": "pruned",
-        "encoding_placement": "subsume"
-      },
-      "tags": [
-        "pruned",
-        "known_collapse_candidate"
-      ],
-      "expected_wall_min": 12
-    },
-    {
-      "name": "t0_19_casc_deepmlp_d16_wq_s16_residual",
-      "config": "t0_19_casc_deepmlp_d16_wq_s16_residual.json",
-      "model_type": "deep_mlp",
-      "cell": {
-        "firing": "ttfs_cycle_based",
-        "sync": "cascaded",
-        "quantization": "wq_aq",
-        "S": "16",
-        "depth": "16",
-        "vehicle": "deep_mlp",
-        "dataset": "mnist",
-        "regime": "from_scratch",
-        "pruning": "dense",
-        "encoding_placement": "subsume"
-      },
-      "tags": [
-        "wall_risk",
-        "known_collapse_candidate",
-        "residual"
-      ],
-      "expected_wall_min": 6
-    },
-    {
-      "name": "t0_20_casc_simplemlp_wq_s4",
-      "config": "t0_20_casc_simplemlp_wq_s4.json",
-      "model_type": "simple_mlp",
-      "cell": {
-        "firing": "ttfs_cycle_based",
-        "sync": "cascaded",
-        "quantization": "wq_aq",
-        "S": "4",
-        "depth": "any",
-        "vehicle": "deep_mlp",
-        "dataset": "mnist",
-        "regime": "from_scratch",
-        "pruning": "dense",
-        "encoding_placement": "subsume"
-      },
-      "tags": [],
-      "expected_wall_min": 6
-    },
-    {
       "name": "t0_21_sync_mmixcore_wq_s8_pruned10",
       "config": "t0_21_sync_mmixcore_wq_s8_pruned10.json",
       "model_type": "mlp_mixer_core",
@@ -527,14 +418,15 @@
   "coverage_notes": [
     "Quantization axis is RUNTIME truth (SSOT: config_schema/deployment_derivation.py): activation quantization is derived from the mode (ON for lif/casc/sync/ttfsq, OFF for analytical ttfs); configs never pin activation_quantization. Names use wq (bits-quantized) or fp (float/vanilla) only.",
     "W3c respec 2026-07-06: t0_04/t0_07 were the fictional aq class (weight_quantization=false + weight_bits ran as de-facto float; X4 passed those forms) -> respecced to real WQ deployments.",
-    "W3c respec 2026-07-06: t0_15/t0_21 pruning 0.5 -> 0.10 (user-directed). t0_02/t0_09/t0_18 stay at 0.5: they pass and keep the heavy-pruning stressor coverage.",
+    "W3c respec 2026-07-06: t0_15/t0_21 pruning 0.5 -> 0.10 (user-directed). t0_02/t0_09 stay at 0.5: they pass and keep the heavy-pruning stressor coverage (t0_18 left with the 2026-07-12 casc removal).",
     "Sim-role respec 2026-07-07 (user-directed): simulators are parity probes \u2014 nevresim max_simulation_samples defaults to 25 (decision parity), SANA-FE/Loihi stay at 1; the ACCURACY verdict is the SCM identity read (full test set, torch<->deployed parity-certified). Historical N=100 simulator accuracy columns are not comparable to the SCM-based accuracy column.",
     "M1 mixer-e4 respec 2026-07-07 (user-mandated): every mmixcore cell trains 4 pretrain epochs (evidence t01_07: e4 + full floor passed 0.9712 dedicated \u2014 envelope and training budget jointly binding on the mixer column).",
     "FAST respec 2026-07-08 (user-directed, <5 min clean / 5-10 min soft / >15 min invalid): lif endpoint cap 1560 -> 600 (convergence-grounded; healthy reaches 250-930 steps), non-mixer WQ endpoint cap 2000, draws only for the sync mixer family (best-of-2; the one family whose draw distribution crosses the bar), target-reach confirmation + fresh-run ledger reset.",
     "M2 conversion-draws 2026-07-07 (user-approved): mmixcore cells run best-of-3 D-hat-selected conversion draws on the variance-carrying stages (LIF/TTFS-cycle/AQ), torch RNG streams seed+k \u2014 the search is deterministic given the config seed and selection can only improve D-hat (each draw independently keep-best/entry-floored).",
-    "Reproducibility respec 2026-07-07 (user-directed): training budgets are STEP-denominated \u2014 endpoint_floor_steps is the RUN-total step budget shared by armed endpoint stages (endpoint_steps ledger), sized 16000 (the validated full floor, t01_23) plus the mode's intermediate-endpoint recipe budgets (lif 2x1560, casc 2x600, sync 600). Wall-seconds budgets are gone: identical configs train identical step counts on any hardware (same config + same seed => same step trajectory, modulo GPU nondeterminism); wall time is a pure measurement judged per hardware context at harvest.",
+    "Reproducibility respec 2026-07-07 (user-directed): training budgets are STEP-denominated \u2014 endpoint_floor_steps is the RUN-total step budget shared by armed endpoint stages (endpoint_steps ledger), sized 16000 (the validated full floor, t01_23) plus the mode's intermediate-endpoint recipe budgets (lif 2x1560, sync 600). Wall-seconds budgets are gone: identical configs train identical step counts on any hardware (same config + same seed => same step trajectory, modulo GPU nondeterminism); wall time is a pure measurement judged per hardware context at harvest.",
     "BN-mixer respec 2026-07-12 (user-authorized, probe env_probe_bn_fc128_e8): every mmixcore cell runs the BN+width envelope \u2014 normalization=batch, fc_w_1/fc_w_2 64 -> 128, training_epochs 8 \u2014 superseding the M1 mixer-e4 respec AND the ttfsq e2 revert (the BN+width envelope is a different regime; the e4/e2 evidence does not carry over). Measured basis: envelope probes saturate 0.954-0.981 without BN+width (fc64 e4 0.970; fc128_c48 e12 0.9785; fc192 e8 0.9805) vs BN+fc128 e8 = 0.982.",
     "WQ-cap deletion 2026-07-12 (synthesis Phase-4): the FAST respec's flat per-cell wq_endpoint_recovery_steps=2000 caps are removed \u2014 the C1 convergence-stop (landed 91eacc01) patience-stops the WQ endpoint, so the recipe's 16k ceiling with convergence stop replaces the flat cap and step budgets self-limit; the endpoint_floor_steps ledger budgets stay.",
-    "M4 arming 2026-07-12: scale_migration=true on every WQ cell \u2014 the step is exact ReLU-homogeneous rescaling, a no-op (s -> 1) when per-channel spread is small (landed 96c74e42)."
+    "M4 arming 2026-07-12: scale_migration=true on every WQ cell \u2014 the step is exact ReLU-homogeneous rescaling, a no-op (s -> 1) when per-channel spread is small (landed 96c74e42).",
+    "casc removed from tier-0 2026-07-12 (user directive): mode marked not-fully-supported pending the cascaded-gap research program; casc coverage continues in tier1/2 and the advisory framework warns on selection."
   ]
 }

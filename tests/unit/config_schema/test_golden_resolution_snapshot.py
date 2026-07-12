@@ -224,7 +224,8 @@ def snapshot() -> dict:
 
 class TestGoldenResolutionSnapshot:
     def test_the_tier_matrix_is_present(self):
-        assert len(_CONFIG_PATHS) == 61
+        # 48 after the 2026-07-12 casc removal from the tier-0 family.
+        assert len(_CONFIG_PATHS) == 48
 
     def test_snapshot_covers_exactly_the_tier_matrix(self, snapshot):
         assert set(snapshot["configs"]) == {_config_id(p) for p in _CONFIG_PATHS}, (

@@ -70,8 +70,8 @@ class TestGeneratorIsTheSSOT:
 
 class TestTierShapes:
     def test_run_counts(self):
-        assert len(_tier_configs(0)) == 25
-        assert len(_tier_configs("0_1")) == 25
+        assert len(_tier_configs(0)) == 20
+        assert len(_tier_configs("0_1")) == 17
         assert len(_tier_configs(1)) == 8
         assert len(_tier_configs(2)) == 3
 
@@ -81,6 +81,63 @@ class TestTierShapes:
             names = {r["config"] for r in manifest["runs"]}
             files = {p.name for p in _tier_configs(tier)}
             assert names == files
+
+
+# casc removed from tier-0 2026-07-12 (user directive): mode marked
+# not-fully-supported pending the cascaded-gap research program; casc coverage
+# continues in tier1/2 and the advisory framework warns on selection.
+REMOVED_TIER0_CASC_CELLS = (
+    "t0_16_casc_mmixcore_wq_s8_offload_sched_nobias",
+    "t0_17_casc_lenet5_wq_s32",
+    "t0_18_casc_deepcnn_d4_wq_s4_pruned",
+    "t0_19_casc_deepmlp_d16_wq_s16_residual",
+    "t0_20_casc_simplemlp_wq_s4",
+)
+REMOVED_TIER01_CASC_CELLS = (
+    "t01_03_casc_mmixcore_wq_s4_offload_sched_nobias",
+    "t01_10_casc_mmixcore_wq_s8_offload_sched_nobias_e4",
+    "t01_11_casc_deepmlp_d16_wq_s16_residual_e4",
+    "t01_12_casc_mmixcore_wq_s8",
+    "t01_13_casc_mmixcore_wq_s8_nobias",
+    "t01_14_casc_deepmlp_d8_wq_s16_residual",
+    "t01_15_casc_deepcnn_d8_wq_s4_sched",
+    "t01_18_casc_lenet5_wq_s16",
+)
+
+
+class TestCascRemovedFromTier0Family:
+    """casc removed from tier-0 2026-07-12 (user directive): the tier-0 family
+    (tier0 + tier0_1) carries no cascaded-schedule cell; tier1/2 casc cells
+    stay for coverage."""
+
+    def _is_casc(self, dp):
+        from mimarsinan.chip_simulation.spiking_semantics import is_cascaded_ttfs
+
+        return is_cascaded_ttfs(dp["spiking_mode"], dp.get("ttfs_cycle_schedule"))
+
+    def test_no_tier0_family_cell_runs_the_cascaded_schedule(self):
+        for tier in (0, "0_1"):
+            for path in _tier_configs(tier):
+                dp = json.loads(path.read_text())["deployment_parameters"]
+                assert not self._is_casc(dp), path.name
+
+    def test_removed_casc_cells_are_gone(self):
+        for name in REMOVED_TIER0_CASC_CELLS:
+            assert not (TEST_CONFIGS / "tier0" / f"{name}.json").exists(), name
+        for name in REMOVED_TIER01_CASC_CELLS:
+            assert not (TEST_CONFIGS / "tier0_1" / f"{name}.json").exists(), name
+
+    def test_casc_coverage_survives_in_tier1_and_tier2(self):
+        for tier in (1, 2):
+            assert any(
+                self._is_casc(json.loads(path.read_text())["deployment_parameters"])
+                for path in _tier_configs(tier)
+            ), tier
+
+    def test_both_manifests_carry_the_dated_removal_note(self):
+        for tier in (0, "0_1"):
+            notes = " ".join(_manifest(tier)["coverage_notes"])
+            assert "casc removed from tier-0 2026-07-12" in notes, tier
 
 
 class TestConfigValidity:
@@ -182,22 +239,25 @@ class TestTier0PairwiseCoverage:
     def _cells(self):
         return [r["cell"] for r in _manifest(0)["runs"]]
 
+    # casc removed from tier-0 2026-07-12 (user directive): the mode grids
+    # below cover the four supported tier-0 modes; casc stays in tier1/2.
+    TIER0_MODES = [("lif", "none"), ("ttfs", "none"), ("ttfs_quantized", "none"),
+                   ("ttfs_cycle_based", "synchronized")]
+
     def test_firing_by_vehicle_full_grid(self):
         runs = _manifest(0)["runs"]
         pairs = {(r["cell"]["firing"], r["cell"]["sync"], r["model_type"]) for r in runs}
-        assert len(pairs) == 25
+        assert len(pairs) == 20
 
     def test_firing_by_s_pairs(self):
         cells = self._cells()
-        for firing, sync in [("lif", "none"), ("ttfs", "none"), ("ttfs_quantized", "none"),
-                             ("ttfs_cycle_based", "cascaded"), ("ttfs_cycle_based", "synchronized")]:
+        for firing, sync in self.TIER0_MODES:
             seen = {c["S"] for c in cells if (c["firing"], c["sync"]) == (firing, sync)}
             assert seen == {"4", "8", "16", "32"}, (firing, sync, seen)
 
     def test_every_mode_has_a_pruned_cell(self):
         cells = self._cells()
-        for firing, sync in [("lif", "none"), ("ttfs", "none"), ("ttfs_quantized", "none"),
-                             ("ttfs_cycle_based", "cascaded"), ("ttfs_cycle_based", "synchronized")]:
+        for firing, sync in self.TIER0_MODES:
             assert any(
                 c["pruning"] == "pruned"
                 for c in cells if (c["firing"], c["sync"]) == (firing, sync)
@@ -226,31 +286,22 @@ class TestTier1Coverage:
 
 
 class TestW2Respecs:
-    """W2 verdicts: t0_03 needs scheduling (packer-verified both ways) and
-    plain deep_mlp d16 is recipe-unreachable (residual is the trainable
-    backbone). USER DECISION 2026-07-06: residual respec, depth kept at 16."""
+    """W2 verdicts: t0_03 needs scheduling (packer-verified both ways). The
+    t0_19 residual-respec assertions left with the cell itself — casc removed
+    from tier-0 2026-07-12 (user directive)."""
 
     def test_t0_03_is_scheduled(self):
         path = TEST_CONFIGS / "tier0" / "t0_03_lif_deepcnn_d8_wq_s16_sched.json"
         cfg = json.loads(path.read_text())
         assert cfg["deployment_parameters"]["allow_scheduling"] is True
 
-    def test_t0_19_is_residual_d16(self):
-        path = TEST_CONFIGS / "tier0" / "t0_19_casc_deepmlp_d16_wq_s16_residual.json"
-        cfg = json.loads(path.read_text())
-        model_config = cfg["deployment_parameters"]["model_config"]
-        assert model_config["residual"] is True
-        assert model_config["depth"] == 16
-
-    def test_old_unscheduled_and_plain_specs_are_gone(self):
+    def test_old_unscheduled_spec_is_gone(self):
         tier0 = TEST_CONFIGS / "tier0"
         assert not (tier0 / "t0_03_lif_deepcnn_d8_wqaq_s16.json").exists()
-        assert not (tier0 / "t0_19_casc_deepmlp_d16_wq_s16.json").exists()
 
     def test_manifest_tags_carry_the_respec(self):
         runs = {r["name"]: r for r in _manifest(0)["runs"]}
         assert "sched" in runs["t0_03_lif_deepcnn_d8_wq_s16_sched"]["tags"]
-        assert "residual" in runs["t0_19_casc_deepmlp_d16_wq_s16_residual"]["tags"]
 
 
 class TestW3cRespecs:
@@ -271,9 +322,10 @@ class TestW3cRespecs:
             assert cfg["deployment_parameters"]["pruning_fraction"] == 0.10, name
 
     def test_heavy_pruning_stressors_kept_at_50_percent(self):
+        # t0_18 left the heavy-pruning set with the 2026-07-12 casc removal.
         runs = {r["name"]: r for r in _manifest(0)["runs"]}
-        heavy = [n for n in runs if n.startswith(("t0_02_", "t0_09_", "t0_18_"))]
-        assert len(heavy) == 3
+        heavy = [n for n in runs if n.startswith(("t0_02_", "t0_09_"))]
+        assert len(heavy) == 2
         for name in heavy:
             cfg = json.loads((TEST_CONFIGS / "tier0" / f"{name}.json").read_text())
             assert cfg["deployment_parameters"]["pruning_fraction"] == 0.5, name
@@ -420,63 +472,30 @@ def _config_delta(a: dict, b: dict) -> set:
 
 
 _S_MOVE = {"platform_constraints.target_tq", "platform_constraints.simulation_steps"}
-_E4_MOVE = {"deployment_parameters.training_epochs"}
 _WB_MOVE = {"platform_constraints.weight_bits"}
 
 # The tier-0.1 design table: cell -> (tier-0 anchor, exact config key-paths moved).
 # Every cell is a minimal pair; experiment_name is excluded from the delta.
+# casc removed from tier-0 2026-07-12 (user directive): the casc anchors left
+# tier-0 with their clones — t01_03 (A), t01_10/t01_11 (B), the whole C
+# cascade-structure family (t01_12-t01_15), and t01_18 (D) are gone together.
 TIER01_EXPECTED_DELTAS = {
     # A - install-resolution law calibration (A6, section 5v)
     "t01_01_lif_mmixcore_wq_s8": ("t0_01_lif_mmixcore_wq_s4", _S_MOVE),
     "t01_02_lif_mmixcore_wq_s16": ("t0_01_lif_mmixcore_wq_s4", _S_MOVE),
-    "t01_03_casc_mmixcore_wq_s4_offload_sched_nobias":
-        ("t0_16_casc_mmixcore_wq_s8_offload_sched_nobias", _S_MOVE),
     "t01_04_sync_mmixcore_wq_s16_pruned10": ("t0_21_sync_mmixcore_wq_s8_pruned10", _S_MOVE),
     "t01_05_sync_mmixcore_wq_s4_pruned10": ("t0_21_sync_mmixcore_wq_s8_pruned10", _S_MOVE),
     "t01_06_ttfsq_mmixcore_wq_s8_offload": ("t0_11_ttfsq_mmixcore_wq_s16_offload", _S_MOVE),
     # B - pretrain envelope (training_epochs 2 -> 4). The M1 mixer-e4 respec
     # (2026-07-07) and then the BN-mixer respec (2026-07-12: BN+fc128 e8)
-    # lifted every mmixcore ANCHOR with its clone, so the mixer B cells are
-    # replication clones; the deepmlp B cell keeps its e4 delta (t0_19 stays e2).
+    # lifted every mmixcore ANCHOR with its clone, so the surviving B cells
+    # are all replication clones.
     "t01_07_ttfs_mmixcore_wq_s8_e4": ("t0_06_ttfs_mmixcore_wq_s8", set()),
     "t01_08_lif_mmixcore_wq_s4_e4": ("t0_01_lif_mmixcore_wq_s4", set()),
     "t01_09_sync_mmixcore_wq_s8_pruned10_e4": ("t0_21_sync_mmixcore_wq_s8_pruned10", set()),
-    "t01_10_casc_mmixcore_wq_s8_offload_sched_nobias_e4":
-        ("t0_16_casc_mmixcore_wq_s8_offload_sched_nobias", set()),
-    "t01_11_casc_deepmlp_d16_wq_s16_residual_e4":
-        ("t0_19_casc_deepmlp_d16_wq_s16_residual", _E4_MOVE),
-    # C - cascade structure isolation
-    "t01_12_casc_mmixcore_wq_s8": (
-        "t0_16_casc_mmixcore_wq_s8_offload_sched_nobias",
-        {"deployment_parameters.encoding_layer_placement",
-         "deployment_parameters.allow_scheduling",
-         "platform_constraints.has_bias",
-         "platform_constraints.cores[0].has_bias",
-         "platform_constraints.cores[1].has_bias"},
-    ),
-    "t01_13_casc_mmixcore_wq_s8_nobias": (
-        "t0_16_casc_mmixcore_wq_s8_offload_sched_nobias",
-        {"deployment_parameters.encoding_layer_placement",
-         "deployment_parameters.allow_scheduling"},
-    ),
-    # Step-denominated endpoint budgets ride the MODE only, so the depth move
-    # induces no budget delta (reproducibility respec 2026-07-07).
-    "t01_14_casc_deepmlp_d8_wq_s16_residual": (
-        "t0_19_casc_deepmlp_d16_wq_s16_residual",
-        {"deployment_parameters.model_config.depth"},
-    ),
-    # sched rides the depth axis: W2 proved platform C packs d8 only scheduled.
-    "t01_15_casc_deepcnn_d8_wq_s4_sched": (
-        "t0_18_casc_deepcnn_d4_wq_s4_pruned",
-        {"deployment_parameters.model_config.depth",
-         "deployment_parameters.allow_scheduling",
-         "deployment_parameters.pruning",
-         "deployment_parameters.pruning_fraction"},
-    ),
     # D - wall / training-ceiling decomposition
     "t01_16_lif_deepcnn_d8_wq_s8_sched": ("t0_03_lif_deepcnn_d8_wq_s16_sched", _S_MOVE),
     "t01_17_ttfs_deepcnn_d8_fp_s16_sched": ("t0_08_ttfs_deepcnn_d8_fp_s32_sched", _S_MOVE),
-    "t01_18_casc_lenet5_wq_s16": ("t0_17_casc_lenet5_wq_s32", _S_MOVE),
     "t01_19_lif_deepcnn_d6_wq_s16_sched": (
         "t0_03_lif_deepcnn_d8_wq_s16_sched",
         {"deployment_parameters.model_config.depth"},
@@ -500,17 +519,18 @@ TIER01_REPLICATION_CLONES = {
     "t01_07_ttfs_mmixcore_wq_s8_e4",
     "t01_08_lif_mmixcore_wq_s4_e4",
     "t01_09_sync_mmixcore_wq_s8_pruned10_e4",
-    "t01_10_casc_mmixcore_wq_s8_offload_sched_nobias_e4",
     "t01_23_ttfs_mmixcore_wq_s8_floor",
     "t01_24_sync_mmixcore_wq_s8_pruned10_floor",
     "t01_25_ttfsq_lenet5_wq_s32",
 }
 
-TIER01_FAMILY_SIZES = {"A": 6, "B": 5, "C": 4, "D": 4, "E": 3, "F": 3}
+# The C cascade-structure family left whole with the 2026-07-12 casc removal.
+TIER01_FAMILY_SIZES = {"A": 5, "B": 3, "D": 3, "E": 3, "F": 3}
 
 
 class TestTier01DiagnosticMatrix:
-    """Tier-0.1: 25 controlled minimal pairs probing tier-0's failure modes."""
+    """Tier-0.1: 17 controlled minimal pairs probing tier-0's failure modes
+    (25 before the 2026-07-12 casc removal)."""
 
     def _runs(self):
         return _manifest("0_1")["runs"]
@@ -547,18 +567,14 @@ class TestTier01DiagnosticMatrix:
             counts[run["family"]] = counts.get(run["family"], 0) + 1
         assert counts == TIER01_FAMILY_SIZES
 
-    def test_epoch_budgets_follow_the_bn_mixer_and_b_family_respecs(self):
+    def test_epoch_budgets_follow_the_bn_mixer_respec(self):
         # BN-mixer respec 2026-07-12: every mmixcore cell trains 8 epochs
         # (ttfsq included — the e2 revert is superseded with the envelope
-        # change); the non-mixer B diagnostic keeps its e4 axis; others 2.
+        # change); others 2. The only non-mixer B diagnostic (t01_11, e4)
+        # left with the 2026-07-12 casc removal.
         for run in self._runs():
             dp = self._load("0_1", run["name"])["deployment_parameters"]
-            if "mmixcore" in run["name"]:
-                expected = 8
-            elif run["family"] == "B":
-                expected = 4
-            else:
-                expected = 2
+            expected = 8 if "mmixcore" in run["name"] else 2
             assert dp["training_epochs"] == expected, run["name"]
 
     def test_every_cell_carries_the_step_denominated_floor_budget(self):
@@ -578,8 +594,9 @@ class TestTier01DiagnosticMatrix:
 
     def test_endpoint_step_budgets_follow_the_mode_arithmetic(self):
         # Spot checks: budget == BASE + mode extra (lif 2x600 for the LIF and
-        # AQ endpoints; casc 2x600 for the TTFS-cycle and AQ endpoints; sync
-        # 600 for the AQ endpoint; ttfs/ttfsq have no intermediate endpoint).
+        # AQ endpoints; sync 600 for the AQ endpoint; ttfs/ttfsq have no
+        # intermediate endpoint). The casc arithmetic left with the
+        # 2026-07-12 casc removal.
         gen = _generator()
         base = gen.ENDPOINT_FLOOR_STEPS_BASE
 
@@ -592,9 +609,6 @@ class TestTier01DiagnosticMatrix:
         assert self._load(
             0, "t0_21_sync_mmixcore_wq_s8_pruned10",
         )["deployment_parameters"]["endpoint_floor_steps"] == base + 600
-        assert self._load(
-            "0_1", "t01_14_casc_deepmlp_d8_wq_s16_residual",
-        )["deployment_parameters"]["endpoint_floor_steps"] == base + 2 * 600
         assert self._load(
             "0_1", "t01_23_ttfs_mmixcore_wq_s8_floor",
         )["deployment_parameters"]["endpoint_floor_steps"] == base

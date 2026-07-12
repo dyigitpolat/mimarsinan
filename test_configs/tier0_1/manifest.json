@@ -56,36 +56,6 @@
       "note": "BN-mixer respec 2026-07-12, probe env_probe_bn_fc128_e8 (user-authorized): every mmixcore cell runs normalization=batch, fc_w_1/fc_w_2 64 -> 128, training_epochs 8 \u2014 supersedes the M1 mixer-e4 respec and the ttfsq e2 revert (the BN+width envelope is a different regime; the e4/e2 evidence does not carry over). Measured basis: envelope probes saturate 0.954-0.981 without BN+width (fc64 e4 0.970; fc128_c48 e12 0.9785; fc192 e8 0.9805) vs BN+fc128 e8 = 0.982."
     },
     {
-      "name": "t01_03_casc_mmixcore_wq_s4_offload_sched_nobias",
-      "config": "t01_03_casc_mmixcore_wq_s4_offload_sched_nobias.json",
-      "model_type": "mlp_mixer_core",
-      "cell": {
-        "firing": "ttfs_cycle_based",
-        "sync": "cascaded",
-        "quantization": "wq_aq",
-        "S": "4",
-        "depth": "any",
-        "vehicle": "mlp_mixer_core",
-        "dataset": "mnist",
-        "regime": "from_scratch",
-        "pruning": "dense",
-        "encoding_placement": "offload"
-      },
-      "tags": [
-        "offload",
-        "sched",
-        "nobias"
-      ],
-      "expected_wall_min": 6,
-      "family": "A",
-      "anchor": "t0_16_casc_mmixcore_wq_s8_offload_sched_nobias",
-      "axes_moved": [
-        "S: 8 -> 4"
-      ],
-      "hypothesis": "Cascaded per-hop attenuation GROWS with S (genuine forward 0.57@S8 -> 0.31@S64 frozen-weights): at S=4 the conversion gap shrinks and deployed exceeds the anchor's ~0.90 ceiling.",
-      "note": "BN-mixer respec 2026-07-12, probe env_probe_bn_fc128_e8 (user-authorized): every mmixcore cell runs normalization=batch, fc_w_1/fc_w_2 64 -> 128, training_epochs 8 \u2014 supersedes the M1 mixer-e4 respec and the ttfsq e2 revert (the BN+width envelope is a different regime; the e4/e2 evidence does not carry over). Measured basis: envelope probes saturate 0.954-0.981 without BN+width (fc64 e4 0.970; fc128_c48 e12 0.9785; fc192 e8 0.9805) vs BN+fc128 e8 = 0.982."
-    },
-    {
       "name": "t01_04_sync_mmixcore_wq_s16_pruned10",
       "config": "t01_04_sync_mmixcore_wq_s16_pruned10.json",
       "model_type": "mlp_mixer_core",
@@ -249,172 +219,6 @@
       "note": "M1 respec 2026-07-07: the anchor was lifted to e4 (evidence t01_07); now a replication clone. BN-mixer respec 2026-07-12, probe env_probe_bn_fc128_e8 (user-authorized): every mmixcore cell runs normalization=batch, fc_w_1/fc_w_2 64 -> 128, training_epochs 8 \u2014 supersedes the M1 mixer-e4 respec and the ttfsq e2 revert (the BN+width envelope is a different regime; the e4/e2 evidence does not carry over). Measured basis: envelope probes saturate 0.954-0.981 without BN+width (fc64 e4 0.970; fc128_c48 e12 0.9785; fc192 e8 0.9805) vs BN+fc128 e8 = 0.982."
     },
     {
-      "name": "t01_10_casc_mmixcore_wq_s8_offload_sched_nobias_e4",
-      "config": "t01_10_casc_mmixcore_wq_s8_offload_sched_nobias_e4.json",
-      "model_type": "mlp_mixer_core",
-      "cell": {
-        "firing": "ttfs_cycle_based",
-        "sync": "cascaded",
-        "quantization": "wq_aq",
-        "S": "8",
-        "depth": "any",
-        "vehicle": "mlp_mixer_core",
-        "dataset": "mnist",
-        "regime": "from_scratch",
-        "pruning": "dense",
-        "encoding_placement": "offload"
-      },
-      "tags": [
-        "offload",
-        "sched",
-        "nobias",
-        "e4"
-      ],
-      "expected_wall_min": 10,
-      "family": "B",
-      "anchor": "t0_16_casc_mmixcore_wq_s8_offload_sched_nobias",
-      "axes_moved": [],
-      "hypothesis": "Replication clone of t0_16 post-M1 (the B4 diagnostic showed e4 arms the retention gate against the casc conversion crater); reads calibrate casc draw variance.",
-      "note": "M1 respec 2026-07-07: the anchor was lifted to e4 (evidence t01_07); now a replication clone. BN-mixer respec 2026-07-12, probe env_probe_bn_fc128_e8 (user-authorized): every mmixcore cell runs normalization=batch, fc_w_1/fc_w_2 64 -> 128, training_epochs 8 \u2014 supersedes the M1 mixer-e4 respec and the ttfsq e2 revert (the BN+width envelope is a different regime; the e4/e2 evidence does not carry over). Measured basis: envelope probes saturate 0.954-0.981 without BN+width (fc64 e4 0.970; fc128_c48 e12 0.9785; fc192 e8 0.9805) vs BN+fc128 e8 = 0.982."
-    },
-    {
-      "name": "t01_11_casc_deepmlp_d16_wq_s16_residual_e4",
-      "config": "t01_11_casc_deepmlp_d16_wq_s16_residual_e4.json",
-      "model_type": "deep_mlp",
-      "cell": {
-        "firing": "ttfs_cycle_based",
-        "sync": "cascaded",
-        "quantization": "wq_aq",
-        "S": "16",
-        "depth": "16",
-        "vehicle": "deep_mlp",
-        "dataset": "mnist",
-        "regime": "from_scratch",
-        "pruning": "dense",
-        "encoding_placement": "subsume"
-      },
-      "tags": [
-        "residual",
-        "e4"
-      ],
-      "expected_wall_min": 12,
-      "family": "B",
-      "anchor": "t0_19_casc_deepmlp_d16_wq_s16_residual",
-      "axes_moved": [
-        "training_epochs: 2 -> 4"
-      ],
-      "hypothesis": "t0_19 is budget/envelope-starved (float 0.973, deployed 0.942): 4 epochs of pretrain buy the envelope and the frontier ladder converts it to a pass."
-    },
-    {
-      "name": "t01_12_casc_mmixcore_wq_s8",
-      "config": "t01_12_casc_mmixcore_wq_s8.json",
-      "model_type": "mlp_mixer_core",
-      "cell": {
-        "firing": "ttfs_cycle_based",
-        "sync": "cascaded",
-        "quantization": "wq_aq",
-        "S": "8",
-        "depth": "any",
-        "vehicle": "mlp_mixer_core",
-        "dataset": "mnist",
-        "regime": "from_scratch",
-        "pruning": "dense",
-        "encoding_placement": "subsume"
-      },
-      "tags": [],
-      "expected_wall_min": 6,
-      "family": "C",
-      "anchor": "t0_16_casc_mmixcore_wq_s8_offload_sched_nobias",
-      "axes_moved": [
-        "tag stack: offload+sched+nobias -> plain"
-      ],
-      "hypothesis": "t0_16's conversion gap survives the removal of offload+sched+nobias: the gap is intrinsic to casc x L=9 (deployed stays ~0.90), not tag-induced.",
-      "note": "BN-mixer respec 2026-07-12, probe env_probe_bn_fc128_e8 (user-authorized): every mmixcore cell runs normalization=batch, fc_w_1/fc_w_2 64 -> 128, training_epochs 8 \u2014 supersedes the M1 mixer-e4 respec and the ttfsq e2 revert (the BN+width envelope is a different regime; the e4/e2 evidence does not carry over). Measured basis: envelope probes saturate 0.954-0.981 without BN+width (fc64 e4 0.970; fc128_c48 e12 0.9785; fc192 e8 0.9805) vs BN+fc128 e8 = 0.982."
-    },
-    {
-      "name": "t01_13_casc_mmixcore_wq_s8_nobias",
-      "config": "t01_13_casc_mmixcore_wq_s8_nobias.json",
-      "model_type": "mlp_mixer_core",
-      "cell": {
-        "firing": "ttfs_cycle_based",
-        "sync": "cascaded",
-        "quantization": "wq_aq",
-        "S": "8",
-        "depth": "any",
-        "vehicle": "mlp_mixer_core",
-        "dataset": "mnist",
-        "regime": "from_scratch",
-        "pruning": "dense",
-        "encoding_placement": "subsume"
-      },
-      "tags": [
-        "nobias"
-      ],
-      "expected_wall_min": 6,
-      "family": "C",
-      "anchor": "t0_16_casc_mmixcore_wq_s8_offload_sched_nobias",
-      "axes_moved": [
-        "tag stack: offload+sched+nobias -> nobias only"
-      ],
-      "hypothesis": "Bias-axon removal alone does not reproduce the anchor's gap: this cell reads within noise of the plain clone; a materially lower read isolates nobias as the load-bearing tag.",
-      "note": "BN-mixer respec 2026-07-12, probe env_probe_bn_fc128_e8 (user-authorized): every mmixcore cell runs normalization=batch, fc_w_1/fc_w_2 64 -> 128, training_epochs 8 \u2014 supersedes the M1 mixer-e4 respec and the ttfsq e2 revert (the BN+width envelope is a different regime; the e4/e2 evidence does not carry over). Measured basis: envelope probes saturate 0.954-0.981 without BN+width (fc64 e4 0.970; fc128_c48 e12 0.9785; fc192 e8 0.9805) vs BN+fc128 e8 = 0.982."
-    },
-    {
-      "name": "t01_14_casc_deepmlp_d8_wq_s16_residual",
-      "config": "t01_14_casc_deepmlp_d8_wq_s16_residual.json",
-      "model_type": "deep_mlp",
-      "cell": {
-        "firing": "ttfs_cycle_based",
-        "sync": "cascaded",
-        "quantization": "wq_aq",
-        "S": "16",
-        "depth": "8",
-        "vehicle": "deep_mlp",
-        "dataset": "mnist",
-        "regime": "from_scratch",
-        "pruning": "dense",
-        "encoding_placement": "subsume"
-      },
-      "tags": [
-        "residual"
-      ],
-      "expected_wall_min": 6,
-      "family": "C",
-      "anchor": "t0_19_casc_deepmlp_d16_wq_s16_residual",
-      "axes_moved": [
-        "depth: 16 -> 8"
-      ],
-      "hypothesis": "The boundary law is linear (~0.3-0.5 pp per boundary): halving t0_19's depth to d8 (~half the seams) plus the lighter training bulk yields a pass."
-    },
-    {
-      "name": "t01_15_casc_deepcnn_d8_wq_s4_sched",
-      "config": "t01_15_casc_deepcnn_d8_wq_s4_sched.json",
-      "model_type": "deep_cnn",
-      "cell": {
-        "firing": "ttfs_cycle_based",
-        "sync": "cascaded",
-        "quantization": "wq_aq",
-        "S": "4",
-        "depth": "8",
-        "vehicle": "deep_cnn",
-        "dataset": "mnist",
-        "regime": "from_scratch",
-        "pruning": "dense",
-        "encoding_placement": "subsume"
-      },
-      "tags": [
-        "sched"
-      ],
-      "expected_wall_min": 12,
-      "family": "C",
-      "anchor": "t0_18_casc_deepcnn_d4_wq_s4_pruned",
-      "axes_moved": [
-        "depth: 4 -> 8 (sched on: the W2-proven d8 packing prerequisite)",
-        "pruning: 0.5 -> dense"
-      ],
-      "hypothesis": "Conv cascades carry no intra-segment compounding (segment depth 0): doubling t0_18's depth to d8 unpruned stays green - the depth cost is boundary-linear, not exponential."
-    },
-    {
       "name": "t01_16_lif_deepcnn_d8_wq_s8_sched",
       "config": "t01_16_lif_deepcnn_d8_wq_s8_sched.json",
       "model_type": "deep_cnn",
@@ -468,31 +272,6 @@
       ],
       "hypothesis": "Analytic-TTFS deployment is S-invariant (SCM bit-identical across S): at S=16 accuracy stays 1.00 while the training and sim walls shrink - wall scales with S, semantics do not.",
       "note": "Inherits the t0_08 sim-sample respec (per-core GEMM sim is sample-bound; N=25 keeps the exclusion arithmetic comparable)."
-    },
-    {
-      "name": "t01_18_casc_lenet5_wq_s16",
-      "config": "t01_18_casc_lenet5_wq_s16.json",
-      "model_type": "lenet5",
-      "cell": {
-        "firing": "ttfs_cycle_based",
-        "sync": "cascaded",
-        "quantization": "wq_aq",
-        "S": "16",
-        "depth": "any",
-        "vehicle": "lenet5",
-        "dataset": "mnist",
-        "regime": "from_scratch",
-        "pruning": "dense",
-        "encoding_placement": "subsume"
-      },
-      "tags": [],
-      "expected_wall_min": 10,
-      "family": "D",
-      "anchor": "t0_17_casc_lenet5_wq_s32",
-      "axes_moved": [
-        "S: 32 -> 16"
-      ],
-      "hypothesis": "t0_17's wall scales with S: at S=16 the artifact wall fits 300 s and accuracy holds >= 0.97."
     },
     {
       "name": "t01_19_lif_deepcnn_d6_wq_s16_sched",
@@ -684,13 +463,14 @@
   ],
   "coverage_notes": [
     "Tier-0.1 (2026-07-07, user-directed): a diagnostic matrix of controlled minimal pairs derived from tier-0's remaining failure modes (theory 5t-5x, A1-A6, 6b). Every cell moves <= 2 axes off a named tier-0 anchor and carries a falsifiable hypothesis; the wave's purpose is insight - failures are the data, not defects.",
-    "Families: A install-resolution law (6), B pretrain envelope e4 (5), C cascade structure isolation (4), D wall/training decomposition (4), E WQ-bit gap (3), F floor mechanics + green control (3).",
+    "Families: A install-resolution law (5), B pretrain envelope e4 (3), D wall/training decomposition (3), E WQ-bit gap (3), F floor mechanics + green control (3). The C cascade-structure family left whole with the 2026-07-12 casc removal.",
     "Acceptance bar unchanged from tier-0: >= 0.97 primary deployed (N=100 pinned; t01_17 inherits the t0_08 sim-sample respec), <= 300 s artifact wall with all simulators excluded; e4 cells account their extra pretrain in the wall honestly.",
     "Sim-role respec 2026-07-07 (user-directed): identical to tier-0 \u2014 simulators are parity probes (nevresim N=25 default); the accuracy verdict is the SCM identity read.",
-    "M1 mixer-e4 respec 2026-07-07 (user-mandated): every mmixcore cell trains 4 epochs, matching the lifted tier-0 anchors; the B-family mixer diagnostics (t01_07-t01_10) are replication clones now.",
+    "M1 mixer-e4 respec 2026-07-07 (user-mandated): every mmixcore cell trains 4 epochs, matching the lifted tier-0 anchors; the B-family mixer diagnostics (t01_07-t01_09) are replication clones now.",
     "Reproducibility respec 2026-07-07 (user-directed): step-denominated endpoint budgets exactly as tier-0's (endpoint_floor_steps = 16000 + mode extra; wall-seconds budgets gone). The F-family 600 s floor-room diagnostic is subsumed \u2014 the full 16k floor is now the default \u2014 so t01_23/t01_24 stay as replication clones of their anchors (draw-variance controls).",
     "BN-mixer respec 2026-07-12 (user-authorized, probe env_probe_bn_fc128_e8): identical to tier-0 \u2014 every mmixcore cell (the ttfsq family included: the e2 revert is superseded with the envelope change) runs normalization=batch, fc_w_1/fc_w_2 64 -> 128, training_epochs 8; anchors and clones move together, so the minimal-pair deltas are unchanged.",
     "WQ-cap deletion 2026-07-12 (synthesis Phase-4): identical to tier-0 \u2014 the flat wq_endpoint_recovery_steps=2000 caps are removed; the C1 convergence-stop (landed 91eacc01) makes step budgets self-limiting under the recipe's 16k ceiling.",
-    "M4 arming 2026-07-12: scale_migration=true on every WQ cell \u2014 the step is exact ReLU-homogeneous rescaling, a no-op (s -> 1) when per-channel spread is small (landed 96c74e42)."
+    "M4 arming 2026-07-12: scale_migration=true on every WQ cell \u2014 the step is exact ReLU-homogeneous rescaling, a no-op (s -> 1) when per-channel spread is small (landed 96c74e42).",
+    "casc removed from tier-0 2026-07-12 (user directive): mode marked not-fully-supported pending the cascaded-gap research program; casc coverage continues in tier1/2 and the advisory framework warns on selection."
   ]
 }
