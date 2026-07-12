@@ -13,6 +13,11 @@ import numpy as np
 import torch
 
 import mimarsinan.data_handling.data_providers  # noqa: F401  # pyright: ignore[reportUnusedImport] — registers built-in providers
+from mimarsinan.advisories import (
+    evaluate_config_advisories,
+    evaluate_post_pretrain_advisories,
+    surface_advisories,
+)
 from mimarsinan.common.best_effort import best_effort
 from mimarsinan.common.reporter import DefaultReporter
 from mimarsinan.config_schema.deployment_derivation import (
@@ -150,6 +155,7 @@ class PipelineSession:
         apply_determinism(self.pipeline.plan.seed)
         if parsed.target_metric_override is not None:
             self.pipeline.set_target_metric(parsed.target_metric_override)
+        self.pipeline.register_post_step_hook(self._post_pretraining_advisory_hook)
 
     @classmethod
     def from_config(
@@ -175,7 +181,34 @@ class PipelineSession:
             return None
         return self.pipeline.get_resolved_start_step(self.parsed.start_step)
 
+    def surface_config_advisories(self) -> None:
+        """Config-time deployment advisories at session start: loud [ADVISORY]
+        prints + reporter events. Warnings only — they never gate a run."""
+        with best_effort("deployment advisories (config)"):
+            surface_advisories(
+                self.pipeline.reporter,
+                evaluate_config_advisories(self.pipeline.plan),
+                context="config",
+            )
+
+    def _post_pretraining_advisory_hook(self, name: str, step: Any) -> None:
+        """Envelope-gate advisory on the recorded pretrain metric (post-step
+        hooks run after the engine records the step metric)."""
+        if name != "Pretraining":
+            return
+        with best_effort("deployment advisories (post-pretrain)"):
+            surface_advisories(
+                self.pipeline.reporter,
+                evaluate_post_pretrain_advisories(
+                    float(self.pipeline.get_target_metric()),
+                    self.pipeline.config,
+                    acceptance_target=self.parsed.target_metric_override,
+                ),
+                context="post_pretrain",
+            )
+
     def run(self) -> None:
+        self.surface_config_advisories()
         start_step = self.resolved_start_step()
         if start_step is None:
             self.pipeline.run(stop_step=self.parsed.stop_step)

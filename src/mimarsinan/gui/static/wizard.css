@@ -1421,3 +1421,51 @@ input.field-invalid { border-color: var(--accent-rose); }
   font-size: 11px; font-weight: 600; color: var(--text-secondary);
   margin-top: 2px;
 }
+
+/* ── Deployment advisories (live rail; UNSUPPORTED reads loud) ─────────── */
+.advisory-rail { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+.advisory-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  font-size: var(--font-caption);
+  line-height: 1.45;
+}
+.advisory-card.advisory-unsupported {
+  border-color: rgba(244, 63, 94, 0.55);
+  background: rgba(244, 63, 94, 0.10);
+}
+.advisory-card.advisory-risk {
+  border-color: rgba(245, 158, 11, 0.45);
+  background: rgba(245, 158, 11, 0.07);
+}
+.advisory-card.advisory-info {
+  border-color: rgba(34, 211, 238, 0.35);
+  background: rgba(34, 211, 238, 0.05);
+}
+.advisory-head { display: flex; align-items: baseline; gap: 6px; }
+.advisory-severity {
+  font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em;
+  font-size: 10px;
+}
+.advisory-unsupported .advisory-severity { color: #fda4af; }
+.advisory-risk .advisory-severity { color: #fcd34d; }
+.advisory-info .advisory-severity { color: var(--accent-cyan); }
+.advisory-title { font-weight: 600; color: var(--text-primary); }
+.advisory-detail { color: var(--text-secondary); margin-top: 4px; }
+.advisory-badges {
+  display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px;
+  align-items: center;
+}
+.advisory-id {
+  font-family: 'JetBrains Mono', monospace; font-size: 10px;
+  color: var(--text-dim);
+}
+.advisory-badge {
+  border: 1px solid var(--border); border-radius: 999px;
+  padding: 0 6px; font-size: 10px; color: var(--text-dim);
+}
+.advisory-badge.mandate {
+  border-color: rgba(244, 63, 94, 0.45); color: #fda4af;
+}
+.advisory-levers { color: var(--text-dim); margin-top: 4px; }

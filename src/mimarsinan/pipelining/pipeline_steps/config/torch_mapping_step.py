@@ -1,9 +1,17 @@
 """TorchMappingStep -- convert a native PyTorch model to a mimarsinan PerceptronFlow."""
 
+from types import SimpleNamespace
+
+from mimarsinan.advisories import evaluate_graph_advisories, surface_advisories
+from mimarsinan.common.best_effort import best_effort
 from mimarsinan.common.diagnostics import phase_profiler
+from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 from mimarsinan.pipelining.core.registry.trainer_factory import make_basic_trainer
 from mimarsinan.pipelining.core.steps.trainer_pipeline_step import TrainerPipelineStep
 from mimarsinan.tuning.orchestration.adaptation_manager_factory import create_adaptation_manager_for_model
+from mimarsinan.tuning.orchestration.install_resolution.capture import (
+    capture_install_stats,
+)
 from mimarsinan.torch_mapping.converter import convert_torch_model
 from mimarsinan.torch_mapping.conversion_probe import ConversionProbeError
 import torch
@@ -64,9 +72,34 @@ class TorchMappingStep(TrainerPipelineStep):
             val = self.validate()
         print(f"  Validation: {val}")
 
+        self._surface_graph_advisories(flow)
+
         if torch.cuda.is_available():
             step_peak = torch.cuda.max_memory_allocated() / (1 << 20)
             print(f"[{tag}] cuda peak (step): {step_peak:.0f} MiB")
+
+    def _surface_graph_advisories(self, flow) -> None:
+        """Graph advisories on the freshly converted mapper DAG: loud warnings
+        + reporter events, never a gate (advisories must not fail a run)."""
+        channel_stats = None
+        with best_effort("graph-advisory channel-stats capture"):
+            stats = capture_install_stats(
+                SimpleNamespace(pipeline=self.pipeline, trainer=self.trainer, model=flow)
+            )
+            channel_stats = {
+                id(perceptron): accumulator.per_channel_q99()
+                for perceptron, accumulator in stats
+            }
+        with best_effort("deployment advisories (graph)"):
+            surface_advisories(
+                self.pipeline.reporter,
+                evaluate_graph_advisories(
+                    flow.get_mapper_repr(),
+                    DeploymentPlan.of(self.pipeline),
+                    channel_stats=channel_stats,
+                ),
+                context="torch_mapping",
+            )
 
     def _verify_equivalence(self, native_model, flow):
         """Compare native vs converted output shapes; converted-flow forward failure is fatal."""

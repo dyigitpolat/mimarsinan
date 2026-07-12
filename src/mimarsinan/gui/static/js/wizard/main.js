@@ -17,8 +17,8 @@ import {
 } from './fields.js';
 import { defaultModelConfig, ensureModelSchema, installStructuredWidgets } from './structured.js';
 import {
-  renderAssemblyRail, renderDerivedChips, renderDiffPanel, renderErrors,
-  renderJsonPreview, renderLaunchStatus, renderRailMapping,
+  renderAdvisories, renderAssemblyRail, renderDerivedChips, renderDiffPanel,
+  renderErrors, renderJsonPreview, renderLaunchStatus, renderRailMapping,
   renderTemplateBanner, renderUnknownTray,
 } from './review.js';
 import { autoSuggestHardware, fetchMetadata, scheduleHwVerify } from './hw.js';
@@ -201,6 +201,7 @@ function legalityChanged() {
 
 function renderResolveViews() {
   if (legalityChanged()) renderGroupHosts();
+  renderAdvisories();
   renderDerivedChips();
   renderDiffPanel();
   renderUnknownTray();

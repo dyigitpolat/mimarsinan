@@ -60,3 +60,14 @@ def resolve_bias_mode(pipeline_config: dict[str, Any]) -> str:
     cores = build_platform_constraints_resolved(pipeline_config)["cores"]
     params = resolve_platform_mapping_params(cores)
     return bias_mode_from_hardware_bias(params.hardware_bias)
+
+
+def resolve_wq_two_scale_projection(config: dict[str, Any]) -> bool:
+    """Effective two-scale WQ flag: the ``wq_two_scale_projection`` key AND the
+    platform's on-chip bias capability — a parameter-encoded bias rides the
+    core matrix as an always-on axon row and must obey the ±q_max
+    weight-register contract on the weight grid, so two-scale is not mappable
+    there (``wq_cascade_crater_repair.md`` §5, backend audit)."""
+    if not bool(config.get("wq_two_scale_projection", False)):
+        return False
+    return resolve_bias_mode(config) == "on_chip"

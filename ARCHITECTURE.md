@@ -8,7 +8,7 @@ IR of neural cores, packs the cores onto a constrained chip, and then runs the
 mapped chip on cycle-level simulators (nevresim C++, SANA-FE, Lava Loihi) to
 produce the deployed-forward accuracy number the pipeline reports.
 
-This file is the lean overview. Detail lives in the 16 per-module
+This file is the lean overview. Detail lives in the 17 per-module
 `src/mimarsinan/<module>/ARCHITECTURE.md` files (see the module map below);
 a machine test keeps this file at or under 400 lines and keeps the per-module
 docs in sync with the files they describe.
@@ -32,7 +32,7 @@ docs in sync with the files they describe.
 
 ## Repository layout
 
-- `src/mimarsinan/` — the Python package (16 modules, one doc each).
+- `src/mimarsinan/` — the Python package (17 modules, one doc each).
 - `run.py` / `src/main.py` — the deployment entry points (below).
 - `tests/` — unit suite (`tests/unit/`), integration tests, shared fixtures.
 - `test_configs/` + `scripts/run_tier.py` — tiered end-to-end run matrices.
@@ -144,6 +144,7 @@ before editing that module.
 | `code_generation` | nevresim C++ source generation from mapped chips (`ChipModel`, main templates, span export) | [doc](src/mimarsinan/code_generation/ARCHITECTURE.md) |
 | `visualization` | Write-to-file Graphviz/matplotlib/Plotly renderings of pipeline artifacts | [doc](src/mimarsinan/visualization/ARCHITECTURE.md) |
 | `gui` | Browser-based run monitor, run manager, and configuration wizard (FastAPI + SPA) | [doc](src/mimarsinan/gui/ARCHITECTURE.md) |
+| `advisories` | Programmatic deployment advisories: generic failure-mode rules from the theory memos, surfaced as warnings (headless prints, GUI wizard, `deployment_advisory` reporter events) and machine-readably as the lossless-mandate checklist | [doc](src/mimarsinan/advisories/ARCHITECTURE.md) |
 | `common` | Leaf utilities: env-var SSOT, `best_effort`, file I/O, compiler discovery, `Reporter`, diagnostics | [doc](src/mimarsinan/common/ARCHITECTURE.md) |
 
 Dependency shape: `common` is the leaf everyone may use; `config_schema`,

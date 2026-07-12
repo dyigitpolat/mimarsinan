@@ -337,6 +337,39 @@ export function renderUnknownTray() {
   for (const path of unknown) host.append(el('div', 'unknown-tray-item', path));
 }
 
+/* ── Deployment advisories (tentative theory; UNSUPPORTED renders loud) ── */
+
+function advisoryCard(advisory) {
+  const severity = String(advisory.severity || 'INFO').toLowerCase();
+  const card = el('div', `advisory-card advisory-${severity}`);
+  const head = el('div', 'advisory-head');
+  head.append(el('span', 'advisory-severity', advisory.severity));
+  head.append(el('span', 'advisory-title', advisory.title));
+  card.append(head);
+  card.append(el('div', 'advisory-detail', advisory.detail));
+  const badges = el('div', 'advisory-badges');
+  badges.append(el('span', 'advisory-id', advisory.id));
+  if (advisory.tentative) badges.append(el('span', 'advisory-badge', 'tentative theory'));
+  if (advisory.mandate_violation) {
+    badges.append(el('span', 'advisory-badge mandate', 'lossless-mandate violation'));
+  }
+  card.append(badges);
+  if (advisory.suggested_levers && advisory.suggested_levers.length) {
+    card.append(el('div', 'advisory-levers',
+      'Levers: ' + advisory.suggested_levers.join(' · ')));
+  }
+  return card;
+}
+
+export function renderAdvisories() {
+  const block = document.getElementById('advisoryBlock');
+  const host = document.getElementById('advisoryRail');
+  if (!block || !host) return;
+  const advisories = (state.resolve && state.resolve.advisories) || [];
+  block.style.display = advisories.length ? '' : 'none';
+  host.replaceChildren(...advisories.map(advisoryCard));
+}
+
 /* ── Pipeline assembly rail (honest vertical list from the resolve) ────── */
 
 export function renderAssemblyRail() {

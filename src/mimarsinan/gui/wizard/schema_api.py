@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Tuple
 
+from mimarsinan.advisories import evaluate_config_advisories
 from mimarsinan.config_schema.defaults import (
     get_default_training_recipe,
     get_default_tuning_recipe,
@@ -295,4 +296,5 @@ def resolve_payload(draft: Dict[str, Any]) -> Dict[str, Any]:
         # The dedicated Pretrained-weights panel's always-computable data.
         "pretrained": pretrained_block(effective),
         "pipeline": pipeline,
+        "advisories": [a.as_payload() for a in evaluate_config_advisories(config)] if config else [],
     }
