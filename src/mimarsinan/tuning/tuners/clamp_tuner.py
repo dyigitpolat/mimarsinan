@@ -17,6 +17,16 @@ from mimarsinan.tuning.orchestration.smooth_adaptation_tuner import SmoothAdapta
 from mimarsinan.tuning.orchestration.tuning_policy import FAST_LADDER_STEPS_PER_RATE
 
 
+def saturation_hit_count(latest: torch.Tensor, ceiling: torch.Tensor) -> int:
+    """Count activations at >=99.9% of the clamp ceiling; a per-channel
+    (vector) ceiling broadcasts channels-last over the flattened capture."""
+    threshold = ceiling * 0.999
+    if ceiling.ndim == 0 or ceiling.numel() == 1:
+        return int((latest >= threshold).sum().item())
+    return int((latest.reshape(-1, ceiling.numel()) >= threshold).sum().item())
+
+
+
 class ClampTuner(SmoothAdaptationTuner):
     def __init__(
         self,
@@ -157,7 +167,7 @@ class ClampTuner(SmoothAdaptationTuner):
                             continue
                         ceiling = perceptron.activation_scale.detach().to(latest.device)
                         total_counts[idx] += int(latest.numel())
-                        hit_counts[idx] += int((latest >= ceiling * 0.999).sum().item())
+                        hit_counts[idx] += saturation_hit_count(latest, ceiling)
                         decorator.latest_output = None
         finally:
             for perceptron in perceptrons:
