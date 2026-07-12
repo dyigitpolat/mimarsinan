@@ -98,3 +98,32 @@ class NormalizationAwarePerceptronQuantization:
             return rate * rescaled + (1.0 - rate) * param
 
         return quantize_param
+
+
+COMPARATOR_HALF_STEP_ARM_RATIO = 0.5
+"""[G6] erosion ratios >= ~0.5 predict the baked half-step erodes on the bias
+lattice (sync memo §5: measured 0.21-1.41 at 5 bits) — arm the E3 comparator."""
+
+
+def half_step_bias_lattice_erosion_ratio(perceptron, simulation_steps) -> float:
+    """[G6/E3] ``g_b / (1/(2S))``: the effective-bias grid step (``1/bias_scale``,
+    already θ-normalized) over the normalized half-step ``1/(2S)``."""
+    return float(2 * int(simulation_steps)) / float(perceptron.bias_scale)
+
+
+def comparator_half_step_advisory(
+    model, simulation_steps, *, arm_threshold: float = COMPARATOR_HALF_STEP_ARM_RATIO,
+) -> dict:
+    """Per-perceptron erosion ratios at projection + the arming verdict
+    (``armed`` when the WORST hop's ratio reaches ``arm_threshold``)."""
+    ratios = [
+        half_step_bias_lattice_erosion_ratio(p, simulation_steps)
+        for p in model.get_perceptrons()
+    ]
+    max_ratio = max(ratios, default=0.0)
+    return {
+        "ratios": ratios,
+        "max_ratio": max_ratio,
+        "arm_threshold": float(arm_threshold),
+        "armed": bool(max_ratio >= float(arm_threshold)),
+    }

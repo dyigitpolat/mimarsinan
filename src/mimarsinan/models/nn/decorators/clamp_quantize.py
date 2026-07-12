@@ -7,6 +7,7 @@ import torch
 from mimarsinan.models.nn.activations.autograd import (
     DifferentiableClamp,
     StaircaseFunction,
+    TTFSComparatorHalfStepStaircaseFunction,
     TTFSStaircaseFunction,
 )
 
@@ -31,11 +32,14 @@ class TTFSCeilStaircaseDecorator:
     """The deployed TTFS ceil kernel ``y = θ·ceil_staircase(x/θ, S)`` with STE.
 
     The exact synchronized/ttfs_quantized deployment activation (MBH T6
-    endpoint) — replaces the floor staircase + half-step shift QAT proxy."""
+    endpoint) — replaces the floor staircase + half-step shift QAT proxy.
+    ``comparator_half_step`` (the contract's [E3] flag) runs the shifted
+    compare ladder so the NF twin moves with the deployed comparator."""
 
-    def __init__(self, simulation_steps, activation_scale):
+    def __init__(self, simulation_steps, activation_scale, comparator_half_step=False):
         self.simulation_steps = int(simulation_steps)
         self.activation_scale = activation_scale
+        self.comparator_half_step = bool(comparator_half_step)
 
     def input_transform(self, x):
         return x
@@ -46,7 +50,12 @@ class TTFSCeilStaircaseDecorator:
             scale = torch.tensor(float(scale))
         scale = scale.to(device=x.device, dtype=x.dtype)
         safe_scale = scale.clamp(min=1e-12)
-        return TTFSStaircaseFunction.apply(x / safe_scale, self.simulation_steps) * safe_scale
+        staircase = (
+            TTFSComparatorHalfStepStaircaseFunction
+            if self.comparator_half_step
+            else TTFSStaircaseFunction
+        )
+        return staircase.apply(x / safe_scale, self.simulation_steps) * safe_scale
 
 
 class QuantizeDecorator:

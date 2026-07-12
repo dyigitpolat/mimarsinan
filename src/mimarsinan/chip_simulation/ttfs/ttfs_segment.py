@@ -131,6 +131,7 @@ def _run_ttfs_segment_ordered(
     *,
     simulation_length: int = 1,
     spiking_mode: str,
+    comparator_half_step: bool = False,
 ) -> tuple[np.ndarray, List[np.ndarray], List[np.ndarray]]:
     """Execute TTFS cores in latency order; propagate activations between cores."""
     from mimarsinan.chip_simulation.spiking_semantics import forces_activation_quantization
@@ -167,7 +168,10 @@ def _run_ttfs_segment_ordered(
         v = v.astype(np.float64, copy=False)
         membrane[ci] = v
         if quantized:
-            buffers[ci] = ttfs_quantized_activation_np(v, seg.thresholds[ci], s)
+            buffers[ci] = ttfs_quantized_activation_np(
+                v, seg.thresholds[ci], s,
+                comparator_half_step=comparator_half_step,
+            )
         else:
             safe_th = np.maximum(seg.thresholds[ci], 1e-12)
             buffers[ci] = np.clip(np.maximum(v, 0.0) / safe_th, 0.0, 1.0)
@@ -203,6 +207,7 @@ def run_ttfs_segment(
     *,
     simulation_length: int,
     spiking_mode: str,
+    comparator_half_step: bool = False,
 ) -> tuple[np.ndarray, List[np.ndarray], List[np.ndarray]]:
     """One execution returning ``(out, per-core buffers, per-core membrane V)``."""
     return _run_ttfs_segment_ordered(
@@ -210,6 +215,7 @@ def run_ttfs_segment(
         input_activations,
         simulation_length=simulation_length,
         spiking_mode=spiking_mode,
+        comparator_half_step=comparator_half_step,
     )
 
 

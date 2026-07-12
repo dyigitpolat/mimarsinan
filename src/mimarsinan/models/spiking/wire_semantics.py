@@ -8,15 +8,26 @@ import numpy as np
 import torch
 
 
+COMPARATOR_HALF_STEP_LADDER_SHIFT = 0.5
+"""[E3] comparator-side half-step: every per-cycle compare level θ·(S-k)/S drops
+by θ/(2S) — ``ceil(S·(1-v/θ) - 1/2)``, the exact zero-bit-cost twin of the
++θ/(2S) bias fold, carried in the threshold ladder (never a θ rescale)."""
+
+
 def ttfs_quantized_staircase_np(
     v: np.ndarray,
     threshold,
     simulation_length: int,
+    *,
+    comparator_half_step: bool = False,
 ) -> np.ndarray:
     """``(S - clamp(ceil(S*(1-V/θ)), 0, S-1)) / S`` with fire mask (numpy)."""
     s = int(simulation_length)
     safe = np.maximum(np.asarray(threshold, dtype=np.float64), 1e-12)
-    k_fire_raw = np.ceil(s * (1.0 - v / safe))
+    ladder = s * (1.0 - v / safe)
+    if comparator_half_step:
+        ladder = ladder - COMPARATOR_HALF_STEP_LADDER_SHIFT
+    k_fire_raw = np.ceil(ladder)
     fires = k_fire_raw < s
     k_fire = np.clip(k_fire_raw, 0, s - 1)
     out = np.where(fires, (s - k_fire) / s, 0.0)
@@ -27,31 +38,46 @@ def ttfs_quantized_staircase(
     V: torch.Tensor,
     threshold: torch.Tensor,
     simulation_length: int,
+    *,
+    comparator_half_step: bool = False,
 ) -> torch.Tensor:
     """``(S - clamp(ceil(S*(1-V/θ)), 0, S-1)) / S`` with fire mask (torch)."""
     S = simulation_length
     safe_thresh = threshold.clamp(min=1e-12)
-    k_fire_raw = torch.ceil(S * (1.0 - V / safe_thresh))
+    ladder = S * (1.0 - V / safe_thresh)
+    if comparator_half_step:
+        ladder = ladder - COMPARATOR_HALF_STEP_LADDER_SHIFT
+    k_fire_raw = torch.ceil(ladder)
     fires = k_fire_raw < S
     k_fire = k_fire_raw.clamp(0, S - 1)
     return torch.where(fires, (S - k_fire) / S, torch.zeros_like(k_fire))
 
 
-def _ttfs_strict_staircase_np(v, threshold, simulation_length: int) -> np.ndarray:
+def _ttfs_strict_staircase_np(
+    v, threshold, simulation_length: int, *, comparator_half_step: bool = False,
+) -> np.ndarray:
     """Strict-compare (``<``) variant: exact grid ties fire one cycle later."""
     s = int(simulation_length)
     safe = np.maximum(np.asarray(threshold, dtype=np.float64), 1e-12)
-    k_fire_raw = np.floor(s * (1.0 - v / safe)) + 1.0
+    ladder = s * (1.0 - v / safe)
+    if comparator_half_step:
+        ladder = ladder - COMPARATOR_HALF_STEP_LADDER_SHIFT
+    k_fire_raw = np.floor(ladder) + 1.0
     fires = k_fire_raw < s
     k_fire = np.clip(k_fire_raw, 0, s - 1)
     out = np.where(fires, (s - k_fire) / s, 0.0)
     return out.astype(np.float64, copy=False)
 
 
-def _ttfs_strict_staircase(V, threshold, simulation_length: int) -> torch.Tensor:
+def _ttfs_strict_staircase(
+    V, threshold, simulation_length: int, *, comparator_half_step: bool = False,
+) -> torch.Tensor:
     S = simulation_length
     safe_thresh = threshold.clamp(min=1e-12)
-    k_fire_raw = torch.floor(S * (1.0 - V / safe_thresh)) + 1.0
+    ladder = S * (1.0 - V / safe_thresh)
+    if comparator_half_step:
+        ladder = ladder - COMPARATOR_HALF_STEP_LADDER_SHIFT
+    k_fire_raw = torch.floor(ladder) + 1.0
     fires = k_fire_raw < S
     k_fire = k_fire_raw.clamp(0, S - 1)
     return torch.where(fires, (S - k_fire) / S, torch.zeros_like(k_fire))
@@ -97,14 +123,17 @@ def ttfs_grid_quantize(rates: torch.Tensor, simulation_length: int) -> torch.Ten
 
 @dataclass(frozen=True)
 class WireSemantics:
-    """Wire-op bundle for one deployment: ``(S, compare_mode)``.
+    """Wire-op bundle for one deployment: ``(S, compare_mode, comparator_half_step)``.
 
     ``compare_mode`` mirrors nevresim Compare: ``"<="`` inclusive (parity default)
     vs ``"<"`` strict (exact grid ties fire one cycle later).
+    ``comparator_half_step`` carries the [E3] mid-tread offset in the compare
+    ladder instead of the bias lattice; both parity twins shift together.
     """
 
     simulation_steps: int
     compare_mode: str = "<="
+    comparator_half_step: bool = False
 
     def __post_init__(self):
         if self.compare_mode not in ("<", "<="):
@@ -117,13 +146,25 @@ class WireSemantics:
         if not isinstance(threshold, torch.Tensor):
             threshold = torch.tensor(float(threshold), dtype=V.dtype, device=V.device)
         if self.compare_mode == "<":
-            return _ttfs_strict_staircase(V, threshold, self.simulation_steps)
-        return ttfs_quantized_staircase(V, threshold, self.simulation_steps)
+            return _ttfs_strict_staircase(
+                V, threshold, self.simulation_steps,
+                comparator_half_step=self.comparator_half_step,
+            )
+        return ttfs_quantized_staircase(
+            V, threshold, self.simulation_steps,
+            comparator_half_step=self.comparator_half_step,
+        )
 
     def quantized_staircase_np(self, v: np.ndarray, threshold) -> np.ndarray:
         if self.compare_mode == "<":
-            return _ttfs_strict_staircase_np(v, threshold, self.simulation_steps)
-        return ttfs_quantized_staircase_np(v, threshold, self.simulation_steps)
+            return _ttfs_strict_staircase_np(
+                v, threshold, self.simulation_steps,
+                comparator_half_step=self.comparator_half_step,
+            )
+        return ttfs_quantized_staircase_np(
+            v, threshold, self.simulation_steps,
+            comparator_half_step=self.comparator_half_step,
+        )
 
     def spike_time(self, rates: torch.Tensor) -> torch.Tensor:
         return ttfs_spike_time(rates, self.simulation_steps)

@@ -294,3 +294,77 @@ class TestPerceptronBiasScaleState:
         del p._parameters["bias_scale"]
         restored = pickle.loads(pickle.dumps(p))
         assert float(restored.bias_scale) == 20.0
+
+
+class TestHalfStepBiasLatticeErosionRatio:
+    """[G6/E3] the erosion gauge ``g_b / (1/(2S))``: the effective-bias grid
+    step over the normalized half-step. Ratios approaching 1 mean the baked
+    ``+theta/(2S)`` rounds by up to half of itself on the bias lattice — the
+    arming predicate for the comparator-side half-step."""
+
+    def _import(self):
+        from mimarsinan.transformations.normalization_aware_perceptron_quantization import (
+            half_step_bias_lattice_erosion_ratio,
+        )
+
+        return half_step_bias_lattice_erosion_ratio
+
+    def test_ratio_after_two_scale_projection(self):
+        ratio_fn = self._import()
+        p = _bias_dominant_perceptron()
+        NormalizationAwarePerceptronQuantization(
+            bits=BITS, device="cpu", rate=1.0, two_scale=True
+        ).transform(p)
+        # weight_scale = 15/0.06 = 250; r = ceil(0.75*250/15) = 13;
+        # bias_scale = 250/13; g_b = 13/250; ratio at S=8 = (13/250)*16 = 0.832.
+        S = 8
+        expected = (2 * S) / float(p.bias_scale)
+        assert ratio_fn(p, S) == pytest.approx(expected, rel=0, abs=1e-12)
+        # bias_scale is a float32 parameter: match to storage precision.
+        assert ratio_fn(p, S) == pytest.approx(0.832, abs=1e-6)
+
+    def test_ratio_scales_linearly_with_s(self):
+        ratio_fn = self._import()
+        p = _bias_dominant_perceptron()
+        NormalizationAwarePerceptronQuantization(
+            bits=BITS, device="cpu", rate=1.0, two_scale=True
+        ).transform(p)
+        assert ratio_fn(p, 16) == pytest.approx(2 * ratio_fn(p, 8), abs=1e-12)
+
+    def test_shared_grid_uses_the_shared_scale(self):
+        ratio_fn = self._import()
+        p = _bias_dominant_perceptron()
+        NormalizationAwarePerceptronQuantization(
+            bits=BITS, device="cpu", rate=1.0
+        ).transform(p)
+        # shared grid: bias_scale == parameter_scale (set_parameter_scale re-declares).
+        assert float(p.bias_scale) == float(p.parameter_scale)
+        assert ratio_fn(p, 8) == pytest.approx(16.0 / float(p.bias_scale), abs=1e-12)
+
+    def test_advisory_arms_on_the_worst_hop(self):
+        from mimarsinan.transformations.normalization_aware_perceptron_quantization import (
+            COMPARATOR_HALF_STEP_ARM_RATIO,
+            comparator_half_step_advisory,
+        )
+
+        eroded = _bias_dominant_perceptron()
+        NormalizationAwarePerceptronQuantization(
+            bits=BITS, device="cpu", rate=1.0, two_scale=True
+        ).transform(eroded)
+        fine = _weight_dominant_perceptron()
+        fine.set_bias_scale(1000.0)  # ultra-fine lattice: ratio ~ 0.016 at S=8
+
+        class _Model:
+            def get_perceptrons(self):
+                return [eroded, fine]
+
+        advisory = comparator_half_step_advisory(_Model(), 8)
+        assert advisory["armed"] is True
+        assert advisory["max_ratio"] == pytest.approx(0.832, abs=1e-6)
+        assert len(advisory["ratios"]) == 2
+        assert COMPARATOR_HALF_STEP_ARM_RATIO == 0.5
+
+        calm = comparator_half_step_advisory(
+            _Model(), 8, arm_threshold=0.9,
+        )
+        assert calm["armed"] is False

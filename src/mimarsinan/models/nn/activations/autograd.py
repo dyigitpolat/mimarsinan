@@ -70,6 +70,22 @@ class TTFSStaircaseFunction(Function):
         return grad_output.clone(), None
 
 
+class TTFSComparatorHalfStepStaircaseFunction(Function):
+    """[E3] the deployment ceil staircase with the comparator-side half-step
+    (shifted compare ladder ``ceil(S·(1-r) - 1/2)``) and STE gradient — the NF
+    twin of the SCM kernel when the contract carries ``comparator_half_step``."""
+
+    @staticmethod
+    def forward(ctx, r, S):
+        one = torch.ones((), dtype=r.dtype, device=r.device)
+        return ttfs_quantized_staircase(r, one, int(S), comparator_half_step=True)
+
+    @staticmethod
+    def backward(ctx, *grad_outputs):
+        grad_output, = grad_outputs
+        return grad_output.clone(), None
+
+
 class RoundedStaircaseFunction(Function):
     """Nearest-neighbour quantiser round(x * T) / T with STE gradient."""
 
@@ -134,14 +150,34 @@ _CLAMP_LEAK = 0.01
 """Minimum out-of-range gradient for DifferentiableClamp."""
 
 
+def _clamp_bound_admissible(bound: torch.Tensor, x: torch.Tensor) -> bool:
+    """Scalar (0-dim), or a channels-last vector matching x's last dim (>1 —
+    scalars must arrive 0-dim so a stray [1]-shaped bound stays loud)."""
+    if bound.dim() == 0:
+        return True
+    return (
+        bound.dim() == 1
+        and bound.numel() > 1
+        and x.dim() >= 1
+        and int(x.shape[-1]) == int(bound.numel())
+    )
+
+
+def _reduce_grad_to_bound(grad: torch.Tensor, bound: torch.Tensor) -> torch.Tensor:
+    if bound.dim() == 0:
+        return grad.sum()
+    return grad.reshape(-1, bound.shape[0]).sum(dim=0)
+
+
 class DifferentiableClamp(Function):
     """Differentiable clamp with optional gradient flow to the bounds."""
 
     @staticmethod
     def forward(ctx, x, a, b):
-        assert a.dim() <= 0 and b.dim() <= 0, (
-            f"DifferentiableClamp expects scalar bounds; got a.shape={tuple(a.shape)}, "
-            f"b.shape={tuple(b.shape)}"
+        assert _clamp_bound_admissible(a, x) and _clamp_bound_admissible(b, x), (
+            f"DifferentiableClamp expects scalar bounds or a channels-last "
+            f"per-channel vector; got a.shape={tuple(a.shape)}, "
+            f"b.shape={tuple(b.shape)} for x.shape={tuple(x.shape)}"
         )
         a_dev = a.to(x.device)
         b_dev = b.to(x.device)
@@ -159,8 +195,12 @@ class DifferentiableClamp(Function):
             below_grad,
             torch.where(x > b, above_grad, torch.ones_like(x)),
         )
-        grad_a = (grad_output * (x < a).to(grad_output.dtype)).sum()
-        grad_b = (grad_output * (x > b).to(grad_output.dtype)).sum()
+        grad_a = _reduce_grad_to_bound(
+            grad_output * (x < a).to(grad_output.dtype), a
+        )
+        grad_b = _reduce_grad_to_bound(
+            grad_output * (x > b).to(grad_output.dtype), b
+        )
         return grad_output * grad_x, grad_a, grad_b
 
 

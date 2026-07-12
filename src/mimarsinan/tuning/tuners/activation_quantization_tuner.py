@@ -5,6 +5,8 @@ import dataclasses
 from mimarsinan.mapping.support.bias_compensation import (
     apply_sync_exact_entry_half_step,
 )
+from mimarsinan.spiking.dfq_bias_correction import preactivation_channel_means
+from mimarsinan.spiking.sync_first_moment import apply_sync_first_moment_fold
 from mimarsinan.tuning.adaptation_rate_tuner import AdaptationRateTuner
 from mimarsinan.tuning.orchestration.adaptation_manager import (
     install_sync_entry_grid_snap,
@@ -19,6 +21,10 @@ from mimarsinan.tuning.orchestration.frontier.hop_staging import (
     resolve_sync_hop_staging,
     run_hop_stage_reaffine,
 )
+from mimarsinan.tuning.orchestration.mbh_ledger import (
+    _fixed_validation_batch,
+    _measurement_guard,
+)
 
 
 class ActivationQuantizationTuner(AdaptationRateTuner):
@@ -29,6 +35,16 @@ class ActivationQuantizationTuner(AdaptationRateTuner):
         super().__init__(pipeline, model, target_accuracy, lr, adaptation_manager)
         self.target_tq = target_tq
         self._final_metric = None
+        # [S3/R6] the float twin must be captured BEFORE the grid snap and the
+        # half-step folds change the forward (it is the reference the endpoint
+        # fold matches against).
+        self._first_moment_armed = sync_exact_qat_active(self.pipeline.config) and bool(
+            self.pipeline.config.get("sync_first_moment_fold", False)
+        )
+        self._fm_cal_x = None
+        self._fm_float_preact = None
+        if self._first_moment_armed:
+            self._capture_first_moment_reference()
         # [MBH T6] exact-endpoint QAT also trains through the deployed per-stage
         # input grid snap (no-op unless the sync_exact_qat recipe knob + synchronized).
         install_sync_entry_grid_snap(self.model, self.pipeline.config)
@@ -64,6 +80,46 @@ class ActivationQuantizationTuner(AdaptationRateTuner):
         )
         print(f"[MBH-B1] sync entry half-step folded on {folded} hops", flush=True)
 
+    def _capture_first_moment_reference(self) -> None:
+        batch = _fixed_validation_batch(self.trainer)
+        if batch is None:
+            print(
+                "[MBH-S3] sync first-moment fold: no calibration batch; "
+                "the endpoint fold will skip",
+                flush=True,
+            )
+            return
+        x, _ = batch
+        self._fm_cal_x = x.to(self.pipeline.config["device"])
+        with _measurement_guard(self.trainer):
+            self._fm_float_preact = preactivation_channel_means(
+                self.model, self._fm_cal_x,
+            )
+
+    def _apply_first_moment_fold(self) -> None:
+        # [S3] closed-form sequential fold at the conversion endpoint (rate 1.0,
+        # half-step folded), BEFORE endpoint recovery so the QAT trains from
+        # the corrected state.
+        if self._fm_cal_x is None or self._fm_float_preact is None:
+            print(
+                "[MBH-S3] sync first-moment fold skipped: no float reference",
+                flush=True,
+            )
+            return
+        with _measurement_guard(self.trainer):
+            stats = apply_sync_first_moment_fold(
+                self.model,
+                self._fm_cal_x,
+                self._fm_float_preact,
+                int(self.pipeline.config["simulation_steps"]),
+            )
+        print(
+            f"[MBH-S3] sync first-moment fold: folded on {stats['folded']} hops "
+            f"(mean |delta| {stats['mean_abs_delta']:.6f}, "
+            f"skipped {stats['skipped']})",
+            flush=True,
+        )
+
     def _fast_ramp(self, rate) -> None:
         if getattr(self, "_hop_stage_levels", None):
             run_hop_stage_reaffine(self, rate)
@@ -87,6 +143,8 @@ class ActivationQuantizationTuner(AdaptationRateTuner):
             # [5v B1(ii)] the deferred fold: the kernel is fully installed at
             # rate 1.0, so this IS the exact-kernel QAT's entry bias.
             self._fold_entry_half_step()
+        if getattr(self, "_first_moment_armed", False):
+            self._apply_first_moment_fold()
         # P1'' for sync: rate 1.0 through the ceil kernel + grid snap IS the
         # exact deployed composition (T6) — train it to the D-hat high-water.
         run_endpoint_recovery(

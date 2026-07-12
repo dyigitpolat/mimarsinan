@@ -74,6 +74,7 @@ class TtfsAnalyticalExecutor:
         *,
         simulation_length: int,
         spiking_mode: str,
+        comparator_half_step: bool = False,
     ) -> NeuralSegmentResult:
         if not is_ttfs_spiking_mode(spiking_mode):
             raise ValueError(
@@ -88,6 +89,7 @@ class TtfsAnalyticalExecutor:
             seg_in,
             simulation_length=int(simulation_length),
             spiking_mode=spiking_mode,
+            comparator_half_step=comparator_half_step,
         )
 
         per_core: List[np.ndarray] = []
@@ -171,6 +173,7 @@ def run_ttfs_contract_neural_stage(
     spiking_mode: str,
     executor: TtfsAnalyticalExecutor | None = None,
     quantize_input_to_ttfs_grid: bool = False,
+    comparator_half_step: bool = False,
 ) -> TtfsContractNeuralStageResult:
     """Run one neural stage on the shared TTFS contract path (float64 numpy).
 
@@ -194,6 +197,7 @@ def run_ttfs_contract_neural_stage(
         seg_in = ttfs_input_grid_quantize(seg_in, simulation_length)
     result = exec_.run_segment(
         hcm, seg_in, simulation_length=simulation_length, spiking_mode=spiking_mode,
+        comparator_half_step=comparator_half_step,
     )
     membrane_V = result.membrane_voltages
     assert membrane_V is not None, (
@@ -247,11 +251,13 @@ def run_ttfs_hybrid_contract(
     sample_index: int = 0,
     ttfs_cycle_schedule: str | None = None,
     contract: Any = None,
+    comparator_half_step: bool | None = None,
 ) -> TtfsContractRunResult:
     """Execute the full hybrid mapping on the canonical TTFS contract path.
 
     Pass a ``SpikingDeploymentContract`` to derive ``simulation_length`` /
-    ``spiking_mode`` / grid-snap from the SSOT; loose kwargs remain honored."""
+    ``spiking_mode`` / grid-snap / comparator shift from the SSOT; loose
+    kwargs remain honored."""
     if contract is not None:
         if simulation_length is None:
             simulation_length = contract.simulation_steps
@@ -259,6 +265,9 @@ def run_ttfs_hybrid_contract(
             spiking_mode = contract.spiking_mode
         if ttfs_cycle_schedule is None:
             ttfs_cycle_schedule = contract.ttfs_cycle_schedule
+        if comparator_half_step is None:
+            comparator_half_step = bool(contract.comparator_half_step)
+    comparator_half_step = bool(comparator_half_step)
     if simulation_length is None or spiking_mode is None:
         raise ValueError(
             "run_ttfs_hybrid_contract requires simulation_length and "
@@ -292,6 +301,7 @@ def run_ttfs_hybrid_contract(
             spiking_mode=spiking_mode,
             executor=executor,
             quantize_input_to_ttfs_grid=quantize_input,
+            comparator_half_step=comparator_half_step,
         )
         record.segments[stage_index] = out.segment_record
 

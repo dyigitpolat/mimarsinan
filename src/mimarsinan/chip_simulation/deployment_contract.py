@@ -32,6 +32,8 @@ class SpikingDeploymentContract:
     bias_mode: str
     # Ops bound, not semantics: the wall cap simulator backends run under.
     simulation_step_timeout_s: float | None = None
+    # [E3] carry the +θ/(2S) mid-tread offset in the compare ladder, not the bias.
+    comparator_half_step: bool = False
 
     @property
     def spiking_mode(self) -> str:
@@ -69,6 +71,7 @@ class SpikingDeploymentContract:
             ),
             bias_mode=resolve_bias_mode(cfg),
             simulation_step_timeout_s=float(timeout) if timeout is not None else None,
+            comparator_half_step=bool(cfg.get("comparator_half_step", False)),
         )
 
     def is_synchronized(self, *, core: Any = None) -> bool:
@@ -92,6 +95,7 @@ class SpikingDeploymentContract:
         return WireSemantics(
             simulation_steps=self.simulation_steps,
             compare_mode=self.thresholding_mode,
+            comparator_half_step=self.comparator_half_step,
         )
 
     def mode_policy(self, *, core: Any = None):
