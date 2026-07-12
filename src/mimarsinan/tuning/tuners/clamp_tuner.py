@@ -6,6 +6,7 @@ import torch
 
 from mimarsinan.common.workload_profile import ResolvedWorkloadProfile
 from mimarsinan.models.nn.layers import SavedTensorDecorator
+from mimarsinan.spiking.per_channel_theta import maybe_promote_per_channel_theta
 from mimarsinan.tuning.axes import ClampAxis
 from mimarsinan.tuning.orchestration.adaptation_manager import (
     lif_subsumed_ladder_steps,
@@ -110,6 +111,12 @@ class ClampTuner(SmoothAdaptationTuner):
                     "scale": float(act_scale),
                 }
             )
+
+        # [R3/S2] the install seam: refine eligible matching-axis hops to their
+        # per-channel theta (scalar install above stays the diagnostics view).
+        self.per_channel_theta_report = maybe_promote_per_channel_theta(
+            self.pipeline.config, self.model, activation_scale_stats, scales,
+        )
 
         return diagnostics
 

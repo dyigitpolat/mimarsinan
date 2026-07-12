@@ -117,6 +117,69 @@ class TestThresholdGroupFragmentationGap:
         assert pf.hard_cores <= 4
 
 
+class TestPerChannelThetaPacking:
+    """[R3/S2] the per-channel-theta packing prerequisite: threshold groups are
+    keyed on perceptron IDENTITY (softcore_spec perceptron_index), and the SCM
+    threshold stays 1.0 in effective coordinates — a per-channel activation_scale
+    vector must therefore change NOTHING in the packing verdict."""
+
+    def _with_per_channel_theta(self, graph):
+        import torch
+
+        for node in graph.nodes:
+            n_out = node.core_matrix.shape[1]
+            node.activation_scale = torch.linspace(0.5, 2.0, n_out)
+        return graph
+
+    def _distinct_group_graph(self, n):
+        nodes = [_core(i, f"P{i}", 2, 2, perceptron_index=i) for i in range(n)]
+        return IRGraph(nodes=nodes, output_sources=_src([(n - 1, 0)]))
+
+    def test_vector_theta_verdict_identical_to_scalar(self):
+        constraints = {"cores": _cores(8, 8, 64)}
+        scalar = dryrun_pack_feasible(self._distinct_group_graph(8), constraints)
+        vector = dryrun_pack_feasible(
+            self._with_per_channel_theta(self._distinct_group_graph(8)),
+            constraints,
+        )
+        assert scalar.feasible and vector.feasible
+        assert vector.hard_cores == scalar.hard_cores
+
+    def test_vector_theta_does_not_multiply_threshold_groups(self):
+        # Same-group co-packing must survive per-channel theta: if the packer
+        # keyed groups on theta VALUES, these 8 same-index cores would
+        # fragment onto >4 hard cores and reject.
+        import torch
+
+        nodes = [_core(i, f"S{i}", 2, 2, perceptron_index=0) for i in range(8)]
+        for node in nodes:
+            node.activation_scale = torch.linspace(0.5, 2.0, 2)
+        graph = IRGraph(nodes=nodes, output_sources=_src([(7, 0)]))
+        pf = dryrun_pack_feasible(graph, {"cores": _cores(8, 8, 4)})
+        assert pf.feasible is True
+        assert pf.hard_cores <= 4
+
+    def test_mixer_shaped_graph_with_vector_theta_packs(self):
+        from unit.mapping.test_identity_hybrid_mapping import (
+            _make_mini_mixer_ir_graph,
+        )
+        import torch
+
+        constraints = {"cores": _cores(64, 64, 32)}
+        ir_scalar, _ = _make_mini_mixer_ir_graph()
+        scalar = dryrun_pack_feasible(ir_scalar, constraints)
+
+        ir_vector, _ = _make_mini_mixer_ir_graph()
+        for node in ir_vector.get_neural_cores():
+            node.activation_scale = torch.linspace(
+                0.5, 2.0, node.get_output_count()
+            )
+        vector = dryrun_pack_feasible(ir_vector, constraints)
+
+        assert scalar.feasible and vector.feasible
+        assert vector.hard_cores == scalar.hard_cores
+
+
 class TestEmptyAndEdge:
     def test_non_capacity_error_propagates_not_swallowed_as_infeasible(self):
         """A structural error (empty graph → no stages) is NOT mislabeled a capacity

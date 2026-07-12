@@ -103,11 +103,17 @@ def perceptron_per_source_scale(node, deps, out_scales) -> torch.Tensor:
 
 
 def perceptron_boundary_scale(node, deps, out_scales, default) -> float:
-    """Shared ``propagate_boundary_scale`` body for perceptron-bearing mappers."""
+    """Shared ``propagate_boundary_scale`` body for perceptron-bearing mappers.
+
+    The boundary walk is scalar by contract (scale_aware_boundaries): a
+    per-channel theta mean-collapses here exactly as in the pure read twin."""
     perceptron = node.perceptron
     in_scale = mean_source_scale(deps, out_scales, default)
     perceptron.set_input_activation_scale(in_scale)
-    return float(perceptron.activation_scale)
+    scale = perceptron.activation_scale
+    if isinstance(scale, torch.Tensor) and scale.dim() > 0:
+        return float(scale.detach().to(torch.float64).mean())
+    return float(scale)
 
 
 def apply_compute_op_scale_policy(node, source_scales: list) -> torch.Tensor | None:

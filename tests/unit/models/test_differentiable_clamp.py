@@ -92,6 +92,49 @@ class TestDifferentiableClampShapes:
         assert torch.isfinite(x.grad).all()
 
 
+class TestDifferentiableClampChannelBounds:
+    """[R3/S2] per-channel theta as the clamp ceiling: a channels-last 1-D bound
+    clamps each channel to its own theta; anything else stays loud-rejected."""
+
+    def test_vector_ceiling_clamps_per_channel(self):
+        x = torch.tensor([[0.5, 0.5, 0.5], [2.0, 2.0, 2.0]])
+        b = torch.tensor([0.4, 1.0, 3.0])
+        out = DifferentiableClamp.apply(x, torch.tensor(0.0), b)
+        assert torch.equal(
+            out, torch.tensor([[0.4, 0.5, 0.5], [0.4, 1.0, 2.0]])
+        )
+
+    def test_vector_matches_scalar_when_uniform(self):
+        x = torch.randn(4, 6)
+        scalar = DifferentiableClamp.apply(
+            x, torch.tensor(0.0), torch.tensor(1.3)
+        )
+        vector = DifferentiableClamp.apply(
+            x, torch.tensor(0.0), torch.full((6,), 1.3)
+        )
+        assert torch.equal(scalar, vector)
+
+    def test_vector_backward_grad_shapes(self):
+        x = torch.randn(2, 5, 6, requires_grad=True)
+        b = torch.linspace(0.5, 1.5, 6)
+        out = DifferentiableClamp.apply(x, torch.tensor(0.0), b)
+        out.sum().backward()
+        assert x.grad.shape == x.shape
+        assert torch.isfinite(x.grad).all()
+
+    def test_mismatched_vector_length_rejected(self):
+        x = torch.randn(2, 6)
+        b = torch.linspace(0.5, 1.5, 4)  # 4 != channels-last 6
+        with pytest.raises(AssertionError, match="scalar bounds"):
+            DifferentiableClamp.apply(x, torch.tensor(0.0), b)
+
+    def test_multi_dim_bound_rejected(self):
+        x = torch.randn(2, 6)
+        b = torch.ones(2, 6)
+        with pytest.raises(AssertionError, match="scalar bounds"):
+            DifferentiableClamp.apply(x, torch.tensor(0.0), b)
+
+
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA unavailable")
 class TestDifferentiableClampCuda:
     """The failure was only on CUDA — parity on CPU matters less than not crashing here."""

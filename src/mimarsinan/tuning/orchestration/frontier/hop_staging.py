@@ -20,6 +20,9 @@ from mimarsinan.tuning.orchestration.install_resolution import (
     capture_install_stats,
     value_grid_levels,
 )
+from mimarsinan.tuning.orchestration.install_resolution.gauges import (
+    gauge_theta_scalar,
+)
 from mimarsinan.tuning.orchestration.mbh_ledger import (
     _fixed_validation_batch,
     _measurement_guard,
@@ -53,7 +56,7 @@ def _install_gauge_fails(tuner, levels: int) -> bool:
     depths = {
         id(p): int(getattr(p, HOP_DEPTH_ATTR, 0)) for p, _ in stats
     }
-    thetas = [float(p.activation_scale) for p, _ in stats]
+    thetas = [gauge_theta_scalar(p.activation_scale) for p, _ in stats]
     gauge = build_value_install_gauge(stats, thetas, depths, levels)
     return gauge.fails
 

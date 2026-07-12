@@ -7,6 +7,9 @@ from typing import Callable
 import torch
 
 from mimarsinan.models.perceptron_mixer.perceptron import activation_channel_axis
+from mimarsinan.transformations.perceptron.perceptron_transformer import (
+    PerceptronTransformer,
+)
 from mimarsinan.transformations.pruning.committed_masks import (
     commit_perceptron_pruning,
 )
@@ -25,23 +28,32 @@ def perceptron_channel_mean(perceptron, t: torch.Tensor) -> torch.Tensor:
     return channel_mean(t, activation_channel_axis(perceptron, t))
 
 
-def teacher_activation_samples(teacher, cal_x) -> dict:
-    """Capture each teacher perceptron's activation output on ``cal_x``."""
+def _activation_hook_samples(model, cal_x, capture, indices=None) -> dict:
+    """One no-grad forward with per-perceptron activation hooks; ``capture``
+    picks the tensor from ``(hook_inputs, hook_output)``."""
+    wanted = None if indices is None else set(indices)
     samples: dict = {}
     handles = [
         perceptron.activation.register_forward_hook(
-            lambda _m, _i, out, k=k: samples.__setitem__(k, out.detach())
+            lambda _m, inp, out, k=k: samples.__setitem__(k, capture(inp, out))
         )
-        for k, perceptron in enumerate(teacher.get_perceptrons())
-        if hasattr(perceptron, "activation")
+        for k, perceptron in enumerate(model.get_perceptrons())
+        if hasattr(perceptron, "activation") and (wanted is None or k in wanted)
     ]
     try:
         with torch.no_grad():
-            teacher(cal_x)
+            model(cal_x)
     finally:
         for handle in handles:
             handle.remove()
     return samples
+
+
+def teacher_activation_samples(teacher, cal_x) -> dict:
+    """Capture each teacher perceptron's activation output on ``cal_x``."""
+    return _activation_hook_samples(
+        teacher, cal_x, lambda _inp, out: out.detach(),
+    )
 
 
 def teacher_channel_means(teacher, cal_x) -> dict:
@@ -50,6 +62,104 @@ def teacher_channel_means(teacher, cal_x) -> dict:
     return {
         k: perceptron_channel_mean(perceptrons[k], v)
         for k, v in teacher_activation_samples(teacher, cal_x).items()
+    }
+
+
+def perceptron_preactivation_samples(model, cal_x, indices=None) -> dict:
+    """Capture each perceptron's activation INPUT (the value-domain
+    pre-activation) on ``cal_x`` — the input-side twin of
+    :func:`teacher_activation_samples`. ``indices`` restricts the capture."""
+    return _activation_hook_samples(
+        model, cal_x, lambda inp, _out: inp[0].detach(), indices,
+    )
+
+
+def preactivation_channel_means(model, cal_x) -> dict:
+    """Per-perceptron pre-activation channel-mean keyed by perceptron index."""
+    perceptrons = list(model.get_perceptrons())
+    return {
+        k: perceptron_channel_mean(perceptrons[k], v)
+        for k, v in perceptron_preactivation_samples(model, cal_x).items()
+    }
+
+
+def _effective_bias_shift(perceptron, value_delta: torch.Tensor) -> None:
+    """Subtract a value-domain pre-activation ``value_delta`` via the effective
+    bias (θ-normalized), per-channel-θ aware."""
+    theta = torch.as_tensor(perceptron.activation_scale).detach()
+    theta = theta.to(value_delta.device, value_delta.dtype)
+    shift = value_delta / (
+        theta.reshape(-1) if theta.numel() == value_delta.numel() else theta
+    )
+    PerceptronTransformer().apply_effective_bias_transform(
+        perceptron, lambda b, s=shift: b - s.to(b.device, b.dtype),
+    )
+
+
+def sequential_first_moment_fold(
+    model,
+    float_preact_mean: dict,
+    cal_x,
+    *,
+    own_offsets: dict,
+    hop_order=None,
+    baked_flag: str = "_first_moment_folded",
+) -> dict:
+    """[S3] Sequential per-hop first-moment bias fold, input→output.
+
+    Per hop k: fold ``b_eff -= (E[preact_deployed - preact_float] - own)/θ``,
+    the deployed estimate measured through the ALREADY-FOLDED prefix (a fresh
+    forward per hop). ``own_offsets[k]`` is the hop's INTENTIONAL value-domain
+    offset (the baked +θ/(2S) half-step): omitting it folds the raw gap and
+    cancels the mid-tread compensation — the §3.2 sign trap (0.93→0.59).
+    """
+    perceptrons = list(model.get_perceptrons())
+    # W-CAL-2: calibration must start from the committed-pruning state.
+    for perceptron in perceptrons:
+        commit_perceptron_pruning(perceptron)
+
+    order = list(hop_order) if hop_order is not None else list(range(len(perceptrons)))
+    folded = 0
+    skipped = 0
+    per_hop_abs_delta: dict = {}
+    for k in order:
+        perceptron = perceptrons[k]
+        mu_float = float_preact_mean.get(k)
+        bias = getattr(perceptron.layer, "bias", None)
+        if (
+            mu_float is None
+            or bias is None
+            or getattr(perceptron, baked_flag, False)
+        ):
+            skipped += 1
+            continue
+        value = perceptron_preactivation_samples(model, cal_x, indices=(k,)).get(k)
+        if value is None:
+            skipped += 1
+            continue
+        cm = perceptron_channel_mean(perceptron, value)
+        mu = mu_float.to(cm.device, cm.dtype)
+        n = min(cm.numel(), mu.numel(), bias.numel())
+        own = torch.as_tensor(
+            own_offsets.get(k, 0.0), dtype=cm.dtype, device=cm.device,
+        )
+        delta = (cm[:n] - mu[:n]) - (own.reshape(-1)[:n] if own.dim() else own)
+        delta = _live_bias_delta(perceptron, delta)
+        full = torch.zeros(bias.numel(), dtype=bias.dtype, device=bias.device)
+        full[:n] = delta.to(bias.device, bias.dtype)
+        _effective_bias_shift(perceptron, full)
+        setattr(perceptron, baked_flag, True)
+        folded += 1
+        per_hop_abs_delta[k] = float(delta.abs().mean())
+
+    return {
+        "folded": folded,
+        "skipped": skipped,
+        "per_hop_abs_delta": per_hop_abs_delta,
+        "mean_abs_delta": (
+            sum(per_hop_abs_delta.values()) / len(per_hop_abs_delta)
+            if per_hop_abs_delta else 0.0
+        ),
     }
 
 

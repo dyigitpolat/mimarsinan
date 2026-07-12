@@ -105,23 +105,29 @@ def _step_through(node, k: int, consumer_predicate):
 
 def channel_aligned_consumer_targets(
     producer_node, consumers: dict, *, consumer_predicate=consumer_columns_unmediated,
+    structural_perceptron_paths: bool = False,
 ):
     """All consumers of the producer's channel axis as ``(perceptrons, modules)``,
     or None when any path is not exactly column-aligned (fan-out closure: one bad
     path voids the producer). ``k`` is the channel position counted from the
     tensor's end (1 = last); ``consumer_predicate`` is the caller's fold-currency
-    alignment condition on consumer perceptrons."""
-    frontier: list = [(producer_node, 1)]
+    alignment condition on consumer perceptrons.
+
+    ``structural_perceptron_paths``: void the producer when a perceptron target
+    is reached through a ComputeOp pass (a host/segment boundary) — currencies
+    that live on the wire (per-channel theta) stop at that seam, while host
+    module targets decode per-source and stay admissible."""
+    frontier: list = [(producer_node, 1, False)]
     visited: set = set()
     perceptron_targets: dict = {}
     module_targets: dict = {}
     while frontier:
-        node, k = frontier.pop()
+        node, k, crossed_compute = frontier.pop()
         downstream = consumers.get(id(node), [])
         if not downstream:
             return None  # the channel axis reaches the model output unmediated
         for consumer in downstream:
-            key = (id(consumer), k)
+            key = (id(consumer), k, crossed_compute)
             if key in visited:
                 continue
             visited.add(key)
@@ -130,8 +136,11 @@ def channel_aligned_consumer_targets(
                 return None
             kind, value = step
             if kind == "pass":
-                frontier.append((consumer, value))
+                crossed = crossed_compute or isinstance(consumer, ComputeOpMapper)
+                frontier.append((consumer, value, crossed))
             elif kind == "perceptron":
+                if structural_perceptron_paths and crossed_compute:
+                    return None
                 perceptron_targets[id(value)] = value
             else:
                 module_targets[id(value)] = value

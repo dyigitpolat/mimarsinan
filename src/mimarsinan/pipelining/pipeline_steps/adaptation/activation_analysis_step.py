@@ -20,6 +20,13 @@ from mimarsinan.pipelining.pipeline_steps.activation_utils import (
     analysis_batch_count,
     calibration_policy,
 )
+from mimarsinan.spiking.per_channel_theta import (
+    PER_CHANNEL_QUANTILE_CAP,
+    per_channel_theta_armed,
+)
+from mimarsinan.tuning.orchestration.theta_quantile_policy import (
+    effective_theta_quantile,
+)
 
 import torch
 
@@ -105,8 +112,10 @@ class ActivationAnalysisStep(TrainerPipelineStep):
             self.trainer.set_validation_batch_size(target_bs)
 
         perceptrons = list(model.get_perceptrons())
+        pc_theta_armed = per_channel_theta_armed(self.pipeline.config)
         decorators = []
         channel_accumulators = []
+        theta_accumulators = []
         cleanup_callbacks = []
         for perceptron in perceptrons:
             decorator, cleanup = _attach_saved_tensor_decorator(perceptron)
@@ -118,6 +127,18 @@ class ActivationAnalysisStep(TrainerPipelineStep):
             cleanup_callbacks.append(
                 attach_activation_decorator(perceptron, accumulator)
             )
+            if pc_theta_armed:
+                # [R3/S2] theta capture on the owner-declared channel axis (the
+                # A6 accumulator keeps its legacy dim-1 convention untouched).
+                theta_accumulator = ChannelStatsAccumulator(
+                    channel_axis=int(
+                        getattr(perceptron, "output_channel_axis", 1)
+                    )
+                )
+                theta_accumulators.append(theta_accumulator)
+                cleanup_callbacks.append(
+                    attach_activation_decorator(perceptron, theta_accumulator)
+                )
 
         n_batches = analysis_batch_count(self.pipeline)
         sampled_activations = [[] for _ in perceptrons]
@@ -152,6 +173,18 @@ class ActivationAnalysisStep(TrainerPipelineStep):
         quantile = float(
             self.pipeline.config.get("activation_scale_quantile", DEFAULT_SCALE_QUANTILE)
         )
+        if bool(self.pipeline.config.get("s_aware_theta_quantile", False)):
+            levels = value_grid_levels(
+                DeploymentPlan.of(self.pipeline).spiking_mode, self.pipeline.config,
+            )
+            s_aware = effective_theta_quantile(levels, quantile)
+            if s_aware < quantile:
+                print(
+                    f"[MBH-S1] s-aware theta quantile {quantile} -> {s_aware} "
+                    f"at the {levels}-step grid",
+                    flush=True,
+                )
+            quantile = s_aware
         merged_samples = []
         activation_scales = []
         for layer_samples in sampled_activations:
@@ -184,6 +217,16 @@ class ActivationAnalysisStep(TrainerPipelineStep):
         )
         if deflated_layers is not None:
             scale_stats["deflated_layers"] = deflated_layers
+        if pc_theta_armed:
+            # [R3/S2] never load a channel at the full quantile (A5 anchor).
+            pc_quantile = min(quantile, PER_CHANNEL_QUANTILE_CAP)
+            scale_stats["per_channel_quantiles"] = {
+                "quantile": pc_quantile,
+                "channels": [
+                    acc.per_channel_quantile(pc_quantile)
+                    for acc in theta_accumulators
+                ],
+            }
         scale_summary = scale_stats["summary"]
         print(
             "[ActivationAnalysisStep] "

@@ -378,3 +378,122 @@ class TestStarvationAwareQuantile:
         pipeline, _ = self._run(tmp_path, cfg)
         stats = pipeline.cache["ActivationAnalysis.activation_scale_stats"]
         assert stats.get("deflated_layers", []) == []
+
+
+class TestSAwareThetaQuantile:
+    """[R4/S1] the S-aware quantile descent: the calibration quantile follows
+    the value grid (min(base, policy(levels))), default OFF, witness-logged."""
+
+    def _run(self, tmp_path, cfg):
+        pipeline = MockPipeline(
+            config=cfg,
+            working_directory=str(tmp_path / "pipeline_cache"),
+            data_provider_factory=MockDataProviderFactory(size=64),
+        )
+        pipeline.seed("model", make_tiny_supermodel())
+        step = ActivationAnalysisStep(pipeline)
+        step.name = "ActivationAnalysis"
+        pipeline.prepare_step(step)
+        step.run()
+        return pipeline
+
+    def test_low_s_deflates_the_quantile_with_witness(self, tmp_path, capsys):
+        cfg = default_config()  # lif, simulation_steps=4 -> policy 0.95
+        cfg["s_aware_theta_quantile"] = True
+        pipeline = self._run(tmp_path, cfg)
+        stats = pipeline.cache["ActivationAnalysis.activation_scale_stats"]
+        assert stats["quantile"] == pytest.approx(0.95)
+        assert "[MBH-S1]" in capsys.readouterr().out
+
+    def test_low_s_scales_do_not_exceed_the_base_quantile_scales(self, tmp_path):
+        cfg_ref = default_config()
+        torch.manual_seed(11)
+        ref = self._run(tmp_path / "ref", cfg_ref)
+        scales_ref = ref.cache["ActivationAnalysis.activation_scales"]
+
+        cfg = default_config()
+        cfg["s_aware_theta_quantile"] = True
+        torch.manual_seed(11)
+        armed = self._run(tmp_path / "armed", cfg)
+        scales_armed = armed.cache["ActivationAnalysis.activation_scales"]
+        assert all(a <= r for a, r in zip(scales_armed, scales_ref))
+
+    def test_high_s_keeps_the_base_quantile(self, tmp_path, capsys):
+        cfg = default_config()
+        cfg["simulation_steps"] = 32  # policy 1.0; base 0.99 wins
+        cfg["s_aware_theta_quantile"] = True
+        pipeline = self._run(tmp_path, cfg)
+        stats = pipeline.cache["ActivationAnalysis.activation_scale_stats"]
+        assert stats["quantile"] == pytest.approx(0.99)
+        assert "[MBH-S1]" not in capsys.readouterr().out
+
+    def test_continuous_mode_keeps_the_base(self, tmp_path):
+        cfg = default_config()
+        cfg["spiking_mode"] = "ttfs"  # no value grid
+        cfg["s_aware_theta_quantile"] = True
+        pipeline = self._run(tmp_path, cfg)
+        stats = pipeline.cache["ActivationAnalysis.activation_scale_stats"]
+        assert stats["quantile"] == pytest.approx(0.99)
+
+    def test_knob_off_is_bit_identical(self, tmp_path):
+        torch.manual_seed(13)
+        ref = self._run(tmp_path / "a", default_config())
+        torch.manual_seed(13)
+        off = self._run(tmp_path / "b", default_config())
+        assert (
+            ref.cache["ActivationAnalysis.activation_scales"]
+            == off.cache["ActivationAnalysis.activation_scales"]
+        )
+
+
+class TestPerChannelQuantileCapture:
+    """[R3/S2] when per_channel_theta is armed, the analysis step exports the
+    per-channel theta quantiles that the install-seam promotion consumes."""
+
+    def _run(self, tmp_path, cfg):
+        pipeline = MockPipeline(
+            config=cfg,
+            working_directory=str(tmp_path / "pipeline_cache"),
+            data_provider_factory=MockDataProviderFactory(size=64),
+        )
+        model = make_tiny_supermodel()
+        pipeline.seed("model", model)
+        step = ActivationAnalysisStep(pipeline)
+        step.name = "ActivationAnalysis"
+        pipeline.prepare_step(step)
+        step.run()
+        return pipeline, model
+
+    def test_armed_lif_exports_per_channel_quantiles(self, tmp_path):
+        cfg = default_config()
+        cfg["per_channel_theta"] = True
+        pipeline, model = self._run(tmp_path, cfg)
+        stats = pipeline.cache["ActivationAnalysis.activation_scale_stats"]
+        table = stats["per_channel_quantiles"]
+        perceptrons = list(model.get_perceptrons())
+        assert table["quantile"] == pytest.approx(0.99)
+        assert len(table["channels"]) == len(perceptrons)
+        for row, perceptron in zip(table["channels"], perceptrons):
+            assert len(row) == perceptron.output_channels
+            assert all(q >= 0.0 for q in row)
+
+    def test_armed_composes_with_s_aware_quantile(self, tmp_path):
+        cfg = default_config()  # S=4 -> effective 0.95
+        cfg["per_channel_theta"] = True
+        cfg["s_aware_theta_quantile"] = True
+        pipeline, _ = self._run(tmp_path, cfg)
+        stats = pipeline.cache["ActivationAnalysis.activation_scale_stats"]
+        assert stats["per_channel_quantiles"]["quantile"] == pytest.approx(0.95)
+
+    def test_off_exports_nothing(self, tmp_path):
+        pipeline, _ = self._run(tmp_path, default_config())
+        stats = pipeline.cache["ActivationAnalysis.activation_scale_stats"]
+        assert "per_channel_quantiles" not in stats
+
+    def test_non_capable_mode_exports_nothing(self, tmp_path):
+        cfg = default_config()
+        cfg["spiking_mode"] = "ttfs_quantized"
+        cfg["per_channel_theta"] = True
+        pipeline, _ = self._run(tmp_path, cfg)
+        stats = pipeline.cache["ActivationAnalysis.activation_scale_stats"]
+        assert "per_channel_quantiles" not in stats

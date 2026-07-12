@@ -54,8 +54,8 @@ class ChannelStatsAccumulator:
             return torch.empty(0, 0)
         return torch.cat(self._chunks, dim=0)
 
-    def per_channel_q99(self) -> List[float]:
-        """Count-based q99 of each channel's positives (no positives -> 0.0)."""
+    def per_channel_quantile(self, quantile: float) -> List[float]:
+        """Count-based ``quantile`` of each channel's positives (none -> 0.0)."""
         rows = self._rows()
         out: List[float] = []
         for c in range(rows.shape[1]):
@@ -64,9 +64,17 @@ class ChannelStatsAccumulator:
                 out.append(0.0)
             else:
                 out.append(
-                    float(torch.quantile(positives, 0.99, interpolation="higher"))
+                    float(
+                        torch.quantile(
+                            positives, float(quantile), interpolation="higher",
+                        )
+                    )
                 )
         return out
+
+    def per_channel_q99(self) -> List[float]:
+        """Count-based q99 of each channel's positives (no positives -> 0.0)."""
+        return self.per_channel_quantile(0.99)
 
     def positive_values(self) -> List[float]:
         rows = self._rows()

@@ -37,6 +37,14 @@ _DEAD_DRIVE_DELAY = 1e6
 """A6(ii): a hop with no drive never fires — its first-fire delay saturates."""
 
 
+def gauge_theta_scalar(theta) -> float:
+    """Scalar gauge read of a theta: a per-channel vector mean-collapses (the
+    gauges are warn-only scalar diagnostics); scalars pass through unchanged."""
+    if getattr(theta, "ndim", 0):
+        return float(theta.detach().mean())
+    return float(theta)
+
+
 def value_gauge_thresholds(spiking_mode: str) -> tuple:
     """(min_median_levels, starved_mass_warn | None) conditioned on the install
     kernel: nearest-rounding (ttfs_quantized) tolerates sub-step mass by
@@ -222,7 +230,7 @@ def lif_temporal_gauge(
         if getattr(perceptron, "is_encoding_layer", False):
             continue
         delay = first_fire_delay(
-            theta=float(perceptron.activation_scale),
+            theta=gauge_theta_scalar(perceptron.activation_scale),
             mean_drive=acc.mean_positive(),
         )
         depth = int(depths.get(id(perceptron), 0))
