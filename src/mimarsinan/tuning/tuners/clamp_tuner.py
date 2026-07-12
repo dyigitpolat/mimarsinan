@@ -18,12 +18,23 @@ from mimarsinan.tuning.orchestration.tuning_policy import FAST_LADDER_STEPS_PER_
 
 
 def saturation_hit_count(latest: torch.Tensor, ceiling: torch.Tensor) -> int:
-    """Count activations at >=99.9% of the clamp ceiling; a per-channel
-    (vector) ceiling broadcasts channels-last over the flattened capture."""
+    """Count activations at >=99.9% of the clamp ceiling.
+
+    Vector (per-channel) ceilings require a full-shape channels-last capture
+    (per-channel promotion is Linear-only by eligibility); sampled/flat
+    captures are rejected loudly rather than mis-binned.
+    """
     threshold = ceiling * 0.999
     if ceiling.ndim == 0 or ceiling.numel() == 1:
         return int((latest >= threshold).sum().item())
-    return int((latest.reshape(-1, ceiling.numel()) >= threshold).sum().item())
+    if latest.ndim >= 2 and latest.shape[-1] == ceiling.numel():
+        return int((latest >= threshold).sum().item())
+    if latest.ndim == 1 and latest.numel() % ceiling.numel() == 0:
+        return int((latest.reshape(-1, ceiling.numel()) >= threshold).sum().item())
+    raise RuntimeError(
+        f"per-channel saturation probe needs a channels-last capture: "
+        f"capture shape {tuple(latest.shape)} vs {ceiling.numel()} channels"
+    )
 
 
 
@@ -151,7 +162,10 @@ class ClampTuner(SmoothAdaptationTuner):
 
         decorators = []
         for perceptron in perceptrons:
-            decorator = SavedTensorDecorator(sample_to_cpu=True)
+            # A vector theta needs the full-shape capture (sampling destroys
+            # channel structure); scalar cells keep the cheap sampled capture.
+            vector_theta = torch.as_tensor(perceptron.activation_scale).numel() > 1
+            decorator = SavedTensorDecorator(sample_to_cpu=not vector_theta)
             perceptron.activation.decorate(decorator)
             decorators.append(decorator)
 

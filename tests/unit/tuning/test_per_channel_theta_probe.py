@@ -29,3 +29,13 @@ class TestSaturationHitCount:
         ceiling = torch.ones(3)
         with pytest.raises(RuntimeError):
             saturation_hit_count(latest, ceiling)
+
+    def test_full_shape_channels_last_broadcasts(self):
+        latest = torch.rand(16, 4) + 10.0
+        assert saturation_hit_count(latest, torch.ones(4)) == 64
+
+    def test_sampled_flat_capture_with_vector_ceiling_fails_loud(self):
+        # The decorator's linspace subsample destroys channel structure.
+        latest = torch.zeros(8192)
+        with pytest.raises(RuntimeError, match="channels-last capture"):
+            saturation_hit_count(latest, torch.ones(120))

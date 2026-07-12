@@ -298,3 +298,40 @@ class TestProcess:
             ), "the affine estimator is fitted on the nearest (half-step) chain"
         finally:
             mp.undo()
+
+
+class TestFoldRollback:
+    """A destructive fold never survives the step (measured 0.94->0.38 collapse)."""
+
+    def test_destructive_fold_is_rolled_back(self):
+        import pytest
+
+        import mimarsinan.pipelining.pipeline_steps.adaptation.lif_affine_fold_step as sut
+
+        mp = pytest.MonkeyPatch()
+        mp.setattr(
+            sut, "evaluate_crater_premise",
+            lambda *a, **k: CraterPremiseVerdict(
+                holds=True, deployed_read=0.9, reference_read=0.97,
+                standard_error=0.005,
+            ),
+        )
+
+        def _destroy(model, cal_x, steps):
+            with torch.no_grad():
+                for p in model.parameters():
+                    p.mul_(0.0)
+            return {"folded": 1, "consumer_folds": 1, "readout_folds": 0,
+                    "skipped": {}}
+
+        mp.setattr(sut, "apply_lif_affine_fold", _destroy)
+        try:
+            cfg = _config()
+            model = _deployed_model(cfg)
+            before = {k: v.detach().clone() for k, v in model.state_dict().items()}
+            _run_step(cfg, model)
+            after = model.state_dict()
+            for k in before:
+                assert torch.equal(before[k], after[k]), f"{k} not restored"
+        finally:
+            mp.undo()

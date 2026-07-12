@@ -101,6 +101,12 @@ class LIFAffineFoldStep(TrainerPipelineStep):
             self.update_entry("model", model, "torch_model")
             return
 
+        # A destructive fold must never survive: snapshot for keep-best
+        # rollback (measured collapse 0.9386 -> 0.3847 on a true-crater cell).
+        pre_fold_state = {
+            k: v.detach().clone() for k, v in model.state_dict().items()
+        }
+
         # The estimator is fitted on the nearest (half-step) chain; the fold is
         # idempotent, so the WeightQuantizationStep's own bake stays a no-op.
         if bool(config.get("lif_half_step_bias", False)):
@@ -115,6 +121,26 @@ class LIFAffineFoldStep(TrainerPipelineStep):
         compute_per_source_scales(model.get_mapper_repr())
 
         report = apply_lif_affine_fold(model, cal_x, simulation_steps)
+
+        with torch.no_grad():
+            post_read = float(
+                (model(cal_x).argmax(dim=-1) == cal_y).float().mean().item()
+            )
+        if post_read < verdict.deployed_read:
+            model.load_state_dict(pre_fold_state)
+            print(
+                f"[LIFAffineFoldStep] fold ROLLED BACK: post-fold calibration "
+                f"read {post_read:.4f} < entry {verdict.deployed_read:.4f} "
+                "(the estimator's regime does not hold on this crater)."
+            )
+            self.pipeline.reporter.report(
+                "lif_affine_fold",
+                {"folded": 0, "rolled_back": True,
+                 "post_fold_read": post_read, **premise_witness},
+            )
+            self.update_entry("model", model, "torch_model")
+            return
+        report["post_fold_read"] = post_read
         print(
             f"[LIFAffineFoldStep] affine folds: {report['consumer_folds']} "
             f"consumer, {report['readout_folds']} readout; skipped: "
