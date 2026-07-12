@@ -94,7 +94,19 @@ class TestStepOrdering:
 
 
 class TestProcess:
-    def test_folds_and_updates_model(self):
+    def test_folds_and_updates_model(self, monkeypatch=None):
+        # The crater-premise gate is contract-tested in test_lif_affine_fold;
+        # here it is pinned open so the step's fold path itself is exercised.
+        import pytest
+        mp = pytest.MonkeyPatch()
+        import mimarsinan.pipelining.pipeline_steps.adaptation.lif_affine_fold_step as sut
+        mp.setattr(sut, "crater_premise_holds", lambda *a, **k: True)
+        try:
+            self._run_fold_body()
+        finally:
+            mp.undo()
+
+    def _run_fold_body(self):
         cfg = _config()
         model = _deployed_model(cfg)
         pipeline = _run_step(cfg, model)
