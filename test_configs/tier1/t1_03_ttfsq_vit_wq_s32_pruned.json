@@ -49,6 +49,7 @@
     "weight_quantization": true,
     "pruning": true,
     "pruning_fraction": 0.05,
+    "scale_migration": true,
     "tuning_batch_size": 128,
     "preprocessing": {
       "interpolation": "bicubic",

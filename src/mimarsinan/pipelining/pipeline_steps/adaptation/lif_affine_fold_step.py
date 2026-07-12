@@ -13,7 +13,7 @@ from mimarsinan.mapping.support.bias_compensation import (
 from mimarsinan.mapping.support.per_source_scales import compute_per_source_scales
 from mimarsinan.pipelining.core.registry.trainer_factory import make_basic_trainer
 from mimarsinan.pipelining.core.steps.trainer_pipeline_step import TrainerPipelineStep
-from mimarsinan.tuning.lif_affine_fold import apply_lif_affine_fold
+from mimarsinan.tuning.lif_affine_fold import apply_lif_affine_fold, crater_premise_holds
 
 _CALIBRATION_BATCHES = 4
 
@@ -71,7 +71,20 @@ class LIFAffineFoldStep(TrainerPipelineStep):
             self.trainer.iter_validation_batches(_CALIBRATION_BATCHES),
         )
         device = config["device"]
-        cal_x = torch.cat([x.to(device) for x, _ in batches], dim=0)
+        pairs = [(x.to(device), y.to(device)) for x, y in batches]
+        cal_x = torch.cat([x for x, _ in pairs], dim=0)
+        cal_y = torch.cat([y for _, y in pairs], dim=0)
+
+        if not crater_premise_holds(model, cal_x, cal_y):
+            print(
+                "[LIFAffineFoldStep] deployed read >= float envelope: the fold "
+                "premise does not hold; skipping (the envelope is a worse teacher)."
+            )
+            self.pipeline.reporter.report(
+                "lif_affine_fold", {"folded": 0, "skipped_premise": True},
+            )
+            self.update_entry("model", model, "torch_model")
+            return
 
         report = apply_lif_affine_fold(model, cal_x, simulation_steps)
         print(

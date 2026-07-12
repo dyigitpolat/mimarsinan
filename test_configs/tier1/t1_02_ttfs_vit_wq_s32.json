@@ -47,6 +47,7 @@
     "thresholding_mode": "<=",
     "encoding_layer_placement": "subsume",
     "weight_quantization": true,
+    "scale_migration": true,
     "tuning_batch_size": 128,
     "preprocessing": {
       "interpolation": "bicubic",

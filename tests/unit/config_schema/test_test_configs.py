@@ -308,28 +308,43 @@ class TestW3cRespecs:
                 assert cell["quantization"] == "wq", run["name"]
 
 
-class TestM1MixerE4Respec:
-    """M1 mixer-e4 respec (2026-07-07, user-mandated): every mmixcore cell in
-    both matrices trains 4 pretrain epochs. Evidence: t01_07 (ttfs mixer, e4 +
-    full floor) passed 0.9712 on a dedicated node — the envelope and the
-    training budget were JOINTLY binding on the mixer column."""
+class TestBNMixerRespec:
+    """BN-mixer envelope respec (2026-07-12, user-authorized, probe-adjudicated):
+    every mmixcore cell in both matrices runs the BN+width envelope
+    (normalization=batch, fc_w 64 -> 128) at 8 pretrain epochs, superseding the
+    M1 mixer-e4 respec AND the ttfsq e2 revert — the BN+width envelope is a
+    different regime. Probes without BN+width saturate 0.954-0.981 (fc64 e4
+    0.970; fc128_c48 e12 0.9785; fc192 e8 0.9805) vs BN+fc128 e8 = 0.982
+    (probe env_probe_bn_fc128_e8)."""
 
-    def test_tier0_mixer_cells_train_four_epochs(self):
-        # ttfsq mixers reverted to e2 (2026-07-08): e4 measurably hurt them
-        # (t0_11 0.9282/0.9533 vs its green e2 history).
+    def test_mixer_cells_run_the_bn_width_envelope_at_e8(self):
+        for tier in (0, "0_1"):
+            for run in _manifest(tier)["runs"]:
+                if "mmixcore" not in run["name"]:
+                    continue
+                dp = json.loads(
+                    (TEST_CONFIGS / f"tier{tier}" / run["config"]).read_text()
+                )["deployment_parameters"]
+                model_config = dp["model_config"]
+                assert model_config["normalization"] == "batch", run["name"]
+                assert model_config["fc_w_1"] == 128, run["name"]
+                assert model_config["fc_w_2"] == 128, run["name"]
+                assert dp["training_epochs"] == 8, run["name"]
+
+    def test_tier0_non_mixer_cells_keep_two_epochs(self):
         for run in _manifest(0)["runs"]:
+            if "mmixcore" in run["name"]:
+                continue
             dp = json.loads(
                 (TEST_CONFIGS / "tier0" / run["config"]).read_text()
             )["deployment_parameters"]
-            mixer = "mmixcore" in run["name"] and "ttfsq" not in run["name"]
-            expected = 4 if mixer else 2
-            assert dp["training_epochs"] == expected, run["name"]
+            assert dp["training_epochs"] == 2, run["name"]
 
-    def test_tier0_mixer_cells_carry_the_respec_note(self):
-        runs = {r["name"]: r for r in _manifest(0)["runs"]}
-        for name, run in runs.items():
-            if "mmixcore" in name:
-                assert "t01_07" in run.get("note", ""), name
+    def test_mixer_cells_carry_the_respec_note(self):
+        for tier in (0, "0_1"):
+            for run in _manifest(tier)["runs"]:
+                if "mmixcore" in run["name"]:
+                    assert "env_probe_bn_fc128_e8" in run.get("note", ""), run["name"]
 
 
 class TestM2ConversionDraws:
@@ -348,24 +363,35 @@ class TestM2ConversionDraws:
                 else:
                     assert "conversion_draws" not in dp, run["name"]
 
-    def test_wq_endpoint_caps_follow_the_pass_by_floor_evidence(self):
-        # FAST respec: the 16k recipe floor stays only for ttfs/sync mixers
-        # (the families that measurably pass by the climb); every other WQ
-        # cell caps at 2000 (2x the largest measured healthy reach; lif/casc
-        # mixer ceilings sit below the floor target, so grinding cannot pass).
-        for tier in (0, "0_1"):
+    def test_no_cell_carries_a_flat_wq_endpoint_cap(self):
+        # WQ-cap deletion 2026-07-12 (synthesis Phase-4): the C1
+        # convergence-stop (91eacc01) patience-stops the WQ endpoint under
+        # the recipe's 16k ceiling, so step budgets self-limit — the FAST
+        # respec's flat 2000-step caps are gone from every cell.
+        for tier in TIERS:
             for run in _manifest(tier)["runs"]:
                 dp = json.loads(
                     (TEST_CONFIGS / f"tier{tier}" / run["config"]).read_text()
                 )["deployment_parameters"]
-                wq = dp["weight_quantization"]
-                floor_family = "mmixcore" in run["name"] and (
-                    "ttfs_mmixcore" in run["name"] or "sync_mmixcore" in run["name"]
-                )
-                if wq and not floor_family:
-                    assert dp["wq_endpoint_recovery_steps"] == 2000, run["name"]
+                assert "wq_endpoint_recovery_steps" not in dp, run["name"]
+
+
+class TestM4ScaleMigrationArming:
+    """M4 arming (2026-07-12): every WQ cell in every tier arms
+    scale_migration — the step is exact ReLU-homogeneous rescaling, a no-op
+    (s -> 1) when per-channel spread is small (landed 96c74e42); float cells
+    leave the key derivation-owned."""
+
+    def test_every_wq_cell_arms_scale_migration(self):
+        for tier in TIERS:
+            for run in _manifest(tier)["runs"]:
+                dp = json.loads(
+                    (TEST_CONFIGS / f"tier{tier}" / run["config"]).read_text()
+                )["deployment_parameters"]
+                if dp["weight_quantization"]:
+                    assert dp.get("scale_migration") is True, run["name"]
                 else:
-                    assert "wq_endpoint_recovery_steps" not in dp, run["name"]
+                    assert "scale_migration" not in dp, run["name"]
 
 
 def _flatten(node, prefix=""):
@@ -409,9 +435,9 @@ TIER01_EXPECTED_DELTAS = {
     "t01_05_sync_mmixcore_wq_s4_pruned10": ("t0_21_sync_mmixcore_wq_s8_pruned10", _S_MOVE),
     "t01_06_ttfsq_mmixcore_wq_s8_offload": ("t0_11_ttfsq_mmixcore_wq_s16_offload", _S_MOVE),
     # B - pretrain envelope (training_epochs 2 -> 4). The M1 mixer-e4 respec
-    # (2026-07-07, evidence t01_07: e4 + full floor passed 0.9712 dedicated)
-    # lifted every mmixcore ANCHOR to e4, so the mixer B cells are replication
-    # clones now; the deepmlp B cell keeps its e4 delta (t0_19 stays e2).
+    # (2026-07-07) and then the BN-mixer respec (2026-07-12: BN+fc128 e8)
+    # lifted every mmixcore ANCHOR with its clone, so the mixer B cells are
+    # replication clones; the deepmlp B cell keeps its e4 delta (t0_19 stays e2).
     "t01_07_ttfs_mmixcore_wq_s8_e4": ("t0_06_ttfs_mmixcore_wq_s8", set()),
     "t01_08_lif_mmixcore_wq_s4_e4": ("t0_01_lif_mmixcore_wq_s4", set()),
     "t01_09_sync_mmixcore_wq_s8_pruned10_e4": ("t0_21_sync_mmixcore_wq_s8_pruned10", set()),
@@ -521,14 +547,18 @@ class TestTier01DiagnosticMatrix:
             counts[run["family"]] = counts.get(run["family"], 0) + 1
         assert counts == TIER01_FAMILY_SIZES
 
-    def test_mixer_and_envelope_cells_train_four_epochs_and_others_two(self):
-        # M1 mixer-e4 respec (2026-07-07, evidence t01_07) minus the ttfsq
-        # revert (2026-07-08: e4 measurably hurt that family — 0.9441/0.9599
-        # vs the 0.9656 e2 read); the non-mixer B diagnostic keeps its e4 axis.
+    def test_epoch_budgets_follow_the_bn_mixer_and_b_family_respecs(self):
+        # BN-mixer respec 2026-07-12: every mmixcore cell trains 8 epochs
+        # (ttfsq included — the e2 revert is superseded with the envelope
+        # change); the non-mixer B diagnostic keeps its e4 axis; others 2.
         for run in self._runs():
             dp = self._load("0_1", run["name"])["deployment_parameters"]
-            mixer = "mmixcore" in run["name"] and "ttfsq" not in run["name"]
-            expected = 4 if (mixer or run["family"] == "B") else 2
+            if "mmixcore" in run["name"]:
+                expected = 8
+            elif run["family"] == "B":
+                expected = 4
+            else:
+                expected = 2
             assert dp["training_epochs"] == expected, run["name"]
 
     def test_every_cell_carries_the_step_denominated_floor_budget(self):

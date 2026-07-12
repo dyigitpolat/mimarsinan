@@ -90,6 +90,28 @@ class TestConsumerFoldIdentity:
         want = (a * r + c) @ w_before.T + b_before
         assert torch.allclose(got, want, atol=1e-6)
 
+    def test_fold_composes_exactly_with_per_input_scales_and_channel_theta(self):
+        """The pipeline's adapted state: stamped ``per_input_scales`` and a
+        per-channel theta are diagonal maps the effective-domain fold composes
+        with exactly — the same wire-domain identity must hold."""
+        q = _linear_perceptron(4, 3, seed=2)
+        q.per_input_scales = torch.tensor([0.7, 1.3, 0.9])
+        q.activation_scale.data = torch.tensor([0.8, 1.1, 0.6, 1.4])
+        tf = PerceptronTransformer()
+        w_before, b_before = tf.get_effective_parameters(q)
+        w_before = w_before.clone().double()
+        b_before = b_before.clone().double()
+
+        a = torch.tensor([0.5, 1.25, 2.0], dtype=torch.float64)
+        c = torch.tensor([0.1, -0.05, 0.3], dtype=torch.float64)
+        fold_affine_into_consumer(q, a, c)
+
+        w_after, b_after = tf.get_effective_parameters(q)
+        r = torch.rand(16, 3, dtype=torch.float64)
+        got = r @ w_after.double().T + b_after.double()
+        want = (a * r + c) @ w_before.T + b_before
+        assert torch.allclose(got, want, atol=1e-6)
+
 
 class TestReadoutSelfFold:
     def test_folded_readout_equals_affine_on_wire_preactivation(self):
@@ -324,6 +346,60 @@ class TestRealConvertedGraphDiscovery:
             f"affine fold increased the calibrated gap: {before} -> {after}"
         )
 
+    def _stamp_pipeline_fold_step_state(self, flow):
+        """The LIFAffineFoldStep preamble state the fixtures previously lacked:
+        per-channel theta (the LIF decode currency) and ``per_input_scales``
+        stamped by ``compute_per_source_scales`` — the pipeline's model state
+        at discovery time."""
+        from mimarsinan.mapping.support.per_source_scales import (
+            compute_per_source_scales,
+        )
+        from mimarsinan.spiking.theta_cotrain import (
+            promote_activation_scale_per_channel,
+        )
+
+        promote_activation_scale_per_channel(flow)
+        compute_per_source_scales(flow.get_mapper_repr())
+        stamped = [
+            p for p in flow.get_perceptrons()
+            if getattr(p, "per_input_scales", None) is not None
+        ]
+        assert stamped, "preamble must stamp per_input_scales (fixture drift)"
+        return flow
+
+    def test_fc_chain_folds_survive_pipeline_fold_step_preamble(self):
+        """Regression for the on-pipeline zero-fold (t0_04): the step's own
+        ``compute_per_source_scales`` preamble stamped ``per_input_scales`` on
+        every consumer and the walk rejected every hop as
+        ``channel_axis_not_preserved``."""
+        flow = self._stamp_pipeline_fold_step_state(_converted_deep_mlp(depth=4))
+        report = apply_lif_affine_fold(flow, _cal_x(), T_STEPS)
+        assert report["consumer_folds"] == 2, f"adapted state must fold: {report}"
+        folded_names = {
+            p.name for p in flow.get_perceptrons()
+            if getattr(p, "_lif_affine_folded", False)
+        }
+        assert folded_names == {"hidden_2", "hidden_4"}, report
+        assert report["skipped"] == {"hidden_6": "host_compute_consumer"}, report
+
+    def test_fc_chain_fold_shrinks_deployed_gap_in_adapted_state(self):
+        flow = self._stamp_pipeline_fold_step_state(_converted_deep_mlp(depth=4))
+        x = _cal_x()
+        targets = _frozen_float_targets(flow, x)
+
+        before = _deployed_gap(flow, x, targets)
+        report = apply_lif_affine_fold(flow, x, T_STEPS)
+        after = _deployed_gap(flow, x, targets)
+        assert report["consumer_folds"] == 2, report
+        assert after <= before + 1e-9, (
+            f"affine fold increased the calibrated gap: {before} -> {after}"
+        )
+
+    def test_mixer_folds_survive_pipeline_fold_step_preamble(self):
+        flow = self._stamp_pipeline_fold_step_state(_converted_mixer())
+        report = apply_lif_affine_fold(flow, _cal_x(), T_STEPS)
+        assert report["consumer_folds"] == 4, f"fc1->fc2 folds missing: {report}"
+
     def test_mixer_cross_compute_op_seams_skipped_honestly(self):
         """fc2 channel axes are consumed across permute/weight-shared seams
         (blocks 0-2) or by the host classifier ComputeOp (block 3) — the walk
@@ -337,3 +413,43 @@ class TestRealConvertedGraphDiscovery:
             "mixer_blocks_3_fc2": "host_compute_consumer",
         }, report
         assert report["readout_folds"] == 0, report
+
+
+class TestCraterPremiseGate:
+    """The fold repairs deployed-below-envelope craters only (measured
+    0.9574 -> 0.7684 on t0_04 when applied with the premise inverted)."""
+
+    def test_premise_false_when_deployed_matches_envelope(self):
+        from mimarsinan.tuning.lif_affine_fold import crater_premise_holds
+        flow = _converted_deep_mlp(depth=4)
+        x = _cal_x()
+        with torch.no_grad():
+            y = flow(x).argmax(dim=-1)  # labels = deployed argmax: deployed is perfect
+        assert crater_premise_holds(flow, x, y) is False
+
+    def test_premise_true_when_deployed_cratered(self):
+        from mimarsinan.tuning.lif_affine_fold import crater_premise_holds, LIFActivation
+
+        class _Stub(torch.nn.Module):
+            """Deployed forward: LIF node output as-is (cratered to 0 by a huge
+            theta at spike time is emulated by the node returning 0); envelope
+            bypass replaces the node output with clamp(z, 0, theta) (healthy)."""
+
+            def __init__(self):
+                super().__init__()
+                self.lif = LIFActivation.__new__(LIFActivation)
+                torch.nn.Module.__init__(self.lif)
+                self.lif.activation_scale = 1.0
+
+            def forward(self, x):
+                # The LIF node's deployed output is zeros (a starved node);
+                # the premise gate's bypass hook overrides this with the
+                # float envelope min(x+, theta), which recovers the signal.
+                z = self.lif(x)
+                return z
+
+        stub = _Stub()
+        stub.lif.forward = lambda z: torch.zeros_like(z)  # deployed: starved
+        x = torch.eye(4)  # envelope argmax = identity classes
+        y = torch.arange(4)
+        assert crater_premise_holds(stub, x, y) is True

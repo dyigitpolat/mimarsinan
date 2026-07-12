@@ -21,7 +21,7 @@
       },
       "tags": [],
       "expected_wall_min": 12,
-      "note": "M1 mixer-e4 respec 2026-07-07 (user-mandated): training_epochs 2 -> 4 on every mmixcore cell; evidence t01_07 (e4 + full floor = 0.9712 dedicated) \u2014 envelope and budget jointly binding."
+      "note": "BN-mixer respec 2026-07-12, probe env_probe_bn_fc128_e8 (user-authorized): every mmixcore cell runs normalization=batch, fc_w_1/fc_w_2 64 -> 128, training_epochs 8 \u2014 supersedes the M1 mixer-e4 respec and the ttfsq e2 revert (the BN+width envelope is a different regime; the e4/e2 evidence does not carry over). Measured basis: envelope probes saturate 0.954-0.981 without BN+width (fc64 e4 0.970; fc128_c48 e12 0.9785; fc192 e8 0.9805) vs BN+fc128 e8 = 0.982."
     },
     {
       "name": "t0_02_lif_lenet5_fp_s8_novena_offload_pruned",
@@ -124,7 +124,7 @@
       },
       "tags": [],
       "expected_wall_min": 6,
-      "note": "M1 mixer-e4 respec 2026-07-07 (user-mandated): training_epochs 2 -> 4 on every mmixcore cell; evidence t01_07 (e4 + full floor = 0.9712 dedicated) \u2014 envelope and budget jointly binding."
+      "note": "BN-mixer respec 2026-07-12, probe env_probe_bn_fc128_e8 (user-authorized): every mmixcore cell runs normalization=batch, fc_w_1/fc_w_2 64 -> 128, training_epochs 8 \u2014 supersedes the M1 mixer-e4 respec and the ttfsq e2 revert (the BN+width envelope is a different regime; the e4/e2 evidence does not carry over). Measured basis: envelope probes saturate 0.954-0.981 without BN+width (fc64 e4 0.970; fc128_c48 e12 0.9785; fc192 e8 0.9805) vs BN+fc128 e8 = 0.982."
     },
     {
       "name": "t0_07_ttfs_lenet5_wq_s16",
@@ -231,7 +231,7 @@
         "offload"
       ],
       "expected_wall_min": 6,
-      "note": "ttfsq e4 revert 2026-07-08: the M1 mixer-e4 respec (evidence t01_07, ttfs-specific) measurably HURT the ttfsq mixer family (t0_11 0.9282/0.9533 vs its green e2 history; t01_06 0.9441/0.9599 vs 0.9656) - reverted to e2."
+      "note": "BN-mixer respec 2026-07-12, probe env_probe_bn_fc128_e8 (user-authorized): every mmixcore cell runs normalization=batch, fc_w_1/fc_w_2 64 -> 128, training_epochs 8 \u2014 supersedes the M1 mixer-e4 respec and the ttfsq e2 revert (the BN+width envelope is a different regime; the e4/e2 evidence does not carry over). Measured basis: envelope probes saturate 0.954-0.981 without BN+width (fc64 e4 0.970; fc128_c48 e12 0.9785; fc192 e8 0.9805) vs BN+fc128 e8 = 0.982."
     },
     {
       "name": "t0_12_ttfsq_lenet5_wq_s32",
@@ -336,7 +336,7 @@
         "nobias"
       ],
       "expected_wall_min": 6,
-      "note": "M1 mixer-e4 respec 2026-07-07 (user-mandated): training_epochs 2 -> 4 on every mmixcore cell; evidence t01_07 (e4 + full floor = 0.9712 dedicated) \u2014 envelope and budget jointly binding."
+      "note": "BN-mixer respec 2026-07-12, probe env_probe_bn_fc128_e8 (user-authorized): every mmixcore cell runs normalization=batch, fc_w_1/fc_w_2 64 -> 128, training_epochs 8 \u2014 supersedes the M1 mixer-e4 respec and the ttfsq e2 revert (the BN+width envelope is a different regime; the e4/e2 evidence does not carry over). Measured basis: envelope probes saturate 0.954-0.981 without BN+width (fc64 e4 0.970; fc128_c48 e12 0.9785; fc192 e8 0.9805) vs BN+fc128 e8 = 0.982."
     },
     {
       "name": "t0_17_casc_lenet5_wq_s32",
@@ -443,7 +443,7 @@
         "pruned10"
       ],
       "expected_wall_min": 6,
-      "note": "W3c respec 2026-07-06: pruning 0.5 -> 0.10 (user-directed; 50% is too strong for this cell). M1 mixer-e4 respec 2026-07-07 (user-mandated): training_epochs 2 -> 4 on every mmixcore cell; evidence t01_07 (e4 + full floor = 0.9712 dedicated) \u2014 envelope and budget jointly binding."
+      "note": "W3c respec 2026-07-06: pruning 0.5 -> 0.10 (user-directed; 50% is too strong for this cell). BN-mixer respec 2026-07-12, probe env_probe_bn_fc128_e8 (user-authorized): every mmixcore cell runs normalization=batch, fc_w_1/fc_w_2 64 -> 128, training_epochs 8 \u2014 supersedes the M1 mixer-e4 respec and the ttfsq e2 revert (the BN+width envelope is a different regime; the e4/e2 evidence does not carry over). Measured basis: envelope probes saturate 0.954-0.981 without BN+width (fc64 e4 0.970; fc128_c48 e12 0.9785; fc192 e8 0.9805) vs BN+fc128 e8 = 0.982."
     },
     {
       "name": "t0_22_sync_lenet5_wq_s4_sched",
@@ -532,6 +532,9 @@
     "M1 mixer-e4 respec 2026-07-07 (user-mandated): every mmixcore cell trains 4 pretrain epochs (evidence t01_07: e4 + full floor passed 0.9712 dedicated \u2014 envelope and training budget jointly binding on the mixer column).",
     "FAST respec 2026-07-08 (user-directed, <5 min clean / 5-10 min soft / >15 min invalid): lif endpoint cap 1560 -> 600 (convergence-grounded; healthy reaches 250-930 steps), non-mixer WQ endpoint cap 2000, draws only for the sync mixer family (best-of-2; the one family whose draw distribution crosses the bar), target-reach confirmation + fresh-run ledger reset.",
     "M2 conversion-draws 2026-07-07 (user-approved): mmixcore cells run best-of-3 D-hat-selected conversion draws on the variance-carrying stages (LIF/TTFS-cycle/AQ), torch RNG streams seed+k \u2014 the search is deterministic given the config seed and selection can only improve D-hat (each draw independently keep-best/entry-floored).",
-    "Reproducibility respec 2026-07-07 (user-directed): training budgets are STEP-denominated \u2014 endpoint_floor_steps is the RUN-total step budget shared by armed endpoint stages (endpoint_steps ledger), sized 16000 (the validated full floor, t01_23) plus the mode's intermediate-endpoint recipe budgets (lif 2x1560, casc 2x600, sync 600). Wall-seconds budgets are gone: identical configs train identical step counts on any hardware (same config + same seed => same step trajectory, modulo GPU nondeterminism); wall time is a pure measurement judged per hardware context at harvest."
+    "Reproducibility respec 2026-07-07 (user-directed): training budgets are STEP-denominated \u2014 endpoint_floor_steps is the RUN-total step budget shared by armed endpoint stages (endpoint_steps ledger), sized 16000 (the validated full floor, t01_23) plus the mode's intermediate-endpoint recipe budgets (lif 2x1560, casc 2x600, sync 600). Wall-seconds budgets are gone: identical configs train identical step counts on any hardware (same config + same seed => same step trajectory, modulo GPU nondeterminism); wall time is a pure measurement judged per hardware context at harvest.",
+    "BN-mixer respec 2026-07-12 (user-authorized, probe env_probe_bn_fc128_e8): every mmixcore cell runs the BN+width envelope \u2014 normalization=batch, fc_w_1/fc_w_2 64 -> 128, training_epochs 8 \u2014 superseding the M1 mixer-e4 respec AND the ttfsq e2 revert (the BN+width envelope is a different regime; the e4/e2 evidence does not carry over). Measured basis: envelope probes saturate 0.954-0.981 without BN+width (fc64 e4 0.970; fc128_c48 e12 0.9785; fc192 e8 0.9805) vs BN+fc128 e8 = 0.982.",
+    "WQ-cap deletion 2026-07-12 (synthesis Phase-4): the FAST respec's flat per-cell wq_endpoint_recovery_steps=2000 caps are removed \u2014 the C1 convergence-stop (landed 91eacc01) patience-stops the WQ endpoint, so the recipe's 16k ceiling with convergence stop replaces the flat cap and step budgets self-limit; the endpoint_floor_steps ledger budgets stay.",
+    "M4 arming 2026-07-12: scale_migration=true on every WQ cell \u2014 the step is exact ReLU-homogeneous rescaling, a no-op (s -> 1) when per-channel spread is small (landed 96c74e42)."
   ]
 }

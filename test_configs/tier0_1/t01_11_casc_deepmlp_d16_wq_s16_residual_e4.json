@@ -52,8 +52,8 @@
     "encoding_layer_placement": "subsume",
     "weight_quantization": true,
     "ttfs_cycle_schedule": "cascaded",
+    "scale_migration": true,
     "endpoint_floor_steps": 17200,
-    "wq_endpoint_recovery_steps": 2000,
     "training_epochs": 4,
     "training_recipe": {
       "optimizer": "adamw",

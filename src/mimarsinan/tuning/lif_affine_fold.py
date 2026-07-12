@@ -6,7 +6,10 @@ from typing import Dict
 
 import torch
 
-from mimarsinan.mapping.channel_axis_walk import channel_aligned_consumer_targets
+from mimarsinan.mapping.channel_axis_walk import (
+    channel_aligned_consumer_targets,
+    columns_channel_aligned,
+)
 from mimarsinan.mapping.mappers.compute_op_mapper import ComputeOpMapper
 from mimarsinan.models.nn.activations.lif import LIFActivation
 from mimarsinan.spiking.chip_aligned_nf import chip_aligned_segment_forward
@@ -174,9 +177,15 @@ def _only_reaches_host_output(node, consumers_map) -> bool:
 
 def _foldable_perceptron_consumers(node, consumers_map):
     """Consumer perceptrons whose weight columns see the producer's channel
-    axis unmediated, discovered by the shared mapper-DAG walk (the M4 SSOT);
-    ``(consumers, skip_reason)`` — a reason means the fold is voided."""
-    targets = channel_aligned_consumer_targets(node, consumers_map)
+    axis aligned, discovered by the shared mapper-DAG walk (the M4 SSOT);
+    ``(consumers, skip_reason)`` — a reason means the fold is voided.
+
+    The fold currency is the effective (wire) domain: the step preamble stamps
+    ``per_input_scales``, and the PerceptronTransformer composes those
+    per-channel diagonal maps exactly, so they must not void discovery."""
+    targets = channel_aligned_consumer_targets(
+        node, consumers_map, consumer_predicate=columns_channel_aligned,
+    )
     if targets is None:
         return None, "channel_axis_not_preserved"
     perceptron_targets, _module_targets = targets
@@ -185,6 +194,36 @@ def _foldable_perceptron_consumers(node, consumers_map):
         # values, not normalized rates); the fold honestly leaves them alone.
         return None, "host_compute_consumer"
     return list(perceptron_targets), None
+
+
+def crater_premise_holds(model, cal_x, cal_y) -> bool:
+    """The fold repairs deployed-below-envelope craters only: when the deployed
+    forward already scores at or above the float envelope (the P1'' endpoint
+    trains the deployed composition past it), the envelope is a worse teacher
+    and sequential folds compound destructively (measured 0.9574 -> 0.7684)."""
+
+    def _bypass(module, inputs, _output):
+        z = inputs[0]
+        theta = torch.as_tensor(
+            module.activation_scale, device=z.device, dtype=z.dtype,
+        ).clamp(min=1e-12)
+        return torch.minimum(z.clamp(min=0.0), theta)
+
+    with torch.no_grad():
+        deployed = model(cal_x).argmax(dim=-1)
+        handles = [
+            m.register_forward_hook(_bypass)
+            for m in model.modules()
+            if isinstance(m, LIFActivation)
+        ]
+        try:
+            envelope = model(cal_x).argmax(dim=-1)
+        finally:
+            for handle in handles:
+                handle.remove()
+    deployed_acc = (deployed == cal_y).float().mean().item()
+    envelope_acc = (envelope == cal_y).float().mean().item()
+    return deployed_acc < envelope_acc
 
 
 def apply_lif_affine_fold(model, cal_x: torch.Tensor, simulation_steps: int) -> dict:

@@ -50,6 +50,7 @@
     "thresholding_mode": "<",
     "encoding_layer_placement": "subsume",
     "weight_quantization": true,
+    "scale_migration": true,
     "training_epochs": 20
   },
   "target_metric_override": null,

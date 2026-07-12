@@ -12,6 +12,7 @@ import torch.nn as nn
 
 from mimarsinan.mapping.channel_axis_walk import (
     channel_aligned_consumer_targets,
+    columns_channel_aligned,
     consumer_columns_unmediated,
 )
 from mimarsinan.mapping.mappers.compute_op_mapper import ComputeOpMapper
@@ -51,6 +52,29 @@ class TestConsumerColumnsUnmediated:
         p = Perceptron(3, 8)
         p.per_input_scales = torch.ones(8)
         assert not consumer_columns_unmediated(p)
+
+
+class TestColumnsChannelAligned:
+    """Effective-domain alignment: stamped per-input scales are per-channel
+    diagonal maps and do NOT break channel-axis identity."""
+
+    def test_per_input_scales_do_not_break_alignment(self):
+        torch.manual_seed(0)
+        p = Perceptron(3, 8)
+        p.per_input_scales = torch.ones(8)
+        assert columns_channel_aligned(p)
+
+    def test_input_wire_op_still_mediates(self):
+        torch.manual_seed(0)
+        p = Perceptron(3, 8)
+        p.append_input_wire_op(nn.ReLU())
+        assert not columns_channel_aligned(p)
+
+    def test_non_linear_layer_still_rejected(self):
+        torch.manual_seed(0)
+        p = Perceptron(3, 8)
+        p.layer = nn.Conv1d(8, 3, 1)
+        assert not columns_channel_aligned(p)
 
 
 class TestWalkThroughPassThroughNodes:
@@ -109,3 +133,40 @@ class TestWalkVoids:
         join = ComputeOpMapper([n1, n2], ComputeAdapter(torch.add))
         consumers = ModelRepresentation(join).consumer_map()
         assert channel_aligned_consumer_targets(n1, consumers) is None
+
+    def test_stamped_per_input_scales_void_the_default_walk(self):
+        """The raw-domain (M4 migration) currency: a stamped per-input scale
+        vector would go stale under raw column writes, so it mediates."""
+        torch.manual_seed(0)
+        p1, p2 = Perceptron(8, 4), Perceptron(3, 8)
+        p2.per_input_scales = torch.full((8,), 0.8)
+        (n1, _n2), out = _interleaved_chain([p1, p2])
+        consumers = ModelRepresentation(out).consumer_map()
+        assert channel_aligned_consumer_targets(n1, consumers) is None
+
+
+class TestEffectiveDomainWalk:
+    """The effective-domain (LIF affine fold) currency composes with per-channel
+    diagonal input scales, so the stamped state must not void discovery."""
+
+    def test_stamped_per_input_scales_pass_with_aligned_predicate(self):
+        torch.manual_seed(0)
+        p1, p2 = Perceptron(8, 4), Perceptron(3, 8)
+        p2.per_input_scales = torch.full((8,), 0.8)
+        (n1, _n2), out = _interleaved_chain([p1, p2])
+        consumers = ModelRepresentation(out).consumer_map()
+        targets = channel_aligned_consumer_targets(
+            n1, consumers, consumer_predicate=columns_channel_aligned,
+        )
+        assert targets == ((p2,), ())
+
+    def test_input_wire_op_still_voids_with_aligned_predicate(self):
+        torch.manual_seed(0)
+        p1, p2 = Perceptron(8, 4), Perceptron(3, 8)
+        p2.append_input_wire_op(nn.ReLU())
+        (n1, _n2), out = _interleaved_chain([p1, p2])
+        consumers = ModelRepresentation(out).consumer_map()
+        targets = channel_aligned_consumer_targets(
+            n1, consumers, consumer_predicate=columns_channel_aligned,
+        )
+        assert targets is None

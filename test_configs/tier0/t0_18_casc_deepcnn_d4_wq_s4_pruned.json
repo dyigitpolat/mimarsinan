@@ -53,8 +53,8 @@
     "ttfs_cycle_schedule": "cascaded",
     "pruning": true,
     "pruning_fraction": 0.5,
+    "scale_migration": true,
     "endpoint_floor_steps": 17200,
-    "wq_endpoint_recovery_steps": 2000,
     "training_epochs": 2,
     "training_recipe": {
       "optimizer": "adamw",

@@ -17,11 +17,25 @@ from mimarsinan.mapping.support.compute_modules import ComputeAdapter
 _LAST_AXIS_PASS_THROUGH = (Ensure2DMapper, MergeLeadingDimsMapper, SplitLeadingDimMapper)
 
 
-def consumer_columns_unmediated(perceptron) -> bool:
-    """Nothing may sit between the consumer's input and its weight columns."""
+def columns_channel_aligned(perceptron) -> bool:
+    """Channels-last linear columns behind an Identity input activation.
+
+    Effective-domain currency (LIF affine fold): stamped ``per_input_scales``
+    are per-channel diagonal maps the PerceptronTransformer composes with
+    exactly, so they do NOT break channel-axis identity."""
     return (
         isinstance(perceptron.layer, nn.Linear)
         and isinstance(perceptron.input_activation, nn.Identity)
+    )
+
+
+def consumer_columns_unmediated(perceptron) -> bool:
+    """Nothing may sit between the consumer's input and its weight columns.
+
+    Raw-domain currency (M4 scale migration): a stamped ``per_input_scales``
+    vector would go stale under raw column writes, so it mediates."""
+    return (
+        columns_channel_aligned(perceptron)
         and getattr(perceptron, "per_input_scales", None) is None
     )
 
@@ -67,11 +81,11 @@ def _mean_passthrough(node: ComputeOpMapper, k: int):
     return int(k) - sum(1 for d in reduced if d > channel_pos)
 
 
-def _step_through(node, k: int):
+def _step_through(node, k: int, consumer_predicate):
     """One walk transition: ('pass', new_k) | ('perceptron', p) | ('module', m) | None."""
     if isinstance(node, PerceptronMapper):
         perceptron = node.perceptron
-        if k == 1 and consumer_columns_unmediated(perceptron):
+        if k == 1 and consumer_predicate(perceptron):
             return ("perceptron", perceptron)
         return None
     if isinstance(node, _LAST_AXIS_PASS_THROUGH):
@@ -89,11 +103,14 @@ def _step_through(node, k: int):
     return None
 
 
-def channel_aligned_consumer_targets(producer_node, consumers: dict):
+def channel_aligned_consumer_targets(
+    producer_node, consumers: dict, *, consumer_predicate=consumer_columns_unmediated,
+):
     """All consumers of the producer's channel axis as ``(perceptrons, modules)``,
     or None when any path is not exactly column-aligned (fan-out closure: one bad
     path voids the producer). ``k`` is the channel position counted from the
-    tensor's end (1 = last)."""
+    tensor's end (1 = last); ``consumer_predicate`` is the caller's fold-currency
+    alignment condition on consumer perceptrons."""
     frontier: list = [(producer_node, 1)]
     visited: set = set()
     perceptron_targets: dict = {}
@@ -108,7 +125,7 @@ def channel_aligned_consumer_targets(producer_node, consumers: dict):
             if key in visited:
                 continue
             visited.add(key)
-            step = _step_through(consumer, k)
+            step = _step_through(consumer, k, consumer_predicate)
             if step is None:
                 return None
             kind, value = step

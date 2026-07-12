@@ -68,5 +68,8 @@
       ],
       "expected_wall_min": 360
     }
+  ],
+  "coverage_notes": [
+    "M4 arming 2026-07-12: scale_migration=true on every WQ cell \u2014 the step is exact ReLU-homogeneous rescaling, a no-op (s -> 1) when per-channel spread is small (landed 96c74e42)."
   ]
 }
