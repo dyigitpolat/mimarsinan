@@ -53,6 +53,11 @@ _MODE_KNOBS = {
         # the temporal-A6 FAIL cells at S<=8 (+1.9pp at S=4 chain9, +0.5pp at
         # S=8; nil at S>=16); the latency cost stays mapping-visible.
         "lif_per_hop_retiming": True,
+        # [R3/R4, lossless ledger] per-channel theta (the 1/S-beating
+        # starvation lever; exact identity, packing-safe by group identity)
+        # + S-aware quantile descent (measured anchors 0.95@S4..1.0@S32).
+        "per_channel_theta": True,
+        "s_aware_theta_quantile": True,
         # [R1/M2, lossless ledger §2C] two-scale WQ grid for LIF: four frozen
         # WQ endpoints prove the residual is grid arithmetic the QAT cannot
         # express (t01_19 -0.57pp WQ residual, t0_05 -0.52pp, t0_03 -0.24pp;
@@ -118,6 +123,11 @@ _MODE_KNOBS = {
         "sync_entry_half_step": True,
         # [5v B1(iii)] the hop frontier (arms only on A6-FAIL x deep chains).
         "sync_hop_staged_install": True,
+        # [R3/R6, lossless ledger] per-channel theta on matching-axis edges
+        # (the sync memo's escape) + the sequential first-moment fold
+        # (own-offset excluded; the sign trap is contract-tested).
+        "per_channel_theta": True,
+        "sync_first_moment_fold": True,
         # [M2] the value-domain forward craters from the same bias-set shared
         # grid (wq_cascade_crater_repair.md §4.4 value-forward control), so the
         # whole ttfs_cycle_based family carries the two-scale projection.

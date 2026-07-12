@@ -62,6 +62,11 @@ _LIF_RECIPE_KNOBS = {
     # the quantized deployed sim stay bit-exact (mapping-time injection broke
     # that parity identity: t0_01 0.9336, t0_05 0.9883).
     "lif_half_step_bias": True,
+    # [R3/R4 lossless ledger] per-channel theta (the 1/S-beating starvation
+    # lever; exact scale-space identity, packing-safe by group-identity) and
+    # the S-aware quantile descent (measured anchors 0.95@S4..1.0@S32).
+    "per_channel_theta": True,
+    "s_aware_theta_quantile": True,
     # [lif_deployment_exactness §7] the exact/statistical correction ladder on
     # top of the half-step: C2 membrane-augmented readout (torch-side
     # DIAGNOSTIC only — the chip exports counts; deployed reads exclude it,
@@ -114,6 +119,11 @@ _SYNCHRONIZED_RECIPE_KNOBS = {
     # chain past the proven-recovery depth, the AQ ladder walks one hop level
     # per rung (per-hop keep-best re-affine) instead of a monolithic install.
     "sync_hop_staged_install": True,
+    # [R3/R6 lossless ledger] per-channel theta on matching-axis edges (the
+    # sync memo's escape) and the sequential first-moment fold (own-offset
+    # excluded; the sign trap is contract-tested).
+    "per_channel_theta": True,
+    "sync_first_moment_fold": True,
     # [M2] the sync value-domain forward craters from the same bias-set shared
     # grid (wq_cascade_crater_repair.md §4.4 value-forward control), so the
     # whole ttfs_cycle_based family carries the two-scale projection.
