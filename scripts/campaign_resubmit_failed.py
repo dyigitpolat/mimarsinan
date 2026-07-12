@@ -60,9 +60,13 @@ def main() -> int:
         return 0
 
     state_path.write_text(json.dumps(state, indent=1))
+    # --only pins resubmission to the purged runs; otherwise submit refills
+    # the state with the first N configs of the whole matrix.
+    only = [name for name, _, _ in purged]
     resubmit = subprocess.run(
         [sys.executable, str(REPO / "scripts/slurm_campaign.py"), "submit",
-         "--wave-size", str(len(purged)), "--time-limit", "00:45:00"],
+         "--wave-size", str(len(purged)), "--time-limit", "00:45:00",
+         "--state", args.state, "--only", *only],
         cwd=REPO, timeout=60 * len(purged) + 300,
     )
     return resubmit.returncode
