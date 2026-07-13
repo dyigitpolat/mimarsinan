@@ -31,6 +31,7 @@ from mimarsinan.tuning.orchestration.tuner_base import _RECOVERY_PATIENCE
 from mimarsinan.tuning.orchestration.tuning_policy import (
     TUNING_POLICY,
     armed_endpoint_check_interval,
+    armed_endpoint_effective_check_interval,
     endpoint_convergence_geometry,
 )
 
@@ -770,9 +771,11 @@ class TestCosineHorizonBinding:
             "the cosine horizon must be the ledger REMAINDER, not the 16k grant"
         )
         assert seen["cosine_decay"] is True
-        expected = endpoint_convergence_geometry(
-            1000, armed_endpoint_check_interval(interval),
-        )
+        # [v6 fix] the sub-cover remainder keeps the DENSE cadence; the [C1]
+        # geometry composes at that same effective interval.
+        effective = armed_endpoint_effective_check_interval(1000, interval)
+        assert seen["check_interval"] == effective == interval
+        expected = endpoint_convergence_geometry(1000, effective)
         assert seen["min_steps"] == expected.min_steps
         assert seen["patience"] == expected.patience
 

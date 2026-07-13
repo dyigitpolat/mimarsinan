@@ -15,7 +15,7 @@ from mimarsinan.tuning.orchestration.recovery_engine import RecoveryEngine
 from mimarsinan.tuning.orchestration.tuner_base import _RECOVERY_PATIENCE
 from mimarsinan.tuning.orchestration.tuning_policy import (
     TUNING_POLICY,
-    armed_endpoint_check_interval,
+    armed_endpoint_effective_check_interval,
     effective_endpoint_floor_lr,
     endpoint_convergence_geometry,
 )
@@ -76,8 +76,11 @@ def run_endpoint_recovery(tuner, *, base_steps, target_floor=None) -> EndpointRe
       convergence stop (min-cover = max(absolute lr-dip cover, fraction of
       budget), keep-best patience scaled to the budget) so the budget is a
       true CEILING, never a mandatory burn; [P4] the funded leg evals at the
-      widened cadence (``armed_endpoint_check_interval``) with the geometry
-      composed at that same interval, while a non-armed stage keeps the exact
+      budget-aware cadence (``armed_endpoint_effective_check_interval``:
+      widened at/above the [C1] min-cover, DENSE below it — coarse keep-best
+      sampling missed the trajectory peak on the v6 small-budget cells) with
+      the geometry composed at that same interval, while a non-armed stage
+      keeps the exact
       ``_RECOVERY_PATIENCE x check_interval`` stagnation economics
       (mbh_analytical_ttfs_stagnation). The former >=1xSE entry-gap gate
       is deleted: it left sub-SE engaged stages sterile (t0_14's 210-step
@@ -131,10 +134,13 @@ def run_endpoint_recovery(tuner, *, base_steps, target_floor=None) -> EndpointRe
         if steps_left > 0:
             lr = min(lr, effective_endpoint_floor_lr(tuner.pipeline.config))
             budget = min(budget, steps_left)
-            # [P4] the funded leg evals at the widened cadence; the geometry
+            # [P4] the funded leg evals at the budget-aware effective cadence
+            # (dense below the [C1] min-cover, widened at/above); the geometry
             # composes at the SAME interval (patience counts checks), so the
             # patience step-window stays ~fraction x budget, never multiplied.
-            check_interval = armed_endpoint_check_interval(check_interval)
+            check_interval = armed_endpoint_effective_check_interval(
+                budget, check_interval,
+            )
             geometry = endpoint_convergence_geometry(budget, check_interval)
             min_steps = geometry.min_steps
             patience = geometry.patience
@@ -217,7 +223,7 @@ def _train_engaged(tuner, *, lr, target, budget, min_steps, patience, armed,
         return steps_used, False
     # [C3] the fired leg already restored its live keep-best (the loop's
     # entry-anchored restore); the restart builds a fresh optimizer. The
-    # rescue leg is armed-only, so it keeps the [P4] widened cadence.
+    # rescue leg is armed-only, so it keeps the stage's [P4] effective cadence.
     geometry = endpoint_convergence_geometry(plan.train_steps, check_interval)
     _, rescue_steps = RecoveryEngine.train_to_target(
         tuner.trainer,

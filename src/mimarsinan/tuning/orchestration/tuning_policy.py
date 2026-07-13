@@ -13,6 +13,7 @@ __all__ = [
     "TUNING_POLICY",
     "ConvergenceStopGeometry",
     "armed_endpoint_check_interval",
+    "armed_endpoint_effective_check_interval",
     "effective_prefix_stage_lr",
     "effective_endpoint_floor_lr",
     "endpoint_convergence_geometry",
@@ -121,6 +122,17 @@ def armed_endpoint_check_interval(check_interval) -> int:
     return interval * max(
         1, int(TUNING_POLICY.endpoint_floor_eval_interval_multiplier),
     )
+
+
+def armed_endpoint_effective_check_interval(budget, check_interval) -> int:
+    """[P4 trajectory-sensitivity fix] effective armed cadence for a funded
+    budget: below the [C1] min-cover the DENSE base interval survives (coarse
+    keep-best sampling missed the trajectory peak on the v6 t0_22/t01_21
+    small-budget cells); at/above the cover the [P4] multiplier applies."""
+    interval = max(1, int(check_interval))
+    if int(budget) < int(TUNING_POLICY.endpoint_floor_min_cover_steps):
+        return interval
+    return armed_endpoint_check_interval(interval)
 
 
 @dataclass(frozen=True)

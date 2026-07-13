@@ -40,6 +40,7 @@ from mimarsinan.tuning.orchestration.tuner_base import _RECOVERY_PATIENCE
 from mimarsinan.tuning.orchestration.tuning_policy import (
     TUNING_POLICY,
     armed_endpoint_check_interval,
+    armed_endpoint_effective_check_interval,
     endpoint_convergence_geometry,
 )
 
@@ -189,6 +190,71 @@ class TestArmedEvalCadence:
         assert base_window <= wide_window <= base_window + widened
         assert wide_window < 3 * base_window
 
+    # [P4 trajectory-sensitivity fix] the lossless-wave v6 regressions (t0_22
+    # sync lenet 0.9908->0.9850, t01_21 lif mixer wb8 0.9531->0.9461): with
+    # few checks the coarser keep-best sampling misses the trajectory peak, so
+    # a funded budget below the [C1] min-cover keeps the DENSE base cadence;
+    # at/above the cover the [P4] multiplier applies.
+
+    def test_small_funded_budget_keeps_the_dense_cadence(self):
+        assert armed_endpoint_effective_check_interval(600, 40) == 40
+        assert armed_endpoint_effective_check_interval(1999, 40) == 40
+
+    def test_funded_budget_at_or_above_the_cover_widens(self):
+        assert armed_endpoint_effective_check_interval(2000, 40) == 120
+        assert armed_endpoint_effective_check_interval(16000, 40) == 120
+
+    def test_dense_threshold_is_the_c1_min_cover_ssot(self):
+        cover = TUNING_POLICY.endpoint_floor_min_cover_steps
+        interval = 40
+        assert armed_endpoint_effective_check_interval(
+            cover - 1, interval,
+        ) == interval
+        assert armed_endpoint_effective_check_interval(
+            cover, interval,
+        ) == armed_endpoint_check_interval(interval)
+
+    def test_effective_cadence_reads_the_frozen_policy(self, monkeypatch):
+        import mimarsinan.tuning.orchestration.tuning_policy as tp
+
+        monkeypatch.setattr(
+            tp, "TUNING_POLICY",
+            dataclasses.replace(
+                tp.TUNING_POLICY,
+                endpoint_floor_min_cover_steps=50,
+                endpoint_floor_eval_interval_multiplier=5,
+            ),
+        )
+        assert tp.armed_endpoint_effective_check_interval(49, 40) == 40
+        assert tp.armed_endpoint_effective_check_interval(50, 40) == 200
+
+    def test_degenerate_intervals_are_floored_at_both_cadences(self):
+        assert armed_endpoint_effective_check_interval(100, 0) == 1
+        assert armed_endpoint_effective_check_interval(5000, 0) == 3
+
+    def test_c1_patience_window_invariant_holds_at_both_cadences(self):
+        # [C1 composition] at EITHER effective cadence the patience window
+        # stays ~fraction x budget in steps (ceil slack of one interval), and
+        # min-cover keeps its absolute floor — the dense fallback never
+        # weakens the geometry.
+        fraction = TUNING_POLICY.endpoint_floor_patience_fraction
+        for budget in (600, 1999, 2000, 16000):
+            effective = armed_endpoint_effective_check_interval(budget, 40)
+            geometry = endpoint_convergence_geometry(budget, effective)
+            window = geometry.patience * effective
+            assert fraction * budget <= window <= fraction * budget + effective
+            assert geometry.min_steps >= (
+                TUNING_POLICY.endpoint_floor_min_cover_steps
+            )
+
+    def test_dense_cadence_samples_the_trajectory_more_densely(self):
+        # The fix's mechanism: a sub-cover budget affords 3x the keep-best
+        # reads of the widened cadence, so a between-checks peak stays visible.
+        budget, base_interval = 600, 40
+        effective = armed_endpoint_effective_check_interval(budget, base_interval)
+        widened = armed_endpoint_check_interval(base_interval)
+        assert budget // effective == 3 * (budget // widened)
+
 
 # ── the keep-best loop honors the geometry (step-deterministic) ─────────────
 
@@ -335,6 +401,59 @@ class TestConvergenceStopLoop:
         assert steps < 400
 
 
+# ── the v6 regression anatomy: peak capture needs the dense cadence ─────────
+
+
+class TestTrajectoryPeakCapture:
+    """[P4 trajectory-sensitivity fix] synthetic v6 trace: the keep-best peak
+    sits on the dense check grid BETWEEN two coarse checks; the dense cadence
+    a sub-cover budget now keeps captures it, while the widened cadence reads
+    straight past it (the measured t0_22 / t01_21 regression mechanism)."""
+
+    _BUDGET = 12
+    _PEAK_STEP = 4  # on the dense grid (interval 2), off the widened grid (6)
+
+    def _best_captured(self, check_interval):
+        trainer = _step_trainer()
+        calls = [0]
+
+        def trace(n):
+            step = calls[0] * check_interval  # entry read, then every check
+            calls[0] += 1
+            return 0.98 if step == self._PEAK_STEP else 0.5
+
+        trainer.validate_n_batches = trace
+        best_seen = [0.0]
+
+        def on_check(step, acc, best_acc, entry_acc):
+            best_seen[0] = best_acc
+            return False
+
+        trainer.train_steps_until_target(
+            lr=1e-3, max_steps=self._BUDGET, target_accuracy=1.0,
+            validation_n_batches=1, check_interval=check_interval,
+            patience=99, min_steps=self._BUDGET, min_improvement=1e-3,
+            cosine_decay=True, return_steps=True, final_validation=False,
+            on_check=on_check,
+        )
+        return best_seen[0]
+
+    def test_dense_cadence_captures_the_between_checks_peak(self):
+        base_interval = 2
+        effective = armed_endpoint_effective_check_interval(
+            self._BUDGET, base_interval,
+        )
+        assert effective == base_interval, "sub-cover budget keeps dense cadence"
+        assert self._best_captured(effective) == pytest.approx(0.98)
+
+    def test_widened_cadence_misses_the_same_peak(self):
+        # The regression this fix removes for small budgets: the peak check
+        # never happens at the coarse cadence, so keep-best holds the entry.
+        widened = armed_endpoint_check_interval(2)
+        assert self._PEAK_STEP % widened != 0, "fixture: peak off the wide grid"
+        assert self._best_captured(widened) == pytest.approx(0.5)
+
+
 # ── the armed endpoint stage wires the geometry ─────────────────────────────
 
 
@@ -407,6 +526,18 @@ class TestArmedStageGeometry:
         )
         wide_window = seen["patience"] * seen["check_interval"]
         assert base_window <= wide_window <= base_window + widened
+
+    def test_small_funded_budget_stage_keeps_the_dense_cadence(
+        self, tmp_path, monkeypatch,
+    ):
+        # [v6 fix] the t0_22/t01_21 anatomy: a sub-cover funded budget keeps
+        # the DENSE keep-best cadence, with the [C1] geometry composed at that
+        # same base interval.
+        _, seen, interval = self._drive(tmp_path, monkeypatch, base_steps=300)
+        assert seen["check_interval"] == interval
+        expected = endpoint_convergence_geometry(300, interval)
+        assert seen["min_steps"] == expected.min_steps == 2000
+        assert seen["patience"] == expected.patience
 
     def test_armed_stage_keeps_cosine_and_the_step_denomination(
         self, tmp_path, monkeypatch,
