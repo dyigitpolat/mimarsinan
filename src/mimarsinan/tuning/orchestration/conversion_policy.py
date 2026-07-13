@@ -62,11 +62,11 @@ _LIF_RECIPE_KNOBS = {
     # the quantized deployed sim stay bit-exact (mapping-time injection broke
     # that parity identity: t0_01 0.9336, t0_05 0.9883).
     "lif_half_step_bias": True,
-    # [R3/R4 lossless ledger] per-channel theta (the 1/S-beating starvation
-    # lever; exact scale-space identity, packing-safe by group-identity) and
-    # the S-aware quantile descent (measured anchors 0.95@S4..1.0@S32).
-    "per_channel_theta": True,
-    "s_aware_theta_quantile": True,
+    # [R3/R4 DISARMED by A/B 2026-07-13] per_channel_theta measured harmful on
+    # the QAT-trained lif composition (t0_01 armed 0.9070 vs no_both 0.9307 ~=
+    # pre-arming 0.9326) — the same post-QAT inversion as the sync armings;
+    # config-armable pending re-derivation on the trained composition
+    # (s_aware_theta_quantile rides the per-channel capture, disarms with it).
     # [lif_deployment_exactness §7] the exact/statistical correction ladder on
     # top of the half-step: C2 membrane-augmented readout (torch-side
     # DIAGNOSTIC only — the chip exports counts; deployed reads exclude it,
@@ -75,7 +75,10 @@ _LIF_RECIPE_KNOBS = {
     # arm gated S>=8 in the step), C5 depth-balancing relays (exact V6 join
     # fix, no-op on gap-free graphs).
     "lif_membrane_readout": True,
-    "lif_affine_fold": True,
+    # lif_affine_fold DISARMED by the same A/B (no_fold 0.9061 vs no_both
+    # 0.9307: harmful in interaction; the premise gate + rollback keep it
+    # safe but not profitable on-pipeline) — config-armable.
+    "lif_affine_fold": False,
     "lif_depth_balancing_relays": True,
     # [R5/C3, lossless_refinement_ledger §2B] per-hop re-timing stays
     # recipe-OFF: the re-encode is count-preserving (round((c/T)*T) = c) but

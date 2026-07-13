@@ -24,11 +24,13 @@ KNOBS = (
 
 RECIPE_ON = (
     "lif_membrane_readout",
-    "lif_affine_fold",
     "lif_depth_balancing_relays",
 )
 
-RECIPE_OFF = ("lif_per_hop_retiming",)
+# retiming: twinless (parity break, t0_01 gate 0.8438); affine fold: A/B
+# 2026-07-13 measured harmful in interaction on the trained composition
+# (no_fold 0.9061 vs no_both 0.9307 vs pre-arming 0.9326).
+RECIPE_OFF = ("lif_per_hop_retiming", "lif_affine_fold")
 
 
 class TestRegistry:
@@ -50,8 +52,8 @@ class TestRecipeFold:
             assert knobs.get(key) is True, key
 
     def test_lif_recipe_keeps_the_twinless_retiming_off(self):
-        # The deployed per-hop uniform re-encode has no NF-twin counterpart;
-        # recipe-ON broke the torch<->deployed gate (t0_01 0.8438 < 0.98).
+        # retiming: no NF-twin counterpart (gate 0.8438); affine fold:
+        # A/B-measured harmful post-QAT — both fail toward measured.
         knobs = ConversionPolicy.derive("lif").knobs
         for key in RECIPE_OFF:
             assert knobs.get(key) is False, key

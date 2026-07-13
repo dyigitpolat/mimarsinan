@@ -46,18 +46,15 @@ _MODE_KNOBS = {
         # depth-balancing relays (exact V6 join fix, no-op on gap-free
         # graphs).
         "lif_membrane_readout": True,
-        "lif_affine_fold": True,
+        "lif_affine_fold": False,
         "lif_depth_balancing_relays": True,
         # [R5/C3] per-hop re-timing stays recipe-OFF: the deployed uniform
         # re-encode has no NF-twin counterpart, so arming it breaks the
         # torch<->deployed-sim gate (t0_01 0.8438 vs 1.0000 per-neuron-exact
         # with it off). Config-explicit arming remains available.
         "lif_per_hop_retiming": False,
-        # [R3/R4, lossless ledger] per-channel theta (the 1/S-beating
-        # starvation lever; exact identity, packing-safe by group identity)
-        # + S-aware quantile descent (measured anchors 0.95@S4..1.0@S32).
-        "per_channel_theta": True,
-        "s_aware_theta_quantile": True,
+        # [R3/R4 disarmed by A/B 2026-07-13: t0_01 armed 0.9070 vs no_both
+        # 0.9307 ~= pre-arming — post-QAT inversion, same as sync.]
         # [R1/M2, lossless ledger §2C] two-scale WQ grid for LIF: four frozen
         # WQ endpoints prove the residual is grid arithmetic the QAT cannot
         # express (t01_19 -0.57pp WQ residual, t0_05 -0.52pp, t0_03 -0.24pp;
