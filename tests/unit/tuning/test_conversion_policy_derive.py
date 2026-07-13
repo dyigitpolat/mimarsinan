@@ -123,11 +123,9 @@ _MODE_KNOBS = {
         "sync_entry_half_step": True,
         # [5v B1(iii)] the hop frontier (arms only on A6-FAIL x deep chains).
         "sync_hop_staged_install": True,
-        # [R3/R6, lossless ledger] per-channel theta on matching-axis edges
-        # (the sync memo's escape) + the sequential first-moment fold
-        # (own-offset excluded; the sign trap is contract-tested).
-        "per_channel_theta": True,
-        "sync_first_moment_fold": True,
+        # [R3/R6 disarmed by A/B 2026-07-13: both measured harmful on the
+        # QAT-trained composition — t0_21 0.9520 armed vs 0.9656/0.9588
+        # single-disarm reads; estimator regime inverts post-QAT.]
         # [M2] the value-domain forward craters from the same bias-set shared
         # grid (wq_cascade_crater_repair.md §4.4 value-forward control), so the
         # whole ttfs_cycle_based family carries the two-scale projection.

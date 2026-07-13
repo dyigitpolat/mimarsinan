@@ -120,11 +120,11 @@ _SYNCHRONIZED_RECIPE_KNOBS = {
     # chain past the proven-recovery depth, the AQ ladder walks one hop level
     # per rung (per-hop keep-best re-affine) instead of a monolithic install.
     "sync_hop_staged_install": True,
-    # [R3/R6 lossless ledger] per-channel theta on matching-axis edges (the
-    # sync memo's escape) and the sequential first-moment fold (own-offset
-    # excluded; the sign trap is contract-tested).
-    "per_channel_theta": True,
-    "sync_first_moment_fold": True,
+    # [R3/R6 DISARMED by A/B, 2026-07-13] both armings measured HARMFUL on the
+    # QAT-trained sync composition (t0_21 armed-both 0.9520; no_fmf 0.9656,
+    # no_pct 0.9588 vs pre-arming 0.9603): the estimators' unadapted-conversion
+    # regime inverts post-QAT — same lesson as the LIF affine-fold premise.
+    # Keys stay config-armable; re-derive against the trained composition.
     # [M2] the sync value-domain forward craters from the same bias-set shared
     # grid (wq_cascade_crater_repair.md §4.4 value-forward control), so the
     # whole ttfs_cycle_based family carries the two-scale projection.
