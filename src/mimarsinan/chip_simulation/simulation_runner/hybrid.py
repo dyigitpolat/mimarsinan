@@ -28,6 +28,13 @@ from mimarsinan.chip_simulation.nevresim.nevresim_driver import NevresimDriver
 from mimarsinan.chip_simulation.nevresim.segment_execute import run_binary_raw
 from mimarsinan.chip_simulation.simulation_runner.emit import _PreparedSegment, _emit_and_compile_segment
 from mimarsinan.chip_simulation.simulation_runner.host_contract import SimulationHostContract
+from mimarsinan.chip_simulation.simulation_runner.membrane_probe import (
+    stash_membrane_corrections,
+)
+from mimarsinan.models.spiking.hybrid.membrane_readout import (
+    apply_membrane_corrections_numpy,
+    membrane_readout_slices,
+)
 from mimarsinan.spiking.segment_boundary import (
     boundary_normalization_scales,
     normalize_boundary_slices_numpy,
@@ -60,7 +67,7 @@ class SimulationHybridMixin(SimulationHostContract):
         original_input = original_input.reshape(original_input.shape[0], -1)
 
         state_sizes: Dict[int, int] = {-2: original_input.shape[1]}
-        segment_specs: List[Tuple[int, str, HardCoreMapping, int, int]] = []
+        segment_specs: List[Tuple[int, str, HardCoreMapping, int, int, bool]] = []
 
         for stage in stages:
             if stage.kind == "neural":
@@ -73,7 +80,15 @@ class SimulationHybridMixin(SimulationHostContract):
                     os.path.join(self.working_directory, f"segment_{seg_idx}")
                 )
                 latency = ChipLatency(seg_mapping).calculate()
-                segment_specs.append((seg_idx, seg_dir, seg_mapping, input_size, latency))
+                # [C2] segments sourcing final-only output nodes compile the
+                # NEVRESIM_EXPORT_MEMBRANE build when the honesty gate is armed.
+                export_membrane = bool(self.membrane_readout) and bool(
+                    membrane_readout_slices(hybrid, stage)
+                )
+                segment_specs.append(
+                    (seg_idx, seg_dir, seg_mapping, input_size, latency,
+                     export_membrane)
+                )
 
                 for s in stage.output_map:
                     state_sizes[s.node_id] = max(
@@ -112,8 +127,10 @@ class SimulationHybridMixin(SimulationHostContract):
                 nevresim_path,
                 self.nevresim_connectivity_mode,
                 timeout_s,
+                export_membrane,
             )
-            for seg_idx, seg_dir, seg_mapping, input_size, latency in segment_specs
+            for seg_idx, seg_dir, seg_mapping, input_size, latency,
+                export_membrane in segment_specs
         }
         prepared: Dict[int, _PreparedSegment] = run_tasks_in_pool_bounded(
             _emit_and_compile_segment,
@@ -131,14 +148,29 @@ class SimulationHybridMixin(SimulationHostContract):
         prepared: _PreparedSegment,
         input_data: list,
         num_proc: int = 0,
-    ) -> np.ndarray:
+    ) -> tuple[np.ndarray, np.ndarray | None]:
         """Run a neural segment using its pre-compiled binary.
 
         Skips NevresimDriver creation entirely — only saves inputs and executes.
-        Returns raw output as ``(num_samples, num_outputs)``.
+        Returns ``(raw_counts, membranes_or_None)``; membranes ride along only
+        for a membrane-export build, counts are byte-identical either way.
         """
         max_input_count = len(input_data)
-        return run_binary_raw(
+        if prepared.export_membrane:
+            return run_binary_raw(
+                binary_path=prepared.binary_path,
+                work_dir=prepared.seg_dir,
+                input_loader=input_data,
+                output_size=prepared.output_size,
+                simulation_length=int(self.simulation_length),
+                input_size=prepared.input_size,
+                spike_generation_mode=self.spike_generation_mode,
+                max_input_count=max_input_count,
+                num_proc=num_proc,
+                export_membrane=True,
+                timeout_s=self.simulation_step_timeout_s,
+            )
+        raw = run_binary_raw(
             binary_path=prepared.binary_path,
             work_dir=prepared.seg_dir,
             input_loader=input_data,
@@ -150,39 +182,7 @@ class SimulationHybridMixin(SimulationHostContract):
             num_proc=num_proc,
             timeout_s=self.simulation_step_timeout_s,
         )
-
-    def _run_neural_segment(
-        self,
-        segment_idx: int,
-        hard_core_mapping: HardCoreMapping,
-        input_data: list,
-        input_size: int,
-    ) -> np.ndarray:
-        """Fallback: run a single neural segment from scratch (emit + compile + execute)."""
-        seg_dir = os.path.join(self.working_directory, f"segment_{segment_idx}")
-        os.makedirs(seg_dir, exist_ok=True)
-
-        delay = ChipLatency(hard_core_mapping).calculate()
-        print(f"  [segment {segment_idx}] delay: {delay}")
-
-        driver = NevresimDriver(
-            input_size,
-            hard_core_mapping,
-            seg_dir,
-            self.weight_type,
-            spike_generation_mode=self.spike_generation_mode,
-            firing_mode=self.firing_mode,
-            thresholding_mode=self.thresholding_mode,
-            spiking_mode=self.spiking_mode,
-            threshold_type=self.threshold_type,
-            connectivity_mode=self.nevresim_connectivity_mode,
-            simulation_step_timeout_s=self.simulation_step_timeout_s,
-        )
-        return driver.predict_spiking_raw(
-            input_data,
-            int(self.simulation_length),
-            delay,
-        )
+        return raw, None
 
     def _raw_to_rates(self, raw: np.ndarray) -> np.ndarray:
         """Convert raw nevresim output to [0,1] rates.
@@ -212,6 +212,9 @@ class SimulationHybridMixin(SimulationHostContract):
         node_output_shifts = getattr(hybrid, "node_output_shifts", None)
 
         seg_counter = 0
+        # [C2] host-read decode side channel keyed by node id; count currencies
+        # in the state buffer never carry it (mirrors the torch flow).
+        membrane_corrections: Dict[int, np.ndarray] = {}
 
         def on_neural(_idx, stage, buf):
             nonlocal seg_counter
@@ -233,8 +236,15 @@ class SimulationHybridMixin(SimulationHostContract):
                 f"  Running neural segment '{stage.name}' (input_size={input_size})"
             )
             prepared = prepared_segments[seg_counter]
-            raw_output = self._run_neural_segment_precompiled(prepared, seg_data)
+            raw_output, membranes = self._run_neural_segment_precompiled(
+                prepared, seg_data,
+            )
             seg_counter += 1
+            if membranes is not None:
+                stash_membrane_corrections(
+                    hybrid, stage, membranes, membrane_corrections,
+                    half_step_charge=self.membrane_half_step_charge,
+                )
             rates = self._raw_to_rates(raw_output)
             store_segment_output_numpy(stage.output_map, buf, rates)
 
@@ -264,6 +274,17 @@ class SimulationHybridMixin(SimulationHostContract):
         final_output = gather_final_output_numpy(
             hybrid.output_sources, state_buffer, original_input, num_samples
         )
+        if membrane_corrections:
+            print(
+                "  [C2] applying the deployed membrane decode to the probe's "
+                f"final read ({len(membrane_corrections)} eligible node(s))"
+            )
+            final_output = apply_membrane_corrections_numpy(
+                final_output,
+                membrane_corrections,
+                hybrid.output_sources,
+                simulation_length=int(self.simulation_length),
+            )
         predictions = np.argmax(final_output, axis=1)
 
         print("Evaluating simulator output...")

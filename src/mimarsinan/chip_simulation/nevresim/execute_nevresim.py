@@ -18,6 +18,20 @@ def _parse_stdout_tokens(stdout: str) -> list[float]:
     return [float(val) for val in stdout.split()]
 
 
+def parse_membrane_records(stderr: str | None) -> list[list[float]]:
+    """Parse ``MEMB`` lines (NEVRESIM_EXPORT_MEMBRANE build) into per-sample rows.
+
+    One line per sample: ``m_T / theta`` per network output, captured at each
+    source core's window-end cycle."""
+    rows: list[list[float]] = []
+    for line in (stderr or "").splitlines():
+        line = line.strip()
+        if not line.startswith("MEMB"):
+            continue
+        rows.append([float(v) for v in line.split()[1:]])
+    return rows
+
+
 def parse_spike_records(stderr: str) -> list[dict[int, dict[str, list[int]]]]:
     """Parse ``SPKREC`` lines (NEVRESIM_RECORD_SPIKES build) into per-sample records.
 
@@ -83,9 +97,11 @@ def _collect_worker_outputs(
     deadline: float,
     timeout_s: float,
     record_spikes: bool,
-) -> tuple[list[float], list[dict]]:
+    export_membrane: bool = False,
+) -> tuple[list[float], list[dict], list[list[float]]]:
     output_values: list[float] = []
     spike_records: list[dict] = []
+    membrane_records: list[list[float]] = []
     for start, end, proc in workers:
         remaining = deadline - time.monotonic()
         try:
@@ -108,22 +124,29 @@ def _collect_worker_outputs(
         output_values.extend(_parse_stdout_tokens(stdout))
         if record_spikes:
             spike_records.extend(parse_spike_records(stderr))
-    return output_values, spike_records
+        if export_membrane:
+            membrane_records.extend(parse_membrane_records(stderr))
+    return output_values, spike_records, membrane_records
 
 
-def execute_simulator(
+def execute_simulator_full(
     simulator_filename,
     input_count,
     num_proc=0,
     *,
     expected_values: int | None = None,
     record_spikes: bool = False,
+    export_membrane: bool = False,
     timeout_s: float | None = None,
-):
+) -> tuple[list[float], list[dict], list[list[float]]]:
     """Run the nevresim binary across ``num_proc`` workers (0 ⇒ ``cpu_count() // 2``).
 
+    Returns ``(output_values, spike_records, membrane_records)``; the record
+    lists are empty unless their flag is set (dedicated builds).
     Stdout protocol: per sample in ``[start, end)``, ``output_size`` whitespace-
     separated numbers then a newline; a mismatch vs ``expected_values`` raises.
+    ``export_membrane`` (a ``NEVRESIM_EXPORT_MEMBRANE`` build) additionally
+    parses per-sample ``MEMB`` stderr rows in sample order.
     The whole worker batch runs under one wall cap (``timeout_s``, else the
     resolved step timeout): on expiry the workers' process groups are killed
     and the batch retries once before failing loud."""
@@ -141,16 +164,19 @@ def execute_simulator(
     )
     cap = resolve_simulation_step_timeout_s(timeout_s)
 
-    def attempt(_attempt_index: int) -> tuple[list[float], list[dict]]:
+    def attempt(
+        _attempt_index: int,
+    ) -> tuple[list[float], list[dict], list[list[float]]]:
         workers = _launch_workers(executable, input_count, num_proc)
         return _collect_worker_outputs(
             workers,
             deadline=time.monotonic() + cap,
             timeout_s=cap,
             record_spikes=record_spikes,
+            export_membrane=export_membrane,
         )
 
-    output_values, spike_records = retry_once_on_timeout(
+    output_values, spike_records, membrane_records = retry_once_on_timeout(
         attempt, description=f"nevresim execute ({executable})",
     )
 
@@ -163,6 +189,29 @@ def execute_simulator(
             f"got {len(output_values)}"
         )
 
+    return output_values, spike_records, membrane_records
+
+
+def execute_simulator(
+    simulator_filename,
+    input_count,
+    num_proc=0,
+    *,
+    expected_values: int | None = None,
+    record_spikes: bool = False,
+    timeout_s: float | None = None,
+):
+    """Narrowing wrapper over ``execute_simulator_full`` for existing callers:
+    returns ``output_values``, or ``(output_values, spike_records)`` with
+    ``record_spikes``."""
+    output_values, spike_records, _membranes = execute_simulator_full(
+        simulator_filename,
+        input_count,
+        num_proc,
+        expected_values=expected_values,
+        record_spikes=record_spikes,
+        timeout_s=timeout_s,
+    )
     if record_spikes:
         return output_values, spike_records
     return output_values

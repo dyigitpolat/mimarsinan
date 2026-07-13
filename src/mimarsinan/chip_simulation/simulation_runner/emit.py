@@ -17,6 +17,7 @@ class _PreparedSegment:
     binary_path: str
     output_size: int
     input_size: int
+    export_membrane: bool = False
 
 
 def _emit_and_compile_segment(
@@ -36,6 +37,7 @@ def _emit_and_compile_segment(
     nevresim_path: str,
     connectivity_mode: ConnectivityMode,
     timeout_s: float | None = None,
+    export_membrane: bool = False,
 ) -> _PreparedSegment:
     """Top-level function for ProcessPoolExecutor: emit chip artifacts and compile."""
     NevresimDriver.nevresim_path = nevresim_path
@@ -65,6 +67,7 @@ def _emit_and_compile_segment(
     output_path = os.path.join(seg_dir, "bin", "simulator")
     binary = compile_simulator(
         seg_dir, nevresim_path, output_path=output_path, verbose=False,
+        extra_flags=(["-DNEVRESIM_EXPORT_MEMBRANE"] if export_membrane else None),
         timeout_s=timeout_s,
     )
     if binary is None:
@@ -76,4 +79,5 @@ def _emit_and_compile_segment(
         binary_path=os.path.abspath(binary),
         output_size=driver.chip.output_size,
         input_size=driver.chip.input_size,
+        export_membrane=export_membrane,
     )

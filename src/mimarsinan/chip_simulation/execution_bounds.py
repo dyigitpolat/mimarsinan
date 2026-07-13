@@ -123,6 +123,60 @@ def _harvest_completed(
             results[key] = future.result()
 
 
+class ReusableBoundedPool:
+    """A caller-owned spawn pool ``run_tasks_in_pool_bounded`` can reuse across
+    calls, amortizing worker-spawn cost (Lava waves pay ~2-3 s per fresh pool).
+
+    Same spawn context and ``setpgrp`` workers as the per-call pool. The owner
+    scopes it — one segment run, context-managed — and teardown is
+    deterministic: ``close()`` after a clean run, ``invalidate()`` (kill) on
+    error paths. Never hold one in a module-global.
+    """
+
+    def __init__(self, max_workers: int):
+        self._max_workers = max(1, int(max_workers))
+        self._executor: "ProcessPoolExecutor | None" = None
+
+    def acquire(self) -> ProcessPoolExecutor:
+        """The live executor, built on first use (workers spawn on demand)."""
+        if self._executor is None:
+            self._executor = ProcessPoolExecutor(
+                max_workers=self._max_workers,
+                initializer=os.setpgrp,
+                mp_context=_POOL_MP_CONTEXT,
+            )
+        return self._executor
+
+    def drop(self) -> None:
+        """Forget an executor whose workers the caller already killed."""
+        self._executor = None
+
+    def invalidate(self) -> None:
+        """Kill the worker process groups and drop the executor (error paths)."""
+        executor, self._executor = self._executor, None
+        if executor is None:
+            return
+        workers = _pool_worker_snapshot(executor)
+        executor.shutdown(wait=False, cancel_futures=True)
+        _kill_pool_workers(workers)
+
+    def close(self) -> None:
+        """Deterministic teardown after a clean run: join the idle workers."""
+        executor, self._executor = self._executor, None
+        if executor is None:
+            return
+        executor.shutdown(wait=True, cancel_futures=True)
+
+    def __enter__(self) -> "ReusableBoundedPool":
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        if exc_type is None:
+            self.close()
+        else:
+            self.invalidate()
+
+
 def run_tasks_in_pool_bounded(
     fn: Callable[..., R],
     task_args: Mapping[K, Tuple[Any, ...]],
@@ -130,11 +184,15 @@ def run_tasks_in_pool_bounded(
     max_workers: int,
     timeout_s: float,
     description: str,
+    pool: "ReusableBoundedPool | None" = None,
 ) -> Dict[K, R]:
     """Run ``fn(*args)`` per task under a pool-wide deadline.
 
     On expiry: cancel pending futures, kill the worker process groups, retry the
-    still-incomplete tasks once, and fail loud on a second expiry.
+    still-incomplete tasks once, and fail loud on a second expiry. ``pool``
+    reuses a caller-owned executor across calls (concurrency bounded by the
+    pool's worker count and the task count); a timeout or task error still
+    kills the workers, and the pool rebuilds a fresh executor on its next use.
     """
     results: Dict[K, R] = {}
 
@@ -142,14 +200,18 @@ def run_tasks_in_pool_bounded(
         pending = {key: args for key, args in task_args.items() if key not in results}
         if not pending:
             return
-        executor = ProcessPoolExecutor(
-            max_workers=max(1, min(max_workers, len(pending))),
-            initializer=os.setpgrp,
-            mp_context=_POOL_MP_CONTEXT,
-        )
+        if pool is not None:
+            executor = pool.acquire()
+        else:
+            executor = ProcessPoolExecutor(
+                max_workers=max(1, min(max_workers, len(pending))),
+                initializer=os.setpgrp,
+                mp_context=_POOL_MP_CONTEXT,
+            )
         futures: Dict["Future[R]", K] = {
             executor.submit(fn, *args): key for key, args in pending.items()
         }
+        completed = False
         try:
             try:
                 for future in as_completed(futures, timeout=timeout_s):
@@ -158,6 +220,8 @@ def run_tasks_in_pool_bounded(
                 workers = _pool_worker_snapshot(executor)
                 executor.shutdown(wait=False, cancel_futures=True)
                 _kill_pool_workers(workers)
+                if pool is not None:
+                    pool.drop()
                 _harvest_completed(futures, results)
                 stuck = sorted(str(key) for key in pending if key not in results)
                 raise SimulationTimeoutError(
@@ -166,10 +230,16 @@ def run_tasks_in_pool_bounded(
                     f"killed the pool workers; stuck: {stuck[:8]}"
                 ) from None
             else:
-                executor.shutdown(wait=True)
+                completed = True
+                if pool is None:
+                    executor.shutdown(wait=True)
         finally:
-            # Idempotent after a normal shutdown; reaps the pool on error paths.
-            executor.shutdown(wait=False, cancel_futures=True)
+            # Reap on error paths (a sibling task may still be running); a
+            # no-op after a clean run or after the timeout kill above.
+            if pool is None:
+                executor.shutdown(wait=False, cancel_futures=True)
+            elif not completed:
+                pool.invalidate()
 
     retry_once_on_timeout(attempt, description=description)
     return results

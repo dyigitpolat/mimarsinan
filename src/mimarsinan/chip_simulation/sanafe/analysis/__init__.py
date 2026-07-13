@@ -38,6 +38,7 @@ from mimarsinan.chip_simulation.sanafe.analysis.trace import (
     _spike_event_group_and_index,
     _spike_trace_to_group_counts,
     _ttfs_potential_trace_group_names,
+    read_final_core_potentials,
 )
 
 __all__ = [
@@ -71,4 +72,5 @@ __all__ = [
     "_spike_trace_to_group_counts",
     "_summarize_message_trace",
     "_ttfs_potential_trace_group_names",
+    "read_final_core_potentials",
 ]

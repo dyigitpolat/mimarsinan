@@ -21,13 +21,16 @@ def _ttfs_potential_trace_group_names(chip: Any) -> List[str]:
     ]
 
 
-def _read_ttfs_core_activations(
+def read_final_core_potentials(
     chip: Any,
     core_idx: int,
     n_neurons: int,
     results: Dict[str, Any],
 ) -> np.ndarray:
-    """Read per-neuron TTFS activations from ``potential_trace`` (plugin somas)."""
+    """Final per-neuron soma potentials for one core from the LAST
+    ``potential_trace`` row (plugin ``get_potential``; each soma idles outside
+    its active window, so the last row is its end-of-window state). TTFS
+    activations ride the same read port."""
     out = np.zeros(n_neurons, dtype=np.float64)
     target = f"core{core_idx}"
     trace = results.get("potential_trace")
@@ -48,6 +51,10 @@ def _read_ttfs_core_activations(
             return out
         pos += n_logged
     return out
+
+
+# TTFS call sites read activations through the same final-potential port.
+_read_ttfs_core_activations = read_final_core_potentials
 
 
 def _group_name(group: Any) -> str:

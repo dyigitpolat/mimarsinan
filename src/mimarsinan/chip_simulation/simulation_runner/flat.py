@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import numpy as np
+
 from mimarsinan.mapping.latency.chip import ChipLatency
 from mimarsinan.mapping.packing.softcore import HardCoreMapping
 from mimarsinan.chip_simulation.nevresim.nevresim_driver import NevresimDriver
 from mimarsinan.chip_simulation.simulation_runner.host_contract import SimulationHostContract
+from mimarsinan.chip_simulation.simulation_runner.membrane_probe import flat_membrane_slices
 
 
 class SimulationFlatMixin(SimulationHostContract):
@@ -32,11 +35,28 @@ class SimulationFlatMixin(SimulationHostContract):
         simulation_steps = int(self.simulation_length)
         print(f"  total simulation steps: {simulation_steps}")
 
-        predictions = simulation_driver.predict_spiking(
-            self.test_data,
-            simulation_steps,
-            delay,
+        eligible_slices = flat_membrane_slices(
+            self.mapping, armed=bool(self.membrane_readout),
         )
+        if eligible_slices:
+            print(
+                "  [C2] applying the deployed membrane decode to the probe's "
+                f"final read ({len(eligible_slices)} eligible node slice(s))"
+            )
+            raw, membranes = simulation_driver.predict_spiking_raw_with_membrane(
+                self.test_data, simulation_steps, delay,
+            )
+            corrected = np.asarray(raw, dtype=np.float64).copy()
+            half_step = float(self.membrane_half_step_charge)
+            for _node_id, start, end in eligible_slices:
+                corrected[:, start:end] += membranes[:, start:end] - half_step
+            predictions = np.argmax(corrected, axis=1)
+        else:
+            predictions = simulation_driver.predict_spiking(
+                self.test_data,
+                simulation_steps,
+                delay,
+            )
 
         print("Evaluating simulator output...")
         accuracy = self._evaluate_chip_output(predictions)

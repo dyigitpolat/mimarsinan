@@ -146,6 +146,33 @@ def accumulate_membrane_correction(
             correction[:, lo:hi] += memb / thresholds[core] - half_step_charge
 
 
+def apply_membrane_corrections_numpy(
+    final_output: np.ndarray,
+    readout_corrections: Dict[int, np.ndarray],
+    output_sources: np.ndarray,
+    *,
+    simulation_length: int,
+) -> np.ndarray:
+    """Numpy twin of ``apply_membrane_corrections_to_logits`` for RATE-domain
+    outputs: adds ``correction / T`` so the argmax matches the count-unit
+    logits decode. Returns a corrected copy; never mutates the input
+    (deployed runners re-read it for records)."""
+    if not readout_corrections:
+        return final_output
+    out = np.asarray(final_output, dtype=np.float64).copy()
+    divisor = float(max(int(simulation_length), 1))
+    for idx, src in enumerate(np.asarray(output_sources).flatten()):
+        if not isinstance(src, IRSource):
+            continue
+        correction = readout_corrections.get(int(src.node_id))
+        if correction is None:
+            continue
+        out[:, idx] += (
+            np.asarray(correction, dtype=np.float64)[:, int(src.index)] / divisor
+        )
+    return out
+
+
 def apply_membrane_corrections_to_logits(
     logits: torch.Tensor,
     readout_corrections: Dict[int, torch.Tensor],

@@ -93,7 +93,11 @@ def test_hybrid_precompiled_runtime_multisample() -> None:
             num_samples,
         )
         seg_data = [(seg_input[i], np.zeros(1)) for i in range(num_samples)]
-        raw = runner._run_neural_segment_precompiled(seg, seg_data, num_proc=4)
+        raw, membranes = runner._run_neural_segment_precompiled(
+            seg, seg_data, num_proc=4,
+        )
 
+    # Default-off contract: without the [C2] gate the segment run is counts-only.
+    assert membranes is None
     assert raw.shape == (num_samples, seg.output_size)
     assert np.any(raw >= 0)

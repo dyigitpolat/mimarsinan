@@ -30,6 +30,7 @@ Pareto decision layer.
 | `hypervolume_axis_encoder.py` | Canonical config/plan/ledger-row → hypervolume-coordinate encoding |
 | `hypervolume_cells.py` | Full-tuple `HypervolumeCell` (extends the certification cell) + claimed sub-product enumeration |
 | `ledger_schema.py` | Normalized campaign-ledger science-row schema: axes, cell key, validity, timing, and cost provenance |
+| `membrane_export.py` | [C2] deployed membrane-readout honesty gate: every enabled backend must export final membranes (declared on the registry), else fail toward counts; half-step charge SSOT |
 | `neural_segment_executor.py` | Dispatches analytical neural-segment execution by spiking mode (TTFS analytical path for references) |
 | `pareto.py` | Pareto decision layer over campaign rows: cascaded-vs-synchronized verdict + recipe proposal with banded cost |
 | `parity_contract.py` | Parity/equivalence contract classification for deployment cells |

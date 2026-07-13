@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
@@ -24,6 +24,11 @@ class SimulationHostContract:
     nevresim_connectivity_mode: ConnectivityMode
     simulation_step_timeout_s: float
     test_data: list[tuple[np.ndarray, np.ndarray]]
+    mapping: Any
+    # [C2] deployed membrane decode: default-off by contract; SimulationRunner
+    # arms it through the honesty gate.
+    membrane_readout: bool = False
+    membrane_half_step_charge: float = 0.0
 
     if TYPE_CHECKING:
         def _evaluate_chip_output(self, predictions) -> float: ...

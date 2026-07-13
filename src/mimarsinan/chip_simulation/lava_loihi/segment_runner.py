@@ -9,7 +9,10 @@ import numpy as np
 
 from mimarsinan.common.env import loihi_quiet, loihi_wave_workers
 
-from mimarsinan.chip_simulation.execution_bounds import run_tasks_in_pool_bounded
+from mimarsinan.chip_simulation.execution_bounds import (
+    ReusableBoundedPool,
+    run_tasks_in_pool_bounded,
+)
 from mimarsinan.chip_simulation.lava_loihi.core_worker import run_lava_core_task
 from mimarsinan.chip_simulation.lava_loihi.segment_assembly import (
     assemble_core_active_input,
@@ -46,8 +49,13 @@ class LavaSegmentMixin:
             input_spikes: np.ndarray,
         ) -> np.ndarray: ...
 
-    def _dispatch_wave(self, wave_tasks: Dict[int, _CoreTask]) -> Dict[int, np.ndarray]:
-        """Run one wave of dependency-free cores; multi-core waves with funded workers go through the bounded spawn pool."""
+    def _dispatch_wave(
+        self,
+        wave_tasks: Dict[int, _CoreTask],
+        *,
+        pool: ReusableBoundedPool | None = None,
+    ) -> Dict[int, np.ndarray]:
+        """Run one wave of dependency-free cores; multi-core waves with funded workers go through the bounded spawn pool (reused across waves via ``pool``)."""
         workers = min(loihi_wave_workers(), len(wave_tasks))
         if workers <= 1:
             return {
@@ -69,6 +77,7 @@ class LavaSegmentMixin:
             max_workers=workers,
             timeout_s=self._simulation_step_timeout_s,
             description=f"lava wave pool ({len(wave_tasks)} cores)",
+            pool=pool,
         )
 
     def _run_neural_segment_scheduled(
@@ -104,66 +113,70 @@ class LavaSegmentMixin:
                 f"{len(waves)} waves; T={T}, N={N} — per-wave timing follows",
                 flush=True,
             )
-        for wave_idx, wave in enumerate(waves):
-            t_wave = _time.time()
-            wave_tasks: Dict[int, _CoreTask] = {}
-            for core_idx in wave:
-                core = seg.cores[core_idx]
-                latency = timing.core_latency(core)
-                used_ax = used_axons(core, min_one=True)
-                used_neu = used_neurons(core, min_one=True)
-                active_input = assemble_core_active_input(
-                    core,
-                    core_idx=core_idx,
-                    N=N,
-                    T=T,
-                    latency=latency,
-                    used_ax=used_ax,
-                    seg_input_logical=seg_input_logical,
-                    core_buffer_spikes=core_buffer_spikes,
-                )
-                weights = np.asarray(
-                    core.core_matrix[:used_ax, :used_neu], dtype=_LAVA_DTYPE,
-                ).T
-                hardware_bias = (
-                    np.asarray(core.hardware_bias[:used_neu], dtype=_LAVA_DTYPE)
-                    if getattr(core, "hardware_bias", None) is not None
-                    else None
-                )
-                wave_tasks[core_idx] = (
-                    weights,
-                    float(core.threshold),
-                    hardware_bias,
-                    active_input.reshape(used_ax, N * T),
-                )
+        # One reusable spawn pool per segment run: multi-core waves share its
+        # workers (spawn paid once), and the `with` tears it down before the
+        # segment returns — closed on success, killed on error.
+        with ReusableBoundedPool(loihi_wave_workers()) as wave_pool:
+            for wave_idx, wave in enumerate(waves):
+                t_wave = _time.time()
+                wave_tasks: Dict[int, _CoreTask] = {}
+                for core_idx in wave:
+                    core = seg.cores[core_idx]
+                    latency = timing.core_latency(core)
+                    used_ax = used_axons(core, min_one=True)
+                    used_neu = used_neurons(core, min_one=True)
+                    active_input = assemble_core_active_input(
+                        core,
+                        core_idx=core_idx,
+                        N=N,
+                        T=T,
+                        latency=latency,
+                        used_ax=used_ax,
+                        seg_input_logical=seg_input_logical,
+                        core_buffer_spikes=core_buffer_spikes,
+                    )
+                    weights = np.asarray(
+                        core.core_matrix[:used_ax, :used_neu], dtype=_LAVA_DTYPE,
+                    ).T
+                    hardware_bias = (
+                        np.asarray(core.hardware_bias[:used_neu], dtype=_LAVA_DTYPE)
+                        if getattr(core, "hardware_bias", None) is not None
+                        else None
+                    )
+                    wave_tasks[core_idx] = (
+                        weights,
+                        float(core.threshold),
+                        hardware_bias,
+                        active_input.reshape(used_ax, N * T),
+                    )
 
-            wave_outputs = self._dispatch_wave(wave_tasks)
+                wave_outputs = self._dispatch_wave(wave_tasks, pool=wave_pool)
 
-            for core_idx in wave:
-                core = seg.cores[core_idx]
-                latency = timing.core_latency(core)
-                used_neu = used_neurons(core, min_one=True)
-                active_output = wave_outputs[core_idx].reshape(used_neu, N, T)
+                for core_idx in wave:
+                    core = seg.cores[core_idx]
+                    latency = timing.core_latency(core)
+                    used_neu = used_neurons(core, min_one=True)
+                    active_output = wave_outputs[core_idx].reshape(used_neu, N, T)
 
-                full_output = np.zeros(
-                    (int(core.neurons_per_core), N, timing.sample_stride),
-                    dtype=_LAVA_DTYPE,
-                )
-                full_output[:used_neu, :, latency:latency + T] = active_output
-                core_output_spikes[core_idx] = full_output
+                    full_output = np.zeros(
+                        (int(core.neurons_per_core), N, timing.sample_stride),
+                        dtype=_LAVA_DTYPE,
+                    )
+                    full_output[:used_neu, :, latency:latency + T] = active_output
+                    core_output_spikes[core_idx] = full_output
 
-                buffered = full_output.copy()
-                hold_start = latency + T
-                if hold_start < timing.sample_stride:
-                    buffered[:, :, hold_start:] = buffered[:, :, hold_start - 1:hold_start]
-                core_buffer_spikes[core_idx] = buffered
-            if verbose:
-                print(
-                    f"    wave {wave_idx + 1:>3}/{len(waves)}: "
-                    f"{len(wave)} core(s) (idx={wave}) "
-                    f"{_time.time() - t_wave:7.1f}s",
-                    flush=True,
-                )
+                    buffered = full_output.copy()
+                    hold_start = latency + T
+                    if hold_start < timing.sample_stride:
+                        buffered[:, :, hold_start:] = buffered[:, :, hold_start - 1:hold_start]
+                    core_buffer_spikes[core_idx] = buffered
+                if verbose:
+                    print(
+                        f"    wave {wave_idx + 1:>3}/{len(waves)}: "
+                        f"{len(wave)} core(s) (idx={wave}) "
+                        f"{_time.time() - t_wave:7.1f}s",
+                        flush=True,
+                    )
 
         print(
             f"  [LavaLoihiRunner] scheduled segment run: {len(seg.cores)} cores, "

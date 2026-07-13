@@ -18,6 +18,7 @@ from mimarsinan.chip_simulation.hybrid_run.hybrid_semantics import (
     NeuralSegmentResult,
     store_neural_segment_output,
 )
+from mimarsinan.chip_simulation.spiking_semantics import is_cascaded_ttfs
 from mimarsinan.spiking.segment_boundary import decode_segment_output
 from mimarsinan.chip_simulation.sanafe.analysis import (
     _aggregate_noc_link_load,
@@ -35,7 +36,7 @@ from mimarsinan.chip_simulation.sanafe.analysis import (
     _pack_potential_trace,
     _pack_spike_trace_matrix,
     _per_core_energy_sanafe,
-    _read_ttfs_core_activations,
+    read_final_core_potentials,
 )
 from mimarsinan.chip_simulation.sanafe.records import (
     SanafeCoreRecord,
@@ -56,6 +57,7 @@ class SanafeNeuralStageRecordMixin:
         T: int
         spiking_mode: str
         ttfs_cycle_schedule: str
+        read_final_potentials: bool
 
         def _derive_per_core_input_counts(self, *args: Any, **kwargs: Any) -> Tuple[np.ndarray, int]: ...
         def _aggregate_per_tile(self, *args: Any, **kwargs: Any) -> List[SanafeTileRecord]: ...
@@ -100,13 +102,11 @@ class SanafeNeuralStageRecordMixin:
             if used_neu <= 0:
                 continue
             group = core_to_group.get(core_idx)
-            if group is None:
-                output_count = np.zeros(used_neu, dtype=np.int64)
-            else:
-                gsc = group_spike_counts.get(_group_name(group))
-                output_count = (np.zeros(used_neu, dtype=np.int64)
-                                if gsc is None
-                                else np.asarray(gsc, dtype=np.int64)[:used_neu])
+            gsc = (group_spike_counts.get(_group_name(group))
+                   if group is not None else None)
+            output_count = (np.zeros(used_neu, dtype=np.int64)
+                            if gsc is None
+                            else np.asarray(gsc, dtype=np.int64)[:used_neu])
             input_count, n_always_on = self._derive_per_core_input_counts(
                 core=core, seg_input_encoded=encoded,
                 group_spike_counts=group_spike_counts,
@@ -122,11 +122,15 @@ class SanafeNeuralStageRecordMixin:
                 off = group_row_offsets.get(group_name)
                 if off is not None and used_neu > 0:
                     core_raster = seg_raster[off:off + used_neu]
-            output_activation = None
-            if is_ttfs and group is not None:
-                output_activation = _read_ttfs_core_activations(
-                    chip, core_idx, used_neu, results,
-                )
+            # [C2] end-of-window potentials (somas idle outside their window,
+            # so the last trace row is window-end); TTFS rides the same port.
+            potentials = (
+                read_final_core_potentials(chip, core_idx, used_neu, results)
+                if group is not None and (is_ttfs or self.read_final_potentials)
+                else None
+            )
+            output_activation = potentials if is_ttfs else None
+            final_potential = potentials if not is_ttfs else None
 
             per_core_records.append(SanafeCoreRecord(
                 core_index=core_idx,
@@ -142,6 +146,7 @@ class SanafeNeuralStageRecordMixin:
                 input_spike_count=input_count,
                 output_spike_count=output_count,
                 output_activation=output_activation,
+                final_potential=final_potential,
                 energy=_per_core_energy_sanafe(
                     preset=self._preset,
                     n_neurons=used_neu,
@@ -186,8 +191,6 @@ class SanafeNeuralStageRecordMixin:
             core_to_group=core_to_group,
             hcm=hcm,
         )
-
-        from mimarsinan.chip_simulation.spiking_semantics import is_cascaded_ttfs
 
         cascade_override = None
         if is_cascaded_ttfs(self.spiking_mode, self.ttfs_cycle_schedule):
@@ -279,8 +282,6 @@ class SanafeNeuralStageRecordMixin:
             contract_ttfs_cores=contract_ttfs_cores,
             contract_ttfs_seg_output=contract_ttfs_seg_output,
         )
-
-        from mimarsinan.chip_simulation.spiking_semantics import is_cascaded_ttfs
 
         cascade = is_cascaded_ttfs(self.spiking_mode, self.ttfs_cycle_schedule)
         if cascade or not _runner.is_ttfs_spiking_mode(self.spiking_mode):

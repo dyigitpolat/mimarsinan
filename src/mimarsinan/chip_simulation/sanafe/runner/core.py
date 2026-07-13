@@ -43,6 +43,7 @@ class SanafeRunner(SanafeNeuralStageMixin, SanafeNeuralStageRecordMixin, SanafeS
         log_message_trace: bool = True,
         cores_per_tile: int = 0,
         simulation_step_timeout_s: float | None = None,
+        read_final_potentials: bool = False,
     ):
         if contract is not None:
             behavior = contract.behavior
@@ -84,6 +85,9 @@ class SanafeRunner(SanafeNeuralStageMixin, SanafeNeuralStageRecordMixin, SanafeS
         ).require_backend_supported(backend="sanafe", context="SanafeRunner")
         self.log_potential_trace = log_potential_trace
         self.log_message_trace = log_message_trace
+        # [C2] default-off final-membrane read: lands end-of-window soma
+        # potentials per core in the segment record (additive; counts untouched).
+        self.read_final_potentials = bool(read_final_potentials)
         self.cores_per_tile = cores_per_tile
         self._sim_timeout_s = resolve_simulation_step_timeout_s(
             simulation_step_timeout_s

@@ -56,6 +56,7 @@ class SanafeNeuralStageMixin:
         ttfs_cycle_schedule: str
         log_potential_trace: bool
         log_message_trace: bool
+        read_final_potentials: bool
 
         def _finalize_neural_stage_record(
             self, **kwargs: Any,
@@ -225,7 +226,9 @@ class SanafeNeuralStageMixin:
             core_latencies=core_latencies,
         )
 
-        need_potential_trace = is_ttfs or self.log_potential_trace
+        need_potential_trace = (
+            is_ttfs or self.log_potential_trace or self.read_final_potentials
+        )
         chip, results = simulate_chip_bounded(
             sanafe, self._arch, net, T_eff,
             spike_trace=True,

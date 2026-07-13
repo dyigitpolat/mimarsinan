@@ -29,6 +29,9 @@ class SanafeCoreRecord:
     spike_raster: Optional[np.ndarray] = None
     output_activation: Optional[np.ndarray] = None
     input_neuron_spikes_fired: int = 0
+    # [C2] end-of-window soma potentials (``get_potential`` via the potential
+    # trace); populated only when the runner arms ``read_final_potentials``.
+    final_potential: Optional[np.ndarray] = None
 
 
 @dataclass

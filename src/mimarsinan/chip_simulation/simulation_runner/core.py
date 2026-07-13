@@ -6,6 +6,10 @@ import numpy as np
 import torch.nn as nn
 
 from mimarsinan.chip_simulation.execution_bounds import resolve_simulation_step_timeout_s
+from mimarsinan.chip_simulation.membrane_export import (
+    deployed_membrane_readout_enabled,
+    half_step_charge_from_config,
+)
 from mimarsinan.chip_simulation.subsample import compute_test_subsample_indices
 from mimarsinan.chip_simulation.nevresim.connectivity import resolve_nevresim_connectivity_mode
 from mimarsinan.chip_simulation.spiking_semantics import requires_ttfs_firing
@@ -27,6 +31,15 @@ class SimulationRunner(SimulationFlatMixin, SimulationHybridMixin):
         self.nevresim_connectivity_mode = resolve_nevresim_connectivity_mode(pipeline.config)
         self.simulation_step_timeout_s = resolve_simulation_step_timeout_s(
             pipeline.config.get("simulation_step_timeout_s")
+        )
+        # [C2] the probe's final read adopts the membrane decode iff the
+        # honesty gate passes, keeping its decode domain aligned with the
+        # SCM/HCM metric reads; count records stay counts regardless.
+        self.membrane_readout = deployed_membrane_readout_enabled(
+            pipeline.config, plan,
+        )
+        self.membrane_half_step_charge = half_step_charge_from_config(
+            pipeline.config,
         )
 
         # Deliberately not routed through DeploymentPlan: this runner keeps the legacy weight_quantization default of True, which diverges from the plan's False default for a config that omits the key.

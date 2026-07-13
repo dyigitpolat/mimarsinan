@@ -15,6 +15,8 @@ from mimarsinan.chip_simulation.nevresim.connectivity import (
     default_nevresim_connectivity_mode,
 )
 
+from mimarsinan.chip_simulation.nevresim import instrumented_builds
+
 import numpy as np
 import shutil
 
@@ -114,27 +116,29 @@ class NevresimDriver:
                 simulation_length, latency, main_cpp_template, cfg, verbose=verbose,
             )
 
-    def _compile_cache_lookup(
-        self, simulation_length: int, latency: int, output_path=None,
-    ) -> str | None:
-        if not self.compile_cache_dir:
-            return None
+    def _compile_cache_key(self, simulation_length: int, latency: int) -> str:
+        """Cache key over the mapping connectivity + the full compile policy."""
         m_hash = mapping_connectivity_hash(self.hard_core_mapping)
-        wt_cpp = _python_to_cpp_type_name(self.weight_type)
-        tt_cpp = _python_to_cpp_type_name(self.threshold_type)
         p_hash = policy_hash(
             spiking_mode=self.spiking_mode,
             spike_generation_mode=self.spike_generation_mode,
             firing_mode=self.firing_mode,
             thresholding_mode=self.thresholding_mode,
-            weight_type_name=wt_cpp,
-            threshold_type_name=tt_cpp,
+            weight_type_name=_python_to_cpp_type_name(self.weight_type),
+            threshold_type_name=_python_to_cpp_type_name(self.threshold_type),
             simulation_length=int(simulation_length),
             latency=int(latency),
             connectivity_mode=self.connectivity_mode,
         )
+        return cache_key(m_hash, p_hash)
+
+    def _compile_cache_lookup(
+        self, simulation_length: int, latency: int, output_path=None,
+    ) -> str | None:
+        if not self.compile_cache_dir:
+            return None
         cache = NevresimCompileCache(self.compile_cache_dir)
-        cached = cache.get_binary(cache_key(m_hash, p_hash))
+        cached = cache.get_binary(self._compile_cache_key(simulation_length, latency))
         if cached is None:
             return None
         if output_path is not None:
@@ -148,22 +152,8 @@ class NevresimDriver:
     ) -> None:
         if not self.compile_cache_dir or binary_path is None:
             return
-        m_hash = mapping_connectivity_hash(self.hard_core_mapping)
-        wt_cpp = _python_to_cpp_type_name(self.weight_type)
-        tt_cpp = _python_to_cpp_type_name(self.threshold_type)
-        p_hash = policy_hash(
-            spiking_mode=self.spiking_mode,
-            spike_generation_mode=self.spike_generation_mode,
-            firing_mode=self.firing_mode,
-            thresholding_mode=self.thresholding_mode,
-            weight_type_name=wt_cpp,
-            threshold_type_name=tt_cpp,
-            simulation_length=int(simulation_length),
-            latency=int(latency),
-            connectivity_mode=self.connectivity_mode,
-        )
         NevresimCompileCache(self.compile_cache_dir).store_binary(
-            cache_key(m_hash, p_hash), binary_path,
+            self._compile_cache_key(simulation_length, latency), binary_path,
         )
 
     def emit_main_and_compile(
@@ -227,48 +217,25 @@ class NevresimDriver:
         prediction_count = int(len(simulator_output) / num_outputs)
         return np.array(simulator_output).reshape((prediction_count, num_outputs))
 
-    def emit_main_and_compile_recording(
-        self, max_input_count, simulation_length, latency, output_path=None,
-    ) -> str:
-        """Compile a dedicated ``NEVRESIM_RECORD_SPIKES`` binary (per-core spike
-        counts on stderr). Never cached — keep it off the production binary path."""
-        self.emit_main(max_input_count, simulation_length, latency, verbose=False)
-        binary = compile_simulator(
-            self.generated_files_path, NevresimDriver.nevresim_path,
-            output_path=output_path, verbose=False,
-            extra_flags=["-DNEVRESIM_RECORD_SPIKES"],
-            timeout_s=self.simulation_step_timeout_s,
-        )
-        if binary is None:
-            raise Exception("Recording-build compilation failed.")
-        return binary
-
     def predict_spiking_raw_with_records(
         self, input_loader, simulation_length, latency,
         max_input_count=None, num_proc=1,
     ):
-        """Run a recording build and return ``(raw, spike_records)`` — per-sample
-        ``{core: {"in","out"}}`` counts windowed to ``[lat, lat+T)``, the nevresim
-        analogue of HCM ``CoreSpikeCounts`` (single-process to keep sample order)."""
-        if max_input_count is None:
-            max_input_count = len(input_loader)
-        binary = self.emit_main_and_compile_recording(
-            max_input_count, simulation_length, latency,
+        """``NEVRESIM_RECORD_SPIKES`` build (never cached): ``(raw, spike_records)``."""
+        return instrumented_builds.predict_spiking_raw_with_records(
+            self, input_loader, simulation_length, latency,
+            max_input_count=max_input_count, num_proc=num_proc,
         )
-        raw, spike_records = run_binary_raw(
-            binary_path=binary,
-            work_dir=self.generated_files_path,
-            input_loader=input_loader,
-            output_size=self.chip.output_size,
-            simulation_length=int(simulation_length),
-            input_size=self.chip.input_size,
-            spike_generation_mode=self.spike_generation_mode,
-            max_input_count=max_input_count,
-            num_proc=num_proc,
-            record_spikes=True,
-            timeout_s=self.simulation_step_timeout_s,
+
+    def predict_spiking_raw_with_membrane(
+        self, input_loader, simulation_length, latency,
+        max_input_count=None, num_proc=0,
+    ):
+        """``NEVRESIM_EXPORT_MEMBRANE`` build (never cached): ``(raw, m_T/theta)``."""
+        return instrumented_builds.predict_spiking_raw_with_membrane(
+            self, input_loader, simulation_length, latency,
+            max_input_count=max_input_count, num_proc=num_proc,
         )
-        return raw, spike_records
 
     def predict_spiking_raw_from_binary(
         self,

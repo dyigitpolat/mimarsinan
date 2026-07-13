@@ -10,6 +10,7 @@ import torch
 from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory
 from mimarsinan.chip_simulation.behavior_config import NeuralBehaviorConfig
 from mimarsinan.chip_simulation.deployment_contract import SpikingDeploymentContract
+from mimarsinan.chip_simulation.membrane_export import deployed_membrane_readout_enabled
 from mimarsinan.chip_simulation.recording.spike_recorder import compare_records, format_first_diff
 from mimarsinan.chip_simulation.spiking_semantics import is_lif
 from mimarsinan.chip_simulation.ttfs.ttfs_executor import run_ttfs_hybrid_contract
@@ -75,16 +76,17 @@ def build_spiking_hybrid_flow(
     *,
     preprocessor=None,
     model=None,
-    membrane_readout_diagnostic: bool = False,
+    membrane_readout_decode: bool = False,
 ) -> SpikingHybridCoreFlow:
-    """Build the deployed-read executor; counts decode ALWAYS.
+    """Build the deployed-read executor; count currencies stay counts ALWAYS.
 
-    [C2/R8] The chip exports spike counts only (nevresim's ``SpikingExecution``
-    returns the accumulated output buffer; the membrane has no read port), so
-    deployed-read metrics, parity gates, and record flows keep the counts
-    decode regardless of ``lif_membrane_readout``. The membrane decode is
-    reachable solely via ``membrane_readout_diagnostic=True`` — the torch-side
-    diagnostic of ``run_membrane_readout_diagnostic``, never a deployed metric.
+    [C2] Records, parity gathers, and cross-sim comparisons keep the per-neuron
+    counts decode unconditionally. The membrane-augmented FINAL logits decode
+    (``Q_T = theta*c_T + m_T``) is opt-in via ``membrane_readout_decode`` and
+    is a legitimate deployed read only through the honesty gate
+    (``deployed_membrane_decode_enabled``): nevresim exports ``m_T/theta`` via
+    its ``NEVRESIM_EXPORT_MEMBRANE`` read port and SANA-FE plugin somas via
+    ``get_potential``; Lava/Loihi cannot, so its presence fails toward counts.
     """
     cfg = pipeline.config
     plan = DeploymentPlan.of(pipeline)
@@ -103,13 +105,40 @@ def build_spiking_hybrid_flow(
         cycle_accurate_lif_forward=plan.cycle_accurate_lif_forward,
         ttfs_cycle_schedule=contract.ttfs_cycle_schedule,
         membrane_readout=(
-            membrane_readout_diagnostic and is_lif(contract.spiking_mode)
+            membrane_readout_decode and is_lif(contract.spiking_mode)
         ),
         membrane_readout_half_step=bool(cfg.get("lif_half_step_bias", False)),
     )
     if plan.cycle_accurate_lif_forward and model is not None:
         apply_cycle_accurate_trains_to_model(model, True)
     return flow.to(cfg["device"])
+
+
+def deployed_membrane_decode_enabled(pipeline) -> bool:
+    """[C2] metric-level honesty gate (SSOT: ``chip_simulation.membrane_export``)."""
+    return deployed_membrane_readout_enabled(
+        pipeline.config, DeploymentPlan.of(pipeline),
+    )
+
+
+def build_deployed_metric_flow(
+    pipeline,
+    hybrid_mapping,
+    *,
+    model=None,
+) -> SpikingHybridCoreFlow:
+    """Deployed-read flow for the SCM/HCM accuracy metrics: consumes the
+    membrane logits decode iff the honesty gate passes, else pure counts."""
+    decode = deployed_membrane_decode_enabled(pipeline)
+    if decode:
+        print(
+            "[C2] deployed membrane decode ARMED for the metric read "
+            "(lif_membrane_readout armed; every enabled chip backend exports "
+            "final membranes)."
+        )
+    return build_spiking_hybrid_flow(
+        pipeline, hybrid_mapping, model=model, membrane_readout_decode=decode,
+    )
 
 
 def run_membrane_readout_diagnostic(
@@ -119,11 +148,12 @@ def run_membrane_readout_diagnostic(
     *,
     model=None,
 ) -> dict[str, Any] | None:
-    """[C2/R8] Torch-side membrane-readout engagement report; never a metric.
+    """[C2] Membrane-readout engagement report (never a metric itself).
 
     Measures the counts-decode vs membrane-decode logit delta on ``samples``,
-    prints the engagement line, and emits a reporter event. Returns None when
-    the knob is unarmed or the mode is not LIF.
+    reports whether the honesty gate lets the deployed metric read consume the
+    membrane decode, prints the engagement line, and emits a reporter event.
+    Returns None when the knob is unarmed or the mode is not LIF.
     """
     cfg = pipeline.config
     contract = build_deployment_contract(pipeline)
@@ -138,27 +168,34 @@ def run_membrane_readout_diagnostic(
         pipeline, hybrid_mapping, model=model,
     ).eval()
     diagnostic_flow = build_spiking_hybrid_flow(
-        pipeline, hybrid_mapping, model=model, membrane_readout_diagnostic=True,
+        pipeline, hybrid_mapping, model=model, membrane_readout_decode=True,
     ).eval()
     x = samples.to(device)
     with torch.no_grad():
         counts_logits = counts_flow(x)
         membrane_logits = diagnostic_flow(x)
     delta = membrane_logits - counts_logits
+    deployed_decode = deployed_membrane_decode_enabled(pipeline)
     stats: dict[str, Any] = {
         "eligible_nodes": len(final_only_output_nodes(hybrid_mapping)),
         "samples": int(x.shape[0]),
         "engaged": bool(delta.abs().max().item() > 0.0),
+        "deployed_decode": deployed_decode,
         "pred_flips": int(
             (membrane_logits.argmax(dim=1) != counts_logits.argmax(dim=1))
             .sum().item()
         ),
         "max_abs_correction": float(delta.abs().max().item()),
     }
+    gate_state = (
+        "membrane (gate armed: all enabled chip backends export final membranes)"
+        if deployed_decode
+        else "counts (honesty gate failed toward counts: an enabled backend "
+             "cannot export final membranes)"
+    )
     print(
-        "[C2] membrane-readout diagnostic (torch-side decode only; deployed "
-        "reads keep the counts decode — the chip exports spike counts, not "
-        f"membranes): eligible_nodes={stats['eligible_nodes']}, "
+        f"[C2] membrane-readout diagnostic: deployed metric decode {gate_state}; "
+        f"eligible_nodes={stats['eligible_nodes']}, "
         f"engaged={stats['engaged']}, "
         f"pred_flips={stats['pred_flips']}/{stats['samples']}, "
         f"max|dlogit|={stats['max_abs_correction']:.4f}"
@@ -353,7 +390,7 @@ def run_hcm_mapping_metric(
                     pipeline_config=pipeline.config,
                 )
                 pipeline.cache.add(cache_key, hybrid_mapping, "pickle")
-            flow = build_spiking_hybrid_flow(
+            flow = build_deployed_metric_flow(
                 pipeline, hybrid_mapping, model=model,
             )
             return float(
@@ -408,7 +445,7 @@ def run_scm_identity_metric(
 
     for attempt in range(2 if outer_oom_retry else 1):
         try:
-            flow = build_spiking_hybrid_flow(
+            flow = build_deployed_metric_flow(
                 pipeline, identity_mapping, model=model,
             )
             return float(

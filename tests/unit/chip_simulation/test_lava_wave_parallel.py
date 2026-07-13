@@ -150,7 +150,8 @@ class _FakeLavaHost(LavaSegmentMixin):
 
 
 def _diamond_segment() -> HardCoreMapping:
-    """core0 -> {core1, core2} -> core3; waves must be [[0], [1, 2], [3]]."""
+    """core0 -> {core1, core2} -> core3 -> {core4, core5}; waves must be
+    [[0], [1, 2], [3], [4, 5]] — TWO pool-funded waves in one segment run."""
     core0 = _core(2, 2, [
         SpikeSource(-2, 0, is_input=True), SpikeSource(-2, 1, is_input=True),
     ])
@@ -159,9 +160,11 @@ def _diamond_segment() -> HardCoreMapping:
     core3 = _core(3, 2, [
         SpikeSource(1, 0), SpikeSource(2, 0), SpikeSource(2, 1),
     ])
+    core4 = _core(2, 1, [SpikeSource(3, 0), SpikeSource(3, 1)])
+    core5 = _core(2, 1, [SpikeSource(3, 0), SpikeSource(3, 1)], threshold=2.0)
     mapping = HardCoreMapping(chip_cores=[])
-    mapping.cores = [core0, core1, core2, core3]
-    mapping.output_sources = np.array([SpikeSource(3, 0), SpikeSource(3, 1)])
+    mapping.cores = [core0, core1, core2, core3, core4, core5]
+    mapping.output_sources = np.array([SpikeSource(4, 0), SpikeSource(5, 0)])
     return mapping
 
 
@@ -189,11 +192,13 @@ class TestParallelSerialEquality:
         monkeypatch.setenv(LOIHI_WAVE_WORKERS_VAR, "4")
         pool_calls: list[dict] = []
 
-        def _fake_pool(fn, task_args, *, max_workers, timeout_s, description):
+        def _fake_pool(fn, task_args, *, max_workers, timeout_s, description,
+                       pool=None):
             pool_calls.append({
                 "keys": sorted(task_args),
                 "max_workers": max_workers,
                 "timeout_s": timeout_s,
+                "pool": pool,
             })
             # Reversed completion order: aggregation must be dict-keyed, not positional.
             return {key: fn(*task_args[key]) for key in reversed(sorted(task_args))}
@@ -208,10 +213,66 @@ class TestParallelSerialEquality:
         parallel_out = _run_segment(_FakeLavaHost(T=4))
 
         np.testing.assert_array_equal(serial_out, parallel_out)
-        # Only the two-core wave [1, 2] is pool-funded; waves [0] and [3] run inline.
-        assert [c["keys"] for c in pool_calls] == [[1, 2]]
-        assert pool_calls[0]["max_workers"] == 2
-        assert pool_calls[0]["timeout_s"] == 60.0
+        # Only the two-core waves [1, 2] and [4, 5] are pool-funded; waves [0]
+        # and [3] run inline.
+        assert [c["keys"] for c in pool_calls] == [[1, 2], [4, 5]]
+        assert all(c["max_workers"] == 2 for c in pool_calls)
+        assert all(c["timeout_s"] == 60.0 for c in pool_calls)
+        # C5 follow-up: ONE persistent pool per segment run, shared by every
+        # pool-funded wave, so the spawn cost is paid once, not per wave.
+        pools = [c["pool"] for c in pool_calls]
+        assert all(
+            isinstance(p, segment_runner.ReusableBoundedPool) for p in pools
+        )
+        assert pools[0] is pools[1]
+
+    def test_segment_pool_is_scoped_to_one_run_and_torn_down(
+        self, monkeypatch,
+    ):
+        monkeypatch.setenv(LOIHI_WAVE_WORKERS_VAR, "4")
+
+        class _RecordingPool(segment_runner.ReusableBoundedPool):
+            instances: list = []
+
+            def __init__(self, max_workers):
+                super().__init__(max_workers)
+                self.closed = False
+                self.invalidated = False
+                type(self).instances.append(self)
+
+            def close(self):
+                self.closed = True
+                super().close()
+
+            def invalidate(self):
+                self.invalidated = True
+                super().invalidate()
+
+        def _fake_pool(fn, task_args, *, max_workers, timeout_s, description,
+                       pool=None):
+            return {key: fn(*task_args[key]) for key in task_args}
+
+        monkeypatch.setattr(segment_runner, "ReusableBoundedPool", _RecordingPool)
+        monkeypatch.setattr(segment_runner, "run_tasks_in_pool_bounded", _fake_pool)
+        monkeypatch.setattr(
+            segment_runner, "run_lava_core_task",
+            lambda T, behavior, *task: _fake_core_output(*task),
+        )
+        _run_segment(_FakeLavaHost(T=4))
+        assert len(_RecordingPool.instances) == 1, "one pool per segment run"
+        assert _RecordingPool.instances[0].closed is True
+
+        def _boom_pool(fn, task_args, *, max_workers, timeout_s, description,
+                       pool=None):
+            raise RuntimeError("wave failed")
+
+        monkeypatch.setattr(segment_runner, "run_tasks_in_pool_bounded", _boom_pool)
+        with pytest.raises(RuntimeError, match="wave failed"):
+            _run_segment(_FakeLavaHost(T=4))
+        assert len(_RecordingPool.instances) == 2
+        assert _RecordingPool.instances[1].invalidated is True, (
+            "a failed segment run must reap the pool deterministically"
+        )
 
 
 # ---------------------------------------------------------------------------

@@ -414,9 +414,10 @@ class SoftCoreMappingStep(PipelineStep):
         })
 
     def _run_membrane_readout_diagnostic(self, model, ir_graph) -> None:
-        """[C2/R8] Engagement report for the armed membrane readout: torch-side
-        diagnostic decode only — every deployed read keeps the counts decode
-        because the chip exports spike counts, not membranes."""
+        """[C2] Engagement report for the armed membrane readout, including
+        whether the honesty gate lets the deployed metric read consume the
+        membrane decode (all enabled chip backends must export final
+        membranes; otherwise the read stays counts)."""
         if not (
             is_lif(DeploymentPlan.of(self.pipeline).spiking_mode)
             and bool(self.pipeline.config.get("lif_membrane_readout", False))

@@ -25,6 +25,13 @@ class Backend(ABC):
     """A capability-declared deployment target with a build/run/parity-gate driver seam."""
 
     name: str
+    # Whether the backend can export end-of-window membrane potentials of
+    # output neurons (the [C2] charge-identity decode needs every enabled
+    # backend to say yes).
+    exports_final_membrane: bool = False
+    # Whether this backend produces a deployed ACCURACY read (vs parity-only
+    # per-neuron count comparison, whose currency a logits decode never touches).
+    decodes_accuracy: bool = False
 
     def supports(self, contract: Any) -> bool:
         """Whether this backend supports the contract's spiking mode (matrix-driven)."""
@@ -67,6 +74,8 @@ class SimulationBackend(Backend):
         enabled_for: Callable[[Any], bool],
         applies_for: Optional[Callable[[Any], bool]] = None,
         unsupported_error: Optional[Callable[[Any], str]] = None,
+        exports_final_membrane: bool = False,
+        decodes_accuracy: bool = False,
     ) -> None:
         self.name = name
         self.step_name = step_name
@@ -74,6 +83,8 @@ class SimulationBackend(Backend):
         self._enabled_for = enabled_for
         self._applies_for = applies_for
         self._unsupported_error = unsupported_error
+        self.exports_final_membrane = bool(exports_final_membrane)
+        self.decodes_accuracy = bool(decodes_accuracy)
 
     def enabled(self, plan: Any) -> bool:
         """Whether the plan's ``enable_*`` flag turns this backend on."""
@@ -174,6 +185,10 @@ def _build_default_registry() -> BackendRegistry:
             enabled_for=lambda plan: plan.enable_nevresim_simulation,
             # nevresim has no genuine synchronized-window backend, so skip it only there.
             applies_for=lambda plan: not plan.is_synchronized_ttfs,
+            # NEVRESIM_EXPORT_MEMBRANE build: m_T/theta of output neurons on stderr.
+            exports_final_membrane=True,
+            # nevresim_probe_accuracy is a deployed accuracy read.
+            decodes_accuracy=True,
         ),
         SimulationBackend(
             "loihi",
@@ -181,12 +196,16 @@ def _build_default_registry() -> BackendRegistry:
             step_class=LoihiSimulationStep,
             enabled_for=lambda plan: plan.enable_loihi_simulation,
             unsupported_error=_loihi_ttfs_error,
+            # Lava reads spike parity only; no final-membrane export.
+            exports_final_membrane=False,
         ),
         SimulationBackend(
             "sanafe",
             step_name="SANA-FE Simulation",
             step_class=SanafeSimulationStep,
             enabled_for=lambda plan: plan.enable_sanafe_simulation,
+            # Plugin somas expose get_potential via the potential trace.
+            exports_final_membrane=True,
         ),
     ])
 

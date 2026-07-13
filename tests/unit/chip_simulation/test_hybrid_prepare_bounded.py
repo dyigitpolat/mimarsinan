@@ -45,6 +45,8 @@ def _fake_self(tmp_path, timeout_s):
         simulation_length=4,
         nevresim_connectivity_mode="runtime",
         simulation_step_timeout_s=timeout_s,
+        membrane_readout=False,
+        membrane_half_step_charge=0.0,
     )
 
 
