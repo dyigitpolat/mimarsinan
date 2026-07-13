@@ -154,7 +154,11 @@ ENTRIES = (
            "kd_temperature; the exact endpoint then saturates at the teacher's "
            "own accuracy (WS-Z-measured WIN, >1 SE at both S=4 cells). Pairs "
            "with lif_exact_qat: it downgrades with the exact arm (Novena / "
-           "explicit opt-out) and an explicit contradiction fails loud.",
+           "explicit opt-out) and an explicit contradiction fails loud. "
+           "REFUTED on-pipeline (§9): the isolated WIN inverts on the full "
+           "composition (5-mixer mean -0.14pp; t01_01 S=8 -0.51, t01_21 -0.70 "
+           "vs t0_01/t01_08 S=4 +0.30) — the KD loss also steers the WQ "
+           "endpoint leg and the draws. Config-armable only; NOT recipe-armed.",
        provenance="consumer frozen default", derived_default=_frozen(False),
        relevant=R.when("spiking_mode", in_=("lif",)),
        empty_means="off — the exact-QAT endpoint trains with plain CE"),
