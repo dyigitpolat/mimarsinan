@@ -527,3 +527,36 @@ Walls: non-mixer cells 88–261s (pass); mixers 454–1020s and deepcnn sched
 tail; wall track still open). Under the armed recipe the WQ endpoint burn is
 now PRODUCTIVE (climbs, not the G5 frozen signature) — the seconds buy
 accuracy, so the wall/lossless tension on mixers is real.
+
+## 8. Accepted end-state (2026-07-13, user decision: accept mixers at AQ ceiling)
+
+The lossless mandate is **MET for every non-mixer LIF and sync cell** (v7 §7:
+strict or toleranced). The mixer cells are **accepted at the AQ grid-capacity
+ceiling** — the honest terminal position after the exact-QAT program closed the
+adaptation-METHOD gap (the user's thesis, +0.6..+5.2pp). Both §6.5 levers are
+refuted on-pipeline (basin-entry, KD-teacher §9), and both refutations converge
+with WS-W's sync adjudication: the mixer residual is the AQ envelope CAPACITY,
+not a correctable training target/basin/arithmetic-fold. Measured deployed
+residual vs pretrain, monotone in S (the accepted numbers):
+
+| S | LIF mixer | sync mixer |
+|---|---|---|
+| 4 | −2.7pp (t0_01/t01_08); −2.0 wb8 (t01_21) | −2.4 (t01_05) |
+| 8 | −1.2 (t01_01) | −1.1 (t0_21/t01_09/t01_24) |
+| 16 | −0.8 (t01_02) | −0.7 (t01_04) |
+
+Both mixer families train the EXACT deployed object now (LIF exact-QAT, sync
+sync_exact_qat), so no surrogate remains to swap; for uniform-grid S-step LIF
+counting hardware at a fixed S, this is a representational limit. Closable only
+by raising S (cell redefinition, +latency) — user chose to ACCEPT instead.
+
+**Surfacing:** ADV-STAIRCASE-DEPTH (mandate_violation, tentative) fires on the
+deep-chain × S≤8 mixer cells with "raise S" as the first lever. DOCUMENTED
+COVERAGE LIMITATION: the S=16 mixers (t01_02, t01_04, −0.7/−0.8pp) sit above the
+rule's MAX_S=8 gate and get no advisory — and there is no false-positive-free
+predicate to add them, because deep_mlp (t0_04 S=32) and deepcnn (t01_19 S=16)
+are strict-lossless at the same/higher S: mixer AQ-capacity sensitivity is an
+architectural property (dense token/channel mixing) not separable from the
+lossless deep-conv/MLP cells by depth, S, or norm-free-chain length once BN has
+removed the θ-starvation. The band constant (0.7-1.1pp) remains the sync-S=8
+datum; the per-S table above is the LIF-mixer measured record.
