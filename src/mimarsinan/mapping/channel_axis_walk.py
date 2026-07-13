@@ -106,6 +106,7 @@ def _step_through(node, k: int, consumer_predicate):
 def channel_aligned_consumer_targets(
     producer_node, consumers: dict, *, consumer_predicate=consumer_columns_unmediated,
     structural_perceptron_paths: bool = False,
+    terminal_module_targets: bool = False,
 ):
     """All consumers of the producer's channel axis as ``(perceptrons, modules)``,
     or None when any path is not exactly column-aligned (fan-out closure: one bad
@@ -116,7 +117,11 @@ def channel_aligned_consumer_targets(
     ``structural_perceptron_paths``: void the producer when a perceptron target
     is reached through a ComputeOp pass (a host/segment boundary) — currencies
     that live on the wire (per-channel theta) stop at that seam, while host
-    module targets decode per-source and stay admissible."""
+    module targets decode per-source and stay admissible.
+
+    ``terminal_module_targets``: void the producer when a host module target has
+    downstream consumers — its re-normalized wire output would re-enter seams the
+    NF twin normalizes by scalars, so only a terminal readout carries the vector."""
     frontier: list = [(producer_node, 1, False)]
     visited: set = set()
     perceptron_targets: dict = {}
@@ -143,5 +148,7 @@ def channel_aligned_consumer_targets(
                     return None
                 perceptron_targets[id(value)] = value
             else:
+                if terminal_module_targets and consumers.get(id(consumer), []):
+                    return None
                 module_targets[id(value)] = value
     return tuple(perceptron_targets.values()), tuple(module_targets.values())

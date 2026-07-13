@@ -16,6 +16,7 @@ from mimarsinan.mapping.channel_axis_walk import (
     columns_channel_aligned,
 )
 from mimarsinan.mapping.mappers.perceptron_mapper import PerceptronMapper
+from mimarsinan.mapping.mappers.scale_propagation import arm_compute_op_wrap_slots
 
 MIN_THETA = 1e-6
 
@@ -100,6 +101,7 @@ def eligible_per_channel_perceptrons(model) -> dict:
             consumers,
             consumer_predicate=columns_channel_aligned,
             structural_perceptron_paths=True,
+            terminal_module_targets=True,
         )
         if targets is None:
             continue
@@ -173,6 +175,11 @@ def promote_per_channel_theta(
             )
         perceptron.set_activation_scale(vector)
         promoted.append(name)
+    if promoted:
+        # Arm the deployed ScaleNormalizingWrapper slots at the install seam so
+        # the chip-aligned NF twin trains the SAME per-channel host decode the
+        # deployed sim runs (the t0_01 torch<->deployed parity break).
+        arm_compute_op_wrap_slots(model.get_mapper_repr())
     return PerChannelThetaReport(tuple(promoted), tuple(skipped))
 
 

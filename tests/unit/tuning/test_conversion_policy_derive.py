@@ -48,11 +48,11 @@ _MODE_KNOBS = {
         "lif_membrane_readout": True,
         "lif_affine_fold": True,
         "lif_depth_balancing_relays": True,
-        # [R5/C3, lossless ledger §2B] per-hop re-timing: the transcode is
-        # value-exact (round((c/T)*T) = c) and kills the V3 back-loading on
-        # the temporal-A6 FAIL cells at S<=8 (+1.9pp at S=4 chain9, +0.5pp at
-        # S=8; nil at S>=16); the latency cost stays mapping-visible.
-        "lif_per_hop_retiming": True,
+        # [R5/C3] per-hop re-timing stays recipe-OFF: the deployed uniform
+        # re-encode has no NF-twin counterpart, so arming it breaks the
+        # torch<->deployed-sim gate (t0_01 0.8438 vs 1.0000 per-neuron-exact
+        # with it off). Config-explicit arming remains available.
+        "lif_per_hop_retiming": False,
         # [R3/R4, lossless ledger] per-channel theta (the 1/S-beating
         # starvation lever; exact identity, packing-safe by group identity)
         # + S-aware quantile descent (measured anchors 0.95@S4..1.0@S32).

@@ -23,6 +23,12 @@ class LifSegmentPolicy:
     (encoding) perceptrons run once on the decoded value and emit the uniform
     wire train of ``clamp(value / theta)`` (the deployed boundary contract)."""
 
+    # LIF host values travel in the wire domain, so the driver must run host
+    # value nodes through the emitted ScaleNormalizingWrapper composition
+    # whenever the wrap slots are armed (per-channel theta): the deployed sim
+    # decodes ``wire * theta_c`` per channel there and the twin must match.
+    wire_domain_host_values = True
+
     _boundary_scales: dict | None = None
 
     def prepare(self, driver):

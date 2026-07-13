@@ -187,3 +187,45 @@ class TestEndToEndIREmission:
 
         expected = (s_a * a + s_b * b) / s_out
         assert torch.allclose(out, expected, atol=1e-6)
+
+
+class TestForwardScaleNormalized:
+    """The NF-twin of the emitted wrapper: ``forward_scale_normalized`` must run
+    the same composition the deployed ComputeOp runs, and stay the plain
+    ``forward`` when no scales are armed (the byte-identical scalar path)."""
+
+    def test_unarmed_mapper_is_identity_to_forward(self):
+        mapper = _make_compute_op_mapper(num_sources=2)
+        a = torch.tensor([[0.5, 0.25]])
+        b = torch.tensor([[0.3, 0.1]])
+        assert torch.equal(
+            mapper.forward_scale_normalized((a, b)), mapper.forward((a, b))
+        )
+
+    def test_armed_mapper_matches_the_emitted_wrapper(self):
+        mapper = _make_compute_op_mapper(num_sources=2)
+        s_a = torch.tensor([2.0, 4.0])
+        s_b = torch.tensor([6.0, 8.0])
+        s_out = (s_a + s_b) / 2.0
+        mapper.per_source_scales = [s_a, s_b]
+        mapper.output_scale = s_out
+
+        a = torch.tensor([[0.5, 0.25]])
+        b = torch.tensor([[0.3, 0.1]])
+        wrapper = ScaleNormalizingWrapper(mapper.module, [s_a, s_b], s_out)
+        assert torch.allclose(
+            mapper.forward_scale_normalized((a, b)), wrapper(a, b), atol=1e-6,
+        )
+
+    def test_armed_unary_mapper_decodes_and_renormalizes(self):
+        source = InputMapper((1,))
+        mapper = ComputeOpMapper(source, nn.Linear(2, 3))
+        theta = torch.tensor([2.0, 4.0])
+        mapper.per_source_scales = [theta]
+        mapper.output_scale = theta
+
+        wire = torch.tensor([[0.5, 0.25]])
+        expected = ScaleNormalizingWrapper(mapper.module, [theta], theta)(wire)
+        assert torch.allclose(
+            mapper.forward_scale_normalized(wire), expected, atol=1e-6,
+        )

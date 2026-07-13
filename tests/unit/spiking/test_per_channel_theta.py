@@ -87,12 +87,16 @@ def _axis_flip_model(tokens=4, channels=4):
     return model, p_prod, p_cons
 
 
-def _mean_readout_model(tokens=3, channels=6, classes=2, *, host_readout):
-    """Producer -> mean(dim=1) -> readout.
+def _mean_readout_model(
+    tokens=3, channels=6, classes=2, *, host_readout, tail_after_readout=False,
+):
+    """Producer -> mean(dim=1) -> readout [-> tail perceptron].
 
     ``host_readout=True`` consumes through a host nn.Linear module (the mixer
     readout shape — eligible); ``False`` consumes through a PerceptronMapper
     (a segment-entry seam past a ComputeOp — must stay scalar).
+    ``tail_after_readout`` hangs a perceptron off the host readout, making the
+    readout non-terminal (its wire re-enters a scalar-normalized seam).
     """
     p_prod = Perceptron(channels, channels, name="prod")
     inp = InputMapper((tokens, channels))
@@ -111,7 +115,10 @@ def _mean_readout_model(tokens=3, channels=6, classes=2, *, host_readout):
     else:
         tail_perceptron = Perceptron(classes, channels, name="readout")
         readout = PerceptronMapper(mean, tail_perceptron)
-    model = _FlowShell(ModelRepresentation(readout))
+    head = readout
+    if tail_after_readout:
+        head = PerceptronMapper(readout, Perceptron(2, classes, name="tail"))
+    model = _FlowShell(ModelRepresentation(head))
     model.eval()
     with torch.no_grad():
         model(torch.randn(2, tokens, channels))
@@ -156,6 +163,14 @@ class TestEligibility:
         # A perceptron reached through a host ComputeOp is a segment-entry
         # boundary; its scalar snap normalizer cannot carry the vector yet.
         model, p_prod, _ = _mean_readout_model(host_readout=False)
+        assert id(p_prod) not in eligible_per_channel_perceptrons(model)
+
+    def test_non_terminal_host_module_readout_stays_scalar(self):
+        # A host module with downstream consumers re-enters wire seams the NF
+        # twin normalizes by scalars; only a terminal readout carries the vector.
+        model, p_prod, _ = _mean_readout_model(
+            host_readout=True, tail_after_readout=True,
+        )
         assert id(p_prod) not in eligible_per_channel_perceptrons(model)
 
     def test_channels_first_producer_stays_scalar(self):
@@ -230,6 +245,36 @@ class TestPromotion:
         model = _aligned_chain_model()
         with pytest.raises(ValueError, match="count"):
             promote_per_channel_theta(model, [[1.0]], [1.0])
+
+    def test_promotion_arms_the_downstream_host_wrap_slots(self):
+        """The install seam must stamp per_source_scales/output_scale on host
+        ComputeOps downstream of a promoted producer, so the chip-aligned NF
+        twin runs the SAME ScaleNormalizingWrapper decode the deployed sim
+        emits (the t0_01 torch<->deployed parity break)."""
+        model, p_prod, _ = _mean_readout_model(host_readout=True)
+        perceptrons = list(model.get_perceptrons())
+        channels = [
+            [1.0 + 0.1 * c for c in range(p.output_channels)]
+            for p in perceptrons
+        ]
+        report = promote_per_channel_theta(
+            model, channels, [1.0] * len(perceptrons)
+        )
+        assert p_prod.name in report.promoted
+
+        ops = [
+            n for n in model.get_mapper_repr()._exec_order
+            if isinstance(n, ComputeOpMapper)
+        ]
+        armed = [
+            n for n in ops
+            if n.per_source_scales is not None and n.output_scale is not None
+        ]
+        assert armed, "promotion must arm the downstream host wrap slots"
+        # The weight-fold currency stays owned by compute_per_source_scales.
+        assert all(
+            getattr(p, "per_input_scales", None) is None for p in perceptrons
+        )
 
 
 def _armed_cfg(mode, schedule=None, flag=True):

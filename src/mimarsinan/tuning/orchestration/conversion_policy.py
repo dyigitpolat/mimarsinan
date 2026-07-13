@@ -77,12 +77,13 @@ _LIF_RECIPE_KNOBS = {
     "lif_membrane_readout": True,
     "lif_affine_fold": True,
     "lif_depth_balancing_relays": True,
-    # [R5/C3, lossless_refinement_ledger §2B] per-hop re-timing: boundary
-    # decode + count-preserving re-encode is value-exact (round((c/T)*T) = c)
-    # and kills the V3 back-loading deficit exactly where the ledger's
-    # temporal-A6 gauge FAILs (S<=8: +1.9pp at S=4 chain9, +0.5pp at S=8;
-    # nil at S>=16 — the latency/energy cost stays mapping-visible).
-    "lif_per_hop_retiming": True,
+    # [R5/C3, lossless_refinement_ledger §2B] per-hop re-timing stays
+    # recipe-OFF: the re-encode is count-preserving (round((c/T)*T) = c) but
+    # TIMING-changing, and the NF twin has no per-hop counterpart, so arming
+    # it breaks the torch<->deployed-sim gate (t0_01 measured 0.8438 armed vs
+    # 1.0000 per-neuron-exact off; deployed read 0.8393 vs 0.8772). Re-arm
+    # only together with a twin-side per-hop re-encode.
+    "lif_per_hop_retiming": False,
     # [R1/M2, lossless_refinement_ledger §2C] two-scale WQ projection for LIF:
     # four frozen WQ endpoints (entry == exit, divergence_rescued) prove the
     # WQ residual is shared-grid arithmetic the QAT cannot express (t01_19

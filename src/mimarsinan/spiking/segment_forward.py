@@ -123,16 +123,30 @@ class SegmentForwardDriver:
             self._node_value_recorder = None
             self._join_value_recorder = None
 
-    def _forward_node(self, node, values, x):
+    def _forward_node(self, node, values, x, forward=None):
+        fn = node.forward if forward is None else forward
         d = self._deps.get(node, [])
         if len(d) == 0:
-            return node.forward(x)
+            return fn(x)
         if len(d) == 1:
-            return node.forward(values[d[0]])
-        return node.forward(tuple(values[dep] for dep in d))
+            return fn(values[d[0]])
+        return fn(tuple(values[dep] for dep in d))
+
+    def _host_value_forward(self, node):
+        """Wire-currency policies must run host value nodes through the emitted
+        ScaleNormalizingWrapper composition (armed per-source scales decode
+        ``wire * theta_c`` per channel on the deployed side); ``None`` keeps the
+        plain forward — bit-identical whenever no scales are armed."""
+        if getattr(self.policy, "wire_domain_host_values", False) and isinstance(
+            node, ComputeOpMapper
+        ):
+            return node.forward_scale_normalized
+        return None
 
     def _run_value_node(self, node, values, x, compute_min_recorder):
-        value = self._forward_node(node, values, x)
+        value = self._forward_node(
+            node, values, x, forward=self._host_value_forward(node),
+        )
         if isinstance(node, ComputeOpMapper):
             if compute_min_recorder is not None:
                 cur = value.detach().amin(dim=0)

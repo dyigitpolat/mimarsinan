@@ -102,6 +102,24 @@ def perceptron_per_source_scale(node, deps, out_scales) -> torch.Tensor:
     return perceptron_source_out_scale(node.perceptron)
 
 
+def arm_compute_op_wrap_slots(model_repr) -> None:
+    """Stamp ONLY the ComputeOp wrap slots (``per_source_scales`` /
+    ``output_scale``) from the current perceptron thetas, so the deployed
+    ScaleNormalizingWrapper and its NF twin agree from the install seam on.
+
+    Never touches ``per_input_scales`` — the weight-fold currency stays owned
+    by ``compute_per_source_scales`` at the WQ / mapping seams. A no-op on
+    scalar-theta models (uniform scales never trigger the wrap policy)."""
+
+    def visit(node, deps, out_scales):
+        perceptron = getattr(node, "perceptron", None)
+        if perceptron is not None:
+            return perceptron_source_out_scale(perceptron)
+        return node.propagate_source_scale(deps, out_scales)
+
+    walk_out_scales(model_repr, visit)
+
+
 def perceptron_boundary_scale(node, deps, out_scales, default) -> float:
     """Shared ``propagate_boundary_scale`` body for perceptron-bearing mappers.
 

@@ -129,15 +129,24 @@ class ComputeOpMapper(Mapper):
         return FlowchartNodeEstimate()
 
     def _forward_impl(self, x):
+        return self._forward_with_module(self.module, x)
+
+    def _forward_with_module(self, module: nn.Module, x):
         if len(self._sources_list) == 1:
             inputs: tuple = (x,)
         else:
             inputs = tuple(x) if isinstance(x, (tuple, list)) else (x,)
             self._check_broadcastable(inputs)
-        out = self.module(*inputs, **self.module_kwargs)
+        out = module(*inputs, **self.module_kwargs)
         if self.output_index is not None:
             out = out[self.output_index]
         return out
+
+    def forward_scale_normalized(self, x):
+        """Wire-domain twin of the emitted ComputeOp: run the same
+        ScaleNormalizingWrapper composition IR emission installs when the
+        per-source scales are armed; identical to ``forward`` otherwise."""
+        return self._forward_with_module(self._maybe_wrap_for_scales(), x)
 
     def _check_broadcastable(self, inputs: tuple) -> None:
         tensor_shapes = [
