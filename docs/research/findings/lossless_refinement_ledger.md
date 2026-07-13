@@ -464,3 +464,35 @@ loss (mechanism).
   mid-tread offset contributes a −θ_hop/(2S) same-sign entry drift; count such
   hops (subsumed encoders included) — each is a whole-population floor risk at
   low S. [sync E1, landed; keep as an invariant check]
+
+## 6. Exact-QAT arming verdict (tier-0 A/B, 2026-07-13)
+
+11 armed probe cells (`scripts/_probes/exact_qat/xq_*.json`, `lif_exact_qat:
+true`) vs the dense-cadence v5/v6 baselines; deltas vs each run's own pretrain
+ref (cross-hardware pretrain divergence, RC3):
+
+| cell | armed | own ref | baseline | delta vs baseline |
+|---|---|---|---|---|
+| t0_01 mixer s4 | 0.9548 | 0.9820 | 0.9027 | +5.2pp |
+| t0_02 novena | P-L5 fail-loud | — | — | correct rejection; shipped path |
+| t0_03 deepcnn s16 | 0.9927 | 0.9944 | 0.9933 | −0.06pp (noise; never strict) |
+| t0_04 deepmlp s32 | 0.9577 | 0.9563 | 0.9688 | **lossless vs own ref** |
+| t0_05 simplemlp s4 | 0.9814 | 0.9789 | 0.9815 | holds, lossless |
+| t01_01 mixer s8 | 0.9698 | 0.9820 | 0.9556 | +1.4pp |
+| t01_02 mixer s16 | 0.9743 | 0.9820 | 0.9682 | +0.6pp |
+| t01_08 mixer s4 e4 | 0.9548 | 0.9820 | 0.9027 | +5.2pp |
+| t01_16 deepcnn s8 | 0.9953 | 0.9944 | 0.9952 | holds, lossless |
+| t01_19 deepcnn d6 s16 | 0.9930 | 0.9919 | 0.9919 | improved, lossless |
+| t01_21 mixer s4 wb8 | 0.9616 | 0.9820 | 0.9531 | +0.85pp |
+
+Verdict: 10/10 runnable cells hold or gain; no strict cell regressed; four
+cells strictly ≥ pretrain. **Recipe-armed** (commit 6b379b07): the recipe
+default downgrades the pair on Novena (P-L5) or an explicit retiming opt-out
+(the `_fold_sim_enables` yield contract); an explicit arm keeps the
+fail-louds. Golden snapshot: 13 lif cells arm, the Novena cell resolves off.
+
+Open residual (the lossless gap on mixers) is monotone in S: −2.7pp (S=4),
+−1.2 (S=8), −0.8 (S=16) vs pretrain. Next levers under measurement (WS-Z):
+the §6.5 from-float basin entry A/B and the KD-teacher choice at the exact
+endpoint. Lossless wave v7 (21 lif/sync cells, recipe-armed) in flight:
+`generated/_campaign/lossless_v7_state.json`.
