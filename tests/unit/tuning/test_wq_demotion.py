@@ -272,11 +272,14 @@ class TestEndpointRecoveryThroughTheTransformTrainer:
             }
             # Fix C anchors keep-best at the entry probe: make the recovery
             # probes improve so the TRAINED state commits and the aux-model
-            # gradient routing stays observable.
+            # gradient routing stays observable. The +0.2 slope clears the
+            # keep-best SE bar (~0.177 on this mock) in ONE read, so the
+            # commit survives the [P4] widened armed eval cadence (fewer
+            # checks per leg).
             rising = itertools.count()
             monkeypatch.setattr(
                 tuner.trainer, "validate_n_batches",
-                lambda n: min(0.5 + 0.1 * next(rising), 0.98),
+                lambda n: min(0.5 + 0.2 * next(rising), 0.98),
             )
             report = run_endpoint_recovery(tuner, base_steps=3)
             assert report.engaged is True

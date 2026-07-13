@@ -62,6 +62,11 @@ EXPECTED_POLICY_VALUES = {
     # funded budget — budgets are true ceilings, never mandatory burns.
     "endpoint_floor_min_cover_steps": 2000,
     "endpoint_floor_patience_fraction": 0.25,
+    # [P4 part 2] armed-endpoint eval cadence: the ledger-funded leg checks
+    # at multiplier x check_interval (evals <=~15% of stage wall); the [C1]
+    # geometry composes at the widened interval, and non-armed stages keep
+    # the exact _RECOVERY_PATIENCE x check_interval stagnation economics.
+    "endpoint_floor_eval_interval_multiplier": 3,
     # [C3] divergence guard + LR-backoff rescue on the armed floor
     # (default-off until the Phase-3 measured graduation).
     "endpoint_floor_divergence_rescue": True,

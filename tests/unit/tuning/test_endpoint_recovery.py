@@ -30,6 +30,7 @@ from mimarsinan.tuning.orchestration.recovery_engine import RecoveryEngine
 from mimarsinan.tuning.orchestration.tuner_base import _RECOVERY_PATIENCE
 from mimarsinan.tuning.orchestration.tuning_policy import (
     TUNING_POLICY,
+    armed_endpoint_check_interval,
     endpoint_convergence_geometry,
 )
 
@@ -313,7 +314,9 @@ class TestEndpointTargetFloor:
             base_steps=16000,
         )
         assert seen["max_steps"] == 16000
-        expected = endpoint_convergence_geometry(16000, self._interval)
+        expected = endpoint_convergence_geometry(
+            16000, armed_endpoint_check_interval(self._interval),
+        )
         assert seen["min_steps"] == expected.min_steps
         assert seen["patience"] == expected.patience
 
@@ -589,11 +592,13 @@ class TestArmWhenEngaged:
             tmp_path, monkeypatch, highwater=0.77, entry=0.77 - 1e-4,
             base_steps=16000,
         )
-        expected = endpoint_convergence_geometry(16000, self._interval)
+        widened = armed_endpoint_check_interval(self._interval)
+        expected = endpoint_convergence_geometry(16000, widened)
         assert seen["max_steps"] == 16000
         assert seen["min_steps"] == expected.min_steps < 16000
+        assert seen["check_interval"] == widened
         assert seen["patience"] == expected.patience
-        assert seen["patience"] * self._interval < 16000
+        assert seen["patience"] * seen["check_interval"] < 16000
 
     def test_floor_lifted_geometry_is_identical_to_gap_arming(
         self, tmp_path, monkeypatch,
@@ -650,10 +655,16 @@ class TestArmWhenEngaged:
                 tuner, base_steps=100, target_floor=0.98,
             )
         finally:
+            interval = tuner._budget.check_interval
             tuner.close()
         assert report.armed is False
         assert seen["min_steps"] == 0
         assert seen["patience"] == _RECOVERY_PATIENCE
+        assert seen["check_interval"] == interval, (
+            "[P4] the eval-cadence multiplier applies to the armed leg ONLY: "
+            "a non-armed stage keeps the exact patience x check_interval "
+            "stagnation economics"
+        )
         assert seen["lr"] == pytest.approx(0.003)
         assert "warmup_steps" not in seen
 
@@ -714,6 +725,56 @@ class TestArmWhenEngaged:
         line = _endpoint_lines(capsys.readouterr().out)[0]
         assert "armed=True" in line
         assert "floor_lifted=False" in line
+
+
+class TestCosineHorizonBinding:
+    """[WS-X audit] the armed leg's cosine horizon (``max_steps``) is bound to
+    the LEDGER-REMAINING budget, never the full ``endpoint_floor_steps`` grant:
+    an earlier endpoint's convergence-stop consumption shrinks the next
+    stage's schedule, so the LR decay cannot stretch the climb past the steps
+    the ledger can actually fund (the trainer builds its cosine over exactly
+    ``max_steps`` — pinned in test_convergence_stop.py)."""
+
+    def test_partially_consumed_ledger_clamps_the_cosine_horizon(
+        self, tmp_path, monkeypatch,
+    ):
+        tuner = _lif_tuner(tmp_path)
+        _prepare_endpoint_scaffold(tuner)
+        tuner._fast_optimizer_steps = len(tuner._fixed_ladder_rates) * 2
+        endpoint_steps.consume(
+            tuner.pipeline, TUNING_POLICY.endpoint_floor_steps - 1000,
+        )
+        dhat_highwater.observe(tuner.pipeline, 0.5)
+        reads = iter([0.3, 0.6])
+        monkeypatch.setattr(
+            endpoint_recovery, "_fp32_deployed_read", lambda t: next(reads),
+        )
+        seen = {}
+
+        def fake_train(trainer, lr, target, *, max_steps, **kwargs):
+            seen.update(kwargs, max_steps=max_steps)
+            return 0.6, 9
+
+        monkeypatch.setattr(
+            RecoveryEngine, "train_to_target", staticmethod(fake_train),
+        )
+        try:
+            report = run_endpoint_recovery(
+                tuner, base_steps=16000, target_floor=0.9,
+            )
+        finally:
+            interval = tuner._budget.check_interval
+            tuner.close()
+        assert report.armed is True
+        assert seen["max_steps"] == 1000, (
+            "the cosine horizon must be the ledger REMAINDER, not the 16k grant"
+        )
+        assert seen["cosine_decay"] is True
+        expected = endpoint_convergence_geometry(
+            1000, armed_endpoint_check_interval(interval),
+        )
+        assert seen["min_steps"] == expected.min_steps
+        assert seen["patience"] == expected.patience
 
 
 class TestNeverBelowEntry:

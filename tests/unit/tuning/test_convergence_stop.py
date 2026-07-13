@@ -36,8 +36,10 @@ from mimarsinan.tuning.orchestration.recovery_engine import RecoveryEngine
 from mimarsinan.tuning.orchestration.smooth_adaptation_tuner import (
     SmoothAdaptationTuner,
 )
+from mimarsinan.tuning.orchestration.tuner_base import _RECOVERY_PATIENCE
 from mimarsinan.tuning.orchestration.tuning_policy import (
     TUNING_POLICY,
+    armed_endpoint_check_interval,
     endpoint_convergence_geometry,
 )
 
@@ -144,6 +146,50 @@ class TestConvergenceGeometry:
         assert geometry.patience == 5
 
 
+class TestArmedEvalCadence:
+    """[P4 part 2] the armed (ledger-funded) endpoint leg widens its keep-best
+    check interval by a frozen policy multiplier, so armed stages spend
+    <=~15% of wall on evals. Non-armed stages keep the exact
+    ``_RECOVERY_PATIENCE x check_interval`` stagnation economics
+    (mbh_analytical_ttfs_stagnation), and the [C1] geometry composes at the
+    WIDENED interval: patience counts CHECKS, so the multiplier must never
+    silently multiply the patience window's step budget."""
+
+    def test_policy_pins_the_eval_cadence_multiplier(self):
+        assert TUNING_POLICY.endpoint_floor_eval_interval_multiplier == 3
+
+    def test_armed_cadence_is_the_multiplied_interval(self):
+        assert armed_endpoint_check_interval(40) == 120
+        assert armed_endpoint_check_interval(1) == 3
+
+    def test_degenerate_intervals_are_floored_before_multiplying(self):
+        assert armed_endpoint_check_interval(0) == 3
+
+    def test_cadence_reads_the_frozen_policy(self, monkeypatch):
+        import mimarsinan.tuning.orchestration.tuning_policy as tp
+
+        monkeypatch.setattr(
+            tp, "TUNING_POLICY",
+            dataclasses.replace(
+                tp.TUNING_POLICY, endpoint_floor_eval_interval_multiplier=5,
+            ),
+        )
+        assert tp.armed_endpoint_check_interval(40) == 200
+
+    def test_widened_cadence_never_multiplies_the_patience_step_window(self):
+        # [C1 composition] patience counts CHECKS: the geometry computed at the
+        # widened interval keeps the patience window ~fraction x budget in
+        # STEPS (ceil slack of at most one widened interval), never 3x it.
+        base_interval = 40
+        widened = armed_endpoint_check_interval(base_interval)
+        base = endpoint_convergence_geometry(16000, base_interval)
+        wide = endpoint_convergence_geometry(16000, widened)
+        base_window = base.patience * base_interval
+        wide_window = wide.patience * widened
+        assert base_window <= wide_window <= base_window + widened
+        assert wide_window < 3 * base_window
+
+
 # ── the keep-best loop honors the geometry (step-deterministic) ─────────────
 
 
@@ -198,6 +244,68 @@ class TestConvergenceStopLoop:
         _, steps_a = self._flat_run()
         _, steps_b = self._flat_run()
         assert steps_a == steps_b == 30
+
+    def test_non_armed_stagnation_stops_at_exactly_patience_times_interval(self):
+        # The mbh_analytical_ttfs_stagnation economics: a stagnating NON-armed
+        # endpoint (min_steps=0, pre-floor patience) stops at exactly
+        # _RECOVERY_PATIENCE x check_interval steps — the [P4] armed cadence
+        # multiplier must never touch this geometry.
+        trainer = _step_trainer()
+        trainer.validate_n_batches = lambda n: 0.5
+        _, steps = trainer.train_steps_until_target(
+            lr=1e-3, max_steps=400, target_accuracy=1.0,
+            validation_n_batches=1, check_interval=4,
+            patience=_RECOVERY_PATIENCE, min_steps=0, min_improvement=1e-3,
+            cosine_decay=True, return_steps=True, final_validation=False,
+        )
+        assert steps == _RECOVERY_PATIENCE * 4
+
+    def test_widened_cadence_runs_the_full_budget_with_fewer_reads(self):
+        # [P4] an armed climbing leg at the widened interval still burns its
+        # full step budget, with 1 entry read + floor(budget / interval)
+        # keep-best reads (final_validation off).
+        trainer = _step_trainer()
+        calls = [0]
+
+        def climbing(n):
+            calls[0] += 1
+            return 0.1 + 0.01 * calls[0]
+
+        trainer.validate_n_batches = climbing
+        _, steps = trainer.train_steps_until_target(
+            lr=1e-3, max_steps=60, target_accuracy=1.0,
+            validation_n_batches=1, check_interval=6, patience=5,
+            min_steps=0, min_improvement=1e-3, cosine_decay=True,
+            return_steps=True, final_validation=False,
+        )
+        assert steps == 60
+        assert calls[0] == 1 + 60 // 6
+
+    def test_widened_cadence_keeps_the_keep_best_entry_restore(self):
+        trainer = _step_trainer()
+        pre_sd = {k: v.clone() for k, v in trainer.model.state_dict().items()}
+        trainer.validate_n_batches = lambda n: 0.5
+        trainer.train_steps_until_target(
+            lr=1e-3, max_steps=60, target_accuracy=1.0,
+            validation_n_batches=1, check_interval=6, patience=2,
+            min_steps=0, min_improvement=1e-3, cosine_decay=True,
+            return_steps=True, final_validation=False,
+        )
+        post_sd = trainer.model.state_dict()
+        for key in pre_sd:
+            assert torch.equal(pre_sd[key], post_sd[key]), key
+
+    def test_cosine_horizon_is_bound_to_the_leg_budget(self):
+        # [WS-X audit] the cosine schedule spans exactly the leg's max_steps
+        # (the ledger-clamped budget at the endpoint seam), never a longer
+        # grant that would stretch the climb past the fundable steps.
+        trainer = _step_trainer()
+        optimizer, scheduler, _ = trainer._get_optimizer_and_scheduler_steps(
+            1e-3, 500,
+        )
+        assert isinstance(scheduler, torch.optim.lr_scheduler.CosineAnnealingLR)
+        assert scheduler.T_max == 500
+        del optimizer, scheduler
 
     def test_composition_sub_se_unreachable_target_is_patience_stopped(
         self, monkeypatch,
@@ -277,11 +385,28 @@ class TestArmedStageGeometry:
         self, tmp_path, monkeypatch,
     ):
         _, seen, interval = self._drive(tmp_path, monkeypatch, base_steps=16000)
-        expected = endpoint_convergence_geometry(16000, interval)
+        expected = endpoint_convergence_geometry(
+            16000, armed_endpoint_check_interval(interval),
+        )
         assert seen["patience"] == expected.patience
         assert seen["patience"] < 16000 // max(1, interval), (
             "patience must be able to fire inside the budget (true ceiling)"
         )
+
+    def test_armed_stage_widens_the_keep_best_cadence(
+        self, tmp_path, monkeypatch,
+    ):
+        # [P4 part 2] the ledger-funded leg checks at the multiplied interval;
+        # the geometry is computed at the SAME widened interval so the patience
+        # step-window stays ~fraction x budget.
+        _, seen, interval = self._drive(tmp_path, monkeypatch, base_steps=16000)
+        widened = armed_endpoint_check_interval(interval)
+        assert seen["check_interval"] == widened == 3 * interval
+        base_window = (
+            endpoint_convergence_geometry(16000, interval).patience * interval
+        )
+        wide_window = seen["patience"] * seen["check_interval"]
+        assert base_window <= wide_window <= base_window + widened
 
     def test_armed_stage_keeps_cosine_and_the_step_denomination(
         self, tmp_path, monkeypatch,

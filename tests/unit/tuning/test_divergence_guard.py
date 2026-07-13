@@ -43,6 +43,7 @@ from mimarsinan.tuning.orchestration.recovery_engine import RecoveryEngine
 from mimarsinan.tuning.orchestration.tuner_base import _RECOVERY_PATIENCE
 from mimarsinan.tuning.orchestration.tuning_policy import (
     TUNING_POLICY,
+    armed_endpoint_check_interval,
     endpoint_convergence_geometry,
 )
 
@@ -331,7 +332,10 @@ class TestArmedStageRescue:
         assert second["warmup_steps"] == warmup
         assert second["max_steps"] == remaining - warmup
         assert second["cosine_decay"] is True
-        geometry = endpoint_convergence_geometry(remaining - warmup, interval)
+        # [P4] the rescue leg is armed-only, so it keeps the widened cadence.
+        widened = armed_endpoint_check_interval(interval)
+        assert second["check_interval"] == widened
+        geometry = endpoint_convergence_geometry(remaining - warmup, widened)
         assert second["min_steps"] == geometry.min_steps
         assert second["patience"] == geometry.patience
         assert report.divergence_rescued is True

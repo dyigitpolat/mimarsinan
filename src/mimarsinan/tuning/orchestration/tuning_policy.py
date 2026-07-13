@@ -12,6 +12,7 @@ __all__ = [
     "TuningPolicy",
     "TUNING_POLICY",
     "ConvergenceStopGeometry",
+    "armed_endpoint_check_interval",
     "effective_prefix_stage_lr",
     "effective_endpoint_floor_lr",
     "endpoint_convergence_geometry",
@@ -75,6 +76,13 @@ class TuningPolicy:
     # funded budget is a true CEILING, never a mandatory burn.
     endpoint_floor_min_cover_steps: int = 2000
     endpoint_floor_patience_fraction: float = 0.25
+    # [P4 part 2] armed-endpoint eval cadence: the ledger-funded leg widens
+    # its keep-best check interval by this multiplier so armed stages spend
+    # <=~15% of stage wall on progress evals. The [C1] geometry is computed
+    # at the WIDENED interval (patience counts checks, so the patience
+    # step-window stays ~fraction x budget); non-armed stages keep the exact
+    # _RECOVERY_PATIENCE x check_interval stagnation economics.
+    endpoint_floor_eval_interval_multiplier: int = 3
     # [C3] divergence guard + LR-backoff rescue on the armed floor (default
     # off until the Phase-3 measured graduation): a fired dead-run predicate
     # restores the live keep-best, rebuilds the optimizer, and restarts the
@@ -104,6 +112,15 @@ def effective_endpoint_floor_lr(config) -> float:
     else the frozen probe-validated policy value."""
     override = ResolvedWorkloadProfile.from_config(config).endpoint_floor_lr
     return TUNING_POLICY.endpoint_floor_lr if override is None else float(override)
+
+
+def armed_endpoint_check_interval(check_interval) -> int:
+    """[P4] keep-best cadence for a ledger-funded (armed) endpoint leg: the
+    base interval widened by the frozen eval-cadence multiplier."""
+    interval = max(1, int(check_interval))
+    return interval * max(
+        1, int(TUNING_POLICY.endpoint_floor_eval_interval_multiplier),
+    )
 
 
 @dataclass(frozen=True)
