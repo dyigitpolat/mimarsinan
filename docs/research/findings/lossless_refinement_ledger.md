@@ -269,6 +269,74 @@ for armed-LIF cells drop by exactly the former decode asymmetry (t0_05:
 −0.10 pp locally; −0.25 pp in the wave artifacts) — this is honesty, not
 regression: the counts read is what every backend can produce.
 
+### F.2 WS-W trained-composition adjudication (2026-07-13, measured) — the sync-mixer residual is AQ capacity
+
+**Question.** Can a correction DERIVED FROM AND VALIDATED ON the trained sync
+composition itself close the t0_21 residual (wave: 0.9603 vs post-prune
+envelope 0.9715, −1.12 pp)? Candidates per the meta-lesson (estimators derived
+on unadapted conversions invert post-QAT): (i) readout per-class logit-bias
+fold vs the trained float twin, (ii) per-hop trained-composition first-moment
+fold (twin reference carries the artifact's own baked half-steps), (iii)
+statistical readout recalibration on calibration labels.
+
+**Reproduction.** Local rerun of the byte-identical t0_21 config, seed 0, this
+box: pretrain 0.9837 (wave 0.9820), post-prune envelope 0.9708–0.9726, AQ
+0.9573, WQ = NF = SCM = HCM = **0.9650** (torch↔deployed-sim parity 1.0000/256;
+tail lossless as always). The wave's exact 0.9603 does NOT reproduce
+cross-hardware (same config+seed; the ledger's bit-identity replicas hold
+per-box). Local residual vs the local post-prune envelope: −0.66..−0.76 pp —
+the same regime, so the adjudication transfers.
+
+**Per-hop measurement (post-WQ artifact, 3000-sample val calibration; float
+twin = the SAME trained weights with every staircase bypassed to its clamp
+envelope and the entry grid-snap bypassed):**
+
+| hop | name | E[dep−twin] preact (θ/S grid-steps) | starved ch. | only-this-hop-float val |
+|---|---|---|---|---|
+| 0 | patch_embed (enc) | 0.000 | 0.0% | 0.9470 |
+| 1 | blk0 fc1 | +0.216 | 3.1% | 0.9603 |
+| 2 | blk0 fc2 | +0.038 | 0.0% | 0.9603 |
+| 3 | blk1 fc1 | +0.251 | 1.6% | 0.9623 |
+| 4 | blk1 fc2 | +0.256 | 0.0% | 0.9627 |
+| 5 | blk2 fc1 | −0.004 | 3.9% | 0.9613 |
+| 6 | blk2 fc2 | −0.844 | 0.0% | 0.9623 |
+| 7 | blk3 fc1 | +1.829 | 3.1% | 0.9623 |
+| 8 | blk3 fc2 | −1.076 | 46.9% | 0.9643 |
+
+Deployed val 0.9637 / TEST 0.9650; float-twin val **0.8850** / TEST 0.8829 —
+**the trained composition sits +7.9 pp ABOVE its own float envelope.** The
+staircase-prefix sweep (staircase on hops ≤ j, float beyond) is MONOTONE:
+0.8850 → 0.9323 → 0.9343 → 0.9573 → 0.9593 → 0.9603 → 0.9617 → 0.9627 →
+0.9643 → 0.9637. Substituting the idealized float envelope for ANY suffix (or
+any single hop) never beats the full deployed forward by more than +0.06 pp —
+the per-hop first-moment gaps above (up to 1.8 grid-steps, 47% starved
+channels at hop 8) are TRAINED-IN operating points, not correctable drift.
+
+**Candidate verdicts (entry val 0.9637 / heldout 0.9650 / TEST 0.9650; fit on
+val[:2000], heldout = val[2000:], test report-only):**
+
+| candidate | val | heldout | TEST | verdict |
+|---|---|---|---|---|
+| (i) readout bias fold toward twin | 0.9627 | 0.9640 | — | REFUTED (−0.1) |
+| (ii) per-hop first-moment fold, greedy keep-best | 0.9637 | — | — | REFUTED (8/8 folds rolled back) |
+| (ii′) same, unguarded all-hops | **0.7717** | — | — | inversion measured, −19 pp |
+| (iii-a) prior-matching readout bias | 0.9660 | 0.9680 | 0.9644 | val gain does not transfer (−0.06 test) |
+| (iii-b) ridge readout refit (λ 1–10) | 0.9657 | 0.9660–0.9670 | 0.9657–0.9661 | ≤ +0.11 pp test, sub-2SE (0.37 pp) |
+| (iii-c) per-class bias coordinate ascent | 0.9693 | 0.9680 | 0.9655 | fit-side overfit, +0.05 test |
+
+**Verdict.** The two arithmetic candidates invert on the trained composition —
+the FOURTH measurement of the meta-lesson, now measured per-hop on the
+artifact itself: post-QAT the float envelope is not a valid reference at ANY
+hop. The statistical readout family is bounded at ≤ +0.11 pp test (sub-2SE) —
+the QAT already calibrates the host readout. The sync-mixer S=8 residual vs
+the post-prune float envelope is therefore **irreducible AQ capacity** of the
+scalar-θ depth-9 staircase at S=8 (R10's adjudication, now measured on the
+trained artifact): no post-hoc fold lands; the remaining levers are capacity —
+S, weight_bits (wb8 +0.66 measured, t01_20), per-channel θ (R3). Encoded in
+`advisories/rules_graph.py` (`STAIRCASE_TRAINED_RESIDUAL_BAND_PP`,
+ADV-STAIRCASE-DEPTH detail). No fold step or config key lands — a default-off
+mechanism with a measured-null would be an armed-lever trap (G7).
+
 ---
 
 ## 3. Ranked refinement plan toward lossless
@@ -283,7 +351,7 @@ analytical or statistical; none spends training budget.
 | **R3** | Per-channel θ (S2) on matching-axis edges now; E4 plumbing for the 3 scalar-collapse seams next | exact scale-space identity (`Q_S(z/θ)` per channel; decode folded into consumer `per_input_scales`) | container `spiking/theta_cotrain.py:19-40`; `mapping/mappers/scale_propagation.py:62-74`; seams `mapping/support/activation_scales.py:49-63`, `tuning/orchestration/adaptation_manager.py:104-113`, `scale_propagation.py:76-94` | all 10 mixer cells (lif+sync); deep_mlp family prophylactically | +1.0–1.1 at S=8/16, up to +4.4 at S=4 (sync A5/B4 vs B1); the ONLY lever that beats the 1/S law (lif §5) | threshold-group packing dry-run (`capacity/dryrun.py` oracle) — per-neuron thresholds fragment packing groups; export via `packing/canonical.py:96-101` |
 | **R4** | S1 quantile-descent θ: per-hop candidate scan {0.90,0.95,0.99,0.995,1.0} scored on the deployed calib forward; make LIF's fixed q=0.99 S-aware; keep the deflate as floor candidate | statistical (calibration-only) | generalize `pipelining/pipeline_steps/adaptation/activation_analysis_step.py:218-245`; stats already in `install_resolution/capture.py` | every AQ-losing cell: sync mixer S=4/8, t0_22, lif mixer | up to +2.4 beyond the binary deflate (sync B1 vs A2); +0.1–0.2 lenet-class → flips t0_22 toleranced | score on full calib cache (4k-sample greedy has ~0.7 pp selection noise) |
 | **R5** | C3 per-hop re-timing (boundary decode + count-preserving re-encode) for single-segment LIF chains at S ≤ 8 | value-exact (transcode identity `round((c/T)·T) = c`) | mapping-level segmentation option; machinery exists at `models/spiking/hybrid/rate_forward.py:110-113`, `spiking/segment_boundary.py:181+` (lif memo §7.3) | lif mixer S=4/8 (the temporal-A6 FAIL cells: delay 21.1/24.6 vs windows 4/8) | +1.9 at S=4, +0.5 at S=8 (chain9); nil at S ≥ 16 | gate on temporal-A6 FAIL + single-segment; latency/energy cost is mapping-visible |
-| **R6** | S3 sequential first-moment fold for sync (DFQ family, own-offset-EXCLUDED) | statistical (closed-form calibration) | `spiking/dfq_bias_correction.py` seam at AQ install, before endpoint recovery; gate `is_synchronized_ttfs` | sync mixer (largest at S=4); post-E1 residual entry systematics | +0.1…+0.9 (sync B2) | the §3.2 sign trap: folding the raw mean gap cancels the half-step (0.93→0.59 measured) — exclusion is load-bearing |
+| **R6** | S3 sequential first-moment fold for sync (DFQ family, own-offset-EXCLUDED) — **CLOSED §2F.2**: measured harmful on-pipeline (A/B 2026-07-13) and the trained-composition re-derivation (twin reference including baked half-steps) measured inverted per-hop | statistical (closed-form calibration) | `spiking/dfq_bias_correction.py` seam at AQ install, before endpoint recovery; gate `is_synchronized_ttfs` | sync mixer (largest at S=4); post-E1 residual entry systematics | +0.1…+0.9 (sync B2) — REFUTED post-QAT | the §3.2 sign trap: folding the raw mean gap cancels the half-step (0.93→0.59 measured) — exclusion is load-bearing |
 | **R7** | E3 comparator-side half-step at WQ: carry +θ/(2S) in the per-core threshold when the bias lattice is too coarse | exact identity (threshold shift ≡ bias fold; zero bit cost) | measure `g_b/(1/(2S))` at projection (`transformations/normalization_aware_perceptron_quantization.py:67-83`); arm when ≥ ~0.5 | sync S=16 (t01_04 WQ −0.55, frozen endpoint); any higher-S / fewer-bias-bit sync; LIF analogue after R1 | +0.3…+0.6 at sync S=16; prevents the −1.6 blanket-refold trap | SCM threshold is float64 (not integer-locked); nevresim n/a for sync |
 | **R8** | C2 membrane-readout engagement audit + decode-domain parity: verify the armed `lif_membrane_readout` actually reaches the deployed read; explain t0_05 (theory: mlp-S4 +2.3 ABOVE staircase with C2; measured −0.43 below) and the t0_05 +0.25 SCM jump; document the C2↔C4-premise interaction (§2D) | verification of an exact identity (Theorem 0: `Q = θ·c_T + m_T`) | `models/spiking/hybrid/lif_step.py:199-217`; decode `rate_forward.py:113,199`; parity locks per lif memo §7.5 | all LIF; decisive for t0_05, contributory for the mixer S=4 family | 0 direct; unlocks up to +2 where C2 is armed-but-inert; zero risk | none |
 | **R9** | Spec hygiene: (a) decide the pruning reference — drop `pruned10` from lossless-mandate cells or bind the mandate to the post-prune envelope; (b) regenerate `t01_09_e4` / `t01_24_floor` with their real knob deltas (`generate.py` defect, byte-identical configs) | spec / statistics | `test_configs/generate.py`; campaign DoD text | sync-mixer family + t0_02; two burnt matrix slots | removes a structural −1.05/−0.80 that NO sanctioned lever can touch | user decision on the reference |
@@ -294,7 +362,10 @@ for multi-spike LIF (Theorem 3; 0.7825 vs 0.9180), V0 half-step placement,
 encode phase stagger, stochastic encoding (√S vs 1/S law), bias-only affine
 folds (−4.2), blanket post-WQ half-step refold (−1.6 at S=16), sum-ratio θ̂
 rescale (0.95→0.50), per-channel MSE offsets beyond the half-step (S4 ≡ B1,
-closed negative result).
+closed negative result), **trained-composition twin-referenced folds on sync
+(readout logit-bias and per-hop first-moment, §2F.2: both invert post-QAT,
+unguarded 0.964→0.772) and statistical readout recalibration
+(prior-matching/ridge/coordinate-ascent, §2F.2: ≤ +0.11 pp test, sub-2SE)**.
 
 ---
 
@@ -330,11 +401,14 @@ closed negative result).
   except more levels per channel (lif §5). Neither strict nor toleranced is
   claimable at scalar θ; re-adjudicate after R3 per R10.
 - **Sync mixer** — vs pre-prune pretrain: INFEASIBLE while `pruned10` stands
-  (§2E). Vs the post-prune envelope (0.9715): S=16 needs +0.67 → R7+R4+R6
-  plausible toleranced; S=8 needs +1.12 → R3+R4+R6 plausible toleranced
-  (wb8 already banks +0.66 of it); S=4 needs +2.44 against the §4.1 capacity
-  wall → not claimable at scalar θ (R10). Strict even vs post-prune remains
-  open until R3 numbers exist.
+  (§2E). Vs the post-prune envelope (0.9715): S=16 needs +0.67 → R7+R4
+  plausible toleranced; S=8 needs +1.12 and is now ADJUDICATED AQ capacity
+  (§2F.2: the trained composition saturates its kernels; every post-hoc fold
+  family measured null or inverted) → only capacity levers remain — R3
+  per-channel θ, wb8 (+0.66 banked, t01_20), or S=16; S=4 needs +2.44 against
+  the §4.1 capacity wall → not claimable at scalar θ (R10). Strict even vs
+  post-prune remains open until R3 numbers exist. R6-family re-derivation on
+  the trained composition is CLOSED (§2F.2).
 
 **True ceilings (theorem citations):** (1) S=4 × depth≥8 scalar-θ capacity
 wall — sync §4.1, mixer memo §6 limit 3, lif §5 1/S law; (2) pruning — outside

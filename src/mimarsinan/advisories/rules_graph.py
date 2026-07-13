@@ -35,6 +35,13 @@ STAIRCASE_DEPTH_MAX_S = 8
 """The 1/S crater law heals by S=16 (-6.91pp at S=4, -1.91 at S=8, -0.68 at
 S=16 measured on the lif tier-0 cells)."""
 
+STAIRCASE_TRAINED_RESIDUAL_BAND_PP = (0.7, 1.1)
+"""Measured irreducible post-QAT residual (pp, vs the post-prune float
+envelope) for the depth-9 sync mixer at S=8: the trained composition sits
+ABOVE its own float envelope with a monotone staircase-prefix sweep, so the
+residual is AQ capacity, not correctable composed drift (WS-W adjudication on
+the trained t0_21 artifact; lossless_refinement_ledger.md §2F.2)."""
+
 
 def rule_staircase_depth(model_repr, plan: Any, channel_stats) -> list[Advisory]:
     if not quantized_spiking_deployment(plan):
@@ -60,9 +67,23 @@ def rule_staircase_depth(model_repr, plan: Any, channel_stats) -> list[Advisory]
             "composition law), while per-hop distortion follows the 1/S law "
             "(crater -6.91pp at S=4, -1.91pp at S=8, -0.68pp at S=16, healed "
             "by S>=16 — the lif exactness law). L>=6 with S<=8 sits in the "
-            "entry-dominated composition-distortion regime. Memos: "
+            "entry-dominated composition-distortion regime. Post-QAT "
+            "adjudication (WS-W, measured on the trained t0_21 artifact): the "
+            "sync-exact-trained composition sits ABOVE its own float envelope "
+            "(+7.9pp val) with a MONOTONE staircase-prefix sweep — "
+            "float-suffix substitution bounds every per-hop arithmetic "
+            "correction at ~+0.1pp, so the residual "
+            f"(-{STAIRCASE_TRAINED_RESIDUAL_BAND_PP[0]:.1f}.."
+            f"-{STAIRCASE_TRAINED_RESIDUAL_BAND_PP[1]:.1f}pp vs the "
+            "post-prune float envelope) is AQ capacity. Twin-referenced "
+            "post-hoc folds (readout logit bias, per-hop first moments) "
+            "measured INVERTED on the trained composition (unguarded fold "
+            "0.964->0.772 — do not re-derive), and readout statistical "
+            "recalibration transfers <= +0.11pp test (sub-2SE); only capacity "
+            "levers (S, weight_bits, per-channel theta) remain. Memos: "
             "docs/research/findings/sync_deployment_exactness.md, "
-            "docs/research/findings/lif_deployment_exactness.md."
+            "docs/research/findings/lif_deployment_exactness.md, "
+            "docs/research/findings/lossless_refinement_ledger.md §2F.2."
         ),
         tentative=True,
         mandate_violation=lossless_mandate_applies(plan),

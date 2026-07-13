@@ -286,19 +286,17 @@ def _lif_pipeline(T: int, **config_overrides) -> "MockPipeline":
 
 
 class TestDeployedDecodeDomainParity:
-    """R8 verdict lock: the chip exports spike counts ONLY (nevresim's
-    ``SpikingExecution`` returns the accumulated output buffer; the membrane
-    has no read port), so every deployed-read flow built by the metric factory
-    keeps the counts decode even when ``lif_membrane_readout`` is armed. The
-    membrane decode exists solely as the explicit torch-side diagnostic.
-    Decode-domain parity: NF (counts) == SCM (counts) == HCM (counts)."""
+    """Decode-domain contract after the WS-V read port: the DEFAULT flow (records,
+    parity gathers, cross-sim comparisons) always keeps the counts decode; the
+    membrane logits decode is an explicit opt-in (``membrane_readout_decode``)
+    that the metric factory arms only through the honesty gate."""
 
     def _forward_logits(self, flow) -> torch.Tensor:
         x = torch.ones(1, 1, dtype=torch.float32)
         with torch.no_grad():
             return flow(x)[0].to(DTYPE)
 
-    def test_deployed_metric_flow_keeps_counts_decode_when_armed(self):
+    def test_default_flow_keeps_counts_decode_when_armed(self):
         pipeline = _lif_pipeline(T)
         flow = simulation_factory.build_spiking_hybrid_flow(
             pipeline, _constant_drive_mapping(WEIGHTS),
@@ -306,27 +304,27 @@ class TestDeployedDecodeDomainParity:
         assert flow.membrane_readout is False
         assert torch.equal(self._forward_logits(flow), _raw_clamp_counts())
 
-    def test_diagnostic_flow_carries_membrane_decode(self):
+    def test_decode_flow_carries_membrane_decode(self):
         pipeline = _lif_pipeline(T)
         flow = simulation_factory.build_spiking_hybrid_flow(
             pipeline, _constant_drive_mapping(WEIGHTS),
-            membrane_readout_diagnostic=True,
+            membrane_readout_decode=True,
         )
         assert flow.membrane_readout is True
         want = torch.tensor(WEIGHTS, dtype=DTYPE) * T - 0.5
         assert torch.allclose(self._forward_logits(flow), want, atol=1e-6)
 
-    def test_diagnostic_flow_respects_half_step_flag(self):
+    def test_decode_flow_respects_half_step_flag(self):
         pipeline = _lif_pipeline(T, lif_half_step_bias=False)
         flow = simulation_factory.build_spiking_hybrid_flow(
             pipeline, _constant_drive_mapping(WEIGHTS),
-            membrane_readout_diagnostic=True,
+            membrane_readout_decode=True,
         )
         want = torch.tensor(WEIGHTS, dtype=DTYPE) * T
         assert torch.allclose(self._forward_logits(flow), want, atol=1e-6)
 
-    def test_diagnostic_request_is_inert_off_lif(self):
-        """The diagnostic decode is LIF-only; other modes never arm it."""
+    def test_decode_request_is_inert_off_lif(self):
+        """The membrane decode is LIF-only; other modes never arm it."""
         pipeline = _lif_pipeline(
             T,
             spiking_mode="ttfs_quantized",
@@ -335,9 +333,50 @@ class TestDeployedDecodeDomainParity:
         )
         flow = simulation_factory.build_spiking_hybrid_flow(
             pipeline, _constant_drive_mapping(WEIGHTS),
-            membrane_readout_diagnostic=True,
+            membrane_readout_decode=True,
         )
         assert flow.membrane_readout is False
+
+
+class TestDeployedMetricHonestyGate:
+    """[WS-V] The metric factory's deployed flow consumes the membrane decode
+    ONLY when (a) ``lif_membrane_readout`` is armed AND (b) every enabled chip
+    backend can export final membranes (nevresim/SANA-FE yes, Loihi no) —
+    failing toward counts otherwise."""
+
+    def _metric_flow(self, pipeline):
+        return simulation_factory.build_deployed_metric_flow(
+            pipeline, _constant_drive_mapping(WEIGHTS),
+        )
+
+    def _forward_logits(self, flow) -> torch.Tensor:
+        x = torch.ones(1, 1, dtype=torch.float32)
+        with torch.no_grad():
+            return flow(x)[0].to(DTYPE)
+
+    def test_armed_nevresim_only_metric_flow_decodes_membrane(self):
+        flow = self._metric_flow(_lif_pipeline(T))
+        assert flow.membrane_readout is True
+        want = torch.tensor(WEIGHTS, dtype=DTYPE) * T - 0.5
+        assert torch.allclose(self._forward_logits(flow), want, atol=1e-6)
+
+    def test_armed_with_sanafe_metric_flow_decodes_membrane(self):
+        flow = self._metric_flow(_lif_pipeline(T, enable_sanafe_simulation=True))
+        assert flow.membrane_readout is True
+
+    def test_loihi_enabled_keeps_the_decode(self):
+        # Loihi is parity-currency (per-neuron counts, untouched by the
+        # decode); only an accuracy-producing incapable backend vetoes.
+        flow = self._metric_flow(_lif_pipeline(T, enable_loihi_simulation=True))
+        assert flow.membrane_readout is True
+
+    def test_unarmed_knob_keeps_counts(self):
+        flow = self._metric_flow(_lif_pipeline(T, lif_membrane_readout=False))
+        assert flow.membrane_readout is False
+
+    def test_engagement_line_printed_when_armed(self, capsys):
+        self._metric_flow(_lif_pipeline(T))
+        assert "[C2] deployed membrane decode ARMED" in capsys.readouterr().out
 
 
 class _RecordingReporter:
@@ -380,12 +419,18 @@ class TestMembraneReadoutDiagnostic:
         assert stats["eligible_nodes"] == 1
         assert stats["samples"] == 4
         assert stats["engaged"] is True
+        assert stats["deployed_decode"] is True
         want_delta = float(
             (torch.tensor(WEIGHTS, dtype=DTYPE) * T - 0.5 - _raw_clamp_counts())
             .abs().max()
         )
         assert stats["max_abs_correction"] == pytest.approx(want_delta, abs=1e-6)
         assert isinstance(stats["pred_flips"], int)
+
+    def test_engagement_stats_report_parity_backends_keep_decode(self):
+        stats = self._stats(_lif_pipeline(T, enable_loihi_simulation=True))
+        assert stats is not None
+        assert stats["deployed_decode"] is True
 
     def test_engagement_line_and_reporter_event_emitted(self, capsys):
         pipeline = _lif_pipeline(T)
@@ -394,7 +439,7 @@ class TestMembraneReadoutDiagnostic:
         stats = self._stats(pipeline)
         out = capsys.readouterr().out
         assert "[C2] membrane-readout diagnostic" in out
-        assert "counts decode" in out
+        assert "deployed metric decode" in out
         assert [(k, p) for k, p in reporter.events
                 if k == "membrane_readout_diagnostic"] == [
             ("membrane_readout_diagnostic", stats),
@@ -408,6 +453,48 @@ class TestMembraneReadoutDiagnostic:
             pipeline, _constant_drive_mapping(WEIGHTS),
         )
         assert flow.membrane_readout is False
+
+
+class TestNumpyCorrectionTwin:
+    """The nevresim probe applies the same decode with numpy rate-domain
+    outputs: ``final_rates += correction / T`` — argmax-equivalent to the
+    torch count-unit logits decode."""
+
+    def test_matches_torch_apply_on_rate_domain(self):
+        from mimarsinan.models.spiking.hybrid.membrane_readout import (
+            apply_membrane_corrections_numpy,
+        )
+
+        output_sources = np.asarray(
+            [IRSource(node_id=0, index=0), IRSource(node_id=1, index=0),
+             IRSource(node_id=1, index=1)],
+            dtype=object,
+        )
+        corrections = {1: np.asarray([[0.25, -0.75], [0.5, 0.5]])}
+        rates = np.asarray([[0.5, 0.25, 0.125], [1.0, 0.0, 0.5]])
+        got = apply_membrane_corrections_numpy(
+            rates, corrections, output_sources, simulation_length=T,
+        )
+        want = rates.copy()
+        want[:, 1] += corrections[1][:, 0] / T
+        want[:, 2] += corrections[1][:, 1] / T
+        np.testing.assert_allclose(got, want)
+        # The input array is never mutated (probe reads it again for records).
+        np.testing.assert_array_equal(
+            rates, np.asarray([[0.5, 0.25, 0.125], [1.0, 0.0, 0.5]]),
+        )
+
+    def test_no_corrections_is_identity(self):
+        from mimarsinan.models.spiking.hybrid.membrane_readout import (
+            apply_membrane_corrections_numpy,
+        )
+
+        rates = np.asarray([[0.5, 0.25]])
+        sources = np.asarray([IRSource(node_id=0, index=0)], dtype=object)
+        got = apply_membrane_corrections_numpy(
+            rates, {}, sources, simulation_length=T,
+        )
+        np.testing.assert_array_equal(got, rates)
 
 
 class TestTheorem0OnExecutorState:

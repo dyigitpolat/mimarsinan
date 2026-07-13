@@ -87,6 +87,35 @@ class TestStaircaseDepth:
         }
         assert "ADV-STAIRCASE-DEPTH" not in _ids(repr_, config)
 
+    def test_fires_for_synchronized_ttfs_with_trained_composition_adjudication(self):
+        """[WS-W] The rule fires on the sync cell class and its detail carries
+        the measured post-QAT adjudication: the residual is AQ capacity and
+        twin-referenced post-hoc folds are closed (do not re-derive)."""
+        repr_ = _converted_deep_mlp(depth=7)
+        config = {
+            "spiking_mode": "ttfs_cycle_based",
+            "ttfs_cycle_schedule": "synchronized",
+            "simulation_steps": 8,
+            "activation_quantization": True,
+        }
+        advisory = _by_id(repr_, config, "ADV-STAIRCASE-DEPTH")
+        assert "AQ capacity" in advisory.detail
+        assert "do not re-derive" in advisory.detail
+        assert "lossless_refinement_ledger.md" in advisory.detail
+
+    def test_trained_residual_band_constant_matches_the_detail(self):
+        """The measured residual band is a named module constant and the
+        advisory text quotes exactly it (no drifting duplicate literals)."""
+        from mimarsinan.advisories.rules_graph import (
+            STAIRCASE_TRAINED_RESIDUAL_BAND_PP,
+        )
+
+        low, high = STAIRCASE_TRAINED_RESIDUAL_BAND_PP
+        assert 0.0 < low < high
+        repr_ = _converted_deep_mlp(depth=7)
+        advisory = _by_id(repr_, _lif_config(simulation_steps=8), "ADV-STAIRCASE-DEPTH")
+        assert f"{low:.1f}" in advisory.detail and f"{high:.1f}" in advisory.detail
+
 
 class TestNormfreeChain:
     def test_fires_on_norm_free_chain(self):

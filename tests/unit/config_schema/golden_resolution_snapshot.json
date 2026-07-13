@@ -10950,6 +10950,7 @@
    "checkpoint_scope": "full",
    "dfq_keepbest_patience": 5,
    "endpoint_floor_divergence_rescue": true,
+   "endpoint_floor_eval_interval_multiplier": 3,
    "endpoint_floor_lr": 0.002,
    "endpoint_floor_min_cover_steps": 2000,
    "endpoint_floor_patience_fraction": 0.25,
