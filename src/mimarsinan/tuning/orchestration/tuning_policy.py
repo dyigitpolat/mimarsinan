@@ -83,7 +83,11 @@ class TuningPolicy:
     # at the WIDENED interval (patience counts checks, so the patience
     # step-window stays ~fraction x budget); non-armed stages keep the exact
     # _RECOVERY_PATIENCE x check_interval stagnation economics.
-    endpoint_floor_eval_interval_multiplier: int = 3
+    # [P4 REVERTED to dense 2026-07-13] the 3x cadence missed trajectory
+    # peaks at ANY budget (t0_22 WQ: dense reached 0.9913 in 3026 steps,
+    # widened exit==entry over 4284 — identical entries); re-arm only with a
+    # peak-capture-safe design (dense-until-first-plateau).
+    endpoint_floor_eval_interval_multiplier: int = 1
     # [C3] divergence guard + LR-backoff rescue on the armed floor (default
     # off until the Phase-3 measured graduation): a fired dead-run predicate
     # restores the live keep-best, rebuilds the optimizer, and restarts the

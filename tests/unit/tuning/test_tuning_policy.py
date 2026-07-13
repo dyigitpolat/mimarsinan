@@ -66,7 +66,7 @@ EXPECTED_POLICY_VALUES = {
     # at multiplier x check_interval (evals <=~15% of stage wall); the [C1]
     # geometry composes at the widened interval, and non-armed stages keep
     # the exact _RECOVERY_PATIENCE x check_interval stagnation economics.
-    "endpoint_floor_eval_interval_multiplier": 3,
+    "endpoint_floor_eval_interval_multiplier": 1,
     # [C3] divergence guard + LR-backoff rescue on the armed floor
     # (default-off until the Phase-3 measured graduation).
     "endpoint_floor_divergence_rescue": True,

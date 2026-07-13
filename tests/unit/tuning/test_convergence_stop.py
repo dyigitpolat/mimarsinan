@@ -147,6 +147,17 @@ class TestConvergenceGeometry:
         assert geometry.patience == 5
 
 
+
+
+def _widened_policy(monkeypatch):
+    """Pin the widened-cadence MECHANISM (default is dense since the P4
+    revert); mechanism tests exercise it via an explicit multiplier."""
+    import mimarsinan.tuning.orchestration.tuning_policy as tp
+
+    monkeypatch.setattr(tp, "TUNING_POLICY", dataclasses.replace(
+        tp.TUNING_POLICY, endpoint_floor_eval_interval_multiplier=3))
+
+
 class TestArmedEvalCadence:
     """[P4 part 2] the armed (ledger-funded) endpoint leg widens its keep-best
     check interval by a frozen policy multiplier, so armed stages spend
@@ -157,14 +168,16 @@ class TestArmedEvalCadence:
     silently multiply the patience window's step budget."""
 
     def test_policy_pins_the_eval_cadence_multiplier(self):
-        assert TUNING_POLICY.endpoint_floor_eval_interval_multiplier == 3
+        # [P4 reverted 2026-07-13] widened cadence measurably missed peaks at
+        # any budget (t0_22: dense reached 0.9913, widened exit==entry).
+        assert TUNING_POLICY.endpoint_floor_eval_interval_multiplier == 1
 
     def test_armed_cadence_is_the_multiplied_interval(self):
-        assert armed_endpoint_check_interval(40) == 120
-        assert armed_endpoint_check_interval(1) == 3
+        assert armed_endpoint_check_interval(40) == 40
+        assert armed_endpoint_check_interval(1) == 1
 
     def test_degenerate_intervals_are_floored_before_multiplying(self):
-        assert armed_endpoint_check_interval(0) == 3
+        assert armed_endpoint_check_interval(0) == 1
 
     def test_cadence_reads_the_frozen_policy(self, monkeypatch):
         import mimarsinan.tuning.orchestration.tuning_policy as tp
@@ -200,7 +213,8 @@ class TestArmedEvalCadence:
         assert armed_endpoint_effective_check_interval(600, 40) == 40
         assert armed_endpoint_effective_check_interval(1999, 40) == 40
 
-    def test_funded_budget_at_or_above_the_cover_widens(self):
+    def test_funded_budget_at_or_above_the_cover_widens(self, monkeypatch):
+        _widened_policy(monkeypatch)
         assert armed_endpoint_effective_check_interval(2000, 40) == 120
         assert armed_endpoint_effective_check_interval(16000, 40) == 120
 
@@ -228,7 +242,8 @@ class TestArmedEvalCadence:
         assert tp.armed_endpoint_effective_check_interval(49, 40) == 40
         assert tp.armed_endpoint_effective_check_interval(50, 40) == 200
 
-    def test_degenerate_intervals_are_floored_at_both_cadences(self):
+    def test_degenerate_intervals_are_floored_at_both_cadences(self, monkeypatch):
+        _widened_policy(monkeypatch)
         assert armed_endpoint_effective_check_interval(100, 0) == 1
         assert armed_endpoint_effective_check_interval(5000, 0) == 3
 
@@ -247,7 +262,8 @@ class TestArmedEvalCadence:
                 TUNING_POLICY.endpoint_floor_min_cover_steps
             )
 
-    def test_dense_cadence_samples_the_trajectory_more_densely(self):
+    def test_dense_cadence_samples_the_trajectory_more_densely(self, monkeypatch):
+        _widened_policy(monkeypatch)
         # The fix's mechanism: a sub-cover budget affords 3x the keep-best
         # reads of the widened cadence, so a between-checks peak stays visible.
         budget, base_interval = 600, 40
@@ -446,7 +462,8 @@ class TestTrajectoryPeakCapture:
         assert effective == base_interval, "sub-cover budget keeps dense cadence"
         assert self._best_captured(effective) == pytest.approx(0.98)
 
-    def test_widened_cadence_misses_the_same_peak(self):
+    def test_widened_cadence_misses_the_same_peak(self, monkeypatch):
+        _widened_policy(monkeypatch)
         # The regression this fix removes for small budgets: the peak check
         # never happens at the coarse cadence, so keep-best holds the entry.
         widened = armed_endpoint_check_interval(2)
@@ -515,6 +532,7 @@ class TestArmedStageGeometry:
     def test_armed_stage_widens_the_keep_best_cadence(
         self, tmp_path, monkeypatch,
     ):
+        _widened_policy(monkeypatch)
         # [P4 part 2] the ledger-funded leg checks at the multiplied interval;
         # the geometry is computed at the SAME widened interval so the patience
         # step-window stays ~fraction x budget.
