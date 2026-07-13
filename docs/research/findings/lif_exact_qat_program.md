@@ -682,3 +682,37 @@ line per cell).
   endpoint through the exact forward (the E3/E6 recovery leg); a re-timed
   tier-0 cell end-to-end through SCM/HCM (the §6.4(iii) gate); S=4
   re-adjudication after θ-in-loop (R10).
+
+## 8. Addendum (2026-07-13): §6.5 follow-up measurements (WS-Z) + on-pipeline status
+
+**Arming landed** (commit 6b379b07): tier-0 A/B 10/10 runnable cells hold or
+gain (ledger §6). Two §6.5 open levers measured on the trained composition
+(memo §5.0 protocol, budget-matched 3000 steps, 3 seeds, current-integration
+seams: R3 θ promotion + entry snap + fold-once):
+
+- **From-float basin entry: REFUTED.** Ties at S=8 (−0.85 SEd) and on the
+  fc64 S=4 aux cell (+0.19 SEd); LOSES at the decisive fc128 S=4 cell
+  (−3.0 SEd, −0.15 pp). Mechanically: from-float enters at 0.6141 staircase
+  (vs 0.8721 adapted) at T=4 — the Shift/AQ legs buy staircase-compatible
+  weight structure that from-float forfeits. The adapted-basin entry stands.
+- **KD teacher at the exact endpoint: pretrain-float teacher WINS (small,
+  consistent).** Positive in all three cells, >1 SE in both S=4 cells
+  (fc128 S=4: 0.97113±0.00032 ctrl → 0.97190±0.00064; fc64 S=4 +2.29 SEd);
+  no-KD is the WORST arm (−1.70 SEd below the AQ-teacher control).
+  **Mechanism: the endpoint is pinned by its KD target** — with the AQ
+  teacher the S=8 endpoint saturates at the AQ envelope (0.9783 ≈ teacher's
+  0.9785); the pretrain teacher (0.9837) raises it, more where the residual
+  is larger.
+- **On-pipeline gap:** the AQ-hosted exact-QAT currently trains with PLAIN
+  CE (`pipeline.loss`; the recipe's kd_ce_alpha/kd_temperature are consumed
+  only by the KD-blend family, which the exact arm reduces to
+  finalize+verify) — i.e. the pipeline runs the measured WORST KD arm. The
+  `lif_exact_qat_kd` knob (reference-teacher snapshot step + AQ-tuner loss
+  swap) is in implementation; probe A/B before recipe arming.
+- **Residual decomposition after teacher fix (pre-WQ):** inherited float-leg
+  AQ gap (−0.52 pp) + S=4 grid cost (~−0.66 pp) — further closure needs a
+  different-type lever (not entry/teacher choice).
+- **WQ endpoint through the exact forward (was Open): CONFIRMED WORKING
+  on-pipeline** — the tier-0 A/B endpoints climb (t0_01 0.9300→0.9519,
+  t0_04 0.9307→0.9558, t01_21 0.9446→0.9638; t01_19 reaches in 716 steps);
+  the one frozen endpoint left is t0_03 (0.9896 entry==exit, G5).
