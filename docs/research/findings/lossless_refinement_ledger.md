@@ -496,3 +496,34 @@ Open residual (the lossless gap on mixers) is monotone in S: −2.7pp (S=4),
 the §6.5 from-float basin entry A/B and the KD-teacher choice at the exact
 endpoint. Lossless wave v7 (21 lif/sync cells, recipe-armed) in flight:
 `generated/_campaign/lossless_v7_state.json`.
+
+## 7. Lossless wave v7 — mandate verdict on the armed recipe (2026-07-13, 21/21, zero failures)
+
+`generated/_campaign/lossless_v7_state.json`. Reference = post-prune read for
+pruned cells else pretrain; toleranced band = −2·SE ≈ −0.3pp.
+
+STRICT 7 (t0_04 +0.14, t0_05 +0.25, t01_16 +0.09, t01_19 +0.11, t0_23 +0.28,
+t0_24 +0.00, t0_25 +0.52) · toleranced 2 (t0_03 −0.17, t0_22 −0.20) ·
+lossy 12. **Every non-mixer LIF+sync cell is strict/toleranced.** The lossy
+set is exactly two families + Novena:
+
+- **LIF mixers** (t0_01 −2.72, t01_08 −2.72, t01_21 −2.04 @S4; t01_01 −1.22
+  @S8; t01_02 −0.77 @S16): S-monotone, materially lifted by the arming vs
+  baselines (t01_01 0.9556→0.9698, t01_02 →0.9743) but not yet strict. Root
+  cause NOW ISOLATED (§8 memo #7 addendum + this wave): the AQ-hosted
+  exact-QAT trains with PLAIN CE (`pipeline.loss`) — the measured WORST KD
+  arm (−1.70 SEd below AQ-teacher) — so the endpoint saturates at the AQ
+  envelope, not the pretrain reference. Lever: `lif_exact_qat_kd` (pretrain
+  float teacher at the exact endpoint), WS-Z-measured WIN, in implementation.
+- **Sync mixers** (t01_05 −2.44 @S4; t0_21/t01_09/t01_24 −1.12 @S8;
+  t01_04 −0.67 @S16; t01_20 −0.46): the measured-irreducible AQ-capacity
+  position (WS-W, ADV-STAIRCASE-DEPTH band). Sync already exact-QATs; its
+  residual IS the AQ envelope. No further arithmetic lever.
+- **t0_02 Novena** (−0.60): P-L5-excluded from exact-QAT (charge identity
+  broken); shipped path; advisory-covered.
+
+Walls: non-mixer cells 88–261s (pass); mixers 454–1020s and deepcnn sched
+482–1020s (over 300s — the exact staircase forward at S≥16 + fixed sim/map
+tail; wall track still open). Under the armed recipe the WQ endpoint burn is
+now PRODUCTIVE (climbs, not the G5 frozen signature) — the seconds buy
+accuracy, so the wall/lossless tension on mixers is real.
