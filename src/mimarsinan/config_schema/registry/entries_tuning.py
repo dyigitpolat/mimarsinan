@@ -121,6 +121,25 @@ ENTRIES = (
        provenance="consumer frozen default", derived_default=_frozen(False),
        relevant=R.when("spiking_mode", in_=("ttfs_cycle_based",)),
        empty_means="off — no first-moment fold at the AQ endpoint"),
+    _E("lif_exact_qat", group="tuning", owner="lif_exact_qat",
+       type=T.BOOL, category=Category.ADVANCED, exposure="user",
+       label="LIF Exact QAT",
+       effect="The AQ stage trains the exact deployed LIF count staircase "
+              "(theta in-loop); per-hop re-timed deployment is auto-paired",
+       doc="[lif_exact_qat_program §6] Staircase exact-QAT: the AQ stage "
+           "(transform-inert for LIF otherwise) installs the deployed count "
+           "staircase theta*clamp(F(T*z/theta),0,T)/T under staircase-STE with "
+           "the LSQ theta gradient (per-channel on the R3 matching-axis set), "
+           "folds the half-step ONCE as trainable entry bias (P-L6; the Shift "
+           "bake and the WQ-entry fold are skipped marker-assertedly), and the "
+           "LIF Adaptation reduces to finalize+verify. Deployment auto-pairs "
+           "lif_per_hop_retiming — the trained staircase IS the per-hop twin "
+           "(measured 0.9556 -> 0.9747-0.9751 deployed; raw-cascade staircase "
+           "deployment is the -2.5 pp Goodhart hole and fails loud). "
+           "Default-reset LIF only (P-L5).",
+       provenance="consumer frozen default", derived_default=_frozen(False),
+       relevant=R.when("spiking_mode", in_=("lif",)),
+       empty_means="off — the shipped T-anneal + one-shot-fold recipe"),
     _E("lif_affine_fold", group="tuning", owner="lif_affine_fold",
        type=T.BOOL, category=Category.ADVANCED, label="LIF Affine Fold",
        effect="Adds the pre-WQ LIF Affine Fold calibration step",

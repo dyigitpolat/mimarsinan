@@ -63,7 +63,7 @@ def perceptron_source_out_scale(perceptron) -> torch.Tensor:
     """Per-output-channel out-scale from a perceptron's activation_scale; a per-channel theta is carried verbatim when its length matches output width, else mean-folded."""
     n_out = perceptron.output_channels
     act = perceptron.activation_scale
-    if isinstance(act, torch.Tensor) and act.dim() > 0:
+    if isinstance(act, torch.Tensor):
         vec = act.detach().to(torch.float32).reshape(-1)
         return (
             vec.clone()

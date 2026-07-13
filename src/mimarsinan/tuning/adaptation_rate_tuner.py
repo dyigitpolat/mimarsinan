@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from mimarsinan.tuning.axes import ManagerRateAxis
-from mimarsinan.tuning.orchestration.adaptation_manager import (
+from mimarsinan.tuning.orchestration.lif_exact_qat import (
     lif_subsumed_ladder_steps,
 )
 from mimarsinan.tuning.orchestration.smooth_adaptation_tuner import SmoothAdaptationTuner

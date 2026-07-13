@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 from mimarsinan.chip_simulation.spiking_semantics import is_lif
 from mimarsinan.common.workload_profile import ResolvedWorkloadProfile
+from mimarsinan.tuning.orchestration.lif_exact_qat import lif_exact_qat_active
 from mimarsinan.tuning.orchestration.mbh_tanneal import TAnnealSchedule
 from mimarsinan.tuning.orchestration.tuning_policy import FAST_LADDER_STEPS_PER_RATE
 
@@ -30,10 +31,33 @@ class LifAdaptationPlan:
     distmatch_cal_batches: int
     theta_cotrain: bool
     simulation_steps: int
+    exact_qat: bool = False
 
     @classmethod
     def resolve(cls, config) -> "LifAdaptationPlan":
         get = config.get
+        exact_qat = lif_exact_qat_active(config)
+        if exact_qat:
+            # [lif_exact_qat_program §6.1(3)] the AQ stage owns the QAT: the
+            # adaptation reduces to finalize+verify (rebuild LIF activations —
+            # deployment-identical by A2 — and install the chip-aligned forward);
+            # the T-anneal ladder, distmatch, theta-cotrain, and the raw-cascade
+            # endpoint are superseded.
+            return cls(
+                cycle_accurate=bool(get("cycle_accurate_lif_forward", False)),
+                blend_fast_rates=[1.0],
+                blend_fast_steps_per_rate=0,
+                blend_fast_lr_eta_min=float(get("lif_blend_fast_lr_eta_min", 0.1)),
+                tanneal=False,
+                endpoint_recovery_steps=0,
+                distmatch=False,
+                distmatch_bias_iters=0,
+                distmatch_bias_eta=0.0,
+                distmatch_cal_batches=0,
+                theta_cotrain=False,
+                simulation_steps=int(config["simulation_steps"]),
+                exact_qat=True,
+            )
         calibration = ResolvedWorkloadProfile.from_config(config).calibration
         bias_iters_default = (
             _GENERIC_DISTMATCH_BIAS_ITERS

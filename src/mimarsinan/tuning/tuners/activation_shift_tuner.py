@@ -4,6 +4,7 @@ import torch
 
 from mimarsinan.transformations.perceptron.perceptron_transformer import PerceptronTransformer
 from mimarsinan.tuning.axes import ActivationShiftAxis
+from mimarsinan.tuning.orchestration.lif_exact_qat import lif_exact_qat_active
 from mimarsinan.tuning.orchestration.rate_tuner_seam import OneShotRateTunerSeamMixin
 from mimarsinan.tuning.shift_calculation import calculate_activation_shift
 from mimarsinan.tuning.orchestration.smooth_adaptation_tuner import TunerBase
@@ -22,6 +23,10 @@ class ActivationShiftTuner(OneShotRateTunerSeamMixin, TunerBase):
         self._use_ttfs = (
             plan.spiking_mode == "ttfs" or plan.uses_ttfs_floor_ceil_convention
         )
+        # [lif_exact_qat_program §6.1(1), P-L6] under the exact arm the QAT owns
+        # every offset: the unflagged one-shot bias bake (a measured operating-
+        # point displacement) is skipped; the ttfs branch is untouched.
+        self._skip_lif_bias_bake = lif_exact_qat_active(pipeline.config)
         self._final_metric = None
         self.name = "Shift Recovery"
         self._axis = ActivationShiftAxis(self._apply_shift)
@@ -34,11 +39,12 @@ class ActivationShiftTuner(OneShotRateTunerSeamMixin, TunerBase):
     def _apply_shift(self):
         config = self.pipeline.config
         transformer = PerceptronTransformer()
-        if not self._use_ttfs:
+        bake = not self._use_ttfs and not self._skip_lif_bias_bake
+        if bake:
             self.adaptation_manager.shift_rate = 1.0
 
         for perceptron in self.model.get_perceptrons():
-            if not self._use_ttfs:
+            if bake:
                 shift_amount = calculate_activation_shift(
                     config["target_tq"], perceptron.activation_scale
                 )

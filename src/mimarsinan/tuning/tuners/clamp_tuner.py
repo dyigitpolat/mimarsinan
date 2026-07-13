@@ -8,7 +8,7 @@ from mimarsinan.common.workload_profile import ResolvedWorkloadProfile
 from mimarsinan.models.nn.layers import SavedTensorDecorator
 from mimarsinan.spiking.per_channel_theta import maybe_promote_per_channel_theta
 from mimarsinan.tuning.axes import ClampAxis
-from mimarsinan.tuning.orchestration.adaptation_manager import (
+from mimarsinan.tuning.orchestration.lif_exact_qat import (
     lif_subsumed_ladder_steps,
 )
 from mimarsinan.tuning.orchestration.calibration_pipeline import encoder_scale_pin

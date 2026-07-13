@@ -80,12 +80,12 @@ _LIF_RECIPE_KNOBS = {
     # safe but not profitable on-pipeline) — config-armable.
     "lif_affine_fold": False,
     "lif_depth_balancing_relays": True,
-    # [R5/C3, lossless_refinement_ledger §2B] per-hop re-timing stays
-    # recipe-OFF: the re-encode is count-preserving (round((c/T)*T) = c) but
-    # TIMING-changing, and the NF twin has no per-hop counterpart, so arming
-    # it breaks the torch<->deployed-sim gate (t0_01 measured 0.8438 armed vs
-    # 1.0000 per-neuron-exact off; deployed read 0.8393 vs 0.8772). Re-arm
-    # only together with a twin-side per-hop re-encode.
+    # [R5/C3] per-hop re-timing stays recipe-OFF for the shipped arm; the
+    # twin-side per-hop re-encode now EXISTS (LifSegmentPolicy(retime), armed
+    # by this knob on BOTH twins), and the lif_exact_qat config knob
+    # auto-pairs it (lif_exact_qat_program.md §6: the trained staircase IS
+    # the per-hop twin; measured 0.9556 -> 0.9747-0.9751 deployed). To arm
+    # the exact-QAT recipe after tier-0 A/B, add "lif_exact_qat": True here.
     "lif_per_hop_retiming": False,
     # [R1/M2, lossless_refinement_ledger §2C] two-scale WQ projection for LIF:
     # four frozen WQ endpoints (entry == exit, divergence_rescued) prove the

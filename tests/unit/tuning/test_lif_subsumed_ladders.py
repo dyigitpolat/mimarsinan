@@ -23,7 +23,7 @@ from conftest import (
     make_tiny_supermodel,
 )
 from mimarsinan.tuning.orchestration import mbh_ledger
-from mimarsinan.tuning.orchestration.adaptation_manager import (
+from mimarsinan.tuning.orchestration.lif_exact_qat import (
     lif_subsumed_ladder_steps,
 )
 from mimarsinan.tuning.orchestration.adaptation_manager_factory import (

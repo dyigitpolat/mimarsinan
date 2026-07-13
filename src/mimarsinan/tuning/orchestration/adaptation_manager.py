@@ -1,35 +1,19 @@
 from mimarsinan.common.workload_profile import ResolvedWorkloadProfile
 from mimarsinan.models.nn.layers import *
 from mimarsinan.models.nn.activations import LeakyGradReLU
-from mimarsinan.models.nn.decorators.clamp_quantize import TTFSCeilStaircaseDecorator
+from mimarsinan.models.nn.decorators.clamp_quantize import (
+    LIFCountStaircaseDecorator,
+    TTFSCeilStaircaseDecorator,
+)
 from mimarsinan.models.nn.decorators.rate_buffer import RateBuffer
 from mimarsinan.tuning.orchestration.frontier import frontier_position
+from mimarsinan.tuning.orchestration.lif_exact_qat import (
+    lif_exact_qat_active,
+    mark_lif_exact_qat,
+)
 from mimarsinan.tuning.shift_calculation import calculate_activation_shift
 
 import torch.nn as nn
-
-# The rate ladders whose decorators the LIF spiking node subsumes (see
-# ``update_activation``) — behaviorally inert in LIF mode, measured in MBH X1.
-_MBH_LIF_SUBSUMED_RATE_ATTRS = frozenset({"clamp_rate", "quantization_rate"})
-
-
-def lif_subsumed_ladder_steps(pipeline_config, rate_attr, steps):
-    """Fast-ladder training steps, with the LIF-subsumed ladders dropped (X3 default).
-
-    In lif mode the spiking node subsumes ``rate_attr``'s decorator, so its
-    ladder is behaviorally inert (measured, X1/X2): the rungs train 0 steps
-    while the rung walk, probes, and finalize contracts still run — the freed
-    budget funds the LIF endpoint-recovery stage. Otherwise ``steps`` unchanged.
-    """
-    if rate_attr not in _MBH_LIF_SUBSUMED_RATE_ATTRS:
-        return int(steps)
-    # Lazy: chip_simulation has a fragile import cycle with tuning at init time.
-    from mimarsinan.chip_simulation.spiking_semantics import is_lif
-
-    if not is_lif(pipeline_config.get("spiking_mode", "lif")):
-        return int(steps)
-    return 0
-
 
 _SYNC_EXACT_QAT_ATTR = "_mbh_sync_exact_qat"
 _SYNC_GRID_SNAP_ATTR = "_mbh_sync_grid_snap_installed"
@@ -184,10 +168,17 @@ class AdaptationManager(nn.Module):
 
         spiking_mode = pipeline_config.get("spiking_mode", "lif")
         use_ttfs = requires_ttfs_firing(spiking_mode)
-        subsumes_decorators = (
+        runtime_subsumed = (
             getattr(self, "lif_active", False)
             or getattr(self, "ttfs_active", False)
-            or is_lif(spiking_mode)
+        )
+        subsumes_decorators = runtime_subsumed or is_lif(spiking_mode)
+        # [lif_exact_qat_program §6.1(2)] the exact arm un-subsumes ONLY the
+        # quantization decorator pre-finalize: the AQ stage hosts the staircase
+        # QAT; once LIF activations install (lif_active), the node subsumes it
+        # again (re-quantizing on-grid values would drop a level at strict '<').
+        quantization_subsumed = runtime_subsumed or (
+            is_lif(spiking_mode) and not lif_exact_qat_active(pipeline_config)
         )
         decorators = []
         if self._rate_is_active("activation_adaptation_rate", self.activation_adaptation_rate > 0):
@@ -195,7 +186,7 @@ class AdaptationManager(nn.Module):
                 self.get_rate_adjusted_activation_replacement_decorator(perceptron))
         if not subsumes_decorators and self._rate_is_active("clamp_rate", self.clamp_rate != 0.0):
             decorators.append(self.get_rate_adjusted_clamp_decorator(perceptron))
-        if not subsumes_decorators and self._rate_is_active("quantization_rate", self.quantization_rate != 0.0):
+        if not quantization_subsumed and self._rate_is_active("quantization_rate", self.quantization_rate != 0.0):
             quant_decorator = self.get_rate_adjusted_quantization_decorator(
                 pipeline_config, perceptron)
             if quant_decorator is not None:
@@ -233,6 +224,24 @@ class AdaptationManager(nn.Module):
     
     def get_rate_adjusted_quantization_decorator(self, pipeline_config, perceptron):
         from mimarsinan.chip_simulation.spiking_semantics import requires_ttfs_firing
+
+        if lif_exact_qat_active(pipeline_config):
+            # [lif_exact_qat_program §6.1] the QAT endpoint is the deployed LIF
+            # count staircase itself (theta in-loop rides the same Parameter);
+            # the marker is per-MODEL and owns the half-step fold (P-L6).
+            mark_lif_exact_qat(perceptron)
+            return RateAdjustedDecorator(
+                self._rate_carrier("quantization_rate"),
+                LIFCountStaircaseDecorator(
+                    pipeline_config["simulation_steps"],
+                    perceptron.activation_scale,
+                    thresholding_mode=str(
+                        pipeline_config.get("thresholding_mode", "<=")
+                    ),
+                ),
+                NestedAdjustmentStrategy(
+                    [RandomMaskAdjustmentStrategy(), MixAdjustmentStrategy()]
+                ))
 
         if sync_exact_qat_active(pipeline_config):
             # [MBH T6] The QAT endpoint is the deployed ceil kernel itself; the

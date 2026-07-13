@@ -12,7 +12,10 @@ from mimarsinan.chip_simulation.behavior_config import NeuralBehaviorConfig
 from mimarsinan.chip_simulation.deployment_contract import SpikingDeploymentContract
 from mimarsinan.chip_simulation.membrane_export import deployed_membrane_readout_enabled
 from mimarsinan.chip_simulation.recording.spike_recorder import compare_records, format_first_diff
-from mimarsinan.chip_simulation.spiking_semantics import is_lif
+from mimarsinan.chip_simulation.spiking_semantics import (
+    is_lif,
+    lif_per_hop_retiming_enabled,
+)
 from mimarsinan.chip_simulation.ttfs.ttfs_executor import run_ttfs_hybrid_contract
 from mimarsinan.mapping.packing.hybrid_hardcore_mapping import (
     build_hybrid_hard_core_mapping,
@@ -44,9 +47,7 @@ def _per_hop_retiming_enabled(pipeline_config: dict[str, Any] | None) -> bool:
     """[C3] the lif per-hop count-exact re-timing knob (mapping-level choice)."""
     if pipeline_config is None:
         return False
-    if not bool(pipeline_config.get("lif_per_hop_retiming", False)):
-        return False
-    return is_lif(DeploymentPlan.resolve(pipeline_config).spiking_mode)
+    return lif_per_hop_retiming_enabled(pipeline_config)
 
 
 def build_hybrid_mapping_for_pipeline(

@@ -86,6 +86,40 @@ class TTFSComparatorHalfStepStaircaseFunction(Function):
         return grad_output.clone(), None
 
 
+LIF_EXACT_QAT_THETA_FLOOR = 1e-3
+"""Positivity floor for the in-loop trainable theta: the forward clamps at it,
+so degenerate shrinkage is self-limiting (lif_exact_qat_program.md §4.2)."""
+
+
+class LIFCountStaircaseFunction(Function):
+    """[lif_exact_qat] the deployed LIF count staircase ``θ·clamp(F(T·z/θ),0,T)/T``
+    with a clamp-gated identity STE to z and the LSQ theta gradient
+    ``q(r) − r·1[0<r<1]`` (in-band grid-residual descent; saturation pushes θ up)."""
+
+    @staticmethod
+    def forward(ctx, z, theta, T, strict):
+        safe = theta.clamp(min=LIF_EXACT_QAT_THETA_FLOOR)
+        r = z / safe
+        c = torch.ceil(T * r) - 1.0 if strict else torch.floor(T * r)
+        q = c.clamp(0.0, float(T)) / T
+        ctx.save_for_backward(r, q, safe)
+        return safe * q
+
+    @staticmethod
+    def backward(ctx, *grad_outputs):
+        (g,) = grad_outputs
+        r, q, safe = ctx.saved_tensors
+        inband = ((r > 0) & (r < 1)).to(g.dtype)
+        grad_z = g * inband
+        grad_theta = g * (q - r * inband)
+        while grad_theta.dim() > safe.dim():
+            grad_theta = grad_theta.sum(0)
+        for i in range(grad_theta.dim()):
+            if safe.shape[i] == 1 and grad_theta.shape[i] != 1:
+                grad_theta = grad_theta.sum(i, keepdim=True)
+        return grad_z, grad_theta, None, None
+
+
 class RoundedStaircaseFunction(Function):
     """Nearest-neighbour quantiser round(x * T) / T with STE gradient."""
 

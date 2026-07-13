@@ -6,10 +6,7 @@ from typing import cast
 
 import torch.nn as nn
 
-from mimarsinan.models.nn.activations import (
-    ChipInputQuantizer,
-    LIFActivation,
-)
+from mimarsinan.models.nn.activations import LIFActivation
 from mimarsinan.tuning.orchestration.blend_ramp import (
     BlendActivation,
     run_teacher_distmatch,
@@ -38,13 +35,21 @@ class _ChipAlignedNFForward(LazyExecutorForward):
     """Picklable ``model.forward`` override installed post-blend (rate==1.0).
 
     Routes NF through ``chip_aligned_segment_forward`` so downstream calibrators see
-    the same forward the chip simulators run.
+    the same forward the chip simulators run. ``retime`` mirrors the deployed
+    ``lif_per_hop_retiming`` mapping (the [C3/R5] twin-side per-hop re-encode);
+    pre-retime cache artifacts default to the raw cascade.
     """
+
+    def __init__(self, model, T: int, retime: bool = False):
+        super().__init__(model, T)
+        self.retime = bool(retime)
 
     def _run(self, x):
         from mimarsinan.spiking.chip_aligned_nf import chip_aligned_segment_forward
 
-        return chip_aligned_segment_forward(self.model, x, self.T)
+        return chip_aligned_segment_forward(
+            self.model, x, self.T, retime=getattr(self, "retime", False),
+        )
 
 
 class LIFBlendActivation(BlendActivation):
@@ -72,12 +77,22 @@ class LIFAdaptationTuner(KDBlendAdaptationTuner):
         self.name = "LIF Adaptation"
         self._T = int(self.pipeline.config["simulation_steps"])
         self._thresholding_mode = str(self.pipeline.config.get("thresholding_mode", "<="))
+        from mimarsinan.chip_simulation.spiking_semantics import (
+            lif_per_hop_retiming_enabled,
+        )
         from mimarsinan.pipelining.core.platform_constraints_resolver import resolve_bias_mode
 
         self._bias_mode = resolve_bias_mode(self.pipeline.config)
+        self._per_hop_retiming = lif_per_hop_retiming_enabled(self.pipeline.config)
         plan = LifAdaptationPlan.resolve(self.pipeline.config)
         self._adaptation_plan = plan
         self._cycle_accurate = plan.cycle_accurate
+        if plan.exact_qat:
+            # [lif_exact_qat_program §6.1(3)] the adaptation reduces to
+            # finalize+verify; subsume the QAT decorators from install on —
+            # re-quantizing the LIF node's on-grid values would drop a level
+            # under the strict '<' comparator.
+            self.adaptation_manager.lif_active = True
         self._consume_optimization_driver(
             rates=plan.blend_fast_rates,
             steps_per_rate=plan.blend_fast_steps_per_rate,
@@ -154,15 +169,16 @@ class LIFAdaptationTuner(KDBlendAdaptationTuner):
 
     def _wrap_encoding_input(self, perceptron) -> None:
         if getattr(perceptron, "is_encoding_layer", False):
-            quantizer = ChipInputQuantizer(
-                T=self._T,
-                activation_scale=perceptron.input_activation_scale,
+            # Idempotent: the LIF exact-QAT AQ install may already carry the snap.
+            from mimarsinan.tuning.orchestration.lif_exact_qat import (
+                install_lif_input_quantizer,
             )
-            self._append_encoding_input_module(perceptron, quantizer)
+
+            install_lif_input_quantizer(perceptron, self._T)
 
     def _finalize_forward_for(self, model):
         if self._cycle_accurate:
-            return _ChipAlignedNFForward(model, self._T)
+            return _ChipAlignedNFForward(model, self._T, retime=self._per_hop_retiming)
         return None
 
     def _before_finalize_rebuild(self, model=None) -> None:

@@ -125,6 +125,7 @@ class _LifModel(nn.Module):
 def _lif_ramp_stub(*, cycle_accurate: bool):
     return types.SimpleNamespace(
         model=_LifModel(), _T=8, _cycle_accurate=cycle_accurate,
+        _per_hop_retiming=False,
     )
 
 

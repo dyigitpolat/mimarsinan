@@ -2,15 +2,25 @@
 
 import dataclasses
 
+import torch
+
+from mimarsinan.common.reporter import emit_reporter_event
 from mimarsinan.mapping.support.bias_compensation import (
+    apply_lif_half_step_bias_compensation,
     apply_sync_exact_entry_half_step,
 )
+from mimarsinan.models.nn.activations.autograd import LIF_EXACT_QAT_THETA_FLOOR
 from mimarsinan.spiking.dfq_bias_correction import preactivation_channel_means
 from mimarsinan.spiking.sync_first_moment import apply_sync_first_moment_fold
+from mimarsinan.spiking.theta_cotrain import promote_theta_for_exact_qat
 from mimarsinan.tuning.adaptation_rate_tuner import AdaptationRateTuner
 from mimarsinan.tuning.orchestration.adaptation_manager import (
     install_sync_entry_grid_snap,
     sync_exact_qat_active,
+)
+from mimarsinan.tuning.orchestration.lif_exact_qat import (
+    install_lif_entry_input_quantizers,
+    lif_exact_qat_active,
 )
 from mimarsinan.tuning.orchestration.frontier import frontier_ladder
 from mimarsinan.tuning.orchestration.frontier.endpoint_recovery import (
@@ -69,6 +79,55 @@ class ActivationQuantizationTuner(AdaptationRateTuner):
         )
         if self._half_step_armed and not self._hop_stage_levels:
             self._fold_entry_half_step()
+        # [lif_exact_qat_program §6.1(2)] the LIF exact-QAT install: theta
+        # trainable in-loop, the half-step folded ONCE as trainable entry bias
+        # (P-L6), and the deployed entry round installed before the ladder.
+        self._lif_exact_armed = lif_exact_qat_active(self.pipeline.config)
+        if self._lif_exact_armed:
+            self._install_lif_exact_qat()
+
+    def _install_lif_exact_qat(self) -> None:
+        report = promote_theta_for_exact_qat(self.model)
+        folded = apply_lif_half_step_bias_compensation(
+            self.model, int(self.pipeline.config["simulation_steps"]),
+        )
+        snaps = install_lif_entry_input_quantizers(self.model, self.pipeline.config)
+        witness = {
+            "installed": True,
+            "folded": int(folded),
+            "entry_snaps": int(snaps),
+            "theta_per_channel": len(report["per_channel"]),
+            "theta_scalar": len(report["scalar"]),
+            "retimed": bool(self.pipeline.config.get("lif_per_hop_retiming", False)),
+        }
+        print(
+            "[LIF-EXACT-QAT] installed: "
+            f"theta per_channel={witness['theta_per_channel']} "
+            f"{report['per_channel']} scalar={witness['theta_scalar']} "
+            f"{report['scalar']} folded={witness['folded']} "
+            f"entry_snaps={witness['entry_snaps']} retimed={witness['retimed']}",
+            flush=True,
+        )
+        emit_reporter_event(self.pipeline.reporter, "lif_exact_qat", witness)
+
+    def _pin_lif_theta_positivity_floor(self) -> None:
+        """Pin trained theta at the kernel's forward floor so the finalize-built
+        LIF nodes run exactly the theta the QAT trained."""
+        pinned = 0
+        for perceptron in self.model.get_perceptrons():
+            theta = perceptron.activation_scale
+            if torch.is_tensor(theta) and bool(
+                (theta.detach() < LIF_EXACT_QAT_THETA_FLOOR).any()
+            ):
+                with torch.no_grad():
+                    theta.clamp_(min=LIF_EXACT_QAT_THETA_FLOOR)
+                pinned += 1
+        if pinned:
+            print(
+                f"[LIF-EXACT-QAT] theta positivity floor pinned on {pinned} "
+                f"perceptron(s) (min {LIF_EXACT_QAT_THETA_FLOOR})",
+                flush=True,
+            )
 
     def _fold_entry_half_step(self) -> None:
         folded = apply_sync_exact_entry_half_step(
@@ -126,13 +185,28 @@ class ActivationQuantizationTuner(AdaptationRateTuner):
         super()._fast_ramp(rate)
 
     def _stabilization_budget(self):
-        if sync_exact_qat_active(self.pipeline.config):
-            # The sync AQ endpoint IS the conversion endpoint: the bounded
+        if sync_exact_qat_active(self.pipeline.config) or getattr(
+            self, "_lif_exact_armed", False
+        ):
+            # The exact-QAT AQ endpoint IS the conversion endpoint: the bounded
             # P1'' stage below replaces the open-ended stabilize.
             return 0
         return 4 * int(self._budget.max_training_steps)
 
     def _post_stabilization_hook(self):
+        if getattr(self, "_lif_exact_armed", False):
+            # [lif_exact_qat_program §6.1(2)/§6.3] P1'' through the staircase
+            # forward. Wall equivalence: the recipe's endpoint constant is
+            # convergence-grounded on the O(S)-per-step cycle-accurate forward;
+            # the staircase pays O(1), so the same recipe wall funds S x the
+            # steps (the [C1] convergence stop and the run-total step ledger
+            # keep the budget a ceiling, never a mandatory burn).
+            if getattr(self, "_fixed_ladder_policy", False):
+                base = int(self.pipeline.config.get("endpoint_recovery_steps", 0))
+                base *= max(1, int(self.pipeline.config["simulation_steps"]))
+                run_endpoint_recovery(self, base_steps=base)
+            self._pin_lif_theta_positivity_floor()
+            return
         if not sync_exact_qat_active(self.pipeline.config):
             return
         if not getattr(self, "_fixed_ladder_policy", False):

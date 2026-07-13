@@ -65,6 +65,17 @@ def is_lif(spiking_mode: str) -> bool:
     return _norm(spiking_mode) in LIF_MODES
 
 
+def lif_per_hop_retiming_enabled(config) -> bool:
+    """[C3/R5] the per-hop count-exact re-timing knob is armed for a LIF plan.
+
+    BOTH twins consult this: the mapping splits neural segments per hop and the
+    chip-aligned NF re-times its emitted trains (``LifSegmentPolicy(retime)``).
+    """
+    return bool(config.get("lif_per_hop_retiming", False)) and is_lif(
+        str(config.get("spiking_mode", "lif"))
+    )
+
+
 def forces_activation_quantization(spiking_mode: str) -> bool:
     """Mode requires the activation-quantization chain (S-level activations)."""
     return _norm(spiking_mode) in _ACT_QUANT_MODES

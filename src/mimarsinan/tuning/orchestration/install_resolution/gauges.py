@@ -40,8 +40,8 @@ _DEAD_DRIVE_DELAY = 1e6
 def gauge_theta_scalar(theta) -> float:
     """Scalar gauge read of a theta: a per-channel vector mean-collapses (the
     gauges are warn-only scalar diagnostics); scalars pass through unchanged."""
-    if getattr(theta, "ndim", 0):
-        return float(theta.detach().mean())
+    if hasattr(theta, "detach"):
+        return float(theta.detach().reshape(-1).mean())
     return float(theta)
 
 

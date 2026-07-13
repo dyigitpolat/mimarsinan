@@ -83,6 +83,44 @@ def _ttfs_strict_staircase(
     return torch.where(fires, (S - k_fire) / S, torch.zeros_like(k_fire))
 
 
+_LIF_COMPARE_MODES = ("<", "<=")
+
+
+def _require_lif_compare_mode(compare_mode: str) -> None:
+    if compare_mode not in _LIF_COMPARE_MODES:
+        raise ValueError(
+            f"lif_count_staircase compare_mode must be '<' or '<='; "
+            f"got {compare_mode!r}"
+        )
+
+
+def lif_count_staircase_np(
+    z: np.ndarray, threshold, window: int, *, compare_mode: str = "<=",
+) -> np.ndarray:
+    """LIF window-count commutation staircase ``θ·clamp(F(T·z/θ), 0, T)/T``
+    (numpy); ``F = floor`` for inclusive ``'<='``, ``ceil − 1`` for strict
+    ``'<'`` — exact-integer charge fires one fewer (Theorems 2/A2)."""
+    _require_lif_compare_mode(compare_mode)
+    t = int(window)
+    safe = np.maximum(np.asarray(threshold, dtype=np.float64), 1e-12)
+    r = np.asarray(z, dtype=np.float64) / safe
+    c = np.ceil(t * r) - 1.0 if compare_mode == "<" else np.floor(t * r)
+    c = np.clip(c, 0.0, float(t))
+    return (safe * c / t).astype(np.float64, copy=False)
+
+
+def lif_count_staircase(
+    z: torch.Tensor, threshold: torch.Tensor, window: int, *, compare_mode: str = "<=",
+) -> torch.Tensor:
+    """LIF window-count commutation staircase ``θ·clamp(F(T·z/θ), 0, T)/T`` (torch twin)."""
+    _require_lif_compare_mode(compare_mode)
+    t = int(window)
+    safe = threshold.clamp(min=1e-12)
+    r = z / safe
+    c = torch.ceil(t * r) - 1.0 if compare_mode == "<" else torch.floor(t * r)
+    return safe * c.clamp(0.0, float(t)) / t
+
+
 def floor_staircase(x: torch.Tensor, levels) -> torch.Tensor:
     return torch.floor(x * levels) / levels
 

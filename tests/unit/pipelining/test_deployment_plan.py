@@ -522,6 +522,11 @@ class TestNoStrayDeploymentFlagReadsAnywhere:
         "chip_simulation/deployment_contract.py",
         "chip_simulation/behavior_config.py",
         "chip_simulation/firing_strategy.py",
+        # ``spiking_semantics`` is the mode-predicate SSOT (CLAUDE.md):
+        # ``lif_per_hop_retiming_enabled`` is the ONE predicate both twins
+        # (chip-aligned NF and the mapping) consult, so it resolves its own
+        # (knob, spiking_mode) sub-contract from the raw config.
+        "chip_simulation/spiking_semantics.py",
         # ── codegen: the C++ comparator/exec policy (FiringStrategyFactory SSOT
         #    side); reads its own ``simulation_config`` codegen param ──
         "code_generation/generate_main.py",
@@ -540,6 +545,11 @@ class TestNoStrayDeploymentFlagReadsAnywhere:
         #    "lif"); threading a DeploymentPlan through these signatures removes
         #    no scattered branch and would not be byte-identical — pure churn.
         "tuning/orchestration/adaptation_manager.py",
+        # ``lif_exact_qat`` was split out of ``adaptation_manager`` (module
+        # budget); its predicate reads the same per-perceptron pipeline_config
+        # keys (spiking_mode / cycle_accurate_lif_forward) under the same
+        # training-forward-family rationale.
+        "tuning/orchestration/lif_exact_qat.py",
         "tuning/tuners/ttfs_cycle_adaptation_tuner.py",
         # ── byte-identity carve-out (NOT a "this isn't a decision flag" claim) ──
         # ``simulation_runner/core.py`` reads ``weight_quantization`` with a

@@ -117,6 +117,9 @@ ALLOWLIST = {
     "tuning/orchestration/conversion_policy.py",
     "tuning/orchestration/fast_ladder.py",
     "tuning/orchestration/kd_blend_adaptation_tuner.py",
+    # Same chip_simulation<->tuning init cycle as adaptation_manager: the
+    # predicate consults spiking_semantics lazily.
+    "tuning/orchestration/lif_exact_qat.py",
     "tuning/orchestration/ttfs_adaptation_plan.py",
     "tuning/tuners/activation_adaptation_tuner.py",
     "tuning/tuners/activation_shift_tuner.py",

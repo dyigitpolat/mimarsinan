@@ -21,7 +21,12 @@ def _safe_scale(scale, ref: torch.Tensor):
 class LifSegmentPolicy:
     """Signed-IF cascade: perceptrons run per-cycle off upstream trains; entry
     (encoding) perceptrons run once on the decoded value and emit the uniform
-    wire train of ``clamp(value / theta)`` (the deployed boundary contract)."""
+    wire train of ``clamp(value / theta)`` (the deployed boundary contract).
+
+    ``retime=True`` is the [C3/R5] twin-side per-hop re-encode: every hop's
+    emitted train is replaced by the uniform re-encode of its window count
+    (count-preserving, ``round((c/T)*T) = c``), matching a deployment mapped
+    with per-hop neural segments (``lif_per_hop_retiming``)."""
 
     # LIF host values travel in the wire domain, so the driver must run host
     # value nodes through the emitted ScaleNormalizingWrapper composition
@@ -30,6 +35,9 @@ class LifSegmentPolicy:
     wire_domain_host_values = True
 
     _boundary_scales: dict | None = None
+
+    def __init__(self, retime: bool = False):
+        self.retime = bool(retime)
 
     def prepare(self, driver):
         from spikingjelly.activation_based import functional
@@ -134,6 +142,15 @@ class LifSegmentPolicy:
                     outs = [forward_node(node, [dt[t] for dt in dep_trains]) for t in range(T)]
                     lif.set_cycle_accurate(False)
                     train = torch.stack(outs, dim=0)
+                    if self.retime:
+                        # STE re-encode: forward = the deployed uniform train of
+                        # the window count; backward = the raw cascade's per-cycle
+                        # surrogate path (a hard re-encode severs every hop's
+                        # gradient — the boundary-grad-severance failure mode).
+                        retimed = uniform_spike_train(
+                            (train / scale).mean(dim=0).clamp(0.0, 1.0).detach(), T,
+                        ) * scale
+                        train = retimed.detach() + (train - train.detach())
                     node_train[node] = train
                     node_rate[node] = (train / scale).mean(dim=0)
                 self._record_decoded(driver, p, node_train[node])

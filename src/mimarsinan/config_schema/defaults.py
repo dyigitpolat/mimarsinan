@@ -171,7 +171,7 @@ CONFIG_KEYS_SET: Set[str] = {
     # LIF deployment-exactness promotions (lif_deployment_exactness.md §7):
     # the recipe arms the C2/C3/C4/C5 corrections for lif (C3 per R5,
     # lossless_refinement_ledger.md §2B). All default OFF here.
-    "lif_membrane_readout", "lif_affine_fold",
+    "lif_membrane_readout", "lif_affine_fold", "lif_exact_qat",
     "lif_per_hop_retiming", "lif_depth_balancing_relays",
     # Sync deployment-exactness promotions (sync_deployment_exactness.md §7):
     # the [S3/R6] sequential first-moment fold at the AQ endpoint and the

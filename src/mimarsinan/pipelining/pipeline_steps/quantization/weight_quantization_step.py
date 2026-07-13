@@ -4,8 +4,10 @@ import torch
 
 from mimarsinan.chip_simulation.spiking_semantics import is_lif
 from mimarsinan.mapping.support.bias_compensation import (
+    LIF_HALF_STEP_FLAG,
     apply_lif_half_step_bias_compensation,
 )
+from mimarsinan.tuning.orchestration.lif_exact_qat import model_trained_lif_exact
 from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 from mimarsinan.pipelining.core.platform_constraints_resolver import (
     resolve_wq_two_scale_projection as resolve_wq_two_scale_projection,
@@ -40,6 +42,7 @@ class WeightQuantizationStep(TunerPipelineStep):
     def process(self):
         model = self.get_entry("model")
         adaptation_manager = self.get_entry("adaptation_manager")
+        self._freeze_lif_exact_theta(model)
         self._apply_lif_half_step_entry_fold(model)
         self._canonicalize_starved_bias_outliers(model)
         compute_per_source_scales(model.get_mapper_repr())
@@ -70,12 +73,49 @@ class WeightQuantizationStep(TunerPipelineStep):
             two_scale_projection=two_scale,
         )
 
+    def _freeze_lif_exact_theta(self, model) -> None:
+        """[R1/P-L6] the WQ stage trains weights on a FIXED scale lattice: the
+        effective-weight fold and the NAPQ projection share theta stamped at WQ
+        entry (compute_per_source_scales), so the exact-QAT arm's in-loop theta
+        freezes here — a theta trained under the WQ endpoint drifts the lattice
+        out from under the projection (torch<->deployed 0.9688 vs 1.0000)."""
+        if not model_trained_lif_exact(model):
+            return
+        frozen = 0
+        for perceptron in model.get_perceptrons():
+            theta = perceptron.activation_scale
+            if torch.is_tensor(theta) and theta.requires_grad:
+                theta.requires_grad_(False)
+                frozen += 1
+        if frozen:
+            print(
+                f"[WeightQuantizationStep] LIF exact-QAT: in-loop theta frozen on "
+                f"{frozen} perceptron(s) (the WQ scale lattice is fixed at entry)."
+            )
+
     def _apply_lif_half_step_entry_fold(self, model) -> None:
         """Fold the LIF theta/(2T) half-step as a TRAINABLE entry bias BEFORE the
         weight-quantization QAT, so the QAT reconciles the shifted operating point
         and the float NF stays bit-exact with the quantized deployed sim. Idempotent per perceptron."""
         plan = DeploymentPlan.of(self.pipeline)
         if not is_lif(plan.spiking_mode) or not plan.activation_quantization:
+            return
+        if model_trained_lif_exact(model):
+            # [P-L6] fold-once: the exact-QAT AQ install already folded and
+            # TRAINED the half-step; a second bake would displace the
+            # converged operating point (measured -2.06 pp).
+            for perceptron in model.get_perceptrons():
+                if getattr(perceptron, "is_encoding_layer", False):
+                    continue
+                assert getattr(perceptron, LIF_HALF_STEP_FLAG, False), (
+                    "lif_exact_qat marker present but the half-step fold flag is "
+                    f"missing on {getattr(perceptron, 'name', '<unnamed>')!r}; "
+                    "the exact-QAT install owns the fold (P-L6)."
+                )
+            print(
+                "[WeightQuantizationStep] LIF exact-QAT: half-step fold owned by "
+                "the AQ install; WQ-entry fold skipped (marker-asserted)."
+            )
             return
         if not bool(self.pipeline.config.get("lif_half_step_bias", False)):
             return
