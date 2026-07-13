@@ -51,6 +51,9 @@ def tier_configs(tier: str, only: list[str] | None = None) -> list[Path]:
 def _job_command(config_path: Path) -> str:
     rel = config_path.relative_to(REPO)
     return (
+        # Segment-tensor IPC to pool workers duplicates one fd per shared
+        # storage; the sched'd deep vehicles exhaust the default 1024.
+        "ulimit -n 65536 2>/dev/null || ulimit -n 4096; "
         "export OMP_NUM_THREADS=20 MKL_NUM_THREADS=20 OPENBLAS_NUM_THREADS=20 "
         "NUMEXPR_NUM_THREADS=20; "
         f"python run.py --headless {rel}"
