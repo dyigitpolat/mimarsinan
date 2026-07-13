@@ -50,6 +50,18 @@ def lif_exact_qat_active(pipeline_config) -> bool:
     return True
 
 
+def lif_exact_qat_kd_active(pipeline_config) -> bool:
+    """The ``lif_exact_qat_kd`` knob is on AND the exact-QAT arm is active.
+
+    [lif_exact_qat_program §8] Composes the exact-QAT predicate, so a broken
+    exact precondition fails LOUD through here too; the KD lever is meaningful
+    only at the exact endpoint (with the exact arm off it is a silent no-op).
+    """
+    if not bool(pipeline_config.get("lif_exact_qat_kd", False)):
+        return False
+    return lif_exact_qat_active(pipeline_config)
+
+
 def lif_subsumed_ladder_steps(pipeline_config, rate_attr, steps):
     """Fast-ladder training steps, with the LIF-subsumed ladders dropped (X3 default).
 

@@ -14,6 +14,8 @@ from mimarsinan.spiking.dfq_bias_correction import preactivation_channel_means
 from mimarsinan.spiking.sync_first_moment import apply_sync_first_moment_fold
 from mimarsinan.spiking.theta_cotrain import promote_theta_for_exact_qat
 from mimarsinan.tuning.adaptation_rate_tuner import AdaptationRateTuner
+from mimarsinan.tuning.orchestration.blend_ramp import kd_loss_from_config
+from mimarsinan.tuning.teacher import freeze_module
 from mimarsinan.tuning.orchestration.adaptation_manager import (
     install_sync_entry_grid_snap,
     sync_exact_qat_active,
@@ -41,9 +43,11 @@ class ActivationQuantizationTuner(AdaptationRateTuner):
     rate_attr = "quantization_rate"
     _budget_multiplier = 2.0
 
-    def __init__(self, pipeline, model, target_tq, target_accuracy, lr, adaptation_manager):
+    def __init__(self, pipeline, model, target_tq, target_accuracy, lr,
+                 adaptation_manager, kd_teacher=None):
         super().__init__(pipeline, model, target_accuracy, lr, adaptation_manager)
         self.target_tq = target_tq
+        self._kd_teacher = kd_teacher
         self._final_metric = None
         # [S3/R6] the float twin must be captured BEFORE the grid snap and the
         # half-step folds change the forward (it is the reference the endpoint
@@ -85,6 +89,7 @@ class ActivationQuantizationTuner(AdaptationRateTuner):
         self._lif_exact_armed = lif_exact_qat_active(self.pipeline.config)
         if self._lif_exact_armed:
             self._install_lif_exact_qat()
+            self._install_exact_qat_kd_teacher()
 
     def _install_lif_exact_qat(self) -> None:
         report = promote_theta_for_exact_qat(self.model)
@@ -109,6 +114,27 @@ class ActivationQuantizationTuner(AdaptationRateTuner):
             flush=True,
         )
         emit_reporter_event(self.pipeline.reporter, "lif_exact_qat", witness)
+
+    def _install_exact_qat_kd_teacher(self) -> None:
+        """[lif_exact_qat_program §8] Distil the exact-QAT ladder AND endpoint
+        to the post-structural float teacher (both share ``self.trainer``);
+        on-pipeline the stage otherwise trains plain CE — the measured worst
+        KD arm. No teacher (knob off) leaves the loss byte-identical."""
+        if self._kd_teacher is None:
+            return
+        teacher = freeze_module(self._kd_teacher)
+        self.trainer.loss_function = kd_loss_from_config(self.pipeline.config, teacher)
+        emit_reporter_event(
+            self.pipeline.reporter, "lif_exact_qat_kd",
+            {"kd": True, "alpha": float(self.pipeline.config.get("kd_ce_alpha", 0.3)),
+             "temperature": float(self.pipeline.config.get("kd_temperature", 3.0))},
+        )
+        print(
+            "[LIF-EXACT-QAT] KD teacher installed (post-structural float): "
+            f"alpha={self.pipeline.config.get('kd_ce_alpha', 0.3)} "
+            f"T={self.pipeline.config.get('kd_temperature', 3.0)}",
+            flush=True,
+        )
 
     def _pin_lif_theta_positivity_floor(self) -> None:
         """Pin trained theta at the kernel's forward floor so the finalize-built

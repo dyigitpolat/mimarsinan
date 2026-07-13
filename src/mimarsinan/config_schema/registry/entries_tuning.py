@@ -140,6 +140,24 @@ ENTRIES = (
        provenance="consumer frozen default", derived_default=_frozen(False),
        relevant=R.when("spiking_mode", in_=("lif",)),
        empty_means="off — the shipped T-anneal + one-shot-fold recipe"),
+    _E("lif_exact_qat_kd", group="tuning", owner="lif_exact_qat_kd",
+       type=T.BOOL, category=Category.ADVANCED, exposure="user",
+       label="LIF Exact QAT KD teacher",
+       effect="Distils the exact-QAT endpoint to the post-structural float "
+              "teacher instead of training it with plain CE",
+       doc="[lif_exact_qat_program §8, WS-Z] The AQ-hosted exact-QAT trains "
+           "with plain CE on-pipeline (the measured WORST KD arm, -1.70 SEd), "
+           "so the endpoint saturates at the AQ envelope. This knob distils it "
+           "to the POST-STRUCTURAL float teacher (a Reference Teacher Snapshot "
+           "step captures the model after Scale Migration, so pruned cells get "
+           "the post-prune reference, G8) with the recipe's kd_ce_alpha / "
+           "kd_temperature; the exact endpoint then saturates at the teacher's "
+           "own accuracy (WS-Z-measured WIN, >1 SE at both S=4 cells). Pairs "
+           "with lif_exact_qat: it downgrades with the exact arm (Novena / "
+           "explicit opt-out) and an explicit contradiction fails loud.",
+       provenance="consumer frozen default", derived_default=_frozen(False),
+       relevant=R.when("spiking_mode", in_=("lif",)),
+       empty_means="off — the exact-QAT endpoint trains with plain CE"),
     _E("lif_affine_fold", group="tuning", owner="lif_affine_fold",
        type=T.BOOL, category=Category.ADVANCED, label="LIF Affine Fold",
        effect="Adds the pre-WQ LIF Affine Fold calibration step",

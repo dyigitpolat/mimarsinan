@@ -10,6 +10,7 @@ from .adaptation.clamp_adaptation_step import ClampAdaptationStep as ClampAdapta
 from .adaptation.activation_shift_step import ActivationShiftStep as ActivationShiftStep
 from .adaptation.pruning_adaptation_step import PruningAdaptationStep as PruningAdaptationStep
 from .adaptation.scale_migration_step import ScaleMigrationStep as ScaleMigrationStep
+from .training.reference_teacher_snapshot_step import ReferenceTeacherSnapshotStep as ReferenceTeacherSnapshotStep
 from .adaptation.lif_adaptation_step import LIFAdaptationStep as LIFAdaptationStep
 from .adaptation.lif_affine_fold_step import LIFAffineFoldStep as LIFAffineFoldStep
 from .adaptation.ttfs_cycle_adaptation_step import TTFSCycleAdaptationStep as TTFSCycleAdaptationStep

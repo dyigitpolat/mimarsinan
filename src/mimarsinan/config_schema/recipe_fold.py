@@ -77,6 +77,29 @@ def _pair_lif_exact_qat_retiming(
     dp["lif_per_hop_retiming"] = True
 
 
+def _pair_lif_exact_qat_kd(
+    dp: MutableMapping[str, Any], explicit: Set[str],
+) -> None:
+    """[lif_exact_qat_program §8] ``lif_exact_qat_kd`` rides the exact-QAT arm:
+    it distils the exact endpoint to the post-structural float teacher. A
+    RECIPE-DEFAULT KD arm downgrades with the exact arm (which itself downgrades
+    on Novena / opt-out); an EXPLICIT KD arm without an active exact arm is a
+    contradiction and fails loud. Runs AFTER ``_pair_lif_exact_qat_retiming``
+    so it reads the resolved ``lif_exact_qat``."""
+    if not bool(dp.get("lif_exact_qat_kd", False)):
+        return
+    if bool(dp.get("lif_exact_qat", False)):
+        return
+    if "lif_exact_qat_kd" in explicit:
+        raise ValueError(
+            "lif_exact_qat_kd=true requires lif_exact_qat to resolve on; it "
+            "resolved off (non-lif mode, Novena's broken charge identity, or an "
+            "explicit retiming opt-out). Drop the KD key or fix the exact-QAT "
+            "precondition."
+        )
+    dp["lif_exact_qat_kd"] = False
+
+
 def fold_conversion_recipe(
     dp: MutableMapping[str, Any],
     spiking_mode: str,
@@ -104,3 +127,4 @@ def fold_conversion_recipe(
             continue
         dp[key] = value
     _pair_lif_exact_qat_retiming(dp, explicit)
+    _pair_lif_exact_qat_kd(dp, explicit)

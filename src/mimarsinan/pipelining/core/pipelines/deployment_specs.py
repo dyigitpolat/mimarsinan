@@ -46,6 +46,7 @@ _STEP_PLAN = StepPlan([
     StepSpec("Torch Mapping",                  TorchMappingStep,                 group="torch_mapping"),
     StepSpec("Pruning Adaptation",             PruningAdaptationStep,            group="pruning"),
     StepSpec("Scale Migration",                ScaleMigrationStep,               group="activation"),
+    StepSpec("Reference Teacher Snapshot",     ReferenceTeacherSnapshotStep,     group="activation"),
     StepSpec("Activation Analysis",            ActivationAnalysisStep,           group="activation"),
     StepSpec("Activation Adaptation",          ActivationAdaptationStep,         group="activation"),
     StepSpec("Clamp Adaptation",               ClampAdaptationStep,              group="activation"),
