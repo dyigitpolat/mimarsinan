@@ -716,3 +716,35 @@ seams: R3 θ promotion + entry snap + fold-once):
   on-pipeline** — the tier-0 A/B endpoints climb (t0_01 0.9300→0.9519,
   t0_04 0.9307→0.9558, t01_21 0.9446→0.9638; t01_19 reaches in 716 steps);
   the one frozen endpoint left is t0_03 (0.9896 entry==exit, G5).
+
+## 9. Addendum (2026-07-13): KD-teacher lever REFUTED on-pipeline (6th inversion)
+
+`lif_exact_qat_kd` implemented (commit 6ec3f034, default OFF): the AQ-hosted
+exact-QAT distils to the post-structural float teacher (a Reference Teacher
+Snapshot step, post-Scale-Migration). On-pipeline A/B (6 cells vs v7 baselines,
+`scripts/_probes/exact_qat/xk_*.json`):
+
+| cell | S | KD | v7 base | Δ |
+|---|---|---|---|---|
+| t0_01 mixer | 4 | 0.9578 | 0.9548 | +0.30 |
+| t01_08 mixer | 4 | 0.9578 | 0.9548 | +0.30 |
+| t01_21 mixer wb8 | 4 | 0.9546 | 0.9616 | −0.70 |
+| t01_01 mixer | 8 | 0.9647 | 0.9698 | −0.51 |
+| t01_02 mixer | 16 | 0.9736 | 0.9743 | −0.07 |
+| t0_05 simplemlp (control) | 4 | 0.9825 | 0.9814 | +0.11 |
+
+**Mean effect across the 5 mixers −0.14 pp; MIXED and net-negative.** The §8
+isolated-harness WIN (3000-step budget-matched, no WQ endpoint, no draws)
+INVERTS on the full composition — the 6th measured instance of the meta-lesson
+(after affine fold, sync first-moment fold, per-channel θ on both modes,
+sync-mixer envelope fold). Mechanism: on-pipeline the KD loss also flows through
+the WQ endpoint-recovery leg and the best-of-N draws, and the float teacher's
+decision boundary is one the staircase-constrained student cannot represent at
+S≥8 (soft targets pull off the representable staircase); at the coarse S=4 grid
+the softness sometimes regularizes (t0_01/t01_08 +0.30) but not reliably
+(t01_21 −0.70). The control holds (+0.11), so the mechanism is correct and
+non-destructive — just not a reliable lever. **VERDICT: do NOT arm in the
+recipe** (fail-toward-measured); keep config-armable for research. The mixer
+residual's binder is confirmed the AQ envelope position itself, not the KD
+target — closing it needs a lever that changes the *representable* staircase
+capacity, not the training target.
