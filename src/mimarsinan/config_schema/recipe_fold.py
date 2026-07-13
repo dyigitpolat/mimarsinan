@@ -42,23 +42,31 @@ def _pair_lif_exact_qat_retiming(
 ) -> None:
     """[lif_exact_qat_program §6.1(5)] ``lif_exact_qat`` arms per-hop re-timing:
     under exact-QAT the trained staircase IS the per-hop twin, and staircase
-    deployment WITHOUT re-timing is the measured Goodhart hole (−2.5 pp) —
-    an explicit contradiction fails loud."""
+    deployment WITHOUT re-timing is the measured Goodhart hole (−2.5 pp).
+    A RECIPE-DEFAULT arm yields to conflicts (Novena capability, an explicit
+    retiming opt-out) by downgrading the pair — the ``_fold_sim_enables``
+    contract; an EXPLICIT contradiction fails loud."""
     if not bool(dp.get("lif_exact_qat", False)):
+        return
+    armed_explicitly = "lif_exact_qat" in explicit
+    novena = str(dp.get("firing_mode", "Default")) != "Default"
+    retiming_opt_out = "lif_per_hop_retiming" in explicit and not bool(
+        dp.get("lif_per_hop_retiming", False)
+    )
+    if not armed_explicitly and (novena or retiming_opt_out):
+        dp["lif_exact_qat"] = False
         return
     if not is_lif(str(dp.get("spiking_mode", "lif"))):
         raise ValueError(
             f"lif_exact_qat=true is only meaningful for spiking_mode='lif'; "
             f"got spiking_mode={dp.get('spiking_mode')!r}. Remove the key."
         )
-    if str(dp.get("firing_mode", "Default")) != "Default":
+    if novena:
         raise ValueError(
             "lif_exact_qat requires firing_mode='Default' (P-L5): Novena's zero "
             "reset breaks the Theorem-0 charge identity."
         )
-    if "lif_per_hop_retiming" in explicit and not bool(
-        dp.get("lif_per_hop_retiming", False)
-    ):
+    if retiming_opt_out:
         raise ValueError(
             "lif_exact_qat=true contradicts the explicit lif_per_hop_retiming="
             "false: the exact-QAT arm deploys as the per-hop RE-TIMED pair "

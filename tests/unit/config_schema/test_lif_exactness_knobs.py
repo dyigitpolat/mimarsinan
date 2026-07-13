@@ -1,11 +1,11 @@
 """The LIF exactness-promotion knobs (lif_deployment_exactness.md §7).
 
 Registry-validated keys, default OFF; the LIF recipe turns the exact/statistical
-corrections ON: membrane readout C2, affine fold C4, depth-balancing relays C5.
-Per-hop re-timing C3 stays recipe-OFF: its deployed uniform re-encode has no
-NF-twin counterpart, so arming it breaks the torch<->deployed-sim parity gate
-(t0_01 0.8438 vs 1.0000 per-neuron-exact with it off); config-explicit arming
-remains available for research.
+corrections ON: membrane readout C2, depth-balancing relays C5. The affine fold
+C4 stays recipe-OFF (A/B-measured harmful post-QAT). Per-hop re-timing C3 is
+armed by the exact-QAT PAIRING at fold time (the trained staircase is the
+per-hop twin, parity 1.0000); standalone it stays off — twinless arming breaks
+the torch<->deployed-sim parity gate (t0_01 0.8438).
 """
 
 from __future__ import annotations
@@ -27,10 +27,13 @@ RECIPE_ON = (
     "lif_depth_balancing_relays",
 )
 
-# retiming: twinless (parity break, t0_01 gate 0.8438); affine fold: A/B
-# 2026-07-13 measured harmful in interaction on the trained composition
-# (no_fold 0.9061 vs no_both 0.9307 vs pre-arming 0.9326).
+# Knobs-dict OFF: affine fold (A/B 2026-07-13 harmful in interaction on the
+# trained composition: no_fold 0.9061 vs no_both 0.9307) and retiming, whose
+# arm is OWNED by the exact-QAT pairing at fold time (recipe-armed
+# lif_exact_qat pairs it; the pair downgrades together on Novena/opt-out).
 RECIPE_OFF = ("lif_per_hop_retiming", "lif_affine_fold")
+DERIVED_ON = RECIPE_ON + ("lif_per_hop_retiming",)
+DERIVED_OFF = ("lif_affine_fold",)
 
 
 class TestRegistry:
@@ -51,9 +54,10 @@ class TestRecipeFold:
         for key in RECIPE_ON:
             assert knobs.get(key) is True, key
 
-    def test_lif_recipe_keeps_the_twinless_retiming_off(self):
-        # retiming: no NF-twin counterpart (gate 0.8438); affine fold:
-        # A/B-measured harmful post-QAT — both fail toward measured.
+    def test_lif_recipe_knobs_leave_the_paired_arms_to_the_fold(self):
+        # The knobs dict keeps both False: the affine fold stays off (A/B
+        # harmful), and the retiming arm belongs to the exact-QAT pairing so
+        # the pair can downgrade together (Novena, explicit opt-out).
         knobs = ConversionPolicy.derive("lif").knobs
         for key in RECIPE_OFF:
             assert knobs.get(key) is False, key
@@ -68,9 +72,9 @@ class TestRecipeFold:
         dp = {"spiking_mode": "lif", "weight_quantization": True,
               "activation_quantization": True}
         derive_deployment_parameters(dp)
-        for key in RECIPE_ON:
+        for key in DERIVED_ON:
             assert dp[key] is True, key
-        for key in RECIPE_OFF:
+        for key in DERIVED_OFF:
             assert dp[key] is False, key
 
     def test_explicit_off_wins_over_the_recipe(self):

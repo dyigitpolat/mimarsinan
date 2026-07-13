@@ -80,12 +80,12 @@ _LIF_RECIPE_KNOBS = {
     # safe but not profitable on-pipeline) — config-armable.
     "lif_affine_fold": False,
     "lif_depth_balancing_relays": True,
-    # [R5/C3] per-hop re-timing stays recipe-OFF for the shipped arm; the
-    # twin-side per-hop re-encode now EXISTS (LifSegmentPolicy(retime), armed
-    # by this knob on BOTH twins), and the lif_exact_qat config knob
-    # auto-pairs it (lif_exact_qat_program.md §6: the trained staircase IS
-    # the per-hop twin; measured 0.9556 -> 0.9747-0.9751 deployed). To arm
-    # the exact-QAT recipe after tier-0 A/B, add "lif_exact_qat": True here.
+    # [lif_exact_qat_program §6; tier-0 A/B 2026-07-13] exact-QAT arm, 10/10
+    # runnable cells hold or gain (mixers +0.6..+5.2 pp; four >= pretrain).
+    # Retiming stays False HERE: the fold pairing owns the arm so the pair
+    # downgrades together (Novena P-L5, explicit opt-out); standalone
+    # retiming is twinless (parity 0.8438).
+    "lif_exact_qat": True,
     "lif_per_hop_retiming": False,
     # [R1/M2, lossless_refinement_ledger §2C] two-scale WQ projection for LIF:
     # four frozen WQ endpoints (entry == exit, divergence_rescued) prove the

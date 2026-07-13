@@ -53,6 +53,10 @@ _MODE_KNOBS = {
         # torch<->deployed-sim gate (t0_01 0.8438 vs 1.0000 per-neuron-exact
         # with it off). Config-explicit arming remains available.
         "lif_per_hop_retiming": False,
+        # [A/B 2026-07-13, lif_exact_qat_program §6] the exact-QAT arm: 10/10
+        # runnable tier-0 cells hold or gain (mixers +0.6..+5.2 pp; four cells
+        # strictly >= pretrain). Retiming pairs at fold; Novena downgrades.
+        "lif_exact_qat": True,
         # [R3/R4 disarmed by A/B 2026-07-13: t0_01 armed 0.9070 vs no_both
         # 0.9307 ~= pre-arming — post-QAT inversion, same as sync.]
         # [R1/M2, lossless ledger §2C] two-scale WQ grid for LIF: four frozen

@@ -1,7 +1,8 @@
 """LIF exact-QAT arm (lif_exact_qat_program.md §6) — the (A+R5) composition.
 
-Config knob ``lif_exact_qat`` (registry-validated, default OFF; recipe arming is
-a follow-up decision): the AQ stage hosts the staircase exact-QAT — the exact
+Config knob ``lif_exact_qat`` (registry-validated, default OFF; the LIF recipe
+arms it — tier-0 A/B 2026-07-13, 10/10 runnable cells hold or gain): the AQ
+stage hosts the staircase exact-QAT — the exact
 deployed count staircase ``theta*clamp(F(T*z/theta),0,T)/T`` under staircase-STE
 with theta trainable in the loop — replacing the Shift bake + T-anneal ladder +
 one-shot half-step fold displacement (measured −2.06 pp). Deployment is the
@@ -92,10 +93,15 @@ class TestRegistryAndRecipe:
         assert entry.derived_default({}) is False
         assert "lif_exact_qat" in CONFIG_KEYS_SET
 
-    def test_recipe_does_not_arm_it(self):
-        # Arming is a follow-up decision (tier-0 A/B); the knob is config-armable.
+    def test_lif_recipe_arms_it(self):
+        # Tier-0 A/B verdict 2026-07-13: 10/10 runnable cells hold or gain
+        # (mixers +0.6..+5.2 pp; four cells strictly >= pretrain; no strict
+        # cell regressed) — the recipe arms the exact-QAT composition.
+        assert ConversionPolicy.derive("lif").knobs.get("lif_exact_qat") is True
+
+    def test_non_lif_recipes_do_not_carry_it(self):
         for mode, schedule in [
-            ("lif", None), ("ttfs", None), ("ttfs_quantized", None),
+            ("ttfs", None), ("ttfs_quantized", None),
             ("ttfs_cycle_based", "cascaded"), ("ttfs_cycle_based", "synchronized"),
         ]:
             assert "lif_exact_qat" not in ConversionPolicy.derive(mode, schedule).knobs
@@ -126,11 +132,35 @@ class TestPairingDerivation:
         with pytest.raises(ValueError, match="Novena|Default"):
             derive_deployment_parameters(dp)
 
-    def test_knob_off_derivation_is_byte_identical(self):
-        base = {"spiking_mode": "lif", "weight_quantization": True}
-        dp = dict(base)
+    def test_recipe_armed_derivation_pairs_retiming(self):
+        dp = {"spiking_mode": "lif", "weight_quantization": True}
         derive_deployment_parameters(dp)
-        assert "lif_exact_qat" not in dp
+        assert dp["lif_exact_qat"] is True
+        assert dp["lif_per_hop_retiming"] is True
+
+    def test_recipe_default_yields_on_novena(self):
+        # P-L5 is a CAPABILITY conflict for the recipe default (same contract
+        # as the sim-enable fold): the Novena cell stays on the shipped path.
+        dp = {"spiking_mode": "lif", "weight_quantization": True,
+              "firing_mode": "Novena"}
+        derive_deployment_parameters(dp)
+        assert dp["lif_exact_qat"] is False
+        assert dp["lif_per_hop_retiming"] is False
+
+    def test_recipe_default_yields_to_explicit_retiming_off(self):
+        # An explicit retiming opt-out disarms the recipe-default pair instead
+        # of raising; only an EXPLICIT lif_exact_qat=true contradiction raises.
+        dp = {"spiking_mode": "lif", "weight_quantization": True,
+              "lif_per_hop_retiming": False}
+        derive_deployment_parameters(dp)
+        assert dp["lif_exact_qat"] is False
+        assert dp["lif_per_hop_retiming"] is False
+
+    def test_explicit_off_disarms_the_pair(self):
+        dp = {"spiking_mode": "lif", "weight_quantization": True,
+              "lif_exact_qat": False}
+        derive_deployment_parameters(dp)
+        assert dp["lif_exact_qat"] is False
         assert dp["lif_per_hop_retiming"] is False
 
 
