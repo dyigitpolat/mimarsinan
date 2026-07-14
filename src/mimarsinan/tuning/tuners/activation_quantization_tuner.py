@@ -139,18 +139,16 @@ class ActivationQuantizationTuner(AdaptationRateTuner):
     def _install_ttfsq_exact_qat(self) -> None:
         """[ttfs_exact_qat] Promote theta trainable in-loop (the exact ceil
         staircase decorator installs via ``get_rate_adjusted_quantization_
-        decorator``). No half-step fold or entry re-timing — TTFS is analytical."""
-        report = promote_theta_for_exact_qat(self.model)
-        witness = {
-            "installed": True,
-            "theta_per_channel": len(report["per_channel"]),
-            "theta_scalar": len(report["scalar"]),
-        }
+        decorator``). No half-step fold or entry re-timing — TTFS is analytical.
+
+        Scalar theta only: per-channel theta-in-loop collapses mixer channels
+        under the TTFS ceil gradient (mass degenerate-channel routing OOMs the
+        WQ projection); per-channel needs collapse-hardening (deferred)."""
+        report = promote_theta_for_exact_qat(self.model, per_channel=False)
+        witness = {"installed": True, "theta_scalar": len(report["scalar"])}
         print(
-            "[TTFSQ-EXACT-QAT] installed: "
-            f"theta per_channel={witness['theta_per_channel']} "
-            f"{report['per_channel']} scalar={witness['theta_scalar']} "
-            f"{report['scalar']}",
+            "[TTFSQ-EXACT-QAT] installed (scalar theta): "
+            f"scalar={witness['theta_scalar']} {report['scalar']}",
             flush=True,
         )
         emit_reporter_event(self.pipeline.reporter, "ttfsq_exact_qat", witness)
