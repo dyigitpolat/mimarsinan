@@ -28,10 +28,14 @@ default.
 - `./scripts/typecheck.sh` (curated basedpyright, `pyrightconfig.json`) must
   report zero errors before committing. Inline ignores are a last resort: one
   per line, with a reason.
-- End-to-end coverage lives in `test_configs/` (tiers 0-2). `generate.py` is
-  the SSOT for the matrices — edit it and regenerate; never hand-edit the JSONs
-  (a unit test enforces reproducibility). Run a tier with
-  `python scripts/run_tier.py <tier>`.
+- End-to-end coverage lives in `templates/tier_{0,1,2}/` — deployment-mode
+  example matrices, NOT unit tests (they surface in the template-selector UI as
+  groups). `templates/generate.py` is the SSOT — edit it and regenerate; never
+  hand-edit the JSONs. Their validity/reproducibility tests live under
+  `scripts/template_tests/` (run separately: `pytest scripts/template_tests`);
+  the mimarsinan unit suite (`testpaths = tests`) does NOT depend on them —
+  schema/wizard/mapping tests use `tests/fixtures/deployment_configs/`. Run a
+  tier with `python scripts/run_tier.py <tier>`.
 
 ## Error handling
 

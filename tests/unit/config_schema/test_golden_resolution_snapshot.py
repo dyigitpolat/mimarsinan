@@ -39,7 +39,7 @@ from mimarsinan.tuning.orchestration.tuning_policy import TUNING_POLICY
 
 _REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 _CONFIG_PATHS = sorted(
-    glob.glob(os.path.join(_REPO_ROOT, "test_configs", "tier*", "t*.json"))
+    glob.glob(os.path.join(_REPO_ROOT, "tests", "fixtures", "deployment_configs", "*.json"))
 )
 SNAPSHOT_PATH = os.path.join(
     os.path.dirname(__file__), "golden_resolution_snapshot.json"
@@ -203,7 +203,7 @@ def build_global_surface() -> dict:
 
 
 def _config_id(path: str) -> str:
-    return os.path.relpath(path, os.path.join(_REPO_ROOT, "test_configs"))
+    return os.path.relpath(path, os.path.join(_REPO_ROOT, "tests", "fixtures", "deployment_configs"))
 
 
 def build_snapshot() -> dict:
@@ -223,9 +223,10 @@ def snapshot() -> dict:
 
 
 class TestGoldenResolutionSnapshot:
-    def test_the_tier_matrix_is_present(self):
-        # 48 after the 2026-07-12 casc removal from the tier-0 family.
-        assert len(_CONFIG_PATHS) == 48
+    def test_the_fixture_matrix_is_present(self):
+        # Decoupled from the tier templates (2026-07-14): a curated fixture set
+        # under tests/fixtures/deployment_configs/ covering the resolution space.
+        assert len(_CONFIG_PATHS) >= 12
 
     def test_snapshot_covers_exactly_the_tier_matrix(self, snapshot):
         assert set(snapshot["configs"]) == {_config_id(p) for p in _CONFIG_PATHS}, (

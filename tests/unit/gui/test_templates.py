@@ -112,3 +112,71 @@ class TestInvalidTemplateId:
         monkeypatch.setenv("MIMARSINAN_TEMPLATES_DIR", "/some/dir")
         with pytest.raises(ValueError, match="Invalid template id"):
             delete_template("../evil")
+
+
+class TestSubdirectoryGroups:
+    """Templates one level deep group under their subdirectory name (the tier_0/
+    tier_1/tier_2 deployment-mode example groups); the id stays a flat stem so
+    the /api routes and ?template_id= links need no slash handling."""
+
+    def test_flat_templates_have_empty_group(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("MIMARSINAN_TEMPLATES_DIR", str(tmp_path))
+        (tmp_path / "flat.json").write_text(
+            json.dumps({"experiment_name": "F", "pipeline_mode": "phased"}),
+            encoding="utf-8",
+        )
+        results = list_templates()
+        assert len(results) == 1 and results[0]["group"] == ""
+
+    def test_subdir_templates_carry_their_group(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("MIMARSINAN_TEMPLATES_DIR", str(tmp_path))
+        sub = tmp_path / "tier_0"
+        sub.mkdir()
+        (sub / "t0_01.json").write_text(
+            json.dumps({"experiment_name": "M", "pipeline_mode": "phased"}), encoding="utf-8")
+        (tmp_path / "flat.json").write_text(
+            json.dumps({"experiment_name": "F", "pipeline_mode": "vanilla"}), encoding="utf-8")
+        groups = {r["id"]: r["group"] for r in list_templates()}
+        assert groups == {"t0_01": "tier_0", "flat": ""}
+
+    def test_get_template_resolves_a_subdir_template(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("MIMARSINAN_TEMPLATES_DIR", str(tmp_path))
+        sub = tmp_path / "tier_1"
+        sub.mkdir()
+        (sub / "t1_01.json").write_text(json.dumps({"experiment_name": "M"}), encoding="utf-8")
+        assert get_template("t1_01")["experiment_name"] == "M"
+
+    def test_delete_template_resolves_a_subdir_template(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("MIMARSINAN_TEMPLATES_DIR", str(tmp_path))
+        sub = tmp_path / "tier_2"
+        sub.mkdir()
+        p = sub / "t2_01.json"
+        p.write_text(json.dumps({"experiment_name": "M"}), encoding="utf-8")
+        assert delete_template("t2_01") is True and not p.exists()
+
+    def test_only_recurses_one_level(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("MIMARSINAN_TEMPLATES_DIR", str(tmp_path))
+        deep = tmp_path / "tier_0" / "nested"
+        deep.mkdir(parents=True)
+        (deep / "x.json").write_text(json.dumps({"experiment_name": "X"}), encoding="utf-8")
+        assert list_templates() == []
+
+    def test_flat_template_shadows_a_subdir_stem(self, tmp_path, monkeypatch):
+        # A flat user template wins over a same-stem subdir example (searched first).
+        monkeypatch.setenv("MIMARSINAN_TEMPLATES_DIR", str(tmp_path))
+        (tmp_path / "dup.json").write_text(json.dumps({"experiment_name": "FLAT"}), encoding="utf-8")
+        sub = tmp_path / "tier_0"
+        sub.mkdir()
+        (sub / "dup.json").write_text(json.dumps({"experiment_name": "SUB"}), encoding="utf-8")
+        assert get_template("dup")["experiment_name"] == "FLAT"
+
+
+class TestManifestExcluded:
+    def test_manifest_json_is_not_a_template(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("MIMARSINAN_TEMPLATES_DIR", str(tmp_path))
+        sub = tmp_path / "tier_0"
+        sub.mkdir()
+        (sub / "manifest.json").write_text(json.dumps({"tier": 0, "runs": []}), encoding="utf-8")
+        (sub / "t0_01.json").write_text(json.dumps({"experiment_name": "M"}), encoding="utf-8")
+        ids = {r["id"] for r in list_templates()}
+        assert ids == {"t0_01"}

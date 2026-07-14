@@ -38,36 +38,71 @@ def _validate_id(template_id: str) -> str:
     return template_id
 
 
-def list_templates() -> list[dict[str, Any]]:
-    """List all saved templates (name + basic metadata)."""
+def _iter_template_files() -> list[tuple[Path, str]]:
+    """(path, group) for every ``.json`` at the top level (group "") and exactly
+    one level deep (group = subdirectory name). One level only: subdirectories
+    are the deployment-mode example groups (tier_0/tier_1/tier_2), not a tree."""
     tdir = Path(get_templates_dir())
     if not tdir.is_dir():
         return []
+    def _configs(directory: Path, group: str) -> list[tuple[Path, str]]:
+        # manifest.json is a generator index (tier groups), not a template.
+        return [(p, group) for p in directory.iterdir()
+                if p.is_file() and p.suffix == ".json" and p.name != "manifest.json"]
+
+    found: list[tuple[Path, str]] = _configs(tdir, "")
+    for child in tdir.iterdir():
+        if child.is_dir():
+            found += _configs(child, child.name)
+    return found
+
+
+def list_templates() -> list[dict[str, Any]]:
+    """List all saved templates (name + metadata + group), newest first.
+
+    Flat top-level templates carry group ""; templates one level deep carry
+    their subdirectory name as ``group`` (the UI renders one section per group).
+    """
     results: list[dict[str, Any]] = []
-    for child in sorted(tdir.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True):
-        if child.suffix != ".json" or not child.is_file():
-            continue
+    for path, group in sorted(
+        _iter_template_files(), key=lambda pg: pg[0].stat().st_mtime, reverse=True
+    ):
         try:
-            with open(child, encoding="utf-8") as f:
+            with open(path, encoding="utf-8") as f:
                 config = json.load(f)
         except (OSError, json.JSONDecodeError):
             continue
         if not isinstance(config, dict):
             continue
         results.append({
-            "id": child.stem,
-            "name": config.get("experiment_name", child.stem),
+            "id": path.stem,
+            "name": config.get("experiment_name", path.stem),
             "pipeline_mode": config.get("pipeline_mode", "unknown"),
-            "created_at": child.stat().st_mtime,
+            "group": group,
+            "created_at": path.stat().st_mtime,
         })
     return results
 
 
-def get_template(template_id: str) -> dict[str, Any] | None:
-    """Load a template by ID (filename stem)."""
+def _resolve_template_path(template_id: str) -> Path | None:
+    """The file backing ``template_id``: the flat file if present, else the
+    first same-stem file in a subdirectory. Flat user templates shadow a
+    same-stem example (searched first)."""
     _validate_id(template_id)
-    path = Path(get_templates_dir()) / f"{template_id}.json"
-    if not path.exists():
+    tdir = Path(get_templates_dir())
+    flat = tdir / f"{template_id}.json"
+    if flat.exists():
+        return flat
+    for path, _group in _iter_template_files():
+        if path.stem == template_id:
+            return path
+    return None
+
+
+def get_template(template_id: str) -> dict[str, Any] | None:
+    """Load a template by ID (filename stem), searching flat then subdirectories."""
+    path = _resolve_template_path(template_id)
+    if path is None:
         return None
     try:
         with open(path, encoding="utf-8") as f:
@@ -93,10 +128,9 @@ def save_template(name: str, config: dict[str, Any]) -> str:
 
 
 def delete_template(template_id: str) -> bool:
-    """Delete a template by ID. Returns True if deleted."""
-    _validate_id(template_id)
-    path = Path(get_templates_dir()) / f"{template_id}.json"
-    if path.exists():
+    """Delete a template by ID (flat or in a subdirectory). Returns True if deleted."""
+    path = _resolve_template_path(template_id)
+    if path is not None:
         path.unlink()
         return True
     return False

@@ -395,9 +395,13 @@ function renderTemplates() {
       : '<div class="w-empty">No templates saved yet. <a href="/wizard">Create one &rarr;</a></div>';
     return;
   }
-  grid.innerHTML = filtered.map((t, i) => {
-    const date = new Date(t.created_at * 1000).toLocaleString();
-    return `
+  grid.innerHTML = _groupOrder(filtered).map(group => {
+    const items = filtered.filter(t => (t.group || '') === group);
+    if (items.length === 0) return '';
+    const header = `<div class="w-group-header" style="grid-column:1/-1">${_esc(_groupLabel(group))}</div>`;
+    return header + items.map((t, i) => {
+      const date = new Date(t.created_at * 1000).toLocaleString();
+      return `
       <div class="w-card" style="animation-delay:${i * 40}ms">
         <input class="w-tpl-name" value="${_esc(t.name || t.id)}" data-tpl-id="${_esc(t.id)}" data-orig="${_esc(t.name || t.id)}"
                onblur="renameTemplate(this)" onkeydown="if(event.key==='Enter')this.blur()">
@@ -410,7 +414,21 @@ function renderTemplates() {
           <button class="w-card-btn danger" onclick="deleteTemplate('${_esc(t.id)}')">Delete</button>
         </div>
       </div>`;
+    }).join('');
   }).join('');
+}
+
+// Ungrouped ("My Templates") first, then the deployment-mode example groups
+// (tier_0, tier_1, tier_2, ...) in name order.
+function _groupOrder(items) {
+  const groups = [...new Set(items.map(t => t.group || ''))];
+  return groups.sort((a, b) => (a === '' ? -1 : b === '' ? 1 : a.localeCompare(b)));
+}
+
+function _groupLabel(group) {
+  if (group === '') return 'My Templates';
+  const m = group.match(/^tier_(\d+(?:_\d+)?)$/);
+  return m ? `Tier ${m[1].replace('_', '.')}` : group;
 }
 
 window.renameTemplate = async function(input) {

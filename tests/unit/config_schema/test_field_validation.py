@@ -28,7 +28,7 @@ from mimarsinan.gui.wizard.starter import load_starter_baseline, starter_draft
 
 ROOT = Path(__file__).resolve().parents[3]
 TIER_CONFIG_PATHS = sorted(
-    glob.glob(str(ROOT / "test_configs" / "tier*" / "t*.json"))
+    glob.glob(str(ROOT / "tests" / "fixtures" / "deployment_configs" / "*.json"))
 )
 
 
@@ -227,9 +227,9 @@ class TestEveryTierConfigValidatesCleanThroughBothDoors:
         resolution = resolve_draft(document)
         assert [e for e in resolution.errors if e["rule_id"] == "field_domain"] == []
 
-    def test_the_tier_matrix_is_the_expected_48(self):
-        # 48 after the 2026-07-12 casc removal from the tier-0 family.
-        assert len(TIER_CONFIG_PATHS) == 48
+    def test_the_fixture_matrix_is_present(self):
+        # Decoupled from the tier templates (2026-07-14): curated fixtures.
+        assert len(TIER_CONFIG_PATHS) >= 12
 
     def test_starter_is_clean_through_both_doors(self):
         document = load_starter_baseline()

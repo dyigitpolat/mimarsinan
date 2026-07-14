@@ -1,13 +1,13 @@
 {
-  "seed": 0,
+  "seed": 1,
   "pipeline_mode": "phased",
-  "experiment_name": "t01_08_lif_mmixcore_wq_s4_e4",
+  "experiment_name": "t0_05_lif_simplemlp_wq_s4",
   "generated_files_path": "./generated",
   "data_provider_name": "MNIST_DataProvider",
   "platform_constraints": {
     "cores": [
       {
-        "max_axons": 256,
+        "max_axons": 784,
         "max_neurons": 512,
         "count": 60,
         "has_bias": true
@@ -19,7 +19,7 @@
         "has_bias": true
       }
     ],
-    "max_axons": 512,
+    "max_axons": 784,
     "max_neurons": 512,
     "has_bias": true,
     "target_tq": 4,
@@ -34,15 +34,10 @@
     "degradation_tolerance": 0.15,
     "model_config_mode": "user",
     "hw_config_mode": "fixed",
-    "model_type": "mlp_mixer_core",
+    "model_type": "simple_mlp",
     "model_config": {
-      "base_activation": "ReLU",
-      "normalization": "batch",
-      "patch_n_1": 4,
-      "patch_m_1": 4,
-      "patch_c_1": 32,
-      "fc_w_1": 128,
-      "fc_w_2": 128
+      "mlp_width_1": 256,
+      "mlp_width_2": 128
     },
     "batch_size": 128,
     "max_simulation_samples": 25,
@@ -57,7 +52,7 @@
     "weight_quantization": true,
     "scale_migration": true,
     "endpoint_floor_steps": 17200,
-    "training_epochs": 8,
+    "training_epochs": 2,
     "training_recipe": {
       "optimizer": "adamw",
       "scheduler": "cosine",

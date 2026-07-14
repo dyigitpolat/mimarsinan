@@ -29,7 +29,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
 SECTION_IDS = ("workload", "codesign", "semantics", "training", "review")
-TEMPLATE_TIER_CONFIG = REPO_ROOT / "test_configs" / "tier0" / "t0_02_lif_lenet5_fp_s8_novena_offload_pruned.json"
+TEMPLATE_TIER_CONFIG = REPO_ROOT / "templates" / "tier_0" / "t0_02_lif_lenet5_fp_s8_novena_offload_pruned.json"
 
 MODE_SWITCHES = (
     ("lif", None),

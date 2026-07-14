@@ -365,9 +365,9 @@ def _tier0_model_specs():
     import json
     from pathlib import Path
 
-    root = Path(__file__).resolve().parents[3] / "test_configs" / "tier0"
+    root = Path(__file__).resolve().parents[3] / "tests" / "fixtures" / "deployment_configs"
     specs = []
-    for path in sorted(root.glob("t0_*.json")):
+    for path in sorted(root.glob("*.json")):
         cfg = json.loads(path.read_text())
         dp = cfg["deployment_parameters"]
         specs.append(pytest.param(

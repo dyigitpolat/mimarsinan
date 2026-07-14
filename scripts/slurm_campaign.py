@@ -40,7 +40,7 @@ def _slurmech(*args: str, timeout: float = 600.0) -> subprocess.CompletedProcess
 
 
 def tier_configs(tier: str, only: list[str] | None = None) -> list[Path]:
-    tier_dir = REPO / "test_configs" / f"tier{tier.replace('.', '_')}"
+    tier_dir = REPO / "templates" / f"tier_{tier.replace('.', '_')}"
     manifest = json.loads((tier_dir / "manifest.json").read_text())
     rows = manifest["runs"]
     if only:

@@ -1,4 +1,4 @@
-"""Run a test_configs tier: each config headlessly, with wall budget and a result table."""
+"""Run a templates tier: each config headlessly, with wall budget and a result table."""
 
 from __future__ import annotations
 
@@ -75,7 +75,7 @@ def main() -> int:
     args = parser.parse_args()
 
     manifest = json.loads(
-        (REPO / "test_configs" / f"tier{args.tier}" / "manifest.json").read_text()
+        (REPO / "templates" / f"tier_{args.tier}" / "manifest.json").read_text()
     )
     rows = manifest["runs"]
     if args.only:
@@ -83,7 +83,7 @@ def main() -> int:
 
     results = []
     for row in rows:
-        config_path = REPO / "test_configs" / f"tier{args.tier}" / row["config"]
+        config_path = REPO / "templates" / f"tier_{args.tier}" / row["config"]
         budget_s = row["expected_wall_min"] * 60 * args.budget_scale
         print(f"[run_tier] {row['name']} (budget {budget_s / 60:.0f} min)", flush=True)
         results.append(run_one(config_path, budget_s))

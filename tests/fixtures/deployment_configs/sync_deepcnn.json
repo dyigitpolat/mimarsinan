@@ -1,30 +1,30 @@
 {
   "seed": 0,
   "pipeline_mode": "phased",
-  "experiment_name": "t01_04_sync_mmixcore_wq_s16_pruned10",
+  "experiment_name": "t0_23_sync_deepcnn_d4_wq_s16",
   "generated_files_path": "./generated",
   "data_provider_name": "MNIST_DataProvider",
   "platform_constraints": {
     "cores": [
       {
-        "max_axons": 256,
+        "max_axons": 1024,
         "max_neurons": 512,
-        "count": 60,
+        "count": 180,
         "has_bias": true
       },
       {
         "max_axons": 512,
         "max_neurons": 256,
-        "count": 60,
+        "count": 180,
         "has_bias": true
       }
     ],
-    "max_axons": 512,
+    "max_axons": 1024,
     "max_neurons": 512,
     "has_bias": true,
     "target_tq": 16,
     "simulation_steps": 16,
-    "weight_bits": 5,
+    "weight_bits": 8,
     "allow_coalescing": true,
     "allow_neuron_splitting": true
   },
@@ -34,15 +34,10 @@
     "degradation_tolerance": 0.15,
     "model_config_mode": "user",
     "hw_config_mode": "fixed",
-    "model_type": "mlp_mixer_core",
+    "model_type": "deep_cnn",
     "model_config": {
-      "base_activation": "ReLU",
-      "normalization": "batch",
-      "patch_n_1": 4,
-      "patch_m_1": 4,
-      "patch_c_1": 32,
-      "fc_w_1": 128,
-      "fc_w_2": 128
+      "depth": 4,
+      "width": 16
     },
     "batch_size": 128,
     "max_simulation_samples": 25,
@@ -56,12 +51,9 @@
     "encoding_layer_placement": "subsume",
     "weight_quantization": true,
     "ttfs_cycle_schedule": "synchronized",
-    "pruning": true,
-    "pruning_fraction": 0.1,
     "scale_migration": true,
     "endpoint_floor_steps": 16600,
-    "conversion_draws": 2,
-    "training_epochs": 8,
+    "training_epochs": 2,
     "training_recipe": {
       "optimizer": "adamw",
       "scheduler": "cosine",

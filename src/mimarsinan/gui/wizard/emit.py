@@ -6,7 +6,7 @@ from typing import Any, Dict, Mapping, Tuple
 
 from mimarsinan.config_schema.registry import REGISTRY, Category, parse_deployment_document
 
-# Canonical top-level order (matches test_configs/generate.py output style).
+# Canonical top-level order (matches templates/generate.py output style).
 _CANONICAL_TOP_ORDER = (
     "seed",
     "pipeline_mode",

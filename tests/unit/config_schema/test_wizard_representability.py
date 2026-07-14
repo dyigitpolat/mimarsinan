@@ -23,12 +23,12 @@ from mimarsinan.gui.wizard.emit import emit_deployment_config
 
 _REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 _CONFIG_PATHS = sorted(
-    glob.glob(os.path.join(_REPO_ROOT, "test_configs", "tier*", "t*.json"))
+    glob.glob(os.path.join(_REPO_ROOT, "tests", "fixtures", "deployment_configs", "*.json"))
 )
 
 
 def _config_id(path: str) -> str:
-    return os.path.relpath(path, os.path.join(_REPO_ROOT, "test_configs"))
+    return os.path.relpath(path, os.path.join(_REPO_ROOT, "tests", "fixtures", "deployment_configs"))
 
 
 def _load(path: str) -> dict:
@@ -37,7 +37,7 @@ def _load(path: str) -> dict:
 
 
 def test_the_tier_matrix_is_present() -> None:
-    assert len(_CONFIG_PATHS) >= 48, "tier configs missing; representability undefined"
+    assert len(_CONFIG_PATHS) >= 12, "fixture configs missing; representability undefined"
 
 
 @pytest.mark.parametrize("path", _CONFIG_PATHS, ids=_config_id)

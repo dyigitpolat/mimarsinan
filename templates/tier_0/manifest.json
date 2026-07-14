@@ -4,14 +4,14 @@
   "wall_budget_minutes_per_run": 5,
   "runs": [
     {
-      "name": "t0_01_lif_mmixcore_wq_s4",
-      "config": "t0_01_lif_mmixcore_wq_s4.json",
+      "name": "t0_01_lif_mmixcore_wq_s32",
+      "config": "t0_01_lif_mmixcore_wq_s32.json",
       "model_type": "mlp_mixer_core",
       "cell": {
         "firing": "lif",
         "sync": "none",
         "quantization": "wq_aq",
-        "S": "4",
+        "S": "32",
         "depth": "any",
         "vehicle": "mlp_mixer_core",
         "dataset": "mnist",
@@ -212,14 +212,14 @@
       "expected_wall_min": 6
     },
     {
-      "name": "t0_11_ttfsq_mmixcore_wq_s16_offload",
-      "config": "t0_11_ttfsq_mmixcore_wq_s16_offload.json",
+      "name": "t0_11_ttfsq_mmixcore_wq_s64_offload",
+      "config": "t0_11_ttfsq_mmixcore_wq_s64_offload.json",
       "model_type": "mlp_mixer_core",
       "cell": {
         "firing": "ttfs_quantized",
         "sync": "none",
         "quantization": "wq_aq",
-        "S": "16",
+        "S": "64",
         "depth": "any",
         "vehicle": "mlp_mixer_core",
         "dataset": "mnist",
@@ -413,6 +413,95 @@
       },
       "tags": [],
       "expected_wall_min": 6
+    },
+    {
+      "name": "t0_26_lif_deepcnn_d6_wq_s16_sched",
+      "config": "t0_26_lif_deepcnn_d6_wq_s16_sched.json",
+      "model_type": "deep_cnn",
+      "cell": {
+        "firing": "lif",
+        "sync": "none",
+        "quantization": "wq_aq",
+        "S": "16",
+        "depth": "6",
+        "vehicle": "deep_cnn",
+        "dataset": "mnist",
+        "regime": "from_scratch",
+        "pruning": "dense",
+        "encoding_placement": "subsume"
+      },
+      "tags": [
+        "sched"
+      ],
+      "expected_wall_min": 12,
+      "note": "folded tier-0.1 D3: depth-6 deepcnn wall frontier"
+    },
+    {
+      "name": "t0_27_sync_mmixcore_wq_s8_pruned10_wb8",
+      "config": "t0_27_sync_mmixcore_wq_s8_pruned10_wb8.json",
+      "model_type": "mlp_mixer_core",
+      "cell": {
+        "firing": "ttfs_cycle_based",
+        "sync": "synchronized",
+        "quantization": "wq_aq",
+        "S": "8",
+        "depth": "any",
+        "vehicle": "mlp_mixer_core",
+        "dataset": "mnist",
+        "regime": "from_scratch",
+        "pruning": "pruned",
+        "encoding_placement": "subsume"
+      },
+      "tags": [
+        "pruned10",
+        "wb8"
+      ],
+      "expected_wall_min": 6,
+      "note": "folded tier-0.1 E1: sync mixer weight-bits variant. BN-mixer respec 2026-07-12, probe env_probe_bn_fc128_e8 (user-authorized): every mmixcore cell runs normalization=batch, fc_w_1/fc_w_2 64 -> 128, training_epochs 8 \u2014 supersedes the M1 mixer-e4 respec and the ttfsq e2 revert (the BN+width envelope is a different regime; the e4/e2 evidence does not carry over). Measured basis: envelope probes saturate 0.954-0.981 without BN+width (fc64 e4 0.970; fc128_c48 e12 0.9785; fc192 e8 0.9805) vs BN+fc128 e8 = 0.982."
+    },
+    {
+      "name": "t0_28_lif_mmixcore_wq_s32_wb8",
+      "config": "t0_28_lif_mmixcore_wq_s32_wb8.json",
+      "model_type": "mlp_mixer_core",
+      "cell": {
+        "firing": "lif",
+        "sync": "none",
+        "quantization": "wq_aq",
+        "S": "32",
+        "depth": "any",
+        "vehicle": "mlp_mixer_core",
+        "dataset": "mnist",
+        "regime": "from_scratch",
+        "pruning": "dense",
+        "encoding_placement": "subsume"
+      },
+      "tags": [
+        "wb8"
+      ],
+      "expected_wall_min": 12,
+      "note": "folded tier-0.1 E2: lif mixer weight-bits variant. BN-mixer respec 2026-07-12, probe env_probe_bn_fc128_e8 (user-authorized): every mmixcore cell runs normalization=batch, fc_w_1/fc_w_2 64 -> 128, training_epochs 8 \u2014 supersedes the M1 mixer-e4 respec and the ttfsq e2 revert (the BN+width envelope is a different regime; the e4/e2 evidence does not carry over). Measured basis: envelope probes saturate 0.954-0.981 without BN+width (fc64 e4 0.970; fc128_c48 e12 0.9785; fc192 e8 0.9805) vs BN+fc128 e8 = 0.982."
+    },
+    {
+      "name": "t0_29_ttfsq_deepcnn_d4_wq_s4_wb4",
+      "config": "t0_29_ttfsq_deepcnn_d4_wq_s4_wb4.json",
+      "model_type": "deep_cnn",
+      "cell": {
+        "firing": "ttfs_quantized",
+        "sync": "none",
+        "quantization": "wq_aq",
+        "S": "4",
+        "depth": "4",
+        "vehicle": "deep_cnn",
+        "dataset": "mnist",
+        "regime": "from_scratch",
+        "pruning": "dense",
+        "encoding_placement": "subsume"
+      },
+      "tags": [
+        "wb4"
+      ],
+      "expected_wall_min": 12,
+      "note": "folded tier-0.1 E3: ttfsq deepcnn low-weight-bits variant"
     }
   ],
   "coverage_notes": [

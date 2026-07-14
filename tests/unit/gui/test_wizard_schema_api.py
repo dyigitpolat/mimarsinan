@@ -20,7 +20,7 @@ def client():
 
 def _t0_01() -> dict:
     path = os.path.join(
-        _REPO_ROOT, "test_configs", "tier0", "t0_01_lif_mmixcore_wq_s4.json"
+        _REPO_ROOT, "tests", "fixtures", "deployment_configs", "lif_mmixcore.json"
     )
     with open(path, encoding="utf-8") as f:
         return json.load(f)

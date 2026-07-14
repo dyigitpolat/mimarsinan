@@ -30,7 +30,7 @@ from mimarsinan.gui.wizard.starter import load_starter_baseline, starter_draft
 
 _REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 _TIER_CONFIG_PATHS = sorted(
-    glob.glob(os.path.join(_REPO_ROOT, "test_configs", "tier*", "t*.json"))
+    glob.glob(os.path.join(_REPO_ROOT, "tests", "fixtures", "deployment_configs", "*.json"))
 )
 
 
@@ -214,7 +214,7 @@ class TestStarterModeSwitchContract:
 @pytest.mark.parametrize(
     "path",
     _TIER_CONFIG_PATHS,
-    ids=lambda p: os.path.relpath(p, os.path.join(_REPO_ROOT, "test_configs")),
+    ids=lambda p: os.path.relpath(p, os.path.join(_REPO_ROOT, "tests", "fixtures", "deployment_configs")),
 )
 def test_template_path_stays_error_free(path, tmp_path, monkeypatch):
     """save-as-template -> load-template -> resolve: zero errors for every

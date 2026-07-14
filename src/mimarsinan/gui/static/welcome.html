@@ -127,6 +127,12 @@
     .w-search-input::placeholder { color: var(--text-muted); }
 
     .w-card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 14px; }
+    .w-group-header {
+      font-size: 0.78rem; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;
+      color: var(--text-muted); margin: 10px 0 2px; padding-bottom: 6px;
+      border-bottom: 1px solid var(--border);
+    }
+    .w-group-header:first-child { margin-top: 0; }
     .w-card {
       background: rgba(33, 36, 47, 0.6); backdrop-filter: blur(12px);
       border: 1px solid var(--border); border-radius: var(--radius);
