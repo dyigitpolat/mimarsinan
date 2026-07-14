@@ -38,7 +38,7 @@ class IndexedLoader(Loader):
         super().__init__(*args, **kwargs)
         self._label_lookup = label_lookup
 
-    def __iter__(self) -> Iterator:
+    def __iter__(self) -> Iterator:  # pyright: ignore[reportIncompatibleMethodOverride]  # deliberately replaces ffcv Loader's concrete EpochIterator with a (x, y)-yielding generator
         Compiler.set_num_threads(self.num_workers)
         order = self.next_traversal_order()
         selected_order = order[: len(self) * self.batch_size]

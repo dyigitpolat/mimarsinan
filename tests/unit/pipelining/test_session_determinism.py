@@ -25,6 +25,8 @@ def _restore_process_globals():
     cudnn_tf32 = torch.backends.cudnn.allow_tf32
     benchmark = torch.backends.cudnn.benchmark
     precision = torch.get_float32_matmul_precision()
+    flash_sdp = (torch.backends.cuda.flash_sdp_enabled()
+                 if hasattr(torch.backends.cuda, "enable_flash_sdp") else None)
     yield
     torch.random.set_rng_state(torch_state)
     np.random.set_state(np_state)
@@ -33,6 +35,8 @@ def _restore_process_globals():
     torch.backends.cuda.matmul.allow_tf32 = matmul_tf32
     torch.backends.cudnn.allow_tf32 = cudnn_tf32
     torch.backends.cudnn.benchmark = benchmark
+    if flash_sdp is not None:
+        torch.backends.cuda.enable_flash_sdp(flash_sdp)
     torch.set_float32_matmul_precision(precision)
 
 
@@ -102,6 +106,10 @@ class TestApplyDeterminism:
         assert torch.is_deterministic_algorithms_warn_only_enabled()
         assert torch.backends.cuda.matmul.allow_tf32 is False
         assert torch.backends.cudnn.allow_tf32 is False
+        # Flash-Attention SDP disabled: its non-deterministic backward hard-crashes
+        # the mapped-ViT attention (offloaded-ViT Pruning Adaptation).
+        if hasattr(torch.backends.cuda, "enable_flash_sdp"):
+            assert torch.backends.cuda.flash_sdp_enabled() is False
         assert torch.backends.cudnn.benchmark is False
         assert torch.get_float32_matmul_precision() == "highest"
 

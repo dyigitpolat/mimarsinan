@@ -58,6 +58,14 @@ def apply_determinism(seed: int) -> None:
     torch.backends.cuda.matmul.allow_tf32 = False
     torch.backends.cudnn.allow_tf32 = False
     torch.set_float32_matmul_precision("highest")
+    # Flash-Attention's scaled-dot-product backward is non-deterministic AND
+    # hard-crashes (silent SIGKILL) on the mapped-ViT attention (torch 2.12 /
+    # cu13, offloaded-ViT Pruning Adaptation); force the deterministic
+    # math/mem-efficient SDP backends. No-op for the attention-free vehicles.
+    if hasattr(torch.backends.cuda, "enable_flash_sdp"):
+        torch.backends.cuda.enable_flash_sdp(False)
+        torch.backends.cuda.enable_mem_efficient_sdp(True)
+        torch.backends.cuda.enable_math_sdp(True)
 
 
 def parse_deployment_config(
