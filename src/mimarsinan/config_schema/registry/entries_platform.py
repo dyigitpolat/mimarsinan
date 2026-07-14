@@ -97,7 +97,12 @@ ENTRIES = (
     _E("target_tq", section=_PC, group="hardware", owner="activation_quantization",
        type=T.INT, category=Category.BASIC, exposure="user", label="Target Tq",
        effect="Activation quantization threshold groups",
-       doc="Activation threshold-group count; must divide simulation_steps.",
+       doc="Activation threshold-group count (the QAT activation-quantization "
+           "level / AQ capacity); must divide simulation_steps — enforced "
+           "fail-loud at platform-constraint resolution. Kept EQUAL to "
+           "simulation_steps in every tier config (the bit-exact deployment "
+           "identity); Tq<S is the separate-axes regime the divisibility "
+           "contract permits.",
        bounds=(1, None)),
     _E("simulation_steps", section=_PC, group="hardware", owner="SimulationRunner",
        type=T.INT, category=Category.BASIC, exposure="user", label="Simulation Steps",

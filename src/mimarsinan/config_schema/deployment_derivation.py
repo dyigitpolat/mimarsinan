@@ -152,6 +152,28 @@ def enforce_quantization_assembly_contract(
         raise _contract_error(detail, rule)
 
 
+def _require_tq_divides_simulation_steps(pc: Mapping[str, Any]) -> None:
+    """[registry: target_tq doc] The QAT quantization level Tq must tile the
+    deployment spike window S — the deployment identity needs the trained grid
+    to divide the simulator window. Enforced fail-loud over already-valid
+    positive ints; a one-operand config (search sets Tq without S) or a
+    per-field-invalid value (type/bounds — the registry surfaces its own keyed
+    error) is not cross-checkable and passes through untouched."""
+    tq = pc.get("target_tq")
+    s = pc.get("simulation_steps")
+    if not isinstance(tq, int) or not isinstance(s, int):
+        return
+    if isinstance(tq, bool) or isinstance(s, bool) or tq <= 0 or s <= 0:
+        return
+    if s % tq != 0:
+        raise ValueError(
+            f"target_tq={tq} must divide simulation_steps={s} (the QAT "
+            f"activation-quantization level must tile the deployment spike "
+            f"window; the tier configs set them equal). Fix target_tq or "
+            f"simulation_steps so simulation_steps % target_tq == 0."
+        )
+
+
 def derive_platform_constraints(
     pc: MutableMapping[str, Any], *, cores_declared: bool = True
 ) -> None:
@@ -165,6 +187,7 @@ def derive_platform_constraints(
     legacy / hardware-search shape), ``cores_declared=False`` skips the pass:
     the scalars are the only constraint information there.
     """
+    _require_tq_divides_simulation_steps(pc)
     if not cores_declared:
         return
     cores = pc.get("cores")
