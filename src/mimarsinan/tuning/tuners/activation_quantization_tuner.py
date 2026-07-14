@@ -12,7 +12,11 @@ from mimarsinan.mapping.support.bias_compensation import (
 from mimarsinan.models.nn.activations.autograd import LIF_EXACT_QAT_THETA_FLOOR
 from mimarsinan.spiking.dfq_bias_correction import preactivation_channel_means
 from mimarsinan.spiking.sync_first_moment import apply_sync_first_moment_fold
-from mimarsinan.spiking.theta_cotrain import promote_theta_for_exact_qat
+from mimarsinan.spiking.theta_cotrain import (
+    emit_theta_install_witness,
+    install_exact_qat_theta,
+    promote_theta_for_exact_qat,
+)
 from mimarsinan.tuning.adaptation_rate_tuner import AdaptationRateTuner
 from mimarsinan.tuning.orchestration.blend_ramp import kd_loss_from_config
 from mimarsinan.tuning.teacher import freeze_module
@@ -105,11 +109,9 @@ class ActivationQuantizationTuner(AdaptationRateTuner):
         if self._sync_theta_armed:
             # Scalar theta only: the synchronized mapper forward does not route
             # per-channel theta through the ComputeOp wrap (shape mismatch).
-            report = promote_theta_for_exact_qat(self.model, per_channel=False)
-            print(
-                "[SYNC-EXACT-QAT] theta in-loop (scalar): "
-                f"scalar={len(report['scalar'])}",
-                flush=True,
+            install_exact_qat_theta(
+                self.model, self.pipeline.reporter, "SYNC-EXACT-QAT",
+                per_channel=False,
             )
 
     def _install_lif_exact_qat(self) -> None:
@@ -118,23 +120,14 @@ class ActivationQuantizationTuner(AdaptationRateTuner):
             self.model, int(self.pipeline.config["simulation_steps"]),
         )
         snaps = install_lif_entry_input_quantizers(self.model, self.pipeline.config)
-        witness = {
-            "installed": True,
-            "folded": int(folded),
-            "entry_snaps": int(snaps),
-            "theta_per_channel": len(report["per_channel"]),
-            "theta_scalar": len(report["scalar"]),
-            "retimed": bool(self.pipeline.config.get("lif_per_hop_retiming", False)),
-        }
-        print(
-            "[LIF-EXACT-QAT] installed: "
-            f"theta per_channel={witness['theta_per_channel']} "
-            f"{report['per_channel']} scalar={witness['theta_scalar']} "
-            f"{report['scalar']} folded={witness['folded']} "
-            f"entry_snaps={witness['entry_snaps']} retimed={witness['retimed']}",
-            flush=True,
+        emit_theta_install_witness(
+            self.pipeline.reporter, "LIF-EXACT-QAT", report,
+            extra={
+                "folded": int(folded),
+                "entry_snaps": int(snaps),
+                "retimed": bool(self.pipeline.config.get("lif_per_hop_retiming", False)),
+            },
         )
-        emit_reporter_event(self.pipeline.reporter, "lif_exact_qat", witness)
 
     def _install_ttfsq_exact_qat(self) -> None:
         """[ttfs_exact_qat] Promote theta trainable in-loop (the exact ceil
@@ -143,18 +136,9 @@ class ActivationQuantizationTuner(AdaptationRateTuner):
 
         Per-channel theta (R3 matching-axis) is safe with the collapse-hardened
         gated backward (the dead-zone theta gradient no longer runs away)."""
-        report = promote_theta_for_exact_qat(self.model)
-        witness = {
-            "installed": True,
-            "theta_per_channel": len(report["per_channel"]),
-            "theta_scalar": len(report["scalar"]),
-        }
-        print(
-            f"[TTFSQ-EXACT-QAT] installed: theta per_channel="
-            f"{witness['theta_per_channel']} scalar={witness['theta_scalar']} "
-            f"({report['per_channel']} / {report['scalar']})", flush=True,
+        install_exact_qat_theta(
+            self.model, self.pipeline.reporter, "TTFSQ-EXACT-QAT", per_channel=True,
         )
-        emit_reporter_event(self.pipeline.reporter, "ttfsq_exact_qat", witness)
 
     def _install_exact_qat_kd_teacher(self) -> None:
         """[lif_exact_qat_program §8] Distil the exact-QAT ladder AND endpoint

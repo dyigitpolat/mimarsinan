@@ -5,6 +5,7 @@ from __future__ import annotations
 import torch
 import torch.nn as nn
 
+from mimarsinan.common.reporter import emit_reporter_event
 from mimarsinan.mapping.mappers.scale_propagation import arm_compute_op_wrap_slots
 from mimarsinan.spiking.per_channel_theta import eligible_per_channel_perceptrons
 
@@ -90,3 +91,36 @@ def promote_theta_for_exact_qat(model, *, per_channel: bool = True) -> dict:
         # per-channel host decode from the install seam on (per_channel_theta).
         arm_compute_op_wrap_slots(model.get_mapper_repr())
     return {"per_channel": per_channel_names, "scalar": scalar, "params": params}
+
+
+def emit_theta_install_witness(reporter, tag, report, *, extra=None) -> dict:
+    """The shared theta-aware install witness: build the witness from a promote
+    ``report``, print the loud ``[tag]`` line, and emit the reporter event (kind
+    = the tag's lowercased snake form). ``extra`` merges mode-specific fields
+    (e.g. LIF's fold/entry/retime, computed after promote). Reused by every mode
+    so the witness/telemetry is one mechanism, not per-mode duplication."""
+    witness = {
+        "installed": True,
+        "theta_per_channel": len(report["per_channel"]),
+        "theta_scalar": len(report["scalar"]),
+        **(extra or {}),
+    }
+    detail = " ".join(f"{k}={v}" for k, v in (extra or {}).items())
+    print(
+        f"[{tag}] theta in-loop: per_channel={witness['theta_per_channel']} "
+        f"{report['per_channel']} scalar={witness['theta_scalar']} "
+        f"{report['scalar']}" + (f" {detail}" if detail else ""),
+        flush=True,
+    )
+    emit_reporter_event(reporter, tag.lower().replace("-", "_"), witness)
+    return witness
+
+
+def install_exact_qat_theta(model, reporter, tag, *, per_channel=True, extra=None):
+    """Promote theta in-loop then emit the witness — the atomic theta-aware
+    install for modes with no post-promote extras (ttfsq/sync/casc). LIF, which
+    computes fold/entry extras between promote and witness, calls
+    ``promote_theta_for_exact_qat`` + ``emit_theta_install_witness`` directly."""
+    report = promote_theta_for_exact_qat(model, per_channel=per_channel)
+    witness = emit_theta_install_witness(reporter, tag, report, extra=extra)
+    return report, witness

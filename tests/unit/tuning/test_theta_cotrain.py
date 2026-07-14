@@ -167,3 +167,59 @@ class TestEndToEnd:
         moved = any(a.shape == b.shape and torch.any(a != b)
                     for a, b in zip(init, after))
         assert moved, "co-trained theta did not change during the step"
+
+
+class _RecordingReporter:
+    def __init__(self):
+        self.events = []
+
+    def event(self, kind, payload):
+        self.events.append((kind, dict(payload)))
+
+
+class TestGenericThetaInstallWitness:
+    """The shared theta-aware install seam: promote + witness + [TAG] print +
+    reporter event, reused by every tuner (AQ lif/ttfsq/sync + the casc cycle
+    tuner) so the theta-aware capability is generic, not per-mode-duplicated."""
+
+    def _model(self):
+        return make_tiny_supermodel(hidden_layers=2)
+
+    def test_promotes_and_emits_tag_and_event(self, capsys):
+        from mimarsinan.spiking.theta_cotrain import install_exact_qat_theta
+
+        model = self._model()
+        reporter = _RecordingReporter()
+        report, witness = install_exact_qat_theta(
+            model, reporter, "TTFSQ-EXACT-QAT", per_channel=True)
+        out = capsys.readouterr().out
+        assert "[TTFSQ-EXACT-QAT]" in out
+        # theta promoted trainable on non-encoders
+        assert witness["installed"] is True
+        assert witness["theta_per_channel"] + witness["theta_scalar"] >= 1
+        # reporter event keyed by the tag's snake form, payload == witness
+        assert reporter.events == [("ttfsq_exact_qat", witness)]
+
+    def test_extra_witness_fields_flow_to_print_and_event(self, capsys):
+        from mimarsinan.spiking.theta_cotrain import install_exact_qat_theta
+
+        reporter = _RecordingReporter()
+        _, witness = install_exact_qat_theta(
+            self._model(), reporter, "LIF-EXACT-QAT", per_channel=True,
+            extra={"folded": 3, "retimed": True})
+        out = capsys.readouterr().out
+        assert "[LIF-EXACT-QAT]" in out and "folded=3" in out
+        assert witness["folded"] == 3 and witness["retimed"] is True
+        assert reporter.events[0][0] == "lif_exact_qat"
+
+    def test_per_channel_false_is_scalar_everywhere(self):
+        from mimarsinan.spiking.theta_cotrain import install_exact_qat_theta
+
+        model = self._model()
+        report, witness = install_exact_qat_theta(
+            model, _RecordingReporter(), "SYNC-EXACT-QAT", per_channel=False)
+        assert witness["theta_per_channel"] == 0
+        for p in model.get_perceptrons():
+            if getattr(p, "is_encoding_layer", False):
+                continue
+            assert p.activation_scale.dim() == 0
