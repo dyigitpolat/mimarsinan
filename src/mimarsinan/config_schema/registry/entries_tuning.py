@@ -121,6 +121,21 @@ ENTRIES = (
        provenance="consumer frozen default", derived_default=_frozen(False),
        relevant=R.when("spiking_mode", in_=("ttfs_cycle_based",)),
        empty_means="off — no first-moment fold at the AQ endpoint"),
+    _E("sync_exact_qat_theta", group="tuning",
+       owner="activation_quantization_tuner",
+       type=T.BOOL, category=Category.ADVANCED, exposure="user",
+       label="Sync Exact-QAT theta in-loop",
+       effect="Trains theta in-loop under the gated LSQ gradient at the sync "
+              "exact-QAT endpoint (else theta is frozen)",
+       doc="[ttfs_exact_qat] sync_exact_qat trains the deployed ceil KERNEL but "
+           "with theta FROZEN (no promote_theta_for_exact_qat; the ceil "
+           "decorator applies theta around a plain-STE staircase). This adds "
+           "LIF-grade theta training: promote theta trainable + the gated "
+           "TTFSCountStaircaseDecorator (clamp-gated STE + in-band LSQ theta "
+           "gradient). Requires sync_exact_qat; default off (probe A/B first).",
+       provenance="consumer frozen default", derived_default=_frozen(False),
+       relevant=R.when("spiking_mode", in_=("ttfs_cycle_based",)),
+       empty_means="off — the frozen-theta ceil kernel"),
     _E("lif_exact_qat", group="tuning", owner="lif_exact_qat",
        type=T.BOOL, category=Category.ADVANCED, exposure="user",
        label="LIF Exact QAT",

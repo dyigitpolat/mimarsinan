@@ -177,7 +177,7 @@ CONFIG_KEYS_SET: Set[str] = {
     # the [S3/R6] sequential first-moment fold at the AQ endpoint and the
     # [E3/R7] comparator-side half-step contract flag. Both default OFF
     # (mechanism landed; arming is a recipe decision).
-    "sync_first_moment_fold", "comparator_half_step",
+    "sync_first_moment_fold", "comparator_half_step", "sync_exact_qat_theta",
     # [S2/R3] per-channel theta (lif + sync matching-axis hops) and [S1/R4]
     # S-aware quantile descent; default OFF, arming is a recipe decision.
     "per_channel_theta", "s_aware_theta_quantile",

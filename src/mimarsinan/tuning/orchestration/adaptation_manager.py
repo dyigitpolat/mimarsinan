@@ -261,9 +261,12 @@ class AdaptationManager(nn.Module):
                 if int(getattr(perceptron, HOP_DEPTH_ATTR, 0)) >= k:
                     return None
                 rate_carrier = 1.0
+            # [ttfs_exact_qat] sync_exact_qat_theta swaps the frozen-theta ceil
+            # decorator for the gated theta-in-loop one (LIF-grade training).
+            gated = bool(pipeline_config.get("sync_exact_qat_theta", False))
+            inner_cls = TTFSCountStaircaseDecorator if gated else TTFSCeilStaircaseDecorator
             return self._exact_qat_decorator(
-                TTFSCeilStaircaseDecorator(
-                    pipeline_config["simulation_steps"], perceptron.activation_scale),
+                inner_cls(pipeline_config["simulation_steps"], perceptron.activation_scale),
                 rate_carrier=rate_carrier)
 
         if ttfsq_exact_qat_active(pipeline_config):

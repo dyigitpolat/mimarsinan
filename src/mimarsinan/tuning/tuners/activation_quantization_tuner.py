@@ -97,6 +97,19 @@ class ActivationQuantizationTuner(AdaptationRateTuner):
         self._ttfsq_exact_armed = ttfsq_exact_qat_active(self.pipeline.config)
         if self._ttfsq_exact_armed:
             self._install_ttfsq_exact_qat()
+        # [ttfs_exact_qat] sync theta-in-loop enhancement: promote theta so the
+        # gated sync decorator trains it (default off = sync's frozen theta).
+        self._sync_theta_armed = sync_exact_qat_active(self.pipeline.config) and bool(
+            self.pipeline.config.get("sync_exact_qat_theta", False)
+        )
+        if self._sync_theta_armed:
+            report = promote_theta_for_exact_qat(self.model)
+            print(
+                "[SYNC-EXACT-QAT] theta in-loop: "
+                f"per_channel={len(report['per_channel'])} "
+                f"scalar={len(report['scalar'])}",
+                flush=True,
+            )
 
     def _install_lif_exact_qat(self) -> None:
         report = promote_theta_for_exact_qat(self.model)
