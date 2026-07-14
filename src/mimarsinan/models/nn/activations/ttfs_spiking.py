@@ -5,7 +5,10 @@ from __future__ import annotations
 import torch
 import torch.nn as nn
 
-from mimarsinan.models.nn.activations.autograd import TTFSStaircaseFunction
+from mimarsinan.models.nn.activations.autograd import (
+    TTFSCountStaircaseFunction,
+    TTFSStaircaseFunction,
+)
 from mimarsinan.models.nn.activations.bias_mode import validate_bias_mode
 from mimarsinan.models.nn.activations.lif import _StrictHeavisideFunction
 
@@ -80,6 +83,8 @@ class TTFSActivation(nn.Module):
         self.surrogate_alpha: float = 2.0
 
         self._cycle_accurate_mode = False
+        self._exact_qat_theta = False
+        self._comparator_half_step = False
         self._ramp_current: torch.Tensor | None = None
         self._membrane: torch.Tensor | None = None
         self._has_fired: torch.Tensor | None = None
@@ -105,6 +110,13 @@ class TTFSActivation(nn.Module):
     def set_cycle_accurate(self, mode: bool) -> None:
         self._cycle_accurate_mode = bool(mode)
         self.reset_state()
+
+    def set_exact_qat_theta(self, on: bool, *, comparator_half_step: bool = False) -> None:
+        """[casc_exact_qat] Route the value-mode proxy's theta gradient through
+        the gated-LSQ ratchet (``TTFSCountStaircaseFunction``) — forward stays
+        bit-exact to the plain-STE proxy; only the theta/z backward changes."""
+        self._exact_qat_theta = bool(on)
+        self._comparator_half_step = bool(comparator_half_step)
 
     def reset_state(self) -> None:
         self._ramp_current = None
@@ -137,6 +149,11 @@ class TTFSActivation(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         if not self._cycle_accurate_mode:
             scale_v, _ = self._scale_values(x)
+            if self._exact_qat_theta:
+                # theta INTO the function (gated-LSQ ratchet backward); forward is
+                # bit-exact to the plain-STE proxy for theta >= the exact-QAT floor.
+                return TTFSCountStaircaseFunction.apply(
+                    torch.relu(x), scale_v, self.T, self._comparator_half_step)
             r = (torch.relu(x) / scale_v).clamp(0.0, 1.0)
             return TTFSStaircaseFunction.apply(r, self.T) * scale_v
 

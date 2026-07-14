@@ -54,6 +54,45 @@ class TestTTFSActivationBiasBroadcast:
         self._run(torch.randn(2, 6, 4), torch.arange(6, dtype=torch.float32))
 
 
+class TestExactQATValueMode:
+    """[casc_exact_qat] The value-mode training proxy can route the gated-LSQ
+    RATCHET backward (TTFSCountStaircaseFunction, theta INTO the function)
+    instead of plain STE around the staircase: forward bit-exact, backward is
+    the collapse-hardened theta gradient. Training-only — the cycle-accurate
+    deploy path is untouched, so deployment parity is unaffected."""
+
+    def _act(self, theta, *, exact):
+        act = TTFSActivation(
+            T=8,
+            activation_scale=nn.Parameter(torch.tensor(float(theta))),
+            thresholding_mode="<=",
+        )
+        act.set_exact_qat_theta(exact)  # value-mode (not cycle-accurate) by default
+        return act
+
+    def test_forward_bit_exact_vs_plain_proxy(self):
+        # includes the dead zone (<1/8), interiors, and saturation (r>1)
+        x = torch.tensor([[-0.5, 0.0, 0.05, 0.3, 1.0, 2.0, 5.0]])
+        for theta in (0.5, 1.0, 2.0):
+            plain = self._act(theta, exact=False).forward(x)
+            exact = self._act(theta, exact=True).forward(x)
+            assert torch.equal(plain, exact), theta
+
+    def test_theta_gradient_ratchet_blocks_dead_zone_runaway(self):
+        act = self._act(1.0, exact=True)
+        x = torch.tensor([[0.05]])  # r=0.05 < 1/8 -> dead (q=0)
+        out = act.forward(x)
+        out.backward(torch.tensor([[1.0]]))  # g>0: loss wants the channel OFF
+        assert act.activation_scale.grad.item() == 0.0  # runaway blocked
+
+    def test_theta_gradient_keeps_dead_zone_revival(self):
+        act = self._act(1.0, exact=True)
+        x = torch.tensor([[0.05]])
+        out = act.forward(x)
+        out.backward(torch.tensor([[-1.0]]))  # g<0: loss wants the channel ON
+        assert act.activation_scale.grad.item() > 0.0  # revival (theta shrinks) kept
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
