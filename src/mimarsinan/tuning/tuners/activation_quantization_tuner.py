@@ -141,15 +141,18 @@ class ActivationQuantizationTuner(AdaptationRateTuner):
         staircase decorator installs via ``get_rate_adjusted_quantization_
         decorator``). No half-step fold or entry re-timing — TTFS is analytical.
 
-        Scalar theta only: per-channel theta-in-loop collapses mixer channels
-        under the TTFS ceil gradient (mass degenerate-channel routing OOMs the
-        WQ projection); per-channel needs collapse-hardening (deferred)."""
-        report = promote_theta_for_exact_qat(self.model, per_channel=False)
-        witness = {"installed": True, "theta_scalar": len(report["scalar"])}
+        Per-channel theta (R3 matching-axis) is safe with the collapse-hardened
+        gated backward (the dead-zone theta gradient no longer runs away)."""
+        report = promote_theta_for_exact_qat(self.model)
+        witness = {
+            "installed": True,
+            "theta_per_channel": len(report["per_channel"]),
+            "theta_scalar": len(report["scalar"]),
+        }
         print(
-            "[TTFSQ-EXACT-QAT] installed (scalar theta): "
-            f"scalar={witness['theta_scalar']} {report['scalar']}",
-            flush=True,
+            f"[TTFSQ-EXACT-QAT] installed: theta per_channel="
+            f"{witness['theta_per_channel']} scalar={witness['theta_scalar']} "
+            f"({report['per_channel']} / {report['scalar']})", flush=True,
         )
         emit_reporter_event(self.pipeline.reporter, "ttfsq_exact_qat", witness)
 

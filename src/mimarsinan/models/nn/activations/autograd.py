@@ -93,12 +93,20 @@ so degenerate shrinkage is self-limiting (lif_exact_qat_program.md §4.2)."""
 
 def _gated_lsq_backward(g, r, q, safe):
     """Shared exact-QAT backward: clamp-gated identity STE to z (in-band
-    ``0<r<1``) + the in-band LSQ theta gradient ``q(r) − r·1[0<r<1]`` (grid-
-    residual descent in-band; saturation pushes θ up), reduced to θ's shape.
-    Kernels (LIF floor-count, TTFS ceil) differ only in the forward staircase."""
+    ``0<r<1``) + the LSQ theta gradient, reduced to θ's shape. Kernels (LIF
+    floor-count, TTFS ceil) differ only in the forward staircase.
+
+    [collapse-hardening] The theta gradient uses q's OWN responsive band
+    ``(q>0)&(r<1)``, not ``0<r<1``: in the DEAD zone (q==0 while 0<r<1) the
+    naive ``q−r=−r`` pushes theta UP, driving r deeper into the dead zone — a
+    positive-feedback runaway that collapses per-channel theta (the TTFS-ceil
+    mixer OOM: theta grows, W/theta→0, mass degenerate-channel routing). The
+    band leaves the responsive steps (q>0 → ``q−r``) and saturation
+    (r>=1 → q=1, theta grows) intact. Generic across kernels/models."""
     inband = ((r > 0) & (r < 1)).to(g.dtype)
     grad_z = g * inband
-    grad_theta = g * (q - r * inband)
+    theta_band = ((q > 0) & (r < 1)).to(g.dtype)
+    grad_theta = g * (q - r * theta_band)
     while grad_theta.dim() > safe.dim():
         grad_theta = grad_theta.sum(0)
     for i in range(grad_theta.dim()):
