@@ -52,16 +52,20 @@ def promote_activation_scale_per_channel(model, *, skip_encoding: bool = True) -
     return params
 
 
-def promote_theta_for_exact_qat(model) -> dict:
+def promote_theta_for_exact_qat(model, *, per_channel: bool = True) -> dict:
     """[lif_exact_qat_program §6.2] Trainable theta under the R3 seam constraints:
     per-channel ONLY on matching-axis-eligible hops (exact on-chip export via the
     ``per_input_scales`` fold), scalar-trainable on externally-consumed hops
     (host boundary mean-collapse seams), encoder frozen. Arms the deployed
     ComputeOp wrap slots when any hop goes per-channel. Returns the witness
     report ``{"per_channel": [...], "scalar": [...], "params": [...]}``.
+
+    ``per_channel=False`` forces SCALAR theta everywhere (no ComputeOp wrap): the
+    synchronized-ttfs mapper forward does not route per-channel theta through the
+    wrap (shape mismatch), so sync trains a scalar-per-perceptron theta.
     """
-    eligible = eligible_per_channel_perceptrons(model)
-    per_channel: list[str] = []
+    eligible = eligible_per_channel_perceptrons(model) if per_channel else set()
+    per_channel_names: list[str] = []
     scalar: list[str] = []
     params: list[nn.Parameter] = []
     for perceptron in model.get_perceptrons():
@@ -72,7 +76,7 @@ def promote_theta_for_exact_qat(model) -> dict:
             param = nn.Parameter(
                 _per_channel_vector(perceptron).contiguous(), requires_grad=True,
             )
-            per_channel.append(name)
+            per_channel_names.append(name)
         else:
             scale = perceptron.activation_scale.detach()
             param = nn.Parameter(
@@ -81,8 +85,8 @@ def promote_theta_for_exact_qat(model) -> dict:
             scalar.append(name)
         _rebind_activation_scale(perceptron, param)
         params.append(param)
-    if per_channel:
+    if per_channel_names:
         # The deployed ScaleNormalizingWrapper and the NF twin must agree on the
         # per-channel host decode from the install seam on (per_channel_theta).
         arm_compute_op_wrap_slots(model.get_mapper_repr())
-    return {"per_channel": per_channel, "scalar": scalar, "params": params}
+    return {"per_channel": per_channel_names, "scalar": scalar, "params": params}

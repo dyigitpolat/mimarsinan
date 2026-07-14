@@ -83,3 +83,29 @@ class TestDispatch:
             assert not perceptron.activation_scale.requires_grad
         finally:
             tuner.close()
+
+    def test_sync_theta_is_scalar_not_per_channel(self, tmp_path):
+        # The synchronized mapper forward can't route per-channel theta, so sync
+        # promotes a SCALAR-per-perceptron theta (per_channel=False).
+        tuner, model, perceptron, dec = self._tuner_and_decorator(
+            tmp_path, _sync_cfg(theta=True))
+        try:
+            for p in model.get_perceptrons():
+                if getattr(p, "is_encoding_layer", False):
+                    continue
+                assert p.activation_scale.dim() == 0, p
+        finally:
+            tuner.close()
+
+
+class TestScalarPromotion:
+    def test_per_channel_false_promotes_all_scalar(self):
+        from mimarsinan.spiking.theta_cotrain import promote_theta_for_exact_qat
+
+        model = make_tiny_supermodel(hidden_layers=2)
+        report = promote_theta_for_exact_qat(model, per_channel=False)
+        assert report["per_channel"] == []
+        for p in model.get_perceptrons():
+            if getattr(p, "is_encoding_layer", False):
+                continue
+            assert p.activation_scale.requires_grad and p.activation_scale.dim() == 0

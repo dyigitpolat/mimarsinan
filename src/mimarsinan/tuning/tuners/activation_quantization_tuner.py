@@ -103,10 +103,11 @@ class ActivationQuantizationTuner(AdaptationRateTuner):
             self.pipeline.config.get("sync_exact_qat_theta", False)
         )
         if self._sync_theta_armed:
-            report = promote_theta_for_exact_qat(self.model)
+            # Scalar theta only: the synchronized mapper forward does not route
+            # per-channel theta through the ComputeOp wrap (shape mismatch).
+            report = promote_theta_for_exact_qat(self.model, per_channel=False)
             print(
-                "[SYNC-EXACT-QAT] theta in-loop: "
-                f"per_channel={len(report['per_channel'])} "
+                "[SYNC-EXACT-QAT] theta in-loop (scalar): "
                 f"scalar={len(report['scalar'])}",
                 flush=True,
             )
