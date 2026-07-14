@@ -162,6 +162,21 @@ ENTRIES = (
        provenance="consumer frozen default", derived_default=_frozen(False),
        relevant=R.when("spiking_mode", in_=("lif",)),
        empty_means="off — the exact-QAT endpoint trains with plain CE"),
+    _E("ttfsq_exact_qat", group="tuning", owner="ttfsq_exact_qat",
+       type=T.BOOL, category=Category.ADVANCED, exposure="user",
+       label="TTFSq Exact QAT",
+       effect="The AQ stage trains the exact deployed TTFS ceil staircase "
+              "(theta in-loop) instead of the shift + floor-quantize proxy",
+       doc="[ttfs_exact_qat] The TTFS analog of lif_exact_qat for the analytical "
+           "ttfs_quantized mode: the AQ stage installs the deployed ceil "
+           "staircase theta*ttfs_quantized_staircase(z/theta, S) under the "
+           "shared clamp-gated STE + in-loop LSQ theta gradient "
+           "(TTFSCountStaircaseFunction), replacing the float shift + floor "
+           "proxy. No per-hop re-timing (TTFS is analytical/timing-free). "
+           "Default-off; ttfs_quantized only.",
+       provenance="consumer frozen default", derived_default=_frozen(False),
+       relevant=R.when("spiking_mode", in_=("ttfs_quantized",)),
+       empty_means="off — the shift + floor-quantize proxy"),
     _E("lif_affine_fold", group="tuning", owner="lif_affine_fold",
        type=T.BOOL, category=Category.ADVANCED, label="LIF Affine Fold",
        effect="Adds the pre-WQ LIF Affine Fold calibration step",

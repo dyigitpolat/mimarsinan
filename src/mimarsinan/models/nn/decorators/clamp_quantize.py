@@ -9,8 +9,27 @@ from mimarsinan.models.nn.activations.autograd import (
     LIFCountStaircaseFunction,
     StaircaseFunction,
     TTFSComparatorHalfStepStaircaseFunction,
+    TTFSCountStaircaseFunction,
     TTFSStaircaseFunction,
 )
+
+
+def _exact_qat_theta(scale, x):
+    """Resolve the trainable ``activation_scale`` for an in-loop staircase: a
+    tensor moved to x's device/dtype, scalar or a channels-last vector matching
+    x's last dim (the exact-QAT shape contract shared by the LIF/TTFS kernels)."""
+    if not isinstance(scale, torch.Tensor):
+        scale = torch.tensor(float(scale))
+    scale = scale.to(device=x.device, dtype=x.dtype)
+    if scale.dim() > 1 or (
+        scale.dim() == 1 and (x.dim() < 1 or scale.numel() != int(x.shape[-1]))
+    ):
+        raise ValueError(
+            f"exact-QAT theta must be scalar or a channels-last vector matching "
+            f"x's last dim; got theta shape {tuple(scale.shape)} for x shape "
+            f"{tuple(x.shape)}"
+        )
+    return scale
 
 
 class ClampDecorator:
@@ -79,20 +98,30 @@ class LIFCountStaircaseDecorator:
         return x
 
     def output_transform(self, x):
-        scale = self.activation_scale
-        if not isinstance(scale, torch.Tensor):
-            scale = torch.tensor(float(scale))
-        scale = scale.to(device=x.device, dtype=x.dtype)
-        if scale.dim() > 1 or (
-            scale.dim() == 1 and (x.dim() < 1 or scale.numel() != int(x.shape[-1]))
-        ):
-            raise ValueError(
-                f"LIFCountStaircaseDecorator theta must be scalar or a "
-                f"channels-last vector matching x's last dim; got theta shape "
-                f"{tuple(scale.shape)} for x shape {tuple(x.shape)}"
-            )
+        scale = _exact_qat_theta(self.activation_scale, x)
         return LIFCountStaircaseFunction.apply(
             x, scale, self.simulation_steps, self.thresholding_mode == "<",
+        )
+
+
+class TTFSCountStaircaseDecorator:
+    """[ttfs_exact_qat] the deployed TTFS ceil staircase with the in-loop LSQ
+    theta gradient — the θ-in-loop upgrade of :class:`TTFSCeilStaircaseDecorator`
+    (which applies θ AROUND a plain-STE staircase, a crude implicit gradient).
+    Passes θ INTO the Function so the gated LSQ gradient trains it."""
+
+    def __init__(self, simulation_steps, activation_scale, comparator_half_step=False):
+        self.simulation_steps = int(simulation_steps)
+        self.activation_scale = activation_scale
+        self.comparator_half_step = bool(comparator_half_step)
+
+    def input_transform(self, x):
+        return x
+
+    def output_transform(self, x):
+        scale = _exact_qat_theta(self.activation_scale, x)
+        return TTFSCountStaircaseFunction.apply(
+            x, scale, self.simulation_steps, self.comparator_half_step,
         )
 
 

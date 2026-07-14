@@ -550,6 +550,10 @@ class TestNoStrayDeploymentFlagReadsAnywhere:
         # keys (spiking_mode / cycle_accurate_lif_forward) under the same
         # training-forward-family rationale.
         "tuning/orchestration/lif_exact_qat.py",
+        # ``ttfs_exact_qat`` (the TTFS analog) reads the same per-perceptron
+        # spiking_mode sub-contract under the same training-forward-family
+        # rationale; its predicate mode-gates the ttfsq exact-QAT decorator.
+        "tuning/orchestration/ttfs_exact_qat.py",
         "tuning/tuners/ttfs_cycle_adaptation_tuner.py",
         # ── byte-identity carve-out (NOT a "this isn't a decision flag" claim) ──
         # ``simulation_runner/core.py`` reads ``weight_quantization`` with a

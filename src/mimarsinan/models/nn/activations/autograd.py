@@ -91,6 +91,22 @@ LIF_EXACT_QAT_THETA_FLOOR = 1e-3
 so degenerate shrinkage is self-limiting (lif_exact_qat_program.md §4.2)."""
 
 
+def _gated_lsq_backward(g, r, q, safe):
+    """Shared exact-QAT backward: clamp-gated identity STE to z (in-band
+    ``0<r<1``) + the in-band LSQ theta gradient ``q(r) − r·1[0<r<1]`` (grid-
+    residual descent in-band; saturation pushes θ up), reduced to θ's shape.
+    Kernels (LIF floor-count, TTFS ceil) differ only in the forward staircase."""
+    inband = ((r > 0) & (r < 1)).to(g.dtype)
+    grad_z = g * inband
+    grad_theta = g * (q - r * inband)
+    while grad_theta.dim() > safe.dim():
+        grad_theta = grad_theta.sum(0)
+    for i in range(grad_theta.dim()):
+        if safe.shape[i] == 1 and grad_theta.shape[i] != 1:
+            grad_theta = grad_theta.sum(i, keepdim=True)
+    return grad_z, grad_theta
+
+
 class LIFCountStaircaseFunction(Function):
     """[lif_exact_qat] the deployed LIF count staircase ``θ·clamp(F(T·z/θ),0,T)/T``
     with a clamp-gated identity STE to z and the LSQ theta gradient
@@ -109,14 +125,33 @@ class LIFCountStaircaseFunction(Function):
     def backward(ctx, *grad_outputs):
         (g,) = grad_outputs
         r, q, safe = ctx.saved_tensors
-        inband = ((r > 0) & (r < 1)).to(g.dtype)
-        grad_z = g * inband
-        grad_theta = g * (q - r * inband)
-        while grad_theta.dim() > safe.dim():
-            grad_theta = grad_theta.sum(0)
-        for i in range(grad_theta.dim()):
-            if safe.shape[i] == 1 and grad_theta.shape[i] != 1:
-                grad_theta = grad_theta.sum(i, keepdim=True)
+        grad_z, grad_theta = _gated_lsq_backward(g, r, q, safe)
+        return grad_z, grad_theta, None, None
+
+
+class TTFSCountStaircaseFunction(Function):
+    """[ttfs_exact_qat] the deployed TTFS ceil staircase ``θ·ttfs_quantized_
+    staircase(z/θ, S)`` with the SAME clamp-gated STE + in-band LSQ theta
+    gradient as :class:`LIFCountStaircaseFunction` — the TTFS analog for the
+    generic exact-QAT (ttfsq + sync). Forward is the deployed kernel, so the
+    torch NF and the quantized deployed sim stay bit-identical."""
+
+    @staticmethod
+    def forward(ctx, z, theta, S, comparator_half_step):
+        safe = theta.clamp(min=LIF_EXACT_QAT_THETA_FLOOR)
+        r = z / safe
+        one = torch.ones((), dtype=r.dtype, device=r.device)
+        q = ttfs_quantized_staircase(
+            r, one, int(S), comparator_half_step=bool(comparator_half_step)
+        )
+        ctx.save_for_backward(r, q, safe)
+        return safe * q
+
+    @staticmethod
+    def backward(ctx, *grad_outputs):
+        (g,) = grad_outputs
+        r, q, safe = ctx.saved_tensors
+        grad_z, grad_theta = _gated_lsq_backward(g, r, q, safe)
         return grad_z, grad_theta, None, None
 
 

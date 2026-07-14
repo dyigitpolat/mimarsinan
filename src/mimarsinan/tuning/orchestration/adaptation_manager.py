@@ -4,12 +4,17 @@ from mimarsinan.models.nn.activations import LeakyGradReLU
 from mimarsinan.models.nn.decorators.clamp_quantize import (
     LIFCountStaircaseDecorator,
     TTFSCeilStaircaseDecorator,
+    TTFSCountStaircaseDecorator,
 )
 from mimarsinan.models.nn.decorators.rate_buffer import RateBuffer
 from mimarsinan.tuning.orchestration.frontier import frontier_position
 from mimarsinan.tuning.orchestration.lif_exact_qat import (
     lif_exact_qat_active,
     mark_lif_exact_qat,
+)
+from mimarsinan.tuning.orchestration.ttfs_exact_qat import (
+    mark_ttfsq_exact_qat,
+    ttfsq_exact_qat_active,
 )
 from mimarsinan.tuning.shift_calculation import calculate_activation_shift
 
@@ -222,50 +227,52 @@ class AdaptationManager(nn.Module):
         shift_amount = calculate_activation_shift(pipeline_config["target_tq"], perceptron.activation_scale) * self.shift_rate
         return ShiftDecorator(shift_amount)
     
+    def _exact_qat_decorator(self, inner, rate_carrier=None):
+        """Wrap an exact-QAT staircase decorator in the shared rate + mix/mask
+        adjustment envelope (lif/ttfsq use the default quantization rate; sync
+        passes its hop-staging rate)."""
+        return RateAdjustedDecorator(
+            self._rate_carrier("quantization_rate") if rate_carrier is None
+            else rate_carrier,
+            inner,
+            NestedAdjustmentStrategy(
+                [RandomMaskAdjustmentStrategy(), MixAdjustmentStrategy()]))
+
     def get_rate_adjusted_quantization_decorator(self, pipeline_config, perceptron):
         from mimarsinan.chip_simulation.spiking_semantics import requires_ttfs_firing
 
         if lif_exact_qat_active(pipeline_config):
-            # [lif_exact_qat_program §6.1] the QAT endpoint is the deployed LIF
-            # count staircase itself (theta in-loop rides the same Parameter);
-            # the marker is per-MODEL and owns the half-step fold (P-L6).
+            # [lif_exact_qat_program §6.1] deployed LIF count staircase, theta
+            # in-loop; marker is per-MODEL and owns the half-step fold (P-L6).
             mark_lif_exact_qat(perceptron)
-            return RateAdjustedDecorator(
-                self._rate_carrier("quantization_rate"),
-                LIFCountStaircaseDecorator(
-                    pipeline_config["simulation_steps"],
-                    perceptron.activation_scale,
-                    thresholding_mode=str(
-                        pipeline_config.get("thresholding_mode", "<=")
-                    ),
-                ),
-                NestedAdjustmentStrategy(
-                    [RandomMaskAdjustmentStrategy(), MixAdjustmentStrategy()]
-                ))
+            return self._exact_qat_decorator(LIFCountStaircaseDecorator(
+                pipeline_config["simulation_steps"], perceptron.activation_scale,
+                thresholding_mode=str(pipeline_config.get("thresholding_mode", "<="))))
 
         if sync_exact_qat_active(pipeline_config):
-            # [MBH T6] The QAT endpoint is the deployed ceil kernel itself; the
-            # floor + half-step proxy (and its mapping-time bias compensation)
-            # is bypassed for models trained this way. The marker is per-MODEL
-            # (staged hops beyond the frontier still end exact by rate 1.0).
+            # [MBH T6] deployed ceil kernel; floor+half-step proxy bypassed.
+            # Marker per-MODEL (staged hops end exact by rate 1.0).
             mark_sync_exact_qat(perceptron)
             rate_carrier = self._rate_carrier("quantization_rate")
             n_levels = getattr(self, "quantization_hop_levels", None)
             if n_levels:
-                # [5v B1] the hop frontier: convert hops 0..k at FULL rate,
-                # keep hops beyond it float (no decorator).
+                # [5v B1] hop frontier: convert 0..k at full rate, rest float.
                 k = hop_frontier(self._rate_value("quantization_rate"), n_levels)
                 if int(getattr(perceptron, HOP_DEPTH_ATTR, 0)) >= k:
                     return None
                 rate_carrier = 1.0
-            return RateAdjustedDecorator(
-                rate_carrier,
+            return self._exact_qat_decorator(
                 TTFSCeilStaircaseDecorator(
-                    pipeline_config["simulation_steps"], perceptron.activation_scale
-                ),
-                NestedAdjustmentStrategy(
-                    [RandomMaskAdjustmentStrategy(), MixAdjustmentStrategy()]
-                ))
+                    pipeline_config["simulation_steps"], perceptron.activation_scale),
+                rate_carrier=rate_carrier)
+
+        if ttfsq_exact_qat_active(pipeline_config):
+            # [ttfs_exact_qat] deployed TTFS ceil kernel with theta in-loop.
+            mark_ttfsq_exact_qat(perceptron)
+            return self._exact_qat_decorator(TTFSCountStaircaseDecorator(
+                pipeline_config["simulation_steps"], perceptron.activation_scale,
+                comparator_half_step=bool(
+                    pipeline_config.get("comparator_half_step", False))))
 
         use_ttfs = requires_ttfs_firing(pipeline_config.get("spiking_mode", "lif"))
         shift = calculate_activation_shift(

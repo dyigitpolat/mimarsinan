@@ -24,6 +24,7 @@ from mimarsinan.tuning.orchestration.lif_exact_qat import (
     install_lif_entry_input_quantizers,
     lif_exact_qat_active,
 )
+from mimarsinan.tuning.orchestration.ttfs_exact_qat import ttfsq_exact_qat_active
 from mimarsinan.tuning.orchestration.frontier import frontier_ladder
 from mimarsinan.tuning.orchestration.frontier.endpoint_recovery import (
     run_endpoint_recovery,
@@ -90,6 +91,12 @@ class ActivationQuantizationTuner(AdaptationRateTuner):
         if self._lif_exact_armed:
             self._install_lif_exact_qat()
             self._install_exact_qat_kd_teacher()
+        # [ttfs_exact_qat] the TTFS analog: promote theta trainable in-loop; the
+        # exact ceil-staircase decorator installs via update_activation (no
+        # half-step fold / re-timing — TTFS is analytical).
+        self._ttfsq_exact_armed = ttfsq_exact_qat_active(self.pipeline.config)
+        if self._ttfsq_exact_armed:
+            self._install_ttfsq_exact_qat()
 
     def _install_lif_exact_qat(self) -> None:
         report = promote_theta_for_exact_qat(self.model)
@@ -114,6 +121,25 @@ class ActivationQuantizationTuner(AdaptationRateTuner):
             flush=True,
         )
         emit_reporter_event(self.pipeline.reporter, "lif_exact_qat", witness)
+
+    def _install_ttfsq_exact_qat(self) -> None:
+        """[ttfs_exact_qat] Promote theta trainable in-loop (the exact ceil
+        staircase decorator installs via ``get_rate_adjusted_quantization_
+        decorator``). No half-step fold or entry re-timing — TTFS is analytical."""
+        report = promote_theta_for_exact_qat(self.model)
+        witness = {
+            "installed": True,
+            "theta_per_channel": len(report["per_channel"]),
+            "theta_scalar": len(report["scalar"]),
+        }
+        print(
+            "[TTFSQ-EXACT-QAT] installed: "
+            f"theta per_channel={witness['theta_per_channel']} "
+            f"{report['per_channel']} scalar={witness['theta_scalar']} "
+            f"{report['scalar']}",
+            flush=True,
+        )
+        emit_reporter_event(self.pipeline.reporter, "ttfsq_exact_qat", witness)
 
     def _install_exact_qat_kd_teacher(self) -> None:
         """[lif_exact_qat_program §8] Distil the exact-QAT ladder AND endpoint
