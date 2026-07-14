@@ -239,6 +239,16 @@ T2 = [
          regime="pretrained", scheduling=True, pruned=0.05, tags=["sched", "pruned"]),
     dict(n=3, mode="casc", quant="wq", wb=8, s=32, vehicle="squeezenet", dataset="CIFAR100",
          regime="pretrained", scheduling=True, tags=["sched", "wall_risk"]),
+    # Offloaded ViT under LIF and TTFS-sync (user-directed 2026-07-15): the
+    # patch-embed encoding layer runs on the host, the transformer stack maps to
+    # chip; CIFAR100 pretrained-finetuned so the tier runs locally (ImageNet
+    # scale-up is tier_3). Scheduled + light-pruned to fit platform E + wall.
+    dict(n=4, mode="lif", quant="wq", wb=8, s=32, vehicle="vit", dataset="CIFAR100",
+         regime="pretrained", scheduling=True, encoding="offload", pruned=0.05,
+         tags=["sched", "offload", "pruned", "wall_risk"]),
+    dict(n=5, mode="sync", quant="wq", wb=8, s=32, vehicle="vit", dataset="CIFAR100",
+         regime="pretrained", scheduling=True, encoding="offload", pruned=0.05,
+         tags=["sched", "offload", "pruned", "wall_risk"]),
 ]
 
 T2_VEHICLES = {
@@ -247,6 +257,24 @@ T2_VEHICLES = {
     "vit": T1_VEHICLES["vit"],
     "squeezenet": T1_VEHICLES["squeezenet"],
 }
+
+# Tier 3 (user-directed 2026-07-15): the full-scale offloaded-ViT deployment tier
+# — LIF, TTFS-sync, and ttfsq on native ImageNet (pretrained torchvision, no
+# finetune). Needs IMAGENET_ROOT; runs on the cluster (the "final verification"
+# scale above tier_2's CIFAR100). Same offloaded encoding + scheduling.
+T3 = [
+    dict(n=1, mode="lif", quant="wq", wb=8, s=32, vehicle="vit", dataset="ImageNet",
+         regime="pretrained", scheduling=True, encoding="offload", finetune_epochs=0,
+         lr=0.0001, budget=0.5, tags=["sched", "offload", "wall_risk"]),
+    dict(n=2, mode="sync", quant="wq", wb=8, s=32, vehicle="vit", dataset="ImageNet",
+         regime="pretrained", scheduling=True, encoding="offload", finetune_epochs=0,
+         lr=0.0001, budget=0.5, tags=["sched", "offload", "wall_risk"]),
+    dict(n=3, mode="ttfsq", quant="wq", wb=8, s=32, vehicle="vit", dataset="ImageNet",
+         regime="pretrained", scheduling=True, encoding="offload", finetune_epochs=0,
+         lr=0.0001, budget=0.5, tags=["sched", "offload", "wall_risk"]),
+]
+
+T3_VEHICLES = {"vit": T1_VEHICLES["vit"]}
 
 DATASET_AXIS = {"MNIST": "mnist", "CIFAR10": "cifar10", "CIFAR100": "cifar100", "ImageNet": "imagenet"}
 
@@ -568,7 +596,8 @@ def main():
     n0 = _emit_tier(0, T0, VEHICLES, "MNIST", 5)
     n1 = _emit_tier(1, T1, T1_VEHICLES, "CIFAR10", 120)
     n2 = _emit_tier(2, T2, T2_VEHICLES, "ImageNet", 360)
-    print(f"tier_0={n0} tier_1={n1} tier_2={n2}")
+    n3 = _emit_tier(3, T3, T3_VEHICLES, "ImageNet", 480)
+    print(f"tier_0={n0} tier_1={n1} tier_2={n2} tier_3={n3}")
 
 
 if __name__ == "__main__":

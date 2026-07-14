@@ -169,3 +169,6 @@ experiments/finish/
 runs/campaign/
 experiments/campaign/
 probe_ckpt/
+
+# scratch A/B probe configs (not deliverables)
+scripts/_probes/

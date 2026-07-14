@@ -1,0 +1,76 @@
+{
+  "tier": 3,
+  "dataset": "ImageNet",
+  "wall_budget_minutes_per_run": 480,
+  "runs": [
+    {
+      "name": "t3_01_lif_vit_wq_s32_sched_offload",
+      "config": "t3_01_lif_vit_wq_s32_sched_offload.json",
+      "model_type": "torch_vit",
+      "cell": {
+        "firing": "lif",
+        "sync": "none",
+        "quantization": "wq_aq",
+        "S": "32",
+        "depth": "any",
+        "vehicle": "vit_b",
+        "dataset": "imagenet",
+        "regime": "pretrained",
+        "pruning": "dense",
+        "encoding_placement": "offload"
+      },
+      "tags": [
+        "sched",
+        "offload",
+        "wall_risk"
+      ],
+      "expected_wall_min": 480
+    },
+    {
+      "name": "t3_02_sync_vit_wq_s32_sched_offload",
+      "config": "t3_02_sync_vit_wq_s32_sched_offload.json",
+      "model_type": "torch_vit",
+      "cell": {
+        "firing": "ttfs_cycle_based",
+        "sync": "synchronized",
+        "quantization": "wq_aq",
+        "S": "32",
+        "depth": "any",
+        "vehicle": "vit_b",
+        "dataset": "imagenet",
+        "regime": "pretrained",
+        "pruning": "dense",
+        "encoding_placement": "offload"
+      },
+      "tags": [
+        "sched",
+        "offload",
+        "wall_risk"
+      ],
+      "expected_wall_min": 480
+    },
+    {
+      "name": "t3_03_ttfsq_vit_wq_s32_sched_offload",
+      "config": "t3_03_ttfsq_vit_wq_s32_sched_offload.json",
+      "model_type": "torch_vit",
+      "cell": {
+        "firing": "ttfs_quantized",
+        "sync": "none",
+        "quantization": "wq_aq",
+        "S": "32",
+        "depth": "any",
+        "vehicle": "vit_b",
+        "dataset": "imagenet",
+        "regime": "pretrained",
+        "pruning": "dense",
+        "encoding_placement": "offload"
+      },
+      "tags": [
+        "sched",
+        "offload",
+        "wall_risk"
+      ],
+      "expected_wall_min": 480
+    }
+  ]
+}

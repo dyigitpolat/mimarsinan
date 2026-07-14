@@ -17,7 +17,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 TEMPLATES = ROOT / "templates"
 GENERATOR = TEMPLATES / "generate.py"
-TIERS = (0, 1, 2)
+TIERS = (0, 1, 2, 3)
 
 TOP_LEVEL_KEYS = {
     "seed", "pipeline_mode", "experiment_name", "generated_files_path",

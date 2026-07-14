@@ -1,7 +1,7 @@
 {
   "seed": 0,
   "pipeline_mode": "phased",
-  "experiment_name": "imgnet_vit_pretrained",
+  "experiment_name": "t3_03_ttfsq_vit_wq_s32_sched_offload",
   "generated_files_path": "./generated",
   "data_provider_name": "ImageNet_DataProvider",
   "platform_constraints": {
@@ -21,61 +21,41 @@
     ],
     "max_axons": 3072,
     "max_neurons": 3072,
+    "has_bias": true,
     "target_tq": 32,
     "simulation_steps": 32,
     "weight_bits": 8,
-    "has_bias": true,
-    "allow_coalescing": false
+    "allow_coalescing": false,
+    "allow_neuron_splitting": true
   },
   "deployment_parameters": {
     "lr": 0.0001,
-    "batch_size": 64,
-    "tuning_batch_size": 32,
     "tuning_budget_scale": 0.5,
-    "max_simulation_samples": 500,
-    "simulation_batch_count": 4,
     "degradation_tolerance": 0.1,
     "model_config_mode": "user",
     "hw_config_mode": "fixed",
     "model_type": "torch_vit",
-    "model_config": {
-      "base_activation": "ReLU"
-    },
+    "model_config": {},
+    "batch_size": 512,
+    "max_simulation_samples": 25,
+    "sanafe_arch_preset": "loihi",
+    "sanafe_sample_count": 1,
+    "allow_scheduling": true,
     "spiking_mode": "ttfs_quantized",
     "firing_mode": "TTFS",
     "spike_generation_mode": "TTFS",
     "thresholding_mode": "<=",
-    "activation_quantization": true,
+    "encoding_layer_placement": "offload",
     "weight_quantization": true,
-    "weight_source": "torchvision",
-    "finetune_epochs": 0,
-    "allow_scheduling": false,
-    "training_recipe": {
-      "optimizer": "adamw",
-      "weight_decay": 0.05,
-      "betas": [
-        0.9,
-        0.999
-      ],
-      "scheduler": "cosine",
-      "warmup_ratio": 0.1,
-      "grad_clip_norm": 1.0,
-      "layer_wise_lr_decay": 0.75,
-      "label_smoothing": 0.1
+    "scale_migration": true,
+    "tuning_batch_size": 128,
+    "preprocessing": {
+      "interpolation": "bicubic",
+      "resize_to": 224,
+      "normalize": "imagenet"
     },
-    "tuning_recipe": {
-      "optimizer": "adamw",
-      "weight_decay": 0.01,
-      "betas": [
-        0.9,
-        0.999
-      ],
-      "scheduler": "cosine",
-      "warmup_ratio": 0.0,
-      "grad_clip_norm": 1.0,
-      "layer_wise_lr_decay": 1.0,
-      "label_smoothing": 0.0
-    }
+    "weight_source": "torchvision",
+    "finetune_epochs": 0
   },
   "target_metric_override": null,
   "start_step": null,

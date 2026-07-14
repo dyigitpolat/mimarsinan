@@ -67,6 +67,54 @@
         "wall_risk"
       ],
       "expected_wall_min": 360
+    },
+    {
+      "name": "t2_04_lif_vit_wq_s32_sched_offload_pruned",
+      "config": "t2_04_lif_vit_wq_s32_sched_offload_pruned.json",
+      "model_type": "torch_vit",
+      "cell": {
+        "firing": "lif",
+        "sync": "none",
+        "quantization": "wq_aq",
+        "S": "32",
+        "depth": "any",
+        "vehicle": "vit_b",
+        "dataset": "cifar100",
+        "regime": "pretrained",
+        "pruning": "pruned",
+        "encoding_placement": "offload"
+      },
+      "tags": [
+        "sched",
+        "offload",
+        "pruned",
+        "wall_risk"
+      ],
+      "expected_wall_min": 360
+    },
+    {
+      "name": "t2_05_sync_vit_wq_s32_sched_offload_pruned",
+      "config": "t2_05_sync_vit_wq_s32_sched_offload_pruned.json",
+      "model_type": "torch_vit",
+      "cell": {
+        "firing": "ttfs_cycle_based",
+        "sync": "synchronized",
+        "quantization": "wq_aq",
+        "S": "32",
+        "depth": "any",
+        "vehicle": "vit_b",
+        "dataset": "cifar100",
+        "regime": "pretrained",
+        "pruning": "pruned",
+        "encoding_placement": "offload"
+      },
+      "tags": [
+        "sched",
+        "offload",
+        "pruned",
+        "wall_risk"
+      ],
+      "expected_wall_min": 360
     }
   ],
   "coverage_notes": [

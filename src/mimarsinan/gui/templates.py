@@ -41,7 +41,7 @@ def _validate_id(template_id: str) -> str:
 def _iter_template_files() -> list[tuple[Path, str]]:
     """(path, group) for every ``.json`` at the top level (group "") and exactly
     one level deep (group = subdirectory name). One level only: subdirectories
-    are the deployment-mode example groups (tier_0/tier_1/tier_2), not a tree."""
+    are the deployment-mode example groups (tier_0..tier_3), not a tree."""
     tdir = Path(get_templates_dir())
     if not tdir.is_dir():
         return []
