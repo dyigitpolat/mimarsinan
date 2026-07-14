@@ -151,6 +151,7 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
         self._gain_correction_stats = None
         self._maybe_apply_gain_correction()
         self._theta_cotrain = cal.theta_cotrain
+        self._casc_exact_qat = cal.casc_exact_qat
         if not self._synchronized:
             self._emit_a6_chain_gauge()
 
@@ -328,7 +329,7 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
             self._budget = saved
 
     def _make_target_activation(self, perceptron) -> TTFSActivation:
-        return TTFSActivation(
+        act = TTFSActivation(
             T=self._T,
             activation_scale=perceptron.activation_scale,
             input_scale=perceptron.input_activation_scale,
@@ -338,6 +339,12 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
             encoding=getattr(perceptron, "is_encoding_layer", False),
             bias_mode=self._bias_mode,
         )
+        if getattr(self, "_casc_exact_qat", False):
+            # Route the value-mode proxy's theta gradient through the gated-LSQ
+            # ratchet (forward bit-exact); the deployed cycle-accurate path is
+            # unchanged, so this only hardens the theta-cotrain gradient.
+            act.set_exact_qat_theta(True)
+        return act
 
     def _make_ramp_strategy(self) -> RampStrategy:
         """Pick the ramp strategy from the flags settled in ``_configure`` — the

@@ -118,13 +118,27 @@ class KDBlendAdaptationTuner(CascadeForwardInstall, SmoothAdaptationTuner):
     def _promote_per_channel_theta(self) -> None:
         """Rebind each perceptron's ``activation_scale`` to a per-output-channel
         trainable Parameter so the optimiser co-trains the firing-gain theta with the
-        weights through the deployed forward. Idempotent; families opt in per site."""
+        weights through the deployed forward. Idempotent; families opt in per site.
+
+        Under ``casc_exact_qat`` the promotion goes through the shared exact-QAT
+        install seam (eligibility-filtered per-channel + ComputeOp wrap) — the
+        same theta-aware capability the AQ lif/ttfsq/sync installs use — so the
+        cascade's theta exports exactly on-chip; else the historical unfiltered
+        per-channel promotion (plain STE)."""
         # Lazy: spiking package init pulls chip_simulation, a top-level import cycle.
         from mimarsinan.spiking.theta_cotrain import (
+            install_exact_qat_theta,
             promote_activation_scale_per_channel,
         )
 
-        params = promote_activation_scale_per_channel(self.model)
+        if getattr(self, "_casc_exact_qat", False):
+            report, _ = install_exact_qat_theta(
+                self.model, self.pipeline.reporter, "CASC-EXACT-QAT",
+                per_channel=True,
+            )
+            params = report["params"]
+        else:
+            params = promote_activation_scale_per_channel(self.model)
         self._theta_cotrain_params = list(params)
         self._theta_cotrain_stats = {"n_theta": len(params)}
         self.pipeline.reporter.report(

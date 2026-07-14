@@ -192,6 +192,22 @@ ENTRIES = (
        provenance="consumer frozen default", derived_default=_frozen(False),
        relevant=R.when("spiking_mode", in_=("ttfs_quantized",)),
        empty_means="off — the shift + floor-quantize proxy"),
+    _E("casc_exact_qat", group="tuning", owner="casc_exact_qat",
+       type=T.BOOL, category=Category.ADVANCED, exposure="user",
+       label="Cascaded Exact QAT",
+       effect="The cascaded TTFS cycle tuner co-trains per-channel theta through "
+              "the gated-LSQ ratchet backward instead of plain-STE theta-cotrain",
+       doc="[casc_exact_qat] Brings the exact-QAT theta machinery (eligibility-"
+           "filtered per-channel promotion + ComputeOp wrap, and the gated-LSQ "
+           "collapse-hardened ratchet backward via TTFSCountStaircaseFunction in "
+           "the value-mode proxy) to the cascaded firing-gain correction: it "
+           "promotes theta through the shared install seam and arms the ratchet "
+           "on the cascade's TTFSActivation proxies, composing with the genuine "
+           "blend-ramp. Mutually exclusive with the gamma gain-correction ramp "
+           "(both own theta). Default-off; ttfs_cycle_based cascaded only.",
+       provenance="consumer frozen default", derived_default=_frozen(False),
+       relevant=R.when("spiking_mode", in_=("ttfs_cycle_based",)),
+       empty_means="off — the plain-STE theta-cotrain / proxy"),
     _E("lif_affine_fold", group="tuning", owner="lif_affine_fold",
        type=T.BOOL, category=Category.ADVANCED, label="LIF Affine Fold",
        effect="Adds the pre-WQ LIF Affine Fold calibration step",

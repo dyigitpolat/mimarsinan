@@ -21,7 +21,8 @@ from mimarsinan.tuning.tuners.ttfs_cycle_adaptation_tuner import (
 )
 
 
-def _make(tmp_path, *, theta_cotrain, schedule="cascaded", gain_ramp=False, blend=False):
+def _make(tmp_path, *, theta_cotrain, schedule="cascaded", gain_ramp=False, blend=False,
+          casc_exact=False):
     cfg = default_config()
     cfg["spiking_mode"] = "ttfs_cycle_based"
     cfg["ttfs_cycle_schedule"] = schedule
@@ -30,6 +31,7 @@ def _make(tmp_path, *, theta_cotrain, schedule="cascaded", gain_ramp=False, blen
     cfg["ttfs_theta_cotrain"] = theta_cotrain
     cfg["ttfs_gain_correction_ramp"] = gain_ramp
     cfg["ttfs_genuine_blend_ramp"] = blend
+    cfg["casc_exact_qat"] = casc_exact
     if blend:
         cfg["ttfs_distmatch_bias_iters"] = 3
     pipeline = MockPipeline(config=cfg, working_directory=str(tmp_path))
@@ -100,6 +102,42 @@ class TestMutualExclusionWithGainRamp:
         assert tuner._theta_cotrain is False
         for p in model.get_perceptrons():
             assert p.activation_scale.dim() == 0
+
+
+class TestCascExactQAT:
+    """[casc_exact_qat] Brings the exact-QAT theta machinery (eligibility-filtered
+    promote + ComputeOp wrap, gated-LSQ ratchet backward on the value-mode proxy)
+    to the cascaded firing-gain correction. Forces theta_cotrain on; mutually
+    exclusive with the gamma gain ramp; default-off byte-identical."""
+
+    def test_forces_theta_cotrain_and_promotes(self, tmp_path):
+        tuner, model = _make(tmp_path, theta_cotrain=False, casc_exact=True)
+        assert tuner._casc_exact_qat is True
+        assert tuner._theta_cotrain is True  # forced on by casc_exact_qat
+        for p in model.get_perceptrons():
+            if getattr(p, "is_encoding_layer", False):
+                continue
+            assert p.activation_scale.requires_grad
+
+    def test_mutually_exclusive_with_gain_ramp(self, tmp_path):
+        tuner, _ = _make(tmp_path, theta_cotrain=False, casc_exact=True, gain_ramp=True)
+        assert tuner._gain_ramp is True
+        assert tuner._casc_exact_qat is False
+        assert tuner._theta_cotrain is False
+
+    def test_target_activation_arms_the_ratchet(self, tmp_path):
+        tuner, model = _make(tmp_path, theta_cotrain=False, casc_exact=True)
+        p = next(p for p in model.get_perceptrons()
+                 if not getattr(p, "is_encoding_layer", False))
+        act = tuner._make_target_activation(p)
+        assert act._exact_qat_theta is True
+
+    def test_off_target_activation_no_ratchet(self, tmp_path):
+        tuner, model = _make(tmp_path, theta_cotrain=True, casc_exact=False)
+        p = next(p for p in model.get_perceptrons()
+                 if not getattr(p, "is_encoding_layer", False))
+        act = tuner._make_target_activation(p)
+        assert act._exact_qat_theta is False
 
 
 class TestComposesWithGenuineBlend:

@@ -36,6 +36,7 @@ class CalibrationPipeline:
     gain_cold: bool
     gain_ramp: bool
     theta_cotrain: bool
+    casc_exact_qat: bool
     distmatch: bool
     boundary_ste: bool
     boundary_surrogate_temp: float | None
@@ -59,6 +60,7 @@ class CalibrationPipeline:
             gain_cold=False,
             gain_ramp=False,
             theta_cotrain=False,
+            casc_exact_qat=False,
             distmatch=False,
             boundary_ste=False,
             boundary_surrogate_temp=None,
@@ -129,7 +131,13 @@ class CalibrationPipeline:
         gain_ramp = bool(get("ttfs_gain_correction_ramp", False))
         gain_cold = bool(get("ttfs_gain_correction", False)) and not gain_ramp
 
-        theta_cotrain = bool(get("ttfs_theta_cotrain", False)) and not gain_ramp
+        # casc_exact_qat co-owns theta with the gamma gain ramp (mutually
+        # exclusive) and drives the per-channel theta promotion, so it forces
+        # theta_cotrain on through the exact-QAT machinery (ratchet backward).
+        casc_exact_qat = bool(get("casc_exact_qat", False)) and not gain_ramp
+        theta_cotrain = (
+            bool(get("ttfs_theta_cotrain", False)) or casc_exact_qat
+        ) and not gain_ramp
 
         boundary_ste = bool(get("ttfs_boundary_surrogate", False))
         boundary_temp = (
@@ -140,6 +148,7 @@ class CalibrationPipeline:
             gain_cold=gain_cold,
             gain_ramp=gain_ramp,
             theta_cotrain=theta_cotrain,
+            casc_exact_qat=casc_exact_qat,
             distmatch=bool(distmatch_driven),
             boundary_ste=boundary_ste,
             boundary_surrogate_temp=boundary_temp,
