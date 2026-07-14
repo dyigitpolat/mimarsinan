@@ -1,6 +1,8 @@
 # TTFS exact-QAT program — generalizing the LIF θ-in-loop exact-QAT to ttfsq + sync
 
-**Status:** mechanism landed (default-off), A/B in progress (2026-07-14).
+**Status:** mechanism landed (default-off); A/B RESOLVED 2026-07-14 — per-channel
+theta is the right QAT lever (forward 0.97-0.98 at S8) but the S8 mixer DEPLOY is
+1/S-floored (~0.94-0.96), so do NOT arm; S64 respec stands (§4.2).
 **Template:** `lif_exact_qat_program.md` (the LIF path being generalized).
 **Theory:** `sync_deployment_exactness.md` (the TTFS composition).
 
@@ -69,29 +71,68 @@ regresses, arm `ttfsq_exact_qat` / adopt `sync_exact_qat_theta` in the recipe
 and dial back the interim S64 respec; else keep config-armable, document the
 refutation (the campaign's post-QAT-inversion discipline).
 
-**Results (slurm/xlog1, scalar theta):** REFUTED for the mixer.
+### 4.1 Scalar theta (slurm/xlog1): REFUTED for the mixer
 
 | cell | exact/theta | baseline | delta |
 |---|---|---|---|
 | ttfsq S8 | 0.8924 | 0.9561 | -6.4pp |
 | ttfsq S16 | 0.9604 | 0.9596 | +0.1pp |
-| sync S8 | (pending) | 0.9603 | - |
 | sync S16 | 0.9635 | 0.9648 | -0.1pp |
 
-Scalar-theta TTFS exact-QAT does NOT help the mixer: ttfsq craters at S8
-(-6.4pp) and is flat at S16; sync is flat-to-slightly-worse. Mechanistically
-clear — the mixer's binder is per-channel scale spread (up to 1870x, M4), which
-a single scalar theta cannot capture; at S8 the exact ceil staircase with one
-global theta starves channels below the float-proxy baseline. The per-channel
-theta that WOULD help is exactly what collapses the mixer (the WQ
-degenerate-channel routing OOM, 7341 lines vs 0). **VERDICT: do NOT arm
-ttfsq_exact_qat / sync_exact_qat_theta** (fail-toward-measured; keep
-config-armable). The mixer benefit requires per-channel theta-in-loop WITH
-collapse-hardening (the LIF program's accumulated territory) — the documented
-open follow-up. The mechanism (kernel/backward/decorator/theta-promotion) is
-correct and generic; scalar theta is simply the wrong lever for this cell.
+Scalar-theta TTFS exact-QAT does NOT help the mixer: ttfsq craters at S8 and is
+flat at S16. Mechanistically clear — the mixer's binder is per-channel scale
+spread (up to 1870x, M4), which a single scalar theta cannot capture; at S8 the
+exact ceil staircase with one global theta starves channels below the float
+proxy. Per-channel theta is the right lever; scalar is the wrong one.
 
-Three integration bugs the A/B found and fixed (real hardening): WQ theta-freeze
-generalized to ttfsq/sync (commit e78fc38c); sync per-channel theta breaks the
-synchronized mapper forward -> scalar (a30af1d8); ttfsq per-channel theta
-collapses mixer channels -> scalar (c2bdbbac).
+### 4.2 Per-channel theta (local, ratchet-hardened): WORKS at QAT, WQ-bound at deploy
+
+The "collapse" of §4.1's follow-up was a MISDIAGNOSIS. Per-channel theta on the
+ttfsq S8 mixer trains **healthily** — AQ 0.9702, WQ endpoint recovery val 0.9793
+(matching the S64 respec's ~0.9795 but at S=8). What looked like a collapse was
+(a) degenerate BN channels being HANDLED (bias routed through normalization beta,
+`perceptron_transformer._realize_effective_bias_through_normalization`) — correct
+behavior, not failure; (b) the routing print firing every endpoint-recovery step
+(6174 lines) as an I/O drag; (c) the 16000-step recovery being infra-killed on the
+SHAQ-saturated box (the LIF t0_01 CONTROL was killed the same way at val 0.9787 —
+NOT a regression). The ceil kernel quantizes down (q<=r) so its LSQ residual
+inflates theta more than LIF's floor kernel -> ~38-40 amplified channels in one
+mixer layer (vs LIF's handful), all routed, all recovered.
+
+Fixes landed (generic): the dead-zone theta RATCHET (clamp the dead-zone theta
+gradient to >=0 — block the theta-growing runaway, keep the theta-shrinking
+revival; the naive full-gate was refuted, routing 7341->10919; ratchet 6174) and
+the routing-telemetry gate (`MIMARSINAN_DEGENERATE_ROUTING_DEBUG`, default off).
+Ratchet safety (it lives in the SHARED backward): the armed LIF t0_01 mixer is
+unregressed — fast-recovery deployed 0.9759 (soft==hard), in the known-good
+~0.978 band (the 0.2pp is the 1500-step under-recovery, not the ratchet).
+
+Deployed (theta FROZEN at WQ — witness "in-loop theta frozen on 9 perceptron(s)";
+soft-core == hard-core, NF<->SCM parity gate PASSED — the mapping is exact):
+
+| recovery budget | MBH exit | torch test | deployed | vs baseline 0.9561 |
+|---|---|---|---|---|
+| 1500 steps | 0.9708 | 0.9692 | 0.9595 | +0.34pp |
+| 5000 steps (stopped 2016, patience) | 0.9631 | 0.9636 | 0.9427 | -1.34pp |
+
+The torch->spiking gap is honest WQ integer rounding
+(`[[mixer_nf_scm_wq_residual_resolved]]` — inherent, do not re-chase). The
+recovery is STOCHASTIC (the deployed model is the exit, not the keep-best), so
+deployed swings ~0.94-0.96 across runs — NOT robustly above the gate.
+
+**VERDICT (measured): do NOT arm `ttfsq_exact_qat` for the mixer.** Per-channel
+theta-in-loop is the right lever at the QAT LEVEL (forward 0.97-0.98 at S8, vs
+scalar's 0.8924 crater), but the S8 DEPLOYMENT is floored by physics the QAT
+cannot cross: the run's own advisory measures the 1/S per-hop composition
+distortion at **-1.91pp at S=8, healed only by S>=16** (the lif-exactness law).
+So the deep (L=9) mixer deploys ~0.94-0.96 at S=8 regardless of QAT quality —
+below the 0.97 gate and not robust. This is the post-QAT-inversion meta-lesson
+(now 8x): the isolated QAT win inverts on the deployed composition. The S64
+respec (t0_11, deployed 0.9795) STANDS as the robust gate-passer; the exact-QAT
+stays config-armable as the low-S QAT lever, not a deployment fix. Consistent
+with "accept mixers at AQ ceiling" (ADV-STAIRCASE-DEPTH).
+
+Integration bugs the A/B found and fixed (real hardening): WQ theta-freeze
+generalized to ttfsq/sync (e78fc38c); sync per-channel theta breaks the
+synchronized mapper forward -> scalar (a30af1d8); the ratchet + telemetry gate
+(0e1d3ec2, plus the env-gated print).
