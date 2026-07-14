@@ -7,7 +7,9 @@ from mimarsinan.mapping.support.bias_compensation import (
     LIF_HALF_STEP_FLAG,
     apply_lif_half_step_bias_compensation,
 )
+from mimarsinan.tuning.orchestration.adaptation_manager import sync_exact_qat_active
 from mimarsinan.tuning.orchestration.lif_exact_qat import model_trained_lif_exact
+from mimarsinan.tuning.orchestration.ttfs_exact_qat import model_trained_ttfsq_exact
 from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 from mimarsinan.pipelining.core.platform_constraints_resolver import (
     resolve_wq_two_scale_projection as resolve_wq_two_scale_projection,
@@ -42,7 +44,7 @@ class WeightQuantizationStep(TunerPipelineStep):
     def process(self):
         model = self.get_entry("model")
         adaptation_manager = self.get_entry("adaptation_manager")
-        self._freeze_lif_exact_theta(model)
+        self._freeze_exact_qat_theta(model)
         self._apply_lif_half_step_entry_fold(model)
         self._canonicalize_starved_bias_outliers(model)
         compute_per_source_scales(model.get_mapper_repr())
@@ -73,13 +75,21 @@ class WeightQuantizationStep(TunerPipelineStep):
             two_scale_projection=two_scale,
         )
 
-    def _freeze_lif_exact_theta(self, model) -> None:
+    def _freeze_exact_qat_theta(self, model) -> None:
         """[R1/P-L6] the WQ stage trains weights on a FIXED scale lattice: the
         effective-weight fold and the NAPQ projection share theta stamped at WQ
-        entry (compute_per_source_scales), so the exact-QAT arm's in-loop theta
-        freezes here — a theta trained under the WQ endpoint drifts the lattice
-        out from under the projection (torch<->deployed 0.9688 vs 1.0000)."""
-        if not model_trained_lif_exact(model):
+        entry (compute_per_source_scales), so ANY exact-QAT's in-loop theta
+        (lif/ttfsq/sync) freezes here — a theta trained under the WQ endpoint
+        drifts the lattice out from under the projection (torch<->deployed
+        0.9688 vs 1.0000; leaving it trainable floods the projection with
+        degenerate-channel bias routing and OOMs the graph)."""
+        cfg = self.pipeline.config
+        promotes = (
+            model_trained_lif_exact(model)
+            or model_trained_ttfsq_exact(model)
+            or (sync_exact_qat_active(cfg) and bool(cfg.get("sync_exact_qat_theta", False)))
+        )
+        if not promotes:
             return
         frozen = 0
         for perceptron in model.get_perceptrons():
@@ -89,7 +99,7 @@ class WeightQuantizationStep(TunerPipelineStep):
                 frozen += 1
         if frozen:
             print(
-                f"[WeightQuantizationStep] LIF exact-QAT: in-loop theta frozen on "
+                f"[WeightQuantizationStep] exact-QAT: in-loop theta frozen on "
                 f"{frozen} perceptron(s) (the WQ scale lattice is fixed at entry)."
             )
 

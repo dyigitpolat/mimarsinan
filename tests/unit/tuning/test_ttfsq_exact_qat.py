@@ -124,3 +124,52 @@ class TestAQTunerArm:
             assert not perceptron.activation_scale.requires_grad
         finally:
             tuner.close()
+
+
+class TestWQThetaFreeze:
+    """The WQ lattice must freeze the exact-QAT in-loop theta for ttfsq/sync too
+    (left trainable, it floods the projection with degenerate-channel routing
+    and OOMs the graph — the real S8 A/B failure, 2026-07-14)."""
+
+    def _freeze(self, model, cfg):
+        from types import SimpleNamespace
+
+        from mimarsinan.pipelining.pipeline_steps.quantization.weight_quantization_step import (
+            WeightQuantizationStep,
+        )
+
+        fake_step = SimpleNamespace(pipeline=MockPipeline(config=cfg))
+        WeightQuantizationStep._freeze_exact_qat_theta(fake_step, model)
+
+    def _promoted_model(self):
+        from mimarsinan.spiking.theta_cotrain import promote_theta_for_exact_qat
+
+        model = make_tiny_supermodel(hidden_layers=2)
+        promote_theta_for_exact_qat(model)
+        return model
+
+    def test_ttfsq_exact_freezes_trainable_theta(self):
+        from mimarsinan.tuning.orchestration.ttfs_exact_qat import mark_ttfsq_exact_qat
+
+        model = self._promoted_model()
+        for p in model.get_perceptrons():
+            mark_ttfsq_exact_qat(p)
+        assert any(p.activation_scale.requires_grad for p in model.get_perceptrons())
+        self._freeze(model, _ttfsq_cfg())
+        assert all(not p.activation_scale.requires_grad for p in model.get_perceptrons())
+
+    def test_sync_theta_freezes_trainable_theta(self):
+        model = self._promoted_model()
+        cfg = default_config()
+        cfg["spiking_mode"] = "ttfs_cycle_based"
+        cfg["ttfs_cycle_schedule"] = "synchronized"
+        cfg["sync_exact_qat"] = True
+        cfg["sync_exact_qat_theta"] = True
+        assert any(p.activation_scale.requires_grad for p in model.get_perceptrons())
+        self._freeze(model, cfg)
+        assert all(not p.activation_scale.requires_grad for p in model.get_perceptrons())
+
+    def test_plain_ttfsq_leaves_theta_untouched(self):
+        model = self._promoted_model()  # promoted but NOT exact-marked
+        self._freeze(model, _ttfsq_cfg(exact=False))
+        assert any(p.activation_scale.requires_grad for p in model.get_perceptrons())

@@ -589,7 +589,7 @@ class TestWQThetaFreeze:
         )
 
         fake_step = SimpleNamespace(pipeline=MockPipeline(config=cfg))
-        WeightQuantizationStep._freeze_lif_exact_theta(fake_step, model)
+        WeightQuantizationStep._freeze_exact_qat_theta(fake_step, model)
 
     def test_exact_marked_model_freezes_trainable_theta(self):
         from mimarsinan.spiking.theta_cotrain import promote_theta_for_exact_qat
