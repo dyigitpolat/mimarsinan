@@ -136,3 +136,48 @@ Integration bugs the A/B found and fixed (real hardening): WQ theta-freeze
 generalized to ttfsq/sync (e78fc38c); sync per-channel theta breaks the
 synchronized mapper forward -> scalar (a30af1d8); the ratchet + telemetry gate
 (0e1d3ec2, plus the env-gated print).
+
+## 5. Generic theta-aware seam + the casc arm (extending to cascaded)
+
+**Generic theta-aware install seam (47092289).** The promote+witness+[TAG]-print
++reporter-event that the three AQ installs (lif/ttfsq/sync) duplicated is one
+reusable seam in `spiking/theta_cotrain.py`: `emit_theta_install_witness` +
+`install_exact_qat_theta`. Any tuner installs theta-in-loop through it — the
+"generically keep theta-aware tuning across tuners" ask.
+
+**casc_exact_qat arm (eb5f3bc1, 282db44f).** The casc training-path map showed
+the AQ-stage decorator is DEAD CODE for casc: the cycle tuner subsumes AQ
+decorators (`ttfs_active=True`) and the genuine cascade forward reads
+`activation_scale` directly (never the decorator chain) — so ttfsq/sync's
+AQ-decorator approach would train a probe that does NOT deploy. The arm therefore
+lives in STAGE 3 (`TTFSCycleAdaptationTuner`), composing with the genuine
+blend-ramp firing-gain correction:
+- `TTFSActivation.set_exact_qat_theta(on)` routes the value-mode proxy's theta
+  gradient through `TTFSCountStaircaseFunction` (gated-LSQ ratchet) — forward
+  bit-exact for theta >= floor (r>1 saturates in both; relu keeps r>=0), and
+  TRAINING-ONLY (the cycle-accurate deploy path is untouched -> parity safe).
+- `casc_exact_qat` knob forces `theta_cotrain` on, promotes through the shared
+  `install_exact_qat_theta` seam (eligibility-filtered per-channel + ComputeOp
+  wrap = exact on-chip export), and is mutually exclusive with the gamma gain
+  ramp (both own theta).
+
+Casc is fundamentally floored (premature-fire law: d_max ~= 0.56*sqrt(S); tier-0
+casc cells read 0.77-0.87 or collapse), so the arm's value is RELATIVE (does the
+collapse-hardened + exact-export theta-cotrain beat the plain-STE default?).
+
+**A/B (mmixcore casc S8, local):**
+
+| arm | torch test | deployed |
+|---|---|---|
+| casc_exact_qat OFF (default casc, no theta-cotrain) | 0.9567 | 0.9567 |
+| casc_exact_qat ON | 0.9518 | 0.9539 |
+
+Flat-to-slightly-worse (-0.28pp deployed), WITHIN casc's stochastic noise band
+(casc recoveries swing >1pp run-to-run). Note casc_off has torch == deployed
+(0.9567) — casc's genuine cascade forward IS the deployed forward, so there is NO
+QAT->deploy gap for the theta-in-loop to close (unlike ttfsq/sync's WQ residual).
+The arm is NEUTRAL on this floored cell. **VERDICT: keep `casc_exact_qat`
+config-armable, default-off** (same as ttfsq/sync) — the mechanism is landed,
+generic, and composes correctly with the blend-ramp, but casc's premature-fire
+floor leaves no headroom for the theta lever here. Not chasing multi-seed casc
+(de-scoped research mode).
