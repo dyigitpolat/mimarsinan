@@ -20,6 +20,7 @@ MP_START_METHOD_VAR = "MIMARSINAN_MP_START_METHOD"
 MBH_LEDGER_VAR = "MIMARSINAN_MBH_LEDGER"
 SIMULATION_STEP_TIMEOUT_VAR = "MIMARSINAN_SIMULATION_STEP_TIMEOUT_S"
 UNSAFE_QUANT_OVERRIDES_VAR = "MIMARSINAN_UNSAFE_QUANT_OVERRIDES"
+DEGENERATE_ROUTING_DEBUG_VAR = "MIMARSINAN_DEGENERATE_ROUTING_DEBUG"
 IMAGENET_ROOT_VAR = "IMAGENET_ROOT"
 
 
@@ -49,6 +50,13 @@ def resource_debug_enabled() -> bool:
 def nf_scm_parity_debug_enabled() -> bool:
     """Verbose NF-SCM parity-gate diagnostics are on (value exactly "1")."""
     return os.environ.get(NF_SCM_PARITY_DEBUG_VAR) == "1"
+
+
+def degenerate_routing_debug_enabled() -> bool:
+    """Per-channel degenerate-bias routing telemetry is on (value exactly "1").
+    Off by default: the effective-bias transform re-routes every training step,
+    so the message otherwise floods WQ endpoint recovery (thousands of lines)."""
+    return os.environ.get(DEGENERATE_ROUTING_DEBUG_VAR) == "1"
 
 
 def ffcv_disabled() -> bool:

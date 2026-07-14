@@ -142,6 +142,24 @@ class TestHealthyChannelsBitIdentical:
         PerceptronTransformer().apply_effective_bias_transform(p, lambda b: b + SHIFT)
         assert torch.equal(p.normalization.bias.data, beta_before)
 
+
+class TestRoutingTelemetryGate:
+    """The routing print floods WQ endpoint recovery (re-routes every step), so
+    it is gated OFF by default and only emitted under the debug env var."""
+
+    def _route_a_dead_channel(self, capsys):
+        p = _bn_perceptron([1e-20, 1.1])  # channel 0 structurally dead -> routed
+        PerceptronTransformer().apply_effective_bias_transform(p, lambda b: b + SHIFT)
+        return capsys.readouterr().out
+
+    def test_silent_by_default(self, capsys, monkeypatch):
+        monkeypatch.delenv("MIMARSINAN_DEGENERATE_ROUTING_DEBUG", raising=False)
+        assert "degenerate-channel" not in self._route_a_dead_channel(capsys)
+
+    def test_emitted_when_debug_enabled(self, capsys, monkeypatch):
+        monkeypatch.setenv("MIMARSINAN_DEGENERATE_ROUTING_DEBUG", "1")
+        assert "degenerate-channel" in self._route_a_dead_channel(capsys)
+
     def test_identity_transform_healthy_matches_classic_bitwise(self):
         p = _bn_perceptron([0.6, 1.7, 0.02])
         expected = _classic_inverted_bias(p, lambda b: b)

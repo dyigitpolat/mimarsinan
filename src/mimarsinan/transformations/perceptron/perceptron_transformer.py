@@ -3,6 +3,7 @@ import contextlib
 import torch
 import torch.nn as nn
 
+from mimarsinan.common.env import degenerate_routing_debug_enabled
 from mimarsinan.transformations.pruning.committed_masks import (
     commit_perceptron_pruning,
 )
@@ -190,11 +191,12 @@ class PerceptronTransformer:
         new_beta = target * act - (raw - mean) * u
         with torch.no_grad():
             norm_bias.data = torch.where(degenerate, new_beta, norm_bias.data)
-        print(
-            f"[PerceptronTransformer] {getattr(perceptron, 'name', '<unnamed>')}: "
-            f"routed {int(degenerate.sum())} degenerate-channel bias delta(s) "
-            "through normalization beta (total inversion)"
-        )
+        if degenerate_routing_debug_enabled():
+            print(
+                f"[PerceptronTransformer] {getattr(perceptron, 'name', '<unnamed>')}: "
+                f"routed {int(degenerate.sum())} degenerate-channel bias delta(s) "
+                "through normalization beta (total inversion)"
+            )
 
     def _get_u_beta_mean(self, bn_layer):
         from mimarsinan.models.nn.layers import norm_affine_params
