@@ -69,4 +69,29 @@ regresses, arm `ttfsq_exact_qat` / adopt `sync_exact_qat_theta` in the recipe
 and dial back the interim S64 respec; else keep config-armable, document the
 refutation (the campaign's post-QAT-inversion discipline).
 
-**Results:** _(pending — GPUs SHAQ-contended; A/B running locally)_.
+**Results (slurm/xlog1, scalar theta):** REFUTED for the mixer.
+
+| cell | exact/theta | baseline | delta |
+|---|---|---|---|
+| ttfsq S8 | 0.8924 | 0.9561 | -6.4pp |
+| ttfsq S16 | 0.9604 | 0.9596 | +0.1pp |
+| sync S8 | (pending) | 0.9603 | - |
+| sync S16 | 0.9635 | 0.9648 | -0.1pp |
+
+Scalar-theta TTFS exact-QAT does NOT help the mixer: ttfsq craters at S8
+(-6.4pp) and is flat at S16; sync is flat-to-slightly-worse. Mechanistically
+clear — the mixer's binder is per-channel scale spread (up to 1870x, M4), which
+a single scalar theta cannot capture; at S8 the exact ceil staircase with one
+global theta starves channels below the float-proxy baseline. The per-channel
+theta that WOULD help is exactly what collapses the mixer (the WQ
+degenerate-channel routing OOM, 7341 lines vs 0). **VERDICT: do NOT arm
+ttfsq_exact_qat / sync_exact_qat_theta** (fail-toward-measured; keep
+config-armable). The mixer benefit requires per-channel theta-in-loop WITH
+collapse-hardening (the LIF program's accumulated territory) — the documented
+open follow-up. The mechanism (kernel/backward/decorator/theta-promotion) is
+correct and generic; scalar theta is simply the wrong lever for this cell.
+
+Three integration bugs the A/B found and fixed (real hardening): WQ theta-freeze
+generalized to ttfsq/sync (commit e78fc38c); sync per-channel theta breaks the
+synchronized mapper forward -> scalar (a30af1d8); ttfsq per-channel theta
+collapses mixer channels -> scalar (c2bdbbac).
