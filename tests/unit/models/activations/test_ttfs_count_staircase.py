@@ -96,13 +96,23 @@ class TestDecorator:
         with pytest.raises(ValueError, match="theta"):
             dec.output_transform(x)
 
-    def test_dead_zone_contributes_no_theta_gradient(self):
-        # [collapse-hardening] r in the dead zone (q==0, no fire) must NOT push
-        # theta — the naive q-r=-r would runaway-grow theta and collapse the
-        # channel (the per-channel TTFS mixer OOM).
-        z = torch.tensor([0.05], dtype=torch.float64, requires_grad=True)  # r=0.05 < 1/8
+    def test_dead_zone_ratchet_blocks_theta_growth(self):
+        # [collapse-hardening] In the dead zone (q==0), the loss wanting the
+        # channel OFF (upstream g>0) would grow theta via q-r=-r — the runaway
+        # that collapses the channel (per-channel TTFS mixer OOM). Ratcheted to 0.
+        z = torch.tensor([0.05], dtype=torch.float64, requires_grad=True)  # r<1/8
         th = torch.tensor(1.0, dtype=torch.float64, requires_grad=True)
-        TTFSCountStaircaseFunction.apply(z, th, 8, False).sum().backward()
+        out = TTFSCountStaircaseFunction.apply(z, th, 8, False)
         q = ttfs_quantized_staircase(z.detach(), torch.ones((), dtype=torch.float64), 8)
         assert float(q) == 0.0  # dead (no fire)
-        assert th.grad.item() == 0.0
+        out.backward(torch.tensor([1.0], dtype=torch.float64))  # g>0: wants off
+        assert th.grad.item() == 0.0  # theta-growing runaway blocked
+
+    def test_dead_zone_ratchet_keeps_revival(self):
+        # The revival direction survives: g<0 (loss wants the dead channel ON)
+        # SHRINKS theta (grad_theta = -g*r > 0), waking it up — not blocked.
+        z = torch.tensor([0.05], dtype=torch.float64, requires_grad=True)  # r<1/8
+        th = torch.tensor(1.0, dtype=torch.float64, requires_grad=True)
+        out = TTFSCountStaircaseFunction.apply(z, th, 8, False)
+        out.backward(torch.tensor([-1.0], dtype=torch.float64))  # g<0: wants on
+        assert th.grad.item() > 0.0  # theta-shrinking revival allowed

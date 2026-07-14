@@ -96,17 +96,20 @@ def _gated_lsq_backward(g, r, q, safe):
     ``0<r<1``) + the LSQ theta gradient, reduced to θ's shape. Kernels (LIF
     floor-count, TTFS ceil) differ only in the forward staircase.
 
-    [collapse-hardening] The theta gradient uses q's OWN responsive band
-    ``(q>0)&(r<1)``, not ``0<r<1``: in the DEAD zone (q==0 while 0<r<1) the
-    naive ``q−r=−r`` pushes theta UP, driving r deeper into the dead zone — a
-    positive-feedback runaway that collapses per-channel theta (the TTFS-ceil
-    mixer OOM: theta grows, W/theta→0, mass degenerate-channel routing). The
-    band leaves the responsive steps (q>0 → ``q−r``) and saturation
-    (r>=1 → q=1, theta grows) intact. Generic across kernels/models."""
+    [collapse-hardening] Dead-zone ratchet on the theta gradient. In the dead
+    zone (q==0 while 0<r<1) the LSQ residual is ``q−r=−r``, so the update
+    ``θ−lr·g·(−r)`` GROWS θ when the loss wants the channel off (g>0): r→0,
+    deeper dead, W/θ→0 — a positive-feedback runaway that collapses per-channel
+    theta (the TTFS-ceil mixer degenerate-channel WQ OOM). But the SAME term
+    SHRINKS θ (revives the channel) when the loss wants it on (g<0). So we
+    ratchet: clamp the dead-zone gradient to ``≥0`` (block only the θ-growing
+    runaway; keep revival). Responsive steps and saturation (r>=1 → q=1) are
+    untouched. Generic across kernels/models."""
     inband = ((r > 0) & (r < 1)).to(g.dtype)
     grad_z = g * inband
-    theta_band = ((q > 0) & (r < 1)).to(g.dtype)
-    grad_theta = g * (q - r * theta_band)
+    raw_theta = g * (q - r * inband)
+    dead = (q <= 0) & (r > 0) & (r < 1)
+    grad_theta = torch.where(dead, raw_theta.clamp_min(0.0), raw_theta)
     while grad_theta.dim() > safe.dim():
         grad_theta = grad_theta.sum(0)
     for i in range(grad_theta.dim()):
