@@ -45,9 +45,7 @@ def resolve_weight_source(config: dict[str, Any]) -> Any:
 OPTIMIZATION_DRIVER_CONTROLLER = "controller"
 OPTIMIZATION_DRIVER_FAST = "fast"
 
-_LEGACY_FAST_SWITCHES = (
-    "lif_blend_fast", "ttfs_genuine_blend_fast", "ttfs_blend_fast",
-)
+_LEGACY_FAST_SWITCHES = ("lif_blend_fast", "ttfs_genuine_blend_fast", "ttfs_blend_fast")
 
 
 def resolve_optimization_driver(config: dict[str, Any]) -> str:
@@ -113,6 +111,7 @@ class DeploymentPlan:
     max_simulation_samples: int
     simulation_batch_count: Any
     simulation_batch_size: int
+    eval_max_samples: int
     seed: int
 
     model_name: str
@@ -172,6 +171,7 @@ class DeploymentPlan:
             max_simulation_samples=int(get("max_simulation_samples", 0) or 0),
             simulation_batch_count=get("simulation_batch_count", None),
             simulation_batch_size=int(get("simulation_batch_size", 8)),
+            eval_max_samples=int(get("eval_max_samples", 10000)),  # registry SSOT default
             seed=int(get("seed", 0)),
             model_name=get("model_name") or model_type,
             workload=workload,

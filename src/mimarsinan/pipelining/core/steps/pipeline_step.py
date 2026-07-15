@@ -1,3 +1,5 @@
+from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
+
 METRIC_MEASURED = "measured"
 METRIC_CARRIED = "carried"
 
@@ -57,11 +59,25 @@ class PipelineStep:
         if tuner is not None:
             trainer = getattr(tuner, "trainer", None)
             if trainer is not None and hasattr(trainer, "test"):
-                return trainer.test()
+                return self._capped_test(trainer)
         trainer = getattr(self, "trainer", None)
         if trainer is not None and hasattr(trainer, "test"):
-            return trainer.test()
+            return self._capped_test(trainer)
         return self.validate()
+
+    def _capped_test(self, trainer):
+        """The definitive test read under the universal eval-sample cap: at/below
+        the cap the dataset evaluates in full (byte-identical); larger datasets use
+        a seeded subsample (matching the deployed-sim subset via ``plan.seed``) so
+        an ImageNet-scale read is not a full-set pass every step."""
+        if not hasattr(trainer, "test_on_subsample"):
+            return trainer.test()
+        plan = DeploymentPlan.of(self.pipeline)
+        if not plan.eval_max_samples:
+            return trainer.test()
+        return trainer.test_on_subsample(
+            max_samples=plan.eval_max_samples, seed=plan.seed,
+        )
 
     def pipeline_metric_kind(self) -> str:
         """How ``pipeline_metric()`` resolves, without measuring: ``measured``

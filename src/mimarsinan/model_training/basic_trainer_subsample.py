@@ -15,6 +15,11 @@ def test_on_subsample(trainer, *, max_samples: int, seed: int = 0) -> float:
     except (TypeError, NotImplementedError):
         total_samples = None
 
+    # The cap covers the whole set: defer to the exact full test() path so a cap
+    # >= the dataset size is byte-identical (no subsampling, same fp/order).
+    if total_samples is not None and 0 < total_samples <= int(max_samples):
+        return trainer.test()
+
     if total_samples is None or total_samples <= 0:
         xs_all: list[torch.Tensor] = []
         ys_all: list[torch.Tensor] = []

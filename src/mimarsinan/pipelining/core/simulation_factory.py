@@ -251,10 +251,21 @@ def run_trainer_metric(
             trainer.set_test_batch_size(
                 min(int(trainer.test_batch_size), int(max_batch_cap))
             )
-        # Evaluate on the SAME (full) test set as the torch reference; a subsample-vs-full-set comparison manufactures spurious NF↔SCM drop.
+        # Evaluate on the SAME test set as the torch reference (a subsample-vs-full
+        # comparison manufactures spurious NF↔SCM drop): the universal eval cap is
+        # seeded by plan.seed here AND at the torch pipeline_metric, so both read the
+        # identical subset. The cap only BINDS when the test set is known to exceed
+        # it (ImageNet-scale); at/below it the exact full path is kept -> tier
+        # datasets (<=10000) are byte-identical.
         plan = DeploymentPlan.of(pipeline)
-        max_samples = 0 if plan.deployment_metric_full_eval else plan.max_simulation_samples
-        if max_samples > 0:
+        existing = 0 if plan.deployment_metric_full_eval else plan.max_simulation_samples
+        cap = plan.eval_max_samples
+        max_samples = cap if existing == 0 else (min(existing, cap) if cap else existing)
+        try:
+            test_size = len(trainer.data_provider._get_test_dataset())
+        except (TypeError, NotImplementedError):
+            test_size = None
+        if max_samples > 0 and test_size is not None and test_size > max_samples:
             return float(
                 trainer.test_on_subsample(
                     max_samples=max_samples,

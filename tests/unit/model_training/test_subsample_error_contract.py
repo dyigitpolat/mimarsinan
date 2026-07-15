@@ -59,7 +59,36 @@ class TestSubsampleErrorContract:
         assert acc == 1.0
         assert trainer.reports
 
+
+class TestFullSetDelegation:
+    """A cap that covers the whole test set defers to the exact full ``test()``
+    path, so a covering cap is byte-identical (the universal eval-cap invariant)."""
+
+    def test_cap_at_or_above_size_defers_to_full_test(self):
+        called = {}
+
+        class _T(_FakeTrainer):
+            def test(self):
+                called["test"] = True
+                return 0.99
+
+        trainer = _T(_FakeProvider([0, 1, 2, 3]), _perfect_batches())  # size 4
+        assert subsample_eval.test_on_subsample(trainer, max_samples=4) == 0.99
+        assert called.get("test") is True
+        assert subsample_eval.test_on_subsample(trainer, max_samples=100) == 0.99
+
+    def test_cap_below_size_subsamples_and_never_calls_full_test(self):
+        class _T(_FakeTrainer):
+            def test(self):
+                raise AssertionError("full test() must not run when the cap binds")
+
+        trainer = _T(_FakeProvider([0, 1, 2, 3]), _perfect_batches())  # size 4
+        acc = subsample_eval.test_on_subsample(trainer, max_samples=2, seed=0)
+        assert 0.0 <= acc <= 1.0
+
     def test_sized_dataset_uses_len_path(self):
+        # max_samples < size exercises the len-based subsample (a covering cap
+        # instead defers to full test(); see TestFullSetDelegation).
         trainer = _FakeTrainer(_FakeProvider([0, 1, 2, 3]), _perfect_batches())
-        acc = subsample_eval.test_on_subsample(trainer, max_samples=4)
+        acc = subsample_eval.test_on_subsample(trainer, max_samples=3)
         assert acc == 1.0

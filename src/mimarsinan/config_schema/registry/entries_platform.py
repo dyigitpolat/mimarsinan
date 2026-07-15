@@ -168,10 +168,7 @@ ENTRIES = (
        owner="ConversionPolicy/backend_registry", type=T.BOOL,
        category=Category.DERIVED, derivation="derived", exposure="derived",
        label="Loihi Simulation",
-       doc="Whether the Lava Loihi spike-parity gate runs. Recipe default: on "
-           "where the backend supports the mode; declare false to skip the "
-           "vehicle (a stored override); an explicit on for an unsupported "
-           "mode is rejected.",
+       doc="Whether the Lava Loihi spike-parity gate runs (recipe: on where supported; explicit-on for an unsupported mode is rejected).",
        derived_from=("spiking_mode", "ttfs_cycle_schedule"),
        why=_why_backend_enable(
            "loihi", "Loihi/Lava only implements LIF dynamics"),
@@ -187,9 +184,7 @@ ENTRIES = (
        category=Category.DERIVED, derivation="derived", exposure="derived",
        label="SANA-FE Simulation",
        doc="Whether the SANA-FE simulator (parity + energy/latency aggregates) "
-           "runs. Recipe default: on where the backend supports the mode; "
-           "declare false to skip the vehicle (a stored override); an "
-           "explicit on for an unsupported mode is rejected.",
+           "runs (recipe: on where supported; explicit-on for an unsupported mode is rejected).",
        derived_from=("spiking_mode", "ttfs_cycle_schedule"),
        why=_why_backend_enable(
            "sanafe", "SANA-FE does not support this mode"),
@@ -228,6 +223,11 @@ ENTRIES = (
        type=T.BOOL, category=Category.ADVANCED, label="Deployment Metric Full Eval",
        doc="Use the full test set (not the probe subsample) for the deployed metric.",
        provenance="consumer frozen default", derived_default=_frozen(True)),
+    _E("eval_max_samples", group="deployment_target", owner="DeploymentPlan",
+       type=T.INT, category=Category.ADVANCED, exposure="user", label="Eval Max Samples",
+       doc="Universal deployment-metric test-sample cap: a set at/below this size "
+           "evaluates in full, larger uses a seeded subsample.",
+       bounds=(1, None), provenance="consumer frozen default", derived_default=_frozen(10000)),
     _E("scm_degradation_tolerance", group="deployment_target", owner="soft_core_mapping",
        type=T.FLOAT, category=Category.ADVANCED, label="SCM Degradation Tolerance",
        doc="Retention tolerance of the SCM identity read. Absent, the SCM step "
