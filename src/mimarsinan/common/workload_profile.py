@@ -79,7 +79,6 @@ class ModelWorkloadProfile:
     endpoint_floor_lr: Optional[float] = None
     pretrained_weight_sets: Tuple[PretrainedWeightSet, ...] = ()
     proven_recovery_depth: Optional[int] = None
-    clamp_cuda_assert_prone: Optional[bool] = None
 
     def config_updates(self) -> dict[str, Any]:
         """The flat config keys this registration declares (absent = no claim)."""
@@ -129,7 +128,6 @@ class ResolvedWorkloadProfile:
     endpoint_floor_lr: Optional[float] = None
     pretrained_weight_sets: Tuple[Dict[str, Any], ...] = ()
     proven_recovery_depth: Optional[int] = None
-    clamp_cuda_assert_prone: bool = False
 
     @classmethod
     def from_config(cls, config: Mapping[str, Any]) -> "ResolvedWorkloadProfile":
@@ -158,5 +156,4 @@ class ResolvedWorkloadProfile:
             endpoint_floor_lr=opt("endpoint_floor_lr", float),
             pretrained_weight_sets=registered_weight_sets(config) or (),
             proven_recovery_depth=opt("proven_recovery_depth", int),
-            clamp_cuda_assert_prone=bool(config.get("clamp_cuda_assert_prone", False)),
         )

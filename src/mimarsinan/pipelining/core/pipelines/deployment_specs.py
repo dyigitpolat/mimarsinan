@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import sys
-
 import torch
 
 from mimarsinan.chip_simulation.backend import BACKEND_REGISTRY
@@ -82,17 +80,3 @@ def get_pipeline_step_specs(config: dict) -> list[tuple[str, type]]:
     return [spec.to_pair() for spec in _STEP_PLAN.validate_data_contract(plan)]
 
 
-def validate_deployment_config(config: dict, *, model_name: str, cuda_debug: bool) -> None:
-    """Non-fatal sanity checks; warnings go to stderr."""
-    plan = DeploymentPlan.resolve(config)
-    clamp_in_play = plan.requires_clamp_preconditioning
-
-    if plan.workload.clamp_cuda_assert_prone and clamp_in_play and not cuda_debug:
-        print(
-            f"[DeploymentPipeline] {model_name}: this architecture is "
-            "registered CUDA-assert-prone under Clamp Adaptation and "
-            "cuda_debug is off. If you hit a CUDA device-side assert, re-run "
-            "with --debug (or set deployment_parameters.cuda_debug=true) to "
-            "get a precise traceback.",
-            file=sys.stderr,
-        )

@@ -58,17 +58,6 @@ def apply_determinism(seed: int) -> None:
     torch.backends.cuda.matmul.allow_tf32 = False
     torch.backends.cudnn.allow_tf32 = False
     torch.set_float32_matmul_precision("highest")
-    # Force the MATH scaled-dot-product-attention backend: on torch 2.12 / cu13
-    # both the flash AND the mem-efficient SDP BACKWARD kernels hard-crash
-    # (silent SIGKILL, no catchable error) on the mapped-ViT attention at
-    # deployment training; math is the pure-PyTorch deterministic fallback that
-    # does not crash (slow for ViT-B, but correct). No-op for the attention-free
-    # vehicles (MLP/CNN/mixer never dispatch SDP). See offloaded-ViT finding in
-    # docs/research/findings/offloaded_vit_deployment.md.
-    if hasattr(torch.backends.cuda, "enable_flash_sdp"):
-        torch.backends.cuda.enable_flash_sdp(False)
-        torch.backends.cuda.enable_mem_efficient_sdp(False)
-        torch.backends.cuda.enable_math_sdp(True)
 
 
 def parse_deployment_config(

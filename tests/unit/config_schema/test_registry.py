@@ -123,7 +123,7 @@ class TestTaxonomy:
 
     def test_model_group_is_architecture_side(self):
         for key in ("model_config_mode", "model_type", "model_config",
-                    "model_factory", "clamp_cuda_assert_prone"):
+                    "model_factory"):
             assert REGISTRY[key].group == "model", key
 
     def test_pretrained_model_config_lives_in_training(self):

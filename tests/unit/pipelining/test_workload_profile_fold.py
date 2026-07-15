@@ -132,11 +132,6 @@ class TestShippedBuilderRegistrations:
             for weight_set in profile.pretrained_weight_sets:
                 assert weight_set.source == "torchvision", model_type
 
-    def test_vit_registers_the_clamp_cuda_assert_flag(self):
-        profile = ModelRegistry.get_workload_profile("torch_vit")
-        assert profile is not None
-        assert profile.clamp_cuda_assert_prone is True
-
     def test_native_builders_register_the_empty_weight_set(self):
         profile = ModelRegistry.get_workload_profile("deep_cnn")
         assert profile is not None

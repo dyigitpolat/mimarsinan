@@ -189,7 +189,7 @@ CONFIG_KEYS_SET: Set[str] = {
     # Workload-profile-injectable keys (absence is meaningful — no defaults).
     "input_data_scale", "eval_subsample_target", "tuning_step_cap_epochs",
     "calibration_set_policy", "prefix_stage_lr", "endpoint_floor_lr",
-    "proven_recovery_depth", "clamp_cuda_assert_prone",
+    "proven_recovery_depth",
 }
 
 

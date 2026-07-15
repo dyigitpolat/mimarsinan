@@ -76,14 +76,12 @@ class TestConfigUpdates:
             endpoint_floor_lr=1e-3,
             pretrained_weight_sets=(weight_set,),
             proven_recovery_depth=9,
-            clamp_cuda_assert_prone=True,
         )
         assert profile.config_updates() == {
             "prefix_stage_lr": 5e-4,
             "endpoint_floor_lr": 1e-3,
             "pretrained_weight_sets": [weight_set.as_dict()],
             "proven_recovery_depth": 9,
-            "clamp_cuda_assert_prone": True,
         }
 
 
@@ -168,7 +166,6 @@ class TestResolvedWorkloadProfile:
         assert resolved == ResolvedWorkloadProfile()
         assert resolved.input_data_scale == 1.0
         assert resolved.calibration == CalibrationSetPolicy()
-        assert resolved.clamp_cuda_assert_prone is False
         assert resolved.eval_subsample_target is None
         assert resolved.tuning_step_cap_epochs is None
         assert resolved.prefix_stage_lr is None
@@ -186,7 +183,6 @@ class TestResolvedWorkloadProfile:
             "endpoint_floor_lr": 1e-3,
             "pretrained_weight_sets": [{"id": "v1", "source": "torchvision"}],
             "proven_recovery_depth": 9,
-            "clamp_cuda_assert_prone": True,
         })
         assert resolved.input_data_scale == 5.0
         assert resolved.eval_subsample_target == 10000
@@ -197,7 +193,6 @@ class TestResolvedWorkloadProfile:
         assert resolved.endpoint_floor_lr == 1e-3
         assert resolved.pretrained_weight_sets == ({"id": "v1", "source": "torchvision"},)
         assert resolved.proven_recovery_depth == 9
-        assert resolved.clamp_cuda_assert_prone is True
 
     def test_unknown_calibration_fields_fail_loud(self):
         with pytest.raises(ValueError, match="calibration_set_policy"):

@@ -205,10 +205,4 @@ ENTRIES = (
        why=lambda cfg: "the model builder's ModelWorkloadProfile registration",
        declarable=False, hidden=True, provenance="builder profile",
        derived_default=lambda cfg: list(cfg.get("pretrained_weight_sets") or [])),
-    _E("clamp_cuda_assert_prone", group="model", owner="workload_profile/deployment_specs",
-       type=T.BOOL, category=Category.ADVANCED, label="Clamp CUDA-assert Prone",
-       doc="Architecture is known to trip CUDA asserts under clamp adaptation "
-           "(warns to enable cuda_debug). Builders register it via "
-           "ModelWorkloadProfile; explicit value wins.",
-       provenance="builder profile", derived_default=_frozen(False)),
 )

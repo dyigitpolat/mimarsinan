@@ -10,7 +10,6 @@ from mimarsinan.pipelining.core.pipelines.deployment_specs import (
     get_pipeline_semantic_group_by_step_name as get_pipeline_semantic_group_by_step_name,
     get_pipeline_step_specs,
     select_device,
-    validate_deployment_config,
 )
 
 import numpy as np
@@ -125,16 +124,6 @@ class DeploymentPipeline(Pipeline):
                 1.0 - self.plan.scm_degradation_tolerance
             )
         self.accuracy_budget.budget_total = self.plan.degradation_budget_total
-
-        self._validate_config()
-
-    def _validate_config(self):
-        model_name = self.config.get("model_name") or self.config.get("model_type", "")
-        validate_deployment_config(
-            self.config,
-            model_name=model_name,
-            cuda_debug=self.cuda_debug,
-        )
 
     def _display_config(self):
         plan = self.plan

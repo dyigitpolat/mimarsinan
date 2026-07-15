@@ -1,9 +1,18 @@
-# Offloaded ViT deployment (LIF / TTFS-sync) — status & the SDP-backend stack blocker
+# Offloaded ViT deployment (LIF / TTFS-sync) — RESOLVED (SDP-backend stack bug)
 
-**Status:** tier_2/tier_3 offloaded-ViT cells BUILT + valid (user-directed
+**Status: RESOLVED (2026-07-16) by pinning stable torch.** The blocker below was
+a **`torch 2.12.0+cu130` DEV-build bug** whose flash/mem-efficient SDP backward
+kernels SIGKILL the mapped-ViT attention. Fix: `requirements.txt` now pins
+**`torch==2.11.0` + `torchvision==0.26.0`** (same CUDA 13, verified flash SDP
+backward works, honors compilagent's `torch>=2.11` floor). The temporary
+math-only SDP override in `apply_determinism` and the ViT `clamp_cuda_assert_prone`
+advisory flag were **removed** (both obsolete on 2.11); attention now runs on the
+fast flash backend. The diagnosis below is retained for the record.
+
+**Original status:** tier_2/tier_3 offloaded-ViT cells BUILT + valid (user-directed
 2026-07-15). The SNN pipeline runs end-to-end through finetune + Torch Mapping;
-**deployment is blocked at Pruning Adaptation by a torch 2.12 / CUDA 13.0
-scaled-dot-product-attention (SDP) stack bug, not a mimarsinan defect.**
+deployment was blocked at Pruning Adaptation by the torch 2.12 / CUDA 13.0 SDP
+dev-build bug (not a mimarsinan defect).
 
 ## What works
 

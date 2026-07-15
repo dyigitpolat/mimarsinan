@@ -156,14 +156,12 @@ class TorchViTBuilder:
     @classmethod
     def workload_profile(cls) -> ModelWorkloadProfile:
         """The torchvision weight sets whose native geometry this builder loads
-        (ViT-B/16 at 224px), plus the measured clamp/CUDA-assert proneness
-        (device-side asserts observed under Clamp Adaptation on this backbone)."""
+        (ViT-B/16 at 224px)."""
         return ModelWorkloadProfile(
             pretrained_weight_sets=tuple(
                 torchvision_weight_set(models.ViT_B_16_Weights[name])
                 for name in ("IMAGENET1K_V1", "IMAGENET1K_SWAG_LINEAR_V1")
             ),
-            clamp_cuda_assert_prone=True,
         )
 
     @classmethod
