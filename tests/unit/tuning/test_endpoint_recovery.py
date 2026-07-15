@@ -18,7 +18,11 @@ import pytest
 import torch
 
 from conftest import MockPipeline, default_config, make_tiny_supermodel
-from mimarsinan.tuning.orchestration import dhat_highwater, endpoint_steps
+from mimarsinan.tuning.orchestration import (
+    dhat_highwater,
+    endpoint_steps,
+    retention_envelope,
+)
 from mimarsinan.tuning.orchestration.frontier import endpoint_recovery
 from mimarsinan.tuning.orchestration.adaptation_manager import AdaptationManager
 from mimarsinan.tuning.orchestration.frontier.endpoint_recovery import (
@@ -218,12 +222,15 @@ class TestEndpointTargetFloor:
     entirely inside the lr transient and would be sterile.
     """
 
-    def _run(self, tmp_path, monkeypatch, *, floor, highwater, reads, base_steps=100):
+    def _run(self, tmp_path, monkeypatch, *, floor, highwater, reads,
+             base_steps=100, envelope=None):
         tuner = _lif_tuner(tmp_path)
         tuner.pipeline.config["endpoint_target_floor"] = floor
         _prepare_endpoint_scaffold(tuner)
         tuner._fast_optimizer_steps = len(tuner._fixed_ladder_rates) * 2
         dhat_highwater.observe(tuner.pipeline, highwater)
+        if envelope is not None:
+            retention_envelope.seed(tuner.pipeline, envelope)
         read_iter = iter(reads)
         monkeypatch.setattr(
             endpoint_recovery, "_fp32_deployed_read", lambda t: next(read_iter),
@@ -251,6 +258,39 @@ class TestEndpointTargetFloor:
         assert seen["target"] == pytest.approx(0.9)
         assert report.target == pytest.approx(0.9)
         assert report.floor_lifted is True
+
+    def test_envelope_absent_is_byte_identical(self, tmp_path, monkeypatch):
+        # No envelope -> the absolute floor is uncapped (the historical behavior).
+        report, seen = self._run(
+            tmp_path, monkeypatch, floor=0.9, highwater=0.5, reads=[0.3, 0.6],
+        )
+        assert seen["target"] == pytest.approx(0.9)
+
+    def test_envelope_at_or_above_floor_is_inert(self, tmp_path, monkeypatch):
+        # tier-0: envelope 0.99 >= floor 0.98 -> min() inert -> target unchanged.
+        report, seen = self._run(
+            tmp_path, monkeypatch, floor=0.98, highwater=0.5, reads=[0.3, 0.6],
+            envelope=0.99,
+        )
+        assert seen["target"] == pytest.approx(0.98)
+        assert report.target == pytest.approx(0.98)
+
+    def test_envelope_below_floor_caps_the_target(self, tmp_path, monkeypatch):
+        # ViT: envelope 0.86 < floor 0.98 -> capped_floor=0.86 -> target=max(0.5,0.86).
+        report, seen = self._run(
+            tmp_path, monkeypatch, floor=0.98, highwater=0.5, reads=[0.3, 0.87],
+            envelope=0.86,
+        )
+        assert seen["target"] == pytest.approx(0.86)
+        assert report.target == pytest.approx(0.86)
+
+    def test_highwater_above_envelope_is_uncapped(self, tmp_path, monkeypatch):
+        # A real measured gain above the envelope still drives the target.
+        report, seen = self._run(
+            tmp_path, monkeypatch, floor=0.98, highwater=0.90, reads=[0.3, 0.91],
+            envelope=0.86,
+        )
+        assert seen["target"] == pytest.approx(0.90)
 
     def test_floor_below_high_water_keeps_the_mark_and_arms(
         self, tmp_path, monkeypatch,

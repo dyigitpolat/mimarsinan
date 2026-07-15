@@ -4,7 +4,7 @@ import time as _time
 
 import torch
 
-from mimarsinan.tuning.orchestration import run_ledger
+from mimarsinan.tuning.orchestration import retention_envelope, run_ledger
 from mimarsinan.pipelining.core.accuracy_budget import (
     AccuracyBudget,
     PretrainEnvelopeError,
@@ -226,6 +226,10 @@ class Pipeline:
         self.accuracy_budget.observe(step_metric)
         if not seeded_before and self.accuracy_budget.seeded():
             self._assert_pretrain_envelope(step.name, step_metric)
+            # The first seeded metric IS the incoming model's clean envelope; a
+            # resume-safe write-once so the endpoint target never demands more
+            # than the model can retain (retention_envelope SSOT).
+            retention_envelope.seed(self, step_metric)
         self.accuracy_budget.warn_if_over_budget(step.name)
 
     def _pretrain_envelope_chance_multiple(self) -> float:

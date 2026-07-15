@@ -5,7 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from mimarsinan.common.reporter import emit_reporter_event
-from mimarsinan.tuning.orchestration import dhat_highwater, endpoint_steps
+from mimarsinan.tuning.orchestration import (
+    dhat_highwater,
+    endpoint_steps,
+    retention_envelope,
+)
 from mimarsinan.tuning.orchestration.frontier.divergence_guard import (
     DivergenceGuard,
     rescue_plan,
@@ -105,7 +109,13 @@ def run_endpoint_recovery(tuner, *, base_steps, target_floor=None) -> EndpointRe
         floor = float(tuner.pipeline.config.get("endpoint_target_floor", 0.0))
     else:
         floor = float(target_floor)
-    target = max(highwater, floor)
+    # An absolute floor can never demand more than the incoming model's own clean
+    # envelope: cap it there (inert when envelope >= floor or absent, so tier-0 is
+    # byte-identical). The measured highwater is never capped, so genuine gains
+    # above the envelope still drive the target (retention_envelope SSOT).
+    envelope = retention_envelope.peek(tuner.pipeline)
+    capped_floor = floor if envelope is None else min(floor, envelope)
+    target = max(highwater, capped_floor)
     floor_lifted = target > highwater
     budget = int(base_steps) + freed_ladder_steps(tuner)
     entry = _fp32_deployed_read(tuner)

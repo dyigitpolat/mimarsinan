@@ -4,8 +4,13 @@ from __future__ import annotations
 
 HIGHWATER_CACHE_KEY = "__mbh_dhat_highwater"
 ENDPOINT_STEPS_CACHE_KEY = "__mbh_endpoint_steps_consumed"
+RETENTION_ENVELOPE_CACHE_KEY = "__mbh_retention_envelope"
 
-RUN_SCOPED_KEYS = (HIGHWATER_CACHE_KEY, ENDPOINT_STEPS_CACHE_KEY)
+RUN_SCOPED_KEYS = (
+    HIGHWATER_CACHE_KEY,
+    ENDPOINT_STEPS_CACHE_KEY,
+    RETENTION_ENVELOPE_CACHE_KEY,
+)
 """Every run-scoped ledger key: reset by a fresh ``pipeline.run()``, kept by an
 explicit resume, and snapshot/restored around each independent conversion draw."""
 

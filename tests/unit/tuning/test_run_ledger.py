@@ -44,10 +44,11 @@ class TestCacheSeam:
 
 
 class TestKeyRegistry:
-    def test_registry_is_the_two_run_scoped_ledgers(self):
+    def test_registry_is_the_run_scoped_ledgers(self):
         assert set(run_ledger.RUN_SCOPED_KEYS) == {
             dhat_highwater.HIGHWATER_CACHE_KEY,
             endpoint_steps.STEPS_CACHE_KEY,
+            run_ledger.RETENTION_ENVELOPE_CACHE_KEY,
         }
 
     def test_domain_modules_share_the_registry_constants(self):
