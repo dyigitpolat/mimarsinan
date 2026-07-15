@@ -42,26 +42,16 @@ class BasicDataProviderFactory(DataProviderFactory):
         if self._cache and self._cached_provider is not None:
             return self._cached_provider
 
+        # Every provider takes the uniform (path, *, seed, preprocessing,
+        # batch_size) signature (the base defaults the optionals), so there is one
+        # construction path — no constructor-arity fallback cascade.
         provider_cls = self._provider_registry[self._name]
-        try:
-            provider = provider_cls(
-                self._datasets_path,
-                seed=self._seed,
-                preprocessing=self._preprocessing,
-                batch_size=self._batch_size,
-            )
-        except TypeError:
-            try:
-                provider = provider_cls(
-                    self._datasets_path,
-                    seed=self._seed,
-                    preprocessing=self._preprocessing,
-                )
-            except TypeError:
-                try:
-                    provider = provider_cls(self._datasets_path, seed=self._seed)
-                except TypeError:
-                    provider = provider_cls(self._datasets_path)
+        provider = provider_cls(
+            self._datasets_path,
+            seed=self._seed,
+            preprocessing=self._preprocessing,
+            batch_size=self._batch_size,
+        )
 
         if self._cache:
             self._cached_provider = provider

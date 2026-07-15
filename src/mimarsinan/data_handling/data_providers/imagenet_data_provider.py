@@ -122,16 +122,6 @@ class ImageNet_DataProvider(DataProvider):
     def raw_datasets(self) -> dict:
         return {"train": self._train_raw, "val": self._val_raw, "test": self._test_raw}
 
-    def full_train_dataset(self):
-        """The full official train (all 1000 classes), unwrapping any Subset."""
-        train = self._train_raw
-        return train.dataset if isinstance(train, torch.utils.data.Subset) else train
-
-    def full_official_val_dataset(self):
-        """The full 50k official val (all 1000 classes), unwrapping the Subset."""
-        val = self._val_raw
-        return val.dataset if isinstance(val, torch.utils.data.Subset) else val
-
     def torch_transforms(self) -> dict:
         return {
             "train": [

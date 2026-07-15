@@ -11,9 +11,12 @@ import os
 class ECG_DataProvider(DataProvider):
     DISPLAY_LABEL = "ECG (1D signal, multi-class)"
 
-    def __init__(self, datasets_path, *, seed: int | None = 0):
-        super().__init__(datasets_path, seed=seed)
-
+    def __init__(self, datasets_path, *, seed: int | None = 0,
+                 preprocessing=None, batch_size=None):
+        # 1-D ECG signals ignore image preprocessing; accept the uniform provider
+        # signature so the factory needs no constructor-arity fallbacks.
+        super().__init__(datasets_path, seed=seed, preprocessing=preprocessing,
+                         batch_size=batch_size)
         self._train_raw, self._val_raw, self._test_raw = self._load_data()
 
     def _load_data(self):
