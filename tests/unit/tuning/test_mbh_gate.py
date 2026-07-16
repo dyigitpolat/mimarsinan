@@ -178,6 +178,10 @@ class TestRetentionGate:
             for before, after in zip(base_before, base_after):
                 for b, a in zip(before, after):
                     assert a == pytest.approx(0.5 * b)
+            # LR x steps preserved: the accepted retry ran a DOUBLED budget
+            # and the scale reset on accept.
+            assert tuner._fast_retry_step_scale == 1
+            assert tuner._fast_optimizer_steps == 2 * tuner._fast_steps_per_rate
         finally:
             tuner.close()
 

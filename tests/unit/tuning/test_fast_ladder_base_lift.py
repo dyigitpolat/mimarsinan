@@ -330,3 +330,43 @@ class TestRungGradClip:
             assert calls == [0.25, 0.25]
         finally:
             tuner.close()
+
+
+class TestRetryStepScale:
+    """[WS-A A1 completion] a retention retry halves the LR AND doubles the
+    step budget (LR x steps preserved: finer steps, same path length —
+    measured: fixed-step halvings converged 0.09->0.39->0.67->0.77 and
+    exhausted short of the 0.856 retention bound). Scaled retries hold the
+    spanning schedule so the cosine never overruns its T_max."""
+
+    def _tuner(self, tmp_path):
+        return _clamp_tuner(
+            tmp_path, optimization_driver="fast",
+            spiking_mode="ttfs_quantized", activation_quantization=True,
+            clamp_fast_rates=[0.5], clamp_fast_steps_per_rate=2,
+        )
+
+    def test_scaled_rung_runs_scaled_steps_and_holds_the_schedule(self, tmp_path):
+        tuner = self._tuner(tmp_path)
+        try:
+            tuner._ensure_fast_optimizer()
+            tuner._fast_retry_step_scale = 2
+            lr_before = tuner._fast_optimizer.param_groups[0]["lr"]
+            steps_before = tuner._fast_optimizer_steps
+            tuner._fast_train_rung(0.5)
+            assert tuner._fast_optimizer_steps == steps_before + 4  # 2 steps x2
+            assert tuner._fast_optimizer.param_groups[0]["lr"] == (
+                pytest.approx(lr_before))  # schedule held: LR constant
+        finally:
+            tuner.close()
+
+    def test_unit_scale_keeps_the_spanning_schedule(self, tmp_path):
+        tuner = self._tuner(tmp_path)
+        try:
+            tuner._ensure_fast_optimizer()
+            lr_before = tuner._fast_optimizer.param_groups[0]["lr"]
+            tuner._fast_train_rung(0.5)
+            assert tuner._fast_optimizer_steps == 2
+            assert tuner._fast_optimizer.param_groups[0]["lr"] != lr_before
+        finally:
+            tuner.close()

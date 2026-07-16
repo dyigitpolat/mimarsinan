@@ -156,15 +156,12 @@ class FastLadderMixin(_FastLadderHost):
 
     def _scale_fast_lr(self, factor: float) -> None:
         """[WS-A A1] the retention gate's Armijo LR backoff (fast_lr_schedule SSOT)."""
-        optimizer, schedule = self._fast_optimizer, self._fast_lr_schedule
-        assert optimizer is not None and schedule is not None, (
-            "_ensure_fast_optimizer must run before _scale_fast_lr"
-        )
-        scale_fast_lr(optimizer, schedule, factor)
+        assert self._fast_optimizer is not None and self._fast_lr_schedule is not None
+        scale_fast_lr(self._fast_optimizer, self._fast_lr_schedule, factor)
 
     def _rung_grad_clip_norm(self):
-        """[WS-A A2] the tuning recipe's declared grad_clip_norm (the rung loop
-        silently ignored it: recovery paths clip, fast rungs did not)."""
+        """[WS-A A2] the tuning recipe's declared grad_clip_norm (recovery
+        paths clip; fast rungs silently did not)."""
         recipe = build_recipe(self.pipeline.config, key="tuning_recipe")
         return None if recipe is None else recipe.grad_clip_norm
 
@@ -209,7 +206,11 @@ class FastLadderMixin(_FastLadderHost):
             probe_interval = max(1, int(keep_best_interval))
             best = float(keep_best_probe())
             best_state = copy.deepcopy(self.model.state_dict())
-        steps = int(self._fast_steps_per_rate)
+        # [WS-A A1] retention retries preserve LR x steps (halved LR, doubled
+        # steps) and HOLD the schedule (cosine past T_max would raise the LR).
+        retry_scale = max(1, int(getattr(self, "_fast_retry_step_scale", 1)))
+        hold_schedule = retry_scale > 1
+        steps = int(self._fast_steps_per_rate) * retry_scale
         self._mbh_nonzero_grad_fraction = float("nan")
         for step_index in range(steps):
             x, y = self.trainer.next_training_batch()
@@ -228,7 +229,8 @@ class FastLadderMixin(_FastLadderHost):
                     self.model.parameters(), float(grad_clip_norm)
                 )
             optimizer.step()
-            schedule.step()
+            if not hold_schedule:
+                schedule.step()
             self._fast_optimizer_steps += 1
             if keep_best_probe is not None and (
                 (step_index + 1) % probe_interval == 0

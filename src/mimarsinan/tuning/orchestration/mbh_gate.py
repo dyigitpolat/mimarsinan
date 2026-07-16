@@ -65,6 +65,7 @@ def gated_fast_rate_attempt(tuner, target: float) -> float:
     state.rung += 1
     committed_before = float(tuner._committed_rate)
     rate = float(target)
+    tuner._fast_retry_step_scale = 1
     for attempt in range(1 + MAX_REFINEMENTS):
         snapshot = _snapshot_live(tuner)
         t0 = time.time()
@@ -88,7 +89,13 @@ def gated_fast_rate_attempt(tuner, target: float) -> float:
         reason = "dhat" if not dhat_ok else "retention"
         _restore_live(tuner, snapshot)
         if reason == "retention":
+            # Armijo trust region preserving LR x steps: halve the step SIZE,
+            # double the step COUNT (fixed-step halvings converged
+            # 0.09->0.39->0.67->0.77 and exhausted short of the bound).
             tuner._scale_fast_lr(0.5)
+            tuner._fast_retry_step_scale = min(
+                8, 2 * max(1, int(getattr(tuner, "_fast_retry_step_scale", 1)))
+            )
         tuner._record_fast_cycle(rate, post_acc, t0, outcome="rollback")
         _add_phase_seconds(tuner, t0)
         retry = (committed_before + rate) / 2.0
@@ -159,6 +166,7 @@ def _accept(tuner, state, rate, post_acc, full_acc, t0) -> None:
     tuner._last_post_acc = post_acc
     tuner._fast_probe(float(rate))
     _add_phase_seconds(tuner, t0)
+    tuner._fast_retry_step_scale = 1
     state.prev_post_acc = float(post_acc)
     if full_acc >= state.best_full_acc:
         state.best_full_acc = float(full_acc)
