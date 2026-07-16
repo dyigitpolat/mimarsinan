@@ -2,17 +2,19 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
-from mimarsinan.common.reporter import emit_reporter_event
 from mimarsinan.tuning.orchestration import (
     dhat_highwater,
     endpoint_steps,
     retention_envelope,
 )
 from mimarsinan.tuning.orchestration.frontier.divergence_guard import (
+    CouplingGuard,
     DivergenceGuard,
     rescue_plan,
+)
+from mimarsinan.tuning.orchestration.frontier.endpoint_report import (
+    EndpointRecoveryReport,
+    emit_endpoint_report as _emit,
 )
 from mimarsinan.tuning.orchestration.mbh_ledger import fp32_deployed_read
 from mimarsinan.tuning.orchestration.recovery_engine import RecoveryEngine
@@ -23,24 +25,6 @@ from mimarsinan.tuning.orchestration.tuning_policy import (
     effective_endpoint_floor_lr,
     endpoint_convergence_geometry,
 )
-
-
-@dataclass(frozen=True)
-class EndpointRecoveryReport:
-    """One endpoint-stage engagement record (target, reads, budget, verdict)."""
-
-    target: float
-    entry: float
-    exit: float
-    budget_steps: int
-    steps_used: int
-    engaged: bool
-    reached: bool
-    rolled_back: bool
-    target_floor: float = 0.0
-    floor_lifted: bool = False
-    armed: bool = False
-    divergence_rescued: bool = False
 
 
 def freed_ladder_steps(tuner) -> int:
@@ -123,6 +107,7 @@ def run_endpoint_recovery(tuner, *, base_steps, target_floor=None) -> EndpointRe
     engaged = budget > 0 and entry < target
     armed = False
     rescued = False
+    decoupled = False
     steps_used = 0
     exit_read = entry
     rolled_back = False
@@ -140,6 +125,13 @@ def run_endpoint_recovery(tuner, *, base_steps, target_floor=None) -> EndpointRe
         total_steps = int(tuner.pipeline.config.get(
             "endpoint_floor_steps", TUNING_POLICY.endpoint_floor_steps,
         ))
+        # [C3'] the absolute min-cover is config-exposed: 2000 is calibrated
+        # to small-model step costs and is a multi-hour mandatory burn on
+        # large backbones.
+        min_cover = int(tuner.pipeline.config.get(
+            "endpoint_floor_min_cover_steps",
+            TUNING_POLICY.endpoint_floor_min_cover_steps,
+        ))
         steps_left = endpoint_steps.remaining(tuner.pipeline, total_steps)
         if steps_left > 0:
             lr = min(lr, effective_endpoint_floor_lr(tuner.pipeline.config))
@@ -149,16 +141,18 @@ def run_endpoint_recovery(tuner, *, base_steps, target_floor=None) -> EndpointRe
             # composes at the SAME interval (patience counts checks), so the
             # patience step-window stays ~fraction x budget, never multiplied.
             check_interval = armed_endpoint_effective_check_interval(
-                budget, check_interval,
+                budget, check_interval, min_cover,
             )
-            geometry = endpoint_convergence_geometry(budget, check_interval)
+            geometry = endpoint_convergence_geometry(
+                budget, check_interval, min_cover,
+            )
             min_steps = geometry.min_steps
             patience = geometry.patience
             armed = True
-        steps_used, rescued = _train_engaged(
+        steps_used, rescued, decoupled = _train_engaged(
             tuner, lr=lr, target=target, budget=budget, min_steps=min_steps,
             patience=patience, armed=armed, check_interval=check_interval,
-            trajectory=trajectory,
+            trajectory=trajectory, entry=entry,
         )
         if armed:
             endpoint_steps.consume(tuner.pipeline, steps_used)
@@ -183,15 +177,16 @@ def run_endpoint_recovery(tuner, *, base_steps, target_floor=None) -> EndpointRe
         floor_lifted=bool(floor_lifted),
         armed=bool(armed),
         divergence_rescued=bool(rescued),
+        decoupled=bool(decoupled),
     )
     _emit(tuner, report, trajectory)
     return report
 
 
 def _train_engaged(tuner, *, lr, target, budget, min_steps, patience, armed,
-                   check_interval, trajectory):
+                   check_interval, trajectory, entry):
     """One engaged endpoint training leg (+ the [C3] guarded rescue leg when
-    armed and the rescue flag is on); returns ``(steps_used, rescued)``."""
+    armed and the rescue flag is on); returns ``(steps_used, rescued, decoupled)``."""
     def record(step, acc, best_acc, entry_acc):
         trajectory.append((int(step), float(acc), float(best_acc)))
         return False
@@ -202,12 +197,26 @@ def _train_engaged(tuner, *, lr, target, budget, min_steps, patience, armed,
             accuracy_se=float(tuner._budget.accuracy_se()),
             hard_floor=getattr(tuner, "_pipeline_hard_floor", None),
         )
+    coupling = None
+    if armed and TUNING_POLICY.endpoint_coupling_guard:
+        # [C1'] the leg's checks read the trainer's surrogate; the coupling
+        # guard arbitrates against the deployed currency once per patience
+        # window (the deployed read is deterministic and cursor-invariant).
+        coupling = CouplingGuard(
+            deployed_read=lambda: _fp32_deployed_read(tuner),
+            entry_deployed=float(entry),
+            accuracy_se=float(tuner._budget.accuracy_se()),
+            cadence=max(1, int(patience)),
+        )
 
     def on_check(step, acc, best_acc, entry_acc):
         record(step, acc, best_acc, entry_acc)
-        if guard is None:
-            return False
-        return guard(step, acc, best_acc, entry_acc)
+        fired = False
+        if guard is not None:
+            fired = guard(step, acc, best_acc, entry_acc)
+        if coupling is not None and coupling(step, acc, best_acc, entry_acc):
+            fired = True
+        return fired
 
     _, steps_used = RecoveryEngine.train_to_target(
         tuner.trainer,
@@ -226,11 +235,15 @@ def _train_engaged(tuner, *, lr, target, budget, min_steps, patience, armed,
         on_check=on_check,
     )
     steps_used = int(steps_used)
+    if coupling is not None and coupling.fired:
+        # [C1'] a decoupled leg stops WITHOUT rescue: retraining the surrogate
+        # cannot buy deployed gain when the composition cannot express it.
+        return steps_used, False, True
     if guard is None or not guard.fired:
-        return steps_used, False
+        return steps_used, False, False
     plan = rescue_plan(budget - steps_used, lr)
     if plan is None:
-        return steps_used, False
+        return steps_used, False, False
     # [C3] the fired leg already restored its live keep-best (the loop's
     # entry-anchored restore); the restart builds a fresh optimizer. The
     # rescue leg is armed-only, so it keeps the stage's [P4] effective cadence.
@@ -252,49 +265,4 @@ def _train_engaged(tuner, *, lr, target, budget, min_steps, patience, armed,
         final_validation=False,
         on_check=record,
     )
-    return steps_used + int(rescue_steps), True
-
-
-def _emit(tuner, report: EndpointRecoveryReport, trajectory) -> None:
-    print(
-        f"[MBH-ENDPOINT] tuner={type(tuner).__name__} "
-        f"target={report.target:.6f} entry={report.entry:.6f} "
-        f"exit={report.exit:.6f} budget={report.budget_steps} "
-        f"steps_used={report.steps_used} engaged={report.engaged} "
-        f"reached={report.reached} rolled_back={report.rolled_back} "
-        f"target_floor={report.target_floor:.6f} "
-        f"floor_lifted={report.floor_lifted} "
-        f"armed={report.armed} "
-        f"divergence_rescued={report.divergence_rescued}",
-        flush=True,
-    )
-    emit_reporter_event(tuner.pipeline.reporter, "mbh_endpoint", {
-        "tuner": type(tuner).__name__,
-        "target": report.target,
-        "entry": report.entry,
-        "exit": report.exit,
-        "budget_steps": report.budget_steps,
-        "steps_used": report.steps_used,
-        "engaged": report.engaged,
-        "reached": report.reached,
-        "rolled_back": report.rolled_back,
-        "target_floor": report.target_floor,
-        "floor_lifted": report.floor_lifted,
-        "armed": report.armed,
-        "divergence_rescued": report.divergence_rescued,
-        "trajectory": list(trajectory),
-    })
-    tuner.pipeline.reporter.report(f"{tuner.name} endpoint_recovery", {
-        "target": round(report.target, 4),
-        "entry": round(report.entry, 4),
-        "exit": round(report.exit, 4),
-        "budget_steps": report.budget_steps,
-        "steps_used": report.steps_used,
-        "engaged": report.engaged,
-        "reached": report.reached,
-        "rolled_back": report.rolled_back,
-        "target_floor": round(report.target_floor, 4),
-        "floor_lifted": report.floor_lifted,
-        "armed": report.armed,
-        "divergence_rescued": report.divergence_rescued,
-    })
+    return steps_used + int(rescue_steps), True, False

@@ -47,6 +47,50 @@ class DivergenceGuard:
         return self.fired
 
 
+class CouplingGuard:
+    """[C1'] decoupling stop for one armed endpoint leg (one-shot).
+
+    The leg trains the SURROGATE the trainer validates, but the funded
+    objective is the DEPLOYED read: at every ``cadence``-th check the guard
+    reads the deployed currency and fires when the surrogate's best gained
+    >= SE over the window while the deployed best gained < SE — further
+    funding is buying surrogate quality the deployed composition cannot
+    express (measured: a ViT WQ leg burned 3.5 h at flat deployed 0.396 while
+    its surrogate climbed 0.43->0.61). Coupled legs never fire: their deployed
+    read tracks the surrogate within SE, so the guard is inert.
+    """
+
+    def __init__(self, *, deployed_read, entry_deployed, accuracy_se, cadence):
+        self._read = deployed_read
+        self._se = float(accuracy_se)
+        self._cadence = max(1, int(cadence))
+        self._checks = 0
+        self._anchor_deployed = float(entry_deployed)
+        self._peak_deployed = float(entry_deployed)
+        self._anchor_surrogate: Optional[float] = None
+        self.fired = False
+
+    def __call__(self, step, acc, best_acc, entry_acc) -> bool:
+        if self.fired:
+            return True
+        self._checks += 1
+        if self._anchor_surrogate is None:
+            self._anchor_surrogate = float(entry_acc)
+        if self._checks % self._cadence:
+            return False
+        self._peak_deployed = max(self._peak_deployed, float(self._read()))
+        # Cumulative anchors: coupled progress (deployed +SE since the anchor)
+        # re-anchors BOTH and stays silent; slow surrogate creep accumulates
+        # across windows instead of being reset away, so a decoupled leg fires
+        # once the surrogate runs >= SE ahead of a stalled deployed read.
+        if self._peak_deployed - self._anchor_deployed >= self._se:
+            self._anchor_deployed = self._peak_deployed
+            self._anchor_surrogate = float(best_acc)
+            return False
+        self.fired = float(best_acc) - self._anchor_surrogate >= self._se
+        return self.fired
+
+
 @dataclass(frozen=True)
 class RescuePlan:
     """The restart leg: backed-off peak LR, warmup ramp, bounded train steps."""

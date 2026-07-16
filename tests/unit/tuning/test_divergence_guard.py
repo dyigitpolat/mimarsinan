@@ -33,6 +33,7 @@ from mimarsinan.tuning.orchestration.adaptation_manager import AdaptationManager
 from mimarsinan.tuning.orchestration.frontier.divergence_guard import (
     CRATER_CHECKS,
     TAKEOFF_CHECKS,
+    CouplingGuard,
     DivergenceGuard,
     rescue_plan,
 )
@@ -154,6 +155,206 @@ class TestDivergenceGuardPredicate:
     def test_predicate_constants_are_the_measured_values(self):
         assert TAKEOFF_CHECKS == 5
         assert CRATER_CHECKS == 3
+
+
+# ── the coupling guard (decoupled surrogate↔deployed legs stop) ─────────────
+
+
+class _DeployedReads:
+    def __init__(self, values):
+        self.values = list(values)
+        self.calls = 0
+
+    def __call__(self):
+        self.calls += 1
+        return self.values[min(self.calls - 1, len(self.values) - 1)]
+
+
+class TestCouplingGuardPredicate:
+    """[C1'] the leg trains the SURROGATE but the funded objective is the
+    DEPLOYED read: when the surrogate gains >= SE over a cadence window while
+    the deployed read gains < SE, further funding buys quality the deployed
+    composition cannot express (measured: a ViT WQ leg burned 3.5 h at flat
+    deployed 0.396 while its surrogate climbed 0.43->0.61)."""
+
+    def test_decoupled_leg_fires_at_the_first_window(self):
+        reads = _DeployedReads([0.396])
+        guard = CouplingGuard(
+            deployed_read=reads, entry_deployed=0.396,
+            accuracy_se=0.01, cadence=3,
+        )
+        assert guard(10, 0.44, 0.44, 0.43) is False
+        assert guard(20, 0.47, 0.47, 0.43) is False
+        # third check = the window boundary: surrogate +0.08 >= SE, deployed +0.
+        assert guard(30, 0.51, 0.51, 0.43) is True
+        assert guard.fired is True
+        assert reads.calls == 1
+
+    def test_coupled_leg_never_fires(self):
+        reads = _DeployedReads([0.5, 0.6, 0.7])
+        guard = CouplingGuard(
+            deployed_read=reads, entry_deployed=0.4,
+            accuracy_se=0.01, cadence=2,
+        )
+        surrogate = [0.45, 0.5, 0.55, 0.6, 0.65, 0.7]
+        for check, acc in enumerate(surrogate, start=1):
+            assert guard(check * 10, acc, acc, 0.4) is False, check
+        assert guard.fired is False
+
+    def test_plateaued_surrogate_never_fires(self):
+        # Both flat: the stall belongs to [C1] patience, not the coupling guard.
+        reads = _DeployedReads([0.4, 0.4, 0.4])
+        guard = CouplingGuard(
+            deployed_read=reads, entry_deployed=0.4,
+            accuracy_se=0.01, cadence=2,
+        )
+        for check in range(1, 9):
+            assert guard(check * 10, 0.5, 0.5, 0.5) is False, check
+        assert guard.fired is False
+
+    def test_deployed_reads_only_at_the_cadence(self):
+        reads = _DeployedReads([0.4, 0.4])
+        guard = CouplingGuard(
+            deployed_read=reads, entry_deployed=0.4,
+            accuracy_se=0.5, cadence=4,
+        )
+        for check in range(1, 9):
+            guard(check * 10, 0.41, 0.41, 0.4)
+        assert reads.calls == 2  # checks 4 and 8 only
+
+    def test_windows_compare_gains_since_the_previous_window(self):
+        # Window 1: surrogate +0.08 but deployed follows (+0.08) -> silent.
+        # Window 2: surrogate +0.08 more, deployed flat -> fires.
+        reads = _DeployedReads([0.48, 0.48])
+        guard = CouplingGuard(
+            deployed_read=reads, entry_deployed=0.40,
+            accuracy_se=0.01, cadence=1,
+        )
+        assert guard(10, 0.51, 0.51, 0.43) is False
+        assert guard(20, 0.59, 0.59, 0.43) is True
+
+    def test_guard_is_one_shot(self):
+        reads = _DeployedReads([0.4])
+        guard = CouplingGuard(
+            deployed_read=reads, entry_deployed=0.4,
+            accuracy_se=0.01, cadence=1,
+        )
+        assert guard(10, 0.5, 0.5, 0.4) is True
+        assert guard(20, 0.5, 0.5, 0.4) is True
+        assert reads.calls == 1
+
+    def test_policy_arms_the_guard_by_default(self):
+        assert TUNING_POLICY.endpoint_coupling_guard is True
+
+
+class TestCouplingGuardInStage:
+    _drive = None  # bound below to reuse TestArmedStageRescue._drive
+
+    def test_decoupled_leg_stops_without_rescue(self, tmp_path, monkeypatch):
+        # Surrogate takes off fast (divergence guard silent) while deployed
+        # reads stay flat: the coupling guard fires and the stage must NOT
+        # rescue-restart (retraining the surrogate cannot buy deployed gain
+        # on a decoupled leg).
+        _enable_rescue(monkeypatch)
+
+        def decoupled_leg(kwargs, max_steps):
+            on_check = kwargs["on_check"]
+            for check in range(1, 500):
+                acc = min(0.99, 0.43 + 0.05 * check)
+                if on_check(check * 3, acc, acc, 0.43):
+                    return acc, check * 3
+            pytest.fail("the coupling guard must fire within the leg")
+
+        report, scripted, _, _ = TestArmedStageRescue._drive(
+            self, tmp_path, monkeypatch,
+            legs=[decoupled_leg, _never_called_leg],
+            reads=(0.396,) * 600, base_steps=400,
+        )
+        assert len(scripted.calls) == 1
+        assert report.divergence_rescued is False
+        assert report.decoupled is True
+        assert report.steps_used < 400
+
+    def test_coupling_flag_off_reads_deployed_only_at_entry_and_exit(
+        self, tmp_path, monkeypatch,
+    ):
+        _disable_rescue(monkeypatch)
+        monkeypatch.setattr(
+            endpoint_recovery, "TUNING_POLICY",
+            dataclasses.replace(
+                endpoint_recovery.TUNING_POLICY,
+                endpoint_floor_divergence_rescue=False,
+                endpoint_coupling_guard=False,
+            ),
+        )
+        calls = [0]
+
+        def counting_read(t):
+            calls[0] += 1
+            return 0.396
+
+        monkeypatch.setattr(
+            endpoint_recovery, "_fp32_deployed_read", counting_read,
+        )
+
+        def climbing_leg(kwargs, max_steps):
+            on_check = kwargs["on_check"]
+            for check in range(1, 10):
+                on_check(check * 42, 0.43 + 0.02 * check, 0.43 + 0.02 * check, 0.43)
+            return 0.6, 210
+
+        tuner = _lif_tuner(tmp_path)
+        _prepare_endpoint_scaffold(tuner)
+        dhat_highwater.observe(tuner.pipeline, 0.9937)
+        scripted = _ScriptedTrain([climbing_leg])
+        monkeypatch.setattr(
+            RecoveryEngine, "train_to_target", staticmethod(scripted),
+        )
+        try:
+            report = run_endpoint_recovery(
+                tuner, base_steps=12000, target_floor=0.98,
+            )
+        finally:
+            tuner.close()
+        assert calls[0] == 2  # entry + exit only: flag-off is byte-identical
+        assert report.decoupled is False
+
+
+class TestMinCoverKnob:
+    """[C3'] endpoint_floor_min_cover_steps is config-exposed: the geometry and
+    the effective cadence both honor the override; the default is unchanged."""
+
+    def test_config_override_reaches_the_geometry(self, tmp_path, monkeypatch):
+        _disable_rescue(monkeypatch)
+        tuner = _lif_tuner(tmp_path)
+        tuner.pipeline.config["endpoint_floor_min_cover_steps"] = 100
+        _prepare_endpoint_scaffold(tuner)
+        dhat_highwater.observe(tuner.pipeline, 0.9937)
+        reads = iter([0.095, 0.5])
+        monkeypatch.setattr(
+            endpoint_recovery, "_fp32_deployed_read", lambda t: next(reads),
+        )
+        scripted = _ScriptedTrain([lambda kwargs, max_steps: (0.5, 9)])
+        monkeypatch.setattr(
+            RecoveryEngine, "train_to_target", staticmethod(scripted),
+        )
+        try:
+            run_endpoint_recovery(tuner, base_steps=300, target_floor=0.98)
+        finally:
+            tuner.close()
+        seen = scripted.calls[0]
+        # default min-cover would be max(2000, ceil(0.25*300)) = 2000;
+        # the override yields max(100, 75) = 100.
+        assert seen["min_steps"] == 100
+
+    def test_geometry_helper_takes_the_override(self):
+        default = endpoint_convergence_geometry(300, 38)
+        assert default.min_steps == TUNING_POLICY.endpoint_floor_min_cover_steps
+        overridden = endpoint_convergence_geometry(300, 38, min_cover_steps=100)
+        assert overridden.min_steps == 100
+        # The fractional term still wins when larger.
+        big = endpoint_convergence_geometry(12000, 38, min_cover_steps=100)
+        assert big.min_steps == math.ceil(0.25 * 12000)
 
 
 # ── the rescue restart geometry ──────────────────────────────────────────────

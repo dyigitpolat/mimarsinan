@@ -160,8 +160,9 @@ CONFIG_KEYS_SET: Set[str] = {
     "sanafe_custom_arch_path", "sanafe_log_potential_trace",
     "simulation_batch_count", "simulation_step_timeout_s",
     # Per-cell RUN-total STEP budget for the 5u endpoint floor (steps, never
-    # wall seconds; endpoint_recovery falls back to the TUNING_POLICY value).
-    "endpoint_floor_steps",
+    # wall seconds; endpoint_recovery falls back to the TUNING_POLICY value)
+    # and the [C3'] absolute min-cover before the convergence stop may vote.
+    "endpoint_floor_steps", "endpoint_floor_min_cover_steps",
     # [MBH-DRAWS] best-of-N conversion draws (1 = single-draw, bit-identical).
     "conversion_draws",
     # WQ knobs, both ConversionPolicy-recipe-defaulted: the endpoint step cap

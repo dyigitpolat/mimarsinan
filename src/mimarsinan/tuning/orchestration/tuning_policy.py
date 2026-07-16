@@ -95,6 +95,16 @@ class TuningPolicy:
     endpoint_floor_divergence_rescue: bool = True
     endpoint_floor_rescue_lr_factor: float = 0.3
     endpoint_floor_rescue_warmup_fraction: float = 0.02
+    # [C1'] coupling guard on the armed floor: the leg's staleness/keep-best
+    # checks read the trainer's SURROGATE, but the funded objective is the
+    # DEPLOYED read — a decoupled leg (surrogate best climbs >= SE per patience
+    # window while the deployed best stays < SE) burns budget on quality the
+    # deployed composition cannot express (measured: ViT WQ 3.5 h at flat
+    # deployed 0.396, surrogate 0.43->0.61). The guard reads the deployed
+    # currency once per patience window and stops fired legs WITHOUT rescue
+    # (retraining the surrogate cannot buy deployed gain there); coupled legs
+    # never fire, so healthy cells are trajectory-identical.
+    endpoint_coupling_guard: bool = True
 
 
 # The fast ladder's generic per-rung training budget (rate-invariant units;
@@ -128,13 +138,20 @@ def armed_endpoint_check_interval(check_interval) -> int:
     )
 
 
-def armed_endpoint_effective_check_interval(budget, check_interval) -> int:
+def armed_endpoint_effective_check_interval(
+    budget, check_interval, min_cover_steps=None,
+) -> int:
     """[P4 trajectory-sensitivity fix] effective armed cadence for a funded
     budget: below the [C1] min-cover the DENSE base interval survives (coarse
     keep-best sampling missed the trajectory peak on the v6 t0_22/t01_21
-    small-budget cells); at/above the cover the [P4] multiplier applies."""
+    small-budget cells); at/above the cover the [P4] multiplier applies.
+    ``min_cover_steps`` overrides the policy cover ([C3'] config exposure)."""
     interval = max(1, int(check_interval))
-    if int(budget) < int(TUNING_POLICY.endpoint_floor_min_cover_steps):
+    cover = (
+        int(TUNING_POLICY.endpoint_floor_min_cover_steps)
+        if min_cover_steps is None else int(min_cover_steps)
+    )
+    if int(budget) < cover:
         return interval
     return armed_endpoint_check_interval(interval)
 
@@ -147,19 +164,25 @@ class ConvergenceStopGeometry:
     patience: int
 
 
-def endpoint_convergence_geometry(budget, check_interval) -> ConvergenceStopGeometry:
+def endpoint_convergence_geometry(
+    budget, check_interval, min_cover_steps=None,
+) -> ConvergenceStopGeometry:
     """[C1] convergence-stop geometry for a funded leg: min-cover =
     max(absolute lr-dip cover, fraction of budget) — the absolute term wins at
     small residual budgets, keeping them full burns — and patience scaled to
-    the budget instead of disarmed, so the budget stays a true ceiling."""
+    the budget instead of disarmed, so the budget stays a true ceiling.
+    ``min_cover_steps`` overrides the policy's absolute cover ([C3'] config
+    exposure: the 2000-step cover is calibrated to MNIST-scale step costs and
+    is a multi-hour mandatory burn at ViT step costs)."""
     policy = TUNING_POLICY
     budget = max(0, int(budget))
     interval = max(1, int(check_interval))
     fraction = float(policy.endpoint_floor_patience_fraction)
+    cover = (
+        int(policy.endpoint_floor_min_cover_steps)
+        if min_cover_steps is None else int(min_cover_steps)
+    )
     return ConvergenceStopGeometry(
-        min_steps=max(
-            int(policy.endpoint_floor_min_cover_steps),
-            math.ceil(fraction * budget),
-        ),
+        min_steps=max(cover, math.ceil(fraction * budget)),
         patience=max(1, math.ceil(fraction * budget / interval)),
     )

@@ -79,6 +79,17 @@ ENTRIES = (
        provenance="TUNING_POLICY",
        derived_default=_frozen(TUNING_POLICY.endpoint_floor_steps),
        empty_means="the frozen TUNING_POLICY run-total budget"),
+    _E("endpoint_floor_min_cover_steps", group="tuning",
+       owner="endpoint_recovery/convergence_stop",
+       type=T.INT, category=Category.ADVANCED, unit="steps",
+       label="Endpoint Floor Min-cover Steps",
+       doc="[C1/C3'] absolute min-cover before the armed endpoint convergence "
+           "stop may vote (covers the lr dip). Calibrated to small-model step "
+           "costs; large-backbone cells bound it down (2000 steps is a "
+           "multi-hour mandatory burn at their step costs).", bounds=(0, None),
+       provenance="TUNING_POLICY",
+       derived_default=_frozen(TUNING_POLICY.endpoint_floor_min_cover_steps),
+       empty_means="the frozen TUNING_POLICY lr-dip cover"),
     _E("endpoint_target_floor", group="tuning", owner="endpoint_recovery",
        type=T.FLOAT, category=Category.ADVANCED, label="Endpoint Target Floor",
        doc="Every-endpoint D-hat target floor. The ConversionPolicy recipe sets it "

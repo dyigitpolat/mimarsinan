@@ -3212,6 +3212,7 @@
    "checkpoint_location": "device",
    "checkpoint_scope": "full",
    "dfq_keepbest_patience": 5,
+   "endpoint_coupling_guard": true,
    "endpoint_floor_divergence_rescue": true,
    "endpoint_floor_eval_interval_multiplier": 1,
    "endpoint_floor_lr": 0.002,

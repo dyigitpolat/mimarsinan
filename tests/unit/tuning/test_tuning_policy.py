@@ -72,6 +72,10 @@ EXPECTED_POLICY_VALUES = {
     "endpoint_floor_divergence_rescue": True,
     "endpoint_floor_rescue_lr_factor": 0.3,
     "endpoint_floor_rescue_warmup_fraction": 0.02,
+    # [C1'] coupling guard: an armed leg whose SURROGATE runs >= SE ahead of a
+    # stalled DEPLOYED read is decoupled and stops without rescue (measured:
+    # 3.5 h flat-deployed burn); coupled legs never fire.
+    "endpoint_coupling_guard": True,
 }
 
 COLLAPSED_CONFIG_KEYS = frozenset({
