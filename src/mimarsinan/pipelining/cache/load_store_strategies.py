@@ -10,6 +10,22 @@ from mimarsinan.transformations.pruning.committed_masks import (
 
 logger = logging.getLogger(__name__)
 
+
+def _clear_transient_ir_caches(model) -> None:
+    """Drop the walk-scoped IR memo before serialization.
+
+    ``map_to_ir`` memoizes a per-node IRGraph (``_cached_ir_mapping``) that
+    dedupes only within one traversal; left on the model it pins a multi-GB
+    IRGraph into the cached ``.pt`` (a 197-token ViT bloated 328 MB -> 58 GB).
+    The memo is never a persistent artifact — it rebuilds lazily on demand.
+    """
+    get_repr = getattr(model, "get_mapper_repr", None)
+    if not callable(get_repr):
+        return
+    clear = getattr(get_repr(), "clear_ir_caches", None)
+    if callable(clear):
+        clear()
+
 class LoadStoreStrategy:
     def __init__(self, filename):
         self.filename = filename
@@ -59,6 +75,7 @@ class TorchModelLoadStoreStrategy(LoadStoreStrategy):
             commit_model_pruning(object)
             verify_model_pruning(object, where=f"cache-store:{self.filename}")
 
+        _clear_transient_ir_caches(object)
         object.cpu()
         torch.save((object, device), f"{cache_directory}/{self.filename}.pt")
         # If the recorded device is no longer visible (narrower CUDA_VISIBLE_DEVICES) fall back to CPU rather than crash mid-save.

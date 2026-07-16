@@ -215,6 +215,56 @@ class TestTorchModelPrunedCacheRoundTrip:
             assert torch.equal(before[key], after[key])
 
 
+class TestTorchModelStoreClearsIRMemo:
+    """The store boundary must drop the walk-scoped IR memo before serializing.
+
+    ``map_to_ir`` memoizes a per-node IRGraph (``_cached_ir_mapping``/
+    ``_ir_sources``) that dedupes only within one traversal. Left on the model
+    it pins a multi-GB IRGraph into the cached ``.pt`` — a 197-token ViT bloated
+    328 MB -> 58 GB, 262 s saves, 116 GB per run. The memo is never a persistent
+    artifact (it rebuilds lazily), so the store must clear it, mirroring the
+    prune-commit enforcement at the same boundary.
+    """
+
+    @staticmethod
+    def _populate_ir_memo(model):
+        nodes = model.get_mapper_repr().execution_order()
+        marker = object()
+        for node in nodes:
+            node._ir_sources = ["walk-scoped-memo"]
+            node._cached_ir_mapping = marker
+        return nodes
+
+    def test_store_clears_memo_on_stored_artifact(self, tmp_path):
+        model = make_tiny_supermodel()
+        self._populate_ir_memo(model)
+
+        TorchModelLoadStoreStrategy("ir_memo").store(str(tmp_path), model)
+        raw, _device = torch.load(
+            str(tmp_path / "ir_memo.pt"), map_location="cpu", weights_only=False,
+        )
+        for node in raw.get_mapper_repr().execution_order():
+            assert getattr(node, "_ir_sources", None) is None
+            assert getattr(node, "_cached_ir_mapping", None) is None
+
+    def test_store_clears_memo_on_the_live_object_too(self, tmp_path):
+        model = make_tiny_supermodel()
+        nodes = self._populate_ir_memo(model)
+        TorchModelLoadStoreStrategy("ir_memo_live").store(str(tmp_path), model)
+        for node in nodes:
+            assert node._ir_sources is None
+            assert node._cached_ir_mapping is None
+
+    def test_maskless_plain_module_store_is_untouched(self, tmp_path):
+        # A model without get_mapper_repr must round-trip exactly (no-op clear).
+        model = nn.Linear(4, 3)
+        before = {k: v.clone() for k, v in model.state_dict().items()}
+        TorchModelLoadStoreStrategy("plain").store(str(tmp_path), model)
+        loaded = TorchModelLoadStoreStrategy("plain").load(str(tmp_path))
+        for key in before:
+            assert torch.equal(before[key], loaded.state_dict()[key])
+
+
 class TestPickleLoadStoreStrategy:
     def test_dict_with_tensors(self, tmp_path):
         obj = {"a": torch.tensor([1.0, 2.0]), "b": "text"}
