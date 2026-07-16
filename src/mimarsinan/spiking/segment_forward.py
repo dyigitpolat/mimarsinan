@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import torch
 
+from mimarsinan.models.nn.adaptive_chunks import forward_adaptive_chunks
+
 from mimarsinan.mapping.mappers.compute_op_mapper import ComputeOpMapper
 from mimarsinan.spiking.segment_partition import (
     classify_spike_producers,
@@ -117,6 +119,13 @@ class SegmentForwardDriver:
         self._join_value_recorder = join_value_recorder
         self.policy.prepare(self)
         try:
+            if not torch.is_grad_enabled():
+                # [C4'] grad-free walks chunk adaptively on CUDA OOM (the
+                # spike trains scale S x batch; recorder minima over chunks
+                # equal minima over the batch).
+                return forward_adaptive_chunks(
+                    lambda part: self._run(part, compute_min_recorder), x,
+                )
             return self._run(x, compute_min_recorder)
         finally:
             self.policy.finalize(self)

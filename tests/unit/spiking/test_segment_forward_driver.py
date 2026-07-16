@@ -237,3 +237,55 @@ def test_tuner_forward_installs_picklable():
     with torch.no_grad():
         out_after = nf_restored(xl)
     torch.testing.assert_close(out_after, out_before, atol=0.0, rtol=0.0)
+
+
+class TestDriverAdaptiveChunking:
+    """[C4'] the genuine walk is the third eval entry (LazyExecutorForward /
+    chip_aligned bypass ConvertedModelFlow.forward): grad-free driver calls
+    chunk adaptively on CUDA OOM. Recorder semantics survive chunking
+    (element-wise minima over chunks == over the batch)."""
+
+    def _driver_with_scripted_run(self, calls, max_batch):
+        import torch as _torch
+        from mimarsinan.spiking.segment_forward import SegmentForwardDriver
+
+        driver = SegmentForwardDriver.__new__(SegmentForwardDriver)
+
+        class _Policy:
+            def prepare(self, d): ...
+            def finalize(self, d): ...
+
+        driver.policy = _Policy()
+
+        def scripted_run(x, recorder=None):
+            calls.append(int(x.size(0)))
+            if x.size(0) > max_batch:
+                raise _torch.OutOfMemoryError("synthetic OOM")
+            return x * 2.0
+
+        driver._run = scripted_run
+        return driver
+
+    def test_grad_free_call_chunks_on_oom(self):
+        import torch as _torch
+
+        calls = []
+        driver = self._driver_with_scripted_run(calls, max_batch=2)
+        x = _torch.arange(8, dtype=_torch.float32).reshape(8, 1)
+        with _torch.no_grad():
+            out = driver(x)
+        _torch.testing.assert_close(out, x * 2.0)
+        assert 8 in calls and 2 in calls  # full try, then converged chunks
+
+    def test_grad_enabled_call_never_chunks(self):
+        import torch as _torch
+
+        calls = []
+        driver = self._driver_with_scripted_run(calls, max_batch=2)
+        x = _torch.ones(8, 1, requires_grad=True)
+        try:
+            driver(x)
+        except _torch.OutOfMemoryError:
+            assert calls == [8]
+            return
+        raise AssertionError("grad-enabled OOM must propagate unchunked")
