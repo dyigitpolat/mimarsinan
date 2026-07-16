@@ -248,6 +248,55 @@ class TestChunkedGenuineEval:
             return
         raise AssertionError("an unchunkable OOM must fail loud")
 
+    def test_wrapped_oom_is_unwrapped_through_the_cause_chain(self):
+        # ModelRepresentation wraps forward failures in RuntimeError (its
+        # fail-loud node context); the chunker must unwrap __cause__ to see
+        # the OOM underneath (measured: the wrap masked the OOM and killed
+        # the LIF probe despite the chunker being engaged).
+        batches = self._batches()
+        model = _TinyNet()
+
+        class _WrappingOOM(nn.Module):
+            def __init__(self, inner, max_batch):
+                super().__init__()
+                self.inner = inner
+                self.max_batch = int(max_batch)
+
+            def forward(self, x):
+                if x.size(0) > self.max_batch:
+                    try:
+                        raise torch.OutOfMemoryError("synthetic OOM")
+                    except torch.OutOfMemoryError as exc:
+                        raise RuntimeError(
+                            "[ModelRepresentation] forward failed at node X"
+                        ) from exc
+                return self.inner(x)
+
+        plain = eval_forward_over_val(
+            _FakeTrainer(batches), model, model, 2, "cpu",
+        )
+        wrapped = _WrappingOOM(model, max_batch=2)
+        chunked = eval_forward_over_val(
+            _FakeTrainer(batches), wrapped, model, 2, "cpu",
+        )
+        assert chunked == plain
+
+    def test_non_oom_runtime_error_stays_loud(self):
+        batches = self._batches()
+
+        class _Broken(nn.Module):
+            def forward(self, x):
+                raise RuntimeError("genuine bug, not an OOM")
+
+        try:
+            eval_forward_over_val(
+                _FakeTrainer(batches), _Broken(), _TinyNet(), 2, "cpu",
+            )
+        except RuntimeError as exc:
+            assert "genuine bug" in str(exc)
+            return
+        raise AssertionError("a non-OOM RuntimeError must propagate")
+
     def test_no_oom_keeps_the_single_forward_path(self):
         batches = self._batches()
         model = _TinyNet()
