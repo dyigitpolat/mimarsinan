@@ -243,3 +243,26 @@ class TestDefaultOffRunsController:
                 ["commit"] * len(t._fixed_ladder_rates)
         finally:
             _close(t)
+
+
+class TestActivationAdaptationEtaMin:
+    """[WS-A A3] the AA family floors its spanning cosine at 0.1*lr: with
+    eta_min=0 the FINAL rung (rate 1.0 — the only one needing real adaptation)
+    trained at lr~0 (measured lr=0.00e+0 on the ViT ladder)."""
+
+    def test_default_floors_the_cosine_at_a_tenth(self, tmp_path):
+        tuner = _activation_adaptation_tuner(tmp_path, optimization_driver="fast")
+        try:
+            assert tuner._fast_eta_min_factor == pytest.approx(0.1)
+        finally:
+            tuner.close()
+
+    def test_explicit_config_key_wins(self, tmp_path):
+        tuner = _activation_adaptation_tuner(
+            tmp_path, optimization_driver="fast",
+            activation_adaptation_fast_lr_eta_min=0.0,
+        )
+        try:
+            assert tuner._fast_eta_min_factor == 0.0
+        finally:
+            tuner.close()

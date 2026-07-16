@@ -30,6 +30,7 @@ from conftest import (
 from mimarsinan.tuning.orchestration.adaptation_manager_factory import (
     create_adaptation_manager_for_model,
 )
+from mimarsinan.config_schema.defaults import DEFAULT_TUNING_RECIPE
 from mimarsinan.tuning.orchestration.fast_ladder import FastLadderMixin
 from mimarsinan.tuning.orchestration.kd_blend_adaptation_tuner import (
     KDBlendAdaptationTuner,
@@ -217,3 +218,115 @@ class TestAnalyticalChainGainsAFastPath:
             assert t._fast_optimizer_steps == len(t._fixed_ladder_rates) * 2
         finally:
             t.close()
+
+
+# ── 4. WS-A: LR backoff scaling + recipe grad-clip threading ─────────────────
+
+class TestScaleFastLr:
+    """[WS-A A1] the retention gate's LR backoff: scale every optimizer group
+    AND the spanning schedule's children together so the halving survives
+    schedule.step() (naive param_group mutation is overwritten each step)."""
+
+    def _fast_tuner(self, tmp_path):
+        tuner = _clamp_tuner(
+            tmp_path, optimization_driver="fast",
+            clamp_fast_rates=[0.5, 1.0], clamp_fast_steps_per_rate=2,
+        )
+        tuner._ensure_fast_optimizer()
+        return tuner
+
+    def test_scales_groups_children_and_eta_min_together(self, tmp_path):
+        tuner = self._fast_tuner(tmp_path)
+        try:
+            optimizer = tuner._fast_optimizer
+            schedule = tuner._fast_lr_schedule
+            group_before = [g["lr"] for g in optimizer.param_groups]
+            init_before = [g["initial_lr"] for g in optimizer.param_groups]
+            base_before = [list(s.base_lrs) for s in schedule._schedulers]
+            eta_before = getattr(schedule._schedulers[-1], "eta_min", 0.0)
+            tuner._scale_fast_lr(0.5)
+            assert [g["lr"] for g in optimizer.param_groups] == pytest.approx(
+                [0.5 * v for v in group_before])
+            assert [g["initial_lr"] for g in optimizer.param_groups] == (
+                pytest.approx([0.5 * v for v in init_before]))
+            for scheduler, before in zip(schedule._schedulers, base_before):
+                assert list(scheduler.base_lrs) == pytest.approx(
+                    [0.5 * v for v in before])
+            assert getattr(schedule._schedulers[-1], "eta_min", 0.0) == (
+                pytest.approx(0.5 * eta_before))
+        finally:
+            tuner.close()
+
+    def test_scaled_schedule_still_steps(self, tmp_path):
+        tuner = self._fast_tuner(tmp_path)
+        try:
+            tuner._scale_fast_lr(0.5)
+            for _ in range(3):
+                tuner._fast_optimizer.step()
+                tuner._fast_lr_schedule.step()
+            lr = tuner._fast_optimizer.param_groups[0]["lr"]
+            assert 0.0 <= lr <= 0.001
+        finally:
+            tuner.close()
+
+
+class TestRungGradClip:
+    """[WS-A A2] the rung loop must honor the tuning recipe's declared
+    grad_clip_norm (it silently ignored it: recovery paths clip, fast rungs
+    did not)."""
+
+    def _spy_clip(self, monkeypatch):
+        calls = []
+        original = torch.nn.utils.clip_grad_norm_
+
+        def spy(params, max_norm, **kwargs):
+            calls.append(float(max_norm))
+            return original(params, max_norm, **kwargs)
+
+        monkeypatch.setattr(torch.nn.utils, "clip_grad_norm_", spy)
+        return calls
+
+    def test_recipe_clip_reaches_the_rung_loop(self, tmp_path, monkeypatch):
+        calls = self._spy_clip(monkeypatch)
+        tuner = _clamp_tuner(
+            tmp_path, optimization_driver="fast",
+            spiking_mode="ttfs_quantized", activation_quantization=True,
+            tuning_recipe=dict(DEFAULT_TUNING_RECIPE),
+            clamp_fast_rates=[0.5], clamp_fast_steps_per_rate=2,
+        )
+        try:
+            tuner._ensure_fast_optimizer()
+            tuner._fast_train_rung(0.5)
+            assert calls == [1.0, 1.0]  # DEFAULT_TUNING_RECIPE.grad_clip_norm
+        finally:
+            tuner.close()
+
+    def test_null_recipe_clip_stays_unclipped(self, tmp_path, monkeypatch):
+        calls = self._spy_clip(monkeypatch)
+        cfg_recipe = dict(DEFAULT_TUNING_RECIPE)
+        cfg_recipe["grad_clip_norm"] = None
+        tuner = _clamp_tuner(
+            tmp_path, optimization_driver="fast", tuning_recipe=cfg_recipe,
+            spiking_mode="ttfs_quantized", activation_quantization=True,
+            clamp_fast_rates=[0.5], clamp_fast_steps_per_rate=2,
+        )
+        try:
+            tuner._ensure_fast_optimizer()
+            tuner._fast_train_rung(0.5)
+            assert calls == []
+        finally:
+            tuner.close()
+
+    def test_explicit_caller_clip_wins(self, tmp_path, monkeypatch):
+        calls = self._spy_clip(monkeypatch)
+        tuner = _clamp_tuner(
+            tmp_path, optimization_driver="fast",
+            spiking_mode="ttfs_quantized", activation_quantization=True,
+            clamp_fast_rates=[0.5], clamp_fast_steps_per_rate=2,
+        )
+        try:
+            tuner._ensure_fast_optimizer()
+            tuner._fast_train_rung(0.5, grad_clip_norm=0.25)
+            assert calls == [0.25, 0.25]
+        finally:
+            tuner.close()

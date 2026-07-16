@@ -20,9 +20,11 @@ DEFAULT_TUNING_RECIPE: Dict[str, object] = {
     "weight_decay": 0.01,
     "betas": [0.9, 0.999],
     "scheduler": "cosine",
-    "warmup_ratio": 0.0,
+    # [WS-A A4] tuning inherits the finetune recipe's proven conditioning
+    # (the same peak lr wrecked a pretrained backbone at LLRD 1.0/no-warmup).
+    "warmup_ratio": DEFAULT_TRAINING_RECIPE["warmup_ratio"],
     "grad_clip_norm": 1.0,
-    "layer_wise_lr_decay": 1.0,
+    "layer_wise_lr_decay": DEFAULT_TRAINING_RECIPE["layer_wise_lr_decay"],
     "label_smoothing": 0.0,
 }
 
@@ -159,9 +161,7 @@ CONFIG_KEYS_SET: Set[str] = {
     "sanafe_sample_count", "sanafe_arch_preset",
     "sanafe_custom_arch_path", "sanafe_log_potential_trace",
     "simulation_batch_count", "simulation_step_timeout_s",
-    # Per-cell RUN-total STEP budget for the 5u endpoint floor (steps, never
-    # wall seconds; endpoint_recovery falls back to the TUNING_POLICY value)
-    # and the [C3'] absolute min-cover before the convergence stop may vote.
+    # Endpoint floor: RUN-total STEP budget (never wall) + [C3'] min-cover.
     "endpoint_floor_steps", "endpoint_floor_min_cover_steps",
     # [MBH-DRAWS] best-of-N conversion draws (1 = single-draw, bit-identical).
     "conversion_draws",

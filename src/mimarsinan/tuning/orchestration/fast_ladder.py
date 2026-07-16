@@ -10,6 +10,10 @@ import torch
 
 from mimarsinan.model_training.training_recipe import build_optimizer, build_recipe
 from mimarsinan.models.nn.layers import freeze_batchnorm_running_stats
+from mimarsinan.tuning.orchestration.fast_lr_schedule import (
+    build_fast_lr_schedule,
+    scale_fast_lr,
+)
 from mimarsinan.tuning.orchestration.mbh_gate import gated_fast_rate_attempt
 from mimarsinan.tuning.orchestration.mbh_ledger import (
     capture_rung_nonzero_grad_fraction,
@@ -122,19 +126,8 @@ class FastLadderMixin(_FastLadderHost):
         setter(float(rate))
 
     def _build_fast_lr_schedule(self, optimizer, total_steps, eta_min=0.0):
-        """Warmup (5%, linear) → cosine decay to ``eta_min`` over ``total_steps``
-        step()s (``eta_min=0`` decays to ~0; >0 floors the endpoint LR)."""
-        total = max(1, int(total_steps))
-        warmup_steps = max(1, int(round(0.05 * total)))
-        warmup = torch.optim.lr_scheduler.LinearLR(
-            optimizer, start_factor=1e-3, end_factor=1.0, total_iters=warmup_steps,
-        )
-        cosine = torch.optim.lr_scheduler.CosineAnnealingLR(
-            optimizer, T_max=max(1, total - warmup_steps), eta_min=float(eta_min),
-        )
-        return torch.optim.lr_scheduler.SequentialLR(
-            optimizer, schedulers=[warmup, cosine], milestones=[warmup_steps],
-        )
+        """The spanning warmup+cosine ladder schedule (fast_lr_schedule SSOT)."""
+        return build_fast_lr_schedule(optimizer, total_steps, eta_min=eta_min)
 
     def _fast_ladder_lr(self) -> float:
         """LR for the shared fast optimizer (tuners may cap it per ramp strategy)."""
@@ -161,6 +154,20 @@ class FastLadderMixin(_FastLadderHost):
         self._fast_blend_path = True
         self._fast_optimizer_steps = 0
 
+    def _scale_fast_lr(self, factor: float) -> None:
+        """[WS-A A1] the retention gate's Armijo LR backoff (fast_lr_schedule SSOT)."""
+        optimizer, schedule = self._fast_optimizer, self._fast_lr_schedule
+        assert optimizer is not None and schedule is not None, (
+            "_ensure_fast_optimizer must run before _scale_fast_lr"
+        )
+        scale_fast_lr(optimizer, schedule, factor)
+
+    def _rung_grad_clip_norm(self):
+        """[WS-A A2] the tuning recipe's declared grad_clip_norm (the rung loop
+        silently ignored it: recovery paths clip, fast rungs did not)."""
+        recipe = build_recipe(self.pipeline.config, key="tuning_recipe")
+        return None if recipe is None else recipe.grad_clip_norm
+
     def _fast_loss(self, x, y):
         """Per-step fast-ramp loss. Default = the trainer's installed loss; subclasses
         may override (e.g. TTFS to its plain-CE + genuine-CE objective)."""
@@ -180,11 +187,14 @@ class FastLadderMixin(_FastLadderHost):
         """The one rung training loop: apply T at ``rate``, then ``steps_per_rate``
         steps of ``_fast_loss`` under the shared optimizer + spanning cosine.
 
-        ``grad_clip_norm`` clips per step; ``keep_best_probe`` snapshots the entry
+        ``grad_clip_norm`` clips per step (``None`` falls back to the tuning
+        recipe's declared value); ``keep_best_probe`` snapshots the entry
         state, probes on every ``keep_best_interval``-th and the last step, and
         restores the best probed state — the rung can never end below its entry.
         """
         device = self.pipeline.config["device"]
+        if grad_clip_norm is None:
+            grad_clip_norm = self._rung_grad_clip_norm()
         self._fast_set_rate(float(rate))
         optimizer, schedule = self._fast_optimizer, self._fast_lr_schedule
         assert optimizer is not None and schedule is not None, (

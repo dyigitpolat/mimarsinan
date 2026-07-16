@@ -35,6 +35,13 @@ class ActivationAdaptationTuner(SmoothAdaptationTuner):
                     "activation_adaptation_fast_steps_per_rate", FAST_LADDER_STEPS_PER_RATE
                 )
             ),
+            # [WS-A A3] floor the spanning cosine: with eta_min=0 the FINAL rung
+            # (rate 1.0 — the only one needing real adaptation) trains at lr~0.
+            eta_min_factor=float(
+                self.pipeline.config.get(
+                    "activation_adaptation_fast_lr_eta_min", 0.1
+                )
+            ),
         )
 
     def _install_kd_teacher(self):

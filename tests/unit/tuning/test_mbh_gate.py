@@ -135,6 +135,143 @@ def _ungated_ladder_replay(tuner):
     return tuner
 
 
+# -- the two-sided rung trust region (WS-A A1) --------------------------------------
+
+class TestRetentionGate:
+    """A rung must retain the BLENDED metric (post_acc >= previous committed
+    post_acc - tolerance) in addition to the D-hat bound. Measured motivation:
+    a ViT rung at lr 2.89e-3 destroyed the blend 0.82->0.31 while D-hat
+    improved 0.02->0.22 and the one-sided gate ACCEPTED the wreck."""
+
+    def _probe_seq(self, tuner, values):
+        seq = list(values)
+        tuner.probe = lambda: float(seq.pop(0)) if seq else float(values[-1])
+
+    @staticmethod
+    def _arm(tuner):
+        # 100 classes -> chance floor 5/100 = 0.05: the 0.8x anchors arm.
+        tuner.pipeline.config["num_classes"] = 100
+
+    def test_destructive_rung_is_rejected_restored_and_lr_backed_off(
+        self, tmp_path, monkeypatch, capsys,
+    ):
+        # D-hat improves but the blend craters: reject, restore, halve the LR,
+        # retry the midpoint; the retry (post-backoff) retains -> accepted.
+        _inject_measurements(monkeypatch, entry=0.02, full_accs=[0.22, 0.25])
+        tuner = _clamp_tuner(tmp_path)
+        try:
+            _prepare_direct_attempts(tuner)
+            self._arm(tuner)
+            # probe reads: entry anchor 0.85, wrecked rung 0.30, healthy retry 0.84
+            self._probe_seq(tuner, [0.85, 0.30, 0.84])
+            tuner._ensure_fast_optimizer()
+            base_before = [
+                list(s.base_lrs) for s in tuner._fast_lr_schedule._schedulers
+            ]
+            committed = tuner._driver_attempt(0.5)
+            out = capsys.readouterr().out
+            assert "reject" in out and "reason=retention" in out
+            assert committed == pytest.approx(0.25)  # midpoint of (0.0, 0.5)
+            base_after = [
+                list(s.base_lrs) for s in tuner._fast_lr_schedule._schedulers
+            ]
+            for before, after in zip(base_before, base_after):
+                for b, a in zip(before, after):
+                    assert a == pytest.approx(0.5 * b)
+        finally:
+            tuner.close()
+
+    def test_dhat_reject_does_not_back_off_the_lr(
+        self, tmp_path, monkeypatch, capsys,
+    ):
+        # The one-sided D-hat reject is a RATE problem (midpoint retry), not an
+        # LR problem: the backoff must not fire.
+        _inject_measurements(monkeypatch, entry=0.50, full_accs=[0.20, 0.55])
+        tuner = _clamp_tuner(tmp_path)
+        try:
+            _prepare_direct_attempts(tuner)
+            self._arm(tuner)
+            self._probe_seq(tuner, [0.85, 0.84, 0.84])
+            tuner._ensure_fast_optimizer()
+            base_before = [
+                list(s.base_lrs) for s in tuner._fast_lr_schedule._schedulers
+            ]
+            tuner._driver_attempt(0.5)
+            out = capsys.readouterr().out
+            assert "reason=dhat" in out
+            base_after = [
+                list(s.base_lrs) for s in tuner._fast_lr_schedule._schedulers
+            ]
+            assert base_after == base_before
+        finally:
+            tuner.close()
+
+    def test_anchor_drifts_to_the_accepted_post_acc(self, tmp_path, monkeypatch):
+        _inject_measurements(monkeypatch, entry=0.4, full_accs=[0.5, 0.6])
+        tuner = _clamp_tuner(tmp_path)
+        try:
+            _prepare_direct_attempts(tuner)
+            self._arm(tuner)
+            self._probe_seq(tuner, [0.85, 0.845, 0.84])
+            for target in tuner._fixed_ladder_rates:
+                tuner._driver_attempt(target)
+            assert tuner._mbh_gate_state.prev_post_acc == pytest.approx(0.84)
+        finally:
+            tuner.close()
+
+    def test_entry_anchor_read_is_rng_isolated(self, tmp_path, monkeypatch):
+        from mimarsinan.tuning.orchestration.mbh_gate import _ensure_gate_state
+
+        _inject_measurements(monkeypatch, entry=0.4, full_accs=[0.5])
+        tuner = _clamp_tuner(tmp_path)
+        try:
+            _prepare_direct_attempts(tuner)
+            self._arm(tuner)
+            rng_before = torch.random.get_rng_state()
+            state = _ensure_gate_state(tuner)
+            assert state.prev_post_acc is not None
+            assert torch.equal(rng_before, torch.random.get_rng_state())
+        finally:
+            tuner.close()
+
+    def test_chance_level_anchor_disarms_retention(self, tmp_path, monkeypatch):
+        # A relative retention bound on a chance-level backbone gates noise:
+        # entry below 2/num_classes leaves the gate one-sided (D-hat only).
+        _inject_measurements(monkeypatch, entry=0.02, full_accs=[0.22])
+        tuner = _clamp_tuner(tmp_path)
+        try:
+            _prepare_direct_attempts(tuner)
+            # entry anchor 0.10 < 2/4 classes: disarmed; wrecked rung accepted
+            # on the D-hat criterion alone (the historical one-sided gate).
+            self._probe_seq(tuner, [0.10, 0.05])
+            committed = tuner._driver_attempt(0.5)
+            assert committed == pytest.approx(0.5)
+            assert tuner._mbh_gate_state.retention_armed is False
+        finally:
+            tuner.close()
+
+    def test_retention_exhaustion_stalls_on_the_best_state(
+        self, tmp_path, monkeypatch, capsys,
+    ):
+        # Every attempt wrecks the blend: refinements exhaust into the
+        # constructive stall exactly like the D-hat path.
+        _inject_measurements(
+            monkeypatch, entry=0.02, full_accs=[0.3, 0.3, 0.3, 0.3],
+        )
+        tuner = _clamp_tuner(tmp_path)
+        try:
+            _prepare_direct_attempts(tuner)
+            self._arm(tuner)
+            self._probe_seq(tuner, [0.85] + [0.30] * 8)
+            committed = tuner._driver_attempt(0.5)
+            out = capsys.readouterr().out
+            assert "constructive_stall" in out
+            assert committed == pytest.approx(0.0)
+            assert tuner._mbh_gate_state.stalled is True
+        finally:
+            tuner.close()
+
+
 # -- default equivalence: all-accepts == the historical ungated ladder --------------
 
 class TestDefaultEquivalence:
