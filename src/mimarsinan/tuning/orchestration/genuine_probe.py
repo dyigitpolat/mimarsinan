@@ -5,6 +5,8 @@ from typing import Iterable, Tuple
 
 import torch
 
+from mimarsinan.models.nn.adaptive_chunks import forward_adaptive_chunks
+
 
 def iter_val_batches(
     trainer, n_batches: int,
@@ -13,26 +15,8 @@ def iter_val_batches(
     return trainer.iter_validation_batches(int(n_batches))
 
 
-def _forward_adaptive_chunks(forward_obj, x):
-    """[C4'] full-batch forward, halving into chunks on CUDA OOM: the genuine
-    spike-train eval materializes S x batch x features, so a val batch sized
-    for the fp32 loaders can exceed VRAM at deploy-eval time (measured
-    36.94 GiB = 32 cycles x 512 batch on a ViT). Value-identical (pure eval,
-    recomputed per retry); an OOM at chunk 1 fails loud."""
-    chunk = int(x.size(0))
-    while True:
-        try:
-            if chunk >= x.size(0):
-                return forward_obj(x)
-            return torch.cat([
-                forward_obj(part) for part in torch.split(x, chunk)
-            ])
-        except torch.OutOfMemoryError:
-            if chunk <= 1:
-                raise
-            chunk = max(1, chunk // 2)
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
+# [C4'] shared adaptive OOM chunker (common/adaptive_chunks SSOT).
+_forward_adaptive_chunks = forward_adaptive_chunks
 
 
 def eval_forward_over_val(trainer, forward_obj, model, n_batches, device) -> float:

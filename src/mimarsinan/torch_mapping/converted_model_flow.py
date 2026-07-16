@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import torch
 import torch.nn as nn
 
+from mimarsinan.models.nn.adaptive_chunks import forward_adaptive_chunks
 from mimarsinan.models.perceptron_mixer.perceptron_flow import PerceptronFlow
 from mimarsinan.mapping.mapping_utils import ModelRepresentation
 
@@ -54,4 +56,9 @@ class ConvertedModelFlow(PerceptronFlow):
         self.input_activation = activation
 
     def forward(self, x):
+        # [C4'] grad-free forwards chunk adaptively on CUDA OOM: an installed
+        # cycle-accurate activation materializes S x batch x features, so a
+        # val batch sized for the fp32 loaders can exceed VRAM at eval time.
+        if not torch.is_grad_enabled():
+            return forward_adaptive_chunks(self._mapper_repr, x)
         return self._mapper_repr(x)
