@@ -224,7 +224,9 @@ T1_VEHICLES = {
     "vit": {"model_type": "torch_vit", "platform": "E", "axis": "vit_b",
             "model_config": {}, "coalescing": False,
             "preprocessing": {"interpolation": "bicubic", "resize_to": 224, "normalize": "imagenet"},
-            "batch_size": 512, "tuning_batch_size": 128},
+            # Cycle-accurate training memory scales S x batch: the unrolled
+            # S=32 ViT graph at tuning batch 128 pins ~80 GiB (measured OOM).
+            "batch_size": 512, "tuning_batch_size": 32},
     "deepcnn32": {"model_type": "deep_cnn", "platform": "F", "axis": "deep_cnn",
                   "model_config": {"depth": 8, "width": 32}},
     "mixerc10": {"model_type": "mlp_mixer_core", "platform": "F", "axis": "mlp_mixer_core",

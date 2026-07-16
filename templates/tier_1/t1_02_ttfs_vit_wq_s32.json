@@ -48,7 +48,7 @@
     "encoding_layer_placement": "subsume",
     "weight_quantization": true,
     "scale_migration": true,
-    "tuning_batch_size": 128,
+    "tuning_batch_size": 32,
     "preprocessing": {
       "interpolation": "bicubic",
       "resize_to": 224,

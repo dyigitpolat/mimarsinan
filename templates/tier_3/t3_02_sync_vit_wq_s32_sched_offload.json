@@ -49,7 +49,7 @@
     "weight_quantization": true,
     "ttfs_cycle_schedule": "synchronized",
     "scale_migration": true,
-    "tuning_batch_size": 128,
+    "tuning_batch_size": 32,
     "preprocessing": {
       "interpolation": "bicubic",
       "resize_to": 224,
