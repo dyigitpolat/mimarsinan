@@ -185,6 +185,34 @@ class TestRetentionGate:
         finally:
             tuner.close()
 
+    def test_both_bounds_failing_classifies_as_retention(
+        self, tmp_path, monkeypatch, capsys,
+    ):
+        # A wrecked blend is an LR problem even when D-hat also regressed
+        # (measured: the AQ ladder cratered post 0.27->0.10 AND D-hat, was
+        # labeled dhat, and burned every attempt without the backoff).
+        _inject_measurements(monkeypatch, entry=0.50, full_accs=[0.20, 0.55])
+        tuner = _clamp_tuner(tmp_path)
+        try:
+            _prepare_direct_attempts(tuner)
+            self._arm(tuner)
+            self._probe_seq(tuner, [0.85, 0.10, 0.84])
+            tuner._ensure_fast_optimizer()
+            base_before = [
+                list(s.base_lrs) for s in tuner._fast_lr_schedule._schedulers
+            ]
+            tuner._driver_attempt(0.5)
+            out = capsys.readouterr().out
+            assert "reason=retention" in out
+            base_after = [
+                list(s.base_lrs) for s in tuner._fast_lr_schedule._schedulers
+            ]
+            for before, after in zip(base_before, base_after):
+                for b, a in zip(before, after):
+                    assert a == pytest.approx(0.5 * b)
+        finally:
+            tuner.close()
+
     def test_dhat_reject_does_not_back_off_the_lr(
         self, tmp_path, monkeypatch, capsys,
     ):

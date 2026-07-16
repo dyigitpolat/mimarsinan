@@ -94,7 +94,11 @@ def gated_fast_rate_attempt(tuner, target: float) -> float:
         if dhat_ok and retained:
             _accept(tuner, state, rate, post_acc, full_acc, t0)
             return rate
-        reason = "dhat" if not dhat_ok else "retention"
+        # A wrecked blend is an LR problem even when D-hat also regressed
+        # (both-fail measured on the AQ ladder: post 0.27->0.10 was labeled
+        # dhat and burned every attempt without the backoff); dhat-only
+        # failures (blend fine, deployed regressed) are rate problems.
+        reason = "retention" if not retained else "dhat"
         _restore_live(tuner, snapshot)
         if reason == "retention":
             # Armijo trust region preserving LR x steps: halve the step SIZE,

@@ -266,3 +266,4 @@ class TestActivationAdaptationEtaMin:
             assert tuner._fast_eta_min_factor == 0.0
         finally:
             tuner.close()
+
