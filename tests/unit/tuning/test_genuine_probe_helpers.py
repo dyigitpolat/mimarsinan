@@ -194,3 +194,63 @@ def test_genuine_acc_on_clone_passes_clone_not_live_model():
     assert captured["prepared"] is not model
     assert captured["built"] is captured["prepared"]
     assert captured["evaluated"] is captured["prepared"]
+
+
+class _OOMBelowChunk(nn.Module):
+    """Forward that raises CUDA-style OOM for batches above ``max_batch`` —
+    the genuine spike-train eval signature (S x batch x features exceeds VRAM
+    at deploy-eval time on val batches sized for fp32 training)."""
+
+    def __init__(self, inner, max_batch):
+        super().__init__()
+        self.inner = inner
+        self.max_batch = int(max_batch)
+        self.oom_raises = 0
+
+    def forward(self, x):
+        if x.size(0) > self.max_batch:
+            self.oom_raises += 1
+            raise torch.OutOfMemoryError("synthetic CUDA out of memory")
+        return self.inner(x)
+
+
+class TestChunkedGenuineEval:
+    """[C4'] eval_forward_over_val halves the forward batch on OOM instead of
+    dying: measured 36.94 GiB alloc = 32 cycles x 512 val batch on a ViT."""
+
+    def _batches(self, n=2, batch=8):
+        torch.manual_seed(0)
+        return [
+            (torch.randn(batch, 3), torch.randint(0, 2, (batch,)))
+            for _ in range(n)
+        ]
+
+    def test_oom_falls_back_to_chunks_with_identical_accuracy(self):
+        batches = self._batches()
+        model = _TinyNet()
+        plain = eval_forward_over_val(
+            _FakeTrainer(batches), model, model, 2, "cpu",
+        )
+        guarded = _OOMBelowChunk(model, max_batch=2)
+        chunked = eval_forward_over_val(
+            _FakeTrainer(batches), guarded, model, 2, "cpu",
+        )
+        assert chunked == plain
+        assert guarded.oom_raises >= 1
+
+    def test_oom_at_chunk_one_reraises(self):
+        batches = self._batches()
+        model = _TinyNet()
+        dead = _OOMBelowChunk(model, max_batch=0)
+        try:
+            eval_forward_over_val(_FakeTrainer(batches), dead, model, 2, "cpu")
+        except torch.OutOfMemoryError:
+            return
+        raise AssertionError("an unchunkable OOM must fail loud")
+
+    def test_no_oom_keeps_the_single_forward_path(self):
+        batches = self._batches()
+        model = _TinyNet()
+        counting = _OOMBelowChunk(model, max_batch=1000)
+        eval_forward_over_val(_FakeTrainer(batches), counting, model, 2, "cpu")
+        assert counting.oom_raises == 0
