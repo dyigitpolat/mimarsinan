@@ -2,8 +2,10 @@
 
 from mimarsinan.models.perceptron_mixer.perceptron import make_activation
 from mimarsinan.tuning.axes import ActivationAdaptationAxis
+from mimarsinan.tuning.orchestration.blend_ramp import kd_loss_from_config
 from mimarsinan.tuning.orchestration.smooth_adaptation_tuner import SmoothAdaptationTuner
 from mimarsinan.tuning.orchestration.tuning_policy import FAST_LADDER_STEPS_PER_RATE
+from mimarsinan.tuning.teacher import snapshot_frozen_teacher
 
 
 class ActivationAdaptationTuner(SmoothAdaptationTuner):
@@ -14,12 +16,15 @@ class ActivationAdaptationTuner(SmoothAdaptationTuner):
     def __init__(self, pipeline, model, target_accuracy, lr, adaptation_manager):
         super().__init__(pipeline, model, target_accuracy, lr)
         self.adaptation_manager = adaptation_manager
+        self._kd_teacher = None
 
         for perceptron in self.model.get_perceptrons():
             self.adaptation_manager.update_activation(self.pipeline.config, perceptron)
 
         self._axis = ActivationAdaptationAxis()
         self._axis.attach(self.model, self.adaptation_manager, self.pipeline.config)
+
+        self._install_kd_teacher()
 
         self._consume_optimization_driver(
             rates=self.pipeline.config.get(
@@ -30,6 +35,20 @@ class ActivationAdaptationTuner(SmoothAdaptationTuner):
                     "activation_adaptation_fast_steps_per_rate", FAST_LADDER_STEPS_PER_RATE
                 )
             ),
+        )
+
+    def _install_kd_teacher(self):
+        """Distil the GELU->ReLU morph against a frozen snapshot of the entry
+        (pre-blend) model instead of plain CE. Full hard-ReLU collapses a
+        GELU-pretrained backbone to chance; CE from that start is a weak signal,
+        so KD carries the teacher's soft targets across the ReLU cliff. Default-off."""
+        if not bool(self.pipeline.config.get("activation_adaptation_kd", False)):
+            return
+        self._kd_teacher = snapshot_frozen_teacher(
+            self.model, self.pipeline.config["device"]
+        )
+        self.trainer.loss_function = kd_loss_from_config(
+            self.pipeline.config, self._kd_teacher
         )
 
     def _set_rate(self, rate):
