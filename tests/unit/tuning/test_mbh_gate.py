@@ -276,6 +276,107 @@ class TestRetentionGate:
             tuner.close()
 
 
+class TestBestDeployedFinalize:
+    """[WS-A A1] finalize arbitration: when the ladder ends below its target
+    rate, the hard finalize can wreck the model while a better DEPLOYED
+    candidate was observed mid-ladder (measured: a rate-1.0 attempt read
+    0.7515 full-ReLU and was retention-rejected; the sub-1.0 commit's hard
+    swap read 0.06). The gate tracks the best deployed state across ALL
+    attempts (accepted or rejected) and the finalize seam restores it when the
+    final state's deployed read falls short by more than the tolerance."""
+
+    def _probe_seq(self, tuner, values):
+        seq = list(values)
+        tuner.probe = lambda: float(seq.pop(0)) if seq else float(values[-1])
+
+    @staticmethod
+    def _arm(tuner):
+        tuner.pipeline.config["num_classes"] = 100
+
+    def test_rejected_attempt_with_best_deployed_read_is_tracked(
+        self, tmp_path, monkeypatch,
+    ):
+        # attempt full_accs: rung0 accepted 0.30; rung1 attempt REJECTED by
+        # retention with deployed 0.75 (the best), retry accepted at 0.28.
+        _inject_measurements(
+            monkeypatch, entry=0.02, full_accs=[0.30, 0.75, 0.28],
+        )
+        tuner = _clamp_tuner(tmp_path)
+        try:
+            _prepare_direct_attempts(tuner)
+            self._arm(tuner)
+            self._probe_seq(tuner, [0.87, 0.86, 0.10, 0.855])
+            tuner._driver_attempt(0.5)
+            tuner._driver_attempt(1.0)
+            state = tuner._mbh_gate_state
+            assert state.best_deployed_acc == pytest.approx(0.75)
+            assert state.best_deployed_state is not None
+        finally:
+            tuner.close()
+
+    def test_finalize_restores_the_best_deployed_state_when_final_falls_short(
+        self, tmp_path, monkeypatch,
+    ):
+        from mimarsinan.tuning.orchestration.mbh_gate import (
+            finalize_on_best_deployed,
+        )
+
+        _inject_measurements(
+            monkeypatch, entry=0.02, full_accs=[0.30, 0.75, 0.28, 0.06],
+        )
+        tuner = _clamp_tuner(tmp_path)
+        try:
+            _prepare_direct_attempts(tuner)
+            self._arm(tuner)
+            self._probe_seq(tuner, [0.87, 0.86, 0.10, 0.855])
+            tuner._driver_attempt(0.5)
+            tuner._driver_attempt(1.0)
+            # final read (the injected entry, 0.02) < best deployed (0.75) - tol:
+            # the restore fires and reports the restored deployed read.
+            restored = finalize_on_best_deployed(tuner)
+            assert restored == pytest.approx(0.75)
+        finally:
+            tuner.close()
+
+    def test_finalize_is_inert_when_the_final_state_is_the_best(
+        self, tmp_path, monkeypatch,
+    ):
+        from mimarsinan.tuning.orchestration.mbh_gate import (
+            finalize_on_best_deployed,
+        )
+
+        # Healthy ladder: deployed climbs monotonically; final read matches.
+        _inject_measurements(
+            monkeypatch, entry=0.02, full_accs=[0.30, 0.60, 0.60],
+        )
+        tuner = _clamp_tuner(tmp_path)
+        try:
+            _prepare_direct_attempts(tuner)
+            self._arm(tuner)
+            self._probe_seq(tuner, [0.87, 0.86, 0.855])
+            tuner._driver_attempt(0.5)
+            tuner._driver_attempt(1.0)
+            # the final state reads at the deployed best: arbitration is inert.
+            monkeypatch.setattr(
+                mbh_ledger, "full_transform_measurement", lambda t: 0.60,
+            )
+            assert finalize_on_best_deployed(tuner) is None
+        finally:
+            tuner.close()
+
+    def test_finalize_without_gate_state_is_inert(self, tmp_path):
+        from mimarsinan.tuning.orchestration.mbh_gate import (
+            finalize_on_best_deployed,
+        )
+
+        tuner = _clamp_tuner(tmp_path)
+        try:
+            tuner._mbh_gate_state = None
+            assert finalize_on_best_deployed(tuner) is None
+        finally:
+            tuner.close()
+
+
 # -- default equivalence: all-accepts == the historical ungated ladder --------------
 
 class TestDefaultEquivalence:

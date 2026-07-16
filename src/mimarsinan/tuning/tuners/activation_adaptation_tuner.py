@@ -83,8 +83,16 @@ class ActivationAdaptationTuner(SmoothAdaptationTuner):
         from mimarsinan.pipelining.pipeline_steps.activation_utils import (
             needs_relu_adaptation,
         )
+        from mimarsinan.tuning.orchestration.mbh_gate import (
+            finalize_on_best_deployed,
+        )
 
         self._continue_to_full_rate()
+        # [WS-A A1] a ladder that ends below rate 1.0 hard-swaps from a state
+        # whose deployed read can sit far below a mid-ladder candidate; the
+        # gate arbitration restores the best deployed state (inert when the
+        # final state already reads best).
+        finalize_on_best_deployed(self)
 
         for p in self.model.get_perceptrons():
             if needs_relu_adaptation(p):

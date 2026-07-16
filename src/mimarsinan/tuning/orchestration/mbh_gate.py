@@ -41,6 +41,11 @@ class MBHGateState:
     rung: int = -1
     prev_post_acc: float | None = None
     retention_armed: bool = False
+    # Best DEPLOYED (full-transform) read over ALL attempts, accepted or
+    # rejected — the finalize-arbitration candidate (retention can rightly
+    # reject the deploy-best state mid-ladder; see finalize_on_best_deployed).
+    best_deployed_acc: float = float("-inf")
+    best_deployed_state: Any = None
 
 
 def gated_fast_rate_attempt(tuner, target: float) -> float:
@@ -77,6 +82,9 @@ def gated_fast_rate_attempt(tuner, target: float) -> float:
         )
         full_acc = float(measurements["full_acc"])
         dhat_highwater.observe(tuner.pipeline, full_acc)
+        if full_acc > state.best_deployed_acc:
+            state.best_deployed_acc = float(full_acc)
+            state.best_deployed_state = tuner._clone_state()
         dhat_ok = full_acc >= state.best_full_acc - ACCEPT_TOLERANCE
         retained = (
             not state.retention_armed
@@ -142,9 +150,11 @@ def _ensure_gate_state(tuner) -> MBHGateState:
         with mbh_ledger._measurement_guard(tuner.trainer):
             entry_post = float(tuner.probe())
         armed = _retention_armed(tuner, entry_post)
+        entry_state = tuner._clone_state()
         state = MBHGateState(
-            best_full_acc=entry, best_state=tuner._clone_state(),
+            best_full_acc=entry, best_state=entry_state,
             prev_post_acc=entry_post, retention_armed=armed,
+            best_deployed_acc=entry, best_deployed_state=entry_state,
         )
         tuner._mbh_gate_state = state
         _log(
@@ -180,6 +190,34 @@ def _accept(tuner, state, rate, post_acc, full_acc, t0) -> None:
         tuner, "accept", rung=state.rung, rate=float(rate),
         full_acc=float(full_acc), best_full_acc=float(state.best_full_acc),
     )
+
+
+def finalize_on_best_deployed(tuner):
+    """[WS-A A1] fixed-ladder finalize arbitration: a ladder that ends below
+    its target rate hard-finalizes from a state whose deployed read can sit
+    far below a mid-ladder candidate (measured: a rate-1.0 attempt read 0.7515
+    full-ReLU and was retention-rejected; the sub-1.0 commit's hard swap read
+    0.06). Restores the best deployed state when the FINAL state's deployed
+    read falls short of it by more than ACCEPT_TOLERANCE; returns the restored
+    read, or None when the final state stands (healthy ladders are inert:
+    their last accept IS the deployed best)."""
+    state = getattr(tuner, "_mbh_gate_state", None)
+    if state is None or state.best_deployed_state is None:
+        return None
+    final_read = float(mbh_ledger.full_transform_measurement(tuner))
+    if final_read >= state.best_deployed_acc - ACCEPT_TOLERANCE:
+        return None
+    tuner._restore_state(state.best_deployed_state)
+    _log(
+        tuner,
+        f"finalize_best_deployed restored={state.best_deployed_acc:.6f} "
+        f"final_read={final_read:.6f}",
+    )
+    _event(
+        tuner, "finalize_best_deployed",
+        restored=float(state.best_deployed_acc), final_read=float(final_read),
+    )
+    return float(state.best_deployed_acc)
 
 
 def _snapshot_live(tuner) -> tuple:
