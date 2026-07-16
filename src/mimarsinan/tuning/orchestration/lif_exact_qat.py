@@ -121,16 +121,45 @@ def install_lif_input_quantizer(perceptron, simulation_steps: int) -> bool:
 
 
 def install_lif_entry_input_quantizers(model, pipeline_config) -> int:
-    """Install the deployed entry round on encoding perceptrons at the AQ install
-    seam so the exact-QAT ladder trains through it (§4.3 — the entry seam is
-    already exact; this moves its install before the QAT). Idempotent; returns
-    installs (0 when the arm is off)."""
+    """Install the deployed entry round at the AQ install seam so the exact-QAT
+    ladder trains through it (§4.3). Placement decides the carriers: under
+    ``subsume`` the encoders themselves (they deploy host-side with the
+    quantizer riding along; their consumers read grid-aligned staircase
+    outputs, so the boundary round is idempotent there); under ``offload`` the
+    encoding marks are cleared and every SEGMENT-ENTRY core reads a host float
+    through the wire-encode round — unmodeled, it read 36 pts under NF on the
+    offloaded ViT. Idempotent; returns installs (0 when the arm is off)."""
     if not lif_exact_qat_active(pipeline_config):
         return 0
+    # Lazy: torch_mapping/spiking pull chip_simulation (import cycle at init).
+    from mimarsinan.torch_mapping.encoding_layers import (
+        encoder_deploys_as_staircase_hop,
+    )
+
+    placement = str(pipeline_config.get("encoding_layer_placement", "subsume"))
+    if encoder_deploys_as_staircase_hop(placement):
+        targets = [
+            p for p in model.get_perceptrons()
+            if getattr(p, "is_encoding_layer", False)
+        ]
+    else:
+        from mimarsinan.common.workload_profile import ResolvedWorkloadProfile
+        from mimarsinan.spiking.scale_aware_boundaries import (
+            propagate_boundary_input_scales,
+        )
+        from mimarsinan.torch_mapping.encoding_layers import (
+            segment_entry_perceptrons,
+        )
+
+        propagate_boundary_input_scales(
+            model,
+            input_data_scale=ResolvedWorkloadProfile.from_config(
+                pipeline_config
+            ).input_data_scale,
+        )
+        targets = segment_entry_perceptrons(model.get_mapper_repr())
     installed = 0
-    for perceptron in model.get_perceptrons():
-        if not getattr(perceptron, "is_encoding_layer", False):
-            continue
+    for perceptron in targets:
         if install_lif_input_quantizer(
             perceptron, int(pipeline_config["simulation_steps"])
         ):

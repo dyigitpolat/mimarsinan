@@ -422,6 +422,112 @@ class TestEntryInputQuantizers:
         assert isinstance(p.input_activation, ChipInputQuantizer)
 
 
+def _offload_model():
+    """Tiny supermodel in the offload placement: no perceptron carries the
+    encoding mark (mark_encoding_layers(placement='offload') clears them all)."""
+    model = make_tiny_supermodel()
+    for p in model.get_perceptrons():
+        p.is_encoding_layer = False
+    return model
+
+
+def _offload_cfg(**kwargs):
+    cfg = _lif_cfg(**kwargs)
+    cfg["encoding_layer_placement"] = "offload"
+    return cfg
+
+
+class TestEntryInputQuantizersOffload:
+    """Offload clears every encoding mark, so the deployed host→chip wire-encode
+    round must install on the SEGMENT-ENTRY perceptrons instead (the seam the
+    genuine walk quantizes; unmodeled it read 36 pts under NF on the ViT)."""
+
+    def test_offload_installs_on_segment_entries(self):
+        from mimarsinan.torch_mapping.encoding_layers import (
+            segment_entry_perceptrons,
+        )
+
+        model = _offload_model()
+        entries = segment_entry_perceptrons(model.get_mapper_repr())
+        assert len(entries) >= 1
+        installed = install_lif_entry_input_quantizers(model, _offload_cfg(steps=8))
+        assert installed == len(entries)
+        for p in entries:
+            assert isinstance(p.input_activation, ChipInputQuantizer)
+            assert p.input_activation.T == 8
+        for p in model.get_perceptrons():
+            if p not in entries:
+                assert isinstance(p.input_activation, nn.Identity)
+
+    def test_offload_install_is_idempotent(self):
+        model = _offload_model()
+        cfg = _offload_cfg(steps=8)
+        first = install_lif_entry_input_quantizers(model, cfg)
+        assert first >= 1
+        assert install_lif_entry_input_quantizers(model, cfg) == 0
+
+    def test_offload_knob_off_installs_nothing(self):
+        model = _offload_model()
+        assert install_lif_entry_input_quantizers(model, _offload_cfg(exact=False)) == 0
+        for p in model.get_perceptrons():
+            assert isinstance(p.input_activation, nn.Identity)
+
+    def test_offload_propagates_boundary_input_scales(self):
+        # The snap must normalize by the deployed consumer scale: the installer
+        # runs the boundary-scale propagation first (the sync SSOT contract).
+        model = _offload_model()
+        install_lif_entry_input_quantizers(model, _offload_cfg(steps=8))
+        from mimarsinan.torch_mapping.encoding_layers import (
+            segment_entry_perceptrons,
+        )
+
+        for p in segment_entry_perceptrons(model.get_mapper_repr()):
+            # Quantizer keeps the LIVE input_activation_scale Parameter so later
+            # re-propagation stays coherent.
+            assert p.input_activation.activation_scale is p.input_activation_scale
+
+    def test_quantizer_is_idempotent_on_wire_grid_values(self):
+        # Per-cycle wire values live on the {0..T}·scale/T grid; the entry round
+        # must be inert on them (the cycle walk applies it to spike trains).
+        p = _perceptron()
+        install_lif_input_quantizer(p, 8)
+        scale = float(p.input_activation_scale)
+        grid = torch.arange(0, 9, dtype=torch.float32) * (scale / 8.0)
+        with torch.no_grad():
+            out = p.input_activation(grid)
+        torch.testing.assert_close(out, grid, atol=1e-7, rtol=0.0)
+
+    def test_subsume_placement_is_unchanged_by_the_offload_branch(self):
+        # The subsume pin: explicit placement="subsume" behaves exactly like the
+        # default-placement test above (encoders themselves, consumers untouched).
+        model = make_tiny_supermodel()
+        cfg = _lif_cfg(steps=8)
+        cfg["encoding_layer_placement"] = "subsume"
+        assert install_lif_entry_input_quantizers(model, cfg) == 1
+        perceptrons = list(model.get_perceptrons())
+        assert isinstance(perceptrons[0].input_activation, ChipInputQuantizer)
+        for p in perceptrons[1:]:
+            assert isinstance(p.input_activation, nn.Identity)
+
+
+class TestHalfStepFoldPlacementInvariance:
+    """apply_lif_half_step_bias_compensation must NOT consult placement: under
+    offload the cleared marks already route the fold to segment heads, and the
+    subsume encoder skip is correct (round-encode owes no floor half-step).
+    Guards against over-eager mirroring of the sync placement-aware fold."""
+
+    def _fold_signature(self, model):
+        apply_lif_half_step_bias_compensation(model, simulation_steps=8)
+        return [bool(getattr(p, LIF_HALF_STEP_FLAG, False)) for p in model.get_perceptrons()]
+
+    def test_fold_targets_depend_only_on_marks_not_placement(self):
+        subsume_sig = self._fold_signature(make_tiny_supermodel())
+        offload_sig = self._fold_signature(_offload_model())
+        # Subsume: encoder skipped; offload: every perceptron folded.
+        assert subsume_sig == [False] + [True] * (len(subsume_sig) - 1)
+        assert offload_sig == [True] * len(offload_sig)
+
+
 class TestShiftBakeSkip:
     def _tuner(self, tmp_path, cfg):
         from mimarsinan.tuning.orchestration.adaptation_manager_factory import (
