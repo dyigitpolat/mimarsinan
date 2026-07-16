@@ -8,6 +8,10 @@ sys.path.append('./spikingjelly')
 # spiking forward's ceil(S*(1-V/θ)) flips on near-boundary neurons otherwise
 # (~3 pp accuracy drift). Must be set before any CUDA context.
 os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
+# Cycle-accurate spiking evals alternate large/small allocations (adaptive
+# chunking): the default caching allocator fragments (measured 42 GiB reserved
+# -but-unallocated while a 9 GiB ask failed). Must be set before CUDA init.
+os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
 
 # --debug must take effect before any CUDA context; strip it before imports.
 _DEBUG_FLAG = "--debug"
