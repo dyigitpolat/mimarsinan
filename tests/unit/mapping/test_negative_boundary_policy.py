@@ -249,13 +249,19 @@ class TestPolicyDispatch:
         (ln,) = _layernorm_ops(flow)
         assert getattr(ln, "_negative_shift", None) is None
 
-    def test_shift_on_fails_loud_where_it_cannot_absorb(self):
-        """ON has no bias to pre-correct across a ComputeOp→ComputeOp seam."""
+    def test_shift_on_handles_host_chains(self):
+        """A ComputeOp→ComputeOp seam is no longer fatal: the producer-side
+        sigma lift hands the host consumer the lifted value in every
+        representation, so only the chain's LAST op (the one a perceptron
+        re-encodes) needs a stamp + bake; a host-only-consumed op is never a
+        lossy boundary."""
         flow = _flow(_ComputeOpToComputeOp)
-        with pytest.raises(NotImplementedError, match="ComputeOp"):
-            apply_negative_boundary_policy(
-                flow, _x(), T, shift_enabled=True, forward_fn=_fwd(),
-            )
+        result = apply_negative_boundary_policy(
+            flow, _x(), T, shift_enabled=True, forward_fn=_fwd(),
+        )
+        assert result.subsumed == []
+        stamped = [op for op in result.shifts]
+        assert stamped, "the perceptron-consumed op must be stamped"
 
     def test_shift_off_handles_what_shift_on_cannot(self):
         flow = _flow(_ComputeOpToComputeOp)
@@ -406,3 +412,31 @@ class TestNumericValueSafety:
         ).subsumed
         recheck = calibrated_compute_op_minima(flow, x, T, forward_fn=_fwd())
         assert lossy_negative_boundaries(flow, recheck) == []
+
+
+class TestHostChainConsumers:
+    """A sigma-stamped op feeding ANOTHER host ComputeOp (the torch-mixer
+    LN -> transpose -> fc chains): under the producer-side lift the host
+    consumer reads the lifted value in every representation, so the bake walk
+    SKIPS it (no bias to compensate, none needed) instead of failing loud."""
+
+    def test_compute_op_consumer_is_skipped_not_fatal(self):
+        import torch.nn as nn
+        from mimarsinan.mapping.mappers.compute_op_mapper import ComputeOpMapper
+        from mimarsinan.mapping.support.negative_shift import (
+            _bake_consumer_perceptrons,
+        )
+
+        producer = object()
+        host_consumer = ComputeOpMapper(
+            [_FakeSource()], nn.Identity(), input_shape=(4,), output_shape=(4,),
+        )
+        consumers = {id(producer): [host_consumer]}
+        baked = _bake_consumer_perceptrons(
+            producer, torch.ones(4), consumers, ComputeOpMapper,
+        )
+        assert baked is False
+
+
+class _FakeSource:
+    pass

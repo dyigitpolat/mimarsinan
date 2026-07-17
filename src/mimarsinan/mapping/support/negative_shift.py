@@ -70,10 +70,11 @@ def _bake_consumer_perceptrons(producer, shift, consumers, compute_op_type) -> b
             apply_negative_shift_bias(consumer.perceptron, sh.reshape(-1))
             baked = True
         elif isinstance(consumer, compute_op_type):
-            raise NotImplementedError(
-                "negative-shift: a ComputeOp output feeding another ComputeOp is "
-                "unsupported (no consuming perceptron bias to compensate the shift)."
-            )
+            # Under the producer-side lift a host consumer reads the LIFTED
+            # value in every representation (mapper forward on the NF side,
+            # the shifted gather on the deployed side): nothing to bake, and
+            # the consumer's own boundary owns its own sigma.
+            continue
         elif sh.numel() == 1:
             # A scalar shift is axis-invariant: structural reshapes cannot
             # change it, so it passes through without a forward.
