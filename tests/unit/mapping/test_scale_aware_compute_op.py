@@ -133,7 +133,10 @@ class TestEndToEndConcatPlusComputeOp:
         # Concatenation of [2,2] and [4,4] → [2,2,4,4]
         assert torch.allclose(merged, torch.tensor([2.0, 2.0, 4.0, 4.0]))
 
-    def test_layernorm_after_concat_of_matching_scales_no_wrap(self):
+    def test_layernorm_after_concat_of_matching_scales_arms_scalar(self):
+        """Boundary-algebra revision: a NON-homogeneous op at a uniform
+        non-unit gauge arms with SCALAR slots (previously it stayed unwrapped
+        and computed on the rate — the V-A hole)."""
         a_perc = Perceptron(2, 2, normalization=nn.Identity(), base_activation_name="ReLU")
         a_perc.activation_scale = nn.Parameter(torch.tensor(3.0), requires_grad=False)
         b_perc = Perceptron(2, 2, normalization=nn.Identity(), base_activation_name="ReLU")
@@ -150,7 +153,9 @@ class TestEndToEndConcatPlusComputeOp:
         repr_ = ModelRepresentation(layer_norm)
         compute_per_source_scales(repr_)
 
-        assert layer_norm.per_source_scales is None
+        assert layer_norm.per_source_scales is not None
+        assert all(s.numel() == 1 for s in layer_norm.per_source_scales)
+        assert float(layer_norm.output_scale) == pytest.approx(3.0)
 
 
 class TestEndToEndIREmission:

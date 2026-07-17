@@ -300,3 +300,18 @@ class TestValueOpArmingGeometry:
         src = np.empty((6, 5), dtype=object)
         oriented = ComputeOpMapper._orient_2d_for_columns(src, wrapped)
         assert oriented.shape == (6, 5)
+
+    def test_terminal_value_op_arms_too(self):
+        # A rate-fed terminal head skews the bias term (trained on VALUES):
+        # host-consumed value ops arm exactly like re-encoded ones.
+        from mimarsinan.mapping.support.value_domain import mark_wire_value_ops
+
+        torch.manual_seed(0)
+        inp = InputMapper((8,))
+        p1 = _lif_perceptron(6, 8, THETA_1)
+        m1 = PerceptronMapper(inp, p1)
+        head = ComputeOpMapper(m1, nn.Linear(6, 4), input_shape=(6,), output_shape=(4,))
+        repr_ = ModelRepresentation(head)
+        mark_encoding_layers(repr_, placement="offload")
+        assert mark_wire_value_ops(repr_) == 1
+        assert head.is_wire_value_op

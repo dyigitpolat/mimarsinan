@@ -83,14 +83,16 @@ def _perceptron_boundaries(node, consumers) -> list:
 
 def mark_wire_value_ops(model_repr) -> int:
     """Stamp ``is_wire_value_op`` on every host ComputeOp whose module is NOT
-    positively homogeneous and whose output re-encodes into on-chip segments.
+    positively homogeneous — the rate-path analog of the TTFS ``apply_ttfs``
+    per-op value transcode.
 
     An armed value op owns its domain at emission (ScaleNormalizingWrapper):
-    inputs lift to values, the output normalizes to the consumer's fold
-    currency — the boundary-algebra I3/I1 fix. Terminal ops and host-consumed
-    ops keep today's convention (the QAT trained through it); ops feeding any
-    host-side encoder stay unarmed too (their consumers read raw values).
-    Idempotent; returns the number of marked ops.
+    inputs lift to values, the output normalizes to the fold currency — the
+    boundary-algebra I3/I1 fix. Terminal/host-consumed value ops arm too (the
+    trained plain forward feeds them VALUES; a rate-fed terminal head skews
+    the bias term and craters argmax parity). Only ops feeding a host-side
+    encoder stay unarmed (encoders read raw values). Idempotent; returns the
+    number of marked ops.
     """
     consumers = model_repr.consumer_map()
     marked = 0
@@ -101,7 +103,7 @@ def mark_wire_value_ops(model_repr) -> int:
         if op_preserves_wire_ratio(getattr(node, "module", None)):
             continue
         boundaries = _perceptron_boundaries(node, consumers)
-        if boundaries and all(
+        if all(
             not getattr(p, "is_encoding_layer", False) for p in boundaries
         ):
             node.is_wire_value_op = True
