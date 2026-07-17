@@ -182,9 +182,10 @@ class RoundedStaircaseFunction(Function):
 class ChipInputQuantizer(nn.Module):
     """STE round-to-chip-rate quantiser for encoding-layer inputs.
 
-    Sigma-free by design: the negative-boundary shift lives in the WALK (the
-    producer's ``_negative_shift`` lifts the value before this op sees it)
-    and in the consumer's baked bias — a shift here would double-apply."""
+    Sigma-free by design: the negative-boundary shift is applied by the walk
+    and deployed stage/gather sites from the producer's ``_negative_shift``
+    stamp, and inverted by the consumer's baked bias — a shift here would
+    double-apply."""
 
     def __init__(self, T: int, activation_scale: nn.Parameter | torch.Tensor | float):
         super().__init__()

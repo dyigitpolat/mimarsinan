@@ -112,11 +112,10 @@ def test_analytical_ttfs_nf_hcm_parity_with_and_without_shift():
 
 @pytest.mark.parametrize("mode", ["ttfs", "ttfs_quantized"])
 def test_shift_moves_boundary_into_encodable_domain(mode):
-    """The shifted boundary value is non-negative — the property protecting
-    the spike-train backends' ``clip(rate, 0, 1)``. The producer-side sigma
-    lift is inside the op's forward (boundary algebra P3c), so the recorder
-    captures the EFFECTIVE (post-shift) boundary; the raw value is
-    reconstructed by subtracting the stamp."""
+    """The shifted boundary value (raw op min + shift) is non-negative — the
+    property protecting the spike-train backends' ``clip(rate, 0, 1)``. The
+    recorder captures the *raw* op output (pre-shift) by design
+    (consumer-side sigma: the walk lifts AFTER recording)."""
     T = 8
     torch.manual_seed(7)
     x = torch.rand(16, 8, dtype=torch.float64)
@@ -132,12 +131,12 @@ def test_shift_moves_boundary_into_encodable_domain(mode):
     }
     assert shifted, "the LayerNorm boundary must have been shifted"
     saw_negative_raw = False
-    for node, effective_min in shifted.items():
-        raw_min = effective_min - torch.as_tensor(
-            node._negative_shift, dtype=effective_min.dtype,
-        )
+    for node, raw_min in shifted.items():
         saw_negative_raw |= bool(raw_min.min() < 0)
-        assert float(effective_min.min()) >= -1e-9, (
+        boundary_min = raw_min + torch.as_tensor(
+            node._negative_shift, dtype=raw_min.dtype,
+        )
+        assert float(boundary_min.min()) >= -1e-9, (
             f"{node} boundary still negative after shift"
         )
     assert saw_negative_raw, (

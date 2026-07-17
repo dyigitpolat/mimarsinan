@@ -13,6 +13,7 @@ from mimarsinan.mapping.support.bias_compensation import (
     calibration_forward_for_mode,
 )
 from mimarsinan.mapping.support.value_domain import node_absorbs_negative_values
+from mimarsinan.models.nn.activations.autograd import ChipInputQuantizer
 
 __all__ = [
     "NegativeBoundaryResult",
@@ -22,6 +23,7 @@ __all__ = [
     "ensure_negative_boundary_policy",
     "lossy_negative_boundaries",
     "subsume_forward_negative_boundaries",
+    "trained_entry_boundary",
 ]
 
 # The [0,1] spike-encode clamp only loses information below this floor.
@@ -72,6 +74,46 @@ def boundary_consumers(node, consumers: Dict[int, list]) -> list:
     return found
 
 
+def _carries_entry_quantizer(perceptron) -> bool:
+    """Whether the perceptron's input wire stack holds a trained entry
+    quantizer (installs may nest it in an ``nn.Sequential``)."""
+    input_activation = getattr(perceptron, "input_activation", None)
+    if input_activation is None:
+        return False
+    return any(
+        isinstance(m, ChipInputQuantizer) for m in input_activation.modules()
+    )
+
+
+def trained_entry_boundary(op, consumers) -> bool:
+    """[sigma-scope law] Whether ``op``'s boundary is TRAINED-lossy.
+
+    ALL non-host boundary consumers carry a trained entry quantizer -> the
+    exact-QAT trained through the deployed clamp (I1 holds with sigma = 0):
+    stamping sigma afterwards would CHANGE the trained function. NONE -> the
+    legacy sigma path. MIXED -> the entry-install and consumer-walk universes
+    disagree — fail loud (the drift alarm)."""
+    entries = [
+        _perceptron_of(consumer)
+        for consumer in boundary_consumers(op, consumers)
+        if not _is_host_node(consumer)
+    ]
+    entries = [p for p in entries if p is not None]
+    if not entries:
+        return False
+    quantized = [_carries_entry_quantizer(p) for p in entries]
+    if all(quantized):
+        return True
+    if any(quantized):
+        raise NotImplementedError(
+            "negative-boundary: a boundary with MIXED consumers (some entries "
+            "carry the trained quantizer, some do not) — the entry-install and "
+            "consumer-walk universes disagree; install the quantizer on every "
+            "entry of this boundary or on none."
+        )
+    return False
+
+
 def calibrated_compute_op_minima(
     model, calibration_x: torch.Tensor, T: int, *, forward_fn,
 ) -> Dict[Any, torch.Tensor]:
@@ -91,39 +133,16 @@ def calibrated_compute_op_minima(
     return recorder
 
 
-def _effective_minimum(
-    op, mins: torch.Tensor, pre_stamp=None, minima_units: str = "buffer",
-) -> torch.Tensor:
-    """The boundary minimum an encoder sees AFTER this policy call.
-
-    The producer-side sigma lift is inside the op's forward, so calibrated
-    minima are effective w.r.t. the stamps PRESENT AT CALIBRATION; only the
-    buffer-unit delta stamped since (`current - pre_stamp`), converted to the
-    minima's domain (value-unit minima of an armed producer scale by s_out),
-    is re-added."""
-    current = getattr(op, "_negative_shift", None)
-    if current is None:
+def _effective_minimum(op, mins: torch.Tensor) -> torch.Tensor:
+    """The boundary minimum an encoder actually sees: the calibrated RAW
+    minimum plus any shift the ON mechanism baked onto this op."""
+    shift = getattr(op, "_negative_shift", None)
+    if shift is None:
         return mins
-    cur = torch.as_tensor(current, dtype=mins.dtype, device=mins.device)
-    if pre_stamp is not None:
-        cur = cur - torch.as_tensor(pre_stamp, dtype=mins.dtype, device=mins.device)
-    out_scale = getattr(op, "output_scale", None)
-    if (
-        minima_units == "value"
-        and getattr(op, "per_source_scales", None) is not None
-        and out_scale is not None
-    ):
-        scale = out_scale.detach().to(dtype=mins.dtype, device=mins.device).reshape(-1)
-        cur = cur * (scale if scale.numel() == cur.numel() else scale.mean())
-    return mins + cur
+    return mins + torch.as_tensor(shift, dtype=mins.dtype, device=mins.device)
 
 
-def lossy_negative_boundaries(
-    model,
-    minima: Dict[Any, torch.Tensor],
-    pre_stamps: Dict[Any, Any] | None = None,
-    minima_units: str = "buffer",
-) -> list:
+def lossy_negative_boundaries(model, minima: Dict[Any, torch.Tensor]) -> list:
     """ComputeOps whose EFFECTIVE boundary value goes negative while an on-chip
     segment encodes it — the exact precondition of silent clamp corruption.
 
@@ -133,11 +152,7 @@ def lossy_negative_boundaries(
     consumers = model.get_mapper_repr().consumer_map()
     lossy = []
     for op, mins in minima.items():
-        pre = None if pre_stamps is None else pre_stamps.get(op)
-        if (
-            float(_effective_minimum(op, mins, pre, minima_units).min())
-            >= -NEGATIVE_TOLERANCE
-        ):
+        if float(_effective_minimum(op, mins).min()) >= -NEGATIVE_TOLERANCE:
             continue
         if any(
             not _is_host_node(consumer)
@@ -197,7 +212,6 @@ def subsume_forward_negative_boundaries(
 
 def apply_negative_boundary_policy(
     model, calibration_x: torch.Tensor, T: int, *, shift_enabled: bool, forward_fn,
-    minima_units: str = "buffer",
 ) -> NegativeBoundaryResult:
     """Make every negative ComputeOp→neural boundary lossless, then PROVE it.
 
@@ -209,17 +223,23 @@ def apply_negative_boundary_policy(
     minima = calibrated_compute_op_minima(
         model, calibration_x, T, forward_fn=forward_fn,
     )
-    pre_stamps = {
-        op: getattr(op, "_negative_shift", None) for op in minima
+    # [sigma-scope law] Trained-clamp boundaries are the QAT's own function:
+    # ONE filter feeds the stamp path, the subsume path, AND the recheck the
+    # same universe (universe drift between them is how silent-skip bugs
+    # slip in).
+    consumers = model.get_mapper_repr().consumer_map()
+    minima = {
+        op: mins for op, mins in minima.items()
+        if not trained_entry_boundary(op, consumers)
     }
     shifts: Dict[Any, Any] = {}
     subsumed: List[Any] = []
     if shift_enabled:
-        shifts = apply_negative_value_shifts(model, minima, minima_units=minima_units)
+        shifts = apply_negative_value_shifts(model, minima)
     else:
         subsumed = subsume_forward_negative_boundaries(model, minima)
 
-    remaining = lossy_negative_boundaries(model, minima, pre_stamps, minima_units)
+    remaining = lossy_negative_boundaries(model, minima)
     if remaining:
         names = [getattr(op, "name", None) or repr(op) for op in remaining]
         mechanism = "calibrated shift" if shift_enabled else "subsume-forward"
@@ -241,8 +261,6 @@ def ensure_negative_boundary_policy(
     device,
     shift_enabled: bool,
     n_batches: int = 2,
-    forward_fn=None,
-    minima_units: str = "buffer",
 ) -> NegativeBoundaryResult | None:
     """Calibrate + apply the policy from the trainer's validation cache.
 
@@ -260,9 +278,5 @@ def ensure_negative_boundary_policy(
         calibration_x,
         int(simulation_steps),
         shift_enabled=shift_enabled,
-        forward_fn=(
-            forward_fn if forward_fn is not None
-            else calibration_forward_for_mode(spiking_mode)
-        ),
-        minima_units=minima_units,
+        forward_fn=calibration_forward_for_mode(spiking_mode),
     )

@@ -176,16 +176,13 @@ def install_lif_entry_input_quantizers(model, pipeline_config) -> int:
 
 
 def ensure_offload_negative_boundary(model, trainer, pipeline_config) -> None:
-    """[V-D] Run the negative-boundary policy at the AQ install seam (offload
-    only) so the exact-QAT trains through the shifted boundary + kappa-baked
-    bias; the SCM invocation degrades to the drift verifier. Subsume
-    boundaries are post-activation non-negative — skipped, keeping their wall
-    budget untouched. Idempotent (re-calibration of a shifted walk stamps
-    nothing new)."""
+    """[I1 capacity, opt-in] Lift armed seam currencies at the AQ install
+    seam (offload only). The sigma half of this seam was REMOVED under the
+    sigma-scope law (memo sec.10e): trained-clamp boundaries are the QAT's
+    own function, so the SCM policy skips them and an AQ-time sigma has
+    nothing correct to add."""
     if not lif_exact_qat_active(pipeline_config):
         return
-    # Default OFF: the install composition measured net-harmful on the
-    # torch-mixer repro (memo sec.10b bisection); SCM-time sigma stays.
     if not bool(pipeline_config.get("lif_aq_negative_boundary", False)):
         return
     from mimarsinan.torch_mapping.encoding_layers import (
@@ -195,27 +192,7 @@ def ensure_offload_negative_boundary(model, trainer, pipeline_config) -> None:
     placement = str(pipeline_config.get("encoding_layer_placement", "subsume"))
     if encoder_deploys_as_staircase_hop(placement):
         return
-    from mimarsinan.mapping.support.bias_compensation import (
-        _analytical_segment_calibration_forward,
-    )
-    from mimarsinan.mapping.support.negative_boundary import (
-        ensure_negative_boundary_policy,
-    )
-
     _cover_armed_seam_scales(model, trainer, pipeline_config)
-    # Pre-conversion seam: activations are not yet LIF, so calibrate through
-    # the ANALYTICAL walk (value-domain minima; converted to buffer units per
-    # armed producer). The SCM invocation re-verifies through the mode walk.
-    ensure_negative_boundary_policy(
-        model,
-        trainer,
-        spiking_mode=str(pipeline_config["spiking_mode"]),
-        simulation_steps=int(pipeline_config["simulation_steps"]),
-        device=pipeline_config["device"],
-        shift_enabled=bool(pipeline_config.get("negative_value_shift", True)),
-        forward_fn=_analytical_segment_calibration_forward,
-        minima_units="value",
-    )
 
 
 def _cover_armed_seam_scales(model, trainer, pipeline_config) -> int:

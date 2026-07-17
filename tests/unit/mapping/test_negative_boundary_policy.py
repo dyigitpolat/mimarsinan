@@ -249,19 +249,15 @@ class TestPolicyDispatch:
         (ln,) = _layernorm_ops(flow)
         assert getattr(ln, "_negative_shift", None) is None
 
-    def test_shift_on_handles_host_chains(self):
-        """A ComputeOp→ComputeOp seam is no longer fatal: the producer-side
-        sigma lift hands the host consumer the lifted value in every
-        representation, so only the chain's LAST op (the one a perceptron
-        re-encodes) needs a stamp + bake; a host-only-consumed op is never a
-        lossy boundary."""
+    def test_shift_on_fails_loud_where_it_cannot_absorb(self):
+        """ON has no bias to pre-correct across a ComputeOp→ComputeOp seam
+        (restored sigma-scope fail-loud: a host consumer of a lifted value
+        has no inverse carrier; subsume-forward is the designed OFF answer)."""
         flow = _flow(_ComputeOpToComputeOp)
-        result = apply_negative_boundary_policy(
-            flow, _x(), T, shift_enabled=True, forward_fn=_fwd(),
-        )
-        assert result.subsumed == []
-        stamped = [op for op in result.shifts]
-        assert stamped, "the perceptron-consumed op must be stamped"
+        with pytest.raises(NotImplementedError, match="ComputeOp"):
+            apply_negative_boundary_policy(
+                flow, _x(), T, shift_enabled=True, forward_fn=_fwd(),
+            )
 
     def test_shift_off_handles_what_shift_on_cannot(self):
         flow = _flow(_ComputeOpToComputeOp)
@@ -414,29 +410,78 @@ class TestNumericValueSafety:
         assert lossy_negative_boundaries(flow, recheck) == []
 
 
-class TestHostChainConsumers:
-    """A sigma-stamped op feeding ANOTHER host ComputeOp (the torch-mixer
-    LN -> transpose -> fc chains): under the producer-side lift the host
-    consumer reads the lifted value in every representation, so the bake walk
-    SKIPS it (no bias to compensate, none needed) instead of failing loud."""
 
-    def test_compute_op_consumer_is_skipped_not_fatal(self):
-        import torch.nn as nn
-        from mimarsinan.mapping.mappers.compute_op_mapper import ComputeOpMapper
-        from mimarsinan.mapping.support.negative_shift import (
-            _bake_consumer_perceptrons,
+
+# ── The sigma-scope law: trained-clamp boundaries are the QAT's own ────────
+
+
+class TestTrainedEntryBoundarySkip:
+    """[sigma-scope law, memo sec.10e] A boundary whose consuming entries all
+    carry a trained entry quantizer is TRAINED-lossy: the QAT trained through
+    the exact deployed clamp (I1 holds with sigma = 0), so the policy stamps
+    nothing, bakes nothing, subsumes nothing — on BOTH knob positions."""
+
+    def _install_quantizer(self, perceptron):
+        from mimarsinan.models.nn.activations.autograd import ChipInputQuantizer
+
+        perceptron.append_input_wire_op(
+            ChipInputQuantizer(
+                T=T, activation_scale=perceptron.input_activation_scale,
+            )
         )
 
-        producer = object()
-        host_consumer = ComputeOpMapper(
-            [_FakeSource()], nn.Identity(), input_shape=(4,), output_shape=(4,),
+    def test_quantized_entries_skip_the_stamp(self):
+        flow = _flow(_ComputeOpToPerceptron)
+        (ln,) = _layernorm_ops(flow)
+        self._install_quantizer(flow.get_perceptrons()[2])
+        result = apply_negative_boundary_policy(
+            flow, _x(), T, shift_enabled=True, forward_fn=_fwd(),
         )
-        consumers = {id(producer): [host_consumer]}
-        baked = _bake_consumer_perceptrons(
-            producer, torch.ones(4), consumers, ComputeOpMapper,
+        assert result.shifts == {}
+        assert getattr(ln, "_negative_shift", None) is None
+        assert result.subsumed == []
+
+    def test_quantized_entries_skip_the_subsume_too(self):
+        flow = _flow(_ComputeOpToPerceptron)
+        self._install_quantizer(flow.get_perceptrons()[2])
+        result = apply_negative_boundary_policy(
+            flow, _x(), T, shift_enabled=False, forward_fn=_fwd(),
         )
-        assert baked is False
+        assert result.subsumed == []
+        assert result.shifts == {}
 
+    def test_mixed_consumers_fail_loud(self):
+        """One quantized and one raw entry on the SAME boundary: the
+        entry-install and consumer-walk universes disagree — drift alarm."""
+        from mimarsinan.mapping.mappers.perceptron_mapper import PerceptronMapper
+        from mimarsinan.mapping.mappers.structural import ConcatMapper, InputMapper
+        from mimarsinan.mapping.model_representation import ModelRepresentation
+        from mimarsinan.models.perceptron_mixer.perceptron import Perceptron
+        from mimarsinan.torch_mapping.encoding_layers import mark_encoding_layers
 
-class _FakeSource:
-    pass
+        torch.manual_seed(0)
+        inp = InputMapper((8,))
+        p1 = Perceptron(6, 8, normalization=nn.Identity())
+        m1 = PerceptronMapper(inp, p1)
+        ln = ComputeOpMapper(m1, nn.LayerNorm(6), input_shape=(6,), output_shape=(6,))
+        p2a = Perceptron(3, 6, normalization=nn.Identity())
+        p2b = Perceptron(3, 6, normalization=nn.Identity())
+        m2a = PerceptronMapper(ln, p2a)
+        m2b = PerceptronMapper(ln, p2b)
+        out = ConcatMapper([m2a, m2b], dim=1)
+        repr_ = ModelRepresentation(out)
+        mark_encoding_layers(repr_, placement="offload")
+        self._install_quantizer(p2a)
+
+        class _Shim:
+            def get_mapper_repr(self):
+                return repr_
+
+            def get_perceptrons(self):
+                return [p1, p2a, p2b]
+
+        with pytest.raises(NotImplementedError, match="MIXED"):
+            apply_negative_boundary_policy(
+                _Shim(), torch.rand(16, 8), T,
+                shift_enabled=True, forward_fn=_fwd(),
+            )

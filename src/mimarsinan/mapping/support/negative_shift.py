@@ -18,11 +18,9 @@ def negative_shifts_from_min(min_by_node: dict[int, np.ndarray]) -> dict[int, np
 
 
 def apply_negative_shift_bias(perceptron, shift) -> None:
-    """Bake ``B' = B − W·s`` (``s`` per-axon or scalar) into ``perceptron``.
-
-    Delta semantics: callers pass the RESIDUAL shift of the current
-    calibration (effective minima make a re-calibration's residual zero, so
-    re-entry is naturally idempotent — no once-flag)."""
+    """Idempotently bake ``B' = B − W·s`` (``s`` per-axon or scalar) into ``perceptron``."""
+    if getattr(perceptron, "_neg_shift_baked", False):
+        return
     effective_weight = PerceptronTransformer().get_effective_weight(perceptron)
     s = torch.as_tensor(
         shift, dtype=effective_weight.dtype, device=effective_weight.device,
@@ -31,6 +29,7 @@ def apply_negative_shift_bias(perceptron, shift) -> None:
     PerceptronTransformer().apply_effective_bias_transform(
         perceptron, lambda b, c=correction: b - c,
     )
+    perceptron._neg_shift_baked = True
 
 
 
@@ -60,21 +59,21 @@ def _assert_baked_encoder_feeds_no_compute_op(node, consumers, compute_op_type) 
 
 def _bake_consumer_perceptrons(producer, shift, consumers, compute_op_type) -> bool:
     """Bake the negative-shift bias into each consuming perceptron, aligning the per-channel
-    shift through intervening (linear) structural nodes. Fails loud on a ComputeOp consumer."""
-    baked = False
+    shift through intervening (linear) structural nodes. Fails loud on a ComputeOp consumer
+    — BEFORE any bake, so an aborted mixed set cannot leave a baked-unstamped model."""
+    plan: list = []
     frontier = [(c, shift) for c in consumers.get(id(producer), [])]
     while frontier:
         consumer, sh = frontier.pop()
         if _is_perceptron(consumer):
             _assert_baked_encoder_feeds_no_compute_op(consumer, consumers, compute_op_type)
-            apply_negative_shift_bias(consumer.perceptron, sh.reshape(-1))
-            baked = True
+            plan.append((consumer.perceptron, sh.reshape(-1)))
         elif isinstance(consumer, compute_op_type):
-            # Under the producer-side lift a host consumer reads the LIFTED
-            # value in every representation (mapper forward on the NF side,
-            # the shifted gather on the deployed side): nothing to bake, and
-            # the consumer's own boundary owns its own sigma.
-            continue
+            raise NotImplementedError(
+                "negative-shift: a ComputeOp output feeding another ComputeOp is "
+                "unsupported (no consuming perceptron bias to compensate the shift; "
+                "negative_value_shift=off subsume-forward handles this topology)."
+            )
         elif sh.numel() == 1:
             # A scalar shift is axis-invariant: structural reshapes cannot
             # change it, so it passes through without a forward.
@@ -90,23 +89,19 @@ def _bake_consumer_perceptrons(producer, shift, consumers, compute_op_type) -> b
                 ) from exc
             for c in consumers.get(id(consumer), []):
                 frontier.append((c, aligned))
-    return baked
+    for perceptron, sh in plan:
+        apply_negative_shift_bias(perceptron, sh)
+    return bool(plan)
 
 
 
-def apply_negative_value_shifts(
-    model, minima: dict, *, minima_units: str = "buffer",
-) -> dict:
-    """The ON mechanism: derive positive RESIDUAL shifts from the calibrated
-    per-ComputeOp effective ``minima``, bake the consuming perceptron(s)
-    (``B − W·s_delta``), and ACCUMULATE each producer's ``_negative_shift``
-    stamp (buffer units). ``minima_units="value"`` converts a value-domain
-    calibration (the analytical walk) by the armed producer's output scale.
-    Returns ``{ComputeOpMapper: total_shift_np}`` for ops stamped THIS call."""
+def apply_negative_value_shifts(model, minima: dict) -> dict:
+    """The ON mechanism: derive positive shifts from the calibrated per-ComputeOp
+    ``minima``, bake the consuming perceptron(s) (``B − W·s``), and tag each shifted
+    ``ComputeOpMapper`` with ``_negative_shift``. Returns ``{ComputeOpMapper: shift_np}``
+    (empty when no boundary goes negative). Calibration belongs to the policy caller."""
     from mimarsinan.mapping.mappers.compute_op_mapper import ComputeOpMapper
 
-    if minima_units not in ("buffer", "value"):
-        raise ValueError(f"minima_units must be buffer|value, got {minima_units!r}")
     if not minima:
         return {}
     mapper_repr = model.get_mapper_repr()
@@ -123,33 +118,26 @@ def apply_negative_value_shifts(
         s = torch.clamp(-mins, min=0.0)
         if not bool((s > 0).any()):
             continue
-        s = _to_buffer_units(compute_op, s, minima_units)
-        # s is baked WITHOUT gauge conversion: the effective weight already
-        # folds per_input_scales (= kappa_fold), so W_eff.s ==
-        # W.(kappa*sigma_wire) exactly — an explicit kappa factor
-        # double-counts (measured 1.7x on the armed micro-fixture).
+        # s is stamped in BUFFER units and baked WITHOUT gauge conversion:
+        # the effective weight already folds per_input_scales (= kappa_fold),
+        # so W_eff.s == W.(kappa*sigma_wire) exactly — an explicit kappa
+        # factor double-counts (measured 1.7x on the armed micro-fixture).
+        prev = getattr(compute_op, "_negative_shift", None)
+        if prev is not None:
+            # Drift verifier: a re-calibration of the value-preserved walk
+            # must reproduce the stamp (the once-flag skips the re-bake).
+            if not torch.allclose(
+                torch.as_tensor(prev, dtype=s.dtype), s, atol=1e-4,
+            ):
+                raise AssertionError(
+                    "negative-shift drift: re-calibration produced a shift "
+                    "different from the existing stamp (weights changed after "
+                    "the bake?)."
+                )
         if _bake_consumer_perceptrons(compute_op, s, consumers, ComputeOpMapper):
-            prev = getattr(compute_op, "_negative_shift", None)
-            total = s.detach().cpu().numpy()
-            if prev is not None:
-                total = np.asarray(prev, dtype=total.dtype) + total
-            compute_op._negative_shift = total
+            compute_op._negative_shift = s.detach().cpu().numpy()
             out[compute_op] = compute_op._negative_shift
     return out
-
-
-def _to_buffer_units(compute_op, shift: torch.Tensor, units: str) -> torch.Tensor:
-    """A value-domain calibration divides by an armed producer's output scale
-    (its buffer is wire = value/s_out); plain producers buffer the value."""
-    if units == "buffer":
-        return shift
-    out_scale = getattr(compute_op, "output_scale", None)
-    if getattr(compute_op, "per_source_scales", None) is None or out_scale is None:
-        return shift
-    scale = out_scale.detach().to(dtype=shift.dtype, device=shift.device).reshape(-1)
-    if scale.numel() != shift.numel():
-        scale = scale.mean()
-    return shift / scale.clamp(min=1e-12)
 
 
 def transfer_negative_shifts_to_ir(model, ir_graph) -> None:

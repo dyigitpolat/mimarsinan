@@ -132,11 +132,7 @@ class ComputeOpMapper(Mapper):
         return FlowchartNodeEstimate()
 
     def _forward_impl(self, x):
-        # Value domain: an armed producer's buffer-unit shift scales by its
-        # output currency (sigma_value = sigma_buffer * s_out).
-        return self._apply_negative_shift(
-            self._forward_with_module(self.module, x), wire_domain=False,
-        )
+        return self._forward_with_module(self.module, x)
 
     def _forward_with_module(self, module: nn.Module, x):
         if len(self._sources_list) == 1:
@@ -149,28 +145,11 @@ class ComputeOpMapper(Mapper):
             out = out[self.output_index]
         return out
 
-    def _apply_negative_shift(self, out, *, wire_domain: bool):
-        """Producer-side sigma lift (the ONE training-representation site):
-        the stamped buffer-unit shift is added to this op's output so the
-        plain forward, the analytical walk, and the wire walk all hand
-        consumers the lifted value the deployed runtime reconstructs."""
-        shift = getattr(self, "_negative_shift", None)
-        if shift is None:
-            return out
-        s = torch.as_tensor(shift, dtype=out.dtype, device=out.device)
-        out_scale = self.output_scale
-        if not wire_domain and self.per_source_scales is not None and out_scale is not None:
-            s = s * out_scale.detach().to(dtype=out.dtype, device=out.device)
-        return out + s
-
     def forward_scale_normalized(self, x):
         """Wire-domain twin of the emitted ComputeOp: run the same
         ScaleNormalizingWrapper composition IR emission installs when the
         per-source scales are armed; identical to ``forward`` otherwise."""
-        return self._apply_negative_shift(
-            self._forward_with_module(self._maybe_wrap_for_scales(), x),
-            wire_domain=True,
-        )
+        return self._forward_with_module(self._maybe_wrap_for_scales(), x)
 
     def _check_broadcastable(self, inputs: tuple) -> None:
         tensor_shapes = [

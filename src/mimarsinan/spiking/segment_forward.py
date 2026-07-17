@@ -179,8 +179,14 @@ class SegmentForwardDriver:
                 compute_max_recorder[node] = (
                     cur if prev is None else torch.maximum(prev, cur)
                 )
-            # The sigma lift is producer-side (ComputeOpMapper._apply_negative_shift),
-            # so the recorded minima are EFFECTIVE (post-shift) boundary values.
+            # Positive-domain shift on the decoded value (consumer-side sigma:
+            # the walk mirrors the deployed stage/gather lifts); the consumer
+            # perceptron's baked bias compensates. Recorded minima are RAW.
+            shift = getattr(node, "_negative_shift", None)
+            if shift is not None:
+                value = value + torch.as_tensor(
+                    shift, dtype=value.dtype, device=value.device,
+                )
             join_recorder = getattr(self, "_join_value_recorder", None)
             if join_recorder is not None and len(self._deps.get(node, [])) >= 2:
                 # Post-shift: this is the value the boundary re-encode normalizes.

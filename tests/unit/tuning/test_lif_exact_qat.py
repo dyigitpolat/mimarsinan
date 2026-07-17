@@ -753,16 +753,17 @@ class TestAdaptationPlanReduction:
 
 
 class TestEnsureOffloadNegativeBoundary:
-    """[V-D] The sigma policy runs at the AQ install seam under offload only,
-    so the exact-QAT trains through the shifted boundary."""
+    """[I1 capacity, opt-in] The seam-currency cover runs at the AQ install
+    seam under offload only; the sigma half was removed under the sigma-scope
+    law (trained-clamp boundaries are the QAT's own function)."""
 
     def _spy(self, monkeypatch):
-        import mimarsinan.mapping.support.negative_boundary as nb
+        import mimarsinan.tuning.orchestration.lif_exact_qat as leq
 
         calls = []
         monkeypatch.setattr(
-            nb, "ensure_negative_boundary_policy",
-            lambda *a, **k: calls.append(k),
+            leq, "_cover_armed_seam_scales",
+            lambda model, trainer, cfg: calls.append(dict(cfg)),
         )
         return calls
 
@@ -787,11 +788,8 @@ class TestEnsureOffloadNegativeBoundary:
 
         calls = self._spy(monkeypatch)
         cfg = self._cfg(encoding_layer_placement="offload")
-        # An empty validation cache skips the cover calibration; the policy
-        # seam itself must still be invoked.
         ensure_offload_negative_boundary(object(), _NoBatchTrainer(), cfg)
         assert len(calls) == 1
-        assert calls[0]["shift_enabled"] is True
         assert calls[0]["spiking_mode"] == "lif"
 
     def test_subsume_skips(self, monkeypatch):
