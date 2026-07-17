@@ -52,6 +52,7 @@
     "pruning_fraction": 0.05,
     "scale_migration": true,
     "tuning_batch_size": 32,
+    "fast_lr_scale": 0.25,
     "preprocessing": {
       "interpolation": "bicubic",
       "resize_to": 224,

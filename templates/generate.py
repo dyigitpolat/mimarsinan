@@ -251,7 +251,11 @@ T1_VEHICLES = {
             "preprocessing": {"interpolation": "bicubic", "resize_to": 224, "normalize": "imagenet"},
             # Cycle-accurate training memory scales S x batch: the unrolled
             # S=32 ViT graph at tuning batch 128 pins ~80 GiB (measured OOM).
-            "batch_size": 512, "tuning_batch_size": 32},
+            "batch_size": 512, "tuning_batch_size": 32,
+            # Retry-economics lever: measured accepted LRs sat ~4x below the
+            # pipeline lr (each rung wasted 1-2 wrecked attempts at 3e-3
+            # before the Armijo backoff found ~7e-4).
+            "fast_lr_scale": 0.25},
     "deepcnn32": {"model_type": "deep_cnn", "platform": "F", "axis": "deep_cnn",
                   "model_config": {"depth": 8, "width": 32}},
     "mixerc10": {"model_type": "mlp_mixer_core", "platform": "F", "axis": "mlp_mixer_core",
@@ -401,6 +405,8 @@ def _deployment(tier, row, vehicles, dataset):
             dp["conversion_draws"] = 2
     if "tuning_batch_size" in v:
         dp["tuning_batch_size"] = v["tuning_batch_size"]
+    if "fast_lr_scale" in v:
+        dp["fast_lr_scale"] = v["fast_lr_scale"]
     if "preprocessing" in v:
         dp["preprocessing"] = v["preprocessing"]
 

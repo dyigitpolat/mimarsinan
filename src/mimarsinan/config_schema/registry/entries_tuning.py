@@ -188,16 +188,16 @@ ENTRIES = (
        provenance="consumer frozen default", derived_default=_frozen(False),
        relevant=R.when("spiking_mode", in_=("lif",)),
        empty_means="off — the exact-QAT endpoint trains with plain CE"),
+    _E("fast_lr_scale", group="tuning", owner="FastLadderMixin", type=T.FLOAT,
+       category=Category.ADVANCED, label="Fast-Ladder LR Scale", bounds=(0.0, None),
+       doc="Fast-ladder starting-LR multiplier (retry economics)."),
     _E("lif_aq_negative_boundary", group="tuning", owner="lif_aq_negative_boundary",
        type=T.BOOL, category=Category.ADVANCED, exposure="user",
-       label="LIF AQ-seam negative boundary",
-       effect="Runs the sigma policy + seam cover at the AQ install seam",
-       doc="[conversion_boundary_algebra sec.10b] Closes V-D-training by "
-           "ordering. Default OFF: measured net-harmful on the mixer repro "
-           "(bisection 2026-07-18); SCM-time sigma stays either way.",
+       label="LIF AQ-seam boundary cover",
+       doc="Armed-seam currency cover at the AQ install seam "
+           "[conversion_boundary_algebra sec.10c/10e; sigma half removed].",
        provenance="consumer frozen default", derived_default=_frozen(False),
-       relevant=R.when("spiking_mode", in_=("lif",)),
-       empty_means="off — sigma calibrates at SCM only (the historical seam)"),
+       relevant=R.when("spiking_mode", in_=("lif",)), empty_means="off"),
     _E("ttfsq_exact_qat", group="tuning", owner="ttfsq_exact_qat",
        type=T.BOOL, category=Category.ADVANCED, exposure="user",
        label="TTFSq Exact QAT",

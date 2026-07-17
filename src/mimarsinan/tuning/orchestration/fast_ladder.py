@@ -140,7 +140,7 @@ class FastLadderMixin(_FastLadderHost):
             return
         device = self.pipeline.config["device"]
         self.model = self.model.to(device)
-        lr = self._fast_ladder_lr()
+        lr = self._fast_ladder_lr() * float(self.pipeline.config.get("fast_lr_scale", 1.0))
         recipe = build_recipe(self.pipeline.config, key="tuning_recipe")
         if recipe is not None:
             self._fast_optimizer = build_optimizer(self.model, lr, recipe)

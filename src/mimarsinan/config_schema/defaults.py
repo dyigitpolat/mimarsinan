@@ -29,7 +29,7 @@ DEFAULT_TUNING_RECIPE: Dict[str, object] = {
 }
 
 DEFAULT_DEPLOYMENT_PARAMETERS: Dict[str, object] = {
-    "lr": 0.001,
+    "lr": 0.001, "fast_lr_scale": 1.0,
     "lr_range_min": 1e-5,
     "lr_range_max": 1e-1,
     "training_epochs": 10,

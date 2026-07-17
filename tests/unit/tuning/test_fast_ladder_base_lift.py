@@ -370,3 +370,35 @@ class TestRetryStepScale:
             assert tuner._fast_optimizer.param_groups[0]["lr"] != lr_before
         finally:
             tuner.close()
+
+
+# ── fast_lr_scale: the retry-economics lever reaches the ONE build site ───────
+
+class TestFastLrScale:
+    def test_default_is_byte_identical(self, tmp_path):
+        tuner = _clamp_tuner(
+            tmp_path, optimization_driver="fast",
+            clamp_fast_rates=[0.5, 1.0], clamp_fast_steps_per_rate=2,
+        )
+        try:
+            tuner._ensure_fast_optimizer()
+            # initial_lr is the peak; the warmup schedule has already
+            # rescaled the live lr at build.
+            lrs = sorted({g["initial_lr"] for g in tuner._fast_optimizer.param_groups})
+            assert lrs == pytest.approx([float(tuner.pipeline_lr)])
+        finally:
+            tuner.close()
+
+    def test_scale_multiplies_the_fast_start_lr_only(self, tmp_path):
+        tuner = _clamp_tuner(
+            tmp_path, optimization_driver="fast", fast_lr_scale=0.25,
+            clamp_fast_rates=[0.5, 1.0], clamp_fast_steps_per_rate=2,
+        )
+        try:
+            tuner._ensure_fast_optimizer()
+            lrs = sorted({g["initial_lr"] for g in tuner._fast_optimizer.param_groups})
+            assert lrs == pytest.approx([0.25 * float(tuner.pipeline_lr)])
+            # The pipeline lr itself (anchors, recovery, preload) is untouched.
+            assert float(tuner.pipeline_lr) == pytest.approx(0.001)
+        finally:
+            tuner.close()
