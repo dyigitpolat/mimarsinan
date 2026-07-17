@@ -523,3 +523,41 @@ class TestComparatorHalfStepSegmentThreading:
         np.testing.assert_array_equal(
             out_off, ttfs_quantized_staircase_np(v, 1.0, 4),
         )
+
+
+class TestLifAnalyticTemporalTwins:
+    """I2 kernel lock: the deployed LIF cycle loop under constant drive equals
+    the analytic count staircase bit-for-bit, both compare modes (boundary
+    algebra memo sec.2; hop-level preconditions live in the exactness ledger)."""
+
+    @pytest.mark.parametrize("mode", ["<", "<="])
+    @pytest.mark.parametrize("T", [4, 8, 16, 32])
+    @pytest.mark.parametrize("theta", [1.0, 1.7])
+    def test_constant_drive_counts_match_staircase(self, mode, T, theta):
+        from mimarsinan.models.nn.lif_kernels import lif_fire_and_reset
+        from mimarsinan.models.spiking.wire_semantics import lif_count_staircase
+
+        # Dense sweep incl. negatives, overdrive, and exact grid ties.
+        d = torch.linspace(-0.3, 1.3, 257, dtype=torch.float64) * theta
+        th = torch.tensor(theta, dtype=torch.float64)
+        memb = torch.zeros_like(d)
+        counts = torch.zeros_like(d)
+        for _ in range(T):
+            memb = memb + d
+            counts = counts + lif_fire_and_reset(
+                memb, th, thresholding_mode=mode,
+                firing_mode="Default", output_dtype=torch.float64,
+            )
+        safe = th.clamp(min=1e-12)
+        temporal_value = safe * counts / T
+        analytic_value = lif_count_staircase(d, th, T, compare_mode=mode)
+        # At an exact integer tie of T*d/theta the accumulated membrane sits
+        # 1 ulp off the one-shot product and may legally flip ONE count; off
+        # ties the twin is bit-exact.
+        r = T * d / safe
+        tie = r == torch.floor(r)
+        assert torch.equal(temporal_value[~tie], analytic_value[~tie])
+        count_gap = torch.round(
+            (temporal_value[tie] - analytic_value[tie]).abs() * T / safe
+        )
+        assert torch.all(count_gap <= 1.0)

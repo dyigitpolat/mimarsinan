@@ -169,3 +169,50 @@ signed tensor); it does not affect the conclusions above (both readings are
 consistent with the quantizer clamp semantics), but the P1 micro-fixture must
 make every call site loggable so the exact plain-walk seam composition is
 pinned rather than inferred.
+
+## 8. P1 results (2026-07-17, `tests/unit/spiking/test_wire_currency_contract.py`)
+
+The micro-fixture (on-chip LIF θ=1.7 → plain signed LayerNorm → on-chip LIF,
+offload placement) reproduces the production signature at unit scale and
+sharpens three claims:
+
+1. **The temporal family is internally consistent — T2 is a GREEN lock, not
+   RED.** NF walk and the HCM twin agree to 0.000000 on the signed seam
+   (mirroring the 32/32 argmax agreement on the large-backbone cell). The
+   plan's T2-RED prediction is refuted at fixture level: the two sides do not
+   disagree with each other, they share the same wrong convention. T2 is now
+   the joint-movement lock — it must hold before AND after the unification.
+2. **The V-B hole manifests as ABSENCE.** `boundary_normalization_scales` on
+   the fixture returns an EMPTY table (no entry at all for the plain LN
+   producer); the divisor defaults to the identity downstream. The seam
+   machinery even self-reports the consequence ("neural stage receives
+   negative boundary values … the [0,1] spike-encode clamp drops the
+   residual").
+3. **Deterministic bias vs grid noise, measured.** At T=32 the temporal walk
+   deviates from the value-domain reference by 0.225 max (batch-mean far
+   above κ/(2T)=0.027) while NF↔HCM sit at 0.0 — exactly the §3 composition
+   law (mean-shifting convention bias vs zero-mean grid noise). The strict
+   xfails (T1, T3, T4-today, T5) encode V-A/V-B/V-C/V-D; the GREEN locks
+   (T2, T4-required, T6 homogeneity, T7 subsume, NF↔IR κ_fold nodewise) pin
+   what the fix must preserve.
+4. **The P0-2 anomaly is explained by V-C.** The walk's own boundary
+   re-encode clamps the raw value to [0,1] and multiplies θ back BEFORE the
+   consumer perceptron sees it (`train_of` clamp-then-scale) — a pre-hook on
+   the entry perceptron therefore reads [0,κ] even though the mapper chain's
+   host output is signed. The [0,κ] observation was the V-C composition
+   itself, measured.
+5. **I2 kernel twin locked.** `TestLifAnalyticTemporalTwins`
+   (test_wire_semantics.py): the deployed `lif_fire_and_reset` cycle loop
+   under constant drive equals `lif_count_staircase` bit-for-bit in float64,
+   both compare modes, off exact-integer ties of T·z/θ; at an exact tie the
+   accumulated membrane sits 1 ulp off the one-shot product and may legally
+   flip one count (measured: |Δcount| ≤ 1, tie set only).
+6. **Tier-0 `wire_transparent` inventory enumerated (31 cached IRs).** Host
+   op module types: MaxPool2d(34), AdaptiveAvgPool2d(8), ComputeAdapter(4),
+   Linear(22), Perceptron(12), Conv2DPerceptronMapper(15),
+   ScaleNormalizingWrapper(5). Neural-FED plain ops are exclusively
+   homogeneous (MaxPool2d 26, AdaptiveAvgPool2d 8, ComputeAdapter 4) plus 10
+   bare biased Linears that are ALL TERMINAL heads (post-exit-decode,
+   value-domain in both representations, never re-encoded). **No tier-0 cell
+   contains a plain host op that is both neural-fed and re-encoded** — the §5
+   inertness argument is now a per-cell measurement.
