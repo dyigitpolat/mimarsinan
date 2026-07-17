@@ -68,6 +68,9 @@ class ComputeOpMapper(Mapper):
         # §6b contract-1: observed-traffic scale of a fan-in join (set by the
         # calibration batch); None everywhere else keeps both walks bit-identical.
         self.boundary_traffic_scale: float | None = None
+        # Gauge classification (mark_wire_value_ops): a non-homogeneous
+        # re-encoded op arms the wrapper even for uniform source scales.
+        self.is_wire_value_op: bool = False
 
     @property
     def sources(self) -> list[Mapper]:

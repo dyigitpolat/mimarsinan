@@ -12,6 +12,7 @@ from mimarsinan.models.nn.activations.ttfs_cycle import TTFSCycleActivation
 from mimarsinan.models.nn.activations.ttfs_spiking import TTFSActivation
 
 __all__ = [
+    "mark_wire_value_ops",
     "node_absorbs_negative_values",
     "op_preserves_wire_ratio",
     "produces_nonnegative_values",
@@ -61,6 +62,50 @@ def produces_nonnegative_values(module) -> bool:
         return produces_nonnegative_values(activation)
 
     return isinstance(module, NONNEGATIVE_ACTIVATIONS)
+
+
+def _perceptron_boundaries(node, consumers) -> list:
+    """First perceptron-bearing nodes reachable downstream of ``node``."""
+    found, frontier, seen = [], list(consumers.get(id(node), [])), set()
+    while frontier:
+        candidate = frontier.pop()
+        if id(candidate) in seen:
+            continue
+        seen.add(id(candidate))
+        perceptron = getattr(candidate, "perceptron", None)
+        if perceptron is not None:
+            found.append(perceptron)
+        else:
+            frontier.extend(consumers.get(id(candidate), []))
+    return found
+
+
+def mark_wire_value_ops(model_repr) -> int:
+    """Stamp ``is_wire_value_op`` on every host ComputeOp whose module is NOT
+    positively homogeneous and whose output re-encodes into on-chip segments.
+
+    An armed value op owns its domain at emission (ScaleNormalizingWrapper):
+    inputs lift to values, the output normalizes to the consumer's fold
+    currency — the boundary-algebra I3/I1 fix. Terminal ops and host-consumed
+    ops keep today's convention (the QAT trained through it); ops feeding any
+    host-side encoder stay unarmed too (their consumers read raw values).
+    Idempotent; returns the number of marked ops.
+    """
+    consumers = model_repr.consumer_map()
+    marked = 0
+    for node in model_repr.execution_order():
+        if not isinstance(node, ComputeOpMapper):
+            continue
+        node.is_wire_value_op = False
+        if op_preserves_wire_ratio(getattr(node, "module", None)):
+            continue
+        boundaries = _perceptron_boundaries(node, consumers)
+        if boundaries and all(
+            not getattr(p, "is_encoding_layer", False) for p in boundaries
+        ):
+            node.is_wire_value_op = True
+            marked += 1
+    return marked
 
 
 # Positively homogeneous modules: f(a*x) = a*f(x) for a > 0, so wire rate and

@@ -144,6 +144,9 @@ def install_lif_entry_input_quantizers(model, pipeline_config) -> int:
         ]
     else:
         from mimarsinan.common.workload_profile import ResolvedWorkloadProfile
+        from mimarsinan.mapping.support.per_source_scales import (
+            compute_per_source_scales,
+        )
         from mimarsinan.spiking.scale_aware_boundaries import (
             propagate_boundary_input_scales,
         )
@@ -151,6 +154,9 @@ def install_lif_entry_input_quantizers(model, pipeline_config) -> int:
             segment_entry_perceptrons,
         )
 
+        # Arm the wire-value ops here so the exact-QAT trains the SAME armed
+        # composition every later seam (WQ / SCM) re-derives.
+        compute_per_source_scales(model.get_mapper_repr())
         propagate_boundary_input_scales(
             model,
             input_data_scale=ResolvedWorkloadProfile.from_config(

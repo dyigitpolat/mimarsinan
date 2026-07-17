@@ -28,6 +28,7 @@ from mimarsinan.models.nn.activations import LIFActivation
 from mimarsinan.models.nn.activations.autograd import ChipInputQuantizer
 from mimarsinan.models.perceptron_mixer.perceptron import Perceptron
 from mimarsinan.models.spiking.hybrid.flow import SpikingHybridCoreFlow
+from mimarsinan.mapping.support.per_source_scales import compute_per_source_scales
 from mimarsinan.spiking.segment_boundary import boundary_normalization_scales
 from mimarsinan.spiking.segment_forward import LifSegmentPolicy, SegmentForwardDriver
 from mimarsinan.torch_mapping.encoding_layers import mark_encoding_layers
@@ -60,9 +61,10 @@ def _signed_seam_model():
     ln = nn.LayerNorm(6)
     with torch.no_grad():
         ln.weight.fill_(1.0)
-        # beta=0.5 puts seam mass into (1, kappa]: the raw-domain clamp
-        # (V-B/V-C) deletes it while the /kappa encode keeps it.
-        ln.bias.fill_(0.5)
+        # beta=0.8 puts seam mass into (1, kappa] while keeping a negative
+        # tail: the raw-domain clamp (V-B/V-C) deletes that band, the /kappa
+        # encode keeps it (measured 1.6x the grid bound pre-fix).
+        ln.bias.fill_(0.8)
     host = ComputeOpMapper(m1, ln, input_shape=(6,), output_shape=(6,))
     p2 = _lif_perceptron(3, 6, THETA_2)
     p2.per_input_scales = torch.full((6,), float(THETA_1))
@@ -70,6 +72,9 @@ def _signed_seam_model():
     m2 = PerceptronMapper(host, p2)
     repr_ = ModelRepresentation(m2)
     mark_encoding_layers(repr_, placement="offload")
+    # The production install seam: classify + arm the wire-value ops so the
+    # non-homogeneous LN owns its domain (ScaleNormalizingWrapper emission).
+    compute_per_source_scales(repr_)
     ir = IRMapping(
         q_max=127.0, firing_mode="Default", max_axons=32, max_neurons=32,
     ).map(repr_)
@@ -81,27 +86,33 @@ def _signed_seam_model():
 
 
 # ---------------------------------------------------------------------------
-# T1 — V-B: the temporal entry divisor must equal kappa_fold/kappa_buf.
+# T1 — V-B closed: the non-homogeneous seam owns its domain (armed wrapper).
 # ---------------------------------------------------------------------------
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="V-B: boundary_normalization_scales carries NO entry for a plain "
-           "host producer (measured: empty table on this fixture — the "
-           "divisor silently defaults to the identity); the consumer fold "
-           "and trained entry expect value/kappa_fold "
-           "(conversion_boundary_algebra.md sec.4)",
-)
-def test_t1_plain_host_divisor_equals_kappa_fold():
-    _, hybrid, _, _, _ = _signed_seam_model()
-    divisors = boundary_normalization_scales(hybrid)
-    values = [
-        float(torch.as_tensor(v).float().mean())
-        for v in divisors.values() if v is not None
+def test_t1_signed_host_op_owns_its_domain():
+    """The re-encoded LN deploys as a ScaleNormalizingWrapper whose output
+    scale IS the consumer's fold currency — value-domain compute, divide-first
+    seam, in every representation that executes the emitted module."""
+    from mimarsinan.mapping.ir import ComputeOp
+    from mimarsinan.mapping.support.compute_modules import ScaleNormalizingWrapper
+
+    repr_, hybrid, _, p2, _ = _signed_seam_model()
+    ops = [
+        s.compute_op for s in hybrid.stages
+        if s.kind == "compute" and s.compute_op is not None
     ]
-    # The LN seam's divisor must carry the fold currency (kappa_fold), not
-    # default-by-absence to 1.
-    assert values and max(values) == pytest.approx(THETA_1)
+    ln_ops = [
+        op for op in ops
+        if isinstance((op.params or {}).get("module"), ScaleNormalizingWrapper)
+    ]
+    assert ln_ops, "the signed non-homogeneous seam must be armed"
+    wrapper = (ln_ops[0].params or {})["module"]
+    assert isinstance(wrapper.module, nn.LayerNorm)
+    assert float(wrapper.output_scale.float().mean()) == pytest.approx(
+        float(p2.input_activation_scale)
+    )
+    # Armed => wire-gauge buffer => the divisor view stays the identity.
+    assert boundary_normalization_scales(hybrid) == {}
 
 
 # ---------------------------------------------------------------------------
@@ -109,10 +120,11 @@ def test_t1_plain_host_divisor_equals_kappa_fold():
 # ---------------------------------------------------------------------------
 
 def test_t2_nf_equals_hcm_across_signed_seam():
-    """NF and the HCM twin agree bit-for-bit on the signed seam — TODAY, on
-    the shared (wrong) convention (measured: 0.000000 here, and 32/32 argmax
-    on the offloaded large-backbone cell). P3 must move BOTH sides jointly:
-    this lock holding through the fix is the joint-movement proof."""
+    """NF and the HCM twin agree bit-for-bit on the signed seam — before the
+    unification on the shared wrong convention (measured 0.000000; 32/32
+    argmax on the offloaded large-backbone cell), after it on the armed
+    correct one. The lock holding THROUGH the fix is the joint-movement
+    proof: no side ever moves alone."""
     repr_, hybrid, _, p2, _ = _signed_seam_model()
     torch.manual_seed(11)
     x = 3.0 * torch.rand(2, 8)
@@ -135,11 +147,13 @@ def test_t2_nf_equals_hcm_across_signed_seam():
 # ---------------------------------------------------------------------------
 
 def _value_domain_reference(p1, p2, host, x):
-    """The analytic composition: values everywhere, seams encode divide-first."""
+    """The analytic composition: values everywhere, every seam encodes
+    divide-first on its own fold currency (input seam kappa == 1)."""
     from mimarsinan.models.spiking.wire_semantics import lif_count_staircase
 
     with torch.no_grad():
-        z1 = p1.layer(x)
+        v0 = torch.round(x.clamp(0.0, 1.0) * T) / T   # input seam grid
+        z1 = p1.layer(v0)
         v1 = lif_count_staircase(
             z1, p1.activation.activation_scale, T, compare_mode="<=",
         ).clamp(min=0.0)
@@ -154,24 +168,20 @@ def _value_domain_reference(p1, p2, host, x):
     return v2
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="V-B/V-C: the temporal seam clamps the RAW signed value at [0, 1] "
-           "(divisor hole + clamp-then-scale) — a deterministic per-seam "
-           "bias that shifts the MEAN far beyond the zero-mean grid noise "
-           "(memo sec.3 composition laws)",
-)
 def test_t3_temporal_matches_value_domain_reference():
+    """I3 closed: with the seam armed, the temporal walk sits within the
+    grid-noise envelope of the value-domain composition (the pre-fix walk
+    deviated by a deterministic 0.225 mean — memo sec.3/sec.8)."""
     repr_, _, p1, p2, host = _signed_seam_model()
     torch.manual_seed(13)
-    x = 3.0 * torch.rand(64, 8)
+    x = torch.rand(64, 8)
     driver = SegmentForwardDriver(repr_, T, LifSegmentPolicy())
     with torch.no_grad():
         nf = driver(x)
     ref = _value_domain_reference(p1, p2, host, x)
-    # Grid noise is zero-mean (memo sec.3): the batch-mean absolute gap must
-    # sit within the per-seam grid scale. A convention mismatch is a
-    # deterministic bias and blows through it.
+    # Zero-mean grid noise across 3 seams plus bounded one-sided hop terms
+    # (exactness-ledger family); a convention mismatch is a deterministic
+    # bias far above this envelope.
     bound = float(p2.input_activation_scale) / (2 * T)
     assert float((nf - ref).abs().mean()) <= bound
 
@@ -282,22 +292,30 @@ def test_t4_todays_sigma_composition_preserves_value():
 # T5 — I1: the trained entry op equals the deployed seam composition.
 # ---------------------------------------------------------------------------
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="V-B/I1: the trained ChipInputQuantizer divides by kappa_fold; "
-           "today's deployed seam clamps at the identity divisor — the two "
-           "compositions disagree on any value above 1 or below 0",
-)
 def test_t5_trained_entry_equals_deployed_seam():
-    kappa = THETA_1
-    quantizer = ChipInputQuantizer(T=T, activation_scale=torch.tensor(kappa))
-    v = torch.linspace(-2.0, 2.5, 19)   # signed, wide-range seam values
+    """I1 closed: the trained ChipInputQuantizer IS the armed deployed seam —
+    the wrapper hands the entry ``v / kappa_fold``, the wire grids counts
+    (``round(r*T)``, lab A1), the consumer fold multiplies kappa back."""
+    repr_, hybrid, _, p2, _ = _signed_seam_model()
+    from mimarsinan.mapping.support.compute_modules import ScaleNormalizingWrapper
+
+    wrapper = next(
+        (s.compute_op.params or {})["module"]
+        for s in hybrid.stages
+        if s.kind == "compute" and s.compute_op is not None
+        and isinstance((s.compute_op.params or {}).get("module"),
+                       ScaleNormalizingWrapper)
+    )
+    kappa = torch.as_tensor(
+        wrapper.output_scale, dtype=torch.float64,
+    ).mean()
+    quantizer = ChipInputQuantizer(T=T, activation_scale=kappa)
+    v = torch.linspace(-2.0, 2.5, 259, dtype=torch.float64)
     with torch.no_grad():
         trained = quantizer(v)
-    # Today's deployed seam: clamp at divisor 1, grid, re-scale by kappa via
-    # the consumer weight fold.
-    deployed = torch.round(v.clamp(0.0, 1.0) * T) / T * kappa
-    torch.testing.assert_close(trained, deployed, atol=1e-6, rtol=0.0)
+    # The armed deployed seam: wire = clamp(v/kappa), grid over T, fold *kappa.
+    deployed = torch.round((v / kappa).clamp(0.0, 1.0) * T) / T * kappa
+    torch.testing.assert_close(trained, deployed, atol=1e-12, rtol=0.0)
 
 
 # ---------------------------------------------------------------------------

@@ -155,6 +155,12 @@ def apply_compute_op_scale_policy(node, source_scales: list) -> torch.Tensor | N
     needs_wrap = (
         any(_is_per_channel_heterogeneous(s) for s in normalized)
         or (len(normalized) > 1 and not _all_sources_uniform(normalized))
+        # A non-homogeneous re-encoded op computes on VALUES: any non-unit
+        # wire gauge must transcode through the wrapper (boundary algebra I3).
+        or (
+            getattr(node, "is_wire_value_op", False)
+            and any(not torch.allclose(s, torch.ones_like(s)) for s in normalized)
+        )
     )
 
     if not needs_wrap:
