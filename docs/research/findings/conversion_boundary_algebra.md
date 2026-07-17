@@ -324,3 +324,40 @@ sigma+cover — the historical SCM-time sigma stays; the exact-QAT climbs the
 quantizer install alone (the offloaded-ViT-proven path: 0.33→0.79). Arming
 V-D-training-closure stays available for A/B once the install composition is
 debugged on the repro cell.
+
+### 10d. Parity-gate replay (2026-07-18) — sigma is CONSUMER-side; the producer lift is refuted
+
+Instrumented replay of the SCM torch<->deployed-sim gate on the cached mixer
+artifacts:
+
+- WITHOUT the sigma policy: **agreement 1.0000** (torch 0.9219 == sim 0.9219,
+  identical argmax distributions) — the armed composition (V-A/V-B/V-C fixes,
+  terminal arming included) is CORRECT end-to-end.
+- WITH the sigma policy: agreement 0.0000; BOTH sides collapse to different
+  constant argmaxes (torch acc 0.156 @ all-1s, sim 0.016 @ all-8s).
+
+Derivation of the wreck: a stamped producer's sigma lift flows through the
+residual adds into the TERMINAL host chain (mean -> classifier) where no bake
+exists to compensate — the P3c "skip host consumers" walk change silently
+traded the (correct) fail-loud for a broken value chain, and the P3c
+PRODUCER-side mapper lift contaminates every host reader by construction.
+
+**The corrected architecture (next session's implementation):** sigma applies
+exactly where value ENTERS an encode domain — consumer-side:
+1. deployed: stage-input assembly shifts (exists) + host-gather lifts ONLY
+   for sigma-baked consumer modules (subsumed perceptrons), never plain hosts;
+2. training: the sigma-aware entry quantizer, NO-TAIL form
+   ``kappa*snap(clamp((v+sigma)/kappa))`` paired with the consumer bake
+   (Perceptron.forward applies input_activation, so the walk and the plain
+   forward get it for free);
+3. the producer-side mapper lift (P3c) is REMOVED; host consumers and
+   terminal paths read RAW values in every representation;
+4. calibration then records RAW minima again — the effective-minima /
+   delta-bake semantics revert with it (the once-flag idempotency contract
+   returns).
+
+Blast radius meanwhile: tier-0 is sigma-free (measured); the offloaded ViT's
+LN seams feed entries DIRECTLY (the T4-covered single-seam case — no host
+chains between the sigma op and its consumers), so BA-P5 on t2_04 does not
+wait on this; the mixer cell fails LOUD at the parity gate (no silent
+corruption path exists).
