@@ -356,7 +356,16 @@ class ComputeOpMapper(Mapper):
         return type(module).__name__
 
     @staticmethod
-    def _is_per_instance_module(module: nn.Module) -> bool:
+    def _unwrap_scale_normalizing(module: nn.Module) -> nn.Module:
+        """The wrapper transcodes the domain; emission GEOMETRY follows the
+        wrapped payload (per-instance split, in_features orientation)."""
+        if isinstance(module, ScaleNormalizingWrapper):
+            return module.module
+        return module
+
+    @classmethod
+    def _is_per_instance_module(cls, module: nn.Module) -> bool:
+        module = cls._unwrap_scale_normalizing(module)
         if isinstance(module, (nn.Linear, nn.Conv1d, nn.Conv2d)):
             return True
         if isinstance(module, nn.Sequential) and len(module) > 0:
@@ -368,8 +377,9 @@ class ComputeOpMapper(Mapper):
             return True
         return False
 
-    @staticmethod
-    def _orient_2d_for_columns(src_arr, module: nn.Module):
+    @classmethod
+    def _orient_2d_for_columns(cls, src_arr, module: nn.Module):
+        module = cls._unwrap_scale_normalizing(module)
         in_features = getattr(module, "in_features", None)
         if in_features is None:
             first_submodule = getattr(module, "0", None)

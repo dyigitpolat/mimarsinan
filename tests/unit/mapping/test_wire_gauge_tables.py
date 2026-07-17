@@ -258,3 +258,45 @@ class TestOpPreservesWireRatio:
 
         assert op_preserves_wire_ratio(ComputeAdapter(torch.mean))
         assert not op_preserves_wire_ratio(ComputeAdapter(torch.sigmoid))
+
+
+class TestValueOpArmingGeometry:
+    """Uniform gauges arm with 1-element SCALAR slots: a source-sized vector
+    cannot normalize a shape-changing op's output (token-mixing Linear), and
+    emission geometry (per-instance split, orientation) follows the wrapped
+    payload, not the wrapper."""
+
+    def test_uniform_value_op_arms_scalar_slots(self):
+        torch.manual_seed(0)
+        inp = InputMapper((8,))
+        p1 = _lif_perceptron(6, 8, THETA_1)
+        m1 = PerceptronMapper(inp, p1)
+        host = ComputeOpMapper(m1, nn.Linear(6, 3), input_shape=(6,), output_shape=(3,))
+        p2 = _lif_perceptron(3, 3, THETA_2)
+        m2 = PerceptronMapper(host, p2)
+        repr_ = ModelRepresentation(m2)
+        mark_encoding_layers(repr_, placement="offload")
+        from mimarsinan.mapping.support.per_source_scales import (
+            compute_per_source_scales,
+        )
+
+        compute_per_source_scales(repr_)
+        assert host.per_source_scales is not None
+        assert tuple(host.output_scale.shape) == (1,)
+        assert all(tuple(s.shape) == (1,) for s in host.per_source_scales)
+        assert float(host.output_scale) == pytest.approx(THETA_1)
+        # The shape-changing wrapped op must forward cleanly on values.
+        with torch.no_grad():
+            out = host.forward_scale_normalized(torch.rand(4, 6))
+        assert tuple(out.shape) == (4, 3)
+
+    def test_emission_geometry_unwraps_the_wrapper(self):
+        wrapped = ScaleNormalizingWrapper(
+            nn.Linear(6, 3),
+            input_scales=[torch.tensor([1.7])],
+            output_scale=torch.tensor([1.7]),
+        )
+        assert ComputeOpMapper._is_per_instance_module(wrapped)
+        src = np.empty((6, 5), dtype=object)
+        oriented = ComputeOpMapper._orient_2d_for_columns(src, wrapped)
+        assert oriented.shape == (6, 5)

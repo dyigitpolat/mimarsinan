@@ -152,22 +152,28 @@ def apply_compute_op_scale_policy(node, source_scales: list) -> torch.Tensor | N
                 dtype=normalized[i].dtype,
             )
 
-    needs_wrap = (
+    legacy_wrap = (
         any(_is_per_channel_heterogeneous(s) for s in normalized)
         or (len(normalized) > 1 and not _all_sources_uniform(normalized))
-        # A non-homogeneous re-encoded op computes on VALUES: any non-unit
-        # wire gauge must transcode through the wrapper (boundary algebra I3).
-        or (
-            getattr(node, "is_wire_value_op", False)
-            and any(not torch.allclose(s, torch.ones_like(s)) for s in normalized)
-        )
+    )
+    # A non-homogeneous re-encoded op computes on VALUES: any non-unit wire
+    # gauge must transcode through the wrapper (boundary algebra I3). Uniform
+    # gauges arm with SCALAR slots: the wrapper's output normalization must
+    # broadcast to the op's OWN output width, which a source-sized vector
+    # cannot do for shape-changing ops (token-mixing Linear).
+    value_op_wrap = getattr(node, "is_wire_value_op", False) and any(
+        not torch.allclose(s, torch.ones_like(s)) for s in normalized
     )
 
-    if not needs_wrap:
+    if not legacy_wrap and not value_op_wrap:
         return normalized[0]
 
-    output_scale = node.combine_source_scales(normalized)
-    node.per_source_scales = list(normalized)
+    if legacy_wrap:
+        output_scale = node.combine_source_scales(normalized)
+        node.per_source_scales = list(normalized)
+    else:
+        output_scale = node.combine_source_scales(normalized).mean().reshape(1)
+        node.per_source_scales = [s.mean().reshape(1) for s in normalized]
     node.output_scale = output_scale
     return output_scale
 
