@@ -25,7 +25,7 @@ ALLOWLIST = {
     "gui/server/routes_layout.py": 2,
     "gui/server/routes_wizard.py": 3,
     "mapping/model_representation.py": 1,
-    "mapping/support/bias_compensation.py": 1,
+    "mapping/support/negative_shift.py": 1,
     "mapping/verification/suggester/hw_config_suggester_scheduled.py": 1,
     "mapping/verification/verifier/mapping_verifier_soft.py": 2,
     "pipelining/core/engine/pipeline.py": 1,

@@ -502,6 +502,50 @@
       ],
       "expected_wall_min": 12,
       "note": "folded tier-0.1 E3: ttfsq deepcnn low-weight-bits variant"
+    },
+    {
+      "name": "t0_30_lif_mmix_wq_s8_offload",
+      "config": "t0_30_lif_mmix_wq_s8_offload.json",
+      "model_type": "mlp_mixer",
+      "cell": {
+        "firing": "lif",
+        "sync": "none",
+        "quantization": "wq_aq",
+        "S": "8",
+        "depth": "any",
+        "vehicle": "mlp_mixer",
+        "dataset": "mnist",
+        "regime": "from_scratch",
+        "pruning": "dense",
+        "encoding_placement": "offload"
+      },
+      "tags": [
+        "offload"
+      ],
+      "expected_wall_min": 12,
+      "note": "BA-P4 repro: offloaded torch-mixer signed host seams"
+    },
+    {
+      "name": "t0_32_sync_mmix_wq_s8_offload",
+      "config": "t0_32_sync_mmix_wq_s8_offload.json",
+      "model_type": "mlp_mixer",
+      "cell": {
+        "firing": "ttfs_cycle_based",
+        "sync": "synchronized",
+        "quantization": "wq_aq",
+        "S": "8",
+        "depth": "any",
+        "vehicle": "mlp_mixer",
+        "dataset": "mnist",
+        "regime": "from_scratch",
+        "pruning": "dense",
+        "encoding_placement": "offload"
+      },
+      "tags": [
+        "offload"
+      ],
+      "expected_wall_min": 6,
+      "note": "BA-P4 TTFS-family exposure: sync on the offloaded torch-mixer"
     }
   ],
   "coverage_notes": [

@@ -91,16 +91,39 @@ def calibrated_compute_op_minima(
     return recorder
 
 
-def _effective_minimum(op, mins: torch.Tensor) -> torch.Tensor:
-    """The boundary minimum an encoder actually sees: the calibrated minimum
-    plus any shift the ON mechanism baked onto this op."""
-    shift = getattr(op, "_negative_shift", None)
-    if shift is None:
+def _effective_minimum(
+    op, mins: torch.Tensor, pre_stamp=None, minima_units: str = "buffer",
+) -> torch.Tensor:
+    """The boundary minimum an encoder sees AFTER this policy call.
+
+    The producer-side sigma lift is inside the op's forward, so calibrated
+    minima are effective w.r.t. the stamps PRESENT AT CALIBRATION; only the
+    buffer-unit delta stamped since (`current - pre_stamp`), converted to the
+    minima's domain (value-unit minima of an armed producer scale by s_out),
+    is re-added."""
+    current = getattr(op, "_negative_shift", None)
+    if current is None:
         return mins
-    return mins + torch.as_tensor(shift, dtype=mins.dtype, device=mins.device)
+    cur = torch.as_tensor(current, dtype=mins.dtype, device=mins.device)
+    if pre_stamp is not None:
+        cur = cur - torch.as_tensor(pre_stamp, dtype=mins.dtype, device=mins.device)
+    out_scale = getattr(op, "output_scale", None)
+    if (
+        minima_units == "value"
+        and getattr(op, "per_source_scales", None) is not None
+        and out_scale is not None
+    ):
+        scale = out_scale.detach().to(dtype=mins.dtype, device=mins.device).reshape(-1)
+        cur = cur * (scale if scale.numel() == cur.numel() else scale.mean())
+    return mins + cur
 
 
-def lossy_negative_boundaries(model, minima: Dict[Any, torch.Tensor]) -> list:
+def lossy_negative_boundaries(
+    model,
+    minima: Dict[Any, torch.Tensor],
+    pre_stamps: Dict[Any, Any] | None = None,
+    minima_units: str = "buffer",
+) -> list:
     """ComputeOps whose EFFECTIVE boundary value goes negative while an on-chip
     segment encodes it — the exact precondition of silent clamp corruption.
 
@@ -110,7 +133,11 @@ def lossy_negative_boundaries(model, minima: Dict[Any, torch.Tensor]) -> list:
     consumers = model.get_mapper_repr().consumer_map()
     lossy = []
     for op, mins in minima.items():
-        if float(_effective_minimum(op, mins).min()) >= -NEGATIVE_TOLERANCE:
+        pre = None if pre_stamps is None else pre_stamps.get(op)
+        if (
+            float(_effective_minimum(op, mins, pre, minima_units).min())
+            >= -NEGATIVE_TOLERANCE
+        ):
             continue
         if any(
             not _is_host_node(consumer)
@@ -170,6 +197,7 @@ def subsume_forward_negative_boundaries(
 
 def apply_negative_boundary_policy(
     model, calibration_x: torch.Tensor, T: int, *, shift_enabled: bool, forward_fn,
+    minima_units: str = "buffer",
 ) -> NegativeBoundaryResult:
     """Make every negative ComputeOp→neural boundary lossless, then PROVE it.
 
@@ -181,14 +209,17 @@ def apply_negative_boundary_policy(
     minima = calibrated_compute_op_minima(
         model, calibration_x, T, forward_fn=forward_fn,
     )
+    pre_stamps = {
+        op: getattr(op, "_negative_shift", None) for op in minima
+    }
     shifts: Dict[Any, Any] = {}
     subsumed: List[Any] = []
     if shift_enabled:
-        shifts = apply_negative_value_shifts(model, minima)
+        shifts = apply_negative_value_shifts(model, minima, minima_units=minima_units)
     else:
         subsumed = subsume_forward_negative_boundaries(model, minima)
 
-    remaining = lossy_negative_boundaries(model, minima)
+    remaining = lossy_negative_boundaries(model, minima, pre_stamps, minima_units)
     if remaining:
         names = [getattr(op, "name", None) or repr(op) for op in remaining]
         mechanism = "calibrated shift" if shift_enabled else "subsume-forward"
@@ -210,6 +241,8 @@ def ensure_negative_boundary_policy(
     device,
     shift_enabled: bool,
     n_batches: int = 2,
+    forward_fn=None,
+    minima_units: str = "buffer",
 ) -> NegativeBoundaryResult | None:
     """Calibrate + apply the policy from the trainer's validation cache.
 
@@ -227,5 +260,9 @@ def ensure_negative_boundary_policy(
         calibration_x,
         int(simulation_steps),
         shift_enabled=shift_enabled,
-        forward_fn=calibration_forward_for_mode(spiking_mode),
+        forward_fn=(
+            forward_fn if forward_fn is not None
+            else calibration_forward_for_mode(spiking_mode)
+        ),
+        minima_units=minima_units,
     )

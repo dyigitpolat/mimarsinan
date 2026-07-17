@@ -69,6 +69,7 @@ def _build(T, *, shift: bool, calib_x=None):
     if shift:
         if calib_x is None:
             calib_x = torch.rand(16, 2, 4)
+        bias_before = encoder.layer.bias.detach().clone()
         shifts = apply_negative_value_shifts(
             flow,
             calibrated_compute_op_minima(
@@ -76,8 +77,8 @@ def _build(T, *, shift: bool, calib_x=None):
             ),
         )
         assert shifts, "the bare Linear boundary must derive a shift"
-        assert getattr(encoder, "_neg_shift_baked", False), (
-            "the subsumed encoder's bias must be baked"
+        assert not torch.equal(encoder.layer.bias.detach(), bias_before), (
+            "the subsumed encoder's bias must be baked (delta semantics)"
         )
     repr_.assign_perceptron_indices()
     ir = IRMapping(q_max=127.0, firing_mode="Default", max_axons=64, max_neurons=64).map(repr_)

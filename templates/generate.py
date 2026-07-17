@@ -55,6 +55,13 @@ VEHICLES = {
                 "model_config": {"depth": 8, "width": 64}},
     "simplemlp": {"model_type": "simple_mlp", "platform": "B", "axis": "deep_mlp",
                   "model_config": {"mlp_width_1": 256, "mlp_width_2": 128}},
+    # [BA-P4] the NON-core mixer converts through the torch path (bare fc2
+    # Linears + a no-activation patch-embed conv => signed plain-host seams),
+    # exposing the boundary algebra's offload failure modes at unit wall cost.
+    "mmix": {"model_type": "mlp_mixer", "platform": "A", "axis": "mlp_mixer",
+             "model_config": {"base_activation": "ReLU",
+                              "patch_n_1": 4, "patch_m_1": 4,
+                              "patch_c_1": 32, "fc_w_1": 64, "fc_w_2": 64}},
 }
 
 MODES = {
@@ -202,6 +209,20 @@ T0 = [
          note="folded tier-0.1 E2: lif mixer weight-bits variant. " + MIXER_BN_NOTE),
     dict(n=29, mode="ttfsq", quant="wq", wb=4, s=4, vehicle="deepcnn", depth=4,
          tags=["wb4"], note="folded tier-0.1 E3: ttfsq deepcnn low-weight-bits variant"),
+    # [BA-P4 2026-07-17] boundary-algebra failure-mode cells
+    # (conversion_boundary_algebra.md sec.3): the torch-converted mixer's
+    # signed host seams. t0_30 = the offload repro (pre-arming the seam
+    # craters), t0_32 = the TTFS-family (sync) temporal exposure. The planned
+    # subsume minimal pair (t0_31) is structurally impossible for this
+    # vehicle — under subsume every torch-mixer perceptron becomes a host op
+    # (measured: 0% on-chip, the majority validity gate fires) — so the
+    # pre/post-fix A/B on t0_30 itself carries the isolation.
+    dict(n=30, mode="lif", quant="wq", wb=5, s=8, vehicle="mmix",
+         encoding="offload", tags=["offload"],
+         note="BA-P4 repro: offloaded torch-mixer signed host seams"),
+    dict(n=32, mode="sync", quant="wq", wb=5, s=8, vehicle="mmix",
+         encoding="offload", tags=["offload"],
+         note="BA-P4 TTFS-family exposure: sync on the offloaded torch-mixer"),
 ]
 
 

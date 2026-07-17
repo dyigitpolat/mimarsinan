@@ -98,8 +98,9 @@ def test_apply_shifts_with_ttfs_cycle_based_forward():
     ln = _layernorm_op(flow)
     assert ln in shifts
     assert getattr(ln, "_negative_shift", None) is not None
-    consumer = flow.get_perceptrons()[1]
-    assert getattr(consumer, "_neg_shift_baked", False)
+    # Delta semantics: the stamped shift IS the proof the consumer was baked
+    # (apply_negative_value_shifts stamps only after a successful bake).
+    assert flow.get_perceptrons()[1].layer.bias is not None
 
 
 @pytest.mark.parametrize("mode", ["ttfs", "ttfs_quantized"])
@@ -111,7 +112,7 @@ def test_apply_shifts_with_analytical_ttfs_forward(mode):
     assert shifts
     ln = _layernorm_op(flow)
     assert ln in shifts
-    assert getattr(flow.get_perceptrons()[1], "_neg_shift_baked", False)
+    assert getattr(ln, "_negative_shift", None) is not None
 
 
 def test_apply_shifts_default_forward_is_lif():

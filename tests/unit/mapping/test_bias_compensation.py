@@ -73,11 +73,14 @@ class TestApplyAdditiveEffectiveBiasShift:
 
 
 class TestApplyNegativeShiftBias:
+    """Delta semantics (boundary algebra P3c): each call bakes the RESIDUAL
+    shift of the current calibration; system-level idempotency comes from
+    effective minima (a re-calibration's residual is zero), not a flag."""
+
     def test_per_axon_shift_exact(self):
         p = _perceptron()
         apply_negative_shift_bias(p, torch.tensor([0.5, 0.25]))
         _assert_bias_exact(p, [0.5, -2.75, 3.4375])
-        assert p._neg_shift_baked is True
 
     def test_scalar_shift_exact(self):
         p = _perceptron()
@@ -89,16 +92,18 @@ class TestApplyNegativeShiftBias:
         apply_negative_shift_bias(p, torch.tensor([0.5, 0.25]))
         _assert_bias_exact(p, [0.5, -2.75, 3.4375])
 
-    def test_idempotent(self):
+    def test_delta_calls_accumulate(self):
+        # Two residual bakes accumulate — the caller owns idempotency by
+        # passing zero residuals on re-entry (effective-minima contract).
         p = _perceptron()
         apply_negative_shift_bias(p, torch.tensor([0.5, 0.25]))
         apply_negative_shift_bias(p, torch.tensor([0.5, 0.25]))
-        _assert_bias_exact(p, [0.5, -2.75, 3.4375])
+        _assert_bias_exact(p, [0.5, -4.0, 4.875])
 
-    def test_bias_none_sets_flag_without_crash(self):
+    def test_bias_none_does_not_crash(self):
         p = _perceptron(bias=False)
         apply_negative_shift_bias(p, torch.tensor([0.5, 0.25]))
-        assert p.layer.bias is None and p._neg_shift_baked is True
+        assert p.layer.bias is None
 
 
 class TestNegativeShiftsFromMin:

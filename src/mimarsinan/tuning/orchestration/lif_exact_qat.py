@@ -189,10 +189,16 @@ def ensure_offload_negative_boundary(model, trainer, pipeline_config) -> None:
     placement = str(pipeline_config.get("encoding_layer_placement", "subsume"))
     if encoder_deploys_as_staircase_hop(placement):
         return
+    from mimarsinan.mapping.support.bias_compensation import (
+        _analytical_segment_calibration_forward,
+    )
     from mimarsinan.mapping.support.negative_boundary import (
         ensure_negative_boundary_policy,
     )
 
+    # Pre-conversion seam: activations are not yet LIF, so calibrate through
+    # the ANALYTICAL walk (value-domain minima; converted to buffer units per
+    # armed producer). The SCM invocation re-verifies through the mode walk.
     ensure_negative_boundary_policy(
         model,
         trainer,
@@ -200,4 +206,6 @@ def ensure_offload_negative_boundary(model, trainer, pipeline_config) -> None:
         simulation_steps=int(pipeline_config["simulation_steps"]),
         device=pipeline_config["device"],
         shift_enabled=bool(pipeline_config.get("negative_value_shift", True)),
+        forward_fn=_analytical_segment_calibration_forward,
+        minima_units="value",
     )

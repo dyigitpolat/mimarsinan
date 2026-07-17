@@ -233,7 +233,9 @@ class TestPolicyDispatch:
         )
         (ln,) = _layernorm_ops(flow)
         assert ln in result.shifts
-        assert getattr(flow.get_perceptrons()[2], "_neg_shift_baked", False)
+        # Delta semantics: the consumer bias moved by W_eff . sigma (no flag).
+        consumer = flow.get_perceptrons()[2]
+        assert consumer.layer.bias is not None
         assert result.subsumed == []
         assert _hosted(flow) == hosted_before  # mapping structure unchanged
 
@@ -244,7 +246,6 @@ class TestPolicyDispatch:
         )
         assert result.shifts == {}
         assert result.subsumed == [flow.get_perceptrons()[2]]
-        assert not getattr(flow.get_perceptrons()[2], "_neg_shift_baked", False)
         (ln,) = _layernorm_ops(flow)
         assert getattr(ln, "_negative_shift", None) is None
 

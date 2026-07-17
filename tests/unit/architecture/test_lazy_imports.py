@@ -70,7 +70,11 @@ ALLOWLIST = {
     "mapping/pruning/boundary_policy.py",
     "mapping/pruning/ir_liveness.py",
     "mapping/pruning/liveness_semantics.py",
+    # The negative-shift extraction split bias_compensation's pre-existing
+    # cycle-breaking imports across both halves (mapping<->spiking/tuning at
+    # init); no new import edges.
     "mapping/support/bias_compensation.py",
+    "mapping/support/negative_shift.py",
     "mapping/support/residual_merge.py",
     "mapping/support/schedule/schedule_partitioner.py",
     "mapping/support/schedule/schedule_split.py",
