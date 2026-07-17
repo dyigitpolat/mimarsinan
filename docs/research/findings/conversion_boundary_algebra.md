@@ -306,3 +306,21 @@ fixes before any accuracy read:
    host-Linear semantics the rate path just fixed. Recorded as an open
    program item; the t0_32 cell is retired from tier-0 (pass-all gate) with
    the repro one git-show away.
+
+### 10c. AQ-seam install bisection (2026-07-18) — the opt-in decision
+
+Component-wise replay on the cached pre-AQ mixer model (val acc per step):
+post-shift baseline 0.9648 → theta promotion 0.9648 → half-step fold 0.9644
+→ **entry quantizers 0.1704** → +cover 0.1846 → +sigma policy 0.1079. The
+wreck is the ENTRY QUANTIZER INSTALL itself (hard [0,kappa] clamp on signed
+multi-host-chain inputs), and sigma+cover do NOT restore the composition —
+the value-preservation chain has a residual defect on this topology
+(suspects: the bake/lift interplay across residual adds; per-instance _col
+splits vs the scalar sigma; open). The AQ flatline (exactly 0.1135 at any S)
+is the QAT's inability to climb this install.
+
+Consequence: `lif_aq_negative_boundary` (NEW, default OFF) gates the AQ-seam
+sigma+cover — the historical SCM-time sigma stays; the exact-QAT climbs the
+quantizer install alone (the offloaded-ViT-proven path: 0.33→0.79). Arming
+V-D-training-closure stays available for A/B once the install composition is
+debugged on the repro cell.

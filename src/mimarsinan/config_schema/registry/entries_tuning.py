@@ -188,6 +188,16 @@ ENTRIES = (
        provenance="consumer frozen default", derived_default=_frozen(False),
        relevant=R.when("spiking_mode", in_=("lif",)),
        empty_means="off — the exact-QAT endpoint trains with plain CE"),
+    _E("lif_aq_negative_boundary", group="tuning", owner="lif_aq_negative_boundary",
+       type=T.BOOL, category=Category.ADVANCED, exposure="user",
+       label="LIF AQ-seam negative boundary",
+       effect="Runs the sigma policy + seam cover at the AQ install seam",
+       doc="[conversion_boundary_algebra sec.10b] Closes V-D-training by "
+           "ordering. Default OFF: measured net-harmful on the mixer repro "
+           "(bisection 2026-07-18); SCM-time sigma stays either way.",
+       provenance="consumer frozen default", derived_default=_frozen(False),
+       relevant=R.when("spiking_mode", in_=("lif",)),
+       empty_means="off — sigma calibrates at SCM only (the historical seam)"),
     _E("ttfsq_exact_qat", group="tuning", owner="ttfsq_exact_qat",
        type=T.BOOL, category=Category.ADVANCED, exposure="user",
        label="TTFSq Exact QAT",

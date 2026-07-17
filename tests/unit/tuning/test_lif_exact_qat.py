@@ -772,6 +772,7 @@ class TestEnsureOffloadNegativeBoundary:
         cfg["lif_per_hop_retiming"] = True
         cfg["spiking_mode"] = "lif"
         cfg["negative_value_shift"] = True
+        cfg["lif_aq_negative_boundary"] = True
         cfg.update(overrides)
         return cfg
 
@@ -811,6 +812,19 @@ class TestEnsureOffloadNegativeBoundary:
         calls = self._spy(monkeypatch)
         cfg = self._cfg(encoding_layer_placement="offload")
         cfg["lif_exact_qat"] = False
+        ensure_offload_negative_boundary(object(), object(), cfg)
+        assert calls == []
+
+    def test_default_off_skips(self, monkeypatch):
+        # [memo sec.10b] the AQ-seam sigma is opt-in until the install
+        # composition measures a win.
+        from mimarsinan.tuning.orchestration.lif_exact_qat import (
+            ensure_offload_negative_boundary,
+        )
+
+        calls = self._spy(monkeypatch)
+        cfg = self._cfg(encoding_layer_placement="offload")
+        del cfg["lif_aq_negative_boundary"]
         ensure_offload_negative_boundary(object(), object(), cfg)
         assert calls == []
 

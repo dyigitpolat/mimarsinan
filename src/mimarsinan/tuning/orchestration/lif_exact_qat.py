@@ -184,6 +184,10 @@ def ensure_offload_negative_boundary(model, trainer, pipeline_config) -> None:
     nothing new)."""
     if not lif_exact_qat_active(pipeline_config):
         return
+    # Default OFF: the install composition measured net-harmful on the
+    # torch-mixer repro (memo sec.10b bisection); SCM-time sigma stays.
+    if not bool(pipeline_config.get("lif_aq_negative_boundary", False)):
+        return
     from mimarsinan.torch_mapping.encoding_layers import (
         encoder_deploys_as_staircase_hop,
     )
