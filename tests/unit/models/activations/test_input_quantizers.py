@@ -69,54 +69,24 @@ class TestChipInputQuantizer:
         np.testing.assert_allclose(x.grad.numpy(), np.ones(7), rtol=0, atol=1e-12)
 
 
-class TestSigmaAwareChipInputQuantizer:
-    """sigma-aware entry composition (boundary algebra I1): the trained op
-    equals the deployed seam ``kappa*(snap(clamp((v+sigma)/kappa)) ) - sigma``;
-    default sigma=None stays bitwise-identical to the historical form."""
+class TestChipInputQuantizerIsSigmaFree:
+    """The negative-boundary shift lives in the walk (+sigma on the producer
+    buffer) and the consumer's kappa-baked bias — never in this op. A shift
+    parameter here would double-apply (boundary algebra V-D resolution)."""
 
-    def test_default_none_is_bitwise_identical(self):
+    def test_constructor_takes_no_shift(self):
+        import inspect
+
+        params = inspect.signature(ChipInputQuantizer.__init__).parameters
+        assert set(params) == {"self", "T", "activation_scale"}
+
+    def test_divide_first_seam_form(self):
         S, kappa = 8, 1.7
         v = torch.linspace(-2.0, 2.5, 259, dtype=torch.float64)
-        plain = ChipInputQuantizer(T=S, activation_scale=kappa)
-        with_default = ChipInputQuantizer(
-            T=S, activation_scale=kappa, negative_shift=None,
-        )
-        assert torch.equal(plain(v), with_default(v))
-
-    def test_sigma_composition_matches_deployed_seam(self):
-        S, kappa = 8, 1.7
-        sigma = torch.tensor([0.4, 0.0, 0.9], dtype=torch.float64)
-        v = torch.randn(16, 3, dtype=torch.float64)
         quantizer = ChipInputQuantizer(
-            T=S,
-            activation_scale=torch.tensor(kappa, dtype=torch.float64),
-            negative_shift=sigma,
+            T=S, activation_scale=torch.tensor(kappa, dtype=torch.float64),
         )
-        got = quantizer(v)
-        wire = ((v + sigma) / kappa).clamp(0.0, 1.0)
-        expected = torch.round(wire * S) / S * kappa - sigma
-        torch.testing.assert_close(got, expected, atol=1e-12, rtol=0.0)
-
-    def test_sigma_makes_in_range_signed_values_identity_up_to_grid(self):
-        S, kappa = 16, 1.7
-        sigma = torch.tensor(0.4, dtype=torch.float64)
-        v = torch.linspace(-0.4, kappa - 0.4, 33, dtype=torch.float64)
-        quantizer = ChipInputQuantizer(
-            T=S, activation_scale=kappa, negative_shift=sigma,
-        )
-        assert float((quantizer(v) - v).abs().max()) <= kappa / (2 * S) + 1e-12
-
-    def test_ttfs_grid_subclass_inherits_sigma(self):
-        S, kappa = 4, 2.0
-        sigma = torch.tensor(0.5, dtype=torch.float64)
-        v = torch.linspace(-0.5, 2.0, 41, dtype=torch.float64)
-        quantizer = TTFSInputGridQuantizer(
-            T=S,
-            activation_scale=torch.tensor(kappa, dtype=torch.float64),
-            negative_shift=sigma,
-        )
-        got = quantizer(v)
-        wire = ((v + sigma) / kappa).clamp(0.0, 1.0)
-        snapped = torch.from_numpy(ttfs_input_grid_quantize(wire.numpy(), S))
-        expected = snapped * kappa - sigma
+        with torch.no_grad():
+            got = quantizer(v)
+        expected = torch.round((v / kappa).clamp(0.0, 1.0) * S) / S * kappa
         torch.testing.assert_close(got, expected, atol=1e-12, rtol=0.0)

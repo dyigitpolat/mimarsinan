@@ -182,18 +182,11 @@ class RoundedStaircaseFunction(Function):
 class ChipInputQuantizer(nn.Module):
     """STE round-to-chip-rate quantiser for encoding-layer inputs.
 
-    With ``negative_shift`` (sigma, value-domain) the op is the exact deployed
-    seam ``kappa*snap(clamp((v+sigma)/kappa)) - sigma``; the consumer's baked
-    bias re-adds ``W.sigma`` on-chip (boundary algebra I1)."""
+    Sigma-free by design: the negative-boundary shift lives in the WALK (the
+    producer's ``_negative_shift`` lifts the value before this op sees it)
+    and in the consumer's baked bias — a shift here would double-apply."""
 
-    negative_shift: torch.Tensor | None
-
-    def __init__(
-        self,
-        T: int,
-        activation_scale: nn.Parameter | torch.Tensor | float,
-        negative_shift: torch.Tensor | None = None,
-    ):
+    def __init__(self, T: int, activation_scale: nn.Parameter | torch.Tensor | float):
         super().__init__()
         self.T = int(T)
         if isinstance(activation_scale, (int, float)):
@@ -201,7 +194,6 @@ class ChipInputQuantizer(nn.Module):
                 torch.tensor(float(activation_scale)), requires_grad=False
             )
         self.activation_scale = activation_scale
-        self.register_buffer("negative_shift", negative_shift)
 
     def _snap(self, x_norm: torch.Tensor) -> torch.Tensor:
         return RoundedStaircaseFunction.apply(x_norm, self.T)
@@ -212,10 +204,8 @@ class ChipInputQuantizer(nn.Module):
             safe_scale = scale.to(device=x.device, dtype=x.dtype).clamp(min=1e-12)
         else:
             safe_scale = max(float(scale), 1e-12)
-        if self.negative_shift is None:
-            return self._snap((x / safe_scale).clamp(0.0, 1.0)) * safe_scale
-        s = self.negative_shift.to(device=x.device, dtype=x.dtype)
-        return self._snap(((x + s) / safe_scale).clamp(0.0, 1.0)) * safe_scale - s
+        x_norm = (x / safe_scale).clamp(0.0, 1.0)
+        return self._snap(x_norm) * safe_scale
 
 
 class TTFSGridSnapFunction(Function):

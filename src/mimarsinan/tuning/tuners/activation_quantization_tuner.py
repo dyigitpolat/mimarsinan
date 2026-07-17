@@ -25,6 +25,7 @@ from mimarsinan.tuning.orchestration.adaptation_manager import (
     sync_exact_qat_active,
 )
 from mimarsinan.tuning.orchestration.lif_exact_qat import (
+    ensure_offload_negative_boundary,
     install_lif_entry_input_quantizers,
     lif_exact_qat_active,
 )
@@ -120,6 +121,9 @@ class ActivationQuantizationTuner(AdaptationRateTuner):
             self.model, int(self.pipeline.config["simulation_steps"]),
         )
         snaps = install_lif_entry_input_quantizers(self.model, self.pipeline.config)
+        ensure_offload_negative_boundary(
+            self.model, self.trainer, self.pipeline.config,
+        )
         emit_theta_install_witness(
             self.pipeline.reporter, "LIF-EXACT-QAT", report,
             extra={

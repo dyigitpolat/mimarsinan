@@ -246,17 +246,16 @@ class TestBoundarySurfaceGetters:
         assert sync.is_synchronized()
         assert type(sync.entry_quantizer(1.0)) is TTFSInputGridQuantizer
 
-    def test_entry_quantizer_passes_sigma_through(self):
-        import torch
+    def test_entry_quantizer_is_sigma_free(self):
+        import inspect
 
         contract = SpikingDeploymentContract.from_pipeline_config(_cfg(
             spiking_mode="lif", firing_mode="Default",
             spike_generation_mode="Uniform", ttfs_cycle_schedule=None,
         ))
-        sigma = torch.tensor([0.3, 0.0])
-        q = contract.entry_quantizer(1.7, sigma=sigma)
-        assert q.negative_shift is sigma
-        assert contract.entry_quantizer(1.7).negative_shift is None
+        # Sigma lives in the walk + baked bias, never in the entry op.
+        params = inspect.signature(contract.entry_quantizer).parameters
+        assert "sigma" not in params
 
     def test_seam_transcode_is_the_boundary_ssot(self):
         from mimarsinan.spiking.compute_boundary import normalize_boundary_value

@@ -1,13 +1,13 @@
 """The conversion boundary algebra as executable spec (conversion_boundary_algebra.md).
 
-Micro-fixture: on-chip LIF segment -> plain SIGNED host op (LayerNorm) ->
-on-chip LIF segment, under encoding_layer_placement=offload — the ViT seam
-topology at unit scale. The identities I1/I3 are violated by today's code
-exactly here (V-A host-op currency, V-B the kappa divisor hole, V-D sigma);
-those tests are `xfail(strict=True)`: they document the violation now and
-fail LOUD the moment the unification lands, forcing promotion to plain
-asserts. Subsume/homogeneous seams are GREEN locks and must stay green
-through the fix (tier-0 inertness).
+Micro-fixture: on-chip LIF segment -> SIGNED host op (LayerNorm) -> on-chip
+LIF segment under encoding_layer_placement=offload — the offloaded-backbone
+seam topology at unit scale. T1-T5 lock the closed identities (the armed
+wrapper owns the seam domain, NF == HCM jointly, temporal == value-domain
+composition within grid noise, the sigma policy preserves the signed band,
+trained entry == deployed seam); T6/T7 pin the homogeneity grounding and the
+subsume byte path (tier-0 inertness). Every test here started RED (or as a
+strict xfail) against the pre-unification code — see memo sec.8.
 """
 
 from __future__ import annotations
@@ -242,50 +242,81 @@ def test_kappa_fold_nf_and_ir_tables_agree_nodewise():
 
 
 # ---------------------------------------------------------------------------
-# T4 — sigma value preservation at kappa_fold != 1 (the V-D identity pair).
+# T4 — V-D closed: the sigma policy preserves the signed band end-to-end.
 # ---------------------------------------------------------------------------
 
-def _sigma_bake_fixture():
-    """Signed values v, real calibration sigma, real bias bake B' = B - W.sigma."""
-    from mimarsinan.mapping.support.bias_compensation import apply_negative_shift_bias
+class _ModelShim:
+    """Minimal model facade for the boundary-policy machinery."""
 
-    torch.manual_seed(5)
-    p = _lif_perceptron(3, 6, THETA_2)
-    # Range chosen so (v + sigma)/kappa stays in [0, 1]: the required
-    # composition is then clamp-free and must be EXACT.
-    v = torch.rand(16, 6) * 1.2 - 0.4
-    sigma = (-v.amin(dim=0)).clamp(min=0.0)
-    weight = p.layer.weight.detach().clone()
-    bias_before = p.layer.bias.detach().clone()
-    apply_negative_shift_bias(p, sigma)
-    bias_baked = p.layer.bias.detach().clone()
-    return v, sigma, weight, bias_before, bias_baked
+    def __init__(self, repr_):
+        self._repr = repr_
+
+    def get_mapper_repr(self):
+        return self._repr
+
+    def get_perceptrons(self):
+        return list(self._repr.get_perceptrons())
 
 
-def test_t4_required_sigma_composition_preserves_value():
-    """GREEN lock: E(v) = (v + sigma)/kappa_fold with the baked bias is exactly
-    W.v + B — the identity P3 must implement (memo sec.1 bias bake)."""
-    v, sigma, weight, bias_before, bias_baked = _sigma_bake_fixture()
-    kappa = THETA_1
-    wire = ((v + sigma) / kappa).clamp(0.0, 1.0)
-    charge = torch.nn.functional.linear(kappa * wire, weight) + bias_baked
-    exact = torch.nn.functional.linear(v, weight) + bias_before
-    torch.testing.assert_close(charge, exact, atol=1e-5, rtol=0.0)
+def _sigma_value_reference(p1, p2, host, x, sigma_wire):
+    """The analytic composition WITH the shifted seam and the baked bias."""
+    from mimarsinan.models.spiking.wire_semantics import lif_count_staircase
+
+    kappa = float(p2.input_activation_scale)
+    s_w = torch.as_tensor(sigma_wire, dtype=torch.float32)
+    with torch.no_grad():
+        v0 = torch.round(x.clamp(0.0, 1.0) * T) / T
+        v1 = lif_count_staircase(
+            p1.layer(v0), p1.activation.activation_scale, T, compare_mode="<=",
+        ).clamp(min=0.0)
+        h = host.module(v1)
+        wire = (h / kappa + s_w).clamp(0.0, 1.0)
+        gridded = torch.round(wire * T) / T
+        # p2.layer.bias is read AFTER the machinery's kappa-converted bake.
+        z2 = torch.nn.functional.linear(
+            gridded * kappa, p2.layer.weight, p2.layer.bias,
+        )
+        v2 = lif_count_staircase(
+            z2, p2.activation.activation_scale, T, compare_mode="<=",
+        ).clamp(min=0.0)
+    return v2
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="V-D x V-B: today's temporal entry adds raw sigma at the identity "
-           "divisor; with kappa_fold != 1 the consumer charge is off by the "
-           "kappa factor and saturates early — value preservation breaks",
-)
-def test_t4_todays_sigma_composition_preserves_value():
-    v, sigma, weight, bias_before, bias_baked = _sigma_bake_fixture()
-    kappa = THETA_1
-    wire = (v + sigma).clamp(0.0, 1.0)   # divisor 1, sigma raw
-    charge = torch.nn.functional.linear(kappa * wire, weight) + bias_baked
-    exact = torch.nn.functional.linear(v, weight) + bias_before
-    torch.testing.assert_close(charge, exact, atol=1e-5, rtol=0.0)
+def test_t4_sigma_policy_preserves_the_signed_band():
+    """Calibrate minima on the ARMED walk (wire units), apply the shifts
+    through the real machinery (kappa-converted bake B - W.(s_out*sigma)),
+    re-run: the walk sits in the grid envelope of the sigma-aware value
+    composition — the negative band survives the seam instead of clamping."""
+    from mimarsinan.mapping.support.bias_compensation import (
+        apply_negative_value_shifts,
+    )
+
+    repr_, _, p1, p2, host = _signed_seam_model()
+    torch.manual_seed(21)
+    x = torch.rand(64, 8)
+    driver = SegmentForwardDriver(repr_, T, LifSegmentPolicy())
+    recorder: dict = {}
+    with torch.no_grad():
+        driver(x, compute_min_recorder=recorder)
+    assert recorder, "the armed host op must record calibration minima"
+    bias_before = p2.layer.bias.detach().clone()
+    shifts = apply_negative_value_shifts(_ModelShim(repr_), recorder)
+    assert shifts, "the signed seam must stamp a negative shift"
+    ((op_mapper, sigma_wire),) = shifts.items()
+    assert float(torch.as_tensor(sigma_wire).max()) > 0.0
+    # The kappa-converted bake moved the consumer bias by W.(kappa * sigma).
+    kappa = float(p2.input_activation_scale)
+    expected_bias = bias_before - p2.layer.weight.detach() @ (
+        torch.as_tensor(sigma_wire, dtype=torch.float32) * kappa
+    )
+    torch.testing.assert_close(
+        p2.layer.bias.detach(), expected_bias, atol=1e-5, rtol=0.0,
+    )
+    with torch.no_grad():
+        nf_shifted = driver(x)
+    ref = _sigma_value_reference(p1, p2, host, x, sigma_wire)
+    bound = kappa / (2 * T)
+    assert float((nf_shifted - ref).abs().mean()) <= bound
 
 
 # ---------------------------------------------------------------------------

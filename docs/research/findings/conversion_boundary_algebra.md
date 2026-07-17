@@ -216,3 +216,46 @@ sharpens three claims:
    value-domain in both representations, never re-encoded). **No tier-0 cell
    contains a plain host op that is both neural-fed and re-encoded** — the §5
    inertness argument is now a per-cell measurement.
+
+## 9. P3 realization (2026-07-17): arming, not lifting — and two measured refinements
+
+The unification landed through the `owns_domain` channel rather than
+hand-lifting in every runner: `mark_wire_value_ops` classifies each host
+ComputeOp (non-homogeneous AND re-encoded into on-chip segments), and the
+ComputeOp wrap policy arms the ScaleNormalizingWrapper for marked ops even at
+uniform scalar source scales — the single-source uniform-θ skip was V-A/V-B's
+mechanical root (`apply_compute_op_scale_policy` assumed scale transparency
+that only holds for positively homogeneous modules). One emission gives every
+representation the value-domain composition for free: the NF twin
+(`forward_scale_normalized`), the HCM torch flow, nevresim, SANA-FE, and Lava
+all execute the same emitted module; the neural entry's clamp becomes
+divide-first at the trained κ because the wrapper's `output_scale` IS the
+consumer's fold currency (same `mean_source` propagation as
+`input_activation_scale`). Terminal heads, host-consumed ops, and encoder-fed
+ops keep the trained-through convention; tier-0 is inert by the §8.6
+measurement.
+
+Two design cells were REFUTED by measurement during P3 and corrected:
+
+1. **The bake needs no κ-conversion.** The consumer's effective weight
+   already folds `per_input_scales` (= κ_fold), so the historical bake
+   `B − W_eff·σ` with buffer-unit σ moves the charge by exactly
+   `W·(κ·σ_wire)` — the value-preservation identity — for armed (wire-buffer)
+   and plain (value-buffer) producers alike. An explicit `σ·κ` conversion
+   double-counts (measured: bias delta / W@(κσ) ≡ 1.70 = κ with the
+   conversion, 1.00 without). The gauge conversion lives in the FOLD, once.
+2. **The entry quantizer is σ-free.** σ is producer-walk-applied
+   (`_negative_shift` lifts the buffer before the entry sees it) and
+   consumer-bias-baked; a quantizer-side σ would double-apply. The P2 σ
+   parameter was removed; V-D-training closes by ORDERING instead:
+   `ensure_negative_boundary_policy` runs at the AQ install seam (offload
+   only), so the exact-QAT trains through the shifted boundary and the SCM
+   invocation degrades to the drift verifier (idempotent: re-calibrating the
+   shifted walk stamps nothing new).
+
+Post-P3 contract-suite state: T1 (armed wrapper owns the seam), T2 (NF==HCM
+held through the flip — the joint-movement proof), T3 (temporal within the
+grid envelope of the value composition: pre-fix 1.6× over the bound, post-fix
+3× under), T4 (σ policy preserves the signed band through the real
+calibrate→stamp→bake machinery), T5 (trained entry == deployed seam), T6/T7
+(homogeneity + subsume byte path) — all plain green asserts, no xfails.

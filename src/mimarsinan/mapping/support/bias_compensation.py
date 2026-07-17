@@ -61,11 +61,6 @@ def apply_ttfs_quantization_bias_compensation(model, target_tq: int) -> None:
         )
 
 
-def apply_ttfs_quantized_bias_shift(model, target_tq: int) -> None:
-    """Backward-compatible alias for :func:`apply_ttfs_quantization_bias_compensation`."""
-    apply_ttfs_quantization_bias_compensation(model, target_tq)
-
-
 LIF_HALF_STEP_FLAG = "_lif_half_step_baked_into_bias"
 SYNC_ENTRY_HALF_STEP_FLAG = "_sync_entry_half_step_folded"
 
@@ -245,6 +240,10 @@ def apply_negative_value_shifts(model, minima: dict) -> dict:
         s = torch.clamp(-mins, min=0.0)
         if not bool((s > 0).any()):
             continue
+        # s is stamped in BUFFER units and baked WITHOUT gauge conversion:
+        # the effective weight already folds per_input_scales (= kappa_fold),
+        # so W_eff.s == W.(kappa*sigma_wire) exactly — an explicit kappa
+        # factor double-counts (measured 1.7x on the armed micro-fixture).
         if _bake_consumer_perceptrons(compute_op, s, consumers, ComputeOpMapper):
             compute_op._negative_shift = s.detach().cpu().numpy()
             out[compute_op] = compute_op._negative_shift

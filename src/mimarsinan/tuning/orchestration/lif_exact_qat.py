@@ -171,3 +171,33 @@ def install_lif_entry_input_quantizers(model, pipeline_config) -> int:
         ):
             installed += 1
     return installed
+
+
+def ensure_offload_negative_boundary(model, trainer, pipeline_config) -> None:
+    """[V-D] Run the negative-boundary policy at the AQ install seam (offload
+    only) so the exact-QAT trains through the shifted boundary + kappa-baked
+    bias; the SCM invocation degrades to the drift verifier. Subsume
+    boundaries are post-activation non-negative — skipped, keeping their wall
+    budget untouched. Idempotent (re-calibration of a shifted walk stamps
+    nothing new)."""
+    if not lif_exact_qat_active(pipeline_config):
+        return
+    from mimarsinan.torch_mapping.encoding_layers import (
+        encoder_deploys_as_staircase_hop,
+    )
+
+    placement = str(pipeline_config.get("encoding_layer_placement", "subsume"))
+    if encoder_deploys_as_staircase_hop(placement):
+        return
+    from mimarsinan.mapping.support.negative_boundary import (
+        ensure_negative_boundary_policy,
+    )
+
+    ensure_negative_boundary_policy(
+        model,
+        trainer,
+        spiking_mode=str(pipeline_config["spiking_mode"]),
+        simulation_steps=int(pipeline_config["simulation_steps"]),
+        device=pipeline_config["device"],
+        shift_enabled=bool(pipeline_config.get("negative_value_shift", True)),
+    )

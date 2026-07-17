@@ -8,7 +8,10 @@ from typing import Any, Dict, List
 import torch
 
 from mimarsinan.mapping.mappers.compute_op_mapper import ComputeOpMapper
-from mimarsinan.mapping.support.bias_compensation import apply_negative_value_shifts
+from mimarsinan.mapping.support.bias_compensation import (
+    apply_negative_value_shifts,
+    calibration_forward_for_mode,
+)
 from mimarsinan.mapping.support.value_domain import node_absorbs_negative_values
 
 __all__ = [
@@ -16,6 +19,7 @@ __all__ = [
     "apply_negative_boundary_policy",
     "boundary_consumers",
     "calibrated_compute_op_minima",
+    "ensure_negative_boundary_policy",
     "lossy_negative_boundaries",
     "subsume_forward_negative_boundaries",
 ]
@@ -195,3 +199,33 @@ def apply_negative_boundary_policy(
             f"the range."
         )
     return NegativeBoundaryResult(minima=minima, shifts=shifts, subsumed=subsumed)
+
+
+def ensure_negative_boundary_policy(
+    model,
+    trainer,
+    *,
+    spiking_mode: str,
+    simulation_steps: int,
+    device,
+    shift_enabled: bool,
+    n_batches: int = 2,
+) -> NegativeBoundaryResult | None:
+    """Calibrate + apply the policy from the trainer's validation cache.
+
+    Callable at the AQ install seam (so the exact-QAT trains through the
+    shifted boundary) AND at SCM: a later call walks the already-shifted NF,
+    records non-negative minima, and stamps nothing new — the SCM invocation
+    degrades to the drift verifier.
+    """
+    batches = [x for x, _ in trainer.iter_validation_batches(n_batches)]
+    if not batches:
+        return None
+    calibration_x = torch.cat(batches, dim=0).to(device)
+    return apply_negative_boundary_policy(
+        model,
+        calibration_x,
+        int(simulation_steps),
+        shift_enabled=shift_enabled,
+        forward_fn=calibration_forward_for_mode(spiking_mode),
+    )

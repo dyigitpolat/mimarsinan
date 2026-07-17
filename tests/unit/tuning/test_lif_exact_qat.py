@@ -750,3 +750,60 @@ class TestAdaptationPlanReduction:
         assert plan.blend_fast_rates == [0.25, 0.5, 0.75, 1.0]
         assert plan.tanneal is True
         assert plan.endpoint_recovery_steps == 600
+
+
+class TestEnsureOffloadNegativeBoundary:
+    """[V-D] The sigma policy runs at the AQ install seam under offload only,
+    so the exact-QAT trains through the shifted boundary."""
+
+    def _spy(self, monkeypatch):
+        import mimarsinan.mapping.support.negative_boundary as nb
+
+        calls = []
+        monkeypatch.setattr(
+            nb, "ensure_negative_boundary_policy",
+            lambda *a, **k: calls.append(k),
+        )
+        return calls
+
+    def _cfg(self, **overrides):
+        cfg = default_config()
+        cfg["lif_exact_qat"] = True
+        cfg["lif_per_hop_retiming"] = True
+        cfg["spiking_mode"] = "lif"
+        cfg["negative_value_shift"] = True
+        cfg.update(overrides)
+        return cfg
+
+    def test_offload_runs_the_policy(self, monkeypatch):
+        from mimarsinan.tuning.orchestration.lif_exact_qat import (
+            ensure_offload_negative_boundary,
+        )
+
+        calls = self._spy(monkeypatch)
+        cfg = self._cfg(encoding_layer_placement="offload")
+        ensure_offload_negative_boundary(object(), object(), cfg)
+        assert len(calls) == 1
+        assert calls[0]["shift_enabled"] is True
+        assert calls[0]["spiking_mode"] == "lif"
+
+    def test_subsume_skips(self, monkeypatch):
+        from mimarsinan.tuning.orchestration.lif_exact_qat import (
+            ensure_offload_negative_boundary,
+        )
+
+        calls = self._spy(monkeypatch)
+        cfg = self._cfg(encoding_layer_placement="subsume")
+        ensure_offload_negative_boundary(object(), object(), cfg)
+        assert calls == []
+
+    def test_disarmed_skips(self, monkeypatch):
+        from mimarsinan.tuning.orchestration.lif_exact_qat import (
+            ensure_offload_negative_boundary,
+        )
+
+        calls = self._spy(monkeypatch)
+        cfg = self._cfg(encoding_layer_placement="offload")
+        cfg["lif_exact_qat"] = False
+        ensure_offload_negative_boundary(object(), object(), cfg)
+        assert calls == []

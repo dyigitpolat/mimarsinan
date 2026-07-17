@@ -43,7 +43,9 @@ def spy(monkeypatch):
 
         return _fn
 
-    import mimarsinan.pipelining.pipeline_steps.mapping.soft_core_mapping_step as mod
+    # The step now routes through the shared ensure_negative_boundary_policy
+    # seam; the knob/mode/data behaviors still flow into the policy call.
+    import mimarsinan.mapping.support.negative_boundary as mod
 
     monkeypatch.setattr(mod, "apply_negative_boundary_policy", _record("policy"))
     return calls

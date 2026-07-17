@@ -16,7 +16,6 @@ from mimarsinan.mapping.support.bias_compensation import (
     apply_additive_effective_bias_shift,
     apply_negative_shift_bias,
     apply_ttfs_quantization_bias_compensation,
-    apply_ttfs_quantized_bias_shift,
     negative_shifts_from_min,
 )
 from mimarsinan.models.perceptron_mixer.perceptron import Perceptron
@@ -139,7 +138,7 @@ class TestApplyTtfsQuantizationBiasCompensation:
 
     def test_alias_matches(self):
         model = _Model([_perceptron()])
-        apply_ttfs_quantized_bias_shift(model, 4)
+        apply_ttfs_quantization_bias_compensation(model, 4)
         _assert_bias_exact(model.get_perceptrons()[0], [0.625, -1.375, 2.125])
 
 

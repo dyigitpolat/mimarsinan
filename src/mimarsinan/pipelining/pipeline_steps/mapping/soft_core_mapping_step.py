@@ -18,10 +18,11 @@ from mimarsinan.mapping.export.chip_quantize import quantize_ir_graph
 from mimarsinan.mapping.platform.platform_constraints import resolve_platform_mapping_params
 from mimarsinan.mapping.support.bias_compensation import (
     apply_ttfs_quantization_bias_compensation,
-    calibration_forward_for_mode,
     transfer_negative_shifts_to_ir,
 )
-from mimarsinan.mapping.support.negative_boundary import apply_negative_boundary_policy
+from mimarsinan.mapping.support.negative_boundary import (
+    ensure_negative_boundary_policy,
+)
 from mimarsinan.mapping.support.per_source_scales import compute_per_source_scales
 from mimarsinan.mapping.verification.capacity import (
     PACKER_DIVERGENCE_MARGIN,
@@ -516,19 +517,13 @@ class SoftCoreMappingStep(PipelineStep):
         negative boundary is left on-chip-encoded, so the [0,1] spike-encode
         clamp can never silently drop a value.
         """
-        spiking_mode = str(DeploymentPlan.of(self.pipeline).spiking_mode)
-        forward_fn = calibration_forward_for_mode(spiking_mode)
-
-        T = int(self.pipeline.config["simulation_steps"])
-        device = self.pipeline.config["device"]
-        batches = self._validation_sample_batches(2)
-        if not batches:
-            return
-        calibration_x = torch.cat(batches, dim=0).to(device)
-        apply_negative_boundary_policy(
-            model, calibration_x, T,
+        ensure_negative_boundary_policy(
+            model,
+            self.trainer,
+            spiking_mode=str(DeploymentPlan.of(self.pipeline).spiking_mode),
+            simulation_steps=int(self.pipeline.config["simulation_steps"]),
+            device=self.pipeline.config["device"],
             shift_enabled=bool(self.pipeline.config.get("negative_value_shift", True)),
-            forward_fn=forward_fn,
         )
 
     def bring_back_bias(self, fused_linear_layer):

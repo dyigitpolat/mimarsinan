@@ -121,19 +121,16 @@ class SpikingDeploymentContract:
             firing_mode=self.firing_mode,
         )
 
-    def entry_quantizer(
-        self, theta, sigma: Any = None, *, core: Any = None
-    ) -> ChipInputQuantizer:
+    def entry_quantizer(self, theta, *, core: Any = None) -> ChipInputQuantizer:
         """The trained entry op == the deployed seam composition for this wire
-        (synchronized TTFS snaps to the grid; rate/LIF rounds)."""
+        (synchronized TTFS snaps to the grid; rate/LIF rounds). Sigma-free:
+        the negative-boundary shift is walk-applied and bias-baked."""
         cls = (
             TTFSInputGridQuantizer
             if self.is_synchronized(core=core)
             else ChipInputQuantizer
         )
-        return cls(
-            T=self.simulation_steps, activation_scale=theta, negative_shift=sigma,
-        )
+        return cls(T=self.simulation_steps, activation_scale=theta)
 
     def seam_transcode(self, *, core: Any = None):
         """The one boundary value->wire transcode kernel (SSOT)."""
