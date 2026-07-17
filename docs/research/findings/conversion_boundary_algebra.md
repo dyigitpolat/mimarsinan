@@ -259,3 +259,30 @@ grid envelope of the value composition: pre-fix 1.6× over the bound, post-fix
 3× under), T4 (σ policy preserves the signed band through the real
 calibrate→stamp→bake machinery), T5 (trained entry == deployed seam), T6/T7
 (homogeneity + subsume byte path) — all plain green asserts, no xfails.
+
+## 10. P4 cells (2026-07-17): what the torch-mixer repro flushed out
+
+The failure-mode cells (t0_30 lif offload, t0_32 sync offload; torch-converted
+non-core mixer, patch 4x4 c32 fc64) turned three latent defects into measured
+fixes before any accuracy read:
+
+1. **The subsume minimal pair is structurally impossible** for this vehicle:
+   under `subsume` every torch-mixer perceptron becomes a host ComputeOp
+   (measured 0% on-chip; the on-chip-majority validity gate fires). t0_31 is
+   retired; the pre/post-fix A/B on t0_30 itself carries the isolation.
+2. **Mixed-axis sigma is not bias-compensable.** A rank-3 seam value
+   (token x channel) yields per-position minima; a per-output bias cannot
+   compensate a shift that varies along the consumer's batched axis — and
+   mixer blocks mix BOTH axes. Fix: per-channel sigma for rank<=2 boundary
+   values (the exactly-compensable case), SCALAR sigma for rank>=3
+   (axis-invariant). The PRE-fix pipeline hard-crashes on exactly this
+   (measured at 812820f0: LIF Adaptation cliff to 0.46 — the crater
+   signature — then the 512-vs-16 bake shape error): the baseline verdict
+   for t0_30 is STRUCTURAL FAILURE, not a low number.
+3. **Host chains needed no fail-loud.** The old walk raised on a
+   ComputeOp->ComputeOp seam ("no consuming perceptron bias to compensate");
+   under the producer-side lift the host consumer reads the lifted value in
+   every representation, so the walk now skips it — only the chain's last op
+   (the one a perceptron re-encodes) stamps + bakes, and a host-only-consumed
+   op is never a lossy boundary. The ON mechanism now handles the
+   LN->transpose->fc chains the OFF mechanism previously had to subsume.
