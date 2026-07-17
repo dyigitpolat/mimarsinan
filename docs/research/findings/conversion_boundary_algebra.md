@@ -361,3 +361,27 @@ LN seams feed entries DIRECTLY (the T4-covered single-seam case — no host
 chains between the sigma op and its consumers), so BA-P5 on t2_04 does not
 wait on this; the mixer cell fails LOUD at the parity gate (no silent
 corruption path exists).
+
+### 10e. The sigma-scope law LANDED + the cell verdict (2026-07-18)
+
+The law (plan sec.1): sigma is a property of the (producer -> neural-entry)
+EDGE. Landed as (a) `trained_entry_boundary` — a boundary whose non-host
+consumers all carry a trained entry quantizer is the QAT's own clamp, sigma
+skips it; (b) the ONE scope filter in `apply_negative_boundary_policy` also
+drops never-encoded (host-only-consumed) boundaries — the ON path
+historically over-stamped them, which is the only reason host chains had to
+fail loud; (c) the producer-side lift reverted to the proven consumer/walk
+semantics (raw minima, once-flag bake + drift belt, pre-scan fail-loud
+narrowed to a sigma-op feeding BOTH an unquantized entry and a host op).
+
+Empirical proof: the parity replay WITH the sigma policy active reads
+**agreement 1.0000** (torch 0.9219 == deployed 0.9219). The t0_30 cell then
+ran the ENTIRE pipeline: AQ retained 0.9559, LIF 0.9143, WQ 0.9238,
+**deployed target metric 0.923**, SCM parity green, Loihi spike parity 1.0
+over 12 cores, SANA-FE completed — zero tracebacks. The crater->fixed
+ledger closes: pre-fix (812820f0) = structural crash after a 0.46
+conversion cliff; post-fix = a green deployment within 2*SE of its WQ read.
+
+The agreement-triage law (plan sec.2) is hereby the debugging SSOT for
+deployed divergences: exactly-0.0 => deterministic convention/offset defect;
+~1/K => decoupled garbage; 0.9x => noise family.
