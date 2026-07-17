@@ -74,6 +74,11 @@ def _bake_consumer_perceptrons(producer, shift, consumers, compute_op_type) -> b
                 "negative-shift: a ComputeOp output feeding another ComputeOp is "
                 "unsupported (no consuming perceptron bias to compensate the shift)."
             )
+        elif sh.numel() == 1:
+            # A scalar shift is axis-invariant: structural reshapes cannot
+            # change it, so it passes through without a forward.
+            for c in consumers.get(id(consumer), []):
+                frontier.append((c, sh))
         else:
             try:
                 aligned = consumer.forward(sh.unsqueeze(0)).squeeze(0)
@@ -170,7 +175,11 @@ def transfer_negative_shifts_to_ir(model, ir_graph) -> None:
         base, sep, col = node.name.rpartition("_col")
         if sep and col.isdigit() and base in by_name:
             s = by_name[base]
-            if s.ndim >= 2 and int(col) < s.shape[0]:
+            if s.size == 1:
+                # A scalar shift is instance-invariant: every split column
+                # carries it verbatim.
+                node._negative_shift = s.reshape(-1)  # pyright: ignore[reportAttributeAccessIssue] — dynamic IR side-channel read via getattr
+            elif s.ndim >= 2 and int(col) < s.shape[0]:
                 node._negative_shift = np.asarray(  # pyright: ignore[reportAttributeAccessIssue] — dynamic IR side-channel read via getattr
                     s[int(col)], dtype=np.float64,
                 ).reshape(-1)

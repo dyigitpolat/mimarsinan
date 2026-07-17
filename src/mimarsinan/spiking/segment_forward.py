@@ -158,7 +158,12 @@ class SegmentForwardDriver:
         )
         if isinstance(node, ComputeOpMapper):
             if compute_min_recorder is not None:
-                cur = value.detach().amin(dim=0)
+                v = value.detach()
+                # Rank<=2: per-channel minima (exactly bias-compensable).
+                # Rank>=3 (token x channel seams): SCALAR minimum — a
+                # per-position shift cannot be compensated by a per-output
+                # bias when consumers mix different axes.
+                cur = v.amin(dim=0) if v.dim() <= 2 else v.amin().reshape(1)
                 prev = compute_min_recorder.get(node)
                 compute_min_recorder[node] = (
                     cur if prev is None else torch.minimum(prev, cur)
