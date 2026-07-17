@@ -217,10 +217,12 @@ T0 = [
     # vehicle — under subsume every torch-mixer perceptron becomes a host op
     # (measured: 0% on-chip, the majority validity gate fires) — so the
     # pre/post-fix A/B on t0_30 itself carries the isolation.
-    dict(n=30, mode="lif", quant="wq", wb=5, s=8, vehicle="mmix",
+    # S=32 per the measured mixer AQ-capacity family (the t0_01 respec):
+    # S=8 activation grids crater mixers regardless of the seam algebra.
+    dict(n=30, mode="lif", quant="wq", wb=5, s=32, vehicle="mmix",
          encoding="offload", tags=["offload"],
          note="BA-P4 repro: offloaded torch-mixer signed host seams"),
-    dict(n=32, mode="sync", quant="wq", wb=5, s=8, vehicle="mmix",
+    dict(n=32, mode="sync", quant="wq", wb=5, s=32, vehicle="mmix",
          encoding="offload", tags=["offload"],
          note="BA-P4 TTFS-family exposure: sync on the offloaded torch-mixer"),
 ]

@@ -504,14 +504,14 @@
       "note": "folded tier-0.1 E3: ttfsq deepcnn low-weight-bits variant"
     },
     {
-      "name": "t0_30_lif_mmix_wq_s8_offload",
-      "config": "t0_30_lif_mmix_wq_s8_offload.json",
+      "name": "t0_30_lif_mmix_wq_s32_offload",
+      "config": "t0_30_lif_mmix_wq_s32_offload.json",
       "model_type": "mlp_mixer",
       "cell": {
         "firing": "lif",
         "sync": "none",
         "quantization": "wq_aq",
-        "S": "8",
+        "S": "32",
         "depth": "any",
         "vehicle": "mlp_mixer",
         "dataset": "mnist",
@@ -526,14 +526,14 @@
       "note": "BA-P4 repro: offloaded torch-mixer signed host seams"
     },
     {
-      "name": "t0_32_sync_mmix_wq_s8_offload",
-      "config": "t0_32_sync_mmix_wq_s8_offload.json",
+      "name": "t0_32_sync_mmix_wq_s32_offload",
+      "config": "t0_32_sync_mmix_wq_s32_offload.json",
       "model_type": "mlp_mixer",
       "cell": {
         "firing": "ttfs_cycle_based",
         "sync": "synchronized",
         "quantization": "wq_aq",
-        "S": "8",
+        "S": "32",
         "depth": "any",
         "vehicle": "mlp_mixer",
         "dataset": "mnist",

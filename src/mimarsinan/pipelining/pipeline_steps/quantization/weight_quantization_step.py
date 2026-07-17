@@ -2,7 +2,7 @@ from typing import Iterable, cast
 
 import torch
 
-from mimarsinan.chip_simulation.spiking_semantics import is_lif
+from mimarsinan.chip_simulation.spiking_semantics import is_lif, requires_ttfs_firing
 from mimarsinan.mapping.support.bias_compensation import (
     LIF_HALF_STEP_FLAG,
     apply_lif_half_step_bias_compensation,
@@ -47,7 +47,12 @@ class WeightQuantizationStep(TunerPipelineStep):
         self._freeze_exact_qat_theta(model)
         self._apply_lif_half_step_entry_fold(model)
         self._canonicalize_starved_bias_outliers(model)
-        compute_per_source_scales(model.get_mapper_repr())
+        compute_per_source_scales(
+            model.get_mapper_repr(),
+            arm_wire_value_ops=not requires_ttfs_firing(
+                str(self.pipeline.config["spiking_mode"])
+            ),
+        )
         for perceptron in model.get_perceptrons():
             if not isinstance(perceptron.normalization, nn.Identity):
                 for param in perceptron.normalization.parameters():

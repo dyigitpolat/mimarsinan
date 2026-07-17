@@ -509,7 +509,7 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
         mapper_repr = cast(Any, self._teacher).get_mapper_repr()
         if hasattr(mapper_repr, "assign_perceptron_indices"):
             mapper_repr.assign_perceptron_indices()
-        compute_per_source_scales(mapper_repr)
+        compute_per_source_scales(mapper_repr, arm_wire_value_ops=False)
         ir_graph = IRMapping(
             q_max=q_max,
             firing_mode=str(cfg.get("firing_mode", "TTFS")),

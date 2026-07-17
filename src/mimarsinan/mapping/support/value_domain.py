@@ -12,6 +12,7 @@ from mimarsinan.models.nn.activations.ttfs_cycle import TTFSCycleActivation
 from mimarsinan.models.nn.activations.ttfs_spiking import TTFSActivation
 
 __all__ = [
+    "clear_wire_value_ops",
     "mark_wire_value_ops",
     "node_absorbs_negative_values",
     "op_preserves_wire_ratio",
@@ -106,6 +107,13 @@ def mark_wire_value_ops(model_repr) -> int:
             node.is_wire_value_op = True
             marked += 1
     return marked
+
+
+def clear_wire_value_ops(model_repr) -> None:
+    """Un-mark every host ComputeOp (the TTFS-family wires own their transcode)."""
+    for node in model_repr.execution_order():
+        if isinstance(node, ComputeOpMapper):
+            node.is_wire_value_op = False
 
 
 # Positively homogeneous modules: f(a*x) = a*f(x) for a > 0, so wire rate and

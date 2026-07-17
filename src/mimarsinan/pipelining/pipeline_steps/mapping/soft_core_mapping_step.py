@@ -7,7 +7,7 @@ from mimarsinan.config_schema.registry import effective_value as _effective
 from mimarsinan.pipelining.core.steps.pipeline_step import PipelineStep
 from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 
-from mimarsinan.chip_simulation.spiking_semantics import is_lif
+from mimarsinan.chip_simulation.spiking_semantics import is_lif, requires_ttfs_firing
 from mimarsinan.mapping.ir_mapping_class import IRMapping
 from mimarsinan.mapping.latency.depth_balancing import (
     assert_relays_alive,
@@ -195,7 +195,12 @@ class SoftCoreMappingStep(PipelineStep):
         if hasattr(mapper_repr, "assign_perceptron_indices"):
             mapper_repr.assign_perceptron_indices()
         # Recompute per-source input scales here so mapping is self-contained; idempotent in activation_scales, so byte-identical when WeightQuantizationStep already populated them.
-        compute_per_source_scales(mapper_repr)
+        compute_per_source_scales(
+            mapper_repr,
+            arm_wire_value_ops=not requires_ttfs_firing(
+                str(self.pipeline.config["spiking_mode"])
+            ),
+        )
         # Re-propagate boundary input scales here so a retuned upstream theta cannot leave the segment-entry grid-snap normalizing by a stale scale; idempotent in activation_scales.
         propagate_boundary_input_scales(
             model, input_data_scale=plan.workload.input_data_scale
