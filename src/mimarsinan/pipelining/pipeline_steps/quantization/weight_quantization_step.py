@@ -50,7 +50,7 @@ class WeightQuantizationStep(TunerPipelineStep):
         compute_per_source_scales(
             model.get_mapper_repr(),
             arm_wire_value_ops=not requires_ttfs_firing(
-                str(self.pipeline.config["spiking_mode"])
+                str(DeploymentPlan.of(self.pipeline).spiking_mode)
             ),
         )
         for perceptron in model.get_perceptrons():

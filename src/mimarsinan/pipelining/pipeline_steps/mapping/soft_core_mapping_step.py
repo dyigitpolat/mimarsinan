@@ -198,7 +198,7 @@ class SoftCoreMappingStep(PipelineStep):
         compute_per_source_scales(
             mapper_repr,
             arm_wire_value_ops=not requires_ttfs_firing(
-                str(self.pipeline.config["spiking_mode"])
+                str(DeploymentPlan.of(self.pipeline).spiking_mode)
             ),
         )
         # Re-propagate boundary input scales here so a retuned upstream theta cannot leave the segment-entry grid-snap normalizing by a stale scale; idempotent in activation_scales.
