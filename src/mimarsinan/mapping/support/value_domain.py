@@ -6,11 +6,16 @@ import torch
 import torch.nn as nn
 
 from mimarsinan.mapping.mappers.compute_op_mapper import ComputeOpMapper
+from mimarsinan.mapping.support.compute_modules import ComputeAdapter
 from mimarsinan.models.nn.activations import LIFActivation, LeakyGradReLU
 from mimarsinan.models.nn.activations.ttfs_cycle import TTFSCycleActivation
 from mimarsinan.models.nn.activations.ttfs_spiking import TTFSActivation
 
-__all__ = ["node_absorbs_negative_values", "produces_nonnegative_values"]
+__all__ = [
+    "node_absorbs_negative_values",
+    "op_preserves_wire_ratio",
+    "produces_nonnegative_values",
+]
 
 # Activations whose output is >= 0 for EVERY input. The spiking activations
 # decode spike counts / spike times, which are non-negative by construction.
@@ -56,6 +61,40 @@ def produces_nonnegative_values(module) -> bool:
         return produces_nonnegative_values(activation)
 
     return isinstance(module, NONNEGATIVE_ACTIVATIONS)
+
+
+# Positively homogeneous modules: f(a*x) = a*f(x) for a > 0, so wire rate and
+# value produce the same output up to the gauge — no seam transcode needed.
+WIRE_TRANSPARENT_MODULES: tuple[type, ...] = (
+    nn.MaxPool1d, nn.MaxPool2d, nn.MaxPool3d,
+    nn.AvgPool1d, nn.AvgPool2d, nn.AvgPool3d,
+    nn.AdaptiveAvgPool1d, nn.AdaptiveAvgPool2d, nn.AdaptiveAvgPool3d,
+    nn.AdaptiveMaxPool1d, nn.AdaptiveMaxPool2d, nn.AdaptiveMaxPool3d,
+    nn.Identity, nn.Flatten,
+)
+
+# ComputeAdapter payload callables that are positively homogeneous.
+_WIRE_TRANSPARENT_ADAPTER_FNS = frozenset({
+    "mean", "sum", "amax", "amin", "flatten", "reshape", "permute",
+    "transpose", "cat",
+})
+
+
+def op_preserves_wire_ratio(module) -> bool:
+    """Whether a host op is positively homogeneous (``f(a*x) = a*f(x)``, a > 0).
+
+    Membership means the op may legally run on the wire rate (the gauge passes
+    through); anything unknown answers ``False`` — the conservative direction
+    (treat as a value op, transcode at its boundaries).
+    """
+    if module is None:
+        return False
+    if isinstance(module, ComputeAdapter):
+        fn_name = getattr(module.fn, "__name__", "")
+        return fn_name in _WIRE_TRANSPARENT_ADAPTER_FNS
+    if isinstance(module, (nn.Linear, nn.Conv1d, nn.Conv2d, nn.Conv3d)):
+        return module.bias is None
+    return isinstance(module, WIRE_TRANSPARENT_MODULES)
 
 
 def node_absorbs_negative_values(node) -> bool:

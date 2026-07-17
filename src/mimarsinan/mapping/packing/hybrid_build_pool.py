@@ -6,6 +6,7 @@ from typing import Sequence
 import numpy as np
 
 from mimarsinan.mapping.support.activation_scales import (
+    compute_node_buffer_scales as _compute_node_buffer_scales,
     compute_node_input_scales as _compute_node_input_activation_scales,
     compute_node_output_scales as _compute_node_activation_scales,
 )
@@ -91,6 +92,7 @@ def build_hybrid_hard_core_mapping(
         output_sources=output_sources,
         node_activation_scales=node_activation_scales,
         node_input_activation_scales=node_input_activation_scales,
+        node_buffer_scales=_compute_node_buffer_scales(ir_graph),
     )
 
 
@@ -131,6 +133,7 @@ def build_identity_hybrid_mapping(
         output_sources=output_sources,
         node_activation_scales=_compute_node_activation_scales(ir_graph),
         node_input_activation_scales=_compute_node_input_activation_scales(ir_graph),
+        node_buffer_scales=_compute_node_buffer_scales(ir_graph),
     )
 
 

@@ -44,6 +44,9 @@ class HybridHardCoreMapping:
     # Scalar float, or per-channel np.ndarray for ttfs_theta_cotrain nodes.
     node_activation_scales: dict[int, NodeScale] = field(default_factory=dict)
     node_input_activation_scales: dict[int, NodeScale] = field(default_factory=dict)
+    # Buffer gauge kappa_buf (state_buffer = value / kappa_buf); the seam
+    # divisor is the derived view kappa_fold / kappa_buf.
+    node_buffer_scales: dict[int, NodeScale] = field(default_factory=dict)
     # Per-producer per-channel rate shift applied before the [0,1] clamp; the consumer core's bias is pre-corrected (B' = B - W·s) so the on-chip result is unchanged.
     node_output_shifts: dict[int, np.ndarray] = field(default_factory=dict)
     # Lazy consumer-refcount cache filled by SpikingHybridCoreFlow._build_consumer_counts.

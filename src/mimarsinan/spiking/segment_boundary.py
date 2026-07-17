@@ -54,13 +54,45 @@ def boundary_normalization_scales(
     """Per-producer wire divisors for rate/LIF host state buffers:
     ``wire rate = buffer value / divisor``.
 
-    Host ComputeOps run with ``(1, 1)`` scales on the rate/LIF paths, so an op
-    whose module carries a perceptron ``activation_scale`` (plain encoders AND
-    wrapper mappers) leaves its *value-domain* result in the state buffer; a
-    structural op inherits its compute sources' divisors (scale-homogeneous
-    pass-through). Neural producers (``counts / T``) and ScaleNormalizingWrapper
-    ops are already wire-domain and are skipped.
+    The derived view of the stamped gauge tables:
+    ``divisor = kappa_fold / kappa_buf`` (``node_activation_scales`` over
+    ``node_buffer_scales``). Neural producers and ScaleNormalizingWrapper ops
+    sit at the wire gauge (divisor 1, skipped); a wrapped host module leaves
+    its value-domain result in the buffer (divisor == its theta). Mappings
+    predating the ``kappa_buf`` stamp fall back to the legacy wrapper walk.
     """
+    if not getattr(hybrid_mapping, "node_buffer_scales", None):
+        return _legacy_boundary_divisors(hybrid_mapping)
+    fold_scales = hybrid_mapping.node_activation_scales
+    buffer_scales = hybrid_mapping.node_buffer_scales
+    divisors: dict[int, float | np.ndarray] = {}
+    for stage in hybrid_mapping.stages:
+        op = stage.compute_op
+        if stage.kind != "compute" or op is None:
+            continue
+        module = (op.params or {}).get("module") if op.params else None
+        if isinstance(module, ScaleNormalizingWrapper):
+            continue
+        fold = fold_scales.get(int(op.id), 1.0)
+        buf = buffer_scales.get(int(op.id), 1.0)
+        divisor: float | np.ndarray
+        if isinstance(fold, np.ndarray) or isinstance(buf, np.ndarray):
+            divisor = np.asarray(fold, dtype=np.float64) / np.maximum(
+                np.asarray(buf, dtype=np.float64), 1e-12,
+            )
+        else:
+            divisor = float(fold) / max(float(buf), 1e-12)
+            if abs(divisor - 1.0) < 1e-12:
+                continue
+        divisors[int(op.id)] = divisor
+    return divisors
+
+
+def _legacy_boundary_divisors(
+    hybrid_mapping: HybridHardCoreMapping,
+) -> dict[int, float | np.ndarray]:
+    """Pre-stamp reconstruction: wrapped modules carry their theta; a plain op
+    inherits the mean of its compute sources' divisors."""
     divisors: dict[int, float | np.ndarray] = {}
     for stage in hybrid_mapping.stages:
         op = stage.compute_op

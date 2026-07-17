@@ -29,7 +29,7 @@ use when).
 | `pruning/` | IR pruning, liveness semantics, mask/compaction application, boundary policy, graph segmentation |
 | `packing/` | `SoftCore`/`HardCore` bin packing, placement engine, hybrid multi-stage mapping (`HybridHardCoreMapping`) |
 | `latency/` | `IRLatency` (IR topology tiers) and `ChipLatency` (packed-chip cycle scheduling) plus upstream closure; `depth_balancing` [C5] inserts identity relay chains on gap>1 intra-segment edges (unequal-depth fan-in, V6) with the loud gap-1 and dead-relay (strict-'<' exact-theta lattice, V9) guards |
-| `support/` | Shared mechanisms: activation/per-source scales, bias compensation, core geometry, source spans, residual merge, scheduling, and the negative value-boundary policy (`negative_boundary.py` + the structural non-negativity predicate `value_domain.py`) |
+| `support/` | Shared mechanisms: activation/per-source scales and the buffer gauge `compute_node_buffer_scales` (`activation_scales.py`), bias compensation, core geometry, source spans, residual merge, scheduling, and the negative value-boundary policy (`negative_boundary.py` + the structural non-negativity predicate and wire-transparency classifier `op_preserves_wire_ratio` in `value_domain.py`) |
 | `verification/` | Layout verification services, capacity checks, hardware suggester, on-chip fraction/majority metrics, wizard verify |
 | `export/` | Chip export (`cpp_chip_model` emission) and IR quantization verify for simulation |
 | `onchip_attention/` | D5 research frontier: attention/LayerNorm on-chip mappability verdicts; not in the deployment path |

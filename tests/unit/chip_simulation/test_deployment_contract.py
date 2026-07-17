@@ -205,3 +205,61 @@ class TestSingleReaderInvariant:
             "ttfs_cycle_schedule must be read from pipeline config only by "
             f"SpikingDeploymentContract.from_pipeline_config; offenders: {offenders}"
         )
+
+
+class TestBoundarySurfaceGetters:
+    """Boundary-algebra P2: the contract answers boundary questions too."""
+
+    def test_boundary_config_mirrors_contract_fields(self):
+        from mimarsinan.spiking.boundary_config import BoundaryConfig
+
+        contract = SpikingDeploymentContract.from_pipeline_config(_cfg(
+            spiking_mode="lif", firing_mode="Default",
+            spike_generation_mode="Uniform", ttfs_cycle_schedule=None,
+        ))
+        config = contract.boundary_config(cycle_accurate=True)
+        assert isinstance(config, BoundaryConfig)
+        assert config.simulation_length == contract.simulation_steps
+        assert config.spiking_mode == contract.spiking_mode
+        assert config.cycle_accurate is True
+        assert config.thresholding_mode == contract.thresholding_mode
+        assert config.firing_mode == contract.firing_mode
+        assert config.spike_mode == contract.spike_generation_mode
+        assert config.use_cycle_accurate_trains
+
+    def test_entry_quantizer_kind_follows_the_wire(self):
+        from mimarsinan.models.nn.activations.autograd import (
+            ChipInputQuantizer,
+            TTFSInputGridQuantizer,
+        )
+
+        lif = SpikingDeploymentContract.from_pipeline_config(_cfg(
+            spiking_mode="lif", firing_mode="Default",
+            spike_generation_mode="Uniform", ttfs_cycle_schedule=None,
+        ))
+        q = lif.entry_quantizer(1.7)
+        assert type(q) is ChipInputQuantizer
+        assert q.T == lif.simulation_steps
+        assert float(q.activation_scale) == pytest.approx(1.7)
+
+        sync = SpikingDeploymentContract.from_pipeline_config(_cfg())
+        assert sync.is_synchronized()
+        assert type(sync.entry_quantizer(1.0)) is TTFSInputGridQuantizer
+
+    def test_entry_quantizer_passes_sigma_through(self):
+        import torch
+
+        contract = SpikingDeploymentContract.from_pipeline_config(_cfg(
+            spiking_mode="lif", firing_mode="Default",
+            spike_generation_mode="Uniform", ttfs_cycle_schedule=None,
+        ))
+        sigma = torch.tensor([0.3, 0.0])
+        q = contract.entry_quantizer(1.7, sigma=sigma)
+        assert q.negative_shift is sigma
+        assert contract.entry_quantizer(1.7).negative_shift is None
+
+    def test_seam_transcode_is_the_boundary_ssot(self):
+        from mimarsinan.spiking.compute_boundary import normalize_boundary_value
+
+        contract = SpikingDeploymentContract.from_pipeline_config(_cfg())
+        assert contract.seam_transcode() is normalize_boundary_value

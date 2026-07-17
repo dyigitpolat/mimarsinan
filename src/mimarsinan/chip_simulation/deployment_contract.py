@@ -13,7 +13,13 @@ from mimarsinan.chip_simulation.spiking_semantics import (
     ttfs_cycle_schedule,
     uses_ttfs_floor_ceil_convention,
 )
+from mimarsinan.models.nn.activations.autograd import (
+    ChipInputQuantizer,
+    TTFSInputGridQuantizer,
+)
 from mimarsinan.models.spiking.wire_semantics import WireSemantics
+from mimarsinan.spiking.boundary_config import BoundaryConfig
+from mimarsinan.spiking.compute_boundary import normalize_boundary_value
 
 
 @dataclass(frozen=True)
@@ -101,6 +107,37 @@ class SpikingDeploymentContract:
     def mode_policy(self, *, core: Any = None):
         """The behavior-carrying ``SpikingModePolicy`` for this (firing × sync)."""
         return policy_for_spiking_mode(self.spiking_mode, self.ttfs_cycle_schedule)
+
+    def boundary_config(
+        self, *, cycle_accurate: bool, core: Any = None
+    ) -> BoundaryConfig:
+        """The segment-boundary encode/decode config for this wire."""
+        return BoundaryConfig(
+            simulation_length=self.simulation_steps,
+            spiking_mode=self.spiking_mode,
+            cycle_accurate=cycle_accurate,
+            spike_mode=self.spike_generation_mode,
+            thresholding_mode=self.thresholding_mode,
+            firing_mode=self.firing_mode,
+        )
+
+    def entry_quantizer(
+        self, theta, sigma: Any = None, *, core: Any = None
+    ) -> ChipInputQuantizer:
+        """The trained entry op == the deployed seam composition for this wire
+        (synchronized TTFS snaps to the grid; rate/LIF rounds)."""
+        cls = (
+            TTFSInputGridQuantizer
+            if self.is_synchronized(core=core)
+            else ChipInputQuantizer
+        )
+        return cls(
+            T=self.simulation_steps, activation_scale=theta, negative_shift=sigma,
+        )
+
+    def seam_transcode(self, *, core: Any = None):
+        """The one boundary value->wire transcode kernel (SSOT)."""
+        return normalize_boundary_value
 
     def calibration_pipeline(self, config, *, distmatch_driven=False, core: Any = None):
         """The conversion-health ``CalibrationPipeline`` for this (firing × sync) cell.

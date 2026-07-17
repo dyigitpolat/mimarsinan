@@ -5,6 +5,7 @@ from __future__ import annotations
 import numpy as np
 
 from mimarsinan.mapping.ir import ComputeOp, IRGraph, IRSource, NeuralCore
+from mimarsinan.mapping.support.compute_modules import ScaleNormalizingWrapper
 
 NodeScale = float | np.ndarray
 
@@ -46,7 +47,7 @@ def perceptron_wrapped_activation_scale(module) -> NodeScale | None:
     return _coerce_node_scale(s)
 
 
-def _scalar_node_scale(scale: NodeScale) -> float:
+def scalar_node_scale(scale: NodeScale) -> float:
     """Collapse a scalar-or-per-channel scale to a single scalar (mean for a vector)."""
     return float(np.mean(scale)) if isinstance(scale, np.ndarray) else float(scale)
 
@@ -59,7 +60,7 @@ def _aggregate_source_scales(src_scales: list[NodeScale]) -> float:
     """
     if not src_scales:
         return 1.0
-    reduced = [_scalar_node_scale(s) for s in src_scales]
+    reduced = [scalar_node_scale(s) for s in src_scales]
     return sum(reduced) / len(reduced)
 
 
@@ -78,7 +79,9 @@ def compute_node_output_scales(ir_graph: IRGraph) -> dict[int, NodeScale]:
             module = (node.params or {}).get("module")
             wrapped_scale = perceptron_wrapped_activation_scale(module)
             if wrapped_scale is not None:
-                scales[node.id] = _scalar_node_scale(wrapped_scale)
+                # Vector-preserving kappa_fold: scalar consumers collapse via
+                # the same float(np.mean) arithmetic (scalar_node_scale).
+                scales[node.id] = wrapped_scale
                 continue
             src_scales: list[NodeScale] = []
             for src in node.input_sources.flatten():
@@ -86,6 +89,34 @@ def compute_node_output_scales(ir_graph: IRGraph) -> dict[int, NodeScale]:
                     src_scales.append(scales.get(src.node_id, 1.0))
             scales[node.id] = _aggregate_source_scales(src_scales)
     return scales
+
+
+def compute_node_buffer_scales(ir_graph: IRGraph) -> dict[int, NodeScale]:
+    """Per-node buffer gauge kappa_buf: ``state_buffer = value / kappa_buf``.
+
+    Neural counts/T buffers and domain-owning wrappers sit at the wire gauge
+    (kappa_buf == kappa_fold); a wrapped host module emits the raw value
+    (kappa_buf == 1); a plain op passes its sources' gauge through. The seam
+    divisor is the derived view ``kappa_fold / kappa_buf``.
+    """
+    fold = compute_node_output_scales(ir_graph)
+    buffer_scales: dict[int, NodeScale] = {}
+    for node in ir_graph.nodes:
+        if isinstance(node, NeuralCore):
+            buffer_scales[node.id] = fold[node.id]
+        elif isinstance(node, ComputeOp):
+            module = (node.params or {}).get("module")
+            if isinstance(module, ScaleNormalizingWrapper):
+                buffer_scales[node.id] = fold[node.id]
+            elif perceptron_wrapped_activation_scale(module) is not None:
+                buffer_scales[node.id] = 1.0
+            else:
+                src_scales: list[NodeScale] = []
+                for src in node.input_sources.flatten():
+                    if isinstance(src, IRSource) and src.node_id >= 0:
+                        src_scales.append(buffer_scales.get(src.node_id, 1.0))
+                buffer_scales[node.id] = _aggregate_source_scales(src_scales)
+    return buffer_scales
 
 
 def compute_node_input_scales(ir_graph: IRGraph) -> dict[int, NodeScale]:

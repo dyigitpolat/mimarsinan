@@ -10,6 +10,7 @@ import torch
 
 from mimarsinan.mapping.ir import ComputeOp, IRSource
 from mimarsinan.mapping.ir.gather_plan import gather_plan_for
+from mimarsinan.mapping.support.activation_scales import scalar_node_scale
 from mimarsinan.mapping.support.compute_modules import ScaleNormalizingWrapper
 
 
@@ -269,7 +270,12 @@ def resolve_stage_compute_scales(
         return 1.0, 1.0
     if op is not None and compute_op_owns_scale_domain(op):
         return 1.0, 1.0
-    return float(in_scales.get(op_id, 1.0)), float(out_scales.get(op_id, 1.0))
+    # kappa_fold entries may be per-channel; this stage API is scalar — the
+    # collapse is the SSOT mean (scalar_node_scale), identical for scalars.
+    return (
+        scalar_node_scale(in_scales.get(op_id, 1.0)),
+        scalar_node_scale(out_scales.get(op_id, 1.0)),
+    )
 
 
 def decref_consumers(
