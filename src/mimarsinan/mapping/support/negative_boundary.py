@@ -223,14 +223,17 @@ def apply_negative_boundary_policy(
     minima = calibrated_compute_op_minima(
         model, calibration_x, T, forward_fn=forward_fn,
     )
-    # [sigma-scope law] Trained-clamp boundaries are the QAT's own function:
-    # ONE filter feeds the stamp path, the subsume path, AND the recheck the
-    # same universe (universe drift between them is how silent-skip bugs
-    # slip in).
+    # [sigma-scope law] ONE filter feeds the stamp path, the subsume path,
+    # AND the recheck the same universe (universe drift between them is how
+    # silent-skip bugs slip in). A boundary is in scope only if it is ever
+    # ENCODED (some non-host consumer) and NOT the QAT's own trained clamp.
     consumers = model.get_mapper_repr().consumer_map()
     minima = {
         op: mins for op, mins in minima.items()
-        if not trained_entry_boundary(op, consumers)
+        if any(
+            not _is_host_node(c) for c in boundary_consumers(op, consumers)
+        )
+        and not trained_entry_boundary(op, consumers)
     }
     shifts: Dict[Any, Any] = {}
     subsumed: List[Any] = []

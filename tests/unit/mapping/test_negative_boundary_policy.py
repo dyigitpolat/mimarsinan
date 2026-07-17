@@ -249,14 +249,51 @@ class TestPolicyDispatch:
         (ln,) = _layernorm_ops(flow)
         assert getattr(ln, "_negative_shift", None) is None
 
-    def test_shift_on_fails_loud_where_it_cannot_absorb(self):
-        """ON has no bias to pre-correct across a ComputeOp→ComputeOp seam
-        (restored sigma-scope fail-loud: a host consumer of a lifted value
-        has no inverse carrier; subsume-forward is the designed OFF answer)."""
+    def test_host_chains_scope_to_the_encoded_boundary(self):
+        """[sigma-scope law] LN1→LN2→p3: LN1 is HOST-consumed (never encoded
+        ⇒ out of scope, unstamped, read raw by LN2 in every representation);
+        LN2 is the encoded boundary and carries the one sigma + bake."""
         flow = _flow(_ComputeOpToComputeOp)
+        result = apply_negative_boundary_policy(
+            flow, _x(), T, shift_enabled=True, forward_fn=_fwd(),
+        )
+        stamped = {getattr(op, "name", "?") for op in result.shifts}
+        assert stamped == {"ln2"}
+        assert result.subsumed == []
+
+    def test_shift_on_fails_loud_on_mixed_neural_and_host_consumers(self):
+        """A sigma-op feeding BOTH an (unquantized) neural entry and a host
+        op is genuinely unsupported: the neural side needs the lift, the host
+        side has no inverse carrier — fail loud before any bake."""
+        from mimarsinan.mapping.mappers.perceptron_mapper import PerceptronMapper
+        from mimarsinan.mapping.mappers.structural import ConcatMapper, InputMapper
+        from mimarsinan.mapping.model_representation import ModelRepresentation
+        from mimarsinan.models.perceptron_mixer.perceptron import Perceptron
+        from mimarsinan.torch_mapping.encoding_layers import mark_encoding_layers
+
+        torch.manual_seed(0)
+        inp = InputMapper((8,))
+        p1 = Perceptron(6, 8, normalization=nn.Identity())
+        m1 = PerceptronMapper(inp, p1)
+        ln = ComputeOpMapper(m1, nn.LayerNorm(6), input_shape=(6,), output_shape=(6,))
+        p2 = Perceptron(3, 6, normalization=nn.Identity())
+        m2 = PerceptronMapper(ln, p2)
+        head = ComputeOpMapper(ln, nn.Linear(6, 3), input_shape=(6,), output_shape=(3,))
+        out = ConcatMapper([m2, head], dim=1)
+        repr_ = ModelRepresentation(out)
+        mark_encoding_layers(repr_, placement="offload")
+
+        class _Shim:
+            def get_mapper_repr(self):
+                return repr_
+
+            def get_perceptrons(self):
+                return [p1, p2]
+
         with pytest.raises(NotImplementedError, match="ComputeOp"):
             apply_negative_boundary_policy(
-                flow, _x(), T, shift_enabled=True, forward_fn=_fwd(),
+                _Shim(), torch.rand(16, 8), T,
+                shift_enabled=True, forward_fn=_fwd(),
             )
 
     def test_shift_off_handles_what_shift_on_cannot(self):
@@ -485,3 +522,17 @@ class TestTrainedEntryBoundarySkip:
                 _Shim(), torch.rand(16, 8), T,
                 shift_enabled=True, forward_fn=_fwd(),
             )
+
+
+    def test_host_only_consumed_boundary_is_out_of_scope(self):
+        """A negative boundary consumed ONLY by host ops is never encoded:
+        no sigma needed, no stamp, no fail-loud (the terminal mean/classifier
+        chains of torch-converted models)."""
+        flow = _flow(_NoAbsorbingNode)
+        # Subsume p2 manually so the LN's only boundary consumer is host-side.
+        for p in flow.get_perceptrons():
+            p.is_encoding_layer = True
+        result = apply_negative_boundary_policy(
+            flow, _x(), T, shift_enabled=True, forward_fn=_fwd(),
+        )
+        assert result.shifts == {}
