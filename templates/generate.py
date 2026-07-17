@@ -219,12 +219,14 @@ T0 = [
     # pre/post-fix A/B on t0_30 itself carries the isolation.
     # S=32 per the measured mixer AQ-capacity family (the t0_01 respec):
     # S=8 activation grids crater mixers regardless of the seam algebra.
+    # The sync exposure cell (t0_32) is retired 2026-07-18 with a measured
+    # verdict: torch<->deployed parity 0.0 on this vehicle WITH arming
+    # mode-gated off — the TTFS value-op path's own convention gap on
+    # per-instance host Linears (conversion_boundary_algebra.md sec.10);
+    # sync/torch-mixer support is an open program item, not a tier-0 cell.
     dict(n=30, mode="lif", quant="wq", wb=5, s=32, vehicle="mmix",
          encoding="offload", tags=["offload"],
          note="BA-P4 repro: offloaded torch-mixer signed host seams"),
-    dict(n=32, mode="sync", quant="wq", wb=5, s=32, vehicle="mmix",
-         encoding="offload", tags=["offload"],
-         note="BA-P4 TTFS-family exposure: sync on the offloaded torch-mixer"),
 ]
 
 

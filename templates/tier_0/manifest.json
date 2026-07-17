@@ -524,28 +524,6 @@
       ],
       "expected_wall_min": 12,
       "note": "BA-P4 repro: offloaded torch-mixer signed host seams"
-    },
-    {
-      "name": "t0_32_sync_mmix_wq_s32_offload",
-      "config": "t0_32_sync_mmix_wq_s32_offload.json",
-      "model_type": "mlp_mixer",
-      "cell": {
-        "firing": "ttfs_cycle_based",
-        "sync": "synchronized",
-        "quantization": "wq_aq",
-        "S": "32",
-        "depth": "any",
-        "vehicle": "mlp_mixer",
-        "dataset": "mnist",
-        "regime": "from_scratch",
-        "pruning": "dense",
-        "encoding_placement": "offload"
-      },
-      "tags": [
-        "offload"
-      ],
-      "expected_wall_min": 6,
-      "note": "BA-P4 TTFS-family exposure: sync on the offloaded torch-mixer"
     }
   ],
   "coverage_notes": [

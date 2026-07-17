@@ -286,3 +286,23 @@ fixes before any accuracy read:
    (the one a perceptron re-encodes) stamps + bakes, and a host-only-consumed
    op is never a lossy boundary. The ON mechanism now handles the
    LN->transpose->fc chains the OFF mechanism previously had to subsume.
+
+### 10b. The two cell verdicts (2026-07-18)
+
+4. **The I1 capacity condition is load-bearing.** With sigma stamped at the
+   AQ install, the shifted wire is (v - min v)/kappa: kappa must cover the
+   seam's value-range WIDTH. Theta-pass-through kappa (~2.5) under a range
+   of ~7 saturated every armed seam to a constant — AQ flatlined at EXACTLY
+   0.1135 at S=8 AND S=32 (deterministic, S-independent, gradient-free
+   through the saturated clamp, unrecoverable by training). Fix: the AQ seam
+   calibrates each armed op's observed range and lifts
+   ``boundary_traffic_scale`` (the existing one-scale-to-both-walks seam) to
+   the range width BEFORE the sigma policy; the wrapper s_out, the weight
+   fold, and the entry quantizer then agree on the covering currency.
+5. **The sync/torch-mixer gap is the TTFS analog, and pre-existing.** With
+   arming mode-gated OFF for TTFS wires (they own their transcode via
+   apply_ttfs), torch<->deployed parity still reads 0.0000 on this vehicle:
+   the per-op scalar apply_ttfs lifts meet the same mixed-axis/per-instance
+   host-Linear semantics the rate path just fixed. Recorded as an open
+   program item; the t0_32 cell is retired from tier-0 (pass-all gate) with
+   the repro one git-show away.

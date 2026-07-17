@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import torch
+
 from mimarsinan.models.nn.activations.autograd import ChipInputQuantizer
 
 _LIF_EXACT_QAT_ATTR = "_mbh_lif_exact_qat"
@@ -196,6 +198,7 @@ def ensure_offload_negative_boundary(model, trainer, pipeline_config) -> None:
         ensure_negative_boundary_policy,
     )
 
+    _cover_armed_seam_scales(model, trainer, pipeline_config)
     # Pre-conversion seam: activations are not yet LIF, so calibrate through
     # the ANALYTICAL walk (value-domain minima; converted to buffer units per
     # armed producer). The SCM invocation re-verifies through the mode walk.
@@ -209,3 +212,62 @@ def ensure_offload_negative_boundary(model, trainer, pipeline_config) -> None:
         forward_fn=_analytical_segment_calibration_forward,
         minima_units="value",
     )
+
+
+def _cover_armed_seam_scales(model, trainer, pipeline_config) -> int:
+    """[I1 capacity] Lift armed seams' currencies to cover the observed value
+    range BEFORE the sigma policy: the shifted wire is (v - min v)/kappa, so
+    kappa must cover the range WIDTH or the encode clamp saturates the seam
+    to a constant (measured: AQ flat at 0.1135 with theta-pass-through kappa).
+    Reuses the boundary_traffic_scale seam — one scale to both walks."""
+    from mimarsinan.common.workload_profile import ResolvedWorkloadProfile
+    from mimarsinan.mapping.mappers.compute_op_mapper import ComputeOpMapper
+    from mimarsinan.mapping.support.per_source_scales import (
+        compute_per_source_scales,
+    )
+    from mimarsinan.spiking.scale_aware_boundaries import (
+        propagate_boundary_input_scales,
+        read_boundary_out_scales,
+    )
+    from mimarsinan.spiking.segment_forward import (
+        AnalyticalSegmentPolicy,
+        SegmentForwardDriver,
+    )
+
+    batches = [x for x, _ in trainer.iter_validation_batches(2)]
+    if not batches:
+        return 0
+    device = pipeline_config["device"]
+    calibration_x = torch.cat(batches, dim=0).to(device)
+    repr_ = model.get_mapper_repr()
+    driver = SegmentForwardDriver(
+        repr_, int(pipeline_config["simulation_steps"]), AnalyticalSegmentPolicy(),
+    )
+    minima: dict = {}
+    maxima: dict = {}
+    with torch.no_grad():
+        driver(
+            calibration_x,
+            compute_min_recorder=minima,
+            compute_max_recorder=maxima,
+        )
+    input_data_scale = ResolvedWorkloadProfile.from_config(
+        pipeline_config
+    ).input_data_scale
+    out_scales = read_boundary_out_scales(repr_, input_data_scale=input_data_scale)
+    lifted = 0
+    for node, mins in minima.items():
+        if not (
+            isinstance(node, ComputeOpMapper)
+            and getattr(node, "is_wire_value_op", False)
+        ):
+            continue
+        width = float(maxima[node].max()) - min(float(mins.min()), 0.0)
+        current = float(torch.as_tensor(out_scales.get(node, 1.0)).float().mean())
+        if width > current:
+            node.boundary_traffic_scale = width
+            lifted += 1
+    if lifted:
+        compute_per_source_scales(repr_)
+        propagate_boundary_input_scales(model, input_data_scale=input_data_scale)
+    return lifted

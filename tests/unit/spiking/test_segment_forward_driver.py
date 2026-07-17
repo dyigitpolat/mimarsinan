@@ -257,7 +257,7 @@ class TestDriverAdaptiveChunking:
 
         driver.policy = _Policy()
 
-        def scripted_run(x, recorder=None):
+        def scripted_run(x, compute_min_recorder=None, compute_max_recorder=None):
             calls.append(int(x.size(0)))
             if x.size(0) > max_batch:
                 raise _torch.OutOfMemoryError("synthetic OOM")

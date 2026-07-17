@@ -111,6 +111,7 @@ class SegmentForwardDriver:
     def __call__(
         self, x, *,
         compute_min_recorder: dict | None = None,
+        compute_max_recorder: dict | None = None,
         node_value_recorder: dict | None = None,
         join_value_recorder: dict | None = None,
     ):
@@ -124,9 +125,12 @@ class SegmentForwardDriver:
                 # spike trains scale S x batch; recorder minima over chunks
                 # equal minima over the batch).
                 return forward_adaptive_chunks(
-                    lambda part: self._run(part, compute_min_recorder), x,
+                    lambda part: self._run(
+                        part, compute_min_recorder, compute_max_recorder,
+                    ),
+                    x,
                 )
-            return self._run(x, compute_min_recorder)
+            return self._run(x, compute_min_recorder, compute_max_recorder)
         finally:
             self.policy.finalize(self)
             self._node_value_recorder = None
@@ -152,7 +156,8 @@ class SegmentForwardDriver:
             return node.forward_scale_normalized
         return None
 
-    def _run_value_node(self, node, values, x, compute_min_recorder):
+    def _run_value_node(self, node, values, x, compute_min_recorder,
+                        compute_max_recorder=None):
         value = self._forward_node(
             node, values, x, forward=self._host_value_forward(node),
         )
@@ -168,6 +173,12 @@ class SegmentForwardDriver:
                 compute_min_recorder[node] = (
                     cur if prev is None else torch.minimum(prev, cur)
                 )
+            if compute_max_recorder is not None:
+                cur = value.detach().amax().reshape(1)
+                prev = compute_max_recorder.get(node)
+                compute_max_recorder[node] = (
+                    cur if prev is None else torch.maximum(prev, cur)
+                )
             # The sigma lift is producer-side (ComputeOpMapper._apply_negative_shift),
             # so the recorded minima are EFFECTIVE (post-shift) boundary values.
             join_recorder = getattr(self, "_join_value_recorder", None)
@@ -176,7 +187,7 @@ class SegmentForwardDriver:
                 join_recorder[node] = value.detach()
         values[node] = value
 
-    def _run(self, x, compute_min_recorder):
+    def _run(self, x, compute_min_recorder, compute_max_recorder=None):
         values: dict = {}
         output_value = None
         done = set()
@@ -191,7 +202,9 @@ class SegmentForwardDriver:
                         output_value = seg_out
                     done.add(root)
             else:
-                self._run_value_node(node, values, x, compute_min_recorder)
+                self._run_value_node(
+                    node, values, x, compute_min_recorder, compute_max_recorder,
+                )
 
             for dep in self._deps.get(node, []):
                 if dep is None or dep is self._output:
