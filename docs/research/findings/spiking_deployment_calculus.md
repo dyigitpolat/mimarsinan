@@ -549,3 +549,79 @@ decorator class and the coherence certificate at MNIST scale) · **PR8**
 PR2 refuted for retime; PR3/PR5 superseded in part by §11.3 (re-derive
 post-coherence). The program of record sequences these as C → D → R → F2 →
 V (`~/.claude/plans/spiking_deployment_calculus_program.md`).
+
+## 12. Phase C executed (2026-07-19): coherence LANDED — PR9 exceeded; the genuine read reaches the analytic band
+
+### 12.1 C1 — the writer-census verdict
+
+A fresh `compute_per_source_scales` + `propagate_boundary_input_scales` on an
+in-memory copy of the cached AQ model reproduces every stamp bit-for-bit:
+the split is IN THE WALKS, not stale ordering. Three formulas coexisted:
+the pure table (θ pass-through, no lifts), the mutating boundary walk
+(`_traffic_lift` accumulation — the source of in_act 1.523), and the
+per-source system (its own lift — the source of s_out 0.813). Second
+finding: the ENTIRE block-0 chain (patch-embed → LN → MHA → LN, exec sites
+1–9) is UNARMED — `is_wire_value_op` marked, but the unity-gauge arming
+condition skipped it — so its raw signed values hit the walk's
+clamp-before-scale re-encode, and the armed-only σ law left that seam
+σ-free (the measured oob 0.498 at entry 1).
+
+### 12.2 C2 — the one-writer fix (landed, gate 8274 green, typecheck 0)
+
+1. `ComputeOpMapper.propagate_boundary_scale`: an ARMED op's boundary
+   out-scale IS its buffer gauge (`output_scale`); unarmed ops keep the
+   lifted pass-through.
+2. `read_boundary_out_scales` now DELEGATES every non-perceptron node to the
+   polymorphic walk — one implementation for both tables (inheriting the
+   traffic lifts and the residual-merge max rule, closing two latent splits
+   beyond the measured one).
+3. `LifSegmentPolicy.train_of` dispatches on representation: ABSOLUTE
+   (raw, unarmed-chain) producers transcode via the SSOT divide-first
+   `normalize_boundary_value`; wire producers clamp; mixed wire/absolute
+   fan-in at a plain host op fails loud (`_absolute_value_nodes`).
+4. `verify_boundary_currency_coherence` — the install-seam fail-loud
+   certificate, called at the σ-install end.
+5. Locks: `test_currency_coherence.py`; and the injection suite tracked the
+   theorem — under coherence an output-gauge corruption CANNOT split the
+   twins (the table follows it): it now surfaces as a currency defect at
+   the consumer stamps; the twin-divergence injection moved to the decode
+   gauge (`per_source_scales`).
+
+### 12.3 C3 — the PR9 verdict: EXCEEDED
+
+Faithful full-transform (retime=T, cycle-trains=T, rebuild=T), same cache,
+zero training:
+
+| read | n=512 | census n=2496 |
+|---|---|---|
+| R0 analytic blended | 0.8086 | **0.7742** (≡ the historical post_acc — harness census-validated) |
+| R1 faithful genuine | **0.7832** | **0.7397** |
+
+The journey on one artifact: **0.0115 (pre-§10) → 0.2910 (post-§10) →
+0.7397 (post-§12)**. Residual G-A = **3.45 pp** (Δ ≈ 3.9·SE — real and
+small), at the mixer's A2-slack scale (t0_30: 4.2 pp), decomposable into
+the known terms: the σ-free entry-1 seam (oob 0.498, Type-C by the
+armed-only law), the entries-2/3 band clips (s_out < κ_Q), hop terms
+(V3/V4/V5 family), and ties.
+
+### 12.4 The G-B reinterpretation (§11.3 strikes again)
+
+The "staircase endpoint 0.6046" was itself a contaminated anchor: the AQ
+full-transform read re-quantizes already-grid values (entry rounds + the
+decorator staircase snap under strict `<`) — the exact double-quantize the
+`lif_active` subsumption exists to avoid (`lif_exact_qat_program` §6.1(2)).
+The deployable LIF composition does not implement that double snap, so
+0.6046 UNDER-reported the deployable function by ~13 pp. The honest ladder
+is now **analytic 0.7742 → genuine twin 0.7397**; G-B as originally framed
+(17 pp) largely dissolves into (i) the AQ read convention (Type-M on the
+train-side twin — an F4 item: align the AQ full-transform read with the
+subsumed composition) and (ii) the 3.45 pp physical residual above.
+
+### 12.5 Between here and "deployed ≈ analytic"
+
+(1) the chip-side κ_W half: entries 1–3 `per_input_scales` (1.0 / 0.813 /
+0.966) vs κ_Q — invisible to the torch twin; needs the SCM emission-table
+coherence + a cross-sim decision-parity spot; (2) the D-phase capacity
+items re-anchored to the 3.45 pp residual (entry-1 σ/arming under the
+unity-gauge condition; entries-2/3 band re-pin; PR8 floor prediction);
+(3) WQ → SCM → parity (Phase V). PR9 CLOSED-EXCEEDED; PR10-12 unchanged.
