@@ -718,3 +718,44 @@ target: ≤ 2 pp analytic + the certified deploy floor), with the §12
 coherence certificates green and cross-sim parity ≥ 0.98. The program of
 record sequences this as Phase E (anchor) → D (deploy residual) → R → F2 →
 V.
+
+### 13.4 E4 executed (2026-07-19): PR14 PASSES — and the twin residual is trajectory-dependent
+
+E2 (origin-teacher SSOT) + E3 (origin-anchored compact) landed default-off
+(locks in `test_origin_anchor.py`; gate 8286). The A/B: t2_04 resumed at
+Reference Teacher Snapshot in an isolated dir with `origin_teacher_kd`,
+`origin_anchored_compact`, `activation_adaptation_kd`, `lif_exact_qat_kd`,
+`eval_subsample_target=1152` armed — same training budgets as baseline.
+
+**The whole conversion chain (snapshot → AA → Clamp → Shift → AQ) completed
+in ONE 10.4-minute window** — the reaper economics dissolved as a side
+effect (SE-sized evals + rungs that converge instead of thrash).
+
+| read | baseline | anchored A/B |
+|---|---|---|
+| AA endpoint (analytic) | 0.8062 | 0.8096 (swap cost −5.8: anchor-INSENSITIVE, as §13.1 predicted — its lever is L-C budget) |
+| AQ exact-QAT ladder | 0.5956 → 0.6046 (plain CE, inert) | **0.694 → 0.798 → 0.802 → 0.807 → 0.808 (KD-to-origin, strongly convergent)** |
+| AQ endpoint analytic (census) | 0.7711 | **0.8140** — PR14 (≥0.80) PASSES, +4.3 pp at equal budgets |
+| genuine twin (census) | 0.7397 (residual 3.45 pp) | **0.7151 (residual 9.9 pp)** |
+
+**The new finding (honest, and the next theory target): the analytic↔genuine
+twin residual CO-VARIES with the training trajectory.** On the anchored
+model the per-seam evidence exonerates the §12 suspects: out-of-band mass
+COLLAPSED (deep seams 0.61 → 0.011–0.047; only the unarmed σ-free entry-1
+seam remains at 0.500), per-seam bias ≈ 0, and retime/cycle-trains remain
+bit-inert (R2 = R3 exactly). The QAT's acceptance gauge (the staircase
+D-hat) is not the deployed composition, so genuine drift is unmonitored and
+unconstrained during training; the leading mechanism candidate — pre-
+registered, not assumed — is **tie-mass concentration**: staircase-KD pulls
+pre-activations onto grid flats where the strict-`<` comparator drops a
+level per hop (the P5/V9 hazard, structurally common on grid values).
+**PR17**: a tie-mass gauge (mass within ε of the θ·k/T grid, per hop) reads
+significantly higher on the anchored model than the baseline, and its
+per-hop profile predicts the genuine drop via the composition law. **PR18
+(the law candidate)**: adding the cheap analytic gauges (tie-mass +
+temporal-A6 + oob) as rung-acceptance CONSTRAINTS — or a small-n genuine
+spot-read at commits — bounds the twin residual during QAT without paying
+the census; with it, the anchored ladder retains its analytic gain AND a
+genuine read ≥ the baseline's. Scoreboard: origin 0.8678 → analytic 0.8140
+→ genuine 0.7151; the program's next block is PR17 → PR18 (gate design,
+theory-first) + PR14b (AA budget scaling) + the entry-1 arming hole.
