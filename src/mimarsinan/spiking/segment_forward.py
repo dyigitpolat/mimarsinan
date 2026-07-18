@@ -112,6 +112,7 @@ class SegmentForwardDriver:
         self, x, *,
         compute_min_recorder: dict | None = None,
         compute_max_recorder: dict | None = None,
+        compute_sample_recorder: dict | None = None,
         node_value_recorder: dict | None = None,
         join_value_recorder: dict | None = None,
     ):
@@ -127,10 +128,14 @@ class SegmentForwardDriver:
                 return forward_adaptive_chunks(
                     lambda part: self._run(
                         part, compute_min_recorder, compute_max_recorder,
+                        compute_sample_recorder,
                     ),
                     x,
                 )
-            return self._run(x, compute_min_recorder, compute_max_recorder)
+            return self._run(
+                x, compute_min_recorder, compute_max_recorder,
+                compute_sample_recorder,
+            )
         finally:
             self.policy.finalize(self)
             self._node_value_recorder = None
@@ -157,7 +162,7 @@ class SegmentForwardDriver:
         return None
 
     def _run_value_node(self, node, values, x, compute_min_recorder,
-                        compute_max_recorder=None):
+                        compute_max_recorder=None, compute_sample_recorder=None):
         value = self._forward_node(
             node, values, x, forward=self._host_value_forward(node),
         )
@@ -179,6 +184,14 @@ class SegmentForwardDriver:
                 compute_max_recorder[node] = (
                     cur if prev is None else torch.maximum(prev, cur)
                 )
+            if compute_sample_recorder is not None:
+                flat = value.detach().reshape(-1)
+                stride = max(1, flat.numel() // 4096)
+                sample = flat[::stride]
+                prev = compute_sample_recorder.get(node)
+                compute_sample_recorder[node] = (
+                    sample if prev is None else torch.cat([prev, sample])
+                )
             # Positive-domain shift on the decoded value (consumer-side sigma:
             # the walk mirrors the deployed stage/gather lifts); the consumer
             # perceptron's baked bias compensates. Recorded minima are RAW.
@@ -193,7 +206,8 @@ class SegmentForwardDriver:
                 join_recorder[node] = value.detach()
         values[node] = value
 
-    def _run(self, x, compute_min_recorder, compute_max_recorder=None):
+    def _run(self, x, compute_min_recorder, compute_max_recorder=None,
+             compute_sample_recorder=None):
         values: dict = {}
         output_value = None
         done = set()
@@ -210,6 +224,7 @@ class SegmentForwardDriver:
             else:
                 self._run_value_node(
                     node, values, x, compute_min_recorder, compute_max_recorder,
+                    compute_sample_recorder,
                 )
 
             for dep in self._deps.get(node, []):

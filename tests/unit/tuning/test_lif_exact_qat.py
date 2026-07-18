@@ -758,11 +758,11 @@ class TestEnsureOffloadNegativeBoundary:
     law (trained-clamp boundaries are the QAT's own function)."""
 
     def _spy(self, monkeypatch):
-        import mimarsinan.tuning.orchestration.lif_exact_qat as leq
+        import mimarsinan.tuning.orchestration.signed_seam_install as leq
 
         calls = []
         monkeypatch.setattr(
-            leq, "_cover_armed_seam_scales",
+            leq, "install_signed_seam_offsets",
             lambda model, trainer, cfg: calls.append(dict(cfg)),
         )
         return calls
@@ -778,7 +778,7 @@ class TestEnsureOffloadNegativeBoundary:
         return cfg
 
     def test_offload_runs_the_policy(self, monkeypatch):
-        from mimarsinan.tuning.orchestration.lif_exact_qat import (
+        from mimarsinan.tuning.orchestration.signed_seam_install import (
             ensure_offload_negative_boundary,
         )
 
@@ -793,7 +793,7 @@ class TestEnsureOffloadNegativeBoundary:
         assert calls[0]["spiking_mode"] == "lif"
 
     def test_subsume_skips(self, monkeypatch):
-        from mimarsinan.tuning.orchestration.lif_exact_qat import (
+        from mimarsinan.tuning.orchestration.signed_seam_install import (
             ensure_offload_negative_boundary,
         )
 
@@ -803,7 +803,7 @@ class TestEnsureOffloadNegativeBoundary:
         assert calls == []
 
     def test_disarmed_skips(self, monkeypatch):
-        from mimarsinan.tuning.orchestration.lif_exact_qat import (
+        from mimarsinan.tuning.orchestration.signed_seam_install import (
             ensure_offload_negative_boundary,
         )
 
@@ -816,7 +816,7 @@ class TestEnsureOffloadNegativeBoundary:
     def test_default_off_skips(self, monkeypatch):
         # [memo sec.10b] the AQ-seam sigma is opt-in until the install
         # composition measures a win.
-        from mimarsinan.tuning.orchestration.lif_exact_qat import (
+        from mimarsinan.tuning.orchestration.signed_seam_install import (
             ensure_offload_negative_boundary,
         )
 
@@ -827,57 +827,28 @@ class TestEnsureOffloadNegativeBoundary:
         assert calls == []
 
 
-class TestArmedSeamCover:
-    """[I1 capacity] kappa must cover the armed seam's value-range WIDTH or
-    the shifted encode saturates to a constant (the measured 0.1135 flatline)."""
+class TestSignedSeamQuantiles:
+    """[memo sec.10f] kappa is a QUANTILE, never the max — the full-width
+    cover was refuted (kappa=range-max destroys grid resolution)."""
 
-    def test_cover_lifts_undersized_currencies(self):
-        import torch.nn as nn
-
-        from mimarsinan.mapping.mappers.compute_op_mapper import ComputeOpMapper
-        from mimarsinan.mapping.mappers.perceptron_mapper import PerceptronMapper
-        from mimarsinan.mapping.mappers.structural import InputMapper
-        from mimarsinan.mapping.model_representation import ModelRepresentation
-        from mimarsinan.mapping.support.per_source_scales import (
-            compute_per_source_scales,
-        )
-        from mimarsinan.models.perceptron_mixer.perceptron import Perceptron
-        from mimarsinan.torch_mapping.encoding_layers import mark_encoding_layers
-        from mimarsinan.tuning.orchestration.lif_exact_qat import (
-            _cover_armed_seam_scales,
+    def test_outlier_robust_quantiles(self):
+        from mimarsinan.tuning.orchestration.signed_seam_install import (
+            _signed_seam_quantiles,
         )
 
         torch.manual_seed(0)
-        inp = InputMapper((8,))
-        p1 = Perceptron(6, 8, normalization=nn.Identity())
-        p1.set_activation_scale(1.7)
-        m1 = PerceptronMapper(inp, p1)
-        ln = nn.LayerNorm(6)
-        with torch.no_grad():
-            ln.weight.fill_(4.0)   # value range far beyond theta pass-through
-        host = ComputeOpMapper(m1, ln, input_shape=(6,), output_shape=(6,))
-        p2 = Perceptron(3, 6, normalization=nn.Identity())
-        p2.set_activation_scale(0.9)
-        m2 = PerceptronMapper(host, p2)
-        repr_ = ModelRepresentation(m2)
-        mark_encoding_layers(repr_, placement="offload")
-        compute_per_source_scales(repr_)
+        v = torch.randn(10000)
+        v[0], v[1] = -50.0, 60.0
+        sigma, kappa = _signed_seam_quantiles(v, quantile=0.99)
+        assert 1.5 < sigma < 4.0
+        assert 3.0 < kappa < 8.0
 
-        class _Model:
-            def get_mapper_repr(self):
-                return repr_
-
-        class _Trainer:
-            def iter_validation_batches(self, n):
-                torch.manual_seed(3)
-                yield torch.rand(64, 8), torch.zeros(64)
-
-        cfg = {"device": "cpu", "simulation_steps": 8, "input_count": 8}
-        lifted = _cover_armed_seam_scales(_Model(), _Trainer(), cfg)
-        assert lifted >= 1
-        # The traffic lift flows to BOTH walks: the armed wrapper's s_out and
-        # the consumer's entry currency now cover the observed width.
-        assert float(host.output_scale) > 1.7
-        assert float(p2.input_activation_scale) == pytest.approx(
-            float(host.output_scale), rel=1e-5,
+    def test_nonnegative_seam_gets_zero_sigma(self):
+        from mimarsinan.tuning.orchestration.signed_seam_install import (
+            _signed_seam_quantiles,
         )
+
+        v = torch.rand(1000) * 3.0
+        sigma, kappa = _signed_seam_quantiles(v, quantile=0.99)
+        assert sigma == 0.0
+        assert 2.0 < kappa < 3.5

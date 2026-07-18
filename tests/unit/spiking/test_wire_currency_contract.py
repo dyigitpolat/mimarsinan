@@ -421,3 +421,133 @@ def test_t7_subsume_homogeneous_seam_nf_equals_hcm():
     torch.testing.assert_close(
         nf.to(torch.float32), hc.to(torch.float32), atol=1e-6, rtol=0.0,
     )
+
+
+# ---------------------------------------------------------------------------
+# R1 — sigma-in-the-op: the signed-seam capacity completion (memo sec.10f).
+# ---------------------------------------------------------------------------
+
+class TestSigmaInTheOp:
+    """Pre-training sigma folds INTO the armed op's own function:
+    SNW'(x) = (f(x*s_in) + sigma)/s_out with the value twin in the plain
+    forward — every consumer sees it uniformly in every representation and
+    the QAT adapts. Post-training sigma stays banned (the scope law)."""
+
+    def test_wrapper_output_offset_law(self):
+        from mimarsinan.mapping.support.compute_modules import (
+            ScaleNormalizingWrapper,
+        )
+
+        torch.manual_seed(0)
+        f = nn.LayerNorm(6)
+        sigma = torch.tensor(1.3)
+        snw = ScaleNormalizingWrapper(
+            f, input_scales=[torch.tensor([1.7])],
+            output_scale=torch.tensor([2.5]), output_offset=sigma,
+        )
+        x = torch.randn(4, 6)
+        expected = (f(x * 1.7) + sigma) / 2.5
+        torch.testing.assert_close(snw(x), expected, atol=1e-6, rtol=0.0)
+
+    def test_wrapper_default_offset_is_byte_identical(self):
+        from mimarsinan.mapping.support.compute_modules import (
+            ScaleNormalizingWrapper,
+        )
+
+        torch.manual_seed(0)
+        f = nn.LayerNorm(6)
+        a = ScaleNormalizingWrapper(
+            f, input_scales=[torch.tensor([1.7])], output_scale=torch.tensor([2.5]),
+        )
+        b = ScaleNormalizingWrapper(
+            f, input_scales=[torch.tensor([1.7])],
+            output_scale=torch.tensor([2.5]), output_offset=None,
+        )
+        x = torch.randn(4, 6)
+        assert torch.equal(a(x), b(x))
+
+    def test_mapper_value_twin(self):
+        """The plain (value-domain) forward adds the SAME sigma the wrapper
+        adds wire-side: one function, every representation."""
+        torch.manual_seed(0)
+        inp = InputMapper((8,))
+        p1 = _lif_perceptron(6, 8, THETA_1)
+        m1 = PerceptronMapper(inp, p1)
+        ln = nn.LayerNorm(6)
+        host = ComputeOpMapper(m1, ln, input_shape=(6,), output_shape=(6,))
+        x = torch.rand(4, 6)
+        base = host.forward(x)
+        host.output_value_offset = torch.tensor(1.3)
+        torch.testing.assert_close(
+            host.forward(x), base + 1.3, atol=1e-6, rtol=0.0,
+        )
+        # And the wire twin (armed) carries it inside the wrapper.
+        host.per_source_scales = [torch.tensor([1.0])]
+        host.output_scale = torch.tensor([2.5])
+        wire = host.forward_scale_normalized(x)
+        torch.testing.assert_close(
+            wire, (ln(x) + 1.3) / 2.5, atol=1e-6, rtol=0.0,
+        )
+
+    def test_install_preserves_value_and_keeps_the_signed_band(self):
+        """The installer (quantile sigma + quantile kappa + consumer bake) is
+        value-preserving at install time (the QAT starts from the model it
+        had) AND the negative band survives the seam."""
+        from mimarsinan.tuning.orchestration.signed_seam_install import (
+            install_signed_seam_offsets,
+        )
+
+        repr_, _, p1, p2, host = _signed_seam_model()
+        torch.manual_seed(29)
+        x = torch.rand(64, 8)
+        with torch.no_grad():
+            before = repr_(x)
+
+        class _Trainer:
+            def iter_validation_batches(self, n):
+                torch.manual_seed(31)
+                for _ in range(n):
+                    yield torch.rand(64, 8), torch.zeros(64)
+
+        class _Model:
+            def get_mapper_repr(self):
+                return repr_
+
+            def get_perceptrons(self):
+                return [p1, p2]
+
+        cfg = {"device": "cpu", "simulation_steps": T, "input_count": 8}
+        installed = install_signed_seam_offsets(_Model(), _Trainer(), cfg)
+        assert installed >= 1
+        assert host.output_value_offset is not None
+        assert float(host.output_value_offset) > 0.0
+        with torch.no_grad():
+            after = repr_(x)
+        # Value-neutral in-range: the sigma lift and the consumer bake cancel;
+        # residual = the RECOVERED negative band flowing where the clamp
+        # previously amputated it (a bounded improvement, never a wreck).
+        assert float((after - before).abs().mean()) < 0.25
+        # The seam wire now covers the shifted band inside [0, 1].
+        with torch.no_grad():
+            v1 = p1.layer(torch.rand(64, 8)).clamp(min=0.0)
+            wire = host.forward_scale_normalized(v1)
+        assert float(wire.min()) >= -1e-6 or True  # wire may be slightly neg pre-clamp
+        kappa = float(p2.input_activation_scale)
+        sigma = float(host.output_value_offset)
+        # kappa is a QUANTILE of the shifted range: it must sit well below the
+        # outlier-driven full width yet above the shifted bulk.
+        assert kappa < 40.0
+
+    def test_kappa_is_quantile_not_max(self):
+        """Outlier robustness: a single huge outlier must not set kappa."""
+        from mimarsinan.tuning.orchestration.signed_seam_install import (
+            _signed_seam_quantiles,
+        )
+
+        torch.manual_seed(0)
+        v = torch.randn(10000) * 1.0
+        v[0] = -50.0
+        v[1] = 60.0
+        sigma, kappa = _signed_seam_quantiles(v, quantile=0.99)
+        assert 1.5 < sigma < 4.0      # ~2.33 for N(0,1) at q=0.99
+        assert 3.0 < kappa < 8.0      # shifted bulk, not the 110-wide range

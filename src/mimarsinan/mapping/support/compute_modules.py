@@ -90,11 +90,14 @@ class ScaleNormalizingWrapper(nn.Module):
 
     output_scale: torch.Tensor
 
+    output_offset: torch.Tensor | None
+
     def __init__(
         self,
         module: nn.Module,
         input_scales: Sequence[torch.Tensor],
         output_scale: torch.Tensor,
+        output_offset: torch.Tensor | None = None,
     ) -> None:
         super().__init__()
         self.module = module
@@ -105,6 +108,13 @@ class ScaleNormalizingWrapper(nn.Module):
             )
         self.register_buffer(
             "output_scale", torch.as_tensor(output_scale, dtype=torch.float32)
+        )
+        # [sigma-in-the-op] pre-training signed-seam lift: part of the op's
+        # own function, so every representation carries it uniformly.
+        self.register_buffer(
+            "output_offset",
+            None if output_offset is None
+            else torch.as_tensor(output_offset, dtype=torch.float32),
         )
 
     def _input_scale(self, i: int) -> torch.Tensor:
@@ -124,6 +134,10 @@ class ScaleNormalizingWrapper(nn.Module):
             )
             absolute_inputs.append(x * broadcast)
         absolute_out = self.module(*absolute_inputs)
+        if self.output_offset is not None:
+            absolute_out = absolute_out + self.output_offset.to(
+                dtype=absolute_out.dtype, device=absolute_out.device,
+            )
         out_scale = broadcast_scale_to_dim(
             self.output_scale.to(dtype=absolute_out.dtype, device=absolute_out.device),
             absolute_out.shape[-1],

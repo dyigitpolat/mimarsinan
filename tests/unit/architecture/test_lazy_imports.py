@@ -124,6 +124,8 @@ ALLOWLIST = {
     # Same chip_simulation<->tuning init cycle as adaptation_manager: the
     # predicate consults spiking_semantics lazily.
     "tuning/orchestration/lif_exact_qat.py",
+    # Extracted from lif_exact_qat (same chip_simulation<->tuning init cycle).
+    "tuning/orchestration/signed_seam_install.py",
     "tuning/orchestration/ttfs_adaptation_plan.py",
     "tuning/tuners/activation_adaptation_tuner.py",
     "tuning/tuners/activation_shift_tuner.py",

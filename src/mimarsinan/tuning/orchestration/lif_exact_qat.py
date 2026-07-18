@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import torch
 
 from mimarsinan.models.nn.activations.autograd import ChipInputQuantizer
 
@@ -173,82 +172,3 @@ def install_lif_entry_input_quantizers(model, pipeline_config) -> int:
         ):
             installed += 1
     return installed
-
-
-def ensure_offload_negative_boundary(model, trainer, pipeline_config) -> None:
-    """[I1 capacity, opt-in] Lift armed seam currencies at the AQ install
-    seam (offload only). The sigma half of this seam was REMOVED under the
-    sigma-scope law (memo sec.10e): trained-clamp boundaries are the QAT's
-    own function, so the SCM policy skips them and an AQ-time sigma has
-    nothing correct to add."""
-    if not lif_exact_qat_active(pipeline_config):
-        return
-    if not bool(pipeline_config.get("lif_aq_negative_boundary", False)):
-        return
-    from mimarsinan.torch_mapping.encoding_layers import (
-        encoder_deploys_as_staircase_hop,
-    )
-
-    placement = str(pipeline_config.get("encoding_layer_placement", "subsume"))
-    if encoder_deploys_as_staircase_hop(placement):
-        return
-    _cover_armed_seam_scales(model, trainer, pipeline_config)
-
-
-def _cover_armed_seam_scales(model, trainer, pipeline_config) -> int:
-    """[I1 capacity] Lift armed seams' currencies to cover the observed value
-    range BEFORE the sigma policy: the shifted wire is (v - min v)/kappa, so
-    kappa must cover the range WIDTH or the encode clamp saturates the seam
-    to a constant (measured: AQ flat at 0.1135 with theta-pass-through kappa).
-    Reuses the boundary_traffic_scale seam — one scale to both walks."""
-    from mimarsinan.common.workload_profile import ResolvedWorkloadProfile
-    from mimarsinan.mapping.mappers.compute_op_mapper import ComputeOpMapper
-    from mimarsinan.mapping.support.per_source_scales import (
-        compute_per_source_scales,
-    )
-    from mimarsinan.spiking.scale_aware_boundaries import (
-        propagate_boundary_input_scales,
-        read_boundary_out_scales,
-    )
-    from mimarsinan.spiking.segment_forward import (
-        AnalyticalSegmentPolicy,
-        SegmentForwardDriver,
-    )
-
-    batches = [x for x, _ in trainer.iter_validation_batches(2)]
-    if not batches:
-        return 0
-    device = pipeline_config["device"]
-    calibration_x = torch.cat(batches, dim=0).to(device)
-    repr_ = model.get_mapper_repr()
-    driver = SegmentForwardDriver(
-        repr_, int(pipeline_config["simulation_steps"]), AnalyticalSegmentPolicy(),
-    )
-    minima: dict = {}
-    maxima: dict = {}
-    with torch.no_grad():
-        driver(
-            calibration_x,
-            compute_min_recorder=minima,
-            compute_max_recorder=maxima,
-        )
-    input_data_scale = ResolvedWorkloadProfile.from_config(
-        pipeline_config
-    ).input_data_scale
-    out_scales = read_boundary_out_scales(repr_, input_data_scale=input_data_scale)
-    lifted = 0
-    for node, mins in minima.items():
-        if not (
-            isinstance(node, ComputeOpMapper)
-            and getattr(node, "is_wire_value_op", False)
-        ):
-            continue
-        width = float(maxima[node].max()) - min(float(mins.min()), 0.0)
-        current = float(torch.as_tensor(out_scales.get(node, 1.0)).float().mean())
-        if width > current:
-            node.boundary_traffic_scale = width
-            lifted += 1
-    if lifted:
-        compute_per_source_scales(repr_)
-        propagate_boundary_input_scales(model, input_data_scale=input_data_scale)
-    return lifted

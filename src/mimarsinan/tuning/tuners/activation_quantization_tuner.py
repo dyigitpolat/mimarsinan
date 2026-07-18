@@ -24,8 +24,10 @@ from mimarsinan.tuning.orchestration.adaptation_manager import (
     install_sync_entry_grid_snap,
     sync_exact_qat_active,
 )
-from mimarsinan.tuning.orchestration.lif_exact_qat import (
+from mimarsinan.tuning.orchestration.signed_seam_install import (
     ensure_offload_negative_boundary,
+)
+from mimarsinan.tuning.orchestration.lif_exact_qat import (
     install_lif_entry_input_quantizers,
     lif_exact_qat_active,
 )

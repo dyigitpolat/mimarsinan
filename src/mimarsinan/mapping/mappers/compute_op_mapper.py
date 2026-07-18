@@ -71,6 +71,9 @@ class ComputeOpMapper(Mapper):
         # Gauge classification (mark_wire_value_ops): a non-homogeneous
         # re-encoded op arms the wrapper even for uniform source scales.
         self.is_wire_value_op: bool = False
+        # [sigma-in-the-op] pre-training signed-seam lift, VALUE units; the
+        # wrapper carries it wire-side (output_offset = this value).
+        self.output_value_offset: torch.Tensor | None = None
 
     @property
     def sources(self) -> list[Mapper]:
@@ -132,7 +135,12 @@ class ComputeOpMapper(Mapper):
         return FlowchartNodeEstimate()
 
     def _forward_impl(self, x):
-        return self._forward_with_module(self.module, x)
+        out = self._forward_with_module(self.module, x)
+        if self.output_value_offset is not None:
+            out = out + self.output_value_offset.to(
+                dtype=out.dtype, device=out.device,
+            )
+        return out
 
     def _forward_with_module(self, module: nn.Module, x):
         if len(self._sources_list) == 1:
@@ -184,6 +192,7 @@ class ComputeOpMapper(Mapper):
             )
         return ScaleNormalizingWrapper(
             self.module, self.per_source_scales, self.output_scale,
+            output_offset=self.output_value_offset,
         )
 
     def _emit_unary(self, ir_mapping, src_arr, module):
