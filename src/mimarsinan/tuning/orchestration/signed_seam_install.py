@@ -85,9 +85,13 @@ def install_signed_seam_offsets(
     consumers = repr_.consumer_map()
     installed = 0
     for node, sample in samples.items():
+        # ONLY armed ops: the wrapper carries the offset into every deployed
+        # representation; an unarmed op's offset would exist in the plain
+        # forward alone (train/deploy split).
         if not (
             isinstance(node, ComputeOpMapper)
             and getattr(node, "is_wire_value_op", False)
+            and node.per_source_scales is not None
         ):
             continue
         if node.output_value_offset is not None:
@@ -151,7 +155,11 @@ def install_signed_seam_offsets(
 
 
 _SHIFT_EQUIVARIANT_ADAPTER_FNS = frozenset({
-    "mean", "amax", "amin", "flatten", "reshape", "permute", "transpose", "cat",
+    # f(v + c) = f(v) + c for a scalar c on the shifted input; "add" passes a
+    # single shifted operand's c through; "getitem" selects; "cat" stays OUT
+    # (a partial-slice shift is not bias-compensable downstream).
+    "mean", "amax", "amin", "flatten", "reshape", "permute", "transpose",
+    "add", "getitem",
 })
 
 
