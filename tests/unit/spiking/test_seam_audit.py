@@ -115,15 +115,28 @@ class TestInjectedDefects:
         assert hits
 
     def test_wire_value_twin_divergence_is_type_b(self):
-        """A corrupted SNW output gauge makes the emitted wire composition
-        disagree with the trained value twin — the deployed-side half of the
-        B10 transparency contract."""
+        """A corrupted SNW DECODE gauge (per_source_scales) makes the emitted
+        wire composition disagree with the trained value twin — the
+        deployed-side half of the B10 transparency contract."""
+        repr_, _, _, host = _seam_repr()
+        assert host.per_source_scales is not None
+        host.per_source_scales = [
+            torch.as_tensor(s) * 2.0 for s in host.per_source_scales
+        ]
+        ledger = _audit(repr_)
+        hits = [c for c in ledger.type_b if c.kind == "host_twin"]
+        assert hits
+
+    def test_output_gauge_corruption_surfaces_as_currency_not_twin_split(self):
+        """Under one-writer coherence (calculus §11.2) the table FOLLOWS an
+        armed op's output gauge, so corrupting it cannot split the twins —
+        it moves the whole currency, caught at the consumer's stamps."""
         repr_, _, _, host = _seam_repr()
         assert host.output_scale is not None
         host.output_scale = torch.as_tensor(host.output_scale) * 2.0
         ledger = _audit(repr_)
-        hits = [c for c in ledger.type_b if c.kind == "host_twin"]
-        assert hits
+        assert not [c for c in ledger.type_b if c.kind == "host_twin"]
+        assert [c for c in ledger.type_b if c.kind == "currency"]
 
     def test_starved_currency_is_type_c_with_high_oob(self):
         """theta far below the seam's band saturates the encode: capacity

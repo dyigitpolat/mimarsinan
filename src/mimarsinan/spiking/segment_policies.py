@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import torch
 
+from mimarsinan.mapping.mappers.compute_op_mapper import ComputeOpMapper
+from mimarsinan.spiking.compute_boundary import normalize_boundary_value
 from mimarsinan.spiking.lif_utils import unwrap_lif_activation
 from mimarsinan.spiking.segment_partition import perceptron_of
 from mimarsinan.spiking.segment_policy_ttfs import TtfsSegmentPolicy
@@ -16,6 +18,31 @@ def _safe_scale(scale, ref: torch.Tensor):
     if isinstance(scale, torch.Tensor):
         return scale.to(device=ref.device, dtype=ref.dtype).clamp(min=1e-12)
     return max(float(scale), 1e-12)
+
+
+def _absolute_value_nodes(driver) -> dict:
+    """node -> True when its stored value is ABSOLUTE (raw): unarmed host /
+    structural chains rooted at the input. Wire nodes (neural producers,
+    armed ComputeOps, and their passthroughs) re-encode by clamp alone;
+    mixed wire/absolute fan-in at a plain host op fails loud (calculus §11.2)."""
+    flags: dict = {}
+    for node in driver._exec:
+        deps = driver._deps.get(node, [])
+        if perceptron_of(node) is not None:
+            flags[node] = False
+        elif isinstance(node, ComputeOpMapper) and node.output_scale is not None:
+            flags[node] = False
+        elif not deps:
+            flags[node] = True
+        else:
+            dep_flags = {flags[dep] for dep in deps}
+            if len(dep_flags) > 1:
+                raise NotImplementedError(
+                    "mixed wire/absolute fan-in at a plain host op is not "
+                    f"supported ({type(node).__name__})"
+                )
+            flags[node] = dep_flags.pop()
+    return flags
 
 
 class LifSegmentPolicy:
@@ -35,6 +62,7 @@ class LifSegmentPolicy:
     wire_domain_host_values = True
 
     _boundary_scales: dict | None = None
+    _absolute_nodes: dict | None = None
 
     def __init__(self, retime: bool = False):
         self.retime = bool(retime)
@@ -54,10 +82,12 @@ class LifSegmentPolicy:
             driver.repr,
             input_data_scale=stamped_input_boundary_scale(driver.repr),
         )
+        self._absolute_nodes = _absolute_value_nodes(driver)
 
     def finalize(self, driver):
         self._set_all_cycle_accurate(driver, False)
         self._boundary_scales = None
+        self._absolute_nodes = None
 
     @staticmethod
     def _lif_of(perceptron):
@@ -92,18 +122,29 @@ class LifSegmentPolicy:
         def rate_of(dep):
             return node_rate[dep] if dep in seg_set else values[dep]
 
+        absolute_nodes = self._absolute_nodes
+        assert absolute_nodes is not None, "prepare() must run before run_segment()"
+
         def train_of(dep):
             """Per-cycle train for ``dep``; encode (uniform, clamped) if only a rate exists.
 
             A rate-only boundary re-encode is value-domain: ``uniform(rate) *
             producer out-scale`` — the deployed IR fold bakes the same scale into
             the consumer's weights (the W1c t0_03 host-op-boundary contract).
+            ABSOLUTE (raw, unarmed-chain) producers transcode through the SSOT
+            divide-first ``normalize_boundary_value``; wire producers are
+            already normalized and only clamp (calculus §11.2).
             """
             t = node_train.get(dep)
             if t is not None:
                 return t
-            t = uniform_spike_train(rate_of(dep).clamp(0.0, 1.0), T)
+            value = rate_of(dep)
             scale = boundary_scales.get(dep, 1.0)
+            if absolute_nodes.get(dep, False):
+                rate = normalize_boundary_value(value, scale)
+            else:
+                rate = value.clamp(0.0, 1.0)
+            t = uniform_spike_train(rate, T)
             if scale != 1.0:
                 t = t * scale
             node_train[dep] = t

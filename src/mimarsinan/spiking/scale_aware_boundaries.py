@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import torch
 
-from mimarsinan.mapping.mappers.scale_propagation import (
-    mean_source_scale,
-    walk_out_scales,
+from mimarsinan.mapping.mappers.scale_propagation import walk_out_scales
+from mimarsinan.spiking.segment_partition import (
+    partition_spike_segments,
+    perceptron_of,
 )
 
 
@@ -20,10 +21,11 @@ def _as_model_repr(model_repr_or_model):
 def read_boundary_out_scales(model_repr_or_model, input_data_scale: float) -> dict:
     """Pure (no-mutation) twin of :func:`propagate_boundary_input_scales`.
 
-    Per-node scalar out-scales: a perceptron-bearing node yields its
-    activation_scale (mean-collapsed), every other node passes through the mean
-    of its sources' scales — the same aggregation the deployed IR fold bakes
-    into consumer weights (per_input_scales).
+    A perceptron-bearing node yields its activation_scale (mean-collapsed);
+    every other node DELEGATES to its own ``propagate_boundary_scale`` — one
+    polymorphic implementation for both walks (armed buffer gauges, traffic
+    lifts, residual-merge rules), so the two tables cannot drift again
+    (calculus §11.2, the one-writer law).
     """
     model_repr = _as_model_repr(model_repr_or_model)
     default = float(input_data_scale)
@@ -35,7 +37,7 @@ def read_boundary_out_scales(model_repr_or_model, input_data_scale: float) -> di
             if isinstance(scale, torch.Tensor):
                 return float(scale.detach().to(torch.float64).mean())
             return float(scale)
-        return mean_source_scale(deps, out_scales, default)
+        return node.propagate_boundary_scale(deps, out_scales, default)
 
     return walk_out_scales(model_repr, visit)
 
@@ -65,6 +67,56 @@ def stamped_input_boundary_scale(model_repr_or_model) -> float:
     return float(
         getattr(_as_model_repr(model_repr_or_model), "input_boundary_scale", 1.0)
     )
+
+
+_COHERENCE_RTOL = 1e-3
+
+
+def verify_boundary_currency_coherence(
+    model_repr_or_model, *, input_data_scale: float | None = None,
+) -> None:
+    """Install-seam coherence certificate (calculus §11.2): every host-fed
+    segment entry's re-encode currency (the boundary table) must equal the
+    consumer's trained entry currency (``input_activation_scale``); fail loud
+    with the offending edges."""
+    model_repr = _as_model_repr(model_repr_or_model)
+    model_repr._ensure_exec_graph()
+    default = (
+        float(input_data_scale)
+        if input_data_scale is not None
+        else stamped_input_boundary_scale(model_repr)
+    )
+    table = read_boundary_out_scales(model_repr, input_data_scale=default)
+    exec_order, deps = model_repr._exec_order, model_repr._deps
+    seg_of, produces = partition_spike_segments(exec_order, deps)
+
+    mismatches = []
+    for node in exec_order:
+        p = perceptron_of(node)
+        if p is None or not produces.get(node, False):
+            continue
+        boundary_deps = [
+            d for d in deps.get(node, [])
+            if not (produces.get(d, False) and seg_of.get(d) == seg_of.get(node))
+        ]
+        if not boundary_deps:
+            continue
+        expected = sum(float(table.get(d, default)) for d in boundary_deps) / len(
+            boundary_deps
+        )
+        stamped = float(
+            torch.as_tensor(p.input_activation_scale).detach().to(torch.float64).mean()
+        )
+        if abs(stamped - expected) > _COHERENCE_RTOL * max(abs(expected), 1e-12):
+            mismatches.append(
+                f"{type(node).__name__}: entry currency {stamped:.6g} != "
+                f"boundary table {expected:.6g}"
+            )
+    if mismatches:
+        raise RuntimeError(
+            "boundary currency coherence violated (one-writer law, calculus "
+            "§11.2) at: " + "; ".join(mismatches)
+        )
 
 
 def calibrate_scale_aware_boundaries(model, activation_scales, input_data_scale: float):

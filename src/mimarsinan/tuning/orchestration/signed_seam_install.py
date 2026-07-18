@@ -63,6 +63,7 @@ def install_signed_seam_offsets(
     from mimarsinan.common.workload_profile import ResolvedWorkloadProfile
     from mimarsinan.spiking.scale_aware_boundaries import (
         propagate_boundary_input_scales,
+        verify_boundary_currency_coherence,
     )
     from mimarsinan.spiking.segment_forward import (
         AnalyticalSegmentPolicy,
@@ -149,6 +150,9 @@ def install_signed_seam_offsets(
                 f"bias carrier ({type(module).__name__}); extend the bake or "
                 "leave this op unlifted."
             )
+    # The install seam is the last currency writer: certify one-writer
+    # coherence LOUD before training adapts to the stamps (calculus §11.2).
+    verify_boundary_currency_coherence(model)
     return installed
 
 

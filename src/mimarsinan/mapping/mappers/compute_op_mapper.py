@@ -115,6 +115,13 @@ class ComputeOpMapper(Mapper):
         return uniform
 
     def propagate_boundary_scale(self, deps, out_scales, default):
+        # Currency coherence (calculus §11.2): an ARMED op's boundary
+        # out-scale IS its buffer gauge — the re-encode must invert the
+        # emitted wire exactly; unarmed ops keep the lifted pass-through.
+        if self.output_scale is not None:
+            return float(
+                torch.as_tensor(self.output_scale).detach().to(torch.float64).mean()
+            )
         return self._traffic_lift(mean_source_scale(deps, out_scales, float(default)))
 
     def flowchart_node_estimate(self, out_shape):
