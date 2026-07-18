@@ -416,3 +416,136 @@ re-encodes with the table. Auditor v1 caveat recorded: its chain-interior
 those B flags must be re-derived against the node gauges before a verdict;
 the entry/boundary certificates stand (out-of-band mass 0.03 → 0.61 growing
 with depth — the §10i eff_levels decay measured at the seam level, Type-C).
+
+## 11. Re-consolidation (2026-07-19): the lossless-deployment decomposition
+
+### 11.1 The gap ladder, named
+
+Measured on t2_04 (one cache, one harness): float/finetuned ≈ 0.86 →
+analytic trained-clamp 0.774 (census) / 0.809 (n=512) → staircase exact-QAT
+endpoint **0.5956 / 0.6046** → genuine full-transform **0.2910** (post-§10
+fix) → deployed (unmeasured). Three gaps of three different KINDS:
+
+- **G-A (0.2910 vs 0.6046) — twin exactness.** By the A2 square this must be
+  ≈ 0 (mixer slack ~4 pts) with ZERO training. Type-B/M territory only.
+- **G-B (0.6046 vs 0.774) — staircase capacity.** The trained-through cost of
+  the (σ, κ, θ, S) design at S=32. Type-C plus a Type-T (undertrained-QAT)
+  component. Minimized by design + training, floor predicted analytically.
+- **G-C (0.774 vs 0.86) — trained-model quality.** The AA/clamp adaptation
+  cost. The T-axis; OUT of deployment-exactness scope; tracked separately.
+
+**Definitive lossless deployment ≡ G-A driven to zero exactly (coherence ⇒
+A2), G-B driven to its analytically predicted floor and the floor itself
+driven small (§11.4), G-C reported honestly on its own axis.**
+
+### 11.2 The Currency Coherence Theorem (G-A's closure)
+
+Per re-encoded edge e, FOUR gauge readers exist in the code today:
+**κ_Q** (the trained entry quantizer's scale), **κ_W** (the weight-fold
+`per_input_scales`), **κ_T** (the walk re-encode table,
+`read_boundary_out_scales`), **κ_S** (the producer's buffer gauge: armed SNW
+`output_scale`, else neural θ).
+
+**Theorem (coherence).** The deployed seam composition is value-preserving
+in-band iff κ_Q = κ_W = κ_T = κ_S ( = κ*_e). Each pairwise violation is a
+distinct, computable Type-B:
+- κ_T ≠ κ_S — every twin-side re-encode multiplies values by κ_T/κ_S
+  (measured ≈ 0.70× on early blocks);
+- κ_S ≠ κ_Q — the deployed clamp band differs from the trained band
+  (one-sided amputation/saturation the QAT never saw);
+- κ_W ≠ κ_Q — chip-side charge mis-scale, INVISIBLE to the torch twin,
+  caught only at SCM parity (the dangerous silent one; measured live at
+  entries 1–3: 1.0 vs 2.64, 0.813 vs 1.523, 0.966 vs 1.137).
+
+**Corollary (the one-writer law).** Coherence is maintainable iff exactly ONE
+propagation writes every κ field (all others derive). §10f–g's σ-in-the-op
+install created node-level currencies (lifted quantile covers) with a
+PARTIAL writer set: the mapping-side re-propagation learned them; the
+NF-side pass-through table and some entry stamps did not — B2 one level up.
+The definitive fix is structural, not a patch: armed-node currencies join
+the single κ propagation; a **coherence certificate** (all four gauges per
+edge) becomes an install-time fail-loud, a permanent contract test, and an
+auditor row (replacing the v1 chain-interior `host_twin` normalization).
+
+**PR9**: with coherence restored, the faithful genuine read rises from
+0.2910 to within the mixer's A2 slack of the staircase endpoint
+(**≥ 0.55** vs 0.6046) with zero training. If it does not, the calculus is
+missing an edge — fail loud, extend §1 before touching more code.
+
+### 11.3 The contaminated-refutation audit (epistemics the taxonomy imposes)
+
+A Type-B/M defect in a measurement composition voids the conclusions
+measured through it. Re-opened by §10:
+
+- **§10j ("no static currency recovers; adaptation is real") — UNPROVEN
+  again.** Its sweeps ran through the κ_T/κ_S-split walk, and sweeping the
+  perceptron θ moved κ_T and the LIF scale TOGETHER while κ_S (host chains)
+  and κ_Q stayed — a confounded experiment. **PR10**: the post-coherence
+  sweep landscape differs from §10j's (the 0.30 plateau moves). The
+  "adaptation is the only path" conclusion is suspended until PR10 runs.
+- **§10i (θ "mis-referenced to the stream" ⇒ the 0.011)** — the ratio
+  MEASUREMENTS stand as facts; the causal reading is superseded (§10 fixed
+  the 0.011 without touching any scale). `eff_levels` remains the Type-C
+  instrument.
+
+**Law (added to the rules of evidence):** every refutation records its
+measurement composition; when a later Type-B/M fix touches that composition,
+the refutation automatically re-enters the open set. Negative results are
+only as durable as the functor they were read through.
+
+### 11.4 The staircase-capacity program (G-B's closure)
+
+Decomposition of 0.6046 vs 0.774 under the calculus, each term with its
+lever and its instrument:
+
+- **(a) Stale covers.** σ/κ are calibrated ONCE at install and frozen; the
+  QAT then moves the activation distributions; the drift is measured as
+  per-seam out-of-band mass (0.03 → 0.61 with depth on this cache). Closure:
+  the **cover-tracking iteration** — alternate [recalibrate (σ, κ) from the
+  CURRENT distributions → the I1 install updates by construction → short
+  recovery]. Each recalibration is pre-training with respect to the next
+  phase, so the σ-scope law is respected: what is banned is a post-training
+  σ the training never trains through; an iterated install trains through
+  every new cover. Monitor: max-seam oob, monotone decreasing to ε.
+  **PR11**: one iteration + endpoint recovery lifts the staircase endpoint
+  ≥ +3 pp (band 0.60 → 0.63–0.70).
+- **(b) Level starvation.** `eff_levels ≥ L_min` becomes an explicit
+  per-hop constraint; per-channel θ (the existing `per_channel_theta` seams,
+  armed for lif + synchronized) reallocates grid within a hop — the sync
+  memo §4 starvation theory applied to LIF. **PR12**: per-channel θ raises
+  min-channel eff_levels and cuts deep-seam oob — checkable ANALYTICALLY by
+  the auditor before any genuine run is spent.
+- **(c) QAT depth.** The σ-armed AQ ladder entered at 0.5956 and finished at
+  0.6046 (fast_lr_scale 0.25, budget 0.5): G-B is partly Type-T
+  (undertrained). The V0 economics (SE-sized evals) buys the budget back.
+- **(d) The irreducible floor, predicted — never assumed.** The PR8
+  composition validator (per-hop first-moment fold over the ledger, sync
+  memo §3) yields an ANALYTIC estimate of the staircase cost at the current
+  (σ, κ, θ, S). "Definitive lossless" at fixed S means: measured G-B ≡
+  predicted floor within 2·SE, AND the floor itself made small by (a)+(b).
+  If the predicted floor at S=32 remains large after both, the theory
+  prescribes resolution (S, per-channel θ) — a design decision with a
+  price, no longer a mystery.
+
+### 11.5 The enumerability law (the §10 lesson, made structural)
+
+Two invisibility mechanisms enabled the §10 defect: behavior-bearing state
+OUTSIDE the module tree (`TransformedActivation.decorators` is a plain list —
+repr-invisible) and dual-representation state (buffer vs float, silently
+diverging). **Law L6**: every forward-influencing state must be enumerable
+through one introspection surface. Enforcement now: the auditor grows a
+per-perceptron **forward-influencer census** row (decorator stack types +
+carrier alphas, blend rates, quantizer scale refs) so this class is caught
+by inspection, not only by behavior; a repr/ratchet follows if it recurs.
+
+### 11.6 The prediction registry after re-consolidation
+
+Open: **PR4** (score-seam certificate) · **PR6** (sync P3/P6 inertness on
+t2_05) · **PR7** (tiny-ViT replication keystone — now including the §10
+decorator class and the coherence certificate at MNIST scale) · **PR8**
+(composition validator match) · **PR9** (coherence ⇒ ≥0.55 no-training) ·
+**PR10** (§10j re-run moves) · **PR11** (cover iteration ≥ +3 pp) · **PR12**
+(per-channel-θ analytic gains). Resolved: PR1 (rebuild axis, fixed §10.3);
+PR2 refuted for retime; PR3/PR5 superseded in part by §11.3 (re-derive
+post-coherence). The program of record sequences these as C → D → R → F2 →
+V (`~/.claude/plans/spiking_deployment_calculus_program.md`).
