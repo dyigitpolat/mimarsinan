@@ -759,3 +759,82 @@ the census; with it, the anchored ladder retains its analytic gain AND a
 genuine read ≥ the baseline's. Scoreboard: origin 0.8678 → analytic 0.8140
 → genuine 0.7151; the program's next block is PR17 → PR18 (gate design,
 theory-first) + PR14b (AA budget scaling) + the entry-1 arming hole.
+
+## 14. The trajectory-dependent twin residual: the model, three refutations, and the surviving mechanism class (2026-07-19)
+
+### 14.1 The model
+
+Write the genuine composition as g = s + η through the network Jacobian:
+s the value/staircase composition, η the per-hop deploy-side terms. The
+accuracy cost of η factors as (how often and how large η fires) × (whether
+J·η crosses decision margins). Candidate mechanisms, each with a
+discriminating instrument: (M1) **tie-mass/STE-parking** — staircase-STE
+updates halt at boundary crossings, parking pre-activations where the
+deployed comparator coin-flips; (M2) **margin sharpening** — anchored KD
+sharpens margins so unchanged grid noise costs more; (M3) **same-sign
+per-hop bias** — a deterministic sub-grid drift that the residual stream
+INTEGRATES across blocks (the §3 linear-composition branch); (M4) a
+within-hop transcode convention split (Type-B proper).
+
+### 14.2 The instrument verdicts (`twin_residual_decomposition.py`, both AQ models, identical batches, n=256)
+
+| read | baseline | anchored |
+|---|---|---|
+| value forward | 0.8164 | 0.8594 |
+| genuine (retimed cascade) | 0.8086 | 0.7383 |
+| value + full grid-noise injection (±θ/2T at every activation) | 0.8086 | **0.8633** |
+| per-hop d_abs/θ (genuine vs value) | ≤ 0.011 | ≤ 0.021 |
+| per-hop d_mean/θ | mixed-sign, ~±0.003 | **same-sign +0.003 … +0.021 at EVERY hop** |
+
+- **M2 REFUTED**: the anchored model is completely robust to iid grid noise
+  of the full deployed amplitude — margins are not the carrier.
+- **M1 instrument VOID** (honest): the tie-distance column mis-handled the
+  dominant negative mass (`frac` of negatives); tie-mass remains unmeasured
+  and is now subsumed by the sharper finding below.
+- **The surviving signature is M3/M4**: per-hop deltas are sub-grid (below
+  one θ/32 step) yet END-TO-END the anchored genuine loses ~12 pp — and the
+  per-hop means are same-sign positive on the anchored model while mixed on
+  the baseline. A deterministic same-sign sub-grid drift, integrated by the
+  residual stream over 12 blocks, is exactly the calculus §3 deterministic-
+  bias branch: invisible to iid-noise robustness, tiny per hop, linearly
+  compounding. The anchored trajectory did not create NEW physics — it
+  aligned the signs of an existing sub-grid term.
+
+### 14.3 The post-hoc lever REFUTED (PR19')
+
+The house first-moment machinery (`match_lif_activation_distributions`,
+DFQ per-neuron mean matching to the ORIGIN teacher, keep-best over the
+genuine probe) does NOT recover it: probe_best ≡ probe_entry (best_iter 0,
+patience-stopped), mean-gap 0.0668 unchanged, genuine 0.7246 → 0.7246
+(n=512). Per-neuron output-mean shifts are the wrong coordinate system for
+the damage. Consequence: **prevention-during-training outranks post-hoc
+correction** — the PR18 gate is promoted from guardrail to primary lever.
+
+### 14.4 The surviving discriminators and the next-block laws
+
+- **PR20 (token structure)**: the classifier reads ONLY the CLS token;
+  element-pooled statistics dilute precisely the damage that matters.
+  Instrument: the per-hop delta ledger resolved per token (CLS vs patch
+  mean) — prediction: the anchored drift concentrates on / is amplified at
+  the CLS path.
+- **PR21 (within-hop convention bisect)**: replay ONE hop on captured real
+  inputs through each transcode stage separately (entry round → LIF count
+  vs trained staircase → retime round) — localizes the same-sign term to a
+  single stage; a nonzero systematic stage bias is Type-B and gets an exact
+  convention fix at the kernel SSOT (`WireSemantics` / the staircase
+  decorator pairing).
+- **PR18 (the genuine-gauged gate — primary)**: under the exact-QAT arm the
+  AQ tuner's full-transform gauge becomes the DEPLOYED (chip-aligned
+  genuine) read on the clone — the measurement functor applied to the gate
+  itself, via the existing `_finalize_forward_for` hook, at SE-sized n
+  (~40 s per rung, affordable since the chain runs in one window).
+  Prediction: re-run E4 with the genuine-gauged gate → analytic gains
+  retained AND genuine ≥ the baseline's 0.7397 (the gate refuses
+  sign-aligning trajectories).
+- **The auditor grows the signed-ledger certificate**: per-hop d_mean/θ
+  with a Type-B threshold from the §3 law (|mean| · depth vs margin scale)
+  — the trajectory-dependence class becomes inspectable forever.
+
+Sequencing: PR20+PR21 (instruments, minutes) → convention fix if PR21 says
+Type-B → PR18 gate (one seam) → E4' re-run (one window) → PR14b (AA budget)
+→ entry-1 arming → E5/PR15 → D/R/F2/V unchanged.
