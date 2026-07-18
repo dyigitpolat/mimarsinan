@@ -119,7 +119,9 @@ def install_signed_seam_offsets(
         s_out = float(
             torch.as_tensor(node.output_scale).float().mean()
         ) if node.output_scale is not None else 1.0
-        for consumer in boundary_consumers(node, consumers):
+        frontier = list(boundary_consumers(node, consumers))
+        while frontier:
+            consumer = frontier.pop()
             if not _is_host_node(consumer):
                 perceptron = _perceptron_of(consumer)
                 if perceptron is not None:
@@ -132,9 +134,38 @@ def install_signed_seam_offsets(
                 with torch.no_grad():
                     module.bias.sub_(sigma_v * module.weight.sum(dim=1))
                 continue
+            if isinstance(module, nn.LayerNorm):
+                # Shift-INVARIANT (mean-subtracting): a scalar sigma vanishes
+                # here — the walk ends with nothing to bake.
+                continue
+            if _scalar_shift_equivariant(module):
+                # f(v + c) = f(v) + c: sigma passes through unchanged.
+                frontier.extend(boundary_consumers(consumer, consumers))
+                continue
             raise NotImplementedError(
                 "sigma-in-the-op: a lifted seam feeds a host consumer with no "
                 f"bias carrier ({type(module).__name__}); extend the bake or "
                 "leave this op unlifted."
             )
     return installed
+
+
+_SHIFT_EQUIVARIANT_ADAPTER_FNS = frozenset({
+    "mean", "amax", "amin", "flatten", "reshape", "permute", "transpose", "cat",
+})
+
+
+def _scalar_shift_equivariant(module) -> bool:
+    """Whether ``f(v + c) = f(v) + c`` for a scalar c: pools/relays and the
+    mean/select adapter family qualify; ``sum`` does NOT (it scales c by N)."""
+    from mimarsinan.mapping.support.compute_modules import ComputeAdapter
+
+    if isinstance(module, ComputeAdapter):
+        return getattr(module.fn, "__name__", "") in _SHIFT_EQUIVARIANT_ADAPTER_FNS
+    return isinstance(module, (
+        nn.MaxPool1d, nn.MaxPool2d, nn.MaxPool3d,
+        nn.AvgPool1d, nn.AvgPool2d, nn.AvgPool3d,
+        nn.AdaptiveAvgPool1d, nn.AdaptiveAvgPool2d, nn.AdaptiveAvgPool3d,
+        nn.AdaptiveMaxPool1d, nn.AdaptiveMaxPool2d, nn.AdaptiveMaxPool3d,
+        nn.Identity, nn.Flatten,
+    ))
