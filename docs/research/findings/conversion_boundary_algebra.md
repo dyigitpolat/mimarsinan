@@ -445,3 +445,40 @@ Three implementation laws proven on the way (each fail-loud first):
    a partial-slice shift is not bias-compensable downstream.
 3. **The bake law as a test.** ``f_baked(v + sigma) == f(v)`` locked for every
    carrier (TestHostBiasCarrierBake); non-carriers refuse loudly.
+
+### 10h. ViT e2e (Q4): downstream fixes + the honest infra wall (2026-07-18)
+
+Past the AQ σ-in-the-op recovery (§10g, 0.596), the σ-armed ViT ladder
+surfaced two latent gaps and one hard infra wall. The gaps (both fixed
+tests-first, gate 8250 green):
+
+1. **`ScaleNormalizingWrapper` was not transparent to the wrapped module's
+   calling convention.** An armed MultiheadAttention op crashed the wire twin
+   (`need_weights` kwarg dropped; the `(attn, weights)` tuple return applied
+   to scale/offset unselected). SNW now carries `module_kwargs` + a scalar
+   `output_index`, selects the tuple element BEFORE offset/scale, and
+   `forward_scale_normalized` delegates the selection to the wrapper (no
+   double-index). The value twin already did both; the twins are now aligned.
+2. **MHA joined `_bake_shift_into_host_bias`** as a σ bias carrier (§10g).
+
+**The wall is VRAM/wall-time scaling of the offloaded whole-backbone LIF
+genuine forward at S=32 — NOT the algebra.** Ledger:
+
+| symptom | cause | lever |
+|---|---|---|
+| OOM, GPU 0 at 1.1 GiB free | other tenants saturating the shared GPU | pin to a free GPU |
+| OOM 16.30 GiB, process holds 93 GiB | segment_forward `values` dict = every layer's [S=32, batch, seq, hidden] at eval-batch 512 | `deployment_parameters.batch_size` (nested block; the EVAL batch, NOT `tuning_batch_size`) → 64 clears it (0 OOMs) |
+| every attempt dies at ~917s, no traceback, no LIF cache | the box's ~952s session reaper kills the process mid-step; each attempt restarts LIF from the AQ cache | run under a USER-started tmux (immune) — `scratchpad/t2_04_tmux_run.sh` |
+
+The bottleneck within a window is the **genuine spike EVAL** (eval_n_batches=39
+× S=32 over the whole backbone), not training — reducing `tuning_budget_scale`
+did not help. Every downstream step (TTFS/Noise/WQ/mapping/SANA-FE) has the
+same slow genuine eval, so the ladder cannot chain under the reaper; the
+immune-tmux run is the path to the true e2e number.
+
+**Not a collapse:** the LIF entry `best_full_acc=0.011` (vs `post_acc≈0.774`
+analytic) is the genuine spike forward at scale=1.0, which reads chance BY
+DESIGN — LIF adaptation is what recovers it (fully lossless on MNIST). Whether
+it recovers for the offloaded ViT at S=32 is UNMEASURED: the adaptation
+training never completed a full rung under the reaper. That measurement is the
+one open Q4 item, gated on the tmux run.
