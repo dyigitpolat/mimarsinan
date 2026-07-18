@@ -338,3 +338,81 @@ to the exact edge with the exact class, and a clean fixture on which it must
 report no Type-B. Its composed-loss output is the PR8 check. It is the L2
 ladder's first rung made executable: no tier-1 run may be used to discover
 what a ledger row could have said.
+
+## 10. F1 executed (2026-07-19): PR1 RESOLVED — the finalize-rebuild decorator defect, fixed and locked
+
+Instruments: the R-matrix harness (`scripts/_probes/lif_finalize_twin_bisect.py`
+— builds the real `PipelineSession` on the cached σ-armed t2_04 AQ run and
+reads every arm through the tuner's own `_mbh_full_transform_forward`, so
+probe ≡ deploy by construction) at n=512 (SE 0.022); the seam auditor +
+gauge-introspection probes on the same cache.
+
+### 10.1 The measured matrix
+
+| arm | retime | cycle-trains | manager-rebuild | read |
+|---|---|---|---|---|
+| R0 blended entry (no transform) | — | — | — | 0.8086 |
+| R1 pipeline-faithful | T | T | T | **0.0156** |
+| R2 | F | T | T | 0.0156 |
+| R3 | T | F | T | 0.0156 |
+| R4 | T | T | F (fresh LIF @ own θ) | **0.2910** |
+| R5 probe replica | F | F | F | 0.2910 |
+
+PR1 confirmed in full (repro 0.0156 ∈ 0.011±0.02; one single-axis toggle
+recovers ≥0.30). **PR2's retime hypothesis is REFUTED**: retime and
+cycle-trains are both bit-inert on this read (R1=R2=R3; R4=R5). The killer
+axis is the **manager rebuild** alone.
+
+### 10.2 The mechanism (Type-M in the taxonomy — the READ ran the wrong function)
+
+`AdaptationManager.update_activation` subsumes clamp/quant/shift under
+`lif_active`/`ttfs_active`, but the **activation-replacement decorator**
+(`activation_adaptation_rate` → `RateAdjustedDecorator(
+ActivationReplacementDecorator(LeakyGradReLU()))`) carried **no subsumption
+gate**. On torch-converted vehicles the Activation Adaptation step binds a
+buffer-backed rate carrier that persists in the cached manager at **alpha 1.0
+even when the float field reads 0.0** (`_rate_is_active`: "a bound buffer
+counts as active even at alpha 0.0"). Every finalize rebuild therefore
+re-attached the decorator, which at alpha 1.0 substitutes
+`LeakyGradReLU(input)` for the installed LIF forward — the deployed twin ran
+ReLU per cycle instead of spikes at all 12 layers. Two aggravators made it
+invisible: `TransformedActivation.decorators` is a plain Python list (absent
+from the module repr — the rebuilt tree LOOKED clean), and native tier-0
+vehicles never bind the AA buffer (float 0.0 → decorator absent), which is
+exactly why tier-0 lif/sync cells stayed strict-exact while every
+torch-converted conversion (ViT, and predictably squeezenet/resnet/deepcnn32
+at tiers 1–2) collapsed at the same seam.
+
+### 10.3 The fix (one gate at the SSOT, tests-first)
+
+`adaptation_manager.py::update_activation`: the replacement decorator is now
+gated on `not runtime_subsumed` — it vanishes exactly when the conversion
+family owns the node, and is untouched before that (the AA phase itself is
+byte-identical; `runtime_subsumed`, not `subsumes_decorators`, so lif-mode AA
+still trains through it). Locks:
+`tests/unit/tuning/test_adaptation_manager_rebuild.py` (lif_active and
+ttfs_active rebuilds transparent over the blend; pre-install AA behavior
+preserved — the buffer-persisted-alpha state replicated exactly). **Measured
+verification: post-fix faithful R1 = 0.2910, bit-identical to R4/R5.** Gate
+8268 green, typecheck 0.
+
+### 10.4 The named next lever: the 0.29 → 0.60 residual is a currency-system split
+
+Gauge introspection on the same cache measured **three coexisting currency
+systems** at the seams: (a) the trained entry quantizers
+(`input_activation_scale ≡ ChipInputQuantizer.activation_scale`,
+self-consistent); (b) the weight-fold `per_input_scales` — **diverging from
+(a) at entries 1–3** (1.0 vs 2.64, 0.813 vs 1.523, 0.966 vs 1.137), agreeing
+deep; (c) the NF walk's re-encode table (`read_boundary_out_scales`
+θ-pass-through), a third value at most entries (e.g. 1.037 vs 1.48 at entry
+4) — while the armed SNW chain gauges (the σ-install's lifted quantile-κ,
+`output_scale ≈ boundary_traffic_scale`) form their own self-consistent
+system that the pass-through table never learned. This is a B2-class
+candidate one level up: the σ-in-the-op re-propagation updated the
+mapping-side gauges but `read_boundary_out_scales` has no term for
+ComputeOp-level lifted currencies, and `LifSegmentPolicy.train_of`
+re-encodes with the table. Auditor v1 caveat recorded: its chain-interior
+`host_twin` certificates normalized wire inputs by the pass-through table, so
+those B flags must be re-derived against the node gauges before a verdict;
+the entry/boundary certificates stand (out-of-band mass 0.03 → 0.61 growing
+with depth — the §10i eff_levels decay measured at the seam level, Type-C).

@@ -186,7 +186,12 @@ class AdaptationManager(nn.Module):
             is_lif(spiking_mode) and not lif_exact_qat_active(pipeline_config)
         )
         decorators = []
-        if self._rate_is_active("activation_adaptation_rate", self.activation_adaptation_rate > 0):
+        # Once the conversion family owns the node (lif_active/ttfs_active),
+        # the chip-ReLU replacement must vanish with the other decorators: its
+        # buffer-backed carrier persists at alpha 1.0 in cached managers, and
+        # un-gated it substitutes LeakyGradReLU for the installed spiking
+        # forward (measured: t2_04 full-transform 0.60-expected -> 0.0156).
+        if not runtime_subsumed and self._rate_is_active("activation_adaptation_rate", self.activation_adaptation_rate > 0):
             decorators.append(
                 self.get_rate_adjusted_activation_replacement_decorator(perceptron))
         if not subsumes_decorators and self._rate_is_active("clamp_rate", self.clamp_rate != 0.0):
