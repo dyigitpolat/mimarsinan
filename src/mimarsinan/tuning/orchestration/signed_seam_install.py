@@ -134,9 +134,7 @@ def install_signed_seam_offsets(
                     )
                 continue
             module = getattr(consumer, "module", None)
-            if isinstance(module, nn.Linear) and module.bias is not None:
-                with torch.no_grad():
-                    module.bias.sub_(sigma_v * module.weight.sum(dim=1))
+            if _bake_shift_into_host_bias(module, sigma_v):
                 continue
             if isinstance(module, nn.LayerNorm):
                 # Shift-INVARIANT (mean-subtracting): a scalar sigma vanishes
@@ -152,6 +150,28 @@ def install_signed_seam_offsets(
                 "leave this op unlifted."
             )
     return installed
+
+
+def _bake_shift_into_host_bias(module, sigma_v: float) -> bool:
+    """Subtract the shift response sigma.W.sum(dim=1) from the module's bias so
+    f_baked(v + sigma) == f(v); True iff the module is a bias carrier."""
+    if isinstance(module, nn.Linear) and module.bias is not None:
+        with torch.no_grad():
+            module.bias.sub_(sigma_v * module.weight.sum(dim=1))
+        return True
+    if (
+        isinstance(module, nn.MultiheadAttention)
+        and module.in_proj_weight is not None
+        and module.in_proj_bias is not None
+    ):
+        # Self-attention: q=k=v arrive from the same lifted seam (the graph
+        # dedupes the edges), so ONE packed-in_proj bake covers all three.
+        with torch.no_grad():
+            module.in_proj_bias.sub_(
+                sigma_v * module.in_proj_weight.sum(dim=1)
+            )
+        return True
+    return False
 
 
 _SHIFT_EQUIVARIANT_ADAPTER_FNS = frozenset({

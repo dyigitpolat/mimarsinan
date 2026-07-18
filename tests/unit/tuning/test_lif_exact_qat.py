@@ -827,6 +827,48 @@ class TestEnsureOffloadNegativeBoundary:
         assert calls == []
 
 
+class TestHostBiasCarrierBake:
+    """[memo sec.10f] the consumer bake on host bias carriers restores the
+    trained function exactly: f_baked(v + sigma) == f(v)."""
+
+    def test_linear_bake_law(self):
+        from mimarsinan.tuning.orchestration.signed_seam_install import (
+            _bake_shift_into_host_bias,
+        )
+        torch.manual_seed(0)
+        lin = nn.Linear(8, 5)
+        x = torch.randn(4, 8)
+        want = lin(x)
+        assert _bake_shift_into_host_bias(lin, 0.37)
+        got = lin(x + 0.37)
+        assert torch.allclose(got, want, atol=1e-5)
+
+    def test_multihead_attention_bake_law(self):
+        from mimarsinan.tuning.orchestration.signed_seam_install import (
+            _bake_shift_into_host_bias,
+        )
+        torch.manual_seed(0)
+        mha = nn.MultiheadAttention(8, 2, batch_first=True)
+        x = torch.randn(2, 6, 8)
+        want, _ = mha(x, x, x, need_weights=False)
+        assert _bake_shift_into_host_bias(mha, 0.37)
+        got, _ = mha(x + 0.37, x + 0.37, x + 0.37, need_weights=False)
+        assert torch.allclose(got, want, atol=1e-5)
+
+    def test_unpacked_attention_is_not_a_carrier(self):
+        from mimarsinan.tuning.orchestration.signed_seam_install import (
+            _bake_shift_into_host_bias,
+        )
+        mha = nn.MultiheadAttention(8, 2, kdim=4, vdim=4)
+        assert not _bake_shift_into_host_bias(mha, 0.1)
+
+    def test_biasless_linear_is_not_a_carrier(self):
+        from mimarsinan.tuning.orchestration.signed_seam_install import (
+            _bake_shift_into_host_bias,
+        )
+        assert not _bake_shift_into_host_bias(nn.Linear(4, 4, bias=False), 0.1)
+
+
 class TestSignedSeamQuantiles:
     """[memo sec.10f] kappa is a QUANTILE, never the max — the full-width
     cover was refuted (kappa=range-max destroys grid resolution)."""
