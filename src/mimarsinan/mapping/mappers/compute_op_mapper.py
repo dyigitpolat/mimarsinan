@@ -147,13 +147,15 @@ class ComputeOpMapper(Mapper):
             )
         return out
 
-    def _forward_with_module(self, module: nn.Module, x):
+    def _prepare_inputs(self, x) -> tuple:
         if len(self._sources_list) == 1:
-            inputs: tuple = (x,)
-        else:
-            inputs = tuple(x) if isinstance(x, (tuple, list)) else (x,)
-            self._check_broadcastable(inputs)
-        out = module(*inputs, **self.module_kwargs)
+            return (x,)
+        inputs = tuple(x) if isinstance(x, (tuple, list)) else (x,)
+        self._check_broadcastable(inputs)
+        return inputs
+
+    def _forward_with_module(self, module: nn.Module, x):
+        out = module(*self._prepare_inputs(x), **self.module_kwargs)
         if self.output_index is not None:
             out = out[self.output_index]
         return out
@@ -162,7 +164,12 @@ class ComputeOpMapper(Mapper):
         """Wire-domain twin of the emitted ComputeOp: run the same
         ScaleNormalizingWrapper composition IR emission installs when the
         per-source scales are armed; identical to ``forward`` otherwise."""
-        return self._forward_with_module(self._maybe_wrap_for_scales(), x)
+        module = self._maybe_wrap_for_scales()
+        if isinstance(module, ScaleNormalizingWrapper):
+            # The wrapper now owns module_kwargs + output_index (it must select
+            # the tuple element before scaling); do NOT re-select here.
+            return module(*self._prepare_inputs(x))
+        return self._forward_with_module(module, x)
 
     def _check_broadcastable(self, inputs: tuple) -> None:
         tensor_shapes = [
@@ -198,6 +205,8 @@ class ComputeOpMapper(Mapper):
         return ScaleNormalizingWrapper(
             self.module, self.per_source_scales, self.output_scale,
             output_offset=self.output_value_offset,
+            module_kwargs=self.module_kwargs or None,
+            output_index=self.output_index,
         )
 
     def _emit_unary(self, ir_mapping, src_arr, module):

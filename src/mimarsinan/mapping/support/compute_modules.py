@@ -98,9 +98,16 @@ class ScaleNormalizingWrapper(nn.Module):
         input_scales: Sequence[torch.Tensor],
         output_scale: torch.Tensor,
         output_offset: torch.Tensor | None = None,
+        module_kwargs: dict | None = None,
+        output_index: int | None = None,
     ) -> None:
         super().__init__()
         self.module = module
+        # Transparent to the wrapped module's calling convention: keyword args
+        # (MultiheadAttention's need_weights) and a tuple return selected by
+        # output_index — the value twin applies both, so the wire twin must too.
+        self.module_kwargs = dict(module_kwargs) if module_kwargs else {}
+        self.output_index = output_index
         self._num_inputs = len(input_scales)
         for i, scale in enumerate(input_scales):
             self.register_buffer(
@@ -133,7 +140,9 @@ class ScaleNormalizingWrapper(nn.Module):
                 scale.to(dtype=x.dtype, device=x.device), x.shape[-1]
             )
             absolute_inputs.append(x * broadcast)
-        absolute_out = self.module(*absolute_inputs)
+        absolute_out = self.module(*absolute_inputs, **self.module_kwargs)
+        if self.output_index is not None:
+            absolute_out = absolute_out[self.output_index]
         if self.output_offset is not None:
             absolute_out = absolute_out + self.output_offset.to(
                 dtype=absolute_out.dtype, device=absolute_out.device,

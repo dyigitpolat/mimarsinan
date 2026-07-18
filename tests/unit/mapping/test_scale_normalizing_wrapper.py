@@ -69,6 +69,48 @@ class TestPicklable:
         assert torch.allclose(wrapper(a, b), loaded(a, b))
 
 
+class TestModuleCallingConvention:
+    """The wrapper is transparent to the wrapped module: it forwards
+    ``module_kwargs`` and selects a tuple return via ``output_index`` BEFORE
+    scaling/offset (MultiheadAttention needs both)."""
+
+    def test_forwards_module_kwargs(self):
+        class NeedsFlag(torch.nn.Module):
+            def forward(self, x, flag=False):
+                if not flag:
+                    raise AssertionError("module_kwargs not forwarded")
+                return x
+
+        wrapper = ScaleNormalizingWrapper(
+            NeedsFlag(), [torch.tensor([2.0])], torch.tensor([1.0]),
+            module_kwargs={"flag": True},
+        )
+        assert torch.allclose(wrapper(torch.tensor([[1.0]])), torch.tensor([[2.0]]))
+
+    def test_selects_tuple_output_before_scaling(self):
+        class TupleOut(torch.nn.Module):
+            def forward(self, x):
+                return (x, None)
+
+        wrapper = ScaleNormalizingWrapper(
+            TupleOut(), [torch.tensor([2.0])], torch.tensor([4.0]),
+            output_index=0,
+        )
+        # (1 * 2) / 4 on the selected element; None never reaches the arithmetic.
+        assert torch.allclose(wrapper(torch.tensor([[1.0]])), torch.tensor([[0.5]]))
+
+    def test_offset_applied_after_index_selection(self):
+        class TupleOut(torch.nn.Module):
+            def forward(self, x):
+                return (x, None)
+
+        wrapper = ScaleNormalizingWrapper(
+            TupleOut(), [torch.tensor([1.0])], torch.tensor([1.0]),
+            output_offset=torch.tensor(0.5), output_index=0,
+        )
+        assert torch.allclose(wrapper(torch.tensor([[2.0]])), torch.tensor([[2.5]]))
+
+
 class TestThreeInputModule:
     """The wrapper is op-agnostic — extends naturally past binary ops."""
 

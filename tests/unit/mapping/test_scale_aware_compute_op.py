@@ -222,6 +222,38 @@ class TestForwardScaleNormalized:
             mapper.forward_scale_normalized((a, b)), wrapper(a, b), atol=1e-6,
         )
 
+    def test_wire_twin_matches_value_twin_for_kwargs_tuple_op(self):
+        """A MultiheadAttention-shaped op (module_kwargs + tuple return via
+        output_index) must run identically through the wire twin and the value
+        twin — the ViT self-attention seam the LIF step evaluates."""
+        class AttnLike(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.lin = nn.Linear(2, 2)
+
+            def forward(self, x, need_weights=True):
+                return self.lin(x), (None if not need_weights else x)
+
+        source = InputMapper((2,))
+        mapper = ComputeOpMapper(
+            source, AttnLike(),
+            module_kwargs={"need_weights": False}, output_index=0,
+        )
+        theta = torch.tensor([2.0, 4.0])
+        mapper.per_source_scales = [theta]
+        mapper.output_scale = theta
+
+        wire = torch.tensor([[0.5, 0.25]])
+        reference = ScaleNormalizingWrapper(
+            mapper.module, [theta], theta,
+            module_kwargs={"need_weights": False}, output_index=0,
+        )
+        # The mapper must plumb kwargs+index into the wrapper AND not re-select
+        # the tuple in forward_scale_normalized (double-index would crash/skew).
+        assert torch.allclose(
+            mapper.forward_scale_normalized(wire), reference(wire), atol=1e-6,
+        )
+
     def test_armed_unary_mapper_decodes_and_renormalizes(self):
         source = InputMapper((1,))
         mapper = ComputeOpMapper(source, nn.Linear(2, 3))
