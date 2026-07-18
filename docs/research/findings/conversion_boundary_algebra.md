@@ -482,3 +482,39 @@ DESIGN — LIF adaptation is what recovers it (fully lossless on MNIST). Whether
 it recovers for the offloaded ViT at S=32 is UNMEASURED: the adaptation
 training never completed a full rung under the reaper. That measurement is the
 one open Q4 item, gated on the tmux run.
+
+### 10i. Phase-D diagnosis: the LIF collapse is an output-currency mismatch (2026-07-18)
+
+The offloaded-ViT genuine LIF entry reads 0.011 (chance). A read-only,
+analytic-only capacity audit (`scripts/_probes/lif_seam_capacity_audit.py`,
+one CIFAR-100 batch on the AQ cache) localizes and explains it — no long run.
+
+LIF semantics (`lif._spikes_and_scale`): `out = rate·scale`, `rate =
+IFNode(x/scale)` over S steps at threshold 1. So `activation_scale` is the max
+encodable value, the grid step is `scale/S`, and the per-neuron signal occupies
+
+    eff_levels = S · R_out / activation_scale   (R_out = 99th-pct |LIF output|)
+
+spike-levels of resolution (its signal-to-one-spike-quantization-noise ratio).
+
+Measured, by MLP depth (the 12 on-chip spiking layers):
+
+    eff_levels:  26 18 13 13  8  8  8  5  1  (silent ×3)
+
+A clean monotonic decay to 1 spike-level at layer 8; the last three MLP
+branches are silent (R_out≈0 — spiking them to 0 is exact, harmless). Root
+cause, confirmed by a second probe: `activation_scale / in_R ≈ 0.7` at EVERY
+depth — the scale tracks the **residual-stream input** magnitude (`in_R`,
+0.78→3.9, accumulating with depth as ViT streams do), but the LIF encodes the
+**branch output** (`R_out`≈0.3, flat). The currency references the wrong tensor,
+so the stream/branch ratio — hence the quantization noise — grows with depth
+and buries the deep-layer signal (the death cascade).
+
+**This is the §10f/g quantile-currency law one seam deeper.** At AQ we fixed the
+ENTRY currency κ (0.06→0.596); here the OUTPUT currency `activation_scale` is
+mis-referenced to the stream. The predicted fix is the exact analog: pre-
+calibrate `activation_scale` to a QUANTILE of the LIF's own output (the branch
+signal it encodes), not the stream — before LIF adaptation. If that lifts the
+genuine entry the way σ-in-the-op lifted AQ, the e2e closes WITHOUT a long
+adaptation run. Verdict: CURABLE, with a specific cheap lever; the long run is
+the fallback, not the plan.
