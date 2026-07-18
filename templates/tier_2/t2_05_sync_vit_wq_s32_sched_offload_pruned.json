@@ -53,6 +53,7 @@
     "scale_migration": true,
     "tuning_batch_size": 32,
     "fast_lr_scale": 0.25,
+    "lif_aq_negative_boundary": true,
     "preprocessing": {
       "interpolation": "bicubic",
       "resize_to": 224,

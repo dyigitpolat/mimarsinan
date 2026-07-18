@@ -255,7 +255,12 @@ T1_VEHICLES = {
             # Retry-economics lever: measured accepted LRs sat ~4x below the
             # pipeline lr (each rung wasted 1-2 wrecked attempts at 3e-3
             # before the Armijo backoff found ~7e-4).
-            "fast_lr_scale": 0.25},
+            "fast_lr_scale": 0.25,
+            # I1 capacity at install: entry kappa is theta-pass-through (~2.6)
+            # while the LN seam ranges reach +-20 — the cover lifts kappa to
+            # the observed width so the exact-QAT starts unsaturated
+            # (measured: AQ entry 0.06 uncovered).
+            "lif_aq_negative_boundary": True},
     "deepcnn32": {"model_type": "deep_cnn", "platform": "F", "axis": "deep_cnn",
                   "model_config": {"depth": 8, "width": 32}},
     "mixerc10": {"model_type": "mlp_mixer_core", "platform": "F", "axis": "mlp_mixer_core",
@@ -407,6 +412,8 @@ def _deployment(tier, row, vehicles, dataset):
         dp["tuning_batch_size"] = v["tuning_batch_size"]
     if "fast_lr_scale" in v:
         dp["fast_lr_scale"] = v["fast_lr_scale"]
+    if "lif_aq_negative_boundary" in v:
+        dp["lif_aq_negative_boundary"] = v["lif_aq_negative_boundary"]
     if "preprocessing" in v:
         dp["preprocessing"] = v["preprocessing"]
 
