@@ -26,7 +26,7 @@ from mimarsinan.tuning.orchestration.ramp_strategy import (
 )
 from mimarsinan.tuning.orchestration.smooth_adaptation_tuner import SmoothAdaptationTuner
 from mimarsinan.tuning.perceptron_rate import rebuild_activations, set_blend_rate
-from mimarsinan.tuning.teacher import snapshot_frozen_teacher
+from mimarsinan.tuning.teacher import resolve_conversion_teacher
 
 __all__ = ["BlendActivation", "KDBlendAdaptationTuner"]
 
@@ -259,7 +259,7 @@ class KDBlendAdaptationTuner(CascadeForwardInstall, SmoothAdaptationTuner):
             )
 
     def _snapshot_teacher(self) -> nn.Module:
-        return snapshot_frozen_teacher(self.model, self.pipeline.config["device"])
+        return resolve_conversion_teacher(self.pipeline, self.model)
 
     def _calibration_inputs(self, n_batches: int | None = None) -> torch.Tensor:
         """A few concatenated validation batches as a calibration anchor (shared by

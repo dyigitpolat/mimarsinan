@@ -268,4 +268,20 @@ ENTRIES = (
        type=T.JSON, category=Category.ADVANCED, exposure="user",
        label="S Allocation (budget)", doc="Budget objective body for s_allocation='budget'.",
        relevant=R.when("s_allocation", in_=("budget",))),
+    _E("origin_teacher_kd", group="tuning", owner="origin_teacher_kd",
+       type=T.BOOL, category=Category.ADVANCED, exposure="user",
+       label="Origin-teacher KD anchor",
+       doc="Conversion tuners distil to the frozen post-structural ORIGIN "
+           "teacher instead of per-step snapshots [spiking_deployment_calculus "
+           "sec.13.2 L-A]; per-step KD knobs still choose WHERE KD runs.",
+       provenance="consumer frozen default", derived_default=_frozen(False),
+       empty_means="off"),
+    _E("origin_anchored_compact", group="tuning", owner="origin_anchored_compact",
+       type=T.BOOL, category=Category.ADVANCED, exposure="user",
+       label="Origin-anchored accuracy compact",
+       doc="Step floors/targets anchor to the ORIGIN metric (no multiplicative "
+           "per-step licensing, no miss relaxation) [spiking_deployment_calculus "
+           "sec.13.2 L-B].",
+       provenance="consumer frozen default", derived_default=_frozen(False),
+       empty_means="off"),
 )

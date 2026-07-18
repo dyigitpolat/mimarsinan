@@ -11,6 +11,7 @@ from mimarsinan.tuning.trace import DecisionTrace
 from mimarsinan.tuning.orchestration.acceptance_sensor import AcceptanceSensor
 from mimarsinan.tuning.orchestration.adaptation_driver import AdaptationDriver
 from mimarsinan.tuning.orchestration.recovery_engine import RecoveryEngine
+from mimarsinan.tuning.orchestration.retention_envelope import resolve_step_anchor
 from mimarsinan.tuning.orchestration.tuning_budget import min_step_for_smooth_adaptation
 from mimarsinan.tuning.orchestration.tuning_policy import (
     endpoint_convergence_geometry,
@@ -203,7 +204,7 @@ class SmoothAdaptationRunMixin(TunerBase):
             self.pipeline.config.get("degradation_tolerance", 0.05)
         )
 
-        pipeline_prev = getattr(self.pipeline, "get_target_metric", lambda: None)()
+        pipeline_prev = resolve_step_anchor(self.pipeline)
         budget = getattr(self.pipeline, "accuracy_budget", None)
         if (
             pipeline_prev is not None

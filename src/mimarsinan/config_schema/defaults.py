@@ -183,7 +183,7 @@ CONFIG_KEYS_SET: Set[str] = {
     "per_channel_theta", "s_aware_theta_quantile",
     # Every-endpoint D-hat target floor (bit-parity-lossless family); the
     # ConversionPolicy recipe may set it.
-    "endpoint_target_floor",
+    "endpoint_target_floor", "origin_teacher_kd", "origin_anchored_compact",
     # torch DataLoader worker count; read via config.get with a fallback of 4.
     "num_workers",
     # Workload-profile-injectable keys (absence is meaningful — no defaults).

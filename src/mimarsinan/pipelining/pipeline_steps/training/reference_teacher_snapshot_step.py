@@ -5,7 +5,7 @@ from mimarsinan.pipelining.core.steps.pipeline_step import (
     PipelineStep,
 )
 from mimarsinan.tuning.orchestration.lif_exact_qat import lif_exact_qat_kd_active
-from mimarsinan.tuning.teacher import snapshot_frozen_teacher
+from mimarsinan.tuning.teacher import origin_teacher_kd_active, snapshot_frozen_teacher
 
 
 class ReferenceTeacherSnapshotStep(PipelineStep):
@@ -18,11 +18,13 @@ class ReferenceTeacherSnapshotStep(PipelineStep):
     """
 
     REQUIRES = ("model",)
-    PROMISES = ("reference_teacher_model",)
+    PROMISES = ("reference_teacher_model", "reference_teacher_metric")
 
     @classmethod
     def applies_to(cls, plan):
-        return lif_exact_qat_kd_active(plan.config)
+        return lif_exact_qat_kd_active(plan.config) or origin_teacher_kd_active(
+            plan.config
+        )
 
     def __init__(self, pipeline):
         super().__init__(self.REQUIRES, self.PROMISES, self.UPDATES, self.CLEARS, pipeline)
@@ -31,6 +33,10 @@ class ReferenceTeacherSnapshotStep(PipelineStep):
         model = self.get_entry("model")
         teacher = snapshot_frozen_teacher(model, self.pipeline.config["device"])
         self.add_entry("reference_teacher_model", teacher, "torch_model")
+        # The ORIGIN metric the L-B compact anchors floors/targets to.
+        self.add_entry(
+            "reference_teacher_metric", float(self.pipeline.get_target_metric())
+        )
 
     def validate(self):
         return self.pipeline.get_target_metric()

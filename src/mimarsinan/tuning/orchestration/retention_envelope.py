@@ -21,6 +21,37 @@ def peek(pipeline) -> float | None:
     return None if value is None else float(value)
 
 
+REFERENCE_TEACHER_METRIC_SUFFIX = ".reference_teacher_metric"
+
+
+def origin_anchored_compact_active(config) -> bool:
+    """The origin-anchored accuracy-compact lever (calculus §13.2 L-B)."""
+    return bool(config.get("origin_anchored_compact", False))
+
+
+def origin_metric(pipeline) -> float | None:
+    """The ORIGIN (post-structural float) metric: the cached reference-teacher
+    metric when present, else the retention envelope."""
+    for key in pipeline.cache.keys():
+        if str(key).endswith(REFERENCE_TEACHER_METRIC_SUFFIX):
+            value = pipeline.cache.get(key)
+            if value is not None and float(value) > 0.0:
+                return float(value)
+    return peek(pipeline)
+
+
+def resolve_step_anchor(pipeline) -> float | None:
+    """The metric conversion steps anchor floors/targets to: the ORIGIN when
+    the compact lever is armed (no multiplicative per-step licensing — the
+    §13.1 decay ledger), else the rolling previous-step target metric."""
+    prev = getattr(pipeline, "get_target_metric", lambda: None)()
+    config = getattr(pipeline, "config", None) or {}
+    if not origin_anchored_compact_active(config):
+        return prev
+    origin = origin_metric(pipeline)
+    return origin if origin is not None else prev
+
+
 def seed(pipeline, envelope: float) -> float | None:
     """Record the incoming-model envelope, WRITE-ONCE. A second seed (a later,
     possibly higher or lower metric) never overwrites the fixed envelope;

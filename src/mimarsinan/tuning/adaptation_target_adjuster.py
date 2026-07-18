@@ -10,7 +10,7 @@ def target_decay_from_validation_samples(n_samples: int) -> float:
 
 
 class AdaptationTargetAdjuster:
-    def __init__(self, original_target, decay=0.999, floor_ratio=0.90):
+    def __init__(self, original_target, decay=0.999, floor_ratio=0.90, frozen=False):
         assert decay < 1.0
         assert decay > 0.5
         assert 0.0 < floor_ratio <= 1.0
@@ -20,6 +20,10 @@ class AdaptationTargetAdjuster:
         self.target_metric = original_target
         self.original_metric = original_target
         self.floor = original_target * floor_ratio
+        # Frozen = the origin-anchored compact (calculus §13.2 L-B): the
+        # target never relaxes on a miss — misses report honestly instead of
+        # licensing drift.
+        self.frozen = bool(frozen)
 
     @classmethod
     def from_pipeline(cls, original_target, pipeline):
@@ -29,9 +33,15 @@ class AdaptationTargetAdjuster:
         decay = target_decay_from_validation_samples(n)
         dt = float(pipeline.config.get("degradation_tolerance", 0.05))
         floor_ratio = 1.0 - dt
-        return cls(original_target, decay, floor_ratio)
+        # Raw key read: the predicate SSOT (retention_envelope.
+        # origin_anchored_compact_active) sits below tuner_base in the import
+        # graph; importing it here would cycle through orchestration.
+        frozen = bool(pipeline.config.get("origin_anchored_compact", False))
+        return cls(original_target, decay, floor_ratio, frozen=frozen)
 
     def update_target(self, new_metric):
+        if self.frozen:
+            return
         if new_metric >= self.target_metric:
             self.target_metric = min(
                 self.target_metric * self.growth, self.original_metric

@@ -1,5 +1,6 @@
 from mimarsinan.pipelining.core.steps.tuner_pipeline_step import TunerPipelineStep
 from mimarsinan.tuning.orchestration.lif_exact_qat import lif_exact_qat_kd_active
+from mimarsinan.tuning.teacher import origin_teacher_kd_active
 from mimarsinan.tuning.tuners.activation_quantization_tuner import ActivationQuantizationTuner
 
 
@@ -21,7 +22,9 @@ class ActivationQuantizationStep(TunerPipelineStep):
         # [lif_exact_qat_program §8] the exact-QAT KD lever distils to the
         # Reference Teacher Snapshot; the dependency is per-plan (same gate as
         # the snapshot step, so the promise always precedes the requirement).
-        if lif_exact_qat_kd_active(pipeline.config):
+        if lif_exact_qat_kd_active(pipeline.config) or origin_teacher_kd_active(
+            pipeline.config
+        ):
             requires = requires + ("reference_teacher_model",)
         super().__init__(requires, self.PROMISES, self.UPDATES, self.CLEARS, pipeline)
 
