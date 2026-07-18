@@ -385,3 +385,34 @@ conversion cliff; post-fix = a green deployment within 2*SE of its WQ read.
 The agreement-triage law (plan sec.2) is hereby the debugging SSOT for
 deployed divergences: exactly-0.0 => deterministic convention/offset defect;
 ~1/K => decoupled garbage; 0.9x => noise family.
+
+### 10f. The signed-seam capacity ledger (2026-07-19) — the next phase's design
+
+Measured on the t2_04 offloaded-ViT AQ install (S=32, offload, armed seams):
+
+| Install variant | AQ entry read | Verdict |
+|---|---|---|
+| pre-arming (inconsistent NF) | 0.33 | trains the WRONG function (deploys at chance) |
+| armed, sigma-free trained clamp | 0.06 | EXACT train==deploy; ~50% of LN mass amputated |
+| armed + full-width cover | 0.0146 | REFUTED: kappa=range-max destroys grid resolution (kappa/T ~ 1.2 per step) |
+
+Two laws extracted:
+1. **Capacity vs resolution**: the entry kappa must cover the encodable band
+   AND keep kappa/T at the signal scale — kappa is a QUANTILE of the
+   (shifted) range, never the max (house convention:
+   activation_scale_quantile / FANIN_TRAFFIC_QUANTILE).
+2. **The signed-seam completion**: the sigma-free trained clamp is exact but
+   capacity-lossy where the seam has large negative mass (ViT LN ~50%). The
+   complete fix folds sigma INTO the armed op's own function, installed
+   BEFORE training: ``SNW'(x) = (f(x*s_in) + sigma)/s_out`` with the value
+   twin in the plain forward and quantile-kappa. Every consumer (terminal
+   heads included) then sees sigma uniformly in every representation and the
+   QAT adapts — pre-training producer-side sigma is sound precisely because
+   training absorbs it; POST-training sigma stays banned (the sigma-scope
+   skip). This supersedes both the deleted AQ sigma half and the full-width
+   cover; it is the designed next phase, to land tests-first with the T4
+   family extended to the SNW-offset composition.
+
+Meanwhile the honest t2_04 measurement runs sigma-free (the exact-but-
+amputated baseline): its AQ ceiling is the quantitative cost of the missing
+signed-seam capacity, the A/B target for the next phase.
