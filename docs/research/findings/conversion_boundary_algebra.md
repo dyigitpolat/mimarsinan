@@ -416,3 +416,32 @@ Two laws extracted:
 Meanwhile the honest t2_04 measurement runs sigma-free (the exact-but-
 amputated baseline): its AQ ceiling is the quantitative cost of the missing
 signed-seam capacity, the A/B target for the next phase.
+
+### 10g. Signed-seam capacity CONFIRMED (2026-07-18) — sigma-in-the-op measured
+
+The R1 install landed (armed-only stamping; quantile sigma + quantile kappa;
+consumer bakes by shift response) and the ViT A/B read the decisive number:
+
+| t2_04 AQ entry (full acc) | config |
+|---|---|
+| 0.0146 | full-width cover (kappa=max) — REFUTED, destroys resolution |
+| 0.06 | sigma-free trained clamp — exact but capacity-amputated |
+| **0.5956** | **sigma-in-the-op** (entry post-recovery 0.6046, retention armed) |
+
+A 10x capacity recovery, inside the predicted 0.3-0.6+ band: the seam loss
+was signed-band amputation, not resolution or training capacity.
+
+Three implementation laws proven on the way (each fail-loud first):
+1. **Armed-only stamping.** Only ops with wrap slots (per_source_scales) may
+   carry output_value_offset — the wrapper is what transports the offset into
+   every deployed representation; an unarmed stamp (patch_embed) is a
+   train/deploy split by construction.
+2. **Shift-response classification of host consumers.** Scalar-shift-
+   equivariant ops (pools, mean/select/flatten family, residual ``add``,
+   ``getitem``) pass sigma through; LayerNorm absorbs it; bias carriers bake
+   it: Linear via ``bias -= sigma.W.sum(dim=1)`` and packed self-attention via
+   ``in_proj_bias -= sigma.in_proj_weight.sum(dim=1)`` (q=k=v arrive from the
+   same seam, deduped to one edge — ONE packed bake). ``cat`` stays fail-loud:
+   a partial-slice shift is not bias-compensable downstream.
+3. **The bake law as a test.** ``f_baked(v + sigma) == f(v)`` locked for every
+   carrier (TestHostBiasCarrierBake); non-carriers refuse loudly.
