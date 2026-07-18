@@ -518,3 +518,32 @@ signal it encodes), not the stream — before LIF adaptation. If that lifts the
 genuine entry the way σ-in-the-op lifted AQ, the e2e closes WITHOUT a long
 adaptation run. Verdict: CURABLE, with a specific cheap lever; the long run is
 the fallback, not the plan.
+
+### 10j. Phase-D fix REFUTED: static currency does not recover; adaptation is real (2026-07-18)
+
+The §10i output-currency hypothesis was prototyped and measured
+(`scripts/_probes/lif_output_currency_recal.py`, CIFAR-100, n=256 on the AQ
+cache) — and REFUTED. Sweeping the LIF `activation_scale` (0.5/1/2/4x the
+stream reference; pre-activation q99/q999/max) and the entry
+`input_activation_scale` (1/2/4/8x), the genuine LIF accuracy plateaus at
+**0.30** with the *original* scale already near-optimal; analytic is 0.816.
+Reducing scale hard-clamps (`out = rate·scale`), raising it starves resolution
+— a real trade-off, but no static point reaches analytic. The §10i resolution-
+decay pattern is real, but static recalibration is NOT its fix.
+
+Consequence: the genuine spiking conversion gap (0.816 -> 0.30 best-static)
+requires LIF ADAPTATION (training), exactly the documented
+[[nf_requires_lif_adaptation]] behavior (scale=1.0 = chance, adaptation
+recovers). There is no static-currency shortcut around the long run. The
+prototype-first discipline paid off: we did not build a generic seam for a
+refuted fix.
+
+**New lead (the real anomaly):** a bare LIF install (this probe) reads genuine
+0.30, but the PIPELINE's LIF entry reads 0.011 — a 27x drop from install steps
+the probe does not reproduce (neither input nor output activation_scale is the
+cause; both sweeps hold ~0.30). Something in the full LIF install (exact-QAT
+snap / blend-at-rate-1.0 / encoding-layer / σ-boundary offsets) collapses the
+entry from 0.30 to chance. Raising the entry floor from 0.011 to 0.30 would
+give the adaptation a vastly better starting point. THAT — not scale
+recalibration — is the next lever: bisect the pipeline LIF install to find the
+27x drop.
