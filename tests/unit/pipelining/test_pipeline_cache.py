@@ -1,10 +1,13 @@
 """Tests for PipelineCache: in-memory operations and disk round-trips."""
 
+import os
+import pickle
+
 import pytest
 import torch
 import torch.nn as nn
-import pickle
 
+from mimarsinan.pipelining.cache.load_store_strategies import CorruptCacheEntryError
 from mimarsinan.pipelining.cache.pipeline_cache import PipelineCache
 
 
@@ -133,3 +136,71 @@ class TestCacheRoundTrip:
         c2 = PipelineCache()
         c2.load(nested)
         assert c2.get("x") == 1
+
+
+class TestCacheIntegrity:
+    """A torn/unloadable entry (the t2_05 0-byte model.pt) must fail LOUD with
+    a named, remediable error — and torn writes must never replace a good
+    artifact in the first place."""
+
+    def _stored_dir(self, tmp_path):
+        c = PipelineCache()
+        c.add("good.scalar", 1)
+        c.add("Step.model", nn.Linear(2, 2), "torch_model")
+        c.store(str(tmp_path))
+        return str(tmp_path)
+
+    def test_truncated_torch_entry_fails_loud_with_named_error(self, tmp_path):
+        directory = self._stored_dir(tmp_path)
+        open(f"{directory}/Step.model.pt", "wb").close()  # the 0-byte tear
+        with pytest.raises(CorruptCacheEntryError, match="Step.model"):
+            PipelineCache().load(directory)
+
+    def test_missing_payload_with_metadata_entry_fails_loud(self, tmp_path):
+        directory = self._stored_dir(tmp_path)
+        os.remove(f"{directory}/Step.model.pt")
+        with pytest.raises(CorruptCacheEntryError, match="Step.model"):
+            PipelineCache().load(directory)
+
+    def test_error_names_the_quarantine_remediation(self, tmp_path):
+        directory = self._stored_dir(tmp_path)
+        open(f"{directory}/Step.model.pt", "wb").close()
+        with pytest.raises(CorruptCacheEntryError, match="quarantine_entry"):
+            PipelineCache().load(directory)
+
+    def test_quarantine_moves_payload_and_drops_metadata(self, tmp_path):
+        directory = self._stored_dir(tmp_path)
+        open(f"{directory}/Step.model.pt", "wb").close()
+        quarantined = PipelineCache.quarantine_entry(directory, "Step.model")
+        assert quarantined == f"{directory}/Step.model.pt.corrupt"
+        assert os.path.exists(quarantined)
+        c = PipelineCache()
+        c.load(directory)
+        assert "Step.model" not in c
+        assert c.get("good.scalar") == 1
+
+    def test_quarantine_unknown_entry_fails_loud(self, tmp_path):
+        directory = self._stored_dir(tmp_path)
+        with pytest.raises(KeyError):
+            PipelineCache.quarantine_entry(directory, "no.such.entry")
+
+    def test_interrupted_store_preserves_previous_artifact(
+        self, tmp_path, monkeypatch,
+    ):
+        directory = self._stored_dir(tmp_path)
+
+        def _killed_mid_write(obj, path, *args, **kwargs):
+            with open(path, "wb") as f:
+                f.write(b"partial")
+            raise RuntimeError("killed mid-write")
+
+        monkeypatch.setattr(torch, "save", _killed_mid_write)
+        c = PipelineCache()
+        c.add("Step.model", nn.Linear(2, 2), "torch_model")
+        with pytest.raises(RuntimeError, match="killed mid-write"):
+            c.store(directory)
+
+        assert not [p for p in os.listdir(directory) if p.endswith(".tmp")]
+        c2 = PipelineCache()
+        c2.load(directory)  # the previous good artifact must still load
+        assert isinstance(c2.get("Step.model"), nn.Linear)

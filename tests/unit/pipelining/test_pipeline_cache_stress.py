@@ -67,7 +67,12 @@ class TestCacheCorruptedFiles:
             c2.load(str(tmp_path))
 
     def test_missing_data_file(self, tmp_path):
-        """Metadata references a file that doesn't exist on disk."""
+        """Metadata references a file that doesn't exist on disk: the named
+        integrity error (with its quarantine remediation), never a raw IO error."""
+        from mimarsinan.pipelining.cache.load_store_strategies import (
+            CorruptCacheEntryError,
+        )
+
         c = PipelineCache()
         c.add("test.value", 42)
         c.store(str(tmp_path))
@@ -78,7 +83,7 @@ class TestCacheCorruptedFiles:
             data_file.unlink()
 
         c2 = PipelineCache()
-        with pytest.raises(FileNotFoundError):
+        with pytest.raises(CorruptCacheEntryError, match="test.value"):
             c2.load(str(tmp_path))
 
     def test_basic_strategy_with_non_json_serializable(self, tmp_path):

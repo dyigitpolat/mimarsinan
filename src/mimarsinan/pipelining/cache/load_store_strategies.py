@@ -1,6 +1,7 @@
 import torch
 import json
 import logging
+import os
 import pickle
 
 from mimarsinan.transformations.pruning.committed_masks import (
@@ -9,6 +10,39 @@ from mimarsinan.transformations.pruning.committed_masks import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Failure modes an unreadable/torn payload can raise at load time; the cache
+# wraps these into CorruptCacheEntryError (anything else is a code bug).
+ENTRY_LOAD_FAILURES = (
+    OSError, EOFError, RuntimeError, ValueError, KeyError,
+    pickle.UnpicklingError, json.JSONDecodeError,
+)
+
+
+class CorruptCacheEntryError(RuntimeError):
+    """A cache entry's on-disk payload is unreadable (torn write / corruption)."""
+
+    def __init__(self, name: str, directory: str, strategy: str, cause: BaseException):
+        super().__init__(
+            f"cache entry {name!r} in {directory!r} is unreadable "
+            f"(strategy={strategy}): {cause!r}. The artifact is corrupt or torn "
+            f"(e.g. a mid-write kill). Quarantine it so the producing step "
+            f"re-runs: PipelineCache.quarantine_entry({directory!r}, {name!r})."
+        )
+        self.entry_name = name
+        self.directory = directory
+
+
+def write_atomically(final_path, write_payload) -> None:
+    """A torn write must never replace a good artifact (the 0-byte-cache class):
+    write to a sibling tmp file, then os.replace into place."""
+    tmp_path = f"{final_path}.tmp"
+    try:
+        write_payload(tmp_path)
+        os.replace(tmp_path, final_path)
+    finally:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
 
 
 def _clear_transient_ir_caches(model) -> None:
@@ -26,34 +60,47 @@ def _clear_transient_ir_caches(model) -> None:
     if callable(clear):
         clear()
 
+
 class LoadStoreStrategy:
+    extension = ""
+
     def __init__(self, filename):
         self.filename = filename
 
+    def path(self, cache_directory) -> str:
+        return f"{cache_directory}/{self.filename}.{self.extension}"
+
     def load(self, cache_directory):
         raise NotImplementedError
 
     def store(self, cache_directory, object):
         raise NotImplementedError
-    
+
+
 class BasicLoadStoreStrategy(LoadStoreStrategy):
-    def __init__(self, filename):
-        super().__init__(filename)
+    extension = "json"
 
     def load(self, cache_directory):
-        with open(f"{cache_directory}/{self.filename}.json", "r") as f:
+        with open(self.path(cache_directory), "r") as f:
             return json.load(f)
 
     def store(self, cache_directory, object):
-        with open(f"{cache_directory}/{self.filename}.json", "w") as f:
-            json.dump(object, f)
+        def _write(path):
+            with open(path, "w") as f:
+                json.dump(object, f)
+
+        write_atomically(self.path(cache_directory), _write)
+
 
 class TorchModelLoadStoreStrategy(LoadStoreStrategy):
-    def __init__(self, filename):
-        super().__init__(filename)
+    extension = "pt"
 
     def load(self, cache_directory):
-        (object, device) = torch.load(f"{cache_directory}/{self.filename}.pt", map_location=torch.device('cpu'), weights_only=False)
+        (object, device) = torch.load(
+            self.path(cache_directory),
+            map_location=torch.device('cpu'),
+            weights_only=False,
+        )
         object._cached_original_device = device
         if isinstance(object, torch.nn.Module):
             # Round-trip half of the prune-parity contract: an artifact whose raw
@@ -77,7 +124,10 @@ class TorchModelLoadStoreStrategy(LoadStoreStrategy):
 
         _clear_transient_ir_caches(object)
         object.cpu()
-        torch.save((object, device), f"{cache_directory}/{self.filename}.pt")
+        write_atomically(
+            self.path(cache_directory),
+            lambda path: torch.save((object, device), path),
+        )
         # If the recorded device is no longer visible (narrower CUDA_VISIBLE_DEVICES) fall back to CPU rather than crash mid-save.
         try:
             object.to(device)
@@ -87,14 +137,17 @@ class TorchModelLoadStoreStrategy(LoadStoreStrategy):
                 self.filename, device, exc_info=True,
             )
 
+
 class PickleLoadStoreStrategy(LoadStoreStrategy):
-    def __init__(self, filename):
-        super().__init__(filename)
+    extension = "pickle"
 
     def load(self, cache_directory):
-        with open(f"{cache_directory}/{self.filename}.pickle", "rb") as f:
+        with open(self.path(cache_directory), "rb") as f:
             return pickle.load(f)
-        
+
     def store(self, cache_directory, object):
-        with open(f"{cache_directory}/{self.filename}.pickle", "wb") as f:
-            pickle.dump(object, f)
+        def _write(path):
+            with open(path, "wb") as f:
+                pickle.dump(object, f)
+
+        write_atomically(self.path(cache_directory), _write)

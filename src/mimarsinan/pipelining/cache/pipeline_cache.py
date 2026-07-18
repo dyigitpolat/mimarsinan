@@ -57,8 +57,11 @@ class PipelineCache:
             strategy = self.LOAD_STORE_STRATEGIES[load_store_strategy](self._filename_for(name))
             strategy.store(cache_directory, object)
 
-        with open(f"{cache_directory}/metadata.json", "w") as f:
-            json.dump(metadata, f)
+        def _write(path):
+            with open(path, "w") as f:
+                json.dump(metadata, f)
+
+        write_atomically(f"{cache_directory}/metadata.json", _write)
 
         self._dirty.clear()
 
@@ -74,7 +77,37 @@ class PipelineCache:
 
         for name, (load_store_strategy, _) in metadata.items():
             strategy = self.LOAD_STORE_STRATEGIES[load_store_strategy](self._filename_for(name))
-            self.cache[name] = (strategy.load(cache_directory), load_store_strategy)
+            try:
+                loaded = strategy.load(cache_directory)
+            except ENTRY_LOAD_FAILURES as exc:
+                raise CorruptCacheEntryError(
+                    name, cache_directory, load_store_strategy, exc,
+                ) from exc
+            self.cache[name] = (loaded, load_store_strategy)
+
+    @classmethod
+    def quarantine_entry(cls, cache_directory, name):
+        """Move a corrupt entry's payload to '<payload>.corrupt' and drop it from
+        metadata so the producing step re-runs from its predecessor; returns the
+        quarantined path (None when no payload file existed)."""
+        meta_path = f"{cache_directory}/metadata.json"
+        with open(meta_path, "r") as f:
+            metadata = json.load(f)
+        if name not in metadata:
+            raise KeyError(f"cache entry {name!r} not present in {meta_path}")
+        strategy_name, filename = metadata.pop(name)
+        payload = cls.LOAD_STORE_STRATEGIES[strategy_name](filename).path(cache_directory)
+        quarantined = None
+        if os.path.exists(payload):
+            quarantined = f"{payload}.corrupt"
+            os.replace(payload, quarantined)
+
+        def _write(path):
+            with open(path, "w") as f:
+                json.dump(metadata, f)
+
+        write_atomically(meta_path, _write)
+        return quarantined
 
     def keys(self):
         return self.cache.keys()
