@@ -625,3 +625,96 @@ coherence + a cross-sim decision-parity spot; (2) the D-phase capacity
 items re-anchored to the 3.45 pp residual (entry-1 σ/arming under the
 unity-gauge condition; entries-2/3 band re-pin; PR8 floor prediction);
 (3) WQ → SCM → parity (Phase V). PR9 CLOSED-EXCEEDED; PR10-12 unchanged.
+
+## 13. The anchored-conversion principle (2026-07-19): the FULL gap is the gate
+
+**Correction of scope (the program's gate metric).** The deployment gate is
+**pretrained → deployed**, not analytic → deployed. At S=32 (5-bit
+activations) with 8-bit weights and per-neuron θ, the deployable family
+F_deploy provably reaches CIFAR-100-ViT accuracy within ~1 pp of float
+(the standard QAT regime); therefore the measured 0.8678 → 0.7397 (−12.8 pp)
+is a **conversion/tuning-dynamics deficit**, not capacity — and §11.1's G-C
+("trained-model quality, out of scope") is RETIRED as a scoping error. One
+gate: origin float → deployed, lossless within a declared ε.
+
+### 13.1 The measured decay ledger (t2_04, per-step pipeline metrics)
+
+| step | metric | Δ | classification |
+|---|---|---|---|
+| Weight Preloading / Torch Mapping | 0.852 | — | structural, lossless |
+| Pruning Adaptation (+recovery) | **0.8678** | +1.6 | **the origin anchor** (post-structural float — exactly what `ReferenceTeacherSnapshotStep` freezes, G8) |
+| Scale Migration / Activation Analysis | 0.8678 | 0 | scales only, lossless |
+| Activation Adaptation (GELU → chip-ReLU) | 0.8062 | **−6.2** | family swap, undertrained (teacher = own entry ≈ origin, so NOT drift: budget/recipe) |
+| Clamp Adaptation | 0.8062 | 0 | carried |
+| Activation Shifting | 0.836 | **+3.0** | recovery credit — training pulls back even toward a drifted anchor |
+| Activation Quantization (σ-armed exact-QAT) | 0.7711 | **−6.5** | family swap trained at **plain CE** — the measured worst arm; the origin-KD lever exists (`lif_exact_qat_kd` + reference teacher) but is default-off and single-step |
+| genuine twin (§12) | 0.7397 | −3.1 | the D-phase deploy-side residual |
+
+The entire ladder loss lives in the two **function-family swaps**; every step
+after AA distills to a **drifted teacher** (each tuner snapshots its own
+entry model — `kd_blend_adaptation_tuner.py:262`,
+`activation_adaptation_tuner.py:54`), and the accuracy compact anchors each
+floor to the PREVIOUS step (`step_floor(previous_metric, tol)`), licensing
+multiplicative decay: with per-step tolerance 0.1 over ~6 conversion steps
+the pipeline contractually permits 0.9⁶ ≈ 0.53×. There is no global
+restoring force; the target adjuster even relaxes missed targets. The
+dynamics are a drift process by construction.
+
+### 13.2 The principle (generic, mode/model/workload-agnostic)
+
+Conversion is constrained optimization: min L(f) s.t. f ∈ F_deploy. The
+ladder implements it as greedy sequential family restriction — fine — but
+lossless conversion additionally requires, at every step k:
+
+- **L-A (one anchor).** The KD teacher is the ORIGIN function (the
+  post-structural float model), not the previous step's endpoint. The
+  mechanism already exists as `ReferenceTeacherSnapshotStep` (post-prune
+  float, cached as `reference_teacher_model`) — generalize it from
+  one-consumer-default-off to the pipeline-wide teacher SSOT: every
+  function-changing tuner consults the reference entry when present
+  (self-snapshot remains the fallback). One seam (`tuning/teacher.py`), all
+  modes.
+- **L-B (one budget).** The accuracy compact anchors every floor/target to
+  the ORIGIN metric with a cumulative loss budget ε(k) (Σ ε_k = ε_total),
+  replacing prev×(1−tol) — no multiplicative license, no relaxation drift;
+  the retention envelope re-anchors to origin so cumulative drift is
+  MONOTONE bookkeeping, not a random walk of per-rung tolerances. One seam
+  (`accuracy_budget.step_floor` + `retention_envelope`).
+- **L-C (budget follows distance).** Function-family swaps (AA, AQ, the
+  mode conversion) are the expensive projections; per-step training budget
+  scales with the swap's measured entry drop, funded by the V0 eval
+  economics. The +3.0 pp Shift credit is the existence proof that the
+  optimizer recovers when given steps — it currently aims at the wrong
+  anchor.
+- **L-D (capacity is certified, never assumed).** The PR8/oob analytic
+  instruments certify per step that F_deploy at the current (σ, κ, θ, S)
+  contains a near-origin function; only a failed certificate may re-classify
+  a deficit as capacity (and then prescribes σ/θ/S design, priced).
+
+Elegance claim: no new subsystems. Three existing seams re-anchored
+(teacher SSOT, compact SSOT, envelope) + one existing step un-gated and
+generalized. Mode-generic because all of them live ABOVE the mode layer.
+
+### 13.3 Predictions (pre-registered)
+
+- **PR13 (CONFIRMED by the ledger above)**: the tuning-ladder loss
+  concentrates in the family swaps (−6.2, −6.5), with recovery credits
+  proving optimizer headroom; registered as the baseline for every E-phase
+  A/B.
+- **PR14**: pipeline-wide origin-teacher KD + origin-anchored compact,
+  SAME budgets, lifts the AQ-endpoint analytic from 0.7711 to ≥ 0.80 on the
+  t2_04 resume (AA entry), tier-0-neutral.
+- **PR14b**: with L-C budget scaling on the two swap steps (funded by
+  SE-sized evals), ≥ 0.84.
+- **PR15**: the capacity certificate at S=32 on the ViT predicts a total
+  deploy-side floor ≤ 2 pp — i.e., F_deploy contains a ≥ 0.85 function; a
+  failed PR15 re-routes the program to σ/θ/S design with the deficit priced.
+- **PR16**: under L-B the ladder's measured cumulative drift never exceeds
+  the declared ε at any step (monotone envelope), on tier-0 and the ViT.
+
+**The definitive-lossless DoD is restated on the full gap**: origin float
+(0.8678 here) → deployed within ε_total (declared per vehicle; the ViT
+target: ≤ 2 pp analytic + the certified deploy floor), with the §12
+coherence certificates green and cross-sim parity ≥ 0.98. The program of
+record sequences this as Phase E (anchor) → D (deploy residual) → R → F2 →
+V.
