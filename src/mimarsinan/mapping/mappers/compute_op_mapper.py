@@ -35,6 +35,11 @@ class ComputeOpMapper(Mapper):
     per_source_scales / output_scale, when populated, trigger a ScaleNormalizingWrapper at emission.
     """
 
+    # Class-level defaults so models PICKLED before these fields existed
+    # resolve them on unpickle (instance assignment shadows).
+    is_wire_value_op: bool = False
+    output_value_offset: torch.Tensor | None = None
+
     def __init__(
         self,
         sources,
@@ -70,10 +75,10 @@ class ComputeOpMapper(Mapper):
         self.boundary_traffic_scale: float | None = None
         # Gauge classification (mark_wire_value_ops): a non-homogeneous
         # re-encoded op arms the wrapper even for uniform source scales.
-        self.is_wire_value_op: bool = False
+        self.is_wire_value_op = False
         # [sigma-in-the-op] pre-training signed-seam lift, VALUE units; the
         # wrapper carries it wire-side (output_offset = this value).
-        self.output_value_offset: torch.Tensor | None = None
+        self.output_value_offset = None
 
     @property
     def sources(self) -> list[Mapper]:
