@@ -894,3 +894,64 @@ class TestSignedSeamQuantiles:
         sigma, kappa = _signed_seam_quantiles(v, quantile=0.99)
         assert sigma == 0.0
         assert 2.0 < kappa < 3.5
+
+
+class TestDeployedLifGauge:
+    """[PR18 / spiking_deployment_calculus §14.4] the exact-QAT D-hat gauge is
+    the DEPLOYED composition — fresh LIF at each perceptron's own theta + the
+    (retimed) chip-aligned genuine forward — never the value staircase, whose
+    null space let training drift into sign-aligned temporal bias."""
+
+    def _exact_config(self):
+        return {
+            "lif_exact_qat": True, "spiking_mode": "lif",
+            "firing_mode": "Default", "cycle_accurate_lif_forward": True,
+            "lif_per_hop_retiming": True, "simulation_steps": 8,
+            "thresholding_mode": "<=",
+        }
+
+    def test_gauge_installs_fresh_lif_and_matches_chip_aligned(self):
+        from mimarsinan.models.nn.activations import LIFActivation
+        from mimarsinan.spiking.chip_aligned_nf import chip_aligned_segment_forward
+        from mimarsinan.tuning.orchestration.lif_exact_qat import (
+            deployed_lif_gauge_forward,
+        )
+
+        model = make_tiny_supermodel()
+        for p in model.get_perceptrons():
+            p.set_activation_scale(1.3)
+        forward = deployed_lif_gauge_forward(model, self._exact_config())
+        for p in model.get_perceptrons():
+            assert isinstance(p.activation, LIFActivation)
+            assert p.activation.T == 8
+            assert p.activation.thresholding_mode == "<="
+        torch.manual_seed(0)
+        x = torch.rand(4, 1, 8, 8)
+        with torch.no_grad():
+            out = forward(x)
+            ref = chip_aligned_segment_forward(model, x, 8, retime=True)
+        torch.testing.assert_close(out, ref)
+
+    def test_aq_gauge_dispatches_on_the_exact_arm(self, monkeypatch):
+        import mimarsinan.tuning.tuners.activation_quantization_tuner as aq_mod
+        from mimarsinan.tuning.orchestration.fast_ladder import FastLadderMixin
+        from mimarsinan.tuning.tuners.activation_quantization_tuner import (
+            ActivationQuantizationTuner,
+        )
+
+        monkeypatch.setattr(
+            FastLadderMixin, "_mbh_full_transform_forward",
+            lambda self, clone: "BASE",
+        )
+        monkeypatch.setattr(
+            aq_mod, "deployed_lif_gauge_forward", lambda clone, cfg: "GAUGE",
+        )
+        tuner = object.__new__(ActivationQuantizationTuner)
+        tuner.pipeline = SimpleNamespace(config=self._exact_config())
+        assert ActivationQuantizationTuner._mbh_full_transform_forward(
+            tuner, object()
+        ) == "GAUGE"
+        tuner.pipeline = SimpleNamespace(config={"lif_exact_qat": False})
+        assert ActivationQuantizationTuner._mbh_full_transform_forward(
+            tuner, object()
+        ) == "BASE"

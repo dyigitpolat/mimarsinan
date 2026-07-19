@@ -107,6 +107,38 @@ def model_trained_lif_exact(model) -> bool:
     return True
 
 
+def deployed_lif_gauge_forward(clone, pipeline_config):
+    """[PR18, spiking_deployment_calculus §14.4] The deployed-composition gauge
+    for an exact-QAT candidate: install fresh LIF activations at each
+    perceptron's own theta on ``clone`` and return the (retimed) chip-aligned
+    genuine forward — the A2 square's deploy side, so the QAT is measured and
+    gated on what actually ships."""
+    # Lazy: chip_simulation/spiking pull import cycles at init (house pattern).
+    from mimarsinan.chip_simulation.spiking_semantics import (
+        lif_per_hop_retiming_enabled,
+    )
+    from mimarsinan.models.nn.activations import LIFActivation
+    from mimarsinan.spiking.chip_aligned_nf import chip_aligned_segment_forward
+
+    T = int(pipeline_config["simulation_steps"])
+    thresholding = str(pipeline_config.get("thresholding_mode", "<="))
+    firing = str(pipeline_config.get("firing_mode", "Default"))
+    device = next(clone.parameters()).device
+    for perceptron in clone.get_perceptrons():
+        perceptron.activation = LIFActivation(
+            T=T,
+            activation_scale=perceptron.activation_scale,
+            thresholding_mode=thresholding,
+            firing_mode=firing,
+        ).to(device)
+    retime = lif_per_hop_retiming_enabled(pipeline_config)
+
+    def _deployed_forward(x):
+        return chip_aligned_segment_forward(clone, x, T, retime=retime)
+
+    return _deployed_forward
+
+
 def install_lif_input_quantizer(perceptron, simulation_steps: int) -> bool:
     """Idempotently append the LIF entry ``ChipInputQuantizer``; True when this call installed it."""
     if getattr(perceptron, _LIF_ENTRY_SNAP_ATTR, False):

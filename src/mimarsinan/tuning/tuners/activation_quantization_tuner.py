@@ -28,6 +28,7 @@ from mimarsinan.tuning.orchestration.signed_seam_install import (
     ensure_offload_negative_boundary,
 )
 from mimarsinan.tuning.orchestration.lif_exact_qat import (
+    deployed_lif_gauge_forward,
     install_lif_entry_input_quantizers,
     lif_exact_qat_active,
 )
@@ -145,6 +146,15 @@ class ActivationQuantizationTuner(AdaptationRateTuner):
         install_exact_qat_theta(
             self.model, self.pipeline.reporter, "TTFSQ-EXACT-QAT", per_channel=True,
         )
+
+    def _mbh_full_transform_forward(self, clone):
+        # [PR18, calculus §14.4] under the exact arm the D-hat gauge IS the
+        # deployed composition (the A2 square's deploy side): the value-
+        # staircase gauge's null space let training drift into sign-aligned
+        # temporal bias (measured: analytic +4.3 pp, genuine −2.5 pp).
+        if lif_exact_qat_active(self.pipeline.config):
+            return deployed_lif_gauge_forward(clone, self.pipeline.config)
+        return super()._mbh_full_transform_forward(clone)
 
     def _install_exact_qat_kd_teacher(self) -> None:
         """[lif_exact_qat_program §8] Distil the exact-QAT ladder AND endpoint
