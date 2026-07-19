@@ -1320,3 +1320,45 @@ Gap to origin −13.0pp = artifact −4.3 (AA-dominated) + composition −8.7
 (hops 0–2 structural). Phase-Deploy is retired as a main lever (flat on
 fixed physics); the endgame budget shifts to Phase-Value quality + the
 entry-seam term.
+
+### 15.14 The early-hop term dissected: magnitude + structure at a
+### sensitive coordinate; attribution ≠ magnitude (2026-07-19)
+
+Parallel-cycle verdicts on the fixed composition (AB3 + knobs):
+
+**PR31 (identical-input hop twin-delta):** hop-internal defect decays
+steeply with depth — d_abs/θ = 0.0664 (hop 0, θ=0.30) → 0.0235 → 0.0130
+→ 0.0076 → 0.0043 → 0.0001 (hop 9). Hop 0 also carries a systematic
++0.0225·θ overfire remnant.
+
+**Hop-0 subsume REFUTED:** running hop 0 in value domain (the walk's
+`is_encoding_layer` path ≡ `encoding_layer_placement=subsume`) changes
+nothing (census 0.7344 ≈ 0.7376 baseline). LESSON: matched-input delta
+MAGNITUDE is not accuracy ATTRIBUTION — LayerNorm absorbs hop-0's error
+entirely. (The k-cut's −1.6 at cut 0 was the value-pin, not the count.)
+
+**The hop-1 discriminator (hop-0 pinned genuine, hop-1 output variants
+through the analytic suffix, n=512):** clean 0.8262 / +real-d 0.7676
+(reproduces the k-cut drop) / +same-RMS iid 0.7969 / +per-channel-mean-
+of-d 0.8203. DECOMPOSITION: the −5.9pp at hop 1 = ~3pp noise MAGNITUDE
+at a genuinely sensitive coordinate (iid at that RMS is NOT free on this
+artifact — §14's noise-immunity result does not transfer) + ~3pp
+higher-order STRUCTURE (token/spatially-correlated deviations), with
+per-channel bias INNOCENT (−0.6) — the DFQ/bias-correction fix class is
+retired for this term.
+
+**Standing lever candidates for the ~8pp composition term, in order:**
+(1) per-hop temporal allocation — give early hops more T within the
+budget (`s_allocation` budget objective is a REGISTERED design axis;
+hops 3+ are free, hops 0–2 carry everything — the allocation is
+maximally lopsided today); (2) the artifact axis (AB5's AA endpoint leg,
+in flight); (3) hop-targeted train-through of hops 0–2 only (weak — full
+train-through was flat, but the targeted form is untested).
+
+**PR14b LANDED (gate 8312):** ActivationAdaptationTuner gains the funded
+endpoint-recovery leg (`aa_endpoint_recovery_steps`, default 0), closing
+the one unfunded endpoint among conversion tuners; the endpoint-family
+registry entries move to `entries_endpoint.py` (both prior tables at the
+300-LOC cap; `config_schema/registry` joins the sibling allowlist with
+the structural reason stated). AB5 (AA @1200-step endpoint leg, physics
+knobs OFF in-chain per the AB4 lesson) is running.
