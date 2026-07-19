@@ -174,6 +174,33 @@ class TestRepresentationDispatch:
             after = driver2(x)
         torch.testing.assert_close(after, before)
 
+    def test_sigma_install_skips_bake_infeasible_ops(self):
+        """[σ-scope law, calculus §15.7] an armed op whose consumer walk hits a
+        non-compensable host (the ViT stem's cat class) is SKIPPED by the
+        σ-install — left trained-clamp exactly as today — instead of crashing
+        the whole install."""
+        from mimarsinan.mapping.support.compute_modules import ComputeAdapter
+        from mimarsinan.tuning.orchestration.signed_seam_install import (
+            _bake_walk_feasible,
+        )
+
+        torch.manual_seed(5)
+        inp = InputMapper((8,))
+        p1 = _lif_perceptron(6, 8, 1.7)
+        m1 = PerceptronMapper(inp, p1)
+        ln = nn.LayerNorm(6)
+        host = ComputeOpMapper(m1, ln, input_shape=(6,), output_shape=(6,))
+        blocker = ComputeOpMapper(
+            host, ComputeAdapter(torch.square), input_shape=(6,), output_shape=(6,),
+        )
+        p2 = _lif_perceptron(3, 6, 0.9)
+        repr_ = ModelRepresentation(PerceptronMapper(blocker, p2))
+        mark_encoding_layers(repr_, placement="offload")
+        compute_per_source_scales(repr_)
+        consumers = repr_.consumer_map()
+        assert not _bake_walk_feasible(host, consumers)
+        assert _bake_walk_feasible(blocker, consumers)  # entry consumer bakes
+
     def test_mixed_wire_absolute_fan_in_fails_loud(self):
         from mimarsinan.mapping.support.compute_modules import ComputeAdapter
 

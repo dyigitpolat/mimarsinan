@@ -63,6 +63,42 @@ def _prearm_marked_value_ops(repr_, boundary_table) -> int:
     return armed
 
 
+def _bake_walk_feasible(node, consumers) -> bool:
+    """Dry-run of the σ consumer walk: True iff every reachable host consumer
+    is compensable (bias carrier / shift-invariant / equivariant pass-through).
+    Non-compensable chains (the ViT stem's ``cat`` class) are SKIPPED by the
+    installer — left trained-clamp — instead of crashing the install
+    (σ-scope law: σ belongs to producer→entry edges it can actually reach)."""
+    import torch.nn as _nn
+
+    from mimarsinan.mapping.support.negative_boundary import (
+        _is_host_node,
+        boundary_consumers,
+    )
+
+    frontier = list(boundary_consumers(node, consumers))
+    while frontier:
+        consumer = frontier.pop()
+        if not _is_host_node(consumer):
+            continue
+        module = getattr(consumer, "module", None)
+        if isinstance(module, _nn.Linear) and module.bias is not None:
+            continue
+        if (
+            isinstance(module, _nn.MultiheadAttention)
+            and module.in_proj_weight is not None
+            and module.in_proj_bias is not None
+        ):
+            continue
+        if isinstance(module, _nn.LayerNorm):
+            continue
+        if _scalar_shift_equivariant(module):
+            frontier.extend(boundary_consumers(consumer, consumers))
+            continue
+        return False
+    return True
+
+
 def install_signed_seam_offsets(
     model, trainer, pipeline_config, *, quantile: float = 0.99,
 ) -> int:
@@ -115,6 +151,7 @@ def install_signed_seam_offsets(
         ),
     )
     installed = 0
+    skipped: list = []
     for node, sample in samples.items():
         # ONLY armed ops: the wrapper carries the offset into every deployed
         # representation; an unarmed op's offset would exist in the plain
@@ -127,11 +164,20 @@ def install_signed_seam_offsets(
             continue
         if node.output_value_offset is not None:
             continue  # idempotent: one install owns the seam
+        if not _bake_walk_feasible(node, consumers):
+            skipped.append(getattr(node, "name", None) or type(node.module).__name__)
+            continue
         sigma, kappa = _signed_seam_quantiles(sample, quantile=quantile)
         node.output_value_offset = torch.tensor(float(sigma))
         node.boundary_traffic_scale = float(kappa)
         installed += 1
 
+    if skipped:
+        print(
+            f"[SIGNED-SEAM] {len(skipped)} armed op(s) skipped "
+            f"(bake-infeasible consumer chains, left trained-clamp): {skipped}",
+            flush=True,
+        )
     if not installed:
         return 0
     # One re-propagation: the wrapper s_out, the weight fold, and the entry
