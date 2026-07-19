@@ -1273,3 +1273,50 @@ top. Refinement noted, not blocking: the value-twin staircase center is
 not shifted with the guard (a ≤θ·0.25/T per-hop offset in the A2 square);
 if AB4's residual stalls at ~1-2pp, shift the LIFCountStaircase center
 with V0 (PR30 candidate).
+
+### 15.13 AB4 verdict + the residual's new address: hops 0–2, structural
+### (2026-07-19)
+
+**AB4 (Phase-Value with physics knobs armed) MISSES its pre-registration**:
+AQ endpoint analytic 0.8359 (endpoint recovery not even engaged) but
+census genuine 0.6668 / analytic 0.8124 — WORSE genuine than AB3's
+zero-training 0.7376. Two causes read out: (1) this run's AA landed
+0.8678→0.7712 (−9.7 vs AB3's −5.8) — the AA step's RUN-TO-RUN VARIANCE
+is now the largest artifact-axis term (PR14b's case strengthens); (2)
+gauge-gating the QAT ladder on the fixed-genuine read does NOT transfer
+the win into the artifact — acceptance can only SELECT among candidates
+the VALUE-staircase objective proposes, and that objective still trains
+the unshifted (V0=0) staircase (§14.6's selection-vs-objective law,
+recurring one level up). Conversion-order law: physics knobs help AT
+DEPLOYMENT on a strong artifact; arming them mid-Phase-Value without
+moving the value twin's center buys nothing and costs ladder stability.
+
+**The fixed-composition k-cut curve (AB3 artifact + knobs, n=512):
+analytic 0.8398 / genuine 0.7617; the residual CONCENTRATES at hops 0–2**
+(−1.6/−5.7/−2.2 = −9.4pp; every later hop flat within noise; endpoint
+self-check 0.7559 vs 0.7617 ✓). The locked curve's late-hop and head
+terms are CURED by dither+guard. Two follow-up sweeps, both FLAT:
+per-hop deeper guards on hops 0–2 (V0 −0.5/−0.75/−1.0: all ±0.2pp —
+overfire exhausted there) and the T-sweep re-run on the FIXED
+composition (T=32/64/128 → 0.7617/0.7480/0.7520 — resolution acquitted
+on clean physics as well; the slight T>32 dip is consistent with knobs
+tuned at T=32).
+
+**Standing model:** the remaining ~8pp is a STRUCTURAL early-hop term —
+prime suspects, in order: the entry-seam composition (ChipInputQuantizer
+grid × walk re-encode double-rounding at the stem, §12's family), true
+within-window causality (back-loading the assay showed no V0 can fix),
+and the quarter-grid value-twin center mismatch (PR30). Next
+instruments/levers: (i) the §14 twin-delta ledger (d_mean/d_abs per hop
+at IDENTICAL inputs) re-run on the fixed composition to split hop-internal
+vs upstream-seam at hops 0–2; (ii) PR14b budget-scaled AA (artifact
+axis, −5.8..−9.7 measured spread); (iii) PR30 center-paired exact-QAT
+(staircase shifted with V0, then Phase-Value again).
+
+**Scoreboard after PR29:** origin 0.8678 → best analytic artifact 0.8244
+(AB3, census) → **deployed genuine census 0.7376 with ZERO training**
+(knobs at deploy; tier-0-replicated lossless across all six backends).
+Gap to origin −13.0pp = artifact −4.3 (AA-dominated) + composition −8.7
+(hops 0–2 structural). Phase-Deploy is retired as a main lever (flat on
+fixed physics); the endgame budget shifts to Phase-Value quality + the
+entry-seam term.
