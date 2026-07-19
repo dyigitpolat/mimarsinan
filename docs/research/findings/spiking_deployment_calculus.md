@@ -1159,3 +1159,64 @@ converting the final distance into the priced (θ, S, topology) decision
 the calculus reserves for a certified floor. DoD arithmetic: PR25 (≤2 pp)
 requires analytic ≈ origin AND τ ≤ 2 — both axes must close; either alone
 cannot.
+
+### 15.11 The tax has a mechanism: rectified-transient overfire — and a
+### zero-training +21pp lever (2026-07-19)
+
+**PR15a (k-cut prefix-hybrid).** New instrument: pin perceptrons 0..k's
+activation outputs to their genuine-walk decoded records (the walk's
+`node_value_recorder` seam) and run the suffix analytically; acc(k) vs k
+decomposes the tax per hop in accuracy units, with a built-in endpoint
+self-check (cut=all must equal the genuine read; W_a validated at 0.4pp,
+W_g at 2pp ~ SE). The mapped ViT has 12 LIF hops (θ 0.30→6.09 with depth,
+head 2.30). The tax is BIMODAL, not uniform: hops 1–2 (−11pp) and hops
+7–9 + head (−10pp, −7pp) carry it; middle hops are free. Both states
+agree on the sites. Not a uniform design floor ⇒ regime-local mechanism.
+
+**PR27 (membrane-init pairing).** The kernel pair is floor-centered
+(V0=0, soft reset; exact-QAT staircase = ceil−1/floor — A2 commutes on
+the floor pair). SHAQ-transfer hypothesis (V0=θ/2 round pair, 35pt→0.7pt
+streaming-gap collapse there): isolated single-hop assay CONFIRMS
+exactness (uniform 0.0128→0.0000, real spike-train arrivals
+0.0282→0.0000) — but the MODEL-level A/B REFUTES it violently (W_a
+genuine 0.5469→0.0801): mimarsinan's LIF integrates SIGNED charge, and
+emitted spikes are a rectified path-functional (later negative charge
+cannot cancel a fire). Pre-charging the membrane raises the rectifier's
+operating point ⇒ near-zero/negative-z neurons overfire on positive
+transients. SHAQ's win lives in all-positive-charge streams; it does not
+transfer to signed ones. LAW: the temporal kernel's quantization center
+is charge-sign-regime-dependent (positive-only ⇒ +θ/2 round; signed ⇒ 0
+or a small NEGATIVE guard).
+
+**The rectified-transient theorem (the tax mechanism).** For per-cycle
+consumer charge z_t = z̄ + ε_t (Σε_t = 0), the count bias
+E[N(path) − N(ε=0)] ≥ 0, increasing in transient variance and in V0 —
+matching every elimination: S-independent (comb correlation is
+T-invariant), iid-injection-immune (deterministic path rectification,
+not noise), depth-bimodal (stream statistics), training-resistant
+(weights can only absorb the mean, not the timing). And the SOURCE is
+ours: `to_uniform_spikes` anchors EVERY active channel's comb at cycle 0
+(`floor(cycle % spacing) == 0`) — a layer-wide synchronized burst at
+each window start, maximizing cross-channel arrival variance.
+
+**PR27-3/PR28 (both levers, zero-training, W_a artifact):**
+- Guard band alone (V0 negative): monotone dose-response 0.5469 →
+  0.6289 (−0.10) → 0.6895 (−0.25) → 0.7207 (−0.50) → 0.7324 (−0.75);
+  V0=+0.10 hurts (0.4434) — the full sign story.
+- Phase dither alone (per-channel comb rotation mod T, counts preserved
+  EXACTLY — decode-invariant, analytic twin untouched): 0.5469 →
+  **0.7559 (+20.9pp)**.
+- Composed: dither + guard(−0.25) = **0.7617** (best); guard's optimum
+  shrinks under dither (variance removed at source) — as predicted.
+- W_g (genuine-trained at locked physics): flat/slightly down under
+  dither — the trained state SPECIALIZED to locked combs; its 0.77
+  ceiling was capacity spent absorbing transient noise. Retraining on
+  the fixed composition is the unlock.
+
+**Program consequence:** the conversion order inverts — fix the
+composition's physics FIRST (dither + guard as SSOT config knobs across
+all five backends: encode SSOT + FiringStrategy V0; HCM/nevresim/SANA-FE
+must consume the SAME phase function or parity breaks), THEN Phase-Deploy
+trains from a 0.76 entry with the noise gone instead of a 0.55 entry
+spending its budget on absorption. Composed with the artifact axis
+(PR14b) this is the arithmetic path to PR25 (≤2pp).
