@@ -10,6 +10,8 @@ from mimarsinan.chip_simulation.spiking_mode_policy import policy_for_spiking_mo
 from mimarsinan.chip_simulation.spiking_semantics import (
     is_cascaded_ttfs,
     is_synchronized_ttfs,
+    lif_membrane_init,
+    spike_phase_dither_enabled,
     ttfs_cycle_schedule,
     uses_ttfs_floor_ceil_convention,
 )
@@ -40,6 +42,10 @@ class SpikingDeploymentContract:
     simulation_step_timeout_s: float | None = None
     # [E3] carry the +θ/(2S) mid-tread offset in the compare ladder, not the bias.
     comparator_half_step: bool = False
+    # [calculus 15.11] deployed-composition physics: decorrelated encode combs
+    # and the window-start membrane guard (normalized threshold units).
+    spike_phase_dither: bool = False
+    lif_membrane_init: float = 0.0
 
     @property
     def spiking_mode(self) -> str:
@@ -78,6 +84,8 @@ class SpikingDeploymentContract:
             bias_mode=resolve_bias_mode(cfg),
             simulation_step_timeout_s=float(timeout) if timeout is not None else None,
             comparator_half_step=bool(cfg.get("comparator_half_step", False)),
+            spike_phase_dither=spike_phase_dither_enabled(cfg),
+            lif_membrane_init=lif_membrane_init(cfg),
         )
 
     def is_synchronized(self, *, core: Any = None) -> bool:
@@ -119,6 +127,7 @@ class SpikingDeploymentContract:
             spike_mode=self.spike_generation_mode,
             thresholding_mode=self.thresholding_mode,
             firing_mode=self.firing_mode,
+            phase_dither=self.spike_phase_dither,
         )
 
     def entry_quantizer(self, theta, *, core: Any = None) -> ChipInputQuantizer:

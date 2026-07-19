@@ -11,7 +11,7 @@ from mimarsinan.chip_simulation.recording.spike_recorder import CoreSpikeCounts,
 from mimarsinan.mapping.latency.chip import ChipLatency
 from mimarsinan.mapping.packing.hybrid_hardcore_mapping import HybridStage
 from mimarsinan.spiking.segment_boundary import encode_segment_input
-from mimarsinan.models.spiking.cycle_policy import cycle_neuron_policy
+from mimarsinan.models.spiking.cycle_policy import cycle_neuron_policy, precharge_lif_states
 from mimarsinan.models.spiking.hybrid.host import HybridFlowHost
 from mimarsinan.models.spiking.hybrid.membrane_readout import stash_membrane_readout_correction
 from mimarsinan.models.spiking.spiking_config import COMPUTE_DTYPE
@@ -76,6 +76,7 @@ class HybridLifStepMixin(HybridFlowHost):
             )
             for c in cores
         ]
+        precharge_lif_states(neuron_states, thresholds, getattr(self, "lif_membrane_init", 0.0))
 
         output_counts = torch.zeros(batch_size, len(output_sources), device=device, dtype=COMPUTE_DTYPE)
 

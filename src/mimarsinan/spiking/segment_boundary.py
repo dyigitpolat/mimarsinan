@@ -25,7 +25,6 @@ from mimarsinan.spiking.compute_boundary import (
     normalize_boundary_value,
 )
 from mimarsinan.spiking.spike_trains import (
-    materialized_spike_train,
     rates_to_spike_train,
     uniform_spike_train,
 )
@@ -210,6 +209,12 @@ def decode_segment_output_torch(
     return spike_counts / float(t)
 
 
+def _encode_uniform(rates, T, config):
+    return uniform_spike_train(
+        rates, T, phase_dither=config.phase_dither,
+    ).to(config.compute_dtype)
+
+
 def encode_segment_input(
     stage: HybridStage,
     seg_input_rates_clamped: torch.Tensor,
@@ -243,18 +248,14 @@ def encode_segment_input(
     if not config.use_cycle_accurate_trains:
         if not filled_ranges:
             return rates_to_spike_train(
-                seg_input_rates_clamped,
-                T,
-                spike_mode=config.spike_mode,
-                log_fallback=True,
+                seg_input_rates_clamped, T, spike_mode=config.spike_mode,
+                log_fallback=True, phase_dither=config.phase_dither,
             ).to(config.compute_dtype)
         if not missing_slices:
             return spike_train
         encoded = rates_to_spike_train(
-            seg_input_rates_clamped,
-            T,
-            spike_mode=config.spike_mode,
-            log_fallback=False,
+            seg_input_rates_clamped, T, spike_mode=config.spike_mode,
+            log_fallback=False, phase_dither=config.phase_dither,
         ).to(config.compute_dtype)
         for lo, hi in filled_ranges:
             encoded[:, :, lo:hi] = spike_train[:, :, lo:hi]
@@ -266,12 +267,8 @@ def encode_segment_input(
     )
     if not filled_ranges and only_raw_input:
         if config.spike_mode == "SpikeTrain":
-            return materialized_spike_train(
-                seg_input_rates_clamped, T,
-            ).to(config.compute_dtype)
-        return uniform_spike_train(
-            seg_input_rates_clamped, T,
-        ).to(config.compute_dtype)
+            return _encode_uniform(seg_input_rates_clamped, T, config)
+        return _encode_uniform(seg_input_rates_clamped, T, config)
 
     non_raw_missing = [m for m in missing_slices if m[0] != -2]
     raw_missing = [m for m in missing_slices if m[0] == -2]
@@ -288,10 +285,10 @@ def encode_segment_input(
             "stage %r: rate-only boundary at non-raw inputs %s — uniform-encoding.",
             stage.name, [m[0] for m in non_raw_missing],
         )
-        return uniform_spike_train(seg_input_rates_clamped, T).to(config.compute_dtype)
+        return _encode_uniform(seg_input_rates_clamped, T, config)
 
     if raw_missing:
-        encoded = uniform_spike_train(seg_input_rates_clamped, T).to(config.compute_dtype)
+        encoded = _encode_uniform(seg_input_rates_clamped, T, config)
         for lo, hi in filled_ranges:
             encoded[:, :, lo:hi] = spike_train[:, :, lo:hi]
         return encoded

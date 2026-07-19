@@ -80,6 +80,7 @@ def rates_to_spike_train(
     *,
     spike_mode: str,
     log_fallback: bool = True,
+    phase_dither: bool = False,
 ) -> torch.Tensor:
     """Legacy fallback: expand clamped rates to a spike train per cycle."""
     if spike_mode == "SpikeTrain":
@@ -88,7 +89,11 @@ def rates_to_spike_train(
                 "rates_to_spike_train SpikeTrain materialization (T=%d, shape=%s)",
                 T, tuple(rates.shape),
             )
-        return materialized_spike_train(rates.clamp(0.0, 1.0), int(T))
+        return materialized_spike_train(
+            rates.clamp(0.0, 1.0), int(T), phase_dither=phase_dither,
+        )
+    if spike_mode == "Uniform" and phase_dither:
+        return uniform_spike_train(rates, int(T), phase_dither=True)
 
     if log_fallback:
         logger.debug(

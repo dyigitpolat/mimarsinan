@@ -52,6 +52,8 @@ class SpikingHybridCoreFlow(
         ttfs_cycle_schedule: str = "cascaded",
         membrane_readout: bool = False,
         membrane_readout_half_step: bool = True,
+        phase_dither: bool = False,
+        lif_membrane_init: float = 0.0,
     ):
         super().__init__()
 
@@ -80,6 +82,10 @@ class SpikingHybridCoreFlow(
             thresholding_mode=thresholding_mode,
         )
 
+        # The guard is LIF-family semantics; other modes never pre-charge.
+        self.lif_membrane_init = (
+            float(lif_membrane_init) if spiking_mode == "lif" else 0.0
+        )
         self._boundary_config = BoundaryConfig(
             simulation_length=self.simulation_length,
             spiking_mode=self.spiking_mode,
@@ -88,6 +94,7 @@ class SpikingHybridCoreFlow(
             thresholding_mode=self.thresholding_mode,
             firing_mode=self.firing_mode,
             compute_dtype=COMPUTE_DTYPE,
+            phase_dither=bool(phase_dither),
         )
 
         self._segment_tensor_cache: Dict[int, dict] = {}

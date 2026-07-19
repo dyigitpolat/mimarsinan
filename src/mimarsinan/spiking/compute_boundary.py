@@ -81,6 +81,6 @@ def encode_compute_boundary(
         return None
 
     wire_rate = normalize_boundary_value(value, lif.activation_scale)
-    return uniform_spike_train(wire_rate, config.simulation_length).to(
-        config.compute_dtype
-    )
+    return uniform_spike_train(
+        wire_rate, config.simulation_length, phase_dither=config.phase_dither,
+    ).to(config.compute_dtype)

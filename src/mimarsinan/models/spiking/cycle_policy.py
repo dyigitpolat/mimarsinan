@@ -14,6 +14,15 @@ from mimarsinan.models.spiking.ttfs_cycle_step import ttfs_cycle_contribute_and_
 NeuronState = Dict[str, torch.Tensor]
 
 
+def precharge_lif_states(neuron_states, thresholds, membrane_init: float) -> None:
+    """[calculus sec.15.11] window-start membrane guard: pre-charge each LIF
+    membrane by ``membrane_init * theta`` (per-neuron threshold units)."""
+    if not membrane_init:
+        return
+    for state, threshold in zip(neuron_states, thresholds):
+        state["memb"] += float(membrane_init) * threshold
+
+
 class LIFCyclePolicy:
     """Multi-spike integrate-and-fire with Default/Novena reset."""
 

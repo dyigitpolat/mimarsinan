@@ -93,3 +93,51 @@ def test_policy_walk_and_boundary_config_carry_the_flag():
     assert BoundaryConfig(
         simulation_length=8, spiking_mode="lif", cycle_accurate=True,
     ).phase_dither is False
+
+
+def test_rates_to_spike_train_threads_phase_dither_for_uniform():
+    from mimarsinan.spiking.spike_trains import rates_to_spike_train
+
+    torch.manual_seed(3)
+    r = torch.rand(2, 40)
+    T = 16
+    locked = rates_to_spike_train(r, T, spike_mode="Uniform", log_fallback=False)
+    dithered = rates_to_spike_train(
+        r, T, spike_mode="Uniform", log_fallback=False, phase_dither=True,
+    )
+    assert torch.equal(locked.sum(0), dithered.sum(0))
+    assert not torch.equal(locked, dithered)
+    train = rates_to_spike_train(
+        r, T, spike_mode="SpikeTrain", log_fallback=False, phase_dither=True,
+    )
+    assert torch.equal(train.sum(0), locked.sum(0))
+
+
+def test_lif_cycle_state_precharge_scales_with_threshold():
+    from mimarsinan.models.spiking.cycle_policy import precharge_lif_states
+
+    states = [
+        {"memb": torch.zeros(2, 3)},
+        {"memb": torch.zeros(2, 2)},
+    ]
+    thresholds = [torch.tensor([1.0, 2.0, 4.0]), torch.tensor([0.5, 8.0])]
+    precharge_lif_states(states, thresholds, -0.25)
+    assert torch.allclose(states[0]["memb"][0], torch.tensor([-0.25, -0.5, -1.0]))
+    assert torch.allclose(states[1]["memb"][1], torch.tensor([-0.125, -2.0]))
+    precharge_lif_states(states, thresholds, 0.0)
+    assert torch.allclose(states[1]["memb"][1], torch.tensor([-0.125, -2.0]))
+
+
+def test_deployment_contract_carries_the_physics_knobs():
+    from mimarsinan.chip_simulation.deployment_contract import (
+        SpikingDeploymentContract,
+    )
+
+    cfg = {
+        "spiking_mode": "lif", "simulation_steps": 8,
+        "spike_phase_dither": True, "lif_membrane_init": -0.25,
+    }
+    contract = SpikingDeploymentContract.from_pipeline_config(cfg)
+    assert contract.spike_phase_dither is True
+    assert contract.lif_membrane_init == -0.25
+    assert contract.boundary_config(cycle_accurate=True).phase_dither is True
