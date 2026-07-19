@@ -3,6 +3,9 @@
 from mimarsinan.models.perceptron_mixer.perceptron import make_activation
 from mimarsinan.tuning.axes import ActivationAdaptationAxis
 from mimarsinan.tuning.orchestration.blend_ramp import kd_loss_from_config
+from mimarsinan.tuning.orchestration.frontier.endpoint_recovery import (
+    run_endpoint_recovery,
+)
 from mimarsinan.tuning.orchestration.smooth_adaptation_tuner import SmoothAdaptationTuner
 from mimarsinan.tuning.orchestration.tuning_policy import FAST_LADDER_STEPS_PER_RATE
 from mimarsinan.tuning.teacher import resolve_conversion_teacher
@@ -55,6 +58,13 @@ class ActivationAdaptationTuner(SmoothAdaptationTuner):
         self.trainer.loss_function = kd_loss_from_config(
             self.pipeline.config, self._kd_teacher
         )
+
+    def _post_stabilization_hook(self):
+        # [PR14b, calculus sec.13.2 L-C] the AA swap is the largest conversion
+        # step yet had the only unfunded endpoint; budget follows swap distance.
+        steps = int(self.pipeline.config.get("aa_endpoint_recovery_steps", 0))
+        if steps > 0:
+            run_endpoint_recovery(self, base_steps=steps)
 
     def _set_rate(self, rate):
         self._axis.set_rate(rate)

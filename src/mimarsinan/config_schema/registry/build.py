@@ -12,6 +12,7 @@ from mimarsinan.config_schema.defaults import (
     DEFAULT_PLATFORM_CONSTRAINTS,
 )
 from mimarsinan.config_schema.registry.entries_conversion import ENTRIES as _CONVERSION
+from mimarsinan.config_schema.registry.entries_endpoint import ENTRIES as _ENDPOINT
 from mimarsinan.config_schema.registry.entries_model import ENTRIES as _MODEL
 from mimarsinan.config_schema.registry.entries_platform import ENTRIES as _PLATFORM
 from mimarsinan.config_schema.registry.entries_run import ENTRIES as _RUN
@@ -95,7 +96,7 @@ def validate_registry(entries: Tuple[ConfigKeySchema, ...]) -> Dict[str, ConfigK
 _REGISTRY: Dict[str, ConfigKeySchema] = validate_registry(
     tuple(
         _inject_default(e)
-        for e in (_RUN + _MODEL + _CONVERSION + _TUNING + _PLATFORM)
+        for e in (_RUN + _MODEL + _CONVERSION + _TUNING + _ENDPOINT + _PLATFORM)
     )
 )
 

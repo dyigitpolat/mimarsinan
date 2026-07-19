@@ -33,6 +33,9 @@ ALLOWLIST_FILES: frozenset[str] = frozenset({
 
 # Directories scheduled for split; shrink this set as refactors land.
 ALLOWLIST_DIRS: frozenset[str] = frozenset({
+    # The per-key SSOT tables partition a growing config surface under a
+    # 300-LOC per-file cap, so sibling count is the designed relief valve.
+    "config_schema/registry",
     "chip_simulation",
     "mapping/mappers",
     "mapping/packing",

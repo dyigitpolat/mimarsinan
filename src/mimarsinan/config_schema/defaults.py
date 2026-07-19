@@ -184,7 +184,7 @@ CONFIG_KEYS_SET: Set[str] = {
     # Every-endpoint D-hat target floor (bit-parity-lossless family); the
     # ConversionPolicy recipe may set it.
     "endpoint_target_floor", "origin_teacher_kd", "origin_anchored_compact",
-    "spike_phase_dither", "lif_membrane_init",  # [calculus 15.11]
+    "spike_phase_dither", "lif_membrane_init", "aa_endpoint_recovery_steps",
     # torch DataLoader worker count; read via config.get with a fallback of 4.
     "num_workers", "proven_recovery_depth",
     # Workload-profile-injectable keys (absence is meaningful — no defaults).
