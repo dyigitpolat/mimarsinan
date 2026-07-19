@@ -838,3 +838,29 @@ correction** — the PR18 gate is promoted from guardrail to primary lever.
 Sequencing: PR20+PR21 (instruments, minutes) → convention fix if PR21 says
 Type-B → PR18 gate (one seam) → E4' re-run (one window) → PR14b (AA budget)
 → entry-1 arming → E5/PR15 → D/R/F2/V unchanged.
+
+### 14.5 G1 executed (2026-07-19): two more refutations close the ring
+
+- **PR21/V1 — the seam round is INERT**: inserting the κ-grid seam round
+  into the value twin at every entry changes nothing (V0 0.8594 = V1 0.8594
+  exactly). The drift is not a seam-round convention.
+- **PR20 — REFUTED**: the signed deltas are token-UNIFORM (hop 6: CLS
+  +0.0126 vs patch +0.0124; hop 11: CLS +0.0126 < patch +0.0213). No CLS
+  concentration.
+- **The ring is closed.** With retime, cycle-trains, iid noise, seam rounds,
+  token structure, coverage, and per-neuron means ALL exonerated, the
+  surviving stage is the only one never toggled: **hop-internal per-cycle
+  integration physics** — the V4-family rectified transient (one-sided
+  positive by construction) balanced against strict-`<` tie deficits
+  (negative); the baseline's mixed per-hop signs are the two terms in
+  near-cancellation, and the anchored trajectory tipped the balance
+  same-sign. This is temporal physics (Type-C-temporal), not a convention
+  bug: there is no exact fix, only the calculus's standard answer —
+  **install the true composition in the training loop's gauge and let the
+  QAT train through it** like every other deployed term. PR18 is therefore
+  not merely primary but UNIQUE among cheap levers, and it is landed:
+  `deployed_lif_gauge_forward` (`lif_exact_qat.py`) — fresh LIF at each θ +
+  the retimed chip-aligned walk on the gate's clone — consumed by the AQ
+  tuner's `_mbh_full_transform_forward` under the exact arm (locks in
+  `test_lif_exact_qat.py::TestDeployedLifGauge`; gate 8288, typecheck 0).
+  E4' (G3) verdict follows below.
