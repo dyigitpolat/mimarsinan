@@ -20,6 +20,7 @@ class BoundaryConfig:
     compute_dtype: torch.dtype = torch.float64
     negative_shift: bool = False
     spike_generation_mode: str = "Uniform"
+    phase_dither: bool = False
 
     @property
     def use_cycle_accurate_trains(self) -> bool:

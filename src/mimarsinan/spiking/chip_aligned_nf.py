@@ -14,17 +14,21 @@ from mimarsinan.spiking.segment_forward import LifSegmentPolicy, SegmentForwardD
 def chip_aligned_segment_forward(
     model: nn.Module, x: torch.Tensor, T: int,
     *, retime: bool = False,
+    phase_dither: bool = False,
     compute_min_recorder: dict | None = None,
     node_value_recorder: dict | None = None,
 ) -> torch.Tensor:
     """Segment-aware chip-aligned NF forward (matches HCM ``_forward_rate``);
-    ``retime`` selects the [C3/R5] per-hop re-encoded twin."""
+    ``retime`` selects the [C3/R5] per-hop re-encoded twin; ``phase_dither``
+    the count-exact decorrelated encode combs [calculus sec.15.11]."""
     if not hasattr(model, "get_mapper_repr"):
         return run_cycle_accurate(model, x, T)
     mapper_repr = cast(Any, model).get_mapper_repr()
     if mapper_repr is None:
         return run_cycle_accurate(model, x, T)
-    driver = SegmentForwardDriver(mapper_repr, T, LifSegmentPolicy(retime=retime))
+    driver = SegmentForwardDriver(
+        mapper_repr, T, LifSegmentPolicy(retime=retime, phase_dither=phase_dither)
+    )
     return driver(
         x,
         compute_min_recorder=compute_min_recorder,

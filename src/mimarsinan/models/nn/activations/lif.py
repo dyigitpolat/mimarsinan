@@ -99,6 +99,7 @@ class LIFActivation(nn.Module):
         thresholding_mode: str = "<=",
         firing_mode: str = "Default",
         bias_mode: str = "on_chip",
+        membrane_init: float = 0.0,
     ):
         super().__init__()
         self.T = int(T)
@@ -150,6 +151,14 @@ class LIFActivation(nn.Module):
                 backend="torch",
             )
 
+        # Window-start membrane guard [calculus sec.15.11]: installed as the
+        # IFNode's reset value so EVERY reset path restores it (spike-time
+        # v_reset semantics stay untouched).
+        self.membrane_init = float(membrane_init)
+        if self.membrane_init != 0.0:
+            self.if_node.set_reset_value("v", self.membrane_init)
+            self.if_node.v = self.membrane_init
+
         self._cycle_accurate_mode = False
         self.use_cycle_accurate_trains = False
 
@@ -158,7 +167,10 @@ class LIFActivation(nn.Module):
         return "LIF"
 
     def extra_repr(self) -> str:
-        return f"T={self.T}, thresholding_mode={self.thresholding_mode!r}"
+        return (
+            f"T={self.T}, thresholding_mode={self.thresholding_mode!r}, "
+            f"membrane_init={self.membrane_init}"
+        )
 
     def set_cycle_accurate(self, mode: bool) -> None:
         """Toggle single-step (cycle-accurate) vs multi-step (rate) forward."""

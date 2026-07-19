@@ -40,15 +40,19 @@ class _ChipAlignedNFForward(LazyExecutorForward):
     pre-retime cache artifacts default to the raw cascade.
     """
 
-    def __init__(self, model, T: int, retime: bool = False):
+    def __init__(
+        self, model, T: int, retime: bool = False, phase_dither: bool = False,
+    ):
         super().__init__(model, T)
         self.retime = bool(retime)
+        self.phase_dither = bool(phase_dither)
 
     def _run(self, x):
         from mimarsinan.spiking.chip_aligned_nf import chip_aligned_segment_forward
 
         return chip_aligned_segment_forward(
             self.model, x, self.T, retime=getattr(self, "retime", False),
+            phase_dither=getattr(self, "phase_dither", False),
         )
 
 
@@ -78,12 +82,16 @@ class LIFAdaptationTuner(KDBlendAdaptationTuner):
         self._T = int(self.pipeline.config["simulation_steps"])
         self._thresholding_mode = str(self.pipeline.config.get("thresholding_mode", "<="))
         from mimarsinan.chip_simulation.spiking_semantics import (
+            lif_membrane_init,
             lif_per_hop_retiming_enabled,
+            spike_phase_dither_enabled,
         )
         from mimarsinan.pipelining.core.platform_constraints_resolver import resolve_bias_mode
 
         self._bias_mode = resolve_bias_mode(self.pipeline.config)
         self._per_hop_retiming = lif_per_hop_retiming_enabled(self.pipeline.config)
+        self._phase_dither = spike_phase_dither_enabled(self.pipeline.config)
+        self._membrane_init = lif_membrane_init(self.pipeline.config)
         plan = LifAdaptationPlan.resolve(self.pipeline.config)
         self._adaptation_plan = plan
         self._cycle_accurate = plan.cycle_accurate
@@ -158,6 +166,7 @@ class LIFAdaptationTuner(KDBlendAdaptationTuner):
             thresholding_mode=self._thresholding_mode,
             firing_mode=str(self.pipeline.config.get("firing_mode", "Default")),
             bias_mode=self._bias_mode,
+            membrane_init=self._membrane_init,
         )
 
     def _make_blend(self, old, target, rate):
@@ -178,7 +187,10 @@ class LIFAdaptationTuner(KDBlendAdaptationTuner):
 
     def _finalize_forward_for(self, model):
         if self._cycle_accurate:
-            return _ChipAlignedNFForward(model, self._T, retime=self._per_hop_retiming)
+            return _ChipAlignedNFForward(
+                model, self._T, retime=self._per_hop_retiming,
+                phase_dither=self._phase_dither,
+            )
         return None
 
     def _before_finalize_rebuild(self, model=None) -> None:

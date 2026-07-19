@@ -12,12 +12,21 @@ from mimarsinan.models.nn.activations import LIFActivation
 logger = logging.getLogger("mimarsinan.spiking.spike_trains")
 
 
-def uniform_spike_train(rate: torch.Tensor, T: int) -> torch.Tensor:
-    """Encode rates in [0, 1] to a uniform-spaced spike train of shape ``(T, ...)``."""
+def uniform_spike_train(
+    rate: torch.Tensor, T: int, *, phase_dither: bool = False,
+) -> torch.Tensor:
+    """Encode rates in [0, 1] to a uniform-spaced spike train of shape ``(T, ...)``.
+
+    ``phase_dither`` rotates each channel's comb by a deterministic offset mod T
+    (count-exact) to decorrelate cross-channel arrival [calculus sec.15.11]."""
     T = int(T)
     rate_c = rate.clamp(0.0, 1.0)
+    offsets = (
+        spike_modes.uniform_phase_offsets(rate_c.shape[-1], T, device=rate_c.device)
+        if phase_dither else None
+    )
     trains = [
-        spike_modes.to_uniform_spikes(rate_c, cycle, simulation_length=T)
+        spike_modes.to_uniform_spikes(rate_c, cycle, T, phase_offsets=offsets)
         for cycle in range(T)
     ]
     return torch.stack(trains, dim=0)
@@ -55,12 +64,14 @@ def lif_spike_train(
         lif.set_cycle_accurate(was_ca)
 
 
-def materialized_spike_train(rate: torch.Tensor, T: int) -> torch.Tensor:
+def materialized_spike_train(
+    rate: torch.Tensor, T: int, *, phase_dither: bool = False,
+) -> torch.Tensor:
     """Build a full ``(T, ...)`` train upfront for ``spike_mode='SpikeTrain'``.
 
     Uses the same Uniform spacing as the per-cycle encoder so replay matches HCM.
     """
-    return uniform_spike_train(rate, T)
+    return uniform_spike_train(rate, T, phase_dither=phase_dither)
 
 
 def rates_to_spike_train(

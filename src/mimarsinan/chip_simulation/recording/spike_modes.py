@@ -29,13 +29,36 @@ def to_ttfs_latched_spikes(tensor: torch.Tensor, cycle: int, simulation_length: 
     return ((spike_time < T) & (cycle >= spike_time)).float()
 
 
-def to_uniform_spikes(tensor: torch.Tensor, cycle: int, simulation_length: int) -> torch.Tensor:
+# Golden-ratio channel phases: irrational stride maximally decorrelates comb
+# alignment across channels while staying deterministic and index-stable.
+_PHASE_GOLDEN = 0.6180339887498949
+
+
+def uniform_phase_offsets(
+    n_channels: int, simulation_length: int, device: torch.device | None = None,
+) -> torch.Tensor:
+    """Per-channel comb rotation (whole cycles in [0, T)) for phase-dithered
+    uniform encodes; rotation mod T preserves every channel's count exactly."""
+    idx = torch.arange(n_channels, device=device, dtype=torch.float32)
+    return torch.floor((idx * _PHASE_GOLDEN).frac() * simulation_length)
+
+
+def to_uniform_spikes(
+    tensor: torch.Tensor,
+    cycle: int,
+    simulation_length: int,
+    phase_offsets: torch.Tensor | None = None,
+) -> torch.Tensor:
     T = simulation_length
     n = torch.round(tensor * T).to(torch.long)
     mask = (n != 0) & (n != T) & (cycle < T)
     n_safe = torch.clamp(n, min=1)
     spacing = T / n_safe.float()
-    result = mask & (torch.floor(cycle / spacing) < n_safe) & (torch.floor(cycle % spacing) == 0)
+    if phase_offsets is None:
+        result = mask & (torch.floor(cycle / spacing) < n_safe) & (torch.floor(cycle % spacing) == 0)
+    else:
+        e = (float(cycle) + phase_offsets.to(tensor.device)) % T
+        result = mask & (torch.floor(e / spacing) < n_safe) & (torch.floor(e % spacing) == 0)
     result = result.float()
     result[n == T] = 1.0
     return result

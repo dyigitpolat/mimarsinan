@@ -158,3 +158,19 @@ class TestBitParityLosslessConversion:
         assert is_bit_parity_lossless_conversion("ttfs_quantized") is False
         # cycle-based (cascaded/synchronized) trains a different composition.
         assert is_bit_parity_lossless_conversion("ttfs_cycle_based") is False
+
+
+def test_lif_membrane_init_accessor_defaults_and_reads():
+    from mimarsinan.chip_simulation.spiking_semantics import lif_membrane_init
+
+    assert lif_membrane_init({}) == 0.0
+    assert lif_membrane_init({"lif_membrane_init": -0.25}) == -0.25
+
+
+def test_spike_phase_dither_accessor_defaults_and_reads():
+    from mimarsinan.chip_simulation.spiking_semantics import (
+        spike_phase_dither_enabled,
+    )
+
+    assert spike_phase_dither_enabled({}) is False
+    assert spike_phase_dither_enabled({"spike_phase_dither": True}) is True

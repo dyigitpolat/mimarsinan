@@ -65,6 +65,18 @@ def is_lif(spiking_mode: str) -> bool:
     return _norm(spiking_mode) in LIF_MODES
 
 
+def lif_membrane_init(config) -> float:
+    """[calculus sec.15.11] window-start membrane guard (normalized units;
+    negative recenters the signed-charge rectifier against transient overfire)."""
+    return float(config.get("lif_membrane_init", 0.0))
+
+
+def spike_phase_dither_enabled(config) -> bool:
+    """[calculus sec.15.11] count-exact per-channel comb rotation at uniform
+    encodes, decorrelating cross-channel arrival (decode-invariant)."""
+    return bool(config.get("spike_phase_dither", False))
+
+
 def lif_per_hop_retiming_enabled(config) -> bool:
     """[C3/R5] the per-hop count-exact re-timing knob is armed for a LIF plan.
 

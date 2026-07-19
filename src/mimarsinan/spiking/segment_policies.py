@@ -64,8 +64,9 @@ class LifSegmentPolicy:
     _boundary_scales: dict | None = None
     _absolute_nodes: dict | None = None
 
-    def __init__(self, retime: bool = False):
+    def __init__(self, retime: bool = False, phase_dither: bool = False):
         self.retime = bool(retime)
+        self.phase_dither = bool(phase_dither)
 
     def prepare(self, driver):
         from spikingjelly.activation_based import functional
@@ -144,7 +145,7 @@ class LifSegmentPolicy:
                 rate = normalize_boundary_value(value, scale)
             else:
                 rate = value.clamp(0.0, 1.0)
-            t = uniform_spike_train(rate, T)
+            t = uniform_spike_train(rate, T, phase_dither=self.phase_dither)
             if scale != 1.0:
                 t = t * scale
             node_train[dep] = t
@@ -172,7 +173,9 @@ class LifSegmentPolicy:
                     node_rate[node] = rate_norm
                     # Mirror of encode_compute_boundary: the deployed boundary is
                     # a uniform wire train; *scale keeps NF value-domain magnitudes.
-                    node_train[node] = uniform_spike_train(rate_norm, T) * scale
+                    node_train[node] = uniform_spike_train(
+                        rate_norm, T, phase_dither=self.phase_dither,
+                    ) * scale
                 else:
                     assert lif is not None, (
                         "LifSegmentPolicy: non-encoding perceptron must carry a LIF activation"
@@ -190,6 +193,7 @@ class LifSegmentPolicy:
                         # gradient — the boundary-grad-severance failure mode).
                         retimed = uniform_spike_train(
                             (train / scale).mean(dim=0).clamp(0.0, 1.0).detach(), T,
+                            phase_dither=self.phase_dither,
                         ) * scale
                         train = retimed.detach() + (train - train.detach())
                     node_train[node] = train
