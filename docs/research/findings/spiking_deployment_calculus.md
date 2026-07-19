@@ -1088,3 +1088,31 @@ and endpoint 0.8205. The audit on the healed artifact: **entry-1 oob
 0.498 → 0.036; all twelve seams now 0.006–0.046 with biases ≈ 0 — the
 certificate board is green across the graph for the first time.** PR23'
 (Phase-Deploy from the healed artifact) is the running verdict.
+
+### 15.9 PR23' MISS (0.7536) — two more refutations; the stall diagnosed as optimization fidelity
+
+PR23' from the healed artifact: entry 0.5625 → best 0.7773 @256, census
+**0.7536** — at or below the unhealed run. Two refutations follow:
+(1) **the stem-oob-as-binding-constraint hypothesis is refuted at the
+outcome level** — healing 0.498 → 0.036 moved the Phase-Deploy ceiling not
+at all (the heal remains correct and stays: the certificates are green and
+the capacity is real, but it was not the constraint); (2) **the strict-`<`
+tie hypothesis is refuted by direct A/B** — the same trained state reads
+0.7540 under BOTH comparators (V9's float-threshold claim confirmed on the
+ViT). The ~0.75–0.77 ceiling now reproduces across two structurally
+different artifacts, two budgets (400/1200), and both comparators.
+
+**The overlooked tell: the KD loss NEVER descended** (~2.03 → ~1.9 across
+1200 steps, both runs) while accuracy did all its climbing in the first
+~120 steps. The optimizer is STALLED, not converged: the surrogate
+gradient through 12 per-cycle IF layers at bs16 is too weak/noisy past the
+easy re-alignment. The front-runner is therefore **optimization fidelity**
+(the quality of the gradient estimator through the deployed composition),
+with the discriminator arm: effective batch 64 (gradient accumulation),
+pure-KD α=1 at T=8 (denser, softer signal) — prediction: the loss
+DESCENDS and genuine exceeds 0.79. The escalation ladder if confirmed is
+already in-house: the **frontier machinery** (`segment_hop_frontier`
+k-hybrid, prefix/hop-staged ramps) — progressive genuine-depth training
+that keeps gradients strong at every stage — is the designed curriculum
+for exactly this class. The PR15 composed floor (still unrun) arbitrates
+what remains after fidelity is fixed.
