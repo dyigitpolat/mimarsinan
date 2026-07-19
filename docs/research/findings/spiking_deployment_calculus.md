@@ -907,3 +907,40 @@ budget step closes toward the analytic band. A ~zero slope would mean the
 temporal term resists the surrogate gradient — then the next candidates are
 deployment-noise/dither QAT and the analytic V4 first-moment fold, in that
 order.
+
+### 14.7 PR22 CONFIRMED (2026-07-19): train-through works, fast — and re-aligns the twins
+
+The pipeline-step form of the experiment could not fit a window (session +
+cache-load + LR-probe overhead precedes any training; no intra-step
+resume), so PR22 ran probe-grade (`pr22_train_through_slope.py`: load AQ
+model + origin teacher only, fresh-LIF install, KD-to-origin loss computed
+ON `chip_aligned_segment_forward(..., retime=True)`, surrogate gradients
+through the per-cycle IF and the retime STE). Three arms on the E4'
+artifact (entry genuine 0.6387 ≡ the census 0.6374):
+
+| arm | result |
+|---|---|
+| lr 3e-4 flat, 180 steps | CRATERED to chance in 60 steps — analytic control cratered identically ⇒ ordinary optimization damage (hot flat LR on a pretrained ViT), not a temporal effect |
+| lr 2e-5 flat, 180 steps (~5 GPU-min) | genuine 0.6387 → **0.7188** (+8.0 pp); **twin gap collapsed along the trajectory** (genuine ≈ analytic at every checkpoint) |
+| lr 2e-5 cosine + keep-best, 400 steps (~11 GPU-min) | genuine → **0.7676 census — the program's best genuine read** (prior best 0.7397); analytic 0.7402: **the twins crossed** — the deployed composition is now the model's best-read function |
+
+Verdict: the temporal term is **surrogate-trainable with a steep slope**
+(+12.9 pp in 11 minutes on a naive flat recipe — no LLRD, no warmup, 0.13
+epochs), and training through the composition doesn't merely lift the
+genuine read, it re-aligns the twins — the term is absorbed into the
+weights exactly as the calculus predicts for any trained-through deployed
+term. The lever-class elimination is complete and constructive: post-hoc
+correction ✗, acceptance gating ✗ (but kept as the gauge/guardrail — it
+also raised analytic), **objective-through-composition ✓**.
+
+**Productionization note (the L-family completion): the conversion endpoint
+must TRAIN through the deployed composition, not merely be measured by it**
+— concretely, the genuine-through recovery becomes the exact-QAT endpoint
+stage (the LIF step's recovery with a genuine-appropriate LR: 2e-5-scale,
+NOT the pipeline 3e-3 which is the measured crater regime), window-chained
+or probe-grade with keep-best. Remaining full-gap ledger after PR22:
+origin 0.8678 → best genuine 0.7676 (−10.0), attributed: the AA swap
+(−5.8, PR14b budget lever untouched), the analytic↔genuine joint headroom
+(the probe traded analytic 0.8377 → 0.7402 under a naive recipe; an
+origin-anchored longer run should hold both), entry-1 σ, and WQ/parity
+still ahead.
