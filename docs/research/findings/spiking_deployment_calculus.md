@@ -1228,3 +1228,48 @@ future gates read census). Zero-training on the fixed composition ≈ the
 fully-trained locked-composition state (0.7676): the remaining artifact
 composition gap is 8.7pp (was ~27pp), now with training headroom that no
 longer pays the absorption tax.
+
+### 15.12 PR29 lands: the physics knobs are SSOT, tier-0-replicated;
+### training on the fixed composition is FLAT ⇒ the artifact axis is next
+### (2026-07-19)
+
+**Landed (tests-first, gate 8310, typecheck 0):** `spike_phase_dither`
+(count-exact per-channel comb rotation at the uniform-encode SSOT —
+`uniform_phase_offsets` golden-ratio policy in spike_modes; threaded
+through spike_trains → LifSegmentPolicy/chip_aligned walk → BoundaryConfig
+→ segment_boundary/compute_boundary → the contract → the HCM flow) and
+`lif_membrane_init` (the window-start guard: LIFActivation installs it as
+the IFNode reset value so every reset path restores it; the HCM rate loop
+pre-charges `memb += V0·θ` via `precharge_lif_states`, LIF-gated at the
+flow ctor). Registry-registered, default-off, byte-identical when off.
+
+**Tier-0 replication GREEN (t0_05, both knobs armed):** the full backend
+ladder — NF → SCM → HCM → nevresim → Loihi → SANA-FE — deploys LOSSLESS
+at 0.9809 (= the pretrained anchor, Δ=+0.0000 at every simulator read)
+with Loihi spike parity 1.0. Cross-backend coherence holds because every
+side consumes the SAME encode policy and the same guard. (One CUDA
+illegal-access on the saturated shared GPU disappeared on rerun —
+infrastructure, not the knobs.)
+
+**Phase-Deploy on the fixed composition is FLAT.** From the healed
+artifact with dither+guard(−0.25): entry 0.7734@256 / census 0.7376.
+(a) DeployedRiskFinetune, warmup + lr 2e-5, 600 steps: entry = best =
+final = 0.7734 — zero trainable improvement; (b) the hot recipe (4e-5,
+no warmup) actively damages it (0.7617 → 0.6133@60). Reading: the fixed
+composition already sits at THIS artifact's joint local capacity — the
++22pp that Phase-Deploy used to deliver was absorption of the transient
+noise the knobs now remove at source. The two-phase theorem update: with
+composition physics fixed, Phase-Deploy's role shrinks to a small
+polish; the remaining 8.7pp (0.7376 vs analytic 0.8244) belongs to the
+ARTIFACT (Phase-Value quality + QAT gauged on the true composition).
+
+**Next block = AB4 (in flight): the Phase-Value chain re-run with the
+physics knobs armed** — the exact-QAT AQ acceptance gauge
+(`deployed_lif_gauge_forward`) now measures candidates on the FIXED
+genuine composition, so the ladder optimizes what actually ships;
+prediction (pre-registered): AQ endpoint genuine census ≥ 0.78 and the
+twin residual ≤ 3pp without any Phase-Deploy. Then PR14b (AA budget) on
+top. Refinement noted, not blocking: the value-twin staircase center is
+not shifted with the guard (a ≤θ·0.25/T per-hop offset in the A2 square);
+if AB4's residual stalls at ~1-2pp, shift the LIFCountStaircase center
+with V0 (PR30 candidate).
