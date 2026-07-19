@@ -6,6 +6,10 @@ from mimarsinan.tuning.orchestration.blend_ramp import kd_loss_from_config
 from mimarsinan.tuning.orchestration.frontier.endpoint_recovery import (
     run_endpoint_recovery,
 )
+from mimarsinan.tuning.orchestration.retention_envelope import (
+    origin_anchored_compact_active,
+    origin_metric,
+)
 from mimarsinan.tuning.orchestration.smooth_adaptation_tuner import SmoothAdaptationTuner
 from mimarsinan.tuning.orchestration.tuning_policy import FAST_LADDER_STEPS_PER_RATE
 from mimarsinan.tuning.teacher import resolve_conversion_teacher
@@ -62,9 +66,17 @@ class ActivationAdaptationTuner(SmoothAdaptationTuner):
     def _post_stabilization_hook(self):
         # [PR14b, calculus sec.13.2 L-C] the AA swap is the largest conversion
         # step yet had the only unfunded endpoint; budget follows swap distance.
+        # Under the origin compact the target anchors to the ORIGIN metric —
+        # the D-hat highwater at AA is the post-swap read and sits below entry.
         steps = int(self.pipeline.config.get("aa_endpoint_recovery_steps", 0))
         if steps > 0:
-            run_endpoint_recovery(self, base_steps=steps)
+            if origin_anchored_compact_active(self.pipeline.config):
+                run_endpoint_recovery(
+                    self, base_steps=steps,
+                    target_floor=origin_metric(self.pipeline),
+                )
+            else:
+                run_endpoint_recovery(self, base_steps=steps)
 
     def _set_rate(self, rate):
         self._axis.set_rate(rate)

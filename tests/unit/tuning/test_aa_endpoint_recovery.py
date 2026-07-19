@@ -32,3 +32,18 @@ def test_hook_funds_recovery_when_armed(monkeypatch):
         _stub({"aa_endpoint_recovery_steps": 1200})
     )
     assert calls == [{"base_steps": 1200}]
+
+
+def test_hook_anchors_floor_to_origin_when_compact_armed(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        aa_mod, "run_endpoint_recovery", lambda tuner, **k: calls.append(k),
+    )
+    monkeypatch.setattr(aa_mod, "origin_metric", lambda pipeline: 0.8678)
+    ActivationAdaptationTuner._post_stabilization_hook(
+        _stub({
+            "aa_endpoint_recovery_steps": 1200,
+            "origin_anchored_compact": True,
+        })
+    )
+    assert calls == [{"base_steps": 1200, "target_floor": 0.8678}]
