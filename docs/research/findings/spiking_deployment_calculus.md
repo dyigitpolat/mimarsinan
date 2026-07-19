@@ -1043,3 +1043,33 @@ bounded by the one-time LR A/B and the keep-best ratchet. Entry-1's
 σ-free seam (oob 0.50) remains a known Type-C item with a designed fix
 (arm marked wire-value ops feeding re-encoded seams regardless of gauge
 unity). Nothing in the remaining ledger lacks a mechanism.
+
+### 15.7 PR23 executed (2026-07-19): MISS at 0.7688 — the plateau diagnosed, H4 promoted to blocking
+
+The full 1200-step Phase-Deploy ran in ONE 39.7-minute window (the reaper
+never fired; checkpointing stands as insurance): keep-best 0.668 → 0.793
+@256, **census 0.7688 — a hair above PR22's 400-step 0.7676: the curve
+SATURATED** (3× budget bought +0.1 pp). Diagnostics on the trained state:
+
+- **The alignment corollary held**: analytic 0.7734 / genuine 0.7930 @512
+  — the twins converged (genuine above); the plateau is a JOINT basin
+  ceiling under this recipe, not a twin gap.
+- **The θ-frozen hypothesis is REFUTED by inspection**: the exact-QAT had
+  already promoted activation_scale to trainable Parameters — Phase-Deploy
+  co-trained θ throughout.
+- **The dominant wound is singular and structural**: entry-1 oob = 0.498
+  (every other seam 0.008–0.061). Half of block-0's LN band is amputated
+  at the STEM; KD cannot restore information the seam deletes; every
+  downstream layer computes on the rectified stem. This is the §12.1
+  unity-gauge arming hole, now measured as the binding constraint.
+
+**H4 design (from the C1/§12 mechanics)**: blanket-arming unity-gauge
+marked ops would REGRESS the seam currency (unity-combined output_scale=1
+vs the 2.64 band, breaking the divide-first pass-through the dispatch
+correctly applies today). The correct completion: **the σ-installer
+pre-arms marked-but-unarmed ops at their PASS-THROUGH currency** (wrap
+slots = unit per-source scales, output_scale = the boundary-table κ),
+then stamps σ/κ and re-propagates as usual — arming exists to transport
+σ; the `lif_aq_negative_boundary` knob already gates it; the §12.2
+coherence certificate verifies the result. Then Phase-Value re-runs
+(one window) and Phase-Deploy re-runs from the healed artifact (PR23').
