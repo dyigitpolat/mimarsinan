@@ -83,8 +83,15 @@ class TuningBudget:
                 else max(1, int(eval_subsample_target))
             )
             target_batches = max(1, target_eval_samples // vbs)
-            min_eval_batches = min(validation_steps, total_val_batches)
-            eval_n_batches = max(min_eval_batches, min(target_batches, total_val_batches))
+            if eval_subsample_target is not None:
+                # An EXPLICIT workload clamp is authoritative (M2): the
+                # validation_steps floor must not re-inflate gate reads.
+                eval_n_batches = min(target_batches, total_val_batches)
+            else:
+                min_eval_batches = min(validation_steps, total_val_batches)
+                eval_n_batches = max(
+                    min_eval_batches, min(target_batches, total_val_batches)
+                )
             eval_sample_count = eval_n_batches * vbs
         else:
             eval_n_batches = validation_steps

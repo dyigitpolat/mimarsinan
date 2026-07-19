@@ -8,6 +8,26 @@ from conftest import MockDataProviderFactory, default_config, MockPipeline
 
 
 class TestTuningBudget:
+    def test_explicit_eval_subsample_target_wins_the_floor(self):
+        """[M2 / calculus V0] an EXPLICIT workload eval clamp is authoritative:
+        the validation_steps floor must not silently re-inflate gate reads
+        (measured: a 256-sample target floored back to 32 batches made the
+        genuine-gauged AQ step structurally unable to fit a process window)."""
+        b = TuningBudget.from_dataset(
+            50000, 64, val_set_size=2496, val_batch_size=64,
+            tuning_batch_size=16, eval_subsample_target=256,
+        )
+        assert b.eval_n_batches == 4
+        assert b.eval_sample_count == 256
+
+    def test_default_eval_target_keeps_the_floor_byte_identical(self):
+        b = TuningBudget.from_dataset(
+            50000, 64, val_set_size=2496, val_batch_size=64,
+            tuning_batch_size=16, eval_subsample_target=None,
+        )
+        # max(floor=min(32, 39), min(5000//64=78, 39)) — the historical path.
+        assert b.eval_n_batches == 39
+
     def test_from_dataset_sqrt_scaling(self):
         b = TuningBudget.from_dataset(dataset_size=50000, batch_size=100, budget_scale=1.0)
         # steps_per_epoch = 500; check_interval = sqrt(500) ~ 22
