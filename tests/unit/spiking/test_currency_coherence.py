@@ -133,6 +133,47 @@ class TestRepresentationDispatch:
         bound = kappa / (2 * T)
         assert float((nf - ref).abs().mean()) <= bound
 
+    def test_unity_gauge_prearm_is_currency_inert(self):
+        """[B4 completion, calculus §15.7] the sigma-installer's pre-arm gives
+        a marked-but-unarmed unity-gauge op wrap slots at the PASS-THROUGH
+        currency: the walk output is IDENTICAL before and after (the armed
+        wire path clamp(v/kappa)*kappa equals the absolute divide-first path),
+        and sigma can now transport through the slots."""
+        from mimarsinan.spiking.scale_aware_boundaries import (
+            stamped_input_boundary_scale,
+        )
+        from mimarsinan.tuning.orchestration.signed_seam_install import (
+            _prearm_marked_value_ops,
+        )
+
+        repr_, host, _ = self._absolute_chain_model()
+        host.is_wire_value_op = True
+        torch.manual_seed(4)
+        x = 2.0 * torch.rand(32, 8)
+        driver = SegmentForwardDriver(repr_, T, LifSegmentPolicy())
+        with torch.no_grad():
+            before = driver(x)
+
+        table = read_boundary_out_scales(
+            repr_, input_data_scale=stamped_input_boundary_scale(repr_),
+        )
+        armed = _prearm_marked_value_ops(repr_, table)
+        assert armed == 1
+        assert host.per_source_scales is not None
+        assert float(torch.as_tensor(host.output_scale).mean()) == pytest.approx(
+            float(table[host])
+        )
+        # The table still reads the same currency (armed-term == pass-through).
+        after_table = read_boundary_out_scales(
+            repr_, input_data_scale=stamped_input_boundary_scale(repr_),
+        )
+        assert float(after_table[host]) == pytest.approx(float(table[host]))
+
+        driver2 = SegmentForwardDriver(repr_, T, LifSegmentPolicy())
+        with torch.no_grad():
+            after = driver2(x)
+        torch.testing.assert_close(after, before)
+
     def test_mixed_wire_absolute_fan_in_fails_loud(self):
         from mimarsinan.mapping.support.compute_modules import ComputeAdapter
 

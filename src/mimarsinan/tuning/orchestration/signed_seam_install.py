@@ -41,6 +41,28 @@ def _signed_seam_quantiles(
     return sigma, kappa
 
 
+def _prearm_marked_value_ops(repr_, boundary_table) -> int:
+    """[B4 completion, calculus §15.7] Marked-but-unarmed wire-value ops
+    (unity-gauge chains — the entry-1 stem class) get wrap slots at the
+    PASS-THROUGH currency so sigma can transport: unit per-source scales,
+    boundary-table kappa out — currency-inert until the covers lift it."""
+    from mimarsinan.mapping.mappers.compute_op_mapper import ComputeOpMapper
+
+    armed = 0
+    for node in repr_.execution_order():
+        if not (
+            isinstance(node, ComputeOpMapper)
+            and getattr(node, "is_wire_value_op", False)
+            and node.per_source_scales is None
+        ):
+            continue
+        kappa = float(boundary_table.get(node, 1.0))
+        node.per_source_scales = [torch.ones(1) for _ in node._sources_list]
+        node.output_scale = torch.tensor([kappa])
+        armed += 1
+    return armed
+
+
 def install_signed_seam_offsets(
     model, trainer, pipeline_config, *, quantile: float = 0.99,
 ) -> int:
@@ -63,6 +85,8 @@ def install_signed_seam_offsets(
     from mimarsinan.common.workload_profile import ResolvedWorkloadProfile
     from mimarsinan.spiking.scale_aware_boundaries import (
         propagate_boundary_input_scales,
+        read_boundary_out_scales,
+        stamped_input_boundary_scale,
         verify_boundary_currency_coherence,
     )
     from mimarsinan.spiking.segment_forward import (
@@ -84,6 +108,12 @@ def install_signed_seam_offsets(
         driver(calibration_x, compute_sample_recorder=samples)
 
     consumers = repr_.consumer_map()
+    _prearm_marked_value_ops(
+        repr_,
+        read_boundary_out_scales(
+            repr_, input_data_scale=stamped_input_boundary_scale(repr_),
+        ),
+    )
     installed = 0
     for node, sample in samples.items():
         # ONLY armed ops: the wrapper carries the offset into every deployed
