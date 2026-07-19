@@ -1102,7 +1102,7 @@ tie hypothesis is refuted by direct A/B** — the same trained state reads
 ViT). The ~0.75–0.77 ceiling now reproduces across two structurally
 different artifacts, two budgets (400/1200), and both comparators.
 
-**The overlooked tell: the KD loss NEVER descended** (~2.03 → ~1.9 across
+**The overlooked tell (see §15.10 for the correction): the KD loss NEVER descended** (~2.03 → ~1.9 across
 1200 steps, both runs) while accuracy did all its climbing in the first
 ~120 steps. The optimizer is STALLED, not converged: the surrogate
 gradient through 12 per-cycle IF layers at bs16 is too weak/noisy past the
@@ -1116,3 +1116,46 @@ k-hybrid, prefix/hop-staged ramps) — progressive genuine-depth training
 that keeps gradients strong at every stage — is the designed curriculum
 for exactly this class. The PR15 composed floor (still unrun) arbitrates
 what remains after fidelity is fixed.
+
+### 15.10 The great elimination closes: the temporal tax model (2026-07-19)
+
+The fidelity arm (accum 4, pure-KD T=8, lr 4e-5, 300 steps on the healed
+artifact) fixed the stall — the loss descends and the slope tripled
+(+21.5 pp in 300 steps) — **but the ceiling did not move: census 0.7676
+again.** (Two honesty notes: keep-best@256 overestimates census by ~2 pp
+via selection bias — future gates read keep-best at larger n; and the
+"descending loss" was partly a scale artifact — T=8 softening makes the
+target easier, so low KL does not imply a closer argmax. The twins also
+DECOUPLED under pure-KD (analytic 0.6172): the §15.2 alignment corollary
+is recipe-dependent, holding for CE+KD mixtures, not pure soft matching.)
+
+**The S-sweep acquits temporal resolution**: the best trained state,
+re-gridded end-to-end (LIF T + entry quantizers + walk) reads T=32 0.7504 /
+T=64 0.7604 / T=128 0.7488 — FLAT. The per-hop S-scaled terms (grid noise,
+back-loading, transient counts) are NOT the cap.
+
+**The elimination board is now effectively complete** — seams, stem
+coverage, comparator ties, retime, cycle-trains, iid noise, margins, token
+structure, per-neuron means, optimization stall, and S-resolution are ALL
+measured-refuted as the binding constraint. What survives is a
+QUANTITATIVE regularity across every artifact and recipe of the program:
+
+    genuine_census ≈ analytic_artifact − τ,   τ ≈ 4–7 pp on this class
+    (ViT: 0.8205→0.7536/0.7676, 0.8377→0.7688; mixer precedent t0_30:
+     0.9559→0.9143, τ = 4.2 pp)
+
+**The temporal-tax model**: the genuine composition levies an
+S-independent, training-resistant, per-design tax τ on the artifact's
+analytic accuracy. The endgame therefore has exactly two axes, both
+pre-registered and both UNPULLED: (1) **the artifact axis — PR14b**: the
+AA swap (−5.8 pp, plain-budget) is the last macro lever; a near-lossless
+AA (literature-standard with KD + epochs, now cheap at one-window chains)
+raises the taxed base directly; (2) **the tax axis — PR15/PR8 at last**:
+the analytic decomposition of τ from the per-hop ledger (first moments ×
+Jacobians + the interaction terms the S-sweep says are S-independent),
+which either localizes τ to a fixable term (per-channel θ / frontier
+curriculum / distmatch-on-aligned) or certifies it as the design floor —
+converting the final distance into the priced (θ, S, topology) decision
+the calculus reserves for a certified floor. DoD arithmetic: PR25 (≤2 pp)
+requires analytic ≈ origin AND τ ≤ 2 — both axes must close; either alone
+cannot.
