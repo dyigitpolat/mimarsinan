@@ -944,3 +944,102 @@ origin 0.8678 → best genuine 0.7676 (−10.0), attributed: the AA swap
 (the probe traded analytic 0.8377 → 0.7402 under a naive recipe; an
 origin-anchored longer run should hold both), entry-1 σ, and WQ/parity
 still ahead.
+
+## 15. The deployed-risk principle — the endgame consolidation (2026-07-19)
+
+### 15.1 What the totality of evidence proves
+
+One sentence per phase, all measured on one vehicle: exactness certificates
+(coherence + twin + measurement-functor integrity) took the genuine read
+0.0115 → 0.7397 with zero training; the anchor laws (one origin teacher,
+one origin-ε compact) turned the AQ QAT from inert (0.5956→0.6046) to
+convergent (0.694→0.808, analytic to 0.8377); the trajectory phenomenon
+showed the twin residual is OBJECTIVE-controlled (acceptance gating selects
+but cannot create; post-hoc correction has the wrong coordinates); and
+PR22 showed the terminal cure — training THROUGH the deployed composition
+lifts genuine +12.9 pp in 11 GPU-minutes and RE-ALIGNS the twins until the
+deployed composition is the model's best-read function. Every pathology was
+the same mistake in a different costume: **optimizing or measuring a
+surrogate of the deployed risk where the surrogate's validity was never
+certified**. Every win was a partial restoration of the converse rule.
+
+### 15.2 The principle, stated as the program's final law
+
+Define the deployed risk **R_dep(W) = E[ℓ(g_W(x), y)]** with g_W the image
+of the deployment functor (the genuine composition), and the surrogate risk
+R_s over the value twin s_W. The **surrogate-validity criterion**: training
+and gating may use s_W only where (i) every Type-B/M certificate is green
+and (ii) the composition-law bound |R_dep − R_s| ≤ δ (computable from the
+signed ledger: Σ_h |d̄_h|·L_h + √K·κ/2T) is tight. Where temporal terms
+leave δ loose, gradient descent on R_s is UNCONTROLLED for R_dep — measured
+twice (E4: −2.5 pp genuine while analytic rose; E4': −7.6 pp while
+analytic rose further). Hence:
+
+**The two-phase conversion theorem.** Lossless conversion decomposes as
+(I) **Phase-Value** — family projection and anchored surrogate training
+wherever the validity criterion holds: the existing ladder, cheap because
+value forwards are S× faster; then (II) **Phase-Deploy** — terminal
+minimization of R_dep itself: origin-KD through g_W with surrogate
+gradients, keep-best on SE-priced genuine reads. **Alignment corollary**:
+at Phase-Deploy convergence the twins re-align (measured: genuine 0.7676 >
+analytic 0.7402), so "holding analytic" is not a goal — analytic is
+thereafter a free gauge of the same function; the shipped metric is R_dep
+and only R_dep. Statistical grounding throughout: optimize the risk you
+are evaluated on; make accept/reject decisions at n sized to their
+tolerance (SE = √(p(1−p)/n)); pay census only at anchors; keep-best is the
+ratcheted estimator of the trajectory minimum.
+
+### 15.3 The cost model — lightning-fast is compatible, quantified
+
+Measured constants (86M ViT, S=32, retimed, bs16): genuine train step
+1.6 s ⇒ one epoch ≈ 83 min; the temporal term absorbed at ~0.13 epoch ⇒
+**Phase-Deploy ≈ 10–30 min**. Phase-Value chain: 10–15 min (measured, one
+window). Instruments: minutes. **PR26 target: end-to-end conversion
+wall-clock ≤ 90 min on this vehicle**, with per-N-step checkpointing in
+Phase-Deploy decoupling the reaper permanently (the pipeline-step form
+failed to fit a window for overhead reasons — the stage must own its
+resume).
+
+### 15.4 The generic terminal stage (one SSOT, all modes)
+
+**DeployedRiskFinetune** = the recovery engine pointed at g_W: origin
+teacher (the L-A SSOT) + the per-mode deployed forward (the existing
+family: `deployed_lif_gauge_forward`, the LIF `_ChipAlignedNFForward`, the
+TTFS genuine policies — ONE stage, mode-parameterized by the finalize/gauge
+seam that already exists) + keep-best on SE-priced genuine reads + the
+**genuine-LR regime lever** (measured: 2e-5-scale; the pipeline recovery
+default 3e-3 is the measured crater regime — the lever ships as a derived
+default, e.g. deployed-finetune LR = tuning LR × 1e-2-scale, A/B'd once
+then frozen) + the house recipe (warmup/cosine/LLRD from `tuning_recipe`)
++ intra-stage checkpointing. Applies unchanged to sync/ttfsq (their genuine
+forwards plug into the same seam) and to any vehicle — genericity by
+construction, elegance by pointing existing machinery at the right risk.
+
+### 15.5 The victory predictions
+
+- **PR23**: Phase-Deploy from the 0.8377 artifact with the proper recipe
+  (warmup + cosine + LLRD + origin-KD, 0.3–0.5 epoch, keep-best) →
+  genuine ≥ **0.82** census.
+- **PR24**: + PR14b (budget-scaled AA under the origin anchor, the −5.8 pp
+  swap) and one iteration → genuine ≥ **0.84**.
+- **PR25 (the victory condition)**: pretrained → DEPLOYED within
+  **ε_total = 2 pp** including WQ, the SCM identity read, and cross-sim
+  decision parity ≥ 0.98 — with the WQ endpoint governed by the same
+  principle (train through the quantized deployed forward; the two-scale
+  machinery exists).
+- **PR26**: end-to-end conversion wall-clock ≤ 90 min.
+- Standing: PR15 (the analytic capacity floor certifies nothing is
+  physically blocked), PR8 (the composed prediction must match the
+  measured read — the theory's own audit), PR7 (tiny-ViT tier-0 locks the
+  whole class at MNIST scale).
+
+### 15.6 Risks, honestly
+
+A persistent analytic/genuine trade at budget is IRRELEVANT to the DoD
+(the alignment corollary makes genuine the only shipped risk) but would be
+watched via PR15 for capacity misattribution. WQ may re-open a twin gap —
+the principle prescribes the same cure at that seam. Recipe sensitivity is
+bounded by the one-time LR A/B and the keep-best ratchet. Entry-1's
+σ-free seam (oob 0.50) remains a known Type-C item with a designed fix
+(arm marked wire-value ops feeding re-encoded seams regardless of gauge
+unity). Nothing in the remaining ledger lacks a mechanism.
