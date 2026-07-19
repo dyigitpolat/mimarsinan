@@ -1220,3 +1220,11 @@ must consume the SAME phase function or parity breaks), THEN Phase-Deploy
 trains from a 0.76 entry with the noise gone instead of a 0.55 entry
 spending its budget on absorption. Composed with the artifact axis
 (PR14b) this is the arithmetic path to PR25 (≤2pp).
+
+**Census-grade correction (n=2500):** the winning arm (dither +
+guard −0.25) on W_a reads **genuine 0.7376 / analytic 0.8244** (the
+n=512 matrix reads flatter by ~2.4pp — the known small-n optimism; all
+future gates read census). Zero-training on the fixed composition ≈ the
+fully-trained locked-composition state (0.7676): the remaining artifact
+composition gap is 8.7pp (was ~27pp), now with training headroom that no
+longer pays the absorption tax.
