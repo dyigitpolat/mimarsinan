@@ -864,3 +864,46 @@ Type-B → PR18 gate (one seam) → E4' re-run (one window) → PR14b (AA budget
   tuner's `_mbh_full_transform_forward` under the exact arm (locks in
   `test_lif_exact_qat.py::TestDeployedLifGauge`; gate 8288, typecheck 0).
   E4' (G3) verdict follows below.
+
+### 14.6 G3 executed (2026-07-19): the gate works, gating is INSUFFICIENT — train-through is mandatory
+
+**Economics forensics first (an M2 hole found and fixed).** The E4' run
+thrashed: the genuine gauge at `eval_n_batches=32` (~5 min/read) cannot fit
+a 952 s window — and the explicit `eval_subsample_target` could not go
+below 32 batches because `TuningBudget` floored it at
+`min(validation_steps, total)`. Fixed tests-first (the explicit workload
+clamp is now authoritative; default path byte-identical). Corollary: E4's
+"SE-sized" reads had silently been census-grade all along.
+
+**E4' completed** (13.2-min window; the F3 atomic-write guarantee is what
+makes a mid-kill cache trustworthy): AQ endpoint 0.8069; census verdict on
+the artifact:
+
+| model | analytic (census) | genuine (census) |
+|---|---|---|
+| baseline (plain CE) | 0.7742 | 0.7397 |
+| E4 anchored, value-gauged | 0.8140 | 0.7151 |
+| **E4' anchored, genuine-gauged** | **0.8377 (best yet)** | **0.6374** |
+
+**PR18-as-sufficient is REFUTED — with the mechanism visible.** The gate did
+exactly its designed job: the ladder's genuine D-hat climbed monotonically
+from the 0.3214 entry to 0.6374 and `finalize_on_best_deployed` kept the
+best state. But an accept/reject ratchet can only SELECT among states the
+training trajectory visits — and the objective (KD-to-origin on the value
+composition) never sees the temporal term, so the trajectory lives where
+the twin gap is wide (analytic even improved, +2.4 pp over E4). The twin
+residual is OBJECTIVE-controlled, not acceptance-controlled: post-hoc
+correction failed (§14.3), gating failed (here) — **the only remaining
+lever class is training THROUGH the genuine composition**, exactly the
+pre-registered escalation.
+
+**PR22 (launched)**: the LIF Adaptation step's below-floor recovery trains
+through the installed chip-aligned genuine forward against the
+origin-anchored floor (0.781) — never yet run on a post-fix artifact. A
+BOUNDED slope experiment (budget 0.15, eval 256, one window) is running on
+the E4' artifact: prediction — the genuine-through recovery slope is
+positive and ≥ +2 pp within the bounded budget; extrapolated, the full-
+budget step closes toward the analytic band. A ~zero slope would mean the
+temporal term resists the surrogate gradient — then the next candidates are
+deployment-noise/dither QAT and the analytic V4 first-moment fold, in that
+order.
