@@ -1073,3 +1073,18 @@ then stamps σ/κ and re-propagates as usual — arming exists to transport
 σ; the `lif_aq_negative_boundary` knob already gates it; the §12.2
 coherence certificate verifies the result. Then Phase-Value re-runs
 (one window) and Phase-Deploy re-runs from the healed artifact (PR23').
+
+### 15.8 H4 executed (2026-07-19): the stem healed — entry-1 oob 0.498 → 0.036
+
+Two locks landed tests-first: the pre-arm (`_prearm_marked_value_ops`,
+currency-inertness proven by a bit-identical walk before/after) and — after
+the fail-loud correctly caught the ViT stem's `cat` (the CLS concatenation,
+genuinely non-compensable) — the **σ-scope feasibility skip**
+(`_bake_walk_feasible`: a dry-run of the consumer walk; infeasible chains
+are left trained-clamp with a report, never crash the install). The healed
+Phase-Value chain then completed AQ in one 5.3-minute window with exactly
+ONE skip (`conv_proj`, the pre-cat patch-embed — collateral, not the seam)
+and endpoint 0.8205. The audit on the healed artifact: **entry-1 oob
+0.498 → 0.036; all twelve seams now 0.006–0.046 with biases ≈ 0 — the
+certificate board is green across the graph for the first time.** PR23'
+(Phase-Deploy from the healed artifact) is the running verdict.
