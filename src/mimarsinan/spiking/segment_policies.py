@@ -63,6 +63,9 @@ class LifSegmentPolicy:
 
     _boundary_scales: dict | None = None
     _absolute_nodes: dict | None = None
+    # Diagnostic side-channel (like node_value_recorder): a set of seam terms
+    # the sync value path skips — {"clamp","grid"}. None = deployed semantics.
+    _seam_ablation: tuple | None = None
 
     def __init__(self, retime: bool = False, phase_dither: bool = False,
                  synchronized: bool = False):
@@ -146,11 +149,18 @@ class LifSegmentPolicy:
                 return t.mean(dim=0)
             value = rate_of(dep)
             scale = boundary_scales.get(dep, 1.0)
+            abl = self._seam_ablation or ()
             if absolute_nodes.get(dep, False):
-                rate = normalize_boundary_value(value, scale)
+                rate = (value / scale) if "clamp" in abl else (
+                    normalize_boundary_value(value, scale)
+                )
             else:
-                rate = value.clamp(0.0, 1.0)
-            return torch.round(rate.clamp(0.0, 1.0) * T) / T * scale
+                rate = value
+            if "clamp" not in abl:
+                rate = rate.clamp(0.0, 1.0)
+            if "grid" in abl:
+                return rate * scale
+            return torch.round(rate * T) / T * scale
 
         def train_of(dep):
             """Per-cycle train for ``dep``; encode (uniform, clamped) if only a rate exists.

@@ -1691,3 +1691,38 @@ latency is priced; synchronized is the lossless mode.
   constants × sensitivities (PR33) — ≲1pp at T=32, and TRAINABLE-through
   by exact-QAT (A2). 87→87−ε follows; ε is the certified quantization
   floor, priced by T.
+
+### 16.5 PR37 landed + validated; the last residual is named: the ENTRY
+### composition (2026-07-20)
+
+**PR37 LANDED (gate 8318, typecheck 0):** `lif_execution_discipline:
+streaming|synchronized`; the theorem's property tests pass (two-window ≡
+strict staircase for arbitrary arrival, order-invariant, integer-tie
+exact; streaming ≡ sync only at constant input, bursty counterexample
+locked). The sync walk runs a census in 43s (vs ~150s streaming) — the
+S-fold gauge speedup is real.
+
+**Empirical validation + the reframe it forced.** Sync census on AB3:
+**0.7336 — equal to streaming+dither+guard (0.7376), NOT to model(x)
+(0.8244).** Read: (a) the §16 noise object is CONFIRMED AND CLOSED —
+sync replaces dither+guard exactly (same number, zero knobs, faster);
+(b) the remaining ~9pp was never execution noise — it is shared by every
+execution mode. Ablations then acquitted the sync value-path seams (grid
+and clamp INERT: all four arms 0.7578@512) and the per-hop divergence
+ledger walk-vs-model(x) under sync shows the §14 signature (d_abs/θ
+0.066→0.037→0.023→…→0.0001, d_mean +0.016 at hops 0–1) — with the root
+measured at last: **hop-0's PRE-ACTIVATION already differs by d_abs
+0.21·θ (max 5.5·θ)** between the walk's entry path and the model's input
+path. The entire residual is the ENTRY composition — a deterministic
+gauge/convention (Type-B family) defect upstream of the first neuron,
+compressed by hop-0's clamp to 0.066·θ and echoing through the stem.
+
+**State of the program:** every stochastic/temporal mechanism is now
+eliminated BY CONSTRUCTION (sync) or measured-inert; the gap decomposes
+as origin 0.8678 → model(x)-analytic 0.8244 (the value ladder — PR34
+ceiling 0.889 ≥ origin, budget-funded recipe known) → deployed 0.7336,
+where the second arrow is ONE deterministic entry-composition defect.
+Next: the finite entry bisect (input_data_scale / ChipInputQuantizer
+placement / entry encode input handling — enumerable, each arm seconds
+under sync), then the fix at the entry SSOT, then AB8 (sync + funded
+swap): the PR25 gate becomes the value ladder alone.
