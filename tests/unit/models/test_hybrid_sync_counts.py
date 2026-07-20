@@ -83,3 +83,51 @@ def test_sync_flow_is_deterministic_and_flag_off_is_streaming():
         s = _flow(hybrid, synchronized=False)(x)
     torch.testing.assert_close(a, b, atol=0.0, rtol=0.0)
     assert s.shape == a.shape
+
+
+def test_per_neuron_counts_match_nf_walk_on_all_cores():
+    """[§16/PR38] the spike-level (per-neuron window-count) parity claim:
+    every core's emitted counts equal the NF sync walk's decoded counts."""
+    from mimarsinan.models.spiking.hybrid.sync_counts import (
+        run_neural_segment_counts,
+    )
+
+    repr_, hybrid = _tiny()
+    x = torch.rand(3, 8) * 0.9
+    driver = SegmentForwardDriver(repr_, T, LifSegmentPolicy(synchronized=True))
+    rec_nf = {}
+    with torch.no_grad():
+        driver(x, node_value_recorder=rec_nf)
+    flow = _flow(hybrid, synchronized=True)
+    calls: list = []
+    orig = run_neural_segment_counts
+
+    import mimarsinan.models.spiking.hybrid.lif_step as ls
+
+    def spy(f, train, **kw):
+        rec: dict = {}
+        out = orig(f, train, neuron_count_recorder=rec, **kw)
+        calls.append(rec)
+        return out
+
+    ls.run_neural_segment_counts = spy
+    try:
+        with torch.no_grad():
+            flow(x)
+    finally:
+        ls.run_neural_segment_counts = orig
+
+    perceptrons = list(repr_.get_perceptrons())
+    nf_counts = []
+    for p in perceptrons:
+        theta = float(torch.as_tensor(p.activation_scale).float().mean())
+        nf_counts.append(rec_nf[id(p)] / theta * T)
+    hcm_all = torch.cat(
+        [rec[i] for rec in calls for i in sorted(rec)], dim=1
+    ).to(torch.float64)
+    nf_all = torch.cat(nf_counts, dim=1).to(torch.float64)
+    # Only ON-CHIP segments run the count executor (the encoding perceptron is
+    # host-side here): the comparable set is the on-chip suffix of the chain.
+    assert hcm_all.shape[1] >= 1
+    nf_tail = nf_all[:, -hcm_all.shape[1]:]
+    torch.testing.assert_close(hcm_all, nf_tail, atol=1e-6, rtol=0.0)

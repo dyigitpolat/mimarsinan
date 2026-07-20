@@ -10,6 +10,7 @@ from mimarsinan.models.spiking.wire_semantics import lif_count_staircase
 
 def run_neural_segment_counts(
     flow, input_spike_train, *, seg, T, batch_size, device,
+    neuron_count_recorder: dict | None = None,
 ) -> torch.Tensor:
     """The synchronized count-domain reference: per core, memb = W·counts +
     bias·T (+ V0·θ) and the emitted count is the strict staircase — bit-equal
@@ -56,6 +57,8 @@ def run_neural_segment_counts(
             torch.as_tensor(theta, dtype=stair.dtype, device=stair.device),
             min=1e-12,
         )
+        if neuron_count_recorder is not None:
+            neuron_count_recorder[i] = buffers[i].detach()
 
     output_counts = torch.zeros(
         batch_size, len(seg["output_sources"]), device=device,
