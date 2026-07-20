@@ -1860,3 +1860,29 @@ recording paths keep the streaming loop.
 (streaming+knobs physics, HCM-coherent) — the full simulator-verified
 deployed number. Remaining to literal 87→87: −0.86pp of value-ladder
 polish (AQ funded further / AA→AQ retention) — same knobs, no unknowns.
+
+### 16.10 Metric-of-record correction + the streaming arbiter (2026-07-21)
+
+**Correction (user-caught):** the §16.9 headline (0.8592) was read under
+the SYNC gauge, and the AB9 chain's acceptance gauges also ran sync —
+the deployed claim was not yet anchored to streaming execution. LAW
+(metric of record): every headline deployed number is a STREAMING
+pipelined-spike census (fire-during-integrate, per-cycle, signed LIF);
+`synchronized` is an internal gauge/verification instrument and an
+opt-in mode, never the default deployed claim. SCM certification metrics
+likewise read the STREAMING HCM.
+
+**The arbiter (n=2500, AB9 WEIGHT-QUANTIZED artifact, streaming +
+dither + guard, currencies repaired):**
+
+    STREAMING genuine census = 0.8580   (origin 0.8678 → −0.98pp)
+
+PR25 (≤2pp) PASSES under the metric of record — post-WQ, real spikes.
+Streaming ≈ sync on AB9 too (0.8580 post-WQ vs 0.8592 pre-WQ), the
+second measured instance of the discipline equivalence (first: AB3
+0.8240/0.8268). The physics record stands as before: every lever
+(dither +21pp, guard, currency +9pp) was discovered AND measured on
+streaming; the streaming simulators were never altered toward torch —
+the one global change (the currency stamp) fixes the chip-side weight
+fold. Remaining risk retired; remaining work: streaming-HCM SCM read,
+per-neuron ViT parity (both classes), PR39, tier-0 sync locks, §17.
