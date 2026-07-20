@@ -62,7 +62,13 @@ class GatherPlan:
         if self.on_dst:
             result[:, idx["on_dst"]] = 1.0
         for nid, dst, src in idx["buffers"]:
-            result[:, dst] = buffers[nid][:, src].to(result.dtype)
+            buf = buffers[nid]
+            if buf.shape[0] != batch_size:
+                # A batch-free constant (parameter node, e.g. pos-embed
+                # (197,768)): flatten to (1, features) and broadcast — real
+                # activation buffers always carry the batch row [calculus 16.11].
+                buf = buf.reshape(1, -1).expand(batch_size, -1)
+            result[:, dst] = buf[:, src].to(result.dtype)
         return result
 
     def gather_referenced_buffers(self, buffers: Dict[int, "torch.Tensor"]) -> Dict[int, "torch.Tensor"]:
