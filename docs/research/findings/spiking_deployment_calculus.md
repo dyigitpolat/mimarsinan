@@ -1362,3 +1362,49 @@ registry entries move to `entries_endpoint.py` (both prior tables at the
 300-LOC cap; `config_schema/registry` joins the sibling allowlist with
 the structural reason stated). AB5 (AA @1200-step endpoint leg, physics
 knobs OFF in-chain per the AB4 lesson) is running.
+
+### 15.15 AB6 on peta: the AA-endpoint lever fires and is REFUTED — the
+### artifact deficit is not a training-budget deficit (2026-07-20)
+
+**Infra:** AB6 ran the whole Phase-Value chain (snapshot→AA→Clamp→Shift→
+AQ) in ONE uninterrupted 36-min process on peta's A100 (no reaper) —
+vs sura's 9-window reaper thrash. peta is now the chain vehicle
+(cu126 wheels; `torch.backends.cudnn.enabled=False` for the one ViT conv;
+`MIMARSINAN_DISABLE_FFCV=1`; recorded in cluster-topology memory).
+
+**The AA anchor fix WORKED (the leg fired) — and the lever is REFUTED.**
+With the target anchored to origin (0.8678, envelope-capped to 0.852) the
+AA endpoint leg engaged for the first time: entry 0.8125, budget 1200,
+steps_used 1200, engaged=True — **exit 0.8125, reached=False,
+rolled_back=False.** 1200 value-domain KD-to-origin steps with a genuine
++4pp of headroom yielded EXACTLY ZERO (keep-best never once beat entry).
+Deployed census (knobs at deploy, n=2500): **genuine 0.7368 / analytic
+0.8144 — statistically identical to AB3's 0.7376 / 0.8244** (the leg also
+did not hurt: non-destructive as designed).
+
+**The finding:** the AA swap deficit (GELU→ReLU, −6..−8pp) is NOT a
+training-budget deficit. This is the SECOND artifact-axis training lever
+to go flat (Phase-Deploy §15.12 was the first) — both refuted with real
+headroom and full budgets. The artifact sits at its joint capacity for
+value-domain KD-to-origin; more optimization does not move it. LAW
+(artifact-training saturation): once the anchored ladder finalizes, the
+value composition is at a KD-to-origin local optimum; neither a terminal
+Phase-Deploy nor a funded endpoint leg recovers the swap loss — the swap
+LOSES information no post-swap objective can reconstruct.
+
+**Consequence — the artifact lever moves to the SWAP ITSELF, not its
+recovery.** The GELU→ReLU morph is the −6..−8pp origin→analytic term;
+recovering it post-hoc is refuted, so the lever is a SOFTER/RICHER swap:
+(a) a mappable parametric activation nearer GELU held through conversion
+(PReLU/│x│-gated families the mapper already supports), or (b) a
+two-target morph (GELU→SiLU-approx→ReLU) spreading the cliff. Both are
+design changes to Activation Adaptation's target, testable analytic-first
+(no deploy needed to read the swap loss). PR14b's endpoint leg stays
+landed (non-destructive, correct for modes whose swap IS recoverable —
+tier-0 native-ReLU cells) but is retired as the ViT artifact lever.
+
+**Scoreboard unchanged (both training levers spent):** origin 0.8678 →
+analytic ~0.82 → deployed genuine ~0.737 zero-training. The two live
+levers are now both STRUCTURAL: the swap (artifact, −4..−8) and hops 0–2
+(composition, −8, of which ~3 magnitude reachable via s_allocation +
+~3 token-structure). No training lever remains.
