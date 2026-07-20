@@ -1802,3 +1802,36 @@ dither+guard **0.8240** ≡ synchronized **0.8268** ≡ analytic **0.8260**
 three compositions agree — the streaming↔sync equivalence holds exactly
 as the event-based argument demands; `synchronized` remains a gauge/
 verification instrument, not a deployment requirement.
+
+### 16.8 AB8 — the victory-gate run: the fixed pipeline delivers its best
+### deployed number natively (2026-07-21)
+
+**The chain (peta, ~26 min compute):** origin 0.8678 cached → AA with the
+origin-anchored endpoint at the TRUE origin target (stale envelope cap
+dropped): entry 0.8398 → **exit 0.8828** → Shift 0.8404 → σ-install
+(currencies stamped natively — the §16.7 fix in-chain; scoped certificate
+GREEN; one conv_proj skip) → AQ endpoint entry 0.8750 → **exit 0.8945**
+(eval-256, above origin). Along the way the first run's install
+fail-loud caught a REAL scope error in the new certificate: 2.64 is also
+the imagenet input scale, and input-fed edges correctly hold
+per_source=1 (torch hosts consume raw values); the pair law is now
+scoped to ARMED-producer edges (traced through structural nodes) —
+tests extended, gate 8322.
+
+**Census (n=2500): SYNC-DEPLOYED = 0.8336, analytic = 0.8360** (Δ=0.24pp,
+composition free on a FRESH artifact, zero post-hoc repair). Deployed
+census arc across the program: −12.8pp → **−3.4pp** vs origin.
+
+**Discipline equivalence (repaired AB3, n=2500):** streaming+knobs
+0.8240 ≡ sync 0.8268 ≡ analytic 0.8260 — the event-based equivalence
+holds measured; sync is a gauge, not a requirement.
+
+**What separates 0.8336 from 87→87 (−3.4pp):** entirely value-ladder
+recipe economics, now visible in one place — the endpoint legs SELECT on
+eval-256 reads (SE ±2.8pp; endpoint 0.8945@256 ≈ 0.836 census), so
+keep-best optimizes a noisy gauge; plus the Clamp/Shift/AQ descent from
+AA's 0.88-class peak. Levers (knobs, not defects): census-graded
+endpoint evals (larger eval_subsample for the endpoint legs), retention
+between AA→AQ, and AQ budget. PR25 (deployed ≥0.8478) is −1.4pp away
+with those knobs; PR38 (HCM two-window bit-parity) + backend capability
+flags remain for the cross-simulator certification.
