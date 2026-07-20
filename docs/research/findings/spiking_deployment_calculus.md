@@ -1726,3 +1726,38 @@ Next: the finite entry bisect (input_data_scale / ChipInputQuantizer
 placement / entry encode input handling — enumerable, each arm seconds
 under sync), then the fix at the entry SSOT, then AB8 (sync + funded
 swap): the PR25 gate becomes the value ladder alone.
+
+### 16.6 The last defect, caught: entry currency incoherence κ_S=2.64 vs
+### per_source=[1.0] (2026-07-20)
+
+**The bisect (first-divergence over all 90 leaf modules, walk vs model,
+sync-deterministic):** graph_node_1 (conv_proj, Conv2d, ARMED
+output_scale=2.6400) is BIT-EQUAL in both compositions; graph_node_4
+(the first consumer ComputeAdapter) receives input model_mean=0.1143 vs
+walk_mean=0.0433 — **ratio 0.3789 = 1/2.64 exactly**. Its stored
+`per_source_scales = [1.0]`.
+
+**Mechanism.** The producer emits wire = value/κ (κ=2.64). The model's
+composed forward decodes correctly because the SNW tuple-transparency
+seam (ad7e1251) carries the scale alongside the tensor. The walk's
+`rate_of` hand-off passes the bare tensor, so the consumer falls back to
+its STORED currency — per_source_scales=[1.0] — and the ×2.64 decode
+never happens. This is the §11.2 Currency Coherence Theorem violated at
+the entry: κ_S(producer)=2.64 ≠ κ_T(consumer)=1.0 — the B2-class
+"fourth self-consistent gauge system" §10.4 predicted, now measured to
+four digits. It poisons hop-0's pre-activation (d_abs 0.21·θ), echoes
+through the stem (the §14 drift signature, the k-cut hops-0–2 term, the
+anti-correlation's fuel), and — critically — the STORED table is what
+the chip-side weight fold consumes, so the defect reaches every backend,
+in every execution discipline. It was never temporal.
+
+**The fix (one-writer, SSOT):** the σ-install's coherence pass must
+STAMP every consumer's per_source_scales from its producers' armed
+output_scale (one writer), and `verify_boundary_currency_coherence` must
+check the (producer output_scale ↔ consumer per_source_scales) pair —
+today it doesn't, which is how 2.64 vs 1.0 survived install. Then the
+walk (honest stored-currency reader), the model's tuple path, and the
+chip fold agree by construction. Predicted effect: sync census
+0.7336 → ≈ model(x) 0.8244; the deployed gate reduces to the value
+ladder (PR34 ceiling 0.889 ≥ origin), i.e. PR25 in range. Next: the
+stamping fix tests-first → sync re-census → AB8.
