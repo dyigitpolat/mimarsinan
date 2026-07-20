@@ -1761,3 +1761,37 @@ chip fold agree by construction. Predicted effect: sync census
 0.7336 → ≈ model(x) 0.8244; the deployed gate reduces to the value
 ladder (PR34 ceiling 0.889 ≥ origin), i.e. PR25 in range. Next: the
 stamping fix tests-first → sync re-census → AB8.
+
+### 16.7 CLOSURE: deployed ≡ analytic (2026-07-20)
+
+**The fix landed (gate 8321, tests-first):** (1) `apply_compute_op_scale_
+policy` — an ALREADY-armed op refreshes its `per_source_scales` from the
+walk and reports its emitted `output_scale`, so consumers decode armed
+producers at their true currency (the pre-arm's unity slots were
+invisible to the walk — the §10.4 "fourth gauge system", closed);
+(2) σ-install re-propagates whenever anything is armed (the pre-arm-only
+path previously skipped it); (3) `verify_boundary_currency_coherence`
+now checks every (producer emitted gauge ↔ consumer per_source) pair,
+fail-loud — the check whose absence let 2.64-vs-1.0 survive install.
+
+**The pre-registered decisive read, on the cached AB3 artifact:**
+re-propagation stamps node_4's per_source 1.0000 → 2.6400; the
+certificate reads GREEN; and the census (n=2500):
+
+    SYNC-DEPLOYED = 0.8268    model-analytic = 0.8260    Δ = 0.0008
+
+The deployed composition EQUALS the analytic model. The prediction
+(0.7336 → ≈0.8244) is confirmed; both reads landed slightly above it
+because the repair also coheres the model's own SNW path. The deployed
+trajectory of this arc: 0.5527 (streaming, locked) → 0.7376 (physics
+knobs) → **0.8268 (one currency stamp; zero training; zero knobs)**.
+
+**What remains for 87→87 is the VALUE LADDER alone: origin 0.8678 →
+0.8268 = −4.1pp**, entirely the GELU→ReLU swap + AQ quality — the axis
+PR34 measured at ceiling 0.889 (≥ origin) with the funded-swap recipe.
+The anti-correlation (§15.18) is dissolved by construction: with
+deployed ≡ analytic, value-training IS deployed-training. Next: AB8 —
+the chain with the fixed install (currencies stamped natively) + funded
+AA at sane LR; then PR38 HCM two-window bit-parity + backends; PR15's
+floor certificate is now the trivial statement deployed-floor ≡
+analytic-floor.
