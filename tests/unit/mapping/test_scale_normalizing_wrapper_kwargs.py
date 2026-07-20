@@ -17,7 +17,7 @@ class _KwargSpy(nn.Module):
         return x * 2.0
 
 
-def test_call_site_kwargs_pass_through_and_owned_kwargs_win():
+def test_call_site_kwargs_win_and_owned_fill_the_gaps():
     spy = _KwargSpy()
     w = ScaleNormalizingWrapper(
         spy, [torch.tensor([2.0])], torch.tensor([1.0]),
@@ -25,5 +25,7 @@ def test_call_site_kwargs_pass_through_and_owned_kwargs_win():
     )
     x = torch.ones(2, 3)
     out = w(x, need_weights=True, scale_hint="ir")
-    assert spy.seen == {"need_weights": False, "scale_hint": "ir"}
+    assert spy.seen == {"need_weights": True, "scale_hint": "ir"}
+    w(x)
+    assert spy.seen == {"need_weights": False, "scale_hint": None}
     torch.testing.assert_close(out, torch.full((2, 3), 4.0))

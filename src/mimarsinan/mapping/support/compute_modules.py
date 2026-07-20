@@ -140,10 +140,10 @@ class ScaleNormalizingWrapper(nn.Module):
                 scale.to(dtype=x.dtype, device=x.device), x.shape[-1]
             )
             absolute_inputs.append(x * broadcast)
-        # Call-site kwargs (the IR executor's module_kwargs) pass through;
-        # constructor-owned kwargs win on collision — one calling convention
-        # for the walk and the emitted IR.
-        merged = {**call_kwargs, **self.module_kwargs}
+        # Call-site kwargs (the IR executor's) WIN on collision: the wrapper
+        # must behave exactly as the bare module did for that caller; the walk
+        # passes none, so the constructor-owned kwargs still govern it.
+        merged = {**self.module_kwargs, **call_kwargs}
         absolute_out = self.module(*absolute_inputs, **merged)
         if self.output_index is not None:
             absolute_out = absolute_out[self.output_index]
