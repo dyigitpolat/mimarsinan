@@ -65,6 +65,13 @@ def is_lif(spiking_mode: str) -> bool:
     return _norm(spiking_mode) in LIF_MODES
 
 
+def lif_execution_synchronized(config) -> bool:
+    """[calculus §16] two-window integrate-then-emit discipline: the emitted
+    count is a function of input counts alone, so genuine ≡ analytic staircase
+    BY CONSTRUCTION (level-crossing noise eliminated, not compensated)."""
+    return str(config.get("lif_execution_discipline", "streaming")) == "synchronized"
+
+
 def lif_membrane_init(config) -> float:
     """[calculus sec.15.11] window-start membrane guard (normalized units;
     negative recenters the signed-charge rectifier against transient overfire)."""

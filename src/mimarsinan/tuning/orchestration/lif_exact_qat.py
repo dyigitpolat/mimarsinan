@@ -115,6 +115,7 @@ def deployed_lif_gauge_forward(clone, pipeline_config):
     gated on what actually ships."""
     # Lazy: chip_simulation/spiking pull import cycles at init (house pattern).
     from mimarsinan.chip_simulation.spiking_semantics import (
+        lif_execution_synchronized,
         lif_membrane_init,
         lif_per_hop_retiming_enabled,
         spike_phase_dither_enabled,
@@ -136,10 +137,11 @@ def deployed_lif_gauge_forward(clone, pipeline_config):
         ).to(device)
     retime = lif_per_hop_retiming_enabled(pipeline_config)
     dither = spike_phase_dither_enabled(pipeline_config)
+    sync = lif_execution_synchronized(pipeline_config)
 
     def _deployed_forward(x):
         return chip_aligned_segment_forward(
-            clone, x, T, retime=retime, phase_dither=dither
+            clone, x, T, retime=retime, phase_dither=dither, synchronized=sync
         )
 
     return _deployed_forward

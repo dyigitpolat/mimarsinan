@@ -64,9 +64,13 @@ class LifSegmentPolicy:
     _boundary_scales: dict | None = None
     _absolute_nodes: dict | None = None
 
-    def __init__(self, retime: bool = False, phase_dither: bool = False):
+    def __init__(self, retime: bool = False, phase_dither: bool = False,
+                 synchronized: bool = False):
         self.retime = bool(retime)
         self.phase_dither = bool(phase_dither)
+        # [calculus §16] two-window discipline: every hop computes ONCE on the
+        # count-decoded values (the strict staircase); no per-cycle loop.
+        self.synchronized = bool(synchronized)
 
     def prepare(self, driver):
         from spikingjelly.activation_based import functional
@@ -109,6 +113,13 @@ class LifSegmentPolicy:
         if recorder is not None and perceptron is not None:
             recorder[id(perceptron)] = train.detach().mean(dim=0)
 
+    @staticmethod
+    def _record_decoded_value(driver, perceptron, value):
+        """[§16 sync] same side-channel, from the already-decoded value."""
+        recorder = getattr(driver, "_node_value_recorder", None)
+        if recorder is not None and perceptron is not None:
+            recorder[id(perceptron)] = value.detach()
+
     def run_segment(self, driver, seg_nodes, values, x):
         from spikingjelly.activation_based import functional
 
@@ -125,6 +136,21 @@ class LifSegmentPolicy:
 
         absolute_nodes = self._absolute_nodes
         assert absolute_nodes is not None, "prepare() must run before run_segment()"
+
+        def value_of(dep):
+            """[§16 sync] the count-decoded mean of ``train_of(dep)`` without
+            materializing the train: same grid (round to counts), same
+            absolute/wire dispatch, same producer out-scale."""
+            t = node_train.get(dep)
+            if t is not None:
+                return t.mean(dim=0)
+            value = rate_of(dep)
+            scale = boundary_scales.get(dep, 1.0)
+            if absolute_nodes.get(dep, False):
+                rate = normalize_boundary_value(value, scale)
+            else:
+                rate = value.clamp(0.0, 1.0)
+            return torch.round(rate.clamp(0.0, 1.0) * T) / T * scale
 
         def train_of(dep):
             """Per-cycle train for ``dep``; encode (uniform, clamped) if only a rate exists.
@@ -176,6 +202,28 @@ class LifSegmentPolicy:
                     node_train[node] = uniform_spike_train(
                         rate_norm, T, phase_dither=self.phase_dither,
                     ) * scale
+                elif self.synchronized:
+                    # [calculus §16] two-window discipline: the hop's count is a
+                    # function of input counts alone, so it computes ONCE on the
+                    # count-decoded values — the strict staircase (the LIF
+                    # multi-step forward), bit-equal to the per-cycle
+                    # integrate-then-emit chip execution (locked by
+                    # test_synchronized_rate).
+                    assert lif is not None, (
+                        "LifSegmentPolicy: non-encoding perceptron must carry a LIF activation"
+                    )
+                    lif.set_cycle_accurate(False)
+                    functional.reset_net(lif.if_node)
+                    out_val = forward_node(node, [value_of(dep) for dep in d])
+                    rate_norm = (out_val / scale).clamp(0.0, 1.0)
+                    node_rate[node] = rate_norm
+                    if node is driver._output:
+                        # Only the output needs a train (value-scaled logits);
+                        # skipping the rest keeps every host node single-call.
+                        node_train[node] = uniform_spike_train(
+                            rate_norm, T, phase_dither=self.phase_dither,
+                        ) * scale
+                    self._record_decoded_value(driver, p, out_val)
                 else:
                     assert lif is not None, (
                         "LifSegmentPolicy: non-encoding perceptron must carry a LIF activation"
@@ -198,7 +246,8 @@ class LifSegmentPolicy:
                         train = retimed.detach() + (train - train.detach())
                     node_train[node] = train
                     node_rate[node] = (train / scale).mean(dim=0)
-                self._record_decoded(driver, p, node_train[node])
+                if node in node_train:
+                    self._record_decoded(driver, p, node_train[node])
             else:
                 if d and all(node_train.get(dep) is not None for dep in d):
                     dep_trains = [node_train[dep] for dep in d]

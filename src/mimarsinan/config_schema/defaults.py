@@ -181,10 +181,10 @@ CONFIG_KEYS_SET: Set[str] = {
     # [S2/R3] per-channel theta (lif + sync matching-axis hops) and [S1/R4]
     # S-aware quantile descent; default OFF, arming is a recipe decision.
     "per_channel_theta", "s_aware_theta_quantile",
-    # Every-endpoint D-hat target floor (bit-parity-lossless family); the
-    # ConversionPolicy recipe may set it.
+    # Every-endpoint D-hat target floor (recipe may set it).
     "endpoint_target_floor", "origin_teacher_kd", "origin_anchored_compact",
-    "spike_phase_dither", "lif_membrane_init", "aa_endpoint_recovery_steps",
+    "spike_phase_dither", "lif_membrane_init", "lif_execution_discipline",
+    "aa_endpoint_recovery_steps",
     # torch DataLoader worker count; read via config.get with a fallback of 4.
     "num_workers", "proven_recovery_depth",
     # Workload-profile-injectable keys (absence is meaningful — no defaults).

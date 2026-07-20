@@ -42,10 +42,12 @@ class _ChipAlignedNFForward(LazyExecutorForward):
 
     def __init__(
         self, model, T: int, retime: bool = False, phase_dither: bool = False,
+        synchronized: bool = False,
     ):
         super().__init__(model, T)
         self.retime = bool(retime)
         self.phase_dither = bool(phase_dither)
+        self.synchronized = bool(synchronized)
 
     def _run(self, x):
         from mimarsinan.spiking.chip_aligned_nf import chip_aligned_segment_forward
@@ -53,6 +55,7 @@ class _ChipAlignedNFForward(LazyExecutorForward):
         return chip_aligned_segment_forward(
             self.model, x, self.T, retime=getattr(self, "retime", False),
             phase_dither=getattr(self, "phase_dither", False),
+            synchronized=getattr(self, "synchronized", False),
         )
 
 
@@ -82,6 +85,7 @@ class LIFAdaptationTuner(KDBlendAdaptationTuner):
         self._T = int(self.pipeline.config["simulation_steps"])
         self._thresholding_mode = str(self.pipeline.config.get("thresholding_mode", "<="))
         from mimarsinan.chip_simulation.spiking_semantics import (
+            lif_execution_synchronized,
             lif_membrane_init,
             lif_per_hop_retiming_enabled,
             spike_phase_dither_enabled,
@@ -92,6 +96,7 @@ class LIFAdaptationTuner(KDBlendAdaptationTuner):
         self._per_hop_retiming = lif_per_hop_retiming_enabled(self.pipeline.config)
         self._phase_dither = spike_phase_dither_enabled(self.pipeline.config)
         self._membrane_init = lif_membrane_init(self.pipeline.config)
+        self._synchronized = lif_execution_synchronized(self.pipeline.config)
         plan = LifAdaptationPlan.resolve(self.pipeline.config)
         self._adaptation_plan = plan
         self._cycle_accurate = plan.cycle_accurate
@@ -190,6 +195,7 @@ class LIFAdaptationTuner(KDBlendAdaptationTuner):
             return _ChipAlignedNFForward(
                 model, self._T, retime=self._per_hop_retiming,
                 phase_dither=self._phase_dither,
+                synchronized=self._synchronized,
             )
         return None
 

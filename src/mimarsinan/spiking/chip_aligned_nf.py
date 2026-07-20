@@ -15,19 +15,25 @@ def chip_aligned_segment_forward(
     model: nn.Module, x: torch.Tensor, T: int,
     *, retime: bool = False,
     phase_dither: bool = False,
+    synchronized: bool = False,
     compute_min_recorder: dict | None = None,
     node_value_recorder: dict | None = None,
 ) -> torch.Tensor:
     """Segment-aware chip-aligned NF forward (matches HCM ``_forward_rate``);
     ``retime`` selects the [C3/R5] per-hop re-encoded twin; ``phase_dither``
-    the count-exact decorrelated encode combs [calculus sec.15.11]."""
+    the count-exact decorrelated encode combs [calculus sec.15.11];
+    ``synchronized`` the two-window integrate-then-emit discipline whose count
+    is exactly the strict staircase [calculus sec.16]."""
     if not hasattr(model, "get_mapper_repr"):
         return run_cycle_accurate(model, x, T)
     mapper_repr = cast(Any, model).get_mapper_repr()
     if mapper_repr is None:
         return run_cycle_accurate(model, x, T)
     driver = SegmentForwardDriver(
-        mapper_repr, T, LifSegmentPolicy(retime=retime, phase_dither=phase_dither)
+        mapper_repr, T,
+        LifSegmentPolicy(
+            retime=retime, phase_dither=phase_dither, synchronized=synchronized
+        ),
     )
     return driver(
         x,
