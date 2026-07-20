@@ -12,6 +12,7 @@ from mimarsinan.mapping.latency.chip import ChipLatency
 from mimarsinan.mapping.packing.hybrid_hardcore_mapping import HybridStage
 from mimarsinan.spiking.segment_boundary import encode_segment_input
 from mimarsinan.models.spiking.cycle_policy import cycle_neuron_policy, precharge_lif_states
+from mimarsinan.models.spiking.hybrid.sync_counts import run_neural_segment_counts
 from mimarsinan.models.spiking.hybrid.host import HybridFlowHost
 from mimarsinan.models.spiking.hybrid.membrane_readout import stash_membrane_readout_correction
 from mimarsinan.models.spiking.spiking_config import COMPUTE_DTYPE
@@ -63,19 +64,14 @@ class HybridLifStepMixin(HybridFlowHost):
 
         buffers = [
             torch.zeros(batch_size, max(int(c.neurons_per_core - c.available_neurons), 1),
-                        device=device, dtype=COMPUTE_DTYPE)
-            for c in cores
-        ]
+                        device=device, dtype=COMPUTE_DTYPE) for c in cores]
         policy = cycle_neuron_policy(
             self.spiking_mode, self.ttfs_cycle_schedule, self.firing_mode,
         )
         neuron_states = [
             policy.make_state(
                 batch_size, max(int(c.neurons_per_core - c.available_neurons), 1),
-                device, COMPUTE_DTYPE,
-            )
-            for c in cores
-        ]
+                device, COMPUTE_DTYPE) for c in cores]
         precharge_lif_states(neuron_states, thresholds, getattr(self, "lif_membrane_init", 0.0))
 
         output_counts = torch.zeros(batch_size, len(output_sources), device=device, dtype=COMPUTE_DTYPE)
@@ -83,27 +79,28 @@ class HybridLifStepMixin(HybridFlowHost):
         zeros_in = torch.zeros(batch_size, input_size, device=device, dtype=COMPUTE_DTYPE)
         input_signals = [
             torch.zeros(batch_size, max(int(c.axons_per_core - c.available_axons), 1),
-                        device=device, dtype=COMPUTE_DTYPE)
-            for c in cores
-        ]
+                        device=device, dtype=COMPUTE_DTYPE) for c in cores]
 
         record_in_t: list[torch.Tensor] | None = None
         record_out_t: list[torch.Tensor] | None = None
         if recording:
             record_in_t = [
                 torch.zeros(max(int(c.axons_per_core - c.available_axons), 1),
-                            device=device, dtype=torch.int64)
-                for c in cores
-            ]
+                            device=device, dtype=torch.int64) for c in cores]
             record_out_t = [
                 torch.zeros(max(int(c.neurons_per_core - c.available_neurons), 1),
-                            device=device, dtype=torch.int64)
-                for c in cores
-            ]
+                            device=device, dtype=torch.int64) for c in cores]
 
         input_spike_train = input_spike_train.to(COMPUTE_DTYPE)
         latency_gated = policy.latency_gated
         single_spike = getattr(policy, "single_spike_io", False)
+
+        if (getattr(self, "lif_execution_synchronized", False)
+                and self.spiking_mode == "lif"
+                and not single_spike and not recording):
+            return run_neural_segment_counts(
+                self, input_spike_train, seg=seg, T=T,
+                batch_size=batch_size, device=device)
 
         if single_spike:
             shifted = torch.zeros_like(input_spike_train)

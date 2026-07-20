@@ -54,6 +54,7 @@ class SpikingHybridCoreFlow(
         membrane_readout_half_step: bool = True,
         phase_dither: bool = False,
         lif_membrane_init: float = 0.0,
+        lif_execution_synchronized: bool = False,
     ):
         super().__init__()
 
@@ -85,6 +86,10 @@ class SpikingHybridCoreFlow(
         # The guard is LIF-family semantics; other modes never pre-charge.
         self.lif_membrane_init = (
             float(lif_membrane_init) if spiking_mode == "lif" else 0.0
+        )
+        # [calculus §16] count-domain reference execution (LIF-family only).
+        self.lif_execution_synchronized = bool(
+            lif_execution_synchronized and spiking_mode == "lif"
         )
         self._boundary_config = BoundaryConfig(
             simulation_length=self.simulation_length,
