@@ -1,11 +1,11 @@
-"""[calculus §16.11] gather over batch-free constant buffers: a parameter
-node's buffer (stored without a batch row, e.g. pos-embed (197,768)) must
-flatten to (1, features) and broadcast across the batch — the armed-add
-first-contact defect on the ViT IR."""
+"""[calculus §16.12] gather over batch-mismatched buffers must FAIL LOUD —
+a silent broadcast masked the attention double-selection defect (a (197,768)
+single-sample output smeared across batch 256)."""
 
 from __future__ import annotations
 
 import numpy as np
+import pytest
 import torch
 
 from mimarsinan.mapping.ir.gather_plan import build_gather_plan
@@ -17,15 +17,13 @@ class _FakeNode:
         self.input_sources = np.array(sources, dtype=object)
 
 
-def test_batch_free_constant_buffer_broadcasts_across_batch():
+def test_batch_mismatched_buffer_fails_loud():
     sources = [IRSource(node_id=4, index=i) for i in range(6)]
     plan = build_gather_plan(_FakeNode(sources))
-    const = torch.arange(6.0).reshape(2, 3)  # batch-free (2,3) constant
-    x = torch.zeros(5, 4)  # batch = 5
-    out = plan.gather(x, {4: const})
-    assert out.shape == (5, 6)
-    expected = torch.arange(6.0).unsqueeze(0).expand(5, 6)
-    torch.testing.assert_close(out, expected)
+    bad = torch.arange(6.0).reshape(2, 3)  # rows != batch
+    x = torch.zeros(5, 4)
+    with pytest.raises(ValueError, match="batch"):
+        plan.gather(x, {4: bad})
 
 
 def test_batched_buffers_stay_untouched():

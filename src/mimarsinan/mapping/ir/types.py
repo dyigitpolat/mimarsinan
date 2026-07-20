@@ -245,7 +245,10 @@ class ComputeOp(IRNode):
             call_args = (x,)
         with torch.no_grad():
             out = module(*call_args, **module_kwargs)
-        if output_index is not None:
+        # An armed ScaleNormalizingWrapper OWNS output_index (it must select
+        # the tuple element before scaling); re-selecting here sliced the
+        # BATCH on attention ops [calculus §16.12].
+        if output_index is not None and getattr(module, "output_index", None) is None:
             out = out[output_index]
         # Explicit feature size keeps the reshape well-defined for empty batches (-1 is ambiguous at 0 elements).
         features = 1

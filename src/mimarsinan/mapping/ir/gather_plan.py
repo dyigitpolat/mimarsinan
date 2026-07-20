@@ -64,10 +64,13 @@ class GatherPlan:
         for nid, dst, src in idx["buffers"]:
             buf = buffers[nid]
             if buf.shape[0] != batch_size:
-                # A batch-free constant (parameter node, e.g. pos-embed
-                # (197,768)): flatten to (1, features) and broadcast — real
-                # activation buffers always carry the batch row [calculus 16.11].
-                buf = buf.reshape(1, -1).expand(batch_size, -1)
+                # Fail loud: a silent broadcast here once masked a
+                # single-sample producer output (the §16.12 attention
+                # double-selection) smeared across the batch.
+                raise ValueError(
+                    f"gather: node {nid} buffer rows {buf.shape[0]} != "
+                    f"batch {batch_size} (shape {tuple(buf.shape)})"
+                )
             result[:, dst] = buf[:, src].to(result.dtype)
         return result
 
