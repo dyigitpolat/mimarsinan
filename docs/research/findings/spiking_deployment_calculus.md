@@ -1546,3 +1546,26 @@ freedom that change the TEMPORAL physics itself (firing/reset mode,
 threshold convention, boundary) — tested next — and, failing those, the
 PR15/PR8 floor certificate to price whether 87→87 needs a chip-model
 change rather than a training change.
+
+### 15.19 Temporal-DOF exhausted; the last composability test (2026-07-20)
+
+**PR36 (deployment-neuron temporal DOF, zero-training on AB3+knobs):**
+Default reset 0.7617 (both thresholds `<`≡`<=`, comparator inert as
+§15.9); **Novena hard-reset WORSE (0.6738)**; guard/dither essential
+(dither-off 0.4277). No reset/threshold/boundary setting beats the
+Default+dither+guard config. The deployment-neuron degrees of freedom do
+not break the ceiling — the temporal tax is not a reset/convention
+choice.
+
+**State of the genuine ceiling (~0.74–0.77 at S=32), fully bounded:**
+S-invariant (§15.10), reset/threshold-invariant (PR36), anti-correlated
+with value-training (§15.18), and it saturates genuine train-through
+(§14.7 PR22 0.7676). Every zero-training and value-training lever is
+spent. ONE composition test remains untried: genuine train-through (the
+only thing that ever RAISED R_dep) starting from AB7's BETTER artifact
+basin (analytic 0.827 vs AB3 0.824) — §15.18 showed value-training the
+better artifact hurts, but training the GENUINE composition from a better
+basin is a distinct experiment (PR35). If it breaks 0.77, the artifact
+axis composes with genuine training after all; if it saturates ~0.77, the
+S=32 signed-IF temporal floor is confirmed and 87→87 is a chip-model /
+higher-S design decision, to be priced by PR15/PR8.
