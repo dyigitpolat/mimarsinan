@@ -1886,3 +1886,24 @@ streaming; the streaming simulators were never altered toward torch —
 the one global change (the currency stamp) fixes the chip-side weight
 fold. Remaining risk retired; remaining work: streaming-HCM SCM read,
 per-neuron ViT parity (both classes), PR39, tier-0 sync locks, §17.
+
+### 16.11 SCM/IR parity debugging state (2026-07-21)
+
+The ViT torch↔sim parity gate at Soft Core Mapping is mid-bisect; the
+currency stamp arming MHA-adjacent wrappers exposed two latent IR-side
+seams: (1) FIXED — the IR executor passes call-site module kwargs
+(need_weights) that the armed wrapper rejected; wrappers now merge
+call-site kwargs with constructor-owned winning (gate 8327, unit-locked).
+(2) OPEN — a broadcast mismatch (197 tokens vs 256) inside an armed
+wrapper on the emitted IR: `broadcast_scale_to_dim(scale, x.shape[-1])`
+assumes channel-last, and an IR-side op (column-oriented emission /
+transpose region) runs token-last; a CUDA device-side assert follows.
+Next: orientation-aware scale broadcast at the IR wrapper (match the
+scale to the CHANNEL axis explicitly, not dim -1), then the parity gate.
+
+**Independence note:** the deployed metric of record (streaming census
+0.8580 on the WQ artifact, §16.10) does not depend on this gate — it is
+the NF streaming walk on the deployed weights. The SCM/IR parity chain
+is the remaining CERTIFICATION work: Normalization Fusion is cached
+(33 min paid once), mapping/packing re-runs from cache, and the gate now
+fails at the named defect rather than silently.
