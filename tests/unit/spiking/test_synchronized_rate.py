@@ -132,3 +132,15 @@ def test_policy_walk_and_accessor_carry_the_discipline():
     assert lif_execution_synchronized(
         {"lif_execution_discipline": "streaming"}
     ) is False
+
+
+def test_contract_carries_the_discipline():
+    from mimarsinan.chip_simulation.deployment_contract import (
+        SpikingDeploymentContract,
+    )
+
+    contract = SpikingDeploymentContract.from_pipeline_config({
+        "spiking_mode": "lif", "simulation_steps": 8,
+        "lif_execution_discipline": "synchronized",
+    })
+    assert contract.lif_execution_synchronized is True

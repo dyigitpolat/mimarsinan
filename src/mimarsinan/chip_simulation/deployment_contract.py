@@ -10,6 +10,7 @@ from mimarsinan.chip_simulation.spiking_mode_policy import policy_for_spiking_mo
 from mimarsinan.chip_simulation.spiking_semantics import (
     is_cascaded_ttfs,
     is_synchronized_ttfs,
+    lif_execution_synchronized,
     lif_membrane_init,
     spike_phase_dither_enabled,
     ttfs_cycle_schedule,
@@ -46,6 +47,7 @@ class SpikingDeploymentContract:
     # and the window-start membrane guard (normalized threshold units).
     spike_phase_dither: bool = False
     lif_membrane_init: float = 0.0
+    lif_execution_synchronized: bool = False
 
     @property
     def spiking_mode(self) -> str:
@@ -86,6 +88,7 @@ class SpikingDeploymentContract:
             comparator_half_step=bool(cfg.get("comparator_half_step", False)),
             spike_phase_dither=spike_phase_dither_enabled(cfg),
             lif_membrane_init=lif_membrane_init(cfg),
+            lif_execution_synchronized=lif_execution_synchronized(cfg),
         )
 
     def is_synchronized(self, *, core: Any = None) -> bool:

@@ -111,6 +111,7 @@ def build_spiking_hybrid_flow(
         membrane_readout_half_step=bool(cfg.get("lif_half_step_bias", False)),
         phase_dither=contract.spike_phase_dither,
         lif_membrane_init=contract.lif_membrane_init,
+        lif_execution_synchronized=contract.lif_execution_synchronized,
     )
     if plan.cycle_accurate_lif_forward and model is not None:
         apply_cycle_accurate_trains_to_model(model, True)
