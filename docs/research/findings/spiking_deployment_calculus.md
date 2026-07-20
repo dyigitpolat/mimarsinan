@@ -1422,3 +1422,37 @@ analytic ~0.82 → deployed genuine ~0.737 zero-training. The two live
 levers are now both STRUCTURAL: the swap (artifact, −4..−8) and hops 0–2
 (composition, −8, of which ~3 magnitude reachable via s_allocation +
 ~3 token-structure). No training lever remains.
+
+### 15.16 Two isolated assays narrow the endgame: s_allocation refuted,
+### swap-target shape refuted, artifact gap is budget-or-floor (2026-07-20)
+
+**PR33 (hop-grid RMS vs T, isolated):** the LIF value-twin vs float-clamp
+RMS is EXACTLY 1/T at every hop (×7.9 for T×8: hop0 0.0197→0.0025,
+hop1 0.0091→0.0011, …). The analytic grid shrinks with T as designed —
+YET the genuine census was flat across T=32/64/128 (§15.10). Grid noise
+shrinks but does not move accuracy ⇒ **s_allocation (per-hop T) is
+REFUTED**: the composition residual at hops 0–2 is temporal STRUCTURE
+(timing), T-invariant, not grid magnitude. (This also re-reads §15.14's
+"~3pp magnitude" term: the iid-injection cost was iid at the genuine-vs-
+analytic RMS, which is timing-dominated, not grid.)
+
+**PR32 (swap-target screen, isolated):** origin GELU 0.883 (n=512) →
+ANY clamped-ReLU/LIF target installed with NO training craters to chance
+(scalar-θ 0.027, per-channel-θ 0.033, 1.5×θ 0.025, +guard 0.031). The
+raw swap loss is target-SHAPE-independent — every mappable rectifier
+collapses a GELU backbone equally; per-channel θ / guard / clamp width do
+not separate them without adaptation. ⇒ the artifact gap is NOT a target-
+resolution problem; it is the GELU→clamped-ReLU ADAPTATION, and the only
+open question is whether that adaptation is BUDGET-limited (the §15.15
+leg was 1200 steps ≈ 0.05 epoch) or a family floor.
+
+**The endgame reduces to two decisive tests, both pre-registered:**
+(1) **PR34 (artifact, in flight on peta):** a PROPER multi-epoch ReLU
+fine-tune of the origin backbone (LIF value-twin target, KD-to-origin,
+full trainset, keep-best analytic). ≥~0.86 ⇒ the artifact gap is budget,
+closable with a recipe change (activation-adaptation budget ∝ swap
+distance, L-C) — NOT the §15.15 saturation (which was a 1200-step leg).
+Plateau ≪0.86 ⇒ clamped-ReLU is the activation-family floor for this
+backbone. (2) **PR15/PR8 composed-floor certificate** for the temporal
+term once the artifact resolves. Together they answer 87→87: reachable
+iff PR34 clears ~0.86 AND the temporal floor ≤ a couple pp.
