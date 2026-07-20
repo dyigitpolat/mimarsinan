@@ -1907,3 +1907,20 @@ the NF streaming walk on the deployed weights. The SCM/IR parity chain
 is the remaining CERTIFICATION work: Normalization Fusion is cached
 (33 min paid once), mapping/packing re-runs from cache, and the gate now
 fails at the named defect rather than silently.
+
+### 16.12 ViT IR parity: executes end-to-end, agreement 0.0156 — a Type-B
+### in the armed emission (2026-07-21)
+
+Three first-contact seams fixed and unit-locked (install currency, wrapper
+call convention, batch-free constant gather); the deployed IR now EXECUTES
+the full ViT and the gate renders its first verdict: **0.0156 ≈ chance**
+— the classic Type-B convention-break signature (§3: linear→chance),
+same family as the original 0.0115 twin. PRIME SUSPECT: the DOMAIN of
+constant/parameter sources through armed wrappers — pos-embed is a
+VALUE-domain constant, but an armed consumer's per_source decode treats
+its edges as WIRE; if the stamped per-source scale on the constant edge
+is non-unity (the one-writer refresh stamps from the walk table, which
+has no concept of value-domain parameter edges), the very first add is
+wrong and everything downstream is noise. Instrument: the §16.6
+first-divergence method, NF-walk vs IR-executor per node (hook both,
+find the first diverging op — each iteration minutes from caches).
