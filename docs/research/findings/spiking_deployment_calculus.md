@@ -1456,3 +1456,43 @@ Plateau ≪0.86 ⇒ clamped-ReLU is the activation-family floor for this
 backbone. (2) **PR15/PR8 composed-floor certificate** for the temporal
 term once the artifact resolves. Together they answer 87→87: reachable
 iff PR34 clears ~0.86 AND the temporal floor ≤ a couple pp.
+
+### 15.17 PR34 — the artifact gap is UNDER-TRAINING, not a floor: a proper
+### ReLU fine-tune reaches ≥ origin (2026-07-20)
+
+**The decisive artifact test.** A proper 6-epoch fine-tune of the ORIGIN
+backbone to the deployable target (`ClampReLU(z)=clamp(z,0,θ)` — the
+T→∞ LIF rate limit, fast, isolates the swap from the grid), KD-to-origin
++ CE, full trainset, keep-best analytic, lr 1e-4: entry (untrained swap)
+0.037 → **BEST analytic census 0.8892 (n=2560), ABOVE the GELU origin
+0.8678** (+2.1pp; ~0.874 on the pipeline census scale after the +1.5pp
+split offset). The trajectory is a clean monotone climb (0.82@300 →
+0.90@6300 → plateau 0.906), loss 0.53→0.10.
+
+**This overturns the §15.15 "artifact-training saturation" reading.**
+The clamped-ReLU activation family is NOT a floor — it matches-or-exceeds
+the GELU origin. The pipeline's Activation Adaptation leaves ~7pp on the
+table (0.82 → 0.889). Why the §15.15 AB6 endpoint leg (1200 steps) was
+flat is now fully explained: (a) BUDGET — 1200 steps ≈ 0.05 epoch vs the
+~9k steps (6 epoch) the swap actually needs (L-C: budget ∝ swap
+distance, and the ViT GELU→ReLU swap is a LARGE distance); (b) LR — the
+endpoint's default `endpoint_floor_lr`=2e-3 is the §14.7 CRATER regime;
+PR34 trains at 1e-4; a crater + keep-best reads as "flat" (revert to
+entry). AB6's endpoint had both wounds at once. The saturation law is
+RETRACTED for the swap: it was a budget+LR artifact, not information loss.
+
+**Consequence — the artifact axis is OPEN, and it is the biggest lever in
+the program.** origin 0.8678 → a properly-trained analytic artifact
+≈0.889 (this split) reclaims the entire −4.3pp artifact term and then
+some. Generic fix: the conversion recipe must fund AA in proportion to
+the swap distance (real multi-epoch budget at a sane genuine-LR), exactly
+the L-C principle — not a ViT special case; any large-activation-swap
+workload inherits it. PR34 artifact saved (peta pr34_relu_best.pt).
+
+**Next (in flight): AB7** — the full pipeline chain with the AA endpoint
+armed at a REAL budget (`aa_endpoint_recovery_steps`≈8000) and a sane LR
+(`endpoint_floor_lr`=1e-4), origin-anchored, physics knobs at deploy —
+the end-to-end pretrained→deployed number from the better artifact. If
+the deployed census jumps from 0.737 toward the artifact minus the
+(knob-cured) temporal tax, 87→87 comes into range on the artifact side
+and the endgame reduces to the temporal floor alone.
