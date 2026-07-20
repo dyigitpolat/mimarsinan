@@ -1795,3 +1795,10 @@ the chain with the fixed install (currencies stamped natively) + funded
 AA at sane LR; then PR38 HCM two-window bit-parity + backends; PR15's
 floor certificate is now the trivial statement deployed-floor ≡
 analytic-floor.
+
+**Discipline-equivalence certificate (n=2500, repaired AB3):** streaming+
+dither+guard **0.8240** ≡ synchronized **0.8268** ≡ analytic **0.8260**
+(all within SE). With coherent currencies and a decorrelated encoder the
+three compositions agree — the streaming↔sync equivalence holds exactly
+as the event-based argument demands; `synchronized` remains a gauge/
+verification instrument, not a deployment requirement.
