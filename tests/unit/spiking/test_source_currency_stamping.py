@@ -100,3 +100,35 @@ def test_unarmed_chains_stay_untouched():
         float(torch.as_tensor(s).mean()) == pytest.approx(1.0)
         for s in host.per_source_scales
     )
+
+
+def test_partial_presence_multi_source_refreshes_the_present_entry():
+    from mimarsinan.mapping.mappers.structural import ConcatMapper
+
+    torch.manual_seed(0)
+    inp = InputMapper((8,))
+    a = _prearmed(
+        ComputeOpMapper(inp, nn.Identity(), input_shape=(8,), output_shape=(8,)),
+        2.64,
+    )
+
+    class _ParamSource(InputMapper):
+        def propagate_source_scale(self, deps, out_scales):
+            return None  # a scale-less producer (parameter/token path)
+
+    tok = _ParamSource((8,))
+    cat = ConcatMapper([tok, a], dim=1)
+    b = ComputeOpMapper(cat, nn.Identity(), input_shape=(16,), output_shape=(16,))
+    b.per_source_scales = [torch.ones(1)]
+    b.output_scale = torch.tensor([1.3])
+    p = Perceptron(3, 16, normalization=nn.Identity())
+    p.set_activation_scale(0.9)
+    lif = LIFActivation(T=T, activation_scale=p.activation_scale)
+    p.base_activation = lif
+    p.activation = lif
+    repr_ = ModelRepresentation(PerceptronMapper(b, p))
+    mark_encoding_layers(repr_, placement="offload")
+    compute_per_source_scales(repr_)
+    assert float(torch.as_tensor(a.per_source_scales[0]).mean()) == pytest.approx(1.0)
+    got = float(torch.as_tensor(b.per_source_scales[0]).mean())
+    assert got > 1.0  # the cat blends the armed 2.64 through; unity must not survive

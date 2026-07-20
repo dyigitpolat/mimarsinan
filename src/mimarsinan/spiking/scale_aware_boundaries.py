@@ -112,20 +112,39 @@ def verify_boundary_currency_coherence(
                 f"{type(node).__name__}: entry currency {stamped:.6g} != "
                 f"boundary table {expected:.6g}"
             )
+    def _traced_armed_gauge(dep):
+        """The dep's ARMED emitted gauge, traced through scale-transparent
+        single-source structural nodes; None for value-domain producers
+        (inputs / unarmed hosts), whose consumers correctly decode at 1."""
+        seen = 0
+        while dep is not None and seen < 64:
+            if getattr(dep, "output_scale", None) is not None:
+                return float(
+                    torch.as_tensor(dep.output_scale).detach().to(torch.float64).mean()
+                )
+            below = deps.get(dep, [])
+            if len(below) != 1 or perceptron_of(dep) is not None:
+                return None
+            dep = below[0]
+            seen += 1
+        return None
+
     for node in exec_order:
         ps = getattr(node, "per_source_scales", None)
         node_deps = deps.get(node, [])
         if ps is None or len(node_deps) != len(ps):
             continue
         for i, d in enumerate(node_deps):
-            expected = float(table.get(d, default))
+            armed = _traced_armed_gauge(d)
+            if armed is None:
+                continue
             actual = float(
                 torch.as_tensor(ps[i]).detach().to(torch.float64).mean()
             )
-            if abs(actual - expected) > _COHERENCE_RTOL * max(abs(expected), 1e-12):
+            if abs(actual - armed) > _COHERENCE_RTOL * max(abs(armed), 1e-12):
                 mismatches.append(
                     f"{type(node).__name__}: per_source[{i}] {actual:.6g} != "
-                    f"producer emitted gauge {expected:.6g} [calculus §16.6]"
+                    f"producer emitted gauge {armed:.6g} [calculus §16.6]"
                 )
     if mismatches:
         raise RuntimeError(
