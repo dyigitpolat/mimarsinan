@@ -1399,9 +1399,23 @@ recovering it post-hoc is refuted, so the lever is a SOFTER/RICHER swap:
 (PReLU/│x│-gated families the mapper already supports), or (b) a
 two-target morph (GELU→SiLU-approx→ReLU) spreading the cliff. Both are
 design changes to Activation Adaptation's target, testable analytic-first
-(no deploy needed to read the swap loss). PR14b's endpoint leg stays
-landed (non-destructive, correct for modes whose swap IS recoverable —
-tier-0 native-ReLU cells) but is retired as the ViT artifact lever.
+(no deploy needed to read the swap loss).
+
+**On PR14b's status (correcting an earlier mis-statement here):** PR14b is
+a SINGLE mode-generic mechanism — `_post_stabilization_hook` reads one
+config key `aa_endpoint_recovery_steps` (default 0, off for EVERY
+workload) and, when armed, runs the same `run_endpoint_recovery` every
+other conversion endpoint uses; its only branch is on the generic
+`origin_anchored_compact` lever, never on a model. It is set in ZERO
+recipes/templates — the only config that ever armed it is the AB6 ViT
+experiment. There is no tier-0-vs-ViT code path, and no evidence it
+helps ANY workload (the sole measured arming, on ViT, recovered nothing;
+a native-ReLU tier-0 cell does no GELU→ReLU swap, so it has nothing to
+recover either). Its justification is the endpoint-funding SYMMETRY — AA
+was the one conversion tuner with no fundable endpoint while WQ/AQ/LIF-
+adaptation all have one — i.e. an SSOT-consistency completion, kept
+default-off, NOT a workload-specific default. The empirical verdict
+stands: on the ViT the AA swap loss is non-recoverable by this leg.
 
 **Scoreboard unchanged (both training levers spent):** origin 0.8678 →
 analytic ~0.82 → deployed genuine ~0.737 zero-training. The two live
