@@ -1569,3 +1569,125 @@ basin is a distinct experiment (PR35). If it breaks 0.77, the artifact
 axis composes with genuine training after all; if it saturates ~0.77, the
 S=32 signed-IF temporal floor is confirmed and 87→87 is a chip-model /
 higher-S design decision, to be priced by PR15/PR8.
+
+---
+
+## 16. The synchronized-rate exactness theorem: the one mechanism behind
+## every residual, and the construction that eliminates it (2026-07-20)
+
+### 16.1 The final harvested datum
+
+PR35 (genuine train-through from AB7's better basin, stopped at 540):
+entry 0.7012 → 0.7422@480, flat thereafter — the FIFTH independent
+saturation in the same ~0.74–0.77 band (PR22 baseline basin 0.7676;
+PR23 1200 steps 0.7688; PR23′ healed 0.7536; fidelity arm 0.7676; PR35
+better-artifact basin ~0.742). The ceiling is basin-independent: it is a
+property of the COMPOSITION, not of any artifact.
+
+### 16.2 The noise object (why the ceiling exists and why it is invariant)
+
+Under STREAMING execution a hop's neuron fires while it integrates. Per
+cycle t it receives charge z_t = Σ_i w_i s_i(t) + b, a random-arrival sum
+over input combs. Decompose z_t = z̄ + ε_t. The membrane is a random walk
+with a one-sided absorbing barrier (a fire is irreversible; later
+negative charge cannot cancel it). The emitted count therefore differs
+from the count of the TOTAL charge by a LEVEL-CROSSING statistic — the
+number of spurious barrier crossings — whose scale is governed by the
+per-cycle noise-to-threshold ratio σ_z/θ, where
+
+    σ_z² = Σ_ij w_i w_j Cov(s_i(t), s_j(t))
+         = Σ_i w_i² r_i(1−r_i)   [duty-cycle diagonal]
+         + Σ_{i≠j} w_i w_j C_ij  [comb-resonance off-diagonal].
+
+Every empirical property of the residual follows from this ONE object:
+
+- **S-invariance** (§15.10, §15.13): comb duty per cycle is r_i at ANY
+  T, so σ_z is T-invariant — more cycles do not reduce per-cycle noise.
+  (PR33's 1/T grid RMS measured the VALUE twin, which is not the noise.)
+- **Phase dither's +21pp** (§15.11): the encoder anchored every comb at
+  cycle 0 — a maximal deterministic C_ij. Dither kills the deterministic
+  part; the stochastic resonance of similar-rate (value-correlated)
+  channels survives = the measured "token-correlated structure" (§15.14).
+- **Guard dose-response / V0=θ/2 catastrophe** (§15.11): V0 shifts the
+  barrier's operating point; positive pre-charge feeds crossings.
+- **Early-hop concentration** (§15.13, PR31's d_abs/θ decay 0.066→0.0001):
+  σ_z/θ is largest where θ is small (stem hops).
+- **Anti-correlation with value-training** (§15.18 AB7): value objectives
+  sharpen activations/weights, RAISING σ_z and packing pre-activations
+  near decision margins — analytic ↑, genuine ↓.
+- **Train-through saturation ~0.77** (five basins): training reshapes
+  MARGINS against a noise floor it cannot remove; the band is where
+  margin-shaping saturates.
+- **Novena worse, comparator inert** (PR36); **hop-0 subsume inert,
+  chanmean inert, iid costs half of real-d** (§15.14) — all consistent:
+  the noise is path-structural, not convention or bias.
+- **Tier-0 lossless / mixer τ=4.2**: shallow nets with wide margins sit
+  below the noise; depth-12 ViTs do not.
+
+### 16.3 The theorem (elimination by construction)
+
+**Synchronized-rate exactness.** Let a hop run TWO windows: an
+integration window in which firing is disabled and the membrane
+accumulates the full signed input, V_T = (W·N_in + bT + V0·θ)/θ (a
+function of input COUNTS only, since Σ_t W s_t = W Σ_t s_t = W·N_in);
+then an input-free emission window of T cycles with fire-and-subtract.
+The emitted count is exactly
+
+    N_out = clamp(⌊V_T⌋_strict, 0, T),
+
+the LIF count staircase of the decoded value — for ANY arrival pattern,
+any T, any fan-in, any topology. The level-crossing statistic is
+identically zero: the genuine temporal composition ≡ the analytic
+staircase composition, hop-exactly, hence end-to-end (host ops already
+run on decoded values between windows; boundary re-encodes are
+count-preserving). This is the A2 kernel identity (`LIFCountStaircase`,
+already bit-locked in exact-QAT) PROMOTED from the kernel to the
+EXECUTION DISCIPLINE. It is the in-house synchronized schedule the TTFS
+family already runs ("latency groups sequential, sim_time = S × groups"),
+applied to the rate/LIF family.
+
+**Corollary (the two-phase theorem, exact form).** Under synchronized
+execution the value surrogate is not a surrogate: s_W ≡ g_W. Phase-Value
+training IS deployed training; §15.18's anti-correlation dissolves; the
+§15.2 surrogate-validity criterion is satisfied by identity. The deployed
+number equals the analytic number BY CONSTRUCTION, and the whole
+remaining program is the VALUE ladder — where the measured ceiling is
+0.8892 (PR34, ≥ origin 0.8678) and the chain already reaches AQ-endpoint
+0.8477 with the funded swap.
+
+**Costs, stated honestly.** (1) Inference LATENCY becomes (D+1)·T cycles
+(ViT-12 @T=32: 416 vs ~44) — but pipelined THROUGHPUT is unchanged (one
+inference per T cycles); conversion wall-time IMPROVES ~S× because every
+genuine gauge/eval collapses to the analytic forward. (2) The membrane
+must hold the full-window signed accumulation (range ≤ Σ|w|·T/θ):
+a per-platform capability bit (Loihi-class membranes suffice; platforms
+without fire-disable/phased scheduling get a fail-loud capability check).
+(3) Guard/dither remain valid knobs for STREAMING deployments where
+latency is priced; synchronized is the lossless mode.
+
+### 16.4 The victory plan (SSOT, generic, 15–20 min to SCM)
+
+- **PR37 — the discipline in the walk (tests-first):** a mode-generic
+  `lif_execution_discipline: streaming|synchronized` predicate in
+  `spiking_semantics` + contract. Under synchronized, the NF genuine
+  forward IS the analytic staircase forward (twins merge; property test:
+  bit-equality of the per-cycle two-window simulation vs the staircase on
+  randomized hops — ties, guards, saturation, signed bias edges).
+- **PR38 — HCM two-window cores:** integration [lat, lat+T) with
+  fire-disable, emission [lat+T, lat+2T); ChipLatency generalizes
+  (lat_k = k·T); nf_scm_parity must read BIT-EXACT per neuron.
+- **PR39 — backends:** nevresim + SANA-FE reuse the existing synchronized
+  group scheduling (TTFS sync path); Loihi/Novena capability flags,
+  fail-loud where unsupported.
+- **PR40 — AB8, the gate run:** full chain on peta with synchronized
+  discipline + the PR34-grade funded swap (aa_endpoint at epoch-scale
+  budget, lr 1e-4) + AQ exact-QAT (whose gauge is now free) + WQ funded
+  endpoint → SCM parity. **DoD: pretrained→deployed ≤2pp (PR25) — i.e.
+  deployed ≥0.8478, target ≈0.86+ — inside a 15–20-min wall.** The wall
+  fits because the slow object (per-cycle genuine reads) no longer exists
+  in the loop.
+- **PR15/PR8 floor certificate, now provable:** deployed floor ≡ analytic
+  floor = staircase quantization only, bounded by the measured 1/T grid
+  constants × sensitivities (PR33) — ≲1pp at T=32, and TRAINABLE-through
+  by exact-QAT (A2). 87→87−ε follows; ε is the certified quantization
+  floor, priced by T.
