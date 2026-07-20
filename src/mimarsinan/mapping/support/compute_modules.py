@@ -127,7 +127,7 @@ class ScaleNormalizingWrapper(nn.Module):
     def _input_scale(self, i: int) -> torch.Tensor:
         return getattr(self, f"input_scale_{i}")
 
-    def forward(self, *inputs: torch.Tensor) -> torch.Tensor:
+    def forward(self, *inputs: torch.Tensor, **call_kwargs) -> torch.Tensor:
         if len(inputs) != self._num_inputs:
             raise ValueError(
                 f"ScaleNormalizingWrapper: expected {self._num_inputs} inputs, "
@@ -140,7 +140,11 @@ class ScaleNormalizingWrapper(nn.Module):
                 scale.to(dtype=x.dtype, device=x.device), x.shape[-1]
             )
             absolute_inputs.append(x * broadcast)
-        absolute_out = self.module(*absolute_inputs, **self.module_kwargs)
+        # Call-site kwargs (the IR executor's module_kwargs) pass through;
+        # constructor-owned kwargs win on collision — one calling convention
+        # for the walk and the emitted IR.
+        merged = {**call_kwargs, **self.module_kwargs}
+        absolute_out = self.module(*absolute_inputs, **merged)
         if self.output_index is not None:
             absolute_out = absolute_out[self.output_index]
         if self.output_offset is not None:
