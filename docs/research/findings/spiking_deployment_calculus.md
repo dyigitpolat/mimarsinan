@@ -1835,3 +1835,28 @@ endpoint evals (larger eval_subsample for the endpoint legs), retention
 between AA→AQ, and AQ budget. PR25 (deployed ≥0.8478) is −1.4pp away
 with those knobs; PR38 (HCM two-window bit-parity) + backend capability
 flags remain for the cross-simulator certification.
+
+### 16.9 AB9 — PR25 PASSED: pretrained 0.8678 → deployed 0.8592 (−0.86pp)
+### (2026-07-21)
+
+**One knob (census-graded endpoint evals, eval_subsample 256→2048) closed
+the selection-noise term exactly as diagnosed.** The chain (40.6 min,
+one process): AA endpoint entry 0.8114 → exit 0.8687 AT the origin
+target, AA step census-grade 0.8642 (−0.36pp — the GELU→ReLU swap is
+now near-free); Clamp and Shift exactly flat; AQ entry 0.8556.
+**Census (n=2500): SYNC-DEPLOYED 0.8592 ≡ analytic 0.8588 (Δ 0.04pp),
+coherence certificate GREEN. PR25 (pretrained→deployed ≤2pp): PASSED
+with 1.1pp margin.** Program arc on the gate metric: −12.8pp → −0.86pp.
+
+**PR38 LANDED alongside (gate 8325):** the HCM synchronized reference is
+a COUNT-DOMAIN executor (`sync_counts.py`: memb = W·counts + bias·T
+(+V0·θ) → the strict `lif_count_staircase`) — bit-equal to two-window
+execution by the §16 theorem, arrival/window-free (latch-correct for
+level-gapped consumers), locked bit-for-bit against the NF synchronized
+walk, and contracted through flow/contract/factory. Single-spike and
+recording paths keep the streaming loop.
+
+**In flight:** the WQ → Soft Core Mapping leg on the AB9 artifact
+(streaming+knobs physics, HCM-coherent) — the full simulator-verified
+deployed number. Remaining to literal 87→87: −0.86pp of value-ladder
+polish (AQ funded further / AA→AQ retention) — same knobs, no unknowns.
