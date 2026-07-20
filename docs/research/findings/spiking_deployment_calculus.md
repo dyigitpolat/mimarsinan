@@ -1496,3 +1496,53 @@ the end-to-end pretrained→deployed number from the better artifact. If
 the deployed census jumps from 0.737 toward the artifact minus the
 (knob-cured) temporal tax, 87→87 comes into range on the artifact side
 and the endgame reduces to the temporal floor alone.
+
+### 15.18 AB7 — the artifact axis does NOT transfer to deployed: analytic↑
+### ⇒ genuine↓ (the anti-correlation wall) (2026-07-20)
+
+**AB7 (full chain, AA endpoint 8000 steps @ lr 1e-4, origin-anchored):**
+the budget+LR fix WORKED at the step level — the AA endpoint reached its
+target (entry 0.8125 → exit 0.859, reached=True in 380 steps; vs AB6's
+flat exit=entry), AA step 0.79→0.8345, AQ analytic 0.8477 (best chain
+analytic yet). BUT the deployed census is WORSE: genuine **0.6936** (knobs
+at deploy, n=2500) vs AB3's 0.7376, with analytic 0.8268 (marginally
+above AB3's 0.8244). The 2×2 (locked/knobs) rules out a knob mismatch —
+knobs help AB7 too (locked 0.496 → knobs 0.694, +20pp, same as every
+artifact).
+
+**The scoreboard, sorted by analytic, exposes the anti-correlation:**
+
+    artifact   analytic   genuine(knobs)   tax
+    AB6        0.8144     0.7368           7.8
+    AB3        0.8244     0.7376           8.7
+    AB7        0.8268     0.6936          13.3   <- best analytic, worst genuine
+
+More value-domain training buys analytic accuracy and PAYS it back (with
+interest) in the temporal composition. This is §13.4's trajectory-
+dependent residual, now quantified as a monotone anti-correlation:
+optimizing the value surrogate moves pre-activations onto configurations
+the genuine temporal composition handles WORSE. PR34's 0.889 analytic
+would very likely deploy even worse still.
+
+**Consequence — the artifact axis is a MIRAGE for the deployed metric.**
+PR34's headline (the clamped-ReLU family reaches ≥origin analytic) is TRUE
+and important for understanding, but it does not move R_dep: the deployed
+number is bottlenecked entirely by the analytic→genuine temporal
+composition, which value-training makes worse. This fully vindicates the
+§15.2 deployed-risk principle: only training that passes THROUGH the
+genuine composition can raise R_dep; value-artifact quality is not just a
+free gauge (§15.10) — beyond a point it is actively HARMFUL. The one
+lever that ever raised genuine was genuine train-through (PR22: 0.64→
+0.7676) and the physics knobs (0.55→0.74). Both partial; both plateau
+~0.74–0.77.
+
+**The endgame question is now sharp and singular:** is the ~0.77 genuine
+composition ceiling the S=32 floor, or is there an unfound lever? Two
+hard facts bound it: (a) it is S-INVARIANT (S-sweep flat 32/64/128) —
+so higher S does NOT help, the tax is timing-structural not grid; (b) it
+resists value-training (anti-correlated) and saturates genuine train-
+through. The remaining candidates are the deployment-neuron degrees of
+freedom that change the TEMPORAL physics itself (firing/reset mode,
+threshold convention, boundary) — tested next — and, failing those, the
+PR15/PR8 floor certificate to price whether 87→87 needs a chip-model
+change rather than a training change.
