@@ -63,16 +63,14 @@ class LifSegmentPolicy:
 
     _boundary_scales: dict | None = None
     _absolute_nodes: dict | None = None
-    # Diagnostic side-channel (like node_value_recorder): a set of seam terms
-    # the sync value path skips — {"clamp","grid"}. None = deployed semantics.
+    # Diagnostic: seam terms the sync path skips ({"clamp","grid"}); None = deployed.
     _seam_ablation: tuple | None = None
 
     def __init__(self, retime: bool = False, phase_dither: bool = False,
                  synchronized: bool = False):
         self.retime = bool(retime)
         self.phase_dither = bool(phase_dither)
-        # [calculus §16] two-window discipline: every hop computes ONCE on the
-        # count-decoded values (the strict staircase); no per-cycle loop.
+        # [§16] two-window: one staircase eval per hop, no per-cycle loop.
         self.synchronized = bool(synchronized)
 
     def prepare(self, driver):
@@ -118,7 +116,6 @@ class LifSegmentPolicy:
 
     @staticmethod
     def _record_decoded_value(driver, perceptron, value):
-        """[§16 sync] same side-channel, from the already-decoded value."""
         recorder = getattr(driver, "_node_value_recorder", None)
         if recorder is not None and perceptron is not None:
             recorder[id(perceptron)] = value.detach()
@@ -141,9 +138,8 @@ class LifSegmentPolicy:
         assert absolute_nodes is not None, "prepare() must run before run_segment()"
 
         def value_of(dep):
-            """[§16 sync] the count-decoded mean of ``train_of(dep)`` without
-            materializing the train: same grid (round to counts), same
-            absolute/wire dispatch, same producer out-scale."""
+            """[§16 sync] the count-decoded mean of ``train_of(dep)``: same
+            grid, dispatch, and producer out-scale, no train materialized."""
             t = node_train.get(dep)
             if t is not None:
                 return t.mean(dim=0)
@@ -213,12 +209,9 @@ class LifSegmentPolicy:
                         rate_norm, T, phase_dither=self.phase_dither,
                     ) * scale
                 elif self.synchronized:
-                    # [calculus §16] two-window discipline: the hop's count is a
-                    # function of input counts alone, so it computes ONCE on the
-                    # count-decoded values — the strict staircase (the LIF
-                    # multi-step forward), bit-equal to the per-cycle
-                    # integrate-then-emit chip execution (locked by
-                    # test_synchronized_rate).
+                    # [§16] two-window discipline: ONE staircase eval on the
+                    # count-decoded values, bit-equal to integrate-then-emit
+                    # (locked by test_synchronized_rate).
                     assert lif is not None, (
                         "LifSegmentPolicy: non-encoding perceptron must carry a LIF activation"
                     )
@@ -228,8 +221,7 @@ class LifSegmentPolicy:
                     rate_norm = (out_val / scale).clamp(0.0, 1.0)
                     node_rate[node] = rate_norm
                     if node is driver._output:
-                        # Only the output needs a train (value-scaled logits);
-                        # skipping the rest keeps every host node single-call.
+                        # Only the output needs a train (value-scaled logits).
                         node_train[node] = uniform_spike_train(
                             rate_norm, T, phase_dither=self.phase_dither,
                         ) * scale

@@ -112,6 +112,21 @@ def verify_boundary_currency_coherence(
                 f"{type(node).__name__}: entry currency {stamped:.6g} != "
                 f"boundary table {expected:.6g}"
             )
+    for node in exec_order:
+        ps = getattr(node, "per_source_scales", None)
+        node_deps = deps.get(node, [])
+        if ps is None or len(node_deps) != len(ps):
+            continue
+        for i, d in enumerate(node_deps):
+            expected = float(table.get(d, default))
+            actual = float(
+                torch.as_tensor(ps[i]).detach().to(torch.float64).mean()
+            )
+            if abs(actual - expected) > _COHERENCE_RTOL * max(abs(expected), 1e-12):
+                mismatches.append(
+                    f"{type(node).__name__}: per_source[{i}] {actual:.6g} != "
+                    f"producer emitted gauge {expected:.6g} [calculus §16.6]"
+                )
     if mismatches:
         raise RuntimeError(
             "boundary currency coherence violated (one-writer law, calculus "

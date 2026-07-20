@@ -178,15 +178,17 @@ def install_signed_seam_offsets(
             f"(bake-infeasible consumer chains, left trained-clamp): {skipped}",
             flush=True,
         )
-    if not installed:
-        return 0
-    # One re-propagation: the wrapper s_out, the weight fold, and the entry
-    # currencies agree on the lifted kappa (one scale to both walks).
+    # One re-propagation whenever ANYTHING is armed (pre-arm included): the
+    # wrapper s_out, the weight fold, the consumers' per_source currencies
+    # [calculus §16.6], and the entry currencies agree (one scale, one writer).
     input_data_scale = ResolvedWorkloadProfile.from_config(
         pipeline_config
     ).input_data_scale
     compute_per_source_scales(repr_)
     propagate_boundary_input_scales(model, input_data_scale=input_data_scale)
+    if not installed:
+        verify_boundary_currency_coherence(model)
+        return 0
 
     # Consumer bake AFTER the currencies settle: entry charge shift is
     # W_eff . (sigma / s_out_final) (the T4 identity, buffer units).

@@ -152,6 +152,18 @@ def apply_compute_op_scale_policy(node, source_scales: list) -> torch.Tensor | N
                 dtype=normalized[i].dtype,
             )
 
+    if (
+        getattr(node, "output_scale", None) is not None
+        and node.per_source_scales is not None
+        and len(node.per_source_scales) == len(normalized)
+    ):
+        # [calculus §16.6 one-writer] an ALREADY-armed op keeps its emitted
+        # gauge but must decode its inputs at the producers' TRUE currencies:
+        # refresh per_source from the walk and report output_scale so
+        # consumers inherit the emitted wire gauge (κ_S ≡ κ_T).
+        node.per_source_scales = [s.reshape(-1).clone() for s in normalized]
+        return node.output_scale
+
     legacy_wrap = (
         any(_is_per_channel_heterogeneous(s) for s in normalized)
         or (len(normalized) > 1 and not _all_sources_uniform(normalized))
