@@ -1984,3 +1984,55 @@ with its regime: its information is subsumed by the streaming census
 derived-accuracy rule. Final old-regime baseline: parity 0.9922×2,
 oracle accuracy 0.8580, certification wall ~85 min/attempt — the number
 PR44's n=2 count-certificates replace.
+
+### 17.1 PR44 LANDED: the alignment layer, the twin edge, and the honest
+### placement of the WQ residual (2026-07-21)
+
+**The alignment layer (generic, no name parsing).** IR output provenance
+is now complete: `perceptron_index` + `perceptron_output_slice` (whole
+output defaulted on the single-core FC path; bank-row slice on bank-backed
+conv cores with the conv mappers passing GLOBAL group channel ranges) +
+NEW `perceptron_output_column` stamped by the map_fc 2-D recursion
+(token/position columns) and the conv position loops. Flat placement =
+`column × channels + slice`. `PerceptronCountAssembler` maps any packed
+program's stage `output_map` counts back to per-perceptron channel
+vectors — drops and reports uncaptured/gap/overlap perceptrons, never
+silently compares. Capture is the sanctioned `stage_count_recorder` seam
+on the rate flow (fires on the raw clamp counts, pre-decode, both
+disciplines). A vacuous certificate (zero windows) raises.
+
+**The measurement that fixed the architecture.** First in-vivo gate run
+(t0_05, T=4) FAILED at exact=0.9987: one window, ±1. Diagnosis at the
+divergent neuron: the executor's staircase argument was EXACTLY 15.5
+(f32 ≡ f64 — clean grid, no tie) vs the walk's 3.9747 normalized — the
+two sides compute genuinely different arguments. Layer-wide: |Δarg|
+median 0.021 counts, p99 0.12, max 0.22 — the HONEST WQ/chip-grid
+residual (model float weights vs core matrices), the same object the
+mixer NF↔SCM investigation closed as not-a-bug. Count flips at staircase
+boundaries are its inevitable shadow (~0.1–0.5%/window at T=4). ViT
+scale (cert6, n=2, 14.5M windows): NF-edge exact=0.9938, max|d|=5,
+depth-U-shaped (worst mid-depth p6 0.981) — the residual accumulates
+then partially cancels.
+
+**The corrected §17 edge structure:**
+- Edge O (oracle accuracy): streaming census on the deployed-grid
+  program — measured directly (fast, torch).
+- Edge R (model ↔ chip grid): the WQ residual; governed by the EXISTING
+  `nf_scm_parity` atol gate + analytic drift report. NOT a count
+  certificate — counts legitimately flip at boundaries here.
+- Edge C (the certificate, FATAL): identity-mapped IR twin ↔ packed
+  program, same core matrices, synchronized discipline —
+  `certify_twin_flow_counts`, atol=0. In vivo t0_05: **PASS
+  exact=1.000000 over 788 windows**; tiny fixture: exact on both
+  disciplines.
+- Edge T (transient report): streaming vs synchronized on the packed
+  program — the §15/§16 per-cycle transient physics (4.3% windows ±1 at
+  T=4), REPORTED with the streaming census accuracy as that cell's
+  arbiter; never an atol=0 gate.
+- Edge B (PR45): backends (nevresim/SANA-FE/Loihi) certified against the
+  HCM executor in the matching discipline — chip-math exact classes.
+
+Gate wiring: `run_spike_count_certificate_gate` in HardCoreMappingStep
+(LIF-only, `spike_count_parity_samples` n=2 default, 0 disables), before
+the metric read. Full step green in vivo: certificate PASS + transient
+report + HCM 0.9809. Gates 8340→8352 all green through the sequence.
