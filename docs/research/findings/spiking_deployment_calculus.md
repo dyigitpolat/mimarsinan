@@ -2111,7 +2111,17 @@ typed certificates. Gates 8358 green, typecheck 0.
 | (O) census oracle (accuracy) | ViT | streaming census n=2500 (the AB9 read) — unchanged, the metric of record | measured |
 
 Bottom line: certification that used to cost ~85 min/attempt and never
-converge is now seconds-scale at tier-0 and a bounded one-off (~2h,
-dominated by the naive identity reference) at ViT scale, with the
-routine per-run gates all riding existing step work. The single named
-cost lever is the vectorized IR count reference (profiling in flight).
+converge is now seconds-scale at tier-0 and minutes-scale at ViT, with
+the routine per-run gates all riding existing step work.
+
+**The cost lever landed same-day (commit ad765e99):** profiling showed
+99.7% of the identity-reference wall was `ChipLatency.calculate()` —
+799M recursive `get_delay_for` calls (1.4B `abs`) at per-neuron python
+granularity, ~440× redundant per core on identity segments. One
+vectorized pass per core in topological order (bit-equal to the
+recursive oracle, locked on randomized DAGs; matrix rows past
+axon_sources allowed only where weights are zero — the bias-row
+contract) measured **336s → 4.3s per ViT identity stage (78×)**: the
+identity reference drops ~55 min → ~2–3 min and the ViT twin gate
+becomes routine. End-to-end cert8 re-run in flight to reconfirm the
+PASS on the vectorized path.
