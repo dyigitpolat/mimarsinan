@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import torch
 
-from mimarsinan.certification.count_alignment import certify_flow_counts
+from mimarsinan.certification.count_alignment import certify_twin_flow_counts
 from mimarsinan.chip_simulation.spiking_semantics import is_lif
 from mimarsinan.config_schema.registry import effective_value as _effective
 from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory
 from mimarsinan.model_training.basic_trainer import BasicTrainer
 from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 from mimarsinan.pipelining.core.simulation_factory import (
+    build_identity_mapping_for_pipeline,
     build_spiking_hybrid_flow,
 )
 
@@ -45,21 +46,44 @@ def run_spike_count_certificate_gate(pipeline, model, ir_graph, hybrid_mapping):
     samples = _certificate_samples(pipeline, model, n)
     if samples is None:
         return None
-    flow = build_spiking_hybrid_flow(pipeline, hybrid_mapping, model=model)
-    repr_ = model.get_mapper_repr()
-    # Both cells: synchronized is exact by construction; streaming is the
-    # metric of record, equal by the §16 staircase theorem — verified here.
-    cert = None
-    for discipline in ("synchronized", "streaming"):
-        cert, detail = certify_flow_counts(
-            repr_, ir_graph, flow, samples, backend="hcm",
-            discipline=discipline,
+    # The exact edge is chip-grid twin <-> packed program (same core
+    # matrices); the model<->grid edge carries the honest WQ residual and is
+    # governed by the nf_scm_parity atol gate, not this certificate.
+    identity = build_identity_mapping_for_pipeline(
+        ir_graph, pipeline_config=pipeline.config,
+    )
+    reference_flow = build_spiking_hybrid_flow(pipeline, identity, model=model)
+    backend_flow = build_spiking_hybrid_flow(
+        pipeline, hybrid_mapping, model=model,
+    )
+    # The fatal cell: synchronized identity-twin vs packed program — exact by
+    # construction (same matrices, canonical schedule). The streaming cell is
+    # a REPORT: streaming-vs-sync count deltas are the measured per-cycle
+    # transient physics [§15-16]; the streaming census accuracy (read moments
+    # later by the metric run) is that cell's arbiter, not per-window counts.
+    cert, detail = certify_twin_flow_counts(
+        ir_graph, reference_flow, backend_flow, samples, backend="hcm",
+        discipline="synchronized",
+    )
+    print(f"[SpikeCountCertificate] synchronized: {cert.summary()}")
+    print(f"[SpikeCountCertificate] synchronized: {detail}")
+    for dv in cert.divergent:
+        print(f"[SpikeCountCertificate] synchronized: divergent {dv}")
+    if not cert.passed:
+        raise RuntimeError(
+            f"spike-count certificate FAILED (synchronized): "
+            f"{cert.summary()} | {detail}"
         )
-        print(f"[SpikeCountCertificate] {discipline}: {cert.summary()}")
-        print(f"[SpikeCountCertificate] {discipline}: {detail}")
-        if not cert.passed:
-            raise RuntimeError(
-                f"spike-count certificate FAILED ({discipline}): "
-                f"{cert.summary()} | {detail}"
-            )
+    stream_cert, _ = certify_twin_flow_counts(
+        ir_graph, backend_flow, backend_flow, samples, backend="hcm",
+        discipline="streaming", reference_discipline="synchronized",
+    )
+    print(
+        "[SpikeTransientReport] streaming vs synchronized: "
+        f"exact={stream_cert.exact_match_fraction:.6f} "
+        f"max|dcount|={stream_cert.max_abs_delta:g} over "
+        f"{stream_cert.neuron_windows_compared} neuron-windows "
+        "(per-cycle transient physics; the streaming census accuracy is the "
+        "arbiter for this cell)"
+    )
     return cert

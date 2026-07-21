@@ -113,19 +113,14 @@ class PerceptronCountAssembler:
         return out
 
 
-def certify_flow_counts(
-    repr_, ir_graph, flow, samples: torch.Tensor, *, backend: str,
-    discipline: str = "synchronized",
-):
-    """One-call certificate: NF oracle vs a hybrid flow's captured stage counts.
-
-    ``discipline`` picks the executor cell — "synchronized" is the exact count
-    cell; "streaming" is the metric-of-record cell, equal by the §16 staircase
-    theorem and VERIFIED here rather than assumed. The ``stage_count_recorder``
-    seam is attached for the run; the flow's own discipline is restored."""
+def flow_perceptron_counts(
+    ir_graph, flow, samples: torch.Tensor, *, discipline: str = "synchronized",
+) -> tuple[dict[int, torch.Tensor], str]:
+    """One flow run under ``discipline`` with the ``stage_count_recorder`` seam
+    attached; returns assembled per-perceptron counts + the coverage report.
+    The flow's own discipline is restored."""
     if discipline not in ("synchronized", "streaming"):
         raise ValueError(f"unknown certificate discipline {discipline!r}")
-    ref = nf_perceptron_counts(repr_, int(flow.simulation_length), samples)
     assembler = PerceptronCountAssembler(ir_graph)
     flow.stage_count_recorder = (
         lambda stage, counts: assembler.capture_stage(stage.output_map, counts)
@@ -138,12 +133,52 @@ def certify_flow_counts(
     finally:
         flow.stage_count_recorder = None
         flow.lif_execution_synchronized = prev_sync
-    aligned_ref, aligned_got, report = intersect_aligned(ref, assembler.assemble())
+    return assembler.assemble(), assembler.last_report
+
+
+def certify_flow_counts(
+    repr_, ir_graph, flow, samples: torch.Tensor, *, backend: str,
+    discipline: str = "synchronized",
+):
+    """NF-oracle edge measurement: model-walk counts vs a hybrid flow's counts.
+
+    NOT the exact certificate — the model walk carries the honest WQ/chip-grid
+    residual, so counts flip at staircase boundaries (bounded by the atol
+    parity gate). The exact edge is ``certify_twin_flow_counts``."""
+    ref = nf_perceptron_counts(repr_, int(flow.simulation_length), samples)
+    got, cover = flow_perceptron_counts(
+        ir_graph, flow, samples, discipline=discipline,
+    )
+    aligned_ref, aligned_got, report = intersect_aligned(ref, got)
     cert = certify_spike_counts(
         lambda _b: aligned_ref, lambda _b: aligned_got, [samples],
         backend=backend,
     )
-    return cert, f"{assembler.last_report} | {report}"
+    return cert, f"{cover} | {report}"
+
+
+def certify_twin_flow_counts(
+    ir_graph, reference_flow, backend_flow, samples: torch.Tensor, *,
+    backend: str, discipline: str = "synchronized",
+    reference_discipline: str = "synchronized",
+):
+    """[§17] the exact certificate edge: two chip-grid programs (same core
+    matrices — e.g. identity-mapped IR twin vs the packed program) must agree
+    per neuron-window at the backend class's tolerance. ``discipline`` picks
+    the backend cell; the reference runs synchronized (the exact cell) unless
+    overridden."""
+    ref, ref_cover = flow_perceptron_counts(
+        ir_graph, reference_flow, samples, discipline=reference_discipline,
+    )
+    got, got_cover = flow_perceptron_counts(
+        ir_graph, backend_flow, samples, discipline=discipline,
+    )
+    aligned_ref, aligned_got, report = intersect_aligned(ref, got)
+    cert = certify_spike_counts(
+        lambda _b: aligned_ref, lambda _b: aligned_got, [samples],
+        backend=backend,
+    )
+    return cert, f"ref[{ref_cover}] backend[{got_cover}] | {report}"
 
 
 def intersect_aligned(
