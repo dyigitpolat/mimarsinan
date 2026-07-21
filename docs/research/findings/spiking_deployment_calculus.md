@@ -1942,3 +1942,35 @@ leftovers — empty_cache without gc.collect() cannot free cyclic
 nn.Module tensors; fixed. Costs measured: parity phase 4957s (83 min)
 at cuda_peak 68.9GB (the ViT residual topology's live frontier is
 genuinely large; a future economy pass can stream it at lower batch).
+
+---
+
+## 17. The certification architecture: spike-count faithfulness (2026-07-21)
+
+**Diagnosis (why argmax parity < 1.0 is structural, not mechanical):** the
+old gate compared the deployed sim against the ORIGINAL torch model — two
+different floating-point programs; the staircase amplifies ulp-level
+membrane differences into count flips near threshold. Perfect parity
+between different float programs is unattainable and the wrong target.
+
+**The theorem:** post-WQ, chip-side arithmetic is integer weights ×
+integer counts — associative, order-independent, exact in float64/int64.
+The float part (LN/attention/softmax) is ONE shared torch implementation
+host-side in every backend. Therefore per-neuron window-count equality
+between a torch-side IR reference with genuine fire and any controlled
+backend is achievable EXACTLY, by construction; and with prediction =
+decode(counts) shared, accuracy(oracle) + counts(oracle ≡ backend) ⟹
+accuracy(backend) — derived, not re-measured. n=1–2 samples ×
+millions of neuron-windows out-powers argmax parity at any n (a Type-B
+shows in the first sample, loudly).
+
+**Landed (PR42, gate 8339):** `certification/` top-level module —
+`certify_spike_counts` + `SpikeCountCertificate` (typed; exactness
+classes exact|counts-export; Loihi = counts-export with documented
+±1-count tolerance; fail-loud on unclassified backends/missing keys);
+`spike_count_parity_samples` knob (default 2); integration lock: NF sync
+walk ≡ HCM count executor per-neuron through the certificate itself.
+NEXT: PR43 oracle promotion (torch-IR genuine-fire accuracy read;
+model-vs-IR demoted to analytic drift check) → PR44 SCM gate swap +
+legacy knob retirement (simulation_batch_count) → PR45 nevresim/SANA-FE
+adoption → PR46 budgets + the deployment-time table.
