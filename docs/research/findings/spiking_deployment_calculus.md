@@ -1974,3 +1974,13 @@ NEXT: PR43 oracle promotion (torch-IR genuine-fire accuracy read;
 model-vs-IR demoted to analytic drift check) → PR44 SCM gate swap +
 legacy knob retirement (simulation_batch_count) → PR45 nevresim/SANA-FE
 adoption → PR46 budgets + the deployment-time table.
+
+**Old-regime closure (2026-07-21):** attempt 10 reproduced the parity
+verdict exactly (0.9922/256 — deterministic, twice-confirmed) and then
+hung 79+ min at 0% GPU inside the legacy identity metric (70.6GB still
+held despite the gc pass) — killed unread. The identity metric retires
+with its regime: its information is subsumed by the streaming census
+(0.8580 @ n=2500, the metric of record) and, going forward, by the §17
+derived-accuracy rule. Final old-regime baseline: parity 0.9922×2,
+oracle accuracy 0.8580, certification wall ~85 min/attempt — the number
+PR44's n=2 count-certificates replace.
