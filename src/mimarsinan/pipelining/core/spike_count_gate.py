@@ -46,13 +46,20 @@ def run_spike_count_certificate_gate(pipeline, model, ir_graph, hybrid_mapping):
     if samples is None:
         return None
     flow = build_spiking_hybrid_flow(pipeline, hybrid_mapping, model=model)
-    cert, detail = certify_flow_counts(
-        model.get_mapper_repr(), ir_graph, flow, samples, backend="hcm",
-    )
-    print(f"[SpikeCountCertificate] {cert.summary()}")
-    print(f"[SpikeCountCertificate] {detail}")
-    if not cert.passed:
-        raise RuntimeError(
-            f"spike-count certificate FAILED: {cert.summary()} | {detail}"
+    repr_ = model.get_mapper_repr()
+    # Both cells: synchronized is exact by construction; streaming is the
+    # metric of record, equal by the §16 staircase theorem — verified here.
+    cert = None
+    for discipline in ("synchronized", "streaming"):
+        cert, detail = certify_flow_counts(
+            repr_, ir_graph, flow, samples, backend="hcm",
+            discipline=discipline,
         )
+        print(f"[SpikeCountCertificate] {discipline}: {cert.summary()}")
+        print(f"[SpikeCountCertificate] {discipline}: {detail}")
+        if not cert.passed:
+            raise RuntimeError(
+                f"spike-count certificate FAILED ({discipline}): "
+                f"{cert.summary()} | {detail}"
+            )
     return cert

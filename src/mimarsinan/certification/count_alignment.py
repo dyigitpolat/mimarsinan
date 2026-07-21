@@ -114,20 +114,24 @@ class PerceptronCountAssembler:
 
 
 def certify_flow_counts(
-    repr_, ir_graph, flow, samples: torch.Tensor, *, backend: str
+    repr_, ir_graph, flow, samples: torch.Tensor, *, backend: str,
+    discipline: str = "synchronized",
 ):
     """One-call certificate: NF oracle vs a hybrid flow's captured stage counts.
 
-    Runs the flow under the synchronized LIF discipline (the exact count cell;
-    the staircase theorem extends equality to streaming) with the
-    ``stage_count_recorder`` seam attached; restores the flow's discipline."""
+    ``discipline`` picks the executor cell — "synchronized" is the exact count
+    cell; "streaming" is the metric-of-record cell, equal by the §16 staircase
+    theorem and VERIFIED here rather than assumed. The ``stage_count_recorder``
+    seam is attached for the run; the flow's own discipline is restored."""
+    if discipline not in ("synchronized", "streaming"):
+        raise ValueError(f"unknown certificate discipline {discipline!r}")
     ref = nf_perceptron_counts(repr_, int(flow.simulation_length), samples)
     assembler = PerceptronCountAssembler(ir_graph)
     flow.stage_count_recorder = (
         lambda stage, counts: assembler.capture_stage(stage.output_map, counts)
     )
     prev_sync = getattr(flow, "lif_execution_synchronized", False)
-    flow.lif_execution_synchronized = True
+    flow.lif_execution_synchronized = discipline == "synchronized"
     try:
         with torch.no_grad():
             flow(samples)

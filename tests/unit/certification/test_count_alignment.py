@@ -167,6 +167,27 @@ def test_certify_flow_counts_one_call_on_the_tiny_fixture():
     assert flow.stage_count_recorder is None
 
 
+def test_streaming_discipline_counts_certify_against_the_same_oracle():
+    """[§16 staircase theorem] streaming per-window counts equal the NF sync
+    oracle exactly — the metric-of-record cell, verified not assumed."""
+    from mimarsinan.certification.count_alignment import certify_flow_counts
+
+    sys.path.insert(0, "tests/unit/models")
+    from test_hybrid_sync_counts import _flow
+
+    torch.manual_seed(0)
+    repr_, ir, hybrid = _tiny_with_provenance()
+    x = torch.rand(3, 8) * 0.9
+
+    flow = _flow(hybrid, synchronized=True)
+    cert, _detail = certify_flow_counts(
+        repr_, ir, flow, x, backend="hcm", discipline="streaming",
+    )
+    assert cert.passed, cert.summary()
+    assert cert.exact_match_fraction == 1.0
+    assert flow.lif_execution_synchronized is True
+
+
 def test_intersect_aligned_rejects_width_mismatch_on_common_key():
     ref = {1: torch.zeros(2, 4)}
     got = {1: torch.zeros(2, 5)}
