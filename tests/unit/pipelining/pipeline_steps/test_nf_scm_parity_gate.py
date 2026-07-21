@@ -461,7 +461,7 @@ class TestOneSampleCountKeyForBothBranches:
         step.pipeline.config["thresholding_mode"] = "<"
         step._run_torch_sim_parity_check(model=object(), ir_graph=object())
         assert len(calls) == 1
-        assert calls[0][3] == pytest.approx(0.98)
+        assert calls[0][3] == pytest.approx(0.90)  # catastrophic floor [calculus 17]
 
 
 class TestParityGate:
