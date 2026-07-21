@@ -119,6 +119,9 @@ class HybridRateForwardMixin(HybridFlowHost):
                 recorder_seg=recorder_seg,
                 readout_corrections=readout_corrections,
             )
+            count_recorder = getattr(self, "stage_count_recorder", None)
+            if count_recorder is not None:
+                count_recorder(stage, counts)
             seg_output_rates = decode_segment_output_torch(counts, T)
             self._store_segment_output(
                 stage.output_map, ctx.state_buffer, seg_output_rates,

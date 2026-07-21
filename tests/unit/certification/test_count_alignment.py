@@ -147,6 +147,31 @@ def test_assembler_drops_uncaptured_and_overlapping_perceptrons():
     assert "p1" in asm.last_report and "overlap" in asm.last_report
 
 
+def test_stage_count_recorder_seam_feeds_the_assembler():
+    """The sanctioned pipeline seam (no monkeypatching): flow.stage_count_recorder."""
+    sys.path.insert(0, "tests/unit/models")
+    from test_hybrid_sync_counts import T as _T
+    from test_hybrid_sync_counts import _flow
+
+    torch.manual_seed(0)
+    repr_, ir, hybrid = _tiny_with_provenance()
+    x = torch.rand(3, 8) * 0.9
+    ref = nf_perceptron_counts(repr_, _T, x)
+
+    assembler = PerceptronCountAssembler(ir)
+    flow = _flow(hybrid, synchronized=True)
+    flow.stage_count_recorder = (
+        lambda stage, counts: assembler.capture_stage(stage.output_map, counts)
+    )
+    with torch.no_grad():
+        flow(x)
+    aligned_ref, aligned_got, _ = intersect_aligned(ref, assembler.assemble())
+    cert = certify_spike_counts(
+        lambda _b: aligned_ref, lambda _b: aligned_got, [x], backend="hcm",
+    )
+    assert cert.passed and cert.exact_match_fraction == 1.0
+
+
 def test_intersect_aligned_rejects_width_mismatch_on_common_key():
     ref = {1: torch.zeros(2, 4)}
     got = {1: torch.zeros(2, 5)}
