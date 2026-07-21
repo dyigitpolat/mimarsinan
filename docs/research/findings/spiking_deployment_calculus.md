@@ -2125,3 +2125,12 @@ contract) measured **336s → 4.3s per ViT identity stage (78×)**: the
 identity reference drops ~55 min → ~2–3 min and the ViT twin gate
 becomes routine. End-to-end cert8 re-run in flight to reconfirm the
 PASS on the vectorized path.
+
+**cert8 — the closing datum (2026-07-21):** full ViT twin certification
+re-run on the vectorized walk: TWIN sync PASS exact=1.000000 and the
+transient report BIT-IDENTICAL to cert7 (1,217,683/14,524,416, max 30) —
+in **~6 minutes end-to-end** (the packed mapping build was also
+ChipLatency-dominated and dropped from ~25 min alongside the identity
+reference). Final table entry: a complete ViT-scale spike-count
+certificate at n=2, both cells, costs ~6-7 min — vs the retired ~85
+min/attempt non-convergent regime.
