@@ -2097,3 +2097,21 @@ residual, atol-gated · (C) identity-twin↔packed sync counts, FATAL
 exact=1.0 (t0_05 + ViT 14.5M) · (T) packed streaming↔sync, report ·
 (T′) nevresim↔HCM streaming, report · (B) SANA-FE/Loihi↔HCM, FATAL
 typed certificates. Gates 8358 green, typecheck 0.
+
+### 17.4 PR46 — the certification time table (2026-07-21, measured)
+
+| Cell | Scale | Cost (measured) | Regime |
+| --- | --- | --- | --- |
+| OLD: argmax-parity + identity metric | ViT | ~85 min/attempt, 68.9 GB peak, hung twice, non-convergent target | RETIRED |
+| (C) twin certificate, sync, n=2 | tier-0 (t0_05) | seconds (in-step; full HCM step green incl. cert + transient report) | routine FATAL gate |
+| (C) twin certificate, sync, n=2 | ViT (t2_04) | ≈2h10m one-off — packed mapping build ~25m + identity flow ~55m + packed sync ~15m; identity flow dominates | per-artifact instrument until the vectorized IR reference lands |
+| (T) streaming transient report | ViT | rides the same probe (packed streaming ~35m at n=2) | report |
+| (B) SANA-FE / Loihi certs | tier-0 | rides the existing sim steps (no added sims) | FATAL typed |
+| (T′) nevresim report | tier-0 | rides the existing probe + one packed streaming forward at n | report |
+| (O) census oracle (accuracy) | ViT | streaming census n=2500 (the AB9 read) — unchanged, the metric of record | measured |
+
+Bottom line: certification that used to cost ~85 min/attempt and never
+converge is now seconds-scale at tier-0 and a bounded one-off (~2h,
+dominated by the naive identity reference) at ViT scale, with the
+routine per-run gates all riding existing step work. The single named
+cost lever is the vectorized IR count reference (profiling in flight).
