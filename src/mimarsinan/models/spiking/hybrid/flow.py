@@ -57,6 +57,9 @@ class SpikingHybridCoreFlow(
         lif_execution_synchronized: bool = False,
     ):
         super().__init__()
+        # [§17] certification capture seam: called as (stage, raw_counts)
+        # after every neural segment, both disciplines; None disables.
+        self.stage_count_recorder: "object | None" = None
 
         self.input_shape = input_shape
         self.hybrid_mapping = hybrid_mapping

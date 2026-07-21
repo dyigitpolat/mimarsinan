@@ -23,6 +23,8 @@ from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 class SimulationRunner(SimulationFlatMixin, SimulationHybridMixin):
     def __init__(self, pipeline, mapping, simulation_length, preprocessor=None):
         self._preprocessor = preprocessor if preprocessor is not None else nn.Identity()
+        # [§17] certification capture seam (hybrid path): (stage, raw_counts).
+        self.stage_count_recorder: "object | None" = None
         plan = DeploymentPlan.of(pipeline)
         self.spike_generation_mode = pipeline.config["spike_generation_mode"]
         self.firing_mode = pipeline.config["firing_mode"]

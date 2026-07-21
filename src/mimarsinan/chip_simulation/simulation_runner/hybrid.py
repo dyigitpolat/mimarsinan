@@ -232,14 +232,13 @@ class SimulationHybridMixin(SimulationHostContract):
                 )
             input_size = seg_input.shape[1]
             seg_data = [(seg_input[i], np.zeros(1)) for i in range(num_samples)]
-            print(
-                f"  Running neural segment '{stage.name}' (input_size={input_size})"
-            )
+            print(f"  Running neural segment '{stage.name}' (input_size={input_size})")
             prepared = prepared_segments[seg_counter]
-            raw_output, membranes = self._run_neural_segment_precompiled(
-                prepared, seg_data,
-            )
+            raw_output, membranes = self._run_neural_segment_precompiled(prepared, seg_data)
             seg_counter += 1
+            recorder = getattr(self, "stage_count_recorder", None)
+            if recorder is not None:
+                recorder(stage, raw_output)
             if membranes is not None:
                 stash_membrane_corrections(
                     hybrid, stage, membranes, membrane_corrections,
