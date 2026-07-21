@@ -48,6 +48,7 @@ if TYPE_CHECKING:
             state_buffer: Dict[int, torch.Tensor],
             remaining: Dict[int, int],
             src_ids: Iterable[int],
+            state_buffer_spikes: Dict[int, torch.Tensor] | None = None,
         ) -> None: ...
 
         def _evict_segment_cache(self) -> None: ...

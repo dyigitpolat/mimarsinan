@@ -281,8 +281,7 @@ def resolve_stage_compute_scales(
 def decref_consumers(
     state_buffer,
     remaining: Dict[int, int],
-    src_ids: Iterable[int],
-    state_buffer_spikes=None,
+    src_ids: Iterable[int], state_buffer_spikes=None,
 ) -> None:
     """Drop state-buffer entries whose consumer refcount reaches zero."""
     for nid in src_ids:
@@ -295,9 +294,7 @@ def decref_consumers(
         if r <= 0:
             remaining.pop(nid, None)
             state_buffer.pop(nid, None)
-            # The cycle-train cache is T x larger per node and shares the
-            # value buffer's lifetime [calculus 16.12: the 80GB parity read].
-            if state_buffer_spikes is not None:
+            if state_buffer_spikes is not None:  # trains share the lifetime
                 state_buffer_spikes.pop(nid, None)
         else:
             remaining[nid] = r
