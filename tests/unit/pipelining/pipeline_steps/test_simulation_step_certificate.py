@@ -53,7 +53,9 @@ def test_matching_counts_certify_exact(monkeypatch):
     assert flow.stage_count_recorder is None
 
 
-def test_count_mismatch_is_fatal(monkeypatch):
+def test_count_mismatch_is_reported_not_fatal(monkeypatch):
+    """Independent per-cycle timing (window-edge transients) is REPORTED —
+    decision parity is this cell's arbiter [measured: 18% windows, parity 1.0]."""
     import mimarsinan.pipelining.pipeline_steps.verification.simulation_step as mod
 
     nev = torch.tensor([[3.0, 0.0, 7.0]])
@@ -63,13 +65,13 @@ def test_count_mismatch_is_fatal(monkeypatch):
     monkeypatch.setattr(
         mod, "build_spiking_hybrid_flow", lambda pipeline, mapping, model: flow,
     )
-    with pytest.raises(RuntimeError, match="nevresim spike-count certificate"):
-        _certify_nevresim_counts(
-            pipeline=SimpleNamespace(config={"device": "cpu"}),
-            mapping=None,
-            captured=captured,
-            samples=torch.zeros(1, 4),
-        )
+    cert = _certify_nevresim_counts(
+        pipeline=SimpleNamespace(config={"device": "cpu"}),
+        mapping=None,
+        captured=captured,
+        samples=torch.zeros(1, 4),
+    )
+    assert not cert.passed and cert.max_abs_delta == 1.0
 
 
 def test_stage_count_recorder_seam_on_the_nevresim_hybrid_runner():
