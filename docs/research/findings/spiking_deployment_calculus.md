@@ -2067,3 +2067,33 @@ would be both too strict (real physics, not defects) and meaningless
 (max 30); the streaming cell's arbiter is the census, full stop. Total
 cert7 wall ≈ 2h10m (mapping ~25m; identity sync ~55m dominates; packed
 runs minutes-scale each).
+
+### 17.3 PR45 complete: all three backends wired; nevresim refines the
+### edge taxonomy again (2026-07-21)
+
+SANA-FE and Loihi: typed `SpikeCountCertificate`s
+(`certify_run_records`) now ride their existing fatal first-diff asserts
+(per-core in/out + segment output counts; Loihi = counts-export ±1
+class). Both are EXACT cells because their runners are timing-aligned to
+the HCM reference (SANA-FE's four-part timing fix; Lava replays HCM
+segments).
+
+nevresim: the hybrid runner gained the `stage_count_recorder` seam (raw
+pre-decode stage counts) and the Simulation step compares them against
+the HCM STREAMING flow on identical inputs. First-ever count-level
+measurement (t0_05, T=4, n=2): **exact=0.8198, max|d|=2 — 18% of windows
+— while decision parity is 1.0.** Mechanism class: nevresim times its
+per-cycle program independently (window-edge transients, the same object
+as the historical seg-output window-gate seam), so "matching discipline ⇒
+exact" is REFUTED between independent per-cycle executors — chip-math
+exactness needs a shared arrival schedule, not just shared matrices.
+Classification: Edge T′ — transient REPORT with the decision-parity probe
+as arbiter (in-vivo green: parity 1.0 + report). The open lever for
+promoting nevresim to an exact cell is timing alignment (window gating
+aligned to the HCM flow, as done for SANA-FE).
+
+Final §17 cell map: (O) census oracle, measured · (R) model↔grid WQ
+residual, atol-gated · (C) identity-twin↔packed sync counts, FATAL
+exact=1.0 (t0_05 + ViT 14.5M) · (T) packed streaming↔sync, report ·
+(T′) nevresim↔HCM streaming, report · (B) SANA-FE/Loihi↔HCM, FATAL
+typed certificates. Gates 8358 green, typecheck 0.
