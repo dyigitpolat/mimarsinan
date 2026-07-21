@@ -209,6 +209,7 @@ class Conv2DPerceptronMapper(Mapper):
             group_sizes = _chunk_sizes(self.out_channels, int(self.max_neurons))
 
         bank_ids: list[int] = []
+        bank_channel_ranges: list[tuple[int, int]] = []
         start_idx = 0
         for g in group_sizes:
             end_idx = start_idx + g
@@ -225,6 +226,7 @@ class Conv2DPerceptronMapper(Mapper):
                 bias_scale=getattr(self.perceptron, "bias_scale", None),
             )
             bank_ids.append(bank_id)
+            bank_channel_ranges.append((start_idx, end_idx))
             start_idx = end_idx
 
         h_base = np.arange(h_out) * s_h
@@ -250,6 +252,8 @@ class Conv2DPerceptronMapper(Mapper):
                     input_sources=patch_sources,
                     weight_bank_id=bank_id,
                     has_bias=has_bias,
+                    perceptron_output_slice=bank_channel_ranges[g_idx],
+                    perceptron_output_column=pos,
                     name=f"{self.name}_pos{oh}_{ow}_g{g_idx}",
                     activation_type=activation_type,
                     perceptron_index=getattr(self, "perceptron_index", None),

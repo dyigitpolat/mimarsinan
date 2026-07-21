@@ -39,6 +39,7 @@ class _LayoutIRMappingFC:
         normalization_type: Optional[str] = None,
         activation_type: Optional[str] = None,
         perceptron_index: Optional[int] = None,
+        perceptron_output_column: Optional[int] = None,
         psum_group_id: Optional[int] = None,
         psum_role: Optional[str] = None,
         coalescing_group_id: Optional[int] = None,
@@ -79,6 +80,7 @@ class _LayoutIRMappingFC:
                         normalization_type=normalization_type,
                         activation_type=activation_type,
                         perceptron_index=perceptron_index,
+                        perceptron_output_column=i,
                         psum_group_id=psum_group_id,
                         psum_role=psum_role,
                         coalescing_group_id=coalescing_group_id,
@@ -122,6 +124,7 @@ class _LayoutIRMappingFC:
                 normalization_type=normalization_type,
                 activation_type=activation_type,
                 perceptron_index=perceptron_index,
+                perceptron_output_column=perceptron_output_column,
                 psum_group_id=psum_group_id,
                 psum_role=psum_role,
                 coalescing_group_id=coalescing_group_id,
@@ -142,6 +145,10 @@ class _LayoutIRMappingFC:
             normalization_type=normalization_type,
             activation_type=activation_type,
             perceptron_index=perceptron_index,
+            perceptron_output_slice=(
+                (0, out_features) if perceptron_index is not None else None
+            ),
+            perceptron_output_column=perceptron_output_column,
             psum_group_id=psum_group_id,
             psum_role=psum_role,
             coalescing_group_id=coalescing_group_id,
@@ -166,6 +173,7 @@ class _LayoutIRMappingFC:
         coalescing_group_id: Optional[int],
         coalescing_role: Optional[str],
         bias_scale: Any = None,
+        perceptron_output_column: Optional[int] = None,
     ) -> "np.ndarray | LayoutSourceView":
         out_features = int(getattr(fc_weights, "shape", [0, 0])[0])
         assert self.max_neurons is not None, (
@@ -193,6 +201,7 @@ class _LayoutIRMappingFC:
                 activation_type=activation_type,
                 perceptron_index=perceptron_index,
                 perceptron_output_slice=(start, end),
+                perceptron_output_column=perceptron_output_column,
                 psum_group_id=psum_group_id,
                 psum_role=psum_role,
                 coalescing_group_id=coalescing_group_id,

@@ -33,6 +33,7 @@ class IRMappingEmitMixin(IRMappingCore):
             perceptron_index: int | None = None,
             perceptron_input_slice: tuple[int, int] | None = None,
             perceptron_output_slice: tuple[int, int] | None = None,
+            perceptron_output_column: int | None = None,
             psum_group_id: int | None = None,
             psum_role: str | None = None,
             coalescing_group_id: int | None = None,
@@ -104,6 +105,7 @@ class IRMappingEmitMixin(IRMappingCore):
                 perceptron_index=perceptron_index,
                 perceptron_input_slice=perceptron_input_slice,
                 perceptron_output_slice=perceptron_output_slice,
+                perceptron_output_column=perceptron_output_column,
                 psum_group_id=psum_group_id,
                 psum_role=psum_role,
                 coalescing_group_id=coalescing_group_id,
@@ -123,6 +125,8 @@ class IRMappingEmitMixin(IRMappingCore):
             normalization_type: str | None = None,
             activation_type: str | None = None,
             perceptron_index: int | None = None,
+            perceptron_output_slice: tuple[int, int] | None = None,
+            perceptron_output_column: int | None = None,
             psum_group_id: int | None = None,
             psum_role: str | None = None,
             coalescing_group_id: int | None = None,
@@ -153,6 +157,9 @@ class IRMappingEmitMixin(IRMappingCore):
             out_features = bank.core_matrix.shape[1]
             if weight_row_slice is None:
                 weight_row_slice = (0, out_features)
+            if perceptron_output_slice is None and perceptron_index is not None:
+                # Bank rows ARE the perceptron's output channels at this position.
+                perceptron_output_slice = weight_row_slice
 
             node_hw_bias: np.ndarray | None = None
             if has_bias:
@@ -178,6 +185,8 @@ class IRMappingEmitMixin(IRMappingCore):
                 normalization_type=normalization_type,
                 activation_type=activation_type,
                 perceptron_index=perceptron_index,
+                perceptron_output_slice=perceptron_output_slice,
+                perceptron_output_column=perceptron_output_column,
                 psum_group_id=psum_group_id,
                 psum_role=psum_role,
                 coalescing_group_id=coalescing_group_id,

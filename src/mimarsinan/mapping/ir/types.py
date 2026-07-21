@@ -90,6 +90,9 @@ class NeuralCore(IRNode):
 
     perceptron_index: int | None = None
     perceptron_output_slice: tuple[int, int] | None = None
+    # Token/position column for per-column emission (map_fc 2-D recursion,
+    # conv positions); flat output placement = column * channels + slice.
+    perceptron_output_column: int | None = None
     perceptron_input_slice: tuple[int, int] | None = None
 
     psum_group_id: int | None = None

@@ -12,9 +12,11 @@ accuracy(oracle) + counts(oracle == backend) derives accuracy(backend)
 | File | Role |
 | --- | --- |
 | `spike_certificate.py` | `certify_spike_counts` + `SpikeCountCertificate`: typed reference↔backend count comparison; per-backend exactness classes (`exact` / `counts-export`), fail-loud on unclassified backends. |
+| `count_alignment.py` | `nf_perceptron_counts` (NF sync-walk reference) + `PerceptronCountAssembler` (backend stage counts → perceptron channel vectors via IR provenance: `perceptron_index`/`perceptron_output_column`/`perceptron_output_slice`; placement = column × channels + slice) + `intersect_aligned`. |
 
 ## Dependencies
 
-torch only. Consumers: the SCM parity gate and the simulator steps (PR44/45)
-feed executor-specific count gatherers; the `spike_count_parity_samples`
-config knob (registry: entries_execution) sets the sample budget.
+torch + `spiking.segment_forward` (the NF reference walk). Consumers: the SCM
+parity gate and the simulator steps (PR44/45) feed executor-specific count
+gatherers; the `spike_count_parity_samples` config knob (registry:
+entries_execution) sets the sample budget.
