@@ -137,6 +137,7 @@ class HybridRateForwardMixin(HybridFlowHost):
                 ctx.state_buffer,
                 remaining_counts,
                 (int(s.node_id) for s in ctx.stage.input_map),
+                state_buffer_spikes=ctx.state_buffer_spikes,
             )
 
         def _on_compute_rate(ctx: HybridStageContext) -> None:
@@ -192,6 +193,7 @@ class HybridRateForwardMixin(HybridFlowHost):
                 remaining_counts,
                 (int(src.node_id) for src in op.input_sources.flatten()
                  if isinstance(src, IRSource) and src.node_id >= 0),
+                state_buffer_spikes=ctx.state_buffer_spikes,
             )
 
         run_hybrid_stages(

@@ -68,8 +68,12 @@ class HybridStageIOMixin(HybridFlowHost):
         state_buffer: Dict[int, torch.Tensor],
         remaining: Dict[int, int],
         src_ids,
+        state_buffer_spikes=None,
     ) -> None:
-        decref_consumers(state_buffer, remaining, src_ids)
+        decref_consumers(
+            state_buffer, remaining, src_ids,
+            state_buffer_spikes=state_buffer_spikes,
+        )
 
     def _evict_segment_cache(self) -> None:
         """Trim the segment tensor cache to the byte budget.
