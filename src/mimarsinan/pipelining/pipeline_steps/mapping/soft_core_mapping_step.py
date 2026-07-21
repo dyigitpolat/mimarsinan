@@ -404,7 +404,11 @@ class SoftCoreMappingStep(PipelineStep):
         if not pairs:
             return
         samples = torch.cat([x for x, _ in pairs])[:n]
-        labels = torch.cat([y for _, y in pairs])[:n]
+        ys = [y for _, y in pairs]
+        labels = (
+            torch.cat(ys)[:n]
+            if all(isinstance(y, torch.Tensor) for y in ys) else None
+        )
         identity_mapping = build_identity_mapping_for_pipeline(
             ir_graph, pipeline_config=self.pipeline.config,
         )
