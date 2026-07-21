@@ -99,12 +99,17 @@ def certify_spike_counts(
                 idx = torch.nonzero(delta > 0, as_tuple=False)[0].tolist()
                 divergent.append((key, idx, d_max))
 
+    if compared == 0:
+        raise ValueError(
+            "spike-count certificate compared ZERO neuron-windows — a vacuous "
+            "pass is not a certificate; fix the reference/backend key alignment"
+        )
     return SpikeCountCertificate(
         backend=backend,
         backend_class=backend_class,
         samples=n_samples,
         neuron_windows_compared=compared,
-        exact_match_fraction=(matched / compared) if compared else 1.0,
+        exact_match_fraction=matched / compared,
         max_abs_delta=max_delta,
         divergent=divergent,
         passed=max_delta <= atol,

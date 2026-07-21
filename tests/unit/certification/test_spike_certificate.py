@@ -116,3 +116,11 @@ def test_integration_nf_walk_vs_hcm_counts_on_the_tiny_fixture():
     cert = certify_spike_counts(reference, backend, [x], backend="hcm")
     assert cert.passed, cert.summary()
     assert cert.exact_match_fraction == 1.0
+
+
+def test_zero_comparisons_is_not_a_certificate():
+    import pytest
+
+    with pytest.raises(ValueError, match="ZERO neuron-windows"):
+        certify_spike_counts(lambda b: {}, lambda b: {}, [torch.zeros(1, 4)],
+                             backend="hcm")
