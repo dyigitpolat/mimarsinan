@@ -235,6 +235,7 @@ def assert_torch_vs_deployed_sim_parity_or_raise(
     samples: torch.Tensor,
     *,
     min_agreement: float = 0.98,
+    labels: torch.Tensor | None = None,
 ) -> float:
     """Torch↔deployed-sim parity: the NF torch forward must agree with the deployed spiking sim on ``min_agreement`` of samples.
 
@@ -249,6 +250,17 @@ def assert_torch_vs_deployed_sim_parity_or_raise(
         torch_pred = model(samples).argmax(dim=1)
         sim_pred = flow(samples).argmax(dim=1)
     agreement = float((torch_pred == sim_pred).double().mean())
+    if labels is not None:
+        flips = (torch_pred != sim_pred).nonzero(as_tuple=True)[0]
+        y = labels.to(torch_pred.device)
+        tr = int(((torch_pred[flips] == y[flips]) & (sim_pred[flips] != y[flips])).sum())
+        sr = int(((sim_pred[flips] == y[flips]) & (torch_pred[flips] != y[flips])).sum())
+        bw = int(len(flips)) - tr - sr
+        print(
+            f"[parity] flips={int(len(flips))} torch-right-sim-wrong={tr} "
+            f"sim-right-torch-wrong={sr} both-wrong={bw}",
+            flush=True,
+        )
     if agreement < float(min_agreement):
         raise NfScmParityError(
             f"torch↔deployed-sim parity failed: {agreement:.4f} < "

@@ -396,10 +396,15 @@ class SoftCoreMappingStep(PipelineStep):
         n = int(_effective(self.pipeline.config, "scm_torch_sim_parity_samples"))
         if n <= 0:
             return
-        batches = self._validation_sample_batches(8)
-        if not batches:
+        assert self.trainer is not None, "trainer is not constructed yet"
+        pairs = list(cast(
+            "Iterable[tuple[torch.Tensor, torch.Tensor]]",
+            self.trainer.iter_validation_batches(8),
+        ))
+        if not pairs:
             return
-        samples = torch.cat(batches)[:n]
+        samples = torch.cat([x for x, _ in pairs])[:n]
+        labels = torch.cat([y for _, y in pairs])[:n]
         identity_mapping = build_identity_mapping_for_pipeline(
             ir_graph, pipeline_config=self.pipeline.config,
         )
@@ -413,6 +418,7 @@ class SoftCoreMappingStep(PipelineStep):
             min_agreement=float(
                 _effective(self.pipeline.config, "scm_torch_sim_parity_min_agreement")
             ),
+            labels=labels,
         )
         print(
             f"[SoftCoreMappingStep] torch↔deployed-sim parity: {agreement:.4f} "
