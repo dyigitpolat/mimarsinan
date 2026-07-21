@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import torch
 
+from mimarsinan.certification.spike_certificate import certify_spike_counts
 from mimarsinan.spiking.segment_forward import (
     LifSegmentPolicy,
     SegmentForwardDriver,
@@ -110,6 +111,35 @@ class PerceptronCountAssembler:
             out[pi] = buf.round()
         self.last_report = "; ".join(dropped) if dropped else "all covered"
         return out
+
+
+def certify_flow_counts(
+    repr_, ir_graph, flow, samples: torch.Tensor, *, backend: str
+):
+    """One-call certificate: NF oracle vs a hybrid flow's captured stage counts.
+
+    Runs the flow under the synchronized LIF discipline (the exact count cell;
+    the staircase theorem extends equality to streaming) with the
+    ``stage_count_recorder`` seam attached; restores the flow's discipline."""
+    ref = nf_perceptron_counts(repr_, int(flow.simulation_length), samples)
+    assembler = PerceptronCountAssembler(ir_graph)
+    flow.stage_count_recorder = (
+        lambda stage, counts: assembler.capture_stage(stage.output_map, counts)
+    )
+    prev_sync = getattr(flow, "lif_execution_synchronized", False)
+    flow.lif_execution_synchronized = True
+    try:
+        with torch.no_grad():
+            flow(samples)
+    finally:
+        flow.stage_count_recorder = None
+        flow.lif_execution_synchronized = prev_sync
+    aligned_ref, aligned_got, report = intersect_aligned(ref, assembler.assemble())
+    cert = certify_spike_counts(
+        lambda _b: aligned_ref, lambda _b: aligned_got, [samples],
+        backend=backend,
+    )
+    return cert, f"{assembler.last_report} | {report}"
 
 
 def intersect_aligned(

@@ -5,6 +5,9 @@ from mimarsinan.common.env import vram_probe_enabled
 from mimarsinan.pipelining.core.hybrid_mapping_consumer import load_hybrid_mapping_for_step
 from mimarsinan.pipelining.core.engine.pipeline_helpers import run_optional_viz
 from mimarsinan.pipelining.core.simulation_factory import run_hcm_mapping_metric
+from mimarsinan.pipelining.core.spike_count_gate import (
+    run_spike_count_certificate_gate,
+)
 
 import torch
 import os
@@ -89,6 +92,9 @@ class HardCoreMappingStep(PipelineStep):
         _vram_probe("after_pickle_save")
 
         _vram_probe("before_test")
+        run_spike_count_certificate_gate(
+            self.pipeline, model, ir_graph, hybrid_mapping,
+        )
         acc = run_hcm_mapping_metric(
             self.pipeline,
             ir_graph,
