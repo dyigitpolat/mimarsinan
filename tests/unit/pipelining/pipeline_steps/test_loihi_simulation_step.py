@@ -36,12 +36,22 @@ class _FakeDataLoaderFactory:
 
 
 def _fake_record(sample_index=0):
+    import numpy as np
+
+    def _core(idx):
+        return SimpleNamespace(
+            core_index=idx,
+            input_spike_count=np.array([1, 2]),
+            output_spike_count=np.array([3]),
+        )
+
     return SimpleNamespace(
         sample_index=sample_index,
         T=4,
         segments={
             0: SimpleNamespace(
-                cores=[SimpleNamespace(), SimpleNamespace()],
+                cores=[_core(0), _core(1)],
+                seg_output_spike_count=np.array([3, 3]),
             ),
         },
     )

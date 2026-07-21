@@ -12,7 +12,8 @@ accuracy(oracle) + counts(oracle == backend) derives accuracy(backend)
 | File | Role |
 | --- | --- |
 | `spike_certificate.py` | `certify_spike_counts` + `SpikeCountCertificate`: typed reference↔backend count comparison; per-backend exactness classes (`exact` / `counts-export`), fail-loud on unclassified backends. |
-| `count_alignment.py` | `nf_perceptron_counts` (NF sync-walk reference) + `PerceptronCountAssembler` (backend stage counts → perceptron channel vectors via IR provenance: `perceptron_index`/`perceptron_output_column`/`perceptron_output_slice`; placement = column × channels + slice) + `intersect_aligned`. |
+| `count_alignment.py` | `PerceptronCountAssembler` (backend stage counts → perceptron channel vectors via IR provenance: `perceptron_index`/`perceptron_output_column`/`perceptron_output_slice`; placement = column × channels + slice), `certify_twin_flow_counts` (the FATAL edge: identity-IR twin ↔ packed program), `certify_flow_counts`/`nf_perceptron_counts` (the model↔grid WQ-residual measurement, atol-governed elsewhere), `flow_perceptron_counts`, `intersect_aligned`. |
+| `record_certificates.py` | `certify_run_records`: typed Edge-B certificate over two backend `RunRecord`s (per-core in/out + segment output counts); used by the SANA-FE and Loihi steps after their first-diff asserts. |
 
 ## Dependencies
 

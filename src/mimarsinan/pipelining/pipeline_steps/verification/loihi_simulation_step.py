@@ -7,6 +7,7 @@ from mimarsinan.pipelining.core.steps.pipeline_step import (
     METRIC_CARRIED,
     PipelineStep,
 )
+from mimarsinan.certification.record_certificates import certify_run_records
 from mimarsinan.pipelining.core.simulation_factory import (
     assert_spike_parity_or_raise,
     build_neural_behavior_config,
@@ -63,6 +64,8 @@ class LoihiSimulationStep(PipelineStep):
         )
         actual = runner.run_segments_from_reference(ref)
         assert_spike_parity_or_raise(ref, actual)
+        cert = certify_run_records(ref, actual, backend="loihi")
+        print(f"[SpikeCountCertificate] {cert.summary()}")
 
         checked_segments = len(ref.segments)
         checked_cores = sum(len(seg.cores) for seg in ref.segments.values())
@@ -75,6 +78,7 @@ class LoihiSimulationStep(PipelineStep):
                 "segments": checked_segments,
                 "cores": checked_cores,
                 "sample_index": ref.sample_index,
+                "spike_count_certificate": cert.summary(),
             },
         }
         print(

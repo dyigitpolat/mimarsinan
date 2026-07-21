@@ -66,16 +66,37 @@ class _FakeDataLoaderFactory:
 
 
 def _fake_hcm_record(sample_index=0):
+    import numpy as np
+
+    core = SimpleNamespace(
+        core_index=0,
+        input_spike_count=np.array([1, 2]),
+        output_spike_count=np.array([3]),
+    )
     return SimpleNamespace(
         sample_index=sample_index,
         T=4,
-        segments={0: SimpleNamespace(cores=[SimpleNamespace()])},
+        segments={0: SimpleNamespace(
+            cores=[core],
+            seg_output_spike_count=np.array([3]),
+        )},
     )
 
 
 def _fake_sanafe_record(sample_index=0, energy_total=2.0,
                         sim_time_s=1.0e-6, total_spikes=10, total_packets=4):
     """Object that quacks like a SanafeRunRecord for the step's aggregation."""
+    rec = _build_fake_sanafe_record(
+        sample_index, energy_total, sim_time_s, total_spikes, total_packets,
+    )
+    # The parity/certificate branch projects via to_hcm_subset; the stub
+    # mirrors the fake HCM reference so counts certify exactly.
+    rec.to_hcm_subset = lambda: _fake_hcm_record(sample_index)
+    return rec
+
+
+def _build_fake_sanafe_record(sample_index, energy_total, sim_time_s,
+                              total_spikes, total_packets):
     return SanafeRunRecord(
         arch_preset="loihi",
         arch_name="t",

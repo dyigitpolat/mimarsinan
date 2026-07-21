@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from typing import List
 
+from mimarsinan.certification.record_certificates import certify_run_records
 from mimarsinan.chip_simulation.certification import CertificationCell
 from mimarsinan.chip_simulation.cost_extraction import (
     extract_cost_record,
@@ -173,7 +174,10 @@ class SanafeSimulationStep(PipelineStep):
                         format_first_ttfs_diff(hw_diffs, layer="hardware"),
                     )
             elif parity_check and ref is not None:
-                assert_spike_parity_or_raise(ref, sanafe_rec.to_hcm_subset())
+                subset = sanafe_rec.to_hcm_subset()
+                assert_spike_parity_or_raise(ref, subset)
+                cert = certify_run_records(ref, subset, backend="sanafe")
+                print(f"[SpikeCountCertificate] {cert.summary()}")
 
         report = SanafeStepReport.from_records(arch_preset, per_sample)
         self.add_entry("sanafe_simulation_results", report, "pickle")
