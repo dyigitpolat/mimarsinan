@@ -1,5 +1,7 @@
 from collections import defaultdict
 
+import numpy as np
+
 
 class ChipLatency:
     def __init__(self, mapping):
@@ -45,6 +47,80 @@ class ChipLatency:
         self.memo[key] = result
         return result
 
+    def _compute_all_delays(self):
+        """Fill ``self.memo`` for every (core, neuron) — bit-equal to the
+        recursive ``get_delay_for`` walk (locked by test), one vectorized
+        pass per core in topological order instead of per-neuron recursion."""
+        cores = self.mapping.cores
+        n_cores = len(cores)
+        live_masks, axon_meta, deps = [], [], [set() for _ in range(n_cores)]
+        for ci, core in enumerate(cores):
+            # Rows are matrix rows: sources are dereferenced only where a
+            # weight is nonzero (bias rows may extend past axon_sources),
+            # mirroring the recursive walk's zero-weight skip.
+            live = np.asarray(core.core_matrix) != 0
+            n_rows = live.shape[0]
+            n_src = len(core.axon_sources)
+            if n_rows > n_src and bool(live[n_src:].any()):
+                raise IndexError(
+                    f"core {ci}: nonzero weight row {n_src}+ has no axon source"
+                )
+            src_core = np.full(n_rows, -1, dtype=np.int64)
+            src_neuron = np.zeros(n_rows, dtype=np.int64)
+            for ai, src in enumerate(core.axon_sources[:n_rows]):
+                if getattr(src, "is_off_", False):
+                    live[ai, :] = False
+                    continue
+                src_core[ai] = int(src.core_)
+                src_neuron[ai] = int(src.neuron_)
+                if src_core[ai] >= 0 and bool(live[ai].any()):
+                    deps[ci].add(int(src_core[ai]))
+            live_masks.append(live)
+            axon_meta.append((src_core, src_neuron))
+
+        indegree = {ci: len(deps[ci]) for ci in range(n_cores)}
+        consumers = defaultdict(set)
+        for ci in range(n_cores):
+            for p in deps[ci]:
+                consumers[p].add(ci)
+        ready = [ci for ci in range(n_cores) if indegree[ci] == 0]
+        order = []
+        while ready:
+            ci = ready.pop()
+            order.append(ci)
+            for c in consumers[ci]:
+                indegree[c] -= 1
+                if indegree[c] == 0:
+                    ready.append(c)
+        if len(order) != n_cores:
+            raise RuntimeError(
+                "ChipLatency: cyclic core dependency; the recursive walk "
+                "would not terminate either"
+            )
+
+        delays: list = [None] * n_cores
+        for ci in order:
+            live = live_masks[ci]
+            n_out = live.shape[1]
+            src_core, src_neuron = axon_meta[ci]
+            axon_delay = np.zeros(len(src_core), dtype=np.int64)
+            # Dead axons (all-zero weights) are masked out per neuron and may
+            # reference cores outside the dependency order — never read them.
+            live_any = (
+                live.any(axis=1) if live.shape[0] else np.zeros(0, dtype=bool)
+            )
+            for p in np.unique(src_core[(src_core >= 0) & live_any]):
+                sel = (src_core == p) & live_any
+                axon_delay[sel] = delays[int(p)][src_neuron[sel]]
+            if live.shape[0] == 0:
+                neuron_delays = np.zeros(n_out, dtype=np.int64)
+            else:
+                masked = np.where(live, axon_delay[:, None], -1)
+                neuron_delays = masked.max(axis=0) + 1
+            delays[ci] = neuron_delays
+            for j in range(n_out):
+                self.memo[(ci, j)] = int(neuron_delays[j])
+
     def calculate(self):
         self.memo = {}
         if len(self.mapping.output_sources) == 0:
@@ -53,6 +129,7 @@ class ChipLatency:
                 "This usually means all output neurons were pruned or compaction removed every output ref. "
                 "Check IR pruning and soft-core compaction."
             )
+        self._compute_all_delays()
         result = max([
             self.get_delay_for(source) for source in self.mapping.output_sources])
 
