@@ -33,4 +33,12 @@ ENTRIES = (
        doc="Window-start membrane guard (normalized); negative recenters the "
            "signed-charge rectifier [calculus 15.11].", empty_means="0.0",
        provenance="consumer frozen default", derived_default=_frozen(0.0)),
+    _E("spike_count_parity_samples", group="spiking", owner="certification",
+       type=T.INT, category=Category.ADVANCED, unit="samples",
+       label="Spike-count Parity Samples",
+       doc="Samples per backend spike-count certificate [calculus 17]: counts "
+           "are integer-exact, so 1-2 samples x millions of neuron-windows "
+           "out-powers argmax parity at any n.", bounds=(1, None),
+       provenance="consumer frozen default", derived_default=_frozen(2),
+       empty_means="2 samples"),
 )

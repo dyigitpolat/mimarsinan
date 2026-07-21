@@ -141,6 +141,7 @@ before editing that module.
 | `mapping` | Mapper graph → IR → packed hard cores: pruning, packing, latency, layout estimation, verification, chip export | [doc](src/mimarsinan/mapping/ARCHITECTURE.md) |
 | `spiking` | Spike-train encoding, segment-boundary transcoding SSOT, unified segment-aware NF forward, cascade calibration | [doc](src/mimarsinan/spiking/ARCHITECTURE.md) |
 | `chip_simulation` | Simulation backends (nevresim, SANA-FE, Lava Loihi, TTFS), spiking-semantics SSOTs, certification/coverage/Pareto instruments | [doc](src/mimarsinan/chip_simulation/ARCHITECTURE.md) |
+| `certification` | Deployment-faithfulness certificates: the per-neuron spike-count observable, typed reference↔backend comparison, per-backend exactness classes | [doc](src/mimarsinan/certification/ARCHITECTURE.md) |
 | `code_generation` | nevresim C++ source generation from mapped chips (`ChipModel`, main templates, span export) | [doc](src/mimarsinan/code_generation/ARCHITECTURE.md) |
 | `visualization` | Write-to-file Graphviz/matplotlib/Plotly renderings of pipeline artifacts | [doc](src/mimarsinan/visualization/ARCHITECTURE.md) |
 | `gui` | Browser-based run monitor, run manager, and configuration wizard (FastAPI + SPA) | [doc](src/mimarsinan/gui/ARCHITECTURE.md) |
