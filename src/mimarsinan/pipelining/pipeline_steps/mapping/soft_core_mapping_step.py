@@ -269,6 +269,11 @@ class SoftCoreMappingStep(PipelineStep):
         device = self.pipeline.config["device"]
         with best_effort("move model to cpu before identity-metric run"):
             model.to("cpu")
+        # empty_cache alone cannot release cycle-held parity-flow tensors
+        # (nn.Module graphs are cyclic); collect first [calculus 16.13].
+        import gc
+
+        gc.collect()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 

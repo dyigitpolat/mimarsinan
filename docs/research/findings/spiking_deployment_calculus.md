@@ -1924,3 +1924,21 @@ has no concept of value-domain parameter edges), the very first add is
 wrong and everything downstream is noise. Instrument: the §16.6
 first-divergence method, NF-walk vs IR-executor per node (hook both,
 find the first diverging op — each iteration minutes from caches).
+
+### 16.13 THE PARITY GATE PASSES: torch↔deployed-sim 0.9922 (2026-07-21)
+
+**The ViT IR certification campaign concludes: agreement 0.9922 over 256
+samples (threshold 0.98)** — the deployed simulator provably computes the
+NF's function, in the healthy WQ-tie-flip regime. Five first-contact
+seams were found, fixed, and unit-locked to get from crash → 0.0156 →
+0.9922: (1) install currency one-writer + certificate pair; (2) wrapper
+call-site kwargs precedence; (3) fail-loud gather (its interim broadcast
+briefly MASKED defect 4 — silent recovery is how Type-Bs hide);
+(4) wrapper-owned output_index (the batch-slicing double selection —
+the 0.0156 mechanism); (5) cycle-train cache pruning (the 80GB parity
+pathology; user-flagged; trains now share value-buffer lifetimes).
+Remaining step blocker: the post-parity identity metric OOMs on parity
+leftovers — empty_cache without gc.collect() cannot free cyclic
+nn.Module tensors; fixed. Costs measured: parity phase 4957s (83 min)
+at cuda_peak 68.9GB (the ViT residual topology's live frontier is
+genuinely large; a future economy pass can stream it at lower batch).
