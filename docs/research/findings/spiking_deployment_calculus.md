@@ -2055,3 +2055,15 @@ tier-0 scale (seconds); TOO SLOW as a routine per-run ViT gate in this
 naive form. Follow-up: vectorized IR count reference (graph-level
 staircase walk over gather plans — no identity mapping/flow machinery) or
 cache the identity counts per artifact. The packed-side runs are minutes.
+
+**cert7 transient tail (Edge T at ViT scale):** packed program, streaming
+vs synchronized, T=32, n=2: mismatch 1,217,683/14,524,416 neuron-windows
+(**8.38%**), **max|dcount| = 30** (of T=32). The per-neuron transient tail
+is HEAVY — yet the census is equivalence-grade (AB3 0.8240/0.8268/0.8260;
+AB9 0.8580/0.8592): the §15/16 per-cycle physics is large per neuron and
+zero-mean at the decision level. This closes the design argument: any
+count-tolerance gate on the streaming cell (atol 1, or any fixed atol)
+would be both too strict (real physics, not defects) and meaningless
+(max 30); the streaming cell's arbiter is the census, full stop. Total
+cert7 wall ≈ 2h10m (mapping ~25m; identity sync ~55m dominates; packed
+runs minutes-scale each).
