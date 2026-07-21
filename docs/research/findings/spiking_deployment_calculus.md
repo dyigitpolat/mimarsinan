@@ -2036,3 +2036,22 @@ Gate wiring: `run_spike_count_certificate_gate` in HardCoreMappingStep
 (LIF-only, `spike_count_parity_samples` n=2 default, 0 disables), before
 the metric read. Full step green in vivo: certificate PASS + transient
 report + HCM 0.9809. Gates 8340→8352 all green through the sequence.
+
+### 17.2 cert7 — THE ViT-SCALE TWIN CERTIFICATE PASSES (2026-07-21)
+
+Identity-IR twin vs the packed t2_04 ViT program (NF-cache artifact, T=32,
+n=2, synchronized): **PASS exact=1.000000 max|dcount|=0 over 14,524,416
+neuron-windows** — every hop aligned, full coverage both sides. The §17
+exact edge (Edge C) holds at 86M-parameter scale: packing, scheduling,
+per-hop retiming, axon fill, and the count-domain executor introduce ZERO
+count deviation between the 1:1 IR program and the deployed packed
+program. Combined with the in-vivo t0_05 gate PASS, Edge C is now
+demonstrated at both ends of the scale ladder.
+
+Pricing (PR46 datum): the identity-reference flow dominates — ~80-90 min
+wall at ViT scale (per-core python loops over ~thousands of single-node
+cores; 158GB RSS on peta). Fine as a one-off artifact certificate and at
+tier-0 scale (seconds); TOO SLOW as a routine per-run ViT gate in this
+naive form. Follow-up: vectorized IR count reference (graph-level
+staircase walk over gather plans — no identity mapping/flow machinery) or
+cache the identity counts per artifact. The packed-side runs are minutes.
