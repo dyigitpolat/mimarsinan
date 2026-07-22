@@ -167,10 +167,11 @@ def test_certify_flow_counts_one_call_on_the_tiny_fixture():
     assert flow.stage_count_recorder is None
 
 
-def test_identity_vs_packed_twin_certificate_is_exact_both_disciplines():
-    """[§17 pivot] the certificate's exact edge is chip-grid twin ↔ packed
-    program (same core matrices); the model↔grid edge carries the honest WQ
-    residual and stays under the atol parity gate, not this certificate."""
+def test_identity_vs_packed_twin_certificate_is_exact_both_cells():
+    """[§17] the FATAL cell is streaming↔streaming: genuine per-cycle LIF on
+    both sides (torch-side cycle-based twin vs the packed program). The
+    synchronized↔synchronized comparison is the training-side analytic gauge —
+    diagnostic only, never load-bearing. Both must be exact here."""
     from mimarsinan.certification.count_alignment import certify_twin_flow_counts
     from mimarsinan.pipelining.core.simulation_factory import (
         build_identity_mapping_for_pipeline,
@@ -184,14 +185,15 @@ def test_identity_vs_packed_twin_certificate_is_exact_both_disciplines():
     x = torch.rand(3, 8) * 0.9
     identity = build_identity_mapping_for_pipeline(ir, pipeline_config=None)
 
-    for discipline in ("synchronized", "streaming"):
+    for discipline in ("streaming", "synchronized"):
         cert, detail = certify_twin_flow_counts(
             ir,
-            _flow(identity, synchronized=True),
-            _flow(hybrid, synchronized=True),
+            _flow(identity, synchronized=False),
+            _flow(hybrid, synchronized=False),
             x,
             backend="hcm",
             discipline=discipline,
+            reference_discipline=discipline,
         )
         assert cert.passed, f"{discipline}: {cert.summary()} | {detail}"
         assert cert.exact_match_fraction == 1.0

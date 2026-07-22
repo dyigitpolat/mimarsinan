@@ -56,34 +56,37 @@ def run_spike_count_certificate_gate(pipeline, model, ir_graph, hybrid_mapping):
     backend_flow = build_spiking_hybrid_flow(
         pipeline, hybrid_mapping, model=model,
     )
-    # The fatal cell: synchronized identity-twin vs packed program — exact by
-    # construction (same matrices, canonical schedule). The streaming cell is
-    # a REPORT: streaming-vs-sync count deltas are the measured per-cycle
-    # transient physics [§15-16]; the streaming census accuracy (read moments
-    # later by the metric run) is that cell's arbiter, not per-window counts.
+    # The FATAL cell is cycle-based LIF on BOTH sides [user law: deployed
+    # semantics = per-cycle LIF, full stop]: the identity-IR twin run as a
+    # genuine streaming (fire-during-integrate) program — the torch-side
+    # cycle-based simulation of the deployed matrices — must match the packed
+    # program's streaming counts per neuron-window, atol=0. The analytic
+    # synchronized executor is a training/tuning-side surrogate and is never
+    # load-bearing here. The streaming-vs-sync delta stays a REPORT (the §16
+    # gauge diagnostic; the census accuracy is that cell's arbiter).
     cert, detail = certify_twin_flow_counts(
         ir_graph, reference_flow, backend_flow, samples, backend="hcm",
-        discipline="synchronized",
+        discipline="streaming", reference_discipline="streaming",
     )
-    print(f"[SpikeCountCertificate] synchronized: {cert.summary()}")
-    print(f"[SpikeCountCertificate] synchronized: {detail}")
+    print(f"[SpikeCountCertificate] streaming-twin: {cert.summary()}")
+    print(f"[SpikeCountCertificate] streaming-twin: {detail}")
     for dv in cert.divergent:
-        print(f"[SpikeCountCertificate] synchronized: divergent {dv}")
+        print(f"[SpikeCountCertificate] streaming-twin: divergent {dv}")
     if not cert.passed:
         raise RuntimeError(
-            f"spike-count certificate FAILED (synchronized): "
+            f"spike-count certificate FAILED (streaming twin): "
             f"{cert.summary()} | {detail}"
         )
-    stream_cert, _ = certify_twin_flow_counts(
+    gauge_cert, _ = certify_twin_flow_counts(
         ir_graph, backend_flow, backend_flow, samples, backend="hcm",
         discipline="streaming", reference_discipline="synchronized",
     )
     print(
-        "[SpikeTransientReport] streaming vs synchronized: "
-        f"exact={stream_cert.exact_match_fraction:.6f} "
-        f"max|dcount|={stream_cert.max_abs_delta:g} over "
-        f"{stream_cert.neuron_windows_compared} neuron-windows "
-        "(per-cycle transient physics; the streaming census accuracy is the "
-        "arbiter for this cell)"
+        "[SpikeTransientReport] streaming vs synchronized-gauge: "
+        f"exact={gauge_cert.exact_match_fraction:.6f} "
+        f"max|dcount|={gauge_cert.max_abs_delta:g} over "
+        f"{gauge_cert.neuron_windows_compared} neuron-windows "
+        "(per-cycle transient physics vs the analytic gauge; the streaming "
+        "census accuracy is the arbiter)"
     )
     return cert
