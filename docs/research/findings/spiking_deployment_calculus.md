@@ -2134,3 +2134,40 @@ ChipLatency-dominated and dropped from ~25 min alongside the identity
 reference). Final table entry: a complete ViT-scale spike-count
 certificate at n=2, both cells, costs ~6-7 min — vs the retired ~85
 min/attempt non-convergent regime.
+
+### 17.5 THE CORRECTED FATAL CELL: cycle-based LIF on both sides (2026-07-22)
+
+**User correction (accepted):** the synchronized count executor is an
+analytic staircase on window totals — it is NOT LIF, and no deployed
+claim may rest on it. The certified structure must be: accuracy read on
+torch-side CYCLE-BASED LIF + per-neuron count parity between that
+torch-side cycle-based run and the sim-side cycle-based run.
+
+**Audit of what was already compliant:** the accuracy chain was
+cycle-based all along — `lif_execution_discipline` is streaming by
+frozen default, so the census (0.8592), the SCM identity metric
+(torch-side cycle-based accuracy), and the HCM deployed metric all ran
+genuine per-cycle LIF. SANA-FE's soma is genuine per-cycle LIF in C++
+(per-timestep integrate + threshold + subtractive reset; its four-part
+timing fix aligned counted cycles, never physics), and the backend
+reference recording path is hard-excluded from the sync branch. The ONE
+non-compliant claim was the twin certificate's fatal cell (sync
+discipline) — now corrected.
+
+**The corrected Edge C (cert9, 2026-07-22):** identity-IR program vs
+packed program, BOTH under genuine streaming fire-during-integrate
+per-cycle LIF: **PASS exact=1.000000 max|dcount|=0 over 14,524,416
+neuron-windows** (n=2, ~38 min end-to-end; t0_05 in vivo also PASS
+exact=1.0 with the full step green). Pre-registered mechanism confirmed:
+under per-hop retiming both programs see identical per-cycle schedules,
+so genuine-LIF counts are bit-equal between the 1:1 twin and the packed
+deployment. The synchronized executor survives only as the
+training/tuning-side surrogate and the labeled gauge diagnostic in the
+transient report (which reproduced bit-identically a third time:
+1,217,683/14,524,416, max 30).
+
+Final certified chain: accuracy(cycle-based census on deployed program,
+measured) + counts(torch-side cycle-based twin ≡ deployed cycle-based
+program, exact) + counts(deployed ≡ SANA-FE/Loihi, exact, cycle-based
+both sides) ⟹ backend accuracy — with zero analytic shortcuts on any
+load-bearing edge.
