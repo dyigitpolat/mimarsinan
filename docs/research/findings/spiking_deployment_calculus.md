@@ -2171,3 +2171,46 @@ measured) + counts(torch-side cycle-based twin ≡ deployed cycle-based
 program, exact) + counts(deployed ≡ SANA-FE/Loihi, exact, cycle-based
 both sides) ⟹ backend accuracy — with zero analytic shortcuts on any
 load-bearing edge.
+
+### 17.6 The certification engineering plan LANDED: generic, conformant,
+### fast (2026-07-24)
+
+W1 — packed stage-flat streaming executor (commit 4a1eb1a9): the per-cycle
+core loop batches into latency-sorted (latency×axons×neurons) buckets;
+two-phase gather-then-advance preserves the reference loop's
+previous-cycle read contract; the physics is shared verbatim through the
+`lif_core_advance` charge/advance split. Per-core loop retained as the
+golden reference; bit-equal locks across multi-latency, retimed, both
+thresholding modes, Novena, hardware bias, membrane-init.
+
+W2 (rescoped by measurement) — a per-node latency-equality predicate is
+WRONG (packed merges chained nodes into one core and in-core pipelining
+preserves the effective schedule while latency tables differ; the tiny
+non-retimed cell certifies exact). The fatal streaming twin IS the
+schedule-equivalence measurement; `twin_schedule_diagnostic` prints both
+programs' per-node schedule tables on failure for triage.
+
+W3 — `SpikingModePolicy.certification_observable()`: counts (LIF family)
+| events (reserved) | typed skip (analytic modes — never certified as
+deployed physics; ttfs-cycle — event observable pending, contract-record
+comparators remain the deep check). `is_lif` literals removed from the
+gate and the nevresim step.
+
+W4 — conformance matrix: every (mode × schedule) cell resolves to exactly
+one typed outcome through policy and gate (certify | printed skip); the
+gate emits its `CertificationCell` key (`lif@hcm`) on PASS.
+
+**Verification (the closing measurements):**
+- tier-0, FULL fresh pipeline (t0_05 from scratch): streaming twin PASS
+  exact=1.0/788 · gauge 0.956853 · HCM 0.9809 · nevresim parity 1.0 +
+  transient 0.819797/max2 · **SANA-FE cert PASS exact=1.0/1428 · Loihi
+  cert PASS exact=1.0/1428** — every sentinel bit-identical, every
+  certificate green in vivo.
+- ViT (cert10, packed executor): **TWIN streaming PASS exact=1.000000
+  over 14,524,416 neuron-windows — and the transient sentinel
+  1,217,683/14,524,416 max 30 reproduced bit-identically for the FOURTH
+  time, through a different executor layout — in ~13 min probe total
+  (twin certificate ≈ 7–8 min, vs ~35 min pre-W1; the whole certified
+  ViT deployment now ≈ 15–20 min, census-dominated).**
+
+Gates 8395 green, typecheck 0. Plan: ~/.claude/plans/spike_certification_engineering_plan.md.
