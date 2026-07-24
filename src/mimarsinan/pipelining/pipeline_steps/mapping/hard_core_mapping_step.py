@@ -102,6 +102,10 @@ class HardCoreMappingStep(PipelineStep):
             hybrid_mapping=hybrid_mapping,
             model=model,
             cache_key="hybrid_mapping",
+            # Post-gate allocator state can deny one large contiguous encode:
+            # the designed OOM retry re-enters at the plan's capped batch.
+            retry_on_oom=True,
+            outer_oom_retry=True,
         )
         _vram_probe("after_test")
         self._last_metric = float(acc)
