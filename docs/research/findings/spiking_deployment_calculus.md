@@ -2294,3 +2294,40 @@ runs only if C caps below target.
 
 Order: E → C → (D if needed). Every arm ships with the certificate
 attached (the gate is in-step) and is judged on the n=2500 census.
+
+### 17.9 Arm E RESULT: the seam is the AQ install, and composition is
+### exactly free (2026-07-25)
+
+Census-grade analytic ladder over every cached step artifact of the
+funded run (n=2500, one forward each — the whole bisect cost ~20 min):
+
+| Step | acc | Δ |
+| --- | --- | --- |
+| Reference Teacher | 0.8624 | — |
+| Scale Migration | 0.8624 | +0.0000 |
+| Activation Adaptation | **0.8684** | **+0.0060** |
+| Clamp Adaptation | 0.8684 | +0.0000 |
+| Activation Shifting | 0.8684 | +0.0000 |
+| **Activation Quantization** | **0.8588** | **−0.0096** |
+| LIF Adaptation | 0.8608 | +0.0020 |
+| Weight Quantization | 0.8580 | −0.0028 |
+
+**Prediction CONFIRMED**: the AQ install (activation grid snap) carries
+the majority (−0.96pp); AS and Clamp are EXACTLY flat (0.0000 each);
+LIF adaptation recovers +0.20pp; WQ costs −0.28pp. Total quantization
+debt δ = 0.96 + 0.28 − 0.20 = **1.04pp** net (1.24pp gross).
+
+**And the closing consistency check**: the WQ artifact's analytic read
+(0.8580) EQUALS the deployed streaming census (0.8580) to four decimals
+— composition, mapping, packing and deployment are exactly free, as
+§16.7 established and the §17 certificates now prove per-neuron. The
+ENTIRE remaining gap is activation/weight quantization debt inside the
+torch model, before any spiking or mapping happens.
+
+**Arm C is therefore precisely specified**: the AA endpoint stops at
+origin by construction (measured exit 0.8684 ≈ origin 0.8678) with
+budget to spare (2538 of 9788 steps used at AQ; AA similar). Retarget it
+to origin + δ ≈ 0.879–0.881. If the basin holds that headroom, the
+downstream debt lands the deployed census AT origin ⇒ 87→87. If the
+basin caps at origin, Arm C refutes for one endpoint leg and the answer
+moves to Arm D (AQ capacity/currency at the named seam).
