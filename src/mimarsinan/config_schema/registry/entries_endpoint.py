@@ -38,6 +38,14 @@ ENTRIES = (
            "mode floors at 0 and takes its floor from the WQ endpoint.", bounds=(0.0, 1.0),
        provenance="ConversionPolicy recipe", derived_default=_frozen(0.0),
        empty_means="the recipe floor where the mode has one, else 0 (no floor)"),
+    _E("endpoint_target_margin", group="tuning", owner="endpoint_recovery",
+       type=T.FLOAT, category=Category.ADVANCED, label="Endpoint Target Margin",
+       doc="Headroom added above the endpoint target to BANK measured "
+           "downstream conversion debt (calculus 17.9): anchoring at the "
+           "D-hat high-water guarantees ending that debt below origin. "
+           "0 = anchored (byte-identical).",
+       bounds=(0.0, 1.0), provenance="consumer frozen default",
+       derived_default=_frozen(0.0), empty_means="0 (anchored target)"),
     _E("wq_endpoint_recovery_steps", group="tuning", owner="wq_endpoint_recovery",
        type=T.INT, category=Category.ADVANCED, unit="steps",
        label="WQ Endpoint Recovery Steps",

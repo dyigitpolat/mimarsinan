@@ -20,6 +20,7 @@ class EndpointRecoveryReport:
     reached: bool
     rolled_back: bool
     target_floor: float = 0.0
+    target_margin: float = 0.0
     floor_lifted: bool = False
     armed: bool = False
     divergence_rescued: bool = False

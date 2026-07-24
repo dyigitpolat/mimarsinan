@@ -99,7 +99,13 @@ def run_endpoint_recovery(tuner, *, base_steps, target_floor=None) -> EndpointRe
     # above the envelope still drive the target (retention_envelope SSOT).
     envelope = retention_envelope.peek(tuner.pipeline)
     capped_floor = floor if envelope is None else min(floor, envelope)
-    target = max(highwater, capped_floor)
+    # [17.9 Arm C] the margin banks MEASURED downstream conversion debt: an
+    # anchored target guarantees ending that debt below origin. Unlike an
+    # absolute floor it is an explicit request to train past the envelope, so
+    # the envelope cap does not apply; keep-best + the rollback guard keep an
+    # unreachable margin free of accuracy cost.
+    margin = float(tuner.pipeline.config.get("endpoint_target_margin", 0.0))
+    target = max(highwater, capped_floor) + margin
     floor_lifted = target > highwater
     budget = int(base_steps) + freed_ladder_steps(tuner)
     entry = _fp32_deployed_read(tuner)
@@ -174,6 +180,7 @@ def run_endpoint_recovery(tuner, *, base_steps, target_floor=None) -> EndpointRe
         reached=bool(exit_read >= target),
         rolled_back=bool(rolled_back),
         target_floor=float(floor),
+        target_margin=float(margin),
         floor_lifted=bool(floor_lifted),
         armed=bool(armed),
         divergence_rescued=bool(rescued),
