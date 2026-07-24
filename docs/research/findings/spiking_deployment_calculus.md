@@ -2363,3 +2363,39 @@ before the convergence stop may vote). If the exit then passes 0.8687
 the stop was binding (a geometry fix, cheap); if it plateaus near 0.859
 the basin is capped and the answer is Arm D (AQ capacity/currency) or
 attacking the AA-install crater itself (the entry term).
+
+### 17.11 Arm C′: the min-cover knob cannot extend an endpoint, and the
+### stage carries ~1pp run-to-run variance (2026-07-25)
+
+| run | code | target | entry | exit | steps | reached |
+| --- | --- | --- | --- | --- | --- | --- |
+| AB9 | pre-tonight | 0.8678 | 0.811368 | 0.868712 | 2864 | True |
+| Arm C | new | 0.8791 | 0.802817 | 0.858652 | 3186 | False |
+| Arm C′ | new | 0.8791 | 0.812374 | 0.859658 | 3618 | False |
+
+**Finding 1 — the disambiguation knob does not do what it looks like it
+does.** `endpoint_floor_min_cover_steps=6000` was supposed to forbid the
+convergence stop until 6000 of 8000 steps; the stage still stopped at
+3618. The reason is in the code's own comment: patience counts CHECKS,
+and the armed cadence is *dense below* the min-cover — so raising the
+min-cover makes checks denser and the fixed check-patience expires after
+FEWER steps. Extending an endpoint needs a step-denominated patience (or
+an explicit stop disable), not a bigger min-cover. Recorded as a lever
+defect, not a basin result.
+
+**Finding 2 — the comparison is underpowered, and that matters for the
+whole 87→87 chase.** Arm C′ entered at 0.812374 vs AB9's 0.811368 (Δ
+0.1pp) yet exited 0.9pp lower after 750 MORE steps. Since keep-best
+would have retained any pass through 0.868, the trajectories genuinely
+differ: this stage carries ~1pp run-to-run variance. Every single-run
+comparison at the 1pp resolution the 87→87 gate demands — including
+AB9's 0.868712, the number the current story rests on — is one draw of a
+distribution, not a level.
+
+**Consequences for the program:** (a) the AA endpoint is a
+variance-carrying stage and belongs under the EXISTING `conversion_draws`
+best-of-N machinery ([MBH-DRAWS], already used for the sync mixer family
+for exactly this reason); (b) arm verdicts at this scale need ≥2 draws
+or a paired control, so the anchored-target control on the new code is
+running before any margin conclusion stands; (c) the §17.10 "exit ≈
+entry + 5.6pp" law holds as a central tendency but its scatter is ~1pp.
