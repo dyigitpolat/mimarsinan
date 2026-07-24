@@ -2331,3 +2331,35 @@ to origin + δ ≈ 0.879–0.881. If the basin holds that headroom, the
 downstream debt lands the deployed census AT origin ⇒ 87→87. If the
 basin caps at origin, Arm C refutes for one endpoint leg and the answer
 moves to Arm D (AQ capacity/currency at the named seam).
+
+### 17.10 Arm C leg 1: the endpoint is ENTRY-bound, not target-bound
+### (2026-07-25)
+
+`endpoint_target_margin` landed (ecf3a788) and works mechanically —
+target lifted to 0.879112 = highwater 0.8687 + margin 0.0104, stage
+engaged, non-destructive. The apples-to-apples endpoint lines:
+
+| run | target | entry | exit | steps | reached |
+| --- | --- | --- | --- | --- | --- |
+| AB9 (anchored) | 0.867800 | 0.811368 | **0.868712** | 2864 | True |
+| Arm C (margin) | 0.879112 | 0.802817 | **0.858652** | 3186 | False |
+
+**The hypothesis is REFUTED**: with a target 1.04pp higher the endpoint
+did NOT climb higher. It trained 322 more steps, convergence-stopped
+with **4814 of 8000 steps unspent**, and exited 1.0pp BELOW the anchored
+run. The climbs are near-identical (+5.73pp vs +5.58pp) from different
+entries, so **exit ≈ entry + 5.6pp**: the stage is bounded by its ENTRY
+and by the patience stop, not by what the target asks for.
+
+Mechanism named: the AA install craters the model ~6pp below the teacher
+(0.8624 → 0.80–0.81) and the endpoint claws back ~5.6pp; the survivors
+are that crater's unrecovered tail plus the §17.9 quantization debt.
+
+**The next measurement is a disambiguation, not a new hypothesis**: the
+stop fired with 60% of budget unspent, so patience-bound and basin-bound
+are still confounded. Arm C′ = margin + raised
+`endpoint_floor_min_cover_steps` (the config-exposed absolute min-cover
+before the convergence stop may vote). If the exit then passes 0.8687
+the stop was binding (a geometry fix, cheap); if it plateaus near 0.859
+the basin is capped and the answer is Arm D (AQ capacity/currency) or
+attacking the AA-install crater itself (the entry term).
