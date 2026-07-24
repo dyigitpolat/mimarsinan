@@ -74,21 +74,18 @@ def _meta_backend_enable(backend: str):
 ENTRIES = (
     _E("cores", section=_PC, group="hardware", owner="ChipCapabilities/mapping",
        type=T.CORES, category=Category.BASIC, exposure="user", label="Core Types",
-       doc="Core-type grid: per type max_axons x max_neurons x count (+ has_bias). "
-           "Under hw_config_mode='search' the co-search discovers the grid.",
+       doc="Core-type grid: max_axons x neurons x count (+ has_bias); search mode discovers it.",
        relevant=R.when("hw_config_mode", in_=("fixed",)), provided_by="co_search"),
     _E("max_axons", section=_PC, group="hardware", owner="mapping/packing",
        type=T.INT, category=Category.DERIVED, derivation="derived", exposure="user",
        label="Max Axons",
-       doc="Largest per-core axon count, derived from the core grid; a "
-           "consistent explicit value is accepted, a contradicting one rejected.",
+       doc="Largest per-core axon count from the core grid; consistent explicit value is accepted, a contradicting one rejected.",
        derived_from=("cores",), why=_why_core_maximum("axon count"),
        provenance="derivation rule"),
     _E("max_neurons", section=_PC, group="hardware", owner="mapping/packing",
        type=T.INT, category=Category.DERIVED, derivation="derived", exposure="user",
        label="Max Neurons",
-       doc="Largest per-core neuron count, derived from the core grid; a "
-           "consistent explicit value is accepted, a contradicting one rejected.",
+       doc="Largest per-core neuron count from the core grid; consistent explicit value is accepted, a contradicting one rejected.",
        derived_from=("cores",), why=_why_core_maximum("neuron count"),
        provenance="derivation rule"),
     _E("has_bias", section=_PC, group="hardware", owner="mapping/bias",
@@ -216,10 +213,9 @@ ENTRIES = (
        empty_means="0 — the runner probes without a sample cap"),
     _E("simulation_batch_size", group="deployment_target", owner="DeploymentPlan",
        type=T.INT, category=Category.ADVANCED, label="Simulation Batch Size",
-       doc="Eval batch bound for deployed metric reads (primary + OOM retry); "
-           "one (T,B,in) encode per batch, so large inputs need a bound.",
+       doc="Eval batch bound for deployed metric reads (primary + OOM retry).",
        bounds=(1, None), provenance="consumer frozen default",
-       derived_default=_frozen(8), empty_means="8 (the plan's frozen default)"),
+       derived_default=_frozen(8), empty_means="8"),
     _E("simulation_batch_count", group="deployment_target", owner="SimulationRunner",
        type=T.INT, category=Category.ADVANCED, label="Simulation Batch Count",
        doc="Batches per simulator probe run.", bounds=(1, None),
@@ -236,16 +232,14 @@ ENTRIES = (
        bounds=(1, None), provenance="consumer frozen default", derived_default=_frozen(10000)),
     _E("scm_degradation_tolerance", group="deployment_target", owner="soft_core_mapping",
        type=T.FLOAT, category=Category.ADVANCED, label="SCM Degradation Tolerance",
-       doc="Retention tolerance of the SCM identity read. Absent, the SCM step "
-           "installs no separate tolerance: the global degradation_tolerance governs.",
+       doc="Retention tolerance of the SCM identity read; absent, the global "
+           "degradation_tolerance governs.",
        bounds=(0.0, 1.0), provenance="derivation rule",
        derived_default=_scm_degradation_tolerance,
        empty_means="the global degradation_tolerance"),
     _E("nf_scm_parity_samples", group="deployment_target", owner="nf_scm_parity",
        type=T.INT, category=Category.ADVANCED, label="NF-SCM Parity Samples",
-       doc="Validation inputs the NF<->SCM gate runs on; 0 disables the gate. The "
-           "default is mode-aware: the serial per-neuron sweep needs 2, the batched "
-           "cascaded decision gate needs 64 Bernoulli trials.",
+       doc="NF<->SCM gate inputs; 0 disables (mode-aware default: sweep 2, cascaded 64).",
        bounds=(0, None), provenance="derivation rule",
        derived_default=_nf_scm_parity_samples,
        empty_means="2, or 64 on the cascaded schedule"),
