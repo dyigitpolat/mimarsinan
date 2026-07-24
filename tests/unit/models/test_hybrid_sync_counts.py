@@ -88,7 +88,7 @@ def test_sync_flow_is_deterministic_and_flag_off_is_streaming():
 def test_per_neuron_counts_match_nf_walk_on_all_cores():
     """[§16/PR38] the spike-level (per-neuron window-count) parity claim:
     every core's emitted counts equal the NF sync walk's decoded counts."""
-    from mimarsinan.models.spiking.hybrid.sync_counts import (
+    from mimarsinan.models.spiking.hybrid.executors.sync_counts import (
         run_neural_segment_counts,
     )
 

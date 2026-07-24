@@ -10,9 +10,11 @@ import torch
 from mimarsinan.chip_simulation.recording.spike_recorder import CoreSpikeCounts, SegmentSpikeRecord
 from mimarsinan.mapping.latency.chip import ChipLatency
 from mimarsinan.mapping.packing.hybrid_hardcore_mapping import HybridStage
-from mimarsinan.spiking.segment_boundary import encode_segment_input
 from mimarsinan.models.spiking.cycle_policy import cycle_neuron_policy, precharge_lif_states
-from mimarsinan.models.spiking.hybrid.sync_counts import run_neural_segment_counts
+from mimarsinan.models.spiking.hybrid.executors import (
+    run_neural_segment_counts,
+    run_neural_segment_packed,
+)
 from mimarsinan.models.spiking.hybrid.host import HybridFlowHost
 from mimarsinan.models.spiking.hybrid.membrane_readout import stash_membrane_readout_correction
 from mimarsinan.models.spiking.spiking_config import COMPUTE_DTYPE
@@ -101,6 +103,16 @@ class HybridLifStepMixin(HybridFlowHost):
             return run_neural_segment_counts(
                 self, input_spike_train, seg=seg, T=T,
                 batch_size=batch_size, device=device)
+
+        # [cert-plan W1] stage-flat executor: same policy physics, batched
+        # charge layout; recording/single-spike/membrane paths keep the
+        # per-core reference loop below (byte-stable records, latch decode).
+        if (not single_spike and not recording and latency_gated
+                and not getattr(self, "membrane_readout", False)
+                and getattr(self, "use_packed_cycle_executor", True)):
+            return run_neural_segment_packed(
+                self, input_spike_train, seg=seg, T=T,
+                batch_size=batch_size, device=device, policy=policy)
 
         if single_spike:
             shifted = torch.zeros_like(input_spike_train)
@@ -251,28 +263,6 @@ class HybridLifStepMixin(HybridFlowHost):
                 )
 
         return output_counts
-
-    def _encode_segment_input(
-        self,
-        stage,
-        seg_input_rates_clamped: torch.Tensor,
-        state_buffer_spikes: Dict[int, torch.Tensor],
-        *,
-        T: int,
-        batch_size: int,
-        device: torch.device,
-    ) -> torch.Tensor:
-        """Build ``(T, B, in_size)`` spike train; prefer cached LIF trains over uniform encoding."""
-        return encode_segment_input(
-            stage,
-            seg_input_rates_clamped,
-            state_buffer_spikes,
-            config=self._boundary_config,
-            hybrid_mapping=self.hybrid_mapping,
-            T=T,
-            batch_size=batch_size,
-            device=device,
-        )
 
     def _apply_input_shifts(self, input_map, seg_input_rates: torch.Tensor) -> torch.Tensor:
         """Add the Round-2a per-producer-channel positive shift before the [0,1] clamp.

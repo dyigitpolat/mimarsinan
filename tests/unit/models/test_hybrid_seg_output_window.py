@@ -72,7 +72,7 @@ def test_shallow_dead_input_source_does_not_accumulate_stale_cycles():
     chain = []
     prev = _xcore(-2, 0)  # segment input source for c0
     for i in range(4):
-        sources = [_xcore(i - 1, 0) if i > 0 else SpikeSource(-2, 0, False, False)]
+        sources = [_xcore(i - 1, 0) if i > 0 else SpikeSource(-2, 0, True)]
         chain.append(_make_core(
             used_axons=1, used_neurons=1,
             axon_sources=sources,

@@ -19,6 +19,7 @@ from mimarsinan.mapping.packing.hybrid_hardcore_mapping import HybridStage, Segm
 from mimarsinan.mapping.support.core_geometry import used_axons, used_neurons
 from mimarsinan.mapping.support.spike_source_spans import compress_spike_sources
 from mimarsinan.models.spiking.hybrid.host import HybridFlowHost
+from mimarsinan.spiking.segment_boundary import encode_segment_input
 from mimarsinan.models.spiking.hybrid.segment_cache import (
     SEGMENT_CACHE_MAX_BYTES as _SEGMENT_CACHE_MAX_BYTES,
     segment_entry_nbytes as _segment_entry_nbytes,
@@ -29,6 +30,28 @@ from mimarsinan.models.spiking.spiking_config import COMPUTE_DTYPE
 
 class HybridStageIOMixin(HybridFlowHost):
     """Segment tensor cache and state-buffer I/O."""
+
+    def _encode_segment_input(
+        self,
+        stage,
+        seg_input_rates_clamped: torch.Tensor,
+        state_buffer_spikes: Dict[int, torch.Tensor],
+        *,
+        T: int,
+        batch_size: int,
+        device: torch.device,
+    ) -> torch.Tensor:
+        """Build ``(T, B, in_size)`` spike train; prefer cached LIF trains over uniform encoding."""
+        return encode_segment_input(
+            stage,
+            seg_input_rates_clamped,
+            state_buffer_spikes,
+            config=self._boundary_config,
+            hybrid_mapping=self.hybrid_mapping,
+            T=T,
+            batch_size=batch_size,
+            device=device,
+        )
 
     def _build_consumer_counts(self) -> Dict[int, int]:
         """Return ``{node_id: downstream_read_count}`` for state-buffer refcount pruning."""

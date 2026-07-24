@@ -8,7 +8,10 @@ import torch
 
 from mimarsinan.chip_simulation.spiking_semantics import is_cascaded_ttfs
 
-from mimarsinan.models.spiking.lif_core_step import lif_core_contribute_and_fire
+from mimarsinan.models.spiking.lif_core_step import (
+    lif_core_advance,
+    lif_core_contribute_and_fire,
+)
 from mimarsinan.models.spiking.ttfs_cycle_step import ttfs_cycle_contribute_and_fire
 
 NeuronState = Dict[str, torch.Tensor]
@@ -41,6 +44,16 @@ class LIFCyclePolicy:
         return lif_core_contribute_and_fire(
             state["memb"], weight, inp, threshold,
             hw_bias=hw_bias, thresholding_mode=thresholding_mode,
+            firing_mode=self.firing_mode, output_dtype=output_dtype,
+        )
+
+    def advance(self, state, contribution, threshold, *, thresholding_mode,
+                output_dtype=None) -> torch.Tensor:
+        """Elementwise cycle on a precomputed contribution — the SAME physics
+        as ``step`` with the charge layout owned by the caller (packed path)."""
+        return lif_core_advance(
+            state["memb"], contribution, threshold,
+            thresholding_mode=thresholding_mode,
             firing_mode=self.firing_mode, output_dtype=output_dtype,
         )
 

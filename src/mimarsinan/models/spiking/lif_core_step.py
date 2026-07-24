@@ -7,6 +7,27 @@ import torch
 from mimarsinan.models.nn.lif_kernels import lif_fire_and_reset
 
 
+def lif_core_advance(
+    memb: torch.Tensor,
+    contribution: torch.Tensor,
+    threshold: torch.Tensor,
+    *,
+    thresholding_mode: str,
+    firing_mode: str,
+    output_dtype: torch.dtype | None = None,
+) -> torch.Tensor:
+    """The elementwise LIF cycle: integrate a precomputed contribution, fire,
+    reset. Shape-agnostic — the physics shared by every charge layout."""
+    memb += contribution
+    return lif_fire_and_reset(
+        memb,
+        threshold,
+        thresholding_mode=thresholding_mode,
+        firing_mode=firing_mode,
+        output_dtype=output_dtype,
+    )
+
+
 def lif_core_contribute_and_fire(
     memb: torch.Tensor,
     weight: torch.Tensor,
@@ -22,9 +43,9 @@ def lif_core_contribute_and_fire(
     contribution = torch.matmul(weight, inp.T).T
     if hw_bias is not None:
         contribution = contribution + hw_bias
-    memb += contribution
-    return lif_fire_and_reset(
+    return lif_core_advance(
         memb,
+        contribution,
         threshold,
         thresholding_mode=thresholding_mode,
         firing_mode=firing_mode,

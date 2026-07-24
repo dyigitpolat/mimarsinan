@@ -70,7 +70,7 @@ def test_integration_nf_walk_vs_hcm_counts_on_the_tiny_fixture():
     sys.path.insert(0, "tests/unit/models")
     from test_hybrid_sync_counts import _tiny, _flow, T as _T
     import mimarsinan.models.spiking.hybrid.lif_step as ls
-    from mimarsinan.models.spiking.hybrid.sync_counts import (
+    from mimarsinan.models.spiking.hybrid.executors.sync_counts import (
         run_neural_segment_counts,
     )
     from mimarsinan.spiking.segment_forward import (
