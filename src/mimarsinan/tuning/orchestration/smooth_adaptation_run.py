@@ -16,6 +16,8 @@ from mimarsinan.tuning.orchestration.tuning_budget import min_step_for_smooth_ad
 from mimarsinan.tuning.orchestration.tuning_policy import (
     endpoint_convergence_geometry,
 )
+from mimarsinan.config_schema.registry import effective_value as _effective_config
+from mimarsinan.tuning.orchestration import mbh_gate
 from mimarsinan.tuning.orchestration.tuner_base import TunerBase
 
 
@@ -35,6 +37,9 @@ class SmoothAdaptationRunMixin(TunerBase):
         """Number of gradient steps for the final rate=1.0 stabilization pass
         (per round; ``_max_stabilization_rounds`` controls the round count).
         Subclasses may override (e.g. return ``None``/``0`` to disable)."""
+        if getattr(self, "_entry_short_circuited", False):
+            # Lossless entry: no training happened; nothing to stabilize.
+            return 0
         return 2 * int(self._budget.max_training_steps)
 
     def _post_stabilization_hook(self):
@@ -307,11 +312,17 @@ class SmoothAdaptationRunMixin(TunerBase):
             policy_override=policy_override,
             rates=rates,
         )
+        entry_short_circuit = None
+        if bool(
+            _effective_config(self.pipeline.config, "tuning_lossless_entry_fast_path")
+        ) and hasattr(self, "_mbh_full_transform_forward"):
+            entry_short_circuit = lambda: mbh_gate.lossless_entry_short_circuit(self)
         driver = AdaptationDriver(
             scheduler=scheduler,
             attempt=self._driver_attempt,
             finalize=self._finalize_run,
             committed=self._committed_rate,
+            entry_short_circuit=entry_short_circuit,
         )
         return driver.run()
 

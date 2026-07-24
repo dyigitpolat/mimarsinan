@@ -31,6 +31,7 @@ _MODE_KNOBS = {
     ("lif", None): {
         "lif_blend_fast": True,
         "lif_tanneal": True,
+        "tuning_lossless_entry_fast_path": True,
         # P1'' budget = dropped inert Clamp/AQ ladders (960) + retired stabilize (600).
         "endpoint_recovery_steps": 600,
         "cycle_accurate_lif_forward": True,

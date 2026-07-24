@@ -56,7 +56,8 @@ EXPECTED_POLICY_VALUES = {
     # [reproducibility] the floor's RUN-total funding is a STEP budget (the
     # endpoint_steps ledger), never wall seconds: 16,000 is the validated
     # full floor (t01_23). Wall time is a pure measurement.
-    "endpoint_floor_steps": 16000,
+        "endpoint_floor_steps": 16000,
+    "lossless_entry_se_margin": 1.0,
     # [C1] armed-endpoint convergence stop: cover the measured lr dip
     # (t0_21 dip ~1.6k absolute), then keep-best patience scaled to the
     # funded budget — budgets are true ceilings, never mandatory burns.

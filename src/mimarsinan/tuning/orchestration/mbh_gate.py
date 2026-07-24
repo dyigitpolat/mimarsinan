@@ -9,9 +9,43 @@ from typing import Any
 
 from mimarsinan.common.reporter import emit_reporter_event
 from mimarsinan.tuning.orchestration import dhat_highwater, mbh_ledger
+from mimarsinan.tuning.orchestration.tuning_policy import TUNING_POLICY
 
 ACCEPT_TOLERANCE = 0.01
 MAX_REFINEMENTS = 3
+
+
+def entry_is_lossless(entry_full: float, entry_post: float, se: float) -> bool:
+    """[recipe-economics] the transform-damage predicate: the FULL transform's
+    entry read within ``lossless_entry_se_margin`` SE of the blended entry
+    means the ladder/ramp has nothing to smooth."""
+    margin = float(TUNING_POLICY.lossless_entry_se_margin) * float(se)
+    return float(entry_full) >= float(entry_post) - margin
+
+
+def lossless_entry_short_circuit(tuner) -> bool:
+    """Driver predicate: measure the entry (isolation-guarded, memoized in the
+    gate state), decide, and on a lossless entry commit rate 1.0 for finalize.
+    Loud by contract — a skipped ladder must never be silent."""
+    state = _ensure_gate_state(tuner)
+    if state.prev_post_acc is None:
+        return False
+    se = float(tuner._budget.accuracy_se())
+    if not entry_is_lossless(state.best_full_acc, float(state.prev_post_acc), se):
+        return False
+    tuner._committed_rate = 1.0
+    tuner._entry_short_circuited = True
+    _log(
+        tuner,
+        f"entry_fast_path: full={state.best_full_acc:.6f} "
+        f"post={state.prev_post_acc:.6f} se={se:.6f} — transform lossless at "
+        f"entry; ladder+ramp skipped, finalize at rate 1.0",
+    )
+    _event(
+        tuner, "entry_fast_path", full_acc=float(state.best_full_acc),
+        post_acc=float(state.prev_post_acc or 0.0), se=se,
+    )
+    return True
 def _retention_tolerance(tuner) -> float:
     """Never demand retention finer than the metric's own noise: 2x the
     Bernoulli SE of the gate's eval window, floored at ACCEPT_TOLERANCE."""

@@ -70,6 +70,9 @@ class TuningPolicy:
     # step trajectory, modulo GPU nondeterminism). 16,000 is the validated
     # full floor budget (t01_23: full 16k => the honest 0.97 fbu ceiling);
     # wall time is a pure measurement, judged per hardware context at harvest.
+    # [recipe-economics] lossless-entry fast path: skip ladder+ramp when the
+    # full transform's entry read is within this many SE of the blended entry.
+    lossless_entry_se_margin: float = 1.0
     endpoint_floor_steps: int = 16000
     # [C1] armed-endpoint convergence stop: min-cover = max(absolute lr-dip
     # cover — measured ~1.6k on the t0_21 dip — fraction of the funded budget)

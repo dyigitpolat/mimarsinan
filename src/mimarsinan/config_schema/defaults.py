@@ -184,7 +184,7 @@ CONFIG_KEYS_SET: Set[str] = {
     # Every-endpoint D-hat target floor (recipe may set it).
     "endpoint_target_floor", "origin_teacher_kd", "origin_anchored_compact",
     "spike_phase_dither", "lif_membrane_init", "lif_execution_discipline",
-    "spike_count_parity_samples", "aa_endpoint_recovery_steps",
+    "spike_count_parity_samples", "aa_endpoint_recovery_steps", "tuning_lossless_entry_fast_path",
     # torch DataLoader worker count; read via config.get with a fallback of 4.
     "num_workers", "proven_recovery_depth",
     # Workload-profile-injectable keys (absence is meaningful — no defaults).

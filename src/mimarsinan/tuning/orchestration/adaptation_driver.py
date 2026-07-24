@@ -29,13 +29,19 @@ class CycleContext:
 class AdaptationDriver:
     """Drive an axis from ``committed`` toward 1.0 via the scheduler, then finalize."""
 
-    def __init__(self, *, scheduler, attempt, finalize, committed: float = 0.0):
+    def __init__(self, *, scheduler, attempt, finalize, committed: float = 0.0,
+                 entry_short_circuit=None):
         self._scheduler = scheduler
         self._attempt = attempt
         self._finalize = finalize
         self._committed = float(committed)
+        self._entry_short_circuit = entry_short_circuit
 
     def run(self):
+        # [recipe-economics] a lossless entry has nothing to smooth: the
+        # scheduler is skipped and finalize applies the full rate directly.
+        if self._entry_short_circuit is not None and self._entry_short_circuit():
+            return self._finalize()
         self._scheduler.run(self._committed, self._attempt)
         return self._finalize()
 

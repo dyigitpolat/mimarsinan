@@ -208,6 +208,16 @@ ENTRIES = (
            "S >= 8. The LIF recipe arms it (lif_deployment_exactness.md).",
        provenance="ConversionPolicy recipe", derived_default=_frozen(False),
        empty_means="the lif recipe arms it; other modes stay off"),
+    _E("tuning_lossless_entry_fast_path", group="tuning", owner="mbh_gate",
+       type=T.BOOL, category=Category.ADVANCED,
+       label="Lossless-entry Fast Path",
+       doc="[recipe-economics] skip a tuner's ladder+ramp when the FULL "
+           "transform's entry read is within lossless_entry_se_margin SE of "
+           "the blended entry (the transform is non-damaging; nothing to "
+           "smooth). Retention and endpoint machinery unchanged; the skip "
+           "prints loudly.",
+       provenance="ConversionPolicy recipe", derived_default=_frozen(False),
+       empty_means="off unless the mode recipe arms it"),
     _E("conversion_draws", group="tuning", owner="conversion_draws",
        type=T.INT, category=Category.ADVANCED, label="Conversion Draws",
        doc="[MBH-DRAWS] best-of-N draws on variance-carrying conversion stages (1 = "

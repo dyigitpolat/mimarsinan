@@ -172,6 +172,7 @@
     "tuner_target_floor_ratio": 0.9,
     "tuning_budget_scale": 1,
     "tuning_budget_scale_ramp_steps": false,
+    "tuning_lossless_entry_fast_path": true,
     "tuning_recipe": {
      "betas": [
       0.9,
@@ -383,6 +384,7 @@
     "tuner_target_floor_ratio": 0.9,
     "tuning_budget_scale": 0.25,
     "tuning_budget_scale_ramp_steps": false,
+    "tuning_lossless_entry_fast_path": true,
     "tuning_recipe": {
      "betas": [
       0.9,
@@ -594,6 +596,7 @@
     "tuner_target_floor_ratio": 0.9,
     "tuning_budget_scale": 0.25,
     "tuning_budget_scale_ramp_steps": false,
+    "tuning_lossless_entry_fast_path": true,
     "tuning_recipe": {
      "betas": [
       0.9,
@@ -938,6 +941,7 @@
     "tuner_target_floor_ratio": 0.9,
     "tuning_budget_scale": 0.5,
     "tuning_budget_scale_ramp_steps": false,
+    "tuning_lossless_entry_fast_path": true,
     "tuning_recipe": {
      "betas": [
       0.9,
@@ -1150,6 +1154,7 @@
     "tuner_target_floor_ratio": 0.9,
     "tuning_budget_scale": 0.25,
     "tuning_budget_scale_ramp_steps": false,
+    "tuning_lossless_entry_fast_path": true,
     "tuning_recipe": {
      "betas": [
       0.9,
@@ -1366,6 +1371,7 @@
     "tuner_target_floor_ratio": 0.9,
     "tuning_budget_scale": 0.25,
     "tuning_budget_scale_ramp_steps": false,
+    "tuning_lossless_entry_fast_path": true,
     "tuning_recipe": {
      "betas": [
       0.9,
@@ -1577,6 +1583,7 @@
     "tuner_target_floor_ratio": 0.9,
     "tuning_budget_scale": 0.25,
     "tuning_budget_scale_ramp_steps": false,
+    "tuning_lossless_entry_fast_path": true,
     "tuning_recipe": {
      "betas": [
       0.9,
@@ -3104,6 +3111,7 @@
      "lif_membrane_readout": true,
      "lif_per_hop_retiming": false,
      "lif_tanneal": true,
+     "tuning_lossless_entry_fast_path": true,
      "wq_endpoint_recovery_steps": 16000,
      "wq_endpoint_target_floor": 0.98,
      "wq_fast_rates": [
@@ -3239,6 +3247,7 @@
    "hop_stage_steps_per_rate": 40,
    "k_commit": 2.0,
    "keepbest_certified": false,
+   "lossless_entry_se_margin": 1.0,
    "prefix_stage_dfq_iters": 4,
    "prefix_stage_grad_clip_norm": 1.0,
    "prefix_stage_keepbest_interval": 25,
