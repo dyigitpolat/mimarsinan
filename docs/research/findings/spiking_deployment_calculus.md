@@ -2399,3 +2399,47 @@ for exactly this reason); (b) arm verdicts at this scale need ≥2 draws
 or a paired control, so the anchored-target control on the new code is
 running before any margin conclusion stands; (c) the §17.10 "exit ≈
 entry + 5.6pp" law holds as a central tendency but its scatter is ~1pp.
+
+### 17.12 THE VARIANCE FINDING: the AA endpoint spans ~2.5pp, and the
+### 87→87 chase has been reading noise (2026-07-25)
+
+Five endpoint runs of the SAME step on the SAME cached inputs:
+
+| run | code | fast path | target | entry | exit |
+| --- | --- | --- | --- | --- | --- |
+| AB9 | pre-tonight | (absent) | 0.8678 | 0.8114 | **0.8687** |
+| Arm C | tonight | on | 0.8791 | 0.8028 | 0.8587 |
+| Arm C′ | tonight | on | 0.8791 | 0.8124 | 0.8597 |
+| control | tonight | on | 0.8678 | 0.7912 | 0.8546 |
+| control | tonight | **off** | 0.8678 | 0.8033 | **0.8431** |
+
+**Both suspects are exonerated by measurement.** The margin is not the
+cause (the anchored control lands in the same band), and the
+lossless-entry fast path is not the cause (turning it OFF produced the
+LOWEST exit of all five). The pre-tonight entry (0.8114) sits INSIDE the
+new-code entry range (0.7912–0.8124).
+
+**The finding is the spread itself: exit ranges 0.8431–0.8687 (2.6pp)
+and entry 0.7912–0.8124 (2.1pp) across identical configurations.** AB9's
+0.868712 — the origin-hitting endpoint the 87→87 story was built on — is
+the TOP of that distribution, not a level; the distribution's centre is
+~0.855.
+
+**Consequences, stated plainly:**
+1. Single-run arm verdicts at 1pp resolution on any chain that RERUNS the
+   AA step are reading noise. (Arm A survives: it cloned the run dir and
+   reran only from AQ onward, so it shared one AA draw — a correctly
+   paired comparison. §17.9's bisect likewise reads one fixed artifact
+   chain.)
+2. The deployed census inherits this: with ~1.04pp downstream debt, an
+   AA exit band of 0.843–0.869 implies a census band of ~0.833–0.859.
+   AB9's 0.8580 was a good draw.
+3. **The binding lever is therefore not quantization capacity — it is AA
+   endpoint VARIANCE and its mean.** Raising the mean toward 0.878 (and
+   shrinking the spread) is a training-stability problem: draws
+   (`conversion_draws`, the existing [MBH-DRAWS] machinery, already used
+   on the sync mixer family for exactly this reason), LR/schedule
+   geometry, and the patience defect of §17.11 (checks, not steps).
+4. Every future arm needs ≥2 draws or artifact-paired comparison before
+   a verdict. This retroactively downgrades any conclusion of this
+   program that rested on a single AA rerun.
