@@ -199,6 +199,42 @@ def test_identity_vs_packed_twin_certificate_is_exact_both_cells():
         assert cert.exact_match_fraction == 1.0
 
 
+def test_twin_certificate_is_node_keyed_and_survives_pruned_provenance():
+    """[fatal cell] twin flows share ONE pruned IR: node-granular comparison
+    needs no perceptron placement, so provenance slices stale-widened by IR
+    pruning (captured 2919 vs slice 3072 on the ViT) cannot break it."""
+    from mimarsinan.certification.count_alignment import certify_twin_flow_counts
+    from mimarsinan.pipelining.core.simulation_factory import (
+        build_identity_mapping_for_pipeline,
+    )
+
+    sys.path.insert(0, "tests/unit/models")
+    from test_hybrid_sync_counts import _flow
+
+    torch.manual_seed(0)
+    repr_, ir, hybrid = _tiny_with_provenance()
+    # Stale-widen one node's provenance slice, as IR pruning does on real
+    # artifacts (slice width > captured width): the twin cert must not care.
+    for n in ir.nodes:
+        if getattr(n, "perceptron_output_slice", None) is not None:
+            a, b = n.perceptron_output_slice
+            n.perceptron_output_slice = (a, b + 153)
+            break
+    identity = build_identity_mapping_for_pipeline(ir, pipeline_config=None)
+    x = torch.rand(3, 8) * 0.9
+    cert, detail = certify_twin_flow_counts(
+        ir,
+        _flow(identity, synchronized=False),
+        _flow(hybrid, synchronized=False),
+        x,
+        backend="hcm",
+        discipline="streaming",
+        reference_discipline="streaming",
+    )
+    assert cert.passed, f"{cert.summary()} | {detail}"
+    assert cert.exact_match_fraction == 1.0
+
+
 def test_streaming_discipline_counts_certify_against_the_same_oracle():
     """[§16 staircase theorem] streaming per-window counts equal the NF sync
     oracle exactly — the metric-of-record cell, verified not assumed."""

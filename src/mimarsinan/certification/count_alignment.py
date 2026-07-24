@@ -157,6 +157,35 @@ def certify_flow_counts(
     return cert, f"{cover} | {report}"
 
 
+def flow_node_counts(
+    flow, samples: torch.Tensor, *, discipline: str = "synchronized",
+) -> dict[int, torch.Tensor]:
+    """One flow run captured at NODE granularity: ``{node_id: (B, n) counts}``
+    straight from the stage output maps — no provenance placement. The twin
+    cell's currency: both twin programs share one IR, so node ids and widths
+    match by construction (IR pruning cannot desynchronize them)."""
+    if discipline not in ("synchronized", "streaming"):
+        raise ValueError(f"unknown certificate discipline {discipline!r}")
+    captured: dict[int, torch.Tensor] = {}
+
+    def _record(stage, counts):
+        for sl in stage.output_map:
+            captured[int(sl.node_id)] = (
+                counts[:, sl.offset : sl.offset + sl.size].detach().cpu()
+            )
+
+    flow.stage_count_recorder = _record
+    prev_sync = getattr(flow, "lif_execution_synchronized", False)
+    flow.lif_execution_synchronized = discipline == "synchronized"
+    try:
+        with torch.no_grad():
+            flow(samples)
+    finally:
+        flow.stage_count_recorder = None
+        flow.lif_execution_synchronized = prev_sync
+    return captured
+
+
 def certify_twin_flow_counts(
     ir_graph, reference_flow, backend_flow, samples: torch.Tensor, *,
     backend: str, discipline: str = "synchronized",
@@ -164,21 +193,27 @@ def certify_twin_flow_counts(
 ):
     """[§17] the exact certificate edge: two chip-grid programs (same core
     matrices — e.g. identity-mapped IR twin vs the packed program) must agree
-    per neuron-window at the backend class's tolerance. ``discipline`` picks
-    the backend cell; the reference runs synchronized (the exact cell) unless
-    overridden."""
-    ref, ref_cover = flow_perceptron_counts(
-        ir_graph, reference_flow, samples, discipline=reference_discipline,
+    per neuron-window at the backend class's tolerance. Node-granular: both
+    programs share one IR, so node keys/widths match by construction and the
+    comparison is placement-free. ``discipline`` picks the backend cell."""
+    del ir_graph  # kept for call-site stability; node keys need no provenance
+    ref = flow_node_counts(
+        reference_flow, samples, discipline=reference_discipline,
     )
-    got, got_cover = flow_perceptron_counts(
-        ir_graph, backend_flow, samples, discipline=discipline,
+    got = flow_node_counts(backend_flow, samples, discipline=discipline)
+    only_ref = sorted(set(ref) - set(got))
+    only_got = sorted(set(got) - set(ref))
+    report = (
+        f"nodes={len(set(ref) & set(got))} "
+        f"reference-only={only_ref[:8]} backend-only={only_got[:8]}"
     )
-    aligned_ref, aligned_got, report = intersect_aligned(ref, got)
+    common_ref = {k: v for k, v in ref.items() if k in got}
+    common_got = {k: got[k] for k in common_ref}
     cert = certify_spike_counts(
-        lambda _b: aligned_ref, lambda _b: aligned_got, [samples],
+        lambda _b: common_ref, lambda _b: common_got, [samples],
         backend=backend,
     )
-    return cert, f"ref[{ref_cover}] backend[{got_cover}] | {report}"
+    return cert, report
 
 
 def intersect_aligned(
