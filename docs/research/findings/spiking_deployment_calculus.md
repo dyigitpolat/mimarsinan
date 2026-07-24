@@ -2261,3 +2261,36 @@ record for ViT-scale runs is the census, which is both cheaper and
 stronger. Two further in-vivo catches landed on the way: the
 node-granular twin cell (IR pruning desynchronizes provenance slices)
 and the gate's flow cleanup (16.13 applied).
+
+### 17.8 Capacity-side arm designs for the remaining gap (2026-07-25,
+### pre-registered before GPU)
+
+**The measured ladder (Arm A logs, eval-2048 grade):** AA endpoint exit
+0.8687 (origin hit, budget to spare) → AQ ENTRY 0.8566 → AQ exit 0.8566
+(funded endpoint: zero headroom) → WQ 0.8551–0.8576 → census 0.8580.
+The surviving loss concentrates at the AA→AQ transform composite
+(AS + Clamp + AQ install ≈ −1.2pp at eval grade), which no downstream
+training recovers — the constraint surface.
+
+**Arm E — seam-loss bisect (MEASURE FIRST, ~40 min GPU):** three
+cached-step reruns with census-grade evals attribute the −1.2pp across
+Activation Shifting / Clamp Adaptation / AQ install. Sharpens C's margin
+and names D's target. Prediction: the AQ install (grid snap) carries the
+majority; AS/CA near-flat (they were flat in AB9's census-graded reads).
+
+**Arm C — margin banking (the cheap high-upside arm, ~1h):** raise the
+AA endpoint target ABOVE origin by the measured seam cost (target =
+origin + δ, δ from Arm E, ~1.0–1.2pp): the origin-anchored design STOPS
+at origin by construction, so whether the basin holds headroom above it
+is untested. Census-graded keep-best stays the selector (no eval
+overfit). Prediction: if exit ≈ origin+δ, post-seam census ≈ 0.868 →
+87→87 met; if the basin caps at origin, the arm refutes for the price of
+one endpoint leg. Falsified cheaply either way.
+
+**Arm D — AQ capacity/currency (Type-C treatment, after E):** raise
+effective levels / re-place currency exactly at the seam channels E
+names (capacity map first); QAT-side, not training-budget. Costlier;
+runs only if C caps below target.
+
+Order: E → C → (D if needed). Every arm ships with the certificate
+attached (the gate is in-step) and is judged on the n=2500 census.
