@@ -15,6 +15,9 @@ from typing import Dict, List
 
 import torch
 
+from mimarsinan.models.spiking.hybrid.membrane_readout import (
+    stash_membrane_readout_correction,
+)
 from mimarsinan.models.spiking.spiking_config import COMPUTE_DTYPE
 
 
@@ -153,7 +156,8 @@ def build_packed_stage(seg: dict, device: torch.device) -> PackedStage:
 
 
 def run_neural_segment_packed(
-    flow, input_spike_train, *, seg, T, batch_size, device, policy,
+    flow, input_spike_train, *, seg, stage, T, batch_size, device, policy,
+    readout_corrections=None,
 ) -> torch.Tensor:
     """Stage-flat twin of the reference cycle loop (multi-spike, non-recording)."""
     packed = seg.get("packed")
@@ -237,4 +241,23 @@ def run_neural_segment_packed(
         if off is None:
             continue
         output_counts[:, d0:d1] = counts[:, off + int(sp.src_start):off + int(sp.src_end)]
+
+    if readout_corrections is not None and getattr(flow, "membrane_readout", False):
+        # [C2] per-core membrane views over the flat state feed the same stash.
+        cores = seg["cores"]
+        per_core_states = []
+        for i, c in enumerate(cores):
+            n = max(int(c.neurons_per_core - c.available_neurons), 1)
+            off = packed.neuron_offset.get(i)
+            memb = (
+                state["memb"][:, off:off + n] if off is not None
+                else torch.zeros(batch_size, n, device=device, dtype=COMPUTE_DTYPE)
+            )
+            per_core_states.append({"memb": memb})
+        stash_membrane_readout_correction(
+            flow, seg=seg, stage=stage, output_counts=output_counts,
+            output_spans=output_spans, neuron_states=per_core_states,
+            thresholds=seg["thresholds"], single_spike=False,
+            readout_corrections=readout_corrections,
+        )
     return output_counts

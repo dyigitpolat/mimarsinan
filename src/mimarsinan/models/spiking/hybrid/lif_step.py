@@ -105,14 +105,14 @@ class HybridLifStepMixin(HybridFlowHost):
                 batch_size=batch_size, device=device)
 
         # [cert-plan W1] stage-flat executor: same policy physics, batched
-        # charge layout; recording/single-spike/membrane paths keep the
-        # per-core reference loop below (byte-stable records, latch decode).
+        # charge layout; recording/single-spike paths keep the per-core
+        # reference loop below (byte-stable records, latch decode).
         if (not single_spike and not recording and latency_gated
-                and not getattr(self, "membrane_readout", False)
                 and getattr(self, "use_packed_cycle_executor", True)):
             return run_neural_segment_packed(
-                self, input_spike_train, seg=seg, T=T,
-                batch_size=batch_size, device=device, policy=policy)
+                self, input_spike_train, seg=seg, stage=stage, T=T,
+                batch_size=batch_size, device=device, policy=policy,
+                readout_corrections=readout_corrections)
 
         if single_spike:
             shifted = torch.zeros_like(input_spike_train)

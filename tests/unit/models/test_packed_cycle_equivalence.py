@@ -146,6 +146,41 @@ def test_packed_respects_membrane_init_precharge():
     assert torch.equal(outs[0], outs[1])
 
 
+def test_packed_membrane_readout_matches_reference():
+    """[C2] the membrane-decode read: packed per-core membrane views feed the
+    same stash; forward outputs (which consume the corrections) bit-match."""
+    hybrid = _chain(per_hop=False)
+    torch.manual_seed(3)
+    x = torch.rand(4, 8) * 0.9
+    outs = []
+    for packed in (False, True):
+        flow = SpikingHybridCoreFlow(
+            (8,), hybrid, T,
+            firing_mode="Default", spike_mode="Uniform", thresholding_mode="<",
+            spiking_mode="lif", cycle_accurate_lif_forward=True,
+            lif_execution_synchronized=False,
+            membrane_readout=True,
+        )
+        flow.use_packed_cycle_executor = packed
+        with torch.no_grad():
+            outs.append(flow(x))
+    assert torch.equal(outs[0], outs[1])
+    # Non-vacuity: the membrane decode must actually engage on this fixture —
+    # a readout-off run must differ, else both paths merely skipped the stash.
+    flow_off = SpikingHybridCoreFlow(
+        (8,), hybrid, T,
+        firing_mode="Default", spike_mode="Uniform", thresholding_mode="<",
+        spiking_mode="lif", cycle_accurate_lif_forward=True,
+        lif_execution_synchronized=False,
+        membrane_readout=False,
+    )
+    with torch.no_grad():
+        out_off = flow_off(x)
+    assert not torch.equal(outs[0], out_off), (
+        "membrane readout did not engage; the equivalence cell is vacuous"
+    )
+
+
 def test_single_spike_and_recording_fall_back_to_reference():
     """Packed eligibility: single-spike TTFS and recording paths keep the
     per-core reference loop (byte-stable backend records)."""
