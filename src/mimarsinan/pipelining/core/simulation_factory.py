@@ -145,6 +145,12 @@ def build_deployed_metric_flow(
     )
 
 
+MEMBRANE_DIAGNOSTIC_MAX_SAMPLES = 8
+"""[C2] the engagement report needs a handful of samples, not a batch: each
+diagnostic flow pays walk-sourced boundary trains, so its cost is bounded
+here regardless of the validation batch size."""
+
+
 def run_membrane_readout_diagnostic(
     pipeline,
     hybrid_mapping,
@@ -168,6 +174,7 @@ def run_membrane_readout_diagnostic(
         return None
 
     device = cfg["device"]
+    samples = samples[:MEMBRANE_DIAGNOSTIC_MAX_SAMPLES]
     counts_flow = build_spiking_hybrid_flow(
         pipeline, hybrid_mapping, model=model,
     ).eval()
