@@ -3,7 +3,6 @@ import torch
 
 from mimarsinan.certification.spike_certificate import certify_spike_counts
 from mimarsinan.chip_simulation.simulation_runner import SimulationRunner
-from mimarsinan.chip_simulation.spiking_semantics import is_lif
 from mimarsinan.config_schema.registry import effective_value as _effective
 from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 from mimarsinan.pipelining.core.simulation_factory import (
@@ -89,8 +88,9 @@ class SimulationStep(PipelineStep):
 
         plan = DeploymentPlan.of(self.pipeline)
         n = int(_effective(self.pipeline.config, "spike_count_parity_samples"))
+        observable, _skip = plan.mode_policy().certification_observable()
         captured: list = []
-        if is_lif(str(plan.spiking_mode)) and n > 0:
+        if observable == "counts" and n > 0:
             # Raw pre-decode counts, first n samples only (Edge B cell).
             runner.stage_count_recorder = (
                 lambda stage, raw: captured.append((stage, raw[:n]))

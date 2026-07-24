@@ -5,7 +5,8 @@ from __future__ import annotations
 import torch
 
 from mimarsinan.certification.count_alignment import certify_twin_flow_counts
-from mimarsinan.chip_simulation.spiking_semantics import is_lif
+from mimarsinan.certification.twin_schedule import twin_schedule_diagnostic
+from mimarsinan.chip_simulation.certification import CertificationCell
 from mimarsinan.config_schema.registry import effective_value as _effective
 from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory
 from mimarsinan.model_training.basic_trainer import BasicTrainer
@@ -38,7 +39,9 @@ def run_spike_count_certificate_gate(pipeline, model, ir_graph, hybrid_mapping):
     staircase theorem extends equality to streaming [calculus §16-17].
     ``spike_count_parity_samples <= 0`` disables the gate."""
     plan = DeploymentPlan.of(pipeline)
-    if not is_lif(str(plan.spiking_mode)):
+    observable, skip_reason = plan.mode_policy().certification_observable()
+    if observable != "counts":
+        print(f"[SpikeCountCertificate] SKIP ({plan.spiking_mode}): {skip_reason}")
         return None
     n = int(_effective(pipeline.config, "spike_count_parity_samples"))
     if n <= 0:
@@ -73,6 +76,7 @@ def run_spike_count_certificate_gate(pipeline, model, ir_graph, hybrid_mapping):
     for dv in cert.divergent:
         print(f"[SpikeCountCertificate] streaming-twin: divergent {dv}")
     if not cert.passed:
+        print(twin_schedule_diagnostic(identity, hybrid_mapping))
         raise RuntimeError(
             f"spike-count certificate FAILED (streaming twin): "
             f"{cert.summary()} | {detail}"
@@ -89,4 +93,7 @@ def run_spike_count_certificate_gate(pipeline, model, ir_graph, hybrid_mapping):
         "(per-cycle transient physics vs the analytic gauge; the streaming "
         "census accuracy is the arbiter)"
     )
+    cell = CertificationCell.from_mode_policy(plan.mode_policy(), backend="hcm")
+    print(f"[SpikeCountCertificate] cell {cell.cell_key}: streaming-twin PASS "
+          f"({cert.neuron_windows_compared} windows, {cert.samples} sample(s))")
     return cert

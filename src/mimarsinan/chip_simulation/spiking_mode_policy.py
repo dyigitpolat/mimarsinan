@@ -147,9 +147,18 @@ class SpikingModePolicy:
         """Subset of ``candidates`` whose capabilities support this mode."""
         return tuple(b for b in candidates if self.supports_backend(b))
 
+    def certification_observable(self) -> tuple[str, "str | None"]:
+        """[cert-plan W3] the per-neuron observable the spike-count
+        certificate compares for this mode: ("counts", None), ("events",
+        None), or ("skip", reason) — a typed skip, never a silent one."""
+        return ("skip", f"no certification observable for {self.spiking_mode}")
+
 
 class LifModePolicy(SpikingModePolicy):
     """LIF family: per-cycle integrate-and-fire, count decode."""
+
+    def certification_observable(self) -> tuple[str, "str | None"]:
+        return ("counts", None)
 
     @property
     def single_step_activation_replacement(self) -> bool:
@@ -206,6 +215,10 @@ class LifModePolicy(SpikingModePolicy):
 
 class TtfsAnalyticalModePolicy(SpikingModePolicy):
     """Closed-form analytical TTFS (``ttfs`` continuous / ``ttfs_quantized``)."""
+
+    def certification_observable(self) -> tuple[str, "str | None"]:
+        return ("skip", "analytic mode — not deployed per-cycle physics")
+
 
     def training_forward_kind(self) -> str:
         return "analytical_staircase"
@@ -285,6 +298,11 @@ class TtfsAnalyticalModePolicy(SpikingModePolicy):
 
 class _TtfsCycleModePolicy(SpikingModePolicy):
     """Shared base for the genuine single-spike (ttfs_cycle_based) schedules."""
+
+    def certification_observable(self) -> tuple[str, "str | None"]:
+        return ("skip", "ttfs event-time observable pending; the TTFS "
+                "contract-record comparators remain the deep check")
+
 
     @property
     def single_step_activation_replacement(self) -> bool:
