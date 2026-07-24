@@ -47,10 +47,9 @@ _LIF_RECIPE_KNOBS = {
     "lif_blend_fast": True,
     "lif_tanneal": True,
     "tuning_lossless_entry_fast_path": True,  # nothing to smooth on non-damaging transforms
-    # P1'' budget, convergence-grounded (FAST respec 2026-07-08): healthy
-    # endpoint reaches measure 250-930 steps; 600 = the shared endpoint cap
-    # (the old 1560 was ladder-accounting, not convergence, and each armed
-    # step pays the O(S) cycle-accurate LIF forward).
+    # P1'' convergence-grounded budget (2026-07-08): healthy endpoints reach
+    # measure in 250-930 steps; 600 = the shared cap (1560 was ladder
+    # accounting; each armed step pays the O(S) cycle-accurate forward).
     "endpoint_recovery_steps": 600,
     "cycle_accurate_lif_forward": True,
     "fast_ladder_freeze_bn": True,
