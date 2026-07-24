@@ -32,6 +32,18 @@ def _certificate_samples(pipeline, model, n: int) -> "torch.Tensor | None":
     return xs[0][:n].to(pipeline.config["device"])
 
 
+def certificate_gate_armed(pipeline) -> bool:
+    """[§17] whether the streaming-twin certificate will run for this config:
+    a counts-observable mode with a nonzero sample budget. Shared by the gate
+    and the SCM rung-2 derivation (identity ≡ packed counts ⇒ the identity
+    accuracy is derived, not re-measured)."""
+    plan = DeploymentPlan.of(pipeline)
+    observable, _reason = plan.mode_policy().certification_observable()
+    if observable != "counts":
+        return False
+    return int(_effective(pipeline.config, "spike_count_parity_samples")) > 0
+
+
 def run_spike_count_certificate_gate(pipeline, model, ir_graph, hybrid_mapping):
     """Certify deployed per-neuron window counts against the NF oracle; fatal.
 
@@ -46,6 +58,7 @@ def run_spike_count_certificate_gate(pipeline, model, ir_graph, hybrid_mapping):
     n = int(_effective(pipeline.config, "spike_count_parity_samples"))
     if n <= 0:
         return None
+    assert certificate_gate_armed(pipeline)
     samples = _certificate_samples(pipeline, model, n)
     if samples is None:
         return None

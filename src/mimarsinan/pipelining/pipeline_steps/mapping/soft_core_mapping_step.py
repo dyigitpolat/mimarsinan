@@ -4,7 +4,7 @@ from typing import Iterable, cast
 
 import mimarsinan.pipelining.core.nf_scm_parity as nf_scm_parity
 from mimarsinan.config_schema.registry import effective_value as _effective
-from mimarsinan.pipelining.core.steps.pipeline_step import PipelineStep
+from mimarsinan.pipelining.core.steps.pipeline_step import METRIC_CARRIED, PipelineStep
 from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 
 from mimarsinan.chip_simulation.spiking_semantics import is_lif, requires_ttfs_firing
@@ -47,6 +47,7 @@ from mimarsinan.tuning.orchestration.adaptation_manager import (
 from mimarsinan.transformations.quantization_bounds import quantization_bounds
 
 from mimarsinan.pipelining.core.engine.pipeline_helpers import run_optional_viz
+from mimarsinan.pipelining.core.spike_count_gate import certificate_gate_armed
 from mimarsinan.pipelining.core.simulation_factory import (
     build_deployment_contract,
     build_identity_mapping_for_pipeline,
@@ -95,6 +96,8 @@ class SoftCoreMappingStep(PipelineStep):
         return [x for x, _ in batches]
 
     def validate(self):
+        if getattr(self, "_identity_metric_derived", False):
+            return self.pipeline.get_target_metric()
         if self._soft_core_spiking_metric is None:
             raise RuntimeError(
                 "Soft-core spiking simulation did not produce a metric; "
@@ -102,7 +105,14 @@ class SoftCoreMappingStep(PipelineStep):
             )
         return self._soft_core_spiking_metric
 
+    def validate_metric_kind(self) -> str:
+        if getattr(self, "_identity_metric_derived", False):
+            return METRIC_CARRIED
+        return super().validate_metric_kind()
+
     def pipeline_metric(self):
+        if getattr(self, "_identity_metric_derived", False):
+            return self.pipeline.get_target_metric()
         if self._soft_core_spiking_metric is None:
             raise RuntimeError(
                 "Soft-core spiking simulation did not produce a metric; "
@@ -277,17 +287,28 @@ class SoftCoreMappingStep(PipelineStep):
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
-        with _phase("sim_identity_metric"):
-            acc = run_scm_identity_metric(
-                self.pipeline,
-                ir_graph,
-                platform_constraints,
-                model=model,
-                device=device,
-                outer_oom_retry=True,
+        if certificate_gate_armed(self.pipeline):
+            # [§17] identity ≡ packed counts is CERTIFIED at Hard Core Mapping,
+            # so identity accuracy equals the packed read there: derived, not
+            # re-measured (the retired eval cost ~20-40 min at ViT scale).
+            self._identity_metric_derived = True
+            print(
+                "[SoftCoreMappingStep] rung-2 identity metric DERIVED via the "
+                "streaming-twin certificate (identity ≡ packed counts); the "
+                "deployed read lands at Hard Core Mapping."
             )
-        self._soft_core_spiking_metric = float(acc)
-        print(f"[SoftCoreMappingStep] Soft-core (identity-mapped) Spiking Simulation Test: {acc}")
+        else:
+            with _phase("sim_identity_metric"):
+                acc = run_scm_identity_metric(
+                    self.pipeline,
+                    ir_graph,
+                    platform_constraints,
+                    model=model,
+                    device=device,
+                    outer_oom_retry=True,
+                )
+            self._soft_core_spiking_metric = float(acc)
+            print(f"[SoftCoreMappingStep] Soft-core (identity-mapped) Spiking Simulation Test: {acc}")
 
     def _commit_pruning_to_raw_params(self, model) -> None:
         """Commit every perceptron's prune masks into its raw parameters."""
