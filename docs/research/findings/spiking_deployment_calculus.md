@@ -2214,3 +2214,34 @@ gate emits its `CertificationCell` key (`lif@hcm`) on PASS.
   ViT deployment now ≈ 15–20 min, census-dominated).**
 
 Gates 8395 green, typecheck 0. Plan: ~/.claude/plans/spike_certification_engineering_plan.md.
+
+### 17.7 The AQ-funding campaign (Arm A): REFUTED — the residual is not
+### endpoint training (2026-07-24)
+
+One lever: `endpoint_recovery_steps=8000` for the AQ tuner (AB9 ran 0;
+the exact machinery that recovered AA 0.8114→0.8687). Measured:
+- Leg 1: the endpoint ENGAGED (origin-anchored target 0.8687, entry
+  0.8566, budget 9788) and converged after 2538 steps at **exit ==
+  entry** — zero recoverable headroom; keep-best at eval-2048 never beat
+  the entry. The AQ exit sits ON the quantized-activation constraint
+  surface (Type-C), unlike AA's float-side trainable crater.
+- Census n=2500 on the funded artifact: **0.8580 — identical to the
+  AB9 baseline** (analytic 0.8584, Δ0.04pp, coherence GREEN:
+  composition stays free).
+Corollary from the same campaign's leg 2: the WQ ramp landed BELOW its
+lossless projection entry, so WQ endpoint funding (Arm B) is
+predicted-refuted too — the endpoint-FUNDING lever family is exhausted
+by measurement. The remaining −0.98pp (0.8678→0.8580 on this read)
+decomposes as the AA swap term (~−0.36pp, priced) + an AQ/WQ capacity
+residual: constraint-surface work (richer targets / capacity design /
+QAT-side treatment — the §13 L-C and task-24 design space), not
+training budget.
+
+Campaign side-products, all landed and verified this session: the
+lossless-entry fast path (recipe-armed, tier-0: 5 skips, certs green,
++0.08pp), the membrane-diagnostic cap (8 samples), the packed executor's
+membrane coverage, and the rung-2 identity-metric derivation
+(certificate-armed runs carry, not re-measure — the last §17
+anti-pattern removed). The one remaining python-sequential twin is the
+NF walk (boundary trains + R-edge gate), bounded and queued for
+W1-pattern batching.
