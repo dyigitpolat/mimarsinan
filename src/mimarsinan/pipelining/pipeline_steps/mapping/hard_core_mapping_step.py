@@ -2,6 +2,7 @@ from mimarsinan.pipelining.core.steps.pipeline_step import PipelineStep
 
 from mimarsinan.common.best_effort import best_effort
 from mimarsinan.common.env import vram_probe_enabled
+from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 from mimarsinan.pipelining.core.hybrid_mapping_consumer import load_hybrid_mapping_for_step
 from mimarsinan.pipelining.core.engine.pipeline_helpers import run_optional_viz
 from mimarsinan.pipelining.core.simulation_factory import run_hcm_mapping_metric
@@ -95,6 +96,7 @@ class HardCoreMappingStep(PipelineStep):
         run_spike_count_certificate_gate(
             self.pipeline, model, ir_graph, hybrid_mapping,
         )
+        plan_cap = DeploymentPlan.of(self.pipeline).simulation_batch_size
         acc = run_hcm_mapping_metric(
             self.pipeline,
             ir_graph,
@@ -102,8 +104,10 @@ class HardCoreMappingStep(PipelineStep):
             hybrid_mapping=hybrid_mapping,
             model=model,
             cache_key="hybrid_mapping",
-            # Post-gate allocator state can deny one large contiguous encode:
-            # the designed OOM retry re-enters at the plan's capped batch.
+            # An explicit simulation_batch_size bounds the PRIMARY attempt too
+            # (the >=1024 eval batch demands one huge contiguous encode);
+            # the designed OOM retry stays as the fallback.
+            max_batch_cap=int(plan_cap) if plan_cap else None,
             retry_on_oom=True,
             outer_oom_retry=True,
         )
