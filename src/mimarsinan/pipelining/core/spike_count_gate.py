@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import gc
+
 import torch
 
 from mimarsinan.certification.count_alignment import certify_twin_flow_counts
@@ -109,4 +111,10 @@ def run_spike_count_certificate_gate(pipeline, model, ir_graph, hybrid_mapping):
     cell = CertificationCell.from_mode_policy(plan.mode_policy(), backend="hcm")
     print(f"[SpikeCountCertificate] cell {cell.cell_key}: streaming-twin PASS "
           f"({cert.neuron_windows_compared} windows, {cert.samples} sample(s))")
+    # [16.13] the twin flows cache tens of GB of segment tensors and nn.Module
+    # graphs are cyclic: free them before the step's metric read or it OOMs.
+    del reference_flow, backend_flow, identity
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
     return cert
