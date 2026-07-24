@@ -276,7 +276,17 @@ T2 = [
     # scale-up is tier_3). Scheduled + light-pruned to fit platform E + wall.
     dict(n=4, mode="lif", quant="wq", wb=8, s=32, vehicle="vit", dataset="CIFAR100",
          regime="pretrained", scheduling=True, encoding="offload", pruned=0.05,
-         tags=["sched", "offload", "pruned", "wall_risk"]),
+         tags=["sched", "offload", "pruned", "wall_risk"],
+         # The AB9-proven census-graded lossless-fast set (calculus 16.9/17.8):
+         # deployed LIF physics (dither + membrane guard), census-grade tuner
+         # evals, the funded AA endpoint, and the metric batch cap.
+         extra_dp={
+             "spike_phase_dither": True,
+             "lif_membrane_init": -0.25,
+             "eval_subsample_target": 2048,
+             "aa_endpoint_recovery_steps": 8000,
+             "simulation_batch_size": 64,
+         }),
     dict(n=5, mode="sync", quant="wq", wb=8, s=32, vehicle="vit", dataset="CIFAR100",
          regime="pretrained", scheduling=True, encoding="offload", pruned=0.05,
          tags=["sched", "offload", "pruned", "wall_risk"]),
@@ -419,6 +429,9 @@ def _deployment(tier, row, vehicles, dataset):
         if tier == 0:
             dp["training_recipe"] = TRAINING_RECIPE
             dp["tuning_recipe"] = TUNING_RECIPE
+    # Row-level knob passthrough: proven per-cell recipes (e.g. the AB9
+    # census-graded ViT set) live on the row, not as generator cases.
+    dp.update(row.get("extra_dp", {}))
     return dp
 
 

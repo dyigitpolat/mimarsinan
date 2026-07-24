@@ -160,7 +160,7 @@ CONFIG_KEYS_SET: Set[str] = {
     "loihi_parity_sample_index",
     "sanafe_sample_count", "sanafe_arch_preset",
     "sanafe_custom_arch_path", "sanafe_log_potential_trace",
-    "simulation_batch_count", "simulation_step_timeout_s",
+    "simulation_batch_count", "simulation_batch_size", "simulation_step_timeout_s",
     # Endpoint floor: RUN-total STEP budget (never wall) + [C3'] min-cover.
     "endpoint_floor_steps", "endpoint_floor_min_cover_steps",
     # [MBH-DRAWS] best-of-N conversion draws (1 = single-draw, bit-identical).

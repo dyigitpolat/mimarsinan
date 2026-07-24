@@ -58,7 +58,12 @@
       "normalize": "imagenet"
     },
     "weight_source": "torchvision",
-    "finetune_epochs": 2
+    "finetune_epochs": 2,
+    "spike_phase_dither": true,
+    "lif_membrane_init": -0.25,
+    "eval_subsample_target": 2048,
+    "aa_endpoint_recovery_steps": 8000,
+    "simulation_batch_size": 64
   },
   "target_metric_override": null,
   "start_step": null,

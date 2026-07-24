@@ -214,6 +214,12 @@ ENTRIES = (
        doc="Sample cap for simulator probes (binomial-noise accuracy reads); 0 = no cap.",
        bounds=(0, None), provenance="consumer frozen default", derived_default=_frozen(0),
        empty_means="0 — the runner probes without a sample cap"),
+    _E("simulation_batch_size", group="deployment_target", owner="DeploymentPlan",
+       type=T.INT, category=Category.ADVANCED, label="Simulation Batch Size",
+       doc="Eval batch bound for deployed metric reads (primary + OOM retry); "
+           "one (T,B,in) encode per batch, so large inputs need a bound.",
+       bounds=(1, None), provenance="consumer frozen default",
+       derived_default=_frozen(8), empty_means="8 (the plan's frozen default)"),
     _E("simulation_batch_count", group="deployment_target", owner="SimulationRunner",
        type=T.INT, category=Category.ADVANCED, label="Simulation Batch Count",
        doc="Batches per simulator probe run.", bounds=(1, None),
