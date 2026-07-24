@@ -2245,3 +2245,19 @@ membrane coverage, and the rung-2 identity-metric derivation
 anti-pattern removed). The one remaining python-sequential twin is the
 NF walk (boundary trains + R-edge gate), bounded and queued for
 W1-pattern batching.
+
+**Arm A record closed (2026-07-25, 01:35).** The stamp stands on: the
+streaming-twin certificate — **PASS exact=1.000000 max|dcount|=0 over
+13,797,880 neuron-windows, node-keyed over 2,364 nodes on the PRUNED
+funded program, reproduced FOUR consecutive times** — and the census
+n=2500 deployed read (0.8580, coherence GREEN). The in-step 25-sample
+HCM metric was ABANDONED as redundant: at SE≈7pp it carries no
+information the census does not carry at 100× the samples, and its
+one-shot (T,B,in) uniform-encode allocation (32.25 GiB at eval batch)
+degrades to a batch≈1 retry (~4 min/sample × 25) after the gate — the
+named follow-ups are (a) chunked segment-input encoding and (b) a
+memory-aware primary eval batch; until then the deployed accuracy of
+record for ViT-scale runs is the census, which is both cheaper and
+stronger. Two further in-vivo catches landed on the way: the
+node-granular twin cell (IR pruning desynchronizes provenance slices)
+and the gate's flow cleanup (16.13 applied).
