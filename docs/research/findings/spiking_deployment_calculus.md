@@ -2443,3 +2443,51 @@ the TOP of that distribution, not a level; the distribution's centre is
 4. Every future arm needs ≥2 draws or artifact-paired comparison before
    a verdict. This retroactively downgrades any conclusion of this
    program that rested on a single AA rerun.
+
+### 17.13 CONFIRMED: the AQ seam is a mis-set θ, and the optimum costs
+### 3.4pp less at install (2026-07-26)
+
+The AQ step (with `lif_exact_qat`) installs
+`LIFCountStaircaseDecorator(T, activation_scale)` — exactly
+`θ·Q_T(clamp(x,0,θ)/θ)`, so its cost IS D(θ) = clipping + resolution, and
+θ is the 0.99 activation quantile. Measured through the pipeline's own
+`update_activation` path with the RESOLVED config (n=1500, T=32,
+`lif_exact_qat_active=True` verified in-probe), varying θ alone:
+
+| θ policy | acc | AQ install cost |
+| --- | --- | --- |
+| 0.75× cached | 0.7871 | −8.27pp |
+| **cached (q0.99, current)** | 0.8294 | **−4.04pp** |
+| 1.5× cached | 0.8535 | −1.63pp |
+| q0.9999 | 0.8600 | −0.98pp |
+| q0.999 | 0.8607 | −0.91pp |
+| 2× cached | 0.8633 | −0.65pp |
+| **MSE-optimal (per layer)** | **0.8633** | **−0.65pp** |
+
+Pre-quantization reference 0.8698. **The current heuristic costs 4.04pp
+at install; the optimum costs 0.65pp.** Prediction was ">2pp"; measured
+3.4pp. The monotone shape is D(θ)'s signature: 0.75× is clipping-
+catastrophic, raising θ helps until the θ/T grid coarsens.
+
+The optimum is genuinely PER-LAYER, not a global multiplier: ratios
+θ*/θ_cached run 5.84× (layer 0), 4.20× (layer 5) … 0.95× (layer 10),
+0.82× (layer 11). A global 2× ties the optimum on this artifact by
+coincidence; only the per-layer argmin generalizes (layer 11 wants LESS
+than the quantile gives it).
+
+**Caveat, stated before any claim:** the AQ stage TRAINS after install
+(QAT recovers 4.04pp → the 0.96pp net of §17.9). A 3.4pp smaller install
+should end closer, but the post-training transfer is not measured yet
+and is not assumed 1:1.
+
+**Three instrument bugs preceded this measurement, one root cause —
+reimplementing instead of using the pipeline's own machinery:** a
+hand-rolled clamp that killed the GELU negative lobe (the pipeline has
+`negative_value_shift`); a manager driven with `lif_active=False`,
+reproducing the documented LeakyGradReLU substitution; and — the
+generalizable one — **a raw `deployment_parameters` dict passed as the
+config, when `lif_exact_qat` is folded in only by `conversion_policy`
+during `PipelineSession` resolution.** THE CONFIG FILE IS NOT THE
+CONFIG. Every probe must resolve through the session and assert the
+predicates it depends on (this one prints `lif_exact_qat_active` before
+reporting).
