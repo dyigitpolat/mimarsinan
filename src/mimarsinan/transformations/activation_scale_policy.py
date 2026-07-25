@@ -6,6 +6,62 @@ from abc import ABC, abstractmethod
 
 import torch
 
+_CANDIDATES = 160
+_MIN_THETA = 1e-3
+_FALLBACK_THETA = 1.0
+
+
+def deployed_distortion(
+    activations: torch.Tensor, theta: float, levels: int, *, weight: float = 1.0,
+) -> float:
+    """``D(θ) = E[(a−θ)²·1(a>θ)] + (θ/L)²/12·P(a≤θ)``, scaled by ``weight``.
+
+    The two terms are the deployed staircase's only error sources: saturation
+    above θ, and the θ/L grid below it. ``weight`` is the unit's sensitivity
+    (Fisher diagonal); it rescales D uniformly, so it orders units without
+    moving any single unit's argmin.
+    """
+    a = activations.float()
+    if a.numel() == 0:
+        return 0.0
+    over = a[a > theta]
+    clipping = float(((over - theta) ** 2).sum()) / a.numel()
+    fraction_in = float((a <= theta).float().mean())
+    resolution = (theta / max(int(levels), 1)) ** 2 / 12.0 * fraction_in
+    return float(weight) * (clipping + resolution)
+
+
+def optimal_theta(
+    activations: torch.Tensor,
+    levels: int,
+    *,
+    weight: float = 1.0,
+    candidates: int = _CANDIDATES,
+    min_theta: float = _MIN_THETA,
+) -> float:
+    """θ* minimizing :func:`deployed_distortion` over a candidate grid.
+
+    Deterministic and assumption-free: the grid spans the positive activations'
+    median to max, so no distribution family is imposed (the measured shapes
+    are heavy-tailed and vary by an order of magnitude across depth). Dead or
+    fully pruned units fall back to ``1.0`` — a normal case, not an error.
+    """
+    a = activations.float()
+    positive = a[a > 1e-6]
+    if positive.numel() == 0:
+        return _FALLBACK_THETA
+    low = float(torch.quantile(positive, 0.5))
+    high = float(positive.max())
+    if not (high > low):
+        return max(high, min_theta)
+    best_theta, best_distortion = low, None
+    for theta in torch.linspace(low, high, int(candidates)).tolist():
+        distortion = deployed_distortion(positive, theta, levels, weight=weight)
+        if best_distortion is None or distortion < best_distortion:
+            best_theta, best_distortion = theta, distortion
+    return max(best_theta, min_theta)
+
+
 PRUNED_THRESHOLD = 1e-9
 MIN_SCALE = 1e-6
 DEFAULT_SCALE_QUANTILE = 0.99
@@ -102,10 +158,31 @@ class MaxNormPolicy(ActivationScalePolicy):
         return max(float(acts.max().item()), float(self.min_scale))
 
 
+class MinDistortionPolicy(ActivationScalePolicy):
+    """[calculus §17.13] theta as the argmin of the DEPLOYED distortion
+    ``clipping + resolution`` on an ``levels``-step grid — the two error
+    sources the staircase actually has, instead of a fixed quantile.
+
+    ``levels`` is required: the optimum depends on the grid the deployment
+    will use (T for rate codes), and guessing it silently would reintroduce
+    the heuristic this policy replaces."""
+
+    def __init__(self, *, levels: int, min_scale: float = MIN_SCALE):
+        self.levels = int(levels)
+        self.min_scale = float(min_scale)
+
+    def scale(self, flat_acts) -> float:
+        return max(
+            float(optimal_theta(_as_float32(flat_acts), self.levels)),
+            float(self.min_scale),
+        )
+
+
 _POLICY_FACTORIES = {
     "count_quantile": CountQuantilePolicy,
     "percentile_norm": PercentileNormPolicy,
     "max_norm": MaxNormPolicy,
+    "min_distortion": MinDistortionPolicy,
 }
 
 
