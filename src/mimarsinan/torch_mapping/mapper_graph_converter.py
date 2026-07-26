@@ -17,6 +17,10 @@ from mimarsinan.mapping.mapping_utils import (
     PermuteMapper,
     ReshapeMapper,
 )
+from mimarsinan.mapping.platform.packaging_contract import (
+    SPIKING_PACKAGING,
+    PackagingContract,
+)
 from mimarsinan.torch_mapping.representability_analyzer import (
     RepresentabilityReport,
     RepresentabilityError,
@@ -43,9 +47,15 @@ class MapperGraphConverter(
 ):
     """Convert a traced ``GraphModule`` into a mimarsinan ``ModelRepresentation``."""
 
-    def __init__(self, graph_module: fx.GraphModule, input_shape: Tuple[int, ...]):
+    def __init__(
+        self,
+        graph_module: fx.GraphModule,
+        input_shape: Tuple[int, ...],
+        packaging: "PackagingContract" = SPIKING_PACKAGING,
+    ):
         self.gm = graph_module
         self.input_shape = input_shape
+        self._packaging = packaging
         self._modules: Dict[str, nn.Module] = dict(graph_module.named_modules())
         self._node_to_mapper: Dict[fx.Node, Any] = {}
         self._node_to_attr: Dict[fx.Node, Any] = {}

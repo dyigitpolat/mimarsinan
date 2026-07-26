@@ -10,7 +10,7 @@ import torch.nn as nn
 import torch.fx as fx
 
 from mimarsinan.mapping.mapping_utils import ComputeOpMapper, Ensure2DMapper, PerceptronMapper
-from mimarsinan.models.perceptron_mixer.perceptron import Perceptron
+from mimarsinan.models.perceptron_mixer.perceptron import Perceptron, as_affine_package
 from mimarsinan.torch_mapping.converter_handlers.converter_contract import ConverterContract
 
 if TYPE_CHECKING:
@@ -45,7 +45,7 @@ class LinearConvertMixin(ConverterContract):
 
         source = Ensure2DMapper(source)
 
-        if act_name is None:
+        if act_name is None and self._packaging.require_activation:
             linear = copy.deepcopy(mod)
             if bn_mod is not None:
                 bn_copy = copy.deepcopy(bn_mod)
@@ -67,6 +67,8 @@ class LinearConvertMixin(ConverterContract):
                 base_activation_name=act_name,
                 name=node.name,
             )
+            if act_name is None:
+                as_affine_package(perceptron)
             with torch.no_grad():
                 perceptron.layer.weight.copy_(mod.weight.data)
                 if mod.bias is not None:

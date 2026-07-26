@@ -10,6 +10,7 @@ import torch.nn as nn
 import torch.fx as fx
 
 from mimarsinan.mapping.mapping_utils import ComputeOpMapper, Conv2DPerceptronMapper
+from mimarsinan.models.perceptron_mixer.perceptron import as_affine_package
 from mimarsinan.torch_mapping.converter_handlers.converter_contract import ConverterContract
 
 if TYPE_CHECKING:
@@ -57,7 +58,7 @@ class ConvConvertMixin(ConverterContract):
         )
         act_name = self._conv_activation_to_name(act_mod)
 
-        if act_name is None:
+        if act_name is None and self._packaging.require_activation:
             conv_copy = copy.deepcopy(mod)
             if bn_mod is not None:
                 bn_copy = copy.deepcopy(bn_mod)
@@ -86,6 +87,8 @@ class ConvConvertMixin(ConverterContract):
                 base_activation_name=act_name,
                 name=node.name,
             )
+            if act_name is None:
+                as_affine_package(conv_mapper.perceptron)
             with torch.no_grad():
                 flat_weight = mod.weight.data.reshape(mod.out_channels, -1)
                 conv_mapper.perceptron.layer.weight.copy_(flat_weight)
@@ -114,7 +117,7 @@ class ConvConvertMixin(ConverterContract):
         )
         act_name = self._conv_activation_to_name(act_mod)
 
-        if act_name is None:
+        if act_name is None and self._packaging.require_activation:
             conv_copy = copy.deepcopy(mod)
             if bn_mod is not None:
                 bn_copy = copy.deepcopy(bn_mod)
@@ -136,6 +139,8 @@ class ConvConvertMixin(ConverterContract):
                 base_activation_name=act_name,
                 name=node.name,
             )
+            if act_name is None:
+                as_affine_package(conv_mapper.perceptron)
             with torch.no_grad():
                 flat_weight = mod.weight.data.reshape(mod.out_channels, -1)
                 conv_mapper.perceptron.layer.weight.copy_(flat_weight)

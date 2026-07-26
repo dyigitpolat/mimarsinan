@@ -25,7 +25,7 @@ use when).
 | `ir/` | Unified IR: `IRGraph` container, node types (`NeuralCore`, `ComputeOp`, `WeightBank`, `IRSource`), legacy conversions |
 | `mappers/` | Mapper hierarchy consumed by the graph: base, structural, perceptron, leading-dim, conv1d/conv2d, scale propagation |
 | `layout/` | Shape-only layout SSoT (`LayoutIRMapping`, layout plan/packer, segmentation) for fast architecture-search estimation |
-| `platform/` | `ChipCapabilities`, `MappingStrategy`, platform constraints, tiling/coalescing structure |
+| `platform/` | `ChipCapabilities`, `MappingStrategy`, platform constraints, tiling/coalescing structure, and the `PackagingContract` SSOT (what op shapes a target's cores accept: spiking perceptron vs value-domain affine packaging) |
 | `pruning/` | IR pruning, liveness semantics, mask/compaction application, boundary policy, graph segmentation |
 | `packing/` | `SoftCore`/`HardCore` bin packing, placement engine, hybrid multi-stage mapping (`HybridHardCoreMapping`) |
 | `latency/` | `IRLatency` (IR topology tiers) and `ChipLatency` (packed-chip cycle scheduling) plus upstream closure; `depth_balancing` [C5] inserts identity relay chains on gap>1 intra-segment edges (unequal-depth fan-in, V6) with the loud gap-1 and dead-relay (strict-'<' exact-theta lattice, V9) guards |
