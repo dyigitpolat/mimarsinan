@@ -2529,3 +2529,89 @@ design: one shared AQ-input artifact, two θ values, both QAT-trained —
 which isolates θ's effect on the trained outcome without the AA draw in
 the path. `min_distortion` therefore ships default-OFF (it is registered,
 tested and byte-identical when unarmed), and no recipe arms it.
+
+## 18. Consolidation: what is settled, what is eliminated, what is open
+
+### 18.1 Settled (certified or measured, not argued)
+
+**Deployment faithfulness.** The fatal cell is the streaming twin —
+identity-IR program vs packed program, genuine per-cycle LIF on BOTH
+sides, node-granular, atol=0. `exact=1.000000, max|dcount|=0 over
+13,797,880 neuron-windows`, five consecutive reproductions on the pruned
+ViT, plus in-vivo tier-0. SANA-FE and Loihi certify exact; nevresim is a
+typed transient report (independent per-cycle clock). The §17.5 law
+holds: no analytic evaluator is load-bearing anywhere.
+
+**Composition is free.** §17.9's ladder ends with the deployed artifact's
+analytic accuracy EQUAL to the streaming census at four decimals
+(0.8580 = 0.8580). Mapping, packing, scheduling, retiming, spiking and
+deployment lose nothing measurable. Every remaining point of loss is
+inside the torch model.
+
+**The gap is one seam.** Teacher 0.8624 → AA +0.60pp → Clamp/Shift/NF
+exactly 0.0000 → **AQ install −0.96pp** → LIF +0.20pp → WQ −0.28pp.
+
+**Certification is cheap.** ~7–8 min at ViT scale, seconds at tier-0,
+versus the retired ~85 min/attempt regime that certified nothing:
+ChipLatency vectorized (78×), a packed stage-flat executor covering
+membrane readout, the rung-2 identity metric DERIVED from the
+certificate rather than re-measured, the C2 diagnostic bounded, and the
+lossless-entry fast path skipping ladders that have nothing to smooth.
+
+### 18.2 Eliminated (negative results, each cheap and decisive)
+
+1. **Endpoint FUNDING** (§17.7): AQ endpoint engaged at 8000 steps,
+   converged at 2538 with exit == entry, census 0.8580 == baseline. The
+   funding family is exhausted.
+2. **Endpoint MARGIN** (§17.10): a target 1.04pp higher produced no
+   climb — the stage is entry-bound and patience-bound, not
+   target-bound (exit ≈ entry + 5.6pp).
+3. **Naive θ optimality** (§17.14): the MSE-optimal θ cuts install cost
+   4.04pp → 0.65pp and still ends 0.86pp WORSE after QAT. Install cost
+   is not the objective.
+
+### 18.3 Open, with the sharpest formulation each has earned
+
+**O1 — training-aware θ.** D(θ)'s terms are not equally recoverable:
+clipping is a bias QAT can compensate, the θ/L grid is noise it cannot.
+The trained objective looks like `α·clipping + resolution`, α ≪ 1.
+Sweeping α over the PAIRED design (one shared AQ-input artifact, two θ
+values, both QAT-trained) traces the real optimum and would explain why
+the 0.99 quantile is a decent heuristic. Cheapest open lead.
+
+**O2 — per-channel θ.** Per-neuron thresholds are already deployable
+(`NodeScale`, per-core threshold arrays). The measured per-layer optima
+span 5.84×–0.82×; per-channel is strictly finer and never explored.
+
+**O3 — endpoint patience is denominated wrong** (§17.11). Patience
+counts CHECKS, so raising `endpoint_floor_min_cover_steps` makes the
+stop fire EARLIER in steps. Every endpoint run stopped with 45–65% of
+its funded budget unspent. A step-denominated geometry is free upside,
+independent of every other lever.
+
+**O4 — AA stage variance** (§17.12): 2.6pp exit spread across identical
+configs. Best-of-N is fishing, not a fix; the variance source itself is
+unidentified (it survives with the fast path OFF).
+
+**O5 — the last python-sequential twin.** The NF walk (boundary trains,
+R-edge gate) is unvectorized; the W1 golden-reference pattern applies
+directly. Multiplier under every remaining cost.
+
+**O6 — coverage.** Tiny-ViT tier-0 vehicle (closes the isolation-ladder
+inversion that forces ViT debugging at 86M scale), TTFS event
+observable, nevresim timing alignment, PR15 floor certificate.
+
+### 18.4 Method rules this program paid for
+
+1. **The config file is not the config** — recipe knobs exist only after
+   `PipelineSession` resolution; a hand-assembled config silently
+   measures a different deployment (§17.13).
+2. **Never reimplement a seam in a probe** — three probes died on
+   hand-rolled activations, manager states and configs.
+3. **Artifact-paired or ≥2 draws** for any arm that reruns a
+   variance-carrying stage; single-run 1pp verdicts are noise (§17.12).
+4. **Pre-register the falsifier.** Every result above that survived did
+   so because a stated falsifier could have killed it — and three did.
+5. **Judge a conversion by what it costs, not by what a retrain
+   rescues** — and verify that the cost you measure is the one the
+   deployment pays (§17.14 is the counter-example that proves the rule).
