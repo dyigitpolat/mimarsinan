@@ -62,3 +62,27 @@ class TestDerivation:
         assert PackagingContract.__dataclass_fields__["boundary"] is not None
         assert MVM_PACKAGING.is_value_domain
         assert not SPIKING_PACKAGING.is_value_domain
+
+
+class TestDeferredSurfaces:
+    """[mvm W4] the deferred features' seams exist and are typed NOW.
+
+    Quantized-I/O rides ``BoundarySpec.io_quantization``; chip-native op
+    kinds ride the ``kinds`` frozenset (consumed by code with the first
+    non-affine kind — until then this pins the declared surface)."""
+
+    def test_package_kind_constants_are_the_registry_seam(self):
+        from mimarsinan.mapping.platform.packaging_contract import (
+            PACKAGE_KIND_AFFINE,
+            PACKAGE_KIND_PERCEPTRON,
+        )
+
+        assert PACKAGE_KIND_PERCEPTRON in SPIKING_PACKAGING.kinds
+        assert PACKAGE_KIND_AFFINE in MVM_PACKAGING.kinds
+
+    def test_io_quantization_seam_is_declared(self):
+        from mimarsinan.mapping.platform.packaging_contract import BoundarySpec
+
+        grid = BoundarySpec(domain="value", signed=True, io_quantization="grid")
+        assert grid.io_quantization == "grid"
+        assert MVM_PACKAGING.boundary.io_quantization == "none"
