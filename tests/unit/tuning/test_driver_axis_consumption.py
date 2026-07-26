@@ -29,10 +29,10 @@ from conftest import (
     make_activation_scale_stats,
     make_tiny_supermodel,
 )
-from mimarsinan.pipelining.core.deployment_plan import (
+from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
+from mimarsinan.tuning.orchestration.optimization_driver import (
     OPTIMIZATION_DRIVER_CONTROLLER,
     OPTIMIZATION_DRIVER_FAST,
-    DeploymentPlan,
 )
 from mimarsinan.tuning.orchestration.adaptation_manager import AdaptationManager
 from mimarsinan.tuning.orchestration.adaptation_manager_factory import (

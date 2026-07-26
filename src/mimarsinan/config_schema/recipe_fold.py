@@ -7,6 +7,7 @@ from typing import Any, Iterable, Mapping, MutableMapping, Optional, Set
 from mimarsinan.chip_simulation.spiking_semantics import is_lif
 from mimarsinan.config_schema.defaults import CONFIG_KEYS_SET
 from mimarsinan.tuning.orchestration.conversion_policy import ConversionPolicy
+from mimarsinan.tuning.orchestration.mvm_conversion import derive_mvm_recipe
 
 # Registry keys the recipe owns OUTRIGHT (correctness mechanisms, never
 # knobs): an explicit value is overwritten, so none is ever honored/stored.
@@ -98,6 +99,29 @@ def _pair_lif_exact_qat_kd(
             "precondition."
         )
     dp["lif_exact_qat_kd"] = False
+
+
+def fold_mvm_recipe(
+    dp: MutableMapping[str, Any],
+    explicit_keys: Optional[Iterable[str]] = None,
+) -> None:
+    """Fold the value-domain (mvm) recipe into ``dp``: WQ knobs only, spiking
+    simulators structurally off (an explicit ON is a domain contradiction)."""
+    explicit: Set[str] = set(dp) if explicit_keys is None else set(explicit_keys)
+    recipe = derive_mvm_recipe()
+    for key, supported in recipe.sim_enables.items():
+        assert not supported
+        if key in explicit and dp.get(key) is True:
+            raise ValueError(
+                f"{key}=true: spiking simulators cannot run the value-domain "
+                f"(core_semantics='mvm') family. Remove the explicit key."
+            )
+        dp[key] = False
+    dp["optimization_driver"] = recipe.driver
+    for key, value in recipe.knobs.items():
+        if key in CONFIG_KEYS_SET and key in explicit:
+            continue
+        dp[key] = value
 
 
 def fold_conversion_recipe(

@@ -16,6 +16,7 @@ Pareto decision layer.
 | `backend.py` | `Backend` interface + capability-validated `BACKEND_REGISTRY` that selects/validates enabled backend steps up-front |
 | `behavior_config.py` | `NeuralBehaviorConfig`: simulator-facing activation semantics (reset, comparison, spike encode) |
 | `certification.py` | Per-`(firing × sync × backend)` regression-floor freezing + `certify` gate on deployed accuracy and wall-clock budget |
+| `core_semantics.py` | Core-semantics taxonomy SSOT: the chip-domain axis (`spiking` vs value-domain `mvm`), queried by intent; owns the inert spiking-mode sentinel |
 | `cost_extraction.py` | `CostRecord`/`CostScatter`: mines sim-run artifacts into a cell-keyed accuracy×cost scatter with Pareto front |
 | `coverage_ci.py` | CI guards that fail loud on each way the coverage instrument could lie (unscreened collapse, merged tiers, aged flags) |
 | `coverage_ledger.py` | Compatibility façade re-exporting the coverage instrument split across `hypervolume_*` and `coverage_*` modules |
@@ -31,6 +32,7 @@ Pareto decision layer.
 | `hypervolume_cells.py` | Full-tuple `HypervolumeCell` (extends the certification cell) + claimed sub-product enumeration |
 | `ledger_schema.py` | Normalized campaign-ledger science-row schema: axes, cell key, validity, timing, and cost provenance |
 | `membrane_export.py` | [C2] deployed membrane-readout honesty gate: every enabled backend must export final membranes (declared on the registry), else fail toward counts; half-step charge SSOT |
+| `mvm_core_policy.py` | `MvmCorePolicy`: the value-domain (MVM) policy — typed answers on the consumed seams (`values` observable, no backends), event seams stay loud |
 | `neural_segment_executor.py` | Dispatches analytical neural-segment execution by spiking mode (TTFS analytical path for references) |
 | `pareto.py` | Pareto decision layer over campaign rows: cascaded-vs-synchronized verdict + recipe proposal with banded cost |
 | `parity_contract.py` | Parity/equivalence contract classification for deployment cells |

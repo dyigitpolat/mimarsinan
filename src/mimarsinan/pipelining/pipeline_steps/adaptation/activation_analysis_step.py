@@ -79,6 +79,12 @@ class ActivationAnalysisStep(TrainerPipelineStep):
         "install_resolution_gauge",
     )
 
+    @classmethod
+    def applies_to(cls, plan):
+        # Activation scales are the spiking decode/clamp grid; a value-domain
+        # (mvm) deployment has no such grid to calibrate.
+        return not plan.is_mvm
+
     def __init__(self, pipeline):
         super().__init__(self.REQUIRES, self.PROMISES, self.UPDATES, self.CLEARS, pipeline)
 

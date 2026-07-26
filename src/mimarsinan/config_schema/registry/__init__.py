@@ -9,6 +9,7 @@ from mimarsinan.config_schema.registry.build import (
     section_keys,
     serialize_registry,
 )
+from mimarsinan.config_schema.registry.domain_rules import mvm_document_errors
 from mimarsinan.config_schema.registry.groups import CONCERN_GROUPS
 from mimarsinan.config_schema.registry.parse import ParsedDocument, parse_deployment_document
 from mimarsinan.config_schema.registry.relevance import Relevance
@@ -31,6 +32,7 @@ __all__ = [
     "Relevance",
     "effective_value",
     "keys_in_category",
+    "mvm_document_errors",
     "parse_deployment_document",
     "schema_for",
     "section_keys",

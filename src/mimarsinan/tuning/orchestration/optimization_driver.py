@@ -3,6 +3,28 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
+
+OPTIMIZATION_DRIVER_CONTROLLER = "controller"
+OPTIMIZATION_DRIVER_FAST = "fast"
+
+_LEGACY_FAST_SWITCHES = ("lif_blend_fast", "ttfs_genuine_blend_fast", "ttfs_blend_fast")
+
+
+def resolve_optimization_driver(config: dict[str, Any]) -> str:
+    """The pipeline-wide ``controller | fast`` driver axis: explicit ``optimization_driver`` wins, else a legacy fast switch, else ``controller``."""
+    explicit = config.get("optimization_driver")
+    if explicit:
+        value = str(explicit).lower()
+        if value in (OPTIMIZATION_DRIVER_CONTROLLER, OPTIMIZATION_DRIVER_FAST):
+            return value
+        raise ValueError(
+            f"optimization_driver must be '{OPTIMIZATION_DRIVER_CONTROLLER}' "
+            f"or '{OPTIMIZATION_DRIVER_FAST}', got {explicit!r}"
+        )
+    if any(bool(config.get(switch, False)) for switch in _LEGACY_FAST_SWITCHES):
+        return OPTIMIZATION_DRIVER_FAST
+    return OPTIMIZATION_DRIVER_CONTROLLER
 
 
 @dataclass(frozen=True)

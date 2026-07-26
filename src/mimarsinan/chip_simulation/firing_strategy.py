@@ -131,3 +131,21 @@ class FiringStrategyFactory:
         )
         strategy.validate_for_spiking_mode(str(cfg.get("spiking_mode", "lif")))
         return strategy
+
+
+def require_chip_faithful_lif_forward(config: Dict[str, Any], spiking_mode: str) -> None:
+    """LIF-family gate: a Novena deployment must run the chip-faithful cycle-accurate forward (skipped for TTFS)."""
+    from mimarsinan.chip_simulation.spiking_semantics import requires_ttfs_firing
+
+    if requires_ttfs_firing(spiking_mode):
+        return
+    strategy = FiringStrategyFactory.from_config({
+        "spiking_mode": spiking_mode,
+        "firing_mode": config.get("firing_mode", "Default"),
+        "thresholding_mode": config.get("thresholding_mode", "<="),
+    })
+    strategy.require_chip_faithful_lif_forward(
+        cycle_accurate_lif_forward=bool(
+            config.get("cycle_accurate_lif_forward", True)
+        ),
+    )

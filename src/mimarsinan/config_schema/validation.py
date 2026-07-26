@@ -14,6 +14,7 @@ from mimarsinan.config_schema.registry import (
     Category,
     FieldType,
     REGISTRY,
+    mvm_document_errors,
     parse_deployment_document,
 )
 from mimarsinan.mapping.platform.coalescing import coalescing_config_errors
@@ -222,6 +223,7 @@ def validate_deployment_config(config: Dict[str, Any]) -> List[str]:
         return errors
 
     errors.extend(non_declarable_key_errors(config))
+    errors.extend(mvm_document_errors(config))
 
     pc = config.get("platform_constraints")
     if isinstance(pc, dict):

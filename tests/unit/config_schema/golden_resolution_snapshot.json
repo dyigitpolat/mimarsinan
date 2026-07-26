@@ -12,6 +12,7 @@
    },
    "plan": {
     "activation_quantization": true,
+    "core_semantics": "spiking",
     "cuda_debug": false,
     "cycle_accurate_lif_forward": true,
     "degradation_budget_total": 0.2,
@@ -73,6 +74,7 @@
     "allow_per_layer_s": false,
     "allow_scheduling": false,
     "batch_size": 128,
+    "core_semantics": "spiking",
     "cores": [
      {
       "count": 256,
@@ -223,6 +225,7 @@
    },
    "plan": {
     "activation_quantization": true,
+    "core_semantics": "spiking",
     "cuda_debug": false,
     "cycle_accurate_lif_forward": true,
     "degradation_budget_total": 0.3,
@@ -284,6 +287,7 @@
     "allow_per_layer_s": false,
     "allow_scheduling": true,
     "batch_size": 128,
+    "core_semantics": "spiking",
     "cores": [
      {
       "count": 180,
@@ -435,6 +439,7 @@
    },
    "plan": {
     "activation_quantization": true,
+    "core_semantics": "spiking",
     "cuda_debug": false,
     "cycle_accurate_lif_forward": true,
     "degradation_budget_total": 0.3,
@@ -496,6 +501,7 @@
     "allow_per_layer_s": false,
     "allow_scheduling": false,
     "batch_size": 128,
+    "core_semantics": "spiking",
     "cores": [
      {
       "count": 60,
@@ -647,6 +653,7 @@
    },
    "plan": {
     "activation_quantization": true,
+    "core_semantics": "spiking",
     "cuda_debug": false,
     "cycle_accurate_lif_forward": true,
     "degradation_budget_total": 0.2,
@@ -779,6 +786,7 @@
     "allow_per_layer_s": false,
     "allow_scheduling": true,
     "batch_size": 128,
+    "core_semantics": "spiking",
     "cores": [
      {
       "count": 512,
@@ -993,6 +1001,7 @@
    },
    "plan": {
     "activation_quantization": false,
+    "core_semantics": "spiking",
     "cuda_debug": false,
     "cycle_accurate_lif_forward": true,
     "degradation_budget_total": 0.3,
@@ -1054,6 +1063,7 @@
     "allow_per_layer_s": false,
     "allow_scheduling": false,
     "batch_size": 128,
+    "core_semantics": "spiking",
     "cores": [
      {
       "count": 60,
@@ -1205,6 +1215,7 @@
    },
    "plan": {
     "activation_quantization": true,
+    "core_semantics": "spiking",
     "cuda_debug": false,
     "cycle_accurate_lif_forward": true,
     "degradation_budget_total": 0.3,
@@ -1266,6 +1277,7 @@
     "allow_per_layer_s": false,
     "allow_scheduling": false,
     "batch_size": 128,
+    "core_semantics": "spiking",
     "cores": [
      {
       "count": 60,
@@ -1422,6 +1434,7 @@
    },
    "plan": {
     "activation_quantization": true,
+    "core_semantics": "spiking",
     "cuda_debug": false,
     "cycle_accurate_lif_forward": true,
     "degradation_budget_total": 0.3,
@@ -1483,6 +1496,7 @@
     "allow_per_layer_s": false,
     "allow_scheduling": false,
     "batch_size": 128,
+    "core_semantics": "spiking",
     "cores": [
      {
       "count": 60,
@@ -1634,6 +1648,7 @@
    },
    "plan": {
     "activation_quantization": true,
+    "core_semantics": "spiking",
     "cuda_debug": false,
     "cycle_accurate_lif_forward": true,
     "degradation_budget_total": 0.3,
@@ -1695,6 +1710,7 @@
     "allow_per_layer_s": false,
     "allow_scheduling": false,
     "batch_size": 128,
+    "core_semantics": "spiking",
     "cores": [
      {
       "count": 180,
@@ -1847,6 +1863,7 @@
    },
    "plan": {
     "activation_quantization": true,
+    "core_semantics": "spiking",
     "cuda_debug": false,
     "cycle_accurate_lif_forward": true,
     "degradation_budget_total": 0.3,
@@ -1909,6 +1926,7 @@
     "allow_scheduling": false,
     "batch_size": 128,
     "conversion_draws": 2,
+    "core_semantics": "spiking",
     "cores": [
      {
       "count": 60,
@@ -2068,6 +2086,7 @@
    },
    "plan": {
     "activation_quantization": true,
+    "core_semantics": "spiking",
     "cuda_debug": false,
     "cycle_accurate_lif_forward": true,
     "degradation_budget_total": 0.3,
@@ -2129,6 +2148,7 @@
     "allow_per_layer_s": false,
     "allow_scheduling": false,
     "batch_size": 128,
+    "core_semantics": "spiking",
     "cores": [
      {
       "count": 60,
@@ -2281,6 +2301,7 @@
    },
    "plan": {
     "activation_quantization": false,
+    "core_semantics": "spiking",
     "cuda_debug": false,
     "cycle_accurate_lif_forward": true,
     "degradation_budget_total": 0.3,
@@ -2342,6 +2363,7 @@
     "allow_per_layer_s": false,
     "allow_scheduling": false,
     "batch_size": 128,
+    "core_semantics": "spiking",
     "cores": [
      {
       "count": 60,
@@ -2486,6 +2508,7 @@
    },
    "plan": {
     "activation_quantization": false,
+    "core_semantics": "spiking",
     "cuda_debug": false,
     "cycle_accurate_lif_forward": true,
     "degradation_budget_total": 0.3,
@@ -2547,6 +2570,7 @@
     "allow_per_layer_s": false,
     "allow_scheduling": false,
     "batch_size": 128,
+    "core_semantics": "spiking",
     "cores": [
      {
       "count": 60,
@@ -2685,6 +2709,7 @@
    },
    "plan": {
     "activation_quantization": true,
+    "core_semantics": "spiking",
     "cuda_debug": false,
     "cycle_accurate_lif_forward": true,
     "degradation_budget_total": 0.3,
@@ -2746,6 +2771,7 @@
     "allow_per_layer_s": false,
     "allow_scheduling": false,
     "batch_size": 128,
+    "core_semantics": "spiking",
     "cores": [
      {
       "count": 180,
@@ -2892,6 +2918,7 @@
    },
    "plan": {
     "activation_quantization": true,
+    "core_semantics": "spiking",
     "cuda_debug": false,
     "cycle_accurate_lif_forward": true,
     "degradation_budget_total": 0.3,
@@ -2953,6 +2980,7 @@
     "allow_per_layer_s": false,
     "allow_scheduling": false,
     "batch_size": 128,
+    "core_semantics": "spiking",
     "cores": [
      {
       "count": 60,

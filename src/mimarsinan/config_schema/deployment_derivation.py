@@ -4,6 +4,10 @@ from __future__ import annotations
 
 from typing import Any, Iterable, Mapping, MutableMapping, Optional, Set, Tuple
 
+from mimarsinan.chip_simulation.core_semantics import (
+    is_mvm_core_semantics,
+    resolve_core_semantics,
+)
 from mimarsinan.chip_simulation.spiking_semantics import (
     forces_activation_quantization,
     is_cycle_based,
@@ -12,7 +16,7 @@ from mimarsinan.common.env import (
     UNSAFE_QUANT_OVERRIDES_VAR,
     unsafe_quant_overrides_enabled,
 )
-from mimarsinan.config_schema.recipe_fold import fold_conversion_recipe
+from mimarsinan.config_schema.recipe_fold import fold_conversion_recipe, fold_mvm_recipe
 from mimarsinan.config_schema.registry import REGISTRY
 
 _AQ_RULE = (
@@ -20,6 +24,12 @@ _AQ_RULE = (
     "(SSOT: config_schema/deployment_derivation.py): ON for spiking_mode in "
     "{lif, ttfs_quantized, ttfs_cycle_based}; OFF for analytical ttfs and for "
     "float-weight (vanilla) deployments."
+)
+
+_MVM_AQ_RULE = (
+    "the value-domain (core_semantics='mvm') family has no on-chip activation "
+    "grid — activations run on the host at full precision, so "
+    "activation_quantization is always False."
 )
 
 
@@ -52,13 +62,11 @@ def _fold_mirror_training_recipe(dp: MutableMapping[str, Any], explicit: Set[str
 
 
 def _resolve_activation_quantization(
-    explicit_aq: Optional[Any], derived_aq: bool, *, spiking_mode: str, float_weights: bool
+    explicit_aq: Optional[Any], derived_aq: bool, *, regime: str, rule: str = _AQ_RULE
 ) -> bool:
     """Derived AQ unless a contradicting explicit value raises or is force-honored."""
     if explicit_aq is None or bool(explicit_aq) == derived_aq:
         return derived_aq
-    regime = ("float-weight (vanilla) deployment" if float_weights
-              else f"spiking_mode={spiking_mode!r}")
     detail = (
         f"explicit activation_quantization={bool(explicit_aq)} contradicts the "
         f"derived value {derived_aq} for {regime}."
@@ -66,7 +74,7 @@ def _resolve_activation_quantization(
     if unsafe_quant_overrides_enabled():
         _unsafe_override_log(detail + " Explicit value honored")
         return bool(explicit_aq)
-    raise _contract_error(detail, _AQ_RULE)
+    raise _contract_error(detail, rule)
 
 
 def derive_deployment_parameters(
@@ -77,12 +85,19 @@ def derive_deployment_parameters(
     (the wizard consumes it via ``/api/config/resolve``; no JS copy exists).
     ``explicit_keys`` names the keys the source DOCUMENT declared (so merged
     defaults don't masquerade as declarations); ``None`` = every present key."""
+    mvm = is_mvm_core_semantics(resolve_core_semantics(dp))
     spiking_mode = str(dp.get("spiking_mode", "lif"))
     pipeline_mode = str(dp.get("pipeline_mode", ""))
     explicit_aq = dp.get("activation_quantization")
     float_weights = pipeline_mode == "vanilla" or not bool(dp.get("weight_quantization", True))
+    aq_regime = ("the mvm (value-domain) family" if mvm
+                 else f"spiking_mode={spiking_mode!r}")
+    aq_rule = _MVM_AQ_RULE if mvm else _AQ_RULE
 
-    fold_conversion_recipe(dp, spiking_mode, explicit_keys)
+    if mvm:
+        fold_mvm_recipe(dp, explicit_keys)
+    else:
+        fold_conversion_recipe(dp, spiking_mode, explicit_keys)
     _fold_mirror_training_recipe(
         dp, set(dp) if explicit_keys is None else set(explicit_keys)
     )
@@ -91,13 +106,17 @@ def derive_deployment_parameters(
         dp["pipeline_mode"] = "vanilla"
         dp["weight_quantization"] = False
         dp["activation_quantization"] = _resolve_activation_quantization(
-            explicit_aq, False, spiking_mode=spiking_mode, float_weights=True
+            explicit_aq, False,
+            regime=(aq_regime if mvm else "float-weight (vanilla) deployment"),
+            rule=aq_rule,
         )
         return
 
-    derived_aq = forces_activation_quantization(spiking_mode) or is_cycle_based(spiking_mode)
+    derived_aq = not mvm and (
+        forces_activation_quantization(spiking_mode) or is_cycle_based(spiking_mode)
+    )
     act_quant = _resolve_activation_quantization(
-        explicit_aq, derived_aq, spiking_mode=spiking_mode, float_weights=False
+        explicit_aq, derived_aq, regime=aq_regime, rule=aq_rule
     )
     wt_quant = bool(dp.get("weight_quantization", True))
     dp["activation_quantization"] = act_quant
