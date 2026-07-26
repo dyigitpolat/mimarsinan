@@ -198,3 +198,45 @@ def make_activation_scale_policy(
             f"unknown activation-scale policy {name!r}; valid: {valid}"
         )
     return factory(**kwargs)
+
+
+def scale_from_activations(
+    flat_acts,
+    pruned_threshold=PRUNED_THRESHOLD,
+    *,
+    quantile=DEFAULT_SCALE_QUANTILE,
+    min_scale=MIN_SCALE,
+):
+    """Count-based activation quantile over non-pruned positives, so post-pruning stats stay unskewed."""
+    active_mask = flat_acts > pruned_threshold
+    active_acts = flat_acts[active_mask]
+
+    if active_acts.numel() == 0:
+        return max(flat_acts.max().item(), 1.0) if flat_acts.numel() > 0 else 1.0
+
+    q = torch.quantile(
+        active_acts.to(torch.float32),
+        float(quantile),
+        interpolation="higher",
+    ).item()
+    return max(float(q), float(min_scale))
+
+
+def resolve_scale_for_samples(flat_acts, *, policy, quantile, levels):
+    """[§17.13] one seam for the scale rule: the legacy count quantile, or the
+    deployed-distortion argmin at the grid the deployment will actually use."""
+    if policy == "count_quantile":
+        return scale_from_activations(
+            flat_acts, quantile=quantile, min_scale=MIN_SCALE,
+        )
+    if policy == "min_distortion":
+        if not levels:
+            raise ValueError(
+                "activation_scale_policy='min_distortion' needs a value grid, "
+                "but this mode deploys continuously (value_grid_levels=None): "
+                "the distortion argmin is undefined without a resolution term"
+            )
+        return make_activation_scale_policy(
+            "min_distortion", levels=int(levels), min_scale=MIN_SCALE,
+        ).scale(flat_acts)
+    return make_activation_scale_policy(policy).scale(flat_acts)

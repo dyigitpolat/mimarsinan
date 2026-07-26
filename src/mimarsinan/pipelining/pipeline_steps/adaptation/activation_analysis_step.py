@@ -24,6 +24,11 @@ from mimarsinan.spiking.per_channel_theta import (
     PER_CHANNEL_QUANTILE_CAP,
     per_channel_theta_armed,
 )
+from mimarsinan.config_schema.registry import effective_value as _effective
+from mimarsinan.transformations.activation_scale_policy import (
+    resolve_scale_for_samples,
+    scale_from_activations,
+)
 from mimarsinan.tuning.orchestration.theta_quantile_policy import (
     effective_theta_quantile,
 )
@@ -53,28 +58,6 @@ def _sample_activation_values(flat_acts, max_samples=MAX_SAMPLES_PER_BATCH):
         device=flat_acts.device,
     ).round().long()
     return flat_acts.index_select(0, indices).cpu()
-
-
-def scale_from_activations(
-    flat_acts,
-    pruned_threshold=PRUNED_THRESHOLD,
-    *,
-    quantile=DEFAULT_SCALE_QUANTILE,
-    min_scale=MIN_SCALE,
-):
-    """Count-based activation quantile over non-pruned positives, so post-pruning stats stay unskewed."""
-    active_mask = flat_acts > pruned_threshold
-    active_acts = flat_acts[active_mask]
-
-    if active_acts.numel() == 0:
-        return max(flat_acts.max().item(), 1.0) if flat_acts.numel() > 0 else 1.0
-
-    q = torch.quantile(
-        active_acts.to(torch.float32),
-        float(quantile),
-        interpolation="higher",
-    ).item()
-    return max(float(q), float(min_scale))
 
 
 def _attach_saved_tensor_decorator(perceptron):
@@ -185,6 +168,18 @@ class ActivationAnalysisStep(TrainerPipelineStep):
                     flush=True,
                 )
             quantile = s_aware
+        scale_policy = str(_effective(
+            self.pipeline.config, "activation_scale_policy",
+        ))
+        grid_levels = value_grid_levels(
+            DeploymentPlan.of(self.pipeline).spiking_mode, self.pipeline.config,
+        )
+        if scale_policy != "count_quantile":
+            print(
+                f"[MBH-THETA] activation scale policy={scale_policy} at the "
+                f"{grid_levels}-level deployed grid",
+                flush=True,
+            )
         merged_samples = []
         activation_scales = []
         for layer_samples in sampled_activations:
@@ -194,10 +189,9 @@ class ActivationAnalysisStep(TrainerPipelineStep):
                 merged = torch.empty(0, dtype=torch.float32)
             merged_samples.append(merged)
             activation_scales.append(
-                scale_from_activations(
-                    merged,
-                    quantile=quantile,
-                    min_scale=MIN_SCALE,
+                resolve_scale_for_samples(
+                    merged, policy=scale_policy, quantile=quantile,
+                    levels=grid_levels,
                 )
             )
 

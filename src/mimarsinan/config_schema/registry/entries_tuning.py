@@ -208,6 +208,17 @@ ENTRIES = (
            "S >= 8. The LIF recipe arms it (lif_deployment_exactness.md).",
        provenance="ConversionPolicy recipe", derived_default=_frozen(False),
        empty_means="the lif recipe arms it; other modes stay off"),
+    _E("activation_scale_policy", group="tuning", owner="activation_analysis",
+       type=T.ENUM,
+       options=("count_quantile", "min_distortion", "percentile_norm", "max_norm"),
+       category=Category.ADVANCED, label="Activation Scale Policy",
+       doc="[calculus 17.13] how theta is calibrated. count_quantile = the "
+           "0.99 activation quantile (default). min_distortion = the argmin of "
+           "the deployed staircase's saturation + grid error at "
+           "value_grid_levels (measured: 4.04pp -> 0.65pp install cost).",
+       provenance="consumer frozen default",
+       derived_default=_frozen("count_quantile"),
+       empty_means="count_quantile (the legacy quantile rule)"),
     _E("tuning_lossless_entry_fast_path", group="tuning", owner="mbh_gate",
        type=T.BOOL, category=Category.ADVANCED,
        label="Lossless-entry Fast Path",
