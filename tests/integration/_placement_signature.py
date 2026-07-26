@@ -17,7 +17,7 @@ from typing import Any, Callable, Dict, List, Tuple
 
 import numpy as np
 
-from mimarsinan.mapping.ir import ComputeOp, IRGraph, IRSource, NeuralCore
+from mimarsinan.mapping.ir import ComputeOp, IRGraph, IRSource, NeuralCore, WeightBank
 
 
 # ── IR graph builders ──────────────────────────────────────────────────────
@@ -97,7 +97,32 @@ def _pruned() -> IRGraph:
 
 
 # name -> (ir_builder, build_kwargs)
+def _bank_shared_tokens() -> IRGraph:
+    """[wsm V1] 3 token instances of one FC sharing a WeightBank."""
+    bank_matrix = (np.arange(5 * 4, dtype=np.float32).reshape(5, 4) + 1.0) * 0.05
+    bank = WeightBank(id=0, core_matrix=bank_matrix)
+    nodes = []
+    for tok in range(3):
+        srcs = np.array(
+            [IRSource(-2, tok * 4 + i) for i in range(4)] + [IRSource(-3, 0)],
+            dtype=object,
+        )
+        nodes.append(NeuralCore(
+            id=tok, name=f"fc_col{tok}", input_sources=srcs, core_matrix=None,
+            weight_bank_id=0, weight_row_slice=(0, 4), latency=0, perceptron_index=0,
+            perceptron_output_column=tok, perceptron_output_slice=(0, 4),
+        ))
+    out = np.array(
+        [IRSource(t, j) for t in range(3) for j in range(4)], dtype=object
+    )
+    return IRGraph(nodes=nodes, output_sources=out, weight_banks={0: bank})
+
+
 CONFIGS: Dict[str, Tuple[Callable[[], IRGraph], Dict[str, Any]]] = {
+    "bank_shared_tokens": (
+        _bank_shared_tokens,
+        {"cores_config": [{"max_axons": 32, "max_neurons": 32, "count": 10}]},
+    ),
     "dense_two_core": (
         _dense_two_core,
         {"cores_config": [{"max_axons": 32, "max_neurons": 32, "count": 10}]},

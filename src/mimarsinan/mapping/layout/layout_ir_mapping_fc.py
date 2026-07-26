@@ -25,6 +25,8 @@ class _LayoutIRMappingFC:
         hardware_bias: bool
         _coalescing_group_counter: int
         add_neural_core: Callable[..., Any]
+        add_shared_neural_core: Callable[..., Any]
+        register_weight_bank: Callable[..., int]
 
     def map_fc(
         self,
@@ -62,6 +64,24 @@ class _LayoutIRMappingFC:
                     f"({src_arr.shape} vs in_features={in_features})"
                 )
             core_count = int(src_arr.shape[1])
+            tiles = (
+                self._fc_bank_tiles(in_features, out_features, fc_biases is not None)
+                if core_count > 1 else None
+            )
+            if tiles is not None:
+                return self._map_fc_banked(
+                    src_arr=src_arr, output_shape=output_shape, tiles=tiles,
+                    fc_weights=fc_weights, fc_biases=fc_biases,
+                    activation_scale=activation_scale,
+                    parameter_scale=parameter_scale,
+                    input_activation_scale=input_activation_scale,
+                    name=name, normalization_type=normalization_type,
+                    activation_type=activation_type,
+                    perceptron_index=perceptron_index,
+                    psum_group_id=psum_group_id, psum_role=psum_role,
+                    coalescing_group_id=coalescing_group_id,
+                    coalescing_role=coalescing_role, bias_scale=bias_scale,
+                )
             outs = []
             for i in range(core_count):
                 col_sources = src_arr[:, i]
@@ -154,6 +174,73 @@ class _LayoutIRMappingFC:
             coalescing_group_id=coalescing_group_id,
             coalescing_role=coalescing_role,
         )
+
+    def _fc_bank_tiles(self, in_features, out_features, has_bias):
+        """Bank-shareable output tiling for a multi-instance FC; ``None`` = the
+        owned per-column path (wide-fan-in coalescing columns stay owned)."""
+        strategy = MappingStrategy.resolve(ChipCapabilities(
+            max_axons=self.max_axons, max_neurons=self.max_neurons,
+            hardware_bias=self.hardware_bias,
+            allow_coalescing=self.allow_coalescing))
+        mode = strategy.tiling_mode(in_features, out_features, has_bias)
+        if mode == "single":
+            return [(0, out_features)]
+        if mode == "output_tiled":
+            assert self.max_neurons is not None
+            chunk = int(self.max_neurons)
+            return [(s, min(s + chunk, out_features))
+                    for s in range(0, out_features, chunk)]
+        return None
+
+    def _map_fc_banked(
+        self, *, src_arr, output_shape, tiles, fc_weights, fc_biases,
+        activation_scale, parameter_scale, input_activation_scale,
+        name, normalization_type, activation_type, perceptron_index,
+        psum_group_id, psum_role, coalescing_group_id, coalescing_role,
+        bias_scale,
+    ) -> "np.ndarray | LayoutSourceView":
+        """One WeightBank per tile, one shared core per column × tile (the conv weight-stationary pattern on instanced FC)."""
+        out_features = int(getattr(fc_weights, "shape", [0, 0])[0])
+        full = (0, out_features)
+        bank_ids = [
+            self.register_weight_bank(
+                weights=(fc_weights if (s, e) == full else fc_weights[s:e, :]),
+                biases=(None if fc_biases is None
+                        else (fc_biases if (s, e) == full else fc_biases[s:e])),
+                activation_scale=activation_scale,
+                parameter_scale=parameter_scale,
+                input_activation_scale=input_activation_scale,
+                perceptron_index=perceptron_index, bias_scale=bias_scale)
+            for s, e in tiles
+        ]
+        tiled = len(tiles) > 1
+        outs = []
+        for i in range(int(src_arr.shape[1])):
+            col_sources = src_arr[:, i]
+            if hasattr(col_sources, "flatten"):
+                col_sources = col_sources.flatten()
+            col_name = f"{name}_col{i}" if name else None
+            views = [
+                self.add_shared_neural_core(
+                    input_sources=col_sources, weight_bank_id=bank_id,
+                    has_bias=fc_biases is not None,
+                    name=(f"{col_name}_tile_{s}_{e}"
+                          if (tiled and col_name) else col_name),
+                    normalization_type=normalization_type,
+                    activation_type=activation_type,
+                    perceptron_index=perceptron_index,
+                    perceptron_output_slice=(
+                        (s, e) if tiled
+                        else (full if perceptron_index is not None else None)),
+                    perceptron_output_column=i,
+                    psum_group_id=psum_group_id, psum_role=psum_role,
+                    coalescing_group_id=coalescing_group_id,
+                    coalescing_role=coalescing_role)
+                for (s, e), bank_id in zip(tiles, bank_ids)
+            ]
+            merged = views[0] if len(views) == 1 else concat_source_views(views)
+            outs.append(merged.flatten())
+        return stack_source_views(outs, axis=1).reshape(tuple(output_shape))
 
     def _map_fc_output_tiled(
         self,

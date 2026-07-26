@@ -41,6 +41,16 @@ ENTRIES = (
            "out-powers argmax parity at any n.", bounds=(1, None),
        provenance="consumer frozen default", derived_default=_frozen(2),
        empty_means="2 samples"),
+    _E("allow_weight_reuse", section="platform_constraints",
+       group="hardware", owner="ChipCapabilities/weight_reuse",
+       type=T.BOOL, category=Category.ADVANCED, exposure="user",
+       label="Allow Weight Reuse",
+       effect="Capability gate: programmed banks stay resident across passes",
+       doc="Hardware capability [wsm]: the chip can keep a programmed weight "
+           "bank resident across scheduled passes; today arms the reuse-phase "
+           "report, the bank-aware schedule policy consumes it next.",
+       provenance="consumer frozen default", derived_default=_frozen(False),
+       empty_means="off — passes reprogram freely, report unarmed"),
     _E("value_parity_samples", group="deployment_target", owner="value_gates",
        type=T.INT, category=Category.ADVANCED, unit="samples",
        label="Value Parity Samples",

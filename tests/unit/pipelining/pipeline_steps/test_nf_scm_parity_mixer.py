@@ -160,10 +160,13 @@ def _build_synchronized_mixer(*, weight_quantization, scale_mult=TRAINED_LIKE_SC
     if weight_quantization:
         # Zero parameter_scale so quantize_ir_graph auto-scales (q_max/w_max) and
         # preserves signal instead of collapsing small weights to 0 under the
-        # un-calibrated parameter_scale=1 path.
+        # un-calibrated parameter_scale=1 path. Token-instanced FCs share
+        # WeightBanks, so the banks' scales must be armed the same way.
         for node in ir_graph.nodes:
             if isinstance(node, NeuralCore):
                 node.parameter_scale = torch.tensor(0.0)
+        for bank in ir_graph.weight_banks.values():
+            bank.parameter_scale = torch.tensor(0.0)
     quantize_ir_graph(ir_graph, bits, weight_quantization=weight_quantization)
     IRLatency(ir_graph).calculate()
 
