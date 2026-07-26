@@ -16,28 +16,40 @@ _SEGMENT_CACHE: "weakref.WeakKeyDictionary" = weakref.WeakKeyDictionary()
 
 
 class _PreparedValueSegment:
-    """Per-(mapping, dtype, device) tensors: weights, biases, gather plans, order."""
+    """Per-(mapping, dtype, device) tensors: weights, biases, gather plans, order.
 
-    def __init__(self, hcm, device: torch.device, dtype: torch.dtype) -> None:
+    ``resident_from`` aliases the residency-chain head's uploaded weight and
+    bias tensors ([wsm V3]: ``schedule_weights_resident`` passes reuse the
+    programmed bank content per ordinal — verified at build by the
+    placement-geometry SUBSET check — so re-upload is pure waste)."""
+
+    def __init__(
+        self, hcm, device: torch.device, dtype: torch.dtype,
+        resident_from: "_PreparedValueSegment | None" = None,
+    ) -> None:
         ensure_core_latencies(hcm)
         self.order: List[int] = sorted(
             range(len(hcm.cores)), key=lambda i: int(hcm.cores[i].latency or 0)
         )
-        self.weights = [
-            torch.as_tensor(core.core_matrix, dtype=dtype, device=device)
-            for core in hcm.cores
-        ]
-        self.biases = []
+        if resident_from is not None:
+            assert len(hcm.cores) <= len(resident_from.weights)
+            self.weights = resident_from.weights[: len(hcm.cores)]
+            self.biases = resident_from.biases[: len(hcm.cores)]
+        else:
+            self.weights = [
+                torch.as_tensor(core.core_matrix, dtype=dtype, device=device)
+                for core in hcm.cores
+            ]
+            self.biases = [
+                None if (bias := getattr(core, "hardware_bias", None)) is None
+                else torch.as_tensor(bias, dtype=dtype, device=device).reshape(1, -1)
+                for core in hcm.cores
+            ]
         self.thresholds = []
         self.plans = []
         self.entry_input_cols = []
         self.entry_scales = []
         for core in hcm.cores:
-            bias = getattr(core, "hardware_bias", None)
-            self.biases.append(
-                None if bias is None
-                else torch.as_tensor(bias, dtype=dtype, device=device).reshape(1, -1)
-            )
             self.thresholds.append(float(core.threshold))
             plan = SpanFillPlan(core.get_axon_source_spans(), device)
             self.plans.append(plan)
@@ -67,18 +79,30 @@ def ensure_core_latencies(hcm) -> None:
         ChipLatency(hcm).calculate()
 
 
-def _prepared(hcm, device: torch.device, dtype: torch.dtype) -> _PreparedValueSegment:
+def _prepared(
+    hcm, device: torch.device, dtype: torch.dtype, resident_head=None
+) -> _PreparedValueSegment:
     by_key = _SEGMENT_CACHE.setdefault(hcm, {})
     key = (str(device), dtype)
     prepared = by_key.get(key)
     if prepared is None:
-        prepared = _PreparedValueSegment(hcm, device, dtype)
+        head = (
+            None if resident_head is None or resident_head is hcm
+            else _prepared(resident_head, device, dtype)
+        )
+        prepared = _PreparedValueSegment(hcm, device, dtype, resident_from=head)
         by_key[key] = prepared
     return prepared
 
 
+def prepared_segment_cache_for_testing() -> "weakref.WeakKeyDictionary":
+    """The live prepared-segment cache (tests assert residency aliasing)."""
+    return _SEGMENT_CACHE
+
+
 def run_neural_segment_values(
-    hcm, seg_input: torch.Tensor, activation_bits: "int | None" = None
+    hcm, seg_input: torch.Tensor, activation_bits: "int | None" = None,
+    resident_head=None,
 ) -> torch.Tensor:
     """Execute one packed segment in the value domain: y_core = (x @ W + b) / theta.
 
@@ -90,7 +114,7 @@ def run_neural_segment_values(
     formula the model-side ``ValueGridQuantizer`` applies.
     """
     device, dtype = seg_input.device, seg_input.dtype
-    prepared = _prepared(hcm, device, dtype)
+    prepared = _prepared(hcm, device, dtype, resident_head=resident_head)
     batch = seg_input.shape[0]
 
     buffers: Dict[int, torch.Tensor] = {}

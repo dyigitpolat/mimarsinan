@@ -584,6 +584,28 @@
       "tags": [],
       "expected_wall_min": 12,
       "note": "mvm conv/weight-bank exercise (shared-bank cores)"
+    },
+    {
+      "name": "t0_44_mvm_lenet5_wq_sched",
+      "config": "t0_44_mvm_lenet5_wq_sched.json",
+      "model_type": "lenet5",
+      "cell": {
+        "firing": "mvm",
+        "sync": "none",
+        "quantization": "wq",
+        "S": "none",
+        "depth": "any",
+        "vehicle": "lenet5",
+        "dataset": "mnist",
+        "regime": "from_scratch",
+        "pruning": "dense",
+        "encoding_placement": "none"
+      },
+      "tags": [
+        "sched"
+      ],
+      "expected_wall_min": 6,
+      "note": "wsm flagship: bank-clustered scheduled passes on a constrained pool + boundary AQ, twin certs FATAL"
     }
   ],
   "coverage_notes": [

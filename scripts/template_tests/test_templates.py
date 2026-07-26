@@ -75,7 +75,9 @@ class TestConfigValidity:
         )
 
         platform_keys = set(DEFAULT_PLATFORM_CONSTRAINTS) | {
-            "cores", "max_axons", "max_neurons", "has_bias",
+            # Defaultless platform keys: absence is meaningful (activation_bits
+            # absent = float boundary I/O on value-domain platforms).
+            "cores", "max_axons", "max_neurons", "has_bias", "activation_bits",
         }
         for path in _tier_configs(tier):
             cfg = json.loads(path.read_text())
@@ -148,7 +150,10 @@ class TestConfigValidity:
                 assert merged["spiking_mode"] == declared["spiking_mode"]
             else:
                 assert declared.get("core_semantics") == "mvm", path.name
-                assert merged["activation_quantization"] is False
+                # [mvm AQ] platform activation_bits is the sole armer.
+                assert merged["activation_quantization"] is bool(
+                    cfg["platform_constraints"].get("activation_bits")
+                ), path.name
 
 
 class TestCascDescopedFromTier0:

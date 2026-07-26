@@ -40,6 +40,12 @@ PLATFORMS = {
           "max_axons": 2304, "max_neurons": 512},
     "G": {"cores": [{"max_axons": 4608, "max_neurons": 2048, "count": 512, "has_bias": True}],
           "max_axons": 4608, "max_neurons": 2048},
+    # [wsm V4] scheduling-scale pool: B's core shapes at 1/5 the count, so a
+    # lenet5-class vehicle EXCEEDS the pool and must map through scheduled
+    # passes (the weight-programming boundary exercised at tier-0 wall cost).
+    "H": {"cores": [{"max_axons": 784, "max_neurons": 512, "count": 12, "has_bias": True},
+                    {"max_axons": 512, "max_neurons": 256, "count": 12, "has_bias": True}],
+          "max_axons": 784, "max_neurons": 512},
 }
 
 VEHICLES = {
@@ -242,6 +248,23 @@ T0 = [
     # 180+180 cores exhausts — an honest capacity statement, not a defect.
     dict(n=43, mode="mvm", quant="wq", wb=8, vehicle="deepcnn", platform="F",
          note="mvm conv/weight-bank exercise (shared-bank cores)"),
+    # [wsm V4 F5+AQ] the weight-programming boundary row: platform H's pool
+    # forces scheduled passes; bank_clustered streams same-bank instances
+    # over a resident core-set (weights program once, W_prog report armed via
+    # allow_weight_reuse) and the boundary grid (activation_bits) composes
+    # with scheduling. The value twin cert (FATAL) certifies the scheduled
+    # packed program bit-exactly against the unscheduled identity program.
+    # Pass budget law: bank_clustered is feasible only when the minimal
+    # resident set fits the pool — loads(b)=ceil(n_b/passes) ≤ pool — so
+    # conv1's 784 instances on H's 12-core pool need passes ≥ 66 (measured:
+    # an under-declared budget silently falls back to pool, reuse 0.16).
+    dict(n=44, mode="mvm", quant="wq", wb=8, vehicle="lenet5", platform="H",
+         scheduling=True, tags=["sched"],
+         extra_dp={"schedule_policy": "bank_clustered"},
+         extra_pc={"activation_bits": 8, "allow_weight_reuse": True,
+                   "max_schedule_passes": 128},
+         note="wsm flagship: bank-clustered scheduled passes on a "
+              "constrained pool + boundary AQ, twin certs FATAL"),
 ]
 
 
@@ -257,9 +280,14 @@ T1 = [
          scheduling=True, tags=["sched"]),
     dict(n=8, mode="ttfs", quant="fp", wb=8, s=16, vehicle="mixerc10", regime="from_scratch"),
     # [mvm W3] wider-mapping showcase: patch-embed conv + MLP fc1/fc2 + heads
-    # map as affine packages; MHA/LayerNorm stay host ops.
+    # map as affine packages; MHA/LayerNorm stay host ops. [wsm V4] armed
+    # with FC banks + bank-clustered scheduling: per-token instances stream
+    # over resident core-sets, so ViT-B fits platform E's 138 cores (the
+    # measured un-scheduled need was 4778 instances).
     dict(n=9, mode="mvm", quant="wq", wb=8, vehicle="vit", regime="pretrained",
-         tags=["wall_risk"]),
+         scheduling=True, tags=["wall_risk", "sched"],
+         extra_dp={"schedule_policy": "bank_clustered"},
+         extra_pc={"allow_weight_reuse": True, "max_schedule_passes": 64}),
 ]
 
 T1_VEHICLES = {
@@ -363,6 +391,9 @@ def _platform(row, vehicles):
     plat["weight_bits"] = row["wb"]
     plat["allow_coalescing"] = row.get("coalescing", v.get("coalescing", True))
     plat["allow_neuron_splitting"] = row.get("splitting", True)
+    # Row-level platform passthrough (mirror of extra_dp): proven per-cell
+    # hardware declarations (activation_bits, weight-reuse, pass budgets).
+    plat.update(row.get("extra_pc", {}))
     return plat
 
 

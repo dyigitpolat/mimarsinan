@@ -163,8 +163,8 @@
       "expected_wall_min": 120
     },
     {
-      "name": "t1_09_mvm_vit_wq",
-      "config": "t1_09_mvm_vit_wq.json",
+      "name": "t1_09_mvm_vit_wq_sched",
+      "config": "t1_09_mvm_vit_wq_sched.json",
       "model_type": "torch_vit",
       "cell": {
         "firing": "mvm",
@@ -179,7 +179,8 @@
         "encoding_placement": "none"
       },
       "tags": [
-        "wall_risk"
+        "wall_risk",
+        "sched"
       ],
       "expected_wall_min": 120
     }

@@ -71,14 +71,20 @@ class ValueHybridCoreFlow(nn.Module):
         batch = x.shape[0]
         x_flat = x.reshape(batch, -1).to(self.execution_device, self.value_dtype)
         state_buffer: Dict[int, torch.Tensor] = {_RAW_INPUT_NODE_ID: x_flat}
+        # [wsm V3] residency-chain head: a schedule_weights_resident pass
+        # aliases the head's uploaded tensors instead of re-uploading.
+        residency_head: list = [None]
 
         def on_neural(_index, stage, buf):
+            if not getattr(stage, "schedule_weights_resident", False):
+                residency_head[0] = stage.hard_core_mapping
             seg_input = assemble_segment_input_torch(
                 stage.input_map, buf, batch, self.execution_device, self.value_dtype
             )
             seg_output = run_neural_segment_values(
                 stage.hard_core_mapping, seg_input,
                 activation_bits=self.activation_bits,
+                resident_head=residency_head[0],
             )
             recorder = self.stage_count_recorder
             if recorder is not None:
