@@ -1,3 +1,4 @@
+import io
 import torch
 import json
 import logging
@@ -138,12 +139,31 @@ class TorchModelLoadStoreStrategy(LoadStoreStrategy):
             )
 
 
+def _load_storage_to_cpu(payload: bytes):
+    return torch.load(io.BytesIO(payload), map_location="cpu", weights_only=False)
+
+
+class _CpuMappingUnpickler(pickle.Unpickler):
+    """Unpickle with every torch storage mapped to CPU.
+
+    Plain pickles restore tensors via ``torch.storage._load_from_bytes`` onto
+    their ORIGINAL device, so an artifact written on a busy GPU would NEED
+    that GPU at load time (measured: a saturated device turned every cache
+    load into a CUDA OOM). Artifacts are device-neutral; consumers move them.
+    """
+
+    def find_class(self, module, name):
+        if module == "torch.storage" and name == "_load_from_bytes":
+            return _load_storage_to_cpu
+        return super().find_class(module, name)
+
+
 class PickleLoadStoreStrategy(LoadStoreStrategy):
     extension = "pickle"
 
     def load(self, cache_directory):
         with open(self.path(cache_directory), "rb") as f:
-            return pickle.load(f)
+            return _CpuMappingUnpickler(f).load()
 
     def store(self, cache_directory, object):
         def _write(path):
