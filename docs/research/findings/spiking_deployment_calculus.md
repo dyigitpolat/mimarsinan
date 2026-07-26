@@ -2491,3 +2491,41 @@ during `PipelineSession` resolution.** THE CONFIG FILE IS NOT THE
 CONFIG. Every probe must resolve through the session and assert the
 predicates it depends on (this one prints `lif_exact_qat_active` before
 reporting).
+
+### 17.14 The θ transfer FAILS: install cost is not the objective (2026-07-26)
+
+Chain re-run from Activation Analysis with `activation_scale_policy=
+min_distortion` (θ derived per layer at the 32-level deployed grid, so every
+downstream scale derives from the new θ):
+
+| stage | AB9 (q0.99) | θ-optimal | Δ |
+| --- | --- | --- | --- |
+| Analysis metric | 0.8678 | 0.8678 | 0.0000 |
+| AA endpoint exit | 0.868712 | 0.869718 | +0.0010 |
+| AA step metric | 0.8684 | 0.8643 | **−0.0041** |
+| **AQ endpoint entry** | **0.856640** | **0.848089** | **−0.0086** |
+| AQ endpoint exit | 0.856640 | 0.848089 | −0.0086 |
+
+**The 3.4pp install-cost win did not transfer; the AQ stage ended 0.86pp
+WORSE.** X2b measured the right quantity for the wrong objective: it
+patched θ into a model TRAINED for the old θ, where a larger θ clips less
+of that model's activations. Training the chain with the larger θ is a
+different experiment, and it lost.
+
+**Mechanism hypothesis (testable, not yet tested):** the two terms of
+D(θ) are not equally recoverable by QAT. Clipping is a systematic bias
+the weights can compensate; the θ/L grid is quantization noise they
+cannot. So the trained-outcome objective is closer to
+`α·clipping(θ) + resolution(θ)` with α ≪ 1, whose argmin sits BELOW the
+MSE optimum — plausibly near the 0.99 quantile the pipeline already uses.
+On that reading the existing heuristic is a decent approximation of the
+training-aware optimum, and the naive MSE optimum is simply the wrong
+target.
+
+**Discipline note — this is n=1 and the upstream stage carries 2.6pp
+variance (§17.12), so this run REFUTES the transfer claim but does not
+establish its converse.** The variance-free follow-up is the paired
+design: one shared AQ-input artifact, two θ values, both QAT-trained —
+which isolates θ's effect on the trained outcome without the AA draw in
+the path. `min_distortion` therefore ships default-OFF (it is registered,
+tested and byte-identical when unarmed), and no recipe arms it.
