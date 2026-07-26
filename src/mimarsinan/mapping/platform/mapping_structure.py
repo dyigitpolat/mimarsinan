@@ -65,6 +65,9 @@ class ChipCapabilities:
     allow_scheduling: bool = False
     allow_per_layer_s: bool = False
     allow_weight_reuse: bool = False
+    # [wsm V2] pass-composition policy under allow_scheduling: "pool" (the
+    # historical capacity split) or "bank_clustered" (weights stay resident).
+    schedule_policy: str = "pool"
 
     @classmethod
     def from_platform_constraints(
@@ -77,6 +80,7 @@ class ChipCapabilities:
             allow_scheduling=bool(constraints.get("allow_scheduling", False)),
             allow_per_layer_s=bool(constraints.get("allow_per_layer_s", False)),
             allow_weight_reuse=bool(constraints.get("allow_weight_reuse", False)),
+            schedule_policy=str(constraints.get("schedule_policy", "pool")),
         )
 
     def permission_kwargs(self) -> dict[str, bool]:
@@ -137,6 +141,11 @@ class MappingStrategy:
     def allow_weight_reuse(self) -> bool:
         """The RESERVED weight-reuse gate (no mapping/build decision consults it yet)."""
         return self.capabilities.allow_weight_reuse
+
+    @property
+    def schedule_policy(self) -> str:
+        """[wsm V2] pass composition under scheduling: ``pool`` | ``bank_clustered``."""
+        return self.capabilities.schedule_policy
 
     def permission_kwargs(self) -> dict[str, bool]:
         """The resolved mapping permission bits as layout/verify kwargs (allow_per_layer_s is a temporal gate, intentionally not spread here)."""

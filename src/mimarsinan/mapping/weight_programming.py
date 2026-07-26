@@ -51,6 +51,10 @@ def weight_programming_report(hybrid_mapping: Any) -> WeightProgrammingReport:
         if stage.kind != "neural" or stage.hard_core_mapping is None:
             continue
         neural_stages += 1
+        if getattr(stage, "schedule_weights_resident", False):
+            # [wsm V2] verified bank-clustered pass: weights stayed resident
+            # from the previous pass — zero programming cost.
+            continue
         segment = stage.hard_core_mapping
         bank_matrices = getattr(segment, "weight_banks", {}) or {}
         for placements in segment.soft_core_placements_per_hard_core:

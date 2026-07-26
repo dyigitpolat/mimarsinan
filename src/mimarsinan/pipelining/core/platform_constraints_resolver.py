@@ -32,6 +32,7 @@ def build_platform_constraints_resolved(
         )
     pcfg["allow_scheduling"] = bool(pipeline_config.get("allow_scheduling", False))
     pcfg["allow_weight_reuse"] = bool(pipeline_config.get("allow_weight_reuse", False))
+    pcfg["schedule_policy"] = str(pipeline_config.get("schedule_policy", "pool"))
 
     if "target_tq" in pipeline_config:
         pcfg["target_tq"] = pipeline_config["target_tq"]

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from mimarsinan.config_schema.registry.relevance import Relevance as R
 from mimarsinan.config_schema.registry.types import (
     Category,
     ConfigKeySchema as _E,
@@ -41,6 +42,20 @@ ENTRIES = (
            "out-powers argmax parity at any n.", bounds=(1, None),
        provenance="consumer frozen default", derived_default=_frozen(2),
        empty_means="2 samples"),
+    _E("schedule_policy", group="mapping_strategy",
+       owner="hybrid_build_scheduled", type=T.ENUM,
+       options=("pool", "bank_clustered"), category=Category.ADVANCED,
+       exposure="user", label="Schedule Policy",
+       effect="Pass composition under scheduling: capacity split vs "
+              "weight-stationary bank streaming",
+       doc="[wsm V2] pool: the historical capacity split (fresh pool per "
+           "pass, weights reprogram). bank_clustered: same-bank instances "
+           "stream over a resident core-set — weights program once, verified "
+           "by placement-geometry identity; segments outside the policy's "
+           "class fall back to pool.",
+       relevant=R.when_true("allow_scheduling"),
+       provenance="consumer frozen default", derived_default=_frozen("pool"),
+       empty_means="pool — the historical scheduled build"),
     _E("allow_weight_reuse", section="platform_constraints",
        group="hardware", owner="ChipCapabilities/weight_reuse",
        type=T.BOOL, category=Category.ADVANCED, exposure="user",

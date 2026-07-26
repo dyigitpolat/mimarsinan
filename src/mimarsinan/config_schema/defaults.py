@@ -117,7 +117,7 @@ CONFIG_KEYS_SET: Set[str] = {
     "allow_coalescing",
     "allow_neuron_splitting",
     "allow_per_layer_s", "allow_weight_reuse",
-    "allow_scheduling",
+    "allow_scheduling", "schedule_policy",
     "max_schedule_passes",
     "scheduling_latency_weight",
     "weight_bits",

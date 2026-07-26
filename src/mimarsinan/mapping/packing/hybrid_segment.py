@@ -177,6 +177,7 @@ def _flush_scheduled_segment(
     segment_label: str,
     allow_neuron_splitting: bool = False,
     allow_coalescing: bool = False,
+    pass_index: int = 0,
 ) -> tuple[list[HybridStage], dict[int, dict[int, int]]]:
     """One segment → one HybridStage on a fresh hardware pool."""
     if allow_coalescing:
@@ -196,7 +197,7 @@ def _flush_scheduled_segment(
         skip_coalescing_check=True,
     )
     stage.schedule_segment_index = segment_index
-    stage.schedule_pass_index = 0
+    stage.schedule_pass_index = pass_index
 
     return [stage], seg_reindex_all
 

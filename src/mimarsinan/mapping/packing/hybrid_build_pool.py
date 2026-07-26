@@ -36,6 +36,7 @@ def build_hybrid_hard_core_mapping(
     cores_config: Sequence[dict],
     strategy: MappingStrategy | None = None,
     per_hop_neural_segments: bool = False,
+    max_schedule_passes: int = 8,
 ) -> HybridHardCoreMapping:
     """Compile a unified IRGraph into a HybridHardCoreMapping.
 
@@ -65,6 +66,8 @@ def build_hybrid_hard_core_mapping(
             allow_neuron_splitting=strategy.allow_neuron_splitting,
             allow_coalescing=strategy.allow_coalescing,
             per_hop_neural_segments=per_hop_neural_segments,
+            schedule_policy=strategy.schedule_policy,
+            max_schedule_passes=max_schedule_passes,
         )
     else:
         _build_single_pool(

@@ -32,9 +32,52 @@ def _flush_scheduled_subsegments(
     stages: list[HybridStage],
     ir_graph: IRGraph | None = None,
     hardware_bias: bool = False,
+    schedule_policy: str = "pool",
+    max_schedule_passes: int = 8,
 ) -> int:
-    """Flush one IR segment; split by capacity when scheduling."""
+    """Flush one IR segment as passes of one shared budget.
+
+    ``bank_clustered`` streams same-bank instances over a resident core-set
+    (weights program once, verified geometry); segments outside that policy's
+    class — and the default ``pool`` policy — split by capacity. Either way,
+    every pass carries the truthful ``(segment_index, pass_index)``."""
     from mimarsinan.mapping.packing.hybrid_build_pool import _split_segment_by_capacity
+    from mimarsinan.mapping.packing.schedule_bank_clustered import (
+        mark_bank_residency,
+        try_bank_clustered_passes,
+    )
+
+    if schedule_policy == "bank_clustered":
+        chunks = try_bank_clustered_passes(
+            cores=cores, cores_config=cores_config, weight_banks=weight_banks,
+            max_schedule_passes=max_schedule_passes,
+        )
+        if chunks is not None:
+            pass_stages: list[HybridStage] = []
+            for pass_idx, chunk in enumerate(chunks):
+                chunk_reindexed = (
+                    _reindex_nodes(chunk, all_reindex_maps)
+                    if all_reindex_maps else chunk
+                )
+                seg_stages, seg_reindex = _flush_scheduled_segment(
+                    current_neural=chunk_reindexed,
+                    consumed_by=consumed_by,
+                    cores_config=cores_config,
+                    weight_banks=weight_banks,
+                    segment_index=segment_index_start,
+                    segment_label=(
+                        segment_label_base if len(chunks) == 1
+                        else f"{segment_label_base}_pass{pass_idx}"
+                    ),
+                    allow_neuron_splitting=allow_neuron_splitting,
+                    allow_coalescing=allow_coalescing,
+                    pass_index=pass_idx,
+                )
+                stages.extend(seg_stages)
+                pass_stages.extend(seg_stages)
+                all_reindex_maps.update(seg_reindex)
+            mark_bank_residency(pass_stages)
+            return segment_index_start + 1
 
     sub_segments = _split_segment_by_capacity(
         cores,
@@ -57,15 +100,16 @@ def _flush_scheduled_subsegments(
             consumed_by=consumed_by,
             cores_config=cores_config,
             weight_banks=weight_banks,
-            segment_index=segment_index_start + sub_idx,
+            segment_index=segment_index_start,
             segment_label=label,
             allow_neuron_splitting=allow_neuron_splitting,
             allow_coalescing=allow_coalescing,
+            pass_index=sub_idx,
         )
         stages.extend(seg_stages)
         all_reindex_maps.update(seg_reindex)
 
-    return segment_index_start + len(sub_segments)
+    return segment_index_start + 1
 
 
 def _build_scheduled(
@@ -78,8 +122,10 @@ def _build_scheduled(
     allow_neuron_splitting: bool,
     allow_coalescing: bool = False,
     per_hop_neural_segments: bool = False,
+    schedule_policy: str = "pool",
+    max_schedule_passes: int = 8,
 ) -> None:
-    """Scheduled compilation: fresh core pool per pass."""
+    """Scheduled compilation: passes of one shared budget per segment."""
     segment_index = 0
 
     for segment in partition_ir_graph(ir_graph, per_hop=per_hop_neural_segments):
@@ -96,6 +142,8 @@ def _build_scheduled(
                 all_reindex_maps=all_reindex_maps,
                 stages=stages,
                 ir_graph=ir_graph,
+                schedule_policy=schedule_policy,
+                max_schedule_passes=max_schedule_passes,
             )
         else:
             node = segment.compute_op

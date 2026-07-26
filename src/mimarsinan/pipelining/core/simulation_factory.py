@@ -64,6 +64,7 @@ def build_hybrid_mapping_for_pipeline(
         cores_config=platform_constraints["cores"],
         strategy=strategy,
         per_hop_neural_segments=_per_hop_retiming_enabled(pipeline_config),
+        max_schedule_passes=int(platform_constraints.get("max_schedule_passes", 8) or 8),
     )
     propagate_negative_shifts_to_hybrid(ir_graph, hybrid_mapping)
     # Provenance stamp (dynamic attribute) for staleness detection when the ir_graph is regenerated.
