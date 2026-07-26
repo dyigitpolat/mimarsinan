@@ -7,6 +7,7 @@ import copy
 import torch
 
 from mimarsinan.certification.value_certificate import (
+    VALUE_R_EDGE_WQ_ATOL,
     VALUE_TWIN_FP64_ATOL,
     certify_twin_flow_values,
 )
@@ -39,8 +40,10 @@ def _fp64_identity_flow(ir_graph) -> ValueHybridCoreFlow:
 def run_model_value_parity_gate(pipeline, model, ir_graph) -> None:
     """[mvm R-edge, FATAL] model forward ≡ identity value program (fp64).
 
-    Identical effective weights make this edge exact by construction; any
-    mismatch is a mapping defect, never an honest residual.
+    Float programs share every bit: exact by construction. Quantized
+    programs carry the honest fp32-projection residual (the model holds
+    round(w*s)/s in fp32; the chip program computes int/s in fp64), so the
+    edge is judged at the measured ``VALUE_R_EDGE_WQ_ATOL``.
     """
     n = int(_effective(pipeline.config, "value_parity_samples"))
     if n <= 0:
@@ -50,6 +53,8 @@ def run_model_value_parity_gate(pipeline, model, ir_graph) -> None:
     if samples is None:
         print("[ValueParityGate] SKIP (no validation batch available)")
         return
+    quantized = bool(DeploymentPlan.of(pipeline).weight_quantization)
+    atol = VALUE_R_EDGE_WQ_ATOL if quantized else VALUE_TWIN_FP64_ATOL
     samples = samples.detach().to("cpu", torch.float64)
     reference = copy.deepcopy(model).to("cpu").double().eval()
     identity_flow = _fp64_identity_flow(ir_graph)
@@ -57,16 +62,18 @@ def run_model_value_parity_gate(pipeline, model, ir_graph) -> None:
         want = reference(samples)
         got = identity_flow(samples)
     max_abs_delta = float((got - want).abs().max().item()) if want.numel() else 0.0
-    if max_abs_delta > VALUE_TWIN_FP64_ATOL:
+    if max_abs_delta > atol:
         raise RuntimeError(
             f"[mvm R-edge] model↔identity value parity FAILED: "
-            f"max|delta|={max_abs_delta:.3e} > atol={VALUE_TWIN_FP64_ATOL:.1e} "
-            f"over {int(samples.shape[0])} samples — the identity program must "
-            f"reproduce the model's affine math exactly."
+            f"max|delta|={max_abs_delta:.3e} > atol={atol:.1e} "
+            f"(weight_quantization={quantized}) over {int(samples.shape[0])} "
+            f"samples — the identity program must reproduce the model's "
+            f"affine math at this edge's exactness class."
         )
     print(
         f"[ValueParityGate] PASS model≡identity "
-        f"(max|delta|={max_abs_delta:.3e}, n={int(samples.shape[0])})"
+        f"(max|delta|={max_abs_delta:.3e}, atol={atol:.1e}, "
+        f"n={int(samples.shape[0])})"
     )
 
 

@@ -77,6 +77,9 @@ MODES = {
     "sync": {"spiking_mode": "ttfs_cycle_based", "ttfs_cycle_schedule": "synchronized",
              "firing_mode": "TTFS", "spike_generation_mode": "TTFS", "thresholding_mode": "<=",
              "axis": ("ttfs_cycle_based", "synchronized")},
+    # [mvm] value-domain MVM cores: no spiking axis, no temporal grid (no S);
+    # event-domain keys are unauthorable so the row carries only the domain.
+    "mvm": {"core_semantics": "mvm", "axis": ("mvm", "none")},
 }
 
 # Quant axis reflects RUNTIME truth (SSOT: config_schema/deployment_derivation.py):
@@ -227,6 +230,18 @@ T0 = [
     dict(n=30, mode="lif", quant="wq", wb=5, s=32, vehicle="mmix",
          encoding="offload", tags=["offload"],
          note="BA-P4 repro: offloaded torch-mixer signed host seams"),
+    # [mvm W3] the value-domain (MVM) family: no conversion ladder; the R/C
+    # value certificates are FATAL and the deployed read is the packed value
+    # census. Fresh numbering block (t0_41+) — t0_31/32 are burned labels.
+    dict(n=41, mode="mvm", quant="wq", wb=8, vehicle="lenet5",
+         note="mvm flagship: quantized weights, float I/O, twin certs FATAL"),
+    dict(n=42, mode="mvm", quant="fp", wb=8, vehicle="mmixcore",
+         note="mvm float assembly: pure packing/boundary exercise"),
+    # Platform F: the value family maps MORE than lif on this vehicle (the
+    # encoder conv and the bare final Linear join the chip), so C's pool of
+    # 180+180 cores exhausts — an honest capacity statement, not a defect.
+    dict(n=43, mode="mvm", quant="wq", wb=8, vehicle="deepcnn", platform="F",
+         note="mvm conv/weight-bank exercise (shared-bank cores)"),
 ]
 
 
@@ -241,6 +256,10 @@ T1 = [
     dict(n=7, mode="casc", quant="wq", wb=8, s=16, vehicle="squeezenet", regime="pretrained",
          scheduling=True, tags=["sched"]),
     dict(n=8, mode="ttfs", quant="fp", wb=8, s=16, vehicle="mixerc10", regime="from_scratch"),
+    # [mvm W3] wider-mapping showcase: patch-embed conv + MLP fc1/fc2 + heads
+    # map as affine packages; MHA/LayerNorm stay host ops.
+    dict(n=9, mode="mvm", quant="wq", wb=8, vehicle="vit", regime="pretrained",
+         tags=["wall_risk"]),
 ]
 
 T1_VEHICLES = {
@@ -327,18 +346,20 @@ def _name(tier, row, vehicles):
     tags = "".join(f"_{t}" for t in row.get("tags", []) if t in
                    ("offload", "sched", "nobias", "pruned", "pruned10", "novena",
                     "identity", "residual", "e4", "wb8", "wb4", "floor"))
-    return f"{prefix}_{row['n']:02d}_{row['mode']}_{v}{depth}_{row['quant']}_s{row['s']}{tags}"
+    s_part = f"_s{row['s']}" if "s" in row else ""
+    return f"{prefix}_{row['n']:02d}_{row['mode']}_{v}{depth}_{row['quant']}{s_part}{tags}"
 
 
 def _platform(row, vehicles):
     v = vehicles[row["vehicle"]]
-    plat = json.loads(json.dumps(PLATFORMS[v["platform"]]))
+    plat = json.loads(json.dumps(PLATFORMS[row.get("platform", v["platform"])]))
     has_bias = row.get("has_bias", True)
     for core in plat["cores"]:
         core["has_bias"] = has_bias
     plat["has_bias"] = has_bias
-    plat["target_tq"] = row["s"]
-    plat["simulation_steps"] = row["s"]
+    if "s" in row:
+        plat["target_tq"] = row["s"]
+        plat["simulation_steps"] = row["s"]
     plat["weight_bits"] = row["wb"]
     plat["allow_coalescing"] = row.get("coalescing", v.get("coalescing", True))
     plat["allow_neuron_splitting"] = row.get("splitting", True)
@@ -382,19 +403,22 @@ def _deployment(tier, row, vehicles, dataset):
         "sanafe_arch_preset": "loihi",
         "sanafe_sample_count": 1,
         "allow_scheduling": row.get("scheduling", False),
-        "spiking_mode": mode["spiking_mode"],
-        "firing_mode": row.get("firing", mode["firing_mode"]),
-        "spike_generation_mode": mode["spike_generation_mode"],
-        "thresholding_mode": mode["thresholding_mode"],
-        "encoding_layer_placement": row.get("encoding", "subsume"),
-        "weight_quantization": quant["weight_quantization"],
     }
+    if "core_semantics" in mode:
+        dp["core_semantics"] = mode["core_semantics"]
+    else:
+        dp["spiking_mode"] = mode["spiking_mode"]
+        dp["firing_mode"] = row.get("firing", mode["firing_mode"])
+        dp["spike_generation_mode"] = mode["spike_generation_mode"]
+        dp["thresholding_mode"] = mode["thresholding_mode"]
+        dp["encoding_layer_placement"] = row.get("encoding", "subsume")
+    dp["weight_quantization"] = quant["weight_quantization"]
     if "ttfs_cycle_schedule" in mode:
         dp["ttfs_cycle_schedule"] = mode["ttfs_cycle_schedule"]
     if "pruned" in row:
         dp["pruning"] = True
         dp["pruning_fraction"] = row["pruned"]
-    if quant["weight_quantization"]:
+    if quant["weight_quantization"] and "core_semantics" not in mode:
         # M4 arming 2026-07-12: exact ReLU-homogeneous rescaling, a no-op
         # (s -> 1) when per-channel spread is small (landed 96c74e42).
         dp["scale_migration"] = True
@@ -442,13 +466,14 @@ def _cell(tier, row, vehicles, dataset):
         "firing": firing,
         "sync": sync,
         "quantization": _quant_axis(row),
-        "S": str(row["s"]),
+        "S": str(row["s"]) if "s" in row else "none",
         "depth": str(row["depth"]) if "depth" in row else "any",
         "vehicle": v["axis"],
         "dataset": DATASET_AXIS[dataset],
         "regime": row.get("regime", "from_scratch"),
         "pruning": "pruned" if "pruned" in row else "dense",
-        "encoding_placement": row.get("encoding", "subsume"),
+        "encoding_placement": ("none" if "core_semantics" in MODES[row["mode"]]
+                               else row.get("encoding", "subsume")),
     }
 
 

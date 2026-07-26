@@ -15,6 +15,16 @@ the unit cells; 1e-9 keeps three orders of margin while sitting seven below
 fp32 noise. The atol=0 cell arrives with the quantized-I/O (int-exact)
 boundary contract."""
 
+VALUE_R_EDGE_WQ_ATOL = 1e-5
+"""[mvm W3, measured in vivo t0_41] the honest R-edge residual under weight
+quantization: the model carries fp32-PROJECTED weights (round(w*s)/s in
+fp32) while the chip program computes integer-grid / scale in fp64, so
+model↔identity differs by the fp32 representation of the ratio (measured
+max|delta| 1.0e-7 on lenet5 logits; 100x margin). The C-edge stays at
+VALUE_TWIN_FP64_ATOL — both twins share the integer convention. This is the
+value-domain instance of the §17 rule: (R) model↔grid is the honest WQ
+residual, (C) twin↔twin is the exact edge."""
+
 
 @dataclass(frozen=True)
 class ValueWindowCertificate:

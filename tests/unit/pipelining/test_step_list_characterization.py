@@ -34,6 +34,17 @@ _COMMON_LIF = [
 ]
 
 EXPECTED_STEP_LISTS = {
+    "mvm_lenet5.json": [
+        "Model Configuration", "Model Building", "Pretraining",
+        "Torch Mapping", "Weight Quantization", "Quantization Verification",
+        "Normalization Fusion", "Soft Core Mapping",
+        "Core Quantization Verification", "Hard Core Mapping",
+    ],
+    "mvm_fp_mmixcore.json": [
+        "Model Configuration", "Model Building", "Pretraining",
+        "Torch Mapping", "Normalization Fusion", "Soft Core Mapping",
+        "Hard Core Mapping",
+    ],
     "lif_cifar_deepcnn.json": _COMMON_LIF,
     "lif_deepcnn.json": _COMMON_LIF,
     "lif_deepmlp.json": _COMMON_LIF,

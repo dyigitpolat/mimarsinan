@@ -524,6 +524,66 @@
       ],
       "expected_wall_min": 12,
       "note": "BA-P4 repro: offloaded torch-mixer signed host seams"
+    },
+    {
+      "name": "t0_41_mvm_lenet5_wq",
+      "config": "t0_41_mvm_lenet5_wq.json",
+      "model_type": "lenet5",
+      "cell": {
+        "firing": "mvm",
+        "sync": "none",
+        "quantization": "wq",
+        "S": "none",
+        "depth": "any",
+        "vehicle": "lenet5",
+        "dataset": "mnist",
+        "regime": "from_scratch",
+        "pruning": "dense",
+        "encoding_placement": "none"
+      },
+      "tags": [],
+      "expected_wall_min": 6,
+      "note": "mvm flagship: quantized weights, float I/O, twin certs FATAL"
+    },
+    {
+      "name": "t0_42_mvm_mmixcore_fp",
+      "config": "t0_42_mvm_mmixcore_fp.json",
+      "model_type": "mlp_mixer_core",
+      "cell": {
+        "firing": "mvm",
+        "sync": "none",
+        "quantization": "none",
+        "S": "none",
+        "depth": "any",
+        "vehicle": "mlp_mixer_core",
+        "dataset": "mnist",
+        "regime": "from_scratch",
+        "pruning": "dense",
+        "encoding_placement": "none"
+      },
+      "tags": [],
+      "expected_wall_min": 6,
+      "note": "mvm float assembly: pure packing/boundary exercise"
+    },
+    {
+      "name": "t0_43_mvm_deepcnn_wq",
+      "config": "t0_43_mvm_deepcnn_wq.json",
+      "model_type": "deep_cnn",
+      "cell": {
+        "firing": "mvm",
+        "sync": "none",
+        "quantization": "wq",
+        "S": "none",
+        "depth": "any",
+        "vehicle": "deep_cnn",
+        "dataset": "mnist",
+        "regime": "from_scratch",
+        "pruning": "dense",
+        "encoding_placement": "none"
+      },
+      "tags": [],
+      "expected_wall_min": 12,
+      "note": "mvm conv/weight-bank exercise (shared-bank cores)"
     }
   ],
   "coverage_notes": [

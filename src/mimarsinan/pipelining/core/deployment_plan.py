@@ -119,6 +119,13 @@ class DeploymentPlan:
         scm_dt = get("scm_degradation_tolerance")
         default_budget = 2.0 * degradation_tolerance
         model_type = get("model_type", "")
+        model_category = ModelRegistry.get_category(model_type)
+        if mvm and model_category == "native":
+            raise ValueError(
+                f"core_semantics='mvm' supports torch-category models only: "
+                f"{model_type!r} is a native builder whose authored perceptron "
+                f"activations affine cores would silently drop (de-fusion is "
+                f"the designed follow-up seam).")
         if not mvm:
             from mimarsinan.chip_simulation import firing_strategy
 
@@ -129,7 +136,7 @@ class DeploymentPlan:
             config=config,
             search_mode=derive_search_mode(config),
             model_type=model_type,
-            model_category=ModelRegistry.get_category(model_type),
+            model_category=model_category,
             weight_source=resolve_weight_source(config),
             pretrained_weight_set=select_weight_set(config),
             core_semantics=core_semantics,

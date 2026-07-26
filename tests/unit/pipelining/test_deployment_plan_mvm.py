@@ -48,6 +48,15 @@ class TestDomainAxis:
         p = _mvm_plan(firing_mode="Novena", cycle_accurate_lif_forward=False)
         assert p.is_mvm is True
 
+    def test_native_builders_are_rejected(self):
+        with pytest.raises(ValueError, match="torch-category"):
+            _mvm_plan(model_type="simple_mlp")
+
+    def test_unsafe_aq_override_cannot_arm_the_ladder(self):
+        p = _mvm_plan(activation_quantization=True)
+        assert p.requires_clamp_preconditioning is False
+        assert p.requires_activation_quantization_preconditioning is False
+
 
 class TestDomainDispatch:
     def test_mode_policy_is_mvm(self):

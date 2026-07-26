@@ -96,7 +96,7 @@ class TestConfigValidity:
     def test_legality_rules(self, tier):
         for path in _tier_configs(tier):
             dp = json.loads(path.read_text())["deployment_parameters"]
-            if dp["spiking_mode"] in QUANT_REQUIRED_MODES:
+            if dp.get("spiking_mode") in QUANT_REQUIRED_MODES:
                 assert dp["weight_quantization"] is True, path.name
             assert dp["max_simulation_samples"] == 25, path.name
 
@@ -106,7 +106,10 @@ class TestConfigValidity:
             assert "_aq_" not in path.name and "_wqaq_" not in path.name, path.name
             cfg = json.loads(path.read_text())
             wq = cfg["deployment_parameters"]["weight_quantization"]
-            assert ("_wq_" if wq else "_fp_") in path.name, path.name
+            tag = "_wq" if wq else "_fp"
+            # Gridless (mvm) rows have no trailing S part, so the quant tag
+            # may terminate the stem.
+            assert f"{tag}_" in path.name or path.name.endswith(f"{tag}.json"), path.name
             assert cfg["pipeline_mode"] == ("phased" if wq else "vanilla"), path.name
 
     @pytest.mark.parametrize("tier", TIERS)
@@ -140,7 +143,12 @@ class TestConfigValidity:
             merged.update(get_default_platform_constraints())
             merged.update(cfg["platform_constraints"])
             derive_deployment_parameters(merged)
-            assert merged["spiking_mode"] == cfg["deployment_parameters"]["spiking_mode"]
+            declared = cfg["deployment_parameters"]
+            if "spiking_mode" in declared:
+                assert merged["spiking_mode"] == declared["spiking_mode"]
+            else:
+                assert declared.get("core_semantics") == "mvm", path.name
+                assert merged["activation_quantization"] is False
 
 
 class TestCascDescopedFromTier0:
@@ -169,7 +177,14 @@ class TestCascDescopedFromTier0:
 class TestModeCoverage:
     def test_tier0_covers_every_deployment_mode(self):
         modes = {
-            json.loads(p.read_text())["deployment_parameters"]["spiking_mode"]
+            json.loads(p.read_text())["deployment_parameters"].get("spiking_mode")
             for p in _tier_configs(0)
         }
         assert {"lif", "ttfs", "ttfs_quantized", "ttfs_cycle_based"} <= modes
+
+    def test_tier0_covers_the_value_domain_family(self):
+        semantics = {
+            json.loads(p.read_text())["deployment_parameters"].get("core_semantics", "spiking")
+            for p in _tier_configs(0)
+        }
+        assert "mvm" in semantics
