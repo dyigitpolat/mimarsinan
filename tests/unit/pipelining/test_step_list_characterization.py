@@ -34,6 +34,13 @@ _COMMON_LIF = [
 ]
 
 EXPECTED_STEP_LISTS = {
+    "mvm_aq_lenet5.json": [
+        "Model Configuration", "Model Building", "Pretraining",
+        "Torch Mapping", "Boundary Quantization", "Weight Quantization",
+        "Quantization Verification", "Normalization Fusion",
+        "Soft Core Mapping", "Core Quantization Verification",
+        "Hard Core Mapping",
+    ],
     "mvm_lenet5.json": [
         "Model Configuration", "Model Building", "Pretraining",
         "Torch Mapping", "Weight Quantization", "Quantization Verification",

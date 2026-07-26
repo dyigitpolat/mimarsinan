@@ -220,9 +220,13 @@ class SoftCoreMappingStep(PipelineStep):
             ),
         )
         # Re-propagate boundary input scales here so a retuned upstream theta cannot leave the segment-entry grid-snap normalizing by a stale scale; idempotent in activation_scales.
-        propagate_boundary_input_scales(
-            model, input_data_scale=plan.workload.input_data_scale
-        )
+        # [mvm AQ] the value domain's boundary currency is owned by the
+        # Boundary Quantization step (calibrated input_activation_scale);
+        # the event-domain theta propagation would overwrite it with 1.0.
+        if not plan.is_mvm:
+            propagate_boundary_input_scales(
+                model, input_data_scale=plan.workload.input_data_scale
+            )
         # Fail loud if any bias/weight write since the commit above broke the
         # committed-pruning contract (mask * param == param) about to be mapped.
         self._verify_pruning_committed(model)

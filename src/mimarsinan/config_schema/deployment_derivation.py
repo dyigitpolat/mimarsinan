@@ -27,9 +27,10 @@ _AQ_RULE = (
 )
 
 _MVM_AQ_RULE = (
-    "the value-domain (core_semantics='mvm') family has no on-chip activation "
-    "grid — activations run on the host at full precision, so "
-    "activation_quantization is always False."
+    "the value-domain (core_semantics='mvm') family derives "
+    "activation_quantization from the platform: True iff activation_bits is "
+    "declared (boundary value-grid quantization); on-chip activations do not "
+    "exist, so the event AQ ladder never applies either way."
 )
 
 
@@ -86,6 +87,7 @@ def derive_deployment_parameters(
     ``explicit_keys`` names the keys the source DOCUMENT declared (so merged
     defaults don't masquerade as declarations); ``None`` = every present key."""
     mvm = is_mvm_core_semantics(resolve_core_semantics(dp))
+    mvm_aq = mvm and bool(dp.get("activation_bits"))
     spiking_mode = str(dp.get("spiking_mode", "lif"))
     pipeline_mode = str(dp.get("pipeline_mode", ""))
     explicit_aq = dp.get("activation_quantization")
@@ -106,13 +108,13 @@ def derive_deployment_parameters(
         dp["pipeline_mode"] = "vanilla"
         dp["weight_quantization"] = False
         dp["activation_quantization"] = _resolve_activation_quantization(
-            explicit_aq, False,
+            explicit_aq, mvm_aq if mvm else False,
             regime=(aq_regime if mvm else "float-weight (vanilla) deployment"),
             rule=aq_rule,
         )
         return
 
-    derived_aq = not mvm and (
+    derived_aq = mvm_aq if mvm else (
         forces_activation_quantization(spiking_mode) or is_cycle_based(spiking_mode)
     )
     act_quant = _resolve_activation_quantization(

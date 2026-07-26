@@ -42,6 +42,14 @@ ENTRIES = (
            "out-powers argmax parity at any n.", bounds=(1, None),
        provenance="consumer frozen default", derived_default=_frozen(2),
        empty_means="2 samples"),
+    _E("activation_bits", section="platform_constraints", group="hardware",
+       owner="boundary_quantization", type=T.INT, category=Category.ADVANCED,
+       exposure="user", label="Activation Bits",
+       effect="Arms value-domain (mvm) boundary activation quantization",
+       doc="[mvm AQ] symmetric signed grid width at host<->chip boundaries; "
+           "absent = float boundary I/O. Event-domain platforms declare "
+           "target_tq instead — this key is value-domain only.",
+       bounds=(2, None), empty_means="absent — float boundary I/O"),
     _E("schedule_policy", group="mapping_strategy",
        owner="hybrid_build_scheduled", type=T.ENUM,
        options=("pool", "bank_clustered"), category=Category.ADVANCED,

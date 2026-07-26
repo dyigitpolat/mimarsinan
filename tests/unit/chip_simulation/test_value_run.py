@@ -140,6 +140,126 @@ class TestPackedProgramMatchesIdentity:
             )
 
 
+def _aq_armed_flow_and_ir(model, input_shape, bits=8):
+    """Mirror the AQ pipeline: convert -> fuse -> install+calibrate -> IR-map."""
+    from mimarsinan.pipelining.pipeline_steps.quantization.boundary_quantization_step import (
+        MIN_BOUNDARY_SCALE,
+        calibrate_boundary_scales,
+        install_boundary_quantizers,
+    )
+    from mimarsinan.torch_mapping.encoding_layers import segment_entry_perceptrons
+    from mimarsinan.transformations.normalization_fusion import fuse_into_perceptron
+
+    flow = convert_torch_model(
+        model.eval(), input_shape, 4, device="cpu", packaging=MVM_PACKAGING
+    ).eval()
+    for perceptron in flow.get_perceptrons():
+        fuse_into_perceptron(perceptron, device="cpu")
+    entries = list(segment_entry_perceptrons(flow.get_mapper_repr()))
+    quantizers = install_boundary_quantizers(entries, bits)
+    torch.manual_seed(0)
+    calibrate_boundary_scales(
+        flow, entries, quantizers, [torch.randn(16, *input_shape)]
+    )
+    # Calibration must land REAL ranges: a floor scale means an entry seam
+    # was never exercised (the conv functional-path regression).
+    assert all(
+        float(p.input_activation_scale) > MIN_BOUNDARY_SCALE for p in entries
+    )
+    repr_ = flow.get_mapper_repr()
+    repr_.assign_perceptron_indices()
+    ir = IRMapping(
+        q_max=127.0, firing_mode="Default", max_axons=256, max_neurons=64
+    ).map(repr_)
+    return flow, ir, entries
+
+
+class TestBoundaryQuantization:
+    def test_identity_program_matches_quantized_model(self):
+        # R-edge under AQ: the executor's entry-column grid snap IS the
+        # model-side ValueGridQuantizer — fp64-exact through host activations.
+        model = _mlp()
+        flow, ir, entries = _aq_armed_flow_and_ir(model, (8,))
+        assert len(entries) >= 2  # input entry + at least one post-host entry
+        identity = ValueHybridCoreFlow(
+            build_identity_hybrid_mapping(ir_graph=ir),
+            dtype=torch.float64, activation_bits=8,
+        )
+        x = torch.randn(6, 8)
+        with torch.no_grad():
+            got = identity(x)
+            want = flow.double()(x.double())
+        torch.testing.assert_close(got, want, atol=1e-9, rtol=1e-9)
+
+    def test_unarmed_executor_diverges_from_quantized_model(self):
+        # The grid must be LOAD-BEARING: forgetting activation_bits on the
+        # executor side breaks the twin, so the pass above is not vacuous.
+        model = _mlp()
+        flow, ir, _ = _aq_armed_flow_and_ir(model, (8,))
+        unarmed = ValueHybridCoreFlow(
+            build_identity_hybrid_mapping(ir_graph=ir), dtype=torch.float64
+        )
+        x = torch.randn(6, 8)
+        with torch.no_grad():
+            got = unarmed(x)
+            want = flow.double()(x.double())
+        assert float((got - want).abs().max()) > 1e-6
+
+    def test_packed_program_matches_identity_under_aq(self):
+        # C-edge under AQ, including neuron-split entry cores.
+        model = _mlp()
+        _, ir, _ = _aq_armed_flow_and_ir(model, (8,))
+        identity = ValueHybridCoreFlow(
+            build_identity_hybrid_mapping(ir_graph=ir),
+            dtype=torch.float64, activation_bits=8,
+        )
+        packed = _packed_flow(ir, max_axons=256, max_neurons=8, split=True)
+        packed.activation_bits = 8
+        x = torch.randn(5, 8)
+        with torch.no_grad():
+            torch.testing.assert_close(
+                packed(x), identity(x), atol=1e-12, rtol=1e-12
+            )
+
+    def test_conv_entry_calibrates_and_twins(self):
+        # Conv mappers invoke input_activation FUNCTIONALLY (no
+        # Perceptron.__call__): calibration must still reach the seam, and
+        # the executor must snap the conv entry's input columns identically.
+        torch.manual_seed(3)
+        model = nn.Sequential(
+            nn.Conv2d(1, 4, 3), nn.ReLU(), nn.Flatten(),
+            nn.Linear(4 * 6 * 6, 4),
+        ).eval()
+        flow, ir, entries = _aq_armed_flow_and_ir(model, (1, 8, 8))
+        assert len(entries) == 2  # conv entry + post-host linear entry
+        identity = ValueHybridCoreFlow(
+            build_identity_hybrid_mapping(ir_graph=ir),
+            dtype=torch.float64, activation_bits=8,
+        )
+        x = torch.randn(2, 1, 8, 8)
+        with torch.no_grad():
+            got = identity(x)
+            want = flow.double()(x.double())
+        torch.testing.assert_close(got, want, atol=1e-9, rtol=1e-9)
+
+    def test_core_fed_cores_are_not_boundary_quantized(self):
+        # Adjacent affine packages share one segment: only the FIRST is a
+        # host->chip boundary on both the model and executor sides.
+        torch.manual_seed(5)
+        model = nn.Sequential(nn.Linear(8, 16), nn.Linear(16, 4)).eval()
+        flow, ir, entries = _aq_armed_flow_and_ir(model, (8,))
+        assert len(entries) == 1
+        identity = ValueHybridCoreFlow(
+            build_identity_hybrid_mapping(ir_graph=ir),
+            dtype=torch.float64, activation_bits=8,
+        )
+        x = torch.randn(6, 8)
+        with torch.no_grad():
+            got = identity(x)
+            want = flow.double()(x.double())
+        torch.testing.assert_close(got, want, atol=1e-9, rtol=1e-9)
+
+
 class TestObservableSeam:
     def test_stage_recorder_captures_values(self):
         model = _mlp()

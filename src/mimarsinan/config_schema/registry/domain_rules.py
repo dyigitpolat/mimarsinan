@@ -36,11 +36,18 @@ def _forbidden(key: str) -> bool:
 
 
 def mvm_document_errors(config: Mapping[str, Any]) -> List[str]:
-    """Reject event-domain declarations in a core_semantics='mvm' document."""
+    """Domain-key document rules for BOTH directions of core_semantics."""
     dp = config.get("deployment_parameters")
     if not isinstance(dp, Mapping):
         return []
     if not is_mvm_core_semantics(dp.get("core_semantics")):
+        pc_spiking = config.get("platform_constraints")
+        if isinstance(pc_spiking, Mapping) and "activation_bits" in pc_spiking:
+            return [
+                "activation_bits declares a value-domain boundary grid; an "
+                "event-domain (spiking) platform declares target_tq instead. "
+                "Remove the key or set core_semantics='mvm'."
+            ]
         return []
     errors = [
         f"core_semantics='mvm': {key} is event-domain (spiking) configuration "

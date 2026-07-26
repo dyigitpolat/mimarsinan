@@ -9,6 +9,7 @@ import torch
 
 from mimarsinan.mapping.latency.chip import ChipLatency
 from mimarsinan.mapping.support.spike_source_spans import compress_spike_sources
+from mimarsinan.models.nn.activations.value_quantizer import quantize_to_value_grid
 from mimarsinan.models.spiking.signal_spans import SpanFillPlan
 
 _SEGMENT_CACHE: "weakref.WeakKeyDictionary" = weakref.WeakKeyDictionary()
@@ -29,6 +30,8 @@ class _PreparedValueSegment:
         self.biases = []
         self.thresholds = []
         self.plans = []
+        self.entry_input_cols = []
+        self.entry_scales = []
         for core in hcm.cores:
             bias = getattr(core, "hardware_bias", None)
             self.biases.append(
@@ -36,7 +39,20 @@ class _PreparedValueSegment:
                 else torch.as_tensor(bias, dtype=dtype, device=device).reshape(1, -1)
             )
             self.thresholds.append(float(core.threshold))
-            self.plans.append(SpanFillPlan(core.get_axon_source_spans(), device))
+            plan = SpanFillPlan(core.get_axon_source_spans(), device)
+            self.plans.append(plan)
+            # [mvm AQ] boundary quantization applies only at entry cores
+            # (no upstream core sources), on the input-sourced columns.
+            self.entry_input_cols.append(
+                None if plan.has_upstream_core_sources else plan.input_destination()
+            )
+            scale = getattr(core, "input_activation_scale", None)
+            if scale is None:
+                self.entry_scales.append(0.0)
+            elif isinstance(scale, torch.Tensor):
+                self.entry_scales.append(float(scale.max()))
+            else:
+                self.entry_scales.append(float(scale))
         self.output_plan = SpanFillPlan(
             compress_spike_sources(list(hcm.output_sources.flatten())), device
         )
@@ -61,12 +77,17 @@ def _prepared(hcm, device: torch.device, dtype: torch.dtype) -> _PreparedValueSe
     return prepared
 
 
-def run_neural_segment_values(hcm, seg_input: torch.Tensor) -> torch.Tensor:
+def run_neural_segment_values(
+    hcm, seg_input: torch.Tensor, activation_bits: "int | None" = None
+) -> torch.Tensor:
     """Execute one packed segment in the value domain: y_core = (x @ W + b) / theta.
 
     ``theta`` is the weight-quantization dequant scale stamped by
     ``quantize_ir_graph`` (1.0 on float programs); always-on axons read 1.0
     (the param-encoded bias row); fused cores execute as one wide dot product.
+    ``activation_bits`` arms boundary quantization of entry cores' input
+    columns onto their calibrated ``input_activation_scale`` grid — the same
+    formula the model-side ``ValueGridQuantizer`` applies.
     """
     device, dtype = seg_input.device, seg_input.dtype
     prepared = _prepared(hcm, device, dtype)
@@ -80,6 +101,20 @@ def run_neural_segment_values(hcm, seg_input: torch.Tensor) -> torch.Tensor:
         prepared.plans[idx].apply(
             signal, input_spikes=seg_input, buffers=buffers, on_value=1.0
         )
+        if activation_bits:
+            columns = prepared.entry_input_cols[idx]
+            scale = prepared.entry_scales[idx]
+            if columns is not None and scale > 0.0:
+                kind, selector = columns
+                if kind == "slice":
+                    lo, hi = selector
+                    signal[:, lo:hi] = quantize_to_value_grid(
+                        signal[:, lo:hi], scale, activation_bits
+                    )
+                else:
+                    signal[:, selector] = quantize_to_value_grid(
+                        signal[:, selector], scale, activation_bits
+                    )
         out = signal @ prepared.weights[idx]
         bias = prepared.biases[idx]
         if bias is not None:

@@ -120,7 +120,7 @@ CONFIG_KEYS_SET: Set[str] = {
     "allow_scheduling", "schedule_policy",
     "max_schedule_passes",
     "scheduling_latency_weight",
-    "weight_bits",
+    "weight_bits", "activation_bits",
     "tuning_budget_scale",
     "tuning_budget_scale_ramp_steps",
     "tuner_target_floor_ratio",

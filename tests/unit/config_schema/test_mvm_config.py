@@ -14,15 +14,45 @@ def _derive(dp, explicit=None):
 
 
 class TestMvmDerivation:
-    def test_aq_is_forced_off(self):
+    def test_aq_defaults_off_without_activation_bits(self):
         dp = _derive({"core_semantics": "mvm", "weight_quantization": True})
         assert dp["activation_quantization"] is False
         assert dp["weight_quantization"] is True
         assert dp["pipeline_mode"] == "phased"
 
+    def test_activation_bits_arms_aq(self):
+        # The derivation runs on the FLAT merge, so the platform key is visible.
+        dp = _derive({
+            "core_semantics": "mvm", "weight_quantization": True,
+            "activation_bits": 8,
+        })
+        assert dp["activation_quantization"] is True
+
+    def test_activation_bits_arms_aq_on_float_weights(self):
+        dp = _derive({
+            "core_semantics": "mvm", "pipeline_mode": "vanilla",
+            "activation_bits": 8,
+        })
+        assert dp["weight_quantization"] is False
+        assert dp["activation_quantization"] is True
+
     def test_explicit_aq_true_fails_loud(self):
         with pytest.raises(ValueError, match="value-domain"):
             _derive({"core_semantics": "mvm", "activation_quantization": True})
+
+    def test_explicit_aq_false_contradicts_activation_bits(self):
+        with pytest.raises(ValueError, match="value-domain"):
+            _derive({
+                "core_semantics": "mvm", "activation_quantization": False,
+                "activation_bits": 8,
+            })
+
+    def test_explicit_aq_true_agrees_with_activation_bits(self):
+        dp = _derive({
+            "core_semantics": "mvm", "activation_quantization": True,
+            "activation_bits": 8,
+        })
+        assert dp["activation_quantization"] is True
 
     def test_vanilla_mvm_is_float(self):
         dp = _derive({"core_semantics": "mvm", "pipeline_mode": "vanilla"})
@@ -101,3 +131,16 @@ class TestMvmDocumentRules:
         doc["platform_constraints"]["simulation_steps"] = 32
         doc["platform_constraints"]["target_tq"] = 32
         assert validate_deployment_config(doc) == []
+
+    def test_mvm_activation_bits_is_clean(self):
+        errors = validate_deployment_config(
+            _mvm_document(pc_extra={"activation_bits": 8})
+        )
+        assert errors == []
+
+    def test_spiking_rejects_activation_bits(self):
+        doc = _mvm_document({"spiking_mode": "lif"},
+                            pc_extra={"activation_bits": 8})
+        doc["deployment_parameters"]["core_semantics"] = "spiking"
+        errors = validate_deployment_config(doc)
+        assert any("activation_bits" in e and "target_tq" in e for e in errors), errors

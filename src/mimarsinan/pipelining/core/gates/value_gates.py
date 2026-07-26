@@ -32,9 +32,17 @@ def value_certificate_gate_armed(pipeline) -> bool:
     return int(_effective(pipeline.config, "value_parity_samples")) > 0
 
 
-def _fp64_identity_flow(ir_graph) -> ValueHybridCoreFlow:
+def _activation_bits(pipeline) -> "int | None":
+    bits = _effective(pipeline.config, "activation_bits")
+    return int(bits) if bits else None
+
+
+def _fp64_identity_flow(pipeline, ir_graph) -> ValueHybridCoreFlow:
     identity = build_identity_hybrid_mapping(ir_graph=ir_graph)
-    return ValueHybridCoreFlow(identity, device="cpu", dtype=torch.float64)
+    return ValueHybridCoreFlow(
+        identity, device="cpu", dtype=torch.float64,
+        activation_bits=_activation_bits(pipeline),
+    )
 
 
 def run_model_value_parity_gate(pipeline, model, ir_graph) -> None:
@@ -57,7 +65,7 @@ def run_model_value_parity_gate(pipeline, model, ir_graph) -> None:
     atol = VALUE_R_EDGE_WQ_ATOL if quantized else VALUE_TWIN_FP64_ATOL
     samples = samples.detach().to("cpu", torch.float64)
     reference = copy.deepcopy(model).to("cpu").double().eval()
-    identity_flow = _fp64_identity_flow(ir_graph)
+    identity_flow = _fp64_identity_flow(pipeline, ir_graph)
     with torch.no_grad():
         want = reference(samples)
         got = identity_flow(samples)
@@ -88,9 +96,10 @@ def run_value_twin_certificate_gate(pipeline, model, ir_graph, hybrid_mapping):
         print("[ValueTwinCertificate] SKIP (no validation batch available)")
         return None
     samples = samples.detach().to("cpu", torch.float64)
-    reference_flow = _fp64_identity_flow(ir_graph)
+    reference_flow = _fp64_identity_flow(pipeline, ir_graph)
     backend_flow = ValueHybridCoreFlow(
-        hybrid_mapping, device="cpu", dtype=torch.float64
+        hybrid_mapping, device="cpu", dtype=torch.float64,
+        activation_bits=_activation_bits(pipeline),
     )
     certificate, detail = certify_twin_flow_values(
         reference_flow, backend_flow, samples
@@ -106,7 +115,10 @@ def run_value_twin_certificate_gate(pipeline, model, ir_graph, hybrid_mapping):
 
 def _value_metric_flow(pipeline, hybrid_mapping) -> ValueHybridCoreFlow:
     device = pipeline.config["device"]
-    return ValueHybridCoreFlow(hybrid_mapping, device=device, dtype=torch.float32)
+    return ValueHybridCoreFlow(
+        hybrid_mapping, device=device, dtype=torch.float32,
+        activation_bits=_activation_bits(pipeline),
+    )
 
 
 def run_value_identity_metric(pipeline, ir_graph, *, device=None) -> float:

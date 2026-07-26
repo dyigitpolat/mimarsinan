@@ -31,11 +31,14 @@ class ValueHybridCoreFlow(nn.Module):
     capture helpers work verbatim.
     """
 
-    def __init__(self, hybrid_mapping, device="cpu", dtype: torch.dtype = torch.float32):
+    def __init__(self, hybrid_mapping, device="cpu",
+                 dtype: torch.dtype = torch.float32,
+                 activation_bits: "int | None" = None):
         super().__init__()
         self.hybrid_mapping = hybrid_mapping
         self.execution_device = torch.device(device)
         self.value_dtype = dtype
+        self.activation_bits = activation_bits
         self.stage_count_recorder = None
         self.lif_execution_synchronized = False
         self._fp64_ops: Dict[int, nn.Module] = {}
@@ -74,7 +77,8 @@ class ValueHybridCoreFlow(nn.Module):
                 stage.input_map, buf, batch, self.execution_device, self.value_dtype
             )
             seg_output = run_neural_segment_values(
-                stage.hard_core_mapping, seg_input
+                stage.hard_core_mapping, seg_input,
+                activation_bits=self.activation_bits,
             )
             recorder = self.stage_count_recorder
             if recorder is not None:
