@@ -21,6 +21,7 @@ use when).
 | `model_representation.py` | `ModelRepresentation` — mapper-graph DAG with a memory-frugal refcounted topological executor, perceptron enumeration, and the public graph accessors `execution_order()` / `consumer_map()` (used by the negative-boundary policy and channel-scale equalization) |
 | `channel_axis_walk.py` | Shared channel-axis walk SSOT: `channel_aligned_consumer_targets` follows `consumer_map()` edges through permute/leading-dim/mean-over-non-channel nodes (fan-out closure — one unalignable path voids the producer) to the perceptrons / host-Linear modules whose columns consume a producer's channel axis unmediated (`consumer_columns_unmediated`); behind M4 scale migration and the LIF affine fold's consumer discovery |
 | `mapping_utils.py` | Legacy star re-export facade; import from the concrete modules in new code |
+| `weight_programming.py` | [wsm] `WeightProgrammingReport`: the weight-programming boundary measured per packed program (events, params programmed vs unique, reuse factor) — printed + reporter-evented on every Hard Core Mapping run |
 | `weight_reuse.py` | Time-domain weight-reuse phase classification of segments by `weight_bank_id` (default-off, pure read of the IR) |
 | `ir/` | Unified IR: `IRGraph` container, node types (`NeuralCore`, `ComputeOp`, `WeightBank`, `IRSource`), legacy conversions |
 | `mappers/` | Mapper hierarchy consumed by the graph: base, structural, perceptron, leading-dim, conv1d/conv2d, scale propagation |

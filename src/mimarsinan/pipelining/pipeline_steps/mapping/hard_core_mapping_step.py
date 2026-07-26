@@ -2,6 +2,8 @@ from mimarsinan.pipelining.core.steps.pipeline_step import PipelineStep
 
 from mimarsinan.common.best_effort import best_effort
 from mimarsinan.common.env import vram_probe_enabled
+from mimarsinan.common.reporter import emit_reporter_event
+from mimarsinan.mapping.weight_programming import weight_programming_report
 from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 from mimarsinan.pipelining.core.hybrid_mapping_consumer import load_hybrid_mapping_for_step
 from mimarsinan.pipelining.core.engine.pipeline_helpers import run_optional_viz
@@ -95,6 +97,17 @@ class HardCoreMappingStep(PipelineStep):
         _vram_probe("after_build_hybrid")
         self.add_entry("hard_core_mapping", hybrid_mapping, "pickle")
         _vram_probe("after_pickle_save")
+
+        # [wsm V0'] the weight-programming boundary, measured on every run.
+        programming = weight_programming_report(hybrid_mapping)
+        print(f"[WeightProgramming] {programming.summary()}")
+        emit_reporter_event(self.pipeline.reporter, "weight_programming", {
+            "neural_stages": programming.neural_stages,
+            "programming_events": programming.programming_events,
+            "params_programmed": programming.params_programmed,
+            "params_unique": programming.params_unique,
+            "reuse_factor": programming.reuse_factor,
+        })
 
         _vram_probe("before_test")
         plan = DeploymentPlan.of(self.pipeline)
