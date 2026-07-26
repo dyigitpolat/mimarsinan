@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
+from mimarsinan.chip_simulation.core_semantics import INERT_SPIKING_MODE
 from mimarsinan.chip_simulation.spiking_semantics import (
     forces_activation_quantization,
     requires_ttfs_firing,
@@ -21,6 +22,10 @@ def bias_can_activate(
 ) -> bool:
     """Return whether bias alone can produce downstream activity for ``spiking_mode``."""
     mode = str(spiking_mode or "lif").lower()
+    if mode == INERT_SPIKING_MODE:
+        # Value domain (mvm): no threshold, no window — any nonzero bias is live.
+        arr = _normalized_bias_array(bias)
+        return arr is not None and bool(np.any(np.abs(arr) > zero_threshold))
     if mode == "ttfs":
         return ttfs_continuous_bias_can_activate(
             bias=bias, zero_threshold=zero_threshold,

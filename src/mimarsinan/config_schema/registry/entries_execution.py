@@ -41,4 +41,13 @@ ENTRIES = (
            "out-powers argmax parity at any n.", bounds=(1, None),
        provenance="consumer frozen default", derived_default=_frozen(2),
        empty_means="2 samples"),
+    _E("value_parity_samples", group="deployment_target", owner="value_gates",
+       type=T.INT, category=Category.ADVANCED, unit="samples",
+       label="Value Parity Samples",
+       doc="Samples per value-domain (mvm) certificate edge: the fp64 twin is "
+           "window-exact, so a handful of samples x every neuron-window "
+           "out-powers argmax parity at any n. 0 disarms the gates.",
+       bounds=(0, None),
+       provenance="consumer frozen default", derived_default=_frozen(2),
+       empty_means="2 samples"),
 )

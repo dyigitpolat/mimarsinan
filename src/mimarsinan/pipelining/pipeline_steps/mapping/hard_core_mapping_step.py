@@ -9,6 +9,10 @@ from mimarsinan.pipelining.core.simulation_factory import run_hcm_mapping_metric
 from mimarsinan.pipelining.core.spike_count_gate import (
     run_spike_count_certificate_gate,
 )
+from mimarsinan.pipelining.core.gates.value_gates import (
+    run_value_mapping_metric,
+    run_value_twin_certificate_gate,
+)
 
 import torch
 import os
@@ -93,24 +97,38 @@ class HardCoreMappingStep(PipelineStep):
         _vram_probe("after_pickle_save")
 
         _vram_probe("before_test")
+        plan = DeploymentPlan.of(self.pipeline)
         run_spike_count_certificate_gate(
             self.pipeline, model, ir_graph, hybrid_mapping,
         )
-        plan_cap = DeploymentPlan.of(self.pipeline).simulation_batch_size
-        acc = run_hcm_mapping_metric(
-            self.pipeline,
-            ir_graph,
-            platform_constraints,
-            hybrid_mapping=hybrid_mapping,
-            model=model,
-            cache_key="hybrid_mapping",
-            # An explicit simulation_batch_size bounds the PRIMARY attempt too
-            # (the >=1024 eval batch demands one huge contiguous encode);
-            # the designed OOM retry stays as the fallback.
-            max_batch_cap=int(plan_cap) if plan_cap else None,
-            retry_on_oom=True,
-            outer_oom_retry=True,
-        )
+        if plan.is_mvm:
+            run_value_twin_certificate_gate(
+                self.pipeline, model, ir_graph, hybrid_mapping,
+            )
+        plan_cap = plan.simulation_batch_size
+        if plan.is_mvm:
+            acc = run_value_mapping_metric(
+                self.pipeline,
+                ir_graph,
+                platform_constraints,
+                hybrid_mapping=hybrid_mapping,
+                cache_key="hybrid_mapping",
+            )
+        else:
+            acc = run_hcm_mapping_metric(
+                self.pipeline,
+                ir_graph,
+                platform_constraints,
+                hybrid_mapping=hybrid_mapping,
+                model=model,
+                cache_key="hybrid_mapping",
+                # An explicit simulation_batch_size bounds the PRIMARY attempt too
+                # (the >=1024 eval batch demands one huge contiguous encode);
+                # the designed OOM retry stays as the fallback.
+                max_batch_cap=int(plan_cap) if plan_cap else None,
+                retry_on_oom=True,
+                outer_oom_retry=True,
+            )
         _vram_probe("after_test")
         self._last_metric = float(acc)
         print(f"[HardCoreMappingStep] Hard-core Spiking Simulation Test: {acc}")

@@ -33,6 +33,7 @@ Pareto decision layer.
 | `ledger_schema.py` | Normalized campaign-ledger science-row schema: axes, cell key, validity, timing, and cost provenance |
 | `membrane_export.py` | [C2] deployed membrane-readout honesty gate: every enabled backend must export final membranes (declared on the registry), else fail toward counts; half-step charge SSOT |
 | `mvm_core_policy.py` | `MvmCorePolicy`: the value-domain (MVM) policy — typed answers on the consumed seams (`values` observable, no backends), event seams stay loud |
+| `value_run/` | Value-domain program execution: `ValueHybridCoreFlow` + the per-core affine kernel (`run_neural_segment_values`) — latency tiers as dependency order, span-plan gathers, fp64 certification mode, no cycle loop |
 | `neural_segment_executor.py` | Dispatches analytical neural-segment execution by spiking mode (TTFS analytical path for references) |
 | `pareto.py` | Pareto decision layer over campaign rows: cascaded-vs-synchronized verdict + recipe proposal with banded cost |
 | `parity_contract.py` | Parity/equivalence contract classification for deployment cells |

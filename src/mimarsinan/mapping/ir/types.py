@@ -66,13 +66,15 @@ class IRNode(ABC):
         self,
         input_tensor: torch.Tensor,
         buffers: Dict[int, torch.Tensor],
+        dtype: "torch.dtype | None" = None,
     ) -> torch.Tensor:
         """Gather inputs from sources into a 1D tensor (override for special cases).
 
         Runs a weakly-cached :class:`GatherPlan` (sources are static); bit-equal
-        to the reference walk kept in ``mapping.ir.gather_plan``.
+        to the reference walk kept in ``mapping.ir.gather_plan``. ``dtype=None``
+        keeps the default-dtype buffer; the value-domain fp64 path widens it.
         """
-        return gather_plan_for(self).gather(input_tensor, buffers)
+        return gather_plan_for(self).gather(input_tensor, buffers, dtype=dtype)
 
 
 @dataclass

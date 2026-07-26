@@ -289,13 +289,14 @@ def run_trainer_metric(
 
 def run_hcm_spiking_test(
     pipeline,
-    flow: SpikingHybridCoreFlow,
+    flow: "torch.nn.Module",
     *,
     device: str | None = None,
     max_batch_cap: int | None = None,
     retry_on_oom: bool = False,
 ) -> float:
-    """Run soft-core / HCM metric test with subsample or batch limit from config."""
+    """Run a deployed-metric census over the eval set (config-bounded
+    subsample/batch). Flow-agnostic: spiking or value hybrid flows."""
     device = device or pipeline.config["device"]
     attempt_cap = max_batch_cap
     last_error: Exception | None = None
