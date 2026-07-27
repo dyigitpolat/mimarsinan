@@ -17,11 +17,16 @@ class TestSubsampleToLimit:
         assert out.numel() == x.numel()
         torch.testing.assert_close(out, x)
 
-    def test_oversized_tensor_is_strided_under_the_limit(self):
-        x = torch.arange(1000.0)
-        out = subsample_to_limit(x, limit=100)
-        assert out.numel() <= 100
-        assert out.numel() > 0
+    @pytest.mark.parametrize("n,limit", [
+        (1000, 100),      # exact multiple
+        (1050, 100),      # NOT a multiple: a floor stride overshoots to 105
+        (77_070_336 // 64, (1 << 24) // 64),  # the ViT patch-embed ratio
+        (101, 100),
+        (199, 100),
+    ])
+    def test_result_never_exceeds_the_limit(self, n, limit):
+        out = subsample_to_limit(torch.arange(float(n)), limit=limit)
+        assert 0 < out.numel() <= limit
 
     def test_multidimensional_input_is_flattened(self):
         x = torch.randn(4, 5, 6)

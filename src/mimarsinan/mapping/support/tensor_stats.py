@@ -15,9 +15,13 @@ def subsample_to_limit(
 ) -> torch.Tensor:
     """Flatten and stride down to at most ``limit`` elements (deterministic)."""
     flat = tensor.detach().reshape(-1)
-    if flat.numel() <= limit:
+    n = flat.numel()
+    if n <= limit:
         return flat
-    return flat[:: max(1, flat.numel() // limit)]
+    # CEILING division: a floor stride leaves up to 2x the limit when n is
+    # not a multiple (77M elements / limit 16.7M -> stride 4 -> 19.3M, still
+    # over the cap — measured on a ViT patch-embed input).
+    return flat[:: -(-n // limit)]
 
 
 def safe_quantile(
