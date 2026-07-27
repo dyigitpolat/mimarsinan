@@ -43,6 +43,7 @@ def _flush_scheduled_subsegments(
     every pass carries the truthful ``(segment_index, pass_index)``."""
     from mimarsinan.mapping.packing.hybrid_build_pool import _split_segment_by_capacity
     from mimarsinan.mapping.packing.schedule_bank_clustered import (
+        dedup_resident_stage_matrices,
         mark_bank_residency,
         try_bank_clustered_passes,
     )
@@ -77,6 +78,7 @@ def _flush_scheduled_subsegments(
                 pass_stages.extend(seg_stages)
                 all_reindex_maps.update(seg_reindex)
             mark_bank_residency(pass_stages)
+            dedup_resident_stage_matrices(pass_stages)
             return segment_index_start + 1
 
     sub_segments = _split_segment_by_capacity(

@@ -153,6 +153,51 @@ def _stage_geometry(stage) -> list:
     return geometry
 
 
+def dedup_resident_stage_matrices(pass_stages: list) -> None:
+    """[wsm V3] Storage dedup across a bank-clustered pass chain.
+
+    Duplicate resident cores hold bitwise-identical padded grids: within the
+    head stage, single-placement cores with the same (bank, region, geometry)
+    share ONE ndarray; every later pass aliases the head's matrix at each
+    ordinal whose placement geometry is EQUAL (the verified residency law) —
+    so pickle memoization stores each distinct payload once (measured: the
+    scheduled ViT materialized ~4.9k grids into 13 GB per mapping pickle).
+    """
+    head = pass_stages[0].hard_core_mapping
+    shared: dict = {}
+    for core, placements in zip(
+        head.cores, head.soft_core_placements_per_hard_core
+    ):
+        if len(placements) != 1:
+            continue
+        record = placements[0]
+        if record.get("weight_bank_id") is None:
+            continue
+        key = (
+            record["weight_bank_id"],
+            record.get("bank_axon_range"), record.get("bank_neuron_range"),
+            record["axon_offset"], record["neuron_offset"],
+            record["axons"], record["neurons"],
+            core.core_matrix.shape, str(core.core_matrix.dtype),
+        )
+        existing = shared.get(key)
+        if existing is None:
+            shared[key] = core.core_matrix
+        else:
+            core.core_matrix = existing
+    head_geometry = _stage_geometry(pass_stages[0])
+    for stage in pass_stages[1:]:
+        geometry = _stage_geometry(stage)
+        for i, core in enumerate(stage.hard_core_mapping.cores):
+            head_core = head.cores[i]
+            if (
+                geometry[i] == head_geometry[i]
+                and core.core_matrix.shape == head_core.core_matrix.shape
+                and core.core_matrix.dtype == head_core.core_matrix.dtype
+            ):
+                core.core_matrix = head_core.core_matrix
+
+
 def mark_bank_residency(pass_stages: list) -> None:
     """Verify every pass p>0 places, per physical core ordinal, a SUBSET of
     pass 0's (bank, region) placements — regions already programmed, so zero

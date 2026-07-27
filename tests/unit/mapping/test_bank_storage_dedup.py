@@ -95,6 +95,53 @@ class TestExactFitAliasPacking:
             hard.add_softcore(self._softcore(graph, nodes[1]))
 
 
+class TestScheduledStageDedup:
+    def _scheduled_build(self, n_tokens=7, count=2):
+        from mimarsinan.mapping.packing.hybrid_build_pool import (
+            build_hybrid_hard_core_mapping,
+        )
+        from mimarsinan.mapping.platform.mapping_structure import (
+            ChipCapabilities,
+            MappingStrategy,
+        )
+        _bank, _nodes, graph = _bank_and_nodes(
+            n_tokens=n_tokens, rows=5, cols=4, row_slice=(0, 4)
+        )
+        strategy = MappingStrategy.resolve(ChipCapabilities(
+            allow_scheduling=True, schedule_policy="bank_clustered",
+        ))
+        # 8x8 pool cores: the (5,4) instances pad into grids (non-exact fit).
+        return build_hybrid_hard_core_mapping(
+            ir_graph=graph,
+            cores_config=[{"max_axons": 8, "max_neurons": 8, "count": count}],
+            strategy=strategy,
+        )
+
+    def test_head_stage_duplicates_share_one_grid(self):
+        hybrid = self._scheduled_build()
+        neural = [s for s in hybrid.stages if s.kind == "neural"]
+        head_cores = neural[0].hard_core_mapping.cores
+        assert len(head_cores) == 2  # full pool, padded grids
+        assert head_cores[0].core_matrix is head_cores[1].core_matrix
+
+    def test_resident_stages_alias_the_head_grid(self):
+        hybrid = self._scheduled_build()
+        neural = [s for s in hybrid.stages if s.kind == "neural"]
+        head_matrix = neural[0].hard_core_mapping.cores[0].core_matrix
+        assert len(neural) > 1
+        for stage in neural[1:]:
+            for core in stage.hard_core_mapping.cores:
+                assert core.core_matrix is head_matrix
+
+    def test_pass_chain_pickles_one_grid_payload(self):
+        hybrid = self._scheduled_build(n_tokens=24, count=2)
+        neural = [s for s in hybrid.stages if s.kind == "neural"]
+        blob = len(pickle.dumps([s.hard_core_mapping for s in neural]))
+        grid_bytes = neural[0].hard_core_mapping.cores[0].core_matrix.nbytes
+        n_cores = sum(len(s.hard_core_mapping.cores) for s in neural)
+        assert blob < 2 * grid_bytes + n_cores * 8192
+
+
 class TestPickleDedup:
     def test_duplicate_cores_pickle_the_bank_once(self):
         rows, cols, n = 65, 64, 24
