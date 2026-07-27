@@ -72,7 +72,7 @@ def _sched_strategy(policy):
 
 
 class TestPassComposition:
-    def test_chunks_stream_instances(self):
+    def test_chunks_fill_the_pool_for_parallelism(self):
         graph = _token_graph(5)
         chunks = try_bank_clustered_passes(
             cores=list(graph.nodes),
@@ -81,9 +81,50 @@ class TestPassComposition:
             max_schedule_passes=8,
         )
         assert chunks is not None
-        # Load-minimizing: 5 instances under an 8-pass budget need ONE
-        # resident core (loads(b)=1), streaming one instance per pass.
-        assert [len(c) for c in chunks] == [1, 1, 1, 1, 1]
+        # Weight reuse must not idle the chip: the bank duplicates onto BOTH
+        # pool cores (one extra programming) so every pass runs 2 instances
+        # in parallel — 3 passes, not 5 one-instance passes.
+        assert [len(c) for c in chunks] == [2, 2, 1]
+
+    def test_expansion_never_exceeds_instances(self):
+        graph = _token_graph(3)
+        chunks = try_bank_clustered_passes(
+            cores=list(graph.nodes),
+            cores_config=[{"max_axons": 32, "max_neurons": 32, "count": 8}],
+            weight_banks=graph.weight_banks,
+            max_schedule_passes=8,
+        )
+        assert chunks is not None
+        # Duplicates beyond the instance count would program weights nothing
+        # ever runs: 3 instances -> 3 resident cores, one pass.
+        assert [len(c) for c in chunks] == [3]
+
+    def test_expansion_is_core_type_aware(self):
+        # Instances need 5 axons: only the 8-axon type fits (count 2); the
+        # 4-axon type's 6 cores are NOT usable duplicates for this bank.
+        graph = _token_graph(6)
+        chunks = try_bank_clustered_passes(
+            cores=list(graph.nodes),
+            cores_config=[
+                {"max_axons": 8, "max_neurons": 8, "count": 2},
+                {"max_axons": 4, "max_neurons": 8, "count": 6},
+            ],
+            weight_banks=graph.weight_banks,
+            max_schedule_passes=8,
+        )
+        assert chunks is not None
+        assert [len(c) for c in chunks] == [2, 2, 2]
+
+    def test_infeasible_minimal_residency_falls_back(self):
+        # Even the minimal resident set exceeds the pool under the budget:
+        # 9 instances / 2 passes -> 5 cores > 4-core pool.
+        graph = _token_graph(9)
+        assert try_bank_clustered_passes(
+            cores=list(graph.nodes),
+            cores_config=[{"max_axons": 32, "max_neurons": 32, "count": 4}],
+            weight_banks=graph.weight_banks,
+            max_schedule_passes=2,
+        ) is None
 
     def test_owned_core_disqualifies(self):
         graph = _token_graph(3)
@@ -141,10 +182,11 @@ class TestScheduledBuild:
     def test_bank_clustered_marks_residency(self):
         hybrid = self._build(_token_graph(7), "bank_clustered")
         neural = [s for s in hybrid.stages if s.kind == "neural"]
-        assert len(neural) == 7  # one resident core streams all 7 instances
+        # Both pool cores hold the bank; 7 instances stream in 4 passes.
+        assert len(neural) == 4
         assert neural[0].schedule_weights_resident is False
         assert all(s.schedule_weights_resident for s in neural[1:])
-        assert [s.schedule_pass_index for s in neural] == list(range(7))
+        assert [s.schedule_pass_index for s in neural] == list(range(4))
 
     def test_weight_programming_counts_resident_passes_free(self):
         graph = _token_graph(7)
@@ -153,9 +195,10 @@ class TestScheduledBuild:
             self._build(_token_graph(7), "bank_clustered")
         )
         assert pool.params_programmed == 7 * 20
-        assert clustered.params_programmed == 20  # one resident core, once
+        # Two resident duplicates (full pool), each programmed once.
+        assert clustered.params_programmed == 2 * 20
         assert clustered.params_unique == 20
-        assert clustered.reuse_factor == pytest.approx(1.0)
+        assert clustered.reuse_factor == pytest.approx(0.5)
         assert clustered.reuse_factor > pool.reuse_factor
 
     def test_value_equivalence_across_policies(self):
@@ -179,16 +222,18 @@ class TestScheduledBuild:
         graph = _two_bank_graph()
         hybrid = self._build(graph, "bank_clustered", count=4)
         report = weight_programming_report(hybrid)
-        # Two banks, one resident core each: the ideal — programmed == unique.
-        assert report.params_programmed == 2 * 20
+        # Two banks over a 4-core pool: each expands to 2 duplicates
+        # (makespan 4 -> 2 passes), each duplicate programmed once.
+        assert report.params_programmed == 4 * 20
         assert report.params_unique == 2 * 20
         neural = [s for s in hybrid.stages if s.kind == "neural"]
+        assert len(neural) == 2
         assert all(s.schedule_weights_resident for s in neural[1:])
 
     def test_interleaving_pathology_pool_vs_clustered(self):
         # [wsm F3] two banks' instances in one segment: the fresh-pool truth
         # reprograms EVERY instance (W_prog >> unique); bank_clustered
-        # collapses it to the unique bytes.
+        # programs each resident duplicate once.
         pool = weight_programming_report(
             self._build(_two_bank_graph(), "pool", count=1)
         )
@@ -197,8 +242,9 @@ class TestScheduledBuild:
         )
         assert pool.params_unique == 2 * 20
         assert pool.params_programmed == 8 * 20  # every instance reprograms
-        assert clustered.params_programmed == 2 * 20
-        assert clustered.reuse_factor == pytest.approx(1.0)
+        assert clustered.params_programmed == 4 * 20
+        assert clustered.reuse_factor == pytest.approx(0.5)
+        assert clustered.reuse_factor > pool.reuse_factor
 
     def test_value_equivalence_across_policies_with_boundary_aq(self):
         # [wsm F5 x mvm AQ] the boundary grid composes with scheduling: entry
@@ -292,7 +338,7 @@ class TestScheduledBuild:
         report = weight_programming_report(
             self._build(pruned(), "bank_clustered")
         )
-        assert report.params_programmed == 20  # structural, not nnz
+        assert report.params_programmed == 2 * 20  # structural, not nnz
         identity = ValueHybridCoreFlow(
             build_identity_hybrid_mapping(ir_graph=pruned()),
             dtype=torch.float64,
