@@ -49,7 +49,7 @@ class _PreparedValueSegment:
         self.thresholds = []
         self.plans = []
         self.entry_input_cols = []
-        self.entry_scales = []
+        self.entry_grids = []
         for core in hcm.cores:
             self.thresholds.append(float(core.threshold))
             plan = SpanFillPlan(core.get_axon_source_spans(), device)
@@ -59,13 +59,8 @@ class _PreparedValueSegment:
             self.entry_input_cols.append(
                 None if plan.has_upstream_core_sources else plan.input_destination()
             )
-            scale = getattr(core, "input_activation_scale", None)
-            if scale is None:
-                self.entry_scales.append(0.0)
-            elif isinstance(scale, torch.Tensor):
-                self.entry_scales.append(float(scale.max()))
-            else:
-                self.entry_scales.append(float(scale))
+            grid = getattr(core, "boundary_grid", None)
+            self.entry_grids.append(grid if (grid is not None and grid.armed) else None)
         self.output_plan = SpanFillPlan(
             compress_spike_sources(list(hcm.output_sources.flatten())), device
         )
@@ -119,17 +114,17 @@ def prepared_segment_cache_for_testing() -> "weakref.WeakKeyDictionary":
 
 
 def run_neural_segment_values(
-    hcm, seg_input: torch.Tensor, activation_bits: "int | None" = None,
-    resident_head=None, upload_memo: "dict | None" = None,
+    hcm, seg_input: torch.Tensor, resident_head=None,
+    upload_memo: "dict | None" = None,
 ) -> torch.Tensor:
     """Execute one packed segment in the value domain: y_core = (x @ W + b) / theta.
 
     ``theta`` is the weight-quantization dequant scale stamped by
     ``quantize_ir_graph`` (1.0 on float programs); always-on axons read 1.0
     (the param-encoded bias row); fused cores execute as one wide dot product.
-    ``activation_bits`` arms boundary quantization of entry cores' input
-    columns onto their calibrated ``input_activation_scale`` grid — the same
-    formula the model-side ``ValueGridQuantizer`` applies.
+    Entry cores carrying a ``boundary_grid`` snap their input-sourced
+    columns onto it with the same formula the model-side
+    ``ValueGridQuantizer`` applies.
     """
     device, dtype = seg_input.device, seg_input.dtype
     prepared = _prepared(
@@ -145,20 +140,14 @@ def run_neural_segment_values(
         prepared.plans[idx].apply(
             signal, input_spikes=seg_input, buffers=buffers, on_value=1.0
         )
-        if activation_bits:
-            columns = prepared.entry_input_cols[idx]
-            scale = prepared.entry_scales[idx]
-            if columns is not None and scale > 0.0:
-                kind, selector = columns
-                if kind == "slice":
-                    lo, hi = selector
-                    signal[:, lo:hi] = quantize_to_value_grid(
-                        signal[:, lo:hi], scale, activation_bits
-                    )
-                else:
-                    signal[:, selector] = quantize_to_value_grid(
-                        signal[:, selector], scale, activation_bits
-                    )
+        grid = prepared.entry_grids[idx]
+        columns = prepared.entry_input_cols[idx]
+        if grid is not None and columns is not None:
+            kind, selector = columns
+            span = slice(*selector) if kind == "slice" else selector
+            signal[:, span] = quantize_to_value_grid(
+                signal[:, span], grid.scale, grid.bits
+            )
         out = signal @ prepared.weights[idx]
         bias = prepared.biases[idx]
         if bias is not None:

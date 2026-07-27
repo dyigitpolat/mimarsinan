@@ -12,6 +12,8 @@ import torch.nn.functional as F
 
 from mimarsinan.mapping.ir.gather_plan import gather_plan_for
 
+from mimarsinan.models.nn.activations.value_quantizer import BoundaryGrid
+
 if TYPE_CHECKING:
     from mimarsinan.mapping.ir.graph import IRGraph
 
@@ -102,6 +104,8 @@ class NeuralCore(IRNode):
     activation_scale: torch.Tensor = field(default_factory=lambda: torch.tensor(1.0))
     parameter_scale: torch.Tensor = field(default_factory=lambda: torch.tensor(1.0))
     input_activation_scale: torch.Tensor = field(default_factory=lambda: torch.tensor(1.0))
+    # [mvm AQ] the realized host->chip value grid; None = float boundary.
+    boundary_grid: "BoundaryGrid | None" = None
     latency: int | None = None
 
     weight_bank_id: int | None = None

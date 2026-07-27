@@ -6,38 +6,37 @@ import torch
 
 from mimarsinan.certification.value_certificate import VALUE_R_EDGE_AQ_LSB_BOUND
 from mimarsinan.mapping.ir import IRGraph, IRSource, NeuralCore
-from mimarsinan.pipelining.core.gates.value_gates import (
-    _assert_aq_grid_parity,
-    boundary_grid_lsb,
-)
+from mimarsinan.mapping.support.boundary_grids import widest_boundary_step
+from mimarsinan.models.nn.activations.value_quantizer import BoundaryGrid
+from mimarsinan.pipelining.core.gates.value_gates import _assert_aq_grid_parity
 
 
-def _ir_with_scales(scales):
+def _ir_with_scales(scales, bits=8):
     nodes = []
     for i, s in enumerate(scales):
         nodes.append(NeuralCore(
             id=i, name=f"c{i}",
             input_sources=np.array([IRSource(-2, 0)], dtype=object),
             core_matrix=np.ones((1, 1), dtype=np.float64),
-            input_activation_scale=torch.tensor(float(s)),
+            boundary_grid=(BoundaryGrid(scale=float(s), bits=bits) if s else None),
         ))
     return IRGraph(nodes=nodes,
                    output_sources=np.array([IRSource(0, 0)], dtype=object),
                    weight_banks={})
 
 
-class TestBoundaryGridLsb:
-    def test_none_when_aq_is_off(self):
-        assert boundary_grid_lsb(None, _ir_with_scales([2.0])) is None
-        assert boundary_grid_lsb(0, _ir_with_scales([2.0])) is None
+class TestWidestBoundaryStep:
+    def test_none_when_no_core_carries_a_grid(self):
+        assert widest_boundary_step(_ir_with_scales([0.0, 0.0])) is None
 
-    def test_widest_armed_scale_sets_the_step(self):
+    def test_widest_armed_grid_sets_the_step(self):
         # 8 bits -> 127 positive levels; the widest grid is the coarsest.
-        lsb = boundary_grid_lsb(8, _ir_with_scales([0.5, 2.54, 1.0]))
-        assert lsb == pytest.approx(2.54 / 127)
+        step = widest_boundary_step(_ir_with_scales([0.5, 2.54, 1.0]))
+        assert step == pytest.approx(2.54 / 127)
 
-    def test_unarmed_cores_are_ignored(self):
-        assert boundary_grid_lsb(8, _ir_with_scales([0.0, 0.0])) is None
+    def test_mixed_armed_and_float_boundaries(self):
+        step = widest_boundary_step(_ir_with_scales([0.0, 1.27, 0.0]))
+        assert step == pytest.approx(1.27 / 127)
 
 
 class TestGridParityAssertion:

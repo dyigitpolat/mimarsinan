@@ -16,6 +16,7 @@ class HardCore:
         self.available_neurons = neurons_per_core
 
         self.input_activation_scale = None
+        self.boundary_grid = None
         self.activation_scale = None
         self.parameter_scale = None
         self.threshold = None
@@ -81,6 +82,9 @@ class HardCore:
 
         if self.input_activation_scale is None:
             self.input_activation_scale = softcore.input_activation_scale
+
+        if self.boundary_grid is None:
+            self.boundary_grid = getattr(softcore, "boundary_grid", None)
 
         if self.activation_scale is None:
             self.activation_scale = softcore.activation_scale

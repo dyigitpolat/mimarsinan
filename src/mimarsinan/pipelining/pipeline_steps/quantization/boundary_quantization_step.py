@@ -21,15 +21,12 @@ MIN_BOUNDARY_SCALE = 1e-3
 def install_boundary_quantizers(
     entries: list, activation_bits: int
 ) -> list[ValueGridQuantizer]:
-    """Append an INERT quantizer (scale 0.0 = identity) per entry, wired to the
-    LIVE ``input_activation_scale`` (the one-writer currency the IR emission
-    copies). Returns the quantizers aligned with ``entries``."""
+    """Append an INERT quantizer (scale 0.0 = identity) per entry. Each owns
+    its own grid buffer — the event domain's ``input_activation_scale`` keeps
+    its single wire-currency meaning. Returns them aligned with ``entries``."""
     quantizers = []
     for perceptron in entries:
-        perceptron.input_activation_scale.data.fill_(0.0)
-        quantizer = ValueGridQuantizer(
-            perceptron.input_activation_scale, activation_bits
-        )
+        quantizer = ValueGridQuantizer(activation_bits)  # inert until calibrated
         perceptron.append_input_wire_op(quantizer)
         quantizers.append(quantizer)
     return quantizers
@@ -68,9 +65,8 @@ def calibrate_boundary_scales(
             f"every host→chip boundary must be exercised by the calibration "
             f"batches — a silent floor scale would saturate the boundary."
         )
-    for perceptron, quantizer in zip(entries, quantizers):
-        scale = max(maxima[id(quantizer)], MIN_BOUNDARY_SCALE)
-        perceptron.input_activation_scale.data.fill_(scale)
+    for quantizer in quantizers:
+        quantizer.calibrate(max(maxima[id(quantizer)], MIN_BOUNDARY_SCALE))
 
 
 class BoundaryQuantizationStep(PipelineStep):

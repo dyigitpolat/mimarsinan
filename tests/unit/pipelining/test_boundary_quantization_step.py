@@ -52,15 +52,27 @@ class TestInstallation:
             got = p(x)
         torch.testing.assert_close(got, want)
 
-    def test_one_quantizer_per_entry_on_the_live_scale(self):
+    def test_the_grid_is_owned_by_the_quantizer_not_the_perceptron(self):
+        # The event domain's input_activation_scale keeps its single wire
+        # meaning; the AQ grid is a typed field on the quantizer's buffer.
         p = _perceptron()
+        before = float(p.input_activation_scale)
         (q,) = install_boundary_quantizers([p], activation_bits=8)
         assert isinstance(q, ValueGridQuantizer)
-        assert q.scale is p.input_activation_scale
-        assert [m for m in p.modules() if isinstance(m, ValueGridQuantizer)] == [q]
+        assert "scale" in dict(q.named_buffers())
+        assert q.grid.armed is False
+        q.calibrate(2.0)
+        assert q.grid.scale == 2.0 and q.grid.bits == 8 and q.grid.armed
+        assert float(p.input_activation_scale) == before  # untouched
 
 
 class TestCalibration:
+    def test_grid_step_is_one_lsb(self):
+        (q,) = install_boundary_quantizers([_perceptron()], activation_bits=8)
+        q.calibrate(2.54)
+        assert q.grid.levels == 127
+        assert abs(q.grid.step - 2.54 / 127) < 1e-7  # fp32 buffer
+
     def test_scales_are_input_quantiles_at_the_seam(self):
         first, second = _perceptron(4, 4, seed=1), _perceptron(2, 4, seed=2)
         model = nn.Sequential(first, second)
@@ -71,10 +83,8 @@ class TestCalibration:
         calibrate_boundary_scales(
             model, [first, second], quantizers, [batch], quantile=1.0
         )
-        assert float(first.input_activation_scale) == float(batch.abs().max())
-        assert abs(
-            float(second.input_activation_scale) - float(hidden.abs().max())
-        ) < 1e-6
+        assert quantizers[0].grid.scale == float(batch.abs().max())
+        assert abs(quantizers[1].grid.scale - float(hidden.abs().max())) < 1e-6
 
     def test_functional_invocation_path_is_calibrated(self):
         # The conv mappers invoke ``input_activation`` directly (no
@@ -91,14 +101,14 @@ class TestCalibration:
         calibrate_boundary_scales(
             FunctionalMapper(), [p], [q], [batch], quantile=1.0
         )
-        assert float(p.input_activation_scale) == float(batch.abs().max())
+        assert q.grid.scale == float(batch.abs().max())
 
     def test_maxima_accumulate_over_batches(self):
         p = _perceptron(3, 3)
         (q,) = install_boundary_quantizers([p], 8)
         small, large = torch.full((2, 3), 0.5), torch.full((2, 3), 2.0)
         calibrate_boundary_scales(p, [p], [q], [small, large], quantile=1.0)
-        assert float(p.input_activation_scale) == 2.0
+        assert q.grid.scale == 2.0
 
     def test_unreached_entry_fails_loud(self):
         reached, dead = _perceptron(seed=3), _perceptron(seed=4)
@@ -114,7 +124,7 @@ class TestCalibration:
         calibrate_boundary_scales(
             p, [p], [q], [torch.full((2, 4), 1e-7)], quantile=1.0
         )
-        assert abs(float(p.input_activation_scale) - MIN_BOUNDARY_SCALE) < 1e-9
+        assert abs(q.grid.scale - MIN_BOUNDARY_SCALE) < 1e-9
 
     def test_hooks_are_removed_after_calibration(self):
         p = _perceptron()
@@ -129,19 +139,17 @@ class TestQuantizedForward:
         (q,) = install_boundary_quantizers([p], 8)
         x = torch.randn(5, 4)
         calibrate_boundary_scales(p, [p], [q], [x], quantile=1.0)
-        scale = p.input_activation_scale.detach().clone()
+        scale = q.scale.detach().clone()
         with torch.no_grad():
             got = p(x)
             want = p.activation(p.layer(quantize_to_value_grid(x, scale, 8)))
         torch.testing.assert_close(got, want)
 
-    def test_scale_write_is_live_for_the_quantizer(self):
-        # One-writer currency: a later scale write moves the grid without
-        # re-installation.
+    def test_recalibration_moves_the_grid_without_reinstallation(self):
         p = _perceptron()
         (q,) = install_boundary_quantizers([p], 8)
         calibrate_boundary_scales(p, [p], [q], [torch.randn(4, 4)])
-        p.input_activation_scale.data.fill_(4.0)
+        q.calibrate(4.0)
         x = torch.tensor([[3.9, -3.9, 0.02, 1.0]])
         with torch.no_grad():
             got = p(x)

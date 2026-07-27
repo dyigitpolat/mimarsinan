@@ -13,8 +13,7 @@ from mimarsinan.certification.value_certificate import (
     certify_twin_flow_values,
 )
 from mimarsinan.chip_simulation.value_run import ValueHybridCoreFlow
-from mimarsinan.mapping.ir import NeuralCore
-from mimarsinan.models.nn.activations.value_quantizer import value_grid_levels
+from mimarsinan.mapping.support.boundary_grids import widest_boundary_step
 from mimarsinan.config_schema.registry import effective_value as _effective
 from mimarsinan.mapping.packing.hybrid_build_pool import build_identity_hybrid_mapping
 from mimarsinan.mapping.platform.packaging_contract import packaging_contract_for
@@ -34,26 +33,6 @@ def value_certificate_gate_armed(pipeline) -> bool:
     if observable != "values":
         return False
     return int(_effective(pipeline.config, "value_parity_samples")) > 0
-
-
-def _activation_bits(pipeline) -> "int | None":
-    bits = _effective(pipeline.config, "activation_bits")
-    return int(bits) if bits else None
-
-
-def boundary_grid_lsb(activation_bits, ir_graph) -> "float | None":
-    """One step of the widest armed boundary grid, or None when AQ is off."""
-    if not activation_bits:
-        return None
-    levels = value_grid_levels(int(activation_bits))
-    if levels <= 0:
-        return None
-    scales = [
-        float(torch.as_tensor(node.input_activation_scale).max())
-        for node in ir_graph.nodes if isinstance(node, NeuralCore)
-    ]
-    armed = [s for s in scales if s > 0.0]
-    return (max(armed) / levels) if armed else None
 
 
 def _assert_aq_grid_parity(got, want, max_abs_delta, lsb, n_samples) -> None:
@@ -93,10 +72,7 @@ def _assert_aq_grid_parity(got, want, max_abs_delta, lsb, n_samples) -> None:
 
 def _fp64_identity_flow(pipeline, ir_graph) -> ValueHybridCoreFlow:
     identity = build_identity_hybrid_mapping(ir_graph=ir_graph)
-    return ValueHybridCoreFlow(
-        identity, device="cpu", dtype=torch.float64,
-        activation_bits=_activation_bits(pipeline),
-    )
+    return ValueHybridCoreFlow(identity, device="cpu", dtype=torch.float64)
 
 
 def run_model_value_parity_gate(pipeline, model, ir_graph) -> None:
@@ -127,7 +103,7 @@ def run_model_value_parity_gate(pipeline, model, ir_graph) -> None:
 
     # The CONTRACT names the certificate class; the gate never re-derives it.
     if packaging_contract_for(DeploymentPlan.of(pipeline)).boundary_is_gridded:
-        lsb = boundary_grid_lsb(_activation_bits(pipeline), ir_graph)
+        lsb = widest_boundary_step(ir_graph)
         if lsb is None:
             raise RuntimeError(
                 "[mvm AQ R-edge] the packaging contract declares a gridded "
@@ -165,8 +141,7 @@ def run_value_twin_certificate_gate(pipeline, model, ir_graph, hybrid_mapping):
     samples = samples.detach().to("cpu", torch.float64)
     reference_flow = _fp64_identity_flow(pipeline, ir_graph)
     backend_flow = ValueHybridCoreFlow(
-        hybrid_mapping, device="cpu", dtype=torch.float64,
-        activation_bits=_activation_bits(pipeline),
+        hybrid_mapping, device="cpu", dtype=torch.float64
     )
     certificate, detail = certify_twin_flow_values(
         reference_flow, backend_flow, samples
@@ -182,10 +157,7 @@ def run_value_twin_certificate_gate(pipeline, model, ir_graph, hybrid_mapping):
 
 def _value_metric_flow(pipeline, hybrid_mapping) -> ValueHybridCoreFlow:
     device = pipeline.config["device"]
-    return ValueHybridCoreFlow(
-        hybrid_mapping, device=device, dtype=torch.float32,
-        activation_bits=_activation_bits(pipeline),
-    )
+    return ValueHybridCoreFlow(hybrid_mapping, device=device, dtype=torch.float32)
 
 
 def run_value_identity_metric(pipeline, ir_graph, *, device=None) -> float:

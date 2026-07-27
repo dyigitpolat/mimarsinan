@@ -147,6 +147,7 @@ def _aq_armed_flow_and_ir(model, input_shape, bits=8):
         calibrate_boundary_scales,
         install_boundary_quantizers,
     )
+    from mimarsinan.mapping.support.boundary_grids import install_boundary_grids
     from mimarsinan.torch_mapping.encoding_layers import segment_entry_perceptrons
     from mimarsinan.transformations.normalization_fusion import fuse_into_perceptron
 
@@ -163,14 +164,14 @@ def _aq_armed_flow_and_ir(model, input_shape, bits=8):
     )
     # Calibration must land REAL ranges: a floor scale means an entry seam
     # was never exercised (the conv functional-path regression).
-    assert all(
-        float(p.input_activation_scale) > MIN_BOUNDARY_SCALE for p in entries
-    )
+    assert all(q.grid.scale > MIN_BOUNDARY_SCALE for q in quantizers)
     repr_ = flow.get_mapper_repr()
     repr_.assign_perceptron_indices()
     ir = IRMapping(
         q_max=127.0, firing_mode="Default", max_axons=256, max_neurons=64
     ).map(repr_)
+    stamped = install_boundary_grids(ir, flow)
+    assert stamped > 0, "the mapped cores must carry the realized grids"
     return flow, ir, entries
 
 
@@ -182,8 +183,7 @@ class TestBoundaryQuantization:
         flow, ir, entries = _aq_armed_flow_and_ir(model, (8,))
         assert len(entries) >= 2  # input entry + at least one post-host entry
         identity = ValueHybridCoreFlow(
-            build_identity_hybrid_mapping(ir_graph=ir),
-            dtype=torch.float64, activation_bits=8,
+            build_identity_hybrid_mapping(ir_graph=ir), dtype=torch.float64
         )
         x = torch.randn(6, 8)
         with torch.no_grad():
@@ -192,10 +192,15 @@ class TestBoundaryQuantization:
         torch.testing.assert_close(got, want, atol=1e-9, rtol=1e-9)
 
     def test_unarmed_executor_diverges_from_quantized_model(self):
-        # The grid must be LOAD-BEARING: forgetting activation_bits on the
-        # executor side breaks the twin, so the pass above is not vacuous.
+        # The grid must be LOAD-BEARING: cores WITHOUT it reproduce the
+        # unquantized program, so the pass above is not vacuous.
+        from mimarsinan.mapping.ir import NeuralCore
+
         model = _mlp()
         flow, ir, _ = _aq_armed_flow_and_ir(model, (8,))
+        for node in ir.nodes:
+            if isinstance(node, NeuralCore):
+                node.boundary_grid = None
         unarmed = ValueHybridCoreFlow(
             build_identity_hybrid_mapping(ir_graph=ir), dtype=torch.float64
         )
@@ -210,11 +215,9 @@ class TestBoundaryQuantization:
         model = _mlp()
         _, ir, _ = _aq_armed_flow_and_ir(model, (8,))
         identity = ValueHybridCoreFlow(
-            build_identity_hybrid_mapping(ir_graph=ir),
-            dtype=torch.float64, activation_bits=8,
+            build_identity_hybrid_mapping(ir_graph=ir), dtype=torch.float64
         )
         packed = _packed_flow(ir, max_axons=256, max_neurons=8, split=True)
-        packed.activation_bits = 8
         x = torch.randn(5, 8)
         with torch.no_grad():
             torch.testing.assert_close(
@@ -233,8 +236,7 @@ class TestBoundaryQuantization:
         flow, ir, entries = _aq_armed_flow_and_ir(model, (1, 8, 8))
         assert len(entries) == 2  # conv entry + post-host linear entry
         identity = ValueHybridCoreFlow(
-            build_identity_hybrid_mapping(ir_graph=ir),
-            dtype=torch.float64, activation_bits=8,
+            build_identity_hybrid_mapping(ir_graph=ir), dtype=torch.float64
         )
         x = torch.randn(2, 1, 8, 8)
         with torch.no_grad():
@@ -250,8 +252,7 @@ class TestBoundaryQuantization:
         flow, ir, entries = _aq_armed_flow_and_ir(model, (8,))
         assert len(entries) == 1
         identity = ValueHybridCoreFlow(
-            build_identity_hybrid_mapping(ir_graph=ir),
-            dtype=torch.float64, activation_bits=8,
+            build_identity_hybrid_mapping(ir_graph=ir), dtype=torch.float64
         )
         x = torch.randn(6, 8)
         with torch.no_grad():

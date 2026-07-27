@@ -39,14 +39,24 @@ class TestGridMath:
 class TestModule:
     def test_ste_gradient_passes_through(self):
         x = torch.randn(8, requires_grad=True)
-        module = ValueGridQuantizer(torch.tensor(1.0), 8)
+        module = ValueGridQuantizer(8, scale=1.0)
         module(x).sum().backward()
         torch.testing.assert_close(x.grad, torch.ones_like(x))
 
-    def test_live_scale_reference(self):
-        scale = torch.nn.Parameter(torch.tensor(0.0), requires_grad=False)
-        module = ValueGridQuantizer(scale, 8)
+    def test_calibration_arms_the_owned_grid(self):
+        module = ValueGridQuantizer(8)
         x = torch.randn(4)
-        torch.testing.assert_close(module(x), x)  # unarmed
-        scale.data.fill_(1.0)
+        torch.testing.assert_close(module(x), x)  # inert until calibrated
+        module.calibrate(1.0)
         assert not torch.equal(module(torch.tensor([0.003])), torch.tensor([0.003]))
+
+    def test_scale_is_a_buffer_that_travels_with_the_module(self):
+        # Declared state: it survives state_dict / .to() / deepcopy without
+        # aliasing another module's parameter.
+        import copy
+
+        module = ValueGridQuantizer(8)
+        module.calibrate(2.5)
+        assert "scale" in module.state_dict()
+        assert not list(module.parameters())
+        assert copy.deepcopy(module).grid == module.grid

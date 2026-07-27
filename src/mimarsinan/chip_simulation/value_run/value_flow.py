@@ -60,13 +60,11 @@ class ValueHybridCoreFlow(nn.Module):
     """
 
     def __init__(self, hybrid_mapping, device="cpu",
-                 dtype: torch.dtype = torch.float32,
-                 activation_bits: "int | None" = None):
+                 dtype: torch.dtype = torch.float32):
         super().__init__()
         self.hybrid_mapping = hybrid_mapping
         self.execution_device = torch.device(device)
         self.value_dtype = dtype
-        self.activation_bits = activation_bits
         self.stage_count_recorder = None
         self.lif_execution_synchronized = False
         self._fp64_ops: Dict[int, nn.Module] = {}
@@ -118,7 +116,6 @@ class ValueHybridCoreFlow(nn.Module):
             )
             seg_output = run_neural_segment_values(
                 stage.hard_core_mapping, seg_input,
-                activation_bits=self.activation_bits,
                 resident_head=residency_head[0],
                 upload_memo=self._upload_memo,
             )

@@ -36,6 +36,7 @@ from mimarsinan.mapping.weight_reuse import (
     weight_reuse_plan_from_graph,
 )
 from mimarsinan.models.nn.activations.ttfs_spiking import refresh_perceptron_bias_references
+from mimarsinan.mapping.support.boundary_grids import install_boundary_grids
 from mimarsinan.spiking.scale_aware_boundaries import propagate_boundary_input_scales
 from mimarsinan.transformations.pruning.committed_masks import (
     commit_perceptron_pruning,
@@ -220,18 +221,16 @@ class SoftCoreMappingStep(PipelineStep):
             ),
         )
         # Re-propagate boundary input scales here so a retuned upstream theta cannot leave the segment-entry grid-snap normalizing by a stale scale; idempotent in activation_scales.
-        # [mvm AQ] the value domain's boundary currency is owned by the
-        # Boundary Quantization step (calibrated input_activation_scale);
-        # the event-domain theta propagation would overwrite it with 1.0.
-        if not plan.is_mvm:
-            propagate_boundary_input_scales(
-                model, input_data_scale=plan.workload.input_data_scale
-            )
+        propagate_boundary_input_scales(
+            model, input_data_scale=plan.workload.input_data_scale
+        )
         # Fail loud if any bias/weight write since the commit above broke the
         # committed-pruning contract (mask * param == param) about to be mapped.
         self._verify_pruning_committed(model)
         with _phase("ir_mapping.map"):
             ir_graph = ir_mapping.map(mapper_repr)
+        # [mvm AQ] realize the model's boundary grids onto the mapped cores.
+        install_boundary_grids(ir_graph, model)
 
         if bool(self.pipeline.config.get("negative_value_shift", True)):
             transfer_negative_shifts_to_ir(model, ir_graph)
