@@ -293,12 +293,16 @@ T1 = [
                    "simulation_batch_size": 64},
          extra_pc={"allow_weight_reuse": True, "max_schedule_passes": 64}),
     # [wsm N1] the weight-programming boundary in the EVENT domain at tier-1
-    # scale: same vehicle/mode/S as t1_01, scheduled with the bank-aware
-    # policy. Measured precondition (t0_22 cached IR): bank_clustered engages
-    # for spiking conv banks (reuse 0.19 -> 0.27), so this cell carries real
-    # evidence rather than a pool fallback. t1_01 is the unscheduled control.
-    dict(n=10, mode="lif", quant="wq", wb=8, s=16, vehicle="squeezenet",
-         regime="pretrained", scheduling=True, tags=["sched"],
+    # scale — an exact minimal pair with t1_06 (same vehicle/mode/S/depth,
+    # scheduling + the bank-aware policy the only difference). Measured
+    # preconditions on cached spiking IRs: bank_clustered ENGAGES for conv
+    # banks (t0_03 d8: programmed 9216000 -> 8239104 with 2 resident stages;
+    # t0_26 d6: 5603328 -> 4626432), so the cell carries real evidence
+    # rather than a pool fallback. The squeezenet vehicle is unusable here:
+    # its ImageNet backbone reads chance on unpreprocessed 32x32 CIFAR10
+    # (no resize/normalize declared) and the pretrain envelope aborts.
+    dict(n=10, mode="lif", quant="wq", wb=8, s=32, vehicle="deepcnn32",
+         depth=8, regime="from_scratch", scheduling=True, tags=["sched"],
          extra_dp={"schedule_policy": "bank_clustered"},
          extra_pc={"allow_weight_reuse": True, "max_schedule_passes": 128}),
     # [mvm AQ] boundary value-grid quantization at ViT scale — the minimal
@@ -310,12 +314,12 @@ T1 = [
                    "simulation_batch_size": 64},
          extra_pc={"allow_weight_reuse": True, "max_schedule_passes": 64,
                    "activation_bits": 8}),
-    # [mvm breadth] a SECOND value-domain architecture family at tier-1: fire
-    # modules (1x1 squeeze / mixed 1x1+3x3 expand, concat) and a conv
-    # classifier head — packaging shapes ViT never exercises. Scheduled so a
-    # pool overflow becomes a scheduled run, not a capacity stop.
-    dict(n=12, mode="mvm", quant="wq", wb=8, vehicle="squeezenet",
-         regime="pretrained", scheduling=True, tags=["sched"],
+    # [mvm breadth] a SECOND value-domain architecture family at tier-1: the
+    # mixer's token-instanced FCs are the FC-weight-bank mechanism (V1) at
+    # scale on a non-transformer family, trained from scratch (t0_42 proves
+    # mlp_mixer_core packages under mvm; this is its WQ tier-1 sibling).
+    dict(n=12, mode="mvm", quant="wq", wb=8, vehicle="mixerc10",
+         regime="from_scratch", scheduling=True, tags=["sched"],
          extra_dp={"schedule_policy": "bank_clustered"},
          extra_pc={"allow_weight_reuse": True, "max_schedule_passes": 128}),
 ]

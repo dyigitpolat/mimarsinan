@@ -185,18 +185,18 @@
       "expected_wall_min": 120
     },
     {
-      "name": "t1_10_lif_squeezenet_wq_s16_sched",
-      "config": "t1_10_lif_squeezenet_wq_s16_sched.json",
-      "model_type": "torch_squeezenet11",
+      "name": "t1_10_lif_deepcnn32_d8_wq_s32_sched",
+      "config": "t1_10_lif_deepcnn32_d8_wq_s32_sched.json",
+      "model_type": "deep_cnn",
       "cell": {
         "firing": "lif",
         "sync": "none",
         "quantization": "wq_aq",
-        "S": "16",
-        "depth": "any",
-        "vehicle": "vit_b",
+        "S": "32",
+        "depth": "8",
+        "vehicle": "deep_cnn",
         "dataset": "cifar10",
-        "regime": "pretrained",
+        "regime": "from_scratch",
         "pruning": "dense",
         "encoding_placement": "subsume"
       },
@@ -229,18 +229,18 @@
       "expected_wall_min": 120
     },
     {
-      "name": "t1_12_mvm_squeezenet_wq_sched",
-      "config": "t1_12_mvm_squeezenet_wq_sched.json",
-      "model_type": "torch_squeezenet11",
+      "name": "t1_12_mvm_mixerc10_wq_sched",
+      "config": "t1_12_mvm_mixerc10_wq_sched.json",
+      "model_type": "mlp_mixer_core",
       "cell": {
         "firing": "mvm",
         "sync": "none",
         "quantization": "wq",
         "S": "none",
         "depth": "any",
-        "vehicle": "vit_b",
+        "vehicle": "mlp_mixer_core",
         "dataset": "cifar10",
-        "regime": "pretrained",
+        "regime": "from_scratch",
         "pruning": "dense",
         "encoding_placement": "none"
       },
