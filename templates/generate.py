@@ -284,9 +284,13 @@ T1 = [
     # with FC banks + bank-clustered scheduling: per-token instances stream
     # over resident core-sets, so ViT-B fits platform E's 138 cores (the
     # measured un-scheduled need was 4778 instances).
+    # simulation_batch_size bounds the value-census activation footprint —
+    # measured: batch-512 census allocated 79 GiB on a dedicated A100 (the
+    # t2 ViT rows' precedent knob).
     dict(n=9, mode="mvm", quant="wq", wb=8, vehicle="vit", regime="pretrained",
          scheduling=True, tags=["wall_risk", "sched"],
-         extra_dp={"schedule_policy": "bank_clustered"},
+         extra_dp={"schedule_policy": "bank_clustered",
+                   "simulation_batch_size": 64},
          extra_pc={"allow_weight_reuse": True, "max_schedule_passes": 64}),
 ]
 
