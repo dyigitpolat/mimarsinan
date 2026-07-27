@@ -4,6 +4,10 @@ from __future__ import annotations
 
 import warmup_scheduler
 
+from mimarsinan.model_training.training_utilities import (
+    EpochArgTolerantScheduler,
+)
+
 
 def train_validation_epochs(trainer, lr, n, warmup_epochs=0):
     optimizer, scheduler, scaler = trainer._get_optimizer_and_scheduler(lr, n)
@@ -16,7 +20,7 @@ def train_validation_epochs(trainer, lr, n, warmup_epochs=0):
             optimizer,
             multiplier=1.0,
             total_epoch=warmup_epochs,
-            after_scheduler=scheduler,
+            after_scheduler=EpochArgTolerantScheduler(scheduler),
         )
 
     validation_accuracy = 0.0

@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 import warmup_scheduler
+
+from mimarsinan.model_training.training_utilities import (
+    EpochArgTolerantScheduler,
+)
 import torch
 
 from mimarsinan.tuning.learning_rate_explorer import (
@@ -49,7 +53,7 @@ def train_n_steps(
             optimizer,
             multiplier=1.0,
             total_epoch=warmup_steps,
-            after_scheduler=scheduler,
+            after_scheduler=EpochArgTolerantScheduler(scheduler),
         )
     total = int(steps) + int(warmup_steps)
     for _ in range(total):
