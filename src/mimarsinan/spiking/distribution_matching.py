@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import torch
 
+from mimarsinan.mapping.support.tensor_stats import safe_quantile
+
 from mimarsinan.spiking.dfq_bias_correction import (
     dfq_correct_biases,
     mean_abs_gap,
@@ -48,7 +50,7 @@ def calibrate_fanin_boundary_scales(
     n_lifted = 0
     for join_node, traffic in joins.items():
         observed = float(
-            torch.quantile(traffic.abs().to(torch.float32).flatten(), float(quantile))
+            safe_quantile(traffic.abs().to(torch.float32).flatten(), float(quantile))
         )
         current = float(out_scales.get(join_node, input_data_scale))
         if observed > current:
@@ -138,7 +140,7 @@ def match_activation_distributions(
         for k, v in ann_samples.items()
     }
     theta_out = [
-        max(float(torch.quantile(ann_samples[k].abs().float().flatten(), quantile)), 1e-2)
+        max(float(safe_quantile(ann_samples[k].abs().float().flatten(), quantile)), 1e-2)
         if k in ann_samples else 1.0
         for k in range(n_perceptrons)
     ]

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import torch
+
+from mimarsinan.mapping.support.tensor_stats import safe_quantile
 import torch.nn as nn
 
 from mimarsinan.tuning.orchestration.lif_exact_qat import lif_exact_qat_active
@@ -36,8 +38,8 @@ def _signed_seam_quantiles(
     memo sec.10f, the full-width cover refutation)."""
     v = values.reshape(-1).float()
     neg = (-v).clamp(min=0.0)
-    sigma = float(torch.quantile(neg, quantile)) if bool((neg > 0).any()) else 0.0
-    kappa = float(torch.quantile(v + sigma, quantile).clamp(min=1e-6))
+    sigma = float(safe_quantile(neg, quantile)) if bool((neg > 0).any()) else 0.0
+    kappa = float(safe_quantile(v + sigma, quantile).clamp(min=1e-6))
     return sigma, kappa
 
 
