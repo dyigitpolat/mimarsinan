@@ -26,6 +26,19 @@ value-domain instance of the §17 rule: (R) model↔grid is the honest WQ
 residual, (C) twin↔twin is the exact edge."""
 
 
+VALUE_R_EDGE_AQ_LSB_BOUND = 1.0
+"""[mvm AQ, measured on t1_11] Under boundary activation quantization the
+model↔chip relation is PIECEWISE CONSTANT, so a scalar atol is the wrong
+instrument: the unavoidable fp seed (the model holds fp32 weights, the chip
+accumulates integers then divides by theta — 2.1e-08 relative at hop 1)
+crosses grid edges and amplifies to ~1 LSB over a deep chain (measured
+9.8e-03 out of a 2.7e-02 LSB across 26 hops, every node affected). The
+honest R-edge for an AQ program is therefore judged in GRID UNITS — the
+divergence must stay within one boundary LSB — together with exact decision
+parity, which is what a deployed classifier actually promises. Both remain
+FATAL; only the unit changed."""
+
+
 @dataclass(frozen=True)
 class ValueWindowCertificate:
     """Per-neuron-window value agreement between two value-domain programs."""

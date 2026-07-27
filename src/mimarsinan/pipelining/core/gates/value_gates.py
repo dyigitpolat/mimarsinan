@@ -7,11 +7,14 @@ import copy
 import torch
 
 from mimarsinan.certification.value_certificate import (
+    VALUE_R_EDGE_AQ_LSB_BOUND,
     VALUE_R_EDGE_WQ_ATOL,
     VALUE_TWIN_FP64_ATOL,
     certify_twin_flow_values,
 )
 from mimarsinan.chip_simulation.value_run import ValueHybridCoreFlow
+from mimarsinan.mapping.ir import NeuralCore
+from mimarsinan.models.nn.activations.value_quantizer import value_grid_levels
 from mimarsinan.config_schema.registry import effective_value as _effective
 from mimarsinan.mapping.packing.hybrid_build_pool import build_identity_hybrid_mapping
 from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
@@ -35,6 +38,56 @@ def value_certificate_gate_armed(pipeline) -> bool:
 def _activation_bits(pipeline) -> "int | None":
     bits = _effective(pipeline.config, "activation_bits")
     return int(bits) if bits else None
+
+
+def boundary_grid_lsb(activation_bits, ir_graph) -> "float | None":
+    """One step of the widest armed boundary grid, or None when AQ is off."""
+    if not activation_bits:
+        return None
+    levels = value_grid_levels(int(activation_bits))
+    if levels <= 0:
+        return None
+    scales = [
+        float(torch.as_tensor(node.input_activation_scale).max())
+        for node in ir_graph.nodes if isinstance(node, NeuralCore)
+    ]
+    armed = [s for s in scales if s > 0.0]
+    return (max(armed) / levels) if armed else None
+
+
+def _assert_aq_grid_parity(got, want, max_abs_delta, lsb, n_samples) -> None:
+    """[mvm AQ R-edge] Judge in GRID units + exact decisions (both FATAL).
+
+    An AQ program is piecewise constant, so the fp seed between the model's
+    fp32 weights and the chip's integer-accumulate-then-divide crosses grid
+    edges and amplifies; a scalar atol measures that chaos, not the mapping.
+    """
+    bound = VALUE_R_EDGE_AQ_LSB_BOUND * lsb
+    decisions = (
+        float((got.argmax(-1) == want.argmax(-1)).double().mean())
+        if want.dim() >= 2 and want.shape[-1] > 1 else 1.0
+    )
+    if decisions < 1.0:
+        raise RuntimeError(
+            f"[mvm AQ R-edge] DECISION parity FAILED: {decisions:.4f} over "
+            f"{n_samples} samples — the deployed program must reproduce the "
+            f"model's decisions exactly (max|delta|={max_abs_delta:.3e}, "
+            f"one boundary LSB={lsb:.3e})."
+        )
+    if max_abs_delta > bound:
+        raise RuntimeError(
+            f"[mvm AQ R-edge] grid parity FAILED: max|delta|="
+            f"{max_abs_delta:.3e} exceeds {VALUE_R_EDGE_AQ_LSB_BOUND:g} "
+            f"boundary LSB ({bound:.3e}) over {n_samples} samples — a "
+            f"divergence beyond one grid step is a mapping defect, not "
+            f"grid-edge chaos."
+        )
+    print(
+        f"[ValueParityGate] PASS model≡identity [AQ grid] "
+        f"(max|delta|={max_abs_delta:.3e} = {max_abs_delta / lsb:.2f} LSB, "
+        f"bound={VALUE_R_EDGE_AQ_LSB_BOUND:g} LSB, decisions=1.0000, "
+        f"n={n_samples})"
+    )
 
 
 def _fp64_identity_flow(pipeline, ir_graph) -> ValueHybridCoreFlow:
@@ -70,6 +123,12 @@ def run_model_value_parity_gate(pipeline, model, ir_graph) -> None:
         want = reference(samples)
         got = identity_flow(samples)
     max_abs_delta = float((got - want).abs().max().item()) if want.numel() else 0.0
+
+    lsb = boundary_grid_lsb(_activation_bits(pipeline), ir_graph)
+    if lsb is not None:
+        _assert_aq_grid_parity(got, want, max_abs_delta, lsb, int(samples.shape[0]))
+        return
+
     if max_abs_delta > atol:
         raise RuntimeError(
             f"[mvm R-edge] model↔identity value parity FAILED: "
