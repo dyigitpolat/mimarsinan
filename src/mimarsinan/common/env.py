@@ -9,6 +9,7 @@ VRAM_PROBE_VAR = "MIMARSINAN_VRAM_PROBE"
 RESOURCE_DEBUG_VAR = "MIMARSINAN_RESOURCE_DEBUG"
 NF_SCM_PARITY_DEBUG_VAR = "MIMARSINAN_NF_SCM_PARITY_DEBUG"
 DISABLE_FFCV_VAR = "MIMARSINAN_DISABLE_FFCV"
+SKIP_CUDNN_INIT_VAR = "MIMARSINAN_SKIP_CUDNN_INIT"
 FFCV_CACHE_DIR_VAR = "MIMARSINAN_FFCV_CACHE_DIR"
 LOIHI_QUIET_VAR = "MIMARSINAN_LOIHI_QUIET"
 LOIHI_WAVE_WORKERS_VAR = "MIMARSINAN_LOIHI_WAVE_WORKERS"
@@ -62,6 +63,12 @@ def degenerate_routing_debug_enabled() -> bool:
 def ffcv_disabled() -> bool:
     """FFCV data loading is force-disabled (value exactly "1")."""
     return os.environ.get(DISABLE_FFCV_VAR) == "1"
+
+
+def skip_cudnn_init() -> bool:
+    """Skip the startup cudnn-warmup conv (value exactly "1"): some hosts'
+    driver/toolkit combos abort in cublasLt during that first conv (peta)."""
+    return os.environ.get(SKIP_CUDNN_INIT_VAR) == "1"
 
 
 def ffcv_cache_dir() -> str | None:

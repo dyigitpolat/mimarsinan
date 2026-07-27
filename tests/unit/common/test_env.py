@@ -15,6 +15,7 @@ EXACT_ONE_FLAGS = [
     (env.resource_debug_enabled, "MIMARSINAN_RESOURCE_DEBUG"),
     (env.nf_scm_parity_debug_enabled, "MIMARSINAN_NF_SCM_PARITY_DEBUG"),
     (env.ffcv_disabled, "MIMARSINAN_DISABLE_FFCV"),
+    (env.skip_cudnn_init, "MIMARSINAN_SKIP_CUDNN_INIT"),
     (env.loihi_quiet, "MIMARSINAN_LOIHI_QUIET"),
     (env.test_cuda_enabled, "MIMARSINAN_TEST_CUDA"),
     (env.mbh_ledger_enabled, "MIMARSINAN_MBH_LEDGER"),
