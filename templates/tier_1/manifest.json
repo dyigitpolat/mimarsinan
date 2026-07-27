@@ -183,6 +183,71 @@
         "sched"
       ],
       "expected_wall_min": 120
+    },
+    {
+      "name": "t1_10_lif_squeezenet_wq_s16_sched",
+      "config": "t1_10_lif_squeezenet_wq_s16_sched.json",
+      "model_type": "torch_squeezenet11",
+      "cell": {
+        "firing": "lif",
+        "sync": "none",
+        "quantization": "wq_aq",
+        "S": "16",
+        "depth": "any",
+        "vehicle": "vit_b",
+        "dataset": "cifar10",
+        "regime": "pretrained",
+        "pruning": "dense",
+        "encoding_placement": "subsume"
+      },
+      "tags": [
+        "sched"
+      ],
+      "expected_wall_min": 120
+    },
+    {
+      "name": "t1_11_mvm_vit_wq_sched_aq8",
+      "config": "t1_11_mvm_vit_wq_sched_aq8.json",
+      "model_type": "torch_vit",
+      "cell": {
+        "firing": "mvm",
+        "sync": "none",
+        "quantization": "wq",
+        "S": "none",
+        "depth": "any",
+        "vehicle": "vit_b",
+        "dataset": "cifar10",
+        "regime": "pretrained",
+        "pruning": "dense",
+        "encoding_placement": "none"
+      },
+      "tags": [
+        "wall_risk",
+        "sched",
+        "aq8"
+      ],
+      "expected_wall_min": 120
+    },
+    {
+      "name": "t1_12_mvm_squeezenet_wq_sched",
+      "config": "t1_12_mvm_squeezenet_wq_sched.json",
+      "model_type": "torch_squeezenet11",
+      "cell": {
+        "firing": "mvm",
+        "sync": "none",
+        "quantization": "wq",
+        "S": "none",
+        "depth": "any",
+        "vehicle": "vit_b",
+        "dataset": "cifar10",
+        "regime": "pretrained",
+        "pruning": "dense",
+        "encoding_placement": "none"
+      },
+      "tags": [
+        "sched"
+      ],
+      "expected_wall_min": 120
     }
   ],
   "coverage_notes": [

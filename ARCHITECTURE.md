@@ -233,8 +233,8 @@ re-run it. The tiers trade coverage for wall clock:
 
 | Tier | Runs | Dataset | Wall budget / run |
 |---|---|---|---|
-| `tier0` | 28 | MNIST | 5-12 min |
-| `tier1` | 9 | CIFAR-10 | 120 min |
+| `tier0` | 29 | MNIST | 5-12 min |
+| `tier1` | 12 | CIFAR-10 | 120 min |
 | `tier2` | 5 | ImageNet / CIFAR-100 | 360 min |
 | `tier3` | 3 | ImageNet | 480 min |
 

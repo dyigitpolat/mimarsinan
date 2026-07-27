@@ -292,6 +292,32 @@ T1 = [
          extra_dp={"schedule_policy": "bank_clustered",
                    "simulation_batch_size": 64},
          extra_pc={"allow_weight_reuse": True, "max_schedule_passes": 64}),
+    # [wsm N1] the weight-programming boundary in the EVENT domain at tier-1
+    # scale: same vehicle/mode/S as t1_01, scheduled with the bank-aware
+    # policy. Measured precondition (t0_22 cached IR): bank_clustered engages
+    # for spiking conv banks (reuse 0.19 -> 0.27), so this cell carries real
+    # evidence rather than a pool fallback. t1_01 is the unscheduled control.
+    dict(n=10, mode="lif", quant="wq", wb=8, s=16, vehicle="squeezenet",
+         regime="pretrained", scheduling=True, tags=["sched"],
+         extra_dp={"schedule_policy": "bank_clustered"},
+         extra_pc={"allow_weight_reuse": True, "max_schedule_passes": 128}),
+    # [mvm AQ] boundary value-grid quantization at ViT scale — the minimal
+    # pair with t1_09 (activation_bits absent -> declared). Exercises AQ x
+    # scheduling composition and the R/C certs over ~18M neuron-windows.
+    dict(n=11, mode="mvm", quant="wq", wb=8, vehicle="vit", regime="pretrained",
+         scheduling=True, tags=["wall_risk", "sched", "aq8"],
+         extra_dp={"schedule_policy": "bank_clustered",
+                   "simulation_batch_size": 64},
+         extra_pc={"allow_weight_reuse": True, "max_schedule_passes": 64,
+                   "activation_bits": 8}),
+    # [mvm breadth] a SECOND value-domain architecture family at tier-1: fire
+    # modules (1x1 squeeze / mixed 1x1+3x3 expand, concat) and a conv
+    # classifier head — packaging shapes ViT never exercises. Scheduled so a
+    # pool overflow becomes a scheduled run, not a capacity stop.
+    dict(n=12, mode="mvm", quant="wq", wb=8, vehicle="squeezenet",
+         regime="pretrained", scheduling=True, tags=["sched"],
+         extra_dp={"schedule_policy": "bank_clustered"},
+         extra_pc={"allow_weight_reuse": True, "max_schedule_passes": 128}),
 ]
 
 T1_VEHICLES = {
@@ -377,7 +403,7 @@ def _name(tier, row, vehicles):
     depth = f"_d{row['depth']}" if "depth" in row else ""
     tags = "".join(f"_{t}" for t in row.get("tags", []) if t in
                    ("offload", "sched", "nobias", "pruned", "pruned10", "novena",
-                    "identity", "residual", "e4", "wb8", "wb4", "floor"))
+                    "identity", "residual", "e4", "wb8", "wb4", "floor", "aq8"))
     s_part = f"_s{row['s']}" if "s" in row else ""
     return f"{prefix}_{row['n']:02d}_{row['mode']}_{v}{depth}_{row['quant']}{s_part}{tags}"
 
