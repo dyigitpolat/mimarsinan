@@ -239,6 +239,16 @@ batch with BIT-EQUAL per-sample decisions; an OOM retry re-enters with
 ``max_batch_cap`` = the plan's ``simulation_batch_size``."""
 
 
+def declared_census_cap(plan) -> "int | None":
+    """The config's DECLARED census bound, or None when it is silent.
+
+    ``plan.simulation_batch_size`` derives to 8 when undeclared — a retry
+    fallback, never a statement about the first read's batch.
+    """
+    declared = plan.config.get("simulation_batch_size")
+    return int(declared) if declared else None
+
+
 def resolve_census_batch_size(
     test_batch_size: int, *, declared_cap: "int | None", retry_cap: "int | None"
 ) -> int:
@@ -274,7 +284,7 @@ def run_trainer_metric(
     try:
         trainer.set_test_batch_size(resolve_census_batch_size(
             trainer.test_batch_size,
-            declared_cap=DeploymentPlan.of(pipeline).declared_simulation_batch_size,
+            declared_cap=declared_census_cap(DeploymentPlan.of(pipeline)),
             retry_cap=max_batch_cap,
         ))
         # Evaluate on the SAME test set as the torch reference (a subsample-vs-full

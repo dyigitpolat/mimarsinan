@@ -112,13 +112,16 @@ class TestCensusBatchResolution:
             128, declared_cap=64, retry_cap=8
         ) == 8
 
-    def test_plan_reports_declared_vs_resolved(self):
+    def test_declared_cap_distinguishes_silence_from_declaration(self):
         from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
+        from mimarsinan.pipelining.core.simulation_factory import (
+            declared_census_cap,
+        )
         bare = DeploymentPlan.resolve({})
-        assert bare.declared_simulation_batch_size is None
+        assert declared_census_cap(bare) is None
         assert bare.simulation_batch_size == 8  # retry fallback only
         declared = DeploymentPlan.resolve({"simulation_batch_size": 64})
-        assert declared.declared_simulation_batch_size == 64
+        assert declared_census_cap(declared) == 64
         assert declared.simulation_batch_size == 64
 
 
