@@ -258,9 +258,17 @@ def run_trainer_metric(
         trainer.set_test_batch_size(
             max(int(trainer.test_batch_size), _SIM_EVAL_BATCH_SIZE)
         )
-        if max_batch_cap is not None:
+        # [F3] the plan's simulation_batch_size bounds EVERY attempt — the
+        # floor above otherwise raised attempt 1 past the declared cap
+        # (measured: config 512 ran the census at 1024, guaranteeing an OOM
+        # pass before the capped retry).
+        plan_cap = DeploymentPlan.of(pipeline).simulation_batch_size
+        effective_cap = min(
+            (c for c in (max_batch_cap, plan_cap) if c), default=None
+        )
+        if effective_cap is not None:
             trainer.set_test_batch_size(
-                min(int(trainer.test_batch_size), int(max_batch_cap))
+                min(int(trainer.test_batch_size), int(effective_cap))
             )
         # Evaluate on the SAME test set as the torch reference (a subsample-vs-full
         # comparison manufactures spurious NF↔SCM drop): the universal eval cap is

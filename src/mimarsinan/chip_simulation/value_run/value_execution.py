@@ -26,6 +26,7 @@ class _PreparedValueSegment:
     def __init__(
         self, hcm, device: torch.device, dtype: torch.dtype,
         resident_from: "_PreparedValueSegment | None" = None,
+        upload_memo: "dict | None" = None,
     ) -> None:
         ensure_core_latencies(hcm)
         self.order: List[int] = sorted(
@@ -37,7 +38,7 @@ class _PreparedValueSegment:
             self.biases = resident_from.biases[: len(hcm.cores)]
         else:
             self.weights = [
-                torch.as_tensor(core.core_matrix, dtype=dtype, device=device)
+                _upload(core.core_matrix, dtype, device, upload_memo)
                 for core in hcm.cores
             ]
             self.biases = [
@@ -79,8 +80,23 @@ def ensure_core_latencies(hcm) -> None:
         ChipLatency(hcm).calculate()
 
 
+def _upload(matrix, dtype, device, memo: "dict | None"):
+    """Device tensor for ``matrix``; cores sharing one deduped ndarray share
+    one tensor ([F2] — identity-checked so a stale id can never alias)."""
+    if memo is None:
+        return torch.as_tensor(matrix, dtype=dtype, device=device)
+    key = (id(matrix), dtype, str(device))
+    hit = memo.get(key)
+    if hit is not None and hit[0] is matrix:
+        return hit[1]
+    tensor = torch.as_tensor(matrix, dtype=dtype, device=device)
+    memo[key] = (matrix, tensor)
+    return tensor
+
+
 def _prepared(
-    hcm, device: torch.device, dtype: torch.dtype, resident_head=None
+    hcm, device: torch.device, dtype: torch.dtype, resident_head=None,
+    upload_memo: "dict | None" = None,
 ) -> _PreparedValueSegment:
     by_key = _SEGMENT_CACHE.setdefault(hcm, {})
     key = (str(device), dtype)
@@ -88,9 +104,11 @@ def _prepared(
     if prepared is None:
         head = (
             None if resident_head is None or resident_head is hcm
-            else _prepared(resident_head, device, dtype)
+            else _prepared(resident_head, device, dtype, upload_memo=upload_memo)
         )
-        prepared = _PreparedValueSegment(hcm, device, dtype, resident_from=head)
+        prepared = _PreparedValueSegment(
+            hcm, device, dtype, resident_from=head, upload_memo=upload_memo
+        )
         by_key[key] = prepared
     return prepared
 
@@ -102,7 +120,7 @@ def prepared_segment_cache_for_testing() -> "weakref.WeakKeyDictionary":
 
 def run_neural_segment_values(
     hcm, seg_input: torch.Tensor, activation_bits: "int | None" = None,
-    resident_head=None,
+    resident_head=None, upload_memo: "dict | None" = None,
 ) -> torch.Tensor:
     """Execute one packed segment in the value domain: y_core = (x @ W + b) / theta.
 
@@ -114,7 +132,9 @@ def run_neural_segment_values(
     formula the model-side ``ValueGridQuantizer`` applies.
     """
     device, dtype = seg_input.device, seg_input.dtype
-    prepared = _prepared(hcm, device, dtype, resident_head=resident_head)
+    prepared = _prepared(
+        hcm, device, dtype, resident_head=resident_head, upload_memo=upload_memo
+    )
     batch = seg_input.shape[0]
 
     buffers: Dict[int, torch.Tensor] = {}
