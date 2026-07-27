@@ -55,3 +55,26 @@ class TestEpochArgTolerance:
         assert shim.last_epoch == inner.last_epoch
         assert shim.get_last_lr() == inner.get_last_lr()
         assert shim.optimizer is inner.optimizer
+
+
+class TestEveryConstructionSiteIsWrapped:
+    """The shim only helps where it is APPLIED: a partial edit left two of
+    four GradualWarmupScheduler sites bare and t1_10 failed identically."""
+
+    def test_no_bare_after_scheduler_argument(self):
+        import re
+        from pathlib import Path
+
+        import mimarsinan.model_training as pkg
+
+        offenders = []
+        for path in Path(pkg.__file__).parent.glob("*.py"):
+            for match in re.finditer(r"after_scheduler=([A-Za-z_][\w.]*)",
+                                     path.read_text()):
+                if match.group(1) != "EpochArgTolerantScheduler":
+                    offenders.append(f"{path.name}: after_scheduler={match.group(1)}")
+        assert not offenders, (
+            f"unwrapped warmup after_scheduler sites (modern SequentialLR "
+            f"rejects the epoch arg): {offenders}"
+        )
+

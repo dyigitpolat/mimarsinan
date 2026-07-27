@@ -130,7 +130,7 @@ def train_steps_until_target(
         )
     if warmup_steps > 0:
         scheduler = warmup_scheduler.GradualWarmupScheduler(
-            optimizer, multiplier=1.0, total_epoch=warmup_steps, after_scheduler=scheduler
+            optimizer, multiplier=1.0, total_epoch=warmup_steps, after_scheduler=EpochArgTolerantScheduler(scheduler)
         )
     total = int(max_steps) + int(warmup_steps)
     n_val = max(1, int(validation_n_batches))

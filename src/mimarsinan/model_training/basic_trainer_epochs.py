@@ -40,7 +40,7 @@ def train_until_target_accuracy(trainer, lr, max_epochs, target_accuracy, warmup
 
     if warmup_epochs > 0:
         scheduler = warmup_scheduler.GradualWarmupScheduler(
-            optimizer, multiplier=1., total_epoch=warmup_epochs, after_scheduler=scheduler
+            optimizer, multiplier=1., total_epoch=warmup_epochs, after_scheduler=EpochArgTolerantScheduler(scheduler)
         )
 
     validation_accuracy = 0.0
