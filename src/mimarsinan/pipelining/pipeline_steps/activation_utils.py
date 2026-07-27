@@ -1,10 +1,7 @@
 """Shared helpers for activation adaptation steps."""
 
-import torch
-
-from mimarsinan.mapping.support.tensor_stats import safe_quantile
-
 from mimarsinan.common.workload_profile import ResolvedWorkloadProfile
+from mimarsinan.mapping.support.tensor_stats import safe_quantile
 from mimarsinan.tuning.orchestration.tuning_budget import tuning_budget_from_pipeline
 
 RELU_COMPATIBLE_TYPES = (
