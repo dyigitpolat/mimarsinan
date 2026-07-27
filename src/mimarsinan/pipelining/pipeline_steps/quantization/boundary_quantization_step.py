@@ -6,6 +6,7 @@ from typing import Iterable
 
 import torch
 
+from mimarsinan.mapping.support.tensor_stats import safe_quantile
 from mimarsinan.models.nn.activations.value_quantizer import ValueGridQuantizer
 from mimarsinan.pipelining.core.registry.trainer_factory import make_basic_trainer
 from mimarsinan.pipelining.core.steps.pipeline_step import PipelineStep
@@ -49,9 +50,7 @@ def calibrate_boundary_scales(
     handles = []
     for quantizer in quantizers:
         def hook(module, args, q=quantizer):
-            value = torch.quantile(
-                args[0].detach().abs().flatten().float(), quantile
-            ).item()
+            value = safe_quantile(args[0].detach().abs(), quantile).item()
             maxima[id(q)] = max(maxima[id(q)], value)
         handles.append(quantizer.register_forward_pre_hook(hook))
     try:
