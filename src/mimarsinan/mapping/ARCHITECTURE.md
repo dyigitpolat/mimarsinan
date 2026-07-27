@@ -21,11 +21,12 @@ use when).
 | `model_representation.py` | `ModelRepresentation` — mapper-graph DAG with a memory-frugal refcounted topological executor, perceptron enumeration, and the public graph accessors `execution_order()` / `consumer_map()` (used by the negative-boundary policy and channel-scale equalization) |
 | `channel_axis_walk.py` | Shared channel-axis walk SSOT: `channel_aligned_consumer_targets` follows `consumer_map()` edges through permute/leading-dim/mean-over-non-channel nodes (fan-out closure — one unalignable path voids the producer) to the perceptrons / host-Linear modules whose columns consume a producer's channel axis unmediated (`consumer_columns_unmediated`); behind M4 scale migration and the LIF affine fold's consumer discovery |
 | `mapping_utils.py` | Legacy star re-export facade; import from the concrete modules in new code |
+| `weight_programming.py` | [wsm] `WeightProgrammingReport`: the weight-programming boundary measured per packed program (events, params programmed vs unique, reuse factor) — printed + reporter-evented on every Hard Core Mapping run |
 | `weight_reuse.py` | Time-domain weight-reuse phase classification of segments by `weight_bank_id` (default-off, pure read of the IR) |
 | `ir/` | Unified IR: `IRGraph` container, node types (`NeuralCore`, `ComputeOp`, `WeightBank`, `IRSource`), legacy conversions |
 | `mappers/` | Mapper hierarchy consumed by the graph: base, structural, perceptron, leading-dim, conv1d/conv2d, scale propagation |
 | `layout/` | Shape-only layout SSoT (`LayoutIRMapping`, layout plan/packer, segmentation) for fast architecture-search estimation |
-| `platform/` | `ChipCapabilities`, `MappingStrategy`, platform constraints, tiling/coalescing structure |
+| `platform/` | `ChipCapabilities`, `MappingStrategy`, platform constraints, tiling/coalescing structure, and the `PackagingContract` SSOT (what op shapes a target's cores accept: spiking perceptron vs value-domain affine packaging) |
 | `pruning/` | IR pruning, liveness semantics, mask/compaction application, boundary policy, graph segmentation |
 | `packing/` | `SoftCore`/`HardCore` bin packing, placement engine, hybrid multi-stage mapping (`HybridHardCoreMapping`) |
 | `latency/` | `IRLatency` (IR topology tiers) and `ChipLatency` (packed-chip cycle scheduling) plus upstream closure; `depth_balancing` [C5] inserts identity relay chains on gap>1 intra-segment edges (unequal-depth fan-in, V6) with the loud gap-1 and dead-relay (strict-'<' exact-theta lattice, V9) guards |

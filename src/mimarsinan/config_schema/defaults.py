@@ -73,7 +73,7 @@ DEFAULT_PLATFORM_CONSTRAINTS: Dict[str, object] = {
     "weight_bits": 8,
     "allow_coalescing": False,
     "allow_neuron_splitting": False,
-    "allow_per_layer_s": False,
+    "allow_per_layer_s": False, "allow_weight_reuse": False,
     "max_schedule_passes": 8,
     "scheduling_latency_weight": 1.0,
 }
@@ -116,11 +116,11 @@ CONFIG_KEYS_SET: Set[str] = {
     "target_tq",
     "allow_coalescing",
     "allow_neuron_splitting",
-    "allow_per_layer_s",
-    "allow_scheduling",
+    "allow_per_layer_s", "allow_weight_reuse",
+    "allow_scheduling", "schedule_policy",
     "max_schedule_passes",
     "scheduling_latency_weight",
-    "weight_bits",
+    "weight_bits", "activation_bits",
     "tuning_budget_scale",
     "tuning_budget_scale_ramp_steps",
     "tuner_target_floor_ratio",
@@ -184,7 +184,7 @@ CONFIG_KEYS_SET: Set[str] = {
     # Every-endpoint D-hat target floor (recipe may set it).
     "endpoint_target_floor", "origin_teacher_kd", "origin_anchored_compact",
     "spike_phase_dither", "lif_membrane_init", "lif_execution_discipline",
-    "spike_count_parity_samples", "aa_endpoint_recovery_steps", "tuning_lossless_entry_fast_path", "endpoint_target_margin", "activation_scale_policy",
+    "spike_count_parity_samples", "aa_endpoint_recovery_steps", "tuning_lossless_entry_fast_path", "endpoint_target_margin", "activation_scale_policy", "core_semantics", "value_parity_samples",
     # torch DataLoader worker count; read via config.get with a fallback of 4.
     "num_workers", "proven_recovery_depth",
     # Workload-profile-injectable keys (absence is meaningful — no defaults).

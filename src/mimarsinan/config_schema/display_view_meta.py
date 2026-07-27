@@ -146,6 +146,11 @@ def _collect_derived_keys(saved: Mapping[str, Any]) -> Set[str]:
     for key, value in dp_raw.items():
         if key not in DERIVED_KEYS:
             before[key] = value
+    # Platform keys the derivation consults (activation_bits arms mvm AQ);
+    # the derivation never writes into the platform section.
+    for key, value in dict(saved.get("platform_constraints") or {}).items():
+        if key not in DERIVED_KEYS and key not in before:
+            before[key] = value
     apply_preset(pipeline_mode, before)
     after = copy.deepcopy(before)
     derive_deployment_parameters(after)

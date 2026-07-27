@@ -290,3 +290,26 @@ class TestPickleLoadStoreStrategy:
         s.store(str(tmp_path), {1, 2, 3})
         loaded = s.load(str(tmp_path))
         assert loaded == {1, 2, 3}
+
+    def test_tensors_load_onto_cpu(self, tmp_path):
+        # Cached artifacts are device-neutral: a pickle written on a busy GPU
+        # must never NEED that GPU at load time (a saturated device turned
+        # every cache load into a CUDA OOM — tier-0 sweep 2026-07-27).
+        s = PickleLoadStoreStrategy("tensors")
+        s.store(str(tmp_path), {"w": torch.arange(6.0).reshape(2, 3)})
+        loaded = s.load(str(tmp_path))
+        assert loaded["w"].device.type == "cpu"
+        assert torch.equal(loaded["w"], torch.arange(6.0).reshape(2, 3))
+
+    def test_cpu_mapping_covers_legacy_plain_pickles(self, tmp_path):
+        # Artifacts written by the pre-fix plain pickler load identically.
+        import pickle as _pickle
+
+        payload = {"t": torch.tensor([3.0, 4.0]), "meta": ("x", 7)}
+        path = f"{tmp_path}/legacy.pickle"
+        with open(path, "wb") as f:
+            _pickle.dump(payload, f)
+        loaded = PickleLoadStoreStrategy("legacy").load(str(tmp_path))
+        assert torch.equal(loaded["t"], payload["t"])
+        assert loaded["t"].device.type == "cpu"
+        assert loaded["meta"] == ("x", 7)

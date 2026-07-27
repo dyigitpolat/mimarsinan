@@ -43,17 +43,26 @@ class HardCore:
         axon_offset = self.axons_per_core - self.available_axons
         neuron_offset = self.neurons_per_core - self.available_neurons
 
-        if self.core_matrix is None:
-            sc_dtype = getattr(softcore.core_matrix, "dtype", None)
-            dtype = sc_dtype if sc_dtype is not None else np.float64
-            self.core_matrix = np.zeros(
-                (self.axons_per_core, self.neurons_per_core), dtype=dtype,
-            )
-
-        self.core_matrix[
-            axon_offset : axon_offset+softcore.get_input_count(),
-            neuron_offset : neuron_offset+softcore.get_output_count()] \
-                = softcore.core_matrix
+        if (
+            self.core_matrix is None
+            and softcore.get_input_count() == self.axons_per_core
+            and softcore.get_output_count() == self.neurons_per_core
+        ):
+            # Exact-fit 1:1: alias the (possibly bank-shared) matrix so pickle
+            # memoization stores each bank payload once across duplicate
+            # cores. Safe: the core is now full, so no later add can write.
+            self.core_matrix = softcore.core_matrix
+        else:
+            if self.core_matrix is None:
+                sc_dtype = getattr(softcore.core_matrix, "dtype", None)
+                dtype = sc_dtype if sc_dtype is not None else np.float64
+                self.core_matrix = np.zeros(
+                    (self.axons_per_core, self.neurons_per_core), dtype=dtype,
+                )
+            self.core_matrix[
+                axon_offset : axon_offset+softcore.get_input_count(),
+                neuron_offset : neuron_offset+softcore.get_output_count()] \
+                    = softcore.core_matrix
 
         self.axon_sources.extend(softcore.axon_sources)
         self._axon_source_spans = None

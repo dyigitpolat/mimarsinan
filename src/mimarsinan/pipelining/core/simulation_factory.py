@@ -64,6 +64,7 @@ def build_hybrid_mapping_for_pipeline(
         cores_config=platform_constraints["cores"],
         strategy=strategy,
         per_hop_neural_segments=_per_hop_retiming_enabled(pipeline_config),
+        max_schedule_passes=int(platform_constraints.get("max_schedule_passes", 8) or 8),
     )
     propagate_negative_shifts_to_hybrid(ir_graph, hybrid_mapping)
     # Provenance stamp (dynamic attribute) for staleness detection when the ir_graph is regenerated.
@@ -238,6 +239,33 @@ batch with BIT-EQUAL per-sample decisions; an OOM retry re-enters with
 ``max_batch_cap`` = the plan's ``simulation_batch_size``."""
 
 
+def declared_census_cap(plan) -> "int | None":
+    """The config's DECLARED census bound, or None when it is silent.
+
+    ``plan.simulation_batch_size`` derives to 8 when undeclared — a retry
+    fallback, never a statement about the first read's batch.
+    """
+    declared = plan.config.get("simulation_batch_size")
+    return int(declared) if declared else None
+
+
+def resolve_census_batch_size(
+    test_batch_size: int, *, declared_cap: "int | None", retry_cap: "int | None"
+) -> int:
+    """[F3] The eval batch for a deployed-metric read.
+
+    Attempt 1 amortizes per-core launch overhead at ``_SIM_EVAL_BATCH_SIZE``
+    UNLESS the config declared a census bound (an author's memory statement —
+    the floor otherwise silently overrode it and guaranteed an OOM pass); an
+    OOM retry additionally passes the plan's resolved ``simulation_batch_size``.
+    """
+    size = max(int(test_batch_size), _SIM_EVAL_BATCH_SIZE)
+    for cap in (declared_cap, retry_cap):
+        if cap:
+            size = min(size, int(cap))
+    return size
+
+
 def run_trainer_metric(
     pipeline,
     model,
@@ -254,13 +282,11 @@ def run_trainer_metric(
         None,
     )
     try:
-        trainer.set_test_batch_size(
-            max(int(trainer.test_batch_size), _SIM_EVAL_BATCH_SIZE)
-        )
-        if max_batch_cap is not None:
-            trainer.set_test_batch_size(
-                min(int(trainer.test_batch_size), int(max_batch_cap))
-            )
+        trainer.set_test_batch_size(resolve_census_batch_size(
+            trainer.test_batch_size,
+            declared_cap=declared_census_cap(DeploymentPlan.of(pipeline)),
+            retry_cap=max_batch_cap,
+        ))
         # Evaluate on the SAME test set as the torch reference (a subsample-vs-full
         # comparison manufactures spurious NF↔SCM drop): the universal eval cap is
         # seeded by plan.seed here AND at the torch pipeline_metric, so both read the
@@ -289,13 +315,14 @@ def run_trainer_metric(
 
 def run_hcm_spiking_test(
     pipeline,
-    flow: SpikingHybridCoreFlow,
+    flow: "torch.nn.Module",
     *,
     device: str | None = None,
     max_batch_cap: int | None = None,
     retry_on_oom: bool = False,
 ) -> float:
-    """Run soft-core / HCM metric test with subsample or batch limit from config."""
+    """Run a deployed-metric census over the eval set (config-bounded
+    subsample/batch). Flow-agnostic: spiking or value hybrid flows."""
     device = device or pipeline.config["device"]
     attempt_cap = max_batch_cap
     last_error: Exception | None = None

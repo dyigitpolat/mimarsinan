@@ -7,6 +7,7 @@ from dataclasses import dataclass
 import torch
 import torch.nn as nn
 
+from mimarsinan.mapping.support.tensor_stats import subsample_to_limit
 from mimarsinan.mapping.mappers.compute_op_mapper import ComputeOpMapper
 from mimarsinan.models.nn.activations import LIFActivation
 from mimarsinan.models.spiking.wire_semantics import lif_count_staircase
@@ -62,8 +63,7 @@ def _scalar(value) -> float:
 
 
 def _subsample(t: torch.Tensor) -> torch.Tensor:
-    flat = t.detach().reshape(-1)
-    return flat[:: max(1, flat.numel() // _SAMPLE_CAP)]
+    return subsample_to_limit(t, _SAMPLE_CAP)
 
 
 def _value_walk(repr_, x):

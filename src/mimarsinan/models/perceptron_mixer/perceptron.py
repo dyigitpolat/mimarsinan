@@ -59,6 +59,15 @@ def make_activation(name=None):
     return ACTIVATION_REGISTRY[name]()
 
 
+def as_affine_package(perceptron: "Perceptron") -> "Perceptron":
+    """Value-domain (mvm) affine package: a true Identity activation by
+    construction — never the spiking flow's ReLU-ification of unnamed acts."""
+    perceptron.base_activation_name = "Identity"
+    perceptron.base_activation = nn.Identity()
+    perceptron.activation = nn.Identity()
+    return perceptron
+
+
 class Perceptron(nn.Module):
     def __init__(
         self,

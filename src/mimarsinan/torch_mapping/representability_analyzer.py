@@ -8,6 +8,10 @@ from typing import Dict, List, Optional
 import torch.nn as nn
 import torch.fx as fx
 
+from mimarsinan.mapping.platform.packaging_contract import (
+    SPIKING_PACKAGING,
+    PackagingContract,
+)
 from mimarsinan.torch_mapping.fx_shape_utils import node_target_str
 
 
@@ -57,21 +61,31 @@ _NEURAL_CORE_MODULES: set[type] = {
 }
 
 # nn.Identity is absorbable so mm → Identity → BN → act chains fold into one Perceptron.
-_ABSORBABLE_MODULES: set[type] = {
+_ABSORBABLE_NORMS: set[type] = {
     nn.BatchNorm1d,
     nn.BatchNorm2d,
-    nn.ReLU,
-    nn.LeakyReLU,
-    nn.GELU,
     nn.Identity,
 }
 
+_ABSORBABLE_ACTIVATIONS: set[type] = {
+    nn.ReLU,
+    nn.LeakyReLU,
+    nn.GELU,
+}
+
+_ABSORBABLE_MODULES: set[type] = _ABSORBABLE_NORMS | _ABSORBABLE_ACTIVATIONS
+
 
 class RepresentabilityAnalyzer:
-    """Analyse an FX graph for mimarsinan representability."""
+    """Analyse an FX graph for mimarsinan representability (per packaging contract)."""
 
-    def __init__(self, graph_module: fx.GraphModule):
+    def __init__(
+        self,
+        graph_module: fx.GraphModule,
+        packaging: PackagingContract = SPIKING_PACKAGING,
+    ):
         self.gm = graph_module
+        self._packaging = packaging
         self._modules: Dict[str, nn.Module] = dict(graph_module.named_modules())
 
     def analyze(self) -> RepresentabilityReport:
@@ -156,7 +170,12 @@ class RepresentabilityAnalyzer:
             if mod is None:
                 continue
 
-            if not isinstance(mod, (*_ABSORBABLE_MODULES,)):
+            absorbable = (
+                _ABSORBABLE_MODULES
+                if self._packaging.absorb_activation
+                else _ABSORBABLE_NORMS
+            )
+            if not isinstance(mod, (*absorbable,)):
                 continue
 
             if len(node.args) < 1:

@@ -33,6 +33,9 @@ class HybridStage:
     output_map: list[SegmentIOSlice] = field(default_factory=list)
     schedule_segment_index: int | None = None
     schedule_pass_index: int | None = None
+    # [wsm] pass p>0 of a bank-clustered schedule: weights stayed resident
+    # from the previous pass (verified geometry), so programming cost is 0.
+    schedule_weights_resident: bool = False
 
 
 @dataclass

@@ -12,6 +12,10 @@ from mimarsinan.mapping.ir import ComputeOp, IRSource
 from mimarsinan.mapping.ir.gather_plan import gather_plan_for
 from mimarsinan.mapping.support.activation_scales import scalar_node_scale
 from mimarsinan.mapping.support.compute_modules import ScaleNormalizingWrapper
+from mimarsinan.chip_simulation.hybrid_run.input_shifts import (
+    apply_input_shifts_numpy as apply_input_shifts_numpy,
+    compute_input_state_with_shifts as compute_input_state_with_shifts,
+)
 
 
 def assemble_segment_input_torch(
@@ -83,13 +87,20 @@ def execute_compute_op_torch(
     in_scale: float = 1.0,
     out_scale: float | None = None,
     output_dtype: torch.dtype | None = None,
+    gather_dtype: torch.dtype | None = None,
 ) -> torch.Tensor:
-    """Execute a host-side ComputeOp; optional in/out activation scales."""
+    """Execute a host-side ComputeOp; optional in/out activation scales.
+
+    ``gather_dtype=None`` keeps the historical default-dtype gather buffer;
+    the value-domain fp64 path passes an explicit dtype so no fp32 round
+    enters between stages.
+    """
     if out_scale is None:
         out_scale = in_scale
 
-    gathered = op.gather_inputs(original_input, state_buffer)
-    gathered = gathered.to(_compute_op_module_dtype(op))
+    gathered = op.gather_inputs(original_input, state_buffer, dtype=gather_dtype)
+    if gather_dtype is None:
+        gathered = gathered.to(_compute_op_module_dtype(op))
     if abs(in_scale - 1.0) > 1e-9:
         gathered = gathered * in_scale
 
@@ -116,64 +127,6 @@ def assemble_segment_input_numpy(
         buf = state_buffer[s.node_id]
         inp[:, s.offset : s.offset + s.size] = buf[:, : s.size]
     return inp
-
-
-def apply_input_shifts_numpy(
-    input_map,
-    seg_input: np.ndarray,
-    node_output_shifts,
-) -> np.ndarray:
-    """Add per-producer-channel positive shift to a segment input (numpy mirror of
-    ``HybridLifStepMixin._apply_input_shifts``). Value-preserving: the consumer bias
-    is pre-corrected ``B' = B − W·s``; empty/None ⇒ identity (no copy)."""
-    if not node_output_shifts:
-        return seg_input
-    out = seg_input
-    copied = False
-    for s in input_map:
-        shift = node_output_shifts.get(int(s.node_id))
-        if shift is None:
-            continue
-        if not copied:
-            out = seg_input.copy()
-            copied = True
-        sh = np.asarray(shift, dtype=out.dtype).reshape(-1)
-        out[:, s.offset : s.offset + s.size] += sh[: s.size]
-    return out
-
-
-def compute_input_state_with_shifts(
-    op: ComputeOp,
-    state_buffer,
-    node_output_shifts,
-):
-    """State-buffer view with producer ``node_output_shifts`` added to ``op``'s inputs.
-
-    A compute-op's baked bias (``B' = B − W·s``) expects lifted inputs, so the
-    host value path must gather them lifted too. No shifted inputs => identity.
-    """
-    if not node_output_shifts:
-        return state_buffer
-    shifted_ids = {
-        int(src.node_id)
-        for src in op.input_sources.flatten()
-        if isinstance(src, IRSource) and src.node_id >= 0
-    } & set(node_output_shifts)
-    shifted_ids = {nid for nid in shifted_ids if nid in state_buffer}
-    if not shifted_ids:
-        return state_buffer
-    view = dict(state_buffer)
-    for nid in shifted_ids:
-        buf = state_buffer[nid]
-        shift = node_output_shifts[nid]
-        if isinstance(buf, torch.Tensor):
-            sh = torch.as_tensor(
-                shift, dtype=buf.dtype, device=buf.device,
-            ).reshape(1, -1)
-        else:
-            sh = np.asarray(shift, dtype=buf.dtype).reshape(1, -1)
-        view[nid] = buf + sh
-    return view
 
 
 def store_segment_output_numpy(

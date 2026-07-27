@@ -8,6 +8,7 @@ import torch
 import torch.nn as nn
 import torch.fx as fx
 
+from mimarsinan.mapping.platform.packaging_contract import PackagingContract
 from mimarsinan.torch_mapping.representability_analyzer import RepresentabilityReport
 
 
@@ -19,6 +20,7 @@ class ConverterContract:
         _node_to_mapper: Dict[fx.Node, Any]
         _node_to_attr: Dict[fx.Node, Any]
         _absorbed: Set[str]
+        _packaging: PackagingContract
 
         def _get_mapper(self, node: fx.Node) -> Any: ...
 

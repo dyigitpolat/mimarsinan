@@ -28,10 +28,6 @@ def build_flat_pipeline_config(
         dp.update(deployment_parameters)
     apply_preset(pipeline_mode, dp)
     dp.setdefault("pipeline_mode", pipeline_mode)
-    derive_deployment_parameters(
-        dp, explicit_keys=set(deployment_parameters or {})
-    )
-    derive_pipeline_runtime_parameters(dp)
 
     pc = dict(get_default_platform_constraints())
     if platform_constraints:
@@ -40,7 +36,14 @@ def build_flat_pipeline_config(
         pc, cores_declared=bool(platform_constraints and "cores" in platform_constraints)
     )
 
+    # Derive on the FLAT merge, exactly like ``merge_pipeline_config`` — the
+    # derivation may consult platform keys (activation_bits arms mvm AQ).
     config: Dict[str, object] = {}
     config.update(dp)
     config.update(pc)
+    derive_deployment_parameters(
+        config,
+        explicit_keys=set(deployment_parameters or {}) | set(platform_constraints or {}),
+    )
+    derive_pipeline_runtime_parameters(config)
     return config

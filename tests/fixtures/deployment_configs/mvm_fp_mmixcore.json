@@ -1,0 +1,53 @@
+{
+  "seed": 0,
+  "pipeline_mode": "vanilla",
+  "experiment_name": "mvm_fp_mmixcore",
+  "generated_files_path": "./generated",
+  "data_provider_name": "MNIST_DataProvider",
+  "platform_constraints": {
+    "cores": [
+      {
+        "max_axons": 256,
+        "max_neurons": 512,
+        "count": 60,
+        "has_bias": false
+      },
+      {
+        "max_axons": 512,
+        "max_neurons": 256,
+        "count": 60,
+        "has_bias": false
+      }
+    ],
+    "max_axons": 512,
+    "max_neurons": 512,
+    "has_bias": false,
+    "allow_coalescing": true,
+    "allow_neuron_splitting": true
+  },
+  "deployment_parameters": {
+    "core_semantics": "mvm",
+    "lr": 0.003,
+    "tuning_budget_scale": 0.25,
+    "degradation_tolerance": 0.15,
+    "model_config_mode": "user",
+    "hw_config_mode": "fixed",
+    "weight_quantization": false,
+    "model_type": "mlp_mixer_core",
+    "model_config": {
+      "base_activation": "ReLU",
+      "normalization": "batch",
+      "patch_n_1": 4,
+      "patch_m_1": 4,
+      "patch_c_1": 32,
+      "fc_w_1": 128,
+      "fc_w_2": 128
+    },
+    "batch_size": 128,
+    "max_simulation_samples": 25,
+    "training_epochs": 2
+  },
+  "target_metric_override": null,
+  "start_step": null,
+  "stop_step": null
+}

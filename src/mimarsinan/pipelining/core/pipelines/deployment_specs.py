@@ -50,6 +50,7 @@ _STEP_PLAN = StepPlan([
     StepSpec("Clamp Adaptation",               ClampAdaptationStep,              group="activation"),
     StepSpec("Activation Shifting",            ActivationShiftStep,              group="activation_quantization"),
     StepSpec("Activation Quantization",        ActivationQuantizationStep,       group="activation_quantization"),
+    StepSpec("Boundary Quantization",          BoundaryQuantizationStep,         group="activation_quantization"),
     StepSpec("LIF Adaptation",                 LIFAdaptationStep,                group="activation"),
     StepSpec("TTFS Cycle Fine-Tuning",         TTFSCycleAdaptationStep,          group="activation"),
     StepSpec("Noise Adaptation",               NoiseAdaptationStep,              group="activation"),

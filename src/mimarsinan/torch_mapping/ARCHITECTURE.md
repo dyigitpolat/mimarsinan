@@ -5,9 +5,13 @@ Converts a trained native `nn.Module` into a mimarsinan `ModelRepresentation`
 unmodified torch model and the adaptation/quantization/mapping stages operate
 on Perceptrons. The pipeline is: FX-trace with shape propagation → graph
 normalization (Linear fusion) → representability analysis with a BN/activation
-absorption plan → node-by-node mapper emission. MM→BN?→ACT chains become
-Perceptron mappers (on-chip candidates); shape-only ops fold into structural
-mappers; every other op flows through one generic host `ComputeOpMapper` path.
+absorption plan → node-by-node mapper emission. Packaging is contract-driven
+(`mapping.platform.packaging_contract`): under the spiking contract (default)
+MM→BN?→ACT chains become Perceptron mappers (on-chip candidates) and a bare MM
+stays host; under the value-domain (mvm) contract any MM→BN? becomes an
+Identity-activation affine package, activations stay host ops, and encoding
+layers are never marked. Shape-only ops fold into structural mappers; every
+other op flows through one generic host `ComputeOpMapper` path.
 
 ## Key files
 | File | Purpose |
@@ -25,6 +29,9 @@ mappers; every other op flows through one generic host `ComputeOpMapper` path.
 | `torch_graph_tracer.py` | `trace_model`: FX symbolic tracing (MultiheadAttention/RNN/Transformer layers and `ChannelsLastBatchNorm1d` as leaves) + ShapeProp annotation; lock-serialized with stale-FX-patch restoration; raises `TracingError` |
 
 ## Dependencies
+- **mapping** — the packaging rule: `mapping.platform.packaging_contract`
+  (`PackagingContract`, `SPIKING_PACKAGING`, `MVM_PACKAGING`,
+  `packaging_contract_for`) parameterizes the analyzer/converter mixins.
 - **mapping** — the target IR: Mapper classes from `mapping.mapping_utils` and
   `mapping.mappers.*` (`ComputeOpMapper`, `InputMapper`, `PerceptronMapper`,
   `Conv1DPerceptronMapper`, `Conv2DPerceptronMapper`, `ConcatMapper`,

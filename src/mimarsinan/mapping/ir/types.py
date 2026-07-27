@@ -28,6 +28,23 @@ class WeightBank:
     hardware_bias: np.ndarray | None = None
     # Two-scale WQ bias grid (parameter_scale / integer r); None == shared grid.
     bias_scale: torch.Tensor | None = None
+    # Per-range view memo (id-invalidated): every instance of a (bank, range)
+    # shares ONE ndarray object so pickle memoization stores the payload once.
+    _column_views: dict = field(default_factory=dict, repr=False, compare=False)
+    _column_views_base: int | None = field(default=None, repr=False, compare=False)
+
+    def column_slice(self, start: int, end: int) -> np.ndarray:
+        """The (start, end) column view — full range returns the array itself."""
+        if start == 0 and end == self.core_matrix.shape[1]:
+            return self.core_matrix
+        if self._column_views_base != id(self.core_matrix):
+            self._column_views = {}
+            self._column_views_base = id(self.core_matrix)
+        view = self._column_views.get((start, end))
+        if view is None:
+            view = self.core_matrix[:, start:end]
+            self._column_views[(start, end)] = view
+        return view
 
 
 @dataclass
@@ -66,13 +83,15 @@ class IRNode(ABC):
         self,
         input_tensor: torch.Tensor,
         buffers: Dict[int, torch.Tensor],
+        dtype: "torch.dtype | None" = None,
     ) -> torch.Tensor:
         """Gather inputs from sources into a 1D tensor (override for special cases).
 
         Runs a weakly-cached :class:`GatherPlan` (sources are static); bit-equal
-        to the reference walk kept in ``mapping.ir.gather_plan``.
+        to the reference walk kept in ``mapping.ir.gather_plan``. ``dtype=None``
+        keeps the default-dtype buffer; the value-domain fp64 path widens it.
         """
-        return gather_plan_for(self).gather(input_tensor, buffers)
+        return gather_plan_for(self).gather(input_tensor, buffers, dtype=dtype)
 
 
 @dataclass
@@ -141,11 +160,10 @@ class NeuralCore(IRNode):
                 f"which does not exist in the graph."
             )
 
-        mat = bank.core_matrix
-        if self.weight_row_slice is not None:
-            start, end = self.weight_row_slice
-            mat = mat[:, start:end]
-        return mat
+        if self.weight_row_slice is None:
+            return bank.core_matrix
+        start, end = self.weight_row_slice
+        return bank.column_slice(int(start), int(end))
 
 
     def get_input_count(self) -> int:

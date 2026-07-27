@@ -2,12 +2,18 @@ from mimarsinan.pipelining.core.steps.pipeline_step import PipelineStep
 
 from mimarsinan.common.best_effort import best_effort
 from mimarsinan.common.env import vram_probe_enabled
+from mimarsinan.common.reporter import emit_reporter_event
+from mimarsinan.mapping.weight_programming import weight_programming_report
 from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 from mimarsinan.pipelining.core.hybrid_mapping_consumer import load_hybrid_mapping_for_step
 from mimarsinan.pipelining.core.engine.pipeline_helpers import run_optional_viz
 from mimarsinan.pipelining.core.simulation_factory import run_hcm_mapping_metric
 from mimarsinan.pipelining.core.spike_count_gate import (
     run_spike_count_certificate_gate,
+)
+from mimarsinan.pipelining.core.gates.value_gates import (
+    run_value_mapping_metric,
+    run_value_twin_certificate_gate,
 )
 
 import torch
@@ -92,25 +98,50 @@ class HardCoreMappingStep(PipelineStep):
         self.add_entry("hard_core_mapping", hybrid_mapping, "pickle")
         _vram_probe("after_pickle_save")
 
+        # [wsm V0'] the weight-programming boundary, measured on every run.
+        programming = weight_programming_report(hybrid_mapping)
+        print(f"[WeightProgramming] {programming.summary()}")
+        emit_reporter_event(self.pipeline.reporter, "weight_programming", {
+            "neural_stages": programming.neural_stages,
+            "programming_events": programming.programming_events,
+            "params_programmed": programming.params_programmed,
+            "params_unique": programming.params_unique,
+            "reuse_factor": programming.reuse_factor,
+        })
+
         _vram_probe("before_test")
+        plan = DeploymentPlan.of(self.pipeline)
         run_spike_count_certificate_gate(
             self.pipeline, model, ir_graph, hybrid_mapping,
         )
-        plan_cap = DeploymentPlan.of(self.pipeline).simulation_batch_size
-        acc = run_hcm_mapping_metric(
-            self.pipeline,
-            ir_graph,
-            platform_constraints,
-            hybrid_mapping=hybrid_mapping,
-            model=model,
-            cache_key="hybrid_mapping",
-            # An explicit simulation_batch_size bounds the PRIMARY attempt too
-            # (the >=1024 eval batch demands one huge contiguous encode);
-            # the designed OOM retry stays as the fallback.
-            max_batch_cap=int(plan_cap) if plan_cap else None,
-            retry_on_oom=True,
-            outer_oom_retry=True,
-        )
+        if plan.is_mvm:
+            run_value_twin_certificate_gate(
+                self.pipeline, model, ir_graph, hybrid_mapping,
+            )
+        plan_cap = plan.simulation_batch_size
+        if plan.is_mvm:
+            acc = run_value_mapping_metric(
+                self.pipeline,
+                ir_graph,
+                platform_constraints,
+                hybrid_mapping=hybrid_mapping,
+                cache_key="hybrid_mapping",
+            )
+        else:
+            acc = run_hcm_mapping_metric(
+                self.pipeline,
+                ir_graph,
+                platform_constraints,
+                hybrid_mapping=hybrid_mapping,
+                model=model,
+                cache_key="hybrid_mapping",
+                # An explicit simulation_batch_size bounds the PRIMARY attempt too
+                # (the >=1024 eval batch demands one huge contiguous encode);
+                # the designed OOM retry stays as the fallback.
+                max_batch_cap=int(plan_cap) if plan_cap else None,
+                retry_on_oom=True,
+                outer_oom_retry=True,
+            )
         _vram_probe("after_test")
         self._last_metric = float(acc)
         print(f"[HardCoreMappingStep] Hard-core Spiking Simulation Test: {acc}")

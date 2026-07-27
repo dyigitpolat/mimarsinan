@@ -22,20 +22,27 @@ docs in sync with the files they describe.
    and is contract-validated (requires/promises) before anything runs.
 3. **Adaptation is progressive**: each hardware constraint is applied at a
    fractional rate by a tuner, with accuracy recovery between increments.
-4. **Spiking semantics are centralized**: four deployable spiking modes
-   (`lif`, `ttfs`, `ttfs_quantized`, `ttfs_cycle_based` × `cascaded |
-   synchronized` schedule) are dispatched through SSOT predicate/policy
-   modules — never through scattered `if spiking_mode == ...` checks.
+4. **Semantics are centralized**: the domain axis `core_semantics ∈
+   {spiking, mvm}` (`chip_simulation/core_semantics.py`) picks the family;
+   four deployable spiking modes (`lif`, `ttfs`, `ttfs_quantized`,
+   `ttfs_cycle_based` × `cascaded | synchronized` schedule) dispatch through
+   SSOT predicate/policy modules — never scattered `if spiking_mode == ...`
+   checks. The `mvm` family (value-domain matmul cores, activations on host)
+   skips the conversion ladder entirely; packaging is contract-driven
+   (`mapping/platform/packaging_contract.py`).
 5. **The deployed number comes from a simulator**, and NF↔SCM parity (torch
    spiking forward vs. simulated chip) holds by construction because both
    sides share one boundary-transcoding SSOT (`spiking/segment_boundary.py`).
+   The mvm family's deployed read is the packed value census, gated by FATAL
+   fp64 twin certificates (model↔identity, identity↔packed).
 
 ## Repository layout
 
 - `src/mimarsinan/` — the Python package (17 modules, one doc each).
 - `run.py` / `src/main.py` — the deployment entry points (below).
 - `tests/` — unit suite (`tests/unit/`), integration tests, shared fixtures.
-- `test_configs/` + `scripts/run_tier.py` — tiered end-to-end run matrices.
+- `templates/` + `scripts/run_tier.py` — tiered end-to-end run matrices
+  (doubling as the wizard's template library).
 - `scripts/` — commit gates: typecheck, module budget, undefined names.
 - `nevresim/`, `spikingjelly/` — vendored simulator / spiking dependencies.
 - `generated/` — per-run working directories (configs, caches, artifacts).
@@ -103,8 +110,10 @@ their logic locally.
 | Config defaults, derivation rules, validation, key provenance | `config_schema/` (`defaults.py`, `deployment_derivation.py`, `namespaced_schema.py`) |
 | Deployment mode → proven conversion recipe (driver, knobs, sim enables) | `tuning/orchestration/conversion_policy.py` (`ConversionPolicy.derive`) |
 | Tuning-loop behavior constants (checkpoint, recovery, rollback, commit gate) | `tuning/orchestration/tuning_policy.py` (frozen `TUNING_POLICY`) |
+| Core-semantics domain axis (`spiking` vs value-domain `mvm`) | `chip_simulation/core_semantics.py` |
 | Spiking-mode taxonomy, mode predicates, per-backend capability matrix | `chip_simulation/spiking_semantics.py` |
-| Behavior-carrying per-`(firing × sync)` mode dispatch | `chip_simulation/spiking_mode_policy.py` (`policy_for_spiking_mode`) |
+| Behavior-carrying per-`(firing × sync)` mode dispatch | `chip_simulation/spiking_mode_policy.py` (`policy_for_spiking_mode`); the mvm family's policy is `chip_simulation/mvm_core_policy.py` |
+| What op shapes a target's cores accept (packaging rule + boundary domain) | `mapping/platform/packaging_contract.py` (`packaging_contract_for`) |
 | Segment-boundary encode/decode shared by torch forward and simulators | `spiking/segment_boundary.py` |
 | Deployed-bias compensation (negative shift, TTFS half-step) | `mapping/support/bias_compensation.py` |
 | `MIMARSINAN_*` environment variables (one call-time accessor each) | `common/env.py` |
@@ -115,7 +124,9 @@ Notes:
 - `ConversionPolicy` is a deterministic `(spiking_mode, schedule) →
   ConversionRecipe` table; each special-case row carries a written rationale
   and its capability-derived backend-enable set. `config_schema` folds the
-  recipe into derived parameters, so config, pipeline, and wizard agree.
+  recipe into derived parameters, so config, pipeline, and wizard agree. The
+  mvm family's recipe (WQ knobs only, spiking simulators structurally off)
+  lives beside it in `tuning/orchestration/mvm_conversion.py`.
 - `TuningPolicy` freezes the formerly config-readable `tuning_*` knobs at
   their proven values; tuning-loop behavior is code, not configuration.
 - `best_effort` is only for telemetry/rendering side work. Verification,
@@ -214,17 +225,18 @@ Codebase-shape invariants that only tighten:
 The curated `pyrightconfig.json` gate must report **zero errors**. It is too
 slow for the pytest suite; run it before committing.
 
-### Tiered integration runs (`test_configs/`)
+### Tiered integration runs (`templates/`)
 
-`test_configs/generate.py` is the SSOT that emits every tier's config JSONs
+`templates/generate.py` is the SSOT that emits every tier's config JSONs
 and manifests — never hand-edit the generated files; edit the generator and
 re-run it. The tiers trade coverage for wall clock:
 
 | Tier | Runs | Dataset | Wall budget / run |
 |---|---|---|---|
-| `tier0` | 25 | MNIST | 5 min |
-| `tier1` | 8 | CIFAR-10 | 120 min |
-| `tier2` | 3 | ImageNet / CIFAR-100 | 360 min |
+| `tier0` | 29 | MNIST | 5-12 min |
+| `tier1` | 12 | CIFAR-10 | 120 min |
+| `tier2` | 5 | ImageNet / CIFAR-100 | 360 min |
+| `tier3` | 3 | ImageNet | 480 min |
 
 Each run is one full deployment pipeline over a `(mode × quantization ×
 vehicle × S × platform)` cell; manifests record the hypervolume cell and tags
@@ -264,6 +276,6 @@ budget and prints a result table from the run's persisted status/metrics.
     contract.
 11. **Gates before commit.** `python -m pytest` green and
     `./scripts/typecheck.sh` at zero errors; for pipeline-behavior changes,
-    a `test_configs/` tier-0 spot check is the integration safety net.
+    a `templates/` tier-0 spot check is the integration safety net.
 12. **Run from the root.** Activate `env/` and drive the pipeline via
     `run.py`; new env vars get a call-time accessor in `common/env.py`.

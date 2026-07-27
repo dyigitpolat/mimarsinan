@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from typing import Any, Mapping
 
+from mimarsinan.chip_simulation.core_semantics import (
+    CORE_SEMANTICS_OPTIONS, CORE_SEMANTICS_SPIKING,
+)
 from mimarsinan.chip_simulation.spiking_semantics import (
     DEFAULT_THRESHOLDING_MODE,
     derived_firing_mode,
@@ -42,6 +45,16 @@ def _why_activation_quantization(cfg: dict) -> str:
 
 
 ENTRIES = (
+    _E("core_semantics", group="deployment_target", owner="core_semantics",
+       type=T.ENUM, options=CORE_SEMANTICS_OPTIONS, category=Category.BASIC,
+       exposure="user", label="Core Semantics", important=True,
+       effect="Selects the deployment family: spiking cores or value-domain MVM cores",
+       doc="spiking: matmul + a neuron nonlinearity (LIF/TTFS event physics); "
+           "mvm: pure y=Wx(+b) with value I/O, activations on host, event keys unauthorable.",
+       provenance="derivation rule",
+       derived_default=_frozen(CORE_SEMANTICS_SPIKING),
+       legal_values=lambda cfg: CORE_SEMANTICS_OPTIONS,
+       empty_means="spiking — the event-driven deployment family"),
     _E("spiking_mode", group="spiking", owner="SpikingDeploymentContract",
        type=T.ENUM, options=SPIKING_MODES, category=Category.BASIC, exposure="user",
        label="Spiking Mode", important=True, effect="Selects LIF/TTFS path and simulation backends",

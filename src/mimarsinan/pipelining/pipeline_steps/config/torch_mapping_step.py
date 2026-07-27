@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from mimarsinan.advisories import evaluate_graph_advisories, surface_advisories
 from mimarsinan.common.best_effort import best_effort
 from mimarsinan.common.diagnostics import phase_profiler
+from mimarsinan.mapping.platform.packaging_contract import packaging_contract_for
 from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 from mimarsinan.pipelining.core.registry.trainer_factory import make_basic_trainer
 from mimarsinan.pipelining.core.steps.trainer_pipeline_step import TrainerPipelineStep
@@ -48,6 +49,7 @@ class TorchMappingStep(TrainerPipelineStep):
                 encoding_layer_placement=str(
                     self.pipeline.config.get("encoding_layer_placement", "subsume")
                 ),
+                packaging=packaging_contract_for(DeploymentPlan.of(self.pipeline)),
             )
 
         adaptation_manager = create_adaptation_manager_for_model(

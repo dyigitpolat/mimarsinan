@@ -1,4 +1,205 @@
 {
+  "bank_shared_tokens": {
+    "stage_kinds": [
+      "neural"
+    ],
+    "num_neural_segments": 1,
+    "num_compute_ops": 0,
+    "output_sources_len": 12,
+    "stages": [
+      {
+        "kind": "neural",
+        "schedule_segment_index": null,
+        "schedule_pass_index": null,
+        "input_map": [
+          [
+            -2,
+            0,
+            12
+          ]
+        ],
+        "output_map": [
+          [
+            0,
+            0,
+            4
+          ],
+          [
+            1,
+            4,
+            4
+          ],
+          [
+            2,
+            8,
+            4
+          ]
+        ],
+        "hardcores": [
+          {
+            "axons_per_core": 32,
+            "neurons_per_core": 32,
+            "available_axons": 17,
+            "available_neurons": 20,
+            "fused_component_axons": null
+          }
+        ],
+        "placements": [
+          [
+            {
+              "ir_node_id": 2,
+              "axon_offset": 0,
+              "neuron_offset": 0,
+              "axons": 5,
+              "neurons": 4,
+              "coalescing_group_id": null,
+              "coalescing_role": null,
+              "perceptron_index": 0,
+              "perceptron_output_slice": [
+                0,
+                4
+              ],
+              "psum_role": null,
+              "weight_bank_id": 0,
+              "bank_axon_range": [
+                0,
+                5
+              ],
+              "bank_neuron_range": [
+                0,
+                4
+              ],
+              "bank_includes_bias_row": true
+            },
+            {
+              "ir_node_id": 1,
+              "axon_offset": 5,
+              "neuron_offset": 4,
+              "axons": 5,
+              "neurons": 4,
+              "coalescing_group_id": null,
+              "coalescing_role": null,
+              "perceptron_index": 0,
+              "perceptron_output_slice": [
+                0,
+                4
+              ],
+              "psum_role": null,
+              "weight_bank_id": 0,
+              "bank_axon_range": [
+                0,
+                5
+              ],
+              "bank_neuron_range": [
+                0,
+                4
+              ],
+              "bank_includes_bias_row": true
+            },
+            {
+              "ir_node_id": 0,
+              "axon_offset": 10,
+              "neuron_offset": 8,
+              "axons": 5,
+              "neurons": 4,
+              "coalescing_group_id": null,
+              "coalescing_role": null,
+              "perceptron_index": 0,
+              "perceptron_output_slice": [
+                0,
+                4
+              ],
+              "psum_role": null,
+              "weight_bank_id": 0,
+              "bank_axon_range": [
+                0,
+                5
+              ],
+              "bank_neuron_range": [
+                0,
+                4
+              ],
+              "bank_includes_bias_row": true
+            }
+          ]
+        ],
+        "neuron_mapping": [
+          [
+            0,
+            0,
+            0,
+            8
+          ],
+          [
+            0,
+            1,
+            0,
+            9
+          ],
+          [
+            0,
+            2,
+            0,
+            10
+          ],
+          [
+            0,
+            3,
+            0,
+            11
+          ],
+          [
+            1,
+            0,
+            0,
+            4
+          ],
+          [
+            1,
+            1,
+            0,
+            5
+          ],
+          [
+            1,
+            2,
+            0,
+            6
+          ],
+          [
+            1,
+            3,
+            0,
+            7
+          ],
+          [
+            2,
+            0,
+            0,
+            0
+          ],
+          [
+            2,
+            1,
+            0,
+            1
+          ],
+          [
+            2,
+            2,
+            0,
+            2
+          ],
+          [
+            2,
+            3,
+            0,
+            3
+          ]
+        ]
+      }
+    ]
+  },
   "dense_two_core": {
     "stage_kinds": [
       "neural"

@@ -107,6 +107,22 @@ class SpanFillPlan:
         for group in self._core_groups:
             group.copy_from(out, buffers[group.src_core])
 
+    @property
+    def has_upstream_core_sources(self) -> bool:
+        """Whether any span reads another core's output (non-entry core)."""
+        return bool(self._core_groups)
+
+    def input_destination(self):
+        """The input-sourced destination columns: ``("slice", (d0, d1))``,
+        ``("index", LongTensor)``, or ``None`` (no direct input spans)."""
+        group = self._input_group
+        if group is None:
+            return None
+        if group.slices is not None:
+            d0, d1, _s0, _s1 = group.slices
+            return ("slice", (d0, d1))
+        return ("index", group.dst_index)
+
     def tensors(self) -> Iterable[torch.Tensor]:
         """Index tensors held by this plan (cache byte accounting)."""
         if self._on_index is not None:

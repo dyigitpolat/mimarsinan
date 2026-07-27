@@ -31,6 +31,13 @@ def build_platform_constraints_resolved(
             pipeline_config.get("allow_neuron_splitting", False)
         )
     pcfg["allow_scheduling"] = bool(pipeline_config.get("allow_scheduling", False))
+    pcfg["allow_weight_reuse"] = bool(pipeline_config.get("allow_weight_reuse", False))
+    pcfg["schedule_policy"] = str(pipeline_config.get("schedule_policy", "pool"))
+    # The scheduled-build pass budget: dropping it here silently pins the
+    # builder to its default and disarms bank_clustered (t0_44 measured).
+    pcfg["max_schedule_passes"] = int(
+        pipeline_config.get("max_schedule_passes", 8) or 8
+    )
 
     if "target_tq" in pipeline_config:
         pcfg["target_tq"] = pipeline_config["target_tq"]

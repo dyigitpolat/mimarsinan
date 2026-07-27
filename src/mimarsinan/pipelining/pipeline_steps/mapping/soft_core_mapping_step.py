@@ -48,6 +48,11 @@ from mimarsinan.transformations.quantization_bounds import quantization_bounds
 
 from mimarsinan.pipelining.core.engine.pipeline_helpers import run_optional_viz
 from mimarsinan.pipelining.core.spike_count_gate import certificate_gate_armed
+from mimarsinan.pipelining.core.gates.value_gates import (
+    run_model_value_parity_gate,
+    run_value_identity_metric,
+    value_certificate_gate_armed,
+)
 from mimarsinan.pipelining.core.simulation_factory import (
     build_deployment_contract,
     build_identity_mapping_for_pipeline,
@@ -187,7 +192,10 @@ class SoftCoreMappingStep(PipelineStep):
             )
 
         self._apply_ttfs_quantization_bias_compensation(model, act_q)
-        self._apply_negative_boundary_policy(model)
+        if not plan.is_mvm:
+            # Value-domain boundaries carry signed values verbatim; the
+            # [0,1] spike-encode clamp this policy guards does not exist.
+            self._apply_negative_boundary_policy(model)
 
         bits = self.pipeline.config['weight_bits']
         _, q_max = quantization_bounds(bits)
@@ -212,9 +220,13 @@ class SoftCoreMappingStep(PipelineStep):
             ),
         )
         # Re-propagate boundary input scales here so a retuned upstream theta cannot leave the segment-entry grid-snap normalizing by a stale scale; idempotent in activation_scales.
-        propagate_boundary_input_scales(
-            model, input_data_scale=plan.workload.input_data_scale
-        )
+        # [mvm AQ] the value domain's boundary currency is owned by the
+        # Boundary Quantization step (calibrated input_activation_scale);
+        # the event-domain theta propagation would overwrite it with 1.0.
+        if not plan.is_mvm:
+            propagate_boundary_input_scales(
+                model, input_data_scale=plan.workload.input_data_scale
+            )
         # Fail loud if any bias/weight write since the commit above broke the
         # committed-pruning contract (mask * param == param) about to be mapped.
         self._verify_pruning_committed(model)
@@ -271,10 +283,16 @@ class SoftCoreMappingStep(PipelineStep):
                 print(f"  - {op.name}: {op.op_type}")
 
         # Run the NF↔SCM gate before model.to("cpu") below, which does not move the mapper-graph compute modules, so the whole model must still be on one device.
-        with _phase("nf_scm_parity_gate"):
-            self._run_nf_scm_parity_gate(model, ir_graph)
-            self._run_torch_sim_parity_check(model, ir_graph)
-            self._run_membrane_readout_diagnostic(model, ir_graph)
+        if plan.is_mvm:
+            # [mvm R-edge] the value analogue of NF↔SCM: model ≡ identity
+            # program, exact by construction in fp64 (FATAL).
+            with _phase("value_parity_gate"):
+                run_model_value_parity_gate(self.pipeline, model, ir_graph)
+        else:
+            with _phase("nf_scm_parity_gate"):
+                self._run_nf_scm_parity_gate(model, ir_graph)
+                self._run_torch_sim_parity_check(model, ir_graph)
+                self._run_membrane_readout_diagnostic(model, ir_graph)
 
         device = self.pipeline.config["device"]
         with best_effort("move model to cpu before identity-metric run"):
@@ -287,16 +305,25 @@ class SoftCoreMappingStep(PipelineStep):
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
-        if certificate_gate_armed(self.pipeline):
-            # [§17] identity ≡ packed counts is CERTIFIED at Hard Core Mapping,
-            # so identity accuracy equals the packed read there: derived, not
-            # re-measured (the retired eval cost ~20-40 min at ViT scale).
+        if certificate_gate_armed(self.pipeline) or (
+            plan.is_mvm and value_certificate_gate_armed(self.pipeline)
+        ):
+            # [§17] identity ≡ packed is CERTIFIED at Hard Core Mapping
+            # (counts twin or value twin), so identity accuracy equals the
+            # packed read there: derived, not re-measured.
             self._identity_metric_derived = True
             print(
                 "[SoftCoreMappingStep] rung-2 identity metric DERIVED via the "
-                "streaming-twin certificate (identity ≡ packed counts); the "
-                "deployed read lands at Hard Core Mapping."
+                "twin certificate (identity ≡ packed); the deployed read "
+                "lands at Hard Core Mapping."
             )
+        elif plan.is_mvm:
+            with _phase("value_identity_metric"):
+                acc = run_value_identity_metric(
+                    self.pipeline, ir_graph, device=device,
+                )
+            self._soft_core_spiking_metric = float(acc)
+            print(f"[SoftCoreMappingStep] Soft-core (identity-mapped) Value Program Test: {acc}")
         else:
             with _phase("sim_identity_metric"):
                 acc = run_scm_identity_metric(

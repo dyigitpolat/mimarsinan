@@ -5,6 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from mimarsinan.chip_simulation.core_semantics import (
+    INERT_SPIKING_MODE, is_mvm_core_semantics, resolve_core_semantics,
+)
 from mimarsinan.chip_simulation.spiking_semantics import (
     is_synchronized_ttfs,
     is_ttfs_cycle_based,
@@ -21,6 +24,10 @@ from mimarsinan.common.workload_profile import ResolvedWorkloadProfile
 from mimarsinan.pipelining.core.registry.model_registry import ModelRegistry
 from mimarsinan.pipelining.core.search_mode import derive_search_mode
 from mimarsinan.transformations.channel_scale_equalization import DEFAULT_CLIP_RATIO
+from mimarsinan.tuning.orchestration.optimization_driver import (
+    OPTIMIZATION_DRIVER_FAST,
+    resolve_optimization_driver,
+)
 from mimarsinan.tuning.orchestration.temporal_allocation import (
     TemporalAllocationResolver,
     resolve_s_allocation_mode,
@@ -42,28 +49,6 @@ def resolve_weight_source(config: dict[str, Any]) -> Any:
     return None
 
 
-OPTIMIZATION_DRIVER_CONTROLLER = "controller"
-OPTIMIZATION_DRIVER_FAST = "fast"
-
-_LEGACY_FAST_SWITCHES = ("lif_blend_fast", "ttfs_genuine_blend_fast", "ttfs_blend_fast")
-
-
-def resolve_optimization_driver(config: dict[str, Any]) -> str:
-    """The pipeline-wide ``controller | fast`` driver axis: explicit ``optimization_driver`` wins, else a legacy fast switch, else ``controller``."""
-    explicit = config.get("optimization_driver")
-    if explicit:
-        value = str(explicit).lower()
-        if value in (OPTIMIZATION_DRIVER_CONTROLLER, OPTIMIZATION_DRIVER_FAST):
-            return value
-        raise ValueError(
-            f"optimization_driver must be '{OPTIMIZATION_DRIVER_CONTROLLER}' "
-            f"or '{OPTIMIZATION_DRIVER_FAST}', got {explicit!r}"
-        )
-    if any(bool(config.get(switch, False)) for switch in _LEGACY_FAST_SWITCHES):
-        return OPTIMIZATION_DRIVER_FAST
-    return OPTIMIZATION_DRIVER_CONTROLLER
-
-
 @dataclass(frozen=True)
 class DeploymentPlan:
     """Resolved deployment decisions; the rest of the pipeline reads THIS."""
@@ -76,6 +61,7 @@ class DeploymentPlan:
     weight_source: Any
     pretrained_weight_set: dict[str, Any] | None
 
+    core_semantics: str
     spiking_mode: str
     ttfs_cycle_schedule: str
     requires_ttfs_firing: bool
@@ -121,7 +107,9 @@ class DeploymentPlan:
     def resolve(cls, config: dict[str, Any]) -> "DeploymentPlan":
         get = config.get
 
-        spiking = get("spiking_mode", "lif")
+        core_semantics = resolve_core_semantics(config)
+        mvm = is_mvm_core_semantics(core_semantics)
+        spiking = INERT_SPIKING_MODE if mvm else get("spiking_mode", "lif")
         schedule_raw = get("ttfs_cycle_schedule")
 
         pruning = get("pruning", False)
@@ -131,16 +119,27 @@ class DeploymentPlan:
         scm_dt = get("scm_degradation_tolerance")
         default_budget = 2.0 * degradation_tolerance
         model_type = get("model_type", "")
-        cls._require_chip_faithful_lif_forward(config, spiking)
+        model_category = ModelRegistry.get_category(model_type)
+        if mvm and model_category == "native":
+            raise ValueError(
+                f"core_semantics='mvm' supports torch-category models only: "
+                f"{model_type!r} is a native builder whose authored perceptron "
+                f"activations affine cores would silently drop (de-fusion is "
+                f"the designed follow-up seam).")
+        if not mvm:
+            from mimarsinan.chip_simulation import firing_strategy
+
+            firing_strategy.require_chip_faithful_lif_forward(config, spiking)
         workload = ResolvedWorkloadProfile.from_config(config)
 
         return cls(
             config=config,
             search_mode=derive_search_mode(config),
             model_type=model_type,
-            model_category=ModelRegistry.get_category(model_type),
+            model_category=model_category,
             weight_source=resolve_weight_source(config),
             pretrained_weight_set=select_weight_set(config),
+            core_semantics=core_semantics,
             spiking_mode=spiking,
             ttfs_cycle_schedule=ttfs_cycle_schedule(schedule_raw),
             requires_ttfs_firing=requires_ttfs_firing(spiking),
@@ -177,38 +176,33 @@ class DeploymentPlan:
             workload=workload,
         )
 
-    @staticmethod
-    def _require_chip_faithful_lif_forward(config: dict[str, Any], spiking: str) -> None:
-        """LIF-family gate: a Novena deployment must run the chip-faithful cycle-accurate forward (skipped for TTFS)."""
-        if requires_ttfs_firing(spiking):
-            return
-        from mimarsinan.chip_simulation.firing_strategy import FiringStrategyFactory
-
-        strategy = FiringStrategyFactory.from_config({
-            "spiking_mode": spiking,
-            "firing_mode": config.get("firing_mode", "Default"),
-            "thresholding_mode": config.get("thresholding_mode", "<="),
-        })
-        strategy.require_chip_faithful_lif_forward(
-            cycle_accurate_lif_forward=bool(
-                config.get("cycle_accurate_lif_forward", True)
-            ),
-        )
-
     @classmethod
     def of(cls, pipeline) -> "DeploymentPlan":
         """Resolve the plan for a pipeline (reads ``pipeline.config``)."""
         return cls.resolve(pipeline.config)
 
+    @property
+    def is_mvm(self) -> bool:
+        """Whether this plan targets the value-domain MVM core family."""
+        return is_mvm_core_semantics(self.core_semantics)
+
     def mode_policy(self):
-        """The behavior-carrying ``SpikingModePolicy`` for this plan (resolved without ``simulation_steps``)."""
+        """The behavior-carrying mode policy for this plan (domain-first dispatch)."""
+        if self.is_mvm:
+            from mimarsinan.chip_simulation.mvm_core_policy import MvmCorePolicy
+
+            return MvmCorePolicy()
         from mimarsinan.chip_simulation.spiking_mode_policy import policy_for_spiking_mode
 
         return policy_for_spiking_mode(self.spiking_mode, self.ttfs_cycle_schedule)
 
     @property
     def conversion_recipe(self):
-        """The ConversionPolicy SSOT recipe for this plan's resolved ``(spiking_mode, schedule)`` mode."""
+        """The recipe SSOT for this plan: the mvm recipe, else ``(spiking_mode, schedule)``."""
+        if self.is_mvm:
+            from mimarsinan.tuning.orchestration.mvm_conversion import derive_mvm_recipe
+
+            return derive_mvm_recipe()
         from mimarsinan.tuning.orchestration.conversion_policy import ConversionPolicy
 
         return ConversionPolicy.derive(self.spiking_mode, self.ttfs_cycle_schedule)
@@ -262,7 +256,7 @@ class DeploymentPlan:
     @property
     def requires_clamp_preconditioning(self) -> bool:
         """Clamp before TTFS firing, activation quantization, or cycle tuning."""
-        return (
+        return not self.is_mvm and (
             self.runs_cycle_accurate_activation_tuner
             or self.activation_quantization
             or self.requires_ttfs_firing
@@ -271,10 +265,17 @@ class DeploymentPlan:
     @property
     def requires_activation_quantization_preconditioning(self) -> bool:
         """Run shift/AQ before cycle tuning or when activation quantization is enabled."""
-        return self.runs_cycle_accurate_activation_tuner or self.activation_quantization
+        return not self.is_mvm and (
+            self.runs_cycle_accurate_activation_tuner or self.activation_quantization
+        )
 
     def spiking_contract(self):
         """The spiking-semantics sub-part SSOT (needs ``simulation_steps``)."""
+        if self.is_mvm:
+            raise RuntimeError(
+                "value-domain (core_semantics='mvm') plans have no spiking "
+                "contract; event machinery must never be reached on this path."
+            )
         from mimarsinan.chip_simulation.deployment_contract import (
             SpikingDeploymentContract,
         )

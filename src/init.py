@@ -32,6 +32,9 @@ def configure_multiprocessing():
 
 
 def force_cudnn_initialization():
+    from mimarsinan.common.env import skip_cudnn_init
+    if skip_cudnn_init() or not torch.cuda.is_available():
+        return
     s = 32
     dev = torch.device('cuda')
     torch.nn.functional.conv2d(torch.zeros(s, s, s, s, device=dev), torch.zeros(s, s, s, s, device=dev))
