@@ -239,6 +239,23 @@ batch with BIT-EQUAL per-sample decisions; an OOM retry re-enters with
 ``max_batch_cap`` = the plan's ``simulation_batch_size``."""
 
 
+def resolve_census_batch_size(
+    test_batch_size: int, *, declared_cap: "int | None", retry_cap: "int | None"
+) -> int:
+    """[F3] The eval batch for a deployed-metric read.
+
+    Attempt 1 amortizes per-core launch overhead at ``_SIM_EVAL_BATCH_SIZE``
+    UNLESS the config declared a census bound (an author's memory statement —
+    the floor otherwise silently overrode it and guaranteed an OOM pass); an
+    OOM retry additionally passes the plan's resolved ``simulation_batch_size``.
+    """
+    size = max(int(test_batch_size), _SIM_EVAL_BATCH_SIZE)
+    for cap in (declared_cap, retry_cap):
+        if cap:
+            size = min(size, int(cap))
+    return size
+
+
 def run_trainer_metric(
     pipeline,
     model,
@@ -255,21 +272,11 @@ def run_trainer_metric(
         None,
     )
     try:
-        trainer.set_test_batch_size(
-            max(int(trainer.test_batch_size), _SIM_EVAL_BATCH_SIZE)
-        )
-        # [F3] the plan's simulation_batch_size bounds EVERY attempt — the
-        # floor above otherwise raised attempt 1 past the declared cap
-        # (measured: config 512 ran the census at 1024, guaranteeing an OOM
-        # pass before the capped retry).
-        plan_cap = DeploymentPlan.of(pipeline).simulation_batch_size
-        effective_cap = min(
-            (c for c in (max_batch_cap, plan_cap) if c), default=None
-        )
-        if effective_cap is not None:
-            trainer.set_test_batch_size(
-                min(int(trainer.test_batch_size), int(effective_cap))
-            )
+        trainer.set_test_batch_size(resolve_census_batch_size(
+            trainer.test_batch_size,
+            declared_cap=DeploymentPlan.of(pipeline).declared_simulation_batch_size,
+            retry_cap=max_batch_cap,
+        ))
         # Evaluate on the SAME test set as the torch reference (a subsample-vs-full
         # comparison manufactures spurious NF↔SCM drop): the universal eval cap is
         # seeded by plan.seed here AND at the torch pipeline_metric, so both read the

@@ -97,6 +97,10 @@ class DeploymentPlan:
     max_simulation_samples: int
     simulation_batch_count: Any
     simulation_batch_size: int
+    # The DECLARED census bound (None = undeclared): an author's explicit
+    # memory statement binds the first metric read, while the resolved
+    # ``simulation_batch_size`` default only funds the OOM retry.
+    declared_simulation_batch_size: "int | None"
     eval_max_samples: int
     seed: int
 
@@ -170,6 +174,10 @@ class DeploymentPlan:
             max_simulation_samples=int(get("max_simulation_samples", 0) or 0),
             simulation_batch_count=get("simulation_batch_count", None),
             simulation_batch_size=int(get("simulation_batch_size", 8)),
+            declared_simulation_batch_size=(
+                int(declared_batch) if (declared_batch := get("simulation_batch_size"))
+                else None
+            ),
             eval_max_samples=int(get("eval_max_samples", 10000)),  # registry SSOT default
             seed=int(get("seed", 0)),
             model_name=get("model_name") or model_type,

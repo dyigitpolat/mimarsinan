@@ -80,6 +80,48 @@ def _token_bank_hybrid(n_tokens=5):
     )
 
 
+class TestCensusBatchResolution:
+    """[F3] a DECLARED census bound binds attempt 1; an undeclared row keeps
+    the throughput floor (its resolved default only funds the OOM retry)."""
+
+    def test_undeclared_keeps_the_throughput_floor(self):
+        from mimarsinan.pipelining.core.simulation_factory import (
+            _SIM_EVAL_BATCH_SIZE,
+            resolve_census_batch_size,
+        )
+        assert resolve_census_batch_size(
+            128, declared_cap=None, retry_cap=None
+        ) == _SIM_EVAL_BATCH_SIZE
+
+    def test_declared_cap_binds_the_first_attempt(self):
+        from mimarsinan.pipelining.core.simulation_factory import (
+            resolve_census_batch_size,
+        )
+        assert resolve_census_batch_size(
+            128, declared_cap=64, retry_cap=None
+        ) == 64
+
+    def test_retry_cap_binds_and_the_tighter_cap_wins(self):
+        from mimarsinan.pipelining.core.simulation_factory import (
+            resolve_census_batch_size,
+        )
+        assert resolve_census_batch_size(
+            128, declared_cap=None, retry_cap=8
+        ) == 8
+        assert resolve_census_batch_size(
+            128, declared_cap=64, retry_cap=8
+        ) == 8
+
+    def test_plan_reports_declared_vs_resolved(self):
+        from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
+        bare = DeploymentPlan.resolve({})
+        assert bare.declared_simulation_batch_size is None
+        assert bare.simulation_batch_size == 8  # retry fallback only
+        declared = DeploymentPlan.resolve({"simulation_batch_size": 64})
+        assert declared.declared_simulation_batch_size == 64
+        assert declared.simulation_batch_size == 64
+
+
 class TestStateBufferPruning:
     def test_consumed_entries_are_pruned_and_outputs_exact(self):
         # [F1] intermediate buffers are freed once consumed; outputs exact.
