@@ -17,6 +17,7 @@ from mimarsinan.mapping.ir import NeuralCore
 from mimarsinan.models.nn.activations.value_quantizer import value_grid_levels
 from mimarsinan.config_schema.registry import effective_value as _effective
 from mimarsinan.mapping.packing.hybrid_build_pool import build_identity_hybrid_mapping
+from mimarsinan.mapping.platform.packaging_contract import packaging_contract_for
 from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 from mimarsinan.pipelining.core.simulation_factory import (
     build_hybrid_mapping_for_pipeline,
@@ -124,8 +125,15 @@ def run_model_value_parity_gate(pipeline, model, ir_graph) -> None:
         got = identity_flow(samples)
     max_abs_delta = float((got - want).abs().max().item()) if want.numel() else 0.0
 
-    lsb = boundary_grid_lsb(_activation_bits(pipeline), ir_graph)
-    if lsb is not None:
+    # The CONTRACT names the certificate class; the gate never re-derives it.
+    if packaging_contract_for(DeploymentPlan.of(pipeline)).boundary_is_gridded:
+        lsb = boundary_grid_lsb(_activation_bits(pipeline), ir_graph)
+        if lsb is None:
+            raise RuntimeError(
+                "[mvm AQ R-edge] the packaging contract declares a gridded "
+                "boundary but no core carries an armed input_activation_scale "
+                "— Boundary Quantization did not reach this program."
+            )
         _assert_aq_grid_parity(got, want, max_abs_delta, lsb, int(samples.shape[0]))
         return
 
