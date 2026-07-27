@@ -325,8 +325,17 @@ T1 = [
 ]
 
 T1_VEHICLES = {
+    # An ImageNet backbone needs ImageNet-shaped input: at 32x32 SqueezeNet's
+    # downsampling collapses the feature map and preloading reads exactly
+    # chance (0.1000), so the pretrain envelope aborts every squeezenet row.
+    # 96px is the measured sweet spot on platform D: 874/1024 cores
+    # unscheduled (t1_01 fits as authored) and peak 471 scheduled (t1_07),
+    # where 128px overflows unscheduled (1620) and 224px needs 5244 with a
+    # pool-saturating peak of 1024.
     "squeezenet": {"model_type": "torch_squeezenet11", "platform": "D", "axis": "vit_b",
-                   "model_config": {}, "coalescing": False},
+                   "model_config": {}, "coalescing": False,
+                   "preprocessing": {"interpolation": "bilinear", "resize_to": 96,
+                                     "normalize": "imagenet"}},
     "vit": {"model_type": "torch_vit", "platform": "E", "axis": "vit_b",
             "model_config": {}, "coalescing": False,
             "preprocessing": {"interpolation": "bicubic", "resize_to": 224, "normalize": "imagenet"},
