@@ -269,15 +269,14 @@ T0 = [
 
 
 T1 = [
-    # OPEN (measured 2026-07-28): 96px preprocessing lifts this backbone off
-    # chance (0.1000 -> 0.3925) but it still misses the pretrain envelope's
-    # 5x-chance floor. Two hypotheses were tested and REFUTED: more finetune
-    # epochs (2->8) collapsed it to exactly chance (train 0.1001), and
-    # fast_lr_scale=0.25 reproduced that collapse bit-identically, so the
-    # 8-epoch schedule fails deterministically and independently of LR.
-    # Both speculative levers reverted; the row stays red pending a real
-    # diagnosis of the 96px transfer, NOT more knob-turning.
-    dict(n=1, mode="lif", quant="wq", wb=8, s=16, vehicle="squeezenet", regime="pretrained"),
+    # 96px preprocessing lifted this backbone off chance (0.1000 -> 0.3925 at
+    # 2 epochs). Longer finetuning at the DEFAULT lr=0.001 then collapsed it
+    # to exactly chance (train 0.1001) — a pretrained backbone cannot take
+    # the from-scratch LR. (An earlier fast_lr_scale attempt was a no-op:
+    # that lever feeds fast_ladder only, while Weight Preloading reads
+    # finetune_lr/lr — which is why its numbers were bit-identical.)
+    dict(n=1, mode="lif", quant="wq", wb=8, s=16, vehicle="squeezenet",
+         regime="pretrained", finetune_epochs=8, extra_dp={"finetune_lr": 1e-4}),
     dict(n=2, mode="ttfs", quant="wq", wb=8, s=32, vehicle="vit", regime="pretrained", tags=["wall_risk"]),
     dict(n=3, mode="ttfsq", quant="wq", wb=8, s=32, vehicle="vit", regime="pretrained",
          pruned=0.05, tags=["wall_risk", "pruned"]),
@@ -285,7 +284,8 @@ T1 = [
     dict(n=5, mode="sync", quant="wq", wb=5, s=8, vehicle="deepcnn32", depth=4, regime="from_scratch"),
     dict(n=6, mode="lif", quant="wq", wb=8, s=32, vehicle="deepcnn32", depth=8, regime="from_scratch"),
     dict(n=7, mode="casc", quant="wq", wb=8, s=16, vehicle="squeezenet", regime="pretrained",
-         scheduling=True, tags=["sched"]),
+         scheduling=True, tags=["sched"], finetune_epochs=8,
+         extra_dp={"finetune_lr": 1e-4}),
     dict(n=8, mode="ttfs", quant="fp", wb=8, s=16, vehicle="mixerc10", regime="from_scratch"),
     # [mvm W3] wider-mapping showcase: patch-embed conv + MLP fc1/fc2 + heads
     # map as affine packages; MHA/LayerNorm stay host ops. [wsm V4] armed
