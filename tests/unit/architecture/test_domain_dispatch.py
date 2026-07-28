@@ -16,6 +16,7 @@ SRC = Path(__file__).resolve().parents[3] / "src" / "mimarsinan"
 _DOMAIN_SSOTS = {
     "chip_simulation/core_semantics.py",       # the axis itself
     "pipelining/core/deployment_plan.py",      # config -> plan resolution
+    "pipelining/core/plan/predicates.py",      # the plan's own derived answers
     "config_schema/deployment_derivation.py",  # config -> derived flags
     "config_schema/registry/domain_rules.py",  # document legality
     "mapping/platform/packaging_contract.py",  # plan -> contract dispatch
