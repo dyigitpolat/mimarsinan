@@ -340,6 +340,12 @@ T1_VEHICLES = {
     # pool-saturating peak of 1024.
     "squeezenet": {"model_type": "torch_squeezenet11", "platform": "D", "axis": "vit_b",
                    "model_config": {}, "coalescing": False,
+                   # Pretrained transfer needs a reduced LR — the same lever the
+                   # vit vehicle carries. MEASURED: at the full pipeline LR this
+                   # backbone reached 0.3925 in 2 epochs but DIVERGED to chance
+                   # (train 0.1001) in 8, so the earlier "under-trained" reading
+                   # was wrong; the schedule was unstable, not short.
+                   "fast_lr_scale": 0.25,
                    "preprocessing": {"interpolation": "bilinear", "resize_to": 96,
                                      "normalize": "imagenet"}},
     "vit": {"model_type": "torch_vit", "platform": "E", "axis": "vit_b",

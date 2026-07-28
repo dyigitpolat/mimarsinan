@@ -48,6 +48,7 @@
     "encoding_layer_placement": "subsume",
     "weight_quantization": true,
     "scale_migration": true,
+    "fast_lr_scale": 0.25,
     "preprocessing": {
       "interpolation": "bilinear",
       "resize_to": 96,

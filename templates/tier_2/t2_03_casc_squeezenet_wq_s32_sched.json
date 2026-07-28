@@ -49,6 +49,7 @@
     "weight_quantization": true,
     "ttfs_cycle_schedule": "cascaded",
     "scale_migration": true,
+    "fast_lr_scale": 0.25,
     "preprocessing": {
       "interpolation": "bilinear",
       "resize_to": 96,
