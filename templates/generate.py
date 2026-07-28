@@ -551,15 +551,30 @@ def _cell(tier, row, vehicles, dataset):
     }
 
 
+# Tier-0 wall budgets, MEASURED (two full sweeps, worst completed wall per
+# vehicle family): deep_cnn 11.6 min, mlp_mixer_core 11.6, lenet5 6.5,
+# deep_mlp 5.8, simple_mlp 4.4. The prior rule gave every mixer 6 min, so
+# four mixer rows timed out at exactly 540 s (9 min at scale 1.5) in the
+# 2026-07-28 verification and reported no verdict at all.
+_TIER0_VEHICLE_WALL_MIN = {
+    "deep_cnn": 16,
+    "mlp_mixer_core": 16,
+    "mlp_mixer": 16,
+    "lenet5": 10,
+    "deep_mlp": 9,
+    "simple_mlp": 7,
+}
+
+
 def _wall_budget(tier, row, vehicles, default_min):
     if "wall_min" in row:
         return row["wall_min"]
     if _policy_tier(tier) != 0:
         return default_min
-    # Measured locally: LIF's Loihi leg and conv-model cells exceed 5 min.
-    if row["mode"] == "lif" or vehicles[row["vehicle"]]["model_type"] == "deep_cnn":
-        return 12
-    return 6
+    model_type = vehicles[row["vehicle"]]["model_type"]
+    base = _TIER0_VEHICLE_WALL_MIN.get(model_type, 10)
+    # LIF pays an extra Loihi leg on top of its family's base.
+    return base + 4 if row["mode"] == "lif" else base
 
 
 M4_ARMING_NOTE = (
