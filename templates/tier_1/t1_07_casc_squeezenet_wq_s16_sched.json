@@ -55,7 +55,7 @@
       "normalize": "imagenet"
     },
     "weight_source": "torchvision",
-    "finetune_epochs": 2
+    "finetune_epochs": 8
   },
   "target_metric_override": null,
   "start_step": null,

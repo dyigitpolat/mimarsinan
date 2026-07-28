@@ -269,7 +269,13 @@ T0 = [
 
 
 T1 = [
-    dict(n=1, mode="lif", quant="wq", wb=8, s=16, vehicle="squeezenet", regime="pretrained"),
+    # finetune_epochs=8: at 96px the ImageNet backbone recovers from chance
+    # (0.1000 -> 0.3925 measured at 2 epochs) but the re-initialized 10-class
+    # head is still UNDER-TRAINED at the envelope check (train 0.287 < test
+    # 0.393), so preloading needs a realistic transfer budget to clear the
+    # 5x-chance floor. Not a gate concession — the gate is unchanged.
+    dict(n=1, mode="lif", quant="wq", wb=8, s=16, vehicle="squeezenet",
+         regime="pretrained", finetune_epochs=8),
     dict(n=2, mode="ttfs", quant="wq", wb=8, s=32, vehicle="vit", regime="pretrained", tags=["wall_risk"]),
     dict(n=3, mode="ttfsq", quant="wq", wb=8, s=32, vehicle="vit", regime="pretrained",
          pruned=0.05, tags=["wall_risk", "pruned"]),
@@ -277,7 +283,7 @@ T1 = [
     dict(n=5, mode="sync", quant="wq", wb=5, s=8, vehicle="deepcnn32", depth=4, regime="from_scratch"),
     dict(n=6, mode="lif", quant="wq", wb=8, s=32, vehicle="deepcnn32", depth=8, regime="from_scratch"),
     dict(n=7, mode="casc", quant="wq", wb=8, s=16, vehicle="squeezenet", regime="pretrained",
-         scheduling=True, tags=["sched"]),
+         scheduling=True, tags=["sched"], finetune_epochs=8),
     dict(n=8, mode="ttfs", quant="fp", wb=8, s=16, vehicle="mixerc10", regime="from_scratch"),
     # [mvm W3] wider-mapping showcase: patch-embed conv + MLP fc1/fc2 + heads
     # map as affine packages; MHA/LayerNorm stay host ops. [wsm V4] armed
