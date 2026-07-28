@@ -124,6 +124,7 @@ def neural_core_to_soft_core(neural_core: NeuralCore, graph: IRGraph | None = No
         activation_scale=neural_core.activation_scale,
         parameter_scale=neural_core.parameter_scale,
         input_activation_scale=neural_core.input_activation_scale,
+        boundary_grid=neural_core.boundary_grid,
         name=neural_core.name,
         psum_group_id=neural_core.psum_group_id,
         psum_role=neural_core.psum_role,

@@ -1,3 +1,5 @@
+from typing import Any
+
 class AccuracyTracker:
     def __init__(self):
         self.correct = 0
@@ -54,3 +56,30 @@ class CustomClassificationLoss:
         classification_loss = classification_loss + act_loss
 
         return classification_loss
+
+
+class EpochArgTolerantScheduler:
+    """Drop the epoch argument ``GradualWarmupScheduler`` passes downstream.
+
+    The third-party warmup wrapper calls ``after_scheduler.step(None)``
+    (``warmup_scheduler/scheduler.py``), but modern ``SequentialLR.step()``
+    takes no argument — every from-scratch recipe whose warmup builds a
+    SequentialLR dies with a TypeError. Dropping a ``None`` epoch is exactly
+    the wrapper's intent; an EXPLICIT epoch has no modern equivalent and
+    fails loud rather than silently moving the LR curve.
+    """
+
+    def __init__(self, scheduler: Any) -> None:
+        self._scheduler = scheduler
+
+    def step(self, epoch: Any = None, *args: Any, **kwargs: Any) -> Any:
+        if epoch is not None:
+            raise ValueError(
+                f"epoch-indexed scheduler stepping (epoch={epoch!r}) is not "
+                f"supported by {type(self._scheduler).__name__}: modern torch "
+                f"schedulers advance implicitly. Step without an epoch."
+            )
+        return self._scheduler.step(*args, **kwargs)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._scheduler, name)

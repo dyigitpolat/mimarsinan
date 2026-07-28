@@ -83,7 +83,7 @@ class ActivationAnalysisStep(TrainerPipelineStep):
     def applies_to(cls, plan):
         # Activation scales are the spiking decode/clamp grid; a value-domain
         # (mvm) deployment has no such grid to calibrate.
-        return not plan.is_mvm
+        return plan.mode_policy().requires_activation_alignment()
 
     def __init__(self, pipeline):
         super().__init__(self.REQUIRES, self.PROMISES, self.UPDATES, self.CLEARS, pipeline)

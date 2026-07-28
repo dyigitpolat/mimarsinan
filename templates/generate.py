@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
+# [D7] the row schema validates against the config registry (the key SSOT),
+# so the generator needs the package importable when run standalone.
+sys.path.insert(0, str(ROOT.parent / "src"))
 
 TRAINING_RECIPE = {
     "optimizer": "adamw",
@@ -240,13 +244,16 @@ T0 = [
     # value certificates are FATAL and the deployed read is the packed value
     # census. Fresh numbering block (t0_41+) — t0_31/32 are burned labels.
     dict(n=41, mode="mvm", quant="wq", wb=8, vehicle="lenet5",
+         pruned=0.05, tags=["pruned"],
          note="mvm flagship: quantized weights, float I/O, twin certs FATAL"),
     dict(n=42, mode="mvm", quant="fp", wb=8, vehicle="mmixcore",
+         pruned=0.05, tags=["pruned"],
          note="mvm float assembly: pure packing/boundary exercise"),
     # Platform F: the value family maps MORE than lif on this vehicle (the
     # encoder conv and the bare final Linear join the chip), so C's pool of
     # 180+180 cores exhausts — an honest capacity statement, not a defect.
     dict(n=43, mode="mvm", quant="wq", wb=8, vehicle="deepcnn", platform="F",
+         pruned=0.05, tags=["pruned"],
          note="mvm conv/weight-bank exercise (shared-bank cores)"),
     # [wsm V4 F5+AQ] the weight-programming boundary row: platform H's pool
     # forces scheduled passes; bank_clustered streams same-bank instances
@@ -259,7 +266,7 @@ T0 = [
     # conv1's 784 instances on H's 12-core pool need passes ≥ 66 (measured:
     # an under-declared budget silently falls back to pool, reuse 0.16).
     dict(n=44, mode="mvm", quant="wq", wb=8, vehicle="lenet5", platform="H",
-         scheduling=True, tags=["sched"],
+         scheduling=True, tags=["sched", "pruned"], pruned=0.05,
          extra_dp={"schedule_policy": "bank_clustered"},
          extra_pc={"activation_bits": 8, "allow_weight_reuse": True,
                    "max_schedule_passes": 128},
@@ -269,7 +276,14 @@ T0 = [
 
 
 T1 = [
-    dict(n=1, mode="lif", quant="wq", wb=8, s=16, vehicle="squeezenet", regime="pretrained"),
+    # 96px preprocessing lifted this backbone off chance (0.1000 -> 0.3925 at
+    # 2 epochs). Longer finetuning at the DEFAULT lr=0.001 then collapsed it
+    # to exactly chance (train 0.1001) — a pretrained backbone cannot take
+    # the from-scratch LR. (An earlier fast_lr_scale attempt was a no-op:
+    # that lever feeds fast_ladder only, while Weight Preloading reads
+    # finetune_lr/lr — which is why its numbers were bit-identical.)
+    dict(n=1, mode="lif", quant="wq", wb=8, s=16, vehicle="squeezenet",
+         regime="pretrained", finetune_epochs=8, finetune_lr=1e-4),
     dict(n=2, mode="ttfs", quant="wq", wb=8, s=32, vehicle="vit", regime="pretrained", tags=["wall_risk"]),
     dict(n=3, mode="ttfsq", quant="wq", wb=8, s=32, vehicle="vit", regime="pretrained",
          pruned=0.05, tags=["wall_risk", "pruned"]),
@@ -277,7 +291,7 @@ T1 = [
     dict(n=5, mode="sync", quant="wq", wb=5, s=8, vehicle="deepcnn32", depth=4, regime="from_scratch"),
     dict(n=6, mode="lif", quant="wq", wb=8, s=32, vehicle="deepcnn32", depth=8, regime="from_scratch"),
     dict(n=7, mode="casc", quant="wq", wb=8, s=16, vehicle="squeezenet", regime="pretrained",
-         scheduling=True, tags=["sched"]),
+         scheduling=True, tags=["sched"], finetune_epochs=8, finetune_lr=1e-4),
     dict(n=8, mode="ttfs", quant="fp", wb=8, s=16, vehicle="mixerc10", regime="from_scratch"),
     # [mvm W3] wider-mapping showcase: patch-embed conv + MLP fc1/fc2 + heads
     # map as affine packages; MHA/LayerNorm stay host ops. [wsm V4] armed
@@ -325,8 +339,17 @@ T1 = [
 ]
 
 T1_VEHICLES = {
+    # An ImageNet backbone needs ImageNet-shaped input: at 32x32 SqueezeNet's
+    # downsampling collapses the feature map and preloading reads exactly
+    # chance (0.1000), so the pretrain envelope aborts every squeezenet row.
+    # 96px is the measured sweet spot on platform D: 874/1024 cores
+    # unscheduled (t1_01 fits as authored) and peak 471 scheduled (t1_07),
+    # where 128px overflows unscheduled (1620) and 224px needs 5244 with a
+    # pool-saturating peak of 1024.
     "squeezenet": {"model_type": "torch_squeezenet11", "platform": "D", "axis": "vit_b",
-                   "model_config": {}, "coalescing": False},
+                   "model_config": {}, "coalescing": False,
+                   "preprocessing": {"interpolation": "bilinear", "resize_to": 96,
+                                     "normalize": "imagenet"}},
     "vit": {"model_type": "torch_vit", "platform": "E", "axis": "vit_b",
             "model_config": {}, "coalescing": False,
             "preprocessing": {"interpolation": "bicubic", "resize_to": 224, "normalize": "imagenet"},
@@ -427,6 +450,7 @@ def _platform(row, vehicles):
     plat["allow_neuron_splitting"] = row.get("splitting", True)
     # Row-level platform passthrough (mirror of extra_dp): proven per-cell
     # hardware declarations (activation_bits, weight-reuse, pass budgets).
+    plat.update(row_config_keys(row, "platform_constraints"))
     plat.update(row.get("extra_pc", {}))
     return plat
 
@@ -520,6 +544,7 @@ def _deployment(tier, row, vehicles, dataset):
             dp["tuning_recipe"] = TUNING_RECIPE
     # Row-level knob passthrough: proven per-cell recipes (e.g. the AB9
     # census-graded ViT set) live on the row, not as generator cases.
+    dp.update(row_config_keys(row, "deployment_parameters"))
     dp.update(row.get("extra_dp", {}))
     return dp
 
@@ -542,15 +567,88 @@ def _cell(tier, row, vehicles, dataset):
     }
 
 
+# Tier-0 wall budgets, MEASURED (two full sweeps, worst completed wall per
+# vehicle family): deep_cnn 11.6 min, mlp_mixer_core 11.6, lenet5 6.5,
+# deep_mlp 5.8, simple_mlp 4.4. The prior rule gave every mixer 6 min, so
+# four mixer rows timed out at exactly 540 s (9 min at scale 1.5) in the
+# 2026-07-28 verification and reported no verdict at all.
+_TIER0_VEHICLE_WALL_MIN = {
+    "deep_cnn": 16,
+    "mlp_mixer_core": 16,
+    "mlp_mixer": 16,
+    "lenet5": 10,
+    "deep_mlp": 9,
+    "simple_mlp": 7,
+}
+
+
+# [D7] Tier rows are a CLOSED schema. A key is either STRUCTURAL (this
+# generator's own vocabulary) or a config key the registry knows — and the
+# registry decides which section it lands in. Anything else is a typo and
+# fails loud: a silently-ignored row key cost a full experiment cycle
+# (finetune_lr evaporated while an LR hypothesis was believed tested).
+_STRUCTURAL_ROW_KEYS = frozenset({
+    "n", "mode", "quant", "wb", "s", "vehicle", "depth", "width", "platform",
+    "regime", "dataset", "tags", "note", "scheduling", "pruned", "encoding",
+    "firing", "epochs", "budget", "sim_samples", "wall_min", "has_bias",
+    "coalescing", "splitting", "seed", "extra_dp", "extra_pc", "cell",
+    "finetune_epochs", "lr",
+})
+
+
+def _registry_entry(key):
+    from mimarsinan.config_schema.registry import REGISTRY
+    return REGISTRY.get(key)
+
+
+def _key_section(key) -> "str | None":
+    entry = _registry_entry(key)
+    if entry is None:
+        return None
+    return getattr(entry, "section", None) or "deployment_parameters"
+
+
+def validate_row_keys(row) -> None:
+    """Reject any row key that is neither structural nor registry-known."""
+    import difflib
+
+    from mimarsinan.config_schema.registry import REGISTRY
+
+    unknown = [
+        k for k in row
+        if k not in _STRUCTURAL_ROW_KEYS and _registry_entry(k) is None
+    ]
+    if not unknown:
+        return
+    details = []
+    for key in sorted(unknown):
+        near = difflib.get_close_matches(key, list(REGISTRY), n=3, cutoff=0.6)
+        hint = f" (did you mean: {', '.join(near)}?)" if near else ""
+        details.append(f"{key!r}{hint}")
+    raise ValueError(
+        f"tier row {row.get('n')} ({row.get('vehicle')}) carries unknown "
+        f"key(s): {'; '.join(details)}. A row key must be structural or a "
+        f"registry config key — an unread key would be silently dropped."
+    )
+
+
+def row_config_keys(row, section: str) -> dict:
+    """Row-authored config keys the registry assigns to ``section``."""
+    return {
+        k: v for k, v in row.items()
+        if k not in _STRUCTURAL_ROW_KEYS and _key_section(k) == section
+    }
+
+
 def _wall_budget(tier, row, vehicles, default_min):
     if "wall_min" in row:
         return row["wall_min"]
     if _policy_tier(tier) != 0:
         return default_min
-    # Measured locally: LIF's Loihi leg and conv-model cells exceed 5 min.
-    if row["mode"] == "lif" or vehicles[row["vehicle"]]["model_type"] == "deep_cnn":
-        return 12
-    return 6
+    model_type = vehicles[row["vehicle"]]["model_type"]
+    base = _TIER0_VEHICLE_WALL_MIN.get(model_type, 10)
+    # LIF pays an extra Loihi leg on top of its family's base.
+    return base + 4 if row["mode"] == "lif" else base
 
 
 M4_ARMING_NOTE = (
@@ -687,6 +785,7 @@ def _emit_tier(tier, rows, vehicles, dataset, wall_budget_min):
     if tier in COVERAGE_NOTES:
         manifest["coverage_notes"] = COVERAGE_NOTES[tier]
     for row in rows:
+        validate_row_keys(row)
         ds = row.get("dataset", dataset)
         name = _name(tier, row, vehicles)
         config = {

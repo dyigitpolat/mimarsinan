@@ -1,8 +1,7 @@
 """Shared helpers for activation adaptation steps."""
 
-import torch
-
 from mimarsinan.common.workload_profile import ResolvedWorkloadProfile
+from mimarsinan.mapping.support.tensor_stats import safe_quantile
 from mimarsinan.tuning.orchestration.tuning_budget import tuning_budget_from_pipeline
 
 RELU_COMPATIBLE_TYPES = (
@@ -46,7 +45,7 @@ def activation_scale_stats(
         active_samples = samples[samples > pruned_threshold]
         if sample_count > 0:
             sample_min = float(samples.min().item())
-            sample_median = float(torch.quantile(samples, 0.5).item())
+            sample_median = float(safe_quantile(samples, 0.5).item())
             sample_max = float(samples.max().item())
         else:
             sample_min = 0.0

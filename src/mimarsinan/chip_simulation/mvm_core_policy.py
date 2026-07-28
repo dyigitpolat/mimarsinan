@@ -21,6 +21,10 @@ class MvmCorePolicy(SpikingModePolicy):
         """[cert-plan W3 shape] per-neuron post-affine VALUES, never counts."""
         return ("values", None)
 
+    def requires_activation_alignment(self) -> bool:
+        """No on-chip activations exist, so the alignment ladder is inert."""
+        return False
+
     def training_forward_kind(self) -> str:
         return "value"
 

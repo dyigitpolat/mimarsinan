@@ -13,8 +13,9 @@ from mimarsinan.mapping.platform.packaging_contract import (
 
 
 class _Plan:
-    def __init__(self, is_mvm):
+    def __init__(self, is_mvm, activation_quantization=False):
         self.is_mvm = is_mvm
+        self.activation_quantization = activation_quantization
 
 
 class TestContracts:
@@ -49,6 +50,31 @@ class TestDerivation:
 
     def test_mvm_plan_gets_mvm_contract(self):
         assert packaging_contract_for(_Plan(is_mvm=True)) is MVM_PACKAGING
+
+    def test_armed_activation_quantization_grids_the_boundary(self):
+        # The contract NAMES the certificate class; nothing downstream
+        # re-derives "is AQ on" from config or from live scales.
+        from mimarsinan.mapping.platform.packaging_contract import (
+            BOUNDARY_IO_FLOAT, BOUNDARY_IO_GRID,
+        )
+        plain = packaging_contract_for(_Plan(is_mvm=True))
+        gridded = packaging_contract_for(
+            _Plan(is_mvm=True, activation_quantization=True)
+        )
+        assert plain.boundary.io_quantization == BOUNDARY_IO_FLOAT
+        assert plain.boundary_is_gridded is False
+        assert gridded.boundary.io_quantization == BOUNDARY_IO_GRID
+        assert gridded.boundary_is_gridded is True
+        # Only the boundary changes; the packaging rule is untouched.
+        assert gridded.kinds == plain.kinds
+        assert gridded.absorb_activation == plain.absorb_activation
+        assert gridded.boundary.signed == plain.boundary.signed
+
+    def test_spiking_never_grids_even_with_aq(self):
+        # Event-domain AQ is the temporal grid (target_tq), not a value grid.
+        c = packaging_contract_for(_Plan(is_mvm=False, activation_quantization=True))
+        assert c is SPIKING_PACKAGING
+        assert c.boundary_is_gridded is False
 
     def test_real_plans_dispatch(self):
         from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
@@ -85,4 +111,6 @@ class TestDeferredSurfaces:
 
         grid = BoundarySpec(domain="value", signed=True, io_quantization="grid")
         assert grid.io_quantization == "grid"
+        # The base contract stays float; packaging_contract_for realizes the
+        # grid per-plan (see TestDerivation) now that AQ is implemented.
         assert MVM_PACKAGING.boundary.io_quantization == "none"

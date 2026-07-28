@@ -26,9 +26,11 @@ class SoftCore:
         bank_axon_slice: tuple[int, int] | None = None,
         bank_neuron_slice: tuple[int, int] | None = None,
         bank_includes_bias_row: bool = False,
+        boundary_grid=None,
     ):
         self.core_matrix = core_matrix
         self.axon_sources = axon_sources
+        self.boundary_grid = boundary_grid
 
         self.id = id
         self.input_activation_scale = input_activation_scale

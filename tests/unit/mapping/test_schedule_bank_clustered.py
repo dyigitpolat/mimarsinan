@@ -253,27 +253,27 @@ class TestScheduledBuild:
         from mimarsinan.chip_simulation.value_run import ValueHybridCoreFlow
 
         def armed(n_tokens=7):
+            from mimarsinan.models.nn.activations.value_quantizer import BoundaryGrid
             graph = _token_graph(n_tokens)
             for node in graph.nodes:
-                node.input_activation_scale = torch.tensor(2.5)
+                node.boundary_grid = BoundaryGrid(scale=2.5, bits=8)
             return graph
 
         identity = ValueHybridCoreFlow(
-            build_identity_hybrid_mapping(ir_graph=armed()),
-            dtype=torch.float64, activation_bits=8,
+            build_identity_hybrid_mapping(ir_graph=armed()), dtype=torch.float64
         )
         x = torch.randn(3, 28)
         with torch.no_grad():
             want = identity(x)
+            # Grid must be LOAD-BEARING: cores without one differ.
             unarmed = ValueHybridCoreFlow(
-                build_identity_hybrid_mapping(ir_graph=armed()),
+                build_identity_hybrid_mapping(ir_graph=_token_graph(7)),
                 dtype=torch.float64,
             )(x)
-            assert float((want - unarmed).abs().max()) > 0  # grid load-bearing
+            assert float((want - unarmed).abs().max()) > 0
             for policy in ("pool", "bank_clustered"):
                 flow = ValueHybridCoreFlow(
                     self._build(armed(), policy), dtype=torch.float64,
-                    activation_bits=8,
                 )
                 torch.testing.assert_close(
                     flow(x), want, atol=1e-12, rtol=1e-12

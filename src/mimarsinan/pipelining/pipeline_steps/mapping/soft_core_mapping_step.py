@@ -36,6 +36,8 @@ from mimarsinan.mapping.weight_reuse import (
     weight_reuse_plan_from_graph,
 )
 from mimarsinan.models.nn.activations.ttfs_spiking import refresh_perceptron_bias_references
+from mimarsinan.mapping.platform.packaging_contract import packaging_contract_for
+from mimarsinan.mapping.support.boundary_grids import install_boundary_grids
 from mimarsinan.spiking.scale_aware_boundaries import propagate_boundary_input_scales
 from mimarsinan.transformations.pruning.committed_masks import (
     commit_perceptron_pruning,
@@ -192,9 +194,10 @@ class SoftCoreMappingStep(PipelineStep):
             )
 
         self._apply_ttfs_quantization_bias_compensation(model, act_q)
-        if not plan.is_mvm:
-            # Value-domain boundaries carry signed values verbatim; the
-            # [0,1] spike-encode clamp this policy guards does not exist.
+        # A SIGNED boundary carries negatives verbatim; this policy exists to
+        # guard the unsigned [0,1] spike-encode clamp, so the contract's own
+        # signedness decides — not the domain name.
+        if not packaging_contract_for(plan).boundary.signed:
             self._apply_negative_boundary_policy(model)
 
         bits = self.pipeline.config['weight_bits']
@@ -220,18 +223,16 @@ class SoftCoreMappingStep(PipelineStep):
             ),
         )
         # Re-propagate boundary input scales here so a retuned upstream theta cannot leave the segment-entry grid-snap normalizing by a stale scale; idempotent in activation_scales.
-        # [mvm AQ] the value domain's boundary currency is owned by the
-        # Boundary Quantization step (calibrated input_activation_scale);
-        # the event-domain theta propagation would overwrite it with 1.0.
-        if not plan.is_mvm:
-            propagate_boundary_input_scales(
-                model, input_data_scale=plan.workload.input_data_scale
-            )
+        propagate_boundary_input_scales(
+            model, input_data_scale=plan.workload.input_data_scale
+        )
         # Fail loud if any bias/weight write since the commit above broke the
         # committed-pruning contract (mask * param == param) about to be mapped.
         self._verify_pruning_committed(model)
         with _phase("ir_mapping.map"):
             ir_graph = ir_mapping.map(mapper_repr)
+        # [mvm AQ] realize the model's boundary grids onto the mapped cores.
+        install_boundary_grids(ir_graph, model)
 
         if bool(self.pipeline.config.get("negative_value_shift", True)):
             transfer_negative_shifts_to_ir(model, ir_graph)
@@ -283,7 +284,7 @@ class SoftCoreMappingStep(PipelineStep):
                 print(f"  - {op.name}: {op.op_type}")
 
         # Run the NF↔SCM gate before model.to("cpu") below, which does not move the mapper-graph compute modules, so the whole model must still be on one device.
-        if plan.is_mvm:
+        if plan.mode_policy().observes_values():
             # [mvm R-edge] the value analogue of NF↔SCM: model ≡ identity
             # program, exact by construction in fp64 (FATAL).
             with _phase("value_parity_gate"):
@@ -305,8 +306,8 @@ class SoftCoreMappingStep(PipelineStep):
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
-        if certificate_gate_armed(self.pipeline) or (
-            plan.is_mvm and value_certificate_gate_armed(self.pipeline)
+        if certificate_gate_armed(self.pipeline) or value_certificate_gate_armed(
+            self.pipeline
         ):
             # [§17] identity ≡ packed is CERTIFIED at Hard Core Mapping
             # (counts twin or value twin), so identity accuracy equals the
@@ -317,7 +318,7 @@ class SoftCoreMappingStep(PipelineStep):
                 "twin certificate (identity ≡ packed); the deployed read "
                 "lands at Hard Core Mapping."
             )
-        elif plan.is_mvm:
+        elif plan.mode_policy().observes_values():
             with _phase("value_identity_metric"):
                 acc = run_value_identity_metric(
                     self.pipeline, ir_graph, device=device,

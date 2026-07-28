@@ -91,6 +91,10 @@ ALLOWLIST = {
     # package init, which pulls chip_simulation (top-level import breaks).
     "models/spiking/training/prefix_genuine_forward.py",
     "pipelining/core/deployment_plan.py",
+    # [D5] the derived predicates split out of deployment_plan carry its
+    # pre-existing cycle-breaking imports (policies/recipes import the
+    # plan); relocation, not new lazy imports.
+    "pipelining/core/plan/predicates.py",
     "pipelining/core/nf_scm_parity.py",
     "pipelining/core/platform_constraints_resolver.py",
     "pipelining/core/registry/model_registry.py",

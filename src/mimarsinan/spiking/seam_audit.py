@@ -5,9 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import torch
+
+from mimarsinan.mapping.support.tensor_stats import safe_quantile
 import torch.nn as nn
 
-from mimarsinan.mapping.support.tensor_stats import subsample_to_limit
 from mimarsinan.mapping.mappers.compute_op_mapper import ComputeOpMapper
 from mimarsinan.models.nn.activations import LIFActivation
 from mimarsinan.models.spiking.wire_semantics import lif_count_staircase
@@ -60,10 +61,6 @@ class SeamAuditLedger:
 
 def _scalar(value) -> float:
     return float(torch.as_tensor(value).detach().to(torch.float64).mean())
-
-
-def _subsample(t: torch.Tensor) -> torch.Tensor:
-    return subsample_to_limit(t, _SAMPLE_CAP)
 
 
 def _value_walk(repr_, x):
@@ -226,7 +223,7 @@ def _kernel_certificate(site, perceptron, z, T, quantile) -> SeamCertificate | N
         mean_delta = float(delta.mean())
         delta_max = float(delta.max())
         eff = float(
-            T * torch.quantile(_subsample(actual.abs()).float(), quantile) / theta
+            T * safe_quantile(actual.abs().float(), quantile, limit=_SAMPLE_CAP) / theta
         )
     if mean_delta > grid_step:
         cls, note = "B", (

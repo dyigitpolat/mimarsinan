@@ -14,7 +14,7 @@ class ActivationAdaptationStep(TunerPipelineStep):
     def applies_to(cls, plan):
         # A value-domain (mvm) deployment keeps its host activations verbatim;
         # blending them toward ReLU would be a correctness bug, not a no-op.
-        return not plan.is_mvm
+        return plan.mode_policy().requires_activation_alignment()
 
     def __init__(self, pipeline):
         super().__init__(self.REQUIRES, self.PROMISES, self.UPDATES, self.CLEARS, pipeline)

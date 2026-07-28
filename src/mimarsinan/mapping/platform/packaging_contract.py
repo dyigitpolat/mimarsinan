@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import FrozenSet
 
 PACKAGE_KIND_PERCEPTRON = "perceptron"  # MM (+BN) + activation, event I/O
@@ -11,13 +11,21 @@ PACKAGE_KIND_AFFINE = "affine"          # MM (+BN) only, value I/O
 BOUNDARY_DOMAIN_EVENT = "event"
 BOUNDARY_DOMAIN_VALUE = "value"
 
+# How the boundary exchanges values — and therefore which certificate class
+# judges the model↔program edge: a float boundary is a continuous relation
+# (numeric tolerance), a grid boundary is PIECEWISE CONSTANT (grid units +
+# exact decisions; a scalar atol would measure grid-edge chaos instead).
+BOUNDARY_IO_FLOAT = "none"
+BOUNDARY_IO_GRID = "grid"
+
 
 @dataclass(frozen=True)
 class BoundarySpec:
     """The value exchange at a package boundary.
 
-    ``io_quantization`` is the deferred quantized-I/O seam: ``"none"`` = float
-    passthrough (v1), ``"grid"`` arms boundary quantizers + the int-exact twin.
+    ``io_quantization`` selects the exchange: ``BOUNDARY_IO_FLOAT`` = float
+    passthrough, ``BOUNDARY_IO_GRID`` = calibrated value-grid quantizers at
+    every host→chip entry (armed by a platform's ``activation_bits``).
     """
 
     domain: str
@@ -44,6 +52,11 @@ class PackagingContract:
     def is_value_domain(self) -> bool:
         return self.boundary.domain == BOUNDARY_DOMAIN_VALUE
 
+    @property
+    def boundary_is_gridded(self) -> bool:
+        """Whether the boundary quantizes — THE certificate-class question."""
+        return self.boundary.io_quantization == BOUNDARY_IO_GRID
+
 
 SPIKING_PACKAGING = PackagingContract(
     kinds=frozenset({PACKAGE_KIND_PERCEPTRON}),
@@ -63,5 +76,17 @@ MVM_PACKAGING = PackagingContract(
 
 
 def packaging_contract_for(plan) -> PackagingContract:
-    """THE plan → packaging-contract dispatch (domain-first, no mode ladders)."""
-    return MVM_PACKAGING if plan.is_mvm else SPIKING_PACKAGING
+    """THE plan → packaging-contract dispatch (domain-first, no mode ladders).
+
+    A value-domain platform that declares ``activation_bits`` realizes the
+    gridded boundary; everything downstream (executor snap, certificate
+    class) reads that from the contract rather than re-deriving it.
+    """
+    if not plan.is_mvm:
+        return SPIKING_PACKAGING
+    if not plan.activation_quantization:
+        return MVM_PACKAGING
+    return replace(
+        MVM_PACKAGING,
+        boundary=replace(MVM_PACKAGING.boundary, io_quantization=BOUNDARY_IO_GRID),
+    )

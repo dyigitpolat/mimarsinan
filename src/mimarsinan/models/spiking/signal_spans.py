@@ -53,6 +53,16 @@ class _GatherGroup:
             return
         out.index_copy_(1, self.dst_index, source.index_select(1, self.src_index))
 
+    def transform_destination(self, out, transform) -> None:
+        """Map this group's destination columns in place (boundary seam)."""
+        if self.slices is not None:
+            d0, d1, _s0, _s1 = self.slices
+            out[:, d0:d1] = transform(out[:, d0:d1])
+            return
+        out.index_copy_(
+            1, self.dst_index, transform(out.index_select(1, self.dst_index))
+        )
+
 
 class SpanFillPlan:
     """Per-core precomputed gather plan over a STATIC span list (W3b).
@@ -94,8 +104,14 @@ class SpanFillPlan:
             else:
                 self._core_groups.append(group)
 
-    def apply(self, out, *, input_spikes, buffers, on_value: float) -> None:
-        """Zero ``out`` then fill every span group for one cycle."""
+    def apply(self, out, *, input_spikes, buffers, on_value: float,
+              input_transform=None) -> None:
+        """Zero ``out`` then fill every span group for one cycle.
+
+        ``input_transform`` (optional) maps the INPUT-sourced columns after
+        they are filled — the host->chip boundary seam. The plan owns those
+        columns, so callers never reconstruct the span themselves.
+        """
         out.zero_()
         if self._on_slice is not None:
             d0, d1 = self._on_slice
@@ -104,6 +120,8 @@ class SpanFillPlan:
             out.index_fill_(1, self._on_index, float(on_value))
         if self._input_group is not None:
             self._input_group.copy_from(out, input_spikes)
+            if input_transform is not None:
+                self._input_group.transform_destination(out, input_transform)
         for group in self._core_groups:
             group.copy_from(out, buffers[group.src_core])
 
@@ -111,17 +129,6 @@ class SpanFillPlan:
     def has_upstream_core_sources(self) -> bool:
         """Whether any span reads another core's output (non-entry core)."""
         return bool(self._core_groups)
-
-    def input_destination(self):
-        """The input-sourced destination columns: ``("slice", (d0, d1))``,
-        ``("index", LongTensor)``, or ``None`` (no direct input spans)."""
-        group = self._input_group
-        if group is None:
-            return None
-        if group.slices is not None:
-            d0, d1, _s0, _s1 = group.slices
-            return ("slice", (d0, d1))
-        return ("index", group.dst_index)
 
     def tensors(self) -> Iterable[torch.Tensor]:
         """Index tensors held by this plan (cache byte accounting)."""

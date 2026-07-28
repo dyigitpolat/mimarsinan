@@ -25,7 +25,8 @@ def subsample_to_limit(
 
 
 def safe_quantile(
-    tensor: torch.Tensor, q: float, limit: int = QUANTILE_ELEMENT_LIMIT
+    tensor: torch.Tensor, q: float, limit: int = QUANTILE_ELEMENT_LIMIT,
+    interpolation: str = "linear",
 ) -> torch.Tensor:
     """``torch.quantile`` that tolerates oversized inputs by subsampling.
 
@@ -36,4 +37,4 @@ def safe_quantile(
     flat = subsample_to_limit(tensor, limit)
     if not flat.is_floating_point():
         flat = flat.float()
-    return torch.quantile(flat, q)
+    return torch.quantile(flat, q, interpolation=interpolation)

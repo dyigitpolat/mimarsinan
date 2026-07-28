@@ -121,13 +121,15 @@ def test_infer_spec_image_chain_is_provider_chain_then_synthesized_tail():
     p = _FakeProvider(ffcv_cfg=cfg)
     spec = infer_spec(p)
     train_image = [(t[1], t[2]) for t in spec.splits["train"].transforms if t[0] == "image"]
-    assert train_image == [
-        ("SimpleRGBImageDecoder", {}),
-        ("RandomHorizontalFlip", {}),
-        ("Cutout", {"crop_size": 8}),
-        ("ToTensor", {}),
-        ("ToDevice", {"non_blocking": True}),
-        ("ToTorchImage", {}),
+    # The dtype-converting NormalizeImage always joins the structural tail
+    # (identity (0, 255) when the provider declares no normalization).
+    assert [name for name, _ in train_image] == [
+        "SimpleRGBImageDecoder", "RandomHorizontalFlip", "Cutout",
+        "NormalizeImage", "ToTensor", "ToDevice", "ToTorchImage",
+    ]
+    assert [kw for name, kw in train_image if name in
+            ("SimpleRGBImageDecoder", "RandomHorizontalFlip", "Cutout")] == [
+        {}, {}, {"crop_size": 8},
     ]
 
 
@@ -151,17 +153,26 @@ def test_infer_spec_synthesizes_normalize_image_from_preprocessing_spec():
     assert normalize_kwargs["type"] is np.float32
 
 
-def test_infer_spec_skips_normalize_when_no_preprocessing_mean_std():
-    """No normalize in preprocessing → tail omits NormalizeImage."""
+def test_infer_spec_uses_identity_normalize_without_preprocessing():
+    """No declared normalize -> the tail STILL normalizes, by (0, 255).
+
+    Superseded pin: this previously asserted the tail omits NormalizeImage,
+    which left raw uint8 streaming into the model (every non-normalizing
+    provider crashed at the first conv). NormalizeImage is the only
+    dtype-converting op, and (x - 0)/255 is exactly torchvision's
+    ToTensor(), so the two data paths stay numerically equal.
+    """
+    import numpy as np
     from mimarsinan.data_handling.ffcv.spec_builder import infer_spec
     spec = infer_spec(_FakeProvider(preprocessing=None))
     image_ops = [(t[1], t[2]) for t in spec.splits["train"].transforms if t[0] == "image"]
-    assert image_ops == [
-        ("SimpleRGBImageDecoder", {}),
-        ("ToTensor", {}),
-        ("ToDevice", {"non_blocking": True}),
-        ("ToTorchImage", {}),
+    assert [name for name, _ in image_ops] == [
+        "SimpleRGBImageDecoder", "NormalizeImage", "ToTensor", "ToDevice",
+        "ToTorchImage",
     ]
+    norm = dict(image_ops)["NormalizeImage"]
+    np.testing.assert_allclose(norm["mean"], np.zeros_like(norm["mean"]))
+    np.testing.assert_allclose(norm["std"], np.full_like(norm["std"], 255.0))
 
 
 def test_infer_spec_supports_per_split_decoder():

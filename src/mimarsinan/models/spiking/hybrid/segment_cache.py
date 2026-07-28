@@ -19,6 +19,20 @@ def segment_entry_nbytes(entry: dict) -> int:
     tensors += list((entry.get("bank_tensors", {}) or {}).values())
     for plan in entry.get("axon_fill_plans", []) or []:
         tensors += list(plan.tensors())
+    # [F4] the packed-cycle executor memoises its PackedStage into THIS entry
+    # (``seg["packed"]``); each bucket holds a DENSE stack of the per-core
+    # weight views. Uncounted, the budget under-reports by exactly the bytes
+    # that make large stages expensive.
+    packed = entry.get("packed")
+    if packed is not None:
+        tensors.append(getattr(packed, "theta_flat", None))
+        for bucket in getattr(packed, "buckets", []) or []:
+            tensors += [
+                getattr(bucket, name, None) for name in (
+                    "weights", "bias", "on_dst", "inp_dst", "inp_src",
+                    "buf_dst", "buf_src",
+                )
+            ]
     for t in tensors:
         if not isinstance(t, torch.Tensor):
             continue

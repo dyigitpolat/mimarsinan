@@ -71,3 +71,15 @@ class TestSafeQuantile:
     def test_non_float_input_is_promoted(self):
         x = torch.arange(5000, dtype=torch.int64)
         assert float(safe_quantile(x, 0.5, limit=100)) > 0
+
+    def test_interpolation_is_forwarded(self):
+        x = torch.tensor([0.0, 1.0, 2.0, 3.0])
+        assert float(safe_quantile(x, 0.5, interpolation="higher")) == float(
+            torch.quantile(x, 0.5, interpolation="higher")
+        )
+
+    def test_interpolation_survives_the_oversized_path(self):
+        torch.manual_seed(3)
+        x = torch.rand(5000)
+        got = safe_quantile(x, 0.9, limit=500, interpolation="higher")
+        assert abs(float(got) - float(torch.quantile(x, 0.9))) < 0.05

@@ -20,7 +20,7 @@
         "encoding_placement": "subsume"
       },
       "tags": [],
-      "expected_wall_min": 12,
+      "expected_wall_min": 20,
       "note": "BN-mixer respec 2026-07-12, probe env_probe_bn_fc128_e8 (user-authorized): every mmixcore cell runs normalization=batch, fc_w_1/fc_w_2 64 -> 128, training_epochs 8 \u2014 supersedes the M1 mixer-e4 respec and the ttfsq e2 revert (the BN+width envelope is a different regime; the e4/e2 evidence does not carry over). Measured basis: envelope probes saturate 0.954-0.981 without BN+width (fc64 e4 0.970; fc128_c48 e12 0.9785; fc192 e8 0.9805) vs BN+fc128 e8 = 0.982."
     },
     {
@@ -44,7 +44,7 @@
         "offload",
         "pruned"
       ],
-      "expected_wall_min": 12
+      "expected_wall_min": 14
     },
     {
       "name": "t0_03_lif_deepcnn_d8_wq_s16_sched",
@@ -65,7 +65,7 @@
       "tags": [
         "sched"
       ],
-      "expected_wall_min": 12
+      "expected_wall_min": 20
     },
     {
       "name": "t0_04_lif_deepmlp_d8_wq_s32",
@@ -84,7 +84,7 @@
         "encoding_placement": "subsume"
       },
       "tags": [],
-      "expected_wall_min": 12,
+      "expected_wall_min": 13,
       "note": "W3c respec 2026-07-06: fictional aq form (weight_quantization=false + weight_bits ran float) -> real WQ deployment; X4 passed the old form."
     },
     {
@@ -104,7 +104,7 @@
         "encoding_placement": "subsume"
       },
       "tags": [],
-      "expected_wall_min": 12
+      "expected_wall_min": 11
     },
     {
       "name": "t0_06_ttfs_mmixcore_wq_s8",
@@ -123,7 +123,7 @@
         "encoding_placement": "subsume"
       },
       "tags": [],
-      "expected_wall_min": 6,
+      "expected_wall_min": 16,
       "note": "BN-mixer respec 2026-07-12, probe env_probe_bn_fc128_e8 (user-authorized): every mmixcore cell runs normalization=batch, fc_w_1/fc_w_2 64 -> 128, training_epochs 8 \u2014 supersedes the M1 mixer-e4 respec and the ttfsq e2 revert (the BN+width envelope is a different regime; the e4/e2 evidence does not carry over). Measured basis: envelope probes saturate 0.954-0.981 without BN+width (fc64 e4 0.970; fc128_c48 e12 0.9785; fc192 e8 0.9805) vs BN+fc128 e8 = 0.982."
     },
     {
@@ -143,7 +143,7 @@
         "encoding_placement": "subsume"
       },
       "tags": [],
-      "expected_wall_min": 6,
+      "expected_wall_min": 10,
       "note": "W3c respec 2026-07-06: fictional aq form (weight_quantization=false + weight_bits ran float) -> real WQ deployment; X4 passed the old form."
     },
     {
@@ -166,7 +166,7 @@
         "wall_risk",
         "sched"
       ],
-      "expected_wall_min": 12,
+      "expected_wall_min": 16,
       "note": "Sim-sample respec 2026-07-07 (user-directed): the analytic per-core GEMM nevresim step is the one sample-bound sim wall (~7 s/sample, 712 s at N=100, X4); accuracy read 1.00."
     },
     {
@@ -188,7 +188,7 @@
       "tags": [
         "pruned"
       ],
-      "expected_wall_min": 6
+      "expected_wall_min": 9
     },
     {
       "name": "t0_10_ttfs_simplemlp_fp_s16_identity",
@@ -209,7 +209,7 @@
       "tags": [
         "identity"
       ],
-      "expected_wall_min": 6
+      "expected_wall_min": 7
     },
     {
       "name": "t0_11_ttfsq_mmixcore_wq_s64_offload",
@@ -230,7 +230,7 @@
       "tags": [
         "offload"
       ],
-      "expected_wall_min": 6,
+      "expected_wall_min": 16,
       "note": "BN-mixer respec 2026-07-12, probe env_probe_bn_fc128_e8 (user-authorized): every mmixcore cell runs normalization=batch, fc_w_1/fc_w_2 64 -> 128, training_epochs 8 \u2014 supersedes the M1 mixer-e4 respec and the ttfsq e2 revert (the BN+width envelope is a different regime; the e4/e2 evidence does not carry over). Measured basis: envelope probes saturate 0.954-0.981 without BN+width (fc64 e4 0.970; fc128_c48 e12 0.9785; fc192 e8 0.9805) vs BN+fc128 e8 = 0.982."
     },
     {
@@ -252,7 +252,7 @@
       "tags": [
         "wall_risk"
       ],
-      "expected_wall_min": 6
+      "expected_wall_min": 10
     },
     {
       "name": "t0_13_ttfsq_deepcnn_d4_wq_s4",
@@ -271,7 +271,7 @@
         "encoding_placement": "subsume"
       },
       "tags": [],
-      "expected_wall_min": 12
+      "expected_wall_min": 16
     },
     {
       "name": "t0_14_ttfsq_deepmlp_d8_wq_s8",
@@ -290,7 +290,7 @@
         "encoding_placement": "subsume"
       },
       "tags": [],
-      "expected_wall_min": 6
+      "expected_wall_min": 9
     },
     {
       "name": "t0_15_ttfsq_simplemlp_wq_s8_pruned10",
@@ -311,7 +311,7 @@
       "tags": [
         "pruned10"
       ],
-      "expected_wall_min": 6,
+      "expected_wall_min": 7,
       "note": "W3c respec 2026-07-06: pruning 0.5 -> 0.10 (user-directed; 50% is too strong for this cell)."
     },
     {
@@ -333,7 +333,7 @@
       "tags": [
         "pruned10"
       ],
-      "expected_wall_min": 6,
+      "expected_wall_min": 16,
       "note": "W3c respec 2026-07-06: pruning 0.5 -> 0.10 (user-directed; 50% is too strong for this cell). BN-mixer respec 2026-07-12, probe env_probe_bn_fc128_e8 (user-authorized): every mmixcore cell runs normalization=batch, fc_w_1/fc_w_2 64 -> 128, training_epochs 8 \u2014 supersedes the M1 mixer-e4 respec and the ttfsq e2 revert (the BN+width envelope is a different regime; the e4/e2 evidence does not carry over). Measured basis: envelope probes saturate 0.954-0.981 without BN+width (fc64 e4 0.970; fc128_c48 e12 0.9785; fc192 e8 0.9805) vs BN+fc128 e8 = 0.982."
     },
     {
@@ -355,7 +355,7 @@
       "tags": [
         "sched"
       ],
-      "expected_wall_min": 6
+      "expected_wall_min": 10
     },
     {
       "name": "t0_23_sync_deepcnn_d4_wq_s16",
@@ -374,7 +374,7 @@
         "encoding_placement": "subsume"
       },
       "tags": [],
-      "expected_wall_min": 12
+      "expected_wall_min": 16
     },
     {
       "name": "t0_24_sync_deepmlp_d4_wq_s8",
@@ -393,7 +393,7 @@
         "encoding_placement": "subsume"
       },
       "tags": [],
-      "expected_wall_min": 6
+      "expected_wall_min": 9
     },
     {
       "name": "t0_25_sync_simplemlp_wq_s32",
@@ -412,7 +412,7 @@
         "encoding_placement": "subsume"
       },
       "tags": [],
-      "expected_wall_min": 6
+      "expected_wall_min": 7
     },
     {
       "name": "t0_26_lif_deepcnn_d6_wq_s16_sched",
@@ -433,7 +433,7 @@
       "tags": [
         "sched"
       ],
-      "expected_wall_min": 12,
+      "expected_wall_min": 20,
       "note": "folded tier-0.1 D3: depth-6 deepcnn wall frontier"
     },
     {
@@ -456,7 +456,7 @@
         "pruned10",
         "wb8"
       ],
-      "expected_wall_min": 6,
+      "expected_wall_min": 16,
       "note": "folded tier-0.1 E1: sync mixer weight-bits variant. BN-mixer respec 2026-07-12, probe env_probe_bn_fc128_e8 (user-authorized): every mmixcore cell runs normalization=batch, fc_w_1/fc_w_2 64 -> 128, training_epochs 8 \u2014 supersedes the M1 mixer-e4 respec and the ttfsq e2 revert (the BN+width envelope is a different regime; the e4/e2 evidence does not carry over). Measured basis: envelope probes saturate 0.954-0.981 without BN+width (fc64 e4 0.970; fc128_c48 e12 0.9785; fc192 e8 0.9805) vs BN+fc128 e8 = 0.982."
     },
     {
@@ -478,7 +478,7 @@
       "tags": [
         "wb8"
       ],
-      "expected_wall_min": 12,
+      "expected_wall_min": 20,
       "note": "folded tier-0.1 E2: lif mixer weight-bits variant. BN-mixer respec 2026-07-12, probe env_probe_bn_fc128_e8 (user-authorized): every mmixcore cell runs normalization=batch, fc_w_1/fc_w_2 64 -> 128, training_epochs 8 \u2014 supersedes the M1 mixer-e4 respec and the ttfsq e2 revert (the BN+width envelope is a different regime; the e4/e2 evidence does not carry over). Measured basis: envelope probes saturate 0.954-0.981 without BN+width (fc64 e4 0.970; fc128_c48 e12 0.9785; fc192 e8 0.9805) vs BN+fc128 e8 = 0.982."
     },
     {
@@ -500,7 +500,7 @@
       "tags": [
         "wb4"
       ],
-      "expected_wall_min": 12,
+      "expected_wall_min": 16,
       "note": "folded tier-0.1 E3: ttfsq deepcnn low-weight-bits variant"
     },
     {
@@ -522,12 +522,12 @@
       "tags": [
         "offload"
       ],
-      "expected_wall_min": 12,
+      "expected_wall_min": 20,
       "note": "BA-P4 repro: offloaded torch-mixer signed host seams"
     },
     {
-      "name": "t0_41_mvm_lenet5_wq",
-      "config": "t0_41_mvm_lenet5_wq.json",
+      "name": "t0_41_mvm_lenet5_wq_pruned",
+      "config": "t0_41_mvm_lenet5_wq_pruned.json",
       "model_type": "lenet5",
       "cell": {
         "firing": "mvm",
@@ -538,16 +538,18 @@
         "vehicle": "lenet5",
         "dataset": "mnist",
         "regime": "from_scratch",
-        "pruning": "dense",
+        "pruning": "pruned",
         "encoding_placement": "none"
       },
-      "tags": [],
-      "expected_wall_min": 6,
+      "tags": [
+        "pruned"
+      ],
+      "expected_wall_min": 10,
       "note": "mvm flagship: quantized weights, float I/O, twin certs FATAL"
     },
     {
-      "name": "t0_42_mvm_mmixcore_fp",
-      "config": "t0_42_mvm_mmixcore_fp.json",
+      "name": "t0_42_mvm_mmixcore_fp_pruned",
+      "config": "t0_42_mvm_mmixcore_fp_pruned.json",
       "model_type": "mlp_mixer_core",
       "cell": {
         "firing": "mvm",
@@ -558,16 +560,18 @@
         "vehicle": "mlp_mixer_core",
         "dataset": "mnist",
         "regime": "from_scratch",
-        "pruning": "dense",
+        "pruning": "pruned",
         "encoding_placement": "none"
       },
-      "tags": [],
-      "expected_wall_min": 6,
+      "tags": [
+        "pruned"
+      ],
+      "expected_wall_min": 16,
       "note": "mvm float assembly: pure packing/boundary exercise"
     },
     {
-      "name": "t0_43_mvm_deepcnn_wq",
-      "config": "t0_43_mvm_deepcnn_wq.json",
+      "name": "t0_43_mvm_deepcnn_wq_pruned",
+      "config": "t0_43_mvm_deepcnn_wq_pruned.json",
       "model_type": "deep_cnn",
       "cell": {
         "firing": "mvm",
@@ -578,16 +582,18 @@
         "vehicle": "deep_cnn",
         "dataset": "mnist",
         "regime": "from_scratch",
-        "pruning": "dense",
+        "pruning": "pruned",
         "encoding_placement": "none"
       },
-      "tags": [],
-      "expected_wall_min": 12,
+      "tags": [
+        "pruned"
+      ],
+      "expected_wall_min": 16,
       "note": "mvm conv/weight-bank exercise (shared-bank cores)"
     },
     {
-      "name": "t0_44_mvm_lenet5_wq_sched",
-      "config": "t0_44_mvm_lenet5_wq_sched.json",
+      "name": "t0_44_mvm_lenet5_wq_sched_pruned",
+      "config": "t0_44_mvm_lenet5_wq_sched_pruned.json",
       "model_type": "lenet5",
       "cell": {
         "firing": "mvm",
@@ -598,13 +604,14 @@
         "vehicle": "lenet5",
         "dataset": "mnist",
         "regime": "from_scratch",
-        "pruning": "dense",
+        "pruning": "pruned",
         "encoding_placement": "none"
       },
       "tags": [
-        "sched"
+        "sched",
+        "pruned"
       ],
-      "expected_wall_min": 6,
+      "expected_wall_min": 10,
       "note": "wsm flagship: bank-clustered scheduled passes on a constrained pool + boundary AQ, twin certs FATAL"
     }
   ],

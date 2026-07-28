@@ -6,6 +6,8 @@ from typing import Iterable, List
 
 import torch
 
+from mimarsinan.mapping.support.tensor_stats import safe_quantile
+
 from mimarsinan.common.workload_profile import ResolvedWorkloadProfile
 from mimarsinan.models.nn.layers import TransformedActivation
 from mimarsinan.tuning.orchestration.mbh_ledger import _measurement_guard
@@ -65,7 +67,7 @@ class ChannelStatsAccumulator:
             else:
                 out.append(
                     float(
-                        torch.quantile(
+                        safe_quantile(
                             positives, float(quantile), interpolation="higher",
                         )
                     )

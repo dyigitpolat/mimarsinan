@@ -6,6 +6,8 @@ from abc import ABC, abstractmethod
 
 import torch
 
+from mimarsinan.mapping.support.tensor_stats import safe_quantile
+
 _CANDIDATES = 160
 _MIN_THETA = 1e-3
 _FALLBACK_THETA = 1.0
@@ -50,7 +52,7 @@ def optimal_theta(
     positive = a[a > 1e-6]
     if positive.numel() == 0:
         return _FALLBACK_THETA
-    low = float(torch.quantile(positive, 0.5))
+    low = float(safe_quantile(positive, 0.5))
     high = float(positive.max())
     if not (high > low):
         return max(high, min_theta)
@@ -108,7 +110,7 @@ class CountQuantilePolicy(ActivationScalePolicy):
                 max(flat_acts.max().item(), 1.0) if flat_acts.numel() > 0 else 1.0
             )
 
-        q = torch.quantile(
+        q = safe_quantile(
             active_acts.to(torch.float32),
             float(self.quantile),
             interpolation="higher",
@@ -137,7 +139,7 @@ class PercentileNormPolicy(ActivationScalePolicy):
         acts = _as_float32(flat_acts)
         if acts.numel() == 0:
             return 1.0
-        q = torch.quantile(
+        q = safe_quantile(
             acts,
             self.percentile / 100.0,
             interpolation="higher",
@@ -214,7 +216,7 @@ def scale_from_activations(
     if active_acts.numel() == 0:
         return max(flat_acts.max().item(), 1.0) if flat_acts.numel() > 0 else 1.0
 
-    q = torch.quantile(
+    q = safe_quantile(
         active_acts.to(torch.float32),
         float(quantile),
         interpolation="higher",

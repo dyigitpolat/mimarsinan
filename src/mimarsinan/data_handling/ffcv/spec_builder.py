@@ -111,6 +111,29 @@ def raw_dataset_for(provider, split: str):
     return raw
 
 
+def image_tail_ops(*, mean, std) -> list:
+    """The structural image tail, matching the torch path's dtype AND scale.
+
+    ``NormalizeImage`` is the only dtype-converting op, so a provider that
+    declares no normalization would otherwise stream raw uint8 into the
+    model. torchvision's ``ToTensor()`` divides by 255, so the identity
+    normalization ``(x - 0) / 255`` is what keeps the two data paths equal —
+    a bare float cast would leave [0,255] and diverge 255x in silence.
+    """
+    if mean is not None and std is not None:
+        mean_255 = np.asarray(mean, dtype=np.float32) * 255.0
+        std_255 = np.asarray(std, dtype=np.float32) * 255.0
+    else:
+        mean_255 = np.zeros(3, dtype=np.float32)
+        std_255 = np.full(3, 255.0, dtype=np.float32)
+    return [
+        ("NormalizeImage", {"mean": mean_255, "std": std_255, "type": np.float32}),
+        ("ToTensor", {}),
+        ("ToDevice", {"non_blocking": True}),
+        ("ToTorchImage", {}),
+    ]
+
+
 def infer_spec(provider) -> PipelineSpec:
     """Build a :class:`PipelineSpec` from a provider's data surface.
 
@@ -136,18 +159,12 @@ def infer_spec(provider) -> PipelineSpec:
         return tuple(("image", cls_name, dict(kwargs))
                      for cls_name, kwargs in provider_splits.get(split, []))
 
-    # Normalize runs CPU-side (before ToDevice) so the GPU path needs no cupy dependency.
-    image_tail_ops = []
-    if preproc is not None and preproc.mean is not None and preproc.std is not None:
-        mean_255 = np.asarray(preproc.mean, dtype=np.float32) * 255.0
-        std_255  = np.asarray(preproc.std,  dtype=np.float32) * 255.0
-        image_tail_ops.append(("NormalizeImage", {"mean": mean_255, "std": std_255, "type": np.float32}))
-    image_tail_ops.extend([
-        ("ToTensor", {}),
-        ("ToDevice", {"non_blocking": True}),
-        ("ToTorchImage", {}),
-    ])
-    image_tail = tuple(("image", cls, kw) for cls, kw in image_tail_ops)
+    image_tail = tuple(
+        ("image", cls, kw) for cls, kw in image_tail_ops(
+            mean=(preproc.mean if preproc is not None else None),
+            std=(preproc.std if preproc is not None else None),
+        )
+    )
 
     label_tail = (
         ("label", "IntDecoder", {}),

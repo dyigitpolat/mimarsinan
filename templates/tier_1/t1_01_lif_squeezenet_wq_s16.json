@@ -48,8 +48,14 @@
     "encoding_layer_placement": "subsume",
     "weight_quantization": true,
     "scale_migration": true,
+    "preprocessing": {
+      "interpolation": "bilinear",
+      "resize_to": 96,
+      "normalize": "imagenet"
+    },
     "weight_source": "torchvision",
-    "finetune_epochs": 2
+    "finetune_epochs": 8,
+    "finetune_lr": 0.0001
   },
   "target_metric_override": null,
   "start_step": null,

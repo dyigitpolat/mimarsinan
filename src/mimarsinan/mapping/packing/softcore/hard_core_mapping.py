@@ -68,6 +68,7 @@ class RuntimeMaterializer:
             activation_scale=parent.activation_scale,
             parameter_scale=parent.parameter_scale,
             input_activation_scale=parent.input_activation_scale,
+            boundary_grid=getattr(parent, "boundary_grid", None),
             name=parent.name,
             psum_group_id=parent.psum_group_id,
             psum_role=parent.psum_role,

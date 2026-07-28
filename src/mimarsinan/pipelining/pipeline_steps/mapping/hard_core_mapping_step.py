@@ -114,12 +114,12 @@ class HardCoreMappingStep(PipelineStep):
         run_spike_count_certificate_gate(
             self.pipeline, model, ir_graph, hybrid_mapping,
         )
-        if plan.is_mvm:
-            run_value_twin_certificate_gate(
-                self.pipeline, model, ir_graph, hybrid_mapping,
-            )
+        # Self-guarding: the gate SKIPs unless the policy observes values.
+        run_value_twin_certificate_gate(
+            self.pipeline, model, ir_graph, hybrid_mapping,
+        )
         plan_cap = plan.simulation_batch_size
-        if plan.is_mvm:
+        if plan.mode_policy().observes_values():
             acc = run_value_mapping_metric(
                 self.pipeline,
                 ir_graph,
