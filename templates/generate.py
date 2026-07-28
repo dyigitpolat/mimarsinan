@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
+# [D7] the row schema validates against the config registry (the key SSOT),
+# so the generator needs the package importable when run standalone.
+sys.path.insert(0, str(ROOT.parent / "src"))
 
 TRAINING_RECIPE = {
     "optimizer": "adamw",
@@ -276,7 +280,7 @@ T1 = [
     # that lever feeds fast_ladder only, while Weight Preloading reads
     # finetune_lr/lr — which is why its numbers were bit-identical.)
     dict(n=1, mode="lif", quant="wq", wb=8, s=16, vehicle="squeezenet",
-         regime="pretrained", finetune_epochs=8, extra_dp={"finetune_lr": 1e-4}),
+         regime="pretrained", finetune_epochs=8, finetune_lr=1e-4),
     dict(n=2, mode="ttfs", quant="wq", wb=8, s=32, vehicle="vit", regime="pretrained", tags=["wall_risk"]),
     dict(n=3, mode="ttfsq", quant="wq", wb=8, s=32, vehicle="vit", regime="pretrained",
          pruned=0.05, tags=["wall_risk", "pruned"]),
@@ -284,8 +288,7 @@ T1 = [
     dict(n=5, mode="sync", quant="wq", wb=5, s=8, vehicle="deepcnn32", depth=4, regime="from_scratch"),
     dict(n=6, mode="lif", quant="wq", wb=8, s=32, vehicle="deepcnn32", depth=8, regime="from_scratch"),
     dict(n=7, mode="casc", quant="wq", wb=8, s=16, vehicle="squeezenet", regime="pretrained",
-         scheduling=True, tags=["sched"], finetune_epochs=8,
-         extra_dp={"finetune_lr": 1e-4}),
+         scheduling=True, tags=["sched"], finetune_epochs=8, finetune_lr=1e-4),
     dict(n=8, mode="ttfs", quant="fp", wb=8, s=16, vehicle="mixerc10", regime="from_scratch"),
     # [mvm W3] wider-mapping showcase: patch-embed conv + MLP fc1/fc2 + heads
     # map as affine packages; MHA/LayerNorm stay host ops. [wsm V4] armed
@@ -444,6 +447,7 @@ def _platform(row, vehicles):
     plat["allow_neuron_splitting"] = row.get("splitting", True)
     # Row-level platform passthrough (mirror of extra_dp): proven per-cell
     # hardware declarations (activation_bits, weight-reuse, pass budgets).
+    plat.update(row_config_keys(row, "platform_constraints"))
     plat.update(row.get("extra_pc", {}))
     return plat
 
@@ -537,6 +541,7 @@ def _deployment(tier, row, vehicles, dataset):
             dp["tuning_recipe"] = TUNING_RECIPE
     # Row-level knob passthrough: proven per-cell recipes (e.g. the AB9
     # census-graded ViT set) live on the row, not as generator cases.
+    dp.update(row_config_keys(row, "deployment_parameters"))
     dp.update(row.get("extra_dp", {}))
     return dp
 
@@ -572,6 +577,64 @@ _TIER0_VEHICLE_WALL_MIN = {
     "deep_mlp": 9,
     "simple_mlp": 7,
 }
+
+
+# [D7] Tier rows are a CLOSED schema. A key is either STRUCTURAL (this
+# generator's own vocabulary) or a config key the registry knows — and the
+# registry decides which section it lands in. Anything else is a typo and
+# fails loud: a silently-ignored row key cost a full experiment cycle
+# (finetune_lr evaporated while an LR hypothesis was believed tested).
+_STRUCTURAL_ROW_KEYS = frozenset({
+    "n", "mode", "quant", "wb", "s", "vehicle", "depth", "width", "platform",
+    "regime", "dataset", "tags", "note", "scheduling", "pruned", "encoding",
+    "firing", "epochs", "budget", "sim_samples", "wall_min", "has_bias",
+    "coalescing", "splitting", "seed", "extra_dp", "extra_pc", "cell",
+    "finetune_epochs", "lr",
+})
+
+
+def _registry_entry(key):
+    from mimarsinan.config_schema.registry import REGISTRY
+    return REGISTRY.get(key)
+
+
+def _key_section(key) -> "str | None":
+    entry = _registry_entry(key)
+    if entry is None:
+        return None
+    return getattr(entry, "section", None) or "deployment_parameters"
+
+
+def validate_row_keys(row) -> None:
+    """Reject any row key that is neither structural nor registry-known."""
+    import difflib
+
+    from mimarsinan.config_schema.registry import REGISTRY
+
+    unknown = [
+        k for k in row
+        if k not in _STRUCTURAL_ROW_KEYS and _registry_entry(k) is None
+    ]
+    if not unknown:
+        return
+    details = []
+    for key in sorted(unknown):
+        near = difflib.get_close_matches(key, list(REGISTRY), n=3, cutoff=0.6)
+        hint = f" (did you mean: {', '.join(near)}?)" if near else ""
+        details.append(f"{key!r}{hint}")
+    raise ValueError(
+        f"tier row {row.get('n')} ({row.get('vehicle')}) carries unknown "
+        f"key(s): {'; '.join(details)}. A row key must be structural or a "
+        f"registry config key — an unread key would be silently dropped."
+    )
+
+
+def row_config_keys(row, section: str) -> dict:
+    """Row-authored config keys the registry assigns to ``section``."""
+    return {
+        k: v for k, v in row.items()
+        if k not in _STRUCTURAL_ROW_KEYS and _key_section(k) == section
+    }
 
 
 def _wall_budget(tier, row, vehicles, default_min):
@@ -719,6 +782,7 @@ def _emit_tier(tier, rows, vehicles, dataset, wall_budget_min):
     if tier in COVERAGE_NOTES:
         manifest["coverage_notes"] = COVERAGE_NOTES[tier]
     for row in rows:
+        validate_row_keys(row)
         ds = row.get("dataset", dataset)
         name = _name(tier, row, vehicles)
         config = {
