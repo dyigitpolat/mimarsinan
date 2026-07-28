@@ -85,3 +85,33 @@ class TestActivationAlignmentCapability:
             assert "is_mvm" not in source, (
                 f"{module.__name__} still tests the domain directly"
             )
+
+
+class TestObservesValuesCapability:
+    """[D2] the certificate and the deployed-metric read share ONE axis."""
+
+    def test_value_family_observes_values(self):
+        from mimarsinan.chip_simulation.mvm_core_policy import MvmCorePolicy
+        assert MvmCorePolicy().observes_values() is True
+
+    def test_event_families_do_not(self):
+        from mimarsinan.chip_simulation.spiking_mode_policy import (
+            policy_for_spiking_mode,
+        )
+        for mode in ("lif", "ttfs", "ttfs_quantized", "ttfs_cycle_based"):
+            assert policy_for_spiking_mode(mode).observes_values() is False
+
+    def test_it_is_derived_from_the_observable_not_duplicated(self):
+        # A domain cannot answer the two questions inconsistently.
+        from mimarsinan.chip_simulation.mvm_core_policy import MvmCorePolicy
+        policy = MvmCorePolicy()
+        observable, _ = policy.certification_observable()
+        assert policy.observes_values() == (observable == "values")
+
+    def test_hcm_metric_dispatch_asks_the_policy(self):
+        import inspect
+
+        from mimarsinan.pipelining.pipeline_steps.mapping import hard_core_mapping_step
+        source = inspect.getsource(hard_core_mapping_step)
+        assert "observes_values()" in source
+        assert "is_mvm" not in source, "HCM still tests the domain directly"

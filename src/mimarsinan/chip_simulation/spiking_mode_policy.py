@@ -147,6 +147,15 @@ class SpikingModePolicy:
         """Subset of ``candidates`` whose capabilities support this mode."""
         return tuple(b for b in candidates if self.supports_backend(b))
 
+    def observes_values(self) -> bool:
+        """Whether this family's deployed observable is VALUES (not events).
+
+        Derived from ``certification_observable`` so the certificate and the
+        deployed-metric read cannot disagree about what the chip emits.
+        """
+        observable, _reason = self.certification_observable()
+        return observable == "values"
+
     def requires_activation_alignment(self) -> bool:
         """Whether the deployed forward needs the activation-alignment ladder.
 
