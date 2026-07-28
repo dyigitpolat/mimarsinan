@@ -15,6 +15,10 @@ from mimarsinan.chip_simulation.hybrid_run.hybrid_execution import (
     gather_final_output_torch,
     store_segment_output_torch,
 )
+from mimarsinan.chip_simulation.hybrid_run.hybrid_stage_runner import run_hybrid_stages
+from mimarsinan.chip_simulation.value_run.value_execution import (
+    run_neural_segment_values,
+)
 from mimarsinan.mapping.ir import IRSource
 
 
@@ -42,11 +46,6 @@ def _consumer_counts(hybrid_mapping) -> Dict[int, int]:
             _bump(int(src.node_id))
     hybrid_mapping._consumer_counts_cache = counts
     return counts
-from mimarsinan.chip_simulation.hybrid_run.hybrid_stage_runner import run_hybrid_stages
-from mimarsinan.chip_simulation.value_run.value_execution import (
-    run_neural_segment_values,
-)
-
 _RAW_INPUT_NODE_ID = -2
 
 
