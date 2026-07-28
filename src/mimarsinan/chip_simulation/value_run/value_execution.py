@@ -48,19 +48,22 @@ class _PreparedValueSegment:
             ]
         self.thresholds = []
         self.plans = []
-        self.entry_input_cols = []
-        self.entry_grids = []
+        self.entry_transforms = []
         for core in hcm.cores:
             self.thresholds.append(float(core.threshold))
             plan = SpanFillPlan(core.get_axon_source_spans(), device)
             self.plans.append(plan)
-            # [mvm AQ] boundary quantization applies only at entry cores
-            # (no upstream core sources), on the input-sourced columns.
-            self.entry_input_cols.append(
-                None if plan.has_upstream_core_sources else plan.input_destination()
-            )
+            # [mvm AQ] the boundary grid snaps ENTRY cores only (no upstream
+            # core sources); the plan applies it to the columns it owns.
             grid = getattr(core, "boundary_grid", None)
-            self.entry_grids.append(grid if (grid is not None and grid.armed) else None)
+            armed = (
+                grid if (grid is not None and grid.armed
+                         and not plan.has_upstream_core_sources) else None
+            )
+            self.entry_transforms.append(
+                None if armed is None
+                else (lambda t, g=armed: quantize_to_value_grid(t, g.scale, g.bits))
+            )
         self.output_plan = SpanFillPlan(
             compress_spike_sources(list(hcm.output_sources.flatten())), device
         )
@@ -138,16 +141,9 @@ def run_neural_segment_values(
             batch, prepared.axon_counts[idx], device=device, dtype=dtype
         )
         prepared.plans[idx].apply(
-            signal, input_spikes=seg_input, buffers=buffers, on_value=1.0
+            signal, input_spikes=seg_input, buffers=buffers, on_value=1.0,
+            input_transform=prepared.entry_transforms[idx],
         )
-        grid = prepared.entry_grids[idx]
-        columns = prepared.entry_input_cols[idx]
-        if grid is not None and columns is not None:
-            kind, selector = columns
-            span = slice(*selector) if kind == "slice" else selector
-            signal[:, span] = quantize_to_value_grid(
-                signal[:, span], grid.scale, grid.bits
-            )
         out = signal @ prepared.weights[idx]
         bias = prepared.biases[idx]
         if bias is not None:
