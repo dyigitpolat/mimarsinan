@@ -147,6 +147,16 @@ class SpikingModePolicy:
         """Subset of ``candidates`` whose capabilities support this mode."""
         return tuple(b for b in candidates if self.supports_backend(b))
 
+    def requires_activation_alignment(self) -> bool:
+        """Whether the deployed forward needs the activation-alignment ladder.
+
+        Event-domain families must reshape activations onto a realizable
+        firing law (analysis -> adaptation -> clamp -> shift -> quantize);
+        value cores run the host's activations unchanged, so the whole ladder
+        is inert there. The steps ASK this instead of testing the domain.
+        """
+        return True
+
     def certification_observable(self) -> tuple[str, "str | None"]:
         """[cert-plan W3] the per-neuron observable the spike-count
         certificate compares for this mode: ("counts", None), ("events",

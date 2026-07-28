@@ -56,3 +56,32 @@ class TestUnreachedSeamsStayLoud:
         # Consumers type against the SpikingModePolicy duck surface.
         assert isinstance(policy, SpikingModePolicy)
         assert policy.spiking_mode == "mvm"
+
+
+class TestActivationAlignmentCapability:
+    """[D2] steps ask the POLICY whether the alignment ladder applies."""
+
+    def test_value_cores_need_no_alignment(self):
+        from mimarsinan.chip_simulation.mvm_core_policy import MvmCorePolicy
+        assert MvmCorePolicy().requires_activation_alignment() is False
+
+    def test_event_families_do(self):
+        from mimarsinan.chip_simulation.spiking_mode_policy import (
+            policy_for_spiking_mode,
+        )
+        for mode in ("lif", "ttfs", "ttfs_quantized", "ttfs_cycle_based"):
+            assert policy_for_spiking_mode(mode).requires_activation_alignment()
+
+    def test_the_alignment_steps_consult_it_not_the_domain(self):
+        import inspect
+
+        from mimarsinan.pipelining.pipeline_steps.adaptation import (
+            activation_adaptation_step,
+            activation_analysis_step,
+        )
+        for module in (activation_adaptation_step, activation_analysis_step):
+            source = inspect.getsource(module)
+            assert "requires_activation_alignment" in source
+            assert "is_mvm" not in source, (
+                f"{module.__name__} still tests the domain directly"
+            )

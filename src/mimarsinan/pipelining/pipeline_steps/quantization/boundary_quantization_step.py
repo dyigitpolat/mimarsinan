@@ -6,6 +6,7 @@ from typing import Iterable
 
 import torch
 
+from mimarsinan.mapping.platform.packaging_contract import packaging_contract_for
 from mimarsinan.mapping.support.tensor_stats import safe_quantile
 from mimarsinan.models.nn.activations.value_quantizer import ValueGridQuantizer
 from mimarsinan.pipelining.core.registry.trainer_factory import make_basic_trainer
@@ -84,7 +85,7 @@ class BoundaryQuantizationStep(PipelineStep):
 
     @classmethod
     def applies_to(cls, plan):
-        return plan.is_mvm and plan.activation_quantization
+        return packaging_contract_for(plan).boundary_is_gridded
 
     def __init__(self, pipeline):
         super().__init__(self.REQUIRES, self.PROMISES, self.UPDATES, self.CLEARS, pipeline)
