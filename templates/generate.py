@@ -244,13 +244,16 @@ T0 = [
     # value certificates are FATAL and the deployed read is the packed value
     # census. Fresh numbering block (t0_41+) — t0_31/32 are burned labels.
     dict(n=41, mode="mvm", quant="wq", wb=8, vehicle="lenet5",
+         pruned=0.05, tags=["pruned"],
          note="mvm flagship: quantized weights, float I/O, twin certs FATAL"),
     dict(n=42, mode="mvm", quant="fp", wb=8, vehicle="mmixcore",
+         pruned=0.05, tags=["pruned"],
          note="mvm float assembly: pure packing/boundary exercise"),
     # Platform F: the value family maps MORE than lif on this vehicle (the
     # encoder conv and the bare final Linear join the chip), so C's pool of
     # 180+180 cores exhausts — an honest capacity statement, not a defect.
     dict(n=43, mode="mvm", quant="wq", wb=8, vehicle="deepcnn", platform="F",
+         pruned=0.05, tags=["pruned"],
          note="mvm conv/weight-bank exercise (shared-bank cores)"),
     # [wsm V4 F5+AQ] the weight-programming boundary row: platform H's pool
     # forces scheduled passes; bank_clustered streams same-bank instances
@@ -263,7 +266,7 @@ T0 = [
     # conv1's 784 instances on H's 12-core pool need passes ≥ 66 (measured:
     # an under-declared budget silently falls back to pool, reuse 0.16).
     dict(n=44, mode="mvm", quant="wq", wb=8, vehicle="lenet5", platform="H",
-         scheduling=True, tags=["sched"],
+         scheduling=True, tags=["sched", "pruned"], pruned=0.05,
          extra_dp={"schedule_policy": "bank_clustered"},
          extra_pc={"activation_bits": 8, "allow_weight_reuse": True,
                    "max_schedule_passes": 128},

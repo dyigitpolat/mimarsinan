@@ -526,8 +526,8 @@
       "note": "BA-P4 repro: offloaded torch-mixer signed host seams"
     },
     {
-      "name": "t0_41_mvm_lenet5_wq",
-      "config": "t0_41_mvm_lenet5_wq.json",
+      "name": "t0_41_mvm_lenet5_wq_pruned",
+      "config": "t0_41_mvm_lenet5_wq_pruned.json",
       "model_type": "lenet5",
       "cell": {
         "firing": "mvm",
@@ -538,16 +538,18 @@
         "vehicle": "lenet5",
         "dataset": "mnist",
         "regime": "from_scratch",
-        "pruning": "dense",
+        "pruning": "pruned",
         "encoding_placement": "none"
       },
-      "tags": [],
+      "tags": [
+        "pruned"
+      ],
       "expected_wall_min": 10,
       "note": "mvm flagship: quantized weights, float I/O, twin certs FATAL"
     },
     {
-      "name": "t0_42_mvm_mmixcore_fp",
-      "config": "t0_42_mvm_mmixcore_fp.json",
+      "name": "t0_42_mvm_mmixcore_fp_pruned",
+      "config": "t0_42_mvm_mmixcore_fp_pruned.json",
       "model_type": "mlp_mixer_core",
       "cell": {
         "firing": "mvm",
@@ -558,16 +560,18 @@
         "vehicle": "mlp_mixer_core",
         "dataset": "mnist",
         "regime": "from_scratch",
-        "pruning": "dense",
+        "pruning": "pruned",
         "encoding_placement": "none"
       },
-      "tags": [],
+      "tags": [
+        "pruned"
+      ],
       "expected_wall_min": 16,
       "note": "mvm float assembly: pure packing/boundary exercise"
     },
     {
-      "name": "t0_43_mvm_deepcnn_wq",
-      "config": "t0_43_mvm_deepcnn_wq.json",
+      "name": "t0_43_mvm_deepcnn_wq_pruned",
+      "config": "t0_43_mvm_deepcnn_wq_pruned.json",
       "model_type": "deep_cnn",
       "cell": {
         "firing": "mvm",
@@ -578,16 +582,18 @@
         "vehicle": "deep_cnn",
         "dataset": "mnist",
         "regime": "from_scratch",
-        "pruning": "dense",
+        "pruning": "pruned",
         "encoding_placement": "none"
       },
-      "tags": [],
+      "tags": [
+        "pruned"
+      ],
       "expected_wall_min": 16,
       "note": "mvm conv/weight-bank exercise (shared-bank cores)"
     },
     {
-      "name": "t0_44_mvm_lenet5_wq_sched",
-      "config": "t0_44_mvm_lenet5_wq_sched.json",
+      "name": "t0_44_mvm_lenet5_wq_sched_pruned",
+      "config": "t0_44_mvm_lenet5_wq_sched_pruned.json",
       "model_type": "lenet5",
       "cell": {
         "firing": "mvm",
@@ -598,11 +604,12 @@
         "vehicle": "lenet5",
         "dataset": "mnist",
         "regime": "from_scratch",
-        "pruning": "dense",
+        "pruning": "pruned",
         "encoding_placement": "none"
       },
       "tags": [
-        "sched"
+        "sched",
+        "pruned"
       ],
       "expected_wall_min": 10,
       "note": "wsm flagship: bank-clustered scheduled passes on a constrained pool + boundary AQ, twin certs FATAL"
