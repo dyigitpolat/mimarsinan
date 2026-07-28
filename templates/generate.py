@@ -269,13 +269,15 @@ T0 = [
 
 
 T1 = [
-    # finetune_epochs=8: at 96px the ImageNet backbone recovers from chance
-    # (0.1000 -> 0.3925 measured at 2 epochs) but the re-initialized 10-class
-    # head is still UNDER-TRAINED at the envelope check (train 0.287 < test
-    # 0.393), so preloading needs a realistic transfer budget to clear the
-    # 5x-chance floor. Not a gate concession — the gate is unchanged.
-    dict(n=1, mode="lif", quant="wq", wb=8, s=16, vehicle="squeezenet",
-         regime="pretrained", finetune_epochs=8),
+    # OPEN (measured 2026-07-28): 96px preprocessing lifts this backbone off
+    # chance (0.1000 -> 0.3925) but it still misses the pretrain envelope's
+    # 5x-chance floor. Two hypotheses were tested and REFUTED: more finetune
+    # epochs (2->8) collapsed it to exactly chance (train 0.1001), and
+    # fast_lr_scale=0.25 reproduced that collapse bit-identically, so the
+    # 8-epoch schedule fails deterministically and independently of LR.
+    # Both speculative levers reverted; the row stays red pending a real
+    # diagnosis of the 96px transfer, NOT more knob-turning.
+    dict(n=1, mode="lif", quant="wq", wb=8, s=16, vehicle="squeezenet", regime="pretrained"),
     dict(n=2, mode="ttfs", quant="wq", wb=8, s=32, vehicle="vit", regime="pretrained", tags=["wall_risk"]),
     dict(n=3, mode="ttfsq", quant="wq", wb=8, s=32, vehicle="vit", regime="pretrained",
          pruned=0.05, tags=["wall_risk", "pruned"]),
@@ -283,7 +285,7 @@ T1 = [
     dict(n=5, mode="sync", quant="wq", wb=5, s=8, vehicle="deepcnn32", depth=4, regime="from_scratch"),
     dict(n=6, mode="lif", quant="wq", wb=8, s=32, vehicle="deepcnn32", depth=8, regime="from_scratch"),
     dict(n=7, mode="casc", quant="wq", wb=8, s=16, vehicle="squeezenet", regime="pretrained",
-         scheduling=True, tags=["sched"], finetune_epochs=8),
+         scheduling=True, tags=["sched"]),
     dict(n=8, mode="ttfs", quant="fp", wb=8, s=16, vehicle="mixerc10", regime="from_scratch"),
     # [mvm W3] wider-mapping showcase: patch-embed conv + MLP fc1/fc2 + heads
     # map as affine packages; MHA/LayerNorm stay host ops. [wsm V4] armed
@@ -340,12 +342,6 @@ T1_VEHICLES = {
     # pool-saturating peak of 1024.
     "squeezenet": {"model_type": "torch_squeezenet11", "platform": "D", "axis": "vit_b",
                    "model_config": {}, "coalescing": False,
-                   # Pretrained transfer needs a reduced LR — the same lever the
-                   # vit vehicle carries. MEASURED: at the full pipeline LR this
-                   # backbone reached 0.3925 in 2 epochs but DIVERGED to chance
-                   # (train 0.1001) in 8, so the earlier "under-trained" reading
-                   # was wrong; the schedule was unstable, not short.
-                   "fast_lr_scale": 0.25,
                    "preprocessing": {"interpolation": "bilinear", "resize_to": 96,
                                      "normalize": "imagenet"}},
     "vit": {"model_type": "torch_vit", "platform": "E", "axis": "vit_b",
