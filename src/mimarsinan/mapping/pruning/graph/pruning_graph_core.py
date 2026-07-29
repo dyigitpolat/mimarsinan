@@ -11,10 +11,12 @@ from mimarsinan.mapping.pruning.graph.pruning_graph_modes import (
     run_closure,
     run_masked,
 )
+from mimarsinan.mapping.pruning.graph.constant_folding import (
+    refresh_constant_folds,
+)
 from mimarsinan.mapping.pruning.graph.pruning_graph_refresh import (
     _refresh_bank_pruning,
     _refresh_node_pruning,
-    _resolve_node_matrix,
 )
 from mimarsinan.mapping.pruning.graph.pruning_graph_seeding import (
     GlobalPruningContext,
@@ -23,6 +25,7 @@ from mimarsinan.mapping.pruning.graph.pruning_graph_seeding import (
 from mimarsinan.mapping.pruning.graph.pruning_graph_types import GlobalPruningResult
 from mimarsinan.mapping.pruning.liveness_transfer import (
     DEFAULT_COMPUTEOP_LIVENESS_TRANSFERS,
+    DEFAULT_ELIMINATION_CONSTANT_FOLDING,
 )
 def compute_global_pruned_sets(
     graph: IRGraph,
@@ -34,6 +37,8 @@ def compute_global_pruned_sets(
     exempt_cols_per_node: Mapping[int, AbstractSet[int]] | None = None,
     mode: str = ELIMINATION_PROPAGATION_CASCADE,
     computeop_liveness_transfers: str = DEFAULT_COMPUTEOP_LIVENESS_TRANSFERS,
+    elimination_constant_folding: str = DEFAULT_ELIMINATION_CONSTANT_FOLDING,
+    spiking_mode: str = "lif",
 ) -> GlobalPruningResult:
     """Run global pruning under one propagation arm (default: cascade fixpoint).
 
@@ -56,6 +61,15 @@ def compute_global_pruned_sets(
             functions relay deadness through elementwise activations, index
             bijections, and pooling regions) or ``"identity_only"`` (the
             pre-W4b relay, for A/B).
+        elimination_constant_folding: ``"full"`` (default: the [W4b-2]
+            constant lattice descends TOP -> CONST(c) and folds CONST axon
+            rows onto each core's constant carrier) or ``"off"`` (the
+            zero-only W4b-1 cascade, byte-identical). ``identity_only``
+            transfers force this ``"off"``.
+        spiking_mode: the deployment domain, which gates whether NON-ZERO
+            constants may be folded (exact only in the value/MVM domain; see
+            ``liveness_transfer.constant_policy``). CONST(0) folding is exact
+            everywhere and is never gated.
     """
     mode = require_elimination_propagation(mode)
     if not graph.nodes and not (getattr(graph, "weight_banks", {}) or {}):
@@ -69,6 +83,8 @@ def compute_global_pruned_sets(
         exempt_rows_per_node=exempt_rows_per_node,
         exempt_cols_per_node=exempt_cols_per_node,
         computeop_liveness_transfers=computeop_liveness_transfers,
+        elimination_constant_folding=elimination_constant_folding,
+        spiking_mode=spiking_mode,
     )
     if not ctx.neural_cores and not ctx.banks:
         return GlobalPruningResult()
@@ -90,14 +106,17 @@ def _run_cascade_fixpoint(ctx: GlobalPruningContext) -> int:
     iterations = 0
     while True:
         iterations += 1
-        changed = False
+        # The constant lattice is one more monotone operator of the same
+        # fixpoint: descents feed starvation/orphaning and vice versa.
+        changed = refresh_constant_folds(ctx).commit(ctx)
         for node in ctx.neural_cores:
-            mat = _resolve_node_matrix(node, ctx.banks)
+            mat = ctx.node_matrix(node)
             if mat is None:
                 continue
             if _refresh_node_pruning(
                 node=node,
                 mat=mat,
+                hardware_bias=ctx.node_bias(node),
                 zero_threshold=ctx.zero_threshold,
                 pruned_rows=ctx.pruned_rows,
                 pruned_cols=ctx.pruned_cols,

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Dict, Sequence, Set, Tuple
+from typing import AbstractSet, Dict, Sequence, Set, Tuple
 
 from mimarsinan.mapping.ir import IRGraph, NeuralCore
 from mimarsinan.mapping.pruning.boundary_policy import (
@@ -42,6 +42,7 @@ from mimarsinan.mapping.pruning.ir_pruning_helpers import (
 )
 from mimarsinan.mapping.pruning.liveness_transfer import (
     DEFAULT_COMPUTEOP_LIVENESS_TRANSFERS,
+    DEFAULT_ELIMINATION_CONSTANT_FOLDING,
 )
 
 SeedMasks = Dict[int, Tuple[Sequence[bool], Sequence[bool]]]
@@ -55,16 +56,18 @@ def compute_elimination_ledger(
     initial_pruned_per_bank: SeedMasks | None = None,
     elimination_propagation: str = DEFAULT_ELIMINATION_PROPAGATION,
     computeop_liveness_transfers: str = DEFAULT_COMPUTEOP_LIVENESS_TRANSFERS,
+    elimination_constant_folding: str = DEFAULT_ELIMINATION_CONSTANT_FOLDING,
     spiking_mode: str = "lif",
     simulation_steps: int = 32,
 ) -> EliminationLedger:
     """Attribute every kill of one (uncompacted) graph + seed set + mode.
 
     Runs the masked and closure arms alongside the requested arm, so each
-    kill is attributed by set difference (SEED = masked; CLOSURE-COUPLING =
-    closure - masked; EMERGENT-PROPAGATION = final - closure), replays the
-    causal waves for per-kill depth, and folds in the liveness pass (DEAD
-    core deletions, BIAS_ONLY collapses). Never mutates ``ir_graph``.
+    kill is attributed by set difference (CONSTANT-FOLD carved out first, then
+    SEED = masked; CLOSURE-COUPLING = closure - masked; EMERGENT-PROPAGATION =
+    final - closure), replays the causal waves for per-kill depth, and folds
+    in the liveness pass (DEAD core deletions, BIAS_ONLY collapses). Never
+    mutates ``ir_graph``.
     """
     mode = require_elimination_propagation(elimination_propagation)
     if not ir_graph.nodes:
@@ -88,6 +91,8 @@ def compute_elimination_ledger(
             exempt_cols_per_node=exempt_cols,
             mode=arm,
             computeop_liveness_transfers=computeop_liveness_transfers,
+            elimination_constant_folding=elimination_constant_folding,
+            spiking_mode=spiking_mode,
         )
 
     masked = _run_arm(ELIMINATION_PROPAGATION_MASKED)
@@ -110,6 +115,8 @@ def compute_elimination_ledger(
         exempt_rows_per_node=exempt_rows,
         exempt_cols_per_node=exempt_cols,
         computeop_liveness_transfers=computeop_liveness_transfers,
+        elimination_constant_folding=elimination_constant_folding,
+        spiking_mode=spiking_mode,
     )
     replay = replay_kill_depths(replay_ctx, mode=mode)
     _assert_replay_reconciles(replay_ctx, final)
@@ -150,12 +157,23 @@ def compute_elimination_ledger(
 
 
 def _split_counts(
-    masked: Set[int], closure: Set[int], final: Set[int], liveness_extra: Set[int]
-) -> Tuple[int, int, int, int]:
-    seed = final & masked
-    coupled = (final & closure) - masked
-    emergent = final - closure
-    return len(seed), len(coupled), len(emergent), len(liveness_extra)
+    masked: AbstractSet[int],
+    closure: AbstractSet[int],
+    final: AbstractSet[int],
+    liveness_extra: AbstractSet[int],
+    constant: AbstractSet[int] = frozenset(),
+) -> Tuple[int, int, int, int, int]:
+    """Partition one kill set into the attribution categories; CONSTANT-FOLD
+    kills are carved out FIRST, else a folded row would land in the closure or
+    emergent bucket depending on the wave that resolved it."""
+    folded = final & constant
+    rest = final - folded
+    seed = rest & masked
+    coupled = (rest & closure) - masked
+    emergent = rest - closure
+    return (
+        len(seed), len(coupled), len(emergent), len(liveness_extra), len(folded)
+    )
 
 
 def _node_record(
@@ -180,12 +198,15 @@ def _node_record(
     liveness_cols = (
         set(range(n_neurons)) - final_cols if nid in dead_ids else set()
     )
-    s_r, c_r, e_r, l_r = _split_counts(
+    folded = frozenset(
+        final.constant_folds.folded_rows.get(nid, {}).keys()
+    )
+    s_r, c_r, e_r, l_r, k_r = _split_counts(
         masked.pruned_rows_per_node.get(nid, set()),
         closure.pruned_rows_per_node.get(nid, set()),
-        final_rows, liveness_rows,
+        final_rows, liveness_rows, folded,
     )
-    s_c, c_c, e_c, l_c = _split_counts(
+    s_c, c_c, e_c, l_c, _ = _split_counts(
         masked.pruned_cols_per_node.get(nid, set()),
         closure.pruned_cols_per_node.get(nid, set()),
         final_cols, liveness_cols,
@@ -197,8 +218,8 @@ def _node_record(
         n_neurons=n_neurons,
         counts=EliminationCounts(
             seed_rows=s_r, closure_rows=c_r, emergent_rows=e_r,
-            liveness_rows=l_r, seed_cols=s_c, closure_cols=c_c,
-            emergent_cols=e_c, liveness_cols=l_c,
+            liveness_rows=l_r, constant_rows=k_r, seed_cols=s_c,
+            closure_cols=c_c, emergent_cols=e_c, liveness_cols=l_c,
         ),
         row_depths=dict(replay.row_depths.get(nid, {})),
         col_depths=dict(replay.col_depths.get(nid, {})),
@@ -213,12 +234,12 @@ def _bank_record(
     final: GlobalPruningResult,
 ) -> BankEliminationRecord:
     n_axons, n_neurons = bank.core_matrix.shape
-    s_r, c_r, e_r, _ = _split_counts(
+    s_r, c_r, e_r, _, _ = _split_counts(
         masked.pruned_rows_per_bank.get(bank_id, set()),
         closure.pruned_rows_per_bank.get(bank_id, set()),
         final.pruned_rows_per_bank.get(bank_id, set()), set(),
     )
-    s_c, c_c, e_c, _ = _split_counts(
+    s_c, c_c, e_c, _, _ = _split_counts(
         masked.pruned_cols_per_bank.get(bank_id, set()),
         closure.pruned_cols_per_bank.get(bank_id, set()),
         final.pruned_cols_per_bank.get(bank_id, set()), set(),

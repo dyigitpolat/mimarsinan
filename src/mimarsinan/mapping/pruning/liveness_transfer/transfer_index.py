@@ -10,7 +10,7 @@ replay-reconciliation guard holds by construction.
 from __future__ import annotations
 
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Dict, FrozenSet, List, Mapping, Set, Tuple
 
 from mimarsinan.mapping.ir import ComputeOp, IRGraph, IRSource, NeuralCore
@@ -46,11 +46,15 @@ class ComputeOpTransferIndex:
     - ``protected_ports`` — producer ports that feed an opaque op, reach a
       model output through ops, or sit on an underivable path: the starvation
       guard, never orphan-killed.
+    - ``per_op`` — the raw per-op relations, kept so the [W4b-2] constant
+      lattice can reuse each op's ``out_to_ins`` region as the exact support
+      of its forward constant transfer (opaque ops fall back to "all inputs").
     """
 
     forward_producers: Mapping[Port, FrozenSet[Port]]
     effective_consumers: Mapping[Port, FrozenSet[Port]]
     protected_ports: FrozenSet[Port]
+    per_op: Mapping[int, LivenessTransfer] = field(default_factory=dict)
 
 
 def _identity_only_index(ir_graph: IRGraph) -> ComputeOpTransferIndex:
@@ -93,6 +97,7 @@ def build_computeop_transfer_index(
         forward_producers=forward,
         effective_consumers=effective,
         protected_ports=protected,
+        per_op=transfers,
     )
 
 

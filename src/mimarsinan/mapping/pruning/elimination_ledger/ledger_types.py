@@ -11,6 +11,9 @@ KILL_CAUSE_SEED = "seed"
 KILL_CAUSE_CLOSURE_COUPLING = "closure_coupling"
 KILL_CAUSE_EMERGENT_PROPAGATION = "emergent_propagation"
 KILL_CAUSE_LIVENESS_DEAD = "liveness_dead"
+# [W4b-2] an axon row whose line was a known CONSTANT and whose
+# contribution was folded onto the core's constant carrier.
+KILL_CAUSE_CONSTANT_FOLD = "constant_fold"
 
 ELIMINATION_LEDGER_RECORD_FILENAME = "elimination_ledger.json"
 
@@ -27,6 +30,7 @@ class EliminationCounts:
     closure_rows: int = 0
     emergent_rows: int = 0
     liveness_rows: int = 0
+    constant_rows: int = 0
     seed_cols: int = 0
     closure_cols: int = 0
     emergent_cols: int = 0
@@ -35,8 +39,8 @@ class EliminationCounts:
     @property
     def total_rows(self) -> int:
         return (
-            self.seed_rows + self.closure_rows
-            + self.emergent_rows + self.liveness_rows
+            self.seed_rows + self.closure_rows + self.emergent_rows
+            + self.liveness_rows + self.constant_rows
         )
 
     @property
@@ -50,7 +54,11 @@ class EliminationCounts:
 @dataclass(frozen=True)
 class NodeEliminationRecord:
     """One NeuralCore's eliminations; depths cover fixpoint kills only
-    (seed = 0; a kill caused by depth-d structure is d+1)."""
+    (seed = 0; a kill caused by depth-d structure is d+1).
+
+    ``counts.constant_rows`` [W4b-2] carves the CONSTANT-FOLD kills out of the
+    arm-difference buckets so the categories stay a partition of the kill set.
+    """
 
     node_id: int
     name: str
@@ -118,6 +126,10 @@ class EliminationLedger:
         return self._sum("emergent_cols")
 
     @property
+    def constant_fold_rows(self) -> int:
+        return self._sum("constant_rows")
+
+    @property
     def liveness_dead_rows(self) -> int:
         return self._sum("liveness_rows")
 
@@ -155,9 +167,10 @@ class EliminationLedger:
             "emergent_propagation_cols": self.emergent_propagation_cols,
             "liveness_dead_rows": self.liveness_dead_rows,
             "liveness_dead_cols": self.liveness_dead_cols,
+            "constant_fold_rows": self.constant_fold_rows,
             "total_rows_eliminated": self._sum("seed_rows")
             + self._sum("closure_rows") + self._sum("emergent_rows")
-            + self._sum("liveness_rows"),
+            + self._sum("liveness_rows") + self._sum("constant_rows"),
             "total_cols_eliminated": self._sum("seed_cols")
             + self._sum("closure_cols") + self._sum("emergent_cols")
             + self._sum("liveness_cols"),
@@ -179,6 +192,7 @@ class EliminationLedger:
             f"emergent r/c={self.emergent_propagation_rows}/"
             f"{self.emergent_propagation_cols} "
             f"liveness r/c={self.liveness_dead_rows}/{self.liveness_dead_cols} "
+            f"constant_fold rows={self.constant_fold_rows} "
             f"cores_deleted={self.cores_deleted} "
             f"bias_only={self.bias_only_collapses} "
             f"iters={self.fixpoint_iterations} "

@@ -117,22 +117,66 @@ def derive_cols_with_implicit_source(
     return {nid: frozenset(cols) for nid, cols in out.items()}
 
 
-def assert_zero_preserving_preconditions(ir_graph: IRGraph) -> None:
+def op_outputs_fully_constant(op: ComputeOp, constant_outputs) -> bool:
+    """[W4b-2] Every output port of ``op`` carries a lattice constant.
+
+    Such an op is certifiable even when ``act(0) != 0``: whatever it emits is a
+    KNOWN constant that the fold moved onto each consumer's carrier exactly.
+    Its inputs cannot have been perturbed by the elimination either — a
+    non-zero-preserving op is always OPAQUE in the transfer registry, so its
+    producer columns are ``protected_ports`` and can never be orphan-killed;
+    they only die by seed or starvation, both of which mean the column's value
+    really was zero.
+    """
+    if not constant_outputs:
+        return False
+    n_out = _flat_output_size(op)
+    if n_out is None or n_out == 0:
+        return False
+    return all((op.id, o) in constant_outputs for o in range(n_out))
+
+
+def _flat_output_size(op: ComputeOp) -> int | None:
+    shape = getattr(op, "output_shape", None)
+    if shape is None:
+        return None
+    size = 1
+    for dim in shape:
+        size *= int(dim)
+    return size
+
+
+def assert_zero_preserving_preconditions(
+    ir_graph: IRGraph, constant_outputs=None
+) -> None:
     """Refuse when any host op is not zero-preserving (or unknown).
 
-    The escape hatch is routing the producer columns into
-    ``cols_with_implicit_source`` (see :func:`derive_cols_with_implicit_source`);
-    the cascade does not consume that exemption externally yet, so the
-    certificate refuses instead of silently passing.
+    Two escape hatches: routing the producer columns into
+    ``cols_with_implicit_source`` (see :func:`derive_cols_with_implicit_source`),
+    which the cascade does not consume externally yet, or [W4b-2] the op's
+    outputs being fully CONST under the constant lattice
+    (:func:`op_outputs_fully_constant`) — that is how ``sigmoid(0) = 0.5``
+    becomes certifiable instead of refused. Without either, the certificate
+    refuses instead of silently passing.
     """
     offenders = []
     for node in ir_graph.nodes:
-        if isinstance(node, ComputeOp) and not is_zero_preserving_host_op(node):
-            offenders.append(_op_label(node))
+        if not isinstance(node, ComputeOp):
+            continue
+        # Fully-resolved FIRST: an op whose whole output is a folded constant
+        # needs no zero-preservation knowledge at all, so it must not be sent
+        # through the registry query (which fails loud on unknown modules —
+        # exactly the residual-join case the lattice now handles).
+        if op_outputs_fully_constant(node, constant_outputs):
+            continue
+        if is_zero_preserving_host_op(node):
+            continue
+        offenders.append(_op_label(node))
     if offenders:
         raise CascadeCertificatePreconditionError(
             "cascade elimination is only exact when every host activation "
             f"maps 0 to 0; non-zero-preserving ops present: {offenders}. "
             "Route their producer columns into cols_with_implicit_source "
-            "(derive_cols_with_implicit_source) before eliminating."
+            "(derive_cols_with_implicit_source) before eliminating, or let "
+            "the constant lattice resolve all of their outputs."
         )

@@ -52,7 +52,9 @@ from mimarsinan.mapping.pruning.ir_pruning_helpers import (
 )
 from mimarsinan.mapping.pruning.liveness_transfer import (
     DEFAULT_COMPUTEOP_LIVENESS_TRANSFERS,
+    DEFAULT_ELIMINATION_CONSTANT_FOLDING,
     require_computeop_liveness_transfers,
+    require_elimination_constant_folding,
 )
 
 
@@ -116,6 +118,7 @@ def certify_cascade_equivalence(
     simulation_steps: int = 32,
     elimination_propagation: str = ELIMINATION_PROPAGATION_CASCADE,
     computeop_liveness_transfers: str = DEFAULT_COMPUTEOP_LIVENESS_TRANSFERS,
+    elimination_constant_folding: str = DEFAULT_ELIMINATION_CONSTANT_FOLDING,
 ) -> CascadeEquivalenceCertificate:
     """Certify that ``prune_ir_graph`` (+ deferred bank compaction in the
     identity build) preserved the program's value function bit-exactly.
@@ -132,6 +135,9 @@ def certify_cascade_equivalence(
     computeop_liveness_transfers = require_computeop_liveness_transfers(
         computeop_liveness_transfers
     )
+    elimination_constant_folding = require_elimination_constant_folding(
+        elimination_constant_folding
+    )
     if not ir_graph.nodes:
         raise CascadeCertificatePreconditionError("empty IR graph; nothing to certify.")
     if 2.0 ** (-fraction_bits) <= zero_threshold:
@@ -144,8 +150,6 @@ def certify_cascade_equivalence(
     refuse_unusable_seeds(
         ir_graph, initial_pruned_per_node, initial_pruned_per_bank
     )
-    assert_zero_preserving_preconditions(ir_graph)
-    assert_dyadic_exactness_grid(ir_graph, fraction_bits=fraction_bits)
     input_size = _derive_input_size(ir_graph)
 
     exempt_rows, exempt_cols = _boundary_policy_exemptions(ir_graph)
@@ -161,6 +165,18 @@ def certify_cascade_equivalence(
         exempt_cols_per_node=exempt_cols,
         mode=elimination_propagation,
         computeop_liveness_transfers=computeop_liveness_transfers,
+        elimination_constant_folding=elimination_constant_folding,
+        spiking_mode=spiking_mode,
+    )
+    # The lattice is an INPUT to the preconditions [W4b-2]: an op whose whole
+    # output is a folded constant is admissible even when act(0) != 0 or its
+    # type maps values off-grid, provided the constants themselves are on the
+    # grid. Analysis first, then refuse — never the reverse.
+    constant_outputs = fixpoint.constant_folds.lattice.snapshot()
+    assert_zero_preserving_preconditions(ir_graph, constant_outputs)
+    assert_dyadic_exactness_grid(
+        ir_graph, fraction_bits=fraction_bits,
+        constant_outputs=constant_outputs,
     )
     bank_columns_checked = check_shared_bank_union_rule(ir_graph, fixpoint)
 
@@ -178,6 +194,7 @@ def certify_cascade_equivalence(
         simulation_steps=simulation_steps,
         elimination_propagation=elimination_propagation,
         computeop_liveness_transfers=computeop_liveness_transfers,
+        elimination_constant_folding=elimination_constant_folding,
     )
 
     reference_hybrid = build_identity_hybrid_mapping(ir_graph=reference)
