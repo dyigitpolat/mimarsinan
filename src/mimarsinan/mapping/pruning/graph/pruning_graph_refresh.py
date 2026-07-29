@@ -87,6 +87,7 @@ def _refresh_node_pruning(
     *,
     node: NeuralCore,
     mat: np.ndarray,
+    hardware_bias: np.ndarray | None = None,
     zero_threshold: float,
     pruned_rows: Dict[int, Set[int]],
     pruned_cols: Dict[int, Set[int]],
@@ -99,9 +100,16 @@ def _refresh_node_pruning(
 ) -> bool:
     """Rerun within-matrix propagation seeded with cross-core deadness.
 
+    ``mat`` / ``hardware_bias`` are the EFFECTIVE (post-constant-fold)
+    structures; passing them explicitly keeps the kernel honest about the
+    program it is reasoning over. ``hardware_bias=None`` falls back to the
+    node's stored vector, which is exactly the pre-W4b-2 behaviour.
+
     Returns True iff this iteration enlarged the node's pruned sets.
     """
     nid = node.id
+    if hardware_bias is None:
+        hardware_bias = getattr(node, "hardware_bias", None)
     n_axons, n_neurons = mat.shape
 
     cross_rows = _cross_core_dead_axons(
@@ -127,7 +135,7 @@ def _refresh_node_pruning(
         exempt_rows=exempt_rows.get(nid, frozenset()),
         exempt_cols=exempt_cols.get(nid, frozenset()),
         cols_with_implicit_source=_cols_with_nonzero_bias(
-            getattr(node, "hardware_bias", None), n_neurons, zero_threshold
+            hardware_bias, n_neurons, zero_threshold
         ),
         mode=mode,
     )

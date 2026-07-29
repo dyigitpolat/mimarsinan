@@ -9,7 +9,9 @@ from mimarsinan.mapping.pruning.graph.propagation_mode import (
     resolve_elimination_propagation,
 )
 from mimarsinan.mapping.pruning.liveness_transfer import (
+    effective_constant_folding,
     resolve_computeop_liveness_transfers,
+    resolve_elimination_constant_folding,
 )
 from mimarsinan.mapping.pruning.ir_pruning_core import prune_ir_graph
 from mimarsinan.mapping.pruning.ir_pruning_masks import get_initial_pruning_masks_from_model
@@ -26,6 +28,10 @@ def apply_ir_pruning_if_enabled(step, model, ir_graph, phase_tag: str):
     )
     computeop_liveness_transfers = resolve_computeop_liveness_transfers(
         step.pipeline.config
+    )
+    elimination_constant_folding = effective_constant_folding(
+        policy=resolve_elimination_constant_folding(step.pipeline.config),
+        computeop_liveness_transfers=computeop_liveness_transfers,
     )
 
     with best_effort("report first-perceptron prune-mask buffers"):
@@ -79,6 +85,7 @@ def apply_ir_pruning_if_enabled(step, model, ir_graph, phase_tag: str):
             initial_pruned_per_bank=initial_bank if initial_bank else None,
             elimination_propagation=elimination_propagation,
             computeop_liveness_transfers=computeop_liveness_transfers,
+            elimination_constant_folding=elimination_constant_folding,
             spiking_mode=str(plan.spiking_mode),
             simulation_steps=int(step.pipeline.config["simulation_steps"]),
         )
@@ -94,10 +101,12 @@ def apply_ir_pruning_if_enabled(step, model, ir_graph, phase_tag: str):
             spiking_mode=str(plan.spiking_mode),
             elimination_propagation=elimination_propagation,
             computeop_liveness_transfers=computeop_liveness_transfers,
+            elimination_constant_folding=elimination_constant_folding,
         )
     print(
         "[SoftCoreMappingStep] Applied IR pruning (zeroed row/col elimination, "
         f"propagation={elimination_propagation}, "
-        f"computeop_liveness_transfers={computeop_liveness_transfers})"
+        f"computeop_liveness_transfers={computeop_liveness_transfers}, "
+        f"elimination_constant_folding={elimination_constant_folding})"
     )
     return ir_graph

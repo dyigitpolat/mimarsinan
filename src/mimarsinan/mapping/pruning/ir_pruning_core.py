@@ -7,6 +7,7 @@ from mimarsinan.mapping.pruning.graph.propagation_mode import (
     ELIMINATION_PROPAGATION_CASCADE,
     require_elimination_propagation,
 )
+from mimarsinan.mapping.pruning.graph.constant_folding import apply_constant_folds
 from mimarsinan.mapping.pruning.graph.pruning_graph_core import compute_global_pruned_sets
 from mimarsinan.mapping.pruning.ir_pruning_helpers import (
     _attach_pre_compaction_metadata,
@@ -24,6 +25,7 @@ from mimarsinan.mapping.pruning.ir_pruning_compact import (
 )
 from mimarsinan.mapping.pruning.liveness_transfer import (
     DEFAULT_COMPUTEOP_LIVENESS_TRANSFERS,
+    DEFAULT_ELIMINATION_CONSTANT_FOLDING,
 )
 def prune_ir_graph(
     ir_graph: IRGraph,
@@ -36,6 +38,7 @@ def prune_ir_graph(
     spiking_mode: str = "lif",
     elimination_propagation: str = ELIMINATION_PROPAGATION_CASCADE,
     computeop_liveness_transfers: str = DEFAULT_COMPUTEOP_LIVENESS_TRANSFERS,
+    elimination_constant_folding: str = DEFAULT_ELIMINATION_CONSTANT_FOLDING,
 ) -> IRGraph:
     """Prune and compact ``ir_graph`` in place; return the same instance.
 
@@ -46,9 +49,12 @@ def prune_ir_graph(
     their registered liveness transfers (``computeop_liveness_transfers=
     "full"``: elementwise activations, index bijections, pooling regions;
     ``"identity_only"`` reproduces the pre-W4b identity-relay barrier);
-    unknown ops stay opaque barriers. Model input data axons and output
-    logits are never pruned; DEAD cores are deleted, surviving cores
-    compacted.
+    unknown ops stay opaque barriers. With
+    ``elimination_constant_folding="full"`` [W4b-2] a CONST axon row is
+    folded onto its core's constant carrier and eliminated exactly (the
+    ``"off"`` kill-switch reproduces the zero-only cascade byte for byte).
+    Model input data axons and output logits are never pruned; DEAD cores are
+    deleted, surviving cores compacted.
     """
     elimination_propagation = require_elimination_propagation(
         elimination_propagation
@@ -73,10 +79,22 @@ def prune_ir_graph(
         exempt_cols_per_node=exempt_cols,
         mode=elimination_propagation,
         computeop_liveness_transfers=computeop_liveness_transfers,
+        elimination_constant_folding=elimination_constant_folding,
+        spiking_mode=spiking_mode,
     )
 
     if not (initial_pruned_per_node or initial_pruned_per_bank):
         _log_value_based_summary(result)
+
+    # Materialize the analysis: every CONST row's contribution moves onto its
+    # core's carrier BEFORE liveness / metadata / compaction read the weights,
+    # so all of them see the program the chip will actually run.
+    folded_cores = apply_constant_folds(graph, result.constant_folds)
+    if folded_cores:
+        print(
+            f"[Pruning] constant folding: {result.constant_folds.total_folded_rows()} "
+            f"axon row(s) folded onto the carriers of {folded_cores} core(s)"
+        )
 
     _attach_pre_compaction_metadata(graph, result, store_heatmap=store_heatmap)
 

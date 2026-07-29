@@ -1,5 +1,5 @@
 """Registry entries: the pruning mapping-strategy keys (adaptation, the criterion-agnostic
-seed seam, and the elimination-propagation axis)."""
+seed seam, and the elimination-propagation / constant-folding axes)."""
 
 from __future__ import annotations
 
@@ -13,6 +13,10 @@ from mimarsinan.config_schema.registry.types import (
 from mimarsinan.mapping.pruning.graph.propagation_mode import (
     DEFAULT_ELIMINATION_PROPAGATION,
     ELIMINATION_PROPAGATION_MODES,
+)
+from mimarsinan.mapping.pruning.liveness_transfer.constant_policy import (
+    DEFAULT_ELIMINATION_CONSTANT_FOLDING,
+    ELIMINATION_CONSTANT_FOLDING_MODES,
 )
 
 ENTRIES = (
@@ -69,4 +73,19 @@ ENTRIES = (
        relevant=R.when_true("pruning"), provenance="consumer frozen default",
        derived_default=_frozen(DEFAULT_ELIMINATION_PROPAGATION),
        empty_means="cascade — the full propagative fixpoint (default path)"),
+    _E("elimination_constant_folding", group="mapping_strategy",
+       owner="pruning_adaptation", type=T.ENUM,
+       options=ELIMINATION_CONSTANT_FOLDING_MODES, category=Category.ADVANCED,
+       exposure="user", label="Elimination Constant Folding",
+       doc="Constant-lattice propagation for IR pruning: 'full' propagates "
+           "TOP > CONST(c) across host ops and folds every CONST axon row onto "
+           "its core's existing constant carrier (so a non-zero-preserving "
+           "activation, a residual join or a bias-only core stops being an "
+           "elimination barrier); 'off' is the kill-switch that reproduces the "
+           "zero-only cascade byte-identically. Non-zero folds are additionally "
+           "gated to the value/MVM chip domain, and 'identity_only' liveness "
+           "transfers force this off.",
+       relevant=R.when_true("pruning"), provenance="consumer frozen default",
+       derived_default=_frozen(DEFAULT_ELIMINATION_CONSTANT_FOLDING),
+       empty_means="full — the constant lattice runs (default path)"),
 )

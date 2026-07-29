@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from typing import Dict, Mapping, Set
 
+from mimarsinan.mapping.pruning.graph.constant_folding import (
+    refresh_constant_folds,
+)
 from mimarsinan.mapping.pruning.graph.propagation_mode import (
     ELIMINATION_PROPAGATION_MASKED,
 )
@@ -52,9 +55,9 @@ def run_bank_alias_fixpoint(ctx: GlobalPruningContext, *, kernel_mode: str) -> N
 
 def run_masked(ctx: GlobalPruningContext) -> None:
     """Allocation-naive LOWER BOUND: exactly the seeded, exemption-filtered
-    sets — no coupling, no emergent deadness, no iteration. Only the bank
-    aliasing closure runs, because seeds on shared physical structure must
-    stay coordinate-consistent (union rule)."""
+    sets — no coupling, no emergent deadness, no iteration, NO constant
+    folding. Only the bank aliasing closure runs, because seeds on shared
+    physical structure must stay coordinate-consistent (union rule)."""
     run_bank_alias_fixpoint(ctx, kernel_mode=ELIMINATION_PROPAGATION_MASKED)
 
 
@@ -67,7 +70,14 @@ def run_closure(ctx: GlobalPruningContext) -> None:
     - backward: a producer neuron every reader of which is seed-dead is the
       paired member of the same seed group and dies with it (owned-matrix
       producers only — killing a shared bank column for one instance's group
-      is a cascade-level decision).
+      is a cascade-level decision);
+    - constants: ONE lattice sweep with ``cross_core=False``. A CONST line
+      still kills every row that reads it (forward relay through wiring — the
+      same single hop closure already grants an activation), but a column is
+      never DISCOVERED constant, because "all my inputs are constant" is
+      emergent deadness and closure must not find it. The sweep runs after
+      the seed state is captured, so its kills never feed the backward
+      coupling — that would be a second hop.
 
     NO emergent-deadness discovery (a neuron whose inputs all died stays
     alive) and NO iteration; a final bank-aliasing pass keeps shared
@@ -80,6 +90,7 @@ def run_closure(ctx: GlobalPruningContext) -> None:
     seed_cols: Dict[int, Set[int]] = {
         nid: set(s) for nid, s in ctx.pruned_cols.items()
     }
+    refresh_constant_folds(ctx, cross_core=False).commit(ctx)
 
     coupled_rows = _forward_consumer_coupling(ctx, seed_cols)
     coupled_cols = _backward_producer_coupling(ctx, seed_rows, seed_cols)

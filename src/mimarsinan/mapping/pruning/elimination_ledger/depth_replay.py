@@ -7,6 +7,9 @@ from typing import Dict, Set, Tuple
 
 import numpy as np
 
+from mimarsinan.mapping.pruning.graph.constant_folding import (
+    refresh_constant_folds,
+)
 from mimarsinan.mapping.pruning.graph.propagation_mode import (
     ELIMINATION_PROPAGATION_CLOSURE,
     ELIMINATION_PROPAGATION_MASKED,
@@ -20,7 +23,6 @@ from mimarsinan.mapping.pruning.graph.pruning_graph_refresh import (
     _cols_with_nonzero_bias,
     _cross_core_dead_axons,
     _orphan_neurons,
-    _resolve_node_matrix,
 )
 from mimarsinan.mapping.pruning.graph.pruning_graph_seeding import (
     GlobalPruningContext,
@@ -78,9 +80,17 @@ def replay_kill_depths(ctx: GlobalPruningContext, *, mode: str) -> DepthReplay:
 def _cascade_wave(
     ctx: GlobalPruningContext, replay: DepthReplay, depth: int
 ) -> bool:
-    """One synchronous causal wave + alias closure; True iff anything died."""
+    """One synchronous causal wave + alias closure; True iff anything died.
+
+    The constant lattice sweeps against the same PRE-wave state as every
+    other operator and is committed alongside them, so the replay traverses
+    folds identically to the production fixpoint and the ledger's
+    reconciliation guard keeps its by-construction meaning.
+    """
+    sweep = refresh_constant_folds(ctx)
     new_rows, new_cols = _node_causal_kills(ctx)
     bank_rows, bank_cols = _bank_causal_kills(ctx)
+    lattice_descended = sweep.commit(ctx)
 
     for nid, rows in new_rows.items():
         ctx.pruned_rows[nid] |= rows
@@ -92,7 +102,10 @@ def _cascade_wave(
         ctx.bank_pruned_cols[bid] |= cols
 
     run_bank_alias_fixpoint(ctx, kernel_mode=ELIMINATION_PROPAGATION_MASKED)
-    return _label_state(ctx, replay, depth=depth)
+    # A wave that only DESCENDED the lattice (a column became constant but its
+    # readers sit behind an opaque op) kills nothing yet still enables the next
+    # wave, so quiescence means "no kills AND no descents".
+    return _label_state(ctx, replay, depth=depth) or lattice_descended
 
 
 def _node_causal_kills(
@@ -102,7 +115,7 @@ def _node_causal_kills(
     new_rows: Dict[int, Set[int]] = {}
     new_cols: Dict[int, Set[int]] = {}
     for node in ctx.neural_cores:
-        mat = _resolve_node_matrix(node, ctx.banks)
+        mat = ctx.node_matrix(node)
         if mat is None:
             continue
         nid = node.id
@@ -128,8 +141,7 @@ def _node_causal_kills(
             exempt_rows=exempt_r,
             exempt_cols=exempt_c,
             cols_with_implicit_source=_cols_with_nonzero_bias(
-                getattr(node, "hardware_bias", None), n_neurons,
-                ctx.zero_threshold,
+                ctx.node_bias(node), n_neurons, ctx.zero_threshold,
             ),
             zero_threshold=ctx.zero_threshold,
         )

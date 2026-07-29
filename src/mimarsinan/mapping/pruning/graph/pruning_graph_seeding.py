@@ -11,9 +11,15 @@ import numpy as np
 from mimarsinan.mapping.ir import IRGraph, IRSource, NeuralCore, WeightBank
 from mimarsinan.mapping.pruning.liveness_transfer import (
     DEFAULT_COMPUTEOP_LIVENESS_TRANSFERS,
+    DEFAULT_ELIMINATION_CONSTANT_FOLDING,
     ComputeOpTransferIndex,
+    ConstantLattice,
+    ELIMINATION_CONSTANT_FOLDING_FULL,
     build_computeop_transfer_index,
+    domain_admits_nonzero_constants,
+    effective_constant_folding,
 )
+from mimarsinan.mapping.pruning.graph.constant_folding import ConstantFoldState
 from mimarsinan.mapping.pruning.graph.pruning_graph_types import GlobalPruningResult
 from mimarsinan.mapping.pruning.graph.pruning_graph_refresh import (
     _cols_with_nonzero_bias,
@@ -36,10 +42,26 @@ class GlobalPruningContext:
     computeop_transfers: ComputeOpTransferIndex
     bank_consumers: Dict[int, Set[int]]
     bank_node_lookup: Dict[int, list]
+    constants: ConstantFoldState = field(default_factory=ConstantFoldState)
     pruned_rows: Dict[int, Set[int]] = field(default_factory=dict)
     pruned_cols: Dict[int, Set[int]] = field(default_factory=dict)
     bank_pruned_rows: Dict[int, Set[int]] = field(default_factory=dict)
     bank_pruned_cols: Dict[int, Set[int]] = field(default_factory=dict)
+
+    def base_node_matrix(self, node: NeuralCore) -> "np.ndarray | None":
+        """The stored ``(axons, neurons)`` matrix (bank view resolved)."""
+        return _resolve_node_matrix(node, self.banks)
+
+    def node_matrix(self, node: NeuralCore) -> "np.ndarray | None":
+        """The EFFECTIVE matrix every kernel must see: base + carrier delta."""
+        base = _resolve_node_matrix(node, self.banks)
+        if base is None:
+            return None
+        return self.constants.effective_matrix(node, base)
+
+    def node_bias(self, node: NeuralCore) -> "np.ndarray | None":
+        """The EFFECTIVE ``hardware_bias``: base + carrier delta."""
+        return self.constants.effective_bias(node)
 
     def to_result(self, *, fixpoint_iterations: int) -> GlobalPruningResult:
         return GlobalPruningResult(
@@ -48,6 +70,7 @@ class GlobalPruningContext:
             pruned_rows_per_bank=self.bank_pruned_rows,
             pruned_cols_per_bank=self.bank_pruned_cols,
             fixpoint_iterations=fixpoint_iterations,
+            constant_folds=self.constants,
         )
 
 
@@ -60,6 +83,8 @@ def build_global_pruning_context(
     exempt_rows_per_node: Mapping[int, AbstractSet[int]] | None,
     exempt_cols_per_node: Mapping[int, AbstractSet[int]] | None,
     computeop_liveness_transfers: str = DEFAULT_COMPUTEOP_LIVENESS_TRANSFERS,
+    elimination_constant_folding: str = DEFAULT_ELIMINATION_CONSTANT_FOLDING,
+    spiking_mode: str = "lif",
 ) -> GlobalPruningContext:
     """Index the graph and seed the pruned sets (explicit + off-source + value-based)."""
     neural_cores = [n for n in graph.nodes if isinstance(n, NeuralCore)]
@@ -87,6 +112,11 @@ def build_global_pruning_context(
         model_output_neurons=model_output_neurons,
         computeop_transfers=build_computeop_transfer_index(
             graph, policy=computeop_liveness_transfers
+        ),
+        constants=_build_constant_state(
+            elimination_constant_folding=elimination_constant_folding,
+            computeop_liveness_transfers=computeop_liveness_transfers,
+            spiking_mode=spiking_mode,
         ),
         bank_consumers=_build_bank_consumer_map(neural_cores),
         bank_node_lookup={
@@ -127,6 +157,25 @@ def build_global_pruning_context(
         exempt_cols=exempt_cols,
     )
     return ctx
+
+
+def _build_constant_state(
+    *,
+    elimination_constant_folding: str,
+    computeop_liveness_transfers: str,
+    spiking_mode: str,
+) -> ConstantFoldState:
+    """The lattice, gated by the policy axis AND the chip-domain exactness gate."""
+    policy = effective_constant_folding(
+        policy=elimination_constant_folding,
+        computeop_liveness_transfers=computeop_liveness_transfers,
+    )
+    return ConstantFoldState(
+        enabled=policy == ELIMINATION_CONSTANT_FOLDING_FULL,
+        lattice=ConstantLattice(
+            admits_nonzero=domain_admits_nonzero_constants(spiking_mode)
+        ),
+    )
 
 
 def _build_consumer_index(
