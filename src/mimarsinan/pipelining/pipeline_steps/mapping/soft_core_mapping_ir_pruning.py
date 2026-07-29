@@ -4,9 +4,19 @@ from __future__ import annotations
 
 from mimarsinan.common.best_effort import best_effort
 from mimarsinan.common.diagnostics import phase_profiler
-from mimarsinan.mapping.pruning.elimination_ledger import compute_elimination_ledger
+from mimarsinan.common.reporter import emit_reporter_event
+from mimarsinan.mapping.pruning.elimination_ledger import (
+    compute_elimination_arms,
+    compute_elimination_ledger,
+)
 from mimarsinan.mapping.pruning.graph.propagation_mode import (
     resolve_elimination_propagation,
+)
+from mimarsinan.mapping.softcore_elimination import (
+    report_from_arms,
+    summarize_softcore_elimination,
+    write_softcore_elimination_markdown,
+    write_softcore_elimination_record,
 )
 from mimarsinan.mapping.pruning.liveness_transfer import (
     effective_constant_folding,
@@ -16,6 +26,19 @@ from mimarsinan.mapping.pruning.liveness_transfer import (
 from mimarsinan.mapping.pruning.ir_pruning_core import prune_ir_graph
 from mimarsinan.mapping.pruning.ir_pruning_masks import get_initial_pruning_masks_from_model
 from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
+
+
+def emit_softcore_elimination_record(step, ir_graph, arms):
+    """[W6b] Print, reporter-event and serialize the softcore-elimination
+    record (JSON + the drop-in markdown table) for this deployment."""
+    report = report_from_arms(ir_graph, arms)
+    print(f"[SoftCoreMappingStep] {summarize_softcore_elimination(report)}")
+    emit_reporter_event(
+        step.pipeline.reporter, "softcore_elimination", report.to_dict()
+    )
+    write_softcore_elimination_record(report, step.pipeline.working_directory)
+    write_softcore_elimination_markdown(report, step.pipeline.working_directory)
+    return report
 
 
 def apply_ir_pruning_if_enabled(step, model, ir_graph, phase_tag: str):
@@ -79,6 +102,15 @@ def apply_ir_pruning_if_enabled(step, model, ir_graph, phase_tag: str):
         store_heatmap = False
 
     with phase_profiler(phase_tag, "elimination_ledger"):
+        arms = compute_elimination_arms(
+            ir_graph,
+            initial_pruned_per_node=initial_node if initial_node else None,
+            initial_pruned_per_bank=initial_bank if initial_bank else None,
+            elimination_propagation=elimination_propagation,
+            computeop_liveness_transfers=computeop_liveness_transfers,
+            elimination_constant_folding=elimination_constant_folding,
+            spiking_mode=str(plan.spiking_mode),
+        )
         ledger = compute_elimination_ledger(
             ir_graph,
             initial_pruned_per_node=initial_node if initial_node else None,
@@ -88,8 +120,16 @@ def apply_ir_pruning_if_enabled(step, model, ir_graph, phase_tag: str):
             elimination_constant_folding=elimination_constant_folding,
             spiking_mode=str(plan.spiking_mode),
             simulation_steps=int(step.pipeline.config["simulation_steps"]),
+            arms=arms,
         )
     print(f"[SoftCoreMappingStep] {ledger.summary()}")
+
+    # [W6b] The paper's HEADLINE metric, measured here and nowhere else: this
+    # is the only seam holding BOTH the mapping (every softcore at its full
+    # pre-elimination a x n) and the per-arm kill sets. One step later
+    # `prune_ir_graph` compacts owned matrices away and the weaker arms are
+    # gone, so the denominator and the C1 columns become unrecoverable.
+    emit_softcore_elimination_record(step, ir_graph, arms)
 
     with phase_profiler(phase_tag, "prune_ir_graph"):
         ir_graph = prune_ir_graph(
