@@ -4,6 +4,29 @@ import torch.nn as nn
 import torch
 
 
+def layer_bias_or_zeros(perceptron) -> torch.Tensor:
+    """The perceptron layer's additive term as a tensor ON THE LAYER'S OWN
+    device and dtype.
+
+    A bias-free layer (a BN-paired convolution: ``layer.bias is None``) still
+    has an additive term — the structural zero. It must be materialized from
+    the layer's weight, never as a bare ``torch.zeros(...)``: a bare create
+    lands on CPU in float32 and every effective-parameter expression that mixes
+    it with the normalization statistics of a CUDA (or float64) perceptron then
+    raises a device/dtype mismatch. Anchoring on the weight makes the
+    "all effective-parameter inputs share one device/dtype" invariant hold by
+    construction, so it follows ``.to()``/offload for free.
+
+    Returns the live ``bias`` Parameter when there is one, so callers that need
+    gradients keep them.
+    """
+    weight = perceptron.layer.weight
+    bias = perceptron.layer.bias
+    if bias is not None:
+        return bias
+    return weight.new_zeros(weight.shape[0])
+
+
 def effective_preactivation_bias(perceptron):
     """Additive constant of ``normalization(layer(x))`` under frozen stats —
     the bias the deployed chip charges per cycle. ``None`` when there is none.
@@ -14,7 +37,7 @@ def effective_preactivation_bias(perceptron):
         return bias
     u, beta, mean = norm_affine_params(normalization)
     if bias is None:
-        bias = torch.zeros_like(mean)
+        bias = layer_bias_or_zeros(perceptron)
     return (bias - mean) * u + beta
 
 

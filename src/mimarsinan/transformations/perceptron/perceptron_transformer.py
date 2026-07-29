@@ -4,6 +4,7 @@ import torch
 import torch.nn as nn
 
 from mimarsinan.common.env import degenerate_routing_debug_enabled
+from mimarsinan.models.perceptron_mixer.perceptron import layer_bias_or_zeros
 from mimarsinan.transformations.pruning.committed_masks import (
     commit_perceptron_pruning,
 )
@@ -114,10 +115,10 @@ class PerceptronTransformer:
             return scale * (perceptron.layer.weight.data * u.unsqueeze(-1)) / act
         
     def get_effective_bias(self, perceptron):
-        if perceptron.layer.bias is None:
-            layer_bias = torch.zeros(perceptron.layer.weight.shape[0])
-        else:
-            layer_bias = perceptron.layer.bias.data
+        # Device/dtype-following by construction: a bias-free layer's structural
+        # zero is materialized from the layer's own weight, so it can never be a
+        # CPU float32 tensor meeting CUDA normalization stats (W0.7 mapping crash).
+        layer_bias = layer_bias_or_zeros(perceptron).data
 
         if isinstance(perceptron.normalization, nn.Identity):
             return layer_bias / perceptron.activation_scale
