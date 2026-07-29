@@ -101,7 +101,7 @@ CONFIG_KEYS_SET: Set[str] = {
     "kd_temperature",
     "activation_quantization",
     "weight_quantization",
-    "pruning", "pruning_fraction", "prune_sparsity",
+    "pruning", "pruning_fraction", "prune_sparsity", "elimination_propagation",
     "scale_migration", "scale_migration_clip_ratio",
     "weight_source", "preload_weights",
     "pretrained_weight_set", "pretrained_weight_sets",
