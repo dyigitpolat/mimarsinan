@@ -18,16 +18,23 @@ from mimarsinan.mapping.softcore_elimination.facts import (
     InstanceFacts,
     SoftcoreEliminationError,
     SoftcoreFacts,
-    facts_from_masks,
     facts_from_pruning_result,
+)
+from mimarsinan.mapping.softcore_elimination.identity import (
+    MappedLayerKey,
+    mapped_layer_key,
+)
+from mimarsinan.mapping.softcore_elimination.labels import (
+    collapse_repeats,
+    display_labels,
+    positional_stems,
 )
 from mimarsinan.mapping.softcore_elimination.markdown import (
     render_softcore_elimination_markdown,
     write_softcore_elimination_markdown,
 )
-from mimarsinan.mapping.softcore_elimination.naming import (
-    softcore_group_name,
-    softcore_layer_name,
+from mimarsinan.mapping.softcore_elimination.mask_facts import (
+    facts_from_masks,
 )
 from mimarsinan.mapping.softcore_elimination.report import (
     EliminationView,
@@ -51,6 +58,7 @@ __all__ = [
     "GEOMETRY_PRE_ELIMINATION",
     "GroupElimination",
     "InstanceFacts",
+    "MappedLayerKey",
     "REALIZED_ARM",
     "SOFTCORE_ELIMINATION_RECORD_FILENAME",
     "SOFTCORE_ELIMINATION_TABLE_FILENAME",
@@ -59,13 +67,15 @@ __all__ = [
     "SoftcoreFacts",
     "StorageElimination",
     "build_view",
+    "collapse_repeats",
+    "display_labels",
     "facts_from_masks",
     "facts_from_pruning_result",
+    "mapped_layer_key",
+    "positional_stems",
     "render_softcore_elimination_markdown",
     "report_from_arms",
     "report_from_pruned_ir_graph",
-    "softcore_group_name",
-    "softcore_layer_name",
     "summarize_softcore_elimination",
     "write_softcore_elimination_markdown",
     "write_softcore_elimination_record",

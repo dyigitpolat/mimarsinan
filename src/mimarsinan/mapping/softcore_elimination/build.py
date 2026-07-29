@@ -1,9 +1,24 @@
-"""[W6b] Aggregate softcore facts into the per-group, per-arm report."""
+"""[W6c] Aggregate softcore facts into the per-group, per-arm report.
+
+The pipeline is deliberately ordered so that IDENTITY comes first and naming
+last:
+
+1. bucket the instances by their STRUCTURAL mapped-layer key
+   (:mod:`...identity`) -- one bucket per mapped source layer, whatever the
+   nodes happen to be called;
+2. label the buckets (:mod:`...labels`) -- display only;
+3. collapse repeated-container rows for presentation, over rows that are
+   already structurally correct.
+
+A workload whose layers are literally named ``0``, ``1``, ``2`` therefore gets
+one correct row per layer, and no naming outcome can merge two layers or split
+one.
+"""
 
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import Callable, Mapping, Sequence
+from typing import Mapping, Sequence
 
 from mimarsinan.mapping.ir import IRGraph
 from mimarsinan.mapping.pruning.elimination_ledger.arm_runs import (
@@ -16,12 +31,15 @@ from mimarsinan.mapping.softcore_elimination.facts import (
     BankFacts,
     InstanceFacts,
     SoftcoreFacts,
-    facts_from_masks,
     facts_from_pruning_result,
 )
-from mimarsinan.mapping.softcore_elimination.naming import (
-    softcore_group_name,
-    softcore_layer_name,
+from mimarsinan.mapping.softcore_elimination.identity import MappedLayerKey
+from mimarsinan.mapping.softcore_elimination.labels import (
+    collapse_repeats,
+    display_labels,
+)
+from mimarsinan.mapping.softcore_elimination.mask_facts import (
+    facts_from_masks,
 )
 from mimarsinan.mapping.softcore_elimination.report import (
     EliminationView,
@@ -42,23 +60,21 @@ from mimarsinan.mapping.softcore_elimination.types import (
 REALIZED_ARM = "realized"
 
 
-def _grouped(
-    instances: Sequence[InstanceFacts], key: Callable[[str], str]
-) -> tuple[GroupElimination, ...]:
-    buckets: dict[str, list[InstanceFacts]] = defaultdict(list)
+def _by_layer_key(
+    instances: Sequence[InstanceFacts],
+) -> dict[MappedLayerKey, list[InstanceFacts]]:
+    """One bucket per mapped source layer — the structural row set."""
+    buckets: dict[MappedLayerKey, list[InstanceFacts]] = defaultdict(list)
     for inst in instances:
-        buckets[key(inst.name)].append(inst)
-    rows = [
-        _group_row(name, members) for name, members in sorted(buckets.items())
-    ]
-    return tuple(rows)
+        buckets[inst.layer_key].append(inst)
+    return dict(buckets)
 
 
-def _group_row(name: str, members: Sequence[InstanceFacts]) -> GroupElimination:
+def _layer_row(label: str, members: Sequence[InstanceFacts]) -> GroupElimination:
     dims = {(m.axons, m.neurons) for m in members}
     axons, neurons = dims.pop() if len(dims) == 1 else (None, None)
     return GroupElimination(
-        group=name,
+        group=label,
         instances=len(members),
         axons=axons,
         neurons=neurons,
@@ -66,29 +82,21 @@ def _group_row(name: str, members: Sequence[InstanceFacts]) -> GroupElimination:
         cols_eliminated=sum(m.cols_eliminated for m in members),
         cells=sum(m.cells for m in members),
         surviving=sum(m.surviving for m in members),
-        layers=tuple(sorted({softcore_layer_name(m.name) for m in members})),
+        layers=(label,),
     )
 
 
-def _storage_group(bank: BankFacts) -> str:
-    """The group a shared bank belongs to: the one every sharer maps to."""
-    groups = {softcore_group_name(name) for name in bank.sharers}
-    if not groups:
-        return UNMAPPED_GROUP_LABEL
-    if len(groups) > 1:
-        return SHARED_GROUP_LABEL
-    return groups.pop()
-
-
-def _storage_rows(facts: SoftcoreFacts) -> tuple[StorageElimination, ...]:
+def _storage_rows(
+    facts: SoftcoreFacts, group_of: Mapping[MappedLayerKey, str]
+) -> tuple[StorageElimination, ...]:
     """Physical weight storage per group: banks once + unshared owned matrices."""
     banks: dict[str, list[BankFacts]] = defaultdict(list)
     for bank in facts.banks:
-        banks[_storage_group(bank)].append(bank)
+        banks[_storage_group(bank, group_of)].append(bank)
     owned: dict[str, list[InstanceFacts]] = defaultdict(list)
     for inst in facts.instances:
         if inst.weight_bank_id is None:
-            owned[softcore_group_name(inst.name)].append(inst)
+            owned[group_of[inst.layer_key]].append(inst)
 
     rows = []
     for name in sorted(set(banks) | set(owned)):
@@ -106,11 +114,34 @@ def _storage_rows(facts: SoftcoreFacts) -> tuple[StorageElimination, ...]:
     return tuple(rows)
 
 
+def _storage_group(
+    bank: BankFacts, group_of: Mapping[MappedLayerKey, str]
+) -> str:
+    """The group a shared bank belongs to: the one every sharer maps to."""
+    groups = {group_of[key] for key in bank.sharer_keys if key in group_of}
+    if not groups:
+        return UNMAPPED_GROUP_LABEL
+    if len(groups) > 1:
+        return SHARED_GROUP_LABEL
+    return groups.pop()
+
+
 def build_view(arm: str, facts: SoftcoreFacts) -> EliminationView:
     """One arm's complete view: group rows, layer rows, both totals."""
-    groups = _grouped(facts.instances, softcore_group_name)
-    layers = _grouped(facts.instances, softcore_layer_name)
-    storage = _storage_rows(facts)
+    buckets = _by_layer_key(facts.instances)
+    labels = display_labels(buckets)
+    layers = tuple(sorted(
+        (_layer_row(labels[key], members) for key, members in buckets.items()),
+        key=lambda row: row.group,
+    ))
+    groups = collapse_repeats(layers)
+    # The storage view is bucketed by the SAME collapsed label, so the two
+    # halves of the table line up row for row.
+    collapsed_of = {
+        layer: row.group for row in groups for layer in row.layers
+    }
+    group_of = {key: collapsed_of[label] for key, label in labels.items()}
+    storage = _storage_rows(facts, group_of)
     return EliminationView(
         arm=arm,
         groups=groups,

@@ -13,6 +13,11 @@ from mimarsinan.mapping.pruning.elimination_ledger.depth_replay import (
     DepthReplay,
     replay_kill_depths,
 )
+from mimarsinan.mapping.pruning.elimination_ledger.ledger_inputs import (
+    UNSET,
+    Unset,
+    resolve_arm_inputs,
+)
 from mimarsinan.mapping.pruning.elimination_ledger.ledger_types import (
     BankEliminationRecord,
     EliminationCounts,
@@ -31,10 +36,6 @@ from mimarsinan.mapping.pruning.graph.pruning_graph_types import (
     GlobalPruningResult,
 )
 from mimarsinan.mapping.pruning.ir_liveness import NodeLiveness, compute_liveness
-from mimarsinan.mapping.pruning.liveness_transfer import (
-    DEFAULT_COMPUTEOP_LIVENESS_TRANSFERS,
-    DEFAULT_ELIMINATION_CONSTANT_FOLDING,
-)
 
 SeedMasks = Dict[int, Tuple[Sequence[bool], Sequence[bool]]]
 
@@ -42,13 +43,13 @@ SeedMasks = Dict[int, Tuple[Sequence[bool], Sequence[bool]]]
 def compute_elimination_ledger(
     ir_graph: IRGraph,
     *,
-    zero_threshold: float = 1e-8,
+    zero_threshold: float | Unset = UNSET,
     initial_pruned_per_node: SeedMasks | None = None,
     initial_pruned_per_bank: SeedMasks | None = None,
     elimination_propagation: str = DEFAULT_ELIMINATION_PROPAGATION,
-    computeop_liveness_transfers: str = DEFAULT_COMPUTEOP_LIVENESS_TRANSFERS,
-    elimination_constant_folding: str = DEFAULT_ELIMINATION_CONSTANT_FOLDING,
-    spiking_mode: str = "lif",
+    computeop_liveness_transfers: str | Unset = UNSET,
+    elimination_constant_folding: str | Unset = UNSET,
+    spiking_mode: str | Unset = UNSET,
     simulation_steps: int = 32,
     arms: EliminationArms | None = None,
 ) -> EliminationLedger:
@@ -63,9 +64,29 @@ def compute_elimination_ledger(
 
     ``arms`` accepts an already-computed :class:`EliminationArms` so a caller
     that also builds the softcore-elimination report pays for the arm runs
-    once; it must have been produced for the same graph and mode.
+    once. It CARRIES the analysis inputs it was run with, and this function
+    then consumes those — including for the liveness pass, which used to read
+    the ledger's own (defaulted, therefore possibly wrong) ``zero_threshold``
+    and ``spiking_mode``. Supplying an arm input that CONTRADICTS the arms
+    fails loud rather than being silently dropped; the seed maps cannot be
+    compared meaningfully once seeded, so passing them with ``arms`` at all is
+    an error.
     """
     mode = require_elimination_propagation(elimination_propagation)
+    resolved = resolve_arm_inputs(
+        {
+            "zero_threshold": zero_threshold,
+            "computeop_liveness_transfers": computeop_liveness_transfers,
+            "elimination_constant_folding": elimination_constant_folding,
+            "spiking_mode": spiking_mode,
+        },
+        {
+            "initial_pruned_per_node": initial_pruned_per_node,
+            "initial_pruned_per_bank": initial_pruned_per_bank,
+        },
+        arms,
+        mode,
+    )
     if not ir_graph.nodes:
         return EliminationLedger(
             mode=mode, per_node=(), per_bank=(), cores_deleted=0,
@@ -74,19 +95,13 @@ def compute_elimination_ledger(
     if arms is None:
         arms = compute_elimination_arms(
             ir_graph,
-            zero_threshold=zero_threshold,
+            zero_threshold=resolved.zero_threshold,
             initial_pruned_per_node=initial_pruned_per_node,
             initial_pruned_per_bank=initial_pruned_per_bank,
             elimination_propagation=mode,
-            computeop_liveness_transfers=computeop_liveness_transfers,
-            elimination_constant_folding=elimination_constant_folding,
-            spiking_mode=spiking_mode,
-        )
-    elif arms.mode != mode:
-        raise EliminationLedgerError(
-            f"precomputed arms were run under mode={arms.mode!r} but the "
-            f"ledger was asked for mode={mode!r}; the attribution would "
-            "difference against the wrong arms."
+            computeop_liveness_transfers=resolved.computeop_liveness_transfers,
+            elimination_constant_folding=resolved.elimination_constant_folding,
+            spiking_mode=resolved.spiking_mode,
         )
     masked, closure, final = arms.masked, arms.closure, arms.final
 
@@ -104,12 +119,15 @@ def compute_elimination_ledger(
     replay = replay_kill_depths(replay_ctx, mode=mode)
     _assert_replay_reconciles(replay_ctx, final)
 
+    # The liveness pass must read the SAME analysis inputs the arms ran with;
+    # before W6c it read this function's own defaults, so a precomputed-arms
+    # caller silently got zero_threshold=1e-8 / spiking_mode="lif" here.
     liveness = compute_liveness(
         ir_graph,
         simulation_steps=simulation_steps,
-        spiking_mode=spiking_mode,
+        spiking_mode=resolved.spiking_mode,
         pruning_result=final,
-        zero_threshold=zero_threshold,
+        zero_threshold=resolved.zero_threshold,
     )
     dead_ids = {
         nid for nid, status in liveness.per_node.items()

@@ -34,12 +34,12 @@ from mimarsinan.mapping.softcore_elimination import (
     GEOMETRY_AS_STORED,
     SOFTCORE_ELIMINATION_RECORD_FILENAME,
     SOFTCORE_ELIMINATION_TABLE_FILENAME,
+    MappedLayerKey,
     SoftcoreEliminationError,
+    mapped_layer_key,
     render_softcore_elimination_markdown,
     report_from_arms,
     report_from_pruned_ir_graph,
-    softcore_group_name,
-    softcore_layer_name,
     summarize_softcore_elimination,
     write_softcore_elimination_markdown,
     write_softcore_elimination_record,
@@ -52,30 +52,124 @@ def _src(specs):
     )
 
 
-class TestGroupNamingIsDerivedFromTheNames:
-    """No per-workload string table: the positional suffixes a mapper appends
-    are peeled off lexically, and repeat indices collapse to one table row."""
+class TestTheRowKeyIsStructural:
+    """[W6c] The mapped-layer row is keyed on the IR's own provenance, so a
+    workload whose modules are named ``0``/``4``/``6`` keys as well as one
+    named ``blocks.0.fc1``. Names never enter the bucketing."""
 
-    @pytest.mark.parametrize(
-        "name,layer,group",
-        [
-            ("blocks_0_fc1_col36", "blocks_0_fc1", "blocks_*_fc1"),
-            ("blocks_6_fc2_col64", "blocks_6_fc2", "blocks_*_fc2"),
-            ("patch_embed_pos0_7_g0", "patch_embed", "patch_embed"),
-            ("head_col0", "head", "head"),
-            ("conv2_tile3", "conv2", "conv2"),
-            ("layer_2_conv_0", "layer_2_conv", "layer_*_conv"),
-            ("fc", "fc", "fc"),
-            ("0", "0", "*"),
-        ],
-    )
-    def test_layer_and_group_derivation(self, name, layer, group):
-        assert softcore_layer_name(name) == layer
-        assert softcore_group_name(name) == group
+    def _core(self, name, **kwargs):
+        return NeuralCore(
+            id=kwargs.pop("id", 0), name=name,
+            input_sources=_src([(-2, 0)]), **kwargs
+        )
 
-    def test_a_positional_word_inside_a_name_is_never_stripped(self):
-        assert softcore_layer_name("column_proj") == "column_proj"
-        assert softcore_layer_name("group_norm_fc") == "group_norm_fc"
+    def test_perceptron_provenance_is_the_identity(self):
+        a = self._core("_0_pos4_7_g0", id=0, perceptron_index=3)
+        b = self._core("blocks_2_fc1_col17", id=1, perceptron_index=3)
+        assert mapped_layer_key(a) == mapped_layer_key(b) == \
+            MappedLayerKey("perceptron", 3)
+
+    def test_split_and_tile_suffixes_do_not_shatter_a_layer(self):
+        """Every suffix the mapper and the layout packer append —
+        `_col{i}`, `_tile_{s}_{e}`, `_split_{k}`, `_coal{k}` — names FRAGMENTS
+        OF ONE LAYER. They share a perceptron index and so must share one row;
+        peeling the tail lexically instead produced one group per column."""
+        keys = {
+            mapped_layer_key(self._core(name, id=i, perceptron_index=7))
+            for i, name in enumerate((
+                "fc_col0_tile_0_16", "fc_col0_tile_16_32",
+                "fc_col1_tile_0_16", "fc_col1_tile_16_32",
+                "fc_col2_split_0", "fc_col2_split_1", "fc_col3_coal0",
+            ))
+        }
+        assert keys == {MappedLayerKey("perceptron", 7)}
+
+    def test_a_bank_carries_the_provenance_its_instances_may_lack(self):
+        bank = WeightBank(
+            id=4, core_matrix=np.ones((2, 2)), perceptron_index=9
+        )
+        graph = IRGraph(
+            nodes=[self._core("x", weight_bank_id=4, weight_row_slice=(0, 2))],
+            output_sources=_src([(0, 0)]), weight_banks={4: bank},
+        )
+        assert mapped_layer_key(graph.nodes[0], graph) == \
+            MappedLayerKey("perceptron", 9)
+
+    def test_weight_identity_is_the_fallback_when_provenance_is_absent(self):
+        bank = WeightBank(id=4, core_matrix=np.ones((2, 4)))
+        graph = IRGraph(
+            nodes=[
+                self._core("a", id=0, weight_bank_id=4, weight_row_slice=(0, 2)),
+                self._core("b", id=1, weight_bank_id=4, weight_row_slice=(0, 2)),
+                self._core("c", id=2, weight_bank_id=4, weight_row_slice=(2, 4)),
+            ],
+            output_sources=_src([(0, 0)]), weight_banks={4: bank},
+        )
+        keys = [mapped_layer_key(n, graph) for n in graph.nodes]
+        assert keys[0] == keys[1] == MappedLayerKey("bank", 4, (0, 2))
+        assert keys[2] == MappedLayerKey("bank", 4, (2, 4))
+
+    def test_an_owned_crossbar_without_provenance_is_its_own_layer(self):
+        a = self._core("0", id=11, core_matrix=np.ones((2, 2)))
+        b = self._core("0", id=12, core_matrix=np.ones((2, 2)))
+        assert mapped_layer_key(a) == MappedLayerKey("core", 11)
+        assert mapped_layer_key(a) != mapped_layer_key(b)
+
+    def test_an_unset_negative_index_falls_through(self):
+        core = self._core("x", core_matrix=np.ones((2, 2)), perceptron_index=-1)
+        assert mapped_layer_key(core) == MappedLayerKey("core", 0)
+
+
+class TestLabelsAreDisplayOnly:
+    """[W6c] A vehicle whose layers are literally named ``0``/``1``/``2`` still
+    gets ONE ROW PER LAYER; the label may degrade, the row may not."""
+
+    def _graph(self, names):
+        cores = [
+            NeuralCore(
+                id=i, name=name, input_sources=_src([(-2, 0), (-2, 1)]),
+                core_matrix=np.ones((2, 2)), perceptron_index=i,
+            )
+            for i, name in enumerate(names)
+        ]
+        for core in cores:
+            core.pruned_row_mask = [False, False]
+            core.pruned_col_mask = [False, False]
+        return IRGraph(nodes=cores, output_sources=_src([(len(cores) - 1, 0)]))
+
+    def test_bare_integer_names_still_give_one_row_per_layer(self):
+        report = report_from_pruned_ir_graph(self._graph(["0", "1", "2"]))
+        assert len(report.view.layers) == 3
+        assert {row.group for row in report.view.layers} == {"0", "1", "2"}
+        assert report.total.instances == 3
+
+    def test_identical_names_are_separated_by_the_structural_key(self):
+        report = report_from_pruned_ir_graph(self._graph(["fc", "fc"]))
+        assert len(report.view.layers) == 2
+        assert len({row.group for row in report.view.layers}) == 2
+        assert all("fc" in row.group for row in report.view.layers)
+
+    def test_positional_labels_never_collapse_into_a_repeat_pattern(self):
+        """``_0``/``_4``/``_6`` of a bare nn.Sequential share the skeleton
+        ``_*``, but collapsing them would erase the only identity they have."""
+        report = report_from_pruned_ir_graph(self._graph(["_0", "_4", "_6"]))
+        assert {row.group for row in report.view.groups} == {"_0", "_4", "_6"}
+
+    def test_a_named_container_still_collapses(self):
+        report = report_from_pruned_ir_graph(
+            self._graph(["blocks_0_fc", "blocks_1_fc", "blocks_2_fc"])
+        )
+        assert [row.group for row in report.view.groups] == ["blocks_*_fc"]
+        assert report.view.groups[0].instances == 3
+        assert len(report.view.layers) == 3
+
+    def test_a_repeat_pattern_over_mixed_geometry_is_not_collapsed(self):
+        graph = self._graph(["blocks_0_fc", "blocks_1_fc"])
+        graph.nodes[1].core_matrix = np.ones((3, 2))
+        graph.nodes[1].pruned_row_mask = [False, False, False]
+        report = report_from_pruned_ir_graph(graph)
+        assert {row.group for row in report.view.groups} == \
+            {"blocks_0_fc", "blocks_1_fc"}
 
 
 def _bank_graph(masks_a, masks_b):
@@ -163,23 +257,40 @@ class TestAsymmetricSharedBank:
 
 
 class TestOwnedCoreArithmetic:
-    def test_hand_checkable_owned_matrix(self):
+    def _owned_graph(self, **core_kwargs):
         core = NeuralCore(
             id=0, name="fc1_col0",
             input_sources=_src([(-2, j) for j in range(5)]),
             core_matrix=np.ones((5, 3), dtype=np.float64),
+            **core_kwargs,
         )
         core.pruned_row_mask = [True, True, False, False, False]
         core.pruned_col_mask = [True, False, False]
-        graph = IRGraph(nodes=[core], output_sources=_src([(0, 1)]))
-        report = report_from_pruned_ir_graph(graph)
+        return IRGraph(nodes=[core], output_sources=_src([(0, 1)]))
 
-        group = report.group("fc1")
+    def test_hand_checkable_owned_matrix(self):
+        report = report_from_pruned_ir_graph(self._owned_graph())
+
+        # A lone hand-built core exhibits NO positional evidence — no sibling
+        # instance, no output column — so the label keeps the whole name
+        # rather than guessing that `col0` is a suffix. The row and its
+        # arithmetic are unaffected: identity is structural, the label is not.
+        group = report.group("fc1_col0")
         assert (group.cells, group.surviving) == (15, 3 * 2)
         assert group.eliminated_fraction == pytest.approx(9 / 15)
         storage = report.storage_total
         assert (storage.banks, storage.owned_matrices) == (0, 1)
         assert (storage.cells_before, storage.cells_after) == (15, 6)
+
+    def test_the_mappers_own_coordinate_recovers_the_readable_label(self):
+        """What a real mapper emits: `_col{i}` where `i` IS the core's output
+        column. The suffix is then recognized STRUCTURALLY, with no word list,
+        and the same row is simply labelled better."""
+        report = report_from_pruned_ir_graph(
+            self._owned_graph(perceptron_output_column=0)
+        )
+        group = report.group("fc1")
+        assert (group.cells, group.surviving) == (15, 3 * 2)
 
     def test_as_stored_geometry_reads_the_post_compaction_masks(self):
         """The retrospective knob: a core whose matrix IR compaction already

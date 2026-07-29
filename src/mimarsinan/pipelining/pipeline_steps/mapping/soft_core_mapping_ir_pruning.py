@@ -111,14 +111,12 @@ def apply_ir_pruning_if_enabled(step, model, ir_graph, phase_tag: str):
             elimination_constant_folding=elimination_constant_folding,
             spiking_mode=str(plan.spiking_mode),
         )
+        # Every analysis input above is already baked into `arms`; the ledger
+        # reads them back off it (and would refuse a contradicting duplicate),
+        # so only what the arm runs do NOT fix is passed here.
         ledger = compute_elimination_ledger(
             ir_graph,
-            initial_pruned_per_node=initial_node if initial_node else None,
-            initial_pruned_per_bank=initial_bank if initial_bank else None,
             elimination_propagation=elimination_propagation,
-            computeop_liveness_transfers=computeop_liveness_transfers,
-            elimination_constant_folding=elimination_constant_folding,
-            spiking_mode=str(plan.spiking_mode),
             simulation_steps=int(step.pipeline.config["simulation_steps"]),
             arms=arms,
         )

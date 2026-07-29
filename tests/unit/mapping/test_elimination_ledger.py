@@ -19,6 +19,8 @@ from mimarsinan.chip_simulation.core_semantics import INERT_SPIKING_MODE
 from mimarsinan.mapping.ir import IRGraph, IRSource, NeuralCore, WeightBank
 from mimarsinan.mapping.pruning.elimination_ledger import (
     EliminationLedger,
+    EliminationLedgerError,
+    compute_elimination_arms,
     compute_elimination_ledger,
 )
 from mimarsinan.mapping.pruning.graph.propagation_mode import (
@@ -329,3 +331,51 @@ class TestLedgerContract:
                 graph, initial_pruned_per_node=seeds,
                 elimination_propagation="bogus",
             )
+
+
+class TestPrecomputedArmsConsumeTheirOwnInputs:
+    """[W6c] Handing the ledger a precomputed :class:`EliminationArms` used to
+    make it SILENTLY IGNORE its own ``zero_threshold`` /
+    ``initial_pruned_per_*`` — the arms had already consumed theirs, and the
+    ledger's defaults leaked into the liveness pass. Every such input is now
+    either consumed from the arms or refused."""
+
+    def _arms(self, **kwargs):
+        graph, seeds = make_emergent_chain()
+        return graph, seeds, compute_elimination_arms(
+            graph, initial_pruned_per_node=seeds, **kwargs
+        )
+
+    def test_a_contradicting_zero_threshold_fails_loud(self):
+        graph, _, arms = self._arms(zero_threshold=1e-3)
+        with pytest.raises(EliminationLedgerError, match="zero_threshold"):
+            compute_elimination_ledger(graph, zero_threshold=1e-8, arms=arms)
+
+    def test_a_contradicting_spiking_mode_fails_loud(self):
+        graph, _, arms = self._arms()
+        with pytest.raises(EliminationLedgerError, match="spiking_mode"):
+            compute_elimination_ledger(graph, spiking_mode="if", arms=arms)
+
+    def test_a_second_seed_set_fails_loud(self):
+        graph, seeds, arms = self._arms()
+        with pytest.raises(
+            EliminationLedgerError, match="initial_pruned_per_node"
+        ):
+            compute_elimination_ledger(
+                graph, initial_pruned_per_node=seeds, arms=arms
+            )
+
+    def test_an_echoed_input_is_accepted(self):
+        """Restating exactly what the arms ran with is not a contradiction."""
+        graph, _, arms = self._arms(zero_threshold=1e-3)
+        ledger = compute_elimination_ledger(graph, zero_threshold=1e-3, arms=arms)
+        assert ledger.per_node
+
+    def test_the_arms_threshold_is_the_one_actually_used(self):
+        """Same arms either way: passing them must not change one number."""
+        graph, seeds, arms = self._arms(zero_threshold=1e-3)
+        shared = compute_elimination_ledger(graph, arms=arms)
+        standalone = compute_elimination_ledger(
+            graph, initial_pruned_per_node=seeds, zero_threshold=1e-3,
+        )
+        assert shared.to_dict() == standalone.to_dict()

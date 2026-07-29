@@ -25,7 +25,9 @@ Marked ``slow``: it loads a ~300 MB artifact that lives outside the repo.
 
 from __future__ import annotations
 
+import os
 import pickle
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -35,21 +37,54 @@ from mimarsinan.mapping.softcore_elimination import (
     report_from_pruned_ir_graph,
 )
 
-# The run directory lives in the main checkout, beside this worktree; the test
-# never writes to it.
-_CANDIDATES = (
-    Path(__file__).resolve().parents[3]
-    / "generated/bc2_cifar_vit_leaf_phased_deployment_run"
-    / "Soft Core Mapping.ir_graph.pickle",
-    Path(
-        "/home/yigit/repos/research_stuff/mimarsinan/generated/"
-        "bc2_cifar_vit_leaf_phased_deployment_run/Soft Core Mapping.ir_graph.pickle"
-    ),
-)
+_RUN_ARTIFACT = Path(
+    "generated/bc2_cifar_vit_leaf_phased_deployment_run"
+) / "Soft Core Mapping.ir_graph.pickle"
+
+def _git(here: Path, *args: str) -> str:
+    try:
+        done = subprocess.run(
+            ["git", "-C", str(here), *args],
+            capture_output=True, text=True, timeout=30, check=False,
+        )
+    except (OSError, subprocess.SubprocessError):  # pragma: no cover - no git
+        return ""
+    return done.stdout.strip() if done.returncode == 0 else ""
+
+
+def _repository_roots() -> "list[Path]":
+    """Where a ``generated/`` run directory may live, most explicit first.
+
+    No machine is named. Runs land in the checkout that produced them, so when
+    these tests execute from a git WORKTREE the artifact sits in the PRIMARY
+    checkout, which git itself can point at: ``--git-common-dir`` gives the
+    shared git directory and ``core.worktree`` (set when the repository is a
+    submodule) gives the checkout hanging off it. ``MIMARSINAN_RUNS_DIR``
+    overrides everything for an archive kept elsewhere.
+    """
+    roots: list[Path] = []
+    override = os.environ.get("MIMARSINAN_RUNS_DIR")
+    if override:
+        roots.append(Path(override))
+    here = Path(__file__).resolve().parents[3]
+    roots.append(here)
+    common = _git(here, "rev-parse", "--path-format=absolute", "--git-common-dir")
+    if common:
+        linked = _git(here, "config", "--get", "core.worktree")
+        roots.append(
+            (Path(common) / linked).resolve() if linked else Path(common).parent
+        )
+    return roots
 
 
 def _cached_ir_path() -> Path | None:
-    return next((p for p in _CANDIDATES if p.exists()), None)
+    for root in _repository_roots():
+        candidate = root / _RUN_ARTIFACT
+        if candidate.exists():
+            return candidate
+        if (root / _RUN_ARTIFACT.name).exists():
+            return root / _RUN_ARTIFACT.name
+    return None
 
 
 _IR_PATH = _cached_ir_path()
@@ -138,6 +173,46 @@ class TestReferenceTableIsReproduced:
         physical = as_stored_report.storage_total
         assert as_mapped.cells > 60 * physical.cells_before
         assert as_mapped.surviving > 60 * physical.cells_after
+
+
+class TestTheRowsAreStructural:
+    """[W6c] The 975 softcores carry 16 distinct ``perceptron_index`` values —
+    patch_embed, 7x(fc1, fc2), head — and the table has exactly those rows.
+    The labels are then derived from the names, but the ROWS are not."""
+
+    def test_one_layer_row_per_mapped_perceptron(self, as_stored_report, vit_graph):
+        from mimarsinan.mapping.ir import NeuralCore
+        from mimarsinan.mapping.softcore_elimination import mapped_layer_key
+
+        keys = {
+            mapped_layer_key(node, vit_graph)
+            for node in vit_graph.nodes if isinstance(node, NeuralCore)
+        }
+        assert len(keys) == 16
+        assert len(as_stored_report.view.layers) == len(keys)
+        assert sum(
+            row.instances for row in as_stored_report.view.layers
+        ) == 975
+
+    def test_the_seven_blocks_collapse_only_in_presentation(
+        self, as_stored_report
+    ):
+        layers = {row.group for row in as_stored_report.view.layers}
+        assert {f"blocks_{i}_fc1" for i in range(7)} <= layers
+        assert {f"blocks_{i}_fc2" for i in range(7)} <= layers
+        assert {row.group for row in as_stored_report.view.groups} == {
+            "blocks_*_fc1", "blocks_*_fc2", "patch_embed", "head",
+        }
+
+    def test_the_collapsed_rows_are_the_sum_of_their_layers(
+        self, as_stored_report
+    ):
+        by_label = {row.group: row for row in as_stored_report.view.layers}
+        for row in as_stored_report.view.groups:
+            members = [by_label[label] for label in row.layers]
+            assert row.instances == sum(m.instances for m in members)
+            assert row.cells == sum(m.cells for m in members)
+            assert row.surviving == sum(m.surviving for m in members)
 
 
 class TestDefaultGeometryOnlyCorrectsTheCompactedOwnedCore:
