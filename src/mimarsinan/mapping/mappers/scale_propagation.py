@@ -7,7 +7,9 @@ from typing import Any, Callable
 import torch
 
 from mimarsinan.mapping.support.scale_broadcast import (
+    align_scale_devices as _align_scale_devices,
     broadcast_scale_pair as _broadcast_scale_pair,
+    spread_scalar as _spread,
 )
 
 
@@ -71,37 +73,46 @@ def perceptron_source_out_scale(perceptron) -> torch.Tensor:
     """
     n_out = perceptron.output_channels
     act = perceptron.activation_scale
+    weight = perceptron.layer.weight
     if isinstance(act, torch.Tensor):
         vec = act.detach().to(torch.float32).reshape(-1)
         return vec.clone() if vec.numel() == n_out else _spread(vec.mean(), n_out)
+    # ``dtype`` is stated, not defaulted: ``torch.full`` with a python float takes
+    # the ambient default dtype, so the scalar branch would silently disagree with
+    # the float32 the tensor branch above pins.
     return torch.full(
-        (n_out,), float(act), device=perceptron.layer.weight.device,
+        (n_out,), float(act), device=weight.device, dtype=torch.float32,
     )
 
 
-def _spread(scalar: torch.Tensor, n: int) -> torch.Tensor:
-    """0-dim ``scalar`` broadcast to an owned ``(n,)`` vector on its own device/dtype."""
-    return scalar.reshape(()).expand(n).clone()
-
-
 def assign_per_input_scales(perceptron, source_scales) -> None:
-    """Stamp ``per_input_scales`` on a perceptron from its source out-scale vector."""
+    """Stamp ``per_input_scales`` on a perceptron from its source out-scale vector.
+
+    The ONE writer of ``per_input_scales``, and therefore the seam where the
+    device invariant is ENFORCED rather than hoped for. Source scales arrive from
+    an arbitrary upstream node -- including ``InputMapper``, which has no
+    parameters to anchor on -- so the stamp lands them on the owning perceptron's
+    parameter device here. Without this a graph rooted in a parameterless node
+    seeds a mixed-device perceptron on every CUDA model, exactly like the
+    bias-free ``torch.zeros`` did (W0.7).
+    """
     in_features = perceptron.input_features
     n_channels = len(source_scales)
 
     if n_channels == 0:
         return
 
+    device = perceptron.layer.weight.device
     if in_features == n_channels:
-        perceptron.per_input_scales = source_scales.clone()
+        perceptron.per_input_scales = source_scales.to(device).clone()
         return
 
     if in_features % n_channels == 0:
         spatial = in_features // n_channels
-        perceptron.per_input_scales = source_scales.repeat_interleave(spatial)
+        perceptron.per_input_scales = source_scales.to(device).repeat_interleave(spatial)
         return
 
-    perceptron.per_input_scales = _spread(source_scales.mean(), in_features)
+    perceptron.per_input_scales = _spread(source_scales.mean().to(device), in_features)
 
 
 def perceptron_per_source_scale(node, deps, out_scales) -> torch.Tensor:
@@ -144,12 +155,21 @@ def perceptron_boundary_scale(node, deps, out_scales, default) -> float:
     return float(scale)
 
 
-def apply_compute_op_scale_policy(node, source_scales: list) -> torch.Tensor | None:
-    """ComputeOp per-source scale policy: wrap heterogeneous/non-uniform fan-in."""
-    if not source_scales:
-        return None
+def normalize_fan_in_scales(source_scales: list) -> list:
+    """A ComputeOp's fan-in scales on ONE device and ONE length.
 
-    normalized = list(source_scales)
+    Two anchoring steps, both of them device-invariant by construction:
+
+    1. ``align_scale_devices`` -- a parameterless structural root
+       (``InputMapper``) contributes a CPU unit scale that would otherwise meet a
+       perceptron's CUDA theta inside ``combine_source_scales``' ``torch.stack``.
+    2. pairwise broadcast, then a mean-fold for whatever still does not match.
+       The fold goes through ``spread_scalar``; it was a bare
+       ``torch.full(..., t.mean().item(), dtype=t.dtype)``, which carried the dtype
+       and dropped the DEVICE, so a CUDA fan-in came back on CPU (and paid a host
+       sync to get there).
+    """
+    normalized = _align_scale_devices(source_scales)
     for i in range(1, len(normalized)):
         s_first, s_i = _broadcast_scale_pair(normalized[0], normalized[i])
         normalized[0] = s_first
@@ -157,10 +177,16 @@ def apply_compute_op_scale_policy(node, source_scales: list) -> torch.Tensor | N
     target_len = normalized[0].shape[0]
     for i in range(1, len(normalized)):
         if normalized[i].shape[0] != target_len:
-            normalized[i] = torch.full(
-                (target_len,), normalized[i].mean().item(),
-                dtype=normalized[i].dtype,
-            )
+            normalized[i] = _spread(normalized[i].mean(), target_len)
+    return normalized
+
+
+def apply_compute_op_scale_policy(node, source_scales: list) -> torch.Tensor | None:
+    """ComputeOp per-source scale policy: wrap heterogeneous/non-uniform fan-in."""
+    if not source_scales:
+        return None
+
+    normalized = normalize_fan_in_scales(source_scales)
 
     if (
         getattr(node, "output_scale", None) is not None

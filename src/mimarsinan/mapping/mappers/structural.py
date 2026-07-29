@@ -43,6 +43,10 @@ class InputMapper(Mapper):
         return x
 
     def propagate_source_scale(self, deps, out_scales):
+        # Parameterless root: nothing here knows the model's device, so the unit
+        # wire scale is emitted on CPU by definition. Consumers anchor it --
+        # ``assign_per_input_scales`` stamps it on the perceptron's device, and
+        # ``align_scale_devices`` lifts it before any ComputeOp join mixes it.
         return torch.ones(self.input_shape[0])
 
     def propagate_boundary_scale(self, deps, out_scales, default):
