@@ -24,7 +24,7 @@ concrete `PipelineStep` implementations live under `pipeline_steps/`.
 - `model_training` — `BasicTrainer` construction (`registry/trainer_factory.py`), training recipes, weight-loading strategies.
 - `data_handling` — data provider/loader factories for the session and steps; test-sample loading for simulation metrics.
 - `models` — model layers and decorators used by steps, `SpikingHybridCoreFlow`, perceptron bias-reference refresh.
-- `transformations` — normalization fusion, `PerceptronTransformer`, magnitude pruning, quantization bounds, `pruning.committed_masks` commit/verify at the cache store/load boundary, `equalize_channel_scales`/`DEFAULT_CLIP_RATIO` for the Scale Migration step and `DeploymentPlan`.
+- `transformations` — normalization fusion, `PerceptronTransformer`, magnitude pruning, quantization bounds, `pruning.committed_masks` commit/verify at the cache store/load boundary, `pruning.seed_generators` (the `prune_criterion` seed seam in the soft-core structured-pruning hook), `equalize_channel_scales`/`DEFAULT_CLIP_RATIO` for the Scale Migration step and `DeploymentPlan`.
 - `spiking` — cycle-accurate LIF train application and scale-aware boundary calibration.
 - `search` — joint arch/HW search problem and result types for `ArchitectureSearchStep`.
 - `config_schema` — config defaults and deployment derivation folded into pipeline configs.

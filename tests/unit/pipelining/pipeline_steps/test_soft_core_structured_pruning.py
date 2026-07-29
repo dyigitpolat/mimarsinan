@@ -133,10 +133,11 @@ def _ir_of(model):
     return ir_mapping.map(mapper_repr)
 
 
-def _step(prune_sparsity=None):
+def _step(prune_sparsity=None, **extra_config):
     cfg = {}
     if prune_sparsity is not None:
         cfg["prune_sparsity"] = prune_sparsity
+    cfg.update(extra_config)
     return SoftCoreMappingStep(MockPipeline(config=cfg))
 
 
@@ -257,4 +258,174 @@ class TestDefaultOffByteIdentical:
         assert (
             estimate_cores_needed(_ir_of(a), _PLATFORM).cores_needed
             == estimate_cores_needed(_ir_of(b), _PLATFORM).cores_needed
+        )
+
+
+# --------------------------------------------------------------------------- #
+# 4. W3b criterion seam: prune_criterion selects the seed generator           #
+# --------------------------------------------------------------------------- #
+class TestPruneCriterionSeam:
+    """`prune_criterion` config key: absent/default = incumbent structural
+    row/col path, byte-identical; foreign criteria install committed SEED
+    MASKS for the IR pruning cascade instead of shrinking layers."""
+
+    def test_absent_key_is_byte_identical_to_explicit_default(self):
+        a = _build_model(seed=11)
+        b = _build_model(seed=11)
+        result_a = apply_structured_pruning_if_enabled(
+            _step(prune_sparsity=0.5), a, "SoftCoreMappingStep"
+        )
+        result_b = apply_structured_pruning_if_enabled(
+            _step(prune_sparsity=0.5, prune_criterion="row_col_l1"),
+            b, "SoftCoreMappingStep",
+        )
+        assert result_a is not None and result_b is not None
+        for pa, pb in zip(a.get_perceptrons(), b.get_perceptrons()):
+            assert pa.layer.out_features == pb.layer.out_features
+            assert torch.equal(pa.layer.weight, pb.layer.weight)
+            assert torch.equal(pa.layer.bias, pb.layer.bias)
+
+    def test_foreign_criterion_installs_masks_without_structural_shrink(self):
+        model = _build_model(seed=12)
+        layers_before = [p.layer for p in model.get_perceptrons()]
+        out_features_before = [l.out_features for l in layers_before]
+
+        result = apply_structured_pruning_if_enabled(
+            _step(prune_sparsity=0.5, prune_criterion="partial_column_group",
+                  prune_group_size=8),
+            model, "SoftCoreMappingStep",
+        )
+
+        assert result is None, "mask seeding must not return a structural result"
+        ps = model.get_perceptrons()
+        assert [p.layer for p in ps] == layers_before, "layers must not be replaced"
+        assert [p.layer.out_features for p in ps] == out_features_before
+        # committed seed-mask buffers installed on every layer
+        for p in ps:
+            assert getattr(p.layer, "prune_mask", None) is not None
+            assert getattr(p.layer, "prune_row_mask", None) is not None
+            assert getattr(p.layer, "prune_col_mask", None) is not None
+        # boundary exemptions: model-input layer and logits layer get no kills
+        assert not ps[0].layer.prune_mask.any()
+        assert not ps[-1].layer.prune_mask.any()
+        # middle layers actually carry group kills
+        assert ps[1].layer.prune_mask.any()
+        assert ps[2].layer.prune_mask.any()
+
+    def test_foreign_criterion_masks_flow_through_commit_and_ir_extraction(self):
+        from mimarsinan.mapping.pruning.ir_pruning_masks import (
+            get_initial_pruning_masks_from_model,
+        )
+        from mimarsinan.transformations.pruning.committed_masks import (
+            commit_perceptron_pruning,
+            verify_committed_pruning,
+        )
+
+        model = _build_model(seed=13)
+        apply_structured_pruning_if_enabled(
+            _step(prune_sparsity=0.5, prune_criterion="partial_column_group"),
+            model, "SoftCoreMappingStep",
+        )
+        for p in model.get_perceptrons():
+            commit_perceptron_pruning(p)
+        verify_committed_pruning(
+            model.get_perceptrons(), where="TestPruneCriterionSeam"
+        )
+        # committed zeros hold in raw weights
+        p1 = model.get_perceptrons()[1]
+        assert (p1.layer.weight.data[p1.layer.prune_mask] == 0.0).all()
+        # and the masks reach the IR seed-extraction entry point
+        initial_node, initial_bank = get_initial_pruning_masks_from_model(
+            model, _ir_of(model)
+        )
+        assert len(initial_node) > 0
+
+    def test_activation_criterion_consumes_collected_stats(self, monkeypatch):
+        import mimarsinan.pipelining.pipeline_steps.mapping.soft_core_structured_pruning as scsp
+
+        model = _build_model(seed=14)
+
+        def _fake_stats(step, m):
+            stats = []
+            for p in m.get_perceptrons():
+                w = p.layer.weight.data
+                stats.append({
+                    "output_importance": -w.abs().sum(dim=1),
+                    "input_importance": -w.abs().sum(dim=0),
+                })
+            return stats
+
+        monkeypatch.setattr(scsp, "_collect_seed_activation_stats", _fake_stats)
+        result = apply_structured_pruning_if_enabled(
+            _step(prune_sparsity=0.5, prune_criterion="activation"),
+            model, "SoftCoreMappingStep",
+        )
+        assert result is None
+        ps = model.get_perceptrons()
+        # structured masks: element mask is the row/col union
+        pm = ps[1].layer.prune_mask
+        rows = ps[1].layer.prune_row_mask
+        cols = ps[1].layer.prune_col_mask
+        assert pm.any()
+        assert torch.equal(pm, rows.unsqueeze(1) | cols.unsqueeze(0))
+
+    def test_foreign_criteria_produce_different_committed_seeds(self, monkeypatch):
+        import mimarsinan.pipelining.pipeline_steps.mapping.soft_core_structured_pruning as scsp
+
+        def _fake_stats(step, m):
+            return [
+                {
+                    "output_importance": -p.layer.weight.data.abs().sum(dim=1),
+                    "input_importance": -p.layer.weight.data.abs().sum(dim=0),
+                }
+                for p in m.get_perceptrons()
+            ]
+
+        monkeypatch.setattr(scsp, "_collect_seed_activation_stats", _fake_stats)
+
+        m_act = _build_model(seed=15)
+        apply_structured_pruning_if_enabled(
+            _step(prune_sparsity=0.5, prune_criterion="activation"),
+            m_act, "SoftCoreMappingStep",
+        )
+        m_pcg = _build_model(seed=15)
+        apply_structured_pruning_if_enabled(
+            _step(prune_sparsity=0.5, prune_criterion="partial_column_group"),
+            m_pcg, "SoftCoreMappingStep",
+        )
+        different = any(
+            not torch.equal(pa.layer.prune_mask, pb.layer.prune_mask)
+            for pa, pb in zip(m_act.get_perceptrons(), m_pcg.get_perceptrons())
+        )
+        assert different, "foreign criteria must seed DIFFERENT masks"
+
+    def test_zero_sparsity_disables_every_criterion(self):
+        model = _build_model(seed=16)
+        result = apply_structured_pruning_if_enabled(
+            _step(prune_sparsity=0.0, prune_criterion="partial_column_group"),
+            model, "SoftCoreMappingStep",
+        )
+        assert result is None
+        for p in model.get_perceptrons():
+            assert getattr(p.layer, "prune_mask", None) is None
+
+    def test_unknown_criterion_fails_loud(self):
+        import pytest
+
+        model = _build_model(seed=17)
+        with pytest.raises(ValueError, match="unknown prune criterion"):
+            apply_structured_pruning_if_enabled(
+                _step(prune_sparsity=0.5, prune_criterion="global_magnitude"),
+                model, "SoftCoreMappingStep",
+            )
+
+    def test_prune_criterion_config_keys_are_registered(self):
+        from mimarsinan.config_schema.defaults import CONFIG_KEYS_SET
+        from mimarsinan.config_schema.registry import REGISTRY
+
+        assert "prune_criterion" in CONFIG_KEYS_SET
+        assert "prune_group_size" in CONFIG_KEYS_SET
+        entry = REGISTRY["prune_criterion"]
+        assert entry.resolved_options() == (
+            "row_col_l1", "activation", "partial_column_group",
         )
