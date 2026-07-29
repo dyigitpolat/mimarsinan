@@ -50,6 +50,10 @@ from mimarsinan.mapping.pruning.ir_pruning_helpers import (
     _boundary_policy_exemptions,
     _collect_initial_seeds,
 )
+from mimarsinan.mapping.pruning.liveness_transfer import (
+    DEFAULT_COMPUTEOP_LIVENESS_TRANSFERS,
+    require_computeop_liveness_transfers,
+)
 
 
 @dataclass(frozen=True)
@@ -111,6 +115,7 @@ def certify_cascade_equivalence(
     spiking_mode: str = INERT_SPIKING_MODE,
     simulation_steps: int = 32,
     elimination_propagation: str = ELIMINATION_PROPAGATION_CASCADE,
+    computeop_liveness_transfers: str = DEFAULT_COMPUTEOP_LIVENESS_TRANSFERS,
 ) -> CascadeEquivalenceCertificate:
     """Certify that ``prune_ir_graph`` (+ deferred bank compaction in the
     identity build) preserved the program's value function bit-exactly.
@@ -123,6 +128,9 @@ def certify_cascade_equivalence(
     """
     elimination_propagation = require_elimination_propagation(
         elimination_propagation
+    )
+    computeop_liveness_transfers = require_computeop_liveness_transfers(
+        computeop_liveness_transfers
     )
     if not ir_graph.nodes:
         raise CascadeCertificatePreconditionError("empty IR graph; nothing to certify.")
@@ -152,6 +160,7 @@ def certify_cascade_equivalence(
         exempt_rows_per_node=exempt_rows,
         exempt_cols_per_node=exempt_cols,
         mode=elimination_propagation,
+        computeop_liveness_transfers=computeop_liveness_transfers,
     )
     bank_columns_checked = check_shared_bank_union_rule(ir_graph, fixpoint)
 
@@ -168,6 +177,7 @@ def certify_cascade_equivalence(
         spiking_mode=spiking_mode,
         simulation_steps=simulation_steps,
         elimination_propagation=elimination_propagation,
+        computeop_liveness_transfers=computeop_liveness_transfers,
     )
 
     reference_hybrid = build_identity_hybrid_mapping(ir_graph=reference)

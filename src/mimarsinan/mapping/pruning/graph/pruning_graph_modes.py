@@ -83,6 +83,9 @@ def run_closure(ctx: GlobalPruningContext) -> None:
 
     coupled_rows = _forward_consumer_coupling(ctx, seed_cols)
     coupled_cols = _backward_producer_coupling(ctx, seed_rows, seed_cols)
+    # A ComputeOp with a liveness transfer is TRANSPARENT wiring, not a hop:
+    # coupling through fc -> activation -> fc counts as the same one step
+    # torch-pruning's DepGraph takes through an activation.
 
     for nid, rows in coupled_rows.items():
         ctx.pruned_rows[nid] |= rows
@@ -100,7 +103,7 @@ def _forward_consumer_coupling(
     out: Dict[int, Set[int]] = {}
     for node in ctx.neural_cores:
         dead = _cross_core_dead_axons(
-            node, seed_cols, ctx.computeop_producer_map
+            node, seed_cols, ctx.computeop_transfers
         )
         new = (dead - ctx.exempt_rows.get(node.id, frozenset())) - \
             ctx.pruned_rows[node.id]
@@ -116,15 +119,22 @@ def _backward_producer_coupling(
 ) -> Dict[int, Set[int]]:
     """Producer neurons whose every reader is seed-dead (the paired group member).
 
-    Conservative guards mirror the cascade's orphan protections: model-output
-    neurons, ComputeOp-referenced neurons, exempt columns, and zero-consumer
-    neurons (never touched by any seed group) all survive.
+    Readers include NeuralCore axons reached THROUGH transfer-mapped
+    ComputeOps (the op is transparent wiring, not a hop). Conservative guards
+    mirror the cascade's orphan protections: model-output neurons,
+    transfer-protected ports (opaque-op-referenced), exempt columns, and
+    zero-consumer neurons (never touched by any seed group) all survive.
     """
     owned_ids = {
         n.id for n in ctx.neural_cores if n.core_matrix is not None
     }
+    effective = ctx.computeop_transfers.effective_consumers
+    protected = ctx.computeop_transfers.protected_ports
     out: Dict[int, Set[int]] = {}
-    for (m, k), consumers in ctx.consumer_axons.items():
+    candidate_ports = set(ctx.consumer_axons) | set(effective)
+    for (m, k) in candidate_ports:
+        consumers: list = list(ctx.consumer_axons.get((m, k), ()))
+        consumers.extend(effective.get((m, k), ()))
         if m not in owned_ids or not consumers:
             continue
         if k in seed_cols.get(m, set()):
@@ -133,7 +143,7 @@ def _backward_producer_coupling(
             continue
         if (m, k) in ctx.model_output_neurons:
             continue
-        if (m, k) in ctx.computeop_referenced:
+        if (m, k) in protected:
             continue
         if all(i in seed_rows.get(n, set()) for n, i in consumers):
             out.setdefault(m, set()).add(k)

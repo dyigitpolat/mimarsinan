@@ -111,7 +111,7 @@ def _node_causal_kills(
         exempt_c = ctx.exempt_cols.get(nid, frozenset())
 
         rows = _cross_core_dead_axons(
-            node, ctx.pruned_cols, ctx.computeop_producer_map
+            node, ctx.pruned_cols, ctx.computeop_transfers
         )
         cols = _orphan_neurons(
             nid,
@@ -119,7 +119,7 @@ def _node_causal_kills(
             ctx.pruned_rows,
             ctx.consumer_axons,
             ctx.model_output_neurons,
-            ctx.computeop_referenced,
+            ctx.computeop_transfers,
         )
         starved_rows, starved_cols = matrix_one_step_deaths(
             mat,

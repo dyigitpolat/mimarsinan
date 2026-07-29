@@ -22,6 +22,9 @@ from mimarsinan.mapping.pruning.ir_pruning_compact import (
     _reset_post_compaction_masks,
     _validate_outputs_remain,
 )
+from mimarsinan.mapping.pruning.liveness_transfer import (
+    DEFAULT_COMPUTEOP_LIVENESS_TRANSFERS,
+)
 def prune_ir_graph(
     ir_graph: IRGraph,
     zero_threshold: float = 1e-8,
@@ -32,15 +35,20 @@ def prune_ir_graph(
     simulation_steps: int = 32,
     spiking_mode: str = "lif",
     elimination_propagation: str = ELIMINATION_PROPAGATION_CASCADE,
+    computeop_liveness_transfers: str = DEFAULT_COMPUTEOP_LIVENESS_TRANSFERS,
 ) -> IRGraph:
     """Prune and compact ``ir_graph`` in place; return the same instance.
 
     Under the default ``elimination_propagation="cascade"`` pruning is
     bidirectional/recursive across NeuralCore boundaries; ``"closure"`` stops
     at one-hop seed-group coupling, ``"masked"`` reclaims only the seeds
-    (the allocation-naive lower bound). ComputeOps block functional
-    propagation. Model input data axons and output logits are never pruned;
-    DEAD cores are deleted, surviving cores compacted.
+    (the allocation-naive lower bound). ComputeOps relay deadness through
+    their registered liveness transfers (``computeop_liveness_transfers=
+    "full"``: elementwise activations, index bijections, pooling regions;
+    ``"identity_only"`` reproduces the pre-W4b identity-relay barrier);
+    unknown ops stay opaque barriers. Model input data axons and output
+    logits are never pruned; DEAD cores are deleted, surviving cores
+    compacted.
     """
     elimination_propagation = require_elimination_propagation(
         elimination_propagation
@@ -64,6 +72,7 @@ def prune_ir_graph(
         exempt_rows_per_node=exempt_rows,
         exempt_cols_per_node=exempt_cols,
         mode=elimination_propagation,
+        computeop_liveness_transfers=computeop_liveness_transfers,
     )
 
     if not (initial_pruned_per_node or initial_pruned_per_bank):

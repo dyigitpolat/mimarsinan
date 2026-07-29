@@ -40,6 +40,9 @@ from mimarsinan.mapping.pruning.ir_pruning_helpers import (
     _boundary_policy_exemptions,
     _collect_initial_seeds,
 )
+from mimarsinan.mapping.pruning.liveness_transfer import (
+    DEFAULT_COMPUTEOP_LIVENESS_TRANSFERS,
+)
 
 SeedMasks = Dict[int, Tuple[Sequence[bool], Sequence[bool]]]
 
@@ -51,6 +54,7 @@ def compute_elimination_ledger(
     initial_pruned_per_node: SeedMasks | None = None,
     initial_pruned_per_bank: SeedMasks | None = None,
     elimination_propagation: str = DEFAULT_ELIMINATION_PROPAGATION,
+    computeop_liveness_transfers: str = DEFAULT_COMPUTEOP_LIVENESS_TRANSFERS,
     spiking_mode: str = "lif",
     simulation_steps: int = 32,
 ) -> EliminationLedger:
@@ -83,6 +87,7 @@ def compute_elimination_ledger(
             exempt_rows_per_node=exempt_rows,
             exempt_cols_per_node=exempt_cols,
             mode=arm,
+            computeop_liveness_transfers=computeop_liveness_transfers,
         )
 
     masked = _run_arm(ELIMINATION_PROPAGATION_MASKED)
@@ -104,6 +109,7 @@ def compute_elimination_ledger(
         initial_per_bank=seed_per_bank,
         exempt_rows_per_node=exempt_rows,
         exempt_cols_per_node=exempt_cols,
+        computeop_liveness_transfers=computeop_liveness_transfers,
     )
     replay = replay_kill_depths(replay_ctx, mode=mode)
     _assert_replay_reconciles(replay_ctx, final)

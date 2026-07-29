@@ -21,6 +21,9 @@ from mimarsinan.mapping.pruning.graph.pruning_graph_seeding import (
     build_global_pruning_context,
 )
 from mimarsinan.mapping.pruning.graph.pruning_graph_types import GlobalPruningResult
+from mimarsinan.mapping.pruning.liveness_transfer import (
+    DEFAULT_COMPUTEOP_LIVENESS_TRANSFERS,
+)
 def compute_global_pruned_sets(
     graph: IRGraph,
     *,
@@ -30,6 +33,7 @@ def compute_global_pruned_sets(
     exempt_rows_per_node: Mapping[int, AbstractSet[int]] | None = None,
     exempt_cols_per_node: Mapping[int, AbstractSet[int]] | None = None,
     mode: str = ELIMINATION_PROPAGATION_CASCADE,
+    computeop_liveness_transfers: str = DEFAULT_COMPUTEOP_LIVENESS_TRANSFERS,
 ) -> GlobalPruningResult:
     """Run global pruning under one propagation arm (default: cascade fixpoint).
 
@@ -48,6 +52,10 @@ def compute_global_pruned_sets(
             ``"closure"`` (one-hop seed-group coupling, no emergent deadness,
             no iteration), or ``"cascade"`` (the bidirectional, recursive
             cross-core fixpoint — the default deployment path).
+        computeop_liveness_transfers: ``"full"`` (default: per-op transfer
+            functions relay deadness through elementwise activations, index
+            bijections, and pooling regions) or ``"identity_only"`` (the
+            pre-W4b relay, for A/B).
     """
     mode = require_elimination_propagation(mode)
     if not graph.nodes and not (getattr(graph, "weight_banks", {}) or {}):
@@ -60,6 +68,7 @@ def compute_global_pruned_sets(
         initial_per_bank=initial_per_bank,
         exempt_rows_per_node=exempt_rows_per_node,
         exempt_cols_per_node=exempt_cols_per_node,
+        computeop_liveness_transfers=computeop_liveness_transfers,
     )
     if not ctx.neural_cores and not ctx.banks:
         return GlobalPruningResult()
@@ -94,8 +103,7 @@ def _run_cascade_fixpoint(ctx: GlobalPruningContext) -> int:
                 pruned_cols=ctx.pruned_cols,
                 consumer_axons=ctx.consumer_axons,
                 model_output_neurons=ctx.model_output_neurons,
-                computeop_referenced_neurons=ctx.computeop_referenced,
-                computeop_producer_map=ctx.computeop_producer_map,
+                computeop_transfers=ctx.computeop_transfers,
                 exempt_rows=ctx.exempt_rows,
                 exempt_cols=ctx.exempt_cols,
             ):
