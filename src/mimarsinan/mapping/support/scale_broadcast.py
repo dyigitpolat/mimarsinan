@@ -48,6 +48,20 @@ def align_scale_devices(scales: list[torch.Tensor]) -> list[torch.Tensor]:
     return [s.to(device) if isinstance(s, torch.Tensor) else s for s in scales]
 
 
+def concat_source_scales(parts: list[torch.Tensor]) -> torch.Tensor:
+    """Lane-concatenate a set of source scales, anchored onto ONE device first.
+
+    The join used by both concat mappers. ``torch.cat`` RAISES on mixed devices,
+    and the mixed-device precondition is the documented one: a parameterless
+    ``InputMapper`` root contributes a CPU unit scale that meets a perceptron's
+    device theta at the first structural join below it. W0.8 closed that only for
+    the ComputeOp fan-in (``normalize_fan_in_scales``); the two concat joins are
+    the rest of the enumeration, and they share this so there is one anchoring
+    rule rather than three copies of it.
+    """
+    return torch.cat(align_scale_devices(parts))
+
+
 def broadcast_scale_pair(s_a: torch.Tensor, s_b: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
     """Expand the shorter scale vector to match the longer one."""
     n_a, n_b = len(s_a), len(s_b)

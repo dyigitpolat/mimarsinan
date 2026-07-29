@@ -15,6 +15,7 @@ from mimarsinan.mapping.mappers.scale_propagation import (
     mean_source_scale,
     present_source_scales,
 )
+from mimarsinan.mapping.support.scale_broadcast import concat_source_scales
 
 
 def _create_ir_input_source(idx: int):
@@ -126,8 +127,10 @@ class ConcatMapper(Mapper):
         return torch.cat(tuple(x), dim=self.dim)
 
     def propagate_source_scale(self, deps, out_scales):
+        # A JOIN: a CPU root scale can meet a device theta here, and ``torch.cat``
+        # raises on mixed devices. Anchored in ``concat_source_scales``.
         parts = present_source_scales(deps, out_scales)
-        return torch.cat(parts) if parts else None
+        return concat_source_scales(parts) if parts else None
 
     def propagate_boundary_scale(self, deps, out_scales, default):
         return mean_source_scale(deps, out_scales, float(default))

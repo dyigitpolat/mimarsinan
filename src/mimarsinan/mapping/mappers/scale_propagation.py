@@ -89,12 +89,20 @@ def assign_per_input_scales(perceptron, source_scales) -> None:
     """Stamp ``per_input_scales`` on a perceptron from its source out-scale vector.
 
     The ONE writer of ``per_input_scales``, and therefore the seam where the
-    device invariant is ENFORCED rather than hoped for. Source scales arrive from
-    an arbitrary upstream node -- including ``InputMapper``, which has no
-    parameters to anchor on -- so the stamp lands them on the owning perceptron's
-    parameter device here. Without this a graph rooted in a parameterless node
-    seeds a mixed-device perceptron on every CUDA model, exactly like the
-    bias-free ``torch.zeros`` did (W0.7).
+    device AND dtype invariants are ENFORCED rather than hoped for. Source scales
+    arrive from an arbitrary upstream node -- including ``InputMapper``, which has
+    no parameters to anchor on -- so the stamp lands them on the owning
+    perceptron's parameter device here. Without this a graph rooted in a
+    parameterless node seeds a mixed-device perceptron on every CUDA model, exactly
+    like the bias-free ``torch.zeros`` did (W0.7).
+
+    ``dtype`` is anchored for the same reason and by the same argument (W0.8b
+    finding 6). ``perceptron_source_out_scale`` pins float32 on BOTH its branches,
+    so float32 is the walk's scale currency and every DERIVED scale carries it. The
+    one origin that can violate it is the same one that violates the device: a root
+    scale is born in whatever ``torch.get_default_dtype()`` happens to be. Stamping
+    it unconverted would fold a float64 scale into a float32 weight, silently
+    promoting the whole effective-parameter computation.
     """
     in_features = perceptron.input_features
     n_channels = len(source_scales)
@@ -102,17 +110,20 @@ def assign_per_input_scales(perceptron, source_scales) -> None:
     if n_channels == 0:
         return
 
-    device = perceptron.layer.weight.device
+    anchored = source_scales.to(
+        device=perceptron.layer.weight.device, dtype=torch.float32,
+    )
     if in_features == n_channels:
-        perceptron.per_input_scales = source_scales.to(device).clone()
+        # ``.to`` is a no-op when nothing changes, so the clone is what owns it.
+        perceptron.per_input_scales = anchored.clone()
         return
 
     if in_features % n_channels == 0:
         spatial = in_features // n_channels
-        perceptron.per_input_scales = source_scales.to(device).repeat_interleave(spatial)
+        perceptron.per_input_scales = anchored.repeat_interleave(spatial)
         return
 
-    perceptron.per_input_scales = _spread(source_scales.mean().to(device), in_features)
+    perceptron.per_input_scales = _spread(anchored.mean(), in_features)
 
 
 def perceptron_per_source_scale(node, deps, out_scales) -> torch.Tensor:

@@ -39,10 +39,13 @@ class _ResidualConcatMapper(Mapper):
         return torch.cat(tuple(x), dim=1)
 
     def propagate_source_scale(self, deps, out_scales):
+        # The second JOIN of the scale walk, anchored like the first: a CPU root
+        # scale meeting a device theta would raise inside ``torch.cat``.
         from mimarsinan.mapping.mappers.scale_propagation import present_source_scales
+        from mimarsinan.mapping.support.scale_broadcast import concat_source_scales
 
         parts = present_source_scales(deps, out_scales)
-        return torch.cat(parts) if parts else None
+        return concat_source_scales(parts) if parts else None
 
     def propagate_boundary_scale(self, deps, out_scales, default):
         # Lane-parallel concat: the scalar wire scale must cover the widest
