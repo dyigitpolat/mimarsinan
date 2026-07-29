@@ -388,3 +388,66 @@ class TestFoldedThenOrphanedLinesAgreeWithTheDeployedProgram:
         assert _live_readers_of_pruned_constants(graph, result) == [
             ((2, 4), (0, 0), result.constant_folds.lattice.values[(0, 0)])
         ]
+
+
+class TestPathologicalHostsDegradeInsteadOfRaising:
+    """A hosted module is arbitrary user code: probing it must not abort a run.
+
+    Regression for the guard gap found while reviewing W4b-2b: `_rng_devices`
+    and `_eval_mode` were reached outside the probe's try boundary, so a host
+    whose `parameters()`/`modules()` raised propagated out of an analysis the
+    pipeline calls mid-mapping.
+    """
+
+    @staticmethod
+    def _ledger_with_host(bad_module):
+        import numpy as np
+        from mimarsinan.mapping.ir import ComputeOp, IRGraph, IRSource, NeuralCore
+        from mimarsinan.mapping.pruning.elimination_ledger import (
+            compute_elimination_ledger,
+        )
+
+        def srcs(specs):
+            return np.array([IRSource(node_id=n, index=i) for n, i in specs],
+                            dtype=object)
+
+        core0 = NeuralCore(
+            id=0, name="c0", threshold=1.0, latency=0,
+            core_matrix=np.array([[0.5, 0.25], [0.25, 0.5], [0.0, 0.0]],
+                                 dtype=np.float64),
+            input_sources=srcs([(-2, 0), (-2, 1), (-3, 0)]))
+        op = ComputeOp(
+            id=1, name="host", op_type=type(bad_module).__name__,
+            input_sources=srcs([(0, 0), (0, 1)]),
+            params={"module": bad_module, "input_shape": (2,)},
+            input_shape=(2,), output_shape=(2,))
+        core1 = NeuralCore(
+            id=2, name="c1", threshold=1.0, latency=1,
+            core_matrix=np.array([[0.5], [0.5], [0.0]], dtype=np.float64),
+            input_sources=srcs([(1, 0), (1, 1), (-3, 0)]))
+        graph = IRGraph(nodes=[core0, op, core1], output_sources=srcs([(2, 0)]))
+        return compute_elimination_ledger(
+            graph, initial_pruned_per_node={0: ([False] * 3, [True, True])},
+            spiking_mode="none")
+
+    def test_a_host_whose_parameters_raises_does_not_abort_the_analysis(self):
+        class BadParameters(torch.nn.Module):
+            def parameters(self, recurse: bool = True):
+                raise ValueError("pathological host")
+
+            def forward(self, x):
+                return x
+
+        ledger = self._ledger_with_host(BadParameters())
+        assert ledger.to_dict()["total_cols_eliminated"] >= 2
+
+    def test_a_host_whose_modules_raises_does_not_abort_the_analysis(self):
+        class BadModules(torch.nn.Module):
+            def modules(self):
+                raise ValueError("pathological host")
+
+            def forward(self, x):
+                return x
+
+        ledger = self._ledger_with_host(BadModules())
+        assert ledger.to_dict()["total_cols_eliminated"] >= 2

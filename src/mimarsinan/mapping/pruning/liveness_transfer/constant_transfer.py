@@ -96,6 +96,13 @@ def _run(op: ComputeOp, probe: List[float], repeats: int, dtype: torch.dtype):
         return op.execute_on_gathered(x)
 
 
+# Every guard on the probe path shares this tuple: a hosted module is arbitrary
+# user code, so probing it degrades to "stay TOP" for the failure classes a
+# module can plausibly raise. Anything outside it still propagates (fail loud).
+_PROBE_FAILURES = (RuntimeError, TypeError, ValueError, IndexError, KeyError,
+                   AttributeError)
+
+
 def _eval_mode(module) -> Callable[[], None]:
     """Put the WHOLE hosted subtree in eval mode; returns an EXACT restore.
 
@@ -160,7 +167,11 @@ def _probe(
     downstream draws. The fork spans the ORIGINAL-module executions too, not
     just the fp64 copies.
     """
-    with torch.random.fork_rng(devices=_rng_devices(module), enabled=True):
+    try:
+        devices = _rng_devices(module)
+    except _PROBE_FAILURES:
+        return None
+    with torch.random.fork_rng(devices=devices, enabled=True):
         return _probe_isolated(op, module, probes)
 
 
@@ -170,11 +181,13 @@ def _probe_isolated(
     original = op.params.get("module")
     try:
         double = copy.deepcopy(module).double()
-    except (RuntimeError, TypeError, ValueError, AttributeError):
+    except _PROBE_FAILURES:
         return None
-    restore_double = _eval_mode(double)
-    restore = _eval_mode(module)
+    restore: Callable[[], None] = lambda: None
+    restore_double: Callable[[], None] = lambda: None
     try:
+        restore_double = _eval_mode(double)
+        restore = _eval_mode(module)
         op.params["module"] = double
         y_a = _run(op, probes[0], 1, torch.float64)
         y_b = _run(op, probes[1], 1, torch.float64)
@@ -184,8 +197,7 @@ def _probe_isolated(
         y_f32_eval = _run(op, probes[0], 1, torch.float32)
         restore()
         y_f32_asis = _run(op, probes[0], 1, torch.float32)
-    except (RuntimeError, TypeError, ValueError, IndexError, KeyError,
-            AttributeError):
+    except _PROBE_FAILURES:
         return None
     finally:
         op.params["module"] = original
@@ -218,7 +230,9 @@ def derive_constant_outputs(
 ) -> Dict[int, float]:
     """CONST outputs of one host ComputeOp (empty dict = everything stays TOP).
 
-    Never raises: an op that cannot be probed exactly is simply not folded.
+    Degrades rather than raising for every failure class a hosted module can
+    plausibly raise (``_PROBE_FAILURES``): such an op is simply not folded.
+    An exception outside that set still propagates, by fail-loud discipline.
     """
     n_in = int(len(op.input_sources.flatten()))
     if n_in == 0 or len(in_values) != n_in:
