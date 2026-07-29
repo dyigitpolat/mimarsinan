@@ -149,12 +149,42 @@ class PerceptronTransformer:
             perceptron, perceptron.layer.weight, new_weight, "weight",
         )
 
+    @staticmethod
+    def normalization_bias_seam(perceptron):
+        """The normalization's affine shift ``beta`` when it is a writable
+        Parameter, else ``None``.
+
+        ``beta`` enters the effective-parameter fold purely additively
+        (``b_eff = ((b_raw - mean) * u + beta) / act``) and does not appear in
+        ``get_effective_weight`` at all, so it realizes ANY requested effective
+        bias exactly, with no inversion through ``u``. It is the ONLY seam a
+        bias-free layer has."""
+        norm = perceptron.normalization
+        if isinstance(norm, nn.Identity):
+            return None
+        beta = getattr(norm, "bias", None)
+        return beta if isinstance(beta, nn.Parameter) else None
+
+    @classmethod
+    def effective_bias_is_writable(cls, perceptron) -> bool:
+        """Whether a requested effective bias can be REALIZED on this
+        perceptron: through its raw bias Parameter, or (bias-free layer) through
+        the normalization's ``beta`` seam."""
+        return (
+            perceptron.layer.bias is not None
+            or cls.normalization_bias_seam(perceptron) is not None
+        )
+
     def apply_effective_bias_transform(self, perceptron, bias_transform):
-        if perceptron.layer.bias is None:
-            return
         effective_bias = self.get_effective_bias(perceptron)
         target = bias_transform(effective_bias)
         act = perceptron.activation_scale
+
+        if perceptron.layer.bias is None:
+            self._apply_bias_free_effective_bias(
+                perceptron, target, effective_bias, act,
+            )
+            return
 
         if isinstance(perceptron.normalization, nn.Identity):
             self._commit_raw_write(
@@ -180,6 +210,46 @@ class PerceptronTransformer:
         new_bias = torch.where(degenerate, raw, inverted)
         self._commit_raw_write(
             perceptron, perceptron.layer.bias, new_bias, "bias",
+        )
+
+    def _apply_bias_free_effective_bias(
+        self, perceptron, target, effective_bias, act
+    ):
+        """Realize an effective-bias transform on a BIAS-FREE layer.
+
+        A BN-paired convolution (``layer.bias is None`` -- the CIFAR VGG-8 /
+        ResNet-20 idiom) still HAS an effective bias, and it is exported to the
+        chip verbatim (the mappers read ``get_effective_bias``). It is derived
+        ENTIRELY from the normalization: ``b_eff = ((0 - mean) * u + beta)/act``.
+        Skipping the transform here -- what this method replaces -- silently
+        dropped the weight-quantization grid projection, so the deployed bias
+        stayed a function of unquantized BN statistics and landed off the
+        integer lattice the chip export and the NF<->SCM parity both assume.
+
+        The write goes to ``beta``, additively and exactly: ``beta`` cannot
+        disturb the effective weight, so the projection the caller just
+        installed on the weight grid survives untouched.
+        """
+        delta = target - effective_bias
+        norm_bias = self.normalization_bias_seam(perceptron)
+        if norm_bias is None:
+            if bool((delta != 0).any()):
+                raise RuntimeError(
+                    "PerceptronTransformer cannot realize an effective-bias "
+                    f"transform on perceptron "
+                    f"{getattr(perceptron, 'name', '<unnamed>')!r}: the layer is "
+                    "bias-free and its normalization exposes no writable affine "
+                    "shift, so there is no seam that can carry the requested "
+                    f"bias (max |delta| = {float(delta.abs().max()):.6g}). "
+                    "Silently dropping it would leave the deployed bias off the "
+                    "chip grid."
+                )
+            return
+        self._commit_raw_write(
+            perceptron,
+            norm_bias,
+            norm_bias.data + delta.to(norm_bias.data.dtype) * act,
+            "normalization bias (bias-free layer)",
         )
 
     def _realize_effective_bias_through_normalization(

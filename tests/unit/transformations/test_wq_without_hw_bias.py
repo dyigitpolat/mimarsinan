@@ -26,7 +26,14 @@ from mimarsinan.mapping.ir_mapping_class import IRMapping
 # ---------------------------------------------------------------------------
 
 class TestPerceptronTransformerBiasGuard:
-    """apply_effective_bias_transform must be a no-op when layer.bias is None."""
+    """apply_effective_bias_transform must not synthesize a raw bias Parameter
+    on a bias-free layer.
+
+    With an Identity normalization the effective bias is structurally zero and
+    a grid projection leaves it there, so nothing is written. The BN-paired
+    case -- where the derived bias is non-zero and MUST reach the chip grid --
+    is covered in ``test_bn_derived_bias_on_chip_grid.py``.
+    """
 
     def _make_perceptron(self, *, bias: bool):
         p = Perceptron(4, 8, bias=bias, normalization=nn.Identity())
@@ -96,6 +103,11 @@ class TestNAPQNoBias:
         napq.transform(p)
 
         assert p.layer.bias is None
+        # ... and the BN-derived effective bias is nonetheless projected onto
+        # the grid, through the normalization's beta seam (W0.9).
+        eff_b = PerceptronTransformer().get_effective_bias(p)
+        scaled_b = eff_b * p.bias_scale
+        assert torch.allclose(scaled_b, torch.round(scaled_b), atol=1e-3)
 
     def test_transform_with_bias_still_quantizes(self):
         p = Perceptron(4, 8, bias=True, normalization=nn.Identity())
