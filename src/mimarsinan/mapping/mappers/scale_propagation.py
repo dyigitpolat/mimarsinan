@@ -60,17 +60,28 @@ def max_source_scale(deps, out_scales, default):
 
 
 def perceptron_source_out_scale(perceptron) -> torch.Tensor:
-    """Per-output-channel out-scale from a perceptron's activation_scale; a per-channel theta is carried verbatim when its length matches output width, else mean-folded."""
+    """Per-output-channel out-scale from a perceptron's activation_scale; a per-channel theta is carried verbatim when its length matches output width, else mean-folded.
+
+    Materialized on the perceptron's OWN parameter device (same invariant as
+    ``layer_bias_or_zeros``): this vector is stamped into ``per_input_scales``
+    and folded into effective weights, so a bare CPU create would seed a
+    mixed-device perceptron on every CUDA model. Mean-folding broadcasts the
+    reduction tensor rather than round-tripping it through a host float, so
+    device and dtype follow by construction (and no host sync is forced).
+    """
     n_out = perceptron.output_channels
     act = perceptron.activation_scale
     if isinstance(act, torch.Tensor):
         vec = act.detach().to(torch.float32).reshape(-1)
-        return (
-            vec.clone()
-            if vec.numel() == n_out
-            else torch.full((n_out,), float(vec.mean()))
-        )
-    return torch.full((n_out,), float(act))
+        return vec.clone() if vec.numel() == n_out else _spread(vec.mean(), n_out)
+    return torch.full(
+        (n_out,), float(act), device=perceptron.layer.weight.device,
+    )
+
+
+def _spread(scalar: torch.Tensor, n: int) -> torch.Tensor:
+    """0-dim ``scalar`` broadcast to an owned ``(n,)`` vector on its own device/dtype."""
+    return scalar.reshape(()).expand(n).clone()
 
 
 def assign_per_input_scales(perceptron, source_scales) -> None:
@@ -90,8 +101,7 @@ def assign_per_input_scales(perceptron, source_scales) -> None:
         perceptron.per_input_scales = source_scales.repeat_interleave(spatial)
         return
 
-    mean_scale = source_scales.mean().item()
-    perceptron.per_input_scales = torch.full((in_features,), mean_scale)
+    perceptron.per_input_scales = _spread(source_scales.mean(), in_features)
 
 
 def perceptron_per_source_scale(node, deps, out_scales) -> torch.Tensor:
