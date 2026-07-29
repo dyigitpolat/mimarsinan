@@ -18,6 +18,18 @@ import torch
 from torch.amp.autocast_mode import autocast
 from torch.amp.grad_scaler import GradScaler
 
+_CORRUPT_BATCH_RETRIES = 2
+"""Re-reads allowed before a non-finite validation batch is called a broken pipeline."""
+
+
+def _is_corrupt_batch(x) -> bool:
+    """A float input batch carrying non-finite values is a corrupted read.
+
+    Integer/boolean inputs cannot be non-finite, so they are never checked (and
+    ``torch.isfinite`` would be a pointless device round-trip on them).
+    """
+    return bool(torch.is_floating_point(x)) and not bool(torch.isfinite(x).all())
+
 
 class BasicTrainer:
     def __init__(
@@ -262,13 +274,51 @@ class BasicTrainer:
             self, max_samples=max_samples, seed=seed
         )
 
-    def next_validation_batch(self):
+    def _raw_next_validation_batch(self):
         try:
-            x, y = next(self.val_iter)
+            return next(self.val_iter)
         except StopIteration:
             self.val_iter = iter(self.validation_loader)
-            x, y = next(self.val_iter)
-        return x, y
+            return next(self.val_iter)
+
+    def next_validation_batch(self):
+        """The next validation batch, verified finite before it is measured on.
+
+        A validation batch is finite by construction: decoded, normalized images.
+        A non-finite one is therefore a CORRUPTED READ of the input pipeline, not
+        data. FFCV hands out views into device buffers filled by a producer
+        thread on a side CUDA stream; a batch that sat in the queue across
+        unrelated GPU work has been observed coming back entirely NaN while the
+        very same batch, re-read a moment later, is bit-correct (W0.7). Measured
+        on, it makes the model emit one constant class and reports a
+        chance-level accuracy -- the collapse that had a converted VGG-8 read
+        0.0859 seconds after the same weights tested 0.9266.
+
+        So: never consume it silently. Discard, say so loudly, re-read; and if
+        the corruption survives a fresh iterator, fail rather than report a
+        number that is not a measurement of the model.
+        """
+        for attempt in range(_CORRUPT_BATCH_RETRIES + 1):
+            x, y = self._raw_next_validation_batch()
+            if not _is_corrupt_batch(x):
+                return x, y
+            print(
+                f"[BasicTrainer] CORRUPTED validation batch discarded "
+                f"(attempt {attempt + 1}/{_CORRUPT_BATCH_RETRIES + 1}): "
+                f"{int((~torch.isfinite(x)).sum())}/{x.numel()} non-finite input "
+                f"values from {type(self.validation_loader).__name__}. The batch "
+                f"is a corrupted read, not data; re-reading.",
+                flush=True,
+            )
+            # A fresh iterator abandons the poisoned in-flight queue entirely.
+            self.val_iter = iter(self.validation_loader)
+        raise RuntimeError(
+            "BasicTrainer.next_validation_batch: the validation input pipeline "
+            f"kept returning non-finite batches after {_CORRUPT_BATCH_RETRIES} "
+            "re-reads. Validation images are finite by construction, so this is "
+            "a broken input pipeline, not data -- refusing to report an accuracy "
+            "measured on it."
+        )
 
     def iter_validation_batches(self, n_batches: int):
         return basic_trainer_eval.iter_validation_batches(self, int(n_batches))
