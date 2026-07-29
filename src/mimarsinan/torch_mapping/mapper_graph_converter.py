@@ -22,6 +22,7 @@ from mimarsinan.mapping.platform.packaging_contract import (
     PackagingContract,
 )
 from mimarsinan.torch_mapping.representability_analyzer import (
+    CONVERTIBLE_CALL_METHODS,
     RepresentabilityReport,
     RepresentabilityError,
 )
@@ -37,6 +38,23 @@ from mimarsinan.torch_mapping.fx_shape_utils import (
     node_target_str,
     strip_batch,
 )
+
+
+class UnsupportedCallMethodError(RuntimeError):
+    """A tensor call_method with no conversion rule reached the converter.
+
+    Silently mapping it to identity would DROP the op (the ``.softmax(dim=-1)``
+    regression); refusing loudly is the only correct behavior.
+    """
+
+    def __init__(self, method: str, node: fx.Node):
+        self.method = method
+        self.node_name = node.name
+        super().__init__(
+            f"call_method '.{method}(...)' (FX node '{node.name}') has no "
+            "conversion rule; refusing to silently map it to identity. "
+            f"Allowlisted structural methods: {sorted(CONVERTIBLE_CALL_METHODS)}"
+        )
 
 
 class MapperGraphConverter(
@@ -239,7 +257,7 @@ class MapperGraphConverter(
             self._emit_generic_compute_op(node, operator.add)
 
         else:
-            self._node_to_mapper[node] = source
+            raise UnsupportedCallMethodError(str(method), node)
 
     def _get_mapper(self, node: fx.Node):
         if node in self._node_to_mapper:

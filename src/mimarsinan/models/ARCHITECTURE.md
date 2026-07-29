@@ -16,6 +16,7 @@ pipeline's `ModelRegistry` so configs can instantiate models by `model_type` id.
 | `lenet5.py` | `LeNet5`: classic LeNet-5 CNN, input-shape-adaptive; the classical baseline rung. |
 | `squeezenet.py` | `SqueezeNet`/`FireModule`: scaled, input-adaptive Fire-module conv vehicle (opt-in; not pipeline-registered). |
 | `torch_mlp_mixer.py` | `TorchMLPMixer`: native plain-`nn.Module` MLP-Mixer for `torch_mapping` conversion. |
+| `vit_leaf.py` | `LeafVisionTransformer`/`LeafViTBlock`: MHA-leaf vision-transformer family (pre-LN blocks, `nn.MultiheadAttention(batch_first=True)` as the hosted FX leaf, GELU MLP, conv patchify, cls/pos embeddings) — the declared ViT conversion subset; `tiny_test_vit`/`deit_tiny_leaf` configs plus the timm weight-porting shim (`timm_vit_to_leaf_state_dict`, `load_timm_vit_state_dict`: fused qkv → `in_proj_*`, fail-loud on unmapped keys). |
 | `torch_mlp_mixer_core.py` | Mixer variant with an activation after every FC so all mixer layers package as perceptrons. |
 | `mlp_mixer_ref.py` | Third-party reference MLP-Mixer (einops-based), kept for architecture comparison; not pipeline-native. |
 | `pretrained_bridge.py` | `load_pretrained_resnet18/50` (torchvision weights, resized `fc` head) + `deploy_and_eval`: run a stock model through the real convert→map→deploy SNN path and return a `DeployedEval`. |
