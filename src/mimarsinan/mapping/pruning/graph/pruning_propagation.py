@@ -16,6 +16,7 @@ def compute_propagated_pruned_rows_cols(
     exempt_rows: AbstractSet[int] = frozenset(),
     exempt_cols: AbstractSet[int] = frozenset(),
     cols_with_implicit_source: AbstractSet[int] = frozenset(),
+    propagate: bool = True,
 ) -> Tuple[Set[int], Set[int]]:
     """Compute pruned row and column indices with propagative fixpoint.
 
@@ -40,6 +41,10 @@ def compute_propagated_pruned_rows_cols(
             offset that produces spikes regardless of axon connectivity). Such
             columns are never killed by within-matrix propagation: even when
             every row feeding them dies, the implicit source keeps them alive.
+        propagate: When False, skip the fixpoint and return exactly the seeded
+            (exemption-filtered) sets. This is the single-layer structured-pruning
+            BASELINE: identical criterion and rate, no cascade, so the difference
+            against the default isolates the structure propagation exposes.
 
     Returns:
         (pruned_rows_set, pruned_cols_set) both as sets of indices.
@@ -98,6 +103,9 @@ def compute_propagated_pruned_rows_cols(
 
     zero_row_mask &= ~exempt_row_mask
     zero_col_mask &= ~exempt_col_mask
+
+    if not propagate:
+        return _mask_to_set(zero_row_mask), _mask_to_set(zero_col_mask)
 
     abs_conn = np.abs(mat_f) >= conn_eps
     has_any_conn_row = abs_conn.any(axis=1)
