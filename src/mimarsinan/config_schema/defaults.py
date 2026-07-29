@@ -102,7 +102,7 @@ CONFIG_KEYS_SET: Set[str] = {
     "activation_quantization",
     "weight_quantization",
     "pruning", "pruning_fraction", "prune_sparsity",
-    "scale_migration", "scale_migration_clip_ratio",
+    "prune_criterion", "prune_group_size", "scale_migration", "scale_migration_clip_ratio",
     "weight_source", "preload_weights",
     "pretrained_weight_set", "pretrained_weight_sets",
     "model_type", "device",
