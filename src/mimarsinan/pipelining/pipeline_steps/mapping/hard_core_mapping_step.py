@@ -3,6 +3,11 @@ from mimarsinan.pipelining.core.steps.pipeline_step import PipelineStep
 from mimarsinan.common.best_effort import best_effort
 from mimarsinan.common.env import vram_probe_enabled
 from mimarsinan.common.reporter import emit_reporter_event
+from mimarsinan.mapping.crossbar_utilization import (
+    CrossbarUtilizationReport,
+    summarize_utilization,
+    write_utilization_record,
+)
 from mimarsinan.mapping.weight_programming import weight_programming_report
 from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 from mimarsinan.pipelining.core.hybrid_mapping_consumer import load_hybrid_mapping_for_step
@@ -108,6 +113,16 @@ class HardCoreMappingStep(PipelineStep):
             "params_unique": programming.params_unique,
             "reuse_factor": programming.reuse_factor,
         })
+
+        # [imc G-A] crossbar occupancy of the deployed program, measured on every run.
+        utilization = CrossbarUtilizationReport.from_hybrid_mapping(
+            hybrid_mapping, weight_bits=platform_constraints.get("weight_bits"),
+        )
+        print(summarize_utilization(utilization))
+        emit_reporter_event(
+            self.pipeline.reporter, "crossbar_utilization", utilization.to_dict()
+        )
+        write_utilization_record(utilization, self.pipeline.working_directory)
 
         _vram_probe("before_test")
         plan = DeploymentPlan.of(self.pipeline)

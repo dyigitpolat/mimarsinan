@@ -23,7 +23,7 @@ use when).
 | `mapping_utils.py` | Legacy star re-export facade; import from the concrete modules in new code |
 | `weight_programming.py` | [wsm] `WeightProgrammingReport`: the weight-programming boundary measured per packed program (events, params programmed vs unique, reuse factor) — printed + reporter-evented on every Hard Core Mapping run |
 | `weight_reuse.py` | Time-domain weight-reuse phase classification of segments by `weight_bank_id` (default-off, pure read of the IR) |
-| `crossbar_utilization.py` | [imc] `CrossbarUtilizationReport`: allocated crossbars and their occupancy (axon/neuron utilization, cell fill, unusable space, MAC + programming-bit energy proxies) — the IMC resource ledger, read from packed `HardCore` geometry |
+| `crossbar_utilization.py` | [imc] `CrossbarUtilizationReport`: allocated crossbars and their occupancy (axon/neuron utilization, cell fill, unusable space, MAC + programming-bit energy proxies) — the IMC resource ledger, read from packed `HardCore` geometry; printed + reporter-evented + serialized (`write_utilization_record` -> `crossbar_utilization.json` in the run dir) on every Hard Core Mapping run |
 | `ir/` | Unified IR: `IRGraph` container, node types (`NeuralCore`, `ComputeOp`, `WeightBank`, `IRSource`), legacy conversions |
 | `mappers/` | Mapper hierarchy consumed by the graph: base, structural, perceptron, leading-dim, conv1d/conv2d, scale propagation |
 | `layout/` | Shape-only layout SSoT (`LayoutIRMapping`, layout plan/packer, segmentation) for fast architecture-search estimation |
