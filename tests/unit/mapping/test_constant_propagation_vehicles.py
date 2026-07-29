@@ -21,7 +21,10 @@ import torch.nn as nn
 
 from mimarsinan.chip_simulation.core_semantics import INERT_SPIKING_MODE
 from mimarsinan.mapping.ir import IRGraph, NeuralCore
-from mimarsinan.mapping.pruning.certificate import snap_ir_graph_to_dyadic_grid
+from mimarsinan.mapping.pruning.certificate import (
+    certify_cascade_equivalence,
+    snap_ir_graph_to_dyadic_grid,
+)
 from mimarsinan.mapping.pruning.graph import (
     compute_global_pruned_sets,
     reanalyze_constant_folding,
@@ -170,6 +173,30 @@ class TestDeepConvConstantFolding:
                 assert lo <= getattr(arms["closure"], attr).get(key, set())
             for key, lo in getattr(arms["closure"], attr).items():
                 assert lo <= getattr(arms["cascade"], attr).get(key, set())
+
+    def test_the_folded_converter_vehicle_is_bit_exact(self, deep_conv):
+        """End-to-end on the deployed value executor: the folded program is
+        value-identical to the seeded reference AND strictly smaller."""
+        graph, _, fc2_id, _ = deep_conv
+        fc2 = next(n for n in graph.nodes if n.id == fc2_id)
+        bank = graph.weight_banks[0]
+        node_seed = {fc2.id: ([i == 5 for i in range(17)], [False] * 10)}
+        bank_seed = {
+            0: ([False] * bank.core_matrix.shape[0],
+                [j == 1 for j in range(bank.core_matrix.shape[1])])
+        }
+        reports = {
+            folding: certify_cascade_equivalence(
+                _deep_conv_constant_vehicle(),
+                initial_pruned_per_node=node_seed,
+                initial_pruned_per_bank=bank_seed,
+                batches=2, batch_size=4,
+                elimination_constant_folding=folding,
+            )
+            for folding in ("off", "full")
+        }
+        assert all(r.passed and r.max_abs_delta == 0.0 for r in reports.values())
+        assert reports["full"].pruned_cells < reports["off"].pruned_cells
 
     def test_retrospective_reanalysis_reproduces_the_delta(self, deep_conv):
         graph, _, fc2_id, seeds = deep_conv
