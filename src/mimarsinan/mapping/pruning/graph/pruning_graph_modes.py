@@ -20,11 +20,12 @@ def run_bank_alias_fixpoint(ctx: GlobalPruningContext, *, kernel_mode: str) -> N
     """Reconcile node-coordinate and bank-coordinate kill sets until stable.
 
     This is pure coordinate ALIASING of shared physical structure, not
-    propagation: a bank row dies only when dead in every sharing node
-    (union rule), a bank column aggregates the per-node views, and bank-level
-    kills project back into every sharing node. With ``kernel_mode="masked"``
-    the within-bank kernel adds nothing beyond exemption filtering, so the
-    masked/closure arms alias without discovering any deadness.
+    propagation: a bank row dies only when dead in every sharing node, a bank
+    column only when dead in the view of every node covering it (the shared
+    union rule), and bank-level kills project back into every sharing node.
+    With ``kernel_mode="masked"`` the within-bank kernel adds nothing beyond
+    exemption filtering, so the masked/closure arms alias without discovering
+    any deadness.
     """
     while True:
         changed = False

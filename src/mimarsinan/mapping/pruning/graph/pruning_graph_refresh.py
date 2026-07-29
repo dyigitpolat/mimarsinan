@@ -165,7 +165,11 @@ def _refresh_bank_pruning(
 
     Bank rows are pruned only when *every* using node has the corresponding
     axon dead (we cannot drop a row another node still needs). Bank columns
-    are the union over per-node pruned cols mapped to bank coords.
+    follow the same rule per physical column: propagation-discovered deadness
+    in ONE instance's view (starvation, orphaning) stays per-instance; the
+    physical column dies only when every node whose ``weight_row_slice``
+    covers it has its local view of the column dead. Explicit bank-level
+    seeds (``bank_pruned_cols``) are shared by construction and pass through.
     """
     n_axons, n_neurons = bank.core_matrix.shape
 
@@ -180,17 +184,27 @@ def _refresh_bank_pruning(
     seed_cols = set(bank_pruned_cols[bank_id])
     bank_exempt_rows: Set[int] = set()
     bank_exempt_cols: Set[int] = set()
+    covered = np.zeros(n_neurons, dtype=bool)
+    dead_in_all_views = np.ones(n_neurons, dtype=bool)
     for node in bank_nodes:
         nid = node.id
         if node.weight_row_slice is not None:
-            start, _end = node.weight_row_slice
+            start, end = node.weight_row_slice
         else:
-            start = 0
+            start, end = 0, n_neurons
+        node_dead = np.zeros(end - start, dtype=bool)
         for j_local in pruned_cols.get(nid, set()):
-            seed_cols.add(start + j_local)
+            if 0 <= j_local < end - start:
+                node_dead[j_local] = True
+        covered[start:end] = True
+        dead_in_all_views[start:end] &= node_dead
         bank_exempt_rows |= exempt_rows.get(nid, frozenset())
         for j_local in exempt_cols.get(nid, frozenset()):
             bank_exempt_cols.add(start + j_local)
+    # Union rule (columns): a physical column dies only if dead for ALL
+    # instances whose slice covers it — one sharer's orphaned view must not
+    # drop live signal of another sharer.
+    seed_cols |= {int(c) for c in np.flatnonzero(covered & dead_in_all_views)}
 
     seed_rows = bank_pruned_rows[bank_id] | (rows_intersection - bank_exempt_rows)
 
