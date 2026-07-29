@@ -2,8 +2,11 @@
 
 `compute_global_pruned_sets` runs a bidirectional, recursive fixpoint over
 the unified IR graph: pruning a neuron in core A propagates to consumer axons
-in any neural core B (provided B is a NeuralCore — ComputeOps act as
-barriers). Pruning all consumers of a neuron makes the neuron itself dead
+in any neural core B. ComputeOps relay deadness only through their registered
+liveness transfers ([W4b] `liveness_transfer.py`: elementwise activations,
+index bijections, pooling regions — see `test_liveness_transfer.py`);
+underivable or unregistered ops remain opaque barriers, as pinned below.
+Pruning all consumers of a neuron makes the neuron itself dead
 unless it is in `output_sources`. Within-matrix propagation is delegated
 to `compute_propagated_pruned_rows_cols`.
 

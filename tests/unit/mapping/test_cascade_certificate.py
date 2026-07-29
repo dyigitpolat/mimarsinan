@@ -317,6 +317,189 @@ class TestSharedBankUnionRule:
             check_shared_bank_union_rule(graph, result)
 
 
+def _pool_vehicle(seed=19, pool_cls=nn.AvgPool2d):
+    """NC0 (8 cols = 1x2x4 plane) -> pool 2x2 op -> NC1 -> 2 logits, dyadic."""
+    rng = np.random.default_rng(seed)
+    core0 = NeuralCore(
+        id=0, name="c0", input_sources=_srcs([(-2, 0), (-2, 1), (-3, 0)]),
+        core_matrix=_dyadic(rng, (3, 8)), threshold=1.0, latency=0,
+    )
+    op = ComputeOp(
+        id=1, name="pool", input_sources=_srcs([(0, j) for j in range(8)]),
+        op_type=pool_cls.__name__,
+        params={"module": pool_cls(2), "input_shape": (1, 2, 4)},
+        input_shape=(1, 2, 4), output_shape=(1, 1, 2),
+    )
+    core1 = NeuralCore(
+        id=2, name="c1", input_sources=_srcs([(1, 0), (1, 1), (-3, 0)]),
+        core_matrix=_dyadic(rng, (3, 2)), threshold=1.0, latency=1,
+    )
+    return IRGraph(nodes=[core0, op, core1], output_sources=_srcs([(2, 0), (2, 1)]))
+
+
+def _flatten_vehicle(seed=23):
+    """NC0 (4 cols = 2x2) -> Flatten op -> NC1 -> 2 logits, dyadic."""
+    rng = np.random.default_rng(seed)
+    core0 = NeuralCore(
+        id=0, name="c0", input_sources=_srcs([(-2, 0), (-2, 1), (-3, 0)]),
+        core_matrix=_dyadic(rng, (3, 4)), threshold=1.0, latency=0,
+    )
+    op = ComputeOp(
+        id=1, name="flat", input_sources=_srcs([(0, j) for j in range(4)]),
+        op_type="Flatten",
+        params={"module": nn.Flatten(), "input_shape": (2, 2)},
+        input_shape=(2, 2), output_shape=(4,),
+    )
+    core1 = NeuralCore(
+        id=2, name="c1",
+        input_sources=_srcs([(1, j) for j in range(4)] + [(-3, 0)]),
+        core_matrix=_dyadic(rng, (5, 2)), threshold=1.0, latency=1,
+    )
+    return IRGraph(nodes=[core0, op, core1], output_sources=_srcs([(2, 0), (2, 1)]))
+
+
+class TestLivenessTransferCertificateCoverage:
+    """[W4b] every implemented transfer class under the bit-exact certificate."""
+
+    def test_relu_chain_propagates_and_stays_bit_exact(self):
+        """ELEMENTWISE_1TO1: the NC -> ReLU -> NC chain now cascades through
+        the op, and the pruned+compacted program stays value-identical. The
+        identity_only kill-switch cert is also green but reclaims less."""
+        seeds = {0: ([False, False, False], [j == 1 for j in range(4)])}
+        full = certify_cascade_equivalence(
+            _relu_sandwich_graph(nn.ReLU()), initial_pruned_per_node=seeds,
+            batches=3, batch_size=8,
+        )
+        old = certify_cascade_equivalence(
+            _relu_sandwich_graph(nn.ReLU()), initial_pruned_per_node=seeds,
+            batches=3, batch_size=8,
+            computeop_liveness_transfers="identity_only",
+        )
+        assert full.passed and old.passed
+        assert full.pruned_cells < old.pruned_cells, (
+            "the transfer relay must reclaim strictly more than the "
+            "identity-only barrier on the same vehicle and seeds"
+        )
+
+    def test_gelu_liveness_equals_relu_twin_and_twin_certifies(self):
+        """GELU relays are liveness-level: GELU is (checked) zero-preserving
+        but grid-breaking for the bit-exact cert (see
+        test_refuses_grid_breaking_gelu), so its transfer is covered by the
+        zero-preserving predicate plus the ReLU-twin topology certificate —
+        identical graph and seeds, identical kill sets."""
+        from mimarsinan.mapping.pruning.ir_pruning_helpers import (
+            _boundary_policy_exemptions,
+        )
+
+        seeds = {0: (set(), {1})}
+        kill_sets = {}
+        for act in (nn.ReLU(), nn.GELU()):
+            graph = _relu_sandwich_graph(act)
+            exempt_rows, exempt_cols = _boundary_policy_exemptions(graph)
+            res = compute_global_pruned_sets(
+                graph, initial_per_node=seeds,
+                exempt_rows_per_node=exempt_rows,
+                exempt_cols_per_node=exempt_cols,
+            )
+            kill_sets[type(act).__name__] = (
+                res.pruned_rows_per_node, res.pruned_cols_per_node,
+            )
+        assert kill_sets["GELU"] == kill_sets["ReLU"]
+        assert 1 in kill_sets["GELU"][0][2]  # consumer axon died through the op
+        twin = certify_cascade_equivalence(
+            _relu_sandwich_graph(nn.ReLU()),
+            initial_pruned_per_node={
+                0: ([False] * 3, [j == 1 for j in range(4)])
+            },
+            batches=3, batch_size=8,
+        )
+        assert twin.passed is True
+
+    @pytest.mark.parametrize("pool_cls", [nn.AvgPool2d, nn.MaxPool2d])
+    def test_pool_vehicle_green_and_region_relays(self, pool_cls):
+        """REGION_REDUCE: killing an entire pooling region cascades through
+        the pool bit-exactly; a partial region must not relay."""
+        seeds_full = {0: ([False] * 3, [j in (0, 1, 4, 5) for j in range(8)])}
+        report = certify_cascade_equivalence(
+            _pool_vehicle(pool_cls=pool_cls),
+            initial_pruned_per_node=seeds_full, batches=3, batch_size=8,
+        )
+        assert report.passed is True
+        assert report.pruned_cells < report.reference_cells
+        seeds_partial = {0: ([False] * 3, [j in (0, 1, 4) for j in range(8)])}
+        partial = certify_cascade_equivalence(
+            _pool_vehicle(pool_cls=pool_cls),
+            initial_pruned_per_node=seeds_partial, batches=3, batch_size=8,
+        )
+        assert partial.passed is True
+        assert partial.pruned_cells > report.pruned_cells, (
+            "a partially dead region must keep the pool output alive"
+        )
+
+    def test_flatten_vehicle_green(self):
+        """INDEX_BIJECTION: the probe-derived flatten map relays bit-exactly."""
+        seeds = {0: ([False] * 3, [j == 2 for j in range(4)])}
+        report = certify_cascade_equivalence(
+            _flatten_vehicle(), initial_pruned_per_node=seeds,
+            batches=3, batch_size=8,
+        )
+        assert report.passed is True
+        assert report.pruned_cells < report.reference_cells
+
+
+class TestCertificateTripsOnTransferMutation:
+    """A wrong transfer map must TRIP the certificate, not pass silently."""
+
+    def _corrupt(self, monkeypatch, corruptor):
+        import mimarsinan.mapping.pruning.liveness_transfer.transfer_index as ti
+        import mimarsinan.mapping.pruning.liveness_transfer.transfer_registry as tr
+
+        original = ti.derive_liveness_transfer
+
+        def corrupted(op, *, policy=tr.DEFAULT_COMPUTEOP_LIVENESS_TRANSFERS):
+            return corruptor(tr, original(op, policy=policy))
+
+        monkeypatch.setattr(ti, "derive_liveness_transfer", corrupted)
+
+    def test_corrupted_bijection_map_trips_certificate(self, monkeypatch):
+        def swap_first_two(lt, transfer):
+            if transfer.kind != lt.TRANSFER_INDEX_BIJECTION:
+                return transfer
+            out = dict(transfer.out_to_ins)
+            out[0], out[1] = out[1], out[0]
+            return lt._relation_transfer(
+                transfer.kind, out, len(transfer.in_to_outs)
+            )
+
+        self._corrupt(monkeypatch, swap_first_two)
+        seeds = {0: ([False] * 3, [j == 0 for j in range(4)])}
+        with pytest.raises(CascadeCertificateError):
+            certify_cascade_equivalence(
+                _flatten_vehicle(), initial_pruned_per_node=seeds,
+                batches=3, batch_size=8,
+            )
+
+    def test_corrupted_pool_region_trips_certificate(self, monkeypatch):
+        def drop_region_member(lt, transfer):
+            if transfer.kind != lt.TRANSFER_REGION_REDUCE:
+                return transfer
+            out = dict(transfer.out_to_ins)
+            region = set(out[0])
+            region.discard(max(region))
+            out[0] = frozenset(region)
+            return lt._relation_transfer(
+                transfer.kind, out, len(transfer.in_to_outs)
+            )
+
+        self._corrupt(monkeypatch, drop_region_member)
+        seeds = {0: ([False] * 3, [j in (0, 1, 4) for j in range(8)])}
+        with pytest.raises(CascadeCertificateError):
+            certify_cascade_equivalence(
+                _pool_vehicle(), initial_pruned_per_node=seeds,
+                batches=3, batch_size=8,
+            )
+
+
 class TestCertificateTripsOnMutation:
     def test_corrupted_rewire_sources_trips_certificate(self, monkeypatch):
         """A certificate that cannot fail is not a certificate: corrupt the
