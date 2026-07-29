@@ -21,6 +21,30 @@ from mimarsinan.mapping.packing.hybrid_hardcore_mapping import HybridHardCoreMap
 from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 
 
+def load_verified_test_data(runner, test_loader, source: str):
+    """The chip's inputs: a full loader pass, owned and proven finite, then stacked.
+
+    The deployed accuracy is measured on exactly these samples, so the read that
+    materializes them is verified like every other measured read -- a corrupted
+    batch here is baked into the chip's inputs for the whole simulation and comes
+    back out as a hardware result. The pass restarts whole on corruption and
+    raises rather than simulating poison.
+
+    Own THEN verify (W0.8b finding 3): with an ``Identity`` preprocessor,
+    ``self._preprocessor(xs).detach().cpu()`` is the loader's own tensor on a host
+    loader, so the retained ``test_input`` entries used to be VIEWS into a buffer
+    the producer refills -- and the verdict was about that buffer, not about what
+    the simulation later read out of it.
+    """
+    runner.test_input = []
+    runner.test_targets = []
+    for xs, ys in test_loader:
+        xs, ys = batch_integrity.own_verified_batch(xs, ys, source=source)
+        runner.test_input.extend(runner._preprocessor(xs).detach().cpu())
+        runner.test_targets.extend(ys.detach().cpu() if hasattr(ys, "detach") else ys)
+    return [*zip(np.stack(runner.test_input), np.stack(runner.test_targets))]
+
+
 class SimulationRunner(SimulationFlatMixin, SimulationHybridMixin):
     def __init__(self, pipeline, mapping, simulation_length, preprocessor=None):
         self._preprocessor = preprocessor if preprocessor is not None else nn.Identity()
@@ -67,25 +91,11 @@ class SimulationRunner(SimulationFlatMixin, SimulationHybridMixin):
             data_provider.get_test_batch_size(), data_provider,
         )
 
-        # The deployed accuracy is measured on exactly these samples, so the read
-        # that materializes them is verified like every other measured read: a
-        # corrupted batch here would be baked into the chip's inputs for the whole
-        # simulation and reported as a hardware result. The pass restarts whole on
-        # corruption (batch_integrity), and raises rather than simulating poison.
-        def _load_test_data():
-            self.test_input = []
-            self.test_targets = []
-            for xs, ys in test_loader:
-                batch_integrity.verify_batch(
-                    xs, source=f"the simulation test loader ({type(test_loader).__name__})",
-                )
-                self.test_input.extend(self._preprocessor(xs).detach().cpu())
-                self.test_targets.extend(ys.detach().cpu() if hasattr(ys, "detach") else ys)
-            return [*zip(np.stack(self.test_input), np.stack(self.test_targets))]
-
+        source = f"the simulation test loader ({type(test_loader).__name__})"
         try:
             self.test_data = batch_integrity.verified_pass(
-                _load_test_data, source="the simulation test loader",
+                lambda: load_verified_test_data(self, test_loader, source),
+                source=source,
             )
         finally:
             shutdown_data_loader(test_loader)

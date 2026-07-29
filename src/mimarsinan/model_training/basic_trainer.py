@@ -284,8 +284,17 @@ class BasicTrainer:
         Two mechanisms, escalated. (1) A FRESH iterator abandons FFCV's poisoned
         in-flight queue -- the repair the W0.7 evidence actually validated: the
         identical position, re-read from a fresh iterator microseconds later, came
-        back bit-correct. (2) On top of that, attempt *k* skips *k-1* batches, so
-        consecutive attempts read DISTINCT positions.
+        back bit-correct. (2) On top of that, the *k*-th repair advances *k-1*
+        batches.
+
+        Which positions that actually reads, stated exactly. The re-read after
+        repair *k* lands on position *k-1*, so the repaired re-reads walk 0, 1, ...
+        and are distinct FROM EACH OTHER. The first (unrepaired) read is wherever
+        the round-robin cursor already stood, which is not controlled here and may
+        itself be position 0 or 1 -- so it can coincide with one repaired re-read,
+        but with ``CORRUPT_BATCH_RETRIES = 2`` never with both. At least one
+        re-read therefore lands on a position this call has not examined yet, which
+        is the property that makes the escalation LIVE.
 
         Why both. Rewinding alone is SAFE but not LIVE: if corruption were
         correlated with the epoch-start position, every retry would re-read the
@@ -293,21 +302,16 @@ class BasicTrainer:
         number, but a run killed by a transient. Advancing alone does not abandon
         the queue that produced the poison, so the next batch out of that same
         queue is the most likely one to be poisoned too, and it would consume a
-        retry for nothing. Escalating keeps the proven mechanism first and
-        guarantees forward progress through unexamined positions after it.
+        retry for nothing. Escalating keeps the proven mechanism first.
 
         The cost is that a repaired read forfeits the round-robin position. That
         is deliberate: which validation batch a single-batch read lands on is not
         a contract (the read already cycles the epoch), whereas reporting a number
         measured on poison is a defect.
         """
-        self.val_iter = iter(self.validation_loader)
-        for _ in range(max(0, attempt - 1)):
-            try:
-                next(self.val_iter)
-            except StopIteration:
-                self.val_iter = iter(self.validation_loader)
-                break
+        self.val_iter = batch_integrity.restart_and_advance(
+            lambda: iter(self.validation_loader), attempt - 1,
+        )
 
     def next_validation_batch(self):
         """The next validation batch, verified finite before it is measured on.

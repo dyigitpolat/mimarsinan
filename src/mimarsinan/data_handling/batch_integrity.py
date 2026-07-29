@@ -14,11 +14,15 @@ non-finite input batch is a corrupted READ of an immutable source, never data. T
 module is the one place that says so, and every seam that turns batches into a
 reported or decided number goes through it. Three primitives:
 
-``own_batch``   snapshot first. The check must apply to the exact tensor the model
-                is measured on; verifying a live view into a rotating producer
-                buffer proves nothing about what the forward pass later reads.
+``own_verified_batch``  own THEN verify, in one call. The order is the whole
+                guarantee, so no call site is trusted to spell it out: W0.8 wrote
+                the rule down and then broke it at three of the nine seams it
+                guarded, each by verifying the live loader tensor and copying (or
+                not copying) afterwards.
+``own_batch``   the snapshot half, for readers that own before they can verify.
 ``read_verified_batch``  a SINGLE-batch read, repaired and re-read on corruption.
 ``verified_pass``        a FULL loader pass, restarted whole on corruption.
+``restart_and_advance``  the repair mechanism those retries escalate.
 
 The split is not cosmetic. A single-batch reader may repair by reading a DIFFERENT
 position (any validation batch is an equally valid draw). A full pass may not: it
@@ -58,7 +62,9 @@ def is_corrupt_batch(x: Any) -> bool:
     return bool(torch.is_floating_point(x)) and not bool(torch.isfinite(x).all())
 
 
-def own_batch(x: Any, y: Any) -> tuple[Any, Any]:
+def own_batch(
+    x: Any, y: Any, *, device: Any = None, non_blocking: bool = False,
+) -> tuple[Any, Any]:
     """An OWNED snapshot of ``(x, y)`` -- the tensor the verification is about.
 
     Load-bearing, not defensive: the loader yields views into a rotating buffer
@@ -66,11 +72,68 @@ def own_batch(x: Any, y: Any) -> tuple[Any, Any]:
     that same view leaves a window in which the buffer is refilled between the
     check and the forward pass, so the check would guarantee nothing. Cloning
     first makes the verified bytes immutable, and the verdict permanent.
+
+    ``device``, when given, moves the batch BEFORE it is owned, so what gets owned
+    (and then verified) is the tensor the forward pass actually consumes rather
+    than a host copy of it.
     """
+    if device is not None:
+        if isinstance(x, torch.Tensor):
+            x = x.to(device, non_blocking=non_blocking)
+        if isinstance(y, torch.Tensor):
+            y = y.to(device, non_blocking=non_blocking)
     return (
         x.clone() if isinstance(x, torch.Tensor) else x,
         y.clone() if isinstance(y, torch.Tensor) else y,
     )
+
+
+def own_verified_batch(
+    x: Any,
+    y: Any,
+    *,
+    source: str,
+    device: Any = None,
+    non_blocking: bool = False,
+) -> tuple[Any, Any]:
+    """An OWNED snapshot of ``(x, y)`` that has been PROVEN finite -- in that order.
+
+    The single call a measurement seam makes when a corrupted batch is FATAL to it,
+    because the ORDER is the entire guarantee and a call site that spells it out is
+    a call site that can get it wrong: W0.8 stated the rule in :func:`own_batch` and
+    then violated it at the NAS fitness pass, the test-subsample collector and the
+    nevresim runner's test-input read, each of which verified the tensor the loader
+    had just yielded and only afterwards took a copy of it. That leaves the producer
+    free to refill the buffer between the verdict and the forward pass, and NOTHING
+    raises when it does -- the check already passed, so a fabricated number is
+    published silently.
+
+    Seams that REPAIR instead of raising pass ``own_batch`` to
+    :func:`read_verified_batch`, which owns identically and then owns the verdict
+    itself so it can re-read rather than propagate.
+    """
+    batch = own_batch(x, y, device=device, non_blocking=non_blocking)
+    verify_batch(batch[0], source=source)
+    return batch
+
+
+def restart_and_advance(make_iterator: Callable[[], Any], skip: int) -> Any:
+    """A FRESH iterator advanced past ``skip`` batches: the repair primitive.
+
+    The one mechanism every :func:`read_verified_batch` repair escalates, so it is
+    stated once rather than re-derived per call site. The fresh iterator is what
+    abandons FFCV's poisoned in-flight queue (the repair the W0.7 evidence
+    validated); the advance is what makes the next read land on a position the
+    corruption has not already been observed at. A loader shorter than ``skip``
+    wraps back to position 0 rather than handing back an exhausted iterator.
+    """
+    iterator = make_iterator()
+    for _ in range(max(0, int(skip))):
+        try:
+            next(iterator)
+        except StopIteration:
+            return make_iterator()
+    return iterator
 
 
 def _describe(x: torch.Tensor, source: str) -> str:

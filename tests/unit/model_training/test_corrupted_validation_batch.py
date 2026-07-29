@@ -190,3 +190,66 @@ class TestRepairPolicyEscalatesRewindThenAdvance:
         trainer = _OneBatchThenStop()
         x, _ = trainer.next_validation_batch()
         assert torch.equal(x, clean[0])
+
+
+class TestWhichPositionsConsecutiveAttemptsRead:
+    """W0.8b finding 6 -- the repair docstring's positional claim, pinned exactly.
+
+    W0.8 wrote "consecutive attempts read DISTINCT positions". They do not: the
+    re-read after repair *k* lands on position *k-1*, so the REPAIRED re-reads walk
+    0, 1, ... and are distinct from each other, but the first read is wherever the
+    round-robin cursor already stood and can coincide with one of them. What is
+    true -- and what makes the escalation live -- is that with two retries at most
+    one re-read can repeat the initial position, so at least one lands somewhere
+    this call has not looked.
+    """
+
+    class _RecordingTrainer(_FakeTrainer):
+        """Every position is poisoned, so all three attempts run and are recorded."""
+
+        def __init__(self, start_position=0):
+            super().__init__([])
+            self._start = start_position
+            self.position = start_position
+            self.positions_read = []
+
+        def __iter__(self):
+            self.reiterations += 1
+            self.position = 0
+            return self
+
+        def __next__(self):
+            self.position += 1
+            return _nan()
+
+        def _record(self):
+            self.positions_read.append(self.position)
+
+    def _read_positions(self, start_position):
+        trainer = self._RecordingTrainer(start_position)
+        raw = trainer._raw_next_validation_batch
+
+        def _recording_raw():
+            trainer.positions_read.append(trainer.position)
+            return raw()
+
+        trainer._raw_next_validation_batch = _recording_raw
+        with pytest.raises(batch_integrity.CorruptedBatchError):
+            trainer.next_validation_batch()
+        return trainer.positions_read
+
+    def test_the_repaired_re_reads_walk_positions_zero_then_one(self):
+        assert self._read_positions(start_position=5)[1:] == [0, 1]
+
+    def test_the_first_read_is_the_standing_cursor_and_may_repeat_one(self):
+        """The honest failure mode the old docstring denied."""
+        positions = self._read_positions(start_position=0)
+        assert positions == [0, 0, 1]
+
+    def test_at_least_one_re_read_lands_on_an_unexamined_position(self):
+        for start in (0, 1, 2, 7):
+            positions = self._read_positions(start_position=start)
+            re_reads = positions[1:]
+            assert any(p != positions[0] for p in re_reads), (
+                f"a standing cursor at {start} trapped every repaired re-read"
+            )

@@ -132,9 +132,7 @@ class TestPoisonedDecisionRead:
         """
         loader = _ReplayLoader([[_nan_batch(LABELS)]])
         trainer = _FakeTrainer(loader)
-        trainer._gpu_val_cache = [
-            basic_trainer_eval._to_device(trainer, *_nan_batch(LABELS))
-        ]
+        trainer._gpu_val_cache = [batch_integrity.own_batch(*_nan_batch(LABELS))]
         trainer._gpu_val_cursor = 0
         assert trainer.validate_n_batches(1) == pytest.approx(0.5)
 

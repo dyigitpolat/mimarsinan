@@ -31,24 +31,15 @@ def metric_grade_eval(device):
     return torch.autocast(device_type=device_type, enabled=False)
 
 
-def _to_device(trainer, x, y):
-    # ``own_batch``'s clone is load-bearing: FFCV's IndexedLoader yields views into a rotating buffer pool, so aliased references silently corrupt cached batches.
-    return batch_integrity.own_batch(
-        x.to(trainer.device, non_blocking=True),
-        y.to(trainer.device, non_blocking=True),
-    )
-
-
 def _verified_to_device(trainer, x, y, source: str):
     """An owned device batch that has been PROVEN finite.
 
-    Snapshot first, verify second: the verdict has to be about the bytes the
-    model is measured on, and only an owned copy cannot be refilled behind the
-    check (``batch_integrity.own_batch``).
+    Snapshot first, verify second -- delegated to ``own_verified_batch`` so the
+    ordering is stated in one place rather than re-implemented per seam.
     """
-    batch = _to_device(trainer, x, y)
-    batch_integrity.verify_batch(batch[0], source=source)
-    return batch
+    return batch_integrity.own_verified_batch(
+        x, y, source=source, device=trainer.device, non_blocking=True,
+    )
 
 
 def _shared_eval_cache_key(trainer, max_batches):
@@ -247,9 +238,12 @@ def _repair_training_read(trainer, _attempt: int) -> None:
 
     No positional advance here, unlike the validation read: the training loader is
     SHUFFLED, so a fresh iterator already draws a different batch on every attempt
-    and progress through unexamined data is guaranteed without one.
+    and progress through unexamined data is guaranteed without one -- hence a skip
+    of 0 through the shared repair primitive.
     """
-    trainer.train_iter = iter(trainer.train_loader)
+    trainer.train_iter = batch_integrity.restart_and_advance(
+        lambda: iter(trainer.train_loader), 0,
+    )
 
 
 def validate_train(trainer):

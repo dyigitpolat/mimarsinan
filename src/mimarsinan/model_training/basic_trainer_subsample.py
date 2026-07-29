@@ -15,14 +15,19 @@ def _collect_all(trainer, source: str):
     ``x[i]`` is a VIEW into the loader's batch buffer, and a producer thread
     refills that buffer, so a list of views held across the whole pass is a list
     of samples the pipeline is still free to overwrite -- the exact aliasing
-    hazard ``_to_device``'s clone exists for. Cloning per sample also drops the
+    hazard ``own_batch``'s clone exists for. Cloning per sample also drops the
     hidden retention of every batch buffer a single selected view would pin.
+
+    Own THEN verify (W0.8b finding 3): the per-sample clones are taken from the
+    OWNED batch, so the verdict covers the bytes that end up in the subsample
+    rather than a buffer that may already have been refilled by the time the
+    clones are made.
     """
     xs_all: list[torch.Tensor] = []
     ys_all: list[torch.Tensor] = []
     with torch.no_grad():
         for x, y in trainer.test_loader:
-            batch_integrity.verify_batch(x, source=source)
+            x, y = batch_integrity.own_verified_batch(x, y, source=source)
             for i in range(x.shape[0]):
                 xs_all.append(x[i].clone())
                 ys_all.append(y[i].clone())
@@ -30,13 +35,15 @@ def _collect_all(trainer, source: str):
 
 
 def _collect_selected(trainer, selected, source: str):
-    """The selected test samples, as OWNED per-sample copies, verified batch by batch."""
+    """The selected test samples, as OWNED per-sample copies, verified batch by batch.
+
+    Owned before verified, for the reason spelled out in :func:`_collect_all`."""
     xs_all: list[torch.Tensor] = []
     ys_all: list[torch.Tensor] = []
     with torch.no_grad():
         global_idx = 0
         for x, y in trainer.test_loader:
-            batch_integrity.verify_batch(x, source=source)
+            x, y = batch_integrity.own_verified_batch(x, y, source=source)
             bsz = int(x.shape[0])
             for i in range(bsz):
                 if selected is None or global_idx in selected:

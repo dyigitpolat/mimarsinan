@@ -18,9 +18,10 @@ def _pass(model, loader, device, source: str) -> tuple[float, float]:
     correct = 0.0
     total = 0.0
     for x, y in loader:
-        batch_integrity.verify_batch(x, source=source)
-        x = x.to(device)
-        y = y.to(device)
+        # Own THEN verify (W0.8b finding 3). This seam used to verify the tensor
+        # the loader had just yielded and measure on that same tensor, so a
+        # producer refill in between would have been ranked on without a sound.
+        x, y = batch_integrity.own_verified_batch(x, y, source=source, device=device)
         _, predicted = model(x).max(1)
         total += float(y.size(0))
         correct += float(predicted.eq(y).sum().item())
