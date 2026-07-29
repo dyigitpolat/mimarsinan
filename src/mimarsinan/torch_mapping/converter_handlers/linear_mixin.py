@@ -70,6 +70,8 @@ class LinearConvertMixin(ConverterContract):
             if act_name is None:
                 as_affine_package(perceptron)
             with torch.no_grad():
+                # Follow the source linear's dtype (no silent fp32 downcast).
+                perceptron.layer.to(mod.weight.dtype)
                 perceptron.layer.weight.copy_(mod.weight.data)
                 if mod.bias is not None:
                     perceptron.layer.bias.copy_(mod.bias.data)

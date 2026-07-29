@@ -80,9 +80,11 @@ def convert_torch_model(
 
     flow = flow.to(device)
 
+    model_param = next(model.parameters(), None)
     result = probe_forward(
         flow, input_shape, device=device, batch=1,
         strict=strict, context="convert_torch_model",
+        dtype=model_param.dtype if model_param is not None else None,
     )
     if not result.ok:
         print(f"[convert_torch_model] {result.format()}")
