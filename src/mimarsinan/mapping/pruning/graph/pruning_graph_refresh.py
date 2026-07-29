@@ -5,6 +5,9 @@ from typing import AbstractSet, Dict, Mapping, Set, Tuple
 import numpy as np
 
 from mimarsinan.mapping.ir import IRSource, NeuralCore, WeightBank
+from mimarsinan.mapping.pruning.graph.propagation_mode import (
+    ELIMINATION_PROPAGATION_CASCADE,
+)
 from mimarsinan.mapping.pruning.graph.pruning_propagation import compute_propagated_pruned_rows_cols
 def _resolve_node_matrix(node: NeuralCore, banks: Mapping[int, WeightBank]) -> np.ndarray | None:
     """Return the effective ``(axons, neurons)`` matrix for a NeuralCore."""
@@ -82,6 +85,7 @@ def _refresh_node_pruning(
     computeop_producer_map: Mapping[Tuple[int, int], Tuple[int, int]],
     exempt_rows: Mapping[int, AbstractSet[int]],
     exempt_cols: Mapping[int, AbstractSet[int]],
+    mode: str = ELIMINATION_PROPAGATION_CASCADE,
 ) -> bool:
     """Rerun within-matrix propagation seeded with cross-core deadness.
 
@@ -115,6 +119,7 @@ def _refresh_node_pruning(
         cols_with_implicit_source=_cols_with_nonzero_bias(
             getattr(node, "hardware_bias", None), n_neurons, zero_threshold
         ),
+        mode=mode,
     )
 
     changed = new_rows != pruned_rows[nid] or new_cols != pruned_cols[nid]
@@ -154,6 +159,7 @@ def _refresh_bank_pruning(
     bank_pruned_cols: Dict[int, Set[int]],
     exempt_rows: Mapping[int, AbstractSet[int]],
     exempt_cols: Mapping[int, AbstractSet[int]],
+    mode: str = ELIMINATION_PROPAGATION_CASCADE,
 ) -> bool:
     """Aggregate per-node bank views into bank-level pruned sets and project back.
 
@@ -216,6 +222,7 @@ def _refresh_bank_pruning(
         cols_with_implicit_source=frozenset(
             bank_bias_alive_cols | per_node_bias_alive_cols
         ),
+        mode=mode,
     )
 
     changed = (

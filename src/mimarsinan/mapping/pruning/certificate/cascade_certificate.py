@@ -38,6 +38,10 @@ from mimarsinan.mapping.pruning.certificate.seed_reference import (
 from mimarsinan.mapping.pruning.certificate.zero_preserving import (
     assert_zero_preserving_preconditions,
 )
+from mimarsinan.mapping.pruning.graph.propagation_mode import (
+    ELIMINATION_PROPAGATION_CASCADE,
+    require_elimination_propagation,
+)
 from mimarsinan.mapping.pruning.graph.pruning_graph_core import (
     compute_global_pruned_sets,
 )
@@ -106,6 +110,7 @@ def certify_cascade_equivalence(
     rng_seed: int = 0,
     spiking_mode: str = INERT_SPIKING_MODE,
     simulation_steps: int = 32,
+    elimination_propagation: str = ELIMINATION_PROPAGATION_CASCADE,
 ) -> CascadeEquivalenceCertificate:
     """Certify that ``prune_ir_graph`` (+ deferred bank compaction in the
     identity build) preserved the program's value function bit-exactly.
@@ -116,6 +121,9 @@ def certify_cascade_equivalence(
     integer probe batches; any output bit difference raises. Never passes
     vacuously and never silently skips a precondition.
     """
+    elimination_propagation = require_elimination_propagation(
+        elimination_propagation
+    )
     if not ir_graph.nodes:
         raise CascadeCertificatePreconditionError("empty IR graph; nothing to certify.")
     if 2.0 ** (-fraction_bits) <= zero_threshold:
@@ -143,6 +151,7 @@ def certify_cascade_equivalence(
         initial_per_bank=seed_per_bank,
         exempt_rows_per_node=exempt_rows,
         exempt_cols_per_node=exempt_cols,
+        mode=elimination_propagation,
     )
     bank_columns_checked = check_shared_bank_union_rule(ir_graph, fixpoint)
 
@@ -158,6 +167,7 @@ def certify_cascade_equivalence(
         initial_pruned_per_bank=initial_pruned_per_bank,
         spiking_mode=spiking_mode,
         simulation_steps=simulation_steps,
+        elimination_propagation=elimination_propagation,
     )
 
     reference_hybrid = build_identity_hybrid_mapping(ir_graph=reference)

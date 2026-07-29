@@ -3,6 +3,10 @@ from typing import Dict, Sequence, Tuple
 from mimarsinan.mapping.ir import IRGraph, NeuralCore
 from mimarsinan.mapping.pruning.boundary_policy import assert_unified_ir_for_pruning
 from mimarsinan.mapping.pruning.ir_liveness import NodeLiveness, compute_liveness
+from mimarsinan.mapping.pruning.graph.propagation_mode import (
+    ELIMINATION_PROPAGATION_CASCADE,
+    require_elimination_propagation,
+)
 from mimarsinan.mapping.pruning.graph.pruning_graph_core import compute_global_pruned_sets
 from mimarsinan.mapping.pruning.ir_pruning_helpers import (
     _attach_pre_compaction_metadata,
@@ -27,13 +31,20 @@ def prune_ir_graph(
     store_heatmap: bool = False,
     simulation_steps: int = 32,
     spiking_mode: str = "lif",
+    elimination_propagation: str = ELIMINATION_PROPAGATION_CASCADE,
 ) -> IRGraph:
     """Prune and compact ``ir_graph`` in place; return the same instance.
 
-    Pruning is bidirectional/recursive across NeuralCore boundaries; ComputeOps block
-    functional propagation. Model input data axons and output logits are never pruned;
+    Under the default ``elimination_propagation="cascade"`` pruning is
+    bidirectional/recursive across NeuralCore boundaries; ``"closure"`` stops
+    at one-hop seed-group coupling, ``"masked"`` reclaims only the seeds
+    (the allocation-naive lower bound). ComputeOps block functional
+    propagation. Model input data axons and output logits are never pruned;
     DEAD cores are deleted, surviving cores compacted.
     """
+    elimination_propagation = require_elimination_propagation(
+        elimination_propagation
+    )
     if not ir_graph.nodes:
         return ir_graph
 
@@ -52,6 +63,7 @@ def prune_ir_graph(
         initial_per_bank=seed_per_bank,
         exempt_rows_per_node=exempt_rows,
         exempt_cols_per_node=exempt_cols,
+        mode=elimination_propagation,
     )
 
     if not (initial_pruned_per_node or initial_pruned_per_bank):

@@ -111,7 +111,7 @@ class TestReportAggregates:
 
 
 class TestEliminationAblation:
-    """The single-layer baseline: identical seeds, propagation disabled."""
+    """The masked arm: allocation-naive LOWER BOUND (seeds only, no cascade)."""
 
     def _matrix(self):
         # col 2 is seeded dead; row 1 feeds ONLY col 2, so propagation kills it.
@@ -129,28 +129,28 @@ class TestEliminationAblation:
         assert 1 in rows, "row feeding only dead columns must cascade"
         assert 2 in cols
 
-    def test_ablation_returns_exactly_the_seeds(self):
+    def test_masked_arm_returns_exactly_the_seeds(self):
         rows, cols = compute_propagated_pruned_rows_cols(
             self._matrix(), initial_zero_rows=set(), initial_zero_cols={2},
-            propagate=False,
+            mode="masked",
         )
-        assert rows == set(), "propagation disabled must not cascade"
+        assert rows == set(), "the masked lower bound must not cascade"
         assert cols == {2}
 
-    def test_ablation_is_a_subset_of_the_cascade(self):
+    def test_masked_arm_is_a_subset_of_the_cascade(self):
         seeded = dict(initial_zero_rows=set(), initial_zero_cols={2})
         base_r, base_c = compute_propagated_pruned_rows_cols(
-            self._matrix(), propagate=False, **seeded
+            self._matrix(), mode="masked", **seeded
         )
         casc_r, casc_c = compute_propagated_pruned_rows_cols(
             self._matrix(), **seeded
         )
         assert base_r <= casc_r and base_c <= casc_c
 
-    def test_exemptions_hold_under_ablation(self):
+    def test_exemptions_hold_under_the_masked_arm(self):
         _, cols = compute_propagated_pruned_rows_cols(
             self._matrix(), initial_zero_rows=set(), initial_zero_cols={2},
-            exempt_cols={2}, propagate=False,
+            exempt_cols={2}, mode="masked",
         )
         assert 2 not in cols
 

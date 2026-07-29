@@ -1,5 +1,5 @@
-"""Registry entries: the pruning mapping-strategy keys (adaptation + the W3b
-criterion-agnostic seed seam)."""
+"""Registry entries: the pruning mapping-strategy keys (adaptation, the criterion-agnostic
+seed seam, and the elimination-propagation axis)."""
 
 from __future__ import annotations
 
@@ -9,6 +9,10 @@ from mimarsinan.config_schema.registry.types import (
     ConfigKeySchema as _E,
     FieldType as T,
     frozen_default as _frozen,
+)
+from mimarsinan.mapping.pruning.graph.propagation_mode import (
+    DEFAULT_ELIMINATION_PROPAGATION,
+    ELIMINATION_PROPAGATION_MODES,
 )
 
 ENTRIES = (
@@ -54,4 +58,15 @@ ENTRIES = (
        relevant=R.when("prune_criterion", in_=("partial_column_group",)),
        provenance="consumer frozen default", derived_default=_frozen(8),
        empty_means="8 rows per group"),
+    _E("elimination_propagation", group="mapping_strategy",
+       owner="pruning_adaptation", type=T.ENUM,
+       options=ELIMINATION_PROPAGATION_MODES, category=Category.ADVANCED,
+       exposure="user", label="Elimination Propagation",
+       doc="Structured-elimination propagation arm for IR pruning: 'masked' "
+           "reclaims only the seeded rows/cols (allocation-naive lower bound); "
+           "'closure' adds one-hop seed-group coupling (DepGraph-equivalent "
+           "baseline); 'cascade' runs the full bidirectional liveness fixpoint.",
+       relevant=R.when_true("pruning"), provenance="consumer frozen default",
+       derived_default=_frozen(DEFAULT_ELIMINATION_PROPAGATION),
+       empty_means="cascade — the full propagative fixpoint (default path)"),
 )

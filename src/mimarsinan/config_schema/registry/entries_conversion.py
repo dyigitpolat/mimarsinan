@@ -1,4 +1,4 @@
-"""Registry entries: spiking semantics, conversion process, and mapping-strategy keys."""
+"""Registry entries: spiking semantics, conversion process, and mapping-strategy keys (pruning keys live in entries_pruning)."""
 
 from __future__ import annotations
 
