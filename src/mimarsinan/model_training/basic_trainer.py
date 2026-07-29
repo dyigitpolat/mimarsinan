@@ -13,22 +13,11 @@ from mimarsinan.model_training import basic_trainer_subsample
 from mimarsinan.model_training import basic_trainer_steps
 from mimarsinan.model_training import basic_trainer_epochs
 from mimarsinan.model_training import basic_trainer_eval
+from mimarsinan.data_handling import batch_integrity
 
 import torch
 from torch.amp.autocast_mode import autocast
 from torch.amp.grad_scaler import GradScaler
-
-_CORRUPT_BATCH_RETRIES = 2
-"""Re-reads allowed before a non-finite validation batch is called a broken pipeline."""
-
-
-def _is_corrupt_batch(x) -> bool:
-    """A float input batch carrying non-finite values is a corrupted read.
-
-    Integer/boolean inputs cannot be non-finite, so they are never checked (and
-    ``torch.isfinite`` would be a pointless device round-trip on them).
-    """
-    return bool(torch.is_floating_point(x)) and not bool(torch.isfinite(x).all())
 
 
 class BasicTrainer:
@@ -275,49 +264,65 @@ class BasicTrainer:
         )
 
     def _raw_next_validation_batch(self):
+        """One OWNED validation batch. Owned because the verification that follows
+        must be about the exact bytes the model is measured on, not about a view a
+        producer thread can refill behind it (``batch_integrity.own_batch``)."""
         try:
-            return next(self.val_iter)
+            x, y = next(self.val_iter)
         except StopIteration:
             self.val_iter = iter(self.validation_loader)
-            return next(self.val_iter)
+            x, y = next(self.val_iter)
+        return batch_integrity.own_batch(x, y)
+
+    def _validation_source(self) -> str:
+        return f"the validation loader ({type(self.validation_loader).__name__})"
+
+    def _repair_validation_read(self, attempt: int) -> None:
+        """Recover the validation read after a corrupted batch: fresh iterator,
+        then a positional advance.
+
+        Two mechanisms, escalated. (1) A FRESH iterator abandons FFCV's poisoned
+        in-flight queue -- the repair the W0.7 evidence actually validated: the
+        identical position, re-read from a fresh iterator microseconds later, came
+        back bit-correct. (2) On top of that, attempt *k* skips *k-1* batches, so
+        consecutive attempts read DISTINCT positions.
+
+        Why both. Rewinding alone is SAFE but not LIVE: if corruption were
+        correlated with the epoch-start position, every retry would re-read the
+        same poison and the read would end in a raise -- loud, never a wrong
+        number, but a run killed by a transient. Advancing alone does not abandon
+        the queue that produced the poison, so the next batch out of that same
+        queue is the most likely one to be poisoned too, and it would consume a
+        retry for nothing. Escalating keeps the proven mechanism first and
+        guarantees forward progress through unexamined positions after it.
+
+        The cost is that a repaired read forfeits the round-robin position. That
+        is deliberate: which validation batch a single-batch read lands on is not
+        a contract (the read already cycles the epoch), whereas reporting a number
+        measured on poison is a defect.
+        """
+        self.val_iter = iter(self.validation_loader)
+        for _ in range(max(0, attempt - 1)):
+            try:
+                next(self.val_iter)
+            except StopIteration:
+                self.val_iter = iter(self.validation_loader)
+                break
 
     def next_validation_batch(self):
         """The next validation batch, verified finite before it is measured on.
 
         A validation batch is finite by construction: decoded, normalized images.
         A non-finite one is therefore a CORRUPTED READ of the input pipeline, not
-        data. FFCV hands out views into device buffers filled by a producer
-        thread on a side CUDA stream; a batch that sat in the queue across
-        unrelated GPU work has been observed coming back entirely NaN while the
-        very same batch, re-read a moment later, is bit-correct (W0.7). Measured
-        on, it makes the model emit one constant class and reports a
-        chance-level accuracy -- the collapse that had a converted VGG-8 read
-        0.0859 seconds after the same weights tested 0.9266.
-
-        So: never consume it silently. Discard, say so loudly, re-read; and if
-        the corruption survives a fresh iterator, fail rather than report a
-        number that is not a measurement of the model.
+        data -- see ``batch_integrity`` for the mechanism and the evidence. Never
+        consume it silently: discard, say so loudly, repair and re-read; and if
+        the corruption survives every repair, fail rather than report a number
+        that is not a measurement of the model.
         """
-        for attempt in range(_CORRUPT_BATCH_RETRIES + 1):
-            x, y = self._raw_next_validation_batch()
-            if not _is_corrupt_batch(x):
-                return x, y
-            print(
-                f"[BasicTrainer] CORRUPTED validation batch discarded "
-                f"(attempt {attempt + 1}/{_CORRUPT_BATCH_RETRIES + 1}): "
-                f"{int((~torch.isfinite(x)).sum())}/{x.numel()} non-finite input "
-                f"values from {type(self.validation_loader).__name__}. The batch "
-                f"is a corrupted read, not data; re-reading.",
-                flush=True,
-            )
-            # A fresh iterator abandons the poisoned in-flight queue entirely.
-            self.val_iter = iter(self.validation_loader)
-        raise RuntimeError(
-            "BasicTrainer.next_validation_batch: the validation input pipeline "
-            f"kept returning non-finite batches after {_CORRUPT_BATCH_RETRIES} "
-            "re-reads. Validation images are finite by construction, so this is "
-            "a broken input pipeline, not data -- refusing to report an accuracy "
-            "measured on it."
+        return batch_integrity.read_verified_batch(
+            self._raw_next_validation_batch,
+            source=self._validation_source(),
+            repair=self._repair_validation_read,
         )
 
     def iter_validation_batches(self, n_batches: int):

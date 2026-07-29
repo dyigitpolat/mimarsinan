@@ -10,6 +10,7 @@ from torch.amp.grad_scaler import GradScaler
 
 from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory, shutdown_data_loader
 from mimarsinan.data_handling.data_provider_factory import DataProviderFactory
+from mimarsinan.search.evaluators.loader_accuracy import accuracy_over_loader
 
 
 @dataclass
@@ -78,18 +79,10 @@ class FastAccuracyEvaluator:
                 scaler.step(optimizer)
                 scaler.update()
 
-            model.eval()
-            correct = 0.0
-            total = 0.0
-            with torch.no_grad():
-                for x, y in val_loader:
-                    x = x.to(self.device)
-                    y = y.to(self.device)
-                    _, predicted = model(x).max(1)
-                    total += float(y.size(0))
-                    correct += float(predicted.eq(y).sum().item())
-
-            return float(correct / total) if total > 0 else 0.0
+            return accuracy_over_loader(
+                model, val_loader, self.device,
+                source="the FastAccuracyEvaluator validation loader",
+            )
         finally:
             shutdown_data_loader(train_loader)
             shutdown_data_loader(val_loader)

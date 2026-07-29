@@ -11,6 +11,7 @@ from mimarsinan.chip_simulation.membrane_export import (
     half_step_charge_from_config,
 )
 from mimarsinan.chip_simulation.subsample import compute_test_subsample_indices
+from mimarsinan.data_handling import batch_integrity
 from mimarsinan.chip_simulation.nevresim.connectivity import resolve_nevresim_connectivity_mode
 from mimarsinan.chip_simulation.spiking_semantics import requires_ttfs_firing
 from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory, shutdown_data_loader
@@ -66,11 +67,26 @@ class SimulationRunner(SimulationFlatMixin, SimulationHybridMixin):
             data_provider.get_test_batch_size(), data_provider,
         )
 
-        try:
+        # The deployed accuracy is measured on exactly these samples, so the read
+        # that materializes them is verified like every other measured read: a
+        # corrupted batch here would be baked into the chip's inputs for the whole
+        # simulation and reported as a hardware result. The pass restarts whole on
+        # corruption (batch_integrity), and raises rather than simulating poison.
+        def _load_test_data():
+            self.test_input = []
+            self.test_targets = []
             for xs, ys in test_loader:
+                batch_integrity.verify_batch(
+                    xs, source=f"the simulation test loader ({type(test_loader).__name__})",
+                )
                 self.test_input.extend(self._preprocessor(xs).detach().cpu())
                 self.test_targets.extend(ys.detach().cpu() if hasattr(ys, "detach") else ys)
-            self.test_data = [*zip(np.stack(self.test_input), np.stack(self.test_targets))]
+            return [*zip(np.stack(self.test_input), np.stack(self.test_targets))]
+
+        try:
+            self.test_data = batch_integrity.verified_pass(
+                _load_test_data, source="the simulation test loader",
+            )
         finally:
             shutdown_data_loader(test_loader)
 
