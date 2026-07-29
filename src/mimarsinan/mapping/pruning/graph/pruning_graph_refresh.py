@@ -9,6 +9,7 @@ from mimarsinan.mapping.pruning.graph.propagation_mode import (
     ELIMINATION_PROPAGATION_CASCADE,
 )
 from mimarsinan.mapping.pruning.graph.pruning_propagation import compute_propagated_pruned_rows_cols
+from mimarsinan.mapping.pruning.liveness_transfer import ComputeOpTransferIndex
 def _resolve_node_matrix(node: NeuralCore, banks: Mapping[int, WeightBank]) -> np.ndarray | None:
     """Return the effective ``(axons, neurons)`` matrix for a NeuralCore."""
     if node.core_matrix is not None:
@@ -26,9 +27,12 @@ def _resolve_node_matrix(node: NeuralCore, banks: Mapping[int, WeightBank]) -> n
 def _cross_core_dead_axons(
     node: NeuralCore,
     pruned_cols: Mapping[int, AbstractSet[int]],
-    computeop_producer_map: Mapping[Tuple[int, int], Tuple[int, int]],
+    computeop_transfers: ComputeOpTransferIndex,
 ) -> Set[int]:
-    """Axons whose source neuron is already dead (off, pruned, or via ComputeOp relay)."""
+    """Axons whose source neuron is already dead (off, pruned, or via ComputeOp
+    liveness transfer: an op output is dead when ALL of its transfer-mapped
+    NeuralCore producers are dead)."""
+    forward_producers = computeop_transfers.forward_producers
     dead: Set[int] = set()
     for i, src in enumerate(node.input_sources.flatten()):
         if not isinstance(src, IRSource):
@@ -36,10 +40,12 @@ def _cross_core_dead_axons(
         if src.is_off():
             dead.add(i)
             continue
-        upstream = computeop_producer_map.get((src.node_id, src.index))
-        if upstream is not None:
-            up_nid, up_col = upstream
-            if up_col in pruned_cols.get(up_nid, frozenset()):
+        producers = forward_producers.get((src.node_id, src.index))
+        if producers is not None:
+            if all(
+                col in pruned_cols.get(nid, frozenset())
+                for nid, col in producers
+            ):
                 dead.add(i)
         elif src.node_id >= 0 and src.index in pruned_cols.get(src.node_id, frozenset()):
             dead.add(i)
@@ -52,15 +58,20 @@ def _orphan_neurons(
     pruned_rows: Mapping[int, AbstractSet[int]],
     consumer_axons: Mapping[Tuple[int, int], list[Tuple[int, int]]],
     model_output_neurons: AbstractSet[Tuple[int, int]],
-    computeop_referenced_neurons: AbstractSet[Tuple[int, int]],
+    computeop_transfers: ComputeOpTransferIndex,
 ) -> Set[int]:
-    """Neurons with no live NeuralCore consumers and no model/ComputeOp wiring."""
+    """Neurons with no live consumer — direct NeuralCore axons AND through-op
+    (transfer-mapped) axons both dead. Transfer-protected ports (feeding an
+    opaque op, or reaching a model output through ops) are never orphaned."""
     dead: Set[int] = set()
+    protected = computeop_transfers.protected_ports
+    effective = computeop_transfers.effective_consumers
     for j in range(n_neurons):
         key = (node_id, j)
-        if key in model_output_neurons or key in computeop_referenced_neurons:
+        if key in model_output_neurons or key in protected:
             continue
-        consumers = consumer_axons.get(key, ())
+        consumers = list(consumer_axons.get(key, ()))
+        consumers.extend(effective.get(key, ()))
         if not consumers:
             dead.add(j)
             continue
@@ -81,8 +92,7 @@ def _refresh_node_pruning(
     pruned_cols: Dict[int, Set[int]],
     consumer_axons: Mapping[Tuple[int, int], list[Tuple[int, int]]],
     model_output_neurons: AbstractSet[Tuple[int, int]],
-    computeop_referenced_neurons: AbstractSet[Tuple[int, int]],
-    computeop_producer_map: Mapping[Tuple[int, int], Tuple[int, int]],
+    computeop_transfers: ComputeOpTransferIndex,
     exempt_rows: Mapping[int, AbstractSet[int]],
     exempt_cols: Mapping[int, AbstractSet[int]],
     mode: str = ELIMINATION_PROPAGATION_CASCADE,
@@ -95,7 +105,7 @@ def _refresh_node_pruning(
     n_axons, n_neurons = mat.shape
 
     cross_rows = _cross_core_dead_axons(
-        node, pruned_cols, computeop_producer_map
+        node, pruned_cols, computeop_transfers
     ) - exempt_rows.get(nid, frozenset())
     cross_cols = _orphan_neurons(
         nid,
@@ -103,7 +113,7 @@ def _refresh_node_pruning(
         pruned_rows,
         consumer_axons,
         model_output_neurons,
-        computeop_referenced_neurons,
+        computeop_transfers,
     ) - exempt_cols.get(nid, frozenset())
 
     seed_rows = pruned_rows[nid] | cross_rows

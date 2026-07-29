@@ -9,9 +9,10 @@ from typing import AbstractSet, Dict, Mapping, Set, Tuple
 import numpy as np
 
 from mimarsinan.mapping.ir import IRGraph, IRSource, NeuralCore, WeightBank
-from mimarsinan.mapping.pruning.boundary_policy import (
-    build_computeop_producer_map,
-    build_computeop_referenced_neurons,
+from mimarsinan.mapping.pruning.liveness_transfer import (
+    DEFAULT_COMPUTEOP_LIVENESS_TRANSFERS,
+    ComputeOpTransferIndex,
+    build_computeop_transfer_index,
 )
 from mimarsinan.mapping.pruning.graph.pruning_graph_types import GlobalPruningResult
 from mimarsinan.mapping.pruning.graph.pruning_graph_refresh import (
@@ -32,8 +33,7 @@ class GlobalPruningContext:
     exempt_cols: Dict[int, frozenset]
     consumer_axons: Dict[Tuple[int, int], list]
     model_output_neurons: Set[Tuple[int, int]]
-    computeop_referenced: frozenset
-    computeop_producer_map: Dict[Tuple[int, int], Tuple[int, int]]
+    computeop_transfers: ComputeOpTransferIndex
     bank_consumers: Dict[int, Set[int]]
     bank_node_lookup: Dict[int, list]
     pruned_rows: Dict[int, Set[int]] = field(default_factory=dict)
@@ -59,6 +59,7 @@ def build_global_pruning_context(
     initial_per_bank: Mapping[int, Tuple[AbstractSet[int], AbstractSet[int]]] | None,
     exempt_rows_per_node: Mapping[int, AbstractSet[int]] | None,
     exempt_cols_per_node: Mapping[int, AbstractSet[int]] | None,
+    computeop_liveness_transfers: str = DEFAULT_COMPUTEOP_LIVENESS_TRANSFERS,
 ) -> GlobalPruningContext:
     """Index the graph and seed the pruned sets (explicit + off-source + value-based)."""
     neural_cores = [n for n in graph.nodes if isinstance(n, NeuralCore)]
@@ -84,8 +85,9 @@ def build_global_pruning_context(
         exempt_cols=exempt_cols,
         consumer_axons=consumer_axons,
         model_output_neurons=model_output_neurons,
-        computeop_referenced=build_computeop_referenced_neurons(graph),
-        computeop_producer_map=build_computeop_producer_map(graph),
+        computeop_transfers=build_computeop_transfer_index(
+            graph, policy=computeop_liveness_transfers
+        ),
         bank_consumers=_build_bank_consumer_map(neural_cores),
         bank_node_lookup={
             b: [n for n in neural_cores
@@ -133,7 +135,7 @@ def _build_consumer_index(
     """Index NeuralCore axon consumers and model-output neuron markers.
 
     Model-output neurons (``output_sources``) are protected from orphan pruning.
-    ComputeOp wiring is handled separately via ``computeop_referenced_neurons``.
+    ComputeOp wiring is handled separately via the liveness-transfer index.
     """
     consumer_axons: Dict[Tuple[int, int], list] = defaultdict(list)
     model_output_neurons: Set[Tuple[int, int]] = set()

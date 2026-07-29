@@ -64,7 +64,9 @@ def _computeop_relays_deadness(op: ComputeOp) -> bool:
     A general op's output index has no positional correspondence with its inputs
     (pool/linear/conv change shape), so relaying deadness through it drops LIVE
     signal from the deployed graph. Only declared-identity ops with matching
-    flat input/output widths qualify.
+    flat input/output widths qualify HERE; richer per-op relays (activations,
+    bijections, pool regions) live in the [W4b] ``liveness_transfer`` registry,
+    which reuses this predicate as its ``identity_only`` kill-switch arm.
     """
     if str(getattr(op, "op_type", "")).lower() != "identity":
         return False
@@ -82,7 +84,8 @@ def build_computeop_producer_map(
 ) -> Dict[Tuple[int, int], Tuple[int, int]]:
     """Map ``(compute_op_id, output_index)`` to upstream ``(neural_id, col)`` for
     the ops that qualify under :func:`_computeop_relays_deadness` (identity 1:1
-    relays only); every other ComputeOp is a deadness barrier."""
+    relays only); every other ComputeOp is a deadness barrier. This is the
+    ``identity_only`` arm of ``liveness_transfer.build_computeop_transfer_index``."""
     producer_map: Dict[Tuple[int, int], Tuple[int, int]] = {}
     for node in ir_graph.nodes:
         if not isinstance(node, ComputeOp):
