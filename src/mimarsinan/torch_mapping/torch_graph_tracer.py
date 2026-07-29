@@ -83,7 +83,13 @@ def trace_model(
                     f"dynamic sections in leaf modules."
                 ) from exc
 
-            example_input = torch.randn(1, *input_shape, device=device)
+            # ShapeProp runs a real forward, so the example input must carry
+            # the MODEL's parameter dtype (fp64/fp16 models trace too).
+            param = next(model.parameters(), None)
+            example_dtype = param.dtype if param is not None else torch.get_default_dtype()
+            example_input = torch.randn(
+                1, *input_shape, device=device, dtype=example_dtype
+            )
             try:
                 ShapeProp(graph_module).propagate(example_input)
             except Exception as exc:

@@ -110,6 +110,22 @@ def deit_tiny_leaf(num_classes: int = 1000) -> LeafVisionTransformer:
     )
 
 
+def cifar_vit_leaf(num_classes: int = 10) -> LeafVisionTransformer:
+    """CIFAR-32 named config: patch 4 (65 tokens), d=192, 3 heads, depth 7, mlp x2.
+
+    The compact ViT-CIFAR recipe scale (~2.7M params): DeiT-Tiny width kept
+    (d=192, 3 heads) but depth 7 and mlp_ratio 2.0 — the geometry the popular
+    from-scratch CIFAR ViT baselines use (~90% CIFAR-10 inside 100 epochs
+    without pretraining), so a BC-2 checkpoint run finishes fast while the
+    65-token attention keeps the hosted MHA ComputeOps small.
+    """
+    return LeafVisionTransformer(
+        image_size=32, patch_size=4, in_channels=3,
+        embed_dim=192, num_heads=3, depth=7, mlp_ratio=2.0,
+        num_classes=num_classes,
+    )
+
+
 # ── timm weight-porting shim ─────────────────────────────────────────────────
 
 _TIMM_DIRECT_KEY_MAP: Dict[str, str] = {

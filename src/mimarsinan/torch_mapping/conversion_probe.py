@@ -49,13 +49,21 @@ def probe_forward(
     batch: int = 1,
     strict: bool = True,
     context: str = "probe_forward",
+    dtype: Optional[torch.dtype] = None,
 ) -> ProbeResult:
-    """Run one zeros-tensor forward; ``strict=True`` re-raises as ``ConversionProbeError``."""
+    """Run one zeros-tensor forward; ``strict=True`` re-raises as ``ConversionProbeError``.
+
+    ``dtype`` sets the probe input's dtype (a converted fp64/fp16 model needs a
+    matching probe input); ``None`` keeps the torch default.
+    """
     device = torch.device(device)
     was_training = flow.training
     flow.eval()
     try:
-        dummy = torch.zeros((batch, *tuple(input_shape)), device=device)
+        dummy = torch.zeros(
+            (batch, *tuple(input_shape)), device=device,
+            dtype=dtype if dtype is not None else torch.get_default_dtype(),
+        )
         with torch.no_grad():
             flow(dummy)
     except Exception as exc:
