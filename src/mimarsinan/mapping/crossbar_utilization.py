@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import json
+import os
 from dataclasses import dataclass
 from typing import Any, Iterable
+
+UTILIZATION_RECORD_FILENAME = "crossbar_utilization.json"
 
 
 def _ratio(used: int, total: int) -> float:
@@ -155,6 +159,16 @@ class CrossbarUtilizationReport:
             "weight_bits": self.weight_bits,
             "programming_bits": self.programming_bits,
         }
+
+
+def write_utilization_record(
+    report: CrossbarUtilizationReport, run_directory: str
+) -> str:
+    """Serialize the flat record as JSON into the run directory; returns the path."""
+    path = os.path.join(run_directory, UTILIZATION_RECORD_FILENAME)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(report.to_dict(), f, indent=2)
+    return path
 
 
 def summarize_utilization(report: CrossbarUtilizationReport) -> str:
