@@ -137,7 +137,12 @@ class Conv2DPerceptronMapper(Mapper):
         w = self.perceptron.layer.weight.view(
             self.out_channels, self.in_channels, self.kernel_size[0], self.kernel_size[1]
         )
-        b = self.perceptron.layer.bias if self.bias else None
+        # Read the LIVE additive term, never the construction-time ``self.bias``
+        # flag: Normalization Fusion replaces a bias-free layer with a
+        # bias-carrying one holding the folded BN bias, and gating on the stale
+        # flag silently dropped it from the forward (measured -0.44 accuracy on
+        # the bias-free CIFAR ResNet-20 at the fusion step).
+        b = self.perceptron.layer.bias
 
         y = F.conv2d(
             x, w, b,

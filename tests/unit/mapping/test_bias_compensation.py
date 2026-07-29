@@ -9,6 +9,7 @@ ttfs bake's +shift semantics — a double-shift here once cost -1.9pp.
 from __future__ import annotations
 
 import numpy as np
+import pytest
 import torch
 import torch.nn as nn
 
@@ -19,6 +20,23 @@ from mimarsinan.mapping.support.bias_compensation import (
     negative_shifts_from_min,
 )
 from mimarsinan.models.perceptron_mixer.perceptron import Perceptron
+from mimarsinan.transformations.perceptron.perceptron_transformer import (
+    PerceptronTransformer,
+)
+
+
+def _eval_bn(num_features, seed=0):
+    """A frozen-stats BatchNorm with a non-trivial affine -- the writable
+    ``beta`` seam a bias-free BN-paired perceptron carries its bias in."""
+    torch.manual_seed(seed)
+    bn = nn.BatchNorm1d(num_features)
+    bn.train()
+    with torch.no_grad():
+        bn(torch.randn(16, num_features) * 2.0 + 1.0)
+        bn.weight.data = torch.randn(num_features).abs() + 0.5
+        bn.bias.data = torch.randn(num_features)
+    bn.eval()
+    return bn
 
 _W = torch.tensor([[1.0, -2.0], [0.5, 4.0], [-3.0, 0.25]])
 _B = torch.tensor([0.5, -1.5, 2.0])
@@ -66,10 +84,25 @@ class TestApplyAdditiveEffectiveBiasShift:
         assert baked_again is False
         _assert_bias_exact(p, [0.625, -1.375, 2.125])
 
-    def test_bias_none_sets_flag_without_crash(self):
+    def test_bias_none_with_no_normalization_seam_fails_loud(self):
+        """W0.9: a bias-free layer whose normalization is Identity has NO seam
+        that can carry an effective-bias shift. Silently dropping the bake (the
+        pre-W0.9 behaviour) deploys a chip bias the model does not compute; the
+        bias-free BN-paired case is realized through ``beta`` instead."""
         p = _perceptron(bias=False)
+        with pytest.raises(RuntimeError, match="no seam"):
+            apply_additive_effective_bias_shift(p, 0.125, baked_flag="_flag")
+
+    def test_bias_none_with_normalization_seam_is_realized(self):
+        p = _perceptron(bias=False)
+        p.normalization = _eval_bn(3)
+        transformer = PerceptronTransformer()
+        before = transformer.get_effective_bias(p).clone()
         baked = apply_additive_effective_bias_shift(p, 0.125, baked_flag="_flag")
         assert baked is True and p.layer.bias is None and p._flag is True
+        assert torch.allclose(
+            transformer.get_effective_bias(p), before + 0.125, atol=1e-6
+        )
 
 
 class TestApplyNegativeShiftBias:
@@ -99,10 +132,23 @@ class TestApplyNegativeShiftBias:
         apply_negative_shift_bias(p, torch.tensor([0.5, 0.25]))
         _assert_bias_exact(p, [0.5, -2.75, 3.4375])
 
-    def test_bias_none_sets_flag_without_crash(self):
+    def test_bias_none_with_no_normalization_seam_fails_loud(self):
         p = _perceptron(bias=False)
+        with pytest.raises(RuntimeError, match="no seam"):
+            apply_negative_shift_bias(p, torch.tensor([0.5, 0.25]))
+
+    def test_bias_none_with_normalization_seam_is_realized(self):
+        p = _perceptron(bias=False)
+        p.normalization = _eval_bn(3)
+        transformer = PerceptronTransformer()
+        before = transformer.get_effective_bias(p).clone()
+        correction = (transformer.get_effective_weight(p)
+                      * torch.tensor([0.5, 0.25])).sum(dim=-1)
         apply_negative_shift_bias(p, torch.tensor([0.5, 0.25]))
         assert p.layer.bias is None and p._neg_shift_baked is True
+        assert torch.allclose(
+            transformer.get_effective_bias(p), before - correction, atol=1e-6
+        )
 
 
 class TestNegativeShiftsFromMin:

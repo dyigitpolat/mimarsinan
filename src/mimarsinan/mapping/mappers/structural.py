@@ -58,7 +58,12 @@ class ReshapeMapper(Mapper):
         return self.require_source_mapper().map_to_ir(ir_mapping).reshape(self.output_shape)
 
     def _forward_impl(self, x):
-        return x.view(x.shape[0], *self.output_shape)
+        # reshape, not view: this is a LOGICAL reshape and must not also demand
+        # a stride layout. A channels-last conv activation (cuDNN's choice,
+        # preserved end to end once Normalization Fusion makes the perceptron's
+        # normalization an Identity) has the same logical order and crashes
+        # ``view`` outright.
+        return x.reshape(x.shape[0], *self.output_shape)
 
 
 class EinopsRearrangeMapper(Mapper):
