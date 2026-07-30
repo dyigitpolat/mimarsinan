@@ -11,6 +11,7 @@ from mimarsinan.mapping.packing.softcore import (
     eliminated_core_extent,
 )
 from mimarsinan.mapping.platform.mapping_structure import compute_core_input_count
+from mimarsinan.mapping.platform.threshold_grouping import provenance_group_id
 
 
 def spec_from_neural_core(
@@ -23,8 +24,9 @@ def spec_from_neural_core(
     the axon/neuron counts the runtime packer will pack (post-compaction);
     ``fallback_threshold_group_id`` applies when the core has no ``perceptron_index``."""
     lat = int(core.latency) if core.latency is not None else 0
-    pi = getattr(core, "perceptron_index", None)
-    tg = int(pi) if pi is not None else int(fallback_threshold_group_id)
+    tg = provenance_group_id(
+        getattr(core, "perceptron_index", None), fallback=fallback_threshold_group_id
+    )
 
     n_axons, n_neurons = compacted_core_extent(core)
     has_bias_axon = core.hardware_bias is None and any(
@@ -70,8 +72,9 @@ def spec_from_softcore(
 ) -> LayoutSoftCoreSpec:
     """Reconstruct a ``LayoutSoftCoreSpec`` from a compacted runtime ``SoftCore``,
     mirroring the exact axon/neuron counts the runtime packer will pack."""
-    pi = getattr(softcore, "perceptron_index", None)
-    tg = int(pi) if pi is not None else int(fallback_threshold_group_id)
+    tg = provenance_group_id(
+        getattr(softcore, "perceptron_index", None), fallback=fallback_threshold_group_id
+    )
     lat = (
         int(softcore.latency)
         if getattr(softcore, "latency", None) is not None

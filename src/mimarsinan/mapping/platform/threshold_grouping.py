@@ -65,6 +65,17 @@ def threshold_group_key(
     return value
 
 
+def provenance_group_id(perceptron_index: int | None, *, fallback: int) -> int:
+    """Today's id: the source perceptron, else a caller-supplied id.
+
+    THE one place this rule is written. It is a proxy -- the hardware constrains per-core VALUES,
+    not provenance -- and it is replaced by ``residency_key`` in the next step; routing every
+    assignment site through here first makes that swap a single edit instead of three, and makes
+    it impossible for the layout planner and the runtime packer to key differently.
+    """
+    return int(perceptron_index) if perceptron_index is not None else int(fallback)
+
+
 class ThresholdGroupInterner:
     """Stable small integer ids for grouping keys within one mapping.
 

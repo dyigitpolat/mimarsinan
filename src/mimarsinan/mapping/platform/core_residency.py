@@ -70,15 +70,28 @@ class CoreResidencyViolation(AssertionError):
     """A softcore was placed in a hardware core that cannot represent its per-core values."""
 
 
-def adopt_or_check(hard_core: Any, softcore: Any) -> None:
+def adopt_or_check(
+    hard_core: Any,
+    softcore: Any,
+    *,
+    constrained: Iterable[str] = ALL_SINGLETON_NAMES,
+) -> None:
     """First softcore into a hardware core sets its singleton values; later ones must agree.
 
     Adopting silently, as this once did, discards the later core's value and leaves it computing
     against the first core's -- a wrong result with no signal. Raising here is what turns a
     residency key that is too coarse into a loud, located failure.
+
+    ``constrained`` is the target's declaration. A property it does NOT constrain is one the
+    hardware stores per neuron rather than per core, so it is recorded per neuron range instead
+    of being checked -- relaxing a constraint means storing the values, never skipping the check.
     """
+    names = frozenset(constrained)
     for prop in CORE_SINGLETON_PROPERTIES:
         incoming = getattr(softcore, prop.name, None)
+        if prop.name not in names:
+            _record_per_neuron(hard_core, softcore, prop.name, incoming)
+            continue
         current = getattr(hard_core, prop.name, None)
         if current is None:
             setattr(hard_core, prop.name, incoming)
@@ -89,6 +102,33 @@ def adopt_or_check(hard_core: Any, softcore: Any) -> None:
                 f"hardware core already holds {prop.name}={current!r}; a core stores one value, "
                 f"so these may not share it"
             )
+
+
+PER_NEURON_ATTR = "per_neuron_values"
+
+
+def _record_per_neuron(hard_core: Any, softcore: Any, name: str, value: Any) -> None:
+    """Write an unconstrained property across the neuron range this softcore occupies.
+
+    Mirrors how ``hardware_bias`` is already merged. Without this a target that declares, say,
+    per-neuron thresholds would pack cores together and then represent only the first one's
+    value -- claiming a capability it does not store.
+    """
+    total = int(getattr(hard_core, "neurons_per_core", 0))
+    width = int(softcore.get_output_count())
+    offset = total - int(getattr(hard_core, "available_neurons", 0)) - width
+    if total <= 0 or width <= 0 or offset < 0:
+        return
+    store = getattr(hard_core, PER_NEURON_ATTR, None)
+    if store is None:
+        store = {}
+        setattr(hard_core, PER_NEURON_ATTR, store)
+    column = store.get(name)
+    if column is None:
+        column = [None] * total
+        store[name] = column
+    for i in range(offset, offset + width):
+        column[i] = value
 
 
 def residency_key(core: Any, *, constrained: Iterable[str] = ALL_SINGLETON_NAMES) -> Hashable:

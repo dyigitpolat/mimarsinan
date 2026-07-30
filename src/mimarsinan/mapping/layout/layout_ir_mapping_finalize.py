@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set
 
 from mimarsinan.mapping.layout.layout_types import LayoutSoftCoreSpec
+from mimarsinan.mapping.platform.threshold_grouping import provenance_group_id
 from mimarsinan.mapping.layout.segmentation import (
     compute_host_side_segment_count,
     compute_node_latencies,
@@ -141,8 +142,9 @@ class _LayoutIRMappingFinalize:
             latency = latencies.get(node_id, 0)
             segment_id = segment_ids.get(node_id, 0)
 
-            pi = self._sc_idx_to_perceptron_index.get(sc_idx)
-            tg = int(pi) if pi is not None else -(sc_idx + 1)
+            tg = provenance_group_id(
+                self._sc_idx_to_perceptron_index.get(sc_idx), fallback=-(sc_idx + 1)
+            )
 
             old = self.layout_softcores[sc_idx]
             self.layout_softcores[sc_idx] = LayoutSoftCoreSpec(

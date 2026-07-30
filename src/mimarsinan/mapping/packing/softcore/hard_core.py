@@ -4,7 +4,10 @@ from typing import Any
 
 import numpy as np
 
-from mimarsinan.mapping.platform.core_residency import adopt_or_check
+from mimarsinan.mapping.platform.core_residency import (
+    ALL_SINGLETON_NAMES,
+    adopt_or_check,
+)
 
 
 class HardCore:
@@ -19,6 +22,8 @@ class HardCore:
         self.available_axons = axons_per_core
         self.available_neurons = neurons_per_core
 
+        # Which of the singleton values THIS target constrains; the rest are stored per neuron.
+        self.constrained_properties: frozenset[str] = ALL_SINGLETON_NAMES
         # Singleton values a hardware core stores once; see platform/core_residency.py.
         self.input_activation_scale: Any = None
         self.boundary_grid: Any = None
@@ -76,7 +81,7 @@ class HardCore:
         self.available_axons -= softcore.get_input_count()
         self.available_neurons -= softcore.get_output_count()
 
-        adopt_or_check(self, softcore)
+        adopt_or_check(self, softcore, constrained=self.constrained_properties)
 
         if self.threshold_group_id is None:
             tg = getattr(softcore, "threshold_group_id", None)
