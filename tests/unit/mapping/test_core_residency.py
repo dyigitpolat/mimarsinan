@@ -11,6 +11,10 @@ import torch
 
 from mimarsinan.mapping.platform.core_residency import (
     ALL_SINGLETON_NAMES,
+    Granularity,
+    constrained_names,
+    default_residency_policy,
+    resolve_residency_policy,
     CORE_SINGLETON_PROPERTIES,
     CoreResidencyViolation,
     adopt_or_check,
@@ -140,3 +144,89 @@ class TestTheSSOTIsTheOnlyPlaceToAddAProperty:
     def test_every_declared_property_carries_its_own_comparator(self):
         for prop in CORE_SINGLETON_PROPERTIES:
             assert callable(prop.compare), prop.name
+
+
+class TestBankBackedCoresUseTheirBankScale:
+    """A bank-backed core's effective parameter_scale lives on the BANK.
+
+    export/chip_quantize reads it from there and re-expresses it as the core's threshold. Keying
+    on the node's own field reports 1.0 for every sharer, merging cores that diverge on export --
+    measured: threshold went 1 -> 2 distinct values across a real export once the banks carried
+    distinct scales.
+    """
+
+    class _Bank:
+        def __init__(self, scale):
+            self.parameter_scale = scale
+
+    def test_the_bank_scale_separates_cores_the_node_field_would_merge(self):
+        a = _Soft(); a.weight_bank_id = 1
+        b = _Soft(); b.weight_bank_id = 2
+        banks = {1: self._Bank(torch.tensor(1.0)), 2: self._Bank(torch.tensor(4.0))}
+        assert residency_key(a) == residency_key(b)                       # node fields agree
+        assert residency_key(a, weight_banks=banks) != residency_key(b, weight_banks=banks)
+
+    def test_cores_sharing_one_bank_stay_together(self):
+        a = _Soft(); a.weight_bank_id = 7
+        b = _Soft(); b.weight_bank_id = 7
+        banks = {7: self._Bank(torch.tensor(3.0))}
+        assert residency_key(a, weight_banks=banks) == residency_key(b, weight_banks=banks)
+
+    def test_an_owned_core_is_unaffected(self):
+        a = _Soft(parameter_scale=torch.tensor(2.0))
+        a.weight_bank_id = None
+        assert residency_key(a, weight_banks={}) == residency_key(a)
+
+
+class TestGranularityIsDeclaredPerQuantity:
+    """threshold and parameter_scale are alternative encodings, not one fixed pair.
+
+    export/chip_quantize folds the weight scale INTO the firing threshold and resets
+    parameter_scale to 1.0, because a spiking chip carries no scale register (nevresim has no
+    parameter_scale at all -- verified). A value-domain target is the mirror image: no firing
+    threshold, but a real quantization scale. So availability is a property of the DEPLOYMENT,
+    and each quantity carries its own granularity rather than one being hard-coded.
+    """
+
+    def test_a_spiking_target_carries_a_threshold_and_no_scale(self):
+        p = default_residency_policy(value_domain=False)
+        assert p["threshold"] is Granularity.PER_CORE
+        assert p["parameter_scale"] is Granularity.ABSENT
+
+    def test_a_value_domain_target_is_the_mirror_image(self):
+        p = default_residency_policy(value_domain=True)
+        assert p["threshold"] is Granularity.ABSENT
+        assert p["parameter_scale"] is Granularity.PER_CORE
+
+    def test_only_per_core_quantities_constrain_residency(self):
+        p = default_residency_policy(value_domain=True)
+        names = constrained_names(p)
+        assert "parameter_scale" in names
+        assert "threshold" not in names, "an absent quantity cannot constrain packing"
+
+    def test_an_absent_quantity_never_separates_two_cores(self):
+        """A value-domain core has no threshold, so differing ones must not split the mapping."""
+        p = default_residency_policy(value_domain=True)
+        a, b = _Soft(threshold=1.0), _Soft(threshold=0.5)
+        assert residency_key(a, constrained=constrained_names(p)) == residency_key(
+            b, constrained=constrained_names(p)
+        )
+
+    def test_a_target_declares_per_neuron_hardware_by_name(self):
+        p = resolve_residency_policy(
+            {"core_value_granularity": {"threshold": "per_neuron"}}, value_domain=False
+        )
+        assert p["threshold"] is Granularity.PER_NEURON
+        assert "threshold" not in constrained_names(p)
+
+    def test_a_target_may_declare_both_present(self):
+        """Nothing forces the encodings to be exclusive; a target carrying both says so."""
+        p = resolve_residency_policy(
+            {"core_value_granularity": {"parameter_scale": "per_core"}}, value_domain=False
+        )
+        assert p["threshold"] is Granularity.PER_CORE
+        assert p["parameter_scale"] is Granularity.PER_CORE
+
+    def test_an_unknown_quantity_is_refused(self):
+        with pytest.raises(ValueError, match="not a core-level quantity"):
+            resolve_residency_policy({"core_value_granularity": {"nonsense": "per_core"}})

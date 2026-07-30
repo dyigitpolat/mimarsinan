@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from enum import Enum
 from typing import Any, Callable, Hashable, Iterable
 
 import numpy as np
@@ -66,6 +67,74 @@ CORE_SINGLETON_PROPERTIES: tuple[SingletonProperty, ...] = (
 ALL_SINGLETON_NAMES: frozenset[str] = frozenset(p.name for p in CORE_SINGLETON_PROPERTIES)
 
 
+class Granularity(Enum):
+    """At what grain a target stores a core-level quantity."""
+
+    ABSENT = "absent"          # the target has no such quantity; any value is vacuous
+    PER_CORE = "per_core"      # one register per hardware core -> constrains residency
+    PER_NEURON = "per_neuron"  # one per neuron column -> stored per range, constrains nothing
+
+
+ResidencyPolicy = dict
+
+
+def default_residency_policy(*, value_domain: bool) -> ResidencyPolicy:
+    """Per-quantity granularity for a target, defaulting per deployment domain.
+
+    ``threshold`` and ``parameter_scale`` are not independent: on a spiking target
+    ``export/chip_quantize`` folds the weight scale INTO the firing threshold and resets
+    ``parameter_scale`` to 1.0, because the chip carries no scale register. A value-domain
+    target is the mirror image -- it has no firing threshold at all, but does carry a
+    quantization scale. Declaring a granularity PER QUANTITY expresses both without either
+    encoding being hard-coded, and lets a target that carries both, or neither, say so.
+
+    Conservative in the same sense as before: a quantity a target does carry defaults to
+    PER_CORE, so nothing silently loses a constraint.
+    """
+    policy: ResidencyPolicy = {
+        "activation_scale": Granularity.PER_CORE,
+        "input_activation_scale": Granularity.PER_CORE,
+        "boundary_grid": Granularity.PER_CORE,
+    }
+    if value_domain:
+        policy["threshold"] = Granularity.ABSENT
+        policy["parameter_scale"] = Granularity.PER_CORE
+    else:
+        policy["threshold"] = Granularity.PER_CORE
+        policy["parameter_scale"] = Granularity.ABSENT
+    return policy
+
+
+def resolve_residency_policy(
+    platform_constraints: Any = None, *, value_domain: bool = False
+) -> ResidencyPolicy:
+    """THE SSOT turning a target's declaration into a granularity per quantity.
+
+    A target overrides any entry by name, e.g. ``{"threshold": "per_neuron"}`` for hardware with
+    a threshold register per neuron column.
+    """
+    policy = default_residency_policy(value_domain=value_domain)
+    declared = {}
+    if platform_constraints is not None:
+        declared = platform_constraints.get(RESIDENCY_KEY, {}) or {}
+    for name, value in declared.items():
+        if name not in ALL_SINGLETON_NAMES:
+            raise ValueError(
+                f"{RESIDENCY_KEY}: {name!r} is not a core-level quantity; known: "
+                f"{sorted(ALL_SINGLETON_NAMES)}"
+            )
+        policy[name] = value if isinstance(value, Granularity) else Granularity(value)
+    return policy
+
+
+RESIDENCY_KEY = "core_value_granularity"
+
+
+def constrained_names(policy: ResidencyPolicy) -> frozenset[str]:
+    """The quantities that constrain residency: exactly those stored once per hardware core."""
+    return frozenset(n for n, g in policy.items() if g is Granularity.PER_CORE)
+
+
 class CoreResidencyViolation(AssertionError):
     """A softcore was placed in a hardware core that cannot represent its per-core values."""
 
@@ -87,10 +156,16 @@ def adopt_or_check(
     of being checked -- relaxing a constraint means storing the values, never skipping the check.
     """
     names = frozenset(constrained)
+    per_neuron = getattr(hard_core, "per_neuron_names", None)
     for prop in CORE_SINGLETON_PROPERTIES:
         incoming = getattr(softcore, prop.name, None)
         if prop.name not in names:
-            _record_per_neuron(hard_core, softcore, prop.name, incoming)
+            # PER_NEURON is stored per range; ABSENT is vacuous on this target, so the first
+            # value stands and nothing can be corrupted by it.
+            if per_neuron is None or prop.name in per_neuron:
+                _record_per_neuron(hard_core, softcore, prop.name, incoming)
+            elif getattr(hard_core, prop.name, None) is None:
+                setattr(hard_core, prop.name, incoming)
             continue
         current = getattr(hard_core, prop.name, None)
         if current is None:
@@ -131,19 +206,43 @@ def _record_per_neuron(hard_core: Any, softcore: Any, name: str, value: Any) -> 
         column[i] = value
 
 
-def residency_key(core: Any, *, constrained: Iterable[str] = ALL_SINGLETON_NAMES) -> Hashable:
+def residency_key(
+    core: Any,
+    *,
+    constrained: Iterable[str] = ALL_SINGLETON_NAMES,
+    weight_banks: Any = None,
+) -> Hashable:
     """The equivalence class of ``core``: equal keys may share a hardware core.
 
     The key IS the constrained values, so two cores are merged only where the target genuinely
     permits it -- it can never authorize a merge the hardware cannot represent.
+
+    ``weight_banks`` resolves bank-backed indirection. A bank-backed core's effective
+    ``parameter_scale`` lives on its BANK, and `export/chip_quantize` reads it from there before
+    re-expressing it as the core's threshold; reading the node's own field would report 1.0 for
+    every sharer and merge cores that diverge the moment they are exported.
     """
     names = frozenset(constrained)
     parts: list[Hashable] = []
     for prop in CORE_SINGLETON_PROPERTIES:
         if prop.name not in names:
             continue
-        parts.append(_hashable(getattr(core, prop.name, None)))
+        parts.append(_hashable(_effective(core, prop.name, weight_banks)))
     return tuple(parts)
+
+
+def _effective(core: Any, name: str, weight_banks: Any) -> Any:
+    """The value that will actually be programmed, following bank-backed indirection."""
+    own = getattr(core, name, None)
+    if name != "parameter_scale" or weight_banks is None:
+        return own
+    bank_id = getattr(core, "weight_bank_id", None)
+    if bank_id is None:
+        return own
+    bank = weight_banks.get(bank_id) if hasattr(weight_banks, "get") else None
+    if bank is None:
+        return own
+    return getattr(bank, name, own)
 
 
 def _hashable(value: Any) -> Hashable:
