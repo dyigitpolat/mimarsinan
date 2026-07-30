@@ -208,12 +208,22 @@ def validate_on_loader(trainer, x, y):
     return correct / total
 
 
-def validate(trainer):
+def validate_measured(trainer) -> tuple[float, int]:
+    """The single-batch validation read WITH the size of the sample it was measured on.
+
+    A tolerance quoted against a number whose sample size is unknown is a guess,
+    so every baseline assertion reads the count from here rather than assuming it.
+    """
     x, y = trainer.next_validation_batch()
     trainer.model.eval()
     acc = validate_on_loader(trainer, x.to(trainer.device), y.to(trainer.device))
     trainer._report(trainer._validation_metric_name("Validation accuracy"), acc)
-    return acc
+    return acc, int(y.shape[0])
+
+
+def validate(trainer):
+    accuracy, _samples = validate_measured(trainer)
+    return accuracy
 
 
 def validate_n_batches(trainer, n_batches: int) -> float:

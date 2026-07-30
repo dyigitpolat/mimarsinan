@@ -13,6 +13,7 @@ from mimarsinan.common.pretrained.weight_sets import (
     registered_weight_sets,
     select_weight_set,
     selected_source,
+    unusable_baseline_reason,
     weight_set_mismatch,
 )
 
@@ -29,5 +30,6 @@ __all__ = [
     "registered_weight_sets",
     "select_weight_set",
     "selected_source",
+    "unusable_baseline_reason",
     "weight_set_mismatch",
 ]

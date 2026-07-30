@@ -346,6 +346,10 @@ class BasicTrainer:
     def validate(self):
         return basic_trainer_eval.validate(self)
 
+    def validate_measured(self) -> tuple[float, int]:
+        """One validation read as ``(accuracy, samples)`` -- what a baseline assertion needs."""
+        return basic_trainer_eval.validate_measured(self)
+
     def validate_n_batches(self, n_batches: int) -> float:
         return basic_trainer_eval.validate_n_batches(self, n_batches)
 
