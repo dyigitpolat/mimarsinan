@@ -25,6 +25,7 @@ from mimarsinan.chip_simulation.lava_loihi.core_lava import LavaCoreMixin, _subt
 from mimarsinan.chip_simulation.lava_loihi.segment_runner import LavaSegmentMixin
 from mimarsinan.chip_simulation.lava_loihi.timing import _RunProfile, _StageTrace
 from mimarsinan.chip_simulation.recording.spike_recorder import RunRecord, SegmentSpikeRecord
+from mimarsinan.data_handling import batch_integrity
 from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory, shutdown_data_loader
 from mimarsinan.mapping.packing.hybrid_hardcore_mapping import HybridHardCoreMapping
 from mimarsinan.spiking.segment_boundary import (
@@ -71,20 +72,21 @@ class LavaLoihiRunner(LavaCoreMixin, LavaSegmentMixin):
         self._accuracy: float | None = None
         self._recorder: RunRecord | None = None
 
-    def _load_test_samples(self) -> Tuple[np.ndarray, np.ndarray]:
-        factory = self._data_loader_factory
-        if factory is None:
-            raise RuntimeError("LavaLoihiRunner requires a pipeline to load test samples")
-        provider = factory.create_data_provider()
-        loader = factory.create_test_loader(
-            provider.get_test_batch_size(), provider,
-        )
+    def _read_test_samples(self, loader, source: str) -> Tuple[np.ndarray, np.ndarray]:
+        """One verified pass over the first ``max_samples`` test samples.
+
+        Own THEN verify: ``x.detach().cpu().numpy()`` SHARES storage with the
+        loader's tensor whenever the batch already lives on the host, so without
+        the snapshot the arrays the Lava graph is run on are views into a buffer
+        the producer refills.
+        """
         xs: List[np.ndarray] = []
         ys: List[np.ndarray] = []
         total = 0
         for x, y in loader:
             if total >= self.max_samples:
                 break
+            x, y = batch_integrity.own_verified_batch(x, y, source=source)
             x_np = x.detach().cpu().numpy()
             y_np = y.detach().cpu().numpy()
             if total + len(x_np) > self.max_samples:
@@ -94,8 +96,31 @@ class LavaLoihiRunner(LavaCoreMixin, LavaSegmentMixin):
             xs.append(x_np)
             ys.append(y_np)
             total += len(x_np)
-        shutdown_data_loader(loader)
         return np.concatenate(xs, axis=0), np.concatenate(ys, axis=0)
+
+    def _load_test_samples(self) -> Tuple[np.ndarray, np.ndarray]:
+        """The samples ``run()`` turns into ``self._accuracy`` -- a DEPLOYED number.
+
+        The exact sibling of ``simulation_runner/core``'s test-input read: a
+        corrupted batch here is baked into the chip's inputs for the whole
+        simulation and reported as a hardware result, so it carries the same
+        discipline. The read is positional (the first ``max_samples`` samples), so
+        it cannot repair by skipping: the pass restarts whole, or it raises.
+        """
+        factory = self._data_loader_factory
+        if factory is None:
+            raise RuntimeError("LavaLoihiRunner requires a pipeline to load test samples")
+        provider = factory.create_data_provider()
+        loader = factory.create_test_loader(
+            provider.get_test_batch_size(), provider,
+        )
+        source = f"the Lava test loader ({type(loader).__name__})"
+        try:
+            return batch_integrity.verified_pass(
+                lambda: self._read_test_samples(loader, source), source=source,
+            )
+        finally:
+            shutdown_data_loader(loader)
 
     def _preprocess(self, x_np: np.ndarray) -> np.ndarray:
         x = torch.tensor(x_np, dtype=torch.float32)

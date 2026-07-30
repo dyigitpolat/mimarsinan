@@ -11,6 +11,7 @@ from mimarsinan.chip_simulation.membrane_export import (
     half_step_charge_from_config,
 )
 from mimarsinan.chip_simulation.subsample import compute_test_subsample_indices
+from mimarsinan.data_handling import batch_integrity
 from mimarsinan.chip_simulation.nevresim.connectivity import resolve_nevresim_connectivity_mode
 from mimarsinan.chip_simulation.spiking_semantics import requires_ttfs_firing
 from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory, shutdown_data_loader
@@ -18,6 +19,30 @@ from mimarsinan.chip_simulation.simulation_runner.flat import SimulationFlatMixi
 from mimarsinan.chip_simulation.simulation_runner.hybrid import SimulationHybridMixin
 from mimarsinan.mapping.packing.hybrid_hardcore_mapping import HybridHardCoreMapping
 from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
+
+
+def load_verified_test_data(runner, test_loader, source: str):
+    """The chip's inputs: a full loader pass, owned and proven finite, then stacked.
+
+    The deployed accuracy is measured on exactly these samples, so the read that
+    materializes them is verified like every other measured read -- a corrupted
+    batch here is baked into the chip's inputs for the whole simulation and comes
+    back out as a hardware result. The pass restarts whole on corruption and
+    raises rather than simulating poison.
+
+    Own THEN verify (W0.8b finding 3): with an ``Identity`` preprocessor,
+    ``self._preprocessor(xs).detach().cpu()`` is the loader's own tensor on a host
+    loader, so the retained ``test_input`` entries used to be VIEWS into a buffer
+    the producer refills -- and the verdict was about that buffer, not about what
+    the simulation later read out of it.
+    """
+    runner.test_input = []
+    runner.test_targets = []
+    for xs, ys in test_loader:
+        xs, ys = batch_integrity.own_verified_batch(xs, ys, source=source)
+        runner.test_input.extend(runner._preprocessor(xs).detach().cpu())
+        runner.test_targets.extend(ys.detach().cpu() if hasattr(ys, "detach") else ys)
+    return [*zip(np.stack(runner.test_input), np.stack(runner.test_targets))]
 
 
 class SimulationRunner(SimulationFlatMixin, SimulationHybridMixin):
@@ -66,11 +91,12 @@ class SimulationRunner(SimulationFlatMixin, SimulationHybridMixin):
             data_provider.get_test_batch_size(), data_provider,
         )
 
+        source = f"the simulation test loader ({type(test_loader).__name__})"
         try:
-            for xs, ys in test_loader:
-                self.test_input.extend(self._preprocessor(xs).detach().cpu())
-                self.test_targets.extend(ys.detach().cpu() if hasattr(ys, "detach") else ys)
-            self.test_data = [*zip(np.stack(self.test_input), np.stack(self.test_targets))]
+            self.test_data = batch_integrity.verified_pass(
+                lambda: load_verified_test_data(self, test_loader, source),
+                source=source,
+            )
         finally:
             shutdown_data_loader(test_loader)
 

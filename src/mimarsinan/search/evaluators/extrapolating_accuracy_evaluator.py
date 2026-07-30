@@ -14,6 +14,7 @@ from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory, shut
 from mimarsinan.data_handling.data_provider_factory import DataProviderFactory
 
 from .learning_curve import fit_and_extrapolate
+from .loader_accuracy import accuracy_over_loader
 
 
 @dataclass
@@ -130,16 +131,10 @@ class ExtrapolatingAccuracyEvaluator:
             shutdown_data_loader(train_loader)
             shutdown_data_loader(val_loader)
 
-    @torch.no_grad()
     def _validate(self, model: torch.nn.Module, val_loader) -> float:
-        model.eval()
-        correct = 0.0
-        total = 0.0
-        for x, y in val_loader:
-            x = x.to(self.device)
-            y = y.to(self.device)
-            _, predicted = model(x).max(1)
-            total += float(y.size(0))
-            correct += float(predicted.eq(y).sum().item())
+        acc = accuracy_over_loader(
+            model, val_loader, self.device,
+            source="the ExtrapolatingAccuracyEvaluator validation loader",
+        )
         model.train()
-        return float(correct / total) if total > 0 else 0.0
+        return acc
