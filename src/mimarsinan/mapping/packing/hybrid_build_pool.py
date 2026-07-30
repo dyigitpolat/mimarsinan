@@ -196,13 +196,20 @@ def _split_segment_by_capacity(
     ir_graph: IRGraph | None = None,
     hardware_bias: bool = False,
 ) -> list[list[NeuralCore]]:
-    """Split IR NeuralCores by hardware capacity via split_softcores_by_capacity."""
+    """Split IR NeuralCores by hardware capacity via split_softcores_by_capacity.
+
+    Every spec is sized by the POST-compaction extent: elimination reaches the
+    pass ladder only if a pruned instance is budgeted for what it occupies.
+    """
     global _SPLIT_FALLBACK_LOGGED
     if not cores:
         return []
 
     from mimarsinan.mapping.layout.layout_types import LayoutHardCoreType, LayoutSoftCoreSpec
-    from mimarsinan.mapping.layout.softcore_spec_adapter import spec_from_neural_core
+    from mimarsinan.mapping.layout.softcore_spec_adapter import (
+        spec_at_compacted_extent,
+        spec_from_neural_core,
+    )
     from mimarsinan.mapping.support.schedule.schedule_partitioner import split_softcores_by_capacity
 
     hw_types = [
@@ -225,7 +232,7 @@ def _split_segment_by_capacity(
     for idx, core in enumerate(cores):
         if use_layout:
             sc_idx = int(core.layout_softcore_index)  # type: ignore[arg-type]
-            spec = layout_specs[sc_idx]
+            spec = spec_at_compacted_extent(layout_specs[sc_idx], core)
         else:
             if not _SPLIT_FALLBACK_LOGGED:
                 import logging

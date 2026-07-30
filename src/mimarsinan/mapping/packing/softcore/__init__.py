@@ -1,6 +1,10 @@
 """Soft-core and hard-core mapping implementations."""
 
-from mimarsinan.mapping.packing.softcore.compaction import compact_soft_core_mapping
+from mimarsinan.mapping.packing.softcore.compaction import (
+    compact_soft_core_mapping,
+    compacted_core_extent,
+    eliminated_core_extent,
+)
 from mimarsinan.mapping.packing.softcore.hard_core import HardCore
 from mimarsinan.mapping.packing.softcore.hard_core_mapping import HardCoreMapping
 from mimarsinan.mapping.packing.softcore.soft_core import SoftCore
@@ -10,4 +14,6 @@ __all__ = [
     "HardCore",
     "HardCoreMapping",
     "compact_soft_core_mapping",
+    "compacted_core_extent",
+    "eliminated_core_extent",
 ]
