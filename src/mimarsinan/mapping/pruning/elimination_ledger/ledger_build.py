@@ -5,12 +5,18 @@ from __future__ import annotations
 from typing import AbstractSet, Dict, Sequence, Set, Tuple
 
 from mimarsinan.mapping.ir import IRGraph, NeuralCore
-from mimarsinan.mapping.pruning.boundary_policy import (
-    assert_unified_ir_for_pruning,
+from mimarsinan.mapping.pruning.elimination_ledger.arm_runs import (
+    EliminationArms,
+    compute_elimination_arms,
 )
 from mimarsinan.mapping.pruning.elimination_ledger.depth_replay import (
     DepthReplay,
     replay_kill_depths,
+)
+from mimarsinan.mapping.pruning.elimination_ledger.ledger_inputs import (
+    UNSET,
+    Unset,
+    resolve_arm_inputs,
 )
 from mimarsinan.mapping.pruning.elimination_ledger.ledger_types import (
     BankEliminationRecord,
@@ -21,13 +27,7 @@ from mimarsinan.mapping.pruning.elimination_ledger.ledger_types import (
 )
 from mimarsinan.mapping.pruning.graph.propagation_mode import (
     DEFAULT_ELIMINATION_PROPAGATION,
-    ELIMINATION_PROPAGATION_CASCADE,
-    ELIMINATION_PROPAGATION_CLOSURE,
-    ELIMINATION_PROPAGATION_MASKED,
     require_elimination_propagation,
-)
-from mimarsinan.mapping.pruning.graph.pruning_graph_core import (
-    compute_global_pruned_sets,
 )
 from mimarsinan.mapping.pruning.graph.pruning_graph_seeding import (
     build_global_pruning_context,
@@ -36,14 +36,6 @@ from mimarsinan.mapping.pruning.graph.pruning_graph_types import (
     GlobalPruningResult,
 )
 from mimarsinan.mapping.pruning.ir_liveness import NodeLiveness, compute_liveness
-from mimarsinan.mapping.pruning.ir_pruning_helpers import (
-    _boundary_policy_exemptions,
-    _collect_initial_seeds,
-)
-from mimarsinan.mapping.pruning.liveness_transfer import (
-    DEFAULT_COMPUTEOP_LIVENESS_TRANSFERS,
-    DEFAULT_ELIMINATION_CONSTANT_FOLDING,
-)
 
 SeedMasks = Dict[int, Tuple[Sequence[bool], Sequence[bool]]]
 
@@ -51,14 +43,15 @@ SeedMasks = Dict[int, Tuple[Sequence[bool], Sequence[bool]]]
 def compute_elimination_ledger(
     ir_graph: IRGraph,
     *,
-    zero_threshold: float = 1e-8,
+    zero_threshold: float | Unset = UNSET,
     initial_pruned_per_node: SeedMasks | None = None,
     initial_pruned_per_bank: SeedMasks | None = None,
     elimination_propagation: str = DEFAULT_ELIMINATION_PROPAGATION,
-    computeop_liveness_transfers: str = DEFAULT_COMPUTEOP_LIVENESS_TRANSFERS,
-    elimination_constant_folding: str = DEFAULT_ELIMINATION_CONSTANT_FOLDING,
-    spiking_mode: str = "lif",
+    computeop_liveness_transfers: str | Unset = UNSET,
+    elimination_constant_folding: str | Unset = UNSET,
+    spiking_mode: str | Unset = UNSET,
     simulation_steps: int = 32,
+    arms: EliminationArms | None = None,
 ) -> EliminationLedger:
     """Attribute every kill of one (uncompacted) graph + seed set + mode.
 
@@ -68,65 +61,73 @@ def compute_elimination_ledger(
     final - closure), replays the causal waves for per-kill depth, and folds
     in the liveness pass (DEAD core deletions, BIAS_ONLY collapses). Never
     mutates ``ir_graph``.
+
+    ``arms`` accepts an already-computed :class:`EliminationArms` so a caller
+    that also builds the softcore-elimination report pays for the arm runs
+    once. It CARRIES the analysis inputs it was run with, and this function
+    then consumes those — including for the liveness pass, which used to read
+    the ledger's own (defaulted, therefore possibly wrong) ``zero_threshold``
+    and ``spiking_mode``. Supplying an arm input that CONTRADICTS the arms
+    fails loud rather than being silently dropped; the seed maps cannot be
+    compared meaningfully once seeded, so passing them with ``arms`` at all is
+    an error.
     """
     mode = require_elimination_propagation(elimination_propagation)
+    resolved = resolve_arm_inputs(
+        {
+            "zero_threshold": zero_threshold,
+            "computeop_liveness_transfers": computeop_liveness_transfers,
+            "elimination_constant_folding": elimination_constant_folding,
+            "spiking_mode": spiking_mode,
+        },
+        {
+            "initial_pruned_per_node": initial_pruned_per_node,
+            "initial_pruned_per_bank": initial_pruned_per_bank,
+        },
+        arms,
+        mode,
+    )
     if not ir_graph.nodes:
         return EliminationLedger(
             mode=mode, per_node=(), per_bank=(), cores_deleted=0,
             bias_only_collapses=0, fixpoint_iterations=0,
         )
-    assert_unified_ir_for_pruning(ir_graph)
-
-    exempt_rows, exempt_cols = _boundary_policy_exemptions(ir_graph)
-    seed_per_node, seed_per_bank = _collect_initial_seeds(
-        ir_graph, initial_pruned_per_node, initial_pruned_per_bank
-    )
-    def _run_arm(arm: str) -> GlobalPruningResult:
-        return compute_global_pruned_sets(
+    if arms is None:
+        arms = compute_elimination_arms(
             ir_graph,
-            zero_threshold=zero_threshold,
-            initial_per_node=seed_per_node,
-            initial_per_bank=seed_per_bank,
-            exempt_rows_per_node=exempt_rows,
-            exempt_cols_per_node=exempt_cols,
-            mode=arm,
-            computeop_liveness_transfers=computeop_liveness_transfers,
-            elimination_constant_folding=elimination_constant_folding,
-            spiking_mode=spiking_mode,
+            zero_threshold=resolved.zero_threshold,
+            initial_pruned_per_node=initial_pruned_per_node,
+            initial_pruned_per_bank=initial_pruned_per_bank,
+            elimination_propagation=mode,
+            computeop_liveness_transfers=resolved.computeop_liveness_transfers,
+            elimination_constant_folding=resolved.elimination_constant_folding,
+            spiking_mode=resolved.spiking_mode,
         )
-
-    masked = _run_arm(ELIMINATION_PROPAGATION_MASKED)
-    if mode == ELIMINATION_PROPAGATION_MASKED:
-        closure = masked
-        final = masked
-    elif mode == ELIMINATION_PROPAGATION_CLOSURE:
-        closure = _run_arm(ELIMINATION_PROPAGATION_CLOSURE)
-        final = closure
-    else:
-        closure = _run_arm(ELIMINATION_PROPAGATION_CLOSURE)
-        final = _run_arm(ELIMINATION_PROPAGATION_CASCADE)
-    _assert_arm_ordering(masked, closure, final)
+    masked, closure, final = arms.masked, arms.closure, arms.final
 
     replay_ctx = build_global_pruning_context(
         ir_graph,
-        zero_threshold=zero_threshold,
-        initial_per_node=seed_per_node,
-        initial_per_bank=seed_per_bank,
-        exempt_rows_per_node=exempt_rows,
-        exempt_cols_per_node=exempt_cols,
-        computeop_liveness_transfers=computeop_liveness_transfers,
-        elimination_constant_folding=elimination_constant_folding,
-        spiking_mode=spiking_mode,
+        zero_threshold=arms.zero_threshold,
+        initial_per_node=arms.seed_per_node,
+        initial_per_bank=arms.seed_per_bank,
+        exempt_rows_per_node=arms.exempt_rows,
+        exempt_cols_per_node=arms.exempt_cols,
+        computeop_liveness_transfers=arms.computeop_liveness_transfers,
+        elimination_constant_folding=arms.elimination_constant_folding,
+        spiking_mode=arms.spiking_mode,
     )
     replay = replay_kill_depths(replay_ctx, mode=mode)
     _assert_replay_reconciles(replay_ctx, final)
 
+    # The liveness pass must read the SAME analysis inputs the arms ran with;
+    # before W6c it read this function's own defaults, so a precomputed-arms
+    # caller silently got zero_threshold=1e-8 / spiking_mode="lif" here.
     liveness = compute_liveness(
         ir_graph,
         simulation_steps=simulation_steps,
-        spiking_mode=spiking_mode,
+        spiking_mode=resolved.spiking_mode,
         pruning_result=final,
-        zero_threshold=zero_threshold,
+        zero_threshold=resolved.zero_threshold,
     )
     dead_ids = {
         nid for nid, status in liveness.per_node.items()
@@ -253,30 +254,6 @@ def _bank_record(
             seed_cols=s_c, closure_cols=c_c, emergent_cols=e_c,
         ),
     )
-
-
-def _assert_arm_ordering(
-    masked: GlobalPruningResult,
-    closure: GlobalPruningResult,
-    final: GlobalPruningResult,
-) -> None:
-    """kills(masked) <= kills(closure) <= kills(final) — fail loud otherwise."""
-    for lo, hi, pair in (
-        (masked, closure, "masked<=closure"),
-        (closure, final, "closure<=final"),
-    ):
-        for attr in (
-            "pruned_rows_per_node", "pruned_cols_per_node",
-            "pruned_rows_per_bank", "pruned_cols_per_bank",
-        ):
-            lo_map, hi_map = getattr(lo, attr), getattr(hi, attr)
-            for key, lo_set in lo_map.items():
-                if not lo_set <= hi_map.get(key, set()):
-                    raise EliminationLedgerError(
-                        f"arm ordering violated ({pair}) on {attr}[{key}]: "
-                        f"{sorted(lo_set - hi_map.get(key, set()))} killed by "
-                        "the weaker arm only."
-                    )
 
 
 def _assert_replay_reconciles(
