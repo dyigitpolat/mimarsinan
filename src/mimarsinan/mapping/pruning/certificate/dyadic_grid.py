@@ -39,7 +39,14 @@ def _is_power_of_two(value: float) -> bool:
     return mantissa == 0.5
 
 
-def _on_grid(array, fraction_bits: int) -> bool:
+def is_on_grid(array, *, fraction_bits: int = DEFAULT_FRACTION_BITS) -> bool:
+    """Is every value exactly on the dyadic grid ``k * 2^-fraction_bits``?
+
+    THE SSOT for "exactly representable, hence invariant to precision and to summation order".
+    The certificate enforces it as a precondition; the constant analysis consumes the same
+    predicate to classify each fold as grid-certifiable or execution-exact-only. A second copy
+    of this idea anywhere is a drift hazard -- import this one.
+    """
     scaled = np.ldexp(np.asarray(array, dtype=np.float64), fraction_bits)
     return bool(np.all(np.isfinite(scaled)) and np.array_equal(scaled, np.rint(scaled)))
 
@@ -60,7 +67,7 @@ def _op_emits_on_grid_constants(
     values = [
         v for (op_id, _), v in constant_outputs.items() if op_id == op.id
     ]
-    return _on_grid(np.asarray(values, dtype=np.float64), fraction_bits)
+    return is_on_grid(np.asarray(values, dtype=np.float64), fraction_bits=fraction_bits)
 
 
 def _op_preserves_dyadic_grid(op: ComputeOp) -> bool:
@@ -102,15 +109,13 @@ def assert_dyadic_exactness_grid(
     problems: list[str] = []
     for node in ir_graph.nodes:
         if isinstance(node, NeuralCore):
-            if node.core_matrix is not None and not _on_grid(
-                node.core_matrix, fraction_bits
-            ):
+            if node.core_matrix is not None and not is_on_grid(node.core_matrix, fraction_bits=fraction_bits):
                 problems.append(
                     f"NeuralCore id={node.id} core_matrix is off the dyadic "
                     f"2^-{fraction_bits} grid"
                 )
             bias = getattr(node, "hardware_bias", None)
-            if bias is not None and not _on_grid(bias, fraction_bits):
+            if bias is not None and not is_on_grid(bias, fraction_bits=fraction_bits):
                 problems.append(
                     f"NeuralCore id={node.id} hardware_bias is off the dyadic grid"
                 )
@@ -134,12 +139,12 @@ def assert_dyadic_exactness_grid(
                     "dyadic values off-grid"
                 )
     for bank_id, bank in (getattr(ir_graph, "weight_banks", None) or {}).items():
-        if not _on_grid(bank.core_matrix, fraction_bits):
+        if not is_on_grid(bank.core_matrix, fraction_bits=fraction_bits):
             problems.append(
                 f"WeightBank id={bank_id} core_matrix is off the dyadic grid"
             )
         bias = getattr(bank, "hardware_bias", None)
-        if bias is not None and not _on_grid(bias, fraction_bits):
+        if bias is not None and not is_on_grid(bias, fraction_bits=fraction_bits):
             problems.append(f"WeightBank id={bank_id} hardware_bias is off the dyadic grid")
     if problems:
         raise CascadeCertificatePreconditionError(

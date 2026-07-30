@@ -8,7 +8,9 @@ from mimarsinan.mapping.pruning.certificate.seed_reference import (
     check_shared_bank_union_rule,
 )
 from mimarsinan.mapping.pruning.certificate.dyadic_grid import (
+    DEFAULT_FRACTION_BITS,
     assert_dyadic_exactness_grid,
+    is_on_grid,
     snap_ir_graph_to_dyadic_grid,
 )
 from mimarsinan.mapping.pruning.certificate.errors import (
@@ -25,6 +27,7 @@ from mimarsinan.mapping.pruning.certificate.zero_preserving import (
 )
 
 __all__ = [
+    "DEFAULT_FRACTION_BITS",
     "CascadeCertificateError",
     "CascadeCertificatePreconditionError",
     "CascadeEquivalenceCertificate",
@@ -35,6 +38,7 @@ __all__ = [
     "certify_cascade_equivalence",
     "check_shared_bank_union_rule",
     "derive_cols_with_implicit_source",
+    "is_on_grid",
     "is_zero_preserving_host_op",
     "op_outputs_fully_constant",
     "snap_ir_graph_to_dyadic_grid",
