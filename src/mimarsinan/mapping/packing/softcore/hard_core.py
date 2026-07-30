@@ -1,6 +1,10 @@
 """HardCore container for chip-level neuron/axon packing."""
 
+from typing import Any
+
 import numpy as np
+
+from mimarsinan.mapping.platform.core_residency import adopt_or_check
 
 
 class HardCore:
@@ -15,11 +19,12 @@ class HardCore:
         self.available_axons = axons_per_core
         self.available_neurons = neurons_per_core
 
-        self.input_activation_scale = None
-        self.boundary_grid = None
-        self.activation_scale = None
-        self.parameter_scale = None
-        self.threshold = None
+        # Singleton values a hardware core stores once; see platform/core_residency.py.
+        self.input_activation_scale: Any = None
+        self.boundary_grid: Any = None
+        self.activation_scale: Any = None
+        self.parameter_scale: Any = None
+        self.threshold: float | None = None
         self.threshold_group_id: int | None = None
         self.latency = None
 
@@ -71,26 +76,13 @@ class HardCore:
         self.available_axons -= softcore.get_input_count()
         self.available_neurons -= softcore.get_output_count()
 
-        if self.threshold is None:
-            self.threshold = softcore.threshold
+        adopt_or_check(self, softcore)
 
         if self.threshold_group_id is None:
             tg = getattr(softcore, "threshold_group_id", None)
             self.threshold_group_id = (
                 int(tg) if tg is not None else -(int(softcore.id) + 1)
             )
-
-        if self.input_activation_scale is None:
-            self.input_activation_scale = softcore.input_activation_scale
-
-        if self.boundary_grid is None:
-            self.boundary_grid = getattr(softcore, "boundary_grid", None)
-
-        if self.activation_scale is None:
-            self.activation_scale = softcore.activation_scale
-
-        if self.parameter_scale is None:
-            self.parameter_scale = softcore.parameter_scale
 
         if self.latency is None:
             self.latency = softcore.latency
