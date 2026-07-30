@@ -5,11 +5,14 @@ from __future__ import annotations
 from math import ceil
 from typing import Sequence
 
+from mimarsinan.mapping.packing.softcore import compacted_core_extent
+
 
 def _fitting_capacity(group: list, cores_config: Sequence[dict]) -> "list[int] | None":
     """Per-core-type usable counts for this bank (None = some instance fits nowhere)."""
-    max_axons = max(len(core.input_sources.flatten()) for core in group)
-    max_neurons = max(int(core.get_output_count()) for core in group)
+    extents = [compacted_core_extent(core) for core in group]
+    max_axons = max(axons for axons, _ in extents)
+    max_neurons = max(neurons for _, neurons in extents)
     fits = [
         int(ct.get("count", 0))
         if max_axons <= int(ct["max_axons"]) and max_neurons <= int(ct["max_neurons"])
@@ -38,6 +41,11 @@ def try_bank_clustered_passes(
 ) -> "list[list] | None":
     """Compose passes so every physical core keeps one bank while its
     instance queue drains (the weight-stationary regime).
+
+    Instances are sized POST-compaction (:func:`compacted_core_extent`): a
+    bank-backed instance carries its elimination as masks until the soft-core
+    stage materializes them, so the bank's own matrix is never the extent a
+    resident core must budget for.
 
     Allocation law: ``loads(b) = ceil(n_b / max_passes)`` is the FEASIBILITY
     FLOOR, then allocations EXPAND into remaining pool capacity (type-aware)
