@@ -15,6 +15,8 @@ import torch.nn as nn
 
 from mimarsinan.chip_simulation.core_semantics import INERT_SPIKING_MODE
 from mimarsinan.mapping.ir import ComputeOp, IRSource, NeuralCore
+from mimarsinan.mapping.ir.deployment_dtype import computeop_deployment_dtype
+from mimarsinan.mapping.pruning.certificate.dyadic_grid import is_on_grid
 from mimarsinan.mapping.pruning.liveness_transfer import (
     COMPUTEOP_LIVENESS_TRANSFERS_IDENTITY_ONLY,
     ELIMINATION_CONSTANT_FOLDING_FULL,
@@ -214,13 +216,6 @@ class TestComputeOpForwardTransferIsGenericAndExecuted:
             _op(nn.Dropout(p=0.9).train()), OPAQUE_TRANSFER, [0.5] * 4
         ) == {}
 
-    def test_dtype_unstable_constant_is_refused(self):
-        """GELU of a NON-zero constant genuinely differs between fp32 and
-        fp64, so folding it would not be bit-exact in every deployment."""
-        assert derive_constant_outputs(
-            _op(nn.GELU().eval()), OPAQUE_TRANSFER, [0.3] * 4
-        ) == {}
-
     def test_module_less_identity_relay_folds_index_wise(self):
         op = ComputeOp(
             id=9, name="relay", input_sources=srcs([(0, 0), (0, 1)]),
@@ -229,6 +224,118 @@ class TestComputeOpForwardTransferIsGenericAndExecuted:
         assert derive_constant_outputs(
             op, OPAQUE_TRANSFER, [0.5, None]
         ) == {0: 0.5}
+
+
+def _executed(op, probe, repeats):
+    with torch.no_grad():
+        return op.execute_on_gathered(
+            torch.tensor([probe] * repeats, dtype=computeop_deployment_dtype(op))
+        )
+
+
+class TestConstantsAreDerivedAtTheDeploymentDtype:
+    """The probe executes the op at the dtype the DEPLOYED program runs it at.
+
+    Deriving in fp64 and then demanding the fp32 evaluation be bit-identical
+    was unsatisfiable for every value fp32 cannot carry exactly — i.e. for
+    almost every trained parameter — so the analysis refused before it had
+    executed anything.
+    """
+
+    def test_identity_folds_a_non_dyadic_deployment_value(self):
+        c = float(torch.tensor(0.3, dtype=torch.float32))
+        assert not is_on_grid([c])
+        assert derive_constant_outputs(
+            _op(nn.Identity().eval()), OPAQUE_TRANSFER, [c] * 4
+        ) == {j: c for j in range(4)}
+
+    def test_transcendental_of_a_non_dyadic_constant_is_execution_exact_only(self):
+        op = _op(nn.GELU().eval())
+        out = derive_constant_outputs(op, OPAQUE_TRANSFER, [0.25] * 4)
+        want = float(_executed(op, [0.25] * 4, 1).flatten()[0])
+        assert out == {j: want for j in range(4)}
+        assert not is_on_grid(list(out.values())), (
+            "GELU(0.25) is exactly what the deployment computes, and off the "
+            "dyadic grid: execution-exact, NOT grid-certifiable"
+        )
+
+    def test_sigmoid_of_zero_folds_and_is_grid_certifiable(self):
+        out = derive_constant_outputs(
+            _op(nn.Sigmoid().eval()), OPAQUE_TRANSFER, [0.0] * 4
+        )
+        assert out == {j: 0.5 for j in range(4)}
+        assert is_on_grid(list(out.values()))
+
+    def test_linear_still_refuses_on_batch_size_independence(self):
+        """This refusal is CORRECT and stays: a GEMM reassociates its sum
+        differently from the batch-1 GEMV, so a Linear is not a per-sample
+        constant producer."""
+        torch.manual_seed(0)
+        op = _op(nn.Linear(16, 16).eval(), n_in=16, n_out=16)
+        probe = [0.25] * 16
+        assert not torch.equal(_executed(op, probe, 2)[0:1], _executed(op, probe, 1)), (
+            "premise of this pin: batch 1 and batch 2 genuinely disagree"
+        )
+        assert derive_constant_outputs(op, OPAQUE_TRANSFER, probe) == {}
+
+    def test_the_deployment_dtype_follows_the_module_parameters(self):
+        class AddParam(nn.Module):
+            def __init__(self, dtype):
+                super().__init__()
+                self.offset = nn.Parameter(torch.full((4,), 0.1, dtype=dtype))
+
+            def forward(self, x):
+                return x + self.offset
+
+        op64 = _op(AddParam(torch.float64).eval())
+        op32 = _op(AddParam(torch.float32).eval())
+        assert computeop_deployment_dtype(op64) == torch.float64
+        assert computeop_deployment_dtype(op32) == torch.float32
+        assert derive_constant_outputs(op64, OPAQUE_TRANSFER, [0.25] * 4) == {
+            j: 0.25 + 0.1 for j in range(4)
+        }
+        want32 = float(_executed(op32, [0.25] * 4, 1).flatten()[0])
+        assert want32 != 0.25 + 0.1
+        assert derive_constant_outputs(op32, OPAQUE_TRANSFER, [0.25] * 4) == {
+            j: want32 for j in range(4)
+        }
+
+    def test_a_dtype_transparent_module_derives_at_the_process_dtype(self):
+        """A parameterless module carries no precision of its own: it computes
+        in whatever dtype its inputs are born in, which is the process dtype
+        the deployed executor's gather buffer uses."""
+        op = _op(nn.Identity().eval())
+        assert computeop_deployment_dtype(op) == torch.get_default_dtype()
+        previous = torch.get_default_dtype()
+        torch.set_default_dtype(torch.float64)
+        try:
+            assert computeop_deployment_dtype(op) == torch.float64
+            assert derive_constant_outputs(
+                op, OPAQUE_TRANSFER, [0.3] * 4
+            ) == {j: 0.3 for j in range(4)}
+        finally:
+            torch.set_default_dtype(previous)
+
+    def test_a_value_the_deployment_dtype_cannot_carry_is_refused(self):
+        """0.3 is not an fp32 value, so an fp32 deployment never carries it on
+        that line; probing with the ROUNDED value would derive a constant for
+        a line that does not exist. Refuse, explicitly."""
+        assert float(torch.tensor(0.3, dtype=torch.float32)) != 0.3
+        assert derive_constant_outputs(
+            _op(nn.Identity().eval()), OPAQUE_TRANSFER, [0.3] * 4
+        ) == {}
+
+    def test_that_refusal_can_never_cost_a_certifiable_fold(self):
+        """Every dyadic-grid value is exactly an fp32 value, so the
+        carriability gate only ever refuses folds the certificate would have
+        refused anyway."""
+        op = _op(nn.Identity().eval())
+        for k in range(-4096, 4097, 37):
+            c = float(np.ldexp(float(k), -8))
+            assert is_on_grid([c])
+            assert derive_constant_outputs(op, OPAQUE_TRANSFER, [c] * 4) == {
+                j: c for j in range(4)
+            }
 
 
 def _graph_with(op):

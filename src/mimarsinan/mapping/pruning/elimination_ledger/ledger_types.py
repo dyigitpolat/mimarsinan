@@ -5,7 +5,12 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import dataclass
-from typing import Any, Mapping
+from typing import Any, Iterable, Mapping
+
+from mimarsinan.mapping.pruning.certificate.dyadic_grid import (
+    DEFAULT_FRACTION_BITS,
+    is_on_grid,
+)
 
 KILL_CAUSE_SEED = "seed"
 KILL_CAUSE_CLOSURE_COUPLING = "closure_coupling"
@@ -22,6 +27,23 @@ class EliminationLedgerError(RuntimeError):
     """The ledger failed to reconcile against the production kill sets."""
 
 
+def count_grid_certifiable_folds(
+    constants: Iterable[float], *, fraction_bits: int = DEFAULT_FRACTION_BITS
+) -> int:
+    """How many folded constants the bit-exact certificate can back [W4b-2].
+
+    Every fold is exactly what the deployed program computes; only the ones on
+    the dyadic grid survive the certificate's exactness precondition, so the
+    rest are EXECUTION-EXACT ONLY (the documented ``GELU(c != 0)`` refusal).
+    Classification uses the ``is_on_grid`` SSOT and never SNAPS a constant onto
+    the grid: that would change the folded value to buy certifiability.
+    """
+    return sum(
+        1 for c in constants
+        if is_on_grid((float(c),), fraction_bits=fraction_bits)
+    )
+
+
 @dataclass(frozen=True)
 class EliminationCounts:
     """Rows/columns killed, split by attribution category."""
@@ -31,6 +53,9 @@ class EliminationCounts:
     emergent_rows: int = 0
     liveness_rows: int = 0
     constant_rows: int = 0
+    # The grid-certifiable SUBSET of constant_rows; the complement is
+    # execution-exact but refused by the bit-exact certificate.
+    constant_rows_grid_certifiable: int = 0
     seed_cols: int = 0
     closure_cols: int = 0
     emergent_cols: int = 0
@@ -130,6 +155,15 @@ class EliminationLedger:
         return self._sum("constant_rows")
 
     @property
+    def constant_fold_rows_grid_certifiable(self) -> int:
+        return self._sum("constant_rows_grid_certifiable")
+
+    @property
+    def constant_fold_rows_execution_exact_only(self) -> int:
+        """Folds the deployment reproduces exactly but the certificate refuses."""
+        return self.constant_fold_rows - self.constant_fold_rows_grid_certifiable
+
+    @property
     def liveness_dead_rows(self) -> int:
         return self._sum("liveness_rows")
 
@@ -168,6 +202,12 @@ class EliminationLedger:
             "liveness_dead_rows": self.liveness_dead_rows,
             "liveness_dead_cols": self.liveness_dead_cols,
             "constant_fold_rows": self.constant_fold_rows,
+            "constant_fold_rows_grid_certifiable": (
+                self.constant_fold_rows_grid_certifiable
+            ),
+            "constant_fold_rows_execution_exact_only": (
+                self.constant_fold_rows_execution_exact_only
+            ),
             "total_rows_eliminated": self._sum("seed_rows")
             + self._sum("closure_rows") + self._sum("emergent_rows")
             + self._sum("liveness_rows") + self._sum("constant_rows"),
@@ -193,6 +233,8 @@ class EliminationLedger:
             f"{self.emergent_propagation_cols} "
             f"liveness r/c={self.liveness_dead_rows}/{self.liveness_dead_cols} "
             f"constant_fold rows={self.constant_fold_rows} "
+            f"(grid_certifiable={self.constant_fold_rows_grid_certifiable} "
+            f"exact_only={self.constant_fold_rows_execution_exact_only}) "
             f"cores_deleted={self.cores_deleted} "
             f"bias_only={self.bias_only_collapses} "
             f"iters={self.fixpoint_iterations} "

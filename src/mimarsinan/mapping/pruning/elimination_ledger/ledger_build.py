@@ -24,6 +24,7 @@ from mimarsinan.mapping.pruning.elimination_ledger.ledger_types import (
     EliminationLedger,
     EliminationLedgerError,
     NodeEliminationRecord,
+    count_grid_certifiable_folds,
 )
 from mimarsinan.mapping.pruning.graph.propagation_mode import (
     DEFAULT_ELIMINATION_PROPAGATION,
@@ -199,13 +200,15 @@ def _node_record(
     liveness_cols = (
         set(range(n_neurons)) - final_cols if nid in dead_ids else set()
     )
-    folded = frozenset(
-        final.constant_folds.folded_rows.get(nid, {}).keys()
-    )
+    fold_values = final.constant_folds.folded_rows.get(nid, {})
+    folded = frozenset(fold_values)
     s_r, c_r, e_r, l_r, k_r = _split_counts(
         masked.pruned_rows_per_node.get(nid, set()),
         closure.pruned_rows_per_node.get(nid, set()),
         final_rows, liveness_rows, folded,
+    )
+    on_grid = count_grid_certifiable_folds(
+        fold_values[row] for row in sorted(final_rows & folded)
     )
     s_c, c_c, e_c, l_c, _ = _split_counts(
         masked.pruned_cols_per_node.get(nid, set()),
@@ -219,7 +222,8 @@ def _node_record(
         n_neurons=n_neurons,
         counts=EliminationCounts(
             seed_rows=s_r, closure_rows=c_r, emergent_rows=e_r,
-            liveness_rows=l_r, constant_rows=k_r, seed_cols=s_c,
+            liveness_rows=l_r, constant_rows=k_r,
+            constant_rows_grid_certifiable=on_grid, seed_cols=s_c,
             closure_cols=c_c, emergent_cols=e_c, liveness_cols=l_c,
         ),
         row_depths=dict(replay.row_depths.get(nid, {})),

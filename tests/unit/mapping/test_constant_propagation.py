@@ -39,6 +39,7 @@ from mimarsinan.mapping.pruning.liveness_transfer import (
 
 from unit.mapping.constant_vehicles import (
     bias_only_collapse_graph,
+    gelu_execution_exact_graph,
     residual_join_graph,
     sigmoid_chain_graph,
 )
@@ -251,6 +252,7 @@ class TestKillSwitchesAreByteIdentical:
             (sigmoid_chain_graph, STEM_DEAD),
             (residual_join_graph, STEM_DEAD),
             (bias_only_collapse_graph, None),
+            (gelu_execution_exact_graph, None),
         ],
     )
     def test_off_reproduces_the_zero_only_cascade(self, make, seeds):
@@ -351,11 +353,13 @@ class TestCertificateTripsOnFoldMutation:
 
 
 class TestCertificateRefusesGridBreakingConstants:
-    def test_gelu_of_a_nonzero_constant_never_folds(self):
-        """Execution-exact but grid-breaking AND dtype-unstable: the lattice
-        refuses rather than certifying something it cannot compare."""
+    def test_gelu_of_a_nonzero_constant_folds_but_never_certifies(self):
+        """Execution-exact, grid-breaking: the fold happens (it is exactly what
+        the deployment computes) and the CERTIFICATE is what refuses — the
+        documented honesty, moved to the gate that can actually see the grid."""
         import torch.nn as nn
 
+        from mimarsinan.mapping.pruning.certificate.dyadic_grid import is_on_grid
         from mimarsinan.mapping.pruning.liveness_transfer import (
             derive_constant_outputs,
         )
@@ -364,9 +368,33 @@ class TestCertificateRefusesGridBreakingConstants:
         )
         from unit.mapping.test_constant_lattice import _op
 
-        assert derive_constant_outputs(
+        folded = derive_constant_outputs(
             _op(nn.GELU().eval()), OPAQUE_TRANSFER, [0.5] * 4
-        ) == {}
+        )
+        assert set(folded) == {0, 1, 2, 3}
+        assert not is_on_grid(list(folded.values()))
+
+    def test_the_certificate_refuses_the_execution_exact_vehicle(self):
+        with pytest.raises(
+            CascadeCertificatePreconditionError, match="off-grid"
+        ):
+            certify_cascade_equivalence(
+                gelu_execution_exact_graph(), batches=1, batch_size=2,
+            )
+
+    def test_identity_carries_the_non_dyadic_constant_one_line_further(self):
+        """The op class the fp64-vs-fp32 gate refused outright: an Identity
+        relaying a constant the deployment carries exactly but the dyadic grid
+        does not."""
+        from mimarsinan.mapping.pruning.certificate.dyadic_grid import is_on_grid
+
+        result = _arm(gelu_execution_exact_graph(), folding="full")
+        lines = constant_line_values(result)
+        relay = next(
+            n for n in gelu_execution_exact_graph().nodes if n.name == "relay"
+        )
+        assert (relay.id, 0) in lines
+        assert not is_on_grid([lines[(relay.id, 0)]])
 
 
 class TestLedgerAttributionAndReplay:
@@ -399,6 +427,38 @@ class TestLedgerAttributionAndReplay:
         )
         assert ledger.cores_deleted == 1
         assert ledger.constant_fold_rows == 1
+
+    def test_grid_certifiable_folds_are_counted_apart_from_exact_only(self):
+        """[W4b-2] every fold is classified with the SSOT grid predicate: a
+        certifiable fold and an execution-exact-only one both land, and the
+        ledger says which is which instead of hiding the refusal."""
+        certifiable = compute_elimination_ledger(
+            sigmoid_chain_graph(), initial_pruned_per_node=STEM_DEAD,
+            spiking_mode=INERT_SPIKING_MODE,
+        )
+        assert certifiable.constant_fold_rows == 4
+        assert certifiable.constant_fold_rows_grid_certifiable == 4
+        assert certifiable.constant_fold_rows_execution_exact_only == 0
+
+        exact_only = compute_elimination_ledger(
+            gelu_execution_exact_graph(), spiking_mode=INERT_SPIKING_MODE,
+        )
+        assert exact_only.constant_fold_rows == 1
+        assert exact_only.constant_fold_rows_grid_certifiable == 0
+        assert exact_only.constant_fold_rows_execution_exact_only == 1
+        row = exact_only.to_dict()
+        assert row["constant_fold_rows_grid_certifiable"] == 0
+        assert row["constant_fold_rows_execution_exact_only"] == 1
+        assert "grid_certifiable" in exact_only.summary()
+
+    def test_the_split_partitions_the_constant_fold_category(self):
+        ledger = compute_elimination_ledger(
+            gelu_execution_exact_graph(), spiking_mode=INERT_SPIKING_MODE,
+        )
+        assert ledger.constant_fold_rows == (
+            ledger.constant_fold_rows_grid_certifiable
+            + ledger.constant_fold_rows_execution_exact_only
+        )
 
     def test_ledger_totals_stay_a_partition(self):
         ledger = compute_elimination_ledger(

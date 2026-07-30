@@ -8,7 +8,7 @@ import numpy as np
 import numpy.typing as npt
 import torch
 
-from mimarsinan.mapping.ir import ComputeOp, IRSource
+from mimarsinan.mapping.ir import ComputeOp, IRSource, computeop_deployment_dtype
 from mimarsinan.mapping.ir.gather_plan import gather_plan_for
 from mimarsinan.mapping.support.activation_scales import scalar_node_scale
 from mimarsinan.mapping.support.compute_modules import ScaleNormalizingWrapper
@@ -69,16 +69,6 @@ def gather_final_output_torch(
     return out
 
 
-def _compute_op_module_dtype(op: ComputeOp) -> torch.dtype:
-    """The op module's floating dtype (float32 for parameterless modules)."""
-    module = op.params.get("module")
-    if module is not None and hasattr(module, "parameters"):
-        for p in module.parameters():
-            if p.dtype.is_floating_point:
-                return p.dtype
-    return torch.float32
-
-
 def execute_compute_op_torch(
     op: ComputeOp,
     original_input: torch.Tensor,
@@ -100,7 +90,7 @@ def execute_compute_op_torch(
 
     gathered = op.gather_inputs(original_input, state_buffer, dtype=gather_dtype)
     if gather_dtype is None:
-        gathered = gathered.to(_compute_op_module_dtype(op))
+        gathered = gathered.to(computeop_deployment_dtype(op))
     if abs(in_scale - 1.0) > 1e-9:
         gathered = gathered * in_scale
 

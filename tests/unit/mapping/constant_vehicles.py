@@ -15,6 +15,7 @@ from mimarsinan.mapping.ir import ComputeOp, IRGraph, IRSource, NeuralCore
 __all__ = [
     "bias_only_collapse_graph",
     "dyadic",
+    "gelu_execution_exact_graph",
     "residual_join_graph",
     "sigmoid_chain_graph",
     "srcs",
@@ -147,4 +148,47 @@ def bias_only_collapse_graph(seed=41):
     )
     return IRGraph(
         nodes=[bias_core, data, head], output_sources=srcs([(2, 0), (2, 1)])
+    )
+
+
+def gelu_execution_exact_graph(seed=43):
+    """bias core -> GELU -> Identity -> head: EXACT, but OFF the dyadic grid.
+
+    ``GELU(0.25)`` is exactly what the deployed program computes and is not a
+    dyadic value, so the fold is execution-exact while the bit-exact
+    certificate refuses to back it. The ``Identity`` hop carries that same
+    non-dyadic constant one line further — the op class that used to refuse
+    every constant fp32 could carry but fp64 could not. The ledger carries the
+    split; nothing is ever snapped onto the grid to buy certifiability.
+    """
+    rng = np.random.default_rng(seed)
+    bias_core = NeuralCore(
+        id=0, name="bias_core", input_sources=srcs([(-3, 0)]),
+        core_matrix=np.array([[0.25]], dtype=np.float64),
+        threshold=1.0, latency=0,
+    )
+    act = ComputeOp(
+        id=1, name="act", input_sources=srcs([(0, 0)]), op_type="GELU",
+        params={"module": nn.GELU().eval(), "input_shape": (1,)},
+        input_shape=(1,), output_shape=(1,),
+    )
+    relay = ComputeOp(
+        id=2, name="relay", input_sources=srcs([(1, 0)]), op_type="Identity",
+        params={"module": nn.Identity().eval(), "input_shape": (1,)},
+        input_shape=(1,), output_shape=(1,),
+    )
+    data = NeuralCore(
+        id=3, name="data", input_sources=srcs([(-2, 0), (-2, 1), (-3, 0)]),
+        core_matrix=_nonzero_bias_row(dyadic(rng, (3, 2))),
+        threshold=1.0, latency=0,
+    )
+    head = NeuralCore(
+        id=4, name="head",
+        input_sources=srcs([(2, 0), (3, 0), (3, 1), (-3, 0)]),
+        core_matrix=_nonzero_bias_row(dyadic(rng, (4, 2))),
+        threshold=1.0, latency=1,
+    )
+    return IRGraph(
+        nodes=[bias_core, act, relay, data, head],
+        output_sources=srcs([(4, 0), (4, 1)]),
     )

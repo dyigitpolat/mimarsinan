@@ -1,5 +1,6 @@
 """Unified IR: types, graph container, and legacy conversions."""
 
+from mimarsinan.mapping.ir.deployment_dtype import computeop_deployment_dtype
 from mimarsinan.mapping.ir.graph import IRGraph
 from mimarsinan.mapping.ir.legacy_convert import (
     ir_graph_to_soft_core_mapping,
@@ -19,6 +20,7 @@ from mimarsinan.mapping.ir.types import (
 
 __all__ = [
     "IRGraph",
+    "computeop_deployment_dtype",
     "ir_graph_to_soft_core_mapping",
     "ir_source_to_spike_source",
     "neural_core_to_soft_core",

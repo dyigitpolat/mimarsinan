@@ -7,10 +7,12 @@ cascade must leave them (and the fc2 rows reading them) alive; the lattice
 folds their constant onto fc2's carrier and reclaims both.
 
 Tiny ViT vehicle: ``tiny_test_vit`` with its wiring constants (cls token,
-positional embedding) zeroed so every host constant is exactly representable.
+positional embedding) zeroed so every host constant lands on the dyadic grid.
 Killing the patch embedding then propagates through cat -> add -> LayerNorm ->
 MultiheadAttention -> residual add — five OPAQUE barriers the zero-only
-cascade cannot cross at all.
+cascade cannot cross at all. The PRISTINE twin keeps those trained constants,
+so the same chain now carries off-grid values: execution-exact, not
+grid-certifiable.
 """
 
 from __future__ import annotations
@@ -23,6 +25,7 @@ from mimarsinan.chip_simulation.core_semantics import INERT_SPIKING_MODE
 from mimarsinan.mapping.ir import IRGraph, NeuralCore
 from mimarsinan.mapping.pruning.certificate import (
     certify_cascade_equivalence,
+    is_on_grid,
     snap_ir_graph_to_dyadic_grid,
 )
 from mimarsinan.mapping.pruning.graph import (
@@ -100,7 +103,7 @@ def _deep_conv_constant_vehicle() -> IRGraph:
     return snap_ir_graph_to_dyadic_grid(graph, fraction_bits=8)
 
 
-def _tiny_vit_constant_vehicle() -> IRGraph:
+def _tiny_vit_constant_vehicle(*, zero_wiring_constants: bool = True) -> IRGraph:
     from mimarsinan.mapping.map_model_to_ir import map_model_to_ir
     from mimarsinan.mapping.platform.packaging_contract import MVM_PACKAGING
     from mimarsinan.models.vit_leaf import tiny_test_vit
@@ -108,10 +111,11 @@ def _tiny_vit_constant_vehicle() -> IRGraph:
 
     torch.manual_seed(0)
     model = tiny_test_vit().eval()
-    with torch.no_grad():
-        for name, param in model.named_parameters():
-            if "cls_token" in name or "pos_embed" in name:
-                param.zero_()
+    if zero_wiring_constants:
+        with torch.no_grad():
+            for name, param in model.named_parameters():
+                if "cls_token" in name or "pos_embed" in name:
+                    param.zero_()
     flow = convert_torch_model(
         model, (3, 8, 8), num_classes=10, packaging=MVM_PACKAGING
     )
@@ -218,14 +222,23 @@ class TestDeepConvConstantFolding:
         assert "additional_kills" in report.summary() or True
 
 
-@pytest.fixture(scope="module")
-def vit():
-    graph = _tiny_vit_constant_vehicle()
+def _vit_with_dead_patch_embedding(graph: IRGraph):
     bank0 = graph.weight_banks[0]
-    seeds = dict(
+    return graph, dict(
         seeds_bank={0: (set(), set(range(bank0.core_matrix.shape[1])))}
     )
-    return graph, seeds
+
+
+@pytest.fixture(scope="module")
+def vit():
+    return _vit_with_dead_patch_embedding(_tiny_vit_constant_vehicle())
+
+
+@pytest.fixture(scope="module")
+def pristine_vit():
+    return _vit_with_dead_patch_embedding(
+        _tiny_vit_constant_vehicle(zero_wiring_constants=False)
+    )
 
 
 class TestTinyViTOpaqueBarriersNowPropagate:
@@ -263,19 +276,58 @@ class TestTinyViTOpaqueBarriersNowPropagate:
                      "blocks_0_norm2"):
             assert by_name[name] in resolved_ops, name
 
-    def test_the_gelu_of_a_nonzero_constant_is_the_documented_stop(self, vit):
-        """fc1's columns become CONST(bias/theta) != 0, and GELU of a non-zero
-        constant is not dtype-stable, so the lattice REFUSES there rather than
-        folding a value the fp32 deployment would not reproduce. The final
-        LayerNorm therefore stays TOP — refuse-to-fold, stated, not silent."""
+    def test_the_gelu_of_a_nonzero_constant_is_execution_exact_not_certifiable(
+        self, vit
+    ):
+        """fc1's columns become CONST(bias/theta) != 0, and the GELU of that is
+        exactly what the deployment computes — so the lattice RESOLVES it now
+        (it derives at the deployment dtype) and the value is off the dyadic
+        grid. The refusal moves to where the grid is visible: the certificate
+        declines the instance. The analysis no longer pretends the line is
+        unknown, and nothing is snapped onto the grid.
+
+        [ratchet, was ``blocks_0_act not in resolved_ops``] the old assertion
+        pinned the fp64-vs-fp32 probe, which refused every constant fp32 can
+        carry but fp64 cannot — i.e. almost every trained value.
+        """
         graph, seeds = vit
         on = _arm(graph, folding="full", **seeds)
-        resolved_ops = {
-            op_id for (op_id, _) in on.constant_folds.lattice.values
-        }
+        lattice = on.constant_folds.lattice.values
         by_name = {n.name: n.id for n in graph.nodes}
-        assert by_name["blocks_0_act"] not in resolved_ops
-        assert by_name["norm"] not in resolved_ops
+        act = [
+            v for (op_id, _), v in lattice.items()
+            if op_id == by_name["blocks_0_act"]
+        ]
+        assert act, "the GELU of a known constant is a known constant"
+        assert not is_on_grid(act), "execution-exact, NOT grid-certifiable"
+        assert by_name["norm"] not in {op_id for (op_id, _) in lattice}, (
+            "the post-block residual join still stops the lattice"
+        )
+
+    def test_a_pristine_transformer_propagates_past_its_first_arithmetic_op(
+        self, pristine_vit
+    ):
+        """The vehicle above zeroes cls_token/pos_embed so every host constant
+        is dyadic. UNZEROED — a normally trained ViT — the fp64-vs-fp32 probe
+        stopped at the very first op that adds two trained floats, because
+        their fp64 sum is not an fp32 value. Deriving at the deployment dtype
+        carries the chain through add -> LayerNorm -> attention -> add.
+        """
+        graph, seeds = pristine_vit
+        on = _arm(graph, folding="full", **seeds)
+        resolved = {op_id for (op_id, _) in on.constant_folds.lattice.values}
+        by_name = {n.name: n.id for n in graph.nodes}
+        for name in ("cat", "add", "blocks_0_norm1", "blocks_0_attn", "add_1",
+                     "blocks_0_norm2"):
+            assert by_name[name] in resolved, name
+        values = [
+            v for (op_id, _), v in on.constant_folds.lattice.values.items()
+            if op_id == by_name["add"]
+        ]
+        assert values and not is_on_grid(values), (
+            "trained cls_token + pos_embed is exactly what the deployment "
+            "carries and is nowhere near the dyadic grid"
+        )
 
     def test_arm_ordering_holds_on_the_vit(self, vit):
         graph, seeds = vit

@@ -118,10 +118,14 @@ class _ModeProbeHost(nn.Module):
         return self.child(x)
 
 
-# Module-level, so a ``deepcopy`` of the host (the fp64 twin) shares it and
-# every probe execution is counted, copies included.
+# Module-level, so a ``deepcopy`` of the host would share it too and every
+# probe execution is counted whatever the battery runs on.
 _CHILD_MODES: list = []
 _PROBE_EXECUTIONS: list = []
+
+# The probe battery per op: two fillers, a determinism repeat, a two-row batch,
+# and the as-deployed-mode run.
+PROBE_EXECUTIONS_PER_OP = 5
 
 
 class _RngDrawingHost(nn.Module):
@@ -131,7 +135,7 @@ class _RngDrawingHost(nn.Module):
     passes every agreement gate and the lattice still folds — which is what
     makes this a clean measurement of the RNG side effect alone rather than of
     a refusal. ``live_calls`` counts only executions of THIS instance; the
-    module-level list counts the fp64 copies too.
+    module-level list counts any copy's executions too.
     """
 
     def __init__(self) -> None:
@@ -207,7 +211,7 @@ class TestGlobalRngIsUnperturbed:
         result = _arm(graph, seeds=STEM_DEAD)
 
         after = torch.get_rng_state()
-        assert len(_PROBE_EXECUTIONS) >= 6, (
+        assert len(_PROBE_EXECUTIONS) >= PROBE_EXECUTIONS_PER_OP, (
             "the probe battery must have executed the stochastic host "
             f"(saw {len(_PROBE_EXECUTIONS)} executions)"
         )
@@ -230,18 +234,17 @@ class TestGlobalRngIsUnperturbed:
         assert all(torch.equal(a, b) for a, b in zip(reference, observed))
 
     def test_isolation_covers_the_original_module_not_only_the_copies(self):
-        """The fp64 twin is a deepcopy, but two of the six probe executions run
-        on the LIVE module — forking only around the copies would still leak."""
+        """[ratchet] the fp64 twin is gone, so EVERY probe execution now runs
+        on the LIVE module — the fork has to cover all of them, not the two it
+        used to. The invariant tightens rather than relaxes."""
         host = _RngDrawingHost()
         graph = _host_graph(host)
         torch.manual_seed(7)
         before = torch.get_rng_state().clone()
         _arm(graph, seeds=STEM_DEAD)
         assert torch.equal(before, torch.get_rng_state())
-        # Two fp32 executions run on `host` ITSELF (the eval probe and the
-        # as-is probe); the other four run on its fp64 deepcopy.
-        assert host.live_calls == 2, (
-            "expected the live module to be executed twice, saw "
+        assert host.live_calls == PROBE_EXECUTIONS_PER_OP, (
+            "expected the live module to carry the whole battery, saw "
             f"{host.live_calls}"
         )
 

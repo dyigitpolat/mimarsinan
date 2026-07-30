@@ -15,23 +15,36 @@ branches are constant, and an add-with-parameter folds because the parameter
 lives inside the module. Zero-preservation is NOT required — this is FORWARD
 constant flow, so ``sigmoid(0) = 0.5`` propagates like any other value.
 
-Execution is guarded by four bit-exact agreement probes, because a wrong
-constant is worse than no constant:
+Probing runs AT THE DEPLOYMENT DTYPE (``computeop_deployment_dtype``), so the
+derived constant is by construction the value the deployed program puts on
+that line — there is nothing left to compare across precisions. The value is
+then either ON the dyadic grid (grid-certifiable: the cascade certificate can
+back it bit-exactly) or not (execution-exact only: the certificate REFUSES the
+instance, the documented ``GELU(c != 0)`` pattern, counted on the elimination
+ledger rather than hidden). Constants are never snapped onto the grid.
+
+Execution is guarded by three bit-exact agreement probes plus a carriability
+gate, because a wrong constant is worse than no constant:
 
 - DETERMINISM — the seam is evaluated twice and must agree;
 - BATCH-SIZE INDEPENDENCE — a two-row batch of the same probe must reproduce
-  the one-row result (a batch-coupled op, e.g. a batch-statistic normalizer,
-  is not a per-sample constant);
+  the one-row result; this is what refuses a ``Linear`` (a GEMM reassociates
+  its sum differently from the batch-1 GEMV) and any batch-coupled op;
 - MODE INDEPENDENCE — probing happens with the WHOLE hosted subtree in eval
   (restored afterwards), so the as-deployed mode is probed too and must agree;
   a module left in training mode whose behaviour differs (dropout) is refused;
-- DTYPE INDEPENDENCE — the fp32 module and its fp64 twin must agree, because
-  the deployed program runs fp32 while the certificate runs an fp64 twin.
-  This is the line that keeps the fold bit-exact in EVERY deployment: it
-  admits ``sigmoid(0) = 0.5``, ``GELU(0) = 0``, ``LayerNorm(const) = bias``,
-  pools, bijections and joins, and refuses e.g. ``GELU(0.3)``, whose value
-  genuinely differs between fp32 and fp64 (and which the bit-exact
-  certificate would refuse as grid-breaking anyway).
+- DEPLOYMENT-DTYPE CARRIABILITY — every incoming constant must be exactly
+  representable at the deployment dtype. A line the deployment cannot carry
+  never held that value, so probing with the ROUNDED value would derive a
+  constant for a line that does not exist; refuse instead.
+
+The earlier fp32-vs-fp64 bit-equality probe is GONE. It derived in fp64 and
+then demanded the fp32 evaluation match bit-for-bit, which no value outside
+fp32 can satisfy — on a trained transformer every constant downstream of the
+first arithmetic op is such a value, so the analysis refused before it had
+executed anything. Precision-invariance is not the fold's obligation; being
+the DEPLOYED value is, and the grid classification is where invariance is
+decided.
 
 TOP inputs are filled with two DIFFERENT probe values; an output that depends
 on a filled position (i.e. a region relation that under-reports its support)
@@ -50,13 +63,12 @@ experiment's downstream draws).
 
 from __future__ import annotations
 
-import copy
 import itertools
 from typing import Callable, Dict, FrozenSet, List, Sequence, Tuple
 
 import torch
 
-from mimarsinan.mapping.ir import ComputeOp
+from mimarsinan.mapping.ir import ComputeOp, computeop_deployment_dtype
 from mimarsinan.mapping.pruning.boundary_policy import _computeop_relays_deadness
 from mimarsinan.mapping.pruning.liveness_transfer.transfer_types import (
     LivenessTransfer,
@@ -96,11 +108,32 @@ def _run(op: ComputeOp, probe: List[float], repeats: int, dtype: torch.dtype):
         return op.execute_on_gathered(x)
 
 
+def _carriable(values: Sequence[float], dtype: torch.dtype) -> bool:
+    """Is every constant exactly representable at the deployment dtype?"""
+    return all(
+        float(torch.tensor(v, dtype=dtype)) == float(v) for v in values
+    )
+
+
 # Every guard on the probe path shares this tuple: a hosted module is arbitrary
 # user code, so probing it degrades to "stay TOP" for the failure classes a
 # module can plausibly raise. Anything outside it still propagates (fail loud).
 _PROBE_FAILURES = (RuntimeError, TypeError, ValueError, IndexError, KeyError,
                    AttributeError)
+
+
+def _deployment_dtype(op: ComputeOp) -> "torch.dtype | None":
+    """The op's deployment dtype; None when the hosted module refuses to say.
+
+    Resolution is never DEFAULTED here: an arbitrary hosted module may raise
+    from ``parameters()``, and an unresolved dtype means the analysis cannot
+    say what the deployment computes, so it refuses. The deployed executor,
+    which must fail loud instead, calls the SSOT directly.
+    """
+    try:
+        return computeop_deployment_dtype(op)
+    except _PROBE_FAILURES:
+        return None
 
 
 def _eval_mode(module) -> Callable[[], None]:
@@ -114,10 +147,9 @@ def _eval_mode(module) -> Callable[[], None]:
     ``nn.Module.train`` itself does per node, minus the recursion.
 
     Capturing flags (O(#submodules) booleans) is chosen over probing a
-    ``deepcopy`` of the live module: the fp64 twin already pays one deepcopy
-    per probe, and a second one would double the cost of every LayerNorm /
-    attention probe on the hot fixpoint path for no extra exactness — the
-    flag snapshot restores the observable state bit-for-bit either way.
+    ``deepcopy`` of the live module: a copy per probe would cost a deep clone
+    of every LayerNorm / attention host on the hot fixpoint path for no extra
+    exactness — the flag snapshot restores the observable state bit-for-bit.
     """
     if not hasattr(module, "eval") or not hasattr(module, "modules"):
         return lambda: None
@@ -157,52 +189,39 @@ def _rng_devices(module) -> List[int]:
 
 
 def _probe(
-    op: ComputeOp, module, probes: List[List[float]]
+    op: ComputeOp, module, probes: List[List[float]], dtype: torch.dtype
 ) -> "Tuple[torch.Tensor, torch.Tensor] | None":
     """Run the guarded probe battery; None means "refuse, stay TOP".
 
     The whole battery runs inside ``fork_rng`` so that a stochastic host op
     (dropout, a sampling block, a module that draws during ``forward``) cannot
     move the global generator: the analysis must not perturb a seeded run's
-    downstream draws. The fork spans the ORIGINAL-module executions too, not
-    just the fp64 copies.
+    downstream draws.
     """
     try:
         devices = _rng_devices(module)
     except _PROBE_FAILURES:
         return None
     with torch.random.fork_rng(devices=devices, enabled=True):
-        return _probe_isolated(op, module, probes)
+        return _probe_isolated(op, module, probes, dtype)
 
 
 def _probe_isolated(
-    op: ComputeOp, module, probes: List[List[float]]
+    op: ComputeOp, module, probes: List[List[float]], dtype: torch.dtype
 ) -> "Tuple[torch.Tensor, torch.Tensor] | None":
-    original = op.params.get("module")
-    try:
-        double = copy.deepcopy(module).double()
-    except _PROBE_FAILURES:
-        return None
     restore: Callable[[], None] = lambda: None
-    restore_double: Callable[[], None] = lambda: None
     try:
-        restore_double = _eval_mode(double)
         restore = _eval_mode(module)
-        op.params["module"] = double
-        y_a = _run(op, probes[0], 1, torch.float64)
-        y_b = _run(op, probes[1], 1, torch.float64)
-        y_again = _run(op, probes[0], 1, torch.float64)
-        y_batch = _run(op, probes[0], 2, torch.float64)
-        op.params["module"] = original
-        y_f32_eval = _run(op, probes[0], 1, torch.float32)
+        y_a = _run(op, probes[0], 1, dtype)
+        y_b = _run(op, probes[1], 1, dtype)
+        y_again = _run(op, probes[0], 1, dtype)
+        y_batch = _run(op, probes[0], 2, dtype)
         restore()
-        y_f32_asis = _run(op, probes[0], 1, torch.float32)
+        y_as_deployed = _run(op, probes[0], 1, dtype)
     except _PROBE_FAILURES:
         return None
     finally:
-        op.params["module"] = original
         restore()
-        restore_double()
 
     if y_a.shape != y_b.shape or y_a.shape != y_again.shape:
         return None
@@ -214,12 +233,10 @@ def _probe_isolated(
         return None                                   # batch-size coupling
     if not torch.equal(y_batch[0:1], y_a):
         return None
-    if y_f32_eval.shape != y_a.shape:
+    if y_as_deployed.shape != y_a.shape:
         return None
-    if not torch.equal(y_f32_eval, y_f32_asis):
+    if not torch.equal(y_as_deployed, y_a):
         return None                                   # mode independence
-    if not torch.equal(y_f32_eval.double(), y_a):
-        return None                                   # dtype independence
     return y_a, y_b
 
 
@@ -244,11 +261,14 @@ def derive_constant_outputs(
     known = {i: v for i, v in enumerate(in_values) if v is not None}
     if not known:
         return {}
+    dtype = _deployment_dtype(op)
+    if dtype is None or not _carriable(list(known.values()), dtype):
+        return {}
 
     probes = [
         [known.get(i, filler) for i in range(n_in)] for filler in _PROBE_FILLERS
     ]
-    probed = _probe(op, module, probes)
+    probed = _probe(op, module, probes, dtype)
     if probed is None:
         return {}
     y_a, y_b = probed
