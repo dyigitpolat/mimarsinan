@@ -1,5 +1,10 @@
 """WeightPreloadingStep -- load pretrained weights into the model and optionally fine-tune."""
 
+from mimarsinan.common.measurement import (
+    MetricTolerance,
+    assert_matches_recorded_baseline,
+)
+from mimarsinan.common.pretrained import unusable_baseline_reason
 from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 from mimarsinan.pipelining.core.registry.trainer_factory import make_basic_trainer
 from mimarsinan.pipelining.core.steps.trainer_pipeline_step import TrainerPipelineStep
@@ -19,6 +24,35 @@ class WeightPreloadingStep(TrainerPipelineStep):
 
     def __init__(self, pipeline):
         super().__init__(self.REQUIRES, self.PROMISES, self.UPDATES, self.CLEARS, pipeline)
+
+    def _assert_recorded_baseline(self, trainer, weight_set) -> None:
+        """The loaded weights must reproduce the accuracy the weight set records.
+
+        Run before any fine-tuning, so the number asserted is the load's own.
+        """
+        if weight_set is None:
+            return
+        reason = unusable_baseline_reason(weight_set, self.pipeline.config)
+        if reason is not None:
+            print(f"[WeightPreloadingStep] Recorded baseline not asserted: {reason}")
+            return
+        expected = float(weight_set["expected_accuracy"])
+        measured, samples = trainer.validate_measured()
+        print(
+            f"[WeightPreloadingStep] Recorded baseline {expected:.4f}; measured "
+            f"{measured:.4f} over {samples} validation samples"
+        )
+        assert_matches_recorded_baseline(
+            measured,
+            expected=expected,
+            tolerance=MetricTolerance.for_sampled_proportion(expected, samples),
+            observable="the preloaded model's validation accuracy",
+            recorded_as=f"weight set {weight_set['id']!r} on {weight_set['dataset']}",
+            causes=(
+                f"this run's data pipeline does not reproduce the preprocessing "
+                f"the weight set records ({weight_set.get('preprocessing')})",
+            ),
+        )
 
     def process(self):
         model = self.get_entry("model")
@@ -63,9 +97,9 @@ class WeightPreloadingStep(TrainerPipelineStep):
 
         finetune_epochs = int(self.pipeline.config.get("finetune_epochs", 0))
         recipe = build_recipe(self.pipeline.config)
-        self.trainer = make_basic_trainer(
-            self.pipeline, model, recipe=recipe
-        )
+        trainer = make_basic_trainer(self.pipeline, model, recipe=recipe)
+        self.trainer = trainer
+        self._assert_recorded_baseline(trainer, weight_set)
 
         if finetune_epochs > 0:
             lr = self.pipeline.config.get("finetune_lr", self.pipeline.config["lr"])

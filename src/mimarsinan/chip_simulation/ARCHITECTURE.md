@@ -46,7 +46,7 @@ Pareto decision layer.
 | `hybrid_run/` | Shared hybrid stage loop, segment I/O + compute-op execution, and the inter-stage semantics contract for all hybrid backends |
 | `lava_loihi/` | Host-scheduled Lava Loihi LIF backend: runner, wave-parallel per-segment execution (longest-path dependency waves through the bounded spawn pool), and timing |
 | `nevresim/` | Nevresim C++ simulator bridge: driver, compile, execute, segment binaries, compile cache, connectivity mode, profiling |
-| `parity/` | Generic segment-record field-diff comparison utilities |
+| `parity/` | Generic segment-record field-diff comparison utilities; float closeness is judged by `common.measurement.MetricTolerance` (the one definition of "matches") |
 | `recording/` | Spike encoding modes plus spike-count recording/diffing shared by HCM and backend parity checks |
 | `sanafe/` | SANA-FE detailed-stats backend: arch/net synthesis, runner, neuron plugins, records, energy analysis |
 | `simulation_runner/` | `SimulationRunner` orchestrating end-to-end nevresim runs (flat single-segment and hybrid multi-segment) |
