@@ -230,3 +230,29 @@ class TestGranularityIsDeclaredPerQuantity:
     def test_an_unknown_quantity_is_refused(self):
         with pytest.raises(ValueError, match="not a core-level quantity"):
             resolve_residency_policy({"core_value_granularity": {"nonsense": "per_core"}})
+
+
+class TestTheUngroupedFallbackHasOneDefinition:
+    """Four copies of `-(id+1)` made "unknown means share with nothing" unchangeable in one place."""
+
+    def test_all_call_sites_agree(self):
+        from mimarsinan.mapping.packing.canonical import _read_threshold_group
+        from mimarsinan.mapping.platform.threshold_grouping import (
+            provenance_group_id,
+            ungrouped_fallback_id,
+        )
+
+        class _Ungrouped:
+            id = 7
+            threshold_group_id = None
+            perceptron_index = None
+
+        expected = ungrouped_fallback_id(7)
+        assert _read_threshold_group(_Ungrouped()) == expected
+        assert provenance_group_id(None, fallback=ungrouped_fallback_id(7)) == expected
+
+    def test_it_never_collides_with_a_real_group(self):
+        from mimarsinan.mapping.platform.threshold_grouping import ungrouped_fallback_id
+
+        assert all(ungrouped_fallback_id(i) < 0 for i in range(64))
+        assert len({ungrouped_fallback_id(i) for i in range(64)}) == 64

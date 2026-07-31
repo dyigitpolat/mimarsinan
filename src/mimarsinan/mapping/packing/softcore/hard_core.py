@@ -4,6 +4,7 @@ from typing import Any
 
 import numpy as np
 
+from mimarsinan.mapping.platform.threshold_grouping import ungrouped_fallback_id
 from mimarsinan.mapping.platform.core_residency import (
     ALL_SINGLETON_NAMES,
     adopt_or_check,
@@ -86,7 +87,7 @@ class HardCore:
         if self.threshold_group_id is None:
             tg = getattr(softcore, "threshold_group_id", None)
             self.threshold_group_id = (
-                int(tg) if tg is not None else -(int(softcore.id) + 1)
+                int(tg) if tg is not None else ungrouped_fallback_id(softcore.id)
             )
 
         if self.latency is None:

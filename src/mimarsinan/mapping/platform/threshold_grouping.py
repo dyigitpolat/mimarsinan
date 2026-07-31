@@ -65,6 +65,16 @@ def threshold_group_key(
     return value
 
 
+def ungrouped_fallback_id(seed: int) -> int:
+    """The id an UNGROUPED core gets: a unique negative, never colliding with a real group.
+
+    THE one definition. It reads "unknown, so share with nothing", which is the maximally
+    conservative answer and the reason a vehicle without provenance fragments completely; four
+    copies of it made that behaviour impossible to change in one place.
+    """
+    return -(int(seed) + 1)
+
+
 def provenance_group_id(perceptron_index: int | None, *, fallback: int) -> int:
     """Today's id: the source perceptron, else a caller-supplied id.
 

@@ -210,6 +210,7 @@ def _split_segment_by_capacity(
         spec_at_compacted_extent,
         spec_from_neural_core,
     )
+    from mimarsinan.mapping.platform.threshold_grouping import ungrouped_fallback_id
     from mimarsinan.mapping.support.schedule.schedule_partitioner import split_softcores_by_capacity
 
     hw_types = [
@@ -245,7 +246,7 @@ def _split_segment_by_capacity(
             spec = spec_from_neural_core(
                 core,
                 hardware_bias=hardware_bias,
-                fallback_threshold_group_id=-(idx + 1),
+                fallback_threshold_group_id=ungrouped_fallback_id(idx),
             )
         specs.append(spec)
         coalescing_group_ids.append(getattr(core, "coalescing_group_id", None))

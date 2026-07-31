@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from mimarsinan.mapping.platform.threshold_grouping import ungrouped_fallback_id
+
 from typing import List, Protocol, TypeVar
 
 
@@ -40,7 +42,7 @@ def _read_threshold_group(obj, *, fallback_id: int | None = None) -> int:
         return int(tg)
     if fallback_id is None:
         fallback_id = int(getattr(obj, "id", 0))
-    return -(fallback_id + 1)
+    return ungrouped_fallback_id(fallback_id)
 
 
 def canonical_fuse_hardcores(
