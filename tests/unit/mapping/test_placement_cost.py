@@ -1,4 +1,4 @@
-"""The packer must minimize the quantity the reuse report measures.
+"""Bank affinity is the packer's STATED preference, replacing an accidental one.
 
 Before this, placement was ranked by geometry alone (`_placement_waste` / `_remaining_capacity`)
 while `weight_programming` measured programming cost. Nothing connected them: `threshold_group_id`
@@ -10,7 +10,7 @@ import pytest
 
 from mimarsinan.mapping.packing.placement_cost import (
     placement_cost,
-    programming_delta,
+    bank_affinity_cost,
     note_resident_bank,
     resident_bank_ids,
 )
@@ -32,26 +32,26 @@ class _Hard:
     pass
 
 
-class TestProgrammingDelta:
+class TestBankAffinityCost:
     def test_a_resident_bank_costs_nothing_extra(self):
         hard = _Hard()
         note_resident_bank(hard, _Soft(bank=3))
-        assert programming_delta(_Soft(bank=3), hard) == 0
+        assert bank_affinity_cost(_Soft(bank=3), hard) == 0
 
     def test_a_new_bank_costs_its_area(self):
         hard = _Hard()
         note_resident_bank(hard, _Soft(bank=3))
-        assert programming_delta(_Soft(axons=4, neurons=4, bank=9), hard) == 16
+        assert bank_affinity_cost(_Soft(axons=4, neurons=4, bank=9), hard) == 16
 
     def test_an_owned_matrix_always_costs(self):
         """Owned weights are programmed per placement; there is nothing to reuse."""
         hard = _Hard()
         note_resident_bank(hard, _Soft(bank=None))
         assert resident_bank_ids(hard) == frozenset()
-        assert programming_delta(_Soft(axons=2, neurons=3, bank=None), hard) == 6
+        assert bank_affinity_cost(_Soft(axons=2, neurons=3, bank=None), hard) == 6
 
     def test_an_empty_core_has_nothing_resident(self):
-        assert programming_delta(_Soft(bank=1), _Hard()) == 4 * 4
+        assert bank_affinity_cost(_Soft(bank=1), _Hard()) == 4 * 4
 
 
 class TestTheCostOrdersProgrammingBeforeFit:
@@ -97,4 +97,4 @@ class TestHardCoreRecordsWhatItHosts:
         sc.weight_bank_id = 11
         hc.add_softcore(sc)
         assert 11 in resident_bank_ids(hc)
-        assert programming_delta(sc, hc) == 0
+        assert bank_affinity_cost(sc, hc) == 0

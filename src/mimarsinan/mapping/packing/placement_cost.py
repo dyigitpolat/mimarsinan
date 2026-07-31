@@ -1,4 +1,4 @@
-"""What a placement costs: the quantity the packer minimizes IS the quantity we report."""
+"""What a placement costs, and why: bank affinity as the packer's stated preference."""
 
 from __future__ import annotations
 
@@ -24,15 +24,19 @@ def note_resident_bank(hard_core: Any, softcore: Any) -> None:
     banks.add(bank_id)
 
 
-def programming_delta(softcore: Any, hard_core: Any) -> int:
-    """Extra weight parameters that must be programmed if ``softcore`` joins ``hard_core``.
+def bank_affinity_cost(softcore: Any, hard_core: Any) -> int:
+    """0 when this core already hosts the softcore's bank, else the weight area it introduces.
 
-    Zero when the softcore's bank is already resident there -- which is exactly the reuse the
-    bank-clustered scheduler exists to create, and exactly what ``weight_programming`` reports.
-    An owned matrix is always programmed, so it always costs its own area.
+    What this models, precisely: clustering the instances of one bank onto the same physical core
+    is the PRECONDITION for `try_bank_clustered_passes` to keep that bank resident across passes,
+    which is where `weight_programming` credits reuse (`schedule_weights_resident`).
 
-    This is deliberately not a bank special case in the packer: it is the cost of the placement,
-    and bank affinity falls out of minimizing it.
+    What it does NOT model: an intra-pass saving. Block-diagonal placement writes each instance
+    into its own sub-region, so `weight_programming` charges every placement its area even when
+    two instances share a bank and a core. This is an affinity preference, not a discount.
+
+    Deliberately not a bank special case in the packer: it is a cost, and bank clustering falls
+    out of minimizing it.
     """
     bank_id = getattr(softcore, "weight_bank_id", None)
     if bank_id is not None and bank_id in resident_bank_ids(hard_core):
@@ -41,10 +45,10 @@ def programming_delta(softcore: Any, hard_core: Any) -> int:
 
 
 def placement_cost(softcore: Any, hard_core: Any, *, remaining_capacity: int) -> tuple[int, int]:
-    """Lexicographic placement cost: program as little as possible, then fit as tightly as possible.
+    """Lexicographic: keep banks clustered first, then fit as tightly as possible.
 
-    Ordering programming cost first is what preserves weight reuse once residency classes stop
-    coinciding with weight banks. Further terms (routing, energy) extend the tuple without the
-    packer learning anything about them.
+    Ordering affinity first is what preserves cross-pass weight residency once residency classes
+    stop coinciding with weight banks. Further terms (routing, energy) extend the tuple without
+    the packer learning anything about them.
     """
-    return (programming_delta(softcore, hard_core), int(remaining_capacity))
+    return (bank_affinity_cost(softcore, hard_core), int(remaining_capacity))
