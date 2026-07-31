@@ -95,7 +95,7 @@ def _derive_index_bijection(op: ComputeOp, n_in: int) -> LivenessTransfer:
         x = torch.tensor([values], dtype=torch.float64)
         try:
             with torch.no_grad():
-                y = op.execute_on_gathered(x)
+                y = op.probe_on_gathered(x)
         except (RuntimeError, TypeError, ValueError, IndexError, KeyError):
             return OPAQUE_TRANSFER
         out_values = y.flatten().tolist()

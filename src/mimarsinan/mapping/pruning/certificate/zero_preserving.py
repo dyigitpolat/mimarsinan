@@ -55,7 +55,7 @@ def _numeric_zero_check(op: ComputeOp, module) -> bool:
     n_inputs = int(len(op.input_sources.flatten()))
     zeros = torch.zeros(1, n_inputs, dtype=torch.float32)
     with torch.no_grad():
-        out = op.execute_on_gathered(zeros)
+        out = op.probe_on_gathered(zeros)
     return bool((out == 0).all().item())
 
 

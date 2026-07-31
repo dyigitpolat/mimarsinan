@@ -11,6 +11,7 @@ from mimarsinan.mapping.mappers.compute_op_mapper import ComputeOpMapper
 from mimarsinan.mapping.mappers.conv1d_mapper import Conv1DPerceptronMapper
 from mimarsinan.mapping.mappers.conv2d_mapper import Conv2DPerceptronMapper
 from mimarsinan.mapping.mappers.perceptron_mapper import PerceptronMapper
+from mimarsinan.mapping.support.device_placement import single_device_of
 from mimarsinan.mapping.verification.onchip_majority import (
     DEFAULT_ONCHIP_FLOOR,
     DEFAULT_ONCHIP_MAJORITY,
@@ -168,9 +169,7 @@ def _module_params(module: nn.Module) -> int:
 
 
 def _flow_device(flow) -> torch.device:
-    for p in flow.parameters():
-        return p.device
-    return torch.device("cpu")
+    return single_device_of(flow, what="the model under the on-chip validity gate")
 
 
 def _assert_materialized(flow) -> None:
@@ -235,7 +234,8 @@ def _macs_breakdown(flow, input_shape):
     try:
         flow.eval()
         # Probe on the flow's own device so the estimator works whether the
-        # caller holds a CPU model spec (scheduler) or a GPU model mid-pipeline.
+        # caller holds a CPU model spec (scheduler) or a GPU model mid-pipeline;
+        # a flow that is on BOTH is a defect upstream and says so here.
         device = _flow_device(flow)
         with torch.no_grad():
             flow(torch.zeros(1, *tuple(input_shape), device=device))

@@ -105,7 +105,7 @@ def _relay_constants(
 def _run(op: ComputeOp, probe: List[float], repeats: int, dtype: torch.dtype):
     x = torch.tensor([probe] * repeats, dtype=dtype)
     with torch.no_grad():
-        return op.execute_on_gathered(x)
+        return op.probe_on_gathered(x)
 
 
 def _carriable(values: Sequence[float], dtype: torch.dtype) -> bool:
