@@ -256,3 +256,43 @@ class TestTheUngroupedFallbackHasOneDefinition:
 
         assert all(ungrouped_fallback_id(i) < 0 for i in range(64))
         assert len({ungrouped_fallback_id(i) for i in range(64)}) == 64
+
+
+class TestTheGranularityDeclarationIsRegistered:
+    """It enters through the config registry, not by editing DEFAULT_PLATFORM_CONSTRAINTS."""
+
+    def test_the_key_is_a_registered_config_key(self):
+        from mimarsinan.config_schema.defaults import CONFIG_KEYS_SET
+        from mimarsinan.mapping.platform.core_residency import RESIDENCY_KEY
+
+        assert RESIDENCY_KEY in CONFIG_KEYS_SET
+
+    def test_it_round_trips_through_resolved_platform_constraints(self):
+        from mimarsinan.mapping.platform.core_residency import (
+            Granularity,
+            RESIDENCY_KEY,
+            resolve_residency_policy,
+        )
+        from mimarsinan.pipelining.core.platform_constraints_resolver import (
+            build_platform_constraints_resolved,
+        )
+
+        resolved = build_platform_constraints_resolved(
+            {RESIDENCY_KEY: {"threshold": "per_neuron"}}
+        )
+        policy = resolve_residency_policy(resolved, value_domain=False)
+        assert policy["threshold"] is Granularity.PER_NEURON
+
+    def test_an_undeclared_target_gets_the_domain_default(self):
+        from mimarsinan.mapping.platform.core_residency import (
+            Granularity,
+            resolve_residency_policy,
+        )
+        from mimarsinan.pipelining.core.platform_constraints_resolver import (
+            build_platform_constraints_resolved,
+        )
+
+        resolved = build_platform_constraints_resolved({})
+        assert resolve_residency_policy(resolved, value_domain=True)["threshold"] is (
+            Granularity.ABSENT
+        )

@@ -85,7 +85,7 @@ PIPELINE_MODE_PRESETS: Dict[str, Dict[str, object]] = {
 }
 
 CONFIG_KEYS_SET: Set[str] = {
-    "degradation_tolerance",
+    "core_value_granularity", "degradation_tolerance",
     "spiking_mode",
     "firing_mode",
     "spike_generation_mode",
