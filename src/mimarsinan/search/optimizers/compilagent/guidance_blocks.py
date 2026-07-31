@@ -55,7 +55,7 @@ def baseline_footprint(backend: "MimarsinanLayoutBackend") -> Optional[dict[str,
         "fragmentation_pct": layout_stats.get("fragmentation_pct"),
         "mapped_params_pct": layout_stats.get("mapped_params_pct"),
         "neural_segment_count": layout_stats.get("neural_segment_count"),
-        "threshold_group_count": layout_stats.get("threshold_group_count"),
+        "residency_class_count": layout_stats.get("residency_class_count"),
     }
 
 

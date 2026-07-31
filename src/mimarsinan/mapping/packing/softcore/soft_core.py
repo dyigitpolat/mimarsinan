@@ -21,7 +21,7 @@ class SoftCore:
         psum_role: str | None = None,
         coalescing_group_id: int | None = None,
         coalescing_role: str | None = None,
-        threshold_group_id: int | None = None,
+        residency_class_id: int | None = None,
         weight_bank_id: int | None = None,
         bank_axon_slice: tuple[int, int] | None = None,
         bank_neuron_slice: tuple[int, int] | None = None,
@@ -38,8 +38,8 @@ class SoftCore:
         self.parameter_scale = parameter_scale
         self.threshold = 1.0
 
-        # Pack-time: share hardcore only when threshold_group_id matches; None → unique group.
-        self.threshold_group_id = threshold_group_id
+        # Pack-time: share hardcore only when residency_class_id matches; None → unique group.
+        self.residency_class_id = residency_class_id
 
         self.name = name
         self.psum_group_id = psum_group_id

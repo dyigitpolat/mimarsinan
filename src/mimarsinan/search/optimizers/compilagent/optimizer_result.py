@@ -154,7 +154,7 @@ def layout_metadata_for(
             "total_cores": layout_stats.get("total_cores"),
             "total_softcores": layout_stats.get("total_softcores"),
             "neural_segment_count": layout_stats.get("neural_segment_count"),
-            "threshold_group_count": layout_stats.get("threshold_group_count"),
+            "residency_class_count": layout_stats.get("residency_class_count"),
             "fragmentation_pct": layout_stats.get("fragmentation_pct"),
             "mapped_params_pct": layout_stats.get("mapped_params_pct"),
             "schedule_pass_count": layout_stats.get("schedule_pass_count"),

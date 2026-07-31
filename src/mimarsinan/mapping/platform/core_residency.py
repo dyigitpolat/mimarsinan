@@ -135,6 +135,25 @@ def constrained_names(policy: ResidencyPolicy) -> frozenset[str]:
     return frozenset(n for n, g in policy.items() if g is Granularity.PER_CORE)
 
 
+def ungrouped_fallback_id(seed: int) -> int:
+    """The id an UNGROUPED core gets: a unique negative, never colliding with a real class.
+
+    THE one definition. It reads "unknown, so share with nothing", which is the maximally
+    conservative answer and why a vehicle without provenance fragments completely.
+    """
+    return -(int(seed) + 1)
+
+
+def provenance_group_id(perceptron_index: int | None, *, fallback: int) -> int:
+    """The legacy proxy: the source perceptron, else a caller-supplied id.
+
+    Kept only for the degraded reconstruction path, which has no layout record to read a class
+    from. Every other producer uses ``residency_key``; see ``residency_basis`` on the spec for
+    which one produced a given id.
+    """
+    return int(perceptron_index) if perceptron_index is not None else int(fallback)
+
+
 class CoreResidencyViolation(AssertionError):
     """A softcore was placed in a hardware core that cannot represent its per-core values."""
 

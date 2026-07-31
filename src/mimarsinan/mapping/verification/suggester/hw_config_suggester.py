@@ -66,7 +66,7 @@ def suggest_hardware_config(
 
     group_sizes: Dict[int, int] = {}
     for _sc in softcores_list:
-        tg = int(_sc.threshold_group_id)
+        tg = int(_sc.residency_class_id)
         group_sizes[tg] = group_sizes.get(tg, 0) + 1
     largest_group = max(group_sizes.values()) if group_sizes else 0
     n_groups = len(group_sizes)

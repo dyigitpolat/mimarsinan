@@ -29,7 +29,7 @@ def split_softcores_by_capacity(
        first accumulation that fails closes the running sub-segment and
        starts a fresh one with the offending group.
     2. **Within-group halving fallback.**  When a single latency group
-       alone does not pack (e.g. because unique ``threshold_group_id``
+       alone does not pack (e.g. because unique ``residency_class_id``
        fragmentation forces one hw core per softcore and the group is
        larger than the pool), the group is halved recursively into
        sub-passes until each half packs or is a singleton.  Singletons

@@ -34,7 +34,7 @@ def _minimal_deployment_config(tmp_path, hw_search: bool) -> dict:
             "core_type_counts": [100, 100],
             "core_axons_bounds": [64, 1024],
             "core_neurons_bounds": [64, 1024],
-            "max_threshold_groups": 3,
+            "max_residency_classes": 3,
         }
     return base
 
@@ -70,7 +70,7 @@ class TestParseDeploymentConfigSearchSpacePreserved:
 
         arch = parsed.deployment_parameters["arch_search"]
         assert arch.get("num_core_types") == 2
-        assert arch.get("max_threshold_groups") == 3
+        assert arch.get("max_residency_classes") == 3
 
 
 class TestParseDeploymentConfigFixedHw:

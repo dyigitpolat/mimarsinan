@@ -118,7 +118,7 @@ class TestThresholdGroupFragmentationGap:
 
 
 class TestPerChannelThetaPacking:
-    """[R3/S2] the per-channel-theta packing prerequisite: threshold groups are
+    """[R3/S2] the per-channel-theta packing prerequisite: residency classes are
     keyed on perceptron IDENTITY (softcore_spec perceptron_index), and the SCM
     threshold stays 1.0 in effective coordinates — a per-channel activation_scale
     vector must therefore change NOTHING in the packing verdict."""
@@ -145,7 +145,7 @@ class TestPerChannelThetaPacking:
         assert scalar.feasible and vector.feasible
         assert vector.hard_cores == scalar.hard_cores
 
-    def test_vector_theta_does_not_multiply_threshold_groups(self):
+    def test_vector_theta_does_not_multiply_residency_classes(self):
         # Same-group co-packing must survive per-channel theta: if the packer
         # keyed groups on theta VALUES, these 8 same-index cores would
         # fragment onto >4 hard cores and reject.

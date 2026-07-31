@@ -145,9 +145,9 @@ class TestVerifySoftCoreMapping:
         assert result.max_output_size == max(sc.output_count for sc in result.softcores)
         assert result.total_area == sum(sc.area for sc in result.softcores)
 
-    def test_threshold_group_equals_perceptron_index(self):
+    def test_residency_class_equals_perceptron_index(self):
         """All softcores produced by a single perceptron (tiles, psum fragments,
-        shared-weight positions) must share one threshold_group_id equal to
+        shared-weight positions) must share one residency_class_id equal to
         that perceptron's index.  Softcores without a perceptron_index fall
         back to a unique negative id."""
         repr_ = _make_native_model_repr()
@@ -156,18 +156,18 @@ class TestVerifySoftCoreMapping:
         # Every non-synthesised softcore belongs to some perceptron (tg >= 0).
         # Allow negative tgs for synthesised cores (e.g. psum accumulators when
         # the layer has no perceptron_index set, which shouldn't happen here).
-        groups = {sc.threshold_group_id for sc in result.softcores}
+        groups = {sc.residency_class_id for sc in result.softcores}
         assert groups, "expected non-empty threshold group set"
 
     def test_deterministic_across_runs(self):
-        """Two runs of the same model must produce identical threshold groups
+        """Two runs of the same model must produce identical residency classes
         (no randomness — groups are driven by perceptron_index)."""
         repr_ = _make_native_model_repr()
         r1 = verify_soft_core_mapping(repr_, max_axons=256, max_neurons=256)
         r2 = verify_soft_core_mapping(repr_, max_axons=256, max_neurons=256)
         assert len(r1.softcores) == len(r2.softcores)
         for s1, s2 in zip(r1.softcores, r2.softcores):
-            assert s1.threshold_group_id == s2.threshold_group_id
+            assert s1.residency_class_id == s2.residency_class_id
 
     def test_mlp_mixer_layout_is_fully_host_side(self):
         """TorchMLPMixer's patch_embed (Conv, no act) produces raw unbounded
@@ -273,8 +273,8 @@ class TestVerifyHardwareConfig:
     @pytest.fixture
     def simple_softcores(self):
         return [
-            LayoutSoftCoreSpec(input_count=16, output_count=8, threshold_group_id=0),
-            LayoutSoftCoreSpec(input_count=9, output_count=4, threshold_group_id=0),
+            LayoutSoftCoreSpec(input_count=16, output_count=8, residency_class_id=0),
+            LayoutSoftCoreSpec(input_count=9, output_count=4, residency_class_id=0),
         ]
 
     def test_sufficient_config_passes(self, simple_softcores):
@@ -304,7 +304,7 @@ class TestVerifyHardwareConfig:
     def test_too_few_cores_fails(self):
         # 20 softcores, only 1 core available
         softcores = [
-            LayoutSoftCoreSpec(input_count=16, output_count=8, threshold_group_id=0)
+            LayoutSoftCoreSpec(input_count=16, output_count=8, residency_class_id=0)
             for _ in range(20)
         ]
         core_types = [{"max_axons": 32, "max_neurons": 16, "count": 1}]
@@ -322,7 +322,7 @@ class TestVerifyHardwareConfig:
 
     def test_exact_fit_passes(self):
         # One softcore, one core with exact dimensions
-        softcores = [LayoutSoftCoreSpec(input_count=16, output_count=8, threshold_group_id=0)]
+        softcores = [LayoutSoftCoreSpec(input_count=16, output_count=8, residency_class_id=0)]
         core_types = [{"max_axons": 16, "max_neurons": 8, "count": 1}]
         result = verify_hardware_config(softcores, core_types)
         assert result["feasible"]
@@ -341,7 +341,7 @@ class TestVerifyHardwareConfig:
         # 10 softcores, each (4, 4). A core of (16, 16) can hold many of them.
         # 3 cores of (16, 16) should pack all 10 softcores easily.
         softcores = [
-            LayoutSoftCoreSpec(input_count=4, output_count=4, threshold_group_id=0)
+            LayoutSoftCoreSpec(input_count=4, output_count=4, residency_class_id=0)
             for _ in range(10)
         ]
         core_types = [{"max_axons": 16, "max_neurons": 16, "count": 3}]
@@ -355,7 +355,7 @@ class TestVerifyHardwareConfig:
         The packer decides, not a headcount comparison."""
         # 20 softcores that fit 4-per-core → need only 5 cores
         softcores = [
-            LayoutSoftCoreSpec(input_count=3, output_count=3, threshold_group_id=0)
+            LayoutSoftCoreSpec(input_count=3, output_count=3, residency_class_id=0)
             for _ in range(20)
         ]
         core_types = [{"max_axons": 16, "max_neurons": 16, "count": 6}]  # 6 < 20
@@ -367,7 +367,7 @@ class TestVerifyHardwareConfig:
     def test_count_field_error_only_on_packing_failure(self):
         """total_count field_error should only appear when packing genuinely fails."""
         softcores = [
-            LayoutSoftCoreSpec(input_count=4, output_count=4, threshold_group_id=0)
+            LayoutSoftCoreSpec(input_count=4, output_count=4, residency_class_id=0)
             for _ in range(10)
         ]
         # 1 core: too few to pack 10 softcores
@@ -388,8 +388,8 @@ class TestVerifyHardwareConfig:
         """With two core types (e.g. H×W and W×H), only one type need fit the largest softcore."""
         # Largest softcore is (20, 10). Type (10, 20) does not fit it; type (20, 10) does.
         softcores = [
-            LayoutSoftCoreSpec(input_count=20, output_count=10, threshold_group_id=0),
-            LayoutSoftCoreSpec(input_count=8, output_count=8, threshold_group_id=0),
+            LayoutSoftCoreSpec(input_count=20, output_count=10, residency_class_id=0),
+            LayoutSoftCoreSpec(input_count=8, output_count=8, residency_class_id=0),
         ]
         core_types = [
             {"max_axons": 10, "max_neurons": 20, "count": 2},

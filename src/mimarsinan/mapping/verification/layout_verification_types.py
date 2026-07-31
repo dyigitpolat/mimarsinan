@@ -37,7 +37,7 @@ class LayoutVerificationStats:
     segment_latency_min: float = 0.0
     segment_latency_median: float = 0.0
     segment_latency_max: float = 0.0
-    threshold_group_count: int = 0
+    residency_class_count: int = 0
 
     coalescing_group_count: int = 0
     coalescing_frags_per_group_min: float = 0.0

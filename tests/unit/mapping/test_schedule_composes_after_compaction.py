@@ -74,7 +74,7 @@ def _bank_instances(*, bank_rows, n_instances=2, producer_id=None):
         ))
         specs.append(LayoutSoftCoreSpec(
             input_count=bank_rows, output_count=OUT_FEATURES,
-            threshold_group_id=0, latency_tag=0, segment_id=0, name=f"inst{k}",
+            residency_class_id=0, latency_tag=0, segment_id=0, name=f"inst{k}",
         ))
     return bank, nodes, specs
 
@@ -293,7 +293,7 @@ class TestNoPreCompactionExtentIsRead:
             ))
             specs.append(LayoutSoftCoreSpec(
                 input_count=20, output_count=OUT_FEATURES,
-                threshold_group_id=0, latency_tag=0, segment_id=0,
+                residency_class_id=0, latency_tag=0, segment_id=0,
                 name=f"owned{k}",
             ))
         outputs = np.array(

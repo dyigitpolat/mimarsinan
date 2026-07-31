@@ -94,7 +94,7 @@ def _flush_neural_segment(
         group_ids: dict[object, int] = {}
         rows = []
         for sc in soft.cores:
-            tg = getattr(sc, "threshold_group_id", None)
+            tg = getattr(sc, "residency_class_id", None)
             pi = getattr(sc, "perceptron_index", None)
             tg_val = tg if tg is not None else f"fallback(-{sc.id + 1})"
             group_ids.setdefault(tg_val, 0)
@@ -110,7 +110,7 @@ def _flush_neural_segment(
         diag = (
             f"Hard-core packing failed in segment '{name}': {e}.\n"
             f"  Sub-segment softcores: {len(soft.cores)}\n"
-            f"  Distinct threshold groups: {len(group_ids)} "
+            f"  Distinct residency classes: {len(group_ids)} "
             f"(most: {sorted(group_ids.items(), key=lambda kv: -kv[1])[:3]})\n"
             f"  Pool size: {len(shared_pool)} (types head: {hw_summary})\n"
             f"  Softcore heads:\n" + "\n".join(rows[:5])

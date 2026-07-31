@@ -24,7 +24,7 @@ def _memo_key(softcores, core_types, splitting, coalescing, scheduling) -> Tuple
         tuple(
             (
                 int(sc.input_count), int(sc.output_count),
-                sc.threshold_group_id, sc.latency_tag, sc.segment_id, sc.name,
+                sc.residency_class_id, sc.latency_tag, sc.segment_id, sc.name,
             )
             for sc in softcores
         ),

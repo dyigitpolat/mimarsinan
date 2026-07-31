@@ -67,7 +67,7 @@ def _stats_from_packing(
         segment_latency_min,
         segment_latency_median,
         segment_latency_max,
-        threshold_group_count,
+        residency_class_count,
     ) = _latency_stats(softcores)
 
     coal_sizes = list(packing.coalescing_group_sizes or ())
@@ -110,7 +110,7 @@ def _stats_from_packing(
         segment_latency_min=segment_latency_min,
         segment_latency_median=segment_latency_median,
         segment_latency_max=segment_latency_max,
-        threshold_group_count=threshold_group_count,
+        residency_class_count=residency_class_count,
         coalescing_group_count=coalescing_group_count,
         coalescing_frags_per_group_min=coalescing_frags_per_group_min,
         coalescing_frags_per_group_median=coalescing_frags_per_group_median,
@@ -149,7 +149,7 @@ def _empty_stats(*, feasible: bool, num_softcores: int = 0, total_hw_cores: int 
         segment_latency_min=0.0,
         segment_latency_median=0.0,
         segment_latency_max=0.0,
-        threshold_group_count=0,
+        residency_class_count=0,
         coalescing_group_count=0,
         coalescing_frags_per_group_min=0.0,
         coalescing_frags_per_group_median=0.0,
@@ -201,7 +201,7 @@ def build_stats_from_packing_result(
 ) -> LayoutVerificationStats:
     """Build stats from an already-computed packing result.
 
-    Pass ``softcores`` to include latency/threshold-group metrics; pass
+    Pass ``softcores`` to include latency/residency-class metrics; pass
     ``core_types`` to compute metrics against the full chip (including idle cores).
     """
     if not packing.feasible:

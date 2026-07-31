@@ -11,7 +11,7 @@ class LayoutSoftCoreSpec:
     input_count: int
     output_count: int
 
-    threshold_group_id: int = 0
+    residency_class_id: int = 0
     latency_tag: Optional[int] = None
     segment_id: Optional[int] = None
 
@@ -45,7 +45,7 @@ class LayoutHardCoreInstance:
     available_axons: int = field(init=False)
     available_neurons: int = field(init=False)
 
-    threshold_group_id: Optional[int] = None
+    residency_class_id: Optional[int] = None
     latency_tag: Optional[int] = None
 
     unusable_space: int = 0
@@ -85,8 +85,8 @@ class LayoutHardCoreInstance:
         self.used_area += int(in_c) * int(out_c)
         self.softcore_count += 1
 
-        if self.threshold_group_id is None:
-            self.threshold_group_id = int(softcore.threshold_group_id)
+        if self.residency_class_id is None:
+            self.residency_class_id = int(softcore.residency_class_id)
 
         if self.latency_tag is None:
             self.latency_tag = softcore.latency_tag

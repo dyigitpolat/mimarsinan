@@ -1,7 +1,7 @@
 """Bank affinity is the packer's STATED preference, replacing an accidental one.
 
 Before this, placement was ranked by geometry alone (`_placement_waste` / `_remaining_capacity`)
-while `weight_programming` measured programming cost. Nothing connected them: `threshold_group_id`
+while `weight_programming` measured programming cost. Nothing connected them: `residency_class_id`
 happened to equal the weight-bank id, so bank affinity was preserved BY ACCIDENT. Stating the cost
 makes the affinity deliberate, and lets the residency key stop carrying that job.
 """

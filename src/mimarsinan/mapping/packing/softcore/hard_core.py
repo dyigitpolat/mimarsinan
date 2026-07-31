@@ -5,10 +5,10 @@ from typing import Any
 import numpy as np
 
 from mimarsinan.mapping.packing.placement_cost import note_resident_bank
-from mimarsinan.mapping.platform.threshold_grouping import ungrouped_fallback_id
 from mimarsinan.mapping.platform.core_residency import (
     ALL_SINGLETON_NAMES,
     adopt_or_check,
+    ungrouped_fallback_id,
 )
 
 
@@ -32,7 +32,7 @@ class HardCore:
         self.activation_scale: Any = None
         self.parameter_scale: Any = None
         self.threshold: float | None = None
-        self.threshold_group_id: int | None = None
+        self.residency_class_id: int | None = None
         self.latency = None
 
         self.hardware_bias = None
@@ -86,9 +86,9 @@ class HardCore:
         adopt_or_check(self, softcore, constrained=self.constrained_properties)
         note_resident_bank(self, softcore)
 
-        if self.threshold_group_id is None:
-            tg = getattr(softcore, "threshold_group_id", None)
-            self.threshold_group_id = (
+        if self.residency_class_id is None:
+            tg = getattr(softcore, "residency_class_id", None)
+            self.residency_class_id = (
                 int(tg) if tg is not None else ungrouped_fallback_id(softcore.id)
             )
 

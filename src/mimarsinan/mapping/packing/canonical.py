@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from mimarsinan.mapping.platform.threshold_grouping import ungrouped_fallback_id
+from mimarsinan.mapping.platform.core_residency import ungrouped_fallback_id
 
 from typing import List, Protocol, TypeVar
 
@@ -35,9 +35,9 @@ def _read_latency(obj) -> int | None:
     return int(lat) if lat is not None else None
 
 
-def _read_threshold_group(obj, *, fallback_id: int | None = None) -> int:
-    """Canonical threshold-group id read; ungrouped objects get a unique ``-(id+1)`` fallback."""
-    tg = getattr(obj, "threshold_group_id", None)
+def _read_residency_class(obj, *, fallback_id: int | None = None) -> int:
+    """Canonical residency-class id read; ungrouped objects get a unique ``-(id+1)`` fallback."""
+    tg = getattr(obj, "residency_class_id", None)
     if tg is not None:
         return int(tg)
     if fallback_id is None:
@@ -95,12 +95,12 @@ def canonical_split_softcore(
 def canonical_is_mapping_possible(softcore: SoftCoreLike, hardcore: HardCoreLike) -> bool:
     """Single-source-of-truth feasibility predicate shared by the layout and runtime packers.
 
-    A hardcore accepts a softcore only when threshold-group, latency, and the
+    A hardcore accepts a softcore only when residency-class, latency, and the
     remaining axon/neuron budget all match.
     """
-    hc_tg = getattr(hardcore, "threshold_group_id", None)
+    hc_tg = getattr(hardcore, "residency_class_id", None)
     if hc_tg is not None:
-        sc_tg = _read_threshold_group(softcore)
+        sc_tg = _read_residency_class(softcore)
         if sc_tg != int(hc_tg):
             return False
 

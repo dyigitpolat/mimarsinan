@@ -5,10 +5,8 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set
 from mimarsinan.mapping.layout.layout_types import LayoutSoftCoreSpec
 from mimarsinan.mapping.platform.core_residency import (
     ALL_SINGLETON_NAMES,
-    residency_key,
-)
-from mimarsinan.mapping.platform.threshold_grouping import (
     provenance_group_id,
+    residency_key,
     ungrouped_fallback_id,
 )
 from mimarsinan.mapping.layout.segmentation import (
@@ -161,7 +159,7 @@ class _LayoutIRMappingFinalize:
 
     def _finalize_softcores(self) -> None:
         """Rewrite each softcore with its finalised latency_tag, segment_id, and
-        threshold_group_id (= perceptron_index, or a unique fallback when None)."""
+        residency_class_id (= perceptron_index, or a unique fallback when None)."""
         latencies = self._compute_latencies()
         residency_ids = self._residency_group_ids()
         segment_ids = self._compute_segment_ids()
@@ -178,7 +176,7 @@ class _LayoutIRMappingFinalize:
             self.layout_softcores[sc_idx] = LayoutSoftCoreSpec(
                 input_count=old.input_count,
                 output_count=old.output_count,
-                threshold_group_id=tg,
+                residency_class_id=tg,
                 latency_tag=int(latency),
                 segment_id=int(segment_id),
                 name=old.name,

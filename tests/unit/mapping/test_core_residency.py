@@ -236,23 +236,23 @@ class TestTheUngroupedFallbackHasOneDefinition:
     """Four copies of `-(id+1)` made "unknown means share with nothing" unchangeable in one place."""
 
     def test_all_call_sites_agree(self):
-        from mimarsinan.mapping.packing.canonical import _read_threshold_group
-        from mimarsinan.mapping.platform.threshold_grouping import (
+        from mimarsinan.mapping.packing.canonical import _read_residency_class
+        from mimarsinan.mapping.platform.core_residency import (
             provenance_group_id,
             ungrouped_fallback_id,
         )
 
         class _Ungrouped:
             id = 7
-            threshold_group_id = None
+            residency_class_id = None
             perceptron_index = None
 
         expected = ungrouped_fallback_id(7)
-        assert _read_threshold_group(_Ungrouped()) == expected
+        assert _read_residency_class(_Ungrouped()) == expected
         assert provenance_group_id(None, fallback=ungrouped_fallback_id(7)) == expected
 
     def test_it_never_collides_with_a_real_group(self):
-        from mimarsinan.mapping.platform.threshold_grouping import ungrouped_fallback_id
+        from mimarsinan.mapping.platform.core_residency import ungrouped_fallback_id
 
         assert all(ungrouped_fallback_id(i) < 0 for i in range(64))
         assert len({ungrouped_fallback_id(i) for i in range(64)}) == 64
@@ -296,3 +296,33 @@ class TestTheGranularityDeclarationIsRegistered:
         assert resolve_residency_policy(resolved, value_domain=True)["threshold"] is (
             Granularity.ABSENT
         )
+
+
+class TestTheConceptHasOneName:
+    """`threshold_group_id` named one of five values and, on a value-domain target, the one the
+    grouping EXCLUDES. A half-true name is trusted where a wrong one is questioned."""
+
+    def test_no_threshold_group_identifier_survives(self):
+        import pathlib
+        import re
+
+        root = pathlib.Path(__file__).resolve().parents[3] / "src" / "mimarsinan"
+        offenders = []
+        for path in root.rglob("*.py"):
+            for n, line in enumerate(path.read_text().splitlines(), 1):
+                if re.search(r"threshold.group|Threshold group", line):
+                    if "Activation" in line or "activation-quantization" in line:
+                        continue        # target_tq: activation-QUANTIZATION thresholds
+                    offenders.append(f"{path.name}:{n}")
+        assert not offenders, offenders
+
+    def test_genuine_thresholds_were_not_renamed(self):
+        """The rename targeted the compound token only; a firing threshold is a real concept,
+        and so is the activation-quantization threshold group behind `target_tq`."""
+        import dataclasses
+
+        from mimarsinan.mapping.ir.types import NeuralCore
+
+        fields = {f.name for f in dataclasses.fields(NeuralCore)}
+        assert "threshold" in fields
+        assert "residency" not in " ".join(fields)

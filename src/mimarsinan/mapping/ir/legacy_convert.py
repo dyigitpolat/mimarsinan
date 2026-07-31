@@ -130,7 +130,7 @@ def neural_core_to_soft_core(neural_core: NeuralCore, graph: IRGraph | None = No
         psum_role=neural_core.psum_role,
         coalescing_group_id=neural_core.coalescing_group_id,
         coalescing_role=neural_core.coalescing_role,
-        threshold_group_id=int(pi) if pi is not None else None,
+        residency_class_id=int(pi) if pi is not None else None,
         weight_bank_id=(
             int(neural_core.weight_bank_id)
             if neural_core.weight_bank_id is not None else None

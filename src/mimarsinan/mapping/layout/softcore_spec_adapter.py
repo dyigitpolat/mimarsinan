@@ -11,21 +11,21 @@ from mimarsinan.mapping.packing.softcore import (
     eliminated_core_extent,
 )
 from mimarsinan.mapping.platform.mapping_structure import compute_core_input_count
-from mimarsinan.mapping.platform.threshold_grouping import provenance_group_id
+from mimarsinan.mapping.platform.core_residency import provenance_group_id
 
 
 def spec_from_neural_core(
     core: Any,
     *,
     hardware_bias: bool,
-    fallback_threshold_group_id: int,
+    fallback_residency_class_id: int,
 ) -> LayoutSoftCoreSpec:
     """Reconstruct a ``LayoutSoftCoreSpec`` from an IR ``NeuralCore``, sized by
     the axon/neuron counts the runtime packer will pack (post-compaction);
-    ``fallback_threshold_group_id`` applies when the core has no ``perceptron_index``."""
+    ``fallback_residency_class_id`` applies when the core has no ``perceptron_index``."""
     lat = int(core.latency) if core.latency is not None else 0
     tg = provenance_group_id(
-        getattr(core, "perceptron_index", None), fallback=fallback_threshold_group_id
+        getattr(core, "perceptron_index", None), fallback=fallback_residency_class_id
     )
 
     n_axons, n_neurons = compacted_core_extent(core)
@@ -41,7 +41,7 @@ def spec_from_neural_core(
     return LayoutSoftCoreSpec(
         input_count=in_count,
         output_count=n_neurons,
-        threshold_group_id=tg,
+        residency_class_id=tg,
         latency_tag=lat,
         segment_id=0,
         name=core.name,
@@ -68,12 +68,12 @@ def spec_at_compacted_extent(spec: LayoutSoftCoreSpec, core: Any) -> LayoutSoftC
 def spec_from_softcore(
     softcore: Any,
     *,
-    fallback_threshold_group_id: int,
+    fallback_residency_class_id: int,
 ) -> LayoutSoftCoreSpec:
     """Reconstruct a ``LayoutSoftCoreSpec`` from a compacted runtime ``SoftCore``,
     mirroring the exact axon/neuron counts the runtime packer will pack."""
     tg = provenance_group_id(
-        getattr(softcore, "perceptron_index", None), fallback=fallback_threshold_group_id
+        getattr(softcore, "perceptron_index", None), fallback=fallback_residency_class_id
     )
     lat = (
         int(softcore.latency)
@@ -83,7 +83,7 @@ def spec_from_softcore(
     return LayoutSoftCoreSpec(
         input_count=int(softcore.get_input_count()),
         output_count=int(softcore.get_output_count()),
-        threshold_group_id=tg,
+        residency_class_id=tg,
         latency_tag=lat,
         segment_id=0,
         name=getattr(softcore, "name", None),

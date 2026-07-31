@@ -136,7 +136,7 @@ ENTRIES = (
     _E("search_space", section=_PC, group="co_search", owner="search/hw_search_space",
        type=T.JSON, category=Category.ADVANCED, exposure="user", label="HW Search Space",
        doc="Hardware co-search bounds (core type counts, axon/neuron bounds, "
-           "threshold groups).", relevant=R.when("hw_config_mode", in_=("search",)),
+           "residency classes).", relevant=R.when("hw_config_mode", in_=("search",)),
        promote_when=R.when("hw_config_mode", in_=("search",)),
        empty_means="the co-search's default bounds"),
     _E("allow_scheduling", group="mapping_strategy", owner="MappingStrategy/scheduler",

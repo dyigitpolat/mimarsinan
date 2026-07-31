@@ -60,11 +60,11 @@ def greedy_pack_softcores(
         return False
 
     def _soft_tg(sc) -> int | None:
-        tg = getattr(sc, "threshold_group_id", None)
+        tg = getattr(sc, "residency_class_id", None)
         return int(tg) if tg is not None else None
 
     def _hard_tg(hc) -> int | None:
-        tg = getattr(hc, "threshold_group_id", None)
+        tg = getattr(hc, "residency_class_id", None)
         return int(tg) if tg is not None else None
 
     unused_by_type: dict[tuple[int, int], list] = {}
