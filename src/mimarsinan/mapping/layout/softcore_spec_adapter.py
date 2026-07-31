@@ -11,7 +11,10 @@ from mimarsinan.mapping.packing.softcore import (
     eliminated_core_extent,
 )
 from mimarsinan.mapping.platform.mapping_structure import compute_core_input_count
-from mimarsinan.mapping.platform.core_residency import provenance_group_id
+from mimarsinan.mapping.platform.core_residency import (
+    BASIS_PROVENANCE,
+    provenance_group_id,
+)
 
 
 def spec_from_neural_core(
@@ -42,6 +45,7 @@ def spec_from_neural_core(
         input_count=in_count,
         output_count=n_neurons,
         residency_class_id=tg,
+        residency_basis=BASIS_PROVENANCE,
         latency_tag=lat,
         segment_id=0,
         name=core.name,
@@ -84,6 +88,7 @@ def spec_from_softcore(
         input_count=int(softcore.get_input_count()),
         output_count=int(softcore.get_output_count()),
         residency_class_id=tg,
+        residency_basis=BASIS_PROVENANCE,
         latency_tag=lat,
         segment_id=0,
         name=getattr(softcore, "name", None),

@@ -5,6 +5,8 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set
 from mimarsinan.mapping.layout.layout_types import LayoutSoftCoreSpec
 from mimarsinan.mapping.platform.core_residency import (
     ALL_SINGLETON_NAMES,
+    BASIS_PROVENANCE,
+    BASIS_VALUES,
     provenance_group_id,
     residency_key,
     ungrouped_fallback_id,
@@ -135,7 +137,7 @@ class _LayoutIRMappingFinalize:
             "flow": flow,
         }
 
-    def _residency_group_ids(self) -> Dict[int, int]:
+    def _residency_group_ids(self) -> Dict[int, tuple[int, str]]:
         """Softcore index -> residency class id, keyed on the values a hard core stores once.
 
         Falls back to the source-perceptron proxy only for the shape-only layout planner, which
@@ -144,17 +146,20 @@ class _LayoutIRMappingFinalize:
         nodes = {getattr(n, "id", None): n for n in getattr(self, "nodes", []) or []}
         banks = getattr(self, "_weight_banks", None)
         interned: Dict[Any, int] = {}
-        ids: Dict[int, int] = {}
+        ids: Dict[int, tuple[int, str]] = {}
         for node_id, sc_idx in self._node_id_to_softcore_idx.items():
             node = nodes.get(node_id)
             if node is None:
-                ids[sc_idx] = provenance_group_id(
-                    self._sc_idx_to_perceptron_index.get(sc_idx),
-                    fallback=ungrouped_fallback_id(sc_idx),
+                ids[sc_idx] = (
+                    provenance_group_id(
+                        self._sc_idx_to_perceptron_index.get(sc_idx),
+                        fallback=ungrouped_fallback_id(sc_idx),
+                    ),
+                    BASIS_PROVENANCE,
                 )
                 continue
             key = residency_key(node, constrained=ALL_SINGLETON_NAMES, weight_banks=banks)
-            ids[sc_idx] = interned.setdefault(key, len(interned))
+            ids[sc_idx] = (interned.setdefault(key, len(interned)), BASIS_VALUES)
         return ids
 
     def _finalize_softcores(self) -> None:
@@ -170,13 +175,14 @@ class _LayoutIRMappingFinalize:
             latency = latencies.get(node_id, 0)
             segment_id = segment_ids.get(node_id, 0)
 
-            tg = residency_ids[sc_idx]
+            tg, basis = residency_ids[sc_idx]
 
             old = self.layout_softcores[sc_idx]
             self.layout_softcores[sc_idx] = LayoutSoftCoreSpec(
                 input_count=old.input_count,
                 output_count=old.output_count,
                 residency_class_id=tg,
+                residency_basis=basis,
                 latency_tag=int(latency),
                 segment_id=int(segment_id),
                 name=old.name,

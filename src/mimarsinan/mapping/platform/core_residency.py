@@ -135,6 +135,10 @@ def constrained_names(policy: ResidencyPolicy) -> frozenset[str]:
     return frozenset(n for n, g in policy.items() if g is Granularity.PER_CORE)
 
 
+BASIS_VALUES = "values"
+BASIS_PROVENANCE = "provenance_fallback"
+
+
 def ungrouped_fallback_id(seed: int) -> int:
     """The id an UNGROUPED core gets: a unique negative, never colliding with a real class.
 

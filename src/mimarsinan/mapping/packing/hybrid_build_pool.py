@@ -240,7 +240,9 @@ def _split_segment_by_capacity(
 
                 logging.getLogger(__name__).warning(
                     "Scheduled split: reconstructing LayoutSoftCoreSpec from NeuralCore "
-                    "(missing IRGraph.layout_softcores); input_count may diverge from SCM."
+                    "(missing IRGraph.layout_softcores); input_count may diverge from SCM, "
+                    "and residency classes fall back to the source-perceptron proxy "
+                    "(residency_basis=provenance_fallback) rather than the core values."
                 )
                 _SPLIT_FALLBACK_LOGGED = True
             spec = spec_from_neural_core(

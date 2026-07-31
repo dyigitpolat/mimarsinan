@@ -111,6 +111,7 @@ def _flush_neural_segment(
             f"Hard-core packing failed in segment '{name}': {e}.\n"
             f"  Sub-segment softcores: {len(soft.cores)}\n"
             f"  Distinct residency classes: {len(group_ids)} "
+            f"(basis: {sorted({getattr(sc, 'residency_basis', '?') for sc in soft.cores})}) "
             f"(most: {sorted(group_ids.items(), key=lambda kv: -kv[1])[:3]})\n"
             f"  Pool size: {len(shared_pool)} (types head: {hw_summary})\n"
             f"  Softcore heads:\n" + "\n".join(rows[:5])

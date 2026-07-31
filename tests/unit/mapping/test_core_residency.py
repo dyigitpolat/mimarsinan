@@ -326,3 +326,54 @@ class TestTheConceptHasOneName:
         fields = {f.name for f in dataclasses.fields(NeuralCore)}
         assert "threshold" in fields
         assert "residency" not in " ".join(fields)
+
+
+class TestTheResidencyBasisIsRecorded:
+    """Two producers still exist: the finalizer keys on values, the degraded reconstruction path
+    on the source-perceptron proxy. Ids from different bases are not comparable, so the basis is
+    recorded rather than left to be inferred -- and a mapping that MIXES them is a defect."""
+
+    def test_a_spec_defaults_to_the_values_basis(self):
+        from mimarsinan.mapping.layout.layout_types import LayoutSoftCoreSpec
+        from mimarsinan.mapping.platform.core_residency import BASIS_VALUES
+
+        assert LayoutSoftCoreSpec(input_count=4, output_count=4).residency_basis == BASIS_VALUES
+
+    def test_the_degraded_adapter_declares_the_proxy(self):
+        from mimarsinan.mapping.layout.softcore_spec_adapter import spec_from_softcore
+        from mimarsinan.mapping.platform.core_residency import BASIS_PROVENANCE
+
+        class _Soft:
+            id = 1
+            perceptron_index = 0
+            latency = None
+            name = "s"
+
+            def get_input_count(self):
+                return 4
+
+            def get_output_count(self):
+                return 4
+
+        spec = spec_from_softcore(_Soft(), fallback_residency_class_id=-1)
+        assert spec.residency_basis == BASIS_PROVENANCE
+
+    def test_a_real_mapping_uses_one_basis_throughout(self):
+        """Mixing bases inside one mapping would compare ids that mean different things."""
+        import torch
+        import torch.nn as nn
+
+        from mimarsinan.mapping.ir_mapping_class import IRMapping
+        from mimarsinan.mapping.platform.packaging_contract import MVM_PACKAGING
+        from mimarsinan.torch_mapping.converter import convert_torch_model
+
+        torch.manual_seed(0)
+        model = nn.Sequential(nn.Flatten(), nn.Linear(16, 8), nn.ReLU(), nn.Linear(8, 4)).eval()
+        fused = convert_torch_model(model, (1, 4, 4), 4, device="cpu",
+                                    packaging=MVM_PACKAGING).eval()
+        repr_ = fused.get_mapper_repr()
+        repr_.assign_perceptron_indices()
+        graph = IRMapping(q_max=127.0, firing_mode="Default",
+                          max_axons=64, max_neurons=64).map(repr_)
+        bases = {s.residency_basis for s in (graph.layout_softcores or [])}
+        assert len(bases) == 1, bases
