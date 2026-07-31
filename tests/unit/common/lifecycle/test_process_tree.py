@@ -27,6 +27,16 @@ def _spawn_child_with_grandchild():
     ])
 
 
+def _state_of(pid):
+    """The /proc state character (``Z`` for an exited-but-unreaped process)."""
+    try:
+        with open(f"/proc/{pid}/stat") as f:
+            raw = f.read()
+    except OSError:
+        return "gone"
+    return raw[raw.rindex(")") + 2:].split()[0]
+
+
 def _wait_for(predicate, timeout_s, interval_s=0.05):
     deadline = time.monotonic() + timeout_s
     while time.monotonic() < deadline:
@@ -131,6 +141,21 @@ class TestProcessIdentity:
             assert not process_is_alive(f"{proc.pid}:{int(start_part) + 1}")
         finally:
             proc.kill()
+            proc.wait()
+
+    def test_an_exited_but_unreaped_process_is_not_alive(self):
+        """A zombie holds no fd and no child and can spawn none, so a watcher must
+        not keep waiting on it just because its parent has yet to call wait()."""
+        proc = subprocess.Popen(_SLEEP_CHILD)
+        token = process_identity(proc.pid)
+        assert token is not None
+        proc.kill()
+        try:
+            assert _wait_for(lambda: _state_of(proc.pid) == "Z", timeout_s=5.0), (
+                f"process never became a zombie (state={_state_of(proc.pid)})"
+            )
+            assert not process_is_alive(token)
+        finally:
             proc.wait()
 
     def test_dead_process_has_no_identity_and_is_not_alive(self):

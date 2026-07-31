@@ -9,11 +9,13 @@ import threading
 from typing import Callable, NoReturn
 
 from mimarsinan.common.best_effort import best_effort
+from mimarsinan.common.lifecycle.cohort_reaper import spawn_cohort_reaper
+from mimarsinan.common.lifecycle.owner import owner_token, stamp_cohort
 from mimarsinan.common.lifecycle.process_tree import reap_descendants
 
 # Every catchable way a run is asked to stop: ssh drop and tmux kill-session
 # (SIGHUP), Ctrl-C (SIGINT), Ctrl-\ (SIGQUIT), schedulers and wall watchdogs
-# (SIGTERM). SIGKILL is uncatchable and is contained by the owner watch instead.
+# (SIGTERM). SIGKILL is uncatchable and is contained by the cohort reaper instead.
 TERMINATION_SIGNALS: tuple[signal.Signals, ...] = (
     signal.SIGTERM, signal.SIGINT, signal.SIGHUP, signal.SIGQUIT,
 )
@@ -76,11 +78,18 @@ def install_exit_contract(
     on_terminate: Callable[[int], None] | None = None,
     term_grace_s: float = 2.0,
 ) -> None:
-    """Route every catchable termination signal through ``exit_process``.
+    """Bind this run's whole cohort to its own lifetime, on every termination path.
 
-    Call once from ``__main__`` before anything can spawn a child. Idempotent, and
-    re-callable to refine ``on_terminate`` (a status write, say) once the run's
-    identity is known. Signals whose handler this platform refuses are skipped.
+    Catchable signals route through ``exit_process``. The uncatchable ones (SIGKILL,
+    the OOM killer, a hardware fault) cannot run any handler here at all, so the
+    same teardown is additionally staked out in a separate process: children are
+    marked as they are exec'd, and a reaper sweeps everything carrying the mark once
+    this process is gone.
+
+    Call once from ``__main__`` before anything can spawn a child -- an unmarked
+    child is one this run can no longer account for. Idempotent, and re-callable to
+    refine ``on_terminate`` (a status write, say) once the run's identity is known.
+    Signals whose handler this platform refuses are skipped.
     """
     global _installed, _on_terminate, _signal_term_grace_s
     with _install_lock:
@@ -93,4 +102,8 @@ def install_exit_contract(
                 signal.signal(signum, _handle_termination)
             except (OSError, ValueError):
                 continue
+        token = owner_token()
+        if token is not None:
+            stamp_cohort(token)
+            spawn_cohort_reaper(token)
         _installed = True

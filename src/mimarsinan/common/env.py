@@ -22,6 +22,7 @@ MBH_LEDGER_VAR = "MIMARSINAN_MBH_LEDGER"
 SIMULATION_STEP_TIMEOUT_VAR = "MIMARSINAN_SIMULATION_STEP_TIMEOUT_S"
 UNSAFE_QUANT_OVERRIDES_VAR = "MIMARSINAN_UNSAFE_QUANT_OVERRIDES"
 DEGENERATE_ROUTING_DEBUG_VAR = "MIMARSINAN_DEGENERATE_ROUTING_DEBUG"
+COHORT_TOKEN_VAR = "MIMARSINAN_COHORT_TOKEN"
 IMAGENET_ROOT_VAR = "IMAGENET_ROOT"
 
 
@@ -150,3 +151,13 @@ def simulation_step_timeout_override() -> float | None:
 def imagenet_root() -> str:
     """ILSVRC2012 root directory, stripped; empty string when unset."""
     return os.environ.get(IMAGENET_ROOT_VAR, "").strip()
+
+
+def set_cohort_token(token: str) -> None:
+    """Mark this process so every process it later execs joins ``token``'s cohort.
+
+    ``putenv`` rewrites the array ``execve`` passes on, not this process's own
+    ``/proc/self/environ`` region -- so the mark reaches children (and their fork
+    descendants) but never retroactively claims the process that set it.
+    """
+    os.environ[COHORT_TOKEN_VAR] = token
