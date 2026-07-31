@@ -283,7 +283,6 @@ class SoftCoreMappingStep(PipelineStep):
             for op in compute_ops:
                 print(f"  - {op.name}: {op.op_type}")
 
-        # Run the NF↔SCM gate before model.to("cpu") below, which does not move the mapper-graph compute modules, so the whole model must still be on one device.
         if plan.mode_policy().observes_values():
             # [mvm R-edge] the value analogue of NF↔SCM: model ≡ identity
             # program, exact by construction in fp64 (FATAL).
