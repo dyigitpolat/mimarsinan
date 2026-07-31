@@ -71,6 +71,22 @@ def ir_source_to_spike_source(ir_source: IRSource):
         return SpikeSource(ir_source.node_id, ir_source.index, is_input=False, is_off=False)
 
 
+def _residency_class_of(neural_core: NeuralCore, graph, pi):
+    """Read the class the LAYOUT assigned; recomputing here is how the two drift apart.
+
+    The finalizer is the single producer of residency class ids. A SoftCore that derived its own
+    would disagree with the layout specs the capacity splitter packs against, and the splitter
+    would size sub-segments the runtime packer cannot honour. The source-perceptron proxy is used
+    only when there is no layout record to read -- the same condition the degraded reconstruction
+    path already declares as `provenance_fallback`.
+    """
+    specs = getattr(graph, "layout_softcores", None) if graph is not None else None
+    idx = getattr(neural_core, "layout_softcore_index", None)
+    if specs and idx is not None and 0 <= int(idx) < len(specs):
+        return int(specs[int(idx)].residency_class_id)
+    return int(pi) if pi is not None else None
+
+
 def neural_core_to_soft_core(neural_core: NeuralCore, graph: IRGraph | None = None):
     """Convert NeuralCore to SoftCore (graph required for bank-backed cores)."""
     from mimarsinan.mapping.packing.softcore import SoftCore
@@ -130,7 +146,7 @@ def neural_core_to_soft_core(neural_core: NeuralCore, graph: IRGraph | None = No
         psum_role=neural_core.psum_role,
         coalescing_group_id=neural_core.coalescing_group_id,
         coalescing_role=neural_core.coalescing_role,
-        residency_class_id=int(pi) if pi is not None else None,
+        residency_class_id=_residency_class_of(neural_core, graph, pi),
         weight_bank_id=(
             int(neural_core.weight_bank_id)
             if neural_core.weight_bank_id is not None else None

@@ -377,3 +377,59 @@ class TestTheResidencyBasisIsRecorded:
                           max_axons=64, max_neurons=64).map(repr_)
         bases = {s.residency_basis for s in (graph.layout_softcores or [])}
         assert len(bases) == 1, bases
+
+
+class TestOneProducerPerMapping:
+    """The layout assigns residency classes; everyone else READS them.
+
+    A SoftCore that derived its own would disagree with the layout specs the capacity splitter
+    packs against, and the splitter would size sub-segments the runtime packer cannot honour.
+    That disagreement is what made two attempts at this fail, both times as an unrelated-looking
+    "No more hard cores available".
+    """
+
+    def _graph(self):
+        import torch
+        import torch.nn as nn
+
+        from mimarsinan.mapping.ir_mapping_class import IRMapping
+        from mimarsinan.mapping.platform.packaging_contract import MVM_PACKAGING
+        from mimarsinan.torch_mapping.converter import convert_torch_model
+
+        torch.manual_seed(0)
+        model = nn.Sequential(nn.Flatten(), nn.Linear(16, 8), nn.ReLU(), nn.Linear(8, 4)).eval()
+        fused = convert_torch_model(model, (1, 4, 4), 4, device="cpu",
+                                    packaging=MVM_PACKAGING).eval()
+        repr_ = fused.get_mapper_repr()
+        repr_.assign_perceptron_indices()
+        return IRMapping(q_max=127.0, firing_mode="Default",
+                         max_axons=64, max_neurons=64).map(repr_)
+
+    def test_softcores_carry_the_class_the_layout_assigned(self):
+        from mimarsinan.mapping.ir.legacy_convert import neural_core_to_soft_core
+        from mimarsinan.mapping.ir.types import NeuralCore
+
+        graph = self._graph()
+        specs = graph.layout_softcores or []
+        assert specs, "vehicle must produce a layout record"
+        checked = 0
+        for node in graph.nodes:
+            if not isinstance(node, NeuralCore):
+                continue
+            idx = getattr(node, "layout_softcore_index", None)
+            if idx is None:
+                continue
+            soft = neural_core_to_soft_core(node, graph)
+            assert soft.residency_class_id == specs[int(idx)].residency_class_id
+            checked += 1
+        assert checked, "no core carried a layout index"
+
+    def test_without_a_layout_record_both_sides_fall_back_together(self):
+        """No layout record means no single producer, so both sides use the proxy -- and say so."""
+        from mimarsinan.mapping.ir.legacy_convert import neural_core_to_soft_core
+        from mimarsinan.mapping.ir.types import NeuralCore
+
+        graph = self._graph()
+        node = next(n for n in graph.nodes if isinstance(n, NeuralCore))
+        soft = neural_core_to_soft_core(node, None)
+        assert soft.residency_class_id == node.perceptron_index
