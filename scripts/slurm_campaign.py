@@ -5,12 +5,15 @@ from __future__ import annotations
 import argparse
 import json
 import re
-import subprocess
 import sys
 import time
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO / "src"))
+
+from mimarsinan.common.lifecycle.child_launcher import ChildResult, run_child  # noqa: E402
+
 SLURMECH = [str(REPO / "env/bin/python"), "-c", "from slurmech.cli import main; main()"]
 
 # Gate (user revision 2026-07-10): deployed >= max(ACC_FLOOR, RETENTION * pretrain).
@@ -31,11 +34,11 @@ def accuracy_gate(pretrain_acc: float | None) -> float:
     return max(ACC_FLOOR, RETENTION * pretrain_acc)
 
 
-def _run(cmd: list[str], timeout: float = 600.0) -> subprocess.CompletedProcess:
-    return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, cwd=REPO)
+def _run(cmd: list[str], timeout: float = 600.0) -> ChildResult:
+    return run_child(cmd, cwd=REPO, timeout_s=timeout)
 
 
-def _slurmech(*args: str, timeout: float = 600.0) -> subprocess.CompletedProcess:
+def _slurmech(*args: str, timeout: float = 600.0) -> ChildResult:
     return _run(SLURMECH + list(args), timeout=timeout)
 
 

@@ -83,5 +83,11 @@ def main():
 
 
 if __name__ == "__main__":
+    from mimarsinan.common.lifecycle.exit_contract import (
+        exit_process, install_exit_contract,
+    )
+
+    install_exit_contract()
     init()
     main()
+    exit_process(0)
