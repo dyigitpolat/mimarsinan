@@ -14,6 +14,7 @@ from mimarsinan.mapping.packing.greedy.split import (
     _try_split_into_unused,
 )
 from mimarsinan.mapping.packing.pick_index import PickBestIndex
+from mimarsinan.mapping.packing.placement_cost import placement_cost
 
 __all__ = ["greedy_pack_softcores"]
 
@@ -120,16 +121,18 @@ def greedy_pack_softcores(
         core_tg = _soft_tg(core)
 
         target_idx = None
-        best_remaining = float("inf")
+        best_cost: tuple[int, int] | None = None
         candidate_buckets = [used_by_tg.get(core_tg, ())]
         candidate_buckets.append(used_by_tg.get(None, ()))
         for bucket in candidate_buckets:
             for idx in bucket:
                 hc = used_hardcores[idx]
                 if is_mapping_possible(core, hc):
-                    rem = _remaining_capacity(core, hc)
-                    if rem < best_remaining:
-                        best_remaining = rem
+                    cost = placement_cost(
+                        core, hc, remaining_capacity=_remaining_capacity(core, hc)
+                    )
+                    if best_cost is None or cost < best_cost:
+                        best_cost = cost
                         target_idx = idx
 
         if (

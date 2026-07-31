@@ -4,6 +4,7 @@ from typing import Any
 
 import numpy as np
 
+from mimarsinan.mapping.packing.placement_cost import note_resident_bank
 from mimarsinan.mapping.platform.threshold_grouping import ungrouped_fallback_id
 from mimarsinan.mapping.platform.core_residency import (
     ALL_SINGLETON_NAMES,
@@ -83,6 +84,7 @@ class HardCore:
         self.available_neurons -= softcore.get_output_count()
 
         adopt_or_check(self, softcore, constrained=self.constrained_properties)
+        note_resident_bank(self, softcore)
 
         if self.threshold_group_id is None:
             tg = getattr(softcore, "threshold_group_id", None)
