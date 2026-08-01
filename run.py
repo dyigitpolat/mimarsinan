@@ -25,9 +25,11 @@ from mimarsinan.common.lifecycle.exit_contract import exit_process, install_exit
 from src.init import init
 from src.main import main, run_pipeline_from_config
 
-# Snapshot rendering can exceed a minute on the largest pipelines; a short
-# budget would silently truncate monitor-UI resources. Children are already
-# reaped by the time this runs, so the wait costs latency, never a leak.
+# A headless run renders nothing, so this drains source writes -- seconds, not
+# the minutes rendering used to cost -- but the cap stays generous because a
+# short budget would silently truncate monitor-UI resources rather than delay
+# them. Children are already reaped by the time this runs, so the wait costs
+# latency, never a leak.
 SNAPSHOT_DRAIN_BUDGET_S = 600.0
 SNAPSHOT_HEARTBEAT_S = 30.0
 
@@ -68,7 +70,7 @@ def _run_headless(config_path: str) -> None:
     import json
 
     from mimarsinan.gui import GUIHandle, backfill_skipped_steps, to_json_safe
-    from mimarsinan.gui.resources import ResourceStore
+    from mimarsinan.gui.resources import ResourceRenderPolicy, ResourceStore
     from mimarsinan.gui.runtime.collector import DataCollector
     from mimarsinan.gui.runtime.persistence import save_run_info, update_run_status
     from mimarsinan.model_training.weight_loading import UnsupportedPreloadError
@@ -89,7 +91,15 @@ def _run_headless(config_path: str) -> None:
 
     collector = DataCollector()
     collector.set_resource_store(ResourceStore())
-    gui = GUIHandle(session.pipeline, collector, persist_metrics=True, capture_stdio=False)
+    # Nobody is watching a headless run, so it persists resource SOURCES and
+    # renders nothing: the render backlog is what used to keep the process --
+    # and, under a scheduler, its whole node -- alive for minutes past its last
+    # step. Whoever opens the run later renders from the source data.
+    gui = GUIHandle(
+        session.pipeline, collector,
+        persist_metrics=True, capture_stdio=False,
+        render_policy=ResourceRenderPolicy.DEFERRED,
+    )
     collector.set_metric_callback(gui.on_metric)
     collector.set_event_callback(gui.on_event)
     session.attach_gui(gui)

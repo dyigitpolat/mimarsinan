@@ -8,8 +8,7 @@ from typing import Any
 import numpy as np
 
 from mimarsinan.common.best_effort import best_effort
-from mimarsinan.gui.resources import ResourceDescriptor
-from mimarsinan.gui.snapshot.heatmap import _make_heatmap_producer
+from mimarsinan.gui.resources import HeatmapSource, ResourceDescriptor
 from mimarsinan.gui.snapshot.util.helpers import _histogram
 from mimarsinan.gui.snapshot.ir_graph.ir_graph_nodes import process_ir_graph_node
 from mimarsinan.gui.snapshot.ir_graph.ir_graph_resources import (
@@ -55,7 +54,7 @@ def snapshot_ir_graph(
                     descriptors.append(ResourceDescriptor(
                         kind=RESOURCE_KIND_IR_BANK_HEATMAP,
                         rid=rid,
-                        producer=_make_heatmap_producer(bank.core_matrix, copy=False),
+                        source=HeatmapSource(bank.core_matrix, copy=False),
                         media_type="image/png",
                     ))
 

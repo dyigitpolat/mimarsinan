@@ -17,6 +17,7 @@ LIVE_METRICS_FILENAME = "live_metrics.jsonl"
 CONSOLE_LOG_FILENAME = "console.jsonl"
 EVENTS_FILENAME = "events.jsonl"
 RESOURCES_DIRNAME = "resources"
+RESOURCE_SOURCES_DIRNAME = "resource_sources"
 
 _STEPS_FILE_LOCKS_LOCK = threading.Lock()
 _STEPS_FILE_LOCKS: dict[str, threading.Lock] = {}

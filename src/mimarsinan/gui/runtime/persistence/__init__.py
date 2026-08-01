@@ -20,6 +20,11 @@ from mimarsinan.gui.runtime.persistence.paths import (
 from mimarsinan.gui.runtime.persistence.resource_paths import (
     sanitize_path_segment,
     resource_disk_path,
+    resource_source_disk_path,
+)
+from mimarsinan.gui.runtime.persistence.resource_sources import (
+    load_resource_source,
+    save_resource_source,
 )
 from mimarsinan.gui.runtime.persistence.store import (
     append_console_log,
@@ -51,9 +56,12 @@ __all__ = [
     "load_persisted_steps_cache_clear",
     "load_persisted_steps_cache_info",
     "load_resource_from_disk",
+    "load_resource_source",
     "load_run_info",
     "resource_disk_path",
+    "resource_source_disk_path",
     "sanitize_path_segment",
+    "save_resource_source",
     "save_resource_to_disk",
     "save_run_info",
     "save_step_status",

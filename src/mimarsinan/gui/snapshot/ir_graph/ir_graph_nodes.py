@@ -11,11 +11,10 @@ logger = logging.getLogger("mimarsinan.gui")
 from mimarsinan.common.best_effort import best_effort
 from mimarsinan.gui.snapshot.util.helpers import _t, _histogram
 from mimarsinan.common.presentation import layer_key_from_node_name
-from mimarsinan.gui.resources import ResourceDescriptor
+from mimarsinan.gui.resources import HeatmapSource, ResourceDescriptor
 from mimarsinan.gui.snapshot.heatmap import (
     _detect_neural_core_liveness,
-    _make_bias_strip_producer,
-    _make_heatmap_producer,
+    _make_bias_strip_source,
 )
 from mimarsinan.gui.snapshot.ir_graph.ir_graph_resources import (
     LIVENESS_BIAS_ONLY,
@@ -100,12 +99,13 @@ def process_ir_graph_node(
             info["has_heatmap"] = True
             info["heatmap_resource"] = make_resource_ref(source_step_name, RESOURCE_KIND_IR_CORE_HEATMAP, core_rid)
             if register_descriptors:
-                descriptors.append(ResourceDescriptor(
-                    kind=RESOURCE_KIND_IR_CORE_HEATMAP,
-                    rid=core_rid,
-                    producer=_make_heatmap_producer(mat, copy=False),
-                    media_type="image/png",
-                ))
+                with best_effort(f"register heatmap for IR core {node.id}", logger=logger):
+                    descriptors.append(ResourceDescriptor(
+                        kind=RESOURCE_KIND_IR_CORE_HEATMAP,
+                        rid=core_rid,
+                        source=HeatmapSource(mat, copy=False),
+                        media_type="image/png",
+                    ))
 
             if (
                 liveness == LIVENESS_BIAS_ONLY
@@ -115,12 +115,13 @@ def process_ir_graph_node(
                 info["has_bias_resource"] = True
                 info["bias_resource"] = make_resource_ref(source_step_name, RESOURCE_KIND_IR_CORE_BIAS, core_rid)
                 if register_descriptors:
-                    descriptors.append(ResourceDescriptor(
-                        kind=RESOURCE_KIND_IR_CORE_BIAS,
-                        rid=core_rid,
-                        producer=_make_bias_strip_producer(bias_arr),
-                        media_type="image/png",
-                    ))
+                    with best_effort(f"register bias strip for IR core {node.id}", logger=logger):
+                        descriptors.append(ResourceDescriptor(
+                            kind=RESOURCE_KIND_IR_CORE_BIAS,
+                            rid=core_rid,
+                            source=_make_bias_strip_source(bias_arr),
+                            media_type="image/png",
+                        ))
 
             pre = getattr(node, "pre_pruning_heatmap", None)
             row_mask = getattr(node, "pre_pruning_row_mask", None) or getattr(node, "pruned_row_mask", None)
@@ -139,7 +140,7 @@ def process_ir_graph_node(
                             descriptors.append(ResourceDescriptor(
                                 kind=RESOURCE_KIND_IR_CORE_PRE_PRUNING,
                                 rid=core_rid,
-                                producer=_make_heatmap_producer(
+                                source=HeatmapSource(
                                     pre_arr,
                                     pruned_row_mask=list(row_mask),
                                     pruned_col_mask=list(col_mask),

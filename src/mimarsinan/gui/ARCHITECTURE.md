@@ -6,8 +6,26 @@ single-page frontend, and (with `run.py --ui`) also serves the deployment
 configuration workbench and spawns headless pipeline subprocesses. Central
 abstractions: `GUIHandle` (pipeline hooks that build step snapshots and persist
 them), the thread-safe `DataCollector` (in-memory state + WebSocket broadcast),
-and `ResourceDescriptor`/`ResourceStore` (lazy, step-scoped heavy artefacts —
-heatmap PNGs, connectivity JSON — materialised on first HTTP fetch). The SPA
+and `ResourceDescriptor`/`ResourceSource`/`ResourceStore` (step-scoped heavy
+artefacts — heatmap PNGs, connectivity JSON — carried as MATERIALISED SOURCE
+DATA and rendered on demand).
+
+RENDER WHEN SOMEONE IS WATCHING (`resources/policy.py`). Every descriptor
+carries a `ResourceSource` — the resource's inputs, already copied into host
+memory — rather than a closure over pipeline state, so the descriptor neither
+pins a device allocation past its step nor needs the run alive to be rendered.
+`ResourceRenderPolicy` is the one switch over what a run does with them, declared
+by the run mode and overridable only through `MIMARSINAN_GUI_RESOURCE_RENDER`:
+`--ui` declares EAGER (a monitor is attached, so each step's resources are
+rendered as the run goes and the browser fetches finished bytes), `--headless`
+declares DEFERRED (nobody is watching, so the run writes only the sources —
+cheap array/JSON I/O — under `_GUI_STATE/resource_sources/` and renders
+nothing). Rendering a headless run's backlog used to keep the process, and under
+a scheduler its whole node, alive for minutes past its last step. On the read
+side there is one path either way: `load_resource_from_disk` serves the rendered
+file when it exists and otherwise renders the persisted source ONCE, caching the
+bytes under the normal resource path, so the first attach produces what every
+later attach simply reads. The SPA
 assets (HTML/CSS/ES-module JS) live in the non-package `static/` directory;
 third-party runtime assets (Plotly, fonts, and the `marked` + `DOMPurify` pair
 behind `renderMarkdown`) are vendored under `static/vendor/` so the GUI works
@@ -163,23 +181,23 @@ values, the template flow, and both error/remedy flows.
 | File | Purpose |
 |---|---|
 | `exports.py` | Flat public re-export surface (`GUIHandle`, `start_gui`, `backfill_skipped_steps`, `DataCollector`, `to_json_safe`) consumed by `__init__.py`. |
-| `handle.py` | `GUIHandle` facade: step start/end and metric/event hooks, stdio tee, snapshot build, synchronous status writes plus async resource persistence via `SnapshotExecutor`. Records each step's honest `metric_kind` (`measured`/`carried`) and gate `verdict` from the step's own declaration — a carried value is never persisted as a measurement. |
+| `handle.py` | `GUIHandle` facade: step start/end and metric/event hooks, stdio tee, snapshot build, synchronous status writes plus async resource persistence via `SnapshotExecutor` — rendering resources or writing only their sources per the declared `ResourceRenderPolicy`. Records each step's honest `metric_kind` (`measured`/`carried`) and gate `verdict` from the step's own declaration — a carried value is never persisted as a measurement. |
 | `heatmap_renderer.py` | Matplotlib rendering of weight matrices to PNG bytes / data URIs, with red pruned-row/column overlays. |
 | `json_util.py` | `to_json_safe` recursive JSON coercion (NaN/Inf → `None`, numpy → lists/scalars, fallback `str`). |
 | `reporter.py` | `GUIReporter` implementing the `Reporter` protocol; forwards metrics to the `DataCollector`. |
-| `resources.py` | `ResourceDescriptor` (kind, rid, producer, media_type) and thread-safe `ResourceStore`: lazy once-only materialisation, per-step eviction and version counter for ETags. |
+| `resources/` | The resource SSOT: `sources.py` (`ResourceSource` base + on-disk type registry, `HeatmapSource`, `JsonSource`, `as_host_array` — the one place a pipeline buffer becomes owned host memory — and `encode_resource_payload`, the single payload→bytes encoder both the run and the monitor go through), `descriptor.py` (`ResourceDescriptor`: kind, rid, source, media_type), `policy.py` (`ResourceRenderPolicy` + `resolve_resource_render_policy`), `store.py` (thread-safe `ResourceStore`: lazy once-only materialisation, per-step eviction and version counter for ETags). |
 | `runs.py` | Discovery and loading of historical runs from the generated-files root: run list, config, pipeline overview, step detail (with disk rebuild fallback), console logs, resume-step suggestion, and the run-directory artifact inventory (`list_dir_artifacts`, safe-join `resolve_artifact_file`). |
 | `start.py` | `start_gui` bootstrap (collector + resource store + server + handle) and `backfill_skipped_steps` for edit-and-continue: replays cached steps into the collector and rewrites `steps.json`. |
 | `tee_stream.py` | `TeeStream`: line-buffered stdout/stderr tee that forwards complete lines to the console-log callback while writing through to the original stream. |
 | `templates.py` | CRUD for saved deployment-config templates (JSON files under the templates dir), persisted minimally through the wizard config builder. |
-| `runtime/` | Runtime machinery: `DataCollector` (collector/), the structured pipeline-event vocabulary (`events.py`: `PipelineEvent` + kinds mirroring the console `[TAG]`s one-to-one, transported via `reporter.event`, persisted to `events.jsonl`, WS-broadcast as `{"type":"event"}` frames), on-disk persistence of `steps.json`/metrics/events/console/resources (persistence/), subprocess run management (`ProcessManager`, spawn/monitor), `ActiveRunHub` jsonl tailers for active-run WebSockets, `CompositeReporter`, `SnapshotExecutor`, and run-cache seeding. |
+| `runtime/` | Runtime machinery: `DataCollector` (collector/), the structured pipeline-event vocabulary (`events.py`: `PipelineEvent` + kinds mirroring the console `[TAG]`s one-to-one, transported via `reporter.event`, persisted to `events.jsonl`, WS-broadcast as `{"type":"event"}` frames), on-disk persistence of `steps.json`/metrics/events/console/resources (persistence/, including `resource_sources.py`: a self-describing container of one resource's source arrays + metadata, written whole-or-not-at-all, with zero-padding dropped by a bit-pattern sparse encoding so `-0.0`/NaN survive the round trip), subprocess run management (`ProcessManager`, spawn/monitor), `ActiveRunHub` jsonl tailers for active-run WebSockets, `CompositeReporter`, `SnapshotExecutor`, and run-cache seeding. |
 | `server/` | FastAPI app factory and uvicorn startup (`app.py`) plus route modules: pipeline/runs/templates/console APIs, artifact listing/downloads (`routes_artifacts.py`), lazy-resource endpoints, wizard and config-schema APIs, and hardware layout verification; `json_safe.py` provides the sanitising JSON response class. |
 | `snapshot/` | Pure per-artifact snapshot builders returning `(summary, ResourceDescriptor list)`: model, IR graph, hardware mapping, adaptation, pruning, search, and SANA-FE snapshots, `RESOURCE_KIND_*` constants, disk-based snapshot rebuild for legacy runs, and the best-effort console `[TAG]` parser (`console_events.py`) that backfills events for runs recorded before `events.jsonl`. |
 | `viewmodel/` | Pure, I/O-free view-models (parsed run artifacts in, chart-ready JSON out; unit-tested against synthetic streams): `overview_vm` (measured points + verdict markers — a carried metric NEVER plots), `step_metrics_vm` (the one metric-categorization rule table), `events_vm` (per-kind display hints + annotation lanes), `staircase_vm` (the D-hat ratchet staircase; raises on a falling ratchet), `gantt_vm` (step timeline + endpoint step-budget ledger + artifact/total wall split), `a6_vm` (install-resolution gauge cards). |
 | `wizard/` | Configuration workbench application layer: `schema_api.resolve_payload` guards EVERY contract `DeploymentPlan.resolve` enforces (driver, temporal allocation, firing strategy, weight-source regime) so an authorable document yields a keyed `pipeline_assembly` error instead of a 500; `emit.py` (explicit-keys-only config emission — the ONE builder used by Deploy, templates, and the representability test; unknown keys preserved and reported, never dropped; non-declarable derived keys — `activation_quantization`, the correctness mechanisms — are removed), `build_deployment_config_from_state` (thin alias over emit), `schema_api.py` (`/api/config_schema` payload: serialized registry + the per-key starter `baseline` overlay + recipe/preprocessing/hw-search-space/NAS sub-schemas; `/api/config/resolve` payload: resolution + live step preview + the ALWAYS-served `vehicles` rows and `legal_values` sets + the concrete `resolved` + `derived_values` maps + the ALWAYS-served `pretrained` panel block + the baseline-rebased diff + the config-time deployment `advisories` rows), `pretrained_panel.py` (the dedicated Pretrained-weights panel's data: folds the model builder's registered `pretrained_weight_sets` into an always-computable effective config so the switch's legal set — disabled when the builder registers no applicable set, locked ON when a source is declared — the selector's legal ids, the full registered records to reveal, and the pretrained legality errors survive an erroring draft; config_schema stays builder-agnostic, so this wizard layer owns the builder enrichment), `starter.py` + `starter_baseline.json` (the fresh-state contract: `GET /api/config/starter` serves the packaged baseline DOCUMENT — the lenet5 vehicle, the only tier-0 family green in all five modes, with a fresh experiment name and no pinned derived mode keys — pinned resolvable/emittable/mappable per mode switch by `test_wizard_starter.py`; workload facts live in the document, never in framework code; the baseline doubles as the wizard's diff-defaults document, experiment_name excluded), wizard schema surfaces (model types, NAS, temporal allocation, pipeline steps), and state validation. |
 
 ## Dependencies
-- `common` — `best_effort` error scoping, env-derived paths (`runs_root`, `templates_dir`, `gui_no_browser`), `layer_key` helpers for snapshots.
+- `common` — `best_effort` error scoping, env-derived paths and switches (`runs_root`, `templates_dir`, `gui_no_browser`, `gui_resource_render_override`), `layer_key` helpers for snapshots.
 - `config_schema` — deployment defaults, `validate_deployment_config`, `namespaced_schema` exposure metadata for the wizard builder, `display_view` structured config views.
 - `mapping` — IR types and spike-source span compression for snapshots; layout verification service, request types, and hardware-config suggesters behind `/api/hw_config_verify` and auto-suggest (lazy imports).
 - `models` — `builders.wizard_schema` model-type schemas for the wizard form.

@@ -5,12 +5,17 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from mimarsinan.gui.runtime.persistence.paths import RESOURCES_DIRNAME, gui_state_dir
+from mimarsinan.gui.runtime.persistence.paths import (
+    RESOURCE_SOURCES_DIRNAME,
+    RESOURCES_DIRNAME,
+    gui_state_dir,
+)
 
 RESOURCE_EXT_FOR_MEDIA_TYPE = {
     "image/png": ".png",
     "application/json": ".json",
 }
+RESOURCE_SOURCE_EXT = ".mimsrc"
 
 _SAFE_SEGMENT_CHAR_RE = re.compile(r"[^A-Za-z0-9 ._()+,@=-]")
 
@@ -30,6 +35,20 @@ def resource_root(working_directory: str) -> Path:
     return gui_state_dir(working_directory) / RESOURCES_DIRNAME
 
 
+def resource_source_root(working_directory: str) -> Path:
+    return gui_state_dir(working_directory) / RESOURCE_SOURCES_DIRNAME
+
+
+def _resource_relative_path(step_name: str, kind: str, rid: str, ext: str) -> Path:
+    safe_step = sanitize_path_segment(step_name)
+    safe_kind = sanitize_path_segment(kind)
+    safe_rid_parts = [sanitize_path_segment(p) for p in rid.split("/") if p]
+    if not safe_rid_parts:
+        raise ValueError(f"Empty rid: {rid!r}")
+    safe_rid_parts[-1] = safe_rid_parts[-1] + ext
+    return Path(safe_step, safe_kind, *safe_rid_parts)
+
+
 def resource_disk_path(
     working_directory: str,
     step_name: str,
@@ -40,10 +59,16 @@ def resource_disk_path(
     ext = RESOURCE_EXT_FOR_MEDIA_TYPE.get(media_type)
     if ext is None:
         raise ValueError(f"Unsupported resource media_type: {media_type!r}")
-    safe_step = sanitize_path_segment(step_name)
-    safe_kind = sanitize_path_segment(kind)
-    safe_rid_parts = [sanitize_path_segment(p) for p in rid.split("/") if p]
-    if not safe_rid_parts:
-        raise ValueError(f"Empty rid: {rid!r}")
-    safe_rid_parts[-1] = safe_rid_parts[-1] + ext
-    return resource_root(working_directory).joinpath(safe_step, safe_kind, *safe_rid_parts)
+    return resource_root(working_directory) / _resource_relative_path(step_name, kind, rid, ext)
+
+
+def resource_source_disk_path(
+    working_directory: str,
+    step_name: str,
+    kind: str,
+    rid: str,
+) -> Path:
+    """Where one resource's SOURCE data lives; mirrors the rendered layout, media-type free."""
+    return resource_source_root(working_directory) / _resource_relative_path(
+        step_name, kind, rid, RESOURCE_SOURCE_EXT,
+    )

@@ -14,6 +14,7 @@ FFCV_CACHE_DIR_VAR = "MIMARSINAN_FFCV_CACHE_DIR"
 LOIHI_QUIET_VAR = "MIMARSINAN_LOIHI_QUIET"
 LOIHI_WAVE_WORKERS_VAR = "MIMARSINAN_LOIHI_WAVE_WORKERS"
 GUI_NO_BROWSER_VAR = "MIMARSINAN_GUI_NO_BROWSER"
+GUI_RESOURCE_RENDER_VAR = "MIMARSINAN_GUI_RESOURCE_RENDER"
 RUNS_ROOT_VAR = "MIMARSINAN_RUNS_ROOT"
 TEMPLATES_DIR_VAR = "MIMARSINAN_TEMPLATES_DIR"
 TEST_CUDA_VAR = "MIMARSINAN_TEST_CUDA"
@@ -102,6 +103,27 @@ def loihi_wave_workers() -> int:
 def gui_no_browser() -> bool:
     """GUI server skips opening a browser ("1"/"true"/"yes", case/space-insensitive)."""
     return os.environ.get(GUI_NO_BROWSER_VAR, "").strip().lower() in ("1", "true", "yes")
+
+
+GUI_RESOURCE_RENDER_VALUES = ("eager", "deferred")
+
+
+def gui_resource_render_override() -> str | None:
+    """Operator override of the run mode's GUI resource-render policy; None when unset.
+
+    ``eager`` renders each step's resources during the run, ``deferred`` persists
+    only their source data for a monitor to render on attach. Anything else fails
+    loud rather than silently picking a policy.
+    """
+    raw = os.environ.get(GUI_RESOURCE_RENDER_VAR, "").strip().lower()
+    if not raw:
+        return None
+    if raw not in GUI_RESOURCE_RENDER_VALUES:
+        raise ValueError(
+            f"{GUI_RESOURCE_RENDER_VAR} must be one of "
+            f"{', '.join(GUI_RESOURCE_RENDER_VALUES)}; got {raw!r}"
+        )
+    return raw
 
 
 def runs_root() -> str:

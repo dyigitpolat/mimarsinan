@@ -5,6 +5,7 @@ import threading
 import pytest
 
 from mimarsinan.gui.resources import ResourceDescriptor, ResourceStore
+from resource_source_doubles import CallableSource
 
 
 def _png_descriptor(rid: str, payload: bytes, calls: list[str]) -> ResourceDescriptor:
@@ -15,7 +16,7 @@ def _png_descriptor(rid: str, payload: bytes, calls: list[str]) -> ResourceDescr
     return ResourceDescriptor(
         kind="heatmap",
         rid=rid,
-        producer=produce,
+        source=CallableSource(produce),
         media_type="image/png",
     )
 
@@ -28,7 +29,7 @@ def _json_descriptor(rid: str, payload: dict, calls: list[str]) -> ResourceDescr
     return ResourceDescriptor(
         kind="connectivity",
         rid=rid,
-        producer=produce,
+        source=CallableSource(produce),
         media_type="application/json",
     )
 
@@ -148,7 +149,7 @@ class TestResourceStoreProducerFailure:
             ResourceDescriptor(
                 kind="heatmap",
                 rid="core/1",
-                producer=boom,
+                source=CallableSource(boom),
                 media_type="image/png",
             ),
         )
@@ -174,7 +175,7 @@ class TestResourceStoreThreadSafety:
             ResourceDescriptor(
                 kind="heatmap",
                 rid="core/1",
-                producer=slow_produce,
+                source=CallableSource(slow_produce),
                 media_type="image/png",
             ),
         )

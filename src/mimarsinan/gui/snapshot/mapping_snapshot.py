@@ -12,11 +12,10 @@ logger = logging.getLogger("mimarsinan.gui")
 
 from mimarsinan.common.best_effort import best_effort
 from mimarsinan.gui.snapshot.util.helpers import _histogram
-from mimarsinan.gui.resources import ResourceDescriptor
-from mimarsinan.gui.snapshot.heatmap import _make_heatmap_producer
+from mimarsinan.gui.resources import HeatmapSource, ResourceDescriptor
 from mimarsinan.gui.snapshot.ir_graph.ir_graph_resources import (
     _group_consecutive_compute_stages,
-    _make_per_core_connectivity_producer,
+    _make_per_core_connectivity_source,
     _make_segment_spans_extractor,
 )
 
@@ -128,7 +127,7 @@ def snapshot_hard_core_mapping(mapping: Any) -> tuple[dict, list[ResourceDescrip
                     descriptors.append(ResourceDescriptor(
                         kind=RESOURCE_KIND_HARD_CORE_HEATMAP,
                         rid=rid,
-                        producer=_make_heatmap_producer(mat, copy=False),
+                        source=HeatmapSource(mat, copy=False),
                         media_type="image/png",
                     ))
                 conn_rid = f"seg/{seg_idx}/core/{ci}"
@@ -140,7 +139,7 @@ def snapshot_hard_core_mapping(mapping: Any) -> tuple[dict, list[ResourceDescrip
                 descriptors.append(ResourceDescriptor(
                     kind=RESOURCE_KIND_CONNECTIVITY,
                     rid=conn_rid,
-                    producer=_make_per_core_connectivity_producer(seg_spans_extractor, ci),
+                    source=_make_per_core_connectivity_source(seg_spans_extractor, ci),
                     media_type="application/json",
                 ))
                 placements = getattr(hcm, "soft_core_placements_per_hard_core", None)
