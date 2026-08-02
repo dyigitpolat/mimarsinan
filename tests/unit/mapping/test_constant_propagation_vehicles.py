@@ -300,9 +300,18 @@ class TestTinyViTOpaqueBarriersNowPropagate:
         ]
         assert act, "the GELU of a known constant is a known constant"
         assert not is_on_grid(act), "execution-exact, NOT grid-certifiable"
-        assert by_name["norm"] not in {op_id for (op_id, _) in lattice}, (
-            "the post-block residual join still stops the lattice"
-        )
+
+        # [ratchet, was ``norm not in lattice``] U6 gave the NeuralCore COLUMN
+        # rule the same deployment-dtype treatment U2 gave the ComputeOp probe,
+        # so fc1's columns resolve and the chain no longer stops at the
+        # post-block residual join. The barrier this pinned is gone; what
+        # remains true — and is the load-bearing claim — is that the value is
+        # execution-exact rather than grid-certifiable.
+        norm = [
+            v for (op_id, _), v in lattice.items() if op_id == by_name["norm"]
+        ]
+        assert norm, "the post-block residual join now resolves"
+        assert not is_on_grid(norm), "execution-exact, NOT grid-certifiable"
 
     def test_a_pristine_transformer_propagates_past_its_first_arithmetic_op(
         self, pristine_vit

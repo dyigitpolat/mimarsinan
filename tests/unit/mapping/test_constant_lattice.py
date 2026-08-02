@@ -456,3 +456,55 @@ class TestCoreConstantRules:
             [None, 1.0], matrix, carrier, pruned_rows={0}, threshold=4.0
         )
         assert facts.column_values == {0: 0.25, 1: 0.5}
+
+
+class TestCoreColumnsAreDerivedAtTheDeploymentDtype:
+    """The column fold evaluates the core at the dtype the DEPLOYED value
+    executor runs it at (``ValueCoreFlow`` default float32; float64 is the
+    certificate twin, not the deployment).
+
+    The old gate derived in fp64 and demanded the fp32 evaluation match
+    bit-for-bit -- unsatisfiable for any value fp32 cannot carry exactly, which
+    is almost every constant downstream of a real arithmetic op. Precision
+    invariance is not the fold's obligation; being the deployed value is.
+    """
+
+    def _facts(self, row_values, matrix, carrier, **kw):
+        return derive_core_constants(
+            matrix=matrix, bias=kw.pop("bias", None),
+            threshold=kw.pop("threshold", 1.0), row_values=row_values,
+            pruned_rows=frozenset(), pruned_cols=frozenset(),
+            exempt_rows=frozenset(), carrier=carrier,
+            admits_nonzero=kw.pop("admits_nonzero", True),
+        )
+
+    def _carrier_only(self, matrix):
+        return resolve_constant_carrier(
+            _core([(-3, 0)], matrix),
+            pruned_rows=frozenset(), exempt_rows=frozenset(),
+        )
+
+    def test_a_column_the_two_dtypes_disagree_on_still_folds(self):
+        """1/3 is unrepresentable in both binary floats and rounds DIFFERENTLY
+        in each, so the old fp32-vs-fp64 gate refused this column outright."""
+        matrix = np.array([[1.0, 0.0]])
+        assert float(np.float32(1.0) / np.float32(3.0)) != 1.0 / 3.0
+        facts = self._facts([None], matrix, self._carrier_only(matrix), threshold=3.0)
+        assert 0 in facts.column_values, (
+            "a constant the deployment computes exactly must fold; the old "
+            "cross-precision gate refused it"
+        )
+
+    def test_the_folded_value_is_the_deployed_value_not_the_twins(self):
+        matrix = np.array([[1.0, 0.0]])
+        facts = self._facts([None], matrix, self._carrier_only(matrix), threshold=3.0)
+        deployed = float(np.float32(1.0) / np.float32(3.0))
+        assert facts.column_values[0] == deployed, (
+            "the folded value must be what the DEPLOYED fp32 executor puts on "
+            "that line, not the fp64 certificate twin's value"
+        )
+
+    def test_an_exactly_representable_column_is_unaffected(self):
+        matrix = np.array([[1.0, 0.0]])
+        facts = self._facts([None], matrix, self._carrier_only(matrix), threshold=2.0)
+        assert facts.column_values == {0: 0.5, 1: 0.0}

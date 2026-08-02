@@ -42,6 +42,7 @@ from typing import AbstractSet, Dict, Sequence, Set
 import numpy as np
 
 from mimarsinan.mapping.ir import IRSource, NeuralCore
+from mimarsinan.mapping.ir.deployment_dtype import neuralcore_deployment_dtype
 
 __all__ = [
     "CARRIER_BIAS",
@@ -183,17 +184,27 @@ def derive_core_constants(
     theta = float(threshold)
     if theta == 0.0:
         return CoreConstantFacts(dead_rows, fold_rows, {})
-    pre = _pre_activation(contributors, matrix, bias, theta, np.float64)
-    # DTYPE INDEPENDENCE, the same gate the ComputeOp probe applies: the
-    # deployed program runs fp32 and the certificate an fp64 twin, so only a
-    # constant both dtypes agree on can be folded bit-exactly. (On the
-    # dyadic-grid instances the certificate requires, they always agree.)
-    pre32 = _pre_activation(contributors, matrix, bias, theta, np.float32)
-    stable = pre32.astype(np.float64) == pre
+    # Evaluated AT THE DEPLOYMENT DTYPE, so the derived constant IS the value
+    # the deployed executor puts on that line and there is nothing left to
+    # compare across precisions. The earlier fp32-vs-fp64 bit-equality gate is
+    # gone: it derived in fp64 and demanded the fp32 evaluation match exactly,
+    # which no value outside fp32 can satisfy, so the column rule refused every
+    # constant downstream of a real arithmetic op. Whether the value is
+    # grid-certifiable or execution-exact-only is `is_on_grid`'s call, made on
+    # the elimination ledger; constants are never snapped onto the grid.
+    dtype = neuralcore_deployment_dtype()
+    pre = _pre_activation(contributors, matrix, bias, theta, dtype)
+
+    # CARRIABILITY: a contributor the deployment cannot represent exactly never
+    # held that value, so folding with the ROUNDED one would derive a constant
+    # for a line that does not exist. Refuse instead.
+    carriable = np.asarray(contributors, dtype=dtype).astype(np.float64) == contributors
+    if not bool(carriable.all()):
+        return CoreConstantFacts(dead_rows, fold_rows, {})
 
     column_values = {
         int(j): float(pre[j])
-        for j in np.flatnonzero(~blocked & stable)
+        for j in np.flatnonzero(~blocked)
         if int(j) not in pruned_cols
     }
     return CoreConstantFacts(
