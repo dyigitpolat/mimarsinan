@@ -38,14 +38,6 @@ gate, because a wrong constant is worse than no constant:
   never held that value, so probing with the ROUNDED value would derive a
   constant for a line that does not exist; refuse instead.
 
-The earlier fp32-vs-fp64 bit-equality probe is GONE. It derived in fp64 and
-then demanded the fp32 evaluation match bit-for-bit, which no value outside
-fp32 can satisfy — on a trained transformer every constant downstream of the
-first arithmetic op is such a value, so the analysis refused before it had
-executed anything. Precision-invariance is not the fold's obligation; being
-the DEPLOYED value is, and the grid classification is where invariance is
-decided.
-
 TOP inputs are filled with two DIFFERENT probe values; an output that depends
 on a filled position (i.e. a region relation that under-reports its support)
 disagrees between the probes and is refused. So an unsound transfer relation
@@ -63,9 +55,8 @@ experiment's downstream draws).
 
 from __future__ import annotations
 
-import time
-
 import itertools
+import time
 from typing import Callable, Dict, FrozenSet, List, Sequence, Tuple
 
 import torch
@@ -83,6 +74,13 @@ _PROBE_FILLERS = (0.0, 1.0)
 
 def _module_of(op: ComputeOp):
     return (getattr(op, "params", None) or {}).get("module")
+
+
+def _any_region_satisfiable(transfer: LivenessTransfer, known, n_in: int) -> bool:
+    """Mirrors ``_regions``: no fully-known region == the identical {}, unexecuted."""
+    if transfer.is_opaque or not transfer.out_to_ins:
+        return len(known) == n_in
+    return any(r.issubset(known) for r in transfer.out_to_ins.values())
 
 
 def _regions(
@@ -276,6 +274,8 @@ def _derive_constant_outputs(
         return {}
     dtype = _deployment_dtype(op)
     if dtype is None or not _carriable(list(known.values()), dtype):
+        return {}
+    if not _any_region_satisfiable(transfer, known, n_in):
         return {}
 
     probes = [

@@ -107,6 +107,72 @@ class TestTheMemoIsConsulted:
         assert len(calls) == cold, "shared memo must eliminate every repeat battery"
 
 
+class TestUnsatisfiableProbesNeverExecute:
+    """An op none of whose output regions can be a subset of the known inputs
+    cannot resolve anything — the battery's result is discarded for every
+    output, so running it is pure waste. The precheck must skip it with the
+    IDENTICAL {} result. (Real-scale evidence: a 150,528-line opaque `cat`
+    with 7,448 known inputs burned 6.5 s to certify nothing.)"""
+
+    def _battery_counter(self, monkeypatch):
+        import mimarsinan.mapping.pruning.liveness_transfer.constant_transfer as ct
+
+        calls = []
+        real = ct._probe
+
+        def counting(*args, **kwargs):
+            calls.append(1)
+            return real(*args, **kwargs)
+
+        monkeypatch.setattr(ct, "_probe", counting)
+        return calls
+
+    @staticmethod
+    def _opaque_op(module, n_in=4):
+        from mimarsinan.mapping.ir import ComputeOp
+        from unit.mapping.constant_vehicles import srcs
+
+        return ComputeOp(
+            id=9, name="probe",
+            input_sources=srcs([(0, j) for j in range(n_in)]),
+            op_type=type(module).__name__,
+            params={"module": module, "input_shape": (n_in,)},
+            input_shape=(n_in,), output_shape=(n_in,),
+        )
+
+    def test_opaque_partial_inputs_skip_the_battery(self, monkeypatch):
+        from torch import nn
+
+        from mimarsinan.mapping.pruning.liveness_transfer.constant_transfer import (
+            derive_constant_outputs,
+        )
+        from mimarsinan.mapping.pruning.liveness_transfer.transfer_types import (
+            OPAQUE_TRANSFER,
+        )
+
+        calls = self._battery_counter(monkeypatch)
+        op = self._opaque_op(nn.Sigmoid().eval())
+        out = derive_constant_outputs(op, OPAQUE_TRANSFER, [0.5, None, 0.5, 0.5])
+        assert out == {}
+        assert calls == [], "an unsatisfiable opaque op must not execute"
+
+    def test_opaque_all_known_still_probes(self, monkeypatch):
+        from torch import nn
+
+        from mimarsinan.mapping.pruning.liveness_transfer.constant_transfer import (
+            derive_constant_outputs,
+        )
+        from mimarsinan.mapping.pruning.liveness_transfer.transfer_types import (
+            OPAQUE_TRANSFER,
+        )
+
+        calls = self._battery_counter(monkeypatch)
+        op = self._opaque_op(nn.Sigmoid().eval())
+        out = derive_constant_outputs(op, OPAQUE_TRANSFER, [0.0, 0.0, 0.0, 0.0])
+        assert calls, "a fully-known opaque op must still run the battery"
+        assert out == {j: 0.5 for j in range(4)}
+
+
 class TestArmsShareOneMemo:
     """compute_elimination_arms threads one memo across masked/closure/cascade
     and exposes it for the replay context."""
