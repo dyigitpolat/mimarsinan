@@ -1,4 +1,5 @@
 from __future__ import annotations
+import time
 from typing import Dict, Sequence, Tuple
 from mimarsinan.mapping.ir import IRGraph, NeuralCore
 from mimarsinan.mapping.pruning.boundary_policy import assert_unified_ir_for_pruning
@@ -98,15 +99,20 @@ def prune_ir_graph(
     # Materialize the analysis: every CONST row's contribution moves onto its
     # core's carrier BEFORE liveness / metadata / compaction read the weights,
     # so all of them see the program the chip will actually run.
+    _t = time.perf_counter()
     folded_cores = apply_constant_folds(graph, result.constant_folds)
+    print(f"[Pruning] phase=apply_folds wall={time.perf_counter() - _t:.1f}s", flush=True)
     if folded_cores:
         print(
             f"[Pruning] constant folding: {result.constant_folds.total_folded_rows()} "
             f"axon row(s) folded onto the carriers of {folded_cores} core(s)"
         )
 
+    _t = time.perf_counter()
     _attach_pre_compaction_metadata(graph, result, store_heatmap=store_heatmap)
+    print(f"[Pruning] phase=pre_metadata wall={time.perf_counter() - _t:.1f}s", flush=True)
 
+    _t = time.perf_counter()
     liveness = compute_liveness(
         graph,
         simulation_steps=simulation_steps,
@@ -114,12 +120,16 @@ def prune_ir_graph(
         pruning_result=result,
         zero_threshold=zero_threshold,
     )
+    print(f"[Pruning] phase=liveness wall={time.perf_counter() - _t:.1f}s", flush=True)
+    _t = time.perf_counter()
     dead_node_ids = sorted(
         nid for nid, status in liveness.per_node.items()
         if status == NodeLiveness.DEAD
     )
     _force_dead_nodes_fully_pruned(graph, dead_node_ids, result)
     _rewire_sources(graph, result.pruned_cols_per_node)
+    print(f"[Pruning] phase=force_rewire_validate wall={time.perf_counter() - _t:.1f}s", flush=True)
+    _t = time.perf_counter()
     _validate_outputs_remain(graph)
 
     if dead_node_ids:
@@ -137,7 +147,10 @@ def prune_ir_graph(
                 pruned_cols=result.pruned_cols_per_node.get(node.id, set()),
             )
 
+    print(f"[Pruning] phase=compact wall={time.perf_counter() - _t:.1f}s", flush=True)
+    _t = time.perf_counter()
     _reset_post_compaction_masks(graph)
     _attach_bank_metadata(graph, result, store_heatmap=store_heatmap)
+    print(f"[Pruning] phase=post_metadata wall={time.perf_counter() - _t:.1f}s", flush=True)
 
     return graph

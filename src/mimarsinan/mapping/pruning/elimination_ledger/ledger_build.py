@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from typing import AbstractSet, Dict, Sequence, Set, Tuple
 
 from mimarsinan.mapping.ir import IRGraph, NeuralCore
@@ -117,7 +118,10 @@ def compute_elimination_ledger(
         elimination_constant_folding=arms.elimination_constant_folding,
         spiking_mode=arms.spiking_mode,
     )
+    _t0 = time.perf_counter()
     replay = replay_kill_depths(replay_ctx, mode=mode)
+    print(f"[EliminationLedger] replay wall={time.perf_counter() - _t0:.1f}s "
+          f"waves={replay.waves}", flush=True)
     _assert_replay_reconciles(replay_ctx, final)
 
     # The liveness pass must read the SAME analysis inputs the arms ran with;

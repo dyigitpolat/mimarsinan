@@ -14,6 +14,7 @@ sets under a "closure" label would fabricate a measurement.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import time
 from typing import Dict, Mapping, Sequence, Set, Tuple
 
 from mimarsinan.mapping.ir import IRGraph
@@ -105,7 +106,8 @@ def compute_elimination_arms(
     )
 
     def _run_arm(arm: str) -> GlobalPruningResult:
-        return compute_global_pruned_sets(
+        t0 = time.perf_counter()
+        result = compute_global_pruned_sets(
             ir_graph,
             zero_threshold=zero_threshold,
             initial_per_node=seed_per_node,
@@ -117,6 +119,9 @@ def compute_elimination_arms(
             elimination_constant_folding=elimination_constant_folding,
             spiking_mode=spiking_mode,
         )
+        print(f"[EliminationLedger] arm={arm} wall={time.perf_counter() - t0:.1f}s",
+              flush=True)
+        return result
 
     masked = _run_arm(ELIMINATION_PROPAGATION_MASKED)
     if mode == ELIMINATION_PROPAGATION_MASKED:
