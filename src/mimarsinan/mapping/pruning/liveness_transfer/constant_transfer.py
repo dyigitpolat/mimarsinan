@@ -1,19 +1,14 @@
 """ComputeOp forward constant transfer: ONE generic rule, executed not guessed.
 
-The rule, for every op class alike::
-
-    output o is CONST  iff  every input in region(o) is CONST,
-    and its value is obtained by EXECUTING the op's own seam.
+The rule, for every op class alike: output ``o`` is CONST iff every input in
+``region(o)`` is CONST, its value obtained by EXECUTING the op's own seam.
 
 ``region(o)`` is the W4b-1 ``LivenessTransfer`` relation when the op has one
 (elementwise 1:1, index bijections, pooling receptive fields) and the WHOLE
 input vector otherwise (LayerNorm, softmax, attention, residual add, unknown
-modules). That single definition subsumes every "per-op refinement": an
-elementwise op folds per port, a bijection relabels, a region op folds when
-its whole receptive field is constant, a multi-input join folds when all
-branches are constant, and an add-with-parameter folds because the parameter
-lives inside the module. Zero-preservation is NOT required — this is FORWARD
-constant flow, so ``sigmoid(0) = 0.5`` propagates like any other value.
+modules); that single definition subsumes every "per-op refinement".
+Zero-preservation is NOT required — this is FORWARD constant flow, so
+``sigmoid(0) = 0.5`` propagates like any other value.
 
 Probing runs AT THE DEPLOYMENT DTYPE (``computeop_deployment_dtype``), so the
 derived constant is by construction the value the deployed program puts on
@@ -27,38 +22,34 @@ Execution is guarded by three bit-exact agreement probes plus a carriability
 gate, because a wrong constant is worse than no constant:
 
 - DETERMINISM — the seam is evaluated twice and must agree;
-- BATCH-SIZE INDEPENDENCE — a two-row batch of the same probe must reproduce
-  the one-row result; this is what refuses a ``Linear`` (a GEMM reassociates
-  its sum differently from the batch-1 GEMV) and any batch-coupled op;
-- MODE INDEPENDENCE — probing happens with the WHOLE hosted subtree in eval
-  (restored afterwards), so the as-deployed mode is probed too and must agree;
-  a module left in training mode whose behaviour differs (dropout) is refused;
+- BATCH-SIZE INDEPENDENCE — a two-row batch must reproduce the one-row
+  result; refuses ``Linear`` (GEMM vs GEMV reassociation) and batch coupling;
+- MODE INDEPENDENCE — probed with the whole hosted subtree in eval (restored
+  afterwards) AND as deployed; differing behaviour (dropout) is refused;
 - DEPLOYMENT-DTYPE CARRIABILITY — every incoming constant must be exactly
-  representable at the deployment dtype. A line the deployment cannot carry
-  never held that value, so probing with the ROUNDED value would derive a
-  constant for a line that does not exist; refuse instead.
+  representable at the deployment dtype; a line the deployment cannot carry
+  never held that value, so refuse rather than probe the rounded value.
 
 TOP inputs are filled with two DIFFERENT probe values; an output that depends
 on a filled position (i.e. a region relation that under-reports its support)
 disagrees between the probes and is refused. So an unsound transfer relation
 degrades to TOP instead of to a wrong constant.
 
-Probing EXECUTES the deployment's own modules, so it is held to the discipline
-of a PURE analysis: running it must leave no observable trace on the process.
-Two global side channels exist and both are closed here — the per-module
-``training`` flag of the whole hosted subtree (captured and restored verbatim,
-because ``nn.Module.train()`` recurses and would clobber a deliberately frozen
-child) and the torch RNG (every probe execution runs inside
-``torch.random.fork_rng``, so a stochastic host op cannot shift a seeded
-experiment's downstream draws).
+Probing EXECUTES the deployment's own modules, so it is held to a PURE
+analysis's discipline: no observable trace on the process. Both global side
+channels are closed — per-module ``training`` flags (captured and restored
+verbatim; ``train()`` recurses) and the torch RNG (``fork_rng`` around every
+execution, so a stochastic host op cannot shift a seeded run's draws).
 """
 
 from __future__ import annotations
 
 import itertools
 import time
-from typing import Callable, Dict, FrozenSet, List, Sequence, Tuple
+import weakref
+from typing import Callable, Dict, List, Sequence, Tuple
 
+import numpy as np
 import torch
 
 from mimarsinan.mapping.ir import ComputeOp, computeop_deployment_dtype
@@ -76,21 +67,27 @@ def _module_of(op: ComputeOp):
     return (getattr(op, "params", None) or {}).get("module")
 
 
-def _any_region_satisfiable(transfer: LivenessTransfer, known, n_in: int) -> bool:
-    """Mirrors ``_regions``: no fully-known region == the identical {}, unexecuted."""
-    if transfer.is_opaque or not transfer.out_to_ins:
-        return len(known) == n_in
-    return any(r.issubset(known) for r in transfer.out_to_ins.values())
+# id(transfer) -> (weakref, (outs, offsets, ins)); frozen transfers hash by
+# their (unhashable) mapping fields, so identity + a liveness check stands in.
+_CSR_CACHE: Dict[int, tuple] = {}
 
 
-def _regions(
-    op: ComputeOp, transfer: LivenessTransfer, n_in: int, n_out_hint: int
-) -> Dict[int, FrozenSet[int]]:
-    """``region(o)`` per output: the transfer relation, or all inputs."""
-    if not transfer.is_opaque and transfer.out_to_ins:
-        return {int(o): frozenset(r) for o, r in transfer.out_to_ins.items()}
-    every = frozenset(range(n_in))
-    return {o: every for o in range(n_out_hint)}
+def _transfer_csr(transfer: LivenessTransfer):
+    """``out_to_ins`` lowered once per transfer to CSR arrays."""
+    hit = _CSR_CACHE.get(id(transfer))
+    if hit is not None and hit[0]() is transfer:
+        return hit[1]
+    rel = transfer.out_to_ins
+    outs = np.fromiter(rel.keys(), dtype=np.int64, count=len(rel))
+    sizes = np.fromiter((len(r) for r in rel.values()), dtype=np.int64,
+                        count=len(rel))
+    offsets = np.zeros(outs.size + 1, dtype=np.int64)
+    np.cumsum(sizes, out=offsets[1:])
+    ins = np.fromiter((i for r in rel.values() for i in r), dtype=np.int64,
+                      count=int(offsets[-1]))
+    csr = (outs, offsets, ins)
+    _CSR_CACHE[id(transfer)] = (weakref.ref(transfer), csr)
+    return csr
 
 
 def _relay_constants(
@@ -102,17 +99,13 @@ def _relay_constants(
     return {i: v for i, v in enumerate(in_values) if v is not None}
 
 
-def _run(op: ComputeOp, probe: List[float], repeats: int, dtype: torch.dtype):
-    x = torch.tensor([probe] * repeats, dtype=dtype)
+def _run(op: ComputeOp, probe, repeats: int, dtype: torch.dtype):
+    # from_numpy->to(dtype) rounds double->dtype exactly like the former
+    # per-element torch.tensor(list) path; pinned by the frozen-oracle gate.
+    base = np.asarray(probe, dtype=np.float64)
+    x = torch.from_numpy(np.repeat(base[None, :], repeats, axis=0)).to(dtype)
     with torch.no_grad():
         return op.probe_on_gathered(x)
-
-
-def _carriable(values: Sequence[float], dtype: torch.dtype) -> bool:
-    """Is every constant exactly representable at the deployment dtype?"""
-    return all(
-        float(torch.tensor(v, dtype=dtype)) == float(v) for v in values
-    )
 
 
 # Every guard on the probe path shares this tuple: a hosted module is arbitrary
@@ -139,17 +132,11 @@ def _deployment_dtype(op: ComputeOp) -> "torch.dtype | None":
 def _eval_mode(module) -> Callable[[], None]:
     """Put the WHOLE hosted subtree in eval mode; returns an EXACT restore.
 
-    ``nn.Module.train()``/``.eval()`` recurse into every descendant, so the
-    old root-level ``module.train()`` restore silently promoted any child
-    deliberately left in another mode (a frozen BatchNorm inside a hosted
-    block) to training. The analysis must be pure, so the per-module flag is
-    captured for the whole subtree and written back verbatim — which is what
-    ``nn.Module.train`` itself does per node, minus the recursion.
-
-    Capturing flags (O(#submodules) booleans) is chosen over probing a
-    ``deepcopy`` of the live module: a copy per probe would cost a deep clone
-    of every LayerNorm / attention host on the hot fixpoint path for no extra
-    exactness — the flag snapshot restores the observable state bit-for-bit.
+    ``train()``/``.eval()`` recurse, so a root-level restore would promote a
+    deliberately-frozen child (e.g. an eval BatchNorm) to training; the
+    per-module flag is captured for the whole subtree and written back
+    verbatim. Chosen over probing a ``deepcopy``: the flag snapshot restores
+    observable state bit-for-bit without cloning attention hosts per probe.
     """
     if not hasattr(module, "eval") or not hasattr(module, "modules"):
         return lambda: None
@@ -189,7 +176,7 @@ def _rng_devices(module) -> List[int]:
 
 
 def _probe(
-    op: ComputeOp, module, probes: List[List[float]], dtype: torch.dtype
+    op: ComputeOp, module, probes: Sequence, dtype: torch.dtype
 ) -> "Tuple[torch.Tensor, torch.Tensor] | None":
     """Run the guarded probe battery; None means "refuse, stay TOP".
 
@@ -207,7 +194,7 @@ def _probe(
 
 
 def _probe_isolated(
-    op: ComputeOp, module, probes: List[List[float]], dtype: torch.dtype
+    op: ComputeOp, module, probes: Sequence, dtype: torch.dtype
 ) -> "Tuple[torch.Tensor, torch.Tensor] | None":
     restore: Callable[[], None] = lambda: None
     try:
@@ -269,32 +256,45 @@ def _derive_constant_outputs(
     if module is None:
         return _relay_constants(op, in_values)
 
-    known = {i: v for i, v in enumerate(in_values) if v is not None}
-    if not known:
+    known_mask = np.fromiter(
+        (v is not None for v in in_values), dtype=bool, count=n_in
+    )
+    n_known = int(known_mask.sum())
+    if n_known == 0:
         return {}
+    vals = np.array(
+        [0.0 if v is None else float(v) for v in in_values], dtype=np.float64
+    )
     dtype = _deployment_dtype(op)
-    if dtype is None or not _carriable(list(known.values()), dtype):
+    if dtype is None:
         return {}
-    if not _any_region_satisfiable(transfer, known, n_in):
-        return {}
+    kt = torch.from_numpy(vals[known_mask])
+    if not bool((kt.to(dtype).to(torch.float64) == kt).all()):
+        return {}                              # not exactly representable
+    outs = sat = None
+    mapped = not transfer.is_opaque and bool(transfer.out_to_ins)
+    if mapped:
+        outs, offsets, ins = _transfer_csr(transfer)
+        # segment sums via cumsum: immune to reduceat's zero-length quirk
+        c = np.zeros(ins.size + 1, dtype=np.int64)
+        np.cumsum(~known_mask[ins], out=c[1:])
+        sat = (c[offsets[1:]] - c[offsets[:-1]]) == 0
+        if not bool(sat.any()):
+            return {}                          # no region fully known
+    elif n_known < n_in:
+        return {}                              # opaque needs every input
 
-    probes = [
-        [known.get(i, filler) for i in range(n_in)] for filler in _PROBE_FILLERS
-    ]
+    probes = [np.where(known_mask, vals, filler) for filler in _PROBE_FILLERS]
     probed = _probe(op, module, probes, dtype)
     if probed is None:
         return {}
     y_a, y_b = probed
-    flat_a = y_a.flatten().tolist()
-    flat_b = y_b.flatten().tolist()
-    regions = _regions(op, transfer, n_in, len(flat_a))
-    resolved: Dict[int, float] = {}
-    for o, value in enumerate(flat_a):
-        region = regions.get(o)
-        if region is None or not region.issubset(known):
-            continue
-        if flat_b[o] != value:
-            # The relation under-reported output o's support: refuse.
-            continue
-        resolved[o] = float(value)
-    return resolved
+    ya, yb = y_a.flatten(), y_b.flatten()
+    if outs is not None and sat is not None:
+        cand = outs[sat & (outs < int(ya.numel()))]
+    else:
+        cand = np.arange(int(ya.numel()), dtype=np.int64)
+    pick = torch.from_numpy(cand)
+    idx = cand[(ya[pick] == yb[pick]).numpy()]   # filler disagreement refuses
+    resolved_vals = ya[torch.from_numpy(idx)].to(torch.float64).tolist()
+    return {int(o): v for o, v in zip(idx.tolist(), resolved_vals)}
