@@ -29,6 +29,8 @@ depth replay sweep to quiescence with ``cross_core=True``.
 
 from __future__ import annotations
 
+import time
+
 from dataclasses import dataclass, field
 from typing import Dict, List, Set, Tuple
 
@@ -157,20 +159,22 @@ class ConstantFoldState:
     def total_folded_rows(self) -> int:
         return sum(len(rows) for rows in self.folded_rows.values())
 
-def refresh_constant_folds(
-    ctx, *, cross_core: bool = True, only_ids=None
-) -> ConstantSweep:
+def refresh_constant_folds(ctx, *, cross_core: bool = True, only_ids=None) -> ConstantSweep:
     """One monotone sweep of the constant lattice; the caller commits it.
 
-    Deferring the commit is what lets the depth replay run every operator of a
-    wave against the SAME pre-wave state.
+    Deferred commit lets the replay run a whole wave against pre-wave state.
     """
     state: ConstantFoldState = ctx.constants
     sweep = ConstantSweep()
     if not state.enabled:
         return sweep
+    _t0 = time.perf_counter()
     sweep.op_changed = _sweep_compute_ops(ctx, state)
+    _t1 = time.perf_counter()
     _gather_neural_cores(ctx, state, sweep, cross_core=cross_core, only_ids=only_ids)
+    if time.perf_counter() - _t0 > 5.0:   # slow sweeps only; tests stay silent
+        print(f"[ConstantSweep] op_probe={_t1 - _t0:.1f}s core_gather="
+              f"{time.perf_counter() - _t1:.1f}s only={only_ids is not None}", flush=True)
     return sweep
 
 def _sweep_compute_ops(ctx, state: ConstantFoldState) -> bool:
@@ -207,13 +211,8 @@ def _gather_neural_cores(
     ctx, state: ConstantFoldState, sweep: ConstantSweep, *, cross_core: bool,
     only_ids=None,
 ) -> None:
-    # only_ids: pure restriction for the flat engine's change tracking; a
-    # skipped core would re-derive identical facts, and the engine's final
-    # unrestricted gather asserts exactly that (FlatEngineQuiescenceError).
-    # [O1] ``input_sources`` is static for the whole analysis, so each core's
-    # per-axon dispatch is resolved ONCE and reused every sweep; only the axons
-    # reading a real producer port still need a lattice/pruned query. Cached on
-    # the context, which lives exactly as long as one analysis.
+    # only_ids: pure restriction (change tracking); the engine's final full
+    # gather asserts a skipped core had nothing new (FlatEngineQuiescenceError).
     plans = getattr(ctx, "_source_plans", None)
     if plans is None:
         plans = {}
