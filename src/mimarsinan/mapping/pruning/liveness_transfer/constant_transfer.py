@@ -63,6 +63,8 @@ experiment's downstream draws).
 
 from __future__ import annotations
 
+import time
+
 import itertools
 from typing import Callable, Dict, FrozenSet, List, Sequence, Tuple
 
@@ -240,7 +242,18 @@ def _probe_isolated(
     return y_a, y_b
 
 
-def derive_constant_outputs(
+def derive_constant_outputs(op, transfer, in_values) -> Dict[int, float]:
+    t0 = time.perf_counter()
+    result = _derive_constant_outputs(op, transfer, in_values)
+    dt = time.perf_counter() - t0
+    if dt > 1.0:   # slow probes only: the real-scale evidence line
+        print(f"[OpProbe] {getattr(op, 'name', op.id)} wall={dt:.1f}s "
+              f"known={sum(v is not None for v in in_values)}/{len(in_values)} "
+              f"resolved={len(result)}", flush=True)
+    return result
+
+
+def _derive_constant_outputs(
     op: ComputeOp,
     transfer: LivenessTransfer,
     in_values: Sequence[float | None],
