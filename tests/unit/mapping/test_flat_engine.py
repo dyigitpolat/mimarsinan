@@ -81,6 +81,34 @@ class TestJacobiNeverRegressesGaussSeidel:
         assert w1 == w2 >= 1
 
 
+class TestFoldHeavyVehiclesNeverDiverge:
+    """The vehicles that CAUGHT the stale-mirror bug: fold-driven kills land in
+    the ctx sets outside the node loop, and the engine must see them."""
+
+    @pytest.mark.parametrize("maker", [
+        "bias_only_collapse_graph", "sigmoid_chain_graph",
+        "residual_join_graph", "gelu_execution_exact_graph",
+    ])
+    def test_kills_and_lattice_match(self, maker):
+        import unit.mapping.constant_vehicles as vehicles
+        graph = getattr(vehicles, maker)()
+        def ctx():
+            return build_global_pruning_context(
+                graph, zero_threshold=1e-8,
+                initial_per_node=None, initial_per_bank=None,
+                exempt_rows_per_node=None, exempt_cols_per_node=None,
+                computeop_liveness_transfers="full",
+                elimination_constant_folding="full",
+                spiking_mode=INERT_SPIKING_MODE,
+            )
+        ref = ctx(); _run_cascade_fixpoint(ref)
+        got = ctx(); run_cascade_waves(got)
+        assert _kill_state(ref) == _kill_state(got), maker
+        a = {k: float(v).hex() for k, v in (ref.constants.lattice.values or {}).items()}
+        b = {k: float(v).hex() for k, v in (got.constants.lattice.values or {}).items()}
+        assert a == b, f"{maker}: lattice bit patterns diverge"
+
+
 class TestFlatEngineOnViTVehicles:
     def test_pristine_vit_kill_sets_match(self):
         from unit.mapping.test_constant_propagation_vehicles import (

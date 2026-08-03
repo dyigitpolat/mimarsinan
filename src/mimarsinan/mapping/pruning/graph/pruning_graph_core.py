@@ -11,6 +11,7 @@ from mimarsinan.mapping.pruning.graph.pruning_graph_modes import (
     run_closure,
     run_masked,
 )
+from mimarsinan.mapping.pruning.graph.flat.engine import run_cascade_waves
 from mimarsinan.mapping.pruning.graph.constant_folding import (
     refresh_constant_folds,
 )
@@ -97,7 +98,10 @@ def compute_global_pruned_sets(
         run_closure(ctx)
         iterations = 1
     else:
-        iterations = _run_cascade_fixpoint(ctx)
+        # [P6] the flat wave engine is THE production cascade; the id-order
+        # reference below stays the oracle the suite and the opt-in
+        # cross-check hold it equal to. Wave count is canonical (order-free).
+        iterations = run_cascade_waves(ctx)
 
     return ctx.to_result(fixpoint_iterations=iterations)
 

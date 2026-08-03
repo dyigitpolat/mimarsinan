@@ -41,7 +41,17 @@ __all__ = ["run_cascade_waves"]
 
 
 def _sync_masks(ctx, state: FlatState, row_dead: np.ndarray, col_dead: np.ndarray) -> None:
-    """Mirror the context's per-node sets into the flat masks."""
+    """Mirror the context's per-node sets into the flat masks, EXACTLY.
+
+    The ONE sync point (start of every wave, after the lattice commit): the
+    lattice commit and the node commits both mutate the ctx sets, and the sets
+    are REPLACED wholesale by the kernels, so the mirror is rebuilt rather
+    than accumulated -- an add-only mirror went stale the first time a fold
+    killed a row outside the node loop, which is precisely how the flat
+    engine silently lost the bias-only collapse.
+    """
+    row_dead[:] = False
+    col_dead[:] = False
     for k, nid in enumerate(state.node_ids):
         rows = state.rows_of(k)
         cols = state.cols_of(k)
@@ -85,6 +95,7 @@ def run_cascade_waves(ctx) -> int:
         for nid in folded_now:
             last_seed_rows.pop(nid, None)      # matrix moved; must re-derive
         changed = sweep.commit(ctx)
+        _sync_masks(ctx, state, row_dead, col_dead)
 
         # -- node phase: Jacobi across cores ------------------------------
         dead_axons = flat_cross_core_dead_axons(state, col_dead)
@@ -128,18 +139,10 @@ def run_cascade_waves(ctx) -> int:
             if new_rows != ctx.pruned_rows[nid] or new_cols != ctx.pruned_cols[nid]:
                 commits.append((k, nid, new_rows, new_cols))
 
-        for k, nid, new_rows, new_cols in commits:
+        for _k, nid, new_rows, new_cols in commits:
             changed = True
             ctx.pruned_rows[nid] = new_rows
             ctx.pruned_cols[nid] = new_cols
-            rows = state.rows_of(k)
-            cols = state.cols_of(k)
-            for i in new_rows:
-                if 0 <= i < rows.stop - rows.start:
-                    row_dead[rows.start + i] = True
-            for j in new_cols:
-                if 0 <= j < cols.stop - cols.start:
-                    col_dead[cols.start + j] = True
 
         # -- bank phase: same position as the reference sweep --------------
         for bank_id, bank in ctx.banks.items():
