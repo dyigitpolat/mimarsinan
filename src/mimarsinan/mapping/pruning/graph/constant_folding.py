@@ -59,10 +59,8 @@ __all__ = [
     "refresh_constant_folds",
 ]
 
-
 class ConstantFoldApplicationError(RuntimeError):
     """A recorded fold has nowhere to land — the analysis and the IR disagree."""
-
 
 @dataclass
 class ConstantSweep:
@@ -92,7 +90,6 @@ class ConstantSweep:
             if state.lattice.descend(port, value):
                 changed = True
         return changed
-
 
 @dataclass
 class ConstantFoldState:
@@ -160,8 +157,9 @@ class ConstantFoldState:
     def total_folded_rows(self) -> int:
         return sum(len(rows) for rows in self.folded_rows.values())
 
-
-def refresh_constant_folds(ctx, *, cross_core: bool = True) -> ConstantSweep:
+def refresh_constant_folds(
+    ctx, *, cross_core: bool = True, only_ids=None
+) -> ConstantSweep:
     """One monotone sweep of the constant lattice; the caller commits it.
 
     Deferring the commit is what lets the depth replay run every operator of a
@@ -172,9 +170,8 @@ def refresh_constant_folds(ctx, *, cross_core: bool = True) -> ConstantSweep:
     if not state.enabled:
         return sweep
     sweep.op_changed = _sweep_compute_ops(ctx, state)
-    _gather_neural_cores(ctx, state, sweep, cross_core=cross_core)
+    _gather_neural_cores(ctx, state, sweep, cross_core=cross_core, only_ids=only_ids)
     return sweep
-
 
 def _sweep_compute_ops(ctx, state: ConstantFoldState) -> bool:
     """Op descents apply immediately: a host op is wiring, not a hop."""
@@ -206,10 +203,13 @@ def _sweep_compute_ops(ctx, state: ConstantFoldState) -> bool:
                 changed = True
     return changed
 
-
 def _gather_neural_cores(
-    ctx, state: ConstantFoldState, sweep: ConstantSweep, *, cross_core: bool
+    ctx, state: ConstantFoldState, sweep: ConstantSweep, *, cross_core: bool,
+    only_ids=None,
 ) -> None:
+    # only_ids: pure restriction for the flat engine's change tracking; a
+    # skipped core would re-derive identical facts, and the engine's final
+    # unrestricted gather asserts exactly that (FlatEngineQuiescenceError).
     # [O1] ``input_sources`` is static for the whole analysis, so each core's
     # per-axon dispatch is resolved ONCE and reused every sweep; only the axons
     # reading a real producer port still need a lattice/pruned query. Cached on
@@ -220,6 +220,8 @@ def _gather_neural_cores(
         setattr(ctx, "_source_plans", plans)
 
     for node in ctx.neural_cores:
+        if only_ids is not None and node.id not in only_ids:
+            continue
         base = ctx.base_node_matrix(node)
         if base is None:
             continue
@@ -252,7 +254,6 @@ def _gather_neural_cores(
             continue
         for col, value in facts.column_values.items():
             sweep.descents.append(((nid, col), value))
-
 
 def apply_constant_folds(graph, state: ConstantFoldState) -> int:
     """Materialize the carrier deltas on the IR; returns the cores touched.

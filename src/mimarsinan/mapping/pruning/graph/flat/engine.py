@@ -25,10 +25,16 @@ import numpy as np
 
 from mimarsinan.mapping.pruning.graph.constant_folding import refresh_constant_folds
 from mimarsinan.mapping.pruning.graph.flat.kernels import (
+    build_bank_batches,
     flat_cross_core_dead_axons,
     flat_orphan_neurons,
+    flat_within_matrix_fixpoint,
 )
-from mimarsinan.mapping.pruning.graph.flat.state import FlatState, build_flat_state
+from mimarsinan.mapping.pruning.graph.flat.state import build_flat_state
+from mimarsinan.mapping.pruning.graph.flat.verify import (
+    FlatEngineQuiescenceError,
+    _sync_masks,
+)
 from mimarsinan.mapping.pruning.graph.pruning_graph_refresh import (
     _cols_with_nonzero_bias,
     _refresh_bank_pruning,
@@ -37,30 +43,9 @@ from mimarsinan.mapping.pruning.graph.pruning_propagation import (
     compute_propagated_pruned_rows_cols,
 )
 
-__all__ = ["run_cascade_waves"]
+__all__ = ["FlatEngineQuiescenceError", "run_cascade_waves"]
 
 
-def _sync_masks(ctx, state: FlatState, row_dead: np.ndarray, col_dead: np.ndarray) -> None:
-    """Mirror the context's per-node sets into the flat masks, EXACTLY.
-
-    The ONE sync point (start of every wave, after the lattice commit): the
-    lattice commit and the node commits both mutate the ctx sets, and the sets
-    are REPLACED wholesale by the kernels, so the mirror is rebuilt rather
-    than accumulated -- an add-only mirror went stale the first time a fold
-    killed a row outside the node loop, which is precisely how the flat
-    engine silently lost the bias-only collapse.
-    """
-    row_dead[:] = False
-    col_dead[:] = False
-    for k, nid in enumerate(state.node_ids):
-        rows = state.rows_of(k)
-        cols = state.cols_of(k)
-        for i in ctx.pruned_rows.get(nid, ()):
-            if 0 <= i < rows.stop - rows.start:
-                row_dead[rows.start + i] = True
-        for j in ctx.pruned_cols.get(nid, ()):
-            if 0 <= j < cols.stop - cols.start:
-                col_dead[cols.start + j] = True
 
 
 def run_cascade_waves(ctx) -> int:
@@ -87,11 +72,32 @@ def run_cascade_waves(ctx) -> int:
     last_seed_rows: Dict[int, Set[int]] = {}
     last_seed_cols: Dict[int, Set[int]] = {}
 
+    # [P4a] bank-backed instances share an immutable view (their carriers are
+    # read-only, so no fold can move it): their within-matrix fixpoints run as
+    # one batched kernel per shared view. Owned cores (which can fold) keep the
+    # per-core reference call.
+    batches = build_bank_batches(ctx, state)
+    batched = {k for b in batches for k in b.core_positions}
+
+    # [P4b] the lattice gather re-derives a core only when something it reads
+    # moved: a port it reads descended, a producer's columns changed, its own
+    # sets changed, or it folded. Wave 1 gathers everything. The relation is
+    # allowed to OVER-approximate (costs a re-derivation) and is checked
+    # against UNDER-approximation by the final full gather below.
+    rearm = None
+    node_ids = state.node_ids
+
     waves = 0
     while True:
         waves += 1
-        sweep = refresh_constant_folds(ctx)
+        # ops write their descents STRAIGHT into the lattice ("wiring, not a
+        # hop"), bypassing sweep.descents -- diffing the keys captures them.
+        keys_before = set(ctx.constants.lattice.values)
+        sweep = refresh_constant_folds(ctx, only_ids=rearm)
+        op_descents = set(ctx.constants.lattice.values) - keys_before
         folded_now = {fold[0] for fold in getattr(sweep, "folds", ()) or ()}
+        descents_now = [port for port, _v in getattr(sweep, "descents", ()) or ()]
+        lattice_killed = set(getattr(sweep, "dead_rows", {}) or {})
         for nid in folded_now:
             last_seed_rows.pop(nid, None)      # matrix moved; must re-derive
         changed = sweep.commit(ctx)
@@ -102,7 +108,32 @@ def run_cascade_waves(ctx) -> int:
         orphans = flat_orphan_neurons(state, row_dead)
 
         commits: list[tuple[int, int, Set[int], Set[int]]] = []
+
+        # batched node phase: seeds = current state ∪ cross deadness, gathered
+        # straight from the flat masks; exempt filtering happens at batch init
+        # exactly where the reference function applies it.
+        seed_rows_flat = row_dead | dead_axons
+        seed_cols_flat = col_dead | orphans
+        for batch in batches:
+            new_r, new_c = flat_within_matrix_fixpoint(
+                batch, seed_rows_flat, seed_cols_flat, state
+            )
+            for pos, k in enumerate(batch.core_positions):
+                nid = state.node_ids[k]
+                rows = state.rows_of(k)
+                cols = state.cols_of(k)
+                if (np.array_equal(new_r[pos], row_dead[rows])
+                        and np.array_equal(new_c[pos], col_dead[cols])):
+                    continue
+                commits.append((
+                    k, nid,
+                    {int(i) for i in np.flatnonzero(new_r[pos])},
+                    {int(j) for j in np.flatnonzero(new_c[pos])},
+                ))
+
         for k, node in enumerate(ctx.neural_cores):
+            if k in batched:
+                continue
             mat = ctx.node_matrix(node)
             if mat is None:
                 continue
@@ -162,6 +193,28 @@ def run_cascade_waves(ctx) -> int:
             ):
                 changed = True
 
+        rearm = set()
+        for port in op_descents:
+            for k in state.port_readers.get(tuple(port), ()):
+                rearm.add(node_ids[k])
+        for port in descents_now:
+            for k in state.port_readers.get(tuple(port), ()):
+                rearm.add(node_ids[k])
+        rearm |= folded_now | lattice_killed
+        for _k, nid, _r, _c in commits:
+            rearm.add(nid)
+            for rk in state.core_readers.get(nid, ()):
+                rearm.add(node_ids[rk])
+
         if not changed:
             break
+
+    # The contract lock: one unrestricted gather that MUST be a no-op.
+    verify = refresh_constant_folds(ctx)
+    if verify.commit(ctx):
+        raise FlatEngineQuiescenceError(
+            "the final full lattice gather produced new facts after the "
+            "change-tracked fixpoint reported quiescence: a re-arm edge is "
+            "missing (state.port_readers / core_readers)"
+        )
     return waves

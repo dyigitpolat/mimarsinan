@@ -135,3 +135,68 @@ class FlatStateProxy:
 
     def __getattr__(self, item):
         return getattr(self._s, item)
+
+
+class TestBatchedWithinMatrixEqualsReference:
+    """P4a: the per-bank batched fixpoint must equal the per-core reference
+    function -- same predicate, same inner step order, exact counts -- on every
+    instance, for random monotone states with random exemptions and implicit
+    bias columns."""
+
+    @pytest.mark.parametrize("name", ["bank_shared", "bank_sequential"])
+    def test_batch_equals_per_core(self, name):
+        from mimarsinan.mapping.pruning.graph.flat.kernels import (
+            build_bank_batches,
+            flat_within_matrix_fixpoint,
+        )
+        from mimarsinan.mapping.pruning.graph.pruning_propagation import (
+            compute_propagated_pruned_rows_cols,
+        )
+
+        ctx = _ctx(name)
+        state = build_flat_state(ctx)
+        batches = build_bank_batches(ctx, state)
+        assert batches, f"{name}: no batchable (bank-backed) cores found"
+        rng = np.random.default_rng(11)
+
+        for trial in range(3):
+            row_dead, col_dead, _pr, _pc = _random_state(ctx, state, rng)
+            for batch in batches:
+                # randomize the exempt/implicit branches on BOTH sides
+                for pos in range(len(batch.core_positions)):
+                    n_ax = batch.exempt_rows_m.shape[1]
+                    n_ne = batch.exempt_cols_m.shape[1]
+                    batch.exempt_rows_m[pos] = rng.random(n_ax) < 0.1
+                    batch.exempt_cols_m[pos] = rng.random(n_ne) < 0.1
+                    batch.implicit_m[pos] = rng.random(n_ne) < 0.15
+                    batch.implicit_sets[pos] = frozenset(
+                        int(j) for j in np.flatnonzero(batch.implicit_m[pos]))
+                new_rows, new_cols = flat_within_matrix_fixpoint(
+                    batch, row_dead, col_dead, state
+                )
+                for pos, k in enumerate(batch.core_positions):
+                    node = ctx.neural_cores[k]
+                    mat = ctx.base_node_matrix(node)
+                    rows = state.rows_of(k)
+                    cols = state.cols_of(k)
+                    seed_r = {int(i) for i in np.flatnonzero(row_dead[rows])}
+                    seed_c = {int(j) for j in np.flatnonzero(col_dead[cols])}
+                    ref_r, ref_c = compute_propagated_pruned_rows_cols(
+                        mat, zero_threshold=ctx.zero_threshold,
+                        initial_zero_rows=seed_r, initial_zero_cols=seed_c,
+                        exempt_rows=frozenset(
+                            int(i) for i in np.flatnonzero(batch.exempt_rows_m[pos])),
+                        exempt_cols=frozenset(
+                            int(j) for j in np.flatnonzero(batch.exempt_cols_m[pos])),
+                        cols_with_implicit_source=batch.implicit_sets[pos],
+                        mode="cascade",
+                    )
+                    got_r = {int(i) for i in np.flatnonzero(new_rows[pos])}
+                    got_c = {int(j) for j in np.flatnonzero(new_cols[pos])}
+                    assert got_r == ref_r and got_c == ref_c, (
+                        f"{name} trial {trial} core {node.id}: batch diverges; "
+                        f"rows flat-only={sorted(got_r-ref_r)[:4]} "
+                        f"ref-only={sorted(ref_r-got_r)[:4]} "
+                        f"cols flat-only={sorted(got_c-ref_c)[:4]} "
+                        f"ref-only={sorted(ref_c-got_c)[:4]}"
+                    )

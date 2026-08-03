@@ -48,6 +48,9 @@ class FlatState:
     group_offsets: np.ndarray           # CSR offsets into group_producers
     group_producers: np.ndarray         # flat producer-port indices, concatenated
 
+    port_readers: Dict[tuple, List[int]]   # raw (node_id, index) -> reader positions
+    core_readers: Dict[int, List[int]]     # producer node id -> reader positions
+
     orphan_now: np.ndarray              # flat ports with zero consumers
     consumer_port: np.ndarray           # CSR: port whose consumers follow
     consumer_offsets: np.ndarray
@@ -82,6 +85,9 @@ def build_flat_state(ctx) -> FlatState:
 
     fwd = ctx.computeop_transfers.forward_producers
 
+    port_readers: Dict[tuple, List[int]] = {}
+    core_readers: Dict[int, List[int]] = {}
+
     always_dead: List[int] = []
     d_axon: List[int] = []
     d_prod: List[int] = []
@@ -103,6 +109,8 @@ def build_flat_state(ctx) -> FlatState:
             if src.is_off():
                 always_dead.append(base + i)
                 continue
+            port_readers.setdefault((src.node_id, src.index), []).append(k)
+            core_readers.setdefault(src.node_id, []).append(k)
             producers = fwd.get((src.node_id, src.index))
             if producers is not None:
                 flat = [p for p in (_flat_port(nid, col) for nid, col in producers)
@@ -157,6 +165,7 @@ def build_flat_state(ctx) -> FlatState:
 
     return FlatState(
         node_ids=node_ids, index_of=index_of,
+        port_readers=port_readers, core_readers=core_readers,
         row_base=row_base, col_base=col_base,
         always_dead_rows=np.asarray(always_dead, dtype=np.int64),
         direct_axon=np.asarray(d_axon, dtype=np.int64),

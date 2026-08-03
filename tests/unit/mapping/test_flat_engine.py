@@ -168,3 +168,32 @@ class TestFlatEngineOnViTVehicles:
         a = {k: float(v).hex() for k, v in (ref.constants.lattice.values or {}).items()}
         b = {k: float(v).hex() for k, v in (got.constants.lattice.values or {}).items()}
         assert a == b, "lattice values must be bit-identical"
+
+
+class TestTheQuiescenceLockCanFail:
+    """Delete the re-arm relation and prove the final full gather RAISES.
+    A lock that cannot be shown to fail guards nothing."""
+
+    def test_cleared_readers_raise_on_a_constant_vehicle(self, monkeypatch):
+        import mimarsinan.mapping.pruning.graph.flat.engine as eng
+        from mimarsinan.mapping.pruning.graph.flat.state import build_flat_state as real_build
+        import unit.mapping.constant_vehicles as vehicles
+
+        def sabotaged(ctx):
+            state = real_build(ctx)
+            state.port_readers.clear()
+            state.core_readers.clear()
+            return state
+
+        monkeypatch.setattr(eng, "build_flat_state", sabotaged)
+        graph = vehicles.gelu_execution_exact_graph()
+        ctx = build_global_pruning_context(
+            graph, zero_threshold=1e-8,
+            initial_per_node=None, initial_per_bank=None,
+            exempt_rows_per_node=None, exempt_cols_per_node=None,
+            computeop_liveness_transfers="full",
+            elimination_constant_folding="full",
+            spiking_mode=INERT_SPIKING_MODE,
+        )
+        with pytest.raises(eng.FlatEngineQuiescenceError):
+            eng.run_cascade_waves(ctx)
