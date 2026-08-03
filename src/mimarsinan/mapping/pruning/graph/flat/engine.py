@@ -19,6 +19,7 @@ artifact of node-id visit order and differs by design.
 
 from __future__ import annotations
 
+import time
 from typing import Dict, Set
 
 import numpy as np
@@ -90,6 +91,7 @@ def run_cascade_waves(ctx) -> int:
     waves = 0
     while True:
         waves += 1
+        _tw = time.perf_counter()
         # ops write their descents STRAIGHT into the lattice ("wiring, not a
         # hop"), bypassing sweep.descents -- diffing the keys captures them.
         keys_before = set(ctx.constants.lattice.values)
@@ -102,6 +104,7 @@ def run_cascade_waves(ctx) -> int:
             last_seed_rows.pop(nid, None)      # matrix moved; must re-derive
         changed = sweep.commit(ctx)
         _sync_masks(ctx, state, row_dead, col_dead)
+        _ts = time.perf_counter()
 
         # -- node phase: Jacobi across cores ------------------------------
         dead_axons = flat_cross_core_dead_axons(state, col_dead)
@@ -175,6 +178,7 @@ def run_cascade_waves(ctx) -> int:
             ctx.pruned_rows[nid] = new_rows
             ctx.pruned_cols[nid] = new_cols
 
+        _tn = time.perf_counter()
         # -- bank phase: same position as the reference sweep --------------
         for bank_id, bank in ctx.banks.items():
             if _refresh_bank_pruning(
@@ -206,6 +210,10 @@ def run_cascade_waves(ctx) -> int:
             for rk in state.core_readers.get(nid, ()):
                 rearm.add(node_ids[rk])
 
+        if time.perf_counter() - _tw > 5.0:   # slow waves only; tests stay silent
+            print(f"[CascadeWave] w={waves} sweep={_ts - _tw:.1f}s "
+                  f"nodes={_tn - _ts:.1f}s banks+rearm={time.perf_counter() - _tn:.1f}s "
+                  f"commits={len(commits)} rearm={len(rearm)}", flush=True)
         if not changed:
             break
 
