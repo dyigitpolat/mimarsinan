@@ -315,16 +315,16 @@ class TestCertificateTripsOnFoldMutation:
             )
 
     def test_corrupted_constant_evaluation_trips(self, monkeypatch):
-        import mimarsinan.mapping.pruning.graph.constant_folding as cf
+        import mimarsinan.mapping.pruning.liveness_transfer.constant_transfer as ct
 
-        original = cf.derive_constant_outputs
+        original = ct.derive_constant_outputs
 
         def corrupted(op, transfer, in_values):
             return {
                 o: v + 0.25 for o, v in original(op, transfer, in_values).items()
             }
 
-        monkeypatch.setattr(cf, "derive_constant_outputs", corrupted)
+        monkeypatch.setattr(ct, "derive_constant_outputs", corrupted)
         with pytest.raises(CascadeCertificateError, match="differ"):
             certify_cascade_equivalence(
                 sigmoid_chain_graph(), initial_pruned_per_node=STEM_DEAD,

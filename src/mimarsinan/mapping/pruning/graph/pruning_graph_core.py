@@ -41,6 +41,7 @@ def compute_global_pruned_sets(
     computeop_liveness_transfers: str = DEFAULT_COMPUTEOP_LIVENESS_TRANSFERS,
     elimination_constant_folding: str = DEFAULT_ELIMINATION_CONSTANT_FOLDING,
     spiking_mode: str = "lif",
+    probe_memo: "dict | None" = None,
 ) -> GlobalPruningResult:
     """Run global pruning under one propagation arm (default: cascade fixpoint).
 
@@ -87,6 +88,7 @@ def compute_global_pruned_sets(
         computeop_liveness_transfers=computeop_liveness_transfers,
         elimination_constant_folding=elimination_constant_folding,
         spiking_mode=spiking_mode,
+        probe_memo=probe_memo,
     )
     if not ctx.neural_cores and not ctx.banks:
         return GlobalPruningResult()

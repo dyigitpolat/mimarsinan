@@ -49,8 +49,8 @@ from mimarsinan.mapping.pruning.liveness_transfer.constant_lattice import (
     ConstantLattice,
     source_constant,
 )
-from mimarsinan.mapping.pruning.liveness_transfer.constant_transfer import (
-    derive_constant_outputs,
+from mimarsinan.mapping.pruning.liveness_transfer.probe_memo import (
+    derive_constant_outputs_memoized,
 )
 
 __all__ = [
@@ -103,10 +103,9 @@ class ConstantFoldState:
     deltas: Dict[int, np.ndarray] = field(default_factory=dict)
     folded_rows: Dict[int, Dict[int, float]] = field(default_factory=dict)
     _matrix_cache: Dict[int, tuple] = field(default_factory=dict, repr=False)
-    # op_id -> (input-value tuple, resolved outputs): the sweep repeats every
-    # fixpoint iteration, and re-probing an unchanged input vector would
-    # re-execute attention/LayerNorm for nothing.
-    _probe_memo: Dict[int, tuple] = field(default_factory=dict, repr=False)
+    # (op_id, bitwise key) -> resolved outputs; injectable so one run's arms
+    # and replay share every battery (see liveness_transfer.probe_memo).
+    probe_memo: Dict[tuple, Dict[int, float]] = field(default_factory=dict, repr=False)
 
     def carrier(
         self, node: NeuralCore, *, pruned_rows, exempt_rows
@@ -195,13 +194,9 @@ def _sweep_compute_ops(ctx, state: ConstantFoldState) -> bool:
         ]
         if all(v is None for v in in_values):
             continue
-        key = tuple(in_values)
-        memo = state._probe_memo.get(node.id)
-        if memo is not None and memo[0] == key:
-            resolved = memo[1]
-        else:
-            resolved = derive_constant_outputs(node, transfer, in_values)
-            state._probe_memo[node.id] = (key, resolved)
+        resolved = derive_constant_outputs_memoized(
+            node, transfer, in_values, state.probe_memo
+        )
         for out_idx, value in resolved.items():
             if state.lattice.descend((node.id, out_idx), value):
                 changed = True

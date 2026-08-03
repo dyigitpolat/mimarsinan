@@ -13,7 +13,7 @@ sets under a "closure" label would fabricate a measurement.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import time
 from typing import Dict, Mapping, Sequence, Set, Tuple
 
@@ -72,6 +72,7 @@ class EliminationArms:
     computeop_liveness_transfers: str
     elimination_constant_folding: str
     spiking_mode: str
+    probe_memo: dict = field(default_factory=dict)
 
     def results_by_arm(self) -> Dict[str, GlobalPruningResult]:
         """Arm name -> kill sets, for the arms this pass actually ran."""
@@ -104,6 +105,7 @@ def compute_elimination_arms(
     seed_per_node, seed_per_bank = _collect_initial_seeds(
         ir_graph, initial_pruned_per_node, initial_pruned_per_bank
     )
+    probe_memo: dict = {}   # one run, one battery per (op, bitwise key)
 
     def _run_arm(arm: str) -> GlobalPruningResult:
         t0 = time.perf_counter()
@@ -118,6 +120,7 @@ def compute_elimination_arms(
             computeop_liveness_transfers=computeop_liveness_transfers,
             elimination_constant_folding=elimination_constant_folding,
             spiking_mode=spiking_mode,
+            probe_memo=probe_memo,
         )
         print(f"[EliminationLedger] arm={arm} wall={time.perf_counter() - t0:.1f}s",
               flush=True)
@@ -148,6 +151,7 @@ def compute_elimination_arms(
         computeop_liveness_transfers=computeop_liveness_transfers,
         elimination_constant_folding=elimination_constant_folding,
         spiking_mode=spiking_mode,
+        probe_memo=probe_memo,
     )
 
 

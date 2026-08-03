@@ -85,6 +85,7 @@ def build_global_pruning_context(
     computeop_liveness_transfers: str = DEFAULT_COMPUTEOP_LIVENESS_TRANSFERS,
     elimination_constant_folding: str = DEFAULT_ELIMINATION_CONSTANT_FOLDING,
     spiking_mode: str = "lif",
+    probe_memo: "Dict[tuple, Dict[int, float]] | None" = None,
 ) -> GlobalPruningContext:
     """Index the graph and seed the pruned sets (explicit + off-source + value-based)."""
     neural_cores = [n for n in graph.nodes if isinstance(n, NeuralCore)]
@@ -117,6 +118,7 @@ def build_global_pruning_context(
             elimination_constant_folding=elimination_constant_folding,
             computeop_liveness_transfers=computeop_liveness_transfers,
             spiking_mode=spiking_mode,
+            probe_memo=probe_memo,
         ),
         bank_consumers=_build_bank_consumer_map(neural_cores),
         bank_node_lookup={
@@ -164,6 +166,7 @@ def _build_constant_state(
     elimination_constant_folding: str,
     computeop_liveness_transfers: str,
     spiking_mode: str,
+    probe_memo: "Dict[tuple, Dict[int, float]] | None" = None,
 ) -> ConstantFoldState:
     """The lattice, gated by the policy axis AND the chip-domain exactness gate."""
     policy = effective_constant_folding(
@@ -175,6 +178,7 @@ def _build_constant_state(
         lattice=ConstantLattice(
             admits_nonzero=domain_admits_nonzero_constants(spiking_mode)
         ),
+        probe_memo=probe_memo if probe_memo is not None else {},
     )
 
 

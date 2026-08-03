@@ -117,6 +117,7 @@ def compute_elimination_ledger(
         computeop_liveness_transfers=arms.computeop_liveness_transfers,
         elimination_constant_folding=arms.elimination_constant_folding,
         spiking_mode=arms.spiking_mode,
+        probe_memo=arms.probe_memo,
     )
     _t0 = time.perf_counter()
     replay = replay_kill_depths(replay_ctx, mode=mode)
