@@ -9,6 +9,7 @@ from mimarsinan.mapping.pruning.graph.propagation_mode import (
 )
 from mimarsinan.mapping.pruning.graph.constant_folding import apply_constant_folds
 from mimarsinan.mapping.pruning.graph.pruning_graph_core import compute_global_pruned_sets
+from mimarsinan.mapping.pruning.graph.pruning_graph_types import GlobalPruningResult
 from mimarsinan.mapping.pruning.ir_pruning_helpers import (
     _attach_pre_compaction_metadata,
     _boundary_policy_exemptions,
@@ -39,6 +40,7 @@ def prune_ir_graph(
     elimination_propagation: str = ELIMINATION_PROPAGATION_CASCADE,
     computeop_liveness_transfers: str = DEFAULT_COMPUTEOP_LIVENESS_TRANSFERS,
     elimination_constant_folding: str = DEFAULT_ELIMINATION_CONSTANT_FOLDING,
+    precomputed_result: "GlobalPruningResult | None" = None,
 ) -> IRGraph:
     """Prune and compact ``ir_graph`` in place; return the same instance.
 
@@ -70,18 +72,25 @@ def prune_ir_graph(
         graph, initial_pruned_per_node, initial_pruned_per_bank
     )
 
-    result = compute_global_pruned_sets(
-        graph,
-        zero_threshold=zero_threshold,
-        initial_per_node=seed_per_node,
-        initial_per_bank=seed_per_bank,
-        exempt_rows_per_node=exempt_rows,
-        exempt_cols_per_node=exempt_cols,
-        mode=elimination_propagation,
-        computeop_liveness_transfers=computeop_liveness_transfers,
-        elimination_constant_folding=elimination_constant_folding,
-        spiking_mode=spiking_mode,
-    )
+    # The caller may already hold this exact analysis: the ledger's arm run
+    # computes it over the SAME graph, seeds, exemptions and policy, and
+    # nothing between the two mutates the graph (``compute_elimination_arms``
+    # never mutates, and the record emitter only reads). Recomputing it is a
+    # second full fixpoint for a result we already have.
+    result = precomputed_result
+    if result is None:
+        result = compute_global_pruned_sets(
+            graph,
+            zero_threshold=zero_threshold,
+            initial_per_node=seed_per_node,
+            initial_per_bank=seed_per_bank,
+            exempt_rows_per_node=exempt_rows,
+            exempt_cols_per_node=exempt_cols,
+            mode=elimination_propagation,
+            computeop_liveness_transfers=computeop_liveness_transfers,
+            elimination_constant_folding=elimination_constant_folding,
+            spiking_mode=spiking_mode,
+        )
 
     if not (initial_pruned_per_node or initial_pruned_per_bank):
         _log_value_based_summary(result)

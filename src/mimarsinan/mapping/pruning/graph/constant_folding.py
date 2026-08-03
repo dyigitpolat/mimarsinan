@@ -43,6 +43,7 @@ from mimarsinan.mapping.pruning.liveness_transfer.constant_core import (
     resolve_constant_carrier,
 )
 from mimarsinan.mapping.pruning.liveness_transfer.constant_lattice import (
+    build_source_plan,
     ConstantLattice,
     source_constant,
 )
@@ -209,6 +210,15 @@ def _sweep_compute_ops(ctx, state: ConstantFoldState) -> bool:
 def _gather_neural_cores(
     ctx, state: ConstantFoldState, sweep: ConstantSweep, *, cross_core: bool
 ) -> None:
+    # [O1] ``input_sources`` is static for the whole analysis, so each core's
+    # per-axon dispatch is resolved ONCE and reused every sweep; only the axons
+    # reading a real producer port still need a lattice/pruned query. Cached on
+    # the context, which lives exactly as long as one analysis.
+    plans = getattr(ctx, "_source_plans", None)
+    if plans is None:
+        plans = {}
+        setattr(ctx, "_source_plans", plans)
+
     for node in ctx.neural_cores:
         base = ctx.base_node_matrix(node)
         if base is None:
@@ -223,12 +233,10 @@ def _gather_neural_cores(
             matrix=matrix,
             bias=state.effective_bias(node),
             threshold=float(getattr(node, "threshold", 1.0)),
-            row_values=[
-                source_constant(
-                    src, lattice=state.lattice, pruned_cols=ctx.pruned_cols
-                )
-                for src in node.input_sources.flatten()
-            ],
+            row_values=(
+                plans.get(nid)
+                or plans.setdefault(nid, build_source_plan(node.input_sources))
+            ).row_values(lattice=state.lattice, pruned_cols=ctx.pruned_cols),
             pruned_rows=ctx.pruned_rows[nid],
             pruned_cols=ctx.pruned_cols[nid],
             exempt_rows=exempt,

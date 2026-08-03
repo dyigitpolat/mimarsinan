@@ -4,6 +4,9 @@ from typing import AbstractSet, Dict, Mapping, Set, Tuple
 
 import numpy as np
 
+from mimarsinan.mapping.pruning.graph.analysis_dependencies import (
+    PortPlan, _dead_axons_from_plan, _orphans_from_plan,
+)
 from mimarsinan.mapping.ir import IRSource, NeuralCore, WeightBank
 from mimarsinan.mapping.pruning.graph.propagation_mode import (
     ELIMINATION_PROPAGATION_CASCADE,
@@ -97,6 +100,7 @@ def _refresh_node_pruning(
     exempt_rows: Mapping[int, AbstractSet[int]],
     exempt_cols: Mapping[int, AbstractSet[int]],
     mode: str = ELIMINATION_PROPAGATION_CASCADE,
+    port_plan: "PortPlan | None" = None,
 ) -> bool:
     """Rerun within-matrix propagation seeded with cross-core deadness.
 
@@ -112,16 +116,16 @@ def _refresh_node_pruning(
         hardware_bias = getattr(node, "hardware_bias", None)
     n_axons, n_neurons = mat.shape
 
-    cross_rows = _cross_core_dead_axons(
-        node, pruned_cols, computeop_transfers
+    if port_plan is None:
+        port_plan = PortPlan(
+            node, n_neurons, computeop_transfers, consumer_axons,
+            model_output_neurons,
+        )
+    cross_rows = _dead_axons_from_plan(
+        port_plan, pruned_cols
     ) - exempt_rows.get(nid, frozenset())
-    cross_cols = _orphan_neurons(
-        nid,
-        n_neurons,
-        pruned_rows,
-        consumer_axons,
-        model_output_neurons,
-        computeop_transfers,
+    cross_cols = _orphans_from_plan(
+        port_plan, pruned_rows
     ) - exempt_cols.get(nid, frozenset())
 
     seed_rows = pruned_rows[nid] | cross_rows

@@ -35,6 +35,8 @@ __all__ = [
     "OFF_SOURCE_CONSTANT",
     "ALWAYS_ON_SOURCE_CONSTANT",
     "Port",
+    "SourcePlan",
+    "build_source_plan",
     "source_constant",
 ]
 
@@ -139,3 +141,62 @@ def source_constant(
     if src.index in pruned_cols.get(src.node_id, frozenset()):
         return OFF_SOURCE_CONSTANT
     return None
+
+
+@dataclass(frozen=True)
+class SourcePlan:
+    """The STATIC part of ``source_constant``, resolved once per core.
+
+    ``input_sources`` never changes during an analysis, so every per-axon
+    dispatch it drives -- the ``isinstance``, ``is_off``/``is_always_on``, the
+    sign test, and the ``(node_id, index)`` tuple build -- is a constant of the
+    graph. Resolving them once turns the per-sweep query into a lookup over the
+    handful of axons whose value can still move.
+
+    ``fixed`` holds the axons whose value can NEVER change (off, always-on,
+    model input). ``dynamic_at``/``dynamic_ports`` are the axons that read a
+    real producer port and therefore still need the lattice/pruned query.
+    """
+
+    fixed: Tuple[float | None, ...]
+    dynamic_at: Tuple[int, ...]
+    dynamic_ports: Tuple[Port, ...]
+
+    def row_values(
+        self, *, lattice: "ConstantLattice", pruned_cols: Mapping[int, AbstractSet[int]]
+    ) -> list:
+        """Exactly ``[source_constant(src) for src in input_sources]``.
+
+        The fixed entries are copied; only the dynamic ports are queried, with
+        the identical precedence source_constant applies: a RECORDED constant
+        outranks "eliminated => 0".
+        """
+        out = list(self.fixed)
+        for at, port in zip(self.dynamic_at, self.dynamic_ports):
+            recorded = lattice.get(port)
+            if recorded is not None:
+                out[at] = recorded
+            elif port[1] in pruned_cols.get(port[0], frozenset()):
+                out[at] = OFF_SOURCE_CONSTANT
+        return out
+
+
+def build_source_plan(input_sources) -> SourcePlan:
+    """Resolve one core's static per-axon dispatch (see :class:`SourcePlan`)."""
+    fixed: list = []
+    dyn_at: list = []
+    dyn_ports: list = []
+    for i, src in enumerate(input_sources.flatten()):
+        if not isinstance(src, IRSource):
+            fixed.append(None)
+        elif src.is_off():
+            fixed.append(OFF_SOURCE_CONSTANT)
+        elif src.is_always_on():
+            fixed.append(ALWAYS_ON_SOURCE_CONSTANT)
+        elif src.node_id < 0:
+            fixed.append(None)          # model input and future wiring kinds: TOP
+        else:
+            fixed.append(None)          # placeholder; filled per query
+            dyn_at.append(i)
+            dyn_ports.append((src.node_id, src.index))
+    return SourcePlan(tuple(fixed), tuple(dyn_at), tuple(dyn_ports))

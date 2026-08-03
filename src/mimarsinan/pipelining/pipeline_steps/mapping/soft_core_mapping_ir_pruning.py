@@ -140,6 +140,9 @@ def apply_ir_pruning_if_enabled(step, model, ir_graph, phase_tag: str):
             elimination_propagation=elimination_propagation,
             computeop_liveness_transfers=computeop_liveness_transfers,
             elimination_constant_folding=elimination_constant_folding,
+            # [O2] the ledger's cascade arm IS this analysis; reuse it rather
+            # than running a second identical fixpoint over the same graph.
+            precomputed_result=arms.final,
         )
     print(
         "[SoftCoreMappingStep] Applied IR pruning (zeroed row/col elimination, "

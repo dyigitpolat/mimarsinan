@@ -14,6 +14,7 @@ from mimarsinan.mapping.pruning.graph.pruning_graph_modes import (
 from mimarsinan.mapping.pruning.graph.constant_folding import (
     refresh_constant_folds,
 )
+from mimarsinan.mapping.pruning.graph.analysis_dependencies import PortPlan
 from mimarsinan.mapping.pruning.graph.pruning_graph_refresh import (
     _refresh_bank_pruning,
     _refresh_node_pruning,
@@ -109,10 +110,21 @@ def _run_cascade_fixpoint(ctx: GlobalPruningContext) -> int:
         # The constant lattice is one more monotone operator of the same
         # fixpoint: descents feed starvation/orphaning and vice versa.
         changed = refresh_constant_folds(ctx).commit(ctx)
+        plans = getattr(ctx, "_port_plans", None)
+        if plans is None:
+            plans = {}
+            setattr(ctx, "_port_plans", plans)
         for node in ctx.neural_cores:
             mat = ctx.node_matrix(node)
             if mat is None:
                 continue
+            plan = plans.get(node.id)
+            if plan is None:
+                plan = PortPlan(
+                    node, mat.shape[1], ctx.computeop_transfers,
+                    ctx.consumer_axons, ctx.model_output_neurons,
+                )
+                plans[node.id] = plan
             if _refresh_node_pruning(
                 node=node,
                 mat=mat,
@@ -125,6 +137,7 @@ def _run_cascade_fixpoint(ctx: GlobalPruningContext) -> int:
                 computeop_transfers=ctx.computeop_transfers,
                 exempt_rows=ctx.exempt_rows,
                 exempt_cols=ctx.exempt_cols,
+                port_plan=plan,
             ):
                 changed = True
 
