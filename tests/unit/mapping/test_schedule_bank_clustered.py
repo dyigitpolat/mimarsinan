@@ -280,27 +280,30 @@ class TestScheduledBuild:
                 )
 
     def test_resident_stages_alias_the_head_weights(self):
-        # [wsm V3] schedule_weights_resident IS the executor contract: a
-        # resident pass reuses the chain head's uploaded tensors (no
-        # re-upload), verified by object identity; pool passes never alias.
+        # [wsm V3] schedule_weights_resident IS the executor contract,
+        # observed IN FLIGHT: a resident pass triggers ZERO uploads and
+        # reuses the chain head's tensor objects; pool passes re-upload
+        # every pass and never alias.
         from mimarsinan.chip_simulation.value_run import ValueHybridCoreFlow
-        from mimarsinan.chip_simulation.value_run.value_execution import (
-            prepared_segment_cache_for_testing,
-        )
+        from unit.chip_simulation.value_upload_probe import probe_uploads
 
         flow = ValueHybridCoreFlow(
             self._build(_token_graph(7), "bank_clustered"),
             dtype=torch.float64,
         )
-        with torch.no_grad():
-            flow(torch.randn(2, 28))
+        with probe_uploads(flow, keep=True) as probe:
+            with torch.no_grad():
+                flow(torch.randn(2, 28))
         neural = [
             s for s in flow.hybrid_mapping.stages if s.kind == "neural"
         ]
-        cache = prepared_segment_cache_for_testing()
-        prepared = [
-            cache[s.hard_core_mapping][("cpu", torch.float64)] for s in neural
-        ]
+        assert all(s.schedule_weights_resident for s in neural[1:])
+        counts = probe.per_stage_upload_counts()
+        assert len(counts) == len(neural)
+        assert counts[0] > 0
+        assert all(c == 0 for c in counts[1:])  # residents never re-upload
+        by_hcm = {id(hcm): p for hcm, p in probe.prepared}
+        prepared = [by_hcm[id(s.hard_core_mapping)] for s in neural]
         head = prepared[0]
         assert all(p.weights[0] is head.weights[0] for p in prepared[1:])
 
@@ -310,16 +313,18 @@ class TestScheduledBuild:
             ),
             dtype=torch.float64,
         )
-        with torch.no_grad():
-            pool_flow(torch.randn(2, 28))
+        with probe_uploads(pool_flow, keep=True) as pool_probe:
+            with torch.no_grad():
+                pool_flow(torch.randn(2, 28))
         pool_neural = [
             s for s in pool_flow.hybrid_mapping.stages if s.kind == "neural"
         ]
-        pool_prepared = [
-            cache[s.hard_core_mapping][("cpu", torch.float64)]
-            for s in pool_neural
-        ]
         assert len(pool_neural) > 1
+        assert all(c > 0 for c in pool_probe.per_stage_upload_counts())
+        pool_by_hcm = {id(hcm): p for hcm, p in pool_probe.prepared}
+        pool_prepared = [
+            pool_by_hcm[id(s.hard_core_mapping)] for s in pool_neural
+        ]
         assert not any(
             p.weights[0] is pool_prepared[0].weights[0]
             for p in pool_prepared[1:]

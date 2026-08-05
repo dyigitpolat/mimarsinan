@@ -5,9 +5,6 @@ import torch
 import torch.nn as nn
 
 from mimarsinan.chip_simulation.value_run import ValueHybridCoreFlow
-from mimarsinan.chip_simulation.value_run.value_execution import (
-    prepared_segment_cache_for_testing,
-)
 from mimarsinan.mapping.ir import IRGraph, IRSource, NeuralCore, WeightBank
 from mimarsinan.mapping.packing.hybrid_build_pool import (
     build_hybrid_hard_core_mapping,
@@ -150,11 +147,16 @@ class TestStateBufferPruning:
         assert seen["n"] < n_stages  # consumed nodes were freed
 
     def test_upload_memo_shares_tensors_for_shared_arrays(self):
-        # [F2] cores sharing one deduped ndarray share ONE device tensor.
+        # [F2] cores sharing one deduped ndarray share ONE device tensor —
+        # observed in flight on the upload returns (the prepared segments die
+        # with the per-forward scope).
+        from unit.chip_simulation.value_upload_probe import probe_uploads
+
         hybrid = _token_bank_hybrid()
         flow = ValueHybridCoreFlow(hybrid, dtype=torch.float64)
-        with torch.no_grad():
-            flow(torch.randn(2, 20))
+        with probe_uploads(flow, keep=True) as probe:
+            with torch.no_grad():
+                flow(torch.randn(2, 20))
         neural = [s for s in hybrid.stages if s.kind == "neural"]
         head_cores = neural[0].hard_core_mapping.cores
         # Padded grids materialize transiently, so the ndarray they share is
@@ -165,6 +167,5 @@ class TestStateBufferPruning:
             head_cores[0].matrix_placements[0].source
             is head_cores[1].matrix_placements[0].source
         )
-        cache = prepared_segment_cache_for_testing()
-        head = cache[neural[0].hard_core_mapping][("cpu", torch.float64)]
-        assert head.weights[0] is head.weights[1]
+        uploaded = {id(core): tensor for core, tensor in probe.kept}
+        assert uploaded[id(head_cores[0])] is uploaded[id(head_cores[1])]

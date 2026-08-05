@@ -17,6 +17,7 @@ from mimarsinan.chip_simulation.hybrid_run.hybrid_execution import (
 )
 from mimarsinan.chip_simulation.hybrid_run.hybrid_stage_runner import run_hybrid_stages
 from mimarsinan.chip_simulation.value_run.value_execution import (
+    ValueSegmentScope,
     run_neural_segment_values,
 )
 from mimarsinan.mapping.ir import IRSource
@@ -67,10 +68,6 @@ class ValueHybridCoreFlow(nn.Module):
         self.stage_count_recorder = None
         self.lif_execution_synchronized = False
         self._fp64_ops: Dict[int, nn.Module] = {}
-        # [F2] content-keyed weight-upload memo: cores resolving to one
-        # byte-identical grid share ONE device tensor. Keys stay valid because
-        # the memo holds the arrays (and the flow holds the mapping) alive.
-        self._upload_memo: Dict = {}
 
     def _run_compute_stage(self, op, x_flat, state_buffer):
         original = op.params.get("module")
@@ -103,20 +100,23 @@ class ValueHybridCoreFlow(nn.Module):
         # [F1] refcounted state-buffer pruning (the spiking flows' discipline):
         # without it every node's activations live until the forward ends.
         remaining = dict(_consumer_counts(self.hybrid_mapping))
-        # [wsm V3] residency-chain head: a schedule_weights_resident pass
-        # aliases the head's uploaded tensors instead of re-uploading.
-        residency_head: list = [None]
+        # [wsm V3] forward-local scope: weight tensors live per residency
+        # chain — a non-resident stage heads a new chain (freeing the previous
+        # one) and resident passes alias the head's uploaded tensors.
+        scope = ValueSegmentScope()
 
         def on_neural(_index, stage, buf):
             if not getattr(stage, "schedule_weights_resident", False):
-                residency_head[0] = stage.hard_core_mapping
+                scope.begin_chain(stage.hard_core_mapping)
+            assert scope.head_hcm is not None, (
+                "schedule_weights_resident stage arrived before any chain head"
+            )
             seg_input = assemble_segment_input_torch(
                 stage.input_map, buf, batch, self.execution_device, self.value_dtype
             )
             seg_output = run_neural_segment_values(
                 stage.hard_core_mapping, seg_input,
-                resident_head=residency_head[0],
-                upload_memo=self._upload_memo,
+                resident_head=scope.head_hcm, scope=scope,
             )
             recorder = self.stage_count_recorder
             if recorder is not None:

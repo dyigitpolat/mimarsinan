@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-import weakref
-from typing import Dict, List
+from typing import Any, Dict, List
 
 import torch
 
@@ -14,8 +13,6 @@ from mimarsinan.mapping.packing.softcore.matrix_placement import (
 from mimarsinan.mapping.support.spike_source_spans import compress_spike_sources
 from mimarsinan.models.nn.activations.value_quantizer import quantize_to_value_grid
 from mimarsinan.models.spiking.signal_spans import SpanFillPlan
-
-_SEGMENT_CACHE: "weakref.WeakKeyDictionary" = weakref.WeakKeyDictionary()
 
 
 class _PreparedValueSegment:
@@ -99,33 +96,50 @@ def _upload(core, dtype, device, memo: "dict | None"):
     return tensor
 
 
-def _prepared(
-    hcm, device: torch.device, dtype: torch.dtype, resident_head=None,
-    upload_memo: "dict | None" = None,
-) -> _PreparedValueSegment:
-    by_key = _SEGMENT_CACHE.setdefault(hcm, {})
-    key = (str(device), dtype)
-    prepared = by_key.get(key)
-    if prepared is None:
-        head = (
-            None if resident_head is None or resident_head is hcm
-            else _prepared(resident_head, device, dtype, upload_memo=upload_memo)
-        )
-        prepared = _PreparedValueSegment(
-            hcm, device, dtype, resident_from=head, upload_memo=upload_memo
-        )
-        by_key[key] = prepared
-    return prepared
+class ValueSegmentScope:
+    """Forward-local owner of uploaded weight/bias tensor lifetime.
 
+    The lifetime unit is the residency CHAIN — one non-resident head stage
+    plus its consecutive ``schedule_weights_resident`` passes ([wsm V3]):
+    ``begin_chain`` frees the previous chain, and the scope dying with the
+    forward frees the last one, so peak residency is one chain, never the
+    sum over segments."""
 
-def prepared_segment_cache_for_testing() -> "weakref.WeakKeyDictionary":
-    """The live prepared-segment cache (tests assert residency aliasing)."""
-    return _SEGMENT_CACHE
+    def __init__(self) -> None:
+        self.head_hcm: Any = None
+        self._prepared: Dict = {}
+        # [F2] content-keyed weight-upload memo: cores resolving to one
+        # byte-identical grid share ONE device tensor within the chain.
+        self._upload_memo: Dict = {}
+
+    def begin_chain(self, hcm) -> None:
+        """Drop the previous chain's tensors BEFORE the new head uploads."""
+        self._prepared.clear()
+        self._upload_memo.clear()
+        self.head_hcm = hcm
+
+    def prepared(
+        self, hcm, device: torch.device, dtype: torch.dtype, resident_head=None,
+    ) -> _PreparedValueSegment:
+        by_key = self._prepared.setdefault(hcm, {})
+        key = (str(device), dtype)
+        prepared = by_key.get(key)
+        if prepared is None:
+            head = (
+                None if resident_head is None or resident_head is hcm
+                else self.prepared(resident_head, device, dtype)
+            )
+            prepared = _PreparedValueSegment(
+                hcm, device, dtype, resident_from=head,
+                upload_memo=self._upload_memo,
+            )
+            by_key[key] = prepared
+        return prepared
 
 
 def run_neural_segment_values(
     hcm, seg_input: torch.Tensor, resident_head=None,
-    upload_memo: "dict | None" = None,
+    scope: "ValueSegmentScope | None" = None,
 ) -> torch.Tensor:
     """Execute one packed segment in the value domain: y_core = (x @ W + b) / theta.
 
@@ -137,9 +151,9 @@ def run_neural_segment_values(
     ``ValueGridQuantizer`` applies.
     """
     device, dtype = seg_input.device, seg_input.dtype
-    prepared = _prepared(
-        hcm, device, dtype, resident_head=resident_head, upload_memo=upload_memo
-    )
+    if scope is None:
+        scope = ValueSegmentScope()  # standalone call: single-call lifetime
+    prepared = scope.prepared(hcm, device, dtype, resident_head=resident_head)
     batch = seg_input.shape[0]
 
     buffers: Dict[int, torch.Tensor] = {}
