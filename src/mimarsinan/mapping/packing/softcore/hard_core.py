@@ -161,3 +161,22 @@ class HardCore:
             from mimarsinan.mapping.support.spike_source_spans import compress_spike_sources
             self._axon_source_spans = compress_spike_sources(self.axon_sources)
         return self._axon_source_spans
+
+    def __getstate__(self) -> dict:
+        """Pickle axon_sources range-compressed; drop the transient span cache."""
+        from mimarsinan.mapping.support.spike_source_spans import encode_spike_sources_packed
+
+        state = dict(self.__dict__)
+        state["axon_sources"] = encode_spike_sources_packed(self.axon_sources)
+        state["_axon_source_spans"] = None
+        return state
+
+    def __setstate__(self, state: dict) -> None:
+        """Decode packed axon_sources; legacy raw-list states load unchanged."""
+        from mimarsinan.mapping.support.spike_source_spans import decode_spike_sources_packed
+
+        encoded = state.get("axon_sources")
+        if isinstance(encoded, tuple):
+            state = dict(state)
+            state["axon_sources"] = decode_spike_sources_packed(encoded)
+        self.__dict__.update(state)

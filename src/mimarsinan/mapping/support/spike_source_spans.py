@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Iterable, Literal, Sequence
 
+import numpy as np
+
 from mimarsinan.code_generation.cpp_chip_model import SpikeSource
 
 
@@ -100,4 +102,73 @@ def expand_spike_source_spans(spans: Sequence[SpikeSourceSpan]) -> list[SpikeSou
             raise ValueError(f"Unknown span kind: {sp.kind}")
     return out
 
+
+SPIKE_SOURCES_DENSE_TAG = "spike-sources-dense-v1"
+SPIKE_SOURCES_SPANS_TAG = "spike-sources-spans-v1"
+
+# Pickled cost is ~35 B/span vs ~9 B/source: spans win only when runs average >= 4.
+_SPANS_MIN_AVG_RUN_LENGTH = 4
+
+
+def span_round_trip_exact(s: SpikeSource) -> bool:
+    """Whether compress→expand reproduces ``s`` field-for-field (``_classify`` normalizes everything else)."""
+    if s.is_off_:
+        return (
+            int(s.core_) == -1 and int(s.neuron_) == 0
+            and not s.is_input_ and not s.is_always_on_
+        )
+    if s.is_input_:
+        return int(s.core_) == -2 and not s.is_always_on_
+    if s.is_always_on_:
+        return int(s.core_) == -3 and int(s.neuron_) == 0
+    return True
+
+
+def _encode_spike_sources_dense(sources: Sequence[SpikeSource]) -> tuple:
+    n = len(sources)
+    cores = np.fromiter((int(s.core_) for s in sources), dtype=np.int32, count=n)
+    neurons = np.fromiter((int(s.neuron_) for s in sources), dtype=np.int32, count=n)
+    flags = np.fromiter(
+        (
+            (1 if s.is_input_ else 0)
+            | (2 if s.is_off_ else 0)
+            | (4 if s.is_always_on_ else 0)
+            for s in sources
+        ),
+        dtype=np.uint8,
+        count=n,
+    )
+    return (SPIKE_SOURCES_DENSE_TAG, cores, neurons, flags)
+
+
+def _decode_spike_sources_dense(cores, neurons, flags) -> list[SpikeSource]:
+    return [
+        SpikeSource(
+            core, neuron,
+            is_input=bool(flag & 1), is_off=bool(flag & 2), is_always_on=bool(flag & 4),
+        )
+        for core, neuron, flag in zip(cores.tolist(), neurons.tolist(), flags.tolist())
+    ]
+
+
+def encode_spike_sources_packed(sources: Sequence[SpikeSource]) -> tuple:
+    """Tagged pickle payload: spans when lossless AND compressive, dense (always lossless) otherwise."""
+    if not isinstance(sources, Sequence):
+        sources = list(sources)
+    if all(span_round_trip_exact(s) for s in sources):
+        spans = compress_spike_sources(sources)
+        if len(spans) * _SPANS_MIN_AVG_RUN_LENGTH <= len(sources):
+            return (SPIKE_SOURCES_SPANS_TAG, tuple(spans))
+    return _encode_spike_sources_dense(sources)
+
+
+def decode_spike_sources_packed(payload: tuple) -> list[SpikeSource]:
+    """Rebuild the exact SpikeSource list from a packed payload; unknown tags fail loud."""
+    tag = payload[0] if payload else None
+    if tag == SPIKE_SOURCES_SPANS_TAG:
+        return expand_spike_source_spans(payload[1])
+    if tag == SPIKE_SOURCES_DENSE_TAG:
+        _, cores, neurons, flags = payload
+        return _decode_spike_sources_dense(cores, neurons, flags)
+    raise ValueError(f"Unknown spike-source pickle payload tag: {tag!r}")
 
