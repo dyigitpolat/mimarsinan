@@ -123,7 +123,7 @@ def process_ir_graph_node(
                             media_type="image/png",
                         ))
 
-            pre = getattr(node, "pre_pruning_heatmap", None)
+            pre = node.resolve_pre_pruning_heatmap(ir_graph)
             row_mask = getattr(node, "pre_pruning_row_mask", None) or getattr(node, "pruned_row_mask", None)
             col_mask = getattr(node, "pre_pruning_col_mask", None) or getattr(node, "pruned_col_mask", None)
             if pre is not None and row_mask is not None and col_mask is not None:

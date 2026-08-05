@@ -20,37 +20,6 @@ if TYPE_CHECKING:
 
 
 @dataclass
-class WeightBank:
-    """Shared weight matrix (and optional bias) referenced by multiple NeuralCores."""
-    id: int
-    core_matrix: np.ndarray  # (axons, neurons) — weights only, no bias row
-    activation_scale: torch.Tensor = field(default_factory=lambda: torch.tensor(1.0))
-    parameter_scale: torch.Tensor = field(default_factory=lambda: torch.tensor(1.0))
-    input_activation_scale: torch.Tensor = field(default_factory=lambda: torch.tensor(1.0))
-    perceptron_index: int | None = None
-    hardware_bias: np.ndarray | None = None
-    # Two-scale WQ bias grid (parameter_scale / integer r); None == shared grid.
-    bias_scale: torch.Tensor | None = None
-    # Per-range view memo (id-invalidated): every instance of a (bank, range)
-    # shares ONE ndarray object so pickle memoization stores the payload once.
-    _column_views: dict = field(default_factory=dict, repr=False, compare=False)
-    _column_views_base: int | None = field(default=None, repr=False, compare=False)
-
-    def column_slice(self, start: int, end: int) -> np.ndarray:
-        """The (start, end) column view — full range returns the array itself."""
-        if start == 0 and end == self.core_matrix.shape[1]:
-            return self.core_matrix
-        if self._column_views_base != id(self.core_matrix):
-            self._column_views = {}
-            self._column_views_base = id(self.core_matrix)
-        view = self._column_views.get((start, end))
-        if view is None:
-            view = self.core_matrix[:, start:end]
-            self._column_views[(start, end)] = view
-        return view
-
-
-@dataclass
 class IRSource:
     """Input source: node output, off (-1), network input (-2), or always-on (-3)."""
     node_id: int
@@ -170,6 +139,24 @@ class NeuralCore(IRNode):
         start, end = self.weight_row_slice
         return bank.column_slice(int(start), int(end))
 
+
+    def resolve_pre_pruning_heatmap(
+        self, graph: "IRGraph | None" = None
+    ) -> "np.ndarray | None":
+        """Pre-compaction weights for GUI heatmaps: owned field, or a view of
+        the bank's shared snapshot (never per-core storage)."""
+        if self.pre_pruning_heatmap is not None:
+            return self.pre_pruning_heatmap
+        if self.weight_bank_id is None or graph is None:
+            return None
+        bank = graph.get_weight_bank(self.weight_bank_id)
+        snap = getattr(bank, "pre_pruning_snapshot", None) if bank else None
+        if snap is None:
+            return None
+        if self.weight_row_slice is None:
+            return snap
+        start, end = self.weight_row_slice
+        return snap[:, int(start):int(end)]
 
     def get_input_count(self) -> int:
         return int(len(self.input_sources.flatten()))

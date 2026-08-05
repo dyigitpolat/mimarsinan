@@ -36,7 +36,8 @@ from mimarsinan.mapping.export.chip_quantize import (
     verify_ir_graph_quantized,
 )
 from mimarsinan.mapping.ir import IRGraph, NeuralCore
-from mimarsinan.mapping.ir.types import IRSource, WeightBank
+from mimarsinan.mapping.ir.types import IRSource
+from mimarsinan.mapping.ir.weight_bank import WeightBank
 from mimarsinan.transformations.quantization_bounds import quantization_bounds
 
 DERIVE_SCALE_SENTINEL = 0.0  # parameter_scale == 0.0 -> derive q_max / max|w|

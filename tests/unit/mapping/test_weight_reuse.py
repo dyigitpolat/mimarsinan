@@ -29,7 +29,8 @@ import numpy as np
 import pytest
 
 from mimarsinan.mapping.ir.graph import IRGraph
-from mimarsinan.mapping.ir.types import IRSource, NeuralCore, WeightBank
+from mimarsinan.mapping.ir.types import IRSource, NeuralCore
+from mimarsinan.mapping.ir.weight_bank import WeightBank
 from mimarsinan.mapping.weight_reuse import (
     SegmentReusePhases,
     WeightReusePlan,

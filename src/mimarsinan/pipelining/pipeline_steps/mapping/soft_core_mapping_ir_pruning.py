@@ -92,6 +92,8 @@ def apply_ir_pruning_if_enabled(step, model, ir_graph, phase_tag: str):
     for nc in ir_graph.get_neural_cores():
         if nc.core_matrix is not None:
             est_bytes += nc.core_matrix.shape[0] * nc.core_matrix.shape[1] * 4
+    for bank in (getattr(ir_graph, "weight_banks", {}) or {}).values():
+        est_bytes += int(bank.core_matrix.nbytes)   # one snapshot per bank
     if est_bytes > heatmap_budget_bytes:
         print(
             f"[SoftCoreMappingStep] Pre-pruning heatmap would require "

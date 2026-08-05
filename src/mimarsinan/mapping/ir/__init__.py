@@ -10,12 +10,12 @@ from mimarsinan.mapping.ir.legacy_convert import (
     soft_core_to_neural_core,
     spike_source_to_ir_source,
 )
+from mimarsinan.mapping.ir.weight_bank import WeightBank
 from mimarsinan.mapping.ir.types import (
     ComputeOp,
     IRNode,
     IRSource,
     NeuralCore,
-    WeightBank,
 )
 
 __all__ = [

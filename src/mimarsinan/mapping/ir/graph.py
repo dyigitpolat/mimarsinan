@@ -17,8 +17,8 @@ from mimarsinan.mapping.ir.types import (
     IRNode,
     IRSource,
     NeuralCore,
-    WeightBank,
 )
+from mimarsinan.mapping.ir.weight_bank import WeightBank
 
 
 @dataclass
