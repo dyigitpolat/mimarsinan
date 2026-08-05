@@ -8,6 +8,9 @@ from typing import Dict, List
 import torch
 
 from mimarsinan.mapping.latency.chip import ChipLatency
+from mimarsinan.mapping.packing.softcore.matrix_placement import (
+    same_core_matrix_payloads,
+)
 from mimarsinan.mapping.support.spike_source_spans import compress_spike_sources
 from mimarsinan.models.nn.activations.value_quantizer import quantize_to_value_grid
 from mimarsinan.models.spiking.signal_spans import SpanFillPlan
@@ -38,7 +41,7 @@ class _PreparedValueSegment:
             self.biases = resident_from.biases[: len(hcm.cores)]
         else:
             self.weights = [
-                _upload(core.core_matrix, dtype, device, upload_memo)
+                _upload(core, dtype, device, upload_memo)
                 for core in hcm.cores
             ]
             self.biases = [
@@ -78,17 +81,21 @@ def ensure_core_latencies(hcm) -> None:
         ChipLatency(hcm).calculate()
 
 
-def _upload(matrix, dtype, device, memo: "dict | None"):
-    """Device tensor for ``matrix``; cores sharing one deduped ndarray share
-    one tensor ([F2] — identity-checked so a stale id can never alias)."""
+def _upload(core, dtype, device, memo: "dict | None"):
+    """Device tensor for the core's weight grid; cores resolving to
+    byte-identical grids share one tensor ([F2] — content-keyed, so cores
+    whose padded grid is now a transient composite still upload once).
+    The memo retains the payloads and re-checks them by identity, so a
+    freed-and-reallocated array can never alias through a stale key."""
     if memo is None:
-        return torch.as_tensor(matrix, dtype=dtype, device=device)
-    key = (id(matrix), dtype, str(device))
+        return torch.as_tensor(core.get_core_matrix(), dtype=dtype, device=device)
+    key = (core.core_matrix_key(), dtype, str(device))
+    payloads = core.core_matrix_payloads()
     hit = memo.get(key)
-    if hit is not None and hit[0] is matrix:
+    if hit is not None and same_core_matrix_payloads(hit[0], payloads):
         return hit[1]
-    tensor = torch.as_tensor(matrix, dtype=dtype, device=device)
-    memo[key] = (matrix, tensor)
+    tensor = torch.as_tensor(core.get_core_matrix(), dtype=dtype, device=device)
+    memo[key] = (payloads, tensor)
     return tensor
 
 

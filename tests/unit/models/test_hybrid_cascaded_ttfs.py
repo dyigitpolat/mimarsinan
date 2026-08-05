@@ -10,6 +10,7 @@ fires only on the spike cycle.
 
 from __future__ import annotations
 
+from fake_cores import FakeCore
 from types import SimpleNamespace
 
 import numpy as np
@@ -20,7 +21,7 @@ from mimarsinan.models.spiking.hybrid.flow import SpikingHybridCoreFlow
 
 
 def _single_core_flow(spiking_mode, schedule, T):
-    core = SimpleNamespace(
+    core = FakeCore(
         latency=None,
         axons_per_core=1,
         available_axons=0,

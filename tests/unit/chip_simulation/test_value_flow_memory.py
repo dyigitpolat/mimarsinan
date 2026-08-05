@@ -157,7 +157,14 @@ class TestStateBufferPruning:
             flow(torch.randn(2, 20))
         neural = [s for s in hybrid.stages if s.kind == "neural"]
         head_cores = neural[0].hard_core_mapping.cores
-        assert head_cores[0].core_matrix is head_cores[1].core_matrix
+        # Padded grids materialize transiently, so the ndarray they share is
+        # the stored bank payload behind one content key.
+        assert head_cores[0].core_matrix is None
+        assert head_cores[0].core_matrix_key() == head_cores[1].core_matrix_key()
+        assert (
+            head_cores[0].matrix_placements[0].source
+            is head_cores[1].matrix_placements[0].source
+        )
         cache = prepared_segment_cache_for_testing()
         head = cache[neural[0].hard_core_mapping][("cpu", torch.float64)]
         assert head.weights[0] is head.weights[1]

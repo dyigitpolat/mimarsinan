@@ -260,7 +260,7 @@ class TestCompactSoftCoreMapping:
         ]
         compact_soft_core_mapping(cores, output_sources)
 
-        assert cores[0].core_matrix.shape == (3, 3)
+        assert cores[0].get_core_matrix().shape == (3, 3)
         assert len(cores[0].axon_sources) == 3
         assert len(output_sources) == 3
 

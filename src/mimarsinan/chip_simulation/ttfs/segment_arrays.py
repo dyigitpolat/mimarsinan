@@ -101,7 +101,8 @@ def _segment_ttfs_arrays_from_mapping_uncached(mapping: Any) -> SegmentTtfsArray
                     ).T
 
         if core_weight is None:
-            tile = np.asarray(core.core_matrix[:used_ax, :used_neu], dtype=np.float64)
+            grid = core.get_core_matrix()
+            tile = np.asarray(grid[:used_ax, :used_neu], dtype=np.float64)
             core_weight = tile.T
 
         if core_weight.shape != (used_neu, used_ax):

@@ -13,6 +13,7 @@ Hardware-faithful mapping pinned here:
 
 from __future__ import annotations
 
+from fake_cores import FakeCore
 from types import SimpleNamespace
 
 import numpy as np
@@ -109,7 +110,7 @@ def _fake_hard_core(*, axons_per_core, neurons_per_core, available_axons=None,
     # count equals the list length.
     if available_axons is None:
         available_axons = max(0, axons_per_core - len(axon_sources))
-    return SimpleNamespace(
+    return FakeCore(
         axons_per_core=axons_per_core,
         neurons_per_core=neurons_per_core,
         available_axons=available_axons,
@@ -424,3 +425,29 @@ def test_set_always_on_spike_trains_fires_every_cycle(monkeypatch):
     )
     set_always_on_spike_trains(ao, T=5)
     assert ao[0].model_attributes["spikes"] == [1, 1, 1, 1, 1]
+
+
+def test_build_network_resolves_each_core_matrix_once(monkeypatch):
+    """Hard cores materialize their padded grid on demand, so the axon x
+    neuron weight loop must read a hoisted grid, never resolve per element."""
+    monkeypatch.setattr(net_synth, "_sanafe", _fake_sanafe_module)
+    calls = {"n": 0}
+
+    class _CountingCore(FakeCore):
+        def get_core_matrix(self):
+            calls["n"] += 1
+            return super().get_core_matrix()
+
+    core = _CountingCore(
+        axons_per_core=3, neurons_per_core=4, available_axons=0,
+        available_neurons=0, threshold=1.0, hardware_bias=None,
+        core_matrix=np.ones((3, 4), dtype=np.float32),
+        axon_sources=[SpikeSource(-1, i, True, False, False) for i in range(3)],
+    )
+    build_network_for_segment(
+        _fake_arch(1), _fake_hcm(core), tile_offset=0, core_offset=0,
+    )
+    assert calls["n"] == 1, (
+        f"{calls['n']} resolutions for one core with 3x4 weights: the "
+        "connection loop is re-materializing the grid per element"
+    )

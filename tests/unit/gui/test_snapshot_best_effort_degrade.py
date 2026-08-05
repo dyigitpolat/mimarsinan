@@ -155,7 +155,9 @@ class TestMappingSnapshotDegrade:
         neural_stage = next(
             s for s in hm.stages if s.kind == "neural" and s.hard_core_mapping is not None
         )
-        neural_stage.hard_core_mapping.cores[0].core_matrix = None
+        broken = neural_stage.hard_core_mapping.cores[0]
+        broken.core_matrix = None
+        broken.matrix_placements = []  # no owned grid AND no descriptor
 
         snap, descs = snapshot_hard_core_mapping(hm)
         neural_stages = [s for s in snap["stages"] if s.get("kind") == "neural" and s.get("cores")]

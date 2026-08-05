@@ -5,6 +5,10 @@ from __future__ import annotations
 import numpy as np
 import torch
 
+from mimarsinan.mapping.packing.softcore.matrix_placement import (
+    materialize_compacted,
+)
+
 
 class SoftCore:
     def __init__(
@@ -52,6 +56,13 @@ class SoftCore:
         self.bank_neuron_slice = bank_neuron_slice
         self.bank_includes_bias_row = bool(bank_includes_bias_row)
 
+        # Compaction descriptor: when set, the dense matrix is
+        # ``float64(compact_source_matrix)[np.ix_(rows, cols)]`` resolved on
+        # read — the source stays the SHARED bank payload, never a copy.
+        self.compact_source_matrix = None
+        self.compact_keep_rows: "np.ndarray | None" = None
+        self.compact_keep_cols: "np.ndarray | None" = None
+
         self.hardware_bias: np.ndarray | None = None
 
         self.latency: int | None = None
@@ -71,7 +82,34 @@ class SoftCore:
         return len(self.axon_sources)
 
     def get_output_count(self):
-        return self.core_matrix.shape[-1]
+        if self.core_matrix is not None:
+            return self.core_matrix.shape[-1]
+        if self.compact_keep_cols is not None:
+            return len(self.compact_keep_cols)
+        raise ValueError(
+            f"SoftCore id={self.id}: no core_matrix and no compaction "
+            f"descriptor to size the output count from."
+        )
+
+    def has_core_matrix(self) -> bool:
+        return self.core_matrix is not None or self.compact_keep_rows is not None
+
+    def get_core_matrix(self):
+        """The dense weight matrix; compacted cores materialize TRANSIENTLY
+        (byte-identical to the eager ``np.ix_`` recipe), owned/bank-shared
+        matrices return the stored object unchanged."""
+        if self.core_matrix is not None:
+            return self.core_matrix
+        if self.compact_keep_rows is not None:
+            return materialize_compacted(
+                self.compact_source_matrix,
+                self.compact_keep_rows,
+                self.compact_keep_cols,
+            )
+        raise ValueError(
+            f"SoftCore id={self.id}: no core_matrix and no compaction "
+            f"descriptor to resolve one from."
+        )
 
     def get_axon_source_spans(self):
         """Cached range-compressed axon_sources; invalidate if axon_sources mutate."""

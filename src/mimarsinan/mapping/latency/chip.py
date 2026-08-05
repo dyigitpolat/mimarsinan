@@ -7,10 +7,21 @@ class ChipLatency:
     def __init__(self, mapping):
         self.mapping = mapping
         self.memo = {}
+        # Padded composites materialize per call, so the recursive walk (one
+        # column read per neuron) resolves each core at most once per instance.
+        self._matrix_cache = {}
 
-    def __get_non_zero_axon_sources(self, core, neuron_idx):
+    def _core_matrix(self, core_idx):
+        cached = self._matrix_cache.get(core_idx)
+        if cached is None:
+            cached = self.mapping.cores[core_idx].get_core_matrix()
+            self._matrix_cache[core_idx] = cached
+        return cached
+
+    def __get_non_zero_axon_sources(self, core_idx, neuron_idx):
+        core = self.mapping.cores[core_idx]
         non_zero_axon_sources = []
-        for axon_idx, w in enumerate(core.core_matrix[:, neuron_idx]):
+        for axon_idx, w in enumerate(self._core_matrix(core_idx)[:, neuron_idx]):
             if abs(w) == 0:
                 continue
             src = core.axon_sources[axon_idx]
@@ -33,9 +44,8 @@ class ChipLatency:
             self.memo[key] = 0
             return 0
 
-        current_core = self.mapping.cores[source.core_]
         non_zero_axon_sources = self.__get_non_zero_axon_sources(
-            current_core, source.neuron_)
+            source.core_, source.neuron_)
 
         if len(non_zero_axon_sources) == 0:
             self.memo[key] = 0
@@ -58,7 +68,7 @@ class ChipLatency:
             # Rows are matrix rows: sources are dereferenced only where a
             # weight is nonzero (bias rows may extend past axon_sources),
             # mirroring the recursive walk's zero-weight skip.
-            live = np.asarray(core.core_matrix) != 0
+            live = np.asarray(core.get_core_matrix()) != 0
             n_rows = live.shape[0]
             n_src = len(core.axon_sources)
             if n_rows > n_src and bool(live[n_src:].any()):
@@ -123,6 +133,7 @@ class ChipLatency:
 
     def calculate(self):
         self.memo = {}
+        self._matrix_cache = {}
         if len(self.mapping.output_sources) == 0:
             raise ValueError(
                 "ChipLatency.calculate: mapping has no output_sources (empty list). "
@@ -144,6 +155,7 @@ class ChipLatency:
 
         result = max(result, self._enforce_core_latency_invariant())
         result = self._align_shiftable_cores(result)
+        self._matrix_cache = {}
         return result
 
     @staticmethod

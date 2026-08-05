@@ -13,7 +13,6 @@ from __future__ import annotations
 import copy
 from dataclasses import dataclass
 
-import numpy as np
 import torch
 
 from mimarsinan.chip_simulation.core_semantics import INERT_SPIKING_MODE
@@ -95,8 +94,10 @@ def _derive_input_size(ir_graph: IRGraph) -> int:
 
 
 def _physical_cells(hybrid_mapping) -> int:
+    """Padded grid cells, read from core geometry — a hard core's grid is
+    always ``axons_per_core x neurons_per_core``, so this never materializes."""
     return sum(
-        int(np.asarray(core.core_matrix).size)
+        int(core.axons_per_core) * int(core.neurons_per_core)
         for stage in hybrid_mapping.stages
         if stage.kind == "neural"
         for core in stage.hard_core_mapping.cores

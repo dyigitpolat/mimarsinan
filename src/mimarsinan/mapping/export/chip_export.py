@@ -74,9 +74,10 @@ def hard_cores_to_chip(
         outs = int(hardcore.neurons_per_core)
         hw_bias = getattr(hardcore, "hardware_bias", None)
         has_bias_cap = getattr(hardcore, "has_bias_capability", True)
+        core_grid = hardcore.get_core_matrix()
 
         if hw_bias is not None:
-            weight_tensor = hardcore.core_matrix.transpose()
+            weight_tensor = core_grid.transpose()
             hardcores.append(
                 generate_core_weights(
                     neurons_per_core,
@@ -90,7 +91,7 @@ def hard_cores_to_chip(
             )
         elif has_bias_cap:
             # Parameter-encoded bias: keep the last core_matrix row as an always-on-axon weight; do NOT fold it into on-chip bias_, which breaks spike parity.
-            weight_tensor = hardcore.core_matrix.transpose()
+            weight_tensor = core_grid.transpose()
             hardcores.append(
                 generate_core_weights(
                     neurons_per_core,
@@ -106,7 +107,7 @@ def hard_cores_to_chip(
                 generate_core_weights(
                     neurons_per_core,
                     axons_per_core,
-                    hardcore.core_matrix.transpose(),
+                    core_grid.transpose(),
                     outs,
                     hardcore.threshold,
                     hardcore.latency,

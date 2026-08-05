@@ -5,6 +5,13 @@ from typing import Any
 import numpy as np
 
 from mimarsinan.mapping.packing.placement_cost import note_resident_bank
+from mimarsinan.mapping.packing.softcore.matrix_placement import (
+    MatrixPlacement,
+    core_matrix_content_key,
+    core_matrix_dtype,
+    core_matrix_payloads,
+    resolve_core_matrix,
+)
 from mimarsinan.mapping.platform.core_residency import (
     ALL_SINGLETON_NAMES,
     adopt_or_check,
@@ -18,7 +25,10 @@ class HardCore:
         self.neurons_per_core = neurons_per_core
         self.has_bias_capability = has_bias_capability
 
-        self.core_matrix = None
+        # ``core_matrix`` is OWNED-DENSE only (external writes / legacy
+        # pickles) and takes precedence; packed cores carry placements.
+        self.core_matrix: "np.ndarray | None" = None
+        self.matrix_placements: list[MatrixPlacement] = []
         self.axon_sources = []
 
         self.available_axons = axons_per_core
@@ -56,26 +66,15 @@ class HardCore:
         axon_offset = self.axons_per_core - self.available_axons
         neuron_offset = self.neurons_per_core - self.available_neurons
 
-        if (
-            self.core_matrix is None
-            and softcore.get_input_count() == self.axons_per_core
-            and softcore.get_output_count() == self.neurons_per_core
-        ):
-            # Exact-fit 1:1: alias the (possibly bank-shared) matrix so pickle
-            # memoization stores each bank payload once across duplicate
-            # cores. Safe: the core is now full, so no later add can write.
-            self.core_matrix = softcore.core_matrix
-        else:
-            if self.core_matrix is None:
-                sc_dtype = getattr(softcore.core_matrix, "dtype", None)
-                dtype = sc_dtype if sc_dtype is not None else np.float64
-                self.core_matrix = np.zeros(
-                    (self.axons_per_core, self.neurons_per_core), dtype=dtype,
-                )
+        placement = self._softcore_placement(softcore, axon_offset, neuron_offset)
+        if self.core_matrix is not None:
+            # Legacy owned-dense core: paste eagerly (pre-descriptor writers).
             self.core_matrix[
                 axon_offset : axon_offset+softcore.get_input_count(),
                 neuron_offset : neuron_offset+softcore.get_output_count()] \
-                    = softcore.core_matrix
+                    = placement.materialize()
+        else:
+            self.matrix_placements.append(placement)
 
         self.axon_sources.extend(softcore.axon_sources)
         self._axon_source_spans = None
@@ -103,6 +102,58 @@ class HardCore:
         self.unusable_space += \
             (neuron_offset * softcore.get_input_count()) + \
             (axon_offset * softcore.get_output_count())
+
+    def _softcore_placement(
+        self, softcore, axon_offset: int, neuron_offset: int,
+    ) -> MatrixPlacement:
+        keep_rows = getattr(softcore, "compact_keep_rows", None)
+        if softcore.core_matrix is not None:
+            source, rows, cols = softcore.core_matrix, None, None
+        elif keep_rows is not None:
+            source = softcore.compact_source_matrix
+            rows, cols = keep_rows, softcore.compact_keep_cols
+        else:
+            raise ValueError(
+                f"HardCore.add_softcore: softcore id={softcore.id} carries "
+                f"neither a core_matrix nor a compaction descriptor."
+            )
+        return MatrixPlacement(
+            source=source, keep_rows=rows, keep_cols=cols,
+            axon_offset=axon_offset, neuron_offset=neuron_offset,
+            axons=softcore.get_input_count(),
+            neurons=softcore.get_output_count(),
+        )
+
+    def has_core_matrix(self) -> bool:
+        return self.core_matrix is not None or bool(self.matrix_placements)
+
+    def get_core_matrix(self):
+        """Full ``(axons_per_core, neurons_per_core)`` weight grid.
+
+        An exact-fit single plain placement returns the SHARED payload object
+        unchanged (stable identity: pickle memoization and upload dedup store
+        each bank payload once); composites materialize TRANSIENTLY per call.
+        """
+        return resolve_core_matrix(
+            self.core_matrix, self.matrix_placements,
+            self.axons_per_core, self.neurons_per_core,
+            owner="HardCore",
+        )
+
+    def core_matrix_key(self) -> tuple:
+        """Content identity: equal keys imply byte-identical resolved grids."""
+        return core_matrix_content_key(
+            self.core_matrix, self.matrix_placements,
+            self.axons_per_core, self.neurons_per_core,
+        )
+
+    def core_matrix_dtype(self) -> "np.dtype | None":
+        return core_matrix_dtype(self.core_matrix, self.matrix_placements)
+
+    def core_matrix_payloads(self) -> tuple:
+        """Shared arrays behind :meth:`core_matrix_key` — a memo holding a key
+        must retain these and re-check identity (ids can be re-used)."""
+        return core_matrix_payloads(self.core_matrix, self.matrix_placements)
 
     def get_axon_source_spans(self):
         """Cached range-compressed axon_sources; invalidated on add_softcore."""

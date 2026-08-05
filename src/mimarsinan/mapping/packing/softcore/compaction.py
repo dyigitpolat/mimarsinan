@@ -96,15 +96,34 @@ def eliminated_core_extent(core) -> "tuple[int, int]":
     return pre_axons - post_axons, pre_neurons - post_neurons
 
 
+def _memoized_keep_arrays(memo: dict, keep_rows, keep_cols):
+    """One intp index-array pair per distinct (rows, cols) content, so every
+    same-mask instance shares the objects and pickle memoizes them once."""
+    rows = np.asarray(keep_rows, dtype=np.intp)
+    cols = np.asarray(keep_cols, dtype=np.intp)
+    key = (rows.tobytes(), cols.tobytes())
+    hit = memo.get(key)
+    if hit is None:
+        hit = (rows, cols)
+        memo[key] = hit
+    return hit
+
+
 def compact_soft_core_mapping(cores, output_sources):
-    """Compact soft cores from IR pruning masks; return core_id → neuron reindex maps."""
+    """Compact soft cores from IR pruning masks; return core_id → neuron reindex maps.
+
+    Elimination is stored as a DESCRIPTOR (shared source matrix + keep-index
+    arrays) resolved lazily by ``SoftCore.get_core_matrix``; sources, hardware
+    bias, and reindexing stay eager. Public bank metadata still nulls so the
+    packer's affinity/placement bookkeeping is unchanged.
+    """
     reindex_maps = {}
     n_compacted = 0
     n_skipped = 0
+    keep_array_memo: dict = {}
 
     for core in cores:
-        mat = np.asarray(core.core_matrix, dtype=np.float64)
-        n_axons, n_neurons = mat.shape
+        n_axons, n_neurons = np.shape(core.core_matrix)
         keep_rows, keep_cols = compaction_keep_indices(
             n_axons=n_axons,
             n_neurons=n_neurons,
@@ -126,7 +145,13 @@ def compact_soft_core_mapping(cores, output_sources):
             from mimarsinan.mapping.pruning.pruning_apply import compact_hardware_bias_columns
 
             if keep_rows and keep_cols:
-                core.core_matrix = mat[np.ix_(keep_rows, keep_cols)].copy()
+                rows_arr, cols_arr = _memoized_keep_arrays(
+                    keep_array_memo, keep_rows, keep_cols
+                )
+                core.compact_source_matrix = core.core_matrix
+                core.compact_keep_rows = rows_arr
+                core.compact_keep_cols = cols_arr
+                core.core_matrix = None
                 core.axon_sources = [core.axon_sources[r] for r in keep_rows]
                 core.hardware_bias = compact_hardware_bias_columns(
                     core.hardware_bias, keep_cols

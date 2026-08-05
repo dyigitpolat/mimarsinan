@@ -75,7 +75,8 @@ class TestExactFitAliasPacking:
         soft = self._softcore(graph, nodes[0])
         hard = HardCore(axons_per_core=5, neurons_per_core=4)
         hard.add_softcore(soft)
-        assert hard.core_matrix is bank.core_matrix
+        assert hard.get_core_matrix() is bank.core_matrix
+        assert hard.core_matrix is None  # descriptor only, no owned grid
         assert hard.available_axons == 0 and hard.available_neurons == 0
 
     def test_non_exact_fit_keeps_the_padded_copy(self):
@@ -83,9 +84,13 @@ class TestExactFitAliasPacking:
         soft = self._softcore(graph, nodes[0])
         hard = HardCore(axons_per_core=8, neurons_per_core=8)
         hard.add_softcore(soft)
-        assert hard.core_matrix is not bank.core_matrix
-        assert hard.core_matrix.shape == (8, 8)
-        np.testing.assert_array_equal(hard.core_matrix[:5, :4], bank.core_matrix)
+        grid = hard.get_core_matrix()
+        assert grid is not bank.core_matrix
+        assert grid.shape == (8, 8)
+        np.testing.assert_array_equal(grid[:5, :4], bank.core_matrix)
+        # The padded grid is TRANSIENT: only the bank payload is stored.
+        assert hard.core_matrix is None
+        assert [p.source for p in hard.matrix_placements] == [bank.core_matrix]
 
     def test_exact_fit_never_accepts_a_second_softcore(self):
         bank, nodes, graph = _bank_and_nodes(row_slice=(0, 4))
@@ -122,22 +127,35 @@ class TestScheduledStageDedup:
         neural = [s for s in hybrid.stages if s.kind == "neural"]
         head_cores = neural[0].hard_core_mapping.cores
         assert len(head_cores) == 2  # full pool, padded grids
-        assert head_cores[0].core_matrix is head_cores[1].core_matrix
+        # Padded grids are transients now; the STORED payload is what dedups.
+        assert head_cores[0].core_matrix_key() == head_cores[1].core_matrix_key()
+        assert (
+            head_cores[0].matrix_placements[0].source
+            is head_cores[1].matrix_placements[0].source
+        )
+        np.testing.assert_array_equal(
+            head_cores[0].get_core_matrix(), head_cores[1].get_core_matrix()
+        )
 
     def test_resident_stages_alias_the_head_grid(self):
         hybrid = self._scheduled_build()
         neural = [s for s in hybrid.stages if s.kind == "neural"]
-        head_matrix = neural[0].hard_core_mapping.cores[0].core_matrix
+        head_core = neural[0].hard_core_mapping.cores[0]
+        head_key = head_core.core_matrix_key()
+        head_payload = head_core.matrix_placements[0].source
         assert len(neural) > 1
         for stage in neural[1:]:
             for core in stage.hard_core_mapping.cores:
-                assert core.core_matrix is head_matrix
+                assert core.core_matrix_key() == head_key
+                assert core.matrix_placements[0].source is head_payload
 
     def test_pass_chain_pickles_one_grid_payload(self):
         hybrid = self._scheduled_build(n_tokens=24, count=2)
         neural = [s for s in hybrid.stages if s.kind == "neural"]
         blob = len(pickle.dumps([s.hard_core_mapping for s in neural]))
-        grid_bytes = neural[0].hard_core_mapping.cores[0].core_matrix.nbytes
+        grid_bytes = (
+            neural[0].hard_core_mapping.cores[0].get_core_matrix().nbytes
+        )
         n_cores = sum(len(s.hard_core_mapping.cores) for s in neural)
         assert blob < 2 * grid_bytes + n_cores * 8192
 

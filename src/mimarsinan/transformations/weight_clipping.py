@@ -40,11 +40,6 @@ class SoftTensorClipping:
 
         return torch.clamp(weight_tensor, min_weight, max_weight)
 
-def clip_core_weights(cores, clipping_rate=0.01):
-    clipper = SoftTensorClipping(clipping_rate)
-    for core in cores:
-        core.core_matrix = clipper.get_clipped_weights(core.core_matrix)
-
 def get_clipped_w_b(w, b, clipping_rate):
     clipper = SoftTensorClipping(clipping_rate)
     w_top = clipper.avg_top(w).item()

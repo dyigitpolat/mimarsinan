@@ -115,15 +115,15 @@ def snapshot_hard_core_mapping(mapping: Any) -> tuple[dict, list[ResourceDescrip
                     "latency": core.latency,
                 }
                 with best_effort(f"register heatmap for hard core {ci}", logger=logger):
-                    mat = core.core_matrix
+                    mat = core.get_core_matrix()
                     rid = f"seg/{seg_idx}/core/{ci}"
                     core_d["has_heatmap"] = True
                     core_d["heatmap_resource"] = {
                         "kind": RESOURCE_KIND_HARD_CORE_HEATMAP,
                         "rid": rid,
                     }
-                    core_d["heatmap_axons"] = int(mat.shape[0])
-                    core_d["heatmap_neurons"] = int(mat.shape[1])
+                    core_d["heatmap_axons"] = int(core.axons_per_core)
+                    core_d["heatmap_neurons"] = int(core.neurons_per_core)
                     descriptors.append(ResourceDescriptor(
                         kind=RESOURCE_KIND_HARD_CORE_HEATMAP,
                         rid=rid,

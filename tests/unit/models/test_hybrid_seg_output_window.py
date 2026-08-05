@@ -21,6 +21,7 @@ regardless of how deep the segment is.
 
 from __future__ import annotations
 
+from fake_cores import FakeCore
 from types import SimpleNamespace
 import numpy as np
 import torch
@@ -39,7 +40,7 @@ def _off():
 
 def _make_core(*, used_axons, used_neurons, axon_sources, core_matrix,
                threshold=1.0, hw_bias=None):
-    return SimpleNamespace(
+    return FakeCore(
         latency=None,
         axons_per_core=used_axons,
         available_axons=0,

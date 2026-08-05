@@ -67,9 +67,9 @@ class ValueHybridCoreFlow(nn.Module):
         self.stage_count_recorder = None
         self.lif_execution_synchronized = False
         self._fp64_ops: Dict[int, nn.Module] = {}
-        # [F2] id-keyed weight-upload memo: cores sharing one deduped ndarray
-        # share ONE device tensor. Keys stay valid because the memo holds the
-        # arrays (and the flow holds the mapping) alive.
+        # [F2] content-keyed weight-upload memo: cores resolving to one
+        # byte-identical grid share ONE device tensor. Keys stay valid because
+        # the memo holds the arrays (and the flow holds the mapping) alive.
         self._upload_memo: Dict = {}
 
     def _run_compute_stage(self, op, x_flat, state_buffer):

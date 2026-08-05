@@ -260,7 +260,7 @@ class TestCompactHardwareBias:
 
         # Col 1 removed → bias should be [0.1, 0.3]
         np.testing.assert_array_equal(sc.hardware_bias, [0.1, 0.3])
-        assert sc.core_matrix.shape == (2, 2)
+        assert sc.get_core_matrix().shape == (2, 2)
 
     def test_bias_unchanged_when_no_pruning(self):
         mat = np.eye(3)

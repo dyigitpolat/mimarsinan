@@ -104,9 +104,10 @@ class RuntimeMaterializer:
                 (int(bns_parent[0]), int(bns_parent[0] + first_neurons)),
                 (int(bns_parent[0] + first_neurons), int(bns_parent[1])),
             )
+        parent_dense = softcore.get_core_matrix()
         frag1 = self._build_real_fragment(
             softcore,
-            matrix_slice=softcore.core_matrix[:, :first_neurons].copy(),
+            matrix_slice=parent_dense[:, :first_neurons].copy(),
             hardware_bias_slice=hb[:first_neurons].copy() if hb is not None else None,
             bank_neuron_slice=bns[0] if bns is not None else None,
             offset_delta=0,
@@ -116,7 +117,7 @@ class RuntimeMaterializer:
         )
         frag2 = self._build_real_fragment(
             softcore,
-            matrix_slice=softcore.core_matrix[:, first_neurons:].copy(),
+            matrix_slice=parent_dense[:, first_neurons:].copy(),
             hardware_bias_slice=hb[first_neurons:].copy() if hb is not None else None,
             bank_neuron_slice=bns[1] if bns is not None else None,
             offset_delta=first_neurons,

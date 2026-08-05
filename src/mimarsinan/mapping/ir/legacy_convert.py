@@ -31,7 +31,9 @@ def soft_core_to_neural_core(soft_core, core_id_offset: int = 0) -> NeuralCore:
         id=soft_core.id + core_id_offset,
         name=soft_core.name or f"core_{soft_core.id}",
         input_sources=ir_sources,
-        core_matrix=soft_core.core_matrix,
+        core_matrix=(
+            soft_core.get_core_matrix() if soft_core.has_core_matrix() else None
+        ),
         threshold=soft_core.threshold,
         activation_scale=soft_core.activation_scale,
         parameter_scale=soft_core.parameter_scale,

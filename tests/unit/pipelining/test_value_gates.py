@@ -111,7 +111,7 @@ class TestCEdge:
     def test_fatal_on_corrupted_packed_program(self, monkeypatch):
         flow, ir, hybrid = _mvm_chain()
         seg = hybrid.get_neural_segments()[0]
-        seg.cores[0].core_matrix = seg.cores[0].core_matrix.copy()
+        seg.cores[0].core_matrix = seg.cores[0].get_core_matrix().copy()
         seg.cores[0].core_matrix[0, 0] += 1.0
         pipeline = _pipeline({"core_semantics": "mvm", "device": "cpu"})
         monkeypatch.setattr(

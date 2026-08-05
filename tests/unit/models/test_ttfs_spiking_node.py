@@ -11,6 +11,7 @@ encode/decode mismatch, this spike forward must reproduce, bit-for-bit, what
 
 from __future__ import annotations
 
+from fake_cores import FakeCore
 from types import SimpleNamespace
 
 import numpy as np
@@ -28,7 +29,7 @@ from mimarsinan.models.spiking.hybrid.flow import SpikingHybridCoreFlow
 
 def _hcm_value(W, theta, bias, a, S):
     out_dim, in_dim = W.shape
-    core = SimpleNamespace(
+    core = FakeCore(
         latency=None, axons_per_core=in_dim, available_axons=0,
         neurons_per_core=out_dim, available_neurons=0,
         axon_sources=[SpikeSource(-2, i, True) for i in range(in_dim)],

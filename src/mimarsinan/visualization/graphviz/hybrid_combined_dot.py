@@ -51,7 +51,9 @@ def write_hybrid_hardcore_mapping_combined_dot(
         total_neu = sum(int(c.neurons_per_core) for c in mapping.cores)
         used_ax = sum(int(c.axons_per_core - c.available_axons) for c in mapping.cores)
         used_neu = sum(int(c.neurons_per_core - c.available_neurons) for c in mapping.cores)
-        nnz = sum(int(np.count_nonzero(c.core_matrix)) for c in mapping.cores)
+        nnz = sum(
+            int(np.count_nonzero(c.get_core_matrix())) for c in mapping.cores
+        )
         cap = sum(int(c.axons_per_core * c.neurons_per_core) for c in mapping.cores)
         unusable = sum(int(getattr(c, "unusable_space", 0)) for c in mapping.cores)
 

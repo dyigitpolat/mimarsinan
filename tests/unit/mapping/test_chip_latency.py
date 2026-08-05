@@ -18,6 +18,7 @@ and SANA-FE's spike trace count diverges from HCM's ``record_in_t``.
 
 from __future__ import annotations
 
+from fake_cores import FakeCore
 from types import SimpleNamespace
 
 import numpy as np
@@ -45,7 +46,7 @@ def _xcore(core_idx: int, neuron: int) -> SpikeSource:
 def _make_core(axon_sources, weights):
     """Build a minimal core stub that ChipLatency can walk."""
     weights = np.asarray(weights, dtype=np.float32)
-    return SimpleNamespace(
+    return FakeCore(
         axon_sources=list(axon_sources),
         core_matrix=weights,
         latency=None,

@@ -164,19 +164,21 @@ def _stage_geometry(stage) -> list:
 def dedup_resident_stage_matrices(pass_stages: list) -> None:
     """[wsm V3] Storage dedup across a bank-clustered pass chain.
 
-    Duplicate resident cores hold bitwise-identical padded grids: within the
-    head stage, single-placement cores with the same (bank, region, geometry)
-    share ONE ndarray; every later pass aliases the head's matrix at each
-    ordinal whose placement geometry is EQUAL (the verified residency law) —
-    so pickle memoization stores each distinct payload once (measured: the
-    scheduled ViT materialized ~4.9k grids into 13 GB per mapping pickle).
+    Duplicate resident cores hold bitwise-identical padded grids. Descriptor
+    cores already reference ONE shared payload per bank, so they need no
+    rebinding; this only aliases cores that OWN a dense grid (legacy or
+    externally written mappings), within the head stage by (bank, region,
+    geometry) and across passes at each ordinal whose placement geometry is
+    EQUAL (the verified residency law) — so pickle memoization stores each
+    distinct payload once (measured: the scheduled ViT materialized ~4.9k
+    grids into 13 GB per mapping pickle).
     """
     head = pass_stages[0].hard_core_mapping
     shared: dict = {}
     for core, placements in zip(
         head.cores, head.soft_core_placements_per_hard_core
     ):
-        if len(placements) != 1:
+        if core.core_matrix is None or len(placements) != 1:
             continue
         record = placements[0]
         if record.get("weight_bank_id") is None:
@@ -198,6 +200,8 @@ def dedup_resident_stage_matrices(pass_stages: list) -> None:
         geometry = _stage_geometry(stage)
         for i, core in enumerate(stage.hard_core_mapping.cores):
             head_core = head.cores[i]
+            if core.core_matrix is None or head_core.core_matrix is None:
+                continue
             if (
                 geometry[i] == head_geometry[i]
                 and core.core_matrix.shape == head_core.core_matrix.shape

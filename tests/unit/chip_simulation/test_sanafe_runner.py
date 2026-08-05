@@ -17,6 +17,7 @@ the actual SANA-FE Python package for end-to-end parity on MNIST.
 
 from __future__ import annotations
 
+from fake_cores import FakeCore
 from types import SimpleNamespace
 from typing import Any
 
@@ -141,7 +142,7 @@ def _fake_hard_core(*, axons=2, neurons=2, threshold=1.0,
     # number of live axon_sources so ``axons_per_core - available_axons``
     # is the live count.
     available_axons = max(0, axons - len(axon_sources))
-    return SimpleNamespace(
+    return FakeCore(
         axons_per_core=axons, neurons_per_core=neurons,
         available_axons=available_axons, available_neurons=0,
         threshold=threshold,
