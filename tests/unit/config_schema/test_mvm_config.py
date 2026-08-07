@@ -106,8 +106,8 @@ class TestMvmDocumentRules:
         assert validate_deployment_config(_mvm_document()) == []
 
     @pytest.mark.parametrize("key,value", [
-        ("spiking_mode", "lif"),
-        ("ttfs_cycle_schedule", "cascaded"),
+        ("spiking_family", "lif"),
+        ("spiking_variant", "synchronized"),
         ("firing_mode", "Default"),
         ("spike_generation_mode", "Uniform"),
         ("thresholding_mode", "<="),
@@ -120,13 +120,25 @@ class TestMvmDocumentRules:
         errors = validate_deployment_config(_mvm_document({key: value}))
         assert any("mvm" in e and key in e for e in errors), errors
 
+    @pytest.mark.parametrize("key,value", [
+        ("spiking_mode", "lif"),
+        ("ttfs_cycle_schedule", "cascaded"),
+    ])
+    def test_retired_keys_report_retired_never_silent(self, key, value):
+        # under mvm a retired taxonomy key reports through the retired-key
+        # rule (with its migration remedy), not the mvm domain rule.
+        errors = validate_deployment_config(_mvm_document({key: value}))
+        assert any("retired" in e and key in e for e in errors), errors
+
     @pytest.mark.parametrize("key", ["simulation_steps", "target_tq"])
     def test_temporal_platform_keys_are_rejected(self, key):
         errors = validate_deployment_config(_mvm_document(pc_extra={key: 32}))
         assert any("mvm" in e and key in e for e in errors), errors
 
     def test_spiking_document_is_untouched(self):
-        doc = _mvm_document({"spiking_mode": "lif"})
+        doc = _mvm_document(
+            {"spiking_family": "lif", "spiking_variant": "synchronized"}
+        )
         doc["deployment_parameters"]["core_semantics"] = "spiking"
         doc["platform_constraints"]["simulation_steps"] = 32
         doc["platform_constraints"]["target_tq"] = 32

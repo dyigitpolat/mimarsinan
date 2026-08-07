@@ -16,6 +16,7 @@ Pareto decision layer.
 | `backend.py` | `Backend` interface + capability-validated `BACKEND_REGISTRY` that selects/validates enabled backend steps up-front |
 | `behavior_config.py` | `NeuralBehaviorConfig`: simulator-facing activation semantics (reset, comparison, spike encode) |
 | `certification.py` | Per-`(firing × sync × backend)` regression-floor freezing + `certify` gate on deployed accuracy and wall-clock budget |
+| `activation_semantics.py` | Authored activation-semantics axes SSOT: `(spiking_family × spiking_variant)` vocabulary, canonical six-point mode ids, the meaning-preserving legacy bridge (`axes_from_legacy`, `fold_spiking_axes`), legal/derived variant sets, retired-key list |
 | `core_semantics.py` | Core-semantics taxonomy SSOT: the chip-domain axis (`spiking` vs value-domain `mvm`), queried by intent; owns the inert spiking-mode sentinel |
 | `cost_extraction.py` | `CostRecord`/`CostScatter`: mines sim-run artifacts into a cell-keyed accuracy×cost scatter with Pareto front |
 | `coverage_ci.py` | CI guards that fail loud on each way the coverage instrument could lie (unscreened collapse, merged tiers, aged flags) |

@@ -233,7 +233,8 @@ class TestDeepMLPSmokeTemplate:
         assert config["deployment_parameters"]["model_type"] == "deep_mlp"
         assert config["deployment_parameters"]["model_config"]["depth"] == 8
         assert config["deployment_parameters"]["model_config"]["width"] == 64
-        assert config["deployment_parameters"]["spiking_mode"] == "ttfs_cycle_based"
+        assert config["deployment_parameters"]["spiking_family"] == "ttfs"
+        assert config["deployment_parameters"]["spiking_variant"] == "cascaded"
         assert config["deployment_parameters"]["ttfs_cycle_schedule"] == "cascaded"
         assert config["deployment_parameters"]["enable_sanafe_simulation"] is False
 

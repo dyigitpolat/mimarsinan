@@ -244,7 +244,8 @@ class TestDeepCNNSmokeTemplate:
         assert config["deployment_parameters"]["model_config"]["depth"] == 8
         assert config["deployment_parameters"]["model_config"]["width"] == 16
         assert config["deployment_parameters"]["model_config"]["base_activation"] == "ReLU"
-        assert config["deployment_parameters"]["spiking_mode"] == "ttfs_cycle_based"
+        assert config["deployment_parameters"]["spiking_family"] == "ttfs"
+        assert config["deployment_parameters"]["spiking_variant"] == "cascaded"
         assert config["deployment_parameters"]["ttfs_cycle_schedule"] == "cascaded"
         assert config["platform_constraints"]["simulation_steps"] == 4
         assert config["deployment_parameters"]["max_simulation_samples"] <= 200

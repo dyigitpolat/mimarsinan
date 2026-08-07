@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Iterable, Mapping, MutableMapping, Optional, Set, Tuple
 
+from mimarsinan.chip_simulation.activation_semantics import fold_spiking_axes
 from mimarsinan.chip_simulation.core_semantics import (
     is_mvm_core_semantics,
     resolve_core_semantics,
@@ -87,6 +88,10 @@ def derive_deployment_parameters(
     ``explicit_keys`` names the keys the source DOCUMENT declared (so merged
     defaults don't masquerade as declarations); ``None`` = every present key."""
     mvm = is_mvm_core_semantics(resolve_core_semantics(dp))
+    if not mvm:
+        # Fold the authored (family, variant) axes into their legacy twins
+        # BEFORE anything reads spiking_mode/ttfs_cycle_schedule.
+        fold_spiking_axes(dp)
     mvm_aq = mvm and bool(dp.get("activation_bits"))
     spiking_mode = str(dp.get("spiking_mode", "lif"))
     pipeline_mode = str(dp.get("pipeline_mode", ""))
@@ -266,6 +271,12 @@ def derive_pipeline_runtime_parameters(dp: MutableMapping[str, Any]) -> None:
     one — no per-mode ladder lives here. A legality-bearing key with a SCHEMA
     default (s_allocation) is never filled here; the validators judge it.
     """
+    if not is_mvm_core_semantics(resolve_core_semantics(dp)):
+        fold_spiking_axes(dp)
+        # Recipe-owned mapping arm: the windowed-lif exact-QAT pairing writes
+        # True before this runs; inert False for every other mode — always
+        # resolved, never a knob (RETIRED as a document key).
+        dp.setdefault("lif_per_hop_retiming", False)
     for flat_key in legality_bearing_keys():
         derived = REGISTRY[flat_key].derived_default
         if derived is None:

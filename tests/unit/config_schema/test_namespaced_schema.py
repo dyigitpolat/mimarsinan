@@ -47,6 +47,12 @@ from mimarsinan.config_schema.deployment_derivation import derive_deployment_par
 DERIVED_NON_DEFAULT_KEYS = {
     "pipeline_mode",
     "cycle_accurate_lif_forward",
+    # Legacy twins of the authored (spiking_family, spiking_variant) axes —
+    # derivation-owned, retired as document keys.
+    "spiking_mode",
+    "ttfs_cycle_schedule",
+    "lif_execution_discipline",
+    "lif_per_hop_retiming",
     "activation_quantization",
     "weight_quantization",
     "enable_nevresim_simulation",
@@ -209,7 +215,8 @@ class TestExposureTaxonomy:
 
     def test_wizard_visible_knobs_are_user_exposure(self):
         assert {
-            "spiking_mode",
+            "spiking_family",
+            "spiking_variant",
             "weight_quantization",
             "simulation_steps",
             "target_tq",
@@ -403,12 +410,15 @@ class TestProvenanceTable:
         assert set(table) == set(registered_flat_keys())
 
     def test_provenance_entry_shape(self):
-        entry = provenance_table()["spiking_mode"]
+        entry = provenance_table()["spiking_variant"]
         assert entry["group"] == "spiking"
-        assert entry["owner"] == "SpikingDeploymentContract"
+        assert entry["owner"] == "ActivationSemantics"
         assert entry["derivation"] == "default"
         assert entry["exposure"] == "user"
-        assert entry["namespaced_path"] == "spiking.spiking_mode"
+        assert entry["namespaced_path"] == "spiking.spiking_variant"
+        legacy = provenance_table()["spiking_mode"]
+        assert legacy["derivation"] == "derived"
+        assert legacy["exposure"] == "derived"
 
 
 class TestKeySpecValidation:

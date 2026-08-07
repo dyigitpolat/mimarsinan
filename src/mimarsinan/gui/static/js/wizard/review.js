@@ -222,9 +222,13 @@ const REMEDY_ACTIONS = {
   clear: (remedy) => clearKey(remedy.key),
 };
 
+/* A remedy is one action, or an atomic `ops` list of them (e.g. a retired-key
+   migration that sets the new axes and clears the old keys in one click). */
 function applyRemedy(remedy) {
-  const action = REMEDY_ACTIONS[remedy.action];
-  if (action) action(remedy);
+  for (const op of remedy.ops || [remedy]) {
+    const action = REMEDY_ACTIONS[op.action];
+    if (action) action(op);
+  }
 }
 
 function errorCard(error) {

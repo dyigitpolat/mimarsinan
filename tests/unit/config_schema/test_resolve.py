@@ -3,7 +3,10 @@
 import json
 import os
 
+from mimarsinan.chip_simulation.activation_semantics import axes_from_legacy
 from mimarsinan.config_schema.resolve import resolve_draft
+
+_TTFS_AXES = {"spiking_family": "ttfs", "spiking_variant": "analytical"}
 
 _REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 
@@ -58,7 +61,7 @@ class TestResolveErrors:
         draft = {
             "pipeline_mode": "phased",
             "deployment_parameters": {
-                "spiking_mode": "lif",
+                "spiking_family": "lif",
                 "activation_quantization": False,
                 "weight_quantization": True,
             },
@@ -122,9 +125,8 @@ class TestPolicyOwnedSimulatorEnables:
     payload must carry them as derived chips with an honest WHY."""
 
     def _derived_for(self, mode, schedule=None):
-        dp = {"spiking_mode": mode}
-        if schedule:
-            dp["ttfs_cycle_schedule"] = schedule
+        family, variant = axes_from_legacy(mode, schedule)
+        dp = {"spiking_family": family, "spiking_variant": variant}
         res = resolve_draft(_minimal_draft(deployment_parameters=dp))
         assert res.ok, res.errors
         return res.derived
@@ -155,14 +157,14 @@ class TestVehicleToggleSemantics:
 
     def test_derived_rows_carry_support_meta(self):
         res = resolve_draft(_minimal_draft(
-            deployment_parameters={"spiking_mode": "ttfs"}))
+            deployment_parameters=_TTFS_AXES))
         assert res.ok, res.errors
         assert res.derived["enable_nevresim_simulation"]["meta"]["supported"] is True
         assert res.derived["enable_loihi_simulation"]["meta"]["supported"] is False
 
     def test_user_off_on_a_supported_vehicle_resolves_clean(self):
         res = resolve_draft(_minimal_draft(deployment_parameters={
-            "spiking_mode": "lif", "enable_sanafe_simulation": False}))
+            "spiking_family": "lif", "enable_sanafe_simulation": False}))
         assert res.ok, res.errors
         row = res.derived["enable_sanafe_simulation"]
         assert row["value"] is False
@@ -173,16 +175,16 @@ class TestVehicleToggleSemantics:
         from mimarsinan.gui.wizard.schema_api import resolve_payload
 
         on = resolve_payload(_minimal_draft(
-            deployment_parameters={"spiking_mode": "lif"}))
+            deployment_parameters={"spiking_family": "lif"}))
         off = resolve_payload(_minimal_draft(deployment_parameters={
-            "spiking_mode": "lif", "enable_sanafe_simulation": False}))
+            "spiking_family": "lif", "enable_sanafe_simulation": False}))
         assert on["ok"] and off["ok"]
         assert "SANA-FE Simulation" in on["pipeline"]["steps"]
         assert "SANA-FE Simulation" not in off["pipeline"]["steps"]
 
     def test_user_on_of_an_unsupported_vehicle_is_a_keyed_error(self):
         res = resolve_draft(_minimal_draft(deployment_parameters={
-            "spiking_mode": "ttfs", "enable_loihi_simulation": True}))
+            **_TTFS_AXES, "enable_loihi_simulation": True}))
         assert not res.ok
         assert any(e["key"] == "enable_loihi_simulation" for e in res.errors)
 

@@ -4,12 +4,15 @@ from __future__ import annotations
 
 from typing import Any, List, Mapping
 
+from mimarsinan.chip_simulation.activation_semantics import RETIRED_SPIKING_KEYS
 from mimarsinan.chip_simulation.core_semantics import is_mvm_core_semantics
 
 # Keys whose SEMANTICS are event-domain (spike encoding, thresholds, cycle
 # grids). Under core_semantics='mvm' a document declaring one is a
 # contradiction, never silently inert.
 MVM_FORBIDDEN_DEPLOYMENT_KEYS = frozenset({
+    "spiking_family",
+    "spiking_variant",
     "spiking_mode",
     "ttfs_cycle_schedule",
     "firing_mode",
@@ -52,7 +55,9 @@ def mvm_document_errors(config: Mapping[str, Any]) -> List[str]:
     errors = [
         f"core_semantics='mvm': {key} is event-domain (spiking) configuration "
         f"and is not authorable in a value-domain deployment. Remove the key."
-        for key in sorted(dp) if _forbidden(key)
+        # Retired taxonomy keys report through the retired-key rule instead.
+        for key in sorted(dp)
+        if _forbidden(key) and key not in RETIRED_SPIKING_KEYS
     ]
     pc = config.get("platform_constraints")
     if isinstance(pc, Mapping):

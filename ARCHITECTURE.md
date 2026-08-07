@@ -24,9 +24,13 @@ docs in sync with the files they describe.
    fractional rate by a tuner, with accuracy recovery between increments.
 4. **Semantics are centralized**: the domain axis `core_semantics ∈
    {spiking, mvm}` (`chip_simulation/core_semantics.py`) picks the family;
-   four deployable spiking modes (`lif`, `ttfs`, `ttfs_quantized`,
-   `ttfs_cycle_based` × `cascaded | synchronized` schedule) dispatch through
-   SSOT predicate/policy modules — never scattered `if spiking_mode == ...`
+   spiking semantics are AUTHORED as `spiking_family ∈ {lif, ttfs}` ×
+   `spiking_variant` (lif: `synchronized` — `streamed` reserved for the
+   streamed-deployment phase; ttfs: `analytical | quantized | synchronized |
+   cascaded`), the taxonomy SSOT `chip_simulation/activation_semantics.py`
+   folding them into the legacy dispatch strings (`spiking_mode` ×
+   `ttfs_cycle_schedule`, now derivation-owned) that the SSOT
+   predicate/policy modules consume — never scattered `if spiking_mode == ...`
    checks. The `mvm` family (value-domain matmul cores, activations on host)
    skips the conversion ladder entirely; packaging is contract-driven
    (`mapping/platform/packaging_contract.py`).
@@ -111,6 +115,7 @@ their logic locally.
 | Deployment mode → proven conversion recipe (driver, knobs, sim enables) | `tuning/orchestration/conversion_policy.py` (`ConversionPolicy.derive`) |
 | Tuning-loop behavior constants (checkpoint, recovery, rollback, commit gate) | `tuning/orchestration/tuning_policy.py` (frozen `TUNING_POLICY`) |
 | Core-semantics domain axis (`spiking` vs value-domain `mvm`) | `chip_simulation/core_semantics.py` |
+| Authored activation axes (family × variant), legacy bridge, retired keys | `chip_simulation/activation_semantics.py` |
 | Spiking-mode taxonomy, mode predicates, per-backend capability matrix | `chip_simulation/spiking_semantics.py` |
 | Behavior-carrying per-`(firing × sync)` mode dispatch | `chip_simulation/spiking_mode_policy.py` (`policy_for_spiking_mode`); the mvm family's policy is `chip_simulation/mvm_core_policy.py` |
 | What op shapes a target's cores accept (packaging rule + boundary domain) | `mapping/platform/packaging_contract.py` (`packaging_contract_for`) |

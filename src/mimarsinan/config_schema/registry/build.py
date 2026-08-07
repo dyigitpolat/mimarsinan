@@ -18,6 +18,9 @@ from mimarsinan.config_schema.registry.entries_model import ENTRIES as _MODEL
 from mimarsinan.config_schema.registry.entries_platform import ENTRIES as _PLATFORM
 from mimarsinan.config_schema.registry.entries_pruning import ENTRIES as _PRUNING
 from mimarsinan.config_schema.registry.entries_run import ENTRIES as _RUN
+from mimarsinan.config_schema.registry.entries_semantics import (
+    ENTRIES as _SEMANTICS,
+)
 from mimarsinan.config_schema.registry.entries_tuning import ENTRIES as _TUNING
 from mimarsinan.config_schema.registry.groups import CONCERN_GROUPS, VALID_GROUP_IDS
 from mimarsinan.config_schema.registry.types import Category, ConfigKeySchema
@@ -98,7 +101,7 @@ def validate_registry(entries: Tuple[ConfigKeySchema, ...]) -> Dict[str, ConfigK
 _REGISTRY: Dict[str, ConfigKeySchema] = validate_registry(
     tuple(
         _inject_default(e)
-        for e in (_RUN + _MODEL + _CONVERSION + _PRUNING + _TUNING + _ENDPOINT + _EXECUTION + _PLATFORM)
+        for e in (_RUN + _MODEL + _SEMANTICS + _CONVERSION + _PRUNING + _TUNING + _ENDPOINT + _EXECUTION + _PLATFORM)
     )
 )
 

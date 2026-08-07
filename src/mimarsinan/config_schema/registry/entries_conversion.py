@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Any, Mapping
 
-from mimarsinan.chip_simulation.core_semantics import (
-    CORE_SEMANTICS_OPTIONS, CORE_SEMANTICS_SPIKING,
+from mimarsinan.chip_simulation.activation_semantics import (
+    effective_legacy_spiking_mode,
 )
 from mimarsinan.chip_simulation.spiking_semantics import (
     DEFAULT_THRESHOLDING_MODE,
@@ -29,43 +29,30 @@ from mimarsinan.tuning.orchestration.temporal_allocation import (
     S_ALLOCATION_SUPPORTED_MODES,
 )
 
-SPIKING_MODES = ("lif", "ttfs", "ttfs_quantized", "ttfs_cycle_based")
-
 
 def _mode(cfg: Mapping[str, Any]) -> str:
-    return str(cfg.get("spiking_mode", "lif"))
+    return effective_legacy_spiking_mode(cfg)
+
+
+# Relevance vocabulary: trees are evaluated over AUTHORED keys (the frontend
+# evaluates them against the draft), so they speak family/variant — never the
+# derivation-owned legacy twins.
+_LIF_FAMILY_RELEVANT = R.when("spiking_family", in_=("lif",))
+_TTFS_CYCLE_RELEVANT = R.all_of(
+    R.when("spiking_family", in_=("ttfs",)),
+    R.when("spiking_variant", in_=("synchronized", "cascaded")),
+)
 
 
 def _why_activation_quantization(cfg: dict) -> str:
     if cfg.get("activation_quantization"):
-        return f"on — derived from spiking_mode={cfg.get('spiking_mode')!r}"
+        return f"on — derived from spiking mode {_mode(cfg)!r}"
     if cfg.get("pipeline_mode") == "vanilla" or cfg.get("weight_quantization") is False:
         return "off — float-weight (vanilla) deployment"
-    return f"off — analytical spiking_mode={cfg.get('spiking_mode')!r}"
+    return f"off — analytical spiking mode {_mode(cfg)!r}"
 
 
 ENTRIES = (
-    _E("core_semantics", group="deployment_target", owner="core_semantics",
-       type=T.ENUM, options=CORE_SEMANTICS_OPTIONS, category=Category.BASIC,
-       exposure="user", label="Core Semantics", important=True,
-       effect="Selects the deployment family: spiking cores or value-domain MVM cores",
-       doc="spiking: matmul + a neuron nonlinearity (LIF/TTFS event physics); "
-           "mvm: pure y=Wx(+b) with value I/O, activations on host, event keys unauthorable.",
-       provenance="derivation rule",
-       derived_default=_frozen(CORE_SEMANTICS_SPIKING),
-       legal_values=lambda cfg: CORE_SEMANTICS_OPTIONS,
-       empty_means="spiking — the event-driven deployment family"),
-    _E("spiking_mode", group="spiking", owner="SpikingDeploymentContract",
-       type=T.ENUM, options=SPIKING_MODES, category=Category.BASIC, exposure="user",
-       label="Spiking Mode", important=True, effect="Selects LIF/TTFS path and simulation backends",
-       doc="Deployable spiking semantics: lif (rate), analytical ttfs, ttfs_quantized, "
-           "or ttfs_cycle_based (single-spike, cycle-accurate)."),
-    _E("ttfs_cycle_schedule", group="spiking", owner="SpikingDeploymentContract",
-       type=T.ENUM, options=("cascaded", "synchronized"), category=Category.BASIC,
-       exposure="user", label="TTFS Cycle Schedule",
-       doc="cascaded: greedy fire-once cascade (fewer cycles); synchronized: exact "
-           "S-windowed schedule (more cycles, SANA-FE only).",
-       relevant=R.when("spiking_mode", in_=("ttfs_cycle_based",))),
     _E("firing_mode", group="spiking", owner="DeploymentPipeline", type=T.ENUM,
        options=("Default", "Novena", "TTFS"), category=Category.ADVANCED,
        exposure="user", label="Firing Mode",
@@ -130,22 +117,27 @@ ENTRIES = (
            "diagnostic ([C2] line + reporter event) and nothing else "
            "(lossless_refinement_ledger.md §2F.1). The LIF recipe arms it.",
        provenance="ConversionPolicy recipe", derived_default=_frozen(False),
-       relevant=R.when("spiking_mode", in_=("lif",)),
+       relevant=_LIF_FAMILY_RELEVANT,
        empty_means="the lif recipe arms it; other modes stay off"),
     _E("lif_per_hop_retiming", group="mapping_strategy", owner="layout/segmentation",
-       type=T.BOOL, category=Category.ADVANCED, label="LIF Per-hop Re-timing",
+       type=T.BOOL, category=Category.DERIVED, derivation="derived",
+       exposure="derived", hidden=True, declarable=False,
+       label="LIF Per-hop Re-timing",
        effect="Splits deep neural segments into per-hop segments",
        doc="[C3] Count-exact re-timing: every hop boundary becomes a "
            "decode/re-encode (round((c/T)*T) = c), resetting arrival timing "
            "and killing the back-loading deficit on deep single-segment "
-           "chains at S <= 8. Mixer-class vehicles already re-time at their "
-           "ComputeOp boundaries. The LIF recipe arms it per R5 — the "
-           "transcode is value-exact and the ledger's temporal-A6 FAIL cells "
-           "are its targets (lossless_refinement_ledger.md §2B); the "
-           "latency/energy cost stays mapping-visible.",
-       provenance="ConversionPolicy recipe", derived_default=_frozen(False),
-       relevant=R.when("spiking_mode", in_=("lif",)),
-       empty_means="the lif recipe arms it; other modes stay off"),
+           "chains at S <= 8. RETIRED as a document key: the exact-QAT "
+           "pairing of the windowed-lif recipe owns the arm (the pair "
+           "downgrades together on Novena), so re-timing is part of the "
+           "lif_sync semantics — never a knob.",
+       derived_from=("spiking_family", "spiking_variant", "firing_mode"),
+       why=lambda cfg: (
+           "armed — the windowed-lif exact-QAT pairing deploys per-hop re-timed"
+           if cfg.get("lif_per_hop_retiming")
+           else "off — non-lif mode, or the pairing downgraded (Novena)"
+       ),
+       provenance="ConversionPolicy recipe"),
     _E("lif_depth_balancing_relays", group="mapping_strategy",
        owner="latency/depth_balancing",
        type=T.BOOL, category=Category.ADVANCED, label="LIF Depth-balancing Relays",
@@ -158,7 +150,7 @@ ENTRIES = (
            "under the strict '<' comparator — the integer-lattice hazard). "
            "No-op on gap-free graphs; the LIF recipe arms it.",
        provenance="ConversionPolicy recipe", derived_default=_frozen(False),
-       relevant=R.when("spiking_mode", in_=("lif",)),
+       relevant=_LIF_FAMILY_RELEVANT,
        empty_means="the lif recipe arms it; other modes stay off"),
     _E("comparator_half_step", group="spiking", owner="deployment_contract",
        type=T.BOOL, category=Category.ADVANCED, label="Comparator-side Half-step",
@@ -173,7 +165,7 @@ ENTRIES = (
            "read the flag from the SpikingDeploymentContract, so the parity "
            "twins shift together (sync_deployment_exactness.md §5/§7).",
        provenance="consumer frozen default", derived_default=_frozen(False),
-       relevant=R.when("spiking_mode", in_=("ttfs_cycle_based",)),
+       relevant=_TTFS_CYCLE_RELEVANT,
        empty_means="off — the half-step stays a bias fold"),
     _E("cycle_accurate_lif_forward", group="spiking", owner="lif_adaptation",
        type=T.BOOL, category=Category.DERIVED, derivation="derived",
@@ -183,12 +175,12 @@ ENTRIES = (
            "(the deployed forward) — the correctness mechanism that keeps the "
            "QAT train-forward bit-exact to the deployed eval-forward. The LIF "
            "recipe always folds it ON; it is never a knob.",
-       derived_from=("spiking_mode",),
+       derived_from=("spiking_family", "spiking_variant"),
        why=lambda cfg: (
            "on — LIF adaptation trains the deployed cycle-accurate forward "
            "(train/eval bit-exactness)"
-           if cfg.get("spiking_mode") == "lif"
-           else f"inert — no LIF adaptation for spiking_mode={cfg.get('spiking_mode')!r}"
+           if _mode(cfg) == "lif"
+           else f"inert — no LIF adaptation for spiking mode {_mode(cfg)!r}"
        ),
        declarable=False, provenance="derivation rule"),
     _E("activation_quantization", group="conversion",
@@ -199,7 +191,8 @@ ENTRIES = (
        doc="Derived from the deployment mode: ON for lif/ttfs_quantized/"
            "ttfs_cycle_based, OFF for analytical ttfs and float-weight deployments. "
            "Never pin it in a config; derivation owns it.",
-       derived_from=("spiking_mode", "weight_quantization", "pipeline_mode"),
+       derived_from=("spiking_family", "spiking_variant", "weight_quantization",
+                     "pipeline_mode"),
        why=_why_activation_quantization, declarable=False,
        provenance="derivation rule"),
     _E("weight_quantization", group="conversion",
@@ -246,7 +239,7 @@ ENTRIES = (
            "segment-entry consumers keep the scalar (sync memo §4.2-4.3, "
            "mixer memo §6). Capable modes: lif and synchronized ttfs_cycle.",
        provenance="consumer frozen default", derived_default=_frozen(False),
-       relevant=R.when("spiking_mode", in_=("lif", "ttfs_cycle_based")),
+       relevant=R.any_of(_LIF_FAMILY_RELEVANT, _TTFS_CYCLE_RELEVANT),
        empty_means="off — every hop keeps its pooled scalar theta"),
     # Pruning mapping-strategy keys live in entries_pruning.py (module budget).
     _E("s_allocation", group="mapping_strategy", owner="TemporalAllocation",

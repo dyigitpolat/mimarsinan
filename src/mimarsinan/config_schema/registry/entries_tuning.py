@@ -12,6 +12,18 @@ from mimarsinan.config_schema.registry.types import (
 )
 from mimarsinan.tuning.orchestration.tuning_policy import TUNING_POLICY
 
+# Relevance speaks the AUTHORED axes (family/variant), never the derivation-
+# owned legacy mode strings (the frontend evaluates trees against the draft).
+_LIF_FAMILY_RELEVANT = R.when("spiking_family", in_=("lif",))
+_TTFS_CYCLE_RELEVANT = R.all_of(
+    R.when("spiking_family", in_=("ttfs",)),
+    R.when("spiking_variant", in_=("synchronized", "cascaded")),
+)
+_TTFS_QUANTIZED_RELEVANT = R.all_of(
+    R.when("spiking_family", in_=("ttfs",)),
+    R.when("spiking_variant", in_=("quantized",)),
+)
+
 
 ENTRIES = (
     _E("activation_scale_quantile", group="tuning", owner="activation_analysis",
@@ -97,7 +109,7 @@ ENTRIES = (
            "(0.93->0.59 measured, sync_deployment_exactness.md §3.2). "
            "Calibration-only; never spends training budget.",
        provenance="consumer frozen default", derived_default=_frozen(False),
-       relevant=R.when("spiking_mode", in_=("ttfs_cycle_based",)),
+       relevant=_TTFS_CYCLE_RELEVANT,
        empty_means="off — no first-moment fold at the AQ endpoint"),
     _E("sync_exact_qat_theta", group="tuning",
        owner="activation_quantization_tuner",
@@ -112,7 +124,7 @@ ENTRIES = (
            "TTFSCountStaircaseDecorator (clamp-gated STE + in-band LSQ theta "
            "gradient). Requires sync_exact_qat; default off (probe A/B first).",
        provenance="consumer frozen default", derived_default=_frozen(False),
-       relevant=R.when("spiking_mode", in_=("ttfs_cycle_based",)),
+       relevant=_TTFS_CYCLE_RELEVANT,
        empty_means="off — the frozen-theta ceil kernel"),
     _E("lif_exact_qat", group="tuning", owner="lif_exact_qat",
        type=T.BOOL, category=Category.ADVANCED, exposure="user",
@@ -131,7 +143,7 @@ ENTRIES = (
            "deployment is the -2.5 pp Goodhart hole and fails loud). "
            "Default-reset LIF only (P-L5).",
        provenance="consumer frozen default", derived_default=_frozen(False),
-       relevant=R.when("spiking_mode", in_=("lif",)),
+       relevant=_LIF_FAMILY_RELEVANT,
        empty_means="off — the shipped T-anneal + one-shot-fold recipe"),
     _E("lif_exact_qat_kd", group="tuning", owner="lif_exact_qat_kd",
        type=T.BOOL, category=Category.ADVANCED, exposure="user",
@@ -153,7 +165,7 @@ ENTRIES = (
            "vs t0_01/t01_08 S=4 +0.30) — the KD loss also steers the WQ "
            "endpoint leg and the draws. Config-armable only; NOT recipe-armed.",
        provenance="consumer frozen default", derived_default=_frozen(False),
-       relevant=R.when("spiking_mode", in_=("lif",)),
+       relevant=_LIF_FAMILY_RELEVANT,
        empty_means="off — the exact-QAT endpoint trains with plain CE"),
     _E("fast_lr_scale", group="tuning", owner="FastLadderMixin", type=T.FLOAT,
        category=Category.ADVANCED, label="Fast-Ladder LR Scale", bounds=(0.0, None),
@@ -164,7 +176,7 @@ ENTRIES = (
        doc="Armed-seam currency cover at the AQ install seam "
            "[conversion_boundary_algebra sec.10c/10e; sigma half removed].",
        provenance="consumer frozen default", derived_default=_frozen(False),
-       relevant=R.when("spiking_mode", in_=("lif",)), empty_means="off"),
+       relevant=_LIF_FAMILY_RELEVANT, empty_means="off"),
     _E("ttfsq_exact_qat", group="tuning", owner="ttfsq_exact_qat",
        type=T.BOOL, category=Category.ADVANCED, exposure="user",
        label="TTFSq Exact QAT",
@@ -178,7 +190,7 @@ ENTRIES = (
            "proxy. No per-hop re-timing (TTFS is analytical/timing-free). "
            "Default-off; ttfs_quantized only.",
        provenance="consumer frozen default", derived_default=_frozen(False),
-       relevant=R.when("spiking_mode", in_=("ttfs_quantized",)),
+       relevant=_TTFS_QUANTIZED_RELEVANT,
        empty_means="off — the shift + floor-quantize proxy"),
     _E("casc_exact_qat", group="tuning", owner="casc_exact_qat",
        type=T.BOOL, category=Category.ADVANCED, exposure="user",
@@ -194,7 +206,7 @@ ENTRIES = (
            "blend-ramp. Mutually exclusive with the gamma gain-correction ramp "
            "(both own theta). Default-off; ttfs_cycle_based cascaded only.",
        provenance="consumer frozen default", derived_default=_frozen(False),
-       relevant=R.when("spiking_mode", in_=("ttfs_cycle_based",)),
+       relevant=_TTFS_CYCLE_RELEVANT,
        empty_means="off — the plain-STE theta-cotrain / proxy"),
     _E("lif_affine_fold", group="tuning", owner="lif_affine_fold",
        type=T.BOOL, category=Category.ADVANCED, label="LIF Affine Fold",

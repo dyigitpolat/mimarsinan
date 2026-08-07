@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Mapping
 
+from mimarsinan.chip_simulation.activation_semantics import RETIRED_SPIKING_KEYS
 from mimarsinan.chip_simulation.spiking_semantics import require_known_spiking_mode
 from mimarsinan.config_schema.deployment_derivation import (
     legal_value_error,
@@ -16,6 +17,7 @@ from mimarsinan.config_schema.registry import (
     REGISTRY,
     mvm_document_errors,
     parse_deployment_document,
+    retired_spiking_key_errors,
 )
 from mimarsinan.mapping.platform.coalescing import coalescing_config_errors
 from mimarsinan.tuning.orchestration.temporal_allocation import (
@@ -199,6 +201,8 @@ def non_declarable_key_errors(config: Mapping[str, Any]) -> List[str]:
     }
     errors: List[str] = []
     for flat_key, entry in REGISTRY.items():
+        if flat_key in RETIRED_SPIKING_KEYS:
+            continue  # the retired-key rule owns these with migration remedies
         if entry.category is Category.RUNTIME:
             owner_kind = "the runtime"
         elif entry.category is Category.DERIVED and not entry.declarable:
@@ -223,6 +227,7 @@ def validate_deployment_config(config: Dict[str, Any]) -> List[str]:
         return errors
 
     errors.extend(non_declarable_key_errors(config))
+    errors.extend(row["message"] for row in retired_spiking_key_errors(config))
     errors.extend(mvm_document_errors(config))
 
     pc = config.get("platform_constraints")
@@ -268,13 +273,8 @@ def validate_deployment_config(config: Dict[str, Any]) -> List[str]:
                     "family whose config space the search explores)"
                 )
 
-        spiking = dp.get("spiking_mode", "lif")
-        try:
-            require_known_spiking_mode(spiking)
-        except ValueError as exc:
-            errors.append(str(exc))
-        else:
-            errors.extend(row["message"] for row in legality_errors(dp, dp))
+        # Legality lambdas are total over raw documents; retired keys report above.
+        errors.extend(row["message"] for row in legality_errors(dp, dp))
 
     return errors
 

@@ -75,16 +75,21 @@ VEHICLES = {
 }
 
 MODES = {
-    "lif": {"spiking_mode": "lif", "firing_mode": "Default", "spike_generation_mode": "Uniform",
+    # Configs author the (spiking_family, spiking_variant) axes; the "axis"
+    # tuple keeps the historical hypervolume-cell ids for scoreboard continuity.
+    "lif": {"spiking_family": "lif", "spiking_variant": "synchronized",
+            "firing_mode": "Default", "spike_generation_mode": "Uniform",
             "thresholding_mode": "<", "axis": ("lif", "none")},
-    "ttfs": {"spiking_mode": "ttfs", "firing_mode": "TTFS", "spike_generation_mode": "TTFS",
+    "ttfs": {"spiking_family": "ttfs", "spiking_variant": "analytical",
+             "firing_mode": "TTFS", "spike_generation_mode": "TTFS",
              "thresholding_mode": "<=", "axis": ("ttfs", "none")},
-    "ttfsq": {"spiking_mode": "ttfs_quantized", "firing_mode": "TTFS", "spike_generation_mode": "TTFS",
+    "ttfsq": {"spiking_family": "ttfs", "spiking_variant": "quantized",
+              "firing_mode": "TTFS", "spike_generation_mode": "TTFS",
               "thresholding_mode": "<=", "axis": ("ttfs_quantized", "none")},
-    "casc": {"spiking_mode": "ttfs_cycle_based", "ttfs_cycle_schedule": "cascaded",
+    "casc": {"spiking_family": "ttfs", "spiking_variant": "cascaded",
              "firing_mode": "TTFS", "spike_generation_mode": "TTFS", "thresholding_mode": "<=",
              "axis": ("ttfs_cycle_based", "cascaded")},
-    "sync": {"spiking_mode": "ttfs_cycle_based", "ttfs_cycle_schedule": "synchronized",
+    "sync": {"spiking_family": "ttfs", "spiking_variant": "synchronized",
              "firing_mode": "TTFS", "spike_generation_mode": "TTFS", "thresholding_mode": "<=",
              "axis": ("ttfs_cycle_based", "synchronized")},
     # [mvm] value-domain MVM cores: no spiking axis, no temporal grid (no S);
@@ -496,14 +501,13 @@ def _deployment(tier, row, vehicles, dataset):
     if "core_semantics" in mode:
         dp["core_semantics"] = mode["core_semantics"]
     else:
-        dp["spiking_mode"] = mode["spiking_mode"]
+        dp["spiking_family"] = mode["spiking_family"]
+        dp["spiking_variant"] = mode["spiking_variant"]
         dp["firing_mode"] = row.get("firing", mode["firing_mode"])
         dp["spike_generation_mode"] = mode["spike_generation_mode"]
         dp["thresholding_mode"] = mode["thresholding_mode"]
         dp["encoding_layer_placement"] = row.get("encoding", "subsume")
     dp["weight_quantization"] = quant["weight_quantization"]
-    if "ttfs_cycle_schedule" in mode:
-        dp["ttfs_cycle_schedule"] = mode["ttfs_cycle_schedule"]
     if "pruned" in row:
         dp["pruning"] = True
         dp["pruning_fraction"] = row["pruned"]

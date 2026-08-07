@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Tuple
 
 from mimarsinan.advisories import evaluate_config_advisories
 from mimarsinan.config_schema.defaults import (
@@ -11,8 +11,6 @@ from mimarsinan.config_schema.defaults import (
 )
 import mimarsinan.data_handling.data_providers  # noqa: F401  # pyright: ignore[reportUnusedImport] — registers providers + their normalization presets
 from mimarsinan.config_schema.registry import (
-    Category,
-    FieldType,
     REGISTRY,
     parse_deployment_document,
     serialize_registry,
@@ -21,13 +19,12 @@ from mimarsinan.config_schema.resolve import (
     attach_error_key,
     derived_values_view,
     derived_view,
-    effective_view,
     legal_values_view,
     resolve_draft,
 )
 from mimarsinan.gui.wizard.emit import emit_deployment_config
 from mimarsinan.gui.wizard.starter import load_starter_baseline
-from mimarsinan.tuning.orchestration.conversion_policy import ConversionPolicy
+from mimarsinan.gui.wizard.vehicle_rows import vehicle_rows as _vehicle_rows
 from mimarsinan.data_handling.preprocessing import (
     NORMALIZATION_PRESETS,
     interpolation_mode_names,
@@ -156,49 +153,6 @@ def _apply_baseline_to_diff(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         base = baseline[row["key"]]
         row["default"] = base
         row["differs"] = row["value"] != base
-    return rows
-
-
-def _vehicle_rows(draft: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """Per-vehicle state, computable for EVERY draft: unrelated errors must
-    never remove the rows the on/off toggles render from."""
-    dp = parse_deployment_document(draft or {}).dp
-    effective = effective_view(dp)
-
-    mode = str(effective.get("spiking_mode"))
-    schedule = effective.get("ttfs_cycle_schedule")
-    sim_enables: Optional[Dict[str, bool]]
-    try:
-        sim_enables = dict(ConversionPolicy.derive(mode, schedule).sim_enables)
-    except ValueError:
-        sim_enables = None
-
-    rows: List[Dict[str, Any]] = []
-    for key, entry in REGISTRY.items():
-        if (entry.group != "deployment_target"
-                or entry.category is not Category.DERIVED
-                or entry.type is not FieldType.BOOL):
-            continue
-        declared = dp.get(key)
-        row: Dict[str, Any] = {
-            "key": key,
-            "label": entry.label,
-            "declared": isinstance(declared, bool),
-        }
-        if sim_enables is None:
-            row.update(supported=None, on=None,
-                       why=f"unknown spiking_mode {mode!r} — fix the mode to "
-                           "see vehicle support")
-        else:
-            supported = bool(sim_enables.get(key, False))
-            on = bool(supported and declared is not False)
-            why = None
-            if entry.why is not None:
-                why = entry.why({
-                    "spiking_mode": mode, "ttfs_cycle_schedule": schedule, key: on,
-                })
-            row.update(supported=supported, on=on, why=why)
-        rows.append(row)
     return rows
 
 

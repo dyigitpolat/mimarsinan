@@ -40,7 +40,8 @@ def test_save_template_keeps_explicit_keys_and_drops_owned_derived(tmp_path, mon
         "model_config_mode": "user",
         "model_type": "mlp_mixer",
         "model_config": {},
-        "spiking_mode": "ttfs_quantized",
+        "spiking_family": "ttfs",
+        "spiking_variant": "quantized",
         "activation_quantization": True,
         "firing_mode": "TTFS",
         "spike_generation_mode": "TTFS",
@@ -63,4 +64,5 @@ def test_save_template_keeps_explicit_keys_and_drops_owned_derived(tmp_path, mon
     assert "activation_quantization" not in persisted
     assert persisted["firing_mode"] == "TTFS"
     assert persisted["kd_ce_alpha"] == dp["kd_ce_alpha"]
-    assert persisted["spiking_mode"] == "ttfs_quantized"
+    assert persisted["spiking_family"] == "ttfs"
+    assert persisted["spiking_variant"] == "quantized"

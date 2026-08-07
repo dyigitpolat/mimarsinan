@@ -146,8 +146,9 @@ class TestConfigValidity:
             merged.update(cfg["platform_constraints"])
             derive_deployment_parameters(merged)
             declared = cfg["deployment_parameters"]
-            if "spiking_mode" in declared:
-                assert merged["spiking_mode"] == declared["spiking_mode"]
+            if "spiking_family" in declared:
+                assert merged["spiking_family"] == declared["spiking_family"]
+                assert merged["spiking_variant"] == declared["spiking_variant"]
             else:
                 assert declared.get("core_semantics") == "mvm", path.name
                 # [mvm AQ] platform activation_bits is the sole armer.
@@ -162,8 +163,8 @@ class TestCascDescopedFromTier0:
 
     def _is_casc(self, dp):
         return (
-            dp.get("spiking_mode") == "ttfs_cycle_based"
-            and dp.get("ttfs_cycle_schedule") == "cascaded"
+            dp.get("spiking_family") == "ttfs"
+            and dp.get("spiking_variant") == "cascaded"
         )
 
     def test_no_tier0_cell_is_cascaded(self):
@@ -181,11 +182,17 @@ class TestCascDescopedFromTier0:
 
 class TestModeCoverage:
     def test_tier0_covers_every_deployment_mode(self):
-        modes = {
-            json.loads(p.read_text())["deployment_parameters"].get("spiking_mode")
-            for p in _tier_configs(0)
+        points = {
+            (dp.get("spiking_family"), dp.get("spiking_variant"))
+            for dp in (
+                json.loads(p.read_text())["deployment_parameters"]
+                for p in _tier_configs(0)
+            )
         }
-        assert {"lif", "ttfs", "ttfs_quantized", "ttfs_cycle_based"} <= modes
+        assert {
+            ("lif", "synchronized"), ("ttfs", "analytical"),
+            ("ttfs", "quantized"), ("ttfs", "synchronized"),
+        } <= points
 
     def test_tier0_covers_the_value_domain_family(self):
         semantics = {

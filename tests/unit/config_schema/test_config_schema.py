@@ -23,7 +23,7 @@ class TestDefaults:
         assert "degradation_tolerance" in d
         assert "model_config_mode" in d
         assert "hw_config_mode" in d
-        assert "spiking_mode" in d
+        assert "spiking_family" in d
         assert "allow_scheduling" in d
         assert d["allow_scheduling"] is False
 

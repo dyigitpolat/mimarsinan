@@ -14,13 +14,19 @@ from mimarsinan.config_schema.registry.types import (
 ENTRIES = (
     _E("lif_execution_discipline", group="spiking", owner="LifSegmentPolicy",
        type=T.ENUM, options=("streaming", "synchronized"),
-       category=Category.ADVANCED, exposure="user",
-       label="LIF Execution Discipline",
+       category=Category.DERIVED, derivation="derived", exposure="derived",
+       hidden=True, declarable=False,
+       label="LIF Execution Discipline (internal)",
+       effect="Executor evaluation form inside the windowed-lif semantics",
        doc="synchronized = two-window integrate-then-emit: the emitted count "
            "is exactly the strict staircase (genuine == analytic) [calculus 16]. "
-           "Latency (D+1)*T, pipelined throughput unchanged.",
-       provenance="consumer frozen default", derived_default=_frozen("streaming"),
-       empty_means="fire-during-integrate streaming"),
+           "RETIRED as a document key: the temporal discipline is the "
+           "spiking_variant axis; this internal executor form stays "
+           "derivation-owned (streaming tick loop).",
+       derived_from=("spiking_family", "spiking_variant"),
+       why=lambda cfg: "streaming — the deployed cycle-accurate tick loop",
+       provenance="consumer frozen default",
+       derived_default=_frozen("streaming")),
     _E("spike_phase_dither", group="spiking", owner="spike_trains",
        type=T.BOOL, category=Category.ADVANCED, exposure="user",
        label="Spike Phase Dither",

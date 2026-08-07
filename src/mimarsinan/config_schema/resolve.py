@@ -16,6 +16,7 @@ from mimarsinan.config_schema.registry import (
     REGISTRY,
     effective_value,
     parse_deployment_document,
+    retired_spiking_key_errors,
 )
 from mimarsinan.config_schema.runtime import build_flat_pipeline_config
 from mimarsinan.config_schema.validation import (
@@ -202,6 +203,14 @@ def resolve_draft(draft: Mapping[str, Any]) -> Resolution:
     field_keys = {row["key"] for row in field_errors}
     errors = [error for error in errors if error["key"] not in field_keys]
     errors.extend(field_errors)
+
+    # Retired taxonomy keys come back as keyed rows with one-click MIGRATION
+    # remedies, superseding every other row for the same key (the resolution
+    # itself still previews through the meaning-preserving legacy bridge).
+    retired = retired_spiking_key_errors({"deployment_parameters": parsed.dp})
+    retired_keys = {row["key"] for row in retired}
+    errors = [error for error in errors if error["key"] not in retired_keys]
+    errors.extend(retired)
 
     pipeline_mode = str(draft.get("pipeline_mode", _SESSION_DEFAULT_PIPELINE_MODE))
     resolved: Dict[str, Any] = {}

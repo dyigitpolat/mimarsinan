@@ -47,15 +47,14 @@ DEFAULT_DEPLOYMENT_PARAMETERS: Dict[str, object] = {
     "ttfs_genuine_blend_ce_alpha": 0.3,
     "model_config_mode": "user",
     "hw_config_mode": "fixed",
-    # enable_*_simulation and cycle_accurate_lif_forward carry NO defaults:
-    # the ConversionPolicy recipe / runtime derivation owns them (Pure SSOT).
-    "spiking_mode": "lif",
+    # enable_*_simulation, cycle_accurate_lif_forward and the legacy twins
+    # (spiking_mode/ttfs_cycle_schedule) carry NO defaults: derivation owns them.
+    "spiking_family": "lif",
     # Negative-boundary policy: ON = calibrated shift; OFF = subsume-forward.
     "negative_value_shift": True,
     "allow_scheduling": False,
     "nevresim_connectivity_mode": "runtime",
     "enable_training_noise": False,
-    "ttfs_cycle_schedule": "cascaded",
     "sanafe_sample_count": 1,
     "sanafe_arch_preset": "loihi",
     "sanafe_custom_arch_path": None,
@@ -86,6 +85,7 @@ PIPELINE_MODE_PRESETS: Dict[str, Dict[str, object]] = {
 
 CONFIG_KEYS_SET: Set[str] = {
     "core_value_granularity", "degradation_tolerance",
+    "spiking_family", "spiking_variant",
     "spiking_mode",
     "firing_mode",
     "spike_generation_mode",

@@ -54,7 +54,7 @@ class TestBuildDeploymentConfigFromState:
     def test_ttfs_quantized_enables_activation_quantization(self):
         out = build_deployment_config_from_state({
             "pipeline_mode": "phased",
-            "deployment_parameters": {"spiking_mode": "ttfs_quantized"},
+            "deployment_parameters": {"spiking_family": "ttfs", "spiking_variant": "quantized"},
         })
         assert "activation_quantization" not in out["deployment_parameters"]
         assert _resolved_flat(out)["activation_quantization"] is True
@@ -155,7 +155,8 @@ class TestBuildDeploymentConfigFromState:
             "hw_config_mode": "fixed",
             "model_type": "mlp_mixer",
             "model_config": {},
-            "spiking_mode": "ttfs_quantized",
+            "spiking_family": "ttfs",
+                "spiking_variant": "quantized",
             "weight_quantization": True,
             "activation_quantization": True,
             "firing_mode": "TTFS",
@@ -182,7 +183,8 @@ class TestBuildDeploymentConfigFromState:
             "hw_config_mode": "fixed",
             "model_type": "mlp_mixer",
             "model_config": {},
-            "spiking_mode": "ttfs_quantized",
+            "spiking_family": "ttfs",
+                "spiking_variant": "quantized",
             "weight_quantization": True,
             "activation_quantization": True,
             "pipeline_mode": "phased",
@@ -210,7 +212,7 @@ class TestBuildDeploymentConfigFromState:
                 "hw_config_mode": "fixed",
                 "model_type": "mlp_mixer",
                 "model_config": {},
-                "spiking_mode": "lif",
+                "spiking_family": "lif",
                 "weight_quantization": True,
                 "activation_quantization": True,
                 "pipeline_mode": "phased",
@@ -272,7 +274,8 @@ class TestValidateWizardState:
                 "model_config_mode": "user",
                 "model_type": "mlp_mixer",
                 "model_config": {},
-                "spiking_mode": "ttfs_quantized",
+                "spiking_family": "ttfs",
+                "spiking_variant": "quantized",
             },
             "start_step": None,
         }
@@ -288,7 +291,8 @@ class TestValidateWizardState:
                 "model_config_mode": "user",
                 "model_type": "mlp_mixer",
                 "model_config": {},
-                "spiking_mode": "ttfs_quantized",
+                "spiking_family": "ttfs",
+                "spiking_variant": "quantized",
                 "firing_mode": "Default",
             },
             "start_step": None,
@@ -305,7 +309,7 @@ class TestWizardSchema:
             "activation_quantization": True,
             "weight_quantization": True,
             "pruning": False,
-            "spiking_mode": "lif",
+            "spiking_family": "lif",
         }
         steps = get_pipeline_step_names_for_config(config)
         assert "Model Configuration" in steps

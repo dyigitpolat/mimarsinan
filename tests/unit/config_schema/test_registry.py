@@ -218,7 +218,7 @@ class TestModeHonesty:
         entry = REGISTRY["cycle_accurate_lif_forward"]
         assert entry.category is Category.DERIVED
         assert entry.declarable is False
-        assert entry.derived_from == ("spiking_mode",)
+        assert entry.derived_from == ("spiking_family", "spiking_variant")
         assert entry.why is not None
 
     def test_core_maxima_are_derived_from_the_core_grid(self):
@@ -314,9 +314,15 @@ class TestSerialization:
         assert payload["keys"]["lr"]["provided_by"] is None
 
     def test_relevance_trees_are_serialized(self):
+        # Relevance speaks the AUTHORED axes (family/variant), never the
+        # derivation-owned legacy mode strings.
         payload = serialize_registry()
-        tree = payload["keys"]["ttfs_cycle_schedule"]["relevant"]
-        assert tree == {"op": "in", "key": "spiking_mode", "values": ["ttfs_cycle_based"]}
+        tree = payload["keys"]["comparator_half_step"]["relevant"]
+        assert tree == {"op": "all", "items": [
+            {"op": "in", "key": "spiking_family", "values": ["ttfs"]},
+            {"op": "in", "key": "spiking_variant",
+             "values": ["synchronized", "cascaded"]},
+        ]}
 
     def test_promote_when_and_empty_means_are_serialized(self):
         payload = serialize_registry()

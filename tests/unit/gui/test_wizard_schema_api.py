@@ -6,6 +6,7 @@ import os
 import pytest
 from fastapi.testclient import TestClient
 
+from mimarsinan.chip_simulation.activation_semantics import axes_from_legacy
 from mimarsinan.config_schema.registry import REGISTRY
 from mimarsinan.gui.runtime.collector import DataCollector
 from mimarsinan.gui.server.app import create_app
@@ -108,10 +109,10 @@ class TestPipelinePreviewHonesty:
     the ConversionPolicy recipe enables their backend for the mode."""
 
     def _steps_for(self, client, mode, schedule=None):
+        family, variant = axes_from_legacy(mode, schedule)
         draft = client.get("/api/config/starter").json()
-        draft["deployment_parameters"]["spiking_mode"] = mode
-        if schedule:
-            draft["deployment_parameters"]["ttfs_cycle_schedule"] = schedule
+        draft["deployment_parameters"]["spiking_family"] = family
+        draft["deployment_parameters"]["spiking_variant"] = variant
         body = client.post("/api/config/resolve", json=draft).json()
         assert body["ok"] is True, body["errors"]
         return body["pipeline"]["steps"], body["derived"]
@@ -548,7 +549,8 @@ class TestRound6LegalValueSetsAreServed:
 
     def test_ttfs_locks_firing_and_spike_generation(self, client):
         payload = self._resolve(
-            client, spiking_mode="ttfs", firing_mode="TTFS",
+            client, spiking_family="ttfs", spiking_variant="analytical",
+            firing_mode="TTFS",
             spike_generation_mode="TTFS", weight_quantization=True,
         )
         assert payload["legal_values"]["firing_mode"] == ["TTFS"]
@@ -660,7 +662,7 @@ class TestRound6DerivedValuesAreConcrete:
 
     def test_the_sample_count_follows_the_mode(self, client):
         values = self._resolve(
-            client, spiking_mode="ttfs_cycle_based", ttfs_cycle_schedule="cascaded",
+            client, spiking_family="ttfs", spiking_variant="cascaded",
             firing_mode="TTFS", spike_generation_mode="TTFS",
         )["derived_values"]
         assert values["nf_scm_parity_samples"] == 64

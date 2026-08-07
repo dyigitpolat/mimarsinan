@@ -185,7 +185,8 @@ class TestLeNet5SmokeTemplate:
         assert config["deployment_parameters"]["model_type"] == "lenet5"
         assert config["deployment_parameters"]["model_config"]["variant"] == "lenet5"
         assert config["deployment_parameters"]["model_config"]["base_activation"] == "ReLU"
-        assert config["deployment_parameters"]["spiking_mode"] == "ttfs_cycle_based"
+        assert config["deployment_parameters"]["spiking_family"] == "ttfs"
+        assert config["deployment_parameters"]["spiking_variant"] == "synchronized"
         assert config["deployment_parameters"]["ttfs_cycle_schedule"] == "synchronized"
         assert config["platform_constraints"]["simulation_steps"] == 4
         assert config["deployment_parameters"]["max_simulation_samples"] <= 200

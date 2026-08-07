@@ -14,6 +14,7 @@ import itertools
 
 import pytest
 
+from mimarsinan.chip_simulation.activation_semantics import axes_from_legacy
 from mimarsinan.chip_simulation.firing_strategy import FiringStrategy, FiringMode
 from mimarsinan.chip_simulation.spiking_semantics import (
     ALL_SPIKING_MODES,
@@ -36,6 +37,13 @@ from mimarsinan.models.spiking.spiking_config import (
 LEGALITY_KEYS = ("firing_mode", "spike_generation_mode", "thresholding_mode")
 
 _MODES = sorted(ALL_SPIKING_MODES)
+
+
+def _axes(spiking_mode: str) -> dict:
+    """Author the (family, variant) axes for a legacy mode string — documents
+    declare the axes; the legacy vocabulary drives only the legality helpers."""
+    family, variant = axes_from_legacy(spiking_mode)
+    return {"spiking_family": family, "spiking_variant": variant}
 
 
 def _document(**deployment_parameters) -> dict:
@@ -156,9 +164,13 @@ class TestTheLegalValueSets:
         assert view["pretrained_weight_set"] == ["imagenet1k_v1"]
 
     def test_locked_keys_are_exactly_the_singleton_legal_sets(self):
-        lif = legal_values_view({"spiking_mode": "lif"})
-        ttfs = legal_values_view({"spiking_mode": "ttfs"})
-        assert [k for k, v in lif.items() if len(v) == 1] == ["s_allocation"]
+        # under lif the variant LOCKS to 'synchronized' until the streamed
+        # deployment phase widens the legal set (plan P3).
+        lif = legal_values_view({"spiking_family": "lif"})
+        ttfs = legal_values_view({"spiking_family": "ttfs"})
+        assert sorted(k for k, v in lif.items() if len(v) == 1) == [
+            "s_allocation", "spiking_variant",
+        ]
         assert sorted(k for k, v in ttfs.items() if len(v) == 1) == [
             "firing_mode", "s_allocation", "spike_generation_mode",
         ]
@@ -182,7 +194,7 @@ class TestTheFullLegalityMatrix:
     def test_every_illegal_value_is_a_keyed_remediable_error(self, spiking_mode, key):
         illegal = _illegal_values(key, spiking_mode)
         for value in illegal:
-            document = _document(spiking_mode=spiking_mode, **{key: value})
+            document = _document(**_axes(spiking_mode), **{key: value})
             resolution = resolve_draft(document)  # must not raise
             rows = [e for e in resolution.errors if e["rule_id"] == "legal_value_set"]
             assert rows, f"{spiking_mode}/{key}={value}: no keyed legality error"
@@ -195,14 +207,14 @@ class TestTheFullLegalityMatrix:
     def test_the_reported_bug_is_a_keyed_error_not_a_valueerror(self):
         """spiking_mode='lif' + firing_mode='TTFS' used to raise
         ValueError out of DeploymentPlan.resolve (round-6 item 4)."""
-        resolution = resolve_draft(_document(spiking_mode="lif", firing_mode="TTFS"))
+        resolution = resolve_draft(_document(**_axes("lif"), firing_mode="TTFS"))
         assert not resolution.ok
         row = next(e for e in resolution.errors if e["key"] == "firing_mode")
         assert row["rule_id"] == "legal_value_set"
         assert "Default" in row["message"] and "Novena" in row["message"]
 
     def test_a_singleton_legal_set_remedy_offers_the_only_legal_value(self):
-        resolution = resolve_draft(_document(spiking_mode="ttfs", firing_mode="Novena"))
+        resolution = resolve_draft(_document(**_axes("ttfs"), firing_mode="Novena"))
         row = next(e for e in resolution.errors if e["key"] == "firing_mode")
         assert {"action": "set", "key": "firing_mode", "value": "TTFS"} in [
             {k: r[k] for k in ("action", "key", "value")}
@@ -210,7 +222,7 @@ class TestTheFullLegalityMatrix:
         ]
 
     def test_no_hypothetical_values_survive_a_legality_error(self):
-        resolution = resolve_draft(_document(spiking_mode="lif", firing_mode="TTFS"))
+        resolution = resolve_draft(_document(**_axes("lif"), firing_mode="TTFS"))
         assert resolution.resolved == {}
         assert resolution.derived == {}
 
@@ -228,7 +240,7 @@ class TestTheFullLegalityMatrix:
             legal_thresholding_modes(spiking_mode),
         ):
             resolution = resolve_draft(_document(
-                spiking_mode=spiking_mode, firing_mode=firing,
+                **_axes(spiking_mode), firing_mode=firing,
                 spike_generation_mode=spike_gen, thresholding_mode=thresholding,
             ))
             assert resolution.errors == [], (spiking_mode, firing, spike_gen)

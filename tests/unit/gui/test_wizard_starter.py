@@ -165,11 +165,11 @@ def _planned_mapping_stats(draft: dict):
 
 
 _MODE_SWITCHES = (
-    ("lif", None),
-    ("ttfs", None),
-    ("ttfs_quantized", None),
-    ("ttfs_cycle_based", "cascaded"),
-    ("ttfs_cycle_based", "synchronized"),
+    ("lif", "synchronized"),
+    ("ttfs", "analytical"),
+    ("ttfs", "quantized"),
+    ("ttfs", "cascaded"),
+    ("ttfs", "synchronized"),
 )
 
 
@@ -179,13 +179,12 @@ class TestStarterModeSwitchContract:
 
     @pytest.mark.parametrize(
         "mode,schedule", _MODE_SWITCHES,
-        ids=[m if s is None else f"{m}_{s}" for m, s in _MODE_SWITCHES],
+        ids=[f"{m}_{s}" for m, s in _MODE_SWITCHES],
     )
     def test_starter_plus_single_mode_switch_stays_green(self, mode, schedule):
         draft = starter_draft()
-        draft["deployment_parameters"]["spiking_mode"] = mode
-        if schedule is not None:
-            draft["deployment_parameters"]["ttfs_cycle_schedule"] = schedule
+        draft["deployment_parameters"]["spiking_family"] = mode
+        draft["deployment_parameters"]["spiking_variant"] = schedule
 
         resolution = resolve_draft(draft)
         assert resolution.errors == [], (mode, schedule, resolution.errors)
@@ -203,9 +202,8 @@ class TestStarterModeSwitchContract:
 
         for mode, schedule in _MODE_SWITCHES:
             draft = starter_draft()
-            draft["deployment_parameters"]["spiking_mode"] = mode
-            if schedule is not None:
-                draft["deployment_parameters"]["ttfs_cycle_schedule"] = schedule
+            draft["deployment_parameters"]["spiking_family"] = mode
+            draft["deployment_parameters"]["spiking_variant"] = schedule
             payload = resolve_payload(draft)
             assert payload["ok"] is True, (mode, schedule)
             assert len(payload["pipeline"]["steps"]) >= 10, (mode, schedule)

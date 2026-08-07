@@ -22,7 +22,7 @@ def _minimal_draft(**parts) -> dict:
 class TestWizardAdvisories:
     def test_cascaded_pick_shows_the_unsupported_warning(self):
         payload = resolve_payload(_minimal_draft(
-            deployment_parameters={"spiking_mode": "ttfs_cycle_based"}
+            deployment_parameters={"spiking_family": "ttfs", "spiking_variant": "cascaded"}
         ))
         assert payload["ok"], payload["errors"]
         by_id = {row["id"]: row for row in payload["advisories"]}
@@ -34,7 +34,7 @@ class TestWizardAdvisories:
 
     def test_lif_draft_has_no_casc_advisory(self):
         payload = resolve_payload(_minimal_draft(
-            deployment_parameters={"spiking_mode": "lif"}
+            deployment_parameters={"spiking_family": "lif"}
         ))
         assert payload["ok"], payload["errors"]
         ids = {row["id"] for row in payload["advisories"]}
@@ -43,7 +43,7 @@ class TestWizardAdvisories:
     def test_erroring_draft_renders_no_hypothetical_advisories(self):
         payload = resolve_payload(_minimal_draft(
             deployment_parameters={
-                "spiking_mode": "lif",
+                "spiking_family": "lif",
                 "activation_quantization": False,
                 "weight_quantization": True,
             }

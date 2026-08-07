@@ -527,6 +527,10 @@ class TestNoStrayDeploymentFlagReadsAnywhere:
         # (chip-aligned NF and the mapping) consult, so it resolves its own
         # (knob, spiking_mode) sub-contract from the raw config.
         "chip_simulation/spiking_semantics.py",
+        # ``activation_semantics`` is the family/variant taxonomy SSOT that
+        # FOLDS spiking_mode from the authored axes — it reads the raw key
+        # for idempotence, legacy-dict bridging, and contradiction checks.
+        "chip_simulation/activation_semantics.py",
         # ── codegen: the C++ comparator/exec policy (FiringStrategyFactory SSOT
         #    side); reads its own ``simulation_config`` codegen param ──
         "code_generation/generate_main.py",

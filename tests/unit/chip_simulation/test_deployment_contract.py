@@ -181,9 +181,12 @@ class TestSingleReaderInvariant:
     # Files legitimately reading the raw config key:
     #  - the factory itself
     #  - config_schema (defines/derives the key)
+    #  - activation_semantics (the taxonomy SSOT that FOLDS the key from the
+    #    authored family/variant axes — reader for idempotence/contradiction)
     #  - deployment_specs (step selection on predicates, per the design doc)
     ALLOWLIST = (
         "chip_simulation/deployment_contract.py",
+        "chip_simulation/activation_semantics.py",
         "config_schema/",
         "pipelining/core/pipelines/deployment_specs.py",
     )
