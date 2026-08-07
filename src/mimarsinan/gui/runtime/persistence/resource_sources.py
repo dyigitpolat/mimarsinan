@@ -12,7 +12,15 @@ from typing import IO, Any
 import numpy as np
 
 from mimarsinan.gui.resources import ResourceSource, resource_source_from_state
-from mimarsinan.gui.runtime.persistence.resource_paths import resource_source_disk_path
+from mimarsinan.gui.runtime.persistence.payload_store import (
+    PAYLOAD_MIN_BYTES,
+    load_payload,
+    store_payload,
+)
+from mimarsinan.gui.runtime.persistence.resource_paths import (
+    resource_source_disk_path,
+    resource_source_root,
+)
 
 logger = logging.getLogger("mimarsinan.gui")
 
@@ -27,8 +35,21 @@ _INDEX_BYTES = 4
 _SPARSE_MIN_BYTES = 4096
 
 
-def _encode_array(stream: IO[bytes], array: np.ndarray) -> dict[str, Any]:
-    """Write ``array`` and return its header entry, dropping padding when that pays."""
+def _encode_array(
+    stream: IO[bytes], array: np.ndarray, store_root: "Path | None" = None,
+) -> dict[str, Any]:
+    """Write ``array`` and return its header entry, dropping padding when that pays.
+
+    Large arrays go to the shared payload store by content digest, so the
+    thousands of sources that carry ONE payload cost one copy on disk.
+    """
+    if store_root is not None and array.nbytes >= PAYLOAD_MIN_BYTES:
+        return {
+            "encoding": "ref",
+            "digest": store_payload(store_root, array),
+            "shape": [int(d) for d in array.shape],
+            "dtype": array.dtype.str,
+        }
     array = np.ascontiguousarray(array)
     flat = array.reshape(-1)
     bits_dtype = _BITS_BY_ITEMSIZE.get(array.dtype.itemsize)
@@ -46,7 +67,16 @@ def _encode_array(stream: IO[bytes], array: np.ndarray) -> dict[str, Any]:
     return {"encoding": "dense"}
 
 
-def _decode_array(stream: IO[bytes], entry: dict[str, Any]) -> np.ndarray:
+def _decode_array(
+    stream: IO[bytes], entry: dict[str, Any], store_root: "Path | None" = None,
+) -> np.ndarray:
+    if entry["encoding"] == "ref":
+        if store_root is None:
+            raise ValueError("payload reference without a store root")
+        array = load_payload(store_root, entry["digest"])
+        return array.reshape(tuple(entry["shape"])).astype(
+            np.dtype(entry["dtype"]), copy=False,
+        )
     if entry["encoding"] == "dense":
         return np.load(stream, allow_pickle=False)
     indices = np.load(stream, allow_pickle=False)
@@ -56,7 +86,9 @@ def _decode_array(stream: IO[bytes], entry: dict[str, Any]) -> np.ndarray:
     return array
 
 
-def _write_source(stream: IO[bytes], source: ResourceSource) -> None:
+def _write_source(
+    stream: IO[bytes], source: ResourceSource, store_root: "Path | None" = None,
+) -> None:
     state = source.to_state()
     arrays = {k: v for k, v in state.items() if isinstance(v, np.ndarray)}
     header: dict[str, Any] = {
@@ -68,7 +100,7 @@ def _write_source(stream: IO[bytes], source: ResourceSource) -> None:
     # written first and read back without seeking.
     body = io.BytesIO()
     for name, array in arrays.items():
-        entry = _encode_array(body, array)
+        entry = _encode_array(body, array, store_root)
         entry["name"] = name
         header["arrays"].append(entry)
     encoded = json.dumps(header).encode("utf-8")
@@ -78,14 +110,16 @@ def _write_source(stream: IO[bytes], source: ResourceSource) -> None:
     stream.write(body.getvalue())
 
 
-def _read_source(stream: IO[bytes]) -> ResourceSource:
+def _read_source(
+    stream: IO[bytes], store_root: "Path | None" = None,
+) -> ResourceSource:
     if stream.read(len(MAGIC)) != MAGIC:
         raise ValueError("not a resource source file")
     (header_len,) = _HEADER_LEN.unpack(stream.read(_HEADER_LEN.size))
     header = json.loads(stream.read(header_len).decode("utf-8"))
     state: dict[str, Any] = dict(header["meta"])
     for entry in header["arrays"]:
-        state[entry["name"]] = _decode_array(stream, entry)
+        state[entry["name"]] = _decode_array(stream, entry, store_root)
     return resource_source_from_state(header["source_type"], state)
 
 
@@ -99,10 +133,11 @@ def save_resource_source(
     """Write ``source`` where the monitor will look for it; the file appears whole or not at all."""
     path = resource_source_disk_path(working_directory, step_name, kind, rid)
     path.parent.mkdir(parents=True, exist_ok=True)
+    store_root = resource_source_root(working_directory)
     tmp = path.with_suffix(path.suffix + ".tmp")
     try:
         with open(tmp, "wb") as f:
-            _write_source(f, source)
+            _write_source(f, source, store_root)
         tmp.replace(path)
     finally:
         if tmp.exists():
@@ -128,7 +163,7 @@ def load_resource_source(
         return None
     try:
         with open(path, "rb") as f:
-            return _read_source(f)
+            return _read_source(f, resource_source_root(working_directory))
     except (OSError, ValueError, KeyError, struct.error, json.JSONDecodeError) as e:
         logger.debug("Failed to load resource source %s: %s", path, e)
         return None
