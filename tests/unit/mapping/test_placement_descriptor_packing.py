@@ -373,7 +373,13 @@ class TestFrozenOracleDifferential:
         want[:7, :5] = wide.core_matrix
         _assert_bytes_equal(fused.get_core_matrix(), want, "fused composite")
 
-    def test_composite_materializes_fresh_and_is_never_cached(self):
+    def test_repeated_resolution_is_shared_and_byte_stable(self):
+        """Contract UPDATED 2026-08-07 (matrix_memo): resolution is now
+        content-keyed and SHARED, because unshared transients cost 92.9 GB per
+        sweep on the real vehicle for only 27 distinct grids. The
+        non-retention guarantee this test used to assert is now a BOUNDED one,
+        pinned by ``test_matrix_memo.py::TestTheMemoIsBounded``; what stays
+        pinned here is byte-stability and never writing the core."""
         graph, bank_mat, _own, _hb = _edge_case_graph()
         softs = _compacted_softcores(graph)
         hcm = HardCoreMapping([])
@@ -381,7 +387,7 @@ class TestFrozenOracleDifferential:
         hc = hcm.cores[0]
         first = hc.get_core_matrix()
         second = hc.get_core_matrix()
-        assert first is not second, "transient dense must not be retained"
+        assert second is first, "equal content must resolve to one shared grid"
         _assert_bytes_equal(second, first, "repeated materialization")
         assert hc.core_matrix is None, "resolution must never write the core"
 

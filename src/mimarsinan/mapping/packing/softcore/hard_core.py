@@ -5,12 +5,14 @@ from typing import Any
 import numpy as np
 
 from mimarsinan.mapping.packing.placement_cost import note_resident_bank
+from mimarsinan.mapping.packing.softcore.matrix_memo import (
+    memoized_resolve_core_matrix,
+)
 from mimarsinan.mapping.packing.softcore.matrix_placement import (
     MatrixPlacement,
     core_matrix_content_key,
     core_matrix_dtype,
     core_matrix_payloads,
-    resolve_core_matrix,
 )
 from mimarsinan.mapping.platform.core_residency import (
     ALL_SINGLETON_NAMES,
@@ -130,11 +132,12 @@ class HardCore:
     def get_core_matrix(self):
         """Full ``(axons_per_core, neurons_per_core)`` weight grid.
 
-        An exact-fit single plain placement returns the SHARED payload object
-        unchanged (stable identity: pickle memoization and upload dedup store
-        each bank payload once); composites materialize TRANSIENTLY per call.
+        Resolution is content-keyed and SHARED (matrix_memo): cores whose
+        placements resolve to byte-identical grids get one array, so a full
+        sweep costs one materialization per distinct payload. The returned
+        grid must not be mutated.
         """
-        return resolve_core_matrix(
+        return memoized_resolve_core_matrix(
             self.core_matrix, self.matrix_placements,
             self.axons_per_core, self.neurons_per_core,
             owner="HardCore",
@@ -175,8 +178,12 @@ class HardCore:
         """Decode packed axon_sources; legacy raw-list states load unchanged."""
         from mimarsinan.mapping.support.spike_source_spans import decode_spike_sources_packed
 
+        state = dict(state)
         encoded = state.get("axon_sources")
         if isinstance(encoded, tuple):
-            state = dict(state)
             state["axon_sources"] = decode_spike_sources_packed(encoded)
+        # Pre-descriptor pickles carry neither slot; default them so every
+        # resolve path works on a legacy state instead of raising.
+        state.setdefault("matrix_placements", [])
+        state.setdefault("_axon_source_spans", None)
         self.__dict__.update(state)
