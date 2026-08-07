@@ -31,6 +31,10 @@ from mimarsinan.mapping.pruning.graph.propagation_mode import (
     ELIMINATION_PROPAGATION_MASKED,
     require_elimination_propagation,
 )
+from mimarsinan.mapping.pruning.graph.pruning_graph_seeding import (
+    build_graph_index,
+)
+from mimarsinan.mapping.pruning.graph.pruning_graph_types import GraphIndex
 from mimarsinan.mapping.pruning.graph.pruning_graph_core import (
     compute_global_pruned_sets,
 )
@@ -73,6 +77,7 @@ class EliminationArms:
     elimination_constant_folding: str
     spiking_mode: str
     probe_memo: dict = field(default_factory=dict)
+    graph_index: "GraphIndex | None" = None
 
     def results_by_arm(self) -> Dict[str, GlobalPruningResult]:
         """Arm name -> kill sets, for the arms this pass actually ran."""
@@ -106,6 +111,9 @@ def compute_elimination_arms(
         ir_graph, initial_pruned_per_node, initial_pruned_per_bank
     )
     probe_memo: dict = {}   # one run, one battery per (op, bitwise key)
+    graph_index = build_graph_index(
+        ir_graph, computeop_liveness_transfers=computeop_liveness_transfers,
+    )
 
     def _run_arm(arm: str) -> GlobalPruningResult:
         t0 = time.perf_counter()
@@ -121,6 +129,7 @@ def compute_elimination_arms(
             elimination_constant_folding=elimination_constant_folding,
             spiking_mode=spiking_mode,
             probe_memo=probe_memo,
+            graph_index=graph_index,
         )
         print(f"[EliminationLedger] arm={arm} wall={time.perf_counter() - t0:.1f}s",
               flush=True)
@@ -152,6 +161,7 @@ def compute_elimination_arms(
         elimination_constant_folding=elimination_constant_folding,
         spiking_mode=spiking_mode,
         probe_memo=probe_memo,
+        graph_index=graph_index,
     )
 
 

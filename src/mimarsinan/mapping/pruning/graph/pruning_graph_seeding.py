@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import AbstractSet, Dict, Mapping, Set, Tuple
 
@@ -15,12 +14,16 @@ from mimarsinan.mapping.pruning.liveness_transfer import (
     ComputeOpTransferIndex,
     ConstantLattice,
     ELIMINATION_CONSTANT_FOLDING_FULL,
-    build_computeop_transfer_index,
     domain_admits_nonzero_constants,
     effective_constant_folding,
 )
 from mimarsinan.mapping.pruning.graph.constant_folding import ConstantFoldState
-from mimarsinan.mapping.pruning.graph.pruning_graph_types import GlobalPruningResult
+from mimarsinan.mapping.pruning.graph.pruning_graph_types import (
+    GlobalPruningResult,
+    GraphIndex,
+    _assert_index_matches,
+    build_graph_index,
+)
 from mimarsinan.mapping.pruning.graph.pruning_graph_refresh import (
     _cols_with_nonzero_bias,
     _resolve_node_matrix,
@@ -86,10 +89,15 @@ def build_global_pruning_context(
     elimination_constant_folding: str = DEFAULT_ELIMINATION_CONSTANT_FOLDING,
     spiking_mode: str = "lif",
     probe_memo: "Dict[tuple, Dict[int, float]] | None" = None,
+    graph_index: "GraphIndex | None" = None,
 ) -> GlobalPruningContext:
     """Index the graph and seed the pruned sets (explicit + off-source + value-based)."""
     neural_cores = [n for n in graph.nodes if isinstance(n, NeuralCore)]
     banks: Dict[int, WeightBank] = dict(getattr(graph, "weight_banks", {}) or {})
+    index = graph_index if graph_index is not None else build_graph_index(
+        graph, computeop_liveness_transfers=computeop_liveness_transfers,
+    )
+    _assert_index_matches(index, graph, computeop_liveness_transfers)
 
     exempt_rows = {n.id: frozenset(exempt_rows_per_node.get(n.id, set()))
                    for n in neural_cores} if exempt_rows_per_node else {}
@@ -100,8 +108,6 @@ def build_global_pruning_context(
     if not exempt_cols:
         exempt_cols = {n.id: frozenset() for n in neural_cores}
 
-    consumer_axons, model_output_neurons = _build_consumer_index(graph)
-
     ctx = GlobalPruningContext(
         graph=graph,
         zero_threshold=zero_threshold,
@@ -109,23 +115,17 @@ def build_global_pruning_context(
         banks=banks,
         exempt_rows=exempt_rows,
         exempt_cols=exempt_cols,
-        consumer_axons=consumer_axons,
-        model_output_neurons=model_output_neurons,
-        computeop_transfers=build_computeop_transfer_index(
-            graph, policy=computeop_liveness_transfers
-        ),
+        consumer_axons=index.consumer_axons,
+        model_output_neurons=index.model_output_neurons,
+        computeop_transfers=index.computeop_transfers,
         constants=_build_constant_state(
             elimination_constant_folding=elimination_constant_folding,
             computeop_liveness_transfers=computeop_liveness_transfers,
             spiking_mode=spiking_mode,
             probe_memo=probe_memo,
         ),
-        bank_consumers=_build_bank_consumer_map(neural_cores),
-        bank_node_lookup={
-            b: [n for n in neural_cores
-                if getattr(n, "weight_bank_id", None) == b]
-            for b in banks
-        },
+        bank_consumers=index.bank_consumers,
+        bank_node_lookup=index.bank_node_lookup,
         pruned_rows={n.id: set() for n in neural_cores},
         pruned_cols={n.id: set() for n in neural_cores},
         bank_pruned_rows={bid: set() for bid in banks},
@@ -180,43 +180,6 @@ def _build_constant_state(
         ),
         probe_memo=probe_memo if probe_memo is not None else {},
     )
-
-
-def _build_consumer_index(
-    graph: IRGraph,
-) -> Tuple[Dict[Tuple[int, int], list], Set[Tuple[int, int]]]:
-    """Index NeuralCore axon consumers and model-output neuron markers.
-
-    Model-output neurons (``output_sources``) are protected from orphan pruning.
-    ComputeOp wiring is handled separately via the liveness-transfer index.
-    """
-    consumer_axons: Dict[Tuple[int, int], list] = defaultdict(list)
-    model_output_neurons: Set[Tuple[int, int]] = set()
-
-    if graph.output_sources.size:
-        for src in graph.output_sources.flatten():
-            if isinstance(src, IRSource) and src.node_id >= 0:
-                model_output_neurons.add((src.node_id, src.index))
-
-    for node in graph.nodes:
-        if not isinstance(node, NeuralCore) or not hasattr(node, "input_sources"):
-            continue
-        for axon_idx, src in enumerate(node.input_sources.flatten()):
-            if not isinstance(src, IRSource) or src.node_id < 0:
-                continue
-            consumer_axons[(src.node_id, src.index)].append((node.id, axon_idx))
-
-    return consumer_axons, model_output_neurons
-
-
-def _build_bank_consumer_map(neural_cores: list) -> Dict[int, Set[int]]:
-    """For each weight bank, the set of NeuralCore ids that reference it."""
-    out: Dict[int, Set[int]] = defaultdict(set)
-    for n in neural_cores:
-        bid = getattr(n, "weight_bank_id", None)
-        if bid is not None:
-            out[bid].add(n.id)
-    return out
 
 
 def _seed_off_source_axons(
