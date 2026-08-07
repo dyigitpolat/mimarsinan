@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import time
 from typing import Dict
 
 import torch
@@ -104,6 +105,8 @@ class ValueHybridCoreFlow(nn.Module):
         # chain — a non-resident stage heads a new chain (freeing the previous
         # one) and resident passes alias the head's uploaded tensors.
         scope = ValueSegmentScope()
+        spent = {"assemble": 0.0, "neural": 0.0, "store": 0.0, "compute": 0.0}
+        t_fwd = time.perf_counter()
 
         def on_neural(_index, stage, buf):
             if not getattr(stage, "schedule_weights_resident", False):
@@ -111,17 +114,23 @@ class ValueHybridCoreFlow(nn.Module):
             assert scope.head_hcm is not None, (
                 "schedule_weights_resident stage arrived before any chain head"
             )
+            _t = time.perf_counter()
             seg_input = assemble_segment_input_torch(
                 stage.input_map, buf, batch, self.execution_device, self.value_dtype
             )
+            spent["assemble"] += time.perf_counter() - _t
+            _t = time.perf_counter()
             seg_output = run_neural_segment_values(
                 stage.hard_core_mapping, seg_input,
                 resident_head=scope.head_hcm, scope=scope,
             )
+            spent["neural"] += time.perf_counter() - _t
             recorder = self.stage_count_recorder
             if recorder is not None:
                 recorder(stage, seg_output)
+            _t = time.perf_counter()
             store_segment_output_torch(stage.output_map, buf, seg_output)
+            spent["store"] += time.perf_counter() - _t
             decref_consumers(
                 buf, remaining,
                 (int(s.node_id) for s in stage.input_map
@@ -130,7 +139,9 @@ class ValueHybridCoreFlow(nn.Module):
 
         def on_compute(_index, stage, buf):
             op = stage.compute_op
+            _t = time.perf_counter()
             buf[int(op.id)] = self._run_compute_stage(op, x_flat, buf)
+            spent["compute"] += time.perf_counter() - _t
             decref_consumers(
                 buf, remaining,
                 (int(src.node_id) for src in op.input_sources.flatten()
@@ -141,6 +152,12 @@ class ValueHybridCoreFlow(nn.Module):
             self.hybrid_mapping, state_buffer,
             on_neural=on_neural, on_compute=on_compute,
         )
+        _wall = time.perf_counter() - t_fwd
+        if _wall > 5.0:   # slow forwards only; tests stay silent
+            print(f"[ValueFlow] forward={_wall:.1f}s batch={batch} "
+                  f"assemble={spent['assemble']:.1f}s neural={spent['neural']:.1f}s "
+                  f"store={spent['store']:.1f}s compute={spent['compute']:.1f}s",
+                  flush=True)
         return gather_final_output_torch(
             self.hybrid_mapping.output_sources, state_buffer, x_flat,
             batch, self.execution_device, self.value_dtype,
