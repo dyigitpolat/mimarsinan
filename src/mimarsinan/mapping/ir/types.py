@@ -11,6 +11,10 @@ import torch
 import torch.nn.functional as F
 
 from mimarsinan.mapping.ir.gather_plan import gather_plan_for
+from mimarsinan.mapping.ir.source import (
+    decode_ir_sources,
+    encode_ir_sources,
+)
 from mimarsinan.mapping.support.device_placement import preserved_module_placement
 
 from mimarsinan.models.nn.activations.value_quantizer import BoundaryGrid
@@ -20,27 +24,24 @@ if TYPE_CHECKING:
 
 
 @dataclass
-class IRSource:
-    """Input source: node output, off (-1), network input (-2), or always-on (-3)."""
-    node_id: int
-    index: int
-
-    def is_off(self) -> bool:
-        return self.node_id == -1
-
-    def is_input(self) -> bool:
-        return self.node_id == -2
-
-    def is_always_on(self) -> bool:
-        return self.node_id == -3
-
-
-@dataclass
 class IRNode(ABC):
     """Base class for all IR nodes."""
     id: int
     name: str
     input_sources: np.ndarray
+
+    def __getstate__(self) -> dict:
+        """Pickle wiring columnar (~8 B/axon vs ~27.7 as objects)."""
+        state = dict(self.__dict__)
+        state["input_sources"] = encode_ir_sources(state.get("input_sources"))
+        return state
+
+    def __setstate__(self, state: dict) -> None:
+        """Decode columnar wiring; legacy object arrays pass through."""
+        decoded = dict(state)
+        decoded["input_sources"] = decode_ir_sources(decoded.get("input_sources"))
+        for key, value in decoded.items():
+            object.__setattr__(self, key, value)
 
     @abstractmethod
     def execute(

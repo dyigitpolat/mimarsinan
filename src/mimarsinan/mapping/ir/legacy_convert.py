@@ -5,7 +5,8 @@ from __future__ import annotations
 import numpy as np
 
 from mimarsinan.mapping.ir.graph import IRGraph
-from mimarsinan.mapping.ir.types import IRSource, NeuralCore
+from mimarsinan.mapping.ir.types import NeuralCore
+from mimarsinan.mapping.ir.source import IRSource
 
 
 def spike_source_to_ir_source(spike_source, core_id_offset: int = 0) -> IRSource:

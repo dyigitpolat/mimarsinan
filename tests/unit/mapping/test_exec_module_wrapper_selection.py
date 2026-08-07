@@ -7,7 +7,8 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from mimarsinan.mapping.ir.types import ComputeOp, IRSource
+from mimarsinan.mapping.ir.types import ComputeOp
+from mimarsinan.mapping.ir.source import IRSource
 from mimarsinan.mapping.support.compute_modules import ScaleNormalizingWrapper
 
 

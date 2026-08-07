@@ -20,7 +20,8 @@ import pytest
 import torch
 import torch.nn as nn
 
-from mimarsinan.mapping.ir.types import ComputeOp, IRSource
+from mimarsinan.mapping.ir.types import ComputeOp
+from mimarsinan.mapping.ir.source import IRSource
 from mimarsinan.mapping.pruning.certificate.zero_preserving import (
     is_zero_preserving_host_op,
 )

@@ -11,12 +11,8 @@ from mimarsinan.mapping.ir.legacy_convert import (
     spike_source_to_ir_source,
 )
 from mimarsinan.mapping.ir.weight_bank import WeightBank
-from mimarsinan.mapping.ir.types import (
-    ComputeOp,
-    IRNode,
-    IRSource,
-    NeuralCore,
-)
+from mimarsinan.mapping.ir.types import ComputeOp, IRNode, NeuralCore
+from mimarsinan.mapping.ir.source import IRSource
 
 __all__ = [
     "IRGraph",

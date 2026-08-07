@@ -12,12 +12,8 @@ import numpy as np
 def _new_build_token() -> str:
     return uuid.uuid4().hex
 
-from mimarsinan.mapping.ir.types import (
-    ComputeOp,
-    IRNode,
-    IRSource,
-    NeuralCore,
-)
+from mimarsinan.mapping.ir.types import ComputeOp, IRNode, NeuralCore
+from mimarsinan.mapping.ir.source import IRSource
 from mimarsinan.mapping.ir.weight_bank import WeightBank
 
 
