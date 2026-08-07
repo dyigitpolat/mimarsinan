@@ -164,3 +164,45 @@ artifacts and 179 GB of sources.
 - No touching of the LIF per-hop fusion work (separate, `docs/lif_hop_fused_mapping_design.md`).
 - No new speculative optimization: every unit above is anchored to a measured
   number in §1–§2, and each ships behind a gate that can fail.
+
+---
+
+## 10. Round 2 — p13 sealed, and the metric profiled (2026-08-07)
+
+**p13 (all units U1-U9, clean SCM):** SCM 17,348 -> **928 s** (18.7x); SCM
+artifact 45.86 -> **0.518 GB** (89x); HCM artifact 35.36 -> **0.599 GB** (59x);
+**GUI resource sources 179 GB -> 1.3 GB (138x)**; total storage/run ~260 GB ->
+**~2.4 GB**. Elimination record sha256-identical, metric 0.9699 delta=0.0000.
+
+**Where the remaining time is** (3,598 s pipeline): HCM mapping metric
+**2,223 s = 62%**, SCM analysis 459 s, SCM parity gate 317 s, HCM twin gate
+191 s, builds ~265 s.
+
+**The metric is not a defect.** ``deployment_metric_full_eval`` defaults True,
+so ``max_simulation_samples: 25`` is bypassed and ``eval_max_samples`` (10,000)
+governs: the census evaluates the FULL CIFAR-10 test set through the packed
+program -- 157 batches x ~14 s = 2,223 s. The code's own comment gives the
+reason: a subsampled deployed metric against a full-eval torch reference
+manufactures spurious drops.
+
+**What was waste, measured per forward (batch 64):** neural 6.8 s, compute
+0.4 s, assemble 0.0 s, store 0.0 s. In isolation, preparation is 26.3 s cold
+of which **18.4 s builds 5,000 gather plans**, against **0.3 s of matmuls**.
+Every batch rebuilt all of it, because U3 scoped preparation to the forward to
+kill the +113 GB weight residency. Note batching is nearly free: batch 64
+(15.0 s) is CHEAPER than batch 2 (20.4 s) -- the cost is fixed per forward.
+
+**Landed (1a015a02):** flow-level cache of the static gather plans; segment
+output plans read the mapping's cached spans instead of recompressing 4,925
+sources per stage per forward. Weights remain chain-scoped (U3 intact), pinned
+by a lifetime test that fails if plan reuse retains them; bit-identity pinned
+by repeated-forward and warm-vs-cold float-hex comparisons.
+
+**Open:** (a) cache the identity mapping -- the twin gate spends ~145 s of its
+186 s BUILDING a second 1:1 packing of 4,925 cores, and the SCM parity gate
+builds the same thing again; (b) POLICY, user's call: whether the deployed
+metric must read all 10,000 images every run (the seeded-subsample path where
+both twins read the identical subset already exists; 1,000 samples would be
+~120 s instead of ~1,200 s) -- an error-bar decision, not an engineering one;
+(c) pin runs to an idle GPU (3 of 4 are saturated by other users, which
+confounded p12 and every GPU-bound wall since).
