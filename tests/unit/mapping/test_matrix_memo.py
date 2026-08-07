@@ -169,3 +169,45 @@ class TestLegacyPickleStatesLoad:
         assert np.array_equal(core.get_core_matrix(), legacy["core_matrix"])
         assert core.core_matrix_key() is not None
         assert core.core_matrix_dtype() == np.dtype(np.float64)
+
+
+class TestOutputSourcesPickleCompressed:
+    """[verifier major] Unit 4 compressed HardCore.axon_sources but not
+    HardCoreMapping.output_sources, which still pickled as object soup."""
+
+    @staticmethod
+    def _mapping_with_outputs(n):
+        from mimarsinan.mapping.packing.softcore.hard_core_mapping import (
+            HardCoreMapping,
+        )
+        from mimarsinan.code_generation.cpp_chip_model_types import SpikeSource
+
+        hcm = HardCoreMapping([])
+        hcm.output_sources = np.array(
+            [SpikeSource(0, i % 7, is_input=False, is_off=False) for i in range(n)],
+            dtype=object,
+        )
+        return hcm
+
+    def test_round_trip_preserves_every_field(self):
+        import pickle
+
+        hcm = self._mapping_with_outputs(64)
+        got = pickle.loads(pickle.dumps(hcm))
+        want = list(np.asarray(hcm.output_sources).flatten())
+        have = list(np.asarray(got.output_sources).flatten())
+        assert len(have) == len(want)
+        for a, b in zip(have, want):
+            assert (a.core_, a.neuron_, a.is_input_, a.is_off_) == \
+                   (b.core_, b.neuron_, b.is_input_, b.is_off_)
+
+    def test_pickle_grows_sublinearly_in_source_count(self):
+        import pickle
+
+        small = len(pickle.dumps(self._mapping_with_outputs(200)))
+        large = len(pickle.dumps(self._mapping_with_outputs(4000)))
+        per_source = (large - small) / 3800
+        assert per_source < 8, (
+            f"{per_source:.1f} B/source — output_sources are still pickling "
+            f"as objects (~27.7 B/source)"
+        )

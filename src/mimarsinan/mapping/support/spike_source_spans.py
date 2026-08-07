@@ -172,3 +172,48 @@ def decode_spike_sources_packed(payload: tuple) -> list[SpikeSource]:
         return _decode_spike_sources_dense(cores, neurons, flags)
     raise ValueError(f"Unknown spike-source pickle payload tag: {tag!r}")
 
+
+
+def pack_source_array(sources) -> tuple:
+    """Range-compress an object array/list of SpikeSources for pickling."""
+    array = np.asarray(sources)
+    return (
+        "packed_output_sources", array.shape,
+        encode_spike_sources_packed(array.flatten().tolist()),
+    )
+
+
+def is_packed_source_array(value) -> bool:
+    return (
+        isinstance(value, tuple) and len(value) == 3
+        and value[0] == "packed_output_sources"
+    )
+
+
+def unpack_source_array(packed: tuple):
+    """Inverse of :func:`pack_source_array` (same objects, same shape)."""
+    _tag, shape, payload = packed
+    return np.array(
+        decode_spike_sources_packed(payload), dtype=object,
+    ).reshape(shape)
+
+
+def pack_output_sources_state(state: dict) -> dict:
+    """Range-compress a mapping state's ``output_sources``; drop its span cache."""
+    packed = dict(state)
+    sources = packed.get("output_sources")
+    if sources is not None and not isinstance(sources, tuple):
+        packed["output_sources"] = pack_source_array(sources)
+    packed["_output_source_spans"] = None
+    return packed
+
+
+def unpack_output_sources_state(state: dict) -> dict:
+    """Inverse; legacy states (raw object arrays) pass through unchanged."""
+    unpacked = dict(state)
+    if is_packed_source_array(unpacked.get("output_sources")):
+        unpacked["output_sources"] = unpack_source_array(
+            unpacked["output_sources"]
+        )
+    unpacked.setdefault("_output_source_spans", None)
+    return unpacked
