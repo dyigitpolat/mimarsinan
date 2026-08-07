@@ -27,6 +27,7 @@ class _PreparedValueSegment:
         self, hcm, device: torch.device, dtype: torch.dtype,
         resident_from: "_PreparedValueSegment | None" = None,
         upload_memo: "dict | None" = None,
+        plan_cache: "dict | None" = None,
     ) -> None:
         ensure_core_latencies(hcm)
         self.order: List[int] = sorted(
@@ -49,9 +50,17 @@ class _PreparedValueSegment:
         self.thresholds = []
         self.plans = []
         self.entry_transforms = []
+        # Gather plans are static index tensors, pure in (core spans, device):
+        # rebuilding them per forward cost 18.4 s of a 26.3 s preparation
+        # against 0.3 s of matmuls. Weights stay chain-scoped ([wsm V3]).
+        plans = plan_cache if plan_cache is not None else {}
         for core in hcm.cores:
             self.thresholds.append(float(core.threshold))
-            plan = SpanFillPlan(core.get_axon_source_spans(), device)
+            key = (id(core), str(device))
+            plan = plans.get(key)
+            if plan is None:
+                plan = SpanFillPlan(core.get_axon_source_spans(), device)
+                plans[key] = plan
             self.plans.append(plan)
             # [mvm AQ] the boundary grid snaps ENTRY cores only (no upstream
             # core sources); the plan applies it to the columns it owns.
@@ -64,9 +73,17 @@ class _PreparedValueSegment:
                 None if armed is None
                 else (lambda t, g=armed: quantize_to_value_grid(t, g.scale, g.bits))
             )
-        self.output_plan = SpanFillPlan(
-            compress_spike_sources(list(hcm.output_sources.flatten())), device
-        )
+        out_key = (id(hcm), "outputs", str(device))
+        output_plan = plans.get(out_key)
+        if output_plan is None:
+            spans = (
+                hcm.get_output_source_spans()
+                if hasattr(hcm, "get_output_source_spans")
+                else compress_spike_sources(list(hcm.output_sources.flatten()))
+            )
+            output_plan = SpanFillPlan(spans, device)
+            plans[out_key] = output_plan
+        self.output_plan = output_plan
         self.output_size = int(len(hcm.output_sources.flatten()))
         self.axon_counts = [int(w.shape[0]) for w in self.weights]
 
@@ -105,8 +122,10 @@ class ValueSegmentScope:
     forward frees the last one, so peak residency is one chain, never the
     sum over segments."""
 
-    def __init__(self) -> None:
+    def __init__(self, plan_cache: "Dict | None" = None) -> None:
         self.head_hcm: Any = None
+        # Static gather plans outlive the forward; weights do not.
+        self.plan_cache: Dict = plan_cache if plan_cache is not None else {}
         self._prepared: Dict = {}
         # [F2] content-keyed weight-upload memo: cores resolving to one
         # byte-identical grid share ONE device tensor within the chain.
@@ -131,7 +150,7 @@ class ValueSegmentScope:
             )
             prepared = _PreparedValueSegment(
                 hcm, device, dtype, resident_from=head,
-                upload_memo=self._upload_memo,
+                upload_memo=self._upload_memo, plan_cache=self.plan_cache,
             )
             by_key[key] = prepared
         return prepared

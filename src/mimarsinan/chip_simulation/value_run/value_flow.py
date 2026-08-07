@@ -69,6 +69,9 @@ class ValueHybridCoreFlow(nn.Module):
         self.stage_count_recorder = None
         self.lif_execution_synchronized = False
         self._fp64_ops: Dict[int, nn.Module] = {}
+        # Static gather plans, shared across forwards (weights are NOT:
+        # they stay chain-scoped, [wsm V3]).
+        self._plan_cache: Dict = {}
 
     def _run_compute_stage(self, op, x_flat, state_buffer):
         original = op.params.get("module")
@@ -104,7 +107,7 @@ class ValueHybridCoreFlow(nn.Module):
         # [wsm V3] forward-local scope: weight tensors live per residency
         # chain — a non-resident stage heads a new chain (freeing the previous
         # one) and resident passes alias the head's uploaded tensors.
-        scope = ValueSegmentScope()
+        scope = ValueSegmentScope(plan_cache=self._plan_cache)
         spent = {"assemble": 0.0, "neural": 0.0, "store": 0.0, "compute": 0.0}
         t_fwd = time.perf_counter()
 

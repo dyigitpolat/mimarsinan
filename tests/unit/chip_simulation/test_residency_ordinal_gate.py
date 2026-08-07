@@ -77,9 +77,8 @@ class TestTheOrdinalGateCanFail:
 
         real_init = ve._PreparedValueSegment.__init__
 
-        def sabotaged(self, hcm, device, dtype, resident_from=None, upload_memo=None):
-            real_init(self, hcm, device, dtype,
-                      resident_from=resident_from, upload_memo=upload_memo)
+        def sabotaged(self, hcm, device, dtype, resident_from=None, **kw):
+            real_init(self, hcm, device, dtype, resident_from=resident_from, **kw)
             if resident_from is not None:      # the aliasing branch under test
                 self.weights = list(reversed(self.weights))
                 self.biases = list(reversed(self.biases))
