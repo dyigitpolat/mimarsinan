@@ -164,9 +164,16 @@ class TestTheLegalValueSets:
         assert view["pretrained_weight_set"] == ["imagenet1k_v1"]
 
     def test_locked_keys_are_exactly_the_singleton_legal_sets(self):
+        # bare lif derives STREAMED (P4 default): scheduling locks off.
         lif = legal_values_view({"spiking_family": "lif"})
         ttfs = legal_values_view({"spiking_family": "ttfs"})
         assert sorted(k for k, v in lif.items() if len(v) == 1) == [
+            "allow_scheduling", "s_allocation",
+        ]
+        windowed = legal_values_view(
+            {"spiking_family": "lif", "spiking_variant": "synchronized"}
+        )
+        assert sorted(k for k, v in windowed.items() if len(v) == 1) == [
             "s_allocation",
         ]
         assert sorted(k for k, v in ttfs.items() if len(v) == 1) == [

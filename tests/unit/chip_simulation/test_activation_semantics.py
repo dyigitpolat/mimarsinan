@@ -60,7 +60,7 @@ class TestVocabulary:
         assert is_streamed_lif(
             {"spiking_family": "lif", "spiking_variant": "streamed"}
         )
-        assert not is_streamed_lif({"spiking_family": "lif"})
+        assert is_streamed_lif({"spiking_family": "lif"})  # [P4] default
         assert not is_streamed_lif({"spiking_mode": "lif"})
         assert not is_streamed_lif({"spiking_family": "banana"})
 
@@ -70,9 +70,12 @@ class TestVocabulary:
         )
 
     def test_derived_variant_per_family(self):
-        assert derived_spiking_variant({}) == "synchronized"
-        assert derived_spiking_variant({"spiking_family": "lif"}) == "synchronized"
+        # [P4] streamed is the event-driven default LIF discipline.
+        assert derived_spiking_variant({}) == "streamed"
+        assert derived_spiking_variant({"spiking_family": "lif"}) == "streamed"
         assert derived_spiking_variant({"spiking_family": "ttfs"}) == "analytical"
+        # legacy dicts keep their historical windowed meaning.
+        assert derived_spiking_variant({"spiking_mode": "lif"}) == "synchronized"
 
     def test_retired_keys(self):
         assert set(RETIRED_SPIKING_KEYS) == {
@@ -128,10 +131,10 @@ class TestResolve:
         )
         assert (sem.family, sem.variant) == ("ttfs", "quantized")
 
-    def test_empty_config_defaults_to_windowed_lif(self):
+    def test_empty_config_defaults_to_streamed_lif(self):
         sem = resolve_activation_semantics({})
-        assert (sem.family, sem.variant) == ("lif", "synchronized")
-        assert sem.mode_id == "lif_sync"
+        assert (sem.family, sem.variant) == ("lif", "streamed")
+        assert sem.mode_id == "lif"
 
     def test_legacy_only_preserves_meaning(self):
         assert canonical_mode_id({"spiking_mode": "lif"}) == "lif_sync"
@@ -184,7 +187,7 @@ class TestResolve:
         sem = resolve_activation_semantics(
             {"spiking_family": "lif", "ttfs_cycle_schedule": "cascaded"}
         )
-        assert sem.mode_id == "lif_sync"
+        assert sem.mode_id == "lif"  # streamed default; schedule stays inert
 
     def test_streamed_variant_resolves(self):
         sem = resolve_activation_semantics(
@@ -229,7 +232,7 @@ class TestFold:
         dp = {}
         fold_spiking_axes(dp)
         assert dp == {
-            "spiking_family": "lif", "spiking_variant": "synchronized",
+            "spiking_family": "lif", "spiking_variant": "streamed",
             "spiking_mode": "lif", "ttfs_cycle_schedule": "cascaded",
         }
 

@@ -78,7 +78,16 @@ anywhere. The crossbar is used as an integer matrix-multiply engine
 the trained model. Everything in this guide about spike timing is irrelevant
 to this mode.
 
-**Rate-coded LIF (`lif`)** — the number system IS counts: a value in [0,1]
+**Streamed LIF (`spiking_family=lif, spiking_variant=streamed` — the default
+since 2026-08-07)** — end-to-end event streaming: ONE resident chip program,
+binary spikes on every wire, values transcoded exactly twice (encode before
+the first neural core, decode after the last). Host compute ops may exist
+only as an encode prefix and a readout suffix (the structural gate fails in
+seconds otherwise); scheduling is locked off. The NF train forward IS the
+deployed streaming cascade, gated bitwise: per-neuron window counts equal the
+identity executor at atol=0, with no mismatch budget.
+
+**Windowed LIF (`spiking_variant=synchronized`)** — the number system IS counts: a value in [0,1]
 is represented as "n spikes within a T-tick window" (T = simulation_steps).
 That is textbook rate coding, and the activation-quantization training chain
 exists precisely because it makes every activation live on a 1/T grid.
@@ -130,25 +139,33 @@ logits.
 | input boundary | first layer runs value-side, once; inputs enter as even trains | input encoding hardware | idealized, uniform encode |
 | silicon backends | lava (Loihi), sanafe, nevresim exporters consume the same program | real silicon | each has its own consistency checks; fidelity claims end at the exporter seam |
 
-The clean summary of the deployment contract as it exists: **the simulated
-chip is a windowed, pass-structured machine in which timing is normalized at
-every stage boundary — not a free-running asynchronous chip.** Every tier-0
-accuracy number means: "this trained model, executed under THESE semantics,
-scores X." Within that contract the toolchain is honest and bit-gated
-end-to-end. What the contract does NOT claim is free-streaming behavior;
-where the two diverge, this codebase measured the divergence instead of
-hiding it — that is what the 2.5-point and 0.84-agreement numbers are.
+The clean summary of the deployment contract: the toolchain now carries BOTH
+disciplines honestly. **Windowed** (`lif_sync`, the ttfs family): a
+pass-structured machine in which timing is normalized at every stage/hop
+boundary — the re-timing executes as per-level stages inside ONE fused
+segment since 2026-08-07. **Streamed** (`lif`, the default): a free-running
+binary-spike program whose train↔deploy agreement holds at atol=0 BY
+CONSTRUCTION (the raw streaming cascade is the train forward), enforced by a
+fatal per-neuron window-count gate. Every tier-0 accuracy number means:
+"this trained model, executed under THESE semantics, scores X." The historical
+2.5-point / 0.84-agreement numbers measured what deploying MISMATCHED
+semantics costs — which is exactly why the discipline is a trained-for axis,
+never a deploy-time toggle.
 
 ---
 
-## Part 4 — The three decisions this leaves open
+## Part 4 — The decision, resolved (2026-08-07)
 
-1. **Accept the windowed contract as the deployment story** (status quo,
-   now to be made structurally clean by the fused-mapping fix). Defensible:
-   windowed execution is how pass-based and weight-swapped deployments
-   physically run.
-2. **Pursue free-streaming fidelity as a research axis** — training that
-   tolerates bursty rhythm, or training-time modeling of cascade timing.
-   That is a research program (the −2.5 pp is its baseline), not a knob.
-3. **Carry both as measured arms** — the re-timing toggle already gives the
-   A/B instrument on any trained model.
+Both arms shipped as first-class disciplines of the `(spiking_family ×
+spiking_variant)` taxonomy:
+
+1. **Streamed lif is the default** (`spiking_variant=streamed`): the plain
+   cycle-accurate LIF adaptation trains the raw streaming cascade, so the
+   train forward IS the deployed forward — parity by construction, gated
+   bitwise. Tier-0 carries streamed cells across mlp/mixer/conv topologies
+   (t0_45–t0_49, incl. the spiking-native `stream_cnn` vehicle).
+2. **Windowed lif** stays fully supported as `spiking_variant=synchronized`
+   (the historical `lif` cells, re-tagged `lifsync`, keep their numbers);
+   the per-hop reset executes as level stages inside one fused segment.
+3. The A/B instrument is now the variant switch itself, on any streamable
+   model.

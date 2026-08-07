@@ -1,6 +1,8 @@
 # Activation semantics reconceptualization + streamed LIF deployment — engineering plan
 
-**Date:** 2026-08-07 · **Status:** DESIGN, approved axes (user, 2026-08-07):
+**Date:** 2026-08-07 · **Status:** EXECUTED 2026-08-07 (P0 `a2ae7a33`,
+P2 `4d9da585`, P3+P1 `f53f0167`, P4+P5 in the closing landing; per-phase
+gates recorded in the commit messages). Approved axes (user, 2026-08-07):
 two-key family+variant taxonomy · strict interior-host-op ban for streamed
 modes · streamed lif is the default and the starter re-bases on a streamable
 vehicle · a new spiking-native CNN vehicle joins tier-0.

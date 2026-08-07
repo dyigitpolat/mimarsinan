@@ -116,9 +116,9 @@ class TestStarterIdentity:
 
     def test_drafts_are_independent_copies(self):
         a = starter_draft()
-        a["deployment_parameters"]["model_config"]["variant"] = "mutated"
+        a["deployment_parameters"]["model_config"]["mlp_width_1"] = "mutated"
         b = starter_draft()
-        assert b["deployment_parameters"]["model_config"]["variant"] != "mutated"
+        assert b["deployment_parameters"]["model_config"]["mlp_width_1"] != "mutated"
 
 
 class TestStarterIsRunnable:
@@ -129,10 +129,11 @@ class TestStarterIsRunnable:
         assert stats is not None and stats["feasible"] is True
 
     def test_starter_rides_the_all_modes_green_vehicle(self):
-        """The starter's vehicle is the lenet5 family — the tier-0 family
-        that passes ALL FIVE modes — never a failing anchor cell."""
+        """[P4] The starter's vehicle is simple_mlp — the fully-neural tier-0
+        family (streamable by construction, green across every mode switch) —
+        never a failing anchor cell."""
         baseline = load_starter_baseline()
-        assert baseline["deployment_parameters"]["model_type"] == "lenet5"
+        assert baseline["deployment_parameters"]["model_type"] == "simple_mlp"
 
     def test_starter_pins_no_derived_mode_keys(self):
         """Pinned firing/spike-gen/threshold modes would break single-knob

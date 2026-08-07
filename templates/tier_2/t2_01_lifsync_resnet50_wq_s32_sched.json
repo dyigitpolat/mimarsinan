@@ -1,7 +1,7 @@
 {
   "seed": 0,
   "pipeline_mode": "phased",
-  "experiment_name": "t2_01_lif_resnet50_wq_s32_sched",
+  "experiment_name": "t2_01_lifsync_resnet50_wq_s32_sched",
   "generated_files_path": "./generated",
   "data_provider_name": "ImageNet_DataProvider",
   "platform_constraints": {

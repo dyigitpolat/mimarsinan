@@ -143,15 +143,16 @@ def legal_spiking_variants(cfg: Mapping[str, Any]) -> Tuple[str, ...]:
 
 
 def derived_spiking_variant(cfg: Mapping[str, Any]) -> str:
-    """What an absent variant resolves to. [P4 flips lif → streamed with the
-    starter re-base; until then the windowed semantics stays the default.]"""
+    """What an absent variant resolves to: lif → STREAMED (the event-driven
+    default discipline, P4), ttfs → analytical. Legacy dicts keep their
+    historical meaning through the bridge."""
     if cfg.get(SPIKING_VARIANT_KEY) is None and cfg.get("spiking_mode") is not None:
         try:
             return resolve_activation_semantics(cfg).variant
         except ValueError:
             return SYNCHRONIZED_VARIANT
     family = _effective_family(cfg)
-    return ANALYTICAL_VARIANT if family == TTFS_FAMILY else SYNCHRONIZED_VARIANT
+    return ANALYTICAL_VARIANT if family == TTFS_FAMILY else STREAMED_VARIANT
 
 
 def require_known_spiking_axes(family: Any, variant: Any) -> Tuple[str, str]:

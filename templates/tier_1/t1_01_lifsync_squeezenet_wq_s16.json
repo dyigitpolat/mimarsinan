@@ -1,34 +1,32 @@
 {
   "seed": 0,
   "pipeline_mode": "phased",
-  "experiment_name": "t1_10_lif_deepcnn32_d8_wq_s32_sched",
+  "experiment_name": "t1_01_lifsync_squeezenet_wq_s16",
   "generated_files_path": "./generated",
   "data_provider_name": "CIFAR10_DataProvider",
   "platform_constraints": {
     "cores": [
       {
-        "max_axons": 2304,
-        "max_neurons": 512,
-        "count": 256,
+        "max_axons": 576,
+        "max_neurons": 256,
+        "count": 512,
         "has_bias": true
       },
       {
-        "max_axons": 512,
-        "max_neurons": 256,
-        "count": 256,
+        "max_axons": 256,
+        "max_neurons": 576,
+        "count": 512,
         "has_bias": true
       }
     ],
-    "max_axons": 2304,
-    "max_neurons": 512,
+    "max_axons": 576,
+    "max_neurons": 576,
     "has_bias": true,
-    "target_tq": 32,
-    "simulation_steps": 32,
+    "target_tq": 16,
+    "simulation_steps": 16,
     "weight_bits": 8,
-    "allow_coalescing": true,
-    "allow_neuron_splitting": true,
-    "allow_weight_reuse": true,
-    "max_schedule_passes": 128
+    "allow_coalescing": false,
+    "allow_neuron_splitting": true
   },
   "deployment_parameters": {
     "lr": 0.003,
@@ -36,16 +34,13 @@
     "degradation_tolerance": 0.1,
     "model_config_mode": "user",
     "hw_config_mode": "fixed",
-    "model_type": "deep_cnn",
-    "model_config": {
-      "depth": 8,
-      "width": 32
-    },
+    "model_type": "torch_squeezenet11",
+    "model_config": {},
     "batch_size": 128,
     "max_simulation_samples": 25,
     "sanafe_arch_preset": "loihi",
     "sanafe_sample_count": 1,
-    "allow_scheduling": true,
+    "allow_scheduling": false,
     "spiking_family": "lif",
     "spiking_variant": "synchronized",
     "firing_mode": "Default",
@@ -54,8 +49,14 @@
     "encoding_layer_placement": "subsume",
     "weight_quantization": true,
     "scale_migration": true,
-    "training_epochs": 20,
-    "schedule_policy": "bank_clustered"
+    "preprocessing": {
+      "interpolation": "bilinear",
+      "resize_to": 96,
+      "normalize": "imagenet"
+    },
+    "weight_source": "torchvision",
+    "finetune_epochs": 8,
+    "finetune_lr": 0.0001
   },
   "target_metric_override": null,
   "start_step": null,

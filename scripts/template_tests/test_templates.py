@@ -190,8 +190,9 @@ class TestModeCoverage:
             )
         }
         assert {
-            ("lif", "synchronized"), ("ttfs", "analytical"),
-            ("ttfs", "quantized"), ("ttfs", "synchronized"),
+            ("lif", "streamed"), ("lif", "synchronized"),
+            ("ttfs", "analytical"), ("ttfs", "quantized"),
+            ("ttfs", "synchronized"),
         } <= points
 
     def test_tier0_covers_the_value_domain_family(self):

@@ -4,8 +4,8 @@
   "wall_budget_minutes_per_run": 5,
   "runs": [
     {
-      "name": "t0_01_lif_mmixcore_wq_s32",
-      "config": "t0_01_lif_mmixcore_wq_s32.json",
+      "name": "t0_01_lifsync_mmixcore_wq_s32",
+      "config": "t0_01_lifsync_mmixcore_wq_s32.json",
       "model_type": "mlp_mixer_core",
       "cell": {
         "firing": "lif",
@@ -20,12 +20,12 @@
         "encoding_placement": "subsume"
       },
       "tags": [],
-      "expected_wall_min": 20,
+      "expected_wall_min": 16,
       "note": "BN-mixer respec 2026-07-12, probe env_probe_bn_fc128_e8 (user-authorized): every mmixcore cell runs normalization=batch, fc_w_1/fc_w_2 64 -> 128, training_epochs 8 \u2014 supersedes the M1 mixer-e4 respec and the ttfsq e2 revert (the BN+width envelope is a different regime; the e4/e2 evidence does not carry over). Measured basis: envelope probes saturate 0.954-0.981 without BN+width (fc64 e4 0.970; fc128_c48 e12 0.9785; fc192 e8 0.9805) vs BN+fc128 e8 = 0.982."
     },
     {
-      "name": "t0_02_lif_lenet5_fp_s8_novena_offload_pruned",
-      "config": "t0_02_lif_lenet5_fp_s8_novena_offload_pruned.json",
+      "name": "t0_02_lifsync_lenet5_fp_s8_novena_offload_pruned",
+      "config": "t0_02_lifsync_lenet5_fp_s8_novena_offload_pruned.json",
       "model_type": "lenet5",
       "cell": {
         "firing": "lif",
@@ -44,11 +44,11 @@
         "offload",
         "pruned"
       ],
-      "expected_wall_min": 14
+      "expected_wall_min": 10
     },
     {
-      "name": "t0_03_lif_deepcnn_d8_wq_s16_sched",
-      "config": "t0_03_lif_deepcnn_d8_wq_s16_sched.json",
+      "name": "t0_03_lifsync_deepcnn_d8_wq_s16_sched",
+      "config": "t0_03_lifsync_deepcnn_d8_wq_s16_sched.json",
       "model_type": "deep_cnn",
       "cell": {
         "firing": "lif",
@@ -65,11 +65,11 @@
       "tags": [
         "sched"
       ],
-      "expected_wall_min": 20
+      "expected_wall_min": 16
     },
     {
-      "name": "t0_04_lif_deepmlp_d8_wq_s32",
-      "config": "t0_04_lif_deepmlp_d8_wq_s32.json",
+      "name": "t0_04_lifsync_deepmlp_d8_wq_s32",
+      "config": "t0_04_lifsync_deepmlp_d8_wq_s32.json",
       "model_type": "deep_mlp",
       "cell": {
         "firing": "lif",
@@ -84,12 +84,12 @@
         "encoding_placement": "subsume"
       },
       "tags": [],
-      "expected_wall_min": 13,
+      "expected_wall_min": 9,
       "note": "W3c respec 2026-07-06: fictional aq form (weight_quantization=false + weight_bits ran float) -> real WQ deployment; X4 passed the old form."
     },
     {
-      "name": "t0_05_lif_simplemlp_wq_s4",
-      "config": "t0_05_lif_simplemlp_wq_s4.json",
+      "name": "t0_05_lifsync_simplemlp_wq_s4",
+      "config": "t0_05_lifsync_simplemlp_wq_s4.json",
       "model_type": "simple_mlp",
       "cell": {
         "firing": "lif",
@@ -104,7 +104,7 @@
         "encoding_placement": "subsume"
       },
       "tags": [],
-      "expected_wall_min": 11
+      "expected_wall_min": 7
     },
     {
       "name": "t0_06_ttfs_mmixcore_wq_s8",
@@ -415,8 +415,8 @@
       "expected_wall_min": 7
     },
     {
-      "name": "t0_26_lif_deepcnn_d6_wq_s16_sched",
-      "config": "t0_26_lif_deepcnn_d6_wq_s16_sched.json",
+      "name": "t0_26_lifsync_deepcnn_d6_wq_s16_sched",
+      "config": "t0_26_lifsync_deepcnn_d6_wq_s16_sched.json",
       "model_type": "deep_cnn",
       "cell": {
         "firing": "lif",
@@ -433,7 +433,7 @@
       "tags": [
         "sched"
       ],
-      "expected_wall_min": 20,
+      "expected_wall_min": 16,
       "note": "folded tier-0.1 D3: depth-6 deepcnn wall frontier"
     },
     {
@@ -460,8 +460,8 @@
       "note": "folded tier-0.1 E1: sync mixer weight-bits variant. BN-mixer respec 2026-07-12, probe env_probe_bn_fc128_e8 (user-authorized): every mmixcore cell runs normalization=batch, fc_w_1/fc_w_2 64 -> 128, training_epochs 8 \u2014 supersedes the M1 mixer-e4 respec and the ttfsq e2 revert (the BN+width envelope is a different regime; the e4/e2 evidence does not carry over). Measured basis: envelope probes saturate 0.954-0.981 without BN+width (fc64 e4 0.970; fc128_c48 e12 0.9785; fc192 e8 0.9805) vs BN+fc128 e8 = 0.982."
     },
     {
-      "name": "t0_28_lif_mmixcore_wq_s32_wb8",
-      "config": "t0_28_lif_mmixcore_wq_s32_wb8.json",
+      "name": "t0_28_lifsync_mmixcore_wq_s32_wb8",
+      "config": "t0_28_lifsync_mmixcore_wq_s32_wb8.json",
       "model_type": "mlp_mixer_core",
       "cell": {
         "firing": "lif",
@@ -478,7 +478,7 @@
       "tags": [
         "wb8"
       ],
-      "expected_wall_min": 20,
+      "expected_wall_min": 16,
       "note": "folded tier-0.1 E2: lif mixer weight-bits variant. BN-mixer respec 2026-07-12, probe env_probe_bn_fc128_e8 (user-authorized): every mmixcore cell runs normalization=batch, fc_w_1/fc_w_2 64 -> 128, training_epochs 8 \u2014 supersedes the M1 mixer-e4 respec and the ttfsq e2 revert (the BN+width envelope is a different regime; the e4/e2 evidence does not carry over). Measured basis: envelope probes saturate 0.954-0.981 without BN+width (fc64 e4 0.970; fc128_c48 e12 0.9785; fc192 e8 0.9805) vs BN+fc128 e8 = 0.982."
     },
     {
@@ -504,8 +504,8 @@
       "note": "folded tier-0.1 E3: ttfsq deepcnn low-weight-bits variant"
     },
     {
-      "name": "t0_30_lif_mmix_wq_s32_offload",
-      "config": "t0_30_lif_mmix_wq_s32_offload.json",
+      "name": "t0_30_lifsync_mmix_wq_s32_offload",
+      "config": "t0_30_lifsync_mmix_wq_s32_offload.json",
       "model_type": "mlp_mixer",
       "cell": {
         "firing": "lif",
@@ -522,8 +522,106 @@
       "tags": [
         "offload"
       ],
-      "expected_wall_min": 20,
+      "expected_wall_min": 16,
       "note": "BA-P4 repro: offloaded torch-mixer signed host seams"
+    },
+    {
+      "name": "t0_45_lifs_simplemlp_wq_s4",
+      "config": "t0_45_lifs_simplemlp_wq_s4.json",
+      "model_type": "simple_mlp",
+      "cell": {
+        "firing": "lif",
+        "sync": "streamed",
+        "quantization": "wq_aq",
+        "S": "4",
+        "depth": "any",
+        "vehicle": "deep_mlp",
+        "dataset": "mnist",
+        "regime": "from_scratch",
+        "pruning": "dense",
+        "encoding_placement": "subsume"
+      },
+      "tags": [],
+      "expected_wall_min": 7
+    },
+    {
+      "name": "t0_46_lifs_deepmlp_d4_wq_s8",
+      "config": "t0_46_lifs_deepmlp_d4_wq_s8.json",
+      "model_type": "deep_mlp",
+      "cell": {
+        "firing": "lif",
+        "sync": "streamed",
+        "quantization": "wq_aq",
+        "S": "8",
+        "depth": "4",
+        "vehicle": "deep_mlp",
+        "dataset": "mnist",
+        "regime": "from_scratch",
+        "pruning": "dense",
+        "encoding_placement": "subsume"
+      },
+      "tags": [],
+      "expected_wall_min": 9
+    },
+    {
+      "name": "t0_47_lifs_mmixcore_wq_s32",
+      "config": "t0_47_lifs_mmixcore_wq_s32.json",
+      "model_type": "mlp_mixer_core",
+      "cell": {
+        "firing": "lif",
+        "sync": "streamed",
+        "quantization": "wq_aq",
+        "S": "32",
+        "depth": "any",
+        "vehicle": "mlp_mixer_core",
+        "dataset": "mnist",
+        "regime": "from_scratch",
+        "pruning": "dense",
+        "encoding_placement": "subsume"
+      },
+      "tags": [],
+      "expected_wall_min": 16,
+      "note": "BN-mixer respec 2026-07-12, probe env_probe_bn_fc128_e8 (user-authorized): every mmixcore cell runs normalization=batch, fc_w_1/fc_w_2 64 -> 128, training_epochs 8 \u2014 supersedes the M1 mixer-e4 respec and the ttfsq e2 revert (the BN+width envelope is a different regime; the e4/e2 evidence does not carry over). Measured basis: envelope probes saturate 0.954-0.981 without BN+width (fc64 e4 0.970; fc128_c48 e12 0.9785; fc192 e8 0.9805) vs BN+fc128 e8 = 0.982."
+    },
+    {
+      "name": "t0_48_lifs_stream_cnn_wq_s16_offload",
+      "config": "t0_48_lifs_stream_cnn_wq_s16_offload.json",
+      "model_type": "stream_cnn",
+      "cell": {
+        "firing": "lif",
+        "sync": "streamed",
+        "quantization": "wq_aq",
+        "S": "16",
+        "depth": "any",
+        "vehicle": "deep_cnn",
+        "dataset": "mnist",
+        "regime": "from_scratch",
+        "pruning": "dense",
+        "encoding_placement": "offload"
+      },
+      "tags": [
+        "offload"
+      ],
+      "expected_wall_min": 10
+    },
+    {
+      "name": "t0_49_lifs_stream_cnn_fp_s8",
+      "config": "t0_49_lifs_stream_cnn_fp_s8.json",
+      "model_type": "stream_cnn",
+      "cell": {
+        "firing": "lif",
+        "sync": "streamed",
+        "quantization": "none",
+        "S": "8",
+        "depth": "any",
+        "vehicle": "deep_cnn",
+        "dataset": "mnist",
+        "regime": "from_scratch",
+        "pruning": "dense",
+        "encoding_placement": "subsume"
+      },
+      "tags": [],
+      "expected_wall_min": 10
     },
     {
       "name": "t0_41_mvm_lenet5_wq_pruned",
@@ -616,6 +714,7 @@
     }
   ],
   "coverage_notes": [
+    "[P4 2026-08-07] Streamed-lif respec: the historical lif rows are RE-TAGGED lifsync (windowed semantics, numbers kept: t0_01-05, 26, 28, 30 \u2014 hypervolume axis ('lif','none') unchanged for scoreboard continuity) and five streamed cells land at t0_45-49 (axis ('lif','streamed')): simplemlp wq s4 / deepmlp d4w128 wq s8 / mmixcore wq s32 e8 / stream_cnn wq s16 offload (fully on-chip) / stream_cnn fp s8. stream_cnn is the new spiking-native conv vehicle (stride-2 blocks, no pooling; platform C for the 1024-axon fc).",
     "Quantization axis is RUNTIME truth (SSOT: config_schema/deployment_derivation.py): activation quantization is derived from the mode (ON for lif/casc/sync/ttfsq, OFF for analytical ttfs); configs never pin activation_quantization. Names use wq (bits-quantized) or fp (float/vanilla) only.",
     "W3c respec 2026-07-06: t0_04/t0_07 were the fictional aq class (weight_quantization=false + weight_bits ran as de-facto float; X4 passed those forms) -> respecced to real WQ deployments.",
     "W3c respec 2026-07-06: t0_15/t0_21 pruning 0.5 -> 0.10 (user-directed). t0_02/t0_09 stay at 0.5: they pass and keep the heavy-pruning stressor coverage (t0_18 left with the 2026-07-12 casc removal).",

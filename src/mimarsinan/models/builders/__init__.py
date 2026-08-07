@@ -14,6 +14,7 @@ from .torch_sequential_linear_builder import TorchSequentialLinearBuilder as Tor
 from .torch_sequential_conv_builder import TorchSequentialConvBuilder as TorchSequentialConvBuilder
 from .deep_mlp_builder import DeepMLPBuilder as DeepMLPBuilder
 from .deep_cnn_builder import DeepCNNBuilder as DeepCNNBuilder
+from .torch.stream_cnn_builder import StreamCNNBuilder as StreamCNNBuilder
 from .lenet5_builder import LeNet5Builder as LeNet5Builder
 
 from mimarsinan.pipelining.core.registry.model_registry import ModelRegistry

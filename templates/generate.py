@@ -65,6 +65,10 @@ VEHICLES = {
                 "model_config": {"depth": 8, "width": 64}},
     "simplemlp": {"model_type": "simple_mlp", "platform": "B", "axis": "deep_mlp",
                   "model_config": {"mlp_width_1": 256, "mlp_width_2": 128}},
+    # [P4] the streamed-lif conv vehicle: stride-2 blocks, no pooling —
+    # streamable by construction; fc1 needs 1024 axons (platform C).
+    "stream_cnn": {"model_type": "stream_cnn", "platform": "C", "axis": "deep_cnn",
+                   "model_config": {"width": 16, "blocks": 3, "fc_width": 128}},
     # [BA-P4] the NON-core mixer converts through the torch path (bare fc2
     # Linears + a no-activation patch-embed conv => signed plain-host seams),
     # exposing the boundary algebra's offload failure modes at unit wall cost.
@@ -77,9 +81,14 @@ VEHICLES = {
 MODES = {
     # Configs author the (spiking_family, spiking_variant) axes; the "axis"
     # tuple keeps the historical hypervolume-cell ids for scoreboard continuity.
-    "lif": {"spiking_family": "lif", "spiking_variant": "synchronized",
-            "firing_mode": "Default", "spike_generation_mode": "Uniform",
-            "thresholding_mode": "<", "axis": ("lif", "none")},
+    # Windowed lif (the historical 'lif' cells keep their hypervolume axis).
+    "lifsync": {"spiking_family": "lif", "spiking_variant": "synchronized",
+                "firing_mode": "Default", "spike_generation_mode": "Uniform",
+                "thresholding_mode": "<", "axis": ("lif", "none")},
+    # [P4] end-to-end event-streamed lif: the canonical 'lif' discipline.
+    "lifs": {"spiking_family": "lif", "spiking_variant": "streamed",
+             "firing_mode": "Default", "spike_generation_mode": "Uniform",
+             "thresholding_mode": "<", "axis": ("lif", "streamed")},
     "ttfs": {"spiking_family": "ttfs", "spiking_variant": "analytical",
              "firing_mode": "TTFS", "spike_generation_mode": "TTFS",
              "thresholding_mode": "<=", "axis": ("ttfs", "none")},
@@ -105,7 +114,7 @@ QUANT = {
     "fp": {"weight_quantization": False},
     "wq": {"weight_quantization": True},
 }
-AQ_DERIVED_MODES = {"lif", "ttfsq", "casc", "sync"}
+AQ_DERIVED_MODES = {"lifsync", "lifs", "ttfsq", "casc", "sync"}
 
 
 def _quant_axis(row):
@@ -132,7 +141,8 @@ def _quant_axis(row):
 # 2026-07-12 casc removal from the tier-0 family.
 ENDPOINT_FLOOR_STEPS_BASE = 16000
 ENDPOINT_MODE_EXTRA_STEPS = {
-    "lif": 2 * 600,
+    "lifsync": 2 * 600,
+    "lifs": 2 * 600,
     "sync": 600,
 }
 
@@ -159,19 +169,19 @@ T0 = [
     # S-respec 2026-07-14 (user-directed): the mixer AQ-capacity fix — the mixer
     # examples deploy <0.97 at low S because the activation grid (Tq==S) is too
     # coarse; the measured minimal passing S is baked in (lif S32 -> 0.9751).
-    dict(n=1, mode="lif", quant="wq", wb=5, s=32, vehicle="mmixcore", epochs=8,
+    dict(n=1, mode="lifsync", quant="wq", wb=5, s=32, vehicle="mmixcore", epochs=8,
          note=MIXER_BN_NOTE),
-    dict(n=2, mode="lif", quant="fp", wb=5, s=8, vehicle="lenet5", firing="Novena",
+    dict(n=2, mode="lifsync", quant="fp", wb=5, s=8, vehicle="lenet5", firing="Novena",
          encoding="offload", pruned=0.5, tags=["novena", "offload", "pruned"]),
     # W2: the 360-core pool packs t0_03 only scheduled (111/360 peak over 4 phases).
-    dict(n=3, mode="lif", quant="wq", wb=4, s=16, vehicle="deepcnn", depth=8,
+    dict(n=3, mode="lifsync", quant="wq", wb=4, s=16, vehicle="deepcnn", depth=8,
          scheduling=True, tags=["sched"]),
     # W3c respec: was the fictional aq form (wq=False + weight_bits ran as a de-facto
     # float deployment, X4 passed that form); now a real WQ deployment.
-    dict(n=4, mode="lif", quant="wq", wb=5, s=32, vehicle="deepmlp", depth=8,
+    dict(n=4, mode="lifsync", quant="wq", wb=5, s=32, vehicle="deepmlp", depth=8,
          note="W3c respec 2026-07-06: fictional aq form (weight_quantization=false + "
               "weight_bits ran float) -> real WQ deployment; X4 passed the old form."),
-    dict(n=5, mode="lif", quant="wq", wb=5, s=4, vehicle="simplemlp", seed=1),
+    dict(n=5, mode="lifsync", quant="wq", wb=5, s=4, vehicle="simplemlp", seed=1),
     dict(n=6, mode="ttfs", quant="wq", wb=5, s=8, vehicle="mmixcore", epochs=8,
          note=MIXER_BN_NOTE),
     # W3c respec: same fictional-aq class as t0_04.
@@ -217,12 +227,12 @@ T0 = [
     # respec'd to their passing S), and a wb4 deepcnn. The tier-0.1 minimal-pair
     # matrix (and its anchor test) is retired; its S-capacity hypothesis is now
     # baked into the respec'd mixer cells above.
-    dict(n=26, mode="lif", quant="wq", wb=4, s=16, vehicle="deepcnn", depth=6,
+    dict(n=26, mode="lifsync", quant="wq", wb=4, s=16, vehicle="deepcnn", depth=6,
          scheduling=True, tags=["sched"], note="folded tier-0.1 D3: depth-6 deepcnn wall frontier"),
     dict(n=27, mode="sync", quant="wq", wb=8, s=8, vehicle="mmixcore", pruned=0.10,
          tags=["pruned10", "wb8"], epochs=8,
          note="folded tier-0.1 E1: sync mixer weight-bits variant. " + MIXER_BN_NOTE),
-    dict(n=28, mode="lif", quant="wq", wb=8, s=32, vehicle="mmixcore",
+    dict(n=28, mode="lifsync", quant="wq", wb=8, s=32, vehicle="mmixcore",
          tags=["wb8"], epochs=8,
          note="folded tier-0.1 E2: lif mixer weight-bits variant. " + MIXER_BN_NOTE),
     dict(n=29, mode="ttfsq", quant="wq", wb=4, s=4, vehicle="deepcnn", depth=4,
@@ -242,12 +252,21 @@ T0 = [
     # mode-gated off — the TTFS value-op path's own convention gap on
     # per-instance host Linears (conversion_boundary_algebra.md sec.10);
     # sync/torch-mixer support is an open program item, not a tier-0 cell.
-    dict(n=30, mode="lif", quant="wq", wb=5, s=32, vehicle="mmix",
+    dict(n=30, mode="lifsync", quant="wq", wb=5, s=32, vehicle="mmix",
          encoding="offload", tags=["offload"],
          note="BA-P4 repro: offloaded torch-mixer signed host seams"),
     # [mvm W3] the value-domain (MVM) family: no conversion ladder; the R/C
     # value certificates are FATAL and the deployed read is the packed value
     # census. Fresh numbering block (t0_41+) — t0_31/32 are burned labels.
+    # [P4] streamed-lif cells: end-to-end event streaming, binary spikes on
+    # every wire, one resident program; NF-SCM window counts hold at atol=0.
+    dict(n=45, mode="lifs", quant="wq", wb=5, s=4, vehicle="simplemlp", seed=1),
+    dict(n=46, mode="lifs", quant="wq", wb=5, s=8, vehicle="deepmlp", depth=4, width=128),
+    dict(n=47, mode="lifs", quant="wq", wb=5, s=32, vehicle="mmixcore", epochs=8,
+         note=MIXER_BN_NOTE),
+    dict(n=48, mode="lifs", quant="wq", wb=5, s=16, vehicle="stream_cnn",
+         encoding="offload", tags=["offload"]),
+    dict(n=49, mode="lifs", quant="fp", wb=5, s=8, vehicle="stream_cnn"),
     dict(n=41, mode="mvm", quant="wq", wb=8, vehicle="lenet5",
          pruned=0.05, tags=["pruned"],
          note="mvm flagship: quantized weights, float I/O, twin certs FATAL"),
@@ -287,14 +306,14 @@ T1 = [
     # the from-scratch LR. (An earlier fast_lr_scale attempt was a no-op:
     # that lever feeds fast_ladder only, while Weight Preloading reads
     # finetune_lr/lr — which is why its numbers were bit-identical.)
-    dict(n=1, mode="lif", quant="wq", wb=8, s=16, vehicle="squeezenet",
+    dict(n=1, mode="lifsync", quant="wq", wb=8, s=16, vehicle="squeezenet",
          regime="pretrained", finetune_epochs=8, finetune_lr=1e-4),
     dict(n=2, mode="ttfs", quant="wq", wb=8, s=32, vehicle="vit", regime="pretrained", tags=["wall_risk"]),
     dict(n=3, mode="ttfsq", quant="wq", wb=8, s=32, vehicle="vit", regime="pretrained",
          pruned=0.05, tags=["wall_risk", "pruned"]),
     dict(n=4, mode="casc", quant="wq", wb=5, s=8, vehicle="deepcnn32", depth=8, regime="from_scratch"),
     dict(n=5, mode="sync", quant="wq", wb=5, s=8, vehicle="deepcnn32", depth=4, regime="from_scratch"),
-    dict(n=6, mode="lif", quant="wq", wb=8, s=32, vehicle="deepcnn32", depth=8, regime="from_scratch"),
+    dict(n=6, mode="lifsync", quant="wq", wb=8, s=32, vehicle="deepcnn32", depth=8, regime="from_scratch"),
     dict(n=7, mode="casc", quant="wq", wb=8, s=16, vehicle="squeezenet", regime="pretrained",
          scheduling=True, tags=["sched"], finetune_epochs=8, finetune_lr=1e-4),
     dict(n=8, mode="ttfs", quant="fp", wb=8, s=16, vehicle="mixerc10", regime="from_scratch"),
@@ -320,7 +339,7 @@ T1 = [
     # rather than a pool fallback. The squeezenet vehicle is unusable here:
     # its ImageNet backbone reads chance on unpreprocessed 32x32 CIFAR10
     # (no resize/normalize declared) and the pretrain envelope aborts.
-    dict(n=10, mode="lif", quant="wq", wb=8, s=32, vehicle="deepcnn32",
+    dict(n=10, mode="lifsync", quant="wq", wb=8, s=32, vehicle="deepcnn32",
          depth=8, regime="from_scratch", scheduling=True, tags=["sched"],
          extra_dp={"schedule_policy": "bank_clustered"},
          extra_pc={"allow_weight_reuse": True, "max_schedule_passes": 128}),
@@ -373,7 +392,7 @@ T1_VEHICLES = {
 }
 
 T2 = [
-    dict(n=1, mode="lif", quant="wq", wb=8, s=32, vehicle="resnet50", dataset="ImageNet",
+    dict(n=1, mode="lifsync", quant="wq", wb=8, s=32, vehicle="resnet50", dataset="ImageNet",
          regime="pretrained", scheduling=True, lr=0.0001, finetune_epochs=0, budget=0.5, tags=["sched"]),
     dict(n=2, mode="ttfsq", quant="wq", wb=8, s=32, vehicle="vit", dataset="CIFAR100",
          regime="pretrained", scheduling=True, pruned=0.05, tags=["sched", "pruned"]),
@@ -383,7 +402,7 @@ T2 = [
     # patch-embed encoding layer runs on the host, the transformer stack maps to
     # chip; CIFAR100 pretrained-finetuned so the tier runs locally (ImageNet
     # scale-up is tier_3). Scheduled + light-pruned to fit platform E + wall.
-    dict(n=4, mode="lif", quant="wq", wb=8, s=32, vehicle="vit", dataset="CIFAR100",
+    dict(n=4, mode="lifsync", quant="wq", wb=8, s=32, vehicle="vit", dataset="CIFAR100",
          regime="pretrained", scheduling=True, encoding="offload", pruned=0.05,
          tags=["sched", "offload", "pruned", "wall_risk"],
          # The AB9-proven census-graded lossless-fast set (calculus 16.9/17.8):
@@ -413,7 +432,7 @@ T2_VEHICLES = {
 # finetune). Needs IMAGENET_ROOT; runs on the cluster (the "final verification"
 # scale above tier_2's CIFAR100). Same offloaded encoding + scheduling.
 T3 = [
-    dict(n=1, mode="lif", quant="wq", wb=8, s=32, vehicle="vit", dataset="ImageNet",
+    dict(n=1, mode="lifsync", quant="wq", wb=8, s=32, vehicle="vit", dataset="ImageNet",
          regime="pretrained", scheduling=True, encoding="offload", finetune_epochs=0,
          lr=0.0001, budget=0.5, tags=["sched", "offload", "wall_risk"]),
     dict(n=2, mode="sync", quant="wq", wb=8, s=32, vehicle="vit", dataset="ImageNet",
@@ -481,7 +500,7 @@ def _deployment(tier, row, vehicles, dataset):
     dp = {
         "lr": row.get("lr", 0.003),
         "tuning_budget_scale": row.get(
-            "budget", 0.25 if tier == 0 and row["mode"] in ("lif", "ttfs") else 0.5 if tier == 0 else 1,
+            "budget", 0.25 if tier == 0 and row["mode"] in ("lifsync", "lifs", "ttfs") else 0.5 if tier == 0 else 1,
         ),
         "degradation_tolerance": 0.15 if tier == 0 else 0.1,
         "model_config_mode": "user",
@@ -577,6 +596,7 @@ def _cell(tier, row, vehicles, dataset):
 # four mixer rows timed out at exactly 540 s (9 min at scale 1.5) in the
 # 2026-07-28 verification and reported no verdict at all.
 _TIER0_VEHICLE_WALL_MIN = {
+    "stream_cnn": 10,
     "deep_cnn": 16,
     "mlp_mixer_core": 16,
     "mlp_mixer": 16,
@@ -670,6 +690,14 @@ CASC_REMOVAL_NOTE = (
 
 COVERAGE_NOTES = {
     0: [
+        "[P4 2026-08-07] Streamed-lif respec: the historical lif rows are "
+        "RE-TAGGED lifsync (windowed semantics, numbers kept: t0_01-05, 26, "
+        "28, 30 — hypervolume axis ('lif','none') unchanged for scoreboard "
+        "continuity) and five streamed cells land at t0_45-49 (axis "
+        "('lif','streamed')): simplemlp wq s4 / deepmlp d4w128 wq s8 / "
+        "mmixcore wq s32 e8 / stream_cnn wq s16 offload (fully on-chip) / "
+        "stream_cnn fp s8. stream_cnn is the new spiking-native conv vehicle "
+        "(stride-2 blocks, no pooling; platform C for the 1024-axon fc).",
         "Quantization axis is RUNTIME truth (SSOT: config_schema/"
         "deployment_derivation.py): activation quantization is derived from the "
         "mode (ON for lif/casc/sync/ttfsq, OFF for analytical ttfs); configs "

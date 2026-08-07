@@ -25,8 +25,8 @@ docs in sync with the files they describe.
 4. **Semantics are centralized**: the domain axis `core_semantics ∈
    {spiking, mvm}` (`chip_simulation/core_semantics.py`) picks the family;
    spiking semantics are AUTHORED as `spiking_family ∈ {lif, ttfs}` ×
-   `spiking_variant` (lif: `synchronized` — `streamed` reserved for the
-   streamed-deployment phase; ttfs: `analytical | quantized | synchronized |
+   `spiking_variant` (lif: `streamed` — the event-driven DEFAULT — or
+   `synchronized`; ttfs: `analytical | quantized | synchronized |
    cascaded`), the taxonomy SSOT `chip_simulation/activation_semantics.py`
    folding them into the legacy dispatch strings (`spiking_mode` ×
    `ttfs_cycle_schedule`, now derivation-owned) that the SSOT

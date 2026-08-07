@@ -4,8 +4,8 @@
   "wall_budget_minutes_per_run": 480,
   "runs": [
     {
-      "name": "t3_01_lif_vit_wq_s32_sched_offload",
-      "config": "t3_01_lif_vit_wq_s32_sched_offload.json",
+      "name": "t3_01_lifsync_vit_wq_s32_sched_offload",
+      "config": "t3_01_lifsync_vit_wq_s32_sched_offload.json",
       "model_type": "torch_vit",
       "cell": {
         "firing": "lif",

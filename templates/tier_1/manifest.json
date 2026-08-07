@@ -4,8 +4,8 @@
   "wall_budget_minutes_per_run": 120,
   "runs": [
     {
-      "name": "t1_01_lif_squeezenet_wq_s16",
-      "config": "t1_01_lif_squeezenet_wq_s16.json",
+      "name": "t1_01_lifsync_squeezenet_wq_s16",
+      "config": "t1_01_lifsync_squeezenet_wq_s16.json",
       "model_type": "torch_squeezenet11",
       "cell": {
         "firing": "lif",
@@ -104,8 +104,8 @@
       "expected_wall_min": 120
     },
     {
-      "name": "t1_06_lif_deepcnn32_d8_wq_s32",
-      "config": "t1_06_lif_deepcnn32_d8_wq_s32.json",
+      "name": "t1_06_lifsync_deepcnn32_d8_wq_s32",
+      "config": "t1_06_lifsync_deepcnn32_d8_wq_s32.json",
       "model_type": "deep_cnn",
       "cell": {
         "firing": "lif",
@@ -185,8 +185,8 @@
       "expected_wall_min": 120
     },
     {
-      "name": "t1_10_lif_deepcnn32_d8_wq_s32_sched",
-      "config": "t1_10_lif_deepcnn32_d8_wq_s32_sched.json",
+      "name": "t1_10_lifsync_deepcnn32_d8_wq_s32_sched",
+      "config": "t1_10_lifsync_deepcnn32_d8_wq_s32_sched.json",
       "model_type": "deep_cnn",
       "cell": {
         "firing": "lif",

@@ -215,13 +215,15 @@ class TestVehiclesAlwaysServed:
     )
 
     def test_starter_serves_all_vehicle_rows(self, client):
+        # [P4] the starter streams by default: loihi defers with a reason.
         draft = client.get("/api/config/starter").json()
         body = client.post("/api/config/resolve", json=draft).json()
         rows = {r["key"]: r for r in body["vehicles"]}
         assert set(rows) == set(self._ENABLES)
         for key in self._ENABLES:
-            assert rows[key]["supported"] is True, key
-            assert rows[key]["on"] is True, key
+            expected = key != "enable_loihi_simulation"
+            assert rows[key]["supported"] is expected, key
+            assert rows[key]["on"] is expected, key
             assert rows[key]["declared"] is False, key
             assert rows[key]["why"], key
 
@@ -372,7 +374,7 @@ class TestPretrainedPanelBlock:
         pretrained = body["pretrained"]
         assert pretrained["available"] is False
         assert pretrained["legal_preload"] == [False]
-        assert "lenet5" in pretrained["reason"] and "no pretrained" in pretrained["reason"]
+        assert "simple_mlp" in pretrained["reason"] and "no pretrained" in pretrained["reason"]
         assert pretrained["sets"] == []
 
     def test_single_set_locks_the_choice(self, client, monkeypatch):
@@ -484,7 +486,7 @@ class TestBaselineIsTheDiffBaseline:
 
     def test_experiment_name_derives_from_the_baseline_vehicle(self, client):
         draft = client.get("/api/config/starter").json()
-        assert draft["experiment_name"].startswith("lenet5_")
+        assert draft["experiment_name"].startswith("simplemlp_")
 
     def test_schema_payload_serves_the_baseline_overlay(self, client):
         keys = client.get("/api/config_schema").json()["keys"]

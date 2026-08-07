@@ -1,13 +1,14 @@
 {
-  "experiment_name": "lenet5_baseline",
+  "experiment_name": "simplemlp_baseline",
   "generated_files_path": "./generated",
   "data_provider_name": "MNIST_DataProvider",
   "seed": 0,
   "start_step": null,
   "deployment_parameters": {
-    "model_type": "lenet5",
+    "model_type": "simple_mlp",
     "model_config": {
-      "variant": "lenet5"
+      "mlp_width_1": 256,
+      "mlp_width_2": 128
     },
     "encoding_layer_placement": "subsume",
     "lr": 0.003,
@@ -23,8 +24,8 @@
       { "max_axons": 512, "max_neurons": 256, "count": 60, "has_bias": true }
     ],
     "has_bias": true,
-    "target_tq": 16,
-    "simulation_steps": 16,
+    "target_tq": 4,
+    "simulation_steps": 4,
     "weight_bits": 5,
     "allow_coalescing": true,
     "allow_neuron_splitting": true

@@ -51,6 +51,9 @@ verification, mapping, or training logic in it.
 - Tuning-loop constants: `tuning/orchestration/tuning_policy.py`.
 - Spiking-mode predicates: `chip_simulation/spiking_semantics.py` — never
   compare mode strings with literal ladders.
+- Activation-semantics axes (family × variant), legacy bridge, domain tags:
+  `chip_simulation/activation_semantics.py` (config keys `spiking_family`,
+  `spiking_variant`; lif defaults to the STREAMED discipline).
 - Environment variables: `common/env.py` — never read `MIMARSINAN_*` directly.
 - Config → running pipeline: `pipelining/session.py` (`PipelineSession`);
   `run.py`/`src/main.py` are thin frontends over it.

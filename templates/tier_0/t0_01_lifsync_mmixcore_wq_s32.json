@@ -1,7 +1,7 @@
 {
   "seed": 0,
   "pipeline_mode": "phased",
-  "experiment_name": "t0_28_lif_mmixcore_wq_s32_wb8",
+  "experiment_name": "t0_01_lifsync_mmixcore_wq_s32",
   "generated_files_path": "./generated",
   "data_provider_name": "MNIST_DataProvider",
   "platform_constraints": {
@@ -24,7 +24,7 @@
     "has_bias": true,
     "target_tq": 32,
     "simulation_steps": 32,
-    "weight_bits": 8,
+    "weight_bits": 5,
     "allow_coalescing": true,
     "allow_neuron_splitting": true
   },

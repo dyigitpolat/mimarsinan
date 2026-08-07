@@ -1,9 +1,9 @@
 {
   "seed": 0,
   "pipeline_mode": "phased",
-  "experiment_name": "t3_01_lif_vit_wq_s32_sched_offload",
+  "experiment_name": "t2_04_lifsync_vit_wq_s32_sched_offload_pruned",
   "generated_files_path": "./generated",
-  "data_provider_name": "ImageNet_DataProvider",
+  "data_provider_name": "CIFAR100_DataProvider",
   "platform_constraints": {
     "cores": [
       {
@@ -29,8 +29,8 @@
     "allow_neuron_splitting": true
   },
   "deployment_parameters": {
-    "lr": 0.0001,
-    "tuning_budget_scale": 0.5,
+    "lr": 0.003,
+    "tuning_budget_scale": 1,
     "degradation_tolerance": 0.1,
     "model_config_mode": "user",
     "hw_config_mode": "fixed",
@@ -48,6 +48,8 @@
     "thresholding_mode": "<",
     "encoding_layer_placement": "offload",
     "weight_quantization": true,
+    "pruning": true,
+    "pruning_fraction": 0.05,
     "scale_migration": true,
     "tuning_batch_size": 32,
     "fast_lr_scale": 0.25,
@@ -57,7 +59,12 @@
       "normalize": "imagenet"
     },
     "weight_source": "torchvision",
-    "finetune_epochs": 0
+    "finetune_epochs": 2,
+    "spike_phase_dither": true,
+    "lif_membrane_init": -0.25,
+    "eval_subsample_target": 2048,
+    "aa_endpoint_recovery_steps": 8000,
+    "simulation_batch_size": 64
   },
   "target_metric_override": null,
   "start_step": null,
