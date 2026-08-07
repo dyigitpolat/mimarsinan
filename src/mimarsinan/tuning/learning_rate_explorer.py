@@ -6,6 +6,7 @@ from typing import Any, Callable
 
 import torch
 
+from mimarsinan.data_handling import batch_integrity
 from mimarsinan.tuning.orchestration.tuning_budget import TuningBudget
 
 
@@ -168,13 +169,26 @@ def make_loss_slope_signal(trainer):
 
     Reads one fresh training batch per call, never the test set. Returns ``None``
     when the trainer cannot score a training-batch loss (falls back to validation).
+
+    The read is verified: this loss RANKS candidate learning rates, so a corrupted
+    batch would score a rate on NaN rather than on the model. Guarding is free
+    here -- the probe is called a bounded number of times per sweep, not once per
+    optimizer step -- which is why the check lives at this seam and not inside
+    ``next_training_batch``.
     """
     if not (hasattr(trainer, "evaluate_loss_on_batch")
             and hasattr(trainer, "next_training_batch")):
         return None
 
     def signal() -> float:
-        return float(trainer.evaluate_loss_on_batch(trainer.next_training_batch()))
+        batch = batch_integrity.read_verified_batch(
+            lambda: batch_integrity.own_batch(*trainer.next_training_batch()),
+            source="the LR-probe training loader",
+            repair=lambda _attempt: setattr(
+                trainer, "train_iter", iter(trainer.train_loader)
+            ),
+        )
+        return float(trainer.evaluate_loss_on_batch(batch))
 
     return signal
 

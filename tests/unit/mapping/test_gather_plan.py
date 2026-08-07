@@ -10,7 +10,8 @@ from mimarsinan.mapping.ir.gather_plan import (
     gather_inputs_reference,
     gather_plan_for,
 )
-from mimarsinan.mapping.ir.types import ComputeOp, IRSource
+from mimarsinan.mapping.ir.types import ComputeOp
+from mimarsinan.mapping.ir.source import IRSource
 
 
 def _sources(rng, n, *, n_input=16, buffer_shapes=None):

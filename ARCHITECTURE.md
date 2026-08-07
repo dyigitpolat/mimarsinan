@@ -116,6 +116,7 @@ their logic locally.
 | What op shapes a target's cores accept (packaging rule + boundary domain) | `mapping/platform/packaging_contract.py` (`packaging_contract_for`) |
 | Segment-boundary encode/decode shared by torch forward and simulators | `spiking/segment_boundary.py` |
 | Deployed-bias compensation (negative shift, TTFS half-step) | `mapping/support/bias_compensation.py` |
+| What "matches" means for a measured number vs a recorded baseline | `common/measurement/baseline.py` (`MetricTolerance`, `assert_matches_recorded_baseline`) |
 | `MIMARSINAN_*` environment variables (one call-time accessor each) | `common/env.py` |
 | The only sanctioned log-and-degrade seam | `common/best_effort.py` (`best_effort`) |
 

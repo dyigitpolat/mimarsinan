@@ -10,7 +10,7 @@ deployment is compared apples-to-apples instead of failing a raw shape check.
 import numpy as np
 
 from mimarsinan.mapping.ir import IRGraph, NeuralCore
-from mimarsinan.mapping.ir.types import IRSource
+from mimarsinan.mapping.ir.source import IRSource
 from mimarsinan.mapping.pruning.deployed_neuron_survival import (
     DeployedNeuronSurvival,
     derive_deployed_neuron_survival,

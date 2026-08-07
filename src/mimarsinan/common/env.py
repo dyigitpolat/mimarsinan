@@ -14,6 +14,7 @@ FFCV_CACHE_DIR_VAR = "MIMARSINAN_FFCV_CACHE_DIR"
 LOIHI_QUIET_VAR = "MIMARSINAN_LOIHI_QUIET"
 LOIHI_WAVE_WORKERS_VAR = "MIMARSINAN_LOIHI_WAVE_WORKERS"
 GUI_NO_BROWSER_VAR = "MIMARSINAN_GUI_NO_BROWSER"
+GUI_RESOURCE_RENDER_VAR = "MIMARSINAN_GUI_RESOURCE_RENDER"
 RUNS_ROOT_VAR = "MIMARSINAN_RUNS_ROOT"
 TEMPLATES_DIR_VAR = "MIMARSINAN_TEMPLATES_DIR"
 TEST_CUDA_VAR = "MIMARSINAN_TEST_CUDA"
@@ -22,6 +23,7 @@ MBH_LEDGER_VAR = "MIMARSINAN_MBH_LEDGER"
 SIMULATION_STEP_TIMEOUT_VAR = "MIMARSINAN_SIMULATION_STEP_TIMEOUT_S"
 UNSAFE_QUANT_OVERRIDES_VAR = "MIMARSINAN_UNSAFE_QUANT_OVERRIDES"
 DEGENERATE_ROUTING_DEBUG_VAR = "MIMARSINAN_DEGENERATE_ROUTING_DEBUG"
+COHORT_TOKEN_VAR = "MIMARSINAN_COHORT_TOKEN"
 IMAGENET_ROOT_VAR = "IMAGENET_ROOT"
 
 
@@ -103,6 +105,27 @@ def gui_no_browser() -> bool:
     return os.environ.get(GUI_NO_BROWSER_VAR, "").strip().lower() in ("1", "true", "yes")
 
 
+GUI_RESOURCE_RENDER_VALUES = ("eager", "deferred")
+
+
+def gui_resource_render_override() -> str | None:
+    """Operator override of the run mode's GUI resource-render policy; None when unset.
+
+    ``eager`` renders each step's resources during the run, ``deferred`` persists
+    only their source data for a monitor to render on attach. Anything else fails
+    loud rather than silently picking a policy.
+    """
+    raw = os.environ.get(GUI_RESOURCE_RENDER_VAR, "").strip().lower()
+    if not raw:
+        return None
+    if raw not in GUI_RESOURCE_RENDER_VALUES:
+        raise ValueError(
+            f"{GUI_RESOURCE_RENDER_VAR} must be one of "
+            f"{', '.join(GUI_RESOURCE_RENDER_VALUES)}; got {raw!r}"
+        )
+    return raw
+
+
 def runs_root() -> str:
     """Directory holding past pipeline runs; defaults to "./generated"."""
     return os.environ.get(RUNS_ROOT_VAR, "./generated")
@@ -150,3 +173,13 @@ def simulation_step_timeout_override() -> float | None:
 def imagenet_root() -> str:
     """ILSVRC2012 root directory, stripped; empty string when unset."""
     return os.environ.get(IMAGENET_ROOT_VAR, "").strip()
+
+
+def set_cohort_token(token: str) -> None:
+    """Mark this process so every process it later execs joins ``token``'s cohort.
+
+    ``putenv`` rewrites the array ``execve`` passes on, not this process's own
+    ``/proc/self/environ`` region -- so the mark reaches children (and their fork
+    descendants) but never retroactively claims the process that set it.
+    """
+    os.environ[COHORT_TOKEN_VAR] = token

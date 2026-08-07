@@ -5,7 +5,8 @@ from __future__ import annotations
 import numpy as np
 
 from mimarsinan.mapping.ir.graph import IRGraph
-from mimarsinan.mapping.ir.types import IRSource, NeuralCore
+from mimarsinan.mapping.ir.types import NeuralCore
+from mimarsinan.mapping.ir.source import IRSource
 
 
 def spike_source_to_ir_source(spike_source, core_id_offset: int = 0) -> IRSource:
@@ -31,7 +32,9 @@ def soft_core_to_neural_core(soft_core, core_id_offset: int = 0) -> NeuralCore:
         id=soft_core.id + core_id_offset,
         name=soft_core.name or f"core_{soft_core.id}",
         input_sources=ir_sources,
-        core_matrix=soft_core.core_matrix,
+        core_matrix=(
+            soft_core.get_core_matrix() if soft_core.has_core_matrix() else None
+        ),
         threshold=soft_core.threshold,
         activation_scale=soft_core.activation_scale,
         parameter_scale=soft_core.parameter_scale,
@@ -69,6 +72,22 @@ def ir_source_to_spike_source(ir_source: IRSource):
         return SpikeSource(-3, 0, is_input=False, is_off=False, is_always_on=True)
     else:
         return SpikeSource(ir_source.node_id, ir_source.index, is_input=False, is_off=False)
+
+
+def _residency_class_of(neural_core: NeuralCore, graph, pi):
+    """Read the class the LAYOUT assigned; recomputing here is how the two drift apart.
+
+    The finalizer is the single producer of residency class ids. A SoftCore that derived its own
+    would disagree with the layout specs the capacity splitter packs against, and the splitter
+    would size sub-segments the runtime packer cannot honour. The source-perceptron proxy is used
+    only when there is no layout record to read -- the same condition the degraded reconstruction
+    path already declares as `provenance_fallback`.
+    """
+    specs = getattr(graph, "layout_softcores", None) if graph is not None else None
+    idx = getattr(neural_core, "layout_softcore_index", None)
+    if specs and idx is not None and 0 <= int(idx) < len(specs):
+        return int(specs[int(idx)].residency_class_id)
+    return int(pi) if pi is not None else None
 
 
 def neural_core_to_soft_core(neural_core: NeuralCore, graph: IRGraph | None = None):
@@ -130,7 +149,7 @@ def neural_core_to_soft_core(neural_core: NeuralCore, graph: IRGraph | None = No
         psum_role=neural_core.psum_role,
         coalescing_group_id=neural_core.coalescing_group_id,
         coalescing_role=neural_core.coalescing_role,
-        threshold_group_id=int(pi) if pi is not None else None,
+        residency_class_id=_residency_class_of(neural_core, graph, pi),
         weight_bank_id=(
             int(neural_core.weight_bank_id)
             if neural_core.weight_bank_id is not None else None

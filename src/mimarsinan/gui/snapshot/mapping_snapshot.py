@@ -12,11 +12,10 @@ logger = logging.getLogger("mimarsinan.gui")
 
 from mimarsinan.common.best_effort import best_effort
 from mimarsinan.gui.snapshot.util.helpers import _histogram
-from mimarsinan.gui.resources import ResourceDescriptor
-from mimarsinan.gui.snapshot.heatmap import _make_heatmap_producer
+from mimarsinan.gui.resources import HeatmapSource, ResourceDescriptor
 from mimarsinan.gui.snapshot.ir_graph.ir_graph_resources import (
     _group_consecutive_compute_stages,
-    _make_per_core_connectivity_producer,
+    _make_per_core_connectivity_source,
     _make_segment_spans_extractor,
 )
 
@@ -116,19 +115,19 @@ def snapshot_hard_core_mapping(mapping: Any) -> tuple[dict, list[ResourceDescrip
                     "latency": core.latency,
                 }
                 with best_effort(f"register heatmap for hard core {ci}", logger=logger):
-                    mat = core.core_matrix
+                    mat = core.get_core_matrix()
                     rid = f"seg/{seg_idx}/core/{ci}"
                     core_d["has_heatmap"] = True
                     core_d["heatmap_resource"] = {
                         "kind": RESOURCE_KIND_HARD_CORE_HEATMAP,
                         "rid": rid,
                     }
-                    core_d["heatmap_axons"] = int(mat.shape[0])
-                    core_d["heatmap_neurons"] = int(mat.shape[1])
+                    core_d["heatmap_axons"] = int(core.axons_per_core)
+                    core_d["heatmap_neurons"] = int(core.neurons_per_core)
                     descriptors.append(ResourceDescriptor(
                         kind=RESOURCE_KIND_HARD_CORE_HEATMAP,
                         rid=rid,
-                        producer=_make_heatmap_producer(mat, copy=False),
+                        source=HeatmapSource(mat, copy=False),
                         media_type="image/png",
                     ))
                 conn_rid = f"seg/{seg_idx}/core/{ci}"
@@ -140,7 +139,7 @@ def snapshot_hard_core_mapping(mapping: Any) -> tuple[dict, list[ResourceDescrip
                 descriptors.append(ResourceDescriptor(
                     kind=RESOURCE_KIND_CONNECTIVITY,
                     rid=conn_rid,
-                    producer=_make_per_core_connectivity_producer(seg_spans_extractor, ci),
+                    source=_make_per_core_connectivity_source(seg_spans_extractor, ci),
                     media_type="application/json",
                 ))
                 placements = getattr(hcm, "soft_core_placements_per_hard_core", None)

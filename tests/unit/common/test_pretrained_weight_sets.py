@@ -23,6 +23,7 @@ from mimarsinan.common.pretrained import (
     registered_weight_sets,
     select_weight_set,
     selected_source,
+    unusable_baseline_reason,
     weight_set_mismatch,
 )
 from mimarsinan.common.workload_profile import ModelWorkloadProfile
@@ -246,6 +247,46 @@ class TestRegimeError:
         cfg = _cfg([_set()], preload_weights=True, pretrained_weight_set="nope")
         message = str(preload_regime_error(cfg))
         assert "nope" in message and "imagenet1k_v1" in message
+
+
+class TestRecordedBaselineApplicability:
+    """A recorded accuracy is an expectation only for the workload it was recorded on.
+
+    The instant the builder projects the stem or rebuilds the head, the number
+    describes a model this configuration does not run — asserting against it
+    would fire on every adapted deploy and teach everyone to ignore the gate.
+    """
+
+    def test_a_natively_served_set_yields_an_expectation(self):
+        ws = _set(expected_accuracy=0.7613)
+        cfg = _cfg([ws], input_shape=(3, 224, 224), num_classes=1000)
+        assert unusable_baseline_reason(ws.as_dict(), cfg) is None
+
+    def test_a_set_without_a_recorded_accuracy_has_no_expectation(self):
+        ws = _set(expected_accuracy=None)
+        cfg = _cfg([ws], input_shape=(3, 224, 224), num_classes=1000)
+        reason = unusable_baseline_reason(ws.as_dict(), cfg)
+        assert reason is not None and "no expected accuracy" in reason
+
+    def test_an_adapted_geometry_disarms_the_expectation(self):
+        ws = _set(expected_accuracy=0.7613, adapts_input_shape=True)
+        cfg = _cfg([ws], input_shape=(3, 32, 32), num_classes=1000)
+        reason = unusable_baseline_reason(ws.as_dict(), cfg)
+        assert reason is not None and "(3, 224, 224)" in reason and "(3, 32, 32)" in reason
+
+    def test_a_rebuilt_head_disarms_the_expectation(self):
+        ws = _set(expected_accuracy=0.7613, adapts_num_classes=True)
+        cfg = _cfg([ws], input_shape=(3, 224, 224), num_classes=10)
+        reason = unusable_baseline_reason(ws.as_dict(), cfg)
+        assert reason is not None and "1000" in reason and "10" in reason
+
+    @pytest.mark.parametrize("missing", ["input_shape", "num_classes"])
+    def test_a_config_that_does_not_carry_the_served_workload_disarms(self, missing):
+        ws = _set(expected_accuracy=0.7613)
+        served = {"input_shape": (3, 224, 224), "num_classes": 1000}
+        served.pop(missing)
+        reason = unusable_baseline_reason(ws.as_dict(), _cfg([ws], **served))
+        assert reason is not None and missing in reason
 
 
 class TestProfileInjection:

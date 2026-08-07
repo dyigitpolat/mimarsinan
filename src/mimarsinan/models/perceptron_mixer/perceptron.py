@@ -4,6 +4,44 @@ import torch.nn as nn
 import torch
 
 
+def write_scale(param: nn.Parameter, new_scale) -> None:
+    """Write a scale into ``param``'s data WITHOUT moving the Parameter.
+
+    The scale setters are handed bare floats, and ``torch.tensor(0.5)`` lands on
+    CPU: assigning one to a registered Parameter RELOCATES it, so writing a
+    scale into a CUDA model half-migrated it — the same anchoring rule
+    ``layer_bias_or_zeros`` keeps for the additive term.
+    """
+    tensor = (
+        new_scale if isinstance(new_scale, torch.Tensor)
+        else torch.tensor(new_scale)
+    )
+    param.data = tensor.data.to(param.device)
+
+
+def layer_bias_or_zeros(perceptron) -> torch.Tensor:
+    """The perceptron layer's additive term as a tensor ON THE LAYER'S OWN
+    device and dtype.
+
+    A bias-free layer (a BN-paired convolution: ``layer.bias is None``) still
+    has an additive term — the structural zero. It must be materialized from
+    the layer's weight, never as a bare ``torch.zeros(...)``: a bare create
+    lands on CPU in float32 and every effective-parameter expression that mixes
+    it with the normalization statistics of a CUDA (or float64) perceptron then
+    raises a device/dtype mismatch. Anchoring on the weight makes the
+    "all effective-parameter inputs share one device/dtype" invariant hold by
+    construction, so it follows ``.to()``/offload for free.
+
+    Returns the live ``bias`` Parameter when there is one, so callers that need
+    gradients keep them.
+    """
+    weight = perceptron.layer.weight
+    bias = perceptron.layer.bias
+    if bias is not None:
+        return bias
+    return weight.new_zeros(weight.shape[0])
+
+
 def effective_preactivation_bias(perceptron):
     """Additive constant of ``normalization(layer(x))`` under frozen stats —
     the bias the deployed chip charges per cycle. ``None`` when there is none.
@@ -14,7 +52,7 @@ def effective_preactivation_bias(perceptron):
         return bias
     u, beta, mean = norm_affine_params(normalization)
     if bias is None:
-        bias = torch.zeros_like(mean)
+        bias = layer_bias_or_zeros(perceptron)
     return (bias - mean) * u + beta
 
 
@@ -138,26 +176,17 @@ class Perceptron(nn.Module):
         """Declare the (shared) quantization grid; ``bias_scale`` follows so
         legacy single-scale callers stay coherent — a two-scale install calls
         ``set_bias_scale`` afterwards to refine the bias grid."""
-        if isinstance(new_scale, float):
-            new_scale = torch.tensor(new_scale)
-        self.parameter_scale.data = new_scale.data
-        self.bias_scale.data = new_scale.data.clone()
+        write_scale(self.parameter_scale, new_scale)
+        write_scale(self.bias_scale, self.parameter_scale.data.clone())
 
     def set_bias_scale(self, new_scale):
-        if isinstance(new_scale, float):
-            new_scale = torch.tensor(new_scale)
-        self.bias_scale.data = new_scale.data
-
+        write_scale(self.bias_scale, new_scale)
 
     def set_activation_scale(self, new_scale):
-        if isinstance(new_scale, float):
-            new_scale = torch.tensor(new_scale)
-        self.activation_scale.data = new_scale.data
+        write_scale(self.activation_scale, new_scale)
 
     def set_input_activation_scale(self, new_scale):
-        if isinstance(new_scale, float):
-            new_scale = torch.tensor(new_scale)
-        self.input_activation_scale.data = new_scale.data
+        write_scale(self.input_activation_scale, new_scale)
 
     def append_input_wire_op(self, module):
         """Append a wire op (e.g. an STE input quantizer) after ``input_activation``."""
@@ -167,10 +196,8 @@ class Perceptron(nn.Module):
             self.input_activation = nn.Sequential(self.input_activation, module)
 
     def set_scale_factor(self, new_scale):
-        if isinstance(new_scale, float):
-            new_scale = torch.tensor(new_scale)
-        self.scale_factor.data = new_scale.data
-        
+        write_scale(self.scale_factor, new_scale)
+
     def effective_preactivation_bias(self):
         return effective_preactivation_bias(self)
 

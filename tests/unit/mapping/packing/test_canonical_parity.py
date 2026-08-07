@@ -33,7 +33,7 @@ class _RuntimeHard:
 
 
 def test_canonical_feasibility_matches_layout_and_runtime_types():
-    soft_layout = LayoutSoftCoreSpec(input_count=4, output_count=8, threshold_group_id=0)
+    soft_layout = LayoutSoftCoreSpec(input_count=4, output_count=8, residency_class_id=0)
     hard_layout = LayoutHardCoreInstance(axons_per_core=8, neurons_per_core=16)
     soft_runtime = _RuntimeSoft(4, 8)
     hard_runtime = _RuntimeHard(8, 16)

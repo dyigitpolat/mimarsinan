@@ -3,9 +3,29 @@
 import math
 import torch
 
+from mimarsinan.data_handling import batch_integrity
+
 
 def collect_activation_stats(model, data_loader, device, num_batches=5):
-    """Run sample inference and collect per-perceptron activation statistics."""
+    """Run sample inference and collect per-perceptron activation statistics.
+
+    The importances this returns DECIDE which channels are deleted, permanently,
+    so the probe reads are verified like every measured read (``batch_integrity``).
+
+    W0.8 left this path unguarded on the argument that a NaN importance cannot
+    masquerade as a good number. It can, and mechanically: a non-finite batch makes
+    every ``x.abs().mean(dim=0)`` entry NaN, and the mask builders rank channels
+    with ``sort()`` -- sorting an all-NaN vector RETURNS AN ORDER rather than
+    raising, so the bottom-k it deletes is just the tensor's index order. Masks are
+    booleans, so nothing downstream is non-finite either and nothing downstream can
+    notice. The result is a silent, arbitrary, irreversible structural decision.
+
+    The accumulators are additive, so a poisoned batch must be rejected BEFORE the
+    forward: one NaN hook call poisons every later batch's contribution too. Each
+    probe batch is therefore an independently verified single-batch read, which may
+    honestly repair by reading a DIFFERENT position -- these are sampled statistics
+    over ``num_batches`` draws, not a positional measurement.
+    """
     perceptrons = model.get_perceptrons()
     n = len(perceptrons)
 
@@ -38,16 +58,30 @@ def collect_activation_stats(model, data_loader, device, num_batches=5):
         h = p.layer.register_forward_hook(make_hook(i))
         hooks.append(h)
 
+    source = f"the activation-importance probe loader ({type(data_loader).__name__})"
+    batch_iter = iter(data_loader)
+
+    def _read():
+        nonlocal batch_iter
+        try:
+            x, y = next(batch_iter)
+        except StopIteration:
+            batch_iter = iter(data_loader)
+            x, y = next(batch_iter)
+        return batch_integrity.own_batch(x, y, device=device)
+
+    def _repair(attempt):
+        nonlocal batch_iter
+        batch_iter = batch_integrity.restart_and_advance(
+            lambda: iter(data_loader), attempt - 1,
+        )
+
     model.eval()
     with torch.no_grad():
-        batch_iter = iter(data_loader)
         for _ in range(num_batches):
-            try:
-                x, y = next(batch_iter)
-            except StopIteration:
-                batch_iter = iter(data_loader)
-                x, y = next(batch_iter)
-            x = x.to(device)
+            x, _y = batch_integrity.read_verified_batch(
+                _read, source=source, repair=_repair,
+            )
             model(x)
             count += 1
 

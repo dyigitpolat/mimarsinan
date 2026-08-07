@@ -4,6 +4,7 @@ import sys
 
 from mimarsinan.common.best_effort import best_effort
 from mimarsinan.common.env import resource_debug_enabled
+from mimarsinan.common.lifecycle.owner import owner_bound_initializer, owner_token
 from mimarsinan.data_handling.data_provider import DataProvider
 
 import torch
@@ -182,6 +183,17 @@ class DataLoaderFactory:
             return self._ffcv_factory.create_test_loader(batch_size, data_provider)
         raise ValueError(f"unknown split kind: {kind!r}")
 
+    def worker_init_fn(self, workers: int):
+        """Bind worker lifetime to this process, or ``None`` for in-process loading.
+
+        A forkserver worker's parent is the forkserver, whose pid never changes
+        when the run dies, so torch's ``ManagerWatchdog`` can never fire; the owner
+        token is what lets an orphaned worker notice and exit.
+        """
+        if workers <= 0:
+            return None
+        return owner_bound_initializer(owner_token())
+
     def _get_torch_dataloader(
             self, dataset, batch_size, shuffle, mp_safe):
 
@@ -196,7 +208,8 @@ class DataLoaderFactory:
         return torch.utils.data.DataLoader(
             dataset, batch_size=batch_size, shuffle=shuffle,
             num_workers=workers, pin_memory=self._pin_memory,
-            persistent_workers=pw, multiprocessing_context=mp_ctx)
+            persistent_workers=pw, multiprocessing_context=mp_ctx,
+            worker_init_fn=self.worker_init_fn(workers))
 
     def create_data_provider(self) -> DataProvider:
         return self._data_provider_factory.create()

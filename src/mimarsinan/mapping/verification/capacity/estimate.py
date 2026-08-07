@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, Mapping, Sequence
 
 from mimarsinan.mapping.layout.segmentation import NeuralSegment, partition_ir_graph
+from mimarsinan.mapping.packing.softcore import compacted_core_extent
 from mimarsinan.mapping.platform.coalescing import coalescing_fragment_count
 from mimarsinan.mapping.platform.mapping_structure import ChipCapabilities
 from mimarsinan.mapping.platform.platform_constraints import (
@@ -101,14 +102,14 @@ def _segment_lower_bound(
     """Diagonal-packing lower bound on hard cores for one neural segment.
 
     max(ceil(Σ axons / max_axons), ceil(Σ neurons / max_neurons), max per-core
-    frags·groups); the per-core max is also the segment's atomic-unit cost.
+    frags·groups) over POST-compaction extents; the per-core max is also the
+    segment's atomic-unit cost.
     """
     total_axons = 0
     total_neurons = 0
     max_per_core = 0
     for core in segment.nodes:
-        in_count = int(core.get_input_count())
-        out_count = int(core.get_output_count())
+        in_count, out_count = compacted_core_extent(core)
         total_axons += in_count
         total_neurons += out_count
         frags = coalescing_fragment_count(in_count, max_axons)

@@ -27,7 +27,7 @@
           128,
           2048
         ],
-        "max_threshold_groups": 3
+        "max_residency_classes": 3
       }
     }
   },

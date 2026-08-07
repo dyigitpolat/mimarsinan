@@ -186,6 +186,9 @@ def build_network_for_segment(
         if used_neurons <= 0:
             continue
 
+        # Hoisted: a padded composite materializes per call, so never resolve
+        # inside the axon x neuron loop below.
+        core_grid = core.get_core_matrix()
         accum: Dict[Tuple[int, int], float] = {}
         sources_by_key: Dict[int, Any] = {}
 
@@ -211,7 +214,7 @@ def build_network_for_segment(
             sources_by_key[src_key] = src_neuron
 
             for n_idx in range(used_neurons):
-                w = float(core.core_matrix[a, n_idx])
+                w = float(core_grid[a, n_idx])
                 if w == 0.0:
                     continue
                 key = (src_key, n_idx)

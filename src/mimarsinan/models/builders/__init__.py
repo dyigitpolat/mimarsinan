@@ -5,6 +5,10 @@ from .torch.torch_vgg16_builder import TorchVGG16Builder as TorchVGG16Builder
 from .torch.torch_vit_builder import TorchViTBuilder as TorchViTBuilder
 from .torch.torch_squeezenet11_builder import TorchSqueezeNet11Builder as TorchSqueezeNet11Builder
 from .torch.torch_resnet50_builder import TorchResNet50Builder as TorchResNet50Builder
+from .torch.torch_vit_leaf_builder import TorchViTLeafBuilder as TorchViTLeafBuilder
+from .torch.cifar_resnet20_builder import CifarResNet20Builder as CifarResNet20Builder
+from .torch.cifar_vgg8_builder import CifarVGG8Builder as CifarVGG8Builder
+from .torch.cifar_vit_leaf_builder import CifarViTLeafBuilder as CifarViTLeafBuilder
 from .torch_custom_builder import TorchCustomBuilder as TorchCustomBuilder
 from .torch_sequential_linear_builder import TorchSequentialLinearBuilder as TorchSequentialLinearBuilder
 from .torch_sequential_conv_builder import TorchSequentialConvBuilder as TorchSequentialConvBuilder

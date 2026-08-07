@@ -8,7 +8,7 @@ from typing import Any
 import numpy as np
 
 from mimarsinan.common.best_effort import best_effort
-from mimarsinan.gui.heatmap_renderer import render_heatmap_png_bytes
+from mimarsinan.gui.resources import HeatmapSource, as_host_array
 
 logger = logging.getLogger("mimarsinan.gui")
 
@@ -71,41 +71,10 @@ def _detect_neural_core_liveness(node: Any, mat: Any) -> str:
     return LIVENESS_LIVE
 
 
-def _make_heatmap_producer(
-    matrix: Any,
-    *,
-    pruned_row_mask: list | None = None,
-    pruned_col_mask: list | None = None,
-    copy: bool = True,
-):
-    """Build a zero-arg closure that renders *matrix* to PNG bytes lazily."""
-    matrix_copy: Any = matrix
-    with best_effort("prepare heatmap matrix", logger=logger):
-        matrix_copy = np.asarray(matrix).copy() if copy else np.asarray(matrix)
-    rr = list(pruned_row_mask) if pruned_row_mask is not None else None
-    cc = list(pruned_col_mask) if pruned_col_mask is not None else None
-
-    def produce() -> bytes:
-        return render_heatmap_png_bytes(
-            matrix_copy,
-            pruned_row_mask=rr,
-            pruned_col_mask=cc,
-        )
-
-    return produce
-
-
-def _make_bias_strip_producer(bias: Any):
-    """Render a ``hardware_bias`` vector as a 1-row colormap PNG (for BIAS_ONLY cores)."""
-    bias_copy: Any = bias
-    with best_effort("prepare bias strip array", logger=logger):
-        bias_copy = np.asarray(bias, dtype=np.float64).copy()
-
-    def produce() -> bytes:
-        arr = np.asarray(bias_copy)
-        if arr.ndim == 1:
-            arr = arr.reshape(1, -1)
-        return render_heatmap_png_bytes(arr)
-
-    return produce
+def _make_bias_strip_source(bias: Any) -> HeatmapSource:
+    """A ``hardware_bias`` vector as a 1-row colormap heatmap (for BIAS_ONLY cores)."""
+    array = as_host_array(bias, copy=True).astype(np.float64, copy=False)
+    if array.ndim == 1:
+        array = array.reshape(1, -1)
+    return HeatmapSource(array, copy=False)
 

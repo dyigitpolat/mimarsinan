@@ -41,7 +41,7 @@ def _try_split_into_used(
     """
     best_idx = None
     best_avail_n = -1
-    core_tg = getattr(core, "threshold_group_id", None)
+    core_tg = getattr(core, "residency_class_id", None)
     core_latency = getattr(core, "latency", None)
     core_in = core.get_input_count()
     core_out = core.get_output_count()
@@ -62,7 +62,7 @@ def _try_split_into_used(
             and avail_n > split_threshold * total_n
             and avail_n > best_avail_n
         ):
-            hc_tg = getattr(hc, "threshold_group_id", None)
+            hc_tg = getattr(hc, "residency_class_id", None)
             if hc_tg is not None and core_tg is not None and int(hc_tg) != int(core_tg):
                 continue
             hc_latency = getattr(hc, "latency", None)

@@ -1,18 +1,33 @@
 from __future__ import annotations
-from collections import defaultdict
-from typing import AbstractSet, Dict, Mapping, Set, Tuple
-import numpy as np
-from mimarsinan.mapping.ir import IRGraph, IRSource, NeuralCore, WeightBank
-from mimarsinan.mapping.pruning.boundary_policy import (
-    build_computeop_producer_map,
-    build_computeop_referenced_neurons,
+from typing import AbstractSet, Mapping, Tuple
+from mimarsinan.mapping.ir import IRGraph
+from mimarsinan.mapping.pruning.graph.propagation_mode import (
+    ELIMINATION_PROPAGATION_CASCADE,
+    ELIMINATION_PROPAGATION_CLOSURE,
+    ELIMINATION_PROPAGATION_MASKED,
+    require_elimination_propagation,
 )
-from mimarsinan.mapping.pruning.graph.pruning_graph_types import GlobalPruningResult
+from mimarsinan.mapping.pruning.graph.pruning_graph_modes import (
+    run_closure,
+    run_masked,
+)
+from mimarsinan.mapping.pruning.graph.flat.engine import run_cascade_waves
+from mimarsinan.mapping.pruning.graph.constant_folding import (
+    refresh_constant_folds,
+)
+from mimarsinan.mapping.pruning.graph.analysis_dependencies import PortPlan
 from mimarsinan.mapping.pruning.graph.pruning_graph_refresh import (
-    _cols_with_nonzero_bias,
     _refresh_bank_pruning,
     _refresh_node_pruning,
-    _resolve_node_matrix,
+)
+from mimarsinan.mapping.pruning.graph.pruning_graph_seeding import (
+    GlobalPruningContext,
+    build_global_pruning_context,
+)
+from mimarsinan.mapping.pruning.graph.pruning_graph_types import GlobalPruningResult
+from mimarsinan.mapping.pruning.liveness_transfer import (
+    DEFAULT_COMPUTEOP_LIVENESS_TRANSFERS,
+    DEFAULT_ELIMINATION_CONSTANT_FOLDING,
 )
 def compute_global_pruned_sets(
     graph: IRGraph,
@@ -22,8 +37,14 @@ def compute_global_pruned_sets(
     initial_per_bank: Mapping[int, Tuple[AbstractSet[int], AbstractSet[int]]] | None = None,
     exempt_rows_per_node: Mapping[int, AbstractSet[int]] | None = None,
     exempt_cols_per_node: Mapping[int, AbstractSet[int]] | None = None,
+    mode: str = ELIMINATION_PROPAGATION_CASCADE,
+    computeop_liveness_transfers: str = DEFAULT_COMPUTEOP_LIVENESS_TRANSFERS,
+    elimination_constant_folding: str = DEFAULT_ELIMINATION_CONSTANT_FOLDING,
+    spiking_mode: str = "lif",
+    probe_memo: "dict | None" = None,
+    graph_index=None,
 ) -> GlobalPruningResult:
-    """Run the bidirectional, recursive cross-core pruning fixpoint.
+    """Run global pruning under one propagation arm (default: cascade fixpoint).
 
     Args:
         graph: Unified IR graph. Pruning runs pre-segmentation: ``IRSource``
@@ -36,229 +57,115 @@ def compute_global_pruned_sets(
             bank's own coordinate system.
         exempt_rows_per_node: Per-node row indices that must never be pruned.
         exempt_cols_per_node: Per-node column indices that must never be pruned.
+        mode: ``"masked"`` (allocation-naive lower bound: seeds only),
+            ``"closure"`` (one-hop seed-group coupling, no emergent deadness,
+            no iteration), or ``"cascade"`` (the bidirectional, recursive
+            cross-core fixpoint — the default deployment path).
+        computeop_liveness_transfers: ``"full"`` (default: per-op transfer
+            functions relay deadness through elementwise activations, index
+            bijections, and pooling regions) or ``"identity_only"`` (the
+            pre-W4b relay, for A/B).
+        elimination_constant_folding: ``"full"`` (default: the [W4b-2]
+            constant lattice descends TOP -> CONST(c) and folds CONST axon
+            rows onto each core's constant carrier) or ``"off"`` (the
+            zero-only W4b-1 cascade, byte-identical). ``identity_only``
+            transfers force this ``"off"``.
+        spiking_mode: the deployment domain, which gates whether NON-ZERO
+            constants may be folded (exact only in the value/MVM domain; see
+            ``liveness_transfer.constant_policy``). CONST(0) folding is exact
+            everywhere and is never gated.
     """
-    neural_cores = [n for n in graph.nodes if isinstance(n, NeuralCore)]
-    banks: Dict[int, WeightBank] = dict(getattr(graph, "weight_banks", {}) or {})
-
-    if not neural_cores and not banks:
+    mode = require_elimination_propagation(mode)
+    if not graph.nodes and not (getattr(graph, "weight_banks", {}) or {}):
         return GlobalPruningResult()
 
-    exempt_rows = {n.id: frozenset(exempt_rows_per_node.get(n.id, set()))
-                   for n in neural_cores} if exempt_rows_per_node else {}
-    exempt_cols = {n.id: frozenset(exempt_cols_per_node.get(n.id, set()))
-                   for n in neural_cores} if exempt_cols_per_node else {}
-    if not exempt_rows:
-        exempt_rows = {n.id: frozenset() for n in neural_cores}
-    if not exempt_cols:
-        exempt_cols = {n.id: frozenset() for n in neural_cores}
-
-    consumer_axons, model_output_neurons = _build_consumer_index(graph)
-    computeop_referenced = build_computeop_referenced_neurons(graph)
-    computeop_producer_map = build_computeop_producer_map(graph)
-    bank_consumers = _build_bank_consumer_map(neural_cores)
-
-    pruned_rows: Dict[int, Set[int]] = {n.id: set() for n in neural_cores}
-    pruned_cols: Dict[int, Set[int]] = {n.id: set() for n in neural_cores}
-    bank_pruned_rows: Dict[int, Set[int]] = {bid: set() for bid in banks}
-    bank_pruned_cols: Dict[int, Set[int]] = {bid: set() for bid in banks}
-
-    if initial_per_node:
-        for nid, (rows, cols) in initial_per_node.items():
-            if nid not in pruned_rows:
-                continue
-            pruned_rows[nid] |= set(rows) - exempt_rows.get(nid, frozenset())
-            pruned_cols[nid] |= set(cols) - exempt_cols.get(nid, frozenset())
-
-    if initial_per_bank:
-        for bid, (rows, cols) in initial_per_bank.items():
-            if bid not in bank_pruned_rows:
-                continue
-            bank_pruned_rows[bid] |= set(rows)
-            bank_pruned_cols[bid] |= set(cols)
-
-    _seed_off_source_axons(neural_cores, pruned_rows, exempt_rows)
-    _seed_value_based(
-        neural_cores=neural_cores,
-        banks=banks,
+    ctx = build_global_pruning_context(
+        graph,
         zero_threshold=zero_threshold,
-        pruned_rows=pruned_rows,
-        pruned_cols=pruned_cols,
-        bank_pruned_rows=bank_pruned_rows,
-        bank_pruned_cols=bank_pruned_cols,
-        exempt_rows=exempt_rows,
-        exempt_cols=exempt_cols,
+        initial_per_node=initial_per_node,
+        initial_per_bank=initial_per_bank,
+        exempt_rows_per_node=exempt_rows_per_node,
+        exempt_cols_per_node=exempt_cols_per_node,
+        computeop_liveness_transfers=computeop_liveness_transfers,
+        elimination_constant_folding=elimination_constant_folding,
+        spiking_mode=spiking_mode,
+        probe_memo=probe_memo,
+        graph_index=graph_index,
     )
+    if not ctx.neural_cores and not ctx.banks:
+        return GlobalPruningResult()
 
-    bank_node_lookup = {
-        b: [n for n in neural_cores if getattr(n, "weight_bank_id", None) == b]
-        for b in banks
-    }
+    if mode == ELIMINATION_PROPAGATION_MASKED:
+        run_masked(ctx)
+        iterations = 0
+    elif mode == ELIMINATION_PROPAGATION_CLOSURE:
+        run_closure(ctx)
+        iterations = 1
+    else:
+        # [P6] the flat wave engine is THE production cascade; the id-order
+        # reference below stays the oracle the suite and the opt-in
+        # cross-check hold it equal to. Wave count is canonical (order-free).
+        iterations = run_cascade_waves(ctx)
 
+    return ctx.to_result(fixpoint_iterations=iterations)
+
+
+def _run_cascade_fixpoint(ctx: GlobalPruningContext) -> int:
+    """The bidirectional cross-core fixpoint; returns the sweep count."""
+    iterations = 0
     while True:
-        changed = False
-        for node in neural_cores:
-            mat = _resolve_node_matrix(node, banks)
+        iterations += 1
+        # The constant lattice is one more monotone operator of the same
+        # fixpoint: descents feed starvation/orphaning and vice versa.
+        changed = refresh_constant_folds(ctx).commit(ctx)
+        plans = getattr(ctx, "_port_plans", None)
+        if plans is None:
+            plans = {}
+            setattr(ctx, "_port_plans", plans)
+        for node in ctx.neural_cores:
+            mat = ctx.node_matrix(node)
             if mat is None:
                 continue
+            plan = plans.get(node.id)
+            if plan is None:
+                plan = PortPlan(
+                    node, mat.shape[1], ctx.computeop_transfers,
+                    ctx.consumer_axons, ctx.model_output_neurons,
+                )
+                plans[node.id] = plan
             if _refresh_node_pruning(
                 node=node,
                 mat=mat,
-                zero_threshold=zero_threshold,
-                pruned_rows=pruned_rows,
-                pruned_cols=pruned_cols,
-                consumer_axons=consumer_axons,
-                model_output_neurons=model_output_neurons,
-                computeop_referenced_neurons=computeop_referenced,
-                computeop_producer_map=computeop_producer_map,
-                exempt_rows=exempt_rows,
-                exempt_cols=exempt_cols,
+                hardware_bias=ctx.node_bias(node),
+                zero_threshold=ctx.zero_threshold,
+                pruned_rows=ctx.pruned_rows,
+                pruned_cols=ctx.pruned_cols,
+                consumer_axons=ctx.consumer_axons,
+                model_output_neurons=ctx.model_output_neurons,
+                computeop_transfers=ctx.computeop_transfers,
+                exempt_rows=ctx.exempt_rows,
+                exempt_cols=ctx.exempt_cols,
+                port_plan=plan,
             ):
                 changed = True
 
-        for bank_id, bank in banks.items():
+        for bank_id, bank in ctx.banks.items():
             if _refresh_bank_pruning(
                 bank=bank,
                 bank_id=bank_id,
-                zero_threshold=zero_threshold,
-                bank_nodes=bank_node_lookup[bank_id],
-                bank_consumers=bank_consumers.get(bank_id, set()),
-                model_output_neurons=model_output_neurons,
-                pruned_rows=pruned_rows,
-                pruned_cols=pruned_cols,
-                bank_pruned_rows=bank_pruned_rows,
-                bank_pruned_cols=bank_pruned_cols,
-                exempt_rows=exempt_rows,
-                exempt_cols=exempt_cols,
+                zero_threshold=ctx.zero_threshold,
+                bank_nodes=ctx.bank_node_lookup[bank_id],
+                bank_consumers=ctx.bank_consumers.get(bank_id, set()),
+                model_output_neurons=ctx.model_output_neurons,
+                pruned_rows=ctx.pruned_rows,
+                pruned_cols=ctx.pruned_cols,
+                bank_pruned_rows=ctx.bank_pruned_rows,
+                bank_pruned_cols=ctx.bank_pruned_cols,
+                exempt_rows=ctx.exempt_rows,
+                exempt_cols=ctx.exempt_cols,
             ):
                 changed = True
 
         if not changed:
             break
-
-    return GlobalPruningResult(
-        pruned_rows_per_node=pruned_rows,
-        pruned_cols_per_node=pruned_cols,
-        pruned_rows_per_bank=bank_pruned_rows,
-        pruned_cols_per_bank=bank_pruned_cols,
-    )
-
-
-def _build_consumer_index(
-    graph: IRGraph,
-) -> Tuple[Dict[Tuple[int, int], list[Tuple[int, int]]], Set[Tuple[int, int]]]:
-    """Index NeuralCore axon consumers and model-output neuron markers.
-
-    Model-output neurons (``output_sources``) are protected from orphan pruning.
-    ComputeOp wiring is handled separately via ``computeop_referenced_neurons``.
-    """
-    consumer_axons: Dict[Tuple[int, int], list[Tuple[int, int]]] = defaultdict(list)
-    model_output_neurons: Set[Tuple[int, int]] = set()
-
-    if graph.output_sources.size:
-        for src in graph.output_sources.flatten():
-            if isinstance(src, IRSource) and src.node_id >= 0:
-                model_output_neurons.add((src.node_id, src.index))
-
-    for node in graph.nodes:
-        if not isinstance(node, NeuralCore) or not hasattr(node, "input_sources"):
-            continue
-        for axon_idx, src in enumerate(node.input_sources.flatten()):
-            if not isinstance(src, IRSource) or src.node_id < 0:
-                continue
-            consumer_axons[(src.node_id, src.index)].append((node.id, axon_idx))
-
-    return consumer_axons, model_output_neurons
-
-
-def _build_bank_consumer_map(
-    neural_cores: list[NeuralCore],
-) -> Dict[int, Set[int]]:
-    """For each weight bank, the set of NeuralCore ids that reference it."""
-    out: Dict[int, Set[int]] = defaultdict(set)
-    for n in neural_cores:
-        bid = getattr(n, "weight_bank_id", None)
-        if bid is not None:
-            out[bid].add(n.id)
-    return out
-
-
-def _seed_off_source_axons(
-    neural_cores: list[NeuralCore],
-    pruned_rows: Dict[int, Set[int]],
-    exempt_rows: Mapping[int, AbstractSet[int]],
-) -> None:
-    """Mark every axon whose ``IRSource.is_off()`` as initially pruned."""
-    for node in neural_cores:
-        if not hasattr(node, "input_sources"):
-            continue
-        exempt = exempt_rows.get(node.id, frozenset())
-        flat = node.input_sources.flatten()
-        for i, src in enumerate(flat):
-            if (
-                isinstance(src, IRSource)
-                and src.is_off()
-                and i not in exempt
-            ):
-                pruned_rows[node.id].add(i)
-
-
-def _seed_value_based(
-    *,
-    neural_cores: list[NeuralCore],
-    banks: Mapping[int, WeightBank],
-    zero_threshold: float,
-    pruned_rows: Dict[int, Set[int]],
-    pruned_cols: Dict[int, Set[int]],
-    bank_pruned_rows: Dict[int, Set[int]],
-    bank_pruned_cols: Dict[int, Set[int]],
-    exempt_rows: Mapping[int, AbstractSet[int]],
-    exempt_cols: Mapping[int, AbstractSet[int]],
-) -> None:
-    """Union value-based dead rows/cols into the per-node and per-bank pruned sets.
-
-    A row/column whose every weight is below ``zero_threshold`` cannot
-    contribute to any downstream computation. It is pruned regardless of
-    whether the caller supplied an explicit model mask: the model mask states
-    *additional* deadness that the runtime weights may not yet reflect, but
-    weights that are already zero are dead by themselves. Exemptions
-    (``exempt_rows`` / ``exempt_cols``) and ``hardware_bias``-alive columns
-    are still respected.
-    """
-    for node in neural_cores:
-        mat = _resolve_node_matrix(node, banks)
-        if mat is None:
-            continue
-        abs_mat = np.abs(np.asarray(mat))
-        row_sum = abs_mat.sum(axis=1)
-        col_sum = abs_mat.sum(axis=0)
-        ex_r = exempt_rows.get(node.id, frozenset())
-        ex_c = exempt_cols.get(node.id, frozenset())
-        bias_alive_cols = _cols_with_nonzero_bias(
-            getattr(node, "hardware_bias", None), mat.shape[1], zero_threshold
-        )
-        for i in np.flatnonzero(row_sum < zero_threshold):
-            i = int(i)
-            if i not in ex_r:
-                pruned_rows[node.id].add(i)
-        for j in np.flatnonzero(col_sum < zero_threshold):
-            j = int(j)
-            if j in ex_c or j in bias_alive_cols:
-                continue
-            pruned_cols[node.id].add(j)
-
-    for bank_id, bank in banks.items():
-        abs_mat = np.abs(np.asarray(bank.core_matrix))
-        bias_alive_cols = _cols_with_nonzero_bias(
-            getattr(bank, "hardware_bias", None),
-            bank.core_matrix.shape[1],
-            zero_threshold,
-        )
-        for i in np.flatnonzero(abs_mat.sum(axis=1) < zero_threshold):
-            bank_pruned_rows[bank_id].add(int(i))
-        for j in np.flatnonzero(abs_mat.sum(axis=0) < zero_threshold):
-            j = int(j)
-            if j in bias_alive_cols:
-                continue
-            bank_pruned_cols[bank_id].add(j)
-
-
+    return iterations

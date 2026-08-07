@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
-import json as _json
 import logging
 import sys
 import time
 from typing import Any
 
 from mimarsinan.common.best_effort import best_effort
+from mimarsinan.gui.resources import (
+    ResourceDescriptor,
+    ResourceRenderPolicy,
+    encode_resource_payload,
+    resolve_resource_render_policy,
+)
 from mimarsinan.gui.runtime.events import PipelineEvent
 from mimarsinan.gui.reporter import GUIReporter
 from mimarsinan.gui.runtime.collector import DataCollector
@@ -16,6 +21,7 @@ from mimarsinan.gui.runtime.persistence import (
     append_event,
     append_live_metrics,
     append_console_log,
+    save_resource_source,
     save_resource_to_disk,
     save_step_status,
     save_step_to_persisted,
@@ -37,12 +43,14 @@ class GUIHandle:
         persist_metrics: bool = False,
         capture_stdio: bool = True,
         snapshot_executor: SnapshotExecutor | None = None,
+        render_policy: ResourceRenderPolicy = ResourceRenderPolicy.EAGER,
     ) -> None:
         self.pipeline = pipeline
         self.collector = collector
         self.reporter = GUIReporter(collector)
         self._persist_metrics = persist_metrics
         self._capture_stdio = capture_stdio
+        self._render_policy = resolve_resource_render_policy(render_policy)
         # Buffered live-metric persistence: the trainer reports EVERY optimizer
         # step, and a per-record open/append/close on a network filesystem
         # throttles training itself (measured 12-16 steps/s vs ~118). Records
@@ -192,38 +200,64 @@ class GUIHandle:
                     verdict=verdict,
                 )
 
-        def _persist_resources() -> None:
-            store = self.collector.get_resource_store()
-            for desc in resource_descriptors:
-                payload = None
-                if store is not None:
-                    payload = store.prewarm(step_name, desc.kind, desc.rid)
-                if payload is None:
-                    produced = False
-                    with best_effort(f"resource producer for {desc.kind}/{desc.rid}", logger=logger):
-                        payload = desc.producer()
-                        produced = True
-                    if not produced:
-                        continue
-                if not working_dir:
-                    continue
-                if desc.media_type == "image/png":
-                    if isinstance(payload, (bytes, bytearray)):
-                        save_resource_to_disk(
-                            working_dir, step_name, desc.kind, desc.rid,
-                            bytes(payload), media_type=desc.media_type,
-                        )
-                elif desc.media_type == "application/json":
-                    try:
-                        encoded = _json.dumps(payload).encode("utf-8")
-                    except (TypeError, ValueError):
-                        continue
-                    save_resource_to_disk(
-                        working_dir, step_name, desc.kind, desc.rid,
-                        encoded, media_type=desc.media_type,
-                    )
+        self._snapshot_executor.submit(
+            lambda: self._persist_resources(step_name, working_dir, resource_descriptors)
+        )
 
-        self._snapshot_executor.submit(_persist_resources)
+    def _persist_resources(
+        self,
+        step_name: str,
+        working_dir: str | None,
+        descriptors: list[ResourceDescriptor],
+    ) -> None:
+        if self._render_policy is ResourceRenderPolicy.DEFERRED:
+            self._persist_resource_sources(step_name, working_dir, descriptors)
+            return
+        self._render_and_persist_resources(step_name, working_dir, descriptors)
+
+    def _persist_resource_sources(
+        self,
+        step_name: str,
+        working_dir: str | None,
+        descriptors: list[ResourceDescriptor],
+    ) -> None:
+        """Write each resource's source data; nobody is watching, so nothing is rendered."""
+        if not working_dir:
+            return
+        for desc in descriptors:
+            with best_effort(f"resource source for {desc.kind}/{desc.rid}", logger=logger):
+                save_resource_source(
+                    working_dir, step_name, desc.kind, desc.rid, desc.source,
+                )
+
+    def _render_and_persist_resources(
+        self,
+        step_name: str,
+        working_dir: str | None,
+        descriptors: list[ResourceDescriptor],
+    ) -> None:
+        """Render each resource once, warming the live store and the on-disk cache together."""
+        store = self.collector.get_resource_store()
+        for desc in descriptors:
+            payload = None
+            if store is not None:
+                payload = store.prewarm(step_name, desc.kind, desc.rid)
+            if payload is None:
+                produced = False
+                with best_effort(f"resource producer for {desc.kind}/{desc.rid}", logger=logger):
+                    payload = desc.producer()
+                    produced = True
+                if not produced:
+                    continue
+            if not working_dir:
+                continue
+            encoded = encode_resource_payload(payload, desc.media_type)
+            if encoded is None:
+                continue
+            save_resource_to_disk(
+                working_dir, step_name, desc.kind, desc.rid,
+                encoded, media_type=desc.media_type,
+            )
 
     def shutdown(self) -> None:
         self._flush_live_metrics()

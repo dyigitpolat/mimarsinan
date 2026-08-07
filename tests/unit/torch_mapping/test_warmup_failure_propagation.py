@@ -59,6 +59,7 @@ class TestConverterDefaultsStrict:
 
         def failing_probe(
             flow, input_shape, device, *, batch=1, strict=True, context="",
+            dtype=None,
         ):
             if strict:
                 raise ConversionProbeError(

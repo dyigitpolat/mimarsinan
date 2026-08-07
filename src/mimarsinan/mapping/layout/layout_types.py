@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Optional, Tuple
 
+from mimarsinan.mapping.platform.core_residency import BASIS_VALUES
+
 
 @dataclass(frozen=True)
 class LayoutSoftCoreSpec:
@@ -11,7 +13,10 @@ class LayoutSoftCoreSpec:
     input_count: int
     output_count: int
 
-    threshold_group_id: int = 0
+    residency_class_id: int = 0
+    # Which rule produced residency_class_id. Ids from different bases are not comparable, so a
+    # mapping that mixes them is a defect rather than a merge decision; see core_residency.
+    residency_basis: str = BASIS_VALUES
     latency_tag: Optional[int] = None
     segment_id: Optional[int] = None
 
@@ -45,7 +50,7 @@ class LayoutHardCoreInstance:
     available_axons: int = field(init=False)
     available_neurons: int = field(init=False)
 
-    threshold_group_id: Optional[int] = None
+    residency_class_id: Optional[int] = None
     latency_tag: Optional[int] = None
 
     unusable_space: int = 0
@@ -85,8 +90,8 @@ class LayoutHardCoreInstance:
         self.used_area += int(in_c) * int(out_c)
         self.softcore_count += 1
 
-        if self.threshold_group_id is None:
-            self.threshold_group_id = int(softcore.threshold_group_id)
+        if self.residency_class_id is None:
+            self.residency_class_id = int(softcore.residency_class_id)
 
         if self.latency_tag is None:
             self.latency_tag = softcore.latency_tag

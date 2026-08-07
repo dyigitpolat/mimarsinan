@@ -1,4 +1,4 @@
-"""Registry entries: spiking semantics, conversion process, and mapping-strategy keys."""
+"""Registry entries: spiking semantics, conversion process, and mapping-strategy keys (pruning keys live in entries_pruning)."""
 
 from __future__ import annotations
 
@@ -248,23 +248,7 @@ ENTRIES = (
        provenance="consumer frozen default", derived_default=_frozen(False),
        relevant=R.when("spiking_mode", in_=("lif", "ttfs_cycle_based")),
        empty_means="off — every hop keeps its pooled scalar theta"),
-    _E("pruning", group="mapping_strategy", owner="pruning_adaptation",
-       type=T.BOOL, category=Category.BASIC, exposure="user", label="Pruning Enabled",
-       effect="Adds the Pruning Adaptation step",
-       doc="Enable magnitude pruning adaptation (a deployment-side conversion "
-           "step, not an architecture property).",
-       provenance="consumer frozen default", derived_default=_frozen(False)),
-    _E("pruning_fraction", group="mapping_strategy", owner="pruning_adaptation",
-       type=T.FLOAT, category=Category.BASIC, exposure="user", label="Pruning Fraction",
-       doc="Fraction of weights pruned by the adaptation.", bounds=(0.0, 1.0),
-       relevant=R.when_true("pruning"),
-       provenance="consumer frozen default", derived_default=_frozen(0.0),
-       empty_means="0 — pruning stays inert (no Pruning Adaptation step)"),
-    _E("prune_sparsity", group="mapping_strategy", owner="pruning_adaptation",
-       type=T.FLOAT, category=Category.ADVANCED, label="Prune Sparsity",
-       doc="Legacy sparsity knob consumed by the pruning tuner mask builder.",
-       bounds=(0.0, 1.0), relevant=R.when_true("pruning"),
-       provenance="consumer frozen default", derived_default=_frozen(0.0)),
+    # Pruning mapping-strategy keys live in entries_pruning.py (module budget).
     _E("s_allocation", group="mapping_strategy", owner="TemporalAllocation",
        type=T.ENUM, options=("uniform", "explicit", "budget"), category=Category.ADVANCED,
        exposure="user", label="S Allocation",

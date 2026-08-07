@@ -44,9 +44,9 @@ def _compute_connectivity_edges(hcm: Any) -> List[SanafeConnectivityEdge]:
         ax_per_core = int(core.axons_per_core)
         avail = int(getattr(core, "available_axons", 0))
         used_ax = max(ax_per_core - avail, 0)
-        cm = getattr(core, "core_matrix", None)
-        if cm is None or used_ax <= 0:
+        if not core.has_core_matrix() or used_ax <= 0:
             continue
+        cm = core.get_core_matrix()
         for a in range(used_ax):
             src = core.axon_sources[a]
             if getattr(src, "is_off_", False):

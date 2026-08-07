@@ -6,6 +6,7 @@ from typing import Any, cast
 
 from mimarsinan.config_schema.defaults import DEFAULT_PLATFORM_CONSTRAINTS
 from mimarsinan.mapping.platform.coalescing import CANONICAL_KEY, normalize_coalescing_config
+from mimarsinan.mapping.platform.core_residency import RESIDENCY_KEY
 
 
 def build_platform_constraints_resolved(
@@ -32,6 +33,7 @@ def build_platform_constraints_resolved(
         )
     pcfg["allow_scheduling"] = bool(pipeline_config.get("allow_scheduling", False))
     pcfg["allow_weight_reuse"] = bool(pipeline_config.get("allow_weight_reuse", False))
+    pcfg[RESIDENCY_KEY] = dict(pipeline_config.get(RESIDENCY_KEY, {}) or {})
     pcfg["schedule_policy"] = str(pipeline_config.get("schedule_policy", "pool"))
     # The scheduled-build pass budget: dropping it here silently pins the
     # builder to its default and disarms bank_clustered (t0_44 measured).

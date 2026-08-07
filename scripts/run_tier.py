@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import argparse
 import json
-import subprocess
 import sys
-import time
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO / "src"))
+
+from mimarsinan.common.lifecycle.child_launcher import run_child  # noqa: E402
 
 
 def _working_dir(config: dict) -> Path:
@@ -42,25 +43,20 @@ def _final_metrics(workdir: Path) -> dict:
 
 def run_one(config_path: Path, budget_s: float) -> dict:
     config = json.loads(config_path.read_text())
-    started = time.monotonic()
-    try:
-        proc = subprocess.run(
-            [sys.executable, "run.py", "--headless", str(config_path)],
-            cwd=REPO, timeout=budget_s, capture_output=True, text=True,
-        )
-        rc = proc.returncode
-        timed_out = False
-    except subprocess.TimeoutExpired:
-        rc, timed_out = -1, True
-    wall = time.monotonic() - started
+    result = run_child(
+        [sys.executable, "run.py", "--headless", str(config_path)],
+        cwd=REPO, timeout_s=budget_s,
+    )
     workdir = _working_dir(config)
     return {
         "name": config["experiment_name"],
-        "rc": rc,
-        "timed_out": timed_out,
-        "wall_s": round(wall, 1),
+        "rc": result.returncode,
+        "timed_out": result.timed_out,
+        "wall_s": round(result.wall_s, 1),
         "status": _run_status(workdir),
         "metrics": _final_metrics(workdir),
+        "stderr_tail": result.stderr_tail(),
+        "cohort_gone": result.session_gone,
     }
 
 
@@ -89,17 +85,25 @@ def main() -> int:
         results.append(run_one(config_path, budget_s))
 
     print(f"\n{'run':55s} {'status':10s} {'rc':>3s} {'wall':>8s}  key metrics")
-    failed = 0
+    failed = []
     for r in results:
         ok = r["status"] == "completed" and r["rc"] == 0
-        failed += 0 if ok else 1
+        if not ok:
+            failed.append(r)
         picks = {k: v for k, v in r["metrics"].items()
                  if any(t in str(k).lower() for t in ("accuracy", "parity"))}
         summary = ", ".join(f"{k}={v}" for k, v in sorted(picks.items())[:4])
         flag = "" if ok else "  <-- FAIL"
         print(f"{r['name']:55s} {r['status']:10s} {r['rc']:>3d} {r['wall_s']:>7.1f}s  {summary}{flag}")
 
-    print(f"\n{len(results) - failed}/{len(results)} runs completed")
+    for r in failed:
+        print(f"\n--- {r['name']}: rc={r['rc']} timed_out={r['timed_out']} ---")
+        print(r["stderr_tail"] or "(no stderr captured)")
+    for r in results:
+        if not r["cohort_gone"]:
+            print(f"[run_tier] WARNING: {r['name']} left live processes behind")
+
+    print(f"\n{len(results) - len(failed)}/{len(results)} runs completed")
     return 1 if failed else 0
 
 

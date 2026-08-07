@@ -48,7 +48,7 @@ class LayoutMaterializer:
                 axons_per_core=int(axons),
                 neurons_per_core=int(neurons),
             )
-            inst.threshold_group_id = getattr(template, "threshold_group_id", None)
+            inst.residency_class_id = getattr(template, "residency_class_id", None)
             inst.latency_tag = getattr(template, "latency_tag", None)
             return inst
 
@@ -82,14 +82,14 @@ def _make_layout_fragments(
     frag1 = LayoutSoftCoreSpec(
         input_count=softcore.input_count,
         output_count=first_neurons,
-        threshold_group_id=softcore.threshold_group_id,
+        residency_class_id=softcore.residency_class_id,
         latency_tag=softcore.latency_tag,
         name=f"{softcore.name}_split_0" if softcore.name else None,
     )
     frag2 = LayoutSoftCoreSpec(
         input_count=softcore.input_count,
         output_count=remaining_neurons,
-        threshold_group_id=softcore.threshold_group_id,
+        residency_class_id=softcore.residency_class_id,
         latency_tag=softcore.latency_tag,
         name=f"{softcore.name}_split_1" if softcore.name else None,
     )
@@ -122,7 +122,7 @@ def _expand_for_axon_coalescing(
                 result.append(LayoutSoftCoreSpec(
                     input_count=frag_ax,
                     output_count=sc.output_count,
-                    threshold_group_id=sc.threshold_group_id,
+                    residency_class_id=sc.residency_class_id,
                     latency_tag=sc.latency_tag,
                     name=f"{sc.name}_coal{i}" if sc.name else None,
                 ))
@@ -158,7 +158,7 @@ def pack_layout(
             unmapped[i] = LayoutSoftCoreSpec(
                 input_count=sc.input_count,
                 output_count=sc.output_count,
-                threshold_group_id=sc.threshold_group_id,
+                residency_class_id=sc.residency_class_id,
                 latency_tag=sc.latency_tag,
                 name=f"__sc_{i}",
             )

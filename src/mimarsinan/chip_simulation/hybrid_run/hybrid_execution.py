@@ -8,7 +8,7 @@ import numpy as np
 import numpy.typing as npt
 import torch
 
-from mimarsinan.mapping.ir import ComputeOp, IRSource
+from mimarsinan.mapping.ir import ComputeOp, IRSource, computeop_deployment_dtype
 from mimarsinan.mapping.ir.gather_plan import gather_plan_for
 from mimarsinan.mapping.support.activation_scales import scalar_node_scale
 from mimarsinan.mapping.support.compute_modules import ScaleNormalizingWrapper
@@ -69,16 +69,6 @@ def gather_final_output_torch(
     return out
 
 
-def _compute_op_module_dtype(op: ComputeOp) -> torch.dtype:
-    """The op module's floating dtype (float32 for parameterless modules)."""
-    module = op.params.get("module")
-    if module is not None and hasattr(module, "parameters"):
-        for p in module.parameters():
-            if p.dtype.is_floating_point:
-                return p.dtype
-    return torch.float32
-
-
 def execute_compute_op_torch(
     op: ComputeOp,
     original_input: torch.Tensor,
@@ -100,7 +90,7 @@ def execute_compute_op_torch(
 
     gathered = op.gather_inputs(original_input, state_buffer, dtype=gather_dtype)
     if gather_dtype is None:
-        gathered = gathered.to(_compute_op_module_dtype(op))
+        gathered = gathered.to(computeop_deployment_dtype(op))
     if abs(in_scale - 1.0) > 1e-9:
         gathered = gathered * in_scale
 
@@ -248,6 +238,48 @@ def decref_consumers(
             remaining.pop(nid, None)
             state_buffer.pop(nid, None)
             if state_buffer_spikes is not None:  # trains share the lifetime
+                state_buffer_spikes.pop(nid, None)
+        else:
+            remaining[nid] = r
+
+
+def op_source_counts(op) -> Dict[int, int]:
+    """``{producer node id: how many of the op's inputs read it}``, counted once.
+
+    A host op carries one input source per axon (up to 605,184 on the real
+    ViT), and its wiring is static after packing, so the refcount multiset is
+    computed on first use and reused for every forward.
+    """
+    cached = getattr(op, "_source_counts_cache", None)
+    if cached is not None:
+        return cached
+    counts: Dict[int, int] = {}
+    for src in op.input_sources.flatten():
+        if isinstance(src, IRSource) and src.node_id >= 0:
+            nid = int(src.node_id)
+            counts[nid] = counts.get(nid, 0) + 1
+    op._source_counts_cache = counts
+    return counts
+
+
+def decref_op_consumers(
+    state_buffer, remaining: Dict[int, int], op, state_buffer_spikes=None,
+) -> None:
+    """``decref_consumers`` for one host op, by producer instead of by axon.
+
+    Subtracting a producer's occurrence count in one step is identical to
+    subtracting it one occurrence at a time: nothing observes the buffer
+    between an op's own decrements.
+    """
+    for nid, times in op_source_counts(op).items():
+        r = remaining.get(nid)
+        if r is None:
+            continue
+        r -= times
+        if r <= 0:
+            remaining.pop(nid, None)
+            state_buffer.pop(nid, None)
+            if state_buffer_spikes is not None:
                 state_buffer_spikes.pop(nid, None)
         else:
             remaining[nid] = r

@@ -18,7 +18,7 @@ import torch
 
 from mimarsinan.mapping.export.chip_quantize import quantize_ir_graph
 from mimarsinan.mapping.ir import IRGraph, NeuralCore
-from mimarsinan.mapping.ir.types import IRSource
+from mimarsinan.mapping.ir.source import IRSource
 from mimarsinan.transformations.quantization_bounds import quantization_bounds
 
 BITS = 8

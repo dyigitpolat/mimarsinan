@@ -7,7 +7,7 @@ from typing import Any
 
 from mimarsinan.common.best_effort import best_effort
 from mimarsinan.gui.handle import GUIHandle
-from mimarsinan.gui.resources import ResourceStore
+from mimarsinan.gui.resources import ResourceRenderPolicy, ResourceStore
 from mimarsinan.gui.runtime.collector import DataCollector, to_json_safe
 from mimarsinan.gui.runtime.persistence import (
     load_persisted_steps,
@@ -40,7 +40,7 @@ def start_gui(
     collector.set_working_directory(getattr(pipeline, "working_directory", None))
 
     start_server(collector, host=host, port=port)
-    return GUIHandle(pipeline, collector)
+    return GUIHandle(pipeline, collector, render_policy=ResourceRenderPolicy.EAGER)
 
 
 def backfill_skipped_steps(

@@ -5,11 +5,14 @@ from __future__ import annotations
 from math import ceil
 from typing import Sequence
 
+from mimarsinan.mapping.packing.softcore import compacted_core_extent
+
 
 def _fitting_capacity(group: list, cores_config: Sequence[dict]) -> "list[int] | None":
     """Per-core-type usable counts for this bank (None = some instance fits nowhere)."""
-    max_axons = max(len(core.input_sources.flatten()) for core in group)
-    max_neurons = max(int(core.get_output_count()) for core in group)
+    extents = [compacted_core_extent(core) for core in group]
+    max_axons = max(axons for axons, _ in extents)
+    max_neurons = max(neurons for _, neurons in extents)
     fits = [
         int(ct.get("count", 0))
         if max_axons <= int(ct["max_axons"]) and max_neurons <= int(ct["max_neurons"])
@@ -38,6 +41,11 @@ def try_bank_clustered_passes(
 ) -> "list[list] | None":
     """Compose passes so every physical core keeps one bank while its
     instance queue drains (the weight-stationary regime).
+
+    Instances are sized POST-compaction (:func:`compacted_core_extent`): a
+    bank-backed instance carries its elimination as masks until the soft-core
+    stage materializes them, so the bank's own matrix is never the extent a
+    resident core must budget for.
 
     Allocation law: ``loads(b) = ceil(n_b / max_passes)`` is the FEASIBILITY
     FLOOR, then allocations EXPAND into remaining pool capacity (type-aware)
@@ -156,19 +164,21 @@ def _stage_geometry(stage) -> list:
 def dedup_resident_stage_matrices(pass_stages: list) -> None:
     """[wsm V3] Storage dedup across a bank-clustered pass chain.
 
-    Duplicate resident cores hold bitwise-identical padded grids: within the
-    head stage, single-placement cores with the same (bank, region, geometry)
-    share ONE ndarray; every later pass aliases the head's matrix at each
-    ordinal whose placement geometry is EQUAL (the verified residency law) —
-    so pickle memoization stores each distinct payload once (measured: the
-    scheduled ViT materialized ~4.9k grids into 13 GB per mapping pickle).
+    Duplicate resident cores hold bitwise-identical padded grids. Descriptor
+    cores already reference ONE shared payload per bank, so they need no
+    rebinding; this only aliases cores that OWN a dense grid (legacy or
+    externally written mappings), within the head stage by (bank, region,
+    geometry) and across passes at each ordinal whose placement geometry is
+    EQUAL (the verified residency law) — so pickle memoization stores each
+    distinct payload once (measured: the scheduled ViT materialized ~4.9k
+    grids into 13 GB per mapping pickle).
     """
     head = pass_stages[0].hard_core_mapping
     shared: dict = {}
     for core, placements in zip(
         head.cores, head.soft_core_placements_per_hard_core
     ):
-        if len(placements) != 1:
+        if core.core_matrix is None or len(placements) != 1:
             continue
         record = placements[0]
         if record.get("weight_bank_id") is None:
@@ -190,6 +200,8 @@ def dedup_resident_stage_matrices(pass_stages: list) -> None:
         geometry = _stage_geometry(stage)
         for i, core in enumerate(stage.hard_core_mapping.cores):
             head_core = head.cores[i]
+            if core.core_matrix is None or head_core.core_matrix is None:
+                continue
             if (
                 geometry[i] == head_geometry[i]
                 and core.core_matrix.shape == head_core.core_matrix.shape

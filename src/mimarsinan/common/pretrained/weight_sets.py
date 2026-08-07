@@ -110,6 +110,42 @@ def weight_set_mismatch(record: Mapping[str, Any], cfg: Mapping[str, Any]) -> Op
     return None
 
 
+def unusable_baseline_reason(
+    record: Mapping[str, Any], cfg: Mapping[str, Any]
+) -> Optional[str]:
+    """Why the set's recorded accuracy is not an expectation for a metric measured
+    here, or ``None`` when it is one.
+
+    A recorded number describes the workload it was recorded on. The moment the
+    builder projects the stem or rebuilds the head, it describes a model this
+    configuration does not run, and asserting against it would fire on every
+    adapted deploy.
+    """
+    if record.get("expected_accuracy") is None:
+        return f"weight set {record.get('id')!r} records no expected accuracy"
+
+    shape = cfg.get("input_shape")
+    if shape is None:
+        return "the configuration does not carry the served input_shape"
+    served_shape = tuple(int(dim) for dim in shape)
+    native_shape = tuple(int(dim) for dim in record["input_shape"])
+    if served_shape != native_shape:
+        return (
+            f"the baseline was recorded at input {native_shape} and the data "
+            f"provider serves {served_shape}"
+        )
+
+    classes = cfg.get("num_classes")
+    if classes is None:
+        return "the configuration does not carry the served num_classes"
+    if int(classes) != int(record["num_classes"]):
+        return (
+            f"the baseline was recorded over {int(record['num_classes'])} classes "
+            f"and the data provider serves {int(classes)}"
+        )
+    return None
+
+
 def applicable_weight_sets(cfg: Mapping[str, Any]) -> Optional[Tuple[Dict[str, Any], ...]]:
     """The registered sets that apply to this config; ``None`` = not consulted."""
     sets = registered_weight_sets(cfg)

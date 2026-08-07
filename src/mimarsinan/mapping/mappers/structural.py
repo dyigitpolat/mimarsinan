@@ -15,6 +15,7 @@ from mimarsinan.mapping.mappers.scale_propagation import (
     mean_source_scale,
     present_source_scales,
 )
+from mimarsinan.mapping.support.scale_broadcast import concat_source_scales
 
 
 def _create_ir_input_source(idx: int):
@@ -43,6 +44,10 @@ class InputMapper(Mapper):
         return x
 
     def propagate_source_scale(self, deps, out_scales):
+        # Parameterless root: nothing here knows the model's device, so the unit
+        # wire scale is emitted on CPU by definition. Consumers anchor it --
+        # ``assign_per_input_scales`` stamps it on the perceptron's device, and
+        # ``align_scale_devices`` lifts it before any ComputeOp join mixes it.
         return torch.ones(self.input_shape[0])
 
     def propagate_boundary_scale(self, deps, out_scales, default):
@@ -58,7 +63,12 @@ class ReshapeMapper(Mapper):
         return self.require_source_mapper().map_to_ir(ir_mapping).reshape(self.output_shape)
 
     def _forward_impl(self, x):
-        return x.view(x.shape[0], *self.output_shape)
+        # reshape, not view: this is a LOGICAL reshape and must not also demand
+        # a stride layout. A channels-last conv activation (cuDNN's choice,
+        # preserved end to end once Normalization Fusion makes the perceptron's
+        # normalization an Identity) has the same logical order and crashes
+        # ``view`` outright.
+        return x.reshape(x.shape[0], *self.output_shape)
 
 
 class EinopsRearrangeMapper(Mapper):
@@ -122,8 +132,10 @@ class ConcatMapper(Mapper):
         return torch.cat(tuple(x), dim=self.dim)
 
     def propagate_source_scale(self, deps, out_scales):
+        # A JOIN: a CPU root scale can meet a device theta here, and ``torch.cat``
+        # raises on mixed devices. Anchored in ``concat_source_scales``.
         parts = present_source_scales(deps, out_scales)
-        return torch.cat(parts) if parts else None
+        return concat_source_scales(parts) if parts else None
 
     def propagate_boundary_scale(self, deps, out_scales, default):
         return mean_source_scale(deps, out_scales, float(default))

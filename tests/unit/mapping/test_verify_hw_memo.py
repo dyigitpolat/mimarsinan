@@ -12,7 +12,7 @@ def _softcores(n=6, base=32):
     return [
         LayoutSoftCoreSpec(
             input_count=base + i, output_count=base - i,
-            threshold_group_id=i % 2, latency_tag=i % 3, name=f"sc{i}",
+            residency_class_id=i % 2, latency_tag=i % 3, name=f"sc{i}",
         )
         for i in range(n)
     ]

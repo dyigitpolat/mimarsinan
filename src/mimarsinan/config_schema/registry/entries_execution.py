@@ -64,6 +64,14 @@ ENTRIES = (
        relevant=R.when_true("allow_scheduling"),
        provenance="consumer frozen default", derived_default=_frozen("pool"),
        empty_means="pool — the historical scheduled build"),
+    _E("core_value_granularity", section="platform_constraints", group="hardware",
+       owner="mapping.platform.core_residency", type=T.JSON,
+       category=Category.ADVANCED, exposure="user", label="Core Value Granularity",
+       effect="Which per-core values constrain what may share a hardware core",
+       doc="Per-value grain: absent / per_core / per_neuron, by name. Only per_core "
+           "constrains residency; per_neuron stores one per neuron range; absent is "
+           "vacuous. Defaults follow the deployment domain, so name only exceptions.",
+       provenance="consumer frozen default", derived_default=_frozen({})),
     _E("allow_weight_reuse", section="platform_constraints",
        group="hardware", owner="ChipCapabilities/weight_reuse",
        type=T.BOOL, category=Category.ADVANCED, exposure="user",

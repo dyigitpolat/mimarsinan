@@ -12,8 +12,7 @@ logger = logging.getLogger("mimarsinan.gui")
 
 from mimarsinan.common.best_effort import best_effort
 from mimarsinan.gui.snapshot.util.helpers import _histogram, _safe_scalar
-from mimarsinan.gui.resources import ResourceDescriptor
-from mimarsinan.gui.snapshot.heatmap import _make_heatmap_producer
+from mimarsinan.gui.resources import HeatmapSource, ResourceDescriptor
 
 RESOURCE_KIND_IR_CORE_HEATMAP = "ir_core_heatmap"
 RESOURCE_KIND_IR_CORE_PRE_PRUNING = "ir_core_pre_pruning"
@@ -149,7 +148,7 @@ def snapshot_pruning_layers(model: Any) -> tuple[dict, list[ResourceDescriptor]]
         descriptors.append(ResourceDescriptor(
             kind=RESOURCE_KIND_PRUNING_LAYER_HEATMAP,
             rid=rid,
-            producer=_make_heatmap_producer(
+            source=HeatmapSource(
                 weight,
                 pruned_row_mask=row_list,
                 pruned_col_mask=col_list,

@@ -26,6 +26,7 @@ from fastapi.testclient import TestClient
 from mimarsinan.gui.runtime.collector import DataCollector
 from mimarsinan.gui.runtime.persistence import save_resource_to_disk
 from mimarsinan.gui.resources import ResourceDescriptor, ResourceStore
+from resource_source_doubles import CallableSource
 from mimarsinan.gui.server import create_app
 
 
@@ -119,7 +120,7 @@ class TestResourceEndpoints:
         desc = ResourceDescriptor(
             kind="ir_core_heatmap",
             rid="core/0",
-            producer=_png_bytes,
+            source=CallableSource(_png_bytes),
             media_type="image/png",
         )
         store.put("s1", desc)
@@ -139,7 +140,7 @@ class TestResourceEndpoints:
         desc = ResourceDescriptor(
             kind="connectivity",
             rid="seg/0",
-            producer=lambda: payload,
+            source=CallableSource(lambda: payload),
             media_type="application/json",
         )
         store.put("s1", desc)
@@ -169,7 +170,7 @@ class TestResourceEndpoints:
         desc = ResourceDescriptor(
             kind="ir_core_heatmap",
             rid="core/7",
-            producer=prod,
+            source=CallableSource(prod),
             media_type="image/png",
         )
         store.put("s1", desc)

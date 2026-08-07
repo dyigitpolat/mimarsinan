@@ -62,7 +62,7 @@ def test_layout_and_runtime_packers_agree(name):
     # Layout packer over specs derived from the compacted soft cores.
     soft_layout = _compacted_soft_mapping(builder())
     specs = [
-        spec_from_softcore(c, fallback_threshold_group_id=-(i + 1))
+        spec_from_softcore(c, fallback_residency_class_id=-(i + 1))
         for i, c in enumerate(soft_layout.cores)
     ]
     layout_result = pack_layout(

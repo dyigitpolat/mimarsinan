@@ -49,7 +49,11 @@ class NormalizationAwarePerceptronQuantization:
         if torch.is_tensor(b_max) and b_max.device != w_max.device:
             b_max = b_max.to(w_max.device)
 
-        if self.two_scale and perceptron.layer.bias is not None:
+        # A bias-free BN-paired layer has a derived effective bias that IS
+        # realizable (through the normalization's beta seam), so it takes the
+        # two-scale path too; only a perceptron with no seam at all -- whose
+        # effective bias is structurally zero -- falls back to the weight grid.
+        if self.two_scale and transformer.effective_bias_is_writable(perceptron):
             self._transform_two_scale(perceptron, transformer, w_max, b_max)
             return
 

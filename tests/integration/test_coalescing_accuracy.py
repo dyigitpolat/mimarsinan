@@ -62,7 +62,9 @@ def run_hard_analytical(hard_mapping, inputs, device):
                     axon_vals.append(core_outputs[(src.core_, src.neuron_)])
         
         axon_vals = torch.tensor(axon_vals, device=device).to(torch.float32)
-        weights = torch.tensor(core.core_matrix, device=device).to(torch.float32)
+        weights = torch.tensor(
+            core.get_core_matrix(), device=device,
+        ).to(torch.float32)
         
         raw = weights.T @ axon_vals
         acts = torch.clamp(raw, min=0) / float(core.threshold)

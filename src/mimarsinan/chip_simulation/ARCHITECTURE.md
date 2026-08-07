@@ -33,7 +33,7 @@ Pareto decision layer.
 | `ledger_schema.py` | Normalized campaign-ledger science-row schema: axes, cell key, validity, timing, and cost provenance |
 | `membrane_export.py` | [C2] deployed membrane-readout honesty gate: every enabled backend must export final membranes (declared on the registry), else fail toward counts; half-step charge SSOT |
 | `mvm_core_policy.py` | `MvmCorePolicy`: the value-domain (MVM) policy — typed answers on the consumed seams (`values` observable, no backends), event seams stay loud |
-| `value_run/` | Value-domain program execution: `ValueHybridCoreFlow` + the per-core affine kernel (`run_neural_segment_values`) — latency tiers as dependency order, span-plan gathers, fp64 certification mode, no cycle loop; `activation_bits` snaps entry cores' input-sourced columns onto the calibrated boundary grid (twin of the model-side `ValueGridQuantizer`); `schedule_weights_resident` passes alias the residency-chain head's uploaded weight tensors [wsm V3] |
+| `value_run/` | Value-domain program execution: `ValueHybridCoreFlow` + the per-core affine kernel (`run_neural_segment_values`) — latency tiers as dependency order, span-plan gathers, fp64 certification mode, no cycle loop; `activation_bits` snaps entry cores' input-sourced columns onto the calibrated boundary grid (twin of the model-side `ValueGridQuantizer`); weight tensors are uploaded per forward and live per residency chain — `schedule_weights_resident` passes alias the chain head's uploaded tensors [wsm V3], and each chain is freed when the next non-resident neural stage begins or the forward returns |
 | `neural_segment_executor.py` | Dispatches analytical neural-segment execution by spiking mode (TTFS analytical path for references) |
 | `pareto.py` | Pareto decision layer over campaign rows: cascaded-vs-synchronized verdict + recipe proposal with banded cost |
 | `parity_contract.py` | Parity/equivalence contract classification for deployment cells |
@@ -46,7 +46,7 @@ Pareto decision layer.
 | `hybrid_run/` | Shared hybrid stage loop, segment I/O + compute-op execution, and the inter-stage semantics contract for all hybrid backends |
 | `lava_loihi/` | Host-scheduled Lava Loihi LIF backend: runner, wave-parallel per-segment execution (longest-path dependency waves through the bounded spawn pool), and timing |
 | `nevresim/` | Nevresim C++ simulator bridge: driver, compile, execute, segment binaries, compile cache, connectivity mode, profiling |
-| `parity/` | Generic segment-record field-diff comparison utilities |
+| `parity/` | Generic segment-record field-diff comparison utilities; float closeness is judged by `common.measurement.MetricTolerance` (the one definition of "matches") |
 | `recording/` | Spike encoding modes plus spike-count recording/diffing shared by HCM and backend parity checks |
 | `sanafe/` | SANA-FE detailed-stats backend: arch/net synthesis, runner, neuron plugins, records, energy analysis |
 | `simulation_runner/` | `SimulationRunner` orchestrating end-to-end nevresim runs (flat single-segment and hybrid multi-segment) |

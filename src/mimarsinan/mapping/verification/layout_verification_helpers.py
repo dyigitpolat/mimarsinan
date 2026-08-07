@@ -24,9 +24,9 @@ def _latency_stats(
     tagged = [
         (sc, int(sc.latency_tag)) for sc in softcores if sc.latency_tag is not None
     ]
-    threshold_groups = len({sc.threshold_group_id for sc in softcores})
+    residency_classes = len({sc.residency_class_id for sc in softcores})
     if not tagged:
-        return 0, 0.0, 0.0, 0.0, threshold_groups
+        return 0, 0.0, 0.0, 0.0, residency_classes
 
     segments_to_latencies: Dict[int, set[int]] = {}
     fallback_by_latency_tag = {lat for _, lat in tagged}
@@ -46,5 +46,5 @@ def _latency_stats(
         float(min(per_segment_latencies)),
         _safe_median(per_segment_latencies),
         float(max(per_segment_latencies)),
-        threshold_groups,
+        residency_classes,
     )

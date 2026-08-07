@@ -135,8 +135,9 @@ class LavaSegmentMixin:
                         seg_input_logical=seg_input_logical,
                         core_buffer_spikes=core_buffer_spikes,
                     )
+                    grid = core.get_core_matrix()
                     weights = np.asarray(
-                        core.core_matrix[:used_ax, :used_neu], dtype=_LAVA_DTYPE,
+                        grid[:used_ax, :used_neu], dtype=_LAVA_DTYPE,
                     ).T
                     hardware_bias = (
                         np.asarray(core.hardware_bias[:used_neu], dtype=_LAVA_DTYPE)

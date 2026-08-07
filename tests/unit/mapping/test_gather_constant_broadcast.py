@@ -9,7 +9,7 @@ import pytest
 import torch
 
 from mimarsinan.mapping.ir.gather_plan import build_gather_plan
-from mimarsinan.mapping.ir.types import IRSource
+from mimarsinan.mapping.ir.source import IRSource
 
 
 class _FakeNode:

@@ -6,7 +6,8 @@ from dataclasses import dataclass
 from typing import Dict, Iterable, Mapping, Sequence
 
 from mimarsinan.mapping.ir.graph import IRGraph
-from mimarsinan.mapping.ir.types import NeuralCore, WeightBank
+from mimarsinan.mapping.ir.types import NeuralCore
+from mimarsinan.mapping.ir.weight_bank import WeightBank
 
 
 __all__ = [

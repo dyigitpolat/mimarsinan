@@ -8,7 +8,11 @@ from unittest.mock import MagicMock
 import pytest
 
 from mimarsinan.gui.handle import GUIHandle
-from mimarsinan.gui.resources import ResourceDescriptor
+from mimarsinan.gui.resources import (
+    JsonSource,
+    ResourceDescriptor,
+    ResourceRenderPolicy,
+)
 from mimarsinan.gui.runtime.collector import DataCollector
 from mimarsinan.gui.runtime.persistence.resource_paths import resource_disk_path
 
@@ -47,15 +51,13 @@ class TestPersistResourcesSkipsFailingProducers:
         working_dir = str(tmp_path)
         good_payload = {"ok": True}
 
-        def boom_producer():
-            raise RuntimeError("resource producer boom")
-
-        def good_producer():
-            return good_payload
+        class _BoomSource(JsonSource):
+            def render(self):
+                raise RuntimeError("resource producer boom")
 
         descriptors = [
-            ResourceDescriptor(kind="connectivity", rid="bad", producer=boom_producer, media_type="application/json"),
-            ResourceDescriptor(kind="connectivity", rid="good", producer=good_producer, media_type="application/json"),
+            ResourceDescriptor(kind="connectivity", rid="bad", source=_BoomSource(None), media_type="application/json"),
+            ResourceDescriptor(kind="connectivity", rid="good", source=JsonSource(good_payload), media_type="application/json"),
         ]
         monkeypatch.setattr(
             "mimarsinan.gui.handle.build_step_snapshot",
@@ -67,7 +69,10 @@ class TestPersistResourcesSkipsFailingProducers:
             get_target_metric=MagicMock(return_value=None),
             working_directory=working_dir,
         )
-        gui = GUIHandle(pipeline, collector, capture_stdio=False)
+        gui = GUIHandle(
+            pipeline, collector, capture_stdio=False,
+            render_policy=ResourceRenderPolicy.EAGER,
+        )
         collector.step_started("S")
 
         gui.on_step_end("S", SimpleNamespace())  # must not raise

@@ -216,7 +216,7 @@ def render_layout_section(pareto: List[Any]) -> str:
             ("Total cores used", summary.get("total_cores")),
             ("Total softcores", summary.get("total_softcores")),
             ("Neural segments", summary.get("neural_segment_count")),
-            ("Threshold groups", summary.get("threshold_group_count")),
+            ("Residency classes", summary.get("residency_class_count")),
             ("Fragmentation %", summary.get("fragmentation_pct")),
             ("Mapped params %", summary.get("mapped_params_pct")),
             ("Schedule passes", summary.get("schedule_pass_count")),
@@ -247,7 +247,7 @@ def render_layout_section(pareto: List[Any]) -> str:
                 parts.append(f'<td>{row.get("total_area", 0)}</td>')
                 parts.append(f'<td>{row.get("max_input_count", 0)}</td>')
                 parts.append(f'<td>{row.get("max_output_count", 0)}</td>')
-                parts.append(f'<td>{row.get("threshold_group_count", 0)}</td>')
+                parts.append(f'<td>{row.get("residency_class_count", 0)}</td>')
                 parts.append(f'<td>{row.get("latency_tag_count", 0)}</td>')
                 parts.append(f'<td>{row.get("segment_count", 0)}</td>')
                 parts.append("</tr>")

@@ -13,11 +13,13 @@ import numpy as np
 import torch
 import torch.nn as nn
 
+import pytest
+
+from mimarsinan.gui.resources import HeatmapSource
 from mimarsinan.gui.snapshot.heatmap import (
     LIVENESS_LIVE,
     _detect_neural_core_liveness,
-    _make_bias_strip_producer,
-    _make_heatmap_producer,
+    _make_bias_strip_source,
 )
 from mimarsinan.gui.snapshot.ir_graph.ir_graph_resources import (
     _extract_core_connectivity,
@@ -153,7 +155,9 @@ class TestMappingSnapshotDegrade:
         neural_stage = next(
             s for s in hm.stages if s.kind == "neural" and s.hard_core_mapping is not None
         )
-        neural_stage.hard_core_mapping.cores[0].core_matrix = None
+        broken = neural_stage.hard_core_mapping.cores[0]
+        broken.core_matrix = None
+        broken.matrix_placements = []  # no owned grid AND no descriptor
 
         snap, descs = snapshot_hard_core_mapping(hm)
         neural_stages = [s for s in snap["stages"] if s.get("kind") == "neural" and s.get("cores")]
@@ -206,21 +210,24 @@ class TestHeatmapDegrade:
         )
         assert _detect_neural_core_liveness(node, BadMat()) == LIVENESS_LIVE
 
-    def test_make_heatmap_producer_does_not_raise_when_conversion_fails(self):
+    def test_heatmap_source_raises_when_conversion_fails(self):
+        """A matrix that will not materialise fails HERE, where the caller's
+        best_effort drops that one resource -- rather than silently becoming a
+        source that holds the un-materialised object for the rest of the run."""
         class Unconvertible:
             def __array__(self, *a, **k):
                 raise RuntimeError("boom")
 
-        producer = _make_heatmap_producer(Unconvertible(), copy=True)
-        assert callable(producer)
+        with pytest.raises(RuntimeError):
+            HeatmapSource(Unconvertible(), copy=True)
 
-    def test_make_bias_strip_producer_does_not_raise_when_conversion_fails(self):
+    def test_make_bias_strip_source_raises_when_conversion_fails(self):
         class Unconvertible:
             def __array__(self, *a, **k):
                 raise RuntimeError("boom")
 
-        producer = _make_bias_strip_producer(Unconvertible())
-        assert callable(producer)
+        with pytest.raises(RuntimeError):
+            _make_bias_strip_source(Unconvertible())
 
 
 class TestSanafeSnapshotFindPromiserDegrade:

@@ -48,7 +48,7 @@ def write_softcore_mapping_dot(
         cid = int(getattr(c, "id"))
         nid = f"c{cid}"
 
-        mat = getattr(c, "core_matrix")
+        mat = c.get_core_matrix()
         ax = int(mat.shape[0])
         neu = int(mat.shape[1])
         nnz = int(np.count_nonzero(mat))

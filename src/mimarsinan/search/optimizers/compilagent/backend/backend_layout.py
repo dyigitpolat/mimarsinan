@@ -90,7 +90,7 @@ def softcore_to_dict(sc: LayoutSoftCoreSpec, index: int) -> Dict[str, Any]:
         "input_count": int(sc.input_count),
         "output_count": int(sc.output_count),
         "area": int(sc.area),
-        "threshold_group_id": int(sc.threshold_group_id),
+        "residency_class_id": int(sc.residency_class_id),
         "latency_tag": (None if sc.latency_tag is None else int(sc.latency_tag)),
         "segment_id": (None if sc.segment_id is None else int(sc.segment_id)),
     }
@@ -111,7 +111,7 @@ def aggregate_per_layer(
                 "total_area": 0,
                 "max_input_count": 0,
                 "max_output_count": 0,
-                "threshold_groups": set(),
+                "residency_classes": set(),
                 "latency_tags": set(),
                 "segments": set(),
             },
@@ -120,7 +120,7 @@ def aggregate_per_layer(
         row["total_area"] += int(sc.area)
         row["max_input_count"] = max(row["max_input_count"], int(sc.input_count))
         row["max_output_count"] = max(row["max_output_count"], int(sc.output_count))
-        row["threshold_groups"].add(int(sc.threshold_group_id))
+        row["residency_classes"].add(int(sc.residency_class_id))
         if sc.latency_tag is not None:
             row["latency_tags"].add(int(sc.latency_tag))
         if sc.segment_id is not None:
@@ -135,7 +135,7 @@ def aggregate_per_layer(
                 "total_area": row["total_area"],
                 "max_input_count": row["max_input_count"],
                 "max_output_count": row["max_output_count"],
-                "threshold_group_count": len(row["threshold_groups"]),
+                "residency_class_count": len(row["residency_classes"]),
                 "latency_tag_count": len(row["latency_tags"]),
                 "segment_count": len(row["segments"]),
             }
@@ -145,7 +145,7 @@ def aggregate_per_layer(
 
 
 def layer_key(sc: LayoutSoftCoreSpec) -> str:
-    name = sc.name or f"unnamed_tg{int(sc.threshold_group_id)}"
+    name = sc.name or f"unnamed_tg{int(sc.residency_class_id)}"
     for sep in ("_tile_", "_psum_pos_", "_psum_neg_", "_psum_accum_", "_pos", "_col"):
         if sep in name:
             return name.split(sep, 1)[0]

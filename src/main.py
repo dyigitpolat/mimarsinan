@@ -24,9 +24,13 @@ from mimarsinan.pipelining.session import PipelineSession
 def run_pipeline_from_config(deployment_config, collector, gui_port=8501):
     """Run a config in a background thread with the wizard GUI attached."""
     from mimarsinan.gui import GUIHandle, to_json_safe
+    from mimarsinan.gui.resources import ResourceRenderPolicy
 
     session = PipelineSession.from_config(deployment_config)
-    gui = GUIHandle(session.pipeline, collector)
+    # The wizard is watching this one, so its resources are rendered as it runs.
+    gui = GUIHandle(
+        session.pipeline, collector, render_policy=ResourceRenderPolicy.EAGER,
+    )
     session.attach_gui(gui)
 
     collector.set_pipeline_info(
@@ -83,5 +87,11 @@ def main():
 
 
 if __name__ == "__main__":
+    from mimarsinan.common.lifecycle.exit_contract import (
+        exit_process, install_exit_contract,
+    )
+
+    install_exit_contract()
     init()
     main()
+    exit_process(0)

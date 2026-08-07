@@ -48,7 +48,7 @@ def write_hardcore_mapping_dot(
         neu = int(core.neurons_per_core)
         used_ax = int(ax - core.available_axons)
         used_neu = int(neu - core.available_neurons)
-        nnz = int(np.count_nonzero(core.core_matrix))
+        nnz = int(np.count_nonzero(core.get_core_matrix()))
         total = int(ax * neu)
 
         rows = [

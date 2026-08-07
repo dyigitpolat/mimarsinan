@@ -254,7 +254,7 @@ class HybridStageIOMixin(HybridFlowHost):
                     core_weight = bank_t[int(bn0):int(bn1), int(ba0):int(ba1)]
 
             if core_weight is None:
-                tile = core.core_matrix[:used_ax, :used_neu]
+                tile = core.get_core_matrix()[:used_ax, :used_neu]
                 core_weight = torch.tensor(
                     tile.T, dtype=COMPUTE_DTYPE, device=device,
                 )

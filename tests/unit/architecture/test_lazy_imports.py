@@ -58,6 +58,11 @@ ALLOWLIST = {
     "mapping/ir/legacy_convert.py",
     "mapping/ir/types.py",
     "mapping/layout/layout_ir_mapping.py",
+    # [W4b] cycle-break: the certificate package imports the propagation
+    # kernels (certify_cascade_equivalence), which consume the transfer
+    # registry; the registry's zero-preservation predicate therefore pulls
+    # certificate/zero_preserving lazily.
+    "mapping/pruning/liveness_transfer/transfer_types.py",
     "mapping/packing/hybrid_build_pool.py",
     "mapping/packing/hybrid_build_scheduled.py",
     "mapping/packing/hybrid_segment.py",

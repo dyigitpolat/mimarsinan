@@ -4,11 +4,14 @@ from __future__ import annotations
 
 import argparse
 import json
-import subprocess
 import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO / "src"))
+
+from mimarsinan.common.lifecycle.child_launcher import run_child  # noqa: E402
+
 SLURMECH = [str(REPO / "env/bin/python"), "-c", "from slurmech.cli import main; main()"]
 RETRYABLE = {"FAILED", "TIMEOUT", "STALE", "CANCELLED"}
 
@@ -22,9 +25,8 @@ def main() -> int:
     state_path = REPO / args.state
     state = json.loads(state_path.read_text())
 
-    proc = subprocess.run(
-        SLURMECH + ["status", "--all", "--json"],
-        capture_output=True, text=True, timeout=180, cwd=REPO,
+    proc = run_child(
+        SLURMECH + ["status", "--all", "--json"], cwd=REPO, timeout_s=180,
     )
     states: dict[str, str] = {}
     for line in proc.stdout.splitlines():
@@ -63,12 +65,14 @@ def main() -> int:
     # --only pins resubmission to the purged runs; otherwise submit refills
     # the state with the first N configs of the whole matrix.
     only = [name for name, _, _ in purged]
-    resubmit = subprocess.run(
+    resubmit = run_child(
         [sys.executable, str(REPO / "scripts/slurm_campaign.py"), "submit",
          "--wave-size", str(len(purged)), "--time-limit", "00:45:00",
          "--state", args.state, "--only", *only],
-        cwd=REPO, timeout=60 * len(purged) + 300,
+        cwd=REPO, timeout_s=60 * len(purged) + 300,
     )
+    sys.stdout.write(resubmit.stdout)
+    sys.stderr.write(resubmit.stderr)
     return resubmit.returncode
 
 

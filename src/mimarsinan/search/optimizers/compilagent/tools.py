@@ -59,7 +59,7 @@ def build_introspection_tools(
         )
 
     def inspect_layer_breakdown(*, candidate_id: str) -> str:
-        """Per-layer aggregate (softcore count, total area, threshold groups)."""
+        """Per-layer aggregate (softcore count, total area, residency classes)."""
 
         payload = _payload(candidate_id)
         return json.dumps(
@@ -103,7 +103,7 @@ def build_introspection_tools(
             description=(
                 "Return every softcore (one logical tile of the workload) "
                 "that the named candidate emits, including input/output "
-                "wire counts, threshold-group id, latency tag and segment "
+                "wire counts, residency-class id, latency tag and segment "
                 "id. Read-only."
             ),
             args_schema=_CandidateOnlyArgs.model_json_schema(),

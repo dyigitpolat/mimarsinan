@@ -85,7 +85,7 @@ PIPELINE_MODE_PRESETS: Dict[str, Dict[str, object]] = {
 }
 
 CONFIG_KEYS_SET: Set[str] = {
-    "degradation_tolerance",
+    "core_value_granularity", "degradation_tolerance",
     "spiking_mode",
     "firing_mode",
     "spike_generation_mode",
@@ -101,8 +101,9 @@ CONFIG_KEYS_SET: Set[str] = {
     "kd_temperature",
     "activation_quantization",
     "weight_quantization",
-    "pruning", "pruning_fraction", "prune_sparsity",
-    "scale_migration", "scale_migration_clip_ratio",
+    "pruning", "pruning_fraction", "prune_sparsity", "elimination_propagation",
+    "elimination_constant_folding",
+    "prune_criterion", "prune_group_size", "scale_migration", "scale_migration_clip_ratio",
     "weight_source", "preload_weights",
     "pretrained_weight_set", "pretrained_weight_sets",
     "model_type", "device",
@@ -110,8 +111,7 @@ CONFIG_KEYS_SET: Set[str] = {
     "model_config",
     "model_factory",
     "lr", "lr_range_min", "lr_range_max",
-    "cores",
-    "simulation_steps",
+    "cores", "simulation_steps",
     "arch_search",
     "target_tq",
     "allow_coalescing",

@@ -2,17 +2,17 @@
 
 from __future__ import annotations
 
-import weakref
-from typing import Dict, List
+from typing import Any, Dict, List
 
 import torch
 
 from mimarsinan.mapping.latency.chip import ChipLatency
+from mimarsinan.mapping.packing.softcore.matrix_placement import (
+    same_core_matrix_payloads,
+)
 from mimarsinan.mapping.support.spike_source_spans import compress_spike_sources
 from mimarsinan.models.nn.activations.value_quantizer import quantize_to_value_grid
 from mimarsinan.models.spiking.signal_spans import SpanFillPlan
-
-_SEGMENT_CACHE: "weakref.WeakKeyDictionary" = weakref.WeakKeyDictionary()
 
 
 class _PreparedValueSegment:
@@ -27,6 +27,7 @@ class _PreparedValueSegment:
         self, hcm, device: torch.device, dtype: torch.dtype,
         resident_from: "_PreparedValueSegment | None" = None,
         upload_memo: "dict | None" = None,
+        plan_cache: "dict | None" = None,
     ) -> None:
         ensure_core_latencies(hcm)
         self.order: List[int] = sorted(
@@ -38,7 +39,7 @@ class _PreparedValueSegment:
             self.biases = resident_from.biases[: len(hcm.cores)]
         else:
             self.weights = [
-                _upload(core.core_matrix, dtype, device, upload_memo)
+                _upload(core, dtype, device, upload_memo)
                 for core in hcm.cores
             ]
             self.biases = [
@@ -49,9 +50,17 @@ class _PreparedValueSegment:
         self.thresholds = []
         self.plans = []
         self.entry_transforms = []
+        # Gather plans are static index tensors, pure in (core spans, device):
+        # rebuilding them per forward cost 18.4 s of a 26.3 s preparation
+        # against 0.3 s of matmuls. Weights stay chain-scoped ([wsm V3]).
+        plans = plan_cache if plan_cache is not None else {}
         for core in hcm.cores:
             self.thresholds.append(float(core.threshold))
-            plan = SpanFillPlan(core.get_axon_source_spans(), device)
+            key = (id(core), str(device))
+            plan = plans.get(key)
+            if plan is None:
+                plan = SpanFillPlan(core.get_axon_source_spans(), device)
+                plans[key] = plan
             self.plans.append(plan)
             # [mvm AQ] the boundary grid snaps ENTRY cores only (no upstream
             # core sources); the plan applies it to the columns it owns.
@@ -64,9 +73,17 @@ class _PreparedValueSegment:
                 None if armed is None
                 else (lambda t, g=armed: quantize_to_value_grid(t, g.scale, g.bits))
             )
-        self.output_plan = SpanFillPlan(
-            compress_spike_sources(list(hcm.output_sources.flatten())), device
-        )
+        out_key = (id(hcm), "outputs", str(device))
+        output_plan = plans.get(out_key)
+        if output_plan is None:
+            spans = (
+                hcm.get_output_source_spans()
+                if hasattr(hcm, "get_output_source_spans")
+                else compress_spike_sources(list(hcm.output_sources.flatten()))
+            )
+            output_plan = SpanFillPlan(spans, device)
+            plans[out_key] = output_plan
+        self.output_plan = output_plan
         self.output_size = int(len(hcm.output_sources.flatten()))
         self.axon_counts = [int(w.shape[0]) for w in self.weights]
 
@@ -78,47 +95,70 @@ def ensure_core_latencies(hcm) -> None:
         ChipLatency(hcm).calculate()
 
 
-def _upload(matrix, dtype, device, memo: "dict | None"):
-    """Device tensor for ``matrix``; cores sharing one deduped ndarray share
-    one tensor ([F2] — identity-checked so a stale id can never alias)."""
+def _upload(core, dtype, device, memo: "dict | None"):
+    """Device tensor for the core's weight grid; cores resolving to
+    byte-identical grids share one tensor ([F2] — content-keyed, so cores
+    whose padded grid is now a transient composite still upload once).
+    The memo retains the payloads and re-checks them by identity, so a
+    freed-and-reallocated array can never alias through a stale key."""
     if memo is None:
-        return torch.as_tensor(matrix, dtype=dtype, device=device)
-    key = (id(matrix), dtype, str(device))
+        return torch.as_tensor(core.get_core_matrix(), dtype=dtype, device=device)
+    key = (core.core_matrix_key(), dtype, str(device))
+    payloads = core.core_matrix_payloads()
     hit = memo.get(key)
-    if hit is not None and hit[0] is matrix:
+    if hit is not None and same_core_matrix_payloads(hit[0], payloads):
         return hit[1]
-    tensor = torch.as_tensor(matrix, dtype=dtype, device=device)
-    memo[key] = (matrix, tensor)
+    tensor = torch.as_tensor(core.get_core_matrix(), dtype=dtype, device=device)
+    memo[key] = (payloads, tensor)
     return tensor
 
 
-def _prepared(
-    hcm, device: torch.device, dtype: torch.dtype, resident_head=None,
-    upload_memo: "dict | None" = None,
-) -> _PreparedValueSegment:
-    by_key = _SEGMENT_CACHE.setdefault(hcm, {})
-    key = (str(device), dtype)
-    prepared = by_key.get(key)
-    if prepared is None:
-        head = (
-            None if resident_head is None or resident_head is hcm
-            else _prepared(resident_head, device, dtype, upload_memo=upload_memo)
-        )
-        prepared = _PreparedValueSegment(
-            hcm, device, dtype, resident_from=head, upload_memo=upload_memo
-        )
-        by_key[key] = prepared
-    return prepared
+class ValueSegmentScope:
+    """Forward-local owner of uploaded weight/bias tensor lifetime.
 
+    The lifetime unit is the residency CHAIN — one non-resident head stage
+    plus its consecutive ``schedule_weights_resident`` passes ([wsm V3]):
+    ``begin_chain`` frees the previous chain, and the scope dying with the
+    forward frees the last one, so peak residency is one chain, never the
+    sum over segments."""
 
-def prepared_segment_cache_for_testing() -> "weakref.WeakKeyDictionary":
-    """The live prepared-segment cache (tests assert residency aliasing)."""
-    return _SEGMENT_CACHE
+    def __init__(self, plan_cache: "Dict | None" = None) -> None:
+        self.head_hcm: Any = None
+        # Static gather plans outlive the forward; weights do not.
+        self.plan_cache: Dict = plan_cache if plan_cache is not None else {}
+        self._prepared: Dict = {}
+        # [F2] content-keyed weight-upload memo: cores resolving to one
+        # byte-identical grid share ONE device tensor within the chain.
+        self._upload_memo: Dict = {}
+
+    def begin_chain(self, hcm) -> None:
+        """Drop the previous chain's tensors BEFORE the new head uploads."""
+        self._prepared.clear()
+        self._upload_memo.clear()
+        self.head_hcm = hcm
+
+    def prepared(
+        self, hcm, device: torch.device, dtype: torch.dtype, resident_head=None,
+    ) -> _PreparedValueSegment:
+        by_key = self._prepared.setdefault(hcm, {})
+        key = (str(device), dtype)
+        prepared = by_key.get(key)
+        if prepared is None:
+            head = (
+                None if resident_head is None or resident_head is hcm
+                else self.prepared(resident_head, device, dtype)
+            )
+            prepared = _PreparedValueSegment(
+                hcm, device, dtype, resident_from=head,
+                upload_memo=self._upload_memo, plan_cache=self.plan_cache,
+            )
+            by_key[key] = prepared
+        return prepared
 
 
 def run_neural_segment_values(
     hcm, seg_input: torch.Tensor, resident_head=None,
-    upload_memo: "dict | None" = None,
+    scope: "ValueSegmentScope | None" = None,
 ) -> torch.Tensor:
     """Execute one packed segment in the value domain: y_core = (x @ W + b) / theta.
 
@@ -130,9 +170,9 @@ def run_neural_segment_values(
     ``ValueGridQuantizer`` applies.
     """
     device, dtype = seg_input.device, seg_input.dtype
-    prepared = _prepared(
-        hcm, device, dtype, resident_head=resident_head, upload_memo=upload_memo
-    )
+    if scope is None:
+        scope = ValueSegmentScope()  # standalone call: single-call lifetime
+    prepared = scope.prepared(hcm, device, dtype, resident_head=resident_head)
     batch = seg_input.shape[0]
 
     buffers: Dict[int, torch.Tensor] = {}

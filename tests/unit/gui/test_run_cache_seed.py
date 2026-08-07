@@ -10,6 +10,7 @@ import pytest
 
 from mimarsinan.gui.runtime.run_cache_seed import (
     copy_pipeline_cache_from_previous_run,
+    copy_resources_from_previous_run,
     copy_steps_json_from_previous_run,
 )
 
@@ -51,6 +52,38 @@ def test_no_metadata_skips(tmp_gen_root: Path) -> None:
     dest.mkdir()
     copy_pipeline_cache_from_previous_run(str(tmp_gen_root), prev.name, str(dest))
     assert not (dest / "metadata.json").exists()
+
+
+def test_seeding_carries_forward_rendered_resources_and_their_sources(tmp_gen_root: Path) -> None:
+    """Which tree a previous run left behind depends on whether anything was
+    watching it, so edit-and-continue must carry BOTH forward."""
+    prev = tmp_gen_root / "run_a"
+    rendered = prev / "_GUI_STATE" / "resources" / "S1" / "ir_core_heatmap"
+    sources = prev / "_GUI_STATE" / "resource_sources" / "S1" / "ir_core_heatmap"
+    rendered.mkdir(parents=True)
+    sources.mkdir(parents=True)
+    (rendered / "core.png").write_bytes(b"\x89PNG-rendered")
+    (sources / "core.mimsrc").write_bytes(b"MIMRSRC1-source")
+
+    dest = tmp_gen_root / "run_b"
+    dest.mkdir()
+    copy_resources_from_previous_run(str(tmp_gen_root), prev.name, str(dest))
+
+    state = dest / "_GUI_STATE"
+    assert (state / "resources" / "S1" / "ir_core_heatmap" / "core.png").read_bytes() == b"\x89PNG-rendered"
+    assert (state / "resource_sources" / "S1" / "ir_core_heatmap" / "core.mimsrc").read_bytes() == b"MIMRSRC1-source"
+
+
+def test_seeding_a_run_with_only_sources_is_not_an_error(tmp_gen_root: Path) -> None:
+    prev = tmp_gen_root / "run_c"
+    sources = prev / "_GUI_STATE" / "resource_sources" / "S1" / "connectivity"
+    sources.mkdir(parents=True)
+    (sources / "seg.mimsrc").write_bytes(b"MIMRSRC1-source")
+    dest = tmp_gen_root / "run_d"
+    dest.mkdir()
+    copy_resources_from_previous_run(str(tmp_gen_root), prev.name, str(dest))
+    assert (dest / "_GUI_STATE" / "resource_sources" / "S1" / "connectivity" / "seg.mimsrc").is_file()
+    assert not (dest / "_GUI_STATE" / "resources").exists()
 
 
 def test_copy_steps_json_from_previous_run(tmp_gen_root: Path) -> None:

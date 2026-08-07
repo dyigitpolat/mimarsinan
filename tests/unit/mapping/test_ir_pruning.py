@@ -305,8 +305,10 @@ class TestPruneIRGraph:
             store_heatmap=True,
         )
         pruned_node = pruned.nodes[0]
-        assert pruned_node.pre_pruning_heatmap is not None
-        pre_arr = np.array(pruned_node.pre_pruning_heatmap)
+        assert pruned_node.pre_pruning_heatmap is None, (
+            "bank-backed cores must not own heatmap storage (the 46 GB defect)"
+        )
+        pre_arr = np.array(pruned_node.resolve_pre_pruning_heatmap(pruned))
         assert pre_arr.shape == (4, 2), "Effective matrix is 4x2 (slice of 4x4)"
         assert len(pruned_node.pruned_row_mask) == 4
         assert len(pruned_node.pruned_col_mask) == 2, "Column mask must be sliced to match effective cols"

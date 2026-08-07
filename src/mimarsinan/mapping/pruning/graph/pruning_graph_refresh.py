@@ -4,8 +4,15 @@ from typing import AbstractSet, Dict, Mapping, Set, Tuple
 
 import numpy as np
 
+from mimarsinan.mapping.pruning.graph.analysis_dependencies import (
+    PortPlan, _dead_axons_from_plan, _orphans_from_plan,
+)
 from mimarsinan.mapping.ir import IRSource, NeuralCore, WeightBank
+from mimarsinan.mapping.pruning.graph.propagation_mode import (
+    ELIMINATION_PROPAGATION_CASCADE,
+)
 from mimarsinan.mapping.pruning.graph.pruning_propagation import compute_propagated_pruned_rows_cols
+from mimarsinan.mapping.pruning.liveness_transfer import ComputeOpTransferIndex
 def _resolve_node_matrix(node: NeuralCore, banks: Mapping[int, WeightBank]) -> np.ndarray | None:
     """Return the effective ``(axons, neurons)`` matrix for a NeuralCore."""
     if node.core_matrix is not None:
@@ -23,9 +30,12 @@ def _resolve_node_matrix(node: NeuralCore, banks: Mapping[int, WeightBank]) -> n
 def _cross_core_dead_axons(
     node: NeuralCore,
     pruned_cols: Mapping[int, AbstractSet[int]],
-    computeop_producer_map: Mapping[Tuple[int, int], Tuple[int, int]],
+    computeop_transfers: ComputeOpTransferIndex,
 ) -> Set[int]:
-    """Axons whose source neuron is already dead (off, pruned, or via ComputeOp relay)."""
+    """Axons whose source neuron is already dead (off, pruned, or via ComputeOp
+    liveness transfer: an op output is dead when ALL of its transfer-mapped
+    NeuralCore producers are dead)."""
+    forward_producers = computeop_transfers.forward_producers
     dead: Set[int] = set()
     for i, src in enumerate(node.input_sources.flatten()):
         if not isinstance(src, IRSource):
@@ -33,10 +43,12 @@ def _cross_core_dead_axons(
         if src.is_off():
             dead.add(i)
             continue
-        upstream = computeop_producer_map.get((src.node_id, src.index))
-        if upstream is not None:
-            up_nid, up_col = upstream
-            if up_col in pruned_cols.get(up_nid, frozenset()):
+        producers = forward_producers.get((src.node_id, src.index))
+        if producers is not None:
+            if all(
+                col in pruned_cols.get(nid, frozenset())
+                for nid, col in producers
+            ):
                 dead.add(i)
         elif src.node_id >= 0 and src.index in pruned_cols.get(src.node_id, frozenset()):
             dead.add(i)
@@ -49,15 +61,20 @@ def _orphan_neurons(
     pruned_rows: Mapping[int, AbstractSet[int]],
     consumer_axons: Mapping[Tuple[int, int], list[Tuple[int, int]]],
     model_output_neurons: AbstractSet[Tuple[int, int]],
-    computeop_referenced_neurons: AbstractSet[Tuple[int, int]],
+    computeop_transfers: ComputeOpTransferIndex,
 ) -> Set[int]:
-    """Neurons with no live NeuralCore consumers and no model/ComputeOp wiring."""
+    """Neurons with no live consumer — direct NeuralCore axons AND through-op
+    (transfer-mapped) axons both dead. Transfer-protected ports (feeding an
+    opaque op, or reaching a model output through ops) are never orphaned."""
     dead: Set[int] = set()
+    protected = computeop_transfers.protected_ports
+    effective = computeop_transfers.effective_consumers
     for j in range(n_neurons):
         key = (node_id, j)
-        if key in model_output_neurons or key in computeop_referenced_neurons:
+        if key in model_output_neurons or key in protected:
             continue
-        consumers = consumer_axons.get(key, ())
+        consumers = list(consumer_axons.get(key, ()))
+        consumers.extend(effective.get(key, ()))
         if not consumers:
             dead.add(j)
             continue
@@ -73,33 +90,42 @@ def _refresh_node_pruning(
     *,
     node: NeuralCore,
     mat: np.ndarray,
+    hardware_bias: np.ndarray | None = None,
     zero_threshold: float,
     pruned_rows: Dict[int, Set[int]],
     pruned_cols: Dict[int, Set[int]],
     consumer_axons: Mapping[Tuple[int, int], list[Tuple[int, int]]],
     model_output_neurons: AbstractSet[Tuple[int, int]],
-    computeop_referenced_neurons: AbstractSet[Tuple[int, int]],
-    computeop_producer_map: Mapping[Tuple[int, int], Tuple[int, int]],
+    computeop_transfers: ComputeOpTransferIndex,
     exempt_rows: Mapping[int, AbstractSet[int]],
     exempt_cols: Mapping[int, AbstractSet[int]],
+    mode: str = ELIMINATION_PROPAGATION_CASCADE,
+    port_plan: "PortPlan | None" = None,
 ) -> bool:
     """Rerun within-matrix propagation seeded with cross-core deadness.
+
+    ``mat`` / ``hardware_bias`` are the EFFECTIVE (post-constant-fold)
+    structures; passing them explicitly keeps the kernel honest about the
+    program it is reasoning over. ``hardware_bias=None`` falls back to the
+    node's stored vector, which is exactly the pre-W4b-2 behaviour.
 
     Returns True iff this iteration enlarged the node's pruned sets.
     """
     nid = node.id
+    if hardware_bias is None:
+        hardware_bias = getattr(node, "hardware_bias", None)
     n_axons, n_neurons = mat.shape
 
-    cross_rows = _cross_core_dead_axons(
-        node, pruned_cols, computeop_producer_map
+    if port_plan is None:
+        port_plan = PortPlan(
+            node, n_neurons, computeop_transfers, consumer_axons,
+            model_output_neurons,
+        )
+    cross_rows = _dead_axons_from_plan(
+        port_plan, pruned_cols
     ) - exempt_rows.get(nid, frozenset())
-    cross_cols = _orphan_neurons(
-        nid,
-        n_neurons,
-        pruned_rows,
-        consumer_axons,
-        model_output_neurons,
-        computeop_referenced_neurons,
+    cross_cols = _orphans_from_plan(
+        port_plan, pruned_rows
     ) - exempt_cols.get(nid, frozenset())
 
     seed_rows = pruned_rows[nid] | cross_rows
@@ -113,8 +139,9 @@ def _refresh_node_pruning(
         exempt_rows=exempt_rows.get(nid, frozenset()),
         exempt_cols=exempt_cols.get(nid, frozenset()),
         cols_with_implicit_source=_cols_with_nonzero_bias(
-            getattr(node, "hardware_bias", None), n_neurons, zero_threshold
+            hardware_bias, n_neurons, zero_threshold
         ),
+        mode=mode,
     )
 
     changed = new_rows != pruned_rows[nid] or new_cols != pruned_cols[nid]
@@ -154,12 +181,17 @@ def _refresh_bank_pruning(
     bank_pruned_cols: Dict[int, Set[int]],
     exempt_rows: Mapping[int, AbstractSet[int]],
     exempt_cols: Mapping[int, AbstractSet[int]],
+    mode: str = ELIMINATION_PROPAGATION_CASCADE,
 ) -> bool:
     """Aggregate per-node bank views into bank-level pruned sets and project back.
 
     Bank rows are pruned only when *every* using node has the corresponding
     axon dead (we cannot drop a row another node still needs). Bank columns
-    are the union over per-node pruned cols mapped to bank coords.
+    follow the same rule per physical column: propagation-discovered deadness
+    in ONE instance's view (starvation, orphaning) stays per-instance; the
+    physical column dies only when every node whose ``weight_row_slice``
+    covers it has its local view of the column dead. Explicit bank-level
+    seeds (``bank_pruned_cols``) are shared by construction and pass through.
     """
     n_axons, n_neurons = bank.core_matrix.shape
 
@@ -174,17 +206,27 @@ def _refresh_bank_pruning(
     seed_cols = set(bank_pruned_cols[bank_id])
     bank_exempt_rows: Set[int] = set()
     bank_exempt_cols: Set[int] = set()
+    covered = np.zeros(n_neurons, dtype=bool)
+    dead_in_all_views = np.ones(n_neurons, dtype=bool)
     for node in bank_nodes:
         nid = node.id
         if node.weight_row_slice is not None:
-            start, _end = node.weight_row_slice
+            start, end = node.weight_row_slice
         else:
-            start = 0
+            start, end = 0, n_neurons
+        node_dead = np.zeros(end - start, dtype=bool)
         for j_local in pruned_cols.get(nid, set()):
-            seed_cols.add(start + j_local)
+            if 0 <= j_local < end - start:
+                node_dead[j_local] = True
+        covered[start:end] = True
+        dead_in_all_views[start:end] &= node_dead
         bank_exempt_rows |= exempt_rows.get(nid, frozenset())
         for j_local in exempt_cols.get(nid, frozenset()):
             bank_exempt_cols.add(start + j_local)
+    # Union rule (columns): a physical column dies only if dead for ALL
+    # instances whose slice covers it — one sharer's orphaned view must not
+    # drop live signal of another sharer.
+    seed_cols |= {int(c) for c in np.flatnonzero(covered & dead_in_all_views)}
 
     seed_rows = bank_pruned_rows[bank_id] | (rows_intersection - bank_exempt_rows)
 
@@ -216,6 +258,7 @@ def _refresh_bank_pruning(
         cols_with_implicit_source=frozenset(
             bank_bias_alive_cols | per_node_bias_alive_cols
         ),
+        mode=mode,
     )
 
     changed = (

@@ -5,9 +5,6 @@ import torch
 import torch.nn as nn
 
 from mimarsinan.chip_simulation.value_run import ValueHybridCoreFlow
-from mimarsinan.chip_simulation.value_run.value_execution import (
-    prepared_segment_cache_for_testing,
-)
 from mimarsinan.mapping.ir import IRGraph, IRSource, NeuralCore, WeightBank
 from mimarsinan.mapping.packing.hybrid_build_pool import (
     build_hybrid_hard_core_mapping,
@@ -129,14 +126,24 @@ class TestStateBufferPruning:
 
         flow, fused = _identity_flow_and_fused()
         seen = {"calls": 0, "n": 0}
+        # Neural stages decref by source id, compute ops by producer count
+        # (op_source_counts); every stage must still decref exactly once, so
+        # the count spans BOTH seams.
         original = vf.decref_consumers
+        original_op = vf.decref_op_consumers
 
         def spy(buf, remaining, src_ids, **kw):
             original(buf, remaining, src_ids, **kw)
             seen["calls"] += 1
             seen["n"] = len(buf)
 
+        def spy_op(buf, remaining, op, **kw):
+            original_op(buf, remaining, op, **kw)
+            seen["calls"] += 1
+            seen["n"] = len(buf)
+
         vf.decref_consumers = spy
+        vf.decref_op_consumers = spy_op
         try:
             x = torch.randn(3, 8)
             with torch.no_grad():
@@ -144,20 +151,32 @@ class TestStateBufferPruning:
                 want = fused.double()(x.double())
         finally:
             vf.decref_consumers = original
+            vf.decref_op_consumers = original_op
         torch.testing.assert_close(got, want, atol=1e-9, rtol=1e-9)
         n_stages = len(flow.hybrid_mapping.stages)
         assert seen["calls"] == n_stages
         assert seen["n"] < n_stages  # consumed nodes were freed
 
     def test_upload_memo_shares_tensors_for_shared_arrays(self):
-        # [F2] cores sharing one deduped ndarray share ONE device tensor.
+        # [F2] cores sharing one deduped ndarray share ONE device tensor —
+        # observed in flight on the upload returns (the prepared segments die
+        # with the per-forward scope).
+        from unit.chip_simulation.value_upload_probe import probe_uploads
+
         hybrid = _token_bank_hybrid()
         flow = ValueHybridCoreFlow(hybrid, dtype=torch.float64)
-        with torch.no_grad():
-            flow(torch.randn(2, 20))
+        with probe_uploads(flow, keep=True) as probe:
+            with torch.no_grad():
+                flow(torch.randn(2, 20))
         neural = [s for s in hybrid.stages if s.kind == "neural"]
         head_cores = neural[0].hard_core_mapping.cores
-        assert head_cores[0].core_matrix is head_cores[1].core_matrix
-        cache = prepared_segment_cache_for_testing()
-        head = cache[neural[0].hard_core_mapping][("cpu", torch.float64)]
-        assert head.weights[0] is head.weights[1]
+        # Padded grids materialize transiently, so the ndarray they share is
+        # the stored bank payload behind one content key.
+        assert head_cores[0].core_matrix is None
+        assert head_cores[0].core_matrix_key() == head_cores[1].core_matrix_key()
+        assert (
+            head_cores[0].matrix_placements[0].source
+            is head_cores[1].matrix_placements[0].source
+        )
+        uploaded = {id(core): tensor for core, tensor in probe.kept}
+        assert uploaded[id(head_cores[0])] is uploaded[id(head_cores[1])]

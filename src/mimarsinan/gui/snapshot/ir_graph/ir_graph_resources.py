@@ -9,6 +9,7 @@ from typing import Any
 logger = logging.getLogger("mimarsinan.gui")
 
 from mimarsinan.common.best_effort import best_effort
+from mimarsinan.gui.resources import JsonSource
 
 RESOURCE_KIND_IR_CORE_HEATMAP = "ir_core_heatmap"
 RESOURCE_KIND_IR_CORE_PRE_PRUNING = "ir_core_pre_pruning"
@@ -118,7 +119,8 @@ def _group_consecutive_compute_stages(stages: list[dict]) -> list[dict]:
 
 
 def _make_segment_spans_extractor(hcm: Any, segment_index: int):
-    """Return a memoised zero-arg closure that yields all spans of a segment."""
+    """A memoised zero-arg accessor for a segment's spans: every core of the
+    segment asks, the walk happens once."""
     state: dict[str, Any] = {"spans": None}
     lock = threading.Lock()
 
@@ -130,7 +132,7 @@ def _make_segment_spans_extractor(hcm: Any, segment_index: int):
             if state["spans"] is not None:
                 return state["spans"]
             spans: list[dict] = []
-            with best_effort(f"lazy connectivity extraction for segment {segment_index}", logger=logger):
+            with best_effort(f"connectivity extraction for segment {segment_index}", logger=logger):
                 spans = _extract_core_connectivity(hcm, segment_index)
             state["spans"] = spans
             return spans
@@ -138,14 +140,12 @@ def _make_segment_spans_extractor(hcm: Any, segment_index: int):
     return get_all
 
 
-def _make_per_core_connectivity_producer(get_all_spans, core_index: int):
-    """Per-(segment, core) closure returning spans touching *core_index*."""
-    def produce() -> list[dict]:
-        spans = get_all_spans()
-        return [
-            sp for sp in spans
-            if sp.get("src_core") == core_index or sp.get("dst_core") == core_index
-        ]
-    return produce
+def _make_per_core_connectivity_source(get_all_spans, core_index: int) -> JsonSource:
+    """The spans touching *core_index*, extracted now; a segment's spans are read once."""
+    spans = get_all_spans()
+    return JsonSource([
+        sp for sp in spans
+        if sp.get("src_core") == core_index or sp.get("dst_core") == core_index
+    ])
 
 

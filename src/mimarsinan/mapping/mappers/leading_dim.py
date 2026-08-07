@@ -36,7 +36,9 @@ class SplitLeadingDimMapper(Mapper):
         n = self.second_dim_size
         assert x.shape[0] % n == 0, f"Cannot split leading dim {x.shape[0]} by {n}"
         b = x.shape[0] // n
-        return x.view(b, n, x.shape[1])
+        # reshape: logical split of the leading dim, layout-agnostic (see
+        # ReshapeMapper._forward_impl).
+        return x.reshape(b, n, x.shape[1])
 
 
 class Ensure2DMapper(Mapper):

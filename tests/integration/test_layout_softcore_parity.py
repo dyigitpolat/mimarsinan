@@ -99,8 +99,8 @@ def test_layout_softcores_identical_between_view_path_and_full_ir_path() -> None
     for i, (a, b) in enumerate(zip(layout_softcores, full_softcores)):
         assert a.input_count == b.input_count, f"input_count drift @ {i}"
         assert a.output_count == b.output_count, f"output_count drift @ {i}"
-        assert a.threshold_group_id == b.threshold_group_id, (
-            f"threshold_group_id drift @ {i}"
+        assert a.residency_class_id == b.residency_class_id, (
+            f"residency_class_id drift @ {i}"
         )
         assert a.latency_tag == b.latency_tag, f"latency_tag drift @ {i}"
         assert a.segment_id == b.segment_id, f"segment_id drift @ {i}"

@@ -20,7 +20,7 @@ _CHILD_SCRIPT = textwrap.dedent("""
     from mimarsinan.data_handling.data_loader_factory import (
         DataLoaderFactory, close_pipeline_loaders,
     )
-    from mimarsinan.common.process_tree import reap_descendants
+    from mimarsinan.common.lifecycle.process_tree import reap_descendants
 
     class _Dataset(torch.utils.data.Dataset):
         def __len__(self):

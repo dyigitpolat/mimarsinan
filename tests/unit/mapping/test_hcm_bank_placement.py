@@ -44,11 +44,11 @@ def _build_bank_graph(
     in_feats: int,
     out_feats: int,
     *,
-    distinct_threshold_groups: bool = False,
+    distinct_residency_classes: bool = False,
 ):
     """Build a tiny IRGraph with one shared bank and ``n_positions`` shared cores.
 
-    When ``distinct_threshold_groups`` is True, each position gets a
+    When ``distinct_residency_classes`` is True, each position gets a
     unique ``perceptron_index`` so the packer is forced to assign them
     to separate hardware cores (cross-hw-core bank dedup path).  When
     False (default), all positions share the same perceptron and the
@@ -85,7 +85,7 @@ def _build_bank_graph(
             weight_bank_id=0,
             weight_row_slice=(0, out_feats),
             latency=0,
-            perceptron_index=(i if distinct_threshold_groups else 0),
+            perceptron_index=(i if distinct_residency_classes else 0),
         )
         nodes.append(nc)
 
@@ -151,16 +151,16 @@ class TestBankPathTaken:
 
     def test_segment_cache_shares_bank_tensor(self):
         """Cross-hw-core bank dedup: when positions can't share one hw
-        core (distinct threshold groups), each lands in its own hw core
+        core (distinct residency classes), each lands in its own hw core
         and they all view a single uploaded bank tensor."""
         ir = _build_bank_graph(
             n_positions=3, in_feats=8, out_feats=6,
-            distinct_threshold_groups=True,
+            distinct_residency_classes=True,
         )
         hcm = _build_single_stage_hcm(ir, pool_size=4)
         mapping = hcm.stages[0].hard_core_mapping
         assert len(mapping.cores) >= 3, (
-            "distinct threshold groups should force one hw core per softcore"
+            "distinct residency classes should force one hw core per softcore"
         )
         flow = SpikingHybridCoreFlow(
             input_shape=(8,),

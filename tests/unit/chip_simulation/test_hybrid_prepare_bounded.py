@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from fake_cores import FakeCore
 from types import SimpleNamespace
 
 import numpy as np
@@ -17,7 +18,7 @@ from mimarsinan.code_generation.cpp_chip_model import SpikeSource
 
 
 def _fake_hcm():
-    core = SimpleNamespace(
+    core = FakeCore(
         axons_per_core=1, neurons_per_core=1,
         available_axons=0, available_neurons=0,
         threshold=1.0,

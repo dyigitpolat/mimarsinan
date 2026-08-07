@@ -20,7 +20,7 @@ from mimarsinan.mapping.export.chip_quantize import (
     verify_ir_graph_quantized,
 )
 from mimarsinan.mapping.ir import IRGraph, NeuralCore, WeightBank
-from mimarsinan.mapping.ir.types import IRSource
+from mimarsinan.mapping.ir.source import IRSource
 from mimarsinan.transformations.quantization_bounds import quantization_bounds
 
 BITS = 5

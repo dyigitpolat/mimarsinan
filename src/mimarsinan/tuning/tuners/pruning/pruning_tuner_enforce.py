@@ -5,6 +5,10 @@ from __future__ import annotations
 import torch
 import torch.nn as nn
 
+from mimarsinan.transformations.pruning.seed_generators import (
+    install_seed_masks,
+    structured_seed_masks_from_keep,
+)
 from mimarsinan.tuning.tuners.pruning.pruning_enforce_hooks import (
     pruning_enforce_linear_pre_hook,
     pruning_enforce_norm_pre_hook,
@@ -12,17 +16,11 @@ from mimarsinan.tuning.tuners.pruning.pruning_enforce_hooks import (
 
 
 def register_prune_buffers(perceptrons, row_masks, col_masks):
-    for i, p in enumerate(perceptrons):
-        rm = row_masks[i]
-        cm = col_masks[i]
-        p.layer.register_buffer("prune_row_mask", (~rm).clone())
-        p.layer.register_buffer("prune_col_mask", (~cm).clone())
-        p.layer.register_buffer(
-            "prune_mask",
-            ((~rm).unsqueeze(1) | (~cm).unsqueeze(0)).clone(),
-        )
-        if p.layer.bias is not None:
-            p.layer.register_buffer("prune_bias_mask", (~rm).clone())
+    """Commit (row_keep, col_keep) masks as layer prune buffers via the shared
+    seed-mask SSOT (``transformations.pruning.seed_generators``)."""
+    install_seed_masks(
+        perceptrons, structured_seed_masks_from_keep(row_masks, col_masks)
+    )
 
 
 def enforce_pruning_persistently(perceptrons, row_masks, col_masks):

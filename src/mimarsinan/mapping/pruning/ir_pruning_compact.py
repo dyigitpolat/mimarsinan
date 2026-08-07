@@ -100,6 +100,11 @@ def _attach_bank_metadata(
     """Project bank-level pruned sets onto the per-node masks of bank-backed cores."""
     weight_banks = getattr(graph, "weight_banks", None) or {}
     for bank_id, bank in weight_banks.items():
+        # ONE dtype-preserving pre-compaction snapshot per bank; per-core
+        # float32 copies here once cost 45 GB on a 57 MB graph.
+        bank.pre_pruning_snapshot = (
+            np.array(bank.core_matrix, copy=True) if store_heatmap else None
+        )
         n_axons, n_neurons = bank.core_matrix.shape
         zero_rows = result.pruned_rows_per_bank.get(bank_id, set())
         zero_cols = result.pruned_cols_per_bank.get(bank_id, set())
@@ -111,16 +116,10 @@ def _attach_bank_metadata(
                 or getattr(node, "weight_bank_id", None) != bank_id
             ):
                 continue
+            node.pre_pruning_heatmap = None   # resolve via the bank snapshot
             if node.weight_row_slice is not None:
                 start, end = node.weight_row_slice
-                slice_mat = bank.core_matrix[:, start:end]
-                node.pre_pruning_heatmap = (
-                    np.asarray(slice_mat, dtype=np.float32) if store_heatmap else None
-                )
                 node.pruned_col_mask = pruned_col_mask_full[start:end]
             else:
-                node.pre_pruning_heatmap = (
-                    np.asarray(bank.core_matrix, dtype=np.float32) if store_heatmap else None
-                )
                 node.pruned_col_mask = pruned_col_mask_full
             node.pruned_row_mask = pruned_row_mask

@@ -3,6 +3,7 @@ reference on randomized DAG mappings (the recursive walk stays the oracle)."""
 
 from __future__ import annotations
 
+from fake_cores import FakeCore
 from types import SimpleNamespace
 
 import numpy as np
@@ -12,7 +13,7 @@ from mimarsinan.mapping.latency.chip import ChipLatency
 
 
 def _make_core(axon_sources, weights):
-    return SimpleNamespace(
+    return FakeCore(
         axon_sources=list(axon_sources),
         core_matrix=np.asarray(weights, dtype=np.float32),
         latency=None,

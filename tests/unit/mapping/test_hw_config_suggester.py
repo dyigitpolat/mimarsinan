@@ -3,7 +3,7 @@
 Verifies:
 1. Basic suggestion properties (returns at least 1 core type, positive counts).
 2. Suggested config is sufficient to pack all softcores (end-to-end verify round-trip).
-3. Heuristics behave sensibly with pruning, threshold groups, coalescing.
+3. Heuristics behave sensibly with pruning, residency classes, coalescing.
 4. Single-type coverage: dimensions cover every softcore.
 5. The suggest_hardware_config_for_model convenience wrapper.
 6. Regression: suggested count passes pack_layout at exactly that count (binary-search fix).
@@ -30,14 +30,14 @@ from mimarsinan.mapping.verification.verifier import verify_hardware_config
 def _make_softcores(specs: List[tuple]) -> List[LayoutSoftCoreSpec]:
     """Build softcores from list of (input_count, output_count) tuples."""
     return [
-        LayoutSoftCoreSpec(input_count=a, output_count=b, threshold_group_id=0)
+        LayoutSoftCoreSpec(input_count=a, output_count=b, residency_class_id=0)
         for a, b in specs
     ]
 
 
 def _make_uniform_softcores(n: int, axons: int = 16, neurons: int = 8) -> List[LayoutSoftCoreSpec]:
     return [
-        LayoutSoftCoreSpec(input_count=axons, output_count=neurons, threshold_group_id=i % 4)
+        LayoutSoftCoreSpec(input_count=axons, output_count=neurons, residency_class_id=i % 4)
         for i in range(n)
     ]
 
@@ -89,7 +89,7 @@ class TestSuggestHardwareConfig:
         )
 
     def test_single_softcore(self):
-        softcores = [LayoutSoftCoreSpec(input_count=16, output_count=8, threshold_group_id=0)]
+        softcores = [LayoutSoftCoreSpec(input_count=16, output_count=8, residency_class_id=0)]
         result = suggest_hardware_config(softcores)
         assert result.total_cores >= 1
         verification = verify_hardware_config(softcores, result.core_types)
@@ -119,8 +119,8 @@ class TestSuggestHardwareConfig:
 
     def test_two_types_cover_all_sizes(self):
         """Always produces two core types; together they cover every softcore."""
-        large_cores = [LayoutSoftCoreSpec(input_count=512, output_count=256, threshold_group_id=0)] * 3
-        small_cores = [LayoutSoftCoreSpec(input_count=8, output_count=4, threshold_group_id=0)] * 10
+        large_cores = [LayoutSoftCoreSpec(input_count=512, output_count=256, residency_class_id=0)] * 3
+        small_cores = [LayoutSoftCoreSpec(input_count=8, output_count=4, residency_class_id=0)] * 10
         all_cores = large_cores + small_cores
         result = suggest_hardware_config(all_cores)
         assert len(result.core_types) == 2
@@ -139,7 +139,7 @@ class TestSuggestHardwareConfig:
 
     def test_granularity_rounding(self):
         """Axon/neuron granularity: dimensions are multiples and at least one type covers the softcore."""
-        softcores = [LayoutSoftCoreSpec(input_count=17, output_count=9, threshold_group_id=0)]
+        softcores = [LayoutSoftCoreSpec(input_count=17, output_count=9, residency_class_id=0)]
         result = suggest_hardware_config(softcores, axon_granularity=8, neuron_granularity=8)
         assert len(result.core_types) == 2
         for ct in result.core_types:
@@ -166,7 +166,7 @@ class TestSuggestHardwareConfig:
             LayoutSoftCoreSpec(
                 input_count=rng.randint(8, 128),
                 output_count=rng.randint(4, 64),
-                threshold_group_id=rng.randint(0, 3),
+                residency_class_id=rng.randint(0, 3),
             )
             for _ in range(50)
         ]
@@ -207,7 +207,7 @@ class TestSuggestHardwareConfig:
             LayoutSoftCoreSpec(
                 input_count=rng.randint(4, 32),
                 output_count=rng.randint(4, 16),
-                threshold_group_id=rng.randint(0, 1),
+                residency_class_id=rng.randint(0, 1),
             )
             for _ in range(30)
         ]

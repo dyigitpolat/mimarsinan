@@ -8,6 +8,11 @@ import re
 import shutil
 from pathlib import Path
 
+from mimarsinan.gui.runtime.persistence.paths import (
+    RESOURCE_SOURCES_DIRNAME,
+    RESOURCES_DIRNAME,
+)
+
 logger = logging.getLogger("mimarsinan.gui")
 
 _SAFE_ID_RE = re.compile(r"^[A-Za-z0-9_\-]+$")
@@ -89,18 +94,25 @@ def copy_resources_from_previous_run(
     previous_run_id: str,
     dest_working_dir: str,
 ) -> None:
-    """Copy ``_GUI_STATE/resources/`` (heatmap PNGs, connectivity JSON) from a previous run.
+    """Copy a previous run's resources AND resource sources into this run's state.
 
-    Lets the live monitor serve images for backfilled steps without re-running them.
+    Lets the live monitor serve backfilled steps' images without re-running them.
+    Both trees are seeded because which one a run left behind depends on whether
+    anything was watching it: a headless run persists sources and renders on
+    demand, so seeding only the rendered tree would carry nothing forward.
     """
     if not previous_run_id or not _SAFE_ID_RE.match(previous_run_id):
         return
-    src = Path(generated_root).resolve() / previous_run_id / "_GUI_STATE" / "resources"
-    if not src.is_dir():
-        logger.debug("No resources dir at %s (skip seeding)", src)
-        return
-    dest_dir = Path(dest_working_dir).resolve() / "_GUI_STATE" / "resources"
-    try:
-        shutil.copytree(src, dest_dir, dirs_exist_ok=True)
-    except (OSError, shutil.Error) as e:
-        logger.warning("Failed to seed resources from %s → %s: %s", src, dest_dir, e)
+    previous_state = Path(generated_root).resolve() / previous_run_id / "_GUI_STATE"
+    dest_state = Path(dest_working_dir).resolve() / "_GUI_STATE"
+    for dirname in (RESOURCES_DIRNAME, RESOURCE_SOURCES_DIRNAME):
+        src = previous_state / dirname
+        if not src.is_dir():
+            logger.debug("No %s dir at %s (skip seeding)", dirname, src)
+            continue
+        try:
+            shutil.copytree(src, dest_state / dirname, dirs_exist_ok=True)
+        except (OSError, shutil.Error) as e:
+            logger.warning(
+                "Failed to seed %s from %s → %s: %s", dirname, src, dest_state / dirname, e,
+            )

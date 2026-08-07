@@ -87,7 +87,7 @@ class LayoutIRMapping(_LayoutIRMappingFinalize, _LayoutIRMappingFC):
             LayoutSoftCoreSpec(
                 input_count=int(input_count),
                 output_count=int(output_count),
-                threshold_group_id=0,
+                residency_class_id=0,
                 latency_tag=None,
                 name=name,
             )

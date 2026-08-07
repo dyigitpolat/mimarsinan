@@ -5,11 +5,16 @@ from mimarsinan.code_generation.cpp_chip_model import SpikeSource
 import numpy as np
 
 from mimarsinan.mapping.packing.softcore.hard_core import HardCore
+from mimarsinan.mapping.support.spike_source_spans import (
+    compress_spike_sources,
+    pack_output_sources_state,
+    unpack_output_sources_state,
+)
 from mimarsinan.mapping.packing.softcore.soft_core import SoftCore
 
 
 class RuntimeMaterializer:
-    """Weight-bearing Materializer: places, fuses, and neuron-splits real SoftCores onto HardCores."""
+    """Places, fuses and neuron-splits real SoftCores onto HardCores."""
 
     def __init__(self, hard_core_mapping: "HardCoreMapping") -> None:
         self._hcm = hard_core_mapping
@@ -104,27 +109,21 @@ class RuntimeMaterializer:
                 (int(bns_parent[0]), int(bns_parent[0] + first_neurons)),
                 (int(bns_parent[0] + first_neurons), int(bns_parent[1])),
             )
-        frag1 = self._build_real_fragment(
-            softcore,
-            matrix_slice=softcore.core_matrix[:, :first_neurons].copy(),
-            hardware_bias_slice=hb[:first_neurons].copy() if hb is not None else None,
-            bank_neuron_slice=bns[0] if bns is not None else None,
-            offset_delta=0,
-            fragment_index=0,
-            group_id=group_id,
-            original_neurons=total,
+        parent_dense = softcore.get_core_matrix()
+        windows = ((0, first_neurons), (first_neurons, total))
+        return tuple(
+            self._build_real_fragment(
+                softcore,
+                matrix_slice=parent_dense[:, lo:hi].copy(),
+                hardware_bias_slice=None if hb is None else hb[lo:hi].copy(),
+                bank_neuron_slice=None if bns is None else bns[index],
+                offset_delta=lo,
+                fragment_index=index,
+                group_id=group_id,
+                original_neurons=total,
+            )
+            for index, (lo, hi) in enumerate(windows)
         )
-        frag2 = self._build_real_fragment(
-            softcore,
-            matrix_slice=softcore.core_matrix[:, first_neurons:].copy(),
-            hardware_bias_slice=hb[first_neurons:].copy() if hb is not None else None,
-            bank_neuron_slice=bns[1] if bns is not None else None,
-            offset_delta=first_neurons,
-            fragment_index=1,
-            group_id=group_id,
-            original_neurons=total,
-        )
-        return frag1, frag2
 
     def split_softcore(self, softcore, available_neurons):
         from mimarsinan.mapping.packing.core_packing import canonical_split_softcore
@@ -235,7 +234,7 @@ class HardCoreMapping:
         self._finalize_sources(softcore_mapping)
 
     def map_identity(self, softcore_mapping):
-        """1:1 SoftCore→HardCore placement (no pool/pad/fusion/split); carries pure IR semantics as the rung-2 gate."""
+        """1:1 SoftCore->HardCore placement; pure IR semantics (rung-2 gate)."""
         banks = getattr(softcore_mapping, "weight_banks", None)
         if banks:
             self.weight_banks = dict(banks)
@@ -276,10 +275,17 @@ class HardCoreMapping:
                     SpikeSource(-1, 0, is_input=False, is_off=True))
             hardcore._axon_source_spans = None
 
+    def __getstate__(self) -> dict:
+        """Pickle output_sources range-compressed; drop the span cache."""
+        return pack_output_sources_state(self.__dict__)
+
+    def __setstate__(self, state: dict) -> None:
+        """Decode packed output_sources; legacy states load unchanged."""
+        self.__dict__.update(unpack_output_sources_state(state))
+
     def get_output_source_spans(self):
         """Cached range-compressed output_sources."""
         if self._output_source_spans is None:
-            from mimarsinan.mapping.support.spike_source_spans import compress_spike_sources
             self._output_source_spans = compress_spike_sources(
                 np.asarray(self.output_sources).flatten().tolist()
             )

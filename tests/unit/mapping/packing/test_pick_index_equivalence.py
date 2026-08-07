@@ -19,7 +19,7 @@ class Soft:
         self._n = int(neurons)
         self.label = label
         if tg is not None:
-            self.threshold_group_id = tg
+            self.residency_class_id = tg
         if latency is not None:
             self.latency = latency
 
@@ -37,7 +37,7 @@ class Hard:
         self.available_axons = int(axons)
         self.available_neurons = int(neurons)
         if tg is not None:
-            self.threshold_group_id = tg
+            self.residency_class_id = tg
         if latency is not None:
             self.latency = latency
 
@@ -49,8 +49,8 @@ class Hard:
 
 
 def _is_mapping_possible(soft, hard):
-    s_tg = getattr(soft, "threshold_group_id", None)
-    h_tg = getattr(hard, "threshold_group_id", None)
+    s_tg = getattr(soft, "residency_class_id", None)
+    h_tg = getattr(hard, "residency_class_id", None)
     if h_tg is not None and s_tg is not None and s_tg != h_tg:
         return False
     return (
@@ -73,10 +73,10 @@ def _split(soft, available_neurons):
     n2 = soft.get_output_count() - n1
     return (
         Soft(soft.get_input_count(), n1, soft.label + ".a",
-             tg=getattr(soft, "threshold_group_id", None),
+             tg=getattr(soft, "residency_class_id", None),
              latency=getattr(soft, "latency", None)),
         Soft(soft.get_input_count(), n2, soft.label + ".b",
-             tg=getattr(soft, "threshold_group_id", None),
+             tg=getattr(soft, "residency_class_id", None),
              latency=getattr(soft, "latency", None)),
     )
 
@@ -144,7 +144,7 @@ class TestPickIndexPackingEquivalence:
         )
 
     @pytest.mark.parametrize("seed", range(6))
-    def test_split_with_threshold_groups(self, seed):
+    def test_split_with_residency_classes(self, seed):
         assert _run(None, seed, split=True, fuse=False, with_tg=True) == _run(
             pick_best_softcore, seed, split=True, fuse=False, with_tg=True
         )

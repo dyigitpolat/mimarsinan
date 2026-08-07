@@ -114,7 +114,10 @@ class Conv1DPerceptronMapper(Mapper):
         w = self.perceptron.layer.weight.view(
             self.out_channels, self.in_channels, self.kernel_size
         )
-        b = self.perceptron.layer.bias if self.bias else None
+        # Live additive term, not the construction-time ``self.bias`` flag: see
+        # Conv2DPerceptronMapper._forward_impl (Normalization Fusion installs a
+        # bias on a previously bias-free layer).
+        b = self.perceptron.layer.bias
 
         y = F.conv1d(
             x, w, b,

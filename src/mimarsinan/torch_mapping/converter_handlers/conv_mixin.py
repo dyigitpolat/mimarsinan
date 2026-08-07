@@ -90,6 +90,8 @@ class ConvConvertMixin(ConverterContract):
             if act_name is None:
                 as_affine_package(conv_mapper.perceptron)
             with torch.no_grad():
+                # Follow the source conv's dtype (no silent fp32 downcast).
+                conv_mapper.perceptron.layer.to(mod.weight.dtype)
                 flat_weight = mod.weight.data.reshape(mod.out_channels, -1)
                 conv_mapper.perceptron.layer.weight.copy_(flat_weight)
                 if mod.bias is not None:
@@ -142,6 +144,8 @@ class ConvConvertMixin(ConverterContract):
             if act_name is None:
                 as_affine_package(conv_mapper.perceptron)
             with torch.no_grad():
+                # Follow the source conv's dtype (no silent fp32 downcast).
+                conv_mapper.perceptron.layer.to(mod.weight.dtype)
                 flat_weight = mod.weight.data.reshape(mod.out_channels, -1)
                 conv_mapper.perceptron.layer.weight.copy_(flat_weight)
                 if mod.bias is not None:
@@ -156,9 +160,16 @@ class ConvConvertMixin(ConverterContract):
 
     @staticmethod
     def _copy_bn_params(dst_bn: nn.Module, src_bn: nn.Module) -> None:
-        """Copy affine params and running stats between BatchNorms (possibly 2d src → 1d dst)."""
+        """Copy affine params and running stats between BatchNorms (possibly 2d src → 1d dst).
+
+        The destination follows the source's dtype first, so converting an
+        fp64 (or fp16) model never silently downcasts through a fresh fp32
+        module — dtype is the source model's property, not the converter's.
+        """
         if not isinstance(dst_bn, _BN_TYPES) or not isinstance(src_bn, _BN_TYPES):
             return
+        if src_bn.running_mean is not None:
+            dst_bn.to(src_bn.running_mean.dtype)
 
         if src_bn.weight is not None and dst_bn.weight is not None:
             dst_bn.weight.data.copy_(src_bn.weight.data)

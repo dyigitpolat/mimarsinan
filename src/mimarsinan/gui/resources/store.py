@@ -4,26 +4,12 @@ from __future__ import annotations
 
 import logging
 import threading
-from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any
 
 from mimarsinan.common.best_effort import best_effort
+from mimarsinan.gui.resources.descriptor import ResourceDescriptor
 
 logger = logging.getLogger("mimarsinan.gui")
-
-
-@dataclass(frozen=True)
-class ResourceDescriptor:
-    """Metadata + lazy producer for a single resource.
-
-    ``kind``/``rid`` compose the URL path; ``producer`` returns bytes (binary)
-    or JSON-safe values, tagged by ``media_type``.
-    """
-
-    kind: str
-    rid: str
-    producer: Callable[[], Any]
-    media_type: str
 
 
 class _Entry:
@@ -47,7 +33,7 @@ class _Entry:
             with best_effort(
                 f"resource producer for {self.descriptor.kind}/{self.descriptor.rid}", logger=logger,
             ):
-                self._payload = self.descriptor.producer()
+                self._payload = self.descriptor.source.render()
                 produced = True
             if not produced:
                 self._payload = None
@@ -131,4 +117,4 @@ class ResourceStore:
             return bucket.get((kind, rid))
 
 
-__all__ = ["ResourceDescriptor", "ResourceStore"]
+__all__ = ["ResourceStore"]

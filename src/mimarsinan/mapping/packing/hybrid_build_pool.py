@@ -196,13 +196,21 @@ def _split_segment_by_capacity(
     ir_graph: IRGraph | None = None,
     hardware_bias: bool = False,
 ) -> list[list[NeuralCore]]:
-    """Split IR NeuralCores by hardware capacity via split_softcores_by_capacity."""
+    """Split IR NeuralCores by hardware capacity via split_softcores_by_capacity.
+
+    Every spec is sized by the POST-compaction extent: elimination reaches the
+    pass ladder only if a pruned instance is budgeted for what it occupies.
+    """
     global _SPLIT_FALLBACK_LOGGED
     if not cores:
         return []
 
     from mimarsinan.mapping.layout.layout_types import LayoutHardCoreType, LayoutSoftCoreSpec
-    from mimarsinan.mapping.layout.softcore_spec_adapter import spec_from_neural_core
+    from mimarsinan.mapping.layout.softcore_spec_adapter import (
+        spec_at_compacted_extent,
+        spec_from_neural_core,
+    )
+    from mimarsinan.mapping.platform.core_residency import ungrouped_fallback_id
     from mimarsinan.mapping.support.schedule.schedule_partitioner import split_softcores_by_capacity
 
     hw_types = [
@@ -225,20 +233,22 @@ def _split_segment_by_capacity(
     for idx, core in enumerate(cores):
         if use_layout:
             sc_idx = int(core.layout_softcore_index)  # type: ignore[arg-type]
-            spec = layout_specs[sc_idx]
+            spec = spec_at_compacted_extent(layout_specs[sc_idx], core)
         else:
             if not _SPLIT_FALLBACK_LOGGED:
                 import logging
 
                 logging.getLogger(__name__).warning(
                     "Scheduled split: reconstructing LayoutSoftCoreSpec from NeuralCore "
-                    "(missing IRGraph.layout_softcores); input_count may diverge from SCM."
+                    "(missing IRGraph.layout_softcores); input_count may diverge from SCM, "
+                    "and residency classes fall back to the source-perceptron proxy "
+                    "(residency_basis=provenance_fallback) rather than the core values."
                 )
                 _SPLIT_FALLBACK_LOGGED = True
             spec = spec_from_neural_core(
                 core,
                 hardware_bias=hardware_bias,
-                fallback_threshold_group_id=-(idx + 1),
+                fallback_residency_class_id=ungrouped_fallback_id(idx),
             )
         specs.append(spec)
         coalescing_group_ids.append(getattr(core, "coalescing_group_id", None))

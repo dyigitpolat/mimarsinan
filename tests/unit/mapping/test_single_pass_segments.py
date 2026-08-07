@@ -204,7 +204,7 @@ class TestWizardCapacityEstimator:
         softcores = [
             LayoutSoftCoreSpec(
                 input_count=4, output_count=4,
-                threshold_group_id=i, latency_tag=i, segment_id=0,
+                residency_class_id=i, latency_tag=i, segment_id=0,
                 name=f"p{i}",
             )
             for i in range(3)
@@ -239,7 +239,7 @@ class TestWizardCapacityEstimator:
         softcores = [
             LayoutSoftCoreSpec(
                 input_count=64, output_count=4,
-                threshold_group_id=0, latency_tag=0, segment_id=0,
+                residency_class_id=0, latency_tag=0, segment_id=0,
                 name="oversized",
             )
         ]
@@ -264,7 +264,7 @@ class TestWizardCapacityEstimator:
         softcores = [
             LayoutSoftCoreSpec(
                 input_count=4, output_count=4,
-                threshold_group_id=i, latency_tag=0, segment_id=0,
+                residency_class_id=i, latency_tag=0, segment_id=0,
                 name=f"p{i}",
             )
             for i in range(10)

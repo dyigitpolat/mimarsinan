@@ -6,10 +6,10 @@ from mimarsinan.mapping.support.schedule.schedule_partitioner import split_softc
 
 def test_coalescing_group_stays_in_one_subsegment():
     specs = [
-        LayoutSoftCoreSpec(10, 4, threshold_group_id=1, latency_tag=0, name="p0"),
-        LayoutSoftCoreSpec(10, 4, threshold_group_id=1, latency_tag=0, name="p1"),
-        LayoutSoftCoreSpec(1, 4, threshold_group_id=1, latency_tag=0, name="acc"),
-        LayoutSoftCoreSpec(8, 8, threshold_group_id=2, latency_tag=1, name="other"),
+        LayoutSoftCoreSpec(10, 4, residency_class_id=1, latency_tag=0, name="p0"),
+        LayoutSoftCoreSpec(10, 4, residency_class_id=1, latency_tag=0, name="p1"),
+        LayoutSoftCoreSpec(1, 4, residency_class_id=1, latency_tag=0, name="acc"),
+        LayoutSoftCoreSpec(8, 8, residency_class_id=2, latency_tag=1, name="other"),
     ]
     group_ids = [0, 0, 0, None]
     hw = [LayoutHardCoreType(max_axons=32, max_neurons=32, count=4)]

@@ -32,7 +32,7 @@ def dryrun_pack_feasible(
 ) -> PackFeasibility:
     """Run the real hybrid hard-core packer on ``ir_graph`` and report feasibility.
 
-    Weight-independent (structural threshold grouping), so an untrained model's
+    Weight-independent (structural residency classing), so an untrained model's
     dry-run is bit-identical to the trained deployment's packing.
     """
     strategy = MappingStrategy.resolve(

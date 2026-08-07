@@ -3,6 +3,7 @@
 import numpy as np
 import pytest
 
+from fake_cores import FakeCore
 from mimarsinan.chip_simulation.sanafe.analysis.connectivity import (
     _compute_connectivity_edges,
 )
@@ -16,12 +17,14 @@ class _Src:
         self.core_ = core
 
 
-class _Core:
+class _Core(FakeCore):
     def __init__(self, core_matrix, n_axons_used=1):
-        self.axons_per_core = n_axons_used
-        self.available_axons = 0
-        self.core_matrix = core_matrix
-        self.axon_sources = [_Src(0) for _ in range(n_axons_used)]
+        super().__init__(
+            axons_per_core=n_axons_used,
+            available_axons=0,
+            core_matrix=core_matrix,
+            axon_sources=[_Src(0) for _ in range(n_axons_used)],
+        )
 
 
 class _HCM:

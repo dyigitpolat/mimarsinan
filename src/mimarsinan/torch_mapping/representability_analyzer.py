@@ -75,6 +75,20 @@ _ABSORBABLE_ACTIVATIONS: set[type] = {
 
 _ABSORBABLE_MODULES: set[type] = _ABSORBABLE_NORMS | _ABSORBABLE_ACTIVATIONS
 
+# The ONLY tensor call_methods the converter has a rule for (SSOT shared with
+# ``MapperGraphConverter._handle_call_method``). Everything else is rejected:
+# an unknown method used to fall through to identity and silently DROP the op
+# (e.g. ``.softmax(dim=-1)``), diverging from the native model with no error.
+CONVERTIBLE_CALL_METHODS: frozenset[str] = frozenset({
+    # shape/layout rewrites with dedicated mappers
+    "view", "reshape", "flatten", "permute", "transpose",
+    # reductions/arithmetic emitted as generic host ComputeOps
+    "mean", "add", "__add__",
+    # deliberately structural no-ops (metadata or handled at use sites,
+    # e.g. ``expand`` feeding a constant-concat)
+    "contiguous", "size", "dim", "unsqueeze", "squeeze", "expand",
+})
+
 
 class RepresentabilityAnalyzer:
     """Analyse an FX graph for mimarsinan representability (per packaging contract)."""
@@ -154,6 +168,18 @@ class RepresentabilityAnalyzer:
         self, node: fx.Node, report: RepresentabilityReport
     ) -> None:
         method_name = node_target_str(node)
+        if method_name not in CONVERTIBLE_CALL_METHODS:
+            report.unsupported_ops.append(
+                OpInfo(
+                    node.name, "call_method", method_name,
+                    reason=(
+                        f"Tensor method '.{method_name}(...)' has no conversion "
+                        "rule (it would be silently dropped). Use a supported "
+                        "module/functional form, or add an explicit rule."
+                    ),
+                )
+            )
+            return
         report.supported_ops.append(
             OpInfo(node.name, "call_method", method_name)
         )

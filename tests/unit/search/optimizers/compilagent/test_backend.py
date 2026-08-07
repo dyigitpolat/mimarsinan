@@ -136,15 +136,15 @@ class _FakeProblem:
 def _make_softcores() -> List[LayoutSoftCoreSpec]:
     return [
         LayoutSoftCoreSpec(
-            input_count=64, output_count=32, threshold_group_id=0,
+            input_count=64, output_count=32, residency_class_id=0,
             latency_tag=0, segment_id=0, name="conv1_pos0_0",
         ),
         LayoutSoftCoreSpec(
-            input_count=64, output_count=32, threshold_group_id=0,
+            input_count=64, output_count=32, residency_class_id=0,
             latency_tag=0, segment_id=0, name="conv1_pos1_0",
         ),
         LayoutSoftCoreSpec(
-            input_count=128, output_count=64, threshold_group_id=1,
+            input_count=128, output_count=64, residency_class_id=1,
             latency_tag=1, segment_id=0, name="fc1_tile_0_64",
         ),
     ]
@@ -211,7 +211,7 @@ class TestStaticHelpers:
         conv = next(r for r in rows if r["layer"] == "conv1")
         assert conv["softcore_count"] == 2
         assert conv["total_area"] == 64 * 32 * 2
-        assert conv["threshold_group_count"] == 1
+        assert conv["residency_class_count"] == 1
         assert conv["latency_tag_count"] == 1
         assert conv["segment_count"] == 1
         fc = next(r for r in rows if r["layer"] == "fc1")
