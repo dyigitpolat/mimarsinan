@@ -8,6 +8,7 @@ import numpy as np
 import torch
 
 from mimarsinan.chip_simulation.hybrid_run.hybrid_execution import (
+    decref_op_consumers,
     compute_input_state_with_shifts,
     execute_compute_op_torch,
     resolve_stage_compute_scales,
@@ -21,7 +22,6 @@ from mimarsinan.chip_simulation.spiking_semantics import (
     is_cascaded_ttfs,
     requires_ttfs_firing,
 )
-from mimarsinan.mapping.ir import IRSource
 from mimarsinan.models.spiking.hybrid.host import HybridFlowHost
 from mimarsinan.models.spiking.hybrid.membrane_readout import (
     apply_membrane_corrections_to_logits,
@@ -191,11 +191,10 @@ class HybridRateForwardMixin(HybridFlowHost):
             assert op is not None
             remaining_counts = ctx.remaining
             assert remaining_counts is not None, "_ctx_factory always supplies remaining"
-            self._decref_consumers(
+            decref_op_consumers(
                 ctx.state_buffer,
                 remaining_counts,
-                (int(src.node_id) for src in op.input_sources.flatten()
-                 if isinstance(src, IRSource) and src.node_id >= 0),
+                op,
                 state_buffer_spikes=ctx.state_buffer_spikes,
             )
 

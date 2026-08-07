@@ -12,6 +12,7 @@ import torch.nn as nn
 from mimarsinan.chip_simulation.hybrid_run.hybrid_execution import (
     assemble_segment_input_torch,
     decref_consumers,
+    decref_op_consumers,
     execute_compute_op_torch,
     gather_final_output_torch,
     store_segment_output_torch,
@@ -145,11 +146,7 @@ class ValueHybridCoreFlow(nn.Module):
             _t = time.perf_counter()
             buf[int(op.id)] = self._run_compute_stage(op, x_flat, buf)
             spent["compute"] += time.perf_counter() - _t
-            decref_consumers(
-                buf, remaining,
-                (int(src.node_id) for src in op.input_sources.flatten()
-                 if isinstance(src, IRSource) and src.node_id >= 0),
-            )
+            decref_op_consumers(buf, remaining, op)
 
         run_hybrid_stages(
             self.hybrid_mapping, state_buffer,

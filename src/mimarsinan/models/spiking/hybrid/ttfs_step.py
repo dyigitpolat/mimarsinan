@@ -8,6 +8,7 @@ import numpy as np
 import torch
 
 from mimarsinan.chip_simulation.hybrid_run.hybrid_execution import (
+    decref_op_consumers,
     gather_final_output_numpy,
 )
 from mimarsinan.chip_simulation.hybrid_run.hybrid_stage_runner import (
@@ -20,7 +21,6 @@ from mimarsinan.chip_simulation.ttfs.ttfs_executor import (
     run_ttfs_contract_compute_stage,
     run_ttfs_contract_neural_stage,
 )
-from mimarsinan.mapping.ir import IRSource
 from mimarsinan.mapping.packing.hybrid_hardcore_mapping import HybridStage
 from mimarsinan.models.spiking.hybrid.host import HybridFlowHost
 from mimarsinan.models.spiking.spiking_config import (
@@ -115,11 +115,10 @@ class HybridTtfsStepMixin(HybridFlowHost):
             assert op is not None
             remaining_counts = ctx.remaining
             assert remaining_counts is not None, "_ctx_factory always supplies remaining"
-            self._decref_consumers(
+            decref_op_consumers(
                 ctx.state_buffer,
                 remaining_counts,
-                (int(src.node_id) for src in op.input_sources.flatten()
-                 if isinstance(src, IRSource) and src.node_id >= 0),
+                op,
             )
 
         run_hybrid_stages(

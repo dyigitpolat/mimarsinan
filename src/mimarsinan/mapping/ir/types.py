@@ -34,6 +34,7 @@ class IRNode(ABC):
         """Pickle wiring columnar (~8 B/axon vs ~27.7 as objects)."""
         state = dict(self.__dict__)
         state["input_sources"] = encode_ir_sources(state.get("input_sources"))
+        state.pop("_source_counts_cache", None)   # transient, rebuilt on use
         return state
 
     def __setstate__(self, state: dict) -> None:

@@ -126,14 +126,24 @@ class TestStateBufferPruning:
 
         flow, fused = _identity_flow_and_fused()
         seen = {"calls": 0, "n": 0}
+        # Neural stages decref by source id, compute ops by producer count
+        # (op_source_counts); every stage must still decref exactly once, so
+        # the count spans BOTH seams.
         original = vf.decref_consumers
+        original_op = vf.decref_op_consumers
 
         def spy(buf, remaining, src_ids, **kw):
             original(buf, remaining, src_ids, **kw)
             seen["calls"] += 1
             seen["n"] = len(buf)
 
+        def spy_op(buf, remaining, op, **kw):
+            original_op(buf, remaining, op, **kw)
+            seen["calls"] += 1
+            seen["n"] = len(buf)
+
         vf.decref_consumers = spy
+        vf.decref_op_consumers = spy_op
         try:
             x = torch.randn(3, 8)
             with torch.no_grad():
@@ -141,6 +151,7 @@ class TestStateBufferPruning:
                 want = fused.double()(x.double())
         finally:
             vf.decref_consumers = original
+            vf.decref_op_consumers = original_op
         torch.testing.assert_close(got, want, atol=1e-9, rtol=1e-9)
         n_stages = len(flow.hybrid_mapping.stages)
         assert seen["calls"] == n_stages

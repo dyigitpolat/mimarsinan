@@ -241,3 +241,45 @@ def decref_consumers(
                 state_buffer_spikes.pop(nid, None)
         else:
             remaining[nid] = r
+
+
+def op_source_counts(op) -> Dict[int, int]:
+    """``{producer node id: how many of the op's inputs read it}``, counted once.
+
+    A host op carries one input source per axon (up to 605,184 on the real
+    ViT), and its wiring is static after packing, so the refcount multiset is
+    computed on first use and reused for every forward.
+    """
+    cached = getattr(op, "_source_counts_cache", None)
+    if cached is not None:
+        return cached
+    counts: Dict[int, int] = {}
+    for src in op.input_sources.flatten():
+        if isinstance(src, IRSource) and src.node_id >= 0:
+            nid = int(src.node_id)
+            counts[nid] = counts.get(nid, 0) + 1
+    op._source_counts_cache = counts
+    return counts
+
+
+def decref_op_consumers(
+    state_buffer, remaining: Dict[int, int], op, state_buffer_spikes=None,
+) -> None:
+    """``decref_consumers`` for one host op, by producer instead of by axon.
+
+    Subtracting a producer's occurrence count in one step is identical to
+    subtracting it one occurrence at a time: nothing observes the buffer
+    between an op's own decrements.
+    """
+    for nid, times in op_source_counts(op).items():
+        r = remaining.get(nid)
+        if r is None:
+            continue
+        r -= times
+        if r <= 0:
+            remaining.pop(nid, None)
+            state_buffer.pop(nid, None)
+            if state_buffer_spikes is not None:
+                state_buffer_spikes.pop(nid, None)
+        else:
+            remaining[nid] = r
