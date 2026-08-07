@@ -25,6 +25,9 @@ def build_identity_spiking_flow(
     *,
     spiking_mode: str = "lif",
     ttfs_cycle_schedule: str = "cascaded",
+    cycle_accurate_lif_forward: bool = False,
+    phase_dither: bool = False,
+    lif_membrane_init: float = 0.0,
 ) -> SpikingHybridCoreFlow:
     """Run an IRGraph through the hybrid executor on a 1:1 identity mapping.
 
@@ -48,4 +51,7 @@ def build_identity_spiking_flow(
         thresholding_mode,
         spiking_mode=spiking_mode,
         ttfs_cycle_schedule=ttfs_cycle_schedule,
+        cycle_accurate_lif_forward=cycle_accurate_lif_forward,
+        phase_dither=phase_dither,
+        lif_membrane_init=lif_membrane_init,
     )

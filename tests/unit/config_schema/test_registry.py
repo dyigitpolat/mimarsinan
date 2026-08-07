@@ -314,14 +314,18 @@ class TestSerialization:
         assert payload["keys"]["lr"]["provided_by"] is None
 
     def test_relevance_trees_are_serialized(self):
-        # Relevance speaks the AUTHORED axes (family/variant), never the
-        # derivation-owned legacy mode strings.
+        # Relevance speaks the AUTHORED axes (family/variant), with the
+        # DOMAIN existence gate injected generically: an event key exists
+        # only under core_semantics='spiking'.
         payload = serialize_registry()
         tree = payload["keys"]["comparator_half_step"]["relevant"]
         assert tree == {"op": "all", "items": [
-            {"op": "in", "key": "spiking_family", "values": ["ttfs"]},
-            {"op": "in", "key": "spiking_variant",
-             "values": ["synchronized", "cascaded"]},
+            {"op": "in", "key": "core_semantics", "values": ["spiking"]},
+            {"op": "all", "items": [
+                {"op": "in", "key": "spiking_family", "values": ["ttfs"]},
+                {"op": "in", "key": "spiking_variant",
+                 "values": ["synchronized", "cascaded"]},
+            ]},
         ]}
 
     def test_promote_when_and_empty_means_are_serialized(self):

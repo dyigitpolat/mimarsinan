@@ -13,8 +13,8 @@ CONCERN_GROUPS: Tuple[Dict[str, str], ...] = (
      "subtitle": "Dataset, preprocessing, input encoding", "accent": "91,141,245"},
     {"id": "model", "title": "Model",
      "subtitle": "Architecture builder, weight init", "accent": "45,212,191"},
-    {"id": "spiking", "title": "Spiking semantics",
-     "subtitle": "Firing/sync/encoding/thresholding/spike-gen/bias modes",
+    {"id": "spiking", "title": "Core semantics",
+     "subtitle": "mvm vs spiking; family × variant activation semantics",
      "accent": "168,85,247"},
     {"id": "hardware", "title": "Hardware platform / capabilities",
      "subtitle": "Core grid, weight precision, capability gates (what the "

@@ -7,6 +7,7 @@ from typing import Any
 
 from mimarsinan.chip_simulation.behavior_config import NeuralBehaviorConfig
 from mimarsinan.chip_simulation.spiking_mode_policy import policy_for_spiking_mode
+from mimarsinan.chip_simulation.activation_semantics import is_streamed_lif
 from mimarsinan.chip_simulation.spiking_semantics import (
     is_cascaded_ttfs,
     is_synchronized_ttfs,
@@ -48,6 +49,9 @@ class SpikingDeploymentContract:
     spike_phase_dither: bool = False
     lif_membrane_init: float = 0.0
     lif_execution_synchronized: bool = False
+    # [P3] end-to-end event-streamed LIF: no boundary normalization between
+    # encode and readout; NF↔SCM holds EXACTLY (atol=0), single-program only.
+    lif_streamed: bool = False
 
     @property
     def spiking_mode(self) -> str:
@@ -89,7 +93,11 @@ class SpikingDeploymentContract:
             spike_phase_dither=spike_phase_dither_enabled(cfg),
             lif_membrane_init=lif_membrane_init(cfg),
             lif_execution_synchronized=lif_execution_synchronized(cfg),
+            lif_streamed=is_streamed_lif(cfg),
         )
+
+    def is_streamed_lif(self, *, core: Any = None) -> bool:
+        return self.lif_streamed
 
     def is_synchronized(self, *, core: Any = None) -> bool:
         return is_synchronized_ttfs(self.spiking_mode, self.ttfs_cycle_schedule)

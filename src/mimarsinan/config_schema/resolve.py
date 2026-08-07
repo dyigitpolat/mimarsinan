@@ -18,6 +18,7 @@ from mimarsinan.config_schema.registry import (
     parse_deployment_document,
     retired_spiking_key_errors,
 )
+from mimarsinan.config_schema.registry.build import split_domain_dormant
 from mimarsinan.config_schema.runtime import build_flat_pipeline_config
 from mimarsinan.config_schema.validation import (
     legality_errors,
@@ -39,6 +40,9 @@ class Resolution:
     unknown_keys: List[str]
     meta_keys: List[str]
     diff_vs_defaults: List[Dict[str, Any]] = field(default_factory=list)
+    # Draft keys of the OTHER core-semantics domain: kept in the draft,
+    # excluded from resolution and emission, restored on switch-back.
+    dormant: List[str] = field(default_factory=list)
 
     @property
     def ok(self) -> bool:
@@ -172,6 +176,20 @@ def _diff_vs_defaults(explicit: Mapping[str, Any]) -> List[Dict[str, Any]]:
     return diff
 
 
+def _strip_dormant_domain(draft: Mapping[str, Any]):
+    """Return ``(stripped_draft, dormant_keys)`` — the wizard-authoring view
+    with other-domain keys excluded from both sections."""
+    out = dict(draft or {})
+    dp = dict(out.get("deployment_parameters") or {})
+    pc = dict(out.get("platform_constraints") or {})
+    core = str(dp.get("core_semantics") or "spiking")
+    dp_active, dp_dormant = split_domain_dormant(dp, core)
+    pc_active, pc_dormant = split_domain_dormant(pc, core)
+    out["deployment_parameters"] = dp_active
+    out["platform_constraints"] = pc_active
+    return out, sorted(dp_dormant) + sorted(pc_dormant)
+
+
 def resolve_draft(draft: Mapping[str, Any]) -> Resolution:
     """Resolve a deployment-config draft exactly as a run would, structured.
 
@@ -179,6 +197,9 @@ def resolve_draft(draft: Mapping[str, Any]) -> Resolution:
     attached to their keys, and the explicit-key diff against schema defaults.
     Never raises for config mistakes — they come back as ``errors`` rows.
     """
+    # Dormant-domain keys never resolve and never error: the semantics switch
+    # is zero-friction from any green state (the draft retains them).
+    draft, dormant_keys = _strip_dormant_domain(draft)
     parsed = parse_deployment_document(draft)
     errors = _structural_errors(draft)
 
@@ -241,4 +262,5 @@ def resolve_draft(draft: Mapping[str, Any]) -> Resolution:
         unknown_keys=list(parsed.unknown),
         meta_keys=sorted(parsed.meta),
         diff_vs_defaults=_diff_vs_defaults(explicit),
+        dormant=dormant_keys,
     )

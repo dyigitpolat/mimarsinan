@@ -46,6 +46,10 @@ def nf_scm_parity_enabled(contract: Any) -> bool:
     Continuous ttfs gets the per-neuron gate; cascaded gets a decision-level gate;
     the floor+half-step-bias convention modes (ttfs_quantized, synchronized floor-collapse) are excluded.
     """
+    if contract.is_streamed_lif():
+        # [P3] streamed lif holds EXACTLY: the NF train forward IS the
+        # deployed streaming cascade, so the gate compares at atol=0.
+        return True
     if contract.uses_ttfs_floor_ceil_convention():
         return False
     if contract.is_cascaded():
@@ -158,6 +162,86 @@ def _build_cascaded_identity_executor(pipeline, model, ir_graph):
         spiking_mode=contract.spiking_mode,
         ttfs_cycle_schedule=contract.ttfs_cycle_schedule,
     ).eval()
+
+
+def _build_streamed_identity_executor(pipeline, model, ir_graph):
+    from mimarsinan.chip_simulation.deployment_contract import SpikingDeploymentContract
+    from mimarsinan.models.spiking.hybrid.identity_flow import (
+        build_identity_spiking_flow,
+    )
+
+    cfg = pipeline.config
+    contract = SpikingDeploymentContract.from_pipeline_config(cfg)
+    return build_identity_spiking_flow(
+        cfg["input_shape"],
+        ir_graph,
+        contract.simulation_steps,
+        getattr(model, "preprocessor", None),
+        contract.firing_mode,
+        contract.spike_generation_mode,
+        contract.thresholding_mode,
+        spiking_mode=contract.spiking_mode,
+        ttfs_cycle_schedule=contract.ttfs_cycle_schedule,
+        cycle_accurate_lif_forward=True,
+        phase_dither=contract.spike_phase_dither,
+        lif_membrane_init=contract.lif_membrane_init,
+    ).eval()
+
+
+def assert_streamed_nf_scm_exact_or_raise(
+    pipeline,
+    model,
+    ir_graph,
+    samples: torch.Tensor,
+) -> None:
+    """[P3] streamed-lif exactness gate: per-neuron WINDOW COUNTS of the NF
+    forward must equal the identity-mapped streaming executor at atol=0 —
+    no mismatch budget; parity holds by construction or the deployment is
+    wrong."""
+    executor = _build_streamed_identity_executor(pipeline, model, ir_graph)
+    device = _unify_model_device(model)
+    if device is not None:
+        samples = samples.to(device)
+        executor = executor.to(device)
+    T = float(executor.simulation_length)
+    nf_counts_by_pi = _capture_nf_streamed_counts(model, samples)
+
+    def _counts(core_record):
+        return core_record.output_spike_count[: core_record.n_out_used]
+
+    per_sample: List[Dict[int, np.ndarray]] = []
+    with torch.no_grad():
+        for i in range(samples.shape[0]):
+            _, record = executor.forward_with_recording(
+                samples[i : i + 1], sample_index=i,
+            )
+            per_sample.append(_group_record_by_perceptron(
+                record, executor.hybrid_mapping, values_of=_counts,
+            ))
+    scm_counts = {
+        pi: np.stack([sample_vals[pi] for sample_vals in per_sample])
+        for pi in per_sample[0]
+    }
+    # Per-cycle spike sums ÷ scale are the integer window counts; rint
+    # recovers them exactly (float noise ≪ 0.5, a real miss is ≥ 1 count).
+    nf_counts = {pi: np.rint(nf_counts_by_pi[pi]) for pi in scm_counts}
+    mismatches, total, worst = compare_normalized_records(
+        nf_counts, scm_counts, atol=0.0,
+    )
+    if mismatches:
+        per_pi = {
+            pi: int((np.sort(nf_counts[pi], axis=1)
+                     != np.sort(scm_counts[pi], axis=1)).sum())
+            for pi in scm_counts
+        }
+        raise NfScmParityError(
+            f"streamed NF↔SCM exactness violated: {mismatches}/{total} "
+            f"neuron-window count mismatches over {int(samples.shape[0])} "
+            f"samples (atol=0; worst={worst}; per-perceptron={per_pi}). "
+            f"Streamed lif admits NO tolerance — the NF train forward must BE "
+            f"the deployed streaming cascade (check depth-balancing relays / "
+            f"latency +1 invariant / boundary config drift)."
+        )
 
 
 def assert_cascaded_nf_scm_agreement_or_raise(
@@ -319,6 +403,49 @@ def compare_normalized_records(
     return mismatches, total, worst
 
 
+def _capture_nf_streamed_counts(model, samples: torch.Tensor) -> Dict[int, np.ndarray]:
+    """Per-perceptron NF WINDOW COUNTS over the batch for the streaming walk.
+
+    The streaming NF calls each spiking node once PER CYCLE, so the hook
+    ACCUMULATES the per-cycle emissions (spike × scale); the sum ÷ scale is
+    the window count. (The single-shot ``_capture_nf_normalized`` would keep
+    only the last cycle.)
+    """
+    from mimarsinan.models.nn.activations.ttfs_spiking import _channel_broadcast_view
+
+    device = _unify_model_device(model)
+    if device is not None:
+        samples = samples.to(device)
+    perceptrons = list(model.get_perceptrons())
+    captured: Dict[int, torch.Tensor] = {}
+
+    def _make_hook(index, perceptron):
+        def hook(_module, _inp, out):
+            scale = torch.as_tensor(
+                perceptron.activation_scale, device=out.device, dtype=out.dtype,
+            )
+            if scale.dim() == 0:
+                normalized = out / scale.clamp(min=1e-12)
+            else:
+                normalized = out / _channel_broadcast_view(scale, out).clamp(min=1e-12)
+            flat = normalized.detach().reshape(out.shape[0], -1)
+            prev = captured.get(index)
+            captured[index] = flat if prev is None else prev + flat
+        return hook
+
+    handles = [
+        p.activation.register_forward_hook(_make_hook(i, p))
+        for i, p in enumerate(perceptrons)
+    ]
+    try:
+        with torch.no_grad():
+            model(samples)
+    finally:
+        for handle in handles:
+            handle.remove()
+    return {i: v.cpu().numpy().astype(np.float64) for i, v in captured.items()}
+
+
 def _capture_nf_normalized(model, samples: torch.Tensor) -> Dict[int, np.ndarray]:
     """Per-perceptron NF outputs over the batch, normalized to [0, 1]."""
     from mimarsinan.models.nn.activations.ttfs_spiking import _channel_broadcast_view
@@ -385,7 +512,9 @@ def _collect_scm_normalized(
     return grouped
 
 
-def _group_record_by_perceptron(record, identity_mapping) -> Dict[int, np.ndarray]:
+def _group_record_by_perceptron(
+    record, identity_mapping, *, values_of=None,
+) -> Dict[int, np.ndarray]:
     # Order a perceptron's tiles by tile_offset (perceptron_output_slice start), not ir_id: id assignment is not monotone in the slice after compaction.
     per_core: Dict[int, tuple[int, int, np.ndarray]] = {}
     for stage_index, segment in record.segments.items():
@@ -406,7 +535,8 @@ def _group_record_by_perceptron(record, identity_mapping) -> Dict[int, np.ndarra
             if placement.get("psum_role") not in (None, "accum"):
                 continue
             values = np.asarray(
-                core_record.output_activation[: core_record.n_out_used],
+                (values_of(core_record) if values_of is not None
+                 else core_record.output_activation[: core_record.n_out_used]),
                 dtype=np.float64,
             )
             out_slice = placement.get("perceptron_output_slice")

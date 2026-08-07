@@ -1031,6 +1031,19 @@ input.field-invalid { border-color: var(--accent-rose); }
 }
 
 .note { color: var(--text-dim); font-size: var(--font-caption); }
+/* Dormant-domain notice: a quiet informational line, never an alarm. */
+.global-errors.dormant-only {
+  border-color: rgba(103, 232, 249, 0.25);
+  background: rgba(103, 232, 249, 0.05);
+  color: var(--text-dim);
+}
+.dormant-note {
+  border: 1px solid rgba(103, 232, 249, 0.25);
+  background: rgba(103, 232, 249, 0.06);
+  color: var(--text-dim);
+  border-radius: 6px;
+  padding: 8px 12px;
+}
 
 .divider { height: 1px; background: var(--border); margin: 8px 0; }
 

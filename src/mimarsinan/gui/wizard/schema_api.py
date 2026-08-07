@@ -235,6 +235,7 @@ def resolve_payload(draft: Dict[str, Any]) -> Dict[str, Any]:
         "errors": errors,
         "explicit_keys": resolution.explicit_keys,
         "unknown_keys": resolution.unknown_keys,
+        "dormant": list(resolution.dormant),
         "diff_vs_defaults": _apply_baseline_to_diff(resolution.diff_vs_defaults),
         "emitted": emit_deployment_config(draft),
         "resolved": resolved,

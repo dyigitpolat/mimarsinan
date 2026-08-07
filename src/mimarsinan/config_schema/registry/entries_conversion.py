@@ -53,7 +53,7 @@ def _why_activation_quantization(cfg: dict) -> str:
 
 
 ENTRIES = (
-    _E("firing_mode", group="spiking", owner="DeploymentPipeline", type=T.ENUM,
+    _E("firing_mode", domain="event", group="spiking", owner="DeploymentPipeline", type=T.ENUM,
        options=("Default", "Novena", "TTFS"), category=Category.ADVANCED,
        exposure="user", label="Firing Mode",
        doc="Neuron firing semantics: Default (subtractive reset), Novena (zero reset), "
@@ -63,7 +63,7 @@ ENTRIES = (
        derived_default=lambda cfg: derived_firing_mode(_mode(cfg)),
        legal_values=lambda cfg: legal_firing_modes(_mode(cfg)),
        empty_means="derived from spiking_mode (TTFS modes force 'TTFS')"),
-    _E("spike_generation_mode", group="spiking", owner="DeploymentPipeline", type=T.ENUM,
+    _E("spike_generation_mode", domain="event", group="spiking", owner="DeploymentPipeline", type=T.ENUM,
        options=("Uniform", "Deterministic", "Stochastic", "TTFS"),
        category=Category.ADVANCED, exposure="user",
        label="Spike Generation Mode",
@@ -73,7 +73,7 @@ ENTRIES = (
        derived_default=lambda cfg: derived_spike_generation_mode(_mode(cfg)),
        legal_values=lambda cfg: legal_spike_generation_modes(_mode(cfg)),
        empty_means="derived from spiking_mode (TTFS modes force 'TTFS')"),
-    _E("thresholding_mode", group="spiking", owner="DeploymentPipeline", type=T.ENUM,
+    _E("thresholding_mode", domain="event", group="spiking", owner="DeploymentPipeline", type=T.ENUM,
        options=("<", "<="), category=Category.ADVANCED, exposure="user",
        label="Thresholding Mode",
        doc="Membrane-threshold comparison (strict or inclusive). Both values are legal "
@@ -81,7 +81,7 @@ ENTRIES = (
        provenance="derivation rule", derived_default=_frozen(DEFAULT_THRESHOLDING_MODE),
        legal_values=lambda cfg: legal_thresholding_modes(_mode(cfg)),
        empty_means="derived from spiking_mode ('<=')"),
-    _E("encoding_layer_placement", group="mapping_strategy", owner="mapping/encoding_layer",
+    _E("encoding_layer_placement", domain="event", group="mapping_strategy", owner="mapping/encoding_layer",
        type=T.ENUM, options=("subsume", "offload"), category=Category.BASIC,
        exposure="user", label="Encoding Layer Placement",
        effect="Offload maps the encoding-layer neuralOp on-chip",
@@ -89,7 +89,7 @@ ENTRIES = (
            "(functionally identical, larger hardware-accelerated surface). "
            "An explicit choice — no schema default; configs pin a value as data.",
        empty_means="no default — choose subsume or offload (the starter pins subsume)"),
-    _E("negative_value_shift", group="mapping_strategy", owner="bias_compensation",
+    _E("negative_value_shift", domain="event", group="mapping_strategy", owner="bias_compensation",
        type=T.BOOL, category=Category.BASIC, exposure="user",
        label="Negative-value Shift",
        effect="How a negative ComputeOp→neural boundary stays lossless: "
@@ -103,7 +103,7 @@ ENTRIES = (
            "non-negative-value-generating activation (e.g. ReLU) absorbs the signed "
            "range — exact value-domain math, larger host surface; a graph left with "
            "no on-chip segment fails loud."),
-    _E("lif_membrane_readout", group="spiking", owner="lif_deployment_exactness",
+    _E("lif_membrane_readout", domain="event", group="spiking", owner="lif_deployment_exactness",
        type=T.BOOL, category=Category.ADVANCED, label="LIF Membrane Readout",
        effect="Torch-side membrane-decode DIAGNOSTIC at the SCM gate; "
               "deployed reads always keep the counts decode",
@@ -119,7 +119,7 @@ ENTRIES = (
        provenance="ConversionPolicy recipe", derived_default=_frozen(False),
        relevant=_LIF_FAMILY_RELEVANT,
        empty_means="the lif recipe arms it; other modes stay off"),
-    _E("lif_per_hop_retiming", group="mapping_strategy", owner="layout/segmentation",
+    _E("lif_per_hop_retiming", domain="event", group="mapping_strategy", owner="layout/segmentation",
        type=T.BOOL, category=Category.DERIVED, derivation="derived",
        exposure="derived", hidden=True, declarable=False,
        label="LIF Per-hop Re-timing",
@@ -138,7 +138,7 @@ ENTRIES = (
            else "off — non-lif mode, or the pairing downgraded (Novena)"
        ),
        provenance="ConversionPolicy recipe"),
-    _E("lif_depth_balancing_relays", group="mapping_strategy",
+    _E("lif_depth_balancing_relays", domain="event", group="mapping_strategy",
        owner="latency/depth_balancing",
        type=T.BOOL, category=Category.ADVANCED, label="LIF Depth-balancing Relays",
        effect="Inserts identity relay cores on gap>1 intra-segment edges",
@@ -152,7 +152,7 @@ ENTRIES = (
        provenance="ConversionPolicy recipe", derived_default=_frozen(False),
        relevant=_LIF_FAMILY_RELEVANT,
        empty_means="the lif recipe arms it; other modes stay off"),
-    _E("comparator_half_step", group="spiking", owner="deployment_contract",
+    _E("comparator_half_step", domain="event", group="spiking", owner="deployment_contract",
        type=T.BOOL, category=Category.ADVANCED, label="Comparator-side Half-step",
        effect="Staircase hops carry the +theta/(2S) mid-tread offset in the "
               "compare ladder instead of the bias",
@@ -167,7 +167,7 @@ ENTRIES = (
        provenance="consumer frozen default", derived_default=_frozen(False),
        relevant=_TTFS_CYCLE_RELEVANT,
        empty_means="off — the half-step stays a bias fold"),
-    _E("cycle_accurate_lif_forward", group="spiking", owner="lif_adaptation",
+    _E("cycle_accurate_lif_forward", domain="event", group="spiking", owner="lif_adaptation",
        type=T.BOOL, category=Category.DERIVED, derivation="derived",
        exposure="derived", label="Cycle-accurate LIF Forward",
        effect="Spike-train forward during LIF adaptation training",
@@ -226,7 +226,7 @@ ENTRIES = (
        provenance="consumer frozen default",
        derived_default=_frozen(DEFAULT_SCALE_MIGRATION_CLIP_RATIO),
        empty_means="the mechanism default r=4 (measured to hold 5-bit WQ)"),
-    _E("per_channel_theta", group="tuning", owner="per_channel_theta",
+    _E("per_channel_theta", domain="event", group="tuning", owner="per_channel_theta",
        type=T.BOOL, category=Category.ADVANCED, exposure="user",
        label="Per-channel Theta",
        effect="Eligible matching-axis hops calibrate a per-channel decode theta",
@@ -242,7 +242,7 @@ ENTRIES = (
        relevant=R.any_of(_LIF_FAMILY_RELEVANT, _TTFS_CYCLE_RELEVANT),
        empty_means="off — every hop keeps its pooled scalar theta"),
     # Pruning mapping-strategy keys live in entries_pruning.py (module budget).
-    _E("s_allocation", group="mapping_strategy", owner="TemporalAllocation",
+    _E("s_allocation", domain="event", group="mapping_strategy", owner="TemporalAllocation",
        type=T.ENUM, options=("uniform", "explicit", "budget"), category=Category.ADVANCED,
        exposure="user", label="S Allocation",
        effect="Per-cascade-depth temporal resolution (gated by allow_per_layer_s)",
@@ -250,11 +250,11 @@ ENTRIES = (
            "wired, so the legal set is a singleton and the field LOCKS; the reserved "
            "explicit/budget modes stay loud-rejected config data.",
        legal_values=lambda cfg: S_ALLOCATION_SUPPORTED_MODES),
-    _E("s_allocation_explicit", group="mapping_strategy", owner="TemporalAllocation",
+    _E("s_allocation_explicit", domain="event", group="mapping_strategy", owner="TemporalAllocation",
        type=T.INT_LIST, category=Category.ADVANCED, exposure="user",
        label="S Allocation (explicit)", doc="Explicit per-depth S list for s_allocation='explicit'.",
        relevant=R.when("s_allocation", in_=("explicit",))),
-    _E("s_allocation_budget", group="mapping_strategy", owner="TemporalAllocation",
+    _E("s_allocation_budget", domain="event", group="mapping_strategy", owner="TemporalAllocation",
        type=T.JSON, category=Category.ADVANCED, exposure="user",
        label="S Allocation (budget)", doc="Budget objective body for s_allocation='budget'.",
        relevant=R.when("s_allocation", in_=("budget",))),

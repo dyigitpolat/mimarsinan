@@ -30,7 +30,7 @@ def _mode(cfg: Mapping[str, Any]) -> str:
 
 
 ENTRIES = (
-    _E("core_semantics", group="deployment_target", owner="core_semantics",
+    _E("core_semantics", group="spiking", owner="core_semantics",
        type=T.ENUM, options=CORE_SEMANTICS_OPTIONS, category=Category.BASIC,
        exposure="user", label="Core Semantics", important=True,
        effect="Selects the deployment family: spiking cores or value-domain MVM cores",
@@ -40,7 +40,7 @@ ENTRIES = (
        derived_default=_frozen(CORE_SEMANTICS_SPIKING),
        legal_values=lambda cfg: CORE_SEMANTICS_OPTIONS,
        empty_means="spiking — the event-driven deployment family"),
-    _E("spiking_family", group="spiking", owner="ActivationSemantics",
+    _E("spiking_family", domain="event", group="spiking", owner="ActivationSemantics",
        type=T.ENUM, options=SPIKING_FAMILIES, category=Category.BASIC,
        exposure="user", label="Spiking Family", important=True,
        effect="Selects the neuron/code family: rate-coded LIF or time-coded TTFS",
@@ -48,7 +48,7 @@ ENTRIES = (
            "ttfs: a value is WHEN a single spike occurs (time code). The "
            "variant picks the temporal discipline within the family.",
        legal_values=lambda cfg: legal_spiking_families(cfg)),
-    _E("spiking_variant", group="spiking", owner="ActivationSemantics",
+    _E("spiking_variant", domain="event", group="spiking", owner="ActivationSemantics",
        type=T.ENUM, options=ALL_SPIKING_VARIANTS, category=Category.BASIC,
        exposure="user", label="Spiking Variant", important=True,
        effect="Selects the family's temporal discipline (and simulation backends)",
@@ -62,7 +62,7 @@ ENTRIES = (
        derived_default=derived_spiking_variant,
        legal_values=lambda cfg: legal_spiking_variants(cfg),
        empty_means="derived per family: lif → synchronized; ttfs → analytical"),
-    _E("spiking_mode", group="spiking", owner="ActivationSemantics",
+    _E("spiking_mode", domain="event", group="spiking", owner="ActivationSemantics",
        type=T.ENUM, options=SPIKING_MODES, category=Category.DERIVED,
        derivation="derived", exposure="derived", hidden=True, declarable=False,
        label="Spiking Mode (legacy twin)",
@@ -78,7 +78,7 @@ ENTRIES = (
            f"{cfg.get('spiking_variant')!r})"
        ),
        provenance="derivation rule"),
-    _E("ttfs_cycle_schedule", group="spiking", owner="ActivationSemantics",
+    _E("ttfs_cycle_schedule", domain="event", group="spiking", owner="ActivationSemantics",
        type=T.ENUM, options=("cascaded", "synchronized"),
        category=Category.DERIVED, derivation="derived", exposure="derived",
        hidden=True, declarable=False,

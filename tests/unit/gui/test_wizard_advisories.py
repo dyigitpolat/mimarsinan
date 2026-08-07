@@ -32,6 +32,17 @@ class TestWizardAdvisories:
         assert "not fully supported" in row["detail"]
         assert isinstance(row["suggested_levers"], list)
 
+    def test_streamed_pick_shows_the_structural_contract_info(self):
+        payload = resolve_payload(_minimal_draft(
+            deployment_parameters={
+                "spiking_family": "lif", "spiking_variant": "streamed",
+            }
+        ))
+        assert payload["ok"], payload["errors"]
+        by_id = {row["id"]: row for row in payload["advisories"]}
+        assert "ADV-STREAMED-CONTRACT" in by_id
+        assert by_id["ADV-STREAMED-CONTRACT"]["severity"] == "INFO"
+
     def test_lif_draft_has_no_casc_advisory(self):
         payload = resolve_payload(_minimal_draft(
             deployment_parameters={"spiking_family": "lif"}

@@ -165,12 +165,48 @@ def _planned_mapping_stats(draft: dict):
 
 
 _MODE_SWITCHES = (
+    ("lif", "streamed"),
     ("lif", "synchronized"),
     ("ttfs", "analytical"),
     ("ttfs", "quantized"),
     ("ttfs", "cascaded"),
     ("ttfs", "synchronized"),
 )
+
+
+class TestStarterDomainSwitchContract:
+    """[P1] the core-semantics switch is zero-friction from any green state:
+    other-domain keys go DORMANT (kept in the draft, excluded from resolution
+    and emission), never error rows."""
+
+    def test_mvm_switch_resolves_zero_errors_with_dormant_keys(self):
+        draft = starter_draft()
+        draft["deployment_parameters"]["core_semantics"] = "mvm"
+        resolution = resolve_draft(draft)
+        assert resolution.errors == [], resolution.errors
+        assert set(resolution.dormant) >= {
+            "encoding_layer_placement", "simulation_steps", "target_tq",
+        }
+
+    def test_switch_back_restores_the_spiking_surface(self):
+        draft = starter_draft()
+        draft["deployment_parameters"]["core_semantics"] = "mvm"
+        resolve_draft(draft)
+        # the draft still CARRIES the dormant keys — switching back restores.
+        draft["deployment_parameters"]["core_semantics"] = "spiking"
+        resolution = resolve_draft(draft)
+        assert resolution.errors == []
+        assert resolution.dormant == []
+        assert draft["deployment_parameters"]["encoding_layer_placement"] == "subsume"
+
+    def test_mvm_emission_strips_dormant_keys_and_validates_clean(self):
+        draft = starter_draft()
+        draft["deployment_parameters"]["core_semantics"] = "mvm"
+        emitted = emit_deployment_config(draft)
+        assert "encoding_layer_placement" not in emitted["deployment_parameters"]
+        assert "simulation_steps" not in emitted["platform_constraints"]
+        assert "target_tq" not in emitted["platform_constraints"]
+        assert validate_deployment_config(emitted) == []
 
 
 class TestStarterModeSwitchContract:

@@ -32,6 +32,9 @@ ALLOWLIST = {
     "common/file_utils.py",
     "config_schema/defaults.py",
     "config_schema/display_view.py",
+    # domain_rules is imported BY registry/__init__ and must read the built
+    # REGISTRY for the domain tags — a genuine init-order cycle-break.
+    "config_schema/registry/domain_rules.py",
     "config_schema/display_view_build.py",
     "data_handling/data_loader_factory.py",
     "data_handling/data_provider.py",

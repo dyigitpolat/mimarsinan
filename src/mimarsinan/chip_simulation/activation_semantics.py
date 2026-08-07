@@ -25,15 +25,14 @@ ANALYTICAL_VARIANT = "analytical"
 QUANTIZED_VARIANT = "quantized"
 CASCADED_VARIANT = "cascaded"
 
-# The authorable vocabulary. (lif, streamed) is the DESIGNED default LIF
-# discipline: it enters the legal set when the streamed deployment path lands
-# (plan P3) and becomes the derived default with the starter re-base (P4).
+# The authorable vocabulary. (lif, streamed) is the end-to-end event-streamed
+# discipline (P3); it becomes the derived default with the starter re-base (P4).
 ALL_SPIKING_VARIANTS: Tuple[str, ...] = (
     STREAMED_VARIANT, SYNCHRONIZED_VARIANT, ANALYTICAL_VARIANT,
     QUANTIZED_VARIANT, CASCADED_VARIANT,
 )
-LIF_VARIANTS: Tuple[str, ...] = (SYNCHRONIZED_VARIANT,)
-LIF_VARIANTS_DESIGNED: Tuple[str, ...] = (STREAMED_VARIANT, SYNCHRONIZED_VARIANT)
+LIF_VARIANTS: Tuple[str, ...] = (STREAMED_VARIANT, SYNCHRONIZED_VARIANT)
+LIF_VARIANTS_DESIGNED: Tuple[str, ...] = LIF_VARIANTS
 TTFS_VARIANTS: Tuple[str, ...] = (
     ANALYTICAL_VARIANT, QUANTIZED_VARIANT, SYNCHRONIZED_VARIANT, CASCADED_VARIANT,
 )
@@ -45,14 +44,6 @@ RETIRED_SPIKING_KEYS: Tuple[str, ...] = (
     "spiking_mode", "ttfs_cycle_schedule",
     "lif_execution_discipline", "lif_per_hop_retiming",
 )
-
-_STREAMED_NOT_DEPLOYABLE = (
-    f"spiking_variant='{STREAMED_VARIANT}' is the designed end-to-end streamed "
-    f"LIF discipline and is not deployable yet (it lands with the streamed "
-    f"deployment phase). Use '{SYNCHRONIZED_VARIANT}' — the windowed LIF "
-    f"semantics every existing lif deployment runs."
-)
-
 
 @dataclass(frozen=True)
 class ActivationSemantics:
@@ -164,11 +155,9 @@ def derived_spiking_variant(cfg: Mapping[str, Any]) -> str:
 
 
 def require_known_spiking_axes(family: Any, variant: Any) -> Tuple[str, str]:
-    """Validate one (family, variant) point; streamed is rejected until P3."""
+    """Validate one (family, variant) point of the taxonomy."""
     fam = require_known_spiking_family(family)
     var = str(variant)
-    if var == STREAMED_VARIANT:
-        raise ValueError(_STREAMED_NOT_DEPLOYABLE)
     legal = LIF_VARIANTS if fam == LIF_FAMILY else TTFS_VARIANTS
     if var not in legal:
         raise ValueError(
@@ -269,6 +258,15 @@ def fold_spiking_axes(dp: Any) -> None:
     dp[SPIKING_VARIANT_KEY] = semantics.variant
     dp["spiking_mode"] = semantics.legacy_spiking_mode
     dp["ttfs_cycle_schedule"] = semantics.legacy_ttfs_cycle_schedule
+
+
+def is_streamed_lif(cfg: Mapping[str, Any]) -> bool:
+    """The end-to-end event-streamed LIF discipline (total over any config)."""
+    try:
+        semantics = resolve_activation_semantics(cfg)
+    except ValueError:
+        return False
+    return semantics.family == LIF_FAMILY and semantics.variant == STREAMED_VARIANT
 
 
 def effective_legacy_spiking_mode(cfg: Mapping[str, Any]) -> str:

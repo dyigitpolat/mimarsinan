@@ -522,6 +522,15 @@ class SoftCoreMappingStep(PipelineStep):
         if not batches:
             return
         samples = batches[0][:n_samples]
+        if contract.is_streamed_lif():
+            nf_scm_parity.assert_streamed_nf_scm_exact_or_raise(
+                self.pipeline, model, ir_graph, samples,
+            )
+            print(
+                f"[SoftCoreMappingStep] NF↔SCM streamed EXACT: outputs "
+                f"torch.equal over {int(samples.shape[0])} samples (atol=0)"
+            )
+            return
         if contract.is_cascaded():
             agreement = nf_scm_parity.assert_cascaded_nf_scm_agreement_or_raise(
                 self.pipeline,

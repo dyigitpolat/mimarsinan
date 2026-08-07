@@ -46,6 +46,13 @@ NO_DEFAULT = _NoDefault()
 
 SECTIONS = ("top", "deployment_parameters", "platform_constraints")
 
+# Which core-semantics DOMAIN a key belongs to. EVENT keys exist only under
+# core_semantics='spiking' (spike physics, temporal grids); VALUE keys only
+# under 'mvm' (value-grid boundaries); UNIVERSAL keys under both. The domain
+# drives validation (domain_rules), wizard existence (relevance injection),
+# and emission stripping from ONE tag.
+DOMAINS = ("universal", "event", "value")
+
 # SSOT-source vocabulary for derived-by-default values: WHERE the effective
 # value comes from when the document is silent. Rendered generically by the
 # wizard next to every green derived value.
@@ -143,10 +150,17 @@ class ConfigKeySchema:
     # Derivation-owned keys the UI must not render on ANY surface (no field,
     # no chip); they remain config data (declarable escape) where marked.
     hidden: bool = False
+    # Core-semantics domain membership (see DOMAINS above).
+    domain: str = "universal"
 
     def __post_init__(self) -> None:
         if self.section not in SECTIONS:
             raise ValueError(f"{self.flat_key!r}: unknown section {self.section!r}")
+        if self.domain not in DOMAINS:
+            raise ValueError(
+                f"{self.flat_key!r}: unknown domain {self.domain!r} "
+                f"(vocabulary: {list(DOMAINS)})"
+            )
         if self.type is FieldType.ENUM and self.options is None:
             raise ValueError(f"{self.flat_key!r}: enum keys must declare options")
         if self.bounds is not None and self.type not in (FieldType.INT, FieldType.FLOAT):

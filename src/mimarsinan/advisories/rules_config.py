@@ -11,6 +11,7 @@ from mimarsinan.advisories.advisory import (
     Advisory,
     lossless_mandate_applies,
 )
+from mimarsinan.chip_simulation.activation_semantics import is_streamed_lif
 from mimarsinan.chip_simulation.spiking_semantics import (
     DEFAULT_FIRING_MODE,
     DEFAULT_THRESHOLDING_MODE,
@@ -21,6 +22,7 @@ from mimarsinan.chip_simulation.spiking_semantics import (
 )
 
 ADV_CASC_UNSUPPORTED = "ADV-CASC-UNSUPPORTED"
+ADV_STREAMED_CONTRACT = "ADV-STREAMED-CONTRACT"
 ADV_NOVENA_CHARGE = "ADV-NOVENA-CHARGE"
 ADV_STRICT_LT_LATTICE = "ADV-STRICT-LT-LATTICE"
 ADV_ENVELOPE_GATE = "ADV-ENVELOPE-GATE"
@@ -64,6 +66,32 @@ def rule_cascaded_ttfs_unsupported(plan: Any) -> list[Advisory]:
             "ttfs_cycle_schedule=synchronized (complete-sum deferral is the lossless fix)",
             "spiking_mode=lif",
             "ttfs_gain_correction (partial, default-off)",
+        ),
+    )]
+
+
+def rule_streamed_structural_contract(plan: Any) -> list[Advisory]:
+    if not is_streamed_lif(plan.config):
+        return []
+    return [Advisory(
+        id=ADV_STREAMED_CONTRACT,
+        severity=SEVERITY_INFO,
+        title="Streamed lif requires a spiking-native architecture",
+        detail=(
+            "End-to-end event streaming admits host compute ops ONLY as an "
+            "encode prefix and a readout suffix: every op between the first "
+            "and last on-chip layer must itself map to neural cores "
+            "(interior pooling/normalization is not streamable). The build "
+            "gate enforces this in seconds (NotStreamableError names the "
+            "offending ops); scheduling is locked off — the whole span must "
+            "be resident in one chip program. NF↔SCM window counts hold at "
+            "atol=0 for this discipline."
+        ),
+        tentative=False,
+        mandate_violation=False,
+        suggested_levers=(
+            "spiking_variant=synchronized (the windowed semantics runs any architecture)",
+            "re-architect pooling as strided convolution",
         ),
     )]
 
@@ -131,6 +159,7 @@ def rule_strict_lt_lattice(plan: Any) -> list[Advisory]:
 
 CONFIG_RULES = (
     rule_cascaded_ttfs_unsupported,
+    rule_streamed_structural_contract,
     rule_novena_charge,
     rule_strict_lt_lattice,
 )

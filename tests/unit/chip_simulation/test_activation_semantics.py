@@ -4,6 +4,7 @@ import pytest
 
 from mimarsinan.chip_simulation.activation_semantics import (
     ALL_SPIKING_VARIANTS,
+    is_streamed_lif,
     ActivationSemantics,
     LIF_VARIANTS,
     LIF_VARIANTS_DESIGNED,
@@ -52,11 +53,16 @@ class TestVocabulary:
             "quantized"
         )
 
-    def test_streamed_is_designed_but_not_yet_legal(self):
+    def test_streamed_is_a_legal_lif_variant(self):
         assert "streamed" in ALL_SPIKING_VARIANTS
-        assert "streamed" not in LIF_VARIANTS
-        with pytest.raises(ValueError, match="not deployable yet"):
-            require_known_spiking_axes("lif", "streamed")
+        assert LIF_VARIANTS == ("streamed", "synchronized")
+        assert require_known_spiking_axes("lif", "streamed") == ("lif", "streamed")
+        assert is_streamed_lif(
+            {"spiking_family": "lif", "spiking_variant": "streamed"}
+        )
+        assert not is_streamed_lif({"spiking_family": "lif"})
+        assert not is_streamed_lif({"spiking_mode": "lif"})
+        assert not is_streamed_lif({"spiking_family": "banana"})
 
     def test_unknown_family_rules_nothing_out(self):
         assert legal_spiking_variants({"spiking_family": "banana"}) == (
@@ -180,11 +186,12 @@ class TestResolve:
         )
         assert sem.mode_id == "lif_sync"
 
-    def test_streamed_variant_raises_until_p3(self):
-        with pytest.raises(ValueError, match="not deployable yet"):
-            resolve_activation_semantics(
-                {"spiking_family": "lif", "spiking_variant": "streamed"}
-            )
+    def test_streamed_variant_resolves(self):
+        sem = resolve_activation_semantics(
+            {"spiking_family": "lif", "spiking_variant": "streamed"}
+        )
+        assert sem.mode_id == "lif" and sem.is_streamed
+        assert sem.legacy_spiking_mode == "lif"
 
     def test_unknown_axis_values_raise(self):
         with pytest.raises(ValueError, match="unknown spiking_family"):

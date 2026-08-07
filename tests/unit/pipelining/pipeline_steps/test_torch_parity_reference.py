@@ -162,6 +162,9 @@ class TestStepWiring:
             yield torch.rand(4, 8), None
 
     class _SyncContract:
+        def is_streamed_lif(self):
+            return False
+
         def is_synchronized(self):
             return True
 

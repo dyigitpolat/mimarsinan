@@ -54,7 +54,7 @@ STRING_ALLOWLIST = {
     "common/env.py": (1, "IMAGENET_ROOT env accessor — the sanctioned env-var seam the ImageNet provider consumes"),
     "config_schema/registry/build.py": (1, "wizard document seed default (data_provider_name) — a deployment-config seed, not pipeline behavior"),
     "config_schema/registry/entries_model.py": (1, "preprocessing key doc text naming the provider-registered preset ids"),
-    "tuning/orchestration/conversion_policy.py": (1, "recipe rationale citing the MNIST evidence run ids (provenance text)"),
+    "tuning/orchestration/conversion_rationales.py": (1, "recipe rationale citing the MNIST evidence run ids (provenance text; row moved with the string when the rationales split out of conversion_policy.py)"),
 }
 
 

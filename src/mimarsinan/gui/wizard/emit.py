@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, Dict, Mapping, Tuple
 
 from mimarsinan.config_schema.registry import REGISTRY, Category, parse_deployment_document
+from mimarsinan.config_schema.registry.build import split_domain_dormant
 
 # Canonical top-level order (matches templates/generate.py output style).
 _CANONICAL_TOP_ORDER = (
@@ -40,10 +41,14 @@ def _droppable(flat_key: str) -> bool:
     return entry.category is Category.DERIVED and not entry.declarable
 
 
-def _emit_section(raw: Mapping[str, Any]) -> Dict[str, Any]:
-    """Verbatim pass-through in draft order; only runtime/non-declarable-derived
-    keys are dropped — unknown keys are PRESERVED (never silently lost)."""
-    return {k: v for k, v in raw.items() if not _droppable(k)}
+def _emit_section(raw: Mapping[str, Any], core_semantics: str = "spiking") -> Dict[str, Any]:
+    """Verbatim pass-through in draft order; runtime/non-declarable-derived
+    keys are dropped, and DORMANT-domain keys (the other core-semantics
+    domain) are stripped — an emitted document never contains a key its own
+    core_semantics forbids. Unknown keys are PRESERVED (never silently lost).
+    """
+    active, _dormant = split_domain_dormant(dict(raw), core_semantics)
+    return {k: v for k, v in active.items() if not _droppable(k)}
 
 
 def _top_default(flat_key: str) -> Any:
@@ -71,12 +76,16 @@ def emit_deployment_config(draft: Mapping[str, Any]) -> Dict[str, Any]:
     for key in _REQUIRED_TOP_KEYS:
         top.setdefault(key, _top_default(key))
 
+    dp_raw = dict(draft.get("deployment_parameters") or {})
+    core_semantics = str(dp_raw.get("core_semantics") or "spiking")
     out: Dict[str, Any] = {}
     for key in _CANONICAL_TOP_ORDER:
         if key == "platform_constraints":
-            out[key] = _emit_section(dict(draft.get("platform_constraints") or {}))
+            out[key] = _emit_section(
+                dict(draft.get("platform_constraints") or {}), core_semantics,
+            )
         elif key == "deployment_parameters":
-            out[key] = _emit_section(dict(draft.get("deployment_parameters") or {}))
+            out[key] = _emit_section(dp_raw, core_semantics)
         elif key in top:
             out[key] = top.pop(key)
     out.update(top)

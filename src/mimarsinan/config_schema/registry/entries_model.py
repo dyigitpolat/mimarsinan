@@ -123,7 +123,7 @@ ENTRIES = (
        derived_default=lambda cfg: derived_weight_set_id(cfg),
        legal_values=lambda cfg: legal_weight_set_ids(cfg),
        relevant=_PRETRAINED_REGIME, empty_means="the builder's default weight set"),
-    _E("spike_encoding_seed", group="workload", owner="spike_generation",
+    _E("spike_encoding_seed", domain="event", group="workload", owner="spike_generation",
        type=T.INT, category=Category.ADVANCED, label="Spike Encoding Seed",
        doc="Seed for stochastic spike-train encoding; null follows the run seed.",
        empty_means="follows the run seed"),

@@ -24,11 +24,30 @@ def vehicle_rows(draft: Dict[str, Any]) -> List[Dict[str, Any]]:
     effective = effective_view(dp)
 
     sim_enables: Optional[Dict[str, bool]]
+    if str(effective.get("core_semantics") or "spiking") == "mvm":
+        # Value-domain deployment: spiking simulators are structurally off —
+        # the rows say so instead of pretending mode support.
+        rows = []
+        for key, entry in REGISTRY.items():
+            if (entry.group != "deployment_target"
+                    or entry.category is not Category.DERIVED
+                    or entry.type is not FieldType.BOOL):
+                continue
+            rows.append({
+                "key": key, "label": entry.label,
+                "declared": isinstance(dp.get(key), bool),
+                "supported": False, "on": False,
+                "why": "off — spiking simulators cannot run the value-domain "
+                       "(core_semantics='mvm') family",
+            })
+        return rows
     try:
         semantics = resolve_activation_semantics(effective)
         mode = semantics.legacy_spiking_mode
         schedule = semantics.legacy_ttfs_cycle_schedule
-        sim_enables = dict(ConversionPolicy.derive(mode, schedule).sim_enables)
+        sim_enables = dict(ConversionPolicy.derive(
+            mode, schedule, spiking_variant=semantics.variant,
+        ).sim_enables)
     except ValueError:
         mode = str(effective.get("spiking_family"))
         schedule = None

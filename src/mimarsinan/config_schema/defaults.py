@@ -47,8 +47,8 @@ DEFAULT_DEPLOYMENT_PARAMETERS: Dict[str, object] = {
     "ttfs_genuine_blend_ce_alpha": 0.3,
     "model_config_mode": "user",
     "hw_config_mode": "fixed",
-    # enable_*_simulation, cycle_accurate_lif_forward and the legacy twins
-    # (spiking_mode/ttfs_cycle_schedule) carry NO defaults: derivation owns them.
+    # enable_* / cycle_accurate / legacy twins carry NO defaults: derivation owns them.
+    "core_semantics": "spiking",
     "spiking_family": "lif",
     # Negative-boundary policy: ON = calibrated shift; OFF = subsume-forward.
     "negative_value_shift": True,

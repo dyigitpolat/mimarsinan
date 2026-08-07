@@ -270,8 +270,22 @@ export function renderErrors() {
     }
   }
   if (global) {
-    global.style.display = unattached.length ? '' : 'none';
-    global.replaceChildren(...unattached.map(errorCard));
+    const cards = unattached.map(errorCard);
+    /* Dormant-domain keys are a quiet NOTICE, never errors: the draft keeps
+       them and the semantics switch restores them. */
+    const dormant = (state.resolve && state.resolve.dormant) || [];
+    if (dormant.length) {
+      const note = el(
+        'div', 'note dormant-note',
+        `${dormant.length} key(s) dormant under the current core semantics `
+        + `(kept in the draft, excluded from the emitted config): `
+        + dormant.join(', '),
+      );
+      cards.push(note);
+    }
+    global.style.display = cards.length ? '' : 'none';
+    global.classList.toggle('dormant-only', !unattached.length && dormant.length > 0);
+    global.replaceChildren(...cards);
   }
 }
 

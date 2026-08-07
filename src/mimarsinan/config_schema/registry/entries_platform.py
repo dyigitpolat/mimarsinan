@@ -12,7 +12,12 @@ from mimarsinan.config_schema.registry.types import (
     FieldType as T,
     frozen_default as _frozen,
 )
-from mimarsinan.tuning.orchestration.conversion_policy import ConversionPolicy
+from mimarsinan.chip_simulation.activation_semantics import (
+    is_streamed_lif as _is_streamed_lif)
+from mimarsinan.config_schema.registry.entries_platform_backends import (
+    _meta_backend_enable,
+    _why_backend_enable,
+)
 
 _PC = "platform_constraints"
 
@@ -43,33 +48,6 @@ def _why_core_maximum(dim: str):
     return why
 
 
-def _backend_supported(cfg: dict, backend: str) -> bool:
-    """Mode capability from the ConversionPolicy SSOT."""
-    recipe = ConversionPolicy.derive(
-        str(cfg.get("spiking_mode", "lif")), cfg.get("ttfs_cycle_schedule")
-    )
-    return bool(recipe.sim_enables.get(f"enable_{backend}_simulation", False))
-
-
-def _why_backend_enable(backend: str, off_reason: str):
-    """WHY text for a recipe-defaulted backend enable (user-off aware)."""
-    def why(cfg: dict) -> str:
-        key = f"enable_{backend}_simulation"
-        mode = cfg.get("spiking_mode")
-        if cfg.get(key):
-            return f"on — ConversionPolicy runs the {backend} gate for {mode!r}"
-        if _backend_supported(cfg, backend):
-            return f"off — disabled in this config (recipe default for {mode!r}: on)"
-        return f"off — {off_reason} (spiking_mode={mode!r})"
-    return why
-
-
-def _meta_backend_enable(backend: str):
-    """Machine-readable support flag so the wizard renders toggle vs muted line."""
-    def meta(cfg: dict) -> dict:
-        return {"supported": _backend_supported(cfg, backend)}
-    return meta
-
 
 ENTRIES = (
     _E("cores", section=_PC, group="hardware", owner="ChipCapabilities/mapping",
@@ -91,7 +69,7 @@ ENTRIES = (
     _E("has_bias", section=_PC, group="hardware", owner="mapping/bias",
        type=T.BOOL, category=Category.BASIC, exposure="user", label="Hardware Bias",
        doc="Whether cores carry a bias lane; biasless platforms use compensation."),
-    _E("target_tq", section=_PC, group="hardware", owner="activation_quantization",
+    _E("target_tq", domain="event", section=_PC, group="hardware", owner="activation_quantization",
        type=T.INT, category=Category.BASIC, exposure="user", label="Target Tq",
        effect="Activation quantization threshold groups",
        doc="Activation threshold-group count (the QAT activation-quantization "
@@ -101,7 +79,7 @@ ENTRIES = (
            "identity); Tq<S is the separate-axes regime the divisibility "
            "contract permits.",
        bounds=(1, None)),
-    _E("simulation_steps", section=_PC, group="hardware", owner="SimulationRunner",
+    _E("simulation_steps", domain="event", section=_PC, group="hardware", owner="SimulationRunner",
        type=T.INT, category=Category.BASIC, exposure="user", label="Simulation Steps",
        doc="Temporal resolution S: spiking cycles per forward.", bounds=(1, None)),
     _E("weight_bits", section=_PC, group="hardware", owner="weight_quantization",
@@ -142,8 +120,11 @@ ENTRIES = (
     _E("allow_scheduling", group="mapping_strategy", owner="MappingStrategy/scheduler",
        type=T.BOOL, category=Category.BASIC, exposure="user", label="Allow Scheduling",
        effect="Multi-pass layout scheduling when single-pass packing fails",
-       doc="Deployment option: time-multiplex core passes when the model "
-           "exceeds the grid (how we choose to deploy, not a chip capability)."),
+       doc="Deployment option: time-multiplex core passes when the model exceeds "
+           "the grid (a choice, not a chip capability). Streamed lif needs the "
+           "whole span resident in ONE program: locks false.",
+       provenance="derivation rule", derived_default=_frozen(False),
+       legal_values=lambda cfg: (False,) if _is_streamed_lif(cfg) else (False, True)),
     _E("enable_nevresim_simulation", group="deployment_target",
        owner="ConversionPolicy/backend_registry", type=T.BOOL,
        category=Category.DERIVED, derivation="derived", exposure="derived",

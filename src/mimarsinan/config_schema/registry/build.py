@@ -23,6 +23,7 @@ from mimarsinan.config_schema.registry.entries_semantics import (
 )
 from mimarsinan.config_schema.registry.entries_tuning import ENTRIES as _TUNING
 from mimarsinan.config_schema.registry.groups import CONCERN_GROUPS, VALID_GROUP_IDS
+from mimarsinan.config_schema.registry.relevance import Relevance
 from mimarsinan.config_schema.registry.types import Category, ConfigKeySchema
 
 # Document keys that are not flat pipeline-config keys: the top-level run
@@ -41,6 +42,47 @@ _TOP_DEFAULTS: Dict[str, Any] = {
     "generated_files_path": "./generated",
     "seed": 0,
 }
+
+
+def _inject_domain_relevance(entry: ConfigKeySchema) -> ConfigKeySchema:
+    """Domain-conditional EXISTENCE, injected generically: an event-domain key
+    exists only under core_semantics='spiking', a value-domain key only under
+    'mvm' — relevance controls existence, so the whole spiking surface leaves
+    the wizard when the domain says it does not exist."""
+    if entry.domain == "universal" or entry.flat_key == "core_semantics":
+        return entry
+    wanted = "spiking" if entry.domain == "event" else "mvm"
+    gate = Relevance.when("core_semantics", in_=(wanted,))
+    combined = (
+        gate if entry.relevant.op == "always"
+        else Relevance.all_of(gate, entry.relevant)
+    )
+    return dataclasses.replace(entry, relevant=combined)
+
+
+def domain_keys(domain: str, section: str | None = None) -> Tuple[str, ...]:
+    """Registry keys of one domain (optionally restricted to a section)."""
+    return tuple(
+        k for k, e in REGISTRY.items()
+        if e.domain == domain and (section is None or e.section == section)
+    )
+
+
+def split_domain_dormant(dp: Mapping[str, Any], core_semantics: str):
+    """Split a deployment-parameters mapping into (active, dormant) by domain:
+    dormant keys belong to the OTHER core-semantics domain — the authoring
+    surface keeps them in the draft but excludes them from resolution and
+    emission (restored on switch-back)."""
+    blocked = "value" if str(core_semantics) != "mvm" else "event"
+    active: Dict[str, Any] = {}
+    dormant: Dict[str, Any] = {}
+    for key, value in dp.items():
+        entry = _REGISTRY.get(key)
+        if entry is not None and entry.domain == blocked:
+            dormant[key] = value
+        else:
+            active[key] = value
+    return active, dormant
 
 
 def _inject_default(entry: ConfigKeySchema) -> ConfigKeySchema:
@@ -98,12 +140,45 @@ def validate_registry(entries: Tuple[ConfigKeySchema, ...]) -> Dict[str, ConfigK
     return table
 
 
+# The event-domain SHAPE rule the tags must satisfy (the drift guard that
+# replaced the old hardcoded forbidden list): a key whose name or group is
+# spike-shaped must declare domain='event'; the temporal platform grids are
+# event; activation_bits is the value-domain boundary grid.
+_EVENT_PREFIXES = ("lif_", "ttfs_", "ttfsq_", "casc_", "sync_", "spike_", "spiking_")
+_EVENT_KEYS = frozenset({
+    "simulation_steps", "target_tq", "encoding_layer_placement",
+    "negative_value_shift", "per_channel_theta", "s_aware_theta_quantile",
+    "s_allocation", "s_allocation_explicit", "s_allocation_budget",
+})
+_VALUE_KEYS = frozenset({"activation_bits", "value_parity_samples"})
+
+
+def _assert_domain_tags(entries) -> None:
+    for e in entries:
+        event_shaped = (
+            e.flat_key.startswith(_EVENT_PREFIXES)
+            or e.flat_key in _EVENT_KEYS
+            or (e.group == "spiking" and e.flat_key != "core_semantics")
+        )
+        if event_shaped and e.domain != "event":
+            raise ValueError(
+                f"{e.flat_key!r}: spike-shaped key must declare domain='event' "
+                f"(got {e.domain!r})"
+            )
+        if e.flat_key in _VALUE_KEYS and e.domain != "value":
+            raise ValueError(
+                f"{e.flat_key!r}: value-grid key must declare domain='value' "
+                f"(got {e.domain!r})"
+            )
+
+
 _REGISTRY: Dict[str, ConfigKeySchema] = validate_registry(
     tuple(
-        _inject_default(e)
+        _inject_domain_relevance(_inject_default(e))
         for e in (_RUN + _MODEL + _SEMANTICS + _CONVERSION + _PRUNING + _TUNING + _ENDPOINT + _EXECUTION + _PLATFORM)
     )
 )
+_assert_domain_tags(_REGISTRY.values())
 
 REGISTRY: Mapping[str, ConfigKeySchema] = MappingProxyType(_REGISTRY)
 
@@ -168,6 +243,7 @@ def serialize_registry() -> Dict[str, Any]:
             "derived_from": list(entry.derived_from),
             "declarable": entry.declarable,
             "important": entry.important,
+            "domain": entry.domain,
             "provenance": entry.provenance,
             "hidden": entry.hidden,
         }

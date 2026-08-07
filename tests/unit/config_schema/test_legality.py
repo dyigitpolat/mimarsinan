@@ -164,16 +164,22 @@ class TestTheLegalValueSets:
         assert view["pretrained_weight_set"] == ["imagenet1k_v1"]
 
     def test_locked_keys_are_exactly_the_singleton_legal_sets(self):
-        # under lif the variant LOCKS to 'synchronized' until the streamed
-        # deployment phase widens the legal set (plan P3).
         lif = legal_values_view({"spiking_family": "lif"})
         ttfs = legal_values_view({"spiking_family": "ttfs"})
         assert sorted(k for k, v in lif.items() if len(v) == 1) == [
-            "s_allocation", "spiking_variant",
+            "s_allocation",
         ]
         assert sorted(k for k, v in ttfs.items() if len(v) == 1) == [
             "firing_mode", "s_allocation", "spike_generation_mode",
         ]
+        # streamed lif requires single-program residency: scheduling LOCKS off.
+        streamed = legal_values_view(
+            {"spiking_family": "lif", "spiking_variant": "streamed"}
+        )
+        assert sorted(k for k, v in streamed.items() if len(v) == 1) == [
+            "allow_scheduling", "s_allocation",
+        ]
+        assert streamed["spiking_variant"] == ["streamed", "synchronized"]
 
 
 def _illegal_values(key: str, spiking_mode: str):

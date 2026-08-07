@@ -12,7 +12,7 @@ from mimarsinan.config_schema.registry.types import (
 
 
 ENTRIES = (
-    _E("lif_execution_discipline", group="spiking", owner="LifSegmentPolicy",
+    _E("lif_execution_discipline", domain="event", group="spiking", owner="LifSegmentPolicy",
        type=T.ENUM, options=("streaming", "synchronized"),
        category=Category.DERIVED, derivation="derived", exposure="derived",
        hidden=True, declarable=False,
@@ -27,20 +27,20 @@ ENTRIES = (
        why=lambda cfg: "streaming — the deployed cycle-accurate tick loop",
        provenance="consumer frozen default",
        derived_default=_frozen("streaming")),
-    _E("spike_phase_dither", group="spiking", owner="spike_trains",
+    _E("spike_phase_dither", domain="event", group="spiking", owner="spike_trains",
        type=T.BOOL, category=Category.ADVANCED, exposure="user",
        label="Spike Phase Dither",
        doc="Count-exact per-channel comb rotation mod T at uniform encodes: "
            "decorrelates arrival vs rectified-transient overfire [calculus 15.11].",
        provenance="consumer frozen default", derived_default=_frozen(False),
        empty_means="off"),
-    _E("lif_membrane_init", group="spiking", owner="LIFActivation",
+    _E("lif_membrane_init", domain="event", group="spiking", owner="LIFActivation",
        type=T.FLOAT, category=Category.ADVANCED, exposure="user",
        label="LIF Membrane Init",
        doc="Window-start membrane guard (normalized); negative recenters the "
            "signed-charge rectifier [calculus 15.11].", empty_means="0.0",
        provenance="consumer frozen default", derived_default=_frozen(0.0)),
-    _E("spike_count_parity_samples", group="spiking", owner="certification",
+    _E("spike_count_parity_samples", domain="event", group="spiking", owner="certification",
        type=T.INT, category=Category.ADVANCED, unit="samples",
        label="Spike-count Parity Samples",
        doc="Samples per backend spike-count certificate [calculus 17]: counts "
@@ -48,7 +48,7 @@ ENTRIES = (
            "out-powers argmax parity at any n.", bounds=(1, None),
        provenance="consumer frozen default", derived_default=_frozen(2),
        empty_means="2 samples"),
-    _E("activation_bits", section="platform_constraints", group="hardware",
+    _E("activation_bits", domain="value", section="platform_constraints", group="hardware",
        owner="boundary_quantization", type=T.INT, category=Category.ADVANCED,
        exposure="user", label="Activation Bits",
        effect="Arms value-domain (mvm) boundary activation quantization",
@@ -88,7 +88,7 @@ ENTRIES = (
            "report, the bank-aware schedule policy consumes it next.",
        provenance="consumer frozen default", derived_default=_frozen(False),
        empty_means="off — passes reprogram freely, report unarmed"),
-    _E("value_parity_samples", group="deployment_target", owner="value_gates",
+    _E("value_parity_samples", domain="value", group="deployment_target", owner="value_gates",
        type=T.INT, category=Category.ADVANCED, unit="samples",
        label="Value Parity Samples",
        doc="Samples per value-domain (mvm) certificate edge: the fp64 twin is "

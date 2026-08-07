@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Iterable, Mapping, MutableMapping, Optional, Set
 
+from mimarsinan.chip_simulation.activation_semantics import is_streamed_lif
 from mimarsinan.chip_simulation.spiking_semantics import is_lif
 from mimarsinan.config_schema.defaults import CONFIG_KEYS_SET
 from mimarsinan.tuning.orchestration.conversion_policy import ConversionPolicy
@@ -75,6 +76,10 @@ def _pair_lif_exact_qat_retiming(
             "lif_exact_qat_program.md §5). Drop the explicit key to accept the "
             "auto-pairing."
         )
+    if is_streamed_lif(dp):
+        # [P3] streamed lif: exact-QAT trains the RAW streaming cascade — the
+        # deployed forward — so the windowed re-timing pair never arms.
+        return
     dp["lif_per_hop_retiming"] = True
 
 
@@ -139,7 +144,10 @@ def fold_conversion_recipe(
     present key as declared (dict-as-document callers).
     """
     explicit: Set[str] = set(dp) if explicit_keys is None else set(explicit_keys)
-    recipe = ConversionPolicy.derive(spiking_mode, dp.get("ttfs_cycle_schedule"))
+    recipe = ConversionPolicy.derive(
+        spiking_mode, dp.get("ttfs_cycle_schedule"),
+        spiking_variant=dp.get("spiking_variant"),
+    )
     _fold_sim_enables(dp, recipe.sim_enables, spiking_mode, explicit)
     dp["optimization_driver"] = recipe.driver
     for key, value in recipe.knobs.items():
