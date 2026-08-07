@@ -95,10 +95,12 @@ neuron is charge-sensitive to input rhythm (same count in, different rhythm →
 possibly different count out), and training assumed even spacing. Measured on
 this codebase: without the per-layer reset, a model trained under the default
 recipe loses ~2.5 accuracy points; deploying a model through mismatched
-semantics collapses train↔deploy agreement to ~0.84. Until now the knob was
+semantics collapses train↔deploy agreement to ~0.84. The knob was once
 implemented by splitting the mapping into one segment per layer (the split
-you caught); the fix (docs/lif_hop_fused_mapping_design.md) moves the reset
-inside the executor and un-splits the mapping.
+you caught); since 2026-08-07 the mapping stays FUSED and the reset executes
+as per-level stages inside the one segment (docs/lif_hop_fused_mapping_design.md
+— implemented), so the program artifact is single-segment while every hop
+boundary keeps the identical re-encode.
 
 **Synchronized LIF variant** — drops the tick loop entirely: each layer is
 one closed-form evaluation of "how many spikes would this neuron emit for

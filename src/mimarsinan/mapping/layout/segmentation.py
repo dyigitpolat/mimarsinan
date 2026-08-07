@@ -63,23 +63,22 @@ def partition_ir_graph(ir_graph, *, per_hop: bool = False) -> List[Segment]:
     return segments
 
 
-def _split_segment_per_hop(segment: NeuralSegment) -> List[NeuralSegment]:
-    """One ``NeuralSegment`` per intra-segment depth level, topological order.
-
-    Coalescing / psum groups transfer membrane partial sums (NOT decodable
-    counts), so a segment carrying any group stays whole."""
-    if len(segment.nodes) <= 1:
-        return [segment]
+def segment_depth_groups(nodes: List[NeuralCore]) -> List[List[NeuralCore]] | None:
+    """Intra-segment depth levels in topological order, or ``None`` when the
+    segment must stay whole (single node, or coalescing/psum groups — those
+    transfer membrane partial sums, NOT decodable counts)."""
+    if len(nodes) <= 1:
+        return None
     if any(
         getattr(n, "coalescing_group_id", None) is not None
         or getattr(n, "psum_group_id", None) is not None
-        for n in segment.nodes
+        for n in nodes
     ):
-        return [segment]
+        return None
 
-    ids = {node.id for node in segment.nodes}
+    ids = {node.id for node in nodes}
     depth: Dict[int, int] = {}
-    for node in segment.nodes:
+    for node in nodes:
         upstream = [
             depth[src.node_id]
             for src in node.input_sources.flatten()
@@ -88,11 +87,21 @@ def _split_segment_per_hop(segment: NeuralSegment) -> List[NeuralSegment]:
         depth[node.id] = (max(upstream) + 1) if upstream else 0
 
     groups: Dict[int, List[NeuralCore]] = {}
-    for node in segment.nodes:
+    for node in nodes:
         groups.setdefault(depth[node.id], []).append(node)
+    # Depths are contiguous from 0 by construction (each depth d>0 requires an
+    # upstream at d-1), so list position == depth level.
+    return [groups[d] for d in sorted(groups)]
+
+
+def _split_segment_per_hop(segment: NeuralSegment) -> List[NeuralSegment]:
+    """One ``NeuralSegment`` per intra-segment depth level, topological order."""
+    groups = segment_depth_groups(segment.nodes)
+    if groups is None:
+        return [segment]
     return [
-        NeuralSegment(nodes=groups[d], label=f"{segment.label}_hop{d}")
-        for d in sorted(groups)
+        NeuralSegment(nodes=group, label=f"{segment.label}_hop{d}")
+        for d, group in enumerate(groups)
     ]
 
 

@@ -12,6 +12,7 @@ from mimarsinan.mapping.packing.hybrid_segment_helpers import (
     _reindex_nodes,
 )
 from mimarsinan.mapping.packing.hybrid_types import HybridStage
+from mimarsinan.mapping.packing.retimed_levels import attach_retimed_level_stages
 from mimarsinan.mapping.layout.segmentation import (
     NeuralSegment,
     partition_ir_graph,
@@ -34,6 +35,7 @@ def _flush_scheduled_subsegments(
     hardware_bias: bool = False,
     schedule_policy: str = "pool",
     max_schedule_passes: int = 8,
+    retimed_level_stages: bool = False,
 ) -> int:
     """Flush one IR segment as passes of one shared budget.
 
@@ -74,6 +76,17 @@ def _flush_scheduled_subsegments(
                     allow_coalescing=allow_coalescing,
                     pass_index=pass_idx,
                 )
+                if retimed_level_stages:
+                    for seg_stage in seg_stages:
+                        attach_retimed_level_stages(
+                            seg_stage,
+                            current_neural=chunk_reindexed,
+                            consumed_by=consumed_by,
+                            weight_banks=weight_banks,
+                            cores_config=cores_config,
+                            allow_neuron_splitting=allow_neuron_splitting,
+                            allow_coalescing=allow_coalescing,
+                        )
                 stages.extend(seg_stages)
                 pass_stages.extend(seg_stages)
                 all_reindex_maps.update(seg_reindex)
@@ -108,6 +121,17 @@ def _flush_scheduled_subsegments(
             allow_coalescing=allow_coalescing,
             pass_index=sub_idx,
         )
+        if retimed_level_stages:
+            for seg_stage in seg_stages:
+                attach_retimed_level_stages(
+                    seg_stage,
+                    current_neural=sub_cores_reindexed,
+                    consumed_by=consumed_by,
+                    weight_banks=weight_banks,
+                    cores_config=cores_config,
+                    allow_neuron_splitting=allow_neuron_splitting,
+                    allow_coalescing=allow_coalescing,
+                )
         stages.extend(seg_stages)
         all_reindex_maps.update(seg_reindex)
 
@@ -124,6 +148,7 @@ def _build_scheduled(
     allow_neuron_splitting: bool,
     allow_coalescing: bool = False,
     per_hop_neural_segments: bool = False,
+    retimed_level_stages: bool = False,
     schedule_policy: str = "pool",
     max_schedule_passes: int = 8,
 ) -> None:
@@ -146,6 +171,7 @@ def _build_scheduled(
                 ir_graph=ir_graph,
                 schedule_policy=schedule_policy,
                 max_schedule_passes=max_schedule_passes,
+                retimed_level_stages=retimed_level_stages,
             )
         else:
             node = segment.compute_op

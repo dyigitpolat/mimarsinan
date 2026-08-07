@@ -36,6 +36,12 @@ class HybridStage:
     # [wsm] pass p>0 of a bank-clustered schedule: weights stayed resident
     # from the previous pass (verified geometry), so programming cost is 0.
     schedule_weights_resident: bool = False
+    # [C3 fused] windowed-lif re-timing: per-depth-level EXECUTION stages
+    # (structurally the split builder's hop stages, real node-id I/O) the
+    # shared stage loop runs INSTEAD of this stage's own neural execution.
+    # None = execute this stage directly. Old pickles lack the attribute —
+    # readers use getattr(stage, "retimed_level_stages", None).
+    retimed_level_stages: "list[HybridStage] | None" = None
 
 
 @dataclass

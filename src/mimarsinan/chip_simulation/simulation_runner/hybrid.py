@@ -22,7 +22,10 @@ from mimarsinan.chip_simulation.hybrid_run.hybrid_execution import (
     resolve_stage_compute_scales,
     store_segment_output_numpy,
 )
-from mimarsinan.chip_simulation.hybrid_run.hybrid_stage_runner import run_hybrid_stages
+from mimarsinan.chip_simulation.hybrid_run.hybrid_stage_runner import (
+    execution_neural_stages,
+    run_hybrid_stages,
+)
 from mimarsinan.chip_simulation.spiking_semantics import is_analytical_ttfs, requires_ttfs_firing
 from mimarsinan.chip_simulation.nevresim.nevresim_driver import NevresimDriver
 from mimarsinan.chip_simulation.nevresim.segment_execute import run_binary_raw
@@ -71,29 +74,26 @@ class SimulationHybridMixin(SimulationHostContract):
 
         for stage in stages:
             if stage.kind == "neural":
-                seg_mapping = stage.hard_core_mapping
-                assert seg_mapping is not None
-
-                input_size = max((s.offset + s.size for s in stage.input_map), default=0)
-                seg_idx = len(segment_specs)
-                seg_dir = os.path.abspath(
-                    os.path.join(self.working_directory, f"segment_{seg_idx}")
-                )
-                latency = ChipLatency(seg_mapping).calculate()
-                # [C2] segments sourcing final-only output nodes compile the
-                # NEVRESIM_EXPORT_MEMBRANE build when the honesty gate is armed.
-                export_membrane = bool(self.membrane_readout) and bool(
-                    membrane_readout_slices(hybrid, stage)
-                )
-                segment_specs.append(
-                    (seg_idx, seg_dir, seg_mapping, input_size, latency,
-                     export_membrane)
-                )
-
-                for s in stage.output_map:
-                    state_sizes[s.node_id] = max(
-                        state_sizes.get(s.node_id, 0), s.offset + s.size
-                    )
+                # [C3 fused] a re-timed stage compiles one binary per LEVEL
+                # stage — the execution units the shared stage loop runs.
+                for exec_stage in execution_neural_stages(stage):
+                    seg_mapping = exec_stage.hard_core_mapping
+                    assert seg_mapping is not None
+                    input_size = max(
+                        (s.offset + s.size for s in exec_stage.input_map), default=0)
+                    seg_idx = len(segment_specs)
+                    seg_dir = os.path.abspath(
+                        os.path.join(self.working_directory, f"segment_{seg_idx}"))
+                    # [C2] segments sourcing final-only output nodes compile the
+                    # NEVRESIM_EXPORT_MEMBRANE build when the honesty gate is armed.
+                    export_membrane = bool(self.membrane_readout) and bool(
+                        membrane_readout_slices(hybrid, exec_stage))
+                    segment_specs.append(
+                        (seg_idx, seg_dir, seg_mapping, input_size,
+                         ChipLatency(seg_mapping).calculate(), export_membrane))
+                    for s in exec_stage.output_map:
+                        state_sizes[s.node_id] = max(
+                            state_sizes.get(s.node_id, 0), s.offset + s.size)
 
             elif stage.kind == "compute":
                 assert stage.compute_op is not None

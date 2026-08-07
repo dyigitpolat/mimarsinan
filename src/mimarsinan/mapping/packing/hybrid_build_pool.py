@@ -19,6 +19,7 @@ from mimarsinan.mapping.packing.hybrid_segment_helpers import (
     _reindex_nodes,
 )
 from mimarsinan.mapping.packing.hybrid_build_scheduled import _build_scheduled
+from mimarsinan.mapping.packing.retimed_levels import attach_retimed_level_stages
 from mimarsinan.mapping.packing.hybrid_types import HybridHardCoreMapping, HybridStage
 from mimarsinan.mapping.platform.mapping_structure import (
     ChipCapabilities,
@@ -36,14 +37,17 @@ def build_hybrid_hard_core_mapping(
     cores_config: Sequence[dict],
     strategy: MappingStrategy | None = None,
     per_hop_neural_segments: bool = False,
+    retimed_level_stages: bool = False,
     max_schedule_passes: int = 8,
 ) -> HybridHardCoreMapping:
     """Compile a unified IRGraph into a HybridHardCoreMapping.
 
     Coalesce / split / schedule passes are governed by the resolved
     :class:`MappingStrategy`; when omitted, the all-permissions-off strategy is
-    used. ``per_hop_neural_segments`` splits neural runs per depth level (C3
-    count-exact re-timing).
+    used. ``retimed_level_stages`` keeps segments FUSED and attaches per-depth
+    execution stages to each multi-level neural stage (C3 count-exact
+    re-timing, executor-owned). ``per_hop_neural_segments`` is the historical
+    mapping-level split, retained as the differential reference.
     """
     from mimarsinan.mapping.pruning.ir_segmentation import build_ir_consumed_by
 
@@ -66,6 +70,7 @@ def build_hybrid_hard_core_mapping(
             allow_neuron_splitting=strategy.allow_neuron_splitting,
             allow_coalescing=strategy.allow_coalescing,
             per_hop_neural_segments=per_hop_neural_segments,
+            retimed_level_stages=retimed_level_stages,
             schedule_policy=strategy.schedule_policy,
             max_schedule_passes=max_schedule_passes,
         )
@@ -79,6 +84,7 @@ def build_hybrid_hard_core_mapping(
             allow_neuron_splitting=strategy.allow_neuron_splitting,
             allow_coalescing=strategy.allow_coalescing,
             per_hop_neural_segments=per_hop_neural_segments,
+            retimed_level_stages=retimed_level_stages,
         )
 
     if not stages:
@@ -101,6 +107,7 @@ def build_hybrid_hard_core_mapping(
 
 def build_identity_hybrid_mapping(
     *, ir_graph: IRGraph, per_hop_neural_segments: bool = False,
+    retimed_level_stages: bool = False,
 ) -> HybridHardCoreMapping:
     """Compile an IRGraph into a 1:1 NeuralCore→HardCore hybrid program (no pool/pad/reindex/coalesce/split).
 
@@ -123,6 +130,7 @@ def build_identity_hybrid_mapping(
         allow_neuron_splitting=False,
         identity=True,
         per_hop_neural_segments=per_hop_neural_segments,
+        retimed_level_stages=retimed_level_stages,
     )
 
     if not stages:
@@ -151,6 +159,7 @@ def _build_single_pool(
     allow_coalescing: bool = True,
     identity: bool = False,
     per_hop_neural_segments: bool = False,
+    retimed_level_stages: bool = False,
 ) -> None:
     """Single-shared-pool compilation path (``identity=True``: no pool)."""
     shared_pool: list[HardCore] = (
@@ -172,6 +181,17 @@ def _build_single_pool(
                 allow_coalescing=allow_coalescing,
                 identity=identity,
             )
+            if retimed_level_stages:
+                attach_retimed_level_stages(
+                    stage,
+                    current_neural=current_neural,
+                    consumed_by=consumed_by,
+                    weight_banks=ir_graph.weight_banks,
+                    cores_config=cores_config,
+                    allow_neuron_splitting=allow_neuron_splitting,
+                    allow_coalescing=allow_coalescing,
+                    identity=identity,
+                )
             stages.append(stage)
             all_reindex_maps.update(seg_reindex)
         else:

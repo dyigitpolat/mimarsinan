@@ -20,7 +20,10 @@ from mimarsinan.chip_simulation.hybrid_run.hybrid_execution import (
     resolve_stage_compute_scales,
     store_segment_output_numpy,
 )
-from mimarsinan.chip_simulation.hybrid_run.hybrid_stage_runner import run_hybrid_stages
+from mimarsinan.chip_simulation.hybrid_run.hybrid_stage_runner import (
+    enumerate_execution_stages,
+    run_hybrid_stages,
+)
 from mimarsinan.chip_simulation.lava_loihi.core_lava import LavaCoreMixin, _subtractive_lif_cls
 from mimarsinan.chip_simulation.lava_loihi.segment_runner import LavaSegmentMixin
 from mimarsinan.chip_simulation.lava_loihi.timing import _RunProfile, _StageTrace
@@ -222,7 +225,9 @@ class LavaLoihiRunner(LavaCoreMixin, LavaSegmentMixin):
         )
         self._recorder = out
         try:
-            for stage_index, stage in enumerate(self.mapping.stages):
+            for stage_index, _program_stage, stage in enumerate_execution_stages(
+                self.mapping.stages
+            ):
                 if stage.kind != "neural":
                     continue
                 if stage_index not in ref.segments:

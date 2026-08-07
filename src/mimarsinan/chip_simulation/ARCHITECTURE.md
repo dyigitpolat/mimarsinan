@@ -44,7 +44,7 @@ Pareto decision layer.
 | `subsample.py` | Seeded test-subsample index SSOT shared by SCM/HCM/nevresim evaluation |
 | `subtractive_lif.py` | Subtractive-reset LIF process + float model for Lava (top-level so Lava's model scan finds it) |
 | `weight_reuse_cost_model.py` | Defensible per-phase weight-reuse DMA/sync cost model with a low/nominal/high uncertainty band |
-| `hybrid_run/` | Shared hybrid stage loop, segment I/O + compute-op execution, and the inter-stage semantics contract for all hybrid backends |
+| `hybrid_run/` | Shared hybrid stage loop (expands a re-timed fused stage's `retimed_level_stages` through each backend's per-stage handler with execution-unit indexing — `enumerate_execution_stages` is the ordinal SSOT reference-driven runners share), segment I/O + compute-op execution, and the inter-stage semantics contract for all hybrid backends |
 | `lava_loihi/` | Host-scheduled Lava Loihi LIF backend: runner, wave-parallel per-segment execution (longest-path dependency waves through the bounded spawn pool), and timing |
 | `nevresim/` | Nevresim C++ simulator bridge: driver, compile, execute, segment binaries, compile cache, connectivity mode, profiling |
 | `parity/` | Generic segment-record field-diff comparison utilities; float closeness is judged by `common.measurement.MetricTolerance` (the one definition of "matches") |

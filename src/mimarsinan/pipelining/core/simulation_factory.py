@@ -44,7 +44,8 @@ def build_deployment_contract(pipeline) -> SpikingDeploymentContract:
 
 
 def _per_hop_retiming_enabled(pipeline_config: dict[str, Any] | None) -> bool:
-    """[C3] the lif per-hop count-exact re-timing knob (mapping-level choice)."""
+    """[C3 fused] the lif per-hop count-exact re-timing arm: the mapping stays
+    fused and each multi-level neural stage carries per-level execution stages."""
     if pipeline_config is None:
         return False
     return lif_per_hop_retiming_enabled(pipeline_config)
@@ -63,7 +64,7 @@ def build_hybrid_mapping_for_pipeline(
         ir_graph=ir_graph,
         cores_config=platform_constraints["cores"],
         strategy=strategy,
-        per_hop_neural_segments=_per_hop_retiming_enabled(pipeline_config),
+        retimed_level_stages=_per_hop_retiming_enabled(pipeline_config),
         max_schedule_passes=int(platform_constraints.get("max_schedule_passes", 8) or 8),
     )
     propagate_negative_shifts_to_hybrid(ir_graph, hybrid_mapping)
@@ -227,7 +228,7 @@ def build_identity_mapping_for_pipeline(
     build (negative-value shifts propagated, per-hop segmentation shared)."""
     identity_mapping = build_identity_hybrid_mapping(
         ir_graph=ir_graph,
-        per_hop_neural_segments=_per_hop_retiming_enabled(pipeline_config),
+        retimed_level_stages=_per_hop_retiming_enabled(pipeline_config),
     )
     propagate_negative_shifts_to_hybrid(ir_graph, identity_mapping)
     return identity_mapping

@@ -3,6 +3,18 @@
 **Date:** 2026-08-05 · **Trigger:** lenet5_baseline hop0/hop1 split after features_5
 (user: dependent soft cores must schedule together in a single pass).
 
+**STATUS: IMPLEMENTED 2026-08-07** (activation-semantics branch), with one
+refinement over §2: instead of a level loop inside `_run_neural_segment_rate`,
+the fused stage carries `retimed_level_stages` — per-depth `HybridStage`s built
+by the SAME flush path the split used (`mapping/packing/retimed_levels.py`) —
+and the shared stage loop (`hybrid_run/hybrid_stage_runner.py`) runs them
+through every backend's EXISTING per-stage path (torch, nevresim, SANA-FE,
+Lava alike), so the five-step chain is reused verbatim and all spike-count
+certificates stay integer-exact. Verified: split-vs-fused differential
+(counts + logits bit-equal, `tests/unit/mapping/test_per_hop_segmentation.py`),
+t0_05 all-backend certificates exact=1.0, lenet5_baseline re-run = ONE fused
+stage after features_5 at HCM 0.9906.
+
 ## 1. What the barrier actually is (traced, all layers)
 
 Arming chain: `spiking_mode` defaults to lif → lif recipe arms `lif_exact_qat`

@@ -172,3 +172,161 @@ class TestPerHopBuildAndExecution:
                 f"rate={rate}: per-hop {out_split.tolist()} != "
                 f"single-segment {out_whole.tolist()}"
             )
+
+
+def _flow_for(hybrid, input_size=N) -> SpikingHybridCoreFlow:
+    return SpikingHybridCoreFlow(
+        input_shape=(input_size,),
+        hybrid_mapping=hybrid,
+        simulation_length=T,
+        preprocessor=nn.Identity(),
+        firing_mode="Default",
+        spike_mode="Uniform",
+        thresholding_mode="<=",
+        spiking_mode="lif",
+        cycle_accurate_lif_forward=True,
+    ).eval()
+
+
+def _counts_and_logits(flow, x):
+    captured: list[torch.Tensor] = []
+    flow.stage_count_recorder = (
+        lambda stage, counts: captured.append(counts.detach().clone())
+    )
+    try:
+        with torch.no_grad():
+            out = flow(x)
+    finally:
+        flow.stage_count_recorder = None
+    return captured, out
+
+
+def _fan_in_graph() -> IRGraph:
+    """Depth-0 → two parallel depth-1 cores → depth-2 join (rhythm-sensitive)."""
+    eye = np.eye(N)
+    a = _core(0, "A", [IRSource(-2, i) for i in range(N)], eye * 0.9)
+    b1 = _core(1, "B1", [IRSource(0, i) for i in range(N)], eye * 0.7)
+    b2 = _core(2, "B2", [IRSource(0, i) for i in range(N)], eye * 0.4)
+    c = _core(
+        3, "C",
+        [IRSource(1, i) for i in range(N)] + [IRSource(2, i) for i in range(N)],
+        np.vstack([eye, eye]) * 0.6,
+    )
+    return IRGraph(
+        nodes=[a, b1, b2, c],
+        output_sources=np.asarray([IRSource(3, i) for i in range(N)], dtype=object),
+    )
+
+
+class TestRetimedLevelStages:
+    """[fused mapping] The mapping stays fused (one honest neural stage);
+    when re-timing is armed the stage carries per-level execution stages —
+    structurally the split builder's hop stages — and every executor runs
+    them through its existing per-stage path. Counts and logits must be
+    bit-equal to the split build."""
+
+    CORES = [{"max_axons": 16, "max_neurons": 16, "count": 32}]
+
+    def _build(self, graph, *, per_hop=False, retimed=False):
+        return build_hybrid_hard_core_mapping(
+            ir_graph=graph,
+            cores_config=self.CORES,
+            per_hop_neural_segments=per_hop,
+            retimed_level_stages=retimed,
+        )
+
+    def test_fused_build_carries_level_stages(self):
+        hybrid = self._build(_chain_graph(), retimed=True)
+        assert [s.kind for s in hybrid.stages] == ["neural"]
+        levels = hybrid.stages[0].retimed_level_stages
+        assert levels is not None and len(levels) == 3
+        assert [ls.name for ls in levels] == [
+            "neural_segment_final_hop0",
+            "neural_segment_final_hop1",
+            "neural_segment_final_hop2",
+        ]
+        assert [[s.node_id for s in ls.output_map] for ls in levels] == [
+            [0], [1], [2],
+        ]
+
+    def test_unarmed_build_attaches_nothing(self):
+        hybrid = self._build(_chain_graph())
+        assert hybrid.stages[0].retimed_level_stages is None
+
+    def test_single_level_segment_attaches_nothing(self):
+        graph = _chain_graph(weights=(1.0,))
+        hybrid = self._build(graph, retimed=True)
+        assert hybrid.stages[0].retimed_level_stages is None
+
+    def test_coalescing_groups_refuse_levels_like_the_split(self):
+        graph = _chain_graph()
+        graph.nodes[1].coalescing_group_id = 7
+        hybrid = self._build(graph, retimed=True)
+        assert hybrid.stages[0].retimed_level_stages is None
+
+    def _assert_differential(self, graph, inputs):
+        split = _flow_for(self._build(graph, per_hop=True))
+        fused = _flow_for(self._build(graph, retimed=True))
+        for x in inputs:
+            split_counts, split_out = _counts_and_logits(split, x)
+            fused_counts, fused_out = _counts_and_logits(fused, x)
+            assert len(split_counts) == len(fused_counts)
+            for hop, (a, b) in enumerate(zip(split_counts, fused_counts)):
+                assert torch.equal(a, b), (
+                    f"hop {hop}: split {a.tolist()} != fused-levels {b.tolist()}"
+                )
+            assert torch.equal(split_out, fused_out)
+
+    def _random_inputs(self, n=4, batch=3):
+        gen = torch.Generator().manual_seed(7)
+        return [
+            torch.randint(0, T + 1, (batch, N), generator=gen).float() / T
+            for _ in range(n)
+        ]
+
+    def test_chain_counts_and_logits_bit_equal_split(self):
+        self._assert_differential(_chain_graph(), self._random_inputs())
+
+    def test_fan_in_counts_and_logits_bit_equal_split(self):
+        self._assert_differential(_fan_in_graph(), self._random_inputs())
+
+    def test_hardware_bias_chain_bit_equal_split(self):
+        graph = _chain_graph(weights=(0.8, 0.5))
+        for node in graph.nodes:
+            node.hardware_bias = np.full(N, 0.125, dtype=np.float64)
+        self._assert_differential(graph, self._random_inputs())
+
+    def test_recording_runs_per_level_with_hop_names(self):
+        from mimarsinan.chip_simulation.hybrid_run.hybrid_stage_runner import (
+            enumerate_execution_stages,
+        )
+
+        hybrid = self._build(_chain_graph(), retimed=True)
+        fused = _flow_for(hybrid)
+        x = torch.full((1, N), 0.5, dtype=torch.float32)
+        out, record = fused.forward_with_recording(x)
+        names = [seg.stage_name for seg in record.segments.values()]
+        assert names == [
+            "neural_segment_final_hop0",
+            "neural_segment_final_hop1",
+            "neural_segment_final_hop2",
+        ]
+        # reference-driven runners share the recorded index arithmetic.
+        expected_indices = [
+            idx for idx, _stage, exec_stage
+            in enumerate_execution_stages(hybrid.stages)
+            if exec_stage.kind == "neural"
+        ]
+        assert sorted(record.segments.keys()) == expected_indices
+        split = _flow_for(self._build(_chain_graph(), per_hop=True))
+        out_split, record_split = split.forward_with_recording(x)
+        assert torch.equal(out, out_split)
+        fused_out_counts = [
+            seg.seg_output_spike_count.tolist()
+            for seg in record.segments.values()
+        ]
+        split_out_counts = [
+            seg.seg_output_spike_count.tolist()
+            for seg in record_split.segments.values()
+        ]
+        assert fused_out_counts == split_out_counts
