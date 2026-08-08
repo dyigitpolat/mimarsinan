@@ -596,3 +596,65 @@
   line-height: 1;
   margin: 0 1px;
 }
+
+/* Neural Segment envelope: interior latency groups belong to ONE resident
+   span and must not read as separately mapped segments. */
+.hw-layout-mini-seg {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 3px 6px 5px;
+  border: 1px dashed rgba(56, 189, 248, 0.45);
+  border-radius: 8px;
+  background: rgba(56, 189, 248, 0.05);
+}
+
+.hw-layout-mini-seg-label {
+  font-size: 0.52rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  line-height: 1;
+  margin-bottom: 1px;
+}
+
+.hw-layout-mini-seg-flow {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.hw-layout-mini-seg-sep {
+  flex: 0 0 auto;
+  color: var(--text-dim);
+  font-size: 0.66rem;
+  line-height: 1;
+}
+
+.hw-layout-mini-host-sub {
+  max-width: 76px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hw-layout-mini-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  font-size: 0.55rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  vertical-align: middle;
+}
+
+.hw-layout-mini-badge.e2e {
+  border-color: rgba(52, 211, 153, 0.5);
+  color: rgb(52, 211, 153);
+  background: rgba(52, 211, 153, 0.08);
+}

@@ -48,6 +48,7 @@ class LayoutIRMapping(_LayoutIRMappingFinalize, _LayoutIRMappingFC):
         self._node_input_node_ids: Dict[int, Set[int]] = {}
         self._node_id_to_softcore_idx: Dict[int, int] = {}
         self._node_is_neural: Dict[int, bool] = {}
+        self._node_host_labels: Dict[int, Dict[str, str]] = {}
         self._sc_idx_to_perceptron_index: Dict[int, Optional[int]] = {}
 
         self._layout_weight_banks: Dict[int, Tuple[int, int]] = {}
@@ -153,6 +154,10 @@ class LayoutIRMapping(_LayoutIRMappingFinalize, _LayoutIRMappingFC):
         node_id = self._alloc_node_id()
         self._node_input_node_ids[node_id] = self._extract_input_node_ids(input_sources)
         self._node_is_neural[node_id] = False
+        self._node_host_labels[node_id] = {
+            "name": str(name) if name else str(op_type or "host"),
+            "op_type": str(op_type or ""),
+        }
 
         return LayoutSourceView.from_producer(
             producer_node_id=node_id,

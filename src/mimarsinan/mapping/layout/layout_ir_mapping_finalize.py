@@ -25,6 +25,7 @@ class _LayoutIRMappingFinalize:
         layout_softcores: List[LayoutSoftCoreSpec]
         _node_input_node_ids: Dict[int, Set[int]]
         _node_is_neural: Dict[int, bool]
+        _node_host_labels: Dict[int, Dict[str, str]]
         _node_id_to_softcore_idx: Dict[int, int]
         _sc_idx_to_perceptron_index: Dict[int, Optional[int]]
 
@@ -56,11 +57,17 @@ class _LayoutIRMappingFinalize:
         min_neural_latency = neural_latency_tags[0] if neural_latency_tags else 0
 
         host_counts: Dict[int, int] = {}
-        for node_id, is_neural in self._node_is_neural.items():
+        host_ops: Dict[int, List[Dict[str, str]]] = {}
+        for node_id, is_neural in sorted(self._node_is_neural.items()):
             if is_neural or node_id not in latencies:
                 continue
             slot = max(0, int(latencies[node_id] - min_neural_latency + 1))
             host_counts[slot] = host_counts.get(slot, 0) + 1
+            host_ops.setdefault(slot, []).append(
+                self._node_host_labels.get(
+                    node_id, {"name": "host", "op_type": ""},
+                )
+            )
 
         neural_summary: Dict[int, Dict[str, Any]] = {}
         for sc in self.layout_softcores:
@@ -98,6 +105,7 @@ class _LayoutIRMappingFinalize:
                     "kind": "host",
                     "slot": slot,
                     "compute_op_count": host_counts[slot],
+                    "ops": host_ops.get(slot, []),
                 })
             if slot < len(neural_groups):
                 group = next(
@@ -111,6 +119,7 @@ class _LayoutIRMappingFinalize:
                         "latency_tag": group["latency_tag"],
                         "softcore_count": group["softcore_count"],
                         "segment_count": group["segment_count"],
+                        "segment_ids": group["segment_ids"],
                     })
         flow.append({"kind": "output"})
 

@@ -82,45 +82,103 @@ function _detailChip(lbl, val) {
     + esc(lbl) + '</span>' + esc(_fmtNum(val)) + '</span>';
 }
 
+function _hostBoxHtml(item) {
+  if (item.schedule_sync) {
+    return '<div class="hw-layout-mini-host hw-layout-mini-schedule-sync">'
+      + '<div class="hw-layout-mini-host-box">'
+      + '<div class="hw-layout-mini-host-label">↻ sync</div>'
+      + '<div class="hw-layout-mini-host-sub">pass</div>'
+      + '</div></div>';
+  }
+  const ops = Array.isArray(item.ops) ? item.ops : [];
+  const titleAttr = ops.length
+    ? ' title="' + esc(ops.map(o =>
+        o.name + (o.op_type && o.op_type !== o.name ? ' (' + o.op_type + ')' : '')
+      ).join(', ')) + '"'
+    : '';
+  const label = ops.length === 1
+    ? (ops[0].op_type || ops[0].name)
+    : _fmtInt(item.compute_op_count) + ' ops';
+  const sub = ops.length === 1 ? ops[0].name : 'host';
+  return '<div class="hw-layout-mini-host"' + titleAttr + '>'
+    + '<div class="hw-layout-mini-host-box">'
+    + '<div class="hw-layout-mini-host-label">' + esc(label) + '</div>'
+    + '<div class="hw-layout-mini-host-sub">' + esc(sub) + '</div>'
+    + '</div></div>';
+}
+
+function _neuralBoxHtml(item) {
+  return '<div class="hw-layout-mini-lat-group">'
+    + '<div class="hw-layout-mini-lat-label">' + _fmtInt(item.latency_group_index) + '</div>'
+    + '<div class="hw-layout-mini-lat-bar">' + _fmtInt(item.softcore_count) + '</div>'
+    + '</div>';
+}
+
+/* A neural flow item's segment identity — null when the latency group
+   aggregates several segments (scheduled/legacy payloads render bare). */
+function _segKeyOf(item) {
+  return (Array.isArray(item.segment_ids) && item.segment_ids.length === 1)
+    ? String(item.segment_ids[0]) : null;
+}
+
+function _segEnvelopeHtml(segKey, boxes) {
+  const inner = boxes.join('<div class="hw-layout-mini-seg-sep">›</div>');
+  return '<div class="hw-layout-mini-seg" title="neural segment '
+    + esc(segKey) + ' — one resident span; its latency groups run in order">'
+    + '<div class="hw-layout-mini-seg-label">seg ' + esc(segKey) + '</div>'
+    + '<div class="hw-layout-mini-seg-flow">' + inner + '</div>'
+    + '</div>';
+}
+
 function _renderLayoutPreview(preview) {
   if (!preview || !Array.isArray(preview.flow) || preview.flow.length === 0) return '';
   const hasScheduling = preview.schedule_sync_count > 0;
-  const items = preview.flow.map(item => {
-    if (item.kind === 'input' || item.kind === 'output') {
-      return '<div class="hw-layout-mini-endcap ' + item.kind + '">'
-        + '<span>' + item.kind.toUpperCase() + '</span></div>';
-    }
-    if (item.kind === 'host') {
-      if (item.schedule_sync) {
-        return '<div class="hw-layout-mini-host hw-layout-mini-schedule-sync">'
-          + '<div class="hw-layout-mini-host-box">'
-          + '<div class="hw-layout-mini-host-label">↻ sync</div>'
-          + '<div class="hw-layout-mini-host-sub">pass</div>'
-          + '</div></div>';
-      }
-      return '<div class="hw-layout-mini-host">'
-        + '<div class="hw-layout-mini-host-box">'
-        + '<div class="hw-layout-mini-host-label">' + _fmtInt(item.compute_op_count) + ' ops</div>'
-        + '<div class="hw-layout-mini-host-sub">host</div>'
-        + '</div></div>';
-    }
-    if (item.kind === 'neural') {
-      return '<div class="hw-layout-mini-lat-group">'
-        + '<div class="hw-layout-mini-lat-label">' + _fmtInt(item.latency_group_index) + '</div>'
-        + '<div class="hw-layout-mini-lat-bar">' + _fmtInt(item.softcore_count) + '</div>'
-        + '</div>';
-    }
-    return '';
-  }).filter(Boolean);
 
-  const flowHtml = items.map((itemHtml, idx) => {
-    if (idx === items.length - 1) return itemHtml;
+  /* Consecutive latency groups of the SAME segment fold into one envelope:
+     segment-interior levels must never read as separately mapped segments. */
+  const elements = [];
+  let openSeg = null;
+  const flush = () => {
+    if (openSeg) elements.push(_segEnvelopeHtml(openSeg.key, openSeg.boxes));
+    openSeg = null;
+  };
+  for (const item of preview.flow) {
+    if (item.kind === 'neural') {
+      const key = _segKeyOf(item);
+      if (key !== null) {
+        if (openSeg && openSeg.key === key) openSeg.boxes.push(_neuralBoxHtml(item));
+        else { flush(); openSeg = { key, boxes: [_neuralBoxHtml(item)] }; }
+        continue;
+      }
+      flush();
+      elements.push(_neuralBoxHtml(item));
+    } else if (item.kind === 'input' || item.kind === 'output') {
+      flush();
+      elements.push('<div class="hw-layout-mini-endcap ' + item.kind + '">'
+        + '<span>' + item.kind.toUpperCase() + '</span></div>');
+    } else if (item.kind === 'host') {
+      flush();
+      elements.push(_hostBoxHtml(item));
+    }
+  }
+  flush();
+
+  const flowHtml = elements.map((itemHtml, idx) => {
+    if (idx === elements.length - 1) return itemHtml;
     return itemHtml + '<div class="hw-layout-mini-arrow">→</div>';
   }).join('');
 
+  const segList = Array.isArray(preview.neural_segments) ? preview.neural_segments : [];
+  let badge = '';
+  if (segList.length === 1) {
+    badge = '<span class="hw-layout-mini-badge e2e">end-to-end · 1 segment</span>';
+  } else if (segList.length > 1) {
+    badge = '<span class="hw-layout-mini-badge">' + _fmtInt(segList.length) + ' segments</span>';
+  }
+
   const title = hasScheduling ? 'Mapping Miniview (Scheduled)' : 'Mapping Miniview';
   return '<div class="hw-layout-mini-wrap">'
-    + '<div class="hw-stats-section-label">' + title + '</div>'
+    + '<div class="hw-stats-section-label">' + title + badge + '</div>'
     + '<div class="hw-layout-mini-flow">' + flowHtml + '</div>'
     + '</div>';
 }
