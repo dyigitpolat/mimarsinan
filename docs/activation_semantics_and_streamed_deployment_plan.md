@@ -459,6 +459,14 @@ Order: P0 → (P1 ∥ P2) → P3 → P4 → P5. Each phase lands independently g
 
 ## 9. P6 amendment (2026-08-08): `streamed` is the per-Neural-Segment discipline
 
+> **EXECUTED 2026-08-09** — commits `b2e102f7` (core: report API + multi-span
+> exactness proof), `7d366dad` (mini-view envelopes/named ops/badge),
+> `5b516f67` (t0_50 + docs). Acceptance: lenet5_p6_streamed run end-to-end —
+> 3 segments reported at build, streamed NF↔SCM EXACT atol=0, packed
+> certificate exact=1.000000 over 15,848 windows, HCM read 0.9837 = trained,
+> SANA-FE Δ=0.0000, nevresim probe 0.88 ≥ 0.8351 arbiter (transient
+> window-exactness 0.726 in-family with single-span cells 0.28–0.81).
+
 **User decision (2026-08-08, supersedes §2/§2.1).** Streaming — like every
 other core semantics — is a property of *each Neural Segment*, not of the
 network: within a segment (one or more latency groups) spikes flow
