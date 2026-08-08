@@ -79,13 +79,19 @@ the trained model. Everything in this guide about spike timing is irrelevant
 to this mode.
 
 **Streamed LIF (`spiking_family=lif, spiking_variant=streamed` — the default
-since 2026-08-07)** — end-to-end event streaming: ONE resident chip program,
-binary spikes on every wire, values transcoded exactly twice (encode before
-the first neural core, decode after the last). Host compute ops may exist
-only as an encode prefix and a readout suffix (the structural gate fails in
-seconds otherwise); scheduling is locked off. The NF train forward IS the
+since 2026-08-07; redefined per-segment 2026-08-08, plan §9)** — streaming is
+the execution discipline of each Neural Segment: within a segment, binary
+spikes flow cycle-by-cycle through its latency groups with no interior
+transcode; at segment boundaries, host compute ops (pooling, encode, readout)
+operate on window counts and the next segment re-encodes. Any hybrid
+architecture deploys — the build step reports the span topology instead of
+gating on it — and a model whose host ops are confined to an encode prefix +
+readout suffix earns the **end-to-end** property (ONE segment, one continuous
+window, values transcoded exactly twice). Scheduling is locked off; every
+segment stays resident in one chip program. The NF train forward IS the
 deployed streaming cascade, gated bitwise: per-neuron window counts equal the
-identity executor at atol=0, with no mismatch budget.
+identity executor at atol=0 ACROSS segments, with no mismatch budget (host
+ops are deterministic on counts, so exactness composes).
 
 **Windowed LIF (`spiking_variant=synchronized`)** — the number system IS counts: a value in [0,1]
 is represented as "n spikes within a T-tick window" (T = simulation_steps).
@@ -143,10 +149,12 @@ The clean summary of the deployment contract: the toolchain now carries BOTH
 disciplines honestly. **Windowed** (`lif_sync`, the ttfs family): a
 pass-structured machine in which timing is normalized at every stage/hop
 boundary — the re-timing executes as per-level stages inside ONE fused
-segment since 2026-08-07. **Streamed** (`lif`, the default): a free-running
-binary-spike program whose train↔deploy agreement holds at atol=0 BY
-CONSTRUCTION (the raw streaming cascade is the train forward), enforced by a
-fatal per-neuron window-count gate. Every tier-0 accuracy number means:
+segment since 2026-08-07. **Streamed** (`lif`, the default): each neural
+segment free-runs as a binary-spike cascade, counts cross host boundaries,
+and train↔deploy agreement holds at atol=0 BY CONSTRUCTION (the raw
+per-segment streaming cascade is the train forward), enforced by a fatal
+per-neuron window-count gate; `segments == 1` is reported as the end-to-end
+special case. Every tier-0 accuracy number means:
 "this trained model, executed under THESE semantics, scores X." The historical
 2.5-point / 0.84-agreement numbers measured what deploying MISMATCHED
 semantics costs — which is exactly why the discipline is a trained-for axis,
@@ -162,8 +170,11 @@ spiking_variant)` taxonomy:
 1. **Streamed lif is the default** (`spiking_variant=streamed`): the plain
    cycle-accurate LIF adaptation trains the raw streaming cascade, so the
    train forward IS the deployed forward — parity by construction, gated
-   bitwise. Tier-0 carries streamed cells across mlp/mixer/conv topologies
-   (t0_45–t0_49, incl. the spiking-native `stream_cnn` vehicle).
+   bitwise. Since 2026-08-08 (plan §9) the discipline is per-Neural-Segment,
+   so pooling architectures deploy too: tier-0 carries end-to-end cells
+   across mlp/mixer/conv topologies (t0_45–t0_49, incl. the spiking-native
+   `stream_cnn` vehicle) plus the multi-span flagship t0_50 (lenet5,
+   3 segments, pools as host ops between them).
 2. **Windowed lif** stays fully supported as `spiking_variant=synchronized`
    (the historical `lif` cells, re-tagged `lifsync`, keep their numbers);
    the per-hop reset executes as level stages inside one fused segment.

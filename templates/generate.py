@@ -258,8 +258,11 @@ T0 = [
     # [mvm W3] the value-domain (MVM) family: no conversion ladder; the R/C
     # value certificates are FATAL and the deployed read is the packed value
     # census. Fresh numbering block (t0_41+) — t0_31/32 are burned labels.
-    # [P4] streamed-lif cells: end-to-end event streaming, binary spikes on
-    # every wire, one resident program; NF-SCM window counts hold at atol=0.
+    # [P4/P6 plan §9] streamed-lif cells: streaming is per-Neural-Segment
+    # (cycle-by-cycle spikes within each segment; window counts re-encode at
+    # host-op boundaries); NF-SCM window counts hold at atol=0 across
+    # segments. t0_45-49 are single-segment (end-to-end) models; t0_50 is
+    # the multi-span coverage cell.
     dict(n=45, mode="lifs", quant="wq", wb=5, s=4, vehicle="simplemlp", seed=1),
     dict(n=46, mode="lifs", quant="wq", wb=5, s=8, vehicle="deepmlp", depth=4, width=128),
     dict(n=47, mode="lifs", quant="wq", wb=5, s=32, vehicle="mmixcore", epochs=8,
@@ -267,6 +270,12 @@ T0 = [
     dict(n=48, mode="lifs", quant="wq", wb=5, s=16, vehicle="stream_cnn",
          encoding="offload", tags=["offload"]),
     dict(n=49, mode="lifs", quant="fp", wb=5, s=8, vehicle="stream_cnn"),
+    dict(n=50, mode="lifs", quant="wq", wb=5, s=4, vehicle="lenet5",
+         encoding="offload", tags=["offload"],
+         note="per-segment streamed flagship (plan §9): offload puts both "
+              "pools INTERIOR — 3 neural segments, each streaming "
+              "internally, counts re-encoded at the pools; streamed "
+              "NF<->SCM exactness gate FATAL across segments"),
     dict(n=41, mode="mvm", quant="wq", wb=8, vehicle="lenet5",
          pruned=0.05, tags=["pruned"],
          note="mvm flagship: quantized weights, float I/O, twin certs FATAL"),
