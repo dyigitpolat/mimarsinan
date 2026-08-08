@@ -12,8 +12,6 @@ from mimarsinan.chip_simulation.behavior_config import NeuralBehaviorConfig
 from mimarsinan.chip_simulation.deployment_contract import SpikingDeploymentContract
 from mimarsinan.chip_simulation.membrane_export import deployed_membrane_readout_enabled
 from mimarsinan.chip_simulation.recording.spike_recorder import compare_records, format_first_diff
-from mimarsinan.chip_simulation.activation_semantics import is_streamed_lif
-from mimarsinan.mapping.verification.streamed import assert_streamable_ir
 from mimarsinan.chip_simulation.spiking_semantics import (
     is_lif,
     lif_per_hop_retiming_enabled,
@@ -62,8 +60,6 @@ def build_hybrid_mapping_for_pipeline(
     strategy = MappingStrategy.resolve(
         ChipCapabilities.from_platform_constraints(platform_constraints)
     )
-    if pipeline_config is not None and is_streamed_lif(pipeline_config):
-        assert_streamable_ir(ir_graph)
     hybrid_mapping = build_hybrid_hard_core_mapping(
         ir_graph=ir_graph,
         cores_config=platform_constraints["cores"],
@@ -230,8 +226,6 @@ def build_identity_mapping_for_pipeline(
 ) -> Any:
     """1:1 NeuralCore→HardCore mapping with the same wire effects as the packed
     build (negative-value shifts propagated, per-hop segmentation shared)."""
-    if pipeline_config is not None and is_streamed_lif(pipeline_config):
-        assert_streamable_ir(ir_graph)
     identity_mapping = build_identity_hybrid_mapping(
         ir_graph=ir_graph,
         retimed_level_stages=_per_hop_retiming_enabled(pipeline_config),

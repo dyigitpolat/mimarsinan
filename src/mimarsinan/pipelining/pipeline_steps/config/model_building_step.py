@@ -1,7 +1,7 @@
 from mimarsinan.config_schema.registry import effective_value
 from mimarsinan.chip_simulation.activation_semantics import is_streamed_lif
 from mimarsinan.mapping.verification.streamed import (
-    assert_streamable_model_or_raise,
+    streamed_span_report_model,
 )
 from mimarsinan.mapping.verification.onchip_fraction import (
     assert_onchip_majority_estimate_or_raise,
@@ -46,21 +46,21 @@ class ModelBuildingStep(PipelineStep):
         )
 
         self._run_static_onchip_majority_gate(init_model)
-        self._run_static_streamability_gate(init_model)
+        self._print_streamed_span_report(init_model)
 
         self.add_entry("adaptation_manager", adaptation_manager, 'pickle')
         self.add_entry("model", (init_model), "torch_model")
 
-    def _run_static_streamability_gate(self, model) -> None:
-        """[P3] fail-fast twin of the streamed structural contract: an
-        architecture with interior host ops dies at build, in seconds."""
+    def _print_streamed_span_report(self, model) -> None:
+        """[P6, plan §9] streaming is per-Neural-Segment: report the span
+        topology at build (end-to-end is the segments==1 special case)."""
         config = self.pipeline.config
         if not is_streamed_lif(config):
             return
         num_classes = config.get("num_classes")
         if not num_classes:
             return
-        assert_streamable_model_or_raise(
+        report = streamed_span_report_model(
             model,
             config["input_shape"],
             int(num_classes),
@@ -68,10 +68,7 @@ class ModelBuildingStep(PipelineStep):
                 config.get("encoding_layer_placement", "subsume")
             ),
         )
-        print(
-            "[ModelBuildingStep] static streamability: host ops confined to "
-            "encode prefix / readout suffix — streamed contract holds"
-        )
+        print(f"[ModelBuildingStep] {report.describe()}")
 
     def _run_static_onchip_majority_gate(self, model) -> None:
         """Static fail-fast twin of the SCM on-chip-majority floor gate: a

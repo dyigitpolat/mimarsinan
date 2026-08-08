@@ -1,13 +1,15 @@
-"""Streamed-lif structural contract gates."""
+"""Streamed span-topology reporting [plan §9]."""
 
 from mimarsinan.mapping.verification.streamed.streamability import (
     NotStreamableError,
-    assert_streamable_ir,
-    assert_streamable_model_or_raise,
+    StreamedSpanReport,
+    streamed_span_report_ir,
+    streamed_span_report_model,
 )
 
 __all__ = [
     "NotStreamableError",
-    "assert_streamable_ir",
-    "assert_streamable_model_or_raise",
+    "StreamedSpanReport",
+    "streamed_span_report_ir",
+    "streamed_span_report_model",
 ]

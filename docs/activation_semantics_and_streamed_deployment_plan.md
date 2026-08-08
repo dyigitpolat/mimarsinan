@@ -168,6 +168,11 @@ ADVANCED with unchanged semantics.
 
 ## 2. Streamed LIF — the deployment contract
 
+> **SUPERSEDED in part by §9 (P6, 2026-08-08).** The definition below made
+> streaming a NETWORK-level topology requirement. §9 redefines `streamed` as
+> the per-Neural-Segment execution discipline; the one-span form survives as
+> the reported `end_to_end` special case (`segments == 1`).
+
 **Definition.** One chip program; one continuous run of `C = T + L` cycles
 (`L = ChipLatency(mapping).calculate()`); every inter-core message is a binary
 spike event; values are transcoded exactly twice — encode (value→uniform comb,
@@ -176,7 +181,7 @@ after the last. No interior count-collapse, no re-emission, no passes, no
 reprogramming. `ttfs_cascaded` shares the structural contract (single-spike
 discipline, as today's executor).
 
-### 2.1 Structural streamability (strict interior ban; user decision)
+### 2.1 Structural streamability (strict interior ban; user decision — REVERSED by §9)
 
 A model is **streamable** iff, in IR topological order, host ComputeOps form
 only a *prefix* (encode side: subsumed encoder chain) and a *suffix* (readout
@@ -451,3 +456,89 @@ Order: P0 → (P1 ∥ P2) → P3 → P4 → P5. Each phase lands independently g
   single-segment path needs a timing audit (`T_eff`).
 - **Naming**: final key names (`spiking_family`/`spiking_variant`) and the
   streamed template tag (`lifs` vs `stream`) fixed at P0 review.
+
+## 9. P6 amendment (2026-08-08): `streamed` is the per-Neural-Segment discipline
+
+**User decision (2026-08-08, supersedes §2/§2.1).** Streaming — like every
+other core semantics — is a property of *each Neural Segment*, not of the
+network: within a segment (one or more latency groups) spikes flow
+cycle-by-cycle with no interior transcode; at segment boundaries, host
+ComputeOps (pooling, encode, readout) operate on window counts and the next
+segment re-encodes — transcodes happen exactly where host ops force them and
+nowhere else. A hybrid program `[host]* (NeuralSegment [host]+)* NeuralSegment
+[host]*` is therefore fully deployable under `spiking_variant='streamed'`.
+The former network-level guarantee is preserved as a *reported property*:
+`end_to_end = (neural segment count == 1)` — all five tier-0 streamed cells
+keep it. Demanding `end_to_end` (host-free targets) becomes an optional,
+later platform constraint, not part of the variant's meaning.
+
+Rationale recorded from the discussion: the strict ban conflated the
+execution discipline with span topology; the mapper, the NF, and the SCM were
+already per-segment machines (F10–F13), so the ban rejected valid hybrid
+mappings (lenet5's pools) without buying correctness. What it *did* buy —
+no silent semantic dilution — is preserved by loud span reporting plus the
+train-forward == deploy-forward requirement below.
+
+### 9.1 Verified findings the amendment stands on
+
+- **F10 — the NF is already per-segment streamed.** `LifSegmentPolicy`
+  (default branch: `retime=False, synchronized=False`) runs each segment as a
+  per-cycle raw cascade (`segment_policies.py:229-250`); the
+  `SegmentForwardDriver` composes segments through host ComputeOps on
+  count-decoded values and re-encodes at entry via the boundary SSOT
+  (`normalize_boundary_value` + `uniform_spike_train`). The native model
+  forward mirrors this through `compute_boundary`.
+- **F11 — the SCM is already per-segment streamed.** `SpikingHybridCoreFlow`
+  executes each neural stage's cycle loop (`_run_neural_segment_rate` →
+  `run_neural_segment_packed`) and routes ComputeOps through the state
+  buffer; multi-segment streaming is exactly the pre-P2 shipped execution.
+- **F12 — relays are per-segment by construction.** Depth-balancing operates
+  on *intra-segment* gaps (`mapping/latency/depth_balancing.py`), so the
+  `+1`-latency invariant holds within every span with no change.
+- **F13 — the exactness gate is span-agnostic.** `assert_streamed_nf_scm_
+  exact_or_raise` compares per-perceptron window counts over the whole
+  network; boundary transcodes are deterministic on counts, so atol=0
+  composes across spans unchanged.
+
+**Consequence:** P6 is mostly *removal* (the ban) plus *proof* (a multi-span
+exactness fixture) plus *presentation* (span report, mini-view). The recipe
+(`streamed_raw_cascade`) and legality (scheduling locked False) are
+unchanged; train forward IS deploy forward, now per segment.
+
+### 9.2 Work items
+
+- **P6.1 Gate → report.** `streamability.py` gains
+  `streamed_span_report(...)` → `{segments, interior_host_ops, end_to_end}`;
+  `NotStreamableError` survives ONLY for the degenerate no-neural-span case.
+  `ModelBuildingStep` prints the report (no raise); the two
+  `assert_streamable_ir` calls in `simulation_factory` become report/log.
+  The advisory rule text flips from "will fail in seconds" to the span
+  topology note.
+- **P6.2 Multi-span exactness proof.** CPU fixture (tiny conv→pool→fc model,
+  interior host op) driven through the real identity mapping; the existing
+  streamed gate must hold at atol=0 across ≥2 spans. Whatever breaks gets
+  fixed at the SSOT, never budgeted.
+- **P6.3 Pipeline wiring.** Nothing attaches `retimed_level_stages` under
+  streamed (already per-hop-gated); nevresim/SANA-FE run per-stage cycle
+  loops as today; Loihi stays deferred (stated reason unchanged).
+- **P6.4 Mini-view honesty.** Layout preview groups latency-group boxes
+  inside Neural Segment envelopes (interior levels must be visually distinct
+  from separate segments — the 2026-08-08 misreading), host boxes carry op
+  *names* (maxpool/encode/readout), and an `end-to-end` badge appears when
+  `segments == 1`. Pixel screenshots for user review.
+- **P6.5 Acceptance.** lenet5_baseline deploys `streamed` by default again
+  (multi-span: conv spans + classifier span, pools as ComputeOps): streamed
+  NF↔SCM EXACT atol=0, floors honored. New tier-0 cell `t0_50` (lenet5,
+  lifs, multi-span coverage) via `templates/generate.py`. Docs: this section,
+  `how_networks_reach_the_chip.md`, module ARCHITECTUREs, error/advisory
+  texts. Suite ≤2 min green, typecheck 0, budgets/ratchets clean.
+
+### 9.3 Gates
+
+| Gate | Criterion |
+|---|---|
+| Multi-span exactness | fixture: NF↔SCM per-neuron window counts, atol=0, ≥2 spans |
+| lenet5 streamed run | pipeline completes; streamed EXACT gate green; floor met |
+| No windowed regression | windowed lenet5/t0 numbers byte-identical (no shared-path drift) |
+| End-to-end property | tier-0 streamed cells report `end_to_end=True` unchanged |
+| Presentation | mini-view: segment envelopes, named host ops, badge — pixels reviewed |

@@ -76,22 +76,24 @@ def rule_streamed_structural_contract(plan: Any) -> list[Advisory]:
     return [Advisory(
         id=ADV_STREAMED_CONTRACT,
         severity=SEVERITY_INFO,
-        title="Streamed lif requires a spiking-native architecture",
+        title="Streaming runs per neural segment",
         detail=(
-            "End-to-end event streaming admits host compute ops ONLY as an "
-            "encode prefix and a readout suffix: every op between the first "
-            "and last on-chip layer must itself map to neural cores "
-            "(interior pooling/normalization is not streamable). The build "
-            "gate enforces this in seconds (NotStreamableError names the "
-            "offending ops); scheduling is locked off — the whole span must "
-            "be resident in one chip program. NF↔SCM window counts hold at "
-            "atol=0 for this discipline."
+            "Streamed lif executes each on-chip neural segment as a "
+            "cycle-by-cycle spike cascade; host compute ops (pooling, "
+            "encode, readout) run between segments on window counts, which "
+            "the next segment re-encodes. Any hybrid architecture deploys; "
+            "the build step reports the span topology, and a model whose "
+            "hosts are confined to an encode prefix + readout suffix earns "
+            "the end-to-end property (one segment, one continuous window). "
+            "Scheduling is locked off — every segment stays resident in one "
+            "chip program. NF↔SCM window counts hold at atol=0 across "
+            "segments."
         ),
         tentative=False,
         mandate_violation=False,
         suggested_levers=(
-            "spiking_variant=synchronized (the windowed semantics runs any architecture)",
-            "re-architect pooling as strided convolution",
+            "re-architect pooling as strided convolution to earn end-to-end streaming",
+            "spiking_variant=synchronized (the windowed semantics, count re-encode at every layer)",
         ),
     )]
 
