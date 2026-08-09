@@ -262,7 +262,14 @@ def fold_spiking_axes(dp: Any) -> None:
 
 
 def is_streamed_lif(cfg: Mapping[str, Any]) -> bool:
-    """The end-to-end event-streamed LIF discipline (total over any config)."""
+    """The per-segment streamed LIF discipline (total over any config).
+
+    FALSE for value-domain (mvm) configs: the spiking axes are DORMANT there
+    and their derived defaults must not leak legality — the P4 default flip
+    silently locked allow_scheduling={False} on the mvm scheduling flagship
+    (t0_44, caught by the 2026-08-09 re-baseline)."""
+    if str(cfg.get("core_semantics", "spiking")) == "mvm":
+        return False
     try:
         semantics = resolve_activation_semantics(cfg)
     except ValueError:

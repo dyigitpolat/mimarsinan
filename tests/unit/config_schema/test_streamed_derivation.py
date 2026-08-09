@@ -47,3 +47,41 @@ class TestStreamedRecipe:
     def test_streamed_locks_scheduling_off(self):
         cfg = _resolved("streamed")
         assert cfg["allow_scheduling"] is False
+
+
+class TestMvmNeverStreams:
+    """[t0_44 catch] value-domain configs have DORMANT spiking axes: their
+    derived lif/streamed defaults must not leak legality (the P4 default
+    flip silently locked allow_scheduling on the mvm scheduling flagship)."""
+
+    def test_is_streamed_lif_false_for_mvm(self):
+        from mimarsinan.chip_simulation.activation_semantics import is_streamed_lif
+
+        assert is_streamed_lif({"core_semantics": "mvm"}) is False
+        assert is_streamed_lif({
+            "core_semantics": "mvm",
+            "spiking_family": "lif",
+            "spiking_variant": "streamed",
+        }) is False
+
+    def test_mvm_scheduled_config_resolves(self):
+        import json
+        from pathlib import Path
+
+        from mimarsinan.config_schema.defaults import (
+            get_default_deployment_parameters,
+            get_default_platform_constraints,
+        )
+        from mimarsinan.config_schema.deployment_derivation import (
+            derive_pipeline_runtime_parameters,
+        )
+
+        cfg = json.loads(Path(
+            "templates/tier_0/t0_44_mvm_lenet5_wq_sched_pruned.json"
+        ).read_text())
+        merged = get_default_deployment_parameters()
+        merged.update(cfg["deployment_parameters"])
+        merged.update(get_default_platform_constraints())
+        merged.update(cfg["platform_constraints"])
+        derive_pipeline_runtime_parameters(merged)
+        assert merged["allow_scheduling"] is True
