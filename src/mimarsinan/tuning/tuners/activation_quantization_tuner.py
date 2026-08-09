@@ -24,19 +24,17 @@ from mimarsinan.tuning.orchestration.adaptation_manager import (
     install_sync_entry_grid_snap,
     sync_exact_qat_active,
 )
-from mimarsinan.tuning.orchestration.signed_seam_install import (
-    ensure_offload_negative_boundary,
-)
+from mimarsinan.tuning.forward_install import CascadeForwardInstall
+from mimarsinan.tuning.orchestration.signed_seam_install import ensure_offload_negative_boundary
 from mimarsinan.tuning.orchestration.lif_exact_qat import (
     deployed_lif_gauge_forward,
+    exact_qat_training_forward,
     install_lif_entry_input_quantizers,
     lif_exact_qat_active,
 )
 from mimarsinan.tuning.orchestration.ttfs_exact_qat import ttfsq_exact_qat_active
 from mimarsinan.tuning.orchestration.frontier import frontier_ladder
-from mimarsinan.tuning.orchestration.frontier.endpoint_recovery import (
-    run_endpoint_recovery,
-)
+from mimarsinan.tuning.orchestration.frontier.endpoint_recovery import run_endpoint_recovery
 from mimarsinan.tuning.orchestration.frontier.hop_staging import (
     capture_hop_reference,
     resolve_sync_hop_staging,
@@ -48,7 +46,7 @@ from mimarsinan.tuning.orchestration.mbh_ledger import (
 )
 
 
-class ActivationQuantizationTuner(AdaptationRateTuner):
+class ActivationQuantizationTuner(CascadeForwardInstall, AdaptationRateTuner):
     rate_attr = "quantization_rate"
     _budget_multiplier = 2.0
 
@@ -119,6 +117,7 @@ class ActivationQuantizationTuner(AdaptationRateTuner):
             )
 
     def _install_lif_exact_qat(self) -> None:
+        self._install_forward(exact_qat_training_forward(self.model, self.pipeline.config))
         report = promote_theta_for_exact_qat(self.model)
         folded = apply_lif_half_step_bias_compensation(
             self.model, int(self.pipeline.config["simulation_steps"]),

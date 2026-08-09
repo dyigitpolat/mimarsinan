@@ -955,3 +955,50 @@ class TestDeployedLifGauge:
         assert ActivationQuantizationTuner._mbh_full_transform_forward(
             tuner, object()
         ) == "BASE"
+
+
+class TestTrainingForwardInstall:
+    """[composition identity, n7 D3] the exact-QAT ladder trains through the
+    value-domain chip-aligned walk; the LIF finalize replaces it (stage
+    handoff) with the deployed raw walk."""
+
+    def test_builder_returns_the_synchronized_walk(self):
+        from mimarsinan.tuning.forward_install import ChipAlignedNFForward
+        from mimarsinan.tuning.orchestration.lif_exact_qat import (
+            exact_qat_training_forward,
+        )
+
+        class _M:
+            pass
+
+        m = _M()
+        fwd = exact_qat_training_forward(m, {"simulation_steps": 8})
+        assert isinstance(fwd, ChipAlignedNFForward)
+        assert fwd.synchronized is True and fwd.retime is False
+        assert fwd.T == 8 and fwd.model is m
+
+    def test_pickle_alias_survives_the_move(self):
+        from mimarsinan.tuning.forward_install import ChipAlignedNFForward
+        from mimarsinan.tuning.tuners.lif_adaptation_tuner import (
+            _ChipAlignedNFForward,
+        )
+
+        assert _ChipAlignedNFForward is ChipAlignedNFForward
+
+    def test_stage_handoff_replaces_inherited_patch_but_not_own(self):
+        import pytest
+        import torch.nn as nn
+
+        from mimarsinan.tuning.forward_install import CascadeForwardInstall
+
+        class _Tuner(CascadeForwardInstall):
+            def __init__(self, model):
+                self.model = model
+
+        model = nn.Linear(2, 2)
+        model.forward = "inherited-stage-patch"
+        t = _Tuner(model)
+        t._install_forward("own-patch")           # handoff: replaces inherited
+        assert model.__dict__["forward"] == "own-patch"
+        with pytest.raises(AssertionError):
+            t._install_forward("double-patch")    # within-owner still loud

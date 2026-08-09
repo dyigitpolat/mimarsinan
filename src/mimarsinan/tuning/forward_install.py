@@ -39,6 +39,32 @@ class LazyExecutorForward:
         return state
 
 
+class ChipAlignedNFForward(LazyExecutorForward):
+    """Picklable ``model.forward`` override running the chip-aligned segment
+    walk — the ONE deployed composition (boundary rounds, clamps, host-op
+    domains). ``synchronized`` selects the value-domain walk (one eval per
+    hop: LIF hops and their theorem-equal staircase QAT stand-ins both run
+    it); the raw walk is the per-cycle deployed twin."""
+
+    def __init__(
+        self, model, T: int, retime: bool = False, phase_dither: bool = False,
+        synchronized: bool = False,
+    ):
+        super().__init__(model, T)
+        self.retime = bool(retime)
+        self.phase_dither = bool(phase_dither)
+        self.synchronized = bool(synchronized)
+
+    def _run(self, x):
+        from mimarsinan.spiking.chip_aligned_nf import chip_aligned_segment_forward
+
+        return chip_aligned_segment_forward(
+            self.model, x, self.T, retime=getattr(self, "retime", False),
+            phase_dither=getattr(self, "phase_dither", False),
+            synchronized=getattr(self, "synchronized", False),
+        )
+
+
 class CascadeForwardInstall:
     """Symmetric, single-owner install/remove of an instance ``model.forward``.
 
@@ -53,9 +79,14 @@ class CascadeForwardInstall:
     _patched_forward = False
 
     def _install_forward(self, forward_obj) -> None:
-        assert "forward" not in self.model.__dict__, (
-            f"{type(self).__name__}: model.forward is already patched; a double-"
-            "install would shadow the prior wrapper. Remove it first."
+        # A patch this tuner did not install is a PRIOR STAGE's persisted
+        # forward (e.g. the exact-QAT training walk); installing over it is
+        # the defined stage handoff. A double-install within one owner still
+        # fails loud — that is the shadowing bug this guard exists for.
+        assert not (self._patched_forward and "forward" in self.model.__dict__), (
+            f"{type(self).__name__}: model.forward is already patched by this "
+            "tuner; a double-install would shadow the prior wrapper. Remove it "
+            "first."
         )
         self._patched_forward = True
         self.model.forward = forward_obj

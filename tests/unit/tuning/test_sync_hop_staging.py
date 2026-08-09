@@ -237,8 +237,10 @@ class TestHopStageReaffine:
                 aq_mod, "run_hop_stage_reaffine",
                 lambda t, r: calls.append(("reaffine", r)),
             )
+            from mimarsinan.tuning.adaptation_rate_tuner import AdaptationRateTuner
+
             monkeypatch.setattr(
-                type(tuner).__mro__[1], "_fast_ramp",
+                AdaptationRateTuner, "_fast_ramp",
                 lambda self, rate: calls.append(("train", rate)),
             )
             tuner._fast_ramp(0.5)

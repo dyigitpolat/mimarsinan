@@ -20,7 +20,7 @@ from mimarsinan.tuning.orchestration.install_resolution import (
     emit_temporal_gauge,
     lif_temporal_gauge,
 )
-from mimarsinan.tuning.forward_install import LazyExecutorForward
+from mimarsinan.tuning.forward_install import ChipAlignedNFForward
 from mimarsinan.tuning.orchestration.kd_blend_adaptation_tuner import (
     KDBlendAdaptationTuner,
 )
@@ -31,32 +31,9 @@ from mimarsinan.tuning.orchestration.mbh_tanneal import (
 )
 
 
-class _ChipAlignedNFForward(LazyExecutorForward):
-    """Picklable ``model.forward`` override installed post-blend (rate==1.0).
-
-    Routes NF through ``chip_aligned_segment_forward`` so downstream calibrators see
-    the same forward the chip simulators run. ``retime`` mirrors the deployed
-    ``lif_per_hop_retiming`` mapping (the [C3/R5] twin-side per-hop re-encode);
-    pre-retime cache artifacts default to the raw cascade.
-    """
-
-    def __init__(
-        self, model, T: int, retime: bool = False, phase_dither: bool = False,
-        synchronized: bool = False,
-    ):
-        super().__init__(model, T)
-        self.retime = bool(retime)
-        self.phase_dither = bool(phase_dither)
-        self.synchronized = bool(synchronized)
-
-    def _run(self, x):
-        from mimarsinan.spiking.chip_aligned_nf import chip_aligned_segment_forward
-
-        return chip_aligned_segment_forward(
-            self.model, x, self.T, retime=getattr(self, "retime", False),
-            phase_dither=getattr(self, "phase_dither", False),
-            synchronized=getattr(self, "synchronized", False),
-        )
+# Unpickling seam for pre-move artifacts: the class now lives in
+# ``forward_install`` (shared with the exact-QAT AQ install).
+_ChipAlignedNFForward = ChipAlignedNFForward
 
 
 class LIFBlendActivation(BlendActivation):

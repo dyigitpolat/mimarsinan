@@ -142,6 +142,11 @@ ALLOWLIST = {
     # Extracted from lif_exact_qat (same chip_simulation<->tuning init cycle).
     "tuning/orchestration/signed_seam_install.py",
     "tuning/orchestration/ttfs_adaptation_plan.py",
+    # ChipAlignedNFForward (moved here from lif_adaptation_tuner) reaches
+    # spiking.chip_aligned_nf lazily: models/spiking/training imports this
+    # module at scope, and the spiking init pulls chip_simulation — the same
+    # init cycle as the tuners above.
+    "tuning/forward_install.py",
     "tuning/tuners/activation_adaptation_tuner.py",
     "tuning/tuners/activation_shift_tuner.py",
     "tuning/tuners/lif_adaptation_tuner.py",

@@ -5,6 +5,7 @@ from __future__ import annotations
 import torch
 
 from mimarsinan.mapping.mappers.compute_op_mapper import ComputeOpMapper
+from mimarsinan.models.nn.activations.autograd import RoundedStaircaseFunction
 from mimarsinan.spiking.compute_boundary import normalize_boundary_value
 from mimarsinan.spiking.lif_utils import unwrap_lif_activation
 from mimarsinan.spiking.segment_partition import perceptron_of
@@ -138,10 +139,11 @@ class LifSegmentPolicy:
         assert absolute_nodes is not None, "prepare() must run before run_segment()"
 
         def value_of(dep):
-            """[§16 sync] the count-decoded mean of ``train_of(dep)``: same
-            grid, dispatch, and producer out-scale, no train materialized."""
+            """[§16 sync] the count-decoded value on the wire grid: same
+            grid, dispatch, and producer out-scale; STE rounds so the
+            exact-QAT walk trains through the boundary (n7 D3)."""
             t = node_train.get(dep)
-            if t is not None:
+            if t is not None and dep not in node_rate:
                 return t.mean(dim=0)
             value = rate_of(dep)
             scale = boundary_scales.get(dep, 1.0)
@@ -156,7 +158,7 @@ class LifSegmentPolicy:
                 rate = rate.clamp(0.0, 1.0)
             if "grid" in abl:
                 return rate * scale
-            return torch.round(rate * T) / T * scale
+            return RoundedStaircaseFunction.apply(rate, T) * scale
 
         def train_of(dep):
             """Per-cycle train for ``dep``; encode (uniform, clamped) if only a rate exists.
@@ -196,7 +198,7 @@ class LifSegmentPolicy:
             p = perceptron_of(node)
             if p is not None:
                 lif = self._lif_of(p)
-                scale = _safe_scale(getattr(lif, "activation_scale", 1.0), x)
+                scale = _safe_scale(getattr(lif or p, "activation_scale", 1.0), x)
                 if getattr(p, "is_encoding_layer", False):
                     if lif is not None:
                         lif.set_cycle_accurate(False)
@@ -209,22 +211,19 @@ class LifSegmentPolicy:
                         rate_norm, T, phase_dither=self.phase_dither,
                     ) * scale
                 elif self.synchronized:
-                    # [§16] two-window discipline: ONE staircase eval on the
-                    # count-decoded values, bit-equal to integrate-then-emit
-                    # (locked by test_synchronized_rate).
-                    assert lif is not None, (
-                        "LifSegmentPolicy: non-encoding perceptron must carry a LIF activation"
-                    )
-                    lif.set_cycle_accurate(False)
-                    functional.reset_net(lif.if_node)
+                    # [§16] two-window discipline: ONE value eval per hop —
+                    # LIF hops and their theorem-equal staircase QAT stand-ins
+                    # both walk it (locked by test_synchronized_rate).
+                    if lif is not None:
+                        lif.set_cycle_accurate(False)
+                        functional.reset_net(lif.if_node)
                     out_val = forward_node(node, [value_of(dep) for dep in d])
                     rate_norm = (out_val / scale).clamp(0.0, 1.0)
                     node_rate[node] = rate_norm
                     if node is driver._output:
-                        # Only the output needs a train (value-scaled logits).
-                        node_train[node] = uniform_spike_train(
-                            rate_norm, T, phase_dither=self.phase_dither,
-                        ) * scale
+                        # Wire-grid logits: the uniform train's mean, STE.
+                        node_rate[node] = RoundedStaircaseFunction.apply(
+                            rate_norm, T) * scale
                     self._record_decoded_value(driver, p, out_val)
                 else:
                     assert lif is not None, (
