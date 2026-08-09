@@ -448,3 +448,39 @@ to MNIST beyond the models themselves.
 - `[5v B3]` (`conversion_policy.py:58-64`): the half-step fold's design —
   trainable entry fold before the WQ QAT — is validated by the V0-placement
   refutation; this memo adds the terms B3 does not cover (C2–C6).
+
+## 10. RESOLUTION 2026-08-09: the V9 hazard became real, and the whole seam is closed
+
+The 2026-07-21 nevresim↔HCM count divergence ("18% windows ±1-2, decision
+parity 1.0, timing alignment = the open lever") was root-caused and CLOSED —
+it was never independent timing. Three mimarsinan-side drifts off the chip's
+integer arithmetic (nevresim frozen throughout):
+
+1. **Fractional θ vs the int threshold register.** `quantize_ir_graph` set
+   `threshold = the raw float NAPQ scale` (e.g. 49.6521) while the emit's
+   `threshold_t=int` truncated it to 49 — the deployed chip fired against a
+   different threshold than every torch twin simulated. NAPQ now snaps the
+   grid scale onto the integer lattice (FLOOR keeps `p_max·scale ≤ q_max`:
+   registers never saturate, relays keep their margin), and
+   quantize/verify/emit assert θ-integrality (silent truncation abolished).
+   V9's "lattice-specific hazard" note was prophetic: relays now carry a
+   FULL lattice step (`1/q_max` ⇒ `w_int = θ+1` for any bit width).
+2. **Tail-blind vs tail-full readout.** The runner consumed the binary's
+   stdout readout (sums ALL `T+L` cycles; cores integrate bias through the
+   pipeline tail); the torch twins count `[lat, lat+T)`. lif segments now
+   consume the WINDOW-gated record-build counts — the count currency of this
+   memo's calculus — and membrane-export segments build BOTH binaries.
+3. **Float ties on the integer lattice.** With θ integral, exact ties are
+   common, and f32 summation noise (~1e-7) decided them: a TRUE tie
+   (17+7 == 24 = θ) fired in the NF under strict `<` while the exact SCM
+   held it. Both twins now project membranes onto the exact half-integer
+   chip lattice every cycle (`snap_membrane_to_lattice` — an exact
+   projection, not a tolerance), armed from the persisted
+   `parameter_scale` at the executor/gate seams.
+
+The nevresim comparison is now a FATAL exactness certificate on integer
+chips. Measured (t0_45 wq s4 streamed): nevresim↔HCM windows
+exact=1.000000 max|Δ|=0; NF↔SCM streamed EXACT atol=0; the
+streaming-vs-synchronized gauge ALSO reads exact=1.000000 (previously
+0.99x transients — same root causes). Integer-θ re-baselines every wq
+cell; the old numbers were measured against a chip-unrealizable θ.
