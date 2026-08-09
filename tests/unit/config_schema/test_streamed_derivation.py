@@ -26,9 +26,12 @@ class TestStreamedRecipe:
         assert cfg["lif_exact_qat"] is True
         assert cfg["lif_per_hop_retiming"] is True
 
-    def test_streamed_defers_loihi_with_reason(self):
+    def test_streamed_enables_all_backends(self):
+        """[N5 2026-08-09] streamed Loihi enabled: the wave runner's per-core
+        replay is free-running-equivalent on gap-1 graphs and the FATAL
+        spike-parity gate certifies every run."""
         cfg = _resolved("streamed")
-        assert cfg["enable_loihi_simulation"] is False
+        assert cfg["enable_loihi_simulation"] is True
         assert cfg["enable_nevresim_simulation"] is True
         assert cfg["enable_sanafe_simulation"] is True
         assert _resolved("synchronized")["enable_loihi_simulation"] is True

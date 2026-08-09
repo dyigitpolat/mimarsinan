@@ -265,11 +265,13 @@ class ConversionPolicy:
                 policy.supports_backend("nevresim") and not synchronized
             ),
             "enable_sanafe_simulation": policy.supports_backend("sanafe"),
-            # [P3] streamed lif defers Loihi pending a streaming-faithfulness
-            # audit of the wave runner (unavailable-with-reason, never silent).
-            "enable_loihi_simulation": (
-                policy.supports_backend("loihi") and not streamed_lif
-            ),
+            # [N5 2026-08-09] streamed Loihi ENABLED: the wave runner's
+            # per-core replay is free-running-equivalent on gap-1 graphs
+            # (src_cycle = latency+local-1 is the +1 hop; relays guarantee
+            # gap 1; per-sample window resets; our SubtractiveLIFReset owns
+            # comparator/reset), and the integer-theta lattice makes vth
+            # exactly representable. The step's spike-parity gate is FATAL.
+            "enable_loihi_simulation": policy.supports_backend("loihi"),
         }
 
         return ConversionRecipe(

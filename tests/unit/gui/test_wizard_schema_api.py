@@ -215,15 +215,15 @@ class TestVehiclesAlwaysServed:
     )
 
     def test_starter_serves_all_vehicle_rows(self, client):
-        # [P4] the starter streams by default: loihi defers with a reason.
+        # [N5] the starter streams by default and ALL simulators are
+        # available (streamed Loihi enabled 2026-08-09, FATAL parity gate).
         draft = client.get("/api/config/starter").json()
         body = client.post("/api/config/resolve", json=draft).json()
         rows = {r["key"]: r for r in body["vehicles"]}
         assert set(rows) == set(self._ENABLES)
         for key in self._ENABLES:
-            expected = key != "enable_loihi_simulation"
-            assert rows[key]["supported"] is expected, key
-            assert rows[key]["on"] is expected, key
+            assert rows[key]["supported"] is True, key
+            assert rows[key]["on"] is True, key
             assert rows[key]["declared"] is False, key
             assert rows[key]["why"], key
 
