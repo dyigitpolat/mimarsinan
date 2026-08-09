@@ -626,9 +626,34 @@ certificates green). The incumbent commit cannot even run the new T-points
 (f4653732 fresh t8: the original 7/788 parity violation) — the §12 parity
 fixes are strict improvements.
 
+**Full knob characterization** (fresh knob-ON vs fresh knob-OFF, every
+affected cell — the knob touches only lif exact-QAT (lifsync); lifs is
+bitwise inert (t0_45 reproduced 0.9830 exactly)):
+
+| cell | off | on | Δ |
+|---|---|---|---|
+| t0_01 mmixcore s32 | 0.9799 | 0.9768 | −0.31pp |
+| t0_02 lenet5 fp offload | 0.9893 | 0.9899 | +0.06 |
+| t0_03 deepcnn d8 sched | 0.9953 | 0.9948 | −0.05 |
+| t0_04 deepmlp d8 s32 | 0.9625 | 0.9628 | +0.03 |
+| t0_05 simplemlp s4 | 0.9809 | FATAL nevresim 0.9784 | cert FAIL |
+| t0_26 deepcnn d6 sched | 0.9905 | 0.9899 | −0.06 |
+| t0_28 mmixcore wb8 | 0.9804 | 0.9796 | −0.08 |
+| t0_30 mmix offload s32 | 0.9587 | 0.9453 | −1.34pp |
+| offload T=4 (non-tier) | 0.7111 | 0.8144 | **+10.33pp** |
+
+The t0_05 failure is the LSQ-trains-onto-edges insight biting a shifted
+trajectory: a different training path lands on different boundary
+knife-edges, and this one fails the nevresim exactness the incumbent
+trajectory passes. Verdict: the knob has NO justified arming target in
+tier-0 today — it is a contained EXPERIMENTAL feature
+(`experimental_walk_recovery.py` owns its entire impact surface; the
+mainline tuners make one call each; knob off is bitwise incumbent).
+
 Open follow-ups: (a) MBH owns re-tuning the ledger split/recovery geometry
-for the honest objective, after which the knob can default on; (b) the
-flow↔Lava boundary re-encode still has dust-decided knife-edge ties
-(a fresh t8 draw flipped one under 3-wide GPU contention — same artifacts
-pass on a quiet resume; concurrency changes cuBLAS reduction dust): that
-seam wants the same lattice canonicalization as §10–§12.
+for the honest objective, after which the knob earns a default-on case;
+(b) the flow↔Lava boundary re-encode still has dust-decided knife-edge
+ties (a fresh t8 draw flipped one under 3-wide GPU contention — same
+artifacts pass on a quiet resume; concurrency changes cuBLAS reduction
+dust), and t0_05-armed hit the same family at the nevresim seam: those
+boundary re-encodes want the same lattice canonicalization as §10–§12.
