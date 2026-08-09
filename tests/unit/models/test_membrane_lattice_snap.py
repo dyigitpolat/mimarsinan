@@ -5,6 +5,7 @@ fired on one twin and not the other)."""
 import torch
 
 from mimarsinan.models.nn.activations import LIFActivation
+from mimarsinan.models.nn.lif_kernels import measurement_plane
 from mimarsinan.models.spiking.cycle_policy import LIFCyclePolicy
 
 THETA = 24.0
@@ -24,7 +25,7 @@ class TestNfLatticeSnap:
         cycle 1 is EXACTLY theta (17+7=24). With the lattice armed the tie
         fires and the membrane lands at exactly zero."""
         lif = self._lif(lattice=True)
-        with torch.no_grad():
+        with torch.no_grad(), measurement_plane():
             s0 = lif(torch.tensor([[41.0]]))
             s1 = lif(torch.tensor([[7.0]]))
         assert float(s0) == THETA and float(s1) == THETA
@@ -44,7 +45,7 @@ class TestNfLatticeSnap:
         lif.eval()
         lif.set_cycle_accurate(True)
         lif.set_membrane_lattice(THETA)
-        with torch.no_grad():
+        with torch.no_grad(), measurement_plane():
             s0 = lif(torch.tensor([[41.0]]))   # 41 > 24: fires, memb 17/24
             s1 = lif(torch.tensor([[7.0]]))    # 17+7 == 24: TIE — must hold
         assert float(s0) == THETA
@@ -75,7 +76,7 @@ class TestMultiStepLatticeSnap:
         for dust in (-3e-8, 0.0, +3e-8):
             lif = self._lif()
             z = 41.0 / 164.0 + dust
-            with torch.no_grad():
+            with torch.no_grad(), measurement_plane():
                 out = lif(torch.full((1, 3), z))
             count = round(float(out[0, 0]) / self.THETA * 8)
             assert count == 1, f"dust={dust}: count={count}"
@@ -86,12 +87,12 @@ class TestMultiStepLatticeSnap:
         torch.manual_seed(0)
         x = torch.randn(2, 5)
         m = self._lif()
-        with torch.no_grad():
+        with torch.no_grad(), measurement_plane():
             rate_m = m(x)
         s = self._lif()
         s.set_cycle_accurate(True)
         spikes = []
-        with torch.no_grad():
+        with torch.no_grad(), measurement_plane():
             for _ in range(8):
                 spikes.append(s(x))
         rate_s = torch.stack(spikes).mean(dim=0)
@@ -104,12 +105,13 @@ class TestMultiStepLatticeSnap:
         with torch.no_grad():
             lif(torch.randn(2, 4))
 
-    def test_grad_mode_keeps_the_continuous_training_plane(self):
-        """The chip lattice is a MEASUREMENT-plane property: under grad the
-        armed node must be bit-identical to an unarmed one (pre-snap training
-        dynamics, fused kernels, live surrogate gradients) — snapping inside
-        training forwards corrupted the surrogate chain and cost −0.8pp on
-        the t0_01 control (n8b, 2026-08-10)."""
+    def test_outside_the_measurement_plane_stays_continuous(self):
+        """The chip lattice belongs to the EXPLICIT measurement plane
+        (parity twins, certificates): outside it, an armed node is
+        bit-identical to an unarmed one — snapped training corrupted the
+        surrogate chain, and snapped tuning TELEMETRY steered keep-best /
+        floor decisions onto worse trajectories (t0_01 fresh 0.9771 vs
+        0.9799, n8d 2026-08-10)."""
         torch.manual_seed(5)
         x = torch.rand(8, 2, 3)
         armed = LIFActivation(T=8, activation_scale=self.THETA,
@@ -118,13 +120,13 @@ class TestMultiStepLatticeSnap:
         plain = LIFActivation(T=8, activation_scale=self.THETA,
                               thresholding_mode="<")
         assert plain.if_node.lattice_scale is None
-        out_a = armed.if_node(x)
+        out_a = armed.if_node(x)          # grad-enabled path
         out_p = plain.if_node(x)
         assert torch.equal(out_a, out_p)
-        with torch.no_grad():
+        with torch.no_grad():             # no_grad but OUTSIDE the plane
             armed.if_node.v = 0.0
-            snapped = armed.if_node(x)
-        assert isinstance(snapped, torch.Tensor)
+            plain.if_node.v = 0.0
+            assert torch.equal(armed.if_node(x), plain.if_node(x))
 
     def test_encoder_grid_tie_is_dust_invariant(self):
         """The n7 t8 sample-0 catch: encoder charges live on 1/(ps*T) (input
@@ -138,7 +140,7 @@ class TestMultiStepLatticeSnap:
             lif.eval()
             lif.set_membrane_lattice(82.0 * 8)   # encoding layer: ps * T
             z = 163.5 / 164.0 + dust
-            with torch.no_grad():
+            with torch.no_grad(), measurement_plane():
                 out = lif(torch.full((1, 2), z))
             count = round(float(out[0, 0]) / self.THETA * 8)
             assert count == 7, f"dust={dust}: count={count}"

@@ -201,6 +201,7 @@ def assert_streamed_nf_scm_exact_or_raise(
     forward must equal the identity-mapped streaming executor at atol=0 —
     no mismatch budget; parity holds by construction or the deployment is
     wrong."""
+    from mimarsinan.models.nn.lif_kernels import measurement_plane
     from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
     from mimarsinan.spiking.lif_utils import arm_integer_membrane_lattice
 
@@ -208,26 +209,31 @@ def assert_streamed_nf_scm_exact_or_raise(
     if DeploymentPlan.of(pipeline).weight_quantization:
         # Tuning stages recreate activations; re-arm from parameter_scale so
         # the NF decides ties by the exact lattice value (like the chip).
+        # The snap fires only inside the measurement plane below — tuning
+        # telemetry keeps the continuous membrane.
         arm_integer_membrane_lattice(model)
     device = _unify_model_device(model)
     if device is not None:
         samples = samples.to(device)
         executor = executor.to(device)
     T = float(executor.simulation_length)
-    nf_counts_by_pi = _capture_nf_streamed_counts(model, samples)
 
     def _counts(core_record):
         return core_record.output_spike_count[: core_record.n_out_used]
 
+    # BOTH twins read inside the SAME measurement plane: an asymmetric wrap
+    # re-introduces tie mismatches in opposite directions (n8e canary).
     per_sample: List[Dict[int, np.ndarray]] = []
-    with torch.no_grad():
-        for i in range(samples.shape[0]):
-            _, record = executor.forward_with_recording(
-                samples[i : i + 1], sample_index=i,
-            )
-            per_sample.append(_group_record_by_perceptron(
-                record, executor.hybrid_mapping, values_of=_counts,
-            ))
+    with measurement_plane():
+        nf_counts_by_pi = _capture_nf_streamed_counts(model, samples)
+        with torch.no_grad():
+            for i in range(samples.shape[0]):
+                _, record = executor.forward_with_recording(
+                    samples[i : i + 1], sample_index=i,
+                )
+                per_sample.append(_group_record_by_perceptron(
+                    record, executor.hybrid_mapping, values_of=_counts,
+                ))
     scm_counts = {
         pi: np.stack([sample_vals[pi] for sample_vals in per_sample])
         for pi in per_sample[0]

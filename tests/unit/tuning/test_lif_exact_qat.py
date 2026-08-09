@@ -1025,7 +1025,8 @@ class TestTrainingForwardInstall:
                 return self._r
 
         class _Pipe:
-            config = {"simulation_steps": 8}
+            config = {"simulation_steps": 8,
+                      "lif_exact_qat_walk_recovery": True}
 
         class _Tuner:
             pipeline = _Pipe()
@@ -1047,3 +1048,8 @@ class TestTrainingForwardInstall:
         clean = _Tuner(_Model([object()]))
         assert install_walk_for_host_graph_recovery(clean) is False
         assert not hasattr(clean.model, "forward")
+
+        knob_off = _Tuner(_Model([object(), ComputeOpMapper.__new__(ComputeOpMapper)]))
+        knob_off.pipeline = type("_P", (), {"config": {"simulation_steps": 8}})()
+        assert install_walk_for_host_graph_recovery(knob_off) is False
+        assert not hasattr(knob_off.model, "forward")

@@ -91,32 +91,33 @@ _lattice_if_node_cls = None
 
 
 def _make_lattice_if_node_class():
-    """Subclass IFNode with an exact chip-lattice membrane projection between
-    charge and fire (single-step path): on the integer chip, normalized
-    membranes are multiples of 1/(2*theta_int); float summation noise must
-    never decide a threshold tie (nevresim parity, 2026-08-09). Cached at
-    module scope and resolvable by qualname so pickled models round-trip."""
+    """Subclass IFNode with the exact chip-lattice membrane projection
+    (normalized membranes are multiples of 1/(2*theta_int); float noise must
+    never decide a tie). Cached; resolvable by qualname for pickling."""
     global _lattice_if_node_cls
     if _lattice_if_node_cls is not None:
         return _lattice_if_node_cls
 
     from spikingjelly.activation_based import neuron
 
+    from mimarsinan.models.nn.lif_kernels import (
+        in_measurement_plane,
+        snap_membrane_to_lattice,
+    )
+
     class _LatticeIFNode(neuron.IFNode):
-        # The lattice is a MEASUREMENT-plane property (no_grad reads, parity
-        # twins): grad-enabled forwards keep the continuous membrane and the
-        # fused kernels — snapping inside training corrupted the surrogate
-        # chain (in-place round on v) and the trajectories (n8b control).
+        # Snaps only inside measurement_plane(): snapped training corrupted
+        # surrogates; snapped telemetry steered keep-best (n8b/n8d).
         lattice_scale: "float | None" = None
 
-        def single_step_forward(self, x):
+        def _snapped_scale(self) -> "float | None":
             scale = self.lattice_scale
-            if scale is None or torch.is_grad_enabled():
-                return super().single_step_forward(x)
-            from mimarsinan.models.nn.lif_kernels import (
-                snap_membrane_to_lattice,
-            )
+            return scale if scale is not None and in_measurement_plane() else None
 
+        def single_step_forward(self, x):
+            scale = self._snapped_scale()
+            if scale is None:
+                return super().single_step_forward(x)
             self.v_float_to_tensor(x)
             self.neuronal_charge(x)
             snap_membrane_to_lattice(self.v, float(scale))
@@ -125,10 +126,9 @@ def _make_lattice_if_node_class():
             return spike
 
         def multi_step_forward(self, x_seq):
-            # Armed no-grad forwards snap in EVERY mode: the fused eval
-            # kernel bypasses single_step_forward, so rate-mode ties were
-            # dust-decided, flipping with batch shape (n7 t8, rate 1.5/8).
-            if self.lattice_scale is None or torch.is_grad_enabled():
+            # Snap in EVERY mode: the fused eval kernel bypasses
+            # single_step_forward, so rate-mode ties were dust-decided (n7).
+            if self._snapped_scale() is None:
                 return super().multi_step_forward(x_seq)
             spikes = [
                 self.single_step_forward(x_seq[t])

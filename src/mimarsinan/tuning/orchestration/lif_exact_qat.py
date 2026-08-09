@@ -167,8 +167,11 @@ def install_walk_for_host_graph_recovery(tuner) -> bool:
     the deployed boundary physics (the certified walk read −6.6pp under the
     AQ-trained function on the offloaded mixer): install the value-domain
     walk so the AQ endpoint recovery — the freshest, largest ledger leg,
-    with its rollback guard — grinds what ships. Single-segment graphs
-    (premise proven, cliff ≤ 0.25pp) stay bitwise incumbent."""
+    with its rollback guard — grinds what ships. Opt-in
+    (``lif_exact_qat_walk_recovery``) and host-graph-gated: everything else
+    stays bitwise incumbent (the no-regression contract)."""
+    if not bool(tuner.pipeline.config.get("lif_exact_qat_walk_recovery", False)):
+        return False
     # Lazy: the spiking package init pulls chip_simulation (house cycle).
     from mimarsinan.spiking.segment_partition import graph_has_host_compute_ops
 

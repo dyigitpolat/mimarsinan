@@ -2,7 +2,32 @@
 
 from __future__ import annotations
 
+import contextlib
+import contextvars
+
 import torch
+
+_MEASUREMENT_PLANE = contextvars.ContextVar("lif_measurement_plane", default=False)
+
+
+@contextlib.contextmanager
+def measurement_plane():
+    """The chip-lattice MEASUREMENT plane: inside, armed LIF nodes snap
+    membranes to the integer-chip lattice so exact ties are decided by
+    exact values (parity twins, certificates). Outside — training AND
+    tuning-plane telemetry — the continuous membrane and the fused kernels
+    are untouched: snapped telemetry deterministically steered keep-best /
+    floor decisions onto different trajectories (t0_01 fresh 0.9771 vs
+    0.9799, n8d 2026-08-10)."""
+    token = _MEASUREMENT_PLANE.set(True)
+    try:
+        yield
+    finally:
+        _MEASUREMENT_PLANE.reset(token)
+
+
+def in_measurement_plane() -> bool:
+    return bool(_MEASUREMENT_PLANE.get())
 
 _THRESHOLD_OPS = {"<": torch.lt, "<=": torch.le}
 
