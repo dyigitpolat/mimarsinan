@@ -42,6 +42,9 @@ class HybridStage:
     # None = execute this stage directly. Old pickles lack the attribute —
     # readers use getattr(stage, "retimed_level_stages", None).
     retimed_level_stages: "list[HybridStage] | None" = None
+    # A retimed hop's input is the COUNT re-encode by definition: boundary
+    # encodes never consume cached raw-rhythm trains for these stages.
+    is_retimed_level: bool = False
 
 
 @dataclass

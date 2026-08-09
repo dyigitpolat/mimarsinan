@@ -226,8 +226,11 @@ def encode_segment_input(
     batch_size: int,
     device: torch.device,
 ) -> torch.Tensor:
-    """``(T, B, in_size)`` segment input. Cached trains take precedence; the rest
-    falls back to uniform encoding of the segment input rates."""
+    """``(T, B, in_size)`` segment input. Cached trains take precedence EXCEPT
+    for retimed level stages, whose input is the COUNT re-encode by definition
+    (cached raw rhythm shifts combs at equal counts — the t0_04 s32 catch)."""
+    if getattr(stage, "is_retimed_level", False):
+        state_buffer_spikes = {}
     in_size = seg_input_rates_clamped.shape[1]
     spike_train = torch.zeros(
         T, batch_size, in_size, device=device, dtype=config.compute_dtype,

@@ -64,5 +64,10 @@ def attach_retimed_level_stages(
             identity=identity,
         )
         level_reindex.update(seg_reindex)
+        # [nevresim parity] a retimed hop's input is the COUNT re-encode by
+        # definition; boundary encodes must never pass a producer's raw
+        # emitted rhythm through the train cache (the t0_04 s32 catch:
+        # same counts, shifted comb, ±1 fires downstream).
+        level_stage.is_retimed_level = True
         levels.append(level_stage)
     stage.retimed_level_stages = levels
