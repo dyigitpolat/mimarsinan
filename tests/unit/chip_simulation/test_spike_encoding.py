@@ -153,3 +153,33 @@ def test_behavior_config_spike_train_nevresim_flag():
     out = cfg.encode_segment_input(np.array([[1.0]], dtype=np.float32), 4)
     assert out.shape == (1, 1, 4)
 
+
+
+class TestCombFloat64Canonical:
+    """[nevresim parity] comb placement matches the chip's double arithmetic
+    at exact-division knife-edges (n=12, T=32, spacing 8/3: cycle 8 fires,
+    not 9 — the t0_04 ±1-window class)."""
+
+    def test_knife_edge_placement_matches_double(self):
+        import torch
+
+        from mimarsinan.chip_simulation.recording import spike_modes
+
+        T = 32
+        v = torch.tensor([0.375], dtype=torch.float32)
+        fired = [
+            c for c in range(T)
+            if float(spike_modes.to_uniform_spikes(v, c, T)) == 1.0
+        ]
+        assert fired == [0, 3, 6, 8, 11, 14, 16, 19, 22, 24, 27, 30]
+
+    def test_dtype_of_result_follows_input(self):
+        import torch
+
+        from mimarsinan.chip_simulation.recording import spike_modes
+
+        for dt in (torch.float32, torch.float64):
+            out = spike_modes.to_uniform_spikes(
+                torch.tensor([0.5], dtype=dt), 0, 8,
+            )
+            assert out.dtype == dt

@@ -49,17 +49,23 @@ def to_uniform_spikes(
     simulation_length: int,
     phase_offsets: torch.Tensor | None = None,
 ) -> torch.Tensor:
+    # [nevresim parity] comb arithmetic is canonically FLOAT64: the chip's
+    # UniformSpikeGenerator computes in double, and f32 spacing flips spike
+    # PLACEMENT (same count) at exact-division knife-edges — e.g. n=12,
+    # T=32, spacing 8/3: double fires cycle 8, f32 fires cycle 9 (the
+    # t0_04 ±1-window class across every discipline).
     T = simulation_length
-    n = torch.round(tensor * T).to(torch.long)
+    t64 = tensor.to(torch.float64)
+    n = torch.round(t64 * T).to(torch.long)
     mask = (n != 0) & (n != T) & (cycle < T)
     n_safe = torch.clamp(n, min=1)
-    spacing = T / n_safe.float()
+    spacing = T / n_safe.to(torch.float64)
     if phase_offsets is None:
         result = mask & (torch.floor(cycle / spacing) < n_safe) & (torch.floor(cycle % spacing) == 0)
     else:
-        e = (float(cycle) + phase_offsets.to(tensor.device)) % T
+        e = (float(cycle) + phase_offsets.to(device=tensor.device, dtype=torch.float64)) % T
         result = mask & (torch.floor(e / spacing) < n_safe) & (torch.floor(e % spacing) == 0)
-    result = result.float()
+    result = result.to(tensor.dtype)
     result[n == T] = 1.0
     return result
 

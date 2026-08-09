@@ -15,15 +15,19 @@ from mimarsinan.spiking.spike_trains import uniform_spike_train
 
 
 def _legacy_to_uniform_spikes(tensor, cycle, simulation_length):
+    # [nevresim parity] the comb reference computes in FLOAT64 like the
+    # chip's double UniformSpikeGenerator (f32 spacing flips placement at
+    # exact-division knife-edges — the t0_04 class).
     T = simulation_length
-    n = torch.round(tensor * T).to(torch.long)
+    t64 = tensor.to(torch.float64)
+    n = torch.round(t64 * T).to(torch.long)
     mask = (n != 0) & (n != T) & (cycle < T)
     n_safe = torch.clamp(n, min=1)
-    spacing = T / n_safe.float()
+    spacing = T / n_safe.to(torch.float64)
     result = mask & (torch.floor(cycle / spacing) < n_safe) & (
         torch.floor(cycle % spacing) == 0
     )
-    result = result.float()
+    result = result.to(tensor.dtype)
     result[n == T] = 1.0
     return result
 
