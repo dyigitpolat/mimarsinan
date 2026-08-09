@@ -103,10 +103,15 @@ def _make_lattice_if_node_class():
     from spikingjelly.activation_based import neuron
 
     class _LatticeIFNode(neuron.IFNode):
+        # The lattice is a MEASUREMENT-plane property (no_grad reads, parity
+        # twins): grad-enabled forwards keep the continuous membrane and the
+        # fused kernels — snapping inside training corrupted the surrogate
+        # chain (in-place round on v) and the trajectories (n8b control).
         lattice_scale: "float | None" = None
 
         def single_step_forward(self, x):
-            if self.lattice_scale is None:
+            scale = self.lattice_scale
+            if scale is None or torch.is_grad_enabled():
                 return super().single_step_forward(x)
             from mimarsinan.models.nn.lif_kernels import (
                 snap_membrane_to_lattice,
@@ -114,17 +119,16 @@ def _make_lattice_if_node_class():
 
             self.v_float_to_tensor(x)
             self.neuronal_charge(x)
-            snap_membrane_to_lattice(self.v, float(self.lattice_scale))
+            snap_membrane_to_lattice(self.v, float(scale))
             spike = self.neuronal_fire()
             self.neuronal_reset(spike)
             return spike
 
         def multi_step_forward(self, x_seq):
-            # Armed nodes must snap in EVERY mode: IFNode's fused eval
-            # kernel bypasses single_step_forward, so a rate-mode forward
-            # (encoding layers) let summation dust decide exact staircase
-            # ties — flipping with batch shape (n7 t8, rate 1.5/8).
-            if self.lattice_scale is None:
+            # Armed no-grad forwards snap in EVERY mode: the fused eval
+            # kernel bypasses single_step_forward, so rate-mode ties were
+            # dust-decided, flipping with batch shape (n7 t8, rate 1.5/8).
+            if self.lattice_scale is None or torch.is_grad_enabled():
                 return super().multi_step_forward(x_seq)
             spikes = [
                 self.single_step_forward(x_seq[t])

@@ -104,6 +104,28 @@ class TestMultiStepLatticeSnap:
         with torch.no_grad():
             lif(torch.randn(2, 4))
 
+    def test_grad_mode_keeps_the_continuous_training_plane(self):
+        """The chip lattice is a MEASUREMENT-plane property: under grad the
+        armed node must be bit-identical to an unarmed one (pre-snap training
+        dynamics, fused kernels, live surrogate gradients) — snapping inside
+        training forwards corrupted the surrogate chain and cost −0.8pp on
+        the t0_01 control (n8b, 2026-08-10)."""
+        torch.manual_seed(5)
+        x = torch.rand(8, 2, 3)
+        armed = LIFActivation(T=8, activation_scale=self.THETA,
+                              thresholding_mode="<")
+        armed.set_membrane_lattice(82.0)
+        plain = LIFActivation(T=8, activation_scale=self.THETA,
+                              thresholding_mode="<")
+        assert plain.if_node.lattice_scale is None
+        out_a = armed.if_node(x)
+        out_p = plain.if_node(x)
+        assert torch.equal(out_a, out_p)
+        with torch.no_grad():
+            armed.if_node.v = 0.0
+            snapped = armed.if_node(x)
+        assert isinstance(snapped, torch.Tensor)
+
     def test_encoder_grid_tie_is_dust_invariant(self):
         """The n7 t8 sample-0 catch: encoder charges live on 1/(ps*T) (input
         quantizer grid divides by T), so membranes hit HALF-points of the
