@@ -484,3 +484,44 @@ exact=1.000000 max|Δ|=0; NF↔SCM streamed EXACT atol=0; the
 streaming-vs-synchronized gauge ALSO reads exact=1.000000 (previously
 0.99x transients — same root causes). Integer-θ re-baselines every wq
 cell; the old numbers were measured against a chip-unrealizable θ.
+
+## 11. Tier-0 re-baseline (2026-08-09): four more tie classes, then 35/35 exact
+
+Sweeping all 35 tier-0 cells under the §10 FATAL certificates exposed four
+further defect classes — every one a *representation-boundary tie*, none a
+mechanics bug, all fixed at the SSOT (nevresim untouched):
+
+1. **Comb placement is canonically double** (`935755ec`). The chip's
+   `UniformSpikeGenerator` computes `spacing = T/n` in C++ double;
+   `to_uniform_spikes` computed it through an f32 cast, and at exact-division
+   knife-edges (n=12, T=32, spacing 8/3) the floor/fmod placement flipped a
+   spike by one cycle. All comb arithmetic now runs in float64 and casts back.
+   Symptom class: windowed d8/T≥16 cells at 0.995x with max|Δ|=1.
+2. **Retimed level stages re-encode** (`ab235ba2`). A per-hop-retimed level
+   stage reused the producer's cached raw train, letting the raw *rhythm*
+   cross a boundary that deployment re-times (count-preserving, so counts
+   masked it until d8). Level stages are stamped `is_retimed_level` and the
+   boundary drops cached trains there.
+3. **TTFS membranes on the 1/(2S) lattice** (`642a1cc1`). With integral
+   weights/θ and on-grid inputs, chip potentials live on a 1/(2S) grid; the
+   numpy twin accumulated float dust (V=16.999999… vs θ=17 — a TRUE tie
+   read as sub-threshold). Quantized-contract TTFS segments project membranes
+   onto the exact grid, gated by `integer_lattice() AND inputs-on-grid` so
+   continuous cascaded/stage-0 inputs are never snapped.
+4. **Host ComputeOps run on the pipeline device** (`884a0d09`). CUDA and CPU
+   f32 reductions order sums differently, and at half-grid wire ties (1.5/8)
+   they snap to OPPOSITE grid points — the census flow (CUDA) and the
+   runner's host ops (CPU) disagreed by one spike. The runner now executes
+   host ops on the pipeline device. (A two-step f64→half-grid round is NOT a
+   fix: double rounding corrupts the (1/4, 1/2) bands.)
+
+Plus one legality leak: `is_streamed_lif` now short-circuits FALSE for
+`core_semantics == "mvm"` — dormant derived axes must not gate scheduling
+(`8ccbc4d6`).
+
+Verdict: **35/35 cells green, every integer-chip certificate FATAL-exact
+(nevresim↔HCM exact=1.000000, max|Δ|=0), fp chips report-only as designed.**
+Accuracy cost of exactness: mean −0.09pp across the 26 comparable unchanged
+cells (worst single cell −0.70pp, t0_06 ttfs wq — the floor(q_max/p_max)
+headroom loss); one resurrection +4.06pp (t0_21: integer-lattice relay
+margin revived relays the fractional-θ emit had silently killed).
