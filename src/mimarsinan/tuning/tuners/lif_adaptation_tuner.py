@@ -98,6 +98,13 @@ class LIFAdaptationTuner(KDBlendAdaptationTuner):
         self._membrane_init = lif_membrane_init(self.pipeline.config)
         self._synchronized = lif_execution_synchronized(self.pipeline.config)
         plan = LifAdaptationPlan.resolve(self.pipeline.config)
+        if plan.exact_qat:
+            from mimarsinan.spiking.segment_partition import (
+                graph_has_host_compute_ops,
+            )
+
+            if graph_has_host_compute_ops(self.model):
+                plan = plan.restore_recovery_for_host_graph(self.pipeline.config)
         self._adaptation_plan = plan
         self._cycle_accurate = plan.cycle_accurate
         if plan.exact_qat:

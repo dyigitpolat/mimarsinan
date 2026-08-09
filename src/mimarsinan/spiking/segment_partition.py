@@ -24,6 +24,22 @@ def is_value_boundary(node) -> bool:
     return isinstance(node, (InputMapper, ComputeOpMapper))
 
 
+def graph_has_host_compute_ops(model) -> bool:
+    """Whether the model's mapper graph contains host ComputeOps (offload /
+    multi-segment structures — the graphs where the exact-QAT install premise
+    is falsified)."""
+    get_repr = getattr(model, "get_mapper_repr", None)
+    if get_repr is None:
+        return False
+    mapper_repr = get_repr()
+    if mapper_repr is None:
+        return False
+    mapper_repr._ensure_exec_graph()
+    return any(
+        isinstance(node, ComputeOpMapper) for node in mapper_repr._exec_order
+    )
+
+
 def classify_spike_producers(exec_order, deps_map) -> dict:
     """Map each node to whether it carries on-chip spikes (vs host-side values)."""
     produces: dict = {}

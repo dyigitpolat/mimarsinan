@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from mimarsinan.chip_simulation.spiking_semantics import is_lif
 from mimarsinan.common.workload_profile import ResolvedWorkloadProfile
@@ -90,6 +90,19 @@ class LifAdaptationPlan:
             theta_cotrain=bool(get("lif_theta_cotrain", False)),
             simulation_steps=int(config["simulation_steps"]),
         )
+
+    def restore_recovery_for_host_graph(self, config) -> "LifAdaptationPlan":
+        """[n7 D3] the exact-QAT zero-step reduction rests on the premise
+        'AQ composition == installed composition' — proven on single-segment
+        graphs (cliff <= 0.25pp) and FALSIFIED on host-op graphs (t0_30
+        offload mixer: 28.9pp install cliff, worst at short T). A graph with
+        host ComputeOps keeps the recipe's endpoint-recovery budget."""
+        if not self.exact_qat or self.endpoint_recovery_steps:
+            return self
+        steps = int(config.get("endpoint_recovery_steps", 0))
+        if steps <= 0:
+            return self
+        return replace(self, endpoint_recovery_steps=steps)
 
     def tanneal_schedule(self, ladder_rates) -> TAnnealSchedule | None:
         """The recipe's realizable T-anneal over the tuner's normalized ladder

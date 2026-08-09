@@ -74,3 +74,73 @@ class TestTannealDecision:
             ))
             assert plan.tanneal is False
             assert plan.tanneal_schedule([0.5, 1.0]) is None
+
+
+class TestHostGraphRecovery:
+    """[n7 D3] the exact-QAT zero-step reduction rests on 'AQ composition ==
+    installed composition' — proven single-segment, FALSIFIED on host-op
+    graphs (t0_30 offload mixer: 28.9pp install cliff, recovery disarmed)."""
+
+    def _exact_cfg(self, **overrides):
+        cfg = _minimal_cfg(
+            lif_exact_qat=True,
+            lif_per_hop_retiming=True,
+            cycle_accurate_lif_forward=True,
+            endpoint_recovery_steps=600,
+        )
+        cfg.update(overrides)
+        return cfg
+
+    def test_exact_qat_disarms_recovery_by_default(self):
+        plan = LifAdaptationPlan.resolve(self._exact_cfg())
+        assert plan.exact_qat is True
+        assert plan.endpoint_recovery_steps == 0
+
+    def test_host_graph_restores_the_recipe_budget(self):
+        cfg = self._exact_cfg()
+        plan = LifAdaptationPlan.resolve(cfg)
+        lifted = plan.restore_recovery_for_host_graph(cfg)
+        assert lifted.endpoint_recovery_steps == 600
+        assert lifted.exact_qat is True and lifted.tanneal is False
+
+    def test_non_exact_plan_is_untouched(self):
+        cfg = _minimal_cfg(endpoint_recovery_steps=600)
+        plan = LifAdaptationPlan.resolve(cfg)
+        assert plan.restore_recovery_for_host_graph(cfg) is plan
+
+    def test_zero_budget_config_stays_disarmed(self):
+        cfg = self._exact_cfg(endpoint_recovery_steps=0)
+        plan = LifAdaptationPlan.resolve(cfg)
+        assert plan.restore_recovery_for_host_graph(cfg) is plan
+
+
+class TestGraphHasHostComputeOps:
+    def test_detects_compute_op_mappers(self):
+        from mimarsinan.mapping.mappers.compute_op_mapper import ComputeOpMapper
+        from mimarsinan.spiking.segment_partition import graph_has_host_compute_ops
+
+        class _Repr:
+            def __init__(self, nodes):
+                self._exec_order = nodes
+
+            def _ensure_exec_graph(self):
+                pass
+
+        class _Model:
+            def __init__(self, nodes):
+                self._r = _Repr(nodes)
+
+            def get_mapper_repr(self):
+                return self._r
+
+        host = ComputeOpMapper.__new__(ComputeOpMapper)
+        assert graph_has_host_compute_ops(_Model([object(), host])) is True
+        assert graph_has_host_compute_ops(_Model([object(), object()])) is False
+
+    def test_no_mapper_repr_is_false(self):
+        class _M:
+            pass
+
+        from mimarsinan.spiking.segment_partition import graph_has_host_compute_ops
+
+        assert graph_has_host_compute_ops(_M()) is False
