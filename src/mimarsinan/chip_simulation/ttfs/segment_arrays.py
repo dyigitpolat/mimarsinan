@@ -24,6 +24,25 @@ class SegmentTtfsArrays:
     n_axons_per_core: List[int]
     n_neurons_per_core: List[int]
 
+    def integer_lattice(self) -> bool:
+        """True when every weight/bias/threshold is integral (the wq chip):
+        membranes then live exactly on the 1/S grid and float dust must be
+        projected away before the staircase — a true tie at V == theta was
+        f-noise-decided on t0_15 (V=16.99999943 vs the plugin's exact 17)."""
+        cached = getattr(self, "_integer_lattice", None)
+        if cached is None:
+            def _int(a) -> bool:
+                arr = np.asarray(a, dtype=np.float64)
+                return bool(np.all(np.abs(arr - np.round(arr)) <= 1e-6))
+
+            cached = (
+                all(_int(w) for w in self.core_params)
+                and all(_int(t) for t in self.thresholds)
+                and all(b is None or _int(b) for b in self.hw_biases)
+            )
+            self._integer_lattice = cached
+        return cached
+
 
 # Keyed by mapping identity: a HardCoreMapping is not mutated after packing, so
 # the derived arrays are reused across stages/batches instead of re-extracted per

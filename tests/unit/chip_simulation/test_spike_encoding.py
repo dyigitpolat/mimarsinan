@@ -183,3 +183,87 @@ class TestCombFloat64Canonical:
                 torch.tensor([0.5], dtype=dt), 0, 8,
             )
             assert out.dtype == dt
+
+
+class TestTtfsIntegerLatticeSnap:
+    """[t0_15 catch] on the integer chip, TTFS membranes live on the 1/S
+    grid; float dust must never decide a staircase tie (V=16.99999943 vs
+    theta=17 read one ladder level low while the plugin's exact 17 fired)."""
+
+    def _seg(self, weights):
+        import numpy as np
+
+        from mimarsinan.chip_simulation.ttfs.segment_arrays import (
+            SegmentTtfsArrays,
+        )
+        from mimarsinan.mapping.support.spike_source_spans import (
+            SpikeSourceSpan,
+        )
+
+        n_in = weights.shape[1]
+        spans = [SpikeSourceSpan(kind="input", src_core=-1, src_start=0,
+                                 dst_start=0, length=n_in)]
+        out_spans = [SpikeSourceSpan(kind="core", src_core=0, src_start=0,
+                                     dst_start=0, length=1)]
+        return SegmentTtfsArrays(
+            core_params=[weights],
+            thresholds=[np.array([17.0])],
+            hw_biases=[None],
+            latencies=[0],
+            axon_spans=[spans],
+            output_spans=out_spans,
+            n_output=1,
+            n_axons_per_core=[n_in],
+            n_neurons_per_core=[1],
+        )
+
+    def test_integer_chip_tie_fires_full_level(self):
+        import numpy as np
+
+        from mimarsinan.chip_simulation.ttfs.ttfs_segment import (
+            run_ttfs_segment,
+        )
+
+        w = np.full((1, 8), 17.0 / 8.0)
+        # Integer-lattice check needs integral weights: 17/8 is fractional,
+        # so craft integral weights summing exactly to theta at rate 1/8 * 8.
+        w = np.ones((1, 17))
+        seg = self._seg(w)
+        # noisy inputs: true value 17 * (1/17 each... use rate 1.0 slightly off
+        # on-grid inputs (rate 1.0 = 8/8) carrying float dust
+        a = np.full((1, 17), 1.0 - 3.5e-8)
+        out, _, membrane = run_ttfs_segment(
+            seg, a, simulation_length=8, spiking_mode="ttfs_quantized",
+        )
+        assert float(membrane[0][0, 0]) == 17.0
+        assert float(out[0, 0]) == 1.0
+
+    def test_off_grid_inputs_never_snap(self):
+        import numpy as np
+
+        from mimarsinan.chip_simulation.ttfs.ttfs_segment import (
+            run_ttfs_segment,
+        )
+
+        seg = self._seg(np.ones((1, 17)))
+        a = np.full((1, 17), 0.437)
+        _, _, membrane = run_ttfs_segment(
+            seg, a, simulation_length=8, spiking_mode="ttfs_quantized",
+        )
+        assert abs(float(membrane[0][0, 0]) - 17 * 0.437) < 1e-9
+
+    def test_float_chip_is_untouched(self):
+        import numpy as np
+
+        from mimarsinan.chip_simulation.ttfs.ttfs_segment import (
+            run_ttfs_segment,
+        )
+
+        w = np.full((1, 17), 1.0001)
+        seg = self._seg(w)
+        assert seg.integer_lattice() is False
+        a = np.full((1, 17), 1.0 - 3.5e-8)
+        _, _, membrane = run_ttfs_segment(
+            seg, a, simulation_length=8, spiking_mode="ttfs_quantized",
+        )
+        assert float(membrane[0][0, 0]) != 17.0

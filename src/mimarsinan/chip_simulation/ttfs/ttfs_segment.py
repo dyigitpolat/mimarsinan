@@ -140,6 +140,13 @@ def _run_ttfs_segment_ordered(
     n_cores = len(seg.core_params)
     quantized = forces_activation_quantization(spiking_mode)
     s = max(int(simulation_length), 1)
+    # The 1/(2S) projection is EXACT only when the lattice precondition
+    # holds: integral chip params AND on-grid inputs (raw continuous inputs
+    # — e.g. the cascaded stage-0 contract — must never be snapped). The
+    # tolerance DETECTS float dust on the lattice; it is not a budget.
+    scaled = np.asarray(input_activations, dtype=np.float64) * s
+    inputs_on_grid = bool(np.all(np.abs(scaled - np.round(scaled)) <= 1e-4))
+    snap_lattice = quantized and inputs_on_grid and seg.integer_lattice()
 
     buffers: List[np.ndarray] = [
         np.zeros((batch, seg.n_neurons_per_core[i]), dtype=np.float64)
@@ -166,6 +173,10 @@ def _run_ttfs_segment_ordered(
         if hw_bias is not None:
             v = v + hw_bias
         v = v.astype(np.float64, copy=False)
+        if snap_lattice:
+            # Exact projection onto the 1/(2S) membrane grid of the integer
+            # chip (float dust must never decide a staircase tie — t0_15).
+            v = np.round(v * (2 * s)) / (2 * s)
         membrane[ci] = v
         if quantized:
             buffers[ci] = ttfs_quantized_activation_np(
