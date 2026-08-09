@@ -1002,3 +1002,48 @@ class TestTrainingForwardInstall:
         assert model.__dict__["forward"] == "own-patch"
         with pytest.raises(AssertionError):
             t._install_forward("double-patch")    # within-owner still loud
+
+    def test_walk_recovery_install_is_host_graph_gated(self):
+        from mimarsinan.tuning.forward_install import ChipAlignedNFForward
+        from mimarsinan.tuning.orchestration.lif_exact_qat import (
+            install_walk_for_host_graph_recovery,
+        )
+        from mimarsinan.mapping.mappers.compute_op_mapper import ComputeOpMapper
+
+        class _Repr:
+            def __init__(self, nodes):
+                self._exec_order = nodes
+
+            def _ensure_exec_graph(self):
+                pass
+
+        class _Model:
+            def __init__(self, nodes):
+                self._r = _Repr(nodes)
+
+            def get_mapper_repr(self):
+                return self._r
+
+        class _Pipe:
+            config = {"simulation_steps": 8}
+
+        class _Tuner:
+            pipeline = _Pipe()
+            _patched_forward = False
+
+            def __init__(self, model):
+                self.model = model
+
+            def _install_forward(self, fwd):
+                self.model.forward = fwd
+                self._patched_forward = True
+
+        host = ComputeOpMapper.__new__(ComputeOpMapper)
+        t = _Tuner(_Model([object(), host]))
+        assert install_walk_for_host_graph_recovery(t) is True
+        assert isinstance(t.model.forward, ChipAlignedNFForward)
+        assert t.model.forward.synchronized is True
+
+        clean = _Tuner(_Model([object()]))
+        assert install_walk_for_host_graph_recovery(clean) is False
+        assert not hasattr(clean.model, "forward")

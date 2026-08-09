@@ -162,6 +162,24 @@ def exact_qat_training_forward(model, pipeline_config):
     )
 
 
+def install_walk_for_host_graph_recovery(tuner) -> bool:
+    """[composition identity, n7 D3] on host-op graphs the plain flow omits
+    the deployed boundary physics (the certified walk read −6.6pp under the
+    AQ-trained function on the offloaded mixer): install the value-domain
+    walk so the AQ endpoint recovery — the freshest, largest ledger leg,
+    with its rollback guard — grinds what ships. Single-segment graphs
+    (premise proven, cliff ≤ 0.25pp) stay bitwise incumbent."""
+    # Lazy: the spiking package init pulls chip_simulation (house cycle).
+    from mimarsinan.spiking.segment_partition import graph_has_host_compute_ops
+
+    if not graph_has_host_compute_ops(tuner.model):
+        return False
+    tuner._install_forward(
+        exact_qat_training_forward(tuner.model, tuner.pipeline.config)
+    )
+    return True
+
+
 def install_lif_input_quantizer(perceptron, simulation_steps: int) -> bool:
     """Idempotently append the LIF entry ``ChipInputQuantizer``; True when this call installed it."""
     if getattr(perceptron, _LIF_ENTRY_SNAP_ATTR, False):

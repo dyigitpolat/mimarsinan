@@ -28,8 +28,8 @@ from mimarsinan.tuning.forward_install import CascadeForwardInstall
 from mimarsinan.tuning.orchestration.signed_seam_install import ensure_offload_negative_boundary
 from mimarsinan.tuning.orchestration.lif_exact_qat import (
     deployed_lif_gauge_forward,
-    exact_qat_training_forward,
     install_lif_entry_input_quantizers,
+    install_walk_for_host_graph_recovery,
     lif_exact_qat_active,
 )
 from mimarsinan.tuning.orchestration.ttfs_exact_qat import ttfsq_exact_qat_active
@@ -117,7 +117,6 @@ class ActivationQuantizationTuner(CascadeForwardInstall, AdaptationRateTuner):
             )
 
     def _install_lif_exact_qat(self) -> None:
-        self._install_forward(exact_qat_training_forward(self.model, self.pipeline.config))
         report = promote_theta_for_exact_qat(self.model)
         folded = apply_lif_half_step_bias_compensation(
             self.model, int(self.pipeline.config["simulation_steps"]),
@@ -268,6 +267,7 @@ class ActivationQuantizationTuner(CascadeForwardInstall, AdaptationRateTuner):
             # steps (the [C1] convergence stop and the run-total step ledger
             # keep the budget a ceiling, never a mandatory burn).
             if getattr(self, "_fixed_ladder_policy", False):
+                install_walk_for_host_graph_recovery(self)
                 base = int(self.pipeline.config.get("endpoint_recovery_steps", 0))
                 base *= max(1, int(self.pipeline.config["simulation_steps"]))
                 run_endpoint_recovery(self, base_steps=base)
