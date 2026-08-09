@@ -32,7 +32,10 @@ from mimarsinan.model_training.basic_trainer import BasicTrainer
 from mimarsinan.models.spiking.hybrid.flow import SpikingHybridCoreFlow
 from mimarsinan.models.spiking.hybrid.membrane_readout import final_only_output_nodes
 from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
-from mimarsinan.spiking.lif_utils import apply_cycle_accurate_trains_to_model
+from mimarsinan.spiking.lif_utils import (
+    apply_cycle_accurate_trains_to_model,
+    arm_integer_membrane_lattice,
+)
 
 
 def build_neural_behavior_config(pipeline) -> NeuralBehaviorConfig:
@@ -114,9 +117,12 @@ def build_spiking_hybrid_flow(
         phase_dither=contract.spike_phase_dither,
         lif_membrane_init=contract.lif_membrane_init,
         lif_execution_synchronized=contract.lif_execution_synchronized,
+        membrane_integer_lattice=bool(plan.weight_quantization),
     )
     if plan.cycle_accurate_lif_forward and model is not None:
         apply_cycle_accurate_trains_to_model(model, True)
+        if plan.weight_quantization:
+            arm_integer_membrane_lattice(model)
     return flow.to(cfg["device"])
 
 

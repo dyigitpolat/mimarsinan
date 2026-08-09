@@ -95,24 +95,28 @@ def _matrices(graph: IRGraph) -> dict[str, np.ndarray]:
 
 def test_bits_change_quantized_matrices_with_derived_scale():
     """With the 0.0 sentinel (scale derived from bits), 8b vs 4b MUST differ:
-    max|q| saturates to each width's q_max and threshold == q_max / max|w|."""
+    max|q| saturates to each width's q_max (within the floor lattice step)
+    and threshold == floor(q_max / max|w|) — the INTEGER theta register
+    contract (nevresim threshold_t=int; fractional theta was the 2026-08-09
+    count-divergence root cause)."""
     base = _two_core_graph(DERIVE_SCALE_SENTINEL)
     w_max = float(np.max(np.abs(_rich_matrix())))
     g8, g4 = _quantize_at(base, 8), _quantize_at(base, 4)
 
     for bits, g in ((8, g8), (4, g4)):
         _, q_max = quantization_bounds(bits)
-        expected_scale = q_max / w_max
+        expected_scale = max(1.0, float(np.floor(q_max / w_max)))
         for name, mat in _matrices(g).items():
             assert np.issubdtype(mat.dtype, np.integer), (bits, name, mat.dtype)
-            assert int(np.max(np.abs(mat))) == q_max, (
+            assert q_max - 1 <= int(np.max(np.abs(mat))) <= q_max, (
                 f"{bits}b {name}: derived-scale quantization must saturate "
-                f"max|q| to q_max={q_max}, got {int(np.max(np.abs(mat)))}"
+                f"max|q| to q_max={q_max} within the floor-lattice step, "
+                f"got {int(np.max(np.abs(mat)))}"
             )
         for node in g.get_neural_cores():
             assert node.threshold == pytest.approx(expected_scale), (
-                f"{bits}b {node.name}: threshold must be the derived scale "
-                f"q_max/max|w| = {expected_scale}, got {node.threshold}"
+                f"{bits}b {node.name}: threshold must be the integral derived "
+                f"scale floor(q_max/max|w|) = {expected_scale}, got {node.threshold}"
             )
         verify_ir_graph_quantized(g, bits)
 

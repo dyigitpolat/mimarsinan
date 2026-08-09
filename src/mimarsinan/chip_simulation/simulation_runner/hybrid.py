@@ -28,8 +28,8 @@ from mimarsinan.chip_simulation.hybrid_run.hybrid_stage_runner import (
 )
 from mimarsinan.chip_simulation.spiking_semantics import is_analytical_ttfs, requires_ttfs_firing
 from mimarsinan.chip_simulation.nevresim.nevresim_driver import NevresimDriver
-from mimarsinan.chip_simulation.nevresim.segment_execute import run_binary_raw
 from mimarsinan.chip_simulation.simulation_runner.emit import _PreparedSegment, _emit_and_compile_segment
+from mimarsinan.chip_simulation.simulation_runner.segment_run import run_prepared_segment
 from mimarsinan.chip_simulation.simulation_runner.host_contract import SimulationHostContract
 from mimarsinan.chip_simulation.simulation_runner.membrane_probe import (
     stash_membrane_corrections,
@@ -70,7 +70,7 @@ class SimulationHybridMixin(SimulationHostContract):
         original_input = original_input.reshape(original_input.shape[0], -1)
 
         state_sizes: Dict[int, int] = {-2: original_input.shape[1]}
-        segment_specs: List[Tuple[int, str, HardCoreMapping, int, int, bool]] = []
+        segment_specs: List[Tuple[int, str, HardCoreMapping, int, int, bool, bool]] = []
 
         for stage in stages:
             if stage.kind == "neural":
@@ -88,9 +88,18 @@ class SimulationHybridMixin(SimulationHostContract):
                     # NEVRESIM_EXPORT_MEMBRANE build when the honesty gate is armed.
                     export_membrane = bool(self.membrane_readout) and bool(
                         membrane_readout_slices(hybrid, exec_stage))
+                    # [nevresim parity] lif segments consume the WINDOW-gated
+                    # record counts ([lat, lat+T) per core) as their output —
+                    # the SSOT count currency — instead of the whole-program
+                    # stdout readout, whose tail cycles keep integrating bias
+                    # beyond the window. Membrane-export segments build BOTH
+                    # binaries: counts from the record build, membranes from
+                    # the export build (the C2 decode side-channel).
+                    record_mode = self.spiking_mode == "lif"
                     segment_specs.append(
                         (seg_idx, seg_dir, seg_mapping, input_size,
-                         ChipLatency(seg_mapping).calculate(), export_membrane))
+                         ChipLatency(seg_mapping).calculate(), export_membrane,
+                         record_mode))
                     for s in exec_stage.output_map:
                         state_sizes[s.node_id] = max(
                             state_sizes.get(s.node_id, 0), s.offset + s.size)
@@ -128,9 +137,10 @@ class SimulationHybridMixin(SimulationHostContract):
                 self.nevresim_connectivity_mode,
                 timeout_s,
                 export_membrane,
+                record_mode,
             )
             for seg_idx, seg_dir, seg_mapping, input_size, latency,
-                export_membrane in segment_specs
+                export_membrane, record_mode in segment_specs
         }
         prepared: Dict[int, _PreparedSegment] = run_tasks_in_pool_bounded(
             _emit_and_compile_segment,
@@ -149,40 +159,15 @@ class SimulationHybridMixin(SimulationHostContract):
         input_data: list,
         num_proc: int = 0,
     ) -> tuple[np.ndarray, np.ndarray | None]:
-        """Run a neural segment using its pre-compiled binary.
-
-        Skips NevresimDriver creation entirely — only saves inputs and executes.
-        Returns ``(raw_counts, membranes_or_None)``; membranes ride along only
-        for a membrane-export build, counts are byte-identical either way.
-        """
-        max_input_count = len(input_data)
-        if prepared.export_membrane:
-            return run_binary_raw(
-                binary_path=prepared.binary_path,
-                work_dir=prepared.seg_dir,
-                input_loader=input_data,
-                output_size=prepared.output_size,
-                simulation_length=int(self.simulation_length),
-                input_size=prepared.input_size,
-                spike_generation_mode=self.spike_generation_mode,
-                max_input_count=max_input_count,
-                num_proc=num_proc,
-                export_membrane=True,
-                timeout_s=self.simulation_step_timeout_s,
-            )
-        raw = run_binary_raw(
-            binary_path=prepared.binary_path,
-            work_dir=prepared.seg_dir,
-            input_loader=input_data,
-            output_size=prepared.output_size,
+        """Run a neural segment's pre-compiled binary (see ``segment_run``)."""
+        return run_prepared_segment(
+            prepared,
+            input_data,
             simulation_length=int(self.simulation_length),
-            input_size=prepared.input_size,
             spike_generation_mode=self.spike_generation_mode,
-            max_input_count=max_input_count,
-            num_proc=num_proc,
             timeout_s=self.simulation_step_timeout_s,
+            num_proc=num_proc,
         )
-        return raw, None
 
     def _raw_to_rates(self, raw: np.ndarray) -> np.ndarray:
         """Convert raw nevresim output to [0,1] rates.

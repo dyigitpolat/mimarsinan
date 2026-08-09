@@ -55,8 +55,12 @@ class SpikingHybridCoreFlow(
         phase_dither: bool = False,
         lif_membrane_init: float = 0.0,
         lif_execution_synchronized: bool = False,
+        membrane_integer_lattice: bool = False,
     ):
         super().__init__()
+        # [nevresim parity] integer-chip cells snap membranes to the exact
+        # chip lattice each cycle (float noise must never decide a tie).
+        self.membrane_integer_lattice = bool(membrane_integer_lattice)
         # [§17] certification capture seam: called as (stage, raw_counts)
         # after every neural segment, both disciplines; None disables.
         self.stage_count_recorder: "object | None" = None

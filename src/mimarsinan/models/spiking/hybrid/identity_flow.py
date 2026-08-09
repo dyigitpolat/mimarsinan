@@ -28,6 +28,7 @@ def build_identity_spiking_flow(
     cycle_accurate_lif_forward: bool = False,
     phase_dither: bool = False,
     lif_membrane_init: float = 0.0,
+    membrane_integer_lattice: bool = False,
 ) -> SpikingHybridCoreFlow:
     """Run an IRGraph through the hybrid executor on a 1:1 identity mapping.
 
@@ -54,4 +55,5 @@ def build_identity_spiking_flow(
         cycle_accurate_lif_forward=cycle_accurate_lif_forward,
         phase_dither=phase_dither,
         lif_membrane_init=lif_membrane_init,
+        membrane_integer_lattice=membrane_integer_lattice,
     )

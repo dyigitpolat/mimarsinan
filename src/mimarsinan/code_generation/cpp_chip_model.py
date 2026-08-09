@@ -39,6 +39,22 @@ class ChipModel:
         self.output_buffer: list[SpikeSource] = output_list
         self.cores: list[Core] = cores_list
 
+    @staticmethod
+    def serialize_threshold(threshold_type, value) -> str:
+        """Emit theta for the chip. An int threshold register NEVER truncates
+        silently: a fractional theta means the SSOT lattice drifted (the
+        2026-08-09 nevresim count-divergence root cause) — fail loud."""
+        if threshold_type is int:
+            snapped = round(float(value))
+            if abs(float(value) - snapped) > 1e-6:
+                raise ValueError(
+                    f"chip emit: threshold {value!r} is not on the integer "
+                    f"lattice but threshold_t=int — quantization must deliver "
+                    f"integral thresholds (refusing silent truncation)."
+                )
+            return str(int(snapped))
+        return str(threshold_type(value))
+
     def _max_spans_per_core(self) -> int:
         if not self.connections:
             return 1
@@ -149,7 +165,7 @@ consteval auto generate_chip()
         for core in self.cores:
             parts.append(str(core.latency))
             for neuron in core.neurons:
-                parts.append(str(tt(neuron.thresh)))
+                parts.append(self.serialize_threshold(tt, neuron.thresh))
                 parts.append(str(wt(neuron.bias)))
                 parts.extend(str(wt(w)) for w in neuron.weights)
         return ' '.join(parts) + ' '
@@ -171,7 +187,11 @@ consteval auto generate_chip()
             core_params = []
             for neuron in core.neurons:
                 core_params.append({
-                    "threshold": self.threshold_type(neuron.thresh),
+                    "threshold": self.threshold_type(
+                        # Same lattice guard as the weights-file emit.
+                        int(self.serialize_threshold(int, neuron.thresh))
+                        if self.threshold_type is int else neuron.thresh
+                    ),
                     "bias": self.weight_type(neuron.bias),
                     "weights": [self.weight_type(w) for w in neuron.weights]
                 })

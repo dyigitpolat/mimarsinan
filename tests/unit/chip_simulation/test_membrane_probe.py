@@ -111,11 +111,17 @@ class TestPrepareSegmentsArmsExportFlag:
 
     def test_armed_runner_requests_membrane_build(self, monkeypatch, tmp_path):
         args = self._prepare(monkeypatch, tmp_path, armed=True)
-        assert args[-1] is True, "export_membrane must reach the compile worker"
+        # (..., export_membrane, record_mode): BOTH builds — window counts
+        # from the record binary, membranes from the export binary.
+        assert args[-2] is True, "export_membrane must reach the compile worker"
+        assert args[-1] is True
 
     def test_unarmed_runner_keeps_default_build(self, monkeypatch, tmp_path):
         args = self._prepare(monkeypatch, tmp_path, armed=False)
-        assert args[-1] is False
+        assert args[-2] is False
+        assert args[-1] is True, (
+            "lif segments must request the window-record build"
+        )
 
 
 class TestFlatMembraneSlices:

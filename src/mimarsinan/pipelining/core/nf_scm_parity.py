@@ -169,9 +169,11 @@ def _build_streamed_identity_executor(pipeline, model, ir_graph):
     from mimarsinan.models.spiking.hybrid.identity_flow import (
         build_identity_spiking_flow,
     )
+    from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 
     cfg = pipeline.config
     contract = SpikingDeploymentContract.from_pipeline_config(cfg)
+    plan = DeploymentPlan.of(pipeline)
     return build_identity_spiking_flow(
         cfg["input_shape"],
         ir_graph,
@@ -185,6 +187,7 @@ def _build_streamed_identity_executor(pipeline, model, ir_graph):
         cycle_accurate_lif_forward=True,
         phase_dither=contract.spike_phase_dither,
         lif_membrane_init=contract.lif_membrane_init,
+        membrane_integer_lattice=bool(plan.weight_quantization),
     ).eval()
 
 
@@ -198,7 +201,14 @@ def assert_streamed_nf_scm_exact_or_raise(
     forward must equal the identity-mapped streaming executor at atol=0 —
     no mismatch budget; parity holds by construction or the deployment is
     wrong."""
+    from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
+    from mimarsinan.spiking.lif_utils import arm_integer_membrane_lattice
+
     executor = _build_streamed_identity_executor(pipeline, model, ir_graph)
+    if DeploymentPlan.of(pipeline).weight_quantization:
+        # Tuning stages recreate activations; re-arm from parameter_scale so
+        # the NF decides ties by the exact lattice value (like the chip).
+        arm_integer_membrane_lattice(model)
     device = _unify_model_device(model)
     if device is not None:
         samples = samples.to(device)

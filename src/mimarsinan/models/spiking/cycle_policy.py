@@ -27,14 +27,24 @@ def precharge_lif_states(neuron_states, thresholds, membrane_init: float) -> Non
 
 
 class LIFCyclePolicy:
-    """Multi-spike integrate-and-fire with Default/Novena reset."""
+    """Multi-spike integrate-and-fire with Default/Novena reset.
+
+    ``integer_lattice`` arms the exact chip-lattice membrane projection
+    (integer-chip cells: true membranes are half-integer multiples in chip
+    units; float noise must never decide a threshold tie)."""
 
     latency_gated = True
     always_on_every_cycle = False
     single_spike_io = False
 
-    def __init__(self, firing_mode: str):
+    _CHIP_LATTICE_SCALE = 2.0  # half-integer quantum covers half-step init
+
+    def __init__(self, firing_mode: str, integer_lattice: bool = False):
         self.firing_mode = str(firing_mode)
+        self.integer_lattice = bool(integer_lattice)
+
+    def _lattice_scale(self) -> float | None:
+        return self._CHIP_LATTICE_SCALE if self.integer_lattice else None
 
     def make_state(self, batch_size: int, n_neurons: int, device, dtype) -> NeuronState:
         return {"memb": torch.zeros(batch_size, n_neurons, device=device, dtype=dtype)}
@@ -45,6 +55,7 @@ class LIFCyclePolicy:
             state["memb"], weight, inp, threshold,
             hw_bias=hw_bias, thresholding_mode=thresholding_mode,
             firing_mode=self.firing_mode, output_dtype=output_dtype,
+            lattice_scale=self._lattice_scale(),
         )
 
     def advance(self, state, contribution, threshold, *, thresholding_mode,
@@ -55,6 +66,7 @@ class LIFCyclePolicy:
             state["memb"], contribution, threshold,
             thresholding_mode=thresholding_mode,
             firing_mode=self.firing_mode, output_dtype=output_dtype,
+            lattice_scale=self._lattice_scale(),
         )
 
 
@@ -85,8 +97,11 @@ class TTFSGreedyCyclePolicy:
         )
 
 
-def cycle_neuron_policy(spiking_mode: str, schedule: str, firing_mode: str):
+def cycle_neuron_policy(
+    spiking_mode: str, schedule: str, firing_mode: str,
+    integer_lattice: bool = False,
+):
     """Build the per-cycle neuron policy for the pipelined cascade executor."""
     if is_cascaded_ttfs(spiking_mode, schedule):
         return TTFSGreedyCyclePolicy()
-    return LIFCyclePolicy(firing_mode)
+    return LIFCyclePolicy(firing_mode, integer_lattice=integer_lattice)

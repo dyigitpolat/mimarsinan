@@ -63,16 +63,30 @@ def quantize_ir_graph(
 
 
 def _matrix_scale(matrix, parameter_scale, q_max: int, eps: float) -> float:
+    """Integer-lattice grid scale (== the deployed integer threshold).
+
+    A TRAINED scale (NAPQ parameter_scale) must already be integral — the
+    network was optimized against that lattice, so fractional drift here
+    deploys a different fire condition than was trained and fails loud.
+    The mapping-time fallback (never-trained cores, e.g. relays) rounds."""
     ps = float(
         parameter_scale.item()
         if hasattr(parameter_scale, "item")
         else parameter_scale
     )
     if abs(ps) > eps:
-        return ps
+        snapped = max(1.0, float(round(ps)))
+        if abs(ps - snapped) > 1e-6 * snapped:
+            raise ValueError(
+                f"quantize_ir_graph: trained parameter_scale {ps} is not on "
+                f"the integer lattice (chip threshold_t=int); NAPQ must snap "
+                f"the grid during training — refusing to truncate at deploy."
+            )
+        return snapped
     w_max = float(np.max(np.abs(matrix)))
     w_max = max(w_max, eps)
-    return q_max / w_max
+    # FLOOR keeps w_max*scale <= q_max (no clip saturation; relay margin survives).
+    return max(1.0, float(np.floor(q_max / w_max)))
 
 
 def _bias_grid_ratio(node: NeuralCore, weight_scale: float, eps: float) -> int:
@@ -129,6 +143,14 @@ def verify_ir_graph_quantized(ir_graph: IRGraph, bits: int) -> None:
     for core in ir_graph.get_neural_cores():
         ps = core.parameter_scale
         scale = float(ps.item() if hasattr(ps, "item") else ps)
+        th = float(core.threshold)
+        if abs(th - round(th)) > 1e-6:
+            failures.append(
+                f"{core.name}: threshold {th} is not integral — the chip "
+                f"threshold register is an integer (threshold_t=int); a "
+                f"fractional theta deploys a different fire condition than "
+                f"the SSOT simulates"
+            )
         if core.hardware_bias is not None:
             hb = np.asarray(core.hardware_bias)
             if not np.issubdtype(hb.dtype, np.integer) and not np.allclose(

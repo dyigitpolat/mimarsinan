@@ -358,11 +358,17 @@ class SoftCoreMappingStep(PipelineStep):
         )
         if not enabled:
             return False
+        from mimarsinan.transformations.quantization_bounds import (
+            quantization_bounds,
+        )
+
+        _, q_max = quantization_bounds(int(self.pipeline.config["weight_bits"]))
         inserted = insert_depth_balancing_relays(
             ir_graph,
             thresholding_mode=build_deployment_contract(
                 self.pipeline
             ).thresholding_mode,
+            q_max=q_max,
         )
         if inserted:
             print(

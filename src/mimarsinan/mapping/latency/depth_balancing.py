@@ -14,9 +14,10 @@ from mimarsinan.mapping.layout.segmentation import NeuralSegment, partition_ir_g
 # exact-theta charge, so a relay's identity weight must exceed theta; the
 # accumulated subtractive-reset residual n*margin stays below theta for any
 # realistic window (n < 2**20 cycles).
-RELAY_WEIGHT_MARGIN = 2.0 ** -20
-
 RELAY_MARKER = "_depth_relay"
+
+DEFAULT_RELAY_Q_MAX = 127
+"""Integer-lattice margin base when no chip grid is supplied (8-bit q_max)."""
 
 
 class UnbalancedFanInError(ValueError):
@@ -34,10 +35,16 @@ class DepthGapViolation:
     gap: int
 
 
-def relay_weight(thresholding_mode: str) -> float:
-    """Identity relay weight that fires on every input spike under the comparator."""
+def relay_weight(thresholding_mode: str, q_max: int = DEFAULT_RELAY_Q_MAX) -> float:
+    """Identity relay weight that fires on every input spike under the comparator.
+
+    Strict '<' needs one FULL integer-lattice step of headroom: with margin
+    1/q_max the floor-lattice quantizer lands theta = q_max-1 and the relay
+    weight at q_max = theta+1 for ANY bit width — alive under '<', and
+    count-exact under the Novena zero-reset that strict mode pairs with.
+    (An epsilon margin only worked while theta stayed fractional.)"""
     if thresholding_mode == "<":
-        return 1.0 + RELAY_WEIGHT_MARGIN
+        return 1.0 + 1.0 / float(q_max)
     return 1.0
 
 
@@ -180,18 +187,20 @@ def _build_relay_chain(
 
 def insert_depth_balancing_relays(
     ir_graph: IRGraph, *, thresholding_mode: str,
+    q_max: int = DEFAULT_RELAY_Q_MAX,
 ) -> int:
     """Insert identity relay chains on every gap>1 intra-segment edge.
 
     Consumers at gap ``g`` are rewired to relay ``g-1`` of the shared chain,
     making every live intra-segment edge gap-1 exact. No-op (zero mutation)
     on gap-free graphs; idempotent. Returns the number of relays inserted.
+    ``q_max`` is the chip weight grid (sets the strict-mode margin lattice).
     """
     violations = find_intra_segment_depth_gaps(ir_graph)
     if not violations:
         return 0
 
-    weight = relay_weight(thresholding_mode)
+    weight = relay_weight(thresholding_mode, q_max)
     next_id = max(node.id for node in ir_graph.nodes) + 1
     inserted = 0
 

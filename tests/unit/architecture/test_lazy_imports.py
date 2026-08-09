@@ -126,6 +126,9 @@ ALLOWLIST = {
     "torch_mapping/converter_handlers/conv_mixin.py",
     "torch_mapping/converter_handlers/linear_mixin.py",
     "torch_mapping/converter_handlers/structural_mixin.py",
+    # NAPQ stamps the LIF membrane lattice; spiking imports mapping.verification
+    # which reaches transformations — a genuine module-scope cycle.
+    "transformations/normalization_aware_perceptron_quantization.py",
     "transformations/perceptron/perceptron_transformer.py",
     "transformations/pruning/masks.py",
     "tuning/orchestration/adaptation_manager.py",

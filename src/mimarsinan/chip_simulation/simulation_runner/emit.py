@@ -11,13 +11,22 @@ from mimarsinan.chip_simulation.nevresim.compile_nevresim import compile_simulat
 
 @dataclass
 class _PreparedSegment:
-    """Result of parallel emit+compile for one neural segment."""
+    """Result of parallel emit+compile for one neural segment.
+
+    ``record_mode`` segments run the NEVRESIM_RECORD_SPIKES build and the
+    runner assembles WINDOW-gated output counts ([lat, lat+T) per core) via
+    ``output_sources`` — the count currency of the SSOT calculus — instead
+    of the whole-program stdout readout (which keeps integrating bias
+    through the pipeline tail cycles)."""
     seg_idx: int
     seg_dir: str
     binary_path: str
     output_size: int
     input_size: int
     export_membrane: bool = False
+    record_mode: bool = False
+    output_sources: "list[tuple[str, int, int]] | None" = None
+    membrane_binary_path: "str | None" = None
 
 
 def _emit_and_compile_segment(
@@ -38,6 +47,7 @@ def _emit_and_compile_segment(
     connectivity_mode: ConnectivityMode,
     timeout_s: float | None = None,
     export_membrane: bool = False,
+    record_mode: bool = False,
 ) -> _PreparedSegment:
     """Top-level function for ProcessPoolExecutor: emit chip artifacts and compile."""
     NevresimDriver.nevresim_path = nevresim_path
@@ -64,14 +74,36 @@ def _emit_and_compile_segment(
             f"chip input_size {driver.chip.input_size}"
         )
 
+    if record_mode:
+        extra_flags = ["-DNEVRESIM_RECORD_SPIKES"]
+    elif export_membrane:
+        extra_flags = ["-DNEVRESIM_EXPORT_MEMBRANE"]
+    else:
+        extra_flags = None
     output_path = os.path.join(seg_dir, "bin", "simulator")
     binary = compile_simulator(
         seg_dir, nevresim_path, output_path=output_path, verbose=False,
-        extra_flags=(["-DNEVRESIM_EXPORT_MEMBRANE"] if export_membrane else None),
+        extra_flags=extra_flags,
         timeout_s=timeout_s,
     )
     if binary is None:
         raise RuntimeError(f"Compilation failed for segment {seg_idx}")
+
+    membrane_binary = None
+    if export_membrane and record_mode:
+        # Both observables: window counts (record build, the count currency)
+        # AND final membranes (export build, the C2 decode side-channel).
+        membrane_binary = compile_simulator(
+            seg_dir, nevresim_path,
+            output_path=os.path.join(seg_dir, "bin", "simulator_membrane"),
+            verbose=False,
+            extra_flags=["-DNEVRESIM_EXPORT_MEMBRANE"],
+            timeout_s=timeout_s,
+        )
+        if membrane_binary is None:
+            raise RuntimeError(
+                f"Membrane-build compilation failed for segment {seg_idx}"
+            )
 
     return _PreparedSegment(
         seg_idx=seg_idx,
@@ -80,4 +112,27 @@ def _emit_and_compile_segment(
         output_size=driver.chip.output_size,
         input_size=driver.chip.input_size,
         export_membrane=export_membrane,
+        record_mode=record_mode,
+        output_sources=(
+            _serialize_output_sources(driver.chip) if record_mode else None
+        ),
+        membrane_binary_path=(
+            os.path.abspath(membrane_binary) if membrane_binary else None
+        ),
     )
+
+
+def _serialize_output_sources(chip) -> "list[tuple[str, int, int]]":
+    """Picklable output-buffer wiring: (kind, core, neuron) per output index —
+    the runner re-reads the chip's readout through the WINDOW-gated records."""
+    out: list[tuple[str, int, int]] = []
+    for s in chip.output_buffer:
+        if s.is_off_:
+            out.append(("off", 0, 0))
+        elif s.is_input_:
+            out.append(("input", 0, int(s.neuron_)))
+        elif s.is_always_on_:
+            out.append(("on", 0, 0))
+        else:
+            out.append(("core", int(s.core_), int(s.neuron_)))
+    return out

@@ -7,6 +7,18 @@ import torch
 _THRESHOLD_OPS = {"<": torch.lt, "<=": torch.le}
 
 
+def snap_membrane_to_lattice(memb: torch.Tensor, lattice_scale: float) -> None:
+    """Project the membrane onto its exact arithmetic lattice, in place.
+
+    On the integer chip every true membrane value is a multiple of the
+    lattice quantum (half a chip unit covers the half-step init); float
+    summation-order noise (~1e-7) pushed values ACROSS threshold ties —
+    which the integer-theta lattice makes common (the 2026-08-09 NF↔SCM
+    13/788 catch: a true tie fired on one twin and not the other). This is
+    an EXACT projection, not a tolerance: noise ≪ half a quantum."""
+    memb.mul_(lattice_scale).round_().div_(lattice_scale)
+
+
 def lif_fire_and_reset(
     memb: torch.Tensor,
     threshold: torch.Tensor,

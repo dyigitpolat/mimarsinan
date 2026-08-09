@@ -15,13 +15,18 @@ from mimarsinan.pipelining.core.steps.pipeline_step import (
 
 
 def _certify_nevresim_counts(*, pipeline, mapping, captured, samples):
-    """[§17 Edge T'] nevresim raw stage counts vs the HCM streaming executor on
-    the same inputs — a REPORT, not a gate: nevresim times its per-cycle
-    program independently of the HCM flow (unlike SANA-FE/Loihi, whose
-    runners are timing-aligned to the HCM reference), so window-edge
-    transients move counts while decisions stay equal; the probe's decision
-    parity is this cell's arbiter. Measured 2026-07-21 (t0_05, T=4): 18%
-    windows ±1-2, decision parity 1.0. Timing alignment = the open lever."""
+    """[§17 Edge T'] nevresim WINDOW stage counts vs the HCM streaming
+    executor on the same inputs.
+
+    Root-caused 2026-08-09 (closes the 2026-07-21 'timing alignment' lever):
+    the divergence was never independent timing — it was (a) fractional
+    thresholds truncated by the chip's integer theta register (fixed: the
+    NAPQ grid is integer-lattice) and (b) the stdout readout integrating
+    bias through the pipeline tail cycles (fixed: lif segments consume the
+    window-gated record counts). On the integer chip (weight_quantization)
+    the comparison is all-integer arithmetic and is gated EXACT — FATAL on
+    any mismatch. Float chips keep report-only status: knife-edge threshold
+    comparisons under different float summation orders are inherent."""
     nev = {
         ("stage", k): torch.as_tensor(np.asarray(raw), dtype=torch.float64)
         for k, (_stage, raw) in enumerate(captured)
@@ -45,14 +50,34 @@ def _certify_nevresim_counts(*, pipeline, mapping, captured, samples):
     cert = certify_spike_counts(
         lambda _b: nev, lambda _b: hcm, [samples], backend="nevresim",
     )
-    print(
-        f"[SpikeTransientReport] nevresim vs HCM-streaming: "
-        f"exact={cert.exact_match_fraction:.6f} "
-        f"max|dcount|={cert.max_abs_delta:g} over "
-        f"{cert.neuron_windows_compared} neuron-windows "
-        "(independent per-cycle timing; the decision-parity probe is the "
-        "arbiter for this cell)"
-    )
+    integer_chip = bool(DeploymentPlan.of(pipeline).weight_quantization)
+    if integer_chip:
+        print(
+            f"[SpikeCountCertificate] nevresim windows vs HCM-streaming: "
+            f"exact={cert.exact_match_fraction:.6f} "
+            f"max|dcount|={cert.max_abs_delta:g} over "
+            f"{cert.neuron_windows_compared} neuron-windows (integer chip — "
+            f"FATAL at any mismatch)"
+        )
+        if cert.exact_match_fraction != 1.0 or cert.max_abs_delta != 0:
+            raise AssertionError(
+                f"nevresim↔HCM window-count exactness violated on the integer "
+                f"chip: exact={cert.exact_match_fraction:.6f} "
+                f"max|dcount|={cert.max_abs_delta:g} over "
+                f"{cert.neuron_windows_compared} neuron-windows. All-integer "
+                f"arithmetic admits NO tolerance — check the theta lattice "
+                f"(quantize_ir_graph), the window record path, or comb drift."
+            )
+    else:
+        print(
+            f"[SpikeTransientReport] nevresim vs HCM-streaming: "
+            f"exact={cert.exact_match_fraction:.6f} "
+            f"max|dcount|={cert.max_abs_delta:g} over "
+            f"{cert.neuron_windows_compared} neuron-windows "
+            "(float chip: knife-edge threshold comparisons under different "
+            "float summation orders are inherent; the decision-parity probe "
+            "is this cell's arbiter)"
+        )
     return cert
 
 

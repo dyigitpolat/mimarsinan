@@ -69,6 +69,9 @@ class HybridLifStepMixin(HybridFlowHost):
                         device=device, dtype=COMPUTE_DTYPE) for c in cores]
         policy = cycle_neuron_policy(
             self.spiking_mode, self.ttfs_cycle_schedule, self.firing_mode,
+            integer_lattice=bool(
+                getattr(self, "membrane_integer_lattice", False)
+            ),
         )
         neuron_states = [
             policy.make_state(

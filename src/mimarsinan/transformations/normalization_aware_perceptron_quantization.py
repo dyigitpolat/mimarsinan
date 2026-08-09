@@ -59,17 +59,29 @@ class NormalizationAwarePerceptronQuantization:
 
         p_max = torch.clamp(torch.maximum(w_max, b_max), min=1e-12)
 
-        scale = self.q_max * (1.0 / p_max)
+        # [nevresim parity] the deployed threshold register is INTEGER
+        # (threshold_t=int; theta == this scale after chip quantization):
+        # snap the shared grid to the integer lattice so the trained function
+        # IS the chip function — a fractional scale would be truncated at
+        # emit and deploy a different fire condition than the SSOT simulates.
+        # FLOOR, not round: p_max*scale <= q_max keeps every quantized
+        # parameter inside its register (no clip saturation, relays keep
+        # their strict-comparator margin).
+        scale = torch.clamp(torch.floor(self.q_max / p_max), min=1.0)
 
         # set_parameter_scale re-declares the shared grid (bias_scale follows).
         perceptron.set_parameter_scale(scale)
+        self._stamp_membrane_lattice(perceptron, scale)
 
         transformer.apply_effective_parameter_transform(
             perceptron, self._quantize_param_fn(scale)
         )
 
     def _transform_two_scale(self, perceptron, transformer, w_max, b_max):
-        weight_scale = self.q_max * (1.0 / torch.clamp(w_max, min=1e-12))
+        # [nevresim parity] integer-lattice weight grid (see single-scale note).
+        weight_scale = torch.clamp(
+            torch.floor(self.q_max / torch.clamp(w_max, min=1e-12)), min=1.0,
+        )
         # Integer-ratio snap: a bias grid of r whole weight-grid steps keeps
         # `bias * weight_scale = r * bias_int` exactly integer, which is the
         # lattice the chip export emits and the NF<->SCM parity consumes.
@@ -78,6 +90,7 @@ class NormalizationAwarePerceptronQuantization:
 
         perceptron.set_parameter_scale(weight_scale)
         perceptron.set_bias_scale(bias_scale)
+        self._stamp_membrane_lattice(perceptron, weight_scale)
 
         transformer.apply_effective_weight_transform(
             perceptron, self._quantize_param_fn(weight_scale)
@@ -85,6 +98,18 @@ class NormalizationAwarePerceptronQuantization:
         transformer.apply_effective_bias_transform(
             perceptron, self._quantize_param_fn(bias_scale)
         )
+
+    @staticmethod
+    def _stamp_membrane_lattice(perceptron, scale) -> None:
+        """Arm the LIF activation's integer-chip membrane snap with the grid
+        theta (nevresim parity: ties must be decided by exact values)."""
+        # Lazy: transformations must not import the spiking package at module
+        # scope (spiking -> mapping.verification -> ... -> transformations).
+        from mimarsinan.spiking.lif_utils import unwrap_lif_activation
+
+        lif = unwrap_lif_activation(getattr(perceptron, "activation", None))
+        if lif is not None:
+            lif.set_membrane_lattice(float(scale))
 
     def _quantize_param_fn(self, scale):
         rate = float(self.rate)

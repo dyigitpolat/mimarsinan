@@ -87,6 +87,51 @@ class StrictATanSurrogate(nn.Module):
         return (math.pi / 2 * self.alpha * x).atan() / math.pi + 0.5
 
 
+_lattice_if_node_cls = None
+
+
+def _make_lattice_if_node_class():
+    """Subclass IFNode with an exact chip-lattice membrane projection between
+    charge and fire (single-step path): on the integer chip, normalized
+    membranes are multiples of 1/(2*theta_int); float summation noise must
+    never decide a threshold tie (nevresim parity, 2026-08-09). Cached at
+    module scope and resolvable by qualname so pickled models round-trip."""
+    global _lattice_if_node_cls
+    if _lattice_if_node_cls is not None:
+        return _lattice_if_node_cls
+
+    from spikingjelly.activation_based import neuron
+
+    class _LatticeIFNode(neuron.IFNode):
+        lattice_scale: "float | None" = None
+
+        def single_step_forward(self, x):
+            if self.lattice_scale is None:
+                return super().single_step_forward(x)
+            from mimarsinan.models.nn.lif_kernels import (
+                snap_membrane_to_lattice,
+            )
+
+            self.v_float_to_tensor(x)
+            self.neuronal_charge(x)
+            snap_membrane_to_lattice(self.v, float(self.lattice_scale))
+            spike = self.neuronal_fire()
+            self.neuronal_reset(spike)
+            return spike
+
+    _LatticeIFNode.__module__ = __name__
+    _LatticeIFNode.__qualname__ = "_LatticeIFNode"
+    _lattice_if_node_cls = _LatticeIFNode
+    return _LatticeIFNode
+
+
+def __getattr__(name: str):
+    # PEP 562: unpickling resolves _LatticeIFNode by module attribute.
+    if name == "_LatticeIFNode":
+        return _make_lattice_if_node_class()
+    raise AttributeError(name)
+
+
 class LIFActivation(nn.Module):
     """Multi-timestep integrate-and-fire activation with surrogate gradient."""
 
@@ -119,7 +164,7 @@ class LIFActivation(nn.Module):
         self.thresholding_mode = thresholding_mode
         self.firing_mode = firing_mode
 
-        from spikingjelly.activation_based import neuron, surrogate
+        from spikingjelly.activation_based import surrogate
         from mimarsinan.chip_simulation.firing_strategy import FiringStrategyFactory
 
         v_reset = FiringStrategyFactory.from_config(
@@ -134,8 +179,9 @@ class LIFActivation(nn.Module):
             surrogate_fn = surrogate.ATan()
             preferred_backend = "cupy" if torch.cuda.is_available() else "torch"
 
+        node_cls = _make_lattice_if_node_class()
         try:
-            self.if_node = neuron.IFNode(
+            self.if_node = node_cls(
                 v_threshold=1.0,
                 v_reset=v_reset,
                 surrogate_function=surrogate_fn,
@@ -143,7 +189,7 @@ class LIFActivation(nn.Module):
                 backend=preferred_backend,
             )
         except (ImportError, RuntimeError, AttributeError):
-            self.if_node = neuron.IFNode(
+            self.if_node = node_cls(
                 v_threshold=1.0,
                 v_reset=v_reset,
                 surrogate_function=surrogate_fn,
@@ -179,6 +225,14 @@ class LIFActivation(nn.Module):
         self._cycle_accurate_mode = bool(mode)
         self.if_node.step_mode = "s" if mode else "m"
         functional.reset_net(self.if_node)
+
+    def set_membrane_lattice(self, theta_int: "float | None") -> None:
+        """Arm (or clear) the integer-chip membrane lattice: normalized
+        membranes snap to the 1/(2*theta_int) grid between charge and fire
+        so float noise never decides a tie (nevresim parity)."""
+        self.if_node.lattice_scale = (
+            2.0 * float(theta_int) if theta_int else None
+        )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         if self._cycle_accurate_mode:

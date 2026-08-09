@@ -14,6 +14,7 @@ quantization scale honest. Measured on the specimen: float 0.9927 -> 0.9927
 (bit-equal), NAPQ full-rate 0.1013 -> 0.9873.
 """
 
+import numpy as np
 import pytest
 import torch
 import torch.nn as nn
@@ -441,7 +442,10 @@ class TestNapqScaleIsSaturationAware:
 
         NormalizationAwarePerceptronQuantization(bits=4, device="cpu", rate=1.0).transform(p)
         q_max = 2 ** (4 - 1) - 1
-        assert float(p.parameter_scale) == pytest.approx(q_max / p_max, rel=1e-5)
+        # Integer-lattice grid (nevresim threshold_t=int): floor of the
+        # clipped-p_max derivation, never the raw fractional scale.
+        expected = max(1.0, float(np.floor(q_max / p_max)))
+        assert float(p.parameter_scale) == pytest.approx(expected)
 
     def test_projection_is_function_preserving_up_to_quant_error(self):
         torch.manual_seed(9)
