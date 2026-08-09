@@ -25,6 +25,7 @@ class SimulationHostContract:
     simulation_step_timeout_s: float
     test_data: list[tuple[np.ndarray, np.ndarray]]
     mapping: Any
+    host_compute_device: Any
     # [C2] deployed membrane decode: default-off by contract; SimulationRunner
     # arms it through the honesty gate.
     membrane_readout: bool = False

@@ -251,6 +251,9 @@ class SimulationHybridMixin(SimulationHostContract):
                 gather_buf,
                 in_scale=ttfs_in_scale,
                 out_scale=ttfs_out_scale,
+                # Bit-parity with the census flow: half-grid wire ties must
+                # be decided by the SAME f32 reduction (device) everywhere.
+                device=self.host_compute_device,
             )
 
         run_hybrid_stages(hybrid, state_buffer, on_neural=on_neural, on_compute=on_compute)

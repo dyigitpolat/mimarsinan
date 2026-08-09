@@ -160,28 +160,41 @@ def execute_compute_op_numpy(
     in_scale: float = 1.0,
     out_scale: float | None = None,
     dtype: npt.DTypeLike = np.float32,
+    device: "str | torch.device | None" = None,
 ) -> np.ndarray:
-    """Execute ComputeOp via torch wrapper; ``dtype=np.float64`` for HCM parity."""
+    """Execute ComputeOp via torch wrapper; ``dtype=np.float64`` for HCM parity.
+
+    ``device`` gives bit-parity with the census flow: CUDA/CPU f32 reduction
+    orders snap wire-grid HALF TIES to opposite points (t0_46: 1.5/8 became
+    1 spike on cuda, 2 on cpu); runners pass the pipeline device."""
     if out_scale is None:
         out_scale = in_scale
 
     torch_dtype = (torch.float64 if np.dtype(dtype) == np.float64
                    else torch.float32)
-    x_torch = torch.tensor(original_input, dtype=torch_dtype)
+    dev = torch.device(device) if device is not None else torch.device("cpu")
+    if dev.type == "cuda" and not torch.cuda.is_available():
+        dev = torch.device("cpu")
+    x_torch = torch.tensor(original_input, dtype=torch_dtype, device=dev)
     # Convert only the producer buffers this op's gather actually reads.
     referenced = gather_plan_for(op).referenced_node_ids
     buffers_torch = {
-        k: torch.tensor(state_buffer[k], dtype=torch_dtype) for k in referenced
+        k: torch.tensor(state_buffer[k], dtype=torch_dtype, device=dev)
+        for k in referenced
     }
-    result = execute_compute_op_torch(
-        op,
-        x_torch,
-        buffers_torch,
-        in_scale=in_scale,
-        out_scale=out_scale,
-        output_dtype=torch_dtype,
-    )
-    return result.detach().numpy()
+    module = (op.params or {}).get("module") if op.params else None
+    moved = module if (module is not None and hasattr(module, "to")) else None
+    if moved is not None:
+        moved.to(dev)
+    try:
+        result = execute_compute_op_torch(
+            op, x_torch, buffers_torch,
+            in_scale=in_scale, out_scale=out_scale, output_dtype=torch_dtype,
+        )
+    finally:
+        if moved is not None:
+            moved.to("cpu")
+    return result.detach().cpu().numpy()
 
 
 def compute_op_owns_scale_domain(op) -> bool:

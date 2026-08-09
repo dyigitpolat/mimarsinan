@@ -53,6 +53,9 @@ class SimulationRunner(SimulationFlatMixin, SimulationHybridMixin):
         plan = DeploymentPlan.of(pipeline)
         self.spike_generation_mode = pipeline.config["spike_generation_mode"]
         self.firing_mode = pipeline.config["firing_mode"]
+        # Bit-parity with the census flow: host ComputeOps run on the SAME
+        # device (CUDA/CPU f32 reductions decide half-grid wire ties).
+        self.host_compute_device = pipeline.config.get("device")
         self.thresholding_mode = pipeline.config.get("thresholding_mode", "<=")
         self.spiking_mode = plan.spiking_mode
         self.nevresim_connectivity_mode = resolve_nevresim_connectivity_mode(pipeline.config)
