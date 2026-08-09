@@ -74,19 +74,13 @@ class LIFAdaptationTuner(KDBlendAdaptationTuner):
         self._phase_dither = spike_phase_dither_enabled(self.pipeline.config)
         self._membrane_init = lif_membrane_init(self.pipeline.config)
         self._synchronized = lif_execution_synchronized(self.pipeline.config)
-        plan = LifAdaptationPlan.resolve(self.pipeline.config)
-        if plan.exact_qat and bool(
-            self.pipeline.config.get("lif_exact_qat_walk_recovery", False)
-        ):
-            from mimarsinan.spiking.segment_partition import (
-                graph_has_host_compute_ops,
-            )
+        from mimarsinan.tuning.orchestration.experimental_walk_recovery import (
+            restore_lif_recovery_budget,
+        )
 
-            # One opt-in program with the AQ walk recovery: default keeps
-            # the chain bitwise incumbent (fresh t0_30 read -0.41pp with
-            # this leg alone armed, n8e).
-            if graph_has_host_compute_ops(self.model):
-                plan = plan.restore_recovery_for_host_graph(self.pipeline.config)
+        plan = restore_lif_recovery_budget(
+            LifAdaptationPlan.resolve(self.pipeline.config), self,
+        )
         self._adaptation_plan = plan
         self._cycle_accurate = plan.cycle_accurate
         if plan.exact_qat:

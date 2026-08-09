@@ -147,42 +147,6 @@ def deployed_lif_gauge_forward(clone, pipeline_config):
     return _deployed_forward
 
 
-def exact_qat_training_forward(model, pipeline_config):
-    """[composition identity, n7 D3] the exact-QAT ladder's TRAINING forward:
-    the value-domain chip-aligned walk. Staircase hops are theorem-equal to
-    LIF hops (calculus §16), and the walk carries the deployed boundary
-    physics (wire rounds, clamps, host-op domains) the plain flow forward
-    omits — unmodeled they read −6.6pp on the offloaded mixer (t0_30) with
-    the ladder blind to all of it. Persists as ``model.forward`` until the
-    LIF finalize hands off to the deployed raw walk."""
-    from mimarsinan.tuning.forward_install import ChipAlignedNFForward
-
-    return ChipAlignedNFForward(
-        model, int(pipeline_config["simulation_steps"]), synchronized=True,
-    )
-
-
-def install_walk_for_host_graph_recovery(tuner) -> bool:
-    """[composition identity, n7 D3] on host-op graphs the plain flow omits
-    the deployed boundary physics (the certified walk read −6.6pp under the
-    AQ-trained function on the offloaded mixer): install the value-domain
-    walk so the AQ endpoint recovery — the freshest, largest ledger leg,
-    with its rollback guard — grinds what ships. Opt-in
-    (``lif_exact_qat_walk_recovery``) and host-graph-gated: everything else
-    stays bitwise incumbent (the no-regression contract)."""
-    if not bool(tuner.pipeline.config.get("lif_exact_qat_walk_recovery", False)):
-        return False
-    # Lazy: the spiking package init pulls chip_simulation (house cycle).
-    from mimarsinan.spiking.segment_partition import graph_has_host_compute_ops
-
-    if not graph_has_host_compute_ops(tuner.model):
-        return False
-    tuner._install_forward(
-        exact_qat_training_forward(tuner.model, tuner.pipeline.config)
-    )
-    return True
-
-
 def install_lif_input_quantizer(perceptron, simulation_steps: int) -> bool:
     """Idempotently append the LIF entry ``ChipInputQuantizer``; True when this call installed it."""
     if getattr(perceptron, _LIF_ENTRY_SNAP_ATTR, False):

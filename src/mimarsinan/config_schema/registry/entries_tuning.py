@@ -101,16 +101,13 @@ ENTRIES = (
        type=T.BOOL, category=Category.ADVANCED, label="Sync First-moment Fold",
        effect="Sequential closed-form per-hop bias fold at the sync AQ "
               "endpoint, before endpoint recovery",
-       doc="[S3/R6] Per hop (input->output), the deployed-vs-float "
-           "pre-activation mean gap — measured through the already-folded "
-           "prefix, with the hop's OWN +theta/(2S) half-step EXCLUDED — is "
-           "folded out of the effective bias. The exclusion is load-bearing: "
-           "folding the raw gap cancels the mid-tread compensation "
-           "(0.93->0.59 measured, sync_deployment_exactness.md §3.2). "
-           "Calibration-only; never spends training budget.",
+       doc="[S3/R6] Per hop, the deployed-vs-float pre-activation mean gap "
+           "(hop's own +theta/(2S) half-step EXCLUDED — load-bearing: raw-gap "
+           "folds cancel mid-tread compensation, 0.93->0.59 measured, "
+           "sync_deployment_exactness.md §3.2) folds out of the effective "
+           "bias. Calibration-only.",
        provenance="consumer frozen default", derived_default=_frozen(False),
-       relevant=_TTFS_CYCLE_RELEVANT,
-       empty_means="off — no first-moment fold at the AQ endpoint"),
+       relevant=_TTFS_CYCLE_RELEVANT, empty_means="off — no first-moment fold"),
     _E("sync_exact_qat_theta", domain="event", group="tuning",
        owner="activation_quantization_tuner",
        type=T.BOOL, category=Category.ADVANCED, exposure="user",
@@ -127,11 +124,14 @@ ENTRIES = (
        relevant=_TTFS_CYCLE_RELEVANT,
        empty_means="off — the frozen-theta ceil kernel"),
     _E("lif_exact_qat_walk_recovery", domain="event", group="tuning",
-       owner="lif_exact_qat", type=T.BOOL, category=Category.ADVANCED,
-       exposure="user", label="Exact-QAT walk recovery",
-       effect="AQ endpoint recovery grinds the deployed walk on host-op graphs",
-       doc="[composition identity, n7 D3] the plain flow omits deployed "
-           "boundary physics; +10.3pp at short T. Host-op only; rollback-guarded.",
+       owner="experimental_walk_recovery", type=T.BOOL,
+       category=Category.ADVANCED, exposure="user",
+       label="[EXPERIMENTAL] Exact-QAT walk recovery",
+       effect="Endpoint recoveries grind the deployed walk on host-op graphs",
+       doc="EXPERIMENTAL, default off; contained in experimental_walk_recovery.py. "
+           "Arm ONLY where the incumbent curriculum collapses (short-T offload: "
+           "+10.3pp at T=4); healthy cells regress, one FATAL cert failure "
+           "measured (memo §13 characterization table).",
        provenance="consumer frozen default", derived_default=_frozen(False),
        relevant=_LIF_FAMILY_RELEVANT, empty_means="off (incumbent recovery)"),
     _E("lif_exact_qat", domain="event", group="tuning", owner="lif_exact_qat",
