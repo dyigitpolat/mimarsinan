@@ -525,3 +525,54 @@ Accuracy cost of exactness: mean −0.09pp across the 26 comparable unchanged
 cells (worst single cell −0.70pp, t0_06 ttfs wq — the floor(q_max/p_max)
 headroom loss); one resurrection +4.06pp (t0_21: integer-lattice relay
 margin revived relays the fractional-θ emit had silently killed).
+
+## 12. "Longer trains score lower" (2026-08-10): refuted controlled, and the
+## last two lattice-tie seams it flushed out
+
+The user's observation over the §11 table — accuracy apparently falling with
+simulation length — does NOT survive a controlled sweep (same vehicle,
+discipline, seed; only `simulation_steps`/`target_tq` varied):
+
+- lifsync simplemlp: 0.9809 (T=4) / 0.9839 (8) / 0.9829 (16) / 0.9819 (32)
+- lifs simplemlp: 0.9830 (4) / 0.9837 (8) / 0.9834 (32)
+- lifsync deepmlp d8: 0.9583 (4) / 0.9565 (8) / 0.9625 (32) — IMPROVES in T
+- lifsync mmix offload: 0.7111 (4) / 0.9336 (8) / 0.9587 (32) — STRONGLY
+  improves in T
+
+The table's trend was vehicle/structure confounding (the hard structures
+happened to sit at s32). Every per-step delta across the 35-cell grid is
+noise-scale except the two structural defects below; deployment chains are
+Δ=+0.0000 everywhere — the chip faithfully reproduces whatever tuning built.
+
+The sweep's NEW (T, vehicle) points landed on knife-edges the tier grid had
+missed, exposing two more members of the §10/§11 tie family:
+
+1. **The membrane snap skipped rate-mode forwards** (`a7456029`). The armed
+   `_LatticeIFNode` only overrode `single_step_forward`; spikingjelly's fused
+   eval multi-step kernel bypassed it, so ENCODING layers decided exact
+   staircase ties on batch-shape GEMM dust (rate 1.5/8 read as 1/8 or 2/8 by
+   batch size — streamed NF↔SCM 7/788 at t8; the nevresim ±1 windows at t16
+   were the same ties measured against the integer-exact chip). Armed nodes
+   now run the snapped per-cycle loop in every step mode.
+2. **Encoding membranes live on 1/(ps·T), not 1/ps** (same commit). The
+   input-quantized pre-activation divides by T, so encoder membranes hit
+   HALF-points of the 2·ps lattice (167.5/164) and the snap itself rounded
+   on dust. `membrane_lattice_theta` arms encoders at ps·T.
+
+Post-fix: the parity gate is batch-invariant (batch-2 == batch-1 == SCM,
+0/788), and all four failing sweep cells pass with nevresim exact=1.000000.
+Root insight worth keeping: **LSQ-style exact-QAT actively trains values
+onto tread edges** (the θ-gradient descends grid residuals), so exact ties
+are STRUCTURAL on trained models — every float path that decides one must
+be lattice-canonicalized, and "it passed at T=4" is dice, not proof.
+
+3. **The exact-QAT install cliff on host-op graphs** (`d60bbbdc`). The plan
+   reduced LIF Adaptation to finalize+verify with 0-step endpoint recovery on
+   the premise "AQ composition ≡ installed composition" — measured TRUE on
+   single-segment graphs (cliff ≤ 0.25pp: t0_01/04/28/47) and FALSE on
+   offload/multi-segment graphs: t0_30's install cliffs 41.7pp (s4) /
+   29.7pp (s8) / 28.9pp (s32) — worst at SHORT trains — with recovery
+   disarmed, leaving the deployed model under pretrain. Host-op graphs now
+   keep the recipe's recovery budget; the composition-identity root fix
+   (making the AQ forward BE the installed segment forward on offload
+   graphs) remains open follow-up.
