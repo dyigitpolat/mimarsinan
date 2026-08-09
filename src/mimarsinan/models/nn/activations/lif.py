@@ -119,6 +119,19 @@ def _make_lattice_if_node_class():
             self.neuronal_reset(spike)
             return spike
 
+        def multi_step_forward(self, x_seq):
+            # Armed nodes must snap in EVERY mode: IFNode's fused eval
+            # kernel bypasses single_step_forward, so a rate-mode forward
+            # (encoding layers) let summation dust decide exact staircase
+            # ties — flipping with batch shape (n7 t8, rate 1.5/8).
+            if self.lattice_scale is None:
+                return super().multi_step_forward(x_seq)
+            spikes = [
+                self.single_step_forward(x_seq[t])
+                for t in range(x_seq.shape[0])
+            ]
+            return torch.stack(spikes)
+
     _LatticeIFNode.__module__ = __name__
     _LatticeIFNode.__qualname__ = "_LatticeIFNode"
     _lattice_if_node_cls = _LatticeIFNode

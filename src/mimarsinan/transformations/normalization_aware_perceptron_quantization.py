@@ -105,11 +105,16 @@ class NormalizationAwarePerceptronQuantization:
         theta (nevresim parity: ties must be decided by exact values)."""
         # Lazy: transformations must not import the spiking package at module
         # scope (spiking -> mapping.verification -> ... -> transformations).
-        from mimarsinan.spiking.lif_utils import unwrap_lif_activation
+        from mimarsinan.spiking.lif_utils import (
+            membrane_lattice_theta,
+            unwrap_lif_activation,
+        )
 
         lif = unwrap_lif_activation(getattr(perceptron, "activation", None))
         if lif is not None:
-            lif.set_membrane_lattice(float(scale))
+            lif.set_membrane_lattice(
+                membrane_lattice_theta(float(scale), perceptron, lif)
+            )
 
     def _quantize_param_fn(self, scale):
         rate = float(self.rate)

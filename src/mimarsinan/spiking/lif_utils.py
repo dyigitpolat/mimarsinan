@@ -55,6 +55,20 @@ def arm_integer_membrane_lattice(model) -> int:
             continue
         value = float(ps.item() if hasattr(ps, "item") else ps)
         if value > 0 and abs(value - round(value)) <= 1e-6:
-            lif.set_membrane_lattice(round(value))
+            lif.set_membrane_lattice(membrane_lattice_theta(
+                round(value), perceptron, lif,
+            ))
             armed += 1
     return armed
+
+
+def membrane_lattice_theta(ps_int: float, perceptron, lif) -> float:
+    """The exact membrane grid for a perceptron's LIF snap, in theta units.
+
+    Cascade layers integrate spike-driven charges on the 1/ps grid; ENCODING
+    layers integrate the input-quantized pre-activation, whose grid divides by
+    T as well (1/(ps*T)) — snapping those on 2*ps rounds true HALF-lattice
+    membranes (167.5/164) on float dust (n7 t8 sample-0 catch, 2026-08-10)."""
+    if getattr(perceptron, "is_encoding_layer", False):
+        return float(ps_int) * float(lif.T)
+    return float(ps_int)

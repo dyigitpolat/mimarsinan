@@ -52,6 +52,76 @@ class TestNfLatticeSnap:
         assert float(lif.if_node.v) == 1.0
 
 
+class TestMultiStepLatticeSnap:
+    """The n7 t8 catch (2026-08-10): the encoding layer's RATE-mode forward
+    runs spikingjelly's fused eval multi-step kernel, which bypasses the
+    armed single-step snap — batch-shape GEMM dust then decides an exact
+    staircase tie (rate 1.5/8 read as 1/8 or 2/8 by batch size)."""
+
+    THETA = 1.0
+
+    def _lif(self, thresholding_mode="<"):
+        lif = LIFActivation(
+            T=8, activation_scale=self.THETA, thresholding_mode=thresholding_mode,
+        )
+        lif.eval()
+        lif.set_membrane_lattice(82.0)
+        return lif
+
+    def test_multi_step_tie_is_dust_invariant(self):
+        """Constant charge z with 8z == 2*theta EXACTLY (z = 41/164 on the
+        armed 1/164 lattice): the snapped multi-step count must equal the
+        exact strict-hold count (1 fire), with dust of either sign."""
+        for dust in (-3e-8, 0.0, +3e-8):
+            lif = self._lif()
+            z = 41.0 / 164.0 + dust
+            with torch.no_grad():
+                out = lif(torch.full((1, 3), z))
+            count = round(float(out[0, 0]) / self.THETA * 8)
+            assert count == 1, f"dust={dust}: count={count}"
+
+    def test_multi_step_equals_single_step_loop(self):
+        """Armed 'm'-mode forward must be bit-equal to the armed per-cycle
+        's'-mode loop (the snap must not depend on step mode)."""
+        torch.manual_seed(0)
+        x = torch.randn(2, 5)
+        m = self._lif()
+        with torch.no_grad():
+            rate_m = m(x)
+        s = self._lif()
+        s.set_cycle_accurate(True)
+        spikes = []
+        with torch.no_grad():
+            for _ in range(8):
+                spikes.append(s(x))
+        rate_s = torch.stack(spikes).mean(dim=0)
+        assert torch.equal(rate_m, rate_s)
+
+    def test_unarmed_multi_step_keeps_default_path(self):
+        lif = LIFActivation(T=8, activation_scale=self.THETA)
+        lif.eval()
+        assert lif.if_node.lattice_scale is None
+        with torch.no_grad():
+            lif(torch.randn(2, 4))
+
+    def test_encoder_grid_tie_is_dust_invariant(self):
+        """The n7 t8 sample-0 catch: encoder charges live on 1/(ps*T) (input
+        quantizer grid divides by T), so membranes hit HALF-points of the
+        2*ps lattice (163.5/164) and the snap itself rounds on dust. With
+        the encoder-armed 2*ps*T lattice the walk is exact: strict '<' holds
+        cycle 0 (1308/1312 < theta) and fires cycles 1-7 — count 7, any dust."""
+        for dust in (-3e-8, 0.0, +3e-8):
+            lif = LIFActivation(T=8, activation_scale=self.THETA,
+                                thresholding_mode="<")
+            lif.eval()
+            lif.set_membrane_lattice(82.0 * 8)   # encoding layer: ps * T
+            z = 163.5 / 164.0 + dust
+            with torch.no_grad():
+                out = lif(torch.full((1, 2), z))
+            count = round(float(out[0, 0]) / self.THETA * 8)
+            assert count == 7, f"dust={dust}: count={count}"
+
+
 class TestArmFromParameterScale:
     def test_arm_integer_membrane_lattice_stamps_from_ps(self):
         import torch.nn as nn
@@ -78,6 +148,13 @@ class TestArmFromParameterScale:
 
         frac = _M(24.37)
         assert arm_integer_membrane_lattice(frac) == 0
+
+        enc = _M(24.0)
+        enc.p.is_encoding_layer = True
+        assert arm_integer_membrane_lattice(enc) == 1
+        # Encoding layers integrate the input-quantized pre-activation:
+        # grid 1/(ps*T) => lattice 2*ps*T.
+        assert enc.p.activation.if_node.lattice_scale == 48.0 * 4
 
 
 class TestScmLatticeSnap:
