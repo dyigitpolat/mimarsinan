@@ -576,3 +576,59 @@ be lattice-canonicalized, and "it passed at T=4" is dice, not proof.
    keep the recipe's recovery budget; the composition-identity root fix
    (making the AQ forward BE the installed segment forward on offload
    graphs) remains open follow-up.
+
+## 13. Composition identity (2026-08-10): the walk becomes trainable, and the
+## no-regression contract reshapes where it lands
+
+The §12(3) root fix was built and taken through four fresh A/B rounds; what
+survived is sharper than the original design.
+
+**The machinery** (`7641aa27`): the value-domain chip-aligned walk
+generalizes to staircase hops (theorem-equal to LIF hops — walk-level
+identity locked by test), the boundary round carries STE, and the output
+takes the uniform train's mean by identity. Per-hop kernels were ALREADY
+exact (LIFActivation rate ≡ strict staircase, max|Δ|=0 measured on t0_30's
+p0): the whole 6.6pp AQ-vs-deployed gap is the WALK (boundary physics the
+plain flow omits) plus ~2pp KD drift.
+
+**What end-to-end honest training taught** (fresh A/B): training the ladder
+through the walk kills the cliff by construction (finalize_cliff 0.0) but
+LOSES to the incumbent everywhere — the old chain is unintentionally a
+CURRICULUM (plain-composition pretext, then the big-ledger WQ endpoint
+recovery grinding the deployed composition), and honest end-to-end training
+under the same budgets finds worse optima. Respect the curriculum.
+
+**Three regression mechanisms found while enforcing "only improve":**
+1. **Resume-based A/B is invalid.** The MBH endpoint-steps ledger persists
+   in the run dir: every resumed rerun races a pre-spent pool (rb2's fresh
+   t0_30 ran its AQ recovery leg with 17,200 budget; the resumed "D3
+   verification" inherited 5,650 — its −0.8pp "noise" was starvation).
+   Accuracy A/Bs must be fresh-dir vs fresh-dir.
+2. **The lattice snap must not run in training** (in-place round on v
+   corrupts the surrogate chain; the un-fused loop doubles adaptation wall)
+   **nor in tuning telemetry** (snapped keep-best/floor reads
+   deterministically steer trajectories: control −0.28pp). The snap now
+   fires only inside an explicit `measurement_plane()` context
+   (`ffcfbf6d`/`e6892e64`); BOTH parity twins read inside ONE plane (an
+   asymmetric wrap re-introduces tie mismatches in opposite directions).
+3. **`graph_has_host_compute_ops` is not "offload"**: every vehicle carries
+   encode/readout host ops, so the D3 recovery arm silently fired on
+   single-segment cells too (t0_01 −0.05pp via a 600-step
+   divergence-rescued leg).
+
+**The landed contract** (`e6892e64`): the walk-recovery program — the AQ
+endpoint recovery grinding the deployed walk, plus the D3 LIF-leg re-arm —
+sits behind `lif_exact_qat_walk_recovery` (registry, default off).
+Knob off ⇒ the chain is BITWISE incumbent (fresh t0_30 reproduces 0.9587
+to the digit). Knob on ⇒ +10.3pp where the incumbent is catastrophic
+(short-T offload mixer: 0.8144 vs 0.7111 fresh, deterministic, all
+certificates green). The incumbent commit cannot even run the new T-points
+(f4653732 fresh t8: the original 7/788 parity violation) — the §12 parity
+fixes are strict improvements.
+
+Open follow-ups: (a) MBH owns re-tuning the ledger split/recovery geometry
+for the honest objective, after which the knob can default on; (b) the
+flow↔Lava boundary re-encode still has dust-decided knife-edge ties
+(a fresh t8 draw flipped one under 3-wide GPU contention — same artifacts
+pass on a quiet resume; concurrency changes cuBLAS reduction dust): that
+seam wants the same lattice canonicalization as §10–§12.
