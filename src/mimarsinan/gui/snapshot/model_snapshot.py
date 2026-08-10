@@ -11,6 +11,7 @@ import torch.nn as nn
 logger = logging.getLogger("mimarsinan.gui")
 
 from mimarsinan.common.best_effort import best_effort
+from mimarsinan.gui.snapshot.heatmap import HeatmapScaleFamily
 from mimarsinan.gui.snapshot.util.helpers import _histogram, _safe_scalar
 from mimarsinan.gui.resources import HeatmapSource, ResourceDescriptor
 
@@ -114,6 +115,7 @@ def snapshot_pruning_layers(model: Any) -> tuple[dict, list[ResourceDescriptor]]
     perceptrons = _get_model_perceptrons(model)
     layers_out: list[dict] = []
     descriptors: list[ResourceDescriptor] = []
+    heatmap_family = HeatmapScaleFamily("pruning_layers")
 
     for idx, p in enumerate(perceptrons):
         layer = getattr(p, "layer", None)
@@ -145,17 +147,23 @@ def snapshot_pruning_layers(model: Any) -> tuple[dict, list[ResourceDescriptor]]
                 "rid": rid,
             },
         })
+        layer_source = HeatmapSource(
+            weight,
+            pruned_row_mask=row_list,
+            pruned_col_mask=col_list,
+        )
+        heatmap_family.adopt(layer_source)
         descriptors.append(ResourceDescriptor(
             kind=RESOURCE_KIND_PRUNING_LAYER_HEATMAP,
             rid=rid,
-            source=HeatmapSource(
-                weight,
-                pruned_row_mask=row_list,
-                pruned_col_mask=col_list,
-            ),
+            source=layer_source,
             media_type="image/png",
         ))
 
-    return {"layers": layers_out}, descriptors
+    summary: dict = {"layers": layers_out}
+    heatmap_scale = heatmap_family.finalize(descriptors)
+    if heatmap_scale is not None:
+        summary["heatmap_scale"] = heatmap_scale
+    return summary, descriptors
 
 

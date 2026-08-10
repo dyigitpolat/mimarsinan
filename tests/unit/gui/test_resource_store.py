@@ -157,6 +157,75 @@ class TestResourceStoreProducerFailure:
         assert boom.calls == 1
 
 
+class TestResourceStoreLruBound:
+    """The payload cache is BOUNDED: rendered bytes beyond the byte cap are
+    evicted least-recently-used and re-materialise on demand (descriptors and
+    their sources stay registered — only cached payload bytes are dropped)."""
+
+    def test_default_cap_is_the_documented_constant(self):
+        from mimarsinan.gui.resources.store import RESOURCE_STORE_MAX_PAYLOAD_BYTES
+
+        assert RESOURCE_STORE_MAX_PAYLOAD_BYTES == 64 * 1024 * 1024
+        assert ResourceStore()._max_payload_bytes == RESOURCE_STORE_MAX_PAYLOAD_BYTES
+
+    def test_eviction_respects_cap_and_rematerialises_on_demand(self):
+        store = ResourceStore(max_payload_bytes=100)
+        calls: list[str] = []
+        for rid in ("core/0", "core/1", "core/2"):
+            store.put("S", _png_descriptor(rid, b"x" * 40, calls))
+
+        for rid in ("core/0", "core/1", "core/2"):
+            store.get_bytes("S", "heatmap", rid)
+        assert calls == ["core/0", "core/1", "core/2"]
+        assert store.resident_payload_bytes() <= 100
+
+        # core/0 was least recently used -> evicted -> next get re-renders it.
+        store.get_bytes("S", "heatmap", "core/0")
+        assert calls == ["core/0", "core/1", "core/2", "core/0"]
+
+    def test_recently_used_entry_survives_eviction(self):
+        store = ResourceStore(max_payload_bytes=100)
+        calls: list[str] = []
+        for rid in ("core/0", "core/1"):
+            store.put("S", _png_descriptor(rid, b"x" * 40, calls))
+        store.get_bytes("S", "heatmap", "core/0")
+        store.get_bytes("S", "heatmap", "core/1")
+        store.get_bytes("S", "heatmap", "core/0")  # refresh recency
+        store.put("S", _png_descriptor("core/2", b"x" * 40, calls))
+        store.get_bytes("S", "heatmap", "core/2")  # evicts core/1, not core/0
+
+        store.get_bytes("S", "heatmap", "core/0")
+        store.get_bytes("S", "heatmap", "core/1")
+        assert calls == ["core/0", "core/1", "core/2", "core/1"]
+
+    def test_single_oversize_payload_is_still_served(self):
+        store = ResourceStore(max_payload_bytes=10)
+        calls: list[str] = []
+        store.put("S", _png_descriptor("core/0", b"x" * 64, calls))
+        hit = store.get_bytes("S", "heatmap", "core/0")
+        assert hit is not None and hit[0] == b"x" * 64
+
+    def test_json_payloads_are_exempt_from_the_byte_cap(self):
+        """Connectivity JSON is small and served by reference; only rendered
+        BYTES payloads count toward the cap."""
+        store = ResourceStore(max_payload_bytes=10)
+        calls: list[str] = []
+        store.put("S", _json_descriptor("seg/0", {"spans": list(range(100))}, calls))
+        store.get_json("S", "connectivity", "seg/0")
+        store.get_json("S", "connectivity", "seg/0")
+        assert calls == ["seg/0"]
+        assert store.resident_payload_bytes() == 0
+
+    def test_clear_step_releases_the_accounted_bytes(self):
+        store = ResourceStore(max_payload_bytes=1000)
+        calls: list[str] = []
+        store.put("S", _png_descriptor("core/0", b"x" * 40, calls))
+        store.get_bytes("S", "heatmap", "core/0")
+        assert store.resident_payload_bytes() == 40
+        store.clear_step("S")
+        assert store.resident_payload_bytes() == 0
+
+
 class TestResourceStoreThreadSafety:
     def test_concurrent_gets_invoke_producer_once(self):
         store = ResourceStore()

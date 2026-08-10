@@ -8,14 +8,17 @@ from mimarsinan.common.env import gui_resource_render_override
 
 
 class ResourceRenderPolicy(str, Enum):
-    """Who pays for rendering a step's heavy resources, and when.
+    """Who is watching a step's heavy resources as they are produced.
 
-    ``EAGER`` -- a monitor is attached, so the run renders each step's resources
-    as it goes and the browser fetches finished bytes. ``DEFERRED`` -- nobody is
-    watching, so the run persists only the resources' SOURCE data (cheap array
-    and JSON I/O) and whoever attaches later renders from it. A headless run must
-    never pay for pixels no one asked for: that backlog is what made the process
-    sit for minutes after its last step, holding its scheduler allocation.
+    Both policies persist each resource's SOURCE data and its cheap
+    UI-resolution artifact at snapshot-persist time (the pure-numpy renderer
+    made the artifact affordable, and pre-rendering is what makes a browser
+    attach a plain file read). ``EAGER`` -- a monitor is attached, so the run
+    additionally warms the live in-memory store the monitor serves from.
+    ``DEFERRED`` -- nobody is watching, so the store is left cold. Persist
+    time never pays for a full-resolution render under either policy: the
+    matplotlib-era 1024px backlog once kept a headless process, and under a
+    scheduler its whole node, alive for minutes past its last step.
     """
 
     EAGER = "eager"

@@ -38,6 +38,7 @@ def process_ir_graph_node(
     compute_ops: list,
     nodes_info: list,
     edges: list,
+    heatmap_family=None,
 ) -> None:
     info: dict = {
             "id": node.id,
@@ -100,12 +101,18 @@ def process_ir_graph_node(
             info["heatmap_resource"] = make_resource_ref(source_step_name, RESOURCE_KIND_IR_CORE_HEATMAP, core_rid)
             if register_descriptors:
                 with best_effort(f"register heatmap for IR core {node.id}", logger=logger):
+                    core_source = HeatmapSource(mat, copy=False)
+                    if heatmap_family is not None:
+                        heatmap_family.adopt(core_source)
                     descriptors.append(ResourceDescriptor(
                         kind=RESOURCE_KIND_IR_CORE_HEATMAP,
                         rid=core_rid,
-                        source=HeatmapSource(mat, copy=False),
+                        source=core_source,
                         media_type="image/png",
                     ))
+            elif heatmap_family is not None:
+                with best_effort(f"observe heatmap scale for IR core {node.id}", logger=logger):
+                    heatmap_family.observe(mat)
 
             if (
                 liveness == LIVENESS_BIAS_ONLY
@@ -137,17 +144,22 @@ def process_ir_graph_node(
                         info["pre_pruning_axons"] = int(pre_arr.shape[0])
                         info["pre_pruning_neurons"] = int(pre_arr.shape[1])
                         if register_descriptors:
+                            pre_source = HeatmapSource(
+                                pre_arr,
+                                pruned_row_mask=list(row_mask),
+                                pruned_col_mask=list(col_mask),
+                                copy=False,
+                            )
+                            if heatmap_family is not None:
+                                heatmap_family.adopt(pre_source)
                             descriptors.append(ResourceDescriptor(
                                 kind=RESOURCE_KIND_IR_CORE_PRE_PRUNING,
                                 rid=core_rid,
-                                source=HeatmapSource(
-                                    pre_arr,
-                                    pruned_row_mask=list(row_mask),
-                                    pruned_col_mask=list(col_mask),
-                                    copy=False,
-                                ),
+                                source=pre_source,
                                 media_type="image/png",
                             ))
+                        elif heatmap_family is not None:
+                            heatmap_family.observe(pre_arr)
             neural_cores.append(info)
     else:
             info["layer_group"] = node.name

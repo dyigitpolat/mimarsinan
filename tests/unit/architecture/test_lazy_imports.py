@@ -41,7 +41,6 @@ ALLOWLIST = {
     "data_handling/data_providers/imagenet_data_provider.py",
     "data_handling/ffcv/loader_factory.py",
     "data_handling/ffcv/writer.py",
-    "gui/heatmap_renderer.py",
     "gui/reporter.py",
     "gui/runs.py",
     "gui/runtime/collector/collector.py",

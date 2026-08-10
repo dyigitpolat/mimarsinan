@@ -1,10 +1,18 @@
-"""A run with no monitor attached persists resource SOURCES and renders nothing."""
+"""Snapshot-persist renders CHEAP UI-resolution artifacts under BOTH policies.
+
+The matplotlib-era contract was "a headless run renders nothing" because a
+1024px pyplot render backlog once pinned the process for minutes after its
+last step. The pure-numpy renderer made the UI-resolution artifact cheap, so
+the sharpened contract is: EVERY run persists each resource's SOURCE (the
+full-resolution zoom feeds off it on demand) AND its UI-resolution artifact
+(the browser's first attach is a plain file read, never a render storm) --
+and NOTHING at persist time may pay for a full-resolution render.
+"""
 
 from __future__ import annotations
 
 import gc
 import json
-import threading
 import weakref
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -71,56 +79,63 @@ def _handle(working_dir, descriptors, policy, monkeypatch):
     return gui
 
 
-class TestDeferredRenderingUnblocksTheExit:
-    """THE defect: the exit drain paid the whole render backlog inline."""
+class TestPersistTimeRendersOnlyUiResolution:
+    """THE defect (sharpened): the exit drain once paid a full-resolution
+    matplotlib backlog inline. Persist time may now render ONLY the cheap
+    UI-resolution artifact -- never the full-resolution variant."""
 
-    def test_step_end_drain_never_enters_the_renderer(self, tmp_path, monkeypatch):
-        """With no monitor attached nothing may call the renderer, so the drain
-        cannot inherit its cost: a renderer that never returns must not pin
-        ``wait_snapshots_idle``."""
-        entered = threading.Event()
-        never = threading.Event()
+    def test_deferred_step_end_renders_at_ui_resolution_only(self, tmp_path, monkeypatch):
+        from mimarsinan.gui.heatmap_renderer import (
+            DEFAULT_TARGET_LONG_SIDE,
+            render_heatmap_png_bytes,
+        )
 
-        def _renderer_that_never_returns(*_args, **_kwargs):
-            entered.set()
-            never.wait(timeout=30.0)
-            return b"\x89PNG\r\n\x1a\n"
+        seen_targets: list[int] = []
+
+        def _capturing_renderer(*args, **kwargs):
+            seen_targets.append(
+                kwargs.get("target_long_side", DEFAULT_TARGET_LONG_SIDE)
+            )
+            return render_heatmap_png_bytes(*args, **kwargs)
 
         monkeypatch.setattr(
             "mimarsinan.gui.heatmap_renderer.render_heatmap_png_bytes",
-            _renderer_that_never_returns,
+            _capturing_renderer,
         )
         gui = _handle(
             str(tmp_path), _pruning_descriptors(),
             ResourceRenderPolicy.DEFERRED, monkeypatch,
         )
-
         gui.on_step_end(STEP, SimpleNamespace())
-        assert gui.wait_snapshots_idle(timeout=5.0), (
-            "the snapshot drain is still waiting on rendering"
-        )
-        assert not entered.is_set(), "a headless run entered the renderer"
+        assert gui.wait_snapshots_idle(timeout=10.0)
 
-    def test_step_end_persists_the_source_and_no_rendered_file(self, tmp_path, monkeypatch):
+        assert seen_targets, "the deferred persist must render the UI artifact"
+        assert all(t <= DEFAULT_TARGET_LONG_SIDE for t in seen_targets), (
+            "persist time paid for a beyond-UI-resolution render"
+        )
+
+    def test_deferred_step_end_persists_both_source_and_ui_artifact(self, tmp_path, monkeypatch):
         descriptors = _pruning_descriptors()
         gui = _handle(
             str(tmp_path), descriptors, ResourceRenderPolicy.DEFERRED, monkeypatch,
         )
 
         gui.on_step_end(STEP, SimpleNamespace())
-        assert gui.wait_snapshots_idle(timeout=5.0)
+        assert gui.wait_snapshots_idle(timeout=10.0)
 
         desc = descriptors[0]
         assert resource_source_disk_path(
             str(tmp_path), STEP, desc.kind, desc.rid,
         ).is_file()
-        assert not resource_disk_path(
+        rendered = resource_disk_path(
             str(tmp_path), STEP, desc.kind, desc.rid, desc.media_type,
-        ).exists()
+        )
+        assert rendered.is_file(), "DEFERRED must pre-render the UI-res artifact"
+        assert rendered.read_bytes() == desc.source.render()
 
 
 class TestAttachedMonitorStillRendersEagerly:
-    def test_eager_policy_renders_and_writes_the_resource(self, tmp_path, monkeypatch):
+    def test_eager_policy_renders_and_writes_the_resource_and_source(self, tmp_path, monkeypatch):
         descriptors = _pruning_descriptors()
         gui = _handle(
             str(tmp_path), descriptors, ResourceRenderPolicy.EAGER, monkeypatch,
@@ -135,6 +150,11 @@ class TestAttachedMonitorStillRendersEagerly:
         )
         assert rendered.is_file()
         assert rendered.read_bytes().startswith(b"\x89PNG")
+        # The source is persisted under EAGER too: the on-demand
+        # full-resolution variant feeds off it for historical runs.
+        assert resource_source_disk_path(
+            str(tmp_path), STEP, desc.kind, desc.rid,
+        ).is_file()
 
 
 class TestNothingIsLost:
