@@ -17,6 +17,7 @@ class StepPlanContractError(AssertionError):
 # deployment_specs so the GUI can import it without pulling the pipeline_steps
 # package (deployment_specs star-imports it, which cycles back through gui).
 PRUNING_ADAPTATION_STEP = "Pruning Adaptation"
+SOFT_CORE_MAPPING_STEP = "Soft Core Mapping"
 
 
 @dataclass(frozen=True)

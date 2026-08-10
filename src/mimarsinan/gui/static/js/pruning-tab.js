@@ -73,8 +73,12 @@ export function renderPruningTab(pruningData, container) {
   }
 
   const first = layers[0];
+  const sourceNote = pruningData.source === 'deployed_ir'
+    ? 'As deployed — post-compaction IR (structured pruning commits at Soft Core Mapping).'
+    : 'As committed by this step — model mask buffers (the deployed view lives on Soft Core Mapping).';
 
   let html = `
+    <div class="pruning-source-note">${esc(sourceNote)}</div>
     <div class="pruning-browse">
       <div class="pruning-layer-list card">
         <div class="card-header">Layers</div>

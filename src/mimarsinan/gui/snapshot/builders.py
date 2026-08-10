@@ -33,7 +33,10 @@ from mimarsinan.gui.snapshot.util.constants import (
 )
 # From step_plan (not deployment_specs): the specs module star-imports the whole
 # pipeline_steps package, which cycles back through gui at import time.
-from mimarsinan.pipelining.core.step_plan import PRUNING_ADAPTATION_STEP
+from mimarsinan.pipelining.core.step_plan import (
+    PRUNING_ADAPTATION_STEP,
+    SOFT_CORE_MAPPING_STEP,
+)
 
 
 from mimarsinan.gui.snapshot.model_snapshot import (
@@ -42,6 +45,9 @@ from mimarsinan.gui.snapshot.model_snapshot import (
     snapshot_pruning_layers,
 )
 from mimarsinan.gui.snapshot.ir_graph import snapshot_ir_graph
+from mimarsinan.gui.snapshot.ir_graph.ir_pruning_layers import (
+    snapshot_pruning_layers_from_ir,
+)
 
 __all__ = [
     "LIVENESS_BIAS_ONLY",
@@ -242,6 +248,28 @@ def build_step_snapshot(
             snapshot["pruning_layers"] = pruning_layers_unavailable(reason, configured_fraction)
         if step is not None:
             snapshot_key_kinds["pruning_layers"] = "new"
+
+    # The IR is where structured pruning actually COMMITS (compaction), so the
+    # Soft Core Mapping step carries the deployed pre->post truth.
+    if (
+        step_name == SOFT_CORE_MAPPING_STEP
+        and bool((getattr(pipeline, "config", {}) or {}).get("pruning"))
+        and "ir_graph" in snapshot
+    ):
+        configured_fraction = (getattr(pipeline, "config", {}) or {}).get("pruning_fraction")
+        for key in cache.keys():
+            short = key.split(".", 1)[-1] if "." in key else key
+            if short == "ir_graph":
+                with best_effort(
+                    f"snapshot deployed pruning from key {key!r}", logger=logger,
+                ):
+                    ir_summary, ir_descs = snapshot_pruning_layers_from_ir(
+                        cache.get(key), configured_fraction=configured_fraction,
+                    )
+                    snapshot["pruning_layers"] = ir_summary
+                    descriptors.extend(ir_descs)
+                    snapshot_key_kinds["pruning_layers"] = "new"
+                break
 
     cache_keys = [k.split(".", 1)[-1] if "." in k else k for k in cache.keys() if not k.startswith("__")]
     has_rich_data = any(k in snapshot for k in ("model", "ir_graph", "hard_core_mapping", "search_result"))

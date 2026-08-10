@@ -223,3 +223,47 @@ def test_pruning_snapshot_failure_names_the_error_class(monkeypatch):
     assert pruning["layers"] == []
     reasons = [entry["reason"] for entry in pruning["skipped"]]
     assert reasons == ["pruning snapshot failed: ValueError"]
+
+
+def test_soft_core_mapping_snapshot_carries_deployed_pruning():
+    """A pruned run's SCM snapshot folds the deployed (IR) pruning summary —
+    the structured commit happens here, not at Pruning Adaptation."""
+    import numpy as np
+
+    src = np.array([IRSource(-2, 0), IRSource(-2, 1), IRSource(-3, 0)], dtype=object)
+    core = NeuralCore(
+        id=0, name="c", input_sources=src,
+        core_matrix=np.ones((3, 2), dtype="float32"), latency=0,
+        perceptron_index=0, perceptron_output_slice=(0, 3),
+        pre_pruning_col_mask=[False, True, False],
+    )
+    ir = IRGraph(nodes=[core], output_sources=np.array([IRSource(0, 0)], dtype=object))
+    cache = _Cache({"ir_graph": ir})
+    pipeline = SimpleNamespace(
+        cache=cache,
+        steps=(("Soft Core Mapping", _SoftCoreMappingStep()),),
+        config={"pruning": True, "pruning_fraction": 0.33},
+    )
+    snap, _kinds, descs = build_step_snapshot(
+        pipeline, "Soft Core Mapping", step=_SoftCoreMappingStep()
+    )
+    pl = snap.get("pruning_layers")
+    assert pl is not None and pl.get("source") == "deployed_ir"
+    (layer,) = pl["layers"]
+    assert (layer["pre_neurons"], layer["post_neurons"]) == (3, 2)
+    assert pl["configured_fraction"] == 0.33
+    assert any(d.kind == "pruning_mask_map" for d in descs)
+
+
+def test_soft_core_mapping_snapshot_skips_pruning_when_disabled():
+    ir = _minimal_ir()
+    cache = _Cache({"ir_graph": ir})
+    pipeline = SimpleNamespace(
+        cache=cache,
+        steps=(("Soft Core Mapping", _SoftCoreMappingStep()),),
+        config={},
+    )
+    snap, _kinds, _descs = build_step_snapshot(
+        pipeline, "Soft Core Mapping", step=_SoftCoreMappingStep()
+    )
+    assert "pruning_layers" not in snap
