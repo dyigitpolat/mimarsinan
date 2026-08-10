@@ -8,6 +8,7 @@ from mimarsinan.gui.runtime.persistence import (
     update_run_status,
     append_live_metric,
     load_live_metrics,
+    save_step_status,
     save_step_to_persisted,
     load_persisted_steps,
     write_persisted_steps_replace,
@@ -200,6 +201,43 @@ class TestSaveLoadPersistedSteps:
         working_dir = str(tmp_path)
         steps = load_persisted_steps(working_dir)
         assert steps == {}
+
+
+class TestSaveStepStatusFailed:
+    def test_failed_status_with_error_round_trips(self, tmp_path):
+        working_dir = str(tmp_path)
+        save_step_to_persisted(
+            working_dir,
+            step_name="Pretraining",
+            start_time=10.0,
+            end_time=None,
+            target_metric=None,
+            metrics=[{"name": "acc", "value": 0.5}],
+            snapshot=None,
+            snapshot_key_kinds=None,
+            status="running",
+        )
+        save_step_status(
+            working_dir,
+            "Pretraining",
+            status="failed",
+            end_time=15.0,
+            error="CUDA out of memory",
+        )
+        entry = load_persisted_steps(working_dir)["Pretraining"]
+        assert entry["status"] == "failed"
+        assert entry["error"] == "CUDA out of memory"
+        assert entry["end_time"] == 15.0
+        # Existing fields survive the merge untouched.
+        assert entry["start_time"] == 10.0
+        assert entry["metrics"] == [{"name": "acc", "value": 0.5}]
+
+    def test_status_without_error_leaves_error_absent(self, tmp_path):
+        working_dir = str(tmp_path)
+        save_step_status(str(tmp_path), "Train", status="completed", end_time=2.0)
+        entry = load_persisted_steps(working_dir)["Train"]
+        assert entry["status"] == "completed"
+        assert "error" not in entry
 
 
 class TestResourceDiskPath:

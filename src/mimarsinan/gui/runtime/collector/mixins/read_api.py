@@ -59,6 +59,7 @@ class ReadApiMixin:
                     "target_metric": rec.target_metric,
                     "metric_kind": rec.metric_kind,
                     "verdict": rec.verdict,
+                    "error": rec.error,
                     "semantic_group": groups.get(rec.name),
                 })
             for step in steps:

@@ -81,6 +81,7 @@ def save_step_status(
     target_metric: float | None = None,
     metric_kind: str | None = None,
     verdict: dict | None = None,
+    error: str | None = None,
 ) -> None:
     path = steps_path(working_directory)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -104,6 +105,8 @@ def save_step_status(
             entry["metric_kind"] = metric_kind
         if verdict is not None:
             entry["verdict"] = verdict
+        if error is not None:
+            entry["error"] = error
         existing[step_name] = entry
         atomic_write_json(path, {"steps": existing})
 
