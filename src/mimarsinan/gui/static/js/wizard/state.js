@@ -1,5 +1,6 @@
 /* Draft state: the config DOCUMENT itself (explicit keys only), plus UI state. */
 
+import { emptyAckState } from './advisories.js';
 import { keySchema, schema } from './schema.js';
 
 export const state = {
@@ -13,6 +14,7 @@ export const state = {
   dynamicOptions: {},     // flat_key -> [{id,label}]
   modelSchemas: {},       // model_type -> field schema list
   metadata: null,         // resolved data-provider metadata (input_shape, classes)
+  advisoryAcks: emptyAckState(), // acknowledge-to-launch state (advisories.js)
 };
 
 function sectionOf(key) {
@@ -27,6 +29,23 @@ function container(key, create, section) {
   if (target === 'top') return state.draft;
   if (!state.draft[target] && create) state.draft[target] = {};
   return state.draft[target] || {};
+}
+
+/* An op `path` (container segments under the draft root) overrides scope
+   routing entirely: the server's parse layer names the container it FOUND the
+   key in (the legacy hw-search pc shapes nest theirs under `user` /
+   `auto.fixed`). A `create:false` walk never materializes containers and a
+   non-container segment aborts the walk (`null`) — a remedy must never
+   clobber unrelated data. */
+function containerAt(path, create) {
+  let host = state.draft;
+  for (const segment of path) {
+    if (host[segment] == null && create) host[segment] = {};
+    const next = host[segment];
+    if (typeof next !== 'object' || next === null || Array.isArray(next)) return null;
+    host = next;
+  }
+  return host;
 }
 
 export function getKey(key) {
@@ -98,12 +117,16 @@ export function differsFromDefault(key) {
   return !base.has || JSON.stringify(value) !== JSON.stringify(base.value);
 }
 
-export function setKey(key, value, section) {
-  container(key, true, section)[key] = value;
+export function setKey(key, value, section, path) {
+  const host = Array.isArray(path) && path.length
+    ? containerAt(path, true) : container(key, true, section);
+  if (host) host[key] = value;
 }
 
-export function clearKey(key, section) {
-  delete container(key, true, section)[key];
+export function clearKey(key, section, path) {
+  const host = Array.isArray(path) && path.length
+    ? containerAt(path, false) : container(key, true, section);
+  if (host) delete host[key];
 }
 
 /** Flat view for relevance evaluation between resolve round-trips:
@@ -129,6 +152,7 @@ export function resetDraft() {
   state.draft = { deployment_parameters: {}, platform_constraints: {} };
   state.resolve = null;
   state.templateName = null;
+  state.advisoryAcks = emptyAckState();
 }
 
 export function loadDraftFromConfig(config, { templateName = null } = {}) {
@@ -137,4 +161,6 @@ export function loadDraftFromConfig(config, { templateName = null } = {}) {
   if (!doc.platform_constraints) doc.platform_constraints = {};
   state.draft = doc;
   state.templateName = templateName;
+  /* A new config context never inherits the old one's acknowledgments. */
+  state.advisoryAcks = emptyAckState();
 }

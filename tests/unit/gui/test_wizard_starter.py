@@ -81,6 +81,34 @@ class TestFreshDraftResolves:
         assert resolution.derived["pipeline_mode"]["value"] == "phased"
 
 
+class TestStarterAdvisoryReality:
+    """The acceptance claims docs/ux/review_launch_advisories.md makes about
+    the fresh wizard: the starter derives streamed lif and therefore OPENS with
+    exactly the streamed-contract INFO advisory (review state 2, Launch
+    enabled), and one knob — spiking_variant=synchronized — is the genuinely
+    advisory-free empty state (review state 1). The owner pixel review judges
+    screenshots against that doc; these pins keep it from rotting."""
+
+    def test_fresh_starter_fires_exactly_the_streamed_info_advisory(self):
+        from mimarsinan.gui.wizard.schema_api import resolve_payload
+
+        payload = resolve_payload(starter_draft())
+        (row,) = payload["advisories"]
+        assert row["id"] == "ADV-STREAMED-CONTRACT"
+        assert row["severity"] == "INFO"
+        # non-gating: no acknowledge checkbox, Launch enabled from first paint
+        assert row["mandate_violation"] is False
+
+    def test_synchronized_variant_is_the_zero_advisory_empty_state(self):
+        from mimarsinan.gui.wizard.schema_api import resolve_payload
+
+        draft = starter_draft()
+        draft["deployment_parameters"]["spiking_variant"] = "synchronized"
+        payload = resolve_payload(draft)
+        assert payload["errors"] == []
+        assert payload["advisories"] == []
+
+
 class TestFreshDraftEmits:
     def test_emitted_config_passes_shape_validation(self):
         emitted = emit_deployment_config(starter_draft())

@@ -139,8 +139,24 @@
         <section class="wb-section" data-section-id="review">
           <div class="wb-section-head">
             <h2>Review &amp; Launch</h2>
-            <p>Derived values with their why, every knob that differs from
-              defaults, and the exact JSON that will be emitted.</p>
+            <p>Deployment advisories, derived values with their why, every knob
+              that differs from defaults, and the exact JSON that will be
+              emitted.</p>
+          </div>
+          <!-- Deployment advisories: the section's FIRST card. Gating rows
+               (UNSUPPORTED / mandate violation) carry acknowledge checkboxes
+               that hold the Launch button until every one is ticked. -->
+          <div class="section advisory-section" id="advisoryBlock" style="display:none">
+            <div class="section-header">
+              <div class="section-icon" style="--section-accent:245,158,11">⚠</div>
+              <div class="section-title-group">
+                <div class="section-title">Deployment advisories</div>
+                <div class="section-subtitle">Tentative theory from the memos — UNSUPPORTED and mandate-violating rows must be acknowledged before launch</div>
+              </div>
+            </div>
+            <div class="section-body">
+              <div class="advisory-rail" id="advisoryRail"></div>
+            </div>
           </div>
           <div class="wb-cols">
             <div class="wb-col">
@@ -197,10 +213,7 @@
       <!-- ═══ LIVE RAIL (sticky: verdict · assembly · mapping · launch) ═══ -->
       <aside class="wb-rail" id="liveRail">
         <button type="button" class="rail-verdict" id="statusPill" title="Go to Review &amp; Launch"></button>
-        <div class="rail-block" id="advisoryBlock" style="display:none">
-          <div class="rail-block-title">Deployment advisories</div>
-          <div class="advisory-rail" id="advisoryRail"></div>
-        </div>
+        <button type="button" class="rail-advisory-count" id="advisoryCountBadge" style="display:none" title="Deployment advisories — go to Review &amp; Launch"></button>
         <div class="rail-block" id="assemblyBlock">
           <div class="rail-block-title">Pipeline assembly
             <span class="rail-block-hint" id="pipelineStepsHint"></span>

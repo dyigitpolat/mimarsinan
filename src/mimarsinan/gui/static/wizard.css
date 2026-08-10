@@ -171,6 +171,10 @@ button { font-family: inherit; }
 
 .wb-nav-item.has-errors:not(.active) { border-color: rgba(244, 63, 94, 0.3); }
 
+/* Advisory count on the Review & Launch nav item (amber, beside the rose
+   error badge when both apply). */
+.wb-nav-badge.advisory { background: var(--accent-amber); color: #1a1208; }
+
 /* ═══ Main (center, scrolls) ════════════════════════════════════════════ */
 
 .wb-main {
@@ -292,6 +296,26 @@ button { font-family: inherit; }
 .rail-verdict.error::before { background: var(--accent-rose); }
 .rail-verdict.pending { color: var(--text-dim); }
 .rail-verdict.pending::before { animation: pulse 1s ease infinite; }
+
+/* Compact advisory count beside the verdict pill; the cards themselves live
+   in Review & Launch. `.pending` = unacknowledged gating advisories. */
+.rail-advisory-count {
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  border-radius: 999px;
+  background: rgba(245, 158, 11, 0.08);
+  color: var(--accent-amber);
+  font-size: var(--font-caption);
+  font-weight: 600;
+  padding: 3px 10px;
+  cursor: pointer;
+  align-self: flex-start;
+  transition: border-color var(--motion);
+}
+.rail-advisory-count:hover { border-color: rgba(245, 158, 11, 0.7); }
+.rail-advisory-count.pending {
+  background: rgba(245, 158, 11, 0.16);
+  font-weight: 700;
+}
 
 @keyframes pulse { 50% { opacity: 0.3; } }
 
@@ -1435,8 +1459,10 @@ input.field-invalid { border-color: var(--accent-rose); }
   margin-top: 2px;
 }
 
-/* ── Deployment advisories (live rail; UNSUPPORTED reads loud) ─────────── */
-.advisory-rail { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+/* ── Deployment advisories (Review & Launch first card; UNSUPPORTED reads
+      loud; gating rows carry the acknowledge-to-launch checkbox) ─────────── */
+.advisory-section { margin-bottom: 16px; }
+.advisory-rail { display: flex; flex-direction: column; gap: 8px; }
 .advisory-card {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -1482,3 +1508,21 @@ input.field-invalid { border-color: var(--accent-rose); }
   border-color: rgba(244, 63, 94, 0.45); color: #fda4af;
 }
 .advisory-levers { color: var(--text-dim); margin-top: 4px; }
+
+/* The gating acknowledge row: an explicit per-advisory checkbox that holds
+   the Launch button until ticked. */
+.advisory-ack {
+  display: flex; align-items: center; gap: 8px;
+  margin-top: 8px; padding: 6px 8px;
+  border: 1px dashed rgba(245, 158, 11, 0.5);
+  border-radius: var(--radius-sm);
+  color: var(--accent-amber);
+  font-weight: 600;
+  cursor: pointer;
+}
+.advisory-ack input { accent-color: var(--accent-amber); cursor: pointer; }
+.advisory-ack.acked {
+  border-style: solid;
+  border-color: rgba(16, 185, 129, 0.4);
+  color: var(--accent-green);
+}

@@ -1,6 +1,13 @@
 """The wizard resolve payload carries config-time deployment advisories."""
 
+from pathlib import Path
+
 from mimarsinan.gui.wizard.schema_api import resolve_payload
+
+_WIZARD_HTML = (
+    Path(__file__).resolve().parents[3]
+    / "src" / "mimarsinan" / "gui" / "static" / "wizard.html"
+)
 
 
 def _minimal_draft(**parts) -> dict:
@@ -61,3 +68,44 @@ class TestWizardAdvisories:
         ))
         assert not payload["ok"]
         assert payload["advisories"] == []
+
+
+class TestReviewLaunchLayout:
+    """Advisories render as the FIRST Review & Launch card (before Derived
+    values); the live rail carries only a compact count badge near the verdict
+    pill. String-level pin — the pixel acceptance is the owner's review against
+    docs/ux/review_launch_advisories.md."""
+
+    def _html(self):
+        return _WIZARD_HTML.read_text()
+
+    def _review_section(self, html):
+        start = html.index('data-section-id="review"')
+        # Review's cards are divs (class "section"); the next </section> close
+        # is therefore the review section's own.
+        return html[start:html.index("</section>", start)]
+
+    def test_advisory_block_is_a_review_section_card(self):
+        review = self._review_section(self._html())
+        assert 'id="advisoryBlock"' in review
+        assert 'id="advisoryRail"' in review
+
+    def test_advisory_block_precedes_the_derived_values_card(self):
+        review = self._review_section(self._html())
+        assert review.index('id="advisoryBlock"') < review.index('data-section="derived"')
+
+    def test_rail_hosts_the_count_badge_next_to_the_verdict_pill(self):
+        html = self._html()
+        rail = html[html.index('id="liveRail"'):]
+        assert 'id="advisoryCountBadge"' in rail
+        assert (
+            rail.index('id="statusPill"')
+            < rail.index('id="advisoryCountBadge"')
+            < rail.index('id="assemblyBlock"')
+        )
+
+    def test_the_rail_advisory_block_is_gone(self):
+        html = self._html()
+        assert 'id="advisoryBlock"' not in html[html.index('id="liveRail"'):]
+        assert html.count('id="advisoryBlock"') == 1
+        assert html.count('id="advisoryRail"') == 1

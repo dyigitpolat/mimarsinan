@@ -4,6 +4,7 @@
    honest assembly + mapping from every resolve round-trip. */
 
 import '../tooltip.js';
+import { pendingAckIds } from './advisories.js';
 import {
   enableAssignments, groups, keySchema, loadSchema, pretrainedPanelKeySet,
   providedAwayKeys, schema, unavailabilityReason, vehicleGatedKeySet, visibleKeys,
@@ -210,7 +211,10 @@ function renderResolveViews() {
   renderErrors();
   renderJsonPreview();
   renderLaunchStatus();
-  renderSectionNav((state.resolve && state.resolve.errors) || []);
+  renderSectionNav(
+    (state.resolve && state.resolve.errors) || [],
+    (state.resolve && state.resolve.advisories) || [],
+  );
   renderStatusPill();
   /* Derived placeholders show the CURRENT concrete resolved value. */
   refreshPlaceholders();
@@ -296,6 +300,9 @@ function bindActions() {
   document.getElementById('runBtn')?.addEventListener('click', async () => {
     const errors = currentErrors();
     if (errors.length) { goToFirstError(errors); return; }
+    /* The acknowledge-to-launch gate re-checks at click time: unacknowledged
+       gating advisories send the user to their Review & Launch cards. */
+    if (pendingAckIds(state.advisoryAcks).length) { goToSection('review'); return; }
     const btn = document.getElementById('runBtn');
     btn.disabled = true;
     try {
@@ -329,8 +336,17 @@ function bindActions() {
     document.getElementById('hwStatsPanel')?.scrollIntoView({ block: 'center' });
   });
 
+  /* The advisory card is Review's FIRST card, so the section jump lands on it. */
+  document.getElementById('advisoryCountBadge')?.addEventListener('click', () => {
+    goToSection('review');
+  });
+
   document.addEventListener('wizard:go-first-error', () => {
     goToFirstError(currentErrors());
+  });
+
+  document.addEventListener('wizard:go-review', () => {
+    goToSection('review');
   });
 
   document.getElementById('saveTemplateBtn')?.addEventListener('click', async () => {
