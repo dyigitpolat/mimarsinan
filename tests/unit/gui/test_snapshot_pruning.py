@@ -75,13 +75,20 @@ class TestSnapshotPruningLayers:
         assert out["layers"][1]["pruned_rows"] == 0
         assert out["layers"][1]["pruned_cols"] == 1
 
-        # One descriptor per layer, matching the summary rid.
-        assert len(descriptors) == 2
-        assert {d.rid for d in descriptors} == {"layer/0", "layer/1"}
-        assert all(d.kind == RESOURCE_KIND_PRUNING_LAYER_HEATMAP for d in descriptors)
+        # One descriptor per layer plus exactly ONE family colorbar,
+        # every layer stamped with the shared family scale.
+        layer_descriptors = [
+            d for d in descriptors if d.kind == RESOURCE_KIND_PRUNING_LAYER_HEATMAP
+        ]
+        colorbars = [d for d in descriptors if d.kind == "heatmap_colorbar"]
+        assert len(descriptors) == 3
+        assert len(colorbars) == 1
+        assert {d.rid for d in layer_descriptors} == {"layer/0", "layer/1"}
         assert all(d.media_type == "image/png" for d in descriptors)
+        assert len({d.source.scale for d in layer_descriptors}) == 1
+        assert out["heatmap_scale"]["vmax"] == layer_descriptors[0].source.scale
         # Producer lazily renders PNG bytes.
-        png_bytes = descriptors[0].producer()
+        png_bytes = layer_descriptors[0].producer()
         assert isinstance(png_bytes, bytes)
         assert png_bytes.startswith(b"\x89PNG")
 

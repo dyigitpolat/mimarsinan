@@ -9,6 +9,7 @@ import numpy as np
 
 from mimarsinan.common.best_effort import best_effort
 from mimarsinan.gui.resources import HeatmapSource, ResourceDescriptor
+from mimarsinan.gui.snapshot.heatmap import HeatmapScaleFamily
 from mimarsinan.gui.snapshot.util.helpers import _histogram
 from mimarsinan.gui.snapshot.ir_graph.ir_graph_nodes import process_ir_graph_node
 from mimarsinan.gui.snapshot.ir_graph.ir_graph_resources import (
@@ -35,6 +36,10 @@ def snapshot_ir_graph(
     edges: list[dict] = []
     descriptors: list[ResourceDescriptor] = []
     register_descriptors = source_step_name is None
+    # ONE shared scale for every weight heatmap in the graph (cores,
+    # pre-pruning views, banks); observed in BOTH modes so the embedded
+    # summary reports the same numbers the owning step computed.
+    heatmap_family = HeatmapScaleFamily("ir_graph")
 
     neural_cores: list[dict] = []
     compute_ops: list[dict] = []
@@ -51,12 +56,16 @@ def snapshot_ir_graph(
                     ),
                 }
                 if register_descriptors:
+                    bank_source = HeatmapSource(bank.core_matrix, copy=False)
+                    heatmap_family.adopt(bank_source)
                     descriptors.append(ResourceDescriptor(
                         kind=RESOURCE_KIND_IR_BANK_HEATMAP,
                         rid=rid,
-                        source=HeatmapSource(bank.core_matrix, copy=False),
+                        source=bank_source,
                         media_type="image/png",
                     ))
+                else:
+                    heatmap_family.observe(bank.core_matrix)
 
     for topo_idx, node in enumerate(ir_graph.nodes):
         process_ir_graph_node(
@@ -71,6 +80,7 @@ def snapshot_ir_graph(
             compute_ops=compute_ops,
             nodes_info=nodes_info,
             edges=edges,
+            heatmap_family=heatmap_family,
         )
 
     with best_effort("extract output_sources from ir_graph", logger=logger):
@@ -108,4 +118,11 @@ def snapshot_ir_graph(
         "neuron_counts": neuron_counts,
         "compute_op_types": list({c["op_type"] for c in compute_ops}),
     }
+    heatmap_scale = heatmap_family.finalize(
+        descriptors,
+        register_descriptors=register_descriptors,
+        make_ref=lambda kind, rid: make_resource_ref(source_step_name, kind, rid),
+    )
+    if heatmap_scale is not None:
+        summary["heatmap_scale"] = heatmap_scale
     return summary, descriptors

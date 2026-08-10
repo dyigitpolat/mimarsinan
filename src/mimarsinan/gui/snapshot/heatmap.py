@@ -8,7 +8,10 @@ from typing import Any
 import numpy as np
 
 from mimarsinan.common.best_effort import best_effort
-from mimarsinan.gui.resources import HeatmapSource, as_host_array
+from mimarsinan.gui.heatmap_renderer import symmetric_scale
+from mimarsinan.gui.resources import HeatmapSource, ResourceDescriptor, as_host_array
+from mimarsinan.gui.resources.sources import ColorbarSource
+from mimarsinan.gui.snapshot.util.constants import RESOURCE_KIND_HEATMAP_COLORBAR
 
 logger = logging.getLogger("mimarsinan.gui")
 
@@ -77,4 +80,59 @@ def _make_bias_strip_source(bias: Any) -> HeatmapSource:
     if array.ndim == 1:
         array = array.reshape(1, -1)
     return HeatmapSource(array, copy=False)
+
+
+class HeatmapScaleFamily:
+    """ONE symmetric color scale for a snapshot's heatmap family.
+
+    The family scale is the max of the per-matrix p98 symmetric scales, so
+    every matrix saturates at most 2% of its OWN cells while all tiles stay
+    directly comparable. ``observe`` runs for every family matrix whether or
+    not descriptors are registered (the embedded IR summary must report the
+    same numbers the owning step computed); ``adopt`` collects the sources the
+    shared scale is stamped onto at :meth:`finalize`.
+    """
+
+    def __init__(self, rid: str) -> None:
+        self.rid = rid
+        self._vmax: float | None = None
+        self._sources: list[HeatmapSource] = []
+
+    def observe(self, matrix: Any) -> None:
+        scale = symmetric_scale(np.asarray(matrix))
+        self._vmax = scale if self._vmax is None else max(self._vmax, scale)
+
+    def adopt(self, source: HeatmapSource) -> None:
+        self.observe(source.matrix)
+        self._sources.append(source)
+
+    def finalize(
+        self,
+        descriptors: list[ResourceDescriptor],
+        *,
+        register_descriptors: bool = True,
+        make_ref=None,
+    ) -> dict[str, Any] | None:
+        """Stamp the scale, emit the family colorbar descriptor, return the summary block."""
+        if self._vmax is None:
+            return None
+        for source in self._sources:
+            source.scale = self._vmax
+        ref = (
+            make_ref(RESOURCE_KIND_HEATMAP_COLORBAR, self.rid)
+            if make_ref is not None
+            else {"kind": RESOURCE_KIND_HEATMAP_COLORBAR, "rid": self.rid}
+        )
+        if register_descriptors:
+            descriptors.append(ResourceDescriptor(
+                kind=RESOURCE_KIND_HEATMAP_COLORBAR,
+                rid=self.rid,
+                source=ColorbarSource(),
+                media_type="image/png",
+            ))
+        return {
+            "vmin": -self._vmax,
+            "vmax": self._vmax,
+            "colorbar_resource": ref,
+        }
 
