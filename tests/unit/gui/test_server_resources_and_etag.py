@@ -258,9 +258,13 @@ class TestResourceETag:
     def test_new_kinds_are_servable(
         self, collector_with_store: DataCollector, client: TestClient
     ) -> None:
-        """The colorbar family asset and bias strips are fetchable kinds."""
+        """The colorbar family asset, bias strips, and pruning mask maps are fetchable kinds."""
         store = collector_with_store.get_resource_store()
-        for kind, rid in (("heatmap_colorbar", "ir_graph"), ("ir_core_bias", "core/0")):
+        for kind, rid in (
+            ("heatmap_colorbar", "ir_graph"),
+            ("ir_core_bias", "core/0"),
+            ("pruning_mask_map", "layer/0"),
+        ):
             store.put("s1", ResourceDescriptor(
                 kind=kind, rid=rid,
                 source=CallableSource(_png_bytes), media_type="image/png",
@@ -268,6 +272,46 @@ class TestResourceETag:
             r = client.get(f"/api/steps/s1/resources/{kind}/{rid}")
             assert r.status_code == 200, kind
             assert r.headers["content-type"].startswith("image/png")
+
+
+class TestResourceKindRegistry:
+    """Ratchet: every resource kind a snapshot builder can emit must be
+    registered in ``RESOURCE_MEDIA_TYPE_BY_KIND`` — an unregistered kind 404s
+    on all three serving endpoints, silently blanking its visualization."""
+
+    def test_every_snapshot_resource_kind_has_a_media_type(self) -> None:
+        import importlib
+        import pkgutil
+
+        import mimarsinan.gui.snapshot as snapshot_pkg
+        from mimarsinan.gui.server.routes_resources import RESOURCE_MEDIA_TYPE_BY_KIND
+
+        def _fail_loud(name: str) -> None:
+            raise ImportError(f"could not import {name} while collecting resource kinds")
+
+        modules = [snapshot_pkg]
+        for info in pkgutil.walk_packages(
+            snapshot_pkg.__path__, prefix=snapshot_pkg.__name__ + ".", onerror=_fail_loud,
+        ):
+            modules.append(importlib.import_module(info.name))
+
+        kinds: dict[str, str] = {}
+        for module in modules:
+            for attr in dir(module):
+                if attr.startswith("RESOURCE_KIND_"):
+                    value = getattr(module, attr)
+                    if isinstance(value, str):
+                        kinds.setdefault(value, f"{module.__name__}.{attr}")
+        assert kinds, "collected no RESOURCE_KIND_* constants under gui/snapshot -- scan broken"
+
+        unregistered = {
+            kind: declared_at for kind, declared_at in sorted(kinds.items())
+            if kind not in RESOURCE_MEDIA_TYPE_BY_KIND
+        }
+        assert not unregistered, (
+            "snapshot builders can emit resource kinds that "
+            f"RESOURCE_MEDIA_TYPE_BY_KIND does not register (endpoints 404 them): {unregistered}"
+        )
 
 
 class TestFullResolutionVariant:
