@@ -22,19 +22,27 @@ class DeployedNeuronSurvival:
     survivors: Mapping[int, np.ndarray]
 
     def project(self, records: Dict[int, np.ndarray]) -> Dict[int, np.ndarray]:
-        """Select each per-perceptron record's surviving-neuron columns; ``(batch, N)`` -> ``(batch, M)``.
+        """Select each per-perceptron record's surviving ORIGINAL columns; ``(batch, N)`` -> ``(batch, M)``.
 
-        Identity (byte-identical no-op) for perceptrons with no survival entry or already at full width.
+        Index-based by construction: a pruned neuron's record value is irrelevant
+        (streamed LIF membrane init / folded half-step bias can make a zero-input
+        neuron emit, and records may carry negative values). Identity (byte-identical
+        no-op) for perceptrons with no survival entry or already at deployed width;
+        a record neither full-original-width nor at deployed width fails loud.
         """
         projected: Dict[int, np.ndarray] = {}
         for pi, vals in records.items():
             surviving = self.survivors.get(pi)
-            if surviving is None or vals.shape[1] <= len(surviving):
+            if surviving is None or vals.shape[1] == len(surviving):
                 projected[pi] = vals
                 continue
-            # Survivors are the M largest values per sample: pruned NF neurons contribute exactly 0, and the multiset compare is permutation-invariant.
-            m = len(surviving)
-            projected[pi] = np.sort(vals, axis=1)[:, vals.shape[1] - m:]
+            assert len(surviving) > 0 and vals.shape[1] > int(np.max(surviving)), (
+                f"perceptron {pi}: record width {vals.shape[1]} is neither the "
+                f"deployed width {len(surviving)} nor indexable by the survivor "
+                f"set (max original index "
+                f"{int(np.max(surviving)) if len(surviving) else 'n/a'})"
+            )
+            projected[pi] = vals[:, np.asarray(surviving)]
         return projected
 
 

@@ -276,6 +276,10 @@ T0 = [
               "pools INTERIOR — 3 neural segments, each streaming "
               "internally, counts re-encoded at the pools; streamed "
               "NF<->SCM exactness gate FATAL across segments"),
+    dict(n=51, mode="lifs", quant="wq", wb=5, s=4, vehicle="lenet5",
+         pruned=0.10, tags=["pruned10"],
+         note="pins streamed x pruning parity — the W0.1 regression (streamed "
+              "gate must project the NF onto the deployed survivor set)"),
     dict(n=41, mode="mvm", quant="wq", wb=8, vehicle="lenet5",
          pruned=0.05, tags=["pruned"],
          note="mvm flagship: quantized weights, float I/O, twin certs FATAL"),

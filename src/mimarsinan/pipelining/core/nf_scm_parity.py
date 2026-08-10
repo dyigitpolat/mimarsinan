@@ -201,6 +201,7 @@ def assert_streamed_nf_scm_exact_or_raise(
     forward must equal the identity-mapped streaming executor at atol=0 —
     no mismatch budget; parity holds by construction or the deployment is
     wrong."""
+    from mimarsinan.mapping.pruning import derive_deployed_neuron_survival
     from mimarsinan.models.nn.lif_kernels import measurement_plane
     from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
     from mimarsinan.spiking.lif_utils import arm_integer_membrane_lattice
@@ -226,6 +227,10 @@ def assert_streamed_nf_scm_exact_or_raise(
     per_sample: List[Dict[int, np.ndarray]] = []
     with measurement_plane():
         nf_counts_by_pi = _capture_nf_streamed_counts(model, samples)
+        # Project the NF onto neurons actually deployed after pruning (the pruned ir_graph is the survival authority; no-op when nothing was pruned).
+        nf_counts_by_pi = derive_deployed_neuron_survival(ir_graph).project(
+            nf_counts_by_pi,
+        )
         with torch.no_grad():
             for i in range(samples.shape[0]):
                 _, record = executor.forward_with_recording(

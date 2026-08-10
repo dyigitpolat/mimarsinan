@@ -646,6 +646,28 @@
       "note": "per-segment streamed flagship (plan \u00a79): offload puts both pools INTERIOR \u2014 3 neural segments, each streaming internally, counts re-encoded at the pools; streamed NF<->SCM exactness gate FATAL across segments"
     },
     {
+      "name": "t0_51_lifs_lenet5_wq_s4_pruned10",
+      "config": "t0_51_lifs_lenet5_wq_s4_pruned10.json",
+      "model_type": "lenet5",
+      "cell": {
+        "firing": "lif",
+        "sync": "streamed",
+        "quantization": "wq_aq",
+        "S": "4",
+        "depth": "any",
+        "vehicle": "lenet5",
+        "dataset": "mnist",
+        "regime": "from_scratch",
+        "pruning": "pruned",
+        "encoding_placement": "subsume"
+      },
+      "tags": [
+        "pruned10"
+      ],
+      "expected_wall_min": 10,
+      "note": "pins streamed x pruning parity \u2014 the W0.1 regression (streamed gate must project the NF onto the deployed survivor set)"
+    },
+    {
       "name": "t0_41_mvm_lenet5_wq_pruned",
       "config": "t0_41_mvm_lenet5_wq_pruned.json",
       "model_type": "lenet5",
