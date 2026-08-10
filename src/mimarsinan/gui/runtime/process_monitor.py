@@ -14,6 +14,8 @@ from mimarsinan.gui.viewmodel import (
     annotations_for_step,
     build_overview_chart,
     categories_for,
+    persisted_run_status,
+    persisted_step_status,
     persisted_step_view,
     semantic_groups_from_config_view,
     step_bar_badge,
@@ -47,27 +49,24 @@ def recover_orphaned_runs(runs: dict[str, ManagedRun], generated_files_root: str
         status = info.get("status", "unknown")
         started_at = info.get("started_at", 0.0)
         finished_at = info.get("finished_at")
+        starttime = info.get("starttime")
 
         if finished_at and (time.time() - finished_at) > 3600:
             continue
 
-        alive = False
-        if pid:
-            try:
-                os.kill(pid, 0)
-                alive = True
-            except (OSError, ProcessLookupError):
-                pass
+        experiment_name = (info.get("config_summary") or {}).get("experiment_name", run_id)
+        managed = ManagedRun(
+            run_id=run_id,
+            working_dir=str(child),
+            pid=pid,
+            started_at=started_at,
+            experiment_name=experiment_name,
+            starttime=starttime if isinstance(starttime, int) else None,
+        )
+        # The starttime-aware probe: a recycled pid does not resurrect a run.
+        alive = bool(pid) and managed.is_alive()
 
         if alive or status == "running" or (finished_at and (time.time() - finished_at) < 3600):
-            experiment_name = (info.get("config_summary") or {}).get("experiment_name", run_id)
-            managed = ManagedRun(
-                run_id=run_id,
-                working_dir=str(child),
-                pid=pid,
-                started_at=started_at,
-                experiment_name=experiment_name,
-            )
             runs[run_id] = managed
             logger.info("Recovered orphaned run %s (pid=%d, status=%s)", run_id, pid, status)
 
@@ -100,17 +99,10 @@ def list_active(runs: dict[str, ManagedRun]) -> list[dict]:
 
         step_names = (info or {}).get("step_names", [])
         total = len(step_names)
-        completed = sum(
-            1 for s in steps.values()
-            if s.get("status") == "completed" or (s.get("end_time") is not None and s.get("status") != "running")
-        )
-        failed = sum(1 for s in steps.values() if s.get("status") == "failed")
-        current_step = None
-        for sn in step_names:
-            sd = steps.get(sn, {})
-            if sd.get("status") == "running":
-                current_step = sn
-                break
+        statuses = {sn: persisted_step_status(steps.get(sn, {}), alive=alive) for sn in step_names}
+        completed = sum(1 for st in statuses.values() if st == "completed")
+        failed = sum(1 for st in statuses.values() if st == "failed")
+        current_step = next((sn for sn in step_names if statuses[sn] == "running"), None)
 
         target_metrics = []
         for sn in step_names:
@@ -121,18 +113,10 @@ def list_active(runs: dict[str, ManagedRun]) -> list[dict]:
 
         progress = (completed / total) if total > 0 else 0.0
 
-        steps_summary = {}
-        for sn in step_names:
-            sd = steps.get(sn, {})
-            st = sd.get("status", "pending")
-            if st == "pending" and sd.get("end_time") is not None:
-                st = "completed"
-            if st == "running" and not alive:
-                st = "failed"
-            steps_summary[sn] = {
-                "status": st,
-                "end_time": sd.get("end_time"),
-            }
+        steps_summary = {
+            sn: {"status": statuses[sn], "end_time": steps.get(sn, {}).get("end_time")}
+            for sn in step_names
+        }
 
         results.append({
             "run_id": run_id,
@@ -167,11 +151,7 @@ def get_run_detail(runs: dict[str, ManagedRun], run_id: str) -> dict | None:
     current_step = None
     for sn in step_names:
         sd = steps_data.get(sn, {})
-        status = sd.get("status", "pending")
-        if status == "pending" and sd.get("end_time") is not None:
-            status = "completed"
-        if status == "running" and not alive:
-            status = "failed"
+        status = persisted_step_status(sd, alive=alive)
         if status == "running":
             current_step = sn
         steps.append(persisted_step_view(sn, sd, status=status))
@@ -194,10 +174,8 @@ def get_run_detail(runs: dict[str, ManagedRun], run_id: str) -> dict | None:
     for s in steps:
         s["semantic_group"] = groups.get(s["name"])
 
-    run_status = (info or {}).get("status", "running" if alive else "unknown")
+    run_status = persisted_run_status(info, alive=alive) or "unknown"
     run_error = (info or {}).get("error")
-    if not alive and run_status == "running":
-        run_status = "failed"
 
     for s in steps:
         s["badge"] = step_bar_badge(s)
@@ -239,9 +217,7 @@ def get_run_step_detail(runs: dict[str, ManagedRun], run_id: str, step_name: str
                     "global_step": lm.get("global_step"),
                 })
 
-    step_status = sd.get("status", "pending")
-    if step_status == "pending" and sd.get("end_time") is not None:
-        step_status = "completed"
+    step_status = persisted_step_status(sd, alive=managed.is_alive())
 
     metric_categories = categories_for({m.get("name", "") for m in metrics})
     annotations = annotations_for_step(

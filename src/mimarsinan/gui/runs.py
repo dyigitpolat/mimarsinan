@@ -14,12 +14,15 @@ from mimarsinan.gui.runtime.persistence import (
     load_console_logs,
     load_events,
     load_persisted_steps,
+    load_run_info,
 )
 from mimarsinan.gui.snapshot.console_events import parse_console_events
 from mimarsinan.gui.viewmodel import (
     annotations_for_step,
     build_overview_chart,
     categories_for,
+    persisted_run_status,
+    persisted_step_status,
     persisted_step_view,
     semantic_groups_from_config_view,
     step_bar_badge,
@@ -81,7 +84,7 @@ def list_runs(*, include_steps: bool = False) -> list[dict[str, Any]]:
             entry["total_steps"] = len(entry["steps"])
             entry["completed_steps"] = sum(
                 1 for s in steps_data.values()
-                if s.get("end_time") is not None
+                if persisted_step_status(s, alive=False) == "completed"
             )
         results.append(entry)
     return results
@@ -112,22 +115,26 @@ def get_run_pipeline(run_id: str) -> dict[str, Any] | None:
     config = get_run_config(run_id) or {}
     config_view = _build_run_config_view(config)
     groups = semantic_groups_from_config_view(config_view)
+    # A historical run is dead by definition: persisted statuses win, and a
+    # stale "running" (hard kill) reads failed instead of forever-live.
     steps = []
     for name, sd in steps_data.items():
         steps.append({
-            **persisted_step_view(
-                name, sd, status="completed" if sd.get("end_time") else "pending",
-            ),
+            **persisted_step_view(name, sd, status=persisted_step_status(sd, alive=False)),
             "semantic_group": groups.get(name),
         })
     for step in steps:
         step["badge"] = step_bar_badge(step)
+    info = load_run_info(str(run_dir))
     return {
         "steps": steps,
         "current_step": None,
         "config": config,
         "config_view": config_view,
         "overview_chart": build_overview_chart(steps),
+        "is_alive": False,
+        "status": persisted_run_status(info, alive=False),
+        "error": (info or {}).get("error"),
     }
 
 
@@ -166,9 +173,7 @@ def get_run_step_detail(run_id: str, step_name: str) -> dict[str, Any] | None:
             snapshot, snapshot_key_kinds = rebuilt
     metrics = sd.get("metrics", [])
     return {
-        **persisted_step_view(
-            step_name, sd, status="completed" if sd.get("end_time") else "pending",
-        ),
+        **persisted_step_view(step_name, sd, status=persisted_step_status(sd, alive=False)),
         "metric_categories": categories_for({m.get("name", "") for m in metrics}),
         "annotations": annotations_for_step(
             get_run_events(run_id), step_name, sd.get("start_time"),
