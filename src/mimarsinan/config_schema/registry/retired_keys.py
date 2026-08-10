@@ -76,7 +76,14 @@ _RETIRED_STANDALONE_MESSAGES: Dict[str, Dict[str, str]] = {
             "never a knob. Remove the key."
         ),
     },
-    "platform_constraints": {},
+    "platform_constraints": {
+        "allow_weight_reuse": (
+            "allow_weight_reuse is retired: weight reuse is always on — weight "
+            "banks are built unconditionally and the reuse-phase report always "
+            "prints; bank-resident scheduling is chosen by schedule_policy. "
+            "Remove the key."
+        ),
+    },
 }
 
 

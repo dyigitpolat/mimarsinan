@@ -32,7 +32,6 @@ def build_platform_constraints_resolved(
             pipeline_config.get("allow_neuron_splitting", False)
         )
     pcfg["allow_scheduling"] = bool(pipeline_config.get("allow_scheduling", False))
-    pcfg["allow_weight_reuse"] = bool(pipeline_config.get("allow_weight_reuse", False))
     pcfg[RESIDENCY_KEY] = dict(pipeline_config.get(RESIDENCY_KEY, {}) or {})
     pcfg["schedule_policy"] = str(pipeline_config.get("schedule_policy", "pool"))
     # The scheduled-build pass budget: dropping it here silently pins the

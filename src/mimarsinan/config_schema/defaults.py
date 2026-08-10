@@ -72,7 +72,7 @@ DEFAULT_PLATFORM_CONSTRAINTS: Dict[str, object] = {
     "weight_bits": 8,
     "allow_coalescing": False,
     "allow_neuron_splitting": False,
-    "allow_per_layer_s": False, "allow_weight_reuse": False,
+    "allow_per_layer_s": False,
     "max_schedule_passes": 8,
     "scheduling_latency_weight": 1.0,
 }
@@ -116,7 +116,7 @@ CONFIG_KEYS_SET: Set[str] = {
     "target_tq",
     "allow_coalescing",
     "allow_neuron_splitting",
-    "allow_per_layer_s", "allow_weight_reuse",
+    "allow_per_layer_s",
     "allow_scheduling", "schedule_policy",
     "max_schedule_passes",
     "scheduling_latency_weight",

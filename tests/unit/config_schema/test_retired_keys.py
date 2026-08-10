@@ -1,10 +1,15 @@
 """Retired config keys: scoped keyed migration rows, one-click ops, honest preview."""
 
+from pathlib import Path
+
+from mimarsinan.config_schema.registry import retired_key_errors
 from mimarsinan.config_schema.resolve import resolve_draft
 from mimarsinan.config_schema.validation import (
     non_declarable_key_errors,
     validate_deployment_config,
 )
+
+_SRC_ROOT = Path(__file__).resolve().parents[3] / "src" / "mimarsinan"
 
 
 def _document(pc=None, **dp) -> dict:
@@ -105,3 +110,73 @@ class TestResolveChannel:
                     "spiking_mode", "ttfs_cycle_schedule"):
             assert after.resolved[key] == before.resolved[key], key
 
+
+class TestScopedRetirement:
+    """Retirement is scoped: platform_constraints keys get keyed remedies too,
+    and every row/remedy names the sub-document the wizard must edit."""
+
+    def test_scan_reads_both_scopes(self):
+        rows = retired_key_errors({
+            "deployment_parameters": {"spiking_mode": "lif"},
+            "platform_constraints": {"allow_weight_reuse": True},
+        })
+        by_key = {row["key"]: row for row in rows}
+        assert by_key["spiking_mode"]["scope"] == "deployment_parameters"
+        assert by_key["allow_weight_reuse"]["scope"] == "platform_constraints"
+        for row in rows:
+            assert row["rule_id"] == "retired_key"
+
+    def test_allow_weight_reuse_resolves_to_a_scoped_clear_remedy(self):
+        res = resolve_draft(_document(pc={"allow_weight_reuse": True}))
+        rows = [e for e in res.errors if e["key"] == "allow_weight_reuse"]
+        # exactly ONE row: the keyed retired row supersedes the structural echo.
+        (row,) = rows
+        assert row["rule_id"] == "retired_key"
+        assert row["scope"] == "platform_constraints"
+        assert "retired" in row["message"] and "always on" in row["message"]
+        (remedy,) = row["remedies"]
+        assert remedy["action"] == "clear"
+        assert remedy["key"] == "allow_weight_reuse"
+        assert remedy["scope"] == "platform_constraints"
+
+    def test_retired_platform_key_is_not_unknown_and_never_explicit(self):
+        res = resolve_draft(_document(pc={"allow_weight_reuse": False}))
+        # retired != unknown: the tray must not double-report the keyed error,
+        # and a removed key never counts as an explicit declaration.
+        assert not any("allow_weight_reuse" in path for path in res.unknown_keys)
+        assert "allow_weight_reuse" not in res.explicit_keys
+        assert any(e["rule_id"] == "retired_key"
+                   and e["key"] == "allow_weight_reuse" for e in res.errors)
+
+    def test_validation_path_reports_the_retired_platform_key(self):
+        errors = validate_deployment_config(
+            _document(pc={"allow_weight_reuse": True})
+        )
+        assert any("allow_weight_reuse" in e and "retired" in e for e in errors)
+
+    def test_wizard_shaped_platform_body_reports_too(self):
+        res = resolve_draft(_document(
+            pc={"mode": "user", "user": {"allow_weight_reuse": True}},
+        ))
+        assert any(e["rule_id"] == "retired_key"
+                   and e["key"] == "allow_weight_reuse" for e in res.errors)
+
+    def test_clear_remedy_yields_a_clean_document(self):
+        doc = _document(pc={"allow_weight_reuse": True})
+        before = resolve_draft(doc)
+        (row,) = [e for e in before.errors if e["key"] == "allow_weight_reuse"]
+        after = resolve_draft(_apply_ops(doc, row["remedies"]))
+        assert after.errors == []
+        assert "allow_weight_reuse" not in after.resolved
+
+    def test_retired_knob_is_purged_from_src(self):
+        # The knob must never quietly return: the ONLY src mention is the
+        # retirement table that keys the migration remedy.
+        allowed = {"config_schema/registry/retired_keys.py"}
+        offenders = sorted(
+            str(path.relative_to(_SRC_ROOT))
+            for path in _SRC_ROOT.rglob("*.py")
+            if "allow_weight_reuse" in path.read_text(encoding="utf-8")
+            and str(path.relative_to(_SRC_ROOT)) not in allowed
+        )
+        assert offenders == []

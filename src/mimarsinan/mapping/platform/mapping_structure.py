@@ -54,7 +54,7 @@ def compute_fc_tiling_mode(
 class ChipCapabilities:
     """Declared chip permissions and core grid — the capability layer MappingStrategy derives per-layer decisions from.
 
-    allow_per_layer_s and allow_weight_reuse are RESERVED gates (default False ⇒ byte-identical; no mapping decision consults them yet).
+    allow_per_layer_s is a RESERVED gate (default False ⇒ byte-identical; no mapping decision consults it yet).
     """
 
     max_axons: int | None = None
@@ -64,7 +64,6 @@ class ChipCapabilities:
     allow_neuron_splitting: bool = False
     allow_scheduling: bool = False
     allow_per_layer_s: bool = False
-    allow_weight_reuse: bool = False
     # [wsm V2] pass-composition policy under allow_scheduling: "pool" (the
     # historical capacity split) or "bank_clustered" (weights stay resident).
     schedule_policy: str = "pool"
@@ -79,7 +78,6 @@ class ChipCapabilities:
             allow_neuron_splitting=bool(constraints.get("allow_neuron_splitting", False)),
             allow_scheduling=bool(constraints.get("allow_scheduling", False)),
             allow_per_layer_s=bool(constraints.get("allow_per_layer_s", False)),
-            allow_weight_reuse=bool(constraints.get("allow_weight_reuse", False)),
             schedule_policy=str(constraints.get("schedule_policy", "pool")),
         )
 
@@ -136,11 +134,6 @@ class MappingStrategy:
     def allow_per_layer_s(self) -> bool:
         """The EW1 RESERVED per-layer-S gate (no mapping decision consults it yet)."""
         return self.capabilities.allow_per_layer_s
-
-    @property
-    def allow_weight_reuse(self) -> bool:
-        """The RESERVED weight-reuse gate (no mapping/build decision consults it yet)."""
-        return self.capabilities.allow_weight_reuse
 
     @property
     def schedule_policy(self) -> str:

@@ -110,7 +110,10 @@ derived value as its CONTENT, not a placeholder — `spiking_mode='ttfs'` locks
 that an explicit click takes over. Nothing here special-cases a mode; a change
 to the served sets re-renders the group hosts (a signature guard keeps that off
 the typing path). An illegal value in a loaded document is a keyed inline error
-with its one-click remedy — never an uncaught exception. The
+with its one-click remedy — never an uncaught exception; a remedy op may
+carry a `scope` naming its target sub-document, which overrides the schema
+section lookup (how a RETIRED key, gone from the schema, still clears from
+the right place). The
 pretrained-weight source is ONE concept: `preload_weights` is the hand knob and
 `weight_source` derives from the model builder's `ModelWorkloadProfile`
 registration (`resolve_payload` folds it in through the DeploymentPlan's own

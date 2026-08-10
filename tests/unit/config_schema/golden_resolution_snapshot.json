@@ -73,7 +73,6 @@
     "allow_neuron_splitting": true,
     "allow_per_layer_s": false,
     "allow_scheduling": false,
-    "allow_weight_reuse": false,
     "batch_size": 128,
     "core_semantics": "spiking",
     "cores": [
@@ -289,7 +288,6 @@
     "allow_neuron_splitting": true,
     "allow_per_layer_s": false,
     "allow_scheduling": true,
-    "allow_weight_reuse": false,
     "batch_size": 128,
     "core_semantics": "spiking",
     "cores": [
@@ -506,7 +504,6 @@
     "allow_neuron_splitting": true,
     "allow_per_layer_s": false,
     "allow_scheduling": false,
-    "allow_weight_reuse": false,
     "batch_size": 128,
     "core_semantics": "spiking",
     "cores": [
@@ -794,7 +791,6 @@
     "allow_neuron_splitting": true,
     "allow_per_layer_s": false,
     "allow_scheduling": true,
-    "allow_weight_reuse": false,
     "batch_size": 128,
     "core_semantics": "spiking",
     "cores": [
@@ -1074,7 +1070,6 @@
     "allow_neuron_splitting": true,
     "allow_per_layer_s": false,
     "allow_scheduling": false,
-    "allow_weight_reuse": false,
     "batch_size": 128,
     "core_semantics": "spiking",
     "cores": [
@@ -1291,7 +1286,6 @@
     "allow_neuron_splitting": true,
     "allow_per_layer_s": false,
     "allow_scheduling": false,
-    "allow_weight_reuse": false,
     "batch_size": 128,
     "core_semantics": "spiking",
     "cores": [
@@ -1513,7 +1507,6 @@
     "allow_neuron_splitting": true,
     "allow_per_layer_s": false,
     "allow_scheduling": false,
-    "allow_weight_reuse": false,
     "batch_size": 128,
     "core_semantics": "spiking",
     "cores": [
@@ -1731,7 +1724,6 @@
     "allow_neuron_splitting": true,
     "allow_per_layer_s": false,
     "allow_scheduling": false,
-    "allow_weight_reuse": false,
     "batch_size": 128,
     "core_semantics": "mvm",
     "cores": [
@@ -1929,7 +1921,6 @@
     "allow_neuron_splitting": true,
     "allow_per_layer_s": false,
     "allow_scheduling": false,
-    "allow_weight_reuse": false,
     "batch_size": 128,
     "core_semantics": "mvm",
     "cores": [
@@ -2133,7 +2124,6 @@
     "allow_neuron_splitting": true,
     "allow_per_layer_s": false,
     "allow_scheduling": false,
-    "allow_weight_reuse": false,
     "batch_size": 128,
     "core_semantics": "mvm",
     "cores": [
@@ -2331,7 +2321,6 @@
     "allow_neuron_splitting": true,
     "allow_per_layer_s": false,
     "allow_scheduling": false,
-    "allow_weight_reuse": false,
     "batch_size": 128,
     "core_semantics": "spiking",
     "cores": [
@@ -2550,7 +2539,6 @@
     "allow_neuron_splitting": true,
     "allow_per_layer_s": false,
     "allow_scheduling": false,
-    "allow_weight_reuse": false,
     "batch_size": 128,
     "conversion_draws": 2,
     "core_semantics": "spiking",
@@ -2777,7 +2765,6 @@
     "allow_neuron_splitting": true,
     "allow_per_layer_s": false,
     "allow_scheduling": false,
-    "allow_weight_reuse": false,
     "batch_size": 128,
     "core_semantics": "spiking",
     "cores": [
@@ -2996,7 +2983,6 @@
     "allow_neuron_splitting": true,
     "allow_per_layer_s": false,
     "allow_scheduling": false,
-    "allow_weight_reuse": false,
     "batch_size": 128,
     "core_semantics": "spiking",
     "cores": [
@@ -3207,7 +3193,6 @@
     "allow_neuron_splitting": false,
     "allow_per_layer_s": false,
     "allow_scheduling": false,
-    "allow_weight_reuse": false,
     "batch_size": 128,
     "core_semantics": "spiking",
     "cores": [
@@ -3412,7 +3397,6 @@
     "allow_neuron_splitting": true,
     "allow_per_layer_s": false,
     "allow_scheduling": false,
-    "allow_weight_reuse": false,
     "batch_size": 128,
     "core_semantics": "spiking",
     "cores": [
@@ -3625,7 +3609,6 @@
     "allow_neuron_splitting": true,
     "allow_per_layer_s": false,
     "allow_scheduling": false,
-    "allow_weight_reuse": false,
     "batch_size": 128,
     "core_semantics": "spiking",
     "cores": [
