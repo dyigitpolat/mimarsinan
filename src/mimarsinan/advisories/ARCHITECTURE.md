@@ -34,7 +34,12 @@ entry the refinement tooling consumes (via reporter events of kind
   conversion, with channel q99 stats from
   `tuning/orchestration/install_resolution/capture.py`.
 - GUI: `gui/wizard/schema_api.py` `resolve_payload()["advisories"]`, rendered
-  in the wizard live rail (`gui/static/js/wizard/review.js`).
+  as the wizard Review & Launch section's FIRST card
+  (`gui/static/js/wizard/review.js`) with compact live-rail + section-nav
+  counts; rows with `mandate_violation` or severity UNSUPPORTED gate Launch
+  behind an explicit per-id acknowledgment
+  (`gui/static/js/wizard/advisories.js`, reset whenever the gating id set
+  changes).
 
 ## Dependencies
 

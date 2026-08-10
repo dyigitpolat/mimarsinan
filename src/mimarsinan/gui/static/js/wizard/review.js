@@ -4,6 +4,9 @@
    /api/config/resolve — nothing here is a static copy of the pipeline. */
 
 import {
+  isAcked, isGatingAdvisory, nextAckState, pendingAckIds, withAck,
+} from './advisories.js';
+import {
   groups, keySchema, keysGatedBy, relevant, vehicleEnableKeys,
 } from './schema.js';
 import { clearKey, effectiveConfig, setKey, state } from './state.js';
@@ -189,6 +192,8 @@ export function renderLaunchStatus() {
     return;
   }
   const steps = (state.resolve.pipeline && state.resolve.pipeline.steps) || [];
+  const advisories = state.resolve.advisories || [];
+  const pending = pendingAckIds(state.advisoryAcks);
   if (errors.length) {
     const line = el('button', 'launch-status-line error',
       `✖ ${errors.length} error${errors.length > 1 ? 's' : ''} `
@@ -198,6 +203,16 @@ export function renderLaunchStatus() {
       document.dispatchEvent(new CustomEvent('wizard:go-first-error'));
     });
     host.append(line);
+  } else if (pending.length) {
+    /* Gating advisories hold Launch until each one is acknowledged. */
+    const line = el('button', 'launch-status-line warn ack-pending',
+      `⚠ ${pending.length} advisor${pending.length > 1 ? 'ies' : 'y'} `
+      + `need${pending.length > 1 ? '' : 's'} acknowledgment — review`);
+    line.type = 'button';
+    line.addEventListener('click', () => {
+      document.dispatchEvent(new CustomEvent('wizard:go-review'));
+    });
+    host.append(line);
   } else {
     host.append(el('div', 'launch-status-line ok',
       `✓ ${steps.length}-step pipeline ready`));
@@ -205,10 +220,16 @@ export function renderLaunchStatus() {
       host.append(el('div', 'launch-status-line warn',
         '⚠ planned mapping does not fit — the run will fail at Hard Core Mapping'));
     }
+    if (advisories.length) {
+      /* Acknowledged + RISK/INFO advisories stay visible, never blocking. */
+      host.append(el('div', 'launch-status-line warn',
+        `⚠ ${advisories.length} deployment advisor${advisories.length > 1 ? 'ies' : 'y'}`
+        + ' — see Review & Launch'));
+    }
   }
   const name = state.draft.experiment_name;
   if (name) host.append(el('div', 'launch-status-sub', name));
-  if (runBtn) runBtn.disabled = errors.length > 0;
+  if (runBtn) runBtn.disabled = errors.length > 0 || pending.length > 0;
 }
 
 /* ── Inline + global errors (with rule-prescribed one-click remedies) ──── */
@@ -355,7 +376,28 @@ export function renderUnknownTray() {
   for (const path of unknown) host.append(el('div', 'unknown-tray-item', path));
 }
 
-/* ── Deployment advisories (tentative theory; UNSUPPORTED renders loud) ── */
+/* ── Deployment advisories (Review & Launch first card; gating rows carry
+      acknowledge checkboxes that hold Launch — advisories.js is the logic) ── */
+
+/** The explicit acknowledgment row a GATING advisory carries: launch stays
+    disabled until its checkbox — per advisory id — is ticked. */
+function advisoryAckRow(advisory) {
+  const acked = isAcked(state.advisoryAcks, advisory.id);
+  const row = el('label', 'advisory-ack' + (acked ? ' acked' : ''));
+  const box = document.createElement('input');
+  box.type = 'checkbox';
+  box.checked = acked;
+  box.addEventListener('change', () => {
+    state.advisoryAcks = withAck(state.advisoryAcks, advisory.id, box.checked);
+    renderAdvisories();
+    renderLaunchStatus();
+  });
+  row.append(box);
+  row.append(el('span', 'advisory-ack-text', acked
+    ? 'Acknowledged — launch unblocked for this advisory'
+    : 'Acknowledge this advisory to enable launch'));
+  return row;
+}
 
 function advisoryCard(advisory) {
   const severity = String(advisory.severity || 'INFO').toLowerCase();
@@ -376,7 +418,20 @@ function advisoryCard(advisory) {
     card.append(el('div', 'advisory-levers',
       'Levers: ' + advisory.suggested_levers.join(' · ')));
   }
+  if (isGatingAdvisory(advisory)) card.append(advisoryAckRow(advisory));
   return card;
+}
+
+/** Compact rail badge near the verdict pill: total advisory count, plus the
+    still-to-acknowledge count while any gating row is pending. */
+function renderAdvisoryCountBadge(advisories) {
+  const badge = document.getElementById('advisoryCountBadge');
+  if (!badge) return;
+  const pending = pendingAckIds(state.advisoryAcks);
+  badge.style.display = advisories.length ? '' : 'none';
+  badge.classList.toggle('pending', pending.length > 0);
+  badge.textContent = `⚠ ${advisories.length} advisor${advisories.length > 1 ? 'ies' : 'y'}`
+    + (pending.length ? ` · ${pending.length} to acknowledge` : '');
 }
 
 export function renderAdvisories() {
@@ -384,8 +439,11 @@ export function renderAdvisories() {
   const host = document.getElementById('advisoryRail');
   if (!block || !host) return;
   const advisories = (state.resolve && state.resolve.advisories) || [];
+  /* A changed GATING id set invalidates every stored acknowledgment. */
+  state.advisoryAcks = nextAckState(state.advisoryAcks, advisories);
   block.style.display = advisories.length ? '' : 'none';
   host.replaceChildren(...advisories.map(advisoryCard));
+  renderAdvisoryCountBadge(advisories);
 }
 
 /* ── Pipeline assembly rail (honest vertical list from the resolve) ────── */

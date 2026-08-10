@@ -122,11 +122,19 @@ navigation (Workload · Co-Design · Deployment semantics · Training & Tuning
 with the recipes primary and the default-off `mirror_training_recipe` mode
 reflecting the training recipe into the tuning recipe · Review & Launch —
 sections host whole registry concern GROUPS,
-the taxonomy is the placement, with per-section error badges) and a
-persistent sticky right live rail (resolve verdict, the honest vertical
+the taxonomy is the placement, with per-section error badges plus an amber
+advisory count on Review & Launch) and a
+persistent sticky right live rail (resolve verdict with a compact advisory
+count badge beside it, the honest vertical
 pipeline-assembly list re-rendered from every resolve, a compact mapping
 summary mirroring the Co-Design panel, and Launch with strong
-disabled/blocked semantics). The Deployment-semantics section stacks Spiking semantics then the
+disabled/blocked semantics — validation errors AND unacknowledged gating
+advisories both hold the button, re-checked at click time). Deployment
+advisories render as the Review & Launch section's FIRST card (before Derived
+values): every resolve-served row keeps its severity/tentative/mandate badges
+and levers, and UNSUPPORTED or mandate-violation rows each carry an explicit
+acknowledge checkbox (`static/js/wizard/advisories.js`, pure + node-tested)
+whose per-id state resets whenever a config edit changes the gating id set. The Deployment-semantics section stacks Spiking semantics then the
 Deployment-target panel (the gates and probes that judge those semantics) in the
 LEFT column, with the Simulation vehicles card holding the right one.
 The flagship Co-Design section shows model
@@ -205,7 +213,7 @@ values, the template flow, and both error/remedy flows.
 - `data_handling` — `BasicDataProviderFactory` for the data-provider listing/metadata endpoints (lazy import); `preprocessing` normalization/interpolation option surfaces for the wizard schema payload.
 - `search` — `ALL_OBJECTIVES` / `ACCURACY_OBJECTIVE_NAME` for the wizard NAS schema.
 - `tuning` — `S_ALLOCATION_MODES` for the wizard temporal-allocation schema.
-- `advisories` — config-time deployment advisories in the wizard resolve payload (`resolve_payload()["advisories"]`), rendered in the live-rail advisory block (UNSUPPORTED reads loud at selection time).
+- `advisories` — config-time deployment advisories in the wizard resolve payload (`resolve_payload()["advisories"]`), rendered as the Review & Launch section's first card (UNSUPPORTED reads loud at selection time); UNSUPPORTED/mandate-violation rows gate Launch behind explicit per-id acknowledgment (`static/js/wizard/advisories.js` — acks reset whenever the gating id set changes), with compact amber counts on the live rail and the Review nav item.
 
 ## Dependents
 - `pipelining` — `session.py` uses `CompositeReporter`; `architecture_search_helpers` uses `to_json_safe`.

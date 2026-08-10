@@ -44,6 +44,13 @@ export function errorCountsBySection(errors) {
   return counts;
 }
 
+/** Per-section advisory counts: advisories are keyless config-level rows, so
+    every one attributes to the Review & Launch section that renders them. */
+export function advisoryCountsBySection(advisories) {
+  const count = (advisories || []).length;
+  return count ? { review: count } : {};
+}
+
 export function goToSection(sectionId) {
   if (!SECTIONS.some((s) => s.id === sectionId)) return;
   _current = sectionId;
@@ -59,10 +66,11 @@ export function goToSection(sectionId) {
   document.dispatchEvent(new CustomEvent('wizard:section', { detail: { section: sectionId } }));
 }
 
-export function renderSectionNav(errors) {
+export function renderSectionNav(errors, advisories) {
   const host = document.getElementById('sectionNav');
   if (!host) return;
   const counts = errorCountsBySection(errors);
+  const advisoryCounts = advisoryCountsBySection(advisories);
   host.replaceChildren();
   for (const section of SECTIONS) {
     const item = el('button', 'wb-nav-item');
@@ -79,6 +87,12 @@ export function renderSectionNav(errors) {
     if (errorCount > 0) {
       const badge = el('span', 'wb-nav-badge', String(errorCount));
       badge.title = `${errorCount} validation error(s) in this section`;
+      item.append(badge);
+    }
+    const advisoryCount = advisoryCounts[section.id] || 0;
+    if (advisoryCount > 0) {
+      const badge = el('span', 'wb-nav-badge advisory', String(advisoryCount));
+      badge.title = `${advisoryCount} deployment advisor${advisoryCount > 1 ? 'ies' : 'y'} — review before launch`;
       item.append(badge);
     }
     item.addEventListener('click', () => goToSection(section.id));
