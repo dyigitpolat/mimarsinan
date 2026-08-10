@@ -104,3 +104,101 @@ def test_builders_imports_find_ir_graph_promiser():
     from mimarsinan.gui.snapshot.sanafe_snapshot import _find_ir_graph_promiser
 
     assert builders_mod._find_ir_graph_promiser is _find_ir_graph_promiser
+
+
+# ── Pruning Adaptation tab gate ──────────────────────────────────────────
+
+
+class _PruningStep:
+    promises = ()
+    updates = ("model",)
+
+
+def _pruned_model():
+    import torch
+
+    layer = torch.nn.Linear(4, 3)
+    layer.weight.data = torch.randn(3, 4) * 0.1
+    layer.register_buffer("prune_row_mask", torch.tensor([True, False, False]))
+    layer.register_buffer("prune_col_mask", torch.tensor([False, True, False, False]))
+    perceptron = SimpleNamespace(layer=layer, name="fc0")
+
+    class _Model:
+        def get_perceptrons(self):
+            return [perceptron]
+
+        def parameters(self):
+            return iter(layer.parameters())
+
+    return _Model()
+
+
+def test_pruning_gate_consumes_the_registry_step_name_constant():
+    """The gate must consume the registry's canonical constant — renaming the
+    step in ``deployment_specs`` must not orphan the tab via a stale literal."""
+    from pathlib import Path
+
+    import mimarsinan.gui.snapshot.builders as builders_mod
+    from mimarsinan.pipelining.core.pipelines import deployment_specs
+    from mimarsinan.pipelining.pipeline_steps import PruningAdaptationStep
+
+    assert builders_mod.PRUNING_ADAPTATION_STEP is deployment_specs.PRUNING_ADAPTATION_STEP
+    # The registry entry itself is built from the constant (one SSOT).
+    specs = [e for e in deployment_specs._STEP_PLAN.step_classes() if e is PruningAdaptationStep]
+    assert specs, "PruningAdaptationStep missing from the step registry"
+    named = [
+        e for e in deployment_specs._STEP_PLAN._entries
+        if getattr(e, "step_class", None) is PruningAdaptationStep
+    ]
+    assert named and named[0].name == deployment_specs.PRUNING_ADAPTATION_STEP
+    # Rename simulation: no duplicated string literal left in the gate module
+    # or the registry — both consume the step_plan constant (one SSOT).
+    source = Path(builders_mod.__file__).read_text()
+    assert "Pruning Adaptation" not in source, (
+        "builders.py must consume PRUNING_ADAPTATION_STEP, not a string literal"
+    )
+    specs_source = Path(deployment_specs.__file__).read_text()
+    assert "Pruning Adaptation" not in specs_source, (
+        "deployment_specs.py must build its entry from PRUNING_ADAPTATION_STEP"
+    )
+
+
+def test_pruning_step_snapshot_carries_layers_and_configured_fraction():
+    from mimarsinan.gui.snapshot.builders import (
+        PRUNING_ADAPTATION_STEP,
+        RESOURCE_KIND_PRUNING_LAYER_HEATMAP,
+        RESOURCE_KIND_PRUNING_MASK_MAP,
+    )
+
+    cache = _Cache({"model": _pruned_model()})
+    pipeline = SimpleNamespace(
+        cache=cache, steps=(), config={"pruning_fraction": 0.5},
+    )
+    snap, kinds, descs = build_step_snapshot(
+        pipeline, PRUNING_ADAPTATION_STEP, step=_PruningStep()
+    )
+    pruning = snap["pruning_layers"]
+    assert pruning["configured_fraction"] == 0.5
+    assert len(pruning["layers"]) == 1
+    layer = pruning["layers"][0]
+    assert layer["pre_neurons"] == 3 and layer["post_neurons"] == 2
+    assert layer["pre_axons"] == 4 and layer["post_axons"] == 3
+    assert kinds["pruning_layers"] == "new"
+    kinds_seen = {d.kind for d in descs}
+    assert RESOURCE_KIND_PRUNING_LAYER_HEATMAP in kinds_seen
+    assert RESOURCE_KIND_PRUNING_MASK_MAP in kinds_seen
+
+
+def test_pruning_step_without_model_yields_a_loud_diagnostic():
+    """Model missing from the snapshot must produce a skip diagnostic the tab
+    renders, never a silently absent pruning summary."""
+    from mimarsinan.gui.snapshot.builders import PRUNING_ADAPTATION_STEP
+
+    pipeline = SimpleNamespace(cache=_Cache({}), steps=(), config={})
+    snap, _kinds, _descs = build_step_snapshot(
+        pipeline, PRUNING_ADAPTATION_STEP, step=_PruningStep()
+    )
+    pruning = snap["pruning_layers"]
+    assert pruning["layers"] == []
+    assert len(pruning["skipped"]) == 1
+    assert "model" in pruning["skipped"][0]["reason"]

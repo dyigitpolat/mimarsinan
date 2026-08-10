@@ -7,6 +7,7 @@ RESOURCE_KIND_IR_BANK_HEATMAP = "ir_bank_heatmap"
 RESOURCE_KIND_HARD_CORE_HEATMAP = "hard_core_heatmap"
 RESOURCE_KIND_CONNECTIVITY = "connectivity"
 RESOURCE_KIND_PRUNING_LAYER_HEATMAP = "pruning_layer_heatmap"
+RESOURCE_KIND_PRUNING_MASK_MAP = "pruning_mask_map"
 
 LIVENESS_LIVE = "live"
 LIVENESS_BIAS_ONLY = "bias_only"
