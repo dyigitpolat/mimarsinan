@@ -180,3 +180,36 @@ export function plotHistogram(elId, hist, xLabel, color) {
 export function emptyAnnotation(text) {
   return [{ text, showarrow: false, font: { size: 14, color: '#6b6e7a' }, xref: 'paper', yref: 'paper', x: 0.5, y: 0.5 }];
 }
+
+// ── Heatmap display helpers ──────────────────────────────────────────────
+// Mirrors the backend renderer's decimation rule (DEFAULT_TARGET_LONG_SIDE
+// in gui/rendering/heatmap_render.py): PNGs are native below the target and
+// pooled by k = ceil(long/target) above it.
+export const HEATMAP_UI_TARGET_LONG_SIDE = 400;
+
+export function heatmapPngDims(rows, cols) {
+  const r = Number(rows) || 0;
+  const c = Number(cols) || 0;
+  const long = Math.max(r, c);
+  if (long <= 0) return null;
+  const k = Math.max(1, Math.ceil(long / HEATMAP_UI_TARGET_LONG_SIDE));
+  return { w: Math.ceil(c / k), h: Math.ceil(r / k) };
+}
+
+// ' hm-pixelated' when the PNG will be UPSCALED into the display box (crisp
+// cells); '' when it is downscaled, where smooth sampling keeps thin pruned
+// lines visible.
+export function heatmapScalingClass(rows, cols, dispW, dispH) {
+  const dims = heatmapPngDims(rows, cols);
+  if (!dims) return '';
+  return dims.w <= dispW && dims.h <= dispH ? ' hm-pixelated' : '';
+}
+
+// Compact numeric label for the shared color scale (e.g. "0.523", "12.4").
+export function fmtScaleValue(v) {
+  const n = Number(v);
+  if (!isFinite(n)) return '—';
+  if (n === 0) return '0';
+  const p = n.toPrecision(3);
+  return String(Number(p));
+}
