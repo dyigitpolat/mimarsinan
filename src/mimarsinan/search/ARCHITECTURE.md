@@ -11,7 +11,7 @@ of truth for the joint NAS + HW search space, rendered per backend.
 ## Key files
 | File | Purpose |
 |---|---|
-| `problem.py` | `SearchProblem` protocol (validate, validate_detailed, evaluate, constraint_violation, meta) plus `ValidationResult` carrying failure details |
+| `problem.py` | `SearchProblem` protocol (validate, validate_detailed, evaluate, constraint_violation, meta), `ValidationResult` carrying failure details, and `CandidateInfeasibleError` — the typed candidate-dependent failure optimizers convert to penalties while everything else aborts |
 | `results.py` | Objective catalogue (`ALL_OBJECTIVES`), per-search-mode defaults and `resolve_active_objectives`, `Candidate`/`SearchResult` containers, and minimax-rank best-candidate selection |
 | `search_space_description.py` | `SearchSpaceDescription` SSOT for the joint NAS + HW space (`CORE_DIM_GRANULARITY`), with renderers to AgentEvolve prompt schema/example/constraints and compilagent levers |
 | `search_space_compilagent.py` | Renders a `SearchSpaceDescription` into compilagent `Lever` tuples and derives sampled integer candidates per HW dimension |
@@ -19,7 +19,6 @@ of truth for the joint NAS + HW search space, rendered per backend.
 | `evaluators/` | Fast NAS accuracy evaluators: one-epoch `FastAccuracyEvaluator` and `ExtrapolatingAccuracyEvaluator` with parametric learning-curve fitting |
 | `optimizers/` | `SearchOptimizer` interface and backends: pymoo NSGA-II, AgentEvolve LLM evolution, compilagent session (with `MimarsinanLayoutBackend`), shared LLM trace utilities |
 | `problems/` | Concrete problems: `EncodedProblem` (vector-encoded) protocol and `JointArchHwProblem` for joint architecture + hardware co-search |
-| `multi_metric/` | `MultiMetricSearcher`: simple generational two-metric threshold-selection search |
 
 ## Dependencies
 - `mapping` — layout types (`LayoutSoftCoreSpec`, `LayoutHardCoreType`), `ChipCapabilities`, `compute_mapping_stats`, coalescing-config normalization, and platform mapping params, used by the joint problem's layout hook/validation and the compilagent layout backend.
@@ -35,6 +34,7 @@ of truth for the joint NAS + HW search space, rendered per backend.
 ## Exported API
 `__init__.py` re-exports the core contracts:
 - `SearchProblem`, `ValidationResult` — problem interface and feasibility result.
+- `CandidateInfeasibleError` — typed candidate-dependent infeasibility (optimizers penalize, everything else aborts).
 - `ObjectiveSpec`, `Candidate`, `SearchResult` — objective and result containers.
 
 Optimizers, evaluators, and concrete problems are imported from their

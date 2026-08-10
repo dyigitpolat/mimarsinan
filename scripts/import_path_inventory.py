@@ -62,7 +62,6 @@ PHASE3_BANNED: tuple[str, ...] = (
     "mimarsinan.chip_simulation.hybrid_stage_runner",
     "mimarsinan.mapping.packing.softcore_mapping",
     "mimarsinan.transformations.perceptron_transformer",
-    "mimarsinan.search.optimizers.agent_evolve_optimizer",
     "mimarsinan.visualization.search_viz.report_html",
 )
 
