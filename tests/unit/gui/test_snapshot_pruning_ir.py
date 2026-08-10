@@ -83,3 +83,17 @@ def test_relays_and_psum_pos_are_not_layers():
     ])
     summary, _ = snapshot_pruning_layers_from_ir(graph)
     assert len(summary["layers"]) == 1
+
+
+def test_bank_backed_perceptron_is_skipped_loudly():
+    node = _core(0, 0, (0, 4), None, None, n_axons=3, n_neurons=4)
+    banked = NeuralCore(
+        id=1, name="conv_pos0",
+        input_sources=np.array([IRSource(-2, 0)]),
+        core_matrix=None,
+        perceptron_index=1,
+    )
+    summary, _ = snapshot_pruning_layers_from_ir(_graph([node, banked]))
+    assert len(summary["layers"]) == 1
+    (skip,) = summary["skipped"]
+    assert skip["layer"] == "conv_pos0" and "bank-backed" in skip["reason"]

@@ -54,10 +54,19 @@ def snapshot_pruning_layers_from_ir(
     pruned IR. Complements the Pruning Adaptation view: the IR is where structured
     pruning actually commits, so this is what deploys."""
     layers_out: list[dict] = []
+    skipped: list[dict] = []
     descriptors: list[ResourceDescriptor] = []
     family = HeatmapScaleFamily("pruning_layers")
 
     for pi, nodes in sorted(_perceptron_tiles(ir_graph).items()):
+        if any(n.core_matrix is None for n in nodes):
+            skipped.append({
+                "layer": str(nodes[0].name) if nodes else f"perceptron_{pi}",
+                "reason": "bank-backed cores (weights live in a shared bank); "
+                          "per-position pre/post reconstruction is not derivable "
+                          "from the IR node alone",
+            })
+            continue
         axon_masks = [_tile_masks(n)[0] for n in nodes]
         neuron_mask: list[bool] = []
         for n in nodes:
@@ -120,7 +129,7 @@ def snapshot_pruning_layers_from_ir(
 
     summary: dict = {
         "layers": layers_out,
-        "skipped": [],
+        "skipped": skipped,
         "configured_fraction": (
             None if configured_fraction is None else float(configured_fraction)
         ),
