@@ -16,6 +16,7 @@ from mimarsinan.gui.runtime.persistence.paths import (
     steps_file_lock,
     steps_path,
 )
+from mimarsinan.gui.runtime.proc_identity import read_proc_starttime
 from mimarsinan.gui.runtime.persistence.resource_paths import resource_disk_path
 
 logger = logging.getLogger("mimarsinan.gui")
@@ -146,6 +147,9 @@ def save_run_info(
     path = run_info_path(working_directory)
     info = {
         "pid": pid,
+        # PID-reuse honesty: the (pid, kernel starttime) pair identifies the
+        # process; orphan-recovery liveness must match both. None on non-/proc.
+        "starttime": read_proc_starttime(pid),
         "step_names": step_names,
         "status": "running",
         "started_at": time.time(),

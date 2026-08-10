@@ -48,6 +48,11 @@ class ProcessManager:
             return None
         return managed.working_dir
 
+    def is_run_alive(self, run_id: str) -> bool:
+        with self._lock:
+            managed = self._runs.get(run_id)
+        return managed.is_alive() if managed is not None else False
+
     def kill_run(self, run_id: str) -> bool:
         with self._lock:
             return kill_run(self._runs, run_id)
