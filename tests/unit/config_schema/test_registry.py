@@ -103,6 +103,32 @@ class TestRelevance:
         assert not Relevance.when_set("weight_source").evaluate({"weight_source": None})
 
 
+class TestSanafeFloorplanKeys:
+    """W1.2: the SANA-FE floorplan is explicit, deterministic platform
+    configuration — three declarable platform keys, 0 = derived."""
+
+    KEYS = ("cores_per_tile", "tile_grid_rows", "tile_grid_cols")
+
+    def test_registered_as_platform_hardware_ints(self):
+        for key in self.KEYS:
+            entry = REGISTRY[key]
+            assert entry.section == "platform_constraints", key
+            assert entry.group == "hardware", key
+            assert entry.type is FieldType.INT, key
+
+    def test_default_is_zero_meaning_derived(self):
+        for key in self.KEYS:
+            assert REGISTRY[key].default == 0, key
+
+    def test_bounds_reject_negatives(self):
+        for key in self.KEYS:
+            assert REGISTRY[key].bounds == (0, None), key
+
+    def test_keys_are_in_the_live_config_keys_set(self):
+        for key in self.KEYS:
+            assert key in CONFIG_KEYS_SET, key
+
+
 class TestTaxonomy:
     """Dataset-side facts live in 'workload'; architecture-side in 'model';
     deployment-side conversion knobs in 'conversion'; the search concern in

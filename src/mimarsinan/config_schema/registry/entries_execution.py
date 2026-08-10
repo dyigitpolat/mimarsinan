@@ -78,6 +78,31 @@ ENTRIES = (
            "constrains residency; per_neuron stores one per neuron range; absent is "
            "vacuous. Defaults follow the deployment domain, so name only exceptions.",
        provenance="consumer frozen default", derived_default=_frozen({})),
+    _E("cores_per_tile", section="platform_constraints", group="hardware",
+       owner="sanafe_arch_synth", type=T.INT, category=Category.ADVANCED,
+       exposure="user", label="Cores per Tile",
+       effect="Fixes the SANA-FE NoC tile grouping independently of the packed model",
+       doc="NoC floorplan: cores per tile of the synthesized SANA-FE "
+           "architecture. 0 derives it from the declared platform (preset "
+           "tile wiring: loihi 4/tile, truenorth 1/tile; else "
+           "ceil(sqrt(declared core capacity))).",
+       bounds=(0, None), empty_means="0 — derived from the declared platform"),
+    _E("tile_grid_rows", section="platform_constraints", group="hardware",
+       owner="sanafe_arch_synth", type=T.INT, category=Category.ADVANCED,
+       exposure="user", label="Tile Grid Rows",
+       effect="Fixes the SANA-FE NoC mesh height independently of the packed model",
+       doc="NoC floorplan: tile-grid rows (mesh height). 0 derives the "
+           "most-square exact grid; declare together with tile_grid_cols "
+           "(both 0 or both > 0 — a half-declared grid is a config error).",
+       bounds=(0, None), empty_means="0 — the derived most-square exact grid"),
+    _E("tile_grid_cols", section="platform_constraints", group="hardware",
+       owner="sanafe_arch_synth", type=T.INT, category=Category.ADVANCED,
+       exposure="user", label="Tile Grid Cols",
+       effect="Fixes the SANA-FE NoC mesh width independently of the packed model",
+       doc="NoC floorplan: tile-grid columns (mesh width). 0 derives the "
+           "most-square exact grid; declare together with tile_grid_rows "
+           "(both 0 or both > 0 — a half-declared grid is a config error).",
+       bounds=(0, None), empty_means="0 — the derived most-square exact grid"),
     _E("value_parity_samples", domain="value", group="deployment_target", owner="value_gates",
        type=T.INT, category=Category.ADVANCED, unit="samples",
        label="Value Parity Samples",

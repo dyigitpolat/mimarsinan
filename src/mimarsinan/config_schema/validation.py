@@ -5,19 +5,14 @@ from __future__ import annotations
 from typing import Any, Dict, List, Mapping
 
 from mimarsinan.chip_simulation.activation_semantics import RETIRED_SPIKING_KEYS
+from mimarsinan.chip_simulation.sanafe.arch_synth.floorplan import floorplan_config_errors
 from mimarsinan.chip_simulation.spiking_semantics import require_known_spiking_mode
 from mimarsinan.config_schema.deployment_derivation import (
-    legal_value_error,
-    legal_values_for,
-    legality_bearing_keys,
+    legal_value_error, legal_values_for, legality_bearing_keys,
 )
 from mimarsinan.config_schema.registry import (
-    Category,
-    FieldType,
-    REGISTRY,
-    mvm_document_errors,
-    parse_deployment_document,
-    retired_key_errors,
+    Category, FieldType, REGISTRY,
+    mvm_document_errors, parse_deployment_document, retired_key_errors,
 )
 from mimarsinan.mapping.platform.coalescing import coalescing_config_errors
 from mimarsinan.tuning.orchestration.temporal_allocation import (
@@ -233,6 +228,7 @@ def validate_deployment_config(config: Dict[str, Any]) -> List[str]:
     pc = config.get("platform_constraints")
     if isinstance(pc, dict):
         errors.extend(coalescing_config_errors(pc))
+        errors.extend(floorplan_config_errors(pc))
 
     dp_for_axis = config.get("deployment_parameters")
     errors.extend(
@@ -296,5 +292,6 @@ def validate_merged_config(flat: Dict[str, Any]) -> List[str]:
         errors.extend(row["message"] for row in legality_errors(flat, flat))
 
     errors.extend(row["message"] for row in validate_against_registry(flat))
+    errors.extend(floorplan_config_errors(flat))
 
     return errors

@@ -39,6 +39,10 @@ def build_platform_constraints_resolved(
     pcfg["max_schedule_passes"] = int(
         pipeline_config.get("max_schedule_passes", 8) or 8
     )
+    # SANA-FE NoC floorplan declaration (0 = derived): rides the resolved
+    # surface so the SANA-FE step reads floorplan + capacity from ONE place.
+    for key in ("cores_per_tile", "tile_grid_rows", "tile_grid_cols"):
+        pcfg[key] = int(pipeline_config.get(key, 0) or 0)
 
     if "target_tq" in pipeline_config:
         pcfg["target_tq"] = pipeline_config["target_tq"]

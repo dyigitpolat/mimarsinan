@@ -31,3 +31,21 @@ def test_retired_weight_reuse_knob_never_resolves():
     pcfg = build_platform_constraints_resolved({"allow_weight_reuse": True})
     assert "allow_weight_reuse" not in pcfg
     assert "allow_weight_reuse" not in build_platform_constraints_resolved({})
+
+
+def test_sanafe_floorplan_keys_forward():
+    # W1.2: the declared floorplan keys ride platform_constraints_resolved so
+    # the SANA-FE step reads them from the same resolved surface as capacity.
+    pcfg = build_platform_constraints_resolved({
+        "cores_per_tile": 4, "tile_grid_rows": 2, "tile_grid_cols": 5,
+    })
+    assert pcfg["cores_per_tile"] == 4
+    assert pcfg["tile_grid_rows"] == 2
+    assert pcfg["tile_grid_cols"] == 5
+
+
+def test_sanafe_floorplan_keys_default_to_derived():
+    pcfg = build_platform_constraints_resolved({})
+    assert pcfg["cores_per_tile"] == 0
+    assert pcfg["tile_grid_rows"] == 0
+    assert pcfg["tile_grid_cols"] == 0

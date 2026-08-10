@@ -339,6 +339,49 @@ class TestValidateMergedConfig:
         assert errors == []
 
 
+class TestFloorplanValidation:
+    """SANA-FE floorplan keys: a half-declared tile grid is a config error
+    surfaced through the standard validation path (W1.2)."""
+
+    def _doc(self, pc):
+        return {
+            "data_provider_name": "MNIST_DataProvider",
+            "experiment_name": "test",
+            "generated_files_path": "./out",
+            "platform_constraints": pc,
+            "deployment_parameters": {
+                "model_config_mode": "user", "model_type": "mlp_mixer",
+                "model_config": {},
+            },
+            "start_step": None,
+        }
+
+    def test_half_declared_tile_grid_fails_document_validation(self):
+        errors = validate_deployment_config(self._doc({"tile_grid_rows": 2}))
+        assert any("tile_grid" in str(e) for e in errors)
+        errors = validate_deployment_config(self._doc({"tile_grid_cols": 3}))
+        assert any("tile_grid" in str(e) for e in errors)
+
+    def test_full_or_absent_tile_grid_passes_document_validation(self):
+        assert validate_deployment_config(self._doc({})) == []
+        assert validate_deployment_config(
+            self._doc({"tile_grid_rows": 2, "tile_grid_cols": 3,
+                       "cores_per_tile": 4})
+        ) == []
+
+    def test_half_declared_tile_grid_fails_merged_validation(self):
+        errors = validate_merged_config({
+            "spiking_mode": "lif", "tile_grid_rows": 2,
+        })
+        assert any("tile_grid" in str(e) for e in errors)
+
+    def test_negative_floorplan_values_fail_the_field_domain_check(self):
+        errors = validate_merged_config({
+            "spiking_mode": "lif", "cores_per_tile": -1,
+        })
+        assert any("cores_per_tile" in str(e) for e in errors)
+
+
 class TestConfigKeysSet:
     """Config keys set includes all keys read by pipeline consumers."""
 
