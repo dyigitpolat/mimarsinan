@@ -8,6 +8,8 @@ review,workbench,main,state}.js`; structural pins:
 `tests/unit/gui/test_wizard_advisories.py::TestReviewLaunchLayout`; gate
 logic pins (node-executed): `tests/unit/gui/test_wizard_advisory_gate.py`.
 
+Deep link: `/wizard?section=review` opens the wizard directly on this section (used by the pixel-review harness; unknown section ids fall back to the first section).
+
 ## Target layout
 
 - **Review & Launch section** (`data-section-id="review"`): the advisory

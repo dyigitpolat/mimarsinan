@@ -52,7 +52,9 @@ export function advisoryCountsBySection(advisories) {
 }
 
 export function goToSection(sectionId) {
-  if (!SECTIONS.some((s) => s.id === sectionId)) return;
+  // Unknown ids (e.g. a stale ?section= deep link) land on the first section
+  // rather than leaving no panel active.
+  if (!SECTIONS.some((s) => s.id === sectionId)) sectionId = SECTIONS[0].id;
   _current = sectionId;
   document.querySelectorAll('.wb-section').forEach((panel) => {
     panel.classList.toggle('active', panel.dataset.sectionId === sectionId);

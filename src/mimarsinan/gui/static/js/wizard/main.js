@@ -513,7 +513,7 @@ async function boot() {
   await ensureModelSchema(state.draft.deployment_parameters?.model_type);
   bindActions();
   bindChangeEvents();
-  goToSection('codesign');
+  goToSection(new URLSearchParams(location.search).get('section') || 'codesign');
   loadTemplateOptions();
   renderAll();
   scheduleResolve();
