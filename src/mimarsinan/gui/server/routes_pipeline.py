@@ -234,6 +234,7 @@ def register_routes(
         active_hub = ActiveRunHub(
             get_working_dir=process_manager.get_working_dir,
             build_overview=_active_overview,
+            is_run_alive=process_manager.is_run_alive,
         )
         app.state.active_run_hub = active_hub
 

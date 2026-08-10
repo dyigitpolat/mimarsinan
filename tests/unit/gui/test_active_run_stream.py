@@ -172,6 +172,85 @@ def _poll_interval() -> float:
     return POLL_INTERVAL_S
 
 
+class TestLivenessWatcher:
+    """The steps.json tailer goes silent when the process dies; the liveness
+    watcher must push ONE terminal overview frame on the alive->dead flip."""
+
+    def test_alive_to_dead_flip_pushes_exactly_one_terminal_frame(self, tmp_path):
+        working_dir = str(tmp_path)
+        (tmp_path / GUI_STATE_DIR).mkdir(parents=True, exist_ok=True)
+        alive = threading.Event()
+        alive.set()
+        terminal_overview = {
+            "steps": [{"name": "S1", "status": "failed"}],
+            "current_step": None,
+            "is_alive": False,
+            "status": "failed",
+            "error": "boom",
+        }
+
+        hub = ActiveRunHub(
+            get_working_dir=lambda rid: working_dir if rid == "run-A" else None,
+            build_overview=lambda rid: terminal_overview if rid == "run-A" else None,
+            is_run_alive=lambda rid: alive.is_set(),
+            liveness_poll_interval_s=0.02,
+        )
+        try:
+            ws = _FakeWS()
+            assert hub.subscribe("run-A", ws, ws.send) is True
+
+            # While alive: no overview frames arrive (steps.json never changes).
+            time.sleep(0.15)
+            assert not [m for m in ws.messages if m.get("type") == "pipeline_overview"]
+
+            alive.clear()
+            assert _wait_for(
+                lambda: any(
+                    m.get("type") == "pipeline_overview" and m.get("is_alive") is False
+                    for m in ws.messages
+                )
+            ), ws.messages
+
+            # Exactly one terminal frame: the watcher stops after delivering it.
+            time.sleep(0.2)
+            overviews = [m for m in ws.messages if m.get("type") == "pipeline_overview"]
+            assert len(overviews) == 1
+            assert overviews[0]["status"] == "failed"
+            assert overviews[0]["error"] == "boom"
+        finally:
+            hub.shutdown()
+
+    def test_already_dead_run_still_gets_a_terminal_frame(self, tmp_path):
+        working_dir = str(tmp_path)
+        (tmp_path / GUI_STATE_DIR).mkdir(parents=True, exist_ok=True)
+        hub = ActiveRunHub(
+            get_working_dir=lambda rid: working_dir,
+            build_overview=lambda rid: {"steps": [], "is_alive": False, "status": "failed"},
+            is_run_alive=lambda rid: False,
+            liveness_poll_interval_s=0.02,
+        )
+        try:
+            ws = _FakeWS()
+            assert hub.subscribe("dead-run", ws, ws.send) is True
+            assert _wait_for(
+                lambda: any(m.get("type") == "pipeline_overview" for m in ws.messages)
+            ), ws.messages
+            time.sleep(0.2)
+            overviews = [m for m in ws.messages if m.get("type") == "pipeline_overview"]
+            assert len(overviews) == 1
+        finally:
+            hub.shutdown()
+
+    def test_hub_without_liveness_probe_still_works(self, tmp_path, hub_factory):
+        working_dir = str(tmp_path)
+        (tmp_path / GUI_STATE_DIR).mkdir(parents=True, exist_ok=True)
+        hub = hub_factory("run-A", working_dir)
+        ws = _FakeWS()
+        assert hub.subscribe("run-A", ws, ws.send) is True
+        append_live_metric(working_dir, "StepX", "loss", 0.5, seq=1, timestamp=100.0)
+        assert _wait_for(lambda: len(ws.messages) >= 1)
+
+
 class TestStepsOverviewStreaming:
     def test_steps_json_change_triggers_overview_event(self, tmp_path, hub_factory):
         working_dir = str(tmp_path)

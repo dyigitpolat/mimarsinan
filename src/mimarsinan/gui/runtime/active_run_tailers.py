@@ -128,6 +128,60 @@ class StepsFileWatcher:
             self._callback({"type": "pipeline_overview", **overview})
 
 
+class RunLivenessWatcher:
+    """Poll a run's liveness; on death push ONE terminal overview frame.
+
+    The steps.json tailer goes permanently silent when the pipeline process
+    dies, so without this watcher a subscriber never hears that the run it is
+    watching is gone. The terminal frame is the ordinary ``pipeline_overview``
+    payload (which carries ``is_alive``/``status``/``error``); the watcher
+    retires itself after delivering it — death is terminal.
+    """
+
+    def __init__(
+        self,
+        is_alive: Callable[[], bool],
+        build_overview: Callable[[], Optional[dict]],
+        callback: Callback,
+        *,
+        poll_interval_s: float = 1.0,
+    ) -> None:
+        self._is_alive = is_alive
+        self._build_overview = build_overview
+        self._callback = callback
+        self._poll_interval_s = poll_interval_s
+        self._stop = threading.Event()
+        self._thread = threading.Thread(
+            target=self._run, name="RunLivenessWatcher", daemon=True,
+        )
+
+    def start(self) -> None:
+        self._thread.start()
+
+    def stop(self, timeout: float = 1.0) -> None:
+        self._stop.set()
+        self._thread.join(timeout)
+
+    def _run(self) -> None:
+        while not self._stop.is_set():
+            emitted = False
+            with best_effort("run liveness tick", logger=logger):
+                emitted = self._tick()
+            if emitted:
+                return
+            self._stop.wait(self._poll_interval_s)
+
+    def _tick(self) -> bool:
+        """True once the terminal frame is delivered (retries until it is)."""
+        if self._is_alive():
+            return False
+        overview = self._build_overview()
+        if overview is None:
+            return False
+        self._callback({"type": "pipeline_overview", **overview})
+        return True
+
+
 def metrics_tailer(path: Path, callback: Callback) -> JsonlTailer:
     """Tailer for ``live_metrics.jsonl`` (``metric`` frames)."""
     return JsonlTailer(path, callback, frame_type="metric")
