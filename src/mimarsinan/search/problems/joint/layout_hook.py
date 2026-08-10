@@ -94,8 +94,16 @@ class JointLayoutMixin(JointHostContract):
         if self._hw_only_cache is not None:
             return self._hw_only_cache
 
+        if (
+            not self.fixed_platform_constraints
+            or "cores" not in self.fixed_platform_constraints
+        ):
+            raise ValueError(
+                "hardware-only search requires fixed_platform_constraints "
+                "with 'cores' (the resolved platform base)"
+            )
         mc = self.fixed_model_config or {}
-        pcfg = dict(self.fixed_platform_constraints or {})
+        pcfg = dict(self.fixed_platform_constraints)
         normalize_coalescing_config(pcfg)
 
         torch.manual_seed(int(self.accuracy_seed))
