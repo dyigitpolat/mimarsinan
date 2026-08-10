@@ -65,7 +65,7 @@ Pareto decision layer.
 ## Dependents
 - **`models`** — hybrid core-flow stage loop/semantics, spike recording, spiking-mode predicates and policies, TTFS encoding, firing strategies.
 - **`pipelining`** — simulation/Loihi/SANA-FE verification steps, `DeploymentPlan`, `simulation_factory`, backend-registry step selection, certification + cost extraction.
-- **`tuning`** — spiking-mode policy and semantics for conversion/calibration policies.
+- **`tuning`** — spiking-mode policy and semantics for conversion/calibration policies; `orchestration/run_instrumentation` imports `cost_extraction.FT_PASS_WALLS_FILENAME` (the walls-artifact name/shape SSOT shared by writer and reader).
 - **`spiking`** — `spike_modes` encoding for spike trains and the TTFS segment policy.
 - **`mapping`** — spiking semantics in pruning liveness; mode policy in bias compensation.
 - **`config_schema`** — spiking semantics for deployment derivation and config validation.

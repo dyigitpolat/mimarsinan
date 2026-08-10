@@ -1,21 +1,4 @@
-"""Run-directory adaptation instrumentation (W3-S1): artifacts only.
-
-Two NEW files under the pipeline working directory, written at tuner-step
-commit time and read by nothing in the training path:
-
-- ``ft_pass_walls.json`` — the AC5 per-fine-tuning-PASS wall bundle,
-  accumulated ACROSS steps under step-qualified labels
-  (``"<StepName>/<label>"``). The shape is pinned to the pre-existing reader
-  ``chip_simulation.cost_extraction._ft_pass_walls_from_run``
-  (``{"max_ft_pass_wall_s", "passes"}``), whose filename constant is the SSOT.
-- ``retention_ledger.json`` — one entry per tuner-hosting step: the step's
-  entry/exit metrics, the retention envelope, and the endpoint-step ledger
-  accounting the W3 reallocation program needs.
-
-Both writers are read-modify-write with an atomic replace, so a concurrent
-reader never observes a torn file. Under [MBH-DRAWS] best-of-N the persisted
-walls are the KEPT draw's — the trajectory the committed artifact experienced.
-"""
+"""Run-directory adaptation artifacts (W3-S1), written at tuner-step commit time and read by nothing in the training path."""
 
 from __future__ import annotations
 
@@ -55,10 +38,13 @@ def merge_ft_pass_walls(
     ``ft_pass_walls.json`` (read-modify-write, atomic replace).
 
     Passes accumulate across steps as ``"<StepName>/<label>"``;
-    ``max_ft_pass_wall_s`` is recomputed over ALL accumulated passes. A tuner
-    that ran zero FT passes leaves the run byte-identical (no file is created
-    or touched); returns the merged payload, or ``None`` when nothing was
-    written.
+    ``max_ft_pass_wall_s`` is recomputed over ALL accumulated passes. The
+    shape is pinned to the pre-existing reader
+    ``chip_simulation.cost_extraction._ft_pass_walls_from_run``, whose
+    ``FT_PASS_WALLS_FILENAME`` constant is the SSOT; under [MBH-DRAWS]
+    best-of-N the persisted walls are the KEPT draw's. A tuner that ran zero
+    FT passes leaves the run byte-identical (no file is created or touched);
+    returns the merged payload, or ``None`` when nothing was written.
     """
     new_passes = [
         {"label": f"{step_name}/{p['label']}", "wall_s": float(p["wall_s"])}
@@ -94,6 +80,10 @@ def retention_entry(
     consumed_before: int | None,
 ) -> dict:
     """One tuner-hosting step's retention accounting.
+
+    ``exit_metric`` is a single-validation-batch estimator for non-caching
+    tuner families vs the cached full-validation metric for caching families
+    (both resolved zero-draw via ``TunerBase.exit_metric_estimate``).
 
     ``armed_recovery`` derives from the endpoint-step ledger delta: the ledger
     consume in ``frontier/endpoint_recovery`` happens ONLY on an armed stage,
