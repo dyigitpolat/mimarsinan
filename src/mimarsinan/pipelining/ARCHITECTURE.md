@@ -4,7 +4,9 @@ This module owns the end-to-end deployment pipeline: parsing a deployment-config
 JSON, resolving it into a declarative `DeploymentPlan`, assembling the ordered
 step sequence via a contract-driven `StepPlan`, and executing it with the
 `Pipeline` engine (persisted `PipelineCache`, requires/promises data contracts,
-per-step metric-retention tolerance, pre/post-step hooks). `PipelineSession` in
+per-step metric-retention tolerance, pre/post/step-failed hooks — the failure
+hooks observe a dying step with its error and the exception re-raises
+untouched). `PipelineSession` in
 `session.py` is the composition root the `run.py` entry point drives; the
 concrete `PipelineStep` implementations live under `pipeline_steps/`.
 

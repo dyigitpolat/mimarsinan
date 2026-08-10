@@ -40,6 +40,7 @@ class Pipeline:
 
         self.post_step_hooks: list = []
         self.pre_step_hooks: list = []
+        self.step_failed_hooks: list = []
 
     def add_pipeline_step(self, name, pipeline_step):
         pipeline_step.name = name
@@ -151,6 +152,9 @@ class Pipeline:
     def register_pre_step_hook(self, hook):
         self.pre_step_hooks.append(hook)
 
+    def register_step_failed_hook(self, hook):
+        self.step_failed_hooks.append(hook)
+
     def _release_gpu_memory(self):
         """Release unreferenced GPU memory between pipeline steps."""
         gc.collect()
@@ -184,6 +188,12 @@ class Pipeline:
 
             for hook in self.post_step_hooks:
                 hook(name, step)
+        except Exception as error:
+            # Failure hooks observe the death (GUI/monitor persistence) and the
+            # original error re-raises untouched: fail-loud preserved.
+            for hook in self.step_failed_hooks:
+                hook(name, step, error)
+            raise
         finally:
             step.cleanup()
             self._release_gpu_memory()
