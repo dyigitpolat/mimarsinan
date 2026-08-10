@@ -16,6 +16,7 @@ from mimarsinan.advisories.rules_config import (
     ADV_CASC_UNSUPPORTED,
     ADV_ENVELOPE_GATE,
     ADV_NOVENA_CHARGE,
+    ADV_STREAMED_CONTRACT,
     ADV_STRICT_LT_LATTICE,
     CONFIG_RULES,
     rule_envelope_gate,
@@ -34,6 +35,7 @@ from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 
 ALL_ADVISORY_IDS = frozenset({
     ADV_CASC_UNSUPPORTED,
+    ADV_STREAMED_CONTRACT,
     ADV_NOVENA_CHARGE,
     ADV_STRICT_LT_LATTICE,
     ADV_ENVELOPE_GATE,

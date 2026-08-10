@@ -21,6 +21,7 @@ from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 
 EXPECTED_IDS = {
     "ADV-CASC-UNSUPPORTED",
+    "ADV-STREAMED-CONTRACT",
     "ADV-STAIRCASE-DEPTH",
     "ADV-SCALE-SPREAD",
     "ADV-NORMFREE-CHAIN",
@@ -75,14 +76,32 @@ class TestStableIds:
     def test_engine_exposes_exactly_the_rule_set(self):
         assert ALL_ADVISORY_IDS == frozenset(EXPECTED_IDS)
 
+    def test_every_rule_module_constant_is_registered(self):
+        """Completeness pin: a rule module declaring an ADV_* id that the
+        engine's ALL_ADVISORY_IDS misses is registry drift (how the streamed
+        contract id went missing)."""
+        from mimarsinan.advisories import rules_config, rules_graph, rules_graph_scale
+
+        declared = {
+            value
+            for module in (rules_config, rules_graph, rules_graph_scale)
+            for name, value in vars(module).items()
+            if name.startswith("ADV_") and isinstance(value, str)
+        }
+        assert declared == ALL_ADVISORY_IDS
+
     def test_fired_advisories_use_registered_ids(self):
-        config = {
+        cascaded = {
             "spiking_mode": "ttfs_cycle_based",
             "ttfs_cycle_schedule": "cascaded",
             "firing_mode": "TTFS",
         }
-        for advisory in evaluate_config_advisories(config):
-            assert advisory.id in ALL_ADVISORY_IDS
+        streamed = {"spiking_family": "lif", "spiking_variant": "streamed"}
+        for config in (cascaded, streamed):
+            fired = evaluate_config_advisories(config)
+            assert fired, f"expected advisories to fire for {config}"
+            for advisory in fired:
+                assert advisory.id in ALL_ADVISORY_IDS
         for advisory in evaluate_post_pretrain_advisories(
             0.1, {}, acceptance_target=0.9
         ):
