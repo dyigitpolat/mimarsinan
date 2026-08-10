@@ -76,12 +76,9 @@ def snapshot_model(model: Any) -> dict:
 
 
 def _get_model_perceptrons(model: Any) -> tuple[list, str]:
-    """Extract layer-like objects from the model; returns ``(layers, source)``.
-
-    ``source`` names the strategy that produced the list: ``"get_perceptrons"``,
-    ``"perceptrons_attr"``, ``"linear_fallback"`` (synthesized wrappers that
-    never carry pruning masks), or ``"none"``.
-    """
+    """Extract layer-like objects from the model as ``(layers, source)``; ``source``
+    names the strategy: ``"get_perceptrons"``, ``"perceptrons_attr"``,
+    ``"linear_fallback"`` (synthesized wrappers, never carry masks), or ``"none"``."""
     with best_effort("model.get_perceptrons() lookup", logger=logger):
         perceptrons = model.get_perceptrons()
         if perceptrons:
@@ -135,12 +132,8 @@ def snapshot_pruning_layers(
     model: Any, *, configured_fraction: Any = None
 ) -> tuple[dict, list[ResourceDescriptor]]:
     """Per-layer pruning summaries (dims, sparsity, mask map) + lazy descriptors.
-
-    Masks follow the model convention True = PRUNED; committed weights stay
-    full-width, so pre dims come from ``weight.shape`` and post dims are the
-    kept counts. Every skip path appends a ``{layer, reason}`` entry to
-    ``skipped`` — the tab renders these as visible diagnostics.
-    """
+    Masks follow the model convention True = PRUNED; every skip path appends a
+    visible ``{layer, reason}`` diagnostic to ``skipped`` (see docs/ux/pruning_tab.md)."""
     perceptrons, source = _get_model_perceptrons(model)
     layers_out: list[dict] = []
     skipped: list[dict] = []
