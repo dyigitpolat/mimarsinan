@@ -256,19 +256,20 @@ def derive_arch_spec(
 
 
 def _max_cores_per_pass(mapping: Any, packed_cores: int) -> int:
-    """Largest simultaneous (single-pass) core need; the whole packed count
-    when the mapping carries no schedule structure (unscheduled semantics)."""
+    """Largest simultaneous core need: the widest single stage. Stages execute
+    serially (segments AND passes; cores are freed/reprogrammed between them),
+    so per-stage residency is the physical constraint — never a cross-stage
+    sum. Falls back to the whole packed count without stage structure."""
     stages = getattr(mapping, "stages", None)
     if not stages:
         return packed_cores
-    per_pass: dict[int, int] = {}
-    for stage in stages:
-        hcm = getattr(stage, "hard_core_mapping", None)
-        if getattr(stage, "kind", None) != "neural" or hcm is None:
-            continue
-        p = getattr(stage, "schedule_pass_index", None) or 0
-        per_pass[p] = per_pass.get(p, 0) + len(hcm.cores)
-    return max(per_pass.values()) if per_pass else packed_cores
+    widths = [
+        len(stage.hard_core_mapping.cores)
+        for stage in stages
+        if getattr(stage, "kind", None) == "neural"
+        and getattr(stage, "hard_core_mapping", None) is not None
+    ]
+    return max(widths) if widths else packed_cores
 
 
 def _thresholding_mode_to_soma_attr(thresholding_mode: str) -> str:

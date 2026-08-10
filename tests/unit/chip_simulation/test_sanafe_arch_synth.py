@@ -623,6 +623,21 @@ class TestDeclaredCapacityFloorplan:
         assert all(c == 4 for c in spec.n_cores_per_tile)
         assert spec.mesh_width * spec.mesh_height == spec.n_tiles
 
+    def test_serial_segments_of_one_pass_are_not_summed(self):
+        # Segments execute serially (cores freed/reprogrammed between them):
+        # eight 60-core segments on a 360-core chip are placeable even though
+        # their logical sum (480) exceeds the chip — the t0_03 regression.
+        mapping = _fake_mapping(*[
+            _fake_stage("neural", _fake_hcm(*[(3, 2)] * 60), pass_index=None)
+            for _ in range(8)
+        ])
+        spec = derive_arch_spec(
+            mapping, preset_name="loihi", declared_core_capacity=360,
+        )
+        # 480 logical cores over 360 slots -> 2 replicas of the physical grid.
+        assert spec.floorplan_replicas == 2
+        assert spec.total_cores >= 480
+
     def test_single_pass_exceeding_capacity_is_still_loud(self):
         mapping = _fake_mapping(
             _fake_stage("neural", _fake_hcm(*[(3, 2)] * 10), pass_index=0),
