@@ -5,7 +5,7 @@ Scope: the "Pruning" tab on the Pruning Adaptation step-detail page
 `gui/snapshot/model_snapshot.py::snapshot_pruning_layers` via
 `build_step_snapshot`). The tab is mounted only for the step named by the
 registry constant `PRUNING_ADAPTATION_STEP`
-(`pipelining/core/pipelines/deployment_specs.py`).
+(`pipelining/core/step_plan.py`; re-exported by `core/pipelines/deployment_specs.py`).
 
 Conventions the tab inherits:
 
