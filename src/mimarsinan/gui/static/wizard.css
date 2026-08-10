@@ -1461,6 +1461,7 @@ input.field-invalid { border-color: var(--accent-rose); }
 
 /* ── Deployment advisories (Review & Launch first card; UNSUPPORTED reads
       loud; gating rows carry the acknowledge-to-launch checkbox) ─────────── */
+.advisory-section { margin-bottom: 16px; }
 .advisory-rail { display: flex; flex-direction: column; gap: 8px; }
 .advisory-card {
   border: 1px solid var(--border);
