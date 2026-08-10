@@ -817,3 +817,155 @@ class TestPrunedDeploymentParity:
         survival = derive_deployed_neuron_survival(ir_graph)
         # Perceptron 0 (p1) has 6 output neurons; index 2 was pruned -> survivors omit it.
         assert list(survival.survivors[0]) == [0, 1, 3, 4, 5]
+
+
+class TestStreamedPrunedParity:
+    """The W0.1 regression: the STREAMED gate must project the NF capture onto
+    the deployed survivor set exactly like the analytic gate. Without the
+    projection a pruned streamed deployment dies at the shape guard
+    ("perceptron N neuron-count mismatch (b, N) vs (b, M)") on a lossless
+    deploy; with it the window counts hold at atol=0."""
+
+    _T = 8
+
+    def _lif_perceptron(self, out_ch, in_features, theta, *, encoding=False):
+        from mimarsinan.models.nn.activations import LIFActivation
+
+        p = Perceptron(out_ch, in_features, normalization=nn.Identity())
+        p.is_encoding_layer = encoding
+        p.set_activation_scale(theta)
+        lif = LIFActivation(T=self._T, activation_scale=p.activation_scale)
+        lif.use_cycle_accurate_trains = True
+        p.base_activation = lif
+        p.activation = lif
+        return p
+
+    def _build_pruned_streamed(self, pruned_out_neuron=5):
+        """input(8) -> encode P0 (host op) -> P1 core (6 out, one pruned) -> P2 core (4 out)."""
+        from mimarsinan.mapping.pruning.ir_pruning_core import prune_ir_graph
+        from mimarsinan.mapping.pruning.ir_pruning_masks import (
+            get_initial_pruning_masks_from_model,
+        )
+        from mimarsinan.spiking.segment_forward import (
+            LifSegmentPolicy,
+            SegmentForwardDriver,
+        )
+        from mimarsinan.torch_mapping.encoding_layers import mark_encoding_layers
+        from mimarsinan.tuning.tuners.pruning.pruning_tuner_enforce import (
+            enforce_pruning_persistently,
+            register_prune_buffers,
+        )
+
+        torch.manual_seed(0)
+        theta_enc, theta_p1 = 2.185, 0.5
+        p0 = self._lif_perceptron(8, 8, theta_enc, encoding=True)
+        p1 = self._lif_perceptron(6, 8, theta_p1)
+        p1.per_input_scales = torch.full((8,), float(theta_enc))
+        p2 = self._lif_perceptron(4, 6, 1.0)
+        p2.per_input_scales = torch.full((6,), float(theta_p1))
+
+        keep_p1 = torch.ones(6, dtype=torch.bool)
+        keep_p1[pruned_out_neuron] = False
+        row_masks = [keep_p1, torch.ones(4, dtype=torch.bool)]
+        col_masks = [torch.ones(8, dtype=torch.bool), torch.ones(6, dtype=torch.bool)]
+        register_prune_buffers([p1, p2], row_masks, col_masks)
+        enforce_pruning_persistently([p1, p2], row_masks, col_masks)
+
+        m2 = PerceptronMapper(
+            PerceptronMapper(PerceptronMapper(InputMapper((8,)), p0), p1), p2,
+        )
+        repr_ = ModelRepresentation(m2)
+        mark_encoding_layers(repr_)
+        repr_.assign_perceptron_indices()
+        ir_graph = IRMapping(
+            q_max=127.0, firing_mode="Default", max_axons=32, max_neurons=32,
+        ).map(repr_)
+
+        T = self._T
+
+        class _StreamedNFModel(nn.Module):
+            def __init__(self, repr_, perceptrons):
+                super().__init__()
+                self.repr_ = repr_
+                self._perceptrons = nn.ModuleList(perceptrons)
+
+            def get_perceptrons(self):
+                return list(self._perceptrons)
+
+            def forward(self, x):
+                return SegmentForwardDriver(self.repr_, T, LifSegmentPolicy())(x)
+
+        model = _StreamedNFModel(repr_, [p0, p1, p2]).eval()
+        initial_node, initial_bank = get_initial_pruning_masks_from_model(
+            model, ir_graph,
+        )
+        ir_graph = prune_ir_graph(
+            ir_graph,
+            initial_pruned_per_node=initial_node or None,
+            initial_pruned_per_bank=initial_bank or None,
+            store_heatmap=False,
+            simulation_steps=self._T,
+            spiking_mode="lif",
+        )
+        return model, ir_graph
+
+    def _streamed_pipeline_stub(self):
+        from types import SimpleNamespace
+
+        from mimarsinan.config_schema.defaults import (
+            get_default_deployment_parameters,
+            get_default_platform_constraints,
+        )
+
+        cfg = get_default_deployment_parameters()
+        cfg.update(get_default_platform_constraints())
+        cfg.update({
+            "spiking_family": "lif",
+            "spiking_variant": "streamed",
+            "simulation_steps": self._T,
+            "input_shape": (8,),
+            "device": "cpu",
+        })
+        return SimpleNamespace(config=cfg)
+
+    def test_deployed_core_is_genuinely_compacted(self):
+        from mimarsinan.mapping.pruning import derive_deployed_neuron_survival
+
+        _, ir_graph = self._build_pruned_streamed(pruned_out_neuron=5)
+        survival = derive_deployed_neuron_survival(ir_graph)
+        # Perceptron 1 (p1) has 6 output neurons; index 5 was pruned.
+        assert list(survival.survivors[1]) == [0, 1, 2, 3, 4]
+
+    def test_streamed_pruned_parity_holds_at_atol_zero(self):
+        from mimarsinan.pipelining.core.nf_scm_parity import (
+            assert_streamed_nf_scm_exact_or_raise,
+        )
+
+        model, ir_graph = self._build_pruned_streamed()
+        torch.manual_seed(1)
+        samples = 3.0 * torch.rand(4, 8)
+        assert_streamed_nf_scm_exact_or_raise(
+            self._streamed_pipeline_stub(), model, ir_graph, samples,
+        )
+
+    def test_survival_projection_is_load_bearing(self, monkeypatch):
+        """With the projection neutralized, the full-width NF capture must hit
+        the compacted SCM record's shape guard — proving the fixture genuinely
+        exercises the pruned-width path the projection heals."""
+        import mimarsinan.mapping.pruning as pruning_pkg
+        from mimarsinan.mapping.pruning import DeployedNeuronSurvival
+        from mimarsinan.pipelining.core.nf_scm_parity import (
+            assert_streamed_nf_scm_exact_or_raise,
+        )
+
+        model, ir_graph = self._build_pruned_streamed()
+        monkeypatch.setattr(
+            pruning_pkg, "derive_deployed_neuron_survival",
+            lambda _ir: DeployedNeuronSurvival(survivors={}),
+        )
+        torch.manual_seed(1)
+        samples = 3.0 * torch.rand(4, 8)
+        with pytest.raises(NfScmParityError, match="neuron-count mismatch"):
+            assert_streamed_nf_scm_exact_or_raise(
+                self._streamed_pipeline_stub(), model, ir_graph, samples,
+            )
