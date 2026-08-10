@@ -13,6 +13,7 @@ logger = logging.getLogger("mimarsinan.gui")
 from mimarsinan.common.best_effort import best_effort
 from mimarsinan.gui.snapshot.util.helpers import _histogram
 from mimarsinan.gui.resources import HeatmapSource, ResourceDescriptor
+from mimarsinan.gui.snapshot.heatmap import HeatmapScaleFamily
 from mimarsinan.gui.snapshot.ir_graph.ir_graph_resources import (
     _group_consecutive_compute_stages,
     _make_per_core_connectivity_source,
@@ -79,6 +80,7 @@ def snapshot_hard_core_mapping(mapping: Any) -> tuple[dict, list[ResourceDescrip
     all_core_utils: list[dict] = []
     neural_segment_idx = 0
     descriptors: list[ResourceDescriptor] = []
+    heatmap_family = HeatmapScaleFamily("hard_core_mapping")
 
     for i, stage in enumerate(mapping.stages):
         stage_info: dict = {"index": i, "kind": stage.kind, "name": stage.name}
@@ -124,10 +126,12 @@ def snapshot_hard_core_mapping(mapping: Any) -> tuple[dict, list[ResourceDescrip
                     }
                     core_d["heatmap_axons"] = int(core.axons_per_core)
                     core_d["heatmap_neurons"] = int(core.neurons_per_core)
+                    heatmap_source = HeatmapSource(mat, copy=False)
+                    heatmap_family.adopt(heatmap_source)
                     descriptors.append(ResourceDescriptor(
                         kind=RESOURCE_KIND_HARD_CORE_HEATMAP,
                         rid=rid,
-                        source=HeatmapSource(mat, copy=False),
+                        source=heatmap_source,
                         media_type="image/png",
                     ))
                 conn_rid = f"seg/{seg_idx}/core/{ci}"
@@ -212,6 +216,9 @@ def snapshot_hard_core_mapping(mapping: Any) -> tuple[dict, list[ResourceDescrip
         "utilization_histogram": _histogram(np.array(utilizations)) if utilizations else None,
         "mean_utilization": float(np.mean(utilizations)) if utilizations else 0.0,
     }
+    heatmap_scale = heatmap_family.finalize(descriptors)
+    if heatmap_scale is not None:
+        summary["heatmap_scale"] = heatmap_scale
     return summary, descriptors
 
 

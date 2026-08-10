@@ -598,11 +598,41 @@ body {
 .hw-insp-heatmap-wrap {
   /* width and height are set inline in JS to the exact pixel size of
      the displayed heatmap so absolutely-positioned region overlays
-     align to the image's pixels (no letterboxing). */
+     align to the image's pixels (no letterboxing). content-box keeps
+     that inline size the IMAGE size — the border adds outside instead
+     of shaving the content box and skewing the aspect. */
   position: relative; display: block;
+  box-sizing: content-box;
   background: var(--bg-primary); border-radius: 4px; border: 1px solid var(--border);
   overflow: hidden;
   align-self: flex-start;
+}
+.hw-insp-heatmap-missing {
+  display: flex; align-items: center; justify-content: center;
+  min-width: 120px; min-height: 80px; padding: 8px;
+  border: 1px dashed var(--border); border-radius: 4px;
+  color: var(--text-muted); font-size: 10px; text-align: center;
+}
+
+/* ── Shared heatmap color scale legend ── */
+.hw-colorbar-legend {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 10px; font-weight: 500; color: var(--text-muted);
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  white-space: nowrap;
+  /* Reset the card-header's uppercase styling when hosted there. */
+  text-transform: none; letter-spacing: 0;
+}
+.hw-colorbar-img {
+  display: block; width: 96px; height: 10px;
+  border-radius: 2px; border: 1px solid var(--border);
+}
+.hw-colorbar-mask-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+}
+.hw-colorbar-mask-chip::before {
+  content: ''; display: inline-block; width: 8px; height: 8px;
+  border-radius: 2px; background: #e53935;
 }
 .hw-insp-heatmap {
   /* paired with object-fit:fill via inline style; the wrap matches the
@@ -751,11 +781,18 @@ body {
   position: relative; border-radius: 3px; border: 1.5px solid var(--border);
   overflow: hidden; flex-shrink: 0;
   display: inline-block;
-  box-sizing: border-box;
+  /* content-box: the inline width/height/aspect-ratio target the CONTENT box,
+     so the heatmap PNG (margin-free, exact matrix aspect) and the
+     percent-positioned overlays share one pixel space; the 1.5px border adds
+     OUTSIDE and is compensated in the JS cell sizing (CORE_BORDER_PX). */
+  box-sizing: content-box;
   transition: border-color 0.15s, box-shadow 0.15s;
   /* Match heatmap background so no white padding shows if image aspect matches container */
   background: #2b303c;
 }
+/* Native-resolution heatmaps upscaled by the browser stay crisp; downscaled
+   ones keep smooth sampling so thin pruned lines survive (class set in JS). */
+.hm-pixelated { image-rendering: pixelated; }
 .hw-core-cell:hover .hw-core { border-color: var(--accent); transform: translateY(-1px); }
 .hw-core-selected {
   border-color: var(--accent) !important;
@@ -786,7 +823,12 @@ body {
   50%      { box-shadow: 0 0 18px rgba(255,255,255,0.65), inset 0 0 6px rgba(255,255,255,0.32); }
 }
 .hw-core-constituent-overlay {
+  /* Pin the overlay to the core's content box (= the heatmap image box):
+     without position+inset the absolutely-positioned children resolved
+     against an unpositioned static box and drifted off the pixels. */
+  position: absolute; inset: 0;
   box-sizing: border-box;
+  pointer-events: none;
 }
 .hw-core-constituent-boundary {
   position: absolute; box-sizing: border-box;

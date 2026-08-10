@@ -12,7 +12,7 @@
  * /api/.../resources/{kind}/{rid}; the snapshot only carries {kind, rid}.
  */
 import { imgSrcAttr, resourceUrl, getResourceContext } from './resource-urls.js';
-import { esc, safeReact, plotHistogram } from './util.js';
+import { esc, safeReact, plotHistogram, heatmapScalingClass, fmtScaleValue } from './util.js';
 import { buildHwStatsPanelHtml } from './hw-stats-panel.js';
 
 // ── Lazy connectivity (per-core span list) ───────────────────────────────
@@ -93,6 +93,21 @@ function segKey(stage, fallbackIdx) {
   return stage.segment_index ?? fallbackIdx;
 }
 
+// Shared-color-scale legend: ONE symmetric scale per heatmap family, served
+// as summary numbers + a colorbar resource; pruned lines use the reserved red.
+function colorbarLegendHtml(scaleBlock, label) {
+  if (!scaleBlock || !scaleBlock.colorbar_resource) return '';
+  const url = imgSrcAttr(scaleBlock.colorbar_resource);
+  if (!url) return '';
+  const title = `Shared symmetric color scale${label ? ' — ' + label : ''}`;
+  return `<span class="hw-colorbar-legend" title="${esc(title)}">`
+    + `<span>${esc(fmtScaleValue(scaleBlock.vmin))}</span>`
+    + `<img class="hw-colorbar-img" src="${url}" alt="shared color scale" decoding="async">`
+    + `<span>+${esc(fmtScaleValue(scaleBlock.vmax))}</span>`
+    + '<span class="hw-colorbar-mask-chip">pruned</span>'
+    + '</span>';
+}
+
 // ── Sizing constants — keep IDENTICAL to preserve relative dims ──────────
 const MAX_CORE_DISPLAY_PX = 200;
 const MIN_CORE_DISPLAY_PX = 8;
@@ -106,6 +121,10 @@ const SEG_VIEW_WIDTH_FALLBACK = 580;
 const ID_WIDTH = 20;
 const UTIL_HEIGHT = 14;
 const GRID_GAP = 6;
+// .hw-core is content-box (its 1.5px border adds OUTSIDE the heatmap pixels
+// so overlays and aspect math target the image box); the cell budget must
+// carry the border explicitly.
+const CORE_BORDER_PX = 3;
 const HW_SOFT_MAX = 200;
 const MIN_HEATMAP_VIEW_WIDTH = 80;
 const MIN_HEATMAP_VIEW_HEIGHT = 80;
@@ -145,6 +164,7 @@ export function renderHardwareTab(hw, container, irGraph, mappingPerformance) {
     <div class="card hw-workbench-card" style="margin-bottom:20px">
       <div class="card-header">
         <span>Stage Execution Flow</span>
+        ${colorbarLegendHtml(hw.heatmap_scale, 'hardware cores')}
         <span class="hw-workbench-hint text-muted">Rail → click stage · canvas → click core · overlay → click span</span>
       </div>
       <div class="card-body no-pad">
@@ -474,8 +494,8 @@ function mountWorkbench(hw, irGraph) {
       const longPx = Math.max(MIN_CORE_DISPLAY_PX, Math.round((Math.max(ax, n) / maxDimension) * MAX_CORE_DISPLAY_PX));
       const actualW = ax >= n ? Math.round(longPx * (n / ax)) : longPx;
       const actualH = ax >= n ? longPx : Math.round(longPx * (ax / n));
-      const cellW = ID_WIDTH + 4 + actualW;
-      const cellH = actualH + UTIL_HEIGHT;
+      const cellW = ID_WIDTH + 4 + actualW + CORE_BORDER_PX;
+      const cellH = actualH + UTIL_HEIGHT + CORE_BORDER_PX;
       const numCols = Math.max(1, Math.floor((SEG_VIEW_WIDTH + GRID_GAP) / (cellW + GRID_GAP)));
 
       html += '<div class="hw-core-group">';
@@ -510,8 +530,8 @@ function mountWorkbench(hw, irGraph) {
   }
 
   function emitCoreCell(core, ax, n, actualW, actualH, isPlaceholder, segIdx) {
-    const cellW = ID_WIDTH + 4 + actualW;
-    const cellH = actualH + UTIL_HEIGHT;
+    const cellW = ID_WIDTH + 4 + actualW + CORE_BORDER_PX;
+    const cellH = actualH + UTIL_HEIGHT + CORE_BORDER_PX;
     const cellStyle = `width:${cellW}px;height:${cellH}px`;
     const ar = Math.max(0.01, n / ax);
     const coreStyle = ax >= n
@@ -535,7 +555,12 @@ function mountWorkbench(hw, irGraph) {
     cell += `<div class="hw-core${selCls}" id="hc-${segIdx}-${core.core_index}" style="${coreStyle};position:relative">`;
     const cellHeatmapUrl = imgSrcAttr(core.heatmap_resource);
     if (cellHeatmapUrl) {
-      cell += `<img class="hw-core-canvas" src="${cellHeatmapUrl}" loading="lazy" decoding="async" style="width:100%;height:100%;display:block;object-fit:fill" draggable="false">`;
+      const scaleCls = heatmapScalingClass(
+        core.heatmap_axons || core.axons_per_core,
+        core.heatmap_neurons || core.neurons_per_core,
+        actualW, actualH,
+      );
+      cell += `<img class="hw-core-canvas${scaleCls}" src="${cellHeatmapUrl}" loading="lazy" decoding="async" style="width:100%;height:100%;display:block;object-fit:fill" draggable="false">`;
     }
     const placements = core.mapped_placements || [];
     const aTotal = Math.max(1, core.heatmap_axons || core.axons_per_core);
@@ -652,8 +677,9 @@ function mountWorkbench(hw, irGraph) {
       let dispW, dispH;
       if (ar >= MAX_W / MAX_H) { dispW = MAX_W; dispH = Math.max(40, Math.round(MAX_W / ar)); }
       else                     { dispH = MAX_H; dispW = Math.max(40, Math.round(MAX_H * ar)); }
+      const inspScaleCls = heatmapScalingClass(heatA, heatN, dispW, dispH);
       html += `<div class="hw-insp-heatmap-wrap" style="width:${dispW}px;height:${dispH}px">`;
-      html += `<img src="${heatUrl}" alt="Core ${core.core_index} heatmap" loading="lazy" decoding="async" class="hw-insp-heatmap" style="width:100%;height:100%;object-fit:fill">`;
+      html += `<img src="${heatUrl}" alt="Core ${core.core_index} heatmap" loading="lazy" decoding="async" class="hw-insp-heatmap${inspScaleCls}" style="width:100%;height:100%;object-fit:fill">`;
       for (let pi = 0; pi < placements.length; pi++) {
         const pl = placements[pi];
         const top = (pl.axon_offset / aTotal) * 100;
@@ -787,20 +813,29 @@ function mountWorkbench(hw, irGraph) {
           return { w: Math.max(2, w), h: Math.max(2, h) };
         }
         html += '<div class="hw-insp-subtitle">Weight heatmap</div>';
+        const irScaleLegend = colorbarLegendHtml(irGraph?.heatmap_scale, 'IR cores');
+        if (irScaleLegend) html += `<div style="margin:2px 0 6px">${irScaleLegend}</div>`;
         html += '<div class="hw-softcore-heatmaps-scroll">';
         html += '<div class="hw-insp-heatmap-row">';
         let preSz = null;
         if (nodePreHeatmapUrl) {
           const preLabel = (preAx != null && preNu != null) ? ` (${preAx}×${preNu})` : '';
           preSz = (preAx != null && preNu != null) ? softHeatmapSizePre(preAx, preNu) : { w: HW_SOFT_MAX, h: HW_SOFT_MAX };
-          html += `<div class="hw-insp-heatmap-tile"><div class="hw-insp-heatmap-tile-lbl">Pre-pruning${preLabel}</div><img src="${nodePreHeatmapUrl}" alt="Pre-pruning" loading="lazy" decoding="async" class="hw-softcore-heatmap" style="width:${preSz.w}px;height:${preSz.h}px;object-fit:fill"></div>`;
+          const preCls = heatmapScalingClass(preAx, preNu, preSz.w, preSz.h);
+          html += `<div class="hw-insp-heatmap-tile"><div class="hw-insp-heatmap-tile-lbl">Pre-pruning${preLabel}</div><img src="${nodePreHeatmapUrl}" alt="Pre-pruning" loading="lazy" decoding="async" class="hw-softcore-heatmap${preCls}" style="width:${preSz.w}px;height:${preSz.h}px;object-fit:fill"></div>`;
+        } else {
+          // The snapshot advertises pre-pruning only when the mapping stored
+          // the pre matrix AND both masks; say so instead of silently
+          // dropping the tile.
+          html += '<div class="hw-insp-heatmap-tile"><div class="hw-insp-heatmap-tile-lbl">Pre-pruning</div><div class="hw-insp-heatmap-missing">Pre-pruning view unavailable — no stored pre-pruning matrix/masks for this core</div></div>';
         }
         if (nodeHeatmapUrl) {
           const postAxNum = node.axons ?? 0;
           const postNuNum = node.neurons ?? 0;
           const postLabel = (postAxNum && postNuNum) ? ` (${postAxNum}×${postNuNum})` : '';
           const postSz = softHeatmapSizePost(postAxNum, postNuNum, preSz, preAx ?? 0, preNu ?? 0);
-          html += `<div class="hw-insp-heatmap-tile"><div class="hw-insp-heatmap-tile-lbl">Post-pruning${postLabel}</div><img src="${nodeHeatmapUrl}" alt="Post-pruning" loading="lazy" decoding="async" class="hw-softcore-heatmap" style="width:${postSz.w}px;height:${postSz.h}px;object-fit:fill"></div>`;
+          const postCls = heatmapScalingClass(postAxNum, postNuNum, postSz.w, postSz.h);
+          html += `<div class="hw-insp-heatmap-tile"><div class="hw-insp-heatmap-tile-lbl">Post-pruning${postLabel}</div><img src="${nodeHeatmapUrl}" alt="Post-pruning" loading="lazy" decoding="async" class="hw-softcore-heatmap${postCls}" style="width:${postSz.w}px;height:${postSz.h}px;object-fit:fill"></div>`;
         }
         html += '</div></div>';
       }

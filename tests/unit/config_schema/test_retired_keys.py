@@ -139,6 +139,16 @@ class TestScopedRetirement:
         assert remedy["key"] == "allow_weight_reuse"
         assert remedy["scope"] == "platform_constraints"
 
+    def test_retired_echo_never_attaches_to_a_live_key(self):
+        # attach_error_key must recognize retired names: without that, the
+        # validation-channel echo of the removed key's message re-attaches to
+        # whichever LIVE key the message happens to mention (schedule_policy),
+        # producing a duplicate row on an unrelated key.
+        res = resolve_draft(_document(pc={"allow_weight_reuse": True}))
+        for row in res.errors:
+            if row["key"] != "allow_weight_reuse":
+                assert "allow_weight_reuse" not in row["message"], row
+
     def test_retired_platform_key_is_not_unknown_and_never_explicit(self):
         res = resolve_draft(_document(pc={"allow_weight_reuse": False}))
         # retired != unknown: the tray must not double-report the keyed error,

@@ -41,6 +41,10 @@ class ResourceSource(ABC):
     def render(self) -> Any:
         """The resource payload: bytes for binary media, JSON-safe values otherwise."""
 
+    def render_full(self) -> Any:
+        """The on-demand full-resolution variant; identical to :meth:`render` unless overridden."""
+        return self.render()
+
     @abstractmethod
     def to_state(self) -> dict[str, Any]:
         """State ``from_state`` reconstructs from; ndarray values are stored as arrays."""
@@ -84,7 +88,12 @@ def _as_bool_mask(mask: Sequence[Any] | None) -> list[bool] | None:
 
 
 class HeatmapSource(ResourceSource):
-    """A weight matrix plus optional pruned row/column masks, rendered as a PNG heatmap."""
+    """A weight matrix plus optional pruned row/column masks, rendered as a PNG heatmap.
+
+    ``scale`` is the shared symmetric color limit of the source's heatmap
+    FAMILY (stamped by the snapshot loop once the whole family is known);
+    ``None`` falls back to the matrix's own p98 scale.
+    """
 
     SOURCE_TYPE = "heatmap"
 
@@ -94,17 +103,29 @@ class HeatmapSource(ResourceSource):
         *,
         pruned_row_mask: Sequence[Any] | None = None,
         pruned_col_mask: Sequence[Any] | None = None,
+        scale: float | None = None,
         copy: bool = True,
     ) -> None:
         self.matrix = as_host_array(matrix, copy=copy)
         self.pruned_row_mask = _as_bool_mask(pruned_row_mask)
         self.pruned_col_mask = _as_bool_mask(pruned_col_mask)
+        self.scale = float(scale) if scale is not None else None
 
     def render(self) -> bytes:
         return heatmap_renderer.render_heatmap_png_bytes(
             self.matrix,
             pruned_row_mask=self.pruned_row_mask,
             pruned_col_mask=self.pruned_col_mask,
+            scale=self.scale,
+        )
+
+    def render_full(self) -> bytes:
+        return heatmap_renderer.render_heatmap_png_bytes(
+            self.matrix,
+            pruned_row_mask=self.pruned_row_mask,
+            pruned_col_mask=self.pruned_col_mask,
+            scale=self.scale,
+            target_long_side=heatmap_renderer.FULL_TARGET_LONG_SIDE,
         )
 
     def to_state(self) -> dict[str, Any]:
@@ -112,6 +133,7 @@ class HeatmapSource(ResourceSource):
             "matrix": self.matrix,
             "pruned_row_mask": self.pruned_row_mask,
             "pruned_col_mask": self.pruned_col_mask,
+            "scale": self.scale,
         }
 
     @classmethod
@@ -120,8 +142,29 @@ class HeatmapSource(ResourceSource):
             state["matrix"],
             pruned_row_mask=state.get("pruned_row_mask"),
             pruned_col_mask=state.get("pruned_col_mask"),
+            scale=state.get("scale"),
             copy=False,
         )
+
+
+class ColorbarSource(ResourceSource):
+    """The per-family colorbar asset: the diverging LUT as a PNG strip.
+
+    Stateless -- numeric min/max labels live in the snapshot summary, so the
+    strip itself is one shared gradient.
+    """
+
+    SOURCE_TYPE = "colorbar"
+
+    def render(self) -> bytes:
+        return heatmap_renderer.render_colorbar_png_bytes()
+
+    def to_state(self) -> dict[str, Any]:
+        return {}
+
+    @classmethod
+    def from_state(cls, state: Mapping[str, Any]) -> "ColorbarSource":
+        return cls()
 
 
 class JsonSource(ResourceSource):
@@ -162,6 +205,7 @@ def encode_resource_payload(payload: Any, media_type: str) -> bytes | None:
 
 
 __all__ = [
+    "ColorbarSource",
     "HeatmapSource",
     "JsonSource",
     "ResourceSource",
