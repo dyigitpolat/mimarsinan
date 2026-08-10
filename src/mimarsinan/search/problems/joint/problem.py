@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 
-from mimarsinan.mapping.platform.coalescing import CANONICAL_KEY, normalize_coalescing_config
+from mimarsinan.mapping.platform.coalescing import normalize_coalescing_config
 from mimarsinan.search.problems.encoded_problem import EncodedProblem
 from mimarsinan.search.problem import ValidationResult
 from mimarsinan.search.results import ObjectiveSpec, resolve_active_objectives
@@ -143,7 +143,17 @@ class JointArchHwProblem(
         return self.model_config_assembler(raw_arch)
 
     def _decode_hw(self, x: np.ndarray, offset: int) -> Dict[str, Any]:
-        core_types: List[Dict[str, int]] = []
+        # The resolved base is the deployed chip; a candidate is that chip with
+        # only the decision variables (cores, target_tq) replaced.
+        if not self.fixed_platform_constraints:
+            raise ValueError(
+                "hardware search requires fixed_platform_constraints "
+                "(the resolved platform base)"
+            )
+        base_cores = self.fixed_platform_constraints.get("cores") or []
+        base_has_bias = all(bool(c.get("has_bias", True)) for c in base_cores)
+
+        core_types: List[Dict[str, Any]] = []
         idx = offset
         for _ in range(int(self.num_core_types)):
             ax = clip_int(x[idx], int(self.core_axons_bounds[0]), int(self.core_axons_bounds[1]))
@@ -158,22 +168,12 @@ class JointArchHwProblem(
                 "max_axons": ax,
                 "max_neurons": neu,
                 "count": count,
+                "has_bias": base_has_bias,
             })
 
-        pcfg: Dict[str, Any] = {
-            "cores": core_types,
-            "target_tq": int(self.target_tq),
-            "weight_bits": 8,
-        }
-        if self.fixed_platform_constraints:
-            for key in ("allow_scheduling", "allow_neuron_splitting", "has_bias"):
-                if key in self.fixed_platform_constraints:
-                    pcfg.setdefault(key, self.fixed_platform_constraints[key])
-            if CANONICAL_KEY in self.fixed_platform_constraints:
-                pcfg.setdefault(
-                    CANONICAL_KEY,
-                    bool(self.fixed_platform_constraints[CANONICAL_KEY]),
-                )
+        pcfg: Dict[str, Any] = dict(self.fixed_platform_constraints)
+        pcfg["cores"] = core_types
+        pcfg["target_tq"] = int(self.target_tq)
         normalize_coalescing_config(pcfg)
         return pcfg
 

@@ -14,6 +14,7 @@ from pymoo.termination import get_termination
 
 from mimarsinan.common.best_effort import best_effort
 from mimarsinan.search.optimizers.base import SearchOptimizer
+from mimarsinan.search.problem import CandidateInfeasibleError
 from mimarsinan.search.problems.encoded_problem import EncodedProblem
 from mimarsinan.search.results import Candidate, SearchResult, select_minimax_rank
 
@@ -46,6 +47,12 @@ class NSGA2Optimizer(SearchOptimizer[Dict[str, Any]]):
                 vals.append(-v if spec.goal == "max" else v)
             return np.array(vals, dtype=float)
 
+        def penalty_objectives() -> Dict[str, float]:
+            return {
+                s.name: (0.0 if s.goal == "max" else self.invalid_penalty)
+                for s in specs
+            }
+
         class _PymooProblem(ElementwiseProblem):
             def __init__(self):
                 super().__init__(
@@ -57,6 +64,8 @@ class NSGA2Optimizer(SearchOptimizer[Dict[str, Any]]):
                 )
 
             def _evaluate(self, x, out, *args, **kwargs):
+                # Only candidate-dependent infeasibility degrades to a penalty
+                # row; problem-level breakage propagates and aborts the search.
                 try:
                     cfg = problem.decode(np.array(x, dtype=float))
 
@@ -65,7 +74,7 @@ class NSGA2Optimizer(SearchOptimizer[Dict[str, Any]]):
                     out["G"] = np.array([cv])
 
                     if cv > 0:
-                        obj = {s.name: (0.0 if s.goal == "max" else self_outer.invalid_penalty) for s in specs}
+                        obj = penalty_objectives()
                         all_evaluated.append((x.copy(), obj, current_gen[0]))
                         out["F"] = np.full((n_obj,), self_outer.invalid_penalty, dtype=float)
                         return
@@ -73,15 +82,15 @@ class NSGA2Optimizer(SearchOptimizer[Dict[str, Any]]):
                     obj = problem.evaluate(cfg)
                     all_evaluated.append((x.copy(), obj, current_gen[0]))
                     out["F"] = to_minimization(obj)
-                except Exception as exc:
+                except CandidateInfeasibleError as exc:
                     logger.warning(
-                        "NSGA2 candidate evaluation failed (%s: %s) for x=%s; "
+                        "NSGA2 candidate infeasible (%s: %s) for x=%s; "
                         "recording penalty objectives",
                         type(exc).__name__, exc,
                         np.array(x, dtype=float).tolist(),
                         exc_info=True,
                     )
-                    obj = {s.name: (0.0 if s.goal == "max" else self_outer.invalid_penalty) for s in specs}
+                    obj = penalty_objectives()
                     all_evaluated.append((x.copy(), obj, current_gen[0]))
                     out["F"] = np.full((n_obj,), self_outer.invalid_penalty, dtype=float)
                     out["G"] = np.array([1e6])
@@ -129,7 +138,13 @@ class NSGA2Optimizer(SearchOptimizer[Dict[str, Any]]):
             xs = np.atleast_2d(res.X)
             for x in xs:
                 cfg = problem.decode(np.array(x, dtype=float))
-                obj = problem.evaluate(cfg) if problem.validate(cfg) else {s.name: (0.0 if s.goal == "max" else self.invalid_penalty) for s in specs}
+                if problem.validate(cfg):
+                    try:
+                        obj = problem.evaluate(cfg)
+                    except CandidateInfeasibleError:
+                        obj = penalty_objectives()
+                else:
+                    obj = penalty_objectives()
                 pareto.append(Candidate(configuration=cfg, objectives=obj, metadata={"x": x.tolist(), "is_pareto": True}))
 
         all_candidates: List[Candidate[Dict[str, Any]]] = []

@@ -372,6 +372,48 @@ class TestCompile:
         assert result.metadata["failure_phase"] == "structural"
         assert "positive max_axons" in (result.diagnostics or "")
 
+    def test_candidate_infeasible_validate_becomes_failed_compile(self, tmp_path):
+        from mimarsinan.search.problem import CandidateInfeasibleError
+
+        class _TypedFailProblem(_FakeProblem):
+            def validate_detailed(self, configuration):
+                raise CandidateInfeasibleError("candidate collapsed at build")
+
+        workload_id = "fake_layout_typed_fail"
+        register_problem(workload_id, _TypedFailProblem(softcores=_make_softcores(),
+                                                        fixed_platform_constraints={
+                                                            "cores": [{"max_axons": 256, "max_neurons": 256, "count": 100}],
+                                                            "target_tq": 32,
+                                                        }))
+        try:
+            workload = _make_workload(workload_id)
+            backend = MimarsinanLayoutBackend()
+            result = backend.compile(workload, Plan(), artifact_dir=tmp_path)
+        finally:
+            unregister_problem(workload_id)
+        assert result.ok is False
+        assert result.metadata["failure_phase"] == "candidate_infeasible"
+        assert "candidate collapsed at build" in (result.diagnostics or "")
+
+    def test_problem_level_validate_failure_propagates(self, tmp_path):
+        class _BrokenProblem(_FakeProblem):
+            def validate_detailed(self, configuration):
+                raise RuntimeError("problem fixture broken")
+
+        workload_id = "fake_layout_broken"
+        register_problem(workload_id, _BrokenProblem(softcores=_make_softcores(),
+                                                     fixed_platform_constraints={
+                                                         "cores": [{"max_axons": 256, "max_neurons": 256, "count": 100}],
+                                                         "target_tq": 32,
+                                                     }))
+        try:
+            workload = _make_workload(workload_id)
+            backend = MimarsinanLayoutBackend()
+            with pytest.raises(RuntimeError, match="problem fixture broken"):
+                backend.compile(workload, Plan(), artifact_dir=tmp_path)
+        finally:
+            unregister_problem(workload_id)
+
 
 class TestTimeWorkload:
     def test_time_workload_leaves_single_axis_empty_and_exposes_full_objectives(

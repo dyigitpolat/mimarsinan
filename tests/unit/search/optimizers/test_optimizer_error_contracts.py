@@ -9,6 +9,7 @@ from mimarsinan.search.optimizers.agent_evolve import AgentEvolveOptimizer
 from mimarsinan.search.optimizers.agent_evolve_prompts import parse_candidates
 from mimarsinan.search.optimizers.llm.trace import emit_search_event, parse_json_object
 from mimarsinan.search.optimizers.nsga2_optimizer import NSGA2Optimizer
+from mimarsinan.search.problem import CandidateInfeasibleError
 from mimarsinan.search.results import ObjectiveSpec
 
 NSGA2_LOGGER = "mimarsinan.search.optimizers.nsga2_optimizer"
@@ -22,8 +23,9 @@ class _EncodedToyProblem:
     xl = np.array([0.0, 0.0])
     xu = np.array([1.0, 1.0])
 
-    def __init__(self, fail_above=None):
+    def __init__(self, fail_above=None, fail_with=CandidateInfeasibleError):
         self.fail_above = fail_above
+        self.fail_with = fail_with
 
     def decode(self, x):
         return {"x0": float(x[0]), "x1": float(x[1])}
@@ -36,15 +38,17 @@ class _EncodedToyProblem:
 
     def evaluate(self, configuration):
         if self.fail_above is not None and configuration["x0"] > self.fail_above:
-            raise RuntimeError("evaluation blew up")
+            raise self.fail_with("evaluation blew up")
         return {"score": configuration["x0"] + configuration["x1"]}
 
 
 class TestNSGA2ErrorContract:
-    def test_failed_candidate_gets_penalty_and_warning(self, caplog):
+    def test_infeasible_candidate_gets_penalty_and_warning(self, caplog):
         optimizer = NSGA2Optimizer(pop_size=8, generations=2, seed=0, verbose=False)
         with caplog.at_level(logging.WARNING, logger=NSGA2_LOGGER):
-            result = optimizer.optimize(_EncodedToyProblem(fail_above=0.5))
+            result = optimizer.optimize(
+                _EncodedToyProblem(fail_above=0.5, fail_with=CandidateInfeasibleError)
+            )
         assert result.best is not None
         penalized = [
             c for c in result.all_candidates
@@ -55,6 +59,13 @@ class TestNSGA2ErrorContract:
             r.levelno == logging.WARNING and "evaluation blew up" in r.getMessage()
             for r in caplog.records
         )
+
+    def test_problem_level_failure_aborts_search(self):
+        optimizer = NSGA2Optimizer(pop_size=8, generations=2, seed=0, verbose=False)
+        with pytest.raises(RuntimeError, match="evaluation blew up"):
+            optimizer.optimize(
+                _EncodedToyProblem(fail_above=0.5, fail_with=RuntimeError)
+            )
 
     def test_reporter_failure_degrades_without_crashing(self, caplog):
         def bad_reporter(*args, **kwargs):

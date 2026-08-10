@@ -13,7 +13,7 @@ from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 from mimarsinan.pipelining.core.model_config_emit import emit_model_config_entries
 from mimarsinan.pipelining.core.registry.model_registry import ModelRegistry
 from mimarsinan.pipelining.core.search_mode import derive_search_mode
-from mimarsinan.mapping.platform.coalescing import CANONICAL_KEY, normalize_coalescing_config
+from mimarsinan.mapping.platform.coalescing import normalize_coalescing_config
 from mimarsinan.search.problems.joint import JointArchHwProblem
 from mimarsinan.search.results import (
     ACCURACY_OBJECTIVE_NAME,
@@ -95,13 +95,12 @@ class ArchitectureSearchStep(PipelineStep):
             assembler = lambda raw: dict(raw)
 
         fixed_model_config = None
-        fixed_platform_constraints = None
+        # Every search mode anchors on the resolved platform base: hardware
+        # candidates overlay it, model mode carries it, joint inherits it.
+        fixed_platform_constraints = build_fixed_platform_constraints(self.pipeline.config)
 
         if search_mode == "hardware":
             fixed_model_config = dict(self.pipeline.config.get("model_config", {}))
-
-        if search_mode == "model":
-            fixed_platform_constraints = build_fixed_platform_constraints(self.pipeline.config)
 
         validate_config_fn = getattr(builder_cls, "validate_config", None)
 
@@ -218,14 +217,19 @@ class ArchitectureSearchStep(PipelineStep):
             )
 
         model_config = best_cfg["model_config"]
-        platform_constraints = best_cfg["platform_constraints"]
+        # Resolved-base overlay: the searched keys land on the same platform
+        # base the search evaluated against (and fixed mode passes through).
+        platform_constraints = {
+            **fixed_platform_constraints,
+            **best_cfg["platform_constraints"],
+        }
+        platform_constraints["cores"] = [
+            dict(c) for c in platform_constraints.get("cores", [])
+        ]
 
         global_has_bias = self.pipeline.config.get("platform_constraints", {}).get("has_bias", True)
-        for c in platform_constraints.get("cores", []):
+        for c in platform_constraints["cores"]:
             c["has_bias"] = global_has_bias
-
-        if search_mode == "model" and fixed_platform_constraints:
-            platform_constraints = {**fixed_platform_constraints, **platform_constraints}
 
         merged_config = {**self.pipeline.config, **platform_constraints}
         builder = builder_cls(
@@ -245,11 +249,6 @@ class ArchitectureSearchStep(PipelineStep):
 
         self.add_entry("model_builder", builder, "pickle")
         self.add_entry("model_config", model_config)
-        platform_constraints["allow_scheduling"] = bool(self.pipeline.config.get("allow_scheduling", False))
-        if CANONICAL_KEY in self.pipeline.config:
-            platform_constraints[CANONICAL_KEY] = bool(self.pipeline.config[CANONICAL_KEY])
-        else:
-            platform_constraints.setdefault(CANONICAL_KEY, False)
         normalize_coalescing_config(platform_constraints)
         self.add_entry("platform_constraints_resolved", platform_constraints)
         self.add_entry("architecture_search_result", {**result_json, **discovered})

@@ -9,6 +9,10 @@ from mimarsinan.search.results import ObjectiveSpec
 ConfigT = TypeVar("ConfigT")
 
 
+class CandidateInfeasibleError(Exception):
+    """Candidate-dependent infeasibility; optimizers convert to penalty, everything else aborts."""
+
+
 @dataclass
 class ValidationResult:
     """Feasibility decision plus, on failure, a human-readable explanation."""

@@ -25,6 +25,8 @@ from compilagent import (
     WorkloadSpec,
 )
 
+from mimarsinan.search.problem import CandidateInfeasibleError
+
 from .backend_eval import (
     objectives_for_candidate as _objectives_for_candidate,
     time_workload as _time_workload,
@@ -43,6 +45,18 @@ from ..workload import lookup_problem
 from .backend_validate import validate_intervention as _validate_intervention
 
 logger = logging.getLogger(__name__)
+
+
+def _failed_compile(
+    diagnostics: str, phase: str, *,
+    elapsed_ms: Optional[float] = None, config: Optional[Dict[str, Any]] = None,
+) -> CompileResult:
+    metadata: Dict[str, Any] = {"failure_phase": phase}
+    if config is not None:
+        metadata["config"] = config
+    return CompileResult(
+        ok=False, elapsed_ms=elapsed_ms, diagnostics=diagnostics, metadata=metadata,
+    )
 
 
 class MimarsinanLayoutBackend(BackendBase):
@@ -158,11 +172,7 @@ class MimarsinanLayoutBackend(BackendBase):
         try:
             configuration = decode_plan(plan, defaults)
         except PlanCodecError as exc:
-            return CompileResult(
-                ok=False,
-                diagnostics=f"plan decode failed: {exc}",
-                metadata={"failure_phase": "plan_decode"},
-            )
+            return _failed_compile(f"plan decode failed: {exc}", "plan_decode")
 
         artifact_dir.mkdir(parents=True, exist_ok=True)
 
@@ -172,29 +182,29 @@ class MimarsinanLayoutBackend(BackendBase):
 
         validate = getattr(problem, "validate_detailed", None)
         if validate is None:
-            return CompileResult(
-                ok=False,
-                diagnostics="problem has no validate_detailed method",
-                metadata={"failure_phase": "internal"},
-            )
+            return _failed_compile("problem has no validate_detailed method", "internal")
 
         validate_started = time.perf_counter()
-        vr = validate(configuration)
+        try:
+            vr = validate(configuration)
+        except CandidateInfeasibleError as exc:
+            # Candidate infeasibility is a failed compile; problem-level breakage propagates.
+            return _failed_compile(
+                f"candidate infeasible: {exc}", "candidate_infeasible",
+                elapsed_ms=(time.perf_counter() - compile_started) * 1000.0,
+                config=configuration,
+            )
         if pass_callback is not None:
             fire_pass(
                 pass_callback, "validate", "validate_detailed", validate_started,
             )
 
         if not vr.is_valid:
-            elapsed = (time.perf_counter() - compile_started) * 1000.0
-            return CompileResult(
-                ok=False,
-                elapsed_ms=elapsed,
-                diagnostics=vr.error_message or "validation failed",
-                metadata={
-                    "failure_phase": vr.failure_phase or "validation",
-                    "config": configuration,
-                },
+            return _failed_compile(
+                vr.error_message or "validation failed",
+                vr.failure_phase or "validation",
+                elapsed_ms=(time.perf_counter() - compile_started) * 1000.0,
+                config=configuration,
             )
 
         try:
@@ -205,15 +215,10 @@ class MimarsinanLayoutBackend(BackendBase):
                 "returning failed CompileResult",
                 workload.id, configuration, exc_info=True,
             )
-            elapsed = (time.perf_counter() - compile_started) * 1000.0
-            return CompileResult(
-                ok=False,
-                elapsed_ms=elapsed,
-                diagnostics=f"layout payload collection failed: {exc!r}",
-                metadata={
-                    "failure_phase": "layout_collection",
-                    "config": configuration,
-                },
+            return _failed_compile(
+                f"layout payload collection failed: {exc!r}", "layout_collection",
+                elapsed_ms=(time.perf_counter() - compile_started) * 1000.0,
+                config=configuration,
             )
 
         config_path = artifact_dir / "config.json"
