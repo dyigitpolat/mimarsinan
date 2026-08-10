@@ -60,6 +60,39 @@ class TestNSGA2ErrorContract:
             for r in caplog.records
         )
 
+    def test_pareto_reconstruction_survives_infeasible_reevaluation(self):
+        # The final-population re-evaluation inside optimize() must convert
+        # typed infeasibility to penalties instead of crashing the completed
+        # search. Calibrate the optimization-loop call count with a clean run
+        # (same seed => same trajectory), then arm failure from the first
+        # reconstruction call onward.
+        class _CountingProblem(_EncodedToyProblem):
+            def __init__(self, fail_from_call=None):
+                super().__init__()
+                self.calls = 0
+                self.fail_from_call = fail_from_call
+
+            def evaluate(self, configuration):
+                self.calls += 1
+                if self.fail_from_call is not None and self.calls >= self.fail_from_call:
+                    raise CandidateInfeasibleError("late infeasibility")
+                return {"score": configuration["x0"] + configuration["x1"]}
+
+        probe = _CountingProblem()
+        clean = NSGA2Optimizer(pop_size=4, generations=2, seed=0, verbose=False).optimize(probe)
+        pareto_size = len(clean.pareto_front)
+        assert pareto_size > 0
+        opt_calls = probe.calls - pareto_size
+
+        optimizer = NSGA2Optimizer(pop_size=4, generations=2, seed=0, verbose=False)
+        failing = _CountingProblem(fail_from_call=opt_calls + 1)
+        result = optimizer.optimize(failing)
+        assert len(result.pareto_front) == pareto_size
+        assert all(
+            c.objectives.get("score") == optimizer.invalid_penalty
+            for c in result.pareto_front
+        )
+
     def test_problem_level_failure_aborts_search(self):
         optimizer = NSGA2Optimizer(pop_size=8, generations=2, seed=0, verbose=False)
         with pytest.raises(RuntimeError, match="evaluation blew up"):

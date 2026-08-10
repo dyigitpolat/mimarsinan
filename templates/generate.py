@@ -262,7 +262,8 @@ T0 = [
     # (cycle-by-cycle spikes within each segment; window counts re-encode at
     # host-op boundaries); NF-SCM window counts hold at atol=0 across
     # segments. t0_45-49 are single-segment (end-to-end) models; t0_50 is
-    # the multi-span coverage cell.
+    # the multi-span coverage cell; t0_51 is the pruned streamed cell (the
+    # W0.1 parity-regression pin).
     dict(n=45, mode="lifs", quant="wq", wb=5, s=4, vehicle="simplemlp", seed=1),
     dict(n=46, mode="lifs", quant="wq", wb=5, s=8, vehicle="deepmlp", depth=4, width=128),
     dict(n=47, mode="lifs", quant="wq", wb=5, s=32, vehicle="mmixcore", epochs=8,

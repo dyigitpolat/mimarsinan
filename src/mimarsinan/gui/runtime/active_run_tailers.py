@@ -135,7 +135,10 @@ class RunLivenessWatcher:
     dies, so without this watcher a subscriber never hears that the run it is
     watching is gone. The terminal frame is the ordinary ``pipeline_overview``
     payload (which carries ``is_alive``/``status``/``error``); the watcher
-    retires itself after delivering it — death is terminal.
+    retires itself after delivering it — death is terminal. A run evicted from
+    the manager while a subscriber is attached yields no overview payload; the
+    watcher then retries each tick until unsubscribe stops it (bounded by the
+    subscription lifetime).
     """
 
     def __init__(

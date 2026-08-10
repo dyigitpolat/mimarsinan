@@ -28,7 +28,8 @@ class DeployedNeuronSurvival:
         (streamed LIF membrane init / folded half-step bias can make a zero-input
         neuron emit, and records may carry negative values). Identity (byte-identical
         no-op) for perceptrons with no survival entry or already at deployed width;
-        a record neither full-original-width nor at deployed width fails loud.
+        a record the survivor set cannot index (narrower than the deployed width,
+        or an empty survivor set) fails loud.
         """
         projected: Dict[int, np.ndarray] = {}
         for pi, vals in records.items():

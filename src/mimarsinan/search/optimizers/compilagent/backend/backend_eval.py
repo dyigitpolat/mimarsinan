@@ -15,6 +15,7 @@ from compilagent import (
     WorkloadSpec,
 )
 
+from mimarsinan.search.problem import CandidateInfeasibleError
 from mimarsinan.search.results import ObjectiveSpec
 
 from ..plan_codec import CodecDefaults, decode_plan
@@ -73,7 +74,16 @@ def time_workload(
             diagnostics="problem has no evaluate method",
         )
 
-    objectives = evaluator(configuration)
+    try:
+        objectives = evaluator(configuration)
+    except CandidateInfeasibleError as exc:
+        return TimingResult(
+            timings_ms=(),
+            median_ms=None,
+            p20_ms=None,
+            p80_ms=None,
+            diagnostics=f"candidate infeasible: {exc}",
+        )
     return TimingResult(
         timings_ms=(),
         median_ms=None,

@@ -137,3 +137,23 @@ def test_project_fails_loud_on_unindexable_record():
     nf = {3: np.ones((2, 4))}  # 4 > 2 survivors but column 5 does not exist
     with pytest.raises(AssertionError, match=r"perceptron 3"):
         surv.project(nf)
+
+
+def test_project_fails_loud_when_narrower_than_deployed_width():
+    # A record NARROWER than the deployed width can never be the deployed
+    # observable; identity here would hide a capture bug (pins == vs <=).
+    import pytest
+    surv = DeployedNeuronSurvival(survivors={1: np.array([0, 1, 2])})
+    nf = {1: np.ones((2, 2))}
+    with pytest.raises(AssertionError, match=r"perceptron 1"):
+        surv.project(nf)
+
+
+def test_project_fails_loud_on_empty_survivor_set():
+    # An empty survivor entry means the perceptron deployed zero neurons; a
+    # non-empty record for it is structurally inconsistent.
+    import pytest
+    surv = DeployedNeuronSurvival(survivors={2: np.array([], dtype=np.int64)})
+    nf = {2: np.ones((2, 3))}
+    with pytest.raises(AssertionError, match=r"perceptron 2"):
+        surv.project(nf)

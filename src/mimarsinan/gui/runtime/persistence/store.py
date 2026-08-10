@@ -16,8 +16,8 @@ from mimarsinan.gui.runtime.persistence.paths import (
     steps_file_lock,
     steps_path,
 )
-from mimarsinan.gui.runtime.proc_identity import read_proc_starttime
 from mimarsinan.gui.runtime.persistence.resource_paths import resource_disk_path
+from mimarsinan.gui.runtime.proc_identity import read_proc_starttime
 
 logger = logging.getLogger("mimarsinan.gui")
 

@@ -395,6 +395,30 @@ class TestCompile:
         assert result.metadata["failure_phase"] == "candidate_infeasible"
         assert "candidate collapsed at build" in (result.diagnostics or "")
 
+    def test_candidate_infeasible_evaluate_becomes_diagnostic_timing(self, tmp_path):
+        from mimarsinan.search.problem import CandidateInfeasibleError
+
+        class _TypedEvalFailProblem(_FakeProblem):
+            def evaluate(self, configuration):
+                raise CandidateInfeasibleError("candidate collapsed at evaluate")
+
+        workload_id = "fake_layout_typed_eval_fail"
+        register_problem(workload_id, _TypedEvalFailProblem(softcores=_make_softcores(),
+                                                            fixed_platform_constraints={
+                                                                "cores": [{"max_axons": 256, "max_neurons": 256, "count": 100}],
+                                                                "target_tq": 32,
+                                                            }))
+        try:
+            workload = _make_workload(workload_id)
+            backend = MimarsinanLayoutBackend()
+            timing = backend.time_workload(
+                workload, Plan(), warmup=0, repetitions=1, max_seconds=1.0,
+            )
+        finally:
+            unregister_problem(workload_id)
+        assert "candidate infeasible" in (timing.diagnostics or "")
+        assert "objectives" not in (timing.profile_metrics or {})
+
     def test_problem_level_validate_failure_propagates(self, tmp_path):
         class _BrokenProblem(_FakeProblem):
             def validate_detailed(self, configuration):
