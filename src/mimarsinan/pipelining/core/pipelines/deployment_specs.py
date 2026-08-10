@@ -6,7 +6,11 @@ import torch
 
 from mimarsinan.chip_simulation.backend import BACKEND_REGISTRY
 from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
-from mimarsinan.pipelining.core.step_plan import StepPlan, StepSpec
+from mimarsinan.pipelining.core.step_plan import (
+    PRUNING_ADAPTATION_STEP as PRUNING_ADAPTATION_STEP,  # canonical name re-export
+    StepPlan,
+    StepSpec,
+)
 from mimarsinan.pipelining.pipeline_steps import *
 
 
@@ -42,7 +46,7 @@ _STEP_PLAN = StepPlan([
     StepSpec("Weight Preloading",              WeightPreloadingStep,             group="pretraining"),
     StepSpec("Pretraining",                    PretrainingStep,                  group="pretraining"),
     StepSpec("Torch Mapping",                  TorchMappingStep,                 group="torch_mapping"),
-    StepSpec("Pruning Adaptation",             PruningAdaptationStep,            group="pruning"),
+    StepSpec(PRUNING_ADAPTATION_STEP,          PruningAdaptationStep,            group="pruning"),
     StepSpec("Scale Migration",                ScaleMigrationStep,               group="activation"),
     StepSpec("Reference Teacher Snapshot",     ReferenceTeacherSnapshotStep,     group="activation"),
     StepSpec("Activation Analysis",            ActivationAnalysisStep,           group="activation"),

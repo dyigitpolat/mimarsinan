@@ -41,7 +41,7 @@ concrete `PipelineStep` implementations live under `pipeline_steps/`.
 - `tuning` — tuners and orchestration read `DeploymentPlan`, `resolve_bias_mode`, and activation utils.
 - `models` — builders register themselves via `ModelRegistry`.
 - `mapping` — wizard layout verification instantiates builders through `ModelRegistry`.
-- `gui` — wizard schema/routes, run monitors, and collectors use `DeploymentPipeline`, step specs, and the model registry.
+- `gui` — wizard schema/routes, run monitors, and collectors use `DeploymentPipeline`, step specs, and the model registry; the snapshot pruning gate consumes the canonical `PRUNING_ADAPTATION_STEP` step-name constant from `core/pipelines/deployment_specs.py`.
 - `config_schema` — display-view build reads model config schemas and pipeline step specs.
 
 ## Exported API
