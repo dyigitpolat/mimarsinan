@@ -28,6 +28,9 @@ from mimarsinan.pipelining.core.pipelines.deployment_pipeline import (
     apply_workload_profiles,
     merge_pipeline_config,
 )
+from mimarsinan.pipelining.core.platform_constraints_resolver import (
+    build_platform_constraints_resolved,
+)
 from mimarsinan.tuning.orchestration.calibration_pipeline import encoder_scale_pin
 from mimarsinan.tuning.orchestration.conversion_policy import ConversionPolicy
 from mimarsinan.tuning.orchestration.tuning_budget import (
@@ -143,6 +146,12 @@ def build_config_entry(path: str) -> dict:
     budget = tuning_budget_from_pipeline(fake_pipeline)
     return _jsonify({
         "resolved_config": config,
+        # The resolved platform surface the mapping + SANA-FE steps consume
+        # (ModelConfigurationStep runs this same function): pins the declared
+        # keys AND the concrete floorplan derivation (*_resolved keys).
+        "platform_constraints_resolved": build_platform_constraints_resolved(
+            config
+        ),
         "plan": {
             f.name: (
                 dataclasses.asdict(value)

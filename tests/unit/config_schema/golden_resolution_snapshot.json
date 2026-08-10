@@ -66,6 +66,36 @@
      "tuning_step_cap_epochs": null
     }
    },
+   "platform_constraints_resolved": {
+    "allow_coalescing": true,
+    "allow_neuron_splitting": true,
+    "allow_scheduling": false,
+    "core_value_granularity": {},
+    "cores": [
+     {
+      "count": 256,
+      "has_bias": true,
+      "max_axons": 2304,
+      "max_neurons": 512
+     },
+     {
+      "count": 256,
+      "has_bias": true,
+      "max_axons": 512,
+      "max_neurons": 256
+     }
+    ],
+    "cores_per_tile": 0,
+    "cores_per_tile_resolved": 4,
+    "max_schedule_passes": 8,
+    "schedule_policy": "pool",
+    "target_tq": 32,
+    "tile_grid_cols": 0,
+    "tile_grid_cols_resolved": 16,
+    "tile_grid_rows": 0,
+    "tile_grid_rows_resolved": 8,
+    "weight_bits": 8
+   },
    "resolved_config": {
     "activation_quantization": true,
     "activation_scale_quantile": 0.99,
@@ -283,6 +313,36 @@
      "proven_recovery_depth": null,
      "tuning_step_cap_epochs": null
     }
+   },
+   "platform_constraints_resolved": {
+    "allow_coalescing": true,
+    "allow_neuron_splitting": true,
+    "allow_scheduling": true,
+    "core_value_granularity": {},
+    "cores": [
+     {
+      "count": 180,
+      "has_bias": true,
+      "max_axons": 1024,
+      "max_neurons": 512
+     },
+     {
+      "count": 180,
+      "has_bias": true,
+      "max_axons": 512,
+      "max_neurons": 256
+     }
+    ],
+    "cores_per_tile": 0,
+    "cores_per_tile_resolved": 4,
+    "max_schedule_passes": 8,
+    "schedule_policy": "pool",
+    "target_tq": 16,
+    "tile_grid_cols": 0,
+    "tile_grid_cols_resolved": 10,
+    "tile_grid_rows": 0,
+    "tile_grid_rows_resolved": 9,
+    "weight_bits": 4
    },
    "resolved_config": {
     "activation_quantization": true,
@@ -502,6 +562,36 @@
      "proven_recovery_depth": null,
      "tuning_step_cap_epochs": null
     }
+   },
+   "platform_constraints_resolved": {
+    "allow_coalescing": true,
+    "allow_neuron_splitting": true,
+    "allow_scheduling": false,
+    "core_value_granularity": {},
+    "cores": [
+     {
+      "count": 60,
+      "has_bias": true,
+      "max_axons": 784,
+      "max_neurons": 512
+     },
+     {
+      "count": 60,
+      "has_bias": true,
+      "max_axons": 512,
+      "max_neurons": 256
+     }
+    ],
+    "cores_per_tile": 0,
+    "cores_per_tile_resolved": 4,
+    "max_schedule_passes": 8,
+    "schedule_policy": "pool",
+    "target_tq": 32,
+    "tile_grid_cols": 0,
+    "tile_grid_cols_resolved": 6,
+    "tile_grid_rows": 0,
+    "tile_grid_rows_resolved": 5,
+    "weight_bits": 5
    },
    "resolved_config": {
     "activation_quantization": true,
@@ -793,6 +883,30 @@
      "tuning_step_cap_epochs": null
     }
    },
+   "platform_constraints_resolved": {
+    "allow_coalescing": false,
+    "allow_neuron_splitting": true,
+    "allow_scheduling": true,
+    "core_value_granularity": {},
+    "cores": [
+     {
+      "count": 512,
+      "has_bias": true,
+      "max_axons": 4608,
+      "max_neurons": 2048
+     }
+    ],
+    "cores_per_tile": 0,
+    "cores_per_tile_resolved": 4,
+    "max_schedule_passes": 8,
+    "schedule_policy": "pool",
+    "target_tq": 32,
+    "tile_grid_cols": 0,
+    "tile_grid_cols_resolved": 16,
+    "tile_grid_rows": 0,
+    "tile_grid_rows_resolved": 8,
+    "weight_bits": 8
+   },
    "resolved_config": {
     "activation_quantization": true,
     "activation_scale_quantile": 0.99,
@@ -1075,6 +1189,36 @@
      "tuning_step_cap_epochs": null
     }
    },
+   "platform_constraints_resolved": {
+    "allow_coalescing": true,
+    "allow_neuron_splitting": true,
+    "allow_scheduling": false,
+    "core_value_granularity": {},
+    "cores": [
+     {
+      "count": 60,
+      "has_bias": true,
+      "max_axons": 784,
+      "max_neurons": 512
+     },
+     {
+      "count": 60,
+      "has_bias": true,
+      "max_axons": 512,
+      "max_neurons": 256
+     }
+    ],
+    "cores_per_tile": 0,
+    "cores_per_tile_resolved": 4,
+    "max_schedule_passes": 8,
+    "schedule_policy": "pool",
+    "target_tq": 8,
+    "tile_grid_cols": 0,
+    "tile_grid_cols_resolved": 6,
+    "tile_grid_rows": 0,
+    "tile_grid_rows_resolved": 5,
+    "weight_bits": 5
+   },
    "resolved_config": {
     "activation_quantization": false,
     "activation_scale_quantile": 0.99,
@@ -1293,6 +1437,36 @@
      "proven_recovery_depth": null,
      "tuning_step_cap_epochs": null
     }
+   },
+   "platform_constraints_resolved": {
+    "allow_coalescing": true,
+    "allow_neuron_splitting": true,
+    "allow_scheduling": false,
+    "core_value_granularity": {},
+    "cores": [
+     {
+      "count": 60,
+      "has_bias": true,
+      "max_axons": 256,
+      "max_neurons": 512
+     },
+     {
+      "count": 60,
+      "has_bias": true,
+      "max_axons": 512,
+      "max_neurons": 256
+     }
+    ],
+    "cores_per_tile": 0,
+    "cores_per_tile_resolved": 4,
+    "max_schedule_passes": 8,
+    "schedule_policy": "pool",
+    "target_tq": 32,
+    "tile_grid_cols": 0,
+    "tile_grid_cols_resolved": 6,
+    "tile_grid_rows": 0,
+    "tile_grid_rows_resolved": 5,
+    "weight_bits": 5
    },
    "resolved_config": {
     "activation_quantization": true,
@@ -1518,6 +1692,36 @@
      "tuning_step_cap_epochs": null
     }
    },
+   "platform_constraints_resolved": {
+    "allow_coalescing": true,
+    "allow_neuron_splitting": true,
+    "allow_scheduling": false,
+    "core_value_granularity": {},
+    "cores": [
+     {
+      "count": 60,
+      "has_bias": true,
+      "max_axons": 784,
+      "max_neurons": 512
+     },
+     {
+      "count": 60,
+      "has_bias": true,
+      "max_axons": 512,
+      "max_neurons": 256
+     }
+    ],
+    "cores_per_tile": 0,
+    "cores_per_tile_resolved": 4,
+    "max_schedule_passes": 8,
+    "schedule_policy": "pool",
+    "target_tq": 4,
+    "tile_grid_cols": 0,
+    "tile_grid_cols_resolved": 6,
+    "tile_grid_rows": 0,
+    "tile_grid_rows_resolved": 5,
+    "weight_bits": 5
+   },
    "resolved_config": {
     "activation_quantization": true,
     "activation_scale_quantile": 0.99,
@@ -1737,6 +1941,36 @@
      "tuning_step_cap_epochs": null
     }
    },
+   "platform_constraints_resolved": {
+    "allow_coalescing": true,
+    "allow_neuron_splitting": true,
+    "allow_scheduling": false,
+    "core_value_granularity": {},
+    "cores": [
+     {
+      "count": 60,
+      "has_bias": true,
+      "max_axons": 784,
+      "max_neurons": 512
+     },
+     {
+      "count": 60,
+      "has_bias": true,
+      "max_axons": 512,
+      "max_neurons": 256
+     }
+    ],
+    "cores_per_tile": 0,
+    "cores_per_tile_resolved": 4,
+    "max_schedule_passes": 8,
+    "schedule_policy": "pool",
+    "target_tq": 32,
+    "tile_grid_cols": 0,
+    "tile_grid_cols_resolved": 6,
+    "tile_grid_rows": 0,
+    "tile_grid_rows_resolved": 5,
+    "weight_bits": 8
+   },
    "resolved_config": {
     "activation_bits": 8,
     "activation_quantization": true,
@@ -1937,6 +2171,36 @@
      "proven_recovery_depth": null,
      "tuning_step_cap_epochs": null
     }
+   },
+   "platform_constraints_resolved": {
+    "allow_coalescing": true,
+    "allow_neuron_splitting": true,
+    "allow_scheduling": false,
+    "core_value_granularity": {},
+    "cores": [
+     {
+      "count": 60,
+      "has_bias": false,
+      "max_axons": 256,
+      "max_neurons": 512
+     },
+     {
+      "count": 60,
+      "has_bias": false,
+      "max_axons": 512,
+      "max_neurons": 256
+     }
+    ],
+    "cores_per_tile": 0,
+    "cores_per_tile_resolved": 4,
+    "max_schedule_passes": 8,
+    "schedule_policy": "pool",
+    "target_tq": 32,
+    "tile_grid_cols": 0,
+    "tile_grid_cols_resolved": 6,
+    "tile_grid_rows": 0,
+    "tile_grid_rows_resolved": 5,
+    "weight_bits": 8
    },
    "resolved_config": {
     "activation_quantization": false,
@@ -2144,6 +2408,36 @@
      "tuning_step_cap_epochs": null
     }
    },
+   "platform_constraints_resolved": {
+    "allow_coalescing": true,
+    "allow_neuron_splitting": true,
+    "allow_scheduling": false,
+    "core_value_granularity": {},
+    "cores": [
+     {
+      "count": 60,
+      "has_bias": true,
+      "max_axons": 784,
+      "max_neurons": 512
+     },
+     {
+      "count": 60,
+      "has_bias": true,
+      "max_axons": 512,
+      "max_neurons": 256
+     }
+    ],
+    "cores_per_tile": 0,
+    "cores_per_tile_resolved": 4,
+    "max_schedule_passes": 8,
+    "schedule_policy": "pool",
+    "target_tq": 32,
+    "tile_grid_cols": 0,
+    "tile_grid_cols_resolved": 6,
+    "tile_grid_rows": 0,
+    "tile_grid_rows_resolved": 5,
+    "weight_bits": 8
+   },
    "resolved_config": {
     "activation_quantization": false,
     "activation_scale_quantile": 0.99,
@@ -2343,6 +2637,36 @@
      "proven_recovery_depth": null,
      "tuning_step_cap_epochs": null
     }
+   },
+   "platform_constraints_resolved": {
+    "allow_coalescing": true,
+    "allow_neuron_splitting": true,
+    "allow_scheduling": false,
+    "core_value_granularity": {},
+    "cores": [
+     {
+      "count": 180,
+      "has_bias": true,
+      "max_axons": 1024,
+      "max_neurons": 512
+     },
+     {
+      "count": 180,
+      "has_bias": true,
+      "max_axons": 512,
+      "max_neurons": 256
+     }
+    ],
+    "cores_per_tile": 0,
+    "cores_per_tile_resolved": 4,
+    "max_schedule_passes": 8,
+    "schedule_policy": "pool",
+    "target_tq": 16,
+    "tile_grid_cols": 0,
+    "tile_grid_cols_resolved": 10,
+    "tile_grid_rows": 0,
+    "tile_grid_rows_resolved": 9,
+    "weight_bits": 8
    },
    "resolved_config": {
     "activation_quantization": true,
@@ -2564,6 +2888,36 @@
      "proven_recovery_depth": null,
      "tuning_step_cap_epochs": null
     }
+   },
+   "platform_constraints_resolved": {
+    "allow_coalescing": true,
+    "allow_neuron_splitting": true,
+    "allow_scheduling": false,
+    "core_value_granularity": {},
+    "cores": [
+     {
+      "count": 60,
+      "has_bias": true,
+      "max_axons": 256,
+      "max_neurons": 512
+     },
+     {
+      "count": 60,
+      "has_bias": true,
+      "max_axons": 512,
+      "max_neurons": 256
+     }
+    ],
+    "cores_per_tile": 0,
+    "cores_per_tile_resolved": 4,
+    "max_schedule_passes": 8,
+    "schedule_policy": "pool",
+    "target_tq": 8,
+    "tile_grid_cols": 0,
+    "tile_grid_cols_resolved": 6,
+    "tile_grid_rows": 0,
+    "tile_grid_rows_resolved": 5,
+    "weight_bits": 5
    },
    "resolved_config": {
     "activation_quantization": true,
@@ -2794,6 +3148,36 @@
      "tuning_step_cap_epochs": null
     }
    },
+   "platform_constraints_resolved": {
+    "allow_coalescing": true,
+    "allow_neuron_splitting": true,
+    "allow_scheduling": false,
+    "core_value_granularity": {},
+    "cores": [
+     {
+      "count": 60,
+      "has_bias": true,
+      "max_axons": 784,
+      "max_neurons": 512
+     },
+     {
+      "count": 60,
+      "has_bias": true,
+      "max_axons": 512,
+      "max_neurons": 256
+     }
+    ],
+    "cores_per_tile": 0,
+    "cores_per_tile_resolved": 4,
+    "max_schedule_passes": 8,
+    "schedule_policy": "pool",
+    "target_tq": 32,
+    "tile_grid_cols": 0,
+    "tile_grid_cols_resolved": 6,
+    "tile_grid_rows": 0,
+    "tile_grid_rows_resolved": 5,
+    "weight_bits": 5
+   },
    "resolved_config": {
     "activation_quantization": true,
     "activation_scale_quantile": 1.0,
@@ -3015,6 +3399,36 @@
      "tuning_step_cap_epochs": null
     }
    },
+   "platform_constraints_resolved": {
+    "allow_coalescing": true,
+    "allow_neuron_splitting": true,
+    "allow_scheduling": false,
+    "core_value_granularity": {},
+    "cores": [
+     {
+      "count": 60,
+      "has_bias": true,
+      "max_axons": 256,
+      "max_neurons": 512
+     },
+     {
+      "count": 60,
+      "has_bias": true,
+      "max_axons": 512,
+      "max_neurons": 256
+     }
+    ],
+    "cores_per_tile": 0,
+    "cores_per_tile_resolved": 4,
+    "max_schedule_passes": 8,
+    "schedule_policy": "pool",
+    "target_tq": 8,
+    "tile_grid_cols": 0,
+    "tile_grid_cols_resolved": 6,
+    "tile_grid_rows": 0,
+    "tile_grid_rows_resolved": 5,
+    "weight_bits": 5
+   },
    "resolved_config": {
     "activation_quantization": false,
     "activation_scale_quantile": 0.99,
@@ -3228,6 +3642,36 @@
      "tuning_step_cap_epochs": null
     }
    },
+   "platform_constraints_resolved": {
+    "allow_coalescing": false,
+    "allow_neuron_splitting": false,
+    "allow_scheduling": false,
+    "core_value_granularity": {},
+    "cores": [
+     {
+      "count": 60,
+      "has_bias": true,
+      "max_axons": 784,
+      "max_neurons": 512
+     },
+     {
+      "count": 60,
+      "has_bias": true,
+      "max_axons": 512,
+      "max_neurons": 256
+     }
+    ],
+    "cores_per_tile": 0,
+    "cores_per_tile_resolved": 4,
+    "max_schedule_passes": 8,
+    "schedule_policy": "pool",
+    "target_tq": 16,
+    "tile_grid_cols": 0,
+    "tile_grid_cols_resolved": 6,
+    "tile_grid_rows": 0,
+    "tile_grid_rows_resolved": 5,
+    "weight_bits": 5
+   },
    "resolved_config": {
     "activation_quantization": false,
     "activation_scale_quantile": 0.99,
@@ -3434,6 +3878,36 @@
      "proven_recovery_depth": null,
      "tuning_step_cap_epochs": null
     }
+   },
+   "platform_constraints_resolved": {
+    "allow_coalescing": true,
+    "allow_neuron_splitting": true,
+    "allow_scheduling": false,
+    "core_value_granularity": {},
+    "cores": [
+     {
+      "count": 180,
+      "has_bias": true,
+      "max_axons": 1024,
+      "max_neurons": 512
+     },
+     {
+      "count": 180,
+      "has_bias": true,
+      "max_axons": 512,
+      "max_neurons": 256
+     }
+    ],
+    "cores_per_tile": 0,
+    "cores_per_tile_resolved": 4,
+    "max_schedule_passes": 8,
+    "schedule_policy": "pool",
+    "target_tq": 4,
+    "tile_grid_cols": 0,
+    "tile_grid_cols_resolved": 10,
+    "tile_grid_rows": 0,
+    "tile_grid_rows_resolved": 9,
+    "weight_bits": 5
    },
    "resolved_config": {
     "activation_quantization": true,
@@ -3649,6 +4123,36 @@
      "proven_recovery_depth": null,
      "tuning_step_cap_epochs": null
     }
+   },
+   "platform_constraints_resolved": {
+    "allow_coalescing": true,
+    "allow_neuron_splitting": true,
+    "allow_scheduling": false,
+    "core_value_granularity": {},
+    "cores": [
+     {
+      "count": 60,
+      "has_bias": true,
+      "max_axons": 256,
+      "max_neurons": 512
+     },
+     {
+      "count": 60,
+      "has_bias": true,
+      "max_axons": 512,
+      "max_neurons": 256
+     }
+    ],
+    "cores_per_tile": 0,
+    "cores_per_tile_resolved": 4,
+    "max_schedule_passes": 8,
+    "schedule_policy": "pool",
+    "target_tq": 64,
+    "tile_grid_cols": 0,
+    "tile_grid_cols_resolved": 6,
+    "tile_grid_rows": 0,
+    "tile_grid_rows_resolved": 5,
+    "weight_bits": 5
    },
    "resolved_config": {
     "activation_quantization": true,
