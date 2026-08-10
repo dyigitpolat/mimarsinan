@@ -14,7 +14,9 @@ from mimarsinan.chip_simulation.sanafe.runner.segment_io import SanafeSegmentIOM
 
 import mimarsinan.chip_simulation.sanafe.runner as _runner
 from mimarsinan.chip_simulation.sanafe.runner.constants import _COMPUTE_DTYPE, _RAW_INPUT_NODE_ID
-from mimarsinan.chip_simulation.sanafe.presets import PRESETS
+from mimarsinan.chip_simulation.sanafe.arch_synth.floorplan import _mesh_dims
+from mimarsinan.chip_simulation.sanafe.arch_synth.spec import CUSTOM_PRESET_NAME
+from mimarsinan.chip_simulation.sanafe.presets import CUSTOM_ZERO_PRESET, PRESETS
 from mimarsinan.chip_simulation.sanafe.records import (
     SanafeArchGeometry,
     SanafeEnergyBreakdown,
@@ -42,6 +44,9 @@ class SanafeRunner(SanafeNeuralStageMixin, SanafeNeuralStageRecordMixin, SanafeS
         log_potential_trace: bool = False,
         log_message_trace: bool = True,
         cores_per_tile: int = 0,
+        tile_grid_rows: int = 0,
+        tile_grid_cols: int = 0,
+        declared_core_capacity: int = 0,
         simulation_step_timeout_s: float | None = None,
         read_final_potentials: bool = False,
     ):
@@ -65,14 +70,24 @@ class SanafeRunner(SanafeNeuralStageMixin, SanafeNeuralStageRecordMixin, SanafeS
         self.firing_mode = behavior.firing_mode
         self.ttfs_cycle_schedule = str(ttfs_cycle_schedule)
         behavior.require_backend("sanafe")
-        if arch_preset not in PRESETS:
+        if arch_preset == CUSTOM_PRESET_NAME:
+            if not custom_arch_path:
+                raise ValueError(
+                    "sanafe_arch_preset='custom' requires "
+                    "sanafe_custom_arch_path (the user architecture YAML to "
+                    "load in place of synthesis)"
+                )
+            preset = CUSTOM_ZERO_PRESET
+        elif arch_preset not in PRESETS:
             raise ValueError(
                 f"unknown SANA-FE arch preset {arch_preset!r}; "
-                f"expected one of {sorted(PRESETS.keys())}"
+                f"expected one of {sorted(PRESETS.keys()) + [CUSTOM_PRESET_NAME]}"
             )
+        else:
+            preset = PRESETS[arch_preset]
 
         self.mapping = mapping
-        self._preset = PRESETS[arch_preset]
+        self._preset = preset
         self.T = int(simulation_length)
         self.arch_preset = arch_preset
         self.custom_arch_path = custom_arch_path
@@ -89,6 +104,9 @@ class SanafeRunner(SanafeNeuralStageMixin, SanafeNeuralStageRecordMixin, SanafeS
         # potentials per core in the segment record (additive; counts untouched).
         self.read_final_potentials = bool(read_final_potentials)
         self.cores_per_tile = cores_per_tile
+        self.tile_grid_rows = int(tile_grid_rows)
+        self.tile_grid_cols = int(tile_grid_cols)
+        self.declared_core_capacity = int(declared_core_capacity)
         self._sim_timeout_s = resolve_simulation_step_timeout_s(
             simulation_step_timeout_s
         )
@@ -209,6 +227,10 @@ class SanafeRunner(SanafeNeuralStageMixin, SanafeNeuralStageRecordMixin, SanafeS
             self.mapping,
             preset_name=self.arch_preset,
             cores_per_tile=self.cores_per_tile,
+            tile_grid_rows=self.tile_grid_rows,
+            tile_grid_cols=self.tile_grid_cols,
+            declared_core_capacity=self.declared_core_capacity,
+            custom_arch_path=self.custom_arch_path,
         )
         self._arch_name = spec.name
         self._arch = _runner.build_architecture(
@@ -218,13 +240,57 @@ class SanafeRunner(SanafeNeuralStageMixin, SanafeNeuralStageRecordMixin, SanafeS
             simulation_length=self.T,
         )
         self._arch_built_for_T = self.T if need_T else None
-        self.cores_per_tile = int(spec.cores_per_tile_resolved)
+        if self.custom_arch_path is not None:
+            mw, mh = self._adopt_custom_arch_floorplan()
+        else:
+            self.cores_per_tile = int(spec.cores_per_tile_resolved)
+            mw = max(int(spec.mesh_width), 1)
+            mh = max(int(spec.mesh_height), 1)
         # Column-major tile coords: x = tile_id // mesh_height, y = tile_id % mesh_height.
-        n_tiles = int(spec.n_tiles)
-        mw = max(int(spec.mesh_width), 1)
-        mh = max(int(spec.mesh_height), 1)
+        n_tiles = mw * mh
         tiles_xy = [[i // mh, i % mh] for i in range(n_tiles)]
         self._arch_geometry = SanafeArchGeometry(
             width=mw, height=mh, tiles_xy=tiles_xy,
         )
+
+    def _adopt_custom_arch_floorplan(self) -> tuple[int, int]:
+        """The loaded user arch IS the floorplan SSOT: adopt its tile grouping.
+
+        The div/mod core placement needs a uniform per-tile core count (a
+        smaller LAST tile is the one legal remainder shape); declared
+        floorplan keys that contradict the file fail loud. Returns the mesh
+        dims for the geometry record (the arch object exposes no mesh, so the
+        most-square exact grid of its tile count is rendered).
+        """
+        arch = self._arch
+        assert arch is not None
+        counts = [len(tile.cores) for tile in arch.tiles]
+        n_tiles = len(counts)
+        if n_tiles == 0:
+            raise ValueError(
+                f"custom arch at {self.custom_arch_path} defines no tiles"
+            )
+        cpt = int(counts[0])
+        if any(int(c) != cpt for c in counts[:-1]) or int(counts[-1]) > cpt:
+            raise ValueError(
+                f"custom arch at {self.custom_arch_path} has a non-uniform "
+                f"per-tile core count {counts}; the div/mod placement "
+                "requires uniform tiles (a smaller last tile is allowed)"
+            )
+        if self.cores_per_tile > 0 and self.cores_per_tile != cpt:
+            raise ValueError(
+                f"declared cores_per_tile={self.cores_per_tile} contradicts "
+                f"the custom arch at {self.custom_arch_path}, which packs "
+                f"{cpt} cores per tile"
+            )
+        declared_tiles = self.tile_grid_rows * self.tile_grid_cols
+        if declared_tiles > 0 and declared_tiles != n_tiles:
+            raise ValueError(
+                f"declared tile grid {self.tile_grid_rows}x"
+                f"{self.tile_grid_cols} = {declared_tiles} tiles contradicts "
+                f"the custom arch at {self.custom_arch_path}, which defines "
+                f"{n_tiles} tiles"
+            )
+        self.cores_per_tile = cpt
+        return _mesh_dims(n_tiles)
 

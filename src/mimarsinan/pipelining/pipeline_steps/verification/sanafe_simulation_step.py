@@ -70,7 +70,7 @@ from mimarsinan.pipelining.core.simulation_factory import (
 class SanafeSimulationStep(PipelineStep):
     """Run SANA-FE on N deterministic samples; collect rich stats + parity-check."""
 
-    REQUIRES = ("model", "hard_core_mapping")
+    REQUIRES = ("model", "hard_core_mapping", "platform_constraints_resolved")
     PROMISES = ("sanafe_simulation_results",)
 
     def __init__(self, pipeline):
@@ -90,6 +90,16 @@ class SanafeSimulationStep(PipelineStep):
     def process(self):
         self.get_entry("model")
         hard_core_mapping = self.get_entry("hard_core_mapping")
+        # The DECLARED platform fixes the floorplan (W1.2): capacity + the
+        # three floorplan keys come from the resolved constraints, so two
+        # models on the same platform share one floorplan (comparable NoC).
+        platform_constraints = self.get_entry("platform_constraints_resolved")
+        declared_core_capacity = sum(
+            int(core_type["count"]) for core_type in platform_constraints["cores"]
+        )
+        cores_per_tile = int(platform_constraints.get("cores_per_tile", 0) or 0)
+        tile_grid_rows = int(platform_constraints.get("tile_grid_rows", 0) or 0)
+        tile_grid_cols = int(platform_constraints.get("tile_grid_cols", 0) or 0)
         T = int(self.pipeline.config["simulation_steps"])
         spiking_mode = DeploymentPlan.of(self.pipeline).spiking_mode
         require_spiking_mode_supported(
@@ -143,6 +153,10 @@ class SanafeSimulationStep(PipelineStep):
                 custom_arch_path=custom_arch_path,
                 log_potential_trace=log_potential,
                 log_message_trace=log_messages,
+                cores_per_tile=cores_per_tile,
+                tile_grid_rows=tile_grid_rows,
+                tile_grid_cols=tile_grid_cols,
+                declared_core_capacity=declared_core_capacity,
             )
             if is_ttfs:
                 sample_np = preprocess_hybrid_sample(
