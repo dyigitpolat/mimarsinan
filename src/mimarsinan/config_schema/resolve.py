@@ -16,7 +16,8 @@ from mimarsinan.config_schema.registry import (
     REGISTRY,
     effective_value,
     parse_deployment_document,
-    retired_spiking_key_errors,
+    retired_key_errors,
+    retired_scope_of,
 )
 from mimarsinan.config_schema.registry.build import split_domain_dormant
 from mimarsinan.config_schema.runtime import build_flat_pipeline_config
@@ -53,11 +54,24 @@ _KEY_TOKEN_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 
 
 def attach_error_key(message: str) -> Optional[str]:
-    """Attach a validation message to the first registry key it names."""
+    """Attach a validation message to the first registry or retired key it
+    names (a retired key removed from the registry must still attach, or its
+    structural echo could never be superseded by the keyed retired row)."""
     for token in _KEY_TOKEN_RE.findall(message):
-        if token in REGISTRY:
+        if token in REGISTRY or retired_scope_of(token) is not None:
             return token
     return None
+
+
+def _error_key_scope(key: Optional[str]) -> Optional[str]:
+    """The sub-document scope an error row's key belongs to: the registry's
+    section for live keys, the retirement table's scope for removed ones."""
+    if key is None:
+        return None
+    entry = REGISTRY.get(key)
+    if entry is not None:
+        return entry.section
+    return retired_scope_of(key)
 
 
 def _structural_errors(draft: Mapping[str, Any]) -> List[Dict[str, Any]]:
@@ -225,12 +239,16 @@ def resolve_draft(draft: Mapping[str, Any]) -> Resolution:
     errors = [error for error in errors if error["key"] not in field_keys]
     errors.extend(field_errors)
 
-    # Retired taxonomy keys come back as keyed rows with one-click MIGRATION
-    # remedies, superseding every other row for the same key (the resolution
-    # itself still previews through the meaning-preserving legacy bridge).
-    retired = retired_spiking_key_errors({"deployment_parameters": parsed.dp})
-    retired_keys = {row["key"] for row in retired}
-    errors = [error for error in errors if error["key"] not in retired_keys]
+    # Retired keys come back as keyed rows with one-click MIGRATION remedies,
+    # each carrying its SCOPE, superseding every other row for the same
+    # (scope, key). Registry-bridged legacy keys still preview through the
+    # meaning-preserving bridge; fully-removed keys never reach the derivation.
+    retired = retired_key_errors(parsed.retirement_scan_view())
+    retired_pairs = {(row["scope"], row["key"]) for row in retired}
+    errors = [
+        error for error in errors
+        if (_error_key_scope(error["key"]), error["key"]) not in retired_pairs
+    ]
     errors.extend(retired)
 
     pipeline_mode = str(draft.get("pipeline_mode", _SESSION_DEFAULT_PIPELINE_MODE))
