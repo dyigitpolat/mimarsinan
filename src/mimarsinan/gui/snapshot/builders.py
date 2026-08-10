@@ -214,25 +214,32 @@ def build_step_snapshot(
 
     if step_name == PRUNING_ADAPTATION_STEP:
         configured_fraction = (getattr(pipeline, "config", {}) or {}).get("pruning_fraction")
+        pruning_failure: Exception | None = None
         if "model" in snapshot:
             for key in cache.keys():
                 short = key.split(".", 1)[-1] if "." in key else key
                 if short in ("model", "fused_model"):
-                    with best_effort(f"snapshot pruning layers from key {key!r}", logger=logger):
+                    with best_effort(
+                        f"snapshot pruning layers from key {key!r}", logger=logger,
+                    ) as attempt:
                         model_obj = cache.get(key)
                         pr_summary, pr_descs = snapshot_pruning_layers(
                             model_obj, configured_fraction=configured_fraction,
                         )
                         snapshot["pruning_layers"] = pr_summary
                         descriptors.extend(pr_descs)
+                    pruning_failure = attempt.error
                     break
         if "pruning_layers" not in snapshot:
-            # Missing model (or a failed extraction) must surface as a visible
-            # tab diagnostic, never as a silently absent pruning summary.
-            snapshot["pruning_layers"] = pruning_layers_unavailable(
-                "no model in the step snapshot; pruning masks unavailable",
-                configured_fraction,
+            # Missing model or a failed extraction must surface as a visible
+            # tab diagnostic, never as a silently absent pruning summary --
+            # each path named distinctly.
+            reason = (
+                f"pruning snapshot failed: {type(pruning_failure).__name__}"
+                if pruning_failure is not None
+                else "no model in the step snapshot; pruning masks unavailable"
             )
+            snapshot["pruning_layers"] = pruning_layers_unavailable(reason, configured_fraction)
         if step is not None:
             snapshot_key_kinds["pruning_layers"] = "new"
 

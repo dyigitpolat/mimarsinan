@@ -202,3 +202,24 @@ def test_pruning_step_without_model_yields_a_loud_diagnostic():
     assert pruning["layers"] == []
     assert len(pruning["skipped"]) == 1
     assert "model" in pruning["skipped"][0]["reason"]
+
+
+def test_pruning_snapshot_failure_names_the_error_class(monkeypatch):
+    """A present model whose pruning extraction raises must surface the failure
+    class in the diagnostic — never masquerade as a missing model."""
+    import mimarsinan.gui.snapshot.builders as builders_mod
+
+    def _boom(model, *, configured_fraction=None):
+        raise ValueError("mask tensor exploded")
+
+    monkeypatch.setattr(builders_mod, "snapshot_pruning_layers", _boom)
+    pipeline = SimpleNamespace(
+        cache=_Cache({"model": _pruned_model()}), steps=(), config={},
+    )
+    snap, _kinds, _descs = build_step_snapshot(
+        pipeline, builders_mod.PRUNING_ADAPTATION_STEP, step=_PruningStep()
+    )
+    pruning = snap["pruning_layers"]
+    assert pruning["layers"] == []
+    reasons = [entry["reason"] for entry in pruning["skipped"]]
+    assert reasons == ["pruning snapshot failed: ValueError"]
