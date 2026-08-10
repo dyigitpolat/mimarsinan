@@ -61,10 +61,8 @@ class ActivationShiftTuner(OneShotRateTunerSeamMixin, TunerBase):
             else:
                 self.adaptation_manager.update_activation(config, perceptron)
 
-    def validate(self):
-        if self._final_metric is not None:
-            return self._final_metric
-        return self.trainer.validate()
+    def cached_validate_metric(self):
+        return self._final_metric
 
     def run(self):
         self._axis.set_rate(1.0)

@@ -217,6 +217,7 @@ def validate_measured(trainer) -> tuple[float, int]:
     x, y = trainer.next_validation_batch()
     trainer.model.eval()
     acc = validate_on_loader(trainer, x.to(trainer.device), y.to(trainer.device))
+    trainer.last_validation_accuracy = float(acc)
     trainer._report(trainer._validation_metric_name("Validation accuracy"), acc)
     return acc, int(y.shape[0])
 

@@ -128,7 +128,5 @@ class ActivationAdaptationTuner(SmoothAdaptationTuner):
         self._committed_rate = 1.0
         return self._committed_metric
 
-    def validate(self):
-        if hasattr(self, "_committed_metric") and self._committed_metric is not None:
-            return self._committed_metric
-        return self.trainer.validate()
+    def cached_validate_metric(self):
+        return getattr(self, "_committed_metric", None)

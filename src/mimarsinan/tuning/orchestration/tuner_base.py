@@ -147,7 +147,36 @@ class TunerBase:
         return self.target_adjuster.get_target()
 
     def validate(self):
+        cached = self.cached_validate_metric()
+        if cached is not None:
+            return cached
         return self.trainer.validate()
+
+    def cached_validate_metric(self) -> float | None:
+        """The metric ``validate()`` serves from cache, or ``None`` for families
+        whose ``validate()`` always reads fresh (the base). Caching families
+        override this ONE hook instead of re-implementing the cached-else-fresh
+        dispatch in ``validate()``."""
+        return None
+
+    def exit_metric_estimate(self) -> float | None:
+        """The step-exit metric WITHOUT a loader draw (the W3-S1 instrumentation
+        contract: persisting artifacts must leave the run byte-identical, so no
+        fresh validation read is allowed at commit time).
+
+        Resolution: the family's cached validate metric when it caches one, else
+        the run's last single-batch validation read (what a fresh ``validate()``
+        estimates), else the ``_after_run`` final metric; ``None`` when the run
+        never measured anything.
+        """
+        cached = self.cached_validate_metric()
+        if cached is not None:
+            return float(cached)
+        last_read = getattr(self.trainer, "last_validation_accuracy", None)
+        if last_read is not None:
+            return float(last_read)
+        final = self.final_metric
+        return None if final is None else float(final)
 
     @property
     def final_metric(self):

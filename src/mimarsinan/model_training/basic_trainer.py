@@ -60,6 +60,11 @@ class BasicTrainer:
 
         self._validation_context = None
 
+        # Side-channel: the most recent single-batch validation read
+        # (``validate_measured``). Instrumentation reads it to reuse a
+        # measurement WITHOUT a fresh loader draw; never consulted by training.
+        self.last_validation_accuracy: float | None = None
+
     def set_training_batch_size(self, batch_size):
         self.training_batch_size = batch_size
         self.train_loader = self.data_loader_factory.create_training_loader(

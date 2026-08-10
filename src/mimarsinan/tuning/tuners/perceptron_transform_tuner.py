@@ -129,6 +129,8 @@ class PerceptronTransformTuner(SmoothAdaptationTuner):
         with torch.no_grad():
             self.trainer._update_and_transform_model()
 
-        final_acc = self._ensure_pipeline_threshold()
+        # Recorded like every sibling family's _after_run: the zero-draw
+        # instrumentation exit read (``exit_metric_estimate``) needs it.
+        self._final_metric = self._ensure_pipeline_threshold()
         self._committed_rate = 1.0
-        return final_acc
+        return self._final_metric

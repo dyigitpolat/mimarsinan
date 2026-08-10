@@ -71,7 +71,7 @@ class _RunPipeline(_Pipeline):
 
 
 class _WallsTuner:
-    """A tuner double with the AC5 bundle and a validate read."""
+    """A tuner double with the AC5 bundle and a zero-draw exit estimate."""
 
     def __init__(self, passes, exit_metric=0.9):
         self._passes = passes
@@ -84,17 +84,17 @@ class _WallsTuner:
             "passes": [{"label": lbl, "wall_s": w} for lbl, w in self._passes],
         }
 
-    def validate(self):
+    def exit_metric_estimate(self):
         return self._exit
 
 
 class _NoWallsTuner:
-    """A tuner family without the AC5 instrumentation, but with validate."""
+    """A tuner family without the AC5 instrumentation, but with an exit read."""
 
     def __init__(self, exit_metric):
         self._exit = exit_metric
 
-    def validate(self):
+    def exit_metric_estimate(self):
         return self._exit
 
 
@@ -127,7 +127,7 @@ class TestCommitPersistsAdaptationArtifacts:
         ]
         assert data["max_ft_pass_wall_s"] == 8.5
 
-    def test_retention_entry_uses_step_entry_and_validate_metrics(self, tmp_path):
+    def test_retention_entry_uses_step_entry_and_exit_estimate(self, tmp_path):
         pipeline = _RunPipeline(str(tmp_path))
         step = _committing_step(pipeline, "Weight Quantization")
         step.pipeline_previous_metric = 0.95
@@ -198,10 +198,19 @@ class TestCommitPersistsAdaptationArtifacts:
         step.tuner = _WallsTuner([("recover", 1.0)])
         step._commit_tuner_entries(object(), object())  # must not raise
 
-    def test_bare_double_without_validate_skips_the_ledger(self, tmp_path):
-        # A non-TunerBase double (no validate) has no exit read to account.
+    def test_bare_double_without_exit_estimate_skips_the_ledger(self, tmp_path):
+        # A non-TunerBase double (no exit_metric_estimate) has no exit read.
         pipeline = _RunPipeline(str(tmp_path))
         step = _committing_step(pipeline)
         step.tuner = object()
+        step._commit_tuner_entries(object(), object())
+        assert not (tmp_path / "retention_ledger.json").exists()
+
+    def test_never_measured_tuner_skips_the_ledger(self, tmp_path):
+        # A TunerBase family whose run never measured anything (estimate None)
+        # writes no entry rather than a fabricated exit metric.
+        pipeline = _RunPipeline(str(tmp_path))
+        step = _committing_step(pipeline)
+        step.tuner = _NoWallsTuner(exit_metric=None)
         step._commit_tuner_entries(object(), object())
         assert not (tmp_path / "retention_ledger.json").exists()

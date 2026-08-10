@@ -49,7 +49,10 @@ class TunerPipelineStep(PipelineStep):
     def _persist_adaptation_instrumentation(self):
         """Persist the run-dir adaptation artifacts at commit time (W3-S1):
         the ``ft_pass_walls.json`` accumulator + one ``retention_ledger.json``
-        entry. Artifacts only — nothing in the training path reads them."""
+        entry. Artifacts only — nothing in the training path reads them, and
+        the exit read reuses what the run already measured
+        (``exit_metric_estimate``): a fresh ``validate()`` here would draw an
+        extra validation batch and break byte-identical off/on parity."""
         tuner = self.tuner
         if tuner is None:
             return
@@ -61,12 +64,16 @@ class TunerPipelineStep(PipelineStep):
             run_instrumentation.merge_ft_pass_walls(
                 working_directory, self.name, wall_metrics()
             )
-        if getattr(tuner, "validate", None) is None:
+        exit_estimate = getattr(tuner, "exit_metric_estimate", None)
+        if exit_estimate is None:
             return  # not a TunerBase family: no exit read to account
+        exit_metric = exit_estimate()
+        if exit_metric is None:
+            return  # the run never measured anything (bare unit-test doubles)
         entry = run_instrumentation.retention_entry(
             step_name=self.name,
             entry_metric=getattr(self, "pipeline_previous_metric", None),
-            exit_metric=float(self.validate()),
+            exit_metric=float(exit_metric),
             pipeline=self.pipeline,
             consumed_before=getattr(self, "_endpoint_steps_consumed_before", None),
         )

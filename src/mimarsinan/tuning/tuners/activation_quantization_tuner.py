@@ -294,7 +294,5 @@ class ActivationQuantizationTuner(CascadeForwardInstall, AdaptationRateTuner):
             base_steps=int(self.pipeline.config.get("endpoint_recovery_steps", 0)),
         )
 
-    def validate(self):
-        if self._final_metric is not None:
-            return self._final_metric
-        return self.trainer.validate()
+    def cached_validate_metric(self):
+        return self._final_metric

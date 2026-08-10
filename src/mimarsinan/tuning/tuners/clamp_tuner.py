@@ -250,10 +250,8 @@ class ClampTuner(SmoothAdaptationTuner):
         self._set_rate(rate)
         return self.trainer.validate_n_batches(self._budget.progress_eval_batches)
 
-    def validate(self):
-        if self._final_metric is not None:
-            return self._final_metric
-        return self.trainer.validate()
+    def cached_validate_metric(self):
+        return self._final_metric
 
     def _after_run(self):
         self._continue_to_full_rate()
