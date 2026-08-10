@@ -32,6 +32,7 @@ RESOURCE_MEDIA_TYPE_BY_KIND = {
     "ir_bank_heatmap": "image/png",
     "hard_core_heatmap": "image/png",
     "pruning_layer_heatmap": "image/png",
+    "pruning_mask_map": "image/png",
     "heatmap_colorbar": "image/png",
     "connectivity": "application/json",
 }

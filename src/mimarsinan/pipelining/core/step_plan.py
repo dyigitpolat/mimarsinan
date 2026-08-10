@@ -12,6 +12,13 @@ class StepPlanContractError(AssertionError):
     """A resolved step sequence's requires/promises DAG is not satisfiable."""
 
 
+# Canonical step-name SSOT for consumers that key behavior off a registry step
+# (the GUI pruning tab). Lives beside the registry types rather than in
+# deployment_specs so the GUI can import it without pulling the pipeline_steps
+# package (deployment_specs star-imports it, which cycles back through gui).
+PRUNING_ADAPTATION_STEP = "Pruning Adaptation"
+
+
 @dataclass(frozen=True)
 class StepSpec:
     """One registry entry: a named step with its semantic group and applicability.

@@ -29,16 +29,25 @@ from mimarsinan.gui.snapshot.util.constants import (
     RESOURCE_KIND_IR_CORE_HEATMAP,
     RESOURCE_KIND_IR_CORE_PRE_PRUNING,
     RESOURCE_KIND_PRUNING_LAYER_HEATMAP,
+    RESOURCE_KIND_PRUNING_MASK_MAP,
 )
+# From step_plan (not deployment_specs): the specs module star-imports the whole
+# pipeline_steps package, which cycles back through gui at import time.
+from mimarsinan.pipelining.core.step_plan import PRUNING_ADAPTATION_STEP
 
 
-from mimarsinan.gui.snapshot.model_snapshot import snapshot_model, snapshot_pruning_layers
+from mimarsinan.gui.snapshot.model_snapshot import (
+    pruning_layers_unavailable,
+    snapshot_model,
+    snapshot_pruning_layers,
+)
 from mimarsinan.gui.snapshot.ir_graph import snapshot_ir_graph
 
 __all__ = [
     "LIVENESS_BIAS_ONLY",
     "LIVENESS_DEAD_LEGACY",
     "LIVENESS_LIVE",
+    "PRUNING_ADAPTATION_STEP",
     "RESOURCE_KIND_CONNECTIVITY",
     "RESOURCE_KIND_HARD_CORE_HEATMAP",
     "RESOURCE_KIND_IR_BANK_HEATMAP",
@@ -46,6 +55,7 @@ __all__ = [
     "RESOURCE_KIND_IR_CORE_HEATMAP",
     "RESOURCE_KIND_IR_CORE_PRE_PRUNING",
     "RESOURCE_KIND_PRUNING_LAYER_HEATMAP",
+    "RESOURCE_KIND_PRUNING_MASK_MAP",
     "build_step_snapshot",
     "snapshot_ir_graph",
 ]
@@ -202,18 +212,36 @@ def build_step_snapshot(
                     descriptors.extend(ir_descs)
                     break
 
-    if step_name == "Pruning Adaptation" and "model" in snapshot:
-        for key in cache.keys():
-            short = key.split(".", 1)[-1] if "." in key else key
-            if short in ("model", "fused_model"):
-                with best_effort(f"snapshot pruning layers from key {key!r}", logger=logger):
-                    model_obj = cache.get(key)
-                    pr_summary, pr_descs = snapshot_pruning_layers(model_obj)
-                    snapshot["pruning_layers"] = pr_summary
-                    descriptors.extend(pr_descs)
-                    if step is not None:
-                        snapshot_key_kinds["pruning_layers"] = "new"
-                break
+    if step_name == PRUNING_ADAPTATION_STEP:
+        configured_fraction = (getattr(pipeline, "config", {}) or {}).get("pruning_fraction")
+        pruning_failure: Exception | None = None
+        if "model" in snapshot:
+            for key in cache.keys():
+                short = key.split(".", 1)[-1] if "." in key else key
+                if short in ("model", "fused_model"):
+                    with best_effort(
+                        f"snapshot pruning layers from key {key!r}", logger=logger,
+                    ) as attempt:
+                        model_obj = cache.get(key)
+                        pr_summary, pr_descs = snapshot_pruning_layers(
+                            model_obj, configured_fraction=configured_fraction,
+                        )
+                        snapshot["pruning_layers"] = pr_summary
+                        descriptors.extend(pr_descs)
+                    pruning_failure = attempt.error
+                    break
+        if "pruning_layers" not in snapshot:
+            # Missing model or a failed extraction must surface as a visible
+            # tab diagnostic, never as a silently absent pruning summary --
+            # each path named distinctly.
+            reason = (
+                f"pruning snapshot failed: {type(pruning_failure).__name__}"
+                if pruning_failure is not None
+                else "no model in the step snapshot; pruning masks unavailable"
+            )
+            snapshot["pruning_layers"] = pruning_layers_unavailable(reason, configured_fraction)
+        if step is not None:
+            snapshot_key_kinds["pruning_layers"] = "new"
 
     cache_keys = [k.split(".", 1)[-1] if "." in k else k for k in cache.keys() if not k.startswith("__")]
     has_rich_data = any(k in snapshot for k in ("model", "ir_graph", "hard_core_mapping", "search_result"))

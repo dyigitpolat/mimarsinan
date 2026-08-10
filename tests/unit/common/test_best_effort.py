@@ -35,3 +35,13 @@ class TestBestEffort:
             with best_effort("snapshot", logger=logger):
                 raise RuntimeError("panel failed")
         assert any(r.name == "mimarsinan.gui" for r in caplog.records)
+
+    def test_outcome_carries_the_swallowed_error(self):
+        with best_effort("failing block") as outcome:
+            raise ValueError("boom")
+        assert isinstance(outcome.error, ValueError)
+
+    def test_outcome_error_is_none_on_success(self):
+        with best_effort("clean block") as outcome:
+            pass
+        assert outcome.error is None

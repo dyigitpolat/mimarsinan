@@ -8,6 +8,7 @@ from mimarsinan.gui.snapshot.util.constants import (
     RESOURCE_KIND_IR_CORE_HEATMAP,
     RESOURCE_KIND_IR_CORE_PRE_PRUNING,
     RESOURCE_KIND_PRUNING_LAYER_HEATMAP,
+    RESOURCE_KIND_PRUNING_MASK_MAP,
 )
 from mimarsinan.gui.snapshot.builders import (
     build_step_snapshot,
@@ -27,6 +28,7 @@ __all__ = [
     "RESOURCE_KIND_IR_CORE_HEATMAP",
     "RESOURCE_KIND_IR_CORE_PRE_PRUNING",
     "RESOURCE_KIND_PRUNING_LAYER_HEATMAP",
+    "RESOURCE_KIND_PRUNING_MASK_MAP",
     "build_step_snapshot",
     "snapshot_adaptation_manager",
     "snapshot_hard_core_mapping",

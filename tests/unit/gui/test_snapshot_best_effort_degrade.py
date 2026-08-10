@@ -119,9 +119,10 @@ class TestSnapshotModelDegrade:
                 raise RuntimeError("boom")
 
         model = BadModel()
-        perceptrons = _get_model_perceptrons(model)
+        perceptrons, source = _get_model_perceptrons(model)
         assert len(perceptrons) == 1
         assert perceptrons[0].layer is model.fc
+        assert source == "linear_fallback"
 
 
 class TestMappingSnapshotDegrade:
