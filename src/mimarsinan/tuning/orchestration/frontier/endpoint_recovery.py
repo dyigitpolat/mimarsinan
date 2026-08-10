@@ -155,11 +155,14 @@ def run_endpoint_recovery(tuner, *, base_steps, target_floor=None) -> EndpointRe
             min_steps = geometry.min_steps
             patience = geometry.patience
             armed = True
-        steps_used, rescued, decoupled = _train_engaged(
-            tuner, lr=lr, target=target, budget=budget, min_steps=min_steps,
-            patience=patience, armed=armed, check_interval=check_interval,
-            trajectory=trajectory, entry=entry,
-        )
+        # The endpoint legs are where the run-total ledger burns; time them so
+        # ft_pass_walls covers runs whose only training is endpoint recovery.
+        with tuner._ft_pass_wall_log().time_pass("endpoint_recover"):
+            steps_used, rescued, decoupled = _train_engaged(
+                tuner, lr=lr, target=target, budget=budget, min_steps=min_steps,
+                patience=patience, armed=armed, check_interval=check_interval,
+                trajectory=trajectory, entry=entry,
+            )
         if armed:
             endpoint_steps.consume(tuner.pipeline, steps_used)
         exit_read = _fp32_deployed_read(tuner)

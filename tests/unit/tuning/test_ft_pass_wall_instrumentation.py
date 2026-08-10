@@ -340,3 +340,36 @@ class TestRetentionLedgerWriter:
     def test_append_leaves_no_temp_residue(self, tmp_path):
         run_instrumentation.append_retention_entry(str(tmp_path), {"step": "A"})
         assert [p.name for p in tmp_path.iterdir()] == ["retention_ledger.json"]
+
+
+class TestEndpointLegIsTimed:
+    def test_endpoint_recovery_records_a_timed_pass(self, tmp_path, monkeypatch):
+        # The endpoint legs are where the run-total ledger burns; a run whose
+        # only training is endpoint recovery must still surface FT-pass walls.
+        import sys
+        sys.path.insert(0, "tests/unit/tuning")
+        from test_endpoint_recovery import _lif_tuner, _prepare_endpoint_scaffold
+        from mimarsinan.tuning.orchestration import dhat_highwater
+        from mimarsinan.tuning.orchestration.frontier import endpoint_recovery
+        from mimarsinan.tuning.orchestration.frontier.endpoint_recovery import (
+            run_endpoint_recovery,
+        )
+        from mimarsinan.tuning.orchestration.recovery_engine import RecoveryEngine
+
+        tuner = _lif_tuner(tmp_path)
+        try:
+            _prepare_endpoint_scaffold(tuner)
+            # target (highwater 0.90) above entry (0.86) => the leg engages.
+            dhat_highwater.observe(tuner.pipeline, 0.90)
+            monkeypatch.setattr(
+                endpoint_recovery, "_fp32_deployed_read", lambda t: 0.86,
+            )
+            monkeypatch.setattr(
+                RecoveryEngine, "train_to_target",
+                staticmethod(lambda trainer, lr, target, *, max_steps, **kw: (0.86, 1)),
+            )
+            run_endpoint_recovery(tuner, base_steps=100)
+            labels = [p["label"] for p in tuner.ft_pass_walls]
+            assert "endpoint_recover" in labels, labels
+        finally:
+            tuner.close()

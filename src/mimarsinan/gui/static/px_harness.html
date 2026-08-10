@@ -1,0 +1,38 @@
+<!doctype html>
+<!-- Temporary pixel-review harness (untracked; delete after review): renders one
+     production tab component full-page with real run data, parameterized by
+     ?run=<run_id>&step=<step name>&view=pruning|hardware -->
+<html>
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="/static/style.css">
+<style>body { margin: 0; padding: 16px; background: #14171f; } #host { max-width: 1560px; }</style>
+</head>
+<body>
+<div id="host"></div>
+<script type="module">
+import { renderPruningTab } from '/static/js/pruning-tab.js';
+import { renderHardwareTab } from '/static/js/hardware-tab.js';
+import { setResourceContext } from '/static/js/resource-urls.js';
+
+const q = new URLSearchParams(location.search);
+const run = q.get('run');
+const step = q.get('step');
+const view = q.get('view');
+
+const detail = await fetch(`/api/runs/${encodeURIComponent(run)}/steps/${encodeURIComponent(step)}`).then(r => r.json());
+const snap = detail.snapshot || {};
+setResourceContext({ stepName: step, historicalRunId: run, isActiveRun: false });
+
+const host = document.getElementById('host');
+if (view === 'pruning') {
+  renderPruningTab(snap.pruning_layers, host);
+} else if (view === 'hardware') {
+  renderHardwareTab(snap.hard_core_mapping, host, snap.ir_graph, snap.mapping_performance);
+} else {
+  host.textContent = 'unknown view';
+}
+document.title = 'px-ready';
+</script>
+</body>
+</html>
