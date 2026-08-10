@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any, cast
 
+from mimarsinan.chip_simulation.sanafe.arch_synth.floorplan import resolve_floorplan
 from mimarsinan.config_schema.defaults import DEFAULT_PLATFORM_CONSTRAINTS
 from mimarsinan.mapping.platform.coalescing import CANONICAL_KEY, normalize_coalescing_config
 from mimarsinan.mapping.platform.core_residency import RESIDENCY_KEY
@@ -39,6 +40,33 @@ def build_platform_constraints_resolved(
     pcfg["max_schedule_passes"] = int(
         pipeline_config.get("max_schedule_passes", 8) or 8
     )
+    # SANA-FE NoC floorplan declaration (0 = derived): rides the resolved
+    # surface so the SANA-FE step reads floorplan + capacity from ONE place.
+    for key in ("cores_per_tile", "tile_grid_rows", "tile_grid_cols"):
+        pcfg[key] = int(pipeline_config.get(key, 0) or 0)
+    # The CONCRETE floorplan derivation is part of the resolved surface too:
+    # declared keys stay verbatim above, and the *_resolved keys expose the
+    # floorplan the SANA-FE step will build — computed by the SAME pure
+    # function of the declared platform (capacity = sum of declared core
+    # counts, preset = the flat-config sanafe_arch_preset, defaulting like
+    # the SANA-FE step does), so both seams agree by construction. An
+    # invalid declaration (an explicit grid too small for the declared
+    # capacity) fails loud HERE, at resolution time. With
+    # sanafe_arch_preset='custom' the loaded arch YAML remains the floorplan
+    # SSOT at the SANA-FE step (declared keys are validated against the
+    # file); these keys then carry the declared-platform derivation only.
+    # Missing "count" means one core of that type (the imc_platforms
+    # convention) — minimal declarations (e.g. bias-mode queries) stay valid.
+    floorplan = resolve_floorplan(
+        sum(int(core_type.get("count", 1)) for core_type in cores),
+        str(pipeline_config.get("sanafe_arch_preset", "loihi")),
+        pcfg["cores_per_tile"],
+        pcfg["tile_grid_rows"],
+        pcfg["tile_grid_cols"],
+    )
+    pcfg["cores_per_tile_resolved"] = int(floorplan.cores_per_tile)
+    pcfg["tile_grid_rows_resolved"] = int(floorplan.rows)
+    pcfg["tile_grid_cols_resolved"] = int(floorplan.cols)
 
     if "target_tq" in pipeline_config:
         pcfg["target_tq"] = pipeline_config["target_tq"]

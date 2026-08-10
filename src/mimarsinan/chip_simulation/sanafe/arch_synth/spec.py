@@ -7,22 +7,17 @@ import os
 from dataclasses import dataclass, field
 from typing import Any, List, Optional
 
-from mimarsinan.chip_simulation.sanafe.presets import PerEventEnergy, PRESETS
+from mimarsinan.chip_simulation.sanafe.arch_synth.floorplan import (
+    _mesh_dims,
+    resolve_floorplan,
+)
+from mimarsinan.chip_simulation.sanafe.presets import (
+    CUSTOM_ZERO_PRESET,
+    PerEventEnergy,
+    PRESETS,
+)
 
-
-def _mesh_dims(n_tiles: int) -> tuple[int, int]:
-    """Most-square exact factorization ``(width>=height, width*height==n_tiles)``.
-
-    Must be exact: a ceil-padded mesh leaves phantom tiles the YAML never defines
-    and SANA-FE's C++ NoC then SIGFPEs indexing them.
-    """
-    n = max(1, int(n_tiles))
-    height = 1
-    for h in range(int(math.isqrt(n)), 0, -1):
-        if n % h == 0:
-            height = h
-            break
-    return n // height, height
+CUSTOM_PRESET_NAME = "custom"
 
 
 def _plugin_path(name: str) -> Optional[str]:
@@ -98,50 +93,35 @@ class ArchSpec:
     mesh_width: int = 1
     mesh_height: int = 1
     cores_per_tile_resolved: int = 1
+    # The mapping's actual core count (<= total_cores when idle slots exist).
+    packed_cores: int = 0
 
     @property
     def total_cores(self) -> int:
         return sum(self.n_cores_per_tile)
 
 
-def derive_arch_spec(
-    mapping: Any,
-    *,
-    preset_name: str,
-    cores_per_tile: int = 0,
-) -> ArchSpec:
-    """Walk every neural segment of ``mapping`` and produce an ArchSpec."""
+def _resolve_preset(
+    preset_name: str, custom_arch_path: Optional[str]
+) -> PerEventEnergy:
+    """Per-event energy table for ``preset_name``; validates ``custom``."""
+    if preset_name == CUSTOM_PRESET_NAME:
+        if not custom_arch_path:
+            raise ValueError(
+                "sanafe_arch_preset='custom' requires sanafe_custom_arch_path "
+                "(the user architecture YAML to load in place of synthesis)"
+            )
+        return CUSTOM_ZERO_PRESET
     if preset_name not in PRESETS:
         raise ValueError(
             f"unknown SANA-FE arch preset {preset_name!r}; "
-            f"expected one of {sorted(PRESETS.keys())}"
+            f"expected one of {sorted(PRESETS.keys()) + [CUSTOM_PRESET_NAME]}"
         )
-    preset = PRESETS[preset_name]
+    return PRESETS[preset_name]
 
-    segments = list(mapping.get_neural_segments())
-    if not segments:
-        raise ValueError(
-            "no neural segments in the mapping; SANA-FE has nothing to simulate"
-        )
 
-    total_cores = 0
-    max_axons = 0
-    max_neurons = 0
-    for seg in segments:
-        for core in seg.cores:
-            total_cores += 1
-            ax = int(core.axons_per_core)
-            ne = int(core.neurons_per_core)
-            if ax > max_axons:
-                max_axons = ax
-            if ne > max_neurons:
-                max_neurons = ne
-
-    if total_cores == 0:
-        raise ValueError(
-            "no neural cores in the mapping's segments; SANA-FE has nothing to simulate"
-        )
-
+def _resolve_plugins(preset_name: str) -> dict[str, str]:
+    """Built mimarsinan plugin paths; ``custom`` YAMLs reference their own."""
     plugin_names = (
         "dendrite",
         "soma",
@@ -150,6 +130,8 @@ def derive_arch_spec(
         "ttfs_cycle_soma",
         "ttfs_cascade_soma",
     )
+    if preset_name == CUSTOM_PRESET_NAME:
+        return {name: "" for name in plugin_names}
     candidates = {name: _plugin_path(name) for name in plugin_names}
     missing = [name for name, path in candidates.items() if path is None]
     if missing:
@@ -158,19 +140,88 @@ def derive_arch_spec(
             f"{', '.join(missing)}).  Run ``scripts/bootstrap_sanafe.sh`` "
             "to build all libmimarsinan_*.so artifacts."
         )
-    plugins = {name: path for name, path in candidates.items() if path is not None}
+    return {name: path for name, path in candidates.items() if path is not None}
 
-    if cores_per_tile <= 0:
-        cores_per_tile = max(1, math.isqrt(total_cores))
-        if cores_per_tile * cores_per_tile < total_cores:
-            cores_per_tile += 1
-    n_tiles = (total_cores + cores_per_tile - 1) // cores_per_tile
-    n_cores_per_tile = [cores_per_tile] * (n_tiles - 1)
-    last = total_cores - cores_per_tile * (n_tiles - 1)
-    n_cores_per_tile.append(last)
 
-    mesh_width, mesh_height = _mesh_dims(n_tiles)
+def derive_arch_spec(
+    mapping: Any,
+    *,
+    preset_name: str,
+    cores_per_tile: int = 0,
+    tile_grid_rows: int = 0,
+    tile_grid_cols: int = 0,
+    declared_core_capacity: int = 0,
+    custom_arch_path: Optional[str] = None,
+) -> ArchSpec:
+    """Walk every neural segment of ``mapping`` and produce an ArchSpec.
 
+    With ``declared_core_capacity`` > 0 the floorplan is FIXED by the declared
+    platform (``resolve_floorplan``): every tile carries the full complement,
+    idle slots are defined (not phantom), and the floorplan is independent of
+    the packed core count. With 0 (a runner outside a pipeline, no declared
+    platform) the legacy packed-count derivation applies — unless an explicit
+    tile grid is declared, which is honored as a full floorplan over the
+    packed cores (never silently ignored).
+    """
+    preset = _resolve_preset(preset_name, custom_arch_path)
+
+    segments = list(mapping.get_neural_segments())
+    if not segments:
+        raise ValueError(
+            "no neural segments in the mapping; SANA-FE has nothing to simulate"
+        )
+
+    packed_cores = 0
+    max_axons = 0
+    max_neurons = 0
+    for seg in segments:
+        for core in seg.cores:
+            packed_cores += 1
+            ax = int(core.axons_per_core)
+            ne = int(core.neurons_per_core)
+            if ax > max_axons:
+                max_axons = ax
+            if ne > max_neurons:
+                max_neurons = ne
+
+    if packed_cores == 0:
+        raise ValueError(
+            "no neural cores in the mapping's segments; SANA-FE has nothing to simulate"
+        )
+
+    plugins = _resolve_plugins(preset_name)
+
+    effective_capacity = int(declared_core_capacity)
+    if effective_capacity <= 0 and (tile_grid_rows or tile_grid_cols):
+        # An explicit grid is a full-floorplan declaration: honor it over the
+        # packed cores rather than silently ignore it.
+        effective_capacity = packed_cores
+    if effective_capacity > 0:
+        if packed_cores > effective_capacity:
+            raise ValueError(
+                f"the packed mapping needs {packed_cores} cores but the "
+                f"declared platform capacity is {effective_capacity} — "
+                "the mapping cannot be placed on the declared floorplan"
+            )
+        cores_per_tile, rows, cols = resolve_floorplan(
+            effective_capacity, preset_name,
+            cores_per_tile, tile_grid_rows, tile_grid_cols,
+        )
+        n_tiles = rows * cols
+        n_cores_per_tile = [cores_per_tile] * n_tiles
+        mesh_width, mesh_height = cols, rows
+    else:
+        if cores_per_tile <= 0:
+            cores_per_tile = max(1, math.isqrt(packed_cores))
+            if cores_per_tile * cores_per_tile < packed_cores:
+                cores_per_tile += 1
+        n_tiles = (packed_cores + cores_per_tile - 1) // cores_per_tile
+        n_cores_per_tile = [cores_per_tile] * (n_tiles - 1)
+        last = packed_cores - cores_per_tile * (n_tiles - 1)
+        n_cores_per_tile.append(last)
+        mesh_width, mesh_height = _mesh_dims(n_tiles)
+
+    total_cores = sum(n_cores_per_tile)
     name = f"mimarsinan_{preset_name}_{total_cores}core"
     return ArchSpec(
         name=name,
@@ -188,6 +239,7 @@ def derive_arch_spec(
         mesh_width=mesh_width,
         mesh_height=mesh_height,
         cores_per_tile_resolved=cores_per_tile,
+        packed_cores=packed_cores,
     )
 
 

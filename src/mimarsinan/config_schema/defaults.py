@@ -75,6 +75,8 @@ DEFAULT_PLATFORM_CONSTRAINTS: Dict[str, object] = {
     "allow_per_layer_s": False,
     "max_schedule_passes": 8,
     "scheduling_latency_weight": 1.0,
+    # SANA-FE NoC floorplan declaration; 0 = derived from the declared platform.
+    "cores_per_tile": 0, "tile_grid_rows": 0, "tile_grid_cols": 0,
 }
 
 # Presets must not inject AQ/WQ: derivation owns them (a preset value reads as explicit).
@@ -114,12 +116,10 @@ CONFIG_KEYS_SET: Set[str] = {
     "cores", "simulation_steps",
     "arch_search",
     "target_tq",
-    "allow_coalescing",
-    "allow_neuron_splitting",
-    "allow_per_layer_s",
+    "cores_per_tile", "tile_grid_rows", "tile_grid_cols",
+    "allow_coalescing", "allow_neuron_splitting", "allow_per_layer_s",
     "allow_scheduling", "schedule_policy",
-    "max_schedule_passes",
-    "scheduling_latency_weight",
+    "max_schedule_passes", "scheduling_latency_weight",
     "weight_bits", "activation_bits",
     "tuning_budget_scale",
     "tuning_budget_scale_ramp_steps",

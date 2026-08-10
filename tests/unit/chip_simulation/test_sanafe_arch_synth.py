@@ -435,3 +435,314 @@ def test_loihi_preset_values_are_non_negative_floats():
     for key, val in LOIHI_PRESET.items():
         assert isinstance(val, float), f"{key} is not a float"
         assert val >= 0.0, f"{key} should be non-negative (got {val})"
+
+
+# ---------------------------------------------------------------------------
+# resolve_floorplan — the deterministic floorplan SSOT (W1.2)
+# ---------------------------------------------------------------------------
+
+
+class TestResolveFloorplan:
+    """The floorplan is a pure function of the DECLARED platform, never of the
+    packed model: explicit keys win, else the preset's physical tile wiring
+    (loihi.yaml: 4 cores/tile; truenorth.yaml: 1 core/tile), else
+    ceil(sqrt(declared)). An explicit grid is valid iff it holds the declared
+    capacity (rows*cols*cores_per_tile >= declared); an OVERSIZED grid is a
+    legitimate fixed physical chip whose idle tiles are DEFINED, never phantom
+    (phantom tiles SIGFPE SANA-FE's C++ NoC)."""
+
+    def test_explicit_keys_win_over_preset_default(self):
+        from mimarsinan.chip_simulation.sanafe.arch_synth.floorplan import (
+            resolve_floorplan,
+        )
+
+        cpt, rows, cols = resolve_floorplan(64, "loihi", 8, 2, 4)
+        assert (cpt, rows, cols) == (8, 2, 4)
+
+    def test_explicit_cores_per_tile_with_derived_grid(self):
+        from mimarsinan.chip_simulation.sanafe.arch_synth.floorplan import (
+            resolve_floorplan,
+        )
+
+        cpt, rows, cols = resolve_floorplan(64, "loihi", 16, 0, 0)
+        # n_tiles = ceil(64/16) = 4 -> most-square exact grid 2x2.
+        assert (cpt, rows, cols) == (16, 2, 2)
+
+    def test_loihi_preset_floorplan_default_is_4_per_tile(self):
+        from mimarsinan.chip_simulation.sanafe.arch_synth.floorplan import (
+            resolve_floorplan,
+        )
+
+        cpt, rows, cols = resolve_floorplan(40, "loihi", 0, 0, 0)
+        # loihi.yaml packs loihi_core[0..3] per tile: 4/tile -> 10 tiles -> 5x2.
+        assert cpt == 4
+        assert rows * cols == 10
+        assert (cols, rows) == (5, 2)
+
+    def test_truenorth_preset_floorplan_default_is_1_per_tile(self):
+        from mimarsinan.chip_simulation.sanafe.arch_synth.floorplan import (
+            resolve_floorplan,
+        )
+
+        cpt, rows, cols = resolve_floorplan(12, "truenorth", 0, 0, 0)
+        # truenorth.yaml defines one truenorth_core per tile: 1/tile.
+        assert cpt == 1
+        assert rows * cols == 12
+
+    def test_unknown_preset_falls_back_to_ceil_sqrt(self):
+        from mimarsinan.chip_simulation.sanafe.arch_synth.floorplan import (
+            resolve_floorplan,
+        )
+
+        cpt, rows, cols = resolve_floorplan(40, "custom", 0, 0, 0)
+        # ceil(sqrt(40)) = 7 -> 6 tiles -> 3x2.
+        assert cpt == 7
+        assert rows * cols == 6
+
+    def test_derived_grid_is_exact_for_a_capacity_sweep(self):
+        from mimarsinan.chip_simulation.sanafe.arch_synth.floorplan import (
+            resolve_floorplan,
+        )
+
+        for declared in range(1, 300):
+            cpt, rows, cols = resolve_floorplan(declared, "loihi", 0, 0, 0)
+            n_tiles = -(-declared // cpt)
+            assert rows * cols == n_tiles, declared
+            assert rows * cols * cpt >= declared, declared
+
+    def test_half_declared_grid_is_rejected(self):
+        from mimarsinan.chip_simulation.sanafe.arch_synth.floorplan import (
+            resolve_floorplan,
+        )
+
+        with pytest.raises(ValueError, match="tile_grid"):
+            resolve_floorplan(16, "loihi", 0, 2, 0)
+        with pytest.raises(ValueError, match="tile_grid"):
+            resolve_floorplan(16, "loihi", 0, 0, 2)
+
+    def test_undersized_explicit_grid_is_rejected(self):
+        from mimarsinan.chip_simulation.sanafe.arch_synth.floorplan import (
+            resolve_floorplan,
+        )
+
+        # 2x2 tiles x 4 cores = 16 slots < 64 declared.
+        with pytest.raises(ValueError, match="capacity"):
+            resolve_floorplan(64, "loihi", 4, 2, 2)
+
+    def test_oversized_explicit_grid_is_accepted(self):
+        from mimarsinan.chip_simulation.sanafe.arch_synth.floorplan import (
+            resolve_floorplan,
+        )
+
+        # A fixed physical 4x4 chip of 4-core tiles (64 slots) legitimately
+        # hosts a declared capacity of 40 cores: the surplus tiles are idle,
+        # defined tiles — never phantom.
+        cpt, rows, cols = resolve_floorplan(40, "loihi", 4, 4, 4)
+        assert (cpt, rows, cols) == (4, 4, 4)
+
+    def test_nonpositive_declared_capacity_is_rejected(self):
+        from mimarsinan.chip_simulation.sanafe.arch_synth.floorplan import (
+            resolve_floorplan,
+        )
+
+        with pytest.raises(ValueError, match="declared"):
+            resolve_floorplan(0, "loihi", 0, 0, 0)
+
+    def test_negative_keys_are_rejected(self):
+        from mimarsinan.chip_simulation.sanafe.arch_synth.floorplan import (
+            resolve_floorplan,
+        )
+
+        with pytest.raises(ValueError):
+            resolve_floorplan(16, "loihi", -1, 0, 0)
+        with pytest.raises(ValueError):
+            resolve_floorplan(16, "loihi", 0, -2, -2)
+
+    def test_half_declared_grid_config_error_helper(self):
+        from mimarsinan.chip_simulation.sanafe.arch_synth.floorplan import (
+            floorplan_config_errors,
+        )
+
+        assert floorplan_config_errors({"tile_grid_rows": 2}) != []
+        assert floorplan_config_errors({"tile_grid_cols": 2}) != []
+        assert floorplan_config_errors({}) == []
+        assert floorplan_config_errors(
+            {"tile_grid_rows": 2, "tile_grid_cols": 3}
+        ) == []
+
+
+# ---------------------------------------------------------------------------
+# derive_arch_spec — declared-capacity floorplan (W1.2)
+# ---------------------------------------------------------------------------
+
+
+class TestDeclaredCapacityFloorplan:
+    """With ``declared_core_capacity`` the floorplan is FIXED by the declared
+    platform: packed cores are placed into it, idle slots are defined (not
+    phantom), and two different models on the same platform produce identical
+    floorplans — cross-run NoC metrics become comparable by construction."""
+
+    def _floorplan_of(self, spec):
+        return (
+            spec.n_tiles, tuple(spec.n_cores_per_tile),
+            spec.mesh_width, spec.mesh_height, spec.cores_per_tile_resolved,
+        )
+
+    def test_same_declared_platform_identical_floorplan_across_models(self):
+        small = _fake_mapping(_fake_stage("neural", _fake_hcm(*[(3, 2)] * 3)))
+        large = _fake_mapping(
+            _fake_stage("neural", _fake_hcm(*[(5, 4)] * 7)),
+            _fake_stage("compute"),
+            _fake_stage("neural", _fake_hcm(*[(2, 2)] * 6)),
+        )
+        specs = [
+            derive_arch_spec(m, preset_name="loihi", declared_core_capacity=40)
+            for m in (small, large)
+        ]
+        assert self._floorplan_of(specs[0]) == self._floorplan_of(specs[1])
+        assert specs[0].name == specs[1].name
+
+    def test_capacity_floorplan_defines_every_tile_fully(self):
+        mapping = _fake_mapping(_fake_stage("neural", _fake_hcm(*[(3, 2)] * 3)))
+        spec = derive_arch_spec(
+            mapping, preset_name="loihi", declared_core_capacity=40,
+        )
+        # loihi default 4/tile -> 10 tiles, ALL with the full complement:
+        # idle slots are defined in the YAML, never phantom.
+        assert spec.n_tiles == 10
+        assert spec.n_cores_per_tile == [4] * 10
+        assert spec.mesh_width * spec.mesh_height == spec.n_tiles
+        assert spec.cores_per_tile_resolved == 4
+        assert spec.packed_cores == 3
+
+    def test_explicit_grid_keys_reach_the_spec(self):
+        mapping = _fake_mapping(_fake_stage("neural", _fake_hcm(*[(3, 2)] * 3)))
+        spec = derive_arch_spec(
+            mapping, preset_name="loihi", declared_core_capacity=40,
+            cores_per_tile=8, tile_grid_rows=1, tile_grid_cols=5,
+        )
+        assert spec.cores_per_tile_resolved == 8
+        assert spec.n_tiles == 5
+        assert (spec.mesh_width, spec.mesh_height) == (5, 1)
+        assert spec.n_cores_per_tile == [8] * 5
+
+    def test_packed_exceeding_declared_capacity_is_loud(self):
+        mapping = _fake_mapping(_fake_stage("neural", _fake_hcm(*[(3, 2)] * 9)))
+        with pytest.raises(ValueError, match="declared"):
+            derive_arch_spec(
+                mapping, preset_name="loihi", declared_core_capacity=8,
+            )
+
+    def test_zero_capacity_keeps_the_packed_derived_legacy_path(self):
+        # Direct runner callers (no declared platform) keep today's behavior:
+        # cores_per_tile = ceil(sqrt(packed)), remainder last tile.
+        mapping = _fake_mapping(_fake_stage("neural", _fake_hcm(*[(3, 2)] * 5)))
+        spec = derive_arch_spec(mapping, preset_name="loihi")
+        assert spec.cores_per_tile_resolved == 3
+        assert spec.n_cores_per_tile == [3, 2]
+        assert spec.packed_cores == 5
+
+    def test_capacity_yaml_emits_every_tile(self):
+        mapping = _fake_mapping(_fake_stage("neural", _fake_hcm(*[(3, 2)] * 3)))
+        spec = derive_arch_spec(
+            mapping, preset_name="loihi", declared_core_capacity=40,
+        )
+        yaml = _render_arch_yaml(spec)
+        assert yaml.count("- name: tile") == spec.n_tiles
+        # The LAST tile carries the full complement (idle slots defined).
+        assert yaml.count(f"- name: t{spec.n_tiles - 1}_c") == 4
+
+    def test_oversized_explicit_grid_defines_every_walkable_tile(self):
+        # The SIGFPE invariant for a FIXED physical chip larger than the
+        # declared capacity: every tile the NoC can walk (mesh width x height)
+        # is defined in the YAML with its full core complement — surplus
+        # capacity means idle tiles, never phantom ones.
+        mapping = _fake_mapping(_fake_stage("neural", _fake_hcm(*[(3, 2)] * 3)))
+        spec = derive_arch_spec(
+            mapping, preset_name="loihi", declared_core_capacity=40,
+            cores_per_tile=4, tile_grid_rows=4, tile_grid_cols=4,
+        )
+        assert spec.n_tiles == 16
+        assert spec.n_cores_per_tile == [4] * 16
+        assert (spec.mesh_width, spec.mesh_height) == (4, 4)
+        yaml = _render_arch_yaml(spec)
+        assert yaml.count("- name: tile") == spec.mesh_width * spec.mesh_height
+        assert "width: 4" in yaml
+        assert "height: 4" in yaml
+        for tile_idx in range(16):
+            assert yaml.count(f"- name: t{tile_idx}_c") == 4
+
+    def test_undersized_explicit_grid_is_loud_through_derive(self):
+        mapping = _fake_mapping(_fake_stage("neural", _fake_hcm(*[(3, 2)] * 3)))
+        # 2x2 tiles x 4 cores = 16 slots < 40 declared.
+        with pytest.raises(ValueError, match="capacity"):
+            derive_arch_spec(
+                mapping, preset_name="loihi", declared_core_capacity=40,
+                cores_per_tile=4, tile_grid_rows=2, tile_grid_cols=2,
+            )
+
+    def test_explicit_grid_without_capacity_is_honored_not_ignored(self):
+        # A direct runner caller declaring a grid but no platform capacity:
+        # the grid is a full-floorplan declaration over the packed cores —
+        # silently ignoring it would be a fail-loud violation.
+        mapping = _fake_mapping(_fake_stage("neural", _fake_hcm(*[(3, 2)] * 5)))
+        spec = derive_arch_spec(
+            mapping, preset_name="loihi",
+            cores_per_tile=2, tile_grid_rows=1, tile_grid_cols=3,
+        )
+        assert spec.n_tiles == 3
+        assert spec.n_cores_per_tile == [2, 2, 2]
+        assert (spec.mesh_width, spec.mesh_height) == (3, 1)
+
+    def test_half_declared_grid_without_capacity_is_loud(self):
+        mapping = _fake_mapping(_fake_stage("neural", _fake_hcm(*[(3, 2)] * 5)))
+        with pytest.raises(ValueError, match="tile_grid"):
+            derive_arch_spec(
+                mapping, preset_name="loihi", tile_grid_rows=2,
+            )
+
+
+# ---------------------------------------------------------------------------
+# preset 'custom' — accepted iff a user arch YAML is declared (W1.2)
+# ---------------------------------------------------------------------------
+
+
+class TestCustomPreset:
+    def test_custom_without_arch_path_is_loud(self):
+        mapping = _fake_mapping(_fake_stage("neural", _fake_hcm((2, 1))))
+        with pytest.raises(ValueError, match="sanafe_custom_arch_path"):
+            derive_arch_spec(mapping, preset_name="custom")
+
+    def test_custom_with_arch_path_is_accepted_without_built_plugins(
+        self, monkeypatch, tmp_path,
+    ):
+        # The user YAML carries its own plugin references: the mimarsinan
+        # plugin-build gate must not apply.
+        from mimarsinan.chip_simulation.sanafe.arch_synth import spec as spec_mod
+
+        monkeypatch.setattr(spec_mod, "_plugin_path", lambda name: None)
+        yaml_path = tmp_path / "user_arch.yaml"
+        yaml_path.write_text("architecture: {}\n")
+        mapping = _fake_mapping(_fake_stage("neural", _fake_hcm((2, 1))))
+        spec = derive_arch_spec(
+            mapping, preset_name="custom", custom_arch_path=str(yaml_path),
+        )
+        assert spec.packed_cores == 1
+        assert "custom" in spec.name
+
+    def test_custom_preset_energy_table_is_all_zero(self, tmp_path):
+        # Synthesis is skipped and the user YAML carries the real per-event
+        # costs; the trace-based reconstruction telemetry must report zeros
+        # rather than fabricate another platform's numbers.
+        yaml_path = tmp_path / "user_arch.yaml"
+        yaml_path.write_text("architecture: {}\n")
+        mapping = _fake_mapping(_fake_stage("neural", _fake_hcm((2, 1))))
+        spec = derive_arch_spec(
+            mapping, preset_name="custom", custom_arch_path=str(yaml_path),
+        )
+        assert all(float(v) == 0.0 for v in spec.preset.values())
+
+    def test_unknown_preset_error_still_lists_synthesizable_presets(self):
+        mapping = _fake_mapping(_fake_stage("neural", _fake_hcm((2, 1))))
+        with pytest.raises(ValueError, match="unknown.*preset"):
+            derive_arch_spec(mapping, preset_name="silicon-dreams")

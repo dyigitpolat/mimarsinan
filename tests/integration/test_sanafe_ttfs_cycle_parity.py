@@ -15,6 +15,8 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
+from fake_cores import FakeCore
+
 import numpy as np
 import pytest
 import torch
@@ -73,7 +75,7 @@ def _run_genuine(mapping, rates):
 
 def _single_core_mapping(W):
     n_ax, n_ne = W.shape
-    core = SimpleNamespace(
+    core = FakeCore(
         axons_per_core=n_ax, neurons_per_core=n_ne,
         available_axons=0, available_neurons=0, threshold=1.0,
         core_matrix=W.astype(np.float32),
@@ -119,13 +121,13 @@ def test_two_core_cascade_genuine_matches_analytical():
     a0 = _kernel(rates @ W0)
     a1 = _kernel(a0 @ W1)[0]
 
-    c0 = SimpleNamespace(
+    c0 = FakeCore(
         axons_per_core=3, neurons_per_core=2, available_axons=0, available_neurons=0,
         threshold=1.0, core_matrix=W0,
         axon_sources=[_from_spike_source(-1, i, is_input=True) for i in range(3)],
         hardware_bias=None, latency=0,
     )
-    c1 = SimpleNamespace(
+    c1 = FakeCore(
         axons_per_core=2, neurons_per_core=2, available_axons=0, available_neurons=0,
         threshold=1.0, core_matrix=W1,
         axon_sources=[_from_spike_source(0, j, is_input=False) for j in range(2)],

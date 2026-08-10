@@ -121,7 +121,8 @@ def _build_fake_sanafe_record(sample_index, energy_total, sim_time_s,
 
 
 def _prepare_step(monkeypatch, *,
-                  diffs=None, sample_count=1, arch_preset="loihi"):
+                  diffs=None, sample_count=1, arch_preset="loihi",
+                  platform_constraints_resolved=None):
     import mimarsinan.pipelining.pipeline_steps.verification.sanafe_simulation_step as step_mod
 
     calls = {
@@ -187,6 +188,15 @@ def _prepare_step(monkeypatch, *,
     pipeline.set_target_metric(0.875)
     pipeline.seed("model", make_tiny_supermodel(), step_name="Model Configuration")
     pipeline.seed("hard_core_mapping", object(), step_name="Hard Core Mapping")
+    if platform_constraints_resolved is None:
+        platform_constraints_resolved = {
+            "cores": [{"max_axons": 64, "max_neurons": 64, "count": 40}],
+            "cores_per_tile": 0, "tile_grid_rows": 0, "tile_grid_cols": 0,
+        }
+    pipeline.seed(
+        "platform_constraints_resolved", platform_constraints_resolved,
+        step_name="Model Configuration",
+    )
 
     step = SanafeSimulationStep(pipeline)
     step.name = "SANA-FE Simulation"
@@ -201,7 +211,9 @@ def _prepare_step(monkeypatch, *,
 
 def test_step_declares_requires_promises_updates_clears(monkeypatch):
     step, _, _ = _prepare_step(monkeypatch)
-    assert sorted(step.requires) == ["hard_core_mapping", "model"]
+    assert sorted(step.requires) == [
+        "hard_core_mapping", "model", "platform_constraints_resolved",
+    ]
     assert step.promises == ["sanafe_simulation_results"]
     assert step.updates == []
     assert step.clears == []
@@ -276,6 +288,28 @@ def test_step_runner_init_threads_thresholding_and_preset(monkeypatch):
     assert init["contract"].thresholding_mode == "<"
     assert init["arch_preset"] == "truenorth"
     assert init["simulation_length"] == 4
+
+
+def test_step_threads_declared_floorplan_into_the_runner(monkeypatch):
+    """W1.2: the step reads the declared floorplan + core capacity from
+    platform_constraints_resolved and threads them into SanafeRunner, so the
+    floorplan is a function of the DECLARED platform, not the packed model."""
+    step, _, calls = _prepare_step(
+        monkeypatch,
+        platform_constraints_resolved={
+            "cores": [
+                {"max_axons": 64, "max_neurons": 64, "count": 30},
+                {"max_axons": 256, "max_neurons": 256, "count": 10},
+            ],
+            "cores_per_tile": 4, "tile_grid_rows": 2, "tile_grid_cols": 5,
+        },
+    )
+    step.run()
+    init = calls["runner_inits"][0]
+    assert init["declared_core_capacity"] == 40  # sum of cores[].count
+    assert init["cores_per_tile"] == 4
+    assert init["tile_grid_rows"] == 2
+    assert init["tile_grid_cols"] == 5
 
 
 def test_step_reports_rich_metrics_on_success(monkeypatch):

@@ -205,9 +205,14 @@ def _patch_sanafe_stack(monkeypatch, *, fake_arch=None):
     if fake_arch is None:
         fake_arch = _fake_arch(2)
 
-    def _fake_derive_arch_spec(mapping, *, preset_name, cores_per_tile=0):
+    def _fake_derive_arch_spec(mapping, *, preset_name, cores_per_tile=0,
+                               tile_grid_rows=0, tile_grid_cols=0,
+                               declared_core_capacity=0, custom_arch_path=None):
         from mimarsinan.chip_simulation.sanafe.arch_synth import ArchSpec
-        from mimarsinan.chip_simulation.sanafe.presets import PRESETS
+        from mimarsinan.chip_simulation.sanafe.presets import (
+            CUSTOM_ZERO_PRESET,
+            PRESETS,
+        )
 
         return ArchSpec(
             name=f"fake_{preset_name}",
@@ -215,7 +220,7 @@ def _patch_sanafe_stack(monkeypatch, *, fake_arch=None):
             n_cores_per_tile=[len(mapping.get_neural_segments()[0].cores)],
             axons_per_core=4,
             neurons_per_core=4,
-            preset=PRESETS[preset_name],
+            preset=PRESETS.get(preset_name, CUSTOM_ZERO_PRESET),
             dendrite_plugin_path="/fake/dendrite.so",
             soma_plugin_path="/fake/soma.so",
             ttfs_continuous_plugin_path="/fake/ttfs_cont.so",
@@ -343,6 +348,148 @@ def test_runner_rejects_unknown_arch_preset():
     with pytest.raises(ValueError, match="preset"):
         SanafeRunner(mapping=mapping, simulation_length=8,
                      arch_preset="silicon-dreams")
+
+
+def test_runner_custom_preset_requires_custom_arch_path():
+    mapping = _fake_mapping(_fake_stage("neural", hcm=_fake_hcm(_fake_hard_core())))
+    with pytest.raises(ValueError, match="sanafe_custom_arch_path"):
+        SanafeRunner(mapping=mapping, simulation_length=8, arch_preset="custom")
+
+
+def test_runner_custom_preset_accepted_with_arch_path_and_zero_preset():
+    mapping = _fake_mapping(_fake_stage("neural", hcm=_fake_hcm(_fake_hard_core())))
+    runner = SanafeRunner(
+        mapping=mapping, simulation_length=8,
+        arch_preset="custom", custom_arch_path="/some/user_arch.yaml",
+    )
+    assert runner.arch_preset == "custom"
+    # The user YAML carries the real per-event costs; the reconstruction
+    # telemetry table must be all-zero, never another platform's numbers.
+    assert all(float(v) == 0.0 for v in runner._preset.values())
+
+
+# ---------------------------------------------------------------------------
+# Declared-floorplan threading (W1.2)
+# ---------------------------------------------------------------------------
+
+
+def test_runner_forwards_declared_floorplan_to_derive_arch_spec(monkeypatch):
+    mapping = _fake_mapping(_fake_stage("neural", hcm=_fake_hcm(_fake_hard_core())))
+    _patch_sanafe_stack(monkeypatch)
+    seen = {}
+    real_fake = runner_mod.derive_arch_spec
+
+    def _recording(mapping_, **kwargs):
+        seen.update(kwargs)
+        return real_fake(
+            mapping_, preset_name=kwargs["preset_name"],
+            cores_per_tile=kwargs.get("cores_per_tile", 0),
+        )
+
+    monkeypatch.setattr(runner_mod, "derive_arch_spec", _recording)
+    runner = SanafeRunner(
+        mapping=mapping, simulation_length=8,
+        cores_per_tile=4, tile_grid_rows=2, tile_grid_cols=5,
+        declared_core_capacity=40,
+    )
+    runner._ensure_arch()
+    assert seen["cores_per_tile"] == 4
+    assert seen["tile_grid_rows"] == 2
+    assert seen["tile_grid_cols"] == 5
+    assert seen["declared_core_capacity"] == 40
+    assert seen["custom_arch_path"] is None
+
+
+def test_runner_cores_per_tile_tracks_spec_resolution(monkeypatch):
+    """The packet-count / tile-aggregation callers consume the RESOLVED
+    cores_per_tile: after arch build the runner's value equals the spec's."""
+    mapping = _fake_mapping(_fake_stage("neural", hcm=_fake_hcm(_fake_hard_core())))
+    _patch_sanafe_stack(monkeypatch)
+    runner = SanafeRunner(mapping=mapping, simulation_length=8)
+    runner._ensure_arch()
+    assert runner.cores_per_tile >= 1
+    assert runner.cores_per_tile == 1  # fake spec: 1 tile of 1 packed core
+
+
+def test_runner_empty_custom_arch_path_means_unset(monkeypatch):
+    """A blank ``custom_arch_path`` (e.g. an empty config field) IS unset:
+    normalized to None at the constructor boundary, so the ``is not None``
+    arch-build gate never routes a SYNTHESIZED arch through custom-arch
+    floorplan adoption."""
+    mapping = _fake_mapping(_fake_stage("neural", hcm=_fake_hcm(_fake_hard_core())))
+    _patch_sanafe_stack(monkeypatch)  # fake LOADED arch would adopt 2 cores/tile
+    runner = SanafeRunner(
+        mapping=mapping, simulation_length=8, custom_arch_path="",
+    )
+    assert runner.custom_arch_path is None
+    runner._ensure_arch()
+    # Spec resolution (1 packed core -> 1 core/tile), NOT arch adoption (2).
+    assert runner.cores_per_tile == 1
+    geom = runner._arch_geometry
+    assert geom is not None
+    assert (geom.width, geom.height) == (1, 1)
+
+
+def test_runner_custom_preset_with_empty_arch_path_is_still_loud():
+    mapping = _fake_mapping(_fake_stage("neural", hcm=_fake_hcm(_fake_hard_core())))
+    with pytest.raises(ValueError, match="sanafe_custom_arch_path"):
+        SanafeRunner(
+            mapping=mapping, simulation_length=8,
+            arch_preset="custom", custom_arch_path="",
+        )
+
+
+def test_runner_custom_arch_adopts_loaded_floorplan(monkeypatch):
+    """With a user arch YAML the loaded architecture IS the floorplan SSOT:
+    tile grouping comes from its tiles, never from synthesis."""
+    mapping = _fake_mapping(_fake_stage("neural", hcm=_fake_hcm(_fake_hard_core())))
+    _patch_sanafe_stack(monkeypatch, fake_arch=_fake_arch(4, 4, 4))
+    runner = SanafeRunner(
+        mapping=mapping, simulation_length=8,
+        arch_preset="custom", custom_arch_path="/some/user_arch.yaml",
+    )
+    runner._ensure_arch()
+    assert runner.cores_per_tile == 4
+    geom = runner._arch_geometry
+    assert geom is not None
+    assert geom.width * geom.height == 3
+
+
+def test_runner_custom_arch_contradicting_cores_per_tile_is_loud(monkeypatch):
+    mapping = _fake_mapping(_fake_stage("neural", hcm=_fake_hcm(_fake_hard_core())))
+    _patch_sanafe_stack(monkeypatch, fake_arch=_fake_arch(4, 4, 4))
+    runner = SanafeRunner(
+        mapping=mapping, simulation_length=8,
+        arch_preset="custom", custom_arch_path="/some/user_arch.yaml",
+        cores_per_tile=2,
+    )
+    with pytest.raises(ValueError, match="cores_per_tile"):
+        runner._ensure_arch()
+
+
+def test_runner_custom_arch_contradicting_tile_grid_is_loud(monkeypatch):
+    mapping = _fake_mapping(_fake_stage("neural", hcm=_fake_hcm(_fake_hard_core())))
+    _patch_sanafe_stack(monkeypatch, fake_arch=_fake_arch(4, 4, 4))
+    runner = SanafeRunner(
+        mapping=mapping, simulation_length=8,
+        arch_preset="custom", custom_arch_path="/some/user_arch.yaml",
+        tile_grid_rows=2, tile_grid_cols=5,
+    )
+    with pytest.raises(ValueError, match="tile"):
+        runner._ensure_arch()
+
+
+def test_runner_custom_arch_nonuniform_tiles_are_loud(monkeypatch):
+    # div/mod placement requires a uniform per-tile core count (a smaller
+    # LAST tile is the one legal remainder shape).
+    mapping = _fake_mapping(_fake_stage("neural", hcm=_fake_hcm(_fake_hard_core())))
+    _patch_sanafe_stack(monkeypatch, fake_arch=_fake_arch(4, 2, 4))
+    runner = SanafeRunner(
+        mapping=mapping, simulation_length=8,
+        arch_preset="custom", custom_arch_path="/some/user_arch.yaml",
+    )
+    with pytest.raises(ValueError, match="uniform"):
+        runner._ensure_arch()
 
 
 def test_runner_sim_wall_cap_defaults_to_900s(monkeypatch):

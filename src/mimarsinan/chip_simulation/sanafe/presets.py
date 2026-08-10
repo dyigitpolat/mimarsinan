@@ -70,6 +70,28 @@ PRESETS: Dict[str, PerEventEnergy] = {
     "truenorth": TRUENORTH_PRESET,
 }
 
+# Preset 'custom' (user arch YAML): the YAML carries the real per-event costs,
+# so the trace-based reconstruction telemetry gets an all-zero table — honest
+# "not modeled" rather than another platform's numbers.
+CUSTOM_ZERO_PRESET: PerEventEnergy = {
+    "tile_hop_energy_j":         0.0,
+    "tile_hop_latency_s":        0.0,
+    "axon_in_energy_j":          0.0,
+    "axon_in_latency_s":         0.0,
+    "axon_out_energy_j":         0.0,
+    "axon_out_latency_s":        0.0,
+    "synapse_energy_j":          0.0,
+    "synapse_latency_s":         0.0,
+    "dendrite_energy_j":         0.0,
+    "dendrite_latency_s":        0.0,
+    "soma_access_energy_j":      0.0,
+    "soma_access_latency_s":     0.0,
+    "soma_update_energy_j":      0.0,
+    "soma_update_latency_s":     0.0,
+    "soma_spike_out_energy_j":   0.0,
+    "soma_spike_out_latency_s":  0.0,
+}
+
 
 # Hardware-unit names referenced by net_synth/arch_synth as strings — public surface, don't rename.
 SOMA_LIF_NAME = "lif"

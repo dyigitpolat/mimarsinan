@@ -184,10 +184,13 @@ def build_architecture(
             )
         arch = sanafe.load_arch(custom_arch_path)
         loaded_cores = sum(len(tile.cores) for tile in arch.tiles)
-        if loaded_cores < spec.total_cores:
+        # packed_cores is the mapping's real need; total_cores counts floorplan
+        # slots (capacity) and over-demands when idle slots are defined.
+        needed = spec.packed_cores if spec.packed_cores > 0 else spec.total_cores
+        if loaded_cores < needed:
             raise ValueError(
                 f"custom arch at {custom_arch_path} provides only "
-                f"{loaded_cores} cores but the mapping needs {spec.total_cores}"
+                f"{loaded_cores} cores but the mapping needs {needed}"
             )
         return arch
 

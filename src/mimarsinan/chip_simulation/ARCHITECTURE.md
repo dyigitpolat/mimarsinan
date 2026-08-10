@@ -49,7 +49,7 @@ Pareto decision layer.
 | `nevresim/` | Nevresim C++ simulator bridge: driver, compile, execute, segment binaries, compile cache, connectivity mode, profiling |
 | `parity/` | Generic segment-record field-diff comparison utilities; float closeness is judged by `common.measurement.MetricTolerance` (the one definition of "matches") |
 | `recording/` | Spike encoding modes plus spike-count recording/diffing shared by HCM and backend parity checks |
-| `sanafe/` | SANA-FE detailed-stats backend: arch/net synthesis, runner, neuron plugins, records, energy analysis |
+| `sanafe/` | SANA-FE detailed-stats backend: arch/net synthesis, runner, neuron plugins, records, energy analysis; the NoC floorplan is resolved from the DECLARED platform (`arch_synth/floorplan.py::resolve_floorplan` — explicit `cores_per_tile`/`tile_grid_*` keys win, else preset tile wiring, else ceil(sqrt(declared)); tile grids stay exact — phantom tiles SIGFPE), so equal declared platforms give identical, cross-run-comparable floorplans; preset `custom` loads the user arch YAML (accepted iff `sanafe_custom_arch_path` is set) and adopts ITS tile grouping |
 | `simulation_runner/` | `SimulationRunner` orchestrating end-to-end nevresim runs (flat single-segment and hybrid multi-segment) |
 | `ttfs/` | TTFS execution: encoding kernels, analytical executor + hybrid contract runner, segment arrays, genuine cycle sim, recorder |
 
