@@ -90,6 +90,12 @@ class TestEmptyMatrix:
         px = _decode(render_heatmap_png_bytes(np.zeros((0, 5))))
         assert px.shape == (EMPTY_TILE_SIZE, EMPTY_TILE_SIZE, 3)
 
+    def test_non_2d_input_fails_loud(self):
+        with pytest.raises(ValueError):
+            render_heatmap_png_bytes(np.zeros(6))
+        with pytest.raises(ValueError):
+            render_heatmap_png_bytes(np.zeros((2, 3, 4)))
+
 
 class TestMaskSurvival:
     def test_native_masked_row_is_exactly_that_row(self):

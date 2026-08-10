@@ -67,11 +67,11 @@ def _pool_mask_any(mask: np.ndarray, k: int) -> np.ndarray:
     out_n = -(-n // k)
     padded = np.zeros(out_n * k, dtype=bool)
     padded[:n] = mask
-    pooled = padded.reshape(out_n, k).any(axis=1)
+    pooled = np.asarray(padded.reshape(out_n, k).any(axis=1), dtype=bool)
     if pooled.size >= 2:
         thick = pooled.copy()
         thick[1:] |= pooled[:-1]
-        if pooled[-1]:
+        if bool(pooled[-1]):
             thick[-2] = True
         pooled = thick
     return pooled
@@ -116,7 +116,9 @@ def render_heatmap_png_bytes(
     ones decimate by ``k = ceil(long_side / target)`` on both axes.
     """
     matrix = np.asarray(matrix, dtype=np.float64)
-    if matrix.ndim != 2 or matrix.size == 0:
+    if matrix.ndim != 2:
+        raise ValueError(f"heatmaps render 2D matrices; got shape {matrix.shape}")
+    if matrix.size == 0:
         return encode_rgb_png(_empty_tile_rgb())
     h, w = matrix.shape
     row_mask = _as_line_mask(pruned_row_mask, h, "row")
