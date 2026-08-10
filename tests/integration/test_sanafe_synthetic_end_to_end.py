@@ -46,9 +46,11 @@ pytestmark = [
 def _build_tiny_mapping():
     """One neural stage with one HardCore (4 axons, 3 neurons)."""
     from types import SimpleNamespace
+
+    from fake_cores import FakeCore
     from mimarsinan.code_generation.cpp_chip_model import SpikeSource
 
-    core = SimpleNamespace(
+    core = FakeCore(
         axons_per_core=4,
         neurons_per_core=3,
         available_axons=0,
@@ -108,6 +110,54 @@ def test_runner_end_to_end_on_tiny_mapping():
     assert rec.T == 32
     assert rec.arch_preset == "loihi"
     assert 0 in rec.segments
+
+
+def test_runner_declared_capacity_floorplan_with_idle_tiles_runs(tmp_path):
+    """W1.2 acceptance in REAL SANA-FE: the declared-platform floorplan (40
+    slots -> 10 tiles x 4 cores for one packed core) loads and simulates —
+    idle tiles are defined, not phantom (phantom tiles SIGFPE the C++ NoC)."""
+    from mimarsinan.chip_simulation.sanafe.runner import SanafeRunner
+    mapping = _build_tiny_mapping()
+
+    runner = SanafeRunner(mapping=mapping, simulation_length=32,
+                          arch_preset="loihi", declared_core_capacity=40)
+    rates = np.asarray([[1.0, 1.0, 0.0, 0.0]], dtype=np.float32)
+    rec = runner.run(rates, sample_index=0)
+
+    assert runner.cores_per_tile == 4  # the loihi.yaml tile wiring, not packed
+    geom = runner._arch_geometry
+    assert geom is not None and geom.width * geom.height == 10
+    seg = rec.segments[0]
+    assert seg.per_core[0].output_spike_count[0] > 0
+
+
+def test_runner_custom_preset_runs_user_yaml_end_to_end(tmp_path):
+    """Preset 'custom' loads the user YAML directly (synthesis skipped) and
+    adopts ITS floorplan; the simulation still produces spikes."""
+    from mimarsinan.chip_simulation.sanafe.arch_synth import (
+        _render_arch_yaml,
+        derive_arch_spec,
+    )
+    from mimarsinan.chip_simulation.sanafe.runner import SanafeRunner
+
+    mapping = _build_tiny_mapping()
+    spec = derive_arch_spec(
+        mapping, preset_name="loihi", declared_core_capacity=8,
+    )
+    yaml_path = tmp_path / "user_arch.yaml"
+    yaml_path.write_text(_render_arch_yaml(
+        spec, thresholding_mode="<=", simulation_length=32,
+    ))
+
+    runner = SanafeRunner(mapping=mapping, simulation_length=32,
+                          arch_preset="custom",
+                          custom_arch_path=str(yaml_path))
+    rates = np.asarray([[1.0, 1.0, 0.0, 0.0]], dtype=np.float32)
+    rec = runner.run(rates, sample_index=0)
+
+    assert runner.cores_per_tile == 4  # adopted from the loaded user YAML
+    seg = rec.segments[0]
+    assert seg.per_core[0].output_spike_count[0] > 0
 
 
 def test_runner_produces_positive_total_energy():
