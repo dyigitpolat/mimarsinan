@@ -7,6 +7,7 @@ from mimarsinan.pipelining.core.steps.pipeline_step import (
     METRIC_MEASURED,
     PipelineStep,
 )
+from mimarsinan.tuning.orchestration import endpoint_steps, run_instrumentation
 from mimarsinan.tuning.orchestration.conversion_draws import (
     configured_draws,
     run_conversion_draws,
@@ -26,6 +27,12 @@ class TunerPipelineStep(PipelineStep):
         super().__init__(requires, promises, updates, clears, pipeline)
         self.tuner = None
 
+    def run(self):
+        # Entry snapshot for the retention ledger's endpoint-step accounting
+        # (a read-only ledger peek; the tuner consumes during process()).
+        self._endpoint_steps_consumed_before = endpoint_steps.consumed(self.pipeline)
+        super().run()
+
     def validate(self):
         if self.tuner is not None:
             return self.tuner.validate()
@@ -37,6 +44,40 @@ class TunerPipelineStep(PipelineStep):
     def _commit_tuner_entries(self, model, adaptation_manager):
         self.update_entry("adaptation_manager", adaptation_manager, "pickle")
         self.update_entry("model", model, "torch_model")
+        self._persist_adaptation_instrumentation()
+
+    def _persist_adaptation_instrumentation(self):
+        """Persist the run-dir adaptation artifacts at commit time (W3-S1):
+        the ``ft_pass_walls.json`` accumulator + one ``retention_ledger.json``
+        entry. Artifacts only — nothing in the training path reads them, and
+        the exit read reuses what the run already measured
+        (``exit_metric_estimate``): a fresh ``validate()`` here would draw an
+        extra validation batch and break byte-identical off/on parity."""
+        tuner = self.tuner
+        if tuner is None:
+            return
+        working_directory = getattr(self.pipeline, "working_directory", None)
+        if working_directory is None:
+            return
+        wall_metrics = getattr(tuner, "ft_pass_wall_metrics", None)
+        if wall_metrics is not None:
+            run_instrumentation.merge_ft_pass_walls(
+                working_directory, self.name, wall_metrics()
+            )
+        exit_estimate = getattr(tuner, "exit_metric_estimate", None)
+        if exit_estimate is None:
+            return  # not a TunerBase family: no exit read to account
+        exit_metric = exit_estimate()
+        if exit_metric is None:
+            return  # the run never measured anything (bare unit-test doubles)
+        entry = run_instrumentation.retention_entry(
+            step_name=self.name,
+            entry_metric=getattr(self, "pipeline_previous_metric", None),
+            exit_metric=float(exit_metric),
+            pipeline=self.pipeline,
+            consumed_before=getattr(self, "_endpoint_steps_consumed_before", None),
+        )
+        run_instrumentation.append_retention_entry(working_directory, entry)
 
     def run_tuner(self, tuner_cls, model, adaptation_manager, **tuner_kwargs):
         """Construct tuner (best-of-N draws when selected), run, and commit the
