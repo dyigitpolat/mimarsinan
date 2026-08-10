@@ -25,7 +25,6 @@
     "weight_bits": 8,
     "allow_coalescing": false,
     "allow_neuron_splitting": true,
-    "allow_weight_reuse": true,
     "max_schedule_passes": 64,
     "activation_bits": 8
   },

@@ -14,6 +14,7 @@ from mimarsinan.gui.snapshot.builders import (
     RESOURCE_KIND_PRUNING_MASK_MAP,
     snapshot_pruning_layers,
 )
+from mimarsinan.gui.snapshot.util.constants import RESOURCE_KIND_HEATMAP_COLORBAR
 
 
 def _make_perceptron(out_f: int, in_f: int, name: str, pruned_rows: int = 0, pruned_cols: int = 0):
@@ -115,16 +116,28 @@ class TestSnapshotPruningLayers:
         assert out["layers"][1]["pruned_rows"] == 0
         assert out["layers"][1]["pruned_cols"] == 1
 
-        # One heatmap + one mask-map descriptor per layer, matching the summary rids.
-        assert len(descriptors) == 4
-        by_kind = {}
+        # One heatmap + one mask-map descriptor per layer (rids matching the
+        # summary) plus exactly ONE family colorbar for the weight heatmaps.
+        assert len(descriptors) == 5
+        by_kind: dict = {}
         for d in descriptors:
             by_kind.setdefault(d.kind, set()).add(d.rid)
         assert by_kind[RESOURCE_KIND_PRUNING_LAYER_HEATMAP] == {"layer/0", "layer/1"}
         assert by_kind[RESOURCE_KIND_PRUNING_MASK_MAP] == {"layer/0", "layer/1"}
+        assert len(by_kind[RESOURCE_KIND_HEATMAP_COLORBAR]) == 1
         assert all(d.media_type == "image/png" for d in descriptors)
+
+        # Weight heatmaps share ONE family scale, reported in the summary;
+        # mask maps stay on their own categorical +-1 scale (unstamped).
+        layer_descriptors = [
+            d for d in descriptors if d.kind == RESOURCE_KIND_PRUNING_LAYER_HEATMAP
+        ]
+        mask_maps = [d for d in descriptors if d.kind == RESOURCE_KIND_PRUNING_MASK_MAP]
+        assert len({d.source.scale for d in layer_descriptors}) == 1
+        assert out["heatmap_scale"]["vmax"] == layer_descriptors[0].source.scale
+        assert all(d.source.scale is None for d in mask_maps)
         # Producers lazily render PNG bytes.
-        for d in descriptors[:2]:
+        for d in (layer_descriptors[0], mask_maps[0]):
             png_bytes = d.producer()
             assert isinstance(png_bytes, bytes)
             assert png_bytes.startswith(b"\x89PNG")

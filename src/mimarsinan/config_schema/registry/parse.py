@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Mapping
 
 from mimarsinan.config_schema.defaults import DEFAULT_TRAINING_RECIPE
 from mimarsinan.config_schema.registry.build import REGISTRY, section_keys
+from mimarsinan.config_schema.registry.retired_keys import retired_keys_in_scope
 from mimarsinan.config_schema.registry.types import FieldType
 
 CORE_FIELDS = frozenset({"max_axons", "max_neurons", "count", "has_bias"})
@@ -26,6 +27,12 @@ class ParsedDocument:
     pc: Dict[str, Any] = field(default_factory=dict)
     meta: Dict[str, Any] = field(default_factory=dict)
     unknown: List[str] = field(default_factory=list)
+    # Registry-REMOVED retired keys, by scope: neither unknown (no tray noise)
+    # nor schema-known (they never reach the derivation or the explicit diff);
+    # the retired-key rule owns them with a keyed migration remedy.
+    retired: Dict[str, Dict[str, Any]] = field(default_factory=lambda: {
+        "deployment_parameters": {}, "platform_constraints": {},
+    })
 
     def known_flat_keys(self) -> Dict[str, Any]:
         merged: Dict[str, Any] = {}
@@ -33,6 +40,17 @@ class ParsedDocument:
         merged.update(self.dp)
         merged.update(self.pc)
         return merged
+
+    def retirement_scan_view(self) -> Dict[str, Dict[str, Any]]:
+        """Both scopes with their retired declarations folded back in — the
+        mapping the retired-key scan judges (registry-known legacy bridges
+        parse into the section dicts; fully-removed keys ride ``retired``)."""
+        return {
+            "deployment_parameters": {**self.retired["deployment_parameters"],
+                                      **self.dp},
+            "platform_constraints": {**self.retired["platform_constraints"],
+                                     **self.pc},
+        }
 
 
 def _check_nested_fields(value: Any, allowed: frozenset, path: str, out: ParsedDocument) -> None:
@@ -59,12 +77,15 @@ def _parse_section(
     target: Dict[str, Any],
 ) -> None:
     known = section_keys(section)
+    retired = retired_keys_in_scope(section)
     for key, value in data.items():
         if key.startswith("_"):
             out.meta[key] = value
         elif key in known:
             target[key] = value
             _check_value_shape(key, value, f"{prefix}{key}", out)
+        elif key in retired:
+            out.retired[section][key] = value
         else:
             out.unknown.append(f"{prefix}{key}")
 

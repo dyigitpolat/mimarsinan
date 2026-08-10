@@ -11,6 +11,7 @@ import torch.nn as nn
 logger = logging.getLogger("mimarsinan.gui")
 
 from mimarsinan.common.best_effort import best_effort
+from mimarsinan.gui.snapshot.heatmap import HeatmapScaleFamily
 from mimarsinan.gui.snapshot.util.helpers import _histogram, _safe_scalar
 from mimarsinan.gui.snapshot.util.constants import (
     RESOURCE_KIND_PRUNING_LAYER_HEATMAP,
@@ -144,6 +145,7 @@ def snapshot_pruning_layers(
     layers_out: list[dict] = []
     skipped: list[dict] = []
     descriptors: list[ResourceDescriptor] = []
+    heatmap_family = HeatmapScaleFamily("pruning_layers")
 
     if source == "linear_fallback":
         skipped.append({
@@ -212,14 +214,16 @@ def snapshot_pruning_layers(
                 "rid": rid,
             },
         })
+        layer_source = HeatmapSource(
+            weight,
+            pruned_row_mask=row_list,
+            pruned_col_mask=col_list,
+        )
+        heatmap_family.adopt(layer_source)
         descriptors.append(ResourceDescriptor(
             kind=RESOURCE_KIND_PRUNING_LAYER_HEATMAP,
             rid=rid,
-            source=HeatmapSource(
-                weight,
-                pruned_row_mask=row_list,
-                pruned_col_mask=col_list,
-            ),
+            source=layer_source,
             media_type="image/png",
         ))
         descriptors.append(ResourceDescriptor(
@@ -233,9 +237,12 @@ def snapshot_pruning_layers(
             media_type="image/png",
         ))
 
-    summary = {
+    summary: dict = {
         "layers": layers_out,
         "skipped": skipped,
         "configured_fraction": _fraction_or_none(configured_fraction),
     }
+    heatmap_scale = heatmap_family.finalize(descriptors)
+    if heatmap_scale is not None:
+        summary["heatmap_scale"] = heatmap_scale
     return summary, descriptors
