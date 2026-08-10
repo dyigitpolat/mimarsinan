@@ -8,9 +8,9 @@ from mimarsinan.gui.runtime.persistence.load import (
     load_persisted_steps,
     load_persisted_steps_cache_clear,
     load_persisted_steps_cache_info,
-    load_resource_from_disk,
     load_run_info,
 )
+from mimarsinan.gui.runtime.persistence.resource_load import load_resource_from_disk
 from mimarsinan.gui.runtime.persistence.paths import (
     CONSOLE_LOG_FILENAME,
     GUI_STATE_DIR,
