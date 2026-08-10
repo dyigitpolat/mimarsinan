@@ -95,6 +95,19 @@ def test_resolved_floorplan_reads_the_declared_preset():
             ) == 12
 
 
+def test_count_less_core_declarations_resolve_as_one_core_each():
+    # Minimal core dicts without "count" (e.g. resolve_bias_mode queries)
+    # follow the imc_platforms convention: a declared type exists once.
+    pcfg = build_platform_constraints_resolved({
+        "cores": [{"max_axons": 8, "max_neurons": 8},
+                  {"max_axons": 8, "max_neurons": 8}],
+    })
+    # 2 cores on loihi's 4/tile wiring -> one tile.
+    assert pcfg["cores_per_tile_resolved"] == 4
+    assert (pcfg["tile_grid_rows_resolved"], pcfg["tile_grid_cols_resolved"]) \
+        == (1, 1)
+
+
 def test_undersized_explicit_grid_fails_loud_at_the_resolver_seam():
     # The capacity invariant fires at resolution time (model configuration),
     # not first at the SANA-FE step: 2x2 tiles x 4 cores = 16 < 40 declared.

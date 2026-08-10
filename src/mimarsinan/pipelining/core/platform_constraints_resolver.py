@@ -55,8 +55,10 @@ def build_platform_constraints_resolved(
     # sanafe_arch_preset='custom' the loaded arch YAML remains the floorplan
     # SSOT at the SANA-FE step (declared keys are validated against the
     # file); these keys then carry the declared-platform derivation only.
+    # Missing "count" means one core of that type (the imc_platforms
+    # convention) — minimal declarations (e.g. bias-mode queries) stay valid.
     floorplan = resolve_floorplan(
-        sum(int(core_type["count"]) for core_type in cores),
+        sum(int(core_type.get("count", 1)) for core_type in cores),
         str(pipeline_config.get("sanafe_arch_preset", "loihi")),
         pcfg["cores_per_tile"],
         pcfg["tile_grid_rows"],
