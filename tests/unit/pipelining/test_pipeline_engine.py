@@ -348,6 +348,95 @@ class TestPipelineMetric:
         assert p.get_target_metric() == pytest.approx(0.95)
 
 
+class RaisingStep(PipelineStep):
+    """Raises from process() to exercise the engine failure path."""
+    def __init__(self, pipeline):
+        super().__init__(requires=[], promises=[], updates=[], clears=[], pipeline=pipeline)
+
+    def process(self):
+        raise RuntimeError("step exploded")
+
+    def validate(self):
+        return 1.0
+
+
+class TestStepFailedHooks:
+    def test_failure_hook_receives_name_step_error_and_error_propagates(self, tmp_path):
+        p = Pipeline(str(tmp_path / "cache"))
+        step = RaisingStep(p)
+        p.add_pipeline_step("boom", step)
+
+        failed_calls = []
+        p.register_step_failed_hook(lambda name, s, e: failed_calls.append((name, s, e)))
+
+        with pytest.raises(RuntimeError, match="step exploded"):
+            p.run()
+
+        assert len(failed_calls) == 1
+        name, hooked_step, error = failed_calls[0]
+        assert name == "boom"
+        assert hooked_step is step
+        assert isinstance(error, RuntimeError)
+        assert str(error) == "step exploded"
+
+    def test_post_hooks_not_called_on_failure(self, tmp_path):
+        p = Pipeline(str(tmp_path / "cache"))
+        p.add_pipeline_step("boom", RaisingStep(p))
+
+        post_calls, failed_calls = [], []
+        p.register_post_step_hook(lambda name, step: post_calls.append(name))
+        p.register_step_failed_hook(lambda name, step, e: failed_calls.append(name))
+
+        with pytest.raises(RuntimeError):
+            p.run()
+
+        assert post_calls == []
+        assert failed_calls == ["boom"]
+
+    def test_failure_hooks_not_called_on_success_and_hook_order_preserved(self, tmp_path):
+        p = Pipeline(str(tmp_path / "cache"))
+        p.add_pipeline_step("produce", ProducerStep(p, value=1))
+
+        calls = []
+        p.register_pre_step_hook(lambda name, step: calls.append(("pre", name)))
+        p.register_post_step_hook(lambda name, step: calls.append(("post", name)))
+        p.register_step_failed_hook(lambda name, step, e: calls.append(("failed", name)))
+        p.run()
+
+        assert calls == [("pre", "produce"), ("post", "produce")]
+
+    def test_failure_hook_fires_on_retention_failure(self, tmp_path):
+        """The failure hook covers the whole step body, including the metric gate."""
+        p = Pipeline(str(tmp_path / "cache"))
+        p.tolerance = 0.95
+        p.add_pipeline_step("good", ProducerStep(p, value=1))
+        p.add_pipeline_step("bad", PerformanceDropStep(p, metric=0.01))
+
+        failed_calls = []
+        p.register_step_failed_hook(lambda name, step, e: failed_calls.append((name, e)))
+
+        with pytest.raises(AssertionError, match="performance"):
+            p.run()
+
+        assert [name for name, _ in failed_calls] == ["bad"]
+        assert isinstance(failed_calls[0][1], AssertionError)
+
+    def test_cleanup_still_runs_when_failure_hook_registered(self, tmp_path):
+        class RaisingCleanupStep(CleanupTrackingStep):
+            def process(self):
+                raise RuntimeError("mid-step death")
+
+        p = Pipeline(str(tmp_path / "cache"))
+        step = RaisingCleanupStep(p, promises_data=False)
+        p.add_pipeline_step("boom", step)
+        p.register_step_failed_hook(lambda name, s, e: None)
+
+        with pytest.raises(RuntimeError, match="mid-step death"):
+            p.run()
+
+        assert step.cleanup_called == [True]
+
+
 class TestPipelineRunFrom:
     def test_run_from_requires_valid_step(self, tmp_path):
         p = Pipeline(str(tmp_path / "cache"))

@@ -79,7 +79,28 @@ def persisted_step_view(name: str, sd: Mapping[str, Any], *, status: str) -> Dic
         "target_metric": sd.get("target_metric"),
         "metric_kind": sd.get("metric_kind"),
         "verdict": sd.get("verdict"),
+        "error": sd.get("error"),
     }
+
+
+def persisted_step_status(sd: Mapping[str, Any], *, alive: bool) -> str:
+    """Honest status for one steps.json entry: the persisted status wins, the
+    end_time heuristic covers legacy dirs, and a 'running' step of a dead
+    process reads failed (a dead run must never present as live)."""
+    status = sd.get("status")
+    if status is None:
+        status = "completed" if sd.get("end_time") is not None else "pending"
+    if status == "running" and not alive:
+        status = "failed"
+    return str(status)
+
+
+def persisted_run_status(info: Mapping[str, Any] | None, *, alive: bool) -> str | None:
+    """Run-level status from run_info.json under the same honesty rule."""
+    status = (info or {}).get("status", "running" if alive else None)
+    if status == "running" and not alive:
+        status = "failed"
+    return status
 
 
 def step_bar_badge(step: Mapping[str, Any]) -> Dict[str, Any]:

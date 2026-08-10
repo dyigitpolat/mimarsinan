@@ -24,8 +24,8 @@ from mimarsinan.gui.server import create_app
 
 
 class _StubProcessManager:
-    """Minimal ProcessManager stand-in: the server only needs
-    ``get_working_dir`` and ``get_run_detail`` to wire the WS endpoint."""
+    """Minimal ProcessManager stand-in: the server needs ``get_working_dir``,
+    ``get_run_detail`` and ``is_run_alive`` to wire the WS endpoint."""
 
     def __init__(self, run_id: str, working_dir: str) -> None:
         self._run_id = run_id
@@ -38,6 +38,9 @@ class _StubProcessManager:
         if run_id != self._run_id:
             return None
         return {"steps": [{"name": "S", "status": "running"}], "current_step": "S"}
+
+    def is_run_alive(self, run_id: str) -> bool:
+        return run_id == self._run_id
 
 
 def _make_client(run_id: str, working_dir: str) -> TestClient:

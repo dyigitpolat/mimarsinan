@@ -251,6 +251,13 @@ class TestPipelineOverviewBroadcast:
         assert overviews, "expected at least one pipeline_overview broadcast"
         failed = [s for s in overviews[-1]["steps"] if s["status"] == "failed"]
         assert any(s["name"] == "s1" for s in failed)
+        # Error propagation (the on_step_failed path): the lifecycle frame, the
+        # overview row, and the step detail all carry the error string.
+        failed_frames = [m for m in ws.messages if m.get("type") == "step_failed"]
+        assert failed_frames and failed_frames[-1]["error"] == "boom"
+        assert next(s for s in overviews[-1]["steps"] if s["name"] == "s1")["error"] == "boom"
+        detail = c.get_step_detail("s1")
+        assert detail is not None and detail["error"] == "boom"
 
     def test_overview_broadcast_carries_config_view(self) -> None:
         """Every lifecycle overview frame ships the structured config view.

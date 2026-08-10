@@ -16,6 +16,7 @@ from mimarsinan.gui.runtime.persistence.paths import (
     steps_file_lock,
     steps_path,
 )
+from mimarsinan.gui.runtime.proc_identity import read_proc_starttime
 from mimarsinan.gui.runtime.persistence.resource_paths import resource_disk_path
 
 logger = logging.getLogger("mimarsinan.gui")
@@ -81,6 +82,7 @@ def save_step_status(
     target_metric: float | None = None,
     metric_kind: str | None = None,
     verdict: dict | None = None,
+    error: str | None = None,
 ) -> None:
     path = steps_path(working_directory)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -104,6 +106,8 @@ def save_step_status(
             entry["metric_kind"] = metric_kind
         if verdict is not None:
             entry["verdict"] = verdict
+        if error is not None:
+            entry["error"] = error
         existing[step_name] = entry
         atomic_write_json(path, {"steps": existing})
 
@@ -143,6 +147,9 @@ def save_run_info(
     path = run_info_path(working_directory)
     info = {
         "pid": pid,
+        # PID-reuse honesty: the (pid, kernel starttime) pair identifies the
+        # process; orphan-recovery liveness must match both. None on non-/proc.
+        "starttime": read_proc_starttime(pid),
         "step_names": step_names,
         "status": "running",
         "started_at": time.time(),

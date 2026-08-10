@@ -14,6 +14,7 @@ from pathlib import Path
 
 from mimarsinan.common.best_effort import best_effort
 from mimarsinan.gui.runtime.persistence.store import append_console_log
+from mimarsinan.gui.runtime.proc_identity import read_proc_starttime
 from mimarsinan.gui.runtime.run_cache_seed import (
     copy_pipeline_cache_from_previous_run,
     copy_resources_from_previous_run,
@@ -57,6 +58,7 @@ class ManagedRun:
     pid: int
     started_at: float
     experiment_name: str = ""
+    starttime: int | None = None
     _process: subprocess.Popen | None = field(default=None, repr=False)
 
     def is_alive(self) -> bool:
@@ -64,9 +66,16 @@ class ManagedRun:
             return self._process.poll() is None
         try:
             os.kill(self.pid, 0)
-            return True
         except (OSError, ProcessLookupError):
             return False
+        if self.starttime is None:
+            return True
+        current = read_proc_starttime(self.pid)
+        if current is None:
+            # /proc unavailable: fall back to the bare signal-0 probe.
+            return True
+        # A recycled pid answers the probe but wears a different kernel starttime.
+        return current == self.starttime
 
 
 def spawn_run(
@@ -131,6 +140,7 @@ def spawn_run(
         pid=proc.pid,
         started_at=time.time(),
         experiment_name=experiment_name,
+        starttime=read_proc_starttime(proc.pid),
         _process=proc,
     )
     runs[run_id] = managed

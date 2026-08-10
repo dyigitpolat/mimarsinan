@@ -171,10 +171,11 @@ class PipelineSession:
         return cls(parsed, reporter=reporter)
 
     def attach_gui(self, gui: Any) -> None:
-        """Wire a GUI handle (``.reporter``, ``.on_step_start``, ``.on_step_end``)."""
+        """Wire a GUI handle (``.reporter``, ``.on_step_start``, ``.on_step_end``, ``.on_step_failed``)."""
         self.pipeline.reporter = CompositeReporter([self.reporter, gui.reporter])
         self.pipeline.register_pre_step_hook(gui.on_step_start)
         self.pipeline.register_post_step_hook(gui.on_step_end)
+        self.pipeline.register_step_failed_hook(gui.on_step_failed)
 
     def resolved_start_step(self) -> Optional[str]:
         if self.parsed.start_step is None:

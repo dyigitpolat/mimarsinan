@@ -231,6 +231,7 @@ function applyPipelineOverviewFromWS(overview) {
     }
   }
   updateErrorBanner(state.pipeline);
+  updateStopButton(state.pipeline);
   if (!state.pollOk) { state.pollOk = true; updateConnectionDot(); }
 }
 
@@ -275,6 +276,7 @@ async function refreshPipeline() {
     if (state.selectedStep) await refreshStepDetail(state.selectedStep, state, fetchJSON);
 
     updateErrorBanner(state.pipeline);
+    updateStopButton(state.pipeline);
 
     if (_prevAlive && state.pipeline.is_alive === false) {
       await refreshConsoleLogs();
@@ -308,6 +310,24 @@ function updateErrorBanner(pipeline) {
 function updateFailureBadges(pipeline) {
   const failed = ((pipeline && pipeline.steps) || []).filter(s => s.status === 'failed').length;
   setNavBadge('steps', failed);
+}
+
+// Stop button visibility follows is_alive on EVERY overview render (initial
+// load + every pipeline_overview frame) — a dead run must never offer a live
+// Stop control, and a run that dies mid-view loses it on the terminal frame.
+let _stopInFlight = false;
+
+function updateStopButton(pipeline) {
+  if (!_isActiveRun) return;
+  const stopBtn = document.getElementById('header-stop-btn');
+  if (!stopBtn) return;
+  const alive = !!(pipeline && pipeline.is_alive);
+  stopBtn.style.display = alive ? 'inline-block' : 'none';
+  if (!alive) _stopInFlight = false;
+  if (alive && !_stopInFlight) {
+    stopBtn.disabled = false;
+    stopBtn.textContent = 'Stop';
+  }
 }
 
 // Highest ``event_seq`` observed on the WS so a reconnect can ask the
@@ -529,12 +549,27 @@ function setupRunChrome() {
   if (_isActiveRun) {
     const stopBtn = document.getElementById('header-stop-btn');
     if (stopBtn) {
-      stopBtn.style.display = 'inline-block';
+      // Visibility is owned by updateStopButton (per overview render); the
+      // handler only issues the kill and CONSUMES its result: killed:false
+      // means the run was already dead, so re-fetch the honest state instead
+      // of pretending "Stopped".
       stopBtn.addEventListener('click', async () => {
         if (!confirm('Stop this run?')) return;
-        await fetch('/api/active_runs/' + encodeURIComponent(rid), { method: 'DELETE' });
-        stopBtn.textContent = 'Stopped';
+        _stopInFlight = true;
         stopBtn.disabled = true;
+        stopBtn.textContent = 'Stopping…';
+        let killed = false;
+        try {
+          const res = await fetch('/api/active_runs/' + encodeURIComponent(rid), { method: 'DELETE' });
+          const body = await res.json();
+          killed = !!(body && body.killed);
+        } catch (e) { /* treat as not killed; the re-fetch below tells the truth */ }
+        if (!killed) {
+          _stopInFlight = false;
+          await refreshPipeline();
+        }
+        // killed:true — the terminal overview frame flips is_alive and
+        // updateStopButton retires the control.
       });
     }
     return;

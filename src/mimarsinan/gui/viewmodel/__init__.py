@@ -9,6 +9,8 @@ from mimarsinan.gui.viewmodel.events_vm import (
 from mimarsinan.gui.viewmodel.gantt_vm import build_gantt
 from mimarsinan.gui.viewmodel.overview_vm import (
     build_overview_chart,
+    persisted_run_status,
+    persisted_step_status,
     persisted_step_view,
     semantic_groups_from_config_view,
     step_bar_badge,
@@ -32,6 +34,8 @@ __all__ = [
     "display_hints",
     "highwater",
     "metric_category",
+    "persisted_run_status",
+    "persisted_step_status",
     "persisted_step_view",
     "semantic_groups_from_config_view",
     "step_bar_badge",

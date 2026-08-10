@@ -91,6 +91,7 @@ class TestPipelineSession:
             reporter = object()
             def on_step_start(self, *a): ...
             def on_step_end(self, *a): ...
+            def on_step_failed(self, *a): ...
 
         gui = _Gui()
         session.attach_gui(gui)
@@ -98,6 +99,7 @@ class TestPipelineSession:
         assert session.reporter in session.pipeline.reporter._reporters
         assert gui.on_step_start in session.pipeline.pre_step_hooks
         assert gui.on_step_end in session.pipeline.post_step_hooks
+        assert gui.on_step_failed in session.pipeline.step_failed_hooks
 
     def test_run_dispatches_to_run_or_run_from(self, tmp_path, monkeypatch):
         session = self._session(tmp_path, stop_step="Pretraining")

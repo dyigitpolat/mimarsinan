@@ -204,6 +204,22 @@ class GUIHandle:
             lambda: self._persist_resources(step_name, working_dir, resource_descriptors)
         )
 
+    def on_step_failed(self, step_name: str, step: Any, error: BaseException) -> None:
+        """Terminal failure state for one step: persisted synchronously and
+        broadcast, so a dead run never presents as live."""
+        self._flush_live_metrics()
+        working_dir = getattr(self.pipeline, "working_directory", None)
+        if working_dir:
+            with best_effort(f"synchronous status=failed write for {step_name}", logger=logger):
+                save_step_status(
+                    working_dir,
+                    step_name,
+                    status="failed",
+                    end_time=time.time(),
+                    error=str(error),
+                )
+        self.collector.step_failed(step_name, str(error))
+
     def _persist_resources(
         self,
         step_name: str,

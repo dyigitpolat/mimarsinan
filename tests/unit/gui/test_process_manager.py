@@ -1,12 +1,17 @@
 """Unit tests for mimarsinan.gui.runtime.process_manager."""
 
 import json
+import os
 import time
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
+from mimarsinan.gui.runtime.proc_identity import (
+    parse_stat_starttime,
+    read_proc_starttime,
+)
 from mimarsinan.gui.runtime.process_manager import ManagedRun, ProcessManager
 
 
@@ -150,6 +155,113 @@ class TestRecoverOrphanedRuns:
         active = manager.list_active()
         assert len(active) == 0
         assert run_id not in manager._runs
+
+
+class TestProcStarttime:
+    """PID-reuse honesty: liveness = signal-0 probe AND kernel starttime match."""
+
+    def test_parse_stat_starttime_field_22(self):
+        # Field 22 (starttime) is the 20th token after the comm field.
+        rest = "R " + " ".join(str(i) for i in range(18)) + " 4242 999"
+        stat = f"123 (python) {rest}".encode()
+        assert parse_stat_starttime(stat) == 4242
+
+    def test_parse_handles_spaces_and_parens_in_comm(self):
+        # comm may contain spaces AND parens; fields parse from the LAST ')'.
+        rest = "S " + " ".join(str(i) for i in range(18)) + " 777 0"
+        stat = f"42 (weird name) with (parens) {rest}".encode()
+        assert parse_stat_starttime(stat) == 777
+
+    def test_parse_malformed_returns_none(self):
+        assert parse_stat_starttime(b"garbage without parens") is None
+        assert parse_stat_starttime(b"1 (x) R 2 3") is None
+
+    def test_read_proc_starttime_of_self_matches_stat_file(self):
+        pid = os.getpid()
+        value = read_proc_starttime(pid)
+        assert isinstance(value, int) and value > 0
+        with open(f"/proc/{pid}/stat", "rb") as f:
+            assert value == parse_stat_starttime(f.read())
+
+    def test_read_proc_starttime_missing_pid_returns_none(self):
+        assert read_proc_starttime(999999999) is None
+
+    def test_starttime_mismatch_means_not_alive(self, tmp_path):
+        pid = os.getpid()
+        actual = read_proc_starttime(pid)
+        assert actual is not None
+        reused = ManagedRun(
+            run_id="r", working_dir=str(tmp_path), pid=pid,
+            started_at=time.time(), starttime=actual + 1,
+        )
+        assert reused.is_alive() is False
+        same = ManagedRun(
+            run_id="r", working_dir=str(tmp_path), pid=pid,
+            started_at=time.time(), starttime=actual,
+        )
+        assert same.is_alive() is True
+
+    def test_missing_proc_falls_back_to_bare_probe(self, tmp_path, monkeypatch):
+        from mimarsinan.gui.runtime import process_spawn
+
+        monkeypatch.setattr(process_spawn, "read_proc_starttime", lambda pid: None)
+        managed = ManagedRun(
+            run_id="r", working_dir=str(tmp_path), pid=os.getpid(),
+            started_at=time.time(), starttime=123456,
+        )
+        assert managed.is_alive() is True
+
+    def test_save_run_info_records_starttime(self, tmp_path):
+        from mimarsinan.gui.runtime.persistence import load_run_info, save_run_info
+
+        save_run_info(str(tmp_path), pid=os.getpid(), step_names=["A"])
+        info = load_run_info(str(tmp_path))
+        assert info is not None
+        assert info["starttime"] == read_proc_starttime(os.getpid())
+
+    def test_recovered_run_with_reused_pid_is_not_alive(self, tmp_path):
+        """A run_info pointing at a live pid whose kernel starttime differs is a
+        DEAD run wearing a recycled pid; recovery must not call it alive."""
+        pid = os.getpid()
+        actual = read_proc_starttime(pid)
+        assert actual is not None
+        run_id = "reused_pid_phased_deployment_run_20240101_120000"
+        run_dir = tmp_path / run_id / "_GUI_STATE"
+        run_dir.mkdir(parents=True)
+        run_info = {
+            "pid": pid,
+            "starttime": actual + 1,
+            "status": "running",
+            "started_at": time.time() - 60,
+            "finished_at": None,
+            "config_summary": {"experiment_name": "reused"},
+        }
+        (run_dir / "run_info.json").write_text(json.dumps(run_info))
+
+        manager = ProcessManager(generated_files_root=str(tmp_path))
+        active = manager.list_active()
+        assert len(active) == 1
+        assert active[0]["is_alive"] is False
+        assert manager.is_run_alive(run_id) is False
+
+    def test_recovered_run_with_matching_starttime_is_alive(self, tmp_path):
+        pid = os.getpid()
+        actual = read_proc_starttime(pid)
+        run_id = "same_pid_phased_deployment_run_20240101_120000"
+        run_dir = tmp_path / run_id / "_GUI_STATE"
+        run_dir.mkdir(parents=True)
+        run_info = {
+            "pid": pid,
+            "starttime": actual,
+            "status": "running",
+            "started_at": time.time() - 60,
+            "finished_at": None,
+            "config_summary": {"experiment_name": "same"},
+        }
+        (run_dir / "run_info.json").write_text(json.dumps(run_info))
+
+        manager = ProcessManager(generated_files_root=str(tmp_path))
+        assert manager.is_run_alive(run_id) is True
 
 
 class TestSpawnRun:

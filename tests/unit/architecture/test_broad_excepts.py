@@ -28,7 +28,9 @@ ALLOWLIST = {
     "mapping/support/negative_shift.py": 1,
     "mapping/verification/suggester/hw_config_suggester_scheduled.py": 1,
     "mapping/verification/verifier/mapping_verifier_soft.py": 2,
-    "pipelining/core/engine/pipeline.py": 1,
+    # +1: the _run_step step-failed hook boundary - hooks observe
+    # (name, step, error) and the exception re-raises verbatim; nothing degrades.
+    "pipelining/core/engine/pipeline.py": 2,
     "pipelining/pipeline_steps/config/torch_mapping_step.py": 2,
     "search/optimizers/agent_evolve/batch_eval.py": 1,
     "search/optimizers/compilagent/backend/backend.py": 2,
