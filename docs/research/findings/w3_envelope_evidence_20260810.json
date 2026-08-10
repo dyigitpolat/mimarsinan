@@ -11,14 +11,14 @@
     "total_budget": 17200
   },
   {
-    "cell": "t0_03",
+    "cell": "t0_03_fresh",
     "lif_wall_s": 0,
-    "wq_wall_s": 257.9,
+    "wq_wall_s": 355.1,
     "lif_draw": 0,
     "wq_draw": 2144,
     "lif_delta": 0.0003,
     "wq_delta": -0.0024,
-    "total_consumed": 0,
+    "total_consumed": 2398,
     "total_budget": 17200
   },
   {

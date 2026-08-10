@@ -32,12 +32,18 @@ rebalance) design input.
 
 ## Verdicts on the two sweep failures
 
-- **t0_03 (sched)** — a genuine W1.2 program regression, fixed same-day: the
-  declared-capacity validation rejected multi-pass schedules whose logical
-  core total exceeds the physical chip. The invariant is now per-pass and the
-  simulated arch unrolls the physical floorplan into row-stacked replicas
-  (`floorplan_replicas`); t0_26 (sched) passed live with SANA-FE parity exact
-  over 219 296 windows on the fix.
+- **t0_03 (sched)** — a genuine W1.2 program regression, fixed same-day in
+  two layers: (1) the declared-capacity validation rejected multi-pass
+  schedules whose logical core total exceeds the physical chip — the
+  simulated arch now unrolls the physical floorplan into row-stacked replicas
+  (`floorplan_replicas`); (2) the first repair still summed cores ACROSS
+  serial stages sharing a pass index — the physical constraint is per-STAGE
+  residency (segments and passes both execute serially). Final verdict:
+  t0_03 fresh is green (deployed 0.9953, SANA-FE parity exact over 322 784
+  windows, replicas engaged); t0_26 (narrow stages) had validated the replica
+  mechanism but could not catch the summing error — only t0_03's
+  wide-segment shape could, the recurring lesson that coverage holes hide
+  exactly where the matrix has no cell.
 - **t0_05** — **pre-existing knife-edge FATAL, NOT a program regression**:
   nevresim↔HCM `exact=0.978426 max|dcount|=1` over 788 windows, byte-identical
   at program HEAD, at HEAD-minus-W3s1 (8b41545c), and at the handoff baseline
