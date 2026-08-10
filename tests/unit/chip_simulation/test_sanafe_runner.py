@@ -411,6 +411,34 @@ def test_runner_cores_per_tile_tracks_spec_resolution(monkeypatch):
     assert runner.cores_per_tile == 1  # fake spec: 1 tile of 1 packed core
 
 
+def test_runner_empty_custom_arch_path_means_unset(monkeypatch):
+    """A blank ``custom_arch_path`` (e.g. an empty config field) IS unset:
+    normalized to None at the constructor boundary, so the ``is not None``
+    arch-build gate never routes a SYNTHESIZED arch through custom-arch
+    floorplan adoption."""
+    mapping = _fake_mapping(_fake_stage("neural", hcm=_fake_hcm(_fake_hard_core())))
+    _patch_sanafe_stack(monkeypatch)  # fake LOADED arch would adopt 2 cores/tile
+    runner = SanafeRunner(
+        mapping=mapping, simulation_length=8, custom_arch_path="",
+    )
+    assert runner.custom_arch_path is None
+    runner._ensure_arch()
+    # Spec resolution (1 packed core -> 1 core/tile), NOT arch adoption (2).
+    assert runner.cores_per_tile == 1
+    geom = runner._arch_geometry
+    assert geom is not None
+    assert (geom.width, geom.height) == (1, 1)
+
+
+def test_runner_custom_preset_with_empty_arch_path_is_still_loud():
+    mapping = _fake_mapping(_fake_stage("neural", hcm=_fake_hcm(_fake_hard_core())))
+    with pytest.raises(ValueError, match="sanafe_custom_arch_path"):
+        SanafeRunner(
+            mapping=mapping, simulation_length=8,
+            arch_preset="custom", custom_arch_path="",
+        )
+
+
 def test_runner_custom_arch_adopts_loaded_floorplan(monkeypatch):
     """With a user arch YAML the loaded architecture IS the floorplan SSOT:
     tile grouping comes from its tiles, never from synthesis."""

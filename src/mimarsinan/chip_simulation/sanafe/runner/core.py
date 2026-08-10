@@ -70,6 +70,10 @@ class SanafeRunner(SanafeNeuralStageMixin, SanafeNeuralStageRecordMixin, SanafeS
         self.firing_mode = behavior.firing_mode
         self.ttfs_cycle_schedule = str(ttfs_cycle_schedule)
         behavior.require_backend("sanafe")
+        # "" and None both mean "no custom arch": normalize at the boundary
+        # so every downstream ``is not None`` gate (arch build, floorplan
+        # adoption) never routes a SYNTHESIZED arch down the custom-arch path.
+        custom_arch_path = custom_arch_path or None
         if arch_preset == CUSTOM_PRESET_NAME:
             if not custom_arch_path:
                 raise ValueError(
