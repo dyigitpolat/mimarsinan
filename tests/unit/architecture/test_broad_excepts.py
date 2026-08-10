@@ -35,7 +35,6 @@ ALLOWLIST = {
     "search/optimizers/compilagent/backend/backend_layout.py": 1,
     "search/optimizers/compilagent/compilagent_optimizer.py": 1,
     "search/optimizers/llm/trace.py": 1,
-    "search/optimizers/nsga2_optimizer.py": 1,
     "search/problems/joint/evaluate.py": 6,
     "search/problems/joint/validate.py": 5,
     # [MBH-DRAWS] re-raising boundary: a failed conversion draw is a measured

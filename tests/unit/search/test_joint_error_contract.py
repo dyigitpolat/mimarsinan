@@ -1,14 +1,17 @@
 """Error-contract tests for the joint search problem mixins.
 
-Candidate-scoped failures degrade to explicit invalid/penalty results with a
-warning log; problem-level (candidate-independent) failures propagate.
+The typed taxonomy: candidate-scoped failures in the validate path degrade to
+explicit invalid results with a warning log; candidate-scoped failures in the
+evaluate path cross the problem boundary as ``CandidateInfeasibleError`` (the
+optimizer converts them to penalties); problem-level (candidate-independent)
+failures propagate untyped and abort.
 """
 
 import logging
 
 import pytest
 
-from mimarsinan.search.problem import ValidationResult
+from mimarsinan.search.problem import CandidateInfeasibleError, ValidationResult
 from mimarsinan.search.problems.joint.evaluate import JointEvaluateMixin
 from mimarsinan.search.problems.joint.types import ValidationEntry
 from mimarsinan.search.problems.joint.validate import JointValidateMixin
@@ -106,9 +109,10 @@ class _EvaluateHarness(JointEvaluateMixin):
     accuracy_seed = 0
     search_mode = "joint"
 
-    def __init__(self):
+    def __init__(self, inner_error=None):
         self._cache = {}
         self._validation_cache = {}
+        self._inner_error = inner_error
         self.objectives = [
             ObjectiveSpec(ACCURACY_OBJECTIVE_NAME, "max"),
             ObjectiveSpec("total_params", "min"),
@@ -124,7 +128,7 @@ class _EvaluateHarness(JointEvaluateMixin):
         raise RuntimeError("training exploded")
 
     def _evaluate_inner(self, mc, pcfg):
-        raise RuntimeError("inner exploded")
+        raise self._inner_error
 
 
 class TestEvaluateErrorContract:
@@ -143,12 +147,72 @@ class TestEvaluateErrorContract:
             for r in caplog.records
         )
 
-    def test_evaluate_penalizes_inner_failure_and_warns(self, caplog):
-        harness = _EvaluateHarness()
-        with caplog.at_level(logging.WARNING, logger=EVALUATE_LOGGER):
-            obj = harness.evaluate(_config())
-        assert obj == harness._penalty_objectives()
-        assert any(
-            r.levelno == logging.WARNING and "inner exploded" in r.getMessage()
-            for r in caplog.records
+    def test_evaluate_propagates_candidate_infeasibility_typed(self):
+        # The problem boundary raises typed; converting to penalties is the
+        # optimizer's job, so nothing may be swallowed here.
+        harness = _EvaluateHarness(
+            inner_error=CandidateInfeasibleError("candidate collapsed"),
         )
+        with pytest.raises(CandidateInfeasibleError, match="candidate collapsed"):
+            harness.evaluate(_config())
+
+    def test_evaluate_propagates_problem_level_inner_failure(self):
+        harness = _EvaluateHarness(inner_error=RuntimeError("inner exploded"))
+        with pytest.raises(RuntimeError, match="inner exploded"):
+            harness.evaluate(_config())
+
+
+class _InnerHarness(JointEvaluateMixin):
+    """Exercises the REAL ``_evaluate_inner`` classification of raise-sites."""
+
+    accuracy_seed = 0
+    search_mode = "joint"
+
+    def __init__(self, build_error=None, mapper_error=None):
+        self._cache = {}
+        self._validation_cache = {}
+        self._build_error = build_error
+        self._mapper_error = mapper_error
+        self.objectives = [ObjectiveSpec("total_params", "min")]
+
+    def validate_detailed(self, configuration):
+        return ValidationResult(is_valid=True)
+
+    def _penalty_objectives(self):
+        return {s.name: (0.0 if s.goal == "max" else 1e18) for s in self.objectives}
+
+    def _ensure_hw_only_cache(self):
+        raise RuntimeError("hw-only fixture broken")
+
+    def _build_raw_model(self, mc, pcfg):
+        if self._build_error is not None:
+            raise self._build_error
+        return object(), 1.0
+
+    def _ensure_mapper_repr(self, model):
+        if self._mapper_error is not None:
+            raise self._mapper_error
+        return model
+
+    def _collect_softcores(self, model, pcfg):
+        raise AssertionError("should not be reached")
+
+
+class TestEvaluateInnerRaiseSiteClassification:
+    def test_candidate_model_build_failure_raises_typed(self):
+        harness = _InnerHarness(build_error=ValueError("candidate arch invalid"))
+        with pytest.raises(CandidateInfeasibleError, match="candidate arch invalid") as ei:
+            harness._evaluate_inner({}, {})
+        assert isinstance(ei.value.__cause__, ValueError)
+
+    def test_candidate_mapping_collapse_raises_typed(self):
+        harness = _InnerHarness(mapper_error=RuntimeError("conversion collapsed"))
+        with pytest.raises(CandidateInfeasibleError, match="conversion collapsed") as ei:
+            harness._evaluate_inner({}, {})
+        assert isinstance(ei.value.__cause__, RuntimeError)
+
+    def test_hw_only_fixture_failure_propagates_untyped(self):
+        harness = _InnerHarness()
+        harness.search_mode = "hardware"
+        with pytest.raises(RuntimeError, match="hw-only fixture broken"):
+            harness._evaluate_inner({}, {})

@@ -11,6 +11,7 @@ import torch
 from mimarsinan.mapping.platform.coalescing import normalize_coalescing_config
 from mimarsinan.search.evaluators.extrapolating_accuracy_evaluator import ExtrapolatingAccuracyEvaluator
 from mimarsinan.search.evaluators.fast_accuracy_evaluator import FastAccuracyEvaluator
+from mimarsinan.search.problem import CandidateInfeasibleError
 from mimarsinan.search.results import ACCURACY_OBJECTIVE_NAME
 
 from .types import JointHostContract, ValidationEntry, json_key
@@ -29,7 +30,11 @@ def _warn_penalized(
 
 
 class JointEvaluateMixin(JointHostContract):
-    """Accuracy and objective evaluation for :class:`JointArchHwProblem`."""
+    """Accuracy and objective evaluation for :class:`JointArchHwProblem`.
+
+    Candidate-scoped failures cross the problem boundary as
+    :class:`CandidateInfeasibleError`; anything else propagates untyped.
+    """
 
     def evaluate(self, configuration: Dict[str, Any]) -> Dict[str, float]:
         key = json_key(configuration)
@@ -44,27 +49,13 @@ class JointEvaluateMixin(JointHostContract):
 
         vc = self._validation_cache.get(key)
         if vc is not None:
-            try:
-                obj = self._evaluate_from_cache(vc, configuration)
-            except Exception as exc:
-                _warn_penalized(
-                    "_evaluate_from_cache", exc, configuration,
-                    "recording full penalty objectives",
-                )
-                obj = self._penalty_objectives()
+            obj = self._evaluate_from_cache(vc, configuration)
         else:
             mc = configuration["model_config"]
             pcfg = configuration["platform_constraints"]
             torch.manual_seed(int(self.accuracy_seed))
             np.random.seed(int(self.accuracy_seed))
-            try:
-                obj = self._evaluate_inner(mc, pcfg)
-            except Exception as exc:
-                _warn_penalized(
-                    "_evaluate_inner", exc, configuration,
-                    "recording full penalty objectives",
-                )
-                obj = self._penalty_objectives()
+            obj = self._evaluate_inner(mc, pcfg)
 
         self._cache[key] = obj
         return obj
@@ -101,6 +92,11 @@ class JointEvaluateMixin(JointHostContract):
                 np.random.seed(int(self.accuracy_seed))
                 try:
                     raw_model, _ = self._build_raw_model(mc, pcfg)
+                except Exception as exc:
+                    raise CandidateInfeasibleError(
+                        f"Candidate model build failed: {type(exc).__name__}: {exc}"
+                    ) from exc
+                try:
                     obj[ACCURACY_OBJECTIVE_NAME] = self._evaluate_accuracy(raw_model)
                 except Exception as exc:
                     _warn_penalized(
@@ -123,6 +119,7 @@ class JointEvaluateMixin(JointHostContract):
         hw_names = active_names - {ACCURACY_OBJECTIVE_NAME}
 
         if self.search_mode == "hardware":
+            # The fixed-model cache is problem-level fixture: let it propagate.
             cache = self._ensure_hw_only_cache()
             hw_obj, _err = self._compute_hw_objectives(
                 cache.softcores, pcfg, cache.total_params, cache.host_side_segment_count,
@@ -131,7 +128,12 @@ class JointEvaluateMixin(JointHostContract):
                 return self._penalty_objectives()
             return {k: v for k, v in hw_obj.items() if k in active_names}
 
-        raw_model, total_params = self._build_raw_model(mc, pcfg)
+        try:
+            raw_model, total_params = self._build_raw_model(mc, pcfg)
+        except Exception as exc:
+            raise CandidateInfeasibleError(
+                f"Candidate model build failed: {type(exc).__name__}: {exc}"
+            ) from exc
 
         obj: Dict[str, float] = {}
 
@@ -142,19 +144,16 @@ class JointEvaluateMixin(JointHostContract):
                 hw_obj, _err = self._compute_hw_objectives(
                     softcores, pcfg, total_params, host_segments,
                 )
-                if hw_obj is None:
-                    print("[JointArchHwProblem] Packing infeasible – returning full penalty")
-                    return self._penalty_objectives()
-                for k, v in hw_obj.items():
-                    if k in active_names:
-                        obj[k] = v
             except Exception as exc:
-                _warn_penalized(
-                    "HW objective computation", exc,
-                    {"model_config": mc, "platform_constraints": pcfg},
-                    "recording full penalty objectives",
-                )
+                raise CandidateInfeasibleError(
+                    f"Candidate mapping collapsed: {type(exc).__name__}: {exc}"
+                ) from exc
+            if hw_obj is None:
+                print("[JointArchHwProblem] Packing infeasible – returning full penalty")
                 return self._penalty_objectives()
+            for k, v in hw_obj.items():
+                if k in active_names:
+                    obj[k] = v
 
         if needs_accuracy:
             try:
