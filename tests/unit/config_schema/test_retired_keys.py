@@ -1,4 +1,4 @@
-"""Retired taxonomy keys: keyed migration rows, one-click ops, honest preview."""
+"""Retired config keys: scoped keyed migration rows, one-click ops, honest preview."""
 
 from mimarsinan.config_schema.resolve import resolve_draft
 from mimarsinan.config_schema.validation import (
@@ -7,13 +7,13 @@ from mimarsinan.config_schema.validation import (
 )
 
 
-def _document(**dp) -> dict:
+def _document(pc=None, **dp) -> dict:
     return {
         "data_provider_name": "MNIST_DataProvider",
         "experiment_name": "retired",
         "generated_files_path": "./generated",
         "start_step": None,
-        "platform_constraints": {},
+        "platform_constraints": dict(pc or {}),
         "deployment_parameters": {
             "model_type": "lenet5",
             "model_config": {"variant": "lenet5"},
@@ -22,13 +22,17 @@ def _document(**dp) -> dict:
     }
 
 
-def _apply_ops(dp: dict, ops) -> dict:
-    out = dict(dp)
+def _apply_ops(doc: dict, ops) -> dict:
+    """Apply remedy ops the way the wizard does: each op targets the
+    sub-document its ``scope`` names."""
+    out = {key: dict(value) if isinstance(value, dict) else value
+           for key, value in doc.items()}
     for op in ops:
+        body = out[op["scope"]]
         if op["action"] == "set":
-            out[op["key"]] = op["value"]
+            body[op["key"]] = op["value"]
         elif op["action"] == "clear":
-            out.pop(op["key"], None)
+            body.pop(op["key"], None)
     return out
 
 
@@ -61,12 +65,15 @@ class TestResolveChannel:
         ))
         row = next(e for e in res.errors if e["key"] == "spiking_mode")
         assert row["rule_id"] == "retired_key"
+        assert row["scope"] == "deployment_parameters"
         (remedy,) = row["remedies"]
+        dp = "deployment_parameters"
         assert remedy["ops"] == [
-            {"action": "set", "key": "spiking_family", "value": "ttfs"},
-            {"action": "set", "key": "spiking_variant", "value": "synchronized"},
-            {"action": "clear", "key": "spiking_mode"},
-            {"action": "clear", "key": "ttfs_cycle_schedule"},
+            {"action": "set", "key": "spiking_family", "value": "ttfs", "scope": dp},
+            {"action": "set", "key": "spiking_variant", "value": "synchronized",
+             "scope": dp},
+            {"action": "clear", "key": "spiking_mode", "scope": dp},
+            {"action": "clear", "key": "ttfs_cycle_schedule", "scope": dp},
         ]
 
     def test_unknown_legacy_value_gets_a_clear_only_remedy(self):
@@ -91,13 +98,10 @@ class TestResolveChannel:
         row = next(e for e in before.errors if e["key"] == "spiking_mode")
         (remedy,) = row["remedies"]
 
-        migrated = dict(doc)
-        migrated["deployment_parameters"] = _apply_ops(
-            doc["deployment_parameters"], remedy["ops"]
-        )
-        after = resolve_draft(migrated)
+        after = resolve_draft(_apply_ops(doc, remedy["ops"]))
         assert after.errors == []
         # identical resolved semantics: the migration preserved meaning.
         for key in ("spiking_family", "spiking_variant",
                     "spiking_mode", "ttfs_cycle_schedule"):
             assert after.resolved[key] == before.resolved[key], key
+

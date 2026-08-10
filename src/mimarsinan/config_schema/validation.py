@@ -17,7 +17,7 @@ from mimarsinan.config_schema.registry import (
     REGISTRY,
     mvm_document_errors,
     parse_deployment_document,
-    retired_spiking_key_errors,
+    retired_key_errors,
 )
 from mimarsinan.mapping.platform.coalescing import coalescing_config_errors
 from mimarsinan.tuning.orchestration.temporal_allocation import (
@@ -227,7 +227,7 @@ def validate_deployment_config(config: Dict[str, Any]) -> List[str]:
         return errors
 
     errors.extend(non_declarable_key_errors(config))
-    errors.extend(row["message"] for row in retired_spiking_key_errors(config))
+    errors.extend(row["message"] for row in retired_key_errors(config))
     errors.extend(mvm_document_errors(config))
 
     pc = config.get("platform_constraints")
