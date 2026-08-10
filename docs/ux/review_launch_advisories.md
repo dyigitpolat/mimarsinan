@@ -45,7 +45,10 @@ unacknowledged; both are re-checked inside the click handler (errors →
 first-error section, pending acks → Review & Launch). Launch-status line
 precedence, top to bottom:
 
-1. resolving — "Resolving the draft…" (dim), button disabled;
+1. no resolve yet (first load, or just after a draft reset, until the first
+   round-trip lands) — "Resolving the draft…" (dim), button disabled. A
+   resolve IN FLIGHT never re-enters this branch: the previous resolve's
+   state stays on screen (stale shimmer) until the new payload replaces it;
 2. errors — `✖ N error(s) block(s) launch — review` (rose button-line →
    first error section);
 3. pending acks — `⚠ N advisor(y|ies) need(s) acknowledgment — review`
@@ -70,21 +73,34 @@ precedence, top to bottom:
 
 ## The three review states
 
-1. **No advisories** (e.g. starter baseline, plain lif): no advisory card, no
+The FRESH STARTER opens in state 2, never state 1: the baseline document pins
+no mode keys, the derivation resolves `spiking_family=lif,
+spiking_variant=streamed`, and streamed lif always carries its
+structural-contract advisory. The genuinely advisory-free state 1 sits one
+knob away (`spiking_variant=synchronized`). Both facts are programmatically
+pinned (`tests/unit/gui/test_wizard_starter.py::TestStarterAdvisoryReality`).
+
+1. **No advisories** (`spiking_variant=synchronized` on the starter — verified
+   to serve zero advisory rows; NOT the fresh draft): no advisory card, no
    rail badge, no nav badge; launch status `✓ N-step pipeline ready`; Launch
    enabled. Review's first visible card is the run group / Derived values.
-2. **Advisories, none gating** (e.g. `spiking_family=lif,
-   spiking_variant=streamed` → ADV-STREAMED-CONTRACT, INFO): advisory card
-   first in Review with NO checkbox; rail badge `⚠ 1 advisory` (not
-   pending-styled); nav badge `1`; launch status `✓ … ready` + `⚠ 1
+2. **Advisories, none gating** — THE FRESH STARTER (derived streamed lif →
+   ADV-STREAMED-CONTRACT, INFO): advisory card first in Review with NO
+   checkbox; rail badge `⚠ 1 advisory` (not pending-styled) under the verdict
+   pill; nav badge `1` on Review & Launch; launch status `✓ … ready` + `⚠ 1
    deployment advisory — see Review & Launch`; Launch enabled throughout.
-3. **Gating advisories** (e.g. `spiking_family=ttfs,
-   spiking_variant=cascaded` → ADV-CASC-UNSUPPORTED, UNSUPPORTED; or lif +
-   `firing_mode=Novena` → ADV-NOVENA-CHARGE with `mandate_violation`):
-   - *pending*: card shows the amber dashed acknowledge row; rail badge
-     `⚠ 1 advisory · 1 to acknowledge` (pending style); launch status `⚠ 1
-     advisory needs acknowledgment — review`; Launch DISABLED, and a click
-     lands on the advisory card.
+3. **Gating advisories**:
+   - `spiking_family=ttfs, spiking_variant=cascaded` → ADV-CASC-UNSUPPORTED
+     (UNSUPPORTED) as the SOLE row (the streamed contract is lif-only);
+   - `firing_mode=Novena` under lif → ADV-NOVENA-CHARGE (RISK) with
+     `mandate_violation`. On the starter's streamed variant it arrives
+     ALONGSIDE the streamed INFO row — 2 advisories, 1 gating, rail badge
+     `⚠ 2 advisories · 1 to acknowledge`; under synchronized it is the sole
+     row.
+   - *pending* (cascaded example): card shows the amber dashed acknowledge
+     row; rail badge `⚠ 1 advisory · 1 to acknowledge` (pending style);
+     launch status `⚠ 1 advisory needs acknowledgment — review`; Launch
+     DISABLED, and a click lands on the advisory card.
    - *acknowledged*: checkbox ticked, row turns green-solid "Acknowledged —
      launch unblocked for this advisory"; rail badge back to `⚠ 1 advisory`;
      launch status `✓ … ready` + the non-blocking advisory warn line; Launch
@@ -92,12 +108,16 @@ precedence, top to bottom:
 
 ## Manual verification steps (DOM wiring the node tests cannot cover)
 
-From a fresh `run.py --ui` wizard:
+From a fresh `run.py --ui` wizard (the flow passes states 2 → 1 → 3):
 
-1. Fresh starter draft → state 1: assert no advisory card/badges, Launch
-   enabled.
-2. Semantics → `spiking_variant=streamed` → state 2: INFO card first in
-   Review, no checkbox, badges show 1, Launch stays enabled.
+1. Fresh starter draft → state 2 (the wizard OPENS with an advisory): the
+   ADV-STREAMED-CONTRACT INFO card first in Review with no checkbox; rail
+   badge `⚠ 1 advisory`; nav badge `1`; launch status ready + advisory warn
+   line; Launch enabled.
+2. Semantics → `spiking_variant=synchronized` → state 1: advisory card, rail
+   badge and nav badge all gone; launch status the bare `✓ N-step pipeline
+   ready`; Launch enabled; Review's first card is the run group / Derived
+   values.
 3. Semantics → ttfs family, cascaded variant → state 3 pending: UNSUPPORTED
    card + checkbox, rail badge pending style, Launch disabled; click Launch →
    lands on the advisory card, nothing submits.
@@ -113,5 +133,6 @@ From a fresh `run.py --ui` wizard:
 8. Reload the page mid-acknowledgment → acks are gone (never persisted).
 
 Screenshots for the owner review should capture: states 1/2/3-pending/
-3-acknowledged, the rail badge in both styles, the nav badge beside a rose
-error badge, and the reset-on-edit flow (step 5).
+3-acknowledged (the state-2 shot IS the wizard's first-load look), the rail
+badge in both styles, the nav badge beside a rose error badge, and the
+reset-on-edit flow (step 5).
