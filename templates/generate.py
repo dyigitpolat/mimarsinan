@@ -295,19 +295,18 @@ T0 = [
          note="mvm conv/weight-bank exercise (shared-bank cores)"),
     # [wsm V4 F5+AQ] the weight-programming boundary row: platform H's pool
     # forces scheduled passes; bank_clustered streams same-bank instances
-    # over a resident core-set (weights program once, W_prog report armed via
-    # allow_weight_reuse) and the boundary grid (activation_bits) composes
-    # with scheduling. The value twin cert (FATAL) certifies the scheduled
-    # packed program bit-exactly against the unscheduled identity program.
-    # Pass budget law: bank_clustered is feasible only when the minimal
-    # resident set fits the pool — loads(b)=ceil(n_b/passes) ≤ pool — so
-    # conv1's 784 instances on H's 12-core pool need passes ≥ 66 (measured:
+    # over a resident core-set (weights program once — the always-on reuse
+    # and W_prog reports show it) and the boundary grid (activation_bits)
+    # composes with scheduling. The value twin cert (FATAL) certifies the
+    # scheduled packed program bit-exactly against the unscheduled identity
+    # program. Pass budget law: bank_clustered is feasible only when the
+    # minimal resident set fits the pool — loads(b)=ceil(n_b/passes) ≤ pool —
+    # so conv1's 784 instances on H's 12-core pool need passes ≥ 66 (measured:
     # an under-declared budget silently falls back to pool, reuse 0.16).
     dict(n=44, mode="mvm", quant="wq", wb=8, vehicle="lenet5", platform="H",
          scheduling=True, tags=["sched", "pruned"], pruned=0.05,
          extra_dp={"schedule_policy": "bank_clustered"},
-         extra_pc={"activation_bits": 8, "allow_weight_reuse": True,
-                   "max_schedule_passes": 128},
+         extra_pc={"activation_bits": 8, "max_schedule_passes": 128},
          note="wsm flagship: bank-clustered scheduled passes on a "
               "constrained pool + boundary AQ, twin certs FATAL"),
 ]
@@ -343,7 +342,7 @@ T1 = [
          scheduling=True, tags=["wall_risk", "sched"],
          extra_dp={"schedule_policy": "bank_clustered",
                    "simulation_batch_size": 64},
-         extra_pc={"allow_weight_reuse": True, "max_schedule_passes": 64}),
+         extra_pc={"max_schedule_passes": 64}),
     # [wsm N1] the weight-programming boundary in the EVENT domain at tier-1
     # scale — an exact minimal pair with t1_06 (same vehicle/mode/S/depth,
     # scheduling + the bank-aware policy the only difference). Measured
@@ -356,7 +355,7 @@ T1 = [
     dict(n=10, mode="lifsync", quant="wq", wb=8, s=32, vehicle="deepcnn32",
          depth=8, regime="from_scratch", scheduling=True, tags=["sched"],
          extra_dp={"schedule_policy": "bank_clustered"},
-         extra_pc={"allow_weight_reuse": True, "max_schedule_passes": 128}),
+         extra_pc={"max_schedule_passes": 128}),
     # [mvm AQ] boundary value-grid quantization at ViT scale — the minimal
     # pair with t1_09 (activation_bits absent -> declared). Exercises AQ x
     # scheduling composition and the R/C certs over ~18M neuron-windows.
@@ -364,8 +363,7 @@ T1 = [
          scheduling=True, tags=["wall_risk", "sched", "aq8"],
          extra_dp={"schedule_policy": "bank_clustered",
                    "simulation_batch_size": 64},
-         extra_pc={"allow_weight_reuse": True, "max_schedule_passes": 64,
-                   "activation_bits": 8}),
+         extra_pc={"max_schedule_passes": 64, "activation_bits": 8}),
     # [mvm breadth] a SECOND value-domain architecture family at tier-1: the
     # mixer's token-instanced FCs are the FC-weight-bank mechanism (V1) at
     # scale on a non-transformer family, trained from scratch (t0_42 proves
@@ -373,7 +371,7 @@ T1 = [
     dict(n=12, mode="mvm", quant="wq", wb=8, vehicle="mixerc10",
          regime="from_scratch", scheduling=True, tags=["sched"],
          extra_dp={"schedule_policy": "bank_clustered"},
-         extra_pc={"allow_weight_reuse": True, "max_schedule_passes": 128}),
+         extra_pc={"max_schedule_passes": 128}),
 ]
 
 T1_VEHICLES = {
