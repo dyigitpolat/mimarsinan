@@ -639,6 +639,26 @@ class TestDeclaredCapacityFloorplan:
         # The LAST tile carries the full complement (idle slots defined).
         assert yaml.count(f"- name: t{spec.n_tiles - 1}_c") == 4
 
+    def test_explicit_grid_without_capacity_is_honored_not_ignored(self):
+        # A direct runner caller declaring a grid but no platform capacity:
+        # the grid is a full-floorplan declaration over the packed cores —
+        # silently ignoring it would be a fail-loud violation.
+        mapping = _fake_mapping(_fake_stage("neural", _fake_hcm(*[(3, 2)] * 5)))
+        spec = derive_arch_spec(
+            mapping, preset_name="loihi",
+            cores_per_tile=2, tile_grid_rows=1, tile_grid_cols=3,
+        )
+        assert spec.n_tiles == 3
+        assert spec.n_cores_per_tile == [2, 2, 2]
+        assert (spec.mesh_width, spec.mesh_height) == (3, 1)
+
+    def test_half_declared_grid_without_capacity_is_loud(self):
+        mapping = _fake_mapping(_fake_stage("neural", _fake_hcm(*[(3, 2)] * 5)))
+        with pytest.raises(ValueError, match="tile_grid"):
+            derive_arch_spec(
+                mapping, preset_name="loihi", tile_grid_rows=2,
+            )
+
 
 # ---------------------------------------------------------------------------
 # preset 'custom' — accepted iff a user arch YAML is declared (W1.2)

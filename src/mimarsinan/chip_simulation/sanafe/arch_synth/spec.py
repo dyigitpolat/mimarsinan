@@ -159,7 +159,9 @@ def derive_arch_spec(
     platform (``resolve_floorplan``): every tile carries the full complement,
     idle slots are defined (not phantom), and the floorplan is independent of
     the packed core count. With 0 (a runner outside a pipeline, no declared
-    platform) the legacy packed-count derivation applies.
+    platform) the legacy packed-count derivation applies — unless an explicit
+    tile grid is declared, which is honored as a full floorplan over the
+    packed cores (never silently ignored).
     """
     preset = _resolve_preset(preset_name, custom_arch_path)
 
@@ -189,15 +191,20 @@ def derive_arch_spec(
 
     plugins = _resolve_plugins(preset_name)
 
-    if declared_core_capacity > 0:
-        if packed_cores > declared_core_capacity:
+    effective_capacity = int(declared_core_capacity)
+    if effective_capacity <= 0 and (tile_grid_rows or tile_grid_cols):
+        # An explicit grid is a full-floorplan declaration: honor it over the
+        # packed cores rather than silently ignore it.
+        effective_capacity = packed_cores
+    if effective_capacity > 0:
+        if packed_cores > effective_capacity:
             raise ValueError(
                 f"the packed mapping needs {packed_cores} cores but the "
-                f"declared platform capacity is {declared_core_capacity} — "
+                f"declared platform capacity is {effective_capacity} — "
                 "the mapping cannot be placed on the declared floorplan"
             )
         cores_per_tile, rows, cols = resolve_floorplan(
-            declared_core_capacity, preset_name,
+            effective_capacity, preset_name,
             cores_per_tile, tile_grid_rows, tile_grid_cols,
         )
         n_tiles = rows * cols
