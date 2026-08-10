@@ -620,6 +620,8 @@ body {
   font-size: 10px; font-weight: 500; color: var(--text-muted);
   font-family: 'JetBrains Mono', ui-monospace, monospace;
   white-space: nowrap;
+  /* Reset the card-header's uppercase styling when hosted there. */
+  text-transform: none; letter-spacing: 0;
 }
 .hw-colorbar-img {
   display: block; width: 96px; height: 10px;
