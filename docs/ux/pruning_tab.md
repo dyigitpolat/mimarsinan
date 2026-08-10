@@ -1,11 +1,19 @@
 # Pruning tab — UX spec (owner pixel review)
 
-Scope: the "Pruning" tab on the Pruning Adaptation step-detail page
-(`gui/static/js/pruning-tab.js`, data from
-`gui/snapshot/model_snapshot.py::snapshot_pruning_layers` via
-`build_step_snapshot`). The tab is mounted only for the step named by the
-registry constant `PRUNING_ADAPTATION_STEP`
-(`pipelining/core/step_plan.py`; re-exported by `core/pipelines/deployment_specs.py`).
+Scope: the "Pruning" tab, mounted on TWO steps with an explicit source note:
+
+- **Pruning Adaptation** (`snapshot_pruning_layers`, model mask buffers) —
+  "as committed by this step". On configurations whose structured decision
+  commits later, this honestly shows zero structured pruning (measured:
+  t0_51's model buffers are all-kept at this step).
+- **Soft Core Mapping** (`snapshot_pruning_layers_from_ir`, the pruned IR —
+  the deployment authority) — "as deployed": per-perceptron pre→post
+  dims, achieved sparsity, and mask maps AFTER the IR compaction that
+  actually deploys. This is the view that answers the owner's pre→post
+  requirement on every pruned run.
+
+Step names come from the registry constants `PRUNING_ADAPTATION_STEP` /
+`SOFT_CORE_MAPPING_STEP` (`pipelining/core/step_plan.py`).
 
 Conventions the tab inherits:
 
