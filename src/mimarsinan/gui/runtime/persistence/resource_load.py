@@ -24,10 +24,10 @@ def load_resource_from_disk(
 ) -> bytes | None:
     """Bytes for one persisted resource, rendering from its saved source on a miss.
 
-    A run with no monitor attached renders nothing and persists source data
-    instead, so the first fetch of a resource is also what produces it. The
-    rendered bytes are written back under the normal resource path, which makes
-    every later fetch -- and every later attach -- a plain file read.
+    UI-resolution renders are produced once at snapshot-persist time for every
+    policy; this miss path is the backstop (legacy runs, evicted artifacts) and
+    the ``variant="full"`` on-demand render. Rendered bytes are written back
+    under the normal resource path, so every later fetch is a plain file read.
 
     ``variant="full"`` serves the on-demand near-native render (cached as a
     sibling ``.full`` file); it needs the persisted SOURCE and returns ``None``
