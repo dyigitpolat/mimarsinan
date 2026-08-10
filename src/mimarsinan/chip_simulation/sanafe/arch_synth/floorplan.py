@@ -78,9 +78,14 @@ def resolve_floorplan(
     ``tile_grid_cols`` grid wins over the derived most-square exact grid of
     ``n_tiles = ceil(declared / cores_per_tile)`` tiles.
 
-    Hard invariants (loud ValueError): the grid is EXACT (``rows*cols ==
-    n_tiles`` — phantom tiles SIGFPE SANA-FE's C++ NoC) and holds the declared
-    capacity (``rows*cols*cores_per_tile >= declared_core_capacity``).
+    Hard invariant (loud ValueError): an explicit grid is valid iff it holds
+    the declared capacity (``rows*cols*cores_per_tile >=
+    declared_core_capacity``). An OVERSIZED explicit grid is legitimate — a
+    fixed physical chip whose surplus tiles sit idle — and safe: the arch
+    builder defines every ``rows*cols`` tile, so no tile the NoC can walk is
+    phantom (phantom tiles SIGFPE SANA-FE's C++ NoC). The derived grid needs
+    no runtime check: it is an exact factorization holding the capacity by
+    construction.
     """
     declared = int(declared_core_capacity)
     if declared <= 0:
@@ -110,21 +115,21 @@ def resolve_floorplan(
             cpt += 1
 
     if rows > 0:
-        n_tiles = rows * cols
+        # Explicit grid: a FIXED physical chip. The one REAL validation is
+        # capacity — oversized (idle tiles) is legitimate, and safe because
+        # every rows*cols tile is defined by the arch builder (the SIGFPE
+        # invariant is pinned at the YAML level in test_sanafe_arch_synth).
+        if rows * cols * cpt < declared:
+            raise ValueError(
+                f"floorplan capacity {rows}x{cols} tiles x {cpt} cores/tile = "
+                f"{rows * cols * cpt} cores cannot hold the declared platform "
+                f"capacity of {declared} cores"
+            )
     else:
+        # Derived grid: exact most-square factorization of ceil(declared/cpt)
+        # tiles — exactness (no phantom tiles) and capacity both hold by
+        # construction, so nothing runtime-checkable remains on this path.
         n_tiles = -(-declared // cpt)
         width, height = _mesh_dims(n_tiles)
         cols, rows = width, height
-
-    if rows * cols != n_tiles:
-        raise ValueError(
-            f"tile grid {rows}x{cols} is not exact for {n_tiles} tiles "
-            "(phantom tiles SIGFPE SANA-FE's NoC)"
-        )
-    if rows * cols * cpt < declared:
-        raise ValueError(
-            f"floorplan capacity {rows}x{cols} tiles x {cpt} cores/tile = "
-            f"{rows * cols * cpt} cores cannot hold the declared platform "
-            f"capacity of {declared} cores"
-        )
     return Floorplan(cores_per_tile=cpt, rows=rows, cols=cols)

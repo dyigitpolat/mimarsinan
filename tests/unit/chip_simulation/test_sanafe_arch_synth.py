@@ -446,8 +446,10 @@ class TestResolveFloorplan:
     """The floorplan is a pure function of the DECLARED platform, never of the
     packed model: explicit keys win, else the preset's physical tile wiring
     (loihi.yaml: 4 cores/tile; truenorth.yaml: 1 core/tile), else
-    ceil(sqrt(declared)). rows*cols == n_tiles exactly (phantom tiles SIGFPE
-    SANA-FE's C++ NoC) and the grid must hold the declared capacity."""
+    ceil(sqrt(declared)). An explicit grid is valid iff it holds the declared
+    capacity (rows*cols*cores_per_tile >= declared); an OVERSIZED grid is a
+    legitimate fixed physical chip whose idle tiles are DEFINED, never phantom
+    (phantom tiles SIGFPE SANA-FE's C++ NoC)."""
 
     def test_explicit_keys_win_over_preset_default(self):
         from mimarsinan.chip_simulation.sanafe.arch_synth.floorplan import (
@@ -526,6 +528,17 @@ class TestResolveFloorplan:
         # 2x2 tiles x 4 cores = 16 slots < 64 declared.
         with pytest.raises(ValueError, match="capacity"):
             resolve_floorplan(64, "loihi", 4, 2, 2)
+
+    def test_oversized_explicit_grid_is_accepted(self):
+        from mimarsinan.chip_simulation.sanafe.arch_synth.floorplan import (
+            resolve_floorplan,
+        )
+
+        # A fixed physical 4x4 chip of 4-core tiles (64 slots) legitimately
+        # hosts a declared capacity of 40 cores: the surplus tiles are idle,
+        # defined tiles — never phantom.
+        cpt, rows, cols = resolve_floorplan(40, "loihi", 4, 4, 4)
+        assert (cpt, rows, cols) == (4, 4, 4)
 
     def test_nonpositive_declared_capacity_is_rejected(self):
         from mimarsinan.chip_simulation.sanafe.arch_synth.floorplan import (
@@ -638,6 +651,35 @@ class TestDeclaredCapacityFloorplan:
         assert yaml.count("- name: tile") == spec.n_tiles
         # The LAST tile carries the full complement (idle slots defined).
         assert yaml.count(f"- name: t{spec.n_tiles - 1}_c") == 4
+
+    def test_oversized_explicit_grid_defines_every_walkable_tile(self):
+        # The SIGFPE invariant for a FIXED physical chip larger than the
+        # declared capacity: every tile the NoC can walk (mesh width x height)
+        # is defined in the YAML with its full core complement — surplus
+        # capacity means idle tiles, never phantom ones.
+        mapping = _fake_mapping(_fake_stage("neural", _fake_hcm(*[(3, 2)] * 3)))
+        spec = derive_arch_spec(
+            mapping, preset_name="loihi", declared_core_capacity=40,
+            cores_per_tile=4, tile_grid_rows=4, tile_grid_cols=4,
+        )
+        assert spec.n_tiles == 16
+        assert spec.n_cores_per_tile == [4] * 16
+        assert (spec.mesh_width, spec.mesh_height) == (4, 4)
+        yaml = _render_arch_yaml(spec)
+        assert yaml.count("- name: tile") == spec.mesh_width * spec.mesh_height
+        assert "width: 4" in yaml
+        assert "height: 4" in yaml
+        for tile_idx in range(16):
+            assert yaml.count(f"- name: t{tile_idx}_c") == 4
+
+    def test_undersized_explicit_grid_is_loud_through_derive(self):
+        mapping = _fake_mapping(_fake_stage("neural", _fake_hcm(*[(3, 2)] * 3)))
+        # 2x2 tiles x 4 cores = 16 slots < 40 declared.
+        with pytest.raises(ValueError, match="capacity"):
+            derive_arch_spec(
+                mapping, preset_name="loihi", declared_core_capacity=40,
+                cores_per_tile=4, tile_grid_rows=2, tile_grid_cols=2,
+            )
 
     def test_explicit_grid_without_capacity_is_honored_not_ignored(self):
         # A direct runner caller declaring a grid but no platform capacity:
