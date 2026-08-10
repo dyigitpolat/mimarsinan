@@ -180,6 +180,161 @@ class TestResourceEndpoints:
         assert calls == [1]  # cached after first fetch
 
 
+class TestResourceETag:
+    """Every resource route answers with an ETag of the served bytes and
+    honors ``If-None-Match`` with an empty-body 304."""
+
+    def _put_png(self, collector: DataCollector) -> None:
+        store = collector.get_resource_store()
+        assert store is not None
+        store.put("s1", ResourceDescriptor(
+            kind="ir_core_heatmap", rid="core/0",
+            source=CallableSource(_png_bytes), media_type="image/png",
+        ))
+
+    def test_png_etag_round_trip(
+        self, collector_with_store: DataCollector, client: TestClient
+    ) -> None:
+        self._put_png(collector_with_store)
+        r1 = client.get("/api/steps/s1/resources/ir_core_heatmap/core/0")
+        assert r1.status_code == 200
+        etag = r1.headers.get("etag")
+        assert etag
+        r2 = client.get(
+            "/api/steps/s1/resources/ir_core_heatmap/core/0",
+            headers={"If-None-Match": etag},
+        )
+        assert r2.status_code == 304
+        assert r2.content == b""
+        assert r2.headers.get("etag") == etag
+        assert "cache-control" in r2.headers
+
+    def test_json_etag_round_trip(
+        self, collector_with_store: DataCollector, client: TestClient
+    ) -> None:
+        store = collector_with_store.get_resource_store()
+        store.put("s1", ResourceDescriptor(
+            kind="connectivity", rid="seg/0",
+            source=CallableSource(lambda: {"spans": [1, 2]}),
+            media_type="application/json",
+        ))
+        r1 = client.get("/api/steps/s1/resources/connectivity/seg/0")
+        assert r1.status_code == 200 and r1.headers.get("etag")
+        r2 = client.get(
+            "/api/steps/s1/resources/connectivity/seg/0",
+            headers={"If-None-Match": r1.headers["etag"]},
+        )
+        assert r2.status_code == 304
+        assert r2.content == b""
+
+    def test_mismatched_etag_serves_the_body(
+        self, collector_with_store: DataCollector, client: TestClient
+    ) -> None:
+        self._put_png(collector_with_store)
+        r = client.get(
+            "/api/steps/s1/resources/ir_core_heatmap/core/0",
+            headers={"If-None-Match": '"not-the-etag"'},
+        )
+        assert r.status_code == 200
+        assert r.content == _png_bytes()
+
+    def test_disk_route_etag_round_trip(self, tmp_path: Path, monkeypatch) -> None:
+        runs_root = tmp_path / "generated"
+        run_dir = runs_root / "hist_run"
+        (run_dir / "_RUN_CONFIG").mkdir(parents=True)
+        monkeypatch.setenv("MIMARSINAN_RUNS_ROOT", str(runs_root))
+        save_resource_to_disk(
+            str(run_dir), "s1", "ir_core_heatmap", "core/0",
+            _png_bytes(), media_type="image/png",
+        )
+        client = TestClient(create_app(DataCollector()))
+        url = "/api/runs/hist_run/steps/s1/resources/ir_core_heatmap/core/0"
+        r1 = client.get(url)
+        assert r1.status_code == 200 and r1.headers.get("etag")
+        r2 = client.get(url, headers={"If-None-Match": r1.headers["etag"]})
+        assert r2.status_code == 304
+        assert r2.content == b""
+
+    def test_new_kinds_are_servable(
+        self, collector_with_store: DataCollector, client: TestClient
+    ) -> None:
+        """The colorbar family asset and bias strips are fetchable kinds."""
+        store = collector_with_store.get_resource_store()
+        for kind, rid in (("heatmap_colorbar", "ir_graph"), ("ir_core_bias", "core/0")):
+            store.put("s1", ResourceDescriptor(
+                kind=kind, rid=rid,
+                source=CallableSource(_png_bytes), media_type="image/png",
+            ))
+            r = client.get(f"/api/steps/s1/resources/{kind}/{rid}")
+            assert r.status_code == 200, kind
+            assert r.headers["content-type"].startswith("image/png")
+
+
+class TestFullResolutionVariant:
+    """``?res=full`` renders the persisted SOURCE near-natively; the default
+    GET keeps serving the pre-rendered UI-resolution artifact."""
+
+    def _run_dir_with_source(self, tmp_path: Path, monkeypatch) -> str:
+        import numpy as np
+        from mimarsinan.gui.resources import HeatmapSource
+        from mimarsinan.gui.runtime.persistence import save_resource_source
+
+        runs_root = tmp_path / "generated"
+        run_dir = runs_root / "hist_run"
+        (run_dir / "_RUN_CONFIG").mkdir(parents=True)
+        monkeypatch.setenv("MIMARSINAN_RUNS_ROOT", str(runs_root))
+        source = HeatmapSource(np.zeros((800, 600)))
+        save_resource_source(
+            str(run_dir), "s1", "ir_core_heatmap", "core/0", source,
+        )
+        return str(run_dir)
+
+    def _dims(self, content: bytes) -> tuple[int, int]:
+        import io
+        from PIL import Image
+
+        return Image.open(io.BytesIO(content)).size  # (width, height)
+
+    def test_default_serves_ui_resolution_and_full_serves_native(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        self._run_dir_with_source(tmp_path, monkeypatch)
+        client = TestClient(create_app(DataCollector()))
+        url = "/api/runs/hist_run/steps/s1/resources/ir_core_heatmap/core/0"
+
+        assert self._dims(client.get(url).content) == (300, 400)
+        assert self._dims(client.get(url + "?res=full").content) == (600, 800)
+        # The UI artifact must still be the default after a full render.
+        assert self._dims(client.get(url).content) == (300, 400)
+
+    def test_full_variant_is_cached_on_disk(self, tmp_path: Path, monkeypatch) -> None:
+        run_dir = self._run_dir_with_source(tmp_path, monkeypatch)
+        client = TestClient(create_app(DataCollector()))
+        url = "/api/runs/hist_run/steps/s1/resources/ir_core_heatmap/core/0"
+        first = client.get(url + "?res=full").content
+        cached = list(Path(run_dir).rglob("*.full.png"))
+        assert len(cached) == 1
+        assert cached[0].read_bytes() == first
+
+    def test_full_without_source_falls_back_to_the_artifact(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        runs_root = tmp_path / "generated"
+        run_dir = runs_root / "hist_run"
+        (run_dir / "_RUN_CONFIG").mkdir(parents=True)
+        monkeypatch.setenv("MIMARSINAN_RUNS_ROOT", str(runs_root))
+        save_resource_to_disk(
+            str(run_dir), "s1", "ir_core_heatmap", "core/0",
+            _png_bytes(), media_type="image/png",
+        )
+        client = TestClient(create_app(DataCollector()))
+        r = client.get(
+            "/api/runs/hist_run/steps/s1/resources/ir_core_heatmap/core/0?res=full"
+        )
+        assert r.status_code == 200
+        assert r.content == _png_bytes()
+
+
 class TestHistoricalRunResources:
     def test_serves_png_from_disk(self, tmp_path: Path, monkeypatch) -> None:
         # Stand up a minimal "historical run" layout.

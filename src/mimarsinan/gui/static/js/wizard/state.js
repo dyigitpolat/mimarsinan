@@ -22,11 +22,13 @@ function sectionOf(key) {
   return ks ? ks.section : 'top';
 }
 
-function container(key, create) {
-  const section = sectionOf(key);
-  if (section === 'top') return state.draft;
-  if (!state.draft[section] && create) state.draft[section] = {};
-  return state.draft[section] || {};
+/* `section` (when given) overrides the schema lookup: a RETIRED key is gone
+   from the schema, so its server-served remedy carries the target scope. */
+function container(key, create, section) {
+  const target = section || sectionOf(key);
+  if (target === 'top') return state.draft;
+  if (!state.draft[target] && create) state.draft[target] = {};
+  return state.draft[target] || {};
 }
 
 export function getKey(key) {
@@ -98,12 +100,12 @@ export function differsFromDefault(key) {
   return !base.has || JSON.stringify(value) !== JSON.stringify(base.value);
 }
 
-export function setKey(key, value) {
-  container(key, true)[key] = value;
+export function setKey(key, value, section) {
+  container(key, true, section)[key] = value;
 }
 
-export function clearKey(key) {
-  delete container(key, true)[key];
+export function clearKey(key, section) {
+  delete container(key, true, section)[key];
 }
 
 /** Flat view for relevance evaluation between resolve round-trips:

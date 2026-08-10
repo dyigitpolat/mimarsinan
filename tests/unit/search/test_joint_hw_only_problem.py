@@ -95,7 +95,8 @@ class TestHwOnlyDecodeCarriesResolvedBase:
         assert pcfg["allow_coalescing"] is False
         assert "schedule_policy" in pcfg
         assert "max_schedule_passes" in pcfg
-        assert "allow_weight_reuse" in pcfg
+        # W1.1: weight reuse is always on — the retired knob never resolves.
+        assert "allow_weight_reuse" not in pcfg
 
     def test_decoded_cores_inherit_base_bias_capability(self):
         problem = _make_hw_problem()

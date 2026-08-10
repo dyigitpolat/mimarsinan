@@ -10,22 +10,33 @@ and `ResourceDescriptor`/`ResourceSource`/`ResourceStore` (step-scoped heavy
 artefacts — heatmap PNGs, connectivity JSON — carried as MATERIALISED SOURCE
 DATA and rendered on demand).
 
-RENDER WHEN SOMEONE IS WATCHING (`resources/policy.py`). Every descriptor
-carries a `ResourceSource` — the resource's inputs, already copied into host
-memory — rather than a closure over pipeline state, so the descriptor neither
-pins a device allocation past its step nor needs the run alive to be rendered.
-`ResourceRenderPolicy` is the one switch over what a run does with them, declared
-by the run mode and overridable only through `MIMARSINAN_GUI_RESOURCE_RENDER`:
-`--ui` declares EAGER (a monitor is attached, so each step's resources are
-rendered as the run goes and the browser fetches finished bytes), `--headless`
-declares DEFERRED (nobody is watching, so the run writes only the sources —
-cheap array/JSON I/O — under `_GUI_STATE/resource_sources/` and renders
-nothing). Rendering a headless run's backlog used to keep the process, and under
-a scheduler its whole node, alive for minutes past its last step. On the read
-side there is one path either way: `load_resource_from_disk` serves the rendered
-file when it exists and otherwise renders the persisted source ONCE, caching the
-bytes under the normal resource path, so the first attach produces what every
-later attach simply reads. The SPA
+ONE PERSIST FLOW, UI-RESOLUTION BY DEFAULT (`resources/policy.py`,
+`runtime/persistence/persist_flow.py`). Every descriptor carries a
+`ResourceSource` — the resource's inputs, already copied into host memory —
+rather than a closure over pipeline state, so the descriptor neither pins a
+device allocation past its step nor needs the run alive to be rendered.
+Snapshot-persist writes, under BOTH policies, each resource's source
+(`_GUI_STATE/resource_sources/`, cheap array/JSON I/O) AND its pre-rendered
+UI-resolution artifact (`gui/rendering/` pure-numpy PNGs bounded by
+`DEFAULT_TARGET_LONG_SIDE`), so a browser attach — first or hundredth — is a
+plain file read per tile, never a per-request render storm.
+`ResourceRenderPolicy` (declared by the run mode, overridable only through
+`MIMARSINAN_GUI_RESOURCE_RENDER`) now decides one thing: EAGER (`--ui`) also
+warms the live in-memory `ResourceStore` the monitor serves from; DEFERRED
+(`--headless`) leaves it cold. Persist time never pays for a full-resolution
+render — the matplotlib-era 1024px backlog once kept a headless process alive
+minutes past its last step. On the read side `load_resource_from_disk` serves
+the artifact when it exists and otherwise renders the persisted source ONCE,
+caching the bytes; `?res=full` serves the on-demand near-native variant
+(`FULL_TARGET_LONG_SIDE`, cached as a `.full.png` sibling, UI fallback when no
+source exists). The resource routes stamp an `ETag` of the served bytes on
+every 200 and answer matching `If-None-Match` with an empty 304. Heatmap color
+is comparable across tiles: each snapshot family (hard cores; IR cores +
+pre-pruning + banks; pruning layers) computes ONE symmetric scale — the max of
+per-matrix p98 scales (`snapshot/heatmap.py: HeatmapScaleFamily`) — stamps it
+on every family `HeatmapSource`, and serves numeric `heatmap_scale` min/max in
+the summary plus a `heatmap_colorbar` resource the frontend renders as the
+legend (`docs/ux/hardware_heatmaps.md` is the rendering spec). The SPA
 assets (HTML/CSS/ES-module JS) live in the non-package `static/` directory;
 third-party runtime assets (Plotly, fonts, and the `marked` + `DOMPurify` pair
 behind `renderMarkdown`) are vendored under `static/vendor/` so the GUI works
@@ -110,7 +121,10 @@ derived value as its CONTENT, not a placeholder — `spiking_mode='ttfs'` locks
 that an explicit click takes over. Nothing here special-cases a mode; a change
 to the served sets re-renders the group hosts (a signature guard keeps that off
 the typing path). An illegal value in a loaded document is a keyed inline error
-with its one-click remedy — never an uncaught exception. The
+with its one-click remedy — never an uncaught exception; a remedy op may
+carry a `scope` naming its target sub-document, which overrides the schema
+section lookup (how a RETIRED key, gone from the schema, still clears from
+the right place). The
 pretrained-weight source is ONE concept: `preload_weights` is the hand knob and
 `weight_source` derives from the model builder's `ModelWorkloadProfile`
 registration (`resolve_payload` folds it in through the DeploymentPlan's own
@@ -189,17 +203,18 @@ values, the template flow, and both error/remedy flows.
 | File | Purpose |
 |---|---|
 | `exports.py` | Flat public re-export surface (`GUIHandle`, `start_gui`, `backfill_skipped_steps`, `DataCollector`, `to_json_safe`) consumed by `__init__.py`. |
-| `handle.py` | `GUIHandle` facade: step start/end/failed and metric/event hooks, stdio tee, snapshot build, synchronous status writes plus async resource persistence via `SnapshotExecutor` — rendering resources or writing only their sources per the declared `ResourceRenderPolicy`. Records each step's honest `metric_kind` (`measured`/`carried`) and gate `verdict` from the step's own declaration — a carried value is never persisted as a measurement — and `on_step_failed` (the engine's step-failed hook) persists the terminal `failed` status with its error so a crashed run never presents as live. |
-| `heatmap_renderer.py` | Matplotlib rendering of weight matrices to PNG bytes / data URIs, with red pruned-row/column overlays. |
+| `handle.py` | `GUIHandle` facade: step start/end/failed and metric/event hooks, stdio tee, snapshot build, synchronous status writes plus async resource persistence via `SnapshotExecutor` delegating to `runtime.persistence.persist_step_resources` (sources + UI-res artifacts under both policies; EAGER also warms the live store). Records each step's honest `metric_kind` (`measured`/`carried`) and gate `verdict` from the step's own declaration — a carried value is never persisted as a measurement — and `on_step_failed` (the engine's step-failed hook) persists the terminal `failed` status with its error so a crashed run never presents as live. |
+| `heatmap_renderer.py` | Stable heatmap entry-point re-exporting `rendering/` (`render_heatmap_png_bytes` + data-URI/colorbar/scale helpers); `HeatmapSource` calls through this module's attributes so tests can monkeypatch one name. |
+| `rendering/` | Pure-numpy image rendering (no matplotlib, thread-safe by construction): `heatmap_render.py` (mask-aware max-\|value\| decimation with ANY-pooled ≥2px pruned lines, ONE integer pooling factor per render so cells stay square, zero margins — pixel `[0,0]` IS cell `[0,0]` — native size below `DEFAULT_TARGET_LONG_SIDE`=400, shared symmetric `scale` support, distinct empty tile), `colormap.py` (precomputed 256-entry BrBG LUT + reserved mask/background colors + colorbar strip), `png_codec.py` (deterministic stdlib zlib/struct RGB PNG encoder). |
 | `json_util.py` | `to_json_safe` recursive JSON coercion (NaN/Inf → `None`, numpy → lists/scalars, fallback `str`). |
 | `reporter.py` | `GUIReporter` implementing the `Reporter` protocol; forwards metrics to the `DataCollector`. |
-| `resources/` | The resource SSOT: `sources.py` (`ResourceSource` base + on-disk type registry, `HeatmapSource`, `JsonSource`, `as_host_array` — the one place a pipeline buffer becomes owned host memory — and `encode_resource_payload`, the single payload→bytes encoder both the run and the monitor go through), `descriptor.py` (`ResourceDescriptor`: kind, rid, source, media_type), `policy.py` (`ResourceRenderPolicy` + `resolve_resource_render_policy`), `store.py` (thread-safe `ResourceStore`: lazy once-only materialisation, per-step eviction and version counter for ETags). |
+| `resources/` | The resource SSOT: `sources.py` (`ResourceSource` base + on-disk type registry with a `render_full` near-native variant, `HeatmapSource` — carrying the family `scale` — plus `ColorbarSource`, `JsonSource`, `as_host_array` — the one place a pipeline buffer becomes owned host memory — and `encode_resource_payload`, the single payload→bytes encoder both the run and the monitor go through), `descriptor.py` (`ResourceDescriptor`: kind, rid, source, media_type), `policy.py` (`ResourceRenderPolicy` + `resolve_resource_render_policy`), `store.py` (thread-safe `ResourceStore`: lazy materialisation, per-step eviction and version counter for ETags, and a 64 MB LRU bound on resident rendered bytes — evicted payloads re-materialise on demand). |
 | `runs.py` | Discovery and loading of historical runs from the generated-files root: run list, config, pipeline overview, step detail (with disk rebuild fallback), console logs, resume-step suggestion, and the run-directory artifact inventory (`list_dir_artifacts`, safe-join `resolve_artifact_file`). |
 | `start.py` | `start_gui` bootstrap (collector + resource store + server + handle) and `backfill_skipped_steps` for edit-and-continue: replays cached steps into the collector and rewrites `steps.json`. |
 | `tee_stream.py` | `TeeStream`: line-buffered stdout/stderr tee that forwards complete lines to the console-log callback while writing through to the original stream. |
 | `templates.py` | CRUD for saved deployment-config templates (JSON files under the templates dir), persisted minimally through the wizard config builder. |
-| `runtime/` | Runtime machinery: `DataCollector` (collector/), the structured pipeline-event vocabulary (`events.py`: `PipelineEvent` + kinds mirroring the console `[TAG]`s one-to-one, transported via `reporter.event`, persisted to `events.jsonl`, WS-broadcast as `{"type":"event"}` frames), on-disk persistence of `steps.json`/metrics/events/console/resources (persistence/, including `resource_sources.py`: a self-describing container of one resource's source arrays + metadata, written whole-or-not-at-all, with zero-padding dropped by a bit-pattern sparse encoding so `-0.0`/NaN survive the round trip), subprocess run management (`ProcessManager`, spawn/monitor; liveness is PID-reuse safe — `proc_identity.py` records each run's kernel starttime from `/proc/<pid>/stat` in `run_info.json` and the probe requires signal-0 AND a starttime match, falling back to the bare probe when `/proc` is unavailable), `ActiveRunHub` jsonl tailers for active-run WebSockets plus a `RunLivenessWatcher` per subscribed run (the steps tailer goes silent when the process dies, so the watcher pushes ONE terminal `pipeline_overview` frame on the alive→dead flip), `CompositeReporter`, `SnapshotExecutor`, and run-cache seeding. Historical/active status honesty lives in `viewmodel.overview_vm` (`persisted_step_status`/`persisted_run_status`): persisted statuses win, the end-time heuristic covers legacy dirs, and a `running` record of a dead process reads `failed`. |
-| `server/` | FastAPI app factory and uvicorn startup (`app.py`) plus route modules: pipeline/runs/templates/console APIs, artifact listing/downloads (`routes_artifacts.py`), lazy-resource endpoints, wizard and config-schema APIs, and hardware layout verification; `json_safe.py` provides the sanitising JSON response class. |
+| `runtime/` | Runtime machinery: `DataCollector` (collector/), the structured pipeline-event vocabulary (`events.py`: `PipelineEvent` + kinds mirroring the console `[TAG]`s one-to-one, transported via `reporter.event`, persisted to `events.jsonl`, WS-broadcast as `{"type":"event"}` frames), on-disk persistence of `steps.json`/metrics/events/console/resources (persistence/, including `resource_sources.py`: a self-describing container of one resource's source arrays + metadata, written whole-or-not-at-all, with zero-padding dropped by a bit-pattern sparse encoding so `-0.0`/NaN survive the round trip; and `persist_flow.py`: the ONE step-resource write path — sources + UI-res artifacts under both render policies, store warming under EAGER), subprocess run management (`ProcessManager`, spawn/monitor; liveness is PID-reuse safe — `proc_identity.py` records each run's kernel starttime from `/proc/<pid>/stat` in `run_info.json` and the probe requires signal-0 AND a starttime match, falling back to the bare probe when `/proc` is unavailable), `ActiveRunHub` jsonl tailers for active-run WebSockets plus a `RunLivenessWatcher` per subscribed run (the steps tailer goes silent when the process dies, so the watcher pushes ONE terminal `pipeline_overview` frame on the alive→dead flip), `CompositeReporter`, `SnapshotExecutor`, and run-cache seeding. Historical/active status honesty lives in `viewmodel.overview_vm` (`persisted_step_status`/`persisted_run_status`): persisted statuses win, the end-time heuristic covers legacy dirs, and a `running` record of a dead process reads `failed`. |
+| `server/` | FastAPI app factory and uvicorn startup (`app.py`) plus route modules: pipeline/runs/templates/console APIs, artifact listing/downloads (`routes_artifacts.py`), lazy-resource endpoints (`routes_resources.py`: ETag/If-None-Match 304 on every resource 200, `?res=full` near-native variant), wizard and config-schema APIs, and hardware layout verification; `json_safe.py` provides the sanitising JSON response class. |
 | `snapshot/` | Pure per-artifact snapshot builders returning `(summary, ResourceDescriptor list)`: model, IR graph, hardware mapping, adaptation, pruning, search, and SANA-FE snapshots, `RESOURCE_KIND_*` constants, disk-based snapshot rebuild for legacy runs, and the best-effort console `[TAG]` parser (`console_events.py`) that backfills events for runs recorded before `events.jsonl`. |
 | `viewmodel/` | Pure, I/O-free view-models (parsed run artifacts in, chart-ready JSON out; unit-tested against synthetic streams): `overview_vm` (measured points + verdict markers — a carried metric NEVER plots), `step_metrics_vm` (the one metric-categorization rule table), `events_vm` (per-kind display hints + annotation lanes), `staircase_vm` (the D-hat ratchet staircase; raises on a falling ratchet), `gantt_vm` (step timeline + endpoint step-budget ledger + artifact/total wall split), `a6_vm` (install-resolution gauge cards). |
 | `wizard/` | Configuration workbench application layer: `schema_api.resolve_payload` guards EVERY contract `DeploymentPlan.resolve` enforces (driver, temporal allocation, firing strategy, weight-source regime) so an authorable document yields a keyed `pipeline_assembly` error instead of a 500; `emit.py` (explicit-keys-only config emission — the ONE builder used by Deploy, templates, and the representability test; unknown keys preserved and reported, never dropped; non-declarable derived keys — `activation_quantization`, the correctness mechanisms — are removed), `build_deployment_config_from_state` (thin alias over emit), `schema_api.py` (`/api/config_schema` payload: serialized registry + the per-key starter `baseline` overlay + recipe/preprocessing/hw-search-space/NAS sub-schemas; `/api/config/resolve` payload: resolution + live step preview + the ALWAYS-served `vehicles` rows and `legal_values` sets + the concrete `resolved` + `derived_values` maps + the ALWAYS-served `pretrained` panel block + the baseline-rebased diff + the config-time deployment `advisories` rows), `pretrained_panel.py` (the dedicated Pretrained-weights panel's data: folds the model builder's registered `pretrained_weight_sets` into an always-computable effective config so the switch's legal set — disabled when the builder registers no applicable set, locked ON when a source is declared — the selector's legal ids, the full registered records to reveal, and the pretrained legality errors survive an erroring draft; config_schema stays builder-agnostic, so this wizard layer owns the builder enrichment), `starter.py` + `starter_baseline.json` (the fresh-state contract: `GET /api/config/starter` serves the packaged baseline DOCUMENT — the lenet5 vehicle, the only tier-0 family green in all five modes, with a fresh experiment name and no pinned derived mode keys — pinned resolvable/emittable/mappable per mode switch by `test_wizard_starter.py`; workload facts live in the document, never in framework code; the baseline doubles as the wizard's diff-defaults document, experiment_name excluded), wizard schema surfaces (model types, NAS, temporal allocation, pipeline steps), and state validation. |

@@ -174,28 +174,13 @@ class TestChipCapabilities:
         caps = ChipCapabilities(allow_per_layer_s=True)
         assert "allow_per_layer_s" not in caps.permission_kwargs()
 
-    def test_allow_weight_reuse_gate_default_false(self):
-        # RESERVED weight-reuse capability: declared, defaults False, carried + readable
-        # (the allow_per_layer_s pattern). Default False ⇒ schedule treats every pass
-        # as a reprogram ⇒ byte-identical.
-        assert ChipCapabilities().allow_weight_reuse is False
-        assert ChipCapabilities(allow_weight_reuse=True).allow_weight_reuse is True
-
-    def test_from_platform_constraints_reads_allow_weight_reuse(self):
+    def test_weight_reuse_knob_is_retired(self):
+        # W1.1: weight reuse is always on — the capability class no longer
+        # carries the knob, and a stale constraints declaration is ignored here
+        # (the config-schema layer serves it the keyed retirement remedy).
+        assert not hasattr(ChipCapabilities(), "allow_weight_reuse")
         caps = ChipCapabilities.from_platform_constraints({"allow_weight_reuse": True})
-        assert caps.allow_weight_reuse is True
-        # Absent / falsey ⇒ False (byte-identical default).
-        assert (
-            ChipCapabilities.from_platform_constraints({}).allow_weight_reuse is False
-        )
-        assert ChipCapabilities.from_platform_constraints(
-            {"allow_weight_reuse": 0}
-        ).allow_weight_reuse is False
-
-    def test_permission_kwargs_excludes_weight_reuse(self):
-        # allow_weight_reuse is a SCHEDULING/cost gate, not a layout/verify kwarg — the
-        # leaf helper signatures stay unchanged (byte-identical).
-        caps = ChipCapabilities(allow_weight_reuse=True)
+        assert not hasattr(caps, "allow_weight_reuse")
         assert "allow_weight_reuse" not in caps.permission_kwargs()
 
 
@@ -228,12 +213,10 @@ class TestMappingStrategy:
             ChipCapabilities()
         ).allow_per_layer_s is False
 
-    def test_allow_weight_reuse_accessor_mirrors_capabilities(self):
-        caps = ChipCapabilities(allow_weight_reuse=True)
-        assert MappingStrategy.resolve(caps).allow_weight_reuse is True
-        assert MappingStrategy.resolve(
-            ChipCapabilities()
-        ).allow_weight_reuse is False
+    def test_weight_reuse_accessor_is_retired(self):
+        # W1.1: no strategy surface for the always-on behavior.
+        strat = MappingStrategy.resolve(ChipCapabilities())
+        assert not hasattr(strat, "allow_weight_reuse")
 
     @pytest.mark.parametrize(
         "in_f,out_f,max_ax,max_ne,has_bias,hw_bias,coalesce",
