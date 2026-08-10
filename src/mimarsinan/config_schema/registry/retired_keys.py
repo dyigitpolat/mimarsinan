@@ -24,8 +24,27 @@ def _retired_row(
             "rule_id": "retired_key", "remedies": remedies}
 
 
-def _clear_remedy(scope: str, key: str, label: str) -> Dict[str, Any]:
-    return {"label": label, "action": "clear", "key": key, "scope": scope}
+def _clear_remedy(
+    scope: str, key: str, label: str, path: Optional[List[str]] = None
+) -> Dict[str, Any]:
+    remedy: Dict[str, Any] = {
+        "label": label, "action": "clear", "key": key, "scope": scope}
+    if path is not None:
+        remedy["path"] = list(path)
+    return remedy
+
+
+def _found_path(
+    paths: Optional[Mapping[str, Mapping[str, List[str]]]], scope: str, key: str
+) -> Optional[List[str]]:
+    """The container path a ``clear`` op must target, or ``None`` when scope
+    routing suffices. The parse layer records where it FOUND each retired key;
+    only a key nested inside a structural container (the wizard's hw-search pc
+    shapes) needs a path — at the scope root the payload stays path-free."""
+    found = (paths or {}).get(scope, {}).get(key)
+    if found is None or list(found) == [scope]:
+        return None
+    return list(found)
 
 
 def _spiking_mode_migration_row(dp: Mapping[str, Any]) -> Dict[str, Any]:
@@ -104,12 +123,18 @@ def retired_scope_of(key: str) -> Optional[str]:
     return None
 
 
-def retired_key_errors(config: Mapping[str, Any]) -> List[Dict[str, Any]]:
+def retired_key_errors(
+    config: Mapping[str, Any],
+    *,
+    paths: Optional[Mapping[str, Mapping[str, List[str]]]] = None,
+) -> List[Dict[str, Any]]:
     """Keyed migration rows for a config-shaped mapping declaring retired keys.
 
     Inspects BOTH scopes; one row per declared retired key, each carrying its
     scope. The spiking_mode row carries the full one-click axes migration (its
-    ops also clear a declared schedule).
+    ops also clear a declared schedule). ``paths`` (the parse layer's
+    ``retired_paths``) tells each clear remedy where the key was FOUND, so a
+    declaration nested inside a structural pc container gets a shape-aware op.
     """
     rows: List[Dict[str, Any]] = []
     for scope in RETIREMENT_SCOPES:
@@ -122,6 +147,7 @@ def retired_key_errors(config: Mapping[str, Any]) -> List[Dict[str, Any]]:
             if key in body:
                 rows.append(_retired_row(
                     scope, key, message,
-                    [_clear_remedy(scope, key, f"Remove {key}")],
+                    [_clear_remedy(scope, key, f"Remove {key}",
+                                   path=_found_path(paths, scope, key))],
                 ))
     return rows

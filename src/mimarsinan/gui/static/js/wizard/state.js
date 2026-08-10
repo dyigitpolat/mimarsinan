@@ -31,6 +31,23 @@ function container(key, create, section) {
   return state.draft[target] || {};
 }
 
+/* An op `path` (container segments under the draft root) overrides scope
+   routing entirely: the server's parse layer names the container it FOUND the
+   key in (the legacy hw-search pc shapes nest theirs under `user` /
+   `auto.fixed`). A `create:false` walk never materializes containers and a
+   non-container segment aborts the walk (`null`) — a remedy must never
+   clobber unrelated data. */
+function containerAt(path, create) {
+  let host = state.draft;
+  for (const segment of path) {
+    if (host[segment] == null && create) host[segment] = {};
+    const next = host[segment];
+    if (typeof next !== 'object' || next === null || Array.isArray(next)) return null;
+    host = next;
+  }
+  return host;
+}
+
 export function getKey(key) {
   return container(key, false)[key];
 }
@@ -100,12 +117,16 @@ export function differsFromDefault(key) {
   return !base.has || JSON.stringify(value) !== JSON.stringify(base.value);
 }
 
-export function setKey(key, value, section) {
-  container(key, true, section)[key] = value;
+export function setKey(key, value, section, path) {
+  const host = Array.isArray(path) && path.length
+    ? containerAt(path, true) : container(key, true, section);
+  if (host) host[key] = value;
 }
 
-export function clearKey(key, section) {
-  delete container(key, true, section)[key];
+export function clearKey(key, section, path) {
+  const host = Array.isArray(path) && path.length
+    ? containerAt(path, false) : container(key, true, section);
+  if (host) delete host[key];
 }
 
 /** Flat view for relevance evaluation between resolve round-trips:

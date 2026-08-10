@@ -239,10 +239,13 @@ export function renderLaunchStatus() {
    value, `clear` a key so its derivation takes the value back. No rule-specific
    JS table exists — a new rule ships its remedies from the server. An op may
    carry a `scope` naming the target sub-document (retired keys are gone from
-   the schema, so the schema section lookup cannot route them). */
+   the schema, so the schema section lookup cannot route them), and a `path`
+   naming the exact container the parse layer found the key in (the legacy
+   hw-search pc shapes nest their body under `user` / `auto.fixed`, where a
+   scope-root edit would miss it). */
 const REMEDY_ACTIONS = {
-  set: (remedy) => setKey(remedy.key, remedy.value, remedy.scope),
-  clear: (remedy) => clearKey(remedy.key, remedy.scope),
+  set: (remedy) => setKey(remedy.key, remedy.value, remedy.scope, remedy.path),
+  clear: (remedy) => clearKey(remedy.key, remedy.scope, remedy.path),
 };
 
 /* A remedy is one action, or an atomic `ops` list of them (e.g. a retired-key

@@ -33,6 +33,14 @@ class ParsedDocument:
     retired: Dict[str, Dict[str, Any]] = field(default_factory=lambda: {
         "deployment_parameters": {}, "platform_constraints": {},
     })
+    # WHERE each retired declaration was found: scope -> {key: container path
+    # segments under the document root}. The wizard's structural pc shapes nest
+    # the parsed body (platform_constraints.user / .auto.fixed), so a remedy
+    # clearing a retired key must target the container it actually lives in —
+    # a scope-root clear would miss it and the error would survive the click.
+    retired_paths: Dict[str, Dict[str, List[str]]] = field(default_factory=lambda: {
+        "deployment_parameters": {}, "platform_constraints": {},
+    })
 
     def known_flat_keys(self) -> Dict[str, Any]:
         merged: Dict[str, Any] = {}
@@ -74,7 +82,7 @@ def _check_value_shape(flat_key: str, value: Any, path: str, out: ParsedDocument
 
 def _parse_section(
     data: Mapping[str, Any], section: str, prefix: str, out: ParsedDocument,
-    target: Dict[str, Any],
+    target: Dict[str, Any], container_path: tuple = (),
 ) -> None:
     known = section_keys(section)
     retired = retired_keys_in_scope(section)
@@ -86,6 +94,7 @@ def _parse_section(
             _check_value_shape(key, value, f"{prefix}{key}", out)
         elif key in retired:
             out.retired[section][key] = value
+            out.retired_paths[section][key] = list(container_path or (section,))
         else:
             out.unknown.append(f"{prefix}{key}")
 
@@ -99,9 +108,14 @@ def _parse_platform(pc: Mapping[str, Any], out: ParsedDocument) -> None:
     for key, value in pc.items():
         if key not in _PC_STRUCTURAL:
             out.unknown.append(f"platform_constraints.{key}")
-    body = pc.get("user") if mode == "user" else (pc.get("auto") or {}).get("fixed")
+    if mode == "user":
+        body, body_path = pc.get("user"), ("platform_constraints", "user")
+    else:
+        body = (pc.get("auto") or {}).get("fixed")
+        body_path = ("platform_constraints", "auto", "fixed")
     if isinstance(body, Mapping):
-        _parse_section(body, "platform_constraints", "platform_constraints.", out, out.pc)
+        _parse_section(body, "platform_constraints", "platform_constraints.", out,
+                       out.pc, container_path=body_path)
     search_space = pc.get("search_space") or (pc.get("auto") or {}).get("search_space")
     if isinstance(search_space, Mapping):
         out.pc["search_space"] = dict(search_space)

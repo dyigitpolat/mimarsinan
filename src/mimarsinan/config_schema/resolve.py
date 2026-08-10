@@ -243,7 +243,9 @@ def resolve_draft(draft: Mapping[str, Any]) -> Resolution:
     # each carrying its SCOPE, superseding every other row for the same
     # (scope, key). Registry-bridged legacy keys still preview through the
     # meaning-preserving bridge; fully-removed keys never reach the derivation.
-    retired = retired_key_errors(parsed.retirement_scan_view())
+    retired = retired_key_errors(
+        parsed.retirement_scan_view(), paths=parsed.retired_paths
+    )
     retired_pairs = {(row["scope"], row["key"]) for row in retired}
     errors = [
         error for error in errors

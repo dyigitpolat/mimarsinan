@@ -28,12 +28,24 @@ def _document(pc=None, **dp) -> dict:
 
 
 def _apply_ops(doc: dict, ops) -> dict:
-    """Apply remedy ops the way the wizard does: each op targets the
-    sub-document its ``scope`` names."""
-    out = {key: dict(value) if isinstance(value, dict) else value
-           for key, value in doc.items()}
+    """Apply remedy ops the way the wizard does: an op carrying a ``path``
+    walks those container segments from the document root (creating them on a
+    ``set``, never on a ``clear``); otherwise it targets the sub-document its
+    ``scope`` names."""
+    import copy
+
+    out = copy.deepcopy(doc)
     for op in ops:
-        body = out[op["scope"]]
+        body = out
+        for segment in op.get("path") or [op["scope"]]:
+            if not isinstance(body.get(segment), dict):
+                if op["action"] != "set":
+                    body = None
+                    break
+                body[segment] = {}
+            body = body[segment]
+        if body is None:
+            continue
         if op["action"] == "set":
             body[op["key"]] = op["value"]
         elif op["action"] == "clear":
@@ -138,6 +150,9 @@ class TestScopedRetirement:
         assert remedy["action"] == "clear"
         assert remedy["key"] == "allow_weight_reuse"
         assert remedy["scope"] == "platform_constraints"
+        # A flat pc declares the key at the scope root: scope routing suffices
+        # and the payload stays path-free (byte-identical to the pre-path era).
+        assert "path" not in remedy
 
     def test_retired_echo_never_attaches_to_a_live_key(self):
         # attach_error_key must recognize retired names: without that, the
@@ -170,6 +185,48 @@ class TestScopedRetirement:
         ))
         assert any(e["rule_id"] == "retired_key"
                    and e["key"] == "allow_weight_reuse" for e in res.errors)
+
+    def test_wizard_shaped_remedy_carries_the_nested_container_path(self):
+        # The legacy hw-search pc shape nests the parsed body under `user`; a
+        # scope-root clear would miss the declaration and the error would
+        # return on the next resolve. The remedy op names the container the
+        # parse layer FOUND the key in.
+        res = resolve_draft(_document(
+            pc={"mode": "user", "user": {"allow_weight_reuse": True}},
+        ))
+        (row,) = [e for e in res.errors if e["key"] == "allow_weight_reuse"]
+        (remedy,) = row["remedies"]
+        assert remedy["scope"] == "platform_constraints"
+        assert remedy["path"] == ["platform_constraints", "user"]
+
+    def test_wizard_shaped_clear_remedy_yields_a_clean_document(self):
+        doc = _document(pc={
+            "mode": "user",
+            "user": {"allow_weight_reuse": True, "weight_bits": 5},
+        })
+        before = resolve_draft(doc)
+        (row,) = [e for e in before.errors if e["key"] == "allow_weight_reuse"]
+        after_doc = _apply_ops(doc, row["remedies"])
+        # the clear reached the NESTED body and spared its siblings
+        assert after_doc["platform_constraints"]["user"] == {"weight_bits": 5}
+        after = resolve_draft(after_doc)
+        assert after.errors == []
+        assert "allow_weight_reuse" not in after.resolved
+
+    def test_auto_shaped_clear_remedy_yields_a_clean_document(self):
+        doc = _document(pc={
+            "mode": "auto",
+            "auto": {"fixed": {"allow_weight_reuse": False, "weight_bits": 5}},
+        })
+        before = resolve_draft(doc)
+        (row,) = [e for e in before.errors if e["key"] == "allow_weight_reuse"]
+        (remedy,) = row["remedies"]
+        assert remedy["path"] == ["platform_constraints", "auto", "fixed"]
+        after_doc = _apply_ops(doc, row["remedies"])
+        assert after_doc["platform_constraints"]["auto"]["fixed"] == {
+            "weight_bits": 5}
+        after = resolve_draft(after_doc)
+        assert after.errors == []
 
     def test_clear_remedy_yields_a_clean_document(self):
         doc = _document(pc={"allow_weight_reuse": True})
