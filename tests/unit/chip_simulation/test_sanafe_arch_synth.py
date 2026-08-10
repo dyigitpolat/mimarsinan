@@ -55,10 +55,10 @@ def _fake_hcm(*core_shapes: tuple[int, int]):
     )
 
 
-def _fake_stage(kind: str, hcm=None, input_map=None):
+def _fake_stage(kind: str, hcm=None, input_map=None, pass_index=None):
     return SimpleNamespace(
         kind=kind, hard_core_mapping=hcm, compute_op=None,
-        input_map=input_map or [],
+        input_map=input_map or [], schedule_pass_index=pass_index,
     )
 
 
@@ -601,6 +601,36 @@ class TestDeclaredCapacityFloorplan:
         ]
         assert self._floorplan_of(specs[0]) == self._floorplan_of(specs[1])
         assert specs[0].name == specs[1].name
+
+    def test_scheduled_unroll_replicates_the_physical_floorplan(self):
+        # A multi-pass schedule packs MORE logical cores than the physical
+        # chip by design (passes reuse cores serially). The physical invariant
+        # is per-pass; the simulated arch unrolls the physical floorplan into
+        # k row-stacked replicas — deterministic from platform + schedule.
+        mapping = _fake_mapping(
+            _fake_stage("neural", _fake_hcm(*[(3, 2)] * 8), pass_index=0),
+            _fake_stage("neural", _fake_hcm(*[(3, 2)] * 8), pass_index=1),
+            _fake_stage("neural", _fake_hcm(*[(3, 2)] * 4), pass_index=2),
+        )
+        spec = derive_arch_spec(
+            mapping, preset_name="loihi", declared_core_capacity=8,
+        )
+        # physical: 8 cores @ loihi 4/tile -> 2 tiles (2x1); packed 20 over
+        # 8 slots -> 3 replicas stacked along rows.
+        assert spec.floorplan_replicas == 3
+        assert (spec.mesh_width, spec.mesh_height) == (2, 3)
+        assert spec.n_tiles == 6
+        assert all(c == 4 for c in spec.n_cores_per_tile)
+        assert spec.mesh_width * spec.mesh_height == spec.n_tiles
+
+    def test_single_pass_exceeding_capacity_is_still_loud(self):
+        mapping = _fake_mapping(
+            _fake_stage("neural", _fake_hcm(*[(3, 2)] * 10), pass_index=0),
+        )
+        with pytest.raises(ValueError, match="pass"):
+            derive_arch_spec(
+                mapping, preset_name="loihi", declared_core_capacity=8,
+            )
 
     def test_capacity_floorplan_defines_every_tile_fully(self):
         mapping = _fake_mapping(_fake_stage("neural", _fake_hcm(*[(3, 2)] * 3)))

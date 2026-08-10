@@ -95,6 +95,10 @@ class ArchSpec:
     cores_per_tile_resolved: int = 1
     # The mapping's actual core count (<= total_cores when idle slots exist).
     packed_cores: int = 0
+    # >1 for scheduled mappings: the physical floorplan row-stacked k times so
+    # every logical (per-pass) core materializes; passes reuse cores serially
+    # on the real chip.
+    floorplan_replicas: int = 1
 
     @property
     def total_cores(self) -> int:
@@ -196,10 +200,14 @@ def derive_arch_spec(
         # An explicit grid is a full-floorplan declaration: honor it over the
         # packed cores rather than silently ignore it.
         effective_capacity = packed_cores
+    replicas = 1
     if effective_capacity > 0:
-        if packed_cores > effective_capacity:
+        # The physical invariant is PER-PASS: a multi-pass schedule packs more
+        # logical cores than the chip by design (passes reuse cores serially).
+        max_pass_cores = _max_cores_per_pass(mapping, packed_cores)
+        if max_pass_cores > effective_capacity:
             raise ValueError(
-                f"the packed mapping needs {packed_cores} cores but the "
+                f"a single schedule pass needs {max_pass_cores} cores but the "
                 f"declared platform capacity is {effective_capacity} — "
                 "the mapping cannot be placed on the declared floorplan"
             )
@@ -207,6 +215,9 @@ def derive_arch_spec(
             effective_capacity, preset_name,
             cores_per_tile, tile_grid_rows, tile_grid_cols,
         )
+        slots = rows * cols * cores_per_tile
+        replicas = max(1, -(-packed_cores // slots))
+        rows *= replicas
         n_tiles = rows * cols
         n_cores_per_tile = [cores_per_tile] * n_tiles
         mesh_width, mesh_height = cols, rows
@@ -240,7 +251,24 @@ def derive_arch_spec(
         mesh_height=mesh_height,
         cores_per_tile_resolved=cores_per_tile,
         packed_cores=packed_cores,
+        floorplan_replicas=replicas,
     )
+
+
+def _max_cores_per_pass(mapping: Any, packed_cores: int) -> int:
+    """Largest simultaneous (single-pass) core need; the whole packed count
+    when the mapping carries no schedule structure (unscheduled semantics)."""
+    stages = getattr(mapping, "stages", None)
+    if not stages:
+        return packed_cores
+    per_pass: dict[int, int] = {}
+    for stage in stages:
+        hcm = getattr(stage, "hard_core_mapping", None)
+        if getattr(stage, "kind", None) != "neural" or hcm is None:
+            continue
+        p = getattr(stage, "schedule_pass_index", None) or 0
+        per_pass[p] = per_pass.get(p, 0) + len(hcm.cores)
+    return max(per_pass.values()) if per_pass else packed_cores
 
 
 def _thresholding_mode_to_soma_attr(thresholding_mode: str) -> str:
