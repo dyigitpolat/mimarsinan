@@ -99,3 +99,18 @@ class TestCombCountTieRule:
                 float(_llround(float(r) * T) > cycle) for r in rates[0]
             ]
             assert got == want, f"cycle={cycle}: {got} != {want}"
+
+
+def test_numpy_front_loaded_encoder_uses_the_chip_tie_rule():
+    # The Lava/SANA-FE injection path: rate exactly on the half lattice
+    # (odd multiples of 1/(2T)) must round away from zero like the chip's
+    # llround, never half-to-even (np.round would emit 2 spikes for 0.625*4).
+    import numpy as np
+    from mimarsinan.chip_simulation.recording._spike_encoding import (
+        front_loaded_rate_encode,
+    )
+    rates = np.array([[0.625, 0.375]])  # 2.5 and 1.5 spikes at T=4
+    spikes = front_loaded_rate_encode(rates, 4)
+    assert spikes[0, 0].sum() == 3  # llround(2.5) = 3, not np.round's 2
+    assert spikes[0, 1].sum() == 2  # llround(1.5) = 2, not np.round's 2 (equal here)
+    assert (spikes[0, 0][:3] == 1).all() and spikes[0, 0][3] == 0
