@@ -53,6 +53,16 @@ rebalance) design input.
   memo's knob-flip FATAL cell) surfacing in today's environment era. Owner:
   the lif_deployment_exactness V9 thread; fix-path per the assert: theta
   lattice (`quantize_ir_graph`), window record path, or comb drift.
+  **RESOLVED (same day):** root cause established — an exact theta/T tread tie
+  in the host encoding ComputeOp, decided by device+batch GEMM dust because
+  neither the chip probe nor the certificate twin executed inside the
+  measurement plane (the armed lattice snap never engaged); the twin ran CPU
+  batch-2 vs the runner's CUDA batch-25 and the tie fell oppositely. Fixed at
+  the SSOT (merge 8e7dd3c9): probe + twin unified into measurement_plane() on
+  the pipeline device; comb count tie rule canonicalized to the chip's llround
+  at all four torch/numpy sites. Fresh-run verification: t0_05 green at 0.9810
+  (memo-era reference 0.9809) with nevresim exact=1.000000; t0_45 0.9830 and
+  t0_02 0.9899 reproduce their references to the digit.
 
   **ROOT-CAUSED AND FIXED 2026-08-11** (cached-resume repro on the four run
   dirs; see lif_deployment_exactness.md §14 for the full mechanism): none of
