@@ -5,6 +5,7 @@ from __future__ import annotations
 import numpy as np
 
 from mimarsinan.chip_simulation.nevresim.segment_execute import run_binary_raw
+from mimarsinan.chip_simulation.recording.spike_modes import comb_spike_count_np
 from mimarsinan.chip_simulation.simulation_runner.emit import _PreparedSegment
 
 
@@ -109,7 +110,8 @@ def window_counts_from_records(
             if kind == "core":
                 out[s, j] = float(rec[core]["out"][neuron])
             elif kind == "input":
-                comb_n = int(np.rint(x[neuron] * T))
+                # The chip's llround tie rule, not np.rint (half-to-even).
+                comb_n = int(comb_spike_count_np(x[neuron], T))
                 out[s, j] = float(min(max(comb_n, 0), T))
             elif kind == "on":
                 out[s, j] = float(T)

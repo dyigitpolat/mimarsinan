@@ -5,6 +5,8 @@ from __future__ import annotations
 import numpy as np
 import torch
 
+from mimarsinan.chip_simulation.recording.spike_modes import comb_spike_count_np
+
 from mimarsinan.chip_simulation.recording import spike_modes
 
 
@@ -37,11 +39,11 @@ def deterministic_rate_encode(rates: np.ndarray, T: int) -> np.ndarray:
 
 
 def front_loaded_rate_encode(rates: np.ndarray, T: int) -> np.ndarray:
-    """Front-loaded encoding: spike when round(rate * T) > cycle."""
+    """Front-loaded encoding: spike when comb_spike_count(rate) > cycle (chip llround tie rule)."""
     rates = np.clip(rates, 0.0, 1.0)
     N_samples, D = rates.shape
     spikes = np.zeros((N_samples, D, T), dtype=np.float32)
-    n = np.round(rates * T).astype(np.int64)
+    n = comb_spike_count_np(rates, T).astype(np.int64)
     for cycle in range(T):
         spikes[:, :, cycle] = (n > cycle).astype(np.float32)
     return spikes

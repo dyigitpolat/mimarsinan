@@ -48,9 +48,9 @@ Pareto decision layer.
 | `lava_loihi/` | Host-scheduled Lava Loihi LIF backend: runner, wave-parallel per-segment execution (longest-path dependency waves through the bounded spawn pool), and timing |
 | `nevresim/` | Nevresim C++ simulator bridge: driver, compile, execute, segment binaries, compile cache, connectivity mode, profiling |
 | `parity/` | Generic segment-record field-diff comparison utilities; float closeness is judged by `common.measurement.MetricTolerance` (the one definition of "matches") |
-| `recording/` | Spike encoding modes plus spike-count recording/diffing shared by HCM and backend parity checks |
+| `recording/` | Spike encoding modes plus spike-count recording/diffing shared by HCM and backend parity checks; `spike_modes.comb_spike_count`/`_np` is the comb-count tie SSOT (the chip's `llround` half-away-from-zero, NOT half-to-even — odd 1/(2T)-lattice rates are edges exact-QAT trains onto) |
 | `sanafe/` | SANA-FE detailed-stats backend: arch/net synthesis, runner, neuron plugins, records, energy analysis; the NoC floorplan is resolved from the DECLARED platform (`arch_synth/floorplan.py::resolve_floorplan` — explicit `cores_per_tile`/`tile_grid_*` keys win, else preset tile wiring, else ceil(sqrt(declared)); tile grids stay exact — phantom tiles SIGFPE), so equal declared platforms give identical, cross-run-comparable floorplans; preset `custom` loads the user arch YAML (accepted iff `sanafe_custom_arch_path` is set) and adopts ITS tile grouping |
-| `simulation_runner/` | `SimulationRunner` orchestrating end-to-end nevresim runs (flat single-segment and hybrid multi-segment) |
+| `simulation_runner/` | `SimulationRunner` orchestrating end-to-end nevresim runs (flat single-segment and hybrid multi-segment); `run()` executes inside `measurement_plane()` so host ComputeOps feeding the chip decide exact lattice ties by snapped values (device/batch-invariant, identical to the certificate twin) |
 | `ttfs/` | TTFS execution: encoding kernels, analytical executor + hybrid contract runner, segment arrays, genuine cycle sim, recorder |
 
 ## Dependencies

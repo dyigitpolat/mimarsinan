@@ -18,6 +18,7 @@ from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory, shut
 from mimarsinan.chip_simulation.simulation_runner.flat import SimulationFlatMixin
 from mimarsinan.chip_simulation.simulation_runner.hybrid import SimulationHybridMixin
 from mimarsinan.mapping.packing.hybrid_hardcore_mapping import HybridHardCoreMapping
+from mimarsinan.models.nn.lif_kernels import measurement_plane
 from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 
 
@@ -131,14 +132,19 @@ class SimulationRunner(SimulationFlatMixin, SimulationHybridMixin):
         return float(correct) / total
 
     def run(self) -> float:
-        if isinstance(self.mapping, HybridHardCoreMapping):
-            segments = self.mapping.get_neural_segments()
-            compute_ops = self.mapping.get_compute_ops()
-            if len(segments) == 1 and len(compute_ops) == 0:
-                return self._run_flat_mapping(segments[0])
-            print(
-                f"  Hybrid mapping: {len(segments)} neural segments, "
-                f"{len(compute_ops)} compute ops"
-            )
-            return self._run_hybrid(self.mapping)
-        return self._run_flat_mapping(self.mapping)
+        # [V9 tie class] the chip probe is a MEASUREMENT read: host ComputeOps
+        # feeding the chip decide exact lattice ties (charge == theta) by
+        # snapped values (armed _LatticeIFNode), so the chip's inputs are
+        # device/batch-invariant and identical to the certificate twin's.
+        with measurement_plane():
+            if isinstance(self.mapping, HybridHardCoreMapping):
+                segments = self.mapping.get_neural_segments()
+                compute_ops = self.mapping.get_compute_ops()
+                if len(segments) == 1 and len(compute_ops) == 0:
+                    return self._run_flat_mapping(segments[0])
+                print(
+                    f"  Hybrid mapping: {len(segments)} neural segments, "
+                    f"{len(compute_ops)} compute ops"
+                )
+                return self._run_hybrid(self.mapping)
+            return self._run_flat_mapping(self.mapping)
