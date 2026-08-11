@@ -117,6 +117,9 @@ def test_encoding_cut_creates_sequential_segments():
     """An is_encoding_layer perceptron consumes a *decoded value* -> the partition
     cuts at its input, producing two sequential segments (upstream decodes, the
     encoding layer re-encodes). Validates the value<->spike boundary + ordering."""
+    # Seeded: unseeded weights + a discretizing forward occasionally yield a
+    # dead neuron whose zero grad fails the strict all-grads assertion.
+    torch.manual_seed(0)
     S = 8
     flow = _convert(_TinyMLP(6, 5, 4), (6,), 4)
     # Force the 2nd perceptron to be a segment entry, as a real value boundary would.
