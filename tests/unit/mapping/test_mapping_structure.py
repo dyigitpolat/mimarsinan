@@ -124,15 +124,22 @@ class TestChipCapabilities:
         assert caps.allow_coalescing is True
         assert caps.allow_neuron_splitting is True
         assert caps.allow_scheduling is False
-        # Grid is carried separately (cores/core_types), not by the capability factory.
-        assert caps.max_axons is None
-        assert caps.max_neurons is None
+        # The grid is part of the declaration too: resolved through the platform
+        # SSOT, so a served capability payload never reports "not declared" for a
+        # chip that declares 64x64 cores.
+        assert caps.max_axons == 64
+        assert caps.max_neurons == 64
+        assert caps.hardware_bias is True
 
     def test_from_platform_constraints_defaults_false(self):
         caps = ChipCapabilities.from_platform_constraints({})
         assert caps.allow_coalescing is False
         assert caps.allow_neuron_splitting is False
         assert caps.allow_scheduling is False
+        # No core grid declared ⇒ the geometry stays honestly unset.
+        assert caps.max_axons is None
+        assert caps.max_neurons is None
+        assert caps.hardware_bias is False
 
     def test_from_platform_constraints_coerces_truthy(self):
         caps = ChipCapabilities.from_platform_constraints(

@@ -41,6 +41,8 @@ def spec_from_neural_core(
         has_bias=has_bias_axon,
         hardware_bias=hardware_bias,
     )
+    bank_id = getattr(core, "weight_bank_id", None)
+    perceptron_index = getattr(core, "perceptron_index", None)
     return LayoutSoftCoreSpec(
         input_count=in_count,
         output_count=n_neurons,
@@ -48,6 +50,10 @@ def spec_from_neural_core(
         residency_basis=BASIS_PROVENANCE,
         latency_tag=lat,
         segment_id=0,
+        bank_id=None if bank_id is None else int(bank_id),
+        perceptron_index=(
+            None if perceptron_index is None else int(perceptron_index)
+        ),
         name=core.name,
     )
 
@@ -84,6 +90,8 @@ def spec_from_softcore(
         if getattr(softcore, "latency", None) is not None
         else 0
     )
+    bank_id = getattr(softcore, "weight_bank_id", None)
+    perceptron_index = getattr(softcore, "perceptron_index", None)
     return LayoutSoftCoreSpec(
         input_count=int(softcore.get_input_count()),
         output_count=int(softcore.get_output_count()),
@@ -91,5 +99,9 @@ def spec_from_softcore(
         residency_basis=BASIS_PROVENANCE,
         latency_tag=lat,
         segment_id=0,
+        bank_id=None if bank_id is None else int(bank_id),
+        perceptron_index=(
+            None if perceptron_index is None else int(perceptron_index)
+        ),
         name=getattr(softcore, "name", None),
     )

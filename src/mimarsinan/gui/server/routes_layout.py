@@ -186,7 +186,7 @@ def register_routes(app: FastAPI) -> None:
             softcores = layout_result.softcores
             result = verify_hardware_config(
                 softcores, core_types,
-                **ChipCapabilities.from_platform_constraints(body).permission_kwargs(),
+                **ChipCapabilities.from_platform_constraints(body).layout_kwargs(),
             )
             stats_out = {
                 **(result.get("stats") or {}),

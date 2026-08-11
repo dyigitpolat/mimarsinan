@@ -20,6 +20,15 @@ class LayoutSoftCoreSpec:
     latency_tag: Optional[int] = None
     segment_id: Optional[int] = None
 
+    # The shared weight matrix this core reads (``None`` = it owns its weights).
+    # Bank-clustered scheduling and every bank-composition question are asked of
+    # THIS field; without it the mapper's sharing map died at the layout boundary.
+    bank_id: Optional[int] = None
+    # Real IR-layer identity: which source perceptron emitted this core (``None``
+    # for relays/psum cores that belong to no layer). Consumers key layer rollups
+    # on it instead of splitting the core NAME on separator conventions.
+    perceptron_index: Optional[int] = None
+
     name: Optional[str] = None
 
     def get_input_count(self) -> int:

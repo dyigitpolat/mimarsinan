@@ -131,6 +131,21 @@ class TestTheMemoIsBounded:
         assert matrix_memo_stats()["evictions"] >= 1
         assert "MatrixMemo" in capsys.readouterr().out, "eviction must be logged, never silent"
 
+    def test_a_reset_restores_the_budget_it_narrowed(self):
+        """A temporary cap must not outlive its caller: a plain reset restores it.
+
+        It used to survive — one narrowed budget disabled sharing for every later
+        resolution in the process, which reads as "sharing works" while the cost
+        quietly returned (exactly what the memo exists to prevent).
+        """
+        reset_matrix_memo(budget_bytes=1)
+        reset_matrix_memo()
+        bank = _bank()
+        core = _core_on(bank, keep_rows=[0, 2, 4], keep_cols=[1, 3])
+        first = core.get_core_matrix()
+        assert core.get_core_matrix() is first
+        assert matrix_memo_stats()["evictions"] == 0
+
 
 class TestPayloadIdentityIsRechecked:
     def test_a_stale_key_does_not_serve_a_wrong_grid(self):

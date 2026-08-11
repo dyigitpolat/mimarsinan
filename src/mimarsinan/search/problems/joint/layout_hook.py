@@ -182,11 +182,17 @@ class JointLayoutMixin(JointHostContract):
     def _pack_candidate(
         self, softcores: List[LayoutSoftCoreSpec], pcfg: Dict,
     ) -> Tuple[LayoutVerificationStats, Optional[str]]:
-        """Pack the candidate's softcores onto the chip it declares."""
+        """Pack the candidate's softcores onto the chip it declares.
+
+        The capability declaration is forwarded WHOLE (``layout_kwargs``): the
+        pass structure is not a property of the permission bits alone, so a
+        census computed without the platform's ``schedule_policy`` would score
+        the candidate against a program its chip never runs.
+        """
         return compute_mapping_stats(
             softcores=softcores,
             core_types=self._make_core_types(pcfg),
-            **ChipCapabilities.from_platform_constraints(pcfg).permission_kwargs(),
+            **ChipCapabilities.from_platform_constraints(pcfg).layout_kwargs(),
         )
 
     def _packing_failure(
