@@ -383,3 +383,68 @@ def make_full_record() -> DeploymentRecord:
 
 def segment_with(**overrides) -> SegmentRecord:
     return replace(make_segment(), **overrides)
+
+
+# ── SANA-FE snapshot fixture (W4.4) ──────────────────────────────────────
+# ``SanafeStepReport.to_snapshot_dict()``-shaped, CONSISTENT with
+# ``make_schedule``'s census: stage 1 carries 2 cores, stage 2 carries 1.
+
+SNAPSHOT_SEGMENT_CORES = {1: (40, 25), 2: (30,)}
+SNAPSHOT_TIMESTEPS = {1: 32, 2: 32}
+SNAPSHOT_SIM_TIME_S = {1: 1.5e-3, 2: 2.5e-3}
+
+
+def _snapshot_segment(stage_index: int) -> dict:
+    return {
+        "stage_index": stage_index,
+        "stage_name": f"segment_{stage_index}",
+        "timesteps_executed": SNAPSHOT_TIMESTEPS[stage_index],
+        "sim_time_s": SNAPSHOT_SIM_TIME_S[stage_index],
+        "per_core": [
+            {"core_index": i, "n_neurons": n, "n_axons_used": n + 2}
+            for i, n in enumerate(SNAPSHOT_SEGMENT_CORES[stage_index])
+        ],
+        "inter_tile_packets": 40 * stage_index,
+        "intra_tile_packets": 60 * stage_index,
+        "input_path_packets": 5,
+        "cross_tile_connectivity_edges": 3,
+        "mapped_cross_tile_axons": 7,
+        "noc_link_load": [
+            {"from_x": 0, "from_y": 0, "to_x": 1, "to_y": 0,
+             "packet_count": 11 * stage_index},
+        ],
+        "per_tile": [
+            {"tile_index": 0, "cores": [0, 1], "mesh_x": 0, "mesh_y": 0},
+        ],
+        "arch_geometry": {"width": 2, "height": 2,
+                          "tiles_xy": [[0, 0], [0, 1], [1, 0], [1, 1]]},
+    }
+
+
+def make_sanafe_snapshot(*, sample_count: int = 2) -> dict:
+    """A ``SanafeStepReport``-shaped snapshot dict over N identical samples."""
+    return {
+        "arch_preset": "loihi",
+        "sample_indices": list(range(sample_count)),
+        "aggregate": {
+            "sample_count": sample_count,
+            "total_energy_j": 4.0e-3,
+            "total_energy_mj": 4.0,
+            "energy_breakdown_j": {
+                "synapse": 1.0e-3, "dendrite": 0.5e-3,
+                "soma": 1.5e-3, "network": 1.0e-3, "total": 4.0e-3,
+            },
+            "max_sim_time_s": 2.5e-3,
+            "total_spikes": 987,
+            "total_packets": 1234,
+        },
+        "per_sample": [
+            {
+                "sample_index": s,
+                "T": 32,
+                "arch_name": "mimarsinan_loihi_16core",
+                "segments": [_snapshot_segment(1), _snapshot_segment(2)],
+            }
+            for s in range(sample_count)
+        ],
+    }
