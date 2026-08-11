@@ -24,6 +24,9 @@ class ComputeOpRecord:
     op_type: str
     output_width: int
     wall_s_total: Optional[float]
+    # Executions the wall covers: the divisor that puts a whole-run measured
+    # total onto the per-pass (per-sample) axis the latency decomposition uses.
+    invocations: Optional[int] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)

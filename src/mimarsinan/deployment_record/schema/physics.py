@@ -40,7 +40,11 @@ class LatencyDecomposition:
     programming_s: Optional[ModeledValue]
     compute_steps: int
     compute_sim_time_s: Optional[float]
+    # host_ops_s is the raw measured total over the whole run; _per_pass is the
+    # same measurement on the per-sample axis compute_sim_time_s lives on (a
+    # sample-0 census), so the two are only ever summed after normalization.
     host_ops_s: Optional[float]
+    host_ops_s_per_pass: Optional[float]
     sync_s: Optional[ModeledValue]
     note: str
 

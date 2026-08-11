@@ -162,9 +162,11 @@ def fold_compute_walls(
     if not walls:
         return schedule
     totals: dict[str, float] = {}
+    counts: dict[str, int] = {}
     for row in walls:
         name = str(row["name"])
         totals[name] = totals.get(name, 0.0) + float(row["wall_s_total"])
+        counts[name] = counts.get(name, 0) + int(row.get("invocations", 0) or 0)
     compute_names = [
         stage.name
         for stage in schedule.stages
@@ -185,7 +187,11 @@ def fold_compute_walls(
             f"the name-keyed fold would be ambiguous"
         )
     stages = tuple(
-        replace(stage, wall_s_total=totals[stage.name])
+        replace(
+            stage,
+            wall_s_total=totals[stage.name],
+            invocations=counts.get(stage.name) or None,
+        )
         if isinstance(stage, ComputeOpRecord) and stage.name in totals
         else stage
         for stage in schedule.stages
@@ -194,7 +200,7 @@ def fold_compute_walls(
 
 
 def host_ops_wall_s(schedule: ScheduleRecord) -> Optional[float]:
-    """Σ measured ComputeOp walls; ``None`` when nothing was timed."""
+    """Σ measured ComputeOp walls over the whole run; ``None`` when untimed."""
     timed = [
         stage.wall_s_total
         for stage in schedule.stages
@@ -205,12 +211,32 @@ def host_ops_wall_s(schedule: ScheduleRecord) -> Optional[float]:
     return float(sum(timed))
 
 
+def host_ops_wall_s_per_pass(schedule: ScheduleRecord) -> Optional[float]:
+    """Σ per-execution ComputeOp walls: the host time of ONE program traversal.
+
+    Each op is normalized by its own invocation count, so ops executed at
+    different rates still sum onto the per-sample axis. ``None`` when any timed
+    op lacks a count — an unnormalizable measurement is never guessed at.
+    """
+    timed = [
+        stage
+        for stage in schedule.stages
+        if isinstance(stage, ComputeOpRecord) and stage.wall_s_total is not None
+    ]
+    if not timed:
+        return None
+    if any(not stage.invocations for stage in timed):
+        return None
+    return float(sum(s.wall_s_total / s.invocations for s in timed))
+
+
 def timing_record(
     *,
     s_global: int,
     depth: int,
     per_segment: Sequence[SegmentTimingRecord],
     host_ops_s: Optional[float],
+    host_ops_s_per_pass: Optional[float] = None,
 ) -> TimingRecord:
     """The timing fragment: static part always, measured parts when present."""
     segments = tuple(per_segment)
@@ -228,6 +254,7 @@ def timing_record(
             ),
             compute_sim_time_s=compute_sim_time_s,
             host_ops_s=host_ops_s,
+            host_ops_s_per_pass=host_ops_s_per_pass,
             sync_s=None,
             note=LATENCY_NOTE,
         ),

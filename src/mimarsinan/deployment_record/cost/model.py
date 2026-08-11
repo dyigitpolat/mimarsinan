@@ -60,9 +60,10 @@ _TOTAL_ENERGY_BASIS = (
     "are never added on top of it"
 )
 _TOTAL_LATENCY_BASIS = (
-    "measured compute (SANA-FE sim_time_s, NoC transport already inside) + "
-    "measured host-op walls + modeled programming, per-core init and sync; no "
-    "term adds NoC hops a second time"
+    "PER SAMPLE (one program traversal): measured compute (SANA-FE sim_time_s "
+    "for one sample, NoC transport already inside) + measured host-op walls "
+    "normalized per pass + modeled programming, per-core init and sync; no "
+    "term adds NoC hops a second time and no whole-run total joins unscaled"
 )
 _THROUGHPUT_BASIS = (
     "steady-state samples/s = 1 / per-sample latency total; no cross-sample "
@@ -214,9 +215,23 @@ class DeploymentCostModel:
         measured_s = float(compute_s)
         host_ops_s = decomposition.host_ops_s
         if host_ops_s is not None:
-            measured_s += float(host_ops_s)
+            # compute_sim_time_s is a per-sample census; the raw host wall covers
+            # the whole run. Only the per-pass normalization is commensurable.
+            per_pass = decomposition.host_ops_s_per_pass
+            if per_pass is None:
+                raise ValueError(
+                    "measured host-op walls carry no per pass normalization "
+                    "(timing.latency.host_ops_s_per_pass is None because some "
+                    "timed op has no invocation count); the whole-run total "
+                    "cannot join a per-sample decomposition and a guessed "
+                    "divisor would be a proxy presented as a measurement"
+                )
+            measured_s += float(per_pass)
             terms.append(
-                measured("host_ops_s", "s", float(host_ops_s), "timing.latency.host_ops_s")
+                measured(
+                    "host_ops_s", "s", float(per_pass),
+                    "timing.latency.host_ops_s_per_pass",
+                )
             )
         terms.append(modeled("sync_s", "s", sync, "schedule.sync_count x sync_barrier_s"))
         total = sum_bands(
