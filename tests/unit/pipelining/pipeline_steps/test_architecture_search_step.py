@@ -107,16 +107,13 @@ class TestHardwareModeSmoke:
             {**_hardware_search_config(),
              "cores": winner["cores"],
              "target_tq": winner["target_tq"]},
-            include_neuron_splitting=False,
         )
         assert pcfg == expected
         assert result["discovered_platform_constraints"] == pcfg
 
         # ...and the winner is a chip the search FOUND, not the one it started
         # from, so promoting the base instead cannot satisfy the golden above.
-        base = build_platform_constraints_resolved(
-            _hardware_search_config(), include_neuron_splitting=False,
-        )
+        base = build_platform_constraints_resolved(_hardware_search_config())
         assert pcfg["cores"] != base["cores"], (
             "the fixture must let the search move off its declared platform, "
             "or this golden cannot tell the winner from the base"

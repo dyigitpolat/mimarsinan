@@ -12,10 +12,13 @@ from mimarsinan.mapping.platform.core_residency import RESIDENCY_KEY
 
 def build_platform_constraints_resolved(
     pipeline_config: dict[str, Any],
-    *,
-    include_neuron_splitting: bool = True,
 ) -> dict[str, Any]:
-    """Single source for resolved platform constraints dict."""
+    """Single source for resolved platform constraints dict.
+
+    ONE function of the config, with no mode switch: a searched chip and the
+    same chip declared by hand must resolve identically, and an omitted
+    permission reads as DENIED downstream (``ChipCapabilities``).
+    """
     cores = pipeline_config.get("cores")
     if cores is None:
         cores = list(cast("list[dict[str, Any]]", DEFAULT_PLATFORM_CONSTRAINTS["cores"]))
@@ -28,10 +31,9 @@ def build_platform_constraints_resolved(
         ct.setdefault("has_bias", global_has_bias)
 
     pcfg: dict[str, Any] = {"cores": cores}
-    if include_neuron_splitting:
-        pcfg["allow_neuron_splitting"] = bool(
-            pipeline_config.get("allow_neuron_splitting", False)
-        )
+    pcfg["allow_neuron_splitting"] = bool(
+        pipeline_config.get("allow_neuron_splitting", False)
+    )
     pcfg["allow_scheduling"] = bool(pipeline_config.get("allow_scheduling", False))
     pcfg[RESIDENCY_KEY] = dict(pipeline_config.get(RESIDENCY_KEY, {}) or {})
     pcfg["schedule_policy"] = str(pipeline_config.get("schedule_policy", "pool"))

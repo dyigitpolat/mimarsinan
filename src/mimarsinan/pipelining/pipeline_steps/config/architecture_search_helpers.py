@@ -177,14 +177,13 @@ def make_platform_resolver(pipeline_config: Mapping[str, Any]) -> PlatformResolv
     every other property of the chip comes from re-running the deployment's own
     ``build_platform_constraints_resolved`` over the declared platform with that
     overlay applied. Candidate and deployed twin are therefore the same chip by
-    construction — there is no carried key list between them to drift.
+    construction — there is no carried key list between them to drift, and no
+    resolution mode that could serve the search a reduced surface.
     """
     declared = dict(pipeline_config)
 
     def resolve(overlay: Mapping[str, Any]) -> Dict[str, Any]:
-        return build_platform_constraints_resolved(
-            {**declared, **overlay}, include_neuron_splitting=False,
-        )
+        return build_platform_constraints_resolved({**declared, **overlay})
 
     return resolve
 

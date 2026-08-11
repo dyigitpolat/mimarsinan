@@ -37,7 +37,15 @@ is a FIXPOINT, so every entrance passes through it unconditionally:
 `decode` (the encoded optimizers), `_resolved_configuration` at the
 `evaluate`/`validate_detailed`/`constraint_violation` boundary (the LLM
 optimizers, which declare platforms as JSON rather than vectors), and the base
-itself (`fixed_platform_constraints` == the empty overlay).
+itself (`fixed_platform_constraints` == the empty overlay). The resolver takes
+no mode switch: it once omitted `allow_neuron_splitting` for the search only,
+and since `ChipCapabilities` reads an absent permission as DENIED, candidates
+were scored on a chip that could not split neurons while the run deploying them
+could — a searched chip must resolve exactly as the same chip declared by hand. The resolver takes
+no mode switch: it once omitted `allow_neuron_splitting` for the search only,
+and since `ChipCapabilities` reads an absent permission as DENIED, candidates
+were scored on a chip that could not split neurons while the run deploying them
+could — a searched chip must resolve exactly as the same chip declared by hand.
 
 **What is this candidate worth?** — one path, `_resolve_model` → `_resolve_layout`
 → one `CandidateStaticView` → `{spec.key: spec.value(view)}` over the ACTIVE
