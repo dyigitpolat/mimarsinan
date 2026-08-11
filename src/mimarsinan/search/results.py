@@ -65,18 +65,28 @@ def default_objectives_for_mode(search_mode: str) -> Tuple[str, ...]:
     )
 
 
+def resolve_active_specs(
+    search_mode: str,
+    user_selection: Optional[Sequence[str]] = None,
+) -> Tuple[ObjectiveSpecV2, ...]:
+    """The ACTIVE registry specs — the axes an evaluation must produce, loudly.
+
+    An unknown objective, or one the mode cannot measure, aborts the run: a
+    silently dropped objective is a search that optimizes something other than
+    what was asked for. Callers that only need ``name``/``goal`` use
+    :func:`resolve_active_objectives`; callers that must READ the axis off a
+    view (the evaluation contract) need the spec itself.
+    """
+    names = tuple(user_selection) if user_selection else default_objectives_for_mode(search_mode)
+    return OBJECTIVES.resolve_active(search_mode, names)
+
+
 def resolve_active_objectives(
     search_mode: str,
     user_selection: Optional[Sequence[str]] = None,
 ) -> Tuple[ObjectiveSpec, ...]:
-    """Resolve the selection (or the mode defaults) through the registry, loudly.
-
-    An unknown objective, or one the mode cannot measure, aborts the run: a
-    silently dropped objective is a search that optimizes something other than
-    what was asked for.
-    """
-    names = tuple(user_selection) if user_selection else default_objectives_for_mode(search_mode)
-    return tuple(_project(spec) for spec in OBJECTIVES.resolve_active(search_mode, names))
+    """:func:`resolve_active_specs`, projected onto the optimizer-facing pair."""
+    return tuple(_project(spec) for spec in resolve_active_specs(search_mode, user_selection))
 
 
 ConfigT = TypeVar("ConfigT")

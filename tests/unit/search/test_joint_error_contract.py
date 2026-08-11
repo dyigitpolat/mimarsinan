@@ -11,8 +11,10 @@ import logging
 
 import pytest
 
+from mimarsinan.deployment_record.objectives import OBJECTIVES, CandidateStaticView
 from mimarsinan.search.problem import CandidateInfeasibleError, ValidationResult
 from mimarsinan.search.problems.joint.evaluate import JointEvaluateMixin
+from mimarsinan.search.problems.joint.layout_hook import JointLayoutMixin
 from mimarsinan.search.problems.joint.types import ValidationEntry
 from mimarsinan.search.problems.joint.validate import JointValidateMixin
 from mimarsinan.search.results import ACCURACY_OBJECTIVE_NAME, ObjectiveSpec
@@ -20,21 +22,49 @@ from mimarsinan.search.results import ACCURACY_OBJECTIVE_NAME, ObjectiveSpec
 VALIDATE_LOGGER = "mimarsinan.search.problems.joint.validate"
 EVALUATE_LOGGER = "mimarsinan.search.problems.joint.evaluate"
 
+ACTIVE_NAMES = (ACCURACY_OBJECTIVE_NAME, "total_params")
 
-class _ValidateHarness(JointValidateMixin):
-    def __init__(self, search_mode="joint", validate_fn=None, constraint_fn=None):
+
+class _Harness(JointValidateMixin, JointLayoutMixin, JointEvaluateMixin):
+    """The joint mixins on a bare host: only the host members, nothing simulated."""
+
+    search_mode = "joint"
+    accuracy_seed = 0
+    input_shape = (1, 4, 4)
+    validate_fn = None
+    constraint_fn = None
+    active_objective_names = ACTIVE_NAMES
+
+    def __init__(self, active_names=ACTIVE_NAMES):
+        self._cache = {}
         self._validation_cache = {}
         self._validation_errors = {}
-        self._cache = {}
+        self._hw_only_cache = None
+        self.active_objective_names = tuple(active_names)
+
+    @property
+    def _searches_model(self) -> bool:
+        return self.search_mode in ("model", "joint")
+
+    @property
+    def active_specs(self):
+        return OBJECTIVES.resolve_active(self.search_mode, self.active_objective_names)
+
+    @property
+    def objectives(self):
+        return [ObjectiveSpec(s.name, s.goal) for s in self.active_specs]
+
+    def _resolved_configuration(self, configuration):
+        """The identity resolution: these harnesses declare platforms directly."""
+        return configuration
+
+
+class _ValidateHarness(_Harness):
+    def __init__(self, search_mode="joint", validate_fn=None, constraint_fn=None):
+        super().__init__()
         self.validate_fn = validate_fn
         self.constraint_fn = constraint_fn
         self.search_mode = search_mode
-        self.accuracy_seed = 0
-        self.input_shape = (1, 4, 4)
-        self.objectives = [
-            ObjectiveSpec(ACCURACY_OBJECTIVE_NAME, "max"),
-            ObjectiveSpec("total_params", "min"),
-        ]
 
     def _ensure_hw_only_cache(self):
         raise RuntimeError("hw-only fixture broken")
@@ -48,7 +78,7 @@ class _ValidateHarness(JointValidateMixin):
     def _collect_softcores(self, model, pcfg):
         raise AssertionError("should not be reached")
 
-    def _compute_hw_objectives(self, softcores, pcfg, total_params, host_segments):
+    def _candidate_view(self, softcores, pcfg, total_params, host_segments):
         raise AssertionError("should not be reached")
 
 
@@ -105,24 +135,13 @@ class TestValidateErrorContract:
             harness.constraint_violation(_config())
 
 
-class _EvaluateHarness(JointEvaluateMixin):
-    accuracy_seed = 0
-    search_mode = "joint"
-
+class _EvaluateHarness(_Harness):
     def __init__(self, inner_error=None):
-        self._cache = {}
-        self._validation_cache = {}
+        super().__init__()
         self._inner_error = inner_error
-        self.objectives = [
-            ObjectiveSpec(ACCURACY_OBJECTIVE_NAME, "max"),
-            ObjectiveSpec("total_params", "min"),
-        ]
 
     def validate_detailed(self, configuration):
         return ValidationResult(is_valid=True)
-
-    def _penalty_objectives(self):
-        return {s.name: (0.0 if s.goal == "max" else 1e18) for s in self.objectives}
 
     def _evaluate_accuracy(self, model):
         raise RuntimeError("training exploded")
@@ -131,17 +150,27 @@ class _EvaluateHarness(JointEvaluateMixin):
         raise self._inner_error
 
 
+def _entry(total_params=5.0):
+    return ValidationEntry(
+        model=object(),
+        view=CandidateStaticView(
+            layout=None,
+            chip_param_capacity=None,
+            total_params=total_params,
+            host_side_segment_count=None,
+        ),
+    )
+
+
 class TestEvaluateErrorContract:
-    def test_cached_accuracy_failure_records_penalty_and_warns(self, caplog):
+    def test_accuracy_failure_records_penalty_and_warns(self, caplog):
         harness = _EvaluateHarness()
-        vc = ValidationEntry(
-            model=object(), total_params=1.0, hw_objectives={"total_params": 5.0},
-        )
+        entry = _entry()
         with caplog.at_level(logging.WARNING, logger=EVALUATE_LOGGER):
-            obj = harness._evaluate_from_cache(vc, _config())
+            obj = harness._objectives_from_entry(entry)
         assert obj[ACCURACY_OBJECTIVE_NAME] == 0.0
         assert obj["total_params"] == 5.0
-        assert vc.model is None
+        assert entry.model is None
         assert any(
             r.levelno == logging.WARNING and "training exploded" in r.getMessage()
             for r in caplog.records
@@ -162,24 +191,13 @@ class TestEvaluateErrorContract:
             harness.evaluate(_config())
 
 
-class _InnerHarness(JointEvaluateMixin):
+class _InnerHarness(_Harness):
     """Exercises the REAL ``_evaluate_inner`` classification of raise-sites."""
 
-    accuracy_seed = 0
-    search_mode = "joint"
-
     def __init__(self, build_error=None, mapper_error=None):
-        self._cache = {}
-        self._validation_cache = {}
+        super().__init__(active_names=("total_params",))
         self._build_error = build_error
         self._mapper_error = mapper_error
-        self.objectives = [ObjectiveSpec("total_params", "min")]
-
-    def validate_detailed(self, configuration):
-        return ValidationResult(is_valid=True)
-
-    def _penalty_objectives(self):
-        return {s.name: (0.0 if s.goal == "max" else 1e18) for s in self.objectives}
 
     def _ensure_hw_only_cache(self):
         raise RuntimeError("hw-only fixture broken")
@@ -198,6 +216,14 @@ class _InnerHarness(JointEvaluateMixin):
         raise AssertionError("should not be reached")
 
 
+class _LayoutInnerHarness(_InnerHarness):
+    """Same, with a layout-bearing objective active so the mapping path runs."""
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.active_objective_names = ("total_params", "param_utilization_pct")
+
+
 class TestEvaluateInnerRaiseSiteClassification:
     def test_candidate_model_build_failure_raises_typed(self):
         harness = _InnerHarness(build_error=ValueError("candidate arch invalid"))
@@ -206,7 +232,9 @@ class TestEvaluateInnerRaiseSiteClassification:
         assert isinstance(ei.value.__cause__, ValueError)
 
     def test_candidate_mapping_collapse_raises_typed(self):
-        harness = _InnerHarness(mapper_error=RuntimeError("conversion collapsed"))
+        harness = _LayoutInnerHarness(
+            mapper_error=RuntimeError("conversion collapsed"),
+        )
         with pytest.raises(CandidateInfeasibleError, match="conversion collapsed") as ei:
             harness._evaluate_inner({}, {})
         assert isinstance(ei.value.__cause__, RuntimeError)
@@ -216,3 +244,9 @@ class TestEvaluateInnerRaiseSiteClassification:
         harness.search_mode = "hardware"
         with pytest.raises(RuntimeError, match="hw-only fixture broken"):
             harness._evaluate_inner({}, {})
+
+    def test_a_layoutless_objective_set_never_touches_the_mapping(self):
+        # ``_collect_softcores`` asserts it is unreachable: with no layout-bearing
+        # axis active, the candidate view is built without the mapping at all.
+        harness = _InnerHarness()
+        assert harness._evaluate_inner({}, {}) == {"total_params": 1.0}

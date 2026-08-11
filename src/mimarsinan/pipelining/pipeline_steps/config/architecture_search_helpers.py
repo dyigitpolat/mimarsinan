@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import os
-from typing import Any, Dict, List, Literal, Sequence, Tuple
+from typing import Any, Dict, List, Literal, Mapping, Sequence, Tuple
 
 from mimarsinan.common.best_effort import best_effort
 from mimarsinan.gui.json_util import to_json_safe
 from mimarsinan.pipelining.core.platform_constraints_resolver import (
     build_platform_constraints_resolved,
 )
+from mimarsinan.search.problems.joint import PlatformResolver
 from mimarsinan.search.search_space_description import SearchSpaceDescription
 from mimarsinan.visualization.search_viz import (
     create_interactive_search_report,
@@ -169,10 +170,28 @@ def make_assembler(schema: List[Dict[str, Any]], schema_map: Dict[str, Any]):
     return assembler
 
 
-def build_fixed_platform_constraints(pipeline_config: Dict) -> Dict[str, Any]:
-    return build_platform_constraints_resolved(
-        pipeline_config, include_neuron_splitting=False
-    )
+def make_platform_resolver(pipeline_config: Mapping[str, Any]) -> PlatformResolver:
+    """The search's platform resolution: this run's DEPLOYMENT resolver, curried.
+
+    A candidate declares only what it searches (core dimensions, ``target_tq``);
+    every other property of the chip comes from re-running the deployment's own
+    ``build_platform_constraints_resolved`` over the declared platform with that
+    overlay applied. Candidate and deployed twin are therefore the same chip by
+    construction — there is no carried key list between them to drift.
+    """
+    declared = dict(pipeline_config)
+
+    def resolve(overlay: Mapping[str, Any]) -> Dict[str, Any]:
+        return build_platform_constraints_resolved(
+            {**declared, **overlay}, include_neuron_splitting=False,
+        )
+
+    return resolve
+
+
+def build_fixed_platform_constraints(pipeline_config: Mapping[str, Any]) -> Dict[str, Any]:
+    """The resolved platform with NO candidate overlay — the declared chip itself."""
+    return make_platform_resolver(pipeline_config)({})
 
 
 def write_search_visualizations(result_json: Dict[str, Any], out_dir: str) -> None:

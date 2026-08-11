@@ -4,8 +4,22 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Sequence, Tuple
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    Dict,
+    List,
+    Mapping,
+    Optional,
+    Sequence,
+    Tuple,
+)
 
+from mimarsinan.deployment_record.objectives import (
+    CandidateStaticView,
+    ObjectiveSpecV2,
+)
 from mimarsinan.mapping.layout.layout_types import LayoutSoftCoreSpec
 from mimarsinan.mapping.platform.platform_constraints import resolve_platform_mapping_params
 from mimarsinan.search.problem import ValidationResult
@@ -31,19 +45,60 @@ ModelConfigAssembler = Callable[[Dict[str, Any]], Dict[str, Any]]
 ValidateFn = Callable[[Dict[str, Any], Dict[str, Any], Tuple[int, ...]], bool]
 ConstraintFn = Callable[[Dict[str, Any], Dict[str, Any], Tuple[int, ...]], float]
 
+#: Resolve a candidate platform: the deployment's platform resolution applied to
+#: the declared platform overlaid with the candidate's searched declarations.
+PlatformResolver = Callable[[Mapping[str, Any]], Dict[str, Any]]
+
 
 @dataclass
 class HwOnlyCache:
-    softcores: List[Any]
+    """The candidate-INDEPENDENT model fixture of a hardware-only search.
+
+    Only the model is candidate-independent: its layout is re-derived per
+    candidate, because tiling depends on the candidate's core geometry.
+    """
+
+    model: Any
     total_params: float
-    host_side_segment_count: int
 
 
 @dataclass
 class ValidationEntry:
+    """A validated candidate: its static view, plus the model accuracy may need."""
+
     model: Any
-    total_params: float
-    hw_objectives: Dict[str, float]
+    view: CandidateStaticView
+
+
+class CandidatePlatformError(ValueError):
+    """A candidate DECLARED a platform that does not resolve into a chip.
+
+    Candidate-scoped by construction: the run's own declared platform is
+    resolved first, so a failure past that point is the candidate's declaration
+    (zero cores, a tile grid too small for its capacity, a retired key), and it
+    is scored — never allowed to abort a whole search.
+    """
+
+
+#: Candidate-scoped failure phases, in the order the pipeline meets them.
+STRUCTURAL_PHASE = "structural"
+MODEL_BUILD_PHASE = "model_build"
+HW_CONVERSION_PHASE = "hw_conversion"
+HW_PACKING_PHASE = "hw_packing"
+
+
+@dataclass(frozen=True)
+class CandidateFailure:
+    """One candidate-scoped failure, rendered per boundary (invalid vs typed raise)."""
+
+    phase: str
+    message: str
+    cause: Optional[BaseException] = None
+
+    def as_validation_result(self) -> ValidationResult:
+        return ValidationResult(
+            is_valid=False, error_message=self.message, failure_phase=self.phase,
+        )
 
 
 VALIDATION_CACHE_MAX_SIZE = 16
@@ -63,7 +118,7 @@ class JointHostContract:
     validate_fn: Optional[ValidateFn]
     constraint_fn: Optional[ConstraintFn]
     fixed_model_config: Optional[Dict[str, Any]]
-    fixed_platform_constraints: Optional[Dict[str, Any]]
+    platform_resolver: Optional[PlatformResolver]
     accuracy_seed: int
     warmup_fraction: float
     training_batch_size: Optional[int]
@@ -81,9 +136,28 @@ class JointHostContract:
         @property
         def objectives(self) -> Sequence[ObjectiveSpec]: ...
 
+        @property
+        def active_specs(self) -> Sequence[ObjectiveSpecV2]: ...
+
+        @property
+        def _searches_model(self) -> bool: ...
+
+        @property
+        def fixed_platform_constraints(self) -> Optional[Dict[str, Any]]: ...
+
+        def resolve_candidate_platform(
+            self, overlay: Mapping[str, Any],
+        ) -> Dict[str, Any]: ...
+
+        def _resolved_configuration(
+            self, configuration: Dict[str, Any],
+        ) -> Dict[str, Any]: ...
+
         def validate_detailed(self, configuration: Dict) -> ValidationResult: ...
 
         def _penalty_objectives(self) -> Dict[str, float]: ...
+
+        def _requires_fragment(self, fragment: str) -> bool: ...
 
         def _ensure_hw_only_cache(self) -> HwOnlyCache: ...
 
@@ -95,10 +169,18 @@ class JointHostContract:
             self, model: Any, pcfg: Dict,
         ) -> Tuple[List[LayoutSoftCoreSpec], int]: ...
 
-        def _compute_hw_objectives(
+        def _candidate_view(
             self,
             softcores: List[LayoutSoftCoreSpec],
             pcfg: Dict,
             total_params: float,
             host_side_segment_count: int,
-        ) -> Tuple[Optional[Dict[str, float]], Optional[str]]: ...
+        ) -> Tuple[Optional[CandidateStaticView], Optional[str]]: ...
+
+        def _layoutless_view(
+            self, pcfg: Dict, total_params: float,
+        ) -> CandidateStaticView: ...
+
+        def _resolve_entry(
+            self, mc: Dict, pcfg: Dict,
+        ) -> Tuple[Optional[ValidationEntry], Optional[CandidateFailure]]: ...

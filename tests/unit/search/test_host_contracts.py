@@ -27,13 +27,19 @@ EVOLVE_CONTRACT_METHODS = [
 
 JOINT_CONTRACT_METHODS = [
     "objectives",
+    "active_specs",
+    "fixed_platform_constraints",
+    "resolve_candidate_platform",
     "validate_detailed",
+    "_resolved_configuration",
     "_penalty_objectives",
+    "_requires_fragment",
     "_ensure_hw_only_cache",
     "_build_raw_model",
     "_ensure_mapper_repr",
     "_collect_softcores",
-    "_compute_hw_objectives",
+    "_candidate_view",
+    "_resolve_entry",
 ]
 
 

@@ -37,7 +37,9 @@ ALLOWLIST = {
     "search/optimizers/compilagent/backend/backend_layout.py": 1,
     "search/optimizers/compilagent/compilagent_optimizer.py": 1,
     "search/optimizers/llm/trace.py": 1,
-    "search/problems/joint/evaluate.py": 6,
+    # W5.1: one evaluation contract left exactly one broad catch — the accuracy
+    # estimate, whose failure is a scored penalty rather than a lost candidate.
+    "search/problems/joint/evaluate.py": 1,
     "search/problems/joint/validate.py": 5,
     # [MBH-DRAWS] re-raising boundary: a failed conversion draw is a measured
     # outcome (logged, workers released, independent redraw); the harness

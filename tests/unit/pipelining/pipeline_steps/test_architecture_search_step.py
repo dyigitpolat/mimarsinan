@@ -9,6 +9,9 @@ reported a misleading "no candidates" error).
 from conftest import MockPipeline, default_config
 
 from mimarsinan.mapping.platform.coalescing import CANONICAL_KEY
+from mimarsinan.pipelining.core.platform_constraints_resolver import (
+    build_platform_constraints_resolved,
+)
 from mimarsinan.pipelining.pipeline_steps.config.architecture_search_step import (
     ArchitectureSearchStep,
 )
@@ -84,6 +87,25 @@ class TestHardwareModeSmoke:
         assert pcfg[CANONICAL_KEY] is False
         assert "schedule_policy" in pcfg
         assert "max_schedule_passes" in pcfg
+
+    def test_the_promised_platform_is_the_deployment_resolution_of_the_winner(
+        self, tmp_path,
+    ):
+        # W5.1: the step promises the winner's chip verbatim — the SAME
+        # resolution a fixed-mode deployment of those cores would produce.
+        # Nothing is merged, re-stamped, or carried across afterwards.
+        pipeline = _run_step(tmp_path)
+        pcfg = pipeline.cache["ArchitectureSearch.platform_constraints_resolved"]
+        expected = build_platform_constraints_resolved(
+            {**_hardware_search_config(),
+             "cores": pcfg["cores"],
+             "target_tq": pcfg["target_tq"]},
+            include_neuron_splitting=False,
+        )
+        assert pcfg == expected
+
+        result = pipeline.cache["ArchitectureSearch.architecture_search_result"]
+        assert result["discovered_platform_constraints"] == pcfg
 
     def test_fixed_model_config_is_passed_through(self, tmp_path):
         pipeline = _run_step(tmp_path)

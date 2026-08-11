@@ -10,8 +10,8 @@ from __future__ import annotations
 
 from collections.abc import Mapping as MappingABC
 from collections.abc import Sequence as SequenceABC
-from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Dict, Mapping, Optional, Sequence
+from dataclasses import dataclass, field, replace
+from typing import TYPE_CHECKING, Any, Dict, Mapping, Optional, Sequence, Tuple
 
 from mimarsinan.deployment_record.cost.model import DeploymentCostModel
 from mimarsinan.deployment_record.cost.terms import DeploymentCostReport
@@ -138,19 +138,54 @@ class _ProbeLayout:
     schedule_sync_count: int = 0
 
 
+# The static facts a candidate view can hold; each one is a separate question
+# ("does this candidate carry a layout?"), so an objective's need for a fact is
+# answered by asking the registry, never by a hand-kept list of objective names.
+CANDIDATE_FRAGMENTS: Tuple[str, ...] = (
+    "layout",
+    "chip_param_capacity",
+    "total_params",
+    "host_side_segment_count",
+    "estimated_accuracy",
+)
+
+
+def _full_candidate_probe() -> CandidateStaticView:
+    """Every candidate fragment populated; the values are placeholders."""
+    return CandidateStaticView(
+        layout=_ProbeLayout(),
+        chip_param_capacity=0.0,
+        total_params=0.0,
+        host_side_segment_count=0,
+        estimated_accuracy=0.0,
+    )
+
+
 def candidate_capability_probe(search_mode: str) -> CandidateStaticView:
     """A maximally populated candidate view: what a candidate CAN carry in this mode.
 
     A capability question, not data — the zeros are placeholders whose only
     meaning is "this datum exists in this mode".
     """
-    return CandidateStaticView(
-        layout=_ProbeLayout(),
-        chip_param_capacity=0.0,
-        total_params=0.0,
-        host_side_segment_count=0,
-        estimated_accuracy=0.0 if mode_trains_accuracy(search_mode) else None,
-    )
+    probe = _full_candidate_probe()
+    if mode_trains_accuracy(search_mode):
+        return probe
+    return replace(probe, estimated_accuracy=None)
+
+
+def candidate_probe_without(fragment: str) -> CandidateStaticView:
+    """A fully populated candidate view MINUS one fragment.
+
+    Asking which objectives go unavailable on it is how a caller learns whether
+    a fragment is worth computing — the registry answers, so a new objective
+    classifies itself.
+    """
+    if fragment not in CANDIDATE_FRAGMENTS:
+        raise ValueError(
+            f"unknown candidate fragment {fragment!r}; a candidate view carries "
+            f"{list(CANDIDATE_FRAGMENTS)}"
+        )
+    return replace(_full_candidate_probe(), **{fragment: None})
 
 
 if TYPE_CHECKING:
