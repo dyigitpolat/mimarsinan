@@ -161,3 +161,22 @@ class TestContinuityGolden:
         )
         with pytest.raises(ValueError, match="per_segment"):
             cost_record_from_deployment_record(no_segments)
+
+
+def test_energy_breakdown_terms_are_joules_converted_to_mj():
+    # Pins the J -> mJ conversion on per-plane breakdown terms: the snapshot
+    # carries energy_breakdown_j in JOULES; EnergyTermRecord.mj must be *1e3.
+    snapshot = make_sanafe_snapshot()
+    record = energy_record_from_sanafe(snapshot)
+    breakdown_j = snapshot["aggregate"]["energy_breakdown_j"]
+    assert breakdown_j, "fixture must carry a non-empty breakdown"
+    from mimarsinan.deployment_record.build.from_simulators import (
+        _ENERGY_BREAKDOWN_TERMS,
+    )
+    by_name = {t.name: t for t in record.breakdown}
+    pinned = [t for t in _ENERGY_BREAKDOWN_TERMS if t in breakdown_j]
+    assert pinned, "fixture must cover at least one converter term"
+    for term in pinned:
+        rec = by_name[f"sanafe_{term}"]
+        assert rec.mj == pytest.approx(float(breakdown_j[term]) * 1000.0)
+        assert rec.kind == "measured"
