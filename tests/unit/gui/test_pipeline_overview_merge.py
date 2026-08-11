@@ -8,35 +8,13 @@ Configuration tab used to fall back to its raw table mid-run. The merge is
 therefore key-agnostic, and this test executes the real ES module under Node.
 """
 
-import json
-import shutil
-import subprocess
-from pathlib import Path
+from js_module import JS_ROOT, call_js
 
-import pytest
-
-_MODULE = (
-    Path(__file__).resolve().parents[3]
-    / "src" / "mimarsinan" / "gui" / "static" / "js" / "pipeline-state.js"
-)
+_MODULE = JS_ROOT / "pipeline-state.js"
 
 
 def _merge(prev, frame):
-    node = shutil.which("node")
-    if node is None:
-        pytest.skip("node is required to execute the monitor's ES modules")
-    script = (
-        f"import {{ mergePipelineOverview }} from {json.dumps(_MODULE.as_uri())};\n"
-        f"const prev = {json.dumps(prev)};\n"
-        f"const frame = {json.dumps(frame)};\n"
-        "process.stdout.write(JSON.stringify(mergePipelineOverview(prev, frame)));\n"
-    )
-    proc = subprocess.run(
-        [node, "--input-type=module", "-e", script],
-        capture_output=True, text=True, timeout=60,
-    )
-    assert proc.returncode == 0, f"node failed:\n{proc.stderr}"
-    return json.loads(proc.stdout)
+    return call_js(_MODULE, "mergePipelineOverview", prev, frame)
 
 
 class TestMergePipelineOverview:

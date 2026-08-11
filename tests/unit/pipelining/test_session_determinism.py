@@ -36,8 +36,20 @@ def _restore_process_globals():
     torch.set_float32_matmul_precision(precision)
 
 
-def _config(tmp_path, *, seed, name):
-    return {
+HARDWARE_SEARCH = {
+    "optimizer": "nsga2",
+    "pop_size": 4,
+    "generations": 2,
+    "seed": 0,
+    "num_core_types": 1,
+    "core_axons_bounds": [64, 256],
+    "core_neurons_bounds": [64, 256],
+    "core_count_bounds": [8, 64],
+}
+
+
+def _config(tmp_path, *, seed, name, hardware_search=False):
+    config = {
         "experiment_name": name,
         "data_provider_name": "MNIST_DataProvider",
         "generated_files_path": str(tmp_path / name),
@@ -55,11 +67,18 @@ def _config(tmp_path, *, seed, name):
         },
         "platform_constraints": {},
     }
+    if hardware_search:
+        config["deployment_parameters"]["hw_config_mode"] = "search"
+        config["deployment_parameters"]["arch_search"] = dict(HARDWARE_SEARCH)
+        config["platform_constraints"] = {
+            "cores": [{"max_axons": 256, "max_neurons": 256, "count": 64}],
+        }
+    return config
 
 
-def _session(tmp_path, *, seed, name):
+def _session(tmp_path, *, seed, name, hardware_search=False):
     return PipelineSession.from_config(
-        _config(tmp_path, seed=seed, name=name),
+        _config(tmp_path, seed=seed, name=name, hardware_search=hardware_search),
         data_provider_factory=MockDataProviderFactory(),
     )
 
@@ -72,8 +91,8 @@ def _state_dict_hash(model) -> str:
     return digest.hexdigest()
 
 
-def _model_building_state_hash(tmp_path, *, seed, name) -> str:
-    session = _session(tmp_path, seed=seed, name=name)
+def _model_building_state_hash(tmp_path, *, seed, name, hardware_search=False) -> str:
+    session = _session(tmp_path, seed=seed, name=name, hardware_search=hardware_search)
     session.pipeline.run(stop_step="Model Building")
     model = session.pipeline.cache.get("Model Building.model")
     assert model is not None
@@ -136,3 +155,20 @@ class TestSessionDeterminismOwnership:
         first = _model_building_state_hash(tmp_path, seed=7, name="det_diff_a")
         second = _model_building_state_hash(tmp_path, seed=8, name="det_diff_b")
         assert first != second
+
+    def test_searching_the_hardware_deploys_the_weights_the_fixed_run_would(self, tmp_path):
+        """Choosing the chip must not choose the weights.
+
+        Candidate scoring seeds the world to its own scoring seed; before the
+        search ran inside ``isolated_rng_stream`` that seed escaped, so turning
+        hw_config_mode from ``fixed`` to ``search`` re-rolled every downstream
+        draw — the searched arm trained a DIFFERENT model and then bet it
+        against the same certificates. Measured end to end on t0_60 vs its
+        t0_05 anchor at seed 1: identical Model Building and Pretraining state
+        dicts, same 0.981 read, on two different chips.
+        """
+        fixed = _model_building_state_hash(tmp_path, seed=3, name="det_fixed_arm")
+        searched = _model_building_state_hash(
+            tmp_path, seed=3, name="det_searched_arm", hardware_search=True,
+        )
+        assert searched == fixed

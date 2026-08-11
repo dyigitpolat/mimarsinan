@@ -10,6 +10,7 @@ from mimarsinan.pipelining.core.steps.pipeline_step import (
     PipelineStep,
 )
 from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
+from mimarsinan.pipelining.determinism import isolated_rng_stream
 from mimarsinan.pipelining.core.model_config_emit import emit_model_config_entries
 from mimarsinan.pipelining.core.registry.model_registry import ModelRegistry
 from mimarsinan.pipelining.core.search_mode import derive_search_mode
@@ -61,7 +62,15 @@ class ArchitectureSearchStep(PipelineStep):
         if search_mode == "fixed":
             self._process_fixed()
         else:
-            self._process_search(search_mode)
+            # A search CHOOSES a configuration; it must not move the stream the
+            # deployment draws from. Candidate scoring seeds the world to its
+            # own scoring seed, so without this the weights a run deploys would
+            # depend on how many candidates the search looked at — the same
+            # config would train differently with the search ON than with the
+            # winning chip declared by hand, which is exactly the difference a
+            # searched-hardware guard cell must NOT have from its fixed anchor.
+            with isolated_rng_stream():
+                self._process_search(search_mode)
 
     def _process_fixed(self):
         emit_model_config_entries(self, self.pipeline.config)

@@ -3,18 +3,13 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
-import os
 import threading
 from typing import TYPE_CHECKING, Callable
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-from mimarsinan.common.best_effort import best_effort
-from mimarsinan.gui.runs import get_runs_root, _validate_run_id
-from mimarsinan.gui.server.json_safe import SafeJSONResponse
 from mimarsinan.gui.templates import (
     delete_template,
     get_template,
@@ -176,29 +171,6 @@ def register_routes(
                 status_code=400,
                 content={"error": str(e)},
             )
-
-    @app.get("/api/runs/{run_id}/discovered")
-    def api_run_discovered(run_id: str):
-        _validate_run_id(run_id)
-        run_dir = os.path.join(get_runs_root(), run_id)
-        pop_path = os.path.join(run_dir, "final_population.json")
-        if not os.path.isfile(pop_path):
-            return SafeJSONResponse(content={"discovered": False})
-        result = SafeJSONResponse(content={"discovered": False})
-        with best_effort(f"read discovered population for run {run_id}", logger=logger):
-            with open(pop_path, encoding="utf-8") as f:
-                data = json.load(f)
-            best = data.get("best", {})
-            cfg = best.get("configuration", {})
-            result = SafeJSONResponse(content={
-                "discovered": True,
-                "search_mode_used": data.get("search_mode_used"),
-                "discovered_model_config": data.get("discovered_model_config") or cfg.get("model_config"),
-                "discovered_platform_constraints": data.get("discovered_platform_constraints") or cfg.get("platform_constraints"),
-                "active_objectives": data.get("active_objectives", []),
-                "best_objectives": best.get("objectives", {}),
-            })
-        return result
 
     @app.get("/api/templates")
     def api_list_templates():

@@ -130,7 +130,6 @@ class TestDecodeIsTheDeploymentResolution:
         expected = build_platform_constraints_resolved(
             {**cfg, "cores": _decision_cores(problem, x),
              "target_tq": SEARCH_TARGET_TQ},
-            include_neuron_splitting=False,
         )
 
         assert decoded == expected, (
@@ -212,7 +211,6 @@ class TestTheGoldenIsSensitive:
         without_tq = {k: v for k, v in cfg.items() if k != "target_tq"}
         mutated = build_platform_constraints_resolved(
             {**without_tq, "cores": _decision_cores(problem, x)},
-            include_neuron_splitting=False,
         )
         assert mutated != decoded
 
@@ -226,7 +224,6 @@ class TestTheGoldenIsSensitive:
         mutated = build_platform_constraints_resolved(
             {**without_policy, "cores": _decision_cores(problem, x),
              "target_tq": SEARCH_TARGET_TQ},
-            include_neuron_splitting=False,
         )
         assert mutated != decoded
 

@@ -8,6 +8,17 @@ from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any, Dict, List, Tuple, get_args, get_origin
 
 from mimarsinan.common.best_effort import best_effort
+from mimarsinan.search.optimizers.search_events import emit_search_event
+
+__all__ = [
+    "LLMTraceMixin",
+    "coerce_llm_text",
+    "emit_search_event",
+    "parse_json_object",
+    "schema_has_dict_type",
+    "split_prompt_for_trace",
+    "trace_response_summary",
+]
 
 
 TRACE_MAX_SECTION_CHARS = 4000
@@ -27,14 +38,6 @@ def coerce_llm_text(val: Any) -> str:
         return json.dumps(val, ensure_ascii=False)
     except TypeError:
         return str(val)
-
-
-def emit_search_event(reporter: Any, event: Dict[str, Any]) -> None:
-    """Emit a structured search event via the reporter."""
-    if reporter is None:
-        return
-    with best_effort("emit search_event"):
-        reporter("search_event", json.dumps(event, default=str))
 
 
 def parse_json_object(raw: str) -> Any:
