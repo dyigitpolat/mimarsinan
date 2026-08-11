@@ -69,7 +69,10 @@ def make_identity() -> RecordIdentity:
         model_name="lenet5",
         workload="mnist_t0",
         config_digest="deadbeef" * 8,
-        platform={"cores": [{"axons": 256, "neurons": 256}], "weight_bits": 8},
+        platform={
+            "cores": [{"max_axons": 256, "max_neurons": 256, "count": 20}],
+            "weight_bits": 8,
+        },
         deployment_options={"schedule_policy": "greedy", "target_tq": 32},
         created_at="2026-08-11T00:00:00+00:00",
     )

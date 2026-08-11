@@ -226,7 +226,8 @@ values, the template flow, and both error/remedy flows.
 - `models` — `builders.wizard_schema` model-type schemas for the wizard form.
 - `pipelining` — deployment pipeline step specs and semantic groups for step previews; model registry for model-type/config-schema APIs (lazy imports); the canonical `PRUNING_ADAPTATION_STEP` step-name constant consumed by the snapshot pruning gate.
 - `data_handling` — `BasicDataProviderFactory` for the data-provider listing/metadata endpoints (lazy import); `preprocessing` normalization/interpolation option surfaces for the wizard schema payload.
-- `search` — `ALL_OBJECTIVES` / `ACCURACY_OBJECTIVE_NAME` for the wizard NAS schema.
+- `search` — `ALL_OBJECTIVES` / `ACCURACY_OBJECTIVE_NAME` for the wizard NAS schema's `objective_options` (the eight the frontend switch renders today).
+- `deployment_record` — the objectives registry behind the NAS schema's `objective_catalog`: every registered axis with its `provenance`, the search modes it is available in, and the requirement it is missing when it is not (backend surface; the frontend consumes it in W5.3).
 - `tuning` — `S_ALLOCATION_MODES` for the wizard temporal-allocation schema.
 - `advisories` — config-time deployment advisories in the wizard resolve payload (`resolve_payload()["advisories"]`), rendered as the Review & Launch section's first card (UNSUPPORTED reads loud at selection time); UNSUPPORTED/mandate-violation rows gate Launch behind explicit per-id acknowledgment (`static/js/wizard/advisories.js` — acks reset whenever the gating id set changes), with compact amber counts on the live rail and the Review nav item.
 

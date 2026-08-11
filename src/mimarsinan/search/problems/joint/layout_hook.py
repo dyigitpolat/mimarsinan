@@ -8,6 +8,7 @@ import numpy as np
 import torch
 from torch.nn.parameter import UninitializedParameter
 
+from mimarsinan.deployment_record.objectives import chip_param_capacity
 from mimarsinan.mapping.layout.layout_ir_mapping import LayoutIRMapping
 from mimarsinan.mapping.layout.layout_types import LayoutHardCoreType, LayoutSoftCoreSpec
 from mimarsinan.mapping.platform.coalescing import normalize_coalescing_config
@@ -132,12 +133,7 @@ class JointLayoutMixin(JointHostContract):
 
     @staticmethod
     def _compute_chip_capacity(pcfg: Dict) -> float:
-        return float(
-            sum(
-                int(ct["max_axons"]) * int(ct["max_neurons"]) * int(ct["count"])
-                for ct in pcfg["cores"]
-            )
-        )
+        return chip_param_capacity(pcfg["cores"])
 
     def _penalty_objectives(self) -> Dict[str, float]:
         """Return penalty values for all objectives (infeasible candidate)."""

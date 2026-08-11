@@ -1,8 +1,22 @@
+"""Search result containers, and the legacy projection of the objectives registry.
+
+The objective catalogue itself lives in ``deployment_record.objectives`` — one
+registry over the deployment artifact, asked which axes a view can carry. This
+module PROJECTS the searchable part of it onto the frozen ``ObjectiveSpec``
+tuple every optimizer reads (``spec.name``/``spec.goal``), and keeps the
+per-search-mode DEFAULTS, which are a search policy rather than a record fact.
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Any, Dict, Generic, List, Literal, Optional, Sequence, Tuple, TypeVar
 
+from mimarsinan.deployment_record.objectives import (
+    ACCURACY_OBJECTIVE_KEY,
+    OBJECTIVES,
+    ObjectiveSpecV2,
+)
 
 Goal = Literal["min", "max"]
 
@@ -13,30 +27,21 @@ class ObjectiveSpec:
     goal: Goal
 
 
-ALL_OBJECTIVES: Tuple[ObjectiveSpec, ...] = (
-    ObjectiveSpec("estimated_accuracy", "max"),
-    ObjectiveSpec("total_params", "min"),
-    ObjectiveSpec("total_param_capacity", "min"),
-    ObjectiveSpec("total_sync_barriers", "min"),
-    ObjectiveSpec("param_utilization_pct", "max"),
-    ObjectiveSpec("neuron_wastage_pct", "min"),
-    ObjectiveSpec("axon_wastage_pct", "min"),
-    ObjectiveSpec("fragmentation_pct", "min"),
+def _project(spec: ObjectiveSpecV2) -> ObjectiveSpec:
+    """A registry axis as the legacy optimizer-facing pair."""
+    return ObjectiveSpec(spec.name, spec.goal)
+
+
+ALL_OBJECTIVES: Tuple[ObjectiveSpec, ...] = tuple(
+    _project(spec) for spec in OBJECTIVES.search_catalog()
 )
 
-ACCURACY_OBJECTIVE_NAME = "estimated_accuracy"
-
-_OBJECTIVES_BY_NAME: Dict[str, ObjectiveSpec] = {o.name: o for o in ALL_OBJECTIVES}
+ACCURACY_OBJECTIVE_NAME = ACCURACY_OBJECTIVE_KEY
 
 
 def objectives_for_mode(search_mode: str) -> Tuple[ObjectiveSpec, ...]:
-    """All objectives *available* for a given search mode.
-
-    Accuracy is excluded for hardware-only search (no training is performed).
-    """
-    if search_mode == "hardware":
-        return tuple(o for o in ALL_OBJECTIVES if o.name != ACCURACY_OBJECTIVE_NAME)
-    return ALL_OBJECTIVES
+    """All objectives *available* for a given search mode (registry availability)."""
+    return tuple(_project(spec) for spec in OBJECTIVES.for_search_mode(search_mode))
 
 
 def default_objectives_for_mode(search_mode: str) -> Tuple[str, ...]:
@@ -64,17 +69,14 @@ def resolve_active_objectives(
     search_mode: str,
     user_selection: Optional[Sequence[str]] = None,
 ) -> Tuple[ObjectiveSpec, ...]:
-    """Resolve user selection (or defaults) into validated ObjectiveSpec tuple."""
-    available = {o.name for o in objectives_for_mode(search_mode)}
+    """Resolve the selection (or the mode defaults) through the registry, loudly.
+
+    An unknown objective, or one the mode cannot measure, aborts the run: a
+    silently dropped objective is a search that optimizes something other than
+    what was asked for.
+    """
     names = tuple(user_selection) if user_selection else default_objectives_for_mode(search_mode)
-    resolved = []
-    for n in names:
-        if n in available and n in _OBJECTIVES_BY_NAME:
-            resolved.append(_OBJECTIVES_BY_NAME[n])
-    if not resolved:
-        for n in default_objectives_for_mode(search_mode):
-            resolved.append(_OBJECTIVES_BY_NAME[n])
-    return tuple(resolved)
+    return tuple(_project(spec) for spec in OBJECTIVES.resolve_active(search_mode, names))
 
 
 ConfigT = TypeVar("ConfigT")

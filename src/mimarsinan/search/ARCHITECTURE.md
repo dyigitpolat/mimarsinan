@@ -12,7 +12,7 @@ of truth for the joint NAS + HW search space, rendered per backend.
 | File | Purpose |
 |---|---|
 | `problem.py` | `SearchProblem` protocol (validate, validate_detailed, evaluate, constraint_violation, meta), `ValidationResult` carrying failure details, and `CandidateInfeasibleError` — the typed candidate-dependent failure optimizers convert to penalties while everything else aborts |
-| `results.py` | Objective catalogue (`ALL_OBJECTIVES`), per-search-mode defaults and `resolve_active_objectives`, `Candidate`/`SearchResult` containers, and minimax-rank best-candidate selection |
+| `results.py` | The legacy PROJECTION of `deployment_record.objectives` — `ALL_OBJECTIVES` is that registry's search catalogue rendered as the frozen `ObjectiveSpec(name, goal)` tuple every optimizer indexes (byte-equality pinned by test), `objectives_for_mode`/`resolve_active_objectives` delegate to the registry and now FAIL LOUD on an unknown or mode-unavailable objective (the silent drop is gone); the per-search-mode DEFAULTS stay here (a search policy, not a record fact), together with the `Candidate`/`SearchResult` containers and minimax-rank best-candidate selection |
 | `search_space_description.py` | `SearchSpaceDescription` SSOT for the joint NAS + HW space (`CORE_DIM_GRANULARITY`), with renderers to AgentEvolve prompt schema/example/constraints and compilagent levers |
 | `search_space_compilagent.py` | Renders a `SearchSpaceDescription` into compilagent `Lever` tuples and derives sampled integer candidates per HW dimension |
 | `patch_borders.py` | `get_region_borders`: standalone patch-region border computation utility (no in-repo callers) |
@@ -21,6 +21,7 @@ of truth for the joint NAS + HW search space, rendered per backend.
 | `problems/` | Concrete problems: `EncodedProblem` (vector-encoded) protocol and `JointArchHwProblem` for joint architecture + hardware co-search |
 
 ## Dependencies
+- `deployment_record` — the objectives registry (`OBJECTIVES`, `ObjectiveSpecV2`, `CandidateStaticView`) that `results.py` projects and resolves through, and the `chip_param_capacity` formula the joint layout hook computes candidate chip capacity with. One-way: `deployment_record` never imports `search`.
 - `mapping` — layout types (`LayoutSoftCoreSpec`, `LayoutHardCoreType`), `ChipCapabilities`, `compute_mapping_stats`, coalescing-config normalization, and platform mapping params, used by the joint problem's layout hook/validation and the compilagent layout backend.
 - `data_handling` — `DataProviderFactory` / `DataLoaderFactory` powering the evaluators' train/validate loops.
 - `torch_mapping` — `convert_torch_model` to lower candidate models into layout IR inside the joint problem's layout hook.
