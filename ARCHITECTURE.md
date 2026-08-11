@@ -8,7 +8,7 @@ IR of neural cores, packs the cores onto a constrained chip, and then runs the
 mapped chip on cycle-level simulators (nevresim C++, SANA-FE, Lava Loihi) to
 produce the deployed-forward accuracy number the pipeline reports.
 
-This file is the lean overview. Detail lives in the 17 per-module
+This file is the lean overview. Detail lives in the 18 per-module
 `src/mimarsinan/<module>/ARCHITECTURE.md` files (see the module map below);
 a machine test keeps this file at or under 400 lines and keeps the per-module
 docs in sync with the files they describe.
@@ -42,7 +42,7 @@ docs in sync with the files they describe.
 
 ## Repository layout
 
-- `src/mimarsinan/` — the Python package (17 modules, one doc each).
+- `src/mimarsinan/` — the Python package (18 modules, one doc each).
 - `run.py` / `src/main.py` — the deployment entry points (below).
 - `tests/` — unit suite (`tests/unit/`), integration tests, shared fixtures.
 - `templates/` + `scripts/run_tier.py` — tiered end-to-end run matrices
@@ -159,6 +159,7 @@ before editing that module.
 | `spiking` | Spike-train encoding, segment-boundary transcoding SSOT, unified segment-aware NF forward, cascade calibration | [doc](src/mimarsinan/spiking/ARCHITECTURE.md) |
 | `chip_simulation` | Simulation backends (nevresim, SANA-FE, Lava Loihi, TTFS), spiking-semantics SSOTs, certification/coverage/Pareto instruments | [doc](src/mimarsinan/chip_simulation/ARCHITECTURE.md) |
 | `certification` | Deployment-faithfulness certificates: the per-neuron spike-count observable, typed reference↔backend comparison, per-backend exactness classes | [doc](src/mimarsinan/certification/ARCHITECTURE.md) |
+| `deployment_record` | The typed, versioned, provenance-carrying per-run deployment artifact (`deployment_record.json` schema) and its attach-once, seal-validated builder | [doc](src/mimarsinan/deployment_record/ARCHITECTURE.md) |
 | `code_generation` | nevresim C++ source generation from mapped chips (`ChipModel`, main templates, span export) | [doc](src/mimarsinan/code_generation/ARCHITECTURE.md) |
 | `visualization` | Write-to-file Graphviz/matplotlib/Plotly renderings of pipeline artifacts | [doc](src/mimarsinan/visualization/ARCHITECTURE.md) |
 | `gui` | Browser-based run monitor, run manager, and configuration wizard (FastAPI + SPA) | [doc](src/mimarsinan/gui/ARCHITECTURE.md) |
