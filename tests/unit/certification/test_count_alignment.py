@@ -186,7 +186,7 @@ def test_identity_vs_packed_twin_certificate_is_exact_both_cells():
     identity = build_identity_mapping_for_pipeline(ir, pipeline_config=None)
 
     for discipline in ("streaming", "synchronized"):
-        cert, detail = certify_twin_flow_counts(
+        cert, detail, backend_counts = certify_twin_flow_counts(
             ir,
             _flow(identity, synchronized=False),
             _flow(hybrid, synchronized=False),
@@ -197,6 +197,10 @@ def test_identity_vs_packed_twin_certificate_is_exact_both_cells():
         )
         assert cert.passed, f"{discipline}: {cert.summary()} | {detail}"
         assert cert.exact_match_fraction == 1.0
+        # The backend node counts ride along for gate-scope traffic reduction.
+        assert backend_counts and all(
+            counts.dim() == 2 for counts in backend_counts.values()
+        )
 
 
 def test_twin_certificate_is_node_keyed_and_survives_pruned_provenance():
@@ -222,7 +226,7 @@ def test_twin_certificate_is_node_keyed_and_survives_pruned_provenance():
             break
     identity = build_identity_mapping_for_pipeline(ir, pipeline_config=None)
     x = torch.rand(3, 8) * 0.9
-    cert, detail = certify_twin_flow_counts(
+    cert, detail, _ = certify_twin_flow_counts(
         ir,
         _flow(identity, synchronized=False),
         _flow(hybrid, synchronized=False),

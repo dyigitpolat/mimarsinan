@@ -60,7 +60,7 @@ def test_gate_raises_on_failed_certificate(monkeypatch):
     monkeypatch.setattr(
         gate_mod, "certify_twin_flow_counts",
         lambda ir, ref_flow, backend_flow, samples, backend, discipline,
-            **kw: (failed, "detail"),
+            **kw: (failed, "detail", {}),
     )
     with pytest.raises(RuntimeError, match="spike-count certificate"):
         run_spike_count_certificate_gate(

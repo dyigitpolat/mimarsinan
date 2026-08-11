@@ -58,6 +58,16 @@ def _mvm_pipeline(tmp_path):
     return pipeline
 
 
+def _seed_scm_fragment(pipeline):
+    pipeline.seed("deployment_record_scm", {
+        "reuse_plan": {
+            "reprogram_passes": 2, "reuse_passes": 0, "params_reloaded": 0,
+        },
+        "relay_cores_inserted": 0,
+        "ir_max_latency": 1,
+    })
+
+
 def _run_mapping_step(pipeline, monkeypatch, platform=_PLATFORM):
     import mimarsinan.pipelining.pipeline_steps.mapping.hard_core_mapping_step as hcm
 
@@ -68,6 +78,7 @@ def _run_mapping_step(pipeline, monkeypatch, platform=_PLATFORM):
     pipeline.seed("model", object())
     pipeline.seed("ir_graph", make_tiny_ir_graph())
     pipeline.seed("platform_constraints_resolved", platform)
+    _seed_scm_fragment(pipeline)
     step = HardCoreMappingStep(pipeline)
     pipeline.prepare_step(step)
     step.run()
@@ -154,9 +165,14 @@ class TestMvmRunEmitsUtilization:
     def test_undeclared_platform_width_leaves_programming_bits_null(
         self, tmp_path, monkeypatch
     ):
+        # The utilization record still lands honestly with nulls; the later
+        # deployment-record payload sizing then FAILS LOUD (an undeclared
+        # width cannot size params_bytes — real runs always resolve
+        # weight_bits into the platform before the mapping steps).
         platform = {"cores": _PLATFORM["cores"]}
         pipeline = _mvm_pipeline(tmp_path)
-        _run_mapping_step(pipeline, monkeypatch, platform=platform)
+        with pytest.raises(ValueError, match="weight"):
+            _run_mapping_step(pipeline, monkeypatch, platform=platform)
         record = json.loads((tmp_path / UTILIZATION_RECORD_FILENAME).read_text())
         assert record["weight_bits"] is None
         assert record["programming_bits"] is None
