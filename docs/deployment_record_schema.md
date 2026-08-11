@@ -301,11 +301,22 @@ constants; the VGG16 illustration in `weight_reuse_cost_model.py` stays as-is).
 | `bytes_per_param` | 0.5 / 1.0 / 2.0 | 4-bit · 8-bit · 16-bit weights (existing band) |
 | `e_sync_barrier_mj` | 1e-4 / 1e-3 / 1e-2 | ~0.1 / ~1 / ~10 µJ per barrier (existing band) |
 | `bytes_per_connectivity_entry` | **4 / 8 / 16** | **NEW — needs owner sign-off.** Span entries are exact counts; their byte size is modeled until a real chip wire format exists (`chip_spans.txt` is a simulator exchange format, not chip DMA truth). |
-| `CoreInitCoefficients` (per-core reset/init energy + time) | **NEW — proposed band to be derived from SANA-FE per-event reset costs at implementation; basis string ships in the artifact** | segment initialization constant term |
+| `CoreInitCoefficients.energy_mj` (per core) | 8.96e-8 / 1.8637e-5 / 7.4547e-5 | **NEW — needs owner sign-off.** DERIVED at import from the SANA-FE per-event presets: a core init writes every neuron's soma state once, priced as `(soma_access + soma_update)` per neuron × a reference core — TrueNorth over 256 neurons (low), Loihi over 256 (nominal) and 1024 (high). Per-core SIZE uncertainty lives in the band, not in a hidden constant. |
+| `CoreInitCoefficients.time_s` (per core) | 5.12e-7 / 2.4832e-6 / 9.9328e-6 | **NEW — needs owner sign-off.** Same derivation on the presets' `soma_access_latency_s + soma_update_latency_s`. |
+| `programming_bandwidth_bytes_per_s` | **1e9 / 12.8e9 / 256e9** | **NEW — needs owner sign-off.** Programming-payload DMA bandwidth: ~1 GB/s serial configuration port · DDR3-1600 single channel ~12.8 GB/s · HBM2 stack ~256 GB/s. No chip programming port is measured anywhere in this program. A DIVIDING coefficient: the latency term reads the opposite corner so it stays monotone. |
+| `sync_barrier_s` (latency twin of `e_sync_barrier_mj`) | **6.4e-8 / 8.0e-8 / 6.4e-7** | **NEW — needs owner sign-off.** DERIVED from the presets' `tile_hop_latency_s` (TrueNorth 4 ns / Loihi 5 ns) × a 16-hop (8-hop diameter, out and back) to 128-hop mesh traversal. |
 
 Every modeled term ships `(value, band, kind="modeled", basis)`; measured terms ship
 `band=None`. Latency decomposition never double-counts NoC (measured `sim_time_s` already
-includes it; the record says so in `LatencyDecomposition.note`).
+includes it; the record says so in `LatencyDecomposition.note` — the model REFUSES a record
+whose note does not state the discipline).
+
+Applied by `DeploymentCostModel` (`deployment_record/cost/model.py`), whose coefficient
+fields ARE the table above. Two application rules are structural: `bytes_per_param` is
+inventory-only — the record's `params_bytes` is already a byte count
+(`build/payload_sizes.py`), so the payload goes through the model's per-BYTE DMA channel and
+the weight width is never applied twice; and a **resident** segment costs exactly the per-core
+reset constant (zero payload — nothing is reprogrammed into its cores).
 
 ## 8. Objectives registry v2 (consumer summary)
 

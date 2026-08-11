@@ -30,6 +30,10 @@ from mimarsinan.deployment_record.schema import (
     SegmentTimingRecord,
     TimingRecord,
 )
+from mimarsinan.pipelining.pipeline_steps.verification.deployment_record_walls import (
+    host_ops_wall_s as host_ops_wall_s,
+    host_ops_wall_s_per_pass as host_ops_wall_s_per_pass,
+)
 from mimarsinan.pipelining.core.spike_count_gate import certificate_gate_armed
 from mimarsinan.pipelining.core.steps.tuner_pipeline_step import TunerPipelineStep
 from mimarsinan.tuning.orchestration.run_instrumentation import (
@@ -162,9 +166,11 @@ def fold_compute_walls(
     if not walls:
         return schedule
     totals: dict[str, float] = {}
+    counts: dict[str, int] = {}
     for row in walls:
         name = str(row["name"])
         totals[name] = totals.get(name, 0.0) + float(row["wall_s_total"])
+        counts[name] = counts.get(name, 0) + int(row.get("invocations", 0) or 0)
     compute_names = [
         stage.name
         for stage in schedule.stages
@@ -185,24 +191,16 @@ def fold_compute_walls(
             f"the name-keyed fold would be ambiguous"
         )
     stages = tuple(
-        replace(stage, wall_s_total=totals[stage.name])
+        replace(
+            stage,
+            wall_s_total=totals[stage.name],
+            invocations=counts.get(stage.name) or None,
+        )
         if isinstance(stage, ComputeOpRecord) and stage.name in totals
         else stage
         for stage in schedule.stages
     )
     return replace(schedule, stages=stages)
-
-
-def host_ops_wall_s(schedule: ScheduleRecord) -> Optional[float]:
-    """Σ measured ComputeOp walls; ``None`` when nothing was timed."""
-    timed = [
-        stage.wall_s_total
-        for stage in schedule.stages
-        if isinstance(stage, ComputeOpRecord) and stage.wall_s_total is not None
-    ]
-    if not timed:
-        return None
-    return float(sum(timed))
 
 
 def timing_record(
@@ -211,6 +209,7 @@ def timing_record(
     depth: int,
     per_segment: Sequence[SegmentTimingRecord],
     host_ops_s: Optional[float],
+    host_ops_s_per_pass: Optional[float] = None,
 ) -> TimingRecord:
     """The timing fragment: static part always, measured parts when present."""
     segments = tuple(per_segment)
@@ -228,6 +227,7 @@ def timing_record(
             ),
             compute_sim_time_s=compute_sim_time_s,
             host_ops_s=host_ops_s,
+            host_ops_s_per_pass=host_ops_s_per_pass,
             sync_s=None,
             note=LATENCY_NOTE,
         ),

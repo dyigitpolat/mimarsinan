@@ -48,6 +48,7 @@ from mimarsinan.pipelining.pipeline_steps.verification.deployment_record_assembl
     floorplan_derivation,
     fold_compute_walls,
     host_ops_wall_s,
+    host_ops_wall_s_per_pass,
     identity_from_pipeline,
     nevresim_applies,
     resolved_step_names,
@@ -153,6 +154,7 @@ class DeploymentRecordStep(PipelineStep):
             depth=depth,
             per_segment=per_segment,
             host_ops_s=host_ops_wall_s(schedule),
+            host_ops_s_per_pass=host_ops_wall_s_per_pass(schedule),
         )
         traffic: Optional[TrafficRecord] = None
         if boundaries is not None or noc is not None:

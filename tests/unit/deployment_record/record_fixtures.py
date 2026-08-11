@@ -303,6 +303,7 @@ def make_timing(*, with_per_segment: bool = True) -> TimingRecord:
             compute_steps=64,
             compute_sim_time_s=3e-3 if with_per_segment else None,
             host_ops_s=None,
+            host_ops_s_per_pass=None,
             sync_s=ModeledValue(value=1e-3, band=make_band()),
             note="sim_time_s already includes NoC hop latency; no term double-counts it",
         ),
