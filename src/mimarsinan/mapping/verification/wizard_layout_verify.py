@@ -206,7 +206,7 @@ def verify_planned_mapping_performance(
     plan = build_layout_plan(
         soft,
         core_types_dicts,
-        **capabilities.permission_kwargs(),
+        **capabilities.layout_kwargs(),
     )
     stats_out: dict = plan.stats.to_dict()
     stats_out.setdefault("host_side_segment_count", plan.host_side_segment_count)

@@ -177,8 +177,8 @@ class _LayoutIRMappingFinalize:
         residency_class_id (= perceptron_index, or a unique fallback when None),
         and the two identities the emission side-tables already hold: the shared
         ``bank_id`` and the source ``perceptron_index``. Carrying them ON the spec
-        is what keeps every downstream consumer from re-deriving layer identity
-        from core-name strings."""
+        is what stops every downstream consumer re-deriving layer identity out of
+        core-name strings."""
         latencies = self._compute_latencies()
         residency_ids = self._residency_group_ids()
         segment_ids = self._compute_segment_ids()

@@ -155,7 +155,7 @@ class JointLayoutMixin(JointHostContract):
         stats, error = compute_mapping_stats(
             softcores=softcores,
             core_types=core_types,
-            **ChipCapabilities.from_platform_constraints(pcfg).permission_kwargs(),
+            **ChipCapabilities.from_platform_constraints(pcfg).layout_kwargs(),
         )
 
         if not stats.feasible:

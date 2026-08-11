@@ -66,7 +66,7 @@ def collect_layout_payload(
     stats, _err = compute_mapping_stats(
         softcores=softcores,
         core_types=core_types,
-        **ChipCapabilities.from_platform_constraints(pcfg).permission_kwargs(),
+        **ChipCapabilities.from_platform_constraints(pcfg).layout_kwargs(),
     )
     per_softcore = [softcore_to_dict(sc, idx) for idx, sc in enumerate(softcores)]
     per_layer = aggregate_per_layer(softcores)
