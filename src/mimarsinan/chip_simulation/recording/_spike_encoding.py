@@ -14,9 +14,14 @@ def uniform_rate_encode(rates: np.ndarray, T: int) -> np.ndarray:
     """Uniform-rate spike encoding matching SCM ``spike_mode='Uniform'``.
 
     Uses torch ``to_uniform_spikes`` per cycle so batch output matches HCM.
+    The rate enters in FLOAT64, the comb's canonical domain (HCM feeds it
+    ``COMPUTE_DTYPE`` f64): an f32 landing rounds a rate one ULP below a
+    half-integer tie ONTO the tie, and the chip's llround rule then counts one
+    spike more than HCM did — a ±1 seg_input parity break with no
+    corresponding difference in the deployed value.
     """
     clipped = np.clip(rates, 0.0, 1.0)
-    tensor = torch.tensor(clipped, dtype=torch.float32)
+    tensor = torch.tensor(clipped, dtype=torch.float64)
     n_samples, d = tensor.shape
     spikes = np.zeros((n_samples, d, T), dtype=np.float32)
     for cycle in range(T):
@@ -27,9 +32,13 @@ def uniform_rate_encode(rates: np.ndarray, T: int) -> np.ndarray:
 
 
 def deterministic_rate_encode(rates: np.ndarray, T: int) -> np.ndarray:
-    """Deterministic encoding: fires every cycle when rate > 0.5."""
+    """Deterministic encoding: fires every cycle when rate > 0.5.
+
+    Float64 for the same reason as :func:`uniform_rate_encode`: 0.5 is the
+    decision point, and an f32 landing moves rates just above it onto it.
+    """
     clipped = np.clip(rates, 0.0, 1.0)
-    tensor = torch.tensor(clipped, dtype=torch.float32)
+    tensor = torch.tensor(clipped, dtype=torch.float64)
     n_samples, d = tensor.shape
     spikes = np.zeros((n_samples, d, T), dtype=np.float32)
     per_cycle = spike_modes.to_deterministic_spikes(tensor).numpy()

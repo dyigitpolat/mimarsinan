@@ -236,6 +236,10 @@ def run_ttfs_contract_compute_stage(
         in_scale=in_scale,
         out_scale=out_scale,
         dtype=_CONTRACT_DTYPE,
+        # The TTFS contract IS the shared evaluator: reference and backends
+        # both reach the host op through this f64 numpy path, so both sides of
+        # every TTFS comparison resolve staircase ties on the same cpu math.
+        device=None,
     )
     out = np.asarray(result, dtype=_CONTRACT_DTYPE)
     state_buffer[op.id] = out
