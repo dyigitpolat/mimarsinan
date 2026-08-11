@@ -39,6 +39,7 @@ from mimarsinan.deployment_record.cost.combine import (
     band_of,
     derived,
     flat_band,
+    host_ops_term,
     measured,
     modeled,
     sum_bands,
@@ -213,26 +214,10 @@ class DeploymentCostModel:
             measured("compute_s", "s", float(compute_s), "timing.latency.compute_sim_time_s"),
         ]
         measured_s = float(compute_s)
-        host_ops_s = decomposition.host_ops_s
-        if host_ops_s is not None:
-            # compute_sim_time_s is a per-sample census; the raw host wall covers
-            # the whole run. Only the per-pass normalization is commensurable.
-            per_pass = decomposition.host_ops_s_per_pass
-            if per_pass is None:
-                raise ValueError(
-                    "measured host-op walls carry no per pass normalization "
-                    "(timing.latency.host_ops_s_per_pass is None because some "
-                    "timed op has no invocation count); the whole-run total "
-                    "cannot join a per-sample decomposition and a guessed "
-                    "divisor would be a proxy presented as a measurement"
-                )
-            measured_s += float(per_pass)
-            terms.append(
-                measured(
-                    "host_ops_s", "s", float(per_pass),
-                    "timing.latency.host_ops_s_per_pass",
-                )
-            )
+        host_term = host_ops_term(decomposition)
+        if host_term is not None:
+            measured_s += host_term.value
+            terms.append(host_term)
         terms.append(modeled("sync_s", "s", sync, "schedule.sync_count x sync_barrier_s"))
         total = sum_bands(
             [programming, core_init, sync, flat_band(measured_s, _TOTAL_LATENCY_BASIS)],

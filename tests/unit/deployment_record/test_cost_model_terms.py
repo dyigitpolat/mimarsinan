@@ -214,16 +214,21 @@ def test_latency_compute_is_measured_and_host_ops_appear_only_when_walled(record
     assert (compute.value, compute.band, compute.kind) == (COMPUTE_S, None, "measured")
     assert "host_ops_s" not in [term.name for term in terms]
 
+    # A whole-run wall of 0.25 s over 5 traversals contributes 0.05 s to the
+    # PER-SAMPLE decomposition; the raw total never joins unscaled.
     walled = replace(
         record,
         timing=replace(
-            record.timing, latency=replace(record.timing.latency, host_ops_s=0.25)
+            record.timing,
+            latency=replace(
+                record.timing.latency, host_ops_s=0.25, host_ops_s_per_pass=0.05
+            ),
         ),
     )
     host_ops = find_term(MODEL.latency(walled), "host_ops_s")
-    assert (host_ops.value, host_ops.band, host_ops.kind) == (0.25, None, "measured")
+    assert (host_ops.value, host_ops.band, host_ops.kind) == (0.05, None, "measured")
     assert find_term(MODEL.latency(walled), "total_s").value == pytest.approx(
-        find_term(terms, "total_s").value + 0.25, rel=1e-12
+        find_term(terms, "total_s").value + 0.05, rel=1e-12
     )
 
 

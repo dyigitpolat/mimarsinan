@@ -160,3 +160,4 @@ class DeploymentCostReport:
             kwargs[group] = tuple_of(CostTerm.from_dict, kwargs[group])
         kwargs["notes"] = tuple(str(note) for note in kwargs["notes"])
         return cls(**kwargs)
+

@@ -30,6 +30,10 @@ from mimarsinan.deployment_record.schema import (
     SegmentTimingRecord,
     TimingRecord,
 )
+from mimarsinan.pipelining.pipeline_steps.verification.deployment_record_walls import (
+    host_ops_wall_s as host_ops_wall_s,
+    host_ops_wall_s_per_pass as host_ops_wall_s_per_pass,
+)
 from mimarsinan.pipelining.core.spike_count_gate import certificate_gate_armed
 from mimarsinan.pipelining.core.steps.tuner_pipeline_step import TunerPipelineStep
 from mimarsinan.tuning.orchestration.run_instrumentation import (
@@ -197,37 +201,6 @@ def fold_compute_walls(
         for stage in schedule.stages
     )
     return replace(schedule, stages=stages)
-
-
-def host_ops_wall_s(schedule: ScheduleRecord) -> Optional[float]:
-    """Σ measured ComputeOp walls over the whole run; ``None`` when untimed."""
-    timed = [
-        stage.wall_s_total
-        for stage in schedule.stages
-        if isinstance(stage, ComputeOpRecord) and stage.wall_s_total is not None
-    ]
-    if not timed:
-        return None
-    return float(sum(timed))
-
-
-def host_ops_wall_s_per_pass(schedule: ScheduleRecord) -> Optional[float]:
-    """Σ per-execution ComputeOp walls: the host time of ONE program traversal.
-
-    Each op is normalized by its own invocation count, so ops executed at
-    different rates still sum onto the per-sample axis. ``None`` when any timed
-    op lacks a count — an unnormalizable measurement is never guessed at.
-    """
-    timed = [
-        stage
-        for stage in schedule.stages
-        if isinstance(stage, ComputeOpRecord) and stage.wall_s_total is not None
-    ]
-    if not timed:
-        return None
-    if any(not stage.invocations for stage in timed):
-        return None
-    return float(sum(s.wall_s_total / s.invocations for s in timed))
 
 
 def timing_record(
