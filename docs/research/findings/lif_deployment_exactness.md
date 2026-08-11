@@ -711,4 +711,10 @@ holds under strict `<` in-plane regardless of dust sign and batch shape).
 Cached resume: exact=1.000000 max|dcount|=0/788, full run completes with
 Loihi and SANA-FE certificates green. This also discharges the §13
 follow-up (b) for the nevresim seam: the boundary re-encode's tie class is
-now lattice-canonicalized at the certificate.
+now lattice-canonicalized at the certificate. (`to_front_loaded_spikes` got
+the same rule — its chip generator is also llround. NOT changed: the TTFS
+spike-time transcodes (`wire_semantics.ttfs_spike_time`,
+`ttfs_encoding` `np.rint`) are the remaining half-to-even sites vs the
+chip's llround `TTFSSpikeGenerator` — same latent family, but no measured
+failing cell, and flipping the tie re-baselines the passing TTFS cells;
+canonicalize them only with a verification budget for the ttfs family.)

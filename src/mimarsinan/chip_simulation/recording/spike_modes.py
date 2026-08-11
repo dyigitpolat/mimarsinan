@@ -13,7 +13,9 @@ def to_stochastic_spikes(tensor: torch.Tensor) -> torch.Tensor:
 
 
 def to_front_loaded_spikes(tensor: torch.Tensor, cycle: int, simulation_length: int) -> torch.Tensor:
-    return (torch.round(tensor * simulation_length) > cycle).float()
+    # Chip's FrontLoadedSpikeGenerator: llround(item*T) > cycle (same comb
+    # count tie rule as Uniform — see comb_spike_count).
+    return (comb_spike_count(tensor, simulation_length) > cycle).float()
 
 
 def to_deterministic_spikes(tensor: torch.Tensor, threshold: float = 0.5) -> torch.Tensor:

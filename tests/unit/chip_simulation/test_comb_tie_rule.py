@@ -84,3 +84,18 @@ class TestCombCountTieRule:
         total = sum(to_uniform_spikes(rates, c, T) for c in range(T))
         want = comb_spike_count(rates, T).to(torch.float64)
         assert torch.equal(total, want)
+
+    def test_front_loaded_uses_the_same_tie_rule(self):
+        # Chip FrontLoadedSpikeGenerator: llround(rate*T) > cycle.
+        from mimarsinan.chip_simulation.recording.spike_modes import (
+            to_front_loaded_spikes,
+        )
+
+        T = 4
+        rates = torch.tensor([[k / (2.0 * T) for k in range(2 * T + 1)]], dtype=torch.float64)
+        for cycle in range(T):
+            got = to_front_loaded_spikes(rates, cycle, T)[0].tolist()
+            want = [
+                float(_llround(float(r) * T) > cycle) for r in rates[0]
+            ]
+            assert got == want, f"cycle={cycle}: {got} != {want}"
