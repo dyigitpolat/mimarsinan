@@ -1,17 +1,36 @@
-"""Backend introspection tools for MimarsinanLayoutBackend."""
+"""Backend introspection tools for MimarsinanLayoutBackend.
+
+One tool per payload the CANDIDATE view can answer, declared from the
+introspection registry itself: a payload registered there reaches the agent
+without a hand-written tool, and one that a candidate cannot answer is never
+advertised. The agent-facing names of the original tools are pinned in
+``_TOOL_NAMES`` (renaming a tool would break every saved trace).
+"""
 
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING, List, Sequence
+from typing import TYPE_CHECKING, Any, Dict, List, Sequence
 
 from compilagent import ToolDecl
 from pydantic import BaseModel, Field
 
+from mimarsinan.deployment_record.introspection import (
+    CANDIDATE_LAYOUT,
+    INTROSPECTION_REGISTRY,
+)
+
 if TYPE_CHECKING:
     from .backend import MimarsinanLayoutBackend
 
+# Payload name -> the agent-facing tool name, where they differ.
+_TOOL_NAMES = {
+    "layer_rollup": "inspect_layer_breakdown",
+    "bank_composition": "inspect_weight_banks",
+}
 
+# Payloads whose tool also carries the candidate's raw objective values.
+_WITH_OBJECTIVES = frozenset({"layout_stats"})
 
 
 class _CandidateOnlyArgs(BaseModel):
@@ -27,12 +46,24 @@ class _NoArgs(BaseModel):
     pass
 
 
+def tool_name_for(payload_name: str) -> str:
+    return _TOOL_NAMES.get(payload_name, f"inspect_{payload_name}")
+
+
+def _counted(envelope: Dict[str, Any]) -> Dict[str, Any]:
+    """Row tables are long; give the agent their size next to them."""
+    counts = {
+        f"{key}_count": len(value)
+        for key, value in envelope.items()
+        if isinstance(value, list)
+    }
+    return {**envelope, **counts}
 
 
 def build_introspection_tools(
     backend: "MimarsinanLayoutBackend",
 ) -> Sequence[ToolDecl]:
-    """Return the four ``ToolDecl``s the backend advertises."""
+    """One ``ToolDecl`` per candidate-answerable payload, plus the objective catalogue."""
 
     def _payload(candidate_id: str) -> dict:
         try:
@@ -44,47 +75,23 @@ def build_introspection_tools(
                 f"cached); recently compiled: {known}"
             ) from exc
 
-    def inspect_softcores(*, candidate_id: str) -> str:
-        """List every softcore the candidate emits, with shape + tags."""
+    def _make_handler(payload_name: str):
+        def handler(*, candidate_id: str) -> str:
+            payload = _payload(candidate_id)
+            envelope = (payload.get("introspection") or {}).get(payload_name)
+            body: Dict[str, Any] = {"candidate_id": candidate_id}
+            if envelope is None:
+                body["unavailable"] = (
+                    f"payload {payload_name!r} was not served for this candidate "
+                    f"(its layout could not be computed)"
+                )
+            else:
+                body.update(_counted(dict(envelope)))
+            if payload_name in _WITH_OBJECTIVES:
+                body["hw_objectives"] = payload.get("hw_objectives", {})
+            return json.dumps(body, indent=2, default=str)
 
-        payload = _payload(candidate_id)
-        return json.dumps(
-            {
-                "candidate_id": candidate_id,
-                "count": len(payload.get("softcores", [])),
-                "softcores": payload.get("softcores", []),
-            },
-            indent=2,
-            default=str,
-        )
-
-    def inspect_layer_breakdown(*, candidate_id: str) -> str:
-        """Per-layer aggregate (softcore count, total area, residency classes)."""
-
-        payload = _payload(candidate_id)
-        return json.dumps(
-            {
-                "candidate_id": candidate_id,
-                "layer_count": len(payload.get("per_layer", [])),
-                "per_layer": payload.get("per_layer", []),
-            },
-            indent=2,
-            default=str,
-        )
-
-    def inspect_layout_stats(*, candidate_id: str) -> str:
-        """Full ``LayoutVerificationStats`` (utilisation, fragmentation, ...)."""
-
-        payload = _payload(candidate_id)
-        return json.dumps(
-            {
-                "candidate_id": candidate_id,
-                "layout_stats": payload.get("layout_stats", {}),
-                "hw_objectives": payload.get("hw_objectives", {}),
-            },
-            indent=2,
-            default=str,
-        )
+        return handler
 
     def list_objectives() -> str:
         """Return the active objective catalogue with goal directions."""
@@ -92,50 +99,24 @@ def build_introspection_tools(
             payload = backend.get_candidate_payload(cid)
             catalog = payload.get("objective_catalog", [])
             if catalog:
-                return json.dumps(
-                    {"objectives": catalog}, indent=2, default=str,
-                )
+                return json.dumps({"objectives": catalog}, indent=2, default=str)
         return json.dumps({"objectives": []}, indent=2, default=str)
 
     decls: List[ToolDecl] = [
         ToolDecl(
-            name="inspect_softcores",
+            name=tool_name_for(spec.name),
             description=(
-                "Return every softcore (one logical tile of the workload) "
-                "that the named candidate emits, including input/output "
-                "wire counts, residency-class id, latency tag and segment "
-                "id. Read-only."
+                f"{spec.doc} Payload `{spec.name}` v{spec.version}; read-only."
             ),
             args_schema=_CandidateOnlyArgs.model_json_schema(),
-            handler=inspect_softcores,
+            handler=_make_handler(spec.name),
             args_model=_CandidateOnlyArgs,
             read_only=True,
-        ),
-        ToolDecl(
-            name="inspect_layer_breakdown",
-            description=(
-                "Aggregate softcores by source layer for a candidate: how "
-                "many tiles each layer emits, total area, max input/output "
-                "counts, latency tier counts. Read-only."
-            ),
-            args_schema=_CandidateOnlyArgs.model_json_schema(),
-            handler=inspect_layer_breakdown,
-            args_model=_CandidateOnlyArgs,
-            read_only=True,
-        ),
-        ToolDecl(
-            name="inspect_layout_stats",
-            description=(
-                "Return the full LayoutVerificationStats snapshot for a "
-                "candidate (utilisation, fragmentation, schedule passes, "
-                "wasted axons/neurons, etc.) plus the raw HW objective "
-                "values. Read-only."
-            ),
-            args_schema=_CandidateOnlyArgs.model_json_schema(),
-            handler=inspect_layout_stats,
-            args_model=_CandidateOnlyArgs,
-            read_only=True,
-        ),
+        )
+        for spec in INTROSPECTION_REGISTRY.all()
+        if CANDIDATE_LAYOUT in spec.builders
+    ]
+    decls.append(
         ToolDecl(
             name="list_objectives",
             description=(
@@ -147,9 +128,9 @@ def build_introspection_tools(
             handler=list_objectives,
             args_model=_NoArgs,
             read_only=True,
-        ),
-    ]
+        )
+    )
     return tuple(decls)
 
 
-__all__ = ["build_introspection_tools"]
+__all__ = ["build_introspection_tools", "tool_name_for"]

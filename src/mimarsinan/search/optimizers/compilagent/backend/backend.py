@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import time
 from collections.abc import Sequence
@@ -32,7 +31,7 @@ from .backend_eval import (
     time_workload as _time_workload,
     validate_correctness as _validate_correctness,
 )
-from .backend_layout import collect_layout_payload
+from .backend_layout import collect_layout_payload, write_layout_artifacts
 from .backend_tools import (
     description_for,
     fire_pass,
@@ -63,7 +62,9 @@ class MimarsinanLayoutBackend(BackendBase):
     """Compilagent backend bridging mimarsinan's JointArchHwProblem."""
 
     id: str = "mimarsinan_layout"
-    artifact_stages: Tuple[str, ...] = ("config", "softcores", "layout_stats")
+    artifact_stages: Tuple[str, ...] = (
+        "config", "softcores", "layout_stats", "introspection",
+    )
 
     def __init__(self) -> None:
         self._candidate_payloads: Dict[str, Dict[str, Any]] = {}
@@ -131,6 +132,9 @@ class MimarsinanLayoutBackend(BackendBase):
         else:
             summary["softcore_count_baseline"] = baseline_payload["softcore_count"]
             summary["layer_count"] = len(baseline_payload["per_layer"])
+            summary["introspection_payloads"] = sorted(
+                baseline_payload.get("introspection", {})
+            )
             extra["baseline"] = baseline_payload
         return Analysis(summary=summary, extra=extra)
 
@@ -221,17 +225,14 @@ class MimarsinanLayoutBackend(BackendBase):
                 config=configuration,
             )
 
-        config_path = artifact_dir / "config.json"
-        config_path.write_text(json.dumps(configuration, indent=2, default=str))
-        softcores_path = artifact_dir / "softcores.json"
-        softcores_path.write_text(json.dumps(payload["per_softcore"], indent=2, default=str))
-        layout_stats_path = artifact_dir / "layout_stats.json"
-        layout_stats_path.write_text(json.dumps(payload["layout_stats"], indent=2, default=str))
+        artifacts = write_layout_artifacts(artifact_dir, configuration, payload)
 
         elapsed = (time.perf_counter() - compile_started) * 1000.0
         candidate_id = artifact_dir.name
         cached_payload = {
             "config": configuration,
+            # The served, versioned payloads: what every introspection tool reads.
+            "introspection": payload["introspection"],
             "softcores": payload["per_softcore"],
             "per_layer": payload["per_layer"],
             "layout_stats": payload["layout_stats"],
@@ -244,7 +245,7 @@ class MimarsinanLayoutBackend(BackendBase):
         return CompileResult(
             ok=True,
             elapsed_ms=elapsed,
-            artifacts=(config_path, softcores_path, layout_stats_path),
+            artifacts=artifacts,
             metadata=cached_payload,
         )
 

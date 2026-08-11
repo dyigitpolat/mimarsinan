@@ -19,12 +19,25 @@ from mimarsinan.deployment_record.schema.utilization import LayoutStatsRecord
 INTROSPECTION_FORMAT_VERSION = 1
 
 
+def json_safe(value: Any) -> Any:
+    """Tuples become lists, recursively: a served envelope IS what JSON carries.
+
+    Consumers compare and merge these dicts, so the shape must not depend on
+    whether the payload happens to have made a round trip yet.
+    """
+    if isinstance(value, (list, tuple)):
+        return [json_safe(item) for item in value]
+    if isinstance(value, dict):
+        return {key: json_safe(item) for key, item in value.items()}
+    return value
+
+
 @dataclass(frozen=True)
 class IntrospectionRow:
     """One JSON-safe row of a payload table."""
 
     def to_dict(self) -> Dict[str, Any]:
-        return asdict(self)
+        return json_safe(asdict(self))
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> "IntrospectionRow":
@@ -49,7 +62,7 @@ class IntrospectionPayload:
         return {
             "payload": self.NAME,
             "payload_version": self.VERSION,
-            **asdict(self),
+            **json_safe(asdict(self)),
         }
 
     @classmethod

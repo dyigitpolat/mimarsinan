@@ -1,14 +1,21 @@
-"""Layout payload collection helpers for MimarsinanLayoutBackend."""
+"""Layout payload collection for MimarsinanLayoutBackend.
+
+Everything the agent may see about a candidate comes from the introspection
+registry — a declared, versioned surface — so this module reads no ``mapping``
+internals and cannot recompute a layout answer with a partial capability set.
+"""
 
 from __future__ import annotations
 
+import json
 import logging
-from collections.abc import Sequence
-from typing import Any, Dict, List
+from pathlib import Path
+from typing import Any, Dict, List, Tuple
 
-from mimarsinan.mapping.layout.layout_types import LayoutHardCoreType, LayoutSoftCoreSpec
-from mimarsinan.mapping.platform.mapping_structure import ChipCapabilities
-from mimarsinan.mapping.verification.layout_verification_scheduling import compute_mapping_stats
+from mimarsinan.deployment_record.introspection import (
+    INTROSPECTION_REGISTRY,
+    CandidateLayoutView,
+)
 from mimarsinan.search.problems.joint.problem import json_key
 
 logger = logging.getLogger(__name__)
@@ -18,21 +25,11 @@ def collect_layout_payload(
     problem: Any,
     configuration: Dict[str, Any],
 ) -> Dict[str, Any]:
-    """Pull per-softcore, per-layer, and layout_stats data via the problem."""
+    """Serve every introspection payload the candidate can answer, plus objectives."""
     pcfg = configuration.get("platform_constraints", {})
-    cores_cfg = pcfg.get("cores", [])
-
-    core_types = [
-        LayoutHardCoreType(
-            max_axons=int(c["max_axons"]),
-            max_neurons=int(c["max_neurons"]),
-            count=int(c["count"]),
-        )
-        for c in cores_cfg
-    ]
 
     cache = getattr(problem, "_hw_only_cache", None)
-    softcores: List[LayoutSoftCoreSpec]
+    softcores: List[Any]
     host_segments: int
     total_params: float
     if cache is not None and getattr(problem, "search_mode", "joint") == "hardware":
@@ -53,100 +50,72 @@ def collect_layout_payload(
                 "layout payload (hw_objectives only) from validation cache",
                 key, exc_info=True,
             )
-            hw_obj = vc.hw_objectives
-            return {
-                "softcore_count": 0,
-                "per_softcore": [],
-                "per_layer": [],
-                "layout_stats": {},
-                "hw_objectives": dict(hw_obj),
-            }
+            return degraded_payload(dict(vc.hw_objectives))
         softcores, host_segments = problem._collect_softcores(model, pcfg)
 
-    stats, _err = compute_mapping_stats(
-        softcores=softcores,
-        core_types=core_types,
-        **ChipCapabilities.from_platform_constraints(pcfg).layout_kwargs(),
+    view = CandidateLayoutView.from_platform(
+        softcores, pcfg,
+        host_side_segment_count=host_segments,
+        total_params=total_params,
     )
-    per_softcore = [softcore_to_dict(sc, idx) for idx, sc in enumerate(softcores)]
-    per_layer = aggregate_per_layer(softcores)
     hw_objectives, _ = problem._compute_hw_objectives(
         softcores, pcfg, total_params, host_segments,
     )
+    return with_legacy_projection(
+        {
+            "introspection": INTROSPECTION_REGISTRY.serve_all_dicts(view),
+            "hw_objectives": dict(hw_objectives or {}),
+        }
+    )
 
+
+def degraded_payload(hw_objectives: Dict[str, Any]) -> Dict[str, Any]:
+    """What a candidate whose model could not be rebuilt can still honestly say."""
+    return with_legacy_projection(
+        {"introspection": {}, "hw_objectives": dict(hw_objectives)}
+    )
+
+
+def rows_of(payload: Dict[str, Any], name: str, field: str) -> List[Dict[str, Any]]:
+    """One payload's row table from a served envelope map (empty when unserved)."""
+    envelope = (payload.get("introspection") or {}).get(name) or {}
+    return list(envelope.get(field) or [])
+
+
+def with_legacy_projection(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Add the flat keys the run summaries and guidance blocks read.
+
+    A PROJECTION of the served payloads, never a second computation — the
+    registry envelopes stay the source of truth (and carry their versions).
+    """
+    stats = (payload.get("introspection") or {}).get("layout_stats") or {}
+    softcores = rows_of(payload, "softcores", "softcores")
     return {
+        **payload,
         "softcore_count": len(softcores),
-        "per_softcore": per_softcore,
-        "per_layer": per_layer,
-        "layout_stats": stats.to_dict() if stats else {},
-        "hw_objectives": dict(hw_objectives or {}),
+        "per_softcore": softcores,
+        "per_layer": rows_of(payload, "layer_rollup", "layers"),
+        "layout_stats": dict(stats.get("stats") or {}),
     }
 
 
-def softcore_to_dict(sc: LayoutSoftCoreSpec, index: int) -> Dict[str, Any]:
-    return {
-        "index": index,
-        "name": sc.name,
-        "input_count": int(sc.input_count),
-        "output_count": int(sc.output_count),
-        "area": int(sc.area),
-        "residency_class_id": int(sc.residency_class_id),
-        "latency_tag": (None if sc.latency_tag is None else int(sc.latency_tag)),
-        "segment_id": (None if sc.segment_id is None else int(sc.segment_id)),
-    }
+# Artifact file name -> the payload key it carries.
+_ARTIFACTS = (
+    ("config.json", None),
+    ("softcores.json", "per_softcore"),
+    ("layout_stats.json", "layout_stats"),
+    ("introspection.json", "introspection"),
+)
 
 
-def aggregate_per_layer(
-    softcores: Sequence[LayoutSoftCoreSpec],
-) -> List[Dict[str, Any]]:
-    """Roll per-softcore facts up to per-layer rows for the agent."""
-    by_layer: Dict[str, Dict[str, Any]] = {}
-    for sc in softcores:
-        key = layer_key(sc)
-        row = by_layer.setdefault(
-            key,
-            {
-                "layer": key,
-                "softcore_count": 0,
-                "total_area": 0,
-                "max_input_count": 0,
-                "max_output_count": 0,
-                "residency_classes": set(),
-                "latency_tags": set(),
-                "segments": set(),
-            },
-        )
-        row["softcore_count"] += 1
-        row["total_area"] += int(sc.area)
-        row["max_input_count"] = max(row["max_input_count"], int(sc.input_count))
-        row["max_output_count"] = max(row["max_output_count"], int(sc.output_count))
-        row["residency_classes"].add(int(sc.residency_class_id))
-        if sc.latency_tag is not None:
-            row["latency_tags"].add(int(sc.latency_tag))
-        if sc.segment_id is not None:
-            row["segments"].add(int(sc.segment_id))
-
-    rows: List[Dict[str, Any]] = []
-    for row in by_layer.values():
-        rows.append(
-            {
-                "layer": row["layer"],
-                "softcore_count": row["softcore_count"],
-                "total_area": row["total_area"],
-                "max_input_count": row["max_input_count"],
-                "max_output_count": row["max_output_count"],
-                "residency_class_count": len(row["residency_classes"]),
-                "latency_tag_count": len(row["latency_tags"]),
-                "segment_count": len(row["segments"]),
-            }
-        )
-    rows.sort(key=lambda r: r["layer"])
-    return rows
-
-
-def layer_key(sc: LayoutSoftCoreSpec) -> str:
-    name = sc.name or f"unnamed_tg{int(sc.residency_class_id)}"
-    for sep in ("_tile_", "_psum_pos_", "_psum_neg_", "_psum_accum_", "_pos", "_col"):
-        if sep in name:
-            return name.split(sep, 1)[0]
-    return name
+def write_layout_artifacts(
+    artifact_dir: Path, configuration: Dict[str, Any], payload: Dict[str, Any],
+) -> Tuple[Path, ...]:
+    """Write the candidate's artifacts; ``introspection.json`` is the versioned one."""
+    written = []
+    for name, key in _ARTIFACTS:
+        path = artifact_dir / name
+        body = configuration if key is None else payload[key]
+        path.write_text(json.dumps(body, indent=2, default=str))
+        written.append(path)
+    return tuple(written)

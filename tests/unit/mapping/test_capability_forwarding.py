@@ -28,12 +28,15 @@ from mimarsinan.mapping.verification.verifier import verify_hardware_config
 
 SRC = Path(__file__).resolve().parents[3] / "src" / "mimarsinan"
 
-# The sites that turn a declared platform into a layout answer.
+# The four sites that turn a declared platform into a layout answer. The agent
+# introspection surface is one of them THROUGH the record's candidate view — the
+# compilagent backend no longer computes a layout answer of its own (pinned by
+# tests/unit/search/optimizers/compilagent/test_introspection_import_direction).
 FORWARDING_SITES = (
     "gui/server/routes_layout.py",
     "mapping/verification/wizard_layout_verify.py",
     "search/problems/joint/layout_hook.py",
-    "search/optimizers/compilagent/backend/backend_layout.py",
+    "deployment_record/introspection/views.py",
 )
 
 

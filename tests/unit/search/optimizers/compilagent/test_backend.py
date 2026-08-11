@@ -9,7 +9,7 @@ exercising the full delegation path through the real
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Dict, List, Sequence
 
 import pytest
@@ -26,9 +26,7 @@ from mimarsinan.mapping.layout.layout_types import LayoutSoftCoreSpec
 from mimarsinan.search.optimizers.compilagent.backend import MimarsinanLayoutBackend
 from mimarsinan.search.optimizers.compilagent.backend.backend_eval import unit_for as _unit_for
 from mimarsinan.search.optimizers.compilagent.backend.backend_layout import (
-    aggregate_per_layer as _aggregate_per_layer,
-    layer_key as _layer_key,
-    softcore_to_dict as _softcore_to_dict,
+    collect_layout_payload as _collect_layout_payload,
 )
 from mimarsinan.search.optimizers.compilagent.workload import (
     register_problem,
@@ -134,18 +132,26 @@ class _FakeProblem:
 
 
 def _make_softcores() -> List[LayoutSoftCoreSpec]:
+    """Two bank-backed conv positions and one owned-weight fc tile.
+
+    Both identities are populated because the mapper populates them; the agent
+    surface keys on THOSE, not on the names.
+    """
     return [
         LayoutSoftCoreSpec(
             input_count=64, output_count=32, residency_class_id=0,
-            latency_tag=0, segment_id=0, name="conv1_pos0_0",
+            latency_tag=0, segment_id=0, bank_id=0, perceptron_index=0,
+            name="conv1_pos0_0",
         ),
         LayoutSoftCoreSpec(
             input_count=64, output_count=32, residency_class_id=0,
-            latency_tag=0, segment_id=0, name="conv1_pos1_0",
+            latency_tag=0, segment_id=0, bank_id=0, perceptron_index=0,
+            name="conv1_pos1_0",
         ),
         LayoutSoftCoreSpec(
             input_count=128, output_count=64, residency_class_id=1,
-            latency_tag=1, segment_id=0, name="fc1_tile_0_64",
+            latency_tag=1, segment_id=0, bank_id=None, perceptron_index=1,
+            name="fc1_tile_0_64",
         ),
     ]
 
@@ -186,38 +192,79 @@ def registered_problem():
 # ------------------------------------------------------------------- tests
 
 
-class TestStaticHelpers:
-    def test_softcore_to_dict_round_trip(self):
-        sc = _make_softcores()[0]
-        d = _softcore_to_dict(sc, 7)
-        assert d["index"] == 7
-        assert d["name"] == "conv1_pos0_0"
-        assert d["input_count"] == 64
-        assert d["output_count"] == 32
-        assert d["area"] == 64 * 32
+def _payload_for(problem=None) -> Dict[str, Any]:
+    problem = problem or _make_problem()
+    return _collect_layout_payload(
+        problem,
+        {
+            "model_config": {},
+            "platform_constraints": problem.fixed_platform_constraints,
+        },
+    )
 
-    def test_layer_key_strips_pos_suffix(self):
-        sc = _make_softcores()[0]
-        assert _layer_key(sc) == "conv1"
 
-    def test_layer_key_strips_tile_suffix(self):
-        sc = _make_softcores()[2]
-        assert _layer_key(sc) == "fc1"
+class TestServedPayload:
+    """The agent surface is the introspection registry's, versioned and identified."""
 
-    def test_aggregate_per_layer_collapses_tiles(self):
-        rows = _aggregate_per_layer(_make_softcores())
-        layer_names = sorted(r["layer"] for r in rows)
-        assert layer_names == ["conv1", "fc1"]
-        conv = next(r for r in rows if r["layer"] == "conv1")
+    def test_every_candidate_answerable_payload_is_served(self):
+        served = _payload_for()["introspection"]
+        assert set(served) == {
+            "softcores", "layer_rollup", "bank_composition", "schedule",
+            "capabilities", "layout_stats",
+        }
+        assert all(env["payload"] == name for name, env in served.items())
+        assert all(env["payload_version"] >= 1 for env in served.values())
+
+    def test_softcore_rows_carry_both_identities(self):
+        rows = _payload_for()["introspection"]["softcores"]["softcores"]
+        assert [r["perceptron_index"] for r in rows] == [0, 0, 1]
+        assert [r["bank_id"] for r in rows] == [0, 0, None]
+        assert rows[0]["area"] == 64 * 32
+
+    def test_the_rollup_keys_on_identity_not_on_the_name(self):
+        rows = _payload_for()["introspection"]["layer_rollup"]["layers"]
+        assert [r["perceptron_index"] for r in rows] == [0, 1]
+        conv = rows[0]
         assert conv["softcore_count"] == 2
         assert conv["total_area"] == 64 * 32 * 2
         assert conv["residency_class_count"] == 1
         assert conv["latency_tag_count"] == 1
         assert conv["segment_count"] == 1
-        fc = next(r for r in rows if r["layer"] == "fc1")
-        assert fc["softcore_count"] == 1
-        assert fc["max_input_count"] == 128
+        assert conv["bank_ids"] == [0]
+        assert rows[1]["max_input_count"] == 128
 
+    def test_renaming_the_cores_does_not_move_a_single_core(self):
+        problem = _make_problem()
+        problem.softcores = [
+            replace(sc, name=f"anything_{i}")
+            for i, sc in enumerate(problem.softcores)
+        ]
+        renamed = _payload_for(problem)["introspection"]["layer_rollup"]["layers"]
+        original = _payload_for()["introspection"]["layer_rollup"]["layers"]
+        assert [
+            (r["perceptron_index"], r["softcore_count"]) for r in renamed
+        ] == [(r["perceptron_index"], r["softcore_count"]) for r in original]
+
+    def test_bank_sharing_degree_is_visible(self):
+        banks = _payload_for()["introspection"]["bank_composition"]
+        assert banks["banks"][0]["softcore_count"] == 2
+        assert banks["unbanked_softcore_count"] == 1
+
+    def test_the_legacy_flat_keys_project_the_same_rows(self):
+        payload = _payload_for()
+        assert payload["softcore_count"] == 3
+        assert payload["per_softcore"] == (
+            payload["introspection"]["softcores"]["softcores"]
+        )
+        assert payload["per_layer"] == (
+            payload["introspection"]["layer_rollup"]["layers"]
+        )
+        assert payload["layout_stats"] == (
+            payload["introspection"]["layout_stats"]["stats"]
+        )
+
+
+class TestStaticHelpers:
     def test_unit_for_known_objectives(self):
         assert _unit_for("fragmentation_pct") == "%"
         assert _unit_for("total_params") == "params"
@@ -245,7 +292,11 @@ class TestDeviceCapabilityAndAnalyse:
         baseline = analysis.extra.get("baseline")
         assert baseline is not None
         assert baseline["softcore_count"] == 3
-        assert {row["layer"] for row in baseline["per_layer"]} == {"conv1", "fc1"}
+        # Layer identity is the source perceptron, not a parse of the core name.
+        assert {row["perceptron_index"] for row in baseline["per_layer"]} == {0, 1}
+        assert {row["layer"] for row in baseline["per_layer"]} == {
+            "perceptron_0", "perceptron_1",
+        }
         assert baseline["layout_stats"]
         assert "total_param_capacity" in baseline["hw_objectives"]
 
@@ -343,7 +394,7 @@ class TestCompile:
         backend = MimarsinanLayoutBackend()
         result = backend.compile(workload, Plan(), artifact_dir=tmp_path)
         assert result.ok, result.diagnostics
-        assert result.artifacts and len(result.artifacts) == 3
+        assert result.artifacts and len(result.artifacts) == 4
         # Each artifact should be a real, non-empty JSON file
         for path in result.artifacts:
             data = json.loads(path.read_text())
