@@ -3,15 +3,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 
-from mimarsinan.mapping.platform.coalescing import normalize_coalescing_config
+from mimarsinan.deployment_record.objectives import ObjectiveSpecV2
+from mimarsinan.mapping.platform.platform_constraints import resolve_platform_mapping_params
 from mimarsinan.search.problems.encoded_problem import EncodedProblem
 from mimarsinan.search.problem import ValidationResult
-from mimarsinan.search.results import ObjectiveSpec, resolve_active_objectives
+from mimarsinan.search.results import ObjectiveSpec, resolve_active_specs
 from mimarsinan.search.search_space_description import (
+    CORE_DIM_GRANULARITY,
     DEFAULT_CORE_AXONS_BOUNDS,
     DEFAULT_CORE_COUNT_BOUNDS,
     DEFAULT_CORE_NEURONS_BOUNDS,
@@ -21,9 +23,11 @@ from .evaluate import JointEvaluateMixin
 from .layout_hook import JointLayoutMixin
 from .types import (
     BuilderFactory,
+    CandidatePlatformError,
     ConstraintFn,
     HwOnlyCache,
     ModelConfigAssembler,
+    PlatformResolver,
     ValidateFn,
     ValidationEntry,
     clip_int,
@@ -58,7 +62,11 @@ class JointArchHwProblem(
     constraint_fn: Optional[ConstraintFn] = None
 
     fixed_model_config: Optional[Dict[str, Any]] = None
-    fixed_platform_constraints: Optional[Dict[str, Any]] = None
+    #: The deployment's platform resolution, curried over this run's declared
+    #: platform. Every candidate chip — decoded, LLM-declared, or the base — is
+    #: this one function's output, so no candidate can differ from its
+    #: deployed twin by a key nobody remembered to carry.
+    platform_resolver: Optional[PlatformResolver] = None
 
     active_objective_names: Sequence[str] = ()
 
@@ -80,6 +88,7 @@ class JointArchHwProblem(
     _hw_only_cache: Optional[HwOnlyCache] = field(default=None, init=False)
     _validation_cache: Dict[str, ValidationEntry] = field(default_factory=dict, init=False)
     _validation_errors: Dict[str, ValidationResult] = field(default_factory=dict, init=False)
+    _resolved_base: Optional[Dict[str, Any]] = field(default=None, init=False, repr=False)
 
     @property
     def _searches_model(self) -> bool:
@@ -98,10 +107,64 @@ class JointArchHwProblem(
         return (3 * int(self.num_core_types)) if self._searches_hw else 0
 
     @property
+    def active_specs(self) -> Sequence[ObjectiveSpecV2]:
+        """The ACTIVE registry axes — what an evaluation of this problem produces."""
+        return resolve_active_specs(
+            self.search_mode, self.active_objective_names or None,
+        )
+
+    @property
     def objectives(self) -> Sequence[ObjectiveSpec]:
-        if self.active_objective_names:
-            return resolve_active_objectives(self.search_mode, self.active_objective_names)
-        return resolve_active_objectives(self.search_mode)
+        return tuple(ObjectiveSpec(s.name, s.goal) for s in self.active_specs)
+
+    def _require_platform_resolver(self) -> PlatformResolver:
+        if self.platform_resolver is None:
+            raise ValueError(
+                "the search problem has no platform_resolver: a candidate chip "
+                "is the deployment's platform resolution of the declared "
+                "platform plus the searched dimensions, and without the "
+                "resolver it cannot be built"
+            )
+        return self.platform_resolver
+
+    @property
+    def fixed_platform_constraints(self) -> Optional[Dict[str, Any]]:
+        """The declared platform, resolved — a candidate with an empty overlay."""
+        if self.platform_resolver is None:
+            return None
+        if self._resolved_base is None:
+            self._resolved_base = self.platform_resolver({})
+        return self._resolved_base
+
+    def resolve_candidate_platform(self, overlay: Mapping[str, Any]) -> Dict[str, Any]:
+        """The ONE candidate-platform seam: the deployment resolution of *overlay*.
+
+        Idempotent — re-resolving an already resolved platform returns it
+        unchanged — so every entry point (decode, an LLM-declared candidate, the
+        base itself) may pass through it unconditionally.
+        """
+        return self._require_platform_resolver()(overlay)
+
+    def _resolved_configuration(self, configuration: Dict[str, Any]) -> Dict[str, Any]:
+        """A candidate whose platform is the chip a deployment would build.
+
+        The run's DECLARED platform resolves first: a declared platform that
+        does not resolve is problem-level breakage and aborts here — which is
+        also what makes every remaining failure the candidate's own, and so
+        scorable rather than fatal.
+        """
+        if self.fixed_platform_constraints is None:
+            self._require_platform_resolver()
+        try:
+            platform = self.resolve_candidate_platform(
+                configuration.get("platform_constraints") or {}
+            )
+        except ValueError as exc:
+            raise CandidatePlatformError(
+                f"candidate platform does not resolve into a chip: "
+                f"{type(exc).__name__}: {exc}"
+            ) from exc
+        return {**configuration, "platform_constraints": platform}
 
     @property
     def n_var(self) -> int:
@@ -142,16 +205,26 @@ class JointArchHwProblem(
             raw_arch[key] = options[idx]
         return self.model_config_assembler(raw_arch)
 
+    @staticmethod
+    def _snap_core_dim(value: int) -> int:
+        """Core dimensions live on the declared grid, never between its lines."""
+        snapped = int(round(value / CORE_DIM_GRANULARITY)) * CORE_DIM_GRANULARITY
+        return max(CORE_DIM_GRANULARITY, snapped)
+
     def _decode_hw(self, x: np.ndarray, offset: int) -> Dict[str, Any]:
-        # The resolved base is the deployed chip; a candidate is that chip with
-        # only the decision variables (cores, target_tq) replaced.
-        if not self.fixed_platform_constraints:
+        """The searched dimensions, resolved into a chip by the deployment resolver."""
+        base = self.fixed_platform_constraints
+        if not base:
             raise ValueError(
-                "hardware search requires fixed_platform_constraints "
-                "(the resolved platform base)"
+                "hardware search requires a platform_resolver: the candidate "
+                "chip is the declared platform re-resolved with the searched "
+                "core dimensions"
             )
-        base_cores = self.fixed_platform_constraints.get("cores") or []
-        base_has_bias = all(bool(c.get("has_bias", True)) for c in base_cores)
+        # A searched core type declares dimensions only; every other core
+        # property is the declared platform's — including whether the chip can
+        # deliver a bias on-core, which the resolver stamps onto each core.
+        base_cores = base.get("cores") or []
+        hardware_bias = resolve_platform_mapping_params(base_cores).hardware_bias
 
         core_types: List[Dict[str, Any]] = []
         idx = offset
@@ -162,20 +235,17 @@ class JointArchHwProblem(
             )
             count = clip_int(x[idx + 2], int(self.core_count_bounds[0]), int(self.core_count_bounds[1]))
             idx += 3
-            ax = max(8, int(round(ax / 8)) * 8)
-            neu = max(8, int(round(neu / 8)) * 8)
             core_types.append({
-                "max_axons": ax,
-                "max_neurons": neu,
+                "max_axons": self._snap_core_dim(ax),
+                "max_neurons": self._snap_core_dim(neu),
                 "count": count,
-                "has_bias": base_has_bias,
+                "has_bias": hardware_bias,
             })
 
-        pcfg: Dict[str, Any] = dict(self.fixed_platform_constraints)
-        pcfg["cores"] = core_types
-        pcfg["target_tq"] = int(self.target_tq)
-        normalize_coalescing_config(pcfg)
-        return pcfg
+        return self.resolve_candidate_platform({
+            "cores": core_types,
+            "target_tq": int(self.target_tq),
+        })
 
     def decode(self, x: np.ndarray) -> Dict[str, Any]:
         x = np.array(x, dtype=float).flatten()
@@ -193,8 +263,7 @@ class JointArchHwProblem(
         if self._searches_hw:
             platform_constraints = self._decode_hw(x, offset)
         else:
-            platform_constraints = dict(self.fixed_platform_constraints or {})
-            normalize_coalescing_config(platform_constraints)
+            platform_constraints = self.resolve_candidate_platform({})
 
         return {
             "model_config": model_config,

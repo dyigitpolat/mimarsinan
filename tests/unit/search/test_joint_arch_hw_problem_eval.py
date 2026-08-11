@@ -13,6 +13,9 @@ import mimarsinan.data_handling.data_providers.mnist_data_provider  # noqa: F401
 from mimarsinan.models.builders.torch_mlp_mixer_core_builder import (
     TorchMLPMixerCoreBuilder,
 )
+from mimarsinan.pipelining.pipeline_steps.config.architecture_search_helpers import (
+    make_platform_resolver,
+)
 from mimarsinan.search.problems.joint import JointArchHwProblem
 from mimarsinan.search.results import resolve_active_objectives
 
@@ -44,6 +47,10 @@ def _make_platform_constraints():
     }
 
 
+def _make_pipeline_config():
+    return {**_make_platform_constraints(), "device": "cpu", "lr": 0.001}
+
+
 def _make_problem(
     search_mode="joint",
     objective_names=None,
@@ -73,6 +80,7 @@ def _make_problem(
         arch_options=(),
         model_config_assembler=lambda raw: raw,
         validate_fn=TorchMLPMixerCoreBuilder.validate_config,
+        platform_resolver=make_platform_resolver(_make_pipeline_config()),
         active_objective_names=objective_names,
         accuracy_seed=0,
         warmup_fraction=0.10,
@@ -106,19 +114,19 @@ class TestEvaluateInnerDoesNotReturnPenalties:
         softcores, host_segments = problem._collect_softcores(model, pcfg)
         assert len(softcores) > 0, "Softcores list should not be empty"
 
-    def test_hw_objectives_not_none(self):
-        """_compute_hw_objectives should return a non-None dict (feasible packing)."""
+    def test_candidate_view_not_none(self):
+        """The packed candidate must yield a populated static view."""
         problem = _make_problem()
         mc = _make_model_config()
         pcfg = _make_platform_constraints()
         model, total_params = problem._build_model(mc, pcfg)
         softcores, host_segments = problem._collect_softcores(model, pcfg)
-        hw_obj, error = problem._compute_hw_objectives(
-            softcores, pcfg, total_params, host_segments,
-        )
+        stats, error = problem._pack_candidate(softcores, pcfg)
         assert error is None, f"Packing should be feasible, got: {error}"
-        assert hw_obj is not None, "Packing should be feasible"
-        assert hw_obj["total_params"] == total_params
+        assert stats.feasible, "Packing should be feasible"
+        view = problem._static_view(stats, pcfg, total_params, host_segments)
+        assert view.total_params == total_params
+        assert view.layout is not None
 
     def test_evaluate_inner_returns_real_objectives(self):
         """_evaluate_inner must not raise; returned objectives must not be penalties."""

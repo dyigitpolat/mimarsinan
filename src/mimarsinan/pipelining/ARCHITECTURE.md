@@ -29,7 +29,7 @@ concrete `PipelineStep` implementations live under `pipeline_steps/`.
 - `models` — model layers and decorators used by steps, `SpikingHybridCoreFlow`, perceptron bias-reference refresh.
 - `transformations` — normalization fusion, `PerceptronTransformer`, magnitude pruning, quantization bounds, `pruning.committed_masks` commit/verify at the cache store/load boundary, `pruning.seed_generators` (the `prune_criterion` seed seam in the soft-core structured-pruning hook), `equalize_channel_scales`/`DEFAULT_CLIP_RATIO` for the Scale Migration step and `DeploymentPlan`.
 - `spiking` — cycle-accurate LIF train application and scale-aware boundary calibration.
-- `search` — joint arch/HW search problem and result types for `ArchitectureSearchStep`.
+- `search` — joint arch/HW search problem and result types for `ArchitectureSearchStep`, which injects the step's `make_platform_resolver(config)` as the problem's `PlatformResolver`: every searched chip is `platform_constraints_resolver.build_platform_constraints_resolved` over the declared platform plus the candidate's searched dimensions, so the winning candidate IS the deployed `platform_constraints_resolved` with nothing merged or re-stamped afterwards.
 - `config_schema` — config defaults and deployment derivation folded into pipeline configs.
 - `torch_mapping` — torch-model conversion and conversion probing in `TorchMappingStep`.
 - `gui` — JSON-safe serialization and `CompositeReporter` for GUI wiring.

@@ -16,10 +16,12 @@ from mimarsinan.deployment_record.objectives.spec import (
     RecordView,
 )
 from mimarsinan.deployment_record.objectives.views import (
+    CANDIDATE_FRAGMENTS,
     SEARCH_MODES,
     CandidateStaticView,
     DeploymentRecordView,
     candidate_capability_probe,
+    candidate_probe_without,
     chip_param_capacity,
     declared_core_capacity,
     mode_trains_accuracy,
@@ -27,6 +29,7 @@ from mimarsinan.deployment_record.objectives.views import (
 
 __all__ = [
     "ACCURACY_OBJECTIVE_KEY",
+    "CANDIDATE_FRAGMENTS",
     "OBJECTIVES",
     "SEARCH_MODES",
     "Backing",
@@ -40,6 +43,7 @@ __all__ = [
     "RecordView",
     "build_catalog",
     "candidate_capability_probe",
+    "candidate_probe_without",
     "chip_param_capacity",
     "declared_core_capacity",
     "mode_trains_accuracy",

@@ -13,7 +13,6 @@ from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 from mimarsinan.pipelining.core.model_config_emit import emit_model_config_entries
 from mimarsinan.pipelining.core.registry.model_registry import ModelRegistry
 from mimarsinan.pipelining.core.search_mode import derive_search_mode
-from mimarsinan.mapping.platform.coalescing import normalize_coalescing_config
 from mimarsinan.search.problems.joint import JointArchHwProblem
 from mimarsinan.search.results import (
     ACCURACY_OBJECTIVE_NAME,
@@ -25,6 +24,7 @@ from mimarsinan.pipelining.pipeline_steps.config.architecture_search_helpers imp
     create_optimizer,
     derive_arch_options,
     make_assembler,
+    make_platform_resolver,
     search_result_to_jsonable,
     write_search_visualizations,
 )
@@ -95,9 +95,10 @@ class ArchitectureSearchStep(PipelineStep):
             assembler = lambda raw: dict(raw)
 
         fixed_model_config = None
-        # Every search mode anchors on the resolved platform base: hardware
-        # candidates overlay it, model mode carries it, joint inherits it.
-        fixed_platform_constraints = build_fixed_platform_constraints(self.pipeline.config)
+        # Every candidate platform is this run's DEPLOYMENT resolution with the
+        # searched dimensions overlaid — searched chip and deployed chip are the
+        # same chip by construction, in every mode.
+        platform_resolver = make_platform_resolver(self.pipeline.config)
 
         if search_mode == "hardware":
             fixed_model_config = dict(self.pipeline.config.get("model_config", {}))
@@ -155,7 +156,7 @@ class ArchitectureSearchStep(PipelineStep):
             validate_fn=validate_fn,
             constraint_fn=constraint_fn,
             fixed_model_config=fixed_model_config,
-            fixed_platform_constraints=fixed_platform_constraints,
+            platform_resolver=platform_resolver,
             active_objective_names=active_objective_names,
             num_core_types=num_core_types,
             core_axons_bounds=(int(core_axons_bounds[0]), int(core_axons_bounds[1])),
@@ -217,19 +218,12 @@ class ArchitectureSearchStep(PipelineStep):
             )
 
         model_config = best_cfg["model_config"]
-        # Resolved-base overlay: the searched keys land on the same platform
-        # base the search evaluated against (and fixed mode passes through).
-        platform_constraints = {
-            **fixed_platform_constraints,
-            **best_cfg["platform_constraints"],
-        }
-        platform_constraints["cores"] = [
-            dict(c) for c in platform_constraints.get("cores", [])
-        ]
-
-        global_has_bias = self.pipeline.config.get("platform_constraints", {}).get("has_bias", True)
-        for c in platform_constraints["cores"]:
-            c["has_bias"] = global_has_bias
+        # The winning candidate's platform IS the deployed platform: it came out
+        # of the same resolver this step would run on it, so there is nothing
+        # left to merge, patch, or re-stamp here.
+        platform_constraints = problem.resolve_candidate_platform(
+            best_cfg["platform_constraints"]
+        )
 
         merged_config = {**self.pipeline.config, **platform_constraints}
         builder = builder_cls(
@@ -249,6 +243,5 @@ class ArchitectureSearchStep(PipelineStep):
 
         self.add_entry("model_builder", builder, "pickle")
         self.add_entry("model_config", model_config)
-        normalize_coalescing_config(platform_constraints)
         self.add_entry("platform_constraints_resolved", platform_constraints)
         self.add_entry("architecture_search_result", {**result_json, **discovered})

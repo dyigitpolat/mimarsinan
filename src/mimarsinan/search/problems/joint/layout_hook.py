@@ -1,27 +1,38 @@
-"""Model build, layout collection, and HW objective helpers for joint search."""
+"""Model build, layout collection, and the candidate view for joint search."""
 
 from __future__ import annotations
 
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import torch
 from torch.nn.parameter import UninitializedParameter
 
-from mimarsinan.deployment_record.objectives import chip_param_capacity
+from mimarsinan.deployment_record.objectives import (
+    CandidateStaticView,
+    candidate_probe_without,
+    declared_core_capacity,
+)
 from mimarsinan.mapping.layout.layout_ir_mapping import LayoutIRMapping
 from mimarsinan.mapping.layout.layout_types import LayoutHardCoreType, LayoutSoftCoreSpec
-from mimarsinan.mapping.platform.coalescing import normalize_coalescing_config
 from mimarsinan.mapping.platform.mapping_structure import ChipCapabilities
 from mimarsinan.mapping.platform.platform_constraints import resolve_platform_mapping_params
 from mimarsinan.mapping.verification.layout_verification_scheduling import compute_mapping_stats
+from mimarsinan.mapping.verification.layout_verification_types import (
+    LayoutVerificationStats,
+)
 from mimarsinan.torch_mapping.converter import convert_torch_model
 
-from .types import HwOnlyCache, JointHostContract
+from .types import (
+    HW_PACKING_PHASE,
+    CandidateFailure,
+    HwOnlyCache,
+    JointHostContract,
+)
 
 
 class JointLayoutMixin(JointHostContract):
-    """Layout mapping and HW metric computation for :class:`JointArchHwProblem`."""
+    """Layout mapping and candidate-view construction for :class:`JointArchHwProblem`."""
 
     def _build_raw_model(self, model_config: Dict, pcfg: Dict):
         """Build and warm up a raw model. Returns (model, total_params) or raises."""
@@ -48,7 +59,7 @@ class JointLayoutMixin(JointHostContract):
         total_params = float(sum(int(p.numel()) for p in model.parameters()))
         return model, total_params
 
-    def _ensure_mapper_repr(self, model):
+    def _convert_to_mapper_repr(self, model):
         """Convert via torch mapping if the model lacks ``get_mapper_repr``."""
         if hasattr(model, "get_mapper_repr"):
             return model
@@ -59,6 +70,36 @@ class JointLayoutMixin(JointHostContract):
             device=self.device,
             Tq=self.target_tq,
         )
+
+    def _ensure_mapper_repr(self, model):
+        """The model in mapper form, converted once per model rather than per candidate.
+
+        Only the LAYOUT depends on the candidate chip; lowering the model into
+        mapper form depends on the model alone. A hardware-only search reuses
+        one model across every candidate, so its representation is memoized on
+        that fixture — a model-bearing search builds a new model per candidate
+        and converts it exactly once anyway.
+        """
+        cache = self._hw_only_cache
+        if cache is None or model is not cache.model:
+            return self._convert_to_mapper_repr(model)
+        if cache.mapper_repr is None:
+            cache.mapper_repr = self._convert_to_mapper_repr(model)
+        return cache.mapper_repr
+
+    def _candidate_model(self, mc: Dict, pcfg: Dict) -> Tuple[Any, float]:
+        """The model this candidate is scored with, and its parameter census.
+
+        A model-bearing search builds the candidate's own; a hardware-only
+        search reuses the run's fixed model, which no candidate influences.
+        Seeding belongs here, next to the build it makes reproducible.
+        """
+        torch.manual_seed(int(self.accuracy_seed))
+        np.random.seed(int(self.accuracy_seed))
+        if self._searches_model:
+            return self._build_raw_model(mc, pcfg)
+        cache = self._ensure_hw_only_cache()
+        return cache.model, cache.total_params
 
     def _build_model(self, model_config: Dict, pcfg: Dict):
         """Build, warm up, and convert a model. Returns (model, total_params)."""
@@ -91,33 +132,27 @@ class JointLayoutMixin(JointHostContract):
         return softcores, host_segments
 
     def _ensure_hw_only_cache(self) -> HwOnlyCache:
-        """Build model once and cache softcores for HW-only search."""
+        """Build the candidate-independent model once for a hardware-only search.
+
+        Only the MODEL is reused: every candidate re-derives its own layout,
+        because softcore tiling is a function of the candidate's core geometry.
+        """
         if self._hw_only_cache is not None:
             return self._hw_only_cache
 
-        if (
-            not self.fixed_platform_constraints
-            or "cores" not in self.fixed_platform_constraints
-        ):
+        base = self.fixed_platform_constraints
+        if not base or "cores" not in base:
             raise ValueError(
-                "hardware-only search requires fixed_platform_constraints "
-                "with 'cores' (the resolved platform base)"
+                "hardware-only search requires a platform_resolver whose resolved "
+                "base declares 'cores'"
             )
         mc = self.fixed_model_config or {}
-        pcfg = dict(self.fixed_platform_constraints)
-        normalize_coalescing_config(pcfg)
 
         torch.manual_seed(int(self.accuracy_seed))
         np.random.seed(int(self.accuracy_seed))
 
-        model, total_params = self._build_model(mc, pcfg)
-        softcores, host_segments = self._collect_softcores(model, pcfg)
-
-        self._hw_only_cache = HwOnlyCache(
-            softcores=softcores,
-            total_params=total_params,
-            host_side_segment_count=host_segments,
-        )
+        model, total_params = self._build_raw_model(mc, dict(base))
+        self._hw_only_cache = HwOnlyCache(model=model, total_params=total_params)
         return self._hw_only_cache
 
     @staticmethod
@@ -131,9 +166,10 @@ class JointLayoutMixin(JointHostContract):
             for ct in pcfg["cores"]
         ]
 
-    @staticmethod
-    def _compute_chip_capacity(pcfg: Dict) -> float:
-        return chip_param_capacity(pcfg["cores"])
+    def _requires_fragment(self, fragment: str) -> bool:
+        """Does any ACTIVE objective need this candidate fragment? The registry answers."""
+        probe = candidate_probe_without(fragment)
+        return any(not spec.available(probe) for spec in self.active_specs)
 
     def _penalty_objectives(self) -> Dict[str, float]:
         """Return penalty values for all objectives (infeasible candidate)."""
@@ -143,42 +179,55 @@ class JointLayoutMixin(JointHostContract):
             obj[spec.name] = 0.0 if spec.goal == "max" else large
         return obj
 
-    def _compute_hw_objectives(
-        self,
-        softcores: List[LayoutSoftCoreSpec],
-        pcfg: Dict,
-        total_params: float,
-        host_side_segment_count: int,
-    ) -> Tuple[Optional[Dict[str, float]], Optional[str]]:
-        """Run bin-packing and compute all non-accuracy objectives."""
-        core_types = self._make_core_types(pcfg)
-        stats, error = compute_mapping_stats(
+    def _pack_candidate(
+        self, softcores: List[LayoutSoftCoreSpec], pcfg: Dict,
+    ) -> Tuple[LayoutVerificationStats, Optional[str]]:
+        """Pack the candidate's softcores onto the chip it declares."""
+        return compute_mapping_stats(
             softcores=softcores,
-            core_types=core_types,
+            core_types=self._make_core_types(pcfg),
             **ChipCapabilities.from_platform_constraints(pcfg).permission_kwargs(),
         )
 
-        if not stats.feasible:
-            total_hw_capacity = sum(
-                ct.max_axons * ct.max_neurons * ct.count for ct in core_types
-            )
-            full_error = error or "HW bin-packing infeasible"
-            full_error += (
-                f" | softcores={len(softcores)}"
-                f", total_hw_capacity={total_hw_capacity}"
-            )
-            return None, full_error
+    def _packing_failure(
+        self,
+        stats: LayoutVerificationStats,
+        error: Optional[str],
+        softcores: List[LayoutSoftCoreSpec],
+        pcfg: Dict,
+    ) -> CandidateFailure:
+        """Why the candidate does not fit, with the census that shows how badly."""
+        total_hw_capacity = sum(
+            ct.max_axons * ct.max_neurons * ct.count
+            for ct in self._make_core_types(pcfg)
+        )
+        message = error or "HW bin-packing infeasible"
+        message += (
+            f" | softcores={len(softcores)}"
+            f", total_hw_capacity={total_hw_capacity}"
+        )
+        return CandidateFailure(phase=HW_PACKING_PHASE, message=message)
 
-        chip_capacity = self._compute_chip_capacity(pcfg)
+    def _static_view(
+        self,
+        stats: LayoutVerificationStats,
+        pcfg: Dict,
+        total_params: float,
+        host_side_segment_count: int,
+    ) -> CandidateStaticView:
+        """The static facts of a packed candidate — what every objective reads."""
+        return CandidateStaticView(
+            layout=stats,
+            chip_param_capacity=declared_core_capacity(pcfg),
+            total_params=total_params,
+            host_side_segment_count=host_side_segment_count,
+        )
 
-        return {
-            "total_params": total_params,
-            "total_param_capacity": chip_capacity,
-            "total_sync_barriers": float(
-                host_side_segment_count + stats.schedule_sync_count
-            ),
-            "param_utilization_pct": stats.mapped_params_pct,
-            "neuron_wastage_pct": stats.total_wasted_neurons_pct,
-            "axon_wastage_pct": stats.total_wasted_axons_pct,
-            "fragmentation_pct": stats.fragmentation_pct,
-        }, None
+    def _layoutless_view(self, pcfg: Dict, total_params: float) -> CandidateStaticView:
+        """The view of a candidate no active objective needs a layout for."""
+        return CandidateStaticView(
+            layout=None,
+            chip_param_capacity=declared_core_capacity(pcfg),
+            total_params=total_params,
+            host_side_segment_count=None,
+        )

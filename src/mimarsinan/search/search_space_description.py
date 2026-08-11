@@ -6,7 +6,8 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Sequence, Tuple
 
 
-# Must match the rounding factor `_decode_hw` in search/problems/joint/problem.py applies.
+# The core-dimension grid every backend snaps to; `JointArchHwProblem._snap_core_dim`
+# reads this same constant, so the described space and the decoded one cannot drift.
 CORE_DIM_GRANULARITY = 8
 
 # Platform-search bounds defaults (deployment-config seeds; arch_search.* overrides).

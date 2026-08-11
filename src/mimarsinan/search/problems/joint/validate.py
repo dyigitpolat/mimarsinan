@@ -1,18 +1,24 @@
-"""Validation and constraint checking for joint architecture + hardware search."""
+"""Validation and candidate-view resolution for joint architecture + hardware search."""
 
 from __future__ import annotations
 
 import logging
-from typing import Dict
+from typing import Any, Dict, Optional, Tuple
 
-import numpy as np
-import torch
+from mimarsinan.search.problem import CandidateInfeasibleError, ValidationResult
 
-from mimarsinan.mapping.platform.coalescing import CoalescingConfigError, normalize_coalescing_config
-from mimarsinan.search.problem import ValidationResult
-from mimarsinan.search.results import ACCURACY_OBJECTIVE_NAME
-
-from .types import VALIDATION_CACHE_MAX_SIZE, JointHostContract, ValidationEntry, json_key
+from .types import (
+    HW_CONVERSION_PHASE,
+    MODEL_BUILD_PHASE,
+    STRUCTURAL_PHASE,
+    VALIDATION_CACHE_MAX_SIZE,
+    CandidateFailure,
+    CandidateLayout,
+    CandidatePlatformError,
+    JointHostContract,
+    ValidationEntry,
+    json_key,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -29,125 +35,149 @@ class JointValidateMixin(JointHostContract):
         self._validation_errors[key] = vr
         return vr
 
-    def _record_invalid_exception(
-        self, key: str, what: str, exc: Exception, phase: str,
-    ) -> ValidationResult:
+    @staticmethod
+    def _failure(phase: str, what: str, exc: Exception) -> CandidateFailure:
         message = f"{what}: {type(exc).__name__}: {exc}"
         logger.warning(
-            "[JointArchHwProblem] %s for candidate %.500s; marking invalid",
-            message, key, exc_info=True,
+            "[JointArchHwProblem] %s; candidate rejected", message, exc_info=True,
         )
-        return self._record_invalid(key, message, phase)
+        return CandidateFailure(phase=phase, message=message, cause=exc)
 
     def validate(self, configuration: Dict) -> bool:
         return self.validate_detailed(configuration).is_valid
 
     def validate_detailed(self, configuration: Dict) -> ValidationResult:
         """Full feasibility check: structural → model build → HW packing."""
-        key = json_key(configuration)
+        try:
+            configuration = self._resolved_configuration(configuration)
+        except CandidatePlatformError as exc:
+            return self._record_invalid(
+                json_key(configuration), str(exc), STRUCTURAL_PHASE,
+            )
 
+        key = json_key(configuration)
         if key in self._validation_cache:
             return ValidationResult(is_valid=True)
-
         if key in self._validation_errors:
             return self._validation_errors[key]
-
         if key in self._cache:
             return ValidationResult(is_valid=True)
 
         mc = configuration.get("model_config", {})
         pcfg = dict(configuration.get("platform_constraints", {}))
-        try:
-            normalize_coalescing_config(pcfg)
-        except CoalescingConfigError as exc:
-            return self._record_invalid(key, str(exc), "structural")
 
-        try:
-            if self.validate_fn is not None:
-                if not self.validate_fn(mc, pcfg, self.input_shape):
-                    return self._record_invalid(
-                        key,
-                        "Structural validation failed (validate_fn returned False)",
-                        "structural",
-                    )
-        except Exception as exc:
-            return self._record_invalid_exception(
-                key, "Structural validation error", exc, "structural",
-            )
+        structural = self._structural_failure(mc, pcfg)
+        if structural is not None:
+            return self._record_invalid(key, structural.message, structural.phase)
 
-        torch.manual_seed(int(self.accuracy_seed))
-        np.random.seed(int(self.accuracy_seed))
+        entry, failure = self._resolve_entry(mc, pcfg)
+        if failure is not None:
+            return self._record_invalid(key, failure.message, failure.phase)
 
-        if self.search_mode == "hardware":
-            return self._validate_hw_only(key, pcfg)
-        return self._validate_model_or_joint(key, mc, pcfg)
-
-    def _validate_hw_only(self, key: str, pcfg: Dict) -> ValidationResult:
-        # The fixed model does not depend on the candidate: a build failure is
-        # problem-level breakage, not candidate infeasibility — fail loud.
-        cache = self._ensure_hw_only_cache()
-
-        hw_obj, error = self._compute_hw_objectives(
-            cache.softcores, pcfg, cache.total_params, cache.host_side_segment_count,
-        )
-        if hw_obj is None:
-            return self._record_invalid(
-                key, error or "HW bin-packing infeasible", "hw_packing",
-            )
-
-        self._validation_cache[key] = ValidationEntry(
-            model=None, total_params=cache.total_params, hw_objectives=hw_obj,
-        )
+        assert entry is not None
+        self._validation_cache[key] = entry
         self._evict_validation_cache()
         return ValidationResult(is_valid=True)
 
-    def _validate_model_or_joint(
-        self, key: str, mc: Dict, pcfg: Dict,
-    ) -> ValidationResult:
-        active_names = {spec.name for spec in self.objectives}
-        hw_names = active_names - {ACCURACY_OBJECTIVE_NAME}
-
+    def _structural_failure(self, mc: Dict, pcfg: Dict) -> Optional[CandidateFailure]:
+        """The caller-supplied structural check, if any."""
+        if self.validate_fn is None:
+            return None
         try:
-            raw_model, total_params = self._build_raw_model(mc, pcfg)
+            if not self.validate_fn(mc, pcfg, self.input_shape):
+                return CandidateFailure(
+                    phase=STRUCTURAL_PHASE,
+                    message="Structural validation failed (validate_fn returned False)",
+                )
         except Exception as exc:
-            return self._record_invalid_exception(
-                key, "Model build failed", exc, "model_build",
-            )
+            return self._failure(STRUCTURAL_PHASE, "Structural validation error", exc)
+        return None
 
-        if not hw_names:
-            self._validation_cache[key] = ValidationEntry(
-                model=raw_model, total_params=total_params, hw_objectives={},
-            )
-            self._evict_validation_cache()
-            return ValidationResult(is_valid=True)
-
+    def _resolve_model(
+        self, mc: Dict, pcfg: Dict,
+    ) -> Tuple[Optional[Tuple[Any, float]], Optional[CandidateFailure]]:
+        """The candidate's model, or the candidate-scoped reason there is none."""
         try:
-            mapped_model = self._ensure_mapper_repr(raw_model)
+            return self._candidate_model(mc, pcfg), None
         except Exception as exc:
-            return self._record_invalid_exception(
-                key, "HW conversion failed", exc, "hw_conversion",
-            )
+            if not self._searches_model:
+                # The model does not depend on the candidate here: its failure
+                # is problem-level breakage, not candidate infeasibility.
+                raise
+            return None, self._failure(MODEL_BUILD_PHASE, "Model build failed", exc)
+
+    def _resolve_layout(
+        self, model: Any, pcfg: Dict, total_params: float,
+    ) -> Tuple[Optional[CandidateLayout], Optional[CandidateFailure]]:
+        """Lay a built model onto the candidate chip: conversion → softcores → packing."""
+        try:
+            mapped_model = self._ensure_mapper_repr(model)
+        except Exception as exc:
+            return None, self._failure(HW_CONVERSION_PHASE, "HW conversion failed", exc)
 
         try:
             softcores, host_segments = self._collect_softcores(mapped_model, pcfg)
         except Exception as exc:
-            return self._record_invalid_exception(
-                key, "Softcore collection failed", exc, "hw_conversion",
+            return None, self._failure(
+                HW_CONVERSION_PHASE, "Softcore collection failed", exc,
             )
 
-        hw_obj, error = self._compute_hw_objectives(
-            softcores, pcfg, total_params, host_segments,
-        )
-        if hw_obj is None:
-            return self._record_invalid(
-                key, error or "HW bin-packing infeasible", "hw_packing",
-            )
+        stats, error = self._pack_candidate(softcores, pcfg)
+        if not stats.feasible:
+            return None, self._packing_failure(stats, error, softcores, pcfg)
 
-        self._validation_cache[key] = ValidationEntry(
-            model=raw_model, total_params=total_params, hw_objectives=hw_obj,
-        )
-        self._evict_validation_cache()
-        return ValidationResult(is_valid=True)
+        return CandidateLayout(
+            platform=pcfg,
+            softcores=softcores,
+            host_side_segment_count=host_segments,
+            stats=stats,
+            view=self._static_view(stats, pcfg, total_params, host_segments),
+        ), None
+
+    def _resolve_entry(
+        self, mc: Dict, pcfg: Dict,
+    ) -> Tuple[Optional[ValidationEntry], Optional[CandidateFailure]]:
+        """The ONE candidate-facts path: model → layout → static view.
+
+        Every search mode walks it. Candidate-scoped breakage comes back as a
+        :class:`CandidateFailure` the boundary renders (an invalid result, or a
+        typed raise); problem-level breakage — a fixture the candidate does not
+        influence — propagates untyped.
+        """
+        facts, failure = self._resolve_model(mc, pcfg)
+        if failure is not None:
+            return None, failure
+        assert facts is not None
+        model, total_params = facts
+
+        if not self._requires_fragment("layout"):
+            return ValidationEntry(
+                model=model, view=self._layoutless_view(pcfg, total_params),
+            ), None
+
+        layout, failure = self._resolve_layout(model, pcfg, total_params)
+        if failure is not None:
+            return None, failure
+        assert layout is not None
+        return ValidationEntry(model=model, view=layout.view), None
+
+    def candidate_layout(self, configuration: Dict) -> CandidateLayout:
+        """This candidate, laid out on the chip a deployment would build for it.
+
+        The introspection seam (a layout backend needs the softcores an
+        evaluation throws away) walking the SAME path an evaluation walks, so
+        the two cannot disagree. A candidate-scoped failure crosses typed; a
+        problem-level one propagates untyped, exactly as in ``evaluate``.
+        """
+        resolved = self._resolved_configuration(configuration)
+        pcfg = resolved["platform_constraints"]
+        facts, failure = self._resolve_model(resolved["model_config"], pcfg)
+        if facts is not None:
+            layout, failure = self._resolve_layout(facts[0], pcfg, facts[1])
+            if layout is not None:
+                return layout
+        assert failure is not None
+        raise CandidateInfeasibleError(failure.message) from failure.cause
 
     def _evict_validation_cache(self) -> None:
         while len(self._validation_cache) > VALIDATION_CACHE_MAX_SIZE:
@@ -156,10 +186,14 @@ class JointValidateMixin(JointHostContract):
 
     def constraint_violation(self, configuration: Dict) -> float:
         try:
+            resolved = self._resolved_configuration(configuration)
+        except CandidatePlatformError:
+            return 1.0
+        try:
             if self.constraint_fn is not None:
                 cv = float(self.constraint_fn(
-                    configuration["model_config"],
-                    configuration["platform_constraints"],
+                    resolved["model_config"],
+                    resolved["platform_constraints"],
                     self.input_shape,
                 ))
                 if cv > 0:
@@ -171,4 +205,4 @@ class JointValidateMixin(JointHostContract):
                 type(exc).__name__, exc, configuration, exc_info=True,
             )
             return 1e6
-        return 0.0 if self.validate_detailed(configuration).is_valid else 1.0
+        return 0.0 if self.validate_detailed(resolved).is_valid else 1.0

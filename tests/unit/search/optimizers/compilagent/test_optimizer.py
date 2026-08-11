@@ -1,8 +1,8 @@
 """End-to-end tests for ``CompilagentOptimizer``.
 
 Drive the optimizer through a synthetic harness that proposes a few
-``Plan``s against the fake ``JointArchHwProblem`` from
-``test_backend.py``. The goal is to assert that the resulting
+``Plan``s against the REAL ``JointArchHwProblem`` from
+``real_problem.py``. The goal is to assert that the resulting
 ``SearchResult`` mirrors the shape AgentEvolve and NSGA2 produce: a
 populated Pareto front, a non-empty ``best``, ``all_candidates`` covering
 both successes and failures, and a one-row ``history`` summary.
@@ -10,12 +10,11 @@ both successes and failures, and a one-row ``history`` summary.
 
 from __future__ import annotations
 
-import asyncio
 import json
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, List
+from typing import List
 
 import pytest
 from compilagent import (
@@ -28,9 +27,11 @@ from compilagent import (
 from mimarsinan.search.optimizers.compilagent.compilagent_optimizer import (
     CompilagentOptimizer,
 )
-from mimarsinan.search.search_space_description import SearchSpaceDescription
+from .real_problem import make_problem as _real_problem
 
-from .test_backend import _make_problem  # noqa: E402
+
+def _make_problem():
+    return _real_problem("hardware")
 
 
 # A deterministic harness mirrors the compilagent test pattern: it
@@ -210,16 +211,16 @@ class TestRejectedCandidates:
     def test_failed_compile_records_invalid_candidate(
         self, scripted_harness_registered, tmp_path,
     ):
-        # Use count=9999 — the fake problem's `validate_detailed`
-        # rejects this with a simulated packing failure that surfaces
-        # only AFTER basic intervention validation passes. This is the
-        # realistic "compile_failed" path: validate_intervention is
-        # happy but the deeper problem-side check rejects.
+        # An 8-axon core is a well-formed intervention (positive, a
+        # multiple of 8, inside the lever bounds) that no model with a
+        # 16-wide fan-in can be mapped onto. This is the realistic
+        # "compile_failed" path: validate_intervention is happy but the
+        # deeper problem-side check rejects.
         scripted_harness_registered["plans"] = [
             {
                 "description": "broken plan",
                 "interventions": [
-                    ("hw.core", "0.count", 9999),
+                    ("hw.core", "0.max_axons", 8),
                 ],
             },
             {

@@ -1,42 +1,55 @@
-"""Candidate evaluation for joint architecture + hardware search."""
+"""The one evaluation contract for joint architecture + hardware search.
+
+A candidate becomes a :class:`CandidateStaticView`, and the ACTIVE registry
+objectives are read off that view. There is no per-mode objective assembly:
+accuracy attaches exactly where the registry says the mode can carry the axis,
+and every other axis is a question asked of the same view.
+"""
 
 from __future__ import annotations
 
 import logging
+from dataclasses import replace
 from typing import Any, Dict
 
-import numpy as np
-import torch
-
-from mimarsinan.mapping.platform.coalescing import normalize_coalescing_config
+from mimarsinan.deployment_record.objectives import CandidateStaticView
 from mimarsinan.search.evaluators.extrapolating_accuracy_evaluator import ExtrapolatingAccuracyEvaluator
 from mimarsinan.search.evaluators.fast_accuracy_evaluator import FastAccuracyEvaluator
 from mimarsinan.search.problem import CandidateInfeasibleError
 from mimarsinan.search.results import ACCURACY_OBJECTIVE_NAME
 
-from .types import JointHostContract, ValidationEntry, json_key
+from .types import (
+    HW_PACKING_PHASE,
+    CandidateFailure,
+    CandidatePlatformError,
+    JointHostContract,
+    ValidationEntry,
+    json_key,
+)
 
 logger = logging.getLogger(__name__)
 
-
-def _warn_penalized(
-    stage: str, exc: Exception, configuration: Any, penalty_desc: str,
-) -> None:
-    logger.warning(
-        "[JointArchHwProblem] %s failed (%s: %s) for candidate %.500s; %s",
-        stage, type(exc).__name__, exc, configuration, penalty_desc,
-        exc_info=True,
-    )
+# A candidate that simply does not FIT is scored, not raised about; a candidate
+# that broke while being built crosses the boundary typed. Structural rejection
+# is not listed because it cannot arrive here: ``validate_fn`` runs in
+# ``validate_detailed``, before any candidate fact is resolved, so the phases
+# ``_resolve_entry`` can report are model build, conversion and packing.
+_PENALIZED_PHASES = frozenset({HW_PACKING_PHASE})
 
 
 class JointEvaluateMixin(JointHostContract):
-    """Accuracy and objective evaluation for :class:`JointArchHwProblem`.
+    """Objective evaluation for :class:`JointArchHwProblem`.
 
     Candidate-scoped failures cross the problem boundary as
     :class:`CandidateInfeasibleError`; anything else propagates untyped.
     """
 
     def evaluate(self, configuration: Dict[str, Any]) -> Dict[str, float]:
+        try:
+            configuration = self._resolved_configuration(configuration)
+        except CandidatePlatformError:
+            return self._penalty_objectives()
+
         key = json_key(configuration)
         if key in self._cache:
             return self._cache[key]
@@ -47,127 +60,73 @@ class JointEvaluateMixin(JointHostContract):
             self._cache[key] = obj
             return obj
 
-        vc = self._validation_cache.get(key)
-        if vc is not None:
-            obj = self._evaluate_from_cache(vc, configuration)
+        # The validation cache is an OPTIMIZATION, not a dependency: it is
+        # bounded, so a validated candidate whose entry has been evicted is
+        # simply resolved again rather than scored off something stale.
+        entry = self._validation_cache.get(key)
+        if entry is None:
+            obj = self._evaluate_inner(
+                configuration["model_config"], configuration["platform_constraints"],
+            )
         else:
-            mc = configuration["model_config"]
-            pcfg = configuration["platform_constraints"]
-            torch.manual_seed(int(self.accuracy_seed))
-            np.random.seed(int(self.accuracy_seed))
-            obj = self._evaluate_inner(mc, pcfg)
+            obj = self._objectives_from_entry(entry)
 
         self._cache[key] = obj
         return obj
 
-    def _evaluate_from_cache(
-        self,
-        vc: ValidationEntry,
-        configuration: Dict[str, Any],
-    ) -> Dict[str, float]:
-        """Build objectives from a cached validation entry."""
-        active_names = {spec.name for spec in self.objectives}
-        needs_accuracy = ACCURACY_OBJECTIVE_NAME in active_names
+    def _evaluate_inner(self, mc: Dict[str, Any], pcfg: Dict[str, Any]) -> Dict[str, float]:
+        """Evaluate one candidate pair directly, without the configuration cache."""
+        entry, failure = self._resolve_entry(mc, pcfg)
+        if entry is None:
+            assert failure is not None
+            return self._raise_or_penalize(failure)
+        return self._objectives_from_entry(entry)
 
-        obj: Dict[str, float] = {
-            k: v for k, v in vc.hw_objectives.items() if k in active_names
-        }
-
-        if needs_accuracy:
-            if vc.model is not None:
-                try:
-                    obj[ACCURACY_OBJECTIVE_NAME] = self._evaluate_accuracy(vc.model)
-                except Exception as exc:
-                    _warn_penalized(
-                        "Accuracy evaluation", exc, configuration,
-                        "recording penalty accuracy 0.0",
-                    )
-                    obj[ACCURACY_OBJECTIVE_NAME] = 0.0
-                finally:
-                    vc.model = None
-            else:
-                mc = configuration["model_config"]
-                pcfg = configuration["platform_constraints"]
-                torch.manual_seed(int(self.accuracy_seed))
-                np.random.seed(int(self.accuracy_seed))
-                try:
-                    raw_model, _ = self._build_raw_model(mc, pcfg)
-                except Exception as exc:
-                    raise CandidateInfeasibleError(
-                        f"Candidate model build failed: {type(exc).__name__}: {exc}"
-                    ) from exc
-                try:
-                    obj[ACCURACY_OBJECTIVE_NAME] = self._evaluate_accuracy(raw_model)
-                except Exception as exc:
-                    _warn_penalized(
-                        "Accuracy evaluation", exc, configuration,
-                        "recording penalty accuracy 0.0",
-                    )
-                    obj[ACCURACY_OBJECTIVE_NAME] = 0.0
-
-        return obj
-
-    def _evaluate_inner(
-        self,
-        mc: Dict[str, Any],
-        pcfg: Dict[str, Any],
-    ) -> Dict[str, float]:
-        pcfg = dict(pcfg)
-        normalize_coalescing_config(pcfg)
-        active_names = {spec.name for spec in self.objectives}
-        needs_accuracy = ACCURACY_OBJECTIVE_NAME in active_names
-        hw_names = active_names - {ACCURACY_OBJECTIVE_NAME}
-
-        if self.search_mode == "hardware":
-            # The fixed-model cache is problem-level fixture: let it propagate.
-            cache = self._ensure_hw_only_cache()
-            hw_obj, _err = self._compute_hw_objectives(
-                cache.softcores, pcfg, cache.total_params, cache.host_side_segment_count,
+    def _raise_or_penalize(self, failure: CandidateFailure) -> Dict[str, float]:
+        """Render a candidate-scoped failure at the evaluate boundary."""
+        if failure.phase in _PENALIZED_PHASES:
+            logger.warning(
+                "[JointArchHwProblem] %s – returning full penalty", failure.message,
             )
-            if hw_obj is None:
-                return self._penalty_objectives()
-            return {k: v for k, v in hw_obj.items() if k in active_names}
+            return self._penalty_objectives()
+        raise CandidateInfeasibleError(failure.message) from failure.cause
 
-        try:
-            raw_model, total_params = self._build_raw_model(mc, pcfg)
-        except Exception as exc:
+    def _objectives_from_entry(self, entry: ValidationEntry) -> Dict[str, float]:
+        """Attach the accuracy estimate where the mode carries one, then read the axes."""
+        view = entry.view
+        # ``estimated_accuracy`` names both the objective and the view fragment
+        # backing it, so "does an active axis need this fragment" IS "must this
+        # search train" — asked of the registry rather than of a mode string.
+        if self._requires_fragment(ACCURACY_OBJECTIVE_NAME):
+            view = replace(
+                view, estimated_accuracy=self._accuracy_estimate(entry),
+            )
+        return self._objectives_from_view(view)
+
+    def _objectives_from_view(self, view: CandidateStaticView) -> Dict[str, float]:
+        """THE evaluation contract: every ACTIVE registry axis, read off one view."""
+        return {spec.key: spec.value(view) for spec in self.active_specs}
+
+    def _accuracy_estimate(self, entry: ValidationEntry) -> float:
+        """The training proxy; a failed estimate is a penalty, never a lost candidate."""
+        model = entry.model
+        if model is None:
             raise CandidateInfeasibleError(
-                f"Candidate model build failed: {type(exc).__name__}: {exc}"
-            ) from exc
-
-        obj: Dict[str, float] = {}
-
-        if hw_names:
-            try:
-                mapped_model = self._ensure_mapper_repr(raw_model)
-                softcores, host_segments = self._collect_softcores(mapped_model, pcfg)
-                hw_obj, _err = self._compute_hw_objectives(
-                    softcores, pcfg, total_params, host_segments,
-                )
-            except Exception as exc:
-                raise CandidateInfeasibleError(
-                    f"Candidate mapping collapsed: {type(exc).__name__}: {exc}"
-                ) from exc
-            if hw_obj is None:
-                print("[JointArchHwProblem] Packing infeasible – returning full penalty")
-                return self._penalty_objectives()
-            for k, v in hw_obj.items():
-                if k in active_names:
-                    obj[k] = v
-
-        if needs_accuracy:
-            try:
-                accuracy = self._evaluate_accuracy(raw_model)
-                obj[ACCURACY_OBJECTIVE_NAME] = accuracy
-            except Exception as exc:
-                _warn_penalized(
-                    "Accuracy evaluation", exc,
-                    {"model_config": mc, "platform_constraints": pcfg},
-                    "recording penalty accuracy 0.0",
-                )
-                obj[ACCURACY_OBJECTIVE_NAME] = 0.0
-
-        return obj
+                "accuracy is an active objective but the candidate carries no model"
+            )
+        try:
+            return self._evaluate_accuracy(model)
+        except Exception as exc:
+            logger.warning(
+                "[JointArchHwProblem] Accuracy evaluation failed (%s: %s); "
+                "recording penalty accuracy 0.0", type(exc).__name__, exc,
+                exc_info=True,
+            )
+            return 0.0
+        finally:
+            # The estimate is produced once; the model is the search's largest
+            # retained object, so it is released as soon as it has answered.
+            entry.model = None
 
     def _evaluate_accuracy(self, model) -> float:
         if self.accuracy_evaluator == "extrapolating":

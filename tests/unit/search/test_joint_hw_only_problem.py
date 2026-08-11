@@ -1,9 +1,9 @@
 """Hardware-only ``JointArchHwProblem`` over the resolved platform base.
 
-The searched chip and the deployed chip must be the same chip: candidates
-decode from ``fixed_platform_constraints`` (the resolver output) overlaid with
-only the decision variables, and a problem constructed without the resolved
-base aborts the search instead of degenerating into all-penalty rows.
+The searched chip and the deployed chip must be the same chip: candidates are
+the declared platform re-resolved with only the decision variables overlaid,
+and a problem constructed without the platform resolver aborts the search
+instead of degenerating into all-penalty rows.
 """
 
 import math
@@ -14,7 +14,7 @@ import torch
 
 from mimarsinan.models.builders.simple_mlp_builder import SimpleMLPBuilder
 from mimarsinan.pipelining.pipeline_steps.config.architecture_search_helpers import (
-    build_fixed_platform_constraints,
+    make_platform_resolver,
 )
 from mimarsinan.search.optimizers.nsga2_optimizer import NSGA2Optimizer
 from mimarsinan.search.problems.joint import JointArchHwProblem
@@ -45,10 +45,10 @@ def _fixed_model_config():
     return {"mlp_width_1": 16, "mlp_width_2": 16, "base_activation": "ReLU"}
 
 
-def _make_hw_problem(fixed_platform_constraints="from_config"):
+def _make_hw_problem(platform_resolver="from_config"):
     cfg = _tiny_pipeline_config()
-    if fixed_platform_constraints == "from_config":
-        fixed_platform_constraints = build_fixed_platform_constraints(cfg)
+    if platform_resolver == "from_config":
+        platform_resolver = make_platform_resolver(cfg)
     return JointArchHwProblem(
         data_provider_factory=None,
         device=torch.device("cpu"),
@@ -61,7 +61,7 @@ def _make_hw_problem(fixed_platform_constraints="from_config"):
         arch_options=(),
         model_config_assembler=lambda raw: dict(raw),
         fixed_model_config=_fixed_model_config(),
-        fixed_platform_constraints=fixed_platform_constraints,
+        platform_resolver=platform_resolver,
         active_objective_names=HW_OBJECTIVES,
         num_core_types=1,
         core_axons_bounds=(64, 256),
@@ -135,20 +135,20 @@ class TestHwOnlyValidateAndEvaluate:
 
 
 class TestBrokenProblemAborts:
-    def test_missing_base_aborts_nsga2_run(self):
+    def test_missing_resolver_aborts_nsga2_run(self):
         # A problem-level defect must abort the search loudly, never degrade
         # into penalty rows and a misleading "no candidates" result.
-        problem = _make_hw_problem(fixed_platform_constraints=None)
+        problem = _make_hw_problem(platform_resolver=None)
         optimizer = NSGA2Optimizer(pop_size=4, generations=2, seed=0, verbose=False)
-        with pytest.raises(ValueError, match="fixed_platform_constraints"):
+        with pytest.raises(ValueError, match="platform_resolver"):
             optimizer.optimize(problem)
 
-    def test_decode_requires_resolved_base(self):
-        problem = _make_hw_problem(fixed_platform_constraints=None)
-        with pytest.raises(ValueError, match="fixed_platform_constraints"):
+    def test_decode_requires_the_platform_resolver(self):
+        problem = _make_hw_problem(platform_resolver=None)
+        with pytest.raises(ValueError, match="platform_resolver"):
             problem.decode(np.array([128.0, 128.0, 16.0]))
 
-    def test_hw_only_cache_requires_cores_in_base(self):
-        problem = _make_hw_problem(fixed_platform_constraints={"target_tq": 4})
+    def test_hw_only_cache_requires_cores_in_the_resolved_base(self):
+        problem = _make_hw_problem(platform_resolver=lambda overlay: {"target_tq": 4})
         with pytest.raises(ValueError, match="cores"):
             problem._ensure_hw_only_cache()
