@@ -115,17 +115,16 @@ class TestEvaluateInnerDoesNotReturnPenalties:
         assert len(softcores) > 0, "Softcores list should not be empty"
 
     def test_candidate_view_not_none(self):
-        """_candidate_view should return a populated view (feasible packing)."""
+        """The packed candidate must yield a populated static view."""
         problem = _make_problem()
         mc = _make_model_config()
         pcfg = _make_platform_constraints()
         model, total_params = problem._build_model(mc, pcfg)
         softcores, host_segments = problem._collect_softcores(model, pcfg)
-        view, error = problem._candidate_view(
-            softcores, pcfg, total_params, host_segments,
-        )
+        stats, error = problem._pack_candidate(softcores, pcfg)
         assert error is None, f"Packing should be feasible, got: {error}"
-        assert view is not None, "Packing should be feasible"
+        assert stats.feasible, "Packing should be feasible"
+        view = problem._static_view(stats, pcfg, total_params, host_segments)
         assert view.total_params == total_params
         assert view.layout is not None
 

@@ -14,7 +14,7 @@ import json
 from pathlib import Path
 
 import pytest
-from compilagent import Plan, ToleranceConfig, Toolset, WorkloadKind, WorkloadSpec
+from compilagent import Plan, Toolset
 
 from mimarsinan.search.optimizers.compilagent.backend import MimarsinanLayoutBackend
 from mimarsinan.search.optimizers.compilagent.guided_toolset import GuidedToolset
@@ -28,8 +28,8 @@ from mimarsinan.search.optimizers.compilagent.workload import (
 )
 from mimarsinan.search.results import ObjectiveSpec
 
-# Re-use the synthetic problem fixture from test_backend.py
-from .test_backend import _make_problem, _make_workload  # noqa: E402
+# The REAL problem the backend adapts — see real_problem.py.
+from .real_problem import make_problem, make_workload
 
 
 def _build_real_toolset() -> Toolset:
@@ -74,10 +74,10 @@ def populated_state(tmp_path: Path):
     """Backend with baseline payload cached + sink with one scored candidate."""
 
     workload_id = "guided_toolset_test"
-    problem = _make_problem()
+    problem = make_problem("hardware")
     register_problem(workload_id, problem)
     backend = MimarsinanLayoutBackend()
-    workload = _make_workload(workload_id)
+    workload = make_workload(workload_id)
     # The "baseline" payload key the GuidedToolset reads from is written
     # whenever `compile()`'s artifact_dir is named "baseline".
     baseline_dir = tmp_path / "baseline"

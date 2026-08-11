@@ -22,6 +22,9 @@ from mimarsinan.deployment_record.objectives import (
 )
 from mimarsinan.mapping.layout.layout_types import LayoutSoftCoreSpec
 from mimarsinan.mapping.platform.platform_constraints import resolve_platform_mapping_params
+from mimarsinan.mapping.verification.layout_verification_types import (
+    LayoutVerificationStats,
+)
 from mimarsinan.search.problem import ValidationResult
 from mimarsinan.search.results import ObjectiveSpec
 
@@ -54,12 +57,16 @@ PlatformResolver = Callable[[Mapping[str, Any]], Dict[str, Any]]
 class HwOnlyCache:
     """The candidate-INDEPENDENT model fixture of a hardware-only search.
 
-    Only the model is candidate-independent: its layout is re-derived per
-    candidate, because tiling depends on the candidate's core geometry.
+    Only the model is candidate-independent: its LAYOUT is re-derived per
+    candidate, because tiling depends on the candidate's core geometry. The
+    model-side mapper representation is not — converting a torch model into
+    mapper form is a function of the model alone — so it is memoized here the
+    first time a candidate needs it.
     """
 
     model: Any
     total_params: float
+    mapper_repr: Any = None
 
 
 @dataclass
@@ -67,6 +74,23 @@ class ValidationEntry:
     """A validated candidate: its static view, plus the model accuracy may need."""
 
     model: Any
+    view: CandidateStaticView
+
+
+@dataclass(frozen=True)
+class CandidateLayout:
+    """One candidate, laid out: its chip, its softcores, its packing, its view.
+
+    :class:`ValidationEntry` keeps only what an EVALUATION needs (the view);
+    an introspection caller — the compilagent layout backend — needs the
+    softcores themselves. Both come off the one resolution path, so the numbers
+    an agent is shown cannot drift from the numbers the search scores.
+    """
+
+    platform: Dict[str, Any]
+    softcores: List[LayoutSoftCoreSpec]
+    host_side_segment_count: int
+    stats: LayoutVerificationStats
     view: CandidateStaticView
 
 
@@ -163,19 +187,33 @@ class JointHostContract:
 
         def _build_raw_model(self, model_config: Dict, pcfg: Dict) -> Tuple[Any, float]: ...
 
+        def _candidate_model(self, mc: Dict, pcfg: Dict) -> Tuple[Any, float]: ...
+
         def _ensure_mapper_repr(self, model: Any) -> Any: ...
 
         def _collect_softcores(
             self, model: Any, pcfg: Dict,
         ) -> Tuple[List[LayoutSoftCoreSpec], int]: ...
 
-        def _candidate_view(
+        def _pack_candidate(
+            self, softcores: List[LayoutSoftCoreSpec], pcfg: Dict,
+        ) -> Tuple[LayoutVerificationStats, Optional[str]]: ...
+
+        def _packing_failure(
             self,
+            stats: LayoutVerificationStats,
+            error: Optional[str],
             softcores: List[LayoutSoftCoreSpec],
+            pcfg: Dict,
+        ) -> CandidateFailure: ...
+
+        def _static_view(
+            self,
+            stats: LayoutVerificationStats,
             pcfg: Dict,
             total_params: float,
             host_side_segment_count: int,
-        ) -> Tuple[Optional[CandidateStaticView], Optional[str]]: ...
+        ) -> CandidateStaticView: ...
 
         def _layoutless_view(
             self, pcfg: Dict, total_params: float,

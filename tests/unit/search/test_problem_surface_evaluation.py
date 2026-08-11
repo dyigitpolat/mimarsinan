@@ -18,6 +18,9 @@ from mimarsinan.deployment_record.objectives import (
     chip_param_capacity,
 )
 from mimarsinan.mapping.platform.mapping_structure import ChipCapabilities
+from mimarsinan.mapping.platform.platform_constraints import (
+    resolve_platform_mapping_params,
+)
 from mimarsinan.mapping.verification.layout_verification_scheduling import (
     compute_mapping_stats,
 )
@@ -26,7 +29,9 @@ from mimarsinan.pipelining.pipeline_steps.config.architecture_search_helpers imp
     make_platform_resolver,
 )
 from mimarsinan.search.optimizers.nsga2_optimizer import NSGA2Optimizer
+from mimarsinan.search.problem import CandidateInfeasibleError
 from mimarsinan.search.problems.joint import JointArchHwProblem
+from mimarsinan.search.problems.joint import validate as joint_validate
 
 HW_OBJECTIVES = [
     "total_param_capacity",
@@ -157,6 +162,24 @@ class TestOneEvaluationContract:
             for spec in OBJECTIVES.resolve_active("hardware", HW_OBJECTIVES)
         }
         assert problem.evaluate(configuration) == expected
+
+    def test_the_validation_cache_is_an_optimization_not_a_dependency(
+        self, monkeypatch,
+    ):
+        # The cache is bounded, so a validated candidate whose entry has been
+        # evicted must still be scored — by resolving it again, to the SAME
+        # numbers. (This is what keeps ``_evaluate_inner`` a live path rather
+        # than a comforting dead branch.)
+        problem = _problem("hardware", HW_OBJECTIVES)
+        configuration = problem.decode(_mid_x(problem))
+        expected = problem.evaluate(configuration)
+
+        evicted = _problem("hardware", HW_OBJECTIVES)
+        monkeypatch.setattr(joint_validate, "VALIDATION_CACHE_MAX_SIZE", 0)
+        objectives = evicted.evaluate(configuration)
+
+        assert evicted._validation_cache == {}, "the fixture must evict the entry"
+        assert objectives == expected
 
     def test_joint_values_are_the_registry_read_including_accuracy(self):
         problem = _problem("joint", JOINT_OBJECTIVES)
@@ -316,3 +339,107 @@ class TestCandidateChipIsTheChipTheModelIsMappedOnto:
             "the model does not depend on the candidate platform in a hardware "
             "search; it is trained/built once"
         )
+
+    def test_the_model_side_repr_is_converted_once_across_candidates(self):
+        # The candidate-dependent half of the mapping is the LAYOUT, which every
+        # candidate re-derives. The model-side representation is not: converting
+        # a torch model into mapper form depends on the model alone, so paying
+        # for it per candidate is pure waste in a hardware search.
+        problem = _problem("hardware", HW_OBJECTIVES)
+        conversions = []
+        original = problem._convert_to_mapper_repr
+
+        def _counting(model):
+            conversions.append(model)
+            return original(model)
+
+        problem._convert_to_mapper_repr = _counting
+        layouts = []
+        for count in (16.0, 32.0, 64.0):
+            configuration = problem.decode(np.array([256.0, 256.0, count]))
+            problem.evaluate(configuration)
+            layouts.append(problem.candidate_layout(configuration))
+
+        assert len(conversions) == 1, (
+            "the model-side representation does not depend on the candidate "
+            "chip; a hardware search converts it once per run"
+        )
+        assert all(lay.softcores for lay in layouts), (
+            "every candidate still derives its own layout off that one repr"
+        )
+
+
+class TestTheCandidateLayoutSeam:
+    """``candidate_layout`` — the candidate's chip, softcores and view in one call."""
+
+    def test_the_layout_is_the_problems_own_mapping_of_the_candidate_chip(self):
+        problem = _problem("hardware", HW_OBJECTIVES)
+        configuration = problem.decode(_mid_x(problem))
+        layout = problem.candidate_layout(configuration)
+
+        pcfg = configuration["platform_constraints"]
+        model, total_params = problem._build_model(
+            configuration["model_config"], pcfg,
+        )
+        expected_softcores, expected_host = problem._collect_softcores(model, pcfg)
+
+        assert layout.platform == pcfg
+        assert [sc.name for sc in layout.softcores] == [
+            sc.name for sc in expected_softcores
+        ]
+        assert [sc.input_count for sc in layout.softcores] == [
+            sc.input_count for sc in expected_softcores
+        ]
+        assert layout.host_side_segment_count == expected_host
+        assert layout.stats.feasible
+        assert layout.view.total_params == total_params
+        assert layout.view.layout is layout.stats
+
+    def test_the_view_answers_exactly_what_the_evaluation_reads(self):
+        problem = _problem("hardware", HW_OBJECTIVES)
+        configuration = problem.decode(_mid_x(problem))
+        layout = problem.candidate_layout(configuration)
+        assert problem._objectives_from_view(layout.view) == problem.evaluate(
+            configuration
+        )
+
+    def test_a_raw_declaration_is_laid_out_on_its_RESOLVED_chip(self):
+        # An LLM-declared candidate states core dimensions only. Laying it out
+        # on that raw dict maps the model onto a chip nobody deploys — the bias
+        # capability alone re-tiles it.
+        cfg = _pipeline_config()
+        cfg["platform_constraints"] = {"has_bias": False}
+        problem = _problem("hardware", HW_OBJECTIVES, cfg=cfg)
+
+        raw = {
+            "model_config": cfg["model_config"],
+            "platform_constraints": {
+                "cores": [{"max_axons": 256, "max_neurons": 256, "count": 64}],
+            },
+        }
+        layout = problem.candidate_layout(raw)
+        assert layout.platform["cores"][0]["has_bias"] is False
+
+        raw_params = resolve_platform_mapping_params(
+            raw["platform_constraints"]["cores"],
+        )
+        resolved_params = resolve_platform_mapping_params(layout.platform["cores"])
+        assert raw_params.hardware_bias != resolved_params.hardware_bias, (
+            "the fixture must make the raw and resolved chips map differently"
+        )
+        model, _ = problem._build_model(
+            cfg["model_config"], raw["platform_constraints"],
+        )
+        raw_softcores, _ = problem._collect_softcores(
+            model, raw["platform_constraints"],
+        )
+        assert [sc.input_count for sc in layout.softcores] != [
+            sc.input_count for sc in raw_softcores
+        ], "the layout must be the resolved chip's, not the declaration's"
+
+    def test_a_candidate_that_cannot_be_laid_out_raises_typed(self):
+        cfg = _pipeline_config(width=200)
+        problem = _problem("hardware", HW_OBJECTIVES, cfg=cfg)
+        narrow = problem.decode(np.array([64.0, 256.0, 64.0]))
+        with pytest.raises(CandidateInfeasibleError):
+            problem.candidate_layout(narrow)

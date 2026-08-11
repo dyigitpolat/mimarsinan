@@ -34,7 +34,6 @@ ALLOWLIST = {
     "pipelining/pipeline_steps/config/torch_mapping_step.py": 2,
     "search/optimizers/agent_evolve/batch_eval.py": 1,
     "search/optimizers/compilagent/backend/backend.py": 2,
-    "search/optimizers/compilagent/backend/backend_layout.py": 1,
     "search/optimizers/compilagent/compilagent_optimizer.py": 1,
     "search/optimizers/llm/trace.py": 1,
     # W5.1: one evaluation contract left exactly one broad catch — the accuracy

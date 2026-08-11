@@ -5,9 +5,10 @@ from mimarsinan.search.problems.joint.problem import (
     effective_max_dims,
     json_key,
 )
-from mimarsinan.search.problems.joint.types import PlatformResolver
+from mimarsinan.search.problems.joint.types import CandidateLayout, PlatformResolver
 
 __all__ = [
+    "CandidateLayout",
     "JointArchHwProblem",
     "PlatformResolver",
     "effective_max_dims",

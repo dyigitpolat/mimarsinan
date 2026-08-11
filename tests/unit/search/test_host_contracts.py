@@ -36,10 +36,17 @@ JOINT_CONTRACT_METHODS = [
     "_requires_fragment",
     "_ensure_hw_only_cache",
     "_build_raw_model",
+    "_candidate_model",
     "_ensure_mapper_repr",
     "_collect_softcores",
-    "_candidate_view",
+    "_pack_candidate",
+    "_packing_failure",
+    "_static_view",
+    "_layoutless_view",
     "_resolve_entry",
+    # Not a contract member — the public introspection seam the compilagent
+    # layout backend calls; pinned here so it cannot vanish unnoticed.
+    "candidate_layout",
 ]
 
 

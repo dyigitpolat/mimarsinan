@@ -73,10 +73,11 @@ class TestCandidateViewMatchesTheLayoutHook:
         cache = problem._ensure_hw_only_cache()
         softcores, host_segments = problem._collect_softcores(cache.model, pcfg)
 
-        view, error = problem._candidate_view(
-            softcores, pcfg, cache.total_params, host_segments
+        packed, error = problem._pack_candidate(softcores, pcfg)
+        assert error is None and packed.feasible
+        view = problem._static_view(
+            packed, pcfg, cache.total_params, host_segments
         )
-        assert error is None and view is not None
 
         stats, stats_error = compute_mapping_stats(
             softcores=softcores,
@@ -104,9 +105,9 @@ class TestCandidateViewMatchesTheLayoutHook:
         pcfg = dict(problem.fixed_platform_constraints or {})
         cache = problem._ensure_hw_only_cache()
         softcores, host_segments = problem._collect_softcores(cache.model, pcfg)
-        view, _error = problem._candidate_view(
-            softcores, pcfg, cache.total_params, host_segments
+        packed, _error = problem._pack_candidate(softcores, pcfg)
+        view = problem._static_view(
+            packed, pcfg, cache.total_params, host_segments
         )
-        assert view is not None
         assert "mj_per_sample" not in OBJECTIVES.extract(view)
         assert "estimated_accuracy" not in OBJECTIVES.extract(view)

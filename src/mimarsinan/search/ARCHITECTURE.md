@@ -39,20 +39,30 @@ is a FIXPOINT, so every entrance passes through it unconditionally:
 optimizers, which declare platforms as JSON rather than vectors), and the base
 itself (`fixed_platform_constraints` == the empty overlay).
 
-**What is this candidate worth?** — one path, `_resolve_entry` → one
-`CandidateStaticView` → `{spec.key: spec.value(view)}` over the ACTIVE registry
-specs. The view's facts (model build → layout collection → packing census) are
-computed once and only when an active axis needs them: `_requires_fragment` asks
-the registry — via `candidate_probe_without` — whether any active axis goes
-unavailable without a fragment, so accuracy is trained exactly where the mode
-carries the axis and the mapping is skipped when no axis reads a layout. A
-hardware-only search reuses the candidate-INDEPENDENT model, never its layout:
-tiling is a function of the candidate's core geometry, so each candidate is
-packed on the chip it actually declares. Every candidate-scoped failure comes
-back as a typed `CandidateFailure` that the boundary renders once — an invalid
-`ValidationResult` in the validate path, a `CandidateInfeasibleError` (or a
-scored penalty, for structural/packing infeasibility) in the evaluate path —
-while problem-level breakage propagates untyped and aborts the run.
+**What is this candidate worth?** — one path, `_resolve_model` → `_resolve_layout`
+→ one `CandidateStaticView` → `{spec.key: spec.value(view)}` over the ACTIVE
+registry specs. The view's facts (model build → layout collection → packing
+census) are computed once and only when an active axis needs them:
+`_requires_fragment` asks the registry — via `candidate_probe_without` — whether
+any active axis goes unavailable without a fragment, so accuracy is trained
+exactly where the mode carries the axis and the mapping is skipped when no axis
+reads a layout. A hardware-only search reuses the candidate-INDEPENDENT model
+and its mapper representation, never its layout: tiling is a function of the
+candidate's core geometry, so each candidate is packed on the chip it actually
+declares. The validation cache is an optimization, not a dependency — an evicted
+entry is re-resolved rather than scored off something stale. Every
+candidate-scoped failure comes back as a typed `CandidateFailure` that the
+boundary renders once — an invalid `ValidationResult` in the validate path, a
+`CandidateInfeasibleError` (or a scored penalty, for packing infeasibility) in
+the evaluate path — while problem-level breakage propagates untyped and aborts
+the run.
+
+**What does this candidate LOOK like?** — `candidate_layout(configuration)`
+returns the `CandidateLayout` (chip, softcores, packing census, view) an
+evaluation throws away, off the very same `_resolve_model`/`_resolve_layout`
+path. It is the introspection seam the compilagent layout backend renders its
+per-softcore/per-layer/objective payload from, so an agent cannot be shown a
+chip or a number the search does not use.
 
 ### `EncodedProblem` is not a pymoo interface
 
@@ -78,7 +88,7 @@ encoding: every host may propose continuous vectors inside `[xl, xu]`.
 
 ## Dependencies
 - `deployment_record` — the objectives registry (`OBJECTIVES`, `ObjectiveSpecV2`, `CandidateStaticView`, `candidate_probe_without`) that `results.py` projects and resolves through, and the `chip_param_capacity`/`declared_core_capacity` formulas the joint layout hook computes candidate chip capacity with. One-way: `deployment_record` never imports `search`.
-- `mapping` — layout types (`LayoutSoftCoreSpec`, `LayoutHardCoreType`), `ChipCapabilities`, `compute_mapping_stats`, coalescing-config normalization, and platform mapping params, used by the joint problem's layout hook/validation and the compilagent layout backend.
+- `mapping` — layout types (`LayoutSoftCoreSpec`, `LayoutHardCoreType`), `LayoutVerificationStats`, `ChipCapabilities`, `compute_mapping_stats`, and platform mapping params, used by the joint problem's layout hook/validation and the compilagent layout backend. Coalescing-config normalization is NOT among them: a candidate platform is normalized once, by the deployment resolver the problem is handed.
 - `data_handling` — `DataProviderFactory` / `DataLoaderFactory` powering the evaluators' train/validate loops.
 - `torch_mapping` — `convert_torch_model` to lower candidate models into layout IR inside the joint problem's layout hook.
 - `common` — `best_effort` wrappers for non-fatal reporting/trace paths in optimizers.

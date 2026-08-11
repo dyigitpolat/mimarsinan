@@ -2,84 +2,36 @@
 
 from __future__ import annotations
 
-import logging
 from collections.abc import Sequence
 from typing import Any, Dict, List
 
-from mimarsinan.mapping.layout.layout_types import LayoutHardCoreType, LayoutSoftCoreSpec
-from mimarsinan.mapping.platform.mapping_structure import ChipCapabilities
-from mimarsinan.mapping.verification.layout_verification_scheduling import compute_mapping_stats
-from mimarsinan.search.problems.joint.problem import json_key
-
-logger = logging.getLogger(__name__)
+from mimarsinan.deployment_record.objectives import OBJECTIVES
+from mimarsinan.mapping.layout.layout_types import LayoutSoftCoreSpec
 
 
 def collect_layout_payload(
     problem: Any,
     configuration: Dict[str, Any],
 ) -> Dict[str, Any]:
-    """Pull per-softcore, per-layer, and layout_stats data via the problem."""
-    pcfg = configuration.get("platform_constraints", {})
-    cores_cfg = pcfg.get("cores", [])
+    """Render the problem's own layout of this candidate as an agent-readable payload.
 
-    core_types = [
-        LayoutHardCoreType(
-            max_axons=int(c["max_axons"]),
-            max_neurons=int(c["max_neurons"]),
-            count=int(c["count"]),
-        )
-        for c in cores_cfg
-    ]
-
-    cache = getattr(problem, "_hw_only_cache", None)
-    softcores: List[LayoutSoftCoreSpec]
-    host_segments: int
-    total_params: float
-    if cache is not None and getattr(problem, "search_mode", "joint") == "hardware":
-        softcores = list(cache.softcores)
-        host_segments = int(cache.host_side_segment_count)
-        total_params = float(cache.total_params)
-    else:
-        mc = configuration.get("model_config", {})
-        try:
-            model, total_params = problem._build_model(mc, pcfg)
-        except Exception:
-            key = json_key(configuration)
-            vc = getattr(problem, "_validation_cache", {}).get(key)
-            if vc is None:
-                raise
-            logger.warning(
-                "Model rebuild failed for candidate %.500s; serving degraded "
-                "layout payload (hw_objectives only) from validation cache",
-                key, exc_info=True,
-            )
-            hw_obj = vc.hw_objectives
-            return {
-                "softcore_count": 0,
-                "per_softcore": [],
-                "per_layer": [],
-                "layout_stats": {},
-                "hw_objectives": dict(hw_obj),
-            }
-        softcores, host_segments = problem._collect_softcores(model, pcfg)
-
-    stats, _err = compute_mapping_stats(
-        softcores=softcores,
-        core_types=core_types,
-        **ChipCapabilities.from_platform_constraints(pcfg).permission_kwargs(),
-    )
-    per_softcore = [softcore_to_dict(sc, idx) for idx, sc in enumerate(softcores)]
-    per_layer = aggregate_per_layer(softcores)
-    hw_objectives, _ = problem._compute_hw_objectives(
-        softcores, pcfg, total_params, host_segments,
-    )
-
+    Everything here is a PROJECTION of ``problem.candidate_layout``: the chip is
+    the one the deployment resolver builds for the candidate, the softcores are
+    the ones the search packs, and the objective values are the registry read of
+    the very view the search scores. Nothing is recomputed on the side, so the
+    agent cannot be shown a chip or a number the search does not use.
+    """
+    layout = problem.candidate_layout(configuration)
     return {
-        "softcore_count": len(softcores),
-        "per_softcore": per_softcore,
-        "per_layer": per_layer,
-        "layout_stats": stats.to_dict() if stats else {},
-        "hw_objectives": dict(hw_objectives or {}),
+        "softcore_count": len(layout.softcores),
+        "per_softcore": [
+            softcore_to_dict(sc, idx) for idx, sc in enumerate(layout.softcores)
+        ],
+        "per_layer": aggregate_per_layer(layout.softcores),
+        "layout_stats": layout.stats.to_dict(),
+        # Every axis this candidate's STATIC facts can answer — the training
+        # proxy is not among them, by construction of the candidate view.
+        "hw_objectives": OBJECTIVES.extract(layout.view),
     }
 
 

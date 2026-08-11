@@ -3,20 +3,17 @@
 from __future__ import annotations
 
 import logging
-from typing import Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
-import numpy as np
-import torch
-
-from mimarsinan.search.problem import ValidationResult
+from mimarsinan.search.problem import CandidateInfeasibleError, ValidationResult
 
 from .types import (
     HW_CONVERSION_PHASE,
-    HW_PACKING_PHASE,
     MODEL_BUILD_PHASE,
     STRUCTURAL_PHASE,
     VALIDATION_CACHE_MAX_SIZE,
     CandidateFailure,
+    CandidateLayout,
     CandidatePlatformError,
     JointHostContract,
     ValidationEntry,
@@ -96,35 +93,23 @@ class JointValidateMixin(JointHostContract):
             return self._failure(STRUCTURAL_PHASE, "Structural validation error", exc)
         return None
 
-    def _resolve_entry(
+    def _resolve_model(
         self, mc: Dict, pcfg: Dict,
-    ) -> Tuple[Optional[ValidationEntry], Optional[CandidateFailure]]:
-        """The ONE candidate-facts path: model → layout → static view.
+    ) -> Tuple[Optional[Tuple[Any, float]], Optional[CandidateFailure]]:
+        """The candidate's model, or the candidate-scoped reason there is none."""
+        try:
+            return self._candidate_model(mc, pcfg), None
+        except Exception as exc:
+            if not self._searches_model:
+                # The model does not depend on the candidate here: its failure
+                # is problem-level breakage, not candidate infeasibility.
+                raise
+            return None, self._failure(MODEL_BUILD_PHASE, "Model build failed", exc)
 
-        Every search mode walks it. Candidate-scoped breakage comes back as a
-        :class:`CandidateFailure` the boundary renders (an invalid result, or a
-        typed raise); problem-level breakage — a fixture the candidate does not
-        influence — propagates untyped.
-        """
-        torch.manual_seed(int(self.accuracy_seed))
-        np.random.seed(int(self.accuracy_seed))
-
-        if self._searches_model:
-            try:
-                model, total_params = self._build_raw_model(mc, pcfg)
-            except Exception as exc:
-                return None, self._failure(MODEL_BUILD_PHASE, "Model build failed", exc)
-        else:
-            # The model does not depend on the candidate: its failure is
-            # problem-level breakage, not candidate infeasibility — fail loud.
-            cache = self._ensure_hw_only_cache()
-            model, total_params = cache.model, cache.total_params
-
-        if not self._requires_fragment("layout"):
-            return ValidationEntry(
-                model=model, view=self._layoutless_view(pcfg, total_params),
-            ), None
-
+    def _resolve_layout(
+        self, model: Any, pcfg: Dict, total_params: float,
+    ) -> Tuple[Optional[CandidateLayout], Optional[CandidateFailure]]:
+        """Lay a built model onto the candidate chip: conversion → softcores → packing."""
         try:
             mapped_model = self._ensure_mapper_repr(model)
         except Exception as exc:
@@ -137,15 +122,62 @@ class JointValidateMixin(JointHostContract):
                 HW_CONVERSION_PHASE, "Softcore collection failed", exc,
             )
 
-        view, error = self._candidate_view(
-            softcores, pcfg, total_params, host_segments,
-        )
-        if view is None:
-            return None, CandidateFailure(
-                phase=HW_PACKING_PHASE,
-                message=error or "HW bin-packing infeasible",
-            )
-        return ValidationEntry(model=model, view=view), None
+        stats, error = self._pack_candidate(softcores, pcfg)
+        if not stats.feasible:
+            return None, self._packing_failure(stats, error, softcores, pcfg)
+
+        return CandidateLayout(
+            platform=pcfg,
+            softcores=softcores,
+            host_side_segment_count=host_segments,
+            stats=stats,
+            view=self._static_view(stats, pcfg, total_params, host_segments),
+        ), None
+
+    def _resolve_entry(
+        self, mc: Dict, pcfg: Dict,
+    ) -> Tuple[Optional[ValidationEntry], Optional[CandidateFailure]]:
+        """The ONE candidate-facts path: model → layout → static view.
+
+        Every search mode walks it. Candidate-scoped breakage comes back as a
+        :class:`CandidateFailure` the boundary renders (an invalid result, or a
+        typed raise); problem-level breakage — a fixture the candidate does not
+        influence — propagates untyped.
+        """
+        facts, failure = self._resolve_model(mc, pcfg)
+        if failure is not None:
+            return None, failure
+        assert facts is not None
+        model, total_params = facts
+
+        if not self._requires_fragment("layout"):
+            return ValidationEntry(
+                model=model, view=self._layoutless_view(pcfg, total_params),
+            ), None
+
+        layout, failure = self._resolve_layout(model, pcfg, total_params)
+        if failure is not None:
+            return None, failure
+        assert layout is not None
+        return ValidationEntry(model=model, view=layout.view), None
+
+    def candidate_layout(self, configuration: Dict) -> CandidateLayout:
+        """This candidate, laid out on the chip a deployment would build for it.
+
+        The introspection seam (a layout backend needs the softcores an
+        evaluation throws away) walking the SAME path an evaluation walks, so
+        the two cannot disagree. A candidate-scoped failure crosses typed; a
+        problem-level one propagates untyped, exactly as in ``evaluate``.
+        """
+        resolved = self._resolved_configuration(configuration)
+        pcfg = resolved["platform_constraints"]
+        facts, failure = self._resolve_model(resolved["model_config"], pcfg)
+        if facts is not None:
+            layout, failure = self._resolve_layout(facts[0], pcfg, facts[1])
+            if layout is not None:
+                return layout
+        assert failure is not None
+        raise CandidateInfeasibleError(failure.message) from failure.cause
 
     def _evict_validation_cache(self) -> None:
         while len(self._validation_cache) > VALIDATION_CACHE_MAX_SIZE:
