@@ -668,14 +668,14 @@
       "note": "pins streamed x pruning parity \u2014 the W0.1 regression (streamed gate must project the NF onto the deployed survivor set)"
     },
     {
-      "name": "t0_60_lifsync_simplemlp_wq_s8_search",
-      "config": "t0_60_lifsync_simplemlp_wq_s8_search.json",
+      "name": "t0_60_lifsync_simplemlp_wq_s4_search",
+      "config": "t0_60_lifsync_simplemlp_wq_s4_search.json",
       "model_type": "simple_mlp",
       "cell": {
         "firing": "lif",
         "sync": "none",
         "quantization": "wq_aq",
-        "S": "8",
+        "S": "4",
         "depth": "any",
         "vehicle": "deep_mlp",
         "dataset": "mnist",
@@ -687,7 +687,7 @@
         "search"
       ],
       "expected_wall_min": 7,
-      "note": "W5.3 co-search guard cell: hardware-only NSGA-II over the core grid, then the pipeline deploys on the chip the search found (platform_constraints_resolved == the winner's own resolution)."
+      "note": "W5.3 co-search guard cell: the EXACT minimal pair of t0_05 with hw_config_mode as the only axis moved (fixed -> search), so a red cell here indicts the co-search path and nothing else. Hardware-only NSGA-II over the core grid, then the pipeline deploys on the chip the search found (platform_constraints_resolved == the winner's own resolution; measured identical to the hand-declared twin, key for key). KNOWN RED at authoring time, and NOT this path's fault: the search lands an 864x64x8 chip whose 64-neuron cores split the 256-neuron layer over 7 hard cores, and the SANA-FE spike-parity gate then fails on SOME weight draws \u2014 1 of 256 seg_input positions at stage 1 (neural_segment_final_hop0), one spike over, 'encoding drift (value-vs-wire domain at a boundary)'. MEASURED with the search OFF and that same chip DECLARED: seeds 1/2/4/5 pass, seed 3 fails with the identical signature (sum 86 vs 87), so the discrepancy is the SANA-FE boundary encoder on split-neuron chips, reached through the RNG stream, not the co-search. HCM streaming-twin, nevresim, and Lava/Loihi all read EXACT on the same run."
     },
     {
       "name": "t0_41_mvm_lenet5_wq_pruned",

@@ -291,7 +291,7 @@ T0 = [
     # vehicle's own wall. Bounds are sized to the vehicle: fan-in 785 needs
     # max_axons >= 792 (the granularity-8 grid), and 7 cores of the smallest
     # allowed width host the three layers, so count >= 8 always packs.
-    dict(n=60, mode="lifsync", quant="wq", wb=5, s=8, vehicle="simplemlp", seed=1,
+    dict(n=60, mode="lifsync", quant="wq", wb=5, s=4, vehicle="simplemlp", seed=1,
          hw_config_mode="search",
          arch_search={
              "optimizer": "nsga2",
@@ -304,9 +304,25 @@ T0 = [
              "core_count_bounds": [8, 32],
          },
          tags=["search"],
-         note="W5.3 co-search guard cell: hardware-only NSGA-II over the core "
-              "grid, then the pipeline deploys on the chip the search found "
-              "(platform_constraints_resolved == the winner's own resolution)."),
+         note="W5.3 co-search guard cell: the EXACT minimal pair of t0_05 with "
+              "hw_config_mode as the only axis moved (fixed -> search), so a "
+              "red cell here indicts the co-search path and nothing else. "
+              "Hardware-only NSGA-II over the core grid, then the pipeline "
+              "deploys on the chip the search found "
+              "(platform_constraints_resolved == the winner's own resolution; "
+              "measured identical to the hand-declared twin, key for key). "
+              "KNOWN RED at authoring time, and NOT this path's fault: the "
+              "search lands an 864x64x8 chip whose 64-neuron cores split the "
+              "256-neuron layer over 7 hard cores, and the SANA-FE spike-"
+              "parity gate then fails on SOME weight draws — 1 of 256 "
+              "seg_input positions at stage 1 (neural_segment_final_hop0), "
+              "one spike over, 'encoding drift (value-vs-wire domain at a "
+              "boundary)'. MEASURED with the search OFF and that same chip "
+              "DECLARED: seeds 1/2/4/5 pass, seed 3 fails with the identical "
+              "signature (sum 86 vs 87), so the discrepancy is the SANA-FE "
+              "boundary encoder on split-neuron chips, reached through the "
+              "RNG stream, not the co-search. HCM streaming-twin, nevresim, "
+              "and Lava/Loihi all read EXACT on the same run."),
     dict(n=41, mode="mvm", quant="wq", wb=8, vehicle="lenet5",
          pruned=0.05, tags=["pruned"],
          note="mvm flagship: quantized weights, float I/O, twin certs FATAL"),
