@@ -256,7 +256,12 @@ class SimulationHybridMixin(SimulationHostContract):
                 device=self.host_compute_device,
             )
 
-        run_hybrid_stages(hybrid, state_buffer, on_neural=on_neural, on_compute=on_compute)
+        # [W4.3] the opt-in stage timer wraps host ComputeOps only; neural
+        # segments are the chip simulator's to measure.
+        run_hybrid_stages(
+            hybrid, state_buffer, on_neural=on_neural, on_compute=on_compute,
+            stage_timer=self.stage_timer,
+        )
 
         final_output = gather_final_output_numpy(
             hybrid.output_sources, state_buffer, original_input, num_samples

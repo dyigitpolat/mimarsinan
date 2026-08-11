@@ -29,6 +29,9 @@ Near-leaf: may import `mapping`, `chip_simulation`, `certification`,
 contracts to `mapping` types are enforced by tests).
 Consumers (stage 2): the mapping pipeline steps and the spike-count gate emit
 fragments through the pipeline cache (`deployment_record_scm` /
-`deployment_record_hcm`) using the `build/` converters. Later stages: the
-pipeline's terminal Deployment Record step, `search` candidate views, and the
-GUI introspection surfaces.
+`deployment_record_hcm`) using the `build/` converters. Stage 3: the nevresim
+Simulation step emits `deployment_record_nevresim` (probe read in
+`AccuracyReadRecord` shape, the driver's measured total-output-spikes figure,
+host-op walls from `chip_simulation.hybrid_run.stage_timing.StageTimer`).
+Later stages: the pipeline's terminal Deployment Record step, `search`
+candidate views, and the GUI introspection surfaces.

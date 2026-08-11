@@ -73,6 +73,7 @@ def run_hybrid_stages(
     finalize=None,
     on_unknown=None,
     context_factory: Optional[Callable[[int, Any, Dict[int, Any]], HybridStageContext]] = None,
+    stage_timer=None,
 ) -> Any:
     """Iterate ``mapping.stages`` with optional post-stage hooks.
 
@@ -80,6 +81,11 @@ def run_hybrid_stages(
     ``(stage_index, stage, state_buffer)`` triple for backward compatibility.
     Stage indices enumerate EXECUTION units (level stages included), so both
     certification twins see identical per-unit ordinals.
+
+    ``stage_timer`` (opt-in, default ``None`` — byte-identical behavior): a
+    ``stage_timing.StageTimer`` that wraps every ``on_compute`` invocation to
+    accumulate the measured host-op wall. Neural segments are untimed — the
+    chip simulator measures those.
     """
 
     def _ctx(index: int, stage) -> HybridStageContext:
@@ -113,7 +119,11 @@ def run_hybrid_stages(
         elif stage.kind == "compute":
             ctx = _ctx(index, stage)
             index += 1
-            _invoke_cb(on_compute, ctx)
+            if stage_timer is not None:
+                with stage_timer.time_compute_stage(ctx.stage_index, stage.name):
+                    _invoke_cb(on_compute, ctx)
+            else:
+                _invoke_cb(on_compute, ctx)
             if after_compute is not None:
                 _invoke_cb(after_compute, ctx)
         else:

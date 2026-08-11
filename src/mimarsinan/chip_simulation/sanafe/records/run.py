@@ -116,6 +116,10 @@ class SanafeRunRecord:
     aggregate_sim_time_s: float = 0.0
     total_spikes: int = 0
     total_packets: int = 0
+    # [W4.3] measured host-op walls for this sample's ComputeOp stages
+    # (``StageTimer`` export rows); empty unless the runner opted in via
+    # ``time_host_stages``.
+    compute_stage_walls: List[Dict[str, Any]] = field(default_factory=list)
 
     def to_hcm_subset(self) -> RunRecord:
         """Project to ``spike_recorder.RunRecord`` for parity diffing.

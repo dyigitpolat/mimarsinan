@@ -83,6 +83,9 @@ class NevresimDriver:
         )
 
     def _simulator_output_to_predictions(self, simulator_output, number_of_classes):
+        """Returns ``(predictions, total_spikes)`` — the total-output-spikes
+        figure is a measured read (deployment_record_schema.md §4), returned
+        alongside the existing print instead of being dropped."""
         total_spikes = sum(simulator_output)
         print("  Total spikes: {}".format(total_spikes))
 
@@ -92,7 +95,7 @@ class NevresimDriver:
         predictions = np.zeros(prediction_count, dtype=int)
         for i in range(prediction_count):
             predictions[i] = np.argmax(output_array[i])
-        return predictions
+        return predictions, total_spikes
 
     def emit_main(self, max_input_count, simulation_length, latency, verbose=True):
         """Generate main.cpp only (no compilation)."""
@@ -205,6 +208,7 @@ class NevresimDriver:
         return raw.reshape(-1).tolist(), max_input_count
 
     def predict_spiking(self, input_loader, simulation_length, latency, max_input_count=None, num_proc=0):
+        """Returns ``(predictions, total_spikes)``."""
         simulator_output, _ = self._run_simulator(
             input_loader, simulation_length, latency, max_input_count, num_proc)
         return self._simulator_output_to_predictions(simulator_output, self.chip.output_size)
