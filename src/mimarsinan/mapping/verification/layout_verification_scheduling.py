@@ -9,7 +9,10 @@ from mimarsinan.mapping.verification.layout_verification_packing import (
 from mimarsinan.mapping.verification.layout_verification_types import LayoutVerificationStats
 from mimarsinan.mapping.support.schedule.schedule_partitioner import (
     effective_core_budget,
-    estimate_passes_for_layout_validated,
+)
+from mimarsinan.mapping.support.schedule.schedule_policy import (
+    BANK_CLUSTERED,
+    plan_segment_passes,
 )
 
 
@@ -25,11 +28,20 @@ def compute_mapping_stats(
     allow_scheduling: bool = False,
     allow_neuron_splitting: bool = False,
     allow_coalescing: bool = False,
+    schedule_policy: str = "pool",
+    max_schedule_passes: int = 8,
 ) -> Tuple[LayoutVerificationStats, Optional[str]]:
     """Pack softcores and compute verification statistics with scheduling support.
 
     Returns ``(stats, None)`` on success (single-pass or scheduled) and
     ``(stats, error_message)`` when mapping is infeasible.
+
+    ``schedule_policy``/``max_schedule_passes`` are the SAME declared knobs the
+    hard-core builder consumes. Under ``bank_clustered`` the pass structure is
+    composed even when the flat pack would fit, because the builder composes it
+    too (``allow_scheduling`` always routes through the scheduled build): a
+    weight-stationary platform is otherwise searched against a program it will
+    never run. Where the policy does not apply, the previous answer stands.
     """
     if not softcores or not core_types:
         return _empty_stats(feasible=False, num_softcores=len(softcores)), \
@@ -41,12 +53,20 @@ def compute_mapping_stats(
         allow_neuron_splitting=allow_neuron_splitting,
         allow_coalescing=allow_coalescing,
     )
-
-    if pack.feasible:
-        return _stats_from_packing(
+    flat_stats = (
+        _stats_from_packing(
             pack, num_original_softcores=len(softcores),
             softcores=softcores, core_types=core_types,
-        ), None
+        )
+        if pack.feasible
+        else None
+    )
+    composes_over_a_fitting_pack = (
+        allow_scheduling and schedule_policy == BANK_CLUSTERED
+    )
+
+    if flat_stats is not None and not composes_over_a_fitting_pack:
+        return flat_stats, None
 
     if not allow_scheduling:
         return _empty_stats(
@@ -59,8 +79,6 @@ def compute_mapping_stats(
         for ct in core_types
     ]
     budget = effective_core_budget(core_dicts)
-    max_hw_ax = max(ct.max_axons for ct in core_types)
-    max_hw_neu = max(ct.max_neurons for ct in core_types)
 
     seg_softcores: Dict[int, List[LayoutSoftCoreSpec]] = {}
     for sc in softcores:
@@ -71,27 +89,31 @@ def compute_mapping_stats(
     total_pass_count = 0
     all_pass_lists: List[List[LayoutSoftCoreSpec]] = []
     sched_feasible = True
+    policy_applied = False
 
     for sid in sorted(seg_softcores.keys()):
-        seg_scs = seg_softcores[sid]
-        if budget > 0:
-            n_passes, seg_pass_lists, seg_ok = estimate_passes_for_layout_validated(
-                seg_scs, budget,
-                max_hw_axons=max_hw_ax,
-                max_hw_neurons=max_hw_neu,
-                allow_coalescing=allow_coalescing,
-                allow_splitting=allow_neuron_splitting,
-                core_types=core_types,
-            )
-            if not seg_ok:
-                sched_feasible = False
-        else:
-            n_passes, seg_pass_lists = 1, [seg_scs]
+        n_passes, seg_pass_lists, seg_ok, seg_policy = plan_segment_passes(
+            seg_softcores[sid], budget,
+            core_types=core_types,
+            allow_coalescing=allow_coalescing,
+            allow_splitting=allow_neuron_splitting,
+            schedule_policy=schedule_policy,
+            max_schedule_passes=max_schedule_passes,
+        )
+        if not seg_ok:
+            sched_feasible = False
+        policy_applied = policy_applied or seg_policy
         per_segment_passes[sid] = max(n_passes, 1)
         total_pass_count += max(n_passes, 1)
         all_pass_lists.extend(seg_pass_lists)
 
+    # The flat pack fits and the policy reached nothing: the previous answer.
+    if flat_stats is not None and not policy_applied:
+        return flat_stats, None
+
     if not sched_feasible:
+        if flat_stats is not None:
+            return flat_stats, None
         return _empty_stats(
             feasible=False, num_softcores=len(softcores),
             total_hw_cores=sum(int(ct.count) for ct in core_types),
@@ -113,6 +135,8 @@ def compute_mapping_stats(
             break
 
     if best_stats is None:
+        if flat_stats is not None:
+            return flat_stats, None
         return _empty_stats(
             feasible=False, num_softcores=len(softcores),
             total_hw_cores=sum(int(ct.count) for ct in core_types),

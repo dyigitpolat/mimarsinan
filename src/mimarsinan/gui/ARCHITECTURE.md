@@ -158,7 +158,12 @@ labels, per-core bias toggles, add/remove affordances), the registry
 placement, the negative-boundary policy, pruning, temporal allocation)
 sitting BELOW the Model card in the SAME left column while Hardware holds the
 right one, with the mapping-performance panel spanning the full width beneath
-both so strategy edits re-plan visibly, and weight precision as a first-class
+both so strategy edits re-plan visibly (its `/api/hw_config_verify` request is
+built by `static/js/wizard/hw_request.js` — pure + node-tested — the ONE place
+the client declares which capability keys travel with a layout request, mirroring
+the server's `ChipCapabilities.layout_kwargs()`: without `schedule_policy` and
+`max_schedule_passes` the panel would preview a pass structure the chip never
+runs), and weight precision as a first-class
 float-vs-quantized-N-bits choice (float authors the tier-config fp form:
 pipeline_mode 'vanilla' + weight_quantization false, bits kept inert;
 "Suggest hardware" included). The search concern is

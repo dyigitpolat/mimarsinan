@@ -1,17 +1,27 @@
 """Tests for ``MimarsinanLayoutBackend``.
 
+Two contracts meet in this file, and both are pinned here.
+
 The backend is driven against the REAL ``JointArchHwProblem`` (see
 ``real_problem.py``): it reads that problem's resolver, model fixture, layout
-hook and objective registry, so a stand-in for those members is a stand-in for
-the very thing under test. Only two doubles remain, and both SUBCLASS the real
-problem to override exactly one method — the raise-site whose rendering is being
-pinned.
+seam and objective registry, so a stand-in for those members is a stand-in for
+the very thing under test. Only the raise-site doubles remain, and each
+SUBCLASSES the real problem to override exactly one method.
+
+What that problem's layout ANSWERS is then served through the introspection
+registry — a declared, versioned surface — so the assertions below are about
+served envelopes (``payload``/``payload_version``) and the flat keys that
+project them, never about a hand-rolled rendering. The registry's own row
+semantics (bank sharing degree, rollup identity, rename-invariance, version
+refusals) are pinned against synthetic specs in
+``tests/unit/deployment_record/test_introspection_registry.py``; what belongs
+here is that the SERVED payload is the problem's own candidate layout.
 """
 
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, List
+from typing import Any, Dict
 
 import pytest
 from compilagent import (
@@ -20,15 +30,19 @@ from compilagent import (
     Target,
 )
 
+import mimarsinan.deployment_record.introspection.views as _introspection_views
+from mimarsinan.deployment_record.introspection import (
+    INTROSPECTION_FORMAT_VERSION,
+    INTROSPECTION_REGISTRY,
+    CANDIDATE_LAYOUT,
+)
 from mimarsinan.deployment_record.objectives import OBJECTIVES
-from mimarsinan.mapping.layout.layout_types import LayoutSoftCoreSpec
+from mimarsinan.mapping.platform.mapping_structure import ChipCapabilities
 from mimarsinan.search.optimizers.compilagent.backend import MimarsinanLayoutBackend
 from mimarsinan.search.optimizers.compilagent.backend.backend_eval import unit_for as _unit_for
 from mimarsinan.search.optimizers.compilagent.backend.backend_layout import (
-    aggregate_per_layer as _aggregate_per_layer,
     collect_layout_payload,
-    layer_key as _layer_key,
-    softcore_to_dict as _softcore_to_dict,
+    write_layout_artifacts as _write_layout_artifacts,
 )
 from mimarsinan.search.optimizers.compilagent.plan_codec import CodecDefaults, decode_plan
 from mimarsinan.search.optimizers.compilagent.workload import (
@@ -43,28 +57,17 @@ from .real_problem import (
     pipeline_config,
 )
 
+#: The payloads a search candidate — as opposed to a sealed record — can answer.
+CANDIDATE_PAYLOADS = {
+    spec.name
+    for spec in INTROSPECTION_REGISTRY.all()
+    if CANDIDATE_LAYOUT in spec.builders
+}
+
 
 def _make_problem():
     """The default registered problem: a hardware search over the tiny MLP."""
     return make_problem("hardware")
-
-
-def _make_softcores() -> List[LayoutSoftCoreSpec]:
-    """Synthetic softcores for the PURE name/aggregation helpers below."""
-    return [
-        LayoutSoftCoreSpec(
-            input_count=64, output_count=32, residency_class_id=0,
-            latency_tag=0, segment_id=0, name="conv1_pos0_0",
-        ),
-        LayoutSoftCoreSpec(
-            input_count=64, output_count=32, residency_class_id=0,
-            latency_tag=0, segment_id=0, name="conv1_pos1_0",
-        ),
-        LayoutSoftCoreSpec(
-            input_count=128, output_count=64, residency_class_id=1,
-            latency_tag=1, segment_id=0, name="fc1_tile_0_64",
-        ),
-    ]
 
 
 def _plan(*interventions) -> Plan:
@@ -89,6 +92,27 @@ def _baseline_configuration(problem) -> Dict[str, Any]:
     )
 
 
+def _shapes(softcores):
+    """(name, in, out, area, perceptron) per spec — what a served row must carry."""
+    return [
+        (
+            sc.name, int(sc.input_count), int(sc.output_count), int(sc.area),
+            sc.perceptron_index,
+        )
+        for sc in softcores
+    ]
+
+
+def _row_shapes(rows):
+    return [
+        (
+            row["name"], row["input_count"], row["output_count"], row["area"],
+            row["perceptron_index"],
+        )
+        for row in rows
+    ]
+
+
 @pytest.fixture
 def registered_problem():
     workload_id = "real_layout_test"
@@ -109,37 +133,6 @@ def _registered(workload_id: str, problem):
 
 
 class TestStaticHelpers:
-    def test_softcore_to_dict_round_trip(self):
-        sc = _make_softcores()[0]
-        d = _softcore_to_dict(sc, 7)
-        assert d["index"] == 7
-        assert d["name"] == "conv1_pos0_0"
-        assert d["input_count"] == 64
-        assert d["output_count"] == 32
-        assert d["area"] == 64 * 32
-
-    def test_layer_key_strips_pos_suffix(self):
-        sc = _make_softcores()[0]
-        assert _layer_key(sc) == "conv1"
-
-    def test_layer_key_strips_tile_suffix(self):
-        sc = _make_softcores()[2]
-        assert _layer_key(sc) == "fc1"
-
-    def test_aggregate_per_layer_collapses_tiles(self):
-        rows = _aggregate_per_layer(_make_softcores())
-        layer_names = sorted(r["layer"] for r in rows)
-        assert layer_names == ["conv1", "fc1"]
-        conv = next(r for r in rows if r["layer"] == "conv1")
-        assert conv["softcore_count"] == 2
-        assert conv["total_area"] == 64 * 32 * 2
-        assert conv["residency_class_count"] == 1
-        assert conv["latency_tag_count"] == 1
-        assert conv["segment_count"] == 1
-        fc = next(r for r in rows if r["layer"] == "fc1")
-        assert fc["softcore_count"] == 1
-        assert fc["max_input_count"] == 128
-
     def test_unit_for_known_objectives(self):
         assert _unit_for("fragmentation_pct") == "%"
         assert _unit_for("total_params") == "params"
@@ -149,7 +142,7 @@ class TestStaticHelpers:
 
 
 class TestLayoutPayloadIsTheProblemsOwnCandidateLayout:
-    """The payload is the problem's ``candidate_layout``, rendered — nothing else."""
+    """The payload is the problem's ``candidate_layout``, served — nothing else."""
 
     def test_payload_softcores_are_the_candidates_own_layout(self):
         problem = _make_problem()
@@ -159,11 +152,36 @@ class TestLayoutPayloadIsTheProblemsOwnCandidateLayout:
         layout = problem.candidate_layout(configuration)
         assert payload["softcore_count"] == len(layout.softcores)
         assert payload["softcore_count"] > 0, "the fixture must map something"
-        assert payload["per_softcore"] == [
-            _softcore_to_dict(sc, idx) for idx, sc in enumerate(layout.softcores)
-        ]
-        assert payload["per_layer"] == _aggregate_per_layer(layout.softcores)
+        assert _row_shapes(payload["per_softcore"]) == _shapes(layout.softcores)
         assert payload["layout_stats"] == layout.stats.to_dict()
+        assert sum(row["softcore_count"] for row in payload["per_layer"]) == len(
+            layout.softcores
+        )
+
+    def test_the_backend_serves_the_problems_packing_instead_of_re_running_it(
+        self, monkeypatch,
+    ):
+        """A recomputed layout is a SECOND answer, free to drift from the scored one.
+
+        The problem already packed this candidate; the channel takes that census
+        (``CandidateLayoutView.packed``). Reverting the backend to a view that
+        lays the candidate out itself trips this refusal — the problem's own
+        packing goes through ``layout_hook``'s import, not this one.
+        """
+        problem = _make_problem()
+        configuration = _baseline_configuration(problem)
+
+        def _refuse(*args, **kwargs):
+            raise AssertionError(
+                "the layout backend must not compute a layout of its own"
+            )
+
+        monkeypatch.setattr(
+            _introspection_views, "compute_mapping_stats", _refuse,
+        )
+        payload = collect_layout_payload(problem, configuration)
+        assert payload["softcore_count"] > 0
+        assert payload["layout_stats"]["feasible"] is True
 
     def test_payload_objectives_are_the_registry_read_of_the_candidate_view(self):
         problem = _make_problem()
@@ -206,14 +224,12 @@ class TestLayoutPayloadIsTheProblemsOwnCandidateLayout:
         )
         model, _ = problem._build_model(configuration["model_config"], raw_pcfg)
         raw_softcores, _ = problem._collect_softcores(model, raw_pcfg)
-        raw_rows = [_softcore_to_dict(sc, i) for i, sc in enumerate(raw_softcores)]
-        assert payload["per_softcore"] != raw_rows, (
+        assert _row_shapes(payload["per_softcore"]) != _shapes(raw_softcores), (
             "the payload must describe the resolved chip, not the declaration"
         )
-        assert payload["per_softcore"] == [
-            _softcore_to_dict(sc, i)
-            for i, sc in enumerate(problem.candidate_layout(configuration).softcores)
-        ]
+        assert _row_shapes(payload["per_softcore"]) == _shapes(
+            problem.candidate_layout(configuration).softcores
+        )
 
     def test_a_candidate_that_cannot_be_laid_out_raises(self):
         problem = make_problem("hardware", cfg=pipeline_config(width=200))
@@ -223,6 +239,188 @@ class TestLayoutPayloadIsTheProblemsOwnCandidateLayout:
         ]
         with pytest.raises(Exception, match="fan-in"):
             collect_layout_payload(problem, configuration)
+
+
+class TestBothCacheStatesOfTheRealProblem:
+    """The two ways a real problem holds its model, driven end to end.
+
+    A hardware-only search reuses one candidate-INDEPENDENT model (its cache is
+    WARM after the first candidate); a model-bearing search builds a new model
+    per candidate and never fills that cache at all. The backend used to read
+    the cache's softcores in the first case and rebuild the model in the second
+    — both of which went stale in silence when the problem surface changed.
+    Neither path may touch a private member now: the seam is the same public
+    call, so the two states cannot diverge.
+    """
+
+    def _payload_matches_the_layout(self, problem, configuration):
+        payload = collect_layout_payload(problem, configuration)
+        layout = problem.candidate_layout(configuration)
+        assert set(payload["introspection"]) == CANDIDATE_PAYLOADS
+        assert _row_shapes(payload["per_softcore"]) == _shapes(layout.softcores)
+        assert payload["layout_stats"] == layout.stats.to_dict()
+        assert payload["hw_objectives"] == OBJECTIVES.extract(layout.view)
+        return payload
+
+    def test_a_hardware_search_serves_off_a_warm_model_fixture(self):
+        problem = make_problem("hardware")
+        configuration = _baseline_configuration(problem)
+        assert problem._hw_only_cache is None, "the fixture starts cold"
+        # The public seam warms it, exactly as the first scored candidate would.
+        problem.candidate_layout(configuration)
+        assert problem._hw_only_cache is not None, "a hardware search caches its model"
+
+        payload = self._payload_matches_the_layout(problem, configuration)
+        assert payload["softcore_count"] > 0
+
+    def test_a_joint_search_serves_with_no_model_fixture_at_all(self):
+        problem = make_problem("joint")
+        configuration = _baseline_configuration(problem)
+        payload = self._payload_matches_the_layout(problem, configuration)
+        assert problem._hw_only_cache is None, (
+            "a model-bearing search builds per candidate; nothing is cached"
+        )
+        assert payload["softcore_count"] > 0
+
+    def test_a_model_search_serves_with_no_model_fixture_at_all(self):
+        problem = make_problem("model")
+        configuration = _baseline_configuration(problem)
+        self._payload_matches_the_layout(problem, configuration)
+        assert problem._hw_only_cache is None
+
+
+class TestServedPayload:
+    """The agent surface is the introspection registry's, versioned and identified."""
+
+    def test_every_candidate_answerable_payload_is_served(self):
+        problem = _make_problem()
+        served = collect_layout_payload(
+            problem, _baseline_configuration(problem),
+        )["introspection"]
+        assert set(served) == CANDIDATE_PAYLOADS
+        assert set(served) == {
+            "softcores", "layer_rollup", "bank_composition", "schedule",
+            "capabilities", "layout_stats",
+        }
+        assert all(env["payload"] == name for name, env in served.items())
+        assert all(env["payload_version"] >= 1 for env in served.values())
+
+    def test_softcore_rows_carry_the_layer_identity_the_mapper_assigned(self):
+        problem = _make_problem()
+        configuration = _baseline_configuration(problem)
+        rows = collect_layout_payload(
+            problem, configuration,
+        )["introspection"]["softcores"]["softcores"]
+        layout = problem.candidate_layout(configuration)
+        assert [row["perceptron_index"] for row in rows] == [
+            sc.perceptron_index for sc in layout.softcores
+        ]
+        assert all(row["perceptron_index"] is not None for row in rows), (
+            "the fixture's cores all come from a source perceptron"
+        )
+        assert [row["bank_id"] for row in rows] == [
+            sc.bank_id for sc in layout.softcores
+        ]
+
+    def test_the_rollup_keys_on_identity_not_on_the_name(self):
+        problem = _make_problem()
+        configuration = _baseline_configuration(problem)
+        payload = collect_layout_payload(problem, configuration)
+        rows = payload["introspection"]["layer_rollup"]["layers"]
+        layout = problem.candidate_layout(configuration)
+        assert [row["perceptron_index"] for row in rows] == sorted(
+            {sc.perceptron_index for sc in layout.softcores}
+        )
+        assert [row["layer"] for row in rows] == [
+            f"perceptron_{row['perceptron_index']}" for row in rows
+        ]
+        assert sum(row["total_area"] for row in rows) == sum(
+            int(sc.area) for sc in layout.softcores
+        )
+
+    def test_the_bank_payload_states_who_owns_their_weights(self):
+        # This MLP fixture shares no weight bank, and the payload says so rather
+        # than serving an empty table that reads like "not measured". The
+        # sharing-degree rows are pinned in the registry's own suite.
+        problem = _make_problem()
+        payload = collect_layout_payload(problem, _baseline_configuration(problem))
+        banks = payload["introspection"]["bank_composition"]
+        assert banks["banks"] == []
+        assert banks["unbanked_softcore_count"] == payload["softcore_count"]
+
+    def test_the_schedule_names_the_policy_the_candidate_chip_declares(self):
+        problem = _make_problem()
+        configuration = _baseline_configuration(problem)
+        payload = collect_layout_payload(problem, configuration)
+        schedule = payload["introspection"]["schedule"]
+        layout = problem.candidate_layout(configuration)
+        capabilities = ChipCapabilities.from_platform_constraints(layout.platform)
+        assert schedule["schedule_policy"] == capabilities.schedule_policy == "pool"
+        assert schedule["max_schedule_passes"] == capabilities.max_schedule_passes
+        assert schedule["sync_count"] == int(layout.stats.schedule_sync_count)
+        assert schedule["pass_count"] == int(layout.stats.schedule_pass_count)
+
+    def test_the_capability_bits_are_the_candidate_chips_whole_declaration(self):
+        problem = _make_problem()
+        configuration = _baseline_configuration(problem)
+        payload = collect_layout_payload(problem, configuration)
+        bits = payload["introspection"]["capabilities"]["bits"]
+        layout = problem.candidate_layout(configuration)
+        assert bits == ChipCapabilities.from_platform_constraints(
+            layout.platform
+        ).capability_bits()
+        assert [name for name, value in bits.items() if value is None] == [], (
+            "a served null must mean 'the platform declares none', never 'unread'"
+        )
+        assert bits["allow_scheduling"] is True, "the fixture declares it"
+
+    def test_the_legacy_flat_keys_project_the_same_rows(self):
+        problem = _make_problem()
+        payload = collect_layout_payload(problem, _baseline_configuration(problem))
+        assert payload["softcore_count"] == len(payload["per_softcore"]) > 0
+        assert payload["per_softcore"] == (
+            payload["introspection"]["softcores"]["softcores"]
+        )
+        assert payload["per_layer"] == (
+            payload["introspection"]["layer_rollup"]["layers"]
+        )
+        assert payload["layout_stats"] == (
+            payload["introspection"]["layout_stats"]["stats"]
+        )
+
+
+class TestThePersistedArtifactCarriesTheChannelVersion:
+    """A stored file outlives the writer, so it states its envelope convention.
+
+    Each payload inside carries its own ``payload_version``; the file states the
+    CHANNEL's ``INTROSPECTION_FORMAT_VERSION`` — otherwise reshaping the served
+    map itself would be an undetectable break for anything reading the artifact.
+    """
+
+    def test_introspection_json_is_the_versioned_artifact(self, tmp_path):
+        problem = _make_problem()
+        payload = collect_layout_payload(problem, _baseline_configuration(problem))
+        written = _write_layout_artifacts(tmp_path, {"cfg": 1}, payload)
+        assert [p.name for p in written] == [
+            "config.json", "softcores.json", "layout_stats.json",
+            "introspection.json",
+        ]
+        stored = json.loads((tmp_path / "introspection.json").read_text())
+        assert stored["introspection_format_version"] == INTROSPECTION_FORMAT_VERSION
+        assert stored["payloads"] == payload["introspection"]
+        assert all(
+            envelope["payload_version"] >= 1
+            for envelope in stored["payloads"].values()
+        )
+
+    def test_the_other_artifacts_stay_the_bare_bodies(self, tmp_path):
+        problem = _make_problem()
+        payload = collect_layout_payload(problem, _baseline_configuration(problem))
+        _write_layout_artifacts(tmp_path, {"cfg": 1}, payload)
+        assert json.loads((tmp_path / "config.json").read_text()) == {"cfg": 1}
+        assert json.loads(
+            (tmp_path / "softcores.json").read_text()
+        ) == payload["per_softcore"]
 
 
 class TestDeviceCapabilityAndAnalyse:
@@ -247,6 +445,7 @@ class TestDeviceCapabilityAndAnalyse:
         assert baseline["softcore_count"] == len(expected.softcores)
         assert analysis.summary["softcore_count_baseline"] == len(expected.softcores)
         assert analysis.summary["layer_count"] == len(baseline["per_layer"]) > 0
+        assert analysis.summary["introspection_payloads"] == sorted(CANDIDATE_PAYLOADS)
         assert baseline["layout_stats"]["feasible"] is True
         assert baseline["hw_objectives"] == OBJECTIVES.extract(expected.view)
 
@@ -338,7 +537,7 @@ class TestCompile:
         backend = MimarsinanLayoutBackend()
         result = backend.compile(workload, Plan(), artifact_dir=tmp_path)
         assert result.ok, result.diagnostics
-        assert result.artifacts and len(result.artifacts) == 3
+        assert result.artifacts and len(result.artifacts) == 4
         for path in result.artifacts:
             data = json.loads(path.read_text())
             assert data is not None
@@ -346,6 +545,7 @@ class TestCompile:
         assert len(result.metadata["softcores"]) == len(expected.softcores)
         assert result.metadata["layout_stats"] == expected.stats.to_dict()
         assert result.metadata["hw_objectives"] == OBJECTIVES.extract(expected.view)
+        assert set(result.metadata["introspection"]) == CANDIDATE_PAYLOADS
         assert {row["name"] for row in result.metadata["objective_catalog"]} == set(
             HW_OBJECTIVES
         )

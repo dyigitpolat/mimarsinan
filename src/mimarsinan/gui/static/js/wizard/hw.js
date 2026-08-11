@@ -6,6 +6,7 @@ import { buildHwStatsPanelHtml } from '../hw-stats-panel.js';
 import { renderLaunchStatus, renderRailMapping } from './review.js';
 import { effectiveValue, setKey, state } from './state.js';
 import { el, notifyChange } from './fields.js';
+import { capabilityDeclaration, hwVerifyBody } from './hw_request.js';
 
 const _metadataCache = {};
 
@@ -53,10 +54,8 @@ function hwApiBody() {
     threshold_groups: 1,
     pruning_fraction: dp.pruning ? (dp.pruning_fraction || 0) : 0,
     threshold_seed: 0,
-    allow_coalescing: !!effectiveValue('allow_coalescing'),
+    ...capabilityDeclaration(effectiveValue),
     hardware_bias: effectiveValue('has_bias') !== false,
-    allow_neuron_splitting: !!effectiveValue('allow_neuron_splitting'),
-    allow_scheduling: !!effectiveValue('allow_scheduling'),
     target_tq: effectiveValue('target_tq') || 32,
     encoding_layer_placement: dp.encoding_layer_placement || 'subsume',
   };
@@ -151,15 +150,9 @@ async function runHwVerify() {
     const res = await fetch('/api/hw_config_verify', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model_repr_json: body,
-        core_types: cores.map((c) => ({
-          max_axons: c.max_axons, max_neurons: c.max_neurons, count: c.count,
-        })),
-        allow_coalescing: body.allow_coalescing,
-        allow_neuron_splitting: body.allow_neuron_splitting,
-        allow_scheduling: body.allow_scheduling,
-      }),
+      body: JSON.stringify(
+        hwVerifyBody(body, cores, capabilityDeclaration(effectiveValue)),
+      ),
     });
     const data = res.ok ? await res.json() : null;
     if (!data || data.error) {

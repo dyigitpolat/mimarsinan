@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from typing import Any, Literal, Mapping
+
+from mimarsinan.mapping.platform.platform_constraints import (
+    resolve_platform_mapping_params,
+)
 
 
 def compute_core_input_count(
@@ -67,26 +71,82 @@ class ChipCapabilities:
     # [wsm V2] pass-composition policy under allow_scheduling: "pool" (the
     # historical capacity split) or "bank_clustered" (weights stay resident).
     schedule_policy: str = "pool"
+    # The scheduled-build pass budget the policy's residency floor is sized
+    # against; dropping it pins the answer to the default and disarms the policy.
+    max_schedule_passes: int = 8
 
     @classmethod
     def from_platform_constraints(
         cls, constraints: Mapping[str, Any]
     ) -> "ChipCapabilities":
-        """Read the permission bits from a platform-constraints / wizard body dict (single source for these flags)."""
+        """Read the WHOLE declaration from a platform-constraints / wizard body dict.
+
+        The permission/scheduling flags come off the dict directly; the geometry
+        (``max_axons``/``max_neurons``/``hardware_bias``) is resolved from the
+        declared core grid — ``cores`` (a resolved platform) or ``core_types`` (a
+        wizard body) — by :func:`resolve_platform_mapping_params`, the SAME SSOT
+        the layout mapper is configured from. They are therefore the EFFECTIVE
+        per-core limits the tiling decision consumes: the grid maximum, minus the
+        bias axon when the cores carry no hardware bias. A dict declaring no core
+        grid leaves them at their "not declared" defaults (``None``/``False``)
+        rather than inventing a chip.
+        """
+        cores = constraints.get("cores") or constraints.get("core_types") or ()
+        allow_coalescing = bool(constraints.get("allow_coalescing", False))
+        geometry = (
+            resolve_platform_mapping_params(
+                list(cores), allow_coalescing=allow_coalescing
+            )
+            if cores
+            else None
+        )
         return cls(
-            allow_coalescing=bool(constraints.get("allow_coalescing", False)),
+            max_axons=None if geometry is None else geometry.effective_max_axons,
+            max_neurons=None if geometry is None else geometry.effective_max_neurons,
+            hardware_bias=False if geometry is None else geometry.hardware_bias,
+            allow_coalescing=allow_coalescing,
             allow_neuron_splitting=bool(constraints.get("allow_neuron_splitting", False)),
             allow_scheduling=bool(constraints.get("allow_scheduling", False)),
             allow_per_layer_s=bool(constraints.get("allow_per_layer_s", False)),
             schedule_policy=str(constraints.get("schedule_policy", "pool")),
+            max_schedule_passes=int(constraints.get("max_schedule_passes", 8) or 8),
         )
 
+    def capability_bits(self) -> dict[str, Any]:
+        """The COMPLETE declaration, one entry per declared field.
+
+        Derived from the dataclass rather than listed, so a capability added
+        here reaches every consumer that serves this dict instead of quietly
+        going unforwarded (which is how ``schedule_policy`` stayed invisible to
+        search while the literature IMC presets all declared it). Every bit must
+        therefore be POPULATED by whoever builds the object — a served ``None``
+        means "this platform declares no core grid", never "we did not look".
+        """
+        return {f.name: getattr(self, f.name) for f in fields(self)}
+
     def permission_kwargs(self) -> dict[str, bool]:
-        """The permission bits as the kwargs the layout/verify leaf helpers expect."""
+        """The three permission bits the leaf packing helpers take.
+
+        Kept for helpers whose signature is exactly those bits; the layout
+        answer takes :meth:`layout_kwargs`, which also carries the scheduler.
+        """
         return {
             "allow_neuron_splitting": self.allow_neuron_splitting,
             "allow_coalescing": self.allow_coalescing,
             "allow_scheduling": self.allow_scheduling,
+        }
+
+    def layout_kwargs(self) -> dict[str, Any]:
+        """Everything the layout/verify entry points need to answer as deployment would.
+
+        The permission bits PLUS the scheduling declaration — the pass structure
+        is not a property of the permissions alone, and a layout answer computed
+        without the policy describes a program the chip will never run.
+        """
+        return {
+            **self.permission_kwargs(),
+            "schedule_policy": self.schedule_policy,
+            "max_schedule_passes": self.max_schedule_passes,
         }
 
 
@@ -140,9 +200,18 @@ class MappingStrategy:
         """[wsm V2] pass composition under scheduling: ``pool`` | ``bank_clustered``."""
         return self.capabilities.schedule_policy
 
+    @property
+    def max_schedule_passes(self) -> int:
+        """The declared scheduled-build pass budget."""
+        return self.capabilities.max_schedule_passes
+
     def permission_kwargs(self) -> dict[str, bool]:
         """The resolved mapping permission bits as layout/verify kwargs (allow_per_layer_s is a temporal gate, intentionally not spread here)."""
         return self.capabilities.permission_kwargs()
+
+    def layout_kwargs(self) -> dict[str, Any]:
+        """The permission bits PLUS the scheduling declaration (see ChipCapabilities)."""
+        return self.capabilities.layout_kwargs()
 
     def tiling_mode(
         self,

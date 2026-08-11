@@ -28,6 +28,7 @@ class _LayoutIRMappingFinalize:
         _node_host_labels: Dict[int, Dict[str, str]]
         _node_id_to_softcore_idx: Dict[int, int]
         _sc_idx_to_perceptron_index: Dict[int, Optional[int]]
+        _sc_idx_to_bank_id: Dict[int, int]
 
     def _compute_latencies(self) -> Dict[int, int]:
         return compute_node_latencies(
@@ -172,8 +173,12 @@ class _LayoutIRMappingFinalize:
         return ids
 
     def _finalize_softcores(self) -> None:
-        """Rewrite each softcore with its finalised latency_tag, segment_id, and
-        residency_class_id (= perceptron_index, or a unique fallback when None)."""
+        """Rewrite each softcore with its finalised latency_tag, segment_id,
+        residency_class_id (= perceptron_index, or a unique fallback when None),
+        and the two identities the emission side-tables already hold: the shared
+        ``bank_id`` and the source ``perceptron_index``. Carrying them ON the spec
+        is what stops every downstream consumer re-deriving layer identity out of
+        core-name strings."""
         latencies = self._compute_latencies()
         residency_ids = self._residency_group_ids()
         segment_ids = self._compute_segment_ids()
@@ -186,6 +191,9 @@ class _LayoutIRMappingFinalize:
 
             tg, basis = residency_ids[sc_idx]
 
+            bank_id = self._sc_idx_to_bank_id.get(sc_idx)
+            perceptron_index = self._sc_idx_to_perceptron_index.get(sc_idx)
+
             old = self.layout_softcores[sc_idx]
             self.layout_softcores[sc_idx] = LayoutSoftCoreSpec(
                 input_count=old.input_count,
@@ -194,6 +202,10 @@ class _LayoutIRMappingFinalize:
                 residency_basis=basis,
                 latency_tag=int(latency),
                 segment_id=int(segment_id),
+                bank_id=None if bank_id is None else int(bank_id),
+                perceptron_index=(
+                    None if perceptron_index is None else int(perceptron_index)
+                ),
                 name=old.name,
             )
 

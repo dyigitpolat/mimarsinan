@@ -17,7 +17,7 @@ of truth for the joint NAS + HW search space, rendered per backend.
 | `search_space_compilagent.py` | Renders a `SearchSpaceDescription` into compilagent `Lever` tuples and derives sampled integer candidates per HW dimension |
 | `patch_borders.py` | `get_region_borders`: standalone patch-region border computation utility (no in-repo callers) |
 | `evaluators/` | Fast NAS accuracy evaluators: one-epoch `FastAccuracyEvaluator` and `ExtrapolatingAccuracyEvaluator` with parametric learning-curve fitting |
-| `optimizers/` | `SearchOptimizer` interface and backends: pymoo NSGA-II, AgentEvolve LLM evolution, compilagent session (with `MimarsinanLayoutBackend`), shared LLM trace utilities |
+| `optimizers/` | `SearchOptimizer` interface and backends: pymoo NSGA-II, AgentEvolve LLM evolution, compilagent session (with `MimarsinanLayoutBackend`), shared LLM trace utilities. The compilagent introspection surface is DERIVED from `deployment_record.introspection`'s registry: one read-only tool per payload the candidate view can answer, each response carrying its `payload`/`payload_version`, so registering a payload reaches the agent without a hand-written tool. These modules import the introspection types and NOTHING from `mapping` (AST-pinned) |
 | `problems/` | Concrete problems: `EncodedProblem` (vector-encoded) protocol and `JointArchHwProblem` for joint architecture + hardware co-search — see "The problem surface" below |
 
 ## The problem surface
@@ -61,8 +61,12 @@ the run.
 returns the `CandidateLayout` (chip, softcores, packing census, view) an
 evaluation throws away, off the very same `_resolve_model`/`_resolve_layout`
 path. It is the introspection seam the compilagent layout backend renders its
-per-softcore/per-layer/objective payload from, so an agent cannot be shown a
-chip or a number the search does not use.
+agent-visible payload from, so an agent cannot be shown a chip or a number the
+search does not use. The backend does not RENDER those facts itself: it wraps
+the returned census in `CandidateLayoutView.packed` (the packing is handed over,
+never redone) and serves it through `deployment_record.introspection`'s
+registry, so the payload shapes are declared and versioned and the optimizer
+imports nothing from `mapping`.
 
 ### `EncodedProblem` is not a pymoo interface
 
@@ -87,8 +91,8 @@ The integer/grid nature of the hardware variables lives in `decode`, not in the
 encoding: every host may propose continuous vectors inside `[xl, xu]`.
 
 ## Dependencies
-- `deployment_record` — the objectives registry (`OBJECTIVES`, `ObjectiveSpecV2`, `CandidateStaticView`, `candidate_probe_without`) that `results.py` projects and resolves through, and the `chip_param_capacity`/`declared_core_capacity` formulas the joint layout hook computes candidate chip capacity with. One-way: `deployment_record` never imports `search`.
-- `mapping` — layout types (`LayoutSoftCoreSpec`, `LayoutHardCoreType`), `LayoutVerificationStats`, `ChipCapabilities`, `compute_mapping_stats`, and platform mapping params, used by the joint problem's layout hook/validation and the compilagent layout backend. Coalescing-config normalization is NOT among them: a candidate platform is normalized once, by the deployment resolver the problem is handed.
+- `deployment_record` — the objectives registry (`OBJECTIVES`, `ObjectiveSpecV2`, `CandidateStaticView`, `candidate_probe_without`) that `results.py` projects and resolves through, the `chip_param_capacity`/`declared_core_capacity` formulas the joint layout hook computes candidate chip capacity with, and the introspection registry (`INTROSPECTION_REGISTRY`, `CandidateLayoutView`) the compilagent backend serves every agent-visible payload from — fed from the problem's own `candidate_layout` census via `CandidateLayoutView.packed`, so the agent surface is a projection of the scored layout rather than a second one. One-way: `deployment_record` never imports `search`.
+- `mapping` — layout types (`LayoutSoftCoreSpec`, `LayoutHardCoreType`), `LayoutVerificationStats`, `ChipCapabilities`, `compute_mapping_stats`, and platform mapping params, used by the joint problem's layout hook/validation. Coalescing-config normalization is NOT among them: a candidate platform is normalized once, by the deployment resolver the problem is handed. `optimizers/compilagent` imports none of it (AST-pinned): it reaches the same facts through `deployment_record.introspection`.
 - `data_handling` — `DataProviderFactory` / `DataLoaderFactory` powering the evaluators' train/validate loops.
 - `torch_mapping` — `convert_torch_model` to lower candidate models into layout IR inside the joint problem's layout hook.
 - `common` — `best_effort` wrappers for non-fatal reporting/trace paths in optimizers.
