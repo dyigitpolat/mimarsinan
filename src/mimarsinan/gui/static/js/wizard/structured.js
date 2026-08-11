@@ -450,6 +450,17 @@ function preprocessingWidget(ks) {
 
 /* ── arch_search: NAS schema (optimizer, budget, objectives) ───────────── */
 
+function activeSearchMode() {
+  /* Mirrors config_schema derive_search_mode: hardware-only when just the
+     hardware card searches, model-only when just the model card does. */
+  const dp = (state.draft && state.draft.deployment_parameters) || {};
+  const model = dp.model_config_mode === 'search';
+  const hardware = dp.hw_config_mode === 'search';
+  if (model && hardware) return 'joint';
+  if (hardware) return 'hardware';
+  return 'model';
+}
+
 function archSearchWidget(ks) {
   const nas = schema().nas || {};
   const field = el('div', 'field span-2');
@@ -518,8 +529,24 @@ function archSearchWidget(ks) {
 
   const objectivesTitle = el('div', 'sub-section-title', 'Optimization Objectives');
   const chips = el('div', 'objective-checkboxes');
-  const selected = new Set(current().objectives || (nas.objective_options || []).map((o) => o.id));
-  for (const objective of nas.objective_options || []) {
+  /* Only axes the registry says are available in THIS search mode may be
+     offered or seeded: the backend now fails loud on an unavailable name, so
+     an accuracy chip in hardware-only search would abort the run. */
+  const searchMode = activeSearchMode();
+  const availability = new Map(
+    (nas.objective_catalog || []).map((row) => [row.id, row.available_in_modes || []]),
+  );
+  const offered = (nas.objective_options || []).filter((o) => {
+    const modes = availability.get(o.id);
+    return !modes || modes.includes(searchMode);
+  });
+  const declared = current().objectives;
+  const selected = new Set(
+    (declared || offered.map((o) => o.id)).filter(
+      (id) => offered.some((o) => o.id === id),
+    ),
+  );
+  for (const objective of offered) {
     const chip = el('div', 'objective-chip' + (selected.has(objective.id) ? ' active' : ''));
     chip.append(el('span', '', objective.label), el('span', 'goal-badge', objective.goal));
     chip.addEventListener('click', () => {
