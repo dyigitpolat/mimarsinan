@@ -14,11 +14,7 @@ composition (which is a DIFFERENT number here) is no longer what search sees.
 
 from __future__ import annotations
 
-import numpy as np
-
-from mimarsinan.mapping.ir import IRGraph, IRSource, NeuralCore, WeightBank
 from mimarsinan.mapping.layout.layout_types import LayoutHardCoreType
-from mimarsinan.mapping.layout.softcore_spec_adapter import spec_from_neural_core
 from mimarsinan.mapping.packing.hybrid_build_pool import (
     build_hybrid_hard_core_mapping,
 )
@@ -30,56 +26,12 @@ from mimarsinan.mapping.verification.layout_verification_scheduling import (
     compute_mapping_stats,
 )
 
-_CORES = [{"max_axons": 32, "max_neurons": 32, "count": 2}]
-
-
-def _token_graph(n_tokens: int = 7, in_features: int = 4, out_features: int = 4):
-    """One shared bank streamed over ``n_tokens`` spatial positions (the conv shape)."""
-    rng = np.random.default_rng(7)
-    bank = WeightBank(
-        id=0,
-        core_matrix=rng.normal(
-            size=(in_features + 1, out_features)
-        ).astype(np.float32),
-    )
-    nodes = []
-    for tok in range(n_tokens):
-        srcs = np.array(
-            [IRSource(-2, tok * in_features + i) for i in range(in_features)]
-            + [IRSource(-3, 0)],
-            dtype=object,
-        )
-        nodes.append(NeuralCore(
-            id=tok, name=f"b0_col{tok}", input_sources=srcs, core_matrix=None,
-            weight_bank_id=0, weight_row_slice=(0, out_features), latency=0,
-            perceptron_index=0, perceptron_output_column=tok,
-            perceptron_output_slice=(0, out_features),
-        ))
-    out = np.array(
-        [IRSource(n.id, j) for n in nodes for j in range(out_features)],
-        dtype=object,
-    )
-    return IRGraph(nodes=nodes, output_sources=out, weight_banks={0: bank})
-
-
-def _softcores(graph):
-    return [
-        spec_from_neural_core(
-            core, hardware_bias=False, fallback_residency_class_id=-(i + 1),
-        )
-        for i, core in enumerate(graph.get_neural_cores())
-    ]
-
-
-def _deployed_pass_count(graph, policy: str) -> int:
-    hybrid = build_hybrid_hard_core_mapping(
-        ir_graph=graph,
-        cores_config=_CORES,
-        strategy=MappingStrategy.resolve(
-            ChipCapabilities(allow_scheduling=True, schedule_policy=policy)
-        ),
-    )
-    return len([s for s in hybrid.stages if s.kind == "neural"])
+from .bank_clustered_vehicles import (
+    TWO_CORES as _CORES,
+    deployed_pass_count as _deployed_pass_count,
+    softcores_of as _softcores,
+    token_graph as _token_graph,
+)
 
 
 def _searched(policy: str, softcores, **kwargs):

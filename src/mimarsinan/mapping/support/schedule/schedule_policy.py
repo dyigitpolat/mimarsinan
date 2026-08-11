@@ -54,6 +54,15 @@ def bank_clustered_layout_passes(
     Mirrors ``try_bank_clustered_passes``' applicability with the facts a spec
     carries: every core must read a shared bank (``bank_id``), and the segment
     must hold no intra-segment dependency.
+
+    CONSERVATISM (stated, because it is a real asymmetry): an instance is sized
+    by the spec's own ``input_count``/``output_count``, which a layout walk
+    records BEFORE elimination, while the builder sizes it post-compaction
+    (``compacted_core_extent``). The shape-only extent is therefore >= the
+    deployed one, so this side can only DECLINE a segment the builder would
+    have composed — never claim residency the hardware cannot hold. A caller
+    holding the real cores can pre-shrink the specs
+    (``spec_at_compacted_extent``); the two sides then coincide exactly.
     """
     if not softcores:
         return None
