@@ -130,6 +130,73 @@ class TestSearchMatchesDeployment:
         assert tight.schedule_pass_count != 4
 
 
+class TestOnARealConvolution:
+    """The synthetic vehicle above is hand-built; this one goes through the mapper."""
+
+    CORES = [{"max_axons": 32, "max_neurons": 32, "count": 3}]
+
+    def _repr(self):
+        import torch
+        from mimarsinan.mapping.mappers.conv2d_mapper import Conv2DPerceptronMapper
+        from mimarsinan.mapping.mappers.structural import (
+            EinopsRearrangeMapper,
+            InputMapper,
+        )
+        from mimarsinan.mapping.model_representation import ModelRepresentation
+        from mimarsinan.mapping.support.per_source_scales import (
+            compute_per_source_scales,
+        )
+
+        torch.manual_seed(3)
+        conv = Conv2DPerceptronMapper(
+            InputMapper((1, 8, 8)), in_channels=1, out_channels=2,
+            kernel_size=2, stride=2, padding=0, bias=True,
+            use_batchnorm=False, base_activation_name="Identity",
+        )
+        model = ModelRepresentation(
+            EinopsRearrangeMapper(conv, "... c h w -> ... (c h w)")
+        )
+        compute_per_source_scales(model)
+        model.assign_perceptron_indices()
+        return model
+
+    def _deployed(self, policy: str) -> int:
+        from mimarsinan.mapping.ir_mapping_class import IRMapping
+
+        irm = IRMapping(q_max=1, firing_mode="Default", max_axons=32, max_neurons=32)
+        hybrid = build_hybrid_hard_core_mapping(
+            ir_graph=irm.map(self._repr()),
+            cores_config=self.CORES,
+            strategy=MappingStrategy.resolve(
+                ChipCapabilities(allow_scheduling=True, schedule_policy=policy)
+            ),
+        )
+        return len([s for s in hybrid.stages if s.kind == "neural"])
+
+    def _searched(self, policy: str):
+        from mimarsinan.mapping.layout.layout_ir_mapping import LayoutIRMapping
+
+        layout = LayoutIRMapping(max_axons=32, max_neurons=32)
+        softcores = layout.collect_layout_softcores(self._repr())
+        stats, error = compute_mapping_stats(
+            softcores=softcores,
+            core_types=[LayoutHardCoreType(**ct) for ct in self.CORES],
+            allow_scheduling=True,
+            schedule_policy=policy,
+        )
+        assert error is None
+        return stats
+
+    def test_the_shape_only_answer_equals_the_deployed_pass_count(self):
+        deployed = self._deployed("bank_clustered")
+        assert deployed > 1  # the policy really composes here
+        assert self._searched("bank_clustered").schedule_pass_count == deployed
+
+    def test_the_pool_answer_would_have_been_wrong_for_this_platform(self):
+        assert self._deployed("pool") != self._deployed("bank_clustered")
+        assert self._searched("pool").schedule_pass_count == 0
+
+
 class TestUnchangedWhereThePolicyDoesNotApply:
     def test_pool_platforms_keep_their_exact_previous_answer(self):
         graph = _token_graph(7)

@@ -41,14 +41,19 @@ _stats: Dict[str, int] = {"hits": 0, "misses": 0, "evictions": 0}
 
 
 def reset_matrix_memo(*, budget_bytes: "int | None" = None) -> None:
-    """Drop every cached grid; optionally re-set the budget (tests, long runs)."""
+    """Drop every cached grid and restore the budget (tests, long runs).
+
+    A reset restores EVERYTHING, budget included: leaving a previously narrowed
+    budget in place made one caller's temporary cap silently permanent for the
+    rest of the process, and every later resolution stopped sharing while
+    reading as if it did. Pass ``budget_bytes`` to set a different one.
+    """
     global _budget, _bytes
     _entries.clear()
     _bytes = 0
     for key in _stats:
         _stats[key] = 0
-    if budget_bytes is not None:
-        _budget = int(budget_bytes)
+    _budget = _DEFAULT_BUDGET_BYTES if budget_bytes is None else int(budget_bytes)
 
 
 def matrix_memo_stats() -> Dict[str, int]:
