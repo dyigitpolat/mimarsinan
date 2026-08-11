@@ -1,0 +1,431 @@
+{
+  "accuracy": {
+    "certificates": [
+      {
+        "backend": "hcm",
+        "detail": "spike-count certificate [hcm/exact]: PASS exact=1.000000 max|dcount|=0 over 20 neuron-windows, 2 sample(s)",
+        "exact_match_fraction": 1.0,
+        "max_abs_delta": 0.0,
+        "name": "spike_count_streaming_twin",
+        "neuron_windows_compared": 20,
+        "passed": true
+      }
+    ],
+    "deployed": {
+      "backend": "pipeline",
+      "kind": "carried",
+      "metric": 0.9815,
+      "samples": 0,
+      "step": "Deployment Record"
+    },
+    "reads": [
+      {
+        "backend": "hcm",
+        "kind": "measured",
+        "metric": 0.9815,
+        "samples": 0,
+        "step": "Hard Core Mapping"
+      },
+      {
+        "backend": "nevresim",
+        "kind": "measured",
+        "metric": 1.0,
+        "samples": 25,
+        "step": "Simulation"
+      }
+    ]
+  },
+  "adaptation": {
+    "ft_pass_walls": [
+      {
+        "label": "Weight Quantization/endpoint_recover",
+        "wall_s": 13.748557407001499
+      }
+    ],
+    "max_ft_pass_wall_s": 13.748557407001499
+  },
+  "energy": {
+    "breakdown": [
+      {
+        "band_mj": null,
+        "basis": "SANA-FE per-event energy trace, summed over segments and samples",
+        "kind": "measured",
+        "mj": 0.0008743295000000118,
+        "name": "sanafe_synapse"
+      },
+      {
+        "band_mj": null,
+        "basis": "SANA-FE per-event energy trace, summed over segments and samples",
+        "kind": "measured",
+        "mj": 0.0,
+        "name": "sanafe_dendrite"
+      },
+      {
+        "band_mj": null,
+        "basis": "SANA-FE per-event energy trace, summed over segments and samples",
+        "kind": "measured",
+        "mj": 0.00020006059999999988,
+        "name": "sanafe_soma"
+      },
+      {
+        "band_mj": null,
+        "basis": "SANA-FE per-event energy trace, summed over segments and samples",
+        "kind": "measured",
+        "mj": 5.0172000000000034e-05,
+        "name": "sanafe_network"
+      }
+    ],
+    "energy_proxy_neuron_steps": 2758,
+    "mj_per_sample": 0.0011245621000000117,
+    "sample_count": 1,
+    "total_energy_mj": 0.0011245621000000117,
+    "total_spikes": 24629
+  },
+  "format_version": 1,
+  "identity": {
+    "cell_key": "lif@sanafe",
+    "config_digest": "58475315f3fff1c731e332c207884aa73a51de5be1a7e9cf6ce9c68dd4c8cccf",
+    "created_at": "2026-08-11T10:59:43.787527+00:00",
+    "deployment_options": {
+      "degradation_budget_total": 0.3,
+      "degradation_tolerance": 0.15,
+      "max_schedule_passes": 8,
+      "schedule_policy": "pool",
+      "scm_degradation_tolerance": null,
+      "simulation_steps": 4,
+      "target_tq": 4,
+      "weight_bits": 5
+    },
+    "format_version": 1,
+    "mode": "lif",
+    "model_name": "simple_mlp",
+    "model_type": "simple_mlp",
+    "platform": {
+      "allow_coalescing": true,
+      "allow_neuron_splitting": true,
+      "allow_scheduling": false,
+      "core_value_granularity": {},
+      "cores": [
+        {
+          "count": 60,
+          "has_bias": true,
+          "max_axons": 784,
+          "max_neurons": 512
+        },
+        {
+          "count": 60,
+          "has_bias": true,
+          "max_axons": 512,
+          "max_neurons": 256
+        }
+      ],
+      "cores_per_tile": 0,
+      "cores_per_tile_resolved": 4,
+      "max_schedule_passes": 8,
+      "schedule_policy": "pool",
+      "target_tq": 4,
+      "tile_grid_cols": 0,
+      "tile_grid_cols_resolved": 6,
+      "tile_grid_rows": 0,
+      "tile_grid_rows_resolved": 5,
+      "weight_bits": 5
+    },
+    "run_dir": "./generated/w4s4_cpu_e2e_t0_45_phased_deployment_run",
+    "workload": "MNIST_DataProvider"
+  },
+  "placement": {
+    "banks": [],
+    "floorplan": {
+      "cores_per_tile": 4,
+      "derivation": "derived",
+      "mesh_height": 5,
+      "mesh_width": 6
+    },
+    "softcores": [
+      {
+        "axon_offset": 0,
+        "axons": 128,
+        "bank_axon_range": null,
+        "bank_neuron_range": null,
+        "coalescing_group_id": null,
+        "hard_core_index": 0,
+        "ir_node_id": 2,
+        "neuron_offset": 0,
+        "neurons": 256,
+        "pass_index": 0,
+        "perceptron_index": 2,
+        "segment_index": 0,
+        "split_fragment_index": null,
+        "split_group_id": null,
+        "weight_bank_id": null
+      },
+      {
+        "axon_offset": 0,
+        "axons": 256,
+        "bank_axon_range": null,
+        "bank_neuron_range": null,
+        "coalescing_group_id": null,
+        "hard_core_index": 1,
+        "ir_node_id": 1,
+        "neuron_offset": 0,
+        "neurons": 128,
+        "pass_index": 0,
+        "perceptron_index": 1,
+        "segment_index": 0,
+        "split_fragment_index": null,
+        "split_group_id": null,
+        "weight_bank_id": null
+      },
+      {
+        "axon_offset": 0,
+        "axons": 256,
+        "bank_axon_range": null,
+        "bank_neuron_range": null,
+        "coalescing_group_id": null,
+        "hard_core_index": 2,
+        "ir_node_id": 3,
+        "neuron_offset": 0,
+        "neurons": 10,
+        "pass_index": 0,
+        "perceptron_index": 3,
+        "segment_index": 0,
+        "split_fragment_index": null,
+        "split_group_id": null,
+        "weight_bank_id": null
+      }
+    ],
+    "tiles": [
+      {
+        "core_indices": [
+          0,
+          1,
+          2
+        ],
+        "tile_index": 0,
+        "x": 0,
+        "y": 0
+      }
+    ]
+  },
+  "provenance": {
+    "accuracy": {
+      "detail": "",
+      "kind": "measured",
+      "producer": "mapping metric runs + certificate gates",
+      "step": "Deployment Record"
+    },
+    "adaptation": {
+      "detail": "retention_ledger.json: 5 tuner-step entries",
+      "kind": "measured",
+      "producer": "tuner ft_pass_wall_metrics",
+      "step": "Deployment Record"
+    },
+    "energy": {
+      "detail": "",
+      "kind": "measured",
+      "producer": "SANA-FE energy trace",
+      "step": "SANA-FE Simulation"
+    },
+    "identity": {
+      "detail": "",
+      "kind": "declared",
+      "producer": "DeploymentPlan.resolve + platform_constraints_resolved",
+      "step": "Deployment Record"
+    },
+    "placement": {
+      "detail": "",
+      "kind": "derived",
+      "producer": "soft_core_placements_per_hard_core + SANA-FE floorplan",
+      "step": "Hard Core Mapping"
+    },
+    "schedule": {
+      "detail": "",
+      "kind": "derived",
+      "producer": "HybridHardCoreMapping stage census",
+      "step": "Hard Core Mapping"
+    },
+    "timing": {
+      "detail": "",
+      "kind": "measured",
+      "producer": "SANA-FE per-segment sim + StageTimer host walls",
+      "step": "Deployment Record"
+    },
+    "traffic": {
+      "detail": "",
+      "kind": "measured",
+      "producer": "spike-count gate reduction + SANA-FE NoC",
+      "step": "Deployment Record"
+    },
+    "utilization": {
+      "detail": "",
+      "kind": "derived",
+      "producer": "CrossbarUtilizationReport + LayoutVerificationStats",
+      "step": "Hard Core Mapping"
+    }
+  },
+  "schedule": {
+    "compute_op_count": 1,
+    "params_reloaded": 68096,
+    "pass_count": 0,
+    "reprogram_passes": 1,
+    "reuse_passes": 0,
+    "stages": [
+      {
+        "name": "Perceptron",
+        "op_type": "Perceptron",
+        "output_width": 0,
+        "stage_index": 0,
+        "stage_kind": "compute_op",
+        "wall_s_total": 0.0018318889997317456
+      },
+      {
+        "bank_ids": [],
+        "connectivity_entries": 6,
+        "cores": [
+          {
+            "axons": 512,
+            "axons_used": 128,
+            "cells_used": 32768,
+            "connectivity_entries": 2,
+            "core_index": 0,
+            "neurons": 256,
+            "neurons_used": 256,
+            "params_bytes": 20480,
+            "static_delay_levels": 1
+          },
+          {
+            "axons": 512,
+            "axons_used": 256,
+            "cells_used": 32768,
+            "connectivity_entries": 2,
+            "core_index": 1,
+            "neurons": 256,
+            "neurons_used": 128,
+            "params_bytes": 20480,
+            "static_delay_levels": 0
+          },
+          {
+            "axons": 512,
+            "axons_used": 256,
+            "cells_used": 2560,
+            "connectivity_entries": 2,
+            "core_index": 2,
+            "neurons": 256,
+            "neurons_used": 10,
+            "params_bytes": 1600,
+            "static_delay_levels": 2
+          }
+        ],
+        "params_bytes": 42560,
+        "params_programmed": 68096,
+        "params_unique": 68096,
+        "pass_index": 0,
+        "pass_reason": "initial",
+        "programming": "reprogram",
+        "segment_index": 0,
+        "stage_index": 1,
+        "stage_kind": "segment",
+        "static_latency_levels": 3
+      }
+    ],
+    "sync_count": 0
+  },
+  "timing": {
+    "depth": 1,
+    "latency": {
+      "compute_sim_time_s": 8.858749999999992e-05,
+      "compute_steps": 7,
+      "host_ops_s": 0.0018318889997317456,
+      "note": "SANA-FE sim_time_s includes NoC hop latency (charged by the in-simulator C++ NoC), so compute_sim_time_s already contains NoC transport and no term double-counts it; programming_s and sync_s stay None until the stage-5 cost model prices them from the record's payload/sync census.",
+      "programming_s": null,
+      "sync_s": null
+    },
+    "per_segment": [
+      {
+        "sim_time_s": 8.858749999999992e-05,
+        "stage_index": 1,
+        "timesteps_executed": 7
+      }
+    ],
+    "s_global": 4
+  },
+  "traffic": {
+    "boundaries": [
+      {
+        "max_neuron_count": 3,
+        "neurons": 10,
+        "node_id": 3,
+        "producing_stage_index": 1,
+        "samples": 2,
+        "total_count": 6
+      }
+    ],
+    "noc": {
+      "cross_tile_connectivity_edges": 0,
+      "input_path_packets": 97,
+      "inter_tile_packets": 0,
+      "intra_tile_packets": 452,
+      "link_loads": [],
+      "mapped_cross_tile_axons": 0,
+      "total_packets": 452
+    }
+  },
+  "utilization": {
+    "crossbar": {
+      "axon_utilization": 0.4166666666666667,
+      "axons_physical": 1536,
+      "axons_used": 640,
+      "cell_occupancy": 0.17317708333333334,
+      "cells_physical": 393216,
+      "cells_used": 68096,
+      "cores_allocated": 3,
+      "macs": 68096,
+      "neuron_utilization": 0.5130208333333334,
+      "neurons_physical": 768,
+      "neurons_used": 394,
+      "programming_bits": 340480,
+      "unusable_space": 0,
+      "weight_bits": 5
+    },
+    "layout": {
+      "coalesced_cores": 0,
+      "coalescing_frags_per_group_max": 0.0,
+      "coalescing_frags_per_group_median": 0.0,
+      "coalescing_frags_per_group_min": 0.0,
+      "coalescing_group_count": 0,
+      "feasible": true,
+      "fragmentation_pct": 0.0,
+      "mapped_params_pct": 17.317708333333336,
+      "max_cores_per_pass": 0,
+      "neural_segment_count": 1,
+      "per_core_mapped_params_pct_avg": 17.317708333333332,
+      "per_core_mapped_params_pct_max": 25.0,
+      "per_core_mapped_params_pct_min": 1.953125,
+      "per_core_wasted_axons_pct_avg": 58.333333333333336,
+      "per_core_wasted_axons_pct_max": 75.0,
+      "per_core_wasted_axons_pct_min": 50.0,
+      "per_core_wasted_neurons_pct_avg": 48.697916666666664,
+      "per_core_wasted_neurons_pct_max": 96.09375,
+      "per_core_wasted_neurons_pct_min": 0.0,
+      "residency_class_count": 0,
+      "schedule_pass_count": 0,
+      "schedule_sync_count": 0,
+      "segment_latency_max": 0.0,
+      "segment_latency_median": 0.0,
+      "segment_latency_min": 0.0,
+      "split_cores": 0,
+      "split_softcore_count": 0,
+      "splits_per_softcore_max": 0.0,
+      "splits_per_softcore_median": 0.0,
+      "splits_per_softcore_min": 0.0,
+      "total_cores": 3,
+      "total_hw_cores": 3,
+      "total_softcores": 3,
+      "total_wasted_axons_pct": 58.333333333333336,
+      "total_wasted_neurons_pct": 48.69791666666667,
+      "unusable_space_total": 0,
+      "unused_area_total": 325120
+    },
+    "relay_cores_inserted": 0
+  }
+}
