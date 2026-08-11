@@ -195,7 +195,11 @@ def certify_twin_flow_counts(
     matrices — e.g. identity-mapped IR twin vs the packed program) must agree
     per neuron-window at the backend class's tolerance. Node-granular: both
     programs share one IR, so node keys/widths match by construction and the
-    comparison is placement-free. ``discipline`` picks the backend cell."""
+    comparison is placement-free. ``discipline`` picks the backend cell.
+
+    Returns ``(certificate, report, backend_node_counts)`` — the backend's
+    ``{node_id: (B, n)}`` counts ride along so gate callers can reduce them
+    (boundary traffic) without a second simulation."""
     del ir_graph  # kept for call-site stability; node keys need no provenance
     ref = flow_node_counts(
         reference_flow, samples, discipline=reference_discipline,
@@ -213,7 +217,7 @@ def certify_twin_flow_counts(
         lambda _b: common_ref, lambda _b: common_got, [samples],
         backend=backend,
     )
-    return cert, report
+    return cert, report, got
 
 
 def intersect_aligned(

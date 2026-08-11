@@ -3,6 +3,9 @@ from mimarsinan.pipelining.core.steps.pipeline_step import PipelineStep
 from mimarsinan.common.best_effort import best_effort
 from mimarsinan.common.env import vram_probe_enabled
 from mimarsinan.common.reporter import emit_reporter_event
+from mimarsinan.pipelining.pipeline_steps.mapping.deployment_record_emission import (
+    emit_deployment_record_hcm,
+)
 from mimarsinan.mapping.crossbar_utilization import (
     CrossbarUtilizationReport,
     summarize_utilization,
@@ -52,8 +55,11 @@ def _vram_probe(tag: str) -> None:
     )
 
 class HardCoreMappingStep(PipelineStep):
-    REQUIRES = ("model", "ir_graph", "platform_constraints_resolved")
-    PROMISES = ("hard_core_mapping",)
+    REQUIRES = (
+        "model", "ir_graph", "platform_constraints_resolved",
+        "deployment_record_scm",
+    )
+    PROMISES = ("hard_core_mapping", "deployment_record_hcm")
 
     def __init__(self, pipeline):
         super().__init__(self.REQUIRES, self.PROMISES, self.UPDATES, self.CLEARS, pipeline)
@@ -75,6 +81,7 @@ class HardCoreMappingStep(PipelineStep):
         ir_graph = self.get_entry('ir_graph')
         sim_len = int(self.pipeline.config["simulation_steps"])
         platform_constraints = self.get_entry("platform_constraints_resolved")
+        scm_fragment = self.get_entry("deployment_record_scm")
         _vram_probe("after_load_entries")
 
         _HCM = "HardCoreMappingStep"
@@ -132,7 +139,7 @@ class HardCoreMappingStep(PipelineStep):
         _vram_probe("before_test")
         plan = DeploymentPlan.of(self.pipeline)
         with phase_profiler(_HCM, "spike_count_gate"):
-            run_spike_count_certificate_gate(
+            spike_gate_result = run_spike_count_certificate_gate(
                 self.pipeline, model, ir_graph, hybrid_mapping,
             )
         # Self-guarding: the gate SKIPs unless the policy observes values.
@@ -170,6 +177,18 @@ class HardCoreMappingStep(PipelineStep):
         _vram_probe("after_test")
         self._last_metric = float(acc)
         print(f"[HardCoreMappingStep] Hard-core Spiking Simulation Test: {acc}")
+
+        emit_deployment_record_hcm(
+            self,
+            hybrid_mapping,
+            platform_constraints=platform_constraints,
+            scm_fragment=scm_fragment,
+            programming=programming,
+            crossbar_report=utilization,
+            spike_gate_result=spike_gate_result,
+            accuracy=float(acc),
+            observes_values=plan.mode_policy().observes_values(),
+        )
 
         if self.pipeline.config.get("generate_visualizations", False):
             def _viz():

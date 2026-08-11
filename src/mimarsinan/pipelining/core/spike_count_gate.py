@@ -11,6 +11,9 @@ from mimarsinan.certification.twin_schedule import twin_schedule_diagnostic
 from mimarsinan.chip_simulation.certification import CertificationCell
 from mimarsinan.config_schema.registry import effective_value as _effective
 from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory
+from mimarsinan.deployment_record.build.from_certificates import (
+    boundary_traffic_from_node_counts,
+)
 from mimarsinan.model_training.basic_trainer import BasicTrainer
 from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 from mimarsinan.pipelining.core.simulation_factory import (
@@ -46,12 +49,26 @@ def certificate_gate_armed(pipeline) -> bool:
     return int(_effective(pipeline.config, "spike_count_parity_samples")) > 0
 
 
+def _stage_indices_by_node(hybrid_mapping) -> "dict[int, int]":
+    """Producing top-level stage index per node id, from the stage output maps."""
+    indices: dict[int, int] = {}
+    for stage_index, stage in enumerate(getattr(hybrid_mapping, "stages", []) or []):
+        for io_slice in getattr(stage, "output_map", []) or []:
+            indices.setdefault(int(io_slice.node_id), int(stage_index))
+    return indices
+
+
 def run_spike_count_certificate_gate(pipeline, model, ir_graph, hybrid_mapping):
     """Certify deployed per-neuron window counts against the NF oracle; fatal.
 
     LIF-only: the synchronized count executor is the exact cell and the
     staircase theorem extends equality to streaming [calculus §16-17].
-    ``spike_count_parity_samples <= 0`` disables the gate."""
+    ``spike_count_parity_samples <= 0`` disables the gate.
+
+    Returns ``None`` on every skip path; on a PASS returns
+    ``(certificate, boundary_traffic)`` where ``boundary_traffic`` is the
+    per-node reduction of the packed program's counts (reduced EAGERLY here —
+    the raw ``(B, n)`` tensors never leave the gate scope)."""
     plan = DeploymentPlan.of(pipeline)
     observable, skip_reason = plan.mode_policy().certification_observable()
     if observable != "counts":
@@ -82,7 +99,7 @@ def run_spike_count_certificate_gate(pipeline, model, ir_graph, hybrid_mapping):
     # synchronized executor is a training/tuning-side surrogate and is never
     # load-bearing here. The streaming-vs-sync delta stays a REPORT (the §16
     # gauge diagnostic; the census accuracy is that cell's arbiter).
-    cert, detail = certify_twin_flow_counts(
+    cert, detail, backend_counts = certify_twin_flow_counts(
         ir_graph, reference_flow, backend_flow, samples, backend="hcm",
         discipline="streaming", reference_discipline="streaming",
     )
@@ -96,7 +113,13 @@ def run_spike_count_certificate_gate(pipeline, model, ir_graph, hybrid_mapping):
             f"spike-count certificate FAILED (streaming twin): "
             f"{cert.summary()} | {detail}"
         )
-    gauge_cert, _ = certify_twin_flow_counts(
+    # Boundary-traffic reduction, eager and in-scope: scalars only survive.
+    boundary_traffic = boundary_traffic_from_node_counts(
+        backend_counts,
+        stage_index_by_node=_stage_indices_by_node(hybrid_mapping),
+    )
+    del backend_counts
+    gauge_cert, _, _ = certify_twin_flow_counts(
         ir_graph, backend_flow, backend_flow, samples, backend="hcm",
         discipline="streaming", reference_discipline="synchronized",
     )
@@ -117,4 +140,4 @@ def run_spike_count_certificate_gate(pipeline, model, ir_graph, hybrid_mapping):
     gc.collect()
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
-    return cert
+    return cert, boundary_traffic

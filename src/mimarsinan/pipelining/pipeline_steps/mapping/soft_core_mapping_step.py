@@ -94,7 +94,7 @@ def print_weight_reuse_report(ir_graph) -> None:
 
 class SoftCoreMappingStep(PipelineStep):
     REQUIRES = ("fused_model", "platform_constraints_resolved")
-    PROMISES = ("ir_graph",)
+    PROMISES = ("ir_graph", "deployment_record_scm")
 
     def __init__(self, pipeline):
         super().__init__(self.REQUIRES, self.PROMISES, self.UPDATES, self.CLEARS, pipeline)
@@ -246,7 +246,9 @@ class SoftCoreMappingStep(PipelineStep):
         if bool(self.pipeline.config.get("negative_value_shift", True)):
             transfer_negative_shifts_to_ir(model, ir_graph)
 
-        relays_enabled = self._apply_depth_balancing_relays(ir_graph, plan)
+        relays_enabled, relay_cores_inserted = self._apply_depth_balancing_relays(
+            ir_graph, plan,
+        )
 
         wt_q = plan.weight_quantization
         with _phase("weight_quantization"):
@@ -282,6 +284,9 @@ class SoftCoreMappingStep(PipelineStep):
         neural_cores = ir_graph.get_neural_cores()
         print(f"[SoftCoreMappingStep] IR Graph: {len(neural_cores)} neural cores, {len(compute_ops)} compute ops")
         print_weight_reuse_report(ir_graph)
+        self._emit_deployment_record_scm(
+            ir_graph, relay_cores_inserted, int(max_latency),
+        )
         if compute_ops:
             print(f"[SoftCoreMappingStep] Model contains {len(compute_ops)} non-neural operations:")
             for op in compute_ops:
@@ -341,6 +346,23 @@ class SoftCoreMappingStep(PipelineStep):
             self._soft_core_spiking_metric = float(acc)
             print(f"[SoftCoreMappingStep] Soft-core (identity-mapped) Spiking Simulation Test: {acc}")
 
+    def _emit_deployment_record_scm(
+        self, ir_graph, relay_cores_inserted: int, ir_max_latency: int
+    ) -> None:
+        """Persist the SCM deployment-record fragment: the weight-reuse plan
+        (an unconditional pure IR read, provenance "planned@scm"), the
+        formerly-dropped relay count, and the IR latency census."""
+        reuse_plan = weight_reuse_plan_from_graph(ir_graph)
+        self.add_entry("deployment_record_scm", {
+            "reuse_plan": {
+                "reprogram_passes": int(reuse_plan.reprogram_passes),
+                "reuse_passes": int(reuse_plan.reuse_passes),
+                "params_reloaded": int(reuse_plan.params_reloaded),
+            },
+            "relay_cores_inserted": int(relay_cores_inserted),
+            "ir_max_latency": int(ir_max_latency),
+        }, "basic")
+
     def _commit_pruning_to_raw_params(self, model) -> None:
         """Commit every perceptron's prune masks into its raw parameters."""
         for perceptron in model.get_perceptrons():
@@ -352,16 +374,17 @@ class SoftCoreMappingStep(PipelineStep):
             model.get_perceptrons(), where="SoftCoreMappingStep pre-IR-mapping",
         )
 
-    def _apply_depth_balancing_relays(self, ir_graph, plan) -> bool:
+    def _apply_depth_balancing_relays(self, ir_graph, plan) -> tuple[bool, int]:
         """[C5] pre-quantize relay insertion for unequal-depth intra-segment
         fan-in (gated OFF by default; the pass is a no-op on gap-free graphs).
-        Returns whether the pass is enabled (arms the post-quantize guard)."""
+        Returns ``(enabled, relays_inserted)`` — enabled arms the post-quantize
+        guard; the count feeds the deployment-record SCM fragment."""
         enabled = (
             is_lif(plan.spiking_mode)
             and bool(self.pipeline.config.get("lif_depth_balancing_relays", False))
         )
         if not enabled:
-            return False
+            return False, 0
         from mimarsinan.transformations.quantization_bounds import (
             quantization_bounds,
         )
@@ -379,7 +402,7 @@ class SoftCoreMappingStep(PipelineStep):
                 f"[SoftCoreMappingStep] depth-balancing relays: {inserted} "
                 f"identity relay core(s) inserted (unequal-depth fan-in, V6)."
             )
-        return True
+        return True, int(inserted)
 
     def _run_onchip_validity_gate(self, model, ir_graph) -> None:
         """Authoritative tiered validity gate on the mapped IR graph, over BOTH the
