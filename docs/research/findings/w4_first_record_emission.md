@@ -2,9 +2,12 @@
 
 Evidence that the thesis-§2 formalization emits from a real deployment, not a
 fixture. Artifact: `artifacts/deployment_record_first_emission_t0_45.json`
-(11.9 kB, cell `t0_45_lifs_simplemlp_wq_s4`, run on CPU so the *functional*
-claims are device-independent; the accuracy-digit no-regression check is a
-separate GPU-solo run).
+(11.9 kB, cell `t0_45_lifs_simplemlp_wq_s4`, CPU run — the *functional* claims
+are device-independent). The GPU-solo no-regression leg ran separately and
+**reproduced the reference deployed metric exactly: 0.9830**, with the same
+record assertions green (seal-load OK, boundary traffic non-None, energy and
+`cost_record.json` present) — so the record machinery costs nothing in
+deployed accuracy.
 
 ## What the record proves
 
