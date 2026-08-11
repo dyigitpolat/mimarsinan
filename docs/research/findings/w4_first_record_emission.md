@@ -30,3 +30,27 @@ against `LayoutVerificationStats.schedule_pass_count`), while `reprogram_passes`
 counts *segments that must be programmed* from the IR reuse plan. Two currencies,
 two provenances, both recorded — which is exactly why the record keeps provenance
 per field instead of collapsing to one number.
+
+## Cross-mode coverage (5 cells, fresh dirs, solo GPU)
+
+The schema doc's acceptance criterion is *"every tier run emits a
+schema-validated DeploymentRecord"*. Measured, not assumed:
+
+| cell | family | deployed | passes | segs | programming bytes | boundary nodes | energy | cost_record |
+|---|---|---|---|---|---|---|---|---|
+| t0_01 | lifsync mmixcore | 0.9799 | 0 | 1 | 1 290 240 | 192 | ✓ | ✓ |
+| t0_13 | ttfsq deepcnn | 0.9945 | 0 | 3 | 2 759 040 | 0 | ✓ | ✓ |
+| t0_26 | lifsync deepcnn **sched** | 0.9905 | **4** | 4 | 7 407 360 | 1 047 | ✓ | ✓ |
+| t0_44 | **mvm** lenet5 sched pruned | 0.9912 | **45** | 45 | 315 860 | 0 | — | — |
+| t0_51 | lifs lenet5 pruned | 0.9840 | 0 | 2 | 1 164 413 | 197 | ✓ | ✓ |
+
+Every deployed number reproduces its independent reference. The record adapts
+per family **honestly** rather than fabricating:
+
+- the multi-pass census is real — 0 on unscheduled programs, 4 and 45 on the
+  scheduled cells (the mvm cell's 45 serial segments are what the W1.2
+  per-stage residency fix exists to place);
+- boundary traffic populates only for counts-observable modes with the gate
+  armed (0 on ttfsq and mvm — the availability matrix, not a gap);
+- the mvm family carries **no energy and no `cost_record.json`** because
+  value-domain cores never run SANA-FE; absence is recorded, not imputed.
