@@ -12,12 +12,12 @@ of truth for the joint NAS + HW search space, rendered per backend.
 | File | Purpose |
 |---|---|
 | `problem.py` | `SearchProblem` protocol (validate, validate_detailed, evaluate, constraint_violation, meta), `ValidationResult` carrying failure details, and `CandidateInfeasibleError` — the typed candidate-dependent failure optimizers convert to penalties while everything else aborts |
-| `results.py` | The legacy PROJECTION of `deployment_record.objectives` — `ALL_OBJECTIVES` is that registry's search catalogue rendered as the frozen `ObjectiveSpec(name, goal)` tuple every optimizer indexes (byte-equality pinned by test); `resolve_active_specs` resolves the ACTIVE registry specs (what an evaluation must READ off a view) and `objectives_for_mode`/`resolve_active_objectives` project them, all FAILING LOUD on an unknown or mode-unavailable objective (the silent drop is gone); the per-search-mode DEFAULTS stay here (a search policy, not a record fact), together with the `Candidate`/`SearchResult` containers and minimax-rank best-candidate selection |
+| `results.py` | The legacy PROJECTION of `deployment_record.objectives` — `ALL_OBJECTIVES` is that registry's search catalogue rendered as the frozen `ObjectiveSpec(name, goal)` tuple every optimizer indexes (byte-equality pinned by test); `resolve_active_specs` resolves the ACTIVE registry specs (what an evaluation must READ off a view) and `objectives_for_mode`/`resolve_active_objectives` project them, all FAILING LOUD on an unknown or mode-unavailable objective (the silent drop is gone); the per-search-mode DEFAULTS stay here (a search policy, not a record fact), together with the `Candidate`/`SearchResult` containers and the ONE minimax ranking (`rank_objective_rows`/`order_by_minimax_rank`, and `select_minimax_rank` on top of it) that candidate selection, the reported Pareto orderings, and the live panel's front all read |
 | `search_space_description.py` | `SearchSpaceDescription` SSOT for the joint NAS + HW space (`CORE_DIM_GRANULARITY`), with renderers to AgentEvolve prompt schema/example/constraints and compilagent levers |
 | `search_space_compilagent.py` | Renders a `SearchSpaceDescription` into compilagent `Lever` tuples and derives sampled integer candidates per HW dimension |
 | `patch_borders.py` | `get_region_borders`: standalone patch-region border computation utility (no in-repo callers) |
 | `evaluators/` | Fast NAS accuracy evaluators: one-epoch `FastAccuracyEvaluator` and `ExtrapolatingAccuracyEvaluator` with parametric learning-curve fitting |
-| `optimizers/` | `SearchOptimizer` interface and backends: pymoo NSGA-II, AgentEvolve LLM evolution, compilagent session (with `MimarsinanLayoutBackend`), shared LLM trace utilities. The compilagent introspection surface is DERIVED from `deployment_record.introspection`'s registry: one read-only tool per payload the candidate view can answer, each response carrying its `payload`/`payload_version`, so registering a payload reaches the agent without a hand-written tool. These modules import the introspection types and NOTHING from `mapping` (AST-pinned) |
+| `optimizers/` | `SearchOptimizer` interface and backends: pymoo NSGA-II, AgentEvolve LLM evolution, compilagent session (with `MimarsinanLayoutBackend`), shared LLM trace utilities, and `search_events.py` — the live search-event channel's SSOT (the `emit_search_event` envelope plus the `generation_start`/`candidates_generated`/`generation_complete`/`search_complete` frame constructors). The classical and LLM backends BUILD their generation frames there, so the panel's vocabulary cannot fork; emission is telemetry and degrades through `best_effort`. The compilagent introspection surface is DERIVED from `deployment_record.introspection`'s registry: one read-only tool per payload the candidate view can answer, each response carrying its `payload`/`payload_version`, so registering a payload reaches the agent without a hand-written tool. These modules import the introspection types and NOTHING from `mapping` (AST-pinned) |
 | `problems/` | Concrete problems: `EncodedProblem` (vector-encoded) protocol and `JointArchHwProblem` for joint architecture + hardware co-search — see "The problem surface" below |
 
 ## The problem surface
@@ -89,6 +89,33 @@ MOO library is therefore an adapter, not a problem rewrite:
 
 The integer/grid nature of the hardware variables lives in `decode`, not in the
 encoding: every host may propose continuous vectors inside `[xl, xu]`.
+
+## The live search channel
+
+Every backend reports progress on ONE stream: `reporter("search_event", json)`,
+built by `optimizers/search_events.py` and rendered by
+`gui/static/js/search-live.js`, which dispatches on `event["type"]` and drops
+anything it does not know — a frame invented outside those constructors is a
+silently blank panel, which is exactly the state the classical optimizer was in
+until it started emitting.
+
+Frames both NSGA-II and AgentEvolve emit:
+
+- `generation_start` — `gen`, `total_gens`, `phase`, `pop_size`, and the
+  `{name, goal}` axes the panel ranks and colours candidates by.
+- `candidates_generated` — `gen`, `count` (plus the LLM backends' `reasoning`).
+- `generation_complete` — `gen`, `valid_count`, `failed_count`, `pareto_size`,
+  and the front's leading rows, INCUMBENT FIRST (`order_by_minimax_rank`): the
+  preview is a truncation, never a ranking of its own.
+- `search_complete` — the run totals and the size of the front handed over.
+
+The LLM backends additionally stream per-candidate and per-call detail
+(`candidate_result`, `batch_summary`, `llm_trace`, `compilagent_*`).
+
+The classical optimizer emits at GENERATION granularity only: its candidates are
+cheap and numerous, so a per-candidate stream would be a thousand-frame flood
+that costs more than the silence it replaces. Emission is telemetry and rides
+`best_effort` — a dead monitor never takes a search down.
 
 ## Dependencies
 - `deployment_record` — the objectives registry (`OBJECTIVES`, `ObjectiveSpecV2`, `CandidateStaticView`, `candidate_probe_without`) that `results.py` projects and resolves through, the `chip_param_capacity`/`declared_core_capacity` formulas the joint layout hook computes candidate chip capacity with, and the introspection registry (`INTROSPECTION_REGISTRY`, `CandidateLayoutView`) the compilagent backend serves every agent-visible payload from — fed from the problem's own `candidate_layout` census via `CandidateLayoutView.packed`, so the agent surface is a projection of the scored layout rather than a second one. One-way: `deployment_record` never imports `search`.

@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 from mimarsinan.search.results import (
     Candidate,
     ObjectiveSpec,
-    _rank_candidates,
+    order_by_minimax_rank,
     select_minimax_rank,
 )
 
@@ -164,11 +164,7 @@ def sort_pareto_results_minimax_first(
     """Order Pareto members by minimax rank (best-balanced first)."""
     if len(pareto) <= 1:
         return list(pareto)
-    cands = [result_to_candidate(r) for r in pareto]
-    ranks = _rank_candidates(cands, objectives)
-    worst = [max(row) for row in ranks]
-    rank_sums = [sum(row) for row in ranks]
-    order = sorted(range(len(pareto)), key=lambda i: (worst[i], rank_sums[i]))
+    order = order_by_minimax_rank([r.objectives for r in pareto], objectives)
     return [pareto[i] for i in order]
 
 

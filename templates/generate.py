@@ -281,6 +281,32 @@ T0 = [
          pruned=0.10, tags=["pruned10"],
          note="pins streamed x pruning parity — the W0.1 regression (streamed "
               "gate must project the NF onto the deployed survivor set)"),
+    # [W5.3] the ONE searched-hardware cell. Every other row in every tier
+    # pins hw_config_mode "fixed", so the co-search path — ArchitectureSearchStep,
+    # the objectives registry's per-mode availability, the live search_event
+    # channel, and the law that the DEPLOYED chip is the DISCOVERED one — had
+    # zero end-to-end coverage; that is how a KeyError blocker survived unseen.
+    # Hardware-only search reads layout-proxy objectives, so no candidate
+    # trains: the whole search is a fraction of a second on top of the
+    # vehicle's own wall. Bounds are sized to the vehicle: fan-in 785 needs
+    # max_axons >= 792 (the granularity-8 grid), and 7 cores of the smallest
+    # allowed width host the three layers, so count >= 8 always packs.
+    dict(n=60, mode="lifsync", quant="wq", wb=5, s=8, vehicle="simplemlp", seed=1,
+         hw_config_mode="search",
+         arch_search={
+             "optimizer": "nsga2",
+             "pop_size": 12,
+             "generations": 6,
+             "seed": 0,
+             "num_core_types": 1,
+             "core_axons_bounds": [792, 1024],
+             "core_neurons_bounds": [64, 512],
+             "core_count_bounds": [8, 32],
+         },
+         tags=["search"],
+         note="W5.3 co-search guard cell: hardware-only NSGA-II over the core "
+              "grid, then the pipeline deploys on the chip the search found "
+              "(platform_constraints_resolved == the winner's own resolution)."),
     dict(n=41, mode="mvm", quant="wq", wb=8, vehicle="lenet5",
          pruned=0.05, tags=["pruned"],
          note="mvm flagship: quantized weights, float I/O, twin certs FATAL"),
@@ -466,7 +492,8 @@ def _name(tier, row, vehicles):
     depth = f"_d{row['depth']}" if "depth" in row else ""
     tags = "".join(f"_{t}" for t in row.get("tags", []) if t in
                    ("offload", "sched", "nobias", "pruned", "pruned10", "novena",
-                    "identity", "residual", "e4", "wb8", "wb4", "floor", "aq8"))
+                    "identity", "residual", "e4", "wb8", "wb4", "floor", "aq8",
+                    "search"))
     s_part = f"_s{row['s']}" if "s" in row else ""
     return f"{prefix}_{row['n']:02d}_{row['mode']}_{v}{depth}_{row['quant']}{s_part}{tags}"
 

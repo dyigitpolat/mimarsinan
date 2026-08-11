@@ -22,6 +22,11 @@ from mimarsinan.search.optimizers.agent_evolve.schema import (
     prettify_configuration,
 )
 from mimarsinan.search.optimizers.base import SearchOptimizer
+from mimarsinan.search.optimizers.search_events import (
+    generation_complete_event,
+    generation_start_event,
+    search_complete_event,
+)
 from mimarsinan.search.problem import SearchProblem
 from mimarsinan.search.results import Candidate, ObjectiveSpec, SearchResult
 
@@ -100,14 +105,13 @@ class AgentEvolveOptimizer(
         performance_insights: str,
     ) -> None:
         pareto_sorted = sort_pareto_results_minimax_first(pareto, objectives)
-        pareto_front_summary = [r.objectives for r in pareto_sorted[:5]]
         self._report_search_event(reporter, {
-            "type": "generation_complete",
-            "gen": gen,
-            "valid_count": valid_count,
-            "failed_count": failed_count,
-            "pareto_size": len(pareto),
-            "pareto_front": pareto_front_summary,
+            **generation_complete_event(
+                gen=gen,
+                valid_count=valid_count,
+                failed_count=failed_count,
+                pareto_objectives=[r.objectives for r in pareto_sorted],
+            ),
             "constraint_instruction": (
                 constraint_instruction[: self._TRACE_MAX_GEN_COMPLETE_STR]
                 if constraint_instruction
@@ -160,11 +164,10 @@ class AgentEvolveOptimizer(
         self._trace_seq = 0
 
         self._log(f"=== Generation 1 / {self.generations} (initial sampling) ===")
-        self._report_search_event(reporter, {
-            "type": "generation_start",
-            "gen": 1, "total_gens": self.generations, "phase": "initial",
-            "objectives": [{"name": s.name, "goal": s.goal} for s in objectives],
-        })
+        self._report_search_event(reporter, generation_start_event(
+            gen=1, total_gens=self.generations, phase="initial",
+            objectives=objectives, pop_size=self.pop_size,
+        ))
 
         gen1_valid, gen1_failed, constraint_instruction = await self._run_initial_generation(
             problem=problem,
@@ -209,11 +212,10 @@ class AgentEvolveOptimizer(
 
             self._trace_gen = gen
             self._trace_seq = 0
-            self._report_search_event(reporter, {
-                "type": "generation_start",
-                "gen": gen, "total_gens": self.generations, "phase": "evolution",
-                "objectives": [{"name": s.name, "goal": s.goal} for s in objectives],
-            })
+            self._report_search_event(reporter, generation_start_event(
+                gen=gen, total_gens=self.generations, phase="evolution",
+                objectives=objectives, pop_size=self.pop_size,
+            ))
 
             gen_valid, gen_failed, constraint_instruction = await self._run_evolution_generation(
                 problem=problem,
@@ -280,12 +282,11 @@ class AgentEvolveOptimizer(
         if best_result:
             self._log(f"Best: {best_result.objectives}")
 
-        self._report_search_event(reporter, {
-            "type": "search_complete",
-            "total_valid": len(all_valid_results),
-            "total_failed": len(all_failed_results),
-            "final_pareto_size": len(final_pareto),
-        })
+        self._report_search_event(reporter, search_complete_event(
+            total_valid=len(all_valid_results),
+            total_failed=len(all_failed_results),
+            final_pareto_size=len(final_pareto),
+        ))
 
         return SearchResult(
             objectives=objectives,

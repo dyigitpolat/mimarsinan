@@ -668,6 +668,28 @@
       "note": "pins streamed x pruning parity \u2014 the W0.1 regression (streamed gate must project the NF onto the deployed survivor set)"
     },
     {
+      "name": "t0_60_lifsync_simplemlp_wq_s8_search",
+      "config": "t0_60_lifsync_simplemlp_wq_s8_search.json",
+      "model_type": "simple_mlp",
+      "cell": {
+        "firing": "lif",
+        "sync": "none",
+        "quantization": "wq_aq",
+        "S": "8",
+        "depth": "any",
+        "vehicle": "deep_mlp",
+        "dataset": "mnist",
+        "regime": "from_scratch",
+        "pruning": "dense",
+        "encoding_placement": "subsume"
+      },
+      "tags": [
+        "search"
+      ],
+      "expected_wall_min": 7,
+      "note": "W5.3 co-search guard cell: hardware-only NSGA-II over the core grid, then the pipeline deploys on the chip the search found (platform_constraints_resolved == the winner's own resolution)."
+    },
+    {
       "name": "t0_41_mvm_lenet5_wq_pruned",
       "config": "t0_41_mvm_lenet5_wq_pruned.json",
       "model_type": "lenet5",

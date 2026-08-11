@@ -10,7 +10,10 @@ from mimarsinan.search.optimizers.agent_evolve.schema import (
     CandidateResult,
     prettify_configuration,
 )
-from mimarsinan.search.optimizers.llm.trace import emit_search_event
+from mimarsinan.search.optimizers.search_events import (
+    candidates_generated_event,
+    emit_search_event,
+)
 from mimarsinan.search.problem import SearchProblem
 from mimarsinan.search.results import ObjectiveSpec
 
@@ -166,10 +169,9 @@ class BatchEvalMixin(EvolveHostContract):
                     performance_insights=performance_insights,
                 )
 
-            self._report_search_event(reporter, {
-                "type": "candidates_generated",
-                "gen": 1, "count": len(candidates), "reasoning": reasoning,
-            })
+            self._report_search_event(reporter, candidates_generated_event(
+                gen=1, count=len(candidates), reasoning=reasoning,
+            ))
 
             valid_batch, failed_batch = self._evaluate_batch(
                 problem, candidates, objectives,
@@ -232,10 +234,9 @@ class BatchEvalMixin(EvolveHostContract):
             performance_insights=performance_insights,
         )
 
-        self._report_search_event(reporter, {
-            "type": "candidates_generated",
-            "gen": gen, "count": len(candidates), "reasoning": reasoning,
-        })
+        self._report_search_event(reporter, candidates_generated_event(
+            gen=gen, count=len(candidates), reasoning=reasoning,
+        ))
 
         valid_batch, failed_batch = self._evaluate_batch(
             problem, candidates, objectives,
@@ -266,10 +267,9 @@ class BatchEvalMixin(EvolveHostContract):
                 performance_insights=performance_insights,
             )
 
-            self._report_search_event(reporter, {
-                "type": "candidates_generated",
-                "gen": gen, "count": len(candidates), "reasoning": reasoning,
-            })
+            self._report_search_event(reporter, candidates_generated_event(
+                gen=gen, count=len(candidates), reasoning=reasoning,
+            ))
 
             valid_batch, failed_batch = self._evaluate_batch(
                 problem, candidates, objectives,

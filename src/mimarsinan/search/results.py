@@ -10,7 +10,18 @@ per-search-mode DEFAULTS, which are a search policy rather than a record fact.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, Generic, List, Literal, Optional, Sequence, Tuple, TypeVar
+from typing import (
+    Any,
+    Dict,
+    Generic,
+    List,
+    Literal,
+    Mapping,
+    Optional,
+    Sequence,
+    Tuple,
+    TypeVar,
+)
 
 from mimarsinan.deployment_record.objectives import (
     ACCURACY_OBJECTIVE_KEY,
@@ -110,16 +121,16 @@ class SearchResult(Generic[ConfigT]):
     history: List[Dict[str, Any]] = field(default_factory=list)
 
 
-def _rank_candidates(
-    candidates: Sequence[Candidate[ConfigT]],
+def rank_objective_rows(
+    rows: Sequence[Mapping[str, float]],
     objectives: Sequence[ObjectiveSpec],
 ) -> List[List[int]]:
-    """Return ``ranks[i][j]`` — the 1-based rank of candidate *i* on objective *j* (dense; rank 1 is best)."""
-    n = len(candidates)
+    """Return ``ranks[i][j]`` — the 1-based rank of row *i* on objective *j* (dense; rank 1 is best)."""
+    n = len(rows)
     ranks: List[List[int]] = [[0] * len(objectives) for _ in range(n)]
 
     for j, spec in enumerate(objectives):
-        values = [float(c.objectives.get(spec.name, 0.0)) for c in candidates]
+        values = [float(row.get(spec.name, 0.0)) for row in rows]
         reverse = spec.goal == "max"
         order = sorted(range(n), key=lambda i: values[i], reverse=reverse)
 
@@ -130,6 +141,22 @@ def _rank_candidates(
             ranks[idx][j] = current_rank
 
     return ranks
+
+
+def order_by_minimax_rank(
+    rows: Sequence[Mapping[str, float]],
+    objectives: Sequence[ObjectiveSpec],
+) -> List[int]:
+    """Indices of *rows*, best-balanced first: minimal worst rank, then rank sum.
+
+    The one minimax ordering in the program — candidate selection, the Pareto
+    orderings the LLM backends report, and the live-panel front all read it, so
+    "best" means the same thing everywhere.
+    """
+    ranks = rank_objective_rows(rows, objectives)
+    return sorted(
+        range(len(rows)), key=lambda i: (max(ranks[i]), sum(ranks[i])),
+    )
 
 
 def select_minimax_rank(
@@ -146,17 +173,7 @@ def select_minimax_rank(
     if len(candidates) == 1:
         return candidates[0]
 
-    ranks = _rank_candidates(candidates, objectives)
-
-    worst_ranks = [max(r) for r in ranks]
-    min_worst = min(worst_ranks)
-
-    tied = [i for i in range(len(candidates)) if worst_ranks[i] == min_worst]
-
-    if len(tied) == 1:
-        return candidates[tied[0]]
-
-    best_idx = min(tied, key=lambda i: sum(ranks[i]))
-    return candidates[best_idx]
+    order = order_by_minimax_rank([c.objectives for c in candidates], objectives)
+    return candidates[order[0]]
 
 
