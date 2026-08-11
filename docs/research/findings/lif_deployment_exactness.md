@@ -657,3 +657,58 @@ ties (a fresh t8 draw flipped one under 3-wide GPU contention — same
 artifacts pass on a quiet resume; concurrency changes cuBLAS reduction
 dust), and t0_05-armed hit the same family at the nevresim seam: those
 boundary re-encodes want the same lattice canonicalization as §10–§12.
+
+## 14. t0_05 window-tie FATAL root-caused (2026-08-11): the certificate's own
+## twin ran the encoder on the wrong device, outside the plane
+
+The W3-s1 sweep's t0_05 FATAL (`exact=0.978426 max|dcount|=1` over 788
+windows, byte-identical across four code states — pre-dating the program)
+was root-caused from the cached runs (resume-into-Simulation gives a
+minutes-long deterministic loop; no retraining). None of the assert's three
+hints (theta lattice / window record path / comb drift) was the mechanism.
+
+**The mechanism.** All 17 divergent windows cascade from ONE value: the host
+encoding ComputeOp's channel 248 on sample 0, whose pre-activation is
+EXACTLY `theta/T` (0.4690307080745697 = 1.8761228322982788/4) — the §12
+insight again: LSQ exact-QAT trains pre-activations ONTO tread edges. The
+tie was then decided twice, differently:
+
+- the nevresim runner executes the op via `execute_compute_op_numpy` pinned
+  to the PIPELINE device (§11.4), batch-25: CUDA GEMM dust lands the value
+  at 0.4690306484699249 — below the tread — HOLD (0 counts into the chip);
+- `_certify_nevresim_counts` ran its HCM twin as `flow(samples)` with
+  `samples` never moved off CPU, batch-2: CPU GEMM reproduces the exact
+  tread value, the unsnapped IF node accumulates 4 x 0.25000000...06 > 1.0
+  — FIRE (1 count).
+
+One extra input count flips hop0 neuron 35 (+1), whose count feeds hop1 and
+flips 16 of its 256 neurons in both directions (weight signs); hop2's 10
+outputs absorb it (decision parity 1.0). Measured: 1 + 16 = 17 windows,
+`max|dcount|=1` — the exact observed signature. The armed `_LatticeIFNode`
+snap (§12.1) existed on the module but is plane-gated, and NEITHER side of
+the certificate entered `measurement_plane()` — the §13.2 asymmetric-wrap
+canary, realized as a no-wrap-at-all.
+
+**The fix (both sides exact by construction, nevresim untouched):**
+1. `SimulationRunner.run()` executes inside `measurement_plane()` — the chip
+   probe is a measurement read; host ComputeOps feeding the chip decide
+   lattice ties by snapped values (device/batch-invariant).
+2. The certificate twin moves `samples` to the pipeline device and runs
+   inside `measurement_plane()` — same device, same plane as the probe.
+3. The comb COUNT tie rule is canonicalized to the chip's:
+   `spike_modes.comb_spike_count(_np)` implements `llround` (half AWAY from
+   zero) and replaces `torch.round` in `to_uniform_spikes` and `np.rint` in
+   the record-build input-passthrough assembly — both half-to-EVEN, which
+   resolved odd-1/(2T) rate ties opposite to `UniformSpikeGenerator`. A
+   latent member of the same family: quarter-count rates never tie, but
+   host-op VALUE rates on the odd half-lattice do.
+
+Locks: `tests/unit/chip_simulation/test_comb_tie_rule.py` (comb count ==
+llround on the 1/(2T) lattice, cycle-by-cycle placement == a transcription
+of the C++ generator) and
+`tests/unit/models/spiking/test_host_op_tie_measurement_plane.py` (tread tie
+holds under strict `<` in-plane regardless of dust sign and batch shape).
+Cached resume: exact=1.000000 max|dcount|=0/788, full run completes with
+Loihi and SANA-FE certificates green. This also discharges the §13
+follow-up (b) for the nevresim seam: the boundary re-encode's tie class is
+now lattice-canonicalized at the certificate.

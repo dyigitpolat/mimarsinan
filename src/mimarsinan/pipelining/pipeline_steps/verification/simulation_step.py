@@ -4,6 +4,7 @@ import torch
 from mimarsinan.certification.spike_certificate import certify_spike_counts
 from mimarsinan.chip_simulation.simulation_runner import SimulationRunner
 from mimarsinan.config_schema.registry import effective_value as _effective
+from mimarsinan.models.nn.lif_kernels import measurement_plane
 from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 from mimarsinan.pipelining.core.simulation_factory import (
     build_spiking_hybrid_flow,
@@ -31,6 +32,14 @@ def _certify_nevresim_counts(*, pipeline, mapping, captured, samples):
         ("stage", k): torch.as_tensor(np.asarray(raw), dtype=torch.float64)
         for k, (_stage, raw) in enumerate(captured)
     }
+    # [V9 tie class, root-caused 2026-08-11] the twin runs on the PIPELINE
+    # device and inside the measurement plane, like the runner that fed the
+    # chip: host ComputeOps decide exact-lattice ties (pre-activation ==
+    # theta/T tread, which LSQ exact-QAT trains ONTO) by snapped values, not
+    # by the GEMM dust of whatever device/batch the samples arrived on
+    # (t0_05: the twin's encoder ran on CPU at batch-2 vs the runner's CUDA
+    # batch-25 — one tread tie flipped and 17 windows cascaded).
+    samples = samples.to(pipeline.config["device"])
     flow_captured: list = []
     flow = build_spiking_hybrid_flow(pipeline, mapping, model=None)
     flow.stage_count_recorder = (
@@ -40,7 +49,7 @@ def _certify_nevresim_counts(*, pipeline, mapping, captured, samples):
     # streaming, regardless of the configured metric discipline.
     flow.lif_execution_synchronized = False
     try:
-        with torch.no_grad():
+        with measurement_plane(), torch.no_grad():
             flow(samples)
     finally:
         flow.stage_count_recorder = None

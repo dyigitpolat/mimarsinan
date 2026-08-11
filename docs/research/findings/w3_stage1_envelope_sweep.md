@@ -54,6 +54,27 @@ rebalance) design input.
   the lif_deployment_exactness V9 thread; fix-path per the assert: theta
   lattice (`quantize_ir_graph`), window record path, or comb drift.
 
+  **ROOT-CAUSED AND FIXED 2026-08-11** (cached-resume repro on the four run
+  dirs; see lif_deployment_exactness.md §14 for the full mechanism): none of
+  the three assert hints — the divergence entered BEFORE the first chip
+  segment, in the host encoding ComputeOp. The encoder's ch-248
+  pre-activation sits EXACTLY on the `theta/T` tread (LSQ exact-QAT trains
+  onto edges); the nevresim runner computed it on CUDA at batch-25 (GEMM
+  dust below the tread — hold) while the certificate's HCM twin ran on CPU
+  at batch-2 (`samples` were never moved to the pipeline device — dust
+  above, fire). One count in, 1+16 windows cascade out (hop0 n35 → 16 hop1
+  neurons, both signs by weight sign), decisions intact — exactly the
+  observed 17/788. Fix at the seam: `SimulationRunner.run()` and the
+  certificate twin both execute inside `measurement_plane()` (armed
+  `_LatticeIFNode`s snap the tie to its exact lattice value → the strict-`<`
+  chip resolution, device/batch-invariant) and the twin runs on the pipeline
+  device; plus the comb COUNT tie rule is canonicalized to the chip's
+  `llround` (`comb_spike_count`, half-away-from-zero — `torch.round`/
+  `np.rint` are half-to-even and resolved odd-1/(2T) rate ties opposite to
+  the chip's `UniformSpikeGenerator`). Cached resume: exact=1.000000
+  max|dcount|=0 over 788 windows, run completes with Loihi + SANA-FE
+  certificates green.
+
 ## Protocol lessons (bind future sweeps)
 
 - **Solo per GPU is mandatory, not advisory**: t0_45 measured 0.9775 when run
