@@ -9,6 +9,7 @@ from mimarsinan.config_schema.defaults import (
     get_default_deployment_parameters,
     get_default_platform_constraints,
 )
+from mimarsinan.deployment_record.objectives import OBJECTIVES, SEARCH_MODES
 from mimarsinan.pipelining.core.pipelines.deployment_pipeline import get_pipeline_step_specs
 from mimarsinan.search.results import ALL_OBJECTIVES, ACCURACY_OBJECTIVE_NAME
 from mimarsinan.tuning.orchestration.temporal_allocation import S_ALLOCATION_MODES
@@ -92,7 +93,31 @@ def get_wizard_nas_schema() -> Dict[str, Any]:
              "requires_training": o.name == ACCURACY_OBJECTIVE_NAME}
             for o in ALL_OBJECTIVES
         ],
+        "objective_catalog": get_wizard_objective_catalog(),
     }
+
+
+def get_wizard_objective_catalog() -> List[Dict[str, Any]]:
+    """Every registered objective with its per-search-mode availability, honestly.
+
+    Availability comes from the objectives registry (an axis is available where
+    its backing datum exists), so an axis the frontend must not offer says so
+    itself, with the requirement it is missing.
+    """
+    rows: List[Dict[str, Any]] = []
+    for spec in OBJECTIVES.all():
+        modes = OBJECTIVES.modes_available(spec.key)
+        rows.append({
+            "id": spec.key,
+            "label": _objective_label(spec.key),
+            "goal": spec.goal,
+            "provenance": spec.provenance,
+            "available_in_modes": list(modes),
+            "unavailable_reason": (
+                "" if len(modes) == len(SEARCH_MODES) else f"requires {spec.requires}"
+            ),
+        })
+    return rows
 
 
 def _objective_label(name: str) -> str:
@@ -105,6 +130,20 @@ def _objective_label(name: str) -> str:
         "neuron_wastage_pct": "Neuron Wastage %",
         "axon_wastage_pct": "Axon Wastage %",
         "fragmentation_pct": "Fragmentation %",
+        "deployed_accuracy": "Deployed Accuracy",
+        "mj_per_sample": "Energy per Sample (mJ)",
+        "latency_steps": "Latency (timesteps)",
+        "host_op_wall_s": "Host ComputeOp Wall (s)",
+        "total_spikes": "Total Spikes",
+        "pass_count": "Schedule Passes",
+        "reprogram_passes": "Reprogramming Passes",
+        "reprogramming_bytes": "Reprogramming Bytes",
+        "params_reloaded": "Parameters Reloaded",
+        "noc_inter_tile_packets": "NoC Inter-Tile Packets",
+        "noc_total_packets": "NoC Total Packets",
+        "programming_energy_mj": "Programming Energy (mJ)",
+        "sync_barrier_energy_mj": "Sync Barrier Energy (mJ)",
+        "throughput_samples_per_s": "Throughput (samples/s)",
     }
     return labels.get(name, name)
 

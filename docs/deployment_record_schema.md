@@ -330,6 +330,23 @@ noc_total_packets, programming_energy_mj, sync_barrier_energy_mj, throughput_sam
 Duplicate registration raises — new objectives are additions, never surgeries. Unknown or
 unavailable objective names fail loud (replacing today's silent drop).
 
+**As implemented (stage 6, `deployment_record/objectives/`).** The spec carries one further
+declared field, `requires` — the datum an axis needs, stated once next to its availability
+predicate — so an unavailable objective can SAY what it is missing (the loud resolution error
+and the wizard's `unavailable_reason` are the same string; no per-objective special cases).
+Availability and extraction are one reader (`Backing`), so an axis can never advertise itself
+and then fail to produce a number. `for_search_mode(mode)` asks availability of a *candidate
+capability probe* — a maximally populated `CandidateStaticView` whose accuracy estimate exists
+only where the mode trains — so hardware-only search drops `estimated_accuracy` because a
+hardware candidate carries no accuracy read, not because a list says so. The resulting search
+catalog is the legacy 8, byte-equal in keys/directions/ORDER, and `search/results.py` is its
+projection. Two dispositions worth stating: `pass_count` is keyed to the SEALED schedule census
+even though the static layout stats also carry `schedule_pass_count` (lifting a static pass axis
+into the search catalog changes every optimizer's objective vector — a search-surface decision,
+W5.1); and `total_sync_barriers`/`total_params`/`estimated_accuracy` are candidate-side axes with
+no record twin (the record carries no host-slot census, no torch parameter census, and no
+search-time proxy — `deployed_accuracy` is its measured counterpart).
+
 ## 9. Known limitations (stated, not hidden)
 
 1. **nevresim cycle counts do not exist** — the C++ span machinery is connectivity
