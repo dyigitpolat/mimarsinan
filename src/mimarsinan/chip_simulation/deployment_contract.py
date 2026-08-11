@@ -42,6 +42,13 @@ class SpikingDeploymentContract:
     bias_mode: str
     # Ops bound, not semantics: the wall cap simulator backends run under.
     simulation_step_timeout_s: float | None = None
+    # The evaluator that decides host-op staircase ties. A hosted ComputeOp
+    # (a subsumed encoding layer, say) ends in a staircase of step theta/T, so
+    # a pre-activation within f32 reduction noise of a step edge resolves to
+    # DIFFERENT steps on cuda and cpu — and one step is exactly one spike after
+    # the segment-boundary transcode. Every backend that re-derives a host op
+    # must therefore evaluate it where the census/HCM reference did.
+    host_compute_device: Any = None
     # [E3] carry the +θ/(2S) mid-tread offset in the compare ladder, not the bias.
     comparator_half_step: bool = False
     # [calculus 15.11] deployed-composition physics: decorrelated encode combs
@@ -94,6 +101,7 @@ class SpikingDeploymentContract:
             lif_membrane_init=lif_membrane_init(cfg),
             lif_execution_synchronized=lif_execution_synchronized(cfg),
             lif_streamed=is_streamed_lif(cfg),
+            host_compute_device=cfg.get("device"),
         )
 
     def is_streamed_lif(self, *, core: Any = None) -> bool:

@@ -182,6 +182,9 @@ class LavaLoihiRunner(LavaCoreMixin, LavaSegmentMixin):
                     stage.compute_op, state_buffer, node_output_shifts,
                 ),
                 in_scale=ttfs_in_scale, out_scale=ttfs_out_scale,
+                # Host ops are re-derived here: evaluate them where the census
+                # flow did, or a staircase tie becomes a one-spike divergence.
+                device=self.device,
             )
             state_buffer[op_id] = result
             self._profile.stages.append(

@@ -52,6 +52,7 @@ class SanafeRunner(SanafeNeuralStageMixin, SanafeNeuralStageRecordMixin, SanafeS
         simulation_step_timeout_s: float | None = None,
         read_final_potentials: bool = False,
         time_host_stages: bool = False,
+        host_compute_device: Any = None,
     ):
         if contract is not None:
             behavior = contract.behavior
@@ -60,6 +61,13 @@ class SanafeRunner(SanafeNeuralStageMixin, SanafeNeuralStageRecordMixin, SanafeS
             contract_timeout = getattr(contract, "simulation_step_timeout_s", None)
             if contract_timeout is not None:
                 simulation_step_timeout_s = contract_timeout
+            host_compute_device = getattr(
+                contract, "host_compute_device", host_compute_device,
+            )
+        # Host ComputeOps are re-derived here, so they must be evaluated where
+        # the census/HCM reference evaluated them: a staircase tie decided by a
+        # different f32 reduction is one spike at the next segment boundary.
+        self.host_compute_device = host_compute_device
         if behavior is None:
             behavior = NeuralBehaviorConfig(
                 spiking_mode=str(spiking_mode),
@@ -193,6 +201,7 @@ class SanafeRunner(SanafeNeuralStageMixin, SanafeNeuralStageRecordMixin, SanafeS
                     ),
                     in_scale=in_scale, out_scale=out_scale,
                     dtype=_COMPUTE_DTYPE,
+                    device=self.host_compute_device,
                 )
                 out = np.asarray(result, dtype=_COMPUTE_DTYPE)
                 state_buffer[op.id] = out

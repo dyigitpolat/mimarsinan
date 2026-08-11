@@ -37,8 +37,8 @@ def _compute_only_mapping(op_id=42):
 def _run(monkeypatch, **runner_kwargs):
     monkeypatch.setattr(
         runner_mod, "execute_compute_op_numpy",
-        lambda op, original_input, state_buffer, *, in_scale, out_scale,
-        dtype=np.float32: np.asarray([[3.0]], dtype=dtype),
+        lambda op, original_input, state_buffer, *, device, in_scale,
+        out_scale, dtype=np.float32: np.asarray([[3.0]], dtype=dtype),
     )
     runner = SanafeRunner(
         mapping=_compute_only_mapping(), simulation_length=8, **runner_kwargs,
@@ -64,8 +64,8 @@ def test_default_off_keeps_walls_empty(monkeypatch):
 def test_each_run_gets_a_fresh_timer(monkeypatch):
     monkeypatch.setattr(
         runner_mod, "execute_compute_op_numpy",
-        lambda op, original_input, state_buffer, *, in_scale, out_scale,
-        dtype=np.float32: np.asarray([[3.0]], dtype=dtype),
+        lambda op, original_input, state_buffer, *, device, in_scale,
+        out_scale, dtype=np.float32: np.asarray([[3.0]], dtype=dtype),
     )
     runner = SanafeRunner(
         mapping=_compute_only_mapping(), simulation_length=8,

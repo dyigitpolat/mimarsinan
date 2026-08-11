@@ -625,11 +625,13 @@ def test_run_executes_compute_stage_via_hybrid_execution(monkeypatch):
 
     called = {}
     def fake_compute(op_arg, original_input, state_buffer, *,
-                     in_scale, out_scale, dtype=np.float32):
+                     device, in_scale, out_scale, dtype=np.float32):
         # Accept ``dtype`` — the runner passes ``dtype=np.float64`` so
-        # compute-op arithmetic matches HCM's ``_COMPUTE_DTYPE``.
+        # compute-op arithmetic matches HCM's ``_COMPUTE_DTYPE`` — and
+        # ``device``, which decides staircase ties (see the seam test).
         called["op"] = op_arg
         called["dtype"] = dtype
+        called["device"] = device
         return np.asarray([[3.0]], dtype=dtype)
     monkeypatch.setattr(runner_mod, "execute_compute_op_numpy", fake_compute)
 
@@ -655,7 +657,7 @@ def test_run_lif_compute_stage_does_not_apply_ttfs_scales(monkeypatch):
     called = {}
 
     def fake_compute(op_arg, original_input, state_buffer, *,
-                     in_scale, out_scale, dtype=np.float32):
+                     device, in_scale, out_scale, dtype=np.float32):
         called["in_scale"] = in_scale
         called["out_scale"] = out_scale
         return np.asarray([[3.0]], dtype=dtype)

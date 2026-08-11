@@ -8,8 +8,11 @@ import numpy as np
 import numpy.typing as npt
 import torch
 
-from mimarsinan.mapping.ir import ComputeOp, IRSource, computeop_deployment_dtype
-from mimarsinan.mapping.ir.gather_plan import gather_plan_for
+from mimarsinan.chip_simulation.hybrid_run.host_compute import (
+    execute_compute_op_numpy as execute_compute_op_numpy,
+    execute_compute_op_torch as execute_compute_op_torch,
+)
+from mimarsinan.mapping.ir import IRSource
 from mimarsinan.mapping.support.activation_scales import scalar_node_scale
 from mimarsinan.mapping.support.compute_modules import ScaleNormalizingWrapper
 from mimarsinan.chip_simulation.hybrid_run.input_shifts import (
@@ -69,39 +72,6 @@ def gather_final_output_torch(
     return out
 
 
-def execute_compute_op_torch(
-    op: ComputeOp,
-    original_input: torch.Tensor,
-    state_buffer: Dict[int, torch.Tensor],
-    *,
-    in_scale: float = 1.0,
-    out_scale: float | None = None,
-    output_dtype: torch.dtype | None = None,
-    gather_dtype: torch.dtype | None = None,
-) -> torch.Tensor:
-    """Execute a host-side ComputeOp; optional in/out activation scales.
-
-    ``gather_dtype=None`` keeps the historical default-dtype gather buffer;
-    the value-domain fp64 path passes an explicit dtype so no fp32 round
-    enters between stages.
-    """
-    if out_scale is None:
-        out_scale = in_scale
-
-    gathered = op.gather_inputs(original_input, state_buffer, dtype=gather_dtype)
-    if gather_dtype is None:
-        gathered = gathered.to(computeop_deployment_dtype(op))
-    if abs(in_scale - 1.0) > 1e-9:
-        gathered = gathered * in_scale
-
-    result = op.execute_on_gathered(gathered)
-
-    if abs(out_scale - 1.0) > 1e-9:
-        result = result / out_scale
-    if output_dtype is not None and result.dtype != output_dtype:
-        result = result.to(output_dtype)
-    return result
-
 
 def assemble_segment_input_numpy(
     input_map,
@@ -151,50 +121,6 @@ def gather_final_output_numpy(
             out[:, idx] = state_buffer[src.node_id][:, src.index]
     return out
 
-
-def execute_compute_op_numpy(
-    op: ComputeOp,
-    original_input: np.ndarray,
-    state_buffer: Dict[int, np.ndarray],
-    *,
-    in_scale: float = 1.0,
-    out_scale: float | None = None,
-    dtype: npt.DTypeLike = np.float32,
-    device: "str | torch.device | None" = None,
-) -> np.ndarray:
-    """Execute ComputeOp via torch wrapper; ``dtype=np.float64`` for HCM parity.
-
-    ``device`` gives bit-parity with the census flow: CUDA/CPU f32 reduction
-    orders snap wire-grid HALF TIES to opposite points (t0_46: 1.5/8 became
-    1 spike on cuda, 2 on cpu); runners pass the pipeline device."""
-    if out_scale is None:
-        out_scale = in_scale
-
-    torch_dtype = (torch.float64 if np.dtype(dtype) == np.float64
-                   else torch.float32)
-    dev = torch.device(device) if device is not None else torch.device("cpu")
-    if dev.type == "cuda" and not torch.cuda.is_available():
-        dev = torch.device("cpu")
-    x_torch = torch.tensor(original_input, dtype=torch_dtype, device=dev)
-    # Convert only the producer buffers this op's gather actually reads.
-    referenced = gather_plan_for(op).referenced_node_ids
-    buffers_torch = {
-        k: torch.tensor(state_buffer[k], dtype=torch_dtype, device=dev)
-        for k in referenced
-    }
-    module = (op.params or {}).get("module") if op.params else None
-    moved = module if (module is not None and hasattr(module, "to")) else None
-    if moved is not None:
-        moved.to(dev)
-    try:
-        result = execute_compute_op_torch(
-            op, x_torch, buffers_torch,
-            in_scale=in_scale, out_scale=out_scale, output_dtype=torch_dtype,
-        )
-    finally:
-        if moved is not None:
-            moved.to("cpu")
-    return result.detach().cpu().numpy()
 
 
 def compute_op_owns_scale_domain(op) -> bool:
