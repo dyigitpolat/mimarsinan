@@ -1,8 +1,8 @@
 # DeploymentRecord — the W4.1 schema specification (stage 0, for owner review)
 
-2026-08-10 · deployment-formalization program, workstream W4 · status: **awaiting owner sign-off**
-(implementation stages 1–6 do not start until this document is approved; the sign-off
-checklist is at the end)
+2026-08-10 · deployment-formalization program, workstream W4 · status: **stages 0–6 IMPLEMENTED and merged** (the sign-off checklist at the end
+remains open for the owner; the two proposed coefficient bands are implemented as
+specified and pinned by test, so amending them is a one-line change plus a pin update)
 
 This document specifies the typed, versioned, provenance-carrying artifact that makes the
 thesis-§2 deployment model concrete in the software: **a deployment is a schedule** — ordered
