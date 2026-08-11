@@ -365,21 +365,38 @@ record; `softcores` is the candidate's own table, whose sealed counterpart IS
    name-splitting heuristic is deleted).
 2. `ChipCapabilities.capability_bits()` serves the COMPLETE declaration (derived from
    the dataclass) and `layout_kwargs()` the subset the layout helpers take — the
-   permission bits PLUS `schedule_policy`/`max_schedule_passes`. **Behaviour change:**
-   on a `bank_clustered` platform the searched/previewed pass structure is now the one
-   `build_hybrid_hard_core_mapping` composes, not the capacity-split pool one; the
-   bank-clustered ALLOCATION is a single shared law
-   (`mapping/support/schedule/bank_clustered_law.py`) both sides call. Where the policy
-   does not apply, the previous answer stands byte-identically.
+   permission bits PLUS `schedule_policy`/`max_schedule_passes`. `from_platform_constraints`
+   resolves the core geometry too (`max_axons`/`max_neurons` as the EFFECTIVE per-core
+   limits, `hardware_bias`) through `resolve_platform_mapping_params`, the same SSOT the
+   layout mapper is configured from — a served bit is the platform's answer, and a `null`
+   means "this platform declares no core grid", never "nobody looked".
+   **Behaviour change (BANK-CLUSTERED ONLY):** on a `bank_clustered` platform the
+   searched/previewed pass structure is now the one `build_hybrid_hard_core_mapping`
+   composes, not the capacity-split pool one — on BOTH layout entry points
+   (`compute_mapping_stats` for a search candidate, `verify_hardware_config` for the GUI
+   verify route, the wizard mini-view and every capacity gate). The bank-clustered
+   ALLOCATION is a single shared law (`mapping/support/schedule/bank_clustered_law.py`)
+   both sides call. Where the policy does not apply — a `pool` platform, an owned-weight
+   core, an intra-segment dependency, an unpackable or per-ordinal-unstable composition —
+   the previous answer stands byte-identically, INCLUDING the pool gap in §9.4.
 3. Optimizers depend on the introspection types only. The compilagent backend imports
    nothing from `mapping` (AST-pinned) and derives one read-only tool per
    candidate-answerable payload from the registry, so a registered payload reaches the
-   agent without hand-written plumbing.
+   agent without hand-written plumbing. What it PERSISTS (`introspection.json`) is wrapped
+   by `channel_envelope`, stamping `INTROSPECTION_FORMAT_VERSION` (the envelope
+   convention) around payloads that each carry their own `payload_version`.
 
-Stated disposition: a candidate's `schedule` payload reports the deployed TOTALS
-(passes, barriers) and a per-segment core census, but not a per-segment pass split —
-the layout answer computes the split internally and publishes the totals; re-deriving
-it per query would double the packing work on the candidate hot path.
+Stated dispositions:
+
+- A candidate's `schedule` payload reports the deployed TOTALS (passes, barriers) and a
+  per-segment core census, but not a per-segment pass split — the layout answer computes
+  the split internally and publishes the totals; re-deriving it per query would double the
+  packing work on the candidate hot path.
+- The shape-only twin of the bank-clustered law sizes instances from the layout spec,
+  which is recorded BEFORE elimination, while the builder sizes them post-compaction
+  (`compacted_core_extent`). The shape-only extent is therefore ≥ the deployed one, so
+  this side can only DECLINE a segment the builder would have composed — it can never
+  claim residency the hardware cannot hold.
 
 ## 9. Known limitations (stated, not hidden)
 
@@ -390,7 +407,18 @@ it per query would double the packing work on the candidate hot path.
    tensors — bounded artifact size by construction.
 3. **Resume DAG**: old run dirs lack the new fragment entries, so resumes of pre-record runs
    re-run from an earlier step than before. Accepted and documented.
-4. Record emission is fail-loud; a run whose record cannot seal fails. This is the intended
+4. **The POOL search/deploy divergence is still OPEN** (W5.2 closed the `bank_clustered`
+   half only). With `allow_scheduling` on, the builder always routes through the scheduled
+   build and emits one pass per neural segment; the layout answer, when the FLAT pack
+   already fits, short-circuits to the unscheduled census and reports
+   `schedule_pass_count = 0`. Measured on a 6-segment vehicle with a roomy pool
+   (8 cores of 32x32, `schedule_policy="pool"`): **searched 0 passes vs deployed 6** —
+   `schedule_sync_count` agrees at 0, because one pass per segment means no intra-segment
+   barrier, so the objective that consumes barriers (`total_sync_barriers`) is unaffected;
+   the reported PASS COUNT is not. Shrinking the pool until the flat pack fails makes the
+   two agree again (6 vs 6). Pinned by `tests/unit/mapping/test_schedule_pool_residual_gap.py`,
+   which fails the moment the gap is closed — so this entry cannot outlive the defect.
+5. Record emission is fail-loud; a run whose record cannot seal fails. This is the intended
    discipline (acceptance: every tier run emits a schema-valid record).
 
 ## 10. Owner sign-off checklist
