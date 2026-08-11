@@ -2,17 +2,10 @@
 
 from __future__ import annotations
 
-import logging
 from typing import List
 
 from mimarsinan.certification.record_certificates import certify_run_records
-from mimarsinan.chip_simulation.certification import CertificationCell
-from mimarsinan.chip_simulation.cost_extraction import (
-    extract_cost_record,
-    save_cost_record,
-)
 from mimarsinan.chip_simulation.sanafe.runner import SanafeRunner
-from mimarsinan.common.best_effort import best_effort
 from mimarsinan.chip_simulation.sanafe.records import SanafeCoreDiff, SanafeRunRecord
 from mimarsinan.chip_simulation.sanafe.stats import SanafeStepReport
 from mimarsinan.chip_simulation.spiking_semantics import requires_ttfs_firing
@@ -21,8 +14,6 @@ from mimarsinan.chip_simulation.ttfs.ttfs_recorder import (
     compare_ttfs_hardware_records,
     format_first_ttfs_diff,
 )
-
-logger = logging.getLogger("mimarsinan.chip_simulation")
 
 
 def _attach_per_core_deltas(ref: object, sanafe_rec: SanafeRunRecord) -> None:
@@ -230,24 +221,5 @@ class SanafeSimulationStep(PipelineStep):
             f"{report.aggregate['total_spikes']} spikes, "
             f"{report.aggregate['total_packets']} packets"
         )
-
-        self._emit_cost_record(report)
-
-    def _emit_cost_record(self, report: SanafeStepReport) -> None:
-        """Drop a measured ``cost_record.json`` next to the run artifacts.
-
-        Pure additive side-effect, best-effort: failure is logged and degraded
-        so cost emission can never crash or alter the deployment.
-        """
-        with best_effort("SANA-FE cost-record emission", logger=logger):
-            plan = DeploymentPlan.of(self.pipeline)
-            cell = CertificationCell.from_mode_policy(
-                plan.mode_policy(), backend="sanafe",
-            )
-            record = extract_cost_record(
-                cell=cell,
-                deployed_accuracy=float(self.pipeline.get_target_metric()),
-                sanafe_snapshot=report.to_snapshot_dict(),
-                provenance={"run_dir": self.pipeline.working_directory},
-            )
-            save_cost_record(record, self.pipeline.working_directory)
+        # [W4.4] cost_record.json emission moved to the terminal Deployment
+        # Record step (a fail-loud projection of the sealed record).

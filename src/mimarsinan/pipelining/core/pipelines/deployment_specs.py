@@ -66,6 +66,9 @@ _STEP_PLAN = StepPlan([
     StepSpec("Core Quantization Verification", CoreQuantizationVerificationStep, group="core_verification"),
     StepSpec("Hard Core Mapping",              HardCoreMappingStep,              group="hardware"),
     _backend_tail,
+    # [W4.4] the terminal record step joins EVERY resolved pipeline, after the
+    # simulation tail, and seals deployment_record.json against the plan.
+    StepSpec("Deployment Record",              DeploymentRecordStep,             group="record"),
 ])
 
 

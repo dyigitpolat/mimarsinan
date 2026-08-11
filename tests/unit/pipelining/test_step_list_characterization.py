@@ -145,6 +145,14 @@ EXPECTED_STEP_LISTS = {
     ],
 }
 
+# [W4.4] the terminal Deployment Record step joins EVERY resolved pipeline
+# (applies_to always, after the simulation tail) — appended uniformly so the
+# per-config bodies above keep pinning the mode-dependent surface.
+EXPECTED_STEP_LISTS = {
+    name: steps + ["Deployment Record"]
+    for name, steps in EXPECTED_STEP_LISTS.items()
+}
+
 
 def _fixture_paths():
     return sorted(glob.glob(os.path.join(_FIXTURE_DIR, "*.json")))

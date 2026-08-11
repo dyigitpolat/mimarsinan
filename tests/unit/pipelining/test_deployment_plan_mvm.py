@@ -101,6 +101,7 @@ class TestMvmStepPlan:
             "Soft Core Mapping",
             "Core Quantization Verification",
             "Hard Core Mapping",
+            "Deployment Record",
         ]
 
     def test_float_mvm_step_list_drops_quantization(self):
@@ -120,4 +121,5 @@ class TestMvmStepPlan:
             "Normalization Fusion",
             "Soft Core Mapping",
             "Hard Core Mapping",
+            "Deployment Record",
         ]

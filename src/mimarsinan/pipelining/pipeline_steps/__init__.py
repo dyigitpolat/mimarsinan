@@ -26,3 +26,4 @@ from .mapping.hard_core_mapping_step import HardCoreMappingStep as HardCoreMappi
 from .verification.simulation_step import SimulationStep as SimulationStep
 from .verification.loihi_simulation_step import LoihiSimulationStep as LoihiSimulationStep
 from .verification.sanafe_simulation_step import SanafeSimulationStep as SanafeSimulationStep
+from .verification.deployment_record_step import DeploymentRecordStep as DeploymentRecordStep
