@@ -290,7 +290,9 @@ T0 = [
     # trains: the whole search is a fraction of a second on top of the
     # vehicle's own wall. Bounds are sized to the vehicle: fan-in 785 needs
     # max_axons >= 792 (the granularity-8 grid), and 7 cores of the smallest
-    # allowed width host the three layers, so count >= 8 always packs.
+    # allowed width host the three layers, so count >= 8 always packs. The
+    # smallest allowed width (64) SPLITS the 256-neuron layer over 7 hard
+    # cores on purpose — that is coverage this cell is the only one to carry.
     dict(n=60, mode="lifsync", quant="wq", wb=5, s=4, vehicle="simplemlp", seed=1,
          hw_config_mode="search",
          arch_search={
@@ -311,18 +313,19 @@ T0 = [
               "deploys on the chip the search found "
               "(platform_constraints_resolved == the winner's own resolution; "
               "measured identical to the hand-declared twin, key for key). "
-              "KNOWN RED at authoring time, and NOT this path's fault: the "
-              "search lands an 864x64x8 chip whose 64-neuron cores split the "
-              "256-neuron layer over 7 hard cores, and the SANA-FE spike-"
-              "parity gate then fails on SOME weight draws — 1 of 256 "
-              "seg_input positions at stage 1 (neural_segment_final_hop0), "
-              "one spike over, 'encoding drift (value-vs-wire domain at a "
-              "boundary)'. MEASURED with the search OFF and that same chip "
-              "DECLARED: seeds 1/2/4/5 pass, seed 3 fails with the identical "
-              "signature (sum 86 vs 87), so the discrepancy is the SANA-FE "
-              "boundary encoder on split-neuron chips, reached through the "
-              "RNG stream, not the co-search. HCM streaming-twin, nevresim, "
-              "and Lava/Loihi all read EXACT on the same run."),
+              "The pair is now exact in the WEIGHTS too: candidate scoring "
+              "seeds the world to its own scoring seed, and the step used to "
+              "leave it there, so flipping this one axis silently re-rolled "
+              "every downstream draw and the cell kept betting on fresh dice "
+              "against a knife-edge SANA-FE boundary defect (1 of 256 "
+              "seg_input positions at stage 1, one spike over, 'encoding "
+              "drift'). The search now runs inside isolated_rng_stream, so "
+              "this cell deploys the anchor's own weights onto the discovered "
+              "chip — measured: the Model Building state dict is bit-identical "
+              "to t0_05's at the same seed. The bounds keep the 64-neuron "
+              "floor deliberately: the winner splits the 256-neuron layer over "
+              "7 hard cores, which is split-neuron mapping coverage no other "
+              "tier-0 row carries."),
     dict(n=41, mode="mvm", quant="wq", wb=8, vehicle="lenet5",
          pruned=0.05, tags=["pruned"],
          note="mvm flagship: quantized weights, float I/O, twin certs FATAL"),

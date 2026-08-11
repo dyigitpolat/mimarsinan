@@ -5,12 +5,8 @@ from __future__ import annotations
 import copy
 import json
 import os
-import random
 from dataclasses import dataclass
 from typing import Any, Optional
-
-import numpy as np
-import torch
 
 import mimarsinan.data_handling.data_providers  # noqa: F401  # pyright: ignore[reportUnusedImport] — registers built-in providers
 from mimarsinan.advisories import (
@@ -26,6 +22,12 @@ from mimarsinan.config_schema.deployment_derivation import (
 from mimarsinan.data_handling.data_loader_factory import close_pipeline_loaders
 from mimarsinan.data_handling.data_provider_factory import BasicDataProviderFactory
 from mimarsinan.gui.runtime.composite_reporter import CompositeReporter
+# The session APPLIES determinism, before any step runs (below); the contract
+# itself lives beside its counterpart `isolated_rng_stream`, so the families one
+# seeds and the other restores cannot drift apart.
+from mimarsinan.pipelining.determinism import (
+    apply_determinism as apply_determinism,  # noqa: F401 — re-export
+)
 from mimarsinan.pipelining.core.pipelines.deployment_pipeline import DeploymentPipeline
 
 
@@ -42,22 +44,6 @@ class ParsedDeploymentConfig:
     start_step: Optional[str]
     stop_step: Optional[str]
     target_metric_override: Optional[float]
-
-
-def apply_determinism(seed: int) -> None:
-    """Sole owner of the registry's ``PipelineSession/determinism`` contract:
-    seed every RNG family and pin deterministic fp32 math, once per session and
-    before any step runs (docs/research/findings/numerical_boundary_consistency.md §5a/§5c)."""
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-    torch.use_deterministic_algorithms(True, warn_only=True)
-    torch.backends.cudnn.benchmark = False
-    # TF32 rounds matmul/conv inputs to 10-bit mantissas and flips staircase boundaries; fp32 evaluation is flip-free on the probed stacks.
-    torch.backends.cuda.matmul.allow_tf32 = False
-    torch.backends.cudnn.allow_tf32 = False
-    torch.set_float32_matmul_precision("highest")
 
 
 def parse_deployment_config(

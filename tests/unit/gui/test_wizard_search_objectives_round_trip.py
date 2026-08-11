@@ -4,18 +4,22 @@ The chip list in ``wizard/structured.js`` filters ``nas.objective_options`` by
 the ``available_in_modes`` rows of ``nas.objective_catalog``. The registry now
 ABORTS a run on an axis the mode cannot measure, so that filter is the only
 thing standing between a hardware-only draft and a dead run. These tests walk
-the whole trip the wizard's own payload takes — schema payload -> JS filter
-(reproduced here from the served data) -> emitted config -> ``derive_search_mode``
--> ``ArchitectureSearchStep`` -> ``resolve_active`` — and pin that the unfiltered
-list would in fact abort, so the filter can never quietly stop being load-bearing.
+the whole trip the wizard's own payload takes — schema payload -> the browser's
+OWN filter (``wizard/search_objectives.js``, executed under node) -> emitted
+config -> ``derive_search_mode`` -> ``ArchitectureSearchStep`` -> ``resolve_active``
+— and pin that the unfiltered list would in fact abort, so the filter can never
+quietly stop being load-bearing. The filter is RUN, never re-implemented here:
+a mirrored rule survives its own deletion in the browser.
 """
 
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from functools import lru_cache
+from typing import Any, Dict, List, Tuple
 
 import pytest
 from conftest import MockPipeline, default_config
+from js_module import JS_ROOT, call_js
 
 from mimarsinan.deployment_record.objectives import OBJECTIVES, SEARCH_MODES
 from mimarsinan.gui.wizard.config_builder import build_deployment_config_from_state
@@ -26,23 +30,22 @@ from mimarsinan.pipelining.pipeline_steps.config.architecture_search_step import
 )
 from mimarsinan.search.results import objectives_for_mode, resolve_active_objectives
 
+CHIP_FILTER = JS_ROOT / "wizard" / "search_objectives.js"
+
+
+@lru_cache(maxsize=None)
+def _offered(search_mode: str) -> Tuple[str, ...]:
+    offered = call_js(CHIP_FILTER, "offeredObjectives", get_wizard_nas_schema(), search_mode)
+    return tuple(option["id"] for option in offered)
+
 
 def offered_objective_ids(search_mode: str) -> List[str]:
-    """The chips ``structured.js`` renders for *search_mode*, from the served payload.
+    """The chips the wizard actually renders for *search_mode*.
 
-    Mirrors the JS one-for-one, escape hatch included: an option with no
-    catalog row (``!modes``) is offered in EVERY mode. Reproducing the hole is
-    the point — a missing row is how an unavailable axis would reach the step.
+    The served payload goes through the browser's own module, so an axis the
+    JS stops filtering reaches this step here exactly as it would in a browser.
     """
-    nas = get_wizard_nas_schema()
-    availability = {
-        row["id"]: row["available_in_modes"] for row in nas["objective_catalog"]
-    }
-    return [
-        option["id"] for option in nas["objective_options"]
-        if option["id"] not in availability
-        or search_mode in availability[option["id"]]
-    ]
+    return list(_offered(search_mode))
 
 
 ARCH_SEARCH_BUDGET: Dict[str, Any] = {

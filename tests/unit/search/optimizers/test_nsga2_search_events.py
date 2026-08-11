@@ -60,6 +60,41 @@ class _CapturingReporter:
         ]
 
 
+class _VerdictProblem(_ToyProblem):
+    """The toy problem with a WIDE infeasible region and a record of its own verdicts.
+
+    ``constraint_violation`` is called exactly once per evaluated candidate, in
+    evaluation order, so this list is the ground truth the reported
+    valid/failed counts are checked against — the frames are not allowed to
+    merely add up, they must say which is which.
+    """
+
+    def __init__(self, infeasible_below: float) -> None:
+        self.infeasible_below = float(infeasible_below)
+        self.verdicts: List[bool] = []
+
+    def validate(self, cfg) -> bool:
+        return cfg["a"] >= self.infeasible_below
+
+    def constraint_violation(self, cfg) -> float:
+        feasible = cfg["a"] >= self.infeasible_below
+        self.verdicts.append(feasible)
+        return 0.0 if feasible else 1.0
+
+
+class _PinnedProblem(_ToyProblem):
+    """A space with exactly ONE point: every bound pinned.
+
+    A user pins a dimension by declaring equal bounds (``core_neurons_bounds:
+    [256, 256]``); duplicate elimination then leaves a batch far smaller than
+    the configured population, which is precisely when "how many candidates
+    does this generation have" stops being "pop_size".
+    """
+
+    xl = [0.5, 0.5]
+    xu = [0.5, 0.5]
+
+
 POP_SIZE = 6
 GENERATIONS = 3
 
@@ -201,6 +236,130 @@ class TestCandidateGenerationTagging:
         _, result = run_capture
         gens = {c.metadata["generation"] for c in result.all_candidates}
         assert gens == set(range(1, GENERATIONS + 1))
+
+
+class TestOneGenerationNumberingPerResult:
+    """A ``SearchResult`` counts its generations exactly one way.
+
+    Candidate tags were 1-based (as pymoo's ``n_gen`` and the emitted frames
+    are) while the history rows enumerated from 0, so one generation answered
+    to two different ordinals inside a single result — and the report's x-axis
+    read one lower than every badge on the same page. The LLM backends' history
+    has always been 1-based; this is the classical one agreeing with it.
+    """
+
+    def test_history_rows_carry_the_frames_own_ordinals(self, run_capture, events):
+        _, result = run_capture
+        assert [h["gen"] for h in result.history] == [
+            e["gen"] for e in _of_type(events, "generation_complete")
+        ]
+
+    def test_history_rows_are_one_based_and_complete(self, run_capture):
+        _, result = run_capture
+        assert [h["gen"] for h in result.history] == list(range(1, GENERATIONS + 1))
+
+    def test_no_candidate_claims_a_generation_the_history_never_saw(self, run_capture):
+        _, result = run_capture
+        assert {c.metadata["generation"] for c in result.all_candidates} == {
+            h["gen"] for h in result.history
+        }
+
+
+VERDICT_POP = 10
+VERDICT_GENS = 3
+
+
+@pytest.fixture(scope="module")
+def verdict_run():
+    """A run with a WIDE infeasible region: both verdicts happen, in unequal numbers."""
+    reporter = _CapturingReporter()
+    problem = _VerdictProblem(infeasible_below=0.5)
+    result = NSGA2Optimizer(
+        pop_size=VERDICT_POP, generations=VERDICT_GENS, seed=0, verbose=False,
+    ).optimize(problem, reporter=reporter)
+    return reporter, result, problem
+
+
+class TestTheVerdictCountsSayWhichIsWhich:
+    """``valid_count``/``failed_count`` are ATTRIBUTED, not merely balanced.
+
+    Every check on those two used to be symmetric under swapping them (they
+    only ever had to add up), so a frame that reported failures as successes
+    passed the whole file — and the panel would paint a dying search green.
+    """
+
+    def test_the_fixture_can_tell_the_two_apart(self, verdict_run):
+        _, _, problem = verdict_run
+        failed = problem.verdicts.count(False)
+        assert failed > 0, "a fixture with no failures proves nothing about failed_count"
+        assert failed != problem.verdicts.count(True)
+
+    def test_each_generation_reports_the_verdicts_it_actually_reached(self, verdict_run):
+        reporter, _, problem = verdict_run
+        cursor = 0
+        for frame in _of_type(reporter.events(), "generation_complete"):
+            size = frame["valid_count"] + frame["failed_count"]
+            batch = problem.verdicts[cursor:cursor + size]
+            cursor += size
+            assert frame["valid_count"] == batch.count(True)
+            assert frame["failed_count"] == batch.count(False)
+        assert cursor == len(problem.verdicts), "every evaluation belongs to a generation"
+
+    def test_the_run_totals_are_the_runs_own_verdicts(self, verdict_run):
+        reporter, _, problem = verdict_run
+        done = _of_type(reporter.events(), "search_complete")[0]
+        assert done["total_valid"] == problem.verdicts.count(True)
+        assert done["total_failed"] == problem.verdicts.count(False)
+
+
+PINNED_POP = 6
+
+
+@pytest.fixture(scope="module")
+def pinned_run():
+    """A search whose space holds ONE point: the batch cannot be the budget."""
+    reporter = _CapturingReporter()
+    result = NSGA2Optimizer(
+        pop_size=PINNED_POP, generations=GENERATIONS, seed=0, verbose=False,
+    ).optimize(_PinnedProblem(), reporter=reporter)
+    return reporter, result
+
+
+class TestTheReportedCountIsTheBatchNotTheBudget:
+    """``candidates_generated.count`` is what this generation produced.
+
+    On an open space every generation happens to evaluate exactly ``pop_size``
+    candidates, so reporting the CONFIGURED budget looks identical to reporting
+    the batch. Pin the bounds and the two part company: duplicate elimination
+    leaves one candidate, then none, while the budget still says six.
+    """
+
+    def test_a_pinned_space_reports_the_one_candidate_it_has(self, pinned_run):
+        reporter, _ = pinned_run
+        counts = [e["count"] for e in _of_type(reporter.events(), "candidates_generated")]
+        assert counts[0] == 1
+        assert counts[0] != PINNED_POP
+
+    def test_no_generation_claims_a_candidate_it_did_not_evaluate(self, pinned_run):
+        reporter, result = pinned_run
+        events = reporter.events()
+        by_gen = {e["gen"]: e for e in _of_type(events, "generation_complete")}
+        batches = _of_type(events, "candidates_generated")
+        for ev in batches:
+            done = by_gen[ev["gen"]]
+            assert ev["count"] == done["valid_count"] + done["failed_count"]
+        assert sum(e["count"] for e in batches) == len(result.all_candidates)
+
+    def test_the_budget_is_still_reported_as_the_budget(self, pinned_run):
+        # pop_size keeps its own frame field — the fix is that `count` stops
+        # borrowing it, not that the panel loses the configured population.
+        reporter, _ = pinned_run
+        for ev in _of_type(reporter.events(), "generation_start"):
+            assert ev["pop_size"] == PINNED_POP
+
+    def test_the_collapsed_search_still_hands_over_its_winner(self, pinned_run):
+        _, result = pinned_run
+        assert result.best.configuration == {"a": 0.5, "b": 0.5}
 
 
 class TestEmissionIsTelemetry:

@@ -228,7 +228,12 @@ class NSGA2Optimizer(SearchOptimizer[Dict[str, Any]]):
 
         history: List[Dict[str, Any]] = []
         if getattr(res, "history", None):
-            for gen_idx, h in enumerate(res.history):
+            # ONE generation numbering per SearchResult: the history's `gen` is
+            # the same 1-based ordinal the candidate tags, the emitted frames,
+            # and the LLM backends' own history entries carry. A 0-based row
+            # here would put the first generation at x=0 in the report while
+            # its candidates claimed generation 1.
+            for gen_idx, h in enumerate(res.history, start=1):
                 entry: Dict[str, Any] = {"gen": gen_idx}
                 with best_effort("nsga2 history best-values extraction", logger=logger):
                     F = np.array(getattr(h, "opt").get("F"))

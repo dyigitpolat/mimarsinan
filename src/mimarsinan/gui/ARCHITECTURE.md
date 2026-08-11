@@ -172,7 +172,16 @@ model AND hardware, so it never nests under either): dormant it renders as
 one quiet line with an enable path derived from its keys' relevance trees;
 active its keys render primary, and the Model/Hardware cards show ownership
 chips (registry `provided_by`) exactly where their search-owned hand fields
-would be. Field rendering is
+would be. Its objective chips are filtered by
+`static/js/wizard/search_objectives.js` — pure + node-tested — which offers
+only the axes the objectives registry declares AVAILABLE in the mode the draft
+resolves to (`deriveSearchMode`), and seeds the selection from the draft's own
+declaration pruned to that offer: the registry ABORTS a run on an axis the mode
+cannot measure, so an accuracy chip in a hardware-only draft is a dead run
+rather than a cosmetic slip. The rules live outside the widget because a filter
+that exists only inside a DOM renderer cannot be tested — the python round-trip
+test EXECUTES this module on the served payload rather than mirroring it. Field
+rendering is
 schema-driven and generic: relevance predicates control field EXISTENCE,
 `promote_when` makes mode-defining knobs primary in their mode, bounded
 numerics render as slider+numeric combos, small enums as segmented buttons,

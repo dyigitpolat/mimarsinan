@@ -6,9 +6,18 @@ model mode, every candidate died on ``KeyError: 'cores'``, and the step
 reported a misleading "no candidates" error).
 """
 
+import random
+
+import numpy as np
+import pytest
+import torch
 from conftest import MockPipeline, default_config
 
 from mimarsinan.mapping.platform.coalescing import CANONICAL_KEY
+from mimarsinan.pipelining.determinism import (
+    apply_determinism,
+    isolated_rng_stream,
+)
 from mimarsinan.pipelining.core.platform_constraints_resolver import (
     build_platform_constraints_resolved,
 )
@@ -131,3 +140,90 @@ class TestHardwareModeSmoke:
         assert best_objectives, "hardware mode has layout-proxy objectives"
         for name, value in best_objectives.items():
             assert abs(float(value)) < 1e17, f"{name} looks like a penalty: {value}"
+
+
+@pytest.fixture
+def _restore_process_rng():
+    """These tests seed the process; sibling tests keep their ambient stream."""
+    states = (torch.random.get_rng_state(), np.random.get_state(), random.getstate())
+    yield
+    torch.random.set_rng_state(states[0])
+    np.random.set_state(states[1])
+    random.setstate(states[2])
+
+
+@pytest.mark.usefixtures("_restore_process_rng")
+class TestTheSearchDoesNotMoveTheRunsRngStream:
+    """A search CHOOSES a chip; it must not re-roll the weights the run deploys.
+
+    Candidate scoring seeds the world to its own scoring seed — deliberately,
+    since that is what makes a candidate's score reproducible — and it used to
+    leave it there. Every later step then drew from a stream that depended on
+    how many candidates the search had looked at: the SAME config deployed
+    different weights with the search ON than with its winning chip declared by
+    hand, so the searched-hardware guard cell was rolling fresh dice against
+    every downstream certificate instead of being its fixed anchor's pair.
+    """
+
+    @staticmethod
+    def _draw():
+        return (
+            torch.rand(4).tolist(),
+            np.random.rand(4).tolist(),
+            random.random(),
+        )
+
+    def test_the_next_draw_is_the_one_the_run_would_have_had(self, tmp_path):
+        apply_determinism(1234)
+        expected = self._draw()
+
+        apply_determinism(1234)
+        _run_step(tmp_path)
+        assert self._draw() == expected
+
+    def test_every_seeded_family_is_put_back(self, tmp_path):
+        apply_determinism(4242)
+        torch_state = torch.random.get_rng_state()
+        np_state = np.random.get_state()
+        py_state = random.getstate()
+
+        _run_step(tmp_path)
+
+        assert torch.equal(torch.random.get_rng_state(), torch_state)
+        assert np.random.get_state()[1].tolist() == np_state[1].tolist()  # pyright: ignore[reportIndexIssue] — legacy MT19937 state tuple
+        assert random.getstate() == py_state
+
+    def test_a_reseed_inside_the_block_does_not_escape(self):
+        """The isolation is not a rewind: the search calls ``manual_seed``."""
+        apply_determinism(7)
+        expected = self._draw()
+
+        apply_determinism(7)
+        with isolated_rng_stream():
+            apply_determinism(999)
+            self._draw()
+        assert self._draw() == expected
+
+    def test_no_search_budget_leaves_a_mark_on_the_stream(self, tmp_path):
+        # The budget is what used to leak: more candidates, more draws
+        # consumed, a different model deployed at the end of it. Every budget
+        # must land where a run with NO search at all would have been.
+        def stream_after(pop_size, generations):
+            apply_determinism(11)
+            cfg = _hardware_search_config()
+            cfg["arch_search"] = {**cfg["arch_search"],
+                                  "pop_size": pop_size, "generations": generations}
+            pipeline = MockPipeline(
+                config=cfg,
+                working_directory=str(tmp_path / f"budget_{pop_size}_{generations}"),
+            )
+            step = ArchitectureSearchStep(pipeline)
+            step.name = "ArchitectureSearch"
+            pipeline.prepare_step(step)
+            step.run()
+            return self._draw()
+
+        apply_determinism(11)
+        unsearched = self._draw()
+        assert stream_after(4, 2) == unsearched
+        assert stream_after(8, 3) == unsearched

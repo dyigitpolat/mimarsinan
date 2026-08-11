@@ -41,10 +41,6 @@ itself (`fixed_platform_constraints` == the empty overlay). The resolver takes
 no mode switch: it once omitted `allow_neuron_splitting` for the search only,
 and since `ChipCapabilities` reads an absent permission as DENIED, candidates
 were scored on a chip that could not split neurons while the run deploying them
-could — a searched chip must resolve exactly as the same chip declared by hand. The resolver takes
-no mode switch: it once omitted `allow_neuron_splitting` for the search only,
-and since `ChipCapabilities` reads an absent permission as DENIED, candidates
-were scored on a chip that could not split neurons while the run deploying them
 could — a searched chip must resolve exactly as the same chip declared by hand.
 
 **What is this candidate worth?** — one path, `_resolve_model` → `_resolve_layout`
@@ -58,7 +54,12 @@ reads a layout. A hardware-only search reuses the candidate-INDEPENDENT model
 and its mapper representation, never its layout: tiling is a function of the
 candidate's core geometry, so each candidate is packed on the chip it actually
 declares. The validation cache is an optimization, not a dependency — an evicted
-entry is re-resolved rather than scored off something stale. Every
+entry is re-resolved rather than scored off something stale. Scoring SEEDS the
+world (`torch.manual_seed(accuracy_seed)` per candidate) so a candidate's score
+is reproducible; that reseed is confined by the pipeline step, which runs the
+whole search inside `pipelining.determinism.isolated_rng_stream` — a
+search chooses a configuration and must not re-roll the weights the run goes on
+to deploy. Every
 candidate-scoped failure comes back as a typed `CandidateFailure` that the
 boundary renders once — an invalid `ValidationResult` in the validate path, a
 `CandidateInfeasibleError` (or a scored penalty, for packing infeasibility) in
@@ -112,10 +113,21 @@ Frames both NSGA-II and AgentEvolve emit:
 - `generation_start` — `gen`, `total_gens`, `phase`, `pop_size`, and the
   `{name, goal}` axes the panel ranks and colours candidates by.
 - `candidates_generated` — `gen`, `count` (plus the LLM backends' `reasoning`).
+  `count` is the batch this generation actually PRODUCED, never the configured
+  budget: pin a dimension (`core_neurons_bounds: [256, 256]`) and duplicate
+  elimination leaves fewer candidates than `pop_size`, which keeps its own field.
 - `generation_complete` — `gen`, `valid_count`, `failed_count`, `pareto_size`,
   and the front's leading rows, INCUMBENT FIRST (`order_by_minimax_rank`): the
-  preview is a truncation, never a ranking of its own.
+  preview is a truncation, never a ranking of its own. The two counts are that
+  batch's own verdicts (feasible / infeasible-or-scored-penalty), so a search
+  that is dying reads as dying.
 - `search_complete` — the run totals and the size of the front handed over.
+
+Generations are 1-BASED everywhere one `SearchResult` speaks about them: the
+frames' `gen`, each candidate's `metadata["generation"]`, and the `history`
+rows the search report plots — the classical backend's history used to
+enumerate from 0 while its own candidate tags started at 1, so a single
+generation answered to two ordinals in one artifact.
 
 The LLM backends additionally stream per-candidate and per-call detail
 (`candidate_result`, `batch_summary`, `llm_trace`, `compilagent_*`).
