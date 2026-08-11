@@ -187,7 +187,11 @@ def build_registry() -> IntrospectionRegistry:
         requires="a declared platform",
         doc=(
             "Every capability bit the platform declares — the complete set, so a "
-            "reader can tell which permissions and scheduler produced this layout."
+            "reader can tell which permissions and scheduler produced this layout. "
+            "max_axons/max_neurons are the EFFECTIVE per-core limits the mapper "
+            "budgets against (the declared grid maximum, minus the bias axon when "
+            "the cores carry no hardware bias); a platform declaring no core grid "
+            "serves them as null."
         ),
         builders={CANDIDATE_LAYOUT: _capabilities, DEPLOYMENT_RECORD: _capabilities},
     ))

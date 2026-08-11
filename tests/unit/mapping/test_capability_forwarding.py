@@ -68,6 +68,71 @@ class TestCapabilityBits:
         assert (default.schedule_policy, default.max_schedule_passes) == ("pool", 8)
 
 
+class TestTheGeometryIsPartOfTheDeclaration:
+    """A served bit must be the platform's answer, never an unread default.
+
+    ``capability_bits()`` is a TRUST channel (the agent's ``inspect_capabilities``
+    tool and the record's capability payload read it), so every field it derives
+    from the dataclass has to be populated from the declaration — serving
+    ``max_axons: None`` for a chip that declares 256-axon cores is worse than
+    omitting the key.
+    """
+
+    PLATFORM = {
+        "cores": [
+            {"max_axons": 256, "max_neurons": 128, "count": 4, "has_bias": True},
+            {"max_axons": 128, "max_neurons": 64, "count": 8, "has_bias": True},
+        ],
+        "allow_scheduling": True,
+        "schedule_policy": "bank_clustered",
+    }
+
+    def test_no_served_bit_is_an_unread_default_on_a_declared_platform(self):
+        bits = ChipCapabilities.from_platform_constraints(self.PLATFORM).capability_bits()
+        unread = [
+            name for name, value in bits.items() if value is None
+        ]
+        assert not unread, unread
+        assert bits["max_axons"] == 256
+        assert bits["max_neurons"] == 128
+        assert bits["hardware_bias"] is True
+
+    def test_it_reads_the_wizard_bodys_core_types_key_too(self):
+        """The GUI verify route posts ``core_types``; a platform posts ``cores``."""
+        body = ChipCapabilities.from_platform_constraints(
+            {"core_types": [{"max_axons": 32, "max_neurons": 16, "count": 2}]}
+        )
+        assert (body.max_axons, body.max_neurons) == (32, 16)
+
+    def test_a_bias_less_grid_reports_the_axon_the_bias_consumes(self):
+        """``has_bias=False`` cores spend one axon on the always-on row."""
+        caps = ChipCapabilities.from_platform_constraints(
+            {"cores": [{"max_axons": 256, "max_neurons": 256, "count": 1,
+                        "has_bias": False}]}
+        )
+        assert caps.hardware_bias is False
+        assert caps.max_axons == 255
+        assert caps.max_neurons == 256
+
+    def test_the_resolved_geometry_is_the_layout_mappers_own(self):
+        """Same SSOT, so a strategy resolved here tiles as the mapper tiles."""
+        from mimarsinan.mapping.platform.platform_constraints import (
+            resolve_platform_mapping_params,
+        )
+        caps = ChipCapabilities.from_platform_constraints(self.PLATFORM)
+        pmap = resolve_platform_mapping_params(
+            self.PLATFORM["cores"], allow_coalescing=False,
+        )
+        assert (caps.max_axons, caps.max_neurons, caps.hardware_bias) == (
+            pmap.effective_max_axons, pmap.effective_max_neurons, pmap.hardware_bias,
+        )
+
+    def test_an_undeclared_grid_stays_unset_rather_than_invented(self):
+        caps = ChipCapabilities.from_platform_constraints({"allow_scheduling": True})
+        assert (caps.max_axons, caps.max_neurons) == (None, None)
+        assert caps.hardware_bias is False
+
+
 class TestLayoutKwargs:
     def test_carries_the_scheduling_declaration_the_builder_consumes(self):
         caps = ChipCapabilities(

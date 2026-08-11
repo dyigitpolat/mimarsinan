@@ -5,6 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass, fields
 from typing import Any, Literal, Mapping
 
+from mimarsinan.mapping.platform.platform_constraints import (
+    resolve_platform_mapping_params,
+)
+
 
 def compute_core_input_count(
     n_sources: int,
@@ -75,9 +79,32 @@ class ChipCapabilities:
     def from_platform_constraints(
         cls, constraints: Mapping[str, Any]
     ) -> "ChipCapabilities":
-        """Read the permission bits from a platform-constraints / wizard body dict (single source for these flags)."""
+        """Read the WHOLE declaration from a platform-constraints / wizard body dict.
+
+        The permission/scheduling flags come off the dict directly; the geometry
+        (``max_axons``/``max_neurons``/``hardware_bias``) is resolved from the
+        declared core grid — ``cores`` (a resolved platform) or ``core_types`` (a
+        wizard body) — by :func:`resolve_platform_mapping_params`, the SAME SSOT
+        the layout mapper is configured from. They are therefore the EFFECTIVE
+        per-core limits the tiling decision consumes: the grid maximum, minus the
+        bias axon when the cores carry no hardware bias. A dict declaring no core
+        grid leaves them at their "not declared" defaults (``None``/``False``)
+        rather than inventing a chip.
+        """
+        cores = constraints.get("cores") or constraints.get("core_types") or ()
+        allow_coalescing = bool(constraints.get("allow_coalescing", False))
+        geometry = (
+            resolve_platform_mapping_params(
+                list(cores), allow_coalescing=allow_coalescing
+            )
+            if cores
+            else None
+        )
         return cls(
-            allow_coalescing=bool(constraints.get("allow_coalescing", False)),
+            max_axons=None if geometry is None else geometry.effective_max_axons,
+            max_neurons=None if geometry is None else geometry.effective_max_neurons,
+            hardware_bias=False if geometry is None else geometry.hardware_bias,
+            allow_coalescing=allow_coalescing,
             allow_neuron_splitting=bool(constraints.get("allow_neuron_splitting", False)),
             allow_scheduling=bool(constraints.get("allow_scheduling", False)),
             allow_per_layer_s=bool(constraints.get("allow_per_layer_s", False)),
@@ -91,7 +118,9 @@ class ChipCapabilities:
         Derived from the dataclass rather than listed, so a capability added
         here reaches every consumer that serves this dict instead of quietly
         going unforwarded (which is how ``schedule_policy`` stayed invisible to
-        search while the literature IMC presets all declared it).
+        search while the literature IMC presets all declared it). Every bit must
+        therefore be POPULATED by whoever builds the object — a served ``None``
+        means "this platform declares no core grid", never "we did not look".
         """
         return {f.name: getattr(self, f.name) for f in fields(self)}
 

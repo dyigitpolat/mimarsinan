@@ -22,11 +22,13 @@ from compilagent import (
     WorkloadSpec,
 )
 
+from mimarsinan.deployment_record.introspection import INTROSPECTION_FORMAT_VERSION
 from mimarsinan.mapping.layout.layout_types import LayoutSoftCoreSpec
 from mimarsinan.search.optimizers.compilagent.backend import MimarsinanLayoutBackend
 from mimarsinan.search.optimizers.compilagent.backend.backend_eval import unit_for as _unit_for
 from mimarsinan.search.optimizers.compilagent.backend.backend_layout import (
     collect_layout_payload as _collect_layout_payload,
+    write_layout_artifacts as _write_layout_artifacts,
 )
 from mimarsinan.search.optimizers.compilagent.workload import (
     register_problem,
@@ -262,6 +264,38 @@ class TestServedPayload:
         assert payload["layout_stats"] == (
             payload["introspection"]["layout_stats"]["stats"]
         )
+
+
+class TestThePersistedArtifactCarriesTheChannelVersion:
+    """A stored file outlives the writer, so it states its envelope convention.
+
+    Each payload inside carries its own ``payload_version``; the file states the
+    CHANNEL's ``INTROSPECTION_FORMAT_VERSION`` — otherwise reshaping the served
+    map itself would be an undetectable break for anything reading the artifact.
+    """
+
+    def test_introspection_json_is_the_versioned_artifact(self, tmp_path):
+        payload = _payload_for()
+        written = _write_layout_artifacts(tmp_path, {"cfg": 1}, payload)
+        assert [p.name for p in written] == [
+            "config.json", "softcores.json", "layout_stats.json",
+            "introspection.json",
+        ]
+        stored = json.loads((tmp_path / "introspection.json").read_text())
+        assert stored["introspection_format_version"] == INTROSPECTION_FORMAT_VERSION
+        assert stored["payloads"] == payload["introspection"]
+        assert all(
+            envelope["payload_version"] >= 1
+            for envelope in stored["payloads"].values()
+        )
+
+    def test_the_other_artifacts_stay_the_bare_bodies(self, tmp_path):
+        payload = _payload_for()
+        _write_layout_artifacts(tmp_path, {"cfg": 1}, payload)
+        assert json.loads((tmp_path / "config.json").read_text()) == {"cfg": 1}
+        assert json.loads(
+            (tmp_path / "softcores.json").read_text()
+        ) == payload["per_softcore"]
 
 
 class TestStaticHelpers:

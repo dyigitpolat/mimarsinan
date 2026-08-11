@@ -16,7 +16,24 @@ from typing import Any, ClassVar, Dict, Mapping, Optional, Tuple
 from mimarsinan.deployment_record.schema.serde import strict_kwargs, tuple_of
 from mimarsinan.deployment_record.schema.utilization import LayoutStatsRecord
 
+# The CHANNEL's envelope convention (how served payloads are wrapped), as
+# distinct from each payload's own ``payload_version``. Reshaping the map itself
+# — renaming the wrapper keys, changing what a stored file holds — is a bump
+# here; adding or evolving one payload is not.
 INTROSPECTION_FORMAT_VERSION = 1
+
+
+def channel_envelope(payloads: Mapping[str, Any]) -> Dict[str, Any]:
+    """Served payloads stamped with the channel's format version.
+
+    Anything PERSISTED goes through here: a stored file outlives the process
+    that wrote it, so it has to say which envelope convention it follows, not
+    only which version each payload inside it is.
+    """
+    return {
+        "introspection_format_version": INTROSPECTION_FORMAT_VERSION,
+        "payloads": dict(payloads),
+    }
 
 
 def json_safe(value: Any) -> Any:
@@ -222,7 +239,14 @@ class SchedulePayload(IntrospectionPayload):
 
 @dataclass(frozen=True)
 class CapabilitiesPayload(IntrospectionPayload):
-    """Every capability bit the platform declares — the complete set, or none."""
+    """Every capability bit the platform declares — the complete set, or none.
+
+    ``bits`` is ``ChipCapabilities.capability_bits()`` verbatim: permissions,
+    scheduler declaration, AND the resolved core geometry
+    (``max_axons``/``max_neurons`` as the effective per-core limits, plus
+    ``hardware_bias``). A ``None`` geometry means the platform declared no core
+    grid — never that the reader failed to resolve one.
+    """
 
     NAME: ClassVar[str] = "capabilities"
     VERSION: ClassVar[int] = 1

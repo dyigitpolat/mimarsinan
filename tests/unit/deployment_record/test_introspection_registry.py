@@ -220,9 +220,28 @@ class TestCapabilitiesPayload:
         assert set(payload.bits) == set(ChipCapabilities().capability_bits())
         assert "schedule_policy" in payload.bits
 
+    def test_no_served_bit_is_an_unread_default(self):
+        """This is a trust channel: a served value must be the platform's answer.
+
+        ``max_axons``/``max_neurons``/``hardware_bias`` were served as
+        ``None``/``None``/``False`` while the doc promised "the complete set" —
+        for a platform that declares 64x64 cores.
+        """
+        bits = INTROSPECTION_REGISTRY.serve("capabilities", _candidate()).bits
+        assert [name for name, value in bits.items() if value is None] == []
+        assert bits["max_axons"] == 64
+        assert bits["max_neurons"] == 64
+        assert bits["hardware_bias"] is True
+
     def test_a_record_serves_them_from_its_resolved_platform(self):
         payload = INTROSPECTION_REGISTRY.serve("capabilities", _record_view())
         assert set(payload.bits) == set(ChipCapabilities().capability_bits())
+        assert payload.bits["max_axons"] is not None
+
+    def test_the_registered_doc_describes_the_geometry_it_serves(self):
+        """The doc IS the agent-facing tool description; it must not overpromise."""
+        doc = INTROSPECTION_REGISTRY.get("capabilities").doc
+        assert "EFFECTIVE per-core limits" in doc
 
 
 class TestLayoutStatsPayload:

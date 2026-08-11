@@ -25,6 +25,7 @@ from mimarsinan.deployment_record.introspection.payloads import (
     SegmentPassRow,
     SoftcoreRow,
     SoftcoresPayload,
+    channel_envelope,
 )
 from mimarsinan.deployment_record.introspection.registry import (
     IntrospectionRegistry,
@@ -63,4 +64,5 @@ __all__ = [
     "SoftcoreRow",
     "SoftcoresPayload",
     "build_registry",
+    "channel_envelope",
 ]

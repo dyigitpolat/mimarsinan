@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Tuple
 from mimarsinan.deployment_record.introspection import (
     INTROSPECTION_REGISTRY,
     CandidateLayoutView,
+    channel_envelope,
 )
 from mimarsinan.search.problems.joint.problem import json_key
 
@@ -99,12 +100,16 @@ def with_legacy_projection(payload: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-# Artifact file name -> the payload key it carries.
+# Artifact file name -> what it holds, as one rule per file (configuration,
+# payload) -> body. ``introspection.json`` is the versioned one: a stored file
+# outlives the process that wrote it, so it carries the CHANNEL's format version
+# around the served payloads (each of which still carries its own).
 _ARTIFACTS = (
-    ("config.json", None),
-    ("softcores.json", "per_softcore"),
-    ("layout_stats.json", "layout_stats"),
-    ("introspection.json", "introspection"),
+    ("config.json", lambda configuration, payload: configuration),
+    ("softcores.json", lambda configuration, payload: payload["per_softcore"]),
+    ("layout_stats.json", lambda configuration, payload: payload["layout_stats"]),
+    ("introspection.json",
+     lambda configuration, payload: channel_envelope(payload["introspection"])),
 )
 
 
@@ -113,9 +118,8 @@ def write_layout_artifacts(
 ) -> Tuple[Path, ...]:
     """Write the candidate's artifacts; ``introspection.json`` is the versioned one."""
     written = []
-    for name, key in _ARTIFACTS:
+    for name, body_of in _ARTIFACTS:
         path = artifact_dir / name
-        body = configuration if key is None else payload[key]
-        path.write_text(json.dumps(body, indent=2, default=str))
+        path.write_text(json.dumps(body_of(configuration, payload), indent=2, default=str))
         written.append(path)
     return tuple(written)

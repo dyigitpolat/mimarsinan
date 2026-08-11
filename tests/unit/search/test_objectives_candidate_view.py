@@ -77,10 +77,13 @@ class TestCandidateViewMatchesTheLayoutHook:
         )
         assert error is None and hook_values is not None
 
+        # The SAME forwarding the hook uses: a layout answer computed with the
+        # three permission bits alone is a different layout, so "byte parity with
+        # the hook" would be asserted against a config the hook never runs.
         stats, stats_error = compute_mapping_stats(
             softcores=cache.softcores,
             core_types=problem._make_core_types(pcfg),
-            **ChipCapabilities.from_platform_constraints(pcfg).permission_kwargs(),
+            **ChipCapabilities.from_platform_constraints(pcfg).layout_kwargs(),
         )
         assert stats_error is None or stats.feasible
 
