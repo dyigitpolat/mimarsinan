@@ -30,6 +30,11 @@ class SimulationHostContract:
     # arms it through the honesty gate.
     membrane_readout: bool = False
     membrane_half_step_charge: float = 0.0
+    # [W4.3] opt-in host-op wall timing (``hybrid_run.stage_timing.StageTimer``)
+    # and the driver's measured total-output-spikes read (flat path only;
+    # ``None`` = the run's decode path never produced the figure).
+    stage_timer: Any = None
+    nevresim_total_spikes: "float | None" = None
 
     if TYPE_CHECKING:
         def _evaluate_chip_output(self, predictions) -> float: ...

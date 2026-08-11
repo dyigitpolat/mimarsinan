@@ -52,11 +52,14 @@ class SimulationFlatMixin(SimulationHostContract):
                 corrected[:, start:end] += membranes[:, start:end] - half_step
             predictions = np.argmax(corrected, axis=1)
         else:
-            predictions = simulation_driver.predict_spiking(
+            predictions, total_spikes = simulation_driver.predict_spiking(
                 self.test_data,
                 simulation_steps,
                 delay,
             )
+            # [W4.3] the driver's measured total-output-spikes read, formerly
+            # printed-and-dropped (deployment_record_schema.md §4).
+            self.nevresim_total_spikes = float(total_spikes)
 
         print("Evaluating simulator output...")
         accuracy = self._evaluate_chip_output(predictions)

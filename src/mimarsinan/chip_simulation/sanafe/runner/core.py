@@ -14,7 +14,9 @@ from mimarsinan.chip_simulation.sanafe.runner.segment_io import SanafeSegmentIOM
 
 import mimarsinan.chip_simulation.sanafe.runner as _runner
 from mimarsinan.chip_simulation.sanafe.runner.constants import _COMPUTE_DTYPE, _RAW_INPUT_NODE_ID
-from mimarsinan.chip_simulation.sanafe.arch_synth.floorplan import _mesh_dims
+from mimarsinan.chip_simulation.sanafe.runner.custom_floorplan import (
+    adopt_custom_arch_floorplan,
+)
 from mimarsinan.chip_simulation.sanafe.arch_synth.spec import CUSTOM_PRESET_NAME
 from mimarsinan.chip_simulation.sanafe.presets import CUSTOM_ZERO_PRESET, PRESETS
 from mimarsinan.chip_simulation.sanafe.records import (
@@ -49,6 +51,7 @@ class SanafeRunner(SanafeNeuralStageMixin, SanafeNeuralStageRecordMixin, SanafeS
         declared_core_capacity: int = 0,
         simulation_step_timeout_s: float | None = None,
         read_final_potentials: bool = False,
+        time_host_stages: bool = False,
     ):
         if contract is not None:
             behavior = contract.behavior
@@ -107,6 +110,10 @@ class SanafeRunner(SanafeNeuralStageMixin, SanafeNeuralStageRecordMixin, SanafeS
         # [C2] default-off final-membrane read: lands end-of-window soma
         # potentials per core in the segment record (additive; counts untouched).
         self.read_final_potentials = bool(read_final_potentials)
+        # [W4.3] default-off host-op wall timing: each run() times its host
+        # ComputeOp stages with a fresh StageTimer and surfaces the walls on
+        # the per-sample record (additive; empty when off or compute-free).
+        self.time_host_stages = bool(time_host_stages)
         self.cores_per_tile = cores_per_tile
         self.tile_grid_rows = int(tile_grid_rows)
         self.tile_grid_cols = int(tile_grid_cols)
@@ -145,6 +152,11 @@ class SanafeRunner(SanafeNeuralStageMixin, SanafeNeuralStageRecordMixin, SanafeS
             resolve_stage_compute_scales,
         )
         from mimarsinan.chip_simulation.hybrid_run.hybrid_stage_runner import run_hybrid_stages
+        from mimarsinan.chip_simulation.hybrid_run.stage_timing import StageTimer
+
+        # [W4.3] per-sample host-op walls: a fresh timer per run so the
+        # per-sample record never carries another sample's accumulation.
+        stage_timer = StageTimer() if self.time_host_stages else None
 
         def _on_neural(stage_index, stage, state_buffer):
             segments[stage_index] = self._run_neural_stage(
@@ -191,6 +203,7 @@ class SanafeRunner(SanafeNeuralStageMixin, SanafeNeuralStageRecordMixin, SanafeS
             state_buffer,
             on_neural=_on_neural,
             on_compute=_on_compute,
+            stage_timer=stage_timer,
         )
 
         agg_e = SanafeEnergyBreakdown.zero()
@@ -215,6 +228,10 @@ class SanafeRunner(SanafeNeuralStageMixin, SanafeNeuralStageRecordMixin, SanafeS
             aggregate_sim_time_s=max_sim_time,
             total_spikes=total_spikes,
             total_packets=total_packets,
+            compute_stage_walls=(
+                stage_timer.compute_stage_walls()
+                if stage_timer is not None else []
+            ),
         )
 
 
@@ -258,43 +275,16 @@ class SanafeRunner(SanafeNeuralStageMixin, SanafeNeuralStageRecordMixin, SanafeS
         )
 
     def _adopt_custom_arch_floorplan(self) -> tuple[int, int]:
-        """The loaded user arch IS the floorplan SSOT: adopt its tile grouping.
-
-        The div/mod core placement needs a uniform per-tile core count (a
-        smaller LAST tile is the one legal remainder shape); declared
-        floorplan keys that contradict the file fail loud. Returns the mesh
-        dims for the geometry record (the arch object exposes no mesh, so the
-        most-square exact grid of its tile count is rendered).
-        """
+        """The loaded user arch IS the floorplan SSOT (see ``custom_floorplan``)."""
         arch = self._arch
         assert arch is not None
-        counts = [len(tile.cores) for tile in arch.tiles]
-        n_tiles = len(counts)
-        if n_tiles == 0:
-            raise ValueError(
-                f"custom arch at {self.custom_arch_path} defines no tiles"
-            )
-        cpt = int(counts[0])
-        if any(int(c) != cpt for c in counts[:-1]) or int(counts[-1]) > cpt:
-            raise ValueError(
-                f"custom arch at {self.custom_arch_path} has a non-uniform "
-                f"per-tile core count {counts}; the div/mod placement "
-                "requires uniform tiles (a smaller last tile is allowed)"
-            )
-        if self.cores_per_tile > 0 and self.cores_per_tile != cpt:
-            raise ValueError(
-                f"declared cores_per_tile={self.cores_per_tile} contradicts "
-                f"the custom arch at {self.custom_arch_path}, which packs "
-                f"{cpt} cores per tile"
-            )
-        declared_tiles = self.tile_grid_rows * self.tile_grid_cols
-        if declared_tiles > 0 and declared_tiles != n_tiles:
-            raise ValueError(
-                f"declared tile grid {self.tile_grid_rows}x"
-                f"{self.tile_grid_cols} = {declared_tiles} tiles contradicts "
-                f"the custom arch at {self.custom_arch_path}, which defines "
-                f"{n_tiles} tiles"
-            )
-        self.cores_per_tile = cpt
-        return _mesh_dims(n_tiles)
+        assert self.custom_arch_path is not None
+        self.cores_per_tile, mesh = adopt_custom_arch_floorplan(
+            arch,
+            custom_arch_path=self.custom_arch_path,
+            declared_cores_per_tile=self.cores_per_tile,
+            declared_tile_grid_rows=self.tile_grid_rows,
+            declared_tile_grid_cols=self.tile_grid_cols,
+        )
+        return mesh
 

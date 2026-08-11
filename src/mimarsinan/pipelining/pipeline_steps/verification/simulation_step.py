@@ -2,8 +2,10 @@ import numpy as np
 import torch
 
 from mimarsinan.certification.spike_certificate import certify_spike_counts
+from mimarsinan.chip_simulation.hybrid_run.stage_timing import StageTimer
 from mimarsinan.chip_simulation.simulation_runner import SimulationRunner
 from mimarsinan.config_schema.registry import effective_value as _effective
+from mimarsinan.deployment_record.schema import AccuracyReadRecord
 from mimarsinan.models.nn.lif_kernels import measurement_plane
 from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 from mimarsinan.pipelining.core.simulation_factory import (
@@ -92,6 +94,7 @@ def _certify_nevresim_counts(*, pipeline, mapping, captured, samples):
 
 class SimulationStep(PipelineStep):
     REQUIRES = ("hard_core_mapping",)
+    PROMISES = ("deployment_record_nevresim",)
 
     def __init__(self, pipeline):
         super().__init__(self.REQUIRES, self.PROMISES, self.UPDATES, self.CLEARS, pipeline)
@@ -112,12 +115,38 @@ class SimulationStep(PipelineStep):
         print("Simulation accuracy: ", accuracy)
         self.pipeline.reporter.report("nevresim_probe_accuracy", float(accuracy))
 
+    def _emit_deployment_record_fragment(
+        self, runner, stage_timer, probe_accuracy: float,
+    ) -> None:
+        """[W4.3] persist the ``deployment_record_nevresim`` fragment: the
+        probe read (schema ``AccuracyReadRecord`` shape), the driver's measured
+        total-output-spikes figure (flat path; ``None`` when the run's decode
+        path never produced it), and the measured host-op walls (empty when
+        the program has no host ComputeOps)."""
+        read = AccuracyReadRecord(
+            metric=float(probe_accuracy),
+            backend="nevresim",
+            samples=len(runner.test_data),
+            kind="measured",
+            step=self.name,
+        )
+        self.add_entry("deployment_record_nevresim", {
+            "accuracy_reads": [read.to_dict()],
+            "total_spikes": runner.nevresim_total_spikes,
+            "compute_stage_walls": stage_timer.compute_stage_walls(),
+        }, "basic")
+
     def process(self):
         mapping = self.get_entry('hard_core_mapping')
+        # [W4.3] host-op walls: opt into the shared stage loop's timer (the
+        # nevresim run is otherwise byte-identical; flat runs simply record
+        # no compute stages).
+        stage_timer = StageTimer()
         runner = SimulationRunner(
             self.pipeline,
             mapping,
             int(self.pipeline.config["simulation_steps"]),
+            stage_timer=stage_timer,
         )
 
         plan = DeploymentPlan.of(self.pipeline)
@@ -130,8 +159,9 @@ class SimulationStep(PipelineStep):
                 lambda stage, raw: captured.append((stage, raw[:n]))
             )
 
-        self.probe_accuracy = runner.run()
-        self._report_probe(self.probe_accuracy)
+        probe_accuracy = float(runner.run())
+        self.probe_accuracy = probe_accuracy
+        self._report_probe(probe_accuracy)
 
         cert_summary = None
         if captured:
@@ -141,11 +171,12 @@ class SimulationStep(PipelineStep):
                 captured=captured, samples=samples,
             )
             cert_summary = cert.summary()
+        self._emit_deployment_record_fragment(runner, stage_timer, probe_accuracy)
         self._verdict = {
             "status": "pass",
             "rule": "nevresim decision-parity probe (metric-neutral)",
             "detail": {
-                "probe_accuracy": float(self.probe_accuracy),
+                "probe_accuracy": probe_accuracy,
                 "spike_count_certificate": cert_summary,
             },
         }
