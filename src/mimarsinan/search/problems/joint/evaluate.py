@@ -20,7 +20,6 @@ from mimarsinan.search.results import ACCURACY_OBJECTIVE_NAME
 
 from .types import (
     HW_PACKING_PHASE,
-    STRUCTURAL_PHASE,
     CandidateFailure,
     CandidatePlatformError,
     JointHostContract,
@@ -30,9 +29,12 @@ from .types import (
 
 logger = logging.getLogger(__name__)
 
-# A candidate that simply does not fit is scored, not raised about; a candidate
-# that broke while being built crosses the boundary typed.
-_PENALIZED_PHASES = frozenset({STRUCTURAL_PHASE, HW_PACKING_PHASE})
+# A candidate that simply does not FIT is scored, not raised about; a candidate
+# that broke while being built crosses the boundary typed. Structural rejection
+# is not listed because it cannot arrive here: ``validate_fn`` runs in
+# ``validate_detailed``, before any candidate fact is resolved, so the phases
+# ``_resolve_entry`` can report are model build, conversion and packing.
+_PENALIZED_PHASES = frozenset({HW_PACKING_PHASE})
 
 
 class JointEvaluateMixin(JointHostContract):
@@ -58,6 +60,9 @@ class JointEvaluateMixin(JointHostContract):
             self._cache[key] = obj
             return obj
 
+        # The validation cache is an OPTIMIZATION, not a dependency: it is
+        # bounded, so a validated candidate whose entry has been evicted is
+        # simply resolved again rather than scored off something stale.
         entry = self._validation_cache.get(key)
         if entry is None:
             obj = self._evaluate_inner(

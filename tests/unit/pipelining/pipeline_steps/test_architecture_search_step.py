@@ -91,21 +91,36 @@ class TestHardwareModeSmoke:
     def test_the_promised_platform_is_the_deployment_resolution_of_the_winner(
         self, tmp_path,
     ):
-        # W5.1: the step promises the winner's chip verbatim — the SAME
-        # resolution a fixed-mode deployment of those cores would produce.
-        # Nothing is merged, re-stamped, or carried across afterwards.
+        # W5.1: the step promises the WINNER's chip verbatim — the SAME
+        # resolution a fixed-mode deployment of the winner's decision variables
+        # would produce. Nothing is merged, re-stamped, or carried afterwards.
+        #
+        # The expectation is built from the SEARCH RESULT's own record of the
+        # winner, never from the promised platform: a golden rebuilt out of the
+        # thing under test would pass just as happily on the run's base chip.
         pipeline = _run_step(tmp_path)
         pcfg = pipeline.cache["ArchitectureSearch.platform_constraints_resolved"]
+        result = pipeline.cache["ArchitectureSearch.architecture_search_result"]
+        winner = result["best"]["configuration"]["platform_constraints"]
+
         expected = build_platform_constraints_resolved(
             {**_hardware_search_config(),
-             "cores": pcfg["cores"],
-             "target_tq": pcfg["target_tq"]},
+             "cores": winner["cores"],
+             "target_tq": winner["target_tq"]},
             include_neuron_splitting=False,
         )
         assert pcfg == expected
-
-        result = pipeline.cache["ArchitectureSearch.architecture_search_result"]
         assert result["discovered_platform_constraints"] == pcfg
+
+        # ...and the winner is a chip the search FOUND, not the one it started
+        # from, so promoting the base instead cannot satisfy the golden above.
+        base = build_platform_constraints_resolved(
+            _hardware_search_config(), include_neuron_splitting=False,
+        )
+        assert pcfg["cores"] != base["cores"], (
+            "the fixture must let the search move off its declared platform, "
+            "or this golden cannot tell the winner from the base"
+        )
 
     def test_fixed_model_config_is_passed_through(self, tmp_path):
         pipeline = _run_step(tmp_path)

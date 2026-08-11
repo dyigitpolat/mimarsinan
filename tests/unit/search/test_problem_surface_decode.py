@@ -231,6 +231,35 @@ class TestTheGoldenIsSensitive:
         assert mutated != decoded
 
 
+class TestTheCoreGridIsHonoured:
+    """Core dimensions land ON the declared grid — never between its lines."""
+
+    def test_an_off_grid_decision_variable_snaps_onto_the_grid(self):
+        # The optimizers propose continuous vectors; a 99-axon core is not a
+        # chip anyone can build, and an unsnapped dimension would make the
+        # searched chip differ from the one the levers describe.
+        problem = _hw_problem()
+        decoded = problem.decode(np.array([99.0, 101.0, 16.0]))
+        core = decoded["platform_constraints"]["cores"][0]
+        assert core["max_axons"] == 96, "99 snaps DOWN to the nearest grid line"
+        assert core["max_neurons"] == 104, "101 snaps UP to the nearest grid line"
+        assert core["count"] == 16, "core count is a count, not a grid dimension"
+        for dim in ("max_axons", "max_neurons"):
+            assert core[dim] % CORE_DIM_GRANULARITY == 0
+
+    def test_a_dimension_below_one_grid_line_snaps_up_to_one(self):
+        # Rounding toward zero would decode a 0-axon core: not a small chip,
+        # no chip at all.
+        cfg = _pipeline_config()
+        problem = _hw_problem(cfg)
+        problem.core_axons_bounds = (1, 256)
+        problem.core_neurons_bounds = (1, 256)
+        decoded = problem.decode(np.array([1.0, 3.0, 16.0]))
+        core = decoded["platform_constraints"]["cores"][0]
+        assert core["max_axons"] == CORE_DIM_GRANULARITY
+        assert core["max_neurons"] == CORE_DIM_GRANULARITY
+
+
 class TestCandidatePlatformResolutionIsTheOneSeam:
     def test_resolution_is_a_fixpoint(self):
         # Re-resolving an already resolved candidate changes nothing, so the
@@ -266,6 +295,46 @@ class TestCandidatePlatformResolutionIsTheOneSeam:
         cfg = _pipeline_config()
         problem = _hw_problem(cfg)
         assert problem.fixed_platform_constraints == build_fixed_platform_constraints(cfg)
+
+    def test_the_constraint_check_sees_the_resolved_chip(self):
+        # ``constraint_fn`` is the caller's own feasibility rule (a builder's
+        # ``validate_config``). Handing it the raw declaration would ask it
+        # about a chip nobody deploys — it could not even see the platform's
+        # bias capability, which decides how a layer's fan-in is counted.
+        # (``validate_detailed`` re-resolves idempotently, so passing it the
+        # resolved candidate is the same call; the ``constraint_fn`` argument
+        # is the observable half of that contract.)
+        seen = []
+        cfg = _pipeline_config()
+        problem = _hw_problem(cfg)
+        problem.constraint_fn = lambda mc, pcfg, shape: seen.append(pcfg) or 0.0
+
+        raw = {
+            "model_config": _fixed_model_config(),
+            "platform_constraints": {
+                "cores": [{"max_axons": 128, "max_neurons": 128, "count": 16}],
+            },
+        }
+        assert problem.constraint_violation(raw) == 0.0
+        assert seen == [problem.resolve_candidate_platform(raw["platform_constraints"])]
+        assert seen[0]["cores"][0]["has_bias"] is False, (
+            "the declared bias capability must reach the constraint check"
+        )
+        assert seen[0]["schedule_policy"] == "bank_clustered"
+
+    def test_a_constraint_violation_is_reported_on_the_resolved_chip(self):
+        # The mirror: a rule that rejects the RESOLVED chip must be able to.
+        problem = _hw_problem()
+        problem.constraint_fn = lambda mc, pcfg, shape: (
+            5.0 if pcfg["cores"][0].get("has_bias") is False else 0.0
+        )
+        violation = problem.constraint_violation({
+            "model_config": _fixed_model_config(),
+            "platform_constraints": {
+                "cores": [{"max_axons": 128, "max_neurons": 128, "count": 16}],
+            },
+        })
+        assert violation == 5.0
 
 
 class TestAnUnresolvableDeclarationIsScopedCorrectly:

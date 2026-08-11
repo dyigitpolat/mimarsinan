@@ -12,6 +12,7 @@ import logging
 import pytest
 
 from mimarsinan.deployment_record.objectives import OBJECTIVES, CandidateStaticView
+from mimarsinan.mapping.layout.layout_types import LayoutSoftCoreSpec
 from mimarsinan.search.problem import CandidateInfeasibleError, ValidationResult
 from mimarsinan.search.problems.joint.evaluate import JointEvaluateMixin
 from mimarsinan.search.problems.joint.layout_hook import JointLayoutMixin
@@ -78,7 +79,7 @@ class _ValidateHarness(_Harness):
     def _collect_softcores(self, model, pcfg):
         raise AssertionError("should not be reached")
 
-    def _candidate_view(self, softcores, pcfg, total_params, host_segments):
+    def _pack_candidate(self, softcores, pcfg):
         raise AssertionError("should not be reached")
 
 
@@ -224,6 +225,20 @@ class _LayoutInnerHarness(_InnerHarness):
         self.active_objective_names = ("total_params", "param_utilization_pct")
 
 
+class _UnpackableHarness(_LayoutInnerHarness):
+    """A candidate whose facts resolve but whose softcores do not fit the chip."""
+
+    def _collect_softcores(self, model, pcfg):
+        return [
+            LayoutSoftCoreSpec(
+                input_count=64, output_count=64, residency_class_id=0, name="sc",
+            )
+        ], 0
+
+
+TOO_SMALL_CHIP = {"cores": [{"max_axons": 8, "max_neurons": 8, "count": 1}]}
+
+
 class TestEvaluateInnerRaiseSiteClassification:
     def test_candidate_model_build_failure_raises_typed(self):
         harness = _InnerHarness(build_error=ValueError("candidate arch invalid"))
@@ -250,3 +265,24 @@ class TestEvaluateInnerRaiseSiteClassification:
         # axis active, the candidate view is built without the mapping at all.
         harness = _InnerHarness()
         assert harness._evaluate_inner({}, {}) == {"total_params": 1.0}
+
+    def test_a_candidate_that_does_not_fit_is_SCORED_not_raised(self, caplog):
+        # The one penalized phase: a chip that cannot hold the candidate is a
+        # ranked, dominated row — raising here would let a whole population of
+        # ambitious-but-oversized candidates abort the search instead.
+        harness = _UnpackableHarness()
+        with caplog.at_level(logging.WARNING, logger=EVALUATE_LOGGER):
+            objectives = harness._evaluate_inner({}, TOO_SMALL_CHIP)
+        assert objectives == harness._penalty_objectives()
+        assert any(
+            r.levelno == logging.WARNING and "returning full penalty" in r.getMessage()
+            for r in caplog.records
+        )
+
+    def test_the_packing_penalty_reports_the_census_that_explains_it(self):
+        harness = _UnpackableHarness()
+        _entry, failure = harness._resolve_entry({}, TOO_SMALL_CHIP)
+        assert failure is not None
+        assert failure.phase == "hw_packing"
+        assert "softcores=1" in failure.message
+        assert "total_hw_capacity=64" in failure.message

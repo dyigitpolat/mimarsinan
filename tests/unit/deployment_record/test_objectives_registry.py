@@ -7,6 +7,7 @@ import pytest
 from mimarsinan.deployment_record.cost import DeploymentCostModel, find_term
 from mimarsinan.deployment_record.schema import SegmentRecord
 from mimarsinan.deployment_record.objectives import (
+    CANDIDATE_FRAGMENTS,
     OBJECTIVES,
     SEARCH_MODES,
     CandidateStaticView,
@@ -14,6 +15,7 @@ from mimarsinan.deployment_record.objectives import (
     ObjectiveRegistry,
     ObjectiveSpecV2,
     candidate_capability_probe,
+    candidate_probe_without,
     chip_param_capacity,
 )
 
@@ -180,6 +182,35 @@ class TestAvailabilityOnTheCandidateView:
         for mode in SEARCH_MODES:
             probe = candidate_capability_probe(mode)
             assert OBJECTIVES.available_for(probe) == OBJECTIVES.for_search_mode(mode)
+
+
+class TestTheFragmentProbe:
+    """``candidate_probe_without`` — "which axes need this fact?", asked of the registry."""
+
+    def test_every_fragment_is_droppable_and_costs_at_least_one_axis(self):
+        # A fragment nothing reads is a fragment no caller should be paying to
+        # compute; a fragment name nothing answers is a typo waiting to happen.
+        for fragment in CANDIDATE_FRAGMENTS:
+            probe = candidate_probe_without(fragment)
+            assert getattr(probe, fragment) is None
+            lost = {
+                s.key for s in OBJECTIVES.available_for(candidate_view())
+            } - {s.key for s in OBJECTIVES.available_for(probe)}
+            assert lost, f"no objective reads the {fragment!r} fragment"
+
+    def test_dropping_the_layout_costs_exactly_the_layout_axes(self):
+        probe = candidate_probe_without("layout")
+        keys = {s.key for s in OBJECTIVES.available_for(probe)}
+        assert keys == {"estimated_accuracy", "total_params", "total_param_capacity"}
+
+    def test_an_unknown_fragment_is_refused_by_name(self):
+        # The probe is how a caller decides whether to compute something
+        # expensive; a misspelled fragment would silently answer "nothing needs
+        # it" and skip the work for every candidate.
+        with pytest.raises(ValueError, match="unknown candidate fragment"):
+            candidate_probe_without("layout_stats")
+        with pytest.raises(ValueError, match="estimated_accuracy"):
+            candidate_probe_without("accuracy")
 
 
 class TestAvailabilityOnTheRecordView:
