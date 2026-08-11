@@ -347,6 +347,40 @@ W5.1); and `total_sync_barriers`/`total_params`/`estimated_accuracy` are candida
 no record twin (the record carries no host-slot census, no torch parameter census, and no
 search-time proxy — `deployed_accuracy` is its measured counterpart).
 
+## 8b. Introspection channel (as implemented, W5.2, `deployment_record/introspection/`)
+
+The same registry idea, one level up from scalars: seven typed payloads
+(`softcores, layer_rollup, bank_composition, placement, schedule, capabilities,
+layout_stats`) over the SAME two completenesses — `CandidateLayoutView` (a search
+candidate's shape-only layout) and `RecordIntrospectionView` (a sealed record). Each
+payload carries its own `payload`/`payload_version` and refuses to load under another
+name or version; a payload is served exactly when its backing datum is populated, and
+serving an unavailable one raises naming what it requires (`placement` needs a sealed
+record; `softcores` is the candidate's own table, whose sealed counterpart IS
+`placement`). Three enabling repairs landed with it:
+
+1. `LayoutSoftCoreSpec` carries `bank_id` + `perceptron_index` — the mapper's own
+   side-tables, which previously died at the `collect_layout_softcores` boundary. Layer
+   rollups now key on `perceptron_index`; the core NAME is a label, never a key (the
+   name-splitting heuristic is deleted).
+2. `ChipCapabilities.capability_bits()` serves the COMPLETE declaration (derived from
+   the dataclass) and `layout_kwargs()` the subset the layout helpers take — the
+   permission bits PLUS `schedule_policy`/`max_schedule_passes`. **Behaviour change:**
+   on a `bank_clustered` platform the searched/previewed pass structure is now the one
+   `build_hybrid_hard_core_mapping` composes, not the capacity-split pool one; the
+   bank-clustered ALLOCATION is a single shared law
+   (`mapping/support/schedule/bank_clustered_law.py`) both sides call. Where the policy
+   does not apply, the previous answer stands byte-identically.
+3. Optimizers depend on the introspection types only. The compilagent backend imports
+   nothing from `mapping` (AST-pinned) and derives one read-only tool per
+   candidate-answerable payload from the registry, so a registered payload reaches the
+   agent without hand-written plumbing.
+
+Stated disposition: a candidate's `schedule` payload reports the deployed TOTALS
+(passes, barriers) and a per-segment core census, but not a per-segment pass split —
+the layout answer computes the split internally and publishes the totals; re-deriving
+it per query would double the packing work on the candidate hot path.
+
 ## 9. Known limitations (stated, not hidden)
 
 1. **nevresim cycle counts do not exist** — the C++ span machinery is connectivity
