@@ -80,10 +80,10 @@ class TestResumeResolvesTheLegacyArtifact:
     @pytest.mark.parametrize("placement", ["subsume", "offload"])
     def test_the_configured_placement_is_applied_and_stamped(self, placement):
         legacy = _make_legacy(_flow("subsume"))
-        keys = resolve_cached_flow_placements(
+        stamped = resolve_cached_flow_placements(
             _cache_with(legacy), placement=placement, packaging=SPIKING_PACKAGING,
         )
-        assert keys == ["Model Building/model"]
+        assert stamped == {"Model Building/model": placement}
         assert resolved_encoding_placement(legacy.get_mapper_repr()) == placement
         require_resolved_encoding_placement(
             legacy.get_mapper_repr(), placement, context="the on-chip fraction gate"
@@ -108,23 +108,26 @@ class TestResumeResolvesTheLegacyArtifact:
 
     def test_a_value_domain_resume_is_stamped_not_applicable(self):
         legacy = _make_legacy(_flow("subsume"))
-        resolve_cached_flow_placements(
+        stamped = resolve_cached_flow_placements(
             _cache_with(legacy), placement="subsume", packaging=MVM_PACKAGING,
         )
         assert (
             resolved_encoding_placement(legacy.get_mapper_repr())
             == PLACEMENT_NOT_APPLICABLE
         )
+        # It reports what it STAMPED, not what it was asked for: an MVM resume
+        # told "subsume" would describe a host encoder the target cannot have.
+        assert stamped == {"Model Building/model": PLACEMENT_NOT_APPLICABLE}
 
 
 class TestItTouchesNothingElse:
     def test_an_already_stamped_flow_is_left_alone(self):
         model = _flow("subsume")
         before = _encoders(model)
-        keys = resolve_cached_flow_placements(
+        stamped = resolve_cached_flow_placements(
             _cache_with(model), placement="offload", packaging=SPIKING_PACKAGING,
         )
-        assert keys == []
+        assert stamped == {}
         assert resolved_encoding_placement(model.get_mapper_repr()) == "subsume"
         assert _encoders(model) == before
 
@@ -134,7 +137,7 @@ class TestItTouchesNothingElse:
         cache.add("Pretraining/model", torch.nn.Linear(4, 4), "torch_model")
         assert resolve_cached_flow_placements(
             cache, placement="offload", packaging=SPIKING_PACKAGING,
-        ) == []
+        ) == {}
 
     def test_an_unreadable_flow_names_itself_instead_of_a_bare_traceback(self):
         """This runs at pipeline construction, before any step names an artifact."""
@@ -250,9 +253,9 @@ class TestRoundTripThroughTheRealCache:
         model = reloaded.get("Model Building/model")
         assert resolved_encoding_placement(model.get_mapper_repr()) is None
 
-        keys = resolve_cached_flow_placements(
+        stamped = resolve_cached_flow_placements(
             reloaded, placement="offload", packaging=SPIKING_PACKAGING,
         )
-        assert keys == ["Model Building/model"]
+        assert stamped == {"Model Building/model": "offload"}
         assert resolved_encoding_placement(model.get_mapper_repr()) == "offload"
         assert not any(_encoders(model))

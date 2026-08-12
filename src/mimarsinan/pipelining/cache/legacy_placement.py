@@ -17,12 +17,13 @@ depends on.
 
 from __future__ import annotations
 
-from typing import Any, Callable, List, Optional, cast
+from typing import Any, Callable, Dict, Optional, cast
 
 from mimarsinan.mapping.model_representation import ModelRepresentation
 from mimarsinan.mapping.platform.packaging_contract import PackagingContract
 from mimarsinan.torch_mapping.encoding_layers import (
     resolve_unstamped_encoding_placement,
+    resolved_encoding_placement,
 )
 
 
@@ -44,14 +45,17 @@ def _mapper_repr_of(entry: Any) -> Optional[ModelRepresentation]:
 
 def resolve_cached_flow_placements(
     cache, *, placement: str, packaging: PackagingContract,
-) -> List[str]:
+) -> Dict[str, str]:
     """Apply ``placement`` to every cached flow that carries no placement stamp.
 
-    Returns the cache keys it resolved (empty for a fresh run, and for any
-    directory whose artifacts were already written with a stamp — so this is a
-    no-op on everything but a legacy resume).
+    Returns ``{cache key: the placement actually STAMPED}`` — which is not
+    always the requested one: a value-domain target has no encoder to place and
+    is stamped not-applicable. Reporting the request instead of the result would
+    tell an MVM resume its encoder was subsumed, and the request is not what any
+    consumer will read. Empty for a fresh run and for any directory whose
+    artifacts already carry a stamp, so this is a no-op outside a legacy resume.
     """
-    resolved: List[str] = []
+    resolved: Dict[str, str] = {}
     for key in list(cache.keys()):
         try:
             mapper_repr = _mapper_repr_of(cache.get(key))
@@ -70,5 +74,7 @@ def resolve_cached_flow_placements(
         if resolve_unstamped_encoding_placement(
             mapper_repr, placement=placement, packaging=packaging,
         ):
-            resolved.append(key)
+            stamped = resolved_encoding_placement(mapper_repr)
+            assert stamped is not None  # just applied, by the one writer
+            resolved[key] = stamped
     return resolved

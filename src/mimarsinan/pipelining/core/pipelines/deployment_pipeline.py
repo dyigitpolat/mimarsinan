@@ -138,17 +138,20 @@ class DeploymentPipeline(Pipeline):
         AND no negative-boundary host placement of THIS run exists to erase.
         A no-op for a fresh run and for any artifact written with a stamp.
         """
-        keys = resolve_cached_flow_placements(
+        stamped = resolve_cached_flow_placements(
             self.cache,
             placement=str(self.config.get("encoding_layer_placement", "subsume")),
             packaging=packaging_contract_for(self.plan),
         )
-        if keys:
+        if stamped:
+            # The STAMP, not the request: a value-domain resume is stamped
+            # not-applicable, and saying "subsume" there would be a lie in the
+            # one message a resuming reader has.
             print(
-                f"[DeploymentPipeline] resolved encoding_layer_placement="
-                f"{self.config.get('encoding_layer_placement', 'subsume')!r} on "
-                f"{len(keys)} cached flow(s) written before the placement stamp "
-                f"existed: {sorted(keys)}"
+                f"[DeploymentPipeline] resolved encoding placement "
+                f"{sorted(set(stamped.values()))} on {len(stamped)} cached "
+                f"flow(s) written before the placement stamp existed: "
+                f"{sorted(stamped)}"
             )
 
     def _display_config(self):
