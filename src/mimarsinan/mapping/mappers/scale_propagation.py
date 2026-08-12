@@ -28,6 +28,22 @@ def walk_out_scales(model_repr, visit: Callable[[Any, list, dict], Any]) -> dict
     return out_scales
 
 
+def arm_wrap_slots(node, source_scales, output_scale) -> None:
+    """Give a host ComputeOp the wrap slots IR emission turns into a
+    ``ScaleNormalizingWrapper``: one gauge per source in, one emitted gauge out.
+
+    SCALAR slots: the emitted gauge must broadcast to the op's OWN output width,
+    which a source-sized vector cannot do for a shape-changing op.
+    """
+    node.per_source_scales = [
+        torch.as_tensor(s, dtype=torch.float32).reshape(-1).mean().reshape(1)
+        for s in source_scales
+    ]
+    node.output_scale = (
+        torch.as_tensor(output_scale, dtype=torch.float32).reshape(-1).mean().reshape(1)
+    )
+
+
 def first_source_scale(deps, out_scales):
     """First source's recorded out-scale (graph order), or ``None``."""
     for d in deps:

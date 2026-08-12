@@ -13,11 +13,51 @@ from mimarsinan.models.nn.activations.ttfs_spiking import TTFSActivation
 
 __all__ = [
     "clear_wire_value_ops",
+    "heterogeneous_domain_joins",
     "mark_wire_value_ops",
     "node_absorbs_negative_values",
     "op_preserves_wire_ratio",
     "produces_nonnegative_values",
+    "value_domain_map",
 ]
+
+
+def value_domain_map(exec_order, deps) -> tuple[dict, list]:
+    """``(node -> stored value is ABSOLUTE, plain host ops with a MIXED fan-in)``.
+
+    Neural producers and ARMED ComputeOps emit the wire domain; a structural
+    chain rooted at the input stays absolute; a plain host op inherits its
+    sources'. An op whose sources disagree carries two currencies at once and
+    has NO domain until its gauge is established (calculus §11.2) — it is
+    reported, and the walk continues as absolute so every such join is listed.
+    """
+    flags: dict = {}
+    joins: list = []
+    for node in exec_order:
+        node_deps = deps.get(node, [])
+        if getattr(node, "perceptron", None) is not None:
+            flags[node] = False
+        elif isinstance(node, ComputeOpMapper) and node.output_scale is not None:
+            flags[node] = False
+        elif not node_deps:
+            flags[node] = True
+        else:
+            dep_flags = {flags[dep] for dep in node_deps}
+            if len(dep_flags) > 1:
+                joins.append(node)
+                flags[node] = True
+            else:
+                flags[node] = dep_flags.pop()
+    return flags, joins
+
+
+def heterogeneous_domain_joins(model_repr) -> list:
+    """Plain host ops whose fan-in mixes wire and absolute sources — the graph
+    is unclassifiable (and so unexecutable by a wire-currency twin) until every
+    such source decodes at its own producer gauge."""
+    model_repr._ensure_exec_graph()
+    return value_domain_map(model_repr._exec_order, model_repr._deps)[1]
+
 
 # Activations whose output is >= 0 for EVERY input. The spiking activations
 # decode spike counts / spike times, which are non-negative by construction.

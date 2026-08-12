@@ -76,6 +76,11 @@ VEHICLES = {
              "model_config": {"base_activation": "ReLU",
                               "patch_n_1": 4, "patch_m_1": 4,
                               "patch_c_1": 32, "fc_w_1": 64, "fc_w_2": 64}},
+    # NOTE: a "vitleaf" mixed-domain-seam vehicle was authored and WITHDRAWN on
+    # 2026-08-13 — the seam is fine, but the leaf ViT's host stem exposes an
+    # unrelated framework gap that makes the cell undeployable. Sizing, measured
+    # divergence and the re-add precondition:
+    # docs/research/findings/streamed_host_prefix_entry_gauge.md
 }
 
 MODES = {
@@ -281,6 +286,18 @@ T0 = [
          pruned=0.10, tags=["pruned10"],
          note="pins streamed x pruning parity — the W0.1 regression (streamed "
               "gate must project the NF onto the deployed survivor set)"),
+    # n=52 IS DELIBERATELY UNUSED. A lifs/vitleaf/offload MIXED-DOMAIN SEAM cell
+    # was authored here on 2026-08-13 and WITHDRAWN the same day: it runs to
+    # Soft Core Mapping and then fails the FATAL streamed NF<->SCM exactness
+    # certificate on 94% of windows — not at the seam (which the twin and the
+    # chip agree on), but at the ENTRY to the first core, for a reason that has
+    # nothing to do with the seam and everything to do with a long ABSOLUTE
+    # host prefix. Measured root cause, reproduction and the precondition for
+    # re-adding the row: docs/research/findings/streamed_host_prefix_entry_gauge.md.
+    # The seam repair the cell was meant to cover is instead pinned by unit
+    # coverage (tests/unit/spiking/test_wire_gauge_establishment.py and
+    # tests/unit/pipelining/test_streamed_mixed_seam_exactness.py, both
+    # mutation-verified end to end against the deployed executor).
     # [W5.3] the ONE searched-hardware cell. Every other row in every tier
     # pins hw_config_mode "fixed", so the co-search path — ArchitectureSearchStep,
     # the objectives registry's per-mode availability, the live search_event
@@ -756,6 +773,20 @@ COVERAGE_NOTES = {
         "mmixcore wq s32 e8 / stream_cnn wq s16 offload (fully on-chip) / "
         "stream_cnn fp s8. stream_cnn is the new spiking-native conv vehicle "
         "(stride-2 blocks, no pooling; platform C for the 1024-axon fc).",
+        "[mixed-domain seam 2026-08-13] NO tier-0 row carries a heterogeneous "
+        "fan-in (a host residual re-joining the branch that crossed a core), "
+        "and this is a MEASURED coverage HOLE, not an omission: mmix and "
+        "stream_cnn produce zero mixed seams at either placement, so the "
+        "wire-gauge establishment seam has no end-to-end cell. A leaf-ViT "
+        "vehicle (t0_52) was authored to close it and withdrawn the same day — "
+        "the seam itself deploys exactly, but the vehicle's long ABSOLUTE host "
+        "prefix trips an unrelated framework gap (the entry gauge into the "
+        "first core stays at input_data_scale, so the negative-boundary shift "
+        "both saturates the [0,1] encode and overflows the chip's bias grid), "
+        "which fails the FATAL streamed exactness certificate on 94% of "
+        "windows. Measured root cause and the re-add precondition: "
+        "docs/research/findings/streamed_host_prefix_entry_gauge.md. Until "
+        "then the seam is covered by mutation-verified unit tests only.",
         "Quantization axis is RUNTIME truth (SSOT: config_schema/"
         "deployment_derivation.py): activation quantization is derived from the "
         "mode (ON for lif/casc/sync/ttfsq, OFF for analytical ttfs); configs "
