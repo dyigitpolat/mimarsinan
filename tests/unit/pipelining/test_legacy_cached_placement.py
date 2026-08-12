@@ -136,6 +136,35 @@ class TestItTouchesNothingElse:
             cache, placement="offload", packaging=SPIKING_PACKAGING,
         ) == []
 
+    def test_an_unreadable_flow_names_itself_instead_of_a_bare_traceback(self):
+        """This runs at pipeline construction, before any step names an artifact."""
+
+        class _Broken:
+            def get_mapper_repr(self):
+                raise AttributeError("no attribute '_exec_order'")
+
+        cache = PipelineCache()
+        cache.add("Weight Quantization/model", _Broken(), "torch_model")
+        with pytest.raises(RuntimeError, match="Weight Quantization/model"):
+            resolve_cached_flow_placements(
+                cache, placement="subsume", packaging=SPIKING_PACKAGING,
+            )
+
+    def test_a_failure_that_is_not_a_stale_artifact_propagates_untouched(self):
+        """Only the deserialization-shape failures are re-framed; a code bug is
+        not a stale artifact and must not be relabelled as one."""
+
+        class _Bug:
+            def get_mapper_repr(self):
+                raise ZeroDivisionError("a real bug")
+
+        cache = PipelineCache()
+        cache.add("Weight Quantization/model", _Bug(), "torch_model")
+        with pytest.raises(ZeroDivisionError):
+            resolve_cached_flow_placements(
+                cache, placement="subsume", packaging=SPIKING_PACKAGING,
+            )
+
     def test_a_subsume_forward_host_placement_survives_an_offload_resume(self):
         """The negative-boundary policy owns perceptrons placement does not.
 

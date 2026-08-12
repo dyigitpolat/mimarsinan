@@ -26,6 +26,14 @@ from mimarsinan.torch_mapping.encoding_layers import (
 )
 
 
+#: How a deserialized artifact from an older structural layout fails to yield
+#: its mapper graph: a field the class no longer/not yet has, an abstract base
+#: that never implemented the accessor, a signature that moved. Anything else is
+#: a code bug and propagates untouched. (Sibling of
+#: ``load_store_strategies.ENTRY_LOAD_FAILURES``, one level up the same path.)
+STALE_ARTIFACT_FAILURES = (AttributeError, NotImplementedError, TypeError, KeyError)
+
+
 def _mapper_repr_of(entry: Any) -> Optional[ModelRepresentation]:
     """The entry's ``ModelRepresentation``, or ``None`` if it is not a flow."""
     get_mapper_repr = getattr(entry, "get_mapper_repr", None)
@@ -45,7 +53,18 @@ def resolve_cached_flow_placements(
     """
     resolved: List[str] = []
     for key in list(cache.keys()):
-        mapper_repr = _mapper_repr_of(cache.get(key))
+        try:
+            mapper_repr = _mapper_repr_of(cache.get(key))
+        except STALE_ARTIFACT_FAILURES as exc:
+            # Loud and actionable: this runs at pipeline construction, so a bare
+            # traceback here would name no artifact.
+            raise RuntimeError(
+                f"cache entry {key!r} looks like a mapper flow but its mapper "
+                f"graph could not be read ({exc!r}), so its encoding placement "
+                "cannot be resolved. The artifact predates a structural change; "
+                "quarantine it so the producing step re-runs "
+                f"(PipelineCache.quarantine_entry(<run dir>, {key!r}))."
+            ) from exc
         if mapper_repr is None:
             continue
         if resolve_unstamped_encoding_placement(
