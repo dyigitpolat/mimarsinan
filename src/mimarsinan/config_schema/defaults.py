@@ -187,9 +187,9 @@ CONFIG_KEYS_SET: Set[str] = {
     "spike_count_parity_samples", "aa_endpoint_recovery_steps", "tuning_lossless_entry_fast_path", "endpoint_target_margin", "activation_scale_policy", "core_semantics", "value_parity_samples",
     # torch DataLoader worker count; read via config.get with a fallback of 4.
     "num_workers", "proven_recovery_depth",
-    # Workload-profile-injectable keys (absence is meaningful — no defaults).
+    # Keys with NO default, where absence is meaningful: workload-profile-injectable ones, and the target's declared physics (no profile => no absolute area/energy number at all, never a defaulted one).
     "input_data_scale", "eval_subsample_target", "tuning_step_cap_epochs",
-    "calibration_set_policy", "prefix_stage_lr", "endpoint_floor_lr",
+    "calibration_set_policy", "prefix_stage_lr", "endpoint_floor_lr", "platform_physics_profile", "platform_physics_overrides",
 }
 
 

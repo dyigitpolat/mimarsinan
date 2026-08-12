@@ -116,3 +116,51 @@ def test_undersized_explicit_grid_fails_loud_at_the_resolver_seam():
             "cores": [{"max_axons": 256, "max_neurons": 256, "count": 40}],
             "cores_per_tile": 4, "tile_grid_rows": 2, "tile_grid_cols": 2,
         })
+
+
+def test_platform_physics_is_absent_by_default():
+    # A run that declares no profile must carry NO physics, so the absolute
+    # objectives report "none declared" instead of a framework default.
+    assert build_platform_constraints_resolved({})["platform_physics_resolved"] is None
+
+
+def test_platform_physics_resolves_onto_the_surface_the_record_carries():
+    pcfg = build_platform_constraints_resolved({"platform_physics_profile": "truenorth"})
+    physics = pcfg["platform_physics_resolved"]
+    assert physics["name"] == "truenorth"
+    assert physics["constants"]["t_cycle"]["nominal"] == 1000.0
+
+
+def test_platform_physics_overrides_ride_the_resolved_surface():
+    pcfg = build_platform_constraints_resolved({
+        "platform_physics_profile": "truenorth",
+        "platform_physics_overrides": {
+            "t_cycle": {"nominal": 500.0, "unit": "us", "note": "overclocked"}
+        },
+    })
+    physics = pcfg["platform_physics_resolved"]
+    assert physics["constants"]["t_cycle"]["nominal"] == 500.0
+    assert physics["constants"]["t_cycle"]["overridden"] is True
+
+
+def test_overrides_alone_resolve_to_a_custom_target():
+    pcfg = build_platform_constraints_resolved({
+        "platform_physics_overrides": {
+            "t_cycle": {"nominal": 1.0, "unit": "ms", "note": "vendor datasheet"}
+        },
+    })
+    assert pcfg["platform_physics_resolved"]["name"] == "custom"
+
+
+def test_an_unknown_physics_profile_fails_loud_at_resolution_time():
+    # The floorplan discipline: an invalid declaration is refused HERE, not
+    # discovered as a crash deep in the cost model.
+    with pytest.raises(KeyError, match="nosuchchip"):
+        build_platform_constraints_resolved({"platform_physics_profile": "nosuchchip"})
+
+
+def test_the_resolved_physics_is_json_safe():
+    import json
+
+    pcfg = build_platform_constraints_resolved({"platform_physics_profile": "truenorth"})
+    assert json.loads(json.dumps(pcfg["platform_physics_resolved"]))["name"] == "truenorth"

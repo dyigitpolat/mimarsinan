@@ -6,6 +6,7 @@ from typing import Any, cast
 
 from mimarsinan.chip_simulation.sanafe.arch_synth.floorplan import resolve_floorplan
 from mimarsinan.config_schema.defaults import DEFAULT_PLATFORM_CONSTRAINTS
+from mimarsinan.deployment_record.platform_physics.resolve import resolve_platform_physics
 from mimarsinan.mapping.platform.coalescing import CANONICAL_KEY, normalize_coalescing_config
 from mimarsinan.mapping.platform.core_residency import RESIDENCY_KEY
 
@@ -69,6 +70,19 @@ def build_platform_constraints_resolved(
     pcfg["cores_per_tile_resolved"] = int(floorplan.cores_per_tile)
     pcfg["tile_grid_rows_resolved"] = int(floorplan.rows)
     pcfg["tile_grid_cols_resolved"] = int(floorplan.cols)
+
+    # The TARGET'S PHYSICS, resolved the same way and for the same reason as the
+    # floorplan: profile + overrides is a declaration, and the CONCRETE constants
+    # the cost model will price with belong on the surface the record carries
+    # verbatim, so a run states exactly what physics produced its numbers even if
+    # the profile file changes later. None means none declared — the absolute
+    # objectives are then unavailable rather than defaulted. An unknown profile or
+    # an unknown constant fails loud HERE, at resolution time.
+    physics = resolve_platform_physics(
+        str(pipeline_config.get("platform_physics_profile", "") or ""),
+        pipeline_config.get("platform_physics_overrides") or {},
+    )
+    pcfg["platform_physics_resolved"] = physics.to_dict() if physics else None
 
     if "target_tq" in pipeline_config:
         pcfg["target_tq"] = pipeline_config["target_tq"]
