@@ -177,11 +177,33 @@ class TestRepairIsScopedToUnclassifiableGraphs:
             "establishment must leave the graph classifiable"
         )
 
+    def test_a_non_unit_join_never_reaches_the_unity_fallback(self, monkeypatch):
+        """The fallback's unit gauge is forced, not chosen: any producer at a
+        non-unit gauge makes the fan-in non-uniform (or trips the value-op
+        wrap), so ``compute_per_source_scales`` arms the join FIRST, at the
+        producers' true currencies. Refusing the fallback outright is the pin —
+        without it the fallback's gauge would be untestable, because it can
+        only ever see 1.0."""
+        flow = _lif_thetas(_residual_flow())  # theta 1.7: the gauges differ
+        import mimarsinan.spiking.scale_aware_boundaries as scale_aware_boundaries
+
+        def _refuse(node):
+            raise AssertionError(
+                f"the unity fallback must not see {getattr(node, 'name', node)!r}: "
+                "a join with non-unit producer gauges belongs to the policy"
+            )
+
+        monkeypatch.setattr(scale_aware_boundaries, "_arm_domain_join", _refuse)
+        assert establish_gauge_for_mixed_domain_seams(
+            flow, input_data_scale=1.0,
+        ) == 1
+
     def test_unity_gauge_seam_still_gets_a_domain(self):
         """The necessity is STRUCTURAL: at unity gauges the arming policy
         declines (a unit wrapper is numerically inert), but the join still has
         no domain — so the repair arms it anyway, at the pass-through
-        currencies."""
+        currencies. This is the ONLY branch the fallback is reachable on (see
+        the test above), which is why its gauge is unity by construction."""
         flow = _lif_thetas(_residual_flow(), theta=1.0)
         repr_ = flow.get_mapper_repr()
         establish_wire_gauge(flow, input_data_scale=1.0)
@@ -194,6 +216,12 @@ class TestRepairIsScopedToUnclassifiableGraphs:
         seam = _named(repr_, "add")
         assert seam.per_source_scales is not None
         assert all(_mean(s) == pytest.approx(1.0) for s in seam.per_source_scales)
+        # The EMITTED gauge is the one the fallback owns (the policy refreshes
+        # per-source on the next sweep, but never the output scale), and it must
+        # be the PASS-THROUGH: a repair whose only job is to classify a domain
+        # may not rescale the wire it classifies — that would move the seam's
+        # [0,1] clamp headroom and its consumers' weight fold with it.
+        assert _mean(seam.output_scale) == pytest.approx(1.0)
         with torch.no_grad():
             out = SegmentForwardDriver(repr_, T, LifSegmentPolicy())(
                 torch.rand(4, 1, 1, 8)
