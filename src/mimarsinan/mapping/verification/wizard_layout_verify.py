@@ -90,8 +90,15 @@ def model_repr_from_model(
     *,
     input_shape: tuple | list | None = None,
     num_classes: int | None = None,
+    encoding_placement: str = "subsume",
 ) -> Any | None:
-    """Extract mapper repr from a built model (native or torch); None when extraction fails."""
+    """Extract mapper repr from a built model (native or torch); None when extraction fails.
+
+    ``encoding_placement`` is the RUN's configured placement, and it applies only
+    to the branch that has to birth a flow of its own (a torch module before
+    conversion). A model that already carries a mapper graph carries the
+    deployment's own resolved marking — read it, never re-resolve it.
+    """
     model_repr = None
     with best_effort("snapshot mapper-repr extraction"):
         if hasattr(model, "get_mapper_repr"):
@@ -104,6 +111,7 @@ def model_repr_from_model(
                 input_shape=tuple(input_shape),
                 num_classes=int(num_classes),
                 device="cpu",
+                encoding_layer_placement=encoding_placement,
             )
             model_repr = supermodel.get_mapper_repr()
     if model_repr is None:

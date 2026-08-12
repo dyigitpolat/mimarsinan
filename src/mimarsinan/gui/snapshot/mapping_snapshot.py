@@ -38,8 +38,13 @@ def snapshot_mapping_performance_planned(
     *,
     input_shape: tuple | list | None = None,
     num_classes: int | None = None,
+    encoding_placement: str = "subsume",
 ) -> dict | None:
-    """Return wizard-shaped Mapping Performance stats for the built model."""
+    """Return wizard-shaped Mapping Performance stats for the built model.
+
+    ``encoding_placement`` is the run's configured placement: the panel plans
+    the chip the run will build, not the one a default would.
+    """
     if model is None or not platform_constraints:
         return None
     cores = platform_constraints.get("cores") or []
@@ -56,7 +61,10 @@ def snapshot_mapping_performance_planned(
         return None
 
     model_repr = model_repr_from_model(
-        model, input_shape=input_shape, num_classes=num_classes
+        model,
+        input_shape=input_shape,
+        num_classes=num_classes,
+        encoding_placement=encoding_placement,
     )
     if model_repr is None:
         return None
