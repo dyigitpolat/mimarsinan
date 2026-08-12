@@ -40,7 +40,7 @@
       "embed_dim": 24,
       "num_heads": 2,
       "depth": 1,
-      "mlp_ratio": 1.0
+      "mlp_ratio": 4.0
     },
     "batch_size": 128,
     "max_simulation_samples": 25,

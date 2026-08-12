@@ -80,11 +80,15 @@ VEHICLES = {
     # one: a transformer block's residual leaves the host in the absolute
     # domain and re-joins the branch that crossed the neural core, so a plain
     # host add sees two currencies. MEASURED (28px, patch 7 => 17 tokens,
-    # d=24, depth 1): 19 mapper nodes, 1 perceptron, 1 mixed seam — where
-    # mmix and stream_cnn produce ZERO at any placement.
+    # d=24, depth 1): 19 mapper nodes, 1 perceptron (24 -> 96), 1 mixed seam —
+    # where mmix and stream_cnn produce ZERO at any placement. mlp_ratio is
+    # the CANONICAL 4.0 because the block MLP's first Linear is the ONLY
+    # on-chip tensor here (attention, patch-embed and readout are all host):
+    # at ratio 1.0 the offload majority gate refuses the mapping at 10.66% of
+    # 5626 params, and 4.0 puts it at 26.22% of 9154 (floor 20%).
     "vitleaf": {"model_type": "cifar_vit_leaf", "platform": "A", "axis": "vit_leaf",
                 "model_config": {"patch_size": 7, "embed_dim": 24, "num_heads": 2,
-                                 "depth": 1, "mlp_ratio": 1.0}},
+                                 "depth": 1, "mlp_ratio": 4.0}},
 }
 
 MODES = {
