@@ -42,14 +42,26 @@ def establish_wire_gauge(
     )
 
 
-def _arm_domain_join(node, deps, table) -> None:
-    """Arm a heterogeneous fan-in at its producers' TRUE currencies (kappa_T ==
-    kappa_S). Structural, not numeric: the join owns its domain even when every
-    gauge is unity, because that is what gives the node a domain at all."""
-    source_scales = [float(table.get(dep, 1.0)) for dep in deps]
-    arm_wrap_slots(
-        node, source_scales, sum(source_scales) / len(source_scales),
-    )
+def _arm_domain_join(node) -> None:
+    """Arm a mixed fan-in the SCALE POLICY declined, at UNIT gauge.
+
+    Unity is not a choice here, it is the only currency this fallback can ever
+    see: a join reaching it has ≥2 sources that `apply_compute_op_scale_policy`
+    left unarmed, which happens only when every source scale is exactly 1.0 (a
+    non-unit gauge either makes the fan-in non-uniform — the legacy wrap — or
+    trips the value-op wrap). ``kappa_T == kappa_S`` therefore holds trivially,
+    and a producer-gauge lookup here would be decorative: it could not return
+    anything but 1.0. The arming is purely STRUCTURAL — it is numerically inert
+    (the wrapper multiplies and divides by one) and exists so the join HAS a
+    domain, which is what lets the wire-currency twin walk the graph at all.
+
+    The gauge choice at a join whose producers genuinely differ belongs to the
+    policy, not here, and is measured there — see
+    ``tests/unit/pipelining/test_streamed_mixed_seam_exactness.py::
+    test_gate_catches_a_seam_decoded_at_unity`` (deployed window counts move on
+    56% of neurons when the seam decodes at unity instead of producer gauge).
+    """
+    arm_wrap_slots(node, [1.0] * len(node._sources_list), 1.0)
 
 
 def establish_gauge_for_mixed_domain_seams(
@@ -73,11 +85,8 @@ def establish_gauge_for_mixed_domain_seams(
         joins = heterogeneous_domain_joins(model_repr)
         if not joins:
             break
-        table = read_boundary_out_scales(
-            model_repr, input_data_scale=input_data_scale
-        )
         for node in joins:
-            _arm_domain_join(node, model_repr._deps.get(node, []), table)
+            _arm_domain_join(node)
     verify_boundary_currency_coherence(
         model_repr_or_model, input_data_scale=input_data_scale
     )
