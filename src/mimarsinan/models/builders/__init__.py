@@ -20,6 +20,10 @@ from .lenet5_builder import LeNet5Builder as LeNet5Builder
 from typing import Any, Callable, cast
 
 from mimarsinan.mapping.model_representation import ModelRepresentation
+from mimarsinan.mapping.platform.packaging_contract import (
+    SPIKING_PACKAGING,
+    PackagingContract,
+)
 from mimarsinan.pipelining.core.registry.model_registry import ModelRegistry
 from mimarsinan.torch_mapping.encoding_layers import mark_encoding_layers
 
@@ -28,7 +32,13 @@ from mimarsinan.torch_mapping.encoding_layers import mark_encoding_layers
 BUILDERS_REGISTRY = ModelRegistry.builder_classes()
 
 
-def build_model(builder: Any, model_config: Any, *, encoding_placement: str) -> Any:
+def build_model(
+    builder: Any,
+    model_config: Any,
+    *,
+    encoding_placement: str,
+    packaging: PackagingContract = SPIKING_PACKAGING,
+) -> Any:
     """Build ``builder``'s model with its encoding-layer placement resolved.
 
     ``encoding_layer_placement`` is a config decision, not a builder decision: a
@@ -40,11 +50,15 @@ def build_model(builder: Any, model_config: Any, *, encoding_placement: str) -> 
     moment. A ``torch``-category builder returns an ``nn.Module`` with no mapper
     graph yet; its flow is born later in ``convert_torch_model``, which applies
     the same placement through the same single writer (``mark_encoding_layers``).
-    Nothing else marks.
+    Nothing else marks. ``packaging`` is the deployment's packaging contract, so
+    a value-domain build is stamped not-applicable by the same writer instead of
+    leaving the graph unstamped.
     """
     model = builder.build(model_config)
     get_mapper_repr = getattr(model, "get_mapper_repr", None)
     if callable(get_mapper_repr):
         mapper_repr = cast(Callable[[], ModelRepresentation], get_mapper_repr)()
-        mark_encoding_layers(mapper_repr, placement=encoding_placement)
+        mark_encoding_layers(
+            mapper_repr, placement=encoding_placement, packaging=packaging,
+        )
     return model

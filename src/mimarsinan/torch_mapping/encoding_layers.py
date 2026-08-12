@@ -5,6 +5,10 @@ from __future__ import annotations
 import torch.nn as nn
 
 from mimarsinan.mapping.model_representation import ModelRepresentation
+from mimarsinan.mapping.platform.packaging_contract import (
+    SPIKING_PACKAGING,
+    PackagingContract,
+)
 from mimarsinan.mapping.mappers.perceptron_mapper import PerceptronMapper
 from mimarsinan.mapping.mappers.compute_op_mapper import ComputeOpMapper
 from mimarsinan.mapping.mappers.conv1d_mapper import Conv1DPerceptronMapper
@@ -51,6 +55,14 @@ def _is_encoding_segment_start(node) -> bool:
 
 _VALID_PLACEMENTS = ("subsume", "offload")
 
+#: The stamp a graph carries when ``encoding_layer_placement`` has no meaning
+#: for its target family. A value-domain (MVM) core consumes VALUES, so there
+#: is no spike-train encoder to place anywhere — the registry even makes the
+#: key unauthorable there (``domain="event"``). It is its own value, never a
+#: bare ``None``: ``None`` means "nobody applied the configured placement",
+#: which is the silent no-op this module exists to make loud.
+PLACEMENT_NOT_APPLICABLE = "not_applicable"
+
 
 def encoder_deploys_as_staircase_hop(placement: str) -> bool:
     """True when marked encoders deploy as host ops running their own staircased module.
@@ -78,36 +90,47 @@ class UnresolvedEncodingPlacementError(ValueError):
 
 
 def mark_encoding_layers(
-    model_repr: ModelRepresentation, *, placement: str = "subsume",
+    model_repr: ModelRepresentation,
+    *,
+    placement: str = "subsume",
+    packaging: PackagingContract = SPIKING_PACKAGING,
 ) -> None:
     """Set ``perceptron.is_encoding_layer`` on perceptrons that start a neural segment.
 
     ``placement="subsume"`` marks segment-start perceptrons as host ComputeOps that
     generate spike trains; ``"offload"`` clears the mark so they map on-chip as NeuralCores.
+    ``packaging`` is the target family's contract: a VALUE-domain target has no
+    spike-train encoder at all, so nothing is marked and the graph is stamped
+    :data:`PLACEMENT_NOT_APPLICABLE` — an explicit answer, not an absent one.
 
     THE one writer of the placement decision, and it records the decision on the
     graph (:func:`resolved_encoding_placement`) so a consumer can tell a resolved
     marking from an unresolved one. Call it once, at flow birth — ``build_model``
     for a builder that returns a flow, ``convert_torch_model`` for a torch module.
-    Re-running it later would erase the host placements that ran AFTER it (the
-    negative-boundary subsume-forward policy), so consumers read, never re-mark.
+    Consumers read, never re-mark: the negative-boundary subsume-forward policy
+    adds host placements AFTER birth, and only the perceptrons placement OWNS
+    (the encoding-segment starts) are written here, so anything this walk does
+    not touch survives.
     """
     if placement not in _VALID_PLACEMENTS:
         raise ValueError(
             f"mark_encoding_layers placement must be one of {_VALID_PLACEMENTS!r}; "
             f"got {placement!r}"
         )
+    if packaging.is_value_domain:
+        model_repr.encoding_placement = PLACEMENT_NOT_APPLICABLE
+        return
     model_repr._ensure_exec_graph()
     exec_order = model_repr._exec_order
     assert exec_order is not None  # populated by _ensure_exec_graph
+    host_side = placement == "subsume"
     for node in exec_order:
-        if not _is_perceptron_holder(node):
+        # Scoped to what placement owns: a perceptron that does NOT start an
+        # encoding segment is never placement's to move, so a host mark another
+        # writer put there (negative-boundary subsume-forward) is left alone.
+        if not _is_perceptron_holder(node) or not _is_encoding_segment_start(node):
             continue
-        # Idempotent per placement: offload clears any prior subsume marking so the perceptron maps on-chip.
-        if placement == "offload":
-            node.perceptron.is_encoding_layer = False
-        elif _is_encoding_segment_start(node):
-            node.perceptron.is_encoding_layer = True
+        node.perceptron.is_encoding_layer = host_side
     model_repr.encoding_placement = placement
 
 
@@ -123,10 +146,11 @@ def require_resolved_encoding_placement(
 
     The guard that keeps a placement no-op loud: a flow whose encoders were never
     placed (or were placed differently) cannot be measured, mapped or deployed as
-    if it honored the configured knob.
+    if it honored the configured knob. A value-domain graph answers BOTH
+    placements — it has no encoder, so neither value would change its mapping.
     """
     resolved = resolved_encoding_placement(model_repr)
-    if resolved == placement:
+    if resolved == placement or resolved == PLACEMENT_NOT_APPLICABLE:
         return
     if resolved is None:
         raise UnresolvedEncodingPlacementError(
@@ -142,6 +166,33 @@ def require_resolved_encoding_placement(
         f"{resolved!r} one, so the answer would describe a mapping that will not "
         f"deploy — build a fresh flow for {placement!r} instead."
     )
+
+
+def resolve_unstamped_encoding_placement(
+    model_repr: ModelRepresentation,
+    *,
+    placement: str,
+    packaging: PackagingContract = SPIKING_PACKAGING,
+) -> bool:
+    """Apply the configured placement to a flow that carries NO stamp; else leave it.
+
+    The resume path. A cached flow written before the stamp existed
+    deserializes unstamped, and an unstamped flow is exactly what the guard
+    refuses — so a pre-change run directory could not be resumed at all. The
+    fix is to APPLY the placement (not to wave the flow through): a legacy
+    native flow really never had one applied.
+
+    Safe here and nowhere later: this runs at cache load, before any step of
+    this run executes, so no host placement from the negative-boundary
+    subsume-forward policy exists yet in this process — and the marking is
+    scoped to the encoding-segment starts anyway, so a subsume-forward mark an
+    earlier process left on a perceptron placement does not own survives.
+    Returns whether it applied anything.
+    """
+    if resolved_encoding_placement(model_repr) is not None:
+        return False
+    mark_encoding_layers(model_repr, placement=placement, packaging=packaging)
+    return True
 
 
 def segment_entry_perceptrons(model_repr: ModelRepresentation) -> list:
