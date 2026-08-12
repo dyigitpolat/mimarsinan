@@ -76,19 +76,11 @@ VEHICLES = {
              "model_config": {"base_activation": "ReLU",
                               "patch_n_1": 4, "patch_m_1": 4,
                               "patch_c_1": 32, "fc_w_1": 64, "fc_w_2": 64}},
-    # The MIXED-DOMAIN SEAM vehicle, sized to the smallest graph that carries
-    # one: a transformer block's residual leaves the host in the absolute
-    # domain and re-joins the branch that crossed the neural core, so a plain
-    # host add sees two currencies. MEASURED (28px, patch 7 => 17 tokens,
-    # d=24, depth 1): 19 mapper nodes, 1 perceptron (24 -> 96), 1 mixed seam —
-    # where mmix and stream_cnn produce ZERO at any placement. mlp_ratio is
-    # the CANONICAL 4.0 because the block MLP's first Linear is the ONLY
-    # on-chip tensor here (attention, patch-embed and readout are all host):
-    # at ratio 1.0 the offload majority gate refuses the mapping at 10.66% of
-    # 5626 params, and 4.0 puts it at 26.22% of 9154 (floor 20%).
-    "vitleaf": {"model_type": "cifar_vit_leaf", "platform": "A", "axis": "vit_leaf",
-                "model_config": {"patch_size": 7, "embed_dim": 24, "num_heads": 2,
-                                 "depth": 1, "mlp_ratio": 4.0}},
+    # NOTE: a "vitleaf" mixed-domain-seam vehicle was authored and WITHDRAWN on
+    # 2026-08-13 — the seam is fine, but the leaf ViT's host stem exposes an
+    # unrelated framework gap that makes the cell undeployable. Sizing, measured
+    # divergence and the re-add precondition:
+    # docs/research/findings/streamed_host_prefix_entry_gauge.md
 }
 
 MODES = {
@@ -294,18 +286,18 @@ T0 = [
          pruned=0.10, tags=["pruned10"],
          note="pins streamed x pruning parity — the W0.1 regression (streamed "
               "gate must project the NF onto the deployed survivor set)"),
-    # The MIXED-DOMAIN SEAM cell. Every other lif row is single-currency: the
-    # host stem feeds the cores and never re-joins them, so no host op ever
-    # sees two currencies and the wire-gauge establishment seam had ZERO
-    # coverage. streamed is the default lif discipline AND the one that skips
-    # the exact-QAT install (where windowed lif happened to establish the
-    # gauge), so a transformer residual under lifs crashed the LIF twin
-    # outright. offload mirrors the failing product config.
-    dict(n=52, mode="lifs", quant="wq", wb=5, s=4, vehicle="vitleaf",
-         encoding="offload", tags=["offload"],
-         note="mixed wire/absolute seam pin: the block residual re-joins the "
-              "branch that crossed the first core, so the twin must decode "
-              "each source at its producer's gauge (calculus 11.2/16.6)"),
+    # n=52 IS DELIBERATELY UNUSED. A lifs/vitleaf/offload MIXED-DOMAIN SEAM cell
+    # was authored here on 2026-08-13 and WITHDRAWN the same day: it runs to
+    # Soft Core Mapping and then fails the FATAL streamed NF<->SCM exactness
+    # certificate on 94% of windows — not at the seam (which the twin and the
+    # chip agree on), but at the ENTRY to the first core, for a reason that has
+    # nothing to do with the seam and everything to do with a long ABSOLUTE
+    # host prefix. Measured root cause, reproduction and the precondition for
+    # re-adding the row: docs/research/findings/streamed_host_prefix_entry_gauge.md.
+    # The seam repair the cell was meant to cover is instead pinned by unit
+    # coverage (tests/unit/spiking/test_wire_gauge_establishment.py and
+    # tests/unit/pipelining/test_streamed_mixed_seam_exactness.py, both
+    # mutation-verified end to end against the deployed executor).
     # [W5.3] the ONE searched-hardware cell. Every other row in every tier
     # pins hw_config_mode "fixed", so the co-search path — ArchitectureSearchStep,
     # the objectives registry's per-mode availability, the live search_event
@@ -679,7 +671,6 @@ def _cell(tier, row, vehicles, dataset):
 # four mixer rows timed out at exactly 540 s (9 min at scale 1.5) in the
 # 2026-07-28 verification and reported no verdict at all.
 _TIER0_VEHICLE_WALL_MIN = {
-    "cifar_vit_leaf": 10,
     "stream_cnn": 10,
     "deep_cnn": 16,
     "mlp_mixer_core": 16,
@@ -782,15 +773,20 @@ COVERAGE_NOTES = {
         "mmixcore wq s32 e8 / stream_cnn wq s16 offload (fully on-chip) / "
         "stream_cnn fp s8. stream_cnn is the new spiking-native conv vehicle "
         "(stride-2 blocks, no pooling; platform C for the 1024-axon fc).",
-        "[mixed-domain seam 2026-08-13] t0_52 adds the FIRST cell whose graph "
-        "carries a heterogeneous fan-in: a transformer block's residual stays "
-        "on the host in the absolute domain while its branch crosses the "
-        "first neural core, so a plain host add sees two currencies. Every "
-        "other tier-0 row is single-currency (measured: mmix and stream_cnn "
-        "produce zero mixed seams at either placement), which is why the "
-        "wire-gauge establishment seam had no coverage and a lif/streamed "
-        "transformer crashed the LIF twin. Vehicle sized to the smallest "
-        "graph that exhibits it (19 nodes, 1 perceptron).",
+        "[mixed-domain seam 2026-08-13] NO tier-0 row carries a heterogeneous "
+        "fan-in (a host residual re-joining the branch that crossed a core), "
+        "and this is a MEASURED coverage HOLE, not an omission: mmix and "
+        "stream_cnn produce zero mixed seams at either placement, so the "
+        "wire-gauge establishment seam has no end-to-end cell. A leaf-ViT "
+        "vehicle (t0_52) was authored to close it and withdrawn the same day — "
+        "the seam itself deploys exactly, but the vehicle's long ABSOLUTE host "
+        "prefix trips an unrelated framework gap (the entry gauge into the "
+        "first core stays at input_data_scale, so the negative-boundary shift "
+        "both saturates the [0,1] encode and overflows the chip's bias grid), "
+        "which fails the FATAL streamed exactness certificate on 94% of "
+        "windows. Measured root cause and the re-add precondition: "
+        "docs/research/findings/streamed_host_prefix_entry_gauge.md. Until "
+        "then the seam is covered by mutation-verified unit tests only.",
         "Quantization axis is RUNTIME truth (SSOT: config_schema/"
         "deployment_derivation.py): activation quantization is derived from the "
         "mode (ON for lif/casc/sync/ttfsq, OFF for analytical ttfs); configs "

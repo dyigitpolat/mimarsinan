@@ -668,28 +668,6 @@
       "note": "pins streamed x pruning parity \u2014 the W0.1 regression (streamed gate must project the NF onto the deployed survivor set)"
     },
     {
-      "name": "t0_52_lifs_vitleaf_wq_s4_offload",
-      "config": "t0_52_lifs_vitleaf_wq_s4_offload.json",
-      "model_type": "cifar_vit_leaf",
-      "cell": {
-        "firing": "lif",
-        "sync": "streamed",
-        "quantization": "wq_aq",
-        "S": "4",
-        "depth": "any",
-        "vehicle": "vit_leaf",
-        "dataset": "mnist",
-        "regime": "from_scratch",
-        "pruning": "dense",
-        "encoding_placement": "offload"
-      },
-      "tags": [
-        "offload"
-      ],
-      "expected_wall_min": 10,
-      "note": "mixed wire/absolute seam pin: the block residual re-joins the branch that crossed the first core, so the twin must decode each source at its producer's gauge (calculus 11.2/16.6)"
-    },
-    {
       "name": "t0_60_lifsync_simplemlp_wq_s4_search",
       "config": "t0_60_lifsync_simplemlp_wq_s4_search.json",
       "model_type": "simple_mlp",
@@ -803,7 +781,7 @@
   ],
   "coverage_notes": [
     "[P4 2026-08-07] Streamed-lif respec: the historical lif rows are RE-TAGGED lifsync (windowed semantics, numbers kept: t0_01-05, 26, 28, 30 \u2014 hypervolume axis ('lif','none') unchanged for scoreboard continuity) and five streamed cells land at t0_45-49 (axis ('lif','streamed')): simplemlp wq s4 / deepmlp d4w128 wq s8 / mmixcore wq s32 e8 / stream_cnn wq s16 offload (fully on-chip) / stream_cnn fp s8. stream_cnn is the new spiking-native conv vehicle (stride-2 blocks, no pooling; platform C for the 1024-axon fc).",
-    "[mixed-domain seam 2026-08-13] t0_52 adds the FIRST cell whose graph carries a heterogeneous fan-in: a transformer block's residual stays on the host in the absolute domain while its branch crosses the first neural core, so a plain host add sees two currencies. Every other tier-0 row is single-currency (measured: mmix and stream_cnn produce zero mixed seams at either placement), which is why the wire-gauge establishment seam had no coverage and a lif/streamed transformer crashed the LIF twin. Vehicle sized to the smallest graph that exhibits it (19 nodes, 1 perceptron).",
+    "[mixed-domain seam 2026-08-13] NO tier-0 row carries a heterogeneous fan-in (a host residual re-joining the branch that crossed a core), and this is a MEASURED coverage HOLE, not an omission: mmix and stream_cnn produce zero mixed seams at either placement, so the wire-gauge establishment seam has no end-to-end cell. A leaf-ViT vehicle (t0_52) was authored to close it and withdrawn the same day \u2014 the seam itself deploys exactly, but the vehicle's long ABSOLUTE host prefix trips an unrelated framework gap (the entry gauge into the first core stays at input_data_scale, so the negative-boundary shift both saturates the [0,1] encode and overflows the chip's bias grid), which fails the FATAL streamed exactness certificate on 94% of windows. Measured root cause and the re-add precondition: docs/research/findings/streamed_host_prefix_entry_gauge.md. Until then the seam is covered by mutation-verified unit tests only.",
     "Quantization axis is RUNTIME truth (SSOT: config_schema/deployment_derivation.py): activation quantization is derived from the mode (ON for lif/casc/sync/ttfsq, OFF for analytical ttfs); configs never pin activation_quantization. Names use wq (bits-quantized) or fp (float/vanilla) only.",
     "W3c respec 2026-07-06: t0_04/t0_07 were the fictional aq class (weight_quantization=false + weight_bits ran as de-facto float; X4 passed those forms) -> respecced to real WQ deployments.",
     "W3c respec 2026-07-06: t0_15/t0_21 pruning 0.5 -> 0.10 (user-directed). t0_02/t0_09 stay at 0.5: they pass and keep the heavy-pruning stressor coverage (t0_18 left with the 2026-07-12 casc removal).",
