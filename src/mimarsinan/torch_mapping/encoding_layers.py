@@ -133,7 +133,7 @@ def require_resolved_encoding_placement(
             f"{context}: this flow's encoding_layer_placement was never resolved, "
             f"so its encoder marking answers no configured question and cannot be "
             f"read as the {placement!r} deployment. Build it through "
-            f"models.builders.build.build_model (or convert_torch_model) so the "
+            f"models.builders.build_model (or convert_torch_model) so the "
             f"placement is applied once, at flow birth."
         )
     raise UnresolvedEncodingPlacementError(

@@ -24,7 +24,7 @@ class SimpleMLPBuilder:
         )
         # No encoding-layer marking here: where the encoder runs is
         # ``encoding_layer_placement``'s decision, applied to the built flow by
-        # ``models.builders.build.build_model``. Baking it here made the knob a
+        # ``models.builders.build_model``. Baking it here made the knob a
         # silent no-op for this (the only ``native``) model type.
         assert isinstance(perceptron_flow.perceptrons[0], Perceptron)
         return perceptron_flow
