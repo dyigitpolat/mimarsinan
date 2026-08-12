@@ -73,10 +73,16 @@ def convert_torch_model(
     mapper_repr = converter.convert(report)
 
     flow = ConvertedModelFlow(device, mapper_repr)
-    if not packaging.is_value_domain:
-        # Encoding layers are an event-domain concept (host-side spike-train
-        # generation); a value-domain flow consumes values directly.
-        mark_encoding_layers(flow.get_mapper_repr(), placement=encoding_layer_placement)
+    # Flow birth for a torch module: the placement is resolved here, once, for
+    # EVERY packaging contract. Encoding layers are an event-domain concept
+    # (host-side spike-train generation), so a value-domain flow marks none —
+    # but it is still STAMPED (not-applicable), because an unstamped graph is
+    # indistinguishable from one nobody ever applied the placement to.
+    mark_encoding_layers(
+        flow.get_mapper_repr(),
+        placement=encoding_layer_placement,
+        packaging=packaging,
+    )
 
     flow = flow.to(device)
 

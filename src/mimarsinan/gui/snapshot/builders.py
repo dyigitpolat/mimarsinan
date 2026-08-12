@@ -136,6 +136,9 @@ def build_step_snapshot(
                         pcfg,
                         input_shape=pipeline_cfg.get("input_shape"),
                         num_classes=pipeline_cfg.get("num_classes"),
+                        encoding_placement=str(
+                            pipeline_cfg.get("encoding_layer_placement", "subsume")
+                        ),
                     )
                     if planned is not None:
                         snapshot["mapping_performance"] = planned

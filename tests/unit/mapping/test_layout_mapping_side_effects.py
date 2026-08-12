@@ -7,12 +7,16 @@ import pickle
 import pytest
 import torch
 
-from mimarsinan.models.builders import BUILDERS_REGISTRY
+from mimarsinan.models.builders import BUILDERS_REGISTRY, build_model
 
 
 def _built_simple_mlp():
+    """As the pipeline builds it: subsume, so the 785-wide encoder stays host-side
+    and the 256-axon vehicle below is mappable."""
     builder = BUILDERS_REGISTRY["simple_mlp"]("cpu", (1, 28, 28), 10, {})
-    model = builder.build({"mlp_width_1": 64, "mlp_width_2": 32})
+    model = build_model(
+        builder, {"mlp_width_1": 64, "mlp_width_2": 32}, encoding_placement="subsume",
+    )
     with torch.no_grad():
         model.train()
         model(torch.randn(2, 1, 28, 28))

@@ -22,9 +22,11 @@ class SimpleMLPBuilder:
             configuration["mlp_width_2"],
             base_activation_name=base_activation,
         )
-        encoding_perceptron = perceptron_flow.perceptrons[0]
-        assert isinstance(encoding_perceptron, Perceptron)
-        encoding_perceptron.is_encoding_layer = True
+        # No encoding-layer marking here: where the encoder runs is
+        # ``encoding_layer_placement``'s decision, applied to the built flow by
+        # ``models.builders.build_model``. Baking it here made the knob a
+        # silent no-op for this (the only ``native``) model type.
+        assert isinstance(perceptron_flow.perceptrons[0], Perceptron)
         return perceptron_flow
 
     @classmethod

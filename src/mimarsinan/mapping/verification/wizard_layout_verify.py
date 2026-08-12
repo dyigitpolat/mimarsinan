@@ -17,9 +17,8 @@ from mimarsinan.mapping.platform.platform_constraints import (
     resolve_scalar_mapping_params,
 )
 from mimarsinan.mapping.layout.layout_plan import build_layout_plan
-from mimarsinan.models.builders import BUILDERS_REGISTRY
+from mimarsinan.models.builders import BUILDERS_REGISTRY, build_model
 from mimarsinan.torch_mapping.converter import convert_torch_model
-from mimarsinan.torch_mapping.encoding_layers import mark_encoding_layers
 from mimarsinan.pipelining.core.registry.model_registry import ModelRegistry
 
 
@@ -59,7 +58,7 @@ def model_repr_from_wizard_body(body: dict) -> Any:
         num_classes=num_classes,
         pipeline_config=pipeline_config,
     )
-    raw_model = builder.build(model_config)
+    raw_model = build_model(builder, model_config, encoding_placement=placement)
     category = ModelRegistry.get_category(model_type)
 
     if category == "torch":
@@ -78,8 +77,8 @@ def model_repr_from_wizard_body(body: dict) -> Any:
         raw_model.eval()
         with torch.no_grad(), best_effort("wizard native-model warm-up forward"):
             raw_model(torch.randn(2, *input_shape))
+        # Placement already resolved at flow birth by ``build_model``.
         model_repr = raw_model.get_mapper_repr()
-        mark_encoding_layers(model_repr, placement=placement)
 
     if hasattr(model_repr, "assign_perceptron_indices"):
         model_repr.assign_perceptron_indices()
@@ -91,8 +90,15 @@ def model_repr_from_model(
     *,
     input_shape: tuple | list | None = None,
     num_classes: int | None = None,
+    encoding_placement: str = "subsume",
 ) -> Any | None:
-    """Extract mapper repr from a built model (native or torch); None when extraction fails."""
+    """Extract mapper repr from a built model (native or torch); None when extraction fails.
+
+    ``encoding_placement`` is the RUN's configured placement, and it applies only
+    to the branch that has to birth a flow of its own (a torch module before
+    conversion). A model that already carries a mapper graph carries the
+    deployment's own resolved marking — read it, never re-resolve it.
+    """
     model_repr = None
     with best_effort("snapshot mapper-repr extraction"):
         if hasattr(model, "get_mapper_repr"):
@@ -105,6 +111,7 @@ def model_repr_from_model(
                 input_shape=tuple(input_shape),
                 num_classes=int(num_classes),
                 device="cpu",
+                encoding_layer_placement=encoding_placement,
             )
             model_repr = supermodel.get_mapper_repr()
     if model_repr is None:

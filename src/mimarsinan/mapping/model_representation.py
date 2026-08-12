@@ -16,6 +16,12 @@ class ModelRepresentation:
         self._deps: dict | None = None
         self._consumer_count: dict | None = None
         self._peak_live_values = 0
+        # The ``encoding_layer_placement`` this graph's encoder marking was
+        # resolved under — written ONLY by ``mark_encoding_layers``, at flow
+        # birth. ``None`` means no placement decision has been applied yet, so
+        # the marking answers no configured question and no consumer may read
+        # it as a deployment fact.
+        self.encoding_placement: str | None = None
 
     def map_to_ir(self, ir_mapping):
         """Map this model representation to a unified IRGraph (NeuralCore + ComputeOp nodes)."""

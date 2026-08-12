@@ -26,6 +26,10 @@ from mimarsinan.config_schema.deployment_derivation import (
     derive_pipeline_runtime_parameters,
 )
 from mimarsinan.common.workload_profile import fold_workload_profiles
+from mimarsinan.mapping.platform.packaging_contract import packaging_contract_for
+from mimarsinan.pipelining.cache.legacy_placement import (
+    resolve_cached_flow_placements,
+)
 from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 from mimarsinan.pipelining.core.registry.model_registry import ModelRegistry
 from mimarsinan.pipelining.core.search_mode import derive_search_mode as derive_search_mode  # noqa: F401 — re-export
@@ -124,6 +128,31 @@ class DeploymentPipeline(Pipeline):
                 1.0 - self.plan.scm_degradation_tolerance
             )
         self.accuracy_budget.budget_total = self.plan.degradation_budget_total
+        self._resolve_legacy_cached_placements()
+
+    def _resolve_legacy_cached_placements(self) -> None:
+        """Give a pre-stamp cached flow its placement, at the one safe moment.
+
+        ``Pipeline.__init__`` has already loaded the cache and no step has run,
+        so this is the earliest point where the configured placement is known
+        AND no negative-boundary host placement of THIS run exists to erase.
+        A no-op for a fresh run and for any artifact written with a stamp.
+        """
+        stamped = resolve_cached_flow_placements(
+            self.cache,
+            placement=str(self.config.get("encoding_layer_placement", "subsume")),
+            packaging=packaging_contract_for(self.plan),
+        )
+        if stamped:
+            # The STAMP, not the request: a value-domain resume is stamped
+            # not-applicable, and saying "subsume" there would be a lie in the
+            # one message a resuming reader has.
+            print(
+                f"[DeploymentPipeline] resolved encoding placement "
+                f"{sorted(set(stamped.values()))} on {len(stamped)} cached "
+                f"flow(s) written before the placement stamp existed: "
+                f"{sorted(stamped)}"
+            )
 
     def _display_config(self):
         plan = self.plan

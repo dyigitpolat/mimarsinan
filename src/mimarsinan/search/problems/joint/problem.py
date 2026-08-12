@@ -83,6 +83,10 @@ class JointArchHwProblem(
     extrapolation_num_checkpoints: int = 5
     extrapolation_target_epochs: int = 10
     pruning_fraction: float = 0.0
+    #: The deployment's ``encoding_layer_placement``. A candidate's layout is
+    #: only the deployed model's layout if its encoder sits where deployment
+    #: will put it, so the search resolves the SAME placement the run will.
+    encoding_placement: str = "subsume"
 
     _cache: Dict[str, Dict[str, float]] = field(default_factory=dict, init=False)
     _hw_only_cache: Optional[HwOnlyCache] = field(default=None, init=False)
