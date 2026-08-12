@@ -7,6 +7,10 @@ from dataclasses import dataclass
 import torch
 import torch.nn as nn
 
+#: This bridge deploys one placement — the host-side encoder — and says so once,
+#: at the conversion that resolves it. It is not a pipeline and reads no config.
+ENCODING_PLACEMENT = "subsume"
+
 
 def _resize_head(model: nn.Module, num_classes: int) -> nn.Module:
     """Swap a torchvision classifier ``fc`` Linear to ``num_classes`` outputs, eval()."""
@@ -125,7 +129,6 @@ def deploy_and_eval(
     stays cheap. Only ``spiking_mode='lif'`` is wired; conversion/mapping errors propagate verbatim.
     """
     from mimarsinan.torch_mapping.converter import convert_torch_model
-    from mimarsinan.torch_mapping.encoding_layers import mark_encoding_layers
     from mimarsinan.mapping.ir_mapping_class import IRMapping
     from mimarsinan.mapping.packing.hybrid_hardcore_mapping import (
         build_hybrid_hard_core_mapping,
@@ -152,10 +155,15 @@ def deploy_and_eval(
         )
 
     T = int(simulation_length)
-    flow = convert_torch_model(model.eval(), tuple(input_shape), int(num_classes), device=device)
+    # Conversion is this flow's birth, and it resolves the placement (subsume,
+    # this bridge's fixed choice) through the one writer -- re-marking here
+    # would be a second, silent placement decision.
+    flow = convert_torch_model(
+        model.eval(), tuple(input_shape), int(num_classes), device=device,
+        encoding_layer_placement=ENCODING_PLACEMENT,
+    )
     flow.eval()
     repr_ = flow.get_mapper_repr()
-    mark_encoding_layers(repr_)
     _install_lif_activations(flow, T)
     repr_.assign_perceptron_indices()
 

@@ -147,6 +147,44 @@ class TestTheReportedDefect:
         assert self._fraction("offload").fraction > self._fraction("subsume").fraction
 
 
+class TestTheDeployedMappingHonorsThePlacement:
+    """The knob must move the encoder in the MAPPED IR, not only in the gate.
+
+    A gate that reads right while the mapping deploys the other placement is the
+    same defect wearing a different hat.
+    """
+
+    def _ir(self, placement):
+        from mimarsinan.mapping.ir_mapping_class import IRMapping
+        from mimarsinan.mapping.support.per_source_scales import (
+            compute_per_source_scales,
+        )
+
+        model = _warm(build_model(_builder(), MLP_CONFIG, encoding_placement=placement))
+        repr_ = model.get_mapper_repr()
+        repr_.assign_perceptron_indices()
+        compute_per_source_scales(repr_)
+        return IRMapping(
+            q_max=127, firing_mode="Default", max_axons=None, max_neurons=None,
+            allow_coalescing=False, hardware_bias=True,
+        ).map(repr_)
+
+    def test_subsume_deploys_the_encoder_as_a_host_compute_op(self):
+        ir = self._ir("subsume")
+        assert [op.op_type for op in ir.get_compute_ops()] == ["Perceptron"]
+
+    def test_offload_deploys_the_encoder_as_a_neural_core(self):
+        ir = self._ir("offload")
+        assert ir.get_compute_ops() == []
+        # the 784-wide input layer is now a core, not a host op
+        assert any(core.core_matrix.shape[0] == 784 for core in ir.get_neural_cores())
+
+    def test_offload_maps_one_more_core_than_subsume(self):
+        assert len(self._ir("offload").get_neural_cores()) == (
+            len(self._ir("subsume").get_neural_cores()) + 1
+        )
+
+
 class TestTheGateMeasuresWhatWillDeploy:
     """A flow whose placement was never resolved must not be silently measured."""
 
