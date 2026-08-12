@@ -287,19 +287,22 @@ def estimate_onchip_fraction(
     ``metric="params"`` reproduces ``count_host_params`` exactly; ``metric="macs"``
     reports the on-chip forward-compute fraction at the model's input shape.
     """
+    _require_metric_and_placement("estimate_onchip_fraction", metric, encoding_placement)
+    flow = _build_flow(model, input_shape, num_classes, encoding_placement)
+    return _estimate_from_flow(flow, input_shape, encoding_placement, metric)
+
+
+def _require_metric_and_placement(who: str, metric: str, encoding_placement: str) -> None:
+    """Reject an unknown metric or placement before any model work happens."""
     if metric not in _VALID_METRICS:
         raise ValueError(
-            f"estimate_onchip_fraction metric must be one of {_VALID_METRICS!r}; "
-            f"got {metric!r}"
+            f"{who} metric must be one of {_VALID_METRICS!r}; got {metric!r}"
         )
     if encoding_placement not in _VALID_PLACEMENTS:
         raise ValueError(
-            f"estimate_onchip_fraction encoding_placement must be one of "
-            f"{_VALID_PLACEMENTS!r}; got {encoding_placement!r}"
+            f"{who} encoding_placement must be one of {_VALID_PLACEMENTS!r}; "
+            f"got {encoding_placement!r}"
         )
-
-    flow = _build_flow(model, input_shape, num_classes, encoding_placement)
-    return _estimate_from_flow(flow, input_shape, encoding_placement, metric)
 
 
 def _estimate_from_flow(flow, input_shape, encoding_placement, metric):
@@ -330,6 +333,9 @@ def assert_onchip_majority_estimate_or_raise(
     The static analogue of ``assert_onchip_majority_or_raise`` for callers with a
     model spec but no mapped IR graph.
     """
+    _require_metric_and_placement(
+        "assert_onchip_majority_estimate_or_raise", metric, encoding_placement
+    )
     flow = _build_flow(model, input_shape, num_classes, encoding_placement)
     est = _estimate_from_flow(flow, input_shape, encoding_placement, metric)
     if est.fraction < min_fraction:

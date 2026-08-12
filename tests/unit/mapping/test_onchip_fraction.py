@@ -208,6 +208,27 @@ def test_invalid_placement_raises():
         )
 
 
+class TestAssertHelperValidatesItsArguments:
+    """The assert helper rejects an unknown metric/placement like the estimator
+    does — silently measuring under a misspelled knob is the bug class this file
+    exists for."""
+
+    def _model(self):
+        return _build("deep_mlp", {"depth": 4, "width": 64}, (1, 28, 28), 10)
+
+    def test_unknown_placement_raises(self):
+        with pytest.raises(ValueError, match="encoding_placement"):
+            assert_onchip_majority_estimate_or_raise(
+                self._model(), (1, 28, 28), 10, encoding_placement="nowhere",
+            )
+
+    def test_unknown_metric_raises(self):
+        with pytest.raises(ValueError, match="metric"):
+            assert_onchip_majority_estimate_or_raise(
+                self._model(), (1, 28, 28), 10, metric="flops_or_something",
+            )
+
+
 class TestAssertHelper:
     def test_host_majority_model_raises(self):
         # deep_mlp d4 subsume is host-majority (~0.20 on chip) -> must RAISE.
