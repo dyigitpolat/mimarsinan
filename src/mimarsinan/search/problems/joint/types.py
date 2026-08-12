@@ -139,6 +139,7 @@ class JointHostContract:
     lr: float
     search_mode: str
     builder_factory: BuilderFactory
+    encoding_placement: str
     validate_fn: Optional[ValidateFn]
     constraint_fn: Optional[ConstraintFn]
     fixed_model_config: Optional[Dict[str, Any]]

@@ -104,8 +104,12 @@ class TestIrSpanReport:
 class TestStaticModelReport:
     def test_simplemlp_is_end_to_end(self):
         from mimarsinan.models.perceptron_mixer.simple_mlp import SimpleMLP
+        from mimarsinan.torch_mapping.encoding_layers import mark_encoding_layers
 
         model = SimpleMLP("cpu", (1, 8, 8), 4, 16, 8)
+        # A native flow is born unplaced; the report reads the marking that
+        # will deploy, so the placement is resolved on it first.
+        mark_encoding_layers(model.get_mapper_repr(), placement="subsume")
         report = streamed_span_report_model(
             model, (1, 8, 8), 4, encoding_placement="subsume",
         )

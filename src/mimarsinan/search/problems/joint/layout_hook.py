@@ -21,6 +21,7 @@ from mimarsinan.mapping.verification.layout_verification_scheduling import compu
 from mimarsinan.mapping.verification.layout_verification_types import (
     LayoutVerificationStats,
 )
+from mimarsinan.models.builders import build_model
 from mimarsinan.torch_mapping.converter import convert_torch_model
 
 from .types import (
@@ -42,7 +43,9 @@ class JointLayoutMixin(JointHostContract):
             self.num_classes,
             {**pcfg, "target_tq": int(self.target_tq)},
         )
-        model = builder.build(model_config).to(self.device)
+        model = build_model(
+            builder, model_config, encoding_placement=self.encoding_placement
+        ).to(self.device)
 
         model.eval()
         with torch.no_grad():
@@ -60,7 +63,12 @@ class JointLayoutMixin(JointHostContract):
         return model, total_params
 
     def _convert_to_mapper_repr(self, model):
-        """Convert via torch mapping if the model lacks ``get_mapper_repr``."""
+        """Convert via torch mapping if the model lacks ``get_mapper_repr``.
+
+        A native builder's flow already had its placement resolved by
+        ``build_model``; a torch module's flow is born here and resolves the
+        same one, so a candidate's core count is the deployed model's.
+        """
         if hasattr(model, "get_mapper_repr"):
             return model
         return convert_torch_model(
@@ -69,6 +77,7 @@ class JointLayoutMixin(JointHostContract):
             num_classes=self.num_classes,
             device=self.device,
             Tq=self.target_tq,
+            encoding_layer_placement=self.encoding_placement,
         )
 
     def _ensure_mapper_repr(self, model):

@@ -67,6 +67,16 @@ def encoder_deploys_as_staircase_hop(placement: str) -> bool:
     return placement == "subsume"
 
 
+class UnresolvedEncodingPlacementError(ValueError):
+    """A flow reached a placement-sensitive consumer without a resolved placement.
+
+    Either nothing ever applied ``encoding_layer_placement`` to it (the marking
+    answers no configured question), or it was resolved under a DIFFERENT
+    placement than the caller is asking about (so the answer would describe a
+    mapping that will not deploy).
+    """
+
+
 def mark_encoding_layers(
     model_repr: ModelRepresentation, *, placement: str = "subsume",
 ) -> None:
@@ -74,6 +84,13 @@ def mark_encoding_layers(
 
     ``placement="subsume"`` marks segment-start perceptrons as host ComputeOps that
     generate spike trains; ``"offload"`` clears the mark so they map on-chip as NeuralCores.
+
+    THE one writer of the placement decision, and it records the decision on the
+    graph (:func:`resolved_encoding_placement`) so a consumer can tell a resolved
+    marking from an unresolved one. Call it once, at flow birth — ``build_model``
+    for a builder that returns a flow, ``convert_torch_model`` for a torch module.
+    Re-running it later would erase the host placements that ran AFTER it (the
+    negative-boundary subsume-forward policy), so consumers read, never re-mark.
     """
     if placement not in _VALID_PLACEMENTS:
         raise ValueError(
@@ -91,6 +108,40 @@ def mark_encoding_layers(
             node.perceptron.is_encoding_layer = False
         elif _is_encoding_segment_start(node):
             node.perceptron.is_encoding_layer = True
+    model_repr.encoding_placement = placement
+
+
+def resolved_encoding_placement(model_repr: ModelRepresentation) -> str | None:
+    """The placement this graph's encoder marking was resolved under, or ``None``."""
+    return getattr(model_repr, "encoding_placement", None)
+
+
+def require_resolved_encoding_placement(
+    model_repr: ModelRepresentation, placement: str, *, context: str
+) -> None:
+    """Raise unless this graph's marking already answers ``placement``.
+
+    The guard that keeps a placement no-op loud: a flow whose encoders were never
+    placed (or were placed differently) cannot be measured, mapped or deployed as
+    if it honored the configured knob.
+    """
+    resolved = resolved_encoding_placement(model_repr)
+    if resolved == placement:
+        return
+    if resolved is None:
+        raise UnresolvedEncodingPlacementError(
+            f"{context}: this flow's encoding_layer_placement was never resolved, "
+            f"so its encoder marking answers no configured question and cannot be "
+            f"read as the {placement!r} deployment. Build it through "
+            f"models.builders.build.build_model (or convert_torch_model) so the "
+            f"placement is applied once, at flow birth."
+        )
+    raise UnresolvedEncodingPlacementError(
+        f"{context}: this flow was built for encoding_layer_placement {resolved!r} "
+        f"but is being read as {placement!r}. The marking on the graph is the "
+        f"{resolved!r} one, so the answer would describe a mapping that will not "
+        f"deploy — build a fresh flow for {placement!r} instead."
+    )
 
 
 def segment_entry_perceptrons(model_repr: ModelRepresentation) -> list:

@@ -25,11 +25,16 @@ from mimarsinan.mapping.verification.onchip_majority import (
 )
 
 
-def _build(model_type, model_config, input_shape, num_classes):
-    from mimarsinan.models.builders import BUILDERS_REGISTRY
+def _build(model_type, model_config, input_shape, num_classes, placement="subsume"):
+    """A model as the PIPELINE builds it: placement resolved at flow birth.
+
+    A native builder returns the flow itself, so the placement is applied here;
+    a torch builder's flow is born at conversion and resolves it there.
+    """
+    from mimarsinan.models.builders import BUILDERS_REGISTRY, build_model
 
     builder = BUILDERS_REGISTRY[model_type]("cpu", input_shape, num_classes, {})
-    return builder.build(model_config)
+    return build_model(builder, model_config, encoding_placement=placement)
 
 
 def _authoritative_breakdown(model, input_shape, num_classes, placement):
@@ -354,6 +359,7 @@ class TestLazyModelGuard:
     def test_unmaterialized_lazy_model_raises_named_error(self):
         model = _build(
             "simple_mlp", {"mlp_width_1": 256, "mlp_width_2": 128}, (1, 28, 28), 10,
+            placement="subsume",
         )
         with pytest.raises(ValueError, match="warmup forward"):
             assert_onchip_majority_estimate_or_raise(
@@ -388,7 +394,7 @@ class TestTier0MatrixClearsTheStaticFloor:
     )
     def test_cell_clears_the_20pct_floor(self, model_type, model_config, placement):
         input_shape, num_classes = (1, 28, 28), 10
-        model = _build(model_type, model_config, input_shape, num_classes)
+        model = _build(model_type, model_config, input_shape, num_classes, placement)
         # ModelBuildingStep warms up before the gate (materializes Lazy modules).
         with torch.no_grad():
             model(torch.randn(2, *input_shape))

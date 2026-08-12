@@ -10,6 +10,15 @@ import torch
 import torch.nn as nn
 
 from mimarsinan.mapping.ir import IRGraph
+from mimarsinan.mapping.support.host_contributors import (
+    describe_host_holders,
+    host_contributors_from_ir,
+    subsumed_encoder_params,
+)
+from mimarsinan.mapping.support.scale_wrapper import (
+    is_scale_wrapper as is_scale_wrapper,
+    unwrap_scale_wrapper as unwrap_scale_wrapper,
+)
 
 # Validity threshold SSOT: a mapping whose on-chip params OR ops fraction is below
 # DEFAULT_ONCHIP_FLOOR is INVALID (host-majority — an erroneous deployment); the
@@ -60,19 +69,6 @@ def _numel(value) -> int:
     if torch.is_tensor(value):
         return int(value.numel())
     return 0
-
-
-def is_scale_wrapper(module) -> bool:
-    return type(module).__name__ == "ScaleNormalizingWrapper" and hasattr(
-        module, "module"
-    )
-
-
-def unwrap_scale_wrapper(module):
-    """Peel a ``ScaleNormalizingWrapper`` to reach the wrapped op module."""
-    while is_scale_wrapper(module):
-        module = module.module
-    return module
 
 
 def _linear_macs(in_features: int, out_features: int, n_positions: int) -> int:
@@ -237,24 +233,52 @@ def compute_onchip_fraction(
     )
 
 
+def onchip_placement_remedy(contributors, breakdown: OnchipParamBreakdown) -> str:
+    """The honest next move for a host-majority mapping, in this model's numbers.
+
+    ``subsume`` runs the encoding layer host-side, ``offload`` maps it on chip —
+    so the reachable fraction is today's on-chip params plus whatever the
+    subsumed encoders hold. It is an UPPER bound: the negative-boundary
+    subsume-forward policy (``negative_value_shift=off``) can host an encoder
+    for a reason placement does not control.
+    """
+    subsumed = subsumed_encoder_params(contributors)
+    if subsumed <= 0 or breakdown.total_params <= 0:
+        return (
+            "No encoding layer is subsumed here, so encoding_layer_placement "
+            "cannot move this host majority; shrink the host ops, lower "
+            "onchip_min_fraction, or set onchip_majority_gate=false to deploy "
+            "it as it is."
+        )
+    reachable = (
+        breakdown.onchip_params + subsumed
+    ) / breakdown.total_params
+    return (
+        "encoding_layer_placement='offload' maps the encoding layer on chip "
+        "instead of running it host-side, which would raise this to at most "
+        f"{reachable:.2%}."
+    )
+
+
 def assert_onchip_majority_or_raise(
     ir_graph: IRGraph, *, total_params: int, min_fraction: float = 0.2
 ) -> OnchipParamBreakdown:
     """Raise :class:`OnchipMajorityError` when the on-chip fraction is below the floor.
 
     Raises only below the floor; between floor and majority a mapping is
-    VALID_FLAGGED (see :func:`onchip_fraction.classify_validity`).
+    VALID_FLAGGED (see :func:`onchip_fraction.classify_validity`). The refusal
+    names the host units it actually measured, largest first.
     """
     breakdown = compute_onchip_fraction(ir_graph, total_params=total_params)
     if breakdown.fraction < min_fraction:
+        contributors = host_contributors_from_ir(ir_graph)
         raise OnchipMajorityError(
             "On-chip parameter majority violated: only "
             f"{breakdown.fraction:.2%} of the {breakdown.total_params} deployed "
             f"parameters are placed on chip cores "
             f"(on-chip={breakdown.onchip_params}, host={breakdown.host_params}), "
-            f"below the required {min_fraction:.0%} floor. The host-side "
-            "ComputeOps (offloaded encoding Linear/Conv, classifier readout, "
-            "attention) hold the parameter majority, so this mapping is not a "
-            "genuine on-chip deployment."
+            f"below the required {min_fraction:.0%} floor. "
+            f"{describe_host_holders(contributors)}. "
+            f"{onchip_placement_remedy(contributors, breakdown)}"
         )
     return breakdown

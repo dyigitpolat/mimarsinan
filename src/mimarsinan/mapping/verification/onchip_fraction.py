@@ -12,6 +12,11 @@ from mimarsinan.mapping.mappers.conv1d_mapper import Conv1DPerceptronMapper
 from mimarsinan.mapping.mappers.conv2d_mapper import Conv2DPerceptronMapper
 from mimarsinan.mapping.mappers.perceptron_mapper import PerceptronMapper
 from mimarsinan.mapping.support.device_placement import single_device_of
+from mimarsinan.mapping.support.host_contributors import (
+    describe_host_holders,
+    host_contributors_from_flow,
+    host_contributors_from_ir,
+)
 from mimarsinan.mapping.verification.onchip_majority import (
     DEFAULT_ONCHIP_FLOOR,
     DEFAULT_ONCHIP_MAJORITY,
@@ -19,6 +24,7 @@ from mimarsinan.mapping.verification.onchip_majority import (
     OnchipParamBreakdown,
     compute_onchip_fraction,
     module_macs as _module_macs,
+    onchip_placement_remedy,
     unwrap_scale_wrapper as _unwrap_module,
 )
 
@@ -144,9 +150,23 @@ def _classify_host_node(node):
 
 
 def _build_flow(model, input_shape, num_classes, placement):
+    # Lazy: the torch_mapping package pulls the converter, which imports back
+    # through mapping -> chip_simulation -> here.
+    from mimarsinan.torch_mapping.encoding_layers import (
+        require_resolved_encoding_placement,
+    )
+
     if hasattr(model, "get_mapper_repr"):
-        # Already a perceptron flow: its encoding placement is baked at build;
-        # FX re-tracing is neither possible for einops-based flows nor needed.
+        # Already a perceptron flow: its placement was resolved at flow birth,
+        # and the marking it carries now IS what will deploy — including the
+        # host placements the negative-boundary policy added after birth, which
+        # re-marking here would erase. Measure it; never rewrite it. The
+        # requirement that it BE resolved is checked, not assumed: an
+        # unresolved flow is how the placement no-op stayed silent.
+        # (FX re-tracing is neither possible for einops-based flows nor needed.)
+        require_resolved_encoding_placement(
+            model.get_mapper_repr(), placement, context="the on-chip fraction gate"
+        )
         return model
     from mimarsinan.torch_mapping.converter import convert_torch_model
 
@@ -310,24 +330,47 @@ def assert_onchip_majority_estimate_or_raise(
     The static analogue of ``assert_onchip_majority_or_raise`` for callers with a
     model spec but no mapped IR graph.
     """
-    est = estimate_onchip_fraction(
-        model,
-        input_shape,
-        num_classes,
-        encoding_placement=encoding_placement,
-        metric=metric,
-    )
+    flow = _build_flow(model, input_shape, num_classes, encoding_placement)
+    est = _estimate_from_flow(flow, input_shape, encoding_placement, metric)
     if est.fraction < min_fraction:
+        contributors = host_contributors_from_flow(flow, _host_unit)
         raise OnchipMajorityError(
             "Static on-chip parameter majority violated: only "
             f"{est.fraction:.2%} of the {est.total} {est.metric} are estimated "
             f"on chip (on-chip={est.onchip}, host={est.host}) under placement "
-            f"{est.placement!r}, below the required {min_fraction:.0%} floor. The "
-            "host-side ComputeOps (offloaded encoding Linear/Conv, classifier "
-            "readout, attention) hold the majority, so this mapping would not be "
-            "a genuine on-chip deployment."
+            f"{est.placement!r}, below the required {min_fraction:.0%} floor. "
+            f"{describe_host_holders(contributors)}. "
+            f"{_placement_remedy(contributors, est)}"
         )
     return est
+
+
+def _placement_remedy(contributors, est: OnchipFractionEstimate) -> str:
+    """What moving the encoding layer on chip would buy — in this model's numbers.
+
+    ``subsume`` runs the encoding layer host-side; ``offload`` maps it on chip.
+    Under ``offload`` the encoder is already on chip, so the host majority is
+    something else and pointing at the knob would be a lie.
+    """
+    if est.placement != "subsume":
+        return (
+            "The encoding layer is already mapped on chip under 'offload', so "
+            "this host majority is other host ops: shrink or replace them, or "
+            "set deployment_parameters.onchip_majority_gate=false to deploy a "
+            "deliberately host-heavy network."
+        )
+    if est.metric != "params":
+        return (
+            "encoding_layer_placement='offload' maps the encoding layer on chip "
+            "instead of running it host-side; lowering onchip_min_fraction or "
+            "onchip_majority_gate=false deploys the host-heavy split as it is."
+        )
+    return onchip_placement_remedy(
+        contributors,
+        OnchipParamBreakdown(
+            onchip_params=est.onchip, host_params=est.host, total_params=est.total
+        ),
+    )
 
 
 def _collect_host_op_classes(flow):
@@ -458,15 +501,17 @@ def assert_onchip_validity_or_raise(
             below.append(f"params ({param_frac:.2%})")
         if mac_frac < floor:
             below.append(f"ops ({mac_frac:.2%})")
+        contributors = host_contributors_from_ir(ir_graph)
         raise OnchipMajorityError(
             "On-chip validity gate: "
             f"{' and '.join(below)} below the required {floor:.0%} floor "
             f"(on-chip params {param_frac:.2%}, ops {mac_frac:.2%}). The host "
             "holds the majority of that metric, so this deployment cannot "
             "accelerate a significant fraction of the network — an erroneous "
-            "on-chip deployment. Set deployment_parameters.onchip_majority_gate="
-            "false to deploy an intentionally host-offloaded network, or lower "
-            "onchip_min_fraction."
+            f"on-chip deployment. {describe_host_holders(contributors)}. "
+            f"{onchip_placement_remedy(contributors, param_breakdown)} "
+            "Set deployment_parameters.onchip_majority_gate=false to deploy a "
+            "deliberately host-heavy network, or lower onchip_min_fraction."
         )
     return OnchipValidityReport(
         tier=tier,

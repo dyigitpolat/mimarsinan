@@ -6,6 +6,7 @@ from mimarsinan.mapping.verification.streamed import (
 from mimarsinan.mapping.verification.onchip_fraction import (
     assert_onchip_majority_estimate_or_raise,
 )
+from mimarsinan.models.builders import build_model
 from mimarsinan.pipelining.core.engine.pipeline_helpers import safe_warmup_forward
 from mimarsinan.pipelining.core.steps.pipeline_step import (
     METRIC_CARRIED,
@@ -30,9 +31,19 @@ class ModelBuildingStep(PipelineStep):
     def _is_supermodel(self, model):
         return hasattr(model, "get_perceptrons") and hasattr(model, "get_mapper_repr")
 
+    def _encoding_placement(self) -> str:
+        return str(self.pipeline.config.get("encoding_layer_placement", "subsume"))
+
     def process(self):
         builder = self.get_entry('model_builder')
-        init_model = builder.build(self.get_entry("model_config"))
+        # Flow birth for a native-category builder: the configured placement is
+        # applied HERE (a torch module has no mapper graph yet and gets it at
+        # conversion), so every category honors the knob on the same step.
+        init_model = build_model(
+            builder,
+            self.get_entry("model_config"),
+            encoding_placement=self._encoding_placement(),
+        )
 
         adaptation_manager = create_adaptation_manager_for_model(
             self.pipeline.config, init_model
@@ -64,9 +75,7 @@ class ModelBuildingStep(PipelineStep):
             model,
             config["input_shape"],
             int(num_classes),
-            encoding_placement=str(
-                config.get("encoding_layer_placement", "subsume")
-            ),
+            encoding_placement=self._encoding_placement(),
         )
         print(f"[ModelBuildingStep] {report.describe()}")
 
@@ -84,9 +93,7 @@ class ModelBuildingStep(PipelineStep):
             model,
             config["input_shape"],
             int(num_classes),
-            encoding_placement=str(
-                config.get("encoding_layer_placement", "subsume")
-            ),
+            encoding_placement=self._encoding_placement(),
             min_fraction=float(effective_value(config, "onchip_min_fraction")),
         )
         print(

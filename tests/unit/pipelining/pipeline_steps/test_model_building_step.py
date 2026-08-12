@@ -136,8 +136,50 @@ class TestStaticOnchipMajorityGate:
             step.run()
 
     def test_supermodel_counts_on_its_own_mapper_repr(self, mock_pipeline):
-        """SimpleMLP is already a perceptron flow (encoder on chip, readout the
-        only host op): it is on-chip-majority and must never FX-trace."""
+        """SimpleMLP is already a perceptron flow: the gate counts on that flow
+        and must never FX-trace it."""
         step = TestModelBuildingStep()._make_step(mock_pipeline)
         step.run()
         assert "ModelBuilding.model" in mock_pipeline.cache
+
+
+class TestStepHonorsEncodingPlacement:
+    """The reported defect at the step that owns it.
+
+    ``simple_mlp`` is the only ``native``-category model, so ``TorchMappingStep``
+    (which used to be the sole placement applier) never runs for it. Model
+    Building is where its flow is born, so Model Building resolves the knob —
+    for every category, not just the ones that take the FX path.
+    """
+
+    def _run(self, mock_pipeline, placement):
+        if placement is not None:
+            mock_pipeline.config["encoding_layer_placement"] = placement
+        step = TestModelBuildingStep()._make_step(mock_pipeline)
+        step.run()
+        model = mock_pipeline.cache["ModelBuilding.model"]
+        return model, [p for p in model.get_perceptrons() if p.is_encoding_layer]
+
+    def test_subsume_runs_the_encoder_host_side(self, mock_pipeline):
+        model, marked = self._run(mock_pipeline, "subsume")
+        assert marked == [model.get_perceptrons()[0]]
+
+    def test_offload_maps_the_encoder_on_chip(self, mock_pipeline):
+        _model, marked = self._run(mock_pipeline, "offload")
+        assert marked == [], (
+            "offload must leave no host-side encoder — the knob was a no-op "
+            "for native-category models"
+        )
+
+    def test_unset_placement_keeps_the_subsume_behavior(self, mock_pipeline):
+        """No key in config: identical to an explicit subsume (no silent flip)."""
+        model, marked = self._run(mock_pipeline, None)
+        assert marked == [model.get_perceptrons()[0]]
+
+    def test_the_step_records_the_placement_it_resolved(self, mock_pipeline):
+        from mimarsinan.torch_mapping.encoding_layers import (
+            resolved_encoding_placement,
+        )
+
+        model, _marked = self._run(mock_pipeline, "offload")
+        assert resolved_encoding_placement(model.get_mapper_repr()) == "offload"

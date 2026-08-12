@@ -17,9 +17,8 @@ from mimarsinan.mapping.platform.platform_constraints import (
     resolve_scalar_mapping_params,
 )
 from mimarsinan.mapping.layout.layout_plan import build_layout_plan
-from mimarsinan.models.builders import BUILDERS_REGISTRY
+from mimarsinan.models.builders import BUILDERS_REGISTRY, build_model
 from mimarsinan.torch_mapping.converter import convert_torch_model
-from mimarsinan.torch_mapping.encoding_layers import mark_encoding_layers
 from mimarsinan.pipelining.core.registry.model_registry import ModelRegistry
 
 
@@ -59,7 +58,7 @@ def model_repr_from_wizard_body(body: dict) -> Any:
         num_classes=num_classes,
         pipeline_config=pipeline_config,
     )
-    raw_model = builder.build(model_config)
+    raw_model = build_model(builder, model_config, encoding_placement=placement)
     category = ModelRegistry.get_category(model_type)
 
     if category == "torch":
@@ -78,8 +77,8 @@ def model_repr_from_wizard_body(body: dict) -> Any:
         raw_model.eval()
         with torch.no_grad(), best_effort("wizard native-model warm-up forward"):
             raw_model(torch.randn(2, *input_shape))
+        # Placement already resolved at flow birth by ``build_model``.
         model_repr = raw_model.get_mapper_repr()
-        mark_encoding_layers(model_repr, placement=placement)
 
     if hasattr(model_repr, "assign_perceptron_indices"):
         model_repr.assign_perceptron_indices()

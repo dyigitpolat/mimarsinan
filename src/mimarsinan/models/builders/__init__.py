@@ -17,8 +17,34 @@ from .deep_cnn_builder import DeepCNNBuilder as DeepCNNBuilder
 from .torch.stream_cnn_builder import StreamCNNBuilder as StreamCNNBuilder
 from .lenet5_builder import LeNet5Builder as LeNet5Builder
 
+from typing import Any, Callable, cast
+
+from mimarsinan.mapping.model_representation import ModelRepresentation
 from mimarsinan.pipelining.core.registry.model_registry import ModelRegistry
+from mimarsinan.torch_mapping.encoding_layers import mark_encoding_layers
 
 # One builder SSOT: the imports above ran every @ModelRegistry.register, so this
 # view IS the registry (no hand-maintained duplicate mapping).
 BUILDERS_REGISTRY = ModelRegistry.builder_classes()
+
+
+def build_model(builder: Any, model_config: Any, *, encoding_placement: str) -> Any:
+    """Build ``builder``'s model with its encoding-layer placement resolved.
+
+    ``encoding_layer_placement`` is a config decision, not a builder decision: a
+    builder that bakes it makes the knob a silent no-op for its own model type,
+    and only for that one type. So builders build, and the placement is resolved
+    HERE, once, at the moment a mapper flow first exists.
+
+    A ``native``-category builder returns the flow itself, so this is that
+    moment. A ``torch``-category builder returns an ``nn.Module`` with no mapper
+    graph yet; its flow is born later in ``convert_torch_model``, which applies
+    the same placement through the same single writer (``mark_encoding_layers``).
+    Nothing else marks.
+    """
+    model = builder.build(model_config)
+    get_mapper_repr = getattr(model, "get_mapper_repr", None)
+    if callable(get_mapper_repr):
+        mapper_repr = cast(Callable[[], ModelRepresentation], get_mapper_repr)()
+        mark_encoding_layers(mapper_repr, placement=encoding_placement)
+    return model

@@ -179,6 +179,9 @@ class ArchitectureSearchStep(PipelineStep):
             extrapolation_num_checkpoints=extrapolation_num_checkpoints,
             extrapolation_target_epochs=extrapolation_target_epochs,
             pruning_fraction=DeploymentPlan.of(self.pipeline).pruning_fraction,
+            encoding_placement=str(
+                self.pipeline.config.get("encoding_layer_placement", "subsume")
+            ),
         )
 
         optimizer = create_optimizer(
