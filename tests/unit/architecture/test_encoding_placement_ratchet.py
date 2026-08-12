@@ -31,9 +31,27 @@ SANCTIONED_WRITERS = {
 BUILDERS = SRC / "models" / "builders"
 
 
+def _is_setattr_write(node: ast.AST) -> bool:
+    """``setattr(perceptron, "is_encoding_layer", ...)`` — a write in disguise.
+
+    An attribute-assignment-only walk waves this through, and it is the FIRST
+    shape a second writer takes when someone works around the ratchet.
+    """
+    if not isinstance(node, ast.Call):
+        return False
+    func = node.func
+    name = func.id if isinstance(func, ast.Name) else getattr(func, "attr", None)
+    if name != "setattr" or len(node.args) < 2:
+        return False
+    attr = node.args[1]
+    return isinstance(attr, ast.Constant) and attr.value == FIELD
+
+
 def _writes_field(path: Path) -> bool:
     tree = ast.parse(path.read_text(encoding="utf-8"))
     for node in ast.walk(tree):
+        if _is_setattr_write(node):
+            return True
         targets = []
         if isinstance(node, ast.Assign):
             targets = list(node.targets)
@@ -56,6 +74,22 @@ def test_only_sanctioned_modules_write_the_encoding_mark():
         f"{offenders}. Placement is resolved once, by mark_encoding_layers, from "
         "encoding_layer_placement; a second writer silently overrides the config."
     )
+
+
+def test_the_detector_sees_both_write_shapes(tmp_path):
+    """The ratchet is only as good as its detector — pin both shapes it must catch."""
+    direct = tmp_path / "direct.py"
+    direct.write_text(f"def f(p):\n    p.{FIELD} = True\n", encoding="utf-8")
+    indirect = tmp_path / "indirect.py"
+    indirect.write_text(f'def f(p):\n    setattr(p, "{FIELD}", True)\n', encoding="utf-8")
+    innocent = tmp_path / "innocent.py"
+    innocent.write_text(
+        f'def f(p):\n    return getattr(p, "{FIELD}", False)\n', encoding="utf-8"
+    )
+
+    assert _writes_field(direct)
+    assert _writes_field(indirect), "a setattr write must not slip past the ratchet"
+    assert not _writes_field(innocent)
 
 
 def test_no_builder_decides_encoding_placement():

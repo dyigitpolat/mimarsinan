@@ -20,6 +20,7 @@ from mimarsinan.mapping.support.host_contributors import (
 from mimarsinan.mapping.verification.onchip_majority import (
     DEFAULT_ONCHIP_FLOOR,
     DEFAULT_ONCHIP_MAJORITY,
+    ONCHIP_FLOOR_ESCAPE,
     OnchipMajorityError,
     OnchipParamBreakdown,
     compute_onchip_fraction,
@@ -346,7 +347,8 @@ def assert_onchip_majority_estimate_or_raise(
             f"on chip (on-chip={est.onchip}, host={est.host}) under placement "
             f"{est.placement!r}, below the required {min_fraction:.0%} floor. "
             f"{describe_host_holders(contributors)}. "
-            f"{_placement_remedy(contributors, est)}"
+            f"{_placement_remedy(contributors, est)} "
+            f"{ONCHIP_FLOOR_ESCAPE}"
         )
     return est
 
@@ -356,20 +358,18 @@ def _placement_remedy(contributors, est: OnchipFractionEstimate) -> str:
 
     ``subsume`` runs the encoding layer host-side; ``offload`` maps it on chip.
     Under ``offload`` the encoder is already on chip, so the host majority is
-    something else and pointing at the knob would be a lie.
+    something else and pointing at the knob would be a lie. Placement only; the
+    refusal appends :data:`ONCHIP_FLOOR_ESCAPE` itself.
     """
     if est.placement != "subsume":
         return (
             "The encoding layer is already mapped on chip under 'offload', so "
-            "this host majority is other host ops: shrink or replace them, or "
-            "set deployment_parameters.onchip_majority_gate=false to deploy a "
-            "deliberately host-heavy network."
+            "this host majority is other host ops: shrink or replace them."
         )
     if est.metric != "params":
         return (
             "encoding_layer_placement='offload' maps the encoding layer on chip "
-            "instead of running it host-side; lowering onchip_min_fraction or "
-            "onchip_majority_gate=false deploys the host-heavy split as it is."
+            "instead of running it host-side."
         )
     return onchip_placement_remedy(
         contributors,
@@ -516,8 +516,7 @@ def assert_onchip_validity_or_raise(
             "accelerate a significant fraction of the network — an erroneous "
             f"on-chip deployment. {describe_host_holders(contributors)}. "
             f"{onchip_placement_remedy(contributors, param_breakdown)} "
-            "Set deployment_parameters.onchip_majority_gate=false to deploy a "
-            "deliberately host-heavy network, or lower onchip_min_fraction."
+            f"{ONCHIP_FLOOR_ESCAPE}"
         )
     return OnchipValidityReport(
         tier=tier,

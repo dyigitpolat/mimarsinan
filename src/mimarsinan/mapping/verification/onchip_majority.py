@@ -233,22 +233,30 @@ def compute_onchip_fraction(
     )
 
 
+#: The deploy-it-anyway escape, owned once. Every floor refusal ends with it,
+#: so no remedy sentence repeats it (the two used to collide in one message).
+ONCHIP_FLOOR_ESCAPE = (
+    "Set deployment_parameters.onchip_majority_gate=false to deploy a "
+    "deliberately host-heavy network, or lower onchip_min_fraction."
+)
+
+
 def onchip_placement_remedy(contributors, breakdown: OnchipParamBreakdown) -> str:
-    """The honest next move for a host-majority mapping, in this model's numbers.
+    """What ``encoding_layer_placement`` can do about this host majority.
 
     ``subsume`` runs the encoding layer host-side, ``offload`` maps it on chip —
     so the reachable fraction is today's on-chip params plus whatever the
     subsumed encoders hold. It is an UPPER bound: the negative-boundary
     subsume-forward policy (``negative_value_shift=off``) can host an encoder
-    for a reason placement does not control.
+    for a reason placement does not control. Placement only; the escape hatches
+    are :data:`ONCHIP_FLOOR_ESCAPE`, appended by the refusal itself.
     """
     subsumed = subsumed_encoder_params(contributors)
     if subsumed <= 0 or breakdown.total_params <= 0:
         return (
             "No encoding layer is subsumed here, so encoding_layer_placement "
-            "cannot move this host majority; shrink the host ops, lower "
-            "onchip_min_fraction, or set onchip_majority_gate=false to deploy "
-            "it as it is."
+            "cannot move this host majority; the host units themselves must "
+            "shrink."
         )
     reachable = (
         breakdown.onchip_params + subsumed
@@ -279,6 +287,7 @@ def assert_onchip_majority_or_raise(
             f"(on-chip={breakdown.onchip_params}, host={breakdown.host_params}), "
             f"below the required {min_fraction:.0%} floor. "
             f"{describe_host_holders(contributors)}. "
-            f"{onchip_placement_remedy(contributors, breakdown)}"
+            f"{onchip_placement_remedy(contributors, breakdown)} "
+            f"{ONCHIP_FLOOR_ESCAPE}"
         )
     return breakdown
