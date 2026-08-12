@@ -169,6 +169,43 @@ estimate baseline — clearly labelled, so nobody mistakes it for a measurement.
 P0–P2 are byte-identical to today's outputs for any run that declares no
 profile.
 
+## 8b. Revision (2026-08-13): the host/chip split is an input, not a footnote
+
+Investigating two deployment failures changed one thing in this plan
+structurally. Both failures traced to the **placement** axis — which side of the
+NeuralOps/ComputeOps boundary a layer lands on:
+
+- `encoding_layer_placement` is documented and implemented as
+  **`offload` = encoder mapped on-chip**, **`subsume` = encoder runs host-side**.
+  (The vocabulary in two error messages was inverted; that is being fixed.)
+- Measured on `simple_mlp`: the same model is **25.5 % on-chip under subsume and
+  100 % under offload**. One deployment option moves ~75 % of the parameters
+  across the boundary.
+
+Consequences for this plan:
+
+1. **Host ComputeOps must be priced, or the comparison is rigged.** If host cost
+   is unmodelled, `subsume` looks free: work moved off the chip simply vanishes
+   from the objective. Every absolute Energy and E2E-Latency number must include
+   the host terms (`p_host`, `host_compute_rate`, `e_host_op`), and a report that
+   cannot price the host must say so rather than silently omit it. This promotes
+   the `host` group from a convenience to a **completeness requirement** for the
+   energy and latency axes.
+
+2. **Placement is a first-class deployment option in the search space.** It is
+   exactly a thesis-§2 deployment option (like mapping strategy), it is
+   vendor-independent, and it dominates the on-chip fraction. Co-optimization
+   that fixes it by hand is exploring a slice, not the space.
+
+3. **The on-chip floor is a declared constraint, not an error.** `onchip_min_fraction`
+   shapes the feasible region; a search that can move placement must see it as a
+   constraint (infeasible candidate) rather than discovering it as a crash.
+
+4. **The record should carry the param split explicitly.** On-chip vs host
+   parameter (and MAC) counts belong in the utilization fragment, so the physics
+   prices both sides from one recorded fact and the floor gate reads the record
+   instead of re-deriving the model. Add to the §5 list of missing quantities.
+
 ## 9. Discipline notes
 
 - No physics constant may be hardcoded at a consumer; the resolver is the only
