@@ -29,7 +29,7 @@ concrete `PipelineStep` implementations live under `pipeline_steps/`.
 - `data_handling` — data provider/loader factories for the session and steps; test-sample loading for simulation metrics.
 - `models` — model layers and decorators used by steps, `SpikingHybridCoreFlow`, perceptron bias-reference refresh.
 - `transformations` — normalization fusion, `PerceptronTransformer`, magnitude pruning, quantization bounds, `pruning.committed_masks` commit/verify at the cache store/load boundary, `pruning.seed_generators` (the `prune_criterion` seed seam in the soft-core structured-pruning hook), `equalize_channel_scales`/`DEFAULT_CLIP_RATIO` for the Scale Migration step and `DeploymentPlan`.
-- `spiking` — cycle-accurate LIF train application and scale-aware boundary calibration.
+- `spiking` — cycle-accurate LIF train application and scale-aware boundary calibration; `establish_gauge_for_mixed_domain_seams` at the LIF Adaptation entry, so the wire-currency twin that step finalizes on has a domain at every host op (a graph without a heterogeneous fan-in is untouched).
 - `search` — joint arch/HW search problem and result types for `ArchitectureSearchStep`, which injects the step's `make_platform_resolver(config)` as the problem's `PlatformResolver`: every searched chip is `platform_constraints_resolver.build_platform_constraints_resolved` over the declared platform plus the candidate's searched dimensions, so the winning candidate IS the deployed `platform_constraints_resolved` with nothing merged or re-stamped afterwards.
 - `config_schema` — config defaults and deployment derivation folded into pipeline configs.
 - `torch_mapping` — torch-model conversion and conversion probing in `TorchMappingStep`.

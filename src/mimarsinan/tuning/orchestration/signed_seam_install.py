@@ -49,6 +49,7 @@ def _prearm_marked_value_ops(repr_, boundary_table) -> int:
     PASS-THROUGH currency so sigma can transport: unit per-source scales,
     boundary-table kappa out — currency-inert until the covers lift it."""
     from mimarsinan.mapping.mappers.compute_op_mapper import ComputeOpMapper
+    from mimarsinan.mapping.mappers.scale_propagation import arm_wrap_slots
 
     armed = 0
     for node in repr_.execution_order():
@@ -58,9 +59,10 @@ def _prearm_marked_value_ops(repr_, boundary_table) -> int:
             and node.per_source_scales is None
         ):
             continue
-        kappa = float(boundary_table.get(node, 1.0))
-        node.per_source_scales = [torch.ones(1) for _ in node._sources_list]
-        node.output_scale = torch.tensor([kappa])
+        arm_wrap_slots(
+            node, [1.0] * len(node._sources_list),
+            float(boundary_table.get(node, 1.0)),
+        )
         armed += 1
     return armed
 

@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import torch
 
-from mimarsinan.mapping.mappers.scale_propagation import walk_out_scales
+from mimarsinan.mapping.mappers.scale_propagation import arm_wrap_slots, walk_out_scales
+from mimarsinan.mapping.support.per_source_scales import compute_per_source_scales
+from mimarsinan.mapping.support.value_domain import heterogeneous_domain_joins
 from mimarsinan.spiking.segment_partition import (
     partition_spike_segments,
     perceptron_of,
@@ -16,6 +18,70 @@ def _as_model_repr(model_repr_or_model):
     if hasattr(model_repr_or_model, "_ensure_exec_graph"):
         return model_repr_or_model
     return model_repr_or_model.get_mapper_repr()
+
+
+def establish_wire_gauge(
+    model_repr_or_model, *, input_data_scale: float,
+    arm_wire_value_ops: bool = True,
+) -> None:
+    """The gauge-establishment seam: arm every host ComputeOp's wrap slots, then
+    propagate the boundary currencies (calculus §11.2/§16.6, one writer).
+
+    Arming is what lets a HETEROGENEOUS fan-in be executed at all: each source
+    decodes at its own producer gauge through the ``ScaleNormalizingWrapper``
+    that IR emission installs and the twin walk runs, so both sides share one
+    definition. Any stage that trains against the deployed composition must run
+    this first, or its twin walks a graph whose currencies the later seams
+    (LIF Affine Fold / WQ / SCM) will re-derive differently. Idempotent in
+    ``activation_scales``, and inert when no gauge is non-unit.
+    """
+    model_repr = _as_model_repr(model_repr_or_model)
+    compute_per_source_scales(model_repr, arm_wire_value_ops=arm_wire_value_ops)
+    propagate_boundary_input_scales(
+        model_repr_or_model, input_data_scale=input_data_scale
+    )
+
+
+def _arm_domain_join(node, deps, table) -> None:
+    """Arm a heterogeneous fan-in at its producers' TRUE currencies (kappa_T ==
+    kappa_S). Structural, not numeric: the join owns its domain even when every
+    gauge is unity, because that is what gives the node a domain at all."""
+    source_scales = [float(table.get(dep, 1.0)) for dep in deps]
+    arm_wrap_slots(
+        node, source_scales, sum(source_scales) / len(source_scales),
+    )
+
+
+def establish_gauge_for_mixed_domain_seams(
+    model_repr_or_model, *, input_data_scale: float,
+) -> int:
+    """Precondition repair for a wire-currency twin: a graph carrying a
+    heterogeneous fan-in has no domain there, so no twin can walk it.
+
+    Establishes the gauge — the SAME arming the WQ / SCM seams re-derive, so
+    the trained twin IS the deployed composition — and certifies one-writer
+    coherence. Arming only ever turns a node wire, so the fixpoint is monotone
+    and bounded by the node count. Returns the number of seams repaired; a graph
+    whose domains already classify is left byte-identical (nothing runs).
+    """
+    model_repr = _as_model_repr(model_repr_or_model)
+    repaired = len(heterogeneous_domain_joins(model_repr))
+    if not repaired:
+        return 0
+    for _ in range(len(model_repr.execution_order()) + 1):
+        establish_wire_gauge(model_repr_or_model, input_data_scale=input_data_scale)
+        joins = heterogeneous_domain_joins(model_repr)
+        if not joins:
+            break
+        table = read_boundary_out_scales(
+            model_repr, input_data_scale=input_data_scale
+        )
+        for node in joins:
+            _arm_domain_join(node, model_repr._deps.get(node, []), table)
+    verify_boundary_currency_coherence(
+        model_repr_or_model, input_data_scale=input_data_scale
+    )
+    return repaired
 
 
 def read_boundary_out_scales(model_repr_or_model, input_data_scale: float) -> dict:

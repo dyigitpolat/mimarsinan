@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import torch
 
-from mimarsinan.mapping.mappers.compute_op_mapper import ComputeOpMapper
+from mimarsinan.mapping.support.value_domain import value_domain_map
 from mimarsinan.models.nn.activations.autograd import RoundedStaircaseFunction
 from mimarsinan.spiking.compute_boundary import normalize_boundary_value
 from mimarsinan.spiking.lif_utils import unwrap_lif_activation
@@ -25,24 +25,15 @@ def _absolute_value_nodes(driver) -> dict:
     """node -> True when its stored value is ABSOLUTE (raw): unarmed host /
     structural chains rooted at the input. Wire nodes (neural producers,
     armed ComputeOps, and their passthroughs) re-encode by clamp alone;
-    mixed wire/absolute fan-in at a plain host op fails loud (calculus §11.2)."""
-    flags: dict = {}
-    for node in driver._exec:
-        deps = driver._deps.get(node, [])
-        if perceptron_of(node) is not None:
-            flags[node] = False
-        elif isinstance(node, ComputeOpMapper) and node.output_scale is not None:
-            flags[node] = False
-        elif not deps:
-            flags[node] = True
-        else:
-            dep_flags = {flags[dep] for dep in deps}
-            if len(dep_flags) > 1:
-                raise NotImplementedError(
-                    "mixed wire/absolute fan-in at a plain host op is not "
-                    f"supported ({type(node).__name__})"
-                )
-            flags[node] = dep_flags.pop()
+    mixed wire/absolute fan-in at a plain host op fails loud (calculus §11.2)
+    — the gauge-establishment seam repairs it before the walk, or it is a
+    genuinely unsupported graph."""
+    flags, joins = value_domain_map(driver._exec, driver._deps)
+    if joins:
+        raise NotImplementedError(
+            "mixed wire/absolute fan-in at a plain host op is not "
+            f"supported ({type(joins[0]).__name__})"
+        )
     return flags
 
 
