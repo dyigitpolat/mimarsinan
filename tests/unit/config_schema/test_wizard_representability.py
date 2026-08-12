@@ -123,3 +123,33 @@ class TestRepresentabilityCanary:
         assert parsed.unknown == ["deployment_parameters.endpoint_floor_wall_s"]
         emitted = emit_deployment_config(config)
         assert emitted["deployment_parameters"]["endpoint_floor_wall_s"] == 60
+
+
+def test_a_physics_declaring_config_is_representable():
+    """The physics keys must be buildable and viewable in the wizard like any other.
+
+    No fixture declares them yet, so representability is asserted directly here: the
+    wizard is the configurability SSOT, and a key it cannot round-trip is not
+    configurable no matter what the resolver does with it.
+    """
+    config = _load(os.path.join(
+        _REPO_ROOT, "tests", "fixtures", "deployment_configs", "sync_simplemlp.json"))
+    config.setdefault("platform_constraints", {})
+    config["platform_constraints"]["platform_physics_profile"] = "truenorth"
+    config["platform_constraints"]["platform_physics_overrides"] = {
+        "p_host": {"nominal": 45.0, "unit": "W", "note": "measured on the deployment host"}
+    }
+
+    parsed = parse_deployment_document(config)
+    assert parsed.unknown == []
+    for key in ("platform_physics_profile", "platform_physics_overrides"):
+        entry = REGISTRY[key]
+        assert entry.category is not Category.RUNTIME
+        assert entry.declarable
+
+    emitted = emit_deployment_config(config)
+    assert json.dumps(emitted, sort_keys=True) == json.dumps(config, sort_keys=True)
+
+    resolution = resolve_draft(config)
+    assert resolution.errors == []
+    assert resolution.unknown_keys == []
