@@ -1,0 +1,148 @@
+{
+  "format_version": 1,
+  "name": "truenorth",
+  "display_name": "IBM TrueNorth (28 nm, Merolla 2014 / Akopyan 2015)",
+  "description_file": "truenorth.md",
+  "validity": {
+    "measurement_kind": "silicon",
+    "technology_node_nm": 28.0,
+    "supply_v": 0.775,
+    "temperature_c": null,
+    "array_size_assumed": "256 axons x 256 neurons per core, 4096 cores, 64x64 mesh",
+    "notes": "Energies measured on silicon at 0.775 V unless a constant says otherwise; the chip operates over 0.70-1.05 V and the published power envelope is 42-323 mW. Temperature is not stated by either paper."
+  },
+  "constants": {
+    "area_per_cell": {
+      "nominal": 0.152,
+      "unit": "um^2",
+      "evidence_kind": "derived",
+      "citation": "akopyan2015truenorth Section V-E, p.1545",
+      "derivation": "One TrueNorth synapse is one bit of the core SRAM crossbar (merolla2014a S1: 'w_ij in {0,1} ... We implement the 256x256 w matrix as a crossbar'), and that SRAM uses a published 0.152 um^2 6T bitcell. Bitcell only: excludes decoders, sense amps, drivers and the redundant rows/columns.",
+      "note": "The papers publish no SRAM macro area, so this is the storage cell alone; per-core area is declared separately and is the number to trust for whole-chip area."
+    },
+    "conductance_levels": {
+      "nominal": 2.0,
+      "unit": "levels",
+      "evidence_kind": "published",
+      "citation": "merolla2014a Section S1",
+      "note": "Binary digital synapse: w_ij in {0,1}. Effective weight precision comes from the per-neuron 9-bit signed value selected by one of 4 axon types, not from the cell."
+    },
+    "write_sigma": {
+      "nominal": 0.0,
+      "unit": "fraction",
+      "evidence_kind": "derived",
+      "citation": "akopyan2015truenorth Section V-E, p.1545",
+      "derivation": "TrueNorth stores synapses in digital 6T SRAM, so a written weight has no analog programming spread. Zero is a fact about the technology, not a missing measurement."
+    },
+    "read_sigma": {
+      "nominal": 0.0,
+      "unit": "fraction",
+      "evidence_kind": "derived",
+      "citation": "akopyan2015truenorth Section V-E, p.1545",
+      "derivation": "Digital SRAM read; no analog column-current sensing, so no read spread."
+    },
+    "area_per_adc": {
+      "nominal": 0.0,
+      "unit": "um^2",
+      "evidence_kind": "derived",
+      "citation": "merolla2014a Section S1 (core block list)",
+      "derivation": "The core is fully digital (scheduler, token controller, core SRAM, neuron, router). There is no analog-to-digital converter in the datapath, so the count is zero by construction rather than unknown."
+    },
+    "e_adc_conversion": {
+      "nominal": 0.0,
+      "unit": "pJ",
+      "evidence_kind": "derived",
+      "citation": "merolla2014a Section S1 (core block list)",
+      "derivation": "No ADC exists in a TrueNorth core; see area_per_adc."
+    },
+    "t_adc_conversion": {
+      "nominal": 0.0,
+      "unit": "ns",
+      "evidence_kind": "derived",
+      "citation": "merolla2014a Section S1 (core block list)",
+      "derivation": "No ADC exists in a TrueNorth core; see area_per_adc."
+    },
+    "area_per_neuron_logic": {
+      "nominal": 11.328,
+      "unit": "um^2",
+      "evidence_kind": "derived",
+      "citation": "merolla2014a Section S3 (SM p.4)",
+      "derivation": "The neuron block is a published 2900 um^2 (1272 gates incl. the PRNG) time-multiplexed 256 ways: 2900 / 256 = 11.328 um^2 per neuron. The paper's own effective figure, 2900/256 + 3.0 = 14.3 um^2, is this value plus the state storage declared as area_per_state_bit."
+    },
+    "area_per_state_bit": {
+      "nominal": 0.15,
+      "unit": "um^2",
+      "evidence_kind": "derived",
+      "citation": "merolla2014a Section S3 (SM p.4)",
+      "derivation": "Published: 'storing neuron state (20 bits) requires an additional area of 3.0 um^2 per neuron'. 3.0 / 20 = 0.15 um^2 per bit. Cross-check: this lands within 1.3% of the independently published 0.152 um^2 6T bitcell (akopyan2015truenorth Section V-E), so the two area facts agree."
+    },
+    "membrane_bits": {
+      "nominal": 20.0,
+      "unit": "bit",
+      "evidence_kind": "published",
+      "citation": "merolla2014a Sections S3 and S8",
+      "note": "Signed 20-bit membrane potential V_j(t)."
+    },
+    "e_inter_tile_hop": {
+      "nominal": 2.3,
+      "unit": "pJ",
+      "evidence_kind": "published",
+      "citation": "merolla2014a Fig. S4 caption (SM p.17)",
+      "note": "Energy to send one 32-bit spike packet one core-to-core hop at 0.775 V. Reproduced by the paper's own bit cost: 72 fJ/bit x 32 bits = 2.304 pJ."
+    },
+    "bytes_per_connectivity_entry": {
+      "nominal": 4.0,
+      "unit": "B",
+      "evidence_kind": "derived",
+      "citation": "akopyan2015truenorth Section V-E, p.1546 (core SRAM row fields)",
+      "derivation": "A neuron's routing declaration occupies the 26-bit spike-destination field plus the 4-bit delivery-tick field of its core SRAM row = 30 bits, which is 4 bytes on the wire (the spike packet is likewise 32 bits).",
+      "note": "This replaces the framework's global 4/8/16 B modelled band for this target: TrueNorth's wire format is published."
+    },
+    "t_program_per_byte": {
+      "nominal": 800.0,
+      "unit": "ns",
+      "evidence_kind": "derived",
+      "citation": "akopyan2015truenorth Section V-H, p.1548",
+      "derivation": "Configuration enters through the scan chain, published at 10 MHz with no PLL or global clock tree. A scan chain shifts one bit per cycle: 1 / 10 MHz = 100 ns per bit, so 8 bits = 800 ns per byte.",
+      "note": "Assumes a single serial scan path at one bit per cycle. If the chip shifts several chains in parallel the true figure is lower by that factor; the papers do not state the chain count."
+    },
+    "t_cycle": {
+      "low": 47.6,
+      "nominal": 1000.0,
+      "high": 1000.0,
+      "unit": "us",
+      "evidence_kind": "published",
+      "citation": "merolla2014a p.4; akopyan2015truenorth Section III p.1540 and Section VII p.1551",
+      "note": "The nominal 1 ms tick is the chip's defining real-time step ('a global 1 kHz clock'). The low corner is the fastest demonstrated operation, 21x real-time (1 ms / 21 = 47.6 us), which depends on activity, synaptic density and voltage; 5x real-time (200 us) was verified bit-exact against software. There is no faster-than-nominal guarantee, so the band is one-sided."
+    },
+    "area_global_fixed": {
+      "nominal": 46.6,
+      "unit": "mm^2",
+      "evidence_kind": "derived",
+      "citation": "merolla2014a p.6; akopyan2015truenorth Fig. 1 caption p.1538",
+      "derivation": "Die is 4.3 cm^2 = 430 mm^2; the 4096 cores occupy 4096 x (240 x 390 um) = 383.4 mm^2. The balance, 430 - 383.4 = 46.6 mm^2 (10.8% of the die), is the periphery outside the core array: merge-split, I/O ring and pads."
+    },
+    "p_static_per_core": {
+      "nominal": 10.254,
+      "unit": "uW",
+      "evidence_kind": "derived",
+      "citation": "akopyan2015truenorth Section VII, p.1551",
+      "derivation": "The published low corner is 42 mW at 0.70 V with 0 Hz firing and 0 synapses per neuron: no spiking and no synaptic activity, so it bounds static plus tick-baseline power. 42 mW / 4096 cores = 10.254 uW per core.",
+      "note": "At 0.70 V, not the 0.775 V of the energy constants, and the authors do not label it leakage; it is an upper bound on static power at the low corner."
+    },
+    "p_static_global": {
+      "nominal": 0.0,
+      "unit": "mW",
+      "evidence_kind": "derived",
+      "citation": "akopyan2015truenorth Section VII, p.1551",
+      "derivation": "The whole 42 mW zero-activity corner is already attributed to p_static_per_core across the 4096 cores. Declaring any of it again here would double count the same measurement."
+    },
+    "e_synaptic_event_total": {
+      "nominal": 26.0,
+      "unit": "pJ",
+      "evidence_kind": "published",
+      "citation": "merolla2014a p.7 and Fig. 4C caption",
+      "note": "'At the operating point where neurons fire on average at 20 Hz and have 128 active synapses, the total measured power was 72 mW (at 0.775 V operating voltage), corresponding to 26 pJ per synaptic event (considering total energy).' This is the WHOLE-CHIP energy divided by synaptic events, so it already contains array, neuron, routing and static power. It supersedes the decomposed energy constants and the static powers; pricing must use it or them, never both."
+    }
+  }
+}

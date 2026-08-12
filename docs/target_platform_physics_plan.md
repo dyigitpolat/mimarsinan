@@ -206,6 +206,75 @@ Consequences for this plan:
    prices both sides from one recorded fact and the floor gate reads the record
    instead of re-deriving the model. Add to the §5 list of missing quantities.
 
+## 8c. P0 as landed (2026-08-13)
+
+`src/mimarsinan/deployment_record/platform_physics/` — schema, vocabulary, loader,
+registry, and the `truenorth` reference profile. 88 tests; every guard mutation-checked.
+Named `platform_physics/` rather than `physics/` because `schema/physics.py` (the record's
+timing+energy fragment) already owns that word.
+
+Six design decisions worth recording, because they were forced by what the research and
+the codebase actually turned out to contain:
+
+1. **Vocabulary (code) vs values (data).** `vocabulary.py` declares the closed list of
+   constants — key, group, dimension, display unit, and the *multiplicand* each is priced
+   against. A profile supplies values for a subset; an unknown key is refused by name.
+   The wizard's panel layout and the objectives' availability predicates both derive from
+   this one declaration.
+2. **Units are dimensional, not strings.** A vendor may declare `e_mac` in fJ, pJ or nJ
+   and the loader canonicalizes to SI; a *dimension* mismatch fails loud. String equality
+   would refuse a legitimate nJ declaration, and silent acceptance would be wrong by
+   1000×. Dimensionless symbols (`bit`, `levels`, `fraction`) never rescale, which is what
+   stops a bit WIDTH being converted like a DATA payload.
+3. **Absence is meaningful; there is no `get(key, default)`.** An undeclared constant
+   disables exactly the objectives that need it. Declared **zeros are facts** and are
+   different: TrueNorth declares `e_adc_conversion = 0` because it is fully digital, not
+   because nobody looked.
+4. **Evidence is structural.** Each `evidence_kind` requires its own field — `published`/
+   `datasheet` a citation, `derived` a shown derivation, `estimated` a written rationale.
+   An unevidenced value cannot be constructed, so "research-first" is enforced by the type
+   rather than by convention. A test also requires every `estimated` constant to be
+   discussed by name in the profile's description file.
+5. **`t_program_per_byte`, not a bandwidth.** A multiplicative constant keeps the band
+   monotone; the existing model's dividing `PROGRAMMING_BANDWIDTH_BYTES_PER_S` needs
+   `opposite_corner` to stay honest. Removing the division removes the trap.
+6. **NEW — aggregates supersede decompositions.** Most published chips report a
+   whole-system energy per operation, not a component breakdown. TrueNorth's headline
+   26 pJ/synaptic-event is measured chip power ÷ synaptic events, so it already contains
+   array, neuron, routing *and static* energy. The vocabulary declares
+   `SUPERSEDES`, and `resolve_supersessions()` drops the absorbed terms, so a profile may
+   honestly declare both and the pricer can never charge both. Without this the TrueNorth
+   profile would have had to either lie or carry no energy at all.
+
+**Anti-duplication.** A profile may write `"source_ref": "sanafe_preset:<preset>:<field>"`
+instead of a band, materializing the constant from the in-repo SANA-FE per-event presets
+so a number that already has a home is referenced rather than forked. The TrueNorth
+profile deliberately does **not** use it — see the provenance findings below.
+
+## 8d. Findings from the research pass (reported, not yet acted on)
+
+Full reports: `docs/research/physics/{truenorth,loihi}_constants_research.md`.
+
+Grounding the constants surfaced defects in numbers the repo already ships and treats as
+literature-sourced. None is fixed here: `presets.py` values are SANA-FE *simulator inputs*,
+so changing them changes simulation outputs and needs owner sign-off.
+
+| # | Finding | Severity |
+|---|---|---|
+| 1 | `TRUENORTH_PRESET` is commented "Merolla 2014" but **none of its 16 constants appears in that paper**. `tile_hop_energy_j = 5.0e-14` is **46× below** the published 2.3 pJ/hop; `synapse_energy_j = 2.0e-13` reproduces 0.51 mW against a measured 72 mW. | high |
+| 2 | The vendored `sana_fe/arch/truenorth.yaml` has **every energy and latency set to 0.0** — SANA-FE runs on the `truenorth` preset report identically zero energy. | high |
+| 3 | `LOIHI_PRESET` claims "Davies 2018 SPICE"; only ~4 of ~22 values trace there. The real source is Boyle 2023's silicon micro-benchmarks — arguably a *better* basis, so the defect is the **attribution**, not the numbers. It also explains the anomalies (35.5 pJ vs the paper's 23.6 pJ min; latencies *exceeding* the published max). | high |
+| 4 | `imc_platforms_literature.py::loihi_dense_equiv_128x1024` has `max_axons=128`, matching **no** Loihi constant — its own provenance string quotes 1024/4096. Looks like the *kilobyte* count of synaptic memory reused as an axon count. | medium |
+| 5 | The same entry sets `has_bias=False`, contradicting Davies 2018 Eq. (1) ("b_i is a constant bias current"). | medium |
+| 6 | `E_SYNC_BARRIER_MJ`'s basis says "Loihi-style NoC flush" but the band is imported from Horowitz/HBM2/DDR3 generics. No Loihi barrier energy is published; for scale, a whole chip-wide idle timestep is only 6.8 µJ. | medium |
+| 7 | `imc_platforms_literature.py` cites `papers/.../13_chip_geometries.json` as its transcription source; that file **does not exist** in this repo, so the stated re-transcription workflow is not executable. | low |
+
+Consequence for §7 of `docs/deployment_record_schema.md`: the `CoreInitCoefficients` band's
+low corner is derived from `TRUENORTH_PRESET`, so its "needs owner sign-off" note **cannot
+be satisfied from the literature** — those quantities were never published. Per-target
+profiles are the answer: a target that knows its own numbers declares them, and the global
+band remains only as the documented no-profile fallback.
+
 ## 9. Discipline notes
 
 - No physics constant may be hardcoded at a consumer; the resolver is the only
