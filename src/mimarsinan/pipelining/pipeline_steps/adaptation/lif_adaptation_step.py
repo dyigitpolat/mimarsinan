@@ -34,6 +34,10 @@ class LIFAdaptationStep(TunerPipelineStep):
         twin, so a graph with a heterogeneous fan-in (a host residual re-joining
         a branch that crossed a core) must have its gauge established first —
         otherwise the twin has no domain there at all."""
+        if getattr(model, "get_mapper_repr", lambda: None)() is None:
+            # No mapper graph, no seams — the twin falls back to the plain
+            # cycle-accurate forward (``chip_aligned_segment_forward``).
+            return
         repaired = establish_gauge_for_mixed_domain_seams(
             model,
             input_data_scale=ResolvedWorkloadProfile.from_config(

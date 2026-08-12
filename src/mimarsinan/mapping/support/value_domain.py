@@ -58,6 +58,7 @@ def heterogeneous_domain_joins(model_repr) -> list:
     model_repr._ensure_exec_graph()
     return value_domain_map(model_repr._exec_order, model_repr._deps)[1]
 
+
 # Activations whose output is >= 0 for EVERY input. The spiking activations
 # decode spike counts / spike times, which are non-negative by construction.
 NONNEGATIVE_ACTIVATIONS: tuple[type, ...] = (
