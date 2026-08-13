@@ -13,6 +13,8 @@ answer and the deployed program are always compared on the SAME structure:
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 from typing import List, Sequence
 
 import numpy as np
@@ -29,6 +31,7 @@ from mimarsinan.mapping.layout.layout_types import (
     LayoutSoftCoreSpec,
 )
 from mimarsinan.mapping.layout.softcore_spec_adapter import spec_from_neural_core
+from mimarsinan.mapping.pruning.ir_segmentation import get_neural_segments
 from mimarsinan.mapping.packing.hybrid_build_pool import (
     build_hybrid_hard_core_mapping,
 )
@@ -130,10 +133,25 @@ def multi_segment_graph(n_segments: int = 6, features: int = 4):
 
 
 def softcores_of(graph) -> List[LayoutSoftCoreSpec]:
-    """The shape-only specs a layout answer packs, straight from the IR cores."""
+    """The shape-only specs a layout answer packs, straight from the IR cores.
+
+    Segment ids come from the IR's OWN segmentation authority: a spec adapter is
+    called per-segment in the builder, so it stamps ``segment_id=0``, and a helper
+    that reconstructed a whole multi-segment graph without re-stamping would hand
+    the layout answer one flat segment and hide the pass structure it is meant to
+    report.
+    """
+    segment_of = {
+        id(core): index
+        for index, segment in enumerate(get_neural_segments(graph))
+        for core in segment
+    }
     return [
-        spec_from_neural_core(
-            core, hardware_bias=False, fallback_residency_class_id=-(index + 1),
+        replace(
+            spec_from_neural_core(
+                core, hardware_bias=False, fallback_residency_class_id=-(index + 1),
+            ),
+            segment_id=segment_of[id(core)],
         )
         for index, core in enumerate(graph.get_neural_cores())
     ]

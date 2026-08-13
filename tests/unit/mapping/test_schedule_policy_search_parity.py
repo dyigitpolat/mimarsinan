@@ -144,9 +144,11 @@ class TestOnARealConvolution:
         assert deployed > 1  # the policy really composes here
         assert self._searched("bank_clustered").schedule_pass_count == deployed
 
-    def test_the_pool_answer_would_have_been_wrong_for_this_platform(self):
+    def test_the_pool_answer_now_agrees_too(self):
+        """[C4] The policy decides WHICH schedule is composed, never whether one
+        exists: a scheduled pool platform reports the passes it will run."""
         assert self._deployed("pool") != self._deployed("bank_clustered")
-        assert self._searched("pool").schedule_pass_count == 0
+        assert self._searched("pool").schedule_pass_count == self._deployed("pool")
 
 
 class TestUnchangedWhereThePolicyDoesNotApply:

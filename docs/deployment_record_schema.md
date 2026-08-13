@@ -411,17 +411,21 @@ Stated dispositions:
    tensors — bounded artifact size by construction.
 3. **Resume DAG**: old run dirs lack the new fragment entries, so resumes of pre-record runs
    re-run from an earlier step than before. Accepted and documented.
-4. **The POOL search/deploy divergence is still OPEN** (W5.2 closed the `bank_clustered`
-   half only). With `allow_scheduling` on, the builder always routes through the scheduled
-   build and emits one pass per neural segment; the layout answer, when the FLAT pack
-   already fits, short-circuits to the unscheduled census and reports
-   `schedule_pass_count = 0`. Measured on a 6-segment vehicle with a roomy pool
-   (8 cores of 32x32, `schedule_policy="pool"`): **searched 0 passes vs deployed 6** —
-   `schedule_sync_count` agrees at 0, because one pass per segment means no intra-segment
-   barrier, so the objective that consumes barriers (`total_sync_barriers`) is unaffected;
-   the reported PASS COUNT is not. Shrinking the pool until the flat pack fails makes the
-   two agree again (6 vs 6). Pinned by `tests/unit/mapping/test_schedule_pool_residual_gap.py`,
-   which fails the moment the gap is closed — so this entry cannot outlive the defect.
+4. **The POOL search/deploy divergence is CLOSED** [C4]. W5.2 closed the
+   `bank_clustered` half; the pool half stayed open because the layout answer, when the
+   FLAT pack already fits, short-circuited to the unscheduled census and reported
+   `schedule_pass_count = 0` while the builder emitted one pass per neural segment
+   (measured: searched 0 vs deployed 6 on a roomy 6-segment pool). The rule is now
+   general — with `allow_scheduling` on, the deployment builds a scheduled program, so
+   the searched census is the SCHEDULED one whatever the policy; the policy decides
+   WHICH schedule is composed (bank-clustered residency, else the capacity split),
+   never whether one exists. Two second-order facts came with it: the pass-count
+   agreement is the structural equality the fidelity contract (C4) gates on, and the
+   scheduled census describes ONE PASS's occupancy rather than the flat pack's, which
+   is the same semantics `bank_clustered` already had. `allow_scheduling` off still
+   reports the flat pack, because then the builder runs no schedule at all. Pinned by
+   `tests/unit/mapping/test_schedule_pool_residual_gap.py`, which now asserts the
+   agreement it used to measure as a gap.
 5. Record emission is fail-loud; a run whose record cannot seal fails. This is the intended
    discipline (acceptance: every tier run emits a schema-valid record).
 

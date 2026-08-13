@@ -37,11 +37,14 @@ def compute_mapping_stats(
     ``(stats, error_message)`` when mapping is infeasible.
 
     ``schedule_policy``/``max_schedule_passes`` are the SAME declared knobs the
-    hard-core builder consumes. Under ``bank_clustered`` the pass structure is
-    composed even when the flat pack would fit, because the builder composes it
-    too (``allow_scheduling`` always routes through the scheduled build): a
-    weight-stationary platform is otherwise searched against a program it will
-    never run. Where the policy does not apply, the previous answer stands.
+    hard-core builder consumes. With ``allow_scheduling`` on, the pass structure is
+    composed even when the flat pack would fit, because the builder composes it too
+    (``allow_scheduling`` always routes through the scheduled build): a scheduled
+    platform is otherwise searched against a program it will never run. That holds
+    whatever the POLICY — the policy decides WHICH schedule is composed
+    (bank-clustered residency, else the capacity split), never whether one exists —
+    so a fitting pool platform reports the passes it will actually run rather than
+    the zero the flat pack would suggest [C4].
     """
     if not softcores or not core_types:
         return _empty_stats(feasible=False, num_softcores=len(softcores)), \
@@ -61,9 +64,8 @@ def compute_mapping_stats(
         if pack.feasible
         else None
     )
-    composes_over_a_fitting_pack = (
-        allow_scheduling and schedule_policy == BANK_CLUSTERED
-    )
+    # A scheduled deployment runs passes even when everything would fit at once.
+    composes_over_a_fitting_pack = allow_scheduling
 
     if flat_stats is not None and not composes_over_a_fitting_pack:
         return flat_stats, None
@@ -106,10 +108,6 @@ def compute_mapping_stats(
         per_segment_passes[sid] = max(n_passes, 1)
         total_pass_count += max(n_passes, 1)
         all_pass_lists.extend(seg_pass_lists)
-
-    # The flat pack fits and the policy reached nothing: the previous answer.
-    if flat_stats is not None and not policy_applied:
-        return flat_stats, None
 
     if not sched_feasible:
         if flat_stats is not None:

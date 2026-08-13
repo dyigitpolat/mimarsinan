@@ -93,7 +93,9 @@ class TestIntraSegmentDependency:
         )
         assert clustered == pool
         assert clustered[0].feasible
-        assert clustered[0].schedule_pass_count == 0
+        # [C4] A scheduled platform reports the ONE pass this single-stage
+        # program runs, not the zero the flat pack would suggest.
+        assert clustered[0].schedule_pass_count == deployed
         assert clustered[0].schedule_sync_count == 0
 
 
