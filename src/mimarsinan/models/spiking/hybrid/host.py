@@ -43,6 +43,16 @@ if TYPE_CHECKING:
 
         def _build_consumer_counts(self) -> Dict[int, int]: ...
 
+        def _carried_output_ids(self) -> Dict[int, tuple]: ...
+
+        @staticmethod
+        def _publish_carried_trains(
+            stage,
+            output_train: torch.Tensor,
+            carried_ids: tuple,
+            state_buffer_spikes: Dict[int, torch.Tensor],
+        ) -> None: ...
+
         @staticmethod
         def _decref_consumers(
             state_buffer: Dict[int, torch.Tensor],
@@ -99,6 +109,7 @@ if TYPE_CHECKING:
             input_spike_train: torch.Tensor,
             recorder_seg: SegmentSpikeRecord | None = None,
             readout_corrections: Dict[int, torch.Tensor] | None = None,
+            output_train: list | None = None,
         ) -> torch.Tensor: ...
 
         def _encode_segment_input(

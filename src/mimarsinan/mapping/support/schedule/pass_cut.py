@@ -60,11 +60,26 @@ class CarriedWire:
     producer_latency: int
     produced_in: int
     last_consumed_in: int
+    consumer_latencies: Tuple[int, ...] = ()
 
     @property
     def live_boundaries(self) -> Tuple[int, ...]:
         """Boundary ``b`` sits between pass ``b`` and ``b+1``."""
         return tuple(range(self.produced_in, self.last_consumed_in))
+
+    @property
+    def is_skew_free(self) -> bool:
+        """Whether every consumer sits exactly one cycle after the producer.
+
+        A carried wire re-enters its consumer pass as a SEGMENT INPUT, aligned to
+        each consuming core's own start. Inside one pass the same wire is a live
+        buffer handoff with a fixed one-cycle delay and NO realignment. The two
+        agree only when every consumer sits at ``producer_latency + 1``; otherwise
+        cutting here would silently remove a skew the fused execution has.
+        """
+        return all(
+            latency == self.producer_latency + 1 for latency in self.consumer_latencies
+        )
 
 
 def _validate(nodes: Sequence[CutNode], passes: Sequence[Sequence[int]]) -> Dict[int, int]:
@@ -118,6 +133,7 @@ class PassCut:
         assignment = _validate(nodes, passes)
         by_id = {node.core_id: node for node in nodes}
         last_read: Dict[int, int] = {}
+        consumers: Dict[int, List[int]] = {}
         for node in nodes:
             consumer_pass = assignment[node.core_id]
             for source in node.sources:
@@ -127,6 +143,7 @@ class PassCut:
                     last_read[source] = max(
                         last_read.get(source, consumer_pass), consumer_pass
                     )
+                    consumers.setdefault(source, []).append(node.latency)
         carried = tuple(
             CarriedWire(
                 producer=producer,
@@ -134,6 +151,7 @@ class PassCut:
                 producer_latency=by_id[producer].latency,
                 produced_in=assignment[producer],
                 last_consumed_in=consumed_in,
+                consumer_latencies=tuple(sorted(consumers.get(producer, ()))),
             )
             for producer, consumed_in in sorted(last_read.items())
         )
@@ -141,6 +159,30 @@ class PassCut:
             assignment=dict(assignment),
             carried=carried,
             pass_count=len(passes),
+        )
+
+    @property
+    def skewed_carries(self) -> Tuple[CarriedWire, ...]:
+        """Carried wires this cut cannot reproduce exactly (see ``is_skew_free``)."""
+        return tuple(w for w in self.carried if not w.is_skew_free)
+
+    def require_exact(self, segment: str) -> None:
+        """Refuse a cut that would change the computation, naming the remedy."""
+        skewed = self.skewed_carries
+        if not skewed:
+            return
+        detail = "; ".join(
+            f"core {w.producer} (latency {w.producer_latency}) read by cores at "
+            f"latencies {list(w.consumer_latencies)}" for w in skewed
+        )
+        raise ValueError(
+            f"segment {segment!r} cannot be cut here without changing the "
+            f"computation: {detail}. A carried wire re-enters its consumer pass as "
+            f"a segment input, which is aligned per consuming core, while inside a "
+            f"pass it is a live handoff with a fixed one-cycle delay — the two agree "
+            f"only for consumers at producer_latency + 1. Exact remedy: "
+            f"depth-balancing relay insertion (lif_depth_balancing_relays), which "
+            f"equalizes intra-segment fan-in depth."
         )
 
     def live_at(self, boundary: int) -> Tuple[CarriedWire, ...]:
@@ -188,3 +230,40 @@ def cut_nodes_from_cores(cores: Iterable, segment_ids: Iterable[int]) -> List[Cu
             else 0,
         ))
     return nodes
+
+
+def carried_outputs_by_stage(stages: Sequence) -> Dict[int, Tuple[int, ...]]:
+    """``{stage_index: node_ids whose raster a LATER pass of the same segment reads}``.
+
+    Duck-typed on the hybrid stages: a wire read by a later pass of the SAME segment
+    is an intra-segment pass boundary and must cross verbatim; a wire read by a later
+    SEGMENT crosses a host boundary and collapses to counts by design. Distinguishing
+    them is the whole of the transfer rule, and it is one comparison.
+    """
+    reads: Dict[int, List[int]] = {}
+    for index, stage in enumerate(stages):
+        if getattr(stage, "kind", None) != "neural":
+            continue
+        if getattr(stage, "schedule_segment_index", None) is None:
+            continue
+        for slice_ in getattr(stage, "input_map", ()) or ():
+            reads.setdefault(int(slice_.node_id), []).append(index)
+    carried: Dict[int, Tuple[int, ...]] = {}
+    for index, stage in enumerate(stages):
+        if getattr(stage, "kind", None) != "neural":
+            continue
+        segment = getattr(stage, "schedule_segment_index", None)
+        if segment is None:
+            continue
+        ids = []
+        for slice_ in getattr(stage, "output_map", ()) or ():
+            node_id = int(slice_.node_id)
+            for reader in reads.get(node_id, ()):
+                if reader <= index:
+                    continue
+                if getattr(stages[reader], "schedule_segment_index", None) == segment:
+                    ids.append(node_id)
+                    break
+        if ids:
+            carried[index] = tuple(sorted(set(ids)))
+    return carried

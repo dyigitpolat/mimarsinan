@@ -113,12 +113,22 @@ class HybridRateForwardMixin(HybridFlowHost):
                     seg_output_spike_count=np.zeros(0, dtype=np.int64),
                 )
 
+            carried_ids = self._carried_output_ids().get(ctx.stage_index, ())
+            output_train: list | None = [] if carried_ids else None
             counts = self._run_neural_segment_rate(
                 stage,
                 input_spike_train=spike_train,
                 recorder_seg=recorder_seg,
                 readout_corrections=readout_corrections,
+                output_train=output_train,
             )
+            if output_train:
+                # A pass boundary INSIDE a segment carries the raster verbatim:
+                # publishing it here is what makes the cut semantically invisible,
+                # and is the exact mirror of what a host ComputeOp already does.
+                self._publish_carried_trains(
+                    stage, output_train[0], carried_ids, spikes_buffer,
+                )
             count_recorder = getattr(self, "stage_count_recorder", None)
             if count_recorder is not None:
                 count_recorder(stage, counts)

@@ -9,6 +9,7 @@ import torch
 
 from mimarsinan.chip_simulation.recording.spike_recorder import CoreSpikeCounts, SegmentSpikeRecord
 from mimarsinan.mapping.latency.chip import ChipLatency
+from mimarsinan.models.spiking.hybrid.carry import require_carry_capable
 from mimarsinan.mapping.packing.hybrid_hardcore_mapping import HybridStage
 from mimarsinan.models.spiking.cycle_policy import cycle_neuron_policy, precharge_lif_states
 from mimarsinan.models.spiking.hybrid.executors import (
@@ -30,6 +31,7 @@ class HybridLifStepMixin(HybridFlowHost):
         input_spike_train: torch.Tensor,
         recorder_seg: SegmentSpikeRecord | None = None,
         readout_corrections: Dict[int, torch.Tensor] | None = None,
+        output_train: list | None = None,
     ) -> torch.Tensor:
         """Rate-coded segment: returns raw clamp spike counts ``(B, out_dim)`` —
         the currency parity gathers read. The [C2] membrane term goes into
@@ -100,6 +102,13 @@ class HybridLifStepMixin(HybridFlowHost):
         latency_gated = policy.latency_gated
         single_spike = getattr(policy, "single_spike_io", False)
 
+        if output_train is not None:
+            require_carry_capable(
+                stage,
+                packed=(not single_spike and not recording and latency_gated
+                        and getattr(self, "use_packed_cycle_executor", True)),
+            )
+
         if (getattr(self, "lif_execution_synchronized", False)
                 and self.spiking_mode == "lif"
                 and not single_spike and not recording):
@@ -115,7 +124,8 @@ class HybridLifStepMixin(HybridFlowHost):
             return run_neural_segment_packed(
                 self, input_spike_train, seg=seg, stage=stage, T=T,
                 batch_size=batch_size, device=device, policy=policy,
-                readout_corrections=readout_corrections)
+                readout_corrections=readout_corrections,
+                output_train=output_train)
 
         if single_spike:
             shifted = torch.zeros_like(input_spike_train)

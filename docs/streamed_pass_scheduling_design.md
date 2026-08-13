@@ -160,3 +160,42 @@ a later pass of the same segment consumes.
   stays; only the *transfer* at the resulting boundaries changes.
 - **Segment boundaries.** Host ops still compute on counts. Nothing about the
   end-to-end (`segments == 1`) property changes.
+
+## 11. SP2 — as landed (2026-08-14)
+
+**Implemented.** The carry seam is `models/spiking/hybrid/carry.py`: the packed cycle
+executor records the segment's output raster in PRODUCER-LOCAL time from the same
+`fires` the counts accumulate, and a neural stage publishes it into
+`state_buffer_spikes` for exactly the wires a later pass of its own segment reads.
+`encode_segment_input` already preferred a cached train, so the consuming side needed
+no change. An execution path that cannot record a raster (synchronized / recording /
+single-spike) REFUSES by name rather than handing the next pass a re-encoded count.
+
+**Proven.**
+
+- `raster.sum(0) == counts` — the carry is recorded from the same fires the counts
+  accumulate, so a carry that invented spikes would fail this.
+- Fused-vs-passed equivalence at bit level on a 4-hop LIF vehicle, at 2 and 3 passes.
+- The carry is LOAD-BEARING: with publication disabled the scheduled run diverges from
+  the fused one, which is the whole reason the lock existed.
+
+**A trap worth recording.** The first version of the equivalence test passed with the
+carry disabled. Untrained random weights saturate every neuron, and a saturated raster
+IS its own uniform re-encode — so the vehicle could not witness the carry at all. The
+weights are now set explicitly for mid-range firing, and
+`test_the_carry_is_load_bearing` exists precisely so a future vehicle that drifts back
+into saturation fails loudly instead of passing vacuously.
+
+**Two mutations still survive, both from vehicle simplicity, not from the code:**
+
+| mutation | why it is not witnessed | vehicle needed |
+| --- | --- | --- |
+| clamp `local` into `[0, T)` instead of skipping outside the producer window | every pass in the vehicle holds ONE latency group, so producer latency is 0 within its pass and the window never overhangs | a pass holding >= 2 latency groups |
+| publish wires crossing to a later SEGMENT too | the vehicle has one segment, so no host boundary exists to be wrongly upgraded | a multi-segment vehicle (a host op between two neural segments) |
+
+Both are coverage gaps in the test vehicle and are the first work of SP3.
+
+**The lock is deliberately still ON.** `allow_scheduling` stays `(False,)` for streamed
+until SP3: SANA-FE, nevresim and lava do not carry yet, and unlocking now would let a
+run reach a backend that silently collapses the boundary — the exact failure the lock
+exists to prevent. The unlock belongs with the backends' carry-or-refuse.

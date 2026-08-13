@@ -18,6 +18,10 @@ import torch
 from mimarsinan.models.spiking.hybrid.membrane_readout import (
     stash_membrane_readout_correction,
 )
+from mimarsinan.models.spiking.hybrid.carry import (
+    carry_plan_for,
+    record_carry,
+)
 from mimarsinan.models.spiking.spiking_config import COMPUTE_DTYPE
 
 
@@ -157,9 +161,16 @@ def build_packed_stage(seg: dict, device: torch.device) -> PackedStage:
 
 def run_neural_segment_packed(
     flow, input_spike_train, *, seg, stage, T, batch_size, device, policy,
-    readout_corrections=None,
+    readout_corrections=None, output_train=None,
 ) -> torch.Tensor:
-    """Stage-flat twin of the reference cycle loop (multi-spike, non-recording)."""
+    """Stage-flat twin of the reference cycle loop (multi-spike, non-recording).
+
+    ``output_train`` is the carry seam: pass a one-element list to also receive the
+    segment's output RASTER ``(T, B, out_dim)`` in PRODUCER-LOCAL time, which is what
+    a later pass of the same segment must replay verbatim. Recorded per cycle from
+    the same ``fires`` the counts accumulate, so ``raster.sum(0) == counts`` holds by
+    construction — the cheap invariant that says the two agree.
+    """
     packed = seg.get("packed")
     if packed is None:
         packed = build_packed_stage(seg, device)
@@ -182,6 +193,13 @@ def run_neural_segment_packed(
     zeros_in = torch.zeros(batch_size, input_spike_train.shape[2],
                            device=device, dtype=COMPUTE_DTYPE)
     train = input_spike_train.to(COMPUTE_DTYPE)
+
+    carry = None
+    carry_plan: list = []
+    if output_train is not None:
+        carry = torch.zeros(T, batch_size, len(output_sources),
+                            device=device, dtype=COMPUTE_DTYPE)
+        carry_plan = carry_plan_for(output_spans, packed, seg["cores"], T)
 
     for cycle in range(cycles):
         # Two-phase, mirroring the reference loop: gather every active
@@ -223,6 +241,10 @@ def run_neural_segment_packed(
             fires[:, n0:n1] = out
             counts[:, n0:n1] += out
 
+        if carry is not None:
+            record_carry(carry, carry_plan, cycle=cycle, fires=fires,
+                         train=train, T=T)
+
     output_counts = torch.zeros(
         batch_size, len(output_sources), device=device, dtype=COMPUTE_DTYPE)
     input_total = train[:T].sum(dim=0)
@@ -241,6 +263,10 @@ def run_neural_segment_packed(
         if off is None:
             continue
         output_counts[:, d0:d1] = counts[:, off + int(sp.src_start):off + int(sp.src_end)]
+
+    if carry is not None:
+        assert output_train is not None
+        output_train.append(carry)
 
     if readout_corrections is not None and getattr(flow, "membrane_readout", False):
         # [C2] per-core membrane views over the flat state feed the same stash.

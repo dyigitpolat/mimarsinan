@@ -189,3 +189,85 @@ class TestTheContractSelectsTheDiscipline:
 
     def test_a_windowed_run_keeps_the_collapse_boundary(self):
         assert self._contract(False).pass_boundary_transfer() == COLLAPSE
+
+
+class TestSkewIsRefusedNotSilentlyRemoved:
+    """A carried wire re-enters as a SEGMENT INPUT, aligned per consuming core;
+    inside a pass the same wire is a live handoff with a fixed one-cycle delay
+    and no realignment. They agree only for consumers at producer_latency + 1,
+    so a cut across a skewed edge would quietly compute something else."""
+
+    def _skewed(self):
+        # A(lat 0) feeds both B(lat 1) and D(lat 3) — the deep edge is skewed.
+        return [
+            CutNode(core_id=0, latency=0, sources=(), out_width=8),
+            CutNode(core_id=1, latency=1, sources=(0,), out_width=4),
+            CutNode(core_id=2, latency=2, sources=(1,), out_width=4),
+            CutNode(core_id=3, latency=3, sources=(2, 0), out_width=2),
+        ]
+
+    def test_a_skew_free_cut_is_exact(self):
+        cut = PassCut.over(_chain(), [[0, 1], [2, 3]])
+        assert cut.skewed_carries == ()
+        cut.require_exact("seg0")
+
+    def test_a_skewed_carried_wire_is_reported(self):
+        cut = PassCut.over(self._skewed(), [[0], [1, 2, 3]])
+        assert [w.producer for w in cut.skewed_carries] == [0]
+
+    def test_the_refusal_names_the_cores_and_the_remedy(self):
+        cut = PassCut.over(self._skewed(), [[0], [1, 2, 3]])
+        with pytest.raises(ValueError, match="lif_depth_balancing_relays"):
+            cut.require_exact("seg0")
+        with pytest.raises(ValueError, match="core 0"):
+            cut.require_exact("seg0")
+
+    def test_a_skewed_edge_INSIDE_one_pass_is_not_a_carry_and_not_refused(self):
+        """The fused skew is the model's own semantics; only CUTTING it lies."""
+        cut = PassCut.over(self._skewed(), [[0, 1, 2, 3]])
+        assert cut.skewed_carries == ()
+        cut.require_exact("seg0")
+
+    def test_a_wire_with_one_consumer_at_the_next_latency_is_skew_free(self):
+        cut = PassCut.over(_chain(), [[0], [1], [2], [3]])
+        assert all(w.is_skew_free for w in cut.carried)
+
+
+class _Slice:
+    def __init__(self, node_id):
+        self.node_id = node_id
+
+
+class _Stage:
+    def __init__(self, segment, pass_index, inputs, outputs, kind="neural"):
+        self.kind = kind
+        self.schedule_segment_index = segment
+        self.schedule_pass_index = pass_index
+        self.input_map = [_Slice(n) for n in inputs]
+        self.output_map = [_Slice(n) for n in outputs]
+
+
+class TestWhichOutputsAreCarried:
+    def test_a_wire_read_by_a_later_pass_of_the_same_segment_is_carried(self):
+        from mimarsinan.mapping.support.schedule.pass_cut import (
+            carried_outputs_by_stage,
+        )
+
+        stages = [_Stage(0, 0, [-2], [7]), _Stage(0, 1, [7], [9])]
+        assert carried_outputs_by_stage(stages) == {0: (7,)}
+
+    def test_a_wire_read_by_a_later_SEGMENT_collapses_and_is_not_carried(self):
+        """That crossing is a host boundary — counts are the contract there."""
+        from mimarsinan.mapping.support.schedule.pass_cut import (
+            carried_outputs_by_stage,
+        )
+
+        stages = [_Stage(0, 0, [-2], [7]), _Stage(1, 0, [7], [9])]
+        assert carried_outputs_by_stage(stages) == {}
+
+    def test_a_single_pass_segment_carries_nothing(self):
+        from mimarsinan.mapping.support.schedule.pass_cut import (
+            carried_outputs_by_stage,
+        )
+
+        assert carried_outputs_by_stage([_Stage(0, 0, [-2], [7])]) == {}
