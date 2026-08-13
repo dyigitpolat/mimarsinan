@@ -15,6 +15,7 @@ from typing import Any, Dict
 from mimarsinan.deployment_record.objectives import CandidateStaticView
 from mimarsinan.search.evaluators.extrapolating_accuracy_evaluator import ExtrapolatingAccuracyEvaluator
 from mimarsinan.search.evaluators.fast_accuracy_evaluator import FastAccuracyEvaluator
+from mimarsinan.search.option_axes import candidate_option
 from mimarsinan.search.problem import CandidateInfeasibleError
 from mimarsinan.search.results import ACCURACY_OBJECTIVE_NAME
 
@@ -66,7 +67,12 @@ class JointEvaluateMixin(JointHostContract):
         entry = self._validation_cache.get(key)
         if entry is None:
             obj = self._evaluate_inner(
-                configuration["model_config"], configuration["platform_constraints"],
+                configuration["model_config"],
+                configuration["platform_constraints"],
+                str(candidate_option(
+                    configuration, "encoding_layer_placement",
+                    self.encoding_placement,
+                )),
             )
         else:
             obj = self._objectives_from_entry(entry)
@@ -74,9 +80,11 @@ class JointEvaluateMixin(JointHostContract):
         self._cache[key] = obj
         return obj
 
-    def _evaluate_inner(self, mc: Dict[str, Any], pcfg: Dict[str, Any]) -> Dict[str, float]:
+    def _evaluate_inner(
+        self, mc: Dict[str, Any], pcfg: Dict[str, Any], placement: str,
+    ) -> Dict[str, float]:
         """Evaluate one candidate pair directly, without the configuration cache."""
-        entry, failure = self._resolve_entry(mc, pcfg)
+        entry, failure = self._resolve_entry(mc, pcfg, placement)
         if entry is None:
             assert failure is not None
             return self._raise_or_penalize(failure)

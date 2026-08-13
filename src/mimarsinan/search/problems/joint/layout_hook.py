@@ -35,7 +35,7 @@ from .types import (
 class JointLayoutMixin(JointHostContract):
     """Layout mapping and candidate-view construction for :class:`JointArchHwProblem`."""
 
-    def _build_raw_model(self, model_config: Dict, pcfg: Dict):
+    def _build_raw_model(self, model_config: Dict, pcfg: Dict, placement: str):
         """Build and warm up a raw model. Returns (model, total_params) or raises."""
         builder = self.builder_factory(
             self.device,
@@ -44,7 +44,7 @@ class JointLayoutMixin(JointHostContract):
             {**pcfg, "target_tq": int(self.target_tq)},
         )
         model = build_model(
-            builder, model_config, encoding_placement=self.encoding_placement
+            builder, model_config, encoding_placement=placement
         ).to(self.device)
 
         model.eval()
@@ -62,7 +62,7 @@ class JointLayoutMixin(JointHostContract):
         total_params = float(sum(int(p.numel()) for p in model.parameters()))
         return model, total_params
 
-    def _convert_to_mapper_repr(self, model):
+    def _convert_to_mapper_repr(self, model, placement: str):
         """Convert via torch mapping if the model lacks ``get_mapper_repr``.
 
         A native builder's flow already had its placement resolved by
@@ -77,10 +77,10 @@ class JointLayoutMixin(JointHostContract):
             num_classes=self.num_classes,
             device=self.device,
             Tq=self.target_tq,
-            encoding_layer_placement=self.encoding_placement,
+            encoding_layer_placement=placement,
         )
 
-    def _ensure_mapper_repr(self, model):
+    def _ensure_mapper_repr(self, model, placement: str):
         """The model in mapper form, converted once per model rather than per candidate.
 
         Only the LAYOUT depends on the candidate chip; lowering the model into
@@ -89,14 +89,16 @@ class JointLayoutMixin(JointHostContract):
         that fixture — a model-bearing search builds a new model per candidate
         and converts it exactly once anyway.
         """
-        cache = self._hw_only_cache
+        cache = self._hw_only_cache.get(placement)
         if cache is None or model is not cache.model:
-            return self._convert_to_mapper_repr(model)
+            return self._convert_to_mapper_repr(model, placement)
         if cache.mapper_repr is None:
-            cache.mapper_repr = self._convert_to_mapper_repr(model)
+            cache.mapper_repr = self._convert_to_mapper_repr(model, placement)
         return cache.mapper_repr
 
-    def _candidate_model(self, mc: Dict, pcfg: Dict) -> Tuple[Any, float]:
+    def _candidate_model(
+        self, mc: Dict, pcfg: Dict, placement: str,
+    ) -> Tuple[Any, float]:
         """The model this candidate is scored with, and its parameter census.
 
         A model-bearing search builds the candidate's own; a hardware-only
@@ -106,14 +108,14 @@ class JointLayoutMixin(JointHostContract):
         torch.manual_seed(int(self.accuracy_seed))
         np.random.seed(int(self.accuracy_seed))
         if self._searches_model:
-            return self._build_raw_model(mc, pcfg)
-        cache = self._ensure_hw_only_cache()
+            return self._build_raw_model(mc, pcfg, placement)
+        cache = self._ensure_hw_only_cache(placement)
         return cache.model, cache.total_params
 
-    def _build_model(self, model_config: Dict, pcfg: Dict):
+    def _build_model(self, model_config: Dict, pcfg: Dict, placement: str):
         """Build, warm up, and convert a model. Returns (model, total_params)."""
-        model, total_params = self._build_raw_model(model_config, pcfg)
-        model = self._ensure_mapper_repr(model)
+        model, total_params = self._build_raw_model(model_config, pcfg, placement)
+        model = self._ensure_mapper_repr(model, placement)
         return model, total_params
 
     def _collect_softcores(
@@ -140,14 +142,17 @@ class JointLayoutMixin(JointHostContract):
         host_segments = getattr(layout_mapper, "host_side_segment_count", 0)
         return softcores, host_segments
 
-    def _ensure_hw_only_cache(self) -> HwOnlyCache:
+    def _ensure_hw_only_cache(self, placement: str) -> HwOnlyCache:
         """Build the candidate-independent model once for a hardware-only search.
 
         Only the MODEL is reused: every candidate re-derives its own layout,
         because softcore tiling is a function of the candidate's core geometry.
+        Keyed by PLACEMENT: the encoder's side of the NeuralOps/ComputeOps
+        boundary is baked at flow birth, so two placements are two fixtures.
         """
-        if self._hw_only_cache is not None:
-            return self._hw_only_cache
+        cached = self._hw_only_cache.get(placement)
+        if cached is not None:
+            return cached
 
         base = self.fixed_platform_constraints
         if not base or "cores" not in base:
@@ -160,9 +165,10 @@ class JointLayoutMixin(JointHostContract):
         torch.manual_seed(int(self.accuracy_seed))
         np.random.seed(int(self.accuracy_seed))
 
-        model, total_params = self._build_raw_model(mc, dict(base))
-        self._hw_only_cache = HwOnlyCache(model=model, total_params=total_params)
-        return self._hw_only_cache
+        model, total_params = self._build_raw_model(mc, dict(base), placement)
+        cache = HwOnlyCache(model=model, total_params=total_params)
+        self._hw_only_cache[placement] = cache
+        return cache
 
     @staticmethod
     def _make_core_types(pcfg: Dict) -> List[LayoutHardCoreType]:

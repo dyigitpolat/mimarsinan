@@ -151,4 +151,4 @@ class TestBrokenProblemAborts:
     def test_hw_only_cache_requires_cores_in_the_resolved_base(self):
         problem = _make_hw_problem(platform_resolver=lambda overlay: {"target_tq": 4})
         with pytest.raises(ValueError, match="cores"):
-            problem._ensure_hw_only_cache()
+            problem._ensure_hw_only_cache(problem.encoding_placement)

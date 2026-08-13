@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, Optional, Tuple
 
+from mimarsinan.search.option_axes import candidate_option
 from mimarsinan.search.problem import CandidateInfeasibleError, ValidationResult
 
 from .types import (
@@ -70,7 +71,12 @@ class JointValidateMixin(JointHostContract):
         if structural is not None:
             return self._record_invalid(key, structural.message, structural.phase)
 
-        entry, failure = self._resolve_entry(mc, pcfg)
+        entry, failure = self._resolve_entry(
+            mc, pcfg, str(candidate_option(
+                configuration, "encoding_layer_placement",
+                self.encoding_placement,
+            )),
+        )
         if failure is not None:
             return self._record_invalid(key, failure.message, failure.phase)
 
@@ -94,11 +100,11 @@ class JointValidateMixin(JointHostContract):
         return None
 
     def _resolve_model(
-        self, mc: Dict, pcfg: Dict,
+        self, mc: Dict, pcfg: Dict, placement: str,
     ) -> Tuple[Optional[Tuple[Any, float]], Optional[CandidateFailure]]:
         """The candidate's model, or the candidate-scoped reason there is none."""
         try:
-            return self._candidate_model(mc, pcfg), None
+            return self._candidate_model(mc, pcfg, placement), None
         except Exception as exc:
             if not self._searches_model:
                 # The model does not depend on the candidate here: its failure
@@ -107,11 +113,11 @@ class JointValidateMixin(JointHostContract):
             return None, self._failure(MODEL_BUILD_PHASE, "Model build failed", exc)
 
     def _resolve_layout(
-        self, model: Any, pcfg: Dict, total_params: float,
+        self, model: Any, pcfg: Dict, total_params: float, placement: str,
     ) -> Tuple[Optional[CandidateLayout], Optional[CandidateFailure]]:
         """Lay a built model onto the candidate chip: conversion → softcores → packing."""
         try:
-            mapped_model = self._ensure_mapper_repr(model)
+            mapped_model = self._ensure_mapper_repr(model, placement)
         except Exception as exc:
             return None, self._failure(HW_CONVERSION_PHASE, "HW conversion failed", exc)
 
@@ -135,7 +141,7 @@ class JointValidateMixin(JointHostContract):
         ), None
 
     def _resolve_entry(
-        self, mc: Dict, pcfg: Dict,
+        self, mc: Dict, pcfg: Dict, placement: str,
     ) -> Tuple[Optional[ValidationEntry], Optional[CandidateFailure]]:
         """The ONE candidate-facts path: model → layout → static view.
 
@@ -144,7 +150,7 @@ class JointValidateMixin(JointHostContract):
         typed raise); problem-level breakage — a fixture the candidate does not
         influence — propagates untyped.
         """
-        facts, failure = self._resolve_model(mc, pcfg)
+        facts, failure = self._resolve_model(mc, pcfg, placement)
         if failure is not None:
             return None, failure
         assert facts is not None
@@ -155,7 +161,7 @@ class JointValidateMixin(JointHostContract):
                 model=model, view=self._layoutless_view(pcfg, total_params),
             ), None
 
-        layout, failure = self._resolve_layout(model, pcfg, total_params)
+        layout, failure = self._resolve_layout(model, pcfg, total_params, placement)
         if failure is not None:
             return None, failure
         assert layout is not None
@@ -171,9 +177,16 @@ class JointValidateMixin(JointHostContract):
         """
         resolved = self._resolved_configuration(configuration)
         pcfg = resolved["platform_constraints"]
-        facts, failure = self._resolve_model(resolved["model_config"], pcfg)
+        placement = str(candidate_option(
+            resolved, "encoding_layer_placement", self.encoding_placement,
+        ))
+        facts, failure = self._resolve_model(
+            resolved["model_config"], pcfg, placement,
+        )
         if facts is not None:
-            layout, failure = self._resolve_layout(facts[0], pcfg, facts[1])
+            layout, failure = self._resolve_layout(
+                facts[0], pcfg, facts[1], placement,
+            )
             if layout is not None:
                 return layout
         assert failure is not None

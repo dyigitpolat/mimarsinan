@@ -33,7 +33,7 @@ BEST_EFFORT_LOGGER = "mimarsinan.best_effort"
 class _BrokenFixtureProblem(JointArchHwProblem):
     """A hardware search whose candidate-INDEPENDENT model fixture is broken."""
 
-    def _ensure_hw_only_cache(self):
+    def _ensure_hw_only_cache(self, _placement):
         raise RuntimeError("hw-only fixture broken")
 
 

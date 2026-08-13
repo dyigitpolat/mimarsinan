@@ -70,7 +70,7 @@ class TestCandidateViewMatchesTheLayoutHook:
     def test_the_hook_view_reproduces_the_registry_read_of_the_packing(self):
         problem = _hw_problem()
         pcfg = dict(problem.fixed_platform_constraints or {})
-        cache = problem._ensure_hw_only_cache()
+        cache = problem._ensure_hw_only_cache(problem.encoding_placement)
         softcores, host_segments = problem._collect_softcores(cache.model, pcfg)
 
         packed, error = problem._pack_candidate(softcores, pcfg)
@@ -106,7 +106,7 @@ class TestCandidateViewMatchesTheLayoutHook:
         # record's axes stay unavailable instead of reading as zero.
         problem = _hw_problem()
         pcfg = dict(problem.fixed_platform_constraints or {})
-        cache = problem._ensure_hw_only_cache()
+        cache = problem._ensure_hw_only_cache(problem.encoding_placement)
         softcores, host_segments = problem._collect_softcores(cache.model, pcfg)
         packed, _error = problem._pack_candidate(softcores, pcfg)
         view = problem._static_view(

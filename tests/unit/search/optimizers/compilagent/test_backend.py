@@ -222,7 +222,7 @@ class TestLayoutPayloadIsTheProblemsOwnCandidateLayout:
         assert all("has_bias" not in core for core in raw_pcfg["cores"]), (
             "the fixture must decode a declaration that still needs resolving"
         )
-        model, _ = problem._build_model(configuration["model_config"], raw_pcfg)
+        model, _ = problem._build_model(configuration["model_config"], raw_pcfg, problem.encoding_placement)
         raw_softcores, _ = problem._collect_softcores(model, raw_pcfg)
         assert _row_shapes(payload["per_softcore"]) != _shapes(raw_softcores), (
             "the payload must describe the resolved chip, not the declaration"
@@ -265,10 +265,10 @@ class TestBothCacheStatesOfTheRealProblem:
     def test_a_hardware_search_serves_off_a_warm_model_fixture(self):
         problem = make_problem("hardware")
         configuration = _baseline_configuration(problem)
-        assert problem._hw_only_cache is None, "the fixture starts cold"
+        assert not problem._hw_only_cache, "the fixture starts cold"
         # The public seam warms it, exactly as the first scored candidate would.
         problem.candidate_layout(configuration)
-        assert problem._hw_only_cache is not None, "a hardware search caches its model"
+        assert problem._hw_only_cache, "a hardware search caches its model per placement"
 
         payload = self._payload_matches_the_layout(problem, configuration)
         assert payload["softcore_count"] > 0
@@ -277,7 +277,7 @@ class TestBothCacheStatesOfTheRealProblem:
         problem = make_problem("joint")
         configuration = _baseline_configuration(problem)
         payload = self._payload_matches_the_layout(problem, configuration)
-        assert problem._hw_only_cache is None, (
+        assert not problem._hw_only_cache, (
             "a model-bearing search builds per candidate; nothing is cached"
         )
         assert payload["softcore_count"] > 0
@@ -286,7 +286,7 @@ class TestBothCacheStatesOfTheRealProblem:
         problem = make_problem("model")
         configuration = _baseline_configuration(problem)
         self._payload_matches_the_layout(problem, configuration)
-        assert problem._hw_only_cache is None
+        assert not problem._hw_only_cache
 
 
 class TestServedPayload:

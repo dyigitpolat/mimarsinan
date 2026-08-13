@@ -114,7 +114,7 @@ def _independent_view(problem, configuration, accuracy=None):
     """The candidate's static facts, built WITHOUT the problem's evaluate path."""
     mc = configuration["model_config"]
     pcfg = configuration["platform_constraints"]
-    model, total_params = problem._build_model(mc, pcfg)
+    model, total_params = problem._build_model(mc, pcfg, problem.encoding_placement)
     softcores, host_segments = problem._collect_softcores(model, pcfg)
     stats, error = compute_mapping_stats(
         softcores=softcores,
@@ -301,6 +301,7 @@ class TestCandidateChipIsTheChipTheModelIsMappedOnto:
         base_cores = problem.fixed_platform_constraints["cores"]
         model, _params = problem._build_model(
             cfg["model_config"], {**pcfg, "cores": base_cores},
+            problem.encoding_placement,
         )
         base_softcores, _ = problem._collect_softcores(
             model, {**pcfg, "cores": base_cores},
@@ -328,9 +329,9 @@ class TestCandidateChipIsTheChipTheModelIsMappedOnto:
         builds = []
         original = problem._build_raw_model
 
-        def _counting(mc, pcfg):
+        def _counting(mc, pcfg, _placement):
             builds.append(pcfg)
-            return original(mc, pcfg)
+            return original(mc, pcfg, _placement)
 
         problem._build_raw_model = _counting
         for count in (16.0, 32.0, 64.0):
@@ -349,9 +350,9 @@ class TestCandidateChipIsTheChipTheModelIsMappedOnto:
         conversions = []
         original = problem._convert_to_mapper_repr
 
-        def _counting(model):
+        def _counting(model, _placement):
             conversions.append(model)
-            return original(model)
+            return original(model, _placement)
 
         problem._convert_to_mapper_repr = _counting
         layouts = []
@@ -379,7 +380,7 @@ class TestTheCandidateLayoutSeam:
 
         pcfg = configuration["platform_constraints"]
         model, total_params = problem._build_model(
-            configuration["model_config"], pcfg,
+            configuration["model_config"], pcfg, problem.encoding_placement,
         )
         expected_softcores, expected_host = problem._collect_softcores(model, pcfg)
 
@@ -429,6 +430,7 @@ class TestTheCandidateLayoutSeam:
         )
         model, _ = problem._build_model(
             cfg["model_config"], raw["platform_constraints"],
+            problem.encoding_placement,
         )
         raw_softcores, _ = problem._collect_softcores(
             model, raw["platform_constraints"],

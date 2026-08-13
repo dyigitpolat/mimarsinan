@@ -35,6 +35,8 @@ class _Harness(JointValidateMixin, JointLayoutMixin, JointEvaluateMixin):
     validate_fn = None
     constraint_fn = None
     active_objective_names = ACTIVE_NAMES
+    encoding_placement = "subsume"
+    pruning_fraction = 0.0
 
     def __init__(self, active_names=ACTIVE_NAMES):
         self._cache = {}
@@ -67,13 +69,13 @@ class _ValidateHarness(_Harness):
         self.constraint_fn = constraint_fn
         self.search_mode = search_mode
 
-    def _ensure_hw_only_cache(self):
+    def _ensure_hw_only_cache(self, _placement):
         raise RuntimeError("hw-only fixture broken")
 
-    def _build_raw_model(self, mc, pcfg):
+    def _build_raw_model(self, mc, pcfg, _placement):
         raise ValueError("candidate arch invalid")
 
-    def _ensure_mapper_repr(self, model):
+    def _ensure_mapper_repr(self, model, _placement):
         raise AssertionError("should not be reached")
 
     def _collect_softcores(self, model, pcfg):
@@ -147,7 +149,7 @@ class _EvaluateHarness(_Harness):
     def _evaluate_accuracy(self, model):
         raise RuntimeError("training exploded")
 
-    def _evaluate_inner(self, mc, pcfg):
+    def _evaluate_inner(self, mc, pcfg, _placement):
         raise self._inner_error
 
 
@@ -200,15 +202,15 @@ class _InnerHarness(_Harness):
         self._build_error = build_error
         self._mapper_error = mapper_error
 
-    def _ensure_hw_only_cache(self):
+    def _ensure_hw_only_cache(self, _placement):
         raise RuntimeError("hw-only fixture broken")
 
-    def _build_raw_model(self, mc, pcfg):
+    def _build_raw_model(self, mc, pcfg, _placement):
         if self._build_error is not None:
             raise self._build_error
         return object(), 1.0
 
-    def _ensure_mapper_repr(self, model):
+    def _ensure_mapper_repr(self, model, _placement):
         if self._mapper_error is not None:
             raise self._mapper_error
         return model
@@ -243,7 +245,7 @@ class TestEvaluateInnerRaiseSiteClassification:
     def test_candidate_model_build_failure_raises_typed(self):
         harness = _InnerHarness(build_error=ValueError("candidate arch invalid"))
         with pytest.raises(CandidateInfeasibleError, match="candidate arch invalid") as ei:
-            harness._evaluate_inner({}, {})
+            harness._evaluate_inner({}, {}, harness.encoding_placement)
         assert isinstance(ei.value.__cause__, ValueError)
 
     def test_candidate_mapping_collapse_raises_typed(self):
@@ -251,20 +253,20 @@ class TestEvaluateInnerRaiseSiteClassification:
             mapper_error=RuntimeError("conversion collapsed"),
         )
         with pytest.raises(CandidateInfeasibleError, match="conversion collapsed") as ei:
-            harness._evaluate_inner({}, {})
+            harness._evaluate_inner({}, {}, harness.encoding_placement)
         assert isinstance(ei.value.__cause__, RuntimeError)
 
     def test_hw_only_fixture_failure_propagates_untyped(self):
         harness = _InnerHarness()
         harness.search_mode = "hardware"
         with pytest.raises(RuntimeError, match="hw-only fixture broken"):
-            harness._evaluate_inner({}, {})
+            harness._evaluate_inner({}, {}, harness.encoding_placement)
 
     def test_a_layoutless_objective_set_never_touches_the_mapping(self):
         # ``_collect_softcores`` asserts it is unreachable: with no layout-bearing
         # axis active, the candidate view is built without the mapping at all.
         harness = _InnerHarness()
-        assert harness._evaluate_inner({}, {}) == {"total_params": 1.0}
+        assert harness._evaluate_inner({}, {}, harness.encoding_placement) == {"total_params": 1.0}
 
     def test_a_candidate_that_does_not_fit_is_SCORED_not_raised(self, caplog):
         # The one penalized phase: a chip that cannot hold the candidate is a
@@ -272,7 +274,7 @@ class TestEvaluateInnerRaiseSiteClassification:
         # ambitious-but-oversized candidates abort the search instead.
         harness = _UnpackableHarness()
         with caplog.at_level(logging.WARNING, logger=EVALUATE_LOGGER):
-            objectives = harness._evaluate_inner({}, TOO_SMALL_CHIP)
+            objectives = harness._evaluate_inner({}, TOO_SMALL_CHIP, harness.encoding_placement)
         assert objectives == harness._penalty_objectives()
         assert any(
             r.levelno == logging.WARNING and "returning full penalty" in r.getMessage()
@@ -281,7 +283,7 @@ class TestEvaluateInnerRaiseSiteClassification:
 
     def test_the_packing_penalty_reports_the_census_that_explains_it(self):
         harness = _UnpackableHarness()
-        _entry, failure = harness._resolve_entry({}, TOO_SMALL_CHIP)
+        _entry, failure = harness._resolve_entry({}, TOO_SMALL_CHIP, harness.encoding_placement)
         assert failure is not None
         assert failure.phase == "hw_packing"
         assert "softcores=1" in failure.message

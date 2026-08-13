@@ -25,6 +25,7 @@ from mimarsinan.mapping.platform.platform_constraints import resolve_platform_ma
 from mimarsinan.mapping.verification.layout_verification_types import (
     LayoutVerificationStats,
 )
+from mimarsinan.search.option_axes import OptionAxis
 from mimarsinan.search.problem import ValidationResult
 from mimarsinan.search.results import ObjectiveSpec
 
@@ -140,6 +141,14 @@ class JointHostContract:
     search_mode: str
     builder_factory: BuilderFactory
     encoding_placement: str
+    pruning_fraction: float
+    option_axes: Tuple[OptionAxis, ...]
+    arch_options: Sequence[Tuple[str, Sequence[Any]]]
+    model_config_assembler: ModelConfigAssembler
+    num_core_types: int
+    core_axons_bounds: Tuple[int, int]
+    core_neurons_bounds: Tuple[int, int]
+    core_count_bounds: Tuple[int, int]
     validate_fn: Optional[ValidateFn]
     constraint_fn: Optional[ConstraintFn]
     fixed_model_config: Optional[Dict[str, Any]]
@@ -152,7 +161,7 @@ class JointHostContract:
     extrapolation_num_checkpoints: int
     extrapolation_target_epochs: int
     _cache: Dict[str, Dict[str, float]]
-    _hw_only_cache: Optional[HwOnlyCache]
+    _hw_only_cache: Dict[str, HwOnlyCache]
     _validation_cache: Dict[str, ValidationEntry]
     _validation_errors: Dict[str, ValidationResult]
 
@@ -168,11 +177,22 @@ class JointHostContract:
         def _searches_model(self) -> bool: ...
 
         @property
+        def _searches_hw(self) -> bool: ...
+
+        @property
         def fixed_platform_constraints(self) -> Optional[Dict[str, Any]]: ...
 
         def resolve_candidate_platform(
             self, overlay: Mapping[str, Any],
         ) -> Dict[str, Any]: ...
+
+        def candidate_encoding_placement(
+            self, configuration: Mapping[str, Any],
+        ) -> str: ...
+
+        def candidate_pruning_fraction(
+            self, configuration: Mapping[str, Any],
+        ) -> float: ...
 
         def _resolved_configuration(
             self, configuration: Dict[str, Any],
@@ -184,13 +204,17 @@ class JointHostContract:
 
         def _requires_fragment(self, fragment: str) -> bool: ...
 
-        def _ensure_hw_only_cache(self) -> HwOnlyCache: ...
+        def _ensure_hw_only_cache(self, placement: str) -> HwOnlyCache: ...
 
-        def _build_raw_model(self, model_config: Dict, pcfg: Dict) -> Tuple[Any, float]: ...
+        def _build_raw_model(
+            self, model_config: Dict, pcfg: Dict, placement: str,
+        ) -> Tuple[Any, float]: ...
 
-        def _candidate_model(self, mc: Dict, pcfg: Dict) -> Tuple[Any, float]: ...
+        def _candidate_model(
+            self, mc: Dict, pcfg: Dict, placement: str,
+        ) -> Tuple[Any, float]: ...
 
-        def _ensure_mapper_repr(self, model: Any) -> Any: ...
+        def _ensure_mapper_repr(self, model: Any, placement: str) -> Any: ...
 
         def _collect_softcores(
             self, model: Any, pcfg: Dict,
@@ -221,5 +245,5 @@ class JointHostContract:
         ) -> CandidateStaticView: ...
 
         def _resolve_entry(
-            self, mc: Dict, pcfg: Dict,
+            self, mc: Dict, pcfg: Dict, placement: str,
         ) -> Tuple[Optional[ValidationEntry], Optional[CandidateFailure]]: ...

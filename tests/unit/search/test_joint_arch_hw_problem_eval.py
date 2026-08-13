@@ -99,7 +99,7 @@ class TestEvaluateInnerDoesNotReturnPenalties:
         problem = _make_problem()
         mc = _make_model_config()
         pcfg = _make_platform_constraints()
-        model, total_params = problem._build_model(mc, pcfg)
+        model, total_params = problem._build_model(mc, pcfg, problem.encoding_placement)
         assert total_params > 0
         assert hasattr(model, "get_mapper_repr"), (
             "Model should be converted to torch-mapped flow (has get_mapper_repr)"
@@ -110,7 +110,7 @@ class TestEvaluateInnerDoesNotReturnPenalties:
         problem = _make_problem()
         mc = _make_model_config()
         pcfg = _make_platform_constraints()
-        model, _ = problem._build_model(mc, pcfg)
+        model, _ = problem._build_model(mc, pcfg, problem.encoding_placement)
         softcores, host_segments = problem._collect_softcores(model, pcfg)
         assert len(softcores) > 0, "Softcores list should not be empty"
 
@@ -119,7 +119,7 @@ class TestEvaluateInnerDoesNotReturnPenalties:
         problem = _make_problem()
         mc = _make_model_config()
         pcfg = _make_platform_constraints()
-        model, total_params = problem._build_model(mc, pcfg)
+        model, total_params = problem._build_model(mc, pcfg, problem.encoding_placement)
         softcores, host_segments = problem._collect_softcores(model, pcfg)
         stats, error = problem._pack_candidate(softcores, pcfg)
         assert error is None, f"Packing should be feasible, got: {error}"
@@ -133,7 +133,7 @@ class TestEvaluateInnerDoesNotReturnPenalties:
         problem = _make_problem()
         mc = _make_model_config()
         pcfg = _make_platform_constraints()
-        obj = problem._evaluate_inner(mc, pcfg)
+        obj = problem._evaluate_inner(mc, pcfg, problem.encoding_placement)
         assert obj["total_params"] < 1e17, (
             f"total_params looks like a penalty: {obj['total_params']}"
         )
@@ -166,7 +166,7 @@ class TestEvaluateInnerDoesNotReturnPenalties:
         )
         mc = _make_model_config()
         pcfg = _make_platform_constraints()
-        obj = problem._evaluate_inner(mc, pcfg)
+        obj = problem._evaluate_inner(mc, pcfg, problem.encoding_placement)
         assert obj["total_params"] < 1e17
         assert "estimated_accuracy" not in obj
 
@@ -201,7 +201,7 @@ class TestCoalescingFlagAlignment:
         pcfg = {**self._WIDE_BASE, "allow_coalescing": False}
         normalize_coalescing_config(pcfg)
 
-        model, _total_params = problem._build_model(mc, pcfg)
+        model, _total_params = problem._build_model(mc, pcfg, problem.encoding_placement)
         with pytest.raises(WideFanInUnsupportedError):
             problem._collect_softcores(model, pcfg)
 
@@ -249,7 +249,7 @@ class TestAgentEvolveLikeConfigs:
                 "param_utilization_pct", "neuron_wastage_pct", "axon_wastage_pct",
             ],
         )
-        obj = problem._evaluate_inner(mc, pcfg)
+        obj = problem._evaluate_inner(mc, pcfg, problem.encoding_placement)
         assert obj["total_params"] < 1e17, f"Got penalty: {obj}"
 
     @pytest.mark.parametrize(
@@ -285,7 +285,7 @@ class TestPerPhaseErrorHandling:
             raise RuntimeError("Simulated accuracy failure")
         problem._evaluate_accuracy = _failing_accuracy
 
-        obj = problem._evaluate_inner(mc, pcfg)
+        obj = problem._evaluate_inner(mc, pcfg, problem.encoding_placement)
         problem._evaluate_accuracy = original_evaluate_accuracy
 
         assert obj["total_params"] < 1e17, "HW objectives should be real"
@@ -300,7 +300,7 @@ class TestPerPhaseErrorHandling:
         }
 
         original_ensure = problem._ensure_mapper_repr
-        def _failing_convert(model):
+        def _failing_convert(model, _placement):
             raise RuntimeError("Simulated conversion failure")
         problem._ensure_mapper_repr = _failing_convert
 
@@ -348,10 +348,10 @@ class TestValidationCacheIntegration:
         build_count = 0
         original_build = problem._build_raw_model
 
-        def _counting_build(mc, pcfg):
+        def _counting_build(mc, pcfg, _placement):
             nonlocal build_count
             build_count += 1
-            return original_build(mc, pcfg)
+            return original_build(mc, pcfg, _placement)
 
         problem._build_raw_model = _counting_build
 

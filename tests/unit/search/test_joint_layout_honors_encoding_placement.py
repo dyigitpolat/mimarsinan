@@ -70,7 +70,7 @@ def _candidate(builder_factory, model_config, placement: str):
     """The candidate exactly as the search scores it: build, convert, lay out, pack."""
     problem = _problem(builder_factory, model_config, placement)
     pcfg = dict(problem.fixed_platform_constraints or {})
-    model, total_params = problem._build_model(dict(model_config), pcfg)
+    model, total_params = problem._build_model(dict(model_config), pcfg, problem.encoding_placement)
     softcores, host_segments = problem._collect_softcores(model, pcfg)
     stats, error = problem._pack_candidate(softcores, pcfg)
     return {
