@@ -11,7 +11,6 @@ from mimarsinan.mapping.support.schedule.schedule_partitioner import (
     effective_core_budget,
 )
 from mimarsinan.mapping.support.schedule.schedule_policy import (
-    BANK_CLUSTERED,
     plan_segment_passes,
 )
 
