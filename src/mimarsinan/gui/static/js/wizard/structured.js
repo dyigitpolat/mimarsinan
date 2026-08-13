@@ -455,6 +455,16 @@ function activeSearchMode() {
   return deriveSearchMode((state.draft && state.draft.deployment_parameters) || {});
 }
 
+/* Whether the draft declares platform physics — a named profile, or operator
+   overrides alone (which form a custom target). The vendor-priced objective
+   chips are offered only against a declaration that can back them. */
+function draftDeclaresPhysics() {
+  const pc = (state.draft && state.draft.platform_constraints) || {};
+  const overrides = pc.platform_physics_overrides;
+  return Boolean(pc.platform_physics_profile)
+    || Boolean(overrides && Object.keys(overrides).length);
+}
+
 function archSearchWidget(ks) {
   const nas = schema().nas || {};
   const field = el('div', 'field span-2');
@@ -527,7 +537,7 @@ function archSearchWidget(ks) {
      offered or seeded: the backend now fails loud on an unavailable name, so
      an accuracy chip in hardware-only search would abort the run. The rules
      live in search_objectives.js, where a test can execute them. */
-  const offered = offeredObjectives(nas, activeSearchMode());
+  const offered = offeredObjectives(nas, activeSearchMode(), draftDeclaresPhysics());
   const selected = new Set(seededObjectiveIds(offered, current().objectives));
   for (const objective of offered) {
     const chip = el('div', 'objective-chip' + (selected.has(objective.id) ? ' active' : ''));

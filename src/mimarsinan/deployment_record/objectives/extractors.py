@@ -11,7 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable, Optional, Sequence
 
-from mimarsinan.deployment_record.cost.terms import CostTerm, find_term
+from mimarsinan.deployment_record.cost.terms import CostTerm, find_term_or_none
 from mimarsinan.deployment_record.objectives.spec import RecordView
 
 Reader = Callable[[RecordView], Optional[float]]
@@ -25,6 +25,10 @@ _SCHEDULE_REQUIRES = "the sealed record's schedule fragment (the pass census)"
 _ENERGY_REQUIRES = "the sealed record's energy fragment (SANA-FE measured)"
 _TIMING_REQUIRES = "the measured per-segment timing census (SANA-FE)"
 _NOC_REQUIRES = "the sealed record's NoC traffic fragment (SANA-FE)"
+_PHYSICS_REQUIRES = (
+    "declared platform physics (platform_physics_profile / overrides) whose "
+    "constants can back this axis, plus the quantities it prices"
+)
 _COST_REQUIRES = (
     "the cost model's inputs on a sealed record: the energy fragment and the "
     "measured compute latency"
@@ -176,15 +180,28 @@ def noc_field(name: str) -> Backing:
     return Backing(requires=_NOC_REQUIRES, reader=read)
 
 
-def cost_term(group: str, term_name: str) -> Backing:
-    """A term of the deployment cost model — imported, never re-derived here."""
+def cost_term(
+    group: str, term_name: str, *, requires: str = _COST_REQUIRES
+) -> Backing:
+    """A term of a cost report — imported, never re-derived here.
+
+    A MISSING term is an answer, not a malformed report: a report can legitimately
+    be partial (a candidate carries only the vendor-priced plane; a target's physics
+    may refuse an axis by name), and availability==extraction must never raise.
+    """
 
     def read(view: RecordView) -> Optional[float]:
         report = view.cost_report()
         if report is None:
             return None
         terms: Sequence[CostTerm] = getattr(report, group)
-        return float(find_term(terms, term_name).value)
+        term = find_term_or_none(terms, term_name)
+        return None if term is None else float(term.value)
 
-    return Backing(requires=_COST_REQUIRES, reader=read)
+    return Backing(requires=requires, reader=read)
+
+
+def priced_term(group: str, term_name: str) -> Backing:
+    """A vendor-priced term: the same reader, requiring declared physics."""
+    return cost_term(group, term_name, requires=_PHYSICS_REQUIRES)
 

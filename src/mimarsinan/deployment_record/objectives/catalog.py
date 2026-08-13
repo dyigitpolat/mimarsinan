@@ -15,9 +15,12 @@ search surface's decision (W5.1), not this registry's.
 
 from __future__ import annotations
 
+from typing import Tuple
+
 from mimarsinan.deployment_record.objectives.extractors import (
     Backing,
     cost_term,
+    priced_term,
     deployed_accuracy_backing,
     energy_field,
     host_op_wall_backing,
@@ -185,10 +188,38 @@ _RECORD_AXES = (
 )
 
 
+#: The vendor-priced axes (C2): the chip-designer metrics, available exactly when the
+#: run declares a physics profile whose constants can back them. They register LAST —
+#: catalog order is contract, so every optimizer's existing vector prefix survives.
+_PHYSICS_AXES: Tuple[ObjectiveSpecV2, ...] = (
+    objective(
+        "chip_area_mm2", "min", "mm^2", "modeled",
+        priced_term("area", "chip_area_mm2"),
+        "Silicon area of the declared chip, priced from the target's physics.",
+    ),
+    objective(
+        "energy_per_inference_mj", "min", "mJ", "modeled",
+        priced_term("energy", "energy_per_inference_mj"),
+        "Energy of one inference, host side included, priced from the target's "
+        "physics.",
+    ),
+    objective(
+        "e2e_latency_s", "min", "s", "modeled",
+        priced_term("latency", "e2e_latency_s"),
+        "Steady-state end-to-end latency of one inference in seconds.",
+    ),
+    objective(
+        "throughput_inferences_s", "max", "inferences/s", "modeled",
+        priced_term("throughput", "throughput_inferences_s"),
+        "Steady-state inferences per second (the inverse of e2e latency).",
+    ),
+)
+
+
 def build_catalog() -> ObjectiveRegistry:
     """The program's objective catalog, in contract order."""
     registry = ObjectiveRegistry()
-    for spec in _LEGACY_STATIC_AXES + _RECORD_AXES:
+    for spec in _LEGACY_STATIC_AXES + _RECORD_AXES + _PHYSICS_AXES:
         registry.register(spec)
     return registry
 

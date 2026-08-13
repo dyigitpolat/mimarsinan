@@ -374,8 +374,9 @@ class TestWizardSchema:
     def test_get_wizard_nas_schema_has_objective_options(self):
         nas = get_wizard_nas_schema()
         assert "objective_options" in nas
-        assert len(nas["objective_options"]) == 8
         ids = [o["id"] for o in nas["objective_options"]]
+        # The legacy eight plus the four vendor-priced axes (C2).
+        assert len(ids) == 12
         assert "estimated_accuracy" in ids
         assert "total_params" in ids
         assert "param_utilization_pct" in ids

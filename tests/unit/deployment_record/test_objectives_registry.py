@@ -5,6 +5,8 @@ from dataclasses import replace
 import pytest
 
 from mimarsinan.deployment_record.cost import DeploymentCostModel, find_term
+from mimarsinan.deployment_record.platform_physics.probe import probe_physics
+from mimarsinan.deployment_record.quantities import CandidateQuantityContext
 from mimarsinan.deployment_record.schema import SegmentRecord
 from mimarsinan.deployment_record.objectives import (
     CANDIDATE_FRAGMENTS,
@@ -56,6 +58,14 @@ SPEC_ADDED_KEYS = (
     "throughput_samples_per_s",
 )
 
+#: [C2] The vendor-priced axes, registered last so the legacy prefix never shifts.
+PHYSICS_AXIS_KEYS = (
+    "chip_area_mm2",
+    "energy_per_inference_mj",
+    "e2e_latency_s",
+    "throughput_inferences_s",
+)
+
 DISTINCT_LAYOUT = replace(
     make_layout(),
     mapped_params_pct=33.0,
@@ -80,15 +90,25 @@ def candidate_view(**overrides) -> CandidateStaticView:
         total_params=512.0,
         host_side_segment_count=3,
         estimated_accuracy=0.91,
+        physics=probe_physics(),
+        quantity_context=CandidateQuantityContext(
+            timesteps=8, activity_factor=0.1, weight_bits=8, tiles=1,
+            cores_physical=4, neurons_physical=64, axons_physical=64,
+            host_macs=0, onchip_macs=512,
+        ),
     )
     kwargs.update(overrides)
     return CandidateStaticView(**kwargs)
 
 
 class TestLegacyEightPreserved:
-    def test_search_catalog_is_the_legacy_eight_byte_equal(self):
+    def test_search_catalog_opens_with_the_legacy_eight_byte_equal(self):
+        """C2 added the vendor-priced axes; the legacy eight remain the byte-equal
+        PREFIX, so no optimizer's existing objective vector shifts."""
         catalog = OBJECTIVES.search_catalog()
-        assert tuple((s.key, s.direction) for s in catalog) == LEGACY_EIGHT
+        head = tuple((s.key, s.direction) for s in catalog[: len(LEGACY_EIGHT)])
+        assert head == LEGACY_EIGHT
+        assert tuple(s.key for s in catalog[len(LEGACY_EIGHT):]) == PHYSICS_AXIS_KEYS
 
     def test_legacy_name_and_goal_properties_mirror_key_and_direction(self):
         for spec in OBJECTIVES.all():
@@ -101,15 +121,20 @@ class TestLegacyEightPreserved:
 
     def test_hardware_mode_drops_only_the_training_proxy(self):
         hardware = tuple(s.key for s in OBJECTIVES.for_search_mode("hardware"))
-        assert hardware == tuple(k for k, _ in LEGACY_EIGHT if k != "estimated_accuracy")
+        assert hardware == (
+            tuple(k for k, _ in LEGACY_EIGHT if k != "estimated_accuracy")
+            + PHYSICS_AXIS_KEYS
+        )
 
     def test_every_other_search_mode_carries_all_eight(self):
         for mode in ("model", "joint"):
             keys = tuple(s.key for s in OBJECTIVES.for_search_mode(mode))
-            assert keys == tuple(k for k, _ in LEGACY_EIGHT)
+            assert keys == tuple(k for k, _ in LEGACY_EIGHT) + PHYSICS_AXIS_KEYS
 
     def test_the_spec_documented_axes_are_all_registered(self):
-        assert OBJECTIVES.keys() == tuple(k for k, _ in LEGACY_EIGHT) + SPEC_ADDED_KEYS
+        assert OBJECTIVES.keys() == (
+            tuple(k for k, _ in LEGACY_EIGHT) + SPEC_ADDED_KEYS + PHYSICS_AXIS_KEYS
+        )
 
 
 class TestRegistration:
@@ -158,15 +183,20 @@ class TestRegistration:
 
 
 class TestAvailabilityOnTheCandidateView:
-    def test_a_full_candidate_view_carries_exactly_the_legacy_eight(self):
+    def test_a_full_candidate_view_carries_the_legacy_eight_and_the_priced_axes(self):
         keys = tuple(s.key for s in OBJECTIVES.available_for(candidate_view()))
+        assert keys == tuple(k for k, _ in LEGACY_EIGHT) + PHYSICS_AXIS_KEYS
+
+    def test_a_candidate_without_physics_carries_exactly_the_legacy_eight(self):
+        """The C2 gate: no declared profile, no vendor-priced axis."""
+        keys = tuple(s.key for s in OBJECTIVES.available_for(candidate_view(physics=None)))
         assert keys == tuple(k for k, _ in LEGACY_EIGHT)
 
     def test_a_candidate_without_an_accuracy_estimate_drops_it(self):
         view = candidate_view(estimated_accuracy=None)
         keys = tuple(s.key for s in OBJECTIVES.available_for(view))
         assert "estimated_accuracy" not in keys
-        assert len(keys) == len(LEGACY_EIGHT) - 1
+        assert len(keys) == len(LEGACY_EIGHT) + len(PHYSICS_AXIS_KEYS) - 1
 
     def test_a_candidate_without_the_host_segment_census_drops_sync_barriers(self):
         view = candidate_view(host_side_segment_count=None)
@@ -201,7 +231,15 @@ class TestTheFragmentProbe:
     def test_dropping_the_layout_costs_exactly_the_layout_axes(self):
         probe = candidate_probe_without("layout")
         keys = {s.key for s in OBJECTIVES.available_for(probe)}
-        assert keys == {"estimated_accuracy", "total_params", "total_param_capacity"}
+        # Area needs only the DECLARED chip and its physics, so an area-only
+        # hardware search legitimately never packs.
+        # Area needs only the declared chip, and energy only the MAC census times
+        # the declared activity — neither needs a packing. Latency does (the window
+        # runs once per neural segment), and throughput inverts latency.
+        assert keys == {
+            "estimated_accuracy", "total_params", "total_param_capacity",
+            "chip_area_mm2", "energy_per_inference_mj",
+        }
 
     def test_an_unknown_fragment_is_refused_by_name(self):
         # The probe is how a caller decides whether to compute something

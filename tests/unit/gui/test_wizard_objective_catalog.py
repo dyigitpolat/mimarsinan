@@ -5,6 +5,7 @@ from mimarsinan.gui.wizard.schema import get_wizard_nas_schema
 
 ROW_KEYS = {
     "id", "label", "goal", "provenance", "available_in_modes", "unavailable_reason",
+    "requires_physics",
 }
 
 
@@ -55,9 +56,10 @@ class TestPerModeAvailability:
 class TestLegacyOptionsUnchanged:
     """W5.3 owns the frontend switch; the served option list stays exactly as it was."""
 
-    def test_objective_options_still_serve_the_legacy_eight(self):
+    def test_objective_options_open_with_the_legacy_eight(self):
+        """C2 appended the vendor-priced axes; the legacy eight keep their order."""
         options = get_wizard_nas_schema()["objective_options"]
-        assert [o["id"] for o in options] == [
+        assert [o["id"] for o in options][:8] == [
             "estimated_accuracy",
             "total_params",
             "total_param_capacity",
@@ -67,6 +69,10 @@ class TestLegacyOptionsUnchanged:
             "axon_wastage_pct",
             "fragmentation_pct",
         ]
-        assert set(options[0]) == {"id", "label", "goal", "requires_training"}
+        assert set(options[0]) == {
+            "id", "label", "goal", "requires_training", "requires_physics",
+        }
         assert options[0]["requires_training"] is True
         assert all(o["requires_training"] is False for o in options[1:])
+        assert all(o["requires_physics"] is False for o in options[:8])
+        assert all(o["requires_physics"] is True for o in options[8:])

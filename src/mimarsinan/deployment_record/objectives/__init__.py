@@ -15,13 +15,16 @@ from mimarsinan.deployment_record.objectives.spec import (
     ObjectiveSpecV2,
     RecordView,
 )
-from mimarsinan.deployment_record.objectives.views import (
+from mimarsinan.deployment_record.objectives.probes import (
     CANDIDATE_FRAGMENTS,
+    candidate_capability_probe,
+    candidate_probe_without,
+    run_capability_probe,
+)
+from mimarsinan.deployment_record.objectives.views import (
     SEARCH_MODES,
     CandidateStaticView,
     DeploymentRecordView,
-    candidate_capability_probe,
-    candidate_probe_without,
     chip_param_capacity,
     declared_core_capacity,
     mode_trains_accuracy,
@@ -44,6 +47,7 @@ __all__ = [
     "build_catalog",
     "candidate_capability_probe",
     "candidate_probe_without",
+    "run_capability_probe",
     "chip_param_capacity",
     "declared_core_capacity",
     "mode_trains_accuracy",

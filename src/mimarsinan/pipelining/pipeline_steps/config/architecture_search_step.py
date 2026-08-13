@@ -15,6 +15,9 @@ from mimarsinan.pipelining.core.model_config_emit import emit_model_config_entri
 from mimarsinan.pipelining.core.registry.model_registry import ModelRegistry
 from mimarsinan.pipelining.core.search_mode import derive_search_mode
 from mimarsinan.search.problems.joint import JointArchHwProblem
+from mimarsinan.deployment_record.platform_physics.resolve import (
+    resolve_platform_physics,
+)
 from mimarsinan.search.results import (
     ACCURACY_OBJECTIVE_NAME,
     resolve_active_objectives,
@@ -148,7 +151,15 @@ class ArchitectureSearchStep(PipelineStep):
         optimizer_type: OptimizerType = arch_cfg.get("optimizer", "nsga2")
 
         user_objectives = arch_cfg.get("objectives")
-        active_objectives = resolve_active_objectives(search_mode, user_objectives)
+        # THIS run's physics, from the same SSOT the deployment resolver uses: a
+        # vendor-priced axis is refused by name here, before any candidate is built.
+        run_physics = resolve_platform_physics(
+            str(self.pipeline.config.get("platform_physics_profile", "") or ""),
+            self.pipeline.config.get("platform_physics_overrides") or {},
+        )
+        active_objectives = resolve_active_objectives(
+            search_mode, user_objectives, physics=run_physics,
+        )
         active_objective_names = [o.name for o in active_objectives]
 
         problem = JointArchHwProblem(

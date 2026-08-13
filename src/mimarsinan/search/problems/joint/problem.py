@@ -11,6 +11,7 @@ from mimarsinan.deployment_record.objectives import ObjectiveSpecV2
 from mimarsinan.mapping.platform.platform_constraints import resolve_platform_mapping_params
 from mimarsinan.search.problems.encoded_problem import EncodedProblem
 from mimarsinan.search.problem import ValidationResult
+from mimarsinan.deployment_record.platform_physics.profile import PlatformPhysics
 from mimarsinan.search.results import ObjectiveSpec, resolve_active_specs
 from mimarsinan.search.search_space_description import (
     CORE_DIM_GRANULARITY,
@@ -112,10 +113,23 @@ class JointArchHwProblem(
 
     @property
     def active_specs(self) -> Sequence[ObjectiveSpecV2]:
-        """The ACTIVE registry axes — what an evaluation of this problem produces."""
+        """The ACTIVE registry axes — what an evaluation of this problem produces.
+
+        Gated on the run's OWN physics (read off the resolved platform, the same
+        declaration the deployment carries), so a candidate can never be scored on
+        an axis its target cannot back.
+        """
         return resolve_active_specs(
             self.search_mode, self.active_objective_names or None,
+            physics=self.candidate_physics,
         )
+
+    @property
+    def candidate_physics(self) -> Optional[PlatformPhysics]:
+        """The physics every candidate of this problem is priced with."""
+        base = self.fixed_platform_constraints or {}
+        payload = base.get("platform_physics_resolved")
+        return None if payload is None else PlatformPhysics.from_dict(payload)
 
     @property
     def objectives(self) -> Sequence[ObjectiveSpec]:

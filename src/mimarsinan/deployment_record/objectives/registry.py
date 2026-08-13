@@ -11,13 +11,15 @@ is gone).
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, Sequence, Tuple
+from typing import Dict, Optional, Sequence, Tuple
 
 from mimarsinan.deployment_record.objectives.spec import ObjectiveSpecV2, RecordView
-from mimarsinan.deployment_record.objectives.views import (
-    SEARCH_MODES,
+from mimarsinan.deployment_record.objectives.probes import (
     candidate_capability_probe,
+    run_capability_probe,
 )
+from mimarsinan.deployment_record.platform_physics.probe import probe_physics
+from mimarsinan.deployment_record.objectives.views import SEARCH_MODES
 
 
 @dataclass
@@ -80,16 +82,28 @@ class ObjectiveRegistry:
         )
 
     def resolve_active(
-        self, search_mode: str, names: Sequence[str]
+        self, search_mode: str, names: Sequence[str],
+        *, probe: Optional[RecordView] = None,
     ) -> Tuple[ObjectiveSpecV2, ...]:
-        """Validate a selection against the mode's catalog, preserving caller order."""
+        """Validate a selection against the mode's catalog, preserving caller order.
+
+        ``probe`` narrows availability to what a specific RUN can back (its declared
+        physics, say). Omitted, the question stays capability-level — what the MODE
+        could carry — which is what an offer-the-whole-catalog caller like the wizard
+        asks.
+        """
         selection = tuple(names)
         if not selection:
             raise ValueError(
                 f"no objective names given for search mode {search_mode!r}; the "
                 f"caller resolves its own defaults — an empty active set is a defect"
             )
-        available = {spec.key for spec in self.for_search_mode(search_mode)}
+        available = {
+            spec.key for spec in (
+                self.available_for(probe) if probe is not None
+                else self.for_search_mode(search_mode)
+            )
+        }
         resolved = []
         seen = set()
         for name in selection:
@@ -108,6 +122,19 @@ class ObjectiveRegistry:
             seen.add(name)
             resolved.append(spec)
         return tuple(resolved)
+
+    def requires_physics(self, key: str) -> bool:
+        """Whether this axis needs a declared physics profile to answer.
+
+        Asked of the probes, not of a list: an axis requires physics exactly when a
+        run that declares none cannot back it while one that declares everything can.
+        """
+        spec = self.get(key)
+        widest = max(SEARCH_MODES, key=lambda mode: len(self.for_search_mode(mode)))
+        return (
+            spec.available(run_capability_probe(widest, probe_physics()))
+            and not spec.available(run_capability_probe(widest, None))
+        )
 
     def extract(self, view: RecordView) -> Dict[str, float]:
         """Every available axis' value on *view*, keyed by objective key."""

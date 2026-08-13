@@ -23,8 +23,15 @@ from mimarsinan.search.results import objectives_for_mode
 MODULE = JS_ROOT / "wizard" / "search_objectives.js"
 
 
-def offered(nas: Dict[str, Any], search_mode: str) -> List[str]:
-    return [option["id"] for option in call_js(MODULE, "offeredObjectives", nas, search_mode)]
+def offered(
+    nas: Dict[str, Any], search_mode: str, declares_physics: bool = False
+) -> List[str]:
+    return [
+        option["id"]
+        for option in call_js(
+            MODULE, "offeredObjectives", nas, search_mode, declares_physics
+        )
+    ]
 
 
 def payload(options: List[str], catalog: Dict[str, List[str]]) -> Dict[str, Any]:
@@ -40,9 +47,24 @@ def payload(options: List[str], catalog: Dict[str, List[str]]) -> Dict[str, Any]
 class TestTheFilterIsTheRegistrysAnswer:
     @pytest.mark.parametrize("search_mode", sorted(SEARCH_MODES))
     def test_the_browser_offers_exactly_what_the_mode_can_measure(self, search_mode):
-        """The SERVED payload through the REAL filter == the registry's availability."""
-        served = offered(get_wizard_nas_schema(), search_mode)
+        """The SERVED payload through the REAL filter == the registry's availability.
+
+        A draft that declares physics can back every axis its mode carries.
+        """
+        served = offered(get_wizard_nas_schema(), search_mode, True)
         assert set(served) == {spec.name for spec in objectives_for_mode(search_mode)}
+
+    @pytest.mark.parametrize("search_mode", sorted(SEARCH_MODES))
+    def test_a_draft_without_physics_is_never_offered_a_priced_axis(self, search_mode):
+        """Offering one would be a chip whose run aborts at objective resolution:
+        area in mm² and seconds of latency exist only against declared constants."""
+        nas = get_wizard_nas_schema()
+        priced = {
+            row["id"] for row in nas["objective_catalog"] if row["requires_physics"]
+        }
+        assert priced, "C2 registered vendor-priced axes"
+        assert not priced & set(offered(nas, search_mode))
+        assert priced <= set(offered(nas, search_mode, True))
 
     def test_hardware_only_search_never_offers_the_training_proxy(self):
         nas = get_wizard_nas_schema()

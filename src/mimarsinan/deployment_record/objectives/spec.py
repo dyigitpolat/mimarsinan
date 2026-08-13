@@ -31,10 +31,12 @@ OBJECTIVE_PROVENANCES = frozenset(
 
 
 class LayoutStatsView(Protocol):
-    """The layout-stats fields objectives read.
+    """The layout-stats fields objectives and quantity extraction read.
 
     Satisfied by ``mapping``'s ``LayoutVerificationStats`` (the search seam) and
-    by its record mirror ``LayoutStatsRecord`` — one extractor serves both.
+    by its record mirror ``LayoutStatsRecord`` — one extractor serves both. The
+    packing counts sit here too, because a candidate's quantities are read off the
+    same object (a narrower view would just be a second name for it).
     """
 
     @property
@@ -47,6 +49,12 @@ class LayoutStatsView(Protocol):
     def fragmentation_pct(self) -> float: ...
     @property
     def schedule_sync_count(self) -> int: ...
+    @property
+    def total_hw_cores(self) -> int: ...
+    @property
+    def schedule_pass_count(self) -> int: ...
+    @property
+    def neural_segment_count(self) -> int: ...
 
 
 class RecordView(Protocol):

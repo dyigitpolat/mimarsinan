@@ -32,8 +32,15 @@ export function deriveSearchMode(deploymentParameters) {
  *  An option with NO catalog row is offered everywhere: the served payload is
  *  asserted to carry a row for every option (`test_wizard_search_objectives_
  *  round_trip`), so this hole is visible and pinned rather than silently
- *  swallowing an option the registry never described. */
-export function offeredObjectives(nas, searchMode) {
+ *  swallowing an option the registry never described.
+ *
+ *  `declaresPhysics` is the draft's OWN answer to "did you select a platform
+ *  physics profile": the vendor-priced axes (area in mm², energy in mJ, seconds
+ *  of latency) can only be computed from declared constants, so offering one to
+ *  a draft that declares none is a chip whose run aborts at objective
+ *  resolution. It defaults to false — an undeclared draft is offered only what
+ *  it can actually back. */
+export function offeredObjectives(nas, searchMode, declaresPhysics = false) {
   const options = (nas && nas.objective_options) || [];
   const availability = new Map(
     ((nas && nas.objective_catalog) || []).map(
@@ -41,6 +48,7 @@ export function offeredObjectives(nas, searchMode) {
     ),
   );
   return options.filter((option) => {
+    if (option.requires_physics && !declaresPhysics) return false;
     const modes = availability.get(option.id);
     return !modes || modes.includes(searchMode);
   });

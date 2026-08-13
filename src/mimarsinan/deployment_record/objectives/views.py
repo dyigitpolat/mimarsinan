@@ -10,12 +10,23 @@ from __future__ import annotations
 
 from collections.abc import Mapping as MappingABC
 from collections.abc import Sequence as SequenceABC
-from dataclasses import dataclass, field, replace
-from typing import TYPE_CHECKING, Any, Dict, Mapping, Optional, Sequence, Tuple
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any, Dict, Mapping, Optional, Sequence
 
+from mimarsinan.deployment_record.cost.absolute import (
+    absolute_pricing_for_record,
+    candidate_cost_report,
+    report_with_absolute_terms,
+)
 from mimarsinan.deployment_record.cost.model import DeploymentCostModel
 from mimarsinan.deployment_record.cost.terms import DeploymentCostReport
 from mimarsinan.deployment_record.objectives.spec import LayoutStatsView, RecordView
+from mimarsinan.deployment_record.platform_physics.profile import PlatformPhysics
+from mimarsinan.deployment_record.quantities import (
+    CandidateQuantityContext,
+    Quantities,
+    from_candidate,
+)
 from mimarsinan.deployment_record.schema import DeploymentRecord
 
 CORE_CAPACITY_KEYS = ("max_axons", "max_neurons", "count")
@@ -55,13 +66,24 @@ def mode_trains_accuracy(search_mode: str) -> bool:
 
 @dataclass(frozen=True)
 class CandidateStaticView:
-    """A search candidate's static facts — exactly what the joint layout hook computes."""
+    """A search candidate's static facts — exactly what the joint layout hook computes.
+
+    ``physics`` and ``quantity_context`` are stored FRAGMENTS; the quantities they
+    price are DERIVED from them plus the layout, so dropping either fragment in a
+    probe answers honestly (a pre-baked quantity set would let an energy-only
+    objective set skip the mapping and then fail at extraction).
+    """
 
     layout: Optional[LayoutStatsView]
     chip_param_capacity: Optional[float]
     total_params: Optional[float]
     host_side_segment_count: Optional[int]
     estimated_accuracy: Optional[float] = None
+    physics: Optional[PlatformPhysics] = None
+    quantity_context: Optional[CandidateQuantityContext] = None
+    _priced: Dict[str, Optional[DeploymentCostReport]] = field(
+        default_factory=dict, repr=False, compare=False
+    )
 
     @property
     def view_kind(self) -> str:
@@ -71,8 +93,26 @@ class CandidateStaticView:
     def record(self) -> Optional[DeploymentRecord]:
         return None
 
+    @property
+    def quantities(self) -> Quantities:
+        """What this candidate's shape and declarations can answer."""
+        return from_candidate(
+            layout=self.layout,
+            chip_param_capacity=self.chip_param_capacity,
+            total_params=self.total_params,
+            host_side_segment_count=self.host_side_segment_count,
+            context=self.quantity_context or CandidateQuantityContext(),
+        )
+
     def cost_report(self) -> Optional[DeploymentCostReport]:
-        return None
+        """The vendor-priced report, or None when this run declared no physics."""
+        if "report" not in self._priced:
+            self._priced["report"] = (
+                candidate_cost_report(self.quantities, self.physics)
+                if self.physics is not None
+                else None
+            )
+        return self._priced["report"]
 
 
 @dataclass(frozen=True)
@@ -120,76 +160,28 @@ class DeploymentRecordView:
         )
 
     def cost_report(self) -> Optional[DeploymentCostReport]:
+        """The measured cost surface, plus the vendor-priced plane when declared.
+
+        Either half may be absent: a run without SANA-FE has no measured plane, a
+        run without a profile has no priced one, and a run with neither reports no
+        report at all.
+        """
         if "report" not in self._evaluated:
-            self._evaluated["report"] = (
-                self.cost_model.evaluate(self.record) if self.costable() else None
-            )
+            self._evaluated["report"] = self._build_report()
         return self._evaluated["report"]
 
-
-@dataclass(frozen=True)
-class _ProbeLayout:
-    """A layout-stats stand-in whose only claim is that the fields EXIST."""
-
-    mapped_params_pct: float = 0.0
-    total_wasted_axons_pct: float = 0.0
-    total_wasted_neurons_pct: float = 0.0
-    fragmentation_pct: float = 0.0
-    schedule_sync_count: int = 0
-
-
-# The static facts a candidate view can hold; each one is a separate question
-# ("does this candidate carry a layout?"), so an objective's need for a fact is
-# answered by asking the registry, never by a hand-kept list of objective names.
-CANDIDATE_FRAGMENTS: Tuple[str, ...] = (
-    "layout",
-    "chip_param_capacity",
-    "total_params",
-    "host_side_segment_count",
-    "estimated_accuracy",
-)
-
-
-def _full_candidate_probe() -> CandidateStaticView:
-    """Every candidate fragment populated; the values are placeholders."""
-    return CandidateStaticView(
-        layout=_ProbeLayout(),
-        chip_param_capacity=0.0,
-        total_params=0.0,
-        host_side_segment_count=0,
-        estimated_accuracy=0.0,
-    )
-
-
-def candidate_capability_probe(search_mode: str) -> CandidateStaticView:
-    """A maximally populated candidate view: what a candidate CAN carry in this mode.
-
-    A capability question, not data — the zeros are placeholders whose only
-    meaning is "this datum exists in this mode".
-    """
-    probe = _full_candidate_probe()
-    if mode_trains_accuracy(search_mode):
-        return probe
-    return replace(probe, estimated_accuracy=None)
-
-
-def candidate_probe_without(fragment: str) -> CandidateStaticView:
-    """A fully populated candidate view MINUS one fragment.
-
-    Asking which objectives go unavailable on it is how a caller learns whether
-    a fragment is worth computing — the registry answers, so a new objective
-    classifies itself.
-    """
-    if fragment not in CANDIDATE_FRAGMENTS:
-        raise ValueError(
-            f"unknown candidate fragment {fragment!r}; a candidate view carries "
-            f"{list(CANDIDATE_FRAGMENTS)}"
+    def _build_report(self) -> Optional[DeploymentCostReport]:
+        measured = self.cost_model.evaluate(self.record) if self.costable() else None
+        pricing = absolute_pricing_for_record(self.record)
+        if pricing is None:
+            return measured
+        base = measured or DeploymentCostReport(
+            segments=(), energy=(), latency=(), area=(), throughput=(), notes=()
         )
-    return replace(_full_candidate_probe(), **{fragment: None})
+        return report_with_absolute_terms(base, pricing)
 
 
 if TYPE_CHECKING:
     # Both views satisfy the objective contract — checked statically, not by hope.
     _CANDIDATE_IS_A_VIEW: type[RecordView] = CandidateStaticView
     _RECORD_IS_A_VIEW: type[RecordView] = DeploymentRecordView
-    _PROBE_LAYOUT_IS_A_LAYOUT: type[LayoutStatsView] = _ProbeLayout

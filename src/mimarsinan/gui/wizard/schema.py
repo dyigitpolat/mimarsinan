@@ -90,7 +90,8 @@ def get_wizard_nas_schema() -> Dict[str, Any]:
         },
         "objective_options": [
             {"id": o.name, "label": _objective_label(o.name), "goal": o.goal,
-             "requires_training": o.name == ACCURACY_OBJECTIVE_NAME}
+             "requires_training": o.name == ACCURACY_OBJECTIVE_NAME,
+             "requires_physics": OBJECTIVES.requires_physics(o.name)}
             for o in ALL_OBJECTIVES
         ],
         "objective_catalog": get_wizard_objective_catalog(),
@@ -113,6 +114,7 @@ def get_wizard_objective_catalog() -> List[Dict[str, Any]]:
             "goal": spec.goal,
             "provenance": spec.provenance,
             "available_in_modes": list(modes),
+            "requires_physics": OBJECTIVES.requires_physics(spec.key),
             "unavailable_reason": (
                 "" if len(modes) == len(SEARCH_MODES) else f"requires {spec.requires}"
             ),

@@ -27,7 +27,9 @@ from mimarsinan.deployment_record.objectives import (
     ACCURACY_OBJECTIVE_KEY,
     OBJECTIVES,
     ObjectiveSpecV2,
+    run_capability_probe,
 )
+from mimarsinan.deployment_record.platform_physics.profile import PlatformPhysics
 
 Goal = Literal["min", "max"]
 
@@ -48,6 +50,10 @@ ALL_OBJECTIVES: Tuple[ObjectiveSpec, ...] = tuple(
 )
 
 ACCURACY_OBJECTIVE_NAME = ACCURACY_OBJECTIVE_KEY
+
+#: "The caller did not state the run's physics" — distinct from ``None``, which
+#: MEANS the run declared none and so cannot back a vendor-priced axis.
+_UNDECLARED: Any = object()
 
 
 def objectives_for_mode(search_mode: str) -> Tuple[ObjectiveSpec, ...]:
@@ -79,6 +85,8 @@ def default_objectives_for_mode(search_mode: str) -> Tuple[str, ...]:
 def resolve_active_specs(
     search_mode: str,
     user_selection: Optional[Sequence[str]] = None,
+    *,
+    physics: Optional[PlatformPhysics] = _UNDECLARED,
 ) -> Tuple[ObjectiveSpecV2, ...]:
     """The ACTIVE registry specs — the axes an evaluation must produce, loudly.
 
@@ -87,17 +95,32 @@ def resolve_active_specs(
     what was asked for. Callers that only need ``name``/``goal`` use
     :func:`resolve_active_objectives`; callers that must READ the axis off a
     view (the evaluation contract) need the spec itself.
+
+    ``physics`` is THIS RUN's declaration, and passing it narrows availability to
+    what the run can actually back — a vendor-priced axis on a run that declares
+    no profile is refused BY NAME here rather than producing a number no vendor
+    stands behind. Omitting it keeps the question capability-level (what the MODE
+    could carry), which is what an offer-the-whole-catalog caller asks.
     """
     names = tuple(user_selection) if user_selection else default_objectives_for_mode(search_mode)
-    return OBJECTIVES.resolve_active(search_mode, names)
+    probe = (
+        None if physics is _UNDECLARED
+        else run_capability_probe(search_mode, physics)
+    )
+    return OBJECTIVES.resolve_active(search_mode, names, probe=probe)
 
 
 def resolve_active_objectives(
     search_mode: str,
     user_selection: Optional[Sequence[str]] = None,
+    *,
+    physics: Optional[PlatformPhysics] = _UNDECLARED,
 ) -> Tuple[ObjectiveSpec, ...]:
     """:func:`resolve_active_specs`, projected onto the optimizer-facing pair."""
-    return tuple(_project(spec) for spec in resolve_active_specs(search_mode, user_selection))
+    return tuple(
+        _project(spec)
+        for spec in resolve_active_specs(search_mode, user_selection, physics=physics)
+    )
 
 
 ConfigT = TypeVar("ConfigT")

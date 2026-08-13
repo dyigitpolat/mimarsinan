@@ -9,11 +9,21 @@ from mimarsinan.deployment_record.quantities.spec import Quantities, QuantityVal
 
 
 class _LayoutStatsView(Protocol):
-    """The packing facts a candidate layout answers (duck-typed like LayoutStatsView)."""
+    """The packing facts a candidate layout answers.
 
-    total_hw_cores: int
-    schedule_pass_count: int
-    schedule_sync_count: int
+    Read-only properties, so any object exposing them satisfies it — including the
+    objectives layer's own layout protocol, which this package must not import
+    (quantities sits below it).
+    """
+
+    @property
+    def total_hw_cores(self) -> int: ...
+    @property
+    def schedule_pass_count(self) -> int: ...
+    @property
+    def schedule_sync_count(self) -> int: ...
+    @property
+    def neural_segment_count(self) -> int: ...
 
 
 @dataclass(frozen=True)
@@ -70,6 +80,12 @@ def from_candidate(
         _put(values, "cores_allocated", layout.total_hw_cores)
         _put(values, "pass_count", layout.schedule_pass_count)
         _put(values, "sync_count", layout.schedule_sync_count)
+        # Neural segments run their windows in sequence, so end-to-end latency is
+        # the window length once per segment — structurally the same sum the sealed
+        # record reports as compute_steps.
+        if context.timesteps is not None:
+            _put(values, "latency_steps",
+                 int(context.timesteps) * int(layout.neural_segment_count))
 
     _put(values, "timesteps", context.timesteps)
     _put(values, "weight_bits", context.weight_bits)

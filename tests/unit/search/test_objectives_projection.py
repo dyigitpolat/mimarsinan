@@ -25,10 +25,20 @@ LEGACY_TUPLE = (
     ObjectiveSpec("fragmentation_pct", "min"),
 )
 
+#: [C2] The vendor-priced axes the projection gained; they follow the legacy tuple,
+#: so an optimizer's existing objective-vector prefix is unchanged.
+PHYSICS_TUPLE = (
+    ObjectiveSpec("chip_area_mm2", "min"),
+    ObjectiveSpec("energy_per_inference_mj", "min"),
+    ObjectiveSpec("e2e_latency_s", "min"),
+    ObjectiveSpec("throughput_inferences_s", "max"),
+)
+
 
 class TestLegacyProjection:
-    def test_all_objectives_is_byte_equal_to_the_legacy_tuple(self):
-        assert ALL_OBJECTIVES == LEGACY_TUPLE
+    def test_all_objectives_opens_with_the_legacy_tuple_byte_equal(self):
+        assert ALL_OBJECTIVES[: len(LEGACY_TUPLE)] == LEGACY_TUPLE
+        assert ALL_OBJECTIVES == LEGACY_TUPLE + PHYSICS_TUPLE
 
     def test_the_projection_yields_the_frozen_legacy_dataclass(self):
         for spec in ALL_OBJECTIVES:
@@ -48,11 +58,11 @@ class TestLegacyProjection:
     def test_hardware_mode_excludes_only_accuracy(self):
         assert objectives_for_mode("hardware") == tuple(
             o for o in LEGACY_TUPLE if o.name != ACCURACY_OBJECTIVE_NAME
-        )
+        ) + PHYSICS_TUPLE
 
     def test_other_modes_carry_every_objective(self):
         for mode in ("model", "joint"):
-            assert objectives_for_mode(mode) == LEGACY_TUPLE
+            assert objectives_for_mode(mode) == LEGACY_TUPLE + PHYSICS_TUPLE
 
 
 class TestDefaultsUnchanged:
