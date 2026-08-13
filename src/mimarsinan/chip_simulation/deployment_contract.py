@@ -8,6 +8,7 @@ from typing import Any
 from mimarsinan.chip_simulation.behavior_config import NeuralBehaviorConfig
 from mimarsinan.chip_simulation.spiking_mode_policy import policy_for_spiking_mode
 from mimarsinan.chip_simulation.activation_semantics import is_streamed_lif
+from mimarsinan.mapping.support.schedule.pass_cut import transfer_for
 from mimarsinan.chip_simulation.spiking_semantics import (
     is_cascaded_ttfs,
     is_synchronized_ttfs,
@@ -106,6 +107,17 @@ class SpikingDeploymentContract:
 
     def is_streamed_lif(self, *, core: Any = None) -> bool:
         return self.lif_streamed
+
+    def pass_boundary_transfer(self, *, core: Any = None) -> str:
+        """What a pass boundary INSIDE a neural segment owes this semantics.
+
+        A pass is a physical unit (one chip program); a segment is a semantic one.
+        Streamed execution has no interior transcode, so its pass boundaries must
+        replay the raster verbatim — collapsing to counts there would be the
+        windowed transcode wearing a scheduling hat. The windowed disciplines
+        normalize timing at every boundary anyway, so a pass costs them nothing.
+        """
+        return transfer_for(streamed=self.is_streamed_lif(core=core))
 
     def is_synchronized(self, *, core: Any = None) -> bool:
         return is_synchronized_ttfs(self.spiking_mode, self.ttfs_cycle_schedule)
