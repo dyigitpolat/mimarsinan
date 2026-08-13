@@ -5,7 +5,12 @@ import { schema } from './schema.js';
 import { clearKey, effectiveValue, getKey, setKey, state } from './state.js';
 import { el, fieldDoc, notifyChange, numberInput, registerCustomRenderer } from './fields.js';
 import { installPretrainedPanel } from './pretrained.js';
-import { deriveSearchMode, offeredObjectives, seededObjectiveIds } from './search_objectives.js';
+import {
+  deriveSearchMode,
+  offerableObjectives,
+  offeredObjectives,
+  seededObjectiveIds,
+} from './search_objectives.js';
 
 function subField(labelText, control) {
   const field = el('div', 'field');
@@ -537,18 +542,28 @@ function archSearchWidget(ks) {
      offered or seeded: the backend now fails loud on an unavailable name, so
      an accuracy chip in hardware-only search would abort the run. The rules
      live in search_objectives.js, where a test can execute them. */
-  const offered = offeredObjectives(nas, activeSearchMode(), draftDeclaresPhysics());
+  const offerable = offerableObjectives(nas, activeSearchMode(), draftDeclaresPhysics());
+  const offered = offerable.filter((option) => option.selectable);
   const selected = new Set(seededObjectiveIds(offered, current().objectives));
-  for (const objective of offered) {
-    const chip = el('div', 'objective-chip' + (selected.has(objective.id) ? ' active' : ''));
+  for (const objective of offerable) {
+    const blocked = !objective.selectable;
+    const chip = el('div', 'objective-chip'
+      + (selected.has(objective.id) ? ' active' : '')
+      + (blocked ? ' needs-physics' : ''));
     chip.append(el('span', '', objective.label), el('span', 'goal-badge', objective.goal));
-    chip.addEventListener('click', () => {
-      chip.classList.toggle('active');
-      const arch = current();
-      arch.objectives = [...chips.querySelectorAll('.objective-chip.active')]
-        .map((c) => c.dataset.objective);
-      write(arch);
-    });
+    if (blocked) {
+      /* Shown, not hidden — but never selectable, so a chip the run would
+         refuse can also never be emitted. */
+      chip.title = objective.blockedReason;
+    } else {
+      chip.addEventListener('click', () => {
+        chip.classList.toggle('active');
+        const arch = current();
+        arch.objectives = [...chips.querySelectorAll(
+          '.objective-chip.active:not(.needs-physics)')].map((c) => c.dataset.objective);
+        write(arch);
+      });
+    }
     chip.dataset.objective = objective.id;
     chips.append(chip);
   }

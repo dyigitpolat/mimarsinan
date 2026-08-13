@@ -145,6 +145,11 @@ def _objective_label(name: str) -> str:
         "noc_total_packets": "NoC Total Packets",
         "programming_energy_mj": "Programming Energy (mJ)",
         "sync_barrier_energy_mj": "Sync Barrier Energy (mJ)",
+        # [C5] The vendor-priced axes: named for a chip designer, not a schema.
+        "chip_area_mm2": "Chip Area (mm²)",
+        "energy_per_inference_mj": "Energy per Inference (mJ)",
+        "e2e_latency_s": "E2E Latency (s)",
+        "throughput_inferences_s": "Throughput (inf/s)",
         "throughput_samples_per_s": "Throughput (samples/s)",
     }
     return labels.get(name, name)

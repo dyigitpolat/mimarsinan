@@ -76,3 +76,11 @@ class TestLegacyOptionsUnchanged:
         assert all(o["requires_training"] is False for o in options[1:])
         assert all(o["requires_physics"] is False for o in options[:8])
         assert all(o["requires_physics"] is True for o in options[8:])
+
+
+class TestEveryAxisIsNamedForAHuman:
+    def test_no_row_falls_back_to_its_raw_key(self):
+        """A greyed chip showing `chip_area_mm2` beside `Total Parameters` is the
+        catalog leaking its schema into the UI."""
+        for row in _catalog().values():
+            assert row["label"] != row["id"], f"{row['id']} has no human label"

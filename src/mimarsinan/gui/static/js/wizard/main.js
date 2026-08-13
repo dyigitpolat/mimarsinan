@@ -23,6 +23,7 @@ import {
   renderTemplateBanner, renderUnknownTray,
 } from './review.js';
 import { autoSuggestHardware, fetchMetadata, scheduleHwVerify } from './hw.js';
+import { renderPhysicsPanel } from './physics_panel.js';
 import { goToFirstError, goToSection, renderSectionNav } from './workbench.js';
 
 const GROUP_ICONS = {
@@ -225,6 +226,18 @@ function renderAll() {
   renderTemplateBanner();
   renderResolveViews();
   renderDatasetFacts();
+  renderPhysics();
+}
+
+/* The physics panel is SERVED, so it re-fetches rather than re-deriving: the
+   completeness readout must agree with what a launch will actually resolve.
+   Its edits re-render EVERYTHING, because declaring a profile also changes which
+   objective chips the co-search panel may offer — a panel that refreshed only
+   itself would leave the picker contradicting it. */
+function renderPhysics() {
+  const host = document.getElementById('physicsPanel');
+  if (!host) return;
+  renderPhysicsPanel(host, () => { runResolve(); renderAll(); });
 }
 
 /* ── Rail verdict pill ─────────────────────────────────────────────────── */

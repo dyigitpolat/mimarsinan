@@ -157,3 +157,38 @@ class TestTheModeTheChipsAreFilteredBy:
     def test_a_draft_without_the_keys_at_all_is_readable(self):
         assert call_js(MODULE, "deriveSearchMode", {}) == "model"
         assert call_js(MODULE, "deriveSearchMode", None) == "model"
+
+
+class TestBlockedAxesAreShownNotHidden:
+    """C5: a physics-gated axis is greyed WITH its reason, never removed — a user
+    must be able to see that area is an axis this tool optimizes, and why it is
+    off. `offeredObjectives` stays the SELECTABLE set, so a chip the run would
+    refuse can never be emitted either."""
+
+    def _offerable(self, search_mode: str, declares_physics: bool):
+        return call_js(
+            MODULE, "offerableObjectives",
+            get_wizard_nas_schema(), search_mode, declares_physics,
+        )
+
+    def test_a_physics_less_draft_still_sees_the_priced_axes(self):
+        rows = {row["id"]: row for row in self._offerable("joint", False)}
+        assert "chip_area_mm2" in rows, "the axis is offered, greyed"
+        assert rows["chip_area_mm2"]["selectable"] is False
+        assert rows["chip_area_mm2"]["blockedReason"]
+
+    def test_a_declaring_draft_can_select_them(self):
+        rows = {row["id"]: row for row in self._offerable("joint", True)}
+        assert rows["chip_area_mm2"]["selectable"] is True
+        assert rows["chip_area_mm2"]["blockedReason"] == ""
+
+    def test_the_legacy_axes_are_always_selectable(self):
+        for declares in (False, True):
+            rows = {row["id"]: row for row in self._offerable("joint", declares)}
+            assert rows["total_params"]["selectable"] is True
+
+    def test_the_selectable_subset_is_exactly_the_offered_set(self):
+        selectable = {
+            row["id"] for row in self._offerable("joint", False) if row["selectable"]
+        }
+        assert selectable == set(offered(get_wizard_nas_schema(), "joint"))

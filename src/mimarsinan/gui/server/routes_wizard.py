@@ -125,6 +125,21 @@ def register_routes(
             _metadata_cache[cache_key] = result
         return result
 
+    @app.get("/api/physics_profiles")
+    def physics_profiles():
+        """The platform-physics profiles the selector offers (registry-served)."""
+        from mimarsinan.gui.wizard.physics_panel import physics_profile_options
+        return physics_profile_options()
+
+    @app.post("/api/physics_panel")
+    def physics_panel(body: dict):
+        """The panel for one declaration: header, completeness, grouped constants."""
+        from mimarsinan.gui.wizard.physics_panel import physics_profile_panel
+        payload = body or {}
+        return physics_profile_panel(
+            str(payload.get("profile") or ""), payload.get("overrides") or {},
+        )
+
     @app.get("/api/model_types")
     def api_model_types():
         from mimarsinan.pipelining.core.registry.model_registry import get_model_types

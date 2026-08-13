@@ -54,6 +54,24 @@ export function offeredObjectives(nas, searchMode, declaresPhysics = false) {
   });
 }
 
+/** Every option this MODE can measure, each marked with whether the DRAFT can
+ *  back it. The picker renders the unbackable ones greyed with their reason
+ *  rather than hiding them: a user must be able to see that area is an axis this
+ *  tool optimizes, and why it is off. `offeredObjectives` remains the SELECTABLE
+ *  set, so a chip that cannot be chosen can also never be emitted. */
+export function offerableObjectives(nas, searchMode, declaresPhysics = false) {
+  const selectable = new Set(
+    offeredObjectives(nas, searchMode, declaresPhysics).map((o) => o.id),
+  );
+  return offeredObjectives(nas, searchMode, true).map((option) => ({
+    ...option,
+    selectable: selectable.has(option.id),
+    blockedReason: selectable.has(option.id)
+      ? ''
+      : 'needs a platform physics profile',
+  }));
+}
+
 /** The chips that start ACTIVE: the draft's declaration, pruned to what this
  *  mode still offers — an undeclared draft starts with the whole offer. */
 export function seededObjectiveIds(offered, declared) {
