@@ -1,0 +1,48 @@
+{
+  "name": "loihi_knn_query",
+  "profile": "loihi",
+  "citation": "frady2020neuromorphic Table 2, k=1 / 76,800",
+  "description": "One approximate k-NN query over a 76,800-pattern database on 32 Loihi chips. Every census number comes from the paper's own structural statements; the energy constants come from a DIFFERENT paper (davies2018loihi Table 2, pre-silicon), so this row is a pre-silicon model predicting an independently measured board. Compared on dynamic energy, which is the column Frady reports separately from static, reset and x86.",
+  "independence": "independent",
+  "operating_conditions": {
+    "chips": 32,
+    "patterns": 76800,
+    "reduced_dimensionality": 500,
+    "window_timesteps": 60
+  },
+  "census": {
+    "cores_physical": 4096,
+    "neurons_physical": 4194304,
+    "neurons_used": 76800,
+    "timesteps": 60,
+    "latency_steps": 60,
+    "synaptic_events": 54400000.0,
+    "macs": 54400000.0,
+    "segment_cores": 4096,
+    "sync_count": 0,
+    "host_macs": 0,
+    "host_ops_s": 0.0
+  },
+  "census_sources": {
+    "cores_physical": "davies2018loihi p.95: 128 neuromorphic cores per chip x 32 chips",
+    "neurons_physical": "davies2018loihi: 1024 compartments per core x 128 cores x 32 chips",
+    "neurons_used": "frady2020neuromorphic S3: one pattern-match neuron per database pattern, 76,800 patterns",
+    "timesteps": "frady2020neuromorphic S3: 'the window length is T = 60 timesteps'",
+    "latency_steps": "one query is one 60-timestep window",
+    "synaptic_events": "frady2020neuromorphic S3: W = [E, -E] gives 2 x 500 = 1000 input components; 'The used setting theta_e = 0.1 typically removes about one quarter to one third of spikes' -> 708 transmitted (midpoint of 667-750); 'Each input spike is broadcast to all pattern match neurons' -> x 76,800",
+    "macs": "one synaptic event is one MAC on an event-driven chip",
+    "segment_cores": "every core of the 32 chips is configured for the search",
+    "sync_count": "barrier sync is per timestep and already inside the measured window",
+    "host_macs": "the x86 share is measured separately by the paper and excluded here",
+    "host_ops_s": "the x86 share is measured separately by the paper and excluded here"
+  },
+  "overrides": {},
+  "published": {
+    "energy_dynamic_mj": {
+      "value": 1.33,
+      "citation": "frady2020neuromorphic Table 2, p.7",
+      "quote": "Energy breakdown per query (mJ). k=1, Size=76,800: Static 2.34, Reset 0.19, x86 2.75, Neuro 1.33, Total 6.59"
+    }
+  },
+  "tolerance_pct": 25.0
+}

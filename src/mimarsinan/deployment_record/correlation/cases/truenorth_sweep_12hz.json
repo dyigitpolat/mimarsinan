@@ -1,0 +1,55 @@
+{
+  "name": "truenorth_sweep_12hz",
+  "profile": "truenorth",
+  "citation": "akopyan2015truenorth Fig. 17, p.1551",
+  "description": "TrueNorth running a complex recurrent network at 11.58 Hz average firing rate with 128 active synapses per neuron, at 0.8 V, all 4096 cores, real-time 1 kHz tick. The census is one 1-second window, so the published average power in mW equals the priced energy in mJ. This point is one of the two ENDPOINTS the marginal energy and static power were regressed on, so it checks arithmetic rather than generalization.",
+  "independence": "self_consistency",
+  "operating_conditions": {
+    "supply_v": 0.8,
+    "firing_rate_hz": 11.58,
+    "active_synapses_per_neuron": 128,
+    "tick_hz": 1000,
+    "window_s": 1.0
+  },
+  "census": {
+    "cores_physical": 4096,
+    "cells_physical": 268435456,
+    "neurons_physical": 1048576,
+    "axons_physical": 1048576,
+    "neurons_used": 1048576,
+    "tiles": 4096,
+    "segment_cores": 4096,
+    "sync_count": 0,
+    "timesteps": 1000,
+    "latency_steps": 1000,
+    "synaptic_events": 1554241290.24,
+    "macs": 1554241290.24,
+    "host_macs": 0,
+    "host_ops_s": 0.0
+  },
+  "census_sources": {
+    "cores_physical": "merolla2014a p.6: 4096 cores",
+    "cells_physical": "merolla2014a S1: 256x256 crossbar per core x 4096 cores",
+    "neurons_physical": "merolla2014a p.6: 4096 x 256 = 1,048,576 neurons",
+    "axons_physical": "merolla2014a S1: 256 axons per core x 4096 cores",
+    "neurons_used": "akopyan2015truenorth Fig.17: the characterization networks use every neuron",
+    "tiles": "merolla2014a p.6: one router per core, 64x64 mesh",
+    "segment_cores": "all 4096 cores are configured for the benchmark network",
+    "sync_count": "TrueNorth's 1 kHz tick is the barrier; no extra chip-wide sync",
+    "timesteps": "1000 ticks = one second at the 1 kHz tick (merolla2014a p.4)",
+    "latency_steps": "the window is 1 s, so average power = mJ per window",
+    "synaptic_events": "1,048,576 neurons x firing rate x 128 active synapses/neuron (akopyan2015truenorth Fig.17 caption)",
+    "macs": "one synaptic event is one MAC on an event-driven chip",
+    "host_macs": "a bare-chip characterization: no host ComputeOps",
+    "host_ops_s": "a bare-chip characterization: no host wall"
+  },
+  "overrides": {},
+  "published": {
+    "average_power_mw": {
+      "value": 68.0,
+      "citation": "akopyan2015truenorth Fig. 17, p.1551",
+      "quote": "Total TrueNorth chip power breakdown (@ 0.8 V) for three complex recurrent networks with 128 synapses per neuron average, and three different average firing rates. -- bars printed as 68mW @ 11.58Hz, 71mW @ 20.07Hz, 94mW @ 95.93Hz; this row is 68.0mW @ 11.58Hz"
+    }
+  },
+  "tolerance_pct": 25.0
+}

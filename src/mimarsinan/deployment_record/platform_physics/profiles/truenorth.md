@@ -24,35 +24,49 @@ pre-silicon simulation.
 | Quantity | Value |
 |---|---|
 | Technology | 28 nm Samsung LPP CMOS |
-| Supply for the energy constants | **0.775 V** (`merolla2014a` §S5, p.7) |
-| Supply for `p_static_per_core` | **0.70 V** — the published zero-activity corner |
+| Supply for `e_mac` and `p_static_per_core` | **0.8 V** — the corner of the Fig. 17 sweep |
 | Operating range | 0.70 – 1.05 V, total power 42 – 323 mW |
 | Array size assumed | 256 axons × 256 neurons per core, 4096 cores, 64 × 64 mesh |
 | Temperature | **not stated by either paper** |
 
-Mixing corners matters: the 26 pJ/synaptic-event figure is a 0.775 V measurement while
-the static floor is a 0.70 V measurement. They are not from the same operating point and
-a report that combines them should say so.
+Both priced energy constants come from the *same* measurement at the *same* voltage,
+which is the point: they are the slope and the intercept of one published sweep.
 
-## The aggregate rule — the one thing to get right
+## Why 26 pJ per synaptic event is NOT this profile's constant
 
-TrueNorth publishes **`e_synaptic_event_total` = 26 pJ**, which is the measured 72 mW
-whole-chip power divided by the synaptic events that produced it. It therefore *already
-contains* array, neuron, routing and static energy. It is declared in the `aggregate`
-group precisely so the pricing model can see that it **supersedes** the decomposed
-constants (`e_mac`, `e_neuron_update`, `e_inter_tile_hop`, `p_static_per_core`, …).
-Summing the aggregate with the decomposition counts every component twice.
+TrueNorth's famous number — **26 pJ/synaptic-event** — is the measured 72 mW whole-chip
+power divided by the events that produced it at 20 Hz and 128 synapses/neuron. It is an
+**operating-point average**, so it already contains the static power, and using it as a
+per-event constant makes the model a *point* model: exact where it was measured, wrong
+everywhere else. Against TrueNorth's own published sweep it gives
 
-This is not a TrueNorth quirk. Most published chips report a system-level energy per
-operation rather than a component decomposition, so the supersede relation is a
-first-class part of the vocabulary rather than a note here.
+| firing rate | 26 pJ/event predicts | published | error |
+|---|---|---|---|
+| 11.58 Hz | 40.4 mW | 68 mW | **−40.6 %** |
+| 20.07 Hz | 70.0 mW | 71 mW | −1.4 % (its own calibration point) |
+| 95.93 Hz | 334.8 mW | 94 mW | **+256.1 %** |
+
+So the profile declares the **marginal** energy instead — `e_mac = 2.297 pJ` — with
+static power beside it as `p_static_per_core`, both obtained by regressing the published
+0.8 V sweep. The held-out middle point then lands at −0.54 %. The arithmetic is in each
+constant's `derivation` field and the full working is in
+[`docs/research/physics/silicon_correlation_research.md`](../../../../../docs/research/physics/silicon_correlation_research.md).
+
+`e_synaptic_event_total` remains in the vocabulary — it is the right model for a target
+that publishes *only* a whole-chip average — but no shipped profile prices from it, and
+`deployment_record/correlation/` is the suite that keeps it that way.
+
+**`e_inter_tile_hop` (2.3 pJ/hop) is deliberately not declared here** for the same
+reason: `e_mac` is a whole-chip marginal fitted on total power, so it already contains
+the spike routing. Declaring the hop energy as well would charge routing twice. The
+published figure is recorded in the research note rather than in the profile.
 
 ## Notes on individual constants
 
 - **`area_per_core_total` (93 600 µm²)** is the published, measured 240 × 390 µm
   complete-core footprint — crossbar SRAM, neuron block, scheduler, token controller
   and router together. It sits in the `aggregate` group and **supersedes** the
-  decomposed area constants, exactly as the energy aggregate does: chip area prices as
+  decomposed area constants: chip area prices as
   `cores × area_per_core_total + area_global_fixed`, and the per-cell/per-neuron
   figures below are kept for decomposition studies, never summed with it.
 - **`area_per_cell` (0.152 µm²)** is the published 6T SRAM bitcell. One TrueNorth synapse

@@ -55,7 +55,7 @@ class TestThePanelForADeclaredProfile:
         validity = self._panel()["validity"]
         assert validity["measurement_kind"] == "silicon"
         assert validity["technology_node_nm"] == 28.0
-        assert validity["supply_v"] == 0.775
+        assert validity["supply_v"] == 0.8
 
     def test_groups_follow_the_vocabulary_order(self):
         names = [group["group"] for group in self._panel()["groups"]]
@@ -69,12 +69,12 @@ class TestThePanelForADeclaredProfile:
 
     def test_a_declared_row_carries_its_value_unit_and_evidence(self):
         rows = {r["key"]: r for g in self._panel()["groups"] for r in g["constants"]}
-        row = rows["e_synaptic_event_total"]
+        row = rows["e_mac"]
         assert row["declared"] is True
-        assert row["nominal"] == 26.0
+        assert row["nominal"] == 2.2966
         assert row["unit"] == "pJ"
-        assert row["evidence_kind"] == "published"
-        assert "merolla2014a" in row["evidence_detail"]
+        assert row["evidence_kind"] == "derived"
+        assert "akopyan2015truenorth" in row["evidence_detail"]
 
     def test_an_undeclared_row_says_so_and_carries_no_number(self):
         rows = {r["key"]: r for g in self._panel()["groups"] for r in g["constants"]}

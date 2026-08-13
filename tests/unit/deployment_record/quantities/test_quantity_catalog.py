@@ -2,7 +2,7 @@
 
 import pytest
 
-from mimarsinan.deployment_record.platform_physics.units import DIMENSIONS, unit_for
+from mimarsinan.deployment_record.units import DIMENSIONS, unit_for
 from mimarsinan.deployment_record.quantities.spec import (
     PROVENANCE_KINDS,
     QUANTITY_SPECS,

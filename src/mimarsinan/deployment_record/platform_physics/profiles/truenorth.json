@@ -6,10 +6,10 @@
   "validity": {
     "measurement_kind": "silicon",
     "technology_node_nm": 28.0,
-    "supply_v": 0.775,
+    "supply_v": 0.8,
     "temperature_c": null,
     "array_size_assumed": "256 axons x 256 neurons per core, 4096 cores, 64x64 mesh",
-    "notes": "Energies measured on silicon at 0.775 V unless a constant says otherwise; the chip operates over 0.70-1.05 V and the published power envelope is 42-323 mW. Temperature is not stated by either paper."
+    "notes": "Characterized at the 0.8 V corner, where akopyan2015truenorth Fig. 17 publishes a THREE-POINT firing-rate sweep at fixed synaptic density -- the only published TrueNorth data that separates marginal switching energy from static power. The chip operates over 0.70-1.05 V with a 42-323 mW envelope; points at other voltages are outside this corner because no voltage-scaling model is published. Temperature is not stated by either paper."
   },
   "constants": {
     "area_per_cell": {
@@ -83,13 +83,6 @@
       "citation": "merolla2014a Sections S3 and S8",
       "note": "Signed 20-bit membrane potential V_j(t)."
     },
-    "e_inter_tile_hop": {
-      "nominal": 2.3,
-      "unit": "pJ",
-      "evidence_kind": "published",
-      "citation": "merolla2014a Fig. S4 caption (SM p.17)",
-      "note": "Energy to send one 32-bit spike packet one core-to-core hop at 0.775 V. Reproduced by the paper's own bit cost: 72 fJ/bit x 32 bits = 2.304 pJ."
-    },
     "bytes_per_connectivity_entry": {
       "nominal": 4.0,
       "unit": "B",
@@ -123,12 +116,12 @@
       "derivation": "Die is 4.3 cm^2 = 430 mm^2; the 4096 cores occupy 4096 x (240 x 390 um) = 383.4 mm^2. The balance, 430 - 383.4 = 46.6 mm^2 (10.8% of the die), is the periphery outside the core array: merge-split, I/O ring and pads."
     },
     "p_static_per_core": {
-      "nominal": 10.254,
+      "nominal": 15.7301,
       "unit": "uW",
       "evidence_kind": "derived",
-      "citation": "akopyan2015truenorth Section VII, p.1551",
-      "derivation": "The published low corner is 42 mW at 0.70 V with 0 Hz firing and 0 synapses per neuron: no spiking and no synaptic activity, so it bounds static plus tick-baseline power. 42 mW / 4096 cores = 10.254 uW per core.",
-      "note": "At 0.70 V, not the 0.775 V of the energy constants, and the authors do not label it leakage; it is an upper bound on static power at the low corner."
+      "citation": "akopyan2015truenorth Fig. 17, p.1551",
+      "derivation": "The intercept of the same two-endpoint fit: P_static = 68 mW - 2.297 pJ x 1.5541e9 events/s = 64.43 mW at 0.8 V, divided by 4096 cores = 15.73 uW. Cross-check against the independently published zero-activity corner of 42 mW at 0.70 V: leakage scales super-linearly with supply, and 42 x (0.8/0.7)^2 = 54.9 mW to 42 x (0.8/0.7)^3 = 62.7 mW bracket this intercept without the fit having used it.",
+      "note": "Includes the 1 kHz tick baseline, not leakage alone."
     },
     "p_static_global": {
       "nominal": 0.0,
@@ -142,14 +135,15 @@
       "unit": "um^2",
       "evidence_kind": "published",
       "citation": "akopyan2015truenorth Fig. 1 caption p.1538; merolla2014a Fig. 2 caption p.14",
-      "note": "'one core occupies 240 x 390 um of silicon' — the measured complete-core footprint (crossbar SRAM, neuron block, scheduler, token controller, router together). Supersedes the decomposed area constants; the per-cell and per-neuron figures remain declared for decomposition studies but are never summed with this."
+      "note": "'one core occupies 240 x 390 um of silicon' \u2014 the measured complete-core footprint (crossbar SRAM, neuron block, scheduler, token controller, router together). Supersedes the decomposed area constants; the per-cell and per-neuron figures remain declared for decomposition studies but are never summed with this."
     },
-    "e_synaptic_event_total": {
-      "nominal": 26.0,
+    "e_mac": {
+      "nominal": 2.2966,
       "unit": "pJ",
-      "evidence_kind": "published",
-      "citation": "merolla2014a p.7 and Fig. 4C caption",
-      "note": "'At the operating point where neurons fire on average at 20 Hz and have 128 active synapses, the total measured power was 72 mW (at 0.775 V operating voltage), corresponding to 26 pJ per synaptic event (considering total energy).' This is the WHOLE-CHIP energy divided by synaptic events, so it already contains array, neuron, routing and static power. It supersedes the decomposed energy constants and the static powers; pricing must use it or them, never both."
+      "evidence_kind": "derived",
+      "citation": "akopyan2015truenorth Fig. 17, p.1551",
+      "derivation": "MARGINAL energy per synaptic event, by linear regression on the published 0.8 V sweep at 128 synapses/neuron: 68 mW @ 11.58 Hz, 71 mW @ 20.07 Hz, 94 mW @ 95.93 Hz. Event rate = 1048576 neurons x rate x 128. Fitting P = P_static + E x events on the two ENDPOINTS gives E = (94-68) mW / (1.28742e10 - 1.5541e9) events/s = 2.297 pJ; the held-out middle point then predicts 70.62 mW against a published 71 mW (-0.54%).",
+      "note": "This is the WHOLE-CHIP marginal cost of one more synaptic event -- array read, neuron update and spike routing together -- which is why e_inter_tile_hop is deliberately not declared: adding it would charge routing twice. It is NOT the published 26 pJ/synaptic-event, which is whole-chip power divided by the event rate at one operating point and therefore already contains static power (see truenorth.md)."
     }
   }
 }

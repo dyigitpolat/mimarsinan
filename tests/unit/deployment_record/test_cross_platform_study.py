@@ -110,11 +110,11 @@ class TestTheArtifact:
         comparison = compare_platforms(_census(), ("loihi",))
         text = render_comparison(comparison)
         row = [line for line in text.splitlines() if line.startswith("loihi")][0]
-        # Two axes Loihi cannot back, so exactly two absence marks in its row.
-        assert row.count("—") == 2, row
-        assert set(comparison.rows[0].values) == {
-            "chip_area_mm2", "energy_per_inference_mj"
-        }
+        # Loihi is asynchronous and declares no t_cycle, so it can price neither the
+        # wall nor the static power that accrues over it — three of the four headline
+        # axes are absent. Only area survives.
+        assert row.count("—") == 3, row
+        assert set(comparison.rows[0].values) == {"chip_area_mm2"}
         assert "t_cycle" in text, "and the reason is printed"
 
 

@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from typing import Mapping, Tuple
 
-from mimarsinan.deployment_record.platform_physics.units import (
+from mimarsinan.deployment_record.units import (
     AREA,
     DATA,
     DIMENSIONLESS,

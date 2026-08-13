@@ -78,22 +78,30 @@ class TestEnergy:
         assert "energy_per_inference_mj" not in _by_name(pricing)
         assert "synaptic_events" in _reasons(pricing)["energy_per_inference_mj"]
 
-    def test_truenorth_energy_prices_the_aggregate_over_events(self):
+    def test_truenorth_energy_is_marginal_switching_plus_static_over_the_wall(self):
+        """The affine form the silicon-correlation suite validates: the MARGINAL
+        energy of an event, plus static power over the time the run took. The old
+        shape charged a whole-chip average per event and suppressed static, which
+        reproduced one published operating point and overshot the next by 256%."""
         pricing = price_absolute(
             _quantities(synaptic_events=1e6, cores_physical=20, latency_steps=32,
                         host_macs=0),
             _TRUENORTH,
         )
-        term = _by_name(pricing)["energy_per_inference_mj"]
-        # 26 pJ x 1e6 events = 26 uJ = 0.026 mJ; static power is superseded by the
-        # aggregate, and TrueNorth declares no sync energy (noted, not added).
-        assert term.value == pytest.approx(26e-12 * 1e6 * 1e3)
-        assert term.unit == "mJ"
-        assert "e_synaptic_event_total" in term.source
+        terms = _by_name(pricing)
+        dynamic = 2.2966e-12 * 1e6 * 1e3
+        static = 15.7301e-6 * 20 * (1000e-6 * 32) * 1e3
+        assert terms["energy_dynamic_mj"].value == pytest.approx(dynamic, rel=1e-4)
+        assert terms["energy_static_mj"].value == pytest.approx(static, rel=1e-4)
+        assert terms["energy_per_inference_mj"].value == pytest.approx(
+            dynamic + static, rel=1e-4)
+        assert terms["energy_per_inference_mj"].unit == "mJ"
+        assert "e_mac" in terms["energy_per_inference_mj"].source
 
     def test_unpriced_components_are_named_on_the_headline(self):
         pricing = price_absolute(
-            _quantities(synaptic_events=1e6, sync_count=3, host_macs=0),
+            _quantities(synaptic_events=1e6, sync_count=3, host_macs=0,
+                        cores_physical=20, latency_steps=32),
             _TRUENORTH,
         )
         term = _by_name(pricing)["energy_per_inference_mj"]
@@ -103,15 +111,22 @@ class TestEnergy:
         """The §8b rig: host MACs exist, no host pricing declared — a headline that
         silently omitted them would make subsume look free."""
         pricing = price_absolute(
-            _quantities(synaptic_events=1e6, host_macs=5000, host_ops_s=0.5),
+            _quantities(synaptic_events=1e6, host_macs=5000, host_ops_s=0.5,
+                        cores_physical=20, latency_steps=32),
             _TRUENORTH,
         )
         assert "energy_per_inference_mj" not in _by_name(pricing)
-        assert "p_host" in _reasons(pricing)["energy_per_inference_mj"]
+        # The refusal must name the ROOT cause. Unpriceable host work blocks the
+        # latency first, and static power needs that latency — so a headline that
+        # only said "no latency" would send a reader hunting the wrong constant.
+        reason = _reasons(pricing)["energy_per_inference_mj"]
+        assert "host" in reason and "host_compute_rate" in reason, reason
 
     def test_known_zero_host_work_needs_no_host_constants(self):
         pricing = price_absolute(
-            _quantities(synaptic_events=1e6, host_macs=0), _TRUENORTH
+            _quantities(synaptic_events=1e6, host_macs=0, cores_physical=20,
+                        latency_steps=32),
+            _TRUENORTH,
         )
         assert "energy_per_inference_mj" in _by_name(pricing)
 
@@ -339,9 +354,9 @@ class TestTheConversionModel:
         pricing = price_absolute(
             _quantities(synaptic_events=1e6, macs=1e6, host_macs=0), _TRUENORTH
         )
-        term = _by_name(pricing)["energy_per_inference_mj"]
-        assert term.value == pytest.approx(26e-12 * 1e6 * 1e3), (
-            "the aggregate already contains everything; a zero conversion count adds "
+        term = _by_name(pricing)["energy_dynamic_mj"]
+        assert term.value == pytest.approx(2.2966e-12 * 1e6 * 1e3, rel=1e-4), (
+            "a fully digital target converts nothing; a zero conversion count adds "
             "nothing and must not be mistaken for a missing one"
         )
 

@@ -9,33 +9,17 @@
     "supply_v": 0.75,
     "temperature_c": null,
     "array_size_assumed": "128 neuromorphic cores, 1024 neurons and 4096 in/out axons per core, 16 MB synaptic memory",
-    "notes": "Davies 2018 Table 2 is titled 'Loihi PRE-SILICON performance and energy measurements' and the text calls it SDF+SPICE simulation 'consistent with early post-silicon characterization'. Every per-event constant here is therefore a design-intent number, not a silicon measurement — which is exactly why measurement_kind is 'simulation' and a cross-platform comparison against TrueNorth (silicon) must disclose the difference. The static-power constant is the exception: it is derived from measured board-level data (Frady 2020)."
+    "notes": "Davies 2018 Table 2 is titled 'Loihi PRE-SILICON performance and energy measurements' and the text calls it SDF+SPICE simulation 'consistent with early post-silicon characterization'. Every per-event constant here is therefore a design-intent number, not a silicon measurement \u2014 which is exactly why measurement_kind is 'simulation' and a cross-platform comparison against TrueNorth (silicon) must disclose the difference. The static-power constant is the exception: it is derived from measured board-level data (Frady 2020)."
   },
   "constants": {
-    "e_synaptic_event_total": {
-      "low": 23.6,
-      "nominal": 23.6,
-      "high": 23.6,
-      "unit": "pJ",
-      "evidence_kind": "published",
-      "citation": "davies2018loihi Table 2, p.96",
-      "note": "'Energy per synaptic spike op (min) | 23.6 pJ'. Published as a MINIMUM with no maximum, so the band is a point at the published value rather than an invented spread — inventing an upper corner would be fabricating the number the paper withheld. Like TrueNorth's 26 pJ this is the per-event figure the architecture publishes, so it sits in the aggregate group and supersedes the decomposed energy terms."
-    },
     "e_neuron_update": {
       "low": 52.0,
-      "nominal": 81.0,
+      "nominal": 52.0,
       "high": 81.0,
       "unit": "pJ",
       "evidence_kind": "published",
       "citation": "davies2018loihi Table 2, p.96",
-      "note": "'Energy per neuron update (active / inactive) | 81 pJ / 52 pJ'. Nominal is the ACTIVE cost (what an update actually costs); the inactive figure is the band's floor, since a neuron that is updated but does not fire still pays it."
-    },
-    "e_leak_per_neuron_step": {
-      "nominal": 52.0,
-      "unit": "pJ",
-      "evidence_kind": "published",
-      "citation": "davies2018loihi Table 2, p.96",
-      "note": "The inactive neuron-update energy: what a neuron costs per timestep without firing."
+      "note": "'Energy per neuron update (active / inactive) | 81 pJ / 52 pJ' -- ONE quantity at two activity levels, so it is one banded constant. Nominal takes the INACTIVE cost because the multiplicand is every neuron update, and a census cannot say which of them fired; charging all of them the active cost would over-charge every neuron that stayed silent, which in a sparse SNN is nearly all of them. The active figure is the band's upper corner, i.e. the all-firing worst case. e_leak_per_neuron_step is deliberately NOT declared: on Loihi it is this same measurement, and declaring both makes the pricer charge every neuron twice."
     },
     "e_intra_tile_packet": {
       "nominal": 1.7,
@@ -60,7 +44,7 @@
       "unit": "ns",
       "evidence_kind": "published",
       "citation": "davies2018loihi Table 2, p.96",
-      "note": "'Latency per tile hop (E-W / N-S) | 4.1 ns / 6.5 ns' — the same anisotropy as the hop energy."
+      "note": "'Latency per tile hop (E-W / N-S) | 4.1 ns / 6.5 ns' \u2014 the same anisotropy as the hop energy."
     },
     "t_array_read": {
       "low": 3.5,
@@ -113,7 +97,7 @@
       "unit": "um^2",
       "evidence_kind": "derived",
       "citation": "davies2018loihi Section Design Implementation, p.87",
-      "derivation": "'All logic in the chip is digital' — there is no analog-to-digital converter in the datapath, so the count is zero by construction rather than unknown."
+      "derivation": "'All logic in the chip is digital' \u2014 there is no analog-to-digital converter in the datapath, so the count is zero by construction rather than unknown."
     },
     "e_adc_conversion": {
       "nominal": 0.0,
@@ -134,7 +118,7 @@
       "unit": "um^2",
       "evidence_kind": "derived",
       "citation": "davies2018loihi Section Silicon Realization, p.95",
-      "derivation": "60 mm^2 die / 128 neuromorphic cores = 0.46875 mm^2 = 468750 um^2 per core. This is a DIE-AREA SHARE, not a measured core layout: the die also carries three x86 cores and I/O, so the real neuromorphic core is smaller. Cross-checked against the paper's own 'maximum neuron density of 2,184 per mm^2': 1024 neurons / 0.46875 mm^2 = 2184.5 neurons/mm^2, reproducing it to four figures — which is what confirms the division is the one the authors made.",
+      "derivation": "60 mm^2 die / 128 neuromorphic cores = 0.46875 mm^2 = 468750 um^2 per core. This is a DIE-AREA SHARE, not a measured core layout: the die also carries three x86 cores and I/O, so the real neuromorphic core is smaller. Cross-checked against the paper's own 'maximum neuron density of 2,184 per mm^2': 1024 neurons / 0.46875 mm^2 = 2184.5 neurons/mm^2, reproducing it to four figures \u2014 which is what confirms the division is the one the authors made.",
       "note": "An upper bound on the per-core footprint. Supersedes the decomposed area constants."
     },
     "area_global_fixed": {
@@ -150,7 +134,7 @@
       "evidence_kind": "derived",
       "citation": "frady2020neuromorphic Table 1 and Section 5.2, p.6-7",
       "derivation": "Measured board static power 3.34 W over 32 Loihi chips = 104.4 mW per chip; 104.4 mW / 128 cores = 815 uW per core. The paper attributes leakage to the cores: 'Almost all leakage can be attributed to the neuromorphic cores, which dominate chip area.'",
-      "note": "An UPPER bound per core, and the only measured (not simulated) energy constant in this profile — the supply voltage of the board measurement is not stated."
+      "note": "An UPPER bound per core, and the only measured (not simulated) energy constant in this profile \u2014 the supply voltage of the board measurement is not stated."
     },
     "p_static_global": {
       "nominal": 0.0,
@@ -158,6 +142,15 @@
       "evidence_kind": "derived",
       "citation": "frady2020neuromorphic Section 5.2, p.7",
       "derivation": "The whole measured static power is already attributed per core, following the paper's own attribution; charging it again chip-wide would double-count one measurement."
+    },
+    "e_mac": {
+      "low": 23.6,
+      "nominal": 23.6,
+      "high": 23.6,
+      "unit": "pJ",
+      "evidence_kind": "published",
+      "citation": "davies2018loihi Table 2, p.96",
+      "note": "'Energy per synaptic spike op (min) | 23.6 pJ'. This is a PER-OPERATION energy, not a whole-chip average: it does not contain the neuron-update or static power the same table reports separately, so it belongs beside them rather than superseding them. Published as a MINIMUM with no maximum, so the band is a point at the published value -- inventing an upper corner would fabricate the number the paper withheld, and a prediction built on a minimum is expected to land high."
     }
   }
 }

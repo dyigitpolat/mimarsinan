@@ -2,7 +2,7 @@
 
 import pytest
 
-from mimarsinan.deployment_record.platform_physics.units import (
+from mimarsinan.deployment_record.units import (
     AREA,
     DATA,
     DIMENSIONLESS,

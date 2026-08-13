@@ -456,3 +456,81 @@ mutation-checked.
    evidence kinds.
 4. The wizard can select, inspect, and override a profile, and shows which objectives
    each profile can back BEFORE launch.
+
+## V — Silicon correlation (added 2026-08-13, on owner instruction)
+
+> "we need to match multiple hardware numbers through methodologically sourced and
+> derived values for the units"
+
+The C0–C7 program sourced every constant from a paper. It never asked the next
+question: **do the constants, multiplied by a published workload's census, reproduce
+what that chip's own paper measured?** Stage V asks it, and the answer changed the
+library.
+
+### What the correlation found
+
+A chip paper publishes two things that both look like "energy per synaptic event": an
+**incremental** energy (what one more event costs) and an **operating-point average**
+(whole-chip power ÷ event rate at one firing rate). ODIN's paper distinguishes them
+explicitly — Eq. (2) vs Eq. (3), `E_SOP = 8.43 pJ` vs `E_tot,SOP > 12.7 pJ`. Our
+profiles filed the average as if it were the constant, and `e_synaptic_event_total`
+SUPERSEDES static power by design, so the model became a **point model**: exact at the
+operating point the number was measured at, wrong everywhere else.
+
+| target | aggregate model | affine model (marginal + static) |
+| --- | --- | --- |
+| TrueNorth @ 11.58 Hz | −40.6 % | fitted endpoint |
+| TrueNorth @ 20.07 Hz | −1.4 % (its calibration point) | **−0.54 % (HELD OUT)** |
+| TrueNorth @ 95.93 Hz | **+256.1 %** | fitted endpoint |
+| ODIN biological time | **−76.4 %** | **+0.27 %** |
+
+Three further defects the suite exposed, each fixed:
+
+1. **Loihi's 23.6 pJ was filed as an aggregate.** It is a per-*operation* energy, so
+   filing it in the AGGREGATE group made it suppress the neuron-update and static terms
+   Davies reports separately. Now `e_mac`.
+2. **Loihi charged every neuron twice.** `e_neuron_update` (52–81 pJ) and
+   `e_leak_per_neuron_step` (52 pJ) were both declared and both priced over
+   `neurons_used × timesteps`, but Davies publishes them as ONE quantity at two activity
+   levels. Latent while the aggregate suppressed both; would have fired the moment (1)
+   was fixed.
+3. **Dynamic energy was over-refused.** The pricer refused the whole energy headline
+   when static power could not be priced, so an asynchronous target with no `t_cycle`
+   answered nothing. Switching energy needs no latency; `energy_dynamic_mj` is now its
+   own term, which is also the column chip papers report.
+
+### As landed
+
+`deployment_record/correlation/` — reference cases as DATA (published value + its
+quote + a census whose every entry names its source + an `independence` flag), a runner
+that scores refusals as misses, and `scripts/silicon_correlation.py` as a runnable gate.
+Seven cases over three devices, **worst error 14.5 %**, all inside ±25 %:
+
+| device | reference | result |
+| --- | --- | --- |
+| TrueNorth (silicon) | Akopyan Fig. 17 three-point sweep + die area | held-out **−0.54 %** |
+| Loihi (pre-silicon constants) | Frady's measured 32-chip k-NN query | **+14.5 %** |
+| ODIN (silicon) | two published points 13.6× apart | **−0.02 % / +0.27 %** |
+
+`odin` is the new third device: 28 nm FDSOI, single core, and the only target whose
+paper publishes the affine power model outright.
+
+### What is deliberately NOT shipped
+
+TrueNorth's multi-object detection (no stated voltage or firing rate), Esser's eight CNN
+benchmarks (no spike census), Loihi keyword spotting (topology published, activity not),
+ODIN's MNIST (rank-order coding terminates on first spike, event count not stated). Each
+would need a fitted activity factor, which would make the suite a tautology. The PRIME
+refusal precedent, applied to workloads.
+
+### Consequences to know about
+
+- TrueNorth's declared corner moved to **0.8 V** (where the sweep was measured), and
+  `e_inter_tile_hop` is no longer declared — the whole-chip marginal already contains
+  routing, so declaring it would charge routing twice.
+- **Loihi now backs only `chip_area_mm2`** in the cross-platform study. Static power
+  needs a wall, and Loihi is asynchronous with no `t_cycle`. Previously the aggregate
+  hid this. It still backs `energy_dynamic_mj`, which is what the correlation uses.
+- `units.py` moved from `platform_physics/` to `deployment_record/` — physics and
+  quantities both need it, and importing it through the physics package created a cycle
+  that only import order was hiding.

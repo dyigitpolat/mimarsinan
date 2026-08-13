@@ -1,0 +1,55 @@
+{
+  "name": "odin_accelerated_time",
+  "profile": "odin",
+  "citation": "frenkel2019odin Section IV-A, p.8",
+  "description": "ODIN saturated at its maximum SOP rate: 75 MHz clock, r_SOP = f_clk/2 = 37.5 MSOP/s, 0.55 V. The census needs no activity assumption -- the architecture fixes it. This is the point E_SOP was measured at, so it checks that Eq. (2) is assembled correctly; the biological-time case is the one that shows it generalizes.",
+  "independence": "self_consistency",
+  "operating_conditions": {
+    "supply_v": 0.55,
+    "f_clk_mhz": 75.0,
+    "r_sop": 37500000.0,
+    "temperature_c": 24.0,
+    "window_s": 1.0
+  },
+  "census": {
+    "cores_physical": 1,
+    "cells_physical": 65536,
+    "neurons_physical": 256,
+    "axons_physical": 256,
+    "neurons_used": 256,
+    "tiles": 1,
+    "segment_cores": 1,
+    "sync_count": 0,
+    "timesteps": 37500000.0,
+    "latency_steps": 37500000.0,
+    "synaptic_events": 37500000.0,
+    "macs": 37500000.0,
+    "host_macs": 0,
+    "host_ops_s": 0.0
+  },
+  "census_sources": {
+    "cores_physical": "frenkel2019odin: a single neurosynaptic core",
+    "cells_physical": "frenkel2019odin: 64k = 65,536 synapses",
+    "neurons_physical": "frenkel2019odin: 256 neurons",
+    "axons_physical": "frenkel2019odin: 256-synapse dendritic tree per neuron",
+    "neurons_used": "every neuron is updated on each event: 'all N neurons of ODIN will be updated'",
+    "tiles": "a single core, so a single tile",
+    "segment_cores": "the one core is configured once",
+    "sync_count": "a single core has nothing to synchronize across",
+    "timesteps": "one 1-second window at the stated SOP rate, so mJ per window = mW",
+    "latency_steps": "one 1-second window at the stated SOP rate",
+    "synaptic_events": "the published SOP rate r_SOP for this operating point, over one second",
+    "macs": "one SOP is one MAC",
+    "host_macs": "a bare-chip characterization: no host ComputeOps",
+    "host_ops_s": "a bare-chip characterization: no host wall"
+  },
+  "overrides": {},
+  "published": {
+    "average_power_mw": {
+      "value": 0.477,
+      "citation": "frenkel2019odin Section IV-A, p.8",
+      "quote": "At a clock frequency of 75MHz, the maximum rSOP is equal to 37.5MSOP/s and the measured power consumption P of ODIN is 477uW at 0.55V"
+    }
+  },
+  "tolerance_pct": 25.0
+}

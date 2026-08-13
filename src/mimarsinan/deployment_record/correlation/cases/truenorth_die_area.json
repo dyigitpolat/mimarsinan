@@ -1,0 +1,31 @@
+{
+  "name": "truenorth_die_area",
+  "profile": "truenorth",
+  "citation": "merolla2014a p.6",
+  "description": "The whole TrueNorth die from its core count. The per-core footprint is a published measurement (240 x 390 um) but area_global_fixed was obtained by subtracting the core array from the published die area, so this row confirms the floorplan arithmetic rather than predicting an unseen number.",
+  "independence": "self_consistency",
+  "operating_conditions": {},
+  "census": {
+    "cores_physical": 4096,
+    "cells_physical": 268435456,
+    "neurons_physical": 1048576,
+    "axons_physical": 1048576,
+    "tiles": 4096
+  },
+  "census_sources": {
+    "cores_physical": "merolla2014a p.6: 4096 cores",
+    "cells_physical": "merolla2014a S1: 256x256 crossbar per core x 4096 cores",
+    "neurons_physical": "merolla2014a p.6: 4096 x 256 = 1,048,576 neurons",
+    "axons_physical": "merolla2014a S1: 256 axons per core x 4096 cores",
+    "tiles": "merolla2014a p.6: one router per core, 64x64 mesh"
+  },
+  "overrides": {},
+  "published": {
+    "chip_area_mm2": {
+      "value": 430.0,
+      "citation": "merolla2014a p.6",
+      "quote": "the chip ... occupies 4.3 cm2 of silicon in a 28 nm process"
+    }
+  },
+  "tolerance_pct": 25.0
+}

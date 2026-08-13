@@ -34,8 +34,8 @@ def test_the_record_carries_the_resolved_constants_not_just_the_profile_name():
     identity = _identity({"platform_physics_profile": "truenorth"})
     physics = identity.platform["platform_physics_resolved"]
     assert physics["name"] == "truenorth"
-    assert physics["constants"]["e_synaptic_event_total"]["nominal"] == 26.0
-    assert physics["constants"]["e_synaptic_event_total"]["citation"]
+    assert physics["constants"]["e_mac"]["nominal"] == 2.2966
+    assert physics["constants"]["e_mac"]["citation"]
     assert physics["validity"]["technology_node_nm"] == 28.0
 
 

@@ -19,6 +19,7 @@ from mimarsinan.deployment_record.schema.provenance import Band
 _J_TO_MJ = 1e3
 
 ENERGY_HEADLINE = "energy_per_inference_mj"
+ENERGY_DYNAMIC = "energy_dynamic_mj"
 
 
 def _compute_constant(ctx: PricingContext) -> Optional[str]:
@@ -124,10 +125,19 @@ def price_energy(ctx: PricingContext, e2e: Optional[Band]) -> None:
     components.extend(bands)
     evidence.extend(notes)
 
+    # Switching energy stands on its own: it needs no latency, so a target that
+    # cannot price static power still answers the number chip papers report.
+    dynamic_source = "; ".join(evidence) + (
+        "; DYNAMIC only — excludes static power and the host share"
+    )
+    ctx.term(ENERGY_DYNAMIC, "mJ", add_bands(components, dynamic_source),
+             dynamic_source)
+
     static, static_blocked = _static_band(ctx, e2e)
     if static_blocked:
+        root = ctx.refusal_reason("e2e_latency_s") or "no reason was recorded"
         ctx.refuse(ENERGY_HEADLINE, "static power is declared but the priced latency "
-                                    "it multiplies is unavailable")
+                                    f"it multiplies is unavailable, because {root}")
         _programming_energy(ctx)
         return
     if static is not None:

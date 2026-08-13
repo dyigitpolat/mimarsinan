@@ -1,0 +1,109 @@
+{
+  "format_version": 1,
+  "name": "odin",
+  "display_name": "ODIN (28 nm FDSOI, Frenkel 2019 — measured silicon @ 0.55 V / 75 MHz)",
+  "description_file": "odin.md",
+  "validity": {
+    "measurement_kind": "silicon",
+    "technology_node_nm": 28.0,
+    "supply_v": 0.55,
+    "temperature_c": 24.0,
+    "array_size_assumed": "one 256-neuron, 64k-synapse crossbar core; 4-bit synapses (3-bit weight + 1 mapping bit); 320 um x 270 um",
+    "notes": "Measured on silicon, averaged over 9 test chips at 24 C (Fig. 8b). The declared corner is 0.55 V at f_clk = 75 MHz, the maximum frequency at that supply. ODIN's published power model is P = P_leak + P_idle x f_clk + E_SOP x r_SOP (Eq. 2), so the clock-proportional idle term is folded into p_static_per_core AT THE DECLARED CLOCK; a run at another clock must restate it and say so."
+  },
+  "constants": {
+    "area_per_core_total": {
+      "nominal": 86400.0,
+      "unit": "um^2",
+      "evidence_kind": "published",
+      "citation": "frenkel2019odin Fig. 8a caption and Fig. 8b, p.8",
+      "note": "'Chip area outside the 320um x 270um of the ODIN neuromorphic processor is occupied [by other blocks]' — 320 x 270 = 86400 um^2 = 0.086 mm^2, the headline area. Supersedes the decomposed area constants; never sum both."
+    },
+    "area_per_cell": {
+      "nominal": 0.68,
+      "unit": "um^2",
+      "evidence_kind": "published",
+      "citation": "frenkel2019odin Abstract and Section III, p.1 and p.5",
+      "note": "'only 0.68um2 per 4-bit synapse'. Declared for decomposition studies, not summed with the aggregate above. Cross-check: 65536 x 0.68 = 44564 um^2, i.e. 51.6% of the 86400 um^2 core — about half the core is the synapse array, leaving the neurons, the SDSP update logic, the scheduler and the controller."
+    },
+    "area_global_fixed": {
+      "nominal": 0.0,
+      "unit": "mm^2",
+      "evidence_kind": "derived",
+      "citation": "frenkel2019odin Fig. 8a, p.8",
+      "derivation": "The published 320 um x 270 um IS the whole neuromorphic processor and is already charged by area_per_core_total over the single core. Silicon outside it belongs to other blocks on the shared test chip, not to ODIN."
+    },
+    "e_mac": {
+      "nominal": 8.43,
+      "unit": "pJ",
+      "evidence_kind": "published",
+      "citation": "frenkel2019odin Fig. 8b and Section IV-A, p.8",
+      "note": "'Incr. energy/SOP (ESOP) 8.43pJ @0.55V'. The INCREMENTAL energy of one more synaptic operation, measured by saturating the scheduler and subtracting leakage and idle power. The paper states it 'includes the contributions of reading and updating the synaptic weight according to the SDSP learning rule, reading and updating the associated neuron state, as well as the controller and scheduler overheads' — which is exactly why e_neuron_update is NOT declared for this target: it is already inside this number. Deliberately NOT the 12.7 pJ headline, which is Eq. (3)'s whole-chip power divided by the SOP rate and therefore contains leakage and idle power (see odin.md)."
+    },
+    "p_static_global": {
+      "nominal": 27.3,
+      "unit": "uW",
+      "evidence_kind": "published",
+      "citation": "frenkel2019odin Fig. 8b and Section IV-A, p.8",
+      "note": "'Leakage power (Pleak) 27.3uW @0.55V' — the P_leak term of Eq. (2), leakage with no clock activity, independent of frequency."
+    },
+    "p_static_per_core": {
+      "nominal": 133.5,
+      "unit": "uW",
+      "evidence_kind": "derived",
+      "citation": "frenkel2019odin Fig. 8b and Section IV-A, p.8",
+      "derivation": "The P_idle x f_clk term of Eq. (2) evaluated at this profile's declared clock: 1.78 uW/MHz x 75 MHz = 133.5 uW. ODIN has exactly one core, so a per-core declaration charges it once.",
+      "note": "Clock-proportional idle power, not leakage — a run at another clock must restate it, and 'Idle power (Pidle) 1.78uW/MHz @0.55V' is the rate to restate it from."
+    },
+    "t_cycle": {
+      "nominal": 26.6667,
+      "unit": "ns",
+      "evidence_kind": "derived",
+      "citation": "frenkel2019odin Section II and Section IV-A, p.3 and p.8",
+      "derivation": "'the maximum SOP rate ODIN can handle is equal to fclk/2 as each SOP takes two clock cycles to complete' — 2 / 75 MHz = 26.667 ns per synaptic operation at the declared clock.",
+      "note": "ODIN's pipeline step IS one SOP; there is no separate network timestep at this level."
+    },
+    "conductance_levels": {
+      "nominal": 8.0,
+      "unit": "levels",
+      "evidence_kind": "published",
+      "citation": "frenkel2019odin Section IV-A, p.8",
+      "note": "'each synapse consisting of a 3-bit weight and one bit of mapping table' — 2^3 = 8 weight values. Digital SRAM synapses, so this is a precision fact, not an analog conductance count."
+    },
+    "write_sigma": {
+      "nominal": 0.0,
+      "unit": "fraction",
+      "evidence_kind": "derived",
+      "citation": "frenkel2019odin Section III, p.5",
+      "derivation": "Synaptic weights live in digital SRAM, so a written weight has no analog programming spread. Zero is a fact about the technology, not a missing measurement."
+    },
+    "read_sigma": {
+      "nominal": 0.0,
+      "unit": "fraction",
+      "evidence_kind": "derived",
+      "citation": "frenkel2019odin Section III, p.5",
+      "derivation": "Digital SRAM read; no analog column-current sensing, so no read spread."
+    },
+    "area_per_adc": {
+      "nominal": 0.0,
+      "unit": "um^2",
+      "evidence_kind": "derived",
+      "citation": "frenkel2019odin Section II, p.3",
+      "derivation": "ODIN is an all-digital design with a time-multiplexed SRAM crossbar; there is no analog-to-digital converter in the datapath, so the count is zero by construction rather than unknown."
+    },
+    "e_adc_conversion": {
+      "nominal": 0.0,
+      "unit": "pJ",
+      "evidence_kind": "derived",
+      "citation": "frenkel2019odin Section II, p.3",
+      "derivation": "No ADC exists in ODIN; see area_per_adc."
+    },
+    "t_adc_conversion": {
+      "nominal": 0.0,
+      "unit": "ns",
+      "evidence_kind": "derived",
+      "citation": "frenkel2019odin Section II, p.3",
+      "derivation": "No ADC exists in ODIN; see area_per_adc."
+    }
+  }
+}

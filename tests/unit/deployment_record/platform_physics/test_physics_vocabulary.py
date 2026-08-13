@@ -8,7 +8,7 @@ from mimarsinan.deployment_record.platform_physics.constants import (
     keys_in_group,
     spec_for,
 )
-from mimarsinan.deployment_record.platform_physics.units import DIMENSIONS, unit_for
+from mimarsinan.deployment_record.units import DIMENSIONS, unit_for
 
 
 def test_every_spec_declares_a_known_group_and_dimension():

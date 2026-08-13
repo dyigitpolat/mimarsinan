@@ -1,4 +1,8 @@
-"""Dimensional units for physics constants — the one conversion to canonical SI."""
+"""Dimensional units — the one conversion to canonical SI, shared by both sides.
+
+Physics constants and the quantities they multiply must agree on what a unit means,
+so the unit system sits above both rather than inside either.
+"""
 
 from __future__ import annotations
 

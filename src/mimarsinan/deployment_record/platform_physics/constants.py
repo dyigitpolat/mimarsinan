@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Dict, Iterable, Mapping, Tuple
 
 from mimarsinan.deployment_record.platform_physics import vocabulary
-from mimarsinan.deployment_record.platform_physics.units import DIMENSIONS, unit_for
+from mimarsinan.deployment_record.units import DIMENSIONS, unit_for
 
 PHYSICS_GROUPS: Tuple[str, ...] = vocabulary.GROUPS
 

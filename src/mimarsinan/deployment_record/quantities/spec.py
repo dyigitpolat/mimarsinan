@@ -11,7 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, Iterable, Iterator, Mapping, Tuple
 
-from mimarsinan.deployment_record.platform_physics.units import (
+from mimarsinan.deployment_record.units import (
     DATA,
     DIMENSIONLESS,
     DIMENSIONS,

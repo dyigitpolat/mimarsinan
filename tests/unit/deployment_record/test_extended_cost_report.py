@@ -100,7 +100,10 @@ def test_candidate_report_carries_no_segments_and_the_same_term_names():
     assert report.segments == ()
     assert find_term(report.area, "chip_area_mm2").name in ABSOLUTE_TERM_NAMES
     assert find_term(report.latency, "e2e_latency_s").name in ABSOLUTE_TERM_NAMES
-    assert find_term(report.energy, "energy_per_inference_mj").value == pytest.approx(26e-3)
+    # Marginal switching energy over the events, plus static power over the wall.
+    assert find_term(report.energy, "energy_per_inference_mj").value == pytest.approx(
+        2.2966e-12 * 1e6 * 1e3 + 15.7301e-6 * 20 * 0.064 * 1e3, rel=1e-4
+    )
     assert find_term(report.throughput, "throughput_inferences_s").value == pytest.approx(
         1 / 0.064
     )

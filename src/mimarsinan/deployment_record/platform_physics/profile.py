@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, Mapping, Optional, Tuple
 
 from mimarsinan.deployment_record.platform_physics.constants import spec_for
-from mimarsinan.deployment_record.platform_physics.units import to_canonical, unit_for
+from mimarsinan.deployment_record.units import to_canonical, unit_for
 from mimarsinan.deployment_record.schema.provenance import Band
 from mimarsinan.deployment_record.schema.serde import require_choice, strict_kwargs
 

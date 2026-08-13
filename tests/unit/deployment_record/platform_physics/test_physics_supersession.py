@@ -47,14 +47,29 @@ def test_superseded_by_is_empty_for_an_ordinary_constant():
 
 
 def test_the_truenorth_profile_exercises_the_rule():
-    """Its 26 pJ/event is whole-chip power over events; the static floor is inside it."""
+    """Its published per-core footprint contains the cells and neuron logic."""
     physics = get_platform_physics("truenorth")
-    assert physics.has("e_synaptic_event_total")
-    assert physics.has("p_static_per_core")
+    assert physics.has("area_per_core_total")
+    assert physics.has("area_per_cell")
     priceable = resolve_supersessions(physics.constants)
-    assert "e_synaptic_event_total" in priceable
-    assert "p_static_per_core" not in priceable
-    assert "e_inter_tile_hop" not in priceable
+    assert "area_per_core_total" in priceable
+    assert "area_per_cell" not in priceable
+    assert "area_per_neuron_logic" not in priceable
+
+
+def test_no_shipped_profile_prices_from_an_energy_aggregate():
+    """The energy aggregate is still the right model for a target that publishes
+    ONLY a whole-chip average, so the rule stays. But an average is a point model:
+    it folds static power into a per-event rate, so it is exact at the operating
+    point it was measured at and wrong everywhere else — TrueNorth's 26 pJ/event
+    overshoots its own published 96 Hz measurement by 256%. Every shipped profile
+    now declares a MARGINAL per-event energy with static power beside it, which is
+    what the silicon-correlation suite checks. Reinstating an aggregate here would
+    silently suppress that static term."""
+    for name in ("truenorth", "loihi", "odin", "isaac_like"):
+        physics = get_platform_physics(name)
+        assert not physics.has("e_synaptic_event_total"), name
+        assert physics.has("e_mac"), name
 
 
 def test_the_aggregates_own_doc_warns_against_summing_both():

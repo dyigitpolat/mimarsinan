@@ -101,6 +101,13 @@ class PricingContext:
     def refuse(self, name: str, reason: str) -> None:
         self.refusals.append(PricingRefusal(name=name, reason=reason))
 
+    def refusal_reason(self, name: str) -> Optional[str]:
+        """Why ``name`` was refused, so a dependent term can name the ROOT cause."""
+        for refusal in self.refusals:
+            if refusal.name == name:
+                return refusal.reason
+        return None
+
     def priced(self, constant: str) -> bool:
         """Declared AND not absorbed by an aggregate."""
         return constant in self.priceable

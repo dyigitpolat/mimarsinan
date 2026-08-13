@@ -59,7 +59,19 @@ why `t_cycle` is **deliberately absent** here.
   cannot back `e2e_latency_s` or `throughput_inferences_s`**, and the wizard's
   completeness readout says exactly that. An operator who knows their throttle rate
   supplies it as an override.
-- **One-sided bands stay one-sided.** `e_synaptic_event_total` is published as a
+- **The per-op energy is MARGINAL, not an aggregate.** Davies' 23.6 pJ is declared as
+  `e_mac`, beside the neuron-update and static-power constants the same table reports
+  separately — not as `e_synaptic_event_total`, which would suppress them. Filed as an
+  aggregate it made Loihi look like it could price a per-inference energy without a
+  timestep; it cannot, and now says so.
+- **`e_neuron_update` is ONE banded constant, not two.** Davies publishes "81 pJ / 52 pJ"
+  for the *active / inactive* neuron update — one quantity at two activity levels. The
+  profile previously declared both it and `e_leak_per_neuron_step` (52 pJ), and the
+  pricer sums both over `neurons_used × timesteps`, so every neuron was charged twice.
+  Only `e_neuron_update` survives, banded 52–81, with the nominal at the INACTIVE cost:
+  the multiplicand is every update, a census cannot say which of them fired, and in a
+  sparse SNN nearly none do.
+- **One-sided bands stay one-sided.** `e_mac` is published as a
   *minimum* (23.6 pJ) and `t_array_read` as a *maximum* (3.5 ns). Both are declared as
   point values at the published number: centring a band on a published extremum would
   fabricate the end the paper withheld.
