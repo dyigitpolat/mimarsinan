@@ -30,6 +30,7 @@ class CandidateQuantityContext:
     activity_factor: Optional[float] = None
     weight_bits: Optional[int] = None
     tiles: Optional[int] = None
+    cores_physical: Optional[int] = None
     neurons_physical: Optional[int] = None
     axons_physical: Optional[int] = None
     host_macs: Optional[int] = None
@@ -73,6 +74,7 @@ def from_candidate(
     _put(values, "timesteps", context.timesteps)
     _put(values, "weight_bits", context.weight_bits)
     _put(values, "tiles", context.tiles)
+    _put(values, "cores_physical", context.cores_physical)
     _put(values, "neurons_physical", context.neurons_physical)
     _put(values, "axons_physical", context.axons_physical)
     _put(values, "host_macs", context.host_macs)

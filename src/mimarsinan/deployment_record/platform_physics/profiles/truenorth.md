@@ -49,12 +49,17 @@ first-class part of the vocabulary rather than a note here.
 
 ## Notes on individual constants
 
+- **`area_per_core_total` (93 600 µm²)** is the published, measured 240 × 390 µm
+  complete-core footprint — crossbar SRAM, neuron block, scheduler, token controller
+  and router together. It sits in the `aggregate` group and **supersedes** the
+  decomposed area constants, exactly as the energy aggregate does: chip area prices as
+  `cores × area_per_core_total + area_global_fixed`, and the per-cell/per-neuron
+  figures below are kept for decomposition studies, never summed with it.
 - **`area_per_cell` (0.152 µm²)** is the published 6T SRAM bitcell. One TrueNorth synapse
   is exactly one bit of that array, so the identification is direct — but it is the
   *storage cell alone* and excludes decoders, sense amps, drivers and the redundant
-  rows/columns. For whole-chip area, prefer the measured per-core footprint
-  (240 × 390 µm = 93 600 µm²) recorded in the research report; `area_global_fixed` is
-  derived from it.
+  rows/columns. For whole-chip area, the superseding `area_per_core_total` is the
+  number to trust; `area_global_fixed` is derived from it.
 - **`area_per_state_bit` (0.15 µm²)** comes from a completely different sentence than
   `area_per_cell` — "storing neuron state (20 bits) requires an additional area of
   3.0 µm² per neuron" — and lands within 1.3 % of the 6T bitcell. Two independent

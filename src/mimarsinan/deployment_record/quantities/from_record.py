@@ -31,15 +31,27 @@ def from_record(record: DeploymentRecord) -> Quantities:
 
     crossbar = record.utilization.crossbar
     values["cells_used"] = _measured(crossbar.cells_used)
-    values["cells_physical"] = _measured(crossbar.cells_physical)
     values["cores_allocated"] = _measured(crossbar.cores_allocated)
     values["neurons_used"] = _measured(crossbar.neurons_used)
-    values["neurons_physical"] = _measured(crossbar.neurons_physical)
     values["axons_used"] = _measured(crossbar.axons_used)
-    values["axons_physical"] = _measured(crossbar.axons_physical)
     values["macs"] = _measured(crossbar.macs)
     # A declaration of the run, not a measurement of the execution.
     _put(values, "weight_bits", crossbar.weight_bits, provenance="static")
+
+    # The *_physical totals are the DECLARED chip's — area and static power price
+    # the chip as declared, never just the cores this mapping happened to allocate.
+    cores = list(record.identity.platform.get("cores") or ())
+    if cores:
+        counts = [int(core.get("count", 1)) for core in cores]
+        axons = [int(core["max_axons"]) for core in cores]
+        neurons = [int(core["max_neurons"]) for core in cores]
+        values["cores_physical"] = QuantityValue(float(sum(counts)), "static")
+        values["axons_physical"] = QuantityValue(
+            float(sum(a * c for a, c in zip(axons, counts))), "static")
+        values["neurons_physical"] = QuantityValue(
+            float(sum(n * c for n, c in zip(neurons, counts))), "static")
+        values["cells_physical"] = QuantityValue(
+            float(sum(a * n * c for a, n, c in zip(axons, neurons, counts))), "static")
 
     partition = record.utilization.partition
     if partition is not None:

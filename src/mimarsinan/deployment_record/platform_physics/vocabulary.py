@@ -18,6 +18,7 @@ from mimarsinan.deployment_record.platform_physics.units import (
     DIMENSIONLESS,
     ENERGY,
     POWER,
+    RATE,
     TIME,
 )
 
@@ -87,9 +88,9 @@ ROWS: Tuple[Tuple[str, str, str, str, str, str], ...] = (
      "Silicon area of one bit of per-neuron state storage."),
     ("membrane_bits", NEURON, DIMENSIONLESS, "bit", "declared, not multiplied",
      "Width of one neuron's membrane/accumulator state register."),
-    ("e_neuron_update", NEURON, ENERGY, "pJ", "neurons_physical x timesteps",
+    ("e_neuron_update", NEURON, ENERGY, "pJ", "neurons_used x timesteps",
      "Energy of one neuron state update at one timestep."),
-    ("e_leak_per_neuron_step", NEURON, ENERGY, "pJ", "neurons_physical x timesteps",
+    ("e_leak_per_neuron_step", NEURON, ENERGY, "pJ", "neurons_used x timesteps",
      "Energy of one leak application per neuron per timestep, where leak is separable."),
     # --- interconnect: routers, tiles, hops -------------------------------------------
     ("area_per_router", INTERCONNECT, AREA, "um^2", "tiles",
@@ -129,7 +130,7 @@ ROWS: Tuple[Tuple[str, str, str, str, str, str], ...] = (
     ("area_global_fixed", GLOBAL, AREA, "mm^2", "declared, not multiplied",
      "Whole-chip area that scales with neither cores nor tiles (pads, PLLs, host "
      "interface)."),
-    ("p_static_per_core", GLOBAL, POWER, "mW", "cores_allocated x e2e_latency_s",
+    ("p_static_per_core", GLOBAL, POWER, "mW", "cores_physical x e2e_latency_s",
      "Static (leakage) power of one core while powered."),
     ("p_static_global", GLOBAL, POWER, "mW", "e2e_latency_s",
      "Static (leakage) power of the whole chip outside its cores."),
@@ -140,17 +141,36 @@ ROWS: Tuple[Tuple[str, str, str, str, str, str], ...] = (
     ("host_compute_rate", HOST, DIMENSIONLESS, "fraction", "host_ops_s",
      "Speed of the deployment host relative to the machine that measured host_ops_s; "
      "1.0 means the measuring machine is the deployment host."),
+    ("host_macs_per_s", HOST, RATE, "G/s", "host_macs",
+     "Sustained forward-MAC throughput of the deployment host, for pricing host time "
+     "STATICALLY (host_macs / host_macs_per_s) when no measured wall exists — the "
+     "candidate-time host model of owner decision 3. A DIVIDING constant: corners "
+     "flip so the band stays monotone."),
     # --- aggregate: what a chip publishes when it publishes no decomposition ----------
     ("e_synaptic_event_total", AGGREGATE, ENERGY, "pJ", "synaptic_events",
      "Whole-system energy per synaptic event: measured chip power divided by the "
      "synaptic events that produced it, so it already contains array, neuron, routing "
      "and static contributions. Most published chips report this rather than a "
      "decomposition. It SUPERSEDES the decomposed terms — never sum both."),
+    ("area_per_core_total", AGGREGATE, AREA, "um^2", "cores_physical",
+     "Measured silicon footprint of one complete core — array, periphery, neuron "
+     "logic, router and local memory together, as published core floorplans report "
+     "it. SUPERSEDES the decomposed area constants; never sum both."),
 )
 
 #: An aggregate constant already contains the terms it supersedes; pricing must use the
 #: aggregate OR the decomposition, never both, or every component is counted twice.
 SUPERSEDES: Mapping[str, Tuple[str, ...]] = {
+    "area_per_core_total": (
+        "area_per_cell",
+        "area_per_cell_per_weight_bit",
+        "area_per_adc",
+        "area_per_row_driver",
+        "area_per_neuron_logic",
+        "area_per_state_bit",
+        "area_per_router",
+        "area_per_tile_fixed",
+    ),
     "e_synaptic_event_total": (
         "e_mac",
         "e_adc_conversion",

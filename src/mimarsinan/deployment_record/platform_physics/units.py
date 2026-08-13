@@ -9,10 +9,11 @@ ENERGY = "energy"
 AREA = "area"
 TIME = "time"
 POWER = "power"
+RATE = "rate"
 DATA = "data"
 DIMENSIONLESS = "dimensionless"
 
-DIMENSIONS: Tuple[str, ...] = (ENERGY, AREA, TIME, POWER, DATA, DIMENSIONLESS)
+DIMENSIONS: Tuple[str, ...] = (ENERGY, AREA, TIME, POWER, RATE, DATA, DIMENSIONLESS)
 
 
 @dataclass(frozen=True)
@@ -46,6 +47,10 @@ _UNITS: Tuple[Unit, ...] = (
     Unit("mW", POWER, 1e-3),
     Unit("uW", POWER, 1e-6),
     Unit("nW", POWER, 1e-9),
+    Unit("1/s", RATE, 1.0),
+    Unit("K/s", RATE, 1e3),
+    Unit("M/s", RATE, 1e6),
+    Unit("G/s", RATE, 1e9),
     Unit("B", DATA, 1.0),
     Unit("KiB", DATA, 1024.0),
     Unit("MiB", DATA, 1024.0 * 1024.0),
@@ -65,6 +70,7 @@ _CANONICAL: Dict[str, str] = {
     AREA: "m^2",
     TIME: "s",
     POWER: "W",
+    RATE: "1/s",
     DATA: "B",
     DIMENSIONLESS: "1",
 }

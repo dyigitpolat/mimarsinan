@@ -37,6 +37,13 @@ from mimarsinan.deployment_record.schema import (
     DeploymentRecord,
     load_deployment_record,
 )
+from mimarsinan.deployment_record.cost.absolute import (
+    DEPLOYMENT_COST_REPORT_FILENAME,
+)
+from mimarsinan.deployment_record.cost.terms import DeploymentCostReport
+from mimarsinan.pipelining.core.platform_constraints_resolver import (
+    build_platform_constraints_resolved,
+)
 from mimarsinan.pipelining.pipeline_steps.verification.deployment_record_step import (
     DeploymentRecordStep,
 )
@@ -117,7 +124,8 @@ def _nevresim_entry() -> dict:
 
 def _build(tmp_path, *, sanafe: bool, nevresim: bool = True,
            gate_samples: int = 0, hcm_entry: dict | None = None,
-           scm_entry: dict | None = None, seed_sanafe: bool = True):
+           scm_entry: dict | None = None, seed_sanafe: bool = True,
+           physics_profile: str | None = None):
     config = default_config()
     config["enable_sanafe_simulation"] = sanafe
     config["enable_nevresim_simulation"] = nevresim
@@ -130,7 +138,14 @@ def _build(tmp_path, *, sanafe: bool, nevresim: bool = True,
     pipeline.seed("hard_core_mapping", _mapping())
     pipeline.seed("deployment_record_scm", scm_entry or _scm_entry())
     pipeline.seed("deployment_record_hcm", hcm_entry or _hcm_entry())
-    pipeline.seed("platform_constraints_resolved", dict(_PLATFORM))
+    platform = dict(_PLATFORM)
+    if physics_profile is not None:
+        # Through the REAL resolver, so the record carries what a run would carry.
+        platform["platform_physics_resolved"] = build_platform_constraints_resolved({
+            "cores": _PLATFORM["cores"],
+            "platform_physics_profile": physics_profile,
+        })["platform_physics_resolved"]
+    pipeline.seed("platform_constraints_resolved", platform)
     if nevresim:
         pipeline.seed("deployment_record_nevresim", _nevresim_entry())
     if sanafe and seed_sanafe:
@@ -312,3 +327,76 @@ class TestFailLoud:
         assert step.validate() == TARGET_METRIC
         assert step.validate_metric_kind() == "carried"
         assert pipeline.get_target_metric() == TARGET_METRIC
+
+
+class TestPhysicsReport:
+    """The vendor-priced plane exists exactly when the run declared physics."""
+
+    def _report_path(self, pipeline):
+        return os.path.join(pipeline.working_directory,
+                            DEPLOYMENT_COST_REPORT_FILENAME)
+
+    def test_a_run_without_physics_writes_no_report(self, tmp_path):
+        pipeline, step = _build(tmp_path, sanafe=True)
+        step.run()
+        assert not os.path.exists(self._report_path(pipeline))
+
+    def test_a_declared_profile_writes_the_priced_report(self, tmp_path):
+        pipeline, step = _build(tmp_path, sanafe=True, physics_profile="truenorth")
+        step.run()
+        with open(self._report_path(pipeline), encoding="utf-8") as handle:
+            report = DeploymentCostReport.from_dict(json.load(handle))
+        area = [term for term in report.area if term.name == "chip_area_mm2"]
+        assert area, "the declared profile prices chip area"
+        # 20 declared cores x 0.0936 mm2 + 46.6 mm2 of periphery.
+        assert area[0].value == pytest.approx(20 * 0.0936 + 46.6)
+        assert area[0].band is not None
+        assert "akopyan2015truenorth" in area[0].source
+
+    def test_the_measured_plane_is_untouched_by_the_priced_one(self, tmp_path):
+        """Byte-identity where it matters: adding physics must not move a single
+        measured number, only append predicted terms."""
+        bare, bare_step = _build(tmp_path / "bare", sanafe=True)
+        bare_step.run()
+        priced, priced_step = _build(
+            tmp_path / "priced", sanafe=True, physics_profile="truenorth")
+        priced_step.run()
+
+        def _record(pipeline):
+            payload = json.load(open(
+                os.path.join(pipeline.working_directory,
+                             DEPLOYMENT_RECORD_FILENAME), encoding="utf-8"))
+            # Only the run's own coordinates and the physics declaration itself may
+            # differ; every measured/derived field must be identical.
+            for key in ("platform", "created_at", "run_dir"):
+                payload["identity"][key] = None
+            return payload
+
+        assert _record(bare) == _record(priced)
+
+        def _cost(pipeline):
+            payload = load_cost_record(
+                os.path.join(pipeline.working_directory, COST_RECORD_FILENAME)
+            ).to_dict()
+            payload["provenance"] = None  # carries the run dir
+            return payload
+
+        assert _cost(bare) == _cost(priced)
+
+    def test_refusals_are_visible_in_the_report(self, tmp_path):
+        pipeline, step = _build(tmp_path, sanafe=True, physics_profile="truenorth")
+        step.run()
+        with open(self._report_path(pipeline), encoding="utf-8") as handle:
+            report = DeploymentCostReport.from_dict(json.load(handle))
+        assert any(note.startswith("refused ") for note in report.notes), (
+            "what the physics could NOT price must be stated, not silently missing"
+        )
+
+    def test_a_no_sanafe_run_still_prices_what_it_can(self, tmp_path):
+        """No measured plane at all: the priced terms stand alone."""
+        pipeline, step = _build(tmp_path, sanafe=False, physics_profile="truenorth")
+        step.run()
+        with open(self._report_path(pipeline), encoding="utf-8") as handle:
+            report = DeploymentCostReport.from_dict(json.load(handle))
+        assert report.segments == ()
+        assert [t.name for t in report.area] == ["chip_area_mm2"]

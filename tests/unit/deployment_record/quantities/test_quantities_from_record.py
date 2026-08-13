@@ -16,13 +16,15 @@ from unit.deployment_record.record_fixtures import (
 # The fixture's census, restated once (record_fixtures is the source of these numbers).
 _EXPECTED = {
     "cells_used": 15000.0,
-    "cells_physical": 196608.0,
+    # The declared platform (identity fixture): 20 cores of 256x256.
+    "cells_physical": 20 * 256 * 256.0,
+    "cores_physical": 20.0,
     "cores_allocated": 3.0,
     "macs": 15000.0,
     "neurons_used": 150.0,
-    "neurons_physical": 768.0,
+    "neurons_physical": 20 * 256.0,
     "axons_used": 300.0,
-    "axons_physical": 768.0,
+    "axons_physical": 20 * 256.0,
     "tiles": 1.0,
     "weight_bits": 8.0,
     "pass_count": 2.0,
@@ -75,6 +77,20 @@ def test_record_quantities_are_measured_except_declarations():
     assert quantities.get("latency_steps").provenance == "measured"
     assert quantities.get("pass_count").provenance == "measured"
     assert quantities.get("weight_bits").provenance == "static"
+    assert quantities.get("cells_physical").provenance == "static"
+
+
+def test_physical_totals_price_the_declared_chip_not_the_allocation():
+    """The fixture allocates 3 cores of a 20-core declaration: area and static power
+    multiply the CHIP as declared, so the physical totals must be the platform's."""
+    record = make_full_record()
+    quantities = from_record(record)
+    assert quantities.get("cores_physical").value == 20.0
+    assert quantities.get("cells_physical").value == 20 * 256 * 256.0
+    assert record.utilization.crossbar.cells_physical == 196608, (
+        "the crossbar report still carries the ALLOCATED extent; the quantity "
+        "deliberately does not read it"
+    )
 
 
 def test_absent_fragments_yield_absent_quantities_never_zeros():

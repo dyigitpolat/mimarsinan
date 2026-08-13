@@ -83,6 +83,15 @@ def find_term(terms: Sequence[CostTerm], name: str) -> CostTerm:
     raise KeyError(f"no cost term named {name!r}; have {[t.name for t in terms]}")
 
 
+def find_term_or_none(terms: Sequence[CostTerm], name: str) -> Optional[CostTerm]:
+    """The named term, or None — for partial (candidate) reports, where a missing
+    term means the axis is unavailable rather than the report being malformed."""
+    for term in terms:
+        if term.name == name:
+            return term
+    return None
+
+
 @dataclass(frozen=True)
 class SegmentInitCost:
     """One scheduled segment's initialization cost (reset constant + payload)."""

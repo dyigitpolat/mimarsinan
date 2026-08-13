@@ -25,7 +25,7 @@ from mimarsinan.deployment_record.build.from_simulators import (
     segment_timings_from_sanafe,
     tiles_from_sanafe,
 )
-from mimarsinan.deployment_record.cost import cost_record_from_deployment_record
+from mimarsinan.deployment_record.cost import cost_record_from_deployment_record, emit_physics_report
 from mimarsinan.deployment_record.schema import (
     AccuracyReadRecord,
     AccuracyRecord,
@@ -246,13 +246,16 @@ class DeploymentRecordStep(PipelineStep):
                 self.pipeline.working_directory,
             )
 
+        # Vendor-priced plane iff the run declared physics (else byte-identical).
+        report_path = emit_physics_report(record, self.pipeline.working_directory)
         print(
             f"[DeploymentRecordStep] sealed {path} "
             f"(fragments: energy={'yes' if energy else 'no'}, "
             f"noc={'yes' if noc else 'no'}, "
             f"boundaries={'yes' if boundaries is not None else 'no'}, "
             f"adaptation={'yes' if adaptation else 'no'}; "
-            f"cost_record={'written' if cost_path else 'n/a'})"
+            f"cost_record={'written' if cost_path else 'n/a'}, "
+            f"physics_report={'written' if report_path else 'none declared'})"
         )
         self.metric = self.pipeline.get_target_metric()
         self._verdict = {

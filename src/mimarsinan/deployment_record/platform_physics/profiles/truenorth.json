@@ -137,6 +137,13 @@
       "citation": "akopyan2015truenorth Section VII, p.1551",
       "derivation": "The whole 42 mW zero-activity corner is already attributed to p_static_per_core across the 4096 cores. Declaring any of it again here would double count the same measurement."
     },
+    "area_per_core_total": {
+      "nominal": 93600.0,
+      "unit": "um^2",
+      "evidence_kind": "published",
+      "citation": "akopyan2015truenorth Fig. 1 caption p.1538; merolla2014a Fig. 2 caption p.14",
+      "note": "'one core occupies 240 x 390 um of silicon' — the measured complete-core footprint (crossbar SRAM, neuron block, scheduler, token controller, router together). Supersedes the decomposed area constants; the per-cell and per-neuron figures remain declared for decomposition studies but are never summed with this."
+    },
     "e_synaptic_event_total": {
       "nominal": 26.0,
       "unit": "pJ",
