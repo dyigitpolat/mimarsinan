@@ -164,6 +164,8 @@ class JointHostContract:
     _hw_only_cache: Dict[str, HwOnlyCache]
     _validation_cache: Dict[str, ValidationEntry]
     _validation_errors: Dict[str, ValidationResult]
+    onchip_min_fraction: float
+    _constraint_census: Dict[str, int]
 
     if TYPE_CHECKING:
 
@@ -215,6 +217,8 @@ class JointHostContract:
         ) -> Tuple[Any, float]: ...
 
         def _ensure_mapper_repr(self, model: Any, placement: str) -> Any: ...
+
+        def onchip_constraint(self, configuration: Dict) -> Optional[Any]: ...
 
         def _collect_softcores(
             self, model: Any, pcfg: Dict,

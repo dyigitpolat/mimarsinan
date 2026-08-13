@@ -18,6 +18,8 @@ from mimarsinan.search.problems.joint import JointArchHwProblem
 from mimarsinan.deployment_record.platform_physics.resolve import (
     resolve_platform_physics,
 )
+from mimarsinan.config_schema.registry import effective_value as _effective
+from mimarsinan.search.option_axes import build_option_axes
 from mimarsinan.search.results import (
     ACCURACY_OBJECTIVE_NAME,
     resolve_active_objectives,
@@ -193,6 +195,14 @@ class ArchitectureSearchStep(PipelineStep):
             encoding_placement=str(
                 self.pipeline.config.get("encoding_layer_placement", "subsume")
             ),
+            # Deployment options the run promoted to search axes, and the floor
+            # that shapes the feasible region they move through.
+            option_axes=build_option_axes(arch_cfg.get("option_axes")),
+            onchip_min_fraction=(
+                float(_effective(self.pipeline.config, "onchip_min_fraction"))
+                if bool(_effective(self.pipeline.config, "onchip_majority_gate"))
+                else 0.0
+            ),
         )
 
         optimizer = create_optimizer(
@@ -256,8 +266,17 @@ class ArchitectureSearchStep(PipelineStep):
             merged_config,
         )
 
+        # The winner's OPTIONS are part of what deploys: the run must execute
+        # under the options the winner was scored with, or the deployed thing is
+        # not the thing the search chose.
+        searched_options = dict(best_cfg.get("deployment_options") or {})
+        for key, value in searched_options.items():
+            self.pipeline.config[key] = value
+
         discovered = {
             "search_mode_used": search_mode,
+            "discovered_deployment_options": searched_options,
+            "constraint_census": problem.constraint_census(),
             "discovered_model_config": model_config if search_mode in ("model", "joint") else None,
             "discovered_platform_constraints": platform_constraints if search_mode in ("hardware", "joint") else None,
             "active_objectives": active_objective_names,

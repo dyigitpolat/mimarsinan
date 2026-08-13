@@ -37,11 +37,13 @@ class _Harness(JointValidateMixin, JointLayoutMixin, JointEvaluateMixin):
     active_objective_names = ACTIVE_NAMES
     encoding_placement = "subsume"
     pruning_fraction = 0.0
+    onchip_min_fraction = 0.0
 
     def __init__(self, active_names=ACTIVE_NAMES):
         self._cache = {}
         self._validation_cache = {}
         self._validation_errors = {}
+        self._constraint_census = {}
         self._hw_only_cache = None
         self.active_objective_names = tuple(active_names)
 

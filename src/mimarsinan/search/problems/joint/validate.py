@@ -218,4 +218,23 @@ class JointValidateMixin(JointHostContract):
                 type(exc).__name__, exc, configuration, exc_info=True,
             )
             return 1e6
-        return 0.0 if self.validate_detailed(resolved).is_valid else 1.0
+        if not self.validate_detailed(resolved).is_valid:
+            return 1.0
+        # A DECLARED deployment constraint: infeasible is a region of the search
+        # space the optimizer can see, not an exception a run discovers after it
+        # has already picked a winner.
+        report = self.onchip_constraint(resolved)
+        if report is None:
+            return 0.0
+        self._constraint_census[report.constraint] = (
+            self._constraint_census.get(report.constraint, 0) + 1
+        )
+        logger.warning(
+            "[JointArchHwProblem] candidate violates %s: %s",
+            report.constraint, report.detail,
+        )
+        return report.violation
+
+    def constraint_census(self) -> Dict[str, int]:
+        """How many candidates each declared constraint has rejected so far."""
+        return dict(self._constraint_census)

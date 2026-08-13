@@ -14,6 +14,14 @@ from mimarsinan.deployment_record.objectives import (
     declared_core_capacity,
 )
 from mimarsinan.mapping.layout.layout_ir_mapping import LayoutIRMapping
+from mimarsinan.mapping.verification.onchip_fraction import (
+    estimate_onchip_fraction,
+)
+from mimarsinan.search.constraints import (
+    ConstraintReport,
+    onchip_floor_violation,
+)
+from mimarsinan.search.option_axes import candidate_option
 from mimarsinan.mapping.layout.layout_types import LayoutHardCoreType, LayoutSoftCoreSpec
 from mimarsinan.mapping.platform.mapping_structure import ChipCapabilities
 from mimarsinan.mapping.platform.platform_constraints import resolve_platform_mapping_params
@@ -141,6 +149,38 @@ class JointLayoutMixin(JointHostContract):
         softcores = layout_mapper.collect_layout_softcores(mapper_repr)
         host_segments = getattr(layout_mapper, "host_side_segment_count", 0)
         return softcores, host_segments
+
+    def onchip_fraction(self, configuration: Dict) -> float:
+        """The share of this candidate's parameters that would sit on chip cores.
+
+        Measured through the deployment's OWN estimator, under the CANDIDATE's
+        placement — the axis that decides which side of the NeuralOps/ComputeOps
+        boundary the encoder lands on.
+        """
+        placement = str(candidate_option(
+            configuration, "encoding_layer_placement", self.encoding_placement,
+        ))
+        model, _params = self._candidate_model(
+            configuration.get("model_config") or {},
+            configuration.get("platform_constraints") or {},
+            placement,
+        )
+        return estimate_onchip_fraction(
+            model,
+            tuple(self.input_shape),
+            int(self.num_classes),
+            encoding_placement=placement,
+            metric="params",
+        ).fraction
+
+    def onchip_constraint(self, configuration: Dict) -> Optional[ConstraintReport]:
+        """The on-chip floor report for this candidate, or None when satisfied."""
+        if self.onchip_min_fraction <= 0.0:
+            return None
+        return onchip_floor_violation(
+            fraction=self.onchip_fraction(configuration),
+            floor=float(self.onchip_min_fraction),
+        )
 
     def _ensure_hw_only_cache(self, placement: str) -> HwOnlyCache:
         """Build the candidate-independent model once for a hardware-only search.

@@ -92,6 +92,9 @@ class JointArchHwProblem(
     #: declaration stands and the encoding is byte-identical to before.
     option_axes: Tuple[OptionAxis, ...] = ()
 
+    #: The on-chip parameter floor this search must respect. 0 = no constraint.
+    onchip_min_fraction: float = 0.0
+
     _cache: Dict[str, Dict[str, float]] = field(default_factory=dict, init=False)
     _hw_only_cache: Dict[str, HwOnlyCache] = field(
         default_factory=dict, init=False
@@ -99,6 +102,9 @@ class JointArchHwProblem(
     _validation_cache: Dict[str, ValidationEntry] = field(default_factory=dict, init=False)
     _validation_errors: Dict[str, ValidationResult] = field(default_factory=dict, init=False)
     _resolved_base: Optional[Dict[str, Any]] = field(default=None, init=False, repr=False)
+    _constraint_census: Dict[str, int] = field(
+        default_factory=dict, init=False, repr=False
+    )
 
     @property
     def _searches_model(self) -> bool:
