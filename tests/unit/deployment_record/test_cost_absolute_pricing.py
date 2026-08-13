@@ -312,6 +312,7 @@ class TestTheConversionModel:
             "conversion_model": {
                 "model": "bit_sliced_crossbar", "array_rows": 128,
                 "array_cols": 128, "adc_sharing_factor": 8, "input_bits": 16,
+                "cells_per_weight": 1, "dac_bits": 1,
             },
             "constants": constants,
         })

@@ -59,6 +59,7 @@ class TestTheBitSlicedCrossbarModel:
             "model": "bit_sliced_crossbar",
             "array_rows": 128, "array_cols": 128,
             "adc_sharing_factor": 8, "input_bits": 16,
+            "cells_per_weight": 1, "dac_bits": 1,
             **params,
         }
         return conversion_model_for(spec)
@@ -114,6 +115,7 @@ class TestTheBitSlicedCrossbarModel:
             conversion_model_for({
                 "model": "bit_sliced_crossbar", "array_rows": 0, "array_cols": 128,
                 "adc_sharing_factor": 8, "input_bits": 16,
+                "cells_per_weight": 1, "dac_bits": 1,
             })
 
     def test_an_unknown_parameter_raises(self):
@@ -121,6 +123,7 @@ class TestTheBitSlicedCrossbarModel:
             conversion_model_for({
                 "model": "bit_sliced_crossbar", "array_rows": 128, "array_cols": 128,
                 "adc_sharing_factor": 8, "input_bits": 16, "surprise": 1,
+                "cells_per_weight": 1, "dac_bits": 1,
             })
 
 
@@ -142,6 +145,7 @@ class TestTheModelIsPartOfTheProfile:
             "conversion_model": {
                 "model": "bit_sliced_crossbar", "array_rows": 128,
                 "array_cols": 128, "adc_sharing_factor": 8, "input_bits": 16,
+                "cells_per_weight": 1, "dac_bits": 1,
             },
             "constants": {},
         })
@@ -155,6 +159,7 @@ class TestIsolation:
         model = conversion_model_for({
             "model": "bit_sliced_crossbar", "array_rows": 64, "array_cols": 64,
             "adc_sharing_factor": 4, "input_bits": 8,
+            "cells_per_weight": 1, "dac_bits": 1,
         })
         derived = model.derive(_quantities(macs=1e5, cells_physical=1e5, timesteps=32))
         assert set(derived) <= {"adc_conversions", "adc_count"}
@@ -164,3 +169,36 @@ class TestIsolation:
         quantities = _quantities(macs=1.0)
         model.derive(quantities)
         assert list(quantities.keys()) == ["macs"]
+
+
+class TestTheIsaacReferenceCase:
+    """The published dataflow, priced: ISAAC-CE performs exactly ONE 8-bit
+    conversion per 16-bit MAC (Shafiee 2016 sec.V). Getting the column-slicing
+    factor wrong would under-count conversion — the dominant analog cost — by 8x."""
+
+    def _isaac(self):
+        return conversion_model_for({
+            "model": "bit_sliced_crossbar",
+            "array_rows": 128, "array_cols": 128, "adc_sharing_factor": 128,
+            "input_bits": 16, "dac_bits": 1, "cells_per_weight": 8,
+        })
+
+    def test_one_conversion_per_mac(self):
+        derived = self._isaac().derive(_quantities(macs=1e6))
+        assert derived["adc_conversions"].value == pytest.approx(1e6)
+
+    def test_one_adc_per_array(self):
+        derived = self._isaac().derive(_quantities(cells_physical=128 * 128 * 8))
+        assert derived["adc_count"].value == pytest.approx(8)
+
+    def test_ignoring_the_column_slicing_would_undercount_eightfold(self):
+        # A MAC count divisible by the row count, so the integration ceiling does
+        # not blur the factor being measured.
+        macs = _quantities(macs=128 * 1000)
+        naive = conversion_model_for({
+            "model": "bit_sliced_crossbar",
+            "array_rows": 128, "array_cols": 128, "adc_sharing_factor": 128,
+            "input_bits": 16, "dac_bits": 1, "cells_per_weight": 1,
+        }).derive(macs)["adc_conversions"].value
+        real = self._isaac().derive(macs)["adc_conversions"].value
+        assert real == pytest.approx(8 * naive)

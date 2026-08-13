@@ -103,9 +103,19 @@ class TestTheArtifact:
         assert "estimated" in text
         assert "silicon" in text
 
-    def test_an_unavailable_axis_renders_as_a_dash_with_its_reason(self):
-        text = render_comparison(compare_platforms(_census(), ("loihi",)))
-        assert "t_cycle" in text
+    def test_an_unavailable_axis_renders_as_a_dash_never_a_zero(self):
+        """The most dangerous cell in the table: a 0 on a minimized axis reads as
+        the BEST possible result, so an axis Loihi cannot back must never render
+        as one — it must render as an absence, with its reason printed below."""
+        comparison = compare_platforms(_census(), ("loihi",))
+        text = render_comparison(comparison)
+        row = [line for line in text.splitlines() if line.startswith("loihi")][0]
+        # Two axes Loihi cannot back, so exactly two absence marks in its row.
+        assert row.count("—") == 2, row
+        assert set(comparison.rows[0].values) == {
+            "chip_area_mm2", "energy_per_inference_mj"
+        }
+        assert "t_cycle" in text, "and the reason is printed"
 
 
 class TestRefusals:

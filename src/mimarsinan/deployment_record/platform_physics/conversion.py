@@ -43,13 +43,25 @@ def _digital(
 def _bit_sliced_crossbar(
     quantities: Quantities, params: Mapping[str, float]
 ) -> Dict[str, QuantityValue]:
-    """The classic analog-IMC dataflow: bit-serial input over a shared-ADC crossbar.
+    """The analog-IMC dataflow ISAAC and PRIME describe: weights bit-sliced across
+    COLUMNS, inputs bit-sliced across TIME, every column converted every cycle.
 
-    Conversions: every ``array_rows`` MACs is ONE column integration producing one
-    analog sum, and a bit-serial input converts that sum once per input slice —
-    ``ceil(macs / array_rows) * input_bits``. A partial column still costs a whole
-    integration, so the division rounds UP: rounding down would price a read the
-    chip performs at nothing.
+    One logical weight occupies ``cells_per_weight`` adjacent columns, so one logical
+    MAC touches that many cells; a length-``array_rows`` column integration therefore
+    covers ``array_rows / cells_per_weight`` logical MACs. Each integration is then
+    converted once per input slice (``input_bits / dac_bits`` cycles):
+
+        adc_conversions = ceil(macs * cells_per_weight / array_rows)
+                          * (input_bits / dac_bits)
+
+    Dropping the column-slicing factor is the mistake worth naming: for ISAAC-CE
+    (16-bit weights over 2-bit cells, 16 1-bit input slices, 128 rows) the formula
+    gives exactly ONE 8-bit conversion per 16-bit MAC, and ignoring the slicing would
+    have under-counted conversion — the dominant cost of an analog accelerator — by
+    8x.
+
+    A partial integration still costs a whole one, so the division rounds UP:
+    rounding down would price a read the chip performs at nothing.
 
     Converters: one ADC per ``adc_sharing_factor`` columns, per array, over as many
     arrays as the declared cell capacity implies.
@@ -57,9 +69,11 @@ def _bit_sliced_crossbar(
     derived: Dict[str, QuantityValue] = {}
     if quantities.has("macs"):
         integrations = math.ceil(
-            quantities.get("macs").value / params["array_rows"]
+            quantities.get("macs").value * params["cells_per_weight"]
+            / params["array_rows"]
         )
-        derived["adc_conversions"] = _derived(integrations * params["input_bits"])
+        slices = params["input_bits"] / params["dac_bits"]
+        derived["adc_conversions"] = _derived(integrations * slices)
     if quantities.has("cells_physical"):
         cells_per_array = params["array_rows"] * params["array_cols"]
         arrays = math.ceil(quantities.get("cells_physical").value / cells_per_array)
@@ -94,11 +108,12 @@ _MODEL_SPECS: Tuple[Tuple[str, str, Tuple[str, ...], Derivation], ...] = (
     ),
     (
         BIT_SLICED_CROSSBAR,
-        "Bit-serial input over an analog crossbar whose columns share converters: "
-        "conversions = ceil(macs / array_rows) * input_bits, converters = arrays * "
-        "ceil(array_cols / adc_sharing_factor). The dataflow ISAAC and PRIME "
+        "Weights bit-sliced across columns, inputs bit-sliced across time, every "
+        "column converted every cycle: conversions = ceil(macs * cells_per_weight / "
+        "array_rows) * (input_bits / dac_bits). The dataflow ISAAC and PRIME "
         "describe, and the reason an analog profile can price conversion at all.",
-        ("array_rows", "array_cols", "adc_sharing_factor", "input_bits"),
+        ("array_rows", "array_cols", "adc_sharing_factor", "input_bits",
+         "cells_per_weight", "dac_bits"),
         _bit_sliced_crossbar,
     ),
 )

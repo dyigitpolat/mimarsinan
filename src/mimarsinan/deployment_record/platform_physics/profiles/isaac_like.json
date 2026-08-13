@@ -1,0 +1,164 @@
+{
+  "format_version": 1,
+  "name": "isaac_like",
+  "display_name": "ISAAC-CE (32 nm analog ReRAM, Shafiee 2016 — SIMULATED)",
+  "description_file": "isaac_like.md",
+  "validity": {
+    "measurement_kind": "simulation",
+    "technology_node_nm": 32.0,
+    "supply_v": null,
+    "temperature_c": null,
+    "array_size_assumed": "ISAAC-CE: 8 arrays of 128x128 2-bit cells per IMA, 8 ADCs per IMA, 12 IMAs per tile, 168 tiles",
+    "notes": "A DESIGN-SPACE STUDY, not a fabricated chip: areas and powers come from CACTI 6.5 at 32 nm plus published component models, and Table I reports POWER only — every energy constant here is derived by multiplying a published power by the paper's own 100 ns cycle and dividing by the printed instance count. The supply voltage is never stated. Treat this as a modelled design point."
+  },
+  "conversion_model": {
+    "model": "bit_sliced_crossbar",
+    "array_rows": 128,
+    "array_cols": 128,
+    "adc_sharing_factor": 128,
+    "input_bits": 16,
+    "dac_bits": 1,
+    "cells_per_weight": 8
+  },
+  "constants": {
+    "area_per_cell": {
+      "nominal": 0.0015259,
+      "unit": "um^2",
+      "evidence_kind": "derived",
+      "citation": "shafiee2016isaac Table I, memristor-array row, p.8",
+      "derivation": "Table I gives 0.0002 mm^2 for 8 arrays: 0.0002 mm^2 / 8 = 25 um^2 per array; / (128 x 128 = 16384 cells) = 1.5259e-3 um^2. Implied cell pitch sqrt(1526 nm^2) = 39.1 nm, i.e. 4F^2 at F = 19.5 nm — a sanity check the number passes.",
+      "note": "The source prints ONE significant figure (0.0002 mm^2), so this carries at best one figure of precision despite the arithmetic's five."
+    },
+    "area_per_adc": {
+      "nominal": 1200.0,
+      "unit": "um^2",
+      "evidence_kind": "derived",
+      "citation": "shafiee2016isaac Table I, ADC row, p.8",
+      "derivation": "0.0096 mm^2 for 8 ADCs / 8 = 0.0012 mm^2 = 1200 um^2 per 8-bit 1.2 GSps ADC at 32 nm."
+    },
+    "area_per_row_driver": {
+      "nominal": 0.166,
+      "unit": "um^2",
+      "evidence_kind": "derived",
+      "citation": "shafiee2016isaac Table I, DAC row, p.8",
+      "derivation": "0.00017 mm^2 = 170 um^2 for 8 x 128 = 1024 DACs; 170 / 1024 = 0.166 um^2 per 1-bit DAC.",
+      "note": "The paper calls a 1-bit DAC 'a trivial circuit (an inverter)', and 0.17 um^2 is about a minimum-size inverter at 32 nm — the plausibility check this number passes."
+    },
+    "area_per_router": {
+      "nominal": 151000.0,
+      "unit": "um^2",
+      "evidence_kind": "published",
+      "citation": "shafiee2016isaac Table I, Router row, p.8",
+      "note": "'Router ... 0.151 (shared by 4 tiles)'. Declared PER ROUTER, so a floorplan with one router per tile over-charges by 4x — ISAAC's c-mesh is concentrated."
+    },
+    "area_per_tile_fixed": {
+      "nominal": 177250.0,
+      "unit": "um^2",
+      "evidence_kind": "derived",
+      "citation": "shafiee2016isaac Table I, tile block, p.8",
+      "derivation": "Tile total 0.215 mm^2 minus the tile's router share 0.151/4 mm^2 = 0.17725 mm^2 = 177250 um^2. Components: eDRAM buffer 0.083 + bus 0.090 + sigmoid 0.0006 + S+A 0.00006 + maxpool 0.00024 + OR 0.0032 mm^2."
+    },
+    "area_global_fixed": {
+      "nominal": 22.88,
+      "unit": "mm^2",
+      "evidence_kind": "published",
+      "citation": "shafiee2016isaac Table I, HyperTransport row, p.8",
+      "note": "The off-chip HyperTransport I/O: 4 links at 1.6 GHz, 6.4 GB/s each. Chip total is 85.4 mm^2, of which 62.5 mm^2 is the 168-tile array."
+    },
+    "e_mac": {
+      "nominal": 0.0018311,
+      "unit": "pJ",
+      "evidence_kind": "derived",
+      "citation": "shafiee2016isaac Table I memristor-array row + Section IV cycle, p.4",
+      "derivation": "Table I publishes POWER, never energy: 2.4 mW x 100 ns = 240 pJ per IMA-cycle; an IMA holds 8 x 128 x 128 = 131072 cells, all activated every cycle; 240 pJ / 131072 = 1.8311 fJ per CELL-MAC.",
+      "note": "Per CELL-MAC (one 1-bit input against one 2-bit cell), which is what the conversion model's synaptic_events counts. A full 16x16 MAC costs 128 of these = 0.234 pJ in the array alone, excluding conversion and periphery."
+    },
+    "e_adc_conversion": {
+      "low": 1.5625,
+      "nominal": 1.5625,
+      "high": 1.667,
+      "unit": "pJ",
+      "evidence_kind": "derived",
+      "citation": "shafiee2016isaac Table I ADC row + Section V 'The Read/ADC Pipeline', p.5",
+      "derivation": "Operational (nominal): 16 mW x 100 ns = 1.6 nJ per IMA-cycle over 8 arrays x 128 columns = 1024 conversions = 1.5625 pJ. Nameplate (high): 2 mW per ADC / 1.2 GSps = 1.667 pJ. The two agree because the text's actual rate is 1.28 GSps.",
+      "note": "The single most important constant in this profile: at ~1 conversion per 16-bit MAC, conversion is the dominant analog cost."
+    },
+    "t_adc_conversion": {
+      "low": 0.781,
+      "nominal": 0.781,
+      "high": 0.833,
+      "unit": "ns",
+      "evidence_kind": "derived",
+      "citation": "shafiee2016isaac Section V + Table I, p.5",
+      "derivation": "Text rate 1/1.28 GSps = 0.781 ns; Table I nameplate 1/1.2 GSps = 0.833 ns. Cross-checked by the text's own '128 bitline currents are processed in 100 ns' = 0.781 ns each."
+    },
+    "e_row_drive": {
+      "nominal": 0.3906,
+      "unit": "pJ",
+      "evidence_kind": "derived",
+      "citation": "shafiee2016isaac Table I DAC row, p.8",
+      "derivation": "4 mW x 100 ns = 400 pJ per IMA-cycle / 1024 rows = 0.3906 pJ per 1-bit row activation."
+    },
+    "t_array_read": {
+      "low": 100.0,
+      "nominal": 100.0,
+      "high": 200.0,
+      "unit": "ns",
+      "evidence_kind": "published",
+      "citation": "shafiee2016isaac Section IV 'The ISAAC Pipeline', p.4",
+      "note": "'a cycle is the time required to perform one crossbar read operation, which for most of our analysis is 100 ns'. The band's upper end is the paper's own sensitivity point: 'if crossbar latency is assumed to be 200 ns, throughput is reduced by 2x'."
+    },
+    "t_cycle": {
+      "low": 100.0,
+      "nominal": 100.0,
+      "high": 200.0,
+      "unit": "ns",
+      "evidence_kind": "published",
+      "citation": "shafiee2016isaac Section VI, p.6",
+      "note": "'the cycle time (100 ns) dictated by the slowest stage, which is the crossbar read'. Same quantity and band as t_array_read: in ISAAC the pipeline stage IS the crossbar read."
+    },
+    "conductance_levels": {
+      "nominal": 4.0,
+      "unit": "levels",
+      "evidence_kind": "published",
+      "citation": "shafiee2016isaac Table I and Section VIII-A, p.9",
+      "note": "'bits per cell / 2' — 4 conductance states. 'We empirically estimated that the CE metric is maximized when using 2 bits per cell (w = 2).' A 16-bit weight therefore spans 8 cells in adjacent columns, which is the cells_per_weight the conversion model declares."
+    },
+    "adc_sharing_factor": {
+      "nominal": 128.0,
+      "unit": "columns",
+      "evidence_kind": "derived",
+      "citation": "shafiee2016isaac Section V, p.5",
+      "derivation": "'128 bitline currents are latched in 128 sample-and-hold circuits. In the next 100 ns cycle, these analog values ... are fed sequentially to a single 1.28 GSps ADC unit' — all 128 columns of an array share one ADC. Confirmed by Table I: 8 arrays, 8 ADCs per IMA."
+    },
+    "membrane_bits": {
+      "nominal": 16.0,
+      "unit": "bit",
+      "evidence_kind": "published",
+      "citation": "shafiee2016isaac Section V, p.4",
+      "note": "'We target 16-bit fixed-point arithmetic'. ISAAC is a value-domain accelerator with no membrane state; this is the accumulator width its shift-and-add pipeline carries."
+    },
+    "e_intra_tile_packet": {
+      "nominal": 0.6836,
+      "unit": "pJ",
+      "evidence_kind": "derived",
+      "citation": "shafiee2016isaac Table I bus row + Section VI, p.6",
+      "derivation": "7 mW x 100 ns = 700 pJ per tile-cycle over a bus sized to move 'up to 1KB of data from eDRAM to IR within a 100 ns stage': 700 pJ / 1024 B = 0.6836 pJ per byte moved on-tile."
+    },
+    "e_dma_per_byte": {
+      "nominal": 2.0215,
+      "unit": "pJ",
+      "evidence_kind": "derived",
+      "citation": "shafiee2016isaac Table I eDRAM-buffer row, p.8",
+      "derivation": "20.7 mW x 100 ns = 2.07 nJ per tile-cycle / 1024 B = 2.0215 pJ per byte read from the tile's eDRAM buffer.",
+      "note": "The ON-CHIP payload cost. The off-chip HyperTransport figure (406 pJ/B) is deliberately NOT used here: the paper states that power is constant rather than activity-proportional, so it belongs in p_static_global instead."
+    },
+    "p_static_global": {
+      "nominal": 10400.0,
+      "unit": "mW",
+      "evidence_kind": "published",
+      "citation": "shafiee2016isaac Table I HyperTransport row + Section VII, p.7",
+      "note": "'The HT is a constant overhead of 10 W, representing half of DaDianNao chip power, but only 16% of ISAAC chip power.' Explicitly CONSTANT, not activity-proportional, which is exactly why it is modelled as static power rather than as a per-byte transport energy."
+    }
+  }
+}

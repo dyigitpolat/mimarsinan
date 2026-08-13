@@ -345,7 +345,35 @@ a loud-but-late refusal at the step) — the served catalog rows carry a
 until the draft declares a profile, exactly mirroring the `resolve_active` refusal.
 Written UX spec; owner screenshot review (standing GUI rule).
 
-### C6 — Profile library + conversion models (data + research, M)
+### C6 — Profile library + conversion models (data + research, M) — AS LANDED
+
+`loihi` (simulation — Davies 2018 Table 2 is explicitly pre-silicon; no `t_cycle`,
+because Loihi is asynchronous, so it honestly cannot back latency or throughput),
+`generic_estimated_22nm` (29 constants, every one `estimated`, each anchored on
+something published and each stating its expected error), and `isaac_like` — the
+first analog target, and the reason `platform_physics/conversion.py` exists.
+
+**PRIME is REFUSED, and that is the result.** The research pass established that
+Chi et al. (ISCA 2016) publishes **no absolute per-unit area, energy, power or
+compute-mode latency at all** — there is no PRIME analogue of ISAAC's Table I, only
+structure, area *percentages*, and CPU-normalised *ratios*. A `prime_like` profile
+could only be built by borrowing ISAAC's energies or a generic node's, which is
+precisely the "no proxy presented as a measurement" line this program exists to
+hold. The structure it *does* publish is recorded
+(`docs/research/physics/prime_constants_research.md`), including its conversion
+model (`macs x 3..4 / 256`, ~64-85x fewer conversions per MAC than ISAAC), so the
+profile becomes writable the moment absolute numbers appear. `neurram_like` is not
+attempted for the same reason: unresearched, therefore undeclared.
+
+The conversion-model defect the ISAAC pass found is worth recording: the first
+formula omitted the WEIGHT-side column slicing, under-counting ISAAC's conversions
+— the paper's own dominant cost, 58% of tile power — by 8x, and over-counting
+PRIME's by 1.5-2x. Erring in opposite directions on its two motivating targets is
+what made it visible. Fixed and pinned by `TestTheIsaacReferenceCase`.
+
+### C6 — original plan
+
+
 
 - `loihi` from the completed research pass (validity `simulation` — Davies Table 2 is
   pre-silicon; band = published extrema, never an invented nominal).
