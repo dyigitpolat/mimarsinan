@@ -184,6 +184,7 @@ def test_vgg16_imagenet_is_feasible_via_scheduling_on_realistic_chip():
     assert unsched.cores_needed == est.cores_needed
 
 
+@pytest.mark.timeout(180)  # ~53 s alone; the global 60 s budget flakes under load
 def test_synthetic_imagenet_conv_segment_overflows_1000_budget():
     """Fast stand-in for the E3 headline: a synthetic early-conv segment of 50,176
     softcores of (576 axons, 64 neurons) — the exact ``features_6`` shape E3 named —

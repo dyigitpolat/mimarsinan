@@ -17,7 +17,15 @@ from types import SimpleNamespace
 
 import torch.nn as nn
 
-from conftest import MockPipeline, default_config, make_tiny_ir_graph, make_tiny_supermodel
+from conftest import (
+    MockPipeline,
+    TinyPerceptronFlow,
+    default_config,
+    make_tiny_ir_graph,
+    make_tiny_supermodel,
+)
+
+from mimarsinan.torch_mapping.encoding_layers import mark_encoding_layers
 
 from mimarsinan.deployment_record.schema import (
     AccuracyReadRecord,
@@ -135,7 +143,7 @@ def _run_hard_core_mapping(pipeline, monkeypatch, *, gate_result=None):
     monkeypatch.setattr(hcm, "run_value_twin_certificate_gate", lambda *a, **k: None)
     monkeypatch.setattr(hcm, "run_value_mapping_metric", lambda *a, **k: 0.875)
 
-    pipeline.seed("model", object())
+    pipeline.seed("model", _stamped_tiny_flow())
     pipeline.seed("ir_graph", make_tiny_ir_graph())
     pipeline.seed("platform_constraints_resolved", dict(_PLATFORM))
     pipeline.seed("deployment_record_scm", dict(_SCM_ENTRY))
@@ -143,6 +151,18 @@ def _run_hard_core_mapping(pipeline, monkeypatch, *, gate_result=None):
     pipeline.prepare_step(step)
     step.run()
     return step
+
+
+def _stamped_tiny_flow():
+    """A real tiny flow, placement-stamped at birth like every production model.
+
+    The HCM emission now seals the on-chip/host partition census, which walks the
+    model's parameters and flow — an ``object()`` stub no longer satisfies the
+    step's contract.
+    """
+    model = TinyPerceptronFlow()
+    mark_encoding_layers(model.get_mapper_repr(), placement="subsume")
+    return model
 
 
 def _fake_gate_result():
@@ -172,6 +192,13 @@ class TestHardCoreMappingEntry:
         assert schedule.params_reloaded == 17  # threaded from the SCM entry
         assert utilization.relay_cores_inserted == 3
         assert len(placement.softcores) > 0
+        # The on-chip/host split is sealed on EVERY run (§8b item 4): an ungated
+        # census over the same SSOT pair the validity gate reads.
+        partition = utilization.partition
+        assert partition is not None
+        assert partition.total_params == partition.onchip_params + partition.host_params
+        assert partition.total_macs == partition.onchip_macs + partition.host_macs
+        assert partition.total_params > 0 and partition.total_macs > 0
         assert sum(
             s.params_programmed for s in schedule.segments()
         ) == entry["weight_programming"]["params_programmed"]

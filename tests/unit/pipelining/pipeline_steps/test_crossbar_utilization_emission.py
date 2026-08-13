@@ -13,7 +13,14 @@ from pathlib import Path
 
 import pytest
 
-from conftest import MockPipeline, default_config, make_tiny_ir_graph
+from conftest import (
+    MockPipeline,
+    TinyPerceptronFlow,
+    default_config,
+    make_tiny_ir_graph,
+)
+
+from mimarsinan.torch_mapping.encoding_layers import mark_encoding_layers
 
 from mimarsinan.mapping.crossbar_utilization import (
     UTILIZATION_RECORD_FILENAME,
@@ -23,6 +30,18 @@ from mimarsinan.mapping.crossbar_utilization import (
 from mimarsinan.pipelining.pipeline_steps.mapping.hard_core_mapping_step import (
     HardCoreMappingStep,
 )
+
+def _stamped_tiny_flow():
+    """A real tiny flow, placement-stamped at birth like every production model.
+
+    The HCM emission now seals the on-chip/host partition census, which walks the
+    model's parameters and flow — an ``object()`` stub no longer satisfies the
+    step's contract.
+    """
+    model = TinyPerceptronFlow()
+    mark_encoding_layers(model.get_mapper_repr(), placement="subsume")
+    return model
+
 
 _PLATFORM = {
     "cores": [{"max_axons": 256, "max_neurons": 256, "count": 20}],
@@ -75,7 +94,7 @@ def _run_mapping_step(pipeline, monkeypatch, platform=_PLATFORM):
     monkeypatch.setattr(hcm, "run_value_twin_certificate_gate", lambda *a, **k: None)
     monkeypatch.setattr(hcm, "run_value_mapping_metric", lambda *a, **k: 1.0)
 
-    pipeline.seed("model", object())
+    pipeline.seed("model", _stamped_tiny_flow())
     pipeline.seed("ir_graph", make_tiny_ir_graph())
     pipeline.seed("platform_constraints_resolved", platform)
     _seed_scm_fragment(pipeline)

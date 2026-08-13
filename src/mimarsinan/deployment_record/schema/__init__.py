@@ -47,6 +47,7 @@ from mimarsinan.deployment_record.schema.traffic import (
     TrafficRecord,
 )
 from mimarsinan.deployment_record.schema.utilization import (
+    ComputePartitionRecord,
     CrossbarUtilizationRecord,
     LayoutStatsRecord,
     UtilizationRecord,
@@ -61,6 +62,7 @@ __all__ = [
     "BoundaryTrafficRecord",
     "CertificateRecord",
     "ComputeOpRecord",
+    "ComputePartitionRecord",
     "CrossbarUtilizationRecord",
     "DEPLOYMENT_RECORD_FILENAME",
     "DEPLOYMENT_RECORD_FORMAT_VERSION",

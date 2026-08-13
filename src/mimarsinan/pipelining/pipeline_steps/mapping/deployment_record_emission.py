@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
+from mimarsinan.deployment_record.build.partition import compute_partition_record
 from mimarsinan.deployment_record.build.from_mapping import (
     placement_record_from_mapping,
     schedule_record_from_mapping,
@@ -33,6 +34,11 @@ def emit_deployment_record_hcm(
     spike_gate_result: Any,
     accuracy: float,
     observes_values: bool,
+    model: Any,
+    ir_graph: Any,
+    input_shape: Any,
+    num_classes: int,
+    encoding_placement: str,
 ) -> None:
     """Build the fragments from the live objects and ``add_entry`` them."""
     schedule = schedule_record_from_mapping(
@@ -41,10 +47,20 @@ def emit_deployment_record_hcm(
         params_reloaded=int(scm_fragment["reuse_plan"]["params_reloaded"]),
     )
     placement = placement_record_from_mapping(hybrid_mapping)
+    # The logical on-chip/host split is an ungated CENSUS sealed on every run
+    # (the validity gate reads the same SSOT pair, so the two can never disagree).
+    partition = compute_partition_record(
+        ir_graph,
+        model,
+        input_shape,
+        int(num_classes),
+        encoding_placement=encoding_placement,
+    )
     utilization = utilization_record_from_mapping(
         hybrid_mapping,
         crossbar_report=crossbar_report,
         relay_cores_inserted=int(scm_fragment["relay_cores_inserted"]),
+        partition=partition,
     )
     read = AccuracyReadRecord(
         metric=float(accuracy),

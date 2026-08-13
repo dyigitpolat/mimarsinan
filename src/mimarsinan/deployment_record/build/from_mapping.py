@@ -17,6 +17,7 @@ from mimarsinan.deployment_record.build.payload_sizes import (
 from mimarsinan.deployment_record.schema import (
     BankRecord,
     ComputeOpRecord,
+    ComputePartitionRecord,
     CrossbarUtilizationRecord,
     LayoutStatsRecord,
     PlacementRecord,
@@ -276,6 +277,7 @@ def utilization_record_from_mapping(
     *,
     crossbar_report: CrossbarUtilizationReport,
     relay_cores_inserted: int,
+    partition: Optional[ComputePartitionRecord] = None,
 ) -> UtilizationRecord:
     """Typed mirrors of the two existing reports + the threaded relay count.
 
@@ -292,4 +294,5 @@ def utilization_record_from_mapping(
         crossbar=CrossbarUtilizationRecord.from_dict(crossbar_report.to_dict()),
         layout=LayoutStatsRecord.from_dict(stats_dict),
         relay_cores_inserted=int(relay_cores_inserted),
+        partition=partition,
     )

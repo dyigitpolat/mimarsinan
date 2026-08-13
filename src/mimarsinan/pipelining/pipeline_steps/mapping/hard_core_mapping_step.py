@@ -188,6 +188,13 @@ class HardCoreMappingStep(PipelineStep):
             spike_gate_result=spike_gate_result,
             accuracy=float(acc),
             observes_values=plan.mode_policy().observes_values(),
+            model=model,
+            ir_graph=ir_graph,
+            input_shape=self.pipeline.config["input_shape"],
+            num_classes=int(self.pipeline.config["num_classes"]),
+            encoding_placement=str(
+                self.pipeline.config.get("encoding_layer_placement", "subsume")
+            ),
         )
 
         if self.pipeline.config.get("generate_visualizations", False):

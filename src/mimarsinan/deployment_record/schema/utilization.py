@@ -5,7 +5,43 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from typing import Any, Dict, Mapping, Optional
 
-from mimarsinan.deployment_record.schema.serde import strict_kwargs
+from mimarsinan.deployment_record.schema.serde import optional, strict_kwargs
+
+
+@dataclass(frozen=True)
+class ComputePartitionRecord:
+    """The logical on-chip/host split of the deployed model (§8b item 4).
+
+    Logical censuses — replication-free, so the physics prices both sides of the
+    NeuralOps/ComputeOps boundary from one sealed fact and the floor gate reads the
+    record instead of re-deriving the model.
+    """
+
+    onchip_params: int
+    host_params: int
+    total_params: int
+    onchip_macs: int
+    host_macs: int
+    total_macs: int
+
+    @property
+    def param_fraction(self) -> float:
+        if self.total_params <= 0:
+            return 0.0
+        return self.onchip_params / self.total_params
+
+    @property
+    def mac_fraction(self) -> float:
+        if self.total_macs <= 0:
+            return 0.0
+        return self.onchip_macs / self.total_macs
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> "ComputePartitionRecord":
+        return cls(**strict_kwargs(cls, data))
 
 
 @dataclass(frozen=True)
@@ -87,11 +123,16 @@ class LayoutStatsRecord:
 
 @dataclass(frozen=True)
 class UtilizationRecord:
-    """The utilization fragment, plus the formerly-discarded relay-core count."""
+    """The utilization fragment, plus the formerly-discarded relay-core count.
+
+    ``partition`` is additive-optional (the ``invocations`` precedent): pre-partition
+    records lack the key entirely and load as ``None`` — no format-version bump.
+    """
 
     crossbar: CrossbarUtilizationRecord
     layout: LayoutStatsRecord
     relay_cores_inserted: int
+    partition: Optional[ComputePartitionRecord] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -101,4 +142,7 @@ class UtilizationRecord:
         kwargs = strict_kwargs(cls, data)
         kwargs["crossbar"] = CrossbarUtilizationRecord.from_dict(kwargs["crossbar"])
         kwargs["layout"] = LayoutStatsRecord.from_dict(kwargs["layout"])
+        kwargs["partition"] = optional(
+            ComputePartitionRecord.from_dict, kwargs.get("partition")
+        )
         return cls(**kwargs)
