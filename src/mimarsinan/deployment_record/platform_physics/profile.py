@@ -139,6 +139,9 @@ class PlatformPhysics:
     description_file: str
     validity: PlatformPhysicsValidity
     constants: Mapping[str, PhysicsConstantValue] = field(default_factory=dict)
+    #: The target's DATAFLOW, for the quantities no record counts (ADC
+    #: conversions). Absent = the digital model, which converts nothing.
+    conversion_model: Mapping[str, Any] = field(default_factory=dict)
     format_version: int = PHYSICS_FORMAT_VERSION
 
     def __post_init__(self) -> None:
@@ -189,6 +192,7 @@ class PlatformPhysics:
             "display_name": self.display_name,
             "description_file": self.description_file,
             "validity": self.validity.to_dict(),
+            "conversion_model": dict(self.conversion_model),
             "constants": {k: v.to_dict() for k, v in sorted(self.constants.items())},
         }
 
@@ -200,4 +204,5 @@ class PlatformPhysics:
             key: PhysicsConstantValue.from_dict(value)
             for key, value in (kwargs.get("constants") or {}).items()
         }
+        kwargs["conversion_model"] = dict(kwargs.get("conversion_model") or {})
         return cls(**kwargs)

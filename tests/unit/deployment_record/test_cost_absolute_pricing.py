@@ -285,3 +285,72 @@ class TestDiscipline:
         produced = {term.name for term in pricing.terms}
         refused = set(_reasons(pricing))
         assert not produced & refused
+
+
+class TestTheConversionModel:
+    """An analog target prices conversion because its DATAFLOW says how much of it
+    there is — a count no deployment record could have carried."""
+
+    def _analog(self, **over):
+        constants = {
+            "e_adc_conversion": {"nominal": 2.0, "unit": "pJ",
+                                 "evidence_kind": "estimated", "note": "n"},
+            "area_per_adc": {"nominal": 1000.0, "unit": "um^2",
+                             "evidence_kind": "estimated", "note": "n"},
+            "area_per_cell": {"nominal": 0.1, "unit": "um^2",
+                              "evidence_kind": "estimated", "note": "n"},
+            "e_mac": {"nominal": 0.1, "unit": "pJ",
+                      "evidence_kind": "estimated", "note": "n"},
+            "t_cycle": {"nominal": 1.0, "unit": "us",
+                        "evidence_kind": "estimated", "note": "n"},
+        }
+        constants.update(over)
+        return profile_from_dict({
+            "format_version": 1, "name": "t", "display_name": "T",
+            "description_file": "t.md",
+            "validity": {"measurement_kind": "projection"},
+            "conversion_model": {
+                "model": "bit_sliced_crossbar", "array_rows": 128,
+                "array_cols": 128, "adc_sharing_factor": 8, "input_bits": 16,
+            },
+            "constants": constants,
+        })
+
+    def test_conversion_energy_is_priced_from_the_derived_count(self):
+        pricing = price_absolute(
+            _quantities(synaptic_events=1e5, macs=128 * 1000, host_macs=0), self._analog()
+        )
+        term = _by_name(pricing)["energy_per_inference_mj"]
+        # 1000 integrations x 16 slices x 2 pJ = 32 uJ, on top of the MAC energy.
+        assert term.value == pytest.approx(1e5 * 0.1e-12 * 1e3 + 1000 * 16 * 2e-12 * 1e3)
+
+    def test_converter_area_is_priced_from_the_derived_count(self):
+        pricing = price_absolute(
+            _quantities(cells_physical=128 * 128 * 4, host_macs=0), self._analog()
+        )
+        area = _by_name(pricing)["chip_area_mm2"]
+        # 4 arrays x 16 ADCs x 1000 um^2, plus the cells' own area.
+        assert area.value == pytest.approx(
+            (4 * 16 * 1000.0 + 128 * 128 * 4 * 0.1) * 1e-6
+        )
+
+    def test_a_digital_target_prices_no_conversion(self):
+        pricing = price_absolute(
+            _quantities(synaptic_events=1e6, macs=1e6, host_macs=0), _TRUENORTH
+        )
+        term = _by_name(pricing)["energy_per_inference_mj"]
+        assert term.value == pytest.approx(26e-12 * 1e6 * 1e3), (
+            "the aggregate already contains everything; a zero conversion count adds "
+            "nothing and must not be mistaken for a missing one"
+        )
+
+    def test_a_view_quantity_always_wins_over_a_modeled_one(self):
+        """If a record ever DOES seal a conversion census, the measurement must beat
+        the model rather than the model silently overwriting it."""
+        pricing = price_absolute(
+            _quantities(macs=128 * 1000, adc_conversions=7.0, synaptic_events=0,
+                        host_macs=0),
+            self._analog(),
+        )
+        term = _by_name(pricing)["energy_per_inference_mj"]
+        assert term.value == pytest.approx(7.0 * 2e-12 * 1e3)

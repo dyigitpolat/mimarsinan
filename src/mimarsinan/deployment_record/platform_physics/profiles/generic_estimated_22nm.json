@@ -1,0 +1,234 @@
+{
+  "format_version": 1,
+  "name": "generic_estimated_22nm",
+  "display_name": "Generic 22 nm digital IMC (ALL ESTIMATED — not a real chip)",
+  "description_file": "generic_estimated_22nm.md",
+  "validity": {
+    "measurement_kind": "projection",
+    "technology_node_nm": 22.0,
+    "supply_v": 0.8,
+    "temperature_c": null,
+    "array_size_assumed": "256 x 256 digital SRAM crossbar cores, 8-bit weights",
+    "notes": "EVERY constant in this profile is an ESTIMATE. It describes no real chip and must never be cited as one. It exists so a first-cut co-optimization study can run before a vendor profile is available, and so the estimated-evidence path is exercised end to end by something a reader cannot mistake for a measurement."
+  },
+  "constants": {
+    "area_per_cell": {
+      "low": 0.05,
+      "nominal": 0.09,
+      "high": 0.16,
+      "unit": "um^2",
+      "evidence_kind": "estimated",
+      "note": "A 6T SRAM bitcell holding one weight bit. Anchored on TrueNorth's published 0.152 um^2 6T cell at 28 nm and scaled by area ~ node^2: 0.152 x (22/28)^2 = 0.094 um^2. The band spans a dense foundry cell (0.05) to a relaxed one (0.16), which is roughly the published spread across vendors at this node. Expected error: a factor of ~2 either way."
+    },
+    "area_per_cell_per_weight_bit": {
+      "low": 0.05,
+      "nominal": 0.09,
+      "high": 0.16,
+      "unit": "um^2",
+      "evidence_kind": "estimated",
+      "note": "Digital SRAM storage scales linearly with precision — one bitcell per weight bit — so this equals area_per_cell by construction. Same anchor and same expected error."
+    },
+    "e_mac": {
+      "low": 0.03,
+      "nominal": 0.08,
+      "high": 0.2,
+      "unit": "pJ",
+      "evidence_kind": "estimated",
+      "note": "An 8-bit multiply-accumulate. Horowitz (ISSCC 2014) reports ~0.2 pJ for an 8-bit MAC at 45 nm / 0.9 V; scaling energy by ~(22/45) x (0.8/0.9)^2 gives 0.077 pJ. The band's ends are the unscaled 45 nm figure (high) and an aggressively optimized datapath (low). Expected error: a factor of ~2.5."
+    },
+    "e_neuron_update": {
+      "low": 0.5,
+      "nominal": 2.0,
+      "high": 8.0,
+      "unit": "pJ",
+      "evidence_kind": "estimated",
+      "note": "One membrane update: read state, accumulate, compare, write back. Anchored between Loihi's published 81 pJ (a large asynchronous core doing far more per update) and a bare 24-bit add at this node (~0.1 pJ), landing an order of magnitude above the arithmetic to account for the state SRAM access that dominates. Expected error: a factor of ~4 — this is the least constrained estimate in the profile."
+    },
+    "e_leak_per_neuron_step": {
+      "low": 0.05,
+      "nominal": 0.2,
+      "high": 0.8,
+      "unit": "pJ",
+      "evidence_kind": "estimated",
+      "note": "A leak decrement is a fraction of a full update: one read-modify-write of the same register without the synaptic accumulation, taken as ~10% of e_neuron_update. Expected error: a factor of ~4, inherited from e_neuron_update."
+    },
+    "e_intra_tile_packet": {
+      "low": 0.1,
+      "nominal": 0.4,
+      "high": 1.5,
+      "unit": "pJ",
+      "evidence_kind": "estimated",
+      "note": "Delivering one spike packet inside a tile. Bracketed by TrueNorth's published intra-core SRAM-to-controller transport (~47 fJ/bit x 32 bits = 1.5 pJ, the high end) and Loihi's 1.7 pJ within-tile figure, discounted for a shorter digital wire at 22 nm. Expected error: a factor of ~3."
+    },
+    "e_inter_tile_hop": {
+      "low": 0.5,
+      "nominal": 2.0,
+      "high": 4.0,
+      "unit": "pJ",
+      "evidence_kind": "estimated",
+      "note": "One packet traversal of one inter-tile link. The band brackets the two published digital points directly: TrueNorth's 2.3 pJ/hop at 28 nm and Loihi's 3.0-4.0 pJ/hop at 14 nm, with the low end allowing a shorter link. Expected error: a factor of ~2."
+    },
+    "t_hop": {
+      "low": 1.0,
+      "nominal": 4.0,
+      "high": 8.0,
+      "unit": "ns",
+      "evidence_kind": "estimated",
+      "note": "Latency of one inter-tile link traversal, bracketing the published digital points (TrueNorth 4 ns, Loihi 4.1-6.5 ns). Not added to end-to-end latency by the pricer — timestep-synchronous execution already contains it — so this constant informs NoC studies only."
+    },
+    "t_array_read": {
+      "low": 1.0,
+      "nominal": 3.0,
+      "high": 10.0,
+      "unit": "ns",
+      "evidence_kind": "estimated",
+      "note": "One 256-row array read. Anchored on typical SRAM macro access times at this node (~1-2 ns) plus accumulation, with the high end allowing a slow multi-bank read. Expected error: a factor of ~3."
+    },
+    "t_cycle": {
+      "low": 100.0,
+      "nominal": 1000.0,
+      "high": 10000.0,
+      "unit": "ns",
+      "evidence_kind": "estimated",
+      "note": "The timestep period. A DECLARED DESIGN CHOICE rather than a physical limit: the band spans 100 MHz down to 100 kHz timestep rates, and the 1 us nominal is a fast synchronous digital design. Any real target should override this first — it alone converts latency_steps into seconds, so it gates end-to-end latency and throughput entirely."
+    },
+    "area_per_neuron_logic": {
+      "low": 4.0,
+      "nominal": 9.0,
+      "high": 25.0,
+      "unit": "um^2",
+      "evidence_kind": "estimated",
+      "note": "Per-neuron update logic, excluding state storage. Anchored on TrueNorth's published 11.328 um^2 per neuron at 28 nm (a 2900 um^2 block time-multiplexed 256 ways) scaled by node^2 to 7.0 um^2, rounded up for a less aggressively multiplexed design. Expected error: a factor of ~3."
+    },
+    "area_per_state_bit": {
+      "low": 0.05,
+      "nominal": 0.09,
+      "high": 0.16,
+      "unit": "um^2",
+      "evidence_kind": "estimated",
+      "note": "One bit of membrane state in SRAM — the same bitcell as area_per_cell, so it carries the same anchor, band and expected error."
+    },
+    "membrane_bits": {
+      "nominal": 24.0,
+      "unit": "bit",
+      "evidence_kind": "estimated",
+      "note": "A 24-bit signed accumulator, matching Loihi's independently characterized width and comfortably above TrueNorth's 20 bits. A design choice rather than a measurement, so it is stated as an estimate."
+    },
+    "area_per_router": {
+      "low": 1000.0,
+      "nominal": 4000.0,
+      "high": 15000.0,
+      "unit": "um^2",
+      "evidence_kind": "estimated",
+      "note": "One 5-port mesh router. Typical published NoC router areas at this class of node fall in the low thousands of um^2; the band is wide because buffer depth dominates and no depth is assumed here. Expected error: a factor of ~4."
+    },
+    "area_per_tile_fixed": {
+      "low": 2000.0,
+      "nominal": 8000.0,
+      "high": 30000.0,
+      "unit": "um^2",
+      "evidence_kind": "estimated",
+      "note": "Per-tile overhead that is neither array, neuron logic nor router: schedulers, controllers, local buffers. Taken as ~2x the router area, the ratio TrueNorth's core floorplan roughly exhibits. Expected error: a factor of ~4."
+    },
+    "area_global_fixed": {
+      "low": 2.0,
+      "nominal": 10.0,
+      "high": 40.0,
+      "unit": "mm^2",
+      "evidence_kind": "estimated",
+      "note": "Whole-chip area scaling with neither cores nor tiles: pads, PLLs, host interface. Anchored on TrueNorth's derived 46.6 mm^2 periphery at 28 nm for a 4.3 cm^2 die, scaled down for a smaller die at 22 nm. Expected error: a factor of ~4."
+    },
+    "e_dma_per_byte": {
+      "low": 0.03,
+      "nominal": 0.16,
+      "high": 0.32,
+      "unit": "pJ",
+      "evidence_kind": "estimated",
+      "note": "Moving one byte of programming payload onto the chip. This is the framework's own long-standing DMA band (HBM2 ~3.9 pJ/bit, DDR3 ~20 pJ/bit per Horowitz 2014, off-chip worst case) restated per byte, so this profile and the default-band cost model agree on the one coefficient they share."
+    },
+    "bytes_per_connectivity_entry": {
+      "low": 4.0,
+      "nominal": 8.0,
+      "high": 16.0,
+      "unit": "B",
+      "evidence_kind": "estimated",
+      "note": "Wire size of one connectivity (axon source span) entry. The framework's declared 4/8/16 B band: span entries are exact counts, but their byte size is modeled until a real chip wire format exists."
+    },
+    "t_program_per_byte": {
+      "low": 4.0,
+      "nominal": 80.0,
+      "high": 1000.0,
+      "unit": "ns",
+      "evidence_kind": "estimated",
+      "note": "Wall time to move one programming byte. The band spans a wide parallel configuration bus (4 ns/B) to a slow serial scan chain like TrueNorth's derived 800 ns/B, with a nominal assuming a modest dedicated port. Expected error: two orders of magnitude — this is the widest band in the profile, and deliberately so."
+    },
+    "e_sync_barrier": {
+      "low": 100.0,
+      "nominal": 1000.0,
+      "high": 10000.0,
+      "unit": "pJ",
+      "evidence_kind": "estimated",
+      "note": "Energy of one chip-wide synchronization barrier. The framework's existing ~0.1 / ~1 / ~10 uJ band, which no published chip figure contradicts because none exists — Loihi publishes the barrier TIME but not its energy."
+    },
+    "t_sync_barrier": {
+      "low": 100.0,
+      "nominal": 465.0,
+      "high": 2000.0,
+      "unit": "ns",
+      "evidence_kind": "estimated",
+      "note": "Wall time of one chip-wide barrier. Anchored directly on Loihi's published 113-465 ns mesh-wide range, with the high end allowing a larger mesh. Expected error: a factor of ~4."
+    },
+    "p_static_per_core": {
+      "low": 1.0,
+      "nominal": 50.0,
+      "high": 500.0,
+      "unit": "uW",
+      "evidence_kind": "estimated",
+      "note": "Static (leakage) power per core. The band brackets the two published digital points — TrueNorth's derived 10.25 uW/core at 28 nm and Loihi's derived 815 uW/core at 14 nm — whose 80x spread is itself the reason this band is wide: leakage depends far more on process flavour and power gating than on node. Expected error: an order of magnitude."
+    },
+    "p_static_global": {
+      "low": 0.0,
+      "nominal": 5.0,
+      "high": 50.0,
+      "unit": "mW",
+      "evidence_kind": "estimated",
+      "note": "Whole-chip leakage outside the cores: I/O ring, PLLs, host interface. Taken as a small fraction of a populated chip's core leakage. Expected error: an order of magnitude."
+    },
+    "conductance_levels": {
+      "nominal": 256.0,
+      "unit": "levels",
+      "evidence_kind": "estimated",
+      "note": "8-bit digital weights, the precision this profile's array assumes. A design choice, not a measurement."
+    },
+    "write_sigma": {
+      "nominal": 0.0,
+      "unit": "fraction",
+      "evidence_kind": "estimated",
+      "note": "Zero by the profile's own assumption that the array is DIGITAL SRAM, which has no analog programming spread. Stated as estimated rather than derived because the digital assumption is this profile's premise, not a fact about a real chip."
+    },
+    "read_sigma": {
+      "nominal": 0.0,
+      "unit": "fraction",
+      "evidence_kind": "estimated",
+      "note": "Zero for the same reason as write_sigma: a digital read has no sensing spread."
+    },
+    "area_per_adc": {
+      "nominal": 0.0,
+      "unit": "um^2",
+      "evidence_kind": "estimated",
+      "note": "Zero because this profile assumes a digital array with no analog-to-digital conversion in the datapath. An analog target must declare its own converter area rather than inherit this."
+    },
+    "e_adc_conversion": {
+      "nominal": 0.0,
+      "unit": "pJ",
+      "evidence_kind": "estimated",
+      "note": "Zero for the same digital-array assumption as area_per_adc."
+    },
+    "t_adc_conversion": {
+      "nominal": 0.0,
+      "unit": "ns",
+      "evidence_kind": "estimated",
+      "note": "Zero for the same digital-array assumption as area_per_adc."
+    }
+  }
+}

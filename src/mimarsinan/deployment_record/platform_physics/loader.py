@@ -8,6 +8,9 @@ from typing import Any, Dict, Mapping
 
 from mimarsinan.chip_simulation.sanafe.presets import PRESETS
 from mimarsinan.deployment_record.platform_physics.constants import spec_for
+from mimarsinan.deployment_record.platform_physics.conversion import (
+    conversion_model_for,
+)
 from mimarsinan.deployment_record.platform_physics.profile import (
     PHYSICS_FORMAT_VERSION,
     PhysicsConstantValue,
@@ -118,12 +121,17 @@ def profile_from_dict(data: Mapping[str, Any]) -> PlatformPhysics:
         key: _constant_from_dict(key, value)
         for key, value in (data.get("constants") or {}).items()
     }
+    conversion_model = dict(data.get("conversion_model") or {})
+    # Validate the dataflow HERE: an undescribable one must fail at declaration,
+    # not as a conversion count nobody can defend at pricing time.
+    conversion_model_for(conversion_model)
     return PlatformPhysics(
         name=str(data["name"]),
         display_name=str(data["display_name"]),
         description_file=str(data["description_file"]),
         validity=PlatformPhysicsValidity.from_dict(data["validity"]),
         constants=constants,
+        conversion_model=conversion_model,
     )
 
 
@@ -181,4 +189,5 @@ def apply_overrides(
         description_file=physics.description_file,
         validity=physics.validity,
         constants=constants,
+        conversion_model=physics.conversion_model,
     )

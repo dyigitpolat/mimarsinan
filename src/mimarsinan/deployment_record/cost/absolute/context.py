@@ -14,6 +14,9 @@ from mimarsinan.deployment_record.cost.terms import CostTerm
 from mimarsinan.deployment_record.platform_physics.constants import (
     resolve_supersessions,
 )
+from mimarsinan.deployment_record.platform_physics.conversion import (
+    conversion_model_for,
+)
 from mimarsinan.deployment_record.platform_physics.profile import PlatformPhysics
 from mimarsinan.deployment_record.quantities.spec import Quantities
 from mimarsinan.deployment_record.schema.provenance import Band
@@ -70,7 +73,19 @@ class PricingContext:
     def create(
         cls, quantities: Quantities, physics: PlatformPhysics
     ) -> "PricingContext":
-        """Supersession is resolved ONCE here: an aggregate absorbs its components."""
+        """Supersession is resolved ONCE here: an aggregate absorbs its components.
+
+        The target's declared DATAFLOW also runs once here, deriving the conversion
+        quantities no record counts. They join the view's own quantities rather than
+        replacing any: a model may only ADD what the record could not know.
+        """
+        model = conversion_model_for(physics.conversion_model)
+        derived = model.derive(quantities)
+        if derived:
+            merged = {key: quantities.get(key) for key in quantities.keys()}
+            for key, value in derived.items():
+                merged.setdefault(key, value)
+            quantities = Quantities(merged)
         return cls(
             quantities=quantities,
             physics=physics,
