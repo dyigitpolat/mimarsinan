@@ -25,7 +25,6 @@ from mimarsinan.chip_simulation.sanafe.records import (
     SanafeSegmentRecord,
 )
 
-from mimarsinan.models.spiking.hybrid.carry import require_backend_carry
 
 
 class SanafeRunner(SanafeNeuralStageMixin, SanafeNeuralStageRecordMixin, SanafeSegmentIOMixin):
@@ -135,7 +134,6 @@ class SanafeRunner(SanafeNeuralStageMixin, SanafeNeuralStageRecordMixin, SanafeS
         self._arch_built_for_T: Optional[int] = None
         self._arch_name, self._last_chip = "<unbuilt>", None
         self._arch_geometry: Optional[SanafeArchGeometry] = None  # built lazily
-        require_backend_carry(mapping, "sanafe")  # carry-or-refuse
 
 
     def run(self, sample_input: np.ndarray, sample_index: int) -> SanafeRunRecord:

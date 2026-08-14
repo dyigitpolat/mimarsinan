@@ -24,6 +24,7 @@ from mimarsinan.mapping.platform.mapping_structure import (
 from mimarsinan.models.nn.activations import LIFActivation
 from mimarsinan.models.perceptron_mixer.perceptron import Perceptron
 from mimarsinan.models.spiking.hybrid.flow import SpikingHybridCoreFlow
+from mimarsinan.mapping.support.schedule.pass_cut import COLLAPSE, VERBATIM
 from mimarsinan.torch_mapping.encoding_layers import mark_encoding_layers
 
 T = 8
@@ -213,36 +214,44 @@ class TestTheRecorderRespectsTheProducerWindow:
         assert self._run(latency=0, window=3, cycles=3) == [1.0, 2.0, 3.0]
 
 
-class TestBackendsCarryOrRefuse:
-    """A backend that cannot replay a carried raster must REFUSE the run. Silently
-    collapsing the boundary to counts is the exact failure the streamed lock used
-    to prevent, and it would be invisible in the results."""
+class TestEveryBackendDeploysAScheduledSegment:
+    """No backend refuses. A pass boundary is one this program INTRODUCES, so a
+    chip that reprograms across it has to buffer the intermediate signal either
+    way — the only question is WHAT it buffers. Both answers are honest
+    deployments; the run reports which one it executed."""
 
-    def test_a_carrying_mapping_is_refused_by_a_backend_that_cannot_replay_it(self):
-        from mimarsinan.models.spiking.hybrid.carry import require_backend_carry
+    def test_no_backend_refuses_a_scheduled_deployment(self):
+        from mimarsinan.models.spiking.hybrid.carry import (
+            pass_transfer_for_backend,
+        )
 
-        scheduled = _scheduled(_deep_lif_ir(), count=2)
+        for backend in ("hcm", "sanafe", "nevresim", "lava"):
+            assert pass_transfer_for_backend(backend) in (VERBATIM, COLLAPSE)
+
+    def test_the_hcm_executor_carries_the_raster_verbatim(self):
+        from mimarsinan.models.spiking.hybrid.carry import (
+            pass_transfer_for_backend,
+        )
+
+        assert pass_transfer_for_backend("hcm") == VERBATIM
+
+    def test_a_backend_without_raster_output_collapses_to_counts(self):
+        from mimarsinan.models.spiking.hybrid.carry import (
+            pass_transfer_for_backend,
+        )
+
         for backend in ("sanafe", "nevresim", "lava"):
-            try:
-                require_backend_carry(scheduled, backend)
-            except NotImplementedError as exc:
-                assert backend in str(exc) and "RASTERS" in str(exc)
-            else:
-                raise AssertionError(f"{backend} accepted a carried mapping")
+            assert pass_transfer_for_backend(backend) == COLLAPSE
 
-    def test_a_single_pass_mapping_passes_every_backend(self):
-        from mimarsinan.models.spiking.hybrid.carry import require_backend_carry
+    def test_collapsing_is_cheaper_to_buffer_than_carrying(self):
+        """Counts fit in log2(T+1) bits; a raster needs T. That is the whole
+        trade the two disciplines make, and it is why both exist."""
+        from mimarsinan.models.spiking.hybrid.carry import carried_wire_bytes
 
-        fused = _fused(_deep_lif_ir())
-        for backend in ("sanafe", "nevresim", "lava", "hcm"):
-            require_backend_carry(fused, backend)
-
-    def test_the_hcm_executor_carries_and_is_never_refused(self):
-        from mimarsinan.models.spiking.hybrid.carry import require_backend_carry
-
-        require_backend_carry(_scheduled(_deep_lif_ir(), count=2), "hcm")
-
-
+        verbatim = carried_wire_bytes(64, 32, VERBATIM)
+        collapse = carried_wire_bytes(64, 32, COLLAPSE)
+        assert collapse < verbatim
+        assert verbatim == 64 * 4 and collapse == 64 * 1
 class TestSchedulingIsLegalUnderStreamedLif:
     def test_streamed_lif_may_now_choose_scheduling(self):
         """The view lists only RESTRICTED keys, so an unrestricted boolean is

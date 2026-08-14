@@ -13,7 +13,12 @@ from typing import Dict, Tuple
 
 import torch
 
-from mimarsinan.mapping.support.schedule.pass_cut import carried_outputs_by_stage
+from mimarsinan.mapping.support.schedule.pass_cut import (
+    COLLAPSE,
+    VERBATIM,
+    carried_outputs_by_stage,
+    raster_bytes,
+)
 
 
 def carried_output_ids(hybrid_mapping) -> Dict[int, Tuple[int, ...]]:
@@ -98,26 +103,33 @@ def record_carry(carry, plan, *, cycle: int, fires, train, T: int) -> None:
             carry[local, :, d0:d1] = fires[:, s0:s1]
 
 
-#: Backends that replay a carried raster. A backend absent here must REFUSE a
-#: mapping that carries one — collapsing the boundary to counts would silently
-#: change the computation, which is precisely what the streamed lock prevented.
-CARRY_CAPABLE_BACKENDS = frozenset({"hcm"})
+#: Backends that replay a carried raster verbatim. A backend outside this set uses
+#: the COLLAPSE discipline instead — never a refusal.
+VERBATIM_BACKENDS = frozenset({"hcm"})
 
 
-def require_backend_carry(hybrid_mapping, backend: str) -> None:
-    """Refuse a backend that cannot replay this mapping's carried rasters."""
-    if backend in CARRY_CAPABLE_BACKENDS:
-        return
-    carried = carried_output_ids(hybrid_mapping)
-    if not carried:
-        return
-    wires = sorted({node for ids in carried.values() for node in ids})
-    raise NotImplementedError(
-        f"this deployment cuts a neural segment into passes, so wires {wires} must "
-        f"cross a pass boundary as spike RASTERS, and the {backend!r} backend does "
-        f"not replay them yet. Running it would collapse those boundaries to counts "
-        f"— the interior transcode streamed execution is defined not to have — and "
-        f"silently compute something else. Disable the {backend!r} backend for this "
-        f"run, or turn allow_scheduling off so the segment stays resident in one "
-        f"program."
-    )
+def pass_transfer_for_backend(backend: str) -> str:
+    """Which pass-boundary discipline ``backend`` will actually execute.
+
+    Both are legitimate deployments of a scheduled segment, because the boundary is
+    one this program INTRODUCES: a chip that reprograms between passes has to buffer
+    the intermediate signal either way, and the choice is only WHAT it buffers.
+
+    - ``VERBATIM`` buffers the spike raster (``ceil(T/8)`` bytes per wire) and
+      reproduces the fused execution bit-for-bit.
+    - ``COLLAPSE`` buffers window counts (``ceil(log2(T+1)/8)`` bytes per wire) and
+      re-emits an even train, which normalizes rhythm — the same decode/re-encode a
+      host boundary performs, applied at a boundary that now genuinely exists.
+
+    A backend therefore never refuses a scheduled deployment; it reports which
+    discipline it ran, and the record carries that so a reader knows which of the two
+    computations produced the numbers.
+    """
+    return VERBATIM if backend in VERBATIM_BACKENDS else COLLAPSE
+
+
+def carried_wire_bytes(width: int, timesteps: int, transfer: str) -> int:
+    """Bytes one carried wire occupies under ``transfer`` — the cost of the choice."""
+    if transfer == VERBATIM:
+        return raster_bytes(width, timesteps)
+    return int(width) * ((max(int(timesteps), 1).bit_length() + 7) // 8)

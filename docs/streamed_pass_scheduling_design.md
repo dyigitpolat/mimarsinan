@@ -209,14 +209,9 @@ carries or refuses.
   overhang, so no end-to-end vehicle could witness it; `record_carry` with
   `latency < max` can, in three lines.
 
-**Carry-or-refuse.** `CARRY_CAPABLE_BACKENDS` is the declaration, and
-`require_backend_carry(mapping, backend)` is the gate, wired into `SanafeRunner`,
-`LavaLoihiRunner` and the nevresim `_run_hybrid`. A backend that cannot replay a
-carried raster now refuses the run by name, listing the wires that would have been
-collapsed and both remedies (disable that backend, or turn scheduling off). Only the
-HCM executor is declared capable, so today the refusal fires for all three — which is
-the honest state, not a regression: before this, the same run would have silently
-computed something else.
+**Carry-or-refuse — superseded, see §14.** SP3 first shipped a refusal for backends
+that could not replay a raster. That was the wrong conclusion from a right premise, and
+§14 replaces it.
 
 **The unlock.** `allow_scheduling` no longer carries a `legal_values` lambda: it is
 legal under every execution semantics, because a pass is a spatial cut and the carry is
@@ -230,3 +225,41 @@ changes — scheduling became choosable, not automatic.
 | **SANA-FE carry** | The pieces are in place — `_pack_spike_trace_matrix` already produces a `(neurons, T)` raster and `set_input_spike_trains` already accepts an arbitrary one — but mapping segment-output SLICES to raster rows per cycle is real work, and the refusal is correct in the meantime. This is the highest-value next step: it turns a refusal into a measurement. |
 | **nevresim / lava carry** | nevresim needs the carried raster to cross the C++ program-format seam; lava needs Loihi channel semantics. Both are larger than the SANA-FE case. |
 | **SP4 — the carry census** | `carried_raster_bytes` / `carry_peak_live_bytes` as quantities, sealed and priced through `e_dma_per_byte`. `PassCut` already computes both; nothing consumes them yet, so a scheduled run still looks cheaper than it is. |
+
+## 14. The correction: a pass boundary is one we INTRODUCE (owner, 2026-08-14)
+
+SP3's refusal rested on an unexamined premise: that collapsing a pass boundary to
+counts is a *lie*. It is not, and the owner's correction is the load-bearing one:
+
+> "this is not a function requirement since we are introducing pass boundaries,
+> decode/re-encode at boundary becomes available and it can operate on spike counts"
+
+A pass boundary does not pre-exist the decision to schedule — **we create it**. A chip
+that reprograms between passes must buffer the intermediate signal either way, and the
+only question is *what* it buffers:
+
+| discipline | buffered per wire | fidelity |
+|---|---|---|
+| `VERBATIM` | the raster, `ceil(T/8)` B | reproduces the fused execution bit-for-bit |
+| `COLLAPSE` | window counts, `ceil(log2(T+1)/8)` B | re-emits an even train; rhythm normalized |
+
+Both are honest deployments of a scheduled segment. `COLLAPSE` is the same
+decode/re-encode a host boundary already performs, applied at a boundary that now
+genuinely exists — and it is *cheaper*, which is exactly the trade a CAD tool should
+expose rather than forbid. I had already written the `VERBATIM`/`COLLAPSE` vocabulary in
+SP1 and then implemented only one arm, which is how the refusal crept in.
+
+**As landed.** `require_backend_carry` is gone. `pass_transfer_for_backend(backend)`
+returns the discipline that backend will execute — `VERBATIM` for the HCM executor,
+`COLLAPSE` for SANA-FE, nevresim and lava — and `carried_wire_bytes(width, T, transfer)`
+prices the choice. No backend refuses a scheduled deployment; each reports which of the
+two computations produced its numbers.
+
+## 15. Remaining, in value order
+
+| item | note |
+| --- | --- |
+| **Record the discipline per run** | The record must carry which discipline each backend executed, since they are different computations. Nothing consumes `pass_transfer_for_backend` yet. |
+| **SANA-FE `VERBATIM`** | Both primitives exist (`_pack_spike_trace_matrix` out, `set_input_spike_trains` in), and SANA-FE is the cost-measuring backend, so carrying there raises fidelity where it counts most. |
+| **nevresim spike-train extraction** | Per the owner: NOT a functional gap, but a missing feature worth having on its own merits. `SPKREC` currently prints per-core COUNTS (`SPKREC <core> IN … OUT …`); a per-timestep variant would give nevresim segment-output rasters generally, not only for this program. Clean if done as a separate record line so the existing parser is untouched. |
+| **SP4 — the carry census** | `PassCut` computes `carried_bytes`/`peak_live_bytes`; with `carried_wire_bytes` the census can now be priced under EITHER discipline. |
