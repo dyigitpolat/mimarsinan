@@ -31,14 +31,21 @@ from mimarsinan.torch_mapping.encoding_layers import mark_encoding_layers
 T = 8
 
 
+#: Signed weights around a small positive bias. All-POSITIVE weights make every
+#: output neuron see nearly the same sum, which collapses the vehicle to one repeated
+#: row — see TestTheVehicleDiscriminates for why that silently weakens every claim here.
+_WEIGHT_SCALE = 2.0
+_BIAS = 0.3
+
+
 def _lif(width, fan_in, scale):
     p = Perceptron(width, fan_in, normalization=nn.Identity())
     p.base_activation = LIFActivation(T=T, activation_scale=torch.tensor(1.0))
     p.activation = p.base_activation
     with torch.no_grad():
-        p.layer.weight.copy_(torch.rand(width, fan_in) * scale)
+        p.layer.weight.copy_((torch.rand(width, fan_in) - 0.5) * scale)
         if p.layer.bias is not None:
-            p.layer.bias.zero_()
+            p.layer.bias.fill_(_BIAS)
     return p
 
 
@@ -52,12 +59,12 @@ def _deep_lif_ir(seed: int = 0):
     """
     torch.manual_seed(seed)
     inp = InputMapper((8,))
-    enc = _lif(8, 8, 0.5)
+    enc = _lif(8, 8, _WEIGHT_SCALE)
     enc.is_encoding_layer = True
     enc.use_cycle_accurate_trains = True
     node = PerceptronMapper(inp, enc)
     for width in (8, 8, 4):
-        node = PerceptronMapper(node, _lif(width, 8, 0.35))
+        node = PerceptronMapper(node, _lif(width, 8, _WEIGHT_SCALE))
     repr_ = ModelRepresentation(node)
     mark_encoding_layers(repr_)
     return IRMapping(
@@ -94,6 +101,35 @@ def _passes(hybrid):
         if getattr(s, "kind", None) == "neural"
         and getattr(s, "schedule_pass_index", None) is not None
     )
+
+
+class TestTheVehicleDiscriminates:
+    """Every equivalence claim in this file is only as strong as its witness. A
+    network whose outputs saturate, or which answers the same thing for every input,
+    can be reproduced by almost any wrong implementation — that is exactly how the
+    first version of these tests passed with the carry DISABLED. So the vehicle's
+    own health is pinned here, and drifting back into degeneracy fails loudly."""
+
+    def _outputs(self):
+        with torch.no_grad():
+            return _flow(_fused(_deep_lif_ir()))(torch.rand(8, 8))
+
+    def test_different_inputs_give_different_answers(self):
+        out = self._outputs()
+        assert len({tuple(r.tolist()) for r in out}) >= 6, out
+
+    def test_the_output_neurons_do_not_all_agree(self):
+        """All-positive weights make every neuron see the same sum; the spread is
+        what says the network actually computes something per neuron."""
+        out = self._outputs()
+        spread = (out.max(dim=1).values - out.min(dim=1).values).mean()
+        assert float(spread) >= 2.0, out
+
+    def test_the_counts_are_not_pinned_to_the_window(self):
+        """A saturated raster IS its own uniform re-encode, so a saturated vehicle
+        cannot witness the difference between the two transfer disciplines."""
+        out = self._outputs()
+        assert float(out.max()) < T, out
 
 
 class TestTheRasterAgreesWithTheCounts:
@@ -210,6 +246,32 @@ class TestTheRecorderRespectsTheProducerWindow:
     def test_a_late_cycle_does_not_overwrite_the_last_emission(self):
         """The clamping failure mode: cycle 4 would land back on local T-1."""
         assert self._run(latency=1, window=3, cycles=5)[-1] == 4.0
+
+    def test_a_passthrough_span_carries_the_segment_input(self):
+        """An ``input``-kind output span is a segment output wired straight from the
+        segment INPUT. A linear chain has none, so the branch needs pinning here or a
+        carry that dropped it would look correct."""
+        import torch as _t
+
+        from mimarsinan.models.spiking.hybrid.carry import record_carry
+
+        carry = _t.zeros(3, 1, 1)
+        train = _t.tensor([[[1.0]], [[0.0]], [[1.0]]])
+        for cycle in range(3):
+            record_carry(carry, [("input", 0, 1, 0, 1, 0)], cycle=cycle,
+                         fires=_t.zeros(1, 1), train=train, T=3)
+        assert carry[:, 0, 0].tolist() == [1.0, 0.0, 1.0]
+
+    def test_an_always_on_span_carries_a_spike_every_cycle(self):
+        import torch as _t
+
+        from mimarsinan.models.spiking.hybrid.carry import record_carry
+
+        carry = _t.zeros(3, 1, 1)
+        for cycle in range(3):
+            record_carry(carry, [("on", 0, 1, 0, 1, 0)], cycle=cycle,
+                         fires=_t.zeros(1, 1), train=_t.zeros(3, 1, 1), T=3)
+        assert carry[:, 0, 0].tolist() == [1.0, 1.0, 1.0]
 
     def test_a_zero_latency_producer_starts_at_local_zero(self):
         assert self._run(latency=0, window=3, cycles=3) == [1.0, 2.0, 3.0]

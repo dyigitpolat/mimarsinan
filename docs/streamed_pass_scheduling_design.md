@@ -263,3 +263,32 @@ two computations produced its numbers.
 | **SANA-FE `VERBATIM`** | Both primitives exist (`_pack_spike_trace_matrix` out, `set_input_spike_trains` in), and SANA-FE is the cost-measuring backend, so carrying there raises fidelity where it counts most. |
 | **nevresim spike-train extraction** | Per the owner: NOT a functional gap, but a missing feature worth having on its own merits. `SPKREC` currently prints per-core COUNTS (`SPKREC <core> IN … OUT …`); a per-timestep variant would give nevresim segment-output rasters generally, not only for this program. Clean if done as a separate record line so the existing parser is untouched. |
 | **SP4 — the carry census** | `PassCut` computes `carried_bytes`/`peak_live_bytes`; with `carried_wire_bytes` the census can now be priced under EITHER discipline. |
+
+## 16. The degenerate vehicle, found and fixed (2026-08-14)
+
+A probe of the test vehicle's own outputs found it **near-degenerate**: every output
+neuron in a row carried the SAME count (`7,7,7,7` / `8,8,8,8`) and eight samples
+produced only two distinct rows. The cause was my own earlier "fix" for saturation —
+all-POSITIVE uniform weights with zero bias make every output neuron see essentially
+the same sum, and at T=8 the counts sat at 7–8, one step from the ceiling.
+
+Nothing was *wrong* in the implementation; the WITNESS was weak. Every equivalence
+claim in the file rested on a network that barely discriminated, which is the same
+class of error as the original saturated vehicle — and is exactly how the first
+version of these tests passed with the carry disabled.
+
+Fixed with signed weights around a small positive bias (`(rand - 0.5) * 2.0`, bias
+0.3): eight samples now give 7 distinct rows, a mean per-row spread of 5.75, and a
+maximum of 7 against a window of 8, so nothing saturates.
+
+**Pinned so it cannot drift back.** `TestTheVehicleDiscriminates` asserts the three
+properties directly — distinct answers across inputs, output neurons that do not all
+agree, and counts that never reach the window. A vehicle that degenerates again fails
+loudly instead of quietly weakening every other test in the file.
+
+**What the stronger witness bought.** Re-running the carry mutations on the fixed
+vehicle: disabling the carry now fails 2 tests (was 1), dropping the producer-latency
+origin fails 4, and clamping the producer window — previously invisible at flow level
+and killable only on the pure recorder — now fails at flow level too. The one remaining
+survivor was the `input`-kind output span, which a linear chain never produces; it is
+now pinned directly on `record_carry`, along with the always-on span.
