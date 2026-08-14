@@ -420,3 +420,43 @@ class TestTheRecordNamesWhatCrossed:
         assert carry is not None
         assert carry.carried_wires >= 2
         assert carry.peak_live_bytes < carry.carried_bytes
+
+
+class TestOneDisciplinePerRun:
+    """A 3-pass streamed MLP found this end-to-end: HCM carrying while nevresim
+    collapsed diverged on 4.4% of neuron windows by one spike each, and the
+    cross-backend exactness gates — which admit no tolerance on integer arithmetic —
+    were comparing two different computations."""
+
+    def _transfer(self, **enabled):
+        from mimarsinan.models.spiking.hybrid.carry import run_pass_transfer
+
+        return run_pass_transfer(enabled)
+
+    def test_a_run_of_carrying_backends_only_is_verbatim(self):
+        assert self._transfer(enable_sanafe_simulation=True) == VERBATIM
+
+    def test_one_collapsing_backend_costs_the_whole_run_its_rasters(self):
+        assert self._transfer(enable_sanafe_simulation=True,
+                              enable_nevresim_simulation=True) == COLLAPSE
+
+    def test_lava_collapses_the_run_too(self):
+        assert self._transfer(enable_loihi_simulation=True) == COLLAPSE
+
+    def test_a_run_with_no_chip_backend_keeps_the_verbatim_boundary(self):
+        """Nothing enabled means only the HCM executor runs, and it carries."""
+        assert self._transfer() == VERBATIM
+
+    def test_the_flow_honours_the_run_discipline(self):
+        """The flow must not publish rasters a collapsing run will not replay."""
+        ir = _deep_lif_ir()
+        scheduled = _scheduled(ir, count=2)
+        x = torch.rand(4, 8)
+        collapsing = SpikingHybridCoreFlow(
+            (8,), scheduled, simulation_length=T, spiking_mode="lif",
+            cycle_accurate_lif_forward=True, pass_transfer=COLLAPSE,
+        )
+        with torch.no_grad():
+            assert not torch.equal(_flow(scheduled)(x), collapsing(x)), (
+                "a collapsing run must differ from a carrying one, or the "
+                "discipline is not reaching the executor")

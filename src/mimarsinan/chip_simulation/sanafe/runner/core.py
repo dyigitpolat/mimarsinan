@@ -13,14 +13,13 @@ from mimarsinan.chip_simulation.sanafe.runner.neural_stage_record import SanafeN
 from mimarsinan.chip_simulation.sanafe.runner.segment_io import SanafeSegmentIOMixin
 
 import mimarsinan.chip_simulation.sanafe.runner as _runner
+from mimarsinan.mapping.support.schedule.pass_cut import VERBATIM
 from mimarsinan.chip_simulation.sanafe.runner.constants import _COMPUTE_DTYPE, _RAW_INPUT_NODE_ID
-from mimarsinan.chip_simulation.sanafe.runner.custom_floorplan import (
-    adopt_custom_arch_floorplan)
+from mimarsinan.chip_simulation.sanafe.runner.custom_floorplan import adopt_custom_arch_floorplan  # noqa: E501
 from mimarsinan.chip_simulation.sanafe.arch_synth.spec import CUSTOM_PRESET_NAME
 from mimarsinan.chip_simulation.sanafe.presets import CUSTOM_ZERO_PRESET, PRESETS
 from mimarsinan.chip_simulation.sanafe.records import (
     SanafeArchGeometry, SanafeEnergyBreakdown, SanafeRunRecord, SanafeSegmentRecord,)
-
 
 
 class SanafeRunner(SanafeNeuralStageMixin, SanafeNeuralStageRecordMixin, SanafeSegmentIOMixin):
@@ -48,6 +47,7 @@ class SanafeRunner(SanafeNeuralStageMixin, SanafeNeuralStageRecordMixin, SanafeS
         simulation_step_timeout_s: float | None = None,
         read_final_potentials: bool = False,
         time_host_stages: bool = False,
+        pass_transfer: str = VERBATIM,
         host_compute_device: Any = None,
     ):
         if contract is not None:
@@ -129,6 +129,7 @@ class SanafeRunner(SanafeNeuralStageMixin, SanafeNeuralStageRecordMixin, SanafeS
         self._arch: Optional[Any] = None
         self._arch_built_for_T: Optional[int] = None
         self._arch_name, self._last_chip = "<unbuilt>", None
+        self.pass_transfer = str(pass_transfer)
         self._arch_geometry: Optional[SanafeArchGeometry] = None  # built lazily
 
 
@@ -161,7 +162,9 @@ class SanafeRunner(SanafeNeuralStageMixin, SanafeNeuralStageRecordMixin, SanafeS
         # per-sample record never carries another sample's accumulation.
         stage_timer = StageTimer() if self.time_host_stages else None
 
-        state_buffer_spikes: Dict[int, Any] = {}
+        # ONE discipline per run (run_pass_transfer): carrying while another
+        # enabled backend collapses would compare two computations.
+        state_buffer_spikes = {} if self.pass_transfer == VERBATIM else None
 
         def _on_neural(stage_index, stage, state_buffer):
             segments[stage_index] = self._run_neural_stage(

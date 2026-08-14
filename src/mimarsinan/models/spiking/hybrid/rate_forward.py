@@ -18,6 +18,7 @@ from mimarsinan.chip_simulation.hybrid_run.hybrid_stage_runner import (
     run_hybrid_stages,
 )
 from mimarsinan.chip_simulation.recording.records import SegmentSpikeRecord
+from mimarsinan.mapping.support.schedule.pass_cut import VERBATIM
 from mimarsinan.chip_simulation.spiking_semantics import (
     is_cascaded_ttfs,
     requires_ttfs_firing,
@@ -113,7 +114,10 @@ class HybridRateForwardMixin(HybridFlowHost):
                     seg_output_spike_count=np.zeros(0, dtype=np.int64),
                 )
 
-            carried_ids = self._carried_output_ids().get(ctx.stage_index, ())
+            carried_ids = (
+                self._carried_output_ids().get(ctx.stage_index, ())
+                if getattr(self, "pass_transfer", VERBATIM) == VERBATIM else ()
+            )
             output_train: list | None = [] if carried_ids else None
             counts = self._run_neural_segment_rate(
                 stage,

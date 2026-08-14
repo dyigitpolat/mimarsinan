@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import List
 
+from mimarsinan.models.spiking.hybrid.carry import run_pass_transfer
 from mimarsinan.certification.record_certificates import certify_run_records
 from mimarsinan.chip_simulation.sanafe.runner import SanafeRunner
 from mimarsinan.chip_simulation.sanafe.records import SanafeCoreDiff, SanafeRunRecord
@@ -140,6 +141,7 @@ class SanafeSimulationStep(PipelineStep):
                 mapping=hard_core_mapping,
                 simulation_length=T,
                 contract=contract,
+                pass_transfer=run_pass_transfer(self.pipeline.config),
                 arch_preset=arch_preset,
                 custom_arch_path=custom_arch_path,
                 log_potential_trace=log_potential,

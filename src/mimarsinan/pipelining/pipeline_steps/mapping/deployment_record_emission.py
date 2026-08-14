@@ -12,7 +12,7 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 
 from mimarsinan.deployment_record.build.partition import compute_partition_record
-from mimarsinan.models.spiking.hybrid.carry import pass_transfer_for_backend
+from mimarsinan.models.spiking.hybrid.carry import run_pass_transfer
 from mimarsinan.deployment_record.build.from_mapping import (
     placement_record_from_mapping,
     schedule_record_from_mapping,
@@ -22,6 +22,16 @@ from mimarsinan.deployment_record.schema import (
     AccuracyReadRecord,
     CertificateRecord,
 )
+
+
+def simulation_steps_of(step: Any) -> int:
+    """The run's timestep count, from the config SSOT.
+
+    NOT from ``platform_constraints_resolved``: the resolved platform dict does not
+    carry it, and reading it there silently yields None — which the carry census then
+    refuses, as an end-to-end scheduled run found.
+    """
+    return int(step.pipeline.config["simulation_steps"])
 
 
 def emit_deployment_record_hcm(
@@ -46,10 +56,10 @@ def emit_deployment_record_hcm(
         hybrid_mapping,
         weight_bits=platform_constraints.get("weight_bits"),
         params_reloaded=int(scm_fragment["reuse_plan"]["params_reloaded"]),
-        timesteps=platform_constraints.get("simulation_steps"),
-        # The HCM executor is what produced this record's numbers, and it carries
-        # the raster; a backend that collapses records its own discipline.
-        pass_transfer=pass_transfer_for_backend("hcm"),
+        timesteps=simulation_steps_of(step),
+        # The run's discipline, not one backend's: every enabled backend executes
+        # the same one, or the record would name a computation only some of them ran.
+        pass_transfer=run_pass_transfer(step.pipeline.config),
     )
     placement = placement_record_from_mapping(hybrid_mapping)
     # The logical on-chip/host split is an ungated CENSUS sealed on every run

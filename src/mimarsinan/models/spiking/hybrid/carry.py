@@ -134,6 +134,35 @@ def record_carry(carry, plan, *, cycle: int, fires, train, T: int) -> None:
 VERBATIM_BACKENDS = frozenset({"hcm", "sanafe"})
 
 
+#: config key that enables each backend, so the run's discipline is read from the
+#: same declaration the pipeline runs on.
+_BACKEND_ENABLE_KEYS = {
+    "sanafe": "enable_sanafe_simulation",
+    "nevresim": "enable_nevresim_simulation",
+    "lava": "enable_loihi_simulation",
+}
+
+
+def run_pass_transfer(config) -> str:
+    """ONE discipline per run: the weakest of the backends this run enables.
+
+    A run whose backends disagreed would report numbers from two different
+    computations, and the cross-backend exactness gates — which admit no tolerance on
+    integer arithmetic — would be comparing unlike things. Measured on a 3-pass
+    streamed MLP: HCM carrying while nevresim collapsed diverged on 4.4% of neuron
+    windows by one spike each, which is exactly the rhythm a collapse normalizes away.
+
+    So enabling a backend that cannot replay a raster costs the whole run its verbatim
+    boundaries, and teaching that backend to record one upgrades the run.
+    """
+    enabled = [
+        backend for backend, key in _BACKEND_ENABLE_KEYS.items() if config.get(key)
+    ]
+    if any(pass_transfer_for_backend(b) == COLLAPSE for b in enabled):
+        return COLLAPSE
+    return VERBATIM
+
+
 def pass_transfer_for_backend(backend: str) -> str:
     """Which pass-boundary discipline ``backend`` will actually execute.
 
@@ -162,6 +191,8 @@ __all__ = [
     "carried_wire_bytes",
     "carry_plan_for",
     "pass_transfer_for_backend",
+    "run_pass_transfer",
+    "run_pass_transfer",
     "publish_carried_trains",
     "record_carry",
     "require_carry_capable",

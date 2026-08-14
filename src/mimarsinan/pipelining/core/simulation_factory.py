@@ -29,6 +29,7 @@ from mimarsinan.mapping.platform.mapping_structure import (
 from mimarsinan.mapping.support.bias_compensation import propagate_negative_shifts_to_hybrid
 from mimarsinan.common.reporter import emit_reporter_event
 from mimarsinan.model_training.basic_trainer import BasicTrainer
+from mimarsinan.models.spiking.hybrid.carry import run_pass_transfer
 from mimarsinan.models.spiking.hybrid.flow import SpikingHybridCoreFlow
 from mimarsinan.models.spiking.hybrid.membrane_readout import final_only_output_nodes
 from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
@@ -118,6 +119,7 @@ def build_spiking_hybrid_flow(
         lif_membrane_init=contract.lif_membrane_init,
         lif_execution_synchronized=contract.lif_execution_synchronized,
         membrane_integer_lattice=bool(plan.weight_quantization),
+        pass_transfer=run_pass_transfer(cfg),
     )
     if plan.cycle_accurate_lif_forward and model is not None:
         apply_cycle_accurate_trains_to_model(model, True)

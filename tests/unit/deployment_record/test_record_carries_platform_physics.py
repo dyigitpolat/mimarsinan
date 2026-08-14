@@ -1,5 +1,6 @@
 """The sealed record must state the physics its numbers were priced with."""
 
+import pytest
 import json
 
 from mimarsinan.deployment_record.schema.record import RecordIdentity
@@ -58,3 +59,37 @@ def test_the_physics_survives_the_records_json_round_trip():
         restored.platform["platform_physics_resolved"]
         == identity.platform["platform_physics_resolved"]
     )
+
+
+class TestTheCarryCensusReadsTheRightTimestepSource:
+    """An end-to-end scheduled run died here: simulation_steps is NOT in
+    platform_constraints_resolved, so reading it there yields None and the carry
+    census refuses to seal. The unit tests passed timesteps explicitly and never
+    exercised the production wiring."""
+
+    def test_a_config_without_the_count_fails_loud_rather_than_yielding_none(self):
+        """None is what the platform dict silently returned; the SSOT read must
+        raise instead, so the same bug cannot come back quietly."""
+        from mimarsinan.pipelining.pipeline_steps.mapping import (
+            deployment_record_emission as emission,
+        )
+
+        class _Step:
+            class pipeline:
+                config: dict = {}
+
+        with pytest.raises(KeyError):
+            emission.simulation_steps_of(_Step())
+
+    def test_the_emission_reads_the_config_ssot(self):
+        from mimarsinan.pipelining.pipeline_steps.mapping import (
+            deployment_record_emission as emission,
+        )
+
+        class _Pipeline:
+            config = {"simulation_steps": 7}
+
+        class _Step:
+            pipeline = _Pipeline()
+
+        assert emission.simulation_steps_of(_Step()) == 7

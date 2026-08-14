@@ -11,6 +11,7 @@ from mimarsinan.chip_simulation.recording.spike_recorder import RunRecord
 from mimarsinan.chip_simulation.spiking_mode_policy import policy_for_spiking_mode
 from mimarsinan.chip_simulation.spiking_semantics import is_cascaded_ttfs
 from mimarsinan.mapping.packing.hybrid_hardcore_mapping import HybridHardCoreMapping
+from mimarsinan.mapping.support.schedule.pass_cut import VERBATIM
 from mimarsinan.spiking.segment_boundary import BoundaryConfig
 from mimarsinan.models.spiking.spiking_config import COMPUTE_DTYPE, validate_spiking_init
 from mimarsinan.models.spiking.hybrid.lif_step import HybridLifStepMixin
@@ -56,8 +57,12 @@ class SpikingHybridCoreFlow(
         lif_membrane_init: float = 0.0,
         lif_execution_synchronized: bool = False,
         membrane_integer_lattice: bool = False,
+        pass_transfer: str = VERBATIM,
     ):
         super().__init__()
+        # ONE discipline per run: a run whose backends disagreed would report
+        # numbers from two different computations (see run_pass_transfer).
+        self.pass_transfer = str(pass_transfer)
         # [nevresim parity] integer-chip cells snap membranes to the exact
         # chip lattice each cycle (float noise must never decide a tie).
         self.membrane_integer_lattice = bool(membrane_integer_lattice)

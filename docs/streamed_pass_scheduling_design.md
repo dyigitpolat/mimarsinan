@@ -328,3 +328,57 @@ discipline is a legitimate deployment rather than a refusal.
 dropping the producer latency, and dropping always-on spans all fail. The last two
 needed direct tests of the gather: the earlier tests covered only the consume side, so
 the produce side was passing unexamined.
+
+## 18. What the first end-to-end scheduled run found (2026-08-14)
+
+The unit tier was green and every gate passed, but **no tier cell combines streamed lif
+with scheduling** — 18 scheduling cells exist and all are lifsync / ttfs / mvm / casc.
+So the newly unlocked combination had zero end-to-end coverage. Running one found three
+defects in three successive attempts, none of which any unit test could have caught.
+
+**1. The census read the wrong source.** `simulation_steps` is not in
+`platform_constraints_resolved`; it lives on `pipeline.config`. Reading it from the
+platform dict yielded `None`, and the carry census refused to seal — the fail-loud guard
+working exactly as intended, on a bug the unit tests could not see because they passed
+`timesteps` explicitly. Now `simulation_steps_of(step)` reads the config SSOT and raises
+rather than returning `None`.
+
+**2. Backends ran different disciplines.** HCM carried while nevresim collapsed:
+
+```
+nevresim<->HCM window-count exactness violated: exact=0.955584 max|dcount|=1 over 788 windows
+```
+
+4.4% of neuron windows differed by one spike — precisely the rhythm a collapse
+normalizes away. Both computations were *correct*; comparing them was not. The fix is
+the rule this stage should have had from the start: **one discipline per RUN**, the
+weakest of the enabled backends (`run_pass_transfer`). Enabling a backend that cannot
+replay a raster costs the whole run its verbatim boundaries — and teaching that backend
+to record one upgrades the run, which is the incentive pointing at nevresim's `SPKREC`.
+
+**3. Half the fix is worse than none.** Gating only the HCM flow produced the mirror
+image — HCM collapsing while SANA-FE still carried:
+
+```
+spike parity FAIL @ stage 2 ('neural_segment_final_cap1') 9/64 differ, sum exp=34 act=34
+```
+
+Totals equal, distribution different: the signature of a rhythm difference. The
+`SanafeRunner` now takes the run's discipline too.
+
+**As landed.** A 3-pass streamed MLP deploys clean on every backend:
+
+```
+Hybrid program (scheduled): 1 neural segment(s) (seg 0: 3 passes)
+hcm/exact    PASS exact=1.000000 max|dcount|=0
+loihi        PASS exact=1.000000 max|dcount|=0   (3 segments, 7 cores)
+sanafe/exact PASS exact=1.000000 max|dcount|=0
+carry: 6 wires, 384 B, 256 B peak live, T=4, transfer=collapse
+```
+
+`collapse` because this config enables nevresim and lava. Disabling them makes the same
+run verbatim.
+
+**The coverage gap is the real lesson**, and it remains open: a tier cell for
+streamed × scheduling belongs in tier 0, so this path is exercised by the matrix rather
+than by hand.
