@@ -15,8 +15,7 @@ from mimarsinan.chip_simulation.sanafe.runner.segment_io import SanafeSegmentIOM
 import mimarsinan.chip_simulation.sanafe.runner as _runner
 from mimarsinan.chip_simulation.sanafe.runner.constants import _COMPUTE_DTYPE, _RAW_INPUT_NODE_ID
 from mimarsinan.chip_simulation.sanafe.runner.custom_floorplan import (
-    adopt_custom_arch_floorplan,
-)
+    adopt_custom_arch_floorplan)
 from mimarsinan.chip_simulation.sanafe.arch_synth.spec import CUSTOM_PRESET_NAME
 from mimarsinan.chip_simulation.sanafe.presets import CUSTOM_ZERO_PRESET, PRESETS
 from mimarsinan.chip_simulation.sanafe.records import (
@@ -25,6 +24,8 @@ from mimarsinan.chip_simulation.sanafe.records import (
     SanafeRunRecord,
     SanafeSegmentRecord,
 )
+
+from mimarsinan.models.spiking.hybrid.carry import require_backend_carry
 
 
 class SanafeRunner(SanafeNeuralStageMixin, SanafeNeuralStageRecordMixin, SanafeSegmentIOMixin):
@@ -132,9 +133,9 @@ class SanafeRunner(SanafeNeuralStageMixin, SanafeNeuralStageRecordMixin, SanafeS
 
         self._arch: Optional[Any] = None
         self._arch_built_for_T: Optional[int] = None
-        self._arch_name: str = "<unbuilt>"
-        self._arch_geometry: Optional[SanafeArchGeometry] = None
-        self._last_chip: Optional[Any] = None
+        self._arch_name, self._last_chip = "<unbuilt>", None
+        self._arch_geometry: Optional[SanafeArchGeometry] = None  # built lazily
+        require_backend_carry(mapping, "sanafe")  # carry-or-refuse
 
 
     def run(self, sample_input: np.ndarray, sample_index: int) -> SanafeRunRecord:

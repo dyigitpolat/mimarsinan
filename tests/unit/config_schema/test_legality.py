@@ -164,11 +164,13 @@ class TestTheLegalValueSets:
         assert view["pretrained_weight_set"] == ["imagenet1k_v1"]
 
     def test_locked_keys_are_exactly_the_singleton_legal_sets(self):
-        # bare lif derives STREAMED (P4 default): scheduling locks off.
+        # bare lif derives STREAMED (P4 default). Scheduling is NOT locked: a pass
+        # is a spatial cut of a segment's core DAG, so membrane state never crosses
+        # one and the boundary carries the spike raster verbatim.
         lif = legal_values_view({"spiking_family": "lif"})
         ttfs = legal_values_view({"spiking_family": "ttfs"})
         assert sorted(k for k, v in lif.items() if len(v) == 1) == [
-            "allow_scheduling", "s_allocation",
+            "s_allocation",
         ]
         windowed = legal_values_view(
             {"spiking_family": "lif", "spiking_variant": "synchronized"}
@@ -179,12 +181,13 @@ class TestTheLegalValueSets:
         assert sorted(k for k, v in ttfs.items() if len(v) == 1) == [
             "firing_mode", "s_allocation", "spike_generation_mode",
         ]
-        # streamed lif requires single-program residency: scheduling LOCKS off.
+        # streamed lif is cuttable too: the carry is what keeps a cut exact, and a
+        # backend that cannot replay one refuses by name rather than collapsing it.
         streamed = legal_values_view(
             {"spiking_family": "lif", "spiking_variant": "streamed"}
         )
         assert sorted(k for k, v in streamed.items() if len(v) == 1) == [
-            "allow_scheduling", "s_allocation",
+            "s_allocation",
         ]
         assert streamed["spiking_variant"] == ["streamed", "synchronized"]
 

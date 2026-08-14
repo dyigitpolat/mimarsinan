@@ -42,6 +42,10 @@ from mimarsinan.spiking.segment_boundary import (
     boundary_normalization_scales,
     normalize_boundary_slices_numpy,
 )
+from mimarsinan.models.spiking.hybrid.carry import (
+    require_backend_carry,
+)
+
 
 
 class SimulationHybridMixin(SimulationHostContract):
@@ -181,6 +185,7 @@ class SimulationHybridMixin(SimulationHostContract):
 
     def _run_hybrid(self, hybrid: HybridHardCoreMapping) -> float:
         """Execute a multi-stage hybrid mapping using the state buffer."""
+        require_backend_carry(hybrid, "nevresim")
         stages = hybrid.stages
         num_samples = len(self.test_data)
         is_ttfs = requires_ttfs_firing(self.spiking_mode)

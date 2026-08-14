@@ -12,8 +12,6 @@ from mimarsinan.config_schema.registry.types import (
     FieldType as T,
     frozen_default as _frozen,
 )
-from mimarsinan.chip_simulation.activation_semantics import (
-    is_streamed_lif as _is_streamed_lif)
 from mimarsinan.config_schema.registry.entries_platform_backends import (
     _meta_backend_enable,
     _why_backend_enable,
@@ -121,10 +119,14 @@ ENTRIES = (
        type=T.BOOL, category=Category.BASIC, exposure="user", label="Allow Scheduling",
        effect="Multi-pass layout scheduling when single-pass packing fails",
        doc="Deployment option: time-multiplex core passes when the model exceeds "
-           "the grid (a choice, not a chip capability). Streamed lif needs the "
-           "whole span resident in ONE program: locks false.",
-       provenance="derivation rule", derived_default=_frozen(False),
-       legal_values=lambda cfg: (False,) if _is_streamed_lif(cfg) else (False, True)),
+           "the grid (a choice, not a chip capability). Legal under EVERY execution "
+           "semantics: a pass is a SPATIAL cut of a segment's core DAG, so each core "
+           "still runs its whole cycle window in one pass and only spike rasters "
+           "cross. Under streamed lif those boundaries carry the raster verbatim "
+           "rather than collapsing to counts, which is what makes a cut semantically "
+           "invisible; a backend that cannot replay a carried raster refuses the run "
+           "by name instead of collapsing it silently.",
+       provenance="derivation rule", derived_default=_frozen(False)),
     _E("enable_nevresim_simulation", group="deployment_target",
        owner="ConversionPolicy/backend_registry", type=T.BOOL,
        category=Category.DERIVED, derivation="derived", exposure="derived",

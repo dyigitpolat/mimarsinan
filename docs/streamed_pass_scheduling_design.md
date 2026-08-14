@@ -195,7 +195,38 @@ into saturation fails loudly instead of passing vacuously.
 
 Both are coverage gaps in the test vehicle and are the first work of SP3.
 
-**The lock is deliberately still ON.** `allow_scheduling` stays `(False,)` for streamed
-until SP3: SANA-FE, nevresim and lava do not carry yet, and unlocking now would let a
-run reach a backend that silently collapses the boundary — the exact failure the lock
-exists to prevent. The unlock belongs with the backends' carry-or-refuse.
+**The lock stayed ON through SP2** and was lifted in SP3, once every backend either
+carries or refuses.
+
+## 12. SP3 — carry-or-refuse, and the unlock (2026-08-14)
+
+**Both surviving mutations are dead**, and neither needed a bigger vehicle:
+
+- The over-publish mutation was already caught — by `test_pass_cut.py`, not by the flow
+  suite. It survived only because that round ran the wrong file.
+- The producer-window mutation is killed by unit-testing the pure recorder directly.
+  A segment whose outputs all sit at the deepest latency can never exhibit the
+  overhang, so no end-to-end vehicle could witness it; `record_carry` with
+  `latency < max` can, in three lines.
+
+**Carry-or-refuse.** `CARRY_CAPABLE_BACKENDS` is the declaration, and
+`require_backend_carry(mapping, backend)` is the gate, wired into `SanafeRunner`,
+`LavaLoihiRunner` and the nevresim `_run_hybrid`. A backend that cannot replay a
+carried raster now refuses the run by name, listing the wires that would have been
+collapsed and both remedies (disable that backend, or turn scheduling off). Only the
+HCM executor is declared capable, so today the refusal fires for all three — which is
+the honest state, not a regression: before this, the same run would have silently
+computed something else.
+
+**The unlock.** `allow_scheduling` no longer carries a `legal_values` lambda: it is
+legal under every execution semantics, because a pass is a spatial cut and the carry is
+what keeps a cut exact. The DEFAULT is still `False`, so nothing about existing runs
+changes — scheduling became choosable, not automatic.
+
+## 13. What remains
+
+| item | why it is not done |
+| --- | --- |
+| **SANA-FE carry** | The pieces are in place — `_pack_spike_trace_matrix` already produces a `(neurons, T)` raster and `set_input_spike_trains` already accepts an arbitrary one — but mapping segment-output SLICES to raster rows per cycle is real work, and the refusal is correct in the meantime. This is the highest-value next step: it turns a refusal into a measurement. |
+| **nevresim / lava carry** | nevresim needs the carried raster to cross the C++ program-format seam; lava needs Loihi channel semantics. Both are larger than the SANA-FE case. |
+| **SP4 — the carry census** | `carried_raster_bytes` / `carry_peak_live_bytes` as quantities, sealed and priced through `e_dma_per_byte`. `PassCut` already computes both; nothing consumes them yet, so a scheduled run still looks cheaper than it is. |

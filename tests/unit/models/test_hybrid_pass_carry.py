@@ -179,3 +179,87 @@ class TestPassingIsSemanticallyInvisible:
         assert not torch.equal(reference, collapsed), (
             "the uniform re-encode reproduced the raster on this vehicle, so it "
             "cannot witness the carry; pick a vehicle with non-uniform rhythm")
+
+
+class TestTheRecorderRespectsTheProducerWindow:
+    """A producer emits only during ``[latency, latency + T)``. Outside it, ``fires``
+    still holds whatever that core last did, so an out-of-window cycle must be
+    SKIPPED — clamping it into range would overwrite a real emission with a stale
+    one. Tested on the pure recorder, because a segment whose outputs all sit at the
+    deepest latency can never exhibit the overhang."""
+
+    def _run(self, latency: int, window: int, cycles: int):
+        import torch as _t
+
+        from mimarsinan.models.spiking.hybrid.carry import record_carry
+
+        carry = _t.zeros(window, 1, 1)
+        plan = [("core", 0, 1, 0, 1, latency)]
+        for cycle in range(cycles):
+            fires = _t.full((1, 1), float(cycle + 1))
+            record_carry(carry, plan, cycle=cycle, fires=fires,
+                         train=_t.zeros(window, 1, 1), T=window)
+        return carry[:, 0, 0].tolist()
+
+    def test_only_the_producers_own_window_is_recorded(self):
+        # latency 1, T=3 -> cycles 1,2,3 are local 0,1,2; cycles 0 and 4 are outside.
+        assert self._run(latency=1, window=3, cycles=5) == [2.0, 3.0, 4.0]
+
+    def test_a_late_cycle_does_not_overwrite_the_last_emission(self):
+        """The clamping failure mode: cycle 4 would land back on local T-1."""
+        assert self._run(latency=1, window=3, cycles=5)[-1] == 4.0
+
+    def test_a_zero_latency_producer_starts_at_local_zero(self):
+        assert self._run(latency=0, window=3, cycles=3) == [1.0, 2.0, 3.0]
+
+
+class TestBackendsCarryOrRefuse:
+    """A backend that cannot replay a carried raster must REFUSE the run. Silently
+    collapsing the boundary to counts is the exact failure the streamed lock used
+    to prevent, and it would be invisible in the results."""
+
+    def test_a_carrying_mapping_is_refused_by_a_backend_that_cannot_replay_it(self):
+        from mimarsinan.models.spiking.hybrid.carry import require_backend_carry
+
+        scheduled = _scheduled(_deep_lif_ir(), count=2)
+        for backend in ("sanafe", "nevresim", "lava"):
+            try:
+                require_backend_carry(scheduled, backend)
+            except NotImplementedError as exc:
+                assert backend in str(exc) and "RASTERS" in str(exc)
+            else:
+                raise AssertionError(f"{backend} accepted a carried mapping")
+
+    def test_a_single_pass_mapping_passes_every_backend(self):
+        from mimarsinan.models.spiking.hybrid.carry import require_backend_carry
+
+        fused = _fused(_deep_lif_ir())
+        for backend in ("sanafe", "nevresim", "lava", "hcm"):
+            require_backend_carry(fused, backend)
+
+    def test_the_hcm_executor_carries_and_is_never_refused(self):
+        from mimarsinan.models.spiking.hybrid.carry import require_backend_carry
+
+        require_backend_carry(_scheduled(_deep_lif_ir(), count=2), "hcm")
+
+
+class TestSchedulingIsLegalUnderStreamedLif:
+    def test_streamed_lif_may_now_choose_scheduling(self):
+        """The view lists only RESTRICTED keys, so an unrestricted boolean is
+        absent from it — which is what 'no longer locked' looks like here."""
+        from mimarsinan.config_schema.resolve import legal_values_view
+
+        streamed = legal_values_view(
+            {"spiking_family": "lif", "spiking_variant": "streamed"}
+        )
+        assert "allow_scheduling" not in streamed, streamed.get("allow_scheduling")
+
+    def test_the_default_is_still_off(self):
+        """Unlocking makes scheduling CHOOSABLE, not automatic: a segment that
+        fits stays in one program, and nothing about existing runs changes."""
+        from mimarsinan.config_schema.resolve import resolve_draft
+
+        resolution = resolve_draft(
+            {"spiking_family": "lif", "spiking_variant": "streamed"}
+        )
+        assert resolution.resolved["allow_scheduling"] is False

@@ -96,3 +96,28 @@ def record_carry(carry, plan, *, cycle: int, fires, train, T: int) -> None:
             carry[local, :, d0:d1] = train[local][:, s0:s1]
         else:
             carry[local, :, d0:d1] = fires[:, s0:s1]
+
+
+#: Backends that replay a carried raster. A backend absent here must REFUSE a
+#: mapping that carries one — collapsing the boundary to counts would silently
+#: change the computation, which is precisely what the streamed lock prevented.
+CARRY_CAPABLE_BACKENDS = frozenset({"hcm"})
+
+
+def require_backend_carry(hybrid_mapping, backend: str) -> None:
+    """Refuse a backend that cannot replay this mapping's carried rasters."""
+    if backend in CARRY_CAPABLE_BACKENDS:
+        return
+    carried = carried_output_ids(hybrid_mapping)
+    if not carried:
+        return
+    wires = sorted({node for ids in carried.values() for node in ids})
+    raise NotImplementedError(
+        f"this deployment cuts a neural segment into passes, so wires {wires} must "
+        f"cross a pass boundary as spike RASTERS, and the {backend!r} backend does "
+        f"not replay them yet. Running it would collapse those boundaries to counts "
+        f"— the interior transcode streamed execution is defined not to have — and "
+        f"silently compute something else. Disable the {backend!r} backend for this "
+        f"run, or turn allow_scheduling off so the segment stays resident in one "
+        f"program."
+    )

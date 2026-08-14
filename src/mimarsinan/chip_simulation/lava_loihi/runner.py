@@ -36,6 +36,10 @@ from mimarsinan.spiking.segment_boundary import (
     normalize_boundary_slices_numpy,
 )
 
+from mimarsinan.models.spiking.hybrid.carry import (
+    require_backend_carry,
+)
+
 
 class LavaLoihiRunner(LavaCoreMixin, LavaSegmentMixin):
     """Evaluate a HybridHardCoreMapping under a Lava process graph."""
@@ -53,6 +57,7 @@ class LavaLoihiRunner(LavaCoreMixin, LavaSegmentMixin):
         self.T = int(simulation_length)
         self._behavior = behavior
         behavior.require_backend("lava")
+        require_backend_carry(mapping, "lava")
         self._firing_strategy = behavior.firing_strategy()
         self.thresholding_mode = behavior.thresholding_mode
         self.preprocessor = preprocessor if preprocessor is not None else nn.Identity()
