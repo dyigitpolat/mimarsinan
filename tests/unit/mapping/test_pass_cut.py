@@ -249,7 +249,7 @@ class _Stage:
 
 class TestWhichOutputsAreCarried:
     def test_a_wire_read_by_a_later_pass_of_the_same_segment_is_carried(self):
-        from mimarsinan.mapping.support.schedule.pass_cut import (
+        from mimarsinan.mapping.support.schedule.pass_carry import (
             carried_outputs_by_stage,
         )
 
@@ -258,7 +258,7 @@ class TestWhichOutputsAreCarried:
 
     def test_a_wire_read_by_a_later_SEGMENT_collapses_and_is_not_carried(self):
         """That crossing is a host boundary — counts are the contract there."""
-        from mimarsinan.mapping.support.schedule.pass_cut import (
+        from mimarsinan.mapping.support.schedule.pass_carry import (
             carried_outputs_by_stage,
         )
 
@@ -266,7 +266,7 @@ class TestWhichOutputsAreCarried:
         assert carried_outputs_by_stage(stages) == {}
 
     def test_a_single_pass_segment_carries_nothing(self):
-        from mimarsinan.mapping.support.schedule.pass_cut import (
+        from mimarsinan.mapping.support.schedule.pass_carry import (
             carried_outputs_by_stage,
         )
 

@@ -10,10 +10,8 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional, Tuple
 
 from mimarsinan.deployment_record.build.payload_sizes import (
-    core_connectivity_entries,
-    params_bytes,
-    require_weight_bits,
-)
+    core_connectivity_entries, params_bytes, require_weight_bits)
+from mimarsinan.deployment_record.build.pass_carry import carry_record_from_mapping
 from mimarsinan.deployment_record.schema import (
     BankRecord,
     ComputeOpRecord,
@@ -177,7 +175,8 @@ def _compute_op_record(stage_index: int, stage: Any) -> ComputeOpRecord:
 
 
 def schedule_record_from_mapping(
-    hybrid_mapping: Any, *, weight_bits: Any, params_reloaded: int
+    hybrid_mapping: Any, *, weight_bits: Any, params_reloaded: int,
+    timesteps: Any = None, pass_transfer: Any = None,
 ) -> ScheduleRecord:
     """Mirror ``HybridHardCoreMapping.stages`` 1:1 into the schedule fragment.
 
@@ -213,6 +212,7 @@ def schedule_record_from_mapping(
         reuse_passes=sum(1 for s in segments if s.programming == "resident"),
         params_reloaded=int(params_reloaded),
         compute_op_count=len(stages_out) - len(segments),
+        carry=carry_record_from_mapping(hybrid_mapping, timesteps, pass_transfer),
     )
 
 

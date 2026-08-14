@@ -36,6 +36,7 @@ from mimarsinan.deployment_record.schema.record import (
 )
 from mimarsinan.deployment_record.schema.schedule import (
     ComputeOpRecord,
+    PassCarryRecord,
     ScheduleRecord,
     SegmentCoreRecord,
     SegmentRecord,
@@ -79,6 +80,7 @@ __all__ = [
     "PlacementRecord",
     "Provenance",
     "RecordIdentity",
+    "PassCarryRecord",
     "ScheduleRecord",
     "SegmentCoreRecord",
     "SegmentRecord",

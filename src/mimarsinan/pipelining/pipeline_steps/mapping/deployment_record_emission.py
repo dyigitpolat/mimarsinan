@@ -12,6 +12,7 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 
 from mimarsinan.deployment_record.build.partition import compute_partition_record
+from mimarsinan.models.spiking.hybrid.carry import pass_transfer_for_backend
 from mimarsinan.deployment_record.build.from_mapping import (
     placement_record_from_mapping,
     schedule_record_from_mapping,
@@ -45,6 +46,10 @@ def emit_deployment_record_hcm(
         hybrid_mapping,
         weight_bits=platform_constraints.get("weight_bits"),
         params_reloaded=int(scm_fragment["reuse_plan"]["params_reloaded"]),
+        timesteps=platform_constraints.get("simulation_steps"),
+        # The HCM executor is what produced this record's numbers, and it carries
+        # the raster; a backend that collapses records its own discipline.
+        pass_transfer=pass_transfer_for_backend("hcm"),
     )
     placement = placement_record_from_mapping(hybrid_mapping)
     # The logical on-chip/host split is an ungated CENSUS sealed on every run

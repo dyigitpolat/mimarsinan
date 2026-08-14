@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from typing import Any, Dict, Mapping, Optional, Tuple, Union
 
+from mimarsinan.mapping.support.schedule.pass_cut import TRANSFER_DISCIPLINES
 from mimarsinan.deployment_record.schema.serde import (
     require_choice,
     strict_kwargs,
@@ -120,6 +121,36 @@ def _stage_from_dict(data: Mapping[str, Any]) -> ScheduleStage:
 
 
 @dataclass(frozen=True)
+class PassCarryRecord:
+    """What crossed the INTRA-SEGMENT pass boundaries, and under which discipline.
+
+    A pass boundary is one the schedule INTRODUCES, so the intermediate signal has to
+    be buffered either way; ``transfer`` says what was buffered. VERBATIM keeps the
+    spike raster and reproduces the fused execution bit-for-bit; COLLAPSE keeps window
+    counts and re-emits an even train, which is cheaper and normalizes rhythm. They are
+    DIFFERENT computations, so a record that did not name the one it ran would leave a
+    reader unable to say what produced the numbers.
+    """
+
+    transfer: str
+    carried_wires: int
+    carried_bytes: int
+    peak_live_bytes: int
+    timesteps: int
+
+    def __post_init__(self) -> None:
+        require_choice("PassCarryRecord", "transfer", self.transfer,
+                       frozenset(TRANSFER_DISCIPLINES))
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> "PassCarryRecord":
+        return cls(**strict_kwargs(cls, data))
+
+
+@dataclass(frozen=True)
 class ScheduleRecord:
     """The deployed program in execution order, with the pass census."""
 
@@ -130,6 +161,10 @@ class ScheduleRecord:
     reuse_passes: int
     params_reloaded: int
     compute_op_count: int
+    # Additive-optional (the ``invocations`` / ``partition`` precedent): a program
+    # with no intra-segment pass boundary carries nothing, and pre-carry records
+    # load with None rather than forcing a format-version bump.
+    carry: Optional["PassCarryRecord"] = None
 
     def segments(self) -> Tuple[SegmentRecord, ...]:
         return tuple(s for s in self.stages if isinstance(s, SegmentRecord))
@@ -143,4 +178,7 @@ class ScheduleRecord:
     def from_dict(cls, data: Mapping[str, Any]) -> "ScheduleRecord":
         kwargs = strict_kwargs(cls, data)
         kwargs["stages"] = tuple_of(_stage_from_dict, kwargs["stages"])
+        carry = kwargs.get("carry")
+        if carry is not None and not isinstance(carry, PassCarryRecord):
+            kwargs["carry"] = PassCarryRecord.from_dict(carry)
         return cls(**kwargs)

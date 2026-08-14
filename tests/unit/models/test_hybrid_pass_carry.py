@@ -7,6 +7,7 @@ same model on a grid that fits and on a grid that forces a cut must agree bit fo
 
 from __future__ import annotations
 
+import pytest
 import torch
 import torch.nn as nn
 
@@ -152,7 +153,7 @@ class TestPassingIsSemanticallyInvisible:
     def test_the_cut_really_happened(self):
         """Guard the guard: if the grid stopped forcing a cut, the equivalence
         tests above would pass vacuously."""
-        from mimarsinan.mapping.support.schedule.pass_cut import (
+        from mimarsinan.mapping.support.schedule.pass_carry import (
             carried_outputs_by_stage,
         )
 
@@ -272,3 +273,76 @@ class TestSchedulingIsLegalUnderStreamedLif:
             {"spiking_family": "lif", "spiking_variant": "streamed"}
         )
         assert resolution.resolved["allow_scheduling"] is False
+
+
+class TestTheRecordNamesWhatCrossed:
+    """VERBATIM and COLLAPSE are different computations, so a record that did not
+    name the one it ran would leave a reader unable to say what produced the
+    numbers."""
+
+    def _schedule(self, hybrid, **over):
+        from mimarsinan.deployment_record.build.from_mapping import (
+            schedule_record_from_mapping,
+        )
+
+        kwargs = dict(weight_bits=8, params_reloaded=0,
+                      timesteps=T, pass_transfer=VERBATIM)
+        kwargs.update(over)
+        return schedule_record_from_mapping(hybrid, **kwargs)
+
+    def test_a_single_program_carries_nothing_and_seals_none(self):
+        assert self._schedule(_fused(_deep_lif_ir())).carry is None
+
+    def test_a_scheduled_program_seals_the_discipline_and_the_census(self):
+        carry = self._schedule(_scheduled(_deep_lif_ir(), count=2)).carry
+        assert carry is not None
+        assert carry.transfer == VERBATIM
+        assert carry.carried_wires >= 1
+        assert carry.carried_bytes > 0
+        assert 0 < carry.peak_live_bytes <= carry.carried_bytes
+        assert carry.timesteps == T
+
+    def test_collapsing_seals_a_smaller_census_than_carrying(self):
+        """At a window wide enough for the trade to bite: a raster needs T bits per
+        wire, a count only log2(T+1). (At this vehicle's T=8 both round to one byte,
+        which is why the window is stated explicitly here.)"""
+        scheduled = _scheduled(_deep_lif_ir(), count=2)
+        verbatim = self._schedule(scheduled, timesteps=32).carry
+        collapse = self._schedule(scheduled, timesteps=32,
+                                  pass_transfer=COLLAPSE).carry
+        assert verbatim is not None and collapse is not None
+        assert collapse.carried_bytes * 4 == verbatim.carried_bytes
+
+    def test_at_a_narrow_window_the_two_disciplines_cost_the_same(self):
+        """Both fit one byte per wire at T=8 — the trade is real but not free of
+        rounding, and a census that pretended otherwise would be inventing precision."""
+        scheduled = _scheduled(_deep_lif_ir(), count=2)
+        verbatim = self._schedule(scheduled).carry
+        collapse = self._schedule(scheduled, pass_transfer=COLLAPSE).carry
+        assert verbatim is not None and collapse is not None
+        assert collapse.carried_bytes == verbatim.carried_bytes
+
+    def test_a_carrying_program_refuses_to_seal_an_unstated_discipline(self):
+        """Sealing None here would drop the fact that the two disciplines differ."""
+        with pytest.raises(ValueError, match="which discipline"):
+            self._schedule(_scheduled(_deep_lif_ir(), count=2), pass_transfer=None)
+
+    def test_the_sealed_carry_round_trips(self):
+        from mimarsinan.deployment_record.schema import ScheduleRecord
+
+        record = self._schedule(_scheduled(_deep_lif_ir(), count=2))
+        assert ScheduleRecord.from_dict(record.to_dict()).carry == record.carry
+
+    def test_an_unknown_discipline_fails_loud(self):
+        with pytest.raises(ValueError, match="transfer"):
+            self._schedule(_scheduled(_deep_lif_ir(), count=2),
+                           pass_transfer="whatever")
+
+    def test_wires_that_do_not_overlap_share_the_buffer(self):
+        """The stage-level census is a separate function from PassCut's, and it owes
+        the same discipline: a three-pass program carries two wires whose live ranges
+        are disjoint, so the buffer a run needs is the worst boundary, not the sum."""
+        carry = self._schedule(_scheduled(_deep_lif_ir(), count=1)).carry
+        assert carry is not None
+        assert carry.carried_wires >= 2
+        assert carry.peak_live_bytes < carry.carried_bytes

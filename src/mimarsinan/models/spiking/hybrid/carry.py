@@ -13,12 +13,11 @@ from typing import Dict, Tuple
 
 import torch
 
-from mimarsinan.mapping.support.schedule.pass_cut import (
-    COLLAPSE,
-    VERBATIM,
+from mimarsinan.mapping.support.schedule.pass_carry import (
     carried_outputs_by_stage,
-    raster_bytes,
+    carried_wire_bytes,
 )
+from mimarsinan.mapping.support.schedule.pass_cut import COLLAPSE, VERBATIM
 
 
 def carried_output_ids(hybrid_mapping) -> Dict[int, Tuple[int, ...]]:
@@ -128,8 +127,14 @@ def pass_transfer_for_backend(backend: str) -> str:
     return VERBATIM if backend in VERBATIM_BACKENDS else COLLAPSE
 
 
-def carried_wire_bytes(width: int, timesteps: int, transfer: str) -> int:
-    """Bytes one carried wire occupies under ``transfer`` — the cost of the choice."""
-    if transfer == VERBATIM:
-        return raster_bytes(width, timesteps)
-    return int(width) * ((max(int(timesteps), 1).bit_length() + 7) // 8)
+#: Re-exported so a backend reads the discipline and its price from one import.
+__all__ = [
+    "VERBATIM_BACKENDS",
+    "carried_output_ids",
+    "carried_wire_bytes",
+    "carry_plan_for",
+    "pass_transfer_for_backend",
+    "publish_carried_trains",
+    "record_carry",
+    "require_carry_capable",
+]
