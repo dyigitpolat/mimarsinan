@@ -176,6 +176,53 @@ class SanafeSegmentIOMixin:
             ramps[core_idx] = ramp
         return ramps
 
+    def _compute_seg_output_raster(
+        self,
+        output_sources,
+        *,
+        seg_raster,
+        core_rows: Dict[int, int],
+        core_latency: Dict[int, int],
+        T: int,
+    ):
+        """``(T, n_out)`` segment-output raster in PRODUCER-LOCAL time.
+
+        The per-cycle twin of :meth:`_compute_seg_output_spike_count`: same spans,
+        same sources, but gathering the trace row rather than the accumulated count,
+        shifted by each source core's own latency so index ``k`` is that producer's
+        k-th emission — which is what the consuming pass replays as its input train.
+        Returns ``None`` when the backend recorded no trace.
+        """
+        if seg_raster is None or output_sources is None:
+            return None
+        flat_sources = (
+            list(output_sources.flatten())
+            if hasattr(output_sources, "flatten") else list(output_sources)
+        )
+        if not flat_sources:
+            return None
+        out = np.zeros((int(T), len(flat_sources)), dtype=np.uint8)
+        for sp in compress_spike_sources(flat_sources):
+            d0, d1 = int(sp.dst_start), int(sp.dst_end)
+            if sp.kind == "off":
+                continue
+            if sp.kind == "on":
+                out[:, d0:d1] = 1
+                continue
+            if sp.kind == "input":
+                continue
+            row = core_rows.get(int(sp.src_core))
+            if row is None:
+                continue
+            latency = int(core_latency.get(int(sp.src_core), 0))
+            width = min(d1 - d0, int(sp.length))
+            src = seg_raster[row + int(sp.src_start): row + int(sp.src_start) + width]
+            for k in range(int(T)):
+                cycle = k + latency
+                if 0 <= cycle < src.shape[1]:
+                    out[k, d0:d0 + width] = src[:, cycle]
+        return out
+
     def _compute_seg_output_spike_count(
         self,
         output_map: List[Any],

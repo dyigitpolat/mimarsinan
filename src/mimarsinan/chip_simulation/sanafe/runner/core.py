@@ -19,11 +19,7 @@ from mimarsinan.chip_simulation.sanafe.runner.custom_floorplan import (
 from mimarsinan.chip_simulation.sanafe.arch_synth.spec import CUSTOM_PRESET_NAME
 from mimarsinan.chip_simulation.sanafe.presets import CUSTOM_ZERO_PRESET, PRESETS
 from mimarsinan.chip_simulation.sanafe.records import (
-    SanafeArchGeometry,
-    SanafeEnergyBreakdown,
-    SanafeRunRecord,
-    SanafeSegmentRecord,
-)
+    SanafeArchGeometry, SanafeEnergyBreakdown, SanafeRunRecord, SanafeSegmentRecord,)
 
 
 
@@ -165,12 +161,15 @@ class SanafeRunner(SanafeNeuralStageMixin, SanafeNeuralStageRecordMixin, SanafeS
         # per-sample record never carries another sample's accumulation.
         stage_timer = StageTimer() if self.time_host_stages else None
 
+        state_buffer_spikes: Dict[int, Any] = {}
+
         def _on_neural(stage_index, stage, state_buffer):
             segments[stage_index] = self._run_neural_stage(
                 sanafe=sanafe,
                 stage=stage,
                 stage_index=stage_index,
                 state_buffer=state_buffer,
+                state_buffer_spikes=state_buffer_spikes,
             )
 
         def _on_compute(_stage_index, stage, state_buffer):

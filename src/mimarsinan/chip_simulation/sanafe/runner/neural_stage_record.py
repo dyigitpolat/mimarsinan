@@ -14,35 +14,15 @@ if TYPE_CHECKING:
     )
 
 import mimarsinan.chip_simulation.sanafe.runner as _runner
+from mimarsinan.chip_simulation.sanafe.runner.carry import publish_sanafe_carry
 from mimarsinan.chip_simulation.hybrid_run.hybrid_semantics import (
-    NeuralSegmentResult,
-    store_neural_segment_output,
-)
+    NeuralSegmentResult, store_neural_segment_output)
 from mimarsinan.chip_simulation.spiking_semantics import is_cascaded_ttfs
 from mimarsinan.spiking.segment_boundary import decode_segment_output
 from mimarsinan.chip_simulation.sanafe.analysis import (
-    _aggregate_noc_link_load,
-    _aggregate_noc_links,
-    _build_spike_capture_warning,
-    _compute_cascade_timeline,
-    _compute_critical_cores,
-    _compute_cycle_energy_breakdown,
-    _compute_noc_link_load_per_cycle,
-    _compute_noc_traffic_per_cycle,
-    _compute_tile_packets_per_cycle,
-    _compute_ttfs_activity_diagnostics,
-    _flatten_message_trace,
-    _group_name,
-    _pack_potential_trace,
-    _pack_spike_trace_matrix,
-    _per_core_energy_sanafe,
-    read_final_core_potentials,
-)
+    _aggregate_noc_link_load, _aggregate_noc_links, _build_spike_capture_warning, _compute_cascade_timeline, _compute_critical_cores, _compute_cycle_energy_breakdown, _compute_noc_link_load_per_cycle, _compute_noc_traffic_per_cycle, _compute_tile_packets_per_cycle, _compute_ttfs_activity_diagnostics, _flatten_message_trace, _group_name, _pack_potential_trace, _pack_spike_trace_matrix, _per_core_energy_sanafe, read_final_core_potentials,)
 from mimarsinan.chip_simulation.sanafe.records import (
-    SanafeCoreRecord,
-    SanafeEnergyBreakdown,
-    SanafeSegmentRecord,
-)
+    SanafeCoreRecord, SanafeEnergyBreakdown, SanafeSegmentRecord,)
 from mimarsinan.mapping.support.core_geometry import used_axons as _used_axons
 from mimarsinan.mapping.support.core_geometry import used_neurons as _used_neurons
 
@@ -92,6 +72,7 @@ class SanafeNeuralStageRecordMixin:
         chip_spike_count,
         seg_raster,
         group_row_offsets,
+        state_buffer_spikes=None,
         pkts_in,
         pkts_out,
     ) -> SanafeSegmentRecord:
@@ -296,5 +277,7 @@ class SanafeNeuralStageRecordMixin:
                 state_buffer,
                 NeuralSegmentResult(inter_stage=seg_output_rates),
             )
+            publish_sanafe_carry(
+                self, stage, state_buffer_spikes, seg_raster=seg_raster,
+                group_row_offsets=group_row_offsets, hcm=hcm, core_to_group=core_to_group)
         return seg_record
-

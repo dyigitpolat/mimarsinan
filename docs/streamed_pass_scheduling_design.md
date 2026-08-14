@@ -292,3 +292,39 @@ origin fails 4, and clamping the producer window — previously invisible at flo
 and killable only on the pure recorder — now fails at flow level too. The one remaining
 survivor was the `input`-kind output span, which a linear chain never produces; it is
 now pinned directly on `record_carry`, along with the always-on span.
+
+## 17. SANA-FE carries verbatim (2026-08-14)
+
+SANA-FE is the **cost-measuring** backend — it feeds the physics and energy path — so a
+collapsed pass boundary there would model a different computation from the one the
+record claims, and its energy number would be for the wrong chip. It now carries.
+
+Both primitives already existed, so this is a gather, not a new capability:
+`_pack_spike_trace_matrix` gives a `(neurons, T)` trace, and `set_input_spike_trains`
+accepts an arbitrary `(1, size, T)` train.
+
+Two conversions do the work, and both are places a plausible implementation goes wrong:
+
+- **Produce.** `_compute_seg_output_raster` is the per-cycle twin of
+  `_compute_seg_output_spike_count` — same spans, same sources, gathering the trace row
+  instead of the accumulated count, and **shifted by each source core's own latency** so
+  index *k* is that producer's k-th emission. SANA-FE's trace is in ABSOLUTE cycle time
+  and net-group row order; a carried raster is PRODUCER-LOCAL and in segment-output
+  order.
+- **Consume.** `apply_carried_input` overwrites only the input slices whose producer
+  published a train, transposing `(T, size)` into the `(1, size, T)` SANA-FE reads. A
+  host boundary sharing the same input map keeps its uniform re-encode.
+
+`publish_carried_trains` now slices with `[..., a:b]` rather than a fixed rank, which is
+what lets the torch flow's `(T, B, size)` and a per-sample numpy `(T, size)` share one
+publication path — the canonical carried layout is TIME-FIRST with the feature axis
+LAST.
+
+`VERBATIM_BACKENDS` is now `{hcm, sanafe}`. nevresim and lava still take COLLAPSE, for
+the reason recorded in §14: neither records a rhythm it could replay, and the cheaper
+discipline is a legitimate deployment rather than a refusal.
+
+**Mutation-checked.** Replaying without the transpose, replaying host boundaries too,
+dropping the producer latency, and dropping always-on spans all fail. The last two
+needed direct tests of the gather: the earlier tests covered only the consume side, so
+the produce side was passing unexamined.

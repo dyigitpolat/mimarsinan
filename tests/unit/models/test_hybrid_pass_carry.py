@@ -298,12 +298,24 @@ class TestEveryBackendDeploysAScheduledSegment:
 
         assert pass_transfer_for_backend("hcm") == VERBATIM
 
-    def test_a_backend_without_raster_output_collapses_to_counts(self):
+    def test_the_cost_measuring_backend_carries_verbatim(self):
+        """SANA-FE feeds the physics and energy path, so a collapsed boundary there
+        would model a different computation from the one the record claims."""
         from mimarsinan.models.spiking.hybrid.carry import (
             pass_transfer_for_backend,
         )
 
-        for backend in ("sanafe", "nevresim", "lava"):
+        assert pass_transfer_for_backend("sanafe") == VERBATIM
+
+    def test_a_backend_without_raster_output_collapses_to_counts(self):
+        """nevresim's SPKREC prints per-core COUNTS and lava's runner returns rates;
+        neither can replay a rhythm it never recorded, so both take the cheaper
+        discipline rather than refusing the deployment."""
+        from mimarsinan.models.spiking.hybrid.carry import (
+            pass_transfer_for_backend,
+        )
+
+        for backend in ("nevresim", "lava"):
             assert pass_transfer_for_backend(backend) == COLLAPSE
 
     def test_collapsing_is_cheaper_to_buffer_than_carrying(self):

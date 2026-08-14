@@ -35,6 +35,7 @@ from mimarsinan.chip_simulation.sanafe.net_synth import apply_ttfs_preset_membra
 from mimarsinan.chip_simulation.sanafe.records import SanafeSegmentRecord
 from mimarsinan.chip_simulation.sanafe.runner.bounded_sim import simulate_chip_bounded
 from mimarsinan.mapping.latency.chip import ChipLatency
+from mimarsinan.models.spiking.hybrid.carry import apply_carried_input
 
 from .constants import _COMPUTE_DTYPE
 
@@ -69,6 +70,7 @@ class SanafeNeuralStageMixin:
         stage: Any,
         stage_index: int,
         state_buffer: Dict[int, np.ndarray],
+        state_buffer_spikes: Optional[Dict[int, Any]] = None,
     ) -> SanafeSegmentRecord:
         hcm = stage.hard_core_mapping
         _output_sources = getattr(hcm, "output_sources", None)
@@ -216,6 +218,11 @@ class SanafeNeuralStageMixin:
                     dtype=encoded.dtype,
                 )
                 encoded_padded = np.concatenate([encoded, pad], axis=2)
+            if state_buffer_spikes:
+                # A pass boundary inside this segment replays the producer's raster
+                # verbatim; only slices with a published train are overwritten, so a
+                # host boundary in the same input map still arrives re-encoded.
+                apply_carried_input(encoded_padded, stage, state_buffer_spikes)
             _runner.set_input_spike_trains(core_input_neurons, hcm, encoded_padded)
         core_latencies = {
             i: (int(c.latency) if getattr(c, "latency", None) is not None else 0)
@@ -286,6 +293,7 @@ class SanafeNeuralStageMixin:
             chip_spike_count=chip_spike_count,
             seg_raster=seg_raster,
             group_row_offsets=group_row_offsets,
+            state_buffer_spikes=state_buffer_spikes,
             pkts_in=pkts_in,
             pkts_out=pkts_out,
         )

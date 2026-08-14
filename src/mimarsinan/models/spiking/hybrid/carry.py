@@ -44,9 +44,36 @@ def publish_carried_trains(
     for s in stage.output_map:
         node_id = int(s.node_id)
         if node_id in wanted:
+            # Ellipsis, not a fixed rank: the canonical carried layout is
+            # TIME-FIRST with the feature axis LAST, so the torch flow's
+            # (T, B, size) and a per-sample numpy (T, size) slice identically.
             state_buffer_spikes[node_id] = (
-                output_train[:, :, s.offset : s.offset + s.size]
+                output_train[..., s.offset : s.offset + s.size]
             )
+
+
+def apply_carried_input(encoded, stage, state_buffer_spikes) -> bool:
+    """Overwrite ``encoded`` slices whose producer published a raster.
+
+    ``encoded`` is the backend's per-axon train in ``(1, size, T)`` — the shape
+    SANA-FE's ``set_input_spike_trains`` reads — while a carried raster is stored
+    time-first as ``(T, size)``. Returns whether anything was replayed, so a caller
+    can report the discipline it actually ran rather than the one it hoped for.
+    """
+    replayed = False
+    for s in stage.input_map:
+        train = state_buffer_spikes.get(int(s.node_id))
+        if train is None:
+            continue
+        width = min(int(s.size), train.shape[-1], encoded.shape[1] - int(s.offset))
+        if width <= 0:
+            continue
+        window = min(int(train.shape[0]), int(encoded.shape[2]))
+        encoded[0, s.offset : s.offset + width, :window] = (
+            train[:window, :width].T
+        )
+        replayed = True
+    return replayed
 
 
 def require_carry_capable(stage, *, packed: bool) -> None:
@@ -104,7 +131,7 @@ def record_carry(carry, plan, *, cycle: int, fires, train, T: int) -> None:
 
 #: Backends that replay a carried raster verbatim. A backend outside this set uses
 #: the COLLAPSE discipline instead — never a refusal.
-VERBATIM_BACKENDS = frozenset({"hcm"})
+VERBATIM_BACKENDS = frozenset({"hcm", "sanafe"})
 
 
 def pass_transfer_for_backend(backend: str) -> str:
@@ -131,6 +158,7 @@ def pass_transfer_for_backend(backend: str) -> str:
 __all__ = [
     "VERBATIM_BACKENDS",
     "carried_output_ids",
+    "apply_carried_input",
     "carried_wire_bytes",
     "carry_plan_for",
     "pass_transfer_for_backend",
