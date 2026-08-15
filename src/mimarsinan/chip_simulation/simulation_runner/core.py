@@ -19,6 +19,7 @@ from mimarsinan.chip_simulation.simulation_runner.flat import SimulationFlatMixi
 from mimarsinan.chip_simulation.simulation_runner.hybrid import SimulationHybridMixin
 from mimarsinan.mapping.packing.hybrid_hardcore_mapping import HybridHardCoreMapping
 from mimarsinan.models.nn.lif_kernels import measurement_plane
+from mimarsinan.models.spiking.hybrid.carry import run_pass_transfer
 from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 
 
@@ -66,6 +67,9 @@ class SimulationRunner(SimulationFlatMixin, SimulationHybridMixin):
         self.thresholding_mode = pipeline.config.get("thresholding_mode", "<=")
         self.spiking_mode = plan.spiking_mode
         self.nevresim_connectivity_mode = resolve_nevresim_connectivity_mode(pipeline.config)
+        # ONE discipline per run (run_pass_transfer): verbatim only when the
+        # semantics stream AND every enabled backend can replay a raster.
+        self.pass_transfer = run_pass_transfer(pipeline.config)
         self.simulation_step_timeout_s = resolve_simulation_step_timeout_s(
             pipeline.config.get("simulation_step_timeout_s")
         )

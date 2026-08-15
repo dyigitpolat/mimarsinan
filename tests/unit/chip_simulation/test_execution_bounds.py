@@ -389,7 +389,8 @@ class TestSeamsStayBounded:
     """Each unbounded-wait seam must go through execution_bounds primitives."""
 
     def test_hybrid_pool_uses_bounded_pool(self):
-        src = (SRC_ROOT / "chip_simulation/simulation_runner/hybrid.py").read_text()
+        # The emit+compile pool moved with prepare_all_segments into emit.py.
+        src = (SRC_ROOT / "chip_simulation/simulation_runner/emit.py").read_text()
         assert "run_tasks_in_pool_bounded" in src
         assert "as_completed" not in src
 

@@ -8,7 +8,7 @@ from types import SimpleNamespace
 import numpy as np
 
 from mimarsinan.chip_simulation.nevresim.nevresim_driver import NevresimDriver
-from mimarsinan.chip_simulation.simulation_runner import hybrid as hybrid_mod
+from mimarsinan.chip_simulation.simulation_runner import emit as emit_mod
 from mimarsinan.chip_simulation.simulation_runner.emit import (
     _PreparedSegment,
     _emit_and_compile_segment,
@@ -43,6 +43,7 @@ def _fake_self(tmp_path, timeout_s):
         firing_mode="Default",
         thresholding_mode="<=",
         spiking_mode="lif",
+        pass_transfer="collapse",
         simulation_length=4,
         nevresim_connectivity_mode="runtime",
         simulation_step_timeout_s=timeout_s,
@@ -76,7 +77,7 @@ def test_prepare_all_segments_passes_the_wall_cap_to_the_bounded_pool(
         )
         return {0: sentinel}
 
-    monkeypatch.setattr(hybrid_mod, "run_tasks_in_pool_bounded", _fake_pool)
+    monkeypatch.setattr(emit_mod, "run_tasks_in_pool_bounded", _fake_pool)
 
     prepared = SimulationHybridMixin._prepare_all_segments(
         _fake_self(tmp_path, 432.0), hybrid,

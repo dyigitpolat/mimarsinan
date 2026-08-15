@@ -114,9 +114,15 @@ class HybridRateForwardMixin(HybridFlowHost):
                     seg_output_spike_count=np.zeros(0, dtype=np.int64),
                 )
 
+            # Semantics gate the run (F0); the INSTANCE's own execution gates
+            # the flow: a synchronized twin of a streamed run re-encodes at its
+            # boundaries by its own discipline, so it neither carries nor refuses.
+            instance_streams = not getattr(self, "lif_execution_synchronized", False)
             carried_ids = (
                 self._carried_output_ids().get(ctx.stage_index, ())
-                if getattr(self, "pass_transfer", VERBATIM) == VERBATIM else ()
+                if (instance_streams
+                    and getattr(self, "pass_transfer", VERBATIM) == VERBATIM)
+                else ()
             )
             output_train: list | None = [] if carried_ids else None
             counts = self._run_neural_segment_rate(

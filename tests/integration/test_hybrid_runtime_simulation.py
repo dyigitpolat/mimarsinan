@@ -66,6 +66,7 @@ class _HybridSmokeRunner(SimulationHybridMixin):
         self.firing_mode = "Default"
         self.thresholding_mode = "<="
         self.spiking_mode = "lif"
+        self.pass_transfer = "collapse"
         self.simulation_length = 4
         self.nevresim_connectivity_mode = "runtime"
         self.simulation_step_timeout_s = 900.0
@@ -93,7 +94,7 @@ def test_hybrid_precompiled_runtime_multisample() -> None:
             num_samples,
         )
         seg_data = [(seg_input[i], np.zeros(1)) for i in range(num_samples)]
-        raw, membranes = runner._run_neural_segment_precompiled(
+        raw, membranes, _trains = runner._run_neural_segment_precompiled(
             seg, seg_data, num_proc=4,
         )
 

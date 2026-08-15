@@ -9,11 +9,14 @@ import torch
 
 from mimarsinan.chip_simulation.recording.spike_recorder import CoreSpikeCounts, SegmentSpikeRecord
 from mimarsinan.mapping.latency.chip import ChipLatency
-from mimarsinan.models.spiking.hybrid.carry import require_carry_capable
+from mimarsinan.models.spiking.hybrid.carry import (
+    record_reference_carry, require_carry_capable)
 from mimarsinan.mapping.packing.hybrid_hardcore_mapping import HybridStage
 from mimarsinan.models.spiking.cycle_policy import cycle_neuron_policy, precharge_lif_states
 from mimarsinan.models.spiking.hybrid.executors import (
     run_neural_segment_counts, run_neural_segment_packed,)
+from mimarsinan.models.spiking.hybrid.executors.single_spike import (
+    single_spike_output_step)
 from mimarsinan.models.spiking.hybrid.host import HybridFlowHost
 from mimarsinan.models.spiking.hybrid.membrane_readout import stash_membrane_readout_correction
 from mimarsinan.models.spiking.spiking_config import COMPUTE_DTYPE
@@ -104,12 +107,11 @@ class HybridLifStepMixin(HybridFlowHost):
             getattr(self, "lif_execution_synchronized", False)
             and self.spiking_mode == "lif" and not single_spike and not recording)
         if output_train is not None:
-            # packed= must describe the EXECUTED path: the synchronized early-
-            # return records nothing; claiming capability = silently empty raster.
-            require_carry_capable(stage, packed=(
-                not synchronized_path and not single_spike and not recording
-                and latency_gated
-                and getattr(self, "use_packed_cycle_executor", True)))
+            # capable= must describe the EXECUTED path: the synchronized early-
+            # return and the single-spike latch record no multi-spike raster;
+            # the packed executor AND the reference loop below both do.
+            require_carry_capable(
+                stage, packed=(not synchronized_path and not single_spike))
 
         if synchronized_path:
             return run_neural_segment_counts(
@@ -135,6 +137,12 @@ class HybridLifStepMixin(HybridFlowHost):
         out_arrival = (torch.zeros(batch_size, len(output_sources),
                                    device=device, dtype=COMPUTE_DTYPE)
                        if single_spike else None)
+
+        reference_carry = None
+        if output_train is not None and not single_spike:
+            reference_carry = torch.zeros(
+                T, batch_size, len(output_sources),
+                device=device, dtype=COMPUTE_DTYPE)
 
         # A gated core only consumes its axon fill inside [latency, latency+T);
         # filling outside that window is dead work (input_signals feed nothing),
@@ -191,36 +199,9 @@ class HybridLifStepMixin(HybridFlowHost):
 
             if single_spike:
                 assert out_arrival is not None
-                # Single-spike decode: count each latched source only within its own [src_lat, src_lat+T) window, else shallow sources overcount and saturate.
-                for sp in output_spans:
-                    d0 = int(sp.dst_start)
-                    d1 = int(sp.dst_end)
-                    if sp.kind == "off":
-                        continue
-                    if sp.kind == "on":
-                        if cycle < T:
-                            output_counts[:, d0:d1] += 1.0
-                        continue
-                    if sp.kind == "input":
-                        if cycle < T:
-                            torch.maximum(
-                                out_arrival[:, d0:d1],
-                                input_spikes[:, int(sp.src_start):int(sp.src_end)],
-                                out=out_arrival[:, d0:d1],
-                            )
-                            output_counts[:, d0:d1] += out_arrival[:, d0:d1]
-                        continue
-                    src_lat = cores[int(sp.src_core)].latency
-                    if src_lat is None:
-                        continue
-                    if cycle < int(src_lat) or cycle >= int(src_lat) + T:
-                        continue
-                    torch.maximum(
-                        out_arrival[:, d0:d1],
-                        buffers[int(sp.src_core)][:, int(sp.src_start):int(sp.src_end)],
-                        out=out_arrival[:, d0:d1],
-                    )
-                    output_counts[:, d0:d1] += out_arrival[:, d0:d1]
+                single_spike_output_step(
+                    output_counts, out_arrival, output_spans, cores,
+                    cycle=cycle, T=T, buffers=buffers, input_spikes=input_spikes)
                 continue
 
             for sp in output_spans:
@@ -242,6 +223,14 @@ class HybridLifStepMixin(HybridFlowHost):
                 if cycle < int(src_lat) or cycle >= int(src_lat) + T:
                     continue
                 output_counts[:, d0:d1] += buffers[int(sp.src_core)][:, int(sp.src_start):int(sp.src_end)]
+
+            if reference_carry is not None:
+                record_reference_carry(
+                    reference_carry, output_spans, cores, cycle=cycle,
+                    buffers=buffers, input_spikes=input_spikes, T=T)
+
+        if output_train is not None and not single_spike:
+            output_train.append(reference_carry)
 
         stash_membrane_readout_correction(
             self,

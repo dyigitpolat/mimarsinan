@@ -76,7 +76,7 @@ class TestPrepareSegmentsArmsExportFlag:
     def _prepare(self, monkeypatch, tmp_path, *, armed: bool):
         from types import SimpleNamespace
 
-        import mimarsinan.chip_simulation.simulation_runner.hybrid as hybrid_mod
+        import mimarsinan.chip_simulation.simulation_runner.emit as emit_mod
         from mimarsinan.chip_simulation.nevresim.nevresim_driver import NevresimDriver
         from mimarsinan.chip_simulation.simulation_runner.hybrid import (
             SimulationHybridMixin,
@@ -90,7 +90,7 @@ class TestPrepareSegmentsArmsExportFlag:
             recorded.update(task_args)
             return {}
 
-        monkeypatch.setattr(hybrid_mod, "run_tasks_in_pool_bounded", _fake_pool)
+        monkeypatch.setattr(emit_mod, "run_tasks_in_pool_bounded", _fake_pool)
         fake_self = SimpleNamespace(
             test_data=[(np.zeros(1, dtype=np.float64), np.zeros(1))],
             working_directory=str(tmp_path),
@@ -100,6 +100,9 @@ class TestPrepareSegmentsArmsExportFlag:
             firing_mode="Default",
             thresholding_mode="<=",
             spiking_mode="lif",
+            # The host contract's run discipline: COLLAPSE keeps this fixture on
+            # the pre-carry path (no train roles computed).
+            pass_transfer="collapse",
             simulation_length=4,
             nevresim_connectivity_mode="runtime",
             simulation_step_timeout_s=900.0,
@@ -111,15 +114,17 @@ class TestPrepareSegmentsArmsExportFlag:
 
     def test_armed_runner_requests_membrane_build(self, monkeypatch, tmp_path):
         args = self._prepare(monkeypatch, tmp_path, armed=True)
-        # (..., export_membrane, record_mode): BOTH builds — window counts
-        # from the record binary, membranes from the export binary.
-        assert args[-2] is True, "export_membrane must reach the compile worker"
-        assert args[-1] is True
+        # (..., export_membrane, record_mode, record_trains, input_mode,
+        # carried_out): BOTH builds — window counts from the record binary,
+        # membranes from the export binary; a COLLAPSE run carries nothing.
+        assert args[-5] is True, "export_membrane must reach the compile worker"
+        assert args[-4] is True
+        assert args[-3] is False and args[-2] is None and args[-1] == ()
 
     def test_unarmed_runner_keeps_default_build(self, monkeypatch, tmp_path):
         args = self._prepare(monkeypatch, tmp_path, armed=False)
-        assert args[-2] is False
-        assert args[-1] is True, (
+        assert args[-5] is False
+        assert args[-4] is True, (
             "lif segments must request the window-record build"
         )
 

@@ -188,10 +188,15 @@ class SanafeSegmentIOMixin:
         """``(T, n_out)`` segment-output raster in PRODUCER-LOCAL time.
 
         The per-cycle twin of :meth:`_compute_seg_output_spike_count`: same spans,
-        same sources, but gathering the trace row rather than the accumulated count,
-        shifted by each source core's own latency so index ``k`` is that producer's
-        k-th emission — which is what the consuming pass replays as its input train.
-        Returns ``None`` when the backend recorded no trace.
+        same sources, but gathering the trace row rather than the accumulated
+        count. SANA-FE's spike trace logs a fire at its DELIVERY cycle — one
+        after the soma's own step — so a producer at latency ``lat`` emits its
+        k-th spike into trace column ``lat + 1 + k``; that origin makes index
+        ``k`` the producer's k-th emission, which is what the consuming pass
+        replays. (Measured against the HCM carrying flow on the scheduled
+        probe: the ``lat + k`` origin reproduced HCM shifted one cycle late
+        with the final emission truncated.) Returns ``None`` when the backend
+        recorded no trace.
         """
         if seg_raster is None or output_sources is None:
             return None
@@ -218,7 +223,7 @@ class SanafeSegmentIOMixin:
             width = min(d1 - d0, int(sp.length))
             src = seg_raster[row + int(sp.src_start): row + int(sp.src_start) + width]
             for k in range(int(T)):
-                cycle = k + latency
+                cycle = k + latency + 1
                 if 0 <= cycle < src.shape[1]:
                     out[k, d0:d0 + width] = src[:, cycle]
         return out

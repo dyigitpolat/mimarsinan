@@ -9,9 +9,7 @@ is a host boundary and still collapses, by design.
 
 from __future__ import annotations
 
-from typing import Dict, Tuple
-
-import torch
+from typing import Any, Dict, Tuple
 
 from mimarsinan.mapping.support.schedule.pass_carry import (
     carried_outputs_by_stage,
@@ -36,9 +34,9 @@ def carried_output_ids(hybrid_mapping) -> Dict[int, Tuple[int, ...]]:
 
 def publish_carried_trains(
     stage,
-    output_train: torch.Tensor,
+    output_train,
     carried_ids: Tuple[int, ...],
-    state_buffer_spikes: Dict[int, torch.Tensor],
+    state_buffer_spikes: Dict[int, Any],
 ) -> None:
     """Slice the segment's output raster into the per-wire trains a later pass replays.
 
@@ -79,6 +77,39 @@ def apply_carried_input(encoded, stage, state_buffer_spikes) -> bool:
         )
         replayed = True
     return replayed
+
+
+def record_reference_carry(
+    carry, output_spans, cores, *, cycle: int, buffers, input_spikes, T: int
+) -> None:
+    """One cycle of the REFERENCE loop's output raster, producer-local time.
+
+    The per-core twin of the packed executor's ``record_carry``: same span walk,
+    same window discipline (a cycle outside a producer's ``[lat, lat+T)`` window
+    is SKIPPED, never clamped), reading each core's live fire vector instead of
+    the packed ``fires`` slab.
+    """
+    for sp in output_spans:
+        d0, d1 = int(sp.dst_start), int(sp.dst_end)
+        if sp.kind == "off":
+            continue
+        if sp.kind == "on":
+            if cycle < T:
+                carry[cycle, :, d0:d1] = 1.0
+            continue
+        if sp.kind == "input":
+            if cycle < T:
+                carry[cycle, :, d0:d1] = (
+                    input_spikes[:, int(sp.src_start):int(sp.src_end)])
+            continue
+        latency = cores[int(sp.src_core)].latency
+        if latency is None:
+            continue
+        local = cycle - int(latency)
+        if not (0 <= local < T):
+            continue
+        carry[local, :, d0:d1] = (
+            buffers[int(sp.src_core)][:, int(sp.src_start):int(sp.src_end)])
 
 
 def require_carry_capable(stage, *, packed: bool) -> None:
@@ -136,7 +167,7 @@ def record_carry(carry, plan, *, cycle: int, fires, train, T: int) -> None:
 
 #: Backends that replay a carried raster verbatim. A backend outside this set uses
 #: the COLLAPSE discipline instead — never a refusal.
-VERBATIM_BACKENDS = frozenset({"hcm", "sanafe"})
+VERBATIM_BACKENDS = frozenset({"hcm", "sanafe", "nevresim"})
 
 
 #: config key that enables each backend, so the run's discipline is read from the
@@ -209,5 +240,6 @@ __all__ = [
     "run_pass_transfer",
     "publish_carried_trains",
     "record_carry",
+    "record_reference_carry",
     "require_carry_capable",
 ]

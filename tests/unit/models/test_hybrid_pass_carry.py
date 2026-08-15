@@ -307,16 +307,23 @@ class TestEveryBackendDeploysAScheduledSegment:
 
         assert pass_transfer_for_backend("sanafe") == VERBATIM
 
-    def test_a_backend_without_raster_output_collapses_to_counts(self):
-        """nevresim's SPKREC prints per-core COUNTS and lava's runner returns rates;
-        neither can replay a rhythm it never recorded, so both take the cheaper
-        discipline rather than refusing the deployment."""
+    def test_nevresim_carries_verbatim(self):
+        """SPKTRN extraction + SpikeTrain replay: the per-segment binaries record
+        producer-local trains and consuming segments replay them."""
         from mimarsinan.models.spiking.hybrid.carry import (
             pass_transfer_for_backend,
         )
 
-        for backend in ("nevresim", "lava"):
-            assert pass_transfer_for_backend(backend) == COLLAPSE
+        assert pass_transfer_for_backend("nevresim") == VERBATIM
+
+    def test_a_backend_without_raster_output_collapses_to_counts(self):
+        """lava's runner returns rates and records no rhythm it could replay, so
+        it takes the cheaper discipline rather than refusing the deployment."""
+        from mimarsinan.models.spiking.hybrid.carry import (
+            pass_transfer_for_backend,
+        )
+
+        assert pass_transfer_for_backend("lava") == COLLAPSE
 
     def test_collapsing_is_cheaper_to_buffer_than_carrying(self):
         """Counts fit in log2(T+1) bits; a raster needs T. That is the whole
@@ -438,7 +445,11 @@ class TestOneDisciplinePerRun:
 
     def test_one_collapsing_backend_costs_the_whole_run_its_rasters(self):
         assert self._transfer(enable_sanafe_simulation=True,
-                              enable_nevresim_simulation=True) == COLLAPSE
+                              enable_loihi_simulation=True) == COLLAPSE
+
+    def test_nevresim_no_longer_collapses_the_run(self):
+        assert self._transfer(enable_sanafe_simulation=True,
+                              enable_nevresim_simulation=True) == VERBATIM
 
     def test_lava_collapses_the_run_too(self):
         assert self._transfer(enable_loihi_simulation=True) == COLLAPSE
@@ -483,10 +494,11 @@ class TestSemanticsDecideBeforeBackends:
             "core_semantics": "mvm", "enable_sanafe_simulation": True,
         }) == COLLAPSE
 
-    def test_requesting_a_raster_on_the_synchronized_path_refuses_loudly(self):
-        """The executor's honesty half: the synchronized early-return records
-        nothing, so a caller that asks for a raster there must get the refusal —
-        never a silently empty list that downstream code happens to skip."""
+    def test_a_synchronized_twin_of_a_verbatim_run_neither_carries_nor_refuses(self):
+        """The gauge certificate runs a SYNCHRONIZED twin of the streamed run:
+        the run discipline says verbatim, but that instance's execution re-encodes
+        at its boundaries by its own discipline — so it must run clean without
+        publishing (the first verbatim probe died here on the refusal)."""
         ir = _deep_lif_ir()
         scheduled = _scheduled(ir, count=2)
         flow = SpikingHybridCoreFlow(
@@ -494,9 +506,27 @@ class TestSemanticsDecideBeforeBackends:
             cycle_accurate_lif_forward=True, lif_execution_synchronized=True,
             pass_transfer=VERBATIM,
         )
+        with torch.no_grad():
+            out = flow(torch.rand(2, 8))
+        assert torch.isfinite(out).all()
+
+    def test_requesting_a_raster_on_the_synchronized_executor_refuses_loudly(self):
+        """The executor-level guard stays: a DIRECT caller that asks the
+        synchronized path for a raster must get the refusal, never a silently
+        empty list that downstream code happens to skip."""
+        ir = _deep_lif_ir()
+        scheduled = _scheduled(ir, count=2)
+        flow = SpikingHybridCoreFlow(
+            (8,), scheduled, simulation_length=T, spiking_mode="lif",
+            cycle_accurate_lif_forward=True, lif_execution_synchronized=True,
+            pass_transfer=VERBATIM,
+        )
+        stage = next(s for s in scheduled.stages
+                     if getattr(s, "kind", None) == "neural")
+        train = torch.zeros(T, 1, max(s.offset + s.size for s in stage.input_map))
         with pytest.raises(NotImplementedError, match="synchronized"):
-            with torch.no_grad():
-                flow(torch.rand(2, 8))
+            flow._run_neural_segment_rate(
+                stage, input_spike_train=train, output_train=[])
 
     def test_every_enable_key_survives_config_resolution(self):
         """run_pass_transfer reads enable_* keys with no default; DeploymentPlan
@@ -511,3 +541,42 @@ class TestSemanticsDecideBeforeBackends:
         ).resolved
         for key in _BACKEND_ENABLE_KEYS.values():
             assert key in resolved, key
+
+
+class TestTheReferenceLoopCarriesLikeThePackedExecutor:
+    """The certificate paths run the RECORDING reference loop (batch 1), which the
+    first verbatim probe found could not carry. It now can — and its raster must
+    be bit-identical to the packed executor's, or the two execution paths of one
+    flow would compute different scheduled runs."""
+
+    def _published(self, use_packed: bool):
+        ir = _deep_lif_ir(seed=11)
+        scheduled = _scheduled(ir, count=2)
+        flow = _flow(scheduled)
+        flow.use_packed_cycle_executor = use_packed
+        captured = {}
+        original = SpikingHybridCoreFlow._publish_carried_trains
+
+        def _capture(stage, output_train, carried_ids, buffer):
+            for s in stage.output_map:
+                if int(s.node_id) in set(carried_ids):
+                    captured[int(s.node_id)] = (
+                        output_train[..., s.offset:s.offset + s.size].clone())
+            return original(stage, output_train, carried_ids, buffer)
+
+        flow._publish_carried_trains = _capture
+        x = torch.rand(3, 8)
+        with torch.no_grad():
+            out = flow(x)
+        assert captured, "the scheduled run must have published a carry"
+        return out, captured
+
+    def test_reference_and_packed_rasters_are_identical(self):
+        torch.manual_seed(5)
+        packed_out, packed = self._published(use_packed=True)
+        torch.manual_seed(5)
+        reference_out, reference = self._published(use_packed=False)
+        assert torch.equal(packed_out, reference_out)
+        assert packed.keys() == reference.keys()
+        for node in packed:
+            assert torch.equal(packed[node], reference[node]), node

@@ -90,23 +90,28 @@ class TestTheSanafeGather:
         return np.array([SpikeSource(**spec) for spec in specs], dtype=object)
 
     def test_a_core_span_is_gathered_per_cycle(self):
-        # Core 0 neurons 0..1; trace rows 0..1 over 4 absolute cycles.
+        """SANA-FE's trace logs a fire at its DELIVERY cycle — one after the
+        soma's step — so a latency-0 core's k-th emission sits at column k+1.
+        Measured against the HCM carrying flow on the scheduled probe: the
+        column-k origin reproduced HCM one cycle late with the last emission
+        truncated; this origin matches it exactly, totals and rhythms."""
         raster = _Gather()._compute_seg_output_raster(
             self._sources([{"core": 0, "neuron": 0}, {"core": 0, "neuron": 1}]),
-            seg_raster=np.array([[1, 0, 1, 0], [0, 1, 1, 0]], dtype=np.uint8),
+            seg_raster=np.array([[9, 1, 0, 1, 0], [9, 0, 1, 1, 0]], dtype=np.uint8),
             core_rows={0: 0}, core_latency={0: 0}, T=4,
         )
         assert raster.tolist() == [[1, 0], [0, 1], [1, 1], [0, 0]]
 
     def test_the_producers_latency_sets_local_time_zero(self):
-        """A core at latency 1 emits its FIRST spike at absolute cycle 1, and the
-        consuming pass reads that as its own step 0."""
+        """A core at latency 1 delivers its FIRST spike at absolute cycle 2, and
+        the consuming pass reads that as its own step 0."""
         raster = _Gather()._compute_seg_output_raster(
             self._sources([{"core": 0, "neuron": 0}]),
-            seg_raster=np.array([[9, 1, 0, 1]], dtype=np.uint8),
+            seg_raster=np.array([[9, 9, 1, 0, 1]], dtype=np.uint8),
             core_rows={0: 0}, core_latency={0: 1}, T=3,
         )
-        assert raster[:, 0].tolist() == [1, 0, 1], "cycle 0 belongs to no local step"
+        assert raster[:, 0].tolist() == [1, 0, 1], (
+            "cycles 0..1 belong to no local step")
 
     def test_an_always_on_source_spikes_every_local_step(self):
         raster = _Gather()._compute_seg_output_raster(
