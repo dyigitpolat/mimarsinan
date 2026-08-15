@@ -65,6 +65,16 @@ _ROWS: Tuple[Tuple[str, Tuple[str, str], str], ...] = (
     ("reprogrammed_cores", _COUNT,
      "Sum of core counts over reprogram passes only (the per-core programming "
      "overhead multiplicand)."),
+    ("carried_raster_bytes", (DATA, "B"),
+     "Payload crossing INTRA-SEGMENT pass boundaries per inference, sized under "
+     "the run's sealed transfer discipline: raster bits under verbatim, window "
+     "counts under collapse. A pass that halves cores but doubles this is not "
+     "a free win."),
+    ("carry_peak_live_bytes", (DATA, "B"),
+     "Peak concurrently-live carried payload over the segment's boundaries — the "
+     "buffer a scheduled chip must provision. Wires with disjoint live ranges "
+     "share it. A capacity fact for constraints; deliberately not an energy "
+     "multiplicand."),
     # --- dynamics: what an execution did ------------------------------------------
     ("timesteps", _COUNT, "Timesteps of one inference window (S)."),
     ("latency_steps", _COUNT,

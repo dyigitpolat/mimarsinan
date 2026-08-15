@@ -104,8 +104,11 @@ ROWS: Tuple[Tuple[str, str, str, str, str, str], ...] = (
     ("t_hop", INTERCONNECT, TIME, "ns", "noc_total_hops",
      "Wall time of one packet traversal of one inter-tile link."),
     # --- programming: getting weights and connectivity onto the chip ------------------
-    ("e_dma_per_byte", PROGRAMMING, ENERGY, "pJ", "reprogrammed_bytes",
-     "Energy to move one byte of programming payload to the chip."),
+    ("e_dma_per_byte", PROGRAMMING, ENERGY, "pJ",
+     "reprogrammed_bytes | carried_raster_bytes",
+     "Energy to move one byte over the target's DMA channel — programming "
+     "payloads (per program load) and intra-segment pass-boundary carries "
+     "(per inference) alike."),
     ("bytes_per_connectivity_entry", PROGRAMMING, DATA, "B",
      "connectivity_entries",
      "Wire size of one connectivity (axon source span) entry in this target's format."),

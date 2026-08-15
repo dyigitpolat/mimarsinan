@@ -370,3 +370,54 @@ class TestTheConversionModel:
         )
         term = _by_name(pricing)["energy_per_inference_mj"]
         assert term.value == pytest.approx(7.0 * 2e-12 * 1e3)
+
+
+class TestThePassCarryIsCharged:
+    """SP4: a pass that halves cores but doubles carry must stop looking free.
+    The carried payload moves over the DMA channel PER INFERENCE, so it lands in
+    the energy headline — never amortized with the program load."""
+
+    _ISAAC = get_platform_physics("isaac_like")
+
+    def _census(self, **over):
+        base = dict(synaptic_events=1e6, macs=1e6, host_macs=0,
+                    cores_physical=25, latency_steps=64, timesteps=4)
+        base.update(over)
+        return _quantities(**base)
+
+    def test_a_carrying_record_pays_the_dma_channel_per_inference(self):
+        with_carry = price_absolute(
+            self._census(carried_raster_bytes=1024.0), self._ISAAC)
+        without = price_absolute(self._census(), self._ISAAC)
+        both = _by_name(with_carry), _by_name(without)
+        delta = (both[0]["energy_per_inference_mj"].value
+                 - both[1]["energy_per_inference_mj"].value)
+        # isaac_like: e_dma_per_byte = 2.0215 pJ/B x 1024 B = 2.07 nJ.
+        assert delta == pytest.approx(2.0215e-12 * 1024 * 1e3, rel=1e-6)
+        assert "pass_carry" in both[0]["energy_per_inference_mj"].source
+
+    def test_a_run_with_no_carry_is_priced_identically(self):
+        """Absence is meaningful: no carry quantity, no term, no note."""
+        pricing = price_absolute(self._census(), self._ISAAC)
+        source = _by_name(pricing)["energy_per_inference_mj"].source
+        assert "pass_carry" not in source
+
+    def test_an_undeclared_dma_channel_names_the_unpriced_carry(self):
+        """TrueNorth declares no e_dma_per_byte: carried work exists and cannot
+        be priced, so the headline must SAY so rather than omit it silently."""
+        pricing = price_absolute(
+            _quantities(synaptic_events=1e6, host_macs=0, cores_physical=20,
+                        latency_steps=32, carried_raster_bytes=512.0),
+            _TRUENORTH,
+        )
+        source = _by_name(pricing)["energy_per_inference_mj"].source
+        assert "e_dma_per_byte(pass_carry)" in source
+
+    def test_peak_live_is_a_census_fact_not_an_energy(self):
+        """The buffer requirement is capacity, not switching work: pricing must
+        not multiply it into any energy term."""
+        with_peak = price_absolute(
+            self._census(carry_peak_live_bytes=99999.0), self._ISAAC)
+        without = price_absolute(self._census(), self._ISAAC)
+        assert (_by_name(with_peak)["energy_per_inference_mj"].value
+                == _by_name(without)["energy_per_inference_mj"].value)

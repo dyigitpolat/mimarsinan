@@ -144,3 +144,30 @@ def test_without_the_partition_the_split_is_absent():
     for key in ("onchip_params", "host_params", "total_params",
                 "onchip_macs", "host_macs", "total_macs"):
         assert not quantities.has(key), key
+
+
+class TestTheCarryCensusExtraction:
+    def test_a_record_without_carry_produces_no_carry_quantities(self):
+        """Absence is what 'no pass boundary' means — never zero, which would
+        price as a real payload of nothing and read as measured."""
+        quantities = from_record(make_full_record())
+        assert not quantities.has("carried_raster_bytes")
+        assert not quantities.has("carry_peak_live_bytes")
+
+    def test_a_sealed_carry_arrives_as_static_facts(self):
+        import dataclasses
+
+        from mimarsinan.deployment_record.schema import PassCarryRecord
+
+        record = make_full_record()
+        schedule = dataclasses.replace(
+            record.schedule,
+            carry=PassCarryRecord(transfer="collapse", carried_wires=6,
+                                  carried_bytes=384, peak_live_bytes=256,
+                                  timesteps=4),
+        )
+        record = dataclasses.replace(record, schedule=schedule)
+        quantities = from_record(record)
+        assert quantities.get("carried_raster_bytes").value == 384.0
+        assert quantities.get("carried_raster_bytes").provenance == "static"
+        assert quantities.get("carry_peak_live_bytes").value == 256.0
