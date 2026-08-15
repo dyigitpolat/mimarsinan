@@ -687,7 +687,7 @@
         "sched"
       ],
       "expected_wall_min": 7,
-      "note": "streamed x scheduling: 3 passes, intra-segment boundaries under the run transfer discipline, carry census sealed in the record"
+      "note": "streamed x scheduling: 3 passes, VERBATIM raster carry on every backend, carry census sealed in the record"
     },
     {
       "name": "t0_60_lifsync_simplemlp_wq_s4_search",

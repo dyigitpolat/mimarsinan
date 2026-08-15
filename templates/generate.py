@@ -292,16 +292,17 @@ T0 = [
          note="pins streamed x pruning parity — the W0.1 regression (streamed "
               "gate must project the NF onto the deployed survivor set)"),
     # [SP] streamed x scheduling: the ONE cell where a pass boundary sits
-    # INSIDE a streamed window. Pool I starves simple_mlp to 3 passes, so the
-    # intra-segment boundaries must carry (verbatim) or re-encode (collapse)
-    # under the RUN discipline — nevresim+lava enabled makes this run COLLAPSE,
-    # sealed in schedule.carry; the streamed NF<->SCM exactness gate stays
-    # FATAL, so a boundary that silently changed the computation is red here.
-    # Verified end-to-end 2026-08-15 (hcm/loihi/sanafe all max|dcount|=0).
+    # INSIDE a streamed window. Pool I starves simple_mlp to 3 passes; every
+    # shipped backend now carries the raster VERBATIM (hcm/sanafe/nevresim/
+    # lava), so the run discipline resolves verbatim and schedule.carry seals
+    # it — the streamed NF<->SCM exactness gate stays FATAL, so a boundary
+    # that silently changed the computation is red here. (COLLAPSE remains the
+    # automatic discipline for windowed/mvm sched cells: t0_03/22/26/44.)
+    # Verified end-to-end 2026-08-16, all backends max|dcount|=0.
     dict(n=53, mode="lifs", quant="wq", wb=5, s=4, vehicle="simplemlp", seed=1,
          scheduling=True, platform="I", tags=["sched"],
-         note="streamed x scheduling: 3 passes, intra-segment boundaries under "
-              "the run transfer discipline, carry census sealed in the record"),
+         note="streamed x scheduling: 3 passes, VERBATIM raster carry on every "
+              "backend, carry census sealed in the record"),
     # n=52 IS DELIBERATELY UNUSED. A lifs/vitleaf/offload MIXED-DOMAIN SEAM cell
     # was authored here on 2026-08-13 and WITHDRAWN the same day: it runs to
     # Soft Core Mapping and then fails the FATAL streamed NF<->SCM exactness
