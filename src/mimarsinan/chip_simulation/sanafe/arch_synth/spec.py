@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
-import math
 import os
 from dataclasses import dataclass, field
 from typing import Any, List, Optional
 
 from mimarsinan.chip_simulation.sanafe.arch_synth.floorplan import (
-    _mesh_dims,
     resolve_floorplan,
+)
+from mimarsinan.chip_simulation.sanafe.noc_geometry import (
+    legacy_mesh,
+    replicated_mesh,
 )
 from mimarsinan.chip_simulation.sanafe.presets import (
     CUSTOM_ZERO_PRESET,
@@ -215,22 +217,19 @@ def derive_arch_spec(
             effective_capacity, preset_name,
             cores_per_tile, tile_grid_rows, tile_grid_cols,
         )
-        slots = rows * cols * cores_per_tile
-        replicas = max(1, -(-packed_cores // slots))
-        rows *= replicas
-        n_tiles = rows * cols
+        n_tiles, mesh_width, mesh_height = replicated_mesh(
+            packed_cores=packed_cores, cores_per_tile=cores_per_tile,
+            rows=rows, cols=cols,
+        )
+        replicas = mesh_height // rows
         n_cores_per_tile = [cores_per_tile] * n_tiles
-        mesh_width, mesh_height = cols, rows
     else:
-        if cores_per_tile <= 0:
-            cores_per_tile = max(1, math.isqrt(packed_cores))
-            if cores_per_tile * cores_per_tile < packed_cores:
-                cores_per_tile += 1
-        n_tiles = (packed_cores + cores_per_tile - 1) // cores_per_tile
+        cores_per_tile, n_tiles, mesh_width, mesh_height = legacy_mesh(
+            packed_cores=packed_cores, cores_per_tile=cores_per_tile,
+        )
         n_cores_per_tile = [cores_per_tile] * (n_tiles - 1)
         last = packed_cores - cores_per_tile * (n_tiles - 1)
         n_cores_per_tile.append(last)
-        mesh_width, mesh_height = _mesh_dims(n_tiles)
 
     total_cores = sum(n_cores_per_tile)
     name = f"mimarsinan_{preset_name}_{total_cores}core"

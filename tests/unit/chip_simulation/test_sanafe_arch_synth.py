@@ -163,7 +163,9 @@ class TestMeshDimsAreExact:
         (10, (5, 2)), (11, (11, 1)), (12, (4, 3)), (109 // 11 + 1, None),
     ])
     def test_specific_and_invariants(self, n, expected):
-        from mimarsinan.chip_simulation.sanafe.arch_synth.spec import _mesh_dims
+        from mimarsinan.chip_simulation.sanafe.noc_geometry import (
+            most_square_exact_dims as _mesh_dims,
+        )
 
         w, h = _mesh_dims(n)
         assert w * h == n, f"{n}: {w}x{h} is not a full rectangle (phantom tiles)"
@@ -172,7 +174,9 @@ class TestMeshDimsAreExact:
             assert (w, h) == expected
 
     def test_no_phantom_tiles_for_all_small_n(self):
-        from mimarsinan.chip_simulation.sanafe.arch_synth.spec import _mesh_dims
+        from mimarsinan.chip_simulation.sanafe.noc_geometry import (
+            most_square_exact_dims as _mesh_dims,
+        )
 
         for n in range(1, 200):
             w, h = _mesh_dims(n)
@@ -180,7 +184,9 @@ class TestMeshDimsAreExact:
 
     def test_mmixcore_ten_tiles_is_5x2_not_4x3(self):
         # The exact incident: 10 tiles must be 5×2 (=10), never 4×3 (=12).
-        from mimarsinan.chip_simulation.sanafe.arch_synth.spec import _mesh_dims
+        from mimarsinan.chip_simulation.sanafe.noc_geometry import (
+            most_square_exact_dims as _mesh_dims,
+        )
 
         assert _mesh_dims(10) == (5, 2)
 

@@ -8,15 +8,14 @@ import numpy as np
 
 import mimarsinan.chip_simulation.sanafe.net_synth as _net_synth
 from mimarsinan.chip_simulation.sanafe.neuron_model import input_neuron_attributes
+from mimarsinan.chip_simulation.sanafe.noc_geometry import tile_and_local_of_core
 from mimarsinan.chip_simulation.sanafe.presets import SOMA_INPUT_RANGE_NAME, SYNAPSE_NAME
 from mimarsinan.mapping.support.core_geometry import used_axons as _used_axons
 from mimarsinan.mapping.support.core_geometry import used_neurons as _used_neurons
 
 
 def _pack_tile_index(core_global_idx: int, cores_per_tile: int) -> Tuple[int, int]:
-    if cores_per_tile <= 0:
-        return 0, core_global_idx
-    return core_global_idx // cores_per_tile, core_global_idx % cores_per_tile
+    return tile_and_local_of_core(core_global_idx, cores_per_tile)
 
 
 def build_network_for_segment(

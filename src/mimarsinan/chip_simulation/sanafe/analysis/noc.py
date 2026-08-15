@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Tuple
 
+from mimarsinan.chip_simulation.sanafe.noc_geometry import xy_route_edges
 from mimarsinan.chip_simulation.sanafe.records import (
     SanafeArchGeometry,
     SanafeNocLink,
@@ -97,7 +98,7 @@ def _aggregate_noc_links(
 
 
 def _xy_route_edges(ev: dict) -> List[Tuple[int, int, int, int]]:
-    """Mesh edges one message traverses under XY routing (x first, then y);
+    """Mesh edges one trace message traverses — the shared XY walk;
     empty for local or unplaced messages."""
     sx = int(ev.get("src_x", -1))
     sy = int(ev.get("src_y", -1))
@@ -105,19 +106,7 @@ def _xy_route_edges(ev: dict) -> List[Tuple[int, int, int, int]]:
     dy = int(ev.get("dest_y", -1))
     if sx < 0 or sy < 0 or dx < 0 or dy < 0:
         return []
-    edges: List[Tuple[int, int, int, int]] = []
-    cx, cy = sx, sy
-    step_x = 1 if dx > sx else -1 if dx < sx else 0
-    step_y = 1 if dy > sy else -1 if dy < sy else 0
-    while cx != dx:
-        nx = cx + step_x
-        edges.append((cx, cy, nx, cy))
-        cx = nx
-    while cy != dy:
-        ny = cy + step_y
-        edges.append((cx, cy, cx, ny))
-        cy = ny
-    return edges
+    return xy_route_edges((sx, sy), (dx, dy))
 
 
 def _aggregate_noc_link_load(

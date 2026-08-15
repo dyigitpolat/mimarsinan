@@ -17,6 +17,7 @@ from mimarsinan.mapping.support.schedule.pass_cut import VERBATIM
 from mimarsinan.chip_simulation.sanafe.runner.constants import _COMPUTE_DTYPE, _RAW_INPUT_NODE_ID
 from mimarsinan.chip_simulation.sanafe.runner.custom_floorplan import adopt_custom_arch_floorplan  # noqa: E501
 from mimarsinan.chip_simulation.sanafe.arch_synth.spec import CUSTOM_PRESET_NAME
+from mimarsinan.chip_simulation.sanafe.noc_geometry import xy_of_tile
 from mimarsinan.chip_simulation.sanafe.presets import CUSTOM_ZERO_PRESET, PRESETS
 from mimarsinan.chip_simulation.sanafe.records import (
     SanafeArchGeometry, SanafeEnergyBreakdown, SanafeRunRecord, SanafeSegmentRecord,)
@@ -275,9 +276,9 @@ class SanafeRunner(SanafeNeuralStageMixin, SanafeNeuralStageRecordMixin, SanafeS
             self.cores_per_tile = int(spec.cores_per_tile_resolved)
             mw = max(int(spec.mesh_width), 1)
             mh = max(int(spec.mesh_height), 1)
-        # Column-major tile coords: x = tile_id // mesh_height, y = tile_id % mesh_height.
+        # Column-major tile coords via the geometry SSOT.
         n_tiles = mw * mh
-        tiles_xy = [[i // mh, i % mh] for i in range(n_tiles)]
+        tiles_xy = [list(xy_of_tile(i, mh)) for i in range(n_tiles)]
         self._arch_geometry = SanafeArchGeometry(
             width=mw, height=mh, tiles_xy=tiles_xy,
         )

@@ -11,6 +11,8 @@ from __future__ import annotations
 import math
 from typing import Any, List, Mapping, NamedTuple
 
+from mimarsinan.chip_simulation.sanafe.noc_geometry import most_square_exact_dims
+
 # Physical tile wiring of the bundled SANA-FE reference architectures:
 # sana_fe/arch/loihi.yaml packs ``loihi_core[0..3]`` per tile (4 cores/tile,
 # 8x4 tiles); sana_fe/arch/truenorth.yaml defines one ``truenorth_core`` per
@@ -31,18 +33,8 @@ class Floorplan(NamedTuple):
 
 
 def _mesh_dims(n_tiles: int) -> tuple[int, int]:
-    """Most-square exact factorization ``(width>=height, width*height==n_tiles)``.
-
-    Must be exact: a ceil-padded mesh leaves phantom tiles the YAML never defines
-    and SANA-FE's C++ NoC then SIGFPEs indexing them.
-    """
-    n = max(1, int(n_tiles))
-    height = 1
-    for h in range(int(math.isqrt(n)), 0, -1):
-        if n % h == 0:
-            height = h
-            break
-    return n // height, height
+    """Most-square exact factorization — delegated to the geometry SSOT."""
+    return most_square_exact_dims(n_tiles)
 
 
 def floorplan_config_errors(constraints: Mapping[str, Any]) -> List[str]:
