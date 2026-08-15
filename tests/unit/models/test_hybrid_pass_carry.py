@@ -460,3 +460,54 @@ class TestOneDisciplinePerRun:
             assert not torch.equal(_flow(scheduled)(x), collapsing(x)), (
                 "a collapsing run must differ from a carrying one, or the "
                 "discipline is not reaching the executor")
+
+
+class TestSemanticsDecideBeforeBackends:
+    """Only STREAMED execution has a rhythm to carry. A windowed or value-domain run
+    that resolved verbatim would seal a record naming a computation that never
+    happened, and any backend replaying a raw raster into a windowed pass would
+    diverge from every peer that re-encoded — the audit found exactly that pair."""
+
+    def test_a_windowed_run_collapses_even_with_only_carrying_backends(self):
+        from mimarsinan.models.spiking.hybrid.carry import run_pass_transfer
+
+        assert run_pass_transfer({
+            "spiking_family": "lif", "spiking_variant": "synchronized",
+            "enable_sanafe_simulation": True,
+        }) == COLLAPSE
+
+    def test_a_value_domain_run_collapses(self):
+        from mimarsinan.models.spiking.hybrid.carry import run_pass_transfer
+
+        assert run_pass_transfer({
+            "core_semantics": "mvm", "enable_sanafe_simulation": True,
+        }) == COLLAPSE
+
+    def test_requesting_a_raster_on_the_synchronized_path_refuses_loudly(self):
+        """The executor's honesty half: the synchronized early-return records
+        nothing, so a caller that asks for a raster there must get the refusal —
+        never a silently empty list that downstream code happens to skip."""
+        ir = _deep_lif_ir()
+        scheduled = _scheduled(ir, count=2)
+        flow = SpikingHybridCoreFlow(
+            (8,), scheduled, simulation_length=T, spiking_mode="lif",
+            cycle_accurate_lif_forward=True, lif_execution_synchronized=True,
+            pass_transfer=VERBATIM,
+        )
+        with pytest.raises(NotImplementedError, match="synchronized"):
+            with torch.no_grad():
+                flow(torch.rand(2, 8))
+
+    def test_every_enable_key_survives_config_resolution(self):
+        """run_pass_transfer reads enable_* keys with no default; DeploymentPlan
+        defaults an absent nevresim key to True. The two can only agree because a
+        RESOLVED config always carries the keys — pin that, or the absent-key path
+        could silently disagree with the plan about which backends run."""
+        from mimarsinan.config_schema.resolve import resolve_draft
+        from mimarsinan.models.spiking.hybrid.carry import _BACKEND_ENABLE_KEYS
+
+        resolved = resolve_draft(
+            {"spiking_family": "lif", "spiking_variant": "streamed"}
+        ).resolved
+        for key in _BACKEND_ENABLE_KEYS.values():
+            assert key in resolved, key

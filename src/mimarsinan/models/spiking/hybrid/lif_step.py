@@ -13,9 +13,7 @@ from mimarsinan.models.spiking.hybrid.carry import require_carry_capable
 from mimarsinan.mapping.packing.hybrid_hardcore_mapping import HybridStage
 from mimarsinan.models.spiking.cycle_policy import cycle_neuron_policy, precharge_lif_states
 from mimarsinan.models.spiking.hybrid.executors import (
-    run_neural_segment_counts,
-    run_neural_segment_packed,
-)
+    run_neural_segment_counts, run_neural_segment_packed,)
 from mimarsinan.models.spiking.hybrid.host import HybridFlowHost
 from mimarsinan.models.spiking.hybrid.membrane_readout import stash_membrane_readout_correction
 from mimarsinan.models.spiking.spiking_config import COMPUTE_DTYPE
@@ -102,16 +100,18 @@ class HybridLifStepMixin(HybridFlowHost):
         latency_gated = policy.latency_gated
         single_spike = getattr(policy, "single_spike_io", False)
 
+        synchronized_path = (
+            getattr(self, "lif_execution_synchronized", False)
+            and self.spiking_mode == "lif" and not single_spike and not recording)
         if output_train is not None:
-            require_carry_capable(
-                stage,
-                packed=(not single_spike and not recording and latency_gated
-                        and getattr(self, "use_packed_cycle_executor", True)),
-            )
+            # packed= must describe the EXECUTED path: the synchronized early-
+            # return records nothing; claiming capability = silently empty raster.
+            require_carry_capable(stage, packed=(
+                not synchronized_path and not single_spike and not recording
+                and latency_gated
+                and getattr(self, "use_packed_cycle_executor", True)))
 
-        if (getattr(self, "lif_execution_synchronized", False)
-                and self.spiking_mode == "lif"
-                and not single_spike and not recording):
+        if synchronized_path:
             return run_neural_segment_counts(
                 self, input_spike_train, seg=seg, T=T,
                 batch_size=batch_size, device=device)

@@ -17,7 +17,12 @@ from mimarsinan.mapping.support.schedule.pass_carry import (
     carried_outputs_by_stage,
     carried_wire_bytes,
 )
-from mimarsinan.mapping.support.schedule.pass_cut import COLLAPSE, VERBATIM
+from mimarsinan.chip_simulation.activation_semantics import is_streamed_lif
+from mimarsinan.mapping.support.schedule.pass_cut import (
+    COLLAPSE,
+    VERBATIM,
+    transfer_for,
+)
 
 
 def carried_output_ids(hybrid_mapping) -> Dict[int, Tuple[int, ...]]:
@@ -144,17 +149,26 @@ _BACKEND_ENABLE_KEYS = {
 
 
 def run_pass_transfer(config) -> str:
-    """ONE discipline per run: the weakest of the backends this run enables.
+    """ONE discipline per run: semantics first, then the weakest enabled backend.
 
-    A run whose backends disagreed would report numbers from two different
-    computations, and the cross-backend exactness gates — which admit no tolerance on
-    integer arithmetic — would be comparing unlike things. Measured on a 3-pass
-    streamed MLP: HCM carrying while nevresim collapsed diverged on 4.4% of neuron
-    windows by one spike each, which is exactly the rhythm a collapse normalizes away.
+    Semantics first — only STREAMED execution has a rhythm to carry. The windowed
+    disciplines re-encode at every boundary by definition and mvm has no spikes at
+    all, so their pass boundaries collapse regardless of which backends run; a
+    "verbatim" record for such a run would name a computation that never happened,
+    and a backend replaying a raw raster into a windowed pass would diverge from
+    every peer that re-encoded.
 
-    So enabling a backend that cannot replay a raster costs the whole run its verbatim
-    boundaries, and teaching that backend to record one upgrades the run.
+    Then the weakest backend — a run whose backends disagreed would report the
+    numbers of two different computations, and the cross-backend exactness gates,
+    which admit no tolerance on integer arithmetic, would compare unlike things.
+    Measured on a 3-pass streamed MLP: HCM carrying while nevresim collapsed
+    diverged on 4.4% of neuron windows by one spike each — exactly the rhythm a
+    collapse normalizes away. So enabling a backend that cannot replay a raster
+    costs the whole run its verbatim boundaries, and teaching that backend to
+    record one upgrades the run.
     """
+    if transfer_for(streamed=is_streamed_lif(config)) == COLLAPSE:
+        return COLLAPSE
     enabled = [
         backend for backend, key in _BACKEND_ENABLE_KEYS.items() if config.get(key)
     ]
