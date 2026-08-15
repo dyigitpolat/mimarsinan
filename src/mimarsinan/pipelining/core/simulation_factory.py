@@ -107,7 +107,7 @@ def build_spiking_hybrid_flow(
         preprocessor,
         contract.firing_mode,
         contract.spike_generation_mode,
-        contract.thresholding_mode,
+        thresholding_mode=contract.thresholding_mode,
         spiking_mode=contract.spiking_mode,
         cycle_accurate_lif_forward=plan.cycle_accurate_lif_forward,
         ttfs_cycle_schedule=contract.ttfs_cycle_schedule,

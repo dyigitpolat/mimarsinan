@@ -120,7 +120,7 @@ class TestCascadedDriverExecutorParity:
         mapping = _identity_mapping_for(flow)
         driver = TTFSSegmentForward(flow.get_mapper_repr(), S)
         executor = SpikingHybridCoreFlow(
-            input_shape, mapping, S, nn.Identity(), "TTFS", "TTFS", "<=",
+            input_shape, mapping, S, nn.Identity(), "TTFS", "TTFS", thresholding_mode="<=",
             spiking_mode="ttfs_cycle_based", ttfs_cycle_schedule="cascaded",
         ).eval()
         # The NF drives the value domain; the executor's state is normalized by

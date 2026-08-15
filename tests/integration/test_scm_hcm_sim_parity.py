@@ -87,7 +87,7 @@ def _build_flow(cfg, hybrid):
         None,
         cfg["firing_mode"],
         cfg["spike_generation_mode"],
-        cfg["thresholding_mode"],
+        thresholding_mode=cfg["thresholding_mode"],
         spiking_mode=cfg["spiking_mode"],
     )
 

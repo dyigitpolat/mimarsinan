@@ -136,7 +136,7 @@ def test_coalescing_accuracy_with_rearrange():
         # Soft Core Simulation
         sim_length = 32
         flow = build_identity_spiking_flow(
-            (1, 28, 28), ir_graph, sim_length, nn.Identity(), "TTFS", "TTFS", "<=", spiking_mode="ttfs"
+            (1, 28, 28), ir_graph, sim_length, nn.Identity(), "TTFS", "TTFS", thresholding_mode="<=", spiking_mode="ttfs"
         ).to(device)
         with torch.no_grad():
             # The hybrid executor returns count-scaled logits (× simulation_length);

@@ -46,7 +46,7 @@ def _build_ir_and_flow(mapper_repr, input_shape):
 
     flow = build_identity_spiking_flow(
         input_shape, ir_graph, 32, nn.Identity(),
-        "TTFS", "TTFS", "<=", spiking_mode="ttfs",
+        "TTFS", "TTFS", thresholding_mode="<=", spiking_mode="ttfs",
     )
     flow.eval()
     return flow

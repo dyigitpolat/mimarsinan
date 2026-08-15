@@ -158,7 +158,7 @@ def _build_cascaded_identity_executor(pipeline, model, ir_graph):
         getattr(model, "preprocessor", None),
         contract.firing_mode,
         contract.spike_generation_mode,
-        contract.thresholding_mode,
+        thresholding_mode=contract.thresholding_mode,
         spiking_mode=contract.spiking_mode,
         ttfs_cycle_schedule=contract.ttfs_cycle_schedule,
     ).eval()
@@ -181,7 +181,7 @@ def _build_streamed_identity_executor(pipeline, model, ir_graph):
         getattr(model, "preprocessor", None),
         contract.firing_mode,
         contract.spike_generation_mode,
-        contract.thresholding_mode,
+        thresholding_mode=contract.thresholding_mode,
         spiking_mode=contract.spiking_mode,
         ttfs_cycle_schedule=contract.ttfs_cycle_schedule,
         cycle_accurate_lif_forward=True,

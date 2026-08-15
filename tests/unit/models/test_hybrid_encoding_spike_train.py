@@ -51,7 +51,7 @@ def test_cycle_accurate_hybrid_forward_uses_encoding_trains() -> None:
         simulation_length=4,
         spiking_mode="lif",
         cycle_accurate_lif_forward=True,
-    )
+    thresholding_mode="<=", )
     x = torch.rand(2, 8)
     with torch.no_grad():
         out = flow(x)
@@ -76,7 +76,7 @@ def test_build_segment_input_uniform_fallback_for_missing_trains() -> None:
         simulation_length=4,
         spiking_mode="lif",
         cycle_accurate_lif_forward=True,
-    )
+    thresholding_mode="<=", )
     stage = next(s for s in hybrid.stages if s.kind == "neural")
     in_size = sum(s.size for s in stage.input_map)
     rates = torch.rand(1, in_size)

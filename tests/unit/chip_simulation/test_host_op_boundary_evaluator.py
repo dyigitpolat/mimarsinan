@@ -43,6 +43,17 @@ from mimarsinan.spiking.segment_boundary import (
 from mimarsinan.spiking.spike_trains import uniform_spike_train
 
 
+def _declared_behavior(spiking_mode="lif", firing_mode="Default"):
+    """The semantics these fixtures were written against — the executor's former
+    silent defaults, now STATED at the fixture (the hardening's point)."""
+    from mimarsinan.chip_simulation.behavior_config import NeuralBehaviorConfig
+
+    return NeuralBehaviorConfig(
+        spiking_mode=spiking_mode, firing_mode=firing_mode,
+        thresholding_mode="<=", spike_generation_mode="Uniform")
+
+
+
 # ---------------------------------------------------------------------------
 # fixtures
 # ---------------------------------------------------------------------------
@@ -148,7 +159,7 @@ def test_sanafe_runner_without_a_contract_takes_the_evaluator_explicitly(monkeyp
     runner = SanafeRunner(
         mapping=_compute_only_mapping(), simulation_length=4,
         host_compute_device="cuda:1",
-    )
+    behavior=_declared_behavior())
     runner.run(np.asarray([[1.0, 2.0]], dtype=np.float32), sample_index=0)
     assert seen["device"] == "cuda:1"
 

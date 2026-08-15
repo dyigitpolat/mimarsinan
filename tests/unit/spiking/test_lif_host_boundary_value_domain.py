@@ -151,7 +151,7 @@ def test_nf_driver_equals_hybrid_flow_across_host_boundary(theta_enc) -> None:
     flow = SpikingHybridCoreFlow(
         (8,), hybrid, simulation_length=T,
         spiking_mode="lif", cycle_accurate_lif_forward=True,
-    )
+    thresholding_mode="<=", )
     with torch.no_grad():
         nf = driver(x) / p2.activation.activation_scale.clamp(min=1e-12)
         hc = flow(x) / T

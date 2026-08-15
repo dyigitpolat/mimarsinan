@@ -59,7 +59,7 @@ def _build_ir_and_flows(mapper_repr, input_shape):
 
     soft_flow = build_identity_spiking_flow(
         input_shape, ir_graph, SIM_LENGTH, nn.Identity(),
-        "TTFS", "TTFS", "<=", spiking_mode="ttfs",
+        "TTFS", "TTFS", thresholding_mode="<=", spiking_mode="ttfs",
     )
     soft_flow.eval()
 
@@ -70,7 +70,7 @@ def _build_ir_and_flows(mapper_repr, input_shape):
 
     hard_flow = SpikingHybridCoreFlow(
         input_shape, hybrid_mapping, SIM_LENGTH, nn.Identity(),
-        "TTFS", "TTFS", "<=", spiking_mode="ttfs",
+        "TTFS", "TTFS", thresholding_mode="<=", spiking_mode="ttfs",
     )
     hard_flow.eval()
 
@@ -301,7 +301,7 @@ class TestHardCoreTTFSFullMixer:
 
         soft_flow = build_identity_spiking_flow(
             input_shape, ir_graph, SIM_LENGTH, nn.Identity(),
-            "TTFS", "TTFS", "<=", spiking_mode="ttfs",
+            "TTFS", "TTFS", thresholding_mode="<=", spiking_mode="ttfs",
         )
         soft_flow.eval()
 
@@ -311,7 +311,7 @@ class TestHardCoreTTFSFullMixer:
         )
         hard_flow = SpikingHybridCoreFlow(
             input_shape, hybrid_mapping, SIM_LENGTH, nn.Identity(),
-            "TTFS", "TTFS", "<=", spiking_mode="ttfs",
+            "TTFS", "TTFS", thresholding_mode="<=", spiking_mode="ttfs",
         )
         hard_flow.eval()
 

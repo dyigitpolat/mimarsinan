@@ -76,7 +76,7 @@ def _flow(hybrid):
     return SpikingHybridCoreFlow(
         (8,), hybrid, simulation_length=T, spiking_mode="lif",
         cycle_accurate_lif_forward=True,
-    )
+    thresholding_mode="<=", )
 
 
 def _fused(ir):
@@ -473,7 +473,7 @@ class TestOneDisciplinePerRun:
         collapsing = SpikingHybridCoreFlow(
             (8,), scheduled, simulation_length=T, spiking_mode="lif",
             cycle_accurate_lif_forward=True, pass_transfer=COLLAPSE,
-        )
+        thresholding_mode="<=", )
         with torch.no_grad():
             assert not torch.equal(_flow(scheduled)(x), collapsing(x)), (
                 "a collapsing run must differ from a carrying one, or the "
@@ -512,7 +512,7 @@ class TestSemanticsDecideBeforeBackends:
             (8,), scheduled, simulation_length=T, spiking_mode="lif",
             cycle_accurate_lif_forward=True, lif_execution_synchronized=True,
             pass_transfer=VERBATIM,
-        )
+        thresholding_mode="<=", )
         with torch.no_grad():
             out = flow(torch.rand(2, 8))
         assert torch.isfinite(out).all()
@@ -527,7 +527,7 @@ class TestSemanticsDecideBeforeBackends:
             (8,), scheduled, simulation_length=T, spiking_mode="lif",
             cycle_accurate_lif_forward=True, lif_execution_synchronized=True,
             pass_transfer=VERBATIM,
-        )
+        thresholding_mode="<=", )
         stage = next(s for s in scheduled.stages
                      if getattr(s, "kind", None) == "neural")
         train = torch.zeros(T, 1, max(s.offset + s.size for s in stage.input_map))

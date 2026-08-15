@@ -92,7 +92,7 @@ def _build_ir_flow(supermodel, input_shape):
 
     flow = build_identity_spiking_flow(
         input_shape, ir_graph, SIM_LENGTH, nn.Identity(),
-        "TTFS", "TTFS", "<=", spiking_mode="ttfs",
+        "TTFS", "TTFS", thresholding_mode="<=", spiking_mode="ttfs",
     )
     flow.eval()
     return ir_graph, flow

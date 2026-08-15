@@ -449,8 +449,9 @@ now takes `pass_transfer` explicitly.
 the real mapping): SANA-FE's spike trace logs a fire at its DELIVERY cycle — one after
 the soma's step — so the raster gather's origin is `lat + 1 + k`. With it, all six
 carried wires match HCM exactly, totals AND rhythms. A first probe "refuting" this was
-itself wrong (its HCM flow defaulted to `<=` thresholding while the run deploys `<`) —
-comparator hygiene recorded as a lesson.
+itself wrong — its HCM flow silently inherited the constructor default
+`thresholding_mode="<="` while the run deploys `<`. §21 removes that class of
+mistake structurally rather than leaving it as a lesson.
 
 **The end state.** `VERBATIM_BACKENDS = {hcm, sanafe, nevresim, lava}`: a streamed
 scheduled run is verbatim on every shipped backend, with the weakest-backend rule kept
@@ -470,3 +471,36 @@ one pass per segment, so the truthful census is null (the forced multi-pass wind
 arm is evidenced by the lifsync probe: 3 passes, `collapse` sealed). One environment
 find: t0_44's first sweep died unpickling an August-1 cache written before `IRSource`
 moved modules — a stale artifact, moved aside, rerun green.
+
+## 21. Why the comparator incident was possible, and its structural removal (2026-08-16)
+
+The owner's question — "aren't we using SSOT spike semantics?" — has a precise answer:
+**production is**, and that is why no gate ever disagreed: every pipeline flow is built
+by `build_spiking_hybrid_flow` from the `SpikingDeploymentContract`. The incident's
+probe bypassed the factory and constructed the executor directly — and the constructor
+LET it, because the executors kept **semantic defaults**. That is a second, silent
+source of semantics beside the SSOT: the constructor-shaped version of the banned
+`get(key, default)`. The default was worse than arbitrary — `"<="` is the TTFS
+family's comparator, so a bypass silently selected another family's physics, and
+`NevresimDriver`'s `spike_generation_mode="Stochastic"` default would hand a bypass
+RANDOM input spikes.
+
+**Removed at the entry points.** `SpikingHybridCoreFlow` and
+`build_identity_spiking_flow` require `thresholding_mode` keyword-only;
+`NevresimDriver` requires `thresholding_mode` and `spike_generation_mode`
+keyword-only; `SanafeRunner` lost its loose scalars entirely — semantics arrive as
+`contract=` or `behavior=` (a `NeuralBehaviorConfig`, whose fields are all required),
+or construction raises naming the SSOT. ~30 test fixtures now STATE the semantics they
+were always running under, which is the point. Inner kernels (activations,
+`subtractive_lif`, arch synth) still carry defaults — they receive values from the
+hardened entry points; tightening them is possible but was not the incident's class.
+
+**Pinned.** `tests/unit/architecture/test_semantic_defaults.py` asserts each axis on
+each entry point exists, is keyword-only, and has NO default; that `SanafeRunner`
+refuses undeclared semantics; and that `NeuralBehaviorConfig` itself stays
+default-free, or the hole just moves into the carrier.
+
+One explicitly-stated oddity surfaced by the sweep and deliberately left alone:
+`models/pretrained_bridge.py` builds a lif flow with an EXPLICIT `"<="`. Stated is not
+defaulted — and on float thresholds `<` vs `<=` ties are measure-zero (V9) — but it is
+now visible where it was ambient.

@@ -38,6 +38,17 @@ from mimarsinan.chip_simulation.sanafe.analysis import (
 from mimarsinan.code_generation.cpp_chip_model import SpikeSource
 
 
+def _declared_behavior(spiking_mode="lif", firing_mode="Default"):
+    """The semantics these fixtures were written against — the executor's former
+    silent defaults, now STATED at the fixture (the hardening's point)."""
+    from mimarsinan.chip_simulation.behavior_config import NeuralBehaviorConfig
+
+    return NeuralBehaviorConfig(
+        spiking_mode=spiking_mode, firing_mode=firing_mode,
+        thresholding_mode="<=", spike_generation_mode="Uniform")
+
+
+
 # ---------------------------------------------------------------------------
 # Fake SANA-FE module + tiny fixture-builders
 # ---------------------------------------------------------------------------
@@ -328,7 +339,7 @@ def test_runner_init_stores_config_and_does_not_import_sanafe(monkeypatch):
     SanafeRunner(
         mapping=_fake_mapping(_fake_stage("neural", hcm=_fake_hcm(_fake_hard_core()))),
         simulation_length=8,
-    )
+    behavior=_declared_behavior())
     assert sentinel == []
 
 
@@ -338,7 +349,8 @@ def test_runner_accepts_ttfs_quantized_spiking_mode(monkeypatch):
                         lambda: (_ for _ in ()).throw(AssertionError("no import")))
     runner = SanafeRunner(
         mapping=mapping, simulation_length=8,
-        spiking_mode="ttfs_quantized", firing_mode="TTFS",
+        behavior=_declared_behavior(
+            spiking_mode="ttfs_quantized", firing_mode="TTFS"),
     )
     assert runner.spiking_mode == "ttfs_quantized"
 
@@ -347,13 +359,13 @@ def test_runner_rejects_unknown_arch_preset():
     mapping = _fake_mapping(_fake_stage("neural", hcm=_fake_hcm(_fake_hard_core())))
     with pytest.raises(ValueError, match="preset"):
         SanafeRunner(mapping=mapping, simulation_length=8,
-                     arch_preset="silicon-dreams")
+                     arch_preset="silicon-dreams", behavior=_declared_behavior())
 
 
 def test_runner_custom_preset_requires_custom_arch_path():
     mapping = _fake_mapping(_fake_stage("neural", hcm=_fake_hcm(_fake_hard_core())))
     with pytest.raises(ValueError, match="sanafe_custom_arch_path"):
-        SanafeRunner(mapping=mapping, simulation_length=8, arch_preset="custom")
+        SanafeRunner(mapping=mapping, simulation_length=8, arch_preset="custom", behavior=_declared_behavior())
 
 
 def test_runner_custom_preset_accepted_with_arch_path_and_zero_preset():
@@ -361,7 +373,7 @@ def test_runner_custom_preset_accepted_with_arch_path_and_zero_preset():
     runner = SanafeRunner(
         mapping=mapping, simulation_length=8,
         arch_preset="custom", custom_arch_path="/some/user_arch.yaml",
-    )
+    behavior=_declared_behavior())
     assert runner.arch_preset == "custom"
     # The user YAML carries the real per-event costs; the reconstruction
     # telemetry table must be all-zero, never another platform's numbers.
@@ -391,7 +403,7 @@ def test_runner_forwards_declared_floorplan_to_derive_arch_spec(monkeypatch):
         mapping=mapping, simulation_length=8,
         cores_per_tile=4, tile_grid_rows=2, tile_grid_cols=5,
         declared_core_capacity=40,
-    )
+    behavior=_declared_behavior())
     runner._ensure_arch()
     assert seen["cores_per_tile"] == 4
     assert seen["tile_grid_rows"] == 2
@@ -405,7 +417,7 @@ def test_runner_cores_per_tile_tracks_spec_resolution(monkeypatch):
     cores_per_tile: after arch build the runner's value equals the spec's."""
     mapping = _fake_mapping(_fake_stage("neural", hcm=_fake_hcm(_fake_hard_core())))
     _patch_sanafe_stack(monkeypatch)
-    runner = SanafeRunner(mapping=mapping, simulation_length=8)
+    runner = SanafeRunner(mapping=mapping, simulation_length=8, behavior=_declared_behavior())
     runner._ensure_arch()
     assert runner.cores_per_tile >= 1
     assert runner.cores_per_tile == 1  # fake spec: 1 tile of 1 packed core
@@ -420,7 +432,7 @@ def test_runner_empty_custom_arch_path_means_unset(monkeypatch):
     _patch_sanafe_stack(monkeypatch)  # fake LOADED arch would adopt 2 cores/tile
     runner = SanafeRunner(
         mapping=mapping, simulation_length=8, custom_arch_path="",
-    )
+    behavior=_declared_behavior())
     assert runner.custom_arch_path is None
     runner._ensure_arch()
     # Spec resolution (1 packed core -> 1 core/tile), NOT arch adoption (2).
@@ -436,7 +448,7 @@ def test_runner_custom_preset_with_empty_arch_path_is_still_loud():
         SanafeRunner(
             mapping=mapping, simulation_length=8,
             arch_preset="custom", custom_arch_path="",
-        )
+        behavior=_declared_behavior())
 
 
 def test_runner_custom_arch_adopts_loaded_floorplan(monkeypatch):
@@ -447,7 +459,7 @@ def test_runner_custom_arch_adopts_loaded_floorplan(monkeypatch):
     runner = SanafeRunner(
         mapping=mapping, simulation_length=8,
         arch_preset="custom", custom_arch_path="/some/user_arch.yaml",
-    )
+    behavior=_declared_behavior())
     runner._ensure_arch()
     assert runner.cores_per_tile == 4
     geom = runner._arch_geometry
@@ -462,7 +474,7 @@ def test_runner_custom_arch_contradicting_cores_per_tile_is_loud(monkeypatch):
         mapping=mapping, simulation_length=8,
         arch_preset="custom", custom_arch_path="/some/user_arch.yaml",
         cores_per_tile=2,
-    )
+    behavior=_declared_behavior())
     with pytest.raises(ValueError, match="cores_per_tile"):
         runner._ensure_arch()
 
@@ -474,7 +486,7 @@ def test_runner_custom_arch_contradicting_tile_grid_is_loud(monkeypatch):
         mapping=mapping, simulation_length=8,
         arch_preset="custom", custom_arch_path="/some/user_arch.yaml",
         tile_grid_rows=2, tile_grid_cols=5,
-    )
+    behavior=_declared_behavior())
     with pytest.raises(ValueError, match="tile"):
         runner._ensure_arch()
 
@@ -487,7 +499,7 @@ def test_runner_custom_arch_nonuniform_tiles_are_loud(monkeypatch):
     runner = SanafeRunner(
         mapping=mapping, simulation_length=8,
         arch_preset="custom", custom_arch_path="/some/user_arch.yaml",
-    )
+    behavior=_declared_behavior())
     with pytest.raises(ValueError, match="uniform"):
         runner._ensure_arch()
 
@@ -497,7 +509,7 @@ def test_runner_sim_wall_cap_defaults_to_900s(monkeypatch):
 
     monkeypatch.delenv(SIMULATION_STEP_TIMEOUT_VAR, raising=False)
     mapping = _fake_mapping(_fake_stage("neural", hcm=_fake_hcm(_fake_hard_core())))
-    runner = SanafeRunner(mapping=mapping, simulation_length=8)
+    runner = SanafeRunner(mapping=mapping, simulation_length=8, behavior=_declared_behavior())
     assert runner._sim_timeout_s == 900.0
 
 
@@ -508,13 +520,13 @@ def test_runner_sim_wall_cap_honors_ctor_value_and_env_override(monkeypatch):
     monkeypatch.delenv(SIMULATION_STEP_TIMEOUT_VAR, raising=False)
     runner = SanafeRunner(
         mapping=mapping, simulation_length=8, simulation_step_timeout_s=123.0,
-    )
+    behavior=_declared_behavior())
     assert runner._sim_timeout_s == 123.0
 
     monkeypatch.setenv(SIMULATION_STEP_TIMEOUT_VAR, "77")
     runner = SanafeRunner(
         mapping=mapping, simulation_length=8, simulation_step_timeout_s=123.0,
-    )
+    behavior=_declared_behavior())
     assert runner._sim_timeout_s == 77.0
 
 
@@ -557,7 +569,7 @@ def test_run_returns_sanafe_run_record_for_single_neural_stage(monkeypatch):
     _seed_chip_result(spikes=12, packets_sent=7, neurons_fired=12,
                       spike_trace=trace)
 
-    runner = SanafeRunner(mapping=mapping, simulation_length=8)
+    runner = SanafeRunner(mapping=mapping, simulation_length=8, behavior=_declared_behavior())
     rec = runner.run(np.asarray([[0.5, 1.0]], dtype=np.float32), sample_index=0)
 
     assert isinstance(rec, SanafeRunRecord)
@@ -590,7 +602,7 @@ def test_run_threads_chip_sim_with_extended_simulation_length(monkeypatch):
     )
     _patch_sanafe_stack(monkeypatch)
     _seed_chip_result(spike_trace=[[] for _ in range(33)])
-    runner = SanafeRunner(mapping=_fake_mapping(stage), simulation_length=32)
+    runner = SanafeRunner(mapping=_fake_mapping(stage), simulation_length=32, behavior=_declared_behavior())
     runner.run(np.asarray([[0.0, 0.0]], dtype=np.float32), sample_index=0)
     chip = runner._last_chip
     assert chip.last_sim["timesteps"] == 33
@@ -605,7 +617,7 @@ def test_run_propagates_arch_preset_to_record(monkeypatch):
     _patch_sanafe_stack(monkeypatch)
     _seed_chip_result(spike_trace=[[] for _ in range(8)])
     runner = SanafeRunner(mapping=_fake_mapping(stage), simulation_length=8,
-                          arch_preset="truenorth")
+                          arch_preset="truenorth", behavior=_declared_behavior())
     rec = runner.run(np.asarray([[0.0, 0.0]], dtype=np.float32), sample_index=4)
     assert rec.arch_preset == "truenorth"
     assert rec.sample_index == 4
@@ -635,7 +647,7 @@ def test_run_executes_compute_stage_via_hybrid_execution(monkeypatch):
         return np.asarray([[3.0]], dtype=dtype)
     monkeypatch.setattr(runner_mod, "execute_compute_op_numpy", fake_compute)
 
-    runner = SanafeRunner(mapping=mapping, simulation_length=8)
+    runner = SanafeRunner(mapping=mapping, simulation_length=8, behavior=_declared_behavior())
     rec = runner.run(np.asarray([[1.0, 2.0]], dtype=np.float32), sample_index=0)
 
     assert called["op"] is op
@@ -664,7 +676,8 @@ def test_run_lif_compute_stage_does_not_apply_ttfs_scales(monkeypatch):
 
     monkeypatch.setattr(runner_mod, "execute_compute_op_numpy", fake_compute)
 
-    runner = SanafeRunner(mapping=mapping, simulation_length=8, spiking_mode="lif")
+    runner = SanafeRunner(mapping=mapping, simulation_length=8,
+                          behavior=_declared_behavior(spiking_mode="lif"))
     runner.run(np.asarray([[1.0, 2.0]], dtype=np.float32), sample_index=0)
 
     assert called["in_scale"] == 1.0
@@ -703,8 +716,7 @@ def test_run_ttfs_compute_stage_records_op_id_after_neural(monkeypatch):
     runner = SanafeRunner(
         mapping=mapping,
         simulation_length=8,
-        spiking_mode="ttfs",
-        firing_mode="TTFS",
+        behavior=_declared_behavior(spiking_mode="ttfs", firing_mode="TTFS"),
     )
     rec = runner.run(np.asarray([[1.0]], dtype=np.float32), sample_index=0)
     assert contract_called["stage"] is s2
@@ -734,7 +746,7 @@ def test_run_walks_stages_in_order(monkeypatch):
     monkeypatch.setattr(runner_mod, "execute_compute_op_numpy",
                         lambda op, orig, buf, **kw: np.asarray([[0.5]], dtype=np.float32))
 
-    runner = SanafeRunner(mapping=mapping, simulation_length=8)
+    runner = SanafeRunner(mapping=mapping, simulation_length=8, behavior=_declared_behavior())
     rec = runner.run(np.asarray([[1.0]], dtype=np.float32), sample_index=0)
     assert sorted(rec.segments.keys()) == [0, 2]
     assert rec.segments[0].stage_name == "s1"
@@ -763,7 +775,7 @@ def test_run_aggregates_total_energy_spikes_packets_across_segments(monkeypatch)
                 "soma": 0.75, "network": 0.5},
         spike_trace=[["core0.0"]] * 8,
     )
-    runner = SanafeRunner(mapping=mapping, simulation_length=8)
+    runner = SanafeRunner(mapping=mapping, simulation_length=8, behavior=_declared_behavior())
     rec = runner.run(np.asarray([[1.0]], dtype=np.float32), sample_index=0)
     assert rec.total_spikes == 10
     assert rec.total_packets == 4
@@ -788,7 +800,7 @@ def test_run_derives_per_core_input_spike_count_from_input_axons(monkeypatch):
                         output_map=[_seg_io_slice(0, 0, 1)])
     _patch_sanafe_stack(monkeypatch)
     _seed_chip_result(spike_trace=[[] for _ in range(8)])
-    runner = SanafeRunner(mapping=_fake_mapping(stage), simulation_length=8)
+    runner = SanafeRunner(mapping=_fake_mapping(stage), simulation_length=8, behavior=_declared_behavior())
     rec = runner.run(np.asarray([[0.5, 1.0]], dtype=np.float32), sample_index=0)
     core_rec = rec.segments[0].per_core[0]
     assert core_rec.input_spike_count.tolist() == [4, 8]
@@ -824,7 +836,7 @@ def test_run_per_core_input_count_always_on_axon_counts_T(monkeypatch):
                         output_map=[_seg_io_slice(0, 0, 1)])
     _patch_sanafe_stack(monkeypatch)
     _seed_chip_result(spike_trace=[[] for _ in range(12)])
-    runner = SanafeRunner(mapping=_fake_mapping(stage), simulation_length=12)
+    runner = SanafeRunner(mapping=_fake_mapping(stage), simulation_length=12, behavior=_declared_behavior())
     rec = runner.run(np.asarray([[0.0]], dtype=np.float32), sample_index=0)
     assert rec.segments[0].per_core[0].input_spike_count.tolist() == [12]
     assert rec.segments[0].per_core[0].n_always_on_axons == 1

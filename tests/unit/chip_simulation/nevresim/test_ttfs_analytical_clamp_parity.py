@@ -98,7 +98,7 @@ def outputs(tmp_path_factory):
         spiking_mode="ttfs",
         connectivity_mode="runtime",
         verbose=False,
-    )
+    thresholding_mode="<=", )
     binary = driver.emit_main_and_compile(len(inputs), T, latency)
     raw = run_binary_raw(
         binary_path=binary,

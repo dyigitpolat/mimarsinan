@@ -42,7 +42,7 @@ def compiled_segment(tmp_path_factory):
         spiking_mode="lif",
         connectivity_mode="runtime",
         verbose=False,
-    )
+    thresholding_mode="<=", )
     binary = driver.emit_main_and_compile(1, T, latency)
     assert binary is not None
     return {

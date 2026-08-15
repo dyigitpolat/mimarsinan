@@ -67,7 +67,7 @@ def _build_flow(mapper_repr, input_shape, tq=8, spiking_mode="ttfs_quantized"):
             node.parameter_scale = torch.tensor(1.0)
     flow = build_identity_spiking_flow(
         input_shape, ir_graph, tq, nn.Identity(),
-        "TTFS", "TTFS", "<=", spiking_mode=spiking_mode,
+        "TTFS", "TTFS", thresholding_mode="<=", spiking_mode=spiking_mode,
     )
     flow.eval()
     return flow, ir_graph

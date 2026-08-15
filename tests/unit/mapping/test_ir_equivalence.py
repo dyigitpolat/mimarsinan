@@ -104,7 +104,7 @@ def test_ir_forward_matches_raw_model():
         nn.Identity(),
         "TTFS",
         "TTFS",
-        "<=",
+        thresholding_mode="<=",
         spiking_mode="ttfs",
     )
     flow.eval()

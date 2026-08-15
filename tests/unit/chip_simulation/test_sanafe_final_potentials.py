@@ -11,6 +11,17 @@ from mimarsinan.chip_simulation.sanafe.records import SanafeCoreRecord
 from mimarsinan.chip_simulation.sanafe.records.energy import SanafeEnergyBreakdown
 
 
+def _declared_behavior(spiking_mode="lif", firing_mode="Default"):
+    """The semantics these fixtures were written against — the executor's former
+    silent defaults, now STATED at the fixture (the hardening's point)."""
+    from mimarsinan.chip_simulation.behavior_config import NeuralBehaviorConfig
+
+    return NeuralBehaviorConfig(
+        spiking_mode=spiking_mode, firing_mode=firing_mode,
+        thresholding_mode="<=", spike_generation_mode="Uniform")
+
+
+
 class _FakeChip:
     """Chip stub with the ``mapped_neuron_groups`` surface the reader walks."""
 
@@ -84,7 +95,7 @@ class TestRunnerFlagDefaultOff:
         mapping = SimpleNamespace(stages=[])
         assert SanafeRunner(
             mapping=mapping, simulation_length=4,
-        ).read_final_potentials is False
+        behavior=_declared_behavior()).read_final_potentials is False
         assert SanafeRunner(
             mapping=mapping, simulation_length=4, read_final_potentials=True,
-        ).read_final_potentials is True
+        behavior=_declared_behavior()).read_final_potentials is True

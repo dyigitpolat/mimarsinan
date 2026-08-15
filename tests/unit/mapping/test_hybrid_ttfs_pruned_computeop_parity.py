@@ -83,11 +83,11 @@ def test_hybrid_matches_unified_on_pruned_computeop_graph(spiking_mode):
 
     soft = build_identity_spiking_flow(
         input_shape, ir_graph, SIM_LENGTH, nn.Identity(),
-        "TTFS", "TTFS", "<=", spiking_mode=spiking_mode,
+        "TTFS", "TTFS", thresholding_mode="<=", spiking_mode=spiking_mode,
     ).eval()
     hard = SpikingHybridCoreFlow(
         input_shape, hybrid_mapping, SIM_LENGTH, nn.Identity(),
-        "TTFS", "TTFS", "<=", spiking_mode=spiking_mode,
+        "TTFS", "TTFS", thresholding_mode="<=", spiking_mode=spiking_mode,
     ).eval()
 
     x = torch.rand(4, *input_shape)

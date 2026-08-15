@@ -132,7 +132,7 @@ def test_t2_nf_equals_hcm_across_signed_seam():
     flow = SpikingHybridCoreFlow(
         (8,), hybrid, simulation_length=T,
         spiking_mode="lif", cycle_accurate_lif_forward=True,
-    )
+    thresholding_mode="<=", )
     with torch.no_grad():
         nf = driver(x) / p2.activation.activation_scale.clamp(min=1e-12)
         hc = flow(x) / T
@@ -414,7 +414,7 @@ def test_t7_subsume_homogeneous_seam_nf_equals_hcm():
     flow = SpikingHybridCoreFlow(
         (8,), hybrid, simulation_length=T,
         spiking_mode="lif", cycle_accurate_lif_forward=True,
-    )
+    thresholding_mode="<=", )
     with torch.no_grad():
         nf = driver(x) / p2.activation.activation_scale.clamp(min=1e-12)
         hc = flow(x) / T

@@ -47,7 +47,12 @@ class SpikingHybridCoreFlow(
         preprocessor: nn.Module | None = None,
         firing_mode: str = "Default",
         spike_mode: str = "Uniform",
-        thresholding_mode: str = "<=",
+        *,
+        # Contract-owned semantics carry NO defaults: a silently defaulted
+        # comparator is another family's physics ("<=" is the ttfs family's,
+        # and on integer-lattice chips "<" vs "<=" is load-bearing — V9).
+        # The constructor-shaped version of the banned get(key, default).
+        thresholding_mode: str,
         spiking_mode: str = "lif",
         cycle_accurate_lif_forward: bool = False,
         ttfs_cycle_schedule: str = "cascaded",

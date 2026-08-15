@@ -160,7 +160,7 @@ def _build_pair(model, input_shape, num_classes, S, thresholding_mode, *, prune=
         None,
         "TTFS",
         "TTFS",
-        thresholding_mode,
+        thresholding_mode=thresholding_mode,
         spiking_mode="ttfs_cycle_based",
         ttfs_cycle_schedule="cascaded",
     ).eval()

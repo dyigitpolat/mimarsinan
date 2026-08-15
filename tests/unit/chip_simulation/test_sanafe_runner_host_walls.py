@@ -17,6 +17,17 @@ from mimarsinan.chip_simulation.sanafe import runner as runner_mod
 from mimarsinan.chip_simulation.sanafe.runner import SanafeRunner
 
 
+def _declared_behavior(spiking_mode="lif", firing_mode="Default"):
+    """The semantics these fixtures were written against — the executor's former
+    silent defaults, now STATED at the fixture (the hardening's point)."""
+    from mimarsinan.chip_simulation.behavior_config import NeuralBehaviorConfig
+
+    return NeuralBehaviorConfig(
+        spiking_mode=spiking_mode, firing_mode=firing_mode,
+        thresholding_mode="<=", spike_generation_mode="Uniform")
+
+
+
 def _compute_only_mapping(op_id=42):
     op = SimpleNamespace(id=op_id)
     stage = SimpleNamespace(
@@ -41,7 +52,8 @@ def _run(monkeypatch, **runner_kwargs):
         out_scale, dtype=np.float32: np.asarray([[3.0]], dtype=dtype),
     )
     runner = SanafeRunner(
-        mapping=_compute_only_mapping(), simulation_length=8, **runner_kwargs,
+        mapping=_compute_only_mapping(), simulation_length=8,
+        behavior=_declared_behavior(), **runner_kwargs,
     )
     return runner.run(np.asarray([[1.0, 2.0]], dtype=np.float32), sample_index=0)
 
@@ -70,7 +82,7 @@ def test_each_run_gets_a_fresh_timer(monkeypatch):
     runner = SanafeRunner(
         mapping=_compute_only_mapping(), simulation_length=8,
         time_host_stages=True,
-    )
+    behavior=_declared_behavior())
     sample = np.asarray([[1.0, 2.0]], dtype=np.float32)
     first = runner.run(sample, sample_index=0)
     second = runner.run(sample, sample_index=1)

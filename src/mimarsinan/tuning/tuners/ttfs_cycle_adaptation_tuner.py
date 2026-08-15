@@ -475,7 +475,7 @@ class TTFSCycleAdaptationTuner(KDBlendAdaptationTuner):
             getattr(self._teacher, "preprocessor", None),
             str(cfg.get("firing_mode", "TTFS")),
             str(cfg.get("spike_generation_mode", "TTFS")),
-            self._thresholding_mode,
+            thresholding_mode=self._thresholding_mode,
             spiking_mode=str(cfg.get("spiking_mode", "ttfs_cycle_based")),
             ttfs_cycle_schedule="synchronized",
         )

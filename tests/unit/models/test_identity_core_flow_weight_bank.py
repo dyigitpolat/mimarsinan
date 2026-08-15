@@ -70,7 +70,7 @@ class TestBankParamRegistration:
         flow = build_identity_spiking_flow(
             input_shape=(5,), ir_graph=graph, simulation_length=4,
             preprocessor=nn.Identity(), spiking_mode="ttfs",
-        )
+        thresholding_mode="<=", )
         # All 16 cores share the single bank; none are owned (no per-core matrix).
         num_banks, bank_backed, owned = _placement_bank_counts(flow)
         assert num_banks == 1
@@ -84,7 +84,7 @@ class TestForwardWithBanks:
         flow = build_identity_spiking_flow(
             input_shape=(3,), ir_graph=graph, simulation_length=4,
             preprocessor=nn.Identity(), spiking_mode="ttfs",
-        )
+        thresholding_mode="<=", )
         x = torch.rand(2, 3)
         out = flow(x)
         assert out.shape == (2, 8)
@@ -94,7 +94,7 @@ class TestForwardWithBanks:
         flow = build_identity_spiking_flow(
             input_shape=(3,), ir_graph=graph, simulation_length=4,
             preprocessor=nn.Identity(), spiking_mode="lif",
-        )
+        thresholding_mode="<=", )
         x = torch.rand(2, 3)
         out = flow(x)
         assert out.shape == (2, 4)
@@ -128,7 +128,7 @@ class TestMixedOwnedAndBank:
         flow = build_identity_spiking_flow(
             input_shape=(2,), ir_graph=graph, simulation_length=4,
             preprocessor=nn.Identity(), spiking_mode="ttfs",
-        )
+        thresholding_mode="<=", )
         x = torch.tensor([[0.5, 0.3]])
         out = flow(x)
         assert out.shape == (1, 1)

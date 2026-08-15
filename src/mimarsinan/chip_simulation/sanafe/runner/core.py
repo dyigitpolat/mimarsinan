@@ -33,9 +33,6 @@ class SanafeRunner(SanafeNeuralStageMixin, SanafeNeuralStageRecordMixin, SanafeS
         behavior: NeuralBehaviorConfig | None = None,
         arch_preset: str = "loihi",
         custom_arch_path: Optional[str] = None,
-        thresholding_mode: str = "<=",
-        spiking_mode: str = "lif",
-        firing_mode: str = "Default",
         ttfs_cycle_schedule: str = "cascaded",
         contract: Any = None,
         log_potential_trace: bool = False,
@@ -65,11 +62,12 @@ class SanafeRunner(SanafeNeuralStageMixin, SanafeNeuralStageRecordMixin, SanafeS
         # different f32 reduction is one spike at the next segment boundary.
         self.host_compute_device = host_compute_device
         if behavior is None:
-            behavior = NeuralBehaviorConfig(
-                spiking_mode=str(spiking_mode),
-                firing_mode=str(firing_mode),
-                thresholding_mode=str(thresholding_mode),
-                spike_generation_mode="Uniform",
+            raise TypeError(
+                "SanafeRunner needs its semantics DECLARED: pass contract= (the "
+                "deployment contract) or behavior= (a NeuralBehaviorConfig, whose "
+                "fields are all required). The old fallback manufactured one from "
+                "defaulted scalars — another silent source of semantics beside "
+                "the SSOT, exactly the bypass the comparator incident rode."
             )
         self._behavior = behavior
         self.spiking_mode = behavior.spiking_mode

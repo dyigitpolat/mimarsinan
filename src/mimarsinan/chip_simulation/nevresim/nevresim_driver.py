@@ -33,8 +33,12 @@ class NevresimDriver:
 
     def __init__(
         self, input_buffer_size, hard_core_mapping, generated_files_path, weight_type,
-        spike_generation_mode="Stochastic", firing_mode="Default", spiking_mode="lif",
-        thresholding_mode="<=",
+        *,
+        # Contract-owned semantics carry NO defaults: the old
+        # spike_generation_mode="Stochastic" handed a bypassing caller RANDOM
+        # input spikes, and "<=" is the ttfs family's comparator.
+        spike_generation_mode, thresholding_mode,
+        firing_mode="Default", spiking_mode="lif",
         threshold_type=None, verbose=True,
         connectivity_mode: ConnectivityMode | None = None,
         compile_cache_dir: str | None = None,

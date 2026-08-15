@@ -80,7 +80,7 @@ def _build_quantized_flows(mapper_repr, input_shape):
 
     soft_flow = build_identity_spiking_flow(
         input_shape, ir_graph, SIM_LENGTH, nn.Identity(),
-        "TTFS", "TTFS", "<=", spiking_mode="ttfs_quantized",
+        "TTFS", "TTFS", thresholding_mode="<=", spiking_mode="ttfs_quantized",
     ).eval()
 
     hybrid_mapping = build_hybrid_hard_core_mapping(
@@ -88,7 +88,7 @@ def _build_quantized_flows(mapper_repr, input_shape):
     )
     hard_flow = SpikingHybridCoreFlow(
         input_shape, hybrid_mapping, SIM_LENGTH, nn.Identity(),
-        "TTFS", "TTFS", "<=", spiking_mode="ttfs_quantized",
+        "TTFS", "TTFS", thresholding_mode="<=", spiking_mode="ttfs_quantized",
     ).eval()
 
     return soft_flow, hard_flow, ir_graph

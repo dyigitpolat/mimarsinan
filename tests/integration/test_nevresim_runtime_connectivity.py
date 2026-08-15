@@ -57,7 +57,7 @@ def _run_parity_for_mode(
                 threshold_type=threshold_type,
                 connectivity_mode=mode,
                 verbose=False,
-            )
+            thresholding_mode="<=", )
             raw = driver.predict_spiking_raw(_Loader(), T, latency, max_input_count=1, num_proc=1)
             outputs[mode] = raw
     return outputs
