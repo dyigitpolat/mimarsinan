@@ -316,14 +316,24 @@ class TestEveryBackendDeploysAScheduledSegment:
 
         assert pass_transfer_for_backend("nevresim") == VERBATIM
 
-    def test_a_backend_without_raster_output_collapses_to_counts(self):
-        """lava's runner returns rates and records no rhythm it could replay, so
-        it takes the cheaper discipline rather than refusing the deployment."""
+    def test_lava_carries_verbatim(self):
+        """lava is host-scheduled: core output spikes already live host-side, so
+        extraction is a windowed gather and replay overwrites the encoded train."""
         from mimarsinan.models.spiking.hybrid.carry import (
             pass_transfer_for_backend,
         )
 
-        assert pass_transfer_for_backend("lava") == COLLAPSE
+        assert pass_transfer_for_backend("lava") == VERBATIM
+
+    def test_an_unknown_backend_still_collapses_by_default(self):
+        """The weakest-backend rule is the safety default for FUTURE backends: a
+        name outside the declaration takes the cheaper discipline, never an
+        unearned verbatim."""
+        from mimarsinan.models.spiking.hybrid.carry import (
+            pass_transfer_for_backend,
+        )
+
+        assert pass_transfer_for_backend("some_future_backend") == COLLAPSE
 
     def test_collapsing_is_cheaper_to_buffer_than_carrying(self):
         """Counts fit in log2(T+1) bits; a raster needs T. That is the whole
@@ -443,16 +453,13 @@ class TestOneDisciplinePerRun:
     def test_a_run_of_carrying_backends_only_is_verbatim(self):
         assert self._transfer(enable_sanafe_simulation=True) == VERBATIM
 
-    def test_one_collapsing_backend_costs_the_whole_run_its_rasters(self):
+    def test_every_shipped_backend_now_carries_so_streamed_runs_are_verbatim(self):
         assert self._transfer(enable_sanafe_simulation=True,
-                              enable_loihi_simulation=True) == COLLAPSE
+                              enable_nevresim_simulation=True,
+                              enable_loihi_simulation=True) == VERBATIM
 
-    def test_nevresim_no_longer_collapses_the_run(self):
-        assert self._transfer(enable_sanafe_simulation=True,
-                              enable_nevresim_simulation=True) == VERBATIM
-
-    def test_lava_collapses_the_run_too(self):
-        assert self._transfer(enable_loihi_simulation=True) == COLLAPSE
+    def test_lava_no_longer_collapses_the_run(self):
+        assert self._transfer(enable_loihi_simulation=True) == VERBATIM
 
     def test_a_run_with_no_chip_backend_keeps_the_verbatim_boundary(self):
         """Nothing enabled means only the HCM executor runs, and it carries."""

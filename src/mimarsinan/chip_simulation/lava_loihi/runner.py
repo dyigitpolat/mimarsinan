@@ -12,29 +12,21 @@ import torch.nn as nn
 from mimarsinan.chip_simulation.behavior_config import NeuralBehaviorConfig
 from mimarsinan.chip_simulation.execution_bounds import resolve_simulation_step_timeout_s
 from mimarsinan.chip_simulation.hybrid_run.hybrid_execution import (
-    apply_input_shifts_numpy,
-    assemble_segment_input_numpy,
-    compute_input_state_with_shifts,
-    execute_compute_op_numpy,
-    gather_final_output_numpy,
-    resolve_stage_compute_scales,
-    store_segment_output_numpy,
-)
+    apply_input_shifts_numpy, assemble_segment_input_numpy, compute_input_state_with_shifts, execute_compute_op_numpy, gather_final_output_numpy, resolve_stage_compute_scales, store_segment_output_numpy,)
 from mimarsinan.chip_simulation.hybrid_run.hybrid_stage_runner import (
-    enumerate_execution_stages,
-    run_hybrid_stages,
-)
+    enumerate_execution_stages, run_hybrid_stages,)
 from mimarsinan.chip_simulation.lava_loihi.core_lava import LavaCoreMixin, _subtractive_lif_cls
 from mimarsinan.chip_simulation.lava_loihi.segment_runner import LavaSegmentMixin
 from mimarsinan.chip_simulation.lava_loihi.timing import _RunProfile, _StageTrace
 from mimarsinan.chip_simulation.recording.spike_recorder import RunRecord, SegmentSpikeRecord
+from mimarsinan.mapping.support.schedule.pass_cut import COLLAPSE, VERBATIM
+from mimarsinan.models.spiking.hybrid.carry import (
+    carried_output_ids, run_pass_transfer)
 from mimarsinan.data_handling import batch_integrity
 from mimarsinan.data_handling.data_loader_factory import DataLoaderFactory, shutdown_data_loader
 from mimarsinan.mapping.packing.hybrid_hardcore_mapping import HybridHardCoreMapping
 from mimarsinan.spiking.segment_boundary import (
-    boundary_normalization_scales,
-    normalize_boundary_slices_numpy,
-)
+    boundary_normalization_scales, normalize_boundary_slices_numpy,)
 
 
 
@@ -48,12 +40,24 @@ class LavaLoihiRunner(LavaCoreMixin, LavaSegmentMixin):
         behavior: NeuralBehaviorConfig,
         pipeline=None,
         preprocessor: nn.Module | None = None,
+        pass_transfer: str | None = None,
     ):
         self.pipeline = pipeline
         self.mapping = mapping
         self.T = int(simulation_length)
         self._behavior = behavior
         behavior.require_backend("lava")
+        # ONE discipline per run (run_pass_transfer): verbatim only when the
+        # semantics stream AND every enabled backend can replay a raster. A
+        # pipeline-less runner must be TOLD the run's discipline — defaulting a
+        # bare runner to COLLAPSE while the HCM reference ran VERBATIM is the
+        # split-brain the parity gate exists to catch (and did).
+        if pass_transfer is not None:
+            self.pass_transfer = str(pass_transfer)
+        else:
+            self.pass_transfer = (
+                run_pass_transfer(pipeline.config) if pipeline is not None
+                else COLLAPSE)
         self._firing_strategy = behavior.firing_strategy()
         self.thresholding_mode = behavior.thresholding_mode
         self.preprocessor = preprocessor if preprocessor is not None else nn.Identity()
@@ -147,7 +151,13 @@ class LavaLoihiRunner(LavaCoreMixin, LavaSegmentMixin):
         wire_divisors = boundary_normalization_scales(self.mapping)
         node_output_shifts = getattr(self.mapping, "node_output_shifts", None)
 
-        def _on_neural(_stage_index, stage, state_buffer):
+        carried_by_stage = (
+            carried_output_ids(self.mapping)
+            if self.pass_transfer == VERBATIM else {}
+        )
+        state_buffer_trains: dict = {}
+
+        def _on_neural(stage_index, stage, state_buffer):
             t0 = time.time()
             seg = stage.hard_core_mapping
             assert seg is not None
@@ -158,7 +168,11 @@ class LavaLoihiRunner(LavaCoreMixin, LavaSegmentMixin):
             seg_input = apply_input_shifts_numpy(
                 stage.input_map, seg_input, node_output_shifts,
             )
-            seg_output = self._run_neural_segment(seg, seg_input)
+            seg_output = self._run_neural_segment(
+                seg, seg_input, stage=stage,
+                state_buffer_trains=state_buffer_trains,
+                carried_out=tuple(carried_by_stage.get(stage_index, ())),
+            )
             store_segment_output_numpy(stage.output_map, state_buffer, seg_output)
             self._profile.stages.append(
                 _StageTrace(
@@ -228,6 +242,11 @@ class LavaLoihiRunner(LavaCoreMixin, LavaSegmentMixin):
             compute_outputs=dict(ref.compute_outputs),
         )
         self._recorder = out
+        carried_by_stage = (
+            carried_output_ids(self.mapping)
+            if self.pass_transfer == VERBATIM else {}
+        )
+        state_buffer_trains: dict = {}
         try:
             for stage_index, _program_stage, stage in enumerate_execution_stages(
                 self.mapping.stages
@@ -257,6 +276,8 @@ class LavaLoihiRunner(LavaCoreMixin, LavaSegmentMixin):
 
                 seg_out_rates = self._run_neural_segment(
                     seg, seg_input_rates, recorder_seg=actual_seg,
+                    stage=stage, state_buffer_trains=state_buffer_trains,
+                    carried_out=tuple(carried_by_stage.get(stage_index, ())),
                 )
 
                 if actual_seg.seg_output_spike_count.size == 0:

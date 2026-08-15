@@ -84,7 +84,8 @@ def _prepare_step(monkeypatch, *, diffs=None):
             return torch.zeros((1, 1)), _fake_record(sample_index=sample_index)
 
     class FakeRunner:
-        def __init__(self, mapping, simulation_length, behavior):
+        def __init__(self, mapping, simulation_length, behavior,
+                     pass_transfer=None):
             calls["runner_inits"].append(
                 {
                     "mapping": mapping,

@@ -10,16 +10,16 @@ import numpy as np
 from mimarsinan.common.env import loihi_quiet, loihi_wave_workers
 
 from mimarsinan.chip_simulation.execution_bounds import (
-    ReusableBoundedPool,
-    run_tasks_in_pool_bounded,
-)
+    ReusableBoundedPool, run_tasks_in_pool_bounded,)
 from mimarsinan.chip_simulation.lava_loihi.core_worker import run_lava_core_task
 from mimarsinan.chip_simulation.lava_loihi.segment_assembly import (
-    assemble_core_active_input,
-)
+    assemble_core_active_input,)
 from mimarsinan.chip_simulation.lava_loihi.wave_schedule import (
-    core_dependency_graph,
-    wave_levels,
+    core_dependency_graph, wave_levels,)
+from mimarsinan.chip_simulation.lava_loihi.carry import (
+    _output_raster,
+    apply_carried_input,
+    publish_carried_trains,
 )
 from mimarsinan.chip_simulation.recording.spike_recorder import CoreSpikeCounts, SegmentSpikeRecord
 from mimarsinan.mapping.packing.softcore import HardCoreMapping
@@ -86,6 +86,9 @@ class LavaSegmentMixin:
         seg_input_rates: np.ndarray,
         *,
         recorder_seg: SegmentSpikeRecord | None = None,
+        stage=None,
+        state_buffer_trains=None,
+        carried_out: tuple = (),
     ) -> np.ndarray:
         """Execute a segment with host-scheduled routing and Lava per-core LIF."""
         T = self.T
@@ -94,6 +97,10 @@ class LavaSegmentMixin:
         timing = _SegmentTiming.from_mapping(seg, T)
 
         seg_input_spikes = self._behavior.encode_segment_input(seg_input_rates, T)
+        if stage is not None and state_buffer_trains:
+            # Verbatim pass carry: overwrite carried input slices with the
+            # producing pass's rasters; host-boundary slices keep the encode.
+            apply_carried_input(seg_input_spikes, stage, state_buffer_trains)
         seg_input_logical = np.zeros(
             (seg_in_size, N, timing.sample_stride), dtype=_LAVA_DTYPE,
         )
@@ -211,6 +218,14 @@ class LavaSegmentMixin:
         seg_out_counts = seg_out_spikes.sum(axis=2).T
         seg_out_rates = seg_out_counts / float(T)
 
+        if stage is not None and state_buffer_trains is not None and carried_out:
+            publish_carried_trains(
+                stage,
+                _output_raster(
+                    seg, timing, core_output_spikes, seg_input_logical, T, N),
+                carried_out, state_buffer_trains,
+            )
+
         if recorder_seg is not None:
             assert N == 1, "Spike recording requires a single sample (N == 1)"
             recorder_seg.seg_output_spike_count = seg_out_counts[0].astype(np.int64)
@@ -272,8 +287,13 @@ class LavaSegmentMixin:
         seg_input_rates: np.ndarray,
         *,
         recorder_seg: SegmentSpikeRecord | None = None,
+        stage=None,
+        state_buffer_trains=None,
+        carried_out: tuple = (),
     ) -> np.ndarray:
         """Execute one neural segment with HCM-equivalent Lava core dynamics."""
         return self._run_neural_segment_scheduled(
             seg, seg_input_rates, recorder_seg=recorder_seg,
+            stage=stage, state_buffer_trains=state_buffer_trains,
+            carried_out=carried_out,
         )

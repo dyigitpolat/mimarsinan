@@ -1,6 +1,7 @@
 """Optional Loihi-target HCM-vs-Lava spike-parity step (LIF-only)."""
 
 from mimarsinan.chip_simulation.lava_loihi import LavaLoihiRunner
+from mimarsinan.models.spiking.hybrid.carry import run_pass_transfer
 from mimarsinan.data_handling.sample_loader import load_test_sample_by_index
 from mimarsinan.pipelining.core.engine.pipeline_helpers import require_spiking_mode_supported
 from mimarsinan.pipelining.core.steps.pipeline_step import (
@@ -61,6 +62,7 @@ class LoihiSimulationStep(PipelineStep):
             mapping=hard_core_mapping,
             simulation_length=simulation_length,
             behavior=behavior,
+            pass_transfer=run_pass_transfer(self.pipeline.config),
         )
         actual = runner.run_segments_from_reference(ref)
         assert_spike_parity_or_raise(ref, actual)

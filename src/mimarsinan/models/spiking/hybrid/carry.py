@@ -58,10 +58,11 @@ def publish_carried_trains(
 def apply_carried_input(encoded, stage, state_buffer_spikes) -> bool:
     """Overwrite ``encoded`` slices whose producer published a raster.
 
-    ``encoded`` is the backend's per-axon train in ``(1, size, T)`` — the shape
-    SANA-FE's ``set_input_spike_trains`` reads — while a carried raster is stored
-    time-first as ``(T, size)``. Returns whether anything was replayed, so a caller
-    can report the discipline it actually ran rather than the one it hoped for.
+    ``encoded`` is the backend's per-axon train in ``(N, size, T)`` — SANA-FE
+    passes ``N == 1``, lava the whole batch — while a carried raster is stored
+    time-first: ``(T, size)`` per-sample, or ``(N, T, size)`` batched. Returns
+    whether anything was replayed, so a caller can report the discipline it
+    actually ran rather than the one it hoped for.
     """
     replayed = False
     for s in stage.input_map:
@@ -71,10 +72,16 @@ def apply_carried_input(encoded, stage, state_buffer_spikes) -> bool:
         width = min(int(s.size), train.shape[-1], encoded.shape[1] - int(s.offset))
         if width <= 0:
             continue
-        window = min(int(train.shape[0]), int(encoded.shape[2]))
-        encoded[0, s.offset : s.offset + width, :window] = (
-            train[:window, :width].T
-        )
+        window = min(int(train.shape[-2]), int(encoded.shape[2]))
+        if train.ndim == 2:
+            encoded[0, s.offset : s.offset + width, :window] = (
+                train[:window, :width].T
+            )
+        else:
+            for i in range(min(int(train.shape[0]), int(encoded.shape[0]))):
+                encoded[i, s.offset : s.offset + width, :window] = (
+                    train[i, :window, :width].T
+                )
         replayed = True
     return replayed
 
@@ -167,7 +174,7 @@ def record_carry(carry, plan, *, cycle: int, fires, train, T: int) -> None:
 
 #: Backends that replay a carried raster verbatim. A backend outside this set uses
 #: the COLLAPSE discipline instead — never a refusal.
-VERBATIM_BACKENDS = frozenset({"hcm", "sanafe", "nevresim"})
+VERBATIM_BACKENDS = frozenset({"hcm", "sanafe", "nevresim", "lava"})
 
 
 #: config key that enables each backend, so the run's discipline is read from the
