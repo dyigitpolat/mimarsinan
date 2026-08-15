@@ -49,6 +49,7 @@ def run_binary_raw(
     num_proc: int = 0,
     record_spikes: Literal[False] = False,
     export_membrane: Literal[False] = False,
+    record_spike_trains: Literal[False] = False,
     timeout_s: float | None = None,
 ) -> np.ndarray: ...
 
@@ -67,6 +68,7 @@ def run_binary_raw(
     num_proc: int = 0,
     record_spikes: Literal[True],
     export_membrane: Literal[False] = False,
+    record_spike_trains: Literal[False] = False,
     timeout_s: float | None = None,
 ) -> tuple[np.ndarray, list[dict[int, dict[str, list[int]]]]]: ...
 
@@ -83,8 +85,29 @@ def run_binary_raw(
     spike_generation_mode: str,
     max_input_count: int,
     num_proc: int = 0,
+    record_spikes: Literal[True],
+    export_membrane: Literal[False] = False,
+    record_spike_trains: Literal[True],
+    timeout_s: float | None = None,
+) -> tuple[np.ndarray, list[dict[int, dict[str, list[int]]]],
+           list[dict[int, list[str]]]]: ...
+
+
+@overload
+def run_binary_raw(
+    *,
+    binary_path: str,
+    work_dir: str,
+    input_loader: Iterable,
+    output_size: int,
+    simulation_length: int,
+    input_size: int,
+    spike_generation_mode: str,
+    max_input_count: int,
+    num_proc: int = 0,
     record_spikes: Literal[False] = False,
     export_membrane: Literal[True],
+    record_spike_trains: Literal[False] = False,
     timeout_s: float | None = None,
 ) -> tuple[np.ndarray, np.ndarray]: ...
 
@@ -102,12 +125,16 @@ def run_binary_raw(
     num_proc: int = 0,
     record_spikes: bool = False,
     export_membrane: bool = False,
+    record_spike_trains: bool = False,
     timeout_s: float | None = None,
 ):
     """Run a pre-compiled nevresim binary and return ``(num_samples, output_size)``.
 
     With ``record_spikes`` (a ``NEVRESIM_RECORD_SPIKES`` build) returns
     ``(raw, spike_records)`` — per-sample per-core counts from ``parse_spike_records``.
+    With ``record_spike_trains`` too (a build defining BOTH flags) returns
+    ``(raw, spike_records, spike_trains)`` — the trains per-neuron bitstrings in
+    producer-local time, beside the counts they must sum to.
     With ``export_membrane`` (a ``NEVRESIM_EXPORT_MEMBRANE`` build) returns
     ``(raw, membranes)`` — per-sample final ``m_T/theta`` per output, failing
     loud when the binary emits no membrane records."""
@@ -139,16 +166,24 @@ def run_binary_raw(
     )
 
     expected_values = max_input_count * output_size
-    raw, spike_records, membrane_rows = execute_simulator_full(
+    raw, spike_records, spike_trains, membrane_rows = execute_simulator_full(
         binary_path,
         max_input_count,
         num_proc,
         expected_values=expected_values,
         record_spikes=record_spikes,
         export_membrane=export_membrane,
+        record_spike_trains=record_spike_trains,
         timeout_s=timeout_s,
     )
     out = np.array(raw, dtype=np.float64).reshape((max_input_count, output_size))
+    if record_spike_trains:
+        if not record_spikes:
+            raise ValueError(
+                "record_spike_trains rides the recording build: pass "
+                "record_spikes=True as well (the trains binary defines both)"
+            )
+        return out, spike_records, spike_trains
     if record_spikes:
         return out, spike_records
     if export_membrane:

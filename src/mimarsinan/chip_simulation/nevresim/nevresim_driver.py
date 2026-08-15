@@ -231,6 +231,19 @@ class NevresimDriver:
             max_input_count=max_input_count, num_proc=num_proc,
         )
 
+    def predict_spiking_raw_with_spike_trains(
+        self, input_loader, simulation_length, latency,
+        max_input_count=None, num_proc=1,
+    ):
+        """Both recording flags in one build (never cached):
+        ``(raw, spike_records, spike_trains)`` — trains per-sample
+        ``{core: (neurons, T) uint8}`` in producer-local time, whose window sum
+        IS the SPKREC count."""
+        return instrumented_builds.predict_spiking_raw_with_spike_trains(
+            self, input_loader, simulation_length, latency,
+            max_input_count=max_input_count, num_proc=num_proc,
+        )
+
     def predict_spiking_raw_with_membrane(
         self, input_loader, simulation_length, latency,
         max_input_count=None, num_proc=0,

@@ -63,3 +63,71 @@ class TestRunBinaryRawMembraneContract:
                 record_spikes=True,
                 export_membrane=True,
             )
+
+
+class TestSpikeTrainParse:
+    """SPKTRN is its own record line beside SPKREC — the count parser is untouched,
+    and the trains arrive in producer-local time as per-neuron bitstrings."""
+
+    def test_trains_parse_per_sample_per_core(self):
+        from mimarsinan.chip_simulation.nevresim.execute_nevresim import (
+            parse_spike_trains,
+        )
+
+        stderr = (
+            "SPKTRN 0 0101 0011\nSPKTRN 1 1111\nSPKTRN_END\n"
+            "SPKTRN 0 0000 1000\nSPKTRN 1 0001\nSPKTRN_END\n"
+        )
+        samples = parse_spike_trains(stderr)
+        assert samples == [
+            {0: ["0101", "0011"], 1: ["1111"]},
+            {0: ["0000", "1000"], 1: ["0001"]},
+        ]
+
+    def test_spkrec_lines_are_not_trains_and_trains_are_not_counts(self):
+        from mimarsinan.chip_simulation.nevresim.execute_nevresim import (
+            parse_spike_records,
+            parse_spike_trains,
+        )
+
+        stderr = (
+            "SPKREC 0 IN 1 OUT 2\nSPKREC_END\n"
+            "SPKTRN 0 0101\nSPKTRN_END\n"
+        )
+        assert parse_spike_records(stderr) == [{0: {"in": [1], "out": [2]}}]
+        assert parse_spike_trains(stderr) == [{0: ["0101"]}]
+
+    def test_a_ragged_core_fails_loud(self):
+        import pytest
+
+        from mimarsinan.chip_simulation.nevresim.execute_nevresim import (
+            parse_spike_trains,
+        )
+
+        with pytest.raises(ValueError, match="ragged"):
+            parse_spike_trains("SPKTRN 0 010 0111\nSPKTRN_END\n")
+
+    def test_a_non_binary_symbol_fails_loud(self):
+        import pytest
+
+        from mimarsinan.chip_simulation.nevresim.execute_nevresim import (
+            parse_spike_trains,
+        )
+
+        with pytest.raises(ValueError, match="non-binary"):
+            parse_spike_trains("SPKTRN 0 0102\nSPKTRN_END\n")
+
+    def test_the_recorder_header_pins_the_protocol(self):
+        """The C++ side is compiled only in the integration tier, so the unit
+        tier pins the contract textually: its own define, its own record line,
+        and the producer-local time convention."""
+        from pathlib import Path
+
+        header = Path("nevresim/include/simulator/recording/"
+                      "spike_train_recorder.hpp").read_text()
+        assert "NEVRESIM_RECORD_SPIKE_TRAINS" in header
+        assert '"SPKTRN "' in header and '"SPKTRN_END' in header
+        assert "cycle - lat" in header, "producer-local time is the convention"
+        execution = Path("nevresim/include/simulator/execution/"
+                         "spiking_execution.hpp").read_text()
+        assert execution.count("NEVRESIM_RECORD_SPIKE_TRAINS") >= 4

@@ -382,3 +382,47 @@ run verbatim.
 **The coverage gap is the real lesson**, and it remains open: a tier cell for
 streamed × scheduling belongs in tier 0, so this path is exercised by the matrix rather
 than by hand.
+
+## 19. Finalization (2026-08-15) — F-series, as landed
+
+The closing pass: plan → audit → the three remaining items → verification. Every stage
+committed separately; this section is the program's closure record.
+
+**F0 — the audit found the discipline was semantics-blind.** `run_pass_transfer`
+decided from backends alone, so a WINDOWED (lifsync) scheduled run with only carrying
+backends resolved VERBATIM: the record sealed a discipline that never executed, and
+SANA-FE replayed raw rasters into a windowed run while the HCM flow — saved only by an
+empty list being falsy — re-encoded. Fixed at one point: semantics first
+(`transfer_for(streamed=is_streamed_lif(cfg))`, the same SSOT predicate the deployment
+contract reads), then the weakest enabled backend. The executor's carry-capability
+predicate now describes the EXECUTED path, so requesting a raster on the synchronized
+path refuses loudly. Verified end-to-end with the lifsync mirror of the streamed probe
+(3 passes, every certificate PASS, record truthfully seals `collapse`). Also pinned:
+resolved configs always carry every `enable_*` key the discipline reads.
+
+**F1 — t0_53.** The streamed × scheduling tier-0 cell (pool I: 3 narrow cores → 3
+passes), generated via `templates/generate.py`. The path the last five bugs hid on is
+now in the matrix.
+
+**F2 (SP4) — the carry is charged.** `carried_raster_bytes` / `carry_peak_live_bytes`
+in the quantity catalog; `from_record` extracts them from the sealed `PassCarryRecord`
+(absence stays meaningful); `e_dma_per_byte × carried_raster_bytes` per inference in
+`ENERGY_COMPONENTS`. A target without the constant gets the honest `unpriced:` note.
+Peak-live is sealed but deliberately unpriced — capacity, not switching work. The
+multiplicand grammar gained " | " for a constant with independent uses.
+
+**F3 — nevresim per-timestep spike-train extraction.** A sibling recorder
+(`spike_train_recorder.hpp`, its own `NEVRESIM_RECORD_SPIKE_TRAINS` define, its own
+`SPKTRN` record line) beside the SPKREC count recorder — the existing parser untouched,
+per the owner's constraint. Trains are per-neuron bitstrings in PRODUCER-LOCAL time,
+the same convention as the HCM carry seam and SANA-FE's raster gather. The trains build
+defines BOTH flags, so `predict_spiking_raw_with_spike_trains` returns counts beside
+trains and the identity `sum(train) == count` is a self-check every consumer gets for
+free. Verified by compiling and running the real binary on the cut run's own segment:
+384 neuron-windows, 0 mismatches, 170 spikes. Extraction only — nevresim still runs
+COLLAPSE (legitimate); wiring the trains into a verbatim replay across the segment
+input side is the recorded follow-up that would upgrade mixed runs.
+
+**Still open, deliberately:** nevresim/lava VERBATIM replay (the follow-up above), and
+the t0_53 cell's first integration-tier sweep, which runs with the tier harness rather
+than here.

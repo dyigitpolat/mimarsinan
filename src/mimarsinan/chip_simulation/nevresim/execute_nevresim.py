@@ -57,6 +57,36 @@ def parse_spike_records(stderr: str) -> list[dict[int, dict[str, list[int]]]]:
     return samples
 
 
+def parse_spike_trains(stderr: str) -> list[dict[int, list[str]]]:
+    """Parse ``SPKTRN`` lines (NEVRESIM_RECORD_SPIKE_TRAINS build) into per-sample
+    trains: ``{core: [bitstring per neuron]}``, each bitstring the neuron's
+    emission history in PRODUCER-LOCAL time. ``SPKTRN_END`` closes a sample.
+    A ragged core (neuron bitstrings of unequal length) fails loud — that is a
+    protocol violation, not a short train."""
+    samples: list[dict[int, list[str]]] = []
+    current: dict[int, list[str]] = {}
+    for line in (stderr or "").splitlines():
+        line = line.strip()
+        if not line.startswith("SPKTRN"):
+            continue
+        if line == "SPKTRN_END":
+            samples.append(current)
+            current = {}
+            continue
+        toks = line.split()
+        core, trains = int(toks[1]), toks[2:]
+        widths = {len(t) for t in trains}
+        if len(widths) > 1:
+            raise ValueError(
+                f"SPKTRN core {core}: ragged trains (lengths {sorted(widths)}) — "
+                f"every neuron of a core shares one window"
+            )
+        if any(set(t) - {"0", "1"} for t in trains):
+            raise ValueError(f"SPKTRN core {core}: non-binary train symbol")
+        current[core] = trains
+    return samples
+
+
 def _launch_workers(
     executable: str, input_count: int, num_proc: int,
 ) -> list[tuple[int, int, subprocess.Popen]]:
@@ -98,9 +128,11 @@ def _collect_worker_outputs(
     timeout_s: float,
     record_spikes: bool,
     export_membrane: bool = False,
-) -> tuple[list[float], list[dict], list[list[float]]]:
+    record_spike_trains: bool = False,
+) -> tuple[list[float], list[dict], list[dict], list[list[float]]]:
     output_values: list[float] = []
     spike_records: list[dict] = []
+    spike_trains: list[dict] = []
     membrane_records: list[list[float]] = []
     for start, end, proc in workers:
         remaining = deadline - time.monotonic()
@@ -124,9 +156,11 @@ def _collect_worker_outputs(
         output_values.extend(_parse_stdout_tokens(stdout))
         if record_spikes:
             spike_records.extend(parse_spike_records(stderr))
+        if record_spike_trains:
+            spike_trains.extend(parse_spike_trains(stderr))
         if export_membrane:
             membrane_records.extend(parse_membrane_records(stderr))
-    return output_values, spike_records, membrane_records
+    return output_values, spike_records, spike_trains, membrane_records
 
 
 def execute_simulator_full(
@@ -137,8 +171,9 @@ def execute_simulator_full(
     expected_values: int | None = None,
     record_spikes: bool = False,
     export_membrane: bool = False,
+    record_spike_trains: bool = False,
     timeout_s: float | None = None,
-) -> tuple[list[float], list[dict], list[list[float]]]:
+) -> tuple[list[float], list[dict], list[dict], list[list[float]]]:
     """Run the nevresim binary across ``num_proc`` workers (0 ⇒ ``cpu_count() // 2``).
 
     Returns ``(output_values, spike_records, membrane_records)``; the record
@@ -166,7 +201,7 @@ def execute_simulator_full(
 
     def attempt(
         _attempt_index: int,
-    ) -> tuple[list[float], list[dict], list[list[float]]]:
+    ) -> tuple[list[float], list[dict], list[dict], list[list[float]]]:
         workers = _launch_workers(executable, input_count, num_proc)
         return _collect_worker_outputs(
             workers,
@@ -174,9 +209,10 @@ def execute_simulator_full(
             timeout_s=cap,
             record_spikes=record_spikes,
             export_membrane=export_membrane,
+            record_spike_trains=record_spike_trains,
         )
 
-    output_values, spike_records, membrane_records = retry_once_on_timeout(
+    output_values, spike_records, spike_trains, membrane_records = retry_once_on_timeout(
         attempt, description=f"nevresim execute ({executable})",
     )
 
@@ -189,7 +225,7 @@ def execute_simulator_full(
             f"got {len(output_values)}"
         )
 
-    return output_values, spike_records, membrane_records
+    return output_values, spike_records, spike_trains, membrane_records
 
 
 def execute_simulator(
@@ -204,7 +240,7 @@ def execute_simulator(
     """Narrowing wrapper over ``execute_simulator_full`` for existing callers:
     returns ``output_values``, or ``(output_values, spike_records)`` with
     ``record_spikes``."""
-    output_values, spike_records, _membranes = execute_simulator_full(
+    output_values, spike_records, _trains, _membranes = execute_simulator_full(
         simulator_filename,
         input_count,
         num_proc,

@@ -17,15 +17,16 @@ def emit_and_compile_flagged(
     simulation_length: int,
     latency: int,
     *,
-    extra_flag: str,
+    extra_flag: str | list[str],
     label: str,
     output_path: str | None = None,
 ) -> str:
     """Compile a dedicated ``extra_flag`` build (never cached — keep it off the
     production binary path). ``output_path`` defaults to a flag-specific name so
     the production binary is never clobbered."""
+    flags = [extra_flag] if isinstance(extra_flag, str) else list(extra_flag)
     if output_path is None:
-        suffix = extra_flag.removeprefix("-DNEVRESIM_").lower()
+        suffix = "_".join(f.removeprefix("-DNEVRESIM_").lower() for f in flags)
         output_path = str(
             Path(driver.generated_files_path) / "bin" / f"simulator_{suffix}"
         )
@@ -35,7 +36,7 @@ def emit_and_compile_flagged(
         type(driver).nevresim_path,
         output_path=output_path,
         verbose=False,
-        extra_flags=[extra_flag],
+        extra_flags=flags,
         timeout_s=driver.simulation_step_timeout_s,
     )
     if binary is None:
@@ -107,3 +108,49 @@ def predict_spiking_raw_with_membrane(
         export_membrane=True,
         timeout_s=driver.simulation_step_timeout_s,
     )
+
+
+def predict_spiking_raw_with_spike_trains(
+    driver: Any,
+    input_loader,
+    simulation_length: int,
+    latency: int,
+    max_input_count: int | None = None,
+    num_proc: int = 1,
+):
+    """Run a build defining BOTH recording flags and return
+    ``(raw, spike_records, spike_trains)``.
+
+    ``spike_trains`` is per-sample ``{core: (neurons, T) uint8}`` in
+    PRODUCER-LOCAL time — the per-cycle emission history whose window sum IS the
+    SPKREC count, which is the self-check a consumer gets for free by asking for
+    both from one binary.
+    """
+    if max_input_count is None:
+        max_input_count = len(input_loader)
+    binary = emit_and_compile_flagged(
+        driver, max_input_count, simulation_length, latency,
+        extra_flag=["-DNEVRESIM_RECORD_SPIKES",
+                    "-DNEVRESIM_RECORD_SPIKE_TRAINS"],
+        label="Spike-train recording",
+    )
+    raw, spike_records, spike_trains = run_binary_raw(
+        binary_path=binary,
+        work_dir=driver.generated_files_path,
+        input_loader=input_loader,
+        output_size=driver.chip.output_size,
+        simulation_length=int(simulation_length),
+        input_size=driver.chip.input_size,
+        spike_generation_mode=driver.spike_generation_mode,
+        max_input_count=max_input_count,
+        num_proc=num_proc,
+        record_spikes=True,
+        record_spike_trains=True,
+        timeout_s=driver.simulation_step_timeout_s,
+    )
+    as_arrays = [
+        {core: np.array([[int(b) for b in t] for t in trains], dtype=np.uint8)
+         for core, trains in sample.items()}
+        for sample in spike_trains
+    ]
+    return raw, spike_records, as_arrays
