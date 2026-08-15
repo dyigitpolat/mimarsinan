@@ -36,4 +36,18 @@ ENTRIES = (
            "saying why it deviates; low/high and unit default to the profile's. With "
            "no profile selected these constants alone form a custom target.",
        provenance="consumer frozen default", derived_default=_frozen({})),
+    _E("activity_factor", section=_PC, group="hardware",
+       owner="deployment_record.quantities", type=T.FLOAT,
+       category=Category.ADVANCED, exposure="user",
+       bounds=(0.0, 1.0), default=0.0,
+       label="Switching Activity Factor",
+       effect="Declared per-synapse spike probability per timestep for "
+              "candidate-time spike-dependent pricing",
+       doc="The EDA switching-activity assumption: at search time no spikes have "
+           "been measured, so spike-dependent quantities (synaptic events, NoC "
+           "messages) are modeled as activity_factor x timesteps over the "
+           "structural census, with provenance 'modeled'. 0 means undeclared: "
+           "those quantities stay absent rather than resting on an assumption "
+           "nobody stated. Sealed records always carry measured counts instead.",
+       empty_means="undeclared — spike-dependent modeled quantities stay absent"),
 )

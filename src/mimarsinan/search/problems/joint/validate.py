@@ -132,12 +132,15 @@ class JointValidateMixin(JointHostContract):
         if not stats.feasible:
             return None, self._packing_failure(stats, error, softcores, pcfg)
 
+        census = self._onchip_census(model, placement)
         return CandidateLayout(
             platform=pcfg,
             softcores=softcores,
             host_side_segment_count=host_segments,
             stats=stats,
-            view=self._static_view(stats, pcfg, total_params, host_segments),
+            view=self._static_view(
+                stats, pcfg, total_params, host_segments, census,
+            ),
         ), None
 
     def _resolve_entry(

@@ -88,6 +88,17 @@ def build_platform_constraints_resolved(
         pcfg["target_tq"] = pipeline_config["target_tq"]
     if "weight_bits" in pipeline_config:
         pcfg["weight_bits"] = pipeline_config["weight_bits"]
+    # The deployment spike window and the declared switching-activity
+    # assumption ride the resolved surface: candidate-time quantities and the
+    # sealed record's twin read the SAME declarations (0 activity = undeclared).
+    pcfg["simulation_steps"] = int(
+        pipeline_config.get(
+            "simulation_steps", DEFAULT_PLATFORM_CONSTRAINTS["simulation_steps"],
+        ) or 0
+    )
+    pcfg["activity_factor"] = float(
+        pipeline_config.get("activity_factor", 0.0) or 0.0
+    )
 
     if CANONICAL_KEY in pipeline_config:
         pcfg[CANONICAL_KEY] = bool(pipeline_config[CANONICAL_KEY])

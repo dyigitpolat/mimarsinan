@@ -6,6 +6,9 @@ from mimarsinan.deployment_record.objectives.catalog import (
     build_catalog,
     objective,
 )
+from mimarsinan.deployment_record.objectives.context import (
+    candidate_context_from_platform,
+)
 from mimarsinan.deployment_record.objectives.extractors import Backing
 from mimarsinan.deployment_record.objectives.registry import ObjectiveRegistry
 from mimarsinan.deployment_record.objectives.spec import (
@@ -46,6 +49,7 @@ __all__ = [
     "RecordView",
     "build_catalog",
     "candidate_capability_probe",
+    "candidate_context_from_platform",
     "candidate_probe_without",
     "run_capability_probe",
     "chip_param_capacity",

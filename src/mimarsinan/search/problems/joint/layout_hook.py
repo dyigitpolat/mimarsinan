@@ -6,7 +6,6 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import torch
-from torch.nn.parameter import UninitializedParameter
 
 from mimarsinan.deployment_record.objectives import (
     CandidateStaticView,
@@ -29,9 +28,8 @@ from mimarsinan.mapping.verification.layout_verification_scheduling import compu
 from mimarsinan.mapping.verification.layout_verification_types import (
     LayoutVerificationStats,
 )
-from mimarsinan.models.builders import build_model
-from mimarsinan.torch_mapping.converter import convert_torch_model
-
+from .candidate_fragments import candidate_fragments, compute_onchip_census
+from .model_build import build_raw_model, convert_to_mapper_repr
 from .types import (
     HW_PACKING_PHASE,
     CandidateFailure,
@@ -45,47 +43,22 @@ class JointLayoutMixin(JointHostContract):
 
     def _build_raw_model(self, model_config: Dict, pcfg: Dict, placement: str):
         """Build and warm up a raw model. Returns (model, total_params) or raises."""
-        builder = self.builder_factory(
-            self.device,
-            self.input_shape,
-            self.num_classes,
-            {**pcfg, "target_tq": int(self.target_tq)},
+        return build_raw_model(
+            builder_factory=self.builder_factory, device=self.device,
+            input_shape=tuple(self.input_shape), num_classes=self.num_classes,
+            target_tq=int(self.target_tq), model_config=model_config,
+            pcfg=pcfg, placement=placement,
         )
-        model = build_model(
-            builder, model_config, encoding_placement=placement
-        ).to(self.device)
-
-        model.eval()
-        with torch.no_grad():
-            try:
-                model_device = next(model.parameters()).device
-            except StopIteration:
-                model_device = self.device
-            dummy = torch.zeros((1, *tuple(self.input_shape)), device=model_device)
-            _ = model(dummy)
-
-        if any(isinstance(p, UninitializedParameter) for p in model.parameters()):
-            raise RuntimeError("Model has uninitialised parameters after forward pass")
-
-        total_params = float(sum(int(p.numel()) for p in model.parameters()))
-        return model, total_params
 
     def _convert_to_mapper_repr(self, model, placement: str):
-        """Convert via torch mapping if the model lacks ``get_mapper_repr``.
-
-        A native builder's flow already had its placement resolved by
-        ``build_model``; a torch module's flow is born here and resolves the
-        same one, so a candidate's core count is the deployed model's.
-        """
-        if hasattr(model, "get_mapper_repr"):
-            return model
-        return convert_torch_model(
+        """The mapper-form model — see :func:`convert_to_mapper_repr`."""
+        return convert_to_mapper_repr(
             model,
             input_shape=tuple(self.input_shape),
             num_classes=self.num_classes,
             device=self.device,
-            Tq=self.target_tq,
-            encoding_layer_placement=placement,
+            target_tq=self.target_tq,
+            placement=placement,
         )
 
     def _ensure_mapper_repr(self, model, placement: str):
@@ -269,26 +242,56 @@ class JointLayoutMixin(JointHostContract):
         )
         return CandidateFailure(phase=HW_PACKING_PHASE, message=message)
 
+    def _onchip_census(self, model, placement: str):
+        """Host/on-chip param+MAC counts, when an active axis prices them.
+
+        Two flow walks per candidate, so gated on the registry's own answer
+        (no active objective loses availability without the context → skip),
+        and memoized on the hardware-only fixture whose model no candidate
+        influences.
+        """
+        if not self._requires_fragment("quantity_context"):
+            return None
+        if not self._searches_model:
+            cache = self._hw_only_cache.get(placement)
+            if cache is not None and cache.onchip_census is not None:
+                return cache.onchip_census
+        census = compute_onchip_census(
+            model, tuple(self.input_shape), int(self.num_classes), placement,
+        )
+        if not self._searches_model:
+            cache = self._hw_only_cache.get(placement)
+            if cache is not None:
+                cache.onchip_census = census
+        return census
+
     def _static_view(
         self,
         stats: LayoutVerificationStats,
         pcfg: Dict,
         total_params: float,
         host_side_segment_count: int,
+        census=None,
     ) -> CandidateStaticView:
         """The static facts of a packed candidate — what every objective reads."""
+        physics, context = candidate_fragments(pcfg, census)
         return CandidateStaticView(
             layout=stats,
             chip_param_capacity=declared_core_capacity(pcfg),
             total_params=total_params,
             host_side_segment_count=host_side_segment_count,
+            physics=physics,
+            quantity_context=context,
         )
 
     def _layoutless_view(self, pcfg: Dict, total_params: float) -> CandidateStaticView:
         """The view of a candidate no active objective needs a layout for."""
+        physics, context = candidate_fragments(pcfg)
         return CandidateStaticView(
             layout=None,
             chip_param_capacity=declared_core_capacity(pcfg),
             total_params=total_params,
             host_side_segment_count=None,
+            physics=physics,
+            quantity_context=context,
         )

@@ -68,6 +68,9 @@ class HwOnlyCache:
     model: Any
     total_params: float
     mapper_repr: Any = None
+    # (params, macs) OnchipFractionEstimate pair — a function of the fixed
+    # model and placement alone, so computed once like the mapper repr.
+    onchip_census: Any = None
 
 
 @dataclass
@@ -242,11 +245,14 @@ class JointHostContract:
             pcfg: Dict,
             total_params: float,
             host_side_segment_count: int,
+            census: Any = None,
         ) -> CandidateStaticView: ...
 
         def _layoutless_view(
             self, pcfg: Dict, total_params: float,
         ) -> CandidateStaticView: ...
+
+        def _onchip_census(self, model: Any, placement: str) -> Any: ...
 
         def _resolve_entry(
             self, mc: Dict, pcfg: Dict, placement: str,

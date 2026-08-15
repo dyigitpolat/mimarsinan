@@ -52,7 +52,17 @@ census) are computed once and only when an active axis needs them:
 `_requires_fragment` asks the registry — via `candidate_probe_without` — whether
 any active axis goes unavailable without a fragment, so accuracy is trained
 exactly where the mode carries the axis and the mapping is skipped when no axis
-reads a layout. A hardware-only search reuses the candidate-INDEPENDENT model
+reads a layout. [N0] The view carries the `physics` and `quantity_context`
+fragments off the CANDIDATE's own resolved platform
+(`joint/candidate_fragments.py`: `candidate_fragments` reads
+`pcfg["platform_physics_resolved"]` + `candidate_context_from_platform`;
+`compute_onchip_census` adds the host/on-chip param+MAC split through the
+deployment's own estimator, gated on `_requires_fragment("quantity_context")`
+and memoized on the hardware-only fixture) — the axis gate
+(`resolve_active_specs(physics=...)`) and the view extraction must answer from
+one source, or an admitted priced axis raises at extraction on every candidate.
+Model construction lives in `joint/model_build.py` (`build_raw_model`,
+`convert_to_mapper_repr`), which the hook delegates to. A hardware-only search reuses the candidate-INDEPENDENT model
 and its mapper representation, never its layout: tiling is a function of the
 candidate's core geometry, so each candidate is packed on the chip it actually
 declares. The validation cache is an optimization, not a dependency — an evicted
