@@ -50,6 +50,11 @@ PLATFORMS = {
     "H": {"cores": [{"max_axons": 784, "max_neurons": 512, "count": 12, "has_bias": True},
                     {"max_axons": 512, "max_neurons": 256, "count": 12, "has_bias": True}],
           "max_axons": 784, "max_neurons": 512},
+    # [SP] streamed pass-carry pool: 3 narrow cores, so simple_mlp's ONE neural
+    # segment cannot be a single program and cuts into passes whose boundaries
+    # sit INSIDE the streamed window — the raster-carry coverage grid.
+    "I": {"cores": [{"max_axons": 784, "max_neurons": 64, "count": 3, "has_bias": True}],
+          "max_axons": 784, "max_neurons": 64},
 }
 
 VEHICLES = {
@@ -286,6 +291,17 @@ T0 = [
          pruned=0.10, tags=["pruned10"],
          note="pins streamed x pruning parity — the W0.1 regression (streamed "
               "gate must project the NF onto the deployed survivor set)"),
+    # [SP] streamed x scheduling: the ONE cell where a pass boundary sits
+    # INSIDE a streamed window. Pool I starves simple_mlp to 3 passes, so the
+    # intra-segment boundaries must carry (verbatim) or re-encode (collapse)
+    # under the RUN discipline — nevresim+lava enabled makes this run COLLAPSE,
+    # sealed in schedule.carry; the streamed NF<->SCM exactness gate stays
+    # FATAL, so a boundary that silently changed the computation is red here.
+    # Verified end-to-end 2026-08-15 (hcm/loihi/sanafe all max|dcount|=0).
+    dict(n=53, mode="lifs", quant="wq", wb=5, s=4, vehicle="simplemlp", seed=1,
+         scheduling=True, platform="I", tags=["sched"],
+         note="streamed x scheduling: 3 passes, intra-segment boundaries under "
+              "the run transfer discipline, carry census sealed in the record"),
     # n=52 IS DELIBERATELY UNUSED. A lifs/vitleaf/offload MIXED-DOMAIN SEAM cell
     # was authored here on 2026-08-13 and WITHDRAWN the same day: it runs to
     # Soft Core Mapping and then fails the FATAL streamed NF<->SCM exactness
