@@ -423,6 +423,50 @@ free. Verified by compiling and running the real binary on the cut run's own seg
 COLLAPSE (legitimate); wiring the trains into a verbatim replay across the segment
 input side is the recorded follow-up that would upgrade mixed runs.
 
-**Still open, deliberately:** nevresim/lava VERBATIM replay (the follow-up above), and
-the t0_53 cell's first integration-tier sweep, which runs with the tier harness rather
-than here.
+**Resolved in §20** — nothing in this section remains open.
+
+## 20. G-series: every backend carries, and nothing is open (2026-08-16)
+
+**G1 — nevresim verbatim.** The replay half of F3's extraction: producing segments add
+the SPKTRN define to their existing record build; consuming segments compile in
+SpikeTrain input mode with host-assembled trains (host slices via the SAME encoder twin
+the HCM flow deploys — the certificates already prove it bit-identical to the chip's
+internal generator — carried slices verbatim). Two executor gaps surfaced and were
+fixed with pins: the RECORDING reference loop (certificate paths) could not carry —
+`record_reference_carry` is its per-cycle recorder, pinned bit-identical to the packed
+executor's — and a SYNCHRONIZED TWIN of a streamed run inherited the run's verbatim
+discipline and refused; the instance's own execution now gates publication.
+
+**G2 — lava verbatim.** Host-scheduled, so both halves were gathers: `_output_raster`
+windows `core_output_spikes` to each source core's `[latency, latency+T)`, and replay
+rides the shared `apply_carried_input`, batched. The one real bug was a split-brain
+constructor: the parity step builds `LavaLoihiRunner` without a pipeline, and the bare
+runner defaulted to COLLAPSE while the HCM reference ran VERBATIM — caught by the
+parity gate exactly as designed (5/64 differ, Σ 37 vs 34: a rhythm delta). The runner
+now takes `pass_transfer` explicitly.
+
+**One measured convention** (found by probing SANA-FE against the HCM carrying flow on
+the real mapping): SANA-FE's spike trace logs a fire at its DELIVERY cycle — one after
+the soma's step — so the raster gather's origin is `lat + 1 + k`. With it, all six
+carried wires match HCM exactly, totals AND rhythms. A first probe "refuting" this was
+itself wrong (its HCM flow defaulted to `<=` thresholding while the run deploys `<`) —
+comparator hygiene recorded as a lesson.
+
+**The end state.** `VERBATIM_BACKENDS = {hcm, sanafe, nevresim, lava}`: a streamed
+scheduled run is verbatim on every shipped backend, with the weakest-backend rule kept
+as the safety default for FUTURE backends (an undeclared name still collapses, pinned).
+COLLAPSE remains the automatic discipline for windowed/mvm semantics, exercised by the
+existing sched cells (t0_03/22/26/44); t0_53 carries the verbatim arm — coverage folded
+into existing cells, none added. All-backends probe: exit 0, every certificate PASS at
+max|dcount|=0, record seals `transfer=verbatim`.
+
+**Integration sweeps (2026-08-16).** t0_53 (streamed sched): exit 0, hcm/nevresim/
+loihi/sanafe all exact at max|dcount|=0, record seals `verbatim` with the 6-wire
+census. t0_44 (mvm sched, 45 bank-clustered passes): ValueTwin PASS at
+max|delta|=7.8e-16; `carry: null` is CORRECT — bank-clustered applicability forbids
+intra-segment dependencies, so no wire crosses a pass boundary by construction.
+t0_26 (lifsync sched): all certificates exact over 219k windows; its packing yields
+one pass per segment, so the truthful census is null (the forced multi-pass windowed
+arm is evidenced by the lifsync probe: 3 passes, `collapse` sealed). One environment
+find: t0_44's first sweep died unpickling an August-1 cache written before `IRSource`
+moved modules — a stale artifact, moved aside, rerun green.
