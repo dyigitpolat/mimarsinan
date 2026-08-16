@@ -76,8 +76,17 @@ def estimate_noc(
         for (producer, consumer), wires in census.pair_wires.items():
             src = core_of.get(int(producer))
             dst = core_of.get(int(consumer))
-            if src is None or dst is None:
-                continue  # cross-pass: carry traffic, not mesh traffic
+            if dst is None:
+                continue  # this pass does not consume the wire at all
+            if src is None:
+                # [E5] Cross-pass: the producer ran in an earlier pass, so this
+                # wire comes back over the host boundary and enters at its
+                # consumer's own core — input traffic of THIS pass, never a
+                # mesh crossing (the DMA terms price the boundary itself).
+                carried = float(wires) * activity * steps
+                intra += carried
+                input_path += carried
+                continue
             messages = float(wires) * activity * steps
             distance = xy_route_hops(_xy(src), _xy(dst))
             if distance == 0:

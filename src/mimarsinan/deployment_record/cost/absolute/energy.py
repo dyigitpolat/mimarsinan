@@ -85,14 +85,16 @@ def _programming_energy(ctx: PricingContext) -> None:
             components.append(scale_band(
                 value, payload_bytes * _J_TO_MJ, f"e_dma_per_byte x {note}"))
             evidence.append(f"dma: e_dma_per_byte [{value.basis}]")
-    for constant, quantity in (("e_core_program", "reprogrammed_cores"),
-                               ("e_core_init", "segment_cores")):
-        if ctx.priced(constant) and ctx.quantities.has(quantity):
-            value = ctx.physics.band(constant)
-            components.append(scale_band(
-                value, ctx.quantities.get(quantity).value * _J_TO_MJ,
-                f"{constant} x {quantity}"))
-            evidence.append(f"{constant} [{value.basis}]")
+    # [E4] Only the PROGRAMMING overhead is amortized here. Core INIT is not:
+    # every pass resets its cores' neuron state, so it is paid per inference —
+    # which is where the latency plane has always charged t_core_init.
+    constant, quantity = "e_core_program", "reprogrammed_cores"
+    if ctx.priced(constant) and ctx.quantities.has(quantity):
+        value = ctx.physics.band(constant)
+        components.append(scale_band(
+            value, ctx.quantities.get(quantity).value * _J_TO_MJ,
+            f"{constant} x {quantity}"))
+        evidence.append(f"{constant} [{value.basis}]")
     if components:
         source = "; ".join(evidence) + (
             "; per program load, amortized separately from the per-inference headline"

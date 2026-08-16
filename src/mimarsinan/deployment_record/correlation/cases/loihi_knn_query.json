@@ -2,7 +2,7 @@
   "name": "loihi_knn_query",
   "profile": "loihi",
   "citation": "frady2020neuromorphic Table 2, k=1 / 76,800",
-  "description": "One approximate k-NN query over a 76,800-pattern database on 32 Loihi chips. Every census number comes from the paper's own structural statements; the energy constants come from a DIFFERENT paper (davies2018loihi Table 2, pre-silicon), so this row is a pre-silicon model predicting an independently measured board. Compared on dynamic energy, which is the column Frady reports separately from static, reset and x86.",
+  "description": "One approximate k-NN query over a 76,800-pattern database on 32 Loihi chips. Every census number comes from the paper's own structural statements; the energy constants come from a DIFFERENT paper (davies2018loihi Table 2, pre-silicon), so this row is a pre-silicon model predicting an independently measured board. Compared on dynamic energy, which is the column Frady reports separately from static, reset and x86. [E4] The RESET is excluded on both sides deliberately: Frady reports it in its own column, and the pricer would charge it (e_core_init x segment_cores) if this case declared a pass structure \u2014 so the census declares none, and the two sides stay composed the same way. Keeping it in would also have made the row partly self-consistent, since e_core_init is derived from that very Reset column.",
   "independence": "independent",
   "operating_conditions": {
     "chips": 32,
@@ -18,7 +18,6 @@
     "latency_steps": 60,
     "synaptic_events": 54400000.0,
     "macs": 54400000.0,
-    "segment_cores": 4096,
     "sync_count": 0,
     "host_macs": 0,
     "host_ops_s": 0.0

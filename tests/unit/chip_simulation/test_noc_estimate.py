@@ -99,6 +99,10 @@ class TestTheTrafficModel:
         assert est.intra_tile_packets == pytest.approx(6)
 
     def test_cross_pass_pairs_are_carry_not_mesh_traffic(self):
+        """[E5] Never a mesh crossing — but not nothing either: the wire comes
+        back over the host boundary and enters at its consumer's core, so it
+        is the consuming pass's input traffic. (This pin used to assert it
+        vanished, which hid every carried wire a schedule created.)"""
         frags = _fragments(
             pass_placements=(((0, 0),), ((1, 0),)),
             pair_wires={(0, 1): 7},
@@ -108,8 +112,10 @@ class TestTheTrafficModel:
             fragments=frags, cores_per_tile=1, mesh_height=1,
             activity_factor=1.0, timesteps=3,
         )
-        assert est.total_packets == 0.0
         assert est.total_hops == 0.0
+        assert est.inter_tile_packets == 0.0
+        assert est.input_path_packets == pytest.approx(7 * 3)
+        assert est.total_packets == pytest.approx(7 * 3)
 
     def test_undeclared_activity_refuses(self):
         frags = _fragments((((0, 0),),), {}, (0,), (0,))

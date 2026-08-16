@@ -15,7 +15,8 @@
 | E1 executed-window SSOT | **DONE** — `chip_simulation/stage_timesteps.py`; the runner and the candidate size the wall through ONE rule; retired `T x segments` (measured 4 where the record measured 15) | `search(E1)` |
 | E2 core-init + reprogramming census | **DONE** — `resident_passes` is the one residency law; candidate `segment_cores`/`reprogrammed_cores`/`reprogrammed_bytes`/`reprogram_passes` match the sealed record on both policies; `cores_allocated` now means what the record means | `search(E2)` |
 | E3 directional carry bytes | **DONE** — a boundary is crossed twice; `boundary_out_bytes`/`boundary_in_bytes` in the census + record + quantities, priced by `e_readout_per_byte` and `e_dma_per_byte` separately; the buffer figures keep their own meaning | `record(E3)` |
-| E4/E5 derived `e_core_init`; cross-pass wires as consumer input traffic | pending | |
+| E4 core init, measured | **DONE** — Frady's Reset column decomposes to 31.13 nJ / 1.797 us per core (two configurations agree within 0.66%); core-init ENERGY moved out of the amortized program load into the per-inference headline, where its wall always was | `physics(E4)` |
+| E5 carried wires as input traffic | **DONE** — a cross-pass wire re-enters at its consumer's core; counted there, hopless, instead of vanishing | `noc(E5)` |
 | S study | **DONE** — 4 MLP runs + the LeNet5 pruned stretch sealed with live fidelity.json; results + surfaced follow-ups in `docs/boundary_closure_study.md` | `docs(S)` + fixes |
 
 Repo: `mimarsinan` @ `2bb39fb3` (streamed-scheduling G-series closed). This program
@@ -248,6 +249,49 @@ Stated and not closed: the dense sizing is an upper bound on an address-event
 link, where the readout would follow the emitted spikes. Pricing that needs a
 declared per-event width no profile carries. Latency has no per-byte carry term
 either (`t_program_per_byte` prices the program load only).
+
+### E4 — core init, measured rather than bounded (DONE)
+
+Every pass resets its cores' neuron state, and no profile priced it. The first
+attempt bounded it by a full compartment sweep at Davies 2018's inactive-neuron
+update (1024 x 52 pJ = 53.2 nJ per core). Frady 2020 then turned out to carry
+the real measurement: its Table 2 reports a RESET column per query, at two
+system sizes, and the paper's claim that reset energy per chip is constant
+checks out across them within 0.66% (3.984 vs 3.958 uJ per chip). Per core at
+128 cores/chip that is 30.92-31.13 nJ, and Sec 5.4's 230 us reset wall gives
+1.797 us per core under the framework's serial-in-cores model.
+
+The measurement REFUTED the bound it replaced: 1.7x lower in energy, and the
+sweep's timing would have put one chip's serial reset at 695 us against a
+measured whole-system 230 us. Both constants are upper bounds on the core's own
+share (the published reset phase covers the embedded x86 orchestration too), and
+the wall's low corner is a concurrent clear, since the intra-chip parallelism is
+unstated.
+
+Found while wiring it: **core-init energy was amortized with the program load**
+while its wall was charged per inference — the same reset event, on two
+different accounting planes. A pass resets its cores every time it runs, so the
+energy now sits in the per-inference headline beside the wall. `e_core_program`
+(the per-core PROGRAMMING overhead) stays amortized, which is correct.
+
+The `loihi_knn_query` correlation case has been composed to match: Frady reports
+reset in its own column, so the case declares no pass structure and the reset
+stays out of BOTH sides. Keeping it in would also have made a nominally
+independent row partly self-consistent, since `e_core_init` now comes from that
+very column. The case's error is unchanged at +14.5%; all 8 cases stay in band.
+
+TrueNorth publishes neither a per-neuron update nor a reset measurement, so its
+core init stays absent and refuses by name.
+
+### E5 — a carried wire re-enters, and that entry is traffic (DONE)
+
+The NoC estimator skipped a producer/consumer pair whose ends landed in
+different passes — correctly, since that wire does not ride the mesh — and then
+counted it nowhere. So every pass a schedule cut hid the traffic it created.
+A cross-pass wire now counts as INPUT traffic of the consuming pass (the owner's
+decision: "yes, they are input traffic"), at its consumer's own core, with no
+hops: the boundary crossing itself is what E3's directional DMA terms price.
+The N-series pin that asserted the traffic vanished is corrected in place.
 
 ## Verification protocol (every stage)
 

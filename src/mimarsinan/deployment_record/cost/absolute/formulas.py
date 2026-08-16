@@ -60,6 +60,9 @@ ENERGY_COMPONENTS: Tuple[Tuple[str, Tuple[str, ...], str], ...] = (
     ("e_intra_tile_packet", ("noc_intra_tile_packets",), "intra_tile"),
     ("e_inter_tile_hop", ("noc_total_hops",), "inter_tile"),
     ("e_sync_barrier", ("sync_count",), "sync"),
+    # [E4] Per INFERENCE, not per program load: a pass resets the cores it uses
+    # every time it runs, which is exactly when t_core_init is charged too.
+    ("e_core_init", ("segment_cores",), "core_init"),
     # [E3] The intra-segment pass boundary is crossed TWICE per inference, and
     # the two crossings ride different paths: the host reads emissions back off
     # the chip, then re-injects a train over the DMA channel programming uses.

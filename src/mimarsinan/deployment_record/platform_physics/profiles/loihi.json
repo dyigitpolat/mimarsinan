@@ -21,6 +21,26 @@
       "citation": "davies2018loihi Table 2, p.96",
       "note": "'Energy per neuron update (active / inactive) | 81 pJ / 52 pJ' -- ONE quantity at two activity levels, so it is one banded constant. Nominal takes the INACTIVE cost because the multiplicand is every neuron update, and a census cannot say which of them fired; charging all of them the active cost would over-charge every neuron that stayed silent, which in a sparse SNN is nearly all of them. The active figure is the band's upper corner, i.e. the all-firing worst case. e_leak_per_neuron_step is deliberately NOT declared: on Loihi it is this same measurement, and declaring both makes the pricer charge every neuron twice."
     },
+    "e_core_init": {
+      "low": 30.92,
+      "nominal": 31.13,
+      "high": 31.13,
+      "unit": "nJ",
+      "evidence_kind": "derived",
+      "citation": "frady2020neuromorphic Table 2 (Reset column), p.7; Sec 5.1",
+      "derivation": "frady2020neuromorphic Table 2 reports the RESET phase energy of one query as a line of its own: 3.06 mJ on the 768-chip 1M-pattern configuration and 0.19 mJ on the 76,800-pattern one (76,800 = 48 x 1600, i.e. 48 chips). The paper states reset energy per chip is constant per query, and the two rows agree on that constant within 0.66% (3.984 vs 3.958 uJ per chip) -- an independent check that the decomposition is the paper's own. Per core at 128 neuromorphic cores per chip: 3.06e-3 / 768 / 128 = 31.13 nJ and 0.19e-3 / 48 / 128 = 30.92 nJ, which is the band. UPPER BOUND on the core's own share: the measured reset phase covers the whole system's preparation for the next query, including the embedded x86 work, and no published figure isolates the core-state clear inside it. Supersedes the looser compartment-sweep bound (1024 x 52 pJ = 53.2 nJ from Table 2's inactive neuron update), which this measurement shows to be ~1.7x high.",
+      "note": "Energy to reset one core's neuron state at the start of a pass."
+    },
+    "t_core_init": {
+      "low": 0.0,
+      "nominal": 1.797,
+      "high": 1.797,
+      "unit": "us",
+      "evidence_kind": "derived",
+      "citation": "frady2020neuromorphic Sec 5.4, p.8",
+      "derivation": "frady2020neuromorphic Sec 5.4: 'the reset time of 230us on Pohoiki Springs that falls off the latency critical path'. The framework charges core init per core (t_core_init x segment_cores), so the wall consistent with that model is the chip's share serialized over its 128 cores: 230 / 128 = 1.797 us. UPPER BOUND, twice over -- the published wall covers the whole reset phase (embedded x86 orchestration included), and the intra-chip parallelism is unstated, so a chip that clears its cores concurrently pays far less per core. The low corner is that bulk/parallel clear. This also refutes the compartment-sweep reading (1024 x 5.3 ns = 5.43 us per core), which would put a chip's serial reset at 695 us, three times the measured system wall.",
+      "note": "Wall time to reset one core's neuron state at the start of a pass."
+    },
     "e_intra_tile_packet": {
       "nominal": 1.7,
       "unit": "pJ",
