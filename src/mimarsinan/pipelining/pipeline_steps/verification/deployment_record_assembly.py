@@ -31,8 +31,7 @@ from mimarsinan.deployment_record.schema import (
     TimingRecord,
 )
 from mimarsinan.pipelining.pipeline_steps.verification.deployment_record_walls import (
-    host_ops_wall_s as host_ops_wall_s,
-    host_ops_wall_s_per_pass as host_ops_wall_s_per_pass,
+    host_ops_wall_s as host_ops_wall_s, host_ops_wall_s_per_pass as host_ops_wall_s_per_pass,
 )
 from mimarsinan.pipelining.core.spike_count_gate import certificate_gate_armed
 from mimarsinan.pipelining.core.steps.tuner_pipeline_step import TunerPipelineStep
@@ -281,6 +280,21 @@ def adaptation_from_run_dir(
     if os.path.exists(ledger_path):
         entries = (_read_json(ledger_path) or {}).get("entries") or []
         detail_parts.append(
-            f"retention_ledger.json: {len(entries)} tuner-step entries"
-        )
+            f"retention_ledger.json: {len(entries)} tuner-step entries")
     return record, "; ".join(detail_parts)
+
+
+def cross_check_sealed_sources(schedule, scm, mapping) -> None:
+    """The three cached sources must still agree with the live mapping."""
+    planned_reload = int(scm["reuse_plan"]["params_reloaded"])
+    if schedule.params_reloaded != planned_reload:
+        raise ValueError(
+            f"deployment record: schedule.params_reloaded "
+            f"{schedule.params_reloaded} != SCM reuse-plan "
+            f"figure {planned_reload} — the cached fragments drifted")
+    neural_stages = sum(1 for stage in mapping.stages if stage.kind == "neural")
+    if len(schedule.segments()) != neural_stages:
+        raise ValueError(
+            f"deployment record: schedule carries {len(schedule.segments())} "
+            f"neural segments but the mapping has {neural_stages} neural stages "
+            f"— the cached fragments drifted")

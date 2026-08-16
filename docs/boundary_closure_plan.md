@@ -1,5 +1,19 @@
 # Boundary-Closure Program — candidate-time NoC, deterministic pruned shapes, buffer metric, latency evidence, first study
 
+## Status (2026-08-16)
+
+| Stage | State | Commits |
+|---|---|---|
+| N0 fragment wiring fix | **DONE** — live candidate views carry physics + quantity_context; `activity_factor`/`simulation_steps` ride the resolved platform | `search(N0)` |
+| N1 geometry SSOT | **DONE** — `sanafe/noc_geometry.py`, four readers delegate, pinned | `noc(N1)` |
+| N2 fragments | **DONE** — wire census (opt-in walk) + per-pass packer placements + `mapping/noc/` | `noc(N2)` |
+| N3 estimator + axes | **DONE** — wireload model; `noc_total_hops` at both completenesses; activity run-gate mirrors the physics gate (registry + step + wizard chip filter) | `noc(N3)` |
+| N4 fidelity + granularity | **DONE** — hops zip modeled-vs-measured; message granularity adjudicated on a live SANA-FE sim | `noc(N4)` |
+| P pruned shapes + de-search | **DONE** — both knobs shrink the candidate (exact chain twin; mask floor-count bound with IO exemptions + max-propagation); pruning refused as an axis by name | `search(P)` |
+| B buffer metric + gate | **DONE** — record axes + `pass_buffer_capacity_bytes` gate at the hard-core mapping step | `record(B)` |
+| L latency evidence | **DONE** — loihi `t_cycle` measured band [5.8, 13] µs + `host_compute_rate` identity; `loihi_knn_query_latency` self-consistency case: e2e −22.8%, throughput +16.8% through the real pricer | `physics(L)` |
+| S study | **IN FLIGHT** — 4 profile runs (t0_60-based MLP search cells + physics/activity/host-rate declarations + the 5-axis objective set) launched in parallel; artifacts + report pending |
+
 Repo: `mimarsinan` @ `2bb39fb3` (streamed-scheduling G-series closed). This program
 closes the honest boundary the substrate discussion named, in the owner's priority
 order, and ends with the first real co-optimization study.

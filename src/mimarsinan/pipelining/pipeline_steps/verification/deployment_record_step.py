@@ -43,8 +43,12 @@ from mimarsinan.pipelining.core.steps.pipeline_step import (
     METRIC_CARRIED,
     PipelineStep,
 )
+from mimarsinan.pipelining.pipeline_steps.verification.fidelity_emission import (
+    emit_run_fidelity,
+)
 from mimarsinan.pipelining.pipeline_steps.verification.deployment_record_assembly import (
     adaptation_from_run_dir,
+    cross_check_sealed_sources,
     floorplan_derivation,
     fold_compute_walls,
     host_ops_wall_s,
@@ -248,6 +252,9 @@ class DeploymentRecordStep(PipelineStep):
 
         # Vendor-priced plane iff the run declared physics (else byte-identical).
         report_path = emit_physics_report(record, self.pipeline.working_directory)
+        # [C4] fidelity.json iff the run SEARCHED: the candidate view of the
+        # deployed config, zipped axis-by-axis against the sealed measurement.
+        fidelity_path = emit_run_fidelity(self.pipeline, record)
         print(
             f"[DeploymentRecordStep] sealed {path} "
             f"(fragments: energy={'yes' if energy else 'no'}, "
@@ -255,8 +262,8 @@ class DeploymentRecordStep(PipelineStep):
             f"boundaries={'yes' if boundaries is not None else 'no'}, "
             f"adaptation={'yes' if adaptation else 'no'}; "
             f"cost_record={'written' if cost_path else 'n/a'}, "
-            f"physics_report={'written' if report_path else 'none declared'})"
-        )
+            f"physics_report={'written' if report_path else 'none declared'}, "
+            f"fidelity={'written' if fidelity_path else 'not searched'})")
         self.metric = self.pipeline.get_target_metric()
         self._verdict = {
             "status": "pass",
@@ -274,27 +281,12 @@ class DeploymentRecordStep(PipelineStep):
 
     def _cross_check_sources(self, schedule, scm, mapping) -> None:
         """The three cached sources must still agree with the live mapping."""
-        planned_reload = int(scm["reuse_plan"]["params_reloaded"])
-        if schedule.params_reloaded != planned_reload:
-            raise ValueError(
-                f"deployment record: schedule.params_reloaded "
-                f"{schedule.params_reloaded} != SCM reuse-plan figure "
-                f"{planned_reload} — the cached fragments drifted"
-            )
-        neural_stages = sum(
-            1 for stage in mapping.stages if stage.kind == "neural"
-        )
-        if len(schedule.segments()) != neural_stages:
-            raise ValueError(
-                f"deployment record: schedule carries "
-                f"{len(schedule.segments())} neural segments but the mapping "
-                f"has {neural_stages} neural stages — the cached fragments "
-                f"drifted"
-            )
+        cross_check_sealed_sources(schedule, scm, mapping)
 
     @staticmethod
     def _boundary_records(hcm) -> Optional[Tuple[BoundaryTrafficRecord, ...]]:
         boundaries = hcm["boundary_traffic"]
         if boundaries is None:
             return None
-        return tuple(BoundaryTrafficRecord.from_dict(b) for b in boundaries)
+        return tuple(
+            BoundaryTrafficRecord.from_dict(b) for b in boundaries)
