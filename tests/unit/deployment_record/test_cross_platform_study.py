@@ -23,6 +23,10 @@ _CENSUS = {
 
 def _census(**over):
     values = {**_CENSUS, **over}
+    return _census_of(values)
+
+
+def _census_of(values):
     return Quantities({
         key: QuantityValue(float(v), "static") for key, v in values.items()
     })
@@ -42,16 +46,27 @@ class TestTheComparison:
         assert row.values["energy_per_inference_mj"] > 0
         assert row.values["e2e_latency_s"] > 0
 
-    def test_an_axis_a_target_cannot_back_is_absent_not_zero(self):
-        """Loihi declares no t_cycle (it is asynchronous), so it has no latency —
-        which must never be reported as a latency of zero, the best possible."""
+    def test_loihi_now_prices_latency_from_the_measured_wall(self):
+        """[L] Owner decision: t_cycle is the MEASURED Pohoiki sustained wall
+        (5.8–13 µs band), so Loihi backs the latency axes it used to refuse."""
         loihi = self._compare(profiles=("loihi",)).rows[0]
-        assert "e2e_latency_s" not in loihi.values
-        assert "e2e_latency_s" in loihi.unavailable
+        assert loihi.values["e2e_latency_s"] > 0
+        assert loihi.values["throughput_inferences_s"] > 0
+
+    def test_an_axis_a_target_cannot_back_is_absent_not_zero(self):
+        """A census with no step count prices no wall — which must never be
+        reported as a latency of zero, the best possible."""
+        census = {**_CENSUS}
+        census.pop("latency_steps")
+        row = compare_platforms(_census_of(census), ("truenorth",)).rows[0]
+        assert "e2e_latency_s" not in row.values
+        assert "e2e_latency_s" in row.unavailable
 
     def test_the_reason_travels_with_the_absence(self):
-        loihi = self._compare(profiles=("loihi",)).rows[0]
-        assert "t_cycle" in loihi.unavailable["e2e_latency_s"]
+        census = {**_CENSUS}
+        census.pop("latency_steps")
+        row = compare_platforms(_census_of(census), ("truenorth",)).rows[0]
+        assert "latency_steps" in row.unavailable["e2e_latency_s"]
 
 
 class TestEvidenceIsDisclosed:
@@ -105,17 +120,18 @@ class TestTheArtifact:
 
     def test_an_unavailable_axis_renders_as_a_dash_never_a_zero(self):
         """The most dangerous cell in the table: a 0 on a minimized axis reads as
-        the BEST possible result, so an axis Loihi cannot back must never render
-        as one — it must render as an absence, with its reason printed below."""
-        comparison = compare_platforms(_census(), ("loihi",))
+        the BEST possible result, so an axis a row cannot back must never render
+        as one — it must render as an absence, with its reason printed below.
+        The vehicle: a census with no step count prices no wall, no static
+        energy over that wall, and no inverse throughput. Only area survives."""
+        census = {**_CENSUS}
+        census.pop("latency_steps")
+        comparison = compare_platforms(_census_of(census), ("truenorth",))
         text = render_comparison(comparison)
-        row = [line for line in text.splitlines() if line.startswith("loihi")][0]
-        # Loihi is asynchronous and declares no t_cycle, so it can price neither the
-        # wall nor the static power that accrues over it — three of the four headline
-        # axes are absent. Only area survives.
+        row = [line for line in text.splitlines() if line.startswith("truenorth")][0]
         assert row.count("—") == 3, row
         assert set(comparison.rows[0].values) == {"chip_area_mm2"}
-        assert "t_cycle" in text, "and the reason is printed"
+        assert "latency" in text, "and the reason is printed"
 
 
 class TestRefusals:

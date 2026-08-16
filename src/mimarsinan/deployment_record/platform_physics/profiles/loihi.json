@@ -64,6 +64,22 @@
       "citation": "davies2018loihi Table 2, p.96",
       "note": "'Mesh-wide barrier sync time (1-32 tiles) | 113-465 ns'. The band IS the published tile-count range; nominal takes the 32-tile end, since a real deployment spans the mesh rather than one tile."
     },
+    "host_compute_rate": {
+      "nominal": 1.0,
+      "unit": "fraction",
+      "evidence_kind": "derived",
+      "derivation": "identity: a measured host wall is used at face value (wall / 1.0)",
+      "note": "The derate a MEASURED host wall is divided by. Identity by definition here: Loihi-hosted deployments measure their CPU walls end-to-end (frady2020neuromorphic Sec 5.4 states 220us + 300us on the latency critical path), and derating a measurement would invent headroom. Only the measured-wall pricing path reads this; no host THROUGHPUT rate (host_macs_per_s) is declared, so a run that never measured its wall still refuses host-inclusive axes by name."
+    },
+    "t_cycle": {
+      "low": 5.8,
+      "nominal": 13.0,
+      "high": 13.0,
+      "unit": "us",
+      "evidence_kind": "published",
+      "citation": "frady2020neuromorphic Sec 5.1, p.7",
+      "note": "'the system typically sustains just over 13us per timestep for the 1M-pattern dataset workload and 5.8us per timestep when processing 76,800-pattern datasets.' MEASURED on Pohoiki Springs (768 chips, unthrottled). An asynchronous mesh has no device timestep constant, so this is a workload-dependent SUSTAINED per-timestep wall, not a clock: the band's ends are the two published workloads and nominal takes the LARGER (1M-pattern) figure, because the paper reports late-window slowdowns to ~60us (x86 spike-I/O bound, Fig 8) that a flat wall already under-charges. Single-chip barrier time is a different scale (113-465 ns, t_sync_barrier); throttled real-time mode is 1 ms/step (davies2021advancing Sec II-A). Owner decision 2026-08-16: declare the measured band rather than refuse latency outright; the paired knn latency reference case is SELF-CONSISTENCY (same paper)."
+    },
     "membrane_bits": {
       "nominal": 24.0,
       "unit": "bit",

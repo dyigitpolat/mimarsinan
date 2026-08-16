@@ -46,19 +46,32 @@ data (Frady 2020) — the only published Loihi leakage figure found.
 
 That last row is a real constraint, not a footnote: *"All logic in the chip is
 digital, functionally deterministic, and implemented in an asynchronous bundled data
-design style."* Any Loihi profile quoting an operating frequency is wrong, which is
-why `t_cycle` is **deliberately absent** here.
+design style."* Any Loihi profile quoting an operating FREQUENCY is wrong; the
+`t_cycle` this profile declares is a **measured sustained per-timestep wall**, not
+a clock (below).
 
 ## Notes on individual constants
 
-- **`t_cycle` is not declared.** Loihi has no global clock and no fixed timestep — a
-  timestep is *"throttled to a real-time scale (one millisecond per timestep is
-  common), or the mesh may operate unthrottled"*, and measured unthrottled timesteps
-  span 5.8–13 µs by workload. Declaring one would be inventing a chip property out of
-  a workload measurement. The consequence is honest and visible: **this profile
-  cannot back `e2e_latency_s` or `throughput_inferences_s`**, and the wizard's
-  completeness readout says exactly that. An operator who knows their throttle rate
-  supplies it as an override.
+- **`t_cycle` is a MEASURED workload band, not a clock** (owner decision
+  2026-08-16, reversing the earlier refusal). Loihi has no global clock and no
+  fixed timestep — a timestep is *"throttled to a real-time scale (one millisecond
+  per timestep is common), or the mesh may operate unthrottled"*. What IS
+  published is the unthrottled sustained wall measured on Pohoiki Springs:
+  *"just over 13 µs per timestep for the 1M-pattern dataset workload and 5.8 µs
+  per timestep when processing 76,800-pattern datasets"* (frady2020neuromorphic
+  §5.1). The band's ends are those two workloads; the nominal takes the LARGER
+  figure because the same paper reports late-window slowdowns to ~60 µs/step
+  (x86 spike-I/O bound, Fig 8) that a flat wall already under-charges. The
+  declaration is validated by `loihi_knn_query_latency` — a SELF-CONSISTENCY
+  reference case (same paper): the pricer's `t_cycle × 140 steps + the measured
+  520 µs CPU wall` lands at −22.8% of Table 3's published 3.03 ms query latency,
+  and the inverted throughput at +16.8% of the published 366 s⁻¹. An operator
+  who runs throttled (1 ms/step) or on a different mesh scale overrides it.
+- **`host_compute_rate` is the identity (1.0).** The derate a MEASURED host wall
+  is divided by. Loihi-hosted deployments measure their CPU walls end-to-end
+  (§5.4), and derating a measurement would invent headroom; no host THROUGHPUT
+  rate (`host_macs_per_s`) is declared, so a run that never measured its wall
+  still refuses host-inclusive axes by name.
 - **The per-op energy is MARGINAL, not an aggregate.** Davies' 23.6 pJ is declared as
   `e_mac`, beside the neuron-update and static-power constants the same table reports
   separately — not as `e_synaptic_event_total`, which would suppress them. Filed as an
@@ -91,10 +104,11 @@ why `t_cycle` is **deliberately absent** here.
 
 ## What this profile deliberately does not declare
 
-`t_cycle` (above), `e_dma_per_byte`, `e_core_program`, `e_core_init`,
-`t_program_per_byte`, `t_core_init`, `e_sync_barrier` (only its *time* is published),
-`e_row_drive`, and the whole `host` group. None are published; each absence disables
-exactly the objectives that need it.
+`e_dma_per_byte`, `e_core_program`, `e_core_init`, `t_program_per_byte`,
+`t_core_init`, `e_sync_barrier` (only its *time* is published), `e_row_drive`,
+and — of the `host` group — everything except the measured-wall identity
+`host_compute_rate`. None are published; each absence disables exactly the
+objectives that need it.
 
 ## Cross-check against what the repository already claims
 

@@ -1,0 +1,42 @@
+{
+  "name": "loihi_knn_query_latency",
+  "profile": "loihi",
+  "citation": "frady2020neuromorphic Table 3 (GIST-960), Sec 5.4, Fig 8",
+  "description": "End-to-end latency of one approximate k-NN query over the 1M-pattern GIST-960 database on Pohoiki Springs (768 Loihi chips, unthrottled). The model is the pricer's own composition: t_cycle x latency_steps + the measured CPU wall the paper states is on the latency critical path (220us preprocessing + 300us tie-breaking postprocessing, Sec 5.4). SELF-CONSISTENCY, not independence: t_cycle's band comes from the SAME paper's Sec 5.1 sustained walls; what the case checks is that the sustained wall, the step count and the published query latency tell one coherent story through the real pricer. The flat wall under-charges the late-window slowdowns the paper attributes to x86 spike I/O (Fig 8 left rises to ~60us/step near the output window), so the prediction is expected to sit BELOW the measurement. Throughput is compared with a stated composition difference: the pricer inverts e2e (incl. the 520us CPU wall), while the paper's 366/s excludes pre/post (overlapped across queries) but includes the 230us reset off the latency path.",
+  "independence": "self_consistency",
+  "operating_conditions": {
+    "chips": 768,
+    "patterns": 1000000,
+    "dataset": "GIST-960",
+    "window_timesteps": 60,
+    "k": 100
+  },
+  "census": {
+    "timesteps": 140,
+    "latency_steps": 140,
+    "sync_count": 0,
+    "host_macs": 480000,
+    "host_ops_s": 0.00052
+  },
+  "census_sources": {
+    "timesteps": "frady2020neuromorphic Sec 6.1: 'an integration window of 60 timesteps'; output spikes 'begin to arrive near timestep 80' (Sec 5.1) and the per-timestep trace of Fig 8 (left) runs through ~timestep 140, where the k=100 last outputs land -- the search occupies the full ~140-step span, not just the input window",
+    "latency_steps": "one query is one ~140-timestep search (input window + temporally-ordered output collection, Fig 8)",
+    "sync_count": "barrier sync is per timestep and already inside the sustained per-timestep wall t_cycle is built from",
+    "host_macs": "Eq. (3): the CPU preprocessing computes the ICA-transformed key (a 960 -> 500 projection, ~4.8e5 MACs); the WALL is measured (host_ops_s), so this census entry only states that host work exists",
+    "host_ops_s": "Sec 5.4: '220us of preprocessing on the CPU ... and 300us of CPU postprocessing ... contribute to the search latency' -- 520us on the latency critical path"
+  },
+  "overrides": {},
+  "published": {
+    "e2e_latency_s": {
+      "value": 0.00303,
+      "citation": "frady2020neuromorphic Table 3, p.8",
+      "quote": "Pohoiki Springs | Query Latency (ms) 3.03 (both epsilon rows)"
+    },
+    "throughput_inferences_s": {
+      "value": 366.0,
+      "citation": "frady2020neuromorphic Table 3, p.8",
+      "quote": "Pohoiki Springs | Throughput (s^-1) 366 (both epsilon rows)"
+    }
+  },
+  "tolerance_pct": 25.0
+}
