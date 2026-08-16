@@ -202,12 +202,14 @@ class TestNocRidesTheLivePath:
         with pytest.raises(ValueError, match="noc_total_hops"):
             problem.evaluate(_candidate(problem))
 
-    def test_inactive_noc_axis_skips_the_fragment_work(self):
-        """No active NoC axis -> no wire-census materialisation, no fragment
-        packing; the census gate answers from the registry."""
+    def test_inactive_noc_axis_skips_the_wire_census(self):
+        """The PLACEMENTS are always planned (the latency model needs the pass
+        structure) but the expensive wire-census materialisation is not, and
+        no traffic quantity is claimed without it."""
         problem = _problem(_cfg(activity_factor=0.05), ["param_utilization_pct"])
         layout = problem.candidate_layout(_candidate(problem))
-        assert layout.noc is None
+        assert layout.noc is not None and layout.noc.pass_placements
+        assert layout.noc.census is None
         assert not layout.view.quantities.has("noc_total_hops")
 
     def test_candidate_quantities_carry_the_modeled_noc_census(self):

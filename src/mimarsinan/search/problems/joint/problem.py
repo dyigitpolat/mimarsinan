@@ -92,6 +92,11 @@ class JointArchHwProblem(
     prune_sparsity: float = 0.0
     prune_criterion: str = "row_col_l1"
     firing_mode: str = "Default"
+    #: [E1] The firing semantics the executed-window rule branches on, from
+    #: the run's config — so the candidate sizes the SAME wall the runner runs.
+    spiking_mode: str = "lif"
+    ttfs_cycle_schedule: str = "cascaded"
+    per_hop_retiming: bool = False
     #: The deployment's ``encoding_layer_placement``. A candidate's layout is
     #: only the deployed model's layout if its encoder sits where deployment
     #: will put it, so the search resolves the SAME placement the run will.

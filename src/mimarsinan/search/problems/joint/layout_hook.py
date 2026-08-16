@@ -14,14 +14,6 @@ from mimarsinan.deployment_record.objectives import (
 )
 from mimarsinan.mapping.layout.layout_ir_mapping import LayoutIRMapping
 from mimarsinan.mapping.noc import census_of_walk
-from mimarsinan.mapping.verification.onchip_fraction import (
-    estimate_onchip_fraction,
-)
-from mimarsinan.search.constraints import (
-    ConstraintReport,
-    onchip_floor_violation,
-)
-from mimarsinan.search.option_axes import candidate_option
 from mimarsinan.mapping.layout.layout_types import LayoutHardCoreType, LayoutSoftCoreSpec
 from mimarsinan.mapping.platform.mapping_structure import ChipCapabilities
 from mimarsinan.mapping.platform.platform_constraints import resolve_platform_mapping_params
@@ -30,7 +22,8 @@ from mimarsinan.mapping.verification.layout_verification_types import (
     LayoutVerificationStats,
 )
 from .candidate_fragments import (
-    candidate_fragments, compute_onchip_census, make_core_types,
+    StageSemantics, candidate_fragments, compute_onchip_census,
+    make_core_types, stage_semantics_of,
 )
 from .model_build import build_raw_model, convert_to_mapper_repr
 from .types import (
@@ -135,38 +128,6 @@ class JointLayoutMixin(JointHostContract):
         census = census_of_walk(layout_mapper) if collect_census else None
         return softcores, host_segments, census
 
-    def onchip_fraction(self, configuration: Dict) -> float:
-        """The share of this candidate's parameters that would sit on chip cores.
-
-        Measured through the deployment's OWN estimator, under the CANDIDATE's
-        placement — the axis that decides which side of the NeuralOps/ComputeOps
-        boundary the encoder lands on.
-        """
-        placement = str(candidate_option(
-            configuration, "encoding_layer_placement", self.encoding_placement,
-        ))
-        model, _params = self._candidate_model(
-            configuration.get("model_config") or {},
-            configuration.get("platform_constraints") or {},
-            placement,
-        )
-        return estimate_onchip_fraction(
-            model,
-            tuple(self.input_shape),
-            int(self.num_classes),
-            encoding_placement=placement,
-            metric="params",
-        ).fraction
-
-    def onchip_constraint(self, configuration: Dict) -> Optional[ConstraintReport]:
-        """The on-chip floor report for this candidate, or None when satisfied."""
-        if self.onchip_min_fraction <= 0.0:
-            return None
-        return onchip_floor_violation(
-            fraction=self.onchip_fraction(configuration),
-            floor=float(self.onchip_min_fraction),
-        )
-
     def _ensure_hw_only_cache(self, placement: str) -> HwOnlyCache:
         """Build the candidate-independent model once for a hardware-only search.
 
@@ -265,6 +226,14 @@ class JointLayoutMixin(JointHostContract):
                 cache.onchip_census = census
         return census
 
+    @property
+    def stage_semantics(self) -> StageSemantics:
+        """[E1] The firing semantics the executed-window rule branches on."""
+        return stage_semantics_of(
+            self.spiking_mode, self.ttfs_cycle_schedule,
+            retimed=bool(self.per_hop_retiming),
+        )
+
     def _static_view(
         self,
         stats: LayoutVerificationStats,
@@ -273,9 +242,10 @@ class JointLayoutMixin(JointHostContract):
         host_side_segment_count: int,
         census=None,
         noc=None,
+        latency_steps=None,
     ) -> CandidateStaticView:
         """The static facts of a packed candidate — what every objective reads."""
-        physics, context = candidate_fragments(pcfg, census)
+        physics, context = candidate_fragments(pcfg, census, latency_steps)
         return CandidateStaticView(
             layout=stats,
             chip_param_capacity=declared_core_capacity(pcfg),

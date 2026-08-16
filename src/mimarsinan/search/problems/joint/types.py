@@ -151,6 +151,9 @@ class JointHostContract:
     prune_sparsity: float
     prune_criterion: str
     firing_mode: str
+    spiking_mode: str
+    ttfs_cycle_schedule: str
+    per_hop_retiming: bool
     option_axes: Tuple[OptionAxis, ...]
     arch_options: Sequence[Tuple[str, Sequence[Any]]]
     model_config_assembler: ModelConfigAssembler
@@ -249,7 +252,11 @@ class JointHostContract:
             host_side_segment_count: int,
             census: Any = None,
             noc: Any = None,
+            latency_steps: Any = None,
         ) -> CandidateStaticView: ...
+
+        @property
+        def stage_semantics(self) -> Any: ...
 
         @staticmethod
         def _make_core_types(pcfg: Dict) -> List[Any]: ...

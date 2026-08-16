@@ -51,6 +51,13 @@ class CandidateQuantityContext:
     """
 
     timesteps: Optional[int] = None
+    #: [E1] Σ over the program's EXECUTION stages of their executed windows,
+    #: computed upstream through ``chip_simulation.stage_timesteps`` — the same
+    #: rule the runner sizes its simulation with. ``None`` when the candidate
+    #: cannot determine the stage structure, which makes every latency-bearing
+    #: axis refuse BY NAME instead of pricing a wall that is 3.75x short (the
+    #: measured error of the retired ``timesteps x neural_segment_count``).
+    latency_steps: Optional[int] = None
     activity_factor: Optional[float] = None
     weight_bits: Optional[int] = None
     tiles: Optional[int] = None
@@ -99,12 +106,12 @@ def from_candidate(
         _put(values, "cores_allocated", layout.total_hw_cores)
         _put(values, "pass_count", layout.schedule_pass_count)
         _put(values, "sync_count", layout.schedule_sync_count)
-        # Neural segments run their windows in sequence, so end-to-end latency is
-        # the window length once per segment — structurally the same sum the sealed
-        # record reports as compute_steps.
-        if context.timesteps is not None:
-            _put(values, "latency_steps",
-                 int(context.timesteps) * int(layout.neural_segment_count))
+
+    # [E1] The executed wall comes from the stage structure through the SAME
+    # rule the runner uses, or it is ABSENT. It is never re-derived here: the
+    # retired local formula (timesteps x neural_segment_count) ignored both
+    # depth levels and the input-delivery cycle.
+    _put(values, "latency_steps", context.latency_steps)
 
     _put(values, "timesteps", context.timesteps)
     _put(values, "weight_bits", context.weight_bits)

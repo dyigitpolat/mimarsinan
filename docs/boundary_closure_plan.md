@@ -12,6 +12,10 @@
 | P pruned shapes + de-search | **DONE** — both knobs shrink the candidate (exact chain twin; mask floor-count bound with IO exemptions + max-propagation); pruning refused as an axis by name | `search(P)` |
 | B buffer metric + gate | **DONE** — record axes + `pass_buffer_capacity_bytes` gate at the hard-core mapping step | `record(B)` |
 | L latency evidence | **DONE** — loihi `t_cycle` measured band [5.8, 13] µs + `host_compute_rate` identity; `loihi_knn_query_latency` self-consistency case: e2e −22.8%, throughput +16.8% through the real pricer | `physics(L)` |
+| E1 executed-window SSOT | **DONE** — `chip_simulation/stage_timesteps.py`; the runner and the candidate size the wall through ONE rule; retired `T x segments` (measured 4 where the record measured 15) | `search(E1)` |
+| E2 core-init + reprogramming census | pending | |
+| E3 directional carry bytes | pending | |
+| E4/E5 derived `e_core_init`; cross-pass wires as consumer input traffic | pending | |
 | S study | **DONE** — 4 MLP runs + the LeNet5 pruned stretch sealed with live fidelity.json; results + surfaced follow-ups in `docs/boundary_closure_study.md` | `docs(S)` + fixes |
 
 Repo: `mimarsinan` @ `2bb39fb3` (streamed-scheduling G-series closed). This program
@@ -143,6 +147,43 @@ counts from `analysis/diagnostics.py`.
 3. Cross-platform artifact: Pareto fronts, hypervolume, evidence-kind disclosure per
    constant; study report under `mimarsinan_research/docs/research/findings/`.
 4. Stretch: single-profile LeNet5 repetition.
+
+## E-series — the cost components that were silently zero (owner, 2026-08-17)
+
+The study's energy decomposition exposed terms the candidate priced at 0 not because
+they are negligible but because nothing produced their multiplicand. The governing
+rule the owner set:
+
+> if it's reasonable for non-declared cost components to be counted as zero, you can
+> leave them as zero. but if declared or derivable, we should not leave them as zero.
+
+| Question | Decision |
+|---|---|
+| Latency-group depth in the cycle window | A latency group has depth 1; `+own depth` is meaningless. If incomplete groups can co-reside with elements of other groups, the depth must be accounted for — and if that state is reachable at all, it is a correctness problem first. |
+| Programming energy per pass | Correct accounting: a pass whose weights are already resident is NOT re-programmed. Never charge every pass as a reprogram. |
+| Carry bytes | Charged separately per direction (host→chip vs chip→host): different constants, different multipliers. The COLLAPSE asymmetry is real — outbound counts at `log2(T+1)` bits/wire, the inbound re-emitted train at `T` bits/wire. |
+| Cross-pass wires | They ARE input traffic of the consuming pass — correct as-is. |
+
+### E1 — the executed window (DONE)
+
+The candidate priced latency as `timesteps x neural_segment_count`. The runner sizes
+each executed stage as `T + max_latency + 1` (cycle-based and cascaded TTFS have their
+own rules), and a re-timed program runs one stage PER DEPTH LEVEL. On the sealed MLP
+study run those disagreed 4 vs 15 — every latency-multiplying term (static energy,
+e2e, throughput) carried the 3.75x shortfall.
+
+`chip_simulation/stage_timesteps.py` is now the one home for the rule; the SANA-FE
+runner delegates to it and the candidate applies it to its own pass/level structure
+(`mapping/noc/execution_stage_latencies` + `search/problems/joint/candidate_latency_steps`).
+A candidate with no layout has no stage structure, so `latency_steps` is ABSENT and the
+latency-bearing axes refuse by name rather than pricing a short wall.
+
+Load-bearing detail found while pinning it: **the default LIF recipe re-times.**
+`lif_exact_qat` defaults on and pairs `lif_per_hop_retiming` on during resolution, so
+the ordinary LIF run executes one stage per depth level. A reader that consults the raw
+JSON sees `False` on exactly those runs (this misread cost a debugging cycle) — the
+search step therefore reads the RESOLVED config, pinned in
+`tests/unit/pipelining/pipeline_steps/test_search_step_carries_firing_semantics.py`.
 
 ## Verification protocol (every stage)
 

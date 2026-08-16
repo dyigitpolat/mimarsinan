@@ -99,7 +99,7 @@ def candidate_view(**overrides) -> CandidateStaticView:
         estimated_accuracy=0.91,
         physics=probe_physics(),
         quantity_context=CandidateQuantityContext(
-            timesteps=8, activity_factor=0.1, weight_bits=8, tiles=1,
+            timesteps=8, latency_steps=8, activity_factor=0.1, weight_bits=8, tiles=1,
             cores_per_tile=1, tile_mesh_height=1,
             cores_physical=4, neurons_physical=64, axons_physical=64,
             host_macs=0, onchip_macs=512,

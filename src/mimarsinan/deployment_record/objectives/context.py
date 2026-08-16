@@ -16,6 +16,7 @@ def candidate_context_from_platform(
     onchip_macs: Optional[int] = None,
     host_params: Optional[int] = None,
     onchip_params: Optional[int] = None,
+    latency_steps: Optional[int] = None,
 ) -> CandidateQuantityContext:
     """The declarations a candidate's platform carries, as quantity context.
 
@@ -56,4 +57,5 @@ def candidate_context_from_platform(
         onchip_macs=onchip_macs,
         host_params=host_params,
         onchip_params=onchip_params,
+        latency_steps=latency_steps,
     )

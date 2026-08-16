@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, List, Sequence, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 from mimarsinan.mapping.layout.layout_packer import pack_layout
 from mimarsinan.mapping.layout.layout_types import (
@@ -19,6 +19,40 @@ from mimarsinan.mapping.support.schedule.schedule_policy import (
 )
 
 
+def execution_stage_latencies(
+    softcores: Sequence[LayoutSoftCoreSpec],
+    pass_placements: Sequence[Sequence[Tuple[int, int]]],
+    *,
+    retimed: bool,
+) -> Tuple[int, ...]:
+    """Per-execution-stage max core latency, one entry per stage.
+
+    The deployed program executes one stage per (pass, segment, depth level)
+    when per-hop re-timing is armed — each level re-based, so its internal
+    max latency is 0 — and otherwise one stage per (pass, segment) spanning
+    that segment's whole latency range. Feeding this to
+    ``chip_simulation.stage_timesteps.program_latency_steps`` reproduces the
+    step count the runner executes (measured: the MLP study run's 3 levels
+    at T=4 → 3 x 5 = 15, exactly its sealed ``compute_steps``).
+    """
+    stages: List[int] = []
+    for placements in pass_placements:
+        by_segment: Dict[int, List[int]] = {}
+        for softcore_index, _hardcore in placements:
+            spec = softcores[softcore_index]
+            segment = int(spec.segment_id or 0)
+            by_segment.setdefault(segment, []).append(int(spec.latency_tag or 0))
+        for _segment, latencies in sorted(by_segment.items()):
+            levels = sorted(set(latencies))
+            if retimed and len(levels) > 1:
+                # Each level is its own re-based execution stage.
+                stages.extend(0 for _ in levels)
+            else:
+                base = min(levels) if levels else 0
+                stages.append(max(latencies) - base if latencies else 0)
+    return tuple(stages)
+
+
 @dataclass(frozen=True)
 class LayoutNocFragments:
     """Shape-only NoC inputs of one candidate.
@@ -31,14 +65,16 @@ class LayoutNocFragments:
     """
 
     pass_placements: Tuple[Tuple[Tuple[int, int], ...], ...]
-    census: LayoutWireCensus
+    #: None when no traffic axis asked for it — the placements (cheap) are
+    #: always produced because the LATENCY model needs the pass structure.
+    census: Optional[LayoutWireCensus]
 
 
 def collect_noc_fragments(
     *,
     softcores: Sequence[LayoutSoftCoreSpec],
     core_types: Sequence[LayoutHardCoreType],
-    census: LayoutWireCensus,
+    census: Optional[LayoutWireCensus],
     allow_scheduling: bool,
     allow_neuron_splitting: bool,
     allow_coalescing: bool,

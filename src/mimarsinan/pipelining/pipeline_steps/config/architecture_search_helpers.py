@@ -204,3 +204,27 @@ def write_search_visualizations(result_json: Dict[str, Any], out_dir: str) -> No
             if os.path.exists(legacy_path):
                 with best_effort(f"remove legacy report {legacy}"):
                     os.remove(legacy_path)
+
+
+def resolve_arch_options(
+    builder_cls, arch_cfg: Dict, input_shape: Tuple, *,
+    searches_model: bool, model_type: str,
+):
+    """The model-side search space and its raw->config assembler for one run.
+
+    A hardware-only search has neither: its model config is fixed, so the
+    options list is empty and the assembler is the identity.
+    """
+    if not searches_model:
+        return [], (lambda raw: dict(raw))
+
+    arch_options, schema_map = derive_arch_options(builder_cls, arch_cfg, input_shape)
+    schema = getattr(builder_cls, "get_config_schema", lambda: [])()
+    if not arch_options:
+        raise NotImplementedError(
+            f"No NAS search space defined for model_type='{model_type}'. "
+            f"Add get_nas_search_options() or 'select' fields with multiple options "
+            f"to {builder_cls.__name__}.get_config_schema(). "
+            f"Current schema keys: {[f['key'] for f in schema]}"
+        )
+    return arch_options, make_assembler(schema, schema_map)

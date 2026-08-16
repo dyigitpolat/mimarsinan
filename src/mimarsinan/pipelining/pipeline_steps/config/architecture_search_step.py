@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import List
-
 from mimarsinan.pipelining.core.steps.pipeline_step import (
     METRIC_CARRIED,
     METRIC_MEASURED,
@@ -14,6 +12,9 @@ from mimarsinan.pipelining.determinism import isolated_rng_stream
 from mimarsinan.pipelining.core.model_config_emit import emit_model_config_entries
 from mimarsinan.pipelining.core.registry.model_registry import ModelRegistry
 from mimarsinan.pipelining.core.search_mode import derive_search_mode
+from mimarsinan.chip_simulation.spiking_semantics import (
+    lif_per_hop_retiming_enabled,
+)
 from mimarsinan.pipelining.pipeline_steps.mapping.soft_core_structured_pruning import (
     resolve_prune_criterion,
 )
@@ -31,8 +32,7 @@ from mimarsinan.pipelining.pipeline_steps.config.architecture_search_helpers imp
     OptimizerType,
     build_fixed_platform_constraints,
     create_optimizer,
-    derive_arch_options,
-    make_assembler,
+    resolve_arch_options,
     make_platform_resolver,
     search_result_to_jsonable,
     write_search_visualizations,
@@ -92,24 +92,11 @@ class ArchitectureSearchStep(PipelineStep):
         arch_cfg = self.pipeline.config.get("arch_search", {})
         input_shape = tuple(self.pipeline.config["input_shape"])
 
-        arch_options: List = []
-        assembler = None
-
-        if search_mode in ("model", "joint"):
-            arch_options, schema_map = derive_arch_options(builder_cls, arch_cfg, input_shape)
-            if not arch_options:
-                schema = getattr(builder_cls, "get_config_schema", lambda: [])()
-                raise NotImplementedError(
-                    f"No NAS search space defined for model_type='{model_type}'. "
-                    f"Add get_nas_search_options() or 'select' fields with multiple options "
-                    f"to {builder_cls.__name__}.get_config_schema(). "
-                    f"Current schema keys: {[f['key'] for f in schema]}"
-                )
-            schema = getattr(builder_cls, "get_config_schema", lambda: [])()
-            assembler = make_assembler(schema, schema_map)
-
-        if assembler is None:
-            assembler = lambda raw: dict(raw)
+        arch_options, assembler = resolve_arch_options(
+            builder_cls, arch_cfg, input_shape,
+            searches_model=search_mode in ("model", "joint"),
+            model_type=model_type,
+        )
 
         fixed_model_config = None
         # Every candidate platform is this run's DEPLOYMENT resolution with the
@@ -170,6 +157,7 @@ class ArchitectureSearchStep(PipelineStep):
         )
         active_objective_names = [o.name for o in active_objectives]
 
+        plan = DeploymentPlan.of(self.pipeline)
         problem = JointArchHwProblem(
             data_provider_factory=self.pipeline.data_provider_factory,
             device=self.pipeline.config["device"],
@@ -197,11 +185,13 @@ class ArchitectureSearchStep(PipelineStep):
             extrapolation_num_train_epochs=extrapolation_num_train_epochs,
             extrapolation_num_checkpoints=extrapolation_num_checkpoints,
             extrapolation_target_epochs=extrapolation_target_epochs,
-            pruning_fraction=DeploymentPlan.of(self.pipeline).pruning_fraction,
-            pruning=DeploymentPlan.of(self.pipeline).pruning,
-            prune_sparsity=DeploymentPlan.of(self.pipeline).prune_sparsity,
+            pruning_fraction=plan.pruning_fraction, pruning=plan.pruning,
+            prune_sparsity=plan.prune_sparsity,
             prune_criterion=resolve_prune_criterion(self.pipeline.config),
             firing_mode=str(self.pipeline.config.get("firing_mode", "Default")),
+            spiking_mode=str(plan.spiking_mode),
+            ttfs_cycle_schedule=str(plan.ttfs_cycle_schedule),
+            per_hop_retiming=lif_per_hop_retiming_enabled(self.pipeline.config),
             encoding_placement=str(
                 self.pipeline.config.get("encoding_layer_placement", "subsume")
             ),

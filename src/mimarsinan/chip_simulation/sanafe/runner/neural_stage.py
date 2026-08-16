@@ -19,6 +19,7 @@ from mimarsinan.spiking.segment_boundary import (
     normalize_boundary_slices_numpy,
 )
 from mimarsinan.chip_simulation.hybrid_run.hybrid_semantics import NeuralSegmentResult
+from mimarsinan.chip_simulation.stage_timesteps import executed_stage_timesteps
 from mimarsinan.chip_simulation.sanafe.analysis import (
     _compute_connectivity_edges,
     _count_cross_tile_connectivity_edges,
@@ -122,24 +123,24 @@ class SanafeNeuralStageMixin:
             (int(c.latency) if getattr(c, "latency", None) is not None else 0)
             for c in hcm.cores
         ) if hcm.cores else 0
+        num_groups = chip_latency = None
         if is_cycle:
             from mimarsinan.chip_simulation.ttfs.ttfs_cycle_genuine import latency_groups
-
             num_groups, _ = latency_groups(
-                [getattr(c, "latency", None) for c in hcm.cores]
-            )
-            T_eff = (num_groups + 1) * self.T
+                [getattr(c, "latency", None) for c in hcm.cores])
         elif is_cascade:
-            # Cascaded T_eff must equal HCM's ``ChipLatency + T`` (full ChipLatency,
-            # not max core latency) + 1 for SANA-FE's one-cycle input delivery delay.
+            # Cascaded windows span the FULL ChipLatency, not the max core latency.
             try:
                 chip_latency = int(ChipLatency(hcm).calculate())
             except (RecursionError, ValueError):
                 chip_latency = max_latency
-            T_eff = self.T + chip_latency + 1
-        else:
-            # +1: SANA-FE applies input spikes one cycle after emission.
-            T_eff = self.T + max_latency + 1
+        # The executed-window rule is shared with candidate-time pricing, so it
+        # lives in ONE home (chip_simulation.stage_timesteps) rather than here.
+        T_eff = executed_stage_timesteps(
+            timesteps=self.T, max_latency=max_latency,
+            is_cycle=is_cycle, is_cascade=is_cascade,
+            latency_group_count=num_groups, chip_latency=chip_latency,
+        )
 
         contract_ttfs_cores: List[Any] = []
         contract_ttfs_seg_output: Optional[np.ndarray] = None

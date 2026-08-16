@@ -123,6 +123,7 @@ class CandidateStaticView:
         context = self.quantity_context
         if (
             self.noc_fragments is not None
+            and getattr(self.noc_fragments, "census", None) is not None
             and context is not None
             and context.activity_factor
             and context.timesteps

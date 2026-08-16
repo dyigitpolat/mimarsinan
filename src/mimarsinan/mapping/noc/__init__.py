@@ -8,6 +8,7 @@ from mimarsinan.mapping.noc.wire_census import (
 from mimarsinan.mapping.noc.fragments import (
     LayoutNocFragments,
     collect_noc_fragments,
+    execution_stage_latencies,
 )
 
 __all__ = [
@@ -15,5 +16,6 @@ __all__ = [
     "LayoutWireCensus",
     "census_of_walk",
     "collect_noc_fragments",
+    "execution_stage_latencies",
     "record_emission_census",
 ]

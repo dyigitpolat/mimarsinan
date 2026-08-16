@@ -40,6 +40,7 @@ Pareto decision layer.
 | `parity_contract.py` | Parity/equivalence contract classification for deployment cells |
 | `semantic_axis_screen.py` | Measured equivalence screen deciding whether a semantic knob (pruning/regime) collapses or stays enumerated |
 | `spiking_mode_policy.py` | Behavior-carrying `SpikingModePolicy` per `(firing × sync)`; `policy_for_spiking_mode` is the mode-dispatch SSOT |
+| `stage_timesteps.py` | [E1] The executed-window rule, ONE home for the two readers that must agree: the SANA-FE runner (which sizes the simulation) and candidate-time pricing (which prices the wall before any simulation exists). A stage runs `T + max_latency + 1` (the +1 is input delivery), a cycle-based TTFS window runs `(latency_groups + 1) x T`, a cascade spans the full ChipLatency; `program_latency_steps` sums over the program's execution stages — one per depth LEVEL when per-hop re-timing is armed (which `lif_exact_qat` pairs on), else one per segment. The candidate previously used `timesteps x neural_segment_count`, a second formula that measured 4 where the sealed record measured 15. |
 | `spiking_semantics.py` | Spiking-mode taxonomy + per-backend capability matrix (`_BACKEND_CAPS`), queried through the policy |
 | `subsample.py` | Seeded test-subsample index SSOT shared by SCM/HCM/nevresim evaluation |
 | `subtractive_lif.py` | Subtractive-reset LIF process + float model for Lava (top-level so Lava's model scan finds it) |

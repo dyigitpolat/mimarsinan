@@ -5,10 +5,14 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, Optional, Tuple
 
+from mimarsinan.mapping.verification.onchip_fraction import (
+    estimate_onchip_fraction,
+)
+from mimarsinan.search.constraints import ConstraintReport, onchip_floor_violation
 from mimarsinan.search.option_axes import candidate_option
 from mimarsinan.search.problem import CandidateInfeasibleError, ValidationResult
 
-from .candidate_fragments import collect_candidate_noc
+from .candidate_fragments import candidate_latency_steps, collect_candidate_noc
 
 from .types import (
     HW_CONVERSION_PHASE,
@@ -142,6 +146,10 @@ class JointValidateMixin(JointHostContract):
             census=wire_census, pcfg=pcfg,
         )
         census = self._onchip_census(model, placement)
+        steps = candidate_latency_steps(
+            softcores, noc, self.stage_semantics,
+            pcfg.get("simulation_steps"),
+        )
         return CandidateLayout(
             platform=pcfg,
             softcores=softcores,
@@ -149,7 +157,7 @@ class JointValidateMixin(JointHostContract):
             stats=stats,
             noc=noc,
             view=self._static_view(
-                stats, pcfg, total_params, host_segments, census, noc,
+                stats, pcfg, total_params, host_segments, census, noc, steps,
             ),
         ), None
 
@@ -209,6 +217,38 @@ class JointValidateMixin(JointHostContract):
         while len(self._validation_cache) > VALIDATION_CACHE_MAX_SIZE:
             oldest_key = next(iter(self._validation_cache))
             del self._validation_cache[oldest_key]
+
+    def onchip_fraction(self, configuration: Dict) -> float:
+        """The share of this candidate's parameters that would sit on chip cores.
+
+        Measured through the deployment's OWN estimator, under the CANDIDATE's
+        placement — the axis that decides which side of the NeuralOps/ComputeOps
+        boundary the encoder lands on.
+        """
+        placement = str(candidate_option(
+            configuration, "encoding_layer_placement", self.encoding_placement,
+        ))
+        model, _params = self._candidate_model(
+            configuration.get("model_config") or {},
+            configuration.get("platform_constraints") or {},
+            placement,
+        )
+        return estimate_onchip_fraction(
+            model,
+            tuple(self.input_shape),
+            int(self.num_classes),
+            encoding_placement=placement,
+            metric="params",
+        ).fraction
+
+    def onchip_constraint(self, configuration: Dict) -> Optional[ConstraintReport]:
+        """The on-chip floor report for this candidate, or None when satisfied."""
+        if self.onchip_min_fraction <= 0.0:
+            return None
+        return onchip_floor_violation(
+            fraction=self.onchip_fraction(configuration),
+            floor=float(self.onchip_min_fraction),
+        )
 
     def constraint_violation(self, configuration: Dict) -> float:
         try:

@@ -40,7 +40,7 @@ def _candidate():
         host_side_segment_count=1,
         physics=get_platform_physics("truenorth"),
         quantity_context=CandidateQuantityContext(
-            timesteps=32, activity_factor=0.05, weight_bits=8,
+            timesteps=32, latency_steps=32, activity_factor=0.05, weight_bits=8,
             cores_physical=20, neurons_physical=5120, axons_physical=5120,
             host_macs=0, onchip_macs=100000,
         ),
