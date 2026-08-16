@@ -32,3 +32,30 @@ def carry_record_from_mapping(
     return PassCarryRecord(
         transfer=str(transfer), timesteps=int(timesteps), **census,
     )
+
+
+def enforce_declared_buffer_capacity(
+    hybrid_mapping: Any, timesteps: Any, transfer: Any, capacity_bytes: Any,
+) -> None:
+    """[B] The declared pass-buffer ceiling, enforced at MAPPING time.
+
+    ``pass_buffer_capacity_bytes`` <= 0 (or None) means undeclared — no gate.
+    A program whose worst pass boundary needs more live raster bytes than the
+    platform declares refuses BEFORE any simulation runs, naming both numbers.
+    The required buffer itself stays a reported metric (the record axes);
+    this ceiling is opt-in and never a search axis.
+    """
+    capacity = int(capacity_bytes or 0)
+    if capacity <= 0:
+        return
+    record = carry_record_from_mapping(hybrid_mapping, timesteps, transfer)
+    if record is None:
+        return
+    if int(record.peak_live_bytes) > capacity:
+        raise ValueError(
+            f"the scheduled program's worst pass boundary needs "
+            f"{record.peak_live_bytes} live raster bytes but the platform "
+            f"declares pass_buffer_capacity_bytes={capacity}; loosen the "
+            f"schedule (fewer passes / smaller cuts) or declare the buffer "
+            f"the chip actually has"
+        )

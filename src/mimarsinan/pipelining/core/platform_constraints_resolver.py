@@ -99,6 +99,10 @@ def build_platform_constraints_resolved(
     pcfg["activity_factor"] = float(
         pipeline_config.get("activity_factor", 0.0) or 0.0
     )
+    # [B] The declared pass-carry buffer ceiling (0 = undeclared, metric only).
+    pcfg["pass_buffer_capacity_bytes"] = int(
+        pipeline_config.get("pass_buffer_capacity_bytes", 0) or 0
+    )
 
     if CANONICAL_KEY in pipeline_config:
         pcfg[CANONICAL_KEY] = bool(pipeline_config[CANONICAL_KEY])

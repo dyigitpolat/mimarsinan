@@ -220,7 +220,8 @@ _PHYSICS_AXES: Tuple[ObjectiveSpecV2, ...] = (
 #: [N3] The traffic axis at both completenesses: derived from the sealed NoC
 #: census on a record, and from the wireload model (wire census x declared
 #: activity on the resolved floorplan) on a candidate. No physics needed —
-#: hops are a count. Registered last-of-all: catalog order is contract.
+#: hops are a count. Registered after the physics axes: catalog order is
+#: contract.
 _TRAFFIC_AXES: Tuple[ObjectiveSpecV2, ...] = (
     objective(
         "noc_total_hops", "min", "hops", "modeled",
@@ -233,12 +234,35 @@ _TRAFFIC_AXES: Tuple[ObjectiveSpecV2, ...] = (
     ),
 )
 
+_CARRY_REQUIRES = (
+    "the sealed schedule's pass-carry census (a program that cuts a neural "
+    "segment into passes)"
+)
+
+#: [B] The pass-buffer axes: the required buffer of a PARTICULAR program is a
+#: mapping performance metric of the sealed schedule — record-only by
+#: construction (a candidate has no pass structure to size), never searched.
+_BUFFER_AXES: Tuple[ObjectiveSpecV2, ...] = (
+    objective(
+        "carry_peak_live_bytes", "min", "bytes", "measured",
+        quantity_field("carry_peak_live_bytes", requires=_CARRY_REQUIRES),
+        "Worst pass-boundary live raster bytes the host must buffer at once.",
+    ),
+    objective(
+        "carried_raster_bytes", "min", "bytes", "measured",
+        quantity_field("carried_raster_bytes", requires=_CARRY_REQUIRES),
+        "Raster bytes carried across the schedule's pass boundaries per "
+        "inference.",
+    ),
+)
+
 
 def build_catalog() -> ObjectiveRegistry:
     """The program's objective catalog, in contract order."""
     registry = ObjectiveRegistry()
     for spec in (
         _LEGACY_STATIC_AXES + _RECORD_AXES + _PHYSICS_AXES + _TRAFFIC_AXES
+        + _BUFFER_AXES
     ):
         registry.register(spec)
     return registry

@@ -29,6 +29,9 @@ RECORD_AXES = {
     "programming_energy_mj": ("min", "modeled", "mJ"),
     "sync_barrier_energy_mj": ("min", "modeled", "mJ"),
     "throughput_samples_per_s": ("max", "modeled", "samples/s"),
+    # [B] The pass-buffer metrics of the sealed schedule (record-only).
+    "carry_peak_live_bytes": ("min", "measured", "bytes"),
+    "carried_raster_bytes": ("min", "measured", "bytes"),
 }
 
 
@@ -41,8 +44,8 @@ def test_record_axis_contract_is_pinned(key, expected):
 def test_the_catalogue_holds_exactly_the_published_axes():
     from mimarsinan.search.results import ALL_OBJECTIVES
 
-    legacy = {spec.name for spec in ALL_OBJECTIVES}
-    assert {s.key for s in OBJECTIVES.all()} == legacy | set(RECORD_AXES)
+    searchable = {spec.name for spec in ALL_OBJECTIVES}
+    assert {s.key for s in OBJECTIVES.all()} == searchable | set(RECORD_AXES)
 
 
 def test_chip_param_capacity_counts_every_core():

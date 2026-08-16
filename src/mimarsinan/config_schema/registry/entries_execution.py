@@ -103,6 +103,19 @@ ENTRIES = (
            "most-square exact grid; declare together with tile_grid_rows "
            "(both 0 or both > 0 — a half-declared grid is a config error).",
        bounds=(0, None), empty_means="0 — the derived most-square exact grid"),
+    _E("pass_buffer_capacity_bytes", section="platform_constraints",
+       group="hardware", owner="deployment_record.pass_carry", type=T.INT,
+       category=Category.ADVANCED, exposure="user",
+       label="Pass Buffer Capacity (bytes)",
+       effect="Optional ceiling on the host-side pass-carry buffer; a "
+              "schedule needing more refuses at mapping time",
+       doc="[B] The platform's declared buffer for rasters carried across "
+           "schedule pass boundaries. 0 = undeclared: the required buffer "
+           "stays a reported metric (carry_peak_live_bytes) and nothing "
+           "gates. When declared, a program whose worst pass boundary needs "
+           "more live raster bytes refuses BEFORE any simulation, naming "
+           "both numbers. Never a search axis.",
+       bounds=(0, None), empty_means="0 — undeclared; metric only, no gate"),
     _E("value_parity_samples", domain="value", group="deployment_target", owner="value_gates",
        type=T.INT, category=Category.ADVANCED, unit="samples",
        label="Value Parity Samples",

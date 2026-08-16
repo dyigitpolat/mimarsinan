@@ -11,7 +11,11 @@ from mimarsinan.mapping.crossbar_utilization import (
     summarize_utilization,
     write_utilization_record,
 )
+from mimarsinan.deployment_record.build.pass_carry import (
+    enforce_declared_buffer_capacity,
+)
 from mimarsinan.mapping.weight_programming import weight_programming_report
+from mimarsinan.models.spiking.hybrid.carry import run_pass_transfer
 from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 from mimarsinan.pipelining.core.hybrid_mapping_consumer import load_hybrid_mapping_for_step
 from mimarsinan.pipelining.core.engine.pipeline_helpers import run_optional_viz
@@ -109,6 +113,14 @@ class HardCoreMappingStep(PipelineStep):
                 f"[HardCoreMappingStep] Hybrid program: {len(neural_segs)} neural segments, "
                 f"{len(compute_ops)} compute ops"
             )
+
+        # [B] The declared pass-buffer ceiling gates HERE, with the schedule in
+        # hand and no simulation spent yet (0 = undeclared, metric only).
+        enforce_declared_buffer_capacity(
+            hybrid_mapping, sim_len,
+            run_pass_transfer(self.pipeline.config),
+            self.pipeline.config.get("pass_buffer_capacity_bytes", 0),
+        )
 
         _vram_probe("after_build_hybrid")
         self.add_entry("hard_core_mapping", hybrid_mapping, "pickle")

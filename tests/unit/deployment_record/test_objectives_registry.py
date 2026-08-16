@@ -70,6 +70,9 @@ PHYSICS_AXIS_KEYS = (
 #: [N3] The traffic axis, after the physics axes — the catalog only appends.
 TRAFFIC_AXIS_KEYS = ("noc_total_hops",)
 
+#: [B] The pass-buffer metrics, last of all — record-only mapping performance.
+BUFFER_AXIS_KEYS = ("carry_peak_live_bytes", "carried_raster_bytes")
+
 DISTINCT_LAYOUT = replace(
     make_layout(),
     mapped_params_pct=33.0,
@@ -149,7 +152,7 @@ class TestLegacyEightPreserved:
     def test_the_spec_documented_axes_are_all_registered(self):
         assert OBJECTIVES.keys() == (
             tuple(k for k, _ in LEGACY_EIGHT) + SPEC_ADDED_KEYS
-            + PHYSICS_AXIS_KEYS + TRAFFIC_AXIS_KEYS
+            + PHYSICS_AXIS_KEYS + TRAFFIC_AXIS_KEYS + BUFFER_AXIS_KEYS
         )
 
 
