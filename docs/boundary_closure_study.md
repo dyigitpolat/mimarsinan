@@ -116,6 +116,71 @@ identity — after which the stretch fidelity reads:
 - `e2e_latency_s`: 24 ms modeled vs 101 ms measured — host walls again
   (heavier under offload), same operator-declaration lesson.
 
+## Can we optimize software, hardware, and both? — measured (2026-08-16)
+
+The four study runs above are all `search_mode=hardware`. The other two modes
+had never been run end-to-end, so they were run: same MNIST MLP family, same
+truenorth physics, same declared activity, NSGA-II, all three sealed to real
+deployments with measured energy.
+
+| search mode | decision variables | deployed acc | area mm² | e2e s | µJ/sample (measured) | NoC packets | winner cells |
+|---|---|---|---|---|---|---|---|
+| hardware only | core geometry | 0.9810 | 47.35 | 0.0221 | 995.3 | 667 | 604,160 |
+| software only | widths + activation | 0.9786 | 57.83 | 0.0270 | 792.9 | 270 | 31,948,800 (declared) |
+| **joint** | **both** | 0.9778 | 48.10 | **0.0204** | **355.6** | **172** | 4,505,600 |
+
+**Joint wins where neither single mode can**, and the mechanism is legible:
+
+- **Hardware-only** moves the chip: best area, 53× smaller than the declared
+  platform. But it cannot touch the MAC census, so **energy is FLAT** — the
+  whole 72-candidate population spans 0.40195–0.40346 mJ (1.004×, no
+  leverage). Measured energy ends up the WORST of the three.
+- **Software-only** moves the MAC census: energy improves. But the chip is
+  fixed, so **area is FLAT** (57.832 mm² across every candidate) — and area
+  ends up the worst of the three.
+- **Joint** moves both, and the energy axis that was degenerate under
+  geometry search becomes live: **7.93× span** across its population. The
+  deployed result is 2.8× less energy than hardware-only and 3.9× less NoC
+  traffic, at 0.3 accuracy points.
+
+So the joint space is not the union of the two single spaces — it unlocks an
+axis neither can move alone. The per-axis leverage table (span of each
+objective across the whole population) is the honest way to see it, and it is
+worth running before trusting any search: an axis that is FLAT in your space
+is not being optimized, whatever the report says.
+
+The joint front also contains a real trade-off the substrate can now price:
+**0.9928 proxy accuracy at 0.102 mJ vs 0.9950 at 0.804 mJ** — 8× the energy
+for 0.2 accuracy points. (`estimated_accuracy` is the search-time training
+proxy, not deployed accuracy.)
+
+Caveats stated: single runs at small budgets (24 candidates for model/joint,
+72 for hardware); the accuracy spread across the three modes (0.9778–0.9810)
+is within the proxy's noise; the three searches optimized different objective
+sets, so the comparison is of DEPLOYED outcomes, not of optimizer skill.
+
+### The typed constraint did its job
+
+Three joint candidates scored full penalties rather than crashing: the same
+model config (LeakyReLU 128/64) puts only **15.26% of parameters on chip**,
+below the declared 20% floor. C3's typed on-chip constraint made that a
+region of the search space the optimizer can see, exactly as designed —
+instead of a pipeline crash after the winner was already chosen.
+
+### What running the option axes cost — and caught
+
+`arch_search.option_axes` (placement, weight_bits, schedule policy) had never
+been exercised by any run. The first one died at mapping:
+`AssertionError: bias outside its ±15 register range`. Root cause was a
+genuine split brain — `QuantizationVerificationStep` captured `q_max` in
+`__init__`, at pipeline **assembly**, before the search stamps the winner's
+`weight_bits=6`; the quantizer used 6 bits and the gate asserted against the
+pre-search 5-bit grid. This is the pipeline-step form of the banned
+constructor-shaped `get(key, default)`. Fixed (read where used) plus a
+generic ratchet forbidding the shape across every step, with its one
+sanctioned exception (contract-shaping reads that decide `requires`) closed
+by refusing those keys as search axes.
+
 ## Follow-ups the study surfaced
 
 1. A sealed synaptic-EVENT census (the record measures spikes, not
