@@ -93,5 +93,9 @@ def emit_run_fidelity(pipeline: Any, record: Any) -> Optional[str]:
     if names is None:
         return None
     problem = _fidelity_problem(pipeline, names)
-    view = problem.candidate_layout({}).view
+    # The EMPTY overlay: the fixed model config and the run's own resolved
+    # platform — i.e. exactly the configuration that deployed.
+    view = problem.candidate_layout(
+        {"model_config": {}, "platform_constraints": {}}
+    ).view
     return emit_fidelity_report(record, view, pipeline.working_directory)

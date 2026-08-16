@@ -26,6 +26,43 @@ class TestTheEmissionGate:
         assert emit_run_fidelity(_pipeline(config), record=None) is None
 
 
+class TestTheThroughPath:
+    def test_a_searched_run_emits_the_report(self, tmp_path):
+        """END TO END: the rebuild resolves the run's own config and the
+        report lands beside the record — the gate tests alone missed a
+        malformed candidate_layout call (the study's first launch)."""
+        from unit.deployment_record.test_fidelity_from_record import _record
+
+        config = {
+            "device": "cpu",
+            "input_shape": (1, 8, 8),
+            "num_classes": 4,
+            "target_tq": 4,
+            "weight_bits": 4,
+            "lr": 0.001,
+            "seed": 0,
+            "model_type": "simple_mlp",
+            "model_config_mode": "user",
+            "hw_config_mode": "search",
+            "model_config": {
+                "mlp_width_1": 16, "mlp_width_2": 16,
+                "base_activation": "ReLU",
+            },
+            "cores": [{"max_axons": 256, "max_neurons": 256, "count": 20}],
+            "platform_physics_profile": "truenorth",
+            "activity_factor": 0.05,
+            "arch_search": {
+                "objectives": ["param_utilization_pct", "chip_area_mm2"],
+            },
+        }
+        pipeline = SimpleNamespace(
+            config=config, working_directory=str(tmp_path),
+        )
+        path = emit_run_fidelity(pipeline, _record())
+        assert path is not None
+        assert (tmp_path / "fidelity.json").exists()
+
+
 class TestTheAxisFilter:
     def test_the_training_proxy_is_dropped(self):
         """The rebuild never trains; hardware completeness is what a deployed
