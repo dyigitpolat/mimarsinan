@@ -1,6 +1,7 @@
 """The contract: a sealed run compared against the candidate view of its own config."""
 
 from dataclasses import replace
+from types import SimpleNamespace
 
 import pytest
 
@@ -51,6 +52,28 @@ class TestTheComparison:
         report = fidelity_report_for_record(_record(), _candidate())
         keys = {axis.key for axis in report.axes}
         assert "chip_area_mm2" in keys, "both sides price area from the same physics"
+
+    def test_noc_hops_zip_modeled_against_measured(self):
+        """[N4] The traffic axis rides fidelity automatically: the candidate's
+        wireload estimate against the sealed census, one axis, both sides."""
+        candidate = replace(
+            _candidate(),
+            quantity_context=replace(
+                _candidate().quantity_context,
+                cores_per_tile=1, tile_mesh_height=1,
+            ),
+            noc_fragments=SimpleNamespace(
+                pass_placements=(((0, 0), (1, 1)),),
+                census=SimpleNamespace(
+                    pair_wires={(0, 1): 4}, input_wires=(2, 0), on_wires=(0, 0),
+                ),
+            ),
+        )
+        report = fidelity_report_for_record(_record(), candidate)
+        hops = [a for a in report.axes if a.key == "noc_total_hops"]
+        assert hops, "the traffic axis must ride the fidelity zip"
+        assert hops[0].predicted is not None and hops[0].predicted > 0.0
+        assert hops[0].measured is not None
 
     def test_area_agrees_exactly_because_both_price_the_declared_chip(self):
         """The strongest structural check available: area depends on the DECLARED
