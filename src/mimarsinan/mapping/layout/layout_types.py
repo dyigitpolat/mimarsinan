@@ -155,4 +155,9 @@ class LayoutPackingResult:
 
     split_counts_per_sc: Optional[Tuple[int, ...]] = None
 
+    # (origin softcore index, hardcore index) per placed unit, present only
+    # when the pack was asked to collect placements (the NoC estimator input);
+    # split/coalescing fragments repeat their origin index.
+    placements: Optional[Tuple[Tuple[int, int], ...]] = None
+
 

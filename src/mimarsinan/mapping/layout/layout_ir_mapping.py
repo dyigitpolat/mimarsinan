@@ -13,6 +13,7 @@ from mimarsinan.mapping.layout.layout_source_view_ops import (
 from mimarsinan.mapping.layout.layout_types import LayoutSoftCoreSpec
 from mimarsinan.mapping.layout.layout_ir_mapping_fc import _LayoutIRMappingFC
 from mimarsinan.mapping.layout.layout_ir_mapping_finalize import _LayoutIRMappingFinalize
+from mimarsinan.mapping.noc.wire_census import record_emission_census
 from mimarsinan.mapping.platform.mapping_structure import compute_core_input_count
 
 
@@ -27,6 +28,10 @@ class LayoutIRMapping(_LayoutIRMappingFinalize, _LayoutIRMappingFC):
     allow_coalescing: bool = False
     hardware_bias: bool = False
     onchip_residual_merge: bool = False
+    # Wire-census collection MATERIALISES every deferred input view (the very
+    # cost LayoutSourceView defers), so it is opt-in: only a walk whose caller
+    # needs NoC traffic pays it.
+    collect_wire_census: bool = False
 
     def __post_init__(self):
         self.max_axons = int(self.max_axons) if self.max_axons is not None else None
@@ -46,6 +51,7 @@ class LayoutIRMapping(_LayoutIRMappingFinalize, _LayoutIRMappingFC):
         self.layout_preview: Dict[str, Any] | None = None
 
         self._node_input_node_ids: Dict[int, Set[int]] = {}
+        self._node_wire_census: Dict[int, Any] = {}
         self._node_id_to_softcore_idx: Dict[int, int] = {}
         self._node_is_neural: Dict[int, bool] = {}
         self._node_host_labels: Dict[int, Dict[str, str]] = {}
@@ -76,6 +82,9 @@ class LayoutIRMapping(_LayoutIRMappingFinalize, _LayoutIRMappingFC):
         """Record a softcore shape under ``node_id`` and return a 1-D
         ``LayoutSourceView`` over its outputs."""
         self._node_input_node_ids[node_id] = self._extract_input_node_ids(input_sources)
+        if self.collect_wire_census:
+            record_emission_census(
+                self._node_wire_census, node_id, input_sources, input_count)
         self._node_is_neural[node_id] = True
 
         sc_idx = len(self.layout_softcores)

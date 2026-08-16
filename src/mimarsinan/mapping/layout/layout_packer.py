@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import copy
 import re
-from typing import Dict, List, Sequence, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 from mimarsinan.mapping.packing.core_packing import (
     canonical_fuse_hardcores,
@@ -29,11 +29,23 @@ def _split_root(name: str) -> str:
 
 class LayoutMaterializer:
     """Shape-only ``Materializer`` mirroring runtime placement decisions and
-    tracking split lineage for split-fragment statistics."""
+    tracking split lineage for split-fragment statistics.
 
-    def __init__(self) -> None:
+    With ``collect_placements`` it additionally records which hardcore every
+    softcore landed on, keyed by the ORIGIN index seeded by ``pack_layout``
+    (split/coalescing fragments inherit their parent's origin) — the NoC
+    estimator's placement input. Lookup is strict: a spec the origin map has
+    never seen means an engine path copied specs, which must fail loud rather
+    than misplace traffic.
+    """
+
+    def __init__(self, collect_placements: bool = False) -> None:
         self.split_counter = 0
         self.split_lineage: Dict[str, int] = {}
+        self.collect_placements = bool(collect_placements)
+        self.origin_of: Dict[int, int] = {}
+        self.placed: List[Tuple[int, LayoutHardCoreInstance]] = []
+        self.fused_alias: Dict[int, LayoutHardCoreInstance] = {}
 
     @staticmethod
     def is_mapping_possible(softcore, hardcore) -> bool:
@@ -41,6 +53,8 @@ class LayoutMaterializer:
 
     def place(self, core_idx: int, hardcore: LayoutHardCoreInstance, core: LayoutSoftCoreSpec) -> None:
         hardcore.add_softcore(core)
+        if self.collect_placements:
+            self.placed.append((self.origin_of[id(core)], hardcore))
 
     def fuse_hardcores(self, hcs):
         def _mk(*, axons, neurons, template, components):
@@ -52,15 +66,23 @@ class LayoutMaterializer:
             inst.latency_tag = getattr(template, "latency_tag", None)
             return inst
 
-        return canonical_fuse_hardcores(hcs, make_fused=_mk)
+        fused = canonical_fuse_hardcores(hcs, make_fused=_mk)
+        if self.collect_placements:
+            for component in hcs:
+                self.fused_alias[id(component)] = fused
+        return fused
 
     def split_softcore(self, core: LayoutSoftCoreSpec, available_neurons: int):
         self.split_counter += 1
         root = _split_root(core.name or f"__noname_{id(core)}")
         self.split_lineage[root] = self.split_lineage.get(root, 0) + 1
-        return canonical_split_softcore(
+        fragments = canonical_split_softcore(
             core, available_neurons, make_fragments=_make_layout_fragments,
         )
+        if self.collect_placements:
+            for fragment in fragments:
+                self.origin_of[id(fragment)] = self.origin_of[id(core)]
+        return fragments
 
 
 def _make_instances(core_types: Sequence[LayoutHardCoreType]) -> List[LayoutHardCoreInstance]:
@@ -99,20 +121,24 @@ def _make_layout_fragments(
 def _expand_for_axon_coalescing(
     softcores: Sequence[LayoutSoftCoreSpec],
     core_types: Sequence[LayoutHardCoreType],
-) -> Tuple[List[LayoutSoftCoreSpec], Tuple[int, ...]]:
+) -> Tuple[List[LayoutSoftCoreSpec], Tuple[int, ...], List[int]]:
     """Split each over-wide softcore into axon-coalescing fragments (each carrying
-    all output neurons), mirroring IRMapping's coalescing at model-building time."""
+    all output neurons), mirroring IRMapping's coalescing at model-building time.
+    The third return maps each expanded position to its origin position."""
+    identity_origins = list(range(len(softcores)))
     if not core_types:
-        return list(softcores), ()
+        return list(softcores), (), identity_origins
     max_avail_axons = max(int(ct.max_axons) for ct in core_types)
     if max_avail_axons <= 0:
-        return list(softcores), ()
+        return list(softcores), (), identity_origins
 
     result: List[LayoutSoftCoreSpec] = []
+    origins: List[int] = []
     group_sizes: List[int] = []
-    for sc in softcores:
+    for position, sc in enumerate(softcores):
         if sc.input_count <= max_avail_axons:
             result.append(sc)
+            origins.append(position)
         else:
             k = coalescing_fragment_count(sc.input_count, max_avail_axons)
             base = sc.input_count // k
@@ -126,8 +152,9 @@ def _expand_for_axon_coalescing(
                     latency_tag=sc.latency_tag,
                     name=f"{sc.name}_coal{i}" if sc.name else None,
                 ))
+                origins.append(position)
             group_sizes.append(k)
-    return result, tuple(group_sizes)
+    return result, tuple(group_sizes), origins
 
 
 def pack_layout(
@@ -136,11 +163,15 @@ def pack_layout(
     core_types: Sequence[LayoutHardCoreType],
     allow_neuron_splitting: bool = False,
     allow_coalescing: bool = False,
+    collect_placements: bool = False,
 ) -> LayoutPackingResult:
     """Pack layout-only softcores into a limited pool of hardware cores.
 
     ``allow_neuron_splitting`` splits along the neuron dimension; ``allow_coalescing``
-    pre-expands over-wide softcores into axon-coalescing fragments before packing."""
+    pre-expands over-wide softcores into axon-coalescing fragments before packing.
+    ``collect_placements`` additionally seals which hardcore each input softcore
+    landed on (``result.placements``: ``(origin index, hardcore index)`` per
+    placed unit; fragments repeat their origin)."""
 
     used_hardcores: List[LayoutHardCoreInstance] = []
     unused_hardcores: List[LayoutHardCoreInstance] = _make_instances(core_types)
@@ -148,9 +179,12 @@ def pack_layout(
     unmapped = list(copy.deepcopy(list(softcores)))
     pre_coalesce_count = len(unmapped)
 
+    origins = list(range(pre_coalesce_count))
     coalescing_group_sizes: Tuple[int, ...] = ()
     if allow_coalescing:
-        unmapped, coalescing_group_sizes = _expand_for_axon_coalescing(unmapped, core_types)
+        unmapped, coalescing_group_sizes, origins = _expand_for_axon_coalescing(
+            unmapped, core_types,
+        )
     coalesced_fragment_count = len(unmapped) - pre_coalesce_count
 
     for i, sc in enumerate(unmapped):
@@ -163,7 +197,11 @@ def pack_layout(
                 name=f"__sc_{i}",
             )
 
-    materializer = LayoutMaterializer()
+    materializer = LayoutMaterializer(collect_placements=collect_placements)
+    if collect_placements:
+        materializer.origin_of = {
+            id(sc): origins[i] for i, sc in enumerate(unmapped)
+        }
 
     try:
         run_placement(
@@ -209,6 +247,16 @@ def pack_layout(
         for h in used_hardcores
     )
 
+    placements: Optional[Tuple[Tuple[int, int], ...]] = None
+    if collect_placements:
+        hardcore_index = {id(h): i for i, h in enumerate(used_hardcores)}
+        resolved: List[Tuple[int, int]] = []
+        for origin, hardcore in materializer.placed:
+            while id(hardcore) in materializer.fused_alias:
+                hardcore = materializer.fused_alias[id(hardcore)]
+            resolved.append((int(origin), hardcore_index[id(hardcore)]))
+        placements = tuple(resolved)
+
     return LayoutPackingResult(
         feasible=True,
         cores_used=cores_used,
@@ -229,4 +277,5 @@ def pack_layout(
             if materializer.split_lineage
             else None
         ),
+        placements=placements,
     )
