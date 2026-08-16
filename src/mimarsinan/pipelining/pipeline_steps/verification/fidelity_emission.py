@@ -39,15 +39,24 @@ def _fidelity_axis_names(config: Any) -> Optional[List[str]]:
     return kept or None
 
 
-def _fidelity_problem(pipeline: Any, names: List[str]) -> JointArchHwProblem:
-    """The deployed configuration as a hardware-mode candidate problem.
+def _fidelity_problem(
+    pipeline: Any, names: List[str], deployed_platform: Any,
+) -> JointArchHwProblem:
+    """The DEPLOYED configuration as a hardware-mode candidate problem.
 
     Everything a VIEW needs comes from the same SSOTs the search step reads:
     the deployment's own platform resolver, the registry's builder, and the
-    plan's declared pruning. Training-side knobs are irrelevant — the
-    fidelity view is never trained.
+    plan's declared pruning. The chip is the SEALED winner's — the record's
+    own identity — because the raw config still holds the pre-search
+    declaration; a twin of the declaration would compare the measurement
+    against a chip the run never deployed. Training-side knobs are
+    irrelevant — the fidelity view is never trained.
     """
-    config = pipeline.config
+    config = dict(pipeline.config)
+    config["cores"] = [dict(ct) for ct in deployed_platform["cores"]]
+    for key in ("weight_bits", "target_tq"):
+        if deployed_platform.get(key) is not None:
+            config[key] = deployed_platform[key]
     plan = DeploymentPlan.of(pipeline)
     return JointArchHwProblem(
         data_provider_factory=None,
@@ -92,7 +101,7 @@ def emit_run_fidelity(pipeline: Any, record: Any) -> Optional[str]:
     names = _fidelity_axis_names(config)
     if names is None:
         return None
-    problem = _fidelity_problem(pipeline, names)
+    problem = _fidelity_problem(pipeline, names, record.identity.platform)
     # The EMPTY overlay: the fixed model config and the run's own resolved
     # platform — i.e. exactly the configuration that deployed.
     view = problem.candidate_layout(

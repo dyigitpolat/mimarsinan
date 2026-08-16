@@ -90,14 +90,43 @@ intra-tile (0 measured inter-tile hops on all four) — the axis the owner
 asked for ("NoC quantities are very important during search") demonstrably
 shaped the outcome.
 
-## Stretch — LeNet5, pruned, offload (truenorth)
+## Stretch — LeNet5, pruned, offload (truenorth): sealed
 
 A single-profile repetition on the `t0_02` LeNet5 cell (pruning_fraction
-0.5, offload placement) exercising the P-stage boundary live: conv models
-expose no perceptron chain pre-conversion, so the candidate keeps unpruned
-shapes as a STATED upper bound and fidelity measures the elimination gap.
-*(run in flight at the time of writing; artifacts land in
-`generated/study_truenorth_lenet5_pruned_phased_deployment_run/`)*
+0.5, offload placement), same five-axis search. Sealed at deployed accuracy
+0.9899, area 55.40 mm², 23.6 µJ/sample measured, 32,312 NoC packets (all
+intra-tile), winner capacity 10,927,104 cells. `fidelity.json` was written
+**live in-pipeline** on this run — the first end-to-end validation of the
+wired emission.
+
+Its first live output caught a twin defect: the rebuild resolved the raw
+config's PRE-SEARCH declaration (31.9M cells) instead of the sealed winner
+(10.9M). Fixed — the rebuild now takes the chip from the record's own
+identity — after which the stretch fidelity reads:
+
+- `total_param_capacity`: **byte-equal** (10,927,104 = 10,927,104).
+- `chip_area_mm2`: **exact, in-band** (55.3984 = 55.3984).
+- `param_utilization_pct`: 6.33% predicted vs 6.79% measured — with the
+  platform twin exact, this pair now ISOLATES the P-stage pruning bound:
+  the conv candidate keeps unpruned shapes (no perceptron chain
+  pre-conversion, stated), the deployed compaction eliminates more, and the
+  gap is 6.7% relative — the upper bound holding, tightly.
+- `noc_total_hops`: 192 modeled vs 0 measured — the same conservative
+  layout-twin placement divergence as the MLP runs.
+- `e2e_latency_s`: 24 ms modeled vs 101 ms measured — host walls again
+  (heavier under offload), same operator-declaration lesson.
+
+## Follow-ups the study surfaced
+
+1. A sealed synaptic-EVENT census (the record measures spikes, not
+   per-synapse events), so the record-side priced energy stops refusing and
+   the energy pair gains an in-band verdict.
+2. The layout-twin vs real-packer placement divergence behind the
+   112/192-vs-0 hop rows — either feed the twin the real packer's placement
+   order or keep the conservative bound and say so per row (current state).
+3. Operator host-rate declarations need a measured anchor; the ~1000×
+   optimism of a MAC-rate guess against per-op dispatch walls is now a
+   documented failure mode the wizard could warn about.
 
 ## Evidence disclosure
 
