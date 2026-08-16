@@ -60,10 +60,13 @@ ENERGY_COMPONENTS: Tuple[Tuple[str, Tuple[str, ...], str], ...] = (
     ("e_intra_tile_packet", ("noc_intra_tile_packets",), "intra_tile"),
     ("e_inter_tile_hop", ("noc_total_hops",), "inter_tile"),
     ("e_sync_barrier", ("sync_count",), "sync"),
-    # The intra-segment pass-boundary payload moves over the same DMA channel as
-    # programming, but PER INFERENCE — which is exactly why it must be charged
-    # here and not amortized with the program load.
-    ("e_dma_per_byte", ("carried_raster_bytes",), "pass_carry"),
+    # [E3] The intra-segment pass boundary is crossed TWICE per inference, and
+    # the two crossings ride different paths: the host reads emissions back off
+    # the chip, then re-injects a train over the DMA channel programming uses.
+    # Charged separately, with their own constants; neither is the buffer
+    # figure (carried_raster_bytes), which sizes what is HELD in between.
+    ("e_dma_per_byte", ("carry_in_bytes",), "carry_inject"),
+    ("e_readout_per_byte", ("carry_out_bytes",), "carry_readout"),
 )
 
 #: Decomposed area components, priced only when no area aggregate supersedes them.

@@ -4,6 +4,7 @@ import pytest
 
 from mimarsinan.deployment_record.cost.absolute import price_absolute
 from mimarsinan.deployment_record.platform_physics import (
+    apply_overrides,
     get_platform_physics,
     profile_from_dict,
 )
@@ -13,6 +14,14 @@ from mimarsinan.deployment_record.quantities.spec import Quantities, QuantityVal
 from unit.deployment_record.record_fixtures import make_full_record
 
 _TRUENORTH = get_platform_physics("truenorth")
+
+
+def _with_readout(physics, per_byte: float = 1.0):
+    """The same target, plus a declared readout rate for the OFF-chip direction."""
+    return apply_overrides(physics, {"e_readout_per_byte": {
+        "nominal": per_byte, "evidence_kind": "estimated",
+        "note": "test readout rate",
+    }})
 
 
 def _quantities(**values):
@@ -385,16 +394,38 @@ class TestThePassCarryIsCharged:
         base.update(over)
         return _quantities(**base)
 
-    def test_a_carrying_record_pays_the_dma_channel_per_inference(self):
+    def test_a_carrying_record_pays_the_inbound_channel_per_inference(self):
+        """[E3] The re-injected train rides the DMA channel programming rides,
+        so isaac's declared per-byte constant prices THAT direction."""
         with_carry = price_absolute(
-            self._census(carried_raster_bytes=1024.0), self._ISAAC)
+            self._census(carry_in_bytes=1024.0), self._ISAAC)
         without = price_absolute(self._census(), self._ISAAC)
         both = _by_name(with_carry), _by_name(without)
         delta = (both[0]["energy_per_inference_mj"].value
                  - both[1]["energy_per_inference_mj"].value)
         # isaac_like: e_dma_per_byte = 2.0215 pJ/B x 1024 B = 2.07 nJ.
         assert delta == pytest.approx(2.0215e-12 * 1024 * 1e3, rel=1e-6)
-        assert "pass_carry" in both[0]["energy_per_inference_mj"].source
+        assert "carry_inject" in both[0]["energy_per_inference_mj"].source
+
+    def test_the_readout_direction_is_not_charged_at_the_inbound_rate(self):
+        """[E3] isaac declares no readout constant. The emissions the host
+        reads back are real work that this profile cannot price — so the
+        headline SAYS so instead of quietly charging the inbound number."""
+        pricing = price_absolute(
+            self._census(carry_out_bytes=1024.0), self._ISAAC)
+        source = _by_name(pricing)["energy_per_inference_mj"].source
+        assert "e_readout_per_byte(carry_readout)" in source
+        assert "carry_readout" not in source.split("unpriced:")[0]
+
+    def test_the_two_directions_are_charged_separately(self):
+        """One boundary crossing is two crossings; charging one bucket made
+        the cheaper direction pay the other's rate."""
+        both_ways = price_absolute(
+            self._census(carry_in_bytes=1024.0, carry_out_bytes=1024.0),
+            _with_readout(self._ISAAC),
+        )
+        source = _by_name(both_ways)["energy_per_inference_mj"].source
+        assert "carry_inject" in source and "carry_readout" in source
 
     def test_a_run_with_no_carry_is_priced_identically(self):
         """Absence is meaningful: no carry quantity, no term, no note."""
@@ -407,11 +438,11 @@ class TestThePassCarryIsCharged:
         be priced, so the headline must SAY so rather than omit it silently."""
         pricing = price_absolute(
             _quantities(synaptic_events=1e6, host_macs=0, cores_physical=20,
-                        latency_steps=32, carried_raster_bytes=512.0),
+                        latency_steps=32, carry_in_bytes=512.0),
             _TRUENORTH,
         )
         source = _by_name(pricing)["energy_per_inference_mj"].source
-        assert "e_dma_per_byte(pass_carry)" in source
+        assert "e_dma_per_byte(carry_inject)" in source
 
     def test_peak_live_is_a_census_fact_not_an_energy(self):
         """The buffer requirement is capacity, not switching work: pricing must

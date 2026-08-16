@@ -66,10 +66,20 @@ _ROWS: Tuple[Tuple[str, Tuple[str, str], str], ...] = (
      "Sum of core counts over reprogram passes only (the per-core programming "
      "overhead multiplicand)."),
     ("carried_raster_bytes", (DATA, "B"),
-     "Payload crossing INTRA-SEGMENT pass boundaries per inference, sized under "
-     "the run's sealed transfer discipline: raster bits under verbatim, window "
-     "counts under collapse. A pass that halves cores but doubles this is not "
-     "a free win."),
+     "Payload HELD across INTRA-SEGMENT pass boundaries per inference, sized "
+     "under the run's sealed transfer discipline: raster bits under verbatim, "
+     "window counts under collapse. This is the buffer requirement, NOT the "
+     "transfer — what crossed the chip boundary is carry_out_bytes / "
+     "carry_in_bytes, dense under both disciplines. A pass that halves cores "
+     "but doubles this is not a free win."),
+    ("carry_out_bytes", (DATA, "B"),
+     "Payload the chip EMITS across intra-segment pass boundaries per inference. "
+     "Dense over the window under both disciplines: the collapse to window counts "
+     "is done host-side, after the trace has left the chip."),
+    ("carry_in_bytes", (DATA, "B"),
+     "Payload the host RE-INJECTS across the same boundaries per inference. The "
+     "chip's input interface takes spike trains, so this direction is dense too — "
+     "and it rides the DMA channel that programming payloads ride."),
     ("carry_peak_live_bytes", (DATA, "B"),
      "Peak concurrently-live carried payload over the segment's boundaries — the "
      "buffer a scheduled chip must provision. Wires with disjoint live ranges "

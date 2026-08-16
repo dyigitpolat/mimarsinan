@@ -137,6 +137,13 @@ class PassCarryRecord:
     carried_bytes: int
     peak_live_bytes: int
     timesteps: int
+    #: [E3] What CROSSED the chip boundary, per direction and per inference —
+    #: a different question from what was buffered between the passes. Dense
+    #: under both disciplines (the chip emits and consumes per cycle; the
+    #: collapse to counts is host-side), so under COLLAPSE these exceed
+    #: ``carried_bytes``. Default 0 keeps records sealed before E3 loadable.
+    boundary_out_bytes: int = 0
+    boundary_in_bytes: int = 0
 
     def __post_init__(self) -> None:
         require_choice("PassCarryRecord", "transfer", self.transfer,

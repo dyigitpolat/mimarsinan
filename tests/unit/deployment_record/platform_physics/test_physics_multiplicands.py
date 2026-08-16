@@ -34,9 +34,13 @@ def test_every_multiplicand_token_resolves():
 def test_priced_energy_constants_multiply_dynamics_not_declarations():
     assert PHYSICS_CONSTANTS["e_synaptic_event_total"].multiplicand == "synaptic_events"
     assert PHYSICS_CONSTANTS["e_inter_tile_hop"].multiplicand == "noc_total_hops"
+    # [E3] The inbound channel carries programming payloads and the host's
+    # re-injected pass-boundary trains; the readout direction is its own
+    # constant, so neither borrows the other's number.
     assert PHYSICS_CONSTANTS["e_dma_per_byte"].multiplicand == (
-        "reprogrammed_bytes | carried_raster_bytes"
+        "reprogrammed_bytes | carry_in_bytes"
     )
+    assert PHYSICS_CONSTANTS["e_readout_per_byte"].multiplicand == "carry_out_bytes"
 
 
 def test_the_time_converter_multiplies_the_latency_census():

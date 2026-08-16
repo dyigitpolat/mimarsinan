@@ -1,7 +1,7 @@
 {
   "format_version": 1,
   "name": "generic_estimated_22nm",
-  "display_name": "Generic 22 nm digital IMC (ALL ESTIMATED — not a real chip)",
+  "display_name": "Generic 22 nm digital IMC (ALL ESTIMATED \u2014 not a real chip)",
   "description_file": "generic_estimated_22nm.md",
   "validity": {
     "measurement_kind": "projection",
@@ -26,7 +26,7 @@
       "high": 0.16,
       "unit": "um^2",
       "evidence_kind": "estimated",
-      "note": "Digital SRAM storage scales linearly with precision — one bitcell per weight bit — so this equals area_per_cell by construction. Same anchor and same expected error."
+      "note": "Digital SRAM storage scales linearly with precision \u2014 one bitcell per weight bit \u2014 so this equals area_per_cell by construction. Same anchor and same expected error."
     },
     "e_mac": {
       "low": 0.03,
@@ -42,7 +42,7 @@
       "high": 8.0,
       "unit": "pJ",
       "evidence_kind": "estimated",
-      "note": "One membrane update: read state, accumulate, compare, write back. Anchored between Loihi's published 81 pJ (a large asynchronous core doing far more per update) and a bare 24-bit add at this node (~0.1 pJ), landing an order of magnitude above the arithmetic to account for the state SRAM access that dominates. Expected error: a factor of ~4 — this is the least constrained estimate in the profile."
+      "note": "One membrane update: read state, accumulate, compare, write back. Anchored between Loihi's published 81 pJ (a large asynchronous core doing far more per update) and a bare 24-bit add at this node (~0.1 pJ), landing an order of magnitude above the arithmetic to account for the state SRAM access that dominates. Expected error: a factor of ~4 \u2014 this is the least constrained estimate in the profile."
     },
     "e_leak_per_neuron_step": {
       "low": 0.05,
@@ -74,7 +74,7 @@
       "high": 8.0,
       "unit": "ns",
       "evidence_kind": "estimated",
-      "note": "Latency of one inter-tile link traversal, bracketing the published digital points (TrueNorth 4 ns, Loihi 4.1-6.5 ns). Not added to end-to-end latency by the pricer — timestep-synchronous execution already contains it — so this constant informs NoC studies only."
+      "note": "Latency of one inter-tile link traversal, bracketing the published digital points (TrueNorth 4 ns, Loihi 4.1-6.5 ns). Not added to end-to-end latency by the pricer \u2014 timestep-synchronous execution already contains it \u2014 so this constant informs NoC studies only."
     },
     "t_array_read": {
       "low": 1.0,
@@ -90,7 +90,7 @@
       "high": 10000.0,
       "unit": "ns",
       "evidence_kind": "estimated",
-      "note": "The timestep period. A DECLARED DESIGN CHOICE rather than a physical limit: the band spans 100 MHz down to 100 kHz timestep rates, and the 1 us nominal is a fast synchronous digital design. Any real target should override this first — it alone converts latency_steps into seconds, so it gates end-to-end latency and throughput entirely."
+      "note": "The timestep period. A DECLARED DESIGN CHOICE rather than a physical limit: the band spans 100 MHz down to 100 kHz timestep rates, and the 1 us nominal is a fast synchronous digital design. Any real target should override this first \u2014 it alone converts latency_steps into seconds, so it gates end-to-end latency and throughput entirely."
     },
     "area_per_neuron_logic": {
       "low": 4.0,
@@ -106,7 +106,7 @@
       "high": 0.16,
       "unit": "um^2",
       "evidence_kind": "estimated",
-      "note": "One bit of membrane state in SRAM — the same bitcell as area_per_cell, so it carries the same anchor, band and expected error."
+      "note": "One bit of membrane state in SRAM \u2014 the same bitcell as area_per_cell, so it carries the same anchor, band and expected error."
     },
     "membrane_bits": {
       "nominal": 24.0,
@@ -146,6 +146,14 @@
       "evidence_kind": "estimated",
       "note": "Moving one byte of programming payload onto the chip. This is the framework's own long-standing DMA band (HBM2 ~3.9 pJ/bit, DDR3 ~20 pJ/bit per Horowitz 2014, off-chip worst case) restated per byte, so this profile and the default-band cost model agree on the one coefficient they share."
     },
+    "e_readout_per_byte": {
+      "low": 0.03,
+      "nominal": 0.16,
+      "high": 0.32,
+      "unit": "pJ",
+      "evidence_kind": "estimated",
+      "note": "Moving one byte of pass-boundary emissions OFF the chip. Same off-chip transfer band as e_dma_per_byte (Horowitz 2014 memory-access energy is stated per access, not per direction), restated here so the readout direction is charged explicitly rather than borrowing the inbound constant by omission. A target whose readout path genuinely differs should override this."
+    },
     "bytes_per_connectivity_entry": {
       "low": 4.0,
       "nominal": 8.0,
@@ -160,7 +168,7 @@
       "high": 1000.0,
       "unit": "ns",
       "evidence_kind": "estimated",
-      "note": "Wall time to move one programming byte. The band spans a wide parallel configuration bus (4 ns/B) to a slow serial scan chain like TrueNorth's derived 800 ns/B, with a nominal assuming a modest dedicated port. Expected error: two orders of magnitude — this is the widest band in the profile, and deliberately so."
+      "note": "Wall time to move one programming byte. The band spans a wide parallel configuration bus (4 ns/B) to a slow serial scan chain like TrueNorth's derived 800 ns/B, with a nominal assuming a modest dedicated port. Expected error: two orders of magnitude \u2014 this is the widest band in the profile, and deliberately so."
     },
     "e_sync_barrier": {
       "low": 100.0,
@@ -168,7 +176,7 @@
       "high": 10000.0,
       "unit": "pJ",
       "evidence_kind": "estimated",
-      "note": "Energy of one chip-wide synchronization barrier. The framework's existing ~0.1 / ~1 / ~10 uJ band, which no published chip figure contradicts because none exists — Loihi publishes the barrier TIME but not its energy."
+      "note": "Energy of one chip-wide synchronization barrier. The framework's existing ~0.1 / ~1 / ~10 uJ band, which no published chip figure contradicts because none exists \u2014 Loihi publishes the barrier TIME but not its energy."
     },
     "t_sync_barrier": {
       "low": 100.0,
@@ -184,7 +192,7 @@
       "high": 500.0,
       "unit": "uW",
       "evidence_kind": "estimated",
-      "note": "Static (leakage) power per core. The band brackets the two published digital points — TrueNorth's derived 10.25 uW/core at 28 nm and Loihi's derived 815 uW/core at 14 nm — whose 80x spread is itself the reason this band is wide: leakage depends far more on process flavour and power gating than on node. Expected error: an order of magnitude."
+      "note": "Static (leakage) power per core. The band brackets the two published digital points \u2014 TrueNorth's derived 10.25 uW/core at 28 nm and Loihi's derived 815 uW/core at 14 nm \u2014 whose 80x spread is itself the reason this band is wide: leakage depends far more on process flavour and power gating than on node. Expected error: an order of magnitude."
     },
     "p_static_global": {
       "low": 0.0,

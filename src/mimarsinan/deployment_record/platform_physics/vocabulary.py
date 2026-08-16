@@ -105,10 +105,15 @@ ROWS: Tuple[Tuple[str, str, str, str, str, str], ...] = (
      "Wall time of one packet traversal of one inter-tile link."),
     # --- programming: getting weights and connectivity onto the chip ------------------
     ("e_dma_per_byte", PROGRAMMING, ENERGY, "pJ",
-     "reprogrammed_bytes | carried_raster_bytes",
-     "Energy to move one byte over the target's DMA channel — programming "
-     "payloads (per program load) and intra-segment pass-boundary carries "
-     "(per inference) alike."),
+     "reprogrammed_bytes | carry_in_bytes",
+     "Energy to move one byte ONTO the chip over the target's DMA channel — "
+     "programming payloads (per program load) and the host's re-injected "
+     "pass-boundary trains (per inference) alike."),
+    ("e_readout_per_byte", PROGRAMMING, ENERGY, "pJ", "carry_out_bytes",
+     "Energy to move one byte OFF the chip: the pass-boundary emissions the "
+     "host reads back. Its own constant because the readout path need not "
+     "cost what the inbound DMA path costs; a target that does not declare it "
+     "prices no readout term rather than borrowing the inbound number."),
     ("bytes_per_connectivity_entry", PROGRAMMING, DATA, "B",
      "connectivity_entries",
      "Wire size of one connectivity (axon source span) entry in this target's format."),

@@ -34,6 +34,24 @@ def carried_wire_bytes(width: int, timesteps: int, transfer: str) -> int:
     return int(width) * ((max(int(timesteps), 1).bit_length() + 7) // 8)
 
 
+def boundary_transfer_bytes(*, width: int, timesteps: int) -> int:
+    """Bytes ONE carried wire moves across the chip boundary, per direction.
+
+    Dense under BOTH disciplines, and that is a fact of the runner rather than
+    a modelling choice: what leaves the chip is the window's emissions (both
+    disciplines read the same spike trace; COLLAPSE's reduction to window
+    counts happens host-side afterwards), and what re-enters is a spike train,
+    because the chip's input interface takes trains and nothing else.
+
+    So the discipline chooses what the HOST BUFFERS between the two passes
+    (:func:`carried_wire_bytes`), not what crossed — under COLLAPSE the
+    transfer is strictly larger than the buffer. Dense is also an upper bound
+    on an address-event link, where the cost would follow the emitted spikes;
+    pricing that needs a declared per-event width nobody declares yet.
+    """
+    return raster_bytes(int(width), int(timesteps))
+
+
 def carried_wire_spans(stages: Sequence) -> Tuple[Tuple[int, int, int, int], ...]:
     """``(node_id, width, produced_in, last_consumed_in)`` per carried wire.
 
@@ -76,10 +94,18 @@ def pass_carry_census(
             for _, w, start, end in spans if start <= boundary < end
         )
         peak = max(peak, live)
+    crossing = sum(
+        boundary_transfer_bytes(width=w, timesteps=timesteps)
+        for _, w, _, _ in spans
+    )
     return {
         "carried_wires": len(spans),
         "carried_bytes": total,
         "peak_live_bytes": peak,
+        # [E3] Charged per DIRECTION: the two crossings ride different
+        # channels and are priced by different constants.
+        "boundary_out_bytes": crossing,
+        "boundary_in_bytes": crossing,
     }
 
 

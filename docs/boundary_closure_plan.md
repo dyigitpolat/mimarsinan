@@ -14,7 +14,7 @@
 | L latency evidence | **DONE** — loihi `t_cycle` measured band [5.8, 13] µs + `host_compute_rate` identity; `loihi_knn_query_latency` self-consistency case: e2e −22.8%, throughput +16.8% through the real pricer | `physics(L)` |
 | E1 executed-window SSOT | **DONE** — `chip_simulation/stage_timesteps.py`; the runner and the candidate size the wall through ONE rule; retired `T x segments` (measured 4 where the record measured 15) | `search(E1)` |
 | E2 core-init + reprogramming census | **DONE** — `resident_passes` is the one residency law; candidate `segment_cores`/`reprogrammed_cores`/`reprogrammed_bytes`/`reprogram_passes` match the sealed record on both policies; `cores_allocated` now means what the record means | `search(E2)` |
-| E3 directional carry bytes | pending | |
+| E3 directional carry bytes | **DONE** — a boundary is crossed twice; `boundary_out_bytes`/`boundary_in_bytes` in the census + record + quantities, priced by `e_readout_per_byte` and `e_dma_per_byte` separately; the buffer figures keep their own meaning | `record(E3)` |
 | E4/E5 derived `e_core_init`; cross-pass wires as consumer input traffic | pending | |
 | S study | **DONE** — 4 MLP runs + the LeNet5 pruned stretch sealed with live fidelity.json; results + surfaced follow-ups in `docs/boundary_closure_study.md` | `docs(S)` + fixes |
 
@@ -161,7 +161,7 @@ rule the owner set:
 |---|---|
 | Latency-group depth in the cycle window | A latency group has depth 1; `+own depth` is meaningless. If incomplete groups can co-reside with elements of other groups, the depth must be accounted for — and if that state is reachable at all, it is a correctness problem first. |
 | Programming energy per pass | Correct accounting: a pass whose weights are already resident is NOT re-programmed. Never charge every pass as a reprogram. |
-| Carry bytes | Charged separately per direction (host→chip vs chip→host): different constants, different multipliers. The COLLAPSE asymmetry is real — outbound counts at `log2(T+1)` bits/wire, the inbound re-emitted train at `T` bits/wire. |
+| Carry bytes | Charged separately per direction (host→chip vs chip→host): different constants, different multipliers. (The asymmetry I first stated here — outbound at `log2(T+1)` bits/wire — was wrong; see E3. That sizing is the BUFFER's, not the wire's.) |
 | Cross-pass wires | They ARE input traffic of the consuming pass — correct as-is. |
 
 ### E1 — the executed window (DONE)
@@ -212,6 +212,42 @@ was reporting the DECLARED chip's core count — 36 vs 3 on the study MLP. No
 formula multiplied it yet, which is exactly why it could drift unnoticed; it is
 now the same per-pass count on both sides, pinned against the deployed
 `CrossbarUtilizationReport`.
+
+### E3 — the boundary is crossed twice (DONE)
+
+One bucket (`carried_bytes`, sized under the run's transfer discipline) was
+doing two jobs: sizing the BUFFER the host holds between two passes, and
+standing in as the TRANSFER multiplicand. They are different questions.
+
+Read off the runner rather than assumed:
+
+* **chip → host** is the boundary window's emissions. Both disciplines read the
+  same spike trace off the chip; COLLAPSE's reduction to window counts happens
+  host-side afterwards (`_compute_seg_output_spike_count` sums the trace).
+* **host → chip** is the re-emitted train. The chip's input interface takes
+  spike trains and nothing else, so the runner always injects an encoded raster.
+
+So **both crossings are dense over the window under both disciplines** — the
+discipline chooses what the host BUFFERS in between, never what crossed. This
+corrects the asymmetry claimed in the decision table above: `log2(T+1)` bits per
+wire is the buffered representation, not the wire's. The practical consequence
+is a real mispricing closed: under COLLAPSE the old term charged the transfer at
+the buffer's size, understating it by `T / log2(T+1)`.
+
+The directions are now charged separately, with their own constants:
+`e_dma_per_byte` prices what moves ONTO the chip (programming payloads and the
+re-injected trains alike) and the new `e_readout_per_byte` prices what comes
+off. A target that declares no readout constant prices no readout term and says
+so by name — `isaac_like` is exactly that case, and honestly so: its per-byte
+figure is an eDRAM-buffer read, while its own paper puts the off-chip
+HyperTransport power in `p_static_global`. `generic_estimated_22nm` declares
+both directions at the same band, because the figure behind it (Horowitz 2014)
+is stated per access rather than per direction.
+
+Stated and not closed: the dense sizing is an upper bound on an address-event
+link, where the readout would follow the emitted spikes. Pricing that needs a
+declared per-event width no profile carries. Latency has no per-byte carry term
+either (`t_program_per_byte` prices the program load only).
 
 ## Verification protocol (every stage)
 

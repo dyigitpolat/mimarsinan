@@ -24,9 +24,12 @@ Every constant is anchored on something published rather than invented from noth
 - **Transport, barrier and leakage constants** bracket the two published digital
   points this repository already holds — TrueNorth at 28 nm and Loihi at 14 nm — so
   the band is a real interval between measured chips rather than a guess around one.
-- **`e_dma_per_byte` and `bytes_per_connectivity_entry`** restate the framework's own
-  long-standing coefficient bands, so this profile and the default-band cost model
-  agree on the coefficients they share.
+- **`e_dma_per_byte`, `e_readout_per_byte` and `bytes_per_connectivity_entry`**
+  restate the framework's own long-standing coefficient bands, so this profile and
+  the default-band cost model agree on the coefficients they share. The two transfer
+  directions carry the same band here because the underlying figure (Horowitz 2014
+  memory-access energy) is stated per access rather than per direction — a target
+  whose readout path genuinely differs should override it.
 
 Bands here are **wide on purpose**. Where the two published anchors disagree by 80×
 (leakage per core) the band says 80×; where the mechanism is a design choice rather
@@ -63,6 +66,7 @@ part.
 | `area_per_tile_fixed` | 8000.0 um^2 | Per-tile overhead that is neither array, neuron logic nor router: schedulers, controllers, local buffers. |
 | `area_global_fixed` | 10.0 mm^2 | Whole-chip area scaling with neither cores nor tiles: pads, PLLs, host interface. |
 | `e_dma_per_byte` | 0.16 pJ | Moving one byte of programming payload onto the chip. |
+| `e_readout_per_byte` | 0.16 pJ | Moving one byte of pass-boundary emissions off the chip. Same off-chip band as the inbound direction, restated so the readout is charged explicitly rather than by omission. |
 | `bytes_per_connectivity_entry` | 8.0 B | Wire size of one connectivity (axon source span) entry. |
 | `t_program_per_byte` | 80.0 ns | Wall time to move one programming byte. |
 | `e_sync_barrier` | 1000.0 pJ | Energy of one chip-wide synchronization barrier. |

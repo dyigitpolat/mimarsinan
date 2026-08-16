@@ -74,6 +74,12 @@ def from_record(record: DeploymentRecord) -> Quantities:
             float(schedule.carry.carried_bytes), "static")
         values["carry_peak_live_bytes"] = QuantityValue(
             float(schedule.carry.peak_live_bytes), "static")
+        # [E3] What crossed, per direction — priced by different constants than
+        # the buffer figures above, which size what was held in between.
+        values["carry_out_bytes"] = QuantityValue(
+            float(schedule.carry.boundary_out_bytes), "static")
+        values["carry_in_bytes"] = QuantityValue(
+            float(schedule.carry.boundary_in_bytes), "static")
     segments = list(schedule.segments())
     reprogrammed = [s for s in segments if s.programming == "reprogram"]
     values["segment_cores"] = _measured(sum(len(s.cores) for s in segments))
