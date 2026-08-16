@@ -23,9 +23,9 @@ def _put(values: Dict[str, QuantityValue], key: str, value: Optional[float],
 def from_record(record: DeploymentRecord) -> Quantities:
     """Every multiplicand the sealed record carries, as measured quantities.
 
-    Deliberately unclaimed: ``synaptic_events`` (``total_spikes`` counts emissions,
-    not synapse arrivals — no event census is sealed yet) and the ``adc_*`` pair
-    (produced by C6 conversion models).
+    Deliberately unclaimed: the ``adc_*`` pair (produced by C6 conversion
+    models). ``synaptic_events`` is claimed from the sealed arrival census
+    [H1]; records sealed before it stay honestly absent.
     """
     values: Dict[str, QuantityValue] = {}
 
@@ -97,6 +97,8 @@ def from_record(record: DeploymentRecord) -> Quantities:
 
     if record.energy is not None:
         values["total_spikes"] = _measured(record.energy.total_spikes)
+        _put(values, "synaptic_events", record.energy.synaptic_events,
+             provenance="measured")
 
     traffic = record.traffic
     if traffic is not None and traffic.boundaries is not None:

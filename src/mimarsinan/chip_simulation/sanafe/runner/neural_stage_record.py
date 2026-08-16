@@ -17,6 +17,7 @@ import mimarsinan.chip_simulation.sanafe.runner as _runner
 from mimarsinan.chip_simulation.sanafe.runner.carry import publish_sanafe_carry
 from mimarsinan.chip_simulation.hybrid_run.hybrid_semantics import (
     NeuralSegmentResult, store_neural_segment_output)
+from mimarsinan.chip_simulation.synaptic_events import synaptic_event_census
 from mimarsinan.chip_simulation.spiking_semantics import is_cascaded_ttfs
 from mimarsinan.spiking.segment_boundary import decode_segment_output
 from mimarsinan.chip_simulation.sanafe.analysis import (
@@ -190,6 +191,18 @@ class SanafeNeuralStageRecordMixin:
         )
         seg_in_count = encoded[0].sum(axis=1).astype(np.int64)
 
+        # [H1] Measured synapse arrivals: LIF emissions through the HCM's own
+        # spans + the per-core input/always-on trace tallies. Refuses (None)
+        # when the trace was not parsed, so a partial count never prices.
+        stage_events = None
+        if not spike_parse_skipped:
+            stage_events = synaptic_event_census(
+                hcm.cores,
+                emissions_of=lambda c: group_spike_counts.get(
+                    core_to_group.get(c, "")),
+                boundary_arrivals_of=lambda c: input_spikes_by_core.get(c, 0),
+            )
+
         seg_record = SanafeSegmentRecord(
             stage_index=stage_index,
             stage_name=stage.name,
@@ -204,6 +217,7 @@ class SanafeNeuralStageRecordMixin:
             neurons_fired=int(results.get("neurons_fired", 0)),
             seg_input_rates=seg_input_rates.astype(np.float32, copy=False),
             seg_input_spike_count=seg_in_count,
+            synaptic_events=stage_events,
             seg_output_spike_count=seg_out_count,
             per_core=per_core_records,
             per_tile=per_tile_records,

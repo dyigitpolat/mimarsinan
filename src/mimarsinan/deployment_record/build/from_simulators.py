@@ -72,6 +72,9 @@ def energy_record_from_sanafe(snapshot: Mapping[str, Any]) -> EnergyRecord:
         for term in _ENERGY_BREAKDOWN_TERMS
     )
     neuron_steps, _cores = _neuron_steps_from_sanafe_snapshot(snapshot)
+    events = aggregate.get("total_synaptic_events")
+    if events is not None and sample_count > 1:
+        events = float(events) / sample_count
     return EnergyRecord(
         total_energy_mj=total_energy_mj,
         mj_per_sample=mj_per_sample,
@@ -79,6 +82,7 @@ def energy_record_from_sanafe(snapshot: Mapping[str, Any]) -> EnergyRecord:
         breakdown=breakdown,
         energy_proxy_neuron_steps=int(neuron_steps),
         total_spikes=int(aggregate.get("total_spikes", 0)),
+        synaptic_events=None if events is None else float(events),
     )
 
 

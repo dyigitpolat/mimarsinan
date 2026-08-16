@@ -27,6 +27,9 @@ def _segment_to_dict(seg) -> Dict[str, Any]:
         "sim_time_s": float(seg.sim_time_s),
         "timesteps_executed": int(seg.timesteps_executed),
         "spikes": int(seg.spikes),
+        "synaptic_events": (
+            None if seg.synaptic_events is None else int(seg.synaptic_events)
+        ),
         "packets_sent": int(seg.packets_sent),
         "neurons_updated": int(seg.neurons_updated),
         "neurons_fired": int(seg.neurons_fired),
@@ -202,12 +205,18 @@ class SanafeStepReport:
         max_sim_time_s = 0.0
         total_spikes = 0
         total_packets = 0
+        total_events: "int | None" = 0
         for r in recs:
             agg_e = agg_e.add(r.aggregate_energy)
             if r.aggregate_sim_time_s > max_sim_time_s:
                 max_sim_time_s = r.aggregate_sim_time_s
             total_spikes += int(r.total_spikes)
             total_packets += int(r.total_packets)
+            sample_events = r.total_synaptic_events
+            if total_events is not None and sample_events is not None:
+                total_events += int(sample_events)
+            else:
+                total_events = None
         aggregate = {
             "sample_count": len(recs),
             "total_energy_j": float(agg_e.total_j),
@@ -216,6 +225,9 @@ class SanafeStepReport:
             "max_sim_time_s": float(max_sim_time_s),
             "total_spikes": int(total_spikes),
             "total_packets": int(total_packets),
+            "total_synaptic_events": (
+                None if total_events is None else int(total_events)
+            ),
         }
         return cls(
             arch_preset=arch_preset,

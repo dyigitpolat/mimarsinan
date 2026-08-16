@@ -14,6 +14,14 @@ class FakeCore(SimpleNamespace):
     def has_core_matrix(self) -> bool:
         return getattr(self, "core_matrix", None) is not None
 
+    def get_axon_source_spans(self):
+        """The real cores' span protocol, over whatever sources the fake carries."""
+        from mimarsinan.mapping.support.spike_source_spans import (
+            compress_spike_sources,
+        )
+
+        return compress_spike_sources(getattr(self, "axon_sources", []) or [])
+
     def get_core_matrix(self):
         matrix = getattr(self, "core_matrix", None)
         if matrix is None:

@@ -114,6 +114,10 @@ class EnergyRecord:
     breakdown: Tuple[EnergyTermRecord, ...]
     energy_proxy_neuron_steps: int
     total_spikes: int
+    #: [H1] Measured synapse arrivals per inference (mean over samples), from
+    #: the runner's own trace + the HCM's spans; None on records sealed before
+    #: the census existed or when a stage's trace was unparsed.
+    synaptic_events: Optional[float] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)

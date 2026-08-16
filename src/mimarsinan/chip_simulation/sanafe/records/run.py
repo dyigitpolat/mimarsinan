@@ -60,6 +60,8 @@ class SanafeSegmentRecord:
     seg_input_rates: np.ndarray
     seg_input_spike_count: np.ndarray
     seg_output_spike_count: np.ndarray
+    #: [H1] Measured synapse arrivals of this stage (None: trace unparsed).
+    synaptic_events: Optional[int] = None
     per_core: List[SanafeCoreRecord] = field(default_factory=list)
 
     per_tile: List[SanafeTileRecord] = field(default_factory=list)
@@ -115,6 +117,17 @@ class SanafeRunRecord:
     )
     aggregate_sim_time_s: float = 0.0
     total_spikes: int = 0
+
+    @property
+    def total_synaptic_events(self) -> Optional[int]:
+        """Σ per-stage measured arrivals; None if ANY stage's census refused —
+        a partial total priced as a full one is the silent-zero shape."""
+        total = 0
+        for _, seg in sorted(self.segments.items()):
+            if seg.synaptic_events is None:
+                return None
+            total += int(seg.synaptic_events)
+        return total
     total_packets: int = 0
     # [W4.3] measured host-op walls for this sample's ComputeOp stages
     # (``StageTimer`` export rows); empty unless the runner opted in via
