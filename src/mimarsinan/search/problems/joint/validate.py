@@ -12,7 +12,7 @@ from mimarsinan.search.constraints import ConstraintReport, onchip_floor_violati
 from mimarsinan.search.option_axes import candidate_option
 from mimarsinan.search.problem import CandidateInfeasibleError, ValidationResult
 
-from .candidate_fragments import candidate_latency_steps, collect_candidate_noc
+from .candidate_fragments import candidate_program_facts, collect_candidate_noc
 
 from .types import (
     HW_CONVERSION_PHASE,
@@ -146,9 +146,10 @@ class JointValidateMixin(JointHostContract):
             census=wire_census, pcfg=pcfg,
         )
         census = self._onchip_census(model, placement)
-        steps = candidate_latency_steps(
+        program = candidate_program_facts(
             softcores, noc, self.stage_semantics,
-            pcfg.get("simulation_steps"),
+            timesteps=pcfg.get("simulation_steps"),
+            weight_bits=pcfg.get("weight_bits"),
         )
         return CandidateLayout(
             platform=pcfg,
@@ -157,7 +158,7 @@ class JointValidateMixin(JointHostContract):
             stats=stats,
             noc=noc,
             view=self._static_view(
-                stats, pcfg, total_params, host_segments, census, noc, steps,
+                stats, pcfg, total_params, host_segments, census, noc, program,
             ),
         ), None
 

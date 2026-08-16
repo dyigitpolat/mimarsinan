@@ -61,6 +61,19 @@ deployment's own estimator, gated on `_requires_fragment("quantity_context")`
 and memoized on the hardware-only fixture) — the axis gate
 (`resolve_active_specs(physics=...)`) and the view extraction must answer from
 one source, or an admitted priced axis raises at extraction on every candidate.
+[E1/E2] The same file derives what the candidate's PASS STRUCTURE implies:
+`candidate_program_facts` returns the executed wall (`candidate_latency_steps`
+applies `chip_simulation.stage_timesteps` — the runner's own rule — to the
+candidate's per-execution-stage latencies) and the programming census
+(`candidate_programming_census`: cores over every pass, plus cores/bytes over
+the passes that actually install weights, under the DEPLOYED residency law
+`mapping.support.schedule.schedule_policy.resident_passes` that
+`mark_bank_residency` also reads). Both are ABSENT together when there is no
+pass structure, so the terms multiplying them refuse by name instead of
+pricing zero; `cores_allocated` is that same per-pass count, the meaning the
+record gives it. Payload bytes go through the record's own
+`deployment_record.build.payload_sizes.params_bytes`, and stay absent when the
+platform declares no weight width.
 Model construction lives in `joint/model_build.py` (`build_raw_model`,
 `convert_to_mapper_repr`), which the hook delegates to. [P] `build_raw_model`
 applies the RUN's DECLARED pruning to every candidate model

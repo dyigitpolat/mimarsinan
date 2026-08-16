@@ -9,6 +9,7 @@ from mimarsinan.mapping.support.schedule.bank_clustered_law import (
     BankInstance,
     compose_bank_clustered_passes,
 )
+from mimarsinan.mapping.support.schedule.schedule_policy import resident_passes
 
 
 def try_bank_clustered_passes(
@@ -132,7 +133,8 @@ def mark_bank_residency(pass_stages: list) -> None:
     if len(pass_stages) <= 1:
         return
     reference = _stage_geometry(pass_stages[0])
-    for stage in pass_stages[1:]:
+    residency = resident_passes(len(pass_stages), policy_applied=True)
+    for stage, resident in zip(pass_stages[1:], residency[1:]):
         geometry = _stage_geometry(stage)
         if len(geometry) > len(reference) or any(
             not geometry[i] <= reference[i] for i in range(len(geometry))
@@ -143,4 +145,4 @@ def mark_bank_residency(pass_stages: list) -> None:
                 f"{stage.schedule_segment_index}: placement geometry diverged "
                 f"from pass 0 — weights would silently reprogram."
             )
-        stage.schedule_weights_resident = True
+        stage.schedule_weights_resident = resident

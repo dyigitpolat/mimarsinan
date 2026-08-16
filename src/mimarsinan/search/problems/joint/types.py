@@ -252,7 +252,7 @@ class JointHostContract:
             host_side_segment_count: int,
             census: Any = None,
             noc: Any = None,
-            latency_steps: Any = None,
+            program: Any = None,
         ) -> CandidateStaticView: ...
 
         @property

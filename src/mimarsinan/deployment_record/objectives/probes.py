@@ -44,6 +44,10 @@ def _probe_context() -> CandidateQuantityContext:
     return CandidateQuantityContext(
         timesteps=1,
         latency_steps=1,
+        segment_cores=1,
+        reprogrammed_cores=1,
+        reprogrammed_bytes=1,
+        reprogram_passes=1,
         activity_factor=1.0,
         weight_bits=1,
         tiles=1,
@@ -168,14 +172,16 @@ def candidate_probe_without(fragment: str) -> CandidateStaticView:
     probe = _full_candidate_probe()
     overrides: dict = {fragment: None}
     if fragment == "layout":
-        # NoC fragments and the executed wall are DERIVED from the layout
-        # resolution (the pass/level structure IS the layout): a candidate
-        # without one cannot carry them, so an axis that needs either must
-        # count as needing the layout too.
+        # NoC fragments, the executed wall and the programming census are
+        # DERIVED from the layout resolution (the pass structure IS the
+        # layout): a candidate without one cannot carry them, so an axis that
+        # needs any of them must count as needing the layout too.
         overrides["noc_fragments"] = None
         assert probe.quantity_context is not None
         overrides["quantity_context"] = replace(
             probe.quantity_context, latency_steps=None,
+            segment_cores=None, reprogrammed_cores=None,
+            reprogrammed_bytes=None, reprogram_passes=None,
         )
     return replace(probe, **overrides)
 

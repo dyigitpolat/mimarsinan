@@ -17,6 +17,7 @@ def candidate_context_from_platform(
     host_params: Optional[int] = None,
     onchip_params: Optional[int] = None,
     latency_steps: Optional[int] = None,
+    programming: Optional[Any] = None,
 ) -> CandidateQuantityContext:
     """The declarations a candidate's platform carries, as quantity context.
 
@@ -58,4 +59,17 @@ def candidate_context_from_platform(
         host_params=host_params,
         onchip_params=onchip_params,
         latency_steps=latency_steps,
+        # [E2] Duck-typed: the search layer's programming census. Absent
+        # census -> absent quantities -> the programming terms refuse.
+        segment_cores=None if programming is None else int(programming.segment_cores),
+        reprogrammed_cores=(
+            None if programming is None else int(programming.reprogrammed_cores)
+        ),
+        reprogrammed_bytes=(
+            None if programming is None or programming.reprogrammed_bytes is None
+            else int(programming.reprogrammed_bytes)
+        ),
+        reprogram_passes=(
+            None if programming is None else int(programming.reprogram_passes)
+        ),
     )

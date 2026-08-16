@@ -1,0 +1,192 @@
+"""[E2] What the candidate pays to PROGRAM the chip it just laid out.
+
+Three multiplicands were absent at candidate time, so three priced terms were
+silently zero for every searched candidate: per-core initialization
+(``e_core_init`` x ``segment_cores``, ``t_core_init``), per-core programming
+overhead (``e_core_program`` x ``reprogrammed_cores``) and the DMA payload
+(``e_dma_per_byte`` x ``reprogrammed_bytes``).
+
+The owner's accounting rule is the whole design here: a pass whose weights are
+already resident sends NO payload and pays NO per-core programming — but it
+still resets its cores' neuron state, so it DOES pay core init. Charging every
+pass as a reprogram would have made bank-clustered scheduling — the composition
+all 12 IMC presets declare — look identical to reprogramming from scratch.
+
+The census is checked against the DEPLOYED record built from the same graph,
+not against a re-derivation: same vehicle, same policy, same numbers.
+"""
+
+from __future__ import annotations
+
+import pytest
+
+from mimarsinan.deployment_record.build.payload_sizes import params_bytes
+from mimarsinan.mapping.noc import collect_noc_fragments
+from mimarsinan.mapping.support.schedule.schedule_policy import resident_passes
+from mimarsinan.search.problems.joint.candidate_fragments import (
+    candidate_programming_census,
+)
+
+from unit.mapping.bank_clustered_vehicles import (
+    TWO_CORES,
+    hard_core_types,
+    softcores_of,
+    token_graph,
+)
+
+WEIGHT_BITS = 4
+
+
+def _census(policy: str, graph=None, weight_bits: int = WEIGHT_BITS):
+    """The candidate's programming census under one schedule policy."""
+    graph = token_graph(7) if graph is None else graph
+    softcores = softcores_of(graph)
+    core_types = hard_core_types(TWO_CORES)
+    noc = collect_noc_fragments(
+        softcores=softcores, core_types=core_types, census=None,
+        allow_scheduling=True, allow_neuron_splitting=False,
+        allow_coalescing=False, schedule_policy=policy, max_schedule_passes=8,
+    )
+    return candidate_programming_census(noc, weight_bits=weight_bits)
+
+
+def _deployed_census(policy: str, graph=None, weight_bits: int = WEIGHT_BITS):
+    """The same census read off the sealed record of the deployed program."""
+    from mimarsinan.deployment_record.build.from_mapping import (
+        schedule_record_from_mapping,
+    )
+    from mimarsinan.mapping.packing.hybrid_build_pool import (
+        build_hybrid_hard_core_mapping,
+    )
+    from mimarsinan.mapping.platform.mapping_structure import (
+        ChipCapabilities,
+        MappingStrategy,
+    )
+
+    hybrid = build_hybrid_hard_core_mapping(
+        ir_graph=token_graph(7) if graph is None else graph,
+        cores_config=[dict(ct) for ct in TWO_CORES],
+        strategy=MappingStrategy.resolve(
+            ChipCapabilities(allow_scheduling=True, schedule_policy=policy)
+        ),
+    )
+    record = schedule_record_from_mapping(
+        hybrid, weight_bits=weight_bits, params_reloaded=0,
+    )
+    segments = list(record.segments())
+    reprogrammed = [s for s in segments if s.programming == "reprogram"]
+    return {
+        "segment_cores": sum(len(s.cores) for s in segments),
+        "reprogrammed_cores": sum(len(s.cores) for s in reprogrammed),
+        "reprogrammed_bytes": sum(s.params_bytes for s in reprogrammed),
+        "reprogram_passes": len(reprogrammed),
+    }
+
+
+class TestTheResidencyLawIsOneLaw:
+    def test_a_bank_clustered_segment_programs_only_its_head_pass(self):
+        assert resident_passes(4, policy_applied=True) == (False, True, True, True)
+
+    def test_a_capacity_split_segment_reprograms_every_pass(self):
+        """The pool composition places DIFFERENT weights each pass — nothing
+        stays resident, so nothing may be credited as resident."""
+        assert resident_passes(4, policy_applied=False) == (False,) * 4
+
+    def test_a_single_pass_program_has_nothing_to_reuse(self):
+        assert resident_passes(1, policy_applied=True) == (False,)
+
+    def test_the_deployed_marker_reads_this_law(self):
+        """``mark_bank_residency`` must not carry a second copy of the rule."""
+        import inspect
+
+        from mimarsinan.mapping.packing import schedule_bank_clustered
+
+        assert "resident_passes" in inspect.getsource(schedule_bank_clustered)
+
+
+class TestTheCandidateMatchesTheDeployedCensus:
+    @pytest.mark.parametrize("policy", ["pool", "bank_clustered"])
+    def test_every_programming_quantity_agrees_with_the_sealed_record(self, policy):
+        candidate = _census(policy)
+        deployed = _deployed_census(policy)
+        assert {
+            "segment_cores": candidate.segment_cores,
+            "reprogrammed_cores": candidate.reprogrammed_cores,
+            "reprogrammed_bytes": candidate.reprogrammed_bytes,
+            "reprogram_passes": candidate.reprogram_passes,
+        } == deployed
+
+
+class TestAllocationMeansTheSameThingOnBothSides:
+    """``cores_allocated`` named the DECLARED chip's core count at candidate
+    time and the mapping's allocated cores in the record — one name, two
+    meanings, off by the whole chip (36 vs 3 on the study MLP). Nothing
+    priced it yet, which is exactly why it could drift unnoticed."""
+
+    @pytest.mark.parametrize("policy", ["pool", "bank_clustered"])
+    def test_the_candidate_allocates_what_the_deployed_mapping_allocates(
+        self, policy,
+    ):
+        from mimarsinan.mapping.crossbar_utilization import (
+            CrossbarUtilizationReport,
+        )
+        from mimarsinan.mapping.packing.hybrid_build_pool import (
+            build_hybrid_hard_core_mapping,
+        )
+        from mimarsinan.mapping.platform.mapping_structure import (
+            ChipCapabilities,
+            MappingStrategy,
+        )
+
+        hybrid = build_hybrid_hard_core_mapping(
+            ir_graph=token_graph(7),
+            cores_config=[dict(ct) for ct in TWO_CORES],
+            strategy=MappingStrategy.resolve(
+                ChipCapabilities(allow_scheduling=True, schedule_policy=policy)
+            ),
+        )
+        deployed = CrossbarUtilizationReport.from_hybrid_mapping(hybrid)
+        assert _census(policy).segment_cores == deployed.cores_allocated
+
+
+class TestResidencyIsWorthMoney:
+    def test_bank_clustered_pays_core_init_on_every_pass(self):
+        """Resident or not, a pass resets its cores — core init is per PASS."""
+        clustered = _census("bank_clustered")
+        assert clustered.segment_cores > clustered.reprogrammed_cores
+
+    def test_bank_clustered_sends_one_pass_worth_of_payload(self):
+        """The composition streams ONE shared bank: the head programs it and
+        every later pass reuses it, so the payload does not scale with passes."""
+        clustered = _census("bank_clustered")
+        assert clustered.reprogram_passes == 1
+        assert clustered.reprogrammed_bytes < _census("pool").reprogrammed_bytes
+
+    def test_the_pool_composition_reprograms_every_pass(self):
+        pool = _census("pool")
+        assert pool.reprogrammed_cores == pool.segment_cores
+        assert pool.reprogram_passes == len(pool.pass_cores)
+
+
+class TestThePayloadIsSizedByTheSharedRule:
+    def test_bytes_come_from_the_payload_ssot_at_the_declared_width(self):
+        census = _census("pool")
+        assert census.reprogrammed_bytes == sum(
+            params_bytes(cells, WEIGHT_BITS) for cells in census.reprogrammed_cells
+        )
+
+    def test_a_wider_weight_moves_the_payload_and_nothing_else(self):
+        narrow, wide = _census("pool", weight_bits=4), _census("pool", weight_bits=8)
+        assert wide.reprogrammed_bytes > narrow.reprogrammed_bytes
+        assert wide.segment_cores == narrow.segment_cores
+        assert wide.reprogrammed_cores == narrow.reprogrammed_cores
+
+    def test_an_undeclared_width_drops_the_payload_and_keeps_the_counts(self):
+        """A width nobody declared cannot size bytes — so the payload is
+        ABSENT (its term refuses by name) while the core counts, which need no
+        width, still count. Losing the whole census here would cost a
+        candidate its core-init term over an unrelated declaration."""
+        census = _census("pool", weight_bits=None)
+        assert census.reprogrammed_bytes is None
+        assert census.segment_cores == _census("pool").segment_cores
+        assert census.reprogrammed_cores == _census("pool").reprogrammed_cores

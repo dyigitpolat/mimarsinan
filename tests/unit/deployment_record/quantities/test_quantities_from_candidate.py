@@ -37,12 +37,31 @@ def test_layout_quantities_are_static_facts_of_the_packing():
         host_side_segment_count=1,
         context=_context(),
     )
-    assert quantities.get("cores_allocated").value == 3.0
     assert quantities.get("pass_count").value == 2.0
     assert quantities.get("sync_count").value == 1.0
     assert quantities.get("cells_physical").value == 196608.0
     assert quantities.get("total_params").value == 1000.0
     assert quantities.get("pass_count").provenance == "static"
+    # [E2] Allocation is a fact of the PASS structure, not of the layout stats:
+    # a layout without one claims no allocation rather than reporting the
+    # declared chip's core count under the record's name for used cores.
+    assert not quantities.has("cores_allocated")
+
+
+def test_the_programming_census_rides_in_as_the_allocation_and_payload():
+    quantities = from_candidate(
+        layout=make_layout(), chip_param_capacity=1.0, total_params=None,
+        host_side_segment_count=None,
+        context=_context(
+            segment_cores=7, reprogrammed_cores=3,
+            reprogrammed_bytes=42560, reprogram_passes=1,
+        ),
+    )
+    assert quantities.get("cores_allocated").value == 7.0
+    assert quantities.get("segment_cores").value == 7.0
+    assert quantities.get("reprogrammed_cores").value == 3.0
+    assert quantities.get("reprogrammed_bytes").value == 42560.0
+    assert quantities.get("reprogram_passes").value == 1.0
 
 
 def test_context_declarations_ride_in_as_static():

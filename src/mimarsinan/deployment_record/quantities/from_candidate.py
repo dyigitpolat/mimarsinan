@@ -58,6 +58,15 @@ class CandidateQuantityContext:
     #: axis refuse BY NAME instead of pricing a wall that is 3.75x short (the
     #: measured error of the retired ``timesteps x neural_segment_count``).
     latency_steps: Optional[int] = None
+    #: [E2] The programming census of the candidate's pass structure, computed
+    #: upstream under the DEPLOYED residency law: cores over every pass (core
+    #: init is paid whether or not weights stayed), and cores/bytes over the
+    #: passes that actually install weights. Absent without a pass structure,
+    #: so the programming terms refuse instead of pricing zero.
+    segment_cores: Optional[int] = None
+    reprogrammed_cores: Optional[int] = None
+    reprogrammed_bytes: Optional[int] = None
+    reprogram_passes: Optional[int] = None
     activity_factor: Optional[float] = None
     weight_bits: Optional[int] = None
     tiles: Optional[int] = None
@@ -103,7 +112,6 @@ def from_candidate(
     _put(values, "total_params", total_params)
 
     if layout is not None:
-        _put(values, "cores_allocated", layout.total_hw_cores)
         _put(values, "pass_count", layout.schedule_pass_count)
         _put(values, "sync_count", layout.schedule_sync_count)
 
@@ -112,6 +120,16 @@ def from_candidate(
     # retired local formula (timesteps x neural_segment_count) ignored both
     # depth levels and the input-delivery cycle.
     _put(values, "latency_steps", context.latency_steps)
+
+    # [E2] Programming multiplicands under the residency law — a resident pass
+    # pays core init and nothing else. ``cores_allocated`` is the SAME count
+    # the record means (cores over every pass), not the declared chip's core
+    # count the candidate used to report under that name.
+    _put(values, "cores_allocated", context.segment_cores)
+    _put(values, "segment_cores", context.segment_cores)
+    _put(values, "reprogrammed_cores", context.reprogrammed_cores)
+    _put(values, "reprogrammed_bytes", context.reprogrammed_bytes)
+    _put(values, "reprogram_passes", context.reprogram_passes)
 
     _put(values, "timesteps", context.timesteps)
     _put(values, "weight_bits", context.weight_bits)

@@ -11,6 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Dict, Optional, Tuple
 
+from mimarsinan.deployment_record.build.payload_sizes import params_bytes
 from mimarsinan.deployment_record.objectives import (
     candidate_context_from_platform,
 )
@@ -71,6 +72,80 @@ def candidate_latency_steps(
     )
 
 
+def candidate_programming_census(
+    noc: Optional[LayoutNocFragments], *, weight_bits: Any,
+) -> "CandidateProgramming":
+    """[E2] The programming multiplicands of this candidate's pass structure.
+
+    A resident pass contributes its cores to core INIT and nothing else — the
+    weights it runs on are already installed (owner: "no we cannot charge
+    every pass as reprogram").
+
+    An undeclared ``weight_bits`` cannot size a payload, so the BYTES stay
+    absent (the DMA term then refuses by name) while the core counts, which
+    need no width, still count. Deployment fails loud on the same declaration
+    because a sealed record must state exact bytes; a search candidate need
+    not lose every programming term over one missing width.
+    """
+    programs = () if noc is None else noc.pass_programs
+    reprogrammed = tuple(
+        cells
+        for program in programs if not program.resident
+        for cells in program.core_cells
+    )
+    return CandidateProgramming(
+        segment_cores=sum(program.cores for program in programs),
+        reprogrammed_cores=len(reprogrammed),
+        reprogrammed_bytes=None if weight_bits is None else sum(
+            params_bytes(cells, weight_bits) for cells in reprogrammed
+        ),
+        reprogram_passes=sum(1 for p in programs if not p.resident),
+        pass_cores=tuple(program.cores for program in programs),
+        reprogrammed_cells=reprogrammed,
+    )
+
+
+@dataclass(frozen=True)
+class CandidateProgramming:
+    """The programming census as the quantity surface consumes it."""
+
+    segment_cores: int
+    reprogrammed_cores: int
+    #: None when the platform declares no weight width — absent, never zero.
+    reprogrammed_bytes: Optional[int]
+    reprogram_passes: int
+    pass_cores: Tuple[int, ...]
+    reprogrammed_cells: Tuple[int, ...]
+
+
+@dataclass(frozen=True)
+class ProgramFacts:
+    """What this candidate's pass structure implies for cost, or nothing.
+
+    Both members are ABSENT together: they are derived from the same pass/level
+    resolution, so a candidate without a layout carries neither and the terms
+    that multiply them refuse by name.
+    """
+
+    latency_steps: Optional[int] = None
+    programming: Optional[CandidateProgramming] = None
+
+
+def candidate_program_facts(
+    softcores, noc: Optional[LayoutNocFragments], semantics: "StageSemantics",
+    *, timesteps: Optional[int], weight_bits: Any,
+) -> ProgramFacts:
+    """The executed wall (E1) and the programming census (E2) of one candidate."""
+    if noc is None:
+        return ProgramFacts()
+    return ProgramFacts(
+        latency_steps=candidate_latency_steps(
+            softcores, noc, semantics, timesteps,
+        ),
+        programming=candidate_programming_census(noc, weight_bits=weight_bits),
+    )
+
+
 def stage_semantics_of(
     spiking_mode: str, ttfs_cycle_schedule: str, *, retimed: bool,
 ) -> "StageSemantics":
@@ -96,19 +171,21 @@ class StageSemantics:
 def candidate_fragments(
     pcfg: Dict,
     census: Optional[OnchipCensus] = None,
-    latency_steps: Optional[int] = None,
+    program: Optional[ProgramFacts] = None,
 ):
     """This candidate's physics and quantity context, off its OWN platform."""
     payload = pcfg.get("platform_physics_resolved")
     physics = PlatformPhysics.from_dict(payload) if payload else None
     params_est, macs_est = census if census is not None else (None, None)
+    program = program if program is not None else ProgramFacts()
     context = candidate_context_from_platform(
         pcfg,
         host_macs=None if macs_est is None else int(macs_est.host),
         onchip_macs=None if macs_est is None else int(macs_est.onchip),
         host_params=None if params_est is None else int(params_est.host),
         onchip_params=None if params_est is None else int(params_est.onchip),
-        latency_steps=latency_steps,
+        latency_steps=program.latency_steps,
+        programming=program.programming,
     )
     return physics, context
 

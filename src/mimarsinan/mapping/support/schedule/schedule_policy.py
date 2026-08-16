@@ -30,6 +30,22 @@ BANK_CLUSTERED = "bank_clustered"
 PassPlan = Tuple[int, List[List[LayoutSoftCoreSpec]], bool, bool]
 
 
+def resident_passes(pass_count: int, *, policy_applied: bool) -> Tuple[bool, ...]:
+    """Which passes of ONE segment execute on already-programmed weights.
+
+    The bank-clustered composition streams one shared bank over its passes:
+    pass 0 programs the banks and every later pass places a SUBSET of the same
+    (bank, region) geometry — verified core-by-core in ``mark_bank_residency``
+    — so it sends no weight payload and pays no per-core programming. Any
+    other composition (the capacity split) places different weights each pass
+    and reprograms all of them. Core INIT is not credited either way: a pass
+    resets its cores' neuron state whether or not the weights stayed.
+    """
+    return tuple(
+        bool(policy_applied) and index > 0 for index in range(int(pass_count))
+    )
+
+
 def _has_intra_segment_dependency(softcores: Sequence[LayoutSoftCoreSpec]) -> bool:
     """True when the segment's cores are not all at one latency level.
 

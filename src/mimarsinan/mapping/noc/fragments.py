@@ -16,6 +16,7 @@ from mimarsinan.mapping.support.schedule.schedule_budget import (
 )
 from mimarsinan.mapping.support.schedule.schedule_policy import (
     plan_segment_passes,
+    resident_passes,
 )
 
 
@@ -54,20 +55,39 @@ def execution_stage_latencies(
 
 
 @dataclass(frozen=True)
+class PassProgram:
+    """[E2] What ONE pass of the candidate program costs to install.
+
+    ``cells_used`` is the payload multiplicand under the record's own rule:
+    per occupied hard core, the used-row x used-column rectangle. ``resident``
+    is the residency law's answer — a resident pass installs nothing.
+    """
+
+    core_cells: Tuple[int, ...]
+    resident: bool
+
+    @property
+    def cores(self) -> int:
+        return len(self.core_cells)
+
+
+@dataclass(frozen=True)
 class LayoutNocFragments:
-    """Shape-only NoC inputs of one candidate.
+    """Shape-only pass structure of one candidate.
 
     ``pass_placements``: per pass, ``(global softcore index, hardcore index)``
     for every placed unit (fragments repeat their origin). ``census``: the
-    distinct-wire counts of the walked graph. Together with the candidate's
-    resolved floorplan and declared activity these are everything the NoC
-    estimator needs.
+    distinct-wire counts of the walked graph. ``pass_programs``: per pass, the
+    occupied-core payload census and its residency. Together with the
+    candidate's resolved floorplan and declared activity these are everything
+    the NoC, latency and programming models need.
     """
 
     pass_placements: Tuple[Tuple[Tuple[int, int], ...], ...]
     #: None when no traffic axis asked for it — the placements (cheap) are
     #: always produced because the LATENCY model needs the pass structure.
     census: Optional[LayoutWireCensus]
+    pass_programs: Tuple[PassProgram, ...] = ()
 
 
 def collect_noc_fragments(
@@ -103,8 +123,9 @@ def collect_noc_fragments(
             sid = sc.segment_id if sc.segment_id is not None else 0
             seg_softcores.setdefault(sid, []).append(sc)
         pass_lists: List[List[LayoutSoftCoreSpec]] = []
+        pass_resident: List[bool] = []
         for sid in sorted(seg_softcores):
-            _, seg_pass_lists, seg_ok, _ = plan_segment_passes(
+            _, seg_pass_lists, seg_ok, policy_applied = plan_segment_passes(
                 seg_softcores[sid], budget,
                 core_types=core_types,
                 allow_coalescing=allow_coalescing,
@@ -118,11 +139,18 @@ def collect_noc_fragments(
                     f"{sid} has a softcore no pass can pack"
                 )
             pass_lists.extend(seg_pass_lists)
+            # Residency is a per-SEGMENT question: only a segment whose passes
+            # the bank-clustered composition produced keeps weights installed.
+            pass_resident.extend(resident_passes(
+                len(seg_pass_lists), policy_applied=policy_applied,
+            ))
     else:
         pass_lists = [softcores]
+        pass_resident = [False]
 
     per_pass: List[Tuple[Tuple[int, int], ...]] = []
-    for pass_softcores in pass_lists:
+    programs: List[PassProgram] = []
+    for pass_softcores, resident in zip(pass_lists, pass_resident):
         pack = pack_layout(
             softcores=pass_softcores, core_types=core_types,
             allow_neuron_splitting=allow_neuron_splitting,
@@ -137,4 +165,14 @@ def collect_noc_fragments(
             (global_index[id(pass_softcores[local])], hardcore)
             for local, hardcore in pack.placements
         ))
-    return LayoutNocFragments(pass_placements=tuple(per_pass), census=census)
+        programs.append(PassProgram(
+            core_cells=tuple(
+                int(snapshot.used_axons) * int(snapshot.used_neurons)
+                for snapshot in (pack.used_core_snapshots or ())
+            ),
+            resident=bool(resident),
+        ))
+    return LayoutNocFragments(
+        pass_placements=tuple(per_pass), census=census,
+        pass_programs=tuple(programs),
+    )

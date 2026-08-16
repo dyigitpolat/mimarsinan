@@ -242,10 +242,10 @@ class JointLayoutMixin(JointHostContract):
         host_side_segment_count: int,
         census=None,
         noc=None,
-        latency_steps=None,
+        program=None,
     ) -> CandidateStaticView:
         """The static facts of a packed candidate — what every objective reads."""
-        physics, context = candidate_fragments(pcfg, census, latency_steps)
+        physics, context = candidate_fragments(pcfg, census, program)
         return CandidateStaticView(
             layout=stats,
             chip_param_capacity=declared_core_capacity(pcfg),

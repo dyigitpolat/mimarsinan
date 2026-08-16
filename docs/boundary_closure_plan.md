@@ -13,7 +13,7 @@
 | B buffer metric + gate | **DONE** — record axes + `pass_buffer_capacity_bytes` gate at the hard-core mapping step | `record(B)` |
 | L latency evidence | **DONE** — loihi `t_cycle` measured band [5.8, 13] µs + `host_compute_rate` identity; `loihi_knn_query_latency` self-consistency case: e2e −22.8%, throughput +16.8% through the real pricer | `physics(L)` |
 | E1 executed-window SSOT | **DONE** — `chip_simulation/stage_timesteps.py`; the runner and the candidate size the wall through ONE rule; retired `T x segments` (measured 4 where the record measured 15) | `search(E1)` |
-| E2 core-init + reprogramming census | pending | |
+| E2 core-init + reprogramming census | **DONE** — `resident_passes` is the one residency law; candidate `segment_cores`/`reprogrammed_cores`/`reprogrammed_bytes`/`reprogram_passes` match the sealed record on both policies; `cores_allocated` now means what the record means | `search(E2)` |
 | E3 directional carry bytes | pending | |
 | E4/E5 derived `e_core_init`; cross-pass wires as consumer input traffic | pending | |
 | S study | **DONE** — 4 MLP runs + the LeNet5 pruned stretch sealed with live fidelity.json; results + surfaced follow-ups in `docs/boundary_closure_study.md` | `docs(S)` + fixes |
@@ -184,6 +184,34 @@ the ordinary LIF run executes one stage per depth level. A reader that consults 
 JSON sees `False` on exactly those runs (this misread cost a debugging cycle) — the
 search step therefore reads the RESOLVED config, pinned in
 `tests/unit/pipelining/pipeline_steps/test_search_step_carries_firing_semantics.py`.
+
+### E2 — programming and core init (DONE)
+
+Three multiplicands were absent at candidate time, so `e_core_init x
+segment_cores`, `e_core_program x reprogrammed_cores` and `e_dma_per_byte x
+reprogrammed_bytes` priced as nothing for every searched candidate.
+
+The residency law now has ONE home: `schedule_policy.resident_passes` says that
+pass 0 of a bank-clustered segment installs the banks and every later pass runs
+on them, while any other composition reprograms all of them — and core INIT is
+credited to neither, because a pass resets its cores' neuron state whether or
+not the weights stayed (the owner's rule: "no we cannot charge every pass as
+reprogram"). `mark_bank_residency` reads that law instead of carrying its own
+copy, and `collect_noc_fragments` seals a `PassProgram` per pass (occupied
+cores' used-row x used-column cells + residency) so the candidate can price the
+program it just laid out. Bytes go through the record's own `params_bytes`.
+
+Checked against the DEPLOYED record built from the same graph, under both
+policies, all four quantities equal. Measured effect: on a
+`generic_estimated_22nm` candidate the programming energy term now prices
+4.6e-08 mJ with an evidence band where it was structurally absent.
+
+Found while wiring it: **`cores_allocated` meant two different things.** The
+record means the cores the mapping allocates (Σ over passes); the candidate
+was reporting the DECLARED chip's core count — 36 vs 3 on the study MLP. No
+formula multiplied it yet, which is exactly why it could drift unnoticed; it is
+now the same per-pass count on both sides, pinned against the deployed
+`CrossbarUtilizationReport`.
 
 ## Verification protocol (every stage)
 
