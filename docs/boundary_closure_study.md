@@ -135,9 +135,11 @@ priced, host-inclusive plane is the `energy_per_inference_mj` axis below.)
 **Joint wins where neither single mode can**, and the mechanism is legible:
 
 - **Hardware-only** moves the chip: best area, 53× smaller than the declared
-  platform. But it cannot touch the MAC census, so **energy is FLAT** — the
-  whole 72-candidate population spans 0.40195–0.40346 mJ (1.004×, no
-  leverage). Measured energy ends up the WORST of the three.
+  platform. Its **energy axis spans only 1.004×** (0.40195–0.40346 mJ).
+  CORRECTION (see "why energy looked flat" below): this is NOT because the
+  chip terms fail to respond — the static term tracks core count exactly 4×
+  — but because a geometry-independent HOST term is 99.87% of the total
+  under `subsume`. Measured chip energy ends up the WORST of the three.
 - **Software-only** moves the MAC census: energy improves. But the chip is
   fixed, so **area is FLAT** (57.832 mm² across every candidate) — and area
   ends up the worst of the three.
@@ -224,6 +226,76 @@ generic ratchet forbidding the shape across every step, with its one
 sanctioned exception (contract-shaping reads that decide `requires`) closed
 by refusing those keys as search axes.
 
+## Why energy looked flat — and a REAL candidate-side gap it exposed
+
+The leverage table above invited an obvious objection: chip geometry changes
+the schedule, the static power, and the data transfer, so how can energy be
+flat? Decomposing the actual terms (same model, `subsume`, TrueNorth):
+
+| term | 8 × (944×80) | 32 × (1024×512) |
+|---|---|---|
+| `energy_dynamic_mj` | 0.000031278 | 0.000031278 (unchanged) |
+| `energy_static_mj` | 0.000505889 | 0.002023556 (**exactly 4×, tracks cores**) |
+| `energy_host_mj` | 0.401408 | 0.401408 (unchanged) |
+| **total** | 0.401945 | 0.403463 (**1.0038×**) |
+
+So the chip terms DO respond — static scales exactly with core count. The
+axis looks flat because under `subsume` the geometry-independent HOST term
+is **99.87% of the total**. A 4× move on 0.13% of the number is invisible.
+(That is also why `offload` shows a 536× span: removing the host term makes
+the chip terms the whole number.) The earlier claim "geometry cannot touch
+the MAC census, so energy is flat" was true only of the DYNAMIC term and
+wrongly generalized.
+
+**Area under a model search is flat for a different and correct reason.**
+Every `AREA_COMPONENTS` factor — `cells_physical`, `axons_physical`,
+`neurons_physical`, `tiles`, `weight_bits` — is a property of the DECLARED
+chip; none is a property of the model. A bigger model does not grow the
+silicon. It either does not fit (measured: 512/256 on a 6×512×64 chip →
+`No more hard cores available`) or it runs in MORE PASSES on the same
+silicon. Passes trade time and energy for area — they never add area. That
+is right, but it means `chip_area_mm2` in a model-only search is an axis
+that provably cannot move, and offering it is misleading.
+
+### The gap: multi-pass programs are under-priced at CANDIDATE time
+
+Chasing "more passes should cost something" found a real hole. Same chip
+(6 × 512×64), `allow_scheduling=true`, two model sizes:
+
+| model | pass_count | sync_count | latency_steps | e2e s | static mJ |
+|---|---|---|---|---|---|
+| 64/64 | 1 | 0 | 4 | 0.0040050 | 0.0003780 |
+| 512/256 | **3** | **2** | **4** | 0.0040401 | 0.0003813 |
+
+The schedule responds correctly — three passes, two syncs. But
+`latency_steps` stays **4**: three sequential chip programs are counted as
+one window, because the candidate formula is `timesteps ×
+neural_segment_count` and passes are not segments. Static energy therefore
+barely moves (it is `p_static × cores × latency`), and the candidate
+quantity list has **no `reprogramming_bytes`, no `params_reloaded`, no
+`carried_raster_bytes`** at all. At search time, that means:
+
+- multi-pass execution **time** is not counted;
+- inter-pass **reprogramming** energy is not charged;
+- pass-boundary **carry DMA** is not charged (the B stage sealed that census
+  record-side only).
+
+Consequence: a search would treat a too-small chip as nearly free, when
+passes are exactly what a too-small chip buys. The direction of the error
+favours under-provisioned chips — the opposite of the truth.
+
+Distinguish this from honest profile absences: TrueNorth declares no
+`e_sync_barrier`, `e_core_program`, `e_dma_per_byte` or NoC energies, so
+those components are NAMED-absent rather than silently zero. Those are the
+evidence discipline working. The three items above are different — the
+quantity does not exist at candidate time, so no profile could price it.
+
+The sealed record DOES carry all of it (schedule fragment: `params_reloaded`,
+`reprogramming_bytes`; the pass-carry census), so `fidelity.json` is the
+instrument that would expose the divergence on any scheduled run — and the
+study's four runs all had `allow_scheduling=false`, which is why they never
+did.
+
 ## Follow-ups the study surfaced
 
 1. A sealed synaptic-EVENT census (the record measures spikes, not
@@ -235,6 +307,17 @@ by refusing those keys as search axes.
 3. Operator host-rate declarations need a measured anchor; the ~1000×
    optimism of a MAC-rate guess against per-op dispatch walls is now a
    documented failure mode the wizard could warn about.
+4. **Multi-pass programs are under-priced at candidate time** (see above):
+   `latency_steps` ignores passes, and there are no candidate-side
+   `reprogramming_bytes` / `params_reloaded` / `carried_raster_bytes`
+   quantities. Needs an owner decision on the pass wall's semantics (is it
+   `T` per pass plus `t_program_per_byte × reloaded bytes` between them, and
+   does a reused-weight pass skip the reprogram?) before it is modelled —
+   the record already seals every input the formula would need.
+5. `chip_area_mm2` cannot move in a model-only search (area is a property of
+   the declared chip). Either refuse it there by name, as the physics and
+   activity gates already refuse what they cannot back, or surface the
+   leverage check so a dead axis is visible before a run spends on it.
 
 ## Evidence disclosure
 
