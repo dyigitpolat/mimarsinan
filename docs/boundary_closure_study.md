@@ -123,11 +123,14 @@ had never been run end-to-end, so they were run: same MNIST MLP family, same
 truenorth physics, same declared activity, NSGA-II, all three sealed to real
 deployments with measured energy.
 
-| search mode | decision variables | deployed acc | area mm² | e2e s | µJ/sample (measured) | NoC packets | winner cells |
+| search mode | decision variables | deployed acc | area mm² | e2e s | nJ/sample (measured chip) | NoC packets | winner cells |
 |---|---|---|---|---|---|---|---|
 | hardware only | core geometry | 0.9810 | 47.35 | 0.0221 | 995.3 | 667 | 604,160 |
 | software only | widths + activation | 0.9786 | 57.83 | 0.0270 | 792.9 | 270 | 31,948,800 (declared) |
 | **joint** | **both** | 0.9778 | 48.10 | **0.0204** | **355.6** | **172** | 4,505,600 |
+
+(`mj_per_sample` is SANA-FE's measured CHIP energy — host excluded. The
+priced, host-inclusive plane is the `energy_per_inference_mj` axis below.)
 
 **Joint wins where neither single mode can**, and the mechanism is legible:
 
@@ -166,6 +169,46 @@ model config (LeakyReLU 128/64) puts only **15.26% of parameters on chip**,
 below the declared 20% floor. C3's typed on-chip constraint made that a
 region of the search space the optimizer can see, exactly as designed —
 instead of a pipeline crash after the winner was already chosen.
+
+### The biggest energy lever is a DEPLOYMENT OPTION, not the chip or the model
+
+The fourth decision space — `arch_search.option_axes`
+(`encoding_layer_placement`, `weight_bits` ∈ [4,8]) — has by far the largest
+leverage of any space tried:
+
+| space | energy span across its population |
+|---|---|
+| hardware (core geometry) | 1.004× — **FLAT** |
+| joint (model + hardware) | 7.93× |
+| **deployment options** | **536×** |
+
+It splits cleanly on ONE decision (`subsume` = host-side encoder; `offload` =
+encoding layer mapped **on-chip**):
+
+| placement | n | priced energy mJ (min / median / max) |
+|---|---|---|
+| subsume (encoder on host) | 13 | 0.402008 / 0.402767 / 0.403273 |
+| offload (encoder on chip) | 27 | 0.000753 / 0.001634 / 0.002137 |
+
+The search chose `offload` + `weight_bits=6` and deployed it: accuracy 0.9824,
+area 47.54 mm², e2e 0.0200 s. Its measured CHIP energy rises to 3.78 µJ/sample
+(vs 995 nJ for a host-side-encoder run) — exactly as expected, because the
+encoder's work moved ONTO the chip; the priced total falls because a 20 W host
+no longer runs it. This is §8b.2's claim ("placement moves ~75% of parameters
+across the NeuralOps/ComputeOps boundary") quantified as a search axis for the
+first time.
+
+**Why this conclusion is conservative rather than rigged.** Moving work
+host-side must never look free — the pricer refuses host-inclusive axes
+without declared host rates for exactly that reason. Here the rates ARE
+declared, and the fidelity report already proved the operator's 10 G/s
+estimate is ~1000× optimistic. That error runs in the safe direction: an
+over-fast host under-states host time, hence under-states host energy, hence
+makes `subsume` look CHEAPER than it really is. The measured host walls would
+widen the offload advantage, not shrink it. A *declared but wrong* host price
+is nonetheless more dangerous than a refusal, because it silently sets the
+scale of a 536× axis — which is why "measured anchors for host rates" is
+follow-up 3 below.
 
 ### What running the option axes cost — and caught
 
