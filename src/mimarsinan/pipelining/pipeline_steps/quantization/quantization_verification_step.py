@@ -78,25 +78,37 @@ class QuantizationVerificationStep(TrainerPipelineStep):
 
     def __init__(self, pipeline):
         super().__init__(self.REQUIRES, self.PROMISES, self.UPDATES, self.CLEARS, pipeline)
-        self.q_max = (2 ** (self.pipeline.config["weight_bits"] - 1)) - 1
+
+    @property
+    def q_max(self) -> int:
+        """The register range this run quantizes onto, read WHERE IT IS USED.
+
+        Never captured in ``__init__``: steps are constructed at pipeline
+        assembly, but a hardware search stamps the winner's ``weight_bits``
+        into the config afterwards. A captured value would gate the winner's
+        weights against the pre-search grid (measured: a searched
+        ``weight_bits=6`` asserted against the declared 5-bit ±15 range).
+        """
+        return (2 ** (int(self.pipeline.config["weight_bits"]) - 1)) - 1
 
     def process(self):
         model = self.get_entry("model")
+        q_max = self.q_max
         self.trainer = make_basic_trainer(self.pipeline, model)
         for perceptron in model.get_perceptrons():
             print(perceptron.parameter_scale)
             print(perceptron.scale_factor)
             perceptron.to(self.pipeline.config["device"])
-            assert_effective_parameters_on_chip_grid(perceptron, self.q_max)
+            assert_effective_parameters_on_chip_grid(perceptron, q_max)
 
         # The asserts above ARE the gate; surviving them is the verdict. The
         # per-layer grid diagnostics ship as one low-rate structured event.
-        layers = quantization_grid_report(model.get_perceptrons(), self.q_max)
+        layers = quantization_grid_report(model.get_perceptrons(), q_max)
         bits = int(self.pipeline.config["weight_bits"])
         emit_reporter_event(
             getattr(self.pipeline, "reporter", None),
             "quantization_report",
-            {"bits": bits, "q_max": self.q_max, "layers": layers},
+            {"bits": bits, "q_max": q_max, "layers": layers},
         )
         self._verdict = {
             "status": "pass",

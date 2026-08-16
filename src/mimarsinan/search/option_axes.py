@@ -33,6 +33,13 @@ REFUSED_OPTION_AXES: Mapping[str, str] = {
     "pruning_fraction": "pruning's accuracy impact is unmodeled at candidate time",
     "prune_sparsity": "pruning's accuracy impact is unmodeled at candidate time",
     "pruning": "the pruning tuner's accuracy impact is unmodeled at candidate time",
+    # CONTRACT-SHAPING keys: a step reads these at CONSTRUCTION to declare its
+    # requires, and the DAG is assembled before the search runs. Searching one
+    # would freeze the contract at the pre-search value while the winner's
+    # value drove the run — the split brain the searched weight_bits produced.
+    "ttfs_scale_aware_boundaries":
+        "it shapes a step's declared contract (TTFSCycleAdaptationStep.requires), "
+        "which is fixed at pipeline assembly — before any search runs",
 }
 
 
