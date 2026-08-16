@@ -232,6 +232,22 @@ class TestCandidateShapesMoveOnTheLiveProblem:
         second = self._model_dims(self._problem(pruning=True, pruning_fraction=0.25))
         assert first == second
 
+    def test_a_model_without_the_chain_api_stays_unpruned(self):
+        """Conv models expose perceptrons only post-conversion (where the
+        deployed shrink runs); the candidate keeps its shapes — the same
+        stated upper bound, measured by fidelity."""
+        from mimarsinan.search.problems.joint.candidate_pruning import (
+            apply_declared_pruning,
+        )
+
+        bare = torch.nn.Linear(4, 4)
+        apply_declared_pruning(
+            bare, prune_sparsity=0.5, prune_criterion="row_col_l1",
+            pruning=True, pruning_fraction=0.5, weight_bits=8,
+            firing_mode="Default",
+        )
+        assert bare.out_features == 4 and bare.in_features == 4
+
     def test_a_foreign_criterion_stays_unpruned_as_an_upper_bound(self):
         dense = self._model_dims(self._problem())
         foreign = self._model_dims(

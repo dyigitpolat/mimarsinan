@@ -131,8 +131,13 @@ def apply_declared_pruning(
 
     ``pruning and pruning_fraction > 0`` mirrors ``DeploymentPlan``'s
     ``pruning_enabled`` derivation. Both knobs zero is the byte-identical
-    no-op.
+    no-op. A candidate model with NO perceptron-chain accessor (conv models
+    expose it only post-conversion, where the deployed shrink runs) keeps its
+    shapes — the same stated upper bound as a foreign criterion, and the
+    study's fidelity report measures the gap.
     """
+    if getattr(model, "get_perceptrons", None) is None:
+        return
     sparsity = float(prune_sparsity or 0.0)
     if sparsity > 0.0 and str(prune_criterion) == ROW_COL_L1:
         perceptrons = model.get_perceptrons()
