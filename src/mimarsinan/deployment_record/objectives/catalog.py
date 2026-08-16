@@ -27,6 +27,7 @@ from mimarsinan.deployment_record.objectives.extractors import (
     latency_steps_backing,
     layout_field,
     noc_field,
+    quantity_field,
     reprogramming_bytes_backing,
     schedule_field,
     sync_barrier_backing,
@@ -216,10 +217,29 @@ _PHYSICS_AXES: Tuple[ObjectiveSpecV2, ...] = (
 )
 
 
+#: [N3] The traffic axis at both completenesses: derived from the sealed NoC
+#: census on a record, and from the wireload model (wire census x declared
+#: activity on the resolved floorplan) on a candidate. No physics needed —
+#: hops are a count. Registered last-of-all: catalog order is contract.
+_TRAFFIC_AXES: Tuple[ObjectiveSpecV2, ...] = (
+    objective(
+        "noc_total_hops", "min", "hops", "modeled",
+        quantity_field(
+            "noc_total_hops",
+            requires="the NoC hop census (a sealed SANA-FE traffic record, or "
+                     "candidate NoC fragments + declared activity_factor)",
+        ),
+        "XY-mesh hops of all NoC messages (the sum of per-link packet loads).",
+    ),
+)
+
+
 def build_catalog() -> ObjectiveRegistry:
     """The program's objective catalog, in contract order."""
     registry = ObjectiveRegistry()
-    for spec in _LEGACY_STATIC_AXES + _RECORD_AXES + _PHYSICS_AXES:
+    for spec in (
+        _LEGACY_STATIC_AXES + _RECORD_AXES + _PHYSICS_AXES + _TRAFFIC_AXES
+    ):
         registry.register(spec)
     return registry
 

@@ -8,6 +8,8 @@ from typing import Any, Dict, Optional, Tuple
 from mimarsinan.search.option_axes import candidate_option
 from mimarsinan.search.problem import CandidateInfeasibleError, ValidationResult
 
+from .candidate_fragments import collect_candidate_noc
+
 from .types import (
     HW_CONVERSION_PHASE,
     MODEL_BUILD_PHASE,
@@ -121,8 +123,11 @@ class JointValidateMixin(JointHostContract):
         except Exception as exc:
             return None, self._failure(HW_CONVERSION_PHASE, "HW conversion failed", exc)
 
+        want_noc = self._requires_fragment("noc_fragments")
         try:
-            softcores, host_segments = self._collect_softcores(mapped_model, pcfg)
+            softcores, host_segments, wire_census = self._collect_softcores(
+                mapped_model, pcfg, collect_census=want_noc,
+            )
         except Exception as exc:
             return None, self._failure(
                 HW_CONVERSION_PHASE, "Softcore collection failed", exc,
@@ -132,14 +137,19 @@ class JointValidateMixin(JointHostContract):
         if not stats.feasible:
             return None, self._packing_failure(stats, error, softcores, pcfg)
 
+        noc = collect_candidate_noc(
+            softcores=softcores, core_types=self._make_core_types(pcfg),
+            census=wire_census, pcfg=pcfg,
+        )
         census = self._onchip_census(model, placement)
         return CandidateLayout(
             platform=pcfg,
             softcores=softcores,
             host_side_segment_count=host_segments,
             stats=stats,
+            noc=noc,
             view=self._static_view(
-                stats, pcfg, total_params, host_segments, census,
+                stats, pcfg, total_params, host_segments, census, noc,
             ),
         ), None
 

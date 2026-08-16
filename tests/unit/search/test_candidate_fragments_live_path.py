@@ -152,11 +152,20 @@ class TestQuantityContextRidesTheLivePath:
         assert not q.has("onchip_macs")
 
     def test_undeclared_activity_keeps_event_claims_absent(self):
-        """0 is the registry sentinel for 'undeclared': no assumption, no claim."""
-        cfg = _cfg(platform_physics_profile="truenorth")
-        problem = _problem(cfg, PRICED)
+        """0 is the registry sentinel for 'undeclared': no assumption, no
+        claim — and the run-level gate refuses activity-dependent axes BY
+        NAME at resolution, before any candidate is built."""
+        import pytest
+
+        cfg = _cfg(
+            platform_physics_profile="truenorth",
+            platform_physics_overrides=dict(_HOST_RATES),
+        )
+        problem = _problem(cfg, ["chip_area_mm2"])
         q = problem.candidate_layout(_candidate(problem)).view.quantities
         assert not q.has("synaptic_events")
+        with pytest.raises(ValueError, match="energy_per_inference_mj"):
+            _problem(cfg, ["energy_per_inference_mj"]).active_specs
 
 
 class TestNoPhysicsStaysBare:
@@ -165,3 +174,43 @@ class TestNoPhysicsStaysBare:
         view = problem.candidate_layout(_candidate(problem)).view
         assert view.physics is None
         assert view.cost_report() is None
+
+
+class TestNocRidesTheLivePath:
+    def test_noc_total_hops_evaluates_on_the_live_view(self):
+        """The wireload model end-to-end: fragments collected, placed on the
+        candidate's own resolved floorplan, priced at the declared activity."""
+        problem = _problem(_physics_cfg(), ["noc_total_hops"])
+        out = problem.evaluate(_candidate(problem))
+        assert np.isfinite(out["noc_total_hops"])
+        assert out["noc_total_hops"] >= 0.0
+
+    def test_hops_need_no_physics(self):
+        """Hops are a count: a profile-less run may still search NoC traffic."""
+        problem = _problem(_cfg(activity_factor=0.05), ["noc_total_hops"])
+        out = problem.evaluate(_candidate(problem))
+        assert np.isfinite(out["noc_total_hops"])
+
+    def test_undeclared_activity_refuses_extraction_by_name(self):
+        """No declared switching activity -> no modeled traffic claim; the
+        active axis refuses loudly instead of pricing an unstated assumption."""
+        import pytest
+
+        problem = _problem(_cfg(), ["noc_total_hops"])
+        with pytest.raises(ValueError, match="noc_total_hops"):
+            problem.evaluate(_candidate(problem))
+
+    def test_inactive_noc_axis_skips_the_fragment_work(self):
+        """No active NoC axis -> no wire-census materialisation, no fragment
+        packing; the census gate answers from the registry."""
+        problem = _problem(_cfg(activity_factor=0.05), ["param_utilization_pct"])
+        layout = problem.candidate_layout(_candidate(problem))
+        assert layout.noc is None
+        assert not layout.view.quantities.has("noc_total_hops")
+
+    def test_candidate_quantities_carry_the_modeled_noc_census(self):
+        problem = _problem(_physics_cfg(), ["noc_total_hops"])
+        q = problem.candidate_layout(_candidate(problem)).view.quantities
+        for key in ("noc_total_hops", "noc_total_packets",
+                    "noc_intra_tile_packets", "noc_inter_tile_packets"):
+            assert q.get(key).provenance == "modeled", key

@@ -91,7 +91,8 @@ def get_wizard_nas_schema() -> Dict[str, Any]:
         "objective_options": [
             {"id": o.name, "label": _objective_label(o.name), "goal": o.goal,
              "requires_training": o.name == ACCURACY_OBJECTIVE_NAME,
-             "requires_physics": OBJECTIVES.requires_physics(o.name)}
+             "requires_physics": OBJECTIVES.requires_physics(o.name),
+             "requires_activity": OBJECTIVES.requires_activity(o.name)}
             for o in ALL_OBJECTIVES
         ],
         "objective_catalog": get_wizard_objective_catalog(),
@@ -115,6 +116,7 @@ def get_wizard_objective_catalog() -> List[Dict[str, Any]]:
             "provenance": spec.provenance,
             "available_in_modes": list(modes),
             "requires_physics": OBJECTIVES.requires_physics(spec.key),
+            "requires_activity": OBJECTIVES.requires_activity(spec.key),
             "unavailable_reason": (
                 "" if len(modes) == len(SEARCH_MODES) else f"requires {spec.requires}"
             ),
@@ -150,6 +152,9 @@ def _objective_label(name: str) -> str:
         "energy_per_inference_mj": "Energy per Inference (mJ)",
         "e2e_latency_s": "E2E Latency (s)",
         "throughput_inferences_s": "Throughput (inf/s)",
+        # [N3] The traffic axis: measured on a sealed record, modeled on a
+        # candidate (wire census x declared activity on the resolved floorplan).
+        "noc_total_hops": "NoC Total Hops",
         "throughput_samples_per_s": "Throughput (samples/s)",
     }
     return labels.get(name, name)

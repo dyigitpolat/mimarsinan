@@ -1,6 +1,7 @@
 """Objectives registry v2: the legacy 8 preserved, the record axes added, loud resolution."""
 
 from dataclasses import replace
+from types import SimpleNamespace
 
 import pytest
 
@@ -66,6 +67,9 @@ PHYSICS_AXIS_KEYS = (
     "throughput_inferences_s",
 )
 
+#: [N3] The traffic axis, after the physics axes — the catalog only appends.
+TRAFFIC_AXIS_KEYS = ("noc_total_hops",)
+
 DISTINCT_LAYOUT = replace(
     make_layout(),
     mapped_params_pct=33.0,
@@ -93,8 +97,15 @@ def candidate_view(**overrides) -> CandidateStaticView:
         physics=probe_physics(),
         quantity_context=CandidateQuantityContext(
             timesteps=8, activity_factor=0.1, weight_bits=8, tiles=1,
+            cores_per_tile=1, tile_mesh_height=1,
             cores_physical=4, neurons_physical=64, axons_physical=64,
             host_macs=0, onchip_macs=512,
+        ),
+        noc_fragments=SimpleNamespace(
+            pass_placements=(((0, 0),),),
+            census=SimpleNamespace(
+                pair_wires={}, input_wires=(2,), on_wires=(0,),
+            ),
         ),
     )
     kwargs.update(overrides)
@@ -108,7 +119,9 @@ class TestLegacyEightPreserved:
         catalog = OBJECTIVES.search_catalog()
         head = tuple((s.key, s.direction) for s in catalog[: len(LEGACY_EIGHT)])
         assert head == LEGACY_EIGHT
-        assert tuple(s.key for s in catalog[len(LEGACY_EIGHT):]) == PHYSICS_AXIS_KEYS
+        assert tuple(s.key for s in catalog[len(LEGACY_EIGHT):]) == (
+            PHYSICS_AXIS_KEYS + TRAFFIC_AXIS_KEYS
+        )
 
     def test_legacy_name_and_goal_properties_mirror_key_and_direction(self):
         for spec in OBJECTIVES.all():
@@ -124,16 +137,19 @@ class TestLegacyEightPreserved:
         assert hardware == (
             tuple(k for k, _ in LEGACY_EIGHT if k != "estimated_accuracy")
             + PHYSICS_AXIS_KEYS
+            + TRAFFIC_AXIS_KEYS
         )
 
     def test_every_other_search_mode_carries_all_eight(self):
         for mode in ("model", "joint"):
             keys = tuple(s.key for s in OBJECTIVES.for_search_mode(mode))
-            assert keys == tuple(k for k, _ in LEGACY_EIGHT) + PHYSICS_AXIS_KEYS
+            assert keys == (tuple(k for k, _ in LEGACY_EIGHT) + PHYSICS_AXIS_KEYS
+                            + TRAFFIC_AXIS_KEYS)
 
     def test_the_spec_documented_axes_are_all_registered(self):
         assert OBJECTIVES.keys() == (
-            tuple(k for k, _ in LEGACY_EIGHT) + SPEC_ADDED_KEYS + PHYSICS_AXIS_KEYS
+            tuple(k for k, _ in LEGACY_EIGHT) + SPEC_ADDED_KEYS
+            + PHYSICS_AXIS_KEYS + TRAFFIC_AXIS_KEYS
         )
 
 
@@ -185,18 +201,21 @@ class TestRegistration:
 class TestAvailabilityOnTheCandidateView:
     def test_a_full_candidate_view_carries_the_legacy_eight_and_the_priced_axes(self):
         keys = tuple(s.key for s in OBJECTIVES.available_for(candidate_view()))
-        assert keys == tuple(k for k, _ in LEGACY_EIGHT) + PHYSICS_AXIS_KEYS
+        assert keys == (tuple(k for k, _ in LEGACY_EIGHT) + PHYSICS_AXIS_KEYS
+                            + TRAFFIC_AXIS_KEYS)
 
     def test_a_candidate_without_physics_carries_exactly_the_legacy_eight(self):
-        """The C2 gate: no declared profile, no vendor-priced axis."""
+        """The C2 gate: no declared profile, no vendor-priced axis. The [N3]
+        traffic axis survives the gate — hops are a count, not a priced term."""
         keys = tuple(s.key for s in OBJECTIVES.available_for(candidate_view(physics=None)))
-        assert keys == tuple(k for k, _ in LEGACY_EIGHT)
+        assert keys == tuple(k for k, _ in LEGACY_EIGHT) + TRAFFIC_AXIS_KEYS
 
     def test_a_candidate_without_an_accuracy_estimate_drops_it(self):
         view = candidate_view(estimated_accuracy=None)
         keys = tuple(s.key for s in OBJECTIVES.available_for(view))
         assert "estimated_accuracy" not in keys
-        assert len(keys) == len(LEGACY_EIGHT) + len(PHYSICS_AXIS_KEYS) - 1
+        assert len(keys) == (len(LEGACY_EIGHT) + len(PHYSICS_AXIS_KEYS)
+                             + len(TRAFFIC_AXIS_KEYS) - 1)
 
     def test_a_candidate_without_the_host_segment_census_drops_sync_barriers(self):
         view = candidate_view(host_side_segment_count=None)
@@ -273,6 +292,8 @@ class TestAvailabilityOnTheRecordView:
             "programming_energy_mj",
             "sync_barrier_energy_mj",
             "throughput_samples_per_s",
+            # [N3] derived from the sealed NoC census (Σ per-link loads).
+            "noc_total_hops",
         )
 
     def test_the_search_side_axes_are_unavailable_on_a_record(self):

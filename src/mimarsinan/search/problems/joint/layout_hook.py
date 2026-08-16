@@ -13,6 +13,7 @@ from mimarsinan.deployment_record.objectives import (
     declared_core_capacity,
 )
 from mimarsinan.mapping.layout.layout_ir_mapping import LayoutIRMapping
+from mimarsinan.mapping.noc import census_of_walk
 from mimarsinan.mapping.verification.onchip_fraction import (
     estimate_onchip_fraction,
 )
@@ -103,8 +104,11 @@ class JointLayoutMixin(JointHostContract):
         self,
         model,
         pcfg: Dict,
-    ) -> Tuple[List[LayoutSoftCoreSpec], int]:
-        """Collect layout softcores and host-side segment count from model."""
+        *,
+        collect_census: bool = False,
+    ) -> Tuple[List[LayoutSoftCoreSpec], int, Optional[Any]]:
+        """Collect layout softcores, host segments, and (opt-in — collection
+        materialises the deferred views) the walk's wire census."""
         cores = pcfg["cores"]
         pmap = resolve_platform_mapping_params(
             cores,
@@ -115,13 +119,15 @@ class JointLayoutMixin(JointHostContract):
             max_neurons=pmap.effective_max_neurons,
             allow_coalescing=pmap.allow_coalescing,
             hardware_bias=pmap.hardware_bias,
+            collect_wire_census=collect_census,
         )
         mapper_repr = model.get_mapper_repr()
         if hasattr(mapper_repr, "assign_perceptron_indices"):
             mapper_repr.assign_perceptron_indices()
         softcores = layout_mapper.collect_layout_softcores(mapper_repr)
         host_segments = getattr(layout_mapper, "host_side_segment_count", 0)
-        return softcores, host_segments
+        census = census_of_walk(layout_mapper) if collect_census else None
+        return softcores, host_segments, census
 
     def onchip_fraction(self, configuration: Dict) -> float:
         """The share of this candidate's parameters that would sit on chip cores.
@@ -243,13 +249,8 @@ class JointLayoutMixin(JointHostContract):
         return CandidateFailure(phase=HW_PACKING_PHASE, message=message)
 
     def _onchip_census(self, model, placement: str):
-        """Host/on-chip param+MAC counts, when an active axis prices them.
-
-        Two flow walks per candidate, so gated on the registry's own answer
-        (no active objective loses availability without the context → skip),
-        and memoized on the hardware-only fixture whose model no candidate
-        influences.
-        """
+        """Host/on-chip param+MAC counts when an active axis prices them —
+        two flow walks, so registry-gated and memoized on the hw-only fixture."""
         if not self._requires_fragment("quantity_context"):
             return None
         if not self._searches_model:
@@ -272,6 +273,7 @@ class JointLayoutMixin(JointHostContract):
         total_params: float,
         host_side_segment_count: int,
         census=None,
+        noc=None,
     ) -> CandidateStaticView:
         """The static facts of a packed candidate — what every objective reads."""
         physics, context = candidate_fragments(pcfg, census)
@@ -282,6 +284,7 @@ class JointLayoutMixin(JointHostContract):
             host_side_segment_count=host_side_segment_count,
             physics=physics,
             quantity_context=context,
+            noc_fragments=noc,
         )
 
     def _layoutless_view(self, pcfg: Dict, total_params: float) -> CandidateStaticView:

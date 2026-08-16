@@ -376,7 +376,7 @@ class TestWizardSchema:
         assert "objective_options" in nas
         ids = [o["id"] for o in nas["objective_options"]]
         # The legacy eight plus the four vendor-priced axes (C2).
-        assert len(ids) == 12
+        assert len(ids) == 13  # legacy 8 + physics 4 + [N3] noc_total_hops
         assert "estimated_accuracy" in ids
         assert "total_params" in ids
         assert "param_utilization_pct" in ids

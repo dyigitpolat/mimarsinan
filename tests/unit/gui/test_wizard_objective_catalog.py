@@ -5,7 +5,7 @@ from mimarsinan.gui.wizard.schema import get_wizard_nas_schema
 
 ROW_KEYS = {
     "id", "label", "goal", "provenance", "available_in_modes", "unavailable_reason",
-    "requires_physics",
+    "requires_physics", "requires_activity",
 }
 
 
@@ -71,11 +71,16 @@ class TestLegacyOptionsUnchanged:
         ]
         assert set(options[0]) == {
             "id", "label", "goal", "requires_training", "requires_physics",
+            "requires_activity",
         }
         assert options[0]["requires_training"] is True
         assert all(o["requires_training"] is False for o in options[1:])
         assert all(o["requires_physics"] is False for o in options[:8])
-        assert all(o["requires_physics"] is True for o in options[8:])
+        # [C2] the four vendor-priced axes are physics-gated; [N3] the traffic
+        # axis that follows them is a count and deliberately is NOT.
+        assert all(o["requires_physics"] is True for o in options[8:12])
+        assert [o["id"] for o in options[12:]] == ["noc_total_hops"]
+        assert options[12]["requires_physics"] is False
 
 
 class TestEveryAxisIsNamedForAHuman:

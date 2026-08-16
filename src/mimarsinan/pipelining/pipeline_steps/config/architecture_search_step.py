@@ -161,6 +161,9 @@ class ArchitectureSearchStep(PipelineStep):
         )
         active_objectives = resolve_active_objectives(
             search_mode, user_objectives, physics=run_physics,
+            activity_factor=float(
+                self.pipeline.config.get("activity_factor", 0.0) or 0.0
+            ),
         )
         active_objective_names = [o.name for o in active_objectives]
 

@@ -8,6 +8,20 @@ from typing import Dict, Optional, Protocol
 from mimarsinan.deployment_record.quantities.spec import Quantities, QuantityValue
 
 
+class _NocEstimateView(Protocol):
+    """The modeled NoC census a candidate's fragments price to (duck-typed;
+    produced by the SANA-FE estimator, which this package must not import)."""
+
+    @property
+    def total_packets(self) -> float: ...
+    @property
+    def inter_tile_packets(self) -> float: ...
+    @property
+    def intra_tile_packets(self) -> float: ...
+    @property
+    def total_hops(self) -> float: ...
+
+
 class _LayoutStatsView(Protocol):
     """The packing facts a candidate layout answers.
 
@@ -40,6 +54,8 @@ class CandidateQuantityContext:
     activity_factor: Optional[float] = None
     weight_bits: Optional[int] = None
     tiles: Optional[int] = None
+    cores_per_tile: Optional[int] = None
+    tile_mesh_height: Optional[int] = None
     cores_physical: Optional[int] = None
     neurons_physical: Optional[int] = None
     axons_physical: Optional[int] = None
@@ -63,12 +79,15 @@ def from_candidate(
     total_params: Optional[float],
     host_side_segment_count: Optional[int],
     context: CandidateQuantityContext,
+    noc: Optional[_NocEstimateView] = None,
 ) -> Quantities:
     """The static quantities a candidate can honestly answer.
 
-    Never claimed here: placement-dependent hop counts, execution spike counts,
-    measured host walls, and the as-mapped occupancy censuses (``cells_used``,
-    ``macs``) — those are facts of a deployment, not of a shape.
+    Never claimed here: execution spike counts, measured host walls, and the
+    as-mapped occupancy censuses (``cells_used``, ``macs``) — those are facts
+    of a deployment, not of a shape. Hop counts ARE claimable once ``noc``
+    carries a placement-backed estimate (the wireload model), with provenance
+    ``modeled``.
     """
     del host_side_segment_count  # a view fact today; no quantity reads it yet
     values: Dict[str, QuantityValue] = {}
@@ -99,6 +118,15 @@ def from_candidate(
     _put(values, "onchip_params", context.onchip_params)
     if context.host_macs is not None and context.onchip_macs is not None:
         _put(values, "total_macs", context.host_macs + context.onchip_macs)
+
+    if noc is not None:
+        for key, value in (
+            ("noc_total_packets", noc.total_packets),
+            ("noc_intra_tile_packets", noc.intra_tile_packets),
+            ("noc_inter_tile_packets", noc.inter_tile_packets),
+            ("noc_total_hops", noc.total_hops),
+        ):
+            values[key] = QuantityValue(value=float(value), provenance="modeled")
 
     # The EDA switching-activity discipline: candidate spike-dependent energy rests
     # on a DECLARED activity factor over the logical on-chip MAC census, and the

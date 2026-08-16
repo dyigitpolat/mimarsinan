@@ -87,6 +87,7 @@ def resolve_active_specs(
     user_selection: Optional[Sequence[str]] = None,
     *,
     physics: Optional[PlatformPhysics] = _UNDECLARED,
+    activity_factor: Any = _UNDECLARED,
 ) -> Tuple[ObjectiveSpecV2, ...]:
     """The ACTIVE registry specs — the axes an evaluation must produce, loudly.
 
@@ -99,14 +100,22 @@ def resolve_active_specs(
     ``physics`` is THIS RUN's declaration, and passing it narrows availability to
     what the run can actually back — a vendor-priced axis on a run that declares
     no profile is refused BY NAME here rather than producing a number no vendor
-    stands behind. Omitting it keeps the question capability-level (what the MODE
-    could carry), which is what an offer-the-whole-catalog caller asks.
+    stands behind. ``activity_factor`` narrows the same way for the
+    spike-dependent modeled axes (0 = undeclared). Omitting both keeps the
+    question capability-level (what the MODE could carry), which is what an
+    offer-the-whole-catalog caller asks.
     """
     names = tuple(user_selection) if user_selection else default_objectives_for_mode(search_mode)
-    probe = (
-        None if physics is _UNDECLARED
-        else run_capability_probe(search_mode, physics)
-    )
+    if physics is _UNDECLARED and activity_factor is _UNDECLARED:
+        probe = None
+    elif activity_factor is _UNDECLARED:
+        probe = run_capability_probe(search_mode, physics)
+    else:
+        probe = run_capability_probe(
+            search_mode,
+            None if physics is _UNDECLARED else physics,
+            activity_factor=float(activity_factor or 0.0),
+        )
     return OBJECTIVES.resolve_active(search_mode, names, probe=probe)
 
 
@@ -115,11 +124,15 @@ def resolve_active_objectives(
     user_selection: Optional[Sequence[str]] = None,
     *,
     physics: Optional[PlatformPhysics] = _UNDECLARED,
+    activity_factor: Any = _UNDECLARED,
 ) -> Tuple[ObjectiveSpec, ...]:
     """:func:`resolve_active_specs`, projected onto the optimizer-facing pair."""
     return tuple(
         _project(spec)
-        for spec in resolve_active_specs(search_mode, user_selection, physics=physics)
+        for spec in resolve_active_specs(
+            search_mode, user_selection,
+            physics=physics, activity_factor=activity_factor,
+        )
     )
 
 

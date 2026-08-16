@@ -125,6 +125,9 @@ class JointArchHwProblem(
         return resolve_active_specs(
             self.search_mode, self.active_objective_names or None,
             physics=self.candidate_physics,
+            activity_factor=(self.fixed_platform_constraints or {}).get(
+                "activity_factor", 0.0,
+            ),
         )
 
     @property

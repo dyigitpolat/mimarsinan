@@ -46,6 +46,8 @@ def _probe_context() -> CandidateQuantityContext:
         activity_factor=1.0,
         weight_bits=1,
         tiles=1,
+        cores_per_tile=1,
+        tile_mesh_height=1,
         cores_physical=1,
         neurons_physical=1,
         axons_physical=1,
@@ -54,6 +56,27 @@ def _probe_context() -> CandidateQuantityContext:
         host_params=0,
         onchip_params=1,
     )
+
+
+@dataclass(frozen=True)
+class _ProbeWireCensus:
+    """A wire-census stand-in: one input wire on one softcore."""
+
+    pair_wires: dict = None  # type: ignore[assignment]
+    input_wires: Tuple[int, ...] = (1,)
+    on_wires: Tuple[int, ...] = (0,)
+
+    def __post_init__(self) -> None:
+        if self.pair_wires is None:
+            object.__setattr__(self, "pair_wires", {})
+
+
+@dataclass(frozen=True)
+class _ProbeNocFragments:
+    """A NoC-fragments stand-in whose only claim is that the shape EXISTS."""
+
+    pass_placements: Tuple[Tuple[Tuple[int, int], ...], ...] = (((0, 0),),)
+    census: _ProbeWireCensus = _ProbeWireCensus()
 
 
 # The static facts a candidate view can hold; each one is a separate question
@@ -67,6 +90,7 @@ CANDIDATE_FRAGMENTS: Tuple[str, ...] = (
     "estimated_accuracy",
     "physics",
     "quantity_context",
+    "noc_fragments",
 )
 
 
@@ -80,6 +104,7 @@ def _full_candidate_probe() -> CandidateStaticView:
         estimated_accuracy=0.0,
         physics=probe_physics(),
         quantity_context=_probe_context(),
+        noc_fragments=_ProbeNocFragments(),
     )
 
 
@@ -95,17 +120,36 @@ def candidate_capability_probe(search_mode: str) -> CandidateStaticView:
     return replace(probe, estimated_accuracy=None)
 
 
+#: Sentinel: the caller did not state the run's activity declaration, so the
+#: capability-level placeholder stays (the whole-catalog offer).
+UNSTATED = object()
+
+
 def run_capability_probe(
-    search_mode: str, physics: Optional[PlatformPhysics]
+    search_mode: str,
+    physics: Optional[PlatformPhysics],
+    activity_factor: object = UNSTATED,
 ) -> CandidateStaticView:
     """The capability probe narrowed by what THIS run declared.
 
     The mode says which axes a candidate could carry; the run's own physics says
     which of those it can actually back. With no profile declared the absolute axes
     are unavailable, so asking for one is refused BY NAME at resolution time rather
-    than producing a number no vendor stands behind.
+    than producing a number no vendor stands behind. ``activity_factor`` narrows
+    the spike-dependent modeled axes the same way: stated-positive keeps them,
+    stated-zero (undeclared) drops them, omitted keeps the capability level.
     """
-    return replace(candidate_capability_probe(search_mode), physics=physics)
+    probe = replace(candidate_capability_probe(search_mode), physics=physics)
+    if activity_factor is UNSTATED:
+        return probe
+    declared = float(activity_factor or 0.0)  # type: ignore[arg-type]
+    base_context = probe.quantity_context
+    assert base_context is not None  # the full probe always carries one
+    context = replace(
+        base_context,
+        activity_factor=declared if declared > 0.0 else None,
+    )
+    return replace(probe, quantity_context=context)
 
 
 def candidate_probe_without(fragment: str) -> CandidateStaticView:
@@ -120,7 +164,13 @@ def candidate_probe_without(fragment: str) -> CandidateStaticView:
             f"unknown candidate fragment {fragment!r}; a candidate view carries "
             f"{list(CANDIDATE_FRAGMENTS)}"
         )
-    return replace(_full_candidate_probe(), **{fragment: None})
+    overrides: dict = {fragment: None}
+    if fragment == "layout":
+        # NoC fragments are DERIVED from the layout resolution: a candidate
+        # without a layout cannot carry them, so an axis that needs them must
+        # count as needing the layout too.
+        overrides["noc_fragments"] = None
+    return replace(_full_candidate_probe(), **overrides)
 
 
 _PROBE_LAYOUT_IS_A_LAYOUT: type[LayoutStatsView] = _ProbeLayout

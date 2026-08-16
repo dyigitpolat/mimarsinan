@@ -180,6 +180,23 @@ def noc_field(name: str) -> Backing:
     return Backing(requires=_NOC_REQUIRES, reader=read)
 
 
+def quantity_field(key: str, *, requires: str) -> Backing:
+    """A produced quantity at either completeness.
+
+    Measured on a sealed record's quantities, modeled on a candidate's — the
+    SAME key, so fidelity zips the two automatically. Absent is an answer
+    (this view produced no such census), never an error.
+    """
+
+    def read(view: RecordView) -> Optional[float]:
+        quantities = getattr(view, "quantities", None)
+        if quantities is None or not quantities.has(key):
+            return None
+        return float(quantities.get(key).value)
+
+    return Backing(requires=requires, reader=read)
+
+
 def cost_term(
     group: str, term_name: str, *, requires: str = _COST_REQUIRES
 ) -> Backing:

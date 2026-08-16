@@ -80,7 +80,7 @@ class _ValidateHarness(_Harness):
     def _ensure_mapper_repr(self, model, _placement):
         raise AssertionError("should not be reached")
 
-    def _collect_softcores(self, model, pcfg):
+    def _collect_softcores(self, model, pcfg, *, collect_census=False):
         raise AssertionError("should not be reached")
 
     def _pack_candidate(self, softcores, pcfg):
@@ -217,7 +217,7 @@ class _InnerHarness(_Harness):
             raise self._mapper_error
         return model
 
-    def _collect_softcores(self, model, pcfg):
+    def _collect_softcores(self, model, pcfg, *, collect_census=False):
         raise AssertionError("should not be reached")
 
 
@@ -232,12 +232,12 @@ class _LayoutInnerHarness(_InnerHarness):
 class _UnpackableHarness(_LayoutInnerHarness):
     """A candidate whose facts resolve but whose softcores do not fit the chip."""
 
-    def _collect_softcores(self, model, pcfg):
+    def _collect_softcores(self, model, pcfg, *, collect_census=False):
         return [
             LayoutSoftCoreSpec(
                 input_count=64, output_count=64, residency_class_id=0, name="sc",
             )
-        ], 0
+        ], 0, None
 
 
 TOO_SMALL_CHIP = {"cores": [{"max_axons": 8, "max_neurons": 8, "count": 1}]}

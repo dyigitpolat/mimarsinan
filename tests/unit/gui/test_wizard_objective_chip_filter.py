@@ -24,12 +24,14 @@ MODULE = JS_ROOT / "wizard" / "search_objectives.js"
 
 
 def offered(
-    nas: Dict[str, Any], search_mode: str, declares_physics: bool = False
+    nas: Dict[str, Any], search_mode: str, declares_physics: bool = False,
+    declares_activity: bool = False,
 ) -> List[str]:
     return [
         option["id"]
         for option in call_js(
-            MODULE, "offeredObjectives", nas, search_mode, declares_physics
+            MODULE, "offeredObjectives", nas, search_mode, declares_physics,
+            declares_activity,
         )
     ]
 
@@ -49,9 +51,10 @@ class TestTheFilterIsTheRegistrysAnswer:
     def test_the_browser_offers_exactly_what_the_mode_can_measure(self, search_mode):
         """The SERVED payload through the REAL filter == the registry's availability.
 
-        A draft that declares physics can back every axis its mode carries.
+        A draft that declares physics AND an activity factor can back every
+        axis its mode carries.
         """
-        served = offered(get_wizard_nas_schema(), search_mode, True)
+        served = offered(get_wizard_nas_schema(), search_mode, True, True)
         assert set(served) == {spec.name for spec in objectives_for_mode(search_mode)}
 
     @pytest.mark.parametrize("search_mode", sorted(SEARCH_MODES))
@@ -64,7 +67,23 @@ class TestTheFilterIsTheRegistrysAnswer:
         }
         assert priced, "C2 registered vendor-priced axes"
         assert not priced & set(offered(nas, search_mode))
-        assert priced <= set(offered(nas, search_mode, True))
+        assert priced <= set(offered(nas, search_mode, True, True))
+
+    @pytest.mark.parametrize("search_mode", sorted(SEARCH_MODES))
+    def test_a_draft_without_activity_is_never_offered_a_spike_modeled_axis(
+        self, search_mode,
+    ):
+        """[N3] Candidate NoC traffic and candidate energy rest on the declared
+        switching activity — with none stated the chips stay blocked, exactly
+        as the run-level resolution would refuse them by name."""
+        nas = get_wizard_nas_schema()
+        activity_gated = {
+            row["id"] for row in nas["objective_catalog"] if row["requires_activity"]
+        }
+        assert "noc_total_hops" in activity_gated
+        assert "energy_per_inference_mj" in activity_gated
+        assert not activity_gated & set(offered(nas, search_mode, True))
+        assert activity_gated <= set(offered(nas, search_mode, True, True))
 
     def test_hardware_only_search_never_offers_the_training_proxy(self):
         nas = get_wizard_nas_schema()

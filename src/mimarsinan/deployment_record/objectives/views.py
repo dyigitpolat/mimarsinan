@@ -18,6 +18,7 @@ from mimarsinan.deployment_record.cost.absolute import (
     candidate_cost_report,
     report_with_absolute_terms,
 )
+from mimarsinan.chip_simulation.sanafe.noc_estimate import estimate_noc
 from mimarsinan.deployment_record.cost.model import DeploymentCostModel
 from mimarsinan.deployment_record.cost.terms import DeploymentCostReport
 from mimarsinan.deployment_record.objectives.spec import LayoutStatsView, RecordView
@@ -26,6 +27,7 @@ from mimarsinan.deployment_record.quantities import (
     CandidateQuantityContext,
     Quantities,
     from_candidate,
+    from_record,
 )
 from mimarsinan.deployment_record.schema import DeploymentRecord
 
@@ -81,7 +83,13 @@ class CandidateStaticView:
     estimated_accuracy: Optional[float] = None
     physics: Optional[PlatformPhysics] = None
     quantity_context: Optional[CandidateQuantityContext] = None
+    # Duck-typed ``LayoutNocFragments`` (pass placements + wire census);
+    # quantities sit below mapping, so the concrete type is never imported.
+    noc_fragments: Optional[Any] = None
     _priced: Dict[str, Optional[DeploymentCostReport]] = field(
+        default_factory=dict, repr=False, compare=False
+    )
+    _derived: Dict[str, Any] = field(
         default_factory=dict, repr=False, compare=False
     )
 
@@ -102,7 +110,34 @@ class CandidateStaticView:
             total_params=self.total_params,
             host_side_segment_count=self.host_side_segment_count,
             context=self.quantity_context or CandidateQuantityContext(),
+            noc=self._noc_estimate(),
         )
+
+    def _noc_estimate(self):
+        """The wireload-model NoC census, when the fragments and declarations
+        allow one — placements + wire census priced on the resolved floorplan
+        through the SAME geometry the trace analysis measures with."""
+        if "noc" in self._derived:
+            return self._derived["noc"]
+        estimate = None
+        context = self.quantity_context
+        if (
+            self.noc_fragments is not None
+            and context is not None
+            and context.activity_factor
+            and context.timesteps
+            and context.cores_per_tile
+            and context.tile_mesh_height
+        ):
+            estimate = estimate_noc(
+                fragments=self.noc_fragments,
+                cores_per_tile=int(context.cores_per_tile),
+                mesh_height=int(context.tile_mesh_height),
+                activity_factor=float(context.activity_factor),
+                timesteps=int(context.timesteps),
+            )
+        self._derived["noc"] = estimate
+        return estimate
 
     def cost_report(self) -> Optional[DeploymentCostReport]:
         """The vendor-priced report, or None when this run declared no physics."""
@@ -151,6 +186,11 @@ class DeploymentRecordView:
     def estimated_accuracy(self) -> Optional[float]:
         """A search-time proxy has no place in a sealed record; ``deployed_accuracy`` does."""
         return None
+
+    @property
+    def quantities(self) -> Quantities:
+        """The sealed record's produced quantities (measured provenance)."""
+        return from_record(self.record)
 
     def costable(self) -> bool:
         """The cost model's own preconditions: measured energy and compute latency."""

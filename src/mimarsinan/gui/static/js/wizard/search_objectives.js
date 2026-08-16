@@ -40,7 +40,9 @@ export function deriveSearchMode(deploymentParameters) {
  *  a draft that declares none is a chip whose run aborts at objective
  *  resolution. It defaults to false — an undeclared draft is offered only what
  *  it can actually back. */
-export function offeredObjectives(nas, searchMode, declaresPhysics = false) {
+export function offeredObjectives(
+  nas, searchMode, declaresPhysics = false, declaresActivity = false,
+) {
   const options = (nas && nas.objective_options) || [];
   const availability = new Map(
     ((nas && nas.objective_catalog) || []).map(
@@ -49,6 +51,7 @@ export function offeredObjectives(nas, searchMode, declaresPhysics = false) {
   );
   return options.filter((option) => {
     if (option.requires_physics && !declaresPhysics) return false;
+    if (option.requires_activity && !declaresActivity) return false;
     const modes = availability.get(option.id);
     return !modes || modes.includes(searchMode);
   });
@@ -59,16 +62,21 @@ export function offeredObjectives(nas, searchMode, declaresPhysics = false) {
  *  rather than hiding them: a user must be able to see that area is an axis this
  *  tool optimizes, and why it is off. `offeredObjectives` remains the SELECTABLE
  *  set, so a chip that cannot be chosen can also never be emitted. */
-export function offerableObjectives(nas, searchMode, declaresPhysics = false) {
+export function offerableObjectives(
+  nas, searchMode, declaresPhysics = false, declaresActivity = false,
+) {
   const selectable = new Set(
-    offeredObjectives(nas, searchMode, declaresPhysics).map((o) => o.id),
+    offeredObjectives(nas, searchMode, declaresPhysics, declaresActivity)
+      .map((o) => o.id),
   );
-  return offeredObjectives(nas, searchMode, true).map((option) => ({
+  return offeredObjectives(nas, searchMode, true, true).map((option) => ({
     ...option,
     selectable: selectable.has(option.id),
     blockedReason: selectable.has(option.id)
       ? ''
-      : 'needs a platform physics profile',
+      : (option.requires_physics && !declaresPhysics
+          ? 'needs a platform physics profile'
+          : 'needs a declared activity factor'),
   }));
 }
 

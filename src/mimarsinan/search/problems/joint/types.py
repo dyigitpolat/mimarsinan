@@ -96,6 +96,8 @@ class CandidateLayout:
     host_side_segment_count: int
     stats: LayoutVerificationStats
     view: CandidateStaticView
+    # LayoutNocFragments when a NoC axis asked for them (else None).
+    noc: Optional[Any] = None
 
 
 class CandidatePlatformError(ValueError):
@@ -224,8 +226,8 @@ class JointHostContract:
         def onchip_constraint(self, configuration: Dict) -> Optional[Any]: ...
 
         def _collect_softcores(
-            self, model: Any, pcfg: Dict,
-        ) -> Tuple[List[LayoutSoftCoreSpec], int]: ...
+            self, model: Any, pcfg: Dict, *, collect_census: bool = False,
+        ) -> Tuple[List[LayoutSoftCoreSpec], int, Optional[Any]]: ...
 
         def _pack_candidate(
             self, softcores: List[LayoutSoftCoreSpec], pcfg: Dict,
@@ -246,7 +248,11 @@ class JointHostContract:
             total_params: float,
             host_side_segment_count: int,
             census: Any = None,
+            noc: Any = None,
         ) -> CandidateStaticView: ...
+
+        @staticmethod
+        def _make_core_types(pcfg: Dict) -> List[Any]: ...
 
         def _layoutless_view(
             self, pcfg: Dict, total_params: float,

@@ -470,6 +470,13 @@ function draftDeclaresPhysics() {
     || Boolean(overrides && Object.keys(overrides).length);
 }
 
+/* Whether the draft declares a switching-activity assumption (> 0): the
+   spike-dependent modeled axes (NoC hops, candidate energy) rest on it. */
+function draftDeclaresActivity() {
+  const pc = (state.draft && state.draft.platform_constraints) || {};
+  return Number(pc.activity_factor || 0) > 0;
+}
+
 function archSearchWidget(ks) {
   const nas = schema().nas || {};
   const field = el('div', 'field span-2');
@@ -542,7 +549,9 @@ function archSearchWidget(ks) {
      offered or seeded: the backend now fails loud on an unavailable name, so
      an accuracy chip in hardware-only search would abort the run. The rules
      live in search_objectives.js, where a test can execute them. */
-  const offerable = offerableObjectives(nas, activeSearchMode(), draftDeclaresPhysics());
+  const offerable = offerableObjectives(
+    nas, activeSearchMode(), draftDeclaresPhysics(), draftDeclaresActivity(),
+  );
   const offered = offerable.filter((option) => option.selectable);
   const selected = new Set(seededObjectiveIds(offered, current().objectives));
   for (const objective of offerable) {

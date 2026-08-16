@@ -223,7 +223,7 @@ class TestLayoutPayloadIsTheProblemsOwnCandidateLayout:
             "the fixture must decode a declaration that still needs resolving"
         )
         model, _ = problem._build_model(configuration["model_config"], raw_pcfg, problem.encoding_placement)
-        raw_softcores, _ = problem._collect_softcores(model, raw_pcfg)
+        raw_softcores, _, _ = problem._collect_softcores(model, raw_pcfg)
         assert _row_shapes(payload["per_softcore"]) != _shapes(raw_softcores), (
             "the payload must describe the resolved chip, not the declaration"
         )

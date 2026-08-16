@@ -115,7 +115,7 @@ def _independent_view(problem, configuration, accuracy=None):
     mc = configuration["model_config"]
     pcfg = configuration["platform_constraints"]
     model, total_params = problem._build_model(mc, pcfg, problem.encoding_placement)
-    softcores, host_segments = problem._collect_softcores(model, pcfg)
+    softcores, host_segments, _census = problem._collect_softcores(model, pcfg)
     stats, error = compute_mapping_stats(
         softcores=softcores,
         core_types=problem._make_core_types(pcfg),
@@ -303,10 +303,10 @@ class TestCandidateChipIsTheChipTheModelIsMappedOnto:
             cfg["model_config"], {**pcfg, "cores": base_cores},
             problem.encoding_placement,
         )
-        base_softcores, _ = problem._collect_softcores(
+        base_softcores, _, _ = problem._collect_softcores(
             model, {**pcfg, "cores": base_cores},
         )
-        candidate_softcores, _ = problem._collect_softcores(model, pcfg)
+        candidate_softcores, _, _ = problem._collect_softcores(model, pcfg)
         assert len(candidate_softcores) > len(base_softcores), (
             "the candidate's own tiling is what the search must score"
         )
@@ -382,7 +382,7 @@ class TestTheCandidateLayoutSeam:
         model, total_params = problem._build_model(
             configuration["model_config"], pcfg, problem.encoding_placement,
         )
-        expected_softcores, expected_host = problem._collect_softcores(model, pcfg)
+        expected_softcores, expected_host, _ = problem._collect_softcores(model, pcfg)
 
         assert layout.platform == pcfg
         assert [sc.name for sc in layout.softcores] == [
@@ -432,7 +432,7 @@ class TestTheCandidateLayoutSeam:
             cfg["model_config"], raw["platform_constraints"],
             problem.encoding_placement,
         )
-        raw_softcores, _ = problem._collect_softcores(
+        raw_softcores, _, _ = problem._collect_softcores(
             model, raw["platform_constraints"],
         )
         assert [sc.input_count for sc in layout.softcores] != [

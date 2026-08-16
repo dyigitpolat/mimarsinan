@@ -111,7 +111,7 @@ class TestEvaluateInnerDoesNotReturnPenalties:
         mc = _make_model_config()
         pcfg = _make_platform_constraints()
         model, _ = problem._build_model(mc, pcfg, problem.encoding_placement)
-        softcores, host_segments = problem._collect_softcores(model, pcfg)
+        softcores, host_segments, _census = problem._collect_softcores(model, pcfg)
         assert len(softcores) > 0, "Softcores list should not be empty"
 
     def test_candidate_view_not_none(self):
@@ -120,7 +120,7 @@ class TestEvaluateInnerDoesNotReturnPenalties:
         mc = _make_model_config()
         pcfg = _make_platform_constraints()
         model, total_params = problem._build_model(mc, pcfg, problem.encoding_placement)
-        softcores, host_segments = problem._collect_softcores(model, pcfg)
+        softcores, host_segments, _census = problem._collect_softcores(model, pcfg)
         stats, error = problem._pack_candidate(softcores, pcfg)
         assert error is None, f"Packing should be feasible, got: {error}"
         assert stats.feasible, "Packing should be feasible"

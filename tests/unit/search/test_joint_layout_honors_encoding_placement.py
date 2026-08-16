@@ -71,7 +71,7 @@ def _candidate(builder_factory, model_config, placement: str):
     problem = _problem(builder_factory, model_config, placement)
     pcfg = dict(problem.fixed_platform_constraints or {})
     model, total_params = problem._build_model(dict(model_config), pcfg, problem.encoding_placement)
-    softcores, host_segments = problem._collect_softcores(model, pcfg)
+    softcores, host_segments, _census = problem._collect_softcores(model, pcfg)
     stats, error = problem._pack_candidate(softcores, pcfg)
     return {
         "stamp": resolved_encoding_placement(model.get_mapper_repr()),

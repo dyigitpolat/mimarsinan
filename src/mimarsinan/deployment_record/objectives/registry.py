@@ -136,6 +136,24 @@ class ObjectiveRegistry:
             and not spec.available(run_capability_probe(widest, None))
         )
 
+    def requires_activity(self, key: str) -> bool:
+        """Whether this axis needs a declared switching activity to answer.
+
+        Same probe discipline as ``requires_physics``: an axis requires the
+        declaration exactly when a run stating none cannot back it at
+        candidate time while one stating it can.
+        """
+        spec = self.get(key)
+        widest = max(SEARCH_MODES, key=lambda mode: len(self.for_search_mode(mode)))
+        return (
+            spec.available(
+                run_capability_probe(widest, probe_physics(), activity_factor=1.0)
+            )
+            and not spec.available(
+                run_capability_probe(widest, probe_physics(), activity_factor=0.0)
+            )
+        )
+
     def extract(self, view: RecordView) -> Dict[str, float]:
         """Every available axis' value on *view*, keyed by objective key."""
         return {spec.key: spec.value(view) for spec in self.available_for(view)}

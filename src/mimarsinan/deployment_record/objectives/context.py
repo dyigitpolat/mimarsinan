@@ -37,11 +37,16 @@ def candidate_context_from_platform(
     activity = float(pcfg.get("activity_factor", 0.0) or 0.0)
     weight_bits = pcfg.get("weight_bits")
 
+    cores_per_tile = int(pcfg.get("cores_per_tile_resolved", 0) or 0)
     return CandidateQuantityContext(
         timesteps=steps if steps > 0 else None,
         activity_factor=activity if activity > 0.0 else None,
         weight_bits=None if weight_bits is None else int(weight_bits),
         tiles=rows * cols if rows > 0 and cols > 0 else None,
+        cores_per_tile=cores_per_tile if cores_per_tile > 0 else None,
+        # The runner's tile placement is column-major over the mesh HEIGHT,
+        # which the floorplan resolves as the row count.
+        tile_mesh_height=rows if rows > 0 else None,
         cores_physical=(
             sum(int(ct.get("count", 1)) for ct in cores) if cores else None
         ),

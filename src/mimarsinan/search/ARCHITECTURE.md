@@ -62,7 +62,14 @@ and memoized on the hardware-only fixture) — the axis gate
 (`resolve_active_specs(physics=...)`) and the view extraction must answer from
 one source, or an admitted priced axis raises at extraction on every candidate.
 Model construction lives in `joint/model_build.py` (`build_raw_model`,
-`convert_to_mapper_repr`), which the hook delegates to. A hardware-only search reuses the candidate-INDEPENDENT model
+`convert_to_mapper_repr`), which the hook delegates to. [N3] When a NoC axis
+is active (`_requires_fragment("noc_fragments")`), `_collect_softcores` walks
+with `collect_wire_census=True` and `candidate_fragments.collect_candidate_noc`
+plans+packs every pass under the candidate's OWN capability bits
+(`layout_kwargs()`, the packing-census discipline) — the resulting
+`LayoutNocFragments` ride `CandidateLayout.noc` and the view's `noc_fragments`
+fragment, which the objectives layer prices through the SANA-FE wireload
+estimator. A hardware-only search reuses the candidate-INDEPENDENT model
 and its mapper representation, never its layout: tiling is a function of the
 candidate's core geometry, so each candidate is packed on the chip it actually
 declares. The validation cache is an optimization, not a dependency — an evicted

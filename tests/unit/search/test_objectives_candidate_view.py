@@ -71,7 +71,7 @@ class TestCandidateViewMatchesTheLayoutHook:
         problem = _hw_problem()
         pcfg = dict(problem.fixed_platform_constraints or {})
         cache = problem._ensure_hw_only_cache(problem.encoding_placement)
-        softcores, host_segments = problem._collect_softcores(cache.model, pcfg)
+        softcores, host_segments, _census = problem._collect_softcores(cache.model, pcfg)
 
         packed, error = problem._pack_candidate(softcores, pcfg)
         assert error is None and packed.feasible
@@ -107,7 +107,7 @@ class TestCandidateViewMatchesTheLayoutHook:
         problem = _hw_problem()
         pcfg = dict(problem.fixed_platform_constraints or {})
         cache = problem._ensure_hw_only_cache(problem.encoding_placement)
-        softcores, host_segments = problem._collect_softcores(cache.model, pcfg)
+        softcores, host_segments, _census = problem._collect_softcores(cache.model, pcfg)
         packed, _error = problem._pack_candidate(softcores, pcfg)
         view = problem._static_view(
             packed, pcfg, cache.total_params, host_segments

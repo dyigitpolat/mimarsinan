@@ -34,11 +34,17 @@ PHYSICS_TUPLE = (
     ObjectiveSpec("throughput_inferences_s", "max"),
 )
 
+#: [N3] The traffic axis, appended after the physics axes (catalog order is
+#: contract: every earlier prefix survives byte-equal).
+TRAFFIC_TUPLE = (
+    ObjectiveSpec("noc_total_hops", "min"),
+)
+
 
 class TestLegacyProjection:
     def test_all_objectives_opens_with_the_legacy_tuple_byte_equal(self):
         assert ALL_OBJECTIVES[: len(LEGACY_TUPLE)] == LEGACY_TUPLE
-        assert ALL_OBJECTIVES == LEGACY_TUPLE + PHYSICS_TUPLE
+        assert ALL_OBJECTIVES == LEGACY_TUPLE + PHYSICS_TUPLE + TRAFFIC_TUPLE
 
     def test_the_projection_yields_the_frozen_legacy_dataclass(self):
         for spec in ALL_OBJECTIVES:
@@ -58,11 +64,13 @@ class TestLegacyProjection:
     def test_hardware_mode_excludes_only_accuracy(self):
         assert objectives_for_mode("hardware") == tuple(
             o for o in LEGACY_TUPLE if o.name != ACCURACY_OBJECTIVE_NAME
-        ) + PHYSICS_TUPLE
+        ) + PHYSICS_TUPLE + TRAFFIC_TUPLE
 
     def test_other_modes_carry_every_objective(self):
         for mode in ("model", "joint"):
-            assert objectives_for_mode(mode) == LEGACY_TUPLE + PHYSICS_TUPLE
+            assert objectives_for_mode(mode) == (
+                LEGACY_TUPLE + PHYSICS_TUPLE + TRAFFIC_TUPLE
+            )
 
 
 class TestDefaultsUnchanged:
