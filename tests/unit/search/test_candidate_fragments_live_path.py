@@ -57,8 +57,8 @@ def _cfg(**extra):
     return base
 
 
-def _problem(cfg, names):
-    return JointArchHwProblem(
+def _problem(cfg, names, **overrides):
+    kwargs = dict(
         data_provider_factory=None,
         device=torch.device("cpu"),
         input_shape=tuple(cfg["input_shape"]),
@@ -78,6 +78,8 @@ def _problem(cfg, names):
         core_count_bounds=(8, 64),
         accuracy_seed=0,
     )
+    kwargs.update(overrides)
+    return JointArchHwProblem(**kwargs)
 
 
 def _candidate(problem):

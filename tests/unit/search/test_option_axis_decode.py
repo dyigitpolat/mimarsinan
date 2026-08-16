@@ -150,13 +150,10 @@ class TestTheOptionsReachTheDeployment:
         decoded = problem.decode(problem.xl)
         assert problem.candidate_encoding_placement(decoded) == "offload"
 
-    def test_the_candidate_pruning_follows_the_searched_axis(self):
-        problem = _problem({"pruning_fraction": {"bounds": [0.0, 0.5]}})
-        x = np.concatenate([problem.xl[:-1], np.array([0.4], dtype=float)])
-        decoded = problem.decode(x)
-        assert problem.candidate_pruning_fraction(decoded) == pytest.approx(0.4)
-
-    def test_an_unsearched_pruning_fraction_is_the_problems_declaration(self):
-        problem = _problem(None, pruning_fraction=0.25)
-        decoded = problem.decode(problem.xl)
-        assert problem.candidate_pruning_fraction(decoded) == pytest.approx(0.25)
+    def test_pruning_cannot_be_declared_as_an_axis(self):
+        """[P3] Superseded by design: pruning's accuracy impact is unmodeled
+        at candidate time, so the axis is refused at declaration — the
+        declared run value drives the candidate's pruned-shape twins instead
+        (test_candidate_pruned_shapes)."""
+        with pytest.raises(ValueError, match="pruning_fraction"):
+            _problem({"pruning_fraction": {"bounds": [0.0, 0.5]}})

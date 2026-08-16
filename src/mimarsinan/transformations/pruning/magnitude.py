@@ -41,6 +41,50 @@ def _row_magnitude(weight: torch.Tensor) -> torch.Tensor:
     return weight.detach().abs().pow(2).sum(dim=1).sqrt()
 
 
+def prune_perceptron_chain_by_counts(
+    perceptrons: Sequence[nn.Module],
+    row_counts: Sequence[int],
+    col_counts: Sequence[int],
+) -> List[torch.Tensor]:
+    """Structurally shrink each perceptron by EXACT per-layer counts, in place.
+
+    The candidate count-twin of the pruning tuner: counts come from the mask
+    floor rule, identities from the (irrelevant) current magnitudes. Zero
+    counts everywhere is the byte-identical no-op. Returns the kept OUTPUT
+    masks per layer, so a pre-fusion caller can shrink normalizations too.
+    """
+    kept_output_masks: List[torch.Tensor] = []
+    for i, perceptron in enumerate(perceptrons):
+        p = cast(Any, perceptron)
+        layer = cast(nn.Linear, p.layer)
+        k_rows = int(row_counts[i])
+        k_cols = int(col_counts[i])
+        if k_rows >= layer.out_features or k_cols >= layer.in_features:
+            raise ValueError(
+                f"layer {i}: pruning {k_rows} rows / {k_cols} cols of a "
+                f"{layer.out_features}x{layer.in_features} layer keeps nothing; "
+                f"at least one unit must survive"
+            )
+        keep_rows = torch.ones(
+            layer.out_features, dtype=torch.bool, device=layer.weight.device,
+        )
+        if k_rows > 0:
+            _, order = torch.sort(_row_magnitude(layer.weight.data))
+            keep_rows[order[:k_rows]] = False
+            p.layer = layer = _shrink_linear_outputs(layer, keep_rows)
+            p.output_channels = int(keep_rows.sum().item())
+        kept_output_masks.append(keep_rows)
+        if k_cols > 0:
+            keep = torch.ones(
+                layer.in_features, dtype=torch.bool, device=layer.weight.device,
+            )
+            _, order = torch.sort(layer.weight.data.abs().sum(dim=0))
+            keep[order[:k_cols]] = False
+            p.layer = _shrink_linear_inputs(layer, keep)
+            p.input_features = int(keep.sum().item())
+    return kept_output_masks
+
+
 def kept_output_channels(weight: torch.Tensor, sparsity: float) -> torch.Tensor:
     """Boolean keep-mask over output neurons: drop the lowest-magnitude ``sparsity`` fraction.
 

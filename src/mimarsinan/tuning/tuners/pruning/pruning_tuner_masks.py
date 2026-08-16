@@ -19,7 +19,11 @@ def _boundary_exemption_layers(tuner):
     """Per-tuner cache of (exempt_input_layers, exempt_output_layers); topology-invariant."""
     cached = getattr(tuner, "_boundary_exemption_cache", None)
     if cached is None:
-        ir_graph = build_boundary_ir_graph(tuner.model, tuner.pipeline)
+        ir_graph = build_boundary_ir_graph(
+            tuner.model,
+            weight_bits=int(tuner.pipeline.config.get("weight_bits", 8)),
+            firing_mode=str(tuner.pipeline.config.get("firing_mode", "Default")),
+        )
         cached = compute_perceptron_io_exemption_indices(
             ir_graph, tuner.model.get_perceptrons()
         )

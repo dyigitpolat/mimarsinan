@@ -29,7 +29,9 @@ from mimarsinan.mapping.verification.layout_verification_scheduling import compu
 from mimarsinan.mapping.verification.layout_verification_types import (
     LayoutVerificationStats,
 )
-from .candidate_fragments import candidate_fragments, compute_onchip_census
+from .candidate_fragments import (
+    candidate_fragments, compute_onchip_census, make_core_types,
+)
 from .model_build import build_raw_model, convert_to_mapper_repr
 from .types import (
     HW_PACKING_PHASE,
@@ -49,6 +51,10 @@ class JointLayoutMixin(JointHostContract):
             input_shape=tuple(self.input_shape), num_classes=self.num_classes,
             target_tq=int(self.target_tq), model_config=model_config,
             pcfg=pcfg, placement=placement,
+            prune_sparsity=float(self.prune_sparsity), pruning=bool(self.pruning),
+            prune_criterion=str(self.prune_criterion),
+            pruning_fraction=float(self.pruning_fraction),
+            firing_mode=str(self.firing_mode),
         )
 
     def _convert_to_mapper_repr(self, model, placement: str):
@@ -191,14 +197,7 @@ class JointLayoutMixin(JointHostContract):
 
     @staticmethod
     def _make_core_types(pcfg: Dict) -> List[LayoutHardCoreType]:
-        return [
-            LayoutHardCoreType(
-                max_axons=int(ct["max_axons"]),
-                max_neurons=int(ct["max_neurons"]),
-                count=int(ct["count"]),
-            )
-            for ct in pcfg["cores"]
-        ]
+        return make_core_types(pcfg)
 
     def _requires_fragment(self, fragment: str) -> bool:
         """Does any ACTIVE objective need this candidate fragment? The registry answers."""

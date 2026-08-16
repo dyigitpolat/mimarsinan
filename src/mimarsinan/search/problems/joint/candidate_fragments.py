@@ -14,6 +14,7 @@ from mimarsinan.deployment_record.objectives import (
     candidate_context_from_platform,
 )
 from mimarsinan.deployment_record.platform_physics import PlatformPhysics
+from mimarsinan.mapping.layout.layout_types import LayoutHardCoreType
 from mimarsinan.mapping.noc import LayoutNocFragments, collect_noc_fragments
 from mimarsinan.mapping.platform.mapping_structure import ChipCapabilities
 from mimarsinan.mapping.verification.onchip_fraction import (
@@ -23,6 +24,18 @@ from mimarsinan.mapping.verification.onchip_fraction import (
 
 #: (params, macs) estimates of the host/on-chip split — one flow walk each.
 OnchipCensus = Tuple[OnchipFractionEstimate, OnchipFractionEstimate]
+
+
+def make_core_types(pcfg: Dict) -> list:
+    """The declared chip's hardcore types, as the layout packer consumes them."""
+    return [
+        LayoutHardCoreType(
+            max_axons=int(ct["max_axons"]),
+            max_neurons=int(ct["max_neurons"]),
+            count=int(ct["count"]),
+        )
+        for ct in pcfg["cores"]
+    ]
 
 
 def candidate_fragments(pcfg: Dict, census: Optional[OnchipCensus] = None):

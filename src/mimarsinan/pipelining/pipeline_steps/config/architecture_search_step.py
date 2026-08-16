@@ -14,6 +14,9 @@ from mimarsinan.pipelining.determinism import isolated_rng_stream
 from mimarsinan.pipelining.core.model_config_emit import emit_model_config_entries
 from mimarsinan.pipelining.core.registry.model_registry import ModelRegistry
 from mimarsinan.pipelining.core.search_mode import derive_search_mode
+from mimarsinan.pipelining.pipeline_steps.mapping.soft_core_structured_pruning import (
+    resolve_prune_criterion,
+)
 from mimarsinan.search.problems.joint import JointArchHwProblem
 from mimarsinan.deployment_record.platform_physics.resolve import (
     resolve_platform_physics,
@@ -195,6 +198,10 @@ class ArchitectureSearchStep(PipelineStep):
             extrapolation_num_checkpoints=extrapolation_num_checkpoints,
             extrapolation_target_epochs=extrapolation_target_epochs,
             pruning_fraction=DeploymentPlan.of(self.pipeline).pruning_fraction,
+            pruning=DeploymentPlan.of(self.pipeline).pruning,
+            prune_sparsity=DeploymentPlan.of(self.pipeline).prune_sparsity,
+            prune_criterion=resolve_prune_criterion(self.pipeline.config),
+            firing_mode=str(self.pipeline.config.get("firing_mode", "Default")),
             encoding_placement=str(
                 self.pipeline.config.get("encoding_layer_placement", "subsume")
             ),

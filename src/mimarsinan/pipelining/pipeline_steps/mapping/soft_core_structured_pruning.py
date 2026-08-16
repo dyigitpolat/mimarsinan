@@ -59,7 +59,12 @@ def _seed_context_for(step, model, criterion: str) -> SeedContext:
     """Build the criterion inputs: IR-derived boundary exemptions plus the
     criterion-specific extras (activation stats / group size)."""
     exempt_in, exempt_out = compute_perceptron_io_exemption_indices(
-        build_boundary_ir_graph(model, step.pipeline), model.get_perceptrons()
+        build_boundary_ir_graph(
+            model,
+            weight_bits=int(step.pipeline.config.get("weight_bits", 8)),
+            firing_mode=str(step.pipeline.config.get("firing_mode", "Default")),
+        ),
+        model.get_perceptrons(),
     )
     activation_stats = (
         _collect_seed_activation_stats(step, model)

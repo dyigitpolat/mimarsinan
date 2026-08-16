@@ -34,6 +34,18 @@ def compute_pruning_masks(perceptron, pruning_fraction):
     return row_mask, col_mask
 
 
+def mask_prune_count(dim: int, pruning_fraction: float, *, rate: float = 1.0) -> int:
+    """The tuner's per-dimension elimination count: ``floor(rate * f * dim)``.
+
+    The ONE formula behind every mask the pruning tuner commits — the
+    candidate count-twin reads it too, so search-time shapes and deployed
+    masks can never disagree on the guaranteed elimination.
+    """
+    import math as _math
+
+    return int(_math.floor(float(rate) * float(pruning_fraction) * int(dim)))
+
+
 def compute_masks_from_importance(
     perceptrons,
     rate,
@@ -44,15 +56,13 @@ def compute_masks_from_importance(
     exempt_output_layers,
 ):
     """Compute per-layer pruning masks from importance scores with cross-layer propagation."""
-    import math as _math
-
     n_layers = len(perceptrons)
     row_masks = []
     col_masks = []
     device = perceptrons[0].layer.weight.device
     for i, p in enumerate(perceptrons):
         out_f, in_f = p.layer.weight.data.shape
-        k_r = int(_math.floor(rate * pruning_fraction * out_f))
+        k_r = mask_prune_count(out_f, pruning_fraction, rate=rate)
         if i in exempt_output_layers:
             k_r = 0
         rm = torch.ones(out_f, dtype=torch.bool, device=device)
@@ -61,7 +71,7 @@ def compute_masks_from_importance(
             rm[idx[:k_r]] = False
         row_masks.append(rm)
 
-        k_c = int(_math.floor(rate * pruning_fraction * in_f))
+        k_c = mask_prune_count(in_f, pruning_fraction, rate=rate)
         if i in exempt_input_layers:
             k_c = 0
         cm = torch.ones(in_f, dtype=torch.bool, device=device)

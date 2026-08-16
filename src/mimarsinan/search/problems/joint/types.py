@@ -147,6 +147,10 @@ class JointHostContract:
     builder_factory: BuilderFactory
     encoding_placement: str
     pruning_fraction: float
+    pruning: bool
+    prune_sparsity: float
+    prune_criterion: str
+    firing_mode: str
     option_axes: Tuple[OptionAxis, ...]
     arch_options: Sequence[Tuple[str, Sequence[Any]]]
     model_config_assembler: ModelConfigAssembler
@@ -196,10 +200,6 @@ class JointHostContract:
         def candidate_encoding_placement(
             self, configuration: Mapping[str, Any],
         ) -> str: ...
-
-        def candidate_pruning_fraction(
-            self, configuration: Mapping[str, Any],
-        ) -> float: ...
 
         def _resolved_configuration(
             self, configuration: Dict[str, Any],

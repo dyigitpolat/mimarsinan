@@ -33,10 +33,10 @@ class TestDerivationFromTheConfigRegistry:
         assert axis.section == SECTION_PLATFORM
 
     def test_a_numeric_key_takes_the_registrys_bounds(self):
-        (axis,) = build_option_axes({"pruning_fraction": {}})
+        (axis,) = build_option_axes({"activity_factor": {}})
         assert axis.choices == ()
         assert axis.bounds == (0.0, 1.0)
-        assert axis.section == SECTION_DEPLOYMENT
+        assert axis.section == SECTION_PLATFORM
         assert not axis.integral
 
     def test_an_int_key_is_integral(self):
@@ -55,7 +55,7 @@ class TestDerivationFromTheConfigRegistry:
 
     def test_narrowing_beyond_the_registry_bounds_raises(self):
         with pytest.raises(ValueError, match="bounds"):
-            build_option_axes({"pruning_fraction": {"bounds": [0.0, 2.0]}})
+            build_option_axes({"activity_factor": {"bounds": [0.0, 2.0]}})
 
     def test_an_unknown_key_raises_naming_it(self):
         with pytest.raises(KeyError, match="not_a_key"):
@@ -106,12 +106,12 @@ class TestEncoding:
         assert decode_option_value(axis, 0.0) == "pool"
 
     def test_a_numeric_axis_spans_its_bounds(self):
-        (axis,) = build_option_axes({"pruning_fraction": {"bounds": [0.0, 0.5]}})
+        (axis,) = build_option_axes({"activity_factor": {"bounds": [0.0, 0.5]}})
         assert (axis.lower, axis.upper) == (0.0, 0.5)
         assert decode_option_value(axis, 0.25) == pytest.approx(0.25)
 
     def test_a_numeric_axis_clips_to_its_bounds(self):
-        (axis,) = build_option_axes({"pruning_fraction": {"bounds": [0.0, 0.5]}})
+        (axis,) = build_option_axes({"activity_factor": {"bounds": [0.0, 0.5]}})
         assert decode_option_value(axis, 0.9) == pytest.approx(0.5)
         assert decode_option_value(axis, -1.0) == pytest.approx(0.0)
 
@@ -126,7 +126,7 @@ class TestTheAxisIsSelfDescribing:
     def test_every_axis_declares_a_known_section(self):
         for axis in build_option_axes(
             ["encoding_layer_placement", "schedule_policy", "weight_bits",
-             "pruning_fraction"]
+             "activity_factor"]
         ):
             assert axis.section in (SECTION_PLATFORM, SECTION_DEPLOYMENT)
 

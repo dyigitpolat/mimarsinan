@@ -158,19 +158,22 @@ def assert_unified_ir_for_pruning(ir_graph: IRGraph) -> None:
         )
 
 
-def build_boundary_ir_graph(model, pipeline) -> IRGraph:
-    """Build unified IR for boundary/exemption queries (Pruning Step)."""
+def build_boundary_ir_graph(
+    model, *, weight_bits: int = 8, firing_mode: str = "Default",
+) -> IRGraph:
+    """Build unified IR for boundary/exemption queries.
+
+    Takes the two config VALUES rather than a pipeline, so the candidate
+    count-twin (which has a resolved config but no pipeline) derives its
+    exemptions through the same walk the pruning step uses.
+    """
     from mimarsinan.mapping.ir_mapping_class import IRMapping
     from mimarsinan.transformations.quantization_bounds import quantization_bounds
 
-    bits = int(pipeline.config.get("weight_bits", 8))
-    _, q_max = quantization_bounds(bits)
+    _, q_max = quantization_bounds(int(weight_bits))
     mapper_repr = model.get_mapper_repr()
     if hasattr(mapper_repr, "assign_perceptron_indices"):
         mapper_repr.assign_perceptron_indices()
-    ir_mapping = IRMapping(
-        q_max=q_max,
-        firing_mode=str(pipeline.config.get("firing_mode", "Default")),
-    )
+    ir_mapping = IRMapping(q_max=q_max, firing_mode=str(firing_mode))
     return ir_mapping.map(mapper_repr)
 

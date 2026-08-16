@@ -82,7 +82,16 @@ class JointArchHwProblem(
     extrapolation_num_train_epochs: int = 1
     extrapolation_num_checkpoints: int = 5
     extrapolation_target_epochs: int = 10
+    #: The run's DECLARED pruning [P] — never searched (accuracy impact is
+    #: unmodeled at candidate time; option_axes refuses the keys by name).
+    #: Candidate models are shrunk to the shapes deployment will map:
+    #: ``prune_sparsity`` exactly (the deployed chain shrink itself),
+    #: ``pruning``/``pruning_fraction`` by the mask floor-count bound.
     pruning_fraction: float = 0.0
+    pruning: bool = False
+    prune_sparsity: float = 0.0
+    prune_criterion: str = "row_col_l1"
+    firing_mode: str = "Default"
     #: The deployment's ``encoding_layer_placement``. A candidate's layout is
     #: only the deployed model's layout if its encoder sits where deployment
     #: will put it, so the search resolves the SAME placement the run will.
@@ -141,12 +150,6 @@ class JointArchHwProblem(
         """Where THIS candidate puts its encoder — searched value, else declared."""
         return str(candidate_option(
             configuration, "encoding_layer_placement", self.encoding_placement,
-        ))
-
-    def candidate_pruning_fraction(self, configuration: Mapping[str, Any]) -> float:
-        """How much THIS candidate prunes — searched value, else declared."""
-        return float(candidate_option(
-            configuration, "pruning_fraction", self.pruning_fraction,
         ))
 
     @property

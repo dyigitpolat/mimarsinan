@@ -25,6 +25,16 @@ _NUMERIC_TYPES = (FieldType.INT, FieldType.FLOAT)
 #: map key -> narrowing: a list of choices, or ``{"bounds": [lo, hi]}``.
 OptionAxisDeclaration = Union[Sequence[str], Mapping[str, Any], None]
 
+#: [P3] Keys the registry can describe but a search may NOT vary: their accuracy
+#: impact is unmodeled at candidate time, so a searched value would present free
+#: wins the deployment cannot honor. Declared as run parameters instead — the
+#: candidate census follows the declared value (the pruned-shape twins).
+REFUSED_OPTION_AXES: Mapping[str, str] = {
+    "pruning_fraction": "pruning's accuracy impact is unmodeled at candidate time",
+    "prune_sparsity": "pruning's accuracy impact is unmodeled at candidate time",
+    "pruning": "the pruning tuner's accuracy impact is unmodeled at candidate time",
+}
+
 
 @dataclass(frozen=True)
 class OptionAxis:
@@ -177,6 +187,12 @@ def build_option_axes(declaration: OptionAxisDeclaration) -> Tuple[OptionAxis, .
         if key in seen:
             raise ValueError(f"option axis {key!r} is declared twice")
         seen.add(key)
+        if key in REFUSED_OPTION_AXES:
+            raise ValueError(
+                f"{key!r} is not searchable: {REFUSED_OPTION_AXES[key]}; "
+                f"declare it as a run parameter — the candidate census "
+                f"follows the declared value"
+            )
         choices, bounds = _narrow(key, narrowing, *_registry_shape(key))
         entry = _entry(key)
         axes.append(OptionAxis(

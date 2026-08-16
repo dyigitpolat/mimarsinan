@@ -62,7 +62,21 @@ and memoized on the hardware-only fixture) — the axis gate
 (`resolve_active_specs(physics=...)`) and the view extraction must answer from
 one source, or an admitted priced axis raises at extraction on every candidate.
 Model construction lives in `joint/model_build.py` (`build_raw_model`,
-`convert_to_mapper_repr`), which the hook delegates to. [N3] When a NoC axis
+`convert_to_mapper_repr`), which the hook delegates to. [P] `build_raw_model`
+applies the RUN's DECLARED pruning to every candidate model
+(`joint/candidate_pruning.py`): `prune_sparsity` runs the deployed
+`prune_perceptron_chain` itself (weight-independent counts — candidate shapes
+== deployed shapes by construction); the pruning tuner's
+`pruning`/`pruning_fraction` applies the mask floor-count shrink (the same
+`mask_prune_count` formula, the same IO exemptions via
+`build_boundary_ir_graph`, propagation folded to its conservative `max` —
+the cascade's weights-dependent harvest means the deployed program is never
+LARGER, a stated upper bound); foreign `prune_criterion` values keep shapes
+(same statement at zero elimination); pre-fusion candidate norms are sliced
+to the kept channels. Pruning is NEVER a decision variable: `option_axes.
+REFUSED_OPTION_AXES` refuses `pruning`/`pruning_fraction`/`prune_sparsity`
+by name at declaration time (accuracy impact unmodeled at candidate time),
+and the dead searched-pruning reader (`candidate_pruning_fraction`) is gone. [N3] When a NoC axis
 is active (`_requires_fragment("noc_fragments")`), `_collect_softcores` walks
 with `collect_wire_census=True` and `candidate_fragments.collect_candidate_noc`
 plans+packs every pass under the candidate's OWN capability bits
