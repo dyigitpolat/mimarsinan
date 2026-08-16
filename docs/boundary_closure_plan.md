@@ -12,7 +12,7 @@
 | P pruned shapes + de-search | **DONE** — both knobs shrink the candidate (exact chain twin; mask floor-count bound with IO exemptions + max-propagation); pruning refused as an axis by name | `search(P)` |
 | B buffer metric + gate | **DONE** — record axes + `pass_buffer_capacity_bytes` gate at the hard-core mapping step | `record(B)` |
 | L latency evidence | **DONE** — loihi `t_cycle` measured band [5.8, 13] µs + `host_compute_rate` identity; `loihi_knn_query_latency` self-consistency case: e2e −22.8%, throughput +16.8% through the real pricer | `physics(L)` |
-| S study | **IN FLIGHT** — 4 profile runs (t0_60-based MLP search cells + physics/activity/host-rate declarations + the 5-axis objective set) launched in parallel; artifacts + report pending |
+| S study | **DONE** — 4 MLP runs + the LeNet5 pruned stretch sealed with live fidelity.json; results + surfaced follow-ups in `docs/boundary_closure_study.md` | `docs(S)` + fixes |
 
 Repo: `mimarsinan` @ `2bb39fb3` (streamed-scheduling G-series closed). This program
 closes the honest boundary the substrate discussion named, in the owner's priority
