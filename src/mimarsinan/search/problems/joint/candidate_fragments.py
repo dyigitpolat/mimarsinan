@@ -26,10 +26,13 @@ from mimarsinan.chip_simulation.spiking_semantics import (
     is_synchronized_ttfs,
 )
 from mimarsinan.chip_simulation.stage_timesteps import program_latency_steps
+from dataclasses import replace as _dc_replace
+
 from mimarsinan.mapping.noc import (
     LayoutNocFragments,
     collect_noc_fragments,
     execution_stage_latencies,
+    execution_stage_placements,
 )
 from mimarsinan.mapping.platform.mapping_structure import ChipCapabilities
 from mimarsinan.mapping.verification.onchip_fraction import (
@@ -139,6 +142,22 @@ class ProgramFacts:
     latency_steps: Optional[int] = None
     programming: Optional[CandidateProgramming] = None
     carry: Optional[Dict[str, int]] = None
+
+
+def with_stage_placements(
+    softcores, noc: Optional[LayoutNocFragments], semantics: "StageSemantics",
+) -> Optional[LayoutNocFragments]:
+    """[R3] Attach the EXECUTED per-stage placements to the fragments.
+
+    The runner maps each execution stage from tile 0 — a re-timed program
+    never runs the pass's co-resident placement, and pricing hops on it
+    modeled 113.6 where the executed program measured a true 0.
+    """
+    if noc is None:
+        return None
+    return _dc_replace(noc, stage_placements=execution_stage_placements(
+        softcores, noc.pass_placements, retimed=semantics.retimed,
+    ))
 
 
 def candidate_program_facts(

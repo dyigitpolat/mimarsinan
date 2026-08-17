@@ -7,7 +7,7 @@
 | R0 diagnosis: the "twin divergence" decomposed | **DONE** — findings below | (this doc) |
 | R1 as-mapped event model + committed-cells quantity + occupancy fix | **DONE** — candidate claims `macs`/`cells_used` from the pass structure (== deployed crossbar on the replicated vehicle, both policies); events = as-mapped × T × activity (energy axes now layout-classified); the record mirror divides by the DECLARED chip; probes read ONE fragment→keys table | `search(R1)` |
 | R2 host per-invocation overhead | **DONE** — `t_host_op_overhead` (measured percentile band through `execute_compute_op_torch`: 20.5 µs median on this host) × new `compute_op_count` (record: sealed; candidate: the same flow walk, ops metric); rate-only pricing keeps an unpriced-note; measured walls never double-charge. Found: the sealed 19 ms MLP wall is ONE COLD invocation (`invocations=1`) — R5 times more samples so per-pass normalization amortizes it | `physics(R2)` |
-| R3 measured-NoC honesty (false zero → absence) + instrumented verification | pending | |
+| R3 one floorplan for twin/runner/record | **DONE** — `execution_stage_placements` (stage-local re-basing, the runner's own mapping rule); the estimator prices the EXECUTED placement (a re-timed program's twin now models the true 0 the run measured); pass placements stay the fused/stage-blind fallback. Remaining: the sealed placement fragment under-describes per-stage runs (records one stage's arch) — noted for R5's findings | `noc(R3)` |
 | R4 estimand adjudications + the activity loop | pending | |
 | R5 verification study: MLP + LeNet5 as vehicles, +1 family as the generality witness | pending | |
 

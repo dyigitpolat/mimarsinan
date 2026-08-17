@@ -39,6 +39,7 @@ def estimate_noc(
     mesh_height: int,
     activity_factor: float,
     timesteps: int,
+    stage_placements: Any = None,
 ) -> NocEstimate:
     """Price the fragments' traffic on the resolved floorplan.
 
@@ -59,7 +60,16 @@ def estimate_noc(
     census = fragments.census
     inter = intra = input_path = hops = 0.0
 
-    for placements in fragments.pass_placements:
+    # [R3] The EXECUTED placement is per execution stage (a re-timed program
+    # runs one small remapped chip per depth level, each from tile 0) — the
+    # pass placement is what the PLANNER co-locates, not what runs. Callers
+    # that know the stage structure pass it; the pass placements remain the
+    # fallback for stage-blind callers.
+    placement_sets = (
+        fragments.pass_placements if stage_placements is None
+        else stage_placements
+    )
+    for placements in placement_sets:
         core_of: Dict[int, int] = {
             int(softcore): int(hardcore) for softcore, hardcore in placements
         }

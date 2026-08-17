@@ -54,14 +54,48 @@ def execution_stage_latencies(
     return tuple(stages)
 
 
+def execution_stage_placements(
+    softcores: Sequence[LayoutSoftCoreSpec],
+    pass_placements: Sequence[Sequence[Tuple[int, int]]],
+    *,
+    retimed: bool,
+) -> Tuple[Tuple[Tuple[int, int], ...], ...]:
+    """[R3] Per-EXECUTION-STAGE placements with stage-local hardcore indices.
+
+    The runner maps EACH execution stage's cores from tile 0, core 0 — a
+    re-timed program runs one small remapped chip per depth level, never the
+    co-resident placement the pass planned. Pricing hops on the pass
+    placement modeled 113.6 hops where the executed program measured a true
+    0 (every level fit one tile). Grouping mirrors
+    :func:`execution_stage_latencies` — one stage per (pass, segment, level)
+    when re-timing is armed, else one per (pass, segment) — and hardcore
+    indices are re-based per stage in placement order, the runner's own
+    packing order.
+    """
+    stages: List[Tuple[Tuple[int, int], ...]] = []
+    for placements in pass_placements:
+        by_group: Dict[Tuple[int, int], List[Tuple[int, int]]] = {}
+        for softcore_index, hardcore in placements:
+            spec = softcores[softcore_index]
+            segment = int(spec.segment_id or 0)
+            level = int(spec.latency_tag or 0) if retimed else 0
+            by_group.setdefault((segment, level), []).append(
+                (softcore_index, hardcore)
+            )
+        for _key, group in sorted(by_group.items()):
+            reindex: Dict[int, int] = {}
+            local: List[Tuple[int, int]] = []
+            for softcore_index, hardcore in group:
+                local_core = reindex.setdefault(int(hardcore), len(reindex))
+                local.append((softcore_index, local_core))
+            stages.append(tuple(local))
+    return tuple(stages)
+
+
 @dataclass(frozen=True)
 class PassProgram:
-    """[E2] What ONE pass of the candidate program costs to install.
-
-    ``cells_used`` is the payload multiplicand under the record's own rule:
-    per occupied hard core, the used-row x used-column rectangle. ``resident``
-    is the residency law's answer — a resident pass installs nothing.
-    """
+    """[E2] One pass's install cost: per-core committed rectangles + the
+    residency law's answer (a resident pass installs nothing)."""
 
     core_cells: Tuple[int, ...]
     resident: bool
@@ -88,6 +122,10 @@ class LayoutNocFragments:
     #: always produced because the LATENCY model needs the pass structure.
     census: Optional[LayoutWireCensus]
     pass_programs: Tuple[PassProgram, ...] = ()
+    #: [R3] Per-EXECUTION-STAGE placements (stage-local hardcore indices) —
+    #: what the runner actually maps; None until the caller that knows the
+    #: firing semantics derives them (``execution_stage_placements``).
+    stage_placements: Optional[Tuple[Tuple[Tuple[int, int], ...], ...]] = None
 
 
 def collect_noc_fragments(

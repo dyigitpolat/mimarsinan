@@ -136,6 +136,9 @@ class CandidateStaticView:
                 mesh_height=int(context.tile_mesh_height),
                 activity_factor=float(context.activity_factor),
                 timesteps=int(context.timesteps),
+                stage_placements=getattr(
+                    self.noc_fragments, "stage_placements", None
+                ),
             )
         self._derived["noc"] = estimate
         return estimate

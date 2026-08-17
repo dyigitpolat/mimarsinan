@@ -12,7 +12,11 @@ from mimarsinan.search.constraints import ConstraintReport, onchip_floor_violati
 from mimarsinan.search.option_axes import candidate_option
 from mimarsinan.search.problem import CandidateInfeasibleError, ValidationResult
 
-from .candidate_fragments import candidate_program_facts, collect_candidate_noc
+from .candidate_fragments import (
+    candidate_program_facts,
+    collect_candidate_noc,
+    with_stage_placements,
+)
 
 from .types import (
     HW_CONVERSION_PHASE,
@@ -28,7 +32,6 @@ from .types import (
 )
 
 logger = logging.getLogger(__name__)
-
 
 class JointValidateMixin(JointHostContract):
     """Feasibility validation for :class:`JointArchHwProblem`."""
@@ -145,6 +148,7 @@ class JointValidateMixin(JointHostContract):
             softcores=softcores, core_types=self._make_core_types(pcfg),
             census=wire_census, pcfg=pcfg,
         )
+        noc = with_stage_placements(softcores, noc, self.stage_semantics)
         census = self._onchip_census(model, placement)
         program = candidate_program_facts(
             softcores, noc, self.stage_semantics,
