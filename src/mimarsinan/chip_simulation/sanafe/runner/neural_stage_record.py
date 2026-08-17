@@ -17,7 +17,7 @@ import mimarsinan.chip_simulation.sanafe.runner as _runner
 from mimarsinan.chip_simulation.sanafe.runner.carry import publish_sanafe_carry
 from mimarsinan.chip_simulation.hybrid_run.hybrid_semantics import (
     NeuralSegmentResult, store_neural_segment_output)
-from mimarsinan.chip_simulation.synaptic_events import synaptic_event_census
+from mimarsinan.chip_simulation.synaptic_events import census_from_trace_groups
 from mimarsinan.chip_simulation.spiking_semantics import is_cascaded_ttfs
 from mimarsinan.spiking.segment_boundary import decode_segment_output
 from mimarsinan.chip_simulation.sanafe.analysis import (
@@ -196,11 +196,11 @@ class SanafeNeuralStageRecordMixin:
         # when the trace was not parsed, so a partial count never prices.
         stage_events = None
         if not spike_parse_skipped:
-            stage_events = synaptic_event_census(
+            stage_events = census_from_trace_groups(
                 hcm.cores,
-                emissions_of=lambda c: group_spike_counts.get(
-                    core_to_group.get(c, "")),
-                boundary_arrivals_of=lambda c: input_spikes_by_core.get(c, 0),
+                group_spike_counts=group_spike_counts,
+                core_to_group=core_to_group,
+                boundary_arrivals=input_spikes_by_core,
             )
 
         seg_record = SanafeSegmentRecord(

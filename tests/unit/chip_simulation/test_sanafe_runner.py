@@ -530,6 +530,42 @@ def test_runner_sim_wall_cap_honors_ctor_value_and_env_override(monkeypatch):
     assert runner._sim_timeout_s == 77.0
 
 
+def test_inter_core_arrivals_reach_the_sealed_event_census(monkeypatch):
+    """[H5] The census join that only a FUSED multi-latency stage exercises.
+
+    Every H5 MLP stage was single-latency (per-hop retiming turns intra-stage
+    dependencies into stage boundaries), so the first inter-core read in
+    production was LeNet5's fused classifier — where the finalizer joined
+    group OBJECTS against the name-keyed counts and refused every such stage.
+    Two cores, core 1 reading core 0: the sealed census must be the measured
+    emissions times the consumer's occupied columns, never None."""
+    producer = _fake_hard_core(axons=2, neurons=3, latency=0)
+    consumer = _fake_hard_core(
+        axons=2, neurons=2, latency=1,
+        axon_sources=[SpikeSource(0, 0, False, False, False),
+                      SpikeSource(0, 1, False, False, False)],
+    )
+    stage = _fake_stage(
+        "neural", name="s0", hcm=_fake_hcm(producer, consumer),
+        input_map=[_seg_io_slice(node_id=-2, offset=0, size=2)],
+        output_map=[_seg_io_slice(node_id=0, offset=0, size=2)],
+    )
+    mapping = _fake_mapping(stage)
+    _patch_sanafe_stack(monkeypatch)
+    # Producer neuron 0 fires 4x, neuron 1 fires 8x; the consumer reads both.
+    trace = ([["core0.0", "core0.1"]] * 4) + ([["core0.1"]] * 4)
+    _seed_chip_result(spikes=12, packets_sent=7, neurons_fired=12,
+                      spike_trace=trace)
+
+    runner = SanafeRunner(
+        mapping=mapping, simulation_length=8, behavior=_declared_behavior())
+    rec = runner.run(np.asarray([[0.5, 1.0]], dtype=np.float32), sample_index=0)
+    seg = rec.segments[0]
+    # (4 + 8) arrivals x 2 occupied consumer columns; the producer's own rows
+    # saw no input fires in this trace, so it contributes nothing.
+    assert seg.synaptic_events == (4 + 8) * 2
+
+
 def test_runner_sim_wall_cap_comes_from_the_contract(monkeypatch):
     from mimarsinan.chip_simulation.deployment_contract import (
         SpikingDeploymentContract,

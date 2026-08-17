@@ -102,9 +102,15 @@ silicon-correlation cases stay in band; the full suite holds at 11,634 tests
 
 ## Follow-ups (ranked)
 
-1. **LeNet5 stage-4 census refusal**: adjudicate empty-producer-is-known-zero
-   vs index defect; the distinguisher is `used_neurons(producer) == 0` at the
-   finalizer.
+1. **LeNet5 stage-4 census refusal** — ROOT-CAUSED and fixed post-study: the
+   finalizer joined `core_to_group`'s GROUP OBJECTS against the name-keyed
+   trace counts, so `emissions_of` missed on every inter-core read. Only a
+   FUSED multi-latency stage has such reads (per-hop retiming turns MLP
+   intra-stage dependencies into stage boundaries), so LeNet5's fused
+   classifier was the first production exercise of the path. The join now
+   lives beside the census (`census_from_trace_groups`), pinned by a runner
+   test with a real inter-core dependency; the refusal machinery behaved
+   exactly as designed throughout. Re-run pending to seal a censused record.
 2. **Host per-invocation overhead**: extend `calibrate_host.py` to measure
    `t_host_op_overhead`; add the `x compute_op_count` term; re-zip e2e.
 3. **Re-declare `activity_factor`** from the measured 0.1118 (or declare

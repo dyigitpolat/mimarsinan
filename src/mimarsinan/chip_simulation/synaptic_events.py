@@ -7,6 +7,34 @@ from typing import Any, Callable, Iterable, Optional, Sequence
 from mimarsinan.mapping.crossbar_utilization import CoreOccupancy
 
 
+def census_from_trace_groups(
+    cores: Iterable[Any],
+    *,
+    group_spike_counts,
+    core_to_group,
+    boundary_arrivals,
+) -> Optional[int]:
+    """The census over a runner's trace-group tallies — the ONE join site.
+
+    ``core_to_group`` values are GROUP OBJECTS; the name-keyed counts are
+    joined through the group's own name (joining on the object itself
+    refused every stage whose cores read other cores — the fused
+    multi-latency shape, first hit by LeNet5's classifier [H5]).
+    """
+    def _emissions(core_index: int):
+        group = core_to_group.get(core_index)
+        if group is None:
+            return None
+        name = group.get_name() if hasattr(group, "get_name") else group.name
+        return group_spike_counts.get(name)
+
+    return synaptic_event_census(
+        cores,
+        emissions_of=_emissions,
+        boundary_arrivals_of=lambda c: boundary_arrivals.get(c, 0),
+    )
+
+
 def synaptic_event_census(
     cores: Iterable[Any],
     *,
