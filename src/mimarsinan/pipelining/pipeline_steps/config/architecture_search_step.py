@@ -232,9 +232,24 @@ class ArchitectureSearchStep(PipelineStep):
 
         best_cfg = result.best.configuration
         if not best_cfg:
+            # A search that rejected everything must SAY WHY — the per-candidate
+            # refusals and the constraint census are recorded on the problem;
+            # a bare "no candidates" sent the operator hunting bounds when the
+            # cause could be a single semantic refusal shared by all offspring.
+            reasons: dict = {}
+            for verdict in getattr(problem, "_validation_errors", {}).values():
+                key = f"{verdict.failure_phase}: {(verdict.error_message or '')[:160]}"
+                reasons[key] = reasons.get(key, 0) + 1
+            census = getattr(problem, "constraint_census", lambda: {})()
+            detail = "; ".join(
+                f"{count}x {reason}" for reason, count in
+                sorted(reasons.items(), key=lambda kv: -kv[1])[:3]
+            ) or "no recorded validation errors"
             raise RuntimeError(
-                "[ArchitectureSearchStep] Architecture search produced no candidates. "
-                "Consider increasing pop_size or generations, or relaxing the search bounds."
+                "[ArchitectureSearchStep] Architecture search produced no "
+                f"candidates. Failure census: {detail}. Constraint census: "
+                f"{census or 'none'}. Consider relaxing the named cause before "
+                "touching pop_size/generations/bounds."
             )
 
         if not problem.validate(best_cfg):
