@@ -52,7 +52,6 @@
     },
     "weight_source": "torchvision",
     "finetune_epochs": 2,
-    "schedule_policy": "bank_clustered",
     "simulation_batch_size": 64
   },
   "target_metric_override": null,

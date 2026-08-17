@@ -49,8 +49,7 @@
     "allow_scheduling": true,
     "core_semantics": "mvm",
     "weight_quantization": true,
-    "training_epochs": 20,
-    "schedule_policy": "bank_clustered"
+    "training_epochs": 20
   },
   "target_metric_override": null,
   "start_step": null,

@@ -1,7 +1,7 @@
 {
   "seed": 0,
   "pipeline_mode": "phased",
-  "experiment_name": "t1_03_ttfsq_vit_wq_s32_pruned",
+  "experiment_name": "t1_03_ttfsq_vit_wq_s32_pruned_sched",
   "generated_files_path": "./generated",
   "data_provider_name": "CIFAR10_DataProvider",
   "platform_constraints": {
@@ -26,7 +26,8 @@
     "simulation_steps": 32,
     "weight_bits": 8,
     "allow_coalescing": false,
-    "allow_neuron_splitting": true
+    "allow_neuron_splitting": true,
+    "max_schedule_passes": 64
   },
   "deployment_parameters": {
     "lr": 0.003,
@@ -40,7 +41,7 @@
     "max_simulation_samples": 25,
     "sanafe_arch_preset": "loihi",
     "sanafe_sample_count": 1,
-    "allow_scheduling": false,
+    "allow_scheduling": true,
     "spiking_family": "ttfs",
     "spiking_variant": "quantized",
     "firing_mode": "TTFS",

@@ -798,7 +798,7 @@
         "pruned"
       ],
       "expected_wall_min": 10,
-      "note": "wsm flagship: bank-clustered scheduled passes on a constrained pool + boundary AQ, twin certs FATAL"
+      "note": "wsm flagship: streamed scheduled passes on a constrained pool + boundary AQ, twin certs FATAL"
     }
   ],
   "coverage_notes": [

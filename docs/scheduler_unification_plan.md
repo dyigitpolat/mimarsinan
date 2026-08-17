@@ -4,8 +4,8 @@
 
 | Stage | State |
 |---|---|
-| U1 core: unified planner + chooser + builder-consumes-planner + enum removal | pending |
-| U2 surface: record/introspection echoes, templates (incl. t1_02 fix), docs | pending |
+| U1 core: unified planner + chooser + builder-consumes-planner + enum removal | **DONE** — `scheduler(U1)` @ b8b41dfe; suite 11,661 green, typecheck 0, 3 guard mutants killed (chooser, builder residency marking, retirement row); lazy-import allowlist tightened |
+| U2 surface: record/introspection echoes, templates (incl. t1_02 fix), docs | **DONE** — echoes landed with U1; generator drops the 5 enum declarations; t1_02/t1_03 become `_sched` cells (the 138-core ViT platform was always sized for streaming — the generator's own t1_09 note says so); template tests 40 green |
 | U3 ViT relaunch: feasibility probe, eval-cost measurement, seeded search + per-offspring report | pending |
 
 ## Owner directive (verbatim, 2026-08-18)

@@ -23,8 +23,8 @@
       "expected_wall_min": 120
     },
     {
-      "name": "t1_02_ttfs_vit_wq_s32",
-      "config": "t1_02_ttfs_vit_wq_s32.json",
+      "name": "t1_02_ttfs_vit_wq_s32_sched",
+      "config": "t1_02_ttfs_vit_wq_s32_sched.json",
       "model_type": "torch_vit",
       "cell": {
         "firing": "ttfs",
@@ -39,13 +39,14 @@
         "encoding_placement": "subsume"
       },
       "tags": [
-        "wall_risk"
+        "wall_risk",
+        "sched"
       ],
       "expected_wall_min": 120
     },
     {
-      "name": "t1_03_ttfsq_vit_wq_s32_pruned",
-      "config": "t1_03_ttfsq_vit_wq_s32_pruned.json",
+      "name": "t1_03_ttfsq_vit_wq_s32_pruned_sched",
+      "config": "t1_03_ttfsq_vit_wq_s32_pruned_sched.json",
       "model_type": "torch_vit",
       "cell": {
         "firing": "ttfs_quantized",
@@ -61,7 +62,8 @@
       },
       "tags": [
         "wall_risk",
-        "pruned"
+        "pruned",
+        "sched"
       ],
       "expected_wall_min": 120
     },

@@ -384,9 +384,8 @@ T0 = [
     # an under-declared budget silently falls back to pool, reuse 0.16).
     dict(n=44, mode="mvm", quant="wq", wb=8, vehicle="lenet5", platform="H",
          scheduling=True, tags=["sched", "pruned"], pruned=0.05,
-         extra_dp={"schedule_policy": "bank_clustered"},
          extra_pc={"activation_bits": 8, "max_schedule_passes": 128},
-         note="wsm flagship: bank-clustered scheduled passes on a "
+         note="wsm flagship: streamed scheduled passes on a "
               "constrained pool + boundary AQ, twin certs FATAL"),
 ]
 
@@ -400,9 +399,16 @@ T1 = [
     # finetune_lr/lr — which is why its numbers were bit-identical.)
     dict(n=1, mode="lifsync", quant="wq", wb=8, s=16, vehicle="squeezenet",
          regime="pretrained", finetune_epochs=8, finetune_lr=1e-4),
-    dict(n=2, mode="ttfs", quant="wq", wb=8, s=32, vehicle="vit", regime="pretrained", tags=["wall_risk"]),
+    # [U1] The ViT platform (138 cores) is only coherent under scheduling:
+    # per-token instances stream over resident core-sets, while the flat
+    # residency demand is thousands of instances — the unscheduled variants
+    # of these cells died at packing and could never deploy.
+    dict(n=2, mode="ttfs", quant="wq", wb=8, s=32, vehicle="vit", regime="pretrained",
+         scheduling=True, tags=["wall_risk", "sched"],
+         extra_pc={"max_schedule_passes": 64}),
     dict(n=3, mode="ttfsq", quant="wq", wb=8, s=32, vehicle="vit", regime="pretrained",
-         pruned=0.05, tags=["wall_risk", "pruned"]),
+         pruned=0.05, scheduling=True, tags=["wall_risk", "pruned", "sched"],
+         extra_pc={"max_schedule_passes": 64}),
     dict(n=4, mode="casc", quant="wq", wb=5, s=8, vehicle="deepcnn32", depth=8, regime="from_scratch"),
     dict(n=5, mode="sync", quant="wq", wb=5, s=8, vehicle="deepcnn32", depth=4, regime="from_scratch"),
     dict(n=6, mode="lifsync", quant="wq", wb=8, s=32, vehicle="deepcnn32", depth=8, regime="from_scratch"),
@@ -411,7 +417,7 @@ T1 = [
     dict(n=8, mode="ttfs", quant="fp", wb=8, s=16, vehicle="mixerc10", regime="from_scratch"),
     # [mvm W3] wider-mapping showcase: patch-embed conv + MLP fc1/fc2 + heads
     # map as affine packages; MHA/LayerNorm stay host ops. [wsm V4] armed
-    # with FC banks + bank-clustered scheduling: per-token instances stream
+    # with FC banks + residency-streamed scheduling: per-token instances stream
     # over resident core-sets, so ViT-B fits platform E's 138 cores (the
     # measured un-scheduled need was 4778 instances).
     # simulation_batch_size bounds the value-census activation footprint —
@@ -419,29 +425,26 @@ T1 = [
     # t2 ViT rows' precedent knob).
     dict(n=9, mode="mvm", quant="wq", wb=8, vehicle="vit", regime="pretrained",
          scheduling=True, tags=["wall_risk", "sched"],
-         extra_dp={"schedule_policy": "bank_clustered",
-                   "simulation_batch_size": 64},
+         extra_dp={"simulation_batch_size": 64},
          extra_pc={"max_schedule_passes": 64}),
     # [wsm N1] the weight-programming boundary in the EVENT domain at tier-1
     # scale — an exact minimal pair with t1_06 (same vehicle/mode/S/depth,
-    # scheduling + the bank-aware policy the only difference). Measured
-    # preconditions on cached spiking IRs: bank_clustered ENGAGES for conv
-    # banks (t0_03 d8: programmed 9216000 -> 8239104 with 2 resident stages;
-    # t0_26 d6: 5603328 -> 4626432), so the cell carries real evidence
-    # rather than a pool fallback. The squeezenet vehicle is unusable here:
-    # its ImageNet backbone reads chance on unpreprocessed 32x32 CIFAR10
+    # scheduling the only difference). Measured preconditions on cached
+    # spiking IRs: residency streaming ENGAGES for conv banks (t0_03 d8:
+    # programmed 9216000 -> 8239104 with 2 resident stages; t0_26 d6:
+    # 5603328 -> 4626432), so the cell carries real evidence rather than a
+    # capacity fallback. The squeezenet vehicle is unusable here: its
+    # ImageNet backbone reads chance on unpreprocessed 32x32 CIFAR10
     # (no resize/normalize declared) and the pretrain envelope aborts.
     dict(n=10, mode="lifsync", quant="wq", wb=8, s=32, vehicle="deepcnn32",
          depth=8, regime="from_scratch", scheduling=True, tags=["sched"],
-         extra_dp={"schedule_policy": "bank_clustered"},
          extra_pc={"max_schedule_passes": 128}),
     # [mvm AQ] boundary value-grid quantization at ViT scale — the minimal
     # pair with t1_09 (activation_bits absent -> declared). Exercises AQ x
     # scheduling composition and the R/C certs over ~18M neuron-windows.
     dict(n=11, mode="mvm", quant="wq", wb=8, vehicle="vit", regime="pretrained",
          scheduling=True, tags=["wall_risk", "sched", "aq8"],
-         extra_dp={"schedule_policy": "bank_clustered",
-                   "simulation_batch_size": 64},
+         extra_dp={"simulation_batch_size": 64},
          extra_pc={"max_schedule_passes": 64, "activation_bits": 8}),
     # [mvm breadth] a SECOND value-domain architecture family at tier-1: the
     # mixer's token-instanced FCs are the FC-weight-bank mechanism (V1) at
@@ -449,7 +452,6 @@ T1 = [
     # mlp_mixer_core packages under mvm; this is its WQ tier-1 sibling).
     dict(n=12, mode="mvm", quant="wq", wb=8, vehicle="mixerc10",
          regime="from_scratch", scheduling=True, tags=["sched"],
-         extra_dp={"schedule_policy": "bank_clustered"},
          extra_pc={"max_schedule_passes": 128}),
 ]
 
