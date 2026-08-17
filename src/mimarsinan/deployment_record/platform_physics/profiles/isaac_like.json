@@ -1,7 +1,7 @@
 {
   "format_version": 1,
   "name": "isaac_like",
-  "display_name": "ISAAC-CE (32 nm analog ReRAM, Shafiee 2016 — SIMULATED)",
+  "display_name": "ISAAC-CE (32 nm analog ReRAM, Shafiee 2016 \u2014 SIMULATED)",
   "description_file": "isaac_like.md",
   "validity": {
     "measurement_kind": "simulation",
@@ -9,7 +9,7 @@
     "supply_v": null,
     "temperature_c": null,
     "array_size_assumed": "ISAAC-CE: 8 arrays of 128x128 2-bit cells per IMA, 8 ADCs per IMA, 12 IMAs per tile, 168 tiles",
-    "notes": "A DESIGN-SPACE STUDY, not a fabricated chip: areas and powers come from CACTI 6.5 at 32 nm plus published component models, and Table I reports POWER only — every energy constant here is derived by multiplying a published power by the paper's own 100 ns cycle and dividing by the printed instance count. The supply voltage is never stated. Treat this as a modelled design point."
+    "notes": "A DESIGN-SPACE STUDY, not a fabricated chip: areas and powers come from CACTI 6.5 at 32 nm plus published component models, and Table I reports POWER only \u2014 every energy constant here is derived by multiplying a published power by the paper's own 100 ns cycle and dividing by the printed instance count. The supply voltage is never stated. Treat this as a modelled design point."
   },
   "conversion_model": {
     "model": "bit_sliced_crossbar",
@@ -26,7 +26,7 @@
       "unit": "um^2",
       "evidence_kind": "derived",
       "citation": "shafiee2016isaac Table I, memristor-array row, p.8",
-      "derivation": "Table I gives 0.0002 mm^2 for 8 arrays: 0.0002 mm^2 / 8 = 25 um^2 per array; / (128 x 128 = 16384 cells) = 1.5259e-3 um^2. Implied cell pitch sqrt(1526 nm^2) = 39.1 nm, i.e. 4F^2 at F = 19.5 nm — a sanity check the number passes.",
+      "derivation": "Table I gives 0.0002 mm^2 for 8 arrays: 0.0002 mm^2 / 8 = 25 um^2 per array; / (128 x 128 = 16384 cells) = 1.5259e-3 um^2. Implied cell pitch sqrt(1526 nm^2) = 39.1 nm, i.e. 4F^2 at F = 19.5 nm \u2014 a sanity check the number passes.",
       "note": "The source prints ONE significant figure (0.0002 mm^2), so this carries at best one figure of precision despite the arithmetic's five."
     },
     "area_per_adc": {
@@ -42,14 +42,14 @@
       "evidence_kind": "derived",
       "citation": "shafiee2016isaac Table I, DAC row, p.8",
       "derivation": "0.00017 mm^2 = 170 um^2 for 8 x 128 = 1024 DACs; 170 / 1024 = 0.166 um^2 per 1-bit DAC.",
-      "note": "The paper calls a 1-bit DAC 'a trivial circuit (an inverter)', and 0.17 um^2 is about a minimum-size inverter at 32 nm — the plausibility check this number passes."
+      "note": "The paper calls a 1-bit DAC 'a trivial circuit (an inverter)', and 0.17 um^2 is about a minimum-size inverter at 32 nm \u2014 the plausibility check this number passes."
     },
     "area_per_router": {
       "nominal": 151000.0,
       "unit": "um^2",
       "evidence_kind": "published",
       "citation": "shafiee2016isaac Table I, Router row, p.8",
-      "note": "'Router ... 0.151 (shared by 4 tiles)'. Declared PER ROUTER, so a floorplan with one router per tile over-charges by 4x — ISAAC's c-mesh is concentrated."
+      "note": "'Router ... 0.151 (shared by 4 tiles)'. Declared PER ROUTER, so a floorplan with one router per tile over-charges by 4x \u2014 ISAAC's c-mesh is concentrated."
     },
     "area_per_tile_fixed": {
       "nominal": 177250.0,
@@ -122,14 +122,14 @@
       "unit": "levels",
       "evidence_kind": "published",
       "citation": "shafiee2016isaac Table I and Section VIII-A, p.9",
-      "note": "'bits per cell / 2' — 4 conductance states. 'We empirically estimated that the CE metric is maximized when using 2 bits per cell (w = 2).' A 16-bit weight therefore spans 8 cells in adjacent columns, which is the cells_per_weight the conversion model declares."
+      "note": "'bits per cell / 2' \u2014 4 conductance states. 'We empirically estimated that the CE metric is maximized when using 2 bits per cell (w = 2).' A 16-bit weight therefore spans 8 cells in adjacent columns, which is the cells_per_weight the conversion model declares."
     },
     "adc_sharing_factor": {
       "nominal": 128.0,
       "unit": "columns",
       "evidence_kind": "derived",
       "citation": "shafiee2016isaac Section V, p.5",
-      "derivation": "'128 bitline currents are latched in 128 sample-and-hold circuits. In the next 100 ns cycle, these analog values ... are fed sequentially to a single 1.28 GSps ADC unit' — all 128 columns of an array share one ADC. Confirmed by Table I: 8 arrays, 8 ADCs per IMA."
+      "derivation": "'128 bitline currents are latched in 128 sample-and-hold circuits. In the next 100 ns cycle, these analog values ... are fed sequentially to a single 1.28 GSps ADC unit' \u2014 all 128 columns of an array share one ADC. Confirmed by Table I: 8 arrays, 8 ADCs per IMA."
     },
     "membrane_bits": {
       "nominal": 16.0,
@@ -159,6 +159,13 @@
       "evidence_kind": "published",
       "citation": "shafiee2016isaac Table I HyperTransport row + Section VII, p.7",
       "note": "'The HT is a constant overhead of 10 W, representing half of DaDianNao chip power, but only 16% of ISAAC chip power.' Explicitly CONSTANT, not activity-proportional, which is exactly why it is modelled as static power rather than as a per-byte transport energy."
+    },
+    "host_compute_rate": {
+      "nominal": 1.0,
+      "unit": "fraction",
+      "evidence_kind": "derived",
+      "derivation": "identity: a measured host wall is used at face value (wall / 1.0)",
+      "note": "The derate a MEASURED host wall is divided by. Identity by definition: this framework measures its host ComputeOp walls end-to-end on the deployment host (StageTimer), and derating a measurement would invent headroom. [H5] Declared here after the loihi precedent because its absence refused the record-plane e2e/energy headlines BY NAME on runs whose host wall was in fact measured."
     }
   }
 }

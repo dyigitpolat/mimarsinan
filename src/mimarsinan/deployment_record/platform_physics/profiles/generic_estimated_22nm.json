@@ -237,6 +237,13 @@
       "unit": "ns",
       "evidence_kind": "estimated",
       "note": "Zero for the same digital-array assumption as area_per_adc."
+    },
+    "host_compute_rate": {
+      "nominal": 1.0,
+      "unit": "fraction",
+      "evidence_kind": "derived",
+      "derivation": "identity: a measured host wall is used at face value (wall / 1.0)",
+      "note": "The derate a MEASURED host wall is divided by. Identity by definition: this framework measures its host ComputeOp walls end-to-end on the deployment host (StageTimer), and derating a measurement would invent headroom. [H5] Declared here after the loihi precedent because its absence refused the record-plane e2e/energy headlines BY NAME on runs whose host wall was in fact measured."
     }
   }
 }

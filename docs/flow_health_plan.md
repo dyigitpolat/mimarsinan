@@ -10,7 +10,7 @@
 | H3 fidelity as an instrument | **DONE** — twin armed via the shared `firing_semantics_kwargs`; full candidate-answerable surface; per-term zip with bands/evidence; utilization family = allocated denominator + committed-rectangle numerator BOTH planes (a second numerator fork found and closed); new `chip_occupancy_pct`; one-sided rows carry a written basis | `fidelity(H3)` |
 | H3b host-rate calibration | **DONE** — `scripts/calibrate_host.py` + `platform_physics/host_calibration.py`; new `measured` evidence kind (requires the machine + method note); this host: 21.02 G/s (vs the 10 G/s estimate the study declared — a 2.1x host-term correction), RAPL unreadable so `p_host` stays declared | `physics(H3b)` |
 | H4 performance + elegance consolidation | **DONE** — per-problem caches (active specs, fragment needs) + one-flow onchip census: steady-state eval 4.0→1.89 ms (hardware, 2.1x) and 6.0→3.81 ms (joint, 1.6x). Deferred with reasons below: pack consolidation, probe-context growth pattern | `search(H4)` |
-| H5 study re-run + findings | pending | |
+| H5 study re-run + findings | **DONE** — 5 runs sealed on the new machinery; energy triangle closed within 2.6% (loihi chip side); measured effective activity 0.1118 vs declared 0.05; utilization byte-equal in production; host wall shown overhead-bound (~2000x past the rate model); LeNet5 census refusal fired as designed; `docs/flow_health_study.md` | `study(H5)` |
 
 Repo: `mimarsinan` @ `e97cec1c` (E-series closed). The E-series made the candidate's
 quantities MEAN what the record's mean; this program makes the loop between them

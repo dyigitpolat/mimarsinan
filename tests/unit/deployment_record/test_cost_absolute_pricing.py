@@ -118,11 +118,28 @@ class TestEnergy:
 
     def test_host_work_without_host_constants_refuses_the_energy_headline(self):
         """The §8b rig: host MACs exist, no host pricing declared — a headline that
-        silently omitted them would make subsume look free."""
+        silently omitted them would make subsume look free. (Every SHIPPED
+        profile now declares the identity host_compute_rate [H5], so the
+        no-host-pricing target is built inline.)"""
+        hostless = profile_from_dict({
+            "format_version": 1, "name": "hostless", "display_name": "H",
+            "description_file": "h.md",
+            "validity": {"measurement_kind": "silicon"},
+            "constants": {
+                "e_synaptic_event_total": {
+                    "nominal": 26.0, "unit": "pJ",
+                    "evidence_kind": "estimated", "note": "n"},
+                "p_static_per_core": {
+                    "nominal": 50.0, "unit": "uW",
+                    "evidence_kind": "estimated", "note": "n"},
+                "t_cycle": {"nominal": 1.0, "unit": "ms",
+                            "evidence_kind": "estimated", "note": "n"},
+            },
+        })
         pricing = price_absolute(
             _quantities(synaptic_events=1e6, host_macs=5000, host_ops_s=0.5,
                         cores_physical=20, latency_steps=32),
-            _TRUENORTH,
+            hostless,
         )
         assert "energy_per_inference_mj" not in _by_name(pricing)
         # The refusal must name the ROOT cause. Unpriceable host work blocks the
