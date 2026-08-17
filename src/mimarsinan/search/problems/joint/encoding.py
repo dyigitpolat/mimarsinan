@@ -131,6 +131,39 @@ class JointEncodingMixin(JointHostContract):
             "target_tq": int(self.target_tq),
         })
 
+    def seed_vectors(self) -> "List[np.ndarray]":
+        """[R6] The DECLARED platform as a generation-1 seed.
+
+        The declaration is the one point known feasible (the fixed-mode cell
+        deploys on it), and random sampling over shape-constrained spaces can
+        miss the feasible needle entirely — the ViT cell rejected 72/72
+        offspring exactly that way. Model dims (joint mode) seed at their
+        midpoints; option dims at their first choice; out-of-bounds declared
+        dims clip, so the seed is then merely NEAR the declaration. Empty
+        when the declared core-type count differs from the searched one — a
+        seed that silently reshaped the chip would not be the declaration.
+        """
+        base = self.fixed_platform_constraints or {}
+        cores = list(base.get("cores") or ())
+        if not self._searches_hw or len(cores) != int(self.num_core_types):
+            return []
+        lo, hi = self.xl, self.xu
+        x: "List[float]" = []
+        if self._searches_model:
+            x.extend(
+                (float(lo[i]) + float(hi[i])) / 2.0
+                for i in range(len(self.arch_options))
+            )
+        for core_type in cores:
+            x.extend([
+                float(core_type["max_axons"]),
+                float(core_type["max_neurons"]),
+                float(core_type["count"]),
+            ])
+        x.extend(0.0 for _ in self.option_axes)
+        seed = np.clip(np.asarray(x, dtype=float), lo, hi)
+        return [seed]
+
     def decode(self, x: np.ndarray) -> Dict[str, Any]:
         x = np.array(x, dtype=float).flatten()
         if x.shape[0] != self.n_var:

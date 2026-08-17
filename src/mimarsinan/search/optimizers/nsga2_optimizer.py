@@ -7,6 +7,21 @@ from typing import Any, Dict, List, Set, Tuple
 import numpy as np
 
 from pymoo.algorithms.moo.nsga2 import NSGA2
+from pymoo.operators.sampling.rnd import FloatRandomSampling
+
+
+def _seeded_sampling(seeds):
+    """Random sampling with the leading rows replaced by the given seeds."""
+
+    class _Seeded(FloatRandomSampling):
+        def _do(self, problem, n_samples, **kwargs):
+            X = super()._do(problem, n_samples, **kwargs)
+            for i, seed in enumerate(seeds[: len(X)]):
+                X[i] = seed
+            return X
+
+    return _Seeded()
+
 from pymoo.core.callback import Callback
 from pymoo.core.problem import ElementwiseProblem
 from pymoo.optimize import minimize
@@ -120,7 +135,16 @@ class NSGA2Optimizer(SearchOptimizer[Dict[str, Any]]):
 
         self_outer = self
 
-        algo = NSGA2(pop_size=int(self.pop_size), eliminate_duplicates=bool(self.eliminate_duplicates))
+        # [R6] Generation 1 carries the DECLARED platform when the problem
+        # can encode it: the declaration is the known-feasible point, and a
+        # shape-constrained space searched from pure noise can reject every
+        # offspring (measured: 72/72 on the ViT cell).
+        seeds = list(getattr(problem, "seed_vectors", lambda: [])())
+        sampling = _seeded_sampling(seeds) if seeds else FloatRandomSampling()
+        algo = NSGA2(
+            pop_size=int(self.pop_size), sampling=sampling,
+            eliminate_duplicates=bool(self.eliminate_duplicates),
+        )
         termination = get_termination("n_gen", int(self.generations))
 
         _reporter = reporter
