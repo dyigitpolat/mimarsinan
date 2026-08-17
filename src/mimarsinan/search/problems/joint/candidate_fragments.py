@@ -34,7 +34,7 @@ from mimarsinan.mapping.noc import (
 from mimarsinan.mapping.platform.mapping_structure import ChipCapabilities
 from mimarsinan.mapping.verification.onchip_fraction import (
     OnchipFractionEstimate,
-    estimate_onchip_fraction,
+    estimate_onchip_fractions,
 )
 
 #: (params, macs) estimates of the host/on-chip split — one flow walk each.
@@ -243,14 +243,10 @@ def compute_onchip_census(
     num_classes: int,
     placement: str,
 ) -> OnchipCensus:
-    """Host/on-chip param+MAC counts through the deployment's own estimator."""
-    return (
-        estimate_onchip_fraction(
-            model, tuple(input_shape), int(num_classes),
-            encoding_placement=placement, metric="params",
-        ),
-        estimate_onchip_fraction(
-            model, tuple(input_shape), int(num_classes),
-            encoding_placement=placement, metric="macs",
-        ),
+    """Host/on-chip param+MAC counts through the deployment's own estimator —
+    one flow conversion for both metrics [H4]."""
+    params_est, macs_est = estimate_onchip_fractions(
+        model, tuple(input_shape), int(num_classes),
+        encoding_placement=placement, metrics=("params", "macs"),
     )
+    return params_est, macs_est

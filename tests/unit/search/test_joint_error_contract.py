@@ -31,6 +31,12 @@ class _Harness(JointValidateMixin, JointLayoutMixin, JointEvaluateMixin):
 
     search_mode = "joint"
     accuracy_seed = 0
+    # [H4] the per-problem fragment-need memo the real problem carries; a
+    # fresh dict per harness class keeps active-set differences separate.
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        cls._fragment_needs_cache = {}
+    _fragment_needs_cache: dict = {}
     input_shape = (1, 4, 4)
     validate_fn = None
     constraint_fn = None

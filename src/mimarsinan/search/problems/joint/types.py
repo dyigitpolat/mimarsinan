@@ -258,6 +258,7 @@ class JointHostContract:
         @property
         def stage_semantics(self) -> Any: ...
         pass_transfer: Any
+        _fragment_needs_cache: Any
 
         @staticmethod
         def _make_core_types(pcfg: Dict) -> List[Any]: ...

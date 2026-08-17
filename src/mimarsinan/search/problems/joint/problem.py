@@ -122,6 +122,14 @@ class JointArchHwProblem(
     _constraint_census: Dict[str, int] = field(
         default_factory=dict, init=False, repr=False
     )
+    #: [H4] Per-PROBLEM constants the eval loop was re-deriving per candidate
+    #: (measured: 5 resolutions + 4 probe builds per eval, ~half the wall).
+    _active_specs_cache: Optional[Tuple[ObjectiveSpecV2, ...]] = field(
+        default=None, init=False, repr=False
+    )
+    _fragment_needs_cache: Dict[str, bool] = field(
+        default_factory=dict, init=False, repr=False
+    )
 
     @property
     def _searches_model(self) -> bool:
@@ -139,13 +147,17 @@ class JointArchHwProblem(
         declaration the deployment carries), so a candidate can never be scored on
         an axis its target cannot back.
         """
-        return resolve_active_specs(
+        if self._active_specs_cache is not None:
+            return self._active_specs_cache
+        object.__setattr__(self, "_active_specs_cache", tuple(resolve_active_specs(
             self.search_mode, self.active_objective_names or None,
             physics=self.candidate_physics,
             activity_factor=(self.fixed_platform_constraints or {}).get(
                 "activity_factor", 0.0,
             ),
-        )
+        )))
+        assert self._active_specs_cache is not None
+        return self._active_specs_cache
 
     @property
     def candidate_physics(self) -> Optional[PlatformPhysics]:

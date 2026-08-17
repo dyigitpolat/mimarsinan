@@ -9,7 +9,7 @@
 | H2 candidate carry census | **DONE** — one census over spans (`carry_census_from_spans`), two span producers; candidate == deployed on the vehicles, both disciplines; carry axes searchable (B's capacity-not-a-variable stands); known-zero semantics on BOTH planes | `search(H2)` |
 | H3 fidelity as an instrument | **DONE** — twin armed via the shared `firing_semantics_kwargs`; full candidate-answerable surface; per-term zip with bands/evidence; utilization family = allocated denominator + committed-rectangle numerator BOTH planes (a second numerator fork found and closed); new `chip_occupancy_pct`; one-sided rows carry a written basis | `fidelity(H3)` |
 | H3b host-rate calibration | **DONE** — `scripts/calibrate_host.py` + `platform_physics/host_calibration.py`; new `measured` evidence kind (requires the machine + method note); this host: 21.02 G/s (vs the 10 G/s estimate the study declared — a 2.1x host-term correction), RAPL unreadable so `p_host` stays declared | `physics(H3b)` |
-| H4 performance + elegance consolidation | pending | |
+| H4 performance + elegance consolidation | **DONE** — per-problem caches (active specs, fragment needs) + one-flow onchip census: steady-state eval 4.0→1.89 ms (hardware, 2.1x) and 6.0→3.81 ms (joint, 1.6x). Deferred with reasons below: pack consolidation, probe-context growth pattern | `search(H4)` |
 | H5 study re-run + findings | pending | |
 
 Repo: `mimarsinan` @ `e97cec1c` (E-series closed). The E-series made the candidate's
@@ -170,6 +170,24 @@ behavior unchanged for runs that declare nothing.
    latency, programming, carry — the pass-structure facts) and the physics/context
    fragments; `_put` deduplicated across quantity extractors. Budgets/ratchets stay
    green; every move is a pure refactor under existing pins.
+
+### H4 — what was measured, done, and deliberately deferred
+
+Done (measured): `active_specs` resolved once per problem (was 5x/eval),
+`_requires_fragment` memoized (was 4 probe builds/eval), `cost_report`
+re-pricing collapses with them, and `estimate_onchip_fractions` computes both
+metrics off ONE flow conversion (was two conversions per candidate in joint
+mode). Steady-state eval: hardware 4.0 → 1.89 ms, joint 6.0 → 3.81 ms.
+
+Deferred, stated: (1) the pack consolidation — `compute_mapping_stats` and
+`collect_noc_fragments` still plan+pack independently (11 `pack_layout` calls
+per candidate, ~3 ms at MLP scale); the refactor touches the stats selection
+logic and pays off at conv-scale softcore counts, so it rides with the first
+conv-heavy search need. (2) `probes.py`'s hand-grown probe context — E1, E2
+and H2 each edited the placeholder AND the per-fragment nulls; the pattern
+invites drift and wants a declarative fragment→keys table when the next
+fragment lands. The larger elegance wins this program made are structural:
+one census over spans, one semantics helper, one estimand per name.
 
 ## H5 — study re-run + findings
 

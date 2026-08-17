@@ -161,9 +161,15 @@ class JointLayoutMixin(JointHostContract):
         return make_core_types(pcfg)
 
     def _requires_fragment(self, fragment: str) -> bool:
-        """Does any ACTIVE objective need this candidate fragment? The registry answers."""
-        probe = candidate_probe_without(fragment)
-        return any(not spec.available(probe) for spec in self.active_specs)
+        """Does any ACTIVE objective need this candidate fragment? The registry
+        answers — once per problem [H4]: the active set is fixed at
+        construction, so the probe walk was pure per-candidate waste."""
+        cached = self._fragment_needs_cache.get(fragment)
+        if cached is None:
+            probe = candidate_probe_without(fragment)
+            cached = any(not spec.available(probe) for spec in self.active_specs)
+            self._fragment_needs_cache[fragment] = cached
+        return cached
 
     def _penalty_objectives(self) -> Dict[str, float]:
         """Return penalty values for all objectives (infeasible candidate)."""

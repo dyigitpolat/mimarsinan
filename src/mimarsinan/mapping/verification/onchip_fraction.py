@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Sequence, Tuple
 
 import torch
 import torch.nn as nn
@@ -291,6 +292,30 @@ def estimate_onchip_fraction(
     _require_metric_and_placement("estimate_onchip_fraction", metric, encoding_placement)
     flow = _build_flow(model, input_shape, num_classes, encoding_placement)
     return _estimate_from_flow(flow, input_shape, encoding_placement, metric)
+
+
+def estimate_onchip_fractions(
+    model,
+    input_shape,
+    num_classes,
+    *,
+    encoding_placement: str = "subsume",
+    metrics: Sequence[str] = ("params", "macs"),
+) -> Tuple[OnchipFractionEstimate, ...]:
+    """[H4] Every requested metric off ONE flow conversion.
+
+    The conversion dominates the estimator's cost; the per-metric breakdowns
+    are cheap walks over the same flow, so a caller wanting both metrics paid
+    the conversion twice for nothing.
+    """
+    for metric in metrics:
+        _require_metric_and_placement(
+            "estimate_onchip_fractions", metric, encoding_placement)
+    flow = _build_flow(model, input_shape, num_classes, encoding_placement)
+    return tuple(
+        _estimate_from_flow(flow, input_shape, encoding_placement, metric)
+        for metric in metrics
+    )
 
 
 def _require_metric_and_placement(who: str, metric: str, encoding_placement: str) -> None:
