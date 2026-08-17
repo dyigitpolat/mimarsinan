@@ -102,19 +102,27 @@ claimed it, and the event model multiplied `onchip_macs` (logical).
 4. Pins: formula + refusal notes + calibration block; the e2e convergence
    verdict comes from R5's runs, not from a unit test.
 
-## R3 — an absent measurement is never a zero
+## R3 — one floorplan for the twin, the runner, and the record
 
-1. `from_record`: the NoC quantities are ABSENT when the record sealed no
-   links (`link_loads` empty = uninstrumented; a traced run seals its links
-   even at zero load — verified and pinned against the producer). The refusal
-   names the missing instrumentation ("run with the SANA-FE message trace
-   enabled").
-2. Fidelity rows then say "measurement unavailable" instead of zipping a
-   model against nothing; pre-R3 records load unchanged and simply stop
-   claiming a measured zero.
-3. R5's verification configs enable the message trace — the first HONEST
-   modeled-vs-measured hops comparison is an R5 deliverable, and whatever
-   divergence it shows is a finding, not an assumption.
+REVISED after deeper diagnosis (the "false zero" framing was too small; the
+message trace is already always on):
+
+- The record's IDENTITY resolves a 1x2 grid at 4 cores/tile; the twin priced
+  hops on that resolution (113.6 modeled — cross-tile pairs exist under it).
+- The sealed PLACEMENT fragment shows ONE tile with cores [0..3] — four of
+  the schedule's SEVEN cores — and every per-seg inter-tile count is 0.
+- So the three readers disagree: the resolution declares one floorplan, the
+  per-stage SANA-FE arches ran another (each stage's sim sizes its own arch),
+  and the placement fragment describes neither run completely.
+
+R3's job: audit the measured-NoC chain (per-stage arch synthesis → trace →
+per-seg inter/intra counts → sealed placement + link loads) and make ALL
+readers consume the resolved floorplan — or, where the per-stage arch is the
+honest execution (each stage really is its own chip program), make the
+RECORD say so (per-stage tile assignment sealed per stage) and make the twin
+price per-stage assignments the same way. The modeled-vs-measured hops zip is
+only meaningful after the two planes describe the same floorplan; the R5
+comparison depends on this stage.
 
 ## R4 — one estimand per remaining name + the activity loop
 
