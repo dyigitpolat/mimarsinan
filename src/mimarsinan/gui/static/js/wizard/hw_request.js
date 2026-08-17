@@ -2,9 +2,9 @@
    `ChipCapabilities.layout_kwargs()`.
 
    The layout answer the Mapping Performance panel previews is not a function of
-   the permission bits alone: `schedule_policy` and `max_schedule_passes` decide
-   which passes the hard-core builder composes, and a preview computed without
-   them describes a program the chip never runs. ONE place therefore declares
+   the permission bits alone: `max_schedule_passes` bounds the passes the
+   hard-core builder composes, and a preview computed without it describes a
+   program the chip never runs. ONE place therefore declares
    which keys travel with a layout request, so a capability added server-side
    cannot be silently dropped by this client (a test pins the two key sets
    equal). Pure — no DOM, no state — so it is executable under Node. */
@@ -16,7 +16,6 @@ export function capabilityDeclaration(read) {
     allow_coalescing: !!read('allow_coalescing'),
     allow_neuron_splitting: !!read('allow_neuron_splitting'),
     allow_scheduling: !!read('allow_scheduling'),
-    schedule_policy: read('schedule_policy') || 'pool',
     max_schedule_passes: Number(read('max_schedule_passes')) || 8,
   };
 }

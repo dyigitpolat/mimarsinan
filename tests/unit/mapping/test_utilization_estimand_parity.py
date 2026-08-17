@@ -37,18 +37,18 @@ from unit.mapping.bank_clustered_vehicles import (
 ROOMY_CHIP = [{"max_axons": 32, "max_neurons": 32, "count": 8}]
 
 
-def _both_planes(policy="pool"):
+def _both_planes(chip=ROOMY_CHIP):
     graph = token_graph(7)
     stats, error = compute_mapping_stats(
         softcores=softcores_of(graph),
-        core_types=hard_core_types(ROOMY_CHIP),
-        allow_scheduling=True, schedule_policy=policy,
+        core_types=hard_core_types(chip),
+        allow_scheduling=True,
     )
     assert error is None
     hybrid = build_hybrid_hard_core_mapping(
-        ir_graph=graph, cores_config=[dict(ct) for ct in ROOMY_CHIP],
+        ir_graph=graph, cores_config=[dict(ct) for ct in chip],
         strategy=MappingStrategy.resolve(
-            ChipCapabilities(allow_scheduling=True, schedule_policy=policy)
+            ChipCapabilities(allow_scheduling=True)
         ),
     )
     return stats, CrossbarUtilizationReport.from_hybrid_mapping(hybrid)
@@ -104,7 +104,7 @@ class TestTheRecordMirrorDividesByTheDeclaredChip:
         hybrid = build_hybrid_hard_core_mapping(
             ir_graph=graph, cores_config=[dict(ct) for ct in ROOMY_CHIP],
             strategy=MappingStrategy.resolve(
-                ChipCapabilities(allow_scheduling=True, schedule_policy="pool")
+                ChipCapabilities(allow_scheduling=True)
             ),
         )
         mirror = stats_dict_from_hybrid_mapping(
@@ -126,7 +126,7 @@ class TestTheRecordMirrorDividesByTheDeclaredChip:
             ir_graph=token_graph(7),
             cores_config=[dict(ct) for ct in ROOMY_CHIP],
             strategy=MappingStrategy.resolve(
-                ChipCapabilities(allow_scheduling=True, schedule_policy="pool")
+                ChipCapabilities(allow_scheduling=True)
             ),
         )
         mirror = stats_dict_from_hybrid_mapping(hybrid)
@@ -136,17 +136,22 @@ class TestTheRecordMirrorDividesByTheDeclaredChip:
 
 
 class TestMultiPassAggregation:
+    #: Two cores stream seven token instances in four passes — the multi-pass
+    #: aggregation vehicle (the roomy chip composes a single resident pass).
+    TIGHT_CHIP = [{"max_axons": 32, "max_neurons": 32, "count": 2}]
+
     def test_a_scheduled_programs_utilization_aggregates_every_pass(self):
         """[R5] The deepcnn witness gated 33.3% (one pass's figure) against a
-        measured 40.8% (all passes). The candidate now sums committed and
+        measured 40.8% (all passes). The candidate sums committed and
         allocated over EVERY pass — the record's own aggregation."""
-        stats, crossbar = _both_planes(policy="pool")
+        stats, crossbar = _both_planes(chip=self.TIGHT_CHIP)
+        assert stats.schedule_pass_count == 4
         assert stats.mapped_params_pct == pytest.approx(
             crossbar.cell_occupancy * 100.0, rel=1e-6,
         )
 
-    def test_bank_clustered_passes_aggregate_too(self):
-        stats, crossbar = _both_planes(policy="bank_clustered")
+    def test_the_single_resident_pass_aggregates_too(self):
+        stats, crossbar = _both_planes()
         assert stats.mapped_params_pct == pytest.approx(
             crossbar.cell_occupancy * 100.0, rel=1e-6,
         )

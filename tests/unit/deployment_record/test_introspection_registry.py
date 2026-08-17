@@ -195,13 +195,12 @@ class TestBankComposition:
 
 
 class TestSchedulePayload:
-    def test_a_candidate_reports_the_declared_policy(self):
+    def test_a_candidate_reports_the_composed_pass_structure(self):
         payload = INTROSPECTION_REGISTRY.serve(
             "schedule",
-            _candidate(allow_scheduling=True, schedule_policy="bank_clustered"),
+            _candidate(allow_scheduling=True),
         )
         assert isinstance(payload, SchedulePayload)
-        assert payload.schedule_policy == "bank_clustered"
         assert payload.max_schedule_passes == 8
         assert [row.segment_index for row in payload.segments] == [0]
 
@@ -218,7 +217,7 @@ class TestCapabilitiesPayload:
         payload = INTROSPECTION_REGISTRY.serve("capabilities", _candidate())
         assert isinstance(payload, CapabilitiesPayload)
         assert set(payload.bits) == set(ChipCapabilities().capability_bits())
-        assert "schedule_policy" in payload.bits
+        assert "max_schedule_passes" in payload.bits
 
     def test_no_served_bit_is_an_unread_default(self):
         """This is a trust channel: a served value must be the platform's answer.

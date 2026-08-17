@@ -355,7 +355,6 @@ class TestServedPayload:
         schedule = payload["introspection"]["schedule"]
         layout = problem.candidate_layout(configuration)
         capabilities = ChipCapabilities.from_platform_constraints(layout.platform)
-        assert schedule["schedule_policy"] == capabilities.schedule_policy == "pool"
         assert schedule["max_schedule_passes"] == capabilities.max_schedule_passes
         assert schedule["sync_count"] == int(layout.stats.schedule_sync_count)
         assert schedule["pass_count"] == int(layout.stats.schedule_pass_count)

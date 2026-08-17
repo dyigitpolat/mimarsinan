@@ -10,10 +10,9 @@ from mimarsinan.pipelining.core.platform_constraints_resolver import (
 def test_scheduling_keys_forward():
     pcfg = build_platform_constraints_resolved({
         "allow_scheduling": True,
-        "schedule_policy": "bank_clustered", "max_schedule_passes": 128,
+        "max_schedule_passes": 128,
     })
     assert pcfg["allow_scheduling"] is True
-    assert pcfg["schedule_policy"] == "bank_clustered"
     assert pcfg["max_schedule_passes"] == 128
 
 
@@ -22,7 +21,6 @@ def test_scheduling_defaults_are_the_historical_build_defaults():
     # key here silently disarms the declared schedule (t0_44 measured).
     pcfg = build_platform_constraints_resolved({})
     assert pcfg["allow_scheduling"] is False
-    assert pcfg["schedule_policy"] == "pool"
     assert pcfg["max_schedule_passes"] == 8
 
 

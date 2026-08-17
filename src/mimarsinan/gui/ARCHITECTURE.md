@@ -161,7 +161,7 @@ right one, with the mapping-performance panel spanning the full width beneath
 both so strategy edits re-plan visibly (its `/api/hw_config_verify` request is
 built by `static/js/wizard/hw_request.js` — pure + node-tested — the ONE place
 the client declares which capability keys travel with a layout request, mirroring
-the server's `ChipCapabilities.layout_kwargs()`: without `schedule_policy` and
+the server's `ChipCapabilities.layout_kwargs()`: without
 `max_schedule_passes` the panel would preview a pass structure the chip never
 runs), and weight precision as a first-class
 float-vs-quantized-N-bits choice (float authors the tier-config fp form:

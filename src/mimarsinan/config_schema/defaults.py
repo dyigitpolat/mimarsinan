@@ -100,7 +100,7 @@ CONFIG_KEYS_SET: Set[str] = {
     "input_size", "num_classes", "model_config", "model_factory", "lr", "lr_range_min", "lr_range_max", "cores",
     "simulation_steps", "arch_search", "target_tq", "cores_per_tile", "tile_grid_rows", "tile_grid_cols", "allow_coalescing",
     "activity_factor", "pass_buffer_capacity_bytes",
-    "allow_neuron_splitting", "allow_per_layer_s", "allow_scheduling", "schedule_policy", "max_schedule_passes",
+    "allow_neuron_splitting", "allow_per_layer_s", "allow_scheduling", "max_schedule_passes",
     "scheduling_latency_weight", "weight_bits", "activation_bits", "tuning_budget_scale",
     "tuning_budget_scale_ramp_steps", "tuner_target_floor_ratio", "paired_confirm_batches", "s_allocation",
     "s_allocation_explicit", "s_allocation_budget", "ttfs_genuine_blend_ce_alpha", "finetune_epochs", "finetune_lr",

@@ -11,12 +11,8 @@ from mimarsinan.mapping.layout.layout_types import (
     LayoutSoftCoreSpec,
 )
 from mimarsinan.mapping.noc.wire_census import LayoutWireCensus
-from mimarsinan.mapping.support.schedule.schedule_budget import (
-    effective_core_budget,
-)
-from mimarsinan.mapping.support.schedule.schedule_policy import (
-    plan_segment_passes,
-    resident_passes,
+from mimarsinan.mapping.support.schedule.pass_planner import (
+    plan_program_passes,
 )
 
 
@@ -136,13 +132,12 @@ def collect_noc_fragments(
     allow_scheduling: bool,
     allow_neuron_splitting: bool,
     allow_coalescing: bool,
-    schedule_policy: str,
     max_schedule_passes: int,
 ) -> LayoutNocFragments:
     """Place every pass of the candidate program and seal the placements.
 
-    Mirrors ``compute_mapping_stats``'s pass planning (same planner, same
-    packer) but packs EVERY pass — the NoC estimate needs all placements, not
+    Consumes the ONE planner ``compute_mapping_stats`` and the builder consume
+    [U1] but packs EVERY pass — the NoC estimate needs all placements, not
     just the worst pass's census. Cross-pass producer/consumer pairs are carry
     traffic, not mesh traffic; the estimator excludes them by pass membership.
     """
@@ -150,38 +145,22 @@ def collect_noc_fragments(
     global_index = {id(sc): i for i, sc in enumerate(softcores)}
 
     if allow_scheduling:
-        core_dicts = [
-            {"max_axons": ct.max_axons, "max_neurons": ct.max_neurons,
-             "count": ct.count}
-            for ct in core_types
-        ]
-        budget = effective_core_budget(core_dicts)
-        seg_softcores: Dict[int, List[LayoutSoftCoreSpec]] = {}
-        for sc in softcores:
-            sid = sc.segment_id if sc.segment_id is not None else 0
-            seg_softcores.setdefault(sid, []).append(sc)
-        pass_lists: List[List[LayoutSoftCoreSpec]] = []
-        pass_resident: List[bool] = []
-        for sid in sorted(seg_softcores):
-            _, seg_pass_lists, seg_ok, policy_applied = plan_segment_passes(
-                seg_softcores[sid], budget,
-                core_types=core_types,
-                allow_coalescing=allow_coalescing,
-                allow_splitting=allow_neuron_splitting,
-                schedule_policy=schedule_policy,
-                max_schedule_passes=max_schedule_passes,
+        plan = plan_program_passes(
+            softcores, core_types,
+            allow_coalescing=allow_coalescing,
+            allow_splitting=allow_neuron_splitting,
+            max_schedule_passes=max_schedule_passes,
+        )
+        if not plan.feasible:
+            raise ValueError(
+                f"NoC fragments need a schedulable candidate; segment(s) "
+                f"{list(plan.infeasible_segments())} hold a softcore no "
+                f"pass can pack"
             )
-            if not seg_ok:
-                raise ValueError(
-                    f"NoC fragments need a schedulable candidate; segment "
-                    f"{sid} has a softcore no pass can pack"
-                )
-            pass_lists.extend(seg_pass_lists)
-            # Residency is a per-SEGMENT question: only a segment whose passes
-            # the bank-clustered composition produced keeps weights installed.
-            pass_resident.extend(resident_passes(
-                len(seg_pass_lists), policy_applied=policy_applied,
-            ))
+        pass_lists = [list(chunk) for chunk in plan.pass_lists]
+        # Residency is a per-SEGMENT question: only a segment whose passes
+        # the residency composition produced keeps weights installed.
+        pass_resident = list(plan.resident_flags)
     else:
         pass_lists = [softcores]
         pass_resident = [False]

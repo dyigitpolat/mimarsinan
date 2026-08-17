@@ -138,6 +138,20 @@ class TestScopedRetirement:
         for row in rows:
             assert row["rule_id"] == "retired_key"
 
+    def test_schedule_policy_is_retired_with_a_clear_remedy(self):
+        """[U1] The scheduler composes residency-first automatically; a
+        document still declaring the enum gets the migration row, not a
+        silently ignored key."""
+        rows = retired_key_errors({
+            "deployment_parameters": {"schedule_policy": "bank_clustered"},
+        })
+        (row,) = [r for r in rows if r["key"] == "schedule_policy"]
+        assert row["scope"] == "deployment_parameters"
+        assert "residency-first" in row["message"]
+        (remedy,) = row["remedies"]
+        assert remedy["action"] == "clear"
+        assert remedy["key"] == "schedule_policy"
+
     def test_allow_weight_reuse_resolves_to_a_scoped_clear_remedy(self):
         res = resolve_draft(_document(pc={"allow_weight_reuse": True}))
         rows = [e for e in res.errors if e["key"] == "allow_weight_reuse"]

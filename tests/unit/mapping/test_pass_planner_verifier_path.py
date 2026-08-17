@@ -3,13 +3,12 @@
 ``compute_mapping_stats`` is what a search candidate reads; ``verify_hardware_config``
 is what the GUI ``/api/hw_config_verify`` route, the wizard snapshot
 (``verify_planned_mapping_performance`` via ``build_layout_plan``) and every
-capacity gate read. Both must compose the passes the hard-core builder composes,
-so these pin the SAME behaviour change on the verifier path — a bank-clustered
-platform yields the deployment pass structure even when the flat pack fits, and
-the pool platform keeps reporting exactly what it reported before.
+capacity gate read. Both consume the ONE planner the hard-core builder consumes
+[U1], so a scheduled platform yields the deployed pass structure even when the
+flat pack fits, and an unscheduled platform keeps its flat answer.
 
 The memo in front of the verifier is keyed on the WHOLE declaration for the same
-reason: a key that forgot the policy would serve one platform's program as
+reason: a key that forgot the pass budget would serve one platform's program as
 another's on the second question of a run.
 """
 
@@ -30,31 +29,33 @@ from .bank_clustered_vehicles import (
 )
 
 
-def _verify(policy: str, softcores, **overrides):
+def _verify(softcores, **overrides):
     clear_verify_hardware_config_memo()
-    caps = ChipCapabilities(
-        allow_scheduling=True, schedule_policy=policy, **overrides
-    )
+    caps = ChipCapabilities(allow_scheduling=True, **overrides)
     return verify_hardware_config(softcores, TWO_CORES, **caps.layout_kwargs())
 
 
 class TestTheFlatPackFits:
     """Everything below is about a platform whose UNSCHEDULED pack already fits."""
 
-    def test_the_pool_platform_reports_a_plain_feasible_pack(self):
-        result = _verify("pool", softcores_of(token_graph(7)))
+    def test_an_unscheduled_platform_reports_a_plain_feasible_pack(self):
+        clear_verify_hardware_config_memo()
+        result = verify_hardware_config(
+            softcores_of(token_graph(7)), TWO_CORES,
+            **ChipCapabilities().layout_kwargs(),
+        )
         assert result["feasible"] is True
         assert "schedule_info" not in result
         assert result["stats"]["schedule_pass_count"] == 0
 
 
-class TestBankClusteredComposesOverAFittingPack:
+class TestAScheduledPlatformComposesOverAFittingPack:
     def test_the_verifier_reports_the_deployed_pass_structure(self):
         graph = token_graph(7)
-        deployed = deployed_pass_count(graph, "bank_clustered")
-        result = _verify("bank_clustered", softcores_of(graph))
+        deployed = deployed_pass_count(graph)
+        result = _verify(softcores_of(graph))
         assert result["feasible"] is True
-        # The pool platform above answers 0 here; this is the divergence closed.
+        # The flat pack fits in one pass; the deployed program streams four.
         assert result["stats"]["schedule_pass_count"] == deployed == 4
         assert result["stats"]["schedule_sync_count"] == 3
         assert result["schedule_info"]["total_passes"] == deployed
@@ -74,41 +75,27 @@ class TestBankClusteredComposesOverAFittingPack:
         clear_verify_hardware_config_memo()
         plan = build_layout_plan(
             _Verification(softcores), TWO_CORES,
-            **ChipCapabilities(
-                allow_scheduling=True, schedule_policy="bank_clustered",
-            ).layout_kwargs(),
+            **ChipCapabilities(allow_scheduling=True).layout_kwargs(),
         )
         assert plan.feasible
-        assert plan.stats.schedule_pass_count == deployed_pass_count(
-            graph, "bank_clustered"
-        )
+        assert plan.stats.schedule_pass_count == deployed_pass_count(graph)
         assert (plan.schedule_info or {}).get("total_passes") == 4
 
     def test_the_budget_is_part_of_the_answer(self):
-        """A 1-pass budget needs 7 resident cores; the 2-core pool declines."""
-        softcores = softcores_of(token_graph(7))
-        tight = _verify("bank_clustered", softcores, max_schedule_passes=1)
-        assert tight["stats"]["schedule_pass_count"] == 0
-        assert "schedule_info" not in tight
+        """A 1-pass budget needs 7 resident cores; the 2-core pool declines
+        streaming, so the capacity split answers with its one fitting pass —
+        exactly what the builder emits under the same budget."""
+        graph = token_graph(7)
+        softcores = softcores_of(graph)
+        tight = _verify(softcores, max_schedule_passes=1)
+        assert tight["stats"]["schedule_pass_count"] == 1
+        assert tight["stats"]["schedule_pass_count"] == deployed_pass_count(
+            graph, max_schedule_passes=1,
+        )
 
 
 class TestTheMemoIsKeyedOnTheWholeDeclaration:
     """A memo that forgot the scheduler would answer one platform with another's."""
-
-    def test_a_pool_answer_is_never_replayed_for_a_clustered_platform(self):
-        softcores = softcores_of(token_graph(7))
-        clear_verify_hardware_config_memo()
-        kwargs = dict(softcores=softcores, core_types=TWO_CORES)
-        pool = verify_hardware_config(
-            **kwargs, **ChipCapabilities(
-                allow_scheduling=True, schedule_policy="pool").layout_kwargs()
-        )
-        clustered = verify_hardware_config(
-            **kwargs, **ChipCapabilities(
-                allow_scheduling=True, schedule_policy="bank_clustered").layout_kwargs()
-        )
-        assert pool["stats"]["schedule_pass_count"] == 0
-        assert clustered["stats"]["schedule_pass_count"] == 4
 
     def test_a_narrower_budget_is_never_replayed_from_a_wider_one(self):
         softcores = softcores_of(token_graph(7))
@@ -116,26 +103,23 @@ class TestTheMemoIsKeyedOnTheWholeDeclaration:
         kwargs = dict(softcores=softcores, core_types=TWO_CORES)
         wide = verify_hardware_config(
             **kwargs, **ChipCapabilities(
-                allow_scheduling=True, schedule_policy="bank_clustered",
-                max_schedule_passes=8).layout_kwargs()
+                allow_scheduling=True, max_schedule_passes=8).layout_kwargs()
         )
         tight = verify_hardware_config(
             **kwargs, **ChipCapabilities(
-                allow_scheduling=True, schedule_policy="bank_clustered",
-                max_schedule_passes=1).layout_kwargs()
+                allow_scheduling=True, max_schedule_passes=1).layout_kwargs()
         )
         assert wide["stats"]["schedule_pass_count"] == 4
-        assert tight["stats"]["schedule_pass_count"] == 0
+        assert tight["stats"]["schedule_pass_count"] == 1
 
     def test_a_repeat_of_the_same_question_still_answers_identically(self):
-        """The memo must be a cache, not a mutation: same key ⇒ same answer."""
+        """The memo must be a cache, not a mutation: same key => same answer."""
         softcores = softcores_of(token_graph(7))
         clear_verify_hardware_config_memo()
-        first = _verify("bank_clustered", softcores)
+        first = _verify(softcores)
         second = verify_hardware_config(
             softcores, TWO_CORES,
-            **ChipCapabilities(
-                allow_scheduling=True, schedule_policy="bank_clustered").layout_kwargs(),
+            **ChipCapabilities(allow_scheduling=True).layout_kwargs(),
         )
         assert first["stats"] == second["stats"]
         assert first["schedule_info"]["total_passes"] == (

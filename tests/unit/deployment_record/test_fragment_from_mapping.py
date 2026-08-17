@@ -60,9 +60,9 @@ def _banked_token_graph(n_tokens=7, in_features=4, out_features=4):
     return IRGraph(nodes=nodes, output_sources=out, weight_banks={0: bank})
 
 
-def _scheduled_hybrid(n_tokens=7, count=2, policy="bank_clustered"):
+def _scheduled_hybrid(n_tokens=7, count=2):
     strategy = MappingStrategy.resolve(ChipCapabilities(
-        allow_scheduling=True, schedule_policy=policy,
+        allow_scheduling=True,
     ))
     return build_hybrid_hard_core_mapping(
         ir_graph=_banked_token_graph(n_tokens),

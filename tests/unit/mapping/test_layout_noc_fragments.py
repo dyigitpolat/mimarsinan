@@ -164,7 +164,7 @@ class TestNocFragmentsCollection:
             softcores=specs, core_types=_types(),
             census=self._census(2),
             allow_scheduling=False, allow_neuron_splitting=False,
-            allow_coalescing=False, schedule_policy="pool",
+            allow_coalescing=False,
             max_schedule_passes=8,
         )
         assert len(frags.pass_placements) == 1
@@ -179,7 +179,7 @@ class TestNocFragmentsCollection:
             softcores=specs, core_types=_types(count=2),
             census=self._census(4),
             allow_scheduling=True, allow_neuron_splitting=False,
-            allow_coalescing=False, schedule_policy="pool",
+            allow_coalescing=False,
             max_schedule_passes=8,
         )
         assert len(frags.pass_placements) == 2

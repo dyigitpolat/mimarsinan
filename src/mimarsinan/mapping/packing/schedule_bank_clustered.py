@@ -1,65 +1,10 @@
-"""[wsm V2] Bank-clustered pass composition: banks stay resident, instances stream."""
+"""[wsm V2] Bank-clustered residency: verification and storage dedup of the
+planner's streamed composition (the composition itself lives in
+``support.schedule.pass_planner`` — one planner, both planes [U1])."""
 
 from __future__ import annotations
 
-from typing import Sequence
-
-from mimarsinan.mapping.packing.softcore import compacted_core_extent
-from mimarsinan.mapping.support.schedule.bank_clustered_law import (
-    BankInstance,
-    compose_bank_clustered_passes,
-)
-from mimarsinan.mapping.support.schedule.schedule_policy import resident_passes
-
-
-def try_bank_clustered_passes(
-    *,
-    cores: list,
-    cores_config: Sequence[dict],
-    weight_banks: dict,
-    max_schedule_passes: int,
-) -> "list[list] | None":
-    """Compose passes so every physical core keeps one bank while its
-    instance queue drains (the weight-stationary regime).
-
-    Instances are sized POST-compaction (:func:`compacted_core_extent`): a
-    bank-backed instance carries its elimination as masks until the soft-core
-    stage materializes them, so the bank's own matrix is never the extent a
-    resident core must budget for.
-
-    Applicability is decided HERE (only this caller can see owned cores and
-    intra-segment dependencies); the allocation itself is the shared law in
-    ``support.schedule.bank_clustered_law``, so the shape-only layout answer
-    search reads composes the SAME passes. Returns per-pass core chunks, or
-    ``None`` when the segment is outside this policy's proven class: any owned
-    core, any intra-segment dependency, or anything the law declines (an
-    instance exceeding every core type, infeasible minimal residency, an
-    unstable composition).  Callers fall back to the capacity path.
-    """
-    del weight_banks  # applicability is structural; sizes live on placements
-    if not cores:
-        return None
-    segment_ids = {core.id for core in cores}
-    instances: list[BankInstance] = []
-    for core in cores:
-        if core.weight_bank_id is None:
-            return None
-        for source in core.input_sources.flatten():
-            if getattr(source, "node_id", None) in segment_ids:
-                return None
-        axons, neurons = compacted_core_extent(core)
-        instances.append(
-            BankInstance(
-                bank_id=int(core.weight_bank_id), axons=axons, neurons=neurons,
-            )
-        )
-
-    chunks = compose_bank_clustered_passes(
-        instances, cores_config, max_schedule_passes=max_schedule_passes,
-    )
-    if chunks is None:
-        return None
-    return [[cores[index] for index in chunk] for chunk in chunks]
+from mimarsinan.mapping.support.schedule.pass_planner import resident_passes
 
 
 def _stage_geometry(stage) -> list:

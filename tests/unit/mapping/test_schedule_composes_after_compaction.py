@@ -17,8 +17,9 @@ from mimarsinan.mapping.packing.hybrid_build_pool import (
     build_hybrid_hard_core_mapping,
 )
 from mimarsinan.mapping.packing.hybrid_segment import _validate_coalescing_budget
-from mimarsinan.mapping.packing.schedule_bank_clustered import (
-    try_bank_clustered_passes,
+from mimarsinan.mapping.packing.hybrid_build_pool import _segment_specs
+from mimarsinan.mapping.support.schedule.pass_planner import (
+    bank_clustered_layout_passes,
 )
 from mimarsinan.mapping.packing.softcore import (
     compact_soft_core_mapping,
@@ -93,6 +94,47 @@ def _bank_graph(*, bank_rows=BANK_ROWS, n_instances=2):
     )
 
 
+def _distinct_bank_graph(*, bank_rows=BANK_ROWS):
+    """Two instances, each with its OWN bank: outside the streamed class, so
+    the capacity split composes (two banks cannot both stay resident on the
+    one-core pool)."""
+    rng = np.random.default_rng(5)
+    weight_rows = bank_rows - 1
+    banks, nodes, specs = {}, [], []
+    for k in range(2):
+        banks[k] = WeightBank(
+            id=k,
+            core_matrix=rng.normal(
+                size=(bank_rows, OUT_FEATURES)
+            ).astype(np.float32) + 3.0,
+        )
+        sources = [
+            IRSource(-2, k * weight_rows + i) for i in range(weight_rows)
+        ] + [IRSource(-3, 0)]
+        nodes.append(NeuralCore(
+            id=k, name=f"solo{k}",
+            input_sources=np.array(sources, dtype=object),
+            core_matrix=None, weight_bank_id=k,
+            weight_row_slice=(0, OUT_FEATURES), latency=0,
+            perceptron_index=0, perceptron_output_column=k,
+            layout_softcore_index=k,
+        ))
+        # One residency CLASS (core-sharing stays legal); two BANKS (residency
+        # streaming stays inapplicable) — the capacity-composition vehicle.
+        specs.append(LayoutSoftCoreSpec(
+            input_count=bank_rows, output_count=OUT_FEATURES,
+            residency_class_id=0, latency_tag=0, segment_id=0, name=f"solo{k}",
+        ))
+    outputs = np.array(
+        [IRSource(n.id, j) for n in nodes for j in range(OUT_FEATURES)],
+        dtype=object,
+    )
+    return IRGraph(
+        nodes=list(nodes), output_sources=outputs, weight_banks=banks,
+        layout_softcores=specs,
+    )
+
+
 def _mask_bank_rows(graph, dead_rows):
     """Attach the masks ``prune_ir_graph`` leaves on bank-backed instances."""
     rows = graph.weight_banks[0].core_matrix.shape[0]
@@ -111,16 +153,29 @@ def _compacted_twin():
     return _bank_graph(bank_rows=BANK_ROWS - DEAD_ROWS)
 
 
-def _strategy(policy):
-    return MappingStrategy.resolve(ChipCapabilities(
-        allow_scheduling=True, schedule_policy=policy,
-    ))
+def _strategy():
+    return MappingStrategy.resolve(ChipCapabilities(allow_scheduling=True))
 
 
-def _stage_shapes(graph, policy, cores_config):
+def _residency_chunks(graph, cores_config):
+    """The streamed composition over the builder's own post-compaction specs."""
+    from mimarsinan.mapping.layout.layout_types import LayoutHardCoreType
+
+    specs, _, _ = _segment_specs(list(graph.nodes), ir_graph=graph)
+    hw_types = [
+        LayoutHardCoreType(
+            max_axons=ct["max_axons"], max_neurons=ct["max_neurons"],
+            count=ct["count"],
+        )
+        for ct in cores_config
+    ]
+    return bank_clustered_layout_passes(specs, hw_types, max_schedule_passes=8)
+
+
+def _stage_shapes(graph, cores_config):
     """(pass count, per-pass placement geometry) of the composed program."""
     hybrid = build_hybrid_hard_core_mapping(
-        ir_graph=graph, cores_config=cores_config, strategy=_strategy(policy),
+        ir_graph=graph, cores_config=cores_config, strategy=_strategy(),
     )
     neural = [s for s in hybrid.stages if s.kind == "neural"]
     geometry = [
@@ -142,36 +197,32 @@ class TestPassLadderRespondsToSparsity:
     """The headline: elimination must be able to remove a pass."""
 
     def test_bank_clustered_chunks_shrink_when_pruned(self):
-        full = try_bank_clustered_passes(
-            cores=list(_bank_graph().nodes), cores_config=CORES_CLUSTERED,
-            weight_banks={}, max_schedule_passes=8,
-        )
-        pruned = try_bank_clustered_passes(
-            cores=list(_pruned_bank_graph().nodes),
-            cores_config=CORES_CLUSTERED, weight_banks={},
-            max_schedule_passes=8,
-        )
+        full = _residency_chunks(_bank_graph(), CORES_CLUSTERED)
+        pruned = _residency_chunks(_pruned_bank_graph(), CORES_CLUSTERED)
         # 33 axons fit only the single wide core -> one instance per pass;
         # 17 axons also fit the narrow triple -> both instances in one pass.
         assert [len(c) for c in full] == [1, 1]
         assert [len(c) for c in pruned] == [2]
 
     def test_bank_clustered_stage_ladder_shrinks_when_pruned(self):
-        full, _ = _stage_shapes(
-            _bank_graph(), "bank_clustered", CORES_CLUSTERED,
-        )
-        pruned, _ = _stage_shapes(
-            _pruned_bank_graph(), "bank_clustered", CORES_CLUSTERED,
-        )
+        """Elimination shrinks the ladder by GROWING the resident set: the
+        compacted instance also fits the narrow duplicates."""
+        full, _ = _stage_shapes(_bank_graph(), CORES_CLUSTERED)
+        pruned, _ = _stage_shapes(_pruned_bank_graph(), CORES_CLUSTERED)
         assert (full, pruned) == (2, 1)
 
     def test_capacity_split_ladder_shrinks_when_pruned(self):
-        full, _ = _stage_shapes(_bank_graph(), "pool", CORES_POOL)
-        pruned, _ = _stage_shapes(_pruned_bank_graph(), "pool", CORES_POOL)
+        """Distinct banks put the segment outside the streamed class, so the
+        capacity split answers — and elimination removes its second pass."""
+        full, _ = _stage_shapes(_distinct_bank_graph(), CORES_POOL)
+        pruned, _ = _stage_shapes(
+            _mask_bank_rows(_distinct_bank_graph(), set(range(DEAD_ROWS))),
+            CORES_POOL,
+        )
         assert (full, pruned) == (2, 1)
 
     def test_ladder_responds_through_real_prune_ir_graph(self):
-        """End to end: seeds -> prune_ir_graph -> composition."""
+        """End to end: seeds -> prune_ir_graph -> composition (streamed)."""
         def vehicle(dead_bank_rows):
             host = ComputeOp(
                 id=1000, name="host_relay",
@@ -210,27 +261,86 @@ class TestPassLadderRespondsToSparsity:
             sum(n.pruned_row_mask) for n in pruned.get_neural_cores()
         ] == [DEAD_ROWS, DEAD_ROWS]
         assert (
-            _stage_shapes(full, "pool", CORES_POOL)[0],
-            _stage_shapes(pruned, "pool", CORES_POOL)[0],
+            _stage_shapes(full, CORES_CLUSTERED)[0],
+            _stage_shapes(pruned, CORES_CLUSTERED)[0],
         ) == (2, 1)
+
+    def test_capacity_ladder_responds_through_real_prune_ir_graph(self):
+        """End to end on the DISTINCT-bank vehicle: the capacity split's
+        second pass disappears with the eliminated rows."""
+        weight_rows = BANK_ROWS - 1
+
+        def vehicle(dead_bank_rows):
+            rng = np.random.default_rng(9)
+            host = ComputeOp(
+                id=1000, name="host_relay",
+                input_sources=np.array(
+                    [IRSource(-2, i) for i in range(2 * weight_rows)],
+                    dtype=object,
+                ),
+                op_type="identity",
+                input_shape=(2 * weight_rows,),
+                output_shape=(2 * weight_rows,),
+            )
+            banks, nodes, specs = {}, [], []
+            for k in range(2):
+                banks[k] = WeightBank(
+                    id=k,
+                    core_matrix=rng.normal(
+                        size=(BANK_ROWS, OUT_FEATURES)
+                    ).astype(np.float32) + 3.0,
+                )
+                sources = [
+                    IRSource(host.id, k * weight_rows + i)
+                    for i in range(weight_rows)
+                ] + [IRSource(-3, 0)]
+                nodes.append(NeuralCore(
+                    id=k, name=f"solo{k}",
+                    input_sources=np.array(sources, dtype=object),
+                    core_matrix=None, weight_bank_id=k,
+                    weight_row_slice=(0, OUT_FEATURES), latency=0,
+                    perceptron_index=0, perceptron_output_column=k,
+                    layout_softcore_index=k,
+                ))
+                specs.append(LayoutSoftCoreSpec(
+                    input_count=BANK_ROWS, output_count=OUT_FEATURES,
+                    residency_class_id=0, latency_tag=0, segment_id=0,
+                    name=f"solo{k}",
+                ))
+            outputs = np.array(
+                [IRSource(n.id, j) for n in nodes
+                 for j in range(OUT_FEATURES)],
+                dtype=object,
+            )
+            graph = IRGraph(
+                nodes=[host] + list(nodes), output_sources=outputs,
+                weight_banks=banks, layout_softcores=specs,
+            )
+            seeds = (
+                None if not dead_bank_rows
+                else {
+                    k: (
+                        [i in dead_bank_rows for i in range(BANK_ROWS)],
+                        [False] * OUT_FEATURES,
+                    )
+                    for k in (0, 1)
+                }
+            )
+            return prune_ir_graph(graph, initial_pruned_per_bank=seeds)
+
         assert (
-            _stage_shapes(full, "bank_clustered", CORES_CLUSTERED)[0],
-            _stage_shapes(pruned, "bank_clustered", CORES_CLUSTERED)[0],
+            _stage_shapes(vehicle(set()), CORES_POOL)[0],
+            _stage_shapes(vehicle(set(range(DEAD_ROWS))), CORES_POOL)[0],
         ) == (2, 1)
 
 
 class TestNoPreCompactionExtentIsRead:
     """A compacted instance is sized by what it occupies, not what it was."""
 
-    @pytest.mark.parametrize(
-        "policy,cores_config",
-        [("pool", CORES_POOL), ("bank_clustered", CORES_CLUSTERED)],
-    )
-    def test_composition_matches_the_already_compacted_twin(
-        self, policy, cores_config,
-    ):
-        masked = _stage_shapes(_pruned_bank_graph(), policy, cores_config)
-        twin = _stage_shapes(_compacted_twin(), policy, cores_config)
+    @pytest.mark.parametrize("cores_config", [CORES_POOL, CORES_CLUSTERED])
+    def test_composition_matches_the_already_compacted_twin(self, cores_config):
+        masked = _stage_shapes(_pruned_bank_graph(), cores_config)
+        twin = _stage_shapes(_compacted_twin(), cores_config)
         assert masked == twin
 
     def test_capacity_gate_estimate_responds_to_sparsity(self):
@@ -304,25 +414,25 @@ class TestNoPreCompactionExtentIsRead:
             nodes=nodes, output_sources=outputs, layout_softcores=specs,
         )
         # Stale record: 20 + 20 = 40 > 34 axons (two passes). Truth: 24 <= 34.
-        assert _stage_shapes(graph, "pool", CORES_POOL)[0] == 1
+        assert _stage_shapes(graph, CORES_POOL)[0] == 1
 
 
 class TestUnchangedGeometryIsPreserved:
     """Nothing eliminated -> the composed program is what it always was."""
 
     def test_unpruned_ladder_is_unchanged(self):
-        assert _stage_shapes(_bank_graph(), "pool", CORES_POOL) == (
+        assert _stage_shapes(_bank_graph(), CORES_POOL) == (
             2,
             [[((33, 8, 0, 0),)], [((33, 8, 0, 0),)]],
         )
         assert _stage_shapes(
-            _bank_graph(), "bank_clustered", CORES_CLUSTERED,
+            _bank_graph(), CORES_CLUSTERED,
         ) == (2, [[((33, 8, 0, 0),)], [((33, 8, 0, 0),)]])
 
     def test_all_false_masks_leave_the_extent_alone(self):
         graph = _mask_bank_rows(_bank_graph(), set())
-        assert _stage_shapes(graph, "pool", CORES_POOL) == _stage_shapes(
-            _bank_graph(), "pool", CORES_POOL,
+        assert _stage_shapes(graph, CORES_POOL) == _stage_shapes(
+            _bank_graph(), CORES_POOL,
         )
         for core in graph.nodes:
             assert compacted_core_extent(core) == (BANK_ROWS, OUT_FEATURES)

@@ -161,13 +161,18 @@ def hard_core_types(cores: Sequence[dict]) -> List[LayoutHardCoreType]:
     return [LayoutHardCoreType(**dict(ct)) for ct in cores]
 
 
-def deployed_pass_count(graph, policy: str, cores: Sequence[dict] = TWO_CORES) -> int:
+def deployed_pass_count(
+    graph, cores: Sequence[dict] = TWO_CORES, *, max_schedule_passes: int = 8,
+) -> int:
     """Neural stages the hard-core builder actually emits — the deployed program."""
     hybrid = build_hybrid_hard_core_mapping(
         ir_graph=graph,
         cores_config=[dict(ct) for ct in cores],
         strategy=MappingStrategy.resolve(
-            ChipCapabilities(allow_scheduling=True, schedule_policy=policy)
+            ChipCapabilities(
+                allow_scheduling=True, max_schedule_passes=max_schedule_passes,
+            )
         ),
+        max_schedule_passes=max_schedule_passes,
     )
     return len([stage for stage in hybrid.stages if stage.kind == "neural"])

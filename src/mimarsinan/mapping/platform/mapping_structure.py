@@ -68,11 +68,8 @@ class ChipCapabilities:
     allow_neuron_splitting: bool = False
     allow_scheduling: bool = False
     allow_per_layer_s: bool = False
-    # [wsm V2] pass-composition policy under allow_scheduling: "pool" (the
-    # historical capacity split) or "bank_clustered" (weights stay resident).
-    schedule_policy: str = "pool"
-    # The scheduled-build pass budget the policy's residency floor is sized
-    # against; dropping it pins the answer to the default and disarms the policy.
+    # The scheduled-build pass budget the planner's residency floor is sized
+    # against; dropping it pins the answer to the default and disarms streaming.
     max_schedule_passes: int = 8
 
     @classmethod
@@ -108,7 +105,6 @@ class ChipCapabilities:
             allow_neuron_splitting=bool(constraints.get("allow_neuron_splitting", False)),
             allow_scheduling=bool(constraints.get("allow_scheduling", False)),
             allow_per_layer_s=bool(constraints.get("allow_per_layer_s", False)),
-            schedule_policy=str(constraints.get("schedule_policy", "pool")),
             max_schedule_passes=int(constraints.get("max_schedule_passes", 8) or 8),
         )
 
@@ -117,10 +113,10 @@ class ChipCapabilities:
 
         Derived from the dataclass rather than listed, so a capability added
         here reaches every consumer that serves this dict instead of quietly
-        going unforwarded (which is how ``schedule_policy`` stayed invisible to
-        search while the literature IMC presets all declared it). Every bit must
-        therefore be POPULATED by whoever builds the object — a served ``None``
-        means "this platform declares no core grid", never "we did not look".
+        going unforwarded (which is how the retired ``schedule_policy`` enum
+        once stayed invisible to search). Every bit must therefore be
+        POPULATED by whoever builds the object — a served ``None`` means
+        "this platform declares no core grid", never "we did not look".
         """
         return {f.name: getattr(self, f.name) for f in fields(self)}
 
@@ -139,13 +135,12 @@ class ChipCapabilities:
     def layout_kwargs(self) -> dict[str, Any]:
         """Everything the layout/verify entry points need to answer as deployment would.
 
-        The permission bits PLUS the scheduling declaration — the pass structure
-        is not a property of the permissions alone, and a layout answer computed
-        without the policy describes a program the chip will never run.
+        The permission bits PLUS the pass budget — the pass structure is not a
+        property of the permission bits alone, and a layout answer computed
+        without the budget describes a program the chip will never run.
         """
         return {
             **self.permission_kwargs(),
-            "schedule_policy": self.schedule_policy,
             "max_schedule_passes": self.max_schedule_passes,
         }
 
@@ -194,11 +189,6 @@ class MappingStrategy:
     def allow_per_layer_s(self) -> bool:
         """The EW1 RESERVED per-layer-S gate (no mapping decision consults it yet)."""
         return self.capabilities.allow_per_layer_s
-
-    @property
-    def schedule_policy(self) -> str:
-        """[wsm V2] pass composition under scheduling: ``pool`` | ``bank_clustered``."""
-        return self.capabilities.schedule_policy
 
     @property
     def max_schedule_passes(self) -> int:

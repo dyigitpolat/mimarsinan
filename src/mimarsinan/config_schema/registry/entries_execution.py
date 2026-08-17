@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from mimarsinan.config_schema.registry.relevance import Relevance as R
 from mimarsinan.config_schema.registry.types import (
     Category,
     ConfigKeySchema as _E,
@@ -56,20 +55,6 @@ ENTRIES = (
            "absent = float boundary I/O. Event-domain platforms declare "
            "target_tq instead — this key is value-domain only.",
        bounds=(2, None), empty_means="absent — float boundary I/O"),
-    _E("schedule_policy", group="mapping_strategy",
-       owner="hybrid_build_scheduled", type=T.ENUM,
-       options=("pool", "bank_clustered"), category=Category.ADVANCED,
-       exposure="user", label="Schedule Policy",
-       effect="Pass composition under scheduling: capacity split vs "
-              "weight-stationary bank streaming",
-       doc="[wsm V2] pool: the historical capacity split (fresh pool per "
-           "pass, weights reprogram). bank_clustered: same-bank instances "
-           "stream over a resident core-set — weights program once, verified "
-           "by placement-geometry identity; segments outside the policy's "
-           "class fall back to pool.",
-       relevant=R.when_true("allow_scheduling"),
-       provenance="consumer frozen default", derived_default=_frozen("pool"),
-       empty_means="pool — the historical scheduled build"),
     _E("core_value_granularity", section="platform_constraints", group="hardware",
        owner="mapping.platform.core_residency", type=T.JSON,
        category=Category.ADVANCED, exposure="user", label="Core Value Granularity",

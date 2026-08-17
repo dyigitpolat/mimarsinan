@@ -53,7 +53,6 @@ def _pipeline_config():
         "weight_bits": 4,
         "lr": 0.001,
         "allow_scheduling": True,
-        "schedule_policy": "bank_clustered",
         "max_schedule_passes": 128,
         RESIDENCY_KEY: {"threshold": "per_neuron"},
         # truenorth wires 1 core/tile; loihi (the default) wires 4.
@@ -142,7 +141,6 @@ class TestDecodeIsTheDeploymentResolution:
         problem = _hw_problem(cfg)
         decoded = problem.decode(_mid_x(problem))["platform_constraints"]
 
-        assert decoded["schedule_policy"] == "bank_clustered"
         assert decoded["max_schedule_passes"] == 128
         assert decoded[RESIDENCY_KEY] == {"threshold": "per_neuron"}
         assert decoded["allow_scheduling"] is True
@@ -214,15 +212,17 @@ class TestTheGoldenIsSensitive:
         )
         assert mutated != decoded
 
-    def test_dropping_the_declared_schedule_policy_breaks_the_equality(self):
+    def test_dropping_the_declared_pass_budget_breaks_the_equality(self):
         cfg = _pipeline_config()
         problem = _hw_problem(cfg)
         x = _mid_x(problem)
         decoded = problem.decode(x)["platform_constraints"]
 
-        without_policy = {k: v for k, v in cfg.items() if k != "schedule_policy"}
+        without_budget = {
+            k: v for k, v in cfg.items() if k != "max_schedule_passes"
+        }
         mutated = build_platform_constraints_resolved(
-            {**without_policy, "cores": _decision_cores(problem, x),
+            {**without_budget, "cores": _decision_cores(problem, x),
              "target_tq": SEARCH_TARGET_TQ},
         )
         assert mutated != decoded
@@ -317,7 +317,7 @@ class TestCandidatePlatformResolutionIsTheOneSeam:
         assert seen[0]["cores"][0]["has_bias"] is False, (
             "the declared bias capability must reach the constraint check"
         )
-        assert seen[0]["schedule_policy"] == "bank_clustered"
+        assert seen[0]["max_schedule_passes"] == 128
 
     def test_a_constraint_violation_is_reported_on_the_resolved_chip(self):
         # The mirror: a rule that rejects the RESOLVED chip must be able to.

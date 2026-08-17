@@ -83,7 +83,6 @@ def _candidate_schedule(view: Any) -> Optional[SchedulePayload]:
     if stats is None:
         return None
     return SchedulePayload(
-        schedule_policy=view.capabilities.schedule_policy,
         max_schedule_passes=view.capabilities.max_schedule_passes,
         pass_count=int(stats.schedule_pass_count),
         sync_count=int(stats.schedule_sync_count),
@@ -96,7 +95,6 @@ def _record_schedule(view: Any) -> Optional[SchedulePayload]:
     schedule = view.record.schedule
     bits = capability_bits_of(view) or {}
     return SchedulePayload(
-        schedule_policy=str(bits.get("schedule_policy", "pool")),
         max_schedule_passes=bits.get("max_schedule_passes"),
         pass_count=int(schedule.pass_count),
         sync_count=int(schedule.sync_count),
@@ -173,9 +171,9 @@ def build_registry() -> IntrospectionRegistry:
         payload_type=SchedulePayload,
         requires="a layout answer or a sealed schedule fragment",
         doc=(
-            "The pass structure under the DECLARED schedule_policy: total passes, "
-            "sync barriers, per-segment structure, and (sealed) how many passes "
-            "reprogram versus reuse resident weights."
+            "The composed pass structure (residency-first, capacity fallback): "
+            "total passes, sync barriers, per-segment structure, and (sealed) "
+            "how many passes reprogram versus reuse resident weights."
         ),
         builders={
             CANDIDATE_LAYOUT: _candidate_schedule, DEPLOYMENT_RECORD: _record_schedule,

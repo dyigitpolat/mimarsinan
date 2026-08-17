@@ -71,7 +71,6 @@ def build_hybrid_hard_core_mapping(
             allow_coalescing=strategy.allow_coalescing,
             per_hop_neural_segments=per_hop_neural_segments,
             retimed_level_stages=retimed_level_stages,
-            schedule_policy=strategy.schedule_policy,
             max_schedule_passes=max_schedule_passes,
         )
     else:
@@ -207,47 +206,39 @@ def _build_single_pool(
 _SPLIT_FALLBACK_LOGGED = False
 
 
-def _split_segment_by_capacity(
+def _segment_specs(
     cores: list[NeuralCore],
-    cores_config: Sequence[dict],
     *,
-    allow_coalescing: bool,
-    allow_neuron_splitting: bool,
     ir_graph: IRGraph | None = None,
     hardware_bias: bool = False,
-) -> list[list[NeuralCore]]:
-    """Split IR NeuralCores by hardware capacity via split_softcores_by_capacity.
+) -> "tuple[list, dict[int, NeuralCore], list[int | None]]":
+    """Shape-only specs for one segment's IR cores, sized POST-compaction.
 
-    Every spec is sized by the POST-compaction extent: elimination reaches the
-    pass ladder only if a pruned instance is budgeted for what it occupies.
+    [U1] The pass PLANNING moved to ``pass_planner`` (one planner, both
+    planes); this only produces its inputs: the specs, the spec→core map the
+    materialization walks back through, and the coalescing group ids that
+    keep a wide fan-in's fragments in one pass. Every spec is sized by the
+    post-compaction extent: elimination reaches the pass ladder only if a
+    pruned instance is budgeted for what it occupies.
     """
     global _SPLIT_FALLBACK_LOGGED
     if not cores:
-        return []
+        return [], {}, []
 
-    from mimarsinan.mapping.layout.layout_types import LayoutHardCoreType, LayoutSoftCoreSpec
+    from dataclasses import replace
+
     from mimarsinan.mapping.layout.softcore_spec_adapter import (
         spec_at_compacted_extent,
         spec_from_neural_core,
     )
     from mimarsinan.mapping.platform.core_residency import ungrouped_fallback_id
-    from mimarsinan.mapping.support.schedule.schedule_partitioner import split_softcores_by_capacity
-
-    hw_types = [
-        LayoutHardCoreType(
-            max_axons=int(ct["max_axons"]),
-            max_neurons=int(ct["max_neurons"]),
-            count=int(ct["count"]),
-        )
-        for ct in cores_config
-    ]
 
     layout_specs = list(getattr(ir_graph, "layout_softcores", None) or [])
     use_layout = bool(layout_specs) and all(
         getattr(c, "layout_softcore_index", None) is not None for c in cores
     )
 
-    specs: list[LayoutSoftCoreSpec] = []
+    specs: list = []
     coalescing_group_ids: list[int | None] = []
     spec_to_core: dict[int, NeuralCore] = {}
     for idx, core in enumerate(cores):
@@ -270,16 +261,14 @@ def _split_segment_by_capacity(
                 hardware_bias=hardware_bias,
                 fallback_residency_class_id=ungrouped_fallback_id(idx),
             )
+        bank_id = getattr(core, "weight_bank_id", None)
+        if spec.bank_id is None and bank_id is not None:
+            # The core is the authority on bank identity: a layout spec that
+            # predates bank stamping must not silently disqualify residency.
+            spec = replace(spec, bank_id=int(bank_id))
         specs.append(spec)
         coalescing_group_ids.append(getattr(core, "coalescing_group_id", None))
         spec_to_core[id(spec)] = core
 
-    sub_specs = split_softcores_by_capacity(
-        specs,
-        hw_types,
-        allow_coalescing=allow_coalescing,
-        allow_splitting=allow_neuron_splitting,
-        coalescing_group_ids=coalescing_group_ids if allow_coalescing else None,
-    )
-    return [[spec_to_core[id(s)] for s in sub] for sub in sub_specs]
+    return specs, spec_to_core, coalescing_group_ids
 

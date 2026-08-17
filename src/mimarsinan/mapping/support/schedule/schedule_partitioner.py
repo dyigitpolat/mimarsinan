@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import List, Optional, Sequence, Tuple
 
-from mimarsinan.mapping.ir import NeuralCore
 from mimarsinan.mapping.layout.layout_types import LayoutSoftCoreSpec
 
 # Re-exported: wizard / verification callers import both names from this module.
@@ -15,23 +14,6 @@ from mimarsinan.mapping.support.schedule.schedule_budget import (
 from mimarsinan.mapping.support.schedule.schedule_split import (
     split_softcores_by_capacity as split_softcores_by_capacity,
 )
-
-def partition_segment_into_passes(
-    cores: list[NeuralCore],
-    max_cores_per_pass: int,
-    *,
-    max_hw_axons: int = 0,
-    max_hw_neurons: int = 0,
-    allow_coalescing: bool = False,
-    allow_splitting: bool = False,
-) -> list[list[NeuralCore]]:
-    """Identity on the segment's cores: multi-pass splitting would break
-    cycle-accurate LIF sync barriers, so segmentation is the layout
-    mapper's sole responsibility. Kwargs kept for signature stability."""
-    if not cores:
-        return []
-    return [list(cores)]
-
 
 def estimate_passes_for_layout(
     softcores: Sequence[LayoutSoftCoreSpec],
@@ -71,6 +53,7 @@ def estimate_passes_for_layout_validated(
     allow_coalescing: bool = False,
     allow_splitting: bool = False,
     core_types: Sequence,
+    coalescing_group_ids: "Sequence[int | None] | None" = None,
 ) -> Tuple[int, List[List[LayoutSoftCoreSpec]], bool]:
     """Capacity-aware pass estimator.
 
@@ -99,6 +82,13 @@ def estimate_passes_for_layout_validated(
         seg = sc.segment_id if sc.segment_id is not None else 0
         by_segment[seg].append(sc)
 
+    # Aligned by identity so the per-segment grouping cannot mispair a
+    # coalesced fragment with another spec's group id.
+    group_of = (
+        {id(sc): gid for sc, gid in zip(softcores, coalescing_group_ids)}
+        if allow_coalescing and coalescing_group_ids is not None else None
+    )
+
     all_pass_lists: List[List[LayoutSoftCoreSpec]] = []
     all_ok = True
     for seg_id in sorted(by_segment.keys()):
@@ -108,6 +98,10 @@ def estimate_passes_for_layout_validated(
             hw_types,
             allow_coalescing=allow_coalescing,
             allow_splitting=allow_splitting,
+            coalescing_group_ids=(
+                [group_of[id(sc)] for sc in seg_cores]
+                if group_of is not None else None
+            ),
         )
         if not sub_segments:
             continue

@@ -1,8 +1,8 @@
 """Every declared capability reaches the layout answer, at every forwarding site.
 
-``permission_kwargs()`` forwarded THREE of the declared capability fields and
-dropped ``schedule_policy`` — which the 12 literature IMC presets set — so search
-and the wizard evaluated a different scheduler than deployment runs. These pin
+``permission_kwargs()`` once forwarded THREE of the declared capability fields
+and dropped the pass budget's predecessor — so search and the wizard evaluated a
+different scheduler than deployment runs. These pin
 the two surfaces: ``capability_bits()`` is the complete declaration (derived from
 the dataclass, so a new field can never be silently unforwarded), and
 ``layout_kwargs()`` is the subset the layout helpers take — checked against their
@@ -46,7 +46,7 @@ class TestCapabilityBits:
             max_axons=256, max_neurons=128, hardware_bias=True,
             allow_coalescing=True, allow_neuron_splitting=True,
             allow_scheduling=True, allow_per_layer_s=True,
-            schedule_policy="bank_clustered", max_schedule_passes=4,
+            max_schedule_passes=4,
         )
         bits = caps.capability_bits()
         assert set(bits) == {f.name for f in fields(ChipCapabilities)}
@@ -54,18 +54,17 @@ class TestCapabilityBits:
             "max_axons": 256, "max_neurons": 128, "hardware_bias": True,
             "allow_coalescing": True, "allow_neuron_splitting": True,
             "allow_scheduling": True, "allow_per_layer_s": True,
-            "schedule_policy": "bank_clustered", "max_schedule_passes": 4,
+            "max_schedule_passes": 4,
         }
 
-    def test_schedule_policy_and_budget_are_read_from_the_platform(self):
+    def test_the_pass_budget_is_read_from_the_platform(self):
         caps = ChipCapabilities.from_platform_constraints(
-            {"schedule_policy": "bank_clustered", "max_schedule_passes": 3}
+            {"max_schedule_passes": 3}
         )
-        assert caps.schedule_policy == "bank_clustered"
         assert caps.max_schedule_passes == 3
-        # Absent ⇒ the resolver's documented defaults.
+        # Absent ⇒ the resolver's documented default.
         default = ChipCapabilities.from_platform_constraints({})
-        assert (default.schedule_policy, default.max_schedule_passes) == ("pool", 8)
+        assert default.max_schedule_passes == 8
 
 
 class TestTheGeometryIsPartOfTheDeclaration:
@@ -84,7 +83,6 @@ class TestTheGeometryIsPartOfTheDeclaration:
             {"max_axons": 128, "max_neurons": 64, "count": 8, "has_bias": True},
         ],
         "allow_scheduling": True,
-        "schedule_policy": "bank_clustered",
     }
 
     def test_no_served_bit_is_an_unread_default_on_a_declared_platform(self):
@@ -135,15 +133,11 @@ class TestTheGeometryIsPartOfTheDeclaration:
 
 class TestLayoutKwargs:
     def test_carries_the_scheduling_declaration_the_builder_consumes(self):
-        caps = ChipCapabilities(
-            allow_scheduling=True, schedule_policy="bank_clustered",
-            max_schedule_passes=2,
-        )
+        caps = ChipCapabilities(allow_scheduling=True, max_schedule_passes=2)
         assert caps.layout_kwargs() == {
             "allow_neuron_splitting": False,
             "allow_coalescing": False,
             "allow_scheduling": True,
-            "schedule_policy": "bank_clustered",
             "max_schedule_passes": 2,
         }
 
@@ -154,7 +148,7 @@ class TestLayoutKwargs:
             assert keys <= params, (helper.__name__, sorted(keys - params))
 
     def test_it_is_a_subset_of_the_full_declaration(self):
-        caps = ChipCapabilities(schedule_policy="bank_clustered")
+        caps = ChipCapabilities(max_schedule_passes=5)
         bits = caps.capability_bits()
         assert all(bits[k] == v for k, v in caps.layout_kwargs().items())
 

@@ -54,7 +54,7 @@ RecordIdentity:
     config_digest: str               # sha256 of canonical deployment-config JSON
     platform: Mapping[str, Any]      # platform_constraints_resolved VERBATIM
                                      #   = the thesis' target-system contract
-    deployment_options: Mapping      # schedule_policy, max_schedule_passes, weight_bits,
+    deployment_options: Mapping      # max_schedule_passes, weight_bits,
                                      #   target_tq, T, tolerances
     created_at: str                  # ISO timestamp
 ```
@@ -365,7 +365,7 @@ record; `softcores` is the candidate's own table, whose sealed counterpart IS
    name-splitting heuristic is deleted).
 2. `ChipCapabilities.capability_bits()` serves the COMPLETE declaration (derived from
    the dataclass) and `layout_kwargs()` the subset the layout helpers take — the
-   permission bits PLUS `schedule_policy`/`max_schedule_passes`. `from_platform_constraints`
+   permission bits PLUS `max_schedule_passes`. `from_platform_constraints`
    resolves the core geometry too (`max_axons`/`max_neurons` as the EFFECTIVE per-core
    limits, `hardware_bias`) through `resolve_platform_mapping_params`, the same SSOT the
    layout mapper is configured from — a served bit is the platform's answer, and a `null`

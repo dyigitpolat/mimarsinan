@@ -186,8 +186,8 @@ class JointLayoutMixin(JointHostContract):
 
         The capability declaration is forwarded WHOLE (``layout_kwargs``): the
         pass structure is not a property of the permission bits alone, so a
-        census computed without the platform's ``schedule_policy`` would score
-        the candidate against a program its chip never runs.
+        census computed without the platform's pass budget would score the
+        candidate against a program its chip never runs.
         """
         return compute_mapping_stats(
             softcores=softcores,

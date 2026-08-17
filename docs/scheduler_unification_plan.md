@@ -38,28 +38,37 @@ survives only as the silent default.
 One planner, no policy parameter. Per segment:
 
 1. **Residency composition** via the shared law (`compose_bank_clustered_passes`)
-   when applicable — every softcore carries a `bank_id`, one latency level —
-   and every chunk packs.
-2. **Capacity split** (`split_softcores_by_capacity`) always computed as the
-   baseline.
-3. **Chooser (the dominance rule, stated):** adopt residency iff its pass
-   count does not exceed the capacity split's; otherwise the capacity split.
-   Weight reprogramming is minimized subject to never inflating the pass
-   count. The law's makespan-expansion step already fills idle capacity, so
-   at equal pass counts residency strictly dominates (same passes, ~one bank
-   programming instead of per-pass reprogramming).
+   whenever applicable — every softcore carries a `bank_id`, one latency
+   level — and every chunk packs. Adopted UNCONDITIONALLY when it composes:
+   the owner directive makes weight programming the primary objective, and
+   the token vehicle's own numbers show why pass-count dominance would be
+   wrong — a fitting flat pack programs 7 bank copies in 1 pass while the
+   residency composition programs 2 copies over 4 passes. Fewer programmed
+   copies always (law expansion caps allocation at the instance count);
+   pass inflation is bounded by `max_schedule_passes` (the law's floor) and
+   its sync/latency cost is priced, so the search sees the trade.
+2. **Capacity split** (`split_softcores_by_capacity`, validated) as the
+   fallback wherever residency is inapplicable or fails to pack — the
+   "schedule in other ways too" half of the directive.
 
 `policy_applied` becomes `residency_applied` — an **outcome** the planner
 reports, not a config the operator declares. The E2 residency law
 (`resident_passes`) keeps its semantics unchanged.
 
-Deferred with reason — priced tie-break: comparing the two compositions by
-priced cost (programming bytes vs sync/latency) requires the physics pricer,
-which `mapping/` must not import (AST import-direction wall), and would make
-the composed program config-dependent in a way determinism pins can't hold.
-The dominance rule is deterministic, layer-clean, identical on both planes.
-If a real vehicle ever shows the pass-inflation case mattering, the
-comparator-injection refinement is the named follow-up.
+Named follow-up — priced composition choice: comparing compositions by
+priced cost (programming bytes vs sync/latency) would need the physics
+pricer, which `mapping/` must not import (AST import-direction wall).
+Reprogramming-first is deterministic, layer-clean, identical on both
+planes, and is the directive's own priority order; revisit only if a real
+vehicle shows the pass-inflation cost dominating.
+
+Applicability note (one behavior delta, conservative direction): the builder
+previously checked intra-segment dependencies exactly (core-level source
+scan) while the spec plane uses latency-tag equality, which declines a
+same-segment multi-depth structure with no actual edges. Unification puts
+BOTH planes on the spec check — the planes now agree exactly, at the cost of
+declining residency on that edge case (falls back to capacity, correct
+program either way).
 
 Standing conservatism (unchanged, stated in-code): shape-only specs are sized
 pre-elimination (>= the builder's post-compaction extents), so the candidate

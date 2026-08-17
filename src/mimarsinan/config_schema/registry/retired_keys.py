@@ -94,13 +94,19 @@ _RETIRED_STANDALONE_MESSAGES: Dict[str, Dict[str, str]] = {
             "windowed-lif (lif_sync) semantics via the exact-QAT recipe pairing, "
             "never a knob. Remove the key."
         ),
+        "schedule_policy": (
+            "schedule_policy is retired: the scheduler composes residency-first "
+            "automatically (weights stay resident wherever the bank-clustered "
+            "law applies; the capacity split answers everywhere else), so pass "
+            "composition is no longer an operator choice. Remove the key."
+        ),
     },
     "platform_constraints": {
         "allow_weight_reuse": (
             "allow_weight_reuse is retired: weight reuse is always on — weight "
             "banks are built unconditionally and the reuse-phase report always "
-            "prints; bank-resident scheduling is chosen by schedule_policy. "
-            "Remove the key."
+            "prints; bank-resident streaming is composed by the scheduler "
+            "whenever it applies. Remove the key."
         ),
     },
 }

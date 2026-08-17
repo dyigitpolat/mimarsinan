@@ -20,13 +20,11 @@ class TestDerivationFromTheConfigRegistry:
         assert axis.choices == ("subsume", "offload")
         assert axis.section == SECTION_DEPLOYMENT
 
-    def test_the_section_comes_from_the_registry_never_from_a_table_here(self):
-        """schedule_policy is a DEPLOYMENT key even though the resolved PLATFORM
-        carries it — the registry is the only authority on which document it
-        belongs in, and the winner stamp writes it back where the registry says."""
-        (axis,) = build_option_axes(["schedule_policy"])
-        assert axis.choices == ("pool", "bank_clustered")
-        assert axis.section == SECTION_DEPLOYMENT
+    def test_a_retired_key_is_not_a_search_axis(self):
+        """[U1] schedule_policy left the registry with the enum's retirement;
+        an axis request for it must fail by name, not resolve to a ghost."""
+        with pytest.raises(KeyError, match="schedule_policy"):
+            build_option_axes(["schedule_policy"])
 
     def test_a_platform_section_key_is_recognised_as_one(self):
         (axis,) = build_option_axes({"weight_bits": {"bounds": [2, 8]}})
@@ -46,12 +44,12 @@ class TestDerivationFromTheConfigRegistry:
         assert axis.section == SECTION_PLATFORM
 
     def test_a_declaration_may_narrow_the_choices(self):
-        (axis,) = build_option_axes({"schedule_policy": ["bank_clustered"]})
-        assert axis.choices == ("bank_clustered",)
+        (axis,) = build_option_axes({"encoding_layer_placement": ["offload"]})
+        assert axis.choices == ("offload",)
 
     def test_narrowing_to_a_value_the_registry_rejects_raises(self):
         with pytest.raises(ValueError, match="nonsense"):
-            build_option_axes({"schedule_policy": ["nonsense"]})
+            build_option_axes({"encoding_layer_placement": ["nonsense"]})
 
     def test_narrowing_beyond_the_registry_bounds_raises(self):
         with pytest.raises(ValueError, match="bounds"):
@@ -68,10 +66,10 @@ class TestDerivationFromTheConfigRegistry:
 
     def test_declaration_order_is_preserved(self):
         axes = build_option_axes(
-            ["weight_bits", "encoding_layer_placement", "schedule_policy"]
+            ["weight_bits", "encoding_layer_placement", "activity_factor"]
         )
         assert [a.key for a in axes] == [
-            "weight_bits", "encoding_layer_placement", "schedule_policy",
+            "weight_bits", "encoding_layer_placement", "activity_factor",
         ]
 
     def test_an_empty_declaration_yields_no_axes(self):
@@ -101,9 +99,9 @@ class TestEncoding:
         assert decode_option_value(axis, 99.0) == "offload"
 
     def test_a_single_choice_axis_is_a_degenerate_span(self):
-        (axis,) = build_option_axes({"schedule_policy": ["pool"]})
+        (axis,) = build_option_axes({"encoding_layer_placement": ["subsume"]})
         assert (axis.lower, axis.upper) == (0.0, 0.0)
-        assert decode_option_value(axis, 0.0) == "pool"
+        assert decode_option_value(axis, 0.0) == "subsume"
 
     def test_a_numeric_axis_spans_its_bounds(self):
         (axis,) = build_option_axes({"activity_factor": {"bounds": [0.0, 0.5]}})
@@ -125,8 +123,7 @@ class TestEncoding:
 class TestTheAxisIsSelfDescribing:
     def test_every_axis_declares_a_known_section(self):
         for axis in build_option_axes(
-            ["encoding_layer_placement", "schedule_policy", "weight_bits",
-             "activity_factor"]
+            ["encoding_layer_placement", "weight_bits", "activity_factor"]
         ):
             assert axis.section in (SECTION_PLATFORM, SECTION_DEPLOYMENT)
 

@@ -33,11 +33,11 @@ TIGHT_CORES = [{"max_axons": 32, "max_neurons": 32, "count": 1}]
 SEGMENTS = 6
 
 
-def _searched(cores, *, allow_scheduling=True, policy="pool"):
+def _searched(cores, *, allow_scheduling=True):
     graph = multi_segment_graph(SEGMENTS)
     stats, error = compute_mapping_stats(
         softcores=softcores_of(graph), core_types=hard_core_types(cores),
-        allow_scheduling=allow_scheduling, schedule_policy=policy,
+        allow_scheduling=allow_scheduling,
     )
     assert error is None
     assert stats.feasible
@@ -47,32 +47,31 @@ def _searched(cores, *, allow_scheduling=True, policy="pool"):
 class TestAFittingPoolPlatformReportsThePassesItWillRun:
     def test_the_builder_emits_one_pass_per_segment(self):
         graph = multi_segment_graph(SEGMENTS)
-        assert deployed_pass_count(graph, "pool", ROOMY_CORES) == SEGMENTS
+        assert deployed_pass_count(graph, ROOMY_CORES) == SEGMENTS
 
     def test_the_searched_answer_agrees_with_the_deployed_one(self):
         """The structural equality the fidelity contract gates on."""
         graph = multi_segment_graph(SEGMENTS)
         assert _searched(ROOMY_CORES).schedule_pass_count == deployed_pass_count(
-            graph, "pool", ROOMY_CORES
+            graph, ROOMY_CORES
         )
 
     def test_a_tight_pool_agrees_too(self):
         """The case that already agreed must keep agreeing."""
         graph = multi_segment_graph(SEGMENTS)
         assert _searched(TIGHT_CORES).schedule_pass_count == deployed_pass_count(
-            graph, "pool", TIGHT_CORES
+            graph, TIGHT_CORES
         )
 
     def test_one_pass_per_segment_still_means_no_intra_segment_barrier(self):
         assert _searched(ROOMY_CORES).schedule_sync_count == 0
 
 
-class TestSchedulingIsWhatDecidesNotThePolicy:
-    @pytest.mark.parametrize("policy", ["pool", "bank_clustered"])
-    def test_every_policy_reports_the_scheduled_census(self, policy):
+class TestSchedulingIsWhatDecides:
+    def test_the_scheduler_reports_the_scheduled_census(self):
         graph = multi_segment_graph(SEGMENTS)
-        assert _searched(ROOMY_CORES, policy=policy).schedule_pass_count == (
-            deployed_pass_count(graph, policy, ROOMY_CORES)
+        assert _searched(ROOMY_CORES).schedule_pass_count == (
+            deployed_pass_count(graph, ROOMY_CORES)
         )
 
     def test_an_unscheduled_platform_still_reports_the_flat_pack(self):

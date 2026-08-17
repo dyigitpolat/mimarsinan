@@ -153,7 +153,7 @@ def _square_grid(
         cores=({"max_axons": side, "max_neurons": side, "count": count},),
         weight_bits=weight_bits,
         provenance=provenance,
-        capabilities={"allow_scheduling": True, "schedule_policy": "bank_clustered"},
+        capabilities={"allow_scheduling": True},
         claim_eligibility=claim_eligibility,
     )
 
@@ -178,7 +178,7 @@ def heterogeneous_platform(
         ),
         weight_bits=weight_bits,
         provenance=provenance,
-        capabilities={"allow_scheduling": True, "schedule_policy": "bank_clustered"},
+        capabilities={"allow_scheduling": True},
         claim_eligibility=claim_eligibility,
     )
 

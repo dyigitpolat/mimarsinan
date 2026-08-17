@@ -93,7 +93,7 @@ class TestHwOnlyDecodeCarriesResolvedBase:
         assert pcfg["weight_bits"] == 4, "must carry config weight_bits, not a hardcoded 8"
         assert pcfg["allow_scheduling"] is True
         assert pcfg["allow_coalescing"] is False
-        assert "schedule_policy" in pcfg
+        assert "schedule_policy" not in pcfg  # retired [U1]
         assert "max_schedule_passes" in pcfg
         # W1.1: weight reuse is always on — the retired knob never resolves.
         assert "allow_weight_reuse" not in pcfg

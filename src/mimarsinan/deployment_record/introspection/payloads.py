@@ -220,13 +220,12 @@ class SegmentPassRow(IntrospectionRow):
 
 @dataclass(frozen=True)
 class SchedulePayload(IntrospectionPayload):
-    """The pass structure — under the policy the platform declares."""
+    """The composed pass structure (residency-first, capacity fallback)."""
 
     NAME: ClassVar[str] = "schedule"
-    VERSION: ClassVar[int] = 1
+    VERSION: ClassVar[int] = 2
     ROWS: ClassVar[Mapping[str, type]] = {"segments": SegmentPassRow}
 
-    schedule_policy: str = "pool"
     max_schedule_passes: Optional[int] = None
     pass_count: int = 0
     sync_count: int = 0

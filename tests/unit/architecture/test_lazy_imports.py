@@ -89,7 +89,6 @@ ALLOWLIST = {
     "mapping/support/schedule/schedule_partitioner.py",
     "mapping/support/schedule/schedule_split.py",
     "mapping/verification/onchip_fraction.py",
-    "mapping/verification/verifier/mapping_verifier_hw.py",
     "mapping/verification/verifier/mapping_verifier_soft.py",
     "mapping/verification/verifier/mapping_verifier_types.py",
     "models/nn/activations/lif.py",

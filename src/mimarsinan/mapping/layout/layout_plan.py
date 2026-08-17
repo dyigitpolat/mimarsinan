@@ -168,16 +168,14 @@ def build_layout_plan(
     allow_neuron_splitting: bool = False,
     allow_coalescing: bool = False,
     allow_scheduling: bool = False,
-    schedule_policy: str = "pool",
     max_schedule_passes: int = 8,
 ) -> LayoutPlan:
     """Build a ``LayoutPlan`` from a shape-only ``MappingVerificationResult``.
 
     Routes through :func:`verify_hardware_config` (which packs and computes
     stats via the shared ``build_stats_from_packing_result``), so the wizard
-    miniview consumes exactly the same stats engine as the deployment path —
-    including the declared ``schedule_policy``, without which the preview would
-    show a pass structure the chip never runs.
+    miniview consumes exactly the same stats engine — and, under scheduling,
+    the same pass planner — as the deployment path.
     """
     hw = verify_hardware_config(
         verification.softcores,
@@ -185,7 +183,6 @@ def build_layout_plan(
         allow_neuron_splitting=allow_neuron_splitting,
         allow_coalescing=allow_coalescing,
         allow_scheduling=allow_scheduling,
-        schedule_policy=schedule_policy,
         max_schedule_passes=max_schedule_passes,
     )
 

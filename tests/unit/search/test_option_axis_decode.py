@@ -12,7 +12,7 @@ from mimarsinan.pipelining.core.platform_constraints_resolver import (
 _BASE = {
     "cores": [{"max_axons": 256, "max_neurons": 256, "count": 64}],
     "weight_bits": 8,
-    "schedule_policy": "pool",
+    "max_schedule_passes": 8,
     "encoding_layer_placement": "subsume",
     "pruning_fraction": 0.0,
 }
@@ -50,7 +50,11 @@ def _problem(axes, *, search_mode="hardware", **over):
 class TestTheEncodingGrows:
     def test_each_axis_adds_exactly_one_dimension(self):
         bare = _problem(None)
-        with_axes = _problem(["encoding_layer_placement", "schedule_policy"])
+        with_axes = _problem(
+            ["encoding_layer_placement", {"weight_bits": {"bounds": [2, 8]}}]
+            if False else
+            {"encoding_layer_placement": None, "weight_bits": {"bounds": [2, 8]}}
+        )
         assert with_axes.n_var == bare.n_var + 2
 
     def test_the_option_dims_follow_the_hardware_block(self):
@@ -98,18 +102,10 @@ class TestDecode:
         assert decoded["platform_constraints"]["weight_bits"] == 4
         assert decoded["deployment_options"]["weight_bits"] == 4
 
-    def test_a_deployment_key_the_resolver_reads_also_reaches_the_chip(self):
-        """schedule_policy is a DEPLOYMENT key that the platform resolver consumes;
-        a searched value must show up in the resolved platform all the same."""
-        problem = _problem(["schedule_policy"])
-        decoded = self._decode(problem, [1.0])
-        assert decoded["deployment_options"]["schedule_policy"] == "bank_clustered"
-        assert decoded["platform_constraints"]["schedule_policy"] == "bank_clustered"
-
     def test_an_unsearched_option_keeps_the_declared_value(self):
         problem = _problem(["encoding_layer_placement"])
         decoded = self._decode(problem, [1.0])
-        assert decoded["platform_constraints"]["schedule_policy"] == "pool"
+        assert decoded["platform_constraints"]["max_schedule_passes"] == 8
 
     def test_without_axes_the_candidate_declares_no_options(self):
         problem = _problem(None)

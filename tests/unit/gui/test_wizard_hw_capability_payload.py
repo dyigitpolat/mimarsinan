@@ -2,10 +2,8 @@
 
 ``/api/hw_config_verify`` reads the chip's capability declaration off the request
 body through ``ChipCapabilities.from_platform_constraints``. The client used to
-send three permission bits and neither ``schedule_policy`` nor
-``max_schedule_passes``, so a ``bank_clustered`` platform — every one of the 12
-literature IMC presets — was previewed against the pool composition no matter
-what the wizard's Schedule Policy field said.
+send three permission bits and not ``max_schedule_passes``, so a scheduled
+platform was previewed against a program composed under the wrong pass budget.
 
 These execute the client's own request builder under Node and feed its output to
 the real server-side reader, so a dropped key is a failing round trip rather than
@@ -77,14 +75,12 @@ class TestTheSchedulingDeclarationSurvivesTheRoundTrip:
         "allow_coalescing": True,
         "allow_neuron_splitting": False,
         "allow_scheduling": True,
-        "schedule_policy": "bank_clustered",
         "max_schedule_passes": 3,
     }
 
     def test_the_server_reads_back_exactly_what_the_wizard_declared(self):
         body = _verify_body(self.VALUES, [{"max_axons": 32, "max_neurons": 32, "count": 2}])
         capabilities = ChipCapabilities.from_platform_constraints(body)
-        assert capabilities.schedule_policy == "bank_clustered"
         assert capabilities.max_schedule_passes == 3
         assert capabilities.allow_scheduling is True
         assert capabilities.allow_coalescing is True
@@ -96,9 +92,8 @@ class TestTheSchedulingDeclarationSurvivesTheRoundTrip:
         assert body["core_types"] == [{"max_axons": 8, "max_neurons": 8, "count": 1}]
         assert body["model_repr_json"] == {"model_type": "m"}
 
-    def test_a_pool_draft_still_posts_the_pool_declaration(self):
+    def test_an_undeclared_budget_posts_the_default(self):
         body = _verify_body({"allow_scheduling": True}, [])
-        assert ChipCapabilities.from_platform_constraints(body).schedule_policy == "pool"
         assert ChipCapabilities.from_platform_constraints(body).max_schedule_passes == 8
 
 

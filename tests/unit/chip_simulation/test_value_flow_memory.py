@@ -68,7 +68,7 @@ def _token_bank_hybrid(n_tokens=5):
         weight_banks={0: bank},
     )
     strategy = MappingStrategy.resolve(ChipCapabilities(
-        allow_scheduling=True, schedule_policy="bank_clustered",
+        allow_scheduling=True,
     ))
     return build_hybrid_hard_core_mapping(
         ir_graph=graph,

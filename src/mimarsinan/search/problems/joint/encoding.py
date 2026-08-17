@@ -93,7 +93,7 @@ class JointEncodingMixin(JointHostContract):
 
         Every searched option rides the overlay too: the resolver is a pure function
         of the flat config and reads only what it consumes, so a candidate's chip is
-        resolved from its OWN options (a searched ``schedule_policy`` really lands on
+        resolved from its OWN options (a searched ``weight_bits`` really lands on
         the chip) while options the resolver ignores pass through harmlessly.
         """
         base = self.fixed_platform_constraints

@@ -140,7 +140,6 @@ def identity_from_pipeline(
         config_digest=config_digest(pipeline.config),
         platform=dict(platform),
         deployment_options={
-            "schedule_policy": platform.get("schedule_policy"),
             "max_schedule_passes": platform.get("max_schedule_passes"),
             "weight_bits": platform.get("weight_bits"),
             "target_tq": pipeline.config.get("target_tq"),

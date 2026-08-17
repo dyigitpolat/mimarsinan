@@ -40,7 +40,7 @@ def _fragments(pair_wires):
     planned = collect_noc_fragments(
         softcores=softcores, core_types=hard_core_types(NARROW_CHIP),
         census=None, allow_scheduling=True, allow_neuron_splitting=False,
-        allow_coalescing=False, schedule_policy="pool", max_schedule_passes=8,
+        allow_coalescing=False, max_schedule_passes=8,
     )
     census = LayoutWireCensus(
         pair_wires=dict(pair_wires),

@@ -149,7 +149,7 @@ def from_candidate(
     _put(values, "reprogrammed_bytes", context.reprogrammed_bytes)
     _put(values, "reprogram_passes", context.reprogram_passes)
 
-    # [H2] Carry under the run's own discipline — the cost schedule_policy moves.
+    # [H2] Carry under the run's own discipline — the cost the composed schedule moves.
     _put(values, "carried_raster_bytes", context.carried_raster_bytes)
     _put(values, "carry_peak_live_bytes", context.carry_peak_live_bytes)
     _put(values, "carry_out_bytes", context.carry_out_bytes)

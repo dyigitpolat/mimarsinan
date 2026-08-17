@@ -71,7 +71,7 @@ def build_heterogeneous_residency_mapping():
         weight_banks=banks,
     )
     strategy = MappingStrategy.resolve(ChipCapabilities(
-        allow_scheduling=True, schedule_policy="bank_clustered",
+        allow_scheduling=True,
     ))
     return build_hybrid_hard_core_mapping(
         ir_graph=graph,

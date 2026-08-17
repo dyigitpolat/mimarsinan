@@ -67,7 +67,7 @@ applies `chip_simulation.stage_timesteps` — the runner's own rule — to the
 candidate's per-execution-stage latencies) and the programming census
 (`candidate_programming_census`: cores over every pass, plus cores/bytes over
 the passes that actually install weights, under the DEPLOYED residency law
-`mapping.support.schedule.schedule_policy.resident_passes` that
+`mapping.support.schedule.pass_planner.resident_passes` that
 `mark_bank_residency` also reads). Both are ABSENT together when there is no
 pass structure, so the terms multiplying them refuse by name instead of
 pricing zero; `cores_allocated` is that same per-pass count, the meaning the

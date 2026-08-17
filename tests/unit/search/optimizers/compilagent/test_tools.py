@@ -192,7 +192,6 @@ class TestTheThreeAdditiveTools:
         layout = _candidate_layout(backend, candidate_id, problem)
         capabilities = ChipCapabilities.from_platform_constraints(layout.platform)
         assert result["payload"] == "schedule"
-        assert result["schedule_policy"] == capabilities.schedule_policy == "pool"
         assert result["max_schedule_passes"] == capabilities.max_schedule_passes == 8
         assert result["segments_count"] == len(
             {sc.segment_id for sc in layout.softcores}
@@ -206,7 +205,7 @@ class TestTheThreeAdditiveTools:
         assert result["payload"] == "capabilities"
         assert {
             "allow_coalescing", "allow_neuron_splitting", "allow_scheduling",
-            "allow_per_layer_s", "schedule_policy", "max_schedule_passes",
+            "allow_per_layer_s", "max_schedule_passes",
             "hardware_bias", "max_axons", "max_neurons",
         } == set(result["bits"])
         assert result["bits"] == ChipCapabilities.from_platform_constraints(

@@ -113,7 +113,7 @@ class TestScheduledStageDedup:
             n_tokens=n_tokens, rows=5, cols=4, row_slice=(0, 4)
         )
         strategy = MappingStrategy.resolve(ChipCapabilities(
-            allow_scheduling=True, schedule_policy="bank_clustered",
+            allow_scheduling=True,
         ))
         # 8x8 pool cores: the (5,4) instances pad into grids (non-exact fit).
         return build_hybrid_hard_core_mapping(

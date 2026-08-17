@@ -94,7 +94,7 @@ class TestHardwareModeSmoke:
         assert pcfg["weight_bits"] == 4, "config weight_bits, not a hardcoded 8"
         assert pcfg["allow_scheduling"] is True
         assert pcfg[CANONICAL_KEY] is False
-        assert "schedule_policy" in pcfg
+        assert "schedule_policy" not in pcfg  # retired [U1]
         assert "max_schedule_passes" in pcfg
 
     def test_the_promised_platform_is_the_deployment_resolution_of_the_winner(

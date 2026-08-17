@@ -6,10 +6,9 @@ from typing import Any, Dict, List, Tuple
 from mimarsinan.mapping.layout.layout_types import LayoutHardCoreType, LayoutSoftCoreSpec
 from mimarsinan.mapping.layout.layout_packer import pack_layout
 from mimarsinan.mapping.verification.layout_verification_packing import build_stats_from_packing_result
-from mimarsinan.mapping.verification.layout_verification_scheduling import compute_schedule_sync_count
-from mimarsinan.mapping.support.schedule.schedule_policy import (
-    BANK_CLUSTERED,
-    plan_segment_passes,
+from mimarsinan.mapping.support.schedule.pass_planner import (
+    compute_schedule_sync_count,
+    plan_program_passes,
 )
 
 # One layout question is asked several times per run (build-time capacity gate,
@@ -24,7 +23,7 @@ def clear_verify_hardware_config_memo() -> None:
 
 
 def _memo_key(
-    softcores, core_types, splitting, coalescing, scheduling, policy, max_passes,
+    softcores, core_types, splitting, coalescing, scheduling, max_passes,
 ) -> Tuple:
     return (
         tuple(
@@ -40,7 +39,7 @@ def _memo_key(
             for ct in core_types
         ),
         bool(splitting), bool(coalescing), bool(scheduling),
-        str(policy), int(max_passes),
+        int(max_passes),
     )
 
 
@@ -51,13 +50,12 @@ def verify_hardware_config(
     allow_neuron_splitting: bool = False,
     allow_coalescing: bool = False,
     allow_scheduling: bool = False,
-    schedule_policy: str = "pool",
     max_schedule_passes: int = 8,
 ) -> Dict[str, Any]:
     """Memoizing front of :func:`_verify_hardware_config_uncached` (LRU, deep-copied)."""
     key = _memo_key(
         softcores, core_types, allow_neuron_splitting, allow_coalescing,
-        allow_scheduling, schedule_policy, max_schedule_passes,
+        allow_scheduling, max_schedule_passes,
     )
     hit = _MEMO.get(key)
     if hit is None:
@@ -67,7 +65,6 @@ def verify_hardware_config(
             allow_neuron_splitting=allow_neuron_splitting,
             allow_coalescing=allow_coalescing,
             allow_scheduling=allow_scheduling,
-            schedule_policy=schedule_policy,
             max_schedule_passes=max_schedule_passes,
         )
         _MEMO[key] = copy.deepcopy(hit)
@@ -85,7 +82,6 @@ def _verify_hardware_config_uncached(
     allow_neuron_splitting: bool = False,
     allow_coalescing: bool = False,
     allow_scheduling: bool = False,
-    schedule_policy: str = "pool",
     max_schedule_passes: int = 8,
 ) -> Dict[str, Any]:
     """Check whether a hardware core configuration can pack the given softcores.
@@ -159,50 +155,32 @@ def _verify_hardware_config_uncached(
     )
 
     schedule_info: Dict[str, Any] = {}
-    # A bank-clustered platform composes passes even over a fitting pack — the
-    # hard-core builder does, so the preview must show the deployed program.
-    composes_over_a_fitting_pack = (
-        allow_scheduling and schedule_policy == BANK_CLUSTERED
-    )
-    if allow_scheduling and (not result.feasible or composes_over_a_fitting_pack):
-        from mimarsinan.mapping.support.schedule.schedule_partitioner import (
-            effective_core_budget,
+    # [C4]/[U1] A scheduled platform composes passes even over a fitting pack
+    # — the hard-core builder always routes through the scheduled build, so
+    # the preview must show the deployed program. The composition comes from
+    # the ONE planner both the search census and the builder consume.
+    if allow_scheduling:
+        plan = plan_program_passes(
+            all_softcores, hw_types,
+            allow_coalescing=allow_coalescing,
+            allow_splitting=allow_neuron_splitting,
+            max_schedule_passes=max_schedule_passes,
         )
-        budget = effective_core_budget(core_types)
-
-        seg_softcores: Dict[int, List[LayoutSoftCoreSpec]] = {}
-        for sc in all_softcores:
-            sid = sc.segment_id if sc.segment_id is not None else 0
-            seg_softcores.setdefault(sid, []).append(sc)
-
-        per_segment_passes: Dict[int, int] = {}
-        per_segment_pass_lists: Dict[int, List[List[LayoutSoftCoreSpec]]] = {}
-        total_pass_count = 0
-        all_pass_lists: list = []
-        sched_feasible = True
-        policy_applied = False
-
-        for sid in sorted(seg_softcores.keys()):
-            n_passes, seg_pass_lists, seg_ok, seg_policy = plan_segment_passes(
-                seg_softcores[sid], budget,
-                core_types=hw_types,
-                allow_coalescing=allow_coalescing,
-                allow_splitting=allow_neuron_splitting,
-                schedule_policy=schedule_policy,
-                max_schedule_passes=max_schedule_passes,
-            )
-            if not seg_ok:
-                sched_feasible = False
-            policy_applied = policy_applied or seg_policy
-            per_segment_passes[sid] = max(n_passes, 1)
-            per_segment_pass_lists[sid] = seg_pass_lists
-            total_pass_count += max(n_passes, 1)
-            all_pass_lists.extend(seg_pass_lists)
+        per_segment_passes = plan.per_segment_passes
+        per_segment_pass_lists = {
+            sid: [list(chunk) for chunk in seg_plan.pass_lists]
+            for sid, seg_plan in plan.segments
+        }
+        sched_feasible = plan.feasible
+        total_pass_count = plan.total_pass_count
 
         best_pass_result = None
         best_pass_softcores = all_softcores
         if sched_feasible:
-            for pass_scs in sorted(all_pass_lists, key=len, reverse=True):
+            for pass_scs in sorted(
+                [list(chunk) for chunk in plan.pass_lists],
+                key=len, reverse=True,
+            ):
                 pr = pack_layout(
                     softcores=pass_scs,
                     core_types=hw_types,
@@ -214,14 +192,12 @@ def _verify_hardware_config_uncached(
                     best_pass_softcores = pass_scs
                     break
 
-        # The pack already fits and the policy reached nothing: report exactly
-        # what an unscheduled composition reported (no schedule_info at all).
-        schedule_info = {} if (result.feasible and not policy_applied) else {
+        schedule_info = {
             "scheduled_feasible": sched_feasible,
             "total_passes": total_pass_count,
             "per_segment_passes": per_segment_passes,
             "per_segment_pass_lists": per_segment_pass_lists,
-            "max_cores_per_pass": budget,
+            "max_cores_per_pass": plan.budget,
             "message": (
                 f"Scheduled mapping: {total_pass_count} total passes across "
                 f"{len(per_segment_passes)} segment(s) (cores reused between passes)."
@@ -230,7 +206,7 @@ def _verify_hardware_config_uncached(
                 "onto the given hardware core types (even with splitting/retries)."
             ),
         }
-        if schedule_info and sched_feasible:
+        if sched_feasible:
             if best_pass_result is not None and best_pass_result.feasible:
                 result = best_pass_result
                 softcores = best_pass_softcores

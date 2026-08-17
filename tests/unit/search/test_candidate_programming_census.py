@@ -13,7 +13,7 @@ pass as a reprogram would have made bank-clustered scheduling — the compositio
 all 12 IMC presets declare — look identical to reprogramming from scratch.
 
 The census is checked against the DEPLOYED record built from the same graph,
-not against a re-derivation: same vehicle, same policy, same numbers.
+not against a re-derivation: same vehicle, same schedule, same numbers.
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ import pytest
 
 from mimarsinan.deployment_record.build.payload_sizes import params_bytes
 from mimarsinan.mapping.noc import collect_noc_fragments
-from mimarsinan.mapping.support.schedule.schedule_policy import resident_passes
+from mimarsinan.mapping.support.schedule.pass_planner import resident_passes
 from mimarsinan.search.problems.joint.candidate_fragments import (
     candidate_programming_census,
 )
@@ -37,20 +37,27 @@ from unit.mapping.bank_clustered_vehicles import (
 WEIGHT_BITS = 4
 
 
-def _census(policy: str, graph=None, weight_bits: int = WEIGHT_BITS):
-    """The candidate's programming census under one schedule policy."""
+def _census(graph=None, weight_bits: int = WEIGHT_BITS, *, unbanked=False):
+    """The candidate's programming census under the composed schedule.
+
+    ``unbanked`` strips the shared-bank identity, putting the same shapes on
+    the capacity composition — the reprograms-every-pass contrast vehicle."""
+    from dataclasses import replace
+
     graph = token_graph(7) if graph is None else graph
     softcores = softcores_of(graph)
+    if unbanked:
+        softcores = [replace(sc, bank_id=None) for sc in softcores]
     core_types = hard_core_types(TWO_CORES)
     noc = collect_noc_fragments(
         softcores=softcores, core_types=core_types, census=None,
         allow_scheduling=True, allow_neuron_splitting=False,
-        allow_coalescing=False, schedule_policy=policy, max_schedule_passes=8,
+        allow_coalescing=False, max_schedule_passes=8,
     )
     return candidate_programming_census(noc, weight_bits=weight_bits)
 
 
-def _deployed_census(policy: str, graph=None, weight_bits: int = WEIGHT_BITS):
+def _deployed_census(graph=None, weight_bits: int = WEIGHT_BITS):
     """The same census read off the sealed record of the deployed program."""
     from mimarsinan.deployment_record.build.from_mapping import (
         schedule_record_from_mapping,
@@ -67,7 +74,7 @@ def _deployed_census(policy: str, graph=None, weight_bits: int = WEIGHT_BITS):
         ir_graph=token_graph(7) if graph is None else graph,
         cores_config=[dict(ct) for ct in TWO_CORES],
         strategy=MappingStrategy.resolve(
-            ChipCapabilities(allow_scheduling=True, schedule_policy=policy)
+            ChipCapabilities(allow_scheduling=True)
         ),
     )
     record = schedule_record_from_mapping(
@@ -105,10 +112,9 @@ class TestTheResidencyLawIsOneLaw:
 
 
 class TestTheCandidateMatchesTheDeployedCensus:
-    @pytest.mark.parametrize("policy", ["pool", "bank_clustered"])
-    def test_every_programming_quantity_agrees_with_the_sealed_record(self, policy):
-        candidate = _census(policy)
-        deployed = _deployed_census(policy)
+    def test_every_programming_quantity_agrees_with_the_sealed_record(self):
+        candidate = _census()
+        deployed = _deployed_census()
         assert {
             "segment_cores": candidate.segment_cores,
             "reprogrammed_cores": candidate.reprogrammed_cores,
@@ -123,10 +129,7 @@ class TestAllocationMeansTheSameThingOnBothSides:
     meanings, off by the whole chip (36 vs 3 on the study MLP). Nothing
     priced it yet, which is exactly why it could drift unnoticed."""
 
-    @pytest.mark.parametrize("policy", ["pool", "bank_clustered"])
-    def test_the_candidate_allocates_what_the_deployed_mapping_allocates(
-        self, policy,
-    ):
+    def test_the_candidate_allocates_what_the_deployed_mapping_allocates(self):
         from mimarsinan.mapping.crossbar_utilization import (
             CrossbarUtilizationReport,
         )
@@ -142,41 +145,43 @@ class TestAllocationMeansTheSameThingOnBothSides:
             ir_graph=token_graph(7),
             cores_config=[dict(ct) for ct in TWO_CORES],
             strategy=MappingStrategy.resolve(
-                ChipCapabilities(allow_scheduling=True, schedule_policy=policy)
+                ChipCapabilities(allow_scheduling=True)
             ),
         )
         deployed = CrossbarUtilizationReport.from_hybrid_mapping(hybrid)
-        assert _census(policy).segment_cores == deployed.cores_allocated
+        assert _census().segment_cores == deployed.cores_allocated
 
 
 class TestResidencyIsWorthMoney:
-    def test_bank_clustered_pays_core_init_on_every_pass(self):
+    def test_the_streamed_composition_pays_core_init_on_every_pass(self):
         """Resident or not, a pass resets its cores — core init is per PASS."""
-        clustered = _census("bank_clustered")
-        assert clustered.segment_cores > clustered.reprogrammed_cores
+        streamed = _census()
+        assert streamed.segment_cores > streamed.reprogrammed_cores
 
-    def test_bank_clustered_sends_one_pass_worth_of_payload(self):
+    def test_the_streamed_composition_sends_one_pass_worth_of_payload(self):
         """The composition streams ONE shared bank: the head programs it and
-        every later pass reuses it, so the payload does not scale with passes."""
-        clustered = _census("bank_clustered")
-        assert clustered.reprogram_passes == 1
-        assert clustered.reprogrammed_bytes < _census("pool").reprogrammed_bytes
+        every later pass reuses it, so the payload does not scale with passes.
+        The same shapes without the bank reprogram every pass — the cost the
+        unified scheduler exists to avoid."""
+        streamed = _census()
+        assert streamed.reprogram_passes == 1
+        assert streamed.reprogrammed_bytes < _census(unbanked=True).reprogrammed_bytes
 
-    def test_the_pool_composition_reprograms_every_pass(self):
-        pool = _census("pool")
-        assert pool.reprogrammed_cores == pool.segment_cores
-        assert pool.reprogram_passes == len(pool.pass_cores)
+    def test_the_capacity_composition_reprograms_every_pass(self):
+        capacity = _census(unbanked=True)
+        assert capacity.reprogrammed_cores == capacity.segment_cores
+        assert capacity.reprogram_passes == len(capacity.pass_cores)
 
 
 class TestThePayloadIsSizedByTheSharedRule:
     def test_bytes_come_from_the_payload_ssot_at_the_declared_width(self):
-        census = _census("pool")
+        census = _census()
         assert census.reprogrammed_bytes == sum(
             params_bytes(cells, WEIGHT_BITS) for cells in census.reprogrammed_cells
         )
 
     def test_a_wider_weight_moves_the_payload_and_nothing_else(self):
-        narrow, wide = _census("pool", weight_bits=4), _census("pool", weight_bits=8)
+        narrow, wide = _census(weight_bits=4), _census(weight_bits=8)
         assert wide.reprogrammed_bytes > narrow.reprogrammed_bytes
         assert wide.segment_cores == narrow.segment_cores
         assert wide.reprogrammed_cores == narrow.reprogrammed_cores
@@ -186,17 +191,16 @@ class TestThePayloadIsSizedByTheSharedRule:
         ABSENT (its term refuses by name) while the core counts, which need no
         width, still count. Losing the whole census here would cost a
         candidate its core-init term over an unrelated declaration."""
-        census = _census("pool", weight_bits=None)
+        census = _census(weight_bits=None)
         assert census.reprogrammed_bytes is None
-        assert census.segment_cores == _census("pool").segment_cores
-        assert census.reprogrammed_cores == _census("pool").reprogrammed_cores
+        assert census.segment_cores == _census().segment_cores
+        assert census.reprogrammed_cores == _census().reprogrammed_cores
 
 
 class TestAsMappedCells:
     """[R1] The event model's multiplicand: replicas really fire."""
 
-    @pytest.mark.parametrize("policy", ["pool", "bank_clustered"])
-    def test_committed_cells_match_the_deployed_crossbar(self, policy):
+    def test_committed_cells_match_the_deployed_crossbar(self):
         """The token graph replicates ONE shared bank across instances — the
         as-mapped figure counts every replica, exactly as the record's
         crossbar does. The logical census would count the bank once."""
@@ -215,11 +219,11 @@ class TestAsMappedCells:
             ir_graph=token_graph(7),
             cores_config=[dict(ct) for ct in TWO_CORES],
             strategy=MappingStrategy.resolve(
-                ChipCapabilities(allow_scheduling=True, schedule_policy=policy)
+                ChipCapabilities(allow_scheduling=True)
             ),
         )
         deployed = CrossbarUtilizationReport.from_hybrid_mapping(hybrid)
-        assert _census(policy).committed_cells == deployed.cells_used
+        assert _census().committed_cells == deployed.cells_used
 
     def test_modeled_events_scale_with_replication(self):
         """Seven replicated instances must model ~7x one instance's events —
@@ -240,7 +244,7 @@ class TestAsMappedCells:
             )
             return quantities.get("synaptic_events").value
 
-        one = _census("pool").committed_cells // 7
+        one = _census().committed_cells // 7
         assert _events(7 * one) == pytest.approx(7 * _events(one))
 
     def test_the_replicated_shape_is_priced_at_its_replicas_not_its_logic(self):

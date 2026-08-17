@@ -158,7 +158,7 @@ class TestScheduleErrorsPropagate:
         assert all_ok is False
 
     def test_compute_mapping_stats_propagates_pack_bugs(self, monkeypatch):
-        import mimarsinan.mapping.support.schedule.schedule_policy as spol
+        import mimarsinan.mapping.support.schedule.pass_planner as planner_mod
         import mimarsinan.mapping.verification.layout_verification_scheduling as lvs
 
         sc = LayoutSoftCoreSpec(input_count=2, output_count=2)
@@ -175,9 +175,9 @@ class TestScheduleErrorsPropagate:
             raise ValueError("pack bug")
 
         monkeypatch.setattr(lvs, "pack_layout", _pack_stub)
-        # The per-segment estimator now lives behind the policy planner.
+        # The per-segment estimator now lives behind the unified pass planner.
         monkeypatch.setattr(
-            spol, "estimate_passes_for_layout_validated",
+            planner_mod, "estimate_passes_for_layout_validated",
             lambda scs, budget, **kw: (1, [list(scs)], True),
         )
         with pytest.raises(ValueError, match="pack bug"):

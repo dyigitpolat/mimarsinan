@@ -1,8 +1,7 @@
 """[H2] The candidate sizes the carry of the program it just planned.
 
-``schedule_policy`` is a search axis, and carry is precisely the cost that
-axis moves — yet the candidate produced NO carry quantity, so the search
-optimized that dimension blind. The census function is the record's own
+The composed schedule is what moves carry, yet the candidate produced NO
+carry quantity, so the search optimized that dimension blind. The census function is the record's own
 (`carry_census_from_spans`); only the span producer differs, so the numbers
 are the same numbers by construction — checked here against the DEPLOYED
 program's census on the same graph.
@@ -45,12 +44,12 @@ def _pair_wires(graph):
     return pairs
 
 
-def _candidate_census(graph, policy, transfer, cores):
+def _candidate_census(graph, transfer, cores):
     softcores = softcores_of(graph)
     noc = collect_noc_fragments(
         softcores=softcores, core_types=hard_core_types(cores), census=None,
         allow_scheduling=True, allow_neuron_splitting=False,
-        allow_coalescing=False, schedule_policy=policy, max_schedule_passes=8,
+        allow_coalescing=False, max_schedule_passes=8,
     )
     spans = carried_softcore_spans(
         softcores, noc.pass_placements, _pair_wires(graph),
@@ -61,7 +60,7 @@ def _candidate_census(graph, policy, transfer, cores):
     )
 
 
-def _deployed_census(graph, policy, transfer, cores):
+def _deployed_census(graph, transfer, cores):
     from mimarsinan.mapping.packing.hybrid_build_pool import (
         build_hybrid_hard_core_mapping,
     )
@@ -73,7 +72,7 @@ def _deployed_census(graph, policy, transfer, cores):
     hybrid = build_hybrid_hard_core_mapping(
         ir_graph=graph, cores_config=[dict(ct) for ct in cores],
         strategy=MappingStrategy.resolve(
-            ChipCapabilities(allow_scheduling=True, schedule_policy=policy)
+            ChipCapabilities(allow_scheduling=True)
         ),
     )
     return pass_carry_census(hybrid.stages, T, transfer)
@@ -85,20 +84,17 @@ class TestTheCandidateMatchesTheDeployedCensus:
         """Layer 1 consumes layer 0 across the pass cut: every figure —
         buffer, peak, both boundary directions — equals the deployed one."""
         graph = two_layer_dependency_graph(3, 4)
-        candidate = _candidate_census(graph, "pool", transfer, NARROW_CHIP)
-        deployed = _deployed_census(graph, "pool", transfer, NARROW_CHIP)
+        candidate = _candidate_census(graph, transfer, NARROW_CHIP)
+        deployed = _deployed_census(graph, transfer, NARROW_CHIP)
         assert candidate == deployed
         assert candidate["carried_wires"] > 0
 
-    @pytest.mark.parametrize("policy", ["pool", "bank_clustered"])
-    def test_an_independent_token_stream_carries_nothing_on_either_plane(
-        self, policy,
-    ):
+    def test_an_independent_token_stream_carries_nothing_on_either_plane(self):
         """The token graph's passes are data-independent: a KNOWN zero on
         both planes — the search must see 0, never refuse."""
         graph = token_graph(7)
-        candidate = _candidate_census(graph, policy, VERBATIM, TWO_CORES)
-        deployed = _deployed_census(graph, policy, VERBATIM, TWO_CORES)
+        candidate = _candidate_census(graph, VERBATIM, TWO_CORES)
+        deployed = _deployed_census(graph, VERBATIM, TWO_CORES)
         assert candidate == deployed
         assert candidate["carried_bytes"] == 0
 
