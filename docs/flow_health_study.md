@@ -135,3 +135,46 @@ silicon-correlation cases stay in band; the full suite holds at 11,634 tests
    follow-up, now measurable per run on its own axes.
 5. **`total_sync_barriers` / `timesteps` estimands** (deferred from H3): the
    basis rows now state the mismatch per run; adjudicate on this evidence.
+
+
+## R-series verification (2026-08-17, six runs, gates ARMED)
+
+The predictive-closure program's acceptance batch — the first study run with
+the fidelity gates live, and they earned their keep twice before any row was
+written: catching the record-side `tiles` estimand fork (exactly one tile's
+router+fixed area on the component-priced profiles) and the multi-pass
+utilization fork (the candidate reported one pass's 33.3% against the
+record's aggregated 40.8% on the deepcnn witness — a gap no single-pass
+vehicle could expose). Both fixed and pinned; the runs resealed on the fixes.
+
+**Candidate dynamic energy is now predictive** (declared activity 0.1118 from
+the H5 anchor; measured effective activity 0.109 on every MLP, 0.099 on
+LeNet5 — the anchor generalizes):
+
+| run | dyn-energy err (candidate vs record-plane) | hops zip |
+|---|---|---|
+| truenorth MLP | +2.5% | 0.0 == 0.0 |
+| isaac_like MLP | −1.2% | 0.0 == 0.0 |
+| loihi MLP | −6.8% | 0.0 == 0.0 |
+| **LeNet5 (replicated conv, was ~108x wrong)** | **+12.7%** | 0.0 == 0.0 |
+| generic_estimated_22nm MLP | −62.7% (composition gap, see below) | 0.0 == 0.0 |
+
+The **hops zip closes on every run** — R3's executed-placement model prices
+the true zero the per-stage remapping produces.
+
+**The generic outlier is a composition gap, not a model error**: its
+component-priced dynamic includes terms only the record can back
+(`boundary_events`, leak x `neurons_used` — measured-only multiplicands).
+Candidate-side `neurons_used` is derivable from the committed rectangle;
+named follow-up.
+
+**The host residual is now precisely attributed**: with 5 timed samples
+amortizing cold start, the per-op wall is still ~9 ms — data-marshalling
+dominated, exactly the R2 estimand note's prediction. The per-byte
+marshalling term is the one remaining host follow-up; the term table keeps
+it isolated from the chip-side claims.
+
+Claim upgrade, as of this batch: **"predictive at candidate time on the chip
+side — dynamic energy within ±13% across four profiles and a replicated conv,
+structural axes gated, traffic zipped — with the host wall's marshalling term
+and the generic profile's component multiplicands as the two named residuals."**
