@@ -158,6 +158,7 @@ LeNet5 — the anchor generalizes):
 | loihi MLP | −6.8% | 0.0 == 0.0 |
 | **LeNet5 (replicated conv, was ~108x wrong)** | **+12.7%** | 0.0 == 0.0 |
 | generic_estimated_22nm MLP | −62.7% (composition gap, see below) | 0.0 == 0.0 |
+| **deepcnn (scheduled conv, generality witness)** | **+26.3%** (eff. activity 0.0885 vs declared 0.1118 — the miss IS the error) | 0.0 == 0.0 |
 
 The **hops zip closes on every run** — R3's executed-placement model prices
 the true zero the per-stage remapping produces.
@@ -173,6 +174,14 @@ amortizing cold start, the per-op wall is still ~9 ms — data-marshalling
 dominated, exactly the R2 estimand note's prediction. The per-byte
 marshalling term is the one remaining host follow-up; the term table keeps
 it isolated from the chip-side claims.
+
+The deepcnn witness sealed on its third run with ALL GATES GREEN — its two
+gatings each caught a real fork (multi-pass utilization aggregation; the
+conv-scale wastage closure bound, now stated as the tolerance's basis).
+Utilization zips EXACT on the scheduled conv (60.6213 == 60.6213); its
++26.3% dynamic-energy error decomposes almost entirely into its activity
+declaration miss (0.0885 measured vs the MLP-anchored 0.1118 declared —
+per-workload anchors, as the loop is designed for).
 
 Claim upgrade, as of this batch: **"predictive at candidate time on the chip
 side — dynamic energy within ±13% across four profiles and a replicated conv,
