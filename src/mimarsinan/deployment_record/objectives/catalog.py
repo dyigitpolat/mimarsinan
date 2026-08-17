@@ -240,9 +240,16 @@ _CARRY_REQUIRES = (
 )
 
 #: [B] The pass-buffer axes: the required buffer of a PARTICULAR program is a
-#: mapping performance metric of the sealed schedule — record-only by
-#: construction (a candidate has no pass structure to size), never searched.
+#: mapping performance metric of the schedule; searchable since [H2] — the
+#: candidate sizes its own PLANNED pass structure. Buffer CAPACITY stays a
+#: platform declaration (the B decision), never a decision variable.
 _BUFFER_AXES: Tuple[ObjectiveSpecV2, ...] = (
+    objective(
+        "chip_occupancy_pct", "max", "percent", "static",
+        layout_field("chip_occupancy_pct"),
+        "Used cells over the DECLARED chip, idle cores included — the "
+        "chip-sizing pressure the utilization family no longer hides [H3].",
+    ),
     objective(
         "carry_peak_live_bytes", "min", "bytes", "measured",
         quantity_field("carry_peak_live_bytes", requires=_CARRY_REQUIRES),

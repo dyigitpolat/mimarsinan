@@ -37,6 +37,7 @@ class _ProbeLayout:
     total_hw_cores: int = 1
     schedule_pass_count: int = 1
     neural_segment_count: int = 1
+    chip_occupancy_pct: float = 1.0
 
 
 def _probe_context() -> CandidateQuantityContext:
@@ -101,6 +102,12 @@ CANDIDATE_FRAGMENTS: Tuple[str, ...] = (
     "quantity_context",
     "noc_fragments",
 )
+
+
+def full_candidate_probe() -> CandidateStaticView:
+    """Every fragment present at placeholder magnitudes — the "answerable in
+    principle" question, which the fidelity twin's full surface asks [H3]."""
+    return _full_candidate_probe()
 
 
 def _full_candidate_probe() -> CandidateStaticView:

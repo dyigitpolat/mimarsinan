@@ -8,9 +8,12 @@ from mimarsinan.deployment_record.cost.terms import CostTerm, find_term_or_none
 from mimarsinan.deployment_record.fidelity import (
     AxisComparison,
     FidelityReport,
+    TermComparison,
     compare_axis,
+    compare_term,
     save_fidelity_report,
 )
+from mimarsinan.deployment_record.objectives.probes import full_candidate_probe
 from mimarsinan.deployment_record.objectives.catalog import OBJECTIVES
 from mimarsinan.deployment_record.objectives.spec import ObjectiveSpecV2, RecordView
 from mimarsinan.deployment_record.objectives.views import DeploymentRecordView
@@ -48,6 +51,73 @@ def _predicted_band(
     return (float(term.band.low), float(term.band.high))
 
 
+def _axis_basis(
+    spec: ObjectiveSpecV2,
+    predicted: Optional[float],
+    measured: Optional[float],
+    candidate: Optional[RecordView],
+) -> str:
+    """[H3] WHY a side is absent — never a bare empty cell."""
+    if predicted is not None and measured is not None:
+        return ""
+    reasons = []
+    if predicted is None:
+        if candidate is None:
+            reasons.append("prediction: no candidate rebuild for this run")
+        elif not spec.available(full_candidate_probe()):
+            reasons.append("prediction: record-only axis (no candidate backing)")
+        else:
+            reasons.append(
+                f"prediction unavailable on this run: requires {spec.requires}"
+            )
+    if measured is None:
+        reasons.append(
+            "measurement: the sealed record does not answer this axis on this run"
+        )
+    return "; ".join(reasons)
+
+
+def _term_rows(
+    candidate: Optional[RecordView], measured_view: RecordView
+) -> Tuple[TermComparison, ...]:
+    """[H3] Every priced term, zipped by NAME across the two completenesses.
+
+    The absolute terms share names by construction (one pricer), so an
+    axis-level split decomposes into named causes — the host term's estimated
+    rates stop hiding inside the e2e headline.
+    """
+    def _terms_of(view: Optional[RecordView]):
+        report = None if view is None else view.cost_report()
+        if report is None:
+            return {}
+        return {term.name: term for term in report.all_terms()}
+
+    predicted_terms = _terms_of(candidate)
+    measured_terms = _terms_of(measured_view)
+    rows = []
+    for name in sorted(set(predicted_terms) | set(measured_terms)):
+        predicted = predicted_terms.get(name)
+        measured = measured_terms.get(name)
+        predicted_value = getattr(predicted, "value", None)
+        measured_value = getattr(measured, "value", None)
+        if predicted_value is None and measured_value is None:
+            continue
+        band = getattr(predicted, "band", None)
+        evidence = (getattr(measured, "source", "")
+                    or getattr(predicted, "source", "") or "")
+        rows.append(compare_term(
+            name=name,
+            unit=getattr(predicted or measured, "unit", ""),
+            predicted=predicted_value,
+            measured=measured_value,
+            predicted_band=(
+                None if band is None else (float(band.low), float(band.high))
+            ),
+            evidence=evidence,
+        ))
+    return tuple(rows)
+
+
 def fidelity_report_for_record(
     record: DeploymentRecord, candidate: Optional[RecordView]
 ) -> FidelityReport:
@@ -71,11 +141,13 @@ def fidelity_report_for_record(
             predicted=predicted,
             measured=measured,
             predicted_band=_predicted_band(spec, candidate),
+            basis=_axis_basis(spec, predicted, measured, candidate),
         ))
     return FidelityReport(
         cell_key=record.identity.cell_key,
         run_dir=record.identity.run_dir,
         axes=tuple(axes),
+        terms=_term_rows(candidate, measured_view),
     )
 
 

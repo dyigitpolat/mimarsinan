@@ -101,18 +101,25 @@ class TestTheThroughPath:
 
 
 class TestTheAxisFilter:
-    def test_the_training_proxy_is_dropped(self):
-        """The rebuild never trains; hardware completeness is what a deployed
-        config can answer."""
+    def test_the_surface_is_every_answerable_axis_not_the_searched_list(self):
+        """[H3] The twin predicts everything a candidate can answer under the
+        run's declarations — the searched list only proves the run searched.
+        Physics-less run: the vendor-priced axes are gate-refused, the proxy
+        never predicted, and the capability surface comes back regardless of
+        which single axis the search happened to optimize."""
         names = _fidelity_axis_names({
-            "arch_search": {
-                "objectives": ["estimated_accuracy", "chip_area_mm2"],
-            },
+            "arch_search": {"objectives": ["chip_area_mm2"]},
         })
-        assert names == ["chip_area_mm2"]
+        assert names is not None
+        assert "estimated_accuracy" not in names
+        assert "chip_area_mm2" not in names  # needs physics this run lacks
+        assert "param_utilization_pct" in names
+        assert "chip_occupancy_pct" in names
 
-    def test_a_proxy_only_search_yields_no_axes(self):
+    def test_a_proxy_only_search_still_predicts_the_surface(self):
+        """Searching only the proxy is still a searched run: the hardware
+        predictions exist and are worth zipping."""
         names = _fidelity_axis_names({
             "arch_search": {"objectives": ["estimated_accuracy"]},
         })
-        assert names is None
+        assert names is not None and "estimated_accuracy" not in names

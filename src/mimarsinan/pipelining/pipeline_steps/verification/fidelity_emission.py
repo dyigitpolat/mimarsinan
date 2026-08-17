@@ -18,9 +18,18 @@ from mimarsinan.deployment_record.fidelity_build import emit_fidelity_report
 from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 from mimarsinan.pipelining.core.registry.model_registry import ModelRegistry
 from mimarsinan.pipelining.core.search_mode import derive_search_mode
+from mimarsinan.deployment_record.objectives import (
+    OBJECTIVES,
+    full_candidate_probe,
+)
+from mimarsinan.deployment_record.platform_physics.resolve import (
+    resolve_platform_physics,
+)
 from mimarsinan.pipelining.pipeline_steps.config.architecture_search_helpers import (
+    firing_semantics_kwargs,
     make_platform_resolver,
 )
+from mimarsinan.search.results import resolve_active_specs
 from mimarsinan.pipelining.pipeline_steps.mapping.soft_core_structured_pruning import (
     resolve_prune_criterion,
 )
@@ -29,14 +38,36 @@ from mimarsinan.search.results import ACCURACY_OBJECTIVE_NAME
 
 
 def _fidelity_axis_names(config: Any) -> Optional[List[str]]:
-    """The run's SEARCHED axes, minus the training proxy (the rebuild never
-    trains — hardware completeness is what a deployed config can answer)."""
+    """[H3] The FULL candidate-answerable surface this run can back.
+
+    The searched axes only tell us the run searched at all; the twin predicts
+    every axis a candidate can answer under the run's own declarations, so the
+    report's prediction column stops depending on what the run happened to
+    optimize. Per-axis admission reuses the step's own gate (physics +
+    activity), one axis at a time — an axis the gate refuses is simply not
+    predicted, and the report's basis says why.
+    """
     arch = config.get("arch_search") or {}
-    names = arch.get("objectives")
-    if not names:
-        return None
-    kept = [n for n in names if n != ACCURACY_OBJECTIVE_NAME]
-    return kept or None
+    if not arch.get("objectives"):
+        return None  # the run never searched: nothing was predicted
+    probe = full_candidate_probe()
+    physics = resolve_platform_physics(
+        str(config.get("platform_physics_profile", "") or ""),
+        config.get("platform_physics_overrides") or {},
+    )
+    activity = float(config.get("activity_factor", 0.0) or 0.0)
+    names: List[str] = []
+    for spec in OBJECTIVES.all():
+        if spec.key == ACCURACY_OBJECTIVE_NAME or not spec.available(probe):
+            continue
+        try:
+            resolve_active_specs(
+                "hardware", [spec.key], physics=physics, activity_factor=activity,
+            )
+        except ValueError:
+            continue
+        names.append(spec.key)
+    return names or None
 
 
 def _fidelity_problem(
@@ -85,6 +116,10 @@ def _fidelity_problem(
         encoding_placement=str(
             config.get("encoding_layer_placement", "subsume")
         ),
+        # [H3] The SAME semantics the search step hands its problem — a twin
+        # armed differently prices a program the run never executed (H0: a
+        # re-timed run's twin priced the fused wall).
+        **firing_semantics_kwargs(plan, config),
     )
 
 

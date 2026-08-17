@@ -81,8 +81,9 @@ class TestLegacyOptionsUnchanged:
         assert all(o["requires_physics"] is True for o in options[8:12])
         assert [o["id"] for o in options[12:]] == [
             "noc_total_hops",
-            # [H2] the carry axes, searchable now the candidate sizes its
-            # own planned pass structure.
+            # [H3] the chip-sizing axis; [H2] the carry axes, searchable now
+            # the candidate sizes its own planned pass structure.
+            "chip_occupancy_pct",
             "carry_peak_live_bytes", "carried_raster_bytes",
         ]
         assert options[12]["requires_physics"] is False

@@ -7,7 +7,7 @@
 | H0 investigation: profile + root-causes | **DONE** — findings below, all measured | (this doc) |
 | H1 measured synaptic-event census | **DONE** — `chip_simulation/synaptic_events.py`; the SANA-FE finalizer measures per stage, `EnergyRecord.synaptic_events` seals the per-inference mean, `energy_per_inference_mj` prices on the record plane; refusal (None) propagates end-to-end when any trace is unparsed | `record(H1)` |
 | H2 candidate carry census | **DONE** — one census over spans (`carry_census_from_spans`), two span producers; candidate == deployed on the vehicles, both disciplines; carry axes searchable (B's capacity-not-a-variable stands); known-zero semantics on BOTH planes | `search(H2)` |
-| H3 fidelity as an instrument (twin arming, full surface, term zip, estimand alignment) | pending | |
+| H3 fidelity as an instrument | **DONE** — twin armed via the shared `firing_semantics_kwargs`; full candidate-answerable surface; per-term zip with bands/evidence; utilization family = allocated denominator + committed-rectangle numerator BOTH planes (a second numerator fork found and closed); new `chip_occupancy_pct`; one-sided rows carry a written basis | `fidelity(H3)` |
 | H3b host-rate calibration | pending owner decision | |
 | H4 performance + elegance consolidation | pending | |
 | H5 study re-run + findings | pending | |
@@ -55,9 +55,15 @@ eval (46 `cost_report()` reads), and `pack_layout` runs 11x per candidate
 and re-packs every pass). On MLP-scale programs this is milliseconds; on conv-scale
 softcore counts the packing multiplicity dominates search throughput.
 
-**Other estimand suspects** (adjudicate in H3, mechanically): `total_sync_barriers`
-(candidate: host_segments + schedule syncs; record: schedule sync_count),
-`timesteps` (candidate: `simulation_steps`; record: `s_global`).
+**Other estimand suspects** — `total_sync_barriers` (candidate: host_segments +
+schedule syncs; record answers nothing on the study runs) and `timesteps`
+(candidate `simulation_steps` vs record `s_global`): DEFERRED past H3 with the
+report's basis rows stating the mismatch per run; adjudication rides the H5
+findings once live reports show the magnitudes. A SECOND utilization fork was
+found during H3 and closed: the numerators differed too (candidate summed the
+PLACED PIECES, the record's crossbar measures the committed used-rows x
+used-columns RECTANGLE — 140 vs 740 cells on the token vehicle); both planes
+now measure the rectangle, the IMC reclaim rule's meaning.
 
 ## Owner decisions (asked 2026-08-17)
 

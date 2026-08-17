@@ -42,6 +42,9 @@ class AxisComparison:
     predicted_band: Optional[Tuple[float, float]]
     in_band: Optional[bool]
     relative_error: Optional[float]
+    #: [H3] WHY a side is absent ("" when both sides answered) — the
+    #: refusal-with-reason discipline extended to the report itself.
+    basis: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -55,6 +58,7 @@ class AxisComparison:
             ),
             "in_band": self.in_band,
             "relative_error": self.relative_error,
+            "basis": self.basis,
         }
 
     @classmethod
@@ -75,6 +79,7 @@ def compare_axis(
     predicted: Optional[float],
     measured: Optional[float],
     predicted_band: Optional[Tuple[float, float]],
+    basis: str = "",
 ) -> AxisComparison:
     """One axis' comparison, with the verdicts each side actually supports."""
     in_band: Optional[bool] = None
@@ -97,6 +102,83 @@ def compare_axis(
         ),
         in_band=in_band,
         relative_error=relative_error,
+        basis=str(basis),
+    )
+
+
+@dataclass(frozen=True)
+class TermComparison:
+    """[H3] One priced COST TERM, predicted and measured-plane.
+
+    The absolute terms share names across both completenesses by construction
+    (one pricer), so an axis-level split decomposes into named causes here —
+    "e2e off 100x" becomes "t_cycle x steps within X%, host term off Nx
+    (estimated rates)". ``measured`` is the record-plane PRICED value (same
+    constants, sealed multiplicands); truly measured energies/walls remain
+    axis rows (``mj_per_sample``), never conflated with priced terms.
+    """
+
+    name: str
+    unit: str
+    predicted: Optional[float]
+    measured: Optional[float]
+    predicted_band: Optional[Tuple[float, float]]
+    in_band: Optional[bool]
+    relative_error: Optional[float]
+    #: The evidence basis of the constants behind the term (from the record
+    #: plane when present, else the candidate's).
+    evidence: str = ""
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "name": self.name,
+            "unit": self.unit,
+            "predicted": self.predicted,
+            "measured": self.measured,
+            "predicted_band": (
+                None if self.predicted_band is None else list(self.predicted_band)
+            ),
+            "in_band": self.in_band,
+            "relative_error": self.relative_error,
+            "evidence": self.evidence,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> "TermComparison":
+        kwargs = strict_kwargs(cls, data)
+        band = kwargs.get("predicted_band")
+        kwargs["predicted_band"] = (
+            None if band is None else (float(band[0]), float(band[1]))
+        )
+        return cls(**kwargs)
+
+
+def compare_term(
+    *,
+    name: str,
+    unit: str,
+    predicted: Optional[float],
+    measured: Optional[float],
+    predicted_band: Optional[Tuple[float, float]],
+    evidence: str = "",
+) -> TermComparison:
+    """One term's comparison — the axis rules, applied to a priced term."""
+    in_band: Optional[bool] = None
+    if measured is not None and predicted_band is not None:
+        low, high = predicted_band
+        in_band = bool(low <= measured <= high)
+    relative_error: Optional[float] = None
+    if predicted is not None and measured not in (None, 0.0):
+        relative_error = (float(predicted) - float(measured)) / float(measured)
+    return TermComparison(
+        name=name, unit=unit,
+        predicted=None if predicted is None else float(predicted),
+        measured=None if measured is None else float(measured),
+        predicted_band=(
+            None if predicted_band is None
+            else (float(predicted_band[0]), float(predicted_band[1]))
+        ),
+        in_band=in_band, relative_error=relative_error, evidence=str(evidence),
     )
 
 
@@ -107,6 +189,8 @@ class FidelityReport:
     cell_key: str
     run_dir: str
     axes: Tuple[AxisComparison, ...]
+    #: [H3] The per-term decomposition; additive-optional so pre-H3 reports load.
+    terms: Tuple[TermComparison, ...] = ()
 
     @property
     def compared_count(self) -> int:
@@ -125,12 +209,16 @@ class FidelityReport:
             "cell_key": self.cell_key,
             "run_dir": self.run_dir,
             "axes": [axis.to_dict() for axis in self.axes],
+            "terms": [term.to_dict() for term in self.terms],
         }
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> "FidelityReport":
         kwargs = strict_kwargs(cls, data)
         kwargs["axes"] = tuple_of(AxisComparison.from_dict, kwargs["axes"])
+        kwargs["terms"] = tuple_of(
+            TermComparison.from_dict, kwargs.get("terms") or ()
+        )
         return cls(**kwargs)
 
 

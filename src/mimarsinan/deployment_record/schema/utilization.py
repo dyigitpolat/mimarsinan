@@ -112,6 +112,9 @@ class LayoutStatsRecord:
     unused_area_total: int
     unusable_space_total: int
     fragmentation_pct: float
+    #: [H3] additive-optional: used cells over the DECLARED chip — the mirror
+    #: of the stats' chip-sizing signal; pre-H3 records load at 0.0.
+    chip_occupancy_pct: float = 0.0
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)

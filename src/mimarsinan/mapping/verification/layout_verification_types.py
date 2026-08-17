@@ -56,6 +56,9 @@ class LayoutVerificationStats:
     unused_area_total: int = 0
     unusable_space_total: int = 0
     fragmentation_pct: float = 0.0
+    #: [H3] used cells over the DECLARED chip (idle cores included) — the
+    #: chip-sizing signal, split out of the utilization family by name.
+    chip_occupancy_pct: float = 0.0
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)

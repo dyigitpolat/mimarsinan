@@ -155,7 +155,8 @@ def _objective_label(name: str) -> str:
         # [N3] The traffic axis: measured on a sealed record, modeled on a
         # candidate (wire census x declared activity on the resolved floorplan).
         "noc_total_hops": "NoC Total Hops",
-        # [B] The pass-buffer metrics of the sealed schedule (record-only).
+        # [H3] the chip-sizing axis; [H2] the pass-buffer metrics, searchable.
+        "chip_occupancy_pct": "Chip Occupancy (%)",
         "carry_peak_live_bytes": "Peak Pass-Buffer Bytes",
         "carried_raster_bytes": "Carried Raster Bytes",
         "throughput_samples_per_s": "Throughput (samples/s)",

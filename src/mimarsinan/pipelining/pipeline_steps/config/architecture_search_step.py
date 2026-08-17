@@ -12,10 +12,6 @@ from mimarsinan.pipelining.determinism import isolated_rng_stream
 from mimarsinan.pipelining.core.model_config_emit import emit_model_config_entries
 from mimarsinan.pipelining.core.registry.model_registry import ModelRegistry
 from mimarsinan.pipelining.core.search_mode import derive_search_mode
-from mimarsinan.chip_simulation.spiking_semantics import (
-    lif_per_hop_retiming_enabled,
-)
-from mimarsinan.models.spiking.hybrid.carry import run_pass_transfer
 from mimarsinan.pipelining.pipeline_steps.mapping.soft_core_structured_pruning import (
     resolve_prune_criterion,
 )
@@ -33,6 +29,7 @@ from mimarsinan.pipelining.pipeline_steps.config.architecture_search_helpers imp
     OptimizerType,
     build_fixed_platform_constraints,
     create_optimizer,
+    firing_semantics_kwargs,
     resolve_arch_options,
     make_platform_resolver,
     search_result_to_jsonable,
@@ -190,10 +187,7 @@ class ArchitectureSearchStep(PipelineStep):
             prune_sparsity=plan.prune_sparsity,
             prune_criterion=resolve_prune_criterion(self.pipeline.config),
             firing_mode=str(self.pipeline.config.get("firing_mode", "Default")),
-            spiking_mode=str(plan.spiking_mode),
-            ttfs_cycle_schedule=str(plan.ttfs_cycle_schedule),
-            per_hop_retiming=lif_per_hop_retiming_enabled(self.pipeline.config),
-            pass_transfer=run_pass_transfer(self.pipeline.config),
+            **firing_semantics_kwargs(plan, self.pipeline.config),
             encoding_placement=str(
                 self.pipeline.config.get("encoding_layer_placement", "subsume")
             ),

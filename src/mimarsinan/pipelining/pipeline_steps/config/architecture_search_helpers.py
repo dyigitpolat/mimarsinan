@@ -228,3 +228,23 @@ def resolve_arch_options(
             f"Current schema keys: {[f['key'] for f in schema]}"
         )
     return arch_options, make_assembler(schema, schema_map)
+
+
+def firing_semantics_kwargs(plan, config: Mapping[str, Any]) -> Dict[str, Any]:
+    """[H3] ONE resolution of the run's firing semantics, for every consumer.
+
+    The search step and the fidelity twin must construct the SAME problem
+    parameterization or the twin prices a program the run never executed —
+    the exact drift H0 measured (a re-timed run's twin priced the fused wall).
+    """
+    from mimarsinan.chip_simulation.spiking_semantics import (
+        lif_per_hop_retiming_enabled,
+    )
+    from mimarsinan.models.spiking.hybrid.carry import run_pass_transfer
+
+    return {
+        "spiking_mode": str(plan.spiking_mode),
+        "ttfs_cycle_schedule": str(plan.ttfs_cycle_schedule),
+        "per_hop_retiming": bool(lif_per_hop_retiming_enabled(config)),
+        "pass_transfer": str(run_pass_transfer(config)),
+    }

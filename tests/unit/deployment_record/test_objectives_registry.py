@@ -71,7 +71,10 @@ PHYSICS_AXIS_KEYS = (
 TRAFFIC_AXIS_KEYS = ("noc_total_hops",)
 
 #: [B] The pass-buffer metrics, last of all — record-only mapping performance.
-BUFFER_AXIS_KEYS = ("carry_peak_live_bytes", "carried_raster_bytes")
+BUFFER_AXIS_KEYS = (
+    # [H3] the chip-sizing axis, then the searchable-since-H2 carry axes.
+    "chip_occupancy_pct", "carry_peak_live_bytes", "carried_raster_bytes",
+)
 
 DISTINCT_LAYOUT = replace(
     make_layout(),
@@ -207,21 +210,24 @@ class TestRegistration:
 class TestAvailabilityOnTheCandidateView:
     def test_a_full_candidate_view_carries_the_legacy_eight_and_the_priced_axes(self):
         keys = tuple(s.key for s in OBJECTIVES.available_for(candidate_view()))
+        # [H3] chip_occupancy_pct rides the layout like the legacy stats; the
+        # carry axes need the quantities this fixture view does not build.
         assert keys == (tuple(k for k, _ in LEGACY_EIGHT) + PHYSICS_AXIS_KEYS
-                            + TRAFFIC_AXIS_KEYS)
+                            + TRAFFIC_AXIS_KEYS + ("chip_occupancy_pct",))
 
     def test_a_candidate_without_physics_carries_exactly_the_legacy_eight(self):
         """The C2 gate: no declared profile, no vendor-priced axis. The [N3]
         traffic axis survives the gate — hops are a count, not a priced term."""
         keys = tuple(s.key for s in OBJECTIVES.available_for(candidate_view(physics=None)))
-        assert keys == tuple(k for k, _ in LEGACY_EIGHT) + TRAFFIC_AXIS_KEYS
+        assert keys == (tuple(k for k, _ in LEGACY_EIGHT) + TRAFFIC_AXIS_KEYS
+                        + ("chip_occupancy_pct",))
 
     def test_a_candidate_without_an_accuracy_estimate_drops_it(self):
         view = candidate_view(estimated_accuracy=None)
         keys = tuple(s.key for s in OBJECTIVES.available_for(view))
         assert "estimated_accuracy" not in keys
         assert len(keys) == (len(LEGACY_EIGHT) + len(PHYSICS_AXIS_KEYS)
-                             + len(TRAFFIC_AXIS_KEYS) - 1)
+                             + len(TRAFFIC_AXIS_KEYS) + 1 - 1)  # +chip, -acc
 
     def test_a_candidate_without_the_host_segment_census_drops_sync_barriers(self):
         view = candidate_view(host_side_segment_count=None)
@@ -300,8 +306,10 @@ class TestAvailabilityOnTheRecordView:
             "throughput_samples_per_s",
             # [N3] derived from the sealed NoC census (Σ per-link loads).
             "noc_total_hops",
-            # [H2] the sealed schedule answers carry even when nothing
-            # crosses — a known structural zero, not an absence.
+            # [H3] the record's layout mirror carries the chip axis; [H2]
+            # the sealed schedule answers carry even when nothing crosses —
+            # a known structural zero, not an absence.
+            "chip_occupancy_pct",
             "carry_peak_live_bytes",
             "carried_raster_bytes",
         )

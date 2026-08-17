@@ -16,8 +16,16 @@ def _stats_from_packing(
 ) -> LayoutVerificationStats:
     """Build stats from a successful packing result.
 
-    With ``core_types``, percentage metrics are computed against the entire chip
-    (including idle cores); without it, only actively-used cores.
+    [H3] Percentage metrics are computed over the ALLOCATED cores only — the
+    estimand the sealed record measures (`CrossbarUtilizationReport`), so the
+    candidate's utilization/wastage figures zip against the deployment's
+    instead of forking on the denominator (measured 2.00x on the study MLP).
+    The whole-chip signal keeps its own name: ``chip_occupancy_pct`` divides
+    by the DECLARED chip (idle cores included), which is what a search that
+    wants chip-shrinking pressure selects. The numerator is the record's too:
+    the committed RECTANGLE (used rows x used columns per core — IMC reclaims
+    whole rows/columns only), not the sum of placed pieces, which undercounts
+    the structure a diagonal packing strands.
     """
     snaps = packing.used_core_snapshots or ()
 
@@ -40,27 +48,18 @@ def _stats_from_packing(
 
     total_used_axons = sum(s.used_axons for s in snaps)
     total_used_neurons = sum(s.used_neurons for s in snaps)
-    total_wasted_ax = chip_total_axons - total_used_axons
-    total_wasted_neu = chip_total_neurons - total_used_neurons
+    allocated_axons = sum(s.axons_per_core for s in snaps)
+    allocated_neurons = sum(s.neurons_per_core for s in snaps)
+    allocated_capacity = sum(s.capacity for s in snaps)
+    committed_cells = sum(s.used_axons * s.used_neurons for s in snaps)
 
+    # Per-core spreads are ALLOCATED-only too: an idle core is not a badly
+    # packed core, it is chip headroom — chip_occupancy_pct's business.
     per_core_ax_pct = [_pct(s.wasted_axons, s.axons_per_core) for s in snaps]
     per_core_neu_pct = [_pct(s.wasted_neurons, s.neurons_per_core) for s in snaps]
-    per_core_param_pct = [_pct(s.used_area, s.capacity) for s in snaps]
-
-    if core_types and chip_total_cores > len(snaps):
-        used_per_type: dict[tuple[int, int], int] = {}
-        for s in snaps:
-            key = (s.axons_per_core, s.neurons_per_core)
-            used_per_type[key] = used_per_type.get(key, 0) + 1
-
-        for ct in core_types:
-            key = (int(ct.max_axons), int(ct.max_neurons))
-            used = used_per_type.get(key, 0)
-            idle = int(ct.count) - used
-            if idle > 0:
-                per_core_ax_pct.extend([100.0] * idle)
-                per_core_neu_pct.extend([100.0] * idle)
-                per_core_param_pct.extend([0.0] * idle)
+    per_core_param_pct = [
+        _pct(s.used_axons * s.used_neurons, s.capacity) for s in snaps
+    ]
 
     (
         neural_segment_count,
@@ -92,9 +91,12 @@ def _stats_from_packing(
         total_cores=packing.cores_used,
         total_hw_cores=chip_total_cores,
         total_softcores=num_original_softcores,
-        total_wasted_axons_pct=_pct(total_wasted_ax, chip_total_axons),
-        total_wasted_neurons_pct=_pct(total_wasted_neu, chip_total_neurons),
-        mapped_params_pct=_pct(packing.used_area, chip_total_capacity),
+        total_wasted_axons_pct=_pct(
+            allocated_axons - total_used_axons, allocated_axons),
+        total_wasted_neurons_pct=_pct(
+            allocated_neurons - total_used_neurons, allocated_neurons),
+        mapped_params_pct=_pct(committed_cells, allocated_capacity),
+        chip_occupancy_pct=_pct(committed_cells, chip_total_capacity),
         per_core_wasted_axons_pct_min=min(per_core_ax_pct),
         per_core_wasted_axons_pct_avg=sum(per_core_ax_pct) / len(per_core_ax_pct),
         per_core_wasted_axons_pct_max=max(per_core_ax_pct),

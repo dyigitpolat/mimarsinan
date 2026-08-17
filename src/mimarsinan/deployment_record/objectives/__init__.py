@@ -22,6 +22,7 @@ from mimarsinan.deployment_record.objectives.probes import (
     CANDIDATE_FRAGMENTS,
     candidate_capability_probe,
     candidate_probe_without,
+    full_candidate_probe,
     run_capability_probe,
 )
 from mimarsinan.deployment_record.objectives.views import (
@@ -51,6 +52,7 @@ __all__ = [
     "candidate_capability_probe",
     "candidate_context_from_platform",
     "candidate_probe_without",
+    "full_candidate_probe",
     "run_capability_probe",
     "chip_param_capacity",
     "declared_core_capacity",

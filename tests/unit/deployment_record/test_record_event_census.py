@@ -110,3 +110,52 @@ class TestTheSnapshotThreading:
     def test_a_refused_stage_seals_no_census(self):
         record = energy_record_from_sanafe(self._snapshot(None, samples=2))
         assert record.synaptic_events is None
+
+
+class TestTheTermZip:
+    """[H3] The per-term decomposition: shared names across planes."""
+
+    def _report(self):
+        from mimarsinan.deployment_record.fidelity_build import (
+            fidelity_report_for_record,
+        )
+
+        from unit.search.test_candidate_fragments_live_path import (
+            _candidate,
+            _physics_cfg,
+            _problem,
+        )
+
+        problem = _problem(
+            _physics_cfg(), ["energy_per_inference_mj", "e2e_latency_s"])
+        candidate = problem.candidate_layout(_candidate(problem)).view
+        return fidelity_report_for_record(make_full_record(), candidate)
+
+    def test_terms_zip_by_name_with_bands_and_evidence(self):
+        report = self._report()
+        assert report.terms, "the decomposition must exist"
+        by_name = {t.name: t for t in report.terms}
+        e2e = by_name["e2e_latency_s"]
+        assert e2e.predicted is not None
+        assert e2e.predicted_band is not None
+        assert any(t.evidence for t in report.terms)
+
+    def test_one_sided_axes_say_why(self):
+        report = self._report()
+        one_sided = [a for a in report.axes
+                     if (a.predicted is None) != (a.measured is None)]
+        assert one_sided, "the fixture record has measured-only axes"
+        assert all(a.basis for a in one_sided)
+        both = [a for a in report.axes
+                if a.predicted is not None and a.measured is not None]
+        assert all(a.basis == "" for a in both)
+
+    def test_a_pre_H3_report_json_still_loads(self):
+        from mimarsinan.deployment_record.fidelity import FidelityReport
+
+        data = self._report().to_dict()
+        data.pop("terms")
+        for axis in data["axes"]:
+            axis.pop("basis")
+        loaded = FidelityReport.from_dict(data)
+        assert loaded.terms == ()

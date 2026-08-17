@@ -45,6 +45,8 @@ TRAFFIC_TUPLE = (
 #: CAPACITY is still not a decision variable anywhere — these axes price the
 #: program's required buffer/transfer, which the schedule_policy axis moves.
 CARRY_TUPLE = (
+    # [H3] chip occupancy first (catalog order), then the carry axes.
+    ObjectiveSpec("chip_occupancy_pct", "max"),
     ObjectiveSpec("carry_peak_live_bytes", "min"),
     ObjectiveSpec("carried_raster_bytes", "min"),
 )
