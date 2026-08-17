@@ -36,7 +36,7 @@ _PERCEPTRON_MAPPER_TYPES = (
     Conv1DPerceptronMapper,
 )
 
-_VALID_METRICS = ("params", "macs")
+_VALID_METRICS = ("params", "macs", "ops")
 _VALID_PLACEMENTS = ("subsume", "offload")
 
 _DEFAULT_FLOOR = DEFAULT_ONCHIP_FLOOR
@@ -226,6 +226,21 @@ def _params_breakdown(flow):
     return host, total
 
 
+def _ops_breakdown(flow):
+    """[R2] Host ComputeOp invocations vs all units — the per-invocation
+    overhead multiplicand. Counted over the SAME walk as the other metrics:
+    every host unit is one dispatch per inference."""
+    host = 0
+    total = 0
+    for node in _exec_nodes(flow):
+        if _host_unit(node) is not None:
+            host += 1
+            total += 1
+        elif _onchip_unit(node) is not None:
+            total += 1
+    return host, total
+
+
 def _macs_breakdown(flow, input_shape):
     units: dict[int, tuple[nn.Module, bool]] = {}
     for node in _exec_nodes(flow):
@@ -334,6 +349,8 @@ def _require_metric_and_placement(who: str, metric: str, encoding_placement: str
 def _estimate_from_flow(flow, input_shape, encoding_placement, metric):
     if metric == "params":
         host, total = _params_breakdown(flow)
+    elif metric == "ops":
+        host, total = _ops_breakdown(flow)
     else:
         host, total = _macs_breakdown(flow, input_shape)
     return OnchipFractionEstimate(

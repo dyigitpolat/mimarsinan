@@ -52,6 +52,10 @@ _ROWS: Tuple[Tuple[str, Tuple[str, str], str], ...] = (
      "because replicas really fire. Distinct from the logical census total_macs."),
     # --- program: passes, payloads, barriers -------------------------------------
     ("pass_count", _COUNT, "Passes of the deployed schedule."),
+    ("compute_op_count", _COUNT,
+     "Host ComputeOp invocations per inference — the per-invocation host "
+     "overhead multiplicand [R2]: the measured host wall is dispatch-bound, "
+     "not MAC-bound (~2000x past any rate model on the MLP study)."),
     ("sync_count", _COUNT, "Chip-wide synchronization barriers of the schedule."),
     ("reprogram_passes", _COUNT, "Passes that reprogram core weights."),
     ("reprogrammed_bytes", (DATA, "B"),

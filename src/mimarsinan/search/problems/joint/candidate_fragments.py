@@ -37,8 +37,10 @@ from mimarsinan.mapping.verification.onchip_fraction import (
     estimate_onchip_fractions,
 )
 
-#: (params, macs) estimates of the host/on-chip split — one flow walk each.
-OnchipCensus = Tuple[OnchipFractionEstimate, OnchipFractionEstimate]
+#: (params, macs, ops) estimates of the host/on-chip split — ONE flow build.
+OnchipCensus = Tuple[
+    OnchipFractionEstimate, OnchipFractionEstimate, OnchipFractionEstimate,
+]
 
 
 def make_core_types(pcfg: Dict) -> list:
@@ -201,13 +203,16 @@ def candidate_fragments(
     """This candidate's physics and quantity context, off its OWN platform."""
     payload = pcfg.get("platform_physics_resolved")
     physics = PlatformPhysics.from_dict(payload) if payload else None
-    params_est, macs_est = census if census is not None else (None, None)
+    params_est, macs_est, ops_est = (
+        census if census is not None else (None, None, None)
+    )
     program = program if program is not None else ProgramFacts()
     context = candidate_context_from_platform(
         pcfg,
         host_macs=None if macs_est is None else int(macs_est.host),
         onchip_macs=None if macs_est is None else int(macs_est.onchip),
         host_params=None if params_est is None else int(params_est.host),
+        compute_op_count=None if ops_est is None else int(ops_est.host),
         onchip_params=None if params_est is None else int(params_est.onchip),
         latency_steps=program.latency_steps,
         programming=program.programming,
@@ -246,8 +251,8 @@ def compute_onchip_census(
 ) -> OnchipCensus:
     """Host/on-chip param+MAC counts through the deployment's own estimator —
     one flow conversion for both metrics [H4]."""
-    params_est, macs_est = estimate_onchip_fractions(
+    params_est, macs_est, ops_est = estimate_onchip_fractions(
         model, tuple(input_shape), int(num_classes),
-        encoding_placement=placement, metrics=("params", "macs"),
+        encoding_placement=placement, metrics=("params", "macs", "ops"),
     )
-    return params_est, macs_est
+    return params_est, macs_est, ops_est

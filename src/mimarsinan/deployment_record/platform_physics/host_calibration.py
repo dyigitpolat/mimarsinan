@@ -60,6 +60,51 @@ def measure_host_macs_per_s(
     return best
 
 
+def measure_host_op_overhead_s(
+    *, repeats: int = 400, warmup: int = 40,
+) -> Tuple[float, float, float]:
+    """[R2] Per-invocation wall of one host ComputeOp, through the
+    deployment's OWN dispatch path.
+
+    Drives ``execute_compute_op_torch`` — gather from the state buffer,
+    dtype resolution, module dispatch — on a tiny op. Returns measured
+    (p10, median, p90) walls. ESTIMAND, stated: the size-INDEPENDENT dispatch
+    floor. The record's per-op walls also carry data marshalling that scales
+    with boundary tensor sizes; that residual belongs to a per-byte term if
+    fidelity shows it dominating, never inside this constant.
+    """
+    import numpy as np
+    import torch
+
+    from mimarsinan.chip_simulation.hybrid_run.host_compute import (
+        execute_compute_op_torch,
+    )
+    from mimarsinan.mapping.ir import ComputeOp, IRSource
+
+    torch.manual_seed(0)
+    op = ComputeOp(
+        id=1, name="calibration_op",
+        input_sources=np.array([IRSource(0, j) for j in range(8)], dtype=object),
+        op_type="Identity",
+        params={"module": torch.nn.Identity()},
+    )
+    state = {0: torch.zeros(1, 8)}
+    original = torch.zeros(1, 8)
+    for _ in range(warmup):
+        execute_compute_op_torch(op, original, state)
+    walls = []
+    for _ in range(repeats):
+        start = time.perf_counter()
+        execute_compute_op_torch(op, original, state)
+        walls.append(time.perf_counter() - start)
+    walls.sort()
+    return (
+        walls[len(walls) // 10],
+        walls[len(walls) // 2],
+        walls[(len(walls) * 9) // 10],
+    )
+
+
 def read_rapl_package_j() -> Optional[float]:
     """The RAPL package energy counter (J), or None where unreadable."""
     path = "/sys/class/powercap/intel-rapl/intel-rapl:0/energy_uj"
@@ -93,7 +138,9 @@ def machine_identity() -> str:
 
 
 def calibration_overrides(
-    *, macs_per_s: float, p_host_w: Optional[float], identity: str,
+    *, macs_per_s: float, op_overhead_s: Tuple[float, float, float],
+    p_host_w: Optional[float],
+    identity: str,
 ) -> Dict[str, Dict[str, Any]]:
     """The ``platform_physics_overrides`` block a run config declares."""
     note = (
@@ -102,6 +149,20 @@ def calibration_overrides(
         f"scripts/calibrate_host.py when the host changes."
     )
     overrides: Dict[str, Dict[str, Any]] = {
+        "t_host_op_overhead": {
+            # The vocabulary declares us; the band is measured percentiles.
+            "low": op_overhead_s[0] * 1e6,
+            "nominal": op_overhead_s[1] * 1e6,
+            "high": op_overhead_s[2] * 1e6,
+            "unit": "us",
+            "evidence_kind": "measured",
+            "note": (
+                f"Per-invocation host ComputeOp dispatch wall on {identity}, "
+                f"measured through execute_compute_op_torch (the deployment's "
+                f"own path; median of repeats). The rate term prices the "
+                f"arithmetic; this prices the dispatch."
+            ),
+        },
         "host_macs_per_s": {
             # The vocabulary declares G/s.
             "nominal": macs_per_s / 1e9,
@@ -126,17 +187,20 @@ def calibration_overrides(
 def run_calibration(**measure_kwargs: Any) -> Dict[str, Any]:
     """Measure and assemble the full calibration artifact."""
     macs_per_s = measure_host_macs_per_s(**measure_kwargs)
+    op_overhead_s = measure_host_op_overhead_s()
     p_host = measure_p_host_w()
     identity = machine_identity()
     return {
         "machine": identity,
         "host_macs_per_s": macs_per_s,
+        "t_host_op_overhead_s": list(op_overhead_s),
         "p_host_w": p_host,
         "p_host_basis": (
             "RAPL package counter" if p_host is not None
             else "unavailable: no readable RAPL counter — p_host stays declared"
         ),
         "platform_physics_overrides": calibration_overrides(
-            macs_per_s=macs_per_s, p_host_w=p_host, identity=identity,
+            macs_per_s=macs_per_s, op_overhead_s=op_overhead_s,
+            p_host_w=p_host, identity=identity,
         ),
     }

@@ -64,6 +64,7 @@ def from_record(record: DeploymentRecord) -> Quantities:
 
     schedule = record.schedule
     values["pass_count"] = _measured(schedule.pass_count)
+    values["compute_op_count"] = _measured(schedule.compute_op_count)
     values["sync_count"] = _measured(schedule.sync_count)
     values["reprogram_passes"] = _measured(schedule.reprogram_passes)
     # [H2] The schedule is sealed either way, so "nothing crosses" is a KNOWN

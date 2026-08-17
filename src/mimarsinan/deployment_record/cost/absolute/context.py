@@ -8,6 +8,7 @@ from typing import List, Optional, Sequence, Tuple
 from mimarsinan.deployment_record.cost.absolute.formulas import (
     div_band,
     quantity_product,
+    add_bands,
     scale_band,
 )
 from mimarsinan.deployment_record.cost.terms import CostTerm
@@ -152,11 +153,33 @@ class PricingContext:
             ))
         if self.physics.has("host_macs_per_s"):
             macs = self.quantities.get("host_macs").value
-            return HostTime(band=div_band(
+            work = div_band(
                 Band(macs, macs, macs, "host MAC census"),
                 self.physics.band("host_macs_per_s"),
                 "host_macs / host_macs_per_s (declared host rate)",
-            ))
+            )
+            # [R2] The measured host wall is dispatch-bound at small op sizes
+            # (~2000x past any rate model on the MLP study): every ComputeOp
+            # invocation pays the deployment's own per-op overhead too.
+            if (self.physics.has("t_host_op_overhead")
+                    and self.quantities.has("compute_op_count")):
+                ops = self.quantities.get("compute_op_count").value
+                overhead = scale_band(
+                    self.physics.band("t_host_op_overhead"), ops,
+                    "t_host_op_overhead x compute_op_count",
+                )
+                return HostTime(band=add_bands(
+                    [work, overhead],
+                    "host_macs / host_macs_per_s + t_host_op_overhead x "
+                    "compute_op_count",
+                ))
+            if self.quantities.has("compute_op_count"):
+                return HostTime(band=Band(
+                    work.low, work.nominal, work.high,
+                    work.basis + "; unpriced: t_host_op_overhead("
+                    "per-invocation dispatch)",
+                ))
+            return HostTime(band=work)
         return HostTime(missing=("host_ops_s (measured)", "host_macs_per_s"))
 
     def host_refusal(self, host: HostTime) -> str:

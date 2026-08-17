@@ -149,6 +149,11 @@ ROWS: Tuple[Tuple[str, str, str, str, str, str], ...] = (
     ("host_compute_rate", HOST, DIMENSIONLESS, "fraction", "host_ops_s",
      "Speed of the deployment host relative to the machine that measured host_ops_s; "
      "1.0 means the measuring machine is the deployment host."),
+    ("t_host_op_overhead", HOST, TIME, "us", "compute_op_count",
+     "Per-invocation wall of one host ComputeOp through the deployment's own "
+     "dispatch path (segment I/O, tensor conversion) — the dominant host cost "
+     "at small op sizes; measured by scripts/calibrate_host.py through the "
+     "same StageTimer that produces the record's host_ops_s."),
     ("host_macs_per_s", HOST, RATE, "G/s", "host_macs",
      "Sustained forward-MAC throughput of the deployment host, for pricing host time "
      "STATICALLY (host_macs / host_macs_per_s) when no measured wall exists — the "

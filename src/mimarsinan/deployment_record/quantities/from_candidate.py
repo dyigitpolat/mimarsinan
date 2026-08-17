@@ -90,6 +90,9 @@ class CandidateQuantityContext:
     onchip_macs: Optional[int] = None
     host_params: Optional[int] = None
     onchip_params: Optional[int] = None
+    #: [R2] Host ComputeOp invocations of the flow — the per-invocation
+    #: overhead multiplicand; from the same walk as the host MAC census.
+    compute_op_count: Optional[int] = None
 
 
 def _put(values: Dict[str, QuantityValue], key: str, value: Optional[float],
@@ -161,6 +164,7 @@ def from_candidate(
     _put(values, "host_macs", context.host_macs)
     _put(values, "onchip_macs", context.onchip_macs)
     _put(values, "host_params", context.host_params)
+    _put(values, "compute_op_count", context.compute_op_count)
     _put(values, "onchip_params", context.onchip_params)
     if context.host_macs is not None and context.onchip_macs is not None:
         _put(values, "total_macs", context.host_macs + context.onchip_macs)
