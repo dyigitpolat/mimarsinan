@@ -79,7 +79,12 @@ class TestLegacyOptionsUnchanged:
         # [C2] the four vendor-priced axes are physics-gated; [N3] the traffic
         # axis that follows them is a count and deliberately is NOT.
         assert all(o["requires_physics"] is True for o in options[8:12])
-        assert [o["id"] for o in options[12:]] == ["noc_total_hops"]
+        assert [o["id"] for o in options[12:]] == [
+            "noc_total_hops",
+            # [H2] the carry axes, searchable now the candidate sizes its
+            # own planned pass structure.
+            "carry_peak_live_bytes", "carried_raster_bytes",
+        ]
         assert options[12]["requires_physics"] is False
 
 

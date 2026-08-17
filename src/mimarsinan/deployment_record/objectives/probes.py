@@ -48,6 +48,10 @@ def _probe_context() -> CandidateQuantityContext:
         reprogrammed_cores=1,
         reprogrammed_bytes=1,
         reprogram_passes=1,
+        carried_raster_bytes=1,
+        carry_peak_live_bytes=1,
+        carry_out_bytes=1,
+        carry_in_bytes=1,
         activity_factor=1.0,
         weight_bits=1,
         tiles=1,
@@ -171,6 +175,15 @@ def candidate_probe_without(fragment: str) -> CandidateStaticView:
         )
     probe = _full_candidate_probe()
     overrides: dict = {fragment: None}
+    if fragment == "noc_fragments":
+        # [H2] The carry census needs the wire-census walk for adjacency: a
+        # carry axis in the active set is what makes the walk worth its cost.
+        assert probe.quantity_context is not None
+        overrides["quantity_context"] = replace(
+            probe.quantity_context,
+            carried_raster_bytes=None, carry_peak_live_bytes=None,
+            carry_out_bytes=None, carry_in_bytes=None,
+        )
     if fragment == "layout":
         # NoC fragments, the executed wall and the programming census are
         # DERIVED from the layout resolution (the pass structure IS the
@@ -182,6 +195,8 @@ def candidate_probe_without(fragment: str) -> CandidateStaticView:
             probe.quantity_context, latency_steps=None,
             segment_cores=None, reprogrammed_cores=None,
             reprogrammed_bytes=None, reprogram_passes=None,
+            carried_raster_bytes=None, carry_peak_live_bytes=None,
+            carry_out_bytes=None, carry_in_bytes=None,
         )
     return replace(probe, **overrides)
 

@@ -40,11 +40,20 @@ TRAFFIC_TUPLE = (
     ObjectiveSpec("noc_total_hops", "min"),
 )
 
+#: [H2] The carry axes, searchable once the candidate sizes its own planned
+#: pass structure. B's decision stands untouched where it was made: buffer
+#: CAPACITY is still not a decision variable anywhere — these axes price the
+#: program's required buffer/transfer, which the schedule_policy axis moves.
+CARRY_TUPLE = (
+    ObjectiveSpec("carry_peak_live_bytes", "min"),
+    ObjectiveSpec("carried_raster_bytes", "min"),
+)
+
 
 class TestLegacyProjection:
     def test_all_objectives_opens_with_the_legacy_tuple_byte_equal(self):
         assert ALL_OBJECTIVES[: len(LEGACY_TUPLE)] == LEGACY_TUPLE
-        assert ALL_OBJECTIVES == LEGACY_TUPLE + PHYSICS_TUPLE + TRAFFIC_TUPLE
+        assert ALL_OBJECTIVES == LEGACY_TUPLE + PHYSICS_TUPLE + TRAFFIC_TUPLE + CARRY_TUPLE
 
     def test_the_projection_yields_the_frozen_legacy_dataclass(self):
         for spec in ALL_OBJECTIVES:
@@ -64,12 +73,12 @@ class TestLegacyProjection:
     def test_hardware_mode_excludes_only_accuracy(self):
         assert objectives_for_mode("hardware") == tuple(
             o for o in LEGACY_TUPLE if o.name != ACCURACY_OBJECTIVE_NAME
-        ) + PHYSICS_TUPLE + TRAFFIC_TUPLE
+        ) + PHYSICS_TUPLE + TRAFFIC_TUPLE + CARRY_TUPLE
 
     def test_other_modes_carry_every_objective(self):
         for mode in ("model", "joint"):
             assert objectives_for_mode(mode) == (
-                LEGACY_TUPLE + PHYSICS_TUPLE + TRAFFIC_TUPLE
+                LEGACY_TUPLE + PHYSICS_TUPLE + TRAFFIC_TUPLE + CARRY_TUPLE
             )
 
 

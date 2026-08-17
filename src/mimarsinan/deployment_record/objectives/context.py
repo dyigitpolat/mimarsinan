@@ -18,6 +18,7 @@ def candidate_context_from_platform(
     onchip_params: Optional[int] = None,
     latency_steps: Optional[int] = None,
     programming: Optional[Any] = None,
+    carry: Optional[Any] = None,
 ) -> CandidateQuantityContext:
     """The declarations a candidate's platform carries, as quantity context.
 
@@ -72,4 +73,14 @@ def candidate_context_from_platform(
         reprogram_passes=(
             None if programming is None else int(programming.reprogram_passes)
         ),
+        # [H2] The planned pass structure's carry census, under the run's own
+        # transfer discipline — same keys the record seals, so fidelity zips.
+        carried_raster_bytes=(
+            None if carry is None else int(carry["carried_bytes"])
+        ),
+        carry_peak_live_bytes=(
+            None if carry is None else int(carry["peak_live_bytes"])
+        ),
+        carry_out_bytes=None if carry is None else int(carry["boundary_out_bytes"]),
+        carry_in_bytes=None if carry is None else int(carry["boundary_in_bytes"]),
     )

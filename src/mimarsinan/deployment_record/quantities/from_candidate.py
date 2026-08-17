@@ -67,6 +67,13 @@ class CandidateQuantityContext:
     reprogrammed_cores: Optional[int] = None
     reprogrammed_bytes: Optional[int] = None
     reprogram_passes: Optional[int] = None
+    #: [H2] The planned pass structure's carry census under the run's sealed
+    #: transfer discipline. Absent without the wire census, the discipline,
+    #: or any crossing wire — absence means what the record's absence means.
+    carried_raster_bytes: Optional[int] = None
+    carry_peak_live_bytes: Optional[int] = None
+    carry_out_bytes: Optional[int] = None
+    carry_in_bytes: Optional[int] = None
     activity_factor: Optional[float] = None
     weight_bits: Optional[int] = None
     tiles: Optional[int] = None
@@ -130,6 +137,12 @@ def from_candidate(
     _put(values, "reprogrammed_cores", context.reprogrammed_cores)
     _put(values, "reprogrammed_bytes", context.reprogrammed_bytes)
     _put(values, "reprogram_passes", context.reprogram_passes)
+
+    # [H2] Carry under the run's own discipline — the cost schedule_policy moves.
+    _put(values, "carried_raster_bytes", context.carried_raster_bytes)
+    _put(values, "carry_peak_live_bytes", context.carry_peak_live_bytes)
+    _put(values, "carry_out_bytes", context.carry_out_bytes)
+    _put(values, "carry_in_bytes", context.carry_in_bytes)
 
     _put(values, "timesteps", context.timesteps)
     _put(values, "weight_bits", context.weight_bits)

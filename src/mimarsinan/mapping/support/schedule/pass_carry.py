@@ -76,19 +76,26 @@ def carried_wire_spans(stages: Sequence) -> Tuple[Tuple[int, int, int, int], ...
     return tuple(spans)
 
 
-def pass_carry_census(
-    stages: Sequence, timesteps: int, transfer: str
+def carry_census_from_spans(
+    spans: Sequence[Tuple[int, int, int, int]],
+    *,
+    boundary_count: int,
+    timesteps: int,
+    transfer: str,
 ) -> Dict[str, int]:
-    """How much crosses this program's intra-segment pass boundaries, and peak live.
+    """The carry census of ANY pass structure that can state its spans.
 
-    Wires whose live ranges do not overlap share the buffer, so the peak is the worst
-    boundary rather than the total — the register-allocation shape, priced under
-    whichever discipline the run actually executes.
+    ONE census for both completenesses: the record produces spans from its
+    sealed hybrid stages (:func:`carried_wire_spans`), a search candidate from
+    its planned pass placements (:func:`carried_softcore_spans`) — the same
+    numbers because this is the same function. Wires whose live ranges do not
+    overlap share the buffer, so the peak is the worst boundary rather than
+    the total — the register-allocation shape, priced under whichever
+    discipline the run actually executes.
     """
-    spans = carried_wire_spans(stages)
     total = sum(carried_wire_bytes(w, timesteps, transfer) for _, w, _, _ in spans)
     peak = 0
-    for boundary in range(len(stages)):
+    for boundary in range(int(boundary_count)):
         live = sum(
             carried_wire_bytes(w, timesteps, transfer)
             for _, w, start, end in spans if start <= boundary < end
@@ -107,6 +114,56 @@ def pass_carry_census(
         "boundary_out_bytes": crossing,
         "boundary_in_bytes": crossing,
     }
+
+
+def pass_carry_census(
+    stages: Sequence, timesteps: int, transfer: str
+) -> Dict[str, int]:
+    """The sealed program's census — spans from its own hybrid stages."""
+    return carry_census_from_spans(
+        carried_wire_spans(stages),
+        boundary_count=len(stages), timesteps=timesteps, transfer=transfer,
+    )
+
+
+def carried_softcore_spans(
+    softcores: Sequence,
+    pass_placements: Sequence[Sequence[Tuple[int, int]]],
+    pair_wires,
+) -> Tuple[Tuple[int, int, int, int], ...]:
+    """[H2] A candidate's carried-wire spans, from its planned pass structure.
+
+    The record's rule restated over layout facts: a producer read by a LATER
+    pass of the SAME segment is carried, at the width of its whole published
+    slice (the record sizes by the producing stage's output slice), live until
+    its last consuming pass. Adjacency comes from the wire-census walk
+    (``pair_wires``); membership from the planner's own placements — the same
+    membership the NoC estimator prices carried re-entry traffic with [E5].
+    """
+    membership: Dict[int, int] = {}
+    for pass_index, placements in enumerate(pass_placements):
+        for softcore_index, _hardcore in placements:
+            membership.setdefault(int(softcore_index), pass_index)
+    last_read: Dict[int, int] = {}
+    for (producer, consumer) in pair_wires:
+        produced = membership.get(int(producer))
+        consumed = membership.get(int(consumer))
+        if produced is None or consumed is None or consumed <= produced:
+            continue
+        if _softcore_segment(softcores[int(producer)]) != _softcore_segment(
+                softcores[int(consumer)]):
+            continue  # a later SEGMENT is a host boundary, never a carry
+        key = int(producer)
+        last_read[key] = max(last_read.get(key, consumed), consumed)
+    return tuple(
+        (producer, int(softcores[producer].output_count),
+         membership[producer], last)
+        for producer, last in sorted(last_read.items())
+    )
+
+
+def _softcore_segment(softcore) -> int:
+    return int(getattr(softcore, "segment_id", 0) or 0)
 
 
 def _segment_of(stage):

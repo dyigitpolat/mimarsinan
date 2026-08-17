@@ -66,20 +66,20 @@ def from_record(record: DeploymentRecord) -> Quantities:
     values["pass_count"] = _measured(schedule.pass_count)
     values["sync_count"] = _measured(schedule.sync_count)
     values["reprogram_passes"] = _measured(schedule.reprogram_passes)
-    if schedule.carry is not None:
-        # A fact of the sealed program structure under its sealed discipline —
-        # static, like weight_bits; absent entirely when nothing crosses a
-        # pass boundary, because absence is what "no carry" means.
-        values["carried_raster_bytes"] = QuantityValue(
-            float(schedule.carry.carried_bytes), "static")
-        values["carry_peak_live_bytes"] = QuantityValue(
-            float(schedule.carry.peak_live_bytes), "static")
-        # [E3] What crossed, per direction — priced by different constants than
-        # the buffer figures above, which size what was held in between.
-        values["carry_out_bytes"] = QuantityValue(
-            float(schedule.carry.boundary_out_bytes), "static")
-        values["carry_in_bytes"] = QuantityValue(
-            float(schedule.carry.boundary_in_bytes), "static")
+    # [H2] The schedule is sealed either way, so "nothing crosses" is a KNOWN
+    # zero (a structural fact), not an absence — the search minimizes these
+    # axes, and a single-pass program must score 0, never refuse. [E3] The
+    # directional figures are priced by different constants than the buffer
+    # figures, which size what was held in between.
+    carry = schedule.carry
+    values["carried_raster_bytes"] = QuantityValue(
+        float(0 if carry is None else carry.carried_bytes), "static")
+    values["carry_peak_live_bytes"] = QuantityValue(
+        float(0 if carry is None else carry.peak_live_bytes), "static")
+    values["carry_out_bytes"] = QuantityValue(
+        float(0 if carry is None else carry.boundary_out_bytes), "static")
+    values["carry_in_bytes"] = QuantityValue(
+        float(0 if carry is None else carry.boundary_in_bytes), "static")
     segments = list(schedule.segments())
     reprogrammed = [s for s in segments if s.programming == "reprogram"]
     values["segment_cores"] = _measured(sum(len(s.cores) for s in segments))

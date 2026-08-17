@@ -61,11 +61,14 @@ class TestTheBufferAxes:
         assert keys.index("carry_peak_live_bytes") > hops
         assert keys.index("carried_raster_bytes") > hops
 
-    def test_the_axes_are_record_only(self):
-        """A candidate has no pass structure to size, so no search mode may
-        offer the buffer axes — they are mapping performance metrics."""
-        assert OBJECTIVES.modes_available("carry_peak_live_bytes") == ()
-        assert OBJECTIVES.modes_available("carried_raster_bytes") == ()
+    def test_the_axes_are_searchable_since_H2(self):
+        """[H2] The candidate now sizes its own PLANNED pass structure, so the
+        buffer axes price at search time — the cost the schedule_policy axis
+        moves stopped being invisible to the search. B's decision stands where
+        it was made: buffer CAPACITY is still not a decision variable, and the
+        declared-capacity gate still lives at the mapping step."""
+        for key in ("carry_peak_live_bytes", "carried_raster_bytes"):
+            assert OBJECTIVES.modes_available(key) != ()
 
     def test_a_sealed_carrying_record_answers_both(self):
         from dataclasses import replace
@@ -89,7 +92,10 @@ class TestTheBufferAxes:
         assert peak.available(view) and peak.value(view) == 12.0
         assert carried.available(view) and carried.value(view) == 24.0
 
-    def test_a_carry_free_record_answers_neither(self):
+    def test_a_carry_free_record_answers_known_zeros(self):
+        """[H2] The schedule is sealed either way: "nothing crosses" is a
+        structural zero the search must SEE (a single-pass program is the
+        best possible carry, not an unknown), so both axes answer 0."""
         from mimarsinan.deployment_record.objectives.views import (
             DeploymentRecordView,
         )
@@ -97,5 +103,7 @@ class TestTheBufferAxes:
         from unit.deployment_record.record_fixtures import make_full_record
 
         view = DeploymentRecordView(record=make_full_record())
-        assert not OBJECTIVES.get("carry_peak_live_bytes").available(view)
-        assert not OBJECTIVES.get("carried_raster_bytes").available(view)
+        for key in ("carry_peak_live_bytes", "carried_raster_bytes"):
+            spec = OBJECTIVES.get(key)
+            assert spec.available(view)
+            assert spec.value(view) == 0.0

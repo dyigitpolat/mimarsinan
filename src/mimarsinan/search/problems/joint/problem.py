@@ -97,6 +97,9 @@ class JointArchHwProblem(
     spiking_mode: str = "lif"
     ttfs_cycle_schedule: str = "cascaded"
     per_hop_retiming: bool = False
+    #: [H2] The run's pass-boundary transfer discipline (VERBATIM/COLLAPSE),
+    #: resolved by the deployment's own rule; None leaves carry unpriced.
+    pass_transfer: Optional[str] = None
     #: The deployment's ``encoding_layer_placement``. A candidate's layout is
     #: only the deployed model's layout if its encoder sits where deployment
     #: will put it, so the search resolves the SAME placement the run will.

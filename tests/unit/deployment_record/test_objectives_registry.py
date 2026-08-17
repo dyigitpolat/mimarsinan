@@ -122,8 +122,10 @@ class TestLegacyEightPreserved:
         catalog = OBJECTIVES.search_catalog()
         head = tuple((s.key, s.direction) for s in catalog[: len(LEGACY_EIGHT)])
         assert head == LEGACY_EIGHT
+        # [H2] The carry axes append AFTER traffic — catalog order is
+        # contract, every earlier prefix survives byte-equal.
         assert tuple(s.key for s in catalog[len(LEGACY_EIGHT):]) == (
-            PHYSICS_AXIS_KEYS + TRAFFIC_AXIS_KEYS
+            PHYSICS_AXIS_KEYS + TRAFFIC_AXIS_KEYS + BUFFER_AXIS_KEYS
         )
 
     def test_legacy_name_and_goal_properties_mirror_key_and_direction(self):
@@ -141,13 +143,14 @@ class TestLegacyEightPreserved:
             tuple(k for k, _ in LEGACY_EIGHT if k != "estimated_accuracy")
             + PHYSICS_AXIS_KEYS
             + TRAFFIC_AXIS_KEYS
+            + BUFFER_AXIS_KEYS
         )
 
     def test_every_other_search_mode_carries_all_eight(self):
         for mode in ("model", "joint"):
             keys = tuple(s.key for s in OBJECTIVES.for_search_mode(mode))
             assert keys == (tuple(k for k, _ in LEGACY_EIGHT) + PHYSICS_AXIS_KEYS
-                            + TRAFFIC_AXIS_KEYS)
+                            + TRAFFIC_AXIS_KEYS + BUFFER_AXIS_KEYS)
 
     def test_the_spec_documented_axes_are_all_registered(self):
         assert OBJECTIVES.keys() == (
@@ -297,6 +300,10 @@ class TestAvailabilityOnTheRecordView:
             "throughput_samples_per_s",
             # [N3] derived from the sealed NoC census (Σ per-link loads).
             "noc_total_hops",
+            # [H2] the sealed schedule answers carry even when nothing
+            # crosses — a known structural zero, not an absence.
+            "carry_peak_live_bytes",
+            "carried_raster_bytes",
         )
 
     def test_the_search_side_axes_are_unavailable_on_a_record(self):

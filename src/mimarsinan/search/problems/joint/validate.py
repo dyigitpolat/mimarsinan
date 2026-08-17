@@ -150,6 +150,7 @@ class JointValidateMixin(JointHostContract):
             softcores, noc, self.stage_semantics,
             timesteps=pcfg.get("simulation_steps"),
             weight_bits=pcfg.get("weight_bits"),
+            pass_transfer=self.pass_transfer,
         )
         return CandidateLayout(
             platform=pcfg,

@@ -15,6 +15,7 @@ from mimarsinan.pipelining.core.search_mode import derive_search_mode
 from mimarsinan.chip_simulation.spiking_semantics import (
     lif_per_hop_retiming_enabled,
 )
+from mimarsinan.models.spiking.hybrid.carry import run_pass_transfer
 from mimarsinan.pipelining.pipeline_steps.mapping.soft_core_structured_pruning import (
     resolve_prune_criterion,
 )
@@ -192,6 +193,7 @@ class ArchitectureSearchStep(PipelineStep):
             spiking_mode=str(plan.spiking_mode),
             ttfs_cycle_schedule=str(plan.ttfs_cycle_schedule),
             per_hop_retiming=lif_per_hop_retiming_enabled(self.pipeline.config),
+            pass_transfer=run_pass_transfer(self.pipeline.config),
             encoding_placement=str(
                 self.pipeline.config.get("encoding_layer_placement", "subsume")
             ),

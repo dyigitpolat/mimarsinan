@@ -73,7 +73,14 @@ pass structure, so the terms multiplying them refuse by name instead of
 pricing zero; `cores_allocated` is that same per-pass count, the meaning the
 record gives it. Payload bytes go through the record's own
 `deployment_record.build.payload_sizes.params_bytes`, and stay absent when the
-platform declares no weight width.
+platform declares no weight width. [H2] The same facts also size the CARRY of
+the planned program: `candidate_program_facts` runs the record's own
+`carry_census_from_spans` over `carried_softcore_spans` (pass membership +
+wire-census adjacency) under the run's transfer discipline (`pass_transfer`,
+resolved by the deployment's `run_pass_transfer` and handed down by the search
+step) — a sealed structure with nothing crossing claims KNOWN ZEROS (a
+single-pass program is the best carry, never an unknown), while a missing
+census, discipline or layout keeps the quantities absent.
 Model construction lives in `joint/model_build.py` (`build_raw_model`,
 `convert_to_mapper_repr`), which the hook delegates to. [P] `build_raw_model`
 applies the RUN's DECLARED pruning to every candidate model

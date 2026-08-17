@@ -6,7 +6,7 @@
 |---|---|---|
 | H0 investigation: profile + root-causes | **DONE** — findings below, all measured | (this doc) |
 | H1 measured synaptic-event census | **DONE** — `chip_simulation/synaptic_events.py`; the SANA-FE finalizer measures per stage, `EnergyRecord.synaptic_events` seals the per-inference mean, `energy_per_inference_mj` prices on the record plane; refusal (None) propagates end-to-end when any trace is unparsed | `record(H1)` |
-| H2 candidate carry census | pending | |
+| H2 candidate carry census | **DONE** — one census over spans (`carry_census_from_spans`), two span producers; candidate == deployed on the vehicles, both disciplines; carry axes searchable (B's capacity-not-a-variable stands); known-zero semantics on BOTH planes | `search(H2)` |
 | H3 fidelity as an instrument (twin arming, full surface, term zip, estimand alignment) | pending | |
 | H3b host-rate calibration | pending owner decision | |
 | H4 performance + elegance consolidation | pending | |

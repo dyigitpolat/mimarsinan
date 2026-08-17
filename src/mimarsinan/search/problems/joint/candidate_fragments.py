@@ -12,6 +12,10 @@ from dataclasses import dataclass
 from typing import Any, Dict, Optional, Tuple
 
 from mimarsinan.deployment_record.build.payload_sizes import params_bytes
+from mimarsinan.mapping.support.schedule.pass_carry import (
+    carried_softcore_spans,
+    carry_census_from_spans,
+)
 from mimarsinan.deployment_record.objectives import (
     candidate_context_from_platform,
 )
@@ -122,27 +126,47 @@ class CandidateProgramming:
 class ProgramFacts:
     """What this candidate's pass structure implies for cost, or nothing.
 
-    Both members are ABSENT together: they are derived from the same pass/level
-    resolution, so a candidate without a layout carries neither and the terms
-    that multiply them refuse by name.
+    Every member is derived from the same pass/level resolution, so a
+    candidate without a layout carries none of them and the terms that
+    multiply them refuse by name. ``carry`` additionally needs the wire
+    census (adjacency) and the run's transfer discipline; it is None — not
+    zero — without either.
     """
 
     latency_steps: Optional[int] = None
     programming: Optional[CandidateProgramming] = None
+    carry: Optional[Dict[str, int]] = None
 
 
 def candidate_program_facts(
     softcores, noc: Optional[LayoutNocFragments], semantics: "StageSemantics",
     *, timesteps: Optional[int], weight_bits: Any,
+    pass_transfer: Optional[str] = None,
 ) -> ProgramFacts:
-    """The executed wall (E1) and the programming census (E2) of one candidate."""
+    """The pass-structure facts of one candidate: the executed wall (E1), the
+    programming census (E2), and the carry census (H2)."""
     if noc is None:
         return ProgramFacts()
+    carry = None
+    if (noc.census is not None and pass_transfer is not None
+            and timesteps is not None):
+        # A sealed pass structure with no crossing wire is a KNOWN zero, not
+        # an unknown: an optimizer minimizing carry must see single-pass
+        # programs at 0, never refuse them. Unknown stays None (no census /
+        # no discipline), the E-series law.
+        carry = carry_census_from_spans(
+            carried_softcore_spans(
+                softcores, noc.pass_placements, noc.census.pair_wires,
+            ),
+            boundary_count=len(noc.pass_placements),
+            timesteps=int(timesteps), transfer=str(pass_transfer),
+        )
     return ProgramFacts(
         latency_steps=candidate_latency_steps(
             softcores, noc, semantics, timesteps,
         ),
         programming=candidate_programming_census(noc, weight_bits=weight_bits),
+        carry=carry,
     )
 
 
@@ -186,6 +210,7 @@ def candidate_fragments(
         onchip_params=None if params_est is None else int(params_est.onchip),
         latency_steps=program.latency_steps,
         programming=program.programming,
+        carry=program.carry,
     )
     return physics, context
 

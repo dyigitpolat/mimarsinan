@@ -147,12 +147,14 @@ def test_without_the_partition_the_split_is_absent():
 
 
 class TestTheCarryCensusExtraction:
-    def test_a_record_without_carry_produces_no_carry_quantities(self):
-        """Absence is what 'no pass boundary' means — never zero, which would
-        price as a real payload of nothing and read as measured."""
+    def test_a_record_without_carry_produces_known_zeros(self):
+        """[H2] Sealed structure, nothing crossing: 0 is the fact, and it
+        zips against the candidate's own known zero in fidelity."""
         quantities = from_record(make_full_record())
-        assert not quantities.has("carried_raster_bytes")
-        assert not quantities.has("carry_peak_live_bytes")
+        for key in ("carried_raster_bytes", "carry_peak_live_bytes",
+                    "carry_out_bytes", "carry_in_bytes"):
+            assert quantities.get(key).value == 0.0
+            assert quantities.get(key).provenance == "static"
 
     def test_a_sealed_carry_arrives_as_static_facts(self):
         import dataclasses

@@ -107,6 +107,23 @@ class TestTheRetimingArmSurvivesResolution:
         kwargs = _problem_kwargs(monkeypatch, tmp_path, spiking_mode="lif")
         assert kwargs["per_hop_retiming"] is True
 
+    def test_the_transfer_discipline_reaches_the_search(
+        self, monkeypatch, tmp_path,
+    ):
+        """[H2] The carry census is a different computation per discipline, so
+        the step hands the problem the run's OWN resolution — streamed LIF
+        carries VERBATIM, the windowed disciplines COLLAPSE. (The default LIF
+        recipe resolves to the SYNCHRONIZED variant via exact-QAT, so plain
+        ``spiking_mode=lif`` is windowed here — streaming must be declared
+        through the axes.)"""
+        streamed = _problem_kwargs(
+            monkeypatch, tmp_path,
+            spiking_family="lif", spiking_variant="streamed",
+        )
+        assert streamed["pass_transfer"] == "verbatim"
+        windowed = _problem_kwargs(monkeypatch, tmp_path, spiking_mode="lif")
+        assert windowed["pass_transfer"] == "collapse"
+
     def test_opting_out_of_exact_qat_reaches_the_search_fused(
         self, monkeypatch, tmp_path,
     ):
