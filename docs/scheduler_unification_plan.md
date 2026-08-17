@@ -6,7 +6,7 @@
 |---|---|
 | U1 core: unified planner + chooser + builder-consumes-planner + enum removal | **DONE** — `scheduler(U1)` @ b8b41dfe; suite 11,661 green, typecheck 0, 3 guard mutants killed (chooser, builder residency marking, retirement row); lazy-import allowlist tightened |
 | U2 surface: record/introspection echoes, templates (incl. t1_02 fix), docs | **DONE** — echoes landed with U1; generator drops the 5 enum declarations; t1_02/t1_03 become `_sched` cells (the 138-core ViT platform was always sized for streaming — the generator's own t1_09 note says so); template tests 40 green |
-| U3 ViT relaunch: feasibility probe, eval-cost measurement, seeded search + per-offspring report | pending |
+| U3 ViT relaunch: feasibility probe, eval-cost measurement, seeded search + per-offspring report | **DONE** — 72/72 offspring FEASIBLE (was 72/72 infeasible pre-U1); the R6 seed validated in gen 1 at exactly the declaration (325.58M cells, 100% util); best capacity 196.0M -> 135.4M over 6 generations, final Pareto 12; search wall 148.7 s ~= 2.1 s/candidate at ViT scale, so the H4 pack consolidation stays deferred (measure-first verdict: not prohibitive); run `generated/vit_cifar10_hwshape_search_u1_phased_deployment_run` |
 
 ## Owner directive (verbatim, 2026-08-18)
 
