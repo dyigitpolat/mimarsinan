@@ -290,6 +290,9 @@ class TestAvailabilityOnTheRecordView:
         keys = tuple(s.key for s in OBJECTIVES.available_for(record_view()))
         assert keys == (
             "total_param_capacity",
+            # [R4] the record answers the sync estimand (host segments from
+            # sealed stage kinds), in catalog order.
+            "total_sync_barriers",
             "param_utilization_pct",
             "neuron_wastage_pct",
             "axon_wastage_pct",
@@ -321,7 +324,10 @@ class TestAvailabilityOnTheRecordView:
         keys = {s.key for s in OBJECTIVES.available_for(record_view())}
         assert "estimated_accuracy" not in keys
         assert "total_params" not in keys
-        assert "total_sync_barriers" not in keys
+        # [R4] total_sync_barriers left this list: the record derives its
+        # host segments from sealed stage kinds and answers the SAME estimand
+        # the candidate prices.
+        assert "total_sync_barriers" in keys
 
     def test_a_record_without_the_energy_fragment_drops_every_energy_axis(self):
         keys = {s.key for s in OBJECTIVES.available_for(record_view(energy=None))}

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Optional, Tuple
 
 from mimarsinan.deployment_record.cost.terms import CostTerm, find_term_or_none
@@ -118,6 +119,27 @@ def _term_rows(
     return tuple(rows)
 
 
+#: [R4] Warn when the measured switching anchor misses the declaration by
+#: more than this ratio either way (owner decision: warn loudly, never gate —
+#: the declaration is an assumption, and one that measurement refutes must be
+#: impossible to not see). 1.5x: inside it, the energy bands still bracket.
+ACTIVITY_MISS_WARN_RATIO = 1.5
+
+
+def _effective_activity(view: RecordView) -> Optional[float]:
+    quantities = getattr(view, "quantities", None)
+    if quantities is None:
+        return None
+    needed = ("synaptic_events", "macs", "timesteps")
+    if any(not quantities.has(key) for key in needed):
+        return None
+    denominator = (quantities.get("macs").value
+                   * quantities.get("timesteps").value)
+    if denominator <= 0:
+        return None
+    return quantities.get("synaptic_events").value / denominator
+
+
 def fidelity_report_for_record(
     record: DeploymentRecord, candidate: Optional[RecordView]
 ) -> FidelityReport:
@@ -143,11 +165,66 @@ def fidelity_report_for_record(
             predicted_band=_predicted_band(spec, candidate),
             basis=_axis_basis(spec, predicted, measured, candidate),
         ))
+    declared = record.identity.platform.get("activity_factor")
     return FidelityReport(
         cell_key=record.identity.cell_key,
         run_dir=record.identity.run_dir,
         axes=tuple(axes),
         terms=_term_rows(candidate, measured_view),
+        measured_effective_activity=_effective_activity(measured_view),
+        declared_activity_factor=(
+            None if not declared else float(declared)
+        ),
+    )
+
+
+#: [R4] The axes proven closed become hard in-band checks at emission (owner
+#: decision): a gate fires ONLY when both sides answered, and fails the run
+#: loudly. Energy/e2e stay report-only until R5's bands are in evidence.
+GATED_AXES = {
+    "total_param_capacity": 1e-6,
+    "param_utilization_pct": 1e-2,
+    "neuron_wastage_pct": 1e-2,
+    "axon_wastage_pct": 1e-2,
+    "chip_area_mm2": 1e-3,
+    "carried_raster_bytes": 1e-6,
+    "carry_peak_live_bytes": 1e-6,
+}
+
+
+def enforce_fidelity_gates(report: FidelityReport) -> None:
+    """Raise on any gated axis whose two answers disagree past its tolerance."""
+    failures = []
+    for axis in report.axes:
+        tolerance = GATED_AXES.get(axis.key)
+        if tolerance is None or axis.predicted is None or axis.measured is None:
+            continue
+        reference = max(abs(axis.measured), 1e-12)
+        if abs(axis.predicted - axis.measured) / reference > tolerance:
+            failures.append(
+                f"{axis.key}: predicted {axis.predicted!r} vs measured "
+                f"{axis.measured!r} (tolerance {tolerance})"
+            )
+    if failures:
+        raise ValueError(
+            "fidelity gate: the candidate and the sealed record disagree on "
+            "axes proven closed — " + "; ".join(failures)
+        )
+
+
+def activity_warning(report: FidelityReport) -> Optional[str]:
+    """[R4] The loud declaration-miss warning, or None inside the band."""
+    measured = report.measured_effective_activity
+    declared = report.declared_activity_factor
+    if not measured or not declared:
+        return None
+    ratio = measured / declared
+    if 1.0 / ACTIVITY_MISS_WARN_RATIO <= ratio <= ACTIVITY_MISS_WARN_RATIO:
+        return None
+    return (
+        f"declared activity_factor={declared} but the sealed census measures "
+        f"effective activity {measured:.4f} ({ratio:.2f}x off) — re-declare "
+        f"from the measured anchor; every energy prediction scales with it"
     )
 
 
@@ -162,4 +239,9 @@ def emit_fidelity_report(
     """
     if candidate is None:
         return None
-    return save_fidelity_report(fidelity_report_for_record(record, candidate), run_dir)
+    report = fidelity_report_for_record(record, candidate)
+    warning = activity_warning(report)
+    if warning is not None:
+        logging.getLogger(__name__).warning("[fidelity] %s", warning)
+    enforce_fidelity_gates(report)
+    return save_fidelity_report(report, run_dir)

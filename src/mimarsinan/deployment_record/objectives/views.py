@@ -183,8 +183,19 @@ class DeploymentRecordView:
 
     @property
     def host_side_segment_count(self) -> Optional[int]:
-        """No fragment carries the host-slot census; the candidate view does."""
-        return None
+        """[R4] Maximal runs of compute stages in the sealed schedule — the
+        SAME estimand the candidate's host-slot census counts, derived
+        generically from stage kinds, so total_sync_barriers finally answers
+        on both planes instead of predicted-only."""
+        stages = self.record.schedule.stages
+        runs = 0
+        in_run = False
+        for stage in stages:
+            is_compute = getattr(stage, "op_type", None) is not None
+            if is_compute and not in_run:
+                runs += 1
+            in_run = is_compute
+        return runs
 
     @property
     def estimated_accuracy(self) -> Optional[float]:

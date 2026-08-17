@@ -191,6 +191,10 @@ class FidelityReport:
     axes: Tuple[AxisComparison, ...]
     #: [H3] The per-term decomposition; additive-optional so pre-H3 reports load.
     terms: Tuple[TermComparison, ...] = ()
+    #: [R4] The run's measured switching anchor (events / (macs x steps)) and
+    #: the operator's declaration — every censused run states its own anchor.
+    measured_effective_activity: Optional[float] = None
+    declared_activity_factor: Optional[float] = None
 
     @property
     def compared_count(self) -> int:
@@ -210,6 +214,8 @@ class FidelityReport:
             "run_dir": self.run_dir,
             "axes": [axis.to_dict() for axis in self.axes],
             "terms": [term.to_dict() for term in self.terms],
+            "measured_effective_activity": self.measured_effective_activity,
+            "declared_activity_factor": self.declared_activity_factor,
         }
 
     @classmethod

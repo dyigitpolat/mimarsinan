@@ -1,5 +1,6 @@
 """The C4 fidelity emission wiring: searched runs write, others write nothing."""
 
+import pytest
 from types import SimpleNamespace
 
 from mimarsinan.pipelining.pipeline_steps.verification.fidelity_emission import (
@@ -27,6 +28,16 @@ class TestTheEmissionGate:
 
 
 class TestTheThroughPath:
+    @pytest.fixture(autouse=True)
+    def _plumbing_only(self, monkeypatch):
+        """These tests exercise the EMISSION plumbing on fabricated records
+        whose mirrors are not self-consistent with the twin; the [R4] gates
+        have their own trip/pass tests in test_fidelity_gates.py."""
+        from mimarsinan.deployment_record import fidelity_build
+
+        monkeypatch.setattr(
+            fidelity_build, "enforce_fidelity_gates", lambda report: None)
+
     def test_a_searched_run_emits_the_report(self, tmp_path):
         """END TO END: the rebuild resolves the run's own config and the
         report lands beside the record — the gate tests alone missed a
