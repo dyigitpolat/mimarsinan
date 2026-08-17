@@ -12,7 +12,9 @@ from mimarsinan.deployment_record.schema.serde import require_choice, strict_kwa
 
 PHYSICS_FORMAT_VERSION = 1
 
-EVIDENCE_KINDS = frozenset({"published", "datasheet", "derived", "estimated"})
+EVIDENCE_KINDS = frozenset(
+    {"published", "datasheet", "derived", "estimated", "measured"}
+)
 MEASUREMENT_KINDS = frozenset({"silicon", "simulation", "projection", "mixed"})
 
 #: What each evidence kind must carry for the value to be readable years later.
@@ -21,6 +23,9 @@ _EVIDENCE_REQUIREMENTS = {
     "datasheet": ("citation", "the datasheet and revision the number came from"),
     "derived": ("derivation", "the arithmetic that produced this per-unit number"),
     "estimated": ("note", "why this estimate is reasonable and its expected error"),
+    # [H3b] measured on THIS deployment stack (host calibration, bench runs) —
+    # the strongest kind, and the one that must say where and on what machine.
+    "measured": ("note", "what was measured, on which machine, and how to redo it"),
 }
 
 

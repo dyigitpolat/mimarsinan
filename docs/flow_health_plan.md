@@ -8,7 +8,7 @@
 | H1 measured synaptic-event census | **DONE** — `chip_simulation/synaptic_events.py`; the SANA-FE finalizer measures per stage, `EnergyRecord.synaptic_events` seals the per-inference mean, `energy_per_inference_mj` prices on the record plane; refusal (None) propagates end-to-end when any trace is unparsed | `record(H1)` |
 | H2 candidate carry census | **DONE** — one census over spans (`carry_census_from_spans`), two span producers; candidate == deployed on the vehicles, both disciplines; carry axes searchable (B's capacity-not-a-variable stands); known-zero semantics on BOTH planes | `search(H2)` |
 | H3 fidelity as an instrument | **DONE** — twin armed via the shared `firing_semantics_kwargs`; full candidate-answerable surface; per-term zip with bands/evidence; utilization family = allocated denominator + committed-rectangle numerator BOTH planes (a second numerator fork found and closed); new `chip_occupancy_pct`; one-sided rows carry a written basis | `fidelity(H3)` |
-| H3b host-rate calibration | pending owner decision | |
+| H3b host-rate calibration | **DONE** — `scripts/calibrate_host.py` + `platform_physics/host_calibration.py`; new `measured` evidence kind (requires the machine + method note); this host: 21.02 G/s (vs the 10 G/s estimate the study declared — a 2.1x host-term correction), RAPL unreadable so `p_host` stays declared | `physics(H3b)` |
 | H4 performance + elegance consolidation | pending | |
 | H5 study re-run + findings | pending | |
 

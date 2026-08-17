@@ -11,6 +11,9 @@ _INDENTED_IMPORT = re.compile(r"^\s+(from|import)\s+[A-Za-z_.]")
 # optional heavy backends). Shrink this list; never grow it.
 ALLOWLIST = {
     "chip_simulation/backend.py",
+    # [H3b] torch only when actually measuring: the physics package stays
+    # importable without the training stack.
+    "deployment_record/platform_physics/host_calibration.py",
     "chip_simulation/cost_extraction.py",
     "chip_simulation/deployment_contract.py",
     "chip_simulation/deployment_faithfulness.py",
