@@ -173,3 +173,19 @@ class TestTheCarryCensusExtraction:
         assert quantities.get("carried_raster_bytes").value == 384.0
         assert quantities.get("carried_raster_bytes").provenance == "static"
         assert quantities.get("carry_peak_live_bytes").value == 256.0
+
+
+def test_tiles_are_the_declared_floorplan_not_the_placement_fragment():
+    """[R5] The armed area gate caught this fork live: the placement fragment
+    seals ONE stage's arch (1 tile) while both planes must price the DECLARED
+    chip — the delta was exactly one tile's router+fixed area."""
+    from dataclasses import replace
+
+    record = make_full_record()
+    platform = dict(record.identity.platform)
+    platform["tile_grid_rows_resolved"] = 1
+    platform["tile_grid_cols_resolved"] = 2
+    record = replace(record, identity=replace(record.identity, platform=platform))
+    quantities = from_record(record)
+    assert quantities.get("tiles").value == 2.0
+    assert quantities.get("tiles").provenance == "static"

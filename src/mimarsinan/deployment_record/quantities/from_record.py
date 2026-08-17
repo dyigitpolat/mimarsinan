@@ -90,7 +90,18 @@ def from_record(record: DeploymentRecord) -> Quantities:
         sum(s.connectivity_entries for s in reprogrammed)
     )
 
-    values["tiles"] = _measured(len(record.placement.tiles))
+    # [R5-gate finding] The chip's tile count is a DECLARATION (the resolved
+    # floorplan), not the placement fragment's — which under-describes
+    # per-stage runs (it seals one stage's arch; the R3 note). The gate caught
+    # the fork as exactly one tile's router+fixed area on the component-priced
+    # profiles. Fall back to the fragment only when nothing was resolved.
+    platform = record.identity.platform
+    rows = int(platform.get("tile_grid_rows_resolved", 0) or 0)
+    cols = int(platform.get("tile_grid_cols_resolved", 0) or 0)
+    values["tiles"] = (
+        QuantityValue(float(rows * cols), "static") if rows > 0 and cols > 0
+        else _measured(len(record.placement.tiles))
+    )
 
     values["timesteps"] = _measured(record.timing.s_global)
     values["latency_steps"] = _measured(record.timing.latency.compute_steps)
