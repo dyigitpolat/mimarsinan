@@ -133,3 +133,20 @@ class TestTheRecordMirrorDividesByTheDeclaredChip:
         assert mirror["chip_occupancy_pct"] == pytest.approx(
             mirror["mapped_params_pct"], rel=1e-6,
         )
+
+
+class TestMultiPassAggregation:
+    def test_a_scheduled_programs_utilization_aggregates_every_pass(self):
+        """[R5] The deepcnn witness gated 33.3% (one pass's figure) against a
+        measured 40.8% (all passes). The candidate now sums committed and
+        allocated over EVERY pass — the record's own aggregation."""
+        stats, crossbar = _both_planes(policy="pool")
+        assert stats.mapped_params_pct == pytest.approx(
+            crossbar.cell_occupancy * 100.0, rel=1e-6,
+        )
+
+    def test_bank_clustered_passes_aggregate_too(self):
+        stats, crossbar = _both_planes(policy="bank_clustered")
+        assert stats.mapped_params_pct == pytest.approx(
+            crossbar.cell_occupancy * 100.0, rel=1e-6,
+        )

@@ -116,7 +116,14 @@ def compute_mapping_stats(
             total_hw_cores=sum(int(ct.count) for ct in core_types),
         ), "Scheduling infeasible: at least one softcore cannot be packed"
 
+    # [R5-gate finding] A scheduled program's utilization is the AGGREGATE
+    # over every pass (the record's crossbar sums per-pass allocations); the
+    # old single-pass figure gated 33.3% against a measured 40.8% on the
+    # deepcnn witness. Every pass is packed and the totals accumulate.
     best_stats = None
+    committed = allocated_capacity = allocated_axons = allocated_neurons = 0
+    used_axons_total = used_neurons_total = 0
+    all_feasible = True
     for pass_scs in sorted(all_pass_lists, key=len, reverse=True):
         pr = pack_layout(
             softcores=pass_scs,
@@ -124,12 +131,32 @@ def compute_mapping_stats(
             allow_neuron_splitting=allow_neuron_splitting,
             allow_coalescing=allow_coalescing,
         )
-        if pr.feasible:
+        if not pr.feasible:
+            all_feasible = False
+            continue
+        for snap in pr.used_core_snapshots or ():
+            committed += snap.used_axons * snap.used_neurons
+            allocated_capacity += snap.capacity
+            allocated_axons += snap.axons_per_core
+            allocated_neurons += snap.neurons_per_core
+            used_axons_total += snap.used_axons
+            used_neurons_total += snap.used_neurons
+        if best_stats is None:
             best_stats = _stats_from_packing(
                 pr, num_original_softcores=len(softcores),
                 softcores=softcores, core_types=core_types,
             )
-            break
+
+    if best_stats is not None and all_feasible and allocated_capacity > 0:
+        best_stats = replace(
+            best_stats,
+            mapped_params_pct=100.0 * committed / allocated_capacity,
+            total_wasted_axons_pct=100.0
+            * (allocated_axons - used_axons_total) / max(allocated_axons, 1),
+            total_wasted_neurons_pct=100.0
+            * (allocated_neurons - used_neurons_total)
+            / max(allocated_neurons, 1),
+        )
 
     if best_stats is None:
         if flat_stats is not None:
