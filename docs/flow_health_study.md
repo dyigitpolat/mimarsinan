@@ -110,12 +110,25 @@ silicon-correlation cases stay in band; the full suite holds at 11,634 tests
    classifier was the first production exercise of the path. The join now
    lives beside the census (`census_from_trace_groups`), pinned by a runner
    test with a real inter-core dependency; the refusal machinery behaved
-   exactly as designed throughout. Re-run pending to seal a censused record.
+   exactly as designed throughout. RESEALED: the re-run measures every stage
+   (2,845,860 + 1,727,328 + 32,220 = 4,605,408 events/inference) with the
+   utilization zip holding at 0.002%. The censused record exposed the next
+   model refinement: record-plane dynamic energy is ~108x the candidate's
+   model, because the offloaded encoder's BANK REPLICATION multiplies
+   physical arrivals — modeled events use the LOGICAL (replication-free) MAC
+   census, but replicas really fire (the as-mapped-vs-logical distinction the
+   quantity catalog already states). The candidate-side fix is to model
+   events over its own committed cells (E2/H3 already compute them) rather
+   than the partition census — promoted to follow-up 3b.
 2. **Host per-invocation overhead**: extend `calibrate_host.py` to measure
    `t_host_op_overhead`; add the `x compute_op_count` term; re-zip e2e.
 3. **Re-declare `activity_factor`** from the measured 0.1118 (or declare
    per-workload) — the candidate energy leg then lands within the constants'
    band.
+3b. **Model candidate events over AS-MAPPED cells** (the committed rectangle
+   the candidate already computes), not the logical partition census: on
+   replicated mappings (offload conv) the two diverge by the replication
+   factor — measured ~108x combined with the activity gap on LeNet5.
 4. **Layout-twin allocation divergence** (`chip_occupancy_pct` residual +
    `noc_total_hops` 113.6 modeled vs 0 measured): the twin packs tighter and
    places differently than the deployed builder — the standing N-series
