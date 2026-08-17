@@ -34,6 +34,25 @@ class TestTheSeedEncodesTheDeclaration:
             for c in declared
         ]
 
+    def test_an_asymmetric_two_type_declaration_round_trips(self):
+        """The ViT shape (wide x narrow / narrow x wide): a seed that swapped
+        axons and neurons would round-trip on square chips and silently
+        reshape this one."""
+        cfg = _cfg(cores=[
+            {"max_axons": 256, "max_neurons": 64, "count": 24},
+            {"max_axons": 64, "max_neurons": 256, "count": 24},
+        ])
+        problem = _problem(
+            cfg, ["total_param_capacity"], num_core_types=2,
+            core_axons_bounds=(64, 256), core_neurons_bounds=(64, 256),
+            core_count_bounds=(8, 64),
+        )
+        decoded = problem.decode(problem.seed_vectors()[0])
+        assert [(c["max_axons"], c["max_neurons"], c["count"])
+                for c in decoded["platform_constraints"]["cores"]] == [
+            (256, 64, 24), (64, 256, 24),
+        ]
+
     def test_the_seed_evaluates_feasibly(self):
         """The whole point: individual 0 must never be a penalty row."""
         problem = _problem(_cfg(), ["total_param_capacity"])
