@@ -190,3 +190,76 @@ class TestThePayloadIsSizedByTheSharedRule:
         assert census.reprogrammed_bytes is None
         assert census.segment_cores == _census("pool").segment_cores
         assert census.reprogrammed_cores == _census("pool").reprogrammed_cores
+
+
+class TestAsMappedCells:
+    """[R1] The event model's multiplicand: replicas really fire."""
+
+    @pytest.mark.parametrize("policy", ["pool", "bank_clustered"])
+    def test_committed_cells_match_the_deployed_crossbar(self, policy):
+        """The token graph replicates ONE shared bank across instances — the
+        as-mapped figure counts every replica, exactly as the record's
+        crossbar does. The logical census would count the bank once."""
+        from mimarsinan.mapping.crossbar_utilization import (
+            CrossbarUtilizationReport,
+        )
+        from mimarsinan.mapping.packing.hybrid_build_pool import (
+            build_hybrid_hard_core_mapping,
+        )
+        from mimarsinan.mapping.platform.mapping_structure import (
+            ChipCapabilities,
+            MappingStrategy,
+        )
+
+        hybrid = build_hybrid_hard_core_mapping(
+            ir_graph=token_graph(7),
+            cores_config=[dict(ct) for ct in TWO_CORES],
+            strategy=MappingStrategy.resolve(
+                ChipCapabilities(allow_scheduling=True, schedule_policy=policy)
+            ),
+        )
+        deployed = CrossbarUtilizationReport.from_hybrid_mapping(hybrid)
+        assert _census(policy).committed_cells == deployed.cells_used
+
+    def test_modeled_events_scale_with_replication(self):
+        """Seven replicated instances must model ~7x one instance's events —
+        the H5 finding (record-plane ~108x the logical model on offload
+        LeNet5) made structural."""
+        from mimarsinan.deployment_record.quantities.from_candidate import (
+            CandidateQuantityContext,
+            from_candidate,
+        )
+
+        def _events(cells):
+            quantities = from_candidate(
+                layout=None, chip_param_capacity=None, total_params=None,
+                host_side_segment_count=None,
+                context=CandidateQuantityContext(
+                    timesteps=4, activity_factor=0.05, cells_committed=cells,
+                ),
+            )
+            return quantities.get("synaptic_events").value
+
+        one = _census("pool").committed_cells // 7
+        assert _events(7 * one) == pytest.approx(7 * _events(one))
+
+    def test_the_replicated_shape_is_priced_at_its_replicas_not_its_logic(self):
+        """The discriminating case: logical census 100, as-mapped 700 (one
+        bank, seven firing replicas). The model must multiply the replicas —
+        the logical shortcut is exactly the ~108x LeNet5 understatement."""
+        from mimarsinan.deployment_record.quantities.from_candidate import (
+            CandidateQuantityContext,
+            from_candidate,
+        )
+
+        quantities = from_candidate(
+            layout=None, chip_param_capacity=None, total_params=None,
+            host_side_segment_count=None,
+            context=CandidateQuantityContext(
+                timesteps=4, activity_factor=0.05,
+                onchip_macs=100, cells_committed=700,
+            ),
+        )
+        assert quantities.get("synaptic_events").value == pytest.approx(
+            700 * 4 * 0.05
+        )

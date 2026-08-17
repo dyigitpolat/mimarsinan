@@ -40,19 +40,34 @@ class _ProbeLayout:
     chip_occupancy_pct: float = 1.0
 
 
+#: [R1] WHICH context keys each fragment's resolution produces — the ONE
+#: declaration probes read. A new pass-structure quantity is one entry here;
+#: E1/E2/H2 each hand-edited the placeholder AND the per-fragment nulls, and
+#: R1's key silently missing from the probe context de-listed the energy
+#: axes at the capability level — the drift this table ends.
+FRAGMENT_CONTEXT_KEYS = {
+    "layout": (
+        "latency_steps", "segment_cores", "cells_committed",
+        "reprogrammed_cores", "reprogrammed_bytes", "reprogram_passes",
+        "carried_raster_bytes", "carry_peak_live_bytes",
+        "carry_out_bytes", "carry_in_bytes",
+    ),
+    # Carry additionally needs the wire-census walk for adjacency.
+    "noc_fragments": (
+        "carried_raster_bytes", "carry_peak_live_bytes",
+        "carry_out_bytes", "carry_in_bytes",
+    ),
+}
+
+
 def _probe_context() -> CandidateQuantityContext:
     """Every run declaration a candidate could carry, at placeholder magnitudes."""
+    fragment_keys = {
+        key: 1 for keys in FRAGMENT_CONTEXT_KEYS.values() for key in keys
+    }
     return CandidateQuantityContext(
+        **fragment_keys,
         timesteps=1,
-        latency_steps=1,
-        segment_cores=1,
-        reprogrammed_cores=1,
-        reprogrammed_bytes=1,
-        reprogram_passes=1,
-        carried_raster_bytes=1,
-        carry_peak_live_bytes=1,
-        carry_out_bytes=1,
-        carry_in_bytes=1,
         activity_factor=1.0,
         weight_bits=1,
         tiles=1,
@@ -182,28 +197,15 @@ def candidate_probe_without(fragment: str) -> CandidateStaticView:
         )
     probe = _full_candidate_probe()
     overrides: dict = {fragment: None}
-    if fragment == "noc_fragments":
-        # [H2] The carry census needs the wire-census walk for adjacency: a
-        # carry axis in the active set is what makes the walk worth its cost.
-        assert probe.quantity_context is not None
-        overrides["quantity_context"] = replace(
-            probe.quantity_context,
-            carried_raster_bytes=None, carry_peak_live_bytes=None,
-            carry_out_bytes=None, carry_in_bytes=None,
-        )
     if fragment == "layout":
-        # NoC fragments, the executed wall and the programming census are
-        # DERIVED from the layout resolution (the pass structure IS the
-        # layout): a candidate without one cannot carry them, so an axis that
-        # needs any of them must count as needing the layout too.
+        # The pass structure IS the layout: everything it derives (the NoC
+        # fragments included) goes with it.
         overrides["noc_fragments"] = None
+    derived = FRAGMENT_CONTEXT_KEYS.get(fragment)
+    if derived:
         assert probe.quantity_context is not None
         overrides["quantity_context"] = replace(
-            probe.quantity_context, latency_steps=None,
-            segment_cores=None, reprogrammed_cores=None,
-            reprogrammed_bytes=None, reprogram_passes=None,
-            carried_raster_bytes=None, carry_peak_live_bytes=None,
-            carry_out_bytes=None, carry_in_bytes=None,
+            probe.quantity_context, **{key: None for key in derived},
         )
     return replace(probe, **overrides)
 

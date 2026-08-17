@@ -1,0 +1,167 @@
+# Predictive-Closure Program (R-series) — the full co-optimization claim
+
+## Status (2026-08-17)
+
+| Stage | State | Commits |
+|---|---|---|
+| R0 diagnosis: the "twin divergence" decomposed | **DONE** — findings below | (this doc) |
+| R1 as-mapped event model + committed-cells quantity + occupancy fix | **DONE** — candidate claims `macs`/`cells_used` from the pass structure (== deployed crossbar on the replicated vehicle, both policies); events = as-mapped × T × activity (energy axes now layout-classified); the record mirror divides by the DECLARED chip; probes read ONE fragment→keys table | `search(R1)` |
+| R2 host per-invocation overhead, measured through the deployment's own dispatch | pending | |
+| R3 measured-NoC honesty (false zero → absence) + instrumented verification | pending | |
+| R4 estimand adjudications + the activity loop | pending | |
+| R5 verification study: MLP + LeNet5 as vehicles, +1 family as the generality witness | pending | |
+
+Repo: `mimarsinan` @ `99a95489`. Goal: upgrade the defensible claim from
+"structural/area/chip-side-energy verified against sealed deployments" to
+"predictive at candidate time, host included, with every residual named" —
+with every mechanism GENERIC over any representable model. MLP and LeNet5 are
+verification vehicles only; nothing in the implementation may know a workload.
+Deliverables: correctness, performance, elegance — as before.
+
+## R0 — what the diagnosis established (all measured)
+
+The H5 claim table listed "layout-twin placement/allocation divergence
+(medium)". Diagnosed on the sealed loihi MLP run, it decomposes into two
+honesty bugs and zero twin research:
+
+1. **The twin and the deployed program AGREE.** Both allocate 7 cores and
+   commit 68,096 cells; utilization zips at 0.0. The `chip_occupancy_pct`
+   "residual" (13.68 vs 15.64) is a RECORD-side defect: the emission computes
+   the stats mirror with the ALLOCATED cores as the chip, so record-plane
+   occupancy degenerates to utilization (measured occupancy == measured
+   utilization == 15.6379 on the same report). The candidate's 13.68% over
+   the DECLARED 8 cores is the correct estimand.
+2. **Measured hops = 0 is a FALSE ZERO.** The sealed record's `link_loads`
+   is EMPTY — the SANA-FE message trace was off (default), nothing was
+   measured, and `from_record` claimed hops "measured 0" anyway. The
+   113.6-vs-0 "divergence" compared a model against an absent measurement.
+
+Standing gaps from H5, unchanged: the candidate event model multiplies the
+LOGICAL MAC census while replicas really fire (~108x on offload LeNet5); the
+host wall is per-invocation overhead, not throughput (~2000x past the rate
+model); declared activity 0.05 vs measured 0.1118; `total_sync_barriers` /
+`timesteps` estimands unadjudicated.
+
+## Owner decisions (asked 2026-08-17)
+
+| Question | Decision |
+|---|---|
+| Generality witness + R5 scope | **deepcnn + full MLP×4 + LeNet5** (six runs) — conv-scale replication stresses exactly R1's as-mapped model. |
+| Activity declaration loop | **Manual declaration + a LOUD deployment-time warning** when the measured effective activity misses the declaration by a significant margin (stated threshold, warning not gate). Fidelity reports the measured anchor; the operator re-declares. |
+| Arm numeric fidelity gates now? | **Arm structural + closed terms now** (utilization family, area in-band, capacity, carry known-zeros) as hard checks at emission — fail loud, only when both sides answered; energy/e2e stay report-only until R5 shows their bands hold. |
+
+## R1 — events over as-mapped cells; occupancy honest on both planes
+
+The catalog already declares the right multiplicand: `macs` — "as-mapped MAC
+sites: a weight bank replicated across cores counts once per replica — the
+ENERGY multiplicand, because replicas really fire." The candidate never
+claimed it, and the event model multiplied `onchip_macs` (logical).
+
+1. `CandidateProgramming` gains the committed-cell total per pass (already
+   computed as `PassProgram.core_cells`); the candidate claims `macs` and
+   `cells_used` from it (they are one figure at candidate completeness —
+   stated). Generic: the figure comes from the pass structure of ANY packed
+   model.
+2. The event model becomes `synaptic_events = macs x timesteps x
+   activity_factor` — as-mapped, so replication scales it by construction.
+   Unreplicated mappings are numerically unchanged (`macs == onchip_macs`),
+   pinned. Events now derive from the LAYOUT: energy axes classify as
+   layout-needing via the probes (more honest — events are a mapped-structure
+   fact).
+3. **Occupancy fix (R0 item 1)**: the record emission computes the stats
+   mirror against the DECLARED chip's core types (threaded from the resolved
+   platform the emission already holds), and a cross-plane pin asserts
+   record `chip_occupancy_pct` == 100 x cells_used / cells_physical ==
+   candidate's, on the vehicles.
+4. Elegance (H4 deferral, due now that probes grow again): the hand-grown
+   probe context and per-fragment null lists become ONE declarative
+   fragment→quantity-keys table; E1/E2/H2/R1 each edited two sites by hand —
+   the next fragment edits one row.
+5. Twin-equality pins on a REPLICATED vehicle (the bank-clustered token graph
+   replicates one bank across instances): candidate `macs` == deployed
+   crossbar `macs`; modeled events scale with replicas; mutation kills
+   (logical-census mutant, replication-dropped mutant).
+
+## R2 — the host wall has a per-invocation cost, measured as the record measures it
+
+1. `calibrate_host.py` gains `t_host_op_overhead`: measured by driving a
+   synthetic hybrid program through `run_hybrid_stages` with the SAME
+   `StageTimer` that produces the record's `host_ops_s` — the estimand is the
+   deployment's own dispatch overhead (segment I/O, tensor conversion), not
+   a bare torch-op launch. Synthetic program = framework fixtures only, no
+   workload anything.
+2. New vocabulary constant `t_host_op_overhead` (TIME, host group,
+   multiplicand `compute_op_count`) + new quantity `compute_op_count`:
+   record side from the sealed `schedule.compute_op_count`; candidate side
+   counted generically during the flow walk the on-chip census already does.
+3. Pricer: candidate host time = `compute_op_count x t_host_op_overhead +
+   host_macs / host_macs_per_s`; overhead undeclared → the rate-only figure
+   prices WITH an unpriced-note naming the overhead (the existing
+   unpriced-list mechanism); record plane unchanged (measured wall x identity
+   rate). Energy inherits through `p_host x host time` untouched.
+4. Pins: formula + refusal notes + calibration block; the e2e convergence
+   verdict comes from R5's runs, not from a unit test.
+
+## R3 — an absent measurement is never a zero
+
+1. `from_record`: the NoC quantities are ABSENT when the record sealed no
+   links (`link_loads` empty = uninstrumented; a traced run seals its links
+   even at zero load — verified and pinned against the producer). The refusal
+   names the missing instrumentation ("run with the SANA-FE message trace
+   enabled").
+2. Fidelity rows then say "measurement unavailable" instead of zipping a
+   model against nothing; pre-R3 records load unchanged and simply stop
+   claiming a measured zero.
+3. R5's verification configs enable the message trace — the first HONEST
+   modeled-vs-measured hops comparison is an R5 deliverable, and whatever
+   divergence it shows is a finding, not an assumption.
+
+## R4 — one estimand per remaining name + the activity loop
+
+1. `total_sync_barriers`: the record answers the SAME estimand the candidate
+   prices — `schedule.sync_count` + the count of maximal compute-stage runs
+   (host segments), derived generically from sealed stage kinds; pinned equal
+   on the vehicles.
+2. `timesteps`: verify `s_global == simulation_steps` across the firing modes
+   on sealed fixtures; where a mode makes them differ, the axis reads the one
+   its catalog doc means, and the other gets its own name. Pin.
+3. The measured effective activity (`synaptic_events / (macs x timesteps)`)
+   becomes a first-class fidelity report line — every censused run states its
+   own anchor — and the DeploymentRecordStep emits a LOUD warning when the
+   measured anchor misses the declared `activity_factor` by more than the
+   stated threshold (owner decision: warn, never gate — the declaration is
+   an assumption, and an assumption that measurement refutes must be
+   impossible to not see). The loop (declare → run → warning/anchor →
+   re-declare) is documented; R5's configs re-declare from the H5 anchor.
+   No framework constant, no workload knowledge.
+4. **Fidelity gates armed** (owner decision): the axes proven closed —
+   utilization family, capacity, carry known-zeros (relative tolerance,
+   stated) and area (in-band) — become hard checks at fidelity emission,
+   failing the run loudly; a gate only fires when BOTH sides answered.
+   Energy/e2e stay report-only until R5's bands are in evidence.
+
+## R5 — verification: two known vehicles + one generality witness
+
+1. Re-run with everything above: MLP x 4 profiles + LeNet5 (truenorth) +
+   ONE additional representable family (per the owner decision) — all with
+   the message trace on, the calibrated host block (rate + overhead), and the
+   re-declared activity.
+2. Acceptance, per the upgraded claim: candidate dynamic energy within the
+   constants' band on unreplicated mappings and within the activity residual
+   on replicated ones; candidate e2e within a stated band of measured, host
+   included; `macs`/`cells_used`/occupancy zip both planes; hops compared
+   honestly for the first time; every non-zipping row carries its basis.
+3. The claim table in `docs/flow_health_study.md` gets its upgrade row with
+   the measured numbers; program docs + project memory updated.
+
+## Sequencing
+
+R1 → R2 → R3 → R4 → R5 (R1–R4 are independent-ish but small; serial keeps
+each commit's gate meaningful).
+
+## Verification protocol (every stage)
+
+Tests first; suite ≤2 min green; typecheck zero; ratchets/budgets clean;
+load-bearing guards mutation-checked; generic-only (no workload constants —
+the standing rule); ARCHITECTURE.md per touched module; per-stage commits, no
+AI-attribution trailers.

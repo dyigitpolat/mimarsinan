@@ -41,7 +41,9 @@ def _candidate(*, physics=_TRUENORTH, **context_over):
     context = CandidateQuantityContext(**{
         "timesteps": 32, "latency_steps": 32, "activity_factor": 0.05, "weight_bits": 8,
         "cores_physical": 20, "neurons_physical": 5120, "axons_physical": 5120,
-        "host_macs": 0, "onchip_macs": 100000, **context_over,
+        "host_macs": 0, "onchip_macs": 100000,
+        # [R1] events derive from the AS-MAPPED committed cells.
+        "cells_committed": 100000, **context_over,
     })
     return CandidateStaticView(
         layout=make_layout(),

@@ -64,6 +64,10 @@ class CandidateQuantityContext:
     #: passes that actually install weights. Absent without a pass structure,
     #: so the programming terms refuse instead of pricing zero.
     segment_cores: Optional[int] = None
+    #: [R1] The as-mapped committed cells of the planned program — the
+    #: catalog's ``macs``/``cells_used`` at candidate completeness, and the
+    #: event model's multiplicand (replicas really fire).
+    cells_committed: Optional[int] = None
     reprogrammed_cores: Optional[int] = None
     reprogrammed_bytes: Optional[int] = None
     reprogram_passes: Optional[int] = None
@@ -134,6 +138,10 @@ def from_candidate(
     # count the candidate used to report under that name.
     _put(values, "cores_allocated", context.segment_cores)
     _put(values, "segment_cores", context.segment_cores)
+    # [R1] One figure, two catalog names at this completeness (stated): the
+    # committed rectangle IS the as-mapped MAC-site census of the shape.
+    _put(values, "macs", context.cells_committed)
+    _put(values, "cells_used", context.cells_committed)
     _put(values, "reprogrammed_cores", context.reprogrammed_cores)
     _put(values, "reprogrammed_bytes", context.reprogrammed_bytes)
     _put(values, "reprogram_passes", context.reprogram_passes)
@@ -169,13 +177,17 @@ def from_candidate(
     # The EDA switching-activity discipline: candidate spike-dependent energy rests
     # on a DECLARED activity factor over the logical on-chip MAC census, and the
     # provenance says so. (The as-mapped replication correction is fidelity-tracked.)
+    # [R1] Events are modeled over the AS-MAPPED cells, never the logical
+    # census: a replicated bank's copies really fire (measured ~108x apart on
+    # the offload LeNet5). Absent without a pass structure — an energy claim
+    # about an unmapped shape would be the silent-zero's mirror image.
     if (
-        context.onchip_macs is not None
+        context.cells_committed is not None
         and context.timesteps is not None
         and context.activity_factor is not None
     ):
         values["synaptic_events"] = QuantityValue(
-            value=float(context.onchip_macs)
+            value=float(context.cells_committed)
             * float(context.timesteps)
             * float(context.activity_factor),
             provenance="modeled",

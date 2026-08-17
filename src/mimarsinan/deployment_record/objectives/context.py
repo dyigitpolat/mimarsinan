@@ -63,6 +63,9 @@ def candidate_context_from_platform(
         # [E2] Duck-typed: the search layer's programming census. Absent
         # census -> absent quantities -> the programming terms refuse.
         segment_cores=None if programming is None else int(programming.segment_cores),
+        cells_committed=(
+            None if programming is None else int(programming.committed_cells)
+        ),
         reprogrammed_cores=(
             None if programming is None else int(programming.reprogrammed_cores)
         ),

@@ -106,6 +106,8 @@ def candidate_view(**overrides) -> CandidateStaticView:
             cores_per_tile=1, tile_mesh_height=1,
             cores_physical=4, neurons_physical=64, axons_physical=64,
             host_macs=0, onchip_macs=512,
+            # [R1] events derive from the AS-MAPPED cells now.
+            cells_committed=512,
         ),
         noc_fragments=SimpleNamespace(
             pass_placements=(((0, 0),),),
@@ -263,13 +265,14 @@ class TestTheFragmentProbe:
         probe = candidate_probe_without("layout")
         keys = {s.key for s in OBJECTIVES.available_for(probe)}
         # Area needs only the DECLARED chip and its physics, so an area-only
-        # hardware search legitimately never packs.
-        # Area needs only the declared chip, and energy only the MAC census times
-        # the declared activity — neither needs a packing. Latency does (the window
-        # runs once per neural segment), and throughput inverts latency.
+        # hardware search legitimately never packs. [R1] Energy no longer
+        # survives a layoutless view: events are modeled over the AS-MAPPED
+        # committed cells (replicas really fire), and an unmapped shape has
+        # none — the logical-census shortcut understated replicated mappings
+        # by the replication factor (~108x measured on offload LeNet5).
         assert keys == {
             "estimated_accuracy", "total_params", "total_param_capacity",
-            "chip_area_mm2", "energy_per_inference_mj",
+            "chip_area_mm2",
         }
 
     def test_an_unknown_fragment_is_refused_by_name(self):

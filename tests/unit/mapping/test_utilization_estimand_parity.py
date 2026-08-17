@@ -86,3 +86,50 @@ class TestTheChipSignalKeepsItsOwnName:
         strictly below utilization — the 2x-class gap the fidelity zip showed."""
         stats, _ = _both_planes()
         assert stats.chip_occupancy_pct < stats.mapped_params_pct
+
+
+class TestTheRecordMirrorDividesByTheDeclaredChip:
+    def test_mirror_occupancy_equals_the_candidates_estimand(self):
+        """[R1/R0] The emission computed the mirror's stats WITHOUT the
+        declared chip, so record-plane occupancy degenerated to utilization
+        (measured occupancy == measured utilization == 15.6379 on the sealed
+        loihi run). With the declaration threaded, both planes divide the
+        same committed cells by the same declared capacity."""
+        from mimarsinan.mapping.verification.layout_verification_hybrid import (
+            stats_dict_from_hybrid_mapping,
+        )
+
+        graph = token_graph(7)
+        stats, _ = _both_planes()
+        hybrid = build_hybrid_hard_core_mapping(
+            ir_graph=graph, cores_config=[dict(ct) for ct in ROOMY_CHIP],
+            strategy=MappingStrategy.resolve(
+                ChipCapabilities(allow_scheduling=True, schedule_policy="pool")
+            ),
+        )
+        mirror = stats_dict_from_hybrid_mapping(
+            hybrid, core_types=hard_core_types(ROOMY_CHIP),
+        )
+        assert mirror["chip_occupancy_pct"] == pytest.approx(
+            stats.chip_occupancy_pct, rel=1e-6,
+        )
+        assert mirror["chip_occupancy_pct"] < mirror["mapped_params_pct"]
+
+    def test_an_undeclared_chip_keeps_the_old_degenerate_reading(self):
+        """Without the declaration the mirror can only divide by what it
+        sees — stated, and exactly why the emission now threads it."""
+        from mimarsinan.mapping.verification.layout_verification_hybrid import (
+            stats_dict_from_hybrid_mapping,
+        )
+
+        hybrid = build_hybrid_hard_core_mapping(
+            ir_graph=token_graph(7),
+            cores_config=[dict(ct) for ct in ROOMY_CHIP],
+            strategy=MappingStrategy.resolve(
+                ChipCapabilities(allow_scheduling=True, schedule_policy="pool")
+            ),
+        )
+        mirror = stats_dict_from_hybrid_mapping(hybrid)
+        assert mirror["chip_occupancy_pct"] == pytest.approx(
+            mirror["mapped_params_pct"], rel=1e-6,
+        )

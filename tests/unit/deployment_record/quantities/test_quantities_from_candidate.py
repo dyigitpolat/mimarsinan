@@ -21,7 +21,7 @@ def _context(**over):
         neurons_physical=768,
         axons_physical=768,
         host_macs=1000,
-        onchip_macs=14000,
+        onchip_macs=14000, cells_committed=14000,
         host_params=100,
         onchip_params=900,
     )
@@ -120,8 +120,11 @@ def test_what_a_candidate_never_claims():
         layout=make_layout(), chip_param_capacity=1.0, total_params=1.0,
         host_side_segment_count=0, context=_context(),
     )
+    # [R1] ``cells_used``/``macs`` moved OUT of this list: the committed
+    # rectangle is a static fact of the planned pass structure, and the event
+    # model multiplies it — they are claimed when the structure is known.
     for key in ("noc_total_hops", "noc_total_packets", "total_spikes",
-                "boundary_events", "host_ops_s", "cells_used", "macs",
+                "boundary_events", "host_ops_s",
                 "reprogrammed_bytes", "connectivity_entries"):
         assert not quantities.has(key), key
 

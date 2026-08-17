@@ -13,6 +13,7 @@ from typing import Any, Dict, List, Optional
 
 from mimarsinan.deployment_record.build.partition import compute_partition_record
 from mimarsinan.models.spiking.hybrid.carry import run_pass_transfer
+from mimarsinan.mapping.layout.layout_types import core_types_from_declaration
 from mimarsinan.deployment_record.build.from_mapping import (
     placement_record_from_mapping,
     schedule_record_from_mapping,
@@ -76,6 +77,11 @@ def emit_deployment_record_hcm(
         crossbar_report=crossbar_report,
         relay_cores_inserted=int(scm_fragment["relay_cores_inserted"]),
         partition=partition,
+        # [R1] Chip-relative mirror figures divide by the DECLARED chip, not
+        # the allocation — the run's own resolved cores are the declaration.
+        declared_core_types=core_types_from_declaration(
+            step.pipeline.config.get("cores") or ()
+        ) or None,
     )
     read = AccuracyReadRecord(
         metric=float(accuracy),

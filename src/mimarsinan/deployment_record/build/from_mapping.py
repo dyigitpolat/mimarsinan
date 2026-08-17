@@ -278,18 +278,20 @@ def utilization_record_from_mapping(
     crossbar_report: CrossbarUtilizationReport,
     relay_cores_inserted: int,
     partition: Optional[ComputePartitionRecord] = None,
+    declared_core_types: Optional[Any] = None,
 ) -> UtilizationRecord:
     """Typed mirrors of the two existing reports + the threaded relay count.
 
     ``crossbar_report`` is the report the HCM step already computed; the layout
-    stats come from ``stats_dict_from_hybrid_mapping`` (the wizard/GUI engine),
-    never a recomputation with different formulas.
+    stats come from ``stats_dict_from_hybrid_mapping`` (the wizard/GUI engine,
+    with the DECLARED chip's core types so chip-relative figures never divide
+    by the allocation [R1]), never a recomputation with different formulas.
     """
-    stats_dict = stats_dict_from_hybrid_mapping(hybrid_mapping)
+    stats_dict = stats_dict_from_hybrid_mapping(
+        hybrid_mapping, core_types=declared_core_types,
+    )
     if stats_dict is None:
-        raise ValueError(
-            "layout stats unavailable: the hybrid mapping has no packed stages"
-        )
+        raise ValueError("layout stats unavailable: no packed stages")
     return UtilizationRecord(
         crossbar=CrossbarUtilizationRecord.from_dict(crossbar_report.to_dict()),
         layout=LayoutStatsRecord.from_dict(stats_dict),

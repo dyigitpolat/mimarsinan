@@ -20,7 +20,7 @@ from mimarsinan.deployment_record.objectives import (
     candidate_context_from_platform,
 )
 from mimarsinan.deployment_record.platform_physics import PlatformPhysics
-from mimarsinan.mapping.layout.layout_types import LayoutHardCoreType
+from mimarsinan.mapping.layout.layout_types import core_types_from_declaration
 from mimarsinan.chip_simulation.spiking_semantics import (
     is_cascaded_ttfs,
     is_synchronized_ttfs,
@@ -42,15 +42,8 @@ OnchipCensus = Tuple[OnchipFractionEstimate, OnchipFractionEstimate]
 
 
 def make_core_types(pcfg: Dict) -> list:
-    """The declared chip's hardcore types, as the layout packer consumes them."""
-    return [
-        LayoutHardCoreType(
-            max_axons=int(ct["max_axons"]),
-            max_neurons=int(ct["max_neurons"]),
-            count=int(ct["count"]),
-        )
-        for ct in pcfg["cores"]
-    ]
+    """The declared chip's hardcore types — the mapping layer's own adapter."""
+    return core_types_from_declaration(pcfg["cores"])
 
 
 def candidate_latency_steps(
@@ -99,6 +92,9 @@ def candidate_programming_census(
     )
     return CandidateProgramming(
         segment_cores=sum(program.cores for program in programs),
+        committed_cells=sum(
+            sum(program.core_cells) for program in programs
+        ),
         reprogrammed_cores=len(reprogrammed),
         reprogrammed_bytes=None if weight_bits is None else sum(
             params_bytes(cells, weight_bits) for cells in reprogrammed
@@ -114,6 +110,11 @@ class CandidateProgramming:
     """The programming census as the quantity surface consumes it."""
 
     segment_cores: int
+    #: [R1] Σ over EVERY pass of the occupied used-rows x used-columns cells —
+    #: the AS-MAPPED figure (replicas count once per replica, because replicas
+    #: really fire): the catalog's ``macs``/``cells_used`` at candidate
+    #: completeness, and the event model's multiplicand.
+    committed_cells: int
     reprogrammed_cores: int
     #: None when the platform declares no weight width — absent, never zero.
     reprogrammed_bytes: Optional[int]

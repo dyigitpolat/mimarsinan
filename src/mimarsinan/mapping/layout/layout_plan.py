@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Sequence, Any, Dict, List, Optional, Tuple
 
 from mimarsinan.mapping.layout.layout_types import (
     LayoutCoreSnapshot,
@@ -33,7 +33,9 @@ class LayoutPlan:
     field_errors: Dict[str, str] = field(default_factory=dict)
 
     @classmethod
-    def from_hybrid_mapping(cls, mapping: Any) -> Optional["LayoutPlan"]:
+    def from_hybrid_mapping(
+        cls, mapping: Any, core_types: Optional[Sequence[Any]] = None,
+    ) -> Optional["LayoutPlan"]:
         """Derive a ``LayoutPlan`` from a compiled ``HybridHardCoreMapping``, feeding
         its per-softcore placement provenance through the shared stats builder so
         deployment and wizard layout stats use identical formulas."""
@@ -137,7 +139,9 @@ class LayoutPlan:
             packing,
             num_original_softcores=total_placements or cores_used,
             softcores=None,
-            core_types=None,
+            # [R1] The DECLARED chip when the caller states it — chip-relative
+            # figures must not silently divide by the allocation.
+            core_types=core_types,
         )
         stats_dict = stats.to_dict()
 

@@ -130,6 +130,18 @@ class LayoutCoreSnapshot:
         return self.neurons_per_core - self.used_neurons
 
 
+def core_types_from_declaration(cores) -> "list[LayoutHardCoreType]":
+    """The declared chip's hardcore types, as every layout consumer reads them."""
+    return [
+        LayoutHardCoreType(
+            max_axons=int(ct["max_axons"]),
+            max_neurons=int(ct["max_neurons"]),
+            count=int(ct["count"]),
+        )
+        for ct in cores
+    ]
+
+
 @dataclass(frozen=True)
 class LayoutPackingResult:
     feasible: bool
