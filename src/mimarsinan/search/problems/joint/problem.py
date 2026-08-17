@@ -7,6 +7,7 @@ from typing import Any, Dict, Mapping, Optional, Sequence, Tuple
 
 
 from mimarsinan.deployment_record.objectives import ObjectiveSpecV2
+from mimarsinan.search.optimizers.budget import EvaluationBudget
 from mimarsinan.search.problems.encoded_problem import EncodedProblem
 from mimarsinan.search.option_axes import OptionAxis, candidate_option
 from mimarsinan.search.problem import ValidationResult
@@ -111,6 +112,12 @@ class JointArchHwProblem(
 
     #: The on-chip parameter floor this search must respect. 0 = no constraint.
     onchip_min_fraction: float = 0.0
+
+    #: [TS1] The run's evaluation accountant, set by the step or a campaign
+    #: driver. The problem only METERS at its cache seam; stopping is the
+    #: driver's decision at its own boundary. None = unmetered, and every
+    #: evaluation is byte-identical to a run without an accountant.
+    evaluation_budget: Optional[EvaluationBudget] = None
 
     _cache: Dict[str, Dict[str, float]] = field(default_factory=dict, init=False)
     _hw_only_cache: Dict[str, HwOnlyCache] = field(

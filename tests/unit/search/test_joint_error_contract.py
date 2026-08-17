@@ -44,6 +44,7 @@ class _Harness(JointValidateMixin, JointLayoutMixin, JointEvaluateMixin):
     encoding_placement = "subsume"
     pruning_fraction = 0.0
     onchip_min_fraction = 0.0
+    evaluation_budget = None
 
     def __init__(self, active_names=ACTIVE_NAMES):
         self._cache = {}

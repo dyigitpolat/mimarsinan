@@ -14,12 +14,12 @@ of truth for the joint NAS + HW search space, rendered per backend.
 | `problem.py` | `SearchProblem` protocol (validate, validate_detailed, evaluate, constraint_violation, meta), `ValidationResult` carrying failure details, and `CandidateInfeasibleError` — the typed candidate-dependent failure optimizers convert to penalties while everything else aborts |
 | `constraints.py` | [C3] Typed feasibility constraints: a deployment constraint shapes the FEASIBLE REGION, so a violation belongs in the optimizer's own constraint channel — typed, with the measurement that explains it — rather than as a pipeline exception a run discovers after it has already picked a winner. `onchip_floor_violation` reports the on-chip parameter floor as a `ConstraintReport` whose `violation` is the SHORTFALL, a gradient the optimizer can descend (a near-miss ranks above a candidate that put almost nothing on chip); a floor of zero is no constraint at all rather than a zero-width one. The downstream pipeline gate stays as defence in depth. |
 | `option_axes.py` | [C3] Deployment OPTIONS as decision variables — placement, schedule policy, weight width, pruning fraction — where promoting one is a DECLARATION, not code: `build_option_axes` derives each axis' section, legal values, bounds, label and documentation from the config-key registry, so the search never duplicates the configurability SSOT and a key the registry cannot describe as a range is refused at declaration time rather than becoming an axis a candidate never varies along. An axis carries exactly one shape — `choices` (index-coded, the arch-option pattern) or `bounds` (numeric, integral when the registry says INT) — because both would be two encodings of one axis and neither would be an axis at all; `decode_option_value` clips, never wraps. `candidate_option` is the ONE reader of a candidate's `deployment_options`, so a searched option and a merely-declared one are never told apart by hand at a call site. |
-| `results.py` | The legacy PROJECTION of `deployment_record.objectives` — `ALL_OBJECTIVES` is that registry's search catalogue rendered as the frozen `ObjectiveSpec(name, goal)` tuple every optimizer indexes (byte-equality pinned by test); `resolve_active_specs` resolves the ACTIVE registry specs (what an evaluation must READ off a view) and `objectives_for_mode`/`resolve_active_objectives` project them, all FAILING LOUD on an unknown or mode-unavailable objective (the silent drop is gone); the per-search-mode DEFAULTS stay here (a search policy, not a record fact), together with the `Candidate`/`SearchResult` containers and the ONE minimax ranking (`rank_objective_rows`/`order_by_minimax_rank`, and `select_minimax_rank` on top of it) that candidate selection, the reported Pareto orderings, and the live panel's front all read |
+| `results.py` | The legacy PROJECTION of `deployment_record.objectives` — `ALL_OBJECTIVES` is that registry's search catalogue rendered as the frozen `ObjectiveSpec(name, goal)` tuple every optimizer indexes (byte-equality pinned by test); `resolve_active_specs` resolves the ACTIVE registry specs (what an evaluation must READ off a view) and `objectives_for_mode`/`resolve_active_objectives` project them, all FAILING LOUD on an unknown or mode-unavailable objective (the silent drop is gone); the per-search-mode DEFAULTS stay here (a search policy, not a record fact), together with the `Candidate`/`SearchResult` containers ([TS1] `SearchResult.ledger` is additive-optional — a run nobody metered seals none, and an artifact written before the accountant existed still loads) and the ONE minimax ranking (`rank_objective_rows`/`order_by_minimax_rank`, and `select_minimax_rank` on top of it) that candidate selection, the reported Pareto orderings, and the live panel's front all read |
 | `search_space_description.py` | `SearchSpaceDescription` SSOT for the joint NAS + HW space (`CORE_DIM_GRANULARITY`), with renderers to AgentEvolve prompt schema/example/constraints and compilagent levers |
 | `search_space_compilagent.py` | Renders a `SearchSpaceDescription` into compilagent `Lever` tuples and derives sampled integer candidates per HW dimension |
 | `patch_borders.py` | `get_region_borders`: standalone patch-region border computation utility (no in-repo callers) |
 | `evaluators/` | Fast NAS accuracy evaluators: one-epoch `FastAccuracyEvaluator` and `ExtrapolatingAccuracyEvaluator` with parametric learning-curve fitting |
-| `optimizers/` | `SearchOptimizer` interface and backends: pymoo NSGA-II, AgentEvolve LLM evolution, compilagent session (with `MimarsinanLayoutBackend`), shared LLM trace utilities, and `search_events.py` — the live search-event channel's SSOT (the `emit_search_event` envelope plus the `generation_start`/`candidates_generated`/`generation_complete`/`search_complete` frame constructors). The classical and LLM backends BUILD their generation frames there, so the panel's vocabulary cannot fork; emission is telemetry and degrades through `best_effort`. The compilagent introspection surface is DERIVED from `deployment_record.introspection`'s registry: one read-only tool per payload the candidate view can answer, each response carrying its `payload`/`payload_version`, so registering a payload reaches the agent without a hand-written tool. These modules import the introspection types and NOTHING from `mapping` (AST-pinned) |
+| `optimizers/` | `SearchOptimizer` interface and backends: pymoo NSGA-II, AgentEvolve LLM evolution, compilagent session (with `MimarsinanLayoutBackend`), shared LLM trace utilities, [TS1] `budget.py` (the `EvaluationBudget` accountant, `LlmUsage`, and the `ResourceLedger` a run seals — see "What a search spent" below; the package `__init__` re-exports nothing so this leaf stays importable from `results.py` and the problems without dragging the backends in), and `search_events.py` — the live search-event channel's SSOT (the `emit_search_event` envelope plus the `generation_start`/`candidates_generated`/`generation_complete`/`search_complete` frame constructors). The classical and LLM backends BUILD their generation frames there, so the panel's vocabulary cannot fork; emission is telemetry and degrades through `best_effort`. The compilagent introspection surface is DERIVED from `deployment_record.introspection`'s registry: one read-only tool per payload the candidate view can answer, each response carrying its `payload`/`payload_version`, so registering a payload reaches the agent without a hand-written tool. These modules import the introspection types and NOTHING from `mapping` (AST-pinned) |
 | `problems/` | Concrete problems: `EncodedProblem` (vector-encoded) protocol and `JointArchHwProblem` for joint architecture + hardware co-search — see "The problem surface" below |
 
 ## The problem surface
@@ -129,6 +129,38 @@ the returned census in `CandidateLayoutView.packed` (the packing is handed over,
 never redone) and serves it through `deployment_record.introspection`'s
 registry, so the payload shapes are declared and versioned and the optimizer
 imports nothing from `mapping`.
+
+## What a search spent
+
+[TS1] A campaign compares optimizers at EQUAL SPEND, so the currency has one
+definition and one place that counts it: `optimizers/budget.py`. A DISTINCT
+decoded evaluation is the evaluator work a candidate identity costs the first
+time it is asked for; a DUPLICATE is a candidate the search proposed again.
+The accountant is told which happened at the ONE seam that already knows — the
+joint problem's evaluation cache (`joint/evaluate.py`: miss ⇒ `on_distinct`,
+hit ⇒ `on_duplicate`) — so no driver counts for itself and no two backends can
+count differently. Penalty (infeasible-at-evaluate) candidates ARE charged:
+they consumed real evaluator work, and forgiving them would subsidize a
+strategy that proposes junk. A candidate whose DECLARATION does not resolve
+into a chip is refused before the seam, so it has no candidate identity to
+charge; NSGA-II additionally screens candidates through
+`constraint_violation`, so what it charges is its evaluated population.
+
+`EvaluationBudget` only METERS: an exhausted budget never refuses an
+evaluation. Stopping is each driver's decision at ITS natural boundary
+(owner decision: boundary stop + exact ledger) — NSGA-II checks
+`budget.exhausted` in the generation callback and forces pymoo termination
+there (`termination.terminate()` followed by `termination.update(algorithm)`,
+because pymoo updates the criterion BEFORE calling back, and the flag alone
+would buy one more generation). The overshoot is not hidden: `ResourceLedger`
+seals the EXACT spend (`wall_s` measured around `minimize`, raw/distinct
+counts, duplicate rate, the declared limit, `stopped_at_boundary`, and the
+`LlmUsage` an LLM driver reports), and analysis normalizes. The ledger carries
+no money by construction — dollars are priced research-side from a price
+table, so a sealed run can be re-priced without re-running it. A problem
+carries its accountant as `evaluation_budget` (`problem_budget()` is the one
+reader, and it fails loud on a wrongly typed attribute); absent budget is
+byte-identical to a run before TS1, down to the serialized artifact.
 
 ### `EncodedProblem` is not a pymoo interface
 

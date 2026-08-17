@@ -111,7 +111,6 @@ ALLOWLIST = {
     "pipelining/pipeline_steps/mapping/hard_core_mapping_step.py",
     "pipelining/pipeline_steps/mapping/soft_core_mapping_step.py",
     "pipelining/pipeline_steps/mapping/soft_core_mapping_viz.py",
-    "search/optimizers/__init__.py",
     "search/optimizers/compilagent/backend/backend_tools.py",
     "search/optimizers/compilagent/guidance_blocks.py",
     "search/optimizers/compilagent/guided_toolset.py",

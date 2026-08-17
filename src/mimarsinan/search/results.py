@@ -30,6 +30,7 @@ from mimarsinan.deployment_record.objectives import (
     run_capability_probe,
 )
 from mimarsinan.deployment_record.platform_physics.profile import PlatformPhysics
+from mimarsinan.search.optimizers.budget import ResourceLedger
 
 Goal = Literal["min", "max"]
 
@@ -155,6 +156,10 @@ class SearchResult(Generic[ConfigT]):
     pareto_front: List[Candidate[ConfigT]] = field(default_factory=list)
     all_candidates: List[Candidate[ConfigT]] = field(default_factory=list)
     history: List[Dict[str, Any]] = field(default_factory=list)
+    #: [TS1] What the run SPENT, when an accountant metered it. Additive and
+    #: optional: a search nobody metered has no counts, and a ledger of zeros
+    #: would be a claim about a run that was never measured.
+    ledger: Optional[ResourceLedger] = None
 
 
 def rank_objective_rows(

@@ -25,6 +25,7 @@ from mimarsinan.mapping.platform.platform_constraints import resolve_platform_ma
 from mimarsinan.mapping.verification.layout_verification_types import (
     LayoutVerificationStats,
 )
+from mimarsinan.search.optimizers.budget import EvaluationBudget
 from mimarsinan.search.option_axes import OptionAxis
 from mimarsinan.search.problem import ValidationResult
 from mimarsinan.search.results import ObjectiveSpec
@@ -178,6 +179,7 @@ class JointHostContract:
     _validation_errors: Dict[str, ValidationResult]
     onchip_min_fraction: float
     _constraint_census: Dict[str, int]
+    evaluation_budget: Optional[EvaluationBudget]
 
     if TYPE_CHECKING:
 

@@ -15,6 +15,7 @@ from typing import Any, Dict
 from mimarsinan.deployment_record.objectives import CandidateStaticView
 from mimarsinan.search.evaluators.extrapolating_accuracy_evaluator import ExtrapolatingAccuracyEvaluator
 from mimarsinan.search.evaluators.fast_accuracy_evaluator import FastAccuracyEvaluator
+from mimarsinan.search.optimizers.budget import charge_evaluation
 from mimarsinan.search.option_axes import candidate_option
 from mimarsinan.search.problem import CandidateInfeasibleError
 from mimarsinan.search.results import ACCURACY_OBJECTIVE_NAME
@@ -52,8 +53,13 @@ class JointEvaluateMixin(JointHostContract):
             return self._penalty_objectives()
 
         key = json_key(configuration)
-        if key in self._cache:
-            return self._cache[key]
+        cached = self._cache.get(key)
+        # [TS1] THE distinct-evaluation seam: this cache already knows whether a
+        # candidate identity costs evaluator work (miss) or was merely proposed
+        # again (hit), so the run's accountant is told here and nowhere else.
+        charge_evaluation(self.evaluation_budget, key, hit=cached is not None)
+        if cached is not None:
+            return cached
 
         vr = self.validate_detailed(configuration)
         if not vr.is_valid:

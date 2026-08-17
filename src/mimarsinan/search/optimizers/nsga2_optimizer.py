@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from time import perf_counter
 from typing import Any, Dict, List, Set, Tuple
 
 import numpy as np
@@ -29,6 +30,7 @@ from pymoo.termination import get_termination
 
 from mimarsinan.common.best_effort import best_effort
 from mimarsinan.search.optimizers.base import SearchOptimizer
+from mimarsinan.search.optimizers.budget import problem_budget, seal_ledger
 from mimarsinan.search.optimizers.search_events import (
     candidates_generated_event,
     emit_search_event,
@@ -151,6 +153,10 @@ class NSGA2Optimizer(SearchOptimizer[Dict[str, Any]]):
         _specs = specs
         total_gens = int(self.generations)
         pop_size = int(self.pop_size)
+        # [TS1] The accountant is the PROBLEM's; a driver only decides where its
+        # own boundary is once the distinct budget is spent.
+        budget = problem_budget(problem)
+        stopped = [False]
 
         def front_rows(F: np.ndarray) -> List[Dict[str, float]]:
             """The front in USER space, incumbent first (the panel renders the head)."""
@@ -180,10 +186,11 @@ class NSGA2Optimizer(SearchOptimizer[Dict[str, Any]]):
             ))
 
         class GenCallback(Callback):
-            """Per-generation telemetry: scalar metrics and the live-panel frames.
+            """The generation BOUNDARY: the budget stop first, then telemetry.
 
-            Everything here is best_effort — reporting is the ONE side concern a
-            search may lose without losing the search (the sanctioned seam).
+            Only the telemetry is best_effort — reporting is the ONE side concern
+            a search may lose without losing the search (the sanctioned seam).
+            A lost budget stop would buy evaluations nobody authorized.
             """
 
             def notify(self, algorithm):
@@ -191,6 +198,13 @@ class NSGA2Optimizer(SearchOptimizer[Dict[str, Any]]):
                 # The generation that just closed keeps its tag; everything
                 # evaluated from here on belongs to the next one.
                 current_gen[0] = gen + 1
+                if budget is not None and budget.exhausted:
+                    stopped[0] = True
+                    algorithm.termination.terminate()
+                    # pymoo updates the criterion BEFORE calling back, so the
+                    # forced flag must be re-read here or the run spends one
+                    # more generation past the boundary.
+                    algorithm.termination.update(algorithm)
                 if _reporter is None:
                     return
                 front = None
@@ -208,6 +222,7 @@ class NSGA2Optimizer(SearchOptimizer[Dict[str, Any]]):
                 with best_effort("nsga2 generation search_event frames", logger=logger):
                     emit_generation_frames(gen, front)
 
+        started = perf_counter()
         res = minimize(
             _PymooProblem(),
             algo,
@@ -217,6 +232,7 @@ class NSGA2Optimizer(SearchOptimizer[Dict[str, Any]]):
             verbose=bool(self.verbose),
             callback=GenCallback(),
         )
+        wall_s = perf_counter() - started
 
         pareto_x_set: Set[Tuple[float, ...]] = set()
         if res.X is not None:
@@ -277,6 +293,8 @@ class NSGA2Optimizer(SearchOptimizer[Dict[str, Any]]):
             final_pareto_size=len(pareto),
         ))
 
-        return SearchResult(objectives=specs, best=best, pareto_front=pareto, all_candidates=all_candidates, history=history)
-
-
+        ledger = seal_ledger(budget, wall_s=wall_s, stopped_at_boundary=stopped[0])
+        return SearchResult(
+            objectives=specs, best=best, pareto_front=pareto,
+            all_candidates=all_candidates, history=history, ledger=ledger,
+        )

@@ -114,6 +114,10 @@ def search_result_to_jsonable(result) -> Dict[str, Any]:
         "all_candidates": [cand_to_dict(c) for c in result.all_candidates],
         "history": result.history,
     }
+    # [TS1] An unmetered run seals no ledger, and its artifact stays exactly
+    # what it was before the accountant existed.
+    if result.ledger is not None:
+        payload["ledger"] = result.ledger.to_dict()
     return to_json_safe(payload)
 
 
