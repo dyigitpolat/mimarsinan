@@ -25,6 +25,7 @@ for the honest objective.
 
 from __future__ import annotations
 
+from mimarsinan.tuning.orchestration import adaptation_ledger
 from mimarsinan.tuning.orchestration.lif_exact_qat import lif_exact_qat_active
 
 
@@ -57,6 +58,11 @@ def install_walk_for_aq_recovery(tuner) -> bool:
     tuner._install_forward(
         exact_qat_training_forward(tuner.model, tuner.pipeline.config)
     )
+    adaptation_ledger.record_escalation(
+        adaptation_ledger.ledger_of(tuner),
+        adaptation_ledger.WALK_RECOVERY_INSTALL,
+        "AQ endpoint recovery grinds the deployed chip-aligned walk",
+    )
     return True
 
 
@@ -69,4 +75,9 @@ def restore_lif_recovery_budget(plan, tuner):
 
     if not graph_has_host_compute_ops(tuner.model):
         return plan
+    adaptation_ledger.record_escalation(
+        adaptation_ledger.ledger_of(tuner),
+        adaptation_ledger.LIF_RECOVERY_BUDGET_RESTORE,
+        "recipe LIF endpoint-recovery budget kept over the exact-QAT reduction",
+    )
     return plan.restore_recovery_for_host_graph(tuner.pipeline.config)

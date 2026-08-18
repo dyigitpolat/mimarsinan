@@ -18,6 +18,7 @@ from mimarsinan.deployment_record.schema import (
 from unit.deployment_record.record_fixtures import (
     make_accuracy,
     make_adaptation,
+    make_adaptation_summary,
     make_band,
     make_compute_op,
     make_core,
@@ -60,6 +61,7 @@ FRAGMENT_FIXTURES = [
     make_read(),
     make_accuracy(),
     make_adaptation(),
+    make_adaptation_summary(),
     make_full_record(),
 ]
 

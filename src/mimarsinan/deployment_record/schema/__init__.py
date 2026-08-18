@@ -4,6 +4,7 @@ from mimarsinan.deployment_record.schema.accuracy import (
     AccuracyReadRecord,
     AccuracyRecord,
     AdaptationRecord,
+    AdaptationSummaryRecord,
     CertificateRecord,
     FtPassWallRecord,
 )
@@ -58,6 +59,7 @@ __all__ = [
     "AccuracyReadRecord",
     "AccuracyRecord",
     "AdaptationRecord",
+    "AdaptationSummaryRecord",
     "BankRecord",
     "Band",
     "BoundaryTrafficRecord",

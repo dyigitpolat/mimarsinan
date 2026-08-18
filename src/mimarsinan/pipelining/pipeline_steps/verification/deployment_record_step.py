@@ -46,8 +46,10 @@ from mimarsinan.pipelining.core.steps.pipeline_step import (
 from mimarsinan.pipelining.pipeline_steps.verification.fidelity_emission import (
     emit_run_fidelity,
 )
+from mimarsinan.pipelining.pipeline_steps.verification.deployment_record_adaptation import (
+    attach_adaptation_fragments,
+)
 from mimarsinan.pipelining.pipeline_steps.verification.deployment_record_assembly import (
-    adaptation_from_run_dir,
     cross_check_sealed_sources,
     floorplan_derivation,
     fold_compute_walls,
@@ -175,13 +177,6 @@ class DeploymentRecordStep(PipelineStep):
             deployed=deployed, reads=tuple(reads), certificates=certificates,
         )
         view = seal_view_for(self.pipeline, plan)
-        adaptation, adaptation_detail = adaptation_from_run_dir(
-            self.pipeline.working_directory,
-            tuner_steps_resolved=bool(
-                set(resolved_step_names(self.pipeline))
-                & view.tuner_hosting_step_names
-            ),
-        )
 
         builder = DeploymentRecordBuilder()
         builder.attach(
@@ -229,12 +224,16 @@ class DeploymentRecordStep(PipelineStep):
                 "energy", energy,
                 _prov("measured", "SANA-FE energy trace", "SANA-FE Simulation"),
             )
-        if adaptation is not None:
-            builder.attach(
-                "adaptation", adaptation,
-                _prov("measured", "tuner ft_pass_wall_metrics", STEP_NAME,
-                      detail=adaptation_detail),
-            )
+        # The AC5 wall bundle plus [TS5] the controller-ledger totals; the
+        # per-event trace stays in the steps' own artifacts.
+        adaptation = attach_adaptation_fragments(
+            builder, self.pipeline.working_directory,
+            tuner_steps_resolved=bool(
+                set(resolved_step_names(self.pipeline))
+                & view.tuner_hosting_step_names
+            ),
+            step_name=STEP_NAME,
+        )
         builder.declare_weight_programming_totals(
             params_programmed=int(hcm["weight_programming"]["params_programmed"]),
         )

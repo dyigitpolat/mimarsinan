@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from mimarsinan.tuning.orchestration import (
+    adaptation_ledger,
     dhat_highwater,
     endpoint_steps,
     retention_envelope,
@@ -188,6 +189,18 @@ def run_endpoint_recovery(tuner, *, base_steps, target_floor=None) -> EndpointRe
         armed=bool(armed),
         divergence_rescued=bool(rescued),
         decoupled=bool(decoupled),
+    )
+    adaptation_ledger.record_endpoint(
+        adaptation_ledger.ledger_of(tuner),
+        stage=type(tuner).__name__,
+        steps=report.steps_used,
+        budget_steps=report.budget_steps,
+        engaged=report.engaged,
+        armed=report.armed,
+        reached=report.reached,
+        rolled_back=report.rolled_back,
+        divergence_rescued=report.divergence_rescued,
+        decoupled=report.decoupled,
     )
     _emit(tuner, report, trajectory)
     return report

@@ -2,28 +2,25 @@
 
 Pure functions that turn pipeline state + cached fragments into the typed
 pieces ``DeploymentRecordStep`` seals: identity, host-op wall folding, the
-timing record (with the no-double-count note), the adaptation fragment read
-from the run directory, and the ``SealPlanView`` adapter over the resolved
-``DeploymentPlan``. FAIL LOUD throughout — no ``best_effort`` anywhere.
+timing record (with the no-double-count note), and the ``SealPlanView`` adapter
+over the resolved ``DeploymentPlan``; the run directory's adaptation artifacts
+are read by ``deployment_record_adaptation``. FAIL LOUD throughout — no
+``best_effort`` anywhere.
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
-import os
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
-from typing import AbstractSet, Any, List, Mapping, Optional, Sequence, Tuple
+from typing import AbstractSet, Any, Mapping, Optional, Sequence, Tuple
 
 from mimarsinan.chip_simulation.backend import BACKEND_REGISTRY
 from mimarsinan.chip_simulation.certification import CertificationCell
-from mimarsinan.chip_simulation.cost_extraction import FT_PASS_WALLS_FILENAME
 from mimarsinan.deployment_record.schema import (
     DEPLOYMENT_RECORD_FORMAT_VERSION,
-    AdaptationRecord,
     ComputeOpRecord,
-    FtPassWallRecord,
     LatencyDecomposition,
     RecordIdentity,
     ScheduleRecord,
@@ -35,9 +32,6 @@ from mimarsinan.pipelining.pipeline_steps.verification.deployment_record_walls i
 )
 from mimarsinan.pipelining.core.spike_count_gate import certificate_gate_armed
 from mimarsinan.pipelining.core.steps.tuner_pipeline_step import TunerPipelineStep
-from mimarsinan.tuning.orchestration.run_instrumentation import (
-    RETENTION_LEDGER_FILENAME,
-)
 
 # The explicit no-double-count statement (schema §2.5): stated once, verbatim.
 LATENCY_NOTE = (
@@ -244,43 +238,6 @@ def floorplan_derivation(platform: Mapping[str, Any]) -> str:
 def _read_json(path: str) -> Any:
     with open(path, "r", encoding="utf-8") as fh:
         return json.load(fh)
-
-
-def adaptation_from_run_dir(
-    working_directory: str, *, tuner_steps_resolved: bool
-) -> Tuple[Optional[AdaptationRecord], str]:
-    """Read the run's adaptation artifacts into the fragment (+ ledger detail).
-
-    ``ft_pass_walls.json`` populates the wall bundle; a resolved tuner-hosting
-    step that recorded no FT passes still attaches an (empty) fragment so the
-    seal's availability matrix holds honestly. Returns ``(None, "")`` when the
-    run neither hosts tuners nor recorded walls.
-    """
-    walls_path = os.path.join(working_directory, FT_PASS_WALLS_FILENAME)
-    record: Optional[AdaptationRecord] = None
-    if os.path.exists(walls_path):
-        data = _read_json(walls_path) or {}
-        record = AdaptationRecord(
-            max_ft_pass_wall_s=float(data.get("max_ft_pass_wall_s", 0.0)),
-            ft_pass_walls=tuple(
-                FtPassWallRecord(
-                    label=str(entry["label"]), wall_s=float(entry["wall_s"])
-                )
-                for entry in data.get("passes") or ()
-            ),
-        )
-    elif tuner_steps_resolved:
-        record = AdaptationRecord(max_ft_pass_wall_s=0.0, ft_pass_walls=())
-
-    detail_parts: List[str] = []
-    if record is not None and not record.ft_pass_walls:
-        detail_parts.append("no FT passes recorded (ft_pass_walls.json absent)")
-    ledger_path = os.path.join(working_directory, RETENTION_LEDGER_FILENAME)
-    if os.path.exists(ledger_path):
-        entries = (_read_json(ledger_path) or {}).get("entries") or []
-        detail_parts.append(
-            f"retention_ledger.json: {len(entries)} tuner-step entries")
-    return record, "; ".join(detail_parts)
 
 
 def cross_check_sealed_sources(schedule, scm, mapping) -> None:

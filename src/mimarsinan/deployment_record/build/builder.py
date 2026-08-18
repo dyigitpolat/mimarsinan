@@ -7,6 +7,7 @@ from typing import AbstractSet, Any, Dict, Optional, Protocol, Sequence
 from mimarsinan.deployment_record.schema import (
     AccuracyRecord,
     AdaptationRecord,
+    AdaptationSummaryRecord,
     DeploymentRecord,
     EnergyRecord,
     PlacementRecord,
@@ -28,6 +29,7 @@ _FRAGMENT_TYPES: Dict[str, type] = {
     "traffic": TrafficRecord,
     "energy": EnergyRecord,
     "adaptation": AdaptationRecord,
+    "adaptation_ledger": AdaptationSummaryRecord,
 }
 
 _ALWAYS_REQUIRED = (
@@ -110,6 +112,7 @@ class DeploymentRecordBuilder:
             energy=self._fragments.get("energy"),
             adaptation=self._fragments.get("adaptation"),
             provenance=dict(self._provenance),
+            adaptation_ledger=self._fragments.get("adaptation_ledger"),
         )
 
     def _require(self, group: str, reason: str) -> Any:

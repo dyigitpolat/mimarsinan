@@ -111,3 +111,39 @@ class AdaptationRecord:
             FtPassWallRecord.from_dict, kwargs["ft_pass_walls"]
         )
         return cls(**kwargs)
+
+
+@dataclass(frozen=True)
+class AdaptationSummaryRecord:
+    """[TS5] What the adaptation controllers spent and how each run ended.
+
+    Totals only: the per-event trace stays in the steps' own
+    ``<Step>.adaptation_ledger.json`` artifacts. ``stalls_by_path`` counts the
+    escalations the run took; ``completed_via`` names, per adaptation step, the
+    path its rate search exited through.
+    """
+
+    proposed: int
+    accepted: int
+    rejected: int
+    retries: int
+    recovery_steps: int
+    probe_evals: int
+    endpoint_steps: int
+    total_steps: int
+    stalls_by_path: Mapping[str, int]
+    completed_via: Mapping[str, str]
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> "AdaptationSummaryRecord":
+        kwargs = strict_kwargs(cls, data)
+        kwargs["stalls_by_path"] = {
+            str(k): int(v) for k, v in dict(kwargs["stalls_by_path"]).items()
+        }
+        kwargs["completed_via"] = {
+            str(k): str(v) for k, v in dict(kwargs["completed_via"]).items()
+        }
+        return cls(**kwargs)
