@@ -7,35 +7,22 @@ from mimarsinan.pipelining.core.steps.pipeline_step import (
     METRIC_MEASURED,
     PipelineStep,
 )
-from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
 from mimarsinan.pipelining.determinism import isolated_rng_stream
 from mimarsinan.pipelining.core.model_config_emit import emit_model_config_entries
 from mimarsinan.pipelining.core.registry.model_registry import ModelRegistry
 from mimarsinan.pipelining.core.search_mode import derive_search_mode
-from mimarsinan.pipelining.pipeline_steps.mapping.soft_core_structured_pruning import (
-    resolve_prune_criterion,
-)
-from mimarsinan.search.problems.joint import JointArchHwProblem
-from mimarsinan.deployment_record.platform_physics.resolve import (
-    resolve_platform_physics,
-)
-from mimarsinan.config_schema.registry import effective_value as _effective
-from mimarsinan.search.option_axes import build_option_axes
-from mimarsinan.search.results import (
-    ACCURACY_OBJECTIVE_NAME,
-    resolve_active_objectives,
-)
+from mimarsinan.search.results import ACCURACY_OBJECTIVE_NAME
 from mimarsinan.pipelining.pipeline_steps.config.architecture_search_helpers import (
     OptimizerType,
     build_fixed_platform_constraints,
     create_optimizer,
-    declared_int_pair,
-    firing_semantics_kwargs,
     resolve_arch_options,
-    resolve_evaluation_budget,
-    make_platform_resolver,
     search_result_to_jsonable,
     write_search_visualizations,
+)
+from mimarsinan.pipelining.pipeline_steps.config.architecture_search_problem import (
+    build_search_problem,
+    no_candidate_failure,
 )
 
 
@@ -98,107 +85,18 @@ class ArchitectureSearchStep(PipelineStep):
             model_type=model_type,
         )
 
-        fixed_model_config = None
-        # Every candidate platform is this run's DEPLOYMENT resolution with the
-        # searched dimensions overlaid — searched chip and deployed chip are the
-        # same chip by construction, in every mode.
-        platform_resolver = make_platform_resolver(self.pipeline.config)
-
-        if search_mode == "hardware":
-            fixed_model_config = dict(self.pipeline.config.get("model_config", {}))
-
-        validate_config_fn = getattr(builder_cls, "validate_config", None)
-
-        def validate_fn(model_config, platform_constraints, inp_shape):
-            if validate_config_fn is not None:
-                return bool(validate_config_fn(model_config, platform_constraints, inp_shape))
-            return True
-
-        def constraint_fn(model_config, platform_constraints, inp_shape):
-            if validate_config_fn is not None:
-                if not validate_config_fn(model_config, platform_constraints, inp_shape):
-                    return 1.0
-            return 0.0
-
         pop_size = int(arch_cfg.get("pop_size", 12))
         generations = int(arch_cfg.get("generations", 5))
         seed = int(arch_cfg.get("seed", 0))
-
-        num_core_types = int(arch_cfg.get(
-            "num_core_types", len(self.pipeline.config.get("cores", [])) or 1
-        ))
-
-        warmup_fraction = float(arch_cfg.get("warmup_fraction", 0.10))
-        training_batch_size = arch_cfg.get("training_batch_size") or None
-
-        accuracy_evaluator = str(arch_cfg.get("accuracy_evaluator", "extrapolating"))
-        extrapolation_num_train_epochs = int(arch_cfg.get("extrapolation_num_train_epochs", 1))
-        extrapolation_num_checkpoints = int(arch_cfg.get("extrapolation_num_checkpoints", 5))
-        extrapolation_target_epochs = int(arch_cfg.get("extrapolation_target_epochs", 10))
-
         optimizer_type: OptimizerType = arch_cfg.get("optimizer", "nsga2")
 
-        user_objectives = arch_cfg.get("objectives")
-        # THIS run's physics, from the same SSOT the deployment resolver uses: a
-        # vendor-priced axis is refused by name here, before any candidate is built.
-        run_physics = resolve_platform_physics(
-            str(self.pipeline.config.get("platform_physics_profile", "") or ""),
-            self.pipeline.config.get("platform_physics_overrides") or {},
-        )
-        active_objectives = resolve_active_objectives(
-            search_mode, user_objectives, physics=run_physics,
-            activity_factor=float(
-                self.pipeline.config.get("activity_factor", 0.0) or 0.0
-            ),
-        )
-        active_objective_names = [o.name for o in active_objectives]
-
-        plan = DeploymentPlan.of(self.pipeline)
-        problem = JointArchHwProblem(
-            data_provider_factory=self.pipeline.data_provider_factory,
-            device=self.pipeline.config["device"],
-            input_shape=input_shape,
-            num_classes=int(self.pipeline.config["num_classes"]),
-            target_tq=int(self.pipeline.config["target_tq"]),
-            lr=float(self.pipeline.config["lr"]),
+        problem, active_objective_names = build_search_problem(
+            self.pipeline,
             search_mode=search_mode,
-            builder_factory=builder_cls,
+            builder_cls=builder_cls,
             arch_options=arch_options,
             model_config_assembler=assembler,
-            validate_fn=validate_fn,
-            constraint_fn=constraint_fn,
-            fixed_model_config=fixed_model_config,
-            platform_resolver=platform_resolver,
-            active_objective_names=active_objective_names,
-            num_core_types=num_core_types,
-            core_axons_bounds=declared_int_pair(arch_cfg, "core_axons_bounds", (64, 2048)),
-            core_neurons_bounds=declared_int_pair(arch_cfg, "core_neurons_bounds", (64, 2048)),
-            core_count_bounds=declared_int_pair(arch_cfg, "core_count_bounds", (50, 500)),
-            accuracy_seed=seed,
-            warmup_fraction=warmup_fraction,
-            training_batch_size=(int(training_batch_size) if training_batch_size is not None else None),
-            accuracy_evaluator=accuracy_evaluator,
-            extrapolation_num_train_epochs=extrapolation_num_train_epochs,
-            extrapolation_num_checkpoints=extrapolation_num_checkpoints,
-            extrapolation_target_epochs=extrapolation_target_epochs,
-            pruning_fraction=plan.pruning_fraction, pruning=plan.pruning,
-            prune_sparsity=plan.prune_sparsity,
-            prune_criterion=resolve_prune_criterion(self.pipeline.config),
-            firing_mode=str(self.pipeline.config.get("firing_mode", "Default")),
-            **firing_semantics_kwargs(plan, self.pipeline.config),
-            encoding_placement=str(
-                self.pipeline.config.get("encoding_layer_placement", "subsume")
-            ),
-            # Deployment options the run promoted to search axes, and the floor
-            # that shapes the feasible region they move through.
-            option_axes=build_option_axes(arch_cfg.get("option_axes")),
-            onchip_min_fraction=(
-                float(_effective(self.pipeline.config, "onchip_min_fraction"))
-                if bool(_effective(self.pipeline.config, "onchip_majority_gate"))
-                else 0.0
-            ),
-            # [TS1] What this run declared it may spend; absent = unmetered.
-            evaluation_budget=resolve_evaluation_budget(arch_cfg),
+            seed=seed,
         )
 
         optimizer = create_optimizer(
@@ -232,25 +130,9 @@ class ArchitectureSearchStep(PipelineStep):
 
         best_cfg = result.best.configuration
         if not best_cfg:
-            # A search that rejected everything must SAY WHY — the per-candidate
-            # refusals and the constraint census are recorded on the problem;
-            # a bare "no candidates" sent the operator hunting bounds when the
-            # cause could be a single semantic refusal shared by all offspring.
-            reasons: dict = {}
-            for verdict in getattr(problem, "_validation_errors", {}).values():
-                key = f"{verdict.failure_phase}: {(verdict.error_message or '')[:160]}"
-                reasons[key] = reasons.get(key, 0) + 1
-            census = getattr(problem, "constraint_census", lambda: {})()
-            detail = "; ".join(
-                f"{count}x {reason}" for reason, count in
-                sorted(reasons.items(), key=lambda kv: -kv[1])[:3]
-            ) or "no recorded validation errors"
-            raise RuntimeError(
-                "[ArchitectureSearchStep] Architecture search produced no "
-                f"candidates. Failure census: {detail}. Constraint census: "
-                f"{census or 'none'}. Consider relaxing the named cause before "
-                "touching pop_size/generations/bounds."
-            )
+            # A search that rejected everything must SAY WHY, in the refusals
+            # and the constraint census the problem itself recorded.
+            raise RuntimeError(no_candidate_failure(problem))
 
         if not problem.validate(best_cfg):
             cv = problem.constraint_violation(best_cfg)

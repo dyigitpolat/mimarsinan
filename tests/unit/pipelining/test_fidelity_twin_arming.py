@@ -83,9 +83,9 @@ class TestTheTwinIsArmedLikeTheStep:
         import inspect
 
         from mimarsinan.pipelining.pipeline_steps.config import (
-            architecture_search_step,
+            architecture_search_problem,
         )
 
         assert "firing_semantics_kwargs" in inspect.getsource(
-            architecture_search_step)
+            architecture_search_problem)
         assert "firing_semantics_kwargs" in inspect.getsource(fidelity_emission)

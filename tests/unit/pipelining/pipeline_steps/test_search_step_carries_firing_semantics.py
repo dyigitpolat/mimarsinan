@@ -17,7 +17,7 @@ import pytest
 from conftest import MockPipeline
 
 from mimarsinan.config_schema.runtime import build_flat_pipeline_config
-from mimarsinan.pipelining.pipeline_steps.config import architecture_search_step
+from mimarsinan.pipelining.pipeline_steps.config import architecture_search_problem
 from mimarsinan.pipelining.pipeline_steps.config.architecture_search_step import (
     ArchitectureSearchStep,
 )
@@ -58,7 +58,7 @@ def _problem_kwargs(monkeypatch, tmp_path, **declared):
     def _capture(**kwargs):
         raise _Captured(kwargs)
 
-    monkeypatch.setattr(architecture_search_step, "JointArchHwProblem", _capture)
+    monkeypatch.setattr(architecture_search_problem, "JointArchHwProblem", _capture)
     step = ArchitectureSearchStep(MockPipeline(
         config=cfg, working_directory=str(tmp_path / "search"),
     ))

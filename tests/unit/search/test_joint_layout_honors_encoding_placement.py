@@ -140,8 +140,10 @@ class TestTheProblemDefaultIsNotTheDeploymentDefault:
     def test_the_search_step_passes_the_configured_placement(self):
         import inspect
 
-        from mimarsinan.pipelining.pipeline_steps.config import architecture_search_step
+        from mimarsinan.pipelining.pipeline_steps.config import (
+            architecture_search_problem,
+        )
 
-        source = inspect.getsource(architecture_search_step)
+        source = inspect.getsource(architecture_search_problem)
         assert "encoding_placement=str(" in source
-        assert 'self.pipeline.config.get("encoding_layer_placement"' in source
+        assert 'config.get("encoding_layer_placement"' in source

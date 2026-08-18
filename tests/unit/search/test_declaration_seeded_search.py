@@ -12,7 +12,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from mimarsinan.search.optimizers.nsga2_optimizer import _seeded_sampling
+from mimarsinan.search.optimizers.pymoo_bridge import seeded_sampling
 
 from unit.search.test_candidate_fragments_live_path import (
     _cfg,
@@ -85,7 +85,7 @@ class TestTheSamplingInjectsTheSeed:
             def bounds(self):
                 return self.xl, self.xu
 
-        X = _seeded_sampling([seed])._do(
+        X = seeded_sampling([seed])._do(
             _P(), 4, random_state=np.random.default_rng(0))
         assert np.allclose(X[0], seed)
         assert X.shape == (4, 3)
