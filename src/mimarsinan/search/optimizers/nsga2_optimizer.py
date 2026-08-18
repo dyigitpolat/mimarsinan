@@ -16,7 +16,9 @@ from pymoo.termination import get_termination
 
 from mimarsinan.common.best_effort import best_effort
 from mimarsinan.search.optimizers.base import SearchOptimizer
-from mimarsinan.search.optimizers.budget import problem_budget, seal_ledger
+from mimarsinan.search.optimizers.budget import (
+    BoundaryStop, problem_budget, seal_ledger,
+)
 from mimarsinan.search.optimizers.pymoo_bridge import (
     history_rows,
     penalty_objectives,
@@ -135,7 +137,7 @@ class NSGA2Optimizer(SearchOptimizer[Dict[str, Any]]):
         # [TS1] The accountant is the PROBLEM's; a driver only decides where its
         # own boundary is once the distinct budget is spent.
         budget = problem_budget(problem)
-        stopped = [False]
+        boundary = BoundaryStop(budget)
 
         def emit_generation_frames(gen: int, F: np.ndarray) -> None:
             """One start/count/complete triple per generation — never per candidate."""
@@ -166,11 +168,10 @@ class NSGA2Optimizer(SearchOptimizer[Dict[str, Any]]):
                 # The generation that just closed keeps its tag; everything
                 # evaluated from here on belongs to the next one.
                 current_gen[0] = gen + 1
-                if budget is not None and budget.exhausted:
-                    # Only a stop that DENIED a generation cut the run short:
-                    # the last one was ending on its own, and a campaign reads
-                    # this flag to tell budget-bound runs from generation-bound.
-                    stopped[0] = stopped[0] or gen < total_gens
+                # Asked only where a generation is left to DENY: the last one
+                # was ending on its own, and a campaign reads this flag to tell
+                # budget-bound runs from generation-bound.
+                if gen < total_gens and boundary.should_stop():
                     algorithm.termination.terminate()
                     # pymoo updates the criterion BEFORE calling back, so the
                     # forced flag must be re-read here or the run spends one
@@ -206,7 +207,9 @@ class NSGA2Optimizer(SearchOptimizer[Dict[str, Any]]):
         wall_s = perf_counter() - started
         # [TS1] Sealed where the clock stops, so the counts and the wall cover
         # ONE interval: the search, never the front re-read below.
-        ledger = seal_ledger(budget, wall_s=wall_s, stopped_at_boundary=stopped[0])
+        ledger = seal_ledger(
+            budget, wall_s=wall_s, stopped_at_boundary=boundary.stopped,
+        )
 
         front_x = [] if res.X is None else list(np.atleast_2d(res.X))
         pareto_x_set: Set[Tuple[float, ...]] = {tuple(x.tolist()) for x in front_x}

@@ -38,6 +38,7 @@ from mimarsinan.pipelining.pipeline_steps.config.architecture_search_helpers imp
     search_result_to_jsonable,
 )
 from mimarsinan.search.optimizers.budget import (
+    BoundaryStop,
     EvaluationBudget,
     LlmUsage,
     ResourceLedger,
@@ -46,6 +47,10 @@ from mimarsinan.search.optimizers.budget import (
     seal_ledger,
 )
 from mimarsinan.search.optimizers.nsga2_optimizer import NSGA2Optimizer
+from mimarsinan.search.optimizers.sampling_optimizer import (
+    RandomStrategy,
+    SamplingOptimizer,
+)
 from mimarsinan.search.problems.joint import JointArchHwProblem
 from mimarsinan.search.problems.joint.types import (
     CONSTRAINT_CHANNEL,
@@ -1033,3 +1038,62 @@ class TestTheCallbackIsNotTelemetry:
 
         generations: List[int] = [c.metadata["generation"] for c in result.all_candidates]
         assert set(generations) == {1}
+
+
+@pytest.fixture
+def boundary_asks(monkeypatch):
+    """Every answer the ONE boundary gave during a run, in order."""
+    asks: List[bool] = []
+    original = BoundaryStop.should_stop
+
+    def spy(self: BoundaryStop) -> bool:
+        answer = original(self)
+        asks.append(answer)
+        return answer
+
+    monkeypatch.setattr(BoundaryStop, "should_stop", spy)
+    return asks
+
+
+class TestEveryDriverStopsThroughTheOneBoundary:
+    """[TS3] `BoundaryStop` is the LAW, not one family's helper.
+
+    ``stopped_at_boundary`` is the flag a campaign separates budget-bound runs
+    from run-bound ones by, so it must mean one thing across every backend it
+    compares. A driver that decides it inline is a second definition — it
+    already read the accountant, so nothing warns when the two drift. Every
+    driver that can be cut short therefore asks the same object, and asks it
+    only where the run would otherwise CONTINUE.
+    """
+
+    def test_the_classical_driver_asks_it(self, boundary_asks):
+        budget = EvaluationBudget(limit=BUDGET_LIMIT)
+        _, result = _run_nsga(budget)
+
+        assert True in boundary_asks, "NSGA-II decided its own stop"
+        assert result.ledger is not None
+        assert result.ledger.stopped_at_boundary is True
+
+    def test_the_sampling_driver_asks_it(self, boundary_asks):
+        budget = EvaluationBudget(limit=BUDGET_LIMIT)
+        problem = _ToyProblem(budget)
+        result = SamplingOptimizer(
+            strategy=RandomStrategy(samples=POP_SIZE * GENERATIONS),
+            pop_size=POP_SIZE, seed=0,
+        ).optimize(problem, reporter=None)
+
+        assert True in boundary_asks, "the sampler decided its own stop"
+        assert result.ledger is not None
+        assert result.ledger.stopped_at_boundary is True
+
+    def test_the_boundary_is_never_asked_where_nothing_would_continue(
+        self, boundary_asks,
+    ):
+        # The budget runs out ON the last generation. Asking there would seal
+        # the flag for a run its own termination was ending anyway.
+        limit = POP_SIZE * (GENERATIONS - 1) + 1
+        _, result = _run_nsga(EvaluationBudget(limit=limit))
+
+        assert True not in boundary_asks
+        assert result.ledger is not None
+        assert result.ledger.stopped_at_boundary is False

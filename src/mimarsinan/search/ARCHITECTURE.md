@@ -217,11 +217,15 @@ are evaluation calls at all.
 
 `EvaluationBudget` only METERS: an exhausted budget never refuses an
 evaluation. Stopping is each driver's decision at ITS natural boundary
-(owner decision: boundary stop + exact ledger) — NSGA-II checks
-`budget.exhausted` in the generation callback and forces pymoo termination
-there (`termination.terminate()` followed by `termination.update(algorithm)`,
-because pymoo updates the criterion BEFORE calling back, and the flag alone
-would buy one more generation). The overshoot is not hidden: `ResourceLedger`
+(owner decision: boundary stop + exact ledger), asked through the ONE
+`BoundaryStop` — a driver that read `budget.exhausted` itself would be a
+second definition of the flag a campaign compares runs by. It is asked only
+where the run would otherwise CONTINUE, so its `stopped` IS
+`stopped_at_boundary`: NSGA-II asks in the generation callback and forces pymoo
+termination there (`termination.terminate()` followed by
+`termination.update(algorithm)`, because pymoo updates the criterion BEFORE
+calling back, and the flag alone would buy one more generation), and the
+sampling driver asks after each batch. The overshoot is not hidden: `ResourceLedger`
 seals the EXACT spend (`wall_s`, raw/distinct counts, asked/re-asked identities
 and the rate they derive, the declared limit, `stopped_at_boundary`, and the
 `LlmUsage` an LLM driver reports), and analysis normalizes. Every fact in one ledger covers ONE
@@ -237,9 +241,8 @@ above — one round of asking. The
 ledger carries no money by construction — dollars are priced research-side
 from a price table, so a sealed run can be re-priced without re-running it.
 
-[TS3] The LLM drivers stop at boundaries of their own, through the same
-`BoundaryStop` — asked ONLY where the run would otherwise continue, so its
-`stopped` flag IS `stopped_at_boundary`. AgentEvolve asks at its BATCH (both
+[TS3] The LLM drivers stop at boundaries of their own, through that same
+`BoundaryStop`. AgentEvolve asks at its BATCH (both
 regeneration loops) and before opening a generation, so a proposal nobody will
 evaluate is never asked of the model; compilagent asks in the one tool that
 buys evaluations, and `run_candidate`/`run_candidates` then refuse

@@ -29,7 +29,7 @@ from scipy.stats import qmc
 from mimarsinan.common.best_effort import best_effort
 from mimarsinan.search.optimizers.base import SearchOptimizer
 from mimarsinan.search.optimizers.budget import (
-    ResourceLedger, problem_budget, seal_ledger,
+    BoundaryStop, ResourceLedger, problem_budget, seal_ledger,
 )
 from mimarsinan.search.optimizers.pymoo_bridge import penalty_objectives
 from mimarsinan.search.optimizers.search_events import (
@@ -168,24 +168,26 @@ class SamplingOptimizer(SearchOptimizer[Dict[str, Any]]):
         size = int(self.pop_size)
         batches = [plan[i:i + size] for i in range(0, len(plan), size)]
         budget = problem_budget(problem)
+        boundary = BoundaryStop(budget)
 
         # The tally belongs to THIS run: a reused optimizer must not report the
         # batches of the last one.
         self._verdicts = {}
         rows: List[_Evaluated] = []
-        stopped = False
         started = perf_counter()
         for gen, batch in enumerate(batches, start=1):
             self._verdicts[gen] = [0, 0]
             rows.extend(self._score(problem, x, specs, gen) for x in batch)
             self._emit_batch_frames(reporter, gen, len(batches), specs, rows)
-            if budget is not None and budget.exhausted:
-                # Only a stop that DENIED a batch cut the run short.
-                stopped = gen < len(batches)
+            # Asked only where a batch is left to DENY: the last one was ending
+            # on its own, and only a stop that cut the stream short is one.
+            if gen < len(batches) and boundary.should_stop():
                 break
         wall_s = perf_counter() - started
         # Sealed where the clock stops: one interval, the search itself.
-        ledger = seal_ledger(budget, wall_s=wall_s, stopped_at_boundary=stopped)
+        ledger = seal_ledger(
+            budget, wall_s=wall_s, stopped_at_boundary=boundary.stopped,
+        )
 
         return self._result(specs, rows, ledger, reporter)
 
