@@ -1,10 +1,10 @@
 """[TS1] The search's ONE evaluation accountant, and the ledger it seals.
 
 A campaign compares optimizers at EQUAL SPEND, so "what did this search cost"
-needs exactly one definition and exactly one place that counts it. That place
-is the evaluation cache: a miss is a DISTINCT decoded evaluation (real
-evaluator work), a hit is a DUPLICATE (a candidate the search proposed again).
-No driver counts for itself, and no count is a driver's opinion.
+needs exactly one definition and exactly one place that counts it. The currency
+is the candidate IDENTITY: the first channel that spends evaluator work on it
+pays (a DISTINCT evaluation), and every later ask the caches answer is a
+DUPLICATE. No driver counts for itself, and no count is a driver's opinion.
 
 The ledger seals FACTS only — wall, raw/distinct evaluations, duplicate rate,
 the declared limit, whether the run stopped at a boundary, and (later stages)
@@ -51,6 +51,18 @@ class TestTheAccountantCountsDistinctWork:
     def test_the_first_charge_of_a_key_is_distinct(self):
         budget = EvaluationBudget(limit=4)
         budget.on_distinct("a")
+
+        assert budget.distinct_spent == 1
+        assert budget.raw_calls == 1
+
+    def test_an_identity_is_charged_once_however_many_channels_spend_on_it(self):
+        # The currency is the candidate identity, not the call: a candidate
+        # screened by the constraint channel and then scored by the evaluate
+        # channel cost the run ONE evaluation, and the count must say so
+        # whichever channel got there first.
+        budget = EvaluationBudget(limit=4)
+        for _ in range(3):
+            budget.on_distinct("a")
 
         assert budget.distinct_spent == 1
         assert budget.raw_calls == 1
@@ -247,7 +259,9 @@ def _hw_pipeline_config() -> Dict[str, Any]:
     }
 
 
-def _hw_problem(budget=None, validate_fn=None) -> JointArchHwProblem:
+def _hw_problem(
+    budget=None, validate_fn=None, floor=0.0, constraint_fn=None,
+) -> JointArchHwProblem:
     """A hardware-only search: no training, so an evaluation is pure mapping work."""
     cfg = _hw_pipeline_config()
     return JointArchHwProblem(
@@ -263,6 +277,8 @@ def _hw_problem(budget=None, validate_fn=None) -> JointArchHwProblem:
         model_config_assembler=lambda raw: dict(raw),
         fixed_model_config=dict(cfg["model_config"]),
         validate_fn=validate_fn,
+        constraint_fn=constraint_fn,
+        onchip_min_fraction=floor,
         platform_resolver=make_platform_resolver(cfg),
         active_objective_names=HW_OBJECTIVES,
         num_core_types=1,
@@ -279,7 +295,7 @@ def _mid_configuration(problem: JointArchHwProblem) -> Dict[str, Any]:
 
 
 class TestTheCacheSeamIsTheAccountant:
-    """The joint problem charges at its evaluation cache — the one seam."""
+    """The joint problem charges where a cache decides whether work happens."""
 
     def test_the_first_evaluation_of_a_candidate_is_distinct(self):
         budget = EvaluationBudget(limit=None)
@@ -347,6 +363,95 @@ class TestTheCacheSeamIsTheAccountant:
 
         assert set(objectives) == set(HW_OBJECTIVES)
         assert budget.distinct_spent == 2
+
+
+class TestEveryChannelThatSpendsWorkIsCharged:
+    """A candidate screened out before ``evaluate`` still cost a full resolution.
+
+    NSGA-II asks ``constraint_violation`` FIRST, and on this problem that walks
+    the same model build → conversion → packing an evaluation walks. Work the
+    accountant never hears about is a budget that bounds nothing: a search whose
+    every offspring is rejected would seal a ledger claiming it spent zero.
+    """
+
+    def test_a_candidate_rejected_at_a_declared_floor_is_charged(self):
+        budget = EvaluationBudget(limit=None)
+        problem = _hw_problem(budget, floor=1.0)
+
+        cv = problem.constraint_violation(_mid_configuration(problem))
+
+        assert cv > 0.0, "the fixture must actually reject at the constraint channel"
+        assert budget.distinct_spent == 1
+        assert budget.raw_calls == 1
+
+    def test_a_structural_rejection_at_the_constraint_channel_is_charged(self):
+        budget = EvaluationBudget(limit=None)
+        problem = _hw_problem(budget, validate_fn=lambda mc, pcfg, shape: False)
+
+        assert problem.constraint_violation(_mid_configuration(problem)) > 0.0
+        assert budget.distinct_spent == 1
+
+    def test_one_candidate_seen_by_both_channels_is_one_evaluation(self):
+        # The evaluate channel re-asks the identity the constraint channel just
+        # resolved. Charging per CHANNEL would price one candidate twice and put
+        # a floor under every NSGA run's duplicate rate.
+        budget = EvaluationBudget(limit=None)
+        problem = _hw_problem(budget)
+        configuration = _mid_configuration(problem)
+
+        assert problem.constraint_violation(configuration) == 0.0
+        problem.evaluate(configuration)
+
+        assert (budget.distinct_spent, budget.raw_calls) == (1, 1)
+
+    def test_a_declared_constraint_that_resolves_nothing_costs_nothing(self):
+        # ``constraint_fn`` is a cheap predicate over the DECLARATION: it never
+        # builds a candidate, so charging it would price work nobody did.
+        budget = EvaluationBudget(limit=None)
+        problem = _hw_problem(budget, constraint_fn=lambda mc, pcfg, shape: 1.0)
+
+        assert problem.constraint_violation(_mid_configuration(problem)) > 0.0
+        assert (budget.distinct_spent, budget.raw_calls) == (0, 0)
+
+
+REJECTING_POP = 4
+REJECTING_GENERATIONS = 3
+REJECTING_LIMIT = 2
+
+
+@pytest.fixture(scope="module")
+def rejecting_run():
+    """A real search whose every candidate is screened out at the floor."""
+    budget = EvaluationBudget(limit=REJECTING_LIMIT)
+    problem = _hw_problem(budget, floor=1.0)
+    result = NSGA2Optimizer(
+        pop_size=REJECTING_POP, generations=REJECTING_GENERATIONS,
+        seed=0, verbose=False,
+    ).optimize(problem, reporter=None)
+    return budget, problem, result
+
+
+class TestABudgetBoundsASearchThatRejectsEveryCandidate:
+    """The measured case the optimizer's own R6 note names (72/72 offspring
+    rejected on the ViT cell): if the screen is free, B buys nothing."""
+
+    def test_every_candidate_really_was_screened_out(self, rejecting_run):
+        _, problem, _ = rejecting_run
+        assert problem.constraint_census()
+
+    def test_the_run_stops_at_the_first_boundary(self, rejecting_run):
+        _, _, result = rejecting_run
+        assert [h["gen"] for h in result.history] == [1], (
+            "an exhausted budget must bound a rejecting search too"
+        )
+
+    def test_the_ledger_seals_what_the_screen_actually_spent(self, rejecting_run):
+        _, _, result = rejecting_run
+
+        assert result.ledger is not None
+        assert result.ledger.evaluations_distinct == REJECTING_POP
+        assert result.ledger.budget_limit == REJECTING_LIMIT
+        assert result.ledger.stopped_at_boundary is True
 
 
 class _ToyProblem:
@@ -430,17 +535,8 @@ class TestNsga2StopsAtTheFirstBoundary:
 
         assert ledger is not None
         assert ledger.evaluations_distinct == budget.distinct_spent
-        assert ledger.evaluations_raw == budget.raw_calls
         assert ledger.budget_limit == BUDGET_LIMIT
         assert ledger.stopped_at_boundary is True
-
-    def test_reading_the_front_back_spends_no_distinct_budget(self, boundary_run):
-        # The optimizer re-evaluates the front after the search; those are cache
-        # hits, so the sealed distinct spend stays exactly the search's own.
-        budget, _, result = boundary_run
-
-        assert budget.raw_calls == POP_SIZE + len(result.pareto_front)
-        assert budget.distinct_spent == POP_SIZE
 
     def test_the_ledger_times_the_search(self, boundary_run):
         _, _, result = boundary_run
@@ -451,6 +547,56 @@ class TestNsga2StopsAtTheFirstBoundary:
         _, _, result = boundary_run
         assert result.best.configuration
         assert result.pareto_front
+
+
+class TestTheLedgerCoversTheSearchItself:
+    """Every fact in one ledger describes ONE interval: the search."""
+
+    def test_the_counts_stop_where_the_clock_stops(self, boundary_run):
+        # ``wall_s`` is measured around ``minimize``; counts sealed beside it
+        # must cover the same interval, or a campaign comparing duplicate rates
+        # would be comparing each driver's post-search bookkeeping.
+        _, _, result = boundary_run
+
+        assert result.ledger is not None
+        assert result.ledger.evaluations_raw == POP_SIZE
+        assert result.ledger.evaluations_distinct == POP_SIZE
+        assert result.ledger.duplicate_rate == 0.0, (
+            "this search proposed no candidate twice"
+        )
+
+    def test_the_front_re_read_is_the_accountants_business_not_the_ledgers(
+        self, boundary_run,
+    ):
+        # The optimizer re-reads the front after the boundary: real calls the
+        # accountant keeps counting (they are cache hits, so they buy nothing),
+        # but not part of what the SEARCH spent.
+        budget, _, result = boundary_run
+
+        assert result.pareto_front
+        assert budget.raw_calls == POP_SIZE + len(result.pareto_front)
+        assert budget.distinct_spent == POP_SIZE
+
+
+class TestTheBoundaryFlagMeansTheBudgetCutTheRunShort:
+    def test_a_budget_that_denied_a_generation_is_a_boundary_stop(self, boundary_run):
+        _, _, result = boundary_run
+        assert result.ledger is not None
+        assert result.ledger.stopped_at_boundary is True
+
+    def test_a_run_its_own_generations_ended_is_not_a_boundary_stop(self):
+        # The budget runs out ON the last generation, which the termination was
+        # going to end anyway. A campaign separating budget-bound from
+        # generation-bound runs must not read this as the budget's doing.
+        limit = POP_SIZE * (GENERATIONS - 1) + 1
+        budget = EvaluationBudget(limit=limit)
+        _, result = _run_nsga(budget)
+
+        assert [h["gen"] for h in result.history] == list(range(1, GENERATIONS + 1))
+        assert budget.exhausted, "the fixture must exhaust at the LAST boundary"
+        assert result.ledger is not None
+        assert result.ledger.evaluations_distinct >= limit
+        assert result.ledger.stopped_at_boundary is False
 
 
 class TestAnUnspentBudgetChangesNothing:

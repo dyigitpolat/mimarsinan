@@ -13,6 +13,7 @@ import pytest
 
 from mimarsinan.deployment_record.objectives import OBJECTIVES, CandidateStaticView
 from mimarsinan.mapping.layout.layout_types import LayoutSoftCoreSpec
+from mimarsinan.search.option_axes import candidate_option
 from mimarsinan.search.problem import CandidateInfeasibleError, ValidationResult
 from mimarsinan.search.problems.joint.evaluate import JointEvaluateMixin
 from mimarsinan.search.problems.joint.layout_hook import JointLayoutMixin
@@ -69,6 +70,12 @@ class _Harness(JointValidateMixin, JointLayoutMixin, JointEvaluateMixin):
     def _resolved_configuration(self, configuration):
         """The identity resolution: these harnesses declare platforms directly."""
         return configuration
+
+    def candidate_encoding_placement(self, configuration) -> str:
+        """The host's ONE placement reader: searched value, else declared."""
+        return str(candidate_option(
+            configuration, "encoding_layer_placement", self.encoding_placement,
+        ))
 
 
 class _ValidateHarness(_Harness):

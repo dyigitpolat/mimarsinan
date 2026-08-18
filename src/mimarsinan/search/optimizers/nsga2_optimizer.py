@@ -199,7 +199,10 @@ class NSGA2Optimizer(SearchOptimizer[Dict[str, Any]]):
                 # evaluated from here on belongs to the next one.
                 current_gen[0] = gen + 1
                 if budget is not None and budget.exhausted:
-                    stopped[0] = True
+                    # Only a stop that DENIED a generation cut the run short:
+                    # the last one was ending on its own, and a campaign reads
+                    # this flag to tell budget-bound runs from generation-bound.
+                    stopped[0] = stopped[0] or gen < total_gens
                     algorithm.termination.terminate()
                     # pymoo updates the criterion BEFORE calling back, so the
                     # forced flag must be re-read here or the run spends one
@@ -233,26 +236,24 @@ class NSGA2Optimizer(SearchOptimizer[Dict[str, Any]]):
             callback=GenCallback(),
         )
         wall_s = perf_counter() - started
+        # [TS1] Sealed where the clock stops, so the counts and the wall cover
+        # ONE interval: the search, never the front re-read below.
+        ledger = seal_ledger(budget, wall_s=wall_s, stopped_at_boundary=stopped[0])
 
-        pareto_x_set: Set[Tuple[float, ...]] = set()
-        if res.X is not None:
-            xs = np.atleast_2d(res.X)
-            for x in xs:
-                pareto_x_set.add(tuple(x.tolist()))
+        front_x = [] if res.X is None else list(np.atleast_2d(res.X))
+        pareto_x_set: Set[Tuple[float, ...]] = {tuple(x.tolist()) for x in front_x}
 
         pareto: List[Candidate[Dict[str, Any]]] = []
-        if res.X is not None:
-            xs = np.atleast_2d(res.X)
-            for x in xs:
-                cfg = problem.decode(np.array(x, dtype=float))
-                if problem.validate(cfg):
-                    try:
-                        obj = problem.evaluate(cfg)
-                    except CandidateInfeasibleError:
-                        obj = penalty_objectives()
-                else:
+        for x in front_x:
+            cfg = problem.decode(np.array(x, dtype=float))
+            if problem.validate(cfg):
+                try:
+                    obj = problem.evaluate(cfg)
+                except CandidateInfeasibleError:
                     obj = penalty_objectives()
-                pareto.append(Candidate(configuration=cfg, objectives=obj, metadata={"x": x.tolist(), "is_pareto": True}))
+            else:
+                obj = penalty_objectives()
+            pareto.append(Candidate(configuration=cfg, objectives=obj, metadata={"x": x.tolist(), "is_pareto": True}))
 
         all_candidates: List[Candidate[Dict[str, Any]]] = []
         for x, obj, gen in all_evaluated:
@@ -293,7 +294,6 @@ class NSGA2Optimizer(SearchOptimizer[Dict[str, Any]]):
             final_pareto_size=len(pareto),
         ))
 
-        ledger = seal_ledger(budget, wall_s=wall_s, stopped_at_boundary=stopped[0])
         return SearchResult(
             objectives=specs, best=best, pareto_front=pareto,
             all_candidates=all_candidates, history=history, ledger=ledger,

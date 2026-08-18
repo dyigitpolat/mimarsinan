@@ -9,7 +9,7 @@ from mimarsinan.mapping.verification.onchip_fraction import (
     estimate_onchip_fraction,
 )
 from mimarsinan.search.constraints import ConstraintReport, onchip_floor_violation
-from mimarsinan.search.option_axes import candidate_option
+from mimarsinan.search.optimizers.budget import charge_evaluation
 from mimarsinan.search.problem import CandidateInfeasibleError, ValidationResult
 
 from .candidate_fragments import (
@@ -73,6 +73,13 @@ class JointValidateMixin(JointHostContract):
         if key in self._cache:
             return ValidationResult(is_valid=True)
 
+        # [TS1] Past the caches this identity costs a full resolution, and the
+        # CONSTRAINT channel reaches here for candidates ``evaluate`` never sees
+        # (an optimizer that screens first would otherwise spend a whole search
+        # off-budget). The accountant charges an identity once, so the channel
+        # that gets here first is the one that pays.
+        charge_evaluation(self.evaluation_budget, key, hit=False)
+
         mc = configuration.get("model_config", {})
         pcfg = dict(configuration.get("platform_constraints", {}))
 
@@ -81,10 +88,7 @@ class JointValidateMixin(JointHostContract):
             return self._record_invalid(key, structural.message, structural.phase)
 
         entry, failure = self._resolve_entry(
-            mc, pcfg, str(candidate_option(
-                configuration, "encoding_layer_placement",
-                self.encoding_placement,
-            )),
+            mc, pcfg, self.candidate_encoding_placement(configuration),
         )
         if failure is not None:
             return self._record_invalid(key, failure.message, failure.phase)
@@ -204,9 +208,7 @@ class JointValidateMixin(JointHostContract):
         """
         resolved = self._resolved_configuration(configuration)
         pcfg = resolved["platform_constraints"]
-        placement = str(candidate_option(
-            resolved, "encoding_layer_placement", self.encoding_placement,
-        ))
+        placement = self.candidate_encoding_placement(resolved)
         facts, failure = self._resolve_model(
             resolved["model_config"], pcfg, placement,
         )
@@ -231,9 +233,7 @@ class JointValidateMixin(JointHostContract):
         placement — the axis that decides which side of the NeuralOps/ComputeOps
         boundary the encoder lands on.
         """
-        placement = str(candidate_option(
-            configuration, "encoding_layer_placement", self.encoding_placement,
-        ))
+        placement = self.candidate_encoding_placement(configuration)
         model, _params = self._candidate_model(
             configuration.get("model_config") or {},
             configuration.get("platform_constraints") or {},

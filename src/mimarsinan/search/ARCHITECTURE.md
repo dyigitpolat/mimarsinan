@@ -47,7 +47,10 @@ could — a searched chip must resolve exactly as the same chip declared by hand
 
 **What is this candidate worth?** — one path, `_resolve_model` → `_resolve_layout`
 → one `CandidateStaticView` → `{spec.key: spec.value(view)}` over the ACTIVE
-registry specs. The view's facts (model build → layout collection → packing
+registry specs. Where the candidate's encoder sits is asked in exactly one
+place (`candidate_encoding_placement`, over `candidate_option`): validation,
+evaluation, the layout seam and the on-chip fraction all read it, so no path
+can score a candidate under a placement another path did not use. The view's facts (model build → layout collection → packing
 census) are computed once and only when an active axis needs them:
 `_requires_fragment` asks the registry — via `candidate_probe_without` — whether
 any active axis goes unavailable without a fragment, so accuracy is trained
@@ -133,18 +136,26 @@ imports nothing from `mapping`.
 ## What a search spent
 
 [TS1] A campaign compares optimizers at EQUAL SPEND, so the currency has one
-definition and one place that counts it: `optimizers/budget.py`. A DISTINCT
-decoded evaluation is the evaluator work a candidate identity costs the first
-time it is asked for; a DUPLICATE is a candidate the search proposed again.
-The accountant is told which happened at the ONE seam that already knows — the
-joint problem's evaluation cache (`joint/evaluate.py`: miss ⇒ `on_distinct`,
-hit ⇒ `on_duplicate`) — so no driver counts for itself and no two backends can
-count differently. Penalty (infeasible-at-evaluate) candidates ARE charged:
-they consumed real evaluator work, and forgiving them would subsidize a
-strategy that proposes junk. A candidate whose DECLARATION does not resolve
-into a chip is refused before the seam, so it has no candidate identity to
-charge; NSGA-II additionally screens candidates through
-`constraint_violation`, so what it charges is its evaluated population.
+definition and one place that counts it: `optimizers/budget.py`. The currency
+is the candidate IDENTITY (`json_key` of the resolved configuration): a
+DISTINCT evaluation is the evaluator work that identity costs the first time
+the run spends it, a DUPLICATE is an ask a cache answered. A problem answers
+about a candidate through TWO channels — `constraint_violation` screens it,
+`evaluate` scores it — and both walk the same `validate_detailed` →
+`_resolve_entry` resolution, so the charge sits at each cache that decides
+whether work happens: `joint/validate.py` charges past its caches (the
+resolution is about to run) and `joint/evaluate.py` charges the objective
+cache. `on_distinct` is IDEMPOTENT BY IDENTITY, which is what makes two
+channels safe: the first one to spend the work pays, the second finds it
+already charged, and one candidate is never priced twice. Charging only the
+evaluate channel was measured to seal a ledger claiming ZERO spend for a
+search whose every offspring was rejected at the constraint channel (the R6
+note's 72/72 ViT case), with the budget bounding nothing. Penalty
+(infeasible) candidates ARE charged in both channels: they consumed real
+evaluator work, and forgiving them would subsidize a strategy that proposes
+junk. What is NOT charged is work nobody did: a candidate whose DECLARATION
+does not resolve into a chip is refused before any seam, and a `constraint_fn`
+rejection reads the declaration without building anything.
 
 `EvaluationBudget` only METERS: an exhausted budget never refuses an
 evaluation. Stopping is each driver's decision at ITS natural boundary
@@ -153,14 +164,21 @@ evaluation. Stopping is each driver's decision at ITS natural boundary
 there (`termination.terminate()` followed by `termination.update(algorithm)`,
 because pymoo updates the criterion BEFORE calling back, and the flag alone
 would buy one more generation). The overshoot is not hidden: `ResourceLedger`
-seals the EXACT spend (`wall_s` measured around `minimize`, raw/distinct
-counts, duplicate rate, the declared limit, `stopped_at_boundary`, and the
-`LlmUsage` an LLM driver reports), and analysis normalizes. The ledger carries
-no money by construction — dollars are priced research-side from a price
-table, so a sealed run can be re-priced without re-running it. A problem
-carries its accountant as `evaluation_budget` (`problem_budget()` is the one
-reader, and it fails loud on a wrongly typed attribute); absent budget is
-byte-identical to a run before TS1, down to the serialized artifact.
+seals the EXACT spend (`wall_s`, raw/distinct counts, duplicate rate, the
+declared limit, `stopped_at_boundary`, and the `LlmUsage` an LLM driver
+reports), and analysis normalizes. Every fact in one ledger covers ONE
+interval, so a driver seals it where its clock stops — for NSGA-II
+immediately after `minimize`, which keeps the post-search front re-read (it
+re-asks every front member) out of the duplicate rate a campaign compares.
+`stopped_at_boundary` means the budget CUT THE RUN SHORT: a budget spent
+exactly at the last generation, which the termination was ending anyway,
+seals False, and `evaluations_distinct` against `budget_limit` says the rest.
+The ledger carries no money by construction — dollars are priced
+research-side from a price table, so a sealed run can be re-priced without
+re-running it. A problem carries its accountant as `evaluation_budget`
+(`problem_budget()` is the one reader, and it fails loud on a wrongly typed
+attribute), one accountant per run; absent budget is byte-identical to a run
+before TS1, down to the serialized artifact.
 
 ### `EncodedProblem` is not a pymoo interface
 

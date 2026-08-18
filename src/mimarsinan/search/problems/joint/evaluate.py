@@ -16,7 +16,6 @@ from mimarsinan.deployment_record.objectives import CandidateStaticView
 from mimarsinan.search.evaluators.extrapolating_accuracy_evaluator import ExtrapolatingAccuracyEvaluator
 from mimarsinan.search.evaluators.fast_accuracy_evaluator import FastAccuracyEvaluator
 from mimarsinan.search.optimizers.budget import charge_evaluation
-from mimarsinan.search.option_axes import candidate_option
 from mimarsinan.search.problem import CandidateInfeasibleError
 from mimarsinan.search.results import ACCURACY_OBJECTIVE_NAME
 
@@ -54,9 +53,10 @@ class JointEvaluateMixin(JointHostContract):
 
         key = json_key(configuration)
         cached = self._cache.get(key)
-        # [TS1] THE distinct-evaluation seam: this cache already knows whether a
-        # candidate identity costs evaluator work (miss) or was merely proposed
-        # again (hit), so the run's accountant is told here and nowhere else.
+        # [TS1] The objective cache knows whether this ask costs evaluator work
+        # (miss) or is a candidate proposed again (hit). A miss whose identity
+        # the constraint channel already paid for charges nothing: the
+        # accountant charges an identity once, whichever channel spent it.
         charge_evaluation(self.evaluation_budget, key, hit=cached is not None)
         if cached is not None:
             return cached
@@ -75,10 +75,7 @@ class JointEvaluateMixin(JointHostContract):
             obj = self._evaluate_inner(
                 configuration["model_config"],
                 configuration["platform_constraints"],
-                str(candidate_option(
-                    configuration, "encoding_layer_placement",
-                    self.encoding_placement,
-                )),
+                self.candidate_encoding_placement(configuration),
             )
         else:
             obj = self._objectives_from_entry(entry)

@@ -2,21 +2,23 @@
 
 A campaign compares optimizers at EQUAL SPEND, so the currency needs one
 definition: a DISTINCT decoded evaluation — the evaluator work a candidate
-identity costs the first time it is asked for. Duplicates are what a cache
-absorbs, never what a budget pays for. The accountant is told which of the two
-happened at the ONE seam that already knows (the problem's evaluation cache);
-no driver counts for itself.
+IDENTITY costs the first time a run spends it. The identity is what makes the
+count whole: a problem answers about a candidate through more than one channel
+(a constraint screen, then an evaluation), so whichever channel spends the work
+first pays for it, and every later ask a cache answers is a duplicate.
+Duplicates are what a cache absorbs, never what a budget pays for.
 
 The ledger seals FACTS: wall, counts, duplicate rate, the declared limit,
-whether the run stopped at a boundary, and the LLM usage a driver reports.
-Money is deliberately absent — dollars are priced research-side from a price
-table, so a sealed run can be re-priced without re-running it.
+whether the budget cut the run short, and the LLM usage a driver reports. It
+describes ONE interval — the search — so a driver seals it where its clock
+stops. Money is deliberately absent — dollars are priced research-side from a
+price table, so a sealed run can be re-priced without re-running it.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Set
 
 
 @dataclass
@@ -26,40 +28,45 @@ class EvaluationBudget:
     Metering only: an exhausted budget never refuses an evaluation. Stopping is
     the driver's decision at ITS natural boundary (a generation, a batch, a
     proposal round), and the ledger records the exact spend that resulted.
+    One accountant meters one run.
     """
 
     limit: Optional[int] = None
-    _distinct: int = field(default=0, init=False)
-    _raw: int = field(default=0, init=False)
+    _charged: Set[str] = field(default_factory=set, init=False, repr=False)
+    _duplicates: int = field(default=0, init=False)
 
     def on_distinct(self, key: str) -> None:
-        """Charge the run for the first evaluation of *key* — real evaluator work."""
-        self._distinct += 1
-        self._raw += 1
+        """Charge the run for *key*'s evaluator work — once per identity, ever.
+
+        Idempotent BY IDENTITY: a candidate resolved by the constraint channel
+        and then scored by the evaluate channel cost this run one evaluation,
+        and a second channel charging for it would price the same work twice.
+        """
+        self._charged.add(key)
 
     def on_duplicate(self, key: str) -> None:
         """Record a re-ask of *key*: the call happened, the work did not."""
-        self._raw += 1
+        self._duplicates += 1
 
     @property
     def distinct_spent(self) -> int:
-        return self._distinct
+        return len(self._charged)
 
     @property
     def raw_calls(self) -> int:
-        return self._raw
+        return len(self._charged) + self._duplicates
 
     @property
     def exhausted(self) -> bool:
         """Has the DISTINCT spend reached the limit (an unlimited budget never has)?"""
-        return self.limit is not None and self._distinct >= int(self.limit)
+        return self.limit is not None and self.distinct_spent >= int(self.limit)
 
     @property
     def duplicate_rate(self) -> float:
         """The share of evaluation calls the cache answered."""
-        if self._raw == 0:
+        if self.raw_calls == 0:
             return 0.0
-        return (self._raw - self._distinct) / self._raw
+        return self._duplicates / self.raw_calls
 
 
 def charge_evaluation(
@@ -67,8 +74,9 @@ def charge_evaluation(
 ) -> None:
     """Tell the run's accountant which kind of evaluation *key* just was.
 
-    THE charging seam: every problem calls this at its cache, so "no budget
-    attached" costs one None check instead of a branch per problem.
+    THE charging seam: every problem calls this where a cache decides whether
+    *key* costs work, so "no budget attached" costs one None check instead of a
+    branch per problem.
     """
     if budget is None:
         return
@@ -125,6 +133,9 @@ class ResourceLedger:
     evaluations_distinct: int
     duplicate_rate: float
     budget_limit: Optional[int] = None
+    #: The budget CUT THE RUN SHORT. A run whose own termination ended it seals
+    #: False even when the budget was spent exactly — compare
+    #: ``evaluations_distinct`` against ``budget_limit`` for that.
     stopped_at_boundary: bool = False
     llm: Optional[LlmUsage] = None
 
@@ -165,6 +176,8 @@ def seal_ledger(
 
     A run nobody metered has no counts, and a ledger of zeros would be a claim
     about a search that was never measured — so there is no ledger at all.
+    Sealed where the driver's clock stops, so every fact in it covers the same
+    interval: what the SEARCH spent, not the bookkeeping that follows it.
     """
     if budget is None:
         return None

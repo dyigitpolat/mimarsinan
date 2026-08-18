@@ -30,6 +30,7 @@ JOINT_CONTRACT_METHODS = [
     "active_specs",
     "fixed_platform_constraints",
     "resolve_candidate_platform",
+    "candidate_encoding_placement",
     "validate_detailed",
     "_resolved_configuration",
     "_penalty_objectives",
