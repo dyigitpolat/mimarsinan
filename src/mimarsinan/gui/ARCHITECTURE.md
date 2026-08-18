@@ -249,7 +249,11 @@ values, the template flow, and both error/remedy flows.
 wizard stops being the configurability SSOT — `evaluation_budget` (what a run
 may SPEND, in distinct evaluations) is one of them. It declares no default: the
 generic int renderer shows an empty field, an empty field deletes the key, and
-an absent key is an unmetered run.
+an absent key is an unmetered run. Its BOUNDS travel with it: every numeric
+control in `static/js/wizard/structured.js` derives `step`/`min`/`max` from one
+pure rule (`numericAttrs(spec)` — node-tested, no widget keeps a second copy),
+so the range a schema declares is the range the form offers and the budget's
+declared floor is the floor `resolve_evaluation_budget` accepts.
 - `advisories` — config-time deployment advisories in the wizard resolve payload (`resolve_payload()["advisories"]`), rendered as the Review & Launch section's first card (UNSUPPORTED reads loud at selection time); UNSUPPORTED/mandate-violation rows gate Launch behind explicit per-id acknowledgment (`static/js/wizard/advisories.js` — acks reset whenever the gating id set changes), with compact amber counts on the live rail and the Review nav item.
 
 ## Dependents

@@ -73,7 +73,10 @@ def _recipe_field_schema() -> Dict[str, Any]:
 
 def _preprocessing_field_schema() -> Dict[str, Any]:
     return {
-        "resize_to": {"type": "int"},
+        # The bound is DECLARED, never hardcoded in the widget: the form
+        # renders whatever range the schema states (a zero-pixel resize is not
+        # a preprocessing step a run can take).
+        "resize_to": {"type": "int", "min": 1},
         "normalize": {"type": "enum", "options": sorted(NORMALIZATION_PRESETS)},
         "interpolation": {"type": "enum", "options": list(interpolation_mode_names())},
     }

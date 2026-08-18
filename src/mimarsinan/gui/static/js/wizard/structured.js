@@ -19,11 +19,24 @@ function subField(labelText, control) {
   return field;
 }
 
-function numeric(value, onChange, { step = 'any', min = null, placeholder = '' } = {}) {
+/* A served field spec's numeric input attributes. THE rule every number in
+   this file renders through: the control offers exactly the range the schema
+   declares, so the form cannot offer a value the run refuses by name. */
+export function numericAttrs(spec) {
+  const declared = spec || {};
+  return {
+    step: declared.step ? String(declared.step) : (declared.type === 'int' ? '1' : 'any'),
+    min: declared.min ?? null,
+    max: declared.max ?? null,
+  };
+}
+
+function numeric(value, onChange, { step = 'any', min = null, max = null, placeholder = '' } = {}) {
   const input = el('input');
   input.type = 'number';
   input.step = step;
   if (min !== null) input.min = String(min);
+  if (max !== null) input.max = String(max);
   input.placeholder = placeholder;
   input.value = value === undefined || value === null ? '' : String(value);
   input.addEventListener('change', () => {
@@ -97,7 +110,7 @@ function coresWidget(ks) {
             if (v === undefined) delete c[dim];
             else c[dim] = Math.round(v);
           });
-        }, { step: '1', min: 1 });
+        }, numericAttrs({ type: 'int', min: 1 }));
         input.title = `${title} for core type ${i + 1}`;
         row.append(input);
       }
@@ -190,24 +203,20 @@ function weightPrecisionWidget(ks) {
 
 function rangePair(spec, current, onChange) {
   const wrap = el('div', 'range-pair');
-  const mk = (idx, ph) => {
-    const input = el('input');
-    input.type = 'number';
-    input.step = spec.step ? String(spec.step) : '1';
-    input.min = '1';
-    input.placeholder = String(ph);
-    const value = Array.isArray(current) ? current[idx] : undefined;
-    input.value = value === undefined || value === null ? '' : String(value);
-    input.addEventListener('change', () => {
+  // A range is a pair of INTEGER ends floored at 1, unless the spec says
+  // otherwise; both ends read the same declaration.
+  const mk = (idx, ph) => numeric(
+    Array.isArray(current) ? current[idx] : undefined,
+    () => {
       const raw = [wrap.children[0].value.trim(), wrap.children[2].value.trim()];
       if (raw[0] === '' && raw[1] === '') { onChange(undefined); return; }
       const lo = raw[0] === '' ? spec.default[0] : parseInt(raw[0], 10);
       const hi = raw[1] === '' ? spec.default[1] : parseInt(raw[1], 10);
       if (Number.isNaN(lo) || Number.isNaN(hi)) return;
       onChange([lo, hi]);
-    });
-    return input;
-  };
+    },
+    { ...numericAttrs({ min: 1, ...spec, type: 'int' }), placeholder: String(ph) },
+  );
   wrap.append(mk(0, spec.default[0]));
   wrap.append(el('span', 'range-pair-sep', '–'));
   wrap.append(mk(1, spec.default[1]));
@@ -249,7 +258,10 @@ function searchSpaceWidget(ks) {
         if (v === undefined) delete ss[name];
         else ss[name] = Math.round(v);
         write(ss);
-      }, { step: '1', min: spec.min ?? 1, placeholder: String(spec.default ?? '') });
+      }, {
+        ...numericAttrs({ min: 1, ...spec, type: 'int' }),
+        placeholder: String(spec.default ?? ''),
+      });
     }
     const sub = subField(name.replace(/_/g, ' '), control);
     sub.title = spec.doc || '';
@@ -313,7 +325,10 @@ function recipeWidget(ks) {
         if (v === undefined) delete recipe[name];
         else recipe[name] = v;
         write(recipe);
-      }, { placeholder: fallback === undefined || fallback === null ? '' : String(fallback) });
+      }, {
+        ...numericAttrs(spec),
+        placeholder: fallback === undefined || fallback === null ? '' : String(fallback),
+      });
     }
     grid.append(subField(name.replace(/_/g, ' '), control));
   }
@@ -404,7 +419,7 @@ function modelConfigWidget(ks) {
         const config = current();
         if (v !== undefined) config[spec.key] = v;
         write(config);
-      }, { step: spec.step ? String(spec.step) : 'any' });
+      }, numericAttrs(spec));
     }
     grid.append(subField(spec.label, control));
   }
@@ -447,7 +462,7 @@ function preprocessingWidget(ks) {
         if (v === undefined) delete pp[name];
         else pp[name] = Math.round(v);
         write(pp);
-      }, { step: '1', min: 1, placeholder: 'native' });
+      }, { ...numericAttrs(spec), placeholder: 'native' });
     }
     grid.append(subField(name.replace(/_/g, ' '), control));
   }
@@ -518,7 +533,7 @@ function archSearchWidget(ks) {
         if (v === undefined) delete arch[name];
         else arch[name] = spec.type === 'int' ? Math.round(v) : v;
         write(arch);
-      }, { step: spec.type === 'int' ? '1' : 'any' });
+      }, numericAttrs(spec));
     } else if (spec.options) {
       control = el('select');
       for (const option of spec.options) control.append(new Option(option, option));
