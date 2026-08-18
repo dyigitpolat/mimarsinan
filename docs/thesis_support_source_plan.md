@@ -4,12 +4,49 @@
 
 | Stage | State |
 |---|---|
-| TS1 budget accountant + resource ledger core | pending |
-| TS2 sampling optimizers (exhaustive / random / sobol) + grid enumeration | pending |
-| TS3 LLM-driver threading (usage capture + budget) | pending |
-| TS4 packer verdict trichotomy | pending |
-| TS5 adaptation ledger + stall trace (artifact + record fragment) | pending |
-| TS6 derived programming constants (all five profiles) | pending |
+| TS1 budget accountant + resource ledger core | **DONE** — `f09b7c9e` (landed on main directly). One charging law over every channel that answers about a candidate; `duplicate_rate` counts ROUNDS of asking, so it is comparable across drivers with different channel counts. |
+| TS2 sampling optimizers (exhaustive / random / sobol) + grid enumeration | **DONE** — merge `2bb2c7e4` (`1b905462`, `2bd45ad6`). One `SamplingOptimizer` behind three strategies, `encoding.grid_vectors(cap=…)` as the encoding's own enumeration, and one optimizer catalogue the wizard and the factory both read. |
+| TS3 LLM-driver threading (usage capture + budget) | **DONE** — merge `953c95b3` (`6ce85774`, `533842d5`). Usage counted where the request is MADE (retries and raised runs included); both LLM drivers stop at their own boundary through the shared `BoundaryStop`. |
+| TS4 packer verdict trichotomy | **DONE** — merge `9ffc06ca` (`62fcc229`). Sound provers only; a failed pack states whether the chip provably cannot host the program or the greedy engine merely refused, and the class is propagated (never re-proven) for scheduled programs. |
+| TS5 adaptation ledger + stall trace (artifact + record fragment) | **DONE** — merge `d6184feb` (`d72d5d81`, `d0356f13`, `aed2dac0`). One event per branch the controller took, sealed per tuner-hosting step as an artifact, with the totals riding an additive-optional record fragment. |
+| TS6 derived programming constants (all five profiles) | **DONE** — merge `83c669fa` (`fe3f34b5`, `8617aa6a`). Programming energy/latency constants on all five profiles, each with its derivation string and band; the reference-case predictions are pinned byte-identical by a golden captured before the profiles moved. |
+
+Integrated on `main` in the order TS2 → TS3 → TS4 → TS5 → TS6. One conflict
+(`search/ARCHITECTURE.md`, TS2 vs TS3 on the `optimizers/` row) resolved by
+combining both additions. One cross-stage fix, `7077e95c`: TS3 landed
+`BoundaryStop` as the named stop law while TS2 landed a driver that re-derived
+it inline beside the NSGA-II copy — every driver now asks the one boundary,
+behaviour unchanged, pinned structurally because the duplication was invisible
+to behaviour tests.
+
+Gates on the integrated tree: `python -m pytest tests` 12048 passed / 32
+skipped in 55s (budget 2 min), `./scripts/typecheck.sh` 0 errors 0 warnings,
+`python -m pytest scripts/template_tests` 40 passed.
+
+### Where the shipped code departs from the sections below
+
+The sections below are the SPEC as written before implementation; these names
+and decisions are what actually shipped.
+
+- **TS3**: `agent_evolve/llm_trace.py` was a five-line re-export of
+  `llm/trace.py`, not a second calling path — it is deleted, and there was only
+  ever one pydantic-ai seam. The genuine second path is compilagent's harness,
+  instrumented by `UsageObservingHarness`; its per-run report carries no request
+  count, so `LlmUsage.calls` counts one accounted interaction per report unless
+  the harness names its own `llm_calls`.
+- **TS4**: the provers take dimension-relaxation flags
+  (`neurons_may_split`, `axons_may_spread`), not the declared permission names —
+  `pack_layout` does not forward `allow_coalescing` to the greedy engine, so an
+  axon proof keyed on the declared permission would be UNSOUND. Incompleteness
+  accepted, unsoundness refused.
+- **TS5**: the record field is `adaptation_ledger`, not `adaptation` (taken by
+  the AC5 ft-pass walls), and `completed_via` is a per-step MAPPING because a
+  deployment ends several rate searches their own ways. The escalation taxonomy
+  is the code's real branches, not the spec's parenthetical illustration.
+- **TS6**: `e_program_per_byte` did not exist in the vocabulary; `e_dma_per_byte`
+  is the tile TRANSFER and is already charged per inference, so the programming
+  COMMIT is a new vocabulary row priced beside it over the same payload. Every
+  band's nominal is the log-space centre.
 
 Deliverables: correctness, performance, **elegance** — the standing rule.
 Scope guard: this series adds FRAMEWORK features only. Campaign runners,
