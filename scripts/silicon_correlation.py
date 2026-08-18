@@ -46,6 +46,9 @@ def _payload(results) -> dict:
                         "axis": axis.name,
                         "predicted": axis.predicted,
                         "published": axis.published,
+                        # The BAND is part of the prediction: a constant whose band
+                        # moved while its nominal held is still a changed prediction.
+                        "band": None if axis.band is None else list(axis.band),
                         "error_pct": None if axis.predicted is None else axis.error_pct,
                         "refusal": axis.refusal,
                     }
