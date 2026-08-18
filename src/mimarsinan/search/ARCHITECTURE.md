@@ -138,22 +138,23 @@ introspects rather than evaluates spends the budget it consumes.
 ## What a search spent
 
 [TS1] A campaign compares optimizers at EQUAL SPEND, so the currency has one
-definition and one place that counts it: `optimizers/budget.py`. This module
-doc is the authority on the charging law — `docs/thesis_support_source_plan.md`
-still describes the single-seam sketch TS1 started from.
+definition and one place that counts it: `optimizers/budget.py`. That module
+doc and this section are the authority on the charging law; the TS1 section of
+`docs/thesis_support_source_plan.md` is written FROM them.
 
 The currency is the candidate IDENTITY (`json_key` of the resolved
 configuration): a DISTINCT evaluation is the evaluator work that identity
 costs the first time the run spends it, and every later ask about it is a
 DUPLICATE — a call that bought no new candidate, whether a cache answered it
 or an uncached channel resolved it again. A problem answers about a candidate
-through THREE channels — `constraint_violation` screens it, `evaluate` scores
-it, `candidate_layout` lays it out for an agent to read — and all three walk
-the same `_resolve_entry` resolution, so all three charge. `charge_evaluation`
-ROUTES (already spent → duplicate; unspent and about to run → distinct;
-unspent and cache-answered → nothing), which is what makes several channels
-safe: the first to spend the work pays, the rest find it already paid, and one
-candidate is never priced twice.
+through several CHANNELS, named in `joint/types.py` — `constraint_violation`
+screens it, `evaluate` scores it, `validate_detailed` answers a backend
+directly, `candidate_layout` lays it out for an agent to read — and they all
+walk the same `_resolve_entry` resolution, so they all charge.
+`charge_evaluation` ROUTES (already spent → duplicate; unspent and about to
+run → distinct; unspent and cache-answered → nothing), which is what makes
+several channels safe: the first to spend the work pays, the rest find it
+already paid, and one candidate is never priced twice.
 
 Where each channel charges is decided by where its work becomes unavoidable:
 
@@ -162,13 +163,39 @@ Where each channel charges is decided by where its work becomes unavoidable:
   about to run. It also charges its three cache-hit returns, so a driver that
   re-proposes REJECTED candidates reports duplicates exactly as one that
   re-proposes accepted ones — the DISTINCT and DUPLICATE axes cover the same
-  channels or `duplicate_rate` cannot be compared across optimizers.
+  channels or `duplicate_rate` cannot be compared across optimizers. It takes
+  the channel from its caller (`validate_detailed(..., channel=...)`), because
+  the ask belongs to the seam the driver actually called, not to the helper
+  that happens to resolve it.
 - `joint/evaluate.py` charges only its objective-cache HIT: the one ask that
   never reaches `validate_detailed`. Charging its miss too would price one
   proposal twice, since the miss goes straight on to the validate seam.
+- `joint/constrain.py` is the declared-constraint channel; a `constraint_fn`
+  reading is a cheap predicate over the DECLARATION and charges nothing.
 - `joint/validate.py::candidate_layout` charges unconditionally — the
   introspection seam keeps no cache, so every call really does the work. An
   agent that introspects instead of evaluating spends the budget it uses.
+
+### The comparable axis is identities, not calls
+
+`duplicate_rate` is the number a campaign ranks optimizers by, so it must
+describe the SEARCH and not the driver's plumbing. Counted in CALLS it cannot:
+NSGA-II asks through two channels per proposal (screen, then score), which puts
+a structural ~0.5 floor under its rate — measured, pop 6 × gen 3 seed 0 on the
+hardware-mode problem sealed 0.5556 while the driver re-proposed 2 of its 18
+candidates (0.111). A single-channel driver with the same behaviour would have
+sealed 0.111, and the two numbers are not comparable.
+
+So the accountant counts ROUNDS of asking, per (channel, identity): a channel's
+first look at a candidate joins the round that candidate's proposal opened, and
+a channel asking AGAIN about a candidate it already asked about opens the next
+round — the re-proposal. `identities_asked` / `identities_reasked` are sealed
+beside the rate so an analysis can re-derive, pool, or normalize it, and
+`evaluations_raw` / `evaluations_distinct` remain the call-level facts
+(`evaluations_raw == 2 × identities_asked` for NSGA-II says exactly how many
+channels it used). The rule is deliberately not "the previous ask was about
+another candidate": a batching driver that screens a whole batch and only then
+scores it re-proposes nothing, and must read 0.0.
 
 Charging only the evaluate channel was measured to seal a ledger claiming ZERO
 spend for a search whose every offspring was rejected at the constraint channel
@@ -189,9 +216,9 @@ evaluation. Stopping is each driver's decision at ITS natural boundary
 there (`termination.terminate()` followed by `termination.update(algorithm)`,
 because pymoo updates the criterion BEFORE calling back, and the flag alone
 would buy one more generation). The overshoot is not hidden: `ResourceLedger`
-seals the EXACT spend (`wall_s`, raw/distinct counts, duplicate rate, the
-declared limit, `stopped_at_boundary`, and the `LlmUsage` an LLM driver
-reports), and analysis normalizes. Every fact in one ledger covers ONE
+seals the EXACT spend (`wall_s`, raw/distinct counts, asked/re-asked identities
+and the rate they derive, the declared limit, `stopped_at_boundary`, and the
+`LlmUsage` an LLM driver reports), and analysis normalizes. Every fact in one ledger covers ONE
 interval, so a driver seals it where its clock stops — for NSGA-II
 immediately after `minimize`, which keeps the post-search front re-read (it
 re-asks every front member) out of the duplicate rate a campaign compares.
@@ -199,7 +226,8 @@ re-asks every front member) out of the duplicate rate a campaign compares.
 exactly at the last generation, which the termination was ending anyway,
 seals False, and `evaluations_distinct` against `budget_limit` says the rest.
 `evaluations_raw` is a CALL count (`raw_calls`), so the same identity asked
-through two channels reads as two calls and one distinct evaluation. The
+through two channels reads as two calls, one distinct evaluation and — the axis
+above — one round of asking. The
 ledger carries no money by construction — dollars are priced research-side
 from a price table, so a sealed run can be re-priced without re-running it. A
 problem carries its accountant as `evaluation_budget` (`problem_budget()` is

@@ -20,6 +20,7 @@ from mimarsinan.search.problem import CandidateInfeasibleError
 from mimarsinan.search.results import ACCURACY_OBJECTIVE_NAME
 
 from .types import (
+    EVALUATE_CHANNEL,
     HW_PACKING_PHASE,
     CandidateFailure,
     CandidatePlatformError,
@@ -57,10 +58,12 @@ class JointEvaluateMixin(JointHostContract):
             # [TS1] The ONE ask that never reaches ``validate_detailed``, so it
             # is the only one this seam charges; a miss is charged there, past
             # the caches that decide whether the resolution runs.
-            charge_evaluation(self.evaluation_budget, key, hit=True)
+            charge_evaluation(
+                self.evaluation_budget, key, hit=True, channel=EVALUATE_CHANNEL,
+            )
             return cached
 
-        vr = self.validate_detailed(configuration)
+        vr = self.validate_detailed(configuration, channel=EVALUATE_CHANNEL)
         if not vr.is_valid:
             obj = self._penalty_objectives()
             self._cache[key] = obj

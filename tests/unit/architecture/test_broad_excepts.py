@@ -39,7 +39,11 @@ ALLOWLIST = {
     # W5.1: one evaluation contract left exactly one broad catch — the accuracy
     # estimate, whose failure is a scored penalty rather than a lost candidate.
     "search/problems/joint/evaluate.py": 1,
-    "search/problems/joint/validate.py": 5,
+    # [TS1] The constraint channel moved to its own file and took ONE catch with
+    # it (a caller-supplied constraint_fn's breakage, scored not raised); the
+    # total is unchanged and validate.py ratcheted 5 -> 4.
+    "search/problems/joint/constrain.py": 1,
+    "search/problems/joint/validate.py": 4,
     # [MBH-DRAWS] re-raising boundary: a failed conversion draw is a measured
     # outcome (logged, workers released, independent redraw); the harness
     # re-raises when EVERY draw failed - nothing degrades silently.

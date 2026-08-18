@@ -5,10 +5,6 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, Optional, Tuple
 
-from mimarsinan.mapping.verification.onchip_fraction import (
-    estimate_onchip_fraction,
-)
-from mimarsinan.search.constraints import ConstraintReport, onchip_floor_violation
 from mimarsinan.search.optimizers.budget import charge_evaluation
 from mimarsinan.search.problem import CandidateInfeasibleError, ValidationResult
 
@@ -18,8 +14,10 @@ from .candidate_fragments import (
 
 from .types import (
     HW_CONVERSION_PHASE,
+    LAYOUT_CHANNEL,
     MODEL_BUILD_PHASE,
     STRUCTURAL_PHASE,
+    VALIDATE_CHANNEL,
     VALIDATION_CACHE_MAX_SIZE,
     CandidateFailure,
     CandidateLayout,
@@ -54,8 +52,15 @@ class JointValidateMixin(JointHostContract):
     def validate(self, configuration: Dict) -> bool:
         return self.validate_detailed(configuration).is_valid
 
-    def validate_detailed(self, configuration: Dict) -> ValidationResult:
-        """Full feasibility check: structural → model build → HW packing."""
+    def validate_detailed(
+        self, configuration: Dict, *, channel: str = VALIDATE_CHANNEL,
+    ) -> ValidationResult:
+        """Full feasibility check: structural → model build → HW packing.
+
+        [TS1] *channel* names the caller-facing seam this question arrived
+        through, because the accountant's rounds are per channel; a caller that
+        does not name one is asking through the validation channel itself.
+        """
         try:
             configuration = self._resolved_configuration(configuration)
         except CandidatePlatformError as exc:
@@ -64,7 +69,7 @@ class JointValidateMixin(JointHostContract):
             )
 
         key = json_key(configuration)
-        cached = self._cached_verdict(key)
+        cached = self._cached_verdict(key, channel)
         if cached is not None:
             return cached
 
@@ -77,7 +82,7 @@ class JointValidateMixin(JointHostContract):
 
         # [TS1] Past the caches AND the declaration-only check, this identity is
         # about to cost a full resolution — the channel that gets here first pays.
-        charge_evaluation(self.evaluation_budget, key, hit=False)
+        charge_evaluation(self.evaluation_budget, key, hit=False, channel=channel)
 
         entry, failure = self._resolve_entry(
             mc, pcfg, self.candidate_encoding_placement(configuration),
@@ -90,7 +95,7 @@ class JointValidateMixin(JointHostContract):
         self._evict_validation_cache()
         return ValidationResult(is_valid=True)
 
-    def _cached_verdict(self, key: str) -> Optional[ValidationResult]:
+    def _cached_verdict(self, key: str, channel: str) -> Optional[ValidationResult]:
         """This identity's recorded verdict, charged as the re-ask it is.
 
         A rejection recorded before anything was built was never an evaluation.
@@ -103,7 +108,7 @@ class JointValidateMixin(JointHostContract):
             verdict = ValidationResult(is_valid=True)
         else:
             return None
-        charge_evaluation(self.evaluation_budget, key, hit=True)
+        charge_evaluation(self.evaluation_budget, key, hit=True, channel=channel)
         return verdict
 
     def _structural_failure(self, mc: Dict, pcfg: Dict) -> Optional[CandidateFailure]:
@@ -208,7 +213,10 @@ class JointValidateMixin(JointHostContract):
         resolved = self._resolved_configuration(configuration)
         # [TS1] This channel keeps no cache: every call really does the
         # resolution, so an introspecting driver spends the run's budget.
-        charge_evaluation(self.evaluation_budget, json_key(resolved), hit=False)
+        charge_evaluation(
+            self.evaluation_budget, json_key(resolved),
+            hit=False, channel=LAYOUT_CHANNEL,
+        )
         pcfg = resolved["platform_constraints"]
         placement = self.candidate_encoding_placement(resolved)
         facts, failure = self._resolve_model(
@@ -227,73 +235,3 @@ class JointValidateMixin(JointHostContract):
         while len(self._validation_cache) > VALIDATION_CACHE_MAX_SIZE:
             oldest_key = next(iter(self._validation_cache))
             del self._validation_cache[oldest_key]
-
-    def onchip_fraction(self, configuration: Dict) -> float:
-        """The share of this candidate's parameters that would sit on chip cores.
-
-        Measured through the deployment's OWN estimator, under the CANDIDATE's
-        placement — the NeuralOps/ComputeOps boundary the encoder lands on.
-        """
-        placement = self.candidate_encoding_placement(configuration)
-        model, _params = self._candidate_model(
-            configuration.get("model_config") or {},
-            configuration.get("platform_constraints") or {},
-            placement,
-        )
-        return estimate_onchip_fraction(
-            model,
-            tuple(self.input_shape),
-            int(self.num_classes),
-            encoding_placement=placement,
-            metric="params",
-        ).fraction
-
-    def onchip_constraint(self, configuration: Dict) -> Optional[ConstraintReport]:
-        """The on-chip floor report for this candidate, or None when satisfied."""
-        if self.onchip_min_fraction <= 0.0:
-            return None
-        return onchip_floor_violation(
-            fraction=self.onchip_fraction(configuration),
-            floor=float(self.onchip_min_fraction),
-        )
-
-    def constraint_violation(self, configuration: Dict) -> float:
-        try:
-            resolved = self._resolved_configuration(configuration)
-        except CandidatePlatformError:
-            return 1.0
-        try:
-            if self.constraint_fn is not None:
-                cv = float(self.constraint_fn(
-                    resolved["model_config"],
-                    resolved["platform_constraints"],
-                    self.input_shape,
-                ))
-                if cv > 0:
-                    return cv
-        except Exception as exc:
-            logger.warning(
-                "[JointArchHwProblem] constraint_fn failed (%s: %s) for candidate "
-                "%.500s; recording constraint violation 1e6",
-                type(exc).__name__, exc, configuration, exc_info=True,
-            )
-            return 1e6
-        if not self.validate_detailed(resolved).is_valid:
-            return 1.0
-        # A DECLARED deployment constraint shapes a region the optimizer can
-        # SEE, never an exception a run discovers after it picked a winner.
-        report = self.onchip_constraint(resolved)
-        if report is None:
-            return 0.0
-        self._constraint_census[report.constraint] = (
-            self._constraint_census.get(report.constraint, 0) + 1
-        )
-        logger.warning(
-            "[JointArchHwProblem] candidate violates %s: %s",
-            report.constraint, report.detail,
-        )
-        return report.violation
-
-    def constraint_census(self) -> Dict[str, int]:
-        """How many candidates each declared constraint has rejected so far."""
-        return dict(self._constraint_census)

@@ -19,6 +19,7 @@ from mimarsinan.search.search_space_description import (
     DEFAULT_CORE_NEURONS_BOUNDS,
 )
 
+from .constrain import JointConstrainMixin
 from .encoding import JointEncodingMixin
 from .evaluate import JointEvaluateMixin
 from .layout_hook import JointLayoutMixin
@@ -41,6 +42,7 @@ from .validate import JointValidateMixin
 class JointArchHwProblem(
     JointEncodingMixin,
     JointValidateMixin,
+    JointConstrainMixin,
     JointLayoutMixin,
     JointEvaluateMixin,
     EncodedProblem[Dict[str, Any]],

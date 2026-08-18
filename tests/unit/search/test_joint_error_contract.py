@@ -15,19 +15,23 @@ from mimarsinan.deployment_record.objectives import OBJECTIVES, CandidateStaticV
 from mimarsinan.mapping.layout.layout_types import LayoutSoftCoreSpec
 from mimarsinan.search.option_axes import candidate_option
 from mimarsinan.search.problem import CandidateInfeasibleError, ValidationResult
+from mimarsinan.search.problems.joint.constrain import JointConstrainMixin
 from mimarsinan.search.problems.joint.evaluate import JointEvaluateMixin
 from mimarsinan.search.problems.joint.layout_hook import JointLayoutMixin
-from mimarsinan.search.problems.joint.types import ValidationEntry
+from mimarsinan.search.problems.joint.types import EVALUATE_CHANNEL, ValidationEntry
 from mimarsinan.search.problems.joint.validate import JointValidateMixin
 from mimarsinan.search.results import ACCURACY_OBJECTIVE_NAME, ObjectiveSpec
 
 VALIDATE_LOGGER = "mimarsinan.search.problems.joint.validate"
 EVALUATE_LOGGER = "mimarsinan.search.problems.joint.evaluate"
+CONSTRAIN_LOGGER = "mimarsinan.search.problems.joint.constrain"
 
 ACTIVE_NAMES = (ACCURACY_OBJECTIVE_NAME, "total_params")
 
 
-class _Harness(JointValidateMixin, JointLayoutMixin, JointEvaluateMixin):
+class _Harness(
+    JointValidateMixin, JointConstrainMixin, JointLayoutMixin, JointEvaluateMixin,
+):
     """The joint mixins on a bare host: only the host members, nothing simulated."""
 
     search_mode = "joint"
@@ -140,7 +144,7 @@ class TestValidateErrorContract:
             raise RuntimeError("constraint blew up")
 
         harness = _ValidateHarness(search_mode="joint", constraint_fn=bad_constraint_fn)
-        with caplog.at_level(logging.WARNING, logger=VALIDATE_LOGGER):
+        with caplog.at_level(logging.WARNING, logger=CONSTRAIN_LOGGER):
             cv = harness.constraint_violation(_config())
         assert cv == 1e6
         assert any(
@@ -159,7 +163,7 @@ class _EvaluateHarness(_Harness):
         super().__init__()
         self._inner_error = inner_error
 
-    def validate_detailed(self, configuration):
+    def validate_detailed(self, configuration, *, channel=EVALUATE_CHANNEL):
         return ValidationResult(is_valid=True)
 
     def _evaluate_accuracy(self, model):

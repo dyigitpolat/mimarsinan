@@ -117,6 +117,16 @@ MODEL_BUILD_PHASE = "model_build"
 HW_CONVERSION_PHASE = "hw_conversion"
 HW_PACKING_PHASE = "hw_packing"
 
+# [TS1] The channels this problem answers about a candidate through. The
+# accountant charges per (channel, identity): a second channel's first look at
+# a candidate belongs to the proposal that opened it, and only a channel asking
+# again about the same candidate is a re-proposal. Naming them here keeps the
+# charging law readable at the seams and out of the accountant's vocabulary.
+CONSTRAINT_CHANNEL = "constraint"
+EVALUATE_CHANNEL = "evaluate"
+VALIDATE_CHANNEL = "validate"
+LAYOUT_CHANNEL = "layout"
+
 
 @dataclass(frozen=True)
 class CandidateFailure:
@@ -210,7 +220,9 @@ class JointHostContract:
             self, configuration: Dict[str, Any],
         ) -> Dict[str, Any]: ...
 
-        def validate_detailed(self, configuration: Dict) -> ValidationResult: ...
+        def validate_detailed(
+            self, configuration: Dict, *, channel: str = VALIDATE_CHANNEL,
+        ) -> ValidationResult: ...
 
         def _penalty_objectives(self) -> Dict[str, float]: ...
 

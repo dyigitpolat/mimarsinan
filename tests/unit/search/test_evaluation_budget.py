@@ -7,10 +7,18 @@ pays (a DISTINCT evaluation), and every later ask about that identity is a
 DUPLICATE — it bought no new candidate. No driver counts for itself, and no
 count is a driver's opinion.
 
-The ledger seals FACTS only — wall, raw/distinct evaluations, duplicate rate,
-the declared limit, whether the run stopped at a boundary, and (later stages)
-the LLM usage. Money is priced research-side from a price table; a framework
-that seals dollars seals a price list nobody can re-run.
+The COMPARABLE axis is coarser still. A driver asks about one candidate through
+as many channels as it likes (NSGA-II screens then scores, so two per
+proposal), which puts a structural floor under any rate counted in CALLS — the
+measured 0.5556 for a run whose drivers re-proposed 2 of 18 candidates. So
+``duplicate_rate`` counts ROUNDS of asking: every channel's first look at a
+candidate belongs to the round its proposal opened, and a channel asking again
+about a candidate it already asked about opens a NEW round — the re-proposal.
+
+The ledger seals FACTS only — wall, raw/distinct evaluations, both sides of the
+rate, the declared limit, whether the run stopped at a boundary, and (later
+stages) the LLM usage. Money is priced research-side from a price table; a
+framework that seals dollars seals a price list nobody can re-run.
 """
 
 from __future__ import annotations
@@ -39,6 +47,11 @@ from mimarsinan.search.optimizers.budget import (
 )
 from mimarsinan.search.optimizers.nsga2_optimizer import NSGA2Optimizer
 from mimarsinan.search.problems.joint import JointArchHwProblem
+from mimarsinan.search.problems.joint.types import (
+    CONSTRAINT_CHANNEL,
+    EVALUATE_CHANNEL,
+    LAYOUT_CHANNEL,
+)
 from mimarsinan.search.results import Candidate, ObjectiveSpec, SearchResult
 
 HW_OBJECTIVES = ["total_param_capacity", "param_utilization_pct", "fragmentation_pct"]
@@ -53,24 +66,28 @@ class TestTheAccountantCountsDistinctWork:
 
     def test_the_first_charge_of_a_key_is_distinct(self):
         budget = EvaluationBudget(limit=4)
-        budget.on_distinct("a")
+        budget.charge(EVALUATE_CHANNEL, "a", hit=False)
 
         assert budget.distinct_spent == 1
         assert budget.raw_calls == 1
 
     def test_an_identity_is_charged_once_however_many_channels_spend_on_it(self):
         # The currency is the candidate identity, not the call: a candidate
-        # screened by the constraint channel and then scored by the evaluate
-        # channel cost the run ONE evaluation, and the count must say so
-        # whichever channel got there first. The CALLS still happened, and
-        # ``raw_calls`` is a call count, so it says three.
+        # screened by the constraint channel, scored by the evaluate channel
+        # and laid out for an agent cost the run ONE evaluation, and the count
+        # must say so whichever channel got there first. The CALLS still
+        # happened, and ``raw_calls`` is a call count, so it says three.
         budget = EvaluationBudget(limit=4)
-        for _ in range(3):
-            charge_evaluation(budget, "a", hit=False)
+        for channel in (CONSTRAINT_CHANNEL, EVALUATE_CHANNEL, LAYOUT_CHANNEL):
+            budget.charge(channel, "a", hit=False)
 
         assert budget.distinct_spent == 1
         assert budget.raw_calls == 3
-        assert budget.duplicate_rate == pytest.approx(2.0 / 3.0)
+        # Three channels looking at ONE proposal is one round of asking, so
+        # nothing here was re-proposed — the axis a campaign compares must not
+        # move because a driver happens to consult a third channel.
+        assert (budget.identities_asked, budget.identities_reasked) == (1, 0)
+        assert budget.duplicate_rate == 0.0
 
     def test_a_call_about_an_identity_nobody_spent_is_not_an_evaluation_call(self):
         # A cheap predicate refused this candidate before anything was built,
@@ -79,9 +96,10 @@ class TestTheAccountantCountsDistinctWork:
         # let a search that resolves NOTHING seal a duplicate rate of 1.0.
         budget = EvaluationBudget(limit=4)
         for _ in range(5):
-            charge_evaluation(budget, "a", hit=True)
+            budget.charge(EVALUATE_CHANNEL, "a", hit=True)
 
         assert (budget.distinct_spent, budget.raw_calls) == (0, 0)
+        assert (budget.identities_asked, budget.identities_reasked) == (0, 0)
         assert budget.duplicate_rate == 0.0
 
     def test_a_channel_that_redoes_the_work_still_buys_no_new_candidate(self):
@@ -89,8 +107,8 @@ class TestTheAccountantCountsDistinctWork:
         # resolution again, but the currency is the identity and this run has
         # already paid for it: the call is counted, the budget is not spent.
         budget = EvaluationBudget(limit=2)
-        charge_evaluation(budget, "a", hit=False)
-        charge_evaluation(budget, "a", hit=False)
+        budget.charge(LAYOUT_CHANNEL, "a", hit=False)
+        budget.charge(LAYOUT_CHANNEL, "a", hit=False)
 
         assert budget.distinct_spent == 1
         assert budget.raw_calls == 2
@@ -101,8 +119,8 @@ class TestTheAccountantCountsDistinctWork:
         # set: a seam that charges one identity twice made two calls, and a
         # ledger field named ``evaluations_raw`` must be able to say so.
         budget = EvaluationBudget(limit=None)
-        budget.on_distinct("a")
-        budget.on_distinct("a")
+        budget.charge(EVALUATE_CHANNEL, "a", hit=False)
+        budget.charge(EVALUATE_CHANNEL, "a", hit=False)
 
         assert budget.distinct_spent == 1
         assert budget.raw_calls == 2
@@ -111,16 +129,16 @@ class TestTheAccountantCountsDistinctWork:
         # The one question the seam helper asks to tell a first spend from a
         # re-ask; without it every seam would have to keep its own set.
         budget = EvaluationBudget(limit=None)
-        charge_evaluation(budget, "a", hit=False)
+        budget.charge(EVALUATE_CHANNEL, "a", hit=False)
 
         assert budget.has_spent("a")
         assert not budget.has_spent("b")
 
     def test_a_duplicate_is_never_charged_against_the_budget(self):
         budget = EvaluationBudget(limit=4)
-        budget.on_distinct("a")
+        budget.charge(EVALUATE_CHANNEL, "a", hit=False)
         for _ in range(10):
-            budget.on_duplicate("a")
+            budget.charge(EVALUATE_CHANNEL, "a", hit=True)
 
         assert budget.distinct_spent == 1, "a cache hit is not evaluator work"
         assert budget.raw_calls == 11, "the raw call still happened and is recorded"
@@ -128,54 +146,114 @@ class TestTheAccountantCountsDistinctWork:
     def test_exhaustion_lands_at_exactly_the_limit(self):
         budget = EvaluationBudget(limit=3)
         for i in range(2):
-            budget.on_distinct(f"k{i}")
+            budget.charge(EVALUATE_CHANNEL, f"k{i}", hit=False)
             assert not budget.exhausted
 
-        budget.on_distinct("k2")
+        budget.charge(EVALUATE_CHANNEL, "k2", hit=False)
         assert budget.exhausted, "B distinct evaluations exhaust a budget of B"
 
     def test_duplicates_alone_never_exhaust_a_budget(self):
         # Exhaustion reads DISTINCT spend, not raw calls: a search that keeps
         # re-proposing one candidate has bought exactly one evaluation.
         budget = EvaluationBudget(limit=3)
-        budget.on_distinct("a")
-        budget.on_distinct("b")
+        budget.charge(EVALUATE_CHANNEL, "a", hit=False)
+        budget.charge(EVALUATE_CHANNEL, "b", hit=False)
         for _ in range(5):
-            budget.on_duplicate("a")
+            budget.charge(EVALUATE_CHANNEL, "a", hit=True)
 
         assert budget.raw_calls > 3, "the fixture must out-call the limit"
         assert not budget.exhausted
-        budget.on_distinct("c")
+        budget.charge(EVALUATE_CHANNEL, "c", hit=False)
         assert budget.exhausted
 
     def test_a_budget_without_a_limit_meters_but_never_stops(self):
         budget = EvaluationBudget(limit=None)
         for i in range(50):
-            budget.on_distinct(f"k{i}")
+            budget.charge(EVALUATE_CHANNEL, f"k{i}", hit=False)
 
         assert budget.distinct_spent == 50
         assert not budget.exhausted
-
-    def test_the_duplicate_rate_is_the_share_of_repeated_calls(self):
-        budget = EvaluationBudget(limit=None)
-        budget.on_distinct("a")
-        budget.on_distinct("b")
-        budget.on_duplicate("a")
-        budget.on_duplicate("b")
-
-        assert budget.raw_calls == 4
-        assert budget.duplicate_rate == pytest.approx(0.5)
 
     def test_an_unused_accountant_reports_no_duplicates(self):
         assert EvaluationBudget(limit=2).duplicate_rate == 0.0
 
     def test_charging_through_the_seam_helper_needs_no_none_check(self):
         budget = EvaluationBudget(limit=None)
-        charge_evaluation(budget, "a", hit=False)
-        charge_evaluation(budget, "a", hit=True)
-        charge_evaluation(None, "a", hit=False)
+        charge_evaluation(budget, "a", hit=False, channel=EVALUATE_CHANNEL)
+        charge_evaluation(budget, "a", hit=True, channel=EVALUATE_CHANNEL)
+        charge_evaluation(None, "a", hit=False, channel=EVALUATE_CHANNEL)
 
         assert (budget.distinct_spent, budget.raw_calls) == (1, 2)
+
+
+class TestTheComparableAxisCountsRoundsOfAsking:
+    """``duplicate_rate`` must mean the same thing to a one-channel driver and
+    a three-channel one, or a campaign ranking optimizers by it reads the
+    channel count instead of the search behaviour."""
+
+    def test_the_same_channel_asking_again_is_a_re_proposal(self):
+        budget = EvaluationBudget(limit=None)
+        for _ in range(4):
+            budget.charge(CONSTRAINT_CHANNEL, "a", hit=False)
+
+        assert (budget.identities_asked, budget.identities_reasked) == (4, 3)
+        assert budget.duplicate_rate == pytest.approx(0.75)
+
+    def test_a_second_channels_first_look_joins_the_round_it_did_not_open(self):
+        budget = EvaluationBudget(limit=None)
+        for key in ("a", "b", "c"):
+            budget.charge(CONSTRAINT_CHANNEL, key, hit=False)
+            budget.charge(EVALUATE_CHANNEL, key, hit=True)
+
+        assert budget.raw_calls == 6, "six calls really happened"
+        assert (budget.identities_asked, budget.identities_reasked) == (3, 0)
+        assert budget.duplicate_rate == 0.0
+
+    def test_adding_a_channel_does_not_move_the_rate(self):
+        # THE cross-driver property: the same proposal stream, screened and
+        # scored instead of only scored, must seal the same number.
+        proposals = ["a", "b", "a", "c"]
+        one_channel = EvaluationBudget(limit=None)
+        two_channels = EvaluationBudget(limit=None)
+        for key in proposals:
+            one_channel.charge(EVALUATE_CHANNEL, key, hit=False)
+            two_channels.charge(CONSTRAINT_CHANNEL, key, hit=False)
+            two_channels.charge(EVALUATE_CHANNEL, key, hit=True)
+
+        assert two_channels.raw_calls == 2 * one_channel.raw_calls
+        assert two_channels.duplicate_rate == one_channel.duplicate_rate
+        assert two_channels.duplicate_rate == pytest.approx(0.25)
+
+    def test_a_batched_driver_that_screens_all_then_scores_all_reads_zero(self):
+        # A driver need not interleave its channels: agent-style backends
+        # validate a whole batch and only then evaluate it. Nothing there was
+        # re-proposed, so the rate must be 0.0 — a rule keyed on "the previous
+        # ask was about another candidate" would have read 1.0 here.
+        budget = EvaluationBudget(limit=None)
+        batch = ["a", "b", "c"]
+        for key in batch:
+            budget.charge(CONSTRAINT_CHANNEL, key, hit=False)
+        for key in batch:
+            budget.charge(EVALUATE_CHANNEL, key, hit=True)
+
+        assert (budget.identities_asked, budget.identities_reasked) == (3, 0)
+        assert budget.duplicate_rate == 0.0
+
+    def test_a_re_proposal_reopens_the_round_for_every_channel(self):
+        budget = EvaluationBudget(limit=None)
+        for _ in range(3):
+            budget.charge(CONSTRAINT_CHANNEL, "a", hit=True)
+            budget.charge(EVALUATE_CHANNEL, "a", hit=True)
+        # Nothing was ever spent on "a", so nothing above counted at all.
+        assert (budget.identities_asked, budget.raw_calls) == (0, 0)
+
+        budget.charge(CONSTRAINT_CHANNEL, "a", hit=False)
+        for _ in range(3):
+            budget.charge(CONSTRAINT_CHANNEL, "a", hit=True)
+            budget.charge(EVALUATE_CHANNEL, "a", hit=True)
+
+        assert (budget.identities_asked, budget.identities_reasked) == (4, 3)
+        assert budget.duplicate_rate == pytest.approx(0.75)
 
     def test_a_problem_without_an_accountant_reports_none(self):
         assert problem_budget(object()) is None
@@ -191,19 +269,36 @@ class TestTheAccountantCountsDistinctWork:
 class TestTheLedgerIsFacts:
     def test_the_ledger_reads_the_accountants_own_counts(self):
         budget = EvaluationBudget(limit=8)
-        budget.on_distinct("a")
-        budget.on_distinct("b")
-        budget.on_duplicate("a")
+        budget.charge(EVALUATE_CHANNEL, "a", hit=False)
+        budget.charge(EVALUATE_CHANNEL, "b", hit=False)
+        budget.charge(EVALUATE_CHANNEL, "a", hit=True)
 
         ledger = seal_ledger(budget, wall_s=1.5, stopped_at_boundary=True)
 
         assert ledger is not None
         assert ledger.evaluations_distinct == 2
         assert ledger.evaluations_raw == 3
+        assert (ledger.identities_asked, ledger.identities_reasked) == (3, 1)
         assert ledger.duplicate_rate == pytest.approx(1.0 / 3.0)
         assert ledger.budget_limit == 8
         assert ledger.stopped_at_boundary is True
         assert ledger.wall_s == pytest.approx(1.5)
+
+    def test_the_sealed_rate_is_derivable_from_the_two_counts_beside_it(self):
+        # The rate is a DERIVED fact, so the ledger seals its numerator and
+        # denominator too: an analysis can re-derive it, pool it across runs,
+        # or normalize it without re-running the search.
+        budget = EvaluationBudget(limit=None)
+        for key in ("a", "b", "a", "a"):
+            budget.charge(EVALUATE_CHANNEL, key, hit=False)
+
+        ledger = seal_ledger(budget, wall_s=0.5, stopped_at_boundary=False)
+
+        assert ledger is not None
+        assert (ledger.identities_asked, ledger.identities_reasked) == (4, 2)
+        assert ledger.duplicate_rate == pytest.approx(
+            ledger.identities_reasked / ledger.identities_asked
+        )
 
     def test_no_accountant_seals_no_ledger(self):
         assert seal_ledger(None, wall_s=1.0, stopped_at_boundary=False) is None
@@ -213,6 +308,8 @@ class TestTheLedgerIsFacts:
             wall_s=12.5,
             evaluations_raw=40,
             evaluations_distinct=32,
+            identities_asked=20,
+            identities_reasked=4,
             duplicate_rate=0.2,
             budget_limit=32,
             stopped_at_boundary=True,
@@ -228,6 +325,8 @@ class TestTheLedgerIsFacts:
             wall_s=0.25,
             evaluations_raw=4,
             evaluations_distinct=4,
+            identities_asked=4,
+            identities_reasked=0,
             duplicate_rate=0.0,
         )
 
@@ -246,6 +345,7 @@ class TestTheLedgerIsFacts:
         # research-side from a price table, so a sealed run can be re-priced.
         payload = ResourceLedger(
             wall_s=1.0, evaluations_raw=1, evaluations_distinct=1,
+            identities_asked=1, identities_reasked=0,
             duplicate_rate=0.0, llm=LlmUsage(model="m", calls=1),
         ).to_dict()
         flat = json.dumps(payload).lower()
@@ -277,6 +377,7 @@ class TestSearchResultCarriesTheLedger:
     def test_a_sealed_ledger_reaches_the_artifact(self):
         ledger = ResourceLedger(
             wall_s=2.0, evaluations_raw=9, evaluations_distinct=7,
+            identities_asked=9, identities_reasked=2,
             duplicate_rate=2.0 / 9.0, budget_limit=7, stopped_at_boundary=True,
         )
         result = SearchResult(
@@ -464,6 +565,8 @@ class TestEveryChannelThatSpendsWorkIsCharged:
 
         assert budget.distinct_spent == 1
         assert budget.raw_calls == 5, "four asks a cache answered are four calls"
+        # One channel, five proposals of one candidate: four of them repeats.
+        assert (budget.identities_asked, budget.identities_reasked) == (5, 4)
         assert budget.duplicate_rate == pytest.approx(0.8)
 
     def test_a_structural_rejection_costs_what_every_declaration_only_check_costs(self):
@@ -527,6 +630,10 @@ class TestEveryChannelThatSpendsWorkIsCharged:
 
         assert budget.distinct_spent == 1
         assert budget.raw_calls == 2, "both channels asked; only one bought work"
+        # ONE proposal, screened then scored: the evaluate channel's first look
+        # is part of the round the constraint channel opened, not a repeat.
+        assert (budget.identities_asked, budget.identities_reasked) == (1, 0)
+        assert budget.duplicate_rate == 0.0
 
     def test_a_candidate_asked_again_through_both_channels_is_all_duplicates(self):
         budget = EvaluationBudget(limit=None)
@@ -539,7 +646,11 @@ class TestEveryChannelThatSpendsWorkIsCharged:
 
         assert budget.distinct_spent == 1
         assert budget.raw_calls == 8, "four proposals through two channels"
-        assert budget.duplicate_rate == pytest.approx(7.0 / 8.0)
+        # The comparable axis reads the PROPOSALS, not the calls: four rounds
+        # of asking, three of them repeats. A call-based rate would say 7/8
+        # here and 3/4 for the same behaviour from a one-channel driver.
+        assert (budget.identities_asked, budget.identities_reasked) == (4, 3)
+        assert budget.duplicate_rate == pytest.approx(0.75)
 
     def test_a_declared_constraint_that_resolves_nothing_costs_nothing(self):
         # ``constraint_fn`` is a cheap predicate over the DECLARATION: it never
@@ -587,6 +698,8 @@ class TestTheIntrospectionSeamSpendsWhatItResolves:
             problem.candidate_layout(configuration)
 
         assert (budget.distinct_spent, budget.raw_calls) == (1, 3)
+        # One channel asking three times about one candidate: two re-asks.
+        assert (budget.identities_asked, budget.identities_reasked) == (3, 2)
 
 
 REJECTING_POP = 4
@@ -629,6 +742,72 @@ class TestABudgetBoundsASearchThatRejectsEveryCandidate:
         assert result.ledger.stopped_at_boundary is True
 
 
+TWO_CHANNEL_POP = 6
+TWO_CHANNEL_GENERATIONS = 3
+#: Measured on this exact fixture (pop 6 x gen 3, seed 0): pymoo proposed 18
+#: candidates of which 16 were new, so the driver re-proposed 2. It asked
+#: through BOTH channels every time — 36 calls — which is why a call-based rate
+#: read 0.5556 for a search that repeated one candidate in nine.
+TWO_CHANNEL_DISTINCT = 16
+
+
+@pytest.fixture(scope="module")
+def two_channel_run():
+    """A real NSGA-II search on the real hardware-mode problem, unmetered."""
+    budget = EvaluationBudget(limit=None)
+    problem = _hw_problem(budget)
+    result = NSGA2Optimizer(
+        pop_size=TWO_CHANNEL_POP, generations=TWO_CHANNEL_GENERATIONS,
+        seed=0, verbose=False,
+    ).optimize(problem, reporter=None)
+    return budget, problem, result
+
+
+class TestTheSealedRateIsTheDriversReProposalRate:
+    """The axis a campaign ranks optimizers by must describe the SEARCH, not
+    how many channels the driver happens to ask through."""
+
+    def test_the_fixture_really_asks_through_two_channels_per_proposal(
+        self, two_channel_run,
+    ):
+        _, _, result = two_channel_run
+        ledger = result.ledger
+
+        assert ledger is not None
+        assert ledger.identities_asked == TWO_CHANNEL_POP * TWO_CHANNEL_GENERATIONS
+        assert ledger.evaluations_raw == 2 * ledger.identities_asked, (
+            "NSGA-II screens then scores: two calls per proposal"
+        )
+
+    def test_the_sealed_rate_is_the_re_proposal_rate_not_the_channel_floor(
+        self, two_channel_run,
+    ):
+        _, _, result = two_channel_run
+        ledger = result.ledger
+
+        assert ledger is not None
+        assert ledger.evaluations_distinct == TWO_CHANNEL_DISTINCT
+        assert ledger.identities_reasked == (
+            ledger.identities_asked - ledger.evaluations_distinct
+        ), "every proposal after the first of an identity is a re-proposal"
+        assert ledger.duplicate_rate == pytest.approx(2 / 18)
+        assert ledger.duplicate_rate < 0.2, (
+            "counted in CALLS this search sealed 0.5556 — a structural ~0.5 "
+            "floor no single-channel driver can reach, so the two were never "
+            "comparable"
+        )
+
+    def test_the_call_counts_are_still_sealed_as_facts(self, two_channel_run):
+        # The identity axis REPLACES the rate, not the counts: an analysis that
+        # wants calls per proposal must still be able to read them.
+        budget, _, result = two_channel_run
+        ledger = result.ledger
+
+        assert ledger is not None
+        assert ledger.evaluations_raw == 36
+        assert ledger.evaluations_distinct == budget.distinct_spent
+
+
 class _ToyProblem:
     """Two continuous variables, two objectives, and the same cache seam.
 
@@ -658,7 +837,10 @@ class _ToyProblem:
     def evaluate(self, cfg) -> Dict[str, float]:
         key = json.dumps(cfg, sort_keys=True)
         cached = self._cache.get(key)
-        charge_evaluation(self.evaluation_budget, key, hit=cached is not None)
+        charge_evaluation(
+            self.evaluation_budget, key,
+            hit=cached is not None, channel=EVALUATE_CHANNEL,
+        )
         if cached is not None:
             return cached
         objectives = {
@@ -758,9 +940,19 @@ class TestTheLedgerCoversTheSearchItself:
         assert result.ledger is not None
         assert result.ledger.evaluations_raw == POP_SIZE
         assert result.ledger.evaluations_distinct == POP_SIZE
-        assert result.ledger.duplicate_rate == 0.0, (
-            "this search proposed no candidate twice"
-        )
+
+    def test_a_single_channel_driver_asking_each_identity_once_seals_zero(
+        self, boundary_run,
+    ):
+        # This problem answers through ONE channel and the search proposed no
+        # candidate twice, so the comparable axis reads exactly 0.0 — the
+        # baseline the multi-channel problem below must agree with.
+        _, _, result = boundary_run
+
+        assert result.ledger is not None
+        assert result.ledger.identities_asked == POP_SIZE
+        assert result.ledger.identities_reasked == 0
+        assert result.ledger.duplicate_rate == 0.0
 
     def test_the_front_re_read_is_the_accountants_business_not_the_ledgers(
         self, boundary_run,
