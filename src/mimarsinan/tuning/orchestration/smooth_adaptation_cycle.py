@@ -7,6 +7,7 @@ import warnings
 from typing import TYPE_CHECKING, Any, cast
 
 from mimarsinan.tuning.trace import DecisionRecord, DecisionTrace
+from mimarsinan.tuning.orchestration import adaptation_ledger
 from mimarsinan.tuning.orchestration.acceptance_sensor import AcceptanceSensor
 from mimarsinan.tuning.orchestration.adaptation_driver import AdaptationDriver, CycleContext
 from mimarsinan.tuning.orchestration.checkpoint_guard import CheckpointGuard
@@ -162,6 +163,12 @@ class SmoothAdaptationCycleMixin(TunerBase):
         if extra is not None:
             self._set_extra_state(extra)
 
+    def _record_refinement(self, kind, detail=""):
+        """Note one controller self-refinement on the run's adaptation ledger."""
+        adaptation_ledger.record_refinement(
+            adaptation_ledger.ledger_of(self), kind, detail
+        )
+
     def _baseline_or_none(self):
         baseline = getattr(self, "_validation_baseline", None)
         return float(baseline) if baseline is not None else None
@@ -290,6 +297,7 @@ class SmoothAdaptationCycleMixin(TunerBase):
             t_cycle_start=t_cycle_start,
             pre_state=pre_state,
             pre_cycle_acc=pre_cycle_acc,
+            pre_probe_drawn=last is None,
         )
 
     def _probe_instant(self, ctx: CycleContext) -> None:
@@ -437,6 +445,9 @@ class SmoothAdaptationCycleMixin(TunerBase):
             self._missed_target_streak += 1
             if getattr(self, "_refind_lr_on_miss", False):
                 self._invalidate_lr_cache()
+                self._record_refinement(
+                    adaptation_ledger.LR_REFIND, "missed target; LR cache dropped",
+                )
 
         if self._missed_target_streak >= _STUCK_STREAK_REQUIRED:
             self._pre_relaxation_target = self._get_target()
@@ -447,8 +458,16 @@ class SmoothAdaptationCycleMixin(TunerBase):
                     self.target_adjuster.target_metric, abs_floor
                 )
             self._missed_target_streak = 0
+            self._record_refinement(
+                adaptation_ledger.TARGET_RELAXATION,
+                f"{self._pre_relaxation_target:.6f} -> "
+                f"{self.target_adjuster.target_metric:.6f}",
+            )
             if not getattr(self, "_refind_lr_on_miss", False):
                 self._invalidate_lr_cache()
+                self._record_refinement(
+                    adaptation_ledger.LR_REFIND, "target relaxed; LR cache dropped",
+                )
 
         if hasattr(self, "_cycle_log"): self._cycle_log.record(DecisionRecord(
             cycle_index=len(self._cycle_log),

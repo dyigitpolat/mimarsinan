@@ -8,8 +8,10 @@ import warnings
 from typing import TYPE_CHECKING, Any
 
 from mimarsinan.tuning.trace import DecisionTrace
+from mimarsinan.tuning.orchestration import adaptation_ledger
 from mimarsinan.tuning.orchestration.acceptance_sensor import AcceptanceSensor
 from mimarsinan.tuning.orchestration.adaptation_driver import AdaptationDriver
+from mimarsinan.tuning.orchestration.adaptation_ledger import AdaptationLedger
 from mimarsinan.tuning.orchestration.recovery_engine import RecoveryEngine
 from mimarsinan.tuning.orchestration.retention_envelope import resolve_step_anchor
 from mimarsinan.tuning.orchestration.tuning_budget import min_step_for_smooth_adaptation
@@ -200,6 +202,7 @@ class SmoothAdaptationRunMixin(TunerBase):
         self._best_committed_metric = None
         self._gradual_train_steps = 0
         self._cycle_log = DecisionTrace.new()
+        self._adaptation_ledger = AdaptationLedger()
         self._cached_lr = None
         self._persistent_optimizer_owner = None
         self._phase_seconds = {}
@@ -304,6 +307,7 @@ class SmoothAdaptationRunMixin(TunerBase):
         if getattr(self, "_fixed_ladder_policy", False):
             policy_override = "fixed_ladder"
             rates = getattr(self, "_fixed_ladder_rates", None) or [1.0]
+        ledger = adaptation_ledger.ledger_of(self)
         scheduler = AdaptationDriver.build_scheduler(
             epsilon=epsilon,
             max_rounds=max_cycles,
@@ -311,6 +315,7 @@ class SmoothAdaptationRunMixin(TunerBase):
             initial_step=initial_step,
             policy_override=policy_override,
             rates=rates,
+            ledger=ledger,
         )
         entry_short_circuit = None
         if bool(
@@ -323,6 +328,7 @@ class SmoothAdaptationRunMixin(TunerBase):
             finalize=self._finalize_run,
             committed=self._committed_rate,
             entry_short_circuit=entry_short_circuit,
+            ledger=ledger,
         )
         return driver.run()
 
@@ -337,6 +343,11 @@ class SmoothAdaptationRunMixin(TunerBase):
         self._phase_seconds["gradual"] = time.time() - self._run_t0
 
         if self._natural_rate < 1.0 - 1e-6:
+            adaptation_ledger.record_escalation(
+                adaptation_ledger.ledger_of(self),
+                adaptation_ledger.FORCED_FULL_RATE,
+                f"natural ramp stalled at {self._natural_rate:.6f}",
+            )
             warnings.warn(
                 f"{self.__class__.__name__}: natural adaptation reached only "
                 f"{self._natural_rate:.4f}; _after_run will force to 1.0",
@@ -375,6 +386,11 @@ class SmoothAdaptationRunMixin(TunerBase):
         tol = float(getattr(self, "_rollback_tolerance", 0.0))
         if final_metric < best_metric - tol:
             self._restore_state(best_state)
+            adaptation_ledger.record_escalation(
+                adaptation_ledger.ledger_of(self),
+                adaptation_ledger.KEEPBEST_RESTORE,
+                f"final {final_metric:.6f} < best committed {best_metric:.6f}",
+            )
             self.pipeline.reporter.report(
                 f"{self.name} certified keepbest restore",
                 {"final": final_metric, "best_committed": best_metric},

@@ -6,6 +6,15 @@ from dataclasses import dataclass
 
 from mimarsinan.tuning.orchestration.tuner_base import CATASTROPHIC_DROP_FACTOR
 
+PROBE_INSTANT = "instant_acc"
+"""Pre-recovery instant read the catastrophic fast-fail gate judges."""
+
+PROBE_PAIRED = "paired_correctness"
+"""Per-example correctness fraction the McNemar commit gate judges."""
+
+PROBE_MARGINAL = "marginal_probe"
+"""Unpaired validation probe the threshold commit gate judges."""
+
 
 @dataclass
 class BaselineRef:
@@ -90,6 +99,13 @@ class AcceptanceSensor:
         if absolute_floor is not None:
             bounds.append(absolute_floor)
         return max(bounds)
+
+    @staticmethod
+    def probe_basis(*, catastrophic: bool, paired: bool) -> str:
+        """Name the reading a verdict was taken on — the sensor owns its bases."""
+        if catastrophic:
+            return PROBE_INSTANT
+        return PROBE_PAIRED if paired else PROBE_MARGINAL
 
     @staticmethod
     def is_rollback(post_acc, threshold) -> bool:
