@@ -496,6 +496,24 @@ class TestEveryChannelThatSpendsWorkIsCharged:
 
         assert (budget.distinct_spent, budget.raw_calls) == (0, 0)
 
+    def test_re_evaluating_a_structurally_rejected_candidate_stays_free_too(self):
+        # The EVALUATE channel's twin of the pin above, and the one place the
+        # objective cache answers about an identity the run never spent
+        # anything on: the first evaluate() records the refusal's penalty, the
+        # second is served from that cache. Charging THAT hit would invent an
+        # evaluation out of a candidate nothing was ever built for — and would
+        # do it once per re-proposal, so a search rejecting everything
+        # structurally would seal a spend it never made.
+        budget = EvaluationBudget(limit=None)
+        problem = _hw_problem(budget, validate_fn=lambda mc, pcfg, shape: False)
+        configuration = _mid_configuration(problem)
+
+        first = problem.evaluate(configuration)
+        again = problem.evaluate(configuration)
+
+        assert again == first, "the fixture must actually re-ask the same candidate"
+        assert (budget.distinct_spent, budget.raw_calls) == (0, 0)
+
     def test_one_candidate_seen_by_both_channels_is_one_evaluation(self):
         # The evaluate channel re-asks the identity the constraint channel just
         # resolved. Charging per CHANNEL would price one candidate twice and put
