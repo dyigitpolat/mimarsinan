@@ -99,6 +99,26 @@
       "derivation": "Configuration enters through the scan chain, published at 10 MHz with no PLL or global clock tree. A scan chain shifts one bit per cycle: 1 / 10 MHz = 100 ns per bit, so 8 bits = 800 ns per byte.",
       "note": "Assumes a single serial scan path at one bit per cycle. If the chip shifts several chains in parallel the true figure is lower by that factor; the papers do not state the chain count."
     },
+    "e_program_per_byte": {
+      "low": 9.1864,
+      "nominal": 22.502,
+      "high": 55.1184,
+      "unit": "pJ",
+      "evidence_kind": "derived",
+      "citation": "akopyan2015truenorth Fig. 17, p.1551 (the e_mac anchor); Section V-E, p.1546 (binary synapse)",
+      "derivation": "[TS6] The papers time the configuration path (t_program_per_byte) but never measure its energy, so the commit energy is anchored on this profile's own access-scale constant. A TrueNorth synapse is BINARY (conductance_levels = 2), so one synaptic event consults one BIT of the core's crossbar SRAM and a byte of weight store is 8 such accesses: the per-byte anchor is 8 x e_mac = 8 x 2.2966 = 18.3728 pJ/B. An SRAM write costs about 1-3x its read, so the ratio band is [0.5x, 3x] the anchor = 9.1864 - 55.1184 pJ/B, with the nominal at the band's log-space centre, sqrt(9.1864 x 55.1184) = 22.502 pJ/B.",
+      "note": "e_mac here is the whole-chip MARGINAL per-event energy (array read, neuron update and routing together), so it overstates the bare SRAM access - which is exactly why the ratio band reaches down to 0.5x. DERIVED, not measured."
+    },
+    "e_core_program": {
+      "low": 293.965,
+      "nominal": 587.93,
+      "high": 1175.86,
+      "unit": "pJ",
+      "evidence_kind": "derived",
+      "citation": "akopyan2015truenorth Fig. 17, p.1551 (the e_mac anchor); Section III, p.1540 (256 neurons per core)",
+      "derivation": "[TS6] TrueNorth declares no e_core_init, so the payload-independent part of a program load is anchored on the core-state SWEEP this profile's own geometry defines: 256 neurons per core (validity.array_size_assumed) x e_mac 2.2966 pJ = 587.9296 pJ of per-core control work. That is the same compartment-sweep bound loihi's e_core_init derivation cites (1024 x 52 pJ), where a measured reset later came in about 1.7x below it - so the sweep is an upper-bound-shaped anchor. The ratio band [0.5x, 2x] gives 293.965 - 1175.86 pJ, with the nominal at the band's log-space centre, 587.93 pJ.",
+      "note": "Charged per program LOAD (x reprogrammed_cores). TrueNorth is a configuration-scan chip: this is the control energy of addressing one core's rows, not the payload, which e_program_per_byte prices."
+    },
     "t_cycle": {
       "low": 47.6,
       "nominal": 1000.0,

@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Sequence
+import json
+from typing import Any, Dict, Sequence
 
 from mimarsinan.deployment_record.correlation.run import CaseCorrelation, worst_error
 
@@ -24,6 +25,45 @@ def _row(result: CaseCorrelation, axis) -> str:
         f"{result.case.name:<30}{result.measurement_kind:<11}{axis.name:<24}"
         f"{predicted:>13}{axis.published:>13.5g}{error:>10}  {' '.join(marks)}"
     )
+
+
+def correlation_payload(results: Sequence[CaseCorrelation]) -> Dict[str, Any]:
+    """The whole suite as JSON-safe data — the shape the checked-in golden pins.
+
+    The BAND rides along with the nominal: a constant whose band moved while its
+    nominal held is still a changed prediction, and a golden that could not see
+    that would pass a physics edit it was written to catch.
+    """
+    return {
+        "cases": [
+            {
+                "name": result.case.name,
+                "profile": result.case.profile,
+                "measurement_kind": result.measurement_kind,
+                "independence": result.case.independence,
+                "citation": result.case.citation,
+                "overrides_applied": dict(result.overrides_applied),
+                "passed": result.passed,
+                "axes": [
+                    {
+                        "axis": axis.name,
+                        "predicted": axis.predicted,
+                        "published": axis.published,
+                        "band": None if axis.band is None else list(axis.band),
+                        "error_pct": None if axis.predicted is None else axis.error_pct,
+                        "refusal": axis.refusal,
+                    }
+                    for axis in result.axes
+                ],
+            }
+            for result in results
+        ]
+    }
+
+
+def correlation_payload_json(results: Sequence[CaseCorrelation]) -> str:
+    """Exactly the bytes ``scripts/silicon_correlation.py --json`` writes."""
+    return json.dumps(correlation_payload(results), indent=2, sort_keys=True) + "\n"
 
 
 def render_correlation(results: Sequence[CaseCorrelation]) -> str:

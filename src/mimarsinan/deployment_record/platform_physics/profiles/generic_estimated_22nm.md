@@ -66,9 +66,11 @@ part.
 | `area_per_tile_fixed` | 8000.0 um^2 | Per-tile overhead that is neither array, neuron logic nor router: schedulers, controllers, local buffers. |
 | `area_global_fixed` | 10.0 mm^2 | Whole-chip area scaling with neither cores nor tiles: pads, PLLs, host interface. |
 | `e_dma_per_byte` | 0.16 pJ | Moving one byte of programming payload onto the chip. |
+| `e_program_per_byte` | 0.547723 pJ | Committing one byte into the SRAM weight store, once it has arrived: Horowitz-scale SRAM access (~1.25 pJ/B read at 45 nm, ~0.61 pJ/B scaled to 22 nm) times a 1–3x write ratio, banded 0.1–3.0 pJ/B. |
+| `e_core_program` | 512.0 pJ | The payload-independent per-core setup of a program load: the 256-neuron core-state sweep (256 x e_neuron_update) banded [0.5x, 2x] on the anchor's own corners. |
 | `e_readout_per_byte` | 0.16 pJ | Moving one byte of pass-boundary emissions off the chip. Same off-chip band as the inbound direction, restated so the readout is charged explicitly rather than by omission. |
 | `bytes_per_connectivity_entry` | 8.0 B | Wire size of one connectivity (axon source span) entry. |
-| `t_program_per_byte` | 80.0 ns | Wall time to move one programming byte. |
+| `t_program_per_byte` | 80.0 ns | Wall time to move one programming byte. This profile is a DONOR: the targets that publish no interface rate (Loihi, ODIN, ISAAC) scale this band by `validity.technology_node_nm` to derive their own. |
 | `e_sync_barrier` | 1000.0 pJ | Energy of one chip-wide synchronization barrier. |
 | `t_sync_barrier` | 465.0 ns | Wall time of one chip-wide barrier. |
 | `p_static_per_core` | 50.0 uW | Static (leakage) power per core. |

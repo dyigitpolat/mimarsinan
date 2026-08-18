@@ -41,6 +41,35 @@
       "derivation": "frady2020neuromorphic Sec 5.4: 'the reset time of 230us on Pohoiki Springs that falls off the latency critical path'. The framework charges core init per core (t_core_init x segment_cores), so the wall consistent with that model is the chip's share serialized over its 128 cores: 230 / 128 = 1.797 us. UPPER BOUND, twice over -- the published wall covers the whole reset phase (embedded x86 orchestration included), and the intra-chip parallelism is unstated, so a chip that clears its cores concurrently pays far less per core. The low corner is that bulk/parallel clear. This also refutes the compartment-sweep reading (1024 x 5.3 ns = 5.43 us per core), which would put a chip's serial reset at 695 us, three times the measured system wall.",
       "note": "Wall time to reset one core's neuron state at the start of a pass."
     },
+    "e_program_per_byte": {
+      "low": 11.8,
+      "nominal": 28.904,
+      "high": 70.8,
+      "unit": "pJ",
+      "evidence_kind": "derived",
+      "citation": "davies2018loihi Table 2, p.96 (the e_mac anchor); davies2021advancing (9-bit synapse)",
+      "derivation": "[TS6] No Loihi paper measures a weight load, so the commit energy is anchored on this profile's own access-scale constant: e_mac = 23.6 pJ is one synaptic spike op, i.e. one read of one synapse entry. A weight is up to 9 bits including sign (conductance_levels = 512), so one entry is one byte of synaptic memory and the per-byte access anchor is 23.6 pJ/B. An SRAM write costs about 1-3x its read, and the anchor itself OVERSTATES the pure array read (the published per-op figure carries the datapath around it), so the ratio band is [0.5x, 3x] the anchor: 11.8 - 70.8 pJ/B. The band IS that ratio spread, and the nominal sits at its log-space centre, sqrt(11.8 x 70.8) = 28.904 pJ/B, because the centre of a ratio band is geometric rather than arithmetic.",
+      "note": "DERIVED, never measured: the 1-3x figure is a technology fact about SRAM writes, not a Loihi measurement, and the band is deliberately wide enough to say so. Distinct from e_dma_per_byte, which is what MOVING a byte onto the chip costs and which this profile does not declare (Intel publishes no host-interface transfer energy); this is what COMMITTING it to the synaptic SRAM costs."
+    },
+    "t_program_per_byte": {
+      "low": 2.54545,
+      "nominal": 142.701,
+      "high": 636.364,
+      "unit": "ns",
+      "evidence_kind": "derived",
+      "derivation": "[TS6] Loihi publishes no configuration-interface rate, so the wall is DONOR-SCALED from the two profiles that declare one, along validity.technology_node_nm (a configuration interface is clocked, and a clock period tracks the node's gate delay, so the wall scales with the node): truenorth 800 ns/B at 28 nm becomes 800 x 14/28 = 400 ns/B, and generic_estimated_22nm 4 / 80 / 1000 ns/B at 22 nm becomes 2.54545 / 50.9091 / 636.364 ns/B. The band is the ENVELOPE of both scaled donors, 2.54545 - 636.364 ns/B, and the nominal is the geometric mean of their scaled nominals, sqrt(400 x 50.9091) = 142.701 ns/B.",
+      "note": "The widest band in this profile, and honestly so: a serial scan chain and a wide parallel configuration bus lie two orders of magnitude apart and no Loihi paper says which one Loihi has. Only the amortized latency_programming_s term reads it; the steady-state latency headline never does."
+    },
+    "e_core_program": {
+      "low": 15.46,
+      "nominal": 31.0248,
+      "high": 62.26,
+      "unit": "nJ",
+      "evidence_kind": "derived",
+      "citation": "frady2020neuromorphic Table 2 (Reset column), p.7 - through this profile's e_core_init",
+      "derivation": "[TS6] Anchored on this profile's own e_core_init (30.92 - 31.13 nJ, derived from the measured reset phase): programming a core walks the same per-core control path a state reset walks, addressing every compartment once, so the payload-INDEPENDENT part of a program load is that same scale. The ratio band [0.5x, 2x] is applied to the anchor's own corners: 0.5 x 30.92 = 15.46 nJ to 2 x 31.13 = 62.26 nJ, with the nominal at the band's log-space centre, sqrt(15.46 x 62.26) = 31.0248 nJ.",
+      "note": "Charged per program LOAD (x reprogrammed_cores). e_core_init is its per-INFERENCE twin - the same control path, a different event - and the two are never charged for the same one."
+    },
     "e_intra_tile_packet": {
       "nominal": 1.7,
       "unit": "pJ",

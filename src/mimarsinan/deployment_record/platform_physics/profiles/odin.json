@@ -55,6 +55,35 @@
       "derivation": "The P_idle x f_clk term of Eq. (2) evaluated at this profile's declared clock: 1.78 uW/MHz x 75 MHz = 133.5 uW. ODIN has exactly one core, so a per-core declaration charges it once.",
       "note": "Clock-proportional idle power, not leakage — a run at another clock must restate it, and 'Idle power (Pidle) 1.78uW/MHz @0.55V' is the rate to restate it from."
     },
+    "e_program_per_byte": {
+      "low": 8.43,
+      "nominal": 20.6492,
+      "high": 50.58,
+      "unit": "pJ",
+      "evidence_kind": "derived",
+      "citation": "frenkel2019odin Fig. 8b and Section IV-A, p.8 (the e_mac anchor); Section II-B (4-bit synapse)",
+      "derivation": "[TS6] The paper reports no weight-load energy, so the commit energy is anchored on this profile's own access-scale constant. An ODIN synapse is 4 bits (3-bit weight + 1 mapping bit, conductance_levels = 8), so a byte of synaptic SRAM holds two synapses and the per-byte access anchor is 2 x e_mac = 2 x 8.43 = 16.86 pJ/B. An SRAM write costs about 1-3x its read, so the ratio band is [0.5x, 3x] the anchor = 8.43 - 50.58 pJ/B, with the nominal at the band's log-space centre, sqrt(8.43 x 50.58) = 20.6492 pJ/B.",
+      "note": "e_mac here is the INCREMENTAL energy per SOP, which the paper states already contains the weight read AND update, the neuron state read and update, and the controller and scheduler overheads - so it overstates the bare SRAM access, which is why the ratio band reaches down to 0.5x. DERIVED, not measured."
+    },
+    "t_program_per_byte": {
+      "low": 5.09091,
+      "nominal": 285.402,
+      "high": 1272.73,
+      "unit": "ns",
+      "evidence_kind": "derived",
+      "derivation": "[TS6] ODIN publishes no configuration-interface rate (its SPI bus width and clock are not stated per byte), so the wall is DONOR-SCALED from the two profiles that declare one, along validity.technology_node_nm: truenorth 800 ns/B at 28 nm stays 800 ns/B at ODIN's own 28 nm, and generic_estimated_22nm 4 / 80 / 1000 ns/B at 22 nm becomes 5.09091 / 101.818 / 1272.73 ns/B. The band is the ENVELOPE of both scaled donors, 5.09091 - 1272.73 ns/B, and the nominal is the geometric mean of their scaled nominals, sqrt(800 x 101.818) = 285.402 ns/B.",
+      "note": "Two orders of magnitude wide because the two donors disagree by that much - a scan chain against a parallel bus. Only the amortized latency_programming_s term reads it."
+    },
+    "e_core_program": {
+      "low": 1.07904,
+      "nominal": 2.15808,
+      "high": 4.31616,
+      "unit": "nJ",
+      "evidence_kind": "derived",
+      "citation": "frenkel2019odin Fig. 8b, p.8 (the e_mac anchor); Section II, p.2 (256 neurons)",
+      "derivation": "[TS6] ODIN declares no e_core_init, so the payload-independent part of a program load is anchored on the core-state SWEEP this profile's own geometry defines: 256 neurons in the core (validity.array_size_assumed) x e_mac 8.43 pJ = 2.15808 nJ of per-core control work, the same compartment-sweep anchor loihi's measured e_core_init sits about 1.7x below. The ratio band [0.5x, 2x] gives 1.07904 - 4.31616 nJ, with the nominal at the band's log-space centre, 2.15808 nJ.",
+      "note": "Charged per program LOAD (x reprogrammed_cores). ODIN is a SINGLE core, so this term is paid at most once per load on this target."
+    },
     "t_cycle": {
       "nominal": 26.6667,
       "unit": "ns",

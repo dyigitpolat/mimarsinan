@@ -16,7 +16,6 @@ as a gate. A miss is a finding about the constants, never a reason to widen the 
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import sys
 from typing import Optional, Sequence
@@ -26,38 +25,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 from mimarsinan.deployment_record.correlation import (  # noqa: E402
     available_cases,
     correlate_all,
+    correlation_payload_json,
     render_correlation,
 )
-
-
-def _payload(results) -> dict:
-    return {
-        "cases": [
-            {
-                "name": result.case.name,
-                "profile": result.case.profile,
-                "measurement_kind": result.measurement_kind,
-                "independence": result.case.independence,
-                "citation": result.case.citation,
-                "overrides_applied": dict(result.overrides_applied),
-                "passed": result.passed,
-                "axes": [
-                    {
-                        "axis": axis.name,
-                        "predicted": axis.predicted,
-                        "published": axis.published,
-                        # The BAND is part of the prediction: a constant whose band
-                        # moved while its nominal held is still a changed prediction.
-                        "band": None if axis.band is None else list(axis.band),
-                        "error_pct": None if axis.predicted is None else axis.error_pct,
-                        "refusal": axis.refusal,
-                    }
-                    for axis in result.axes
-                ],
-            }
-            for result in results
-        ]
-    }
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
@@ -74,8 +44,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     if args.json:
         with open(args.json, "w", encoding="utf-8") as handle:
-            json.dump(_payload(results), handle, indent=2, sort_keys=True)
-            handle.write("\n")
+            handle.write(correlation_payload_json(results))
         print(f"\nwrote {args.json}")
 
     missed = [result.case.name for result in results if not result.passed]

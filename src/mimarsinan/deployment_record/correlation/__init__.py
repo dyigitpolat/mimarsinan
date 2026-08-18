@@ -9,7 +9,11 @@ from mimarsinan.deployment_record.correlation.library import (
     correlate_all,
     get_case,
 )
-from mimarsinan.deployment_record.correlation.report import render_correlation
+from mimarsinan.deployment_record.correlation.report import (
+    correlation_payload,
+    correlation_payload_json,
+    render_correlation,
+)
 from mimarsinan.deployment_record.correlation.run import (
     AxisCorrelation,
     CaseCorrelation,
@@ -25,6 +29,8 @@ __all__ = [
     "available_cases",
     "correlate",
     "correlate_all",
+    "correlation_payload",
+    "correlation_payload_json",
     "get_case",
     "render_correlation",
     "worst_error",

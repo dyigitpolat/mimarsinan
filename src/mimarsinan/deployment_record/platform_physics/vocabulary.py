@@ -114,6 +114,15 @@ ROWS: Tuple[Tuple[str, str, str, str, str, str], ...] = (
      "host reads back. Its own constant because the readout path need not "
      "cost what the inbound DMA path costs; a target that does not declare it "
      "prices no readout term rather than borrowing the inbound number."),
+    ("e_program_per_byte", PROGRAMMING, ENERGY, "pJ", "reprogrammed_bytes",
+     "Energy to COMMIT one byte of programming payload into the target's weight "
+     "store — the write itself, beyond moving the byte onto the chip. Its own "
+     "constant because the two costs differ by orders of magnitude on an NVM "
+     "target (a program-verify write against a bus transfer) and because a "
+     "carried activation crosses the DMA channel WITHOUT being written into the "
+     "weight store: sharing one constant would charge every inference for a "
+     "write that never happened. A target whose published per-byte figure "
+     "already contains the write declares only one of the two."),
     ("bytes_per_connectivity_entry", PROGRAMMING, DATA, "B",
      "connectivity_entries",
      "Wire size of one connectivity (axon source span) entry in this target's format."),

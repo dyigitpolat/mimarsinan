@@ -68,6 +68,39 @@ The regression is now pinned by `TestTheIsaacReferenceCase`.
   stage *is* the crossbar read — and both carry the paper's own 100–200 ns
   sensitivity band.
 
+## The programming group — writing an analog array, and what is NOT modelled (TS6)
+
+ISAAC is an *inference* architecture: it assumes its weights are already resident, so
+the paper publishes no write energy, no write time and no endurance budget. The three
+programming constants are authored derivations (`evidence_kind: derived`), each with
+its nominal at the band's log-space centre (`sqrt(low x high)`):
+
+- **`e_program_per_byte` = 237.7 / 751.7 / 2377.0 pJ/B.** An analog conductance is
+  committed by a **program-and-verify pulse sequence**, one to two orders of magnitude
+  above an SRAM write. The library's SRAM class (Loihi 28.90, TrueNorth 22.50, ODIN
+  20.65 pJ/B) has geometric mean 23.77 pJ/B, so the band is `[10x, 100x]` that. Per
+  2-bit cell (4 cells to the byte) that is 59–594 pJ, the program-verify scale.
+  **`e_dma_per_byte` (2.02 pJ/B) is a different thing entirely** — it prices moving a
+  byte through the tile's eDRAM buffer, which is also what a carried activation pays
+  per inference. Committing and moving are separate constants precisely so an NVM
+  target's write cost cannot leak into its per-inference carry.
+- **ENDURANCE IS UNMODELED.** This profile prices the *energy* of a write and says
+  nothing about the *wear*: a per-inference-reprogrammed array has a finite write
+  budget (10⁶–10⁹ cycles in the device literature) and no quantity in this framework
+  counts writes against it. A DOM-style workload that reprograms per sample is priced
+  here but **not** feasibility-checked. Treat that as an open modelling gap, not as a
+  clean bill of health.
+- **`t_program_per_byte` = 5.82 / 326.2 / 1454.5 ns/B.** Donor-scaled along
+  `validity.technology_node_nm` from TrueNorth (800 → 914.3 ns/B at 32 nm) and the
+  generic 22 nm exemplar (4/80/1000 → 5.82/116.4/1454.5). **Transport only, therefore
+  a lower bound here**: the per-cell program-verify wall (microsecond scale in the
+  device literature) is not in this figure.
+- **`e_core_program` = 1.035 / 2.07 / 4.14 nJ.** ISAAC's "core" is a *tile*, so the
+  neuron-sweep anchor the digital profiles use does not apply; the anchor is the tile's
+  own eDRAM buffer cycle (20.7 mW × 100 ns = 2.07 nJ — the very quantity
+  `e_dma_per_byte` divides), banded `[0.5x, 2x]`. Control work only; the conductance
+  writes are `e_program_per_byte`'s.
+
 ## What this profile deliberately does not declare
 
 `e_inter_tile_hop` and `t_hop` are the notable absences. Table I gives router
@@ -78,8 +111,8 @@ say so. The research report records the arithmetic that *would* give 4.4–5.3 p
 if one assumed full utilisation — as an explicitly unusable estimate.
 
 Also absent: the whole `host` group (a property of the deployment host, not the
-chip), `e_core_program` / `e_core_init` / `t_core_init` / `t_program_per_byte` (ISAAC
-assumes weights are already resident and does not model programming), and
+chip), `e_core_init` / `t_core_init` (ISAAC assumes weights are already resident and
+publishes no reset; the *programming* group is now derived — see above), and
 `e_sync_barrier` / `t_sync_barrier` (the c-mesh is *statically scheduled*, so there
 is no barrier to price).
 

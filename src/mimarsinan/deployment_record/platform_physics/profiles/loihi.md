@@ -102,13 +102,42 @@ a clock (below).
   converter, no analog programming spread. That is different from an undeclared
   constant, which means "this target has not said".
 
+## The programming group — DERIVED, and how (TS6)
+
+No Loihi paper measures a weight load, and refusing every programming term by name
+made the target unusable for any study that reprograms. The three constants below are
+therefore **authored derivations**: each states its anchor, its ratio and the arithmetic,
+and each is `evidence_kind: derived` so a comparison discloses that it is not a
+measurement. A ratio band's nominal always sits at the band's **log-space centre**
+(`sqrt(low x high)`) — the centre of a multiplicative spread is geometric.
+
+- **`e_program_per_byte` = 11.8 / 28.904 / 70.8 pJ/B.** Anchor: this profile's own
+  `e_mac` (23.6 pJ per synaptic spike op = one read of one synapse entry). A weight is
+  up to 9 bits with sign, so one entry is one byte and the per-byte access anchor is
+  23.6 pJ/B. An SRAM write costs ~1–3× its read, and the anchor overstates the bare
+  array read, so the band is `[0.5x, 3x]` the anchor — the band *is* the ratio spread.
+  It is **not** `e_dma_per_byte`: that would be what MOVING a byte onto the chip costs,
+  which Intel does not publish, and which a carried activation also pays. This is the
+  commit into synaptic SRAM, charged on `reprogrammed_bytes` alone.
+- **`t_program_per_byte` = 2.545 / 142.7 / 636.4 ns/B.** Donor-scaled along
+  `validity.technology_node_nm` from the two profiles that declare an interface rate:
+  TrueNorth's scan chain (800 ns/B at 28 nm → 400 at 14 nm) and the generic 22 nm
+  exemplar (4/80/1000 ns/B → 2.545/50.91/636.4). The band is the envelope of both
+  scaled donors; the nominal is the geometric mean of their scaled nominals.
+- **`e_core_program` = 15.46 / 31.025 / 62.26 nJ.** Anchor: this profile's own measured
+  `e_core_init` (30.92–31.13 nJ) — programming a core walks the same per-core control
+  path a state reset walks. Band `[0.5x, 2x]` on the anchor's own corners. It is the
+  per-LOAD twin of `e_core_init`, which stays per-inference; the pricer never charges
+  both for one event.
+
 ## What this profile deliberately does not declare
 
-`e_dma_per_byte`, `e_core_program`, `e_core_init`, `t_program_per_byte`,
-`t_core_init`, `e_sync_barrier` (only its *time* is published), `e_row_drive`,
-and — of the `host` group — everything except the measured-wall identity
-`host_compute_rate`. None are published; each absence disables exactly the
-objectives that need it.
+`e_dma_per_byte` (Intel publishes no host-interface transfer energy, so the byte's
+*journey* stays unpriced even though its *commit* is now derived), `e_sync_barrier`
+(only its *time* is published), `e_row_drive`, `e_leak_per_neuron_step` (already inside
+`e_neuron_update`, see above), and — of the `host` group — everything except the
+measured-wall identity `host_compute_rate`. None are published; each absence disables
+exactly the objectives that need it.
 
 ## Cross-check against what the repository already claims
 

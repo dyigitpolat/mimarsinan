@@ -10,6 +10,7 @@ from mimarsinan.deployment_record.cost.absolute.context import (
 )
 from mimarsinan.deployment_record.cost.absolute.formulas import (
     ENERGY_COMPONENTS,
+    PROGRAMMING_BYTE_ENERGIES,
     add_bands,
     programming_payload_bytes,
     scale_band,
@@ -77,14 +78,16 @@ def _programming_energy(ctx: PricingContext) -> None:
     """Per program LOAD, amortized separately from the per-inference headline."""
     components: List[Band] = []
     evidence: List[str] = []
-    if ctx.priced("e_dma_per_byte"):
-        payload = programming_payload_bytes(ctx.quantities, ctx.physics)
-        if payload is not None:
-            payload_bytes, note = payload
-            value = ctx.physics.band("e_dma_per_byte")
+    payload = programming_payload_bytes(ctx.quantities, ctx.physics)
+    if payload is not None:
+        payload_bytes, note = payload
+        for constant, label in PROGRAMMING_BYTE_ENERGIES:
+            if not ctx.priced(constant):
+                continue
+            value = ctx.physics.band(constant)
             components.append(scale_band(
-                value, payload_bytes * _J_TO_MJ, f"e_dma_per_byte x {note}"))
-            evidence.append(f"dma: e_dma_per_byte [{value.basis}]")
+                value, payload_bytes * _J_TO_MJ, f"{constant} x {note}"))
+            evidence.append(f"{label}: {constant} [{value.basis}]")
     # [E4] Only the PROGRAMMING overhead is amortized here. Core INIT is not:
     # every pass resets its cores' neuron state, so it is paid per inference —
     # which is where the latency plane has always charged t_core_init.

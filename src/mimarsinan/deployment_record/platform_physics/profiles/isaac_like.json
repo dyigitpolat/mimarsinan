@@ -153,6 +153,34 @@
       "derivation": "20.7 mW x 100 ns = 2.07 nJ per tile-cycle / 1024 B = 2.0215 pJ per byte read from the tile's eDRAM buffer.",
       "note": "The ON-CHIP payload cost. The off-chip HyperTransport figure (406 pJ/B) is deliberately NOT used here: the paper states that power is constant rather than activity-proportional, so it belongs in p_static_global instead."
     },
+    "e_program_per_byte": {
+      "low": 237.699,
+      "nominal": 751.67,
+      "high": 2376.99,
+      "unit": "pJ",
+      "evidence_kind": "derived",
+      "derivation": "[TS6] ISAAC is an inference architecture: it preloads its weights and publishes no write energy, and its own e_dma_per_byte (2.0215 pJ/B) prices MOVING a byte through the tile's eDRAM buffer, not committing it to a cell. An analog conductance is committed by a program-and-verify pulse sequence, which the RRAM literature places one to two orders of magnitude above an SRAM write. This library's SRAM class - loihi 28.904, truenorth 22.502, odin 20.6492 pJ/B - has geometric mean 23.7699 pJ/B, so the band is [10x, 100x] that = 237.699 - 2376.99 pJ/B, with the nominal at the band's log-space centre, sqrt(237.699 x 2376.99) = 751.67 pJ/B. Per 2-bit cell (4 cells to the byte) that is 59.4 - 594.2 pJ, the hundreds-of-pJ program-verify scale.",
+      "note": "ENDURANCE IS UNMODELED. This constant prices the ENERGY of a write and says nothing about the wear it causes: an analog array reprogrammed per inference has a finite write budget (the device literature spans 10^6 - 10^9 cycles), and no quantity in this framework counts writes against it. A workload that reprograms this target per sample is therefore PRICED here but not feasibility-checked. The widest band in the profile, deliberately: the device spread is real and the ratio, not a measurement, is what is known."
+    },
+    "t_program_per_byte": {
+      "low": 5.81818,
+      "nominal": 326.174,
+      "high": 1454.55,
+      "unit": "ns",
+      "evidence_kind": "derived",
+      "derivation": "[TS6] The paper states no configuration interface, so the wall is DONOR-SCALED from the two profiles that declare one, along validity.technology_node_nm: truenorth 800 ns/B at 28 nm becomes 800 x 32/28 = 914.286 ns/B, and generic_estimated_22nm 4 / 80 / 1000 ns/B at 22 nm becomes 5.81818 / 116.364 / 1454.55 ns/B. The band is the ENVELOPE of both scaled donors, 5.81818 - 1454.55 ns/B, and the nominal is the geometric mean of their scaled nominals, sqrt(914.286 x 116.364) = 326.174 ns/B.",
+      "note": "TRANSPORT only, and therefore a LOWER bound on this target: the program-verify pulse sequence that actually settles a conductance is a per-cell wall the device literature puts at the microsecond scale, and it is NOT in this donor-scaled figure - the same modelling gap e_program_per_byte's endurance note names."
+    },
+    "e_core_program": {
+      "low": 1.035,
+      "nominal": 2.07,
+      "high": 4.14,
+      "unit": "nJ",
+      "evidence_kind": "derived",
+      "citation": "shafiee2016isaac Table I eDRAM-buffer row, p.8 - through this profile's e_dma_per_byte",
+      "derivation": "[TS6] ISAAC declares no e_core_init, and its 'core' is a TILE rather than a neuron array, so the neuron-sweep anchor the digital profiles use does not apply. The payload-independent per-tile control work is anchored instead on the tile's own eDRAM buffer cycle - the very quantity e_dma_per_byte divides: 2.0215 pJ/B x 1024 B = 2.07 nJ per tile-cycle. The ratio band [0.5x, 2x] gives 1.035 - 4.14 nJ, with the nominal at the band's log-space centre, 2.07 nJ.",
+      "note": "Charged per program LOAD (x reprogrammed_cores), and it prices the tile's CONTROL work only - the conductance writes themselves are e_program_per_byte's, endurance caveat included."
+    },
     "p_static_global": {
       "nominal": 10400.0,
       "unit": "mW",
