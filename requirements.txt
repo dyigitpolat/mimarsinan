@@ -1,7 +1,10 @@
 nni
 numpy
 git+https://github.com/ildoonet/pytorch-gradual-warmup-lr.git
-scipy
+# [TS2] The Sobol' sampling backend seeds `qmc.Sobol` through the `rng=`
+# argument scipy 1.15 renamed it to; on an older release the same call is a
+# TypeError, so the floor is declared here rather than found at run time.
+scipy>=1.15
 # Pin the stable release: torch 2.12.0+cu130 was a bleeding-edge DEV build whose
 # flash/mem-efficient SDP BACKWARD kernels SIGKILL the mapped-ViT attention during
 # deployment training (offloaded_vit_deployment.md). 2.11.0 (same CUDA 13) has a
