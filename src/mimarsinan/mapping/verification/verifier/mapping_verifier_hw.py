@@ -5,6 +5,10 @@ from collections import OrderedDict
 from typing import Any, Dict, List, Tuple
 from mimarsinan.mapping.layout.layout_types import LayoutHardCoreType, LayoutSoftCoreSpec
 from mimarsinan.mapping.layout.layout_packer import pack_layout
+from mimarsinan.mapping.packing.infeasibility_proofs import (
+    largest_extents,
+    no_core_type_fits,
+)
 from mimarsinan.mapping.verification.layout_verification_packing import build_stats_from_packing_result
 from mimarsinan.mapping.support.schedule.pass_planner import (
     compute_schedule_sync_count,
@@ -108,8 +112,7 @@ def _verify_hardware_config_uncached(
             "packing_result": None,
         }
 
-    max_req_axons = max(sc.input_count for sc in softcores)
-    max_req_neurons = max(sc.output_count for sc in softcores)
+    max_req_axons, max_req_neurons = largest_extents(softcores)
 
     hw_types: List[LayoutHardCoreType] = []
     for ct in core_types:
@@ -120,15 +123,13 @@ def _verify_hardware_config_uncached(
         ))
 
     if not (allow_coalescing and allow_neuron_splitting) and not allow_scheduling:
-        at_least_one_covers_largest = False
-        for hw in hw_types:
-            axon_ok = allow_coalescing or hw.max_axons >= max_req_axons
-            neuron_ok = allow_neuron_splitting or hw.max_neurons >= max_req_neurons
-            if axon_ok and neuron_ok:
-                at_least_one_covers_largest = True
-                break
-
-        if not at_least_one_covers_largest:
+        # [TS4] ONE home for the largest-softcore proof: the packer's verdict and
+        # this field error must never disagree about what the declaration covers.
+        if no_core_type_fits(
+            softcores, hw_types,
+            neurons_may_split=allow_neuron_splitting,
+            axons_may_spread=allow_coalescing,
+        ):
             if allow_neuron_splitting:
                 field_errors["core_types"] = (
                     f"No core type fits the largest soft core's axon count ({max_req_axons} axons). "
