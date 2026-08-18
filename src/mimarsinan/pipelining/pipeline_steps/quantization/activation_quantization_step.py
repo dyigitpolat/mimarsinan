@@ -6,7 +6,7 @@ from mimarsinan.tuning.tuners.activation_quantization_tuner import ActivationQua
 
 class ActivationQuantizationStep(TunerPipelineStep):
     REQUIRES = ("model", "adaptation_manager")
-    PROMISES = ("aq_reference_read",)
+    PROMISES = TunerPipelineStep.PROMISES + ("aq_reference_read",)
     UPDATES = ("model", "adaptation_manager")
 
     # The staged AQ install (sync's conversion endpoint) carries

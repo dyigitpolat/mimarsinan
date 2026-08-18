@@ -7,7 +7,11 @@ from mimarsinan.pipelining.core.steps.pipeline_step import (
     METRIC_MEASURED,
     PipelineStep,
 )
-from mimarsinan.tuning.orchestration import endpoint_steps, run_instrumentation
+from mimarsinan.tuning.orchestration import (
+    adaptation_ledger,
+    endpoint_steps,
+    run_instrumentation,
+)
 from mimarsinan.tuning.orchestration.conversion_draws import (
     configured_draws,
     run_conversion_draws,
@@ -17,6 +21,10 @@ from mimarsinan.tuning.orchestration.retention_envelope import resolve_step_anch
 
 class TunerPipelineStep(PipelineStep):
     """Shared validate/process/update pattern for tuner-backed steps."""
+
+    PROMISES: tuple[str, ...] = (adaptation_ledger.LEDGER_ENTRY_KEY,)
+    """[TS5] every tuner-hosting step seals its controller ledger; subclasses
+    that declare their own promises must keep this one."""
 
     DRAW_SELECTED = False
     """Opt-in for the best-of-N conversion harness: the mode's variance-carrying
@@ -32,6 +40,19 @@ class TunerPipelineStep(PipelineStep):
         # (a read-only ledger peek; the tuner consumes during process()).
         self._endpoint_steps_consumed_before = endpoint_steps.consumed(self.pipeline)
         super().run()
+        self._seal_adaptation_ledger()
+
+    def _seal_adaptation_ledger(self):
+        """[TS5] Seal the controller's ledger as ``<Step>.adaptation_ledger.json``.
+
+        Sealed from ``run`` rather than a ``process`` tail so the promise holds
+        for every shape of tuner step; a step whose tuner never ran (or whose
+        family keeps no ledger) seals the empty ledger rather than nothing.
+        """
+        ledger = adaptation_ledger.ledger_of(self.tuner)
+        if ledger is None:
+            ledger = adaptation_ledger.AdaptationLedger()
+        self.add_entry(adaptation_ledger.LEDGER_ENTRY_KEY, ledger.to_dict())
 
     def validate(self):
         if self.tuner is not None:

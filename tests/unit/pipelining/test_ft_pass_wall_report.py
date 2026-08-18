@@ -69,6 +69,9 @@ class _RunPipeline(_Pipeline):
     def update_entry(self, step, key, value, strategy):
         self.committed[key] = value
 
+    def add_entry(self, step, key, value, strategy="basic"):
+        self.cache[f"{step.name}.{key}"] = value
+
 
 class _WallsTuner:
     """A tuner double with the AC5 bundle and a zero-draw exit estimate."""
@@ -157,7 +160,12 @@ class TestCommitPersistsAdaptationArtifacts:
                 self.tuner = _NoWallsTuner(exit_metric=0.91)
                 self._commit_tuner_entries(object(), object())
 
-        step = _ConsumingStep([], [], ["model", "adaptation_manager"], [], pipeline)
+        # [TS5] the base now promises its adaptation-ledger artifact, so a step
+        # double driven through run() must carry that promise too.
+        step = _ConsumingStep(
+            [], TunerPipelineStep.PROMISES, ["model", "adaptation_manager"], [],
+            pipeline,
+        )
         step.name = "LIF Adaptation"
         step.pipeline_previous_metric = 0.9
         step.run()
@@ -166,6 +174,7 @@ class TestCommitPersistsAdaptationArtifacts:
         assert entry["endpoint_steps_consumed_before"] == 500
         assert entry["endpoint_steps_consumed_after"] == 1700
         assert entry["armed_recovery"] is True
+        assert "LIF Adaptation.adaptation_ledger" in pipeline.cache
 
     def test_ledger_entries_append_across_steps_in_order(self, tmp_path):
         pipeline = _RunPipeline(str(tmp_path))

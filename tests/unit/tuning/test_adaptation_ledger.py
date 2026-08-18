@@ -782,6 +782,93 @@ class TestEndpointStageEmission:
 
 
 # --------------------------------------------------------------------------- #
+# The step artifact: <Step>.adaptation_ledger.json, sealed via add_entry.
+# --------------------------------------------------------------------------- #
+
+
+def _run_clamp_step(mock_pipeline):
+    from mimarsinan.pipelining.pipeline_steps.adaptation.clamp_adaptation_step import (
+        ClampAdaptationStep,
+    )
+    from mimarsinan.tuning.orchestration.adaptation_manager import AdaptationManager
+
+    from conftest import make_activation_scale_stats
+
+    model = make_tiny_supermodel()
+    scales = [1.0] * len(model.get_perceptrons())
+    mock_pipeline.config["activation_quantization"] = True
+    mock_pipeline.config["tuning_budget_scale"] = 1.0
+    mock_pipeline._target_metric = 0.5
+    mock_pipeline.seed("model", model, step_name="Activation Adaptation")
+    mock_pipeline.seed(
+        "adaptation_manager", AdaptationManager(), step_name="Activation Adaptation"
+    )
+    mock_pipeline.seed("activation_scales", scales, step_name="Activation Analysis")
+    mock_pipeline.seed(
+        "activation_scale_stats",
+        make_activation_scale_stats(model, scales, num_batches=2),
+        step_name="Activation Analysis",
+    )
+    step = ClampAdaptationStep(mock_pipeline)
+    step.name = "Clamp Adaptation"
+    mock_pipeline.prepare_step(step)
+    step.run()
+    return step
+
+
+class TestStepArtifact:
+    def test_every_tuner_step_promises_the_ledger_entry(self):
+        from mimarsinan.pipelining.core.steps.tuner_pipeline_step import (
+            TunerPipelineStep,
+        )
+        from mimarsinan.pipelining.pipeline_steps.quantization.activation_quantization_step import (  # noqa: E501
+            ActivationQuantizationStep,
+        )
+
+        assert led.LEDGER_ENTRY_KEY in TunerPipelineStep.PROMISES
+        # A subclass that adds its own promise must not drop the base's.
+        assert led.LEDGER_ENTRY_KEY in ActivationQuantizationStep.PROMISES
+
+    def test_a_tuner_step_seals_its_ledger_as_a_cache_entry(
+        self, mock_pipeline, deterministic_rng
+    ):
+        step = _run_clamp_step(mock_pipeline)
+        payload = mock_pipeline.cache[f"Clamp Adaptation.{led.LEDGER_ENTRY_KEY}"]
+        assert json.loads(json.dumps(payload)) == payload
+        assert payload["totals"]["proposed"] == len(payload["proposals"])
+        assert payload["totals"]["proposed"] >= 1
+
+    def test_the_sealed_artifact_answers_which_path_completed_the_run(
+        self, mock_pipeline, deterministic_rng
+    ):
+        step = _run_clamp_step(mock_pipeline)
+        payload = mock_pipeline.cache[f"Clamp Adaptation.{led.LEDGER_ENTRY_KEY}"]
+        assert payload["completed_via"] in {
+            led.REACHED_FULL_RATE, led.EPSILON_FLOOR, led.ROUND_BUDGET,
+            led.ONE_SHOT_REFUSED, led.FIXED_LADDER_EXHAUSTED, led.LOSSLESS_ENTRY,
+        }
+
+    def test_a_step_whose_tuner_never_ran_seals_an_empty_ledger(self, mock_pipeline):
+        from mimarsinan.pipelining.core.steps.tuner_pipeline_step import (
+            TunerPipelineStep,
+        )
+
+        class _NoTunerStep(TunerPipelineStep):
+            def __init__(self, pipeline):
+                super().__init__((), self.PROMISES, (), (), pipeline)
+
+            def process(self):
+                pass
+
+        step = _NoTunerStep(mock_pipeline)
+        step.name = "No Tuner"
+        mock_pipeline.prepare_step(step)
+        step.run()
+        payload = mock_pipeline.cache[f"No Tuner.{led.LEDGER_ENTRY_KEY}"]
+        assert payload == AdaptationLedger().to_dict()
+
+
+# --------------------------------------------------------------------------- #
 # Event shapes: every group is a frozen dataclass with a JSON-safe to_dict.
 # --------------------------------------------------------------------------- #
 
