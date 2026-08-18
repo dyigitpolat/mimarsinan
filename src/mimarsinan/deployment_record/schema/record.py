@@ -8,7 +8,11 @@ import tempfile
 from dataclasses import dataclass, field
 from typing import Any, Dict, Mapping, Optional
 
-from mimarsinan.deployment_record.schema.accuracy import AccuracyRecord, AdaptationRecord
+from mimarsinan.deployment_record.schema.accuracy import (
+    AccuracyRecord,
+    AdaptationRecord,
+    AdaptationSummaryRecord,
+)
 from mimarsinan.deployment_record.schema.physics import EnergyRecord, TimingRecord
 from mimarsinan.deployment_record.schema.placement import PlacementRecord
 from mimarsinan.deployment_record.schema.provenance import Provenance
@@ -79,6 +83,10 @@ class DeploymentRecord:
     adaptation: Optional[AdaptationRecord]
     provenance: Mapping[str, Provenance] = field(default_factory=dict)
     format_version: int = DEPLOYMENT_RECORD_FORMAT_VERSION
+    # [TS5] additive-optional (the ``invocations`` / ``partition`` precedent):
+    # LAST, defaults to None, no format-version bump — a record written before
+    # the controller ledger existed still loads.
+    adaptation_ledger: Optional[AdaptationSummaryRecord] = None
 
     def __post_init__(self) -> None:
         _require_version("DeploymentRecord", self.format_version)
@@ -96,6 +104,10 @@ class DeploymentRecord:
             "adaptation": None if self.adaptation is None else self.adaptation.to_dict(),
             "provenance": {k: v.to_dict() for k, v in self.provenance.items()},
             "format_version": self.format_version,
+            "adaptation_ledger": (
+                None if self.adaptation_ledger is None
+                else self.adaptation_ledger.to_dict()
+            ),
         }
 
     @classmethod
@@ -118,6 +130,11 @@ class DeploymentRecord:
             key: Provenance.from_dict(value)
             for key, value in dict(kwargs["provenance"]).items()
         }
+        # Additive-optional: an absent key keeps the field's None default.
+        if "adaptation_ledger" in kwargs:
+            kwargs["adaptation_ledger"] = optional(
+                AdaptationSummaryRecord.from_dict, kwargs["adaptation_ledger"]
+            )
         return cls(**kwargs)
 
 

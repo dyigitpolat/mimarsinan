@@ -9,6 +9,7 @@ from mimarsinan.deployment_record.schema import (
     AccuracyReadRecord,
     AccuracyRecord,
     AdaptationRecord,
+    AdaptationSummaryRecord,
     Band,
     BankRecord,
     BoundaryTrafficRecord,
@@ -368,9 +369,29 @@ def make_adaptation() -> AdaptationRecord:
     )
 
 
+def make_adaptation_summary() -> AdaptationSummaryRecord:
+    """[TS5] The controller-ledger roll-up: totals, stalls, completion paths."""
+    return AdaptationSummaryRecord(
+        proposed=7,
+        accepted=5,
+        rejected=2,
+        retries=2,
+        recovery_steps=640,
+        probe_evals=16,
+        endpoint_steps=200,
+        total_steps=840,
+        stalls_by_path={"epsilon_floor": 2, "forced_full_rate": 1},
+        completed_via={
+            "LIF Adaptation": "reached_full_rate",
+            "Weight Quantization": "epsilon_floor",
+        },
+    )
+
+
 def make_full_record() -> DeploymentRecord:
     groups = ("identity", "schedule", "placement", "utilization",
-              "accuracy", "timing", "traffic", "energy", "adaptation")
+              "accuracy", "timing", "traffic", "energy", "adaptation",
+              "adaptation_ledger")
     return DeploymentRecord(
         identity=make_identity(),
         schedule=make_schedule(),
@@ -382,6 +403,7 @@ def make_full_record() -> DeploymentRecord:
         energy=make_energy(),
         adaptation=make_adaptation(),
         provenance={g: make_provenance() for g in groups},
+        adaptation_ledger=make_adaptation_summary(),
     )
 
 
