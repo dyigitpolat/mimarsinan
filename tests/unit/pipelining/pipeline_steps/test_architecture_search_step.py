@@ -53,9 +53,9 @@ def _hardware_search_config():
     return cfg
 
 
-def _run_step(tmp_path):
+def _run_step(tmp_path, config=None):
     pipeline = MockPipeline(
-        config=_hardware_search_config(),
+        config=config or _hardware_search_config(),
         working_directory=str(tmp_path / "search_step"),
     )
     step = ArchitectureSearchStep(pipeline)
@@ -63,6 +63,42 @@ def _run_step(tmp_path):
     pipeline.prepare_step(step)
     step.run()
     return pipeline
+
+
+class TestADeploymentRunCanSealAResourceLedger:
+    """[TS1] The accountant reaches a real run through the run's DECLARATION.
+
+    A mechanism with no path from a config into a sealed artifact is a
+    mechanism only a hand-built campaign problem can use.
+    """
+
+    def test_a_declared_budget_seals_a_ledger_in_the_step_artifact(self, tmp_path):
+        config = _hardware_search_config()
+        config["arch_search"] = {
+            **config["arch_search"], "generations": 3, "evaluation_budget": 2,
+        }
+
+        pipeline = _run_step(tmp_path, config)
+
+        ledger = pipeline.cache["ArchitectureSearch.architecture_search_result"]["ledger"]
+        assert ledger["budget_limit"] == 2
+        assert ledger["evaluations_distinct"] >= 2, "the boundary stop overshoots"
+        assert ledger["stopped_at_boundary"] is True, "3 generations were declared"
+        assert ledger["wall_s"] > 0.0
+
+    def test_an_undeclared_budget_seals_no_ledger(self, tmp_path):
+        result = _run_step(tmp_path).cache[
+            "ArchitectureSearch.architecture_search_result"
+        ]
+
+        assert "ledger" not in result, "an unmetered run makes no claim about spend"
+
+    def test_a_budget_that_is_not_a_positive_count_fails_loud(self, tmp_path):
+        config = _hardware_search_config()
+        config["arch_search"] = {**config["arch_search"], "evaluation_budget": 0}
+
+        with pytest.raises(ValueError, match="evaluation_budget"):
+            _run_step(tmp_path, config)
 
 
 class TestHardwareModeSmoke:

@@ -4,9 +4,11 @@ A campaign compares optimizers at EQUAL SPEND, so the currency needs one
 definition: a DISTINCT decoded evaluation — the evaluator work a candidate
 IDENTITY costs the first time a run spends it. The identity is what makes the
 count whole: a problem answers about a candidate through more than one channel
-(a constraint screen, then an evaluation), so whichever channel spends the work
-first pays for it, and every later ask a cache answers is a duplicate.
-Duplicates are what a cache absorbs, never what a budget pays for.
+(a constraint screen, an evaluation, a layout introspection), so whichever
+channel spends the work first pays for it, and every later ask about that
+identity is a DUPLICATE — it bought no new candidate, whether a cache answered
+it or the channel resolved it again. An ask about an identity the run never
+spent anything on is not an evaluation call at all.
 
 The ledger seals FACTS: wall, counts, duplicate rate, the declared limit,
 whether the budget cut the run short, and the LLM usage a driver reports. It
@@ -33,20 +35,22 @@ class EvaluationBudget:
 
     limit: Optional[int] = None
     _charged: Set[str] = field(default_factory=set, init=False, repr=False)
+    _calls: int = field(default=0, init=False)
     _duplicates: int = field(default=0, init=False)
 
     def on_distinct(self, key: str) -> None:
-        """Charge the run for *key*'s evaluator work — once per identity, ever.
-
-        Idempotent BY IDENTITY: a candidate resolved by the constraint channel
-        and then scored by the evaluate channel cost this run one evaluation,
-        and a second channel charging for it would price the same work twice.
-        """
+        """Charge the run for *key*'s evaluator work — the first spend of it."""
+        self._calls += 1
         self._charged.add(key)
 
     def on_duplicate(self, key: str) -> None:
-        """Record a re-ask of *key*: the call happened, the work did not."""
+        """Record an ask about the already-spent *key*: a call that bought nothing."""
+        self._calls += 1
         self._duplicates += 1
+
+    def has_spent(self, key: str) -> bool:
+        """Has this run already paid for *key*'s evaluator work?"""
+        return key in self._charged
 
     @property
     def distinct_spent(self) -> int:
@@ -54,7 +58,8 @@ class EvaluationBudget:
 
     @property
     def raw_calls(self) -> int:
-        return len(self._charged) + self._duplicates
+        """Every ask about a candidate this run evaluated — spends and re-asks."""
+        return self._calls
 
     @property
     def exhausted(self) -> bool:
@@ -63,26 +68,35 @@ class EvaluationBudget:
 
     @property
     def duplicate_rate(self) -> float:
-        """The share of evaluation calls the cache answered."""
-        if self.raw_calls == 0:
+        """The share of evaluation calls that bought no new candidate."""
+        if self._calls == 0:
             return 0.0
-        return self._duplicates / self.raw_calls
+        return self._duplicates / self._calls
 
 
 def charge_evaluation(
     budget: Optional[EvaluationBudget], key: str, *, hit: bool,
 ) -> None:
-    """Tell the run's accountant which kind of evaluation *key* just was.
+    """Tell the run's accountant what this ask about *key* did.
 
-    THE charging seam: every problem calls this where a cache decides whether
-    *key* costs work, so "no budget attached" costs one None check instead of a
-    branch per problem.
+    THE charging seam: a problem calls it at every cache that decides whether
+    *key* costs work (``hit``), and at every uncached channel that is about to
+    spend it (``hit=False``). The ROUTING is the accountant's, not the caller's,
+    so one candidate is never priced twice however many channels ask about it:
+
+    - already spent -> a duplicate, whatever answered it;
+    - unspent, work about to run -> the distinct evaluation this run pays for;
+    - unspent, a cache answered -> nothing. A candidate a cheap predicate
+      refused before anything was built is not an evaluation the run made, and
+      neither are the hundred re-asks a cache answers about it.
+
+    "No budget attached" costs one None check instead of a branch per problem.
     """
     if budget is None:
         return
-    if hit:
+    if budget.has_spent(key):
         budget.on_duplicate(key)
-    else:
+    elif not hit:
         budget.on_distinct(key)
 
 

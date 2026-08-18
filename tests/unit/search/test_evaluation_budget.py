@@ -3,8 +3,9 @@
 A campaign compares optimizers at EQUAL SPEND, so "what did this search cost"
 needs exactly one definition and exactly one place that counts it. The currency
 is the candidate IDENTITY: the first channel that spends evaluator work on it
-pays (a DISTINCT evaluation), and every later ask the caches answer is a
-DUPLICATE. No driver counts for itself, and no count is a driver's opinion.
+pays (a DISTINCT evaluation), and every later ask about that identity is a
+DUPLICATE — it bought no new candidate. No driver counts for itself, and no
+count is a driver's opinion.
 
 The ledger seals FACTS only — wall, raw/distinct evaluations, duplicate rate,
 the declared limit, whether the run stopped at a boundary, and (later stages)
@@ -15,6 +16,8 @@ that seals dollars seals a price list nobody can re-run.
 from __future__ import annotations
 
 import json
+import pathlib
+import re
 from typing import Any, Dict, List
 
 import numpy as np
@@ -59,13 +62,59 @@ class TestTheAccountantCountsDistinctWork:
         # The currency is the candidate identity, not the call: a candidate
         # screened by the constraint channel and then scored by the evaluate
         # channel cost the run ONE evaluation, and the count must say so
-        # whichever channel got there first.
+        # whichever channel got there first. The CALLS still happened, and
+        # ``raw_calls`` is a call count, so it says three.
         budget = EvaluationBudget(limit=4)
         for _ in range(3):
-            budget.on_distinct("a")
+            charge_evaluation(budget, "a", hit=False)
 
         assert budget.distinct_spent == 1
-        assert budget.raw_calls == 1
+        assert budget.raw_calls == 3
+        assert budget.duplicate_rate == pytest.approx(2.0 / 3.0)
+
+    def test_a_call_about_an_identity_nobody_spent_is_not_an_evaluation_call(self):
+        # A cheap predicate refused this candidate before anything was built,
+        # so the run never evaluated it. Neither the refusal nor the re-asks a
+        # cache answers afterwards are evaluation calls — counting them would
+        # let a search that resolves NOTHING seal a duplicate rate of 1.0.
+        budget = EvaluationBudget(limit=4)
+        for _ in range(5):
+            charge_evaluation(budget, "a", hit=True)
+
+        assert (budget.distinct_spent, budget.raw_calls) == (0, 0)
+        assert budget.duplicate_rate == 0.0
+
+    def test_a_channel_that_redoes_the_work_still_buys_no_new_candidate(self):
+        # An UNCACHED channel (the layout introspection seam) really does the
+        # resolution again, but the currency is the identity and this run has
+        # already paid for it: the call is counted, the budget is not spent.
+        budget = EvaluationBudget(limit=2)
+        charge_evaluation(budget, "a", hit=False)
+        charge_evaluation(budget, "a", hit=False)
+
+        assert budget.distinct_spent == 1
+        assert budget.raw_calls == 2
+        assert not budget.exhausted
+
+    def test_every_charge_the_accountant_is_handed_is_a_call(self):
+        # ``raw_calls`` is a CALL count, not a number derived from the identity
+        # set: a seam that charges one identity twice made two calls, and a
+        # ledger field named ``evaluations_raw`` must be able to say so.
+        budget = EvaluationBudget(limit=None)
+        budget.on_distinct("a")
+        budget.on_distinct("a")
+
+        assert budget.distinct_spent == 1
+        assert budget.raw_calls == 2
+
+    def test_the_accountant_says_which_identities_it_has_spent(self):
+        # The one question the seam helper asks to tell a first spend from a
+        # re-ask; without it every seam would have to keep its own set.
+        budget = EvaluationBudget(limit=None)
+        charge_evaluation(budget, "a", hit=False)
+
+        assert budget.has_spent("a")
+        assert not budget.has_spent("b")
 
     def test_a_duplicate_is_never_charged_against_the_budget(self):
         budget = EvaluationBudget(limit=4)
@@ -243,7 +292,7 @@ class TestSearchResultCarriesTheLedger:
         assert ResourceLedger.from_dict(payload["ledger"]) == ledger
 
 
-def _hw_pipeline_config() -> Dict[str, Any]:
+def _hw_pipeline_config(allow_scheduling: bool = True) -> Dict[str, Any]:
     return {
         "device": "cpu",
         "input_shape": (1, 8, 8),
@@ -251,7 +300,7 @@ def _hw_pipeline_config() -> Dict[str, Any]:
         "target_tq": 4,
         "weight_bits": 4,
         "lr": 0.001,
-        "allow_scheduling": True,
+        "allow_scheduling": allow_scheduling,
         "cores": [{"max_axons": 256, "max_neurons": 256, "count": 64}],
         "model_config": {
             "mlp_width_1": 16, "mlp_width_2": 16, "base_activation": "ReLU",
@@ -261,9 +310,10 @@ def _hw_pipeline_config() -> Dict[str, Any]:
 
 def _hw_problem(
     budget=None, validate_fn=None, floor=0.0, constraint_fn=None,
+    core_count_bounds=(8, 64), core_dim_bounds=(64, 256), allow_scheduling=True,
 ) -> JointArchHwProblem:
     """A hardware-only search: no training, so an evaluation is pure mapping work."""
-    cfg = _hw_pipeline_config()
+    cfg = _hw_pipeline_config(allow_scheduling)
     return JointArchHwProblem(
         data_provider_factory=None,
         device=torch.device("cpu"),
@@ -282,16 +332,32 @@ def _hw_problem(
         platform_resolver=make_platform_resolver(cfg),
         active_objective_names=HW_OBJECTIVES,
         num_core_types=1,
-        core_axons_bounds=(64, 256),
-        core_neurons_bounds=(64, 256),
-        core_count_bounds=(8, 64),
+        core_axons_bounds=core_dim_bounds,
+        core_neurons_bounds=core_dim_bounds,
+        core_count_bounds=core_count_bounds,
         evaluation_budget=budget,
     )
 
 
-def _mid_configuration(problem: JointArchHwProblem) -> Dict[str, Any]:
-    x = (np.asarray(problem.xl) + np.asarray(problem.xu)) / 2.0
+def _unpackable_problem(budget) -> JointArchHwProblem:
+    """One 64x64 core and no scheduling: the model RESOLVES, then fails to pack.
+
+    The candidate that costs a full evaluation and is scored a penalty anyway —
+    a structural refusal, by contrast, builds nothing.
+    """
+    return _hw_problem(
+        budget, core_count_bounds=(1, 1), core_dim_bounds=(64, 64),
+        allow_scheduling=False,
+    )
+
+
+def _configuration_at(problem: JointArchHwProblem, fraction: float) -> Dict[str, Any]:
+    x = np.asarray(problem.xl) * (1.0 - fraction) + np.asarray(problem.xu) * fraction
     return problem.decode(x)
+
+
+def _mid_configuration(problem: JointArchHwProblem) -> Dict[str, Any]:
+    return _configuration_at(problem, 0.5)
 
 
 class TestTheCacheSeamIsTheAccountant:
@@ -323,7 +389,7 @@ class TestTheCacheSeamIsTheAccountant:
         # scored a penalty; a budget that forgave it would pay for search
         # strategies that propose junk.
         budget = EvaluationBudget(limit=None)
-        problem = _hw_problem(budget, validate_fn=lambda mc, pcfg, shape: False)
+        problem = _unpackable_problem(budget)
 
         objectives = problem.evaluate(_mid_configuration(problem))
 
@@ -332,7 +398,7 @@ class TestTheCacheSeamIsTheAccountant:
 
     def test_a_repeated_penalty_candidate_is_a_duplicate_too(self):
         budget = EvaluationBudget(limit=None)
-        problem = _hw_problem(budget, validate_fn=lambda mc, pcfg, shape: False)
+        problem = _unpackable_problem(budget)
         configuration = _mid_configuration(problem)
 
         problem.evaluate(configuration)
@@ -384,17 +450,56 @@ class TestEveryChannelThatSpendsWorkIsCharged:
         assert budget.distinct_spent == 1
         assert budget.raw_calls == 1
 
-    def test_a_structural_rejection_at_the_constraint_channel_is_charged(self):
+    def test_re_proposing_a_rejected_candidate_is_a_duplicate_like_any_other(self):
+        # The DUPLICATE axis has to cover the constraint channel too, or a
+        # driver that keeps re-proposing REJECTED candidates seals a duplicate
+        # rate of 0.0 while a driver re-proposing ACCEPTED ones seals a
+        # positive one — and a campaign comparing the two reads the wrong sign.
+        budget = EvaluationBudget(limit=None)
+        problem = _hw_problem(budget, floor=1.0)
+        configuration = _mid_configuration(problem)
+
+        for _ in range(5):
+            assert problem.constraint_violation(configuration) > 0.0
+
+        assert budget.distinct_spent == 1
+        assert budget.raw_calls == 5, "four asks a cache answered are four calls"
+        assert budget.duplicate_rate == pytest.approx(0.8)
+
+    def test_a_structural_rejection_costs_what_every_declaration_only_check_costs(self):
+        # ``validate_fn`` and ``constraint_fn`` are the SAME shape of cheap
+        # predicate over the declaration — neither builds anything. The
+        # equal-spend currency must not depend on which caller hook a search
+        # space happens to wire its predicate into.
+        structural = EvaluationBudget(limit=None)
+        declared = EvaluationBudget(limit=None)
+        by_validate_fn = _hw_problem(
+            structural, validate_fn=lambda mc, pcfg, shape: False,
+        )
+        by_constraint_fn = _hw_problem(
+            declared, constraint_fn=lambda mc, pcfg, shape: 1.0,
+        )
+
+        for problem in (by_validate_fn, by_constraint_fn):
+            assert problem.constraint_violation(_mid_configuration(problem)) > 0.0
+
+        assert (structural.distinct_spent, structural.raw_calls) == (0, 0)
+        assert (declared.distinct_spent, declared.raw_calls) == (0, 0)
+
+    def test_re_asking_a_structurally_rejected_candidate_stays_free(self):
         budget = EvaluationBudget(limit=None)
         problem = _hw_problem(budget, validate_fn=lambda mc, pcfg, shape: False)
+        configuration = _mid_configuration(problem)
 
-        assert problem.constraint_violation(_mid_configuration(problem)) > 0.0
-        assert budget.distinct_spent == 1
+        for _ in range(4):
+            problem.constraint_violation(configuration)
+
+        assert (budget.distinct_spent, budget.raw_calls) == (0, 0)
 
     def test_one_candidate_seen_by_both_channels_is_one_evaluation(self):
         # The evaluate channel re-asks the identity the constraint channel just
         # resolved. Charging per CHANNEL would price one candidate twice and put
-        # a floor under every NSGA run's duplicate rate.
+        # a floor under every NSGA run's distinct spend.
         budget = EvaluationBudget(limit=None)
         problem = _hw_problem(budget)
         configuration = _mid_configuration(problem)
@@ -402,7 +507,21 @@ class TestEveryChannelThatSpendsWorkIsCharged:
         assert problem.constraint_violation(configuration) == 0.0
         problem.evaluate(configuration)
 
-        assert (budget.distinct_spent, budget.raw_calls) == (1, 1)
+        assert budget.distinct_spent == 1
+        assert budget.raw_calls == 2, "both channels asked; only one bought work"
+
+    def test_a_candidate_asked_again_through_both_channels_is_all_duplicates(self):
+        budget = EvaluationBudget(limit=None)
+        problem = _hw_problem(budget)
+        configuration = _mid_configuration(problem)
+
+        for _ in range(4):
+            assert problem.constraint_violation(configuration) == 0.0
+            problem.evaluate(configuration)
+
+        assert budget.distinct_spent == 1
+        assert budget.raw_calls == 8, "four proposals through two channels"
+        assert budget.duplicate_rate == pytest.approx(7.0 / 8.0)
 
     def test_a_declared_constraint_that_resolves_nothing_costs_nothing(self):
         # ``constraint_fn`` is a cheap predicate over the DECLARATION: it never
@@ -412,6 +531,44 @@ class TestEveryChannelThatSpendsWorkIsCharged:
 
         assert problem.constraint_violation(_mid_configuration(problem)) > 0.0
         assert (budget.distinct_spent, budget.raw_calls) == (0, 0)
+
+
+class TestTheIntrospectionSeamSpendsWhatItResolves:
+    """``candidate_layout`` walks the whole resolution with no cache of its own.
+
+    It is the compilagent optimizer's introspection tool, so an agent that
+    introspects instead of evaluating would otherwise spend an unbounded amount
+    of real evaluator work entirely off-budget — the same hole the constraint
+    channel had, left open for the driver TS3 must thread.
+    """
+
+    def test_laying_out_a_candidate_costs_a_distinct_evaluation(self):
+        budget = EvaluationBudget(limit=2)
+        problem = _hw_problem(budget)
+
+        problem.candidate_layout(_mid_configuration(problem))
+
+        assert (budget.distinct_spent, budget.raw_calls) == (1, 1)
+
+    def test_an_introspecting_driver_exhausts_the_budget_it_spends(self):
+        budget = EvaluationBudget(limit=2)
+        problem = _hw_problem(budget)
+
+        for fraction in (0.25, 0.5, 0.75):
+            problem.candidate_layout(_configuration_at(problem, fraction))
+
+        assert budget.distinct_spent == 3, "three chips were really built"
+        assert budget.exhausted
+
+    def test_re_introspecting_one_candidate_buys_no_new_evaluation(self):
+        budget = EvaluationBudget(limit=None)
+        problem = _hw_problem(budget)
+        configuration = _mid_configuration(problem)
+
+        for _ in range(3):
+            problem.candidate_layout(configuration)
+
+        assert (budget.distinct_spent, budget.raw_calls) == (1, 3)
 
 
 REJECTING_POP = 4
@@ -513,6 +670,28 @@ def boundary_run():
     budget = EvaluationBudget(limit=BUDGET_LIMIT)
     problem, result = _run_nsga(budget)
     return budget, problem, result
+
+
+REQUIREMENTS = pathlib.Path(__file__).resolve().parents[3] / "requirements.txt"
+
+
+class TestTheBoundaryMechanismsDependencyIsDeclared:
+    def test_pymoo_carries_a_version_bound_in_the_dependency_declaration(self):
+        # The generation-boundary stop depends on pymoo calling
+        # ``termination.update(algorithm)`` BEFORE the callback, which is why
+        # the callback must re-update it. That ordering is not API — a bare
+        # ``pymoo`` requirement lets a release reorder it and buy one extra
+        # generation past every budget boundary. The bound belongs in the
+        # dependency declaration, not only in the test that would go red.
+        lines = [
+            line.strip() for line in REQUIREMENTS.read_text().splitlines()
+            if re.match(r"^\s*pymoo\b", line)
+        ]
+
+        assert len(lines) == 1, f"expected exactly one pymoo requirement, got {lines}"
+        assert re.search(r"(==|>=|~=|<)", lines[0]), (
+            f"pymoo must declare a version bound; requirements.txt says {lines[0]!r}"
+        )
 
 
 class TestNsga2StopsAtTheFirstBoundary:

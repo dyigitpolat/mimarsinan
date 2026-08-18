@@ -131,31 +131,56 @@ search does not use. The backend does not RENDER those facts itself: it wraps
 the returned census in `CandidateLayoutView.packed` (the packing is handed over,
 never redone) and serves it through `deployment_record.introspection`'s
 registry, so the payload shapes are declared and versioned and the optimizer
-imports nothing from `mapping`.
+imports nothing from `mapping`. [TS1] It is a real evaluation and charges as
+one (see "What a search spent"): the seam has no cache, so an agent that
+introspects rather than evaluates spends the budget it consumes.
 
 ## What a search spent
 
 [TS1] A campaign compares optimizers at EQUAL SPEND, so the currency has one
-definition and one place that counts it: `optimizers/budget.py`. The currency
-is the candidate IDENTITY (`json_key` of the resolved configuration): a
-DISTINCT evaluation is the evaluator work that identity costs the first time
-the run spends it, a DUPLICATE is an ask a cache answered. A problem answers
-about a candidate through TWO channels — `constraint_violation` screens it,
-`evaluate` scores it — and both walk the same `validate_detailed` →
-`_resolve_entry` resolution, so the charge sits at each cache that decides
-whether work happens: `joint/validate.py` charges past its caches (the
-resolution is about to run) and `joint/evaluate.py` charges the objective
-cache. `on_distinct` is IDEMPOTENT BY IDENTITY, which is what makes two
-channels safe: the first one to spend the work pays, the second finds it
-already charged, and one candidate is never priced twice. Charging only the
-evaluate channel was measured to seal a ledger claiming ZERO spend for a
-search whose every offspring was rejected at the constraint channel (the R6
-note's 72/72 ViT case), with the budget bounding nothing. Penalty
-(infeasible) candidates ARE charged in both channels: they consumed real
+definition and one place that counts it: `optimizers/budget.py`. This module
+doc is the authority on the charging law — `docs/thesis_support_source_plan.md`
+still describes the single-seam sketch TS1 started from.
+
+The currency is the candidate IDENTITY (`json_key` of the resolved
+configuration): a DISTINCT evaluation is the evaluator work that identity
+costs the first time the run spends it, and every later ask about it is a
+DUPLICATE — a call that bought no new candidate, whether a cache answered it
+or an uncached channel resolved it again. A problem answers about a candidate
+through THREE channels — `constraint_violation` screens it, `evaluate` scores
+it, `candidate_layout` lays it out for an agent to read — and all three walk
+the same `_resolve_entry` resolution, so all three charge. `charge_evaluation`
+ROUTES (already spent → duplicate; unspent and about to run → distinct;
+unspent and cache-answered → nothing), which is what makes several channels
+safe: the first to spend the work pays, the rest find it already paid, and one
+candidate is never priced twice.
+
+Where each channel charges is decided by where its work becomes unavoidable:
+
+- `joint/validate.py` charges past its caches AND past the declaration-only
+  `validate_fn` check, because that is the point where a full resolution is
+  about to run. It also charges its three cache-hit returns, so a driver that
+  re-proposes REJECTED candidates reports duplicates exactly as one that
+  re-proposes accepted ones — the DISTINCT and DUPLICATE axes cover the same
+  channels or `duplicate_rate` cannot be compared across optimizers.
+- `joint/evaluate.py` charges only its objective-cache HIT: the one ask that
+  never reaches `validate_detailed`. Charging its miss too would price one
+  proposal twice, since the miss goes straight on to the validate seam.
+- `joint/validate.py::candidate_layout` charges unconditionally — the
+  introspection seam keeps no cache, so every call really does the work. An
+  agent that introspects instead of evaluating spends the budget it uses.
+
+Charging only the evaluate channel was measured to seal a ledger claiming ZERO
+spend for a search whose every offspring was rejected at the constraint channel
+(the R6 note's 72/72 ViT case), with the budget bounding nothing. Penalty
+(infeasible) candidates ARE charged wherever they resolved: they consumed real
 evaluator work, and forgiving them would subsidize a strategy that proposes
-junk. What is NOT charged is work nobody did: a candidate whose DECLARATION
-does not resolve into a chip is refused before any seam, and a `constraint_fn`
-rejection reads the declaration without building anything.
+junk. What is NOT charged is work nobody did — and it is not charged
+CONSISTENTLY, however the space wired the check: a candidate whose DECLARATION
+does not resolve into a chip is refused before any seam, and a `validate_fn` or
+`constraint_fn` rejection reads the declaration without building anything, so
+neither the refusal nor the re-asks a cache later answers about that candidate
+are evaluation calls at all.
 
 `EvaluationBudget` only METERS: an exhausted budget never refuses an
 evaluation. Stopping is each driver's decision at ITS natural boundary
@@ -173,11 +198,14 @@ re-asks every front member) out of the duplicate rate a campaign compares.
 `stopped_at_boundary` means the budget CUT THE RUN SHORT: a budget spent
 exactly at the last generation, which the termination was ending anyway,
 seals False, and `evaluations_distinct` against `budget_limit` says the rest.
-The ledger carries no money by construction — dollars are priced
-research-side from a price table, so a sealed run can be re-priced without
-re-running it. A problem carries its accountant as `evaluation_budget`
-(`problem_budget()` is the one reader, and it fails loud on a wrongly typed
-attribute), one accountant per run; absent budget is byte-identical to a run
+`evaluations_raw` is a CALL count (`raw_calls`), so the same identity asked
+through two channels reads as two calls and one distinct evaluation. The
+ledger carries no money by construction — dollars are priced research-side
+from a price table, so a sealed run can be re-priced without re-running it. A
+problem carries its accountant as `evaluation_budget` (`problem_budget()` is
+the one reader, and it fails loud on a wrongly typed attribute), one accountant
+per run; the pipeline step builds it from the run's `arch_search.
+evaluation_budget` declaration, and absent budget is byte-identical to a run
 before TS1, down to the serialized artifact.
 
 ### `EncodedProblem` is not a pymoo interface

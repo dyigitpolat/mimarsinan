@@ -29,8 +29,10 @@ from mimarsinan.pipelining.pipeline_steps.config.architecture_search_helpers imp
     OptimizerType,
     build_fixed_platform_constraints,
     create_optimizer,
+    declared_int_pair,
     firing_semantics_kwargs,
     resolve_arch_options,
+    resolve_evaluation_budget,
     make_platform_resolver,
     search_result_to_jsonable,
     write_search_visualizations,
@@ -126,10 +128,6 @@ class ArchitectureSearchStep(PipelineStep):
             "num_core_types", len(self.pipeline.config.get("cores", [])) or 1
         ))
 
-        core_axons_bounds = tuple(arch_cfg.get("core_axons_bounds", [64, 2048]))
-        core_neurons_bounds = tuple(arch_cfg.get("core_neurons_bounds", [64, 2048]))
-        core_count_bounds = tuple(arch_cfg.get("core_count_bounds", [50, 500]))
-
         warmup_fraction = float(arch_cfg.get("warmup_fraction", 0.10))
         training_batch_size = arch_cfg.get("training_batch_size") or None
 
@@ -173,9 +171,9 @@ class ArchitectureSearchStep(PipelineStep):
             platform_resolver=platform_resolver,
             active_objective_names=active_objective_names,
             num_core_types=num_core_types,
-            core_axons_bounds=(int(core_axons_bounds[0]), int(core_axons_bounds[1])),
-            core_neurons_bounds=(int(core_neurons_bounds[0]), int(core_neurons_bounds[1])),
-            core_count_bounds=(int(core_count_bounds[0]), int(core_count_bounds[1])),
+            core_axons_bounds=declared_int_pair(arch_cfg, "core_axons_bounds", (64, 2048)),
+            core_neurons_bounds=declared_int_pair(arch_cfg, "core_neurons_bounds", (64, 2048)),
+            core_count_bounds=declared_int_pair(arch_cfg, "core_count_bounds", (50, 500)),
             accuracy_seed=seed,
             warmup_fraction=warmup_fraction,
             training_batch_size=(int(training_batch_size) if training_batch_size is not None else None),
@@ -199,6 +197,8 @@ class ArchitectureSearchStep(PipelineStep):
                 if bool(_effective(self.pipeline.config, "onchip_majority_gate"))
                 else 0.0
             ),
+            # [TS1] What this run declared it may spend; absent = unmetered.
+            evaluation_budget=resolve_evaluation_budget(arch_cfg),
         )
 
         optimizer = create_optimizer(

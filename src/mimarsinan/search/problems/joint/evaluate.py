@@ -53,12 +53,11 @@ class JointEvaluateMixin(JointHostContract):
 
         key = json_key(configuration)
         cached = self._cache.get(key)
-        # [TS1] The objective cache knows whether this ask costs evaluator work
-        # (miss) or is a candidate proposed again (hit). A miss whose identity
-        # the constraint channel already paid for charges nothing: the
-        # accountant charges an identity once, whichever channel spent it.
-        charge_evaluation(self.evaluation_budget, key, hit=cached is not None)
         if cached is not None:
+            # [TS1] The ONE ask that never reaches ``validate_detailed``, so it
+            # is the only one this seam charges; a miss is charged there, past
+            # the caches that decide whether the resolution runs.
+            charge_evaluation(self.evaluation_budget, key, hit=True)
             return cached
 
         vr = self.validate_detailed(configuration)

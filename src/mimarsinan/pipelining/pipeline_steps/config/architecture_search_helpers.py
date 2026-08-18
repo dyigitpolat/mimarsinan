@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import os
-from typing import Any, Dict, List, Literal, Mapping, Sequence, Tuple
+from typing import Any, Dict, List, Literal, Mapping, Optional, Sequence, Tuple
 
 from mimarsinan.common.best_effort import best_effort
 from mimarsinan.gui.json_util import to_json_safe
 from mimarsinan.pipelining.core.platform_constraints_resolver import (
     build_platform_constraints_resolved,
 )
+from mimarsinan.search.optimizers.budget import EvaluationBudget
 from mimarsinan.search.problems.joint import PlatformResolver
 from mimarsinan.search.search_space_description import SearchSpaceDescription
 from mimarsinan.visualization.search_viz import (
@@ -19,6 +20,35 @@ from mimarsinan.visualization.search_viz import (
 
 
 OptimizerType = Literal["nsga2", "agent_evolve", "compilagent"]
+
+
+def declared_int_pair(
+    arch_cfg: Mapping[str, Any], key: str, default: Tuple[int, int],
+) -> Tuple[int, int]:
+    """A declared ``[low, high]`` search bound as the int pair the problem takes."""
+    low, high = tuple(arch_cfg.get(key, default))
+    return int(low), int(high)
+
+
+def resolve_evaluation_budget(
+    arch_cfg: Mapping[str, Any],
+) -> Optional[EvaluationBudget]:
+    """[TS1] The run's evaluation accountant, or None when none was declared.
+
+    The declaration is a COUNT of distinct evaluations, the currency a campaign
+    compares optimizers in. An undeclared budget meters nothing and the run is
+    byte-identical to one from before the accountant existed; a declared
+    non-count is refused by name rather than silently meaning "unlimited".
+    """
+    declared = arch_cfg.get("evaluation_budget")
+    if declared is None:
+        return None
+    if isinstance(declared, bool) or not isinstance(declared, int) or declared < 1:
+        raise ValueError(
+            f"arch_search.evaluation_budget must be a positive number of distinct "
+            f"evaluations, or absent for an unmetered run; got {declared!r}"
+        )
+    return EvaluationBudget(limit=int(declared))
 
 
 def create_optimizer(

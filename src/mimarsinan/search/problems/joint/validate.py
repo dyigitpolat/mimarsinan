@@ -13,9 +13,7 @@ from mimarsinan.search.optimizers.budget import charge_evaluation
 from mimarsinan.search.problem import CandidateInfeasibleError, ValidationResult
 
 from .candidate_fragments import (
-    candidate_program_facts,
-    collect_candidate_noc,
-    with_stage_placements,
+    candidate_program_facts, collect_candidate_noc, with_stage_placements,
 )
 
 from .types import (
@@ -66,19 +64,9 @@ class JointValidateMixin(JointHostContract):
             )
 
         key = json_key(configuration)
-        if key in self._validation_cache:
-            return ValidationResult(is_valid=True)
-        if key in self._validation_errors:
-            return self._validation_errors[key]
-        if key in self._cache:
-            return ValidationResult(is_valid=True)
-
-        # [TS1] Past the caches this identity costs a full resolution, and the
-        # CONSTRAINT channel reaches here for candidates ``evaluate`` never sees
-        # (an optimizer that screens first would otherwise spend a whole search
-        # off-budget). The accountant charges an identity once, so the channel
-        # that gets here first is the one that pays.
-        charge_evaluation(self.evaluation_budget, key, hit=False)
+        cached = self._cached_verdict(key)
+        if cached is not None:
+            return cached
 
         mc = configuration.get("model_config", {})
         pcfg = dict(configuration.get("platform_constraints", {}))
@@ -86,6 +74,10 @@ class JointValidateMixin(JointHostContract):
         structural = self._structural_failure(mc, pcfg)
         if structural is not None:
             return self._record_invalid(key, structural.message, structural.phase)
+
+        # [TS1] Past the caches AND the declaration-only check, this identity is
+        # about to cost a full resolution — the channel that gets here first pays.
+        charge_evaluation(self.evaluation_budget, key, hit=False)
 
         entry, failure = self._resolve_entry(
             mc, pcfg, self.candidate_encoding_placement(configuration),
@@ -97,6 +89,22 @@ class JointValidateMixin(JointHostContract):
         self._validation_cache[key] = entry
         self._evict_validation_cache()
         return ValidationResult(is_valid=True)
+
+    def _cached_verdict(self, key: str) -> Optional[ValidationResult]:
+        """This identity's recorded verdict, charged as the re-ask it is.
+
+        A rejection recorded before anything was built was never an evaluation.
+        """
+        if key in self._validation_cache:
+            verdict = ValidationResult(is_valid=True)
+        elif key in self._validation_errors:
+            verdict = self._validation_errors[key]
+        elif key in self._cache:
+            verdict = ValidationResult(is_valid=True)
+        else:
+            return None
+        charge_evaluation(self.evaluation_budget, key, hit=True)
+        return verdict
 
     def _structural_failure(self, mc: Dict, pcfg: Dict) -> Optional[CandidateFailure]:
         """The caller-supplied structural check, if any."""
@@ -174,13 +182,7 @@ class JointValidateMixin(JointHostContract):
     def _resolve_entry(
         self, mc: Dict, pcfg: Dict, placement: str,
     ) -> Tuple[Optional[ValidationEntry], Optional[CandidateFailure]]:
-        """The ONE candidate-facts path: model → layout → static view.
-
-        Every search mode walks it. Candidate-scoped breakage comes back as a
-        :class:`CandidateFailure` the boundary renders (an invalid result, or a
-        typed raise); problem-level breakage — a fixture the candidate does not
-        influence — propagates untyped.
-        """
+        """The ONE candidate-facts path every search mode walks: model → layout → view."""
         facts, failure = self._resolve_model(mc, pcfg, placement)
         if failure is not None:
             return None, failure
@@ -201,12 +203,12 @@ class JointValidateMixin(JointHostContract):
     def candidate_layout(self, configuration: Dict) -> CandidateLayout:
         """This candidate, laid out on the chip a deployment would build for it.
 
-        The introspection seam (a layout backend needs the softcores an
-        evaluation throws away) walking the SAME path an evaluation walks, so
-        the two cannot disagree. A candidate-scoped failure crosses typed; a
-        problem-level one propagates untyped, exactly as in ``evaluate``.
+        The introspection seam, walking the SAME path an evaluation walks.
         """
         resolved = self._resolved_configuration(configuration)
+        # [TS1] This channel keeps no cache: every call really does the
+        # resolution, so an introspecting driver spends the run's budget.
+        charge_evaluation(self.evaluation_budget, json_key(resolved), hit=False)
         pcfg = resolved["platform_constraints"]
         placement = self.candidate_encoding_placement(resolved)
         facts, failure = self._resolve_model(
@@ -230,8 +232,7 @@ class JointValidateMixin(JointHostContract):
         """The share of this candidate's parameters that would sit on chip cores.
 
         Measured through the deployment's OWN estimator, under the CANDIDATE's
-        placement — the axis that decides which side of the NeuralOps/ComputeOps
-        boundary the encoder lands on.
+        placement — the NeuralOps/ComputeOps boundary the encoder lands on.
         """
         placement = self.candidate_encoding_placement(configuration)
         model, _params = self._candidate_model(
@@ -279,9 +280,8 @@ class JointValidateMixin(JointHostContract):
             return 1e6
         if not self.validate_detailed(resolved).is_valid:
             return 1.0
-        # A DECLARED deployment constraint: infeasible is a region of the search
-        # space the optimizer can see, not an exception a run discovers after it
-        # has already picked a winner.
+        # A DECLARED deployment constraint shapes a region the optimizer can
+        # SEE, never an exception a run discovers after it picked a winner.
         report = self.onchip_constraint(resolved)
         if report is None:
             return 0.0

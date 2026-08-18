@@ -10,7 +10,12 @@ torch==2.11.0
 torchvision==0.26.0
 einops
 matplotlib
-pymoo
+# [TS1] The NSGA-II budget stop rests on pymoo calling
+# `termination.update(algorithm)` BEFORE the generation callback — behaviour,
+# not API, verified against 0.6.1.6. A release that reorders it buys one extra
+# generation past every budget boundary, so the bound is declared here rather
+# than discovered by a red test.
+pymoo>=0.6.1.6,<0.7
 plotly
 fastapi
 uvicorn[standard]
