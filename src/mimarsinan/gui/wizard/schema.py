@@ -67,6 +67,9 @@ def get_wizard_nas_schema() -> Dict[str, Any]:
             "pop_size": {"type": "int", "default": 12, "min": 2, "max": 64, "doc": "Population size"},
             "generations": {"type": "int", "default": 5, "min": 1, "max": 100, "doc": "Generations"},
             "seed": {"type": "int", "default": 42, "min": 0, "max": 999999, "doc": "Random seed"},
+            # [TS1] No default: an unset budget is an UNMETERED run, and the
+            # wizard's empty field is how a run declares that.
+            "evaluation_budget": {"type": "int", "min": 1, "max": 100000, "doc": "Evaluation budget (distinct evaluations; empty = unmetered)"},
             "warmup_fraction": {"type": "float", "default": 0.1, "min": 0, "max": 1, "doc": "Warmup fraction"},
             "training_batch_size": {"type": "int", "default": 1024, "min": 1, "max": 8192, "doc": "Batch size"},
             "accuracy_evaluator": {"type": "str", "default": "extrapolating", "options": ["extrapolating", "fast"], "doc": "Evaluator"},

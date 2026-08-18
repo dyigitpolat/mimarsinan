@@ -243,6 +243,13 @@ values, the template flow, and both error/remedy flows.
 - `search` — `ALL_OBJECTIVES` / `ACCURACY_OBJECTIVE_NAME` for the wizard NAS schema's `objective_options` (the eight the frontend switch renders today).
 - `deployment_record` — the objectives registry behind the NAS schema's `objective_catalog`: every registered axis with its `provenance`, the search modes it is available in, and the requirement it is missing when it is not (backend surface; the frontend consumes it in W5.3).
 - `tuning` — `S_ALLOCATION_MODES` for the wizard temporal-allocation schema.
+
+[TS1] The NAS schema's `common_fields` is the declaration surface for
+`arch_search`, so every key the search step reads must appear there or the
+wizard stops being the configurability SSOT — `evaluation_budget` (what a run
+may SPEND, in distinct evaluations) is one of them. It declares no default: the
+generic int renderer shows an empty field, an empty field deletes the key, and
+an absent key is an unmetered run.
 - `advisories` — config-time deployment advisories in the wizard resolve payload (`resolve_payload()["advisories"]`), rendered as the Review & Launch section's first card (UNSUPPORTED reads loud at selection time); UNSUPPORTED/mandate-violation rows gate Launch behind explicit per-id acknowledgment (`static/js/wizard/advisories.js` — acks reset whenever the gating id set changes), with compact amber counts on the live rail and the Review nav item.
 
 ## Dependents

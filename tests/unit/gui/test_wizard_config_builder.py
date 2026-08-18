@@ -371,6 +371,42 @@ class TestWizardSchema:
         opts = nas["common_fields"]["accuracy_evaluator"]["options"]
         assert opts == ["extrapolating", "fast"]
 
+    def test_every_common_field_is_renderable_by_the_generic_form(self):
+        # ``archSearchWidget`` in wizard/structured.js renders ``common_fields``
+        # by TYPE, with no per-key branch: a field declaring anything else
+        # would silently fall through to a text input.
+        renderable = {"int", "float", "str", "textarea"}
+        for name, spec in get_wizard_nas_schema()["common_fields"].items():
+            assert spec["type"] in renderable, f"{name} declares an unrenderable type"
+
+    def test_the_evaluation_budget_is_declarable_in_the_wizard(self):
+        # [TS1] ``arch_search.evaluation_budget`` is what a run declares it may
+        # SPEND. The step reads it, so the wizard must be able to write it —
+        # a key only a hand-edited JSON can reach breaks the configurability
+        # SSOT and makes equal-budget comparison a config-file privilege.
+        field = get_wizard_nas_schema()["common_fields"]["evaluation_budget"]
+
+        assert field["type"] == "int"
+        assert field["min"] == 1
+        assert "default" not in field, (
+            "an unset budget means UNMETERED; a default would meter every run"
+        )
+
+    def test_the_declared_budget_minimum_is_the_one_the_step_accepts(self):
+        # The schema advertises the same floor the resolver enforces, so the
+        # wizard cannot offer a value the run refuses by name.
+        from mimarsinan.pipelining.pipeline_steps.config.architecture_search_helpers import (
+            resolve_evaluation_budget,
+        )
+
+        low = get_wizard_nas_schema()["common_fields"]["evaluation_budget"]["min"]
+
+        assert resolve_evaluation_budget({}) is None, "unset stays unmetered"
+        budget = resolve_evaluation_budget({"evaluation_budget": low})
+        assert budget is not None and budget.limit == low
+        with pytest.raises(ValueError, match="evaluation_budget"):
+            resolve_evaluation_budget({"evaluation_budget": low - 1})
+
     def test_get_wizard_nas_schema_has_objective_options(self):
         nas = get_wizard_nas_schema()
         assert "objective_options" in nas
