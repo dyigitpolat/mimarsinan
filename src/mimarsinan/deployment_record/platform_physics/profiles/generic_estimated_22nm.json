@@ -162,13 +162,32 @@
       "evidence_kind": "estimated",
       "note": "Wire size of one connectivity (axon source span) entry. The framework's declared 4/8/16 B band: span entries are exact counts, but their byte size is modeled until a real chip wire format exists."
     },
+    "e_program_per_byte": {
+      "low": 0.1,
+      "nominal": 0.547723,
+      "high": 3.0,
+      "unit": "pJ",
+      "evidence_kind": "estimated",
+      "derivation": "[TS6] Committing one byte into an on-chip SRAM weight store, at Horowitz scale: an 8 KB SRAM 32-bit read is ~5 pJ at 45 nm = 1.25 pJ/B, and scaling by the node ratio 22/45 gives ~0.61 pJ/B of read energy; a write costs about 1-3x a read. A byte written into a wide row amortizes the wordline down toward 0.1 pJ/B, while a narrow byte write into a banked macro reaches 3 pJ/B, so the band is 0.1 - 3.0 pJ/B with the nominal at its log-space centre, sqrt(0.1 x 3.0) = 0.547723 pJ/B. Deliberately NOT anchored on this profile's e_mac: that is an 8-bit datapath multiply, not a memory access.",
+      "note": "An ESTIMATED exemplar, and the estimated-evidence path's exercise for the programming group. Expected error: a factor of ~5. Distinct from e_dma_per_byte above, which moves the byte onto the chip; this commits it to the array, and a target that declares both pays both."
+    },
     "t_program_per_byte": {
       "low": 4.0,
       "nominal": 80.0,
       "high": 1000.0,
       "unit": "ns",
       "evidence_kind": "estimated",
+      "derivation": "The band's ends are two real configuration paths: a wide parallel bus moving about one byte per cycle at a few hundred MHz (4 ns/B) and a serial scan chain like TrueNorth's derived 800 ns/B, rounded to 1000 ns/B at this profile's coarser node, with the nominal assuming a modest dedicated port. Stated as arithmetic because this profile is a DONOR: the targets that publish no configuration rate of their own (loihi, odin, isaac_like) scale this band by validity.technology_node_nm.",
       "note": "Wall time to move one programming byte. The band spans a wide parallel configuration bus (4 ns/B) to a slow serial scan chain like TrueNorth's derived 800 ns/B, with a nominal assuming a modest dedicated port. Expected error: two orders of magnitude \u2014 this is the widest band in the profile, and deliberately so."
+    },
+    "e_core_program": {
+      "low": 64.0,
+      "nominal": 512.0,
+      "high": 4096.0,
+      "unit": "pJ",
+      "evidence_kind": "estimated",
+      "derivation": "[TS6] The payload-independent part of a program load, anchored on the core-state SWEEP this profile's own declarations define: 256 neurons per core (validity.array_size_assumed) x e_neuron_update (0.5 / 2.0 / 8.0 pJ) = 128 / 512 / 2048 pJ of per-core control work. The ratio band [0.5x, 2x] is applied to the anchor's own corners, giving 64 - 4096 pJ, with the nominal at the band's log-space centre, sqrt(64 x 4096) = 512 pJ.",
+      "note": "Six times wider than the device profiles' version of this constant, because it compounds an estimated anchor with the ratio spread - which is exactly what an estimated profile should look like."
     },
     "e_sync_barrier": {
       "low": 100.0,

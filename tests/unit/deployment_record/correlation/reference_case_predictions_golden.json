@@ -1,0 +1,194 @@
+{
+  "cases": [
+    {
+      "axes": [
+        {
+          "axis": "energy_dynamic_mj",
+          "band": [
+            1.5234560000000001,
+            1.6570880000000001
+          ],
+          "error_pct": 14.545563909774442,
+          "predicted": 1.5234560000000001,
+          "published": 1.33,
+          "refusal": null
+        }
+      ],
+      "citation": "frady2020neuromorphic Table 2, k=1 / 76,800",
+      "independence": "independent",
+      "measurement_kind": "simulation",
+      "name": "loihi_knn_query",
+      "overrides_applied": {},
+      "passed": true,
+      "profile": "loihi"
+    },
+    {
+      "axes": [
+        {
+          "axis": "e2e_latency_s",
+          "band": [
+            0.0013319999999999999,
+            0.0023399999999999996
+          ],
+          "error_pct": -22.772277227722785,
+          "predicted": 0.0023399999999999996,
+          "published": 0.00303,
+          "refusal": null
+        },
+        {
+          "axis": "throughput_inferences_s",
+          "band": [
+            427.3504273504274,
+            750.7507507507509
+          ],
+          "error_pct": 16.762411844379077,
+          "predicted": 427.3504273504274,
+          "published": 366.0,
+          "refusal": null
+        }
+      ],
+      "citation": "frady2020neuromorphic Table 3 (GIST-960), Sec 5.4, Fig 8",
+      "independence": "self_consistency",
+      "measurement_kind": "simulation",
+      "name": "loihi_knn_query_latency",
+      "overrides_applied": {},
+      "passed": true,
+      "profile": "loihi"
+    },
+    {
+      "axes": [
+        {
+          "axis": "average_power_mw",
+          "band": [
+            0.4769246048442439,
+            0.4769246048442439
+          ],
+          "error_pct": -0.01580611231783078,
+          "predicted": 0.4769246048442439,
+          "published": 0.477,
+          "refusal": null
+        }
+      ],
+      "citation": "frenkel2019odin Section IV-A, p.8",
+      "independence": "self_consistency",
+      "measurement_kind": "silicon",
+      "name": "odin_accelerated_time",
+      "overrides_applied": {},
+      "passed": true,
+      "profile": "odin"
+    },
+    {
+      "axes": [
+        {
+          "axis": "average_power_mw",
+          "band": [
+            0.035093500136987504,
+            0.035093500136987504
+          ],
+          "error_pct": 0.26714324853571725,
+          "predicted": 0.035093500136987504,
+          "published": 0.035,
+          "refusal": null
+        }
+      ],
+      "citation": "frenkel2019odin Section IV-A, p.8",
+      "independence": "independent",
+      "measurement_kind": "silicon",
+      "name": "odin_biological_time",
+      "overrides_applied": {
+        "p_static_per_core": 2.314,
+        "t_cycle": 1538.4615
+      },
+      "passed": true,
+      "profile": "odin"
+    },
+    {
+      "axes": [
+        {
+          "axis": "chip_area_mm2",
+          "band": [
+            429.98560000000003,
+            429.98560000000003
+          ],
+          "error_pct": -0.003348837209294521,
+          "predicted": 429.98560000000003,
+          "published": 430.0,
+          "refusal": null
+        }
+      ],
+      "citation": "merolla2014a p.6",
+      "independence": "self_consistency",
+      "measurement_kind": "silicon",
+      "name": "truenorth_die_area",
+      "overrides_applied": {},
+      "passed": true,
+      "profile": "truenorth"
+    },
+    {
+      "axes": [
+        {
+          "axis": "average_power_mw",
+          "band": [
+            6.636361852125184,
+            1428.5705913269996
+          ],
+          "error_pct": -5.860711002516355e-05,
+          "predicted": 67.99996014716518,
+          "published": 68.0,
+          "refusal": null
+        }
+      ],
+      "citation": "akopyan2015truenorth Fig. 17, p.1551",
+      "independence": "self_consistency",
+      "measurement_kind": "silicon",
+      "name": "truenorth_sweep_12hz",
+      "overrides_applied": {},
+      "passed": true,
+      "profile": "truenorth"
+    },
+    {
+      "axes": [
+        {
+          "axis": "average_power_mw",
+          "band": [
+            9.253357097844736,
+            1483.549483043797
+          ],
+          "error_pct": -0.5394994466412203,
+          "predicted": 70.61695539288473,
+          "published": 71.0,
+          "refusal": null
+        }
+      ],
+      "citation": "akopyan2015truenorth Fig. 17, p.1551",
+      "independence": "independent",
+      "measurement_kind": "silicon",
+      "name": "truenorth_sweep_20hz",
+      "overrides_applied": {},
+      "passed": true,
+      "profile": "truenorth"
+    },
+    {
+      "axes": [
+        {
+          "axis": "average_power_mw",
+          "band": [
+            32.63677987055207,
+            1974.797860621682
+          ],
+          "error_pct": 0.00040230382134851385,
+          "predicted": 94.00037816559207,
+          "published": 94.0,
+          "refusal": null
+        }
+      ],
+      "citation": "akopyan2015truenorth Fig. 17, p.1551",
+      "independence": "self_consistency",
+      "measurement_kind": "silicon",
+      "name": "truenorth_sweep_96hz",
+      "overrides_applied": {},
+      "passed": true,
+      "profile": "truenorth"
+    }
+  ]
+}

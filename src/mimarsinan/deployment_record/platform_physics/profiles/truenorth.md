@@ -96,11 +96,32 @@ published figure is recorded in the research note rather than in the profile.
   zero-activity corner is already attributed per core, so charging it again chip-wide
   would double count one measurement.
 
+## The programming group — the scan chain, timed and now priced (TS6)
+
+Akopyan Section V-H *times* the configuration path (that is `t_program_per_byte` =
+800 ns/B, a published 10 MHz scan chain at one bit per cycle) but never measures its
+**energy**. The two energy constants are therefore authored derivations, each stating
+its anchor and ratio, each `evidence_kind: derived`, and each with its nominal at the
+band's log-space centre (`sqrt(low x high)`), because the centre of a multiplicative
+spread is geometric:
+
+- **`e_program_per_byte` = 9.186 / 22.502 / 55.118 pJ/B.** A TrueNorth synapse is
+  **binary**, so one synaptic event consults one *bit* of the core's crossbar SRAM and
+  a byte of weight store is 8 accesses: the per-byte anchor is `8 x e_mac` =
+  18.373 pJ/B. An SRAM write costs ~1–3× its read, so the band is `[0.5x, 3x]` the
+  anchor. `e_mac` is the whole-chip *marginal* per-event energy, so it overstates the
+  bare SRAM access — which is what the 0.5× low corner is for.
+- **`e_core_program` = 293.97 / 587.93 / 1175.86 pJ.** No `e_core_init` exists here, so
+  the payload-independent part of a program load is anchored on the **core-state sweep**
+  this chip's geometry defines: 256 neurons × `e_mac` = 587.93 pJ, the same
+  compartment-sweep bound Loihi's *measured* reset came in ~1.7× below. Band
+  `[0.5x, 2x]`.
+
 ## What this profile deliberately does not declare
 
-`t_array_read`, `e_mac`, `e_neuron_update`, `e_leak_per_neuron_step`,
+`t_array_read`, `e_neuron_update`, `e_leak_per_neuron_step`,
 `e_intra_tile_packet`, `t_hop`, `area_per_router`, `area_per_tile_fixed`,
-`e_row_drive`, `area_per_row_driver`, `e_dma_per_byte`, `e_core_program`, `e_core_init`,
+`e_row_drive`, `area_per_row_driver`, `e_dma_per_byte`, `e_core_init`,
 `t_core_init`, `e_sync_barrier` and `t_sync_barrier` are **absent because they are
 unpublished**, not because they are zero. Neither paper prints a per-component power or
 area breakdown — both show a labelled core floorplan image with no block areas — and hop

@@ -72,6 +72,16 @@ ENERGY_COMPONENTS: Tuple[Tuple[str, Tuple[str, ...], str], ...] = (
     ("e_readout_per_byte", ("carry_out_bytes",), "carry_readout"),
 )
 
+#: [TS6] The per-byte program-load energies, in the order a byte incurs them:
+#: (constant, component label). Both multiply the SAME payload bytes and are
+#: distinct physical costs — moving the byte onto the chip, then committing it to
+#: the weight store — so a target declaring both pays both, and one declaring only
+#: the number its paper published prices only that.
+PROGRAMMING_BYTE_ENERGIES: Tuple[Tuple[str, str], ...] = (
+    ("e_dma_per_byte", "dma"),
+    ("e_program_per_byte", "commit"),
+)
+
 #: Decomposed area components, priced only when no area aggregate supersedes them.
 AREA_COMPONENTS: Tuple[Tuple[str, Tuple[str, ...], str], ...] = (
     ("area_per_cell", ("cells_physical",), "cells"),

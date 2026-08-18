@@ -49,17 +49,40 @@ at **−76 %**. Both are in the correlation suite; the second is the regression 
   = 51.6 % of the core, leaving roughly half for the neurons, the SDSP update logic,
   the scheduler and the controller.
 
+## The programming group — DERIVED, and how (TS6)
+
+Frenkel reports no weight-load energy and no per-byte configuration rate, so all three
+programming constants are **authored derivations** (`evidence_kind: derived`), each
+naming its anchor and arithmetic, each with its nominal at the band's log-space centre
+(`sqrt(low x high)`):
+
+- **`e_program_per_byte` = 8.43 / 20.649 / 50.58 pJ/B.** An ODIN synapse is 4 bits
+  (3-bit weight + 1 mapping bit), so a byte of synaptic SRAM holds two synapses and the
+  per-byte access anchor is `2 x e_mac` = 16.86 pJ/B. An SRAM write costs ~1–3× its
+  read → band `[0.5x, 3x]`. `e_mac` already contains the weight read *and* update, the
+  neuron state access and the controller overheads, so it overstates the bare SRAM
+  access: that is what the 0.5× corner is for.
+- **`t_program_per_byte` = 5.09 / 285.4 / 1272.7 ns/B.** Donor-scaled along
+  `validity.technology_node_nm` from TrueNorth's scan chain (800 ns/B, same 28 nm node)
+  and the generic 22 nm exemplar (4/80/1000 → 5.09/101.8/1272.7). Band = the envelope
+  of both scaled donors; nominal = the geometric mean of their scaled nominals. Two
+  orders of magnitude wide because the donors genuinely disagree by that much.
+- **`e_core_program` = 1.079 / 2.158 / 4.316 nJ.** No `e_core_init` exists here, so the
+  anchor is the **core-state sweep** the geometry defines: 256 neurons × `e_mac` =
+  2.158 nJ. Band `[0.5x, 2x]`. ODIN is a single core, so a program load pays this once.
+
 ## What this profile deliberately does not declare
 
 The whole `interconnect` group: ODIN is a **single core** with no NoC, so hop and
 packet energies are not absent-for-lack-of-data, they are structurally zero — and a
 multi-core deployment mapped onto "ODIN" would be a different chip, not this one.
 
-Also absent: the `host` group (a property of the deployment host), the `programming`
-group (the paper reports no weight-load energy), `e_sync_barrier` / `t_sync_barrier`
-(nothing to synchronize across), and `membrane_bits` / `area_per_state_bit` — the
-neuron state width is configurable across the 20 Izhikevich behaviours and no single
-width is published.
+Also absent: the `host` group (a property of the deployment host), `e_dma_per_byte`
+(the SPI transfer energy onto the chip is unpublished — only the *commit* above is
+derived), `e_core_init` / `t_core_init` (no reset measurement exists),
+`e_sync_barrier` / `t_sync_barrier` (nothing to synchronize across), and
+`membrane_bits` / `area_per_state_bit` — the neuron state width is configurable across
+the 20 Izhikevich behaviours and no single width is published.
 
 ## Scope warning
 
