@@ -76,12 +76,15 @@ evaluation the run pays for; unspent and cache-answered → nothing at all (a
 candidate a cheap predicate refused before anything was built is not an
 evaluation, and neither are the re-asks a cache answers about it).
 
-**Charged at three sites, across four channels** — because validation work IS
-evaluator work: `validate_detailed` walks the same model build → conversion →
-packing `_resolve_entry` that an evaluation walks, and NSGA-II asks it FIRST
-through `constraint_violation`. Charging only the evaluate channel was measured
-to seal a ledger claiming ZERO spend for a search whose every offspring was
-screened out (the R6 note's 72/72 ViT case), with the budget bounding nothing.
+**Charged at four sites, across four channels** — one row per
+`charge_evaluation(...)` call in the tree, so an implementer extending the
+accountant can grep the list and find it complete. Every site charges because
+validation work IS evaluator work: `validate_detailed` walks the same model
+build → conversion → packing `_resolve_entry` that an evaluation walks, and
+NSGA-II asks it FIRST through `constraint_violation`. Charging only the evaluate
+channel was measured to seal a ledger claiming ZERO spend for a search whose
+every offspring was screened out (the R6 note's 72/72 ViT case), with the budget
+bounding nothing.
 
 | Site | When | Channel |
 |---|---|---|
