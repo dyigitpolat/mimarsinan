@@ -96,6 +96,9 @@ def _problem(
     arch_options=(),
     search_mode: str = "hardware",
     budget=None,
+    axons_bounds=AXONS_BOUNDS,
+    neurons_bounds=NEURONS_BOUNDS,
+    count_bounds=COUNT_BOUNDS,
 ) -> JointArchHwProblem:
     """The real joint problem over the tiny declared space above."""
     cfg = _pipeline_config()
@@ -114,9 +117,9 @@ def _problem(
         platform_resolver=make_platform_resolver(cfg),
         active_objective_names=HW_OBJECTIVES,
         num_core_types=1,
-        core_axons_bounds=AXONS_BOUNDS,
-        core_neurons_bounds=NEURONS_BOUNDS,
-        core_count_bounds=COUNT_BOUNDS,
+        core_axons_bounds=axons_bounds,
+        core_neurons_bounds=neurons_bounds,
+        core_count_bounds=count_bounds,
         option_axes=option_axes,
         evaluation_budget=budget,
     )
@@ -706,6 +709,66 @@ class TestNondominatedFront:
         # default the minimax ranking uses — so the front and the incumbent
         # can never disagree about what a row is worth.
         assert nondominated_front([{"estimated_accuracy": 1.0}, {}], SPECS[:1]) == [0]
+
+
+#: A space with exactly two candidates: one core geometry, two core counts. The
+#: real problem builds, converts and packs a model per point, so the pin below
+#: buys the whole seam — encoding, driver, accountant — for two mapping runs.
+TWO_POINT_COUNTS = (2, 3)
+
+
+@pytest.fixture(scope="module")
+def real_exhaustive_run():
+    """The exhaustive driver over the REAL joint problem, metered."""
+    budget = EvaluationBudget(limit=None)
+    problem = _problem(
+        budget=budget, axons_bounds=(64, 64), neurons_bounds=(64, 64),
+        count_bounds=TWO_POINT_COUNTS,
+    )
+    result = SamplingOptimizer(
+        strategy=GridStrategy(cap=DEFAULT_GRID_CAP), pop_size=2, seed=0,
+    ).optimize(problem, reporter=None)
+    return budget, problem, result
+
+
+class TestTheDriverRunsTheRealEncoding:
+    """The toy problems above measure the driver; this measures the SEAM —
+    the encoding's grid decoded into real chips, scored by the real evaluation,
+    counted by the real accountant."""
+
+    def test_the_grid_is_the_two_candidates_the_bounds_declare(
+        self, real_exhaustive_run,
+    ):
+        _, _, result = real_exhaustive_run
+
+        assert len(result.all_candidates) == 2
+
+    def test_each_point_becomes_a_distinct_resolved_chip(self, real_exhaustive_run):
+        _, _, result = real_exhaustive_run
+        counts = [
+            c.configuration["platform_constraints"]["cores"][0]["count"]
+            for c in result.all_candidates
+        ]
+
+        assert sorted(counts) == list(TWO_POINT_COUNTS)
+
+    def test_the_ledger_seals_one_distinct_evaluation_per_point(
+        self, real_exhaustive_run,
+    ):
+        budget, _, result = real_exhaustive_run
+
+        assert budget.distinct_spent == 2
+        assert result.ledger is not None
+        assert result.ledger.evaluations_distinct == 2
+        assert result.ledger.stopped_at_boundary is False
+
+    def test_the_run_scores_the_declared_objectives_and_picks_a_winner(
+        self, real_exhaustive_run,
+    ):
+        _, _, result = real_exhaustive_run
+
+        assert set(result.best.objectives) == set(HW_OBJECTIVES)
+        assert result.best.configuration["platform_constraints"]["cores"]
 
 
 ARCH_CFG: Dict[str, Any] = {"grid_cap": 64}
