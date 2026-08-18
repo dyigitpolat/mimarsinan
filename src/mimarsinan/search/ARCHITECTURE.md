@@ -19,7 +19,7 @@ of truth for the joint NAS + HW search space, rendered per backend.
 | `search_space_compilagent.py` | Renders a `SearchSpaceDescription` into compilagent `Lever` tuples and derives sampled integer candidates per HW dimension |
 | `patch_borders.py` | `get_region_borders`: standalone patch-region border computation utility (no in-repo callers) |
 | `evaluators/` | Fast NAS accuracy evaluators: one-epoch `FastAccuracyEvaluator` and `ExtrapolatingAccuracyEvaluator` with parametric learning-curve fitting |
-| `optimizers/` | `SearchOptimizer` interface and backends: pymoo NSGA-II, AgentEvolve LLM evolution, compilagent session (with `MimarsinanLayoutBackend`), shared LLM trace utilities, [TS1] `budget.py` (the `EvaluationBudget` accountant, `LlmUsage`, and the `ResourceLedger` a run seals — see "What a search spent" below; the package `__init__` re-exports nothing so this leaf stays importable from `results.py` and the problems without dragging the backends in), `pymoo_bridge.py` (everything the NSGA-II driver says in pymoo's vocabulary — seeded sampling, the goal-carrying ↔ minimize-everything objective translation, the front in user space, and pymoo's history as the report's own 1-based rows — so the driver file describes the SEARCH), and `search_events.py` — the live search-event channel's SSOT (the `emit_search_event` envelope plus the `generation_start`/`candidates_generated`/`generation_complete`/`search_complete` frame constructors). The classical and LLM backends BUILD their generation frames there, so the panel's vocabulary cannot fork; emission is telemetry and degrades through `best_effort`. The compilagent introspection surface is DERIVED from `deployment_record.introspection`'s registry: one read-only tool per payload the candidate view can answer, each response carrying its `payload`/`payload_version`, so registering a payload reaches the agent without a hand-written tool. These modules import the introspection types and NOTHING from `mapping` (AST-pinned) |
+| `optimizers/` | `SearchOptimizer` interface and backends: pymoo NSGA-II, AgentEvolve LLM evolution, compilagent session (with `MimarsinanLayoutBackend`), shared LLM utilities (`llm/trace.py` is the ONE model-call path both LLM drivers make their requests through, `llm/trace_format.py` how an exchange is shown, [TS3] `llm/usage.py` the `LlmUsageAccumulator` that counts what those requests spent), [TS1] `budget.py` (the `EvaluationBudget` accountant, `BoundaryStop`, `LlmUsage`, and the `ResourceLedger` a run seals — see "What a search spent" below; the package `__init__` re-exports nothing so this leaf stays importable from `results.py` and the problems without dragging the backends in), `pymoo_bridge.py` (everything the NSGA-II driver says in pymoo's vocabulary — seeded sampling, the goal-carrying ↔ minimize-everything objective translation, the front in user space, and pymoo's history as the report's own 1-based rows — so the driver file describes the SEARCH), and `search_events.py` — the live search-event channel's SSOT (the `emit_search_event` envelope plus the `generation_start`/`candidates_generated`/`generation_complete`/`search_complete` frame constructors). The classical and LLM backends BUILD their generation frames there, so the panel's vocabulary cannot fork; emission is telemetry and degrades through `best_effort`. The compilagent introspection surface is DERIVED from `deployment_record.introspection`'s registry: one read-only tool per payload the candidate view can answer, each response carrying its `payload`/`payload_version`, so registering a payload reaches the agent without a hand-written tool. These modules import the introspection types and NOTHING from `mapping` (AST-pinned) |
 | `problems/` | Concrete problems: `EncodedProblem` (vector-encoded) protocol and `JointArchHwProblem` for joint architecture + hardware co-search — see "The problem surface" below |
 
 ## The problem surface
@@ -230,6 +230,21 @@ through two channels reads as two calls, one distinct evaluation and — the axi
 above — one round of asking. The
 ledger carries no money by construction — dollars are priced research-side
 from a price table, so a sealed run can be re-priced without re-running it. A
+[TS3] The LLM drivers stop at boundaries of their own, through the same
+`BoundaryStop` — asked ONLY where the run would otherwise continue, so its
+`stopped` flag IS `stopped_at_boundary`. AgentEvolve asks at its BATCH (both
+regeneration loops) and before opening a generation, so a proposal nobody will
+evaluate is never asked of the model; compilagent asks in the one tool that
+buys evaluations, and `run_candidate`/`run_candidates` then refuse
+deterministically — an agent that keeps proposing simply gets nothing built.
+Their `LlmUsage` is counted where the request is MADE: `_run_agent` hands
+pydantic-ai a usage object and records it in a `finally`, so the retries inside
+a run count request by request and a run that raised still reports the tokens
+it spent; compilagent's agent loop belongs to the harness, whose per-run report
+`UsageObservingHarness` reads off the event stream (the session summary carries
+only the LAST continuation's).
+
+A
 problem carries its accountant as `evaluation_budget` (`problem_budget()` is
 the one reader, and it fails loud on a wrongly typed attribute), one accountant
 per run; the pipeline step builds it from the run's `arch_search.
