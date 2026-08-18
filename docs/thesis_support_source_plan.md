@@ -59,38 +59,97 @@ plan builds scaffolding into `src/`.
 
 ## TS1 — budget accountant + resource ledger core
 
-**The one seam.** The accountant attaches at the evaluation cache: distinct
-= cache miss, duplicate = hit. No driver ever counts for itself — the same
-elegance move as the U1 planner (one authority, N consumers).
+**Written from the shipped code** (the recon premise above — "the evaluate
+cache IS the one seam" — did not survive contact: a problem answers about a
+candidate through several channels, and the ones that are not `evaluate` do the
+same work). `search/ARCHITECTURE.md` ("What a search spent") and the
+`optimizers/budget.py` module doc are the authority; this section is the
+summary TS2/TS3 read before extending it.
 
-1. `search/optimizers/budget.py` (~130 LOC, new):
-   - `EvaluationBudget(limit: Optional[int])` — `on_distinct(key)` /
-     `on_duplicate(key)`, `distinct_spent`, `raw_calls`, `exhausted`
-     (distinct_spent >= limit). Penalty (infeasible) evaluations ARE
-     charged — they consume real evaluator work; the valid/failed split
-     already rides the search events.
-   - `LlmUsage(model, calls, tokens_in, tokens_out)` and
-     `ResourceLedger(wall_s, evaluations_raw, evaluations_distinct,
-     duplicate_rate, budget_limit, stopped_at_boundary, llm)` — frozen,
-     `to_dict`, facts only (no dollars; owner decision).
+**The law.** The currency is the candidate IDENTITY — `json_key` of the
+resolved configuration. A DISTINCT evaluation is the evaluator work that
+identity costs the first time the run spends it; every later ask about it is a
+DUPLICATE call that bought no new candidate. `charge_evaluation(budget, key,
+hit=..., channel=...)` ROUTES, so no caller has to know the law: already spent
+→ duplicate, whatever answered it; unspent and work about to run → the distinct
+evaluation the run pays for; unspent and cache-answered → nothing at all (a
+candidate a cheap predicate refused before anything was built is not an
+evaluation, and neither are the re-asks a cache answers about it).
+
+**Charged at three sites, across four channels** — because validation work IS
+evaluator work: `validate_detailed` walks the same model build → conversion →
+packing `_resolve_entry` that an evaluation walks, and NSGA-II asks it FIRST
+through `constraint_violation`. Charging only the evaluate channel was measured
+to seal a ledger claiming ZERO spend for a search whose every offspring was
+screened out (the R6 note's 72/72 ViT case), with the budget bounding nothing.
+
+| Site | When | Channel |
+|---|---|---|
+| `joint/validate.py` (past the caches and the declaration-only check) | a full resolution is about to run | the caller's |
+| `joint/validate.py::_cached_verdict` | a recorded verdict answers the ask | the caller's |
+| `joint/evaluate.py` (objective-cache HIT) | the one ask that never reaches `validate_detailed` | `evaluate` |
+| `joint/validate.py::candidate_layout` | always — the introspection seam has no cache | `layout` |
+
+`validate_detailed(configuration, *, channel=VALIDATE_CHANNEL)` takes its
+channel from the caller (`constraint_violation` → `constraint`, `evaluate` →
+`evaluate`, a backend calling it directly → `validate`): an ask belongs to the
+seam a driver called, not to the helper that resolved it. Penalty (infeasible)
+candidates ARE charged wherever they resolved — they consumed real evaluator
+work. `constraint_fn` / `validate_fn` refusals are NOT: they read the
+declaration and build nothing.
+
+**The comparable axis is identities, not calls.** A driver asks through as many
+channels as it likes, so a rate counted in calls reads the plumbing: NSGA-II
+(screen, then score) sealed 0.5556 on a run that re-proposed 2 of 18 candidates
+(0.111), a floor no single-channel driver can reach. The accountant therefore
+counts ROUNDS of asking, per (channel, identity): a channel's first look joins
+the round that candidate's proposal opened; a channel asking AGAIN about a
+candidate it already asked about opens the next round. `duplicate_rate =
+identities_reasked / identities_asked`, and both sides are sealed so an
+analysis can re-derive or pool it. The rule is deliberately not "the previous
+ask was about another candidate" — a driver that screens a whole batch and only
+then scores it re-proposes nothing and must read 0.0.
+
+**What shipped**
+
+1. `search/optimizers/budget.py`: `EvaluationBudget(limit)` —
+   `charge(channel, key, hit=...)`, `has_spent`, `distinct_spent`,
+   `raw_calls`, `identities_asked`, `identities_reasked`, `duplicate_rate`,
+   `exhausted` (distinct_spent >= limit); `problem_budget(problem)` (the one
+   reader, fails loud on a wrongly typed attribute); `LlmUsage(model, calls,
+   tokens_in, tokens_out)`; `ResourceLedger(wall_s, evaluations_raw,
+   evaluations_distinct, identities_asked, identities_reasked, duplicate_rate,
+   budget_limit, stopped_at_boundary, llm)` — frozen, `to_dict`/`from_dict`,
+   facts only (no dollars; owner decision); `seal_ledger(...)`.
 2. Problem injection: `JointArchHwProblem.evaluation_budget:
-   Optional[EvaluationBudget]` — `evaluate()` notifies it at the cache
-   seam. Absent budget = today's behavior byte-identical.
-3. `SearchResult.ledger: Optional[ResourceLedger] = None` (additive;
-   old artifacts load) + serialization in `search_result_to_jsonable`.
-4. NSGA-II threading: the existing `GenCallback` checks
-   `budget.exhausted` per generation and forces pymoo termination at the
-   boundary; wall measured around `minimize`; ledger filled from the
-   accountant. Campaign protocol note: choosing B as a pop-size multiple
+   Optional[EvaluationBudget]`, charged at the sites above. Absent budget =
+   today's behavior byte-identical, artifact included.
+3. `SearchResult.ledger: Optional[ResourceLedger] = None` (additive; old
+   artifacts load) + serialization in `search_result_to_jsonable`, which omits
+   the key entirely for an unmetered run.
+4. NSGA-II threading: `GenCallback` checks `budget.exhausted` per generation
+   and forces pymoo termination at the boundary (`terminate()` then
+   `update(algorithm)` — pymoo updates the criterion BEFORE calling back);
+   wall measured around `minimize`, ledger sealed there, so the post-search
+   front re-read stays out of it. `stopped_at_boundary` means the budget CUT
+   THE RUN SHORT. Campaign protocol note: choosing B as a pop-size multiple
    makes the boundary exact for NSGA by construction.
+5. Declaration surface: `arch_search.evaluation_budget` (a positive count,
+   refused by name otherwise) → `resolve_evaluation_budget`; it is a wizard
+   `common_fields` key with no default, because an unset budget is an
+   unmetered run.
 
-Tests first (`tests/unit/search/test_evaluation_budget.py`): duplicates
-never charged (mutant: charge on hit); exhaustion at exactly B distinct;
-NSGA stops at the first boundary with `distinct_spent` sealed exactly
-(small problem, B < pop_size ⇒ one generation); penalty evals charged;
-ledger JSON round-trip; no-budget byte-identity A/B.
-Mutants: charge-on-hit; exhausted-on-raw-not-distinct; callback ignores
-exhaustion.
+Tests (`tests/unit/search/test_evaluation_budget.py`): duplicates never
+charged; a re-ask about a candidate nobody built stays free through BOTH the
+constraint and the evaluate channel; exhaustion at exactly B distinct; penalty
+evals charged; every channel charged; the introspection seam spends what it
+resolves; NSGA stops at the first boundary with `distinct_spent` sealed
+exactly; the sealed rate equals the driver's re-proposal rate on the real
+hardware-mode problem; a single-channel driver seals 0.0; ledger JSON
+round-trip; no-budget byte-identity A/B.
+Mutants killed: charge-on-hit (both channels); rate counted in calls; a
+channel's re-ask never reopening the round; exhausted-on-raw-not-distinct;
+callback ignores exhaustion.
 
 ## TS2 — sampling optimizers + grid enumeration
 
