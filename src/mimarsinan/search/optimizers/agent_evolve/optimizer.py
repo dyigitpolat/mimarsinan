@@ -4,24 +4,30 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass, field
+from time import perf_counter
 from typing import Any, Dict, List, Optional
 
 from mimarsinan.common.best_effort import best_effort
 from mimarsinan.search.optimizers.agent_evolve.batch_eval import BatchEvalMixin
-from mimarsinan.search.optimizers.agent_evolve.llm_trace import LLMTraceMixin
 from mimarsinan.search.optimizers.agent_evolve.prompting import PromptingMixin
 from mimarsinan.search.optimizers.agent_evolve.codec import (
+    assemble_search_result,
     compute_pareto_front,
-    result_to_candidate,
-    select_best_candidate_minimax,
+    generation_candidates,
     sort_pareto_results_minimax_first,
 )
 from mimarsinan.search.optimizers.agent_evolve.schema import (
     CandidateResult,
     format_search_space_description,
-    prettify_configuration,
 )
 from mimarsinan.search.optimizers.base import SearchOptimizer
+from mimarsinan.search.optimizers.budget import (
+    BoundaryStop,
+    problem_budget,
+    seal_ledger,
+)
+from mimarsinan.search.optimizers.llm.trace import LLMTraceMixin
+from mimarsinan.search.optimizers.llm.usage import LlmUsageAccumulator, model_name
 from mimarsinan.search.optimizers.search_events import (
     generation_complete_event,
     generation_start_event,
@@ -61,6 +67,12 @@ class AgentEvolveOptimizer(
     _trace_reporter: Any = field(default=None, init=False, repr=False)
     _trace_gen: int = field(default=0, init=False, repr=False)
     _trace_seq: int = field(default=0, init=False, repr=False)
+    _llm_usage: LlmUsageAccumulator = field(
+        default_factory=lambda: LlmUsageAccumulator(model=""), init=False, repr=False,
+    )
+    _boundary: BoundaryStop = field(
+        default_factory=BoundaryStop, init=False, repr=False,
+    )
 
     def _log(self, message: str) -> None:
         """Print a message if verbose mode is enabled."""
@@ -74,24 +86,14 @@ class AgentEvolveOptimizer(
             raise ValueError("SearchProblem.objectives must not be empty")
 
         self._trace_reporter = reporter
+        # [TS3] One accumulator and one boundary per run: the accountant is the
+        # PROBLEM's, and every batch of this search asks the same two of them.
+        self._llm_usage = LlmUsageAccumulator(model=model_name(self.model))
+        self._boundary = BoundaryStop(problem_budget(problem))
         try:
             return asyncio.run(self._optimize_inner(problem, objectives))
         finally:
             self._trace_reporter = None
-
-    def _append_generation_candidates(
-        self,
-        all_candidates: List[Candidate[ConfigT]],
-        valid: List[CandidateResult],
-        failed: List[CandidateResult],
-        gen: int,
-    ) -> None:
-        for r in valid:
-            all_candidates.append(result_to_candidate(r, {"generation": gen, "is_pareto": False}))
-        for r in failed:
-            all_candidates.append(
-                result_to_candidate(r, {"generation": gen, "is_pareto": False, "valid": False})
-            )
 
     def _emit_generation_complete(
         self,
@@ -144,6 +146,7 @@ class AgentEvolveOptimizer(
         objectives: List[ObjectiveSpec],
     ) -> SearchResult[ConfigT]:
         reporter = self._trace_reporter
+        started = perf_counter()
 
         search_space_desc = format_search_space_description(
             objectives=objectives,
@@ -181,7 +184,7 @@ class AgentEvolveOptimizer(
 
         all_valid_results.extend(gen1_valid)
         all_failed_results.extend(gen1_failed)
-        self._append_generation_candidates(all_candidates, gen1_valid, gen1_failed, 1)
+        all_candidates.extend(generation_candidates(gen1_valid, gen1_failed, gen=1))
 
         pareto = compute_pareto_front(all_valid_results, objectives)
         self._log(f"Generation 1: {len(gen1_valid)} valid, Pareto size={len(pareto)}")
@@ -208,6 +211,9 @@ class AgentEvolveOptimizer(
         prev_pareto = pareto
 
         for gen in range(2, self.generations + 1):
+            # [TS3] A generation this run will not pay for is never proposed.
+            if self._boundary.should_stop():
+                break
             self._log(f"\n=== Generation {gen} / {self.generations} ===")
 
             self._trace_gen = gen
@@ -231,7 +237,7 @@ class AgentEvolveOptimizer(
 
             all_valid_results.extend(gen_valid)
             all_failed_results.extend(gen_failed)
-            self._append_generation_candidates(all_candidates, gen_valid, gen_failed, gen)
+            all_candidates.extend(generation_candidates(gen_valid, gen_failed, gen=gen))
 
             pareto = compute_pareto_front(all_valid_results, objectives)
 
@@ -259,39 +265,33 @@ class AgentEvolveOptimizer(
 
             prev_pareto = pareto
 
-        final_pareto = compute_pareto_front(all_valid_results, objectives)
-
-        pareto_configs = {prettify_configuration(r.configuration) for r in final_pareto}
-        pareto_candidates: List[Candidate[ConfigT]] = []
-        for r in final_pareto:
-            pareto_candidates.append(result_to_candidate(r, {"is_pareto": True}))
-
-        for c in all_candidates:
-            c_key = prettify_configuration(c.configuration)
-            if c_key in pareto_configs:
-                c.metadata["is_pareto"] = True
-
-        best_result = select_best_candidate_minimax(final_pareto, objectives)
-        if best_result:
-            best = result_to_candidate(best_result, {"is_pareto": True})
-        else:
-            best = Candidate(configuration={}, objectives={}, metadata={})
+        # [TS3] Sealed where the clock stops, so every fact covers ONE interval:
+        # what the SEARCH spent, LLM usage included.
+        result: SearchResult[ConfigT] = assemble_search_result(
+            valid_results=all_valid_results,
+            all_candidates=all_candidates,
+            objectives=objectives,
+            history=history,
+            ledger=seal_ledger(
+                self._boundary.budget,
+                wall_s=perf_counter() - started,
+                stopped_at_boundary=self._boundary.stopped,
+                llm=self._llm_usage.sealed(),
+            ),
+        )
 
         self._log(f"\n=== Final Results ===")
-        self._log(f"Total valid: {len(all_valid_results)}, Pareto size: {len(final_pareto)}")
-        if best_result:
-            self._log(f"Best: {best_result.objectives}")
+        self._log(
+            f"Total valid: {len(all_valid_results)}, "
+            f"Pareto size: {len(result.pareto_front)}"
+        )
+        if result.best.objectives:
+            self._log(f"Best: {result.best.objectives}")
 
         self._report_search_event(reporter, search_complete_event(
             total_valid=len(all_valid_results),
             total_failed=len(all_failed_results),
-            final_pareto_size=len(final_pareto),
+            final_pareto_size=len(result.pareto_front),
         ))
 
-        return SearchResult(
-            objectives=objectives,
-            best=best,
-            pareto_front=pareto_candidates,
-            all_candidates=all_candidates,
-            history=history,
-        )
+        return result

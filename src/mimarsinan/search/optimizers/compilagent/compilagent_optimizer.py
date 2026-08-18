@@ -20,6 +20,12 @@ from compilagent import (
 )
 
 from mimarsinan.search.optimizers.base import SearchOptimizer
+from mimarsinan.search.optimizers.budget import (
+    BoundaryStop,
+    problem_budget,
+    seal_ledger,
+)
+from mimarsinan.search.optimizers.llm.usage import LlmUsageAccumulator, model_name
 from mimarsinan.search.results import ObjectiveSpec, SearchResult
 from mimarsinan.search.search_space_description import SearchSpaceDescription
 
@@ -27,6 +33,7 @@ from .backend import MimarsinanLayoutBackend
 from .guided_toolset import GuidedToolset
 from .optimizer_result import build_search_result, build_workload_instance
 from .sink import MultiObjectiveSink
+from .usage_harness import UsageObservingHarness
 from .workload import (
     build_workload_spec,
     register_problem,
@@ -190,6 +197,11 @@ class CompilagentOptimizer(SearchOptimizer):
             objectives=[{"name": s.name, "goal": s.goal} for s in objectives],
         )
 
+        # [TS3] One accumulator and one boundary per run: the accountant is the
+        # PROBLEM's, and the tool that runs candidates asks the boundary.
+        usage = LlmUsageAccumulator(model=model_name(self.model))
+        boundary = BoundaryStop(problem_budget(problem))
+
         started = time.perf_counter()
         run_id = f"run-{uuid.uuid4().hex[:12]}"
         session = OptimizationSession(
@@ -206,6 +218,7 @@ class CompilagentOptimizer(SearchOptimizer):
             sink=sink,
             backend=backend,
             objectives=objectives,
+            boundary=boundary,
         )
 
         request = HarnessRunRequest(
@@ -226,7 +239,7 @@ class CompilagentOptimizer(SearchOptimizer):
             asyncio.run(
                 run_session(
                     session=session,
-                    harness=harness,
+                    harness=UsageObservingHarness(harness=harness, usage=usage),
                     request=request,
                     max_continuations=int(self.max_continuations),
                 )
@@ -245,6 +258,14 @@ class CompilagentOptimizer(SearchOptimizer):
             elapsed_ms=elapsed,
             backend=backend,
             invalid_penalty=self.invalid_penalty,
+            # [TS3] Sealed on the session's own clock, so the counts and the
+            # wall cover ONE interval: the search, not the reporting after it.
+            ledger=seal_ledger(
+                boundary.budget,
+                wall_s=elapsed / 1000.0,
+                stopped_at_boundary=boundary.stopped,
+                llm=usage.sealed(),
+            ),
         )
 
     def _build_system_instructions(self, objective_names: Sequence[str]) -> str:

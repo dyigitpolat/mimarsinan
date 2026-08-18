@@ -1,13 +1,28 @@
-"""Shared LLM trace helpers for AgentEvolve and Compilagent optimizers."""
+"""The ONE model-call path AgentEvolve and Compilagent-style drivers share.
+
+Formatting lives in ``trace_format.py``; what stays here is the call itself —
+make the request, count what it spent, and show it to the live monitor.
+"""
 
 from __future__ import annotations
 
-import json
-import re
 from types import SimpleNamespace
-from typing import TYPE_CHECKING, Any, Dict, List, Tuple, get_args, get_origin
+from typing import TYPE_CHECKING, Any, Dict, List, Tuple, get_origin
 
 from mimarsinan.common.best_effort import best_effort
+from mimarsinan.search.optimizers.llm.trace_format import (
+    TRACE_MAX_GEN_COMPLETE_STR,
+    TRACE_MAX_RESPONSE_STR,
+    TRACE_MAX_SECTION_CHARS,
+    TRACE_MAX_SECTIONS,
+    TRACE_MAX_TEXT_PREVIEW,
+    coerce_llm_text,
+    parse_json_object,
+    schema_has_dict_type,
+    split_prompt_for_trace,
+    trace_response_summary,
+)
+from mimarsinan.search.optimizers.llm.usage import LlmUsageAccumulator
 from mimarsinan.search.optimizers.search_events import emit_search_event
 
 __all__ = [
@@ -21,136 +36,6 @@ __all__ = [
 ]
 
 
-TRACE_MAX_SECTION_CHARS = 4000
-TRACE_MAX_SECTIONS = 12
-TRACE_MAX_RESPONSE_STR = 2500
-TRACE_MAX_TEXT_PREVIEW = 12000
-TRACE_MAX_GEN_COMPLETE_STR = 10000
-
-
-def coerce_llm_text(val: Any) -> str:
-    """Normalize LLM fields expected to be str; models sometimes return dict/list."""
-    if val is None:
-        return ""
-    if isinstance(val, str):
-        return val
-    try:
-        return json.dumps(val, ensure_ascii=False)
-    except TypeError:
-        return str(val)
-
-
-def parse_json_object(raw: str) -> Any:
-    """Parse a JSON object out of raw LLM text; degrade to {} on malformed JSON."""
-    try:
-        return json.loads(raw.strip())
-    except json.JSONDecodeError:
-        m = re.search(r"\{.*\}", raw, re.DOTALL)
-        if m:
-            try:
-                return json.loads(m.group())
-            except json.JSONDecodeError:
-                return {}
-    return {}
-
-
-def schema_has_dict_type(output_schema: Dict[str, type]) -> bool:
-    """Return True if any field type contains an open dict (additionalProperties issue)."""
-    for field_type in output_schema.values():
-        origin = get_origin(field_type)
-        if origin is dict:
-            return True
-        if origin is list:
-            args = get_args(field_type)
-            if args and get_origin(args[0]) is dict:
-                return True
-    return False
-
-
-def split_prompt_for_trace(prompt_text: str) -> Tuple[List[Dict[str, str]], bool, int]:
-    """Split prompt into labeled sections for GUI; return (sections, truncated, total_chars)."""
-    total_chars = len(prompt_text)
-    parts = re.split(r"\n\s*\n+", prompt_text.strip())
-    parts = [p.strip() for p in parts if p.strip()]
-    truncated = len(parts) > TRACE_MAX_SECTIONS
-    sections: List[Dict[str, str]] = []
-    for i, p in enumerate(parts[:TRACE_MAX_SECTIONS]):
-        if len(p) > TRACE_MAX_SECTION_CHARS:
-            p = p[:TRACE_MAX_SECTION_CHARS] + "\n…"
-            truncated = True
-        first_line = p.split("\n", 1)[0].strip()
-        label = first_line[:72] + ("…" if len(first_line) > 72 else "")
-        if len(label) < 8:
-            label = f"Section {i + 1}"
-        sections.append({"label": label, "text": p})
-    return sections, truncated, total_chars
-
-
-def trace_response_summary(
-    call_kind: str,
-    result: Any,
-    *,
-    prettify_configuration,
-) -> Dict[str, Any]:
-    """Structured response summary for live GUI (not raw JSON dumps)."""
-    if hasattr(result, "model_dump"):
-        result = SimpleNamespace(**result.model_dump())
-    out: Dict[str, Any] = {"call_kind": call_kind}
-
-    def _preview_cfg(d: Dict[str, Any]) -> str:
-        s = prettify_configuration(d) if isinstance(d, dict) else str(d)
-        return s[:280] + ("…" if len(s) > 280 else "")
-
-    if call_kind in (
-        "initial_candidates",
-        "regenerate_candidates",
-        "offspring",
-        "regenerate_offspring",
-    ):
-        reasoning = coerce_llm_text(getattr(result, "reasoning", "") or "")
-        cands = getattr(result, "candidates", []) or []
-        out["reasoning_preview"] = reasoning[:TRACE_MAX_RESPONSE_STR] + (
-            "…" if len(reasoning) > TRACE_MAX_RESPONSE_STR else ""
-        )
-        out["candidate_count"] = len(cands)
-        previews = []
-        for i, c in enumerate(cands[:2]):
-            if isinstance(c, dict):
-                previews.append({"index": i, "summary": _preview_cfg(c)})
-            elif isinstance(c, str):
-                previews.append({"index": i, "summary": c[:280]})
-        out["candidate_previews"] = previews
-        return out
-
-    if call_kind == "failure_insights":
-        insights = getattr(result, "insights", []) or []
-        items = []
-        for i, s in enumerate(insights[:20]):
-            t = str(s)
-            items.append({"index": i, "text": t[:400] + ("…" if len(t) > 400 else "")})
-        out["insight_count"] = len(insights)
-        out["insights"] = items
-        return out
-
-    text_kinds = (
-        ("constraint_instruction", "constraint_instruction"),
-        ("update_constraint", "updated_instruction"),
-        ("performance_insights", "performance_insights"),
-        ("update_performance_insights", "updated_insights"),
-    )
-    for kind, attr in text_kinds:
-        if call_kind == kind:
-            text = coerce_llm_text(getattr(result, attr, "") or "")
-            cap = TRACE_MAX_TEXT_PREVIEW
-            out["text_preview"] = text[:cap] + ("…" if len(text) > cap else "")
-            out["text_preview_truncated"] = len(text) > cap
-            out["text_preview_full_len"] = len(text)
-            return out
-
-    out["note"] = "unrecognized call_kind for trace"
-    return out
-
-
 class LLMTraceMixin:
     """Trace emission and pydantic-ai LLM invocation."""
 
@@ -159,6 +44,9 @@ class LLMTraceMixin:
     verbose: bool
     _trace_gen: int
     _trace_seq: int
+    #: [TS3] The run's usage accumulator — one per search, set by the host
+    #: before its first call, so retries and regeneration rounds add up.
+    _llm_usage: LlmUsageAccumulator
 
     if TYPE_CHECKING:
 
@@ -226,6 +114,22 @@ class LLMTraceMixin:
                 "response": self._trace_response_summary(call_kind, result),
             })
 
+    async def _run_agent(self, agent: Any, prompt: str, output_type: Any) -> Any:
+        """[TS3] THE model request: one call path, one usage capture.
+
+        pydantic-ai accumulates into the usage object it is handed, so the
+        retries INSIDE a run are counted request by request, and a run that
+        ends in an exception still reports the tokens it spent — a count that
+        shrank exactly when a model misbehaved would be worthless.
+        """
+        from pydantic_ai.usage import RunUsage
+
+        run_usage = RunUsage()
+        try:
+            return await agent.run(prompt, output_type=output_type, usage=run_usage)
+        finally:
+            self._llm_usage.record_run_usage(run_usage)
+
     async def _llm_call(
         self,
         template: str,
@@ -243,7 +147,7 @@ class LLMTraceMixin:
                     + f"\n\nRespond with a single valid JSON object containing exactly "
                     f"these keys: {keys}. Output only the JSON — no markdown, no explanation."
                 )
-                result = await agent.run(augmented, output_type=str)
+                result = await self._run_agent(agent, augmented, str)
                 raw = getattr(result, "output", "") or ""
 
                 data = parse_json_object(raw)
@@ -270,7 +174,7 @@ class LLMTraceMixin:
                 __base__=BaseModel,
                 **field_definitions,
             )
-            result = await agent.run(template, output_type=output_model)
+            result = await self._run_agent(agent, template, output_model)
             out = getattr(result, "output", result)
             self._emit_llm_trace(call_kind, template, output_schema, out)
             return out

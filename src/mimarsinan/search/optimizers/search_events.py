@@ -24,6 +24,9 @@ SEARCH_EVENT_METRIC = "search_event"
 # reads and a payload everybody pays for.
 PARETO_FRONT_PREVIEW = 5
 
+# A candidate row shows a summary, never the whole configuration.
+CONFIG_SUMMARY_CHARS = 200
+
 
 def emit_search_event(reporter: Any, event: Dict[str, Any]) -> None:
     """Emit a structured search event via the reporter."""
@@ -38,6 +41,29 @@ def objective_declarations(
 ) -> List[Dict[str, str]]:
     """The ``{name, goal}`` pairs the panel ranks and colours candidates by."""
     return [{"name": spec.name, "goal": spec.goal} for spec in objectives]
+
+
+def candidate_result_event(
+    *,
+    gen: int,
+    idx: int,
+    configuration: Any,
+    objectives: Mapping[str, float],
+    is_valid: bool,
+    error_message: str | None = None,
+    failure_phase: str | None = None,
+) -> Dict[str, Any]:
+    """One candidate's verdict: the panel's per-candidate row."""
+    return {
+        "type": "candidate_result",
+        "gen": gen,
+        "idx": idx,
+        "config_summary": str(configuration)[:CONFIG_SUMMARY_CHARS],
+        "is_valid": bool(is_valid),
+        "objectives": dict(objectives),
+        "error_message": error_message,
+        "failure_phase": failure_phase,
+    }
 
 
 def generation_start_event(

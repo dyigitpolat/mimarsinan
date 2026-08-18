@@ -11,6 +11,7 @@ from mimarsinan.search.optimizers.agent_evolve.schema import (
     prettify_configuration,
 )
 from mimarsinan.search.optimizers.search_events import (
+    candidate_result_event,
     candidates_generated_event,
     emit_search_event,
 )
@@ -74,15 +75,11 @@ class BatchEvalMixin(EvolveHostContract):
                         failure_phase=failure_phase,
                     )
                     failed_results.append(cr)
-                    self._report_search_event(reporter, {
-                        "type": "candidate_result",
-                        "gen": gen, "idx": idx,
-                        "config_summary": str(config)[:200],
-                        "is_valid": False,
-                        "objectives": dict(penalty_obj),
-                        "error_message": error_msg,
-                        "failure_phase": failure_phase,
-                    })
+                    self._report_search_event(reporter, candidate_result_event(
+                        gen=gen, idx=idx, configuration=config,
+                        objectives=penalty_obj, is_valid=False,
+                        error_message=error_msg, failure_phase=failure_phase,
+                    ))
                     continue
 
                 obj = problem.evaluate(config)
@@ -93,15 +90,10 @@ class BatchEvalMixin(EvolveHostContract):
                     objectives=obj,
                     is_valid=True,
                 ))
-                self._report_search_event(reporter, {
-                    "type": "candidate_result",
-                    "gen": gen, "idx": idx,
-                    "config_summary": str(config)[:200],
-                    "is_valid": True,
-                    "objectives": obj,
-                    "error_message": None,
-                    "failure_phase": None,
-                })
+                self._report_search_event(reporter, candidate_result_event(
+                    gen=gen, idx=idx, configuration=config,
+                    objectives=obj, is_valid=True,
+                ))
             except Exception as e:
                 logger.warning(
                     "Candidate evaluation raised (%s: %s) for config %.500s; "
@@ -117,15 +109,11 @@ class BatchEvalMixin(EvolveHostContract):
                     is_valid=False,
                     error_message=str(e),
                 ))
-                self._report_search_event(reporter, {
-                    "type": "candidate_result",
-                    "gen": gen, "idx": idx,
-                    "config_summary": str(config)[:200],
-                    "is_valid": False,
-                    "objectives": dict(penalty_obj),
-                    "error_message": str(e),
-                    "failure_phase": "exception",
-                })
+                self._report_search_event(reporter, candidate_result_event(
+                    gen=gen, idx=idx, configuration=config,
+                    objectives=penalty_obj, is_valid=False,
+                    error_message=str(e), failure_phase="exception",
+                ))
 
         self._report_search_event(reporter, {
             "type": "batch_summary",
@@ -153,6 +141,10 @@ class BatchEvalMixin(EvolveHostContract):
 
         regen_round = 0
         while len(population_valid) < self.pop_size and regen_round < self.max_regen_rounds:
+            # [TS3] The BATCH is this driver's boundary: the loop wants another
+            # one, and only a spent budget refuses it.
+            if self._boundary.should_stop():
+                break
             if regen_round == 0:
                 candidates, reasoning = await self._generate_initial_candidates(
                     n_candidates=self.candidates_per_batch,
@@ -255,6 +247,8 @@ class BatchEvalMixin(EvolveHostContract):
         regen_round = 0
         while len(population_valid) < self.pop_size and regen_round < self.max_regen_rounds:
             if not last_round_failed:
+                break
+            if self._boundary.should_stop():
                 break
 
             candidates, reasoning = await self._regenerate_offspring(

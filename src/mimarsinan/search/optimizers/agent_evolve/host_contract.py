@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Dict, List, Sequence, Tuple
 
 from mimarsinan.search.optimizers.agent_evolve.schema import CandidateResult
+from mimarsinan.search.optimizers.budget import BoundaryStop
 from mimarsinan.search.results import ObjectiveSpec
 
 
@@ -17,6 +18,8 @@ class EvolveHostContract:
     max_failed_examples: int
     verbose: bool
     invalid_penalty: float
+    #: [TS3] The run's stop decision, asked at every batch boundary.
+    _boundary: BoundaryStop
 
     if TYPE_CHECKING:
 
