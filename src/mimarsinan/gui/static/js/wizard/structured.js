@@ -520,9 +520,10 @@ function archSearchWidget(ks) {
   const grid = el('div', 'field-grid cols-2');
   field.append(grid);
 
+  /* Per-optimizer fields are served as `<id>_fields`, so a newly catalogued
+     backend brings its own knobs without a case here. */
   const fieldGroups = { ...(nas.common_fields || {}) };
-  if (activeOptimizer() === 'agent_evolve') Object.assign(fieldGroups, nas.agent_evolve_fields || {});
-  if (activeOptimizer() === 'compilagent') Object.assign(fieldGroups, nas.compilagent_fields || {});
+  Object.assign(fieldGroups, nas[`${activeOptimizer()}_fields`] || {});
 
   for (const [name, spec] of Object.entries(fieldGroups)) {
     let control;

@@ -16,9 +16,11 @@ from mimarsinan.pipelining.pipeline_steps.config.architecture_search_helpers imp
     OptimizerType,
     build_fixed_platform_constraints,
     create_optimizer,
-    resolve_arch_options,
     search_result_to_jsonable,
     write_search_visualizations,
+)
+from mimarsinan.pipelining.pipeline_steps.config.architecture_search_space import (
+    resolve_arch_options,
 )
 from mimarsinan.pipelining.pipeline_steps.config.architecture_search_problem import (
     build_search_problem,

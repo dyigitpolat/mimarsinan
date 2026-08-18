@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import os
-from typing import Any, Dict, List, Literal, Mapping, Optional, Sequence, Tuple
+from dataclasses import dataclass
+from typing import (
+    Any, Callable, Dict, List, Literal, Mapping, Optional, Sequence, Tuple,
+)
 
 from mimarsinan.common.best_effort import best_effort
 from mimarsinan.gui.json_util import to_json_safe
@@ -11,6 +14,11 @@ from mimarsinan.pipelining.core.platform_constraints_resolver import (
     build_platform_constraints_resolved,
 )
 from mimarsinan.search.optimizers.budget import EvaluationBudget
+from mimarsinan.search.optimizers.catalog import OPTIMIZER_IDS
+from mimarsinan.search.optimizers.sampling_optimizer import (
+    DEFAULT_GRID_CAP, GridStrategy, RandomStrategy, SamplingOptimizer,
+    SamplingStrategy, SobolStrategy,
+)
 from mimarsinan.search.problems.joint import PlatformResolver
 from mimarsinan.search.search_space_description import SearchSpaceDescription
 from mimarsinan.visualization.search_viz import (
@@ -19,7 +27,10 @@ from mimarsinan.visualization.search_viz import (
 )
 
 
-OptimizerType = Literal["nsga2", "agent_evolve", "compilagent"]
+#: The declared names, kept in step with :data:`OPTIMIZER_IDS` by test.
+OptimizerType = Literal[
+    "nsga2", "agent_evolve", "compilagent", "random", "sobol", "exhaustive",
+]
 
 
 def declared_int_pair(
@@ -51,6 +62,114 @@ def resolve_evaluation_budget(
     return EvaluationBudget(limit=int(declared))
 
 
+@dataclass(frozen=True)
+class OptimizerRequest:
+    """[TS2] What every backend is built from — one shape, one builder each."""
+
+    arch_cfg: Mapping[str, Any]
+    description: SearchSpaceDescription
+    seed: int
+    pop_size: int
+    generations: int
+    active_objective_names: Sequence[str] = ()
+
+    def declared(self, key: str, default: Any) -> Any:
+        return self.arch_cfg.get(key, default)
+
+    @property
+    def planned_samples(self) -> int:
+        """The draw a sampling backend plans: the same budget NSGA-II spends."""
+        return int(self.pop_size) * int(self.generations)
+
+
+def _build_nsga2(request: OptimizerRequest):
+    from mimarsinan.search.optimizers.nsga2_optimizer import NSGA2Optimizer
+
+    return NSGA2Optimizer(
+        pop_size=request.pop_size,
+        generations=request.generations,
+        seed=request.seed,
+        eliminate_duplicates=True,
+        verbose=True,
+    )
+
+
+def _build_agent_evolve(request: OptimizerRequest):
+    try:
+        from mimarsinan.search.optimizers.agent_evolve import AgentEvolveOptimizer
+    except ImportError as e:
+        print(f"[ArchitectureSearchStep] Agentic Evolution optimizer not available: {e}")
+        print("[ArchitectureSearchStep] Falling back to NSGA2")
+        return _build_nsga2(request)
+
+    description = request.description
+    return AgentEvolveOptimizer(
+        pop_size=request.pop_size,
+        generations=request.generations,
+        candidates_per_batch=request.declared("candidates_per_batch", 5),
+        max_regen_rounds=request.declared("max_regen_rounds", 10),
+        max_failed_examples=request.declared("max_failed_examples", 5),
+        model=request.declared("agent_model", "openai:gpt-4o"),
+        llm_retries=request.declared("llm_retries", 3),
+        config_schema=description.to_agent_evolve_schema(),
+        example_config=description.to_agent_evolve_example(),
+        constraints_description=(
+            request.declared("constraints_description", None)
+            or description.to_agent_evolve_constraints()
+        ),
+        verbose=True,
+    )
+
+
+def _build_compilagent(request: OptimizerRequest):
+    from mimarsinan.search.optimizers.compilagent import CompilagentOptimizer
+
+    return CompilagentOptimizer(
+        pop_size=int(request.pop_size),
+        description=request.description,
+        model=str(request.declared("model", "openai:gpt-4o")),
+        harness_id=str(request.declared("harness", "pydantic_ai")),
+        max_candidates=int(request.declared("max_candidates", max(request.pop_size, 8))),
+        max_continuations=int(request.declared("max_continuations", 4)),
+        system_prompt_extra=str(request.declared("system_prompt_extra", "")),
+        active_objective_names=tuple(request.active_objective_names),
+        verbose=True,
+    )
+
+
+def _sampling(request: OptimizerRequest, strategy: SamplingStrategy) -> SamplingOptimizer:
+    return SamplingOptimizer(
+        strategy=strategy, pop_size=int(request.pop_size), seed=int(request.seed),
+    )
+
+
+def _build_random(request: OptimizerRequest):
+    return _sampling(request, RandomStrategy(samples=request.planned_samples))
+
+
+def _build_sobol(request: OptimizerRequest):
+    return _sampling(request, SobolStrategy(samples=request.planned_samples))
+
+
+def _build_exhaustive(request: OptimizerRequest):
+    return _sampling(request, GridStrategy(
+        cap=int(request.declared("grid_cap", DEFAULT_GRID_CAP)),
+    ))
+
+
+#: [TS2] Name -> builder. THE dispatch: an if/elif ladder let a name reach the
+#: pipeline while the wizard, the declared type and the ladder itself disagreed
+#: about which names exist.
+OPTIMIZER_BUILDERS: Dict[str, Callable[[OptimizerRequest], Any]] = {
+    "nsga2": _build_nsga2,
+    "agent_evolve": _build_agent_evolve,
+    "compilagent": _build_compilagent,
+    "random": _build_random,
+    "sobol": _build_sobol,
+    "exhaustive": _build_exhaustive,
+}
+
+
 def create_optimizer(
     optimizer_type: OptimizerType,
     arch_cfg: Dict[str, Any],
@@ -62,71 +181,26 @@ def create_optimizer(
     target_tq: int,
     active_objective_names: Sequence[str] = (),
 ):
-    description = SearchSpaceDescription.from_arch_search(
-        search_mode=search_mode,
-        arch_options=arch_options,
-        arch_cfg=arch_cfg,
-        target_tq=target_tq,
-    )
-
-    if optimizer_type == "agent_evolve":
-        try:
-            from mimarsinan.search.optimizers.agent_evolve import AgentEvolveOptimizer
-
-            agent_model = arch_cfg.get("agent_model", "openai:gpt-4o")
-            candidates_per_batch = arch_cfg.get("candidates_per_batch", 5)
-            max_regen_rounds = arch_cfg.get("max_regen_rounds", 10)
-            max_failed_examples = arch_cfg.get("max_failed_examples", 5)
-            llm_retries = arch_cfg.get("llm_retries", 3)
-
-            config_schema = description.to_agent_evolve_schema()
-            example_config = description.to_agent_evolve_example()
-            constraints_desc = (
-                arch_cfg.get("constraints_description")
-                or description.to_agent_evolve_constraints()
-            )
-
-            return AgentEvolveOptimizer(
-                pop_size=pop_size,
-                generations=generations,
-                candidates_per_batch=candidates_per_batch,
-                max_regen_rounds=max_regen_rounds,
-                max_failed_examples=max_failed_examples,
-                model=agent_model,
-                llm_retries=llm_retries,
-                config_schema=config_schema,
-                example_config=example_config,
-                constraints_description=constraints_desc,
-                verbose=True,
-            )
-        except ImportError as e:
-            print(f"[ArchitectureSearchStep] Agentic Evolution optimizer not available: {e}")
-            print("[ArchitectureSearchStep] Falling back to NSGA2")
-
-    if optimizer_type == "compilagent":
-        from mimarsinan.search.optimizers.compilagent import CompilagentOptimizer
-
-        return CompilagentOptimizer(
-            pop_size=int(pop_size),
-            description=description,
-            model=str(arch_cfg.get("model", "openai:gpt-4o")),
-            harness_id=str(arch_cfg.get("harness", "pydantic_ai")),
-            max_candidates=int(arch_cfg.get("max_candidates", max(pop_size, 8))),
-            max_continuations=int(arch_cfg.get("max_continuations", 4)),
-            system_prompt_extra=str(arch_cfg.get("system_prompt_extra", "")),
-            active_objective_names=tuple(active_objective_names),
-            verbose=True,
+    """The declared backend, built — or a refusal naming every choice there is."""
+    builder = OPTIMIZER_BUILDERS.get(str(optimizer_type))
+    if builder is None:
+        raise ValueError(
+            f"unknown arch_search.optimizer {optimizer_type!r}; declare one of "
+            f"{', '.join(OPTIMIZER_IDS)}"
         )
-
-    from mimarsinan.search.optimizers.nsga2_optimizer import NSGA2Optimizer
-
-    return NSGA2Optimizer(
+    return builder(OptimizerRequest(
+        arch_cfg=arch_cfg,
+        description=SearchSpaceDescription.from_arch_search(
+            search_mode=search_mode,
+            arch_options=arch_options,
+            arch_cfg=arch_cfg,
+            target_tq=target_tq,
+        ),
+        seed=seed,
         pop_size=pop_size,
         generations=generations,
-        seed=seed,
-        eliminate_duplicates=True,
-        verbose=True,
-    )
+        active_objective_names=active_objective_names,
+    ))
 
 
 def search_result_to_jsonable(result) -> Dict[str, Any]:
@@ -149,59 +223,6 @@ def search_result_to_jsonable(result) -> Dict[str, Any]:
     if result.ledger is not None:
         payload["ledger"] = result.ledger.to_dict()
     return to_json_safe(payload)
-
-
-def derive_arch_options(
-    builder_cls: type,
-    arch_cfg: Dict[str, Any],
-    input_shape: tuple,
-) -> Tuple[List[Tuple[str, List[Any]]], Dict[str, Any]]:
-    schema = getattr(builder_cls, "get_config_schema", lambda: [])()
-    schema_map = {f["key"]: f for f in schema}
-
-    nas_opts_fn = getattr(builder_cls, "get_nas_search_options", None)
-    builder_options: Dict[str, List[Any]] = (
-        nas_opts_fn(input_shape=input_shape) if nas_opts_fn else {}
-    )
-
-    arch_options: List[Tuple[str, List[Any]]] = []
-    for field_desc in schema:
-        key = field_desc["key"]
-        field_type = field_desc.get("type")
-        if field_type == "select" and "options" in field_desc:
-            values = arch_cfg.get(f"{key}_options", field_desc["options"])
-            if len(values) > 1:
-                arch_options.append((key, list(values)))
-        elif key in builder_options:
-            values = arch_cfg.get(f"{key}_options", builder_options[key])
-            if len(values) > 1:
-                arch_options.append((key, list(values)))
-
-    schema_keys = {f["key"] for f in schema}
-    for key, default_values in builder_options.items():
-        if key not in schema_keys:
-            values = arch_cfg.get(f"{key}_options", default_values)
-            if len(values) > 1:
-                arch_options.append((key, list(values)))
-
-    return arch_options, schema_map
-
-
-def make_assembler(schema: List[Dict[str, Any]], schema_map: Dict[str, Any]):
-    def assembler(raw: Dict[str, Any]) -> Dict[str, Any]:
-        result: Dict[str, Any] = {}
-        for field_desc in schema:
-            if "default" in field_desc:
-                result[field_desc["key"]] = field_desc["default"]
-        for k, v in raw.items():
-            field_info = schema_map.get(k, {})
-            if field_info.get("type") == "number":
-                default = field_info.get("default", 0)
-                result[k] = float(v) if isinstance(default, float) else int(v)
-            else:
-                result[k] = v
-        return result
-    return assembler
 
 
 def make_platform_resolver(pipeline_config: Mapping[str, Any]) -> PlatformResolver:
@@ -238,30 +259,6 @@ def write_search_visualizations(result_json: Dict[str, Any], out_dir: str) -> No
             if os.path.exists(legacy_path):
                 with best_effort(f"remove legacy report {legacy}"):
                     os.remove(legacy_path)
-
-
-def resolve_arch_options(
-    builder_cls, arch_cfg: Dict, input_shape: Tuple, *,
-    searches_model: bool, model_type: str,
-):
-    """The model-side search space and its raw->config assembler for one run.
-
-    A hardware-only search has neither: its model config is fixed, so the
-    options list is empty and the assembler is the identity.
-    """
-    if not searches_model:
-        return [], (lambda raw: dict(raw))
-
-    arch_options, schema_map = derive_arch_options(builder_cls, arch_cfg, input_shape)
-    schema = getattr(builder_cls, "get_config_schema", lambda: [])()
-    if not arch_options:
-        raise NotImplementedError(
-            f"No NAS search space defined for model_type='{model_type}'. "
-            f"Add get_nas_search_options() or 'select' fields with multiple options "
-            f"to {builder_cls.__name__}.get_config_schema(). "
-            f"Current schema keys: {[f['key'] for f in schema]}"
-        )
-    return arch_options, make_assembler(schema, schema_map)
 
 
 def firing_semantics_kwargs(plan, config: Mapping[str, Any]) -> Dict[str, Any]:

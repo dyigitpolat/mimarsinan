@@ -11,6 +11,8 @@ from mimarsinan.config_schema.defaults import (
 )
 from mimarsinan.deployment_record.objectives import OBJECTIVES, SEARCH_MODES
 from mimarsinan.pipelining.core.pipelines.deployment_pipeline import get_pipeline_step_specs
+from mimarsinan.search.optimizers.catalog import optimizer_options
+from mimarsinan.search.optimizers.sampling_optimizer import DEFAULT_GRID_CAP
 from mimarsinan.search.results import ALL_OBJECTIVES, ACCURACY_OBJECTIVE_NAME
 from mimarsinan.tuning.orchestration.temporal_allocation import S_ALLOCATION_MODES
 
@@ -58,11 +60,9 @@ def get_wizard_temporal_allocation_schema() -> Dict[str, Any]:
 def get_wizard_nas_schema() -> Dict[str, Any]:
     """Return NAS optimizer options and field schemas for arch_search."""
     return {
-        "optimizer_options": [
-            {"id": "nsga2", "label": "NSGA-II"},
-            {"id": "agent_evolve", "label": "Agentic Evolution (LLM-based)"},
-            {"id": "compilagent", "label": "Compilagent (LLM session)"},
-        ],
+        # [TS2] The catalogue itself — one list of backends, read by the wizard,
+        # the factory's builder table and the declared OptimizerType alike.
+        "optimizer_options": optimizer_options(),
         "common_fields": {
             "pop_size": {"type": "int", "default": 12, "min": 2, "max": 64, "doc": "Population size"},
             "generations": {"type": "int", "default": 5, "min": 1, "max": 100, "doc": "Generations"},
@@ -90,6 +90,12 @@ def get_wizard_nas_schema() -> Dict[str, Any]:
             "max_candidates": {"type": "int", "default": 8, "min": 1, "max": 64, "doc": "Max candidates per session"},
             "max_continuations": {"type": "int", "default": 4, "min": 0, "max": 32, "doc": "Max continuation rounds"},
             "system_prompt_extra": {"type": "textarea", "default": "", "doc": "Extra system-prompt text (appended)"},
+        },
+        # [TS2] The exhaustive backend's one knob: how large a grid a run is
+        # willing to enumerate. Past it the encoding refuses by name rather
+        # than serving a truncated "exhaustive" front.
+        "exhaustive_fields": {
+            "grid_cap": {"type": "int", "default": DEFAULT_GRID_CAP, "min": 1, "max": 1000000, "doc": "Max grid points to enumerate (refused above this)"},
         },
         "objective_options": [
             {"id": o.name, "label": _objective_label(o.name), "goal": o.goal,

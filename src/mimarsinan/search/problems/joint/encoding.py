@@ -7,6 +7,8 @@ something by.
 
 from __future__ import annotations
 
+import itertools
+import math
 from typing import Any, Dict, List
 
 import numpy as np
@@ -163,6 +165,72 @@ class JointEncodingMixin(JointHostContract):
         x.extend(0.0 for _ in self.option_axes)
         seed = np.clip(np.asarray(x, dtype=float), lo, hi)
         return [seed]
+
+    def _snapped_dim_values(self, bounds: "tuple[int, int]") -> List[float]:
+        """One coordinate per DISTINCT core dimension the bounds can decode to.
+
+        The grid line is what ``decode`` produces, not what the box contains:
+        raw values between two granularity multiples snap onto the same chip,
+        so enumerating them all would buy the same candidate many times.
+        """
+        representatives: Dict[int, float] = {}
+        for raw in range(int(bounds[0]), int(bounds[1]) + 1):
+            representatives.setdefault(self._snap_core_dim(raw), float(raw))
+        return list(representatives.values())
+
+    def _option_axis_values(self, axis: Any) -> List[float]:
+        """An option axis' enumerable coordinates, or a loud refusal."""
+        if axis.is_choice:
+            return [float(i) for i in range(len(axis.choices))]
+        if not axis.integral:
+            raise ValueError(
+                f"{axis.key}: exhaustive enumeration needs a discrete axis, and "
+                f"this one is continuous — declare a choice or integer axis, or "
+                f"search it with a sampling optimizer"
+            )
+        return [float(v) for v in range(int(axis.lower), int(axis.upper) + 1)]
+
+    def _grid_value_sets(self) -> List[List[float]]:
+        """Every dimension's enumerable coordinates, in the encoding's own order."""
+        value_sets: List[List[float]] = []
+        if self._searches_model:
+            value_sets.extend(
+                [float(i) for i in range(len(options))]
+                for _, options in self.arch_options
+            )
+        if self._searches_hw:
+            for _ in range(int(self.num_core_types)):
+                value_sets.append(self._snapped_dim_values(self.core_axons_bounds))
+                value_sets.append(self._snapped_dim_values(self.core_neurons_bounds))
+                value_sets.append([
+                    float(v) for v in range(
+                        int(self.core_count_bounds[0]), int(self.core_count_bounds[1]) + 1,
+                    )
+                ])
+        value_sets.extend(self._option_axis_values(axis) for axis in self.option_axes)
+        return value_sets
+
+    def grid_vectors(self, *, cap: int) -> "List[np.ndarray]":
+        """[TS2] The DISCRETE grid this encoding stands for, enumerated whole.
+
+        The exhaustive baseline's stream. It is the encoding's to produce for
+        the same reason ``seed_vectors`` is: only the encoding knows that a
+        coordinate is an index into a choice list, a core dimension that snaps
+        to the declared granularity, or an inclusive integer count. Refuses
+        loudly rather than truncating — a shortened enumeration is not the
+        exhaustive front anybody asked for.
+        """
+        value_sets = self._grid_value_sets()
+        size = math.prod(len(values) for values in value_sets)
+        if size > int(cap):
+            raise ValueError(
+                f"exhaustive enumeration of this search space needs {size} "
+                f"candidates, above the declared cap of {int(cap)}; narrow the "
+                f"declared bounds or raise arch_search.grid_cap"
+            )
+        return [
+            np.array(point, dtype=float) for point in itertools.product(*value_sets)
+        ]
 
     def decode(self, x: np.ndarray) -> Dict[str, Any]:
         x = np.array(x, dtype=float).flatten()

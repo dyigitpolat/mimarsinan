@@ -200,6 +200,44 @@ def order_by_minimax_rank(
     )
 
 
+def _dominates(
+    row: Mapping[str, float],
+    other: Mapping[str, float],
+    objectives: Sequence[ObjectiveSpec],
+) -> bool:
+    """Is *row* at least as good on every axis and strictly better on one?"""
+    strictly_better = False
+    for spec in objectives:
+        sign = -1.0 if spec.goal == "max" else 1.0
+        mine = sign * float(row.get(spec.name, 0.0))
+        theirs = sign * float(other.get(spec.name, 0.0))
+        if mine > theirs:
+            return False
+        if mine < theirs:
+            strictly_better = True
+    return strictly_better
+
+
+def nondominated_front(
+    rows: Sequence[Mapping[str, float]],
+    objectives: Sequence[ObjectiveSpec],
+) -> List[int]:
+    """[TS2] Indices of the rows no other row dominates, in input order.
+
+    THE Pareto rule for backends that have no front of their own: a sampler
+    evaluates a stream and must hand over the same kind of front an
+    evolutionary run's algorithm maintains. Equal rows both survive (neither is
+    strictly better), so a repeated candidate never silences its twin.
+    """
+    return [
+        index for index, row in enumerate(rows)
+        if not any(
+            _dominates(other, row, objectives)
+            for position, other in enumerate(rows) if position != index
+        )
+    ]
+
+
 def select_minimax_rank(
     candidates: Sequence[Candidate[ConfigT]],
     objectives: Sequence[ObjectiveSpec],
