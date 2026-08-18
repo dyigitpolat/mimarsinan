@@ -9,6 +9,8 @@ from typing import TYPE_CHECKING, Any
 
 from compilagent import ToolDecl, Toolset
 
+from mimarsinan.search.optimizers.budget import BoundaryStop
+
 from .guidance_blocks import augment_inspect_workload, augment_run_result
 
 if TYPE_CHECKING:
@@ -22,12 +24,22 @@ _INSPECT_WORKLOAD = "inspect_workload"
 _RUN_CANDIDATE = "run_candidate"
 _RUN_CANDIDATES = "run_candidates"
 
+# [TS3] Running candidates is the only tool that BUYS evaluations, so it is
+# this driver's natural boundary. Refusing is deterministic: an agent that
+# keeps proposing simply gets nothing built.
+BUDGET_SPENT_REFUSAL = (
+    "REFUSED: this run's evaluation budget is spent — no further candidate "
+    "will be built. Stop proposing and conclude with `synthesize_findings` "
+    "and `compare_runs` over the candidates already run."
+)
+
 
 @dataclass
 class _GuidanceState:
     sink: "MultiObjectiveSink"
     backend: "MimarsinanLayoutBackend"
     objectives: list["ObjectiveSpec"]
+    boundary: BoundaryStop = field(default_factory=BoundaryStop)
     baseline_injected: bool = False
     seen_metric_values: dict[str, set[float]] = field(default_factory=dict)
 
@@ -42,10 +54,12 @@ class GuidedToolset:
         sink: "MultiObjectiveSink",
         backend: "MimarsinanLayoutBackend",
         objectives: Sequence["ObjectiveSpec"],
+        boundary: BoundaryStop | None = None,
     ) -> None:
         self._base = base
         self._state = _GuidanceState(
             sink=sink, backend=backend, objectives=list(objectives),
+            boundary=boundary or BoundaryStop(),
         )
         self._wrapped_cache: dict[str, ToolDecl] = {}
 
@@ -100,6 +114,8 @@ def _wrap_decl(decl: ToolDecl, state: _GuidanceState, kind: str) -> ToolDecl:
 
     @functools.wraps(original_handler)
     def _augmented_handler(*args: Any, **kwargs: Any) -> str:
+        if kind in (_RUN_CANDIDATE, _RUN_CANDIDATES) and state.boundary.should_stop():
+            return BUDGET_SPENT_REFUSAL
         raw = original_handler(*args, **kwargs)
         if kind == _INSPECT_WORKLOAD:
             return augment_inspect_workload(raw, state)

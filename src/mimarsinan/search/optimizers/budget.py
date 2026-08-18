@@ -154,6 +154,31 @@ def problem_budget(problem: object) -> Optional[EvaluationBudget]:
     )
 
 
+@dataclass
+class BoundaryStop:
+    """A driver's own boundary, asked once per boundary: is the budget spent?
+
+    The accountant only METERS, so every driver decides where it may stop —
+    a generation, a batch, a proposal. Ask this only where the run would
+    otherwise CONTINUE, and ``stopped`` is exactly what the ledger means by
+    ``stopped_at_boundary``: the budget denied work the run wanted to do.
+    """
+
+    budget: Optional[EvaluationBudget] = None
+    _stopped: bool = field(default=False, init=False, repr=False)
+
+    def should_stop(self) -> bool:
+        """Stop here? Answering True is what makes this run a budget-bound one."""
+        if self.budget is None or not self.budget.exhausted:
+            return False
+        self._stopped = True
+        return True
+
+    @property
+    def stopped(self) -> bool:
+        return self._stopped
+
+
 @dataclass(frozen=True)
 class LlmUsage:
     """What a search asked of a model — never what it was billed."""

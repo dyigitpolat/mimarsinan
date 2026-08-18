@@ -14,6 +14,7 @@ from mimarsinan.search.optimizers.agent_evolve.codec import (
     sort_pareto_results_minimax_first,
 )
 from mimarsinan.search.optimizers.agent_evolve.schema import CandidateResult
+from mimarsinan.search.optimizers.budget import ResourceLedger
 from mimarsinan.search.results import Candidate, ObjectiveSpec, SearchResult
 
 from .backend import MimarsinanLayoutBackend
@@ -27,6 +28,7 @@ def build_search_result(
     elapsed_ms: float,
     backend: MimarsinanLayoutBackend,
     invalid_penalty: float,
+    ledger: Optional[ResourceLedger] = None,
 ) -> SearchResult:
     valid_results: List[CandidateResult] = []
     all_candidates: List[Candidate] = []
@@ -122,6 +124,7 @@ def build_search_result(
         pareto_front=pareto_candidates,
         all_candidates=all_candidates,
         history=history,
+        ledger=ledger,
     )
 
 

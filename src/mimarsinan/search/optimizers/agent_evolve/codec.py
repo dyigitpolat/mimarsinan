@@ -5,9 +5,11 @@ from __future__ import annotations
 import random
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
+from mimarsinan.search.optimizers.budget import ResourceLedger
 from mimarsinan.search.results import (
     Candidate,
     ObjectiveSpec,
+    SearchResult,
     order_by_minimax_rank,
     select_minimax_rank,
 )
@@ -63,6 +65,53 @@ def compute_pareto_front(
         if not dominated:
             pareto.append(candidate)
     return pareto
+
+
+def generation_candidates(
+    valid: List[CandidateResult],
+    failed: List[CandidateResult],
+    *,
+    gen: int,
+) -> List[Candidate]:
+    """One generation's verdicts as result candidates, tagged with their round."""
+    return [
+        result_to_candidate(r, {"generation": gen, "is_pareto": False})
+        for r in valid
+    ] + [
+        result_to_candidate(r, {"generation": gen, "is_pareto": False, "valid": False})
+        for r in failed
+    ]
+
+
+def assemble_search_result(
+    *,
+    valid_results: List[CandidateResult],
+    all_candidates: List[Candidate],
+    objectives: Sequence[ObjectiveSpec],
+    history: List[Dict[str, Any]],
+    ledger: Optional[ResourceLedger],
+) -> SearchResult:
+    """The front, the pick, and the ledger, as one result the pipeline seals."""
+    pareto = compute_pareto_front(valid_results, objectives)
+    pareto_configs = {prettify_configuration(r.configuration) for r in pareto}
+    for candidate in all_candidates:
+        if prettify_configuration(candidate.configuration) in pareto_configs:
+            candidate.metadata["is_pareto"] = True
+
+    best_result = select_best_candidate_minimax(pareto, objectives)
+    best = (
+        result_to_candidate(best_result, {"is_pareto": True})
+        if best_result
+        else Candidate(configuration={}, objectives={}, metadata={})
+    )
+    return SearchResult(
+        objectives=list(objectives),
+        best=best,
+        pareto_front=[result_to_candidate(r, {"is_pareto": True}) for r in pareto],
+        all_candidates=all_candidates,
+        history=history,
+        ledger=ledger,
+    )
 
 
 def compute_performance_stats(
@@ -217,6 +266,7 @@ def select_best_candidate(
 
 
 __all__ = [
+    "assemble_search_result",
     "candidate_to_result",
     "compute_pareto_front",
     "compute_performance_stats",
