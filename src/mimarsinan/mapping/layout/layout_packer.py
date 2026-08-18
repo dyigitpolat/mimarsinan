@@ -9,6 +9,10 @@ from mimarsinan.mapping.packing.core_packing import (
     canonical_is_mapping_possible,
     canonical_split_softcore,
 )
+from mimarsinan.mapping.packing.infeasibility_proofs import (
+    failed_pack_verdict,
+    tag_with_verdict,
+)
 from mimarsinan.mapping.packing.placement_engine import run_placement
 from mimarsinan.mapping.platform.coalescing import coalescing_fragment_count
 from mimarsinan.mapping.layout.layout_types import (
@@ -212,6 +216,12 @@ def pack_layout(
             allow_neuron_splitting=allow_neuron_splitting,
         )
     except RuntimeError as e:
+        # ``run_placement`` fuses hardcores whatever ``allow_coalescing`` declared,
+        # so the axon dimension is never tight enough here to prove anything.
+        verdict = failed_pack_verdict(
+            softcores, core_types,
+            neurons_may_split=allow_neuron_splitting, axons_may_spread=True,
+        )
         return LayoutPackingResult(
             feasible=False,
             cores_used=0,
@@ -221,7 +231,8 @@ def pack_layout(
             avg_unused_area_per_core=float("inf"),
             unusable_space_total=0,
             avg_unusable_space_per_core=0.0,
-            error=str(e),
+            error=tag_with_verdict(verdict, str(e)),
+            verdict=verdict,
         )
 
     cores_used = len(used_hardcores)

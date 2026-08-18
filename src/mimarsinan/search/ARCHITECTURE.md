@@ -120,7 +120,13 @@ candidate-scoped failure comes back as a typed `CandidateFailure` that the
 boundary renders once — an invalid `ValidationResult` in the validate path, a
 `CandidateInfeasibleError` (or a scored penalty, for packing infeasibility) in
 the evaluate path — while problem-level breakage propagates untyped and aborts
-the run.
+the run. [TS4] A packing failure STATES ITS CLASS: `joint/layout_hook.py`'s
+`_packing_failure` prefixes the refusal with the packer's verdict
+(`mapping.packing.infeasibility_proofs`), so a failure census separates chips
+that provably cannot host the program from packs the greedy engine refused
+instead of counting one bucket. The class is PROPAGATED, never recomputed
+there — a scheduled program reuses cores across passes, so a flat pack's cell
+proof does not transfer.
 
 **What does this candidate LOOK like?** — `candidate_layout(configuration)`
 returns the `CandidateLayout` (chip, softcores, packing census, view) an

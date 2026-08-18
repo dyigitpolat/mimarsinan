@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Optional, Tuple
 
+from mimarsinan.mapping.packing.infeasibility_proofs import VERDICT_FEASIBLE
 from mimarsinan.mapping.platform.core_residency import BASIS_VALUES
 
 
@@ -171,5 +172,11 @@ class LayoutPackingResult:
     # when the pack was asked to collect placements (the NoC estimator input);
     # split/coalescing fragments repeat their origin index.
     placements: Optional[Tuple[Tuple[int, int], ...]] = None
+
+    # [TS4] Why the pack ended this way, additive beside ``feasible``: a refusal
+    # is either PROVEN (``infeasibility_proofs``, scoped to this one pack — a
+    # scheduled program reuses cores and is a different question) or the greedy
+    # engine's, which some other placement order may still take.
+    verdict: str = VERDICT_FEASIBLE
 
 

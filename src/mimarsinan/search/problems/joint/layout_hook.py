@@ -15,6 +15,7 @@ from mimarsinan.deployment_record.objectives import (
 from mimarsinan.mapping.layout.layout_ir_mapping import LayoutIRMapping
 from mimarsinan.mapping.noc import census_of_walk
 from mimarsinan.mapping.layout.layout_types import LayoutHardCoreType, LayoutSoftCoreSpec
+from mimarsinan.mapping.packing.infeasibility_proofs import ensure_verdict_tag
 from mimarsinan.mapping.platform.mapping_structure import ChipCapabilities
 from mimarsinan.mapping.platform.platform_constraints import resolve_platform_mapping_params
 from mimarsinan.mapping.verification.layout_verification_scheduling import compute_mapping_stats
@@ -202,12 +203,19 @@ class JointLayoutMixin(JointHostContract):
         softcores: List[LayoutSoftCoreSpec],
         pcfg: Dict,
     ) -> CandidateFailure:
-        """Why the candidate does not fit, with the census that shows how badly."""
+        """Why the candidate does not fit, with the census that shows how badly.
+
+        [TS4] The message states its verdict class, so a failure census separates
+        chips that provably cannot host the program from packs the greedy engine
+        refused. The class is PROPAGATED, never recomputed here: a scheduled
+        program reuses cores across passes, so a flat pack's cell proof would not
+        transfer.
+        """
         total_hw_capacity = sum(
             ct.max_axons * ct.max_neurons * ct.count
             for ct in self._make_core_types(pcfg)
         )
-        message = error or "HW bin-packing infeasible"
+        message = ensure_verdict_tag(error or "HW bin-packing infeasible")
         message += (
             f" | softcores={len(softcores)}"
             f", total_hw_capacity={total_hw_capacity}"
