@@ -7,6 +7,7 @@ from typing import Any
 
 import torch
 
+from mimarsinan.chip_simulation.soma_law import SomaLaw
 from mimarsinan.chip_simulation.spiking_mode_policy import policy_for_spiking_mode
 from mimarsinan.common.best_effort import best_effort
 from mimarsinan.pipelining.core.deployment_plan import DeploymentPlan
@@ -28,7 +29,8 @@ def require_spiking_mode_supported(
 ) -> None:
     plan = DeploymentPlan.of(pipeline)
     policy_for_spiking_mode(
-        plan.spiking_mode, plan.ttfs_cycle_schedule
+        plan.spiking_mode, plan.ttfs_cycle_schedule,
+        soma_law=SomaLaw.resolve(plan.config),
     ).require_backend_supported(backend=backend, context=step_name)
 
 

@@ -78,10 +78,19 @@ class CertificationCell:
     def from_mode_policy(
         cls, mode_policy: Any, *, backend: str, variant: Optional[str] = None
     ) -> "CertificationCell":
-        """Build a cell from a (firing × sync) ``SpikingModePolicy`` + a backend."""
+        """Build a cell from a (firing × sync) ``SpikingModePolicy`` + a backend.
+
+        A NON-default soma point rides the existing ``variant`` slot, so a
+        per-event run can never be certified against the per-cycle floor and
+        every historical key stays byte-identical. An explicit ``variant``
+        (a caller separating two configs sharing a recipe cell) still wins.
+        """
         firing = str(getattr(mode_policy, "spiking_mode", "lif"))
         sync = getattr(mode_policy, "schedule", None)
         sync = None if sync is None else str(sync)
+        if variant is None:
+            soma_law = getattr(mode_policy, "soma_law", None)
+            variant = None if soma_law is None else soma_law.point_tag()
         return cls(firing=firing, sync=sync, backend=str(backend), variant=variant)
 
 

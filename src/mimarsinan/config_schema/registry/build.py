@@ -22,6 +22,7 @@ from mimarsinan.config_schema.registry.entries_run import ENTRIES as _RUN
 from mimarsinan.config_schema.registry.entries_semantics import (
     ENTRIES as _SEMANTICS,
 )
+from mimarsinan.config_schema.registry.entries_soma import ENTRIES as _SOMA
 from mimarsinan.config_schema.registry.entries_tuning import ENTRIES as _TUNING
 from mimarsinan.config_schema.registry.groups import CONCERN_GROUPS, VALID_GROUP_IDS
 from mimarsinan.config_schema.registry.relevance import Relevance
@@ -176,7 +177,7 @@ def _assert_domain_tags(entries) -> None:
 _REGISTRY: Dict[str, ConfigKeySchema] = validate_registry(
     tuple(
         _inject_domain_relevance(_inject_default(e))
-        for e in (_RUN + _MODEL + _SEMANTICS + _CONVERSION + _PRUNING + _TUNING + _ENDPOINT + _EXECUTION + _PLATFORM + _PHYSICS)
+        for e in (_RUN + _MODEL + _SEMANTICS + _SOMA + _CONVERSION + _PRUNING + _TUNING + _ENDPOINT + _EXECUTION + _PLATFORM + _PHYSICS)
     )
 )
 _assert_domain_tags(_REGISTRY.values())

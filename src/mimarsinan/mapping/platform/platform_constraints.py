@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Sequence
+from typing import Any, Optional, Sequence
+
+from mimarsinan.models.nn.activations.bias_mode import bias_mode_from_hardware_bias
 
 
 @dataclass(frozen=True)
@@ -47,4 +49,19 @@ def resolve_platform_mapping_params(
         effective_max_axons=effective_max_axons,
         effective_max_neurons=max_neurons,
         allow_coalescing=bool(allow_coalescing),
+    )
+
+
+def bias_mode_for_cores(cores: Optional[Sequence[dict[str, Any]]]) -> str:
+    """THE bias-delivery mode of a declared core grid.
+
+    One rule for both readers (the pipeline's ``resolve_bias_mode`` and the
+    config derivation): a grid where every core type carries a bias lane
+    delivers ``on_chip``, anything else ``param_encoded``. An undeclared grid
+    reads as the framework default platform, which has a lane.
+    """
+    if not cores:
+        return bias_mode_from_hardware_bias(True)
+    return bias_mode_from_hardware_bias(
+        resolve_platform_mapping_params(list(cores)).hardware_bias
     )

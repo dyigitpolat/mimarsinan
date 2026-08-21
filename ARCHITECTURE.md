@@ -116,6 +116,7 @@ their logic locally.
 | Tuning-loop behavior constants (checkpoint, recovery, rollback, commit gate) | `tuning/orchestration/tuning_policy.py` (frozen `TUNING_POLICY`) |
 | Core-semantics domain axis (`spiking` vs value-domain `mvm`) | `chip_simulation/core_semantics.py` |
 | Authored activation axes (family × variant), legacy bridge, retired keys | `chip_simulation/activation_semantics.py` |
+| Soma-law axes (firing granularity × membrane arithmetic), the resolved `SomaLaw` point, and the point-keyed backend refusal | `chip_simulation/soma_axes.py`, `chip_simulation/soma_law.py`, `chip_simulation/soma_capability.py` |
 | Spiking-mode taxonomy, mode predicates, per-backend capability matrix | `chip_simulation/spiking_semantics.py` |
 | Behavior-carrying per-`(firing × sync)` mode dispatch | `chip_simulation/spiking_mode_policy.py` (`policy_for_spiking_mode`); the mvm family's policy is `chip_simulation/mvm_core_policy.py` |
 | What op shapes a target's cores accept (packaging rule + boundary domain) | `mapping/platform/packaging_contract.py` (`packaging_contract_for`) |

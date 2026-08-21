@@ -105,7 +105,6 @@ ALLOWLIST = {
     # plan); relocation, not new lazy imports.
     "pipelining/core/plan/predicates.py",
     "pipelining/core/nf_scm_parity.py",
-    "pipelining/core/platform_constraints_resolver.py",
     "pipelining/core/registry/model_registry.py",
     "pipelining/pipeline_steps/config/architecture_search_helpers.py",
     "pipelining/pipeline_steps/mapping/hard_core_mapping_step.py",

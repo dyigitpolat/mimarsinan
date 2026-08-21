@@ -65,17 +65,21 @@ class CrossSimOutcome:
 
 
 def derive_applicability(
-    backend: str, spiking_mode: str
+    backend: str, spiking_mode: str, *, soma_law: Optional[Any] = None
 ) -> Tuple[bool, Optional[str]]:
-    """Whether ``backend`` can run ``spiking_mode``, derived from the capability registry (never executed).
+    """Whether ``backend`` can run ``spiking_mode`` (and, when the caller holds
+    one, the resolved soma point), derived from the capability registry (never executed).
 
     Returns ``(applicable, reason)`` — ``(True, None)`` when supported, else ``(False, <why>)``.
     """
-    policy = policy_for_spiking_mode(spiking_mode)
+    policy = policy_for_spiking_mode(spiking_mode, soma_law=soma_law)
     if policy.supports_backend(backend):
         return True, None
+    point = "" if soma_law is None or soma_law.point_tag() is None else (
+        f", soma point {soma_law.point_tag()!r}"
+    )
     reason = (
-        f"backend {backend!r} cannot run spiking_mode={spiking_mode!r} "
+        f"backend {backend!r} cannot run spiking_mode={spiking_mode!r}{point} "
         f"(unsupported in the capability registry) — screened INAPPLICABLE, "
         f"not executed"
     )

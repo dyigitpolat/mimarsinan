@@ -210,10 +210,16 @@ def is_novena_firing_mode(firing_mode) -> bool:
 
 @dataclass(frozen=True)
 class BackendSpikingCapabilities:
+    """What one backend can execute: the four mode columns, then the soma-law
+    axes. The new columns default False so every declared entry keeps its
+    positional shape and every backend refuses a law nothing executes yet."""
+
     lif: bool
     ttfs: bool
     ttfs_quantized: bool
     ttfs_cycle_based: bool
+    per_event_firing: bool = False
+    saturating_membrane: bool = False
 
 
 _BACKEND_CAPS: dict[str, BackendSpikingCapabilities] = {
@@ -226,6 +232,11 @@ _BACKEND_CAPS: dict[str, BackendSpikingCapabilities] = {
     "loihi": BackendSpikingCapabilities(True, False, False, False),
     "training": BackendSpikingCapabilities(True, False, False, False),
 }
+
+
+def is_declared_backend(backend: str) -> bool:
+    """Whether ``backend`` has a DECLARED capability row (vs the fallback)."""
+    return str(backend or "").lower() in _BACKEND_CAPS
 
 
 def backend_capabilities(backend: str) -> BackendSpikingCapabilities:

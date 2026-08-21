@@ -21,6 +21,9 @@ from mimarsinan.config_schema.derivation.legality import (
     legal_value_error, legal_values_for, legality_bearing_keys)
 from mimarsinan.config_schema.derivation.platform import (
     derive_platform_constraints as derive_platform_constraints)
+from mimarsinan.config_schema.derivation.soma import (
+    enforce_soma_axes_contract as enforce_soma_axes_contract,
+    fold_soma_axes)
 from mimarsinan.config_schema.recipe_fold import fold_conversion_recipe, fold_mvm_recipe
 from mimarsinan.config_schema.registry import REGISTRY
 
@@ -94,8 +97,10 @@ def derive_deployment_parameters(
     mvm = is_mvm_core_semantics(resolve_core_semantics(dp))
     if not mvm:
         # Fold the authored (family, variant) axes into their legacy twins
-        # BEFORE anything reads spiking_mode/ttfs_cycle_schedule.
+        # BEFORE anything reads spiking_mode/ttfs_cycle_schedule, then the
+        # soma axes so the recipe fold's sim_enables see a resolved point.
         fold_spiking_axes(dp)
+        fold_soma_axes(dp)
     mvm_aq = mvm and bool(dp.get("activation_bits"))
     spiking_mode = str(dp.get("spiking_mode", "lif"))
     pipeline_mode = str(dp.get("pipeline_mode", ""))
@@ -192,6 +197,7 @@ def derive_pipeline_runtime_parameters(dp: MutableMapping[str, Any]) -> None:
     """
     if not is_mvm_core_semantics(resolve_core_semantics(dp)):
         fold_spiking_axes(dp)
+        fold_soma_axes(dp)
         # Recipe-owned mapping arm: the windowed-lif exact-QAT pairing writes
         # True before this runs; inert False for every other mode — always
         # resolved, never a knob (RETIRED as a document key).
@@ -212,3 +218,5 @@ def derive_pipeline_runtime_parameters(dp: MutableMapping[str, Any]) -> None:
     # Boundary-lossless requirement with TWO sound positions (round-5): ON =
     # calibrated shift + bias pre-correction; OFF = the mapper's subsume-forward.
     dp.setdefault("negative_value_shift", True)
+    # The soma point's cross-key rules (inert at the default point).
+    enforce_soma_axes_contract(dp)

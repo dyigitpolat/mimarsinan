@@ -198,13 +198,16 @@ class ConversionPolicy:
     @classmethod
     def derive(
         cls, spiking_mode: str, schedule: Any = None,
-        spiking_variant: Any = None,
+        spiking_variant: Any = None, soma_law: Any = None,
     ) -> ConversionRecipe:
         """Derive the proven recipe for a deployment mode — the SSOT mode→recipe table.
 
         Maps ``(spiking_mode, schedule)`` to its empirically-proven recipe: the
         fast-ladder ``driver``, the per-mode ``knobs``, the capability-derived
         ``sim_enables``, and the ``special_case`` marker + ``rationale``.
+        ``soma_law`` carries the resolved soma point when the caller holds one,
+        so a backend with no executor for that point derives OFF rather than
+        being turned on by the mode alone.
         """
         # Lazy: chip_simulation has a fragile import cycle; a top-level import breaks
         # when this module loads before chip_simulation finishes initializing.
@@ -219,7 +222,7 @@ class ConversionPolicy:
         )
 
         mode = require_known_spiking_mode(spiking_mode)
-        policy = policy_for_spiking_mode(mode, schedule)
+        policy = policy_for_spiking_mode(mode, schedule, soma_law=soma_law)
         synchronized = is_synchronized_ttfs(mode, schedule)
         streamed_lif = mode == "lif" and str(spiking_variant or "") == "streamed"
 

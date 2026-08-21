@@ -5,6 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Optional
 
+from mimarsinan.chip_simulation.soma_capability import (
+    require_soma_law_supported,
+    supports_soma_law,
+)
+from mimarsinan.chip_simulation.soma_law import SomaLaw
 from mimarsinan.chip_simulation.spiking_semantics import (
     forces_activation_quantization,
     is_analytical_ttfs,
@@ -67,14 +72,25 @@ class SpikingModePolicy:
     ``ttfs_cycle_schedule`` for the TTFS-cycle family (``None`` otherwise).
     """
 
-    def __init__(self, spiking_mode: str, schedule: Optional[str] = None) -> None:
+    def __init__(
+        self,
+        spiking_mode: str,
+        schedule: Optional[str] = None,
+        *,
+        soma_law: Optional[SomaLaw] = None,
+    ) -> None:
         self.spiking_mode = spiking_mode
         self.schedule = schedule
+        # The resolved soma point, when the caller holds one. ``None`` is the
+        # pinned legacy surface: a raw mode-string query keeps its mode-keyed
+        # answer, and a lawless policy never refuses on the point.
+        self.soma_law = soma_law
 
     @classmethod
     def from_contract(cls, contract: Any) -> "SpikingModePolicy":
         return policy_for_spiking_mode(
-            contract.spiking_mode, contract.ttfs_cycle_schedule
+            contract.spiking_mode, contract.ttfs_cycle_schedule,
+            soma_law=contract.soma_law(),
         )
 
     def training_forward_kind(self) -> str:
@@ -134,14 +150,18 @@ class SpikingModePolicy:
         return requires_ttfs_firing(self.spiking_mode)
 
     def supports_backend(self, backend: str) -> bool:
-        """Whether ``backend``'s capabilities support this mode."""
-        return supports_spiking_mode(backend, self.spiking_mode)
+        """Whether ``backend``'s capabilities support this mode AND, when the
+        caller holds one, this resolved soma point."""
+        return supports_spiking_mode(backend, self.spiking_mode) and (
+            supports_soma_law(backend, self.soma_law)
+        )
 
     def require_backend_supported(self, *, backend: str, context: str) -> None:
-        """Raise an actionable error if ``backend`` cannot run this mode."""
+        """Raise an actionable error if ``backend`` cannot run this mode or point."""
         require_spiking_mode_supported(
             self.spiking_mode, backend=backend, context=context
         )
+        require_soma_law_supported(self.soma_law, backend=backend, context=context)
 
     def valid_backends(self, candidates) -> tuple[str, ...]:
         """Subset of ``candidates`` whose capabilities support this mode."""
@@ -177,6 +197,10 @@ class LifModePolicy(SpikingModePolicy):
     """LIF family: per-cycle integrate-and-fire, count decode."""
 
     def certification_observable(self) -> tuple[str, "str | None"]:
+        """Counts stay the observable under EVERY soma point: a per-event law
+        changes how many spikes a window holds, not the currency crossing a
+        boundary. The point enters the CELL KEY instead, so a new point never
+        inherits another point's certificate or regression floor."""
         return ("counts", None)
 
     @property
@@ -436,17 +460,21 @@ class TtfsCascadeModePolicy(_TtfsCycleModePolicy):
 
 
 def policy_for_spiking_mode(
-    spiking_mode: str, schedule=None
+    spiking_mode: str, schedule=None, *, soma_law: Optional[SomaLaw] = None
 ) -> SpikingModePolicy:
     """SSOT dispatch resolving the ``(firing × sync)`` policy for ``(spiking_mode, schedule)``.
 
     Rejects modes outside ``ALL_SPIKING_MODES`` (incl. the removed ``rate``).
+    ``soma_law`` carries the resolved soma point when the caller holds one, so
+    the capability query answers on the POINT and not on the mode string alone.
     """
     mode = require_known_spiking_mode(spiking_mode)
     if is_ttfs_cycle_based(mode):
         if is_synchronized_ttfs(mode, schedule):
-            return TtfsSyncCycleModePolicy(mode, ttfs_cycle_schedule(schedule))
-        return TtfsCascadeModePolicy(mode, ttfs_cycle_schedule(schedule))
+            return TtfsSyncCycleModePolicy(
+                mode, ttfs_cycle_schedule(schedule), soma_law=soma_law)
+        return TtfsCascadeModePolicy(
+            mode, ttfs_cycle_schedule(schedule), soma_law=soma_law)
     if is_analytical_ttfs(mode):
-        return TtfsAnalyticalModePolicy(mode)
-    return LifModePolicy(mode)
+        return TtfsAnalyticalModePolicy(mode, soma_law=soma_law)
+    return LifModePolicy(mode, soma_law=soma_law)

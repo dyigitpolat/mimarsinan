@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Mapping, Optional
 
+from mimarsinan.chip_simulation.soma_law import SomaLaw
 from mimarsinan.chip_simulation.spiking_mode_policy import policy_for_spiking_mode
 
 __all__ = [
@@ -21,6 +22,29 @@ def _spiking_mode_of(contract: Any) -> str:
     return str(mode or "lif")
 
 
+def _soma_law_of(contract: Any) -> Optional[SomaLaw]:
+    """The resolved soma point a plan / contract carries.
+
+    ``None`` for a raw mode STRING — the pinned legacy surface carries no
+    point and keeps its mode-keyed answer.
+    """
+    if isinstance(contract, str):
+        return None
+    config = getattr(contract, "config", None)
+    if isinstance(config, Mapping):
+        return SomaLaw.resolve(config)
+    if hasattr(contract, "firing_granularity"):
+        return SomaLaw.resolve(contract)
+    return None
+
+
+def _policy_of(contract: Any):
+    """The point-aware mode policy for a contract / plan / raw mode string."""
+    return policy_for_spiking_mode(
+        _spiking_mode_of(contract), soma_law=_soma_law_of(contract)
+    )
+
+
 class Backend(ABC):
     """A capability-declared deployment target with a build/run/parity-gate driver seam."""
 
@@ -34,14 +58,13 @@ class Backend(ABC):
     decodes_accuracy: bool = False
 
     def supports(self, contract: Any) -> bool:
-        """Whether this backend supports the contract's spiking mode (matrix-driven)."""
-        return policy_for_spiking_mode(_spiking_mode_of(contract)).supports_backend(
-            self.name
-        )
+        """Whether this backend supports the contract's mode AND soma point."""
+        return _policy_of(contract).supports_backend(self.name)
 
     def require_supported(self, contract: Any, *, context: str) -> None:
-        """Raise an actionable error if this backend cannot run the contract's mode."""
-        policy_for_spiking_mode(_spiking_mode_of(contract)).require_backend_supported(
+        """Raise an actionable error if this backend cannot run the contract's
+        mode or its resolved soma point."""
+        _policy_of(contract).require_backend_supported(
             backend=self.name, context=context
         )
 

@@ -59,9 +59,13 @@ class PlanPredicates:
             from mimarsinan.chip_simulation.mvm_core_policy import MvmCorePolicy
 
             return MvmCorePolicy()
+        from mimarsinan.chip_simulation.soma_law import SomaLaw
         from mimarsinan.chip_simulation.spiking_mode_policy import policy_for_spiking_mode
 
-        return policy_for_spiking_mode(self.spiking_mode, self.ttfs_cycle_schedule)
+        return policy_for_spiking_mode(
+            self.spiking_mode, self.ttfs_cycle_schedule,
+            soma_law=SomaLaw.resolve(self.config),
+        )
 
     @property
     def conversion_recipe(self):

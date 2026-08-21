@@ -6,6 +6,10 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Callable, Dict
 
+from mimarsinan.chip_simulation.spiking_semantics import (
+    backend_capabilities,
+    is_declared_backend,
+)
 from mimarsinan.models.nn.lif_kernels import lif_fire_and_reset
 
 
@@ -50,16 +54,20 @@ class FiringStrategy:
             raise ValueError(f"Invalid thresholding_mode: {self.thresholding_mode!r}")
 
     def capabilities(self, backend: str) -> BackendFiringCapabilities:
-        b = backend.lower()
-        if b in ("hcm", "nevresim", "unified", "hybrid"):
-            return BackendFiringCapabilities(True, True, self.mode == FiringMode.TTFS)
-        if b in ("training", "lif_activation"):
-            return BackendFiringCapabilities(True, True, False)
-        if b in ("lava", "loihi"):
-            return BackendFiringCapabilities(True, True, False)
-        if b in ("sanafe",):
-            return BackendFiringCapabilities(True, True, True)
-        return BackendFiringCapabilities(True, False, False)
+        """The firing-law columns, DERIVED from the one capability table.
+
+        A backend that runs the LIF family runs both of its reset laws; the
+        TTFS column is the genuine cycle-based TTFS capability. An UNDECLARED
+        backend supports nothing — the old permissive default let an unknown
+        name pass the Default-reset gate silently.
+        """
+        caps = backend_capabilities(backend)
+        declared = is_declared_backend(backend)
+        return BackendFiringCapabilities(
+            supports_default=declared and caps.lif,
+            supports_novena=declared and caps.lif,
+            supports_ttfs=declared and caps.ttfs_cycle_based,
+        )
 
     def require_backend(self, backend: str) -> None:
         caps = self.capabilities(backend)

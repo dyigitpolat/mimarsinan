@@ -16,8 +16,8 @@ the current axes system can declare, and no exporter emits physical memory image
 | Stage | State | Commits |
 |---|---|---|
 | Plan of record | committed, then revised under 4-judge adversarial review (§14) | docs(ODIN0) |
-| P0 headroom extractions (subpackages, corrected census) | open | |
-| P1 axes + unified point-keyed capability + cell identity | open | |
+| P0 headroom extractions (subpackages, corrected census) | **DONE** — five pure extractions create the LOC headroom P1/P2 need; behaviour is relocation only (31/31 moved definitions AST-byte-identical) | refactor(ODIN0) — suite 12,048 passed / 32 skipped / 0 failed (identical to the parent), typecheck 0, budgets exit 0, architecture 90 passed |
+| P1 axes + unified point-keyed capability + cell identity | **DONE** — the two axes are DECLARED, the capability query is re-keyed on the resolved point, and cell identity discriminates it; every backend refuses the new point by name and nothing executes it | semantics(ODIN1) — golden regen +68 lines / **0 deletions** (4 keys x 17 fixtures), suite 12,324 passed / 32 skipped / 0 failed in ~61 s, typecheck 0, budgets exit 0, architecture 90 passed |
 | P2 torch serial-fold kernels | open | |
 | P3 nevresim integration policy + resolver consolidation | open | |
 | P4 exporter + platform declaration + feasibility gates | open | |

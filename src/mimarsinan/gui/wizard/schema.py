@@ -9,6 +9,8 @@ from mimarsinan.config_schema.defaults import (
     get_default_deployment_parameters,
     get_default_platform_constraints,
 )
+from mimarsinan.chip_simulation.spiking_semantics import legal_firing_modes
+from mimarsinan.config_schema.registry.entries_semantics import SPIKING_MODES
 from mimarsinan.deployment_record.objectives import OBJECTIVES, SEARCH_MODES
 from mimarsinan.pipelining.core.pipelines.deployment_pipeline import get_pipeline_step_specs
 from mimarsinan.search.optimizers.catalog import optimizer_options
@@ -28,11 +30,9 @@ def get_wizard_defaults() -> Dict[str, Any]:
     return {
         "platform_constraints": dict(get_default_platform_constraints()),
         "nas_common_fields": nas.get("common_fields", {}),
+        # The legality SSOT answers this, never a second table here.
         "firing_modes_by_spiking": {
-            "lif": ["Default", "Novena"],
-            "ttfs": ["TTFS"],
-            "ttfs_quantized": ["TTFS"],
-            "ttfs_cycle_based": ["TTFS"],
+            mode: list(legal_firing_modes(mode)) for mode in SPIKING_MODES
         },
         "temporal_allocation": get_wizard_temporal_allocation_schema(),
     }

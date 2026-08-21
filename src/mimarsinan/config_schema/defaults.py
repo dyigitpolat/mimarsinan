@@ -70,6 +70,10 @@ DEFAULT_PLATFORM_CONSTRAINTS: Dict[str, object] = {
     "target_tq": 32,
     "simulation_steps": 32,
     "weight_bits": 8,
+    # [ODIN P1] the soma-law platform widths: 0 = the membrane is not a
+    # fixed-width register; per_synapse = the framework's signed weight grid.
+    "membrane_bits": 0,
+    "weight_sign_granularity": "per_synapse",
     "allow_coalescing": False,
     "allow_neuron_splitting": False,
     "allow_per_layer_s": False,
@@ -140,6 +144,10 @@ CONFIG_KEYS_SET: Set[str] = {
     "lif_execution_discipline", "spike_count_parity_samples", "aa_endpoint_recovery_steps",
     "tuning_lossless_entry_fast_path", "endpoint_target_margin", "activation_scale_policy", "core_semantics",
     "value_parity_samples",
+    # [ODIN P1] the soma-law axes (derived defaults, no schema default) and
+    # their platform widths.
+    "firing_granularity", "membrane_arithmetic", "membrane_bits",
+    "weight_sign_granularity",
     # torch DataLoader worker count; read via config.get with a fallback of 4.
     "num_workers", "proven_recovery_depth",
     # Keys with NO default, where absence is meaningful: workload-profile-injectable ones, and the target's declared physics (no profile => no absolute area/energy number at all, never a defaulted one).

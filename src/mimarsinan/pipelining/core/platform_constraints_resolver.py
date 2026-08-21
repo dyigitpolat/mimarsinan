@@ -8,6 +8,7 @@ from mimarsinan.chip_simulation.sanafe.arch_synth.floorplan import resolve_floor
 from mimarsinan.config_schema.defaults import DEFAULT_PLATFORM_CONSTRAINTS
 from mimarsinan.deployment_record.platform_physics.resolve import resolve_platform_physics
 from mimarsinan.mapping.platform.coalescing import CANONICAL_KEY, normalize_coalescing_config
+from mimarsinan.mapping.platform.platform_constraints import bias_mode_for_cores
 from mimarsinan.mapping.platform.core_residency import RESIDENCY_KEY
 
 
@@ -114,18 +115,13 @@ def build_platform_constraints_resolved(
 def resolve_bias_mode(pipeline_config: dict[str, Any]) -> str:
     """Deployment bias delivery (``"on_chip"`` / ``"param_encoded"``) for this config.
 
-    Single source shared by the tuners and the mapping step: reuses the same
-    ``all(has_bias)`` resolution as ``SoftCoreMappingStep`` so training-time nodes and
-    the deployed mapping agree on the declared mode.
+    Single source shared by the tuners and the mapping step: normalizes the
+    declared grid the way ``SoftCoreMappingStep`` does, then asks the
+    bias-mode SSOT, so training-time nodes and the deployed mapping agree.
     """
-    from mimarsinan.mapping.platform.platform_constraints import (
-        resolve_platform_mapping_params,
+    return bias_mode_for_cores(
+        build_platform_constraints_resolved(pipeline_config)["cores"]
     )
-    from mimarsinan.models.nn.activations.bias_mode import bias_mode_from_hardware_bias
-
-    cores = build_platform_constraints_resolved(pipeline_config)["cores"]
-    params = resolve_platform_mapping_params(cores)
-    return bias_mode_from_hardware_bias(params.hardware_bias)
 
 
 def resolve_wq_two_scale_projection(config: dict[str, Any]) -> bool:

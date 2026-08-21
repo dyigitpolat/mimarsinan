@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, Iterable, Mapping, MutableMapping, Optional, Set
 
 from mimarsinan.chip_simulation.activation_semantics import is_streamed_lif
+from mimarsinan.chip_simulation.soma_law import SomaLaw
 from mimarsinan.chip_simulation.spiking_semantics import is_lif
 from mimarsinan.config_schema.defaults import CONFIG_KEYS_SET
 from mimarsinan.tuning.orchestration.conversion_policy import ConversionPolicy
@@ -147,6 +148,7 @@ def fold_conversion_recipe(
     recipe = ConversionPolicy.derive(
         spiking_mode, dp.get("ttfs_cycle_schedule"),
         spiking_variant=dp.get("spiking_variant"),
+        soma_law=SomaLaw.resolve(dp),
     )
     _fold_sim_enables(dp, recipe.sim_enables, spiking_mode, explicit)
     dp["optimization_driver"] = recipe.driver

@@ -8,6 +8,14 @@ from typing import Any
 from mimarsinan.chip_simulation.behavior_config import NeuralBehaviorConfig
 from mimarsinan.chip_simulation.spiking_mode_policy import policy_for_spiking_mode
 from mimarsinan.chip_simulation.activation_semantics import is_streamed_lif
+from mimarsinan.chip_simulation.soma_axes import (
+    PER_CYCLE_FIRING,
+    UNBOUNDED_MEMBRANE,
+    resolved_firing_granularity,
+    resolved_membrane_arithmetic,
+    resolved_membrane_bits,
+)
+from mimarsinan.chip_simulation.soma_law import SomaLaw
 from mimarsinan.mapping.support.schedule.pass_cut import transfer_for
 from mimarsinan.chip_simulation.spiking_semantics import (
     is_cascaded_ttfs,
@@ -60,6 +68,12 @@ class SpikingDeploymentContract:
     # [P3] end-to-end event-streamed LIF: no boundary normalization between
     # encode and readout; NF↔SCM holds EXACTLY (atol=0), single-program only.
     lif_streamed: bool = False
+    # [ODIN P1] the soma axes: WHEN the threshold is evaluated and WHAT the
+    # membrane's arithmetic is. The defaults are today's law exactly; consumers
+    # take ``soma_law()``, never these fields.
+    firing_granularity: str = PER_CYCLE_FIRING
+    membrane_arithmetic: str = UNBOUNDED_MEMBRANE
+    membrane_bits: int = 0
 
     @property
     def spiking_mode(self) -> str:
@@ -102,8 +116,16 @@ class SpikingDeploymentContract:
             lif_membrane_init=lif_membrane_init(cfg),
             lif_execution_synchronized=lif_execution_synchronized(cfg),
             lif_streamed=is_streamed_lif(cfg),
+            firing_granularity=resolved_firing_granularity(cfg),
+            membrane_arithmetic=resolved_membrane_arithmetic(cfg),
+            membrane_bits=resolved_membrane_bits(cfg),
             host_compute_device=cfg.get("device"),
         )
+
+    def soma_law(self, *, core: Any = None) -> SomaLaw:
+        """The resolved per-neuron firing law this deployment executes."""
+        del core
+        return SomaLaw.resolve(self)
 
     def is_streamed_lif(self, *, core: Any = None) -> bool:
         return self.lif_streamed
@@ -144,8 +166,11 @@ class SpikingDeploymentContract:
         )
 
     def mode_policy(self, *, core: Any = None):
-        """The behavior-carrying ``SpikingModePolicy`` for this (firing × sync)."""
-        return policy_for_spiking_mode(self.spiking_mode, self.ttfs_cycle_schedule)
+        """The behavior-carrying ``SpikingModePolicy`` for this (firing × sync × point)."""
+        return policy_for_spiking_mode(
+            self.spiking_mode, self.ttfs_cycle_schedule,
+            soma_law=self.soma_law(core=core),
+        )
 
     def boundary_config(
         self, *, cycle_accurate: bool, core: Any = None

@@ -6,6 +6,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Mapping, Optional
 
+from mimarsinan.config_schema.derivation.soma import soma_contract_error_rows
 from mimarsinan.config_schema.deployment_derivation import (
     enforce_quantization_assembly_contract,
     legal_values_for,
@@ -84,10 +85,11 @@ def _structural_errors(draft: Mapping[str, Any]) -> List[Dict[str, Any]]:
 def _contract_errors(
     dp: Mapping[str, Any], pc: Mapping[str, Any], pipeline_mode: Optional[str]
 ) -> List[Dict[str, Any]]:
+    rows = soma_contract_error_rows(dp, pc)
     try:
         enforce_quantization_assembly_contract(dp, pc, pipeline_mode=pipeline_mode)
     except ValueError as exc:
-        return [{
+        return rows + [{
             "key": "weight_quantization",
             "message": str(exc),
             "rule_id": "quantization_assembly",
@@ -98,7 +100,7 @@ def _contract_errors(
                 {"label": "Drop weight_bits", "action": "clear", "key": "weight_bits"},
             ],
         }]
-    return []
+    return rows
 
 
 def effective_view(draft_dp: Mapping[str, Any]) -> Dict[str, Any]:
