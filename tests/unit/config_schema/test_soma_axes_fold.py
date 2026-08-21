@@ -173,6 +173,55 @@ class TestPerEventCrossKeyRequirements:
                                     "lif_membrane_init": -0.5})
 
 
+class TestPerEventRequiresTheZeroResetLaw:
+    """The row-pair realization of the per-event law is a no-op only while
+    every fire leaves ``m < theta`` — true of Novena's hard zero, false of the
+    subtractive reset. An EXPLICIT 'Default' is therefore a contradiction, and
+    a silent document DERIVES 'Novena' rather than today's 'Default'."""
+
+    def _per_event(self, **dp):
+        return {"spiking_family": "lif", "spiking_variant": "streamed",
+                "firing_granularity": "per_event", "cores": _BIASLESS_CORES, **dp}
+
+    def test_an_axes_only_per_event_point_resolves_to_the_zero_reset(self):
+        assert SomaLaw.resolve(self._per_event()).firing_mode == "Novena"
+        assert SomaLaw.resolve({"spiking_family": "lif"}).firing_mode == "Default"
+
+    def test_an_axes_only_per_event_document_derives_novena_and_is_silent(self):
+        dp = self._per_event()
+        derive_pipeline_runtime_parameters(dp)
+        assert dp["firing_mode"] == "Novena"
+        assert dp["firing_granularity"] == "per_event"
+
+    def test_an_explicit_novena_is_admitted(self):
+        enforce_soma_axes_contract(self._per_event(firing_mode="Novena"))
+
+    def test_an_explicit_subtractive_reset_is_refused(self):
+        with pytest.raises(ValueError, match="firing_mode"):
+            enforce_soma_axes_contract(self._per_event(firing_mode="Default"))
+
+    def test_the_run_path_refuses_the_explicit_subtractive_reset(self):
+        with pytest.raises(ValueError, match="firing_mode"):
+            derive_pipeline_runtime_parameters(self._per_event(
+                firing_mode="Default"))
+
+    def test_the_contradiction_is_a_keyed_remediable_row(self):
+        rows = soma_contract_error_rows(self._per_event(firing_mode="Default"), {})
+        assert [row["key"] for row in rows] == ["firing_mode"]
+        assert rows[0]["rule_id"] == "soma_law_contract"
+        assert "Novena" in rows[0]["message"]
+        actions = {(r["action"], r["key"]) for r in rows[0]["remedies"]}
+        assert ("clear", "firing_mode") in actions
+        assert ("clear", "firing_granularity") in actions
+
+    def test_the_rule_is_silent_at_every_per_cycle_point(self):
+        for firing_mode in ("Default", "Novena"):
+            enforce_soma_axes_contract({
+                "spiking_family": "lif", "spiking_variant": "streamed",
+                "firing_mode": firing_mode, "cores": _BIASLESS_CORES,
+            })
+
+
 class TestTheContractIsTotalOverAdversarialGrids:
     """The contract judges a RAW, un-normalized draft grid at BOTH seams, so no
     grid shape may raise: a shape it cannot parse as a core grid leaves the row

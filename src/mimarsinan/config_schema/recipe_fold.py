@@ -6,7 +6,10 @@ from typing import Any, Iterable, Mapping, MutableMapping, Optional, Set
 
 from mimarsinan.chip_simulation.activation_semantics import is_streamed_lif
 from mimarsinan.chip_simulation.soma_law import SomaLaw
-from mimarsinan.chip_simulation.spiking_semantics import is_lif
+from mimarsinan.chip_simulation.spiking_semantics import (
+    is_default_firing_mode,
+    is_lif,
+)
 from mimarsinan.config_schema.defaults import CONFIG_KEYS_SET
 from mimarsinan.tuning.orchestration.conversion_policy import ConversionPolicy
 from mimarsinan.tuning.orchestration.mvm_conversion import derive_mvm_recipe
@@ -52,7 +55,10 @@ def _pair_lif_exact_qat_retiming(
     if not bool(dp.get("lif_exact_qat", False)):
         return
     armed_explicitly = "lif_exact_qat" in explicit
-    novena = str(dp.get("firing_mode", "Default")) != "Default"
+    # The RESOLVED reset, not the raw key: a per_event document that stays
+    # silent resolves to Novena, and reading 'Default' here would arm exact-QAT
+    # against a law whose zero reset breaks its charge identity.
+    novena = not is_default_firing_mode(SomaLaw.resolve(dp).firing_mode)
     retiming_opt_out = "lif_per_hop_retiming" in explicit and not bool(
         dp.get("lif_per_hop_retiming", False)
     )

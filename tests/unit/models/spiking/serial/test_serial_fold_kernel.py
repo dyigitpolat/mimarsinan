@@ -14,6 +14,7 @@ from mimarsinan.models.spiking.serial import (
     EMISSION_COUNT_CEILING,
     EmissionBoundExceededError,
     SerialFoldUnsupportedError,
+    SerialResetLawError,
     lif_serial_fold,
 )
 
@@ -80,11 +81,25 @@ def test_multi_spike_in_one_cycle_is_the_new_degree_of_freedom():
     assert memb.tolist() == [[0.0]]
 
 
-def test_novena_resets_to_hard_zero_and_default_subtracts_theta():
+def test_novena_resets_to_hard_zero():
     _, novena = _fold([[5.0]], [[1.0]], 3.0, law=_law(firing_mode="Novena"))
     assert novena.tolist() == [[0.0]]
-    _, default = _fold([[5.0]], [[1.0]], 3.0, law=_law(firing_mode="Default"))
-    assert default.tolist() == [[2.0]]
+
+
+def test_the_subtractive_reset_is_refused_because_the_lemma_fails():
+    """A subtractive reset leaves ``m >= theta`` whenever one event carries
+    ``>= 2*theta``, so the zero-magnitude row of a pair FIRES and the masked
+    pass stops being the serial fold. The minimal witness: theta=3, w=[10],
+    e=[[2],[1]] — the true serial fold gives [[2],[1]], the masked pass gave
+    [[2],[2]], and the second lane's count depended on the FIRST lane being in
+    the batch. It is refused at the kernel, not approximated."""
+    with pytest.raises(SerialResetLawError, match="Novena"):
+        _fold([[10.0]], [[2.0], [1.0]], 3.0, law=_law(firing_mode="Default"))
+    # And the law the point must declare instead runs, batch-independently.
+    counts, _ = _fold([[10.0]], [[2.0], [1.0]], 3.0)
+    assert counts.tolist() == [[2.0], [1.0]]
+    single, _ = _fold([[10.0]], [[1.0]], 3.0)
+    assert single.tolist() == [[1.0]]
 
 
 def test_thresholding_mode_decides_the_exact_tie():

@@ -142,6 +142,61 @@ def test_the_witness_is_non_degenerate_under_the_point():
     assert peak >= 2.0, f"degenerate witness: peak per-cycle emission {peak}"
 
 
+def test_the_raster_arm_covers_every_hop_the_executor_recorded():
+    """Coverage, not intersection: the raster arm compared whatever the two
+    sides happened to share, so a hop the NF twin failed to stack was silently
+    dropped while its window counts were still compared. The compared set must
+    BE the executor's recorded set."""
+    import numpy as np
+    import torch as _torch
+    from mimarsinan.models.nn.lif_kernels import measurement_plane
+    from mimarsinan.pipelining.core.nf_scm_parity import (
+        _build_streamed_identity_executor,
+        _capture_nf_streamed_rasters,
+        _group_record_by_perceptron,
+    )
+
+    pipeline = _pipeline(**_LAW_KEYS)
+    model, ir_graph = _build(_law(pipeline))
+    samples = _samples()
+    executor = _build_streamed_identity_executor(pipeline, model, ir_graph)
+    with measurement_plane(), _torch.no_grad():
+        _, record = executor.forward_with_recording(samples[0:1], sample_index=0)
+    recorded = _group_record_by_perceptron(
+        record, executor.hybrid_mapping,
+        values_of=lambda cr: np.asarray(
+            cr.output_spike_raster[:, : cr.n_out_used].T.reshape(-1)),
+    )
+    with measurement_plane():
+        captured = _capture_nf_streamed_rasters(model, samples)
+    assert set(recorded), "the executor must record per-cycle rasters here"
+    assert set(recorded) <= set(captured), (
+        f"hops {sorted(set(recorded) - set(captured))} are recorded by the "
+        f"executor but have no NF per-cycle train to compare against"
+    )
+
+
+def test_an_uncovered_hop_is_named_instead_of_silently_dropped(monkeypatch):
+    """Teeth for the coverage rule itself: drop one hop's NF train and the
+    gate must refuse by name rather than compare the remaining intersection."""
+    from mimarsinan.pipelining.core import nf_scm_parity
+
+    pipeline = _pipeline(**_LAW_KEYS)
+    model, ir_graph = _build(_law(pipeline))
+    original = nf_scm_parity._capture_nf_streamed_rasters
+
+    def _drop_one(*args, **kwargs):
+        rasters = original(*args, **kwargs)
+        rasters.pop(sorted(rasters)[0])
+        return rasters
+
+    monkeypatch.setattr(
+        nf_scm_parity, "_capture_nf_streamed_rasters", _drop_one)
+    with pytest.raises(NfScmParityError, match="no per-cycle train"):
+        assert_streamed_nf_scm_exact_or_raise(
+            pipeline, model, ir_graph, _samples())
+
+
 def test_the_raster_arm_has_teeth_on_a_mutated_theta():
     """Teeth: mutate the deployed threshold and the gate must go RED."""
     pipeline = _pipeline(**_LAW_KEYS)

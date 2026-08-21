@@ -15,7 +15,11 @@ import torch
 import torch.nn as nn
 
 from mimarsinan.chip_simulation.deployment_contract import SpikingDeploymentContract
-from mimarsinan.models.spiking.serial import SerialFoldUnsupportedError
+from mimarsinan.models.nn.activations.lif_serial import SerialFoldSlot
+from mimarsinan.models.spiking.serial import (
+    SerialDecompositionMismatchError,
+    SerialFoldUnsupportedError,
+)
 from mimarsinan.spiking.chip_aligned_nf import chip_aligned_segment_forward
 
 from .test_serial_executors import (
@@ -154,6 +158,39 @@ def test_a_multi_source_hop_refuses_instead_of_guessing_the_slot_order():
     with pytest.raises(SerialFoldUnsupportedError, match="ONE upstream event"):
         _arm_serial_slot(PER_EVENT_UNBOUNDED, model.get_perceptrons()[1], lif,
                          [None, None])
+
+
+def _slot(weight: torch.Tensor):
+    return SerialFoldSlot(
+        soma_law=PER_EVENT_UNBOUNDED, weight=weight, bias=None, theta=1.0,
+        membrane_init=0.0,
+    )
+
+
+def test_a_decomposition_in_the_wrong_order_RAISES_and_never_folds():
+    """The NF-order == mapper-order contract is the twin's whole warrant, so
+    it must survive ``python -O``: a bare assert would vanish there and the
+    twin would silently fold a different event order than the deployment."""
+    weight = torch.tensor([[1.0, 2.0, 4.0]])
+    events = torch.tensor([[1.0, 1.0, 0.0]])
+    slot = _slot(weight.flip(-1))
+    slot.feed(events)
+    fused = torch.nn.functional.linear(events, weight)
+    with pytest.raises(SerialDecompositionMismatchError, match="feature order"):
+        slot.run_cycle(fused, 1.0)
+
+
+def test_a_non_ascending_canonical_order_refuses_the_pass_through_feed(monkeypatch):
+    """``feed`` hands the NF feature order straight through as the slot order;
+    that is only sound while the canonical order IS ascending."""
+    from mimarsinan.models.nn.activations import lif_serial
+
+    monkeypatch.setattr(
+        lif_serial, "canonical_slot_order", lambda n: list(reversed(range(n))))
+    slot = _slot(torch.tensor([[1.0, 2.0, 4.0]]))
+    with pytest.raises(SerialDecompositionMismatchError,
+                       match="canonical_slot_order"):
+        slot.feed(torch.tensor([[1.0, 1.0, 0.0]]))
 
 
 def _capture_nf_rasters(repr_, x):

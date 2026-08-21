@@ -8,9 +8,13 @@ call THIS function, so a fold-order question has exactly one answer.
     for a in canonical_slot_order(A):        # ascending slots
         repeat e[a] times:                   # occurrences of one slot ADJACENT
             m := sat(m + w[a])               # saturating_unsigned clamps here
-            if compare(theta, m): emit; reset(m)
+            if compare(theta, m): emit; m := 0   # the hard-zero reset, required
     fold the bias event at the declared tail position
     return the per-neuron COUNT emitted this cycle
+
+The reset is not a parameter here: the row-pair realization of the per-event
+law is physical only under ``firing_mode='Novena'`` (see ``require_serial_law``
+and ``SomaLaw.required_firing_mode``).
 """
 
 from __future__ import annotations
@@ -29,6 +33,7 @@ from mimarsinan.models.nn.lif_kernels import (
 from mimarsinan.models.spiking.serial.refusals import (
     EmissionBoundExceededError,
     SerialFoldUnsupportedError,
+    SerialResetLawError,
 )
 
 EMISSION_COUNT_CEILING = 127
@@ -48,6 +53,19 @@ def require_serial_law(soma_law: SomaLaw) -> None:
             f"{soma_law.firing_granularity!r}: the per-cycle law integrates "
             f"the whole contribution before ONE compare and is executed by "
             f"LIFCyclePolicy. Dispatch through cycle_neuron_policy."
+        )
+    if soma_law.firing_mode != soma_law.required_firing_mode:
+        raise SerialResetLawError(
+            f"the event-serial law requires "
+            f"firing_mode={soma_law.required_firing_mode!r} (the hard-zero "
+            f"reset) and the point declares {soma_law.firing_mode!r}. The "
+            f"row-pair realization folds a zero-magnitude row beside every "
+            f"event row, and that row is a no-op ONLY while every fire leaves "
+            f"m < theta: the zero reset guarantees it, a subtractive reset "
+            f"leaves m >= theta the moment one event carries >= 2*theta. The "
+            f"pair is then not a slower per-event law but a DIFFERENT one, "
+            f"whose count depends on which rows the vectorized pass masks. "
+            f"Deploy firing_mode='Novena', or deploy per_cycle."
         )
     if soma_law.bias_slot != BIAS_SLOT_TAIL:
         raise SerialFoldUnsupportedError(
@@ -128,9 +146,11 @@ def lif_serial_fold(
 
     A masked add carries the occurrence: lanes with ``e[a] <= k`` receive a
     ZERO-magnitude event, which is a no-op for the compare too because every
-    fire-path leaves ``m < theta`` and the window starts at ``V0*theta <
-    theta`` (§1.2). That is the row-pair lemma, and it is what lets one
-    vectorized pass be the serial fold.
+    fire-path leaves ``m < theta`` (the hard-zero reset the point is REQUIRED
+    to declare) and the window starts at ``0 <= V0*theta < theta`` (§1.2).
+    That is the row-pair lemma; ``require_serial_law`` and the executor-seam
+    guard enforce both of its preconditions, which is what lets one vectorized
+    pass be the serial fold.
     """
     require_serial_law(soma_law)
     require_event_counts(events)

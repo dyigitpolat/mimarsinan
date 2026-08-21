@@ -33,6 +33,14 @@ class SerialFoldUnsupportedError(SomaLawRefusalError):
     """The serial fold was handed a shape or law it does not implement."""
 
 
+class SerialResetLawError(SomaLawRefusalError):
+    """A per-event point declared a reset its row-pair realization denies."""
+
+
+class SerialDecompositionMismatchError(SomaLawRefusalError):
+    """The NF twin's event order is not the mapper's canonical slot order."""
+
+
 class EmissionBoundExceededError(ValueError):
     """A neuron emitted more spikes in one cycle than the count currency holds."""
 

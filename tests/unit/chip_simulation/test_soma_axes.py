@@ -130,6 +130,37 @@ class TestSomaLaw:
         assert not law.is_default_point
         assert law.point_tag() == "per_event-sat8"
 
+    def test_a_silent_document_derives_the_reset_its_granularity_requires(self):
+        """The per-event law is realizable ONLY under the hard-zero reset, so a
+        document that declares the granularity and stays silent about the reset
+        resolves to Novena — never to today's subtractive 'Default'."""
+        per_event = SomaLaw.resolve({
+            **_STREAMED_LIF, "firing_granularity": PER_EVENT_FIRING})
+        assert per_event.firing_mode == "Novena"
+        assert per_event.firing_mode == per_event.required_firing_mode
+        per_cycle = SomaLaw.resolve(_STREAMED_LIF)
+        assert per_cycle.firing_mode == "Default"
+        assert per_cycle.firing_mode == per_cycle.required_firing_mode
+
+    def test_an_explicit_reset_is_never_overwritten_only_contradicted(self):
+        declared = SomaLaw.resolve({
+            **_STREAMED_LIF, "firing_granularity": PER_EVENT_FIRING,
+            "firing_mode": "Default"})
+        assert declared.firing_mode == "Default"
+        assert declared.required_firing_mode == "Novena"
+
+    def test_the_contract_seam_reads_the_same_derivation(self):
+        from mimarsinan.chip_simulation.deployment_contract import (
+            SpikingDeploymentContract,
+        )
+
+        contract = SpikingDeploymentContract.from_pipeline_config({
+            **_STREAMED_LIF, "firing_granularity": PER_EVENT_FIRING,
+            "simulation_steps": 4,
+        })
+        assert contract.firing_mode == "Novena"
+        assert contract.soma_law().firing_mode == "Novena"
+
     def test_the_tag_discriminates_widths(self):
         eight = SomaLaw.resolve({**_STREAMED_LIF, "membrane_bits": 8})
         sixteen = SomaLaw.resolve({**_STREAMED_LIF, "membrane_bits": 16})

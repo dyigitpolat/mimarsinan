@@ -31,6 +31,7 @@ from mimarsinan.models.spiking.hybrid.flow import SpikingHybridCoreFlow
 from mimarsinan.models.spiking.serial import (
     CycleAtomicRefusalError,
     SerialLIFCyclePolicy,
+    SerialResetLawError,
 )
 from mimarsinan.torch_mapping.encoding_layers import mark_encoding_layers
 
@@ -43,6 +44,13 @@ PER_EVENT_LAW = SomaLaw(
 )
 PER_EVENT_UNBOUNDED = SomaLaw(
     firing_mode="Novena", thresholding_mode="<=",
+    firing_granularity="per_event", membrane_arithmetic="unbounded",
+    membrane_bits=0,
+)
+# The law the row-pair lemma denies: only an EXPLICIT declaration reaches it
+# (an axes-only per_event document derives 'Novena').
+PER_EVENT_SUBTRACTIVE = SomaLaw(
+    firing_mode="Default", thresholding_mode="<=",
     firing_granularity="per_event", membrane_arithmetic="unbounded",
     membrane_bits=0,
 )
@@ -205,6 +213,23 @@ def test_advance_refuses_a_pre_reduced_contribution():
         policy.advance(state, torch.zeros(2, 3, dtype=torch.float64),
                        torch.tensor(1.0, dtype=torch.float64),
                        thresholding_mode="<=")
+
+
+def test_the_subtractive_reset_is_refused_before_a_single_cycle_runs():
+    """The batch-dependence witness, end to end: under a per_event point with
+    the subtractive reset the packed pass produced counts that changed with who
+    else was in the batch. Neither executor may run it — the dispatch itself
+    refuses, so no number is ever reported from that law."""
+    _, hybrid = build_chain()
+    torch.manual_seed(3)
+    x = torch.rand(4, 8) * 0.9
+    for packed in (False, True):
+        with pytest.raises(SerialResetLawError, match="Novena"):
+            run_counts(build_flow(hybrid, law=PER_EVENT_SUBTRACTIVE,
+                                  packed=packed), x)
+    with pytest.raises(SerialResetLawError, match="Novena"):
+        cycle_neuron_policy("lif", "cascaded", "Default",
+                            soma_law=PER_EVENT_SUBTRACTIVE)
 
 
 def test_default_point_dispatches_the_identical_policy_object_type():

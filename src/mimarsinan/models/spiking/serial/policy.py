@@ -14,7 +14,10 @@ from typing import Dict, Optional
 import torch
 
 from mimarsinan.chip_simulation.soma_law import SomaLaw
-from mimarsinan.models.spiking.serial.fold import lif_serial_fold
+from mimarsinan.models.spiking.serial.fold import (
+    lif_serial_fold,
+    require_serial_law,
+)
 from mimarsinan.models.spiking.serial.refusals import (
     CycleAtomicRefusalError,
     SerialFoldUnsupportedError,
@@ -39,6 +42,9 @@ class SerialLIFCyclePolicy:
     serial = True
 
     def __init__(self, soma_law: SomaLaw) -> None:
+        # The same gate the fold applies, one call earlier: a point this
+        # kernel cannot execute must not become a policy object at all.
+        require_serial_law(soma_law)
         self.soma_law = soma_law
         # Mirrors LIFCyclePolicy's attribute for the shared read sites.
         self.firing_mode = soma_law.firing_mode

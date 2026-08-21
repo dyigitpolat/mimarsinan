@@ -44,7 +44,7 @@ def require_serial_deployment_admissible(
         if mapping is None:
             continue
         _require_fold_invariant_placements(stage, mapping)
-        _require_integral_membrane_init(stage, mapping, membrane_init)
+        _require_window_start_membrane(stage, mapping, membrane_init)
 
 
 def _require_fold_invariant_placements(stage: Any, mapping: Any) -> None:
@@ -74,13 +74,16 @@ def _require_fold_invariant_placements(stage: Any, mapping: Any) -> None:
                 )
 
 
-def _require_integral_membrane_init(
+def _require_window_start_membrane(
     stage: Any, mapping: Any, membrane_init: float
 ) -> None:
-    """``V0*theta`` is programmed into the neuron word's integer state field.
+    """§1.2's window start, both halves: ``V0*theta`` integral AND in the window.
 
-    A fractional pre-charge has no representation there, and rounding it
-    would silently move the window-start membrane relative to the twins.
+    Integral, because the pre-charge is programmed into the neuron word's
+    integer state field and rounding it would move the window start relative to
+    the twins. Inside ``[0, theta)``, because the row-pair lemma's hypothesis is
+    "the membrane is below theta on entry" — at ``V0*theta >= theta`` the very
+    first zero-magnitude row fires and the fold stops being the serial law.
     """
     if not membrane_init:
         return
@@ -97,4 +100,16 @@ def _require_integral_membrane_init(
                 f"fractional pre-charge is unrepresentable on the deployment "
                 f"and would make the torch twin disagree with the chip. "
                 f"Choose V0 with V0*theta integral (0 is always legal)."
+            )
+        if not 0.0 <= charge < theta:
+            raise SerialMembraneInitError(
+                f"lif_membrane_init={membrane_init} gives V0*theta={charge} "
+                f"on stage {stage.name!r} core {core_index} (theta={theta}), "
+                f"outside the window [0, theta): under "
+                f"firing_granularity='per_event' the window MUST start below "
+                f"threshold — the row-pair lemma's hypothesis is exactly that, "
+                f"and at or above theta the zero-magnitude row of every pair "
+                f"fires on its own, so the deployed count would depend on "
+                f"which rows are masked. Choose V0 in [0, 1) (0 is always "
+                f"legal)."
             )

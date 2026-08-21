@@ -102,9 +102,40 @@ def test_core_coalescing_is_refused_at_the_executor_seam():
 
 def test_a_non_integral_window_start_membrane_is_refused():
     _, hybrid = build_chain()
-    with pytest.raises(SerialMembraneInitError, match="V0\\*theta"):
+    with pytest.raises(SerialMembraneInitError, match="NOT an integer"):
         build_flow(hybrid, law=PER_EVENT_UNBOUNDED, packed=True,
                    membrane_init=0.25)
+
+
+@pytest.mark.parametrize("membrane_init", [1.0, 2.0, -1.0])
+def test_a_window_start_membrane_outside_zero_to_theta_is_refused(membrane_init):
+    """The OTHER half of §1.2, and the half the row-pair lemma needs: at
+    ``V0*theta >= theta`` the zero-magnitude row of every pair fires on entry,
+    so the deployed count depends on which rows are masked. Integrality alone
+    admits every one of these — each V0*theta below is a whole number."""
+    _, hybrid = build_chain()
+    charges = {
+        float(membrane_init) * float(core.threshold)
+        for stage in hybrid.stages if stage.hard_core_mapping is not None
+        for core in stage.hard_core_mapping.cores
+    }
+    assert charges and all(c == round(c) for c in charges), (
+        f"the integrality half must not be what refuses these: {charges}")
+    with pytest.raises(SerialMembraneInitError, match=r"\[0, theta\)"):
+        build_flow(hybrid, law=PER_EVENT_UNBOUNDED, packed=True,
+                   membrane_init=membrane_init)
+
+
+def test_a_half_window_start_on_an_even_theta_is_admitted():
+    """V0=0.5 with an even theta is integral AND inside the window, so both
+    halves pass and the flow builds."""
+    _, hybrid = build_chain()
+    for stage in hybrid.stages:
+        if stage.hard_core_mapping is None:
+            continue
+        for core in stage.hard_core_mapping.cores:
+            core.threshold = 4.0
+    build_flow(hybrid, law=PER_EVENT_UNBOUNDED, packed=True, membrane_init=0.5)
 
 
 def test_the_default_point_admits_every_one_of_these():

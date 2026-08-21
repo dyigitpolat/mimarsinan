@@ -467,16 +467,30 @@ def _assert_raster_exact_or_raise(
         pi: np.stack([sample_vals[pi] for sample_vals in per_sample_raster])
         for pi in per_sample_raster[0]
     }
-    shared = {pi: nf_rasters[pi] for pi in scm_rasters if pi in nf_rasters}
-    if not shared:
+    if not scm_rasters:
         raise NfScmParityError(
             "streamed NF↔SCM raster gate armed under "
-            "firing_granularity='per_event' but captured NO comparable "
-            "per-cycle trains: the NF twin did not run the event-serial fold, "
-            "so the window-count agreement above proves nothing about rhythm."
+            "firing_granularity='per_event' but the executor recorded NO "
+            "per-cycle rasters, so the window-count agreement above proves "
+            "nothing about rhythm."
+        )
+    # COVERAGE, not intersection: a hop the executor recorded but the NF twin
+    # did not stack is a hop whose rhythm nothing compares, and the count arm
+    # cannot see a rhythm difference. Name it instead of dropping it.
+    uncovered = sorted(pi for pi in scm_rasters if pi not in nf_rasters)
+    if uncovered:
+        raise NfScmParityError(
+            f"streamed NF↔SCM raster gate armed under "
+            f"firing_granularity='per_event' but the NF twin captured no "
+            f"per-cycle train for perceptron(s) {uncovered} that the executor "
+            f"recorded (captured: {sorted(nf_rasters)}): those hops did not "
+            f"run the event-serial fold under the streamed walk, so their "
+            f"per-cycle multiplicity is UNCHECKED while their window counts "
+            f"are compared as if it were."
         )
     mismatches, total, worst = compare_normalized_records(
-        {pi: np.rint(v) for pi, v in shared.items()}, scm_rasters, atol=0.0,
+        {pi: np.rint(nf_rasters[pi]) for pi in scm_rasters}, scm_rasters,
+        atol=0.0,
     )
     if mismatches:
         raise NfScmParityError(

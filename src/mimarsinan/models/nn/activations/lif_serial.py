@@ -5,8 +5,9 @@ cannot reach an event-serial law through the fused pre-activation. The slot
 carries the decomposition the mapper itself uses — ``get_effective_weight``,
 the same columns in the same order — and hands it to ``lif_serial_fold``, the
 one kernel both torch executors run. The fused pre-activation is still computed
-and is asserted against the decomposition every cycle: that assertion IS the
-NF-order == mapper-order contract, checked rather than believed.
+and is checked against the decomposition every cycle, refusing by name: that
+comparison IS the NF-order == mapper-order contract, checked rather than
+believed (and a raise, never an assert — the contract must survive ``-O``).
 """
 
 from __future__ import annotations
@@ -18,6 +19,7 @@ import torch
 from mimarsinan.chip_simulation.soma_law import SomaLaw
 from mimarsinan.mapping.platform.event_order import canonical_slot_order
 from mimarsinan.models.spiking.serial import (
+    SerialDecompositionMismatchError,
     SerialFoldUnsupportedError,
     lif_serial_fold,
 )
@@ -64,7 +66,13 @@ class SerialFoldSlot:
                 f"the mapper's effective weight has {n_slots}: the twin and "
                 f"the deployment disagree about the canonical slot order."
             )
-        assert list(canonical_slot_order(n_slots)) == list(range(n_slots))
+        if list(canonical_slot_order(n_slots)) != list(range(n_slots)):
+            raise SerialDecompositionMismatchError(
+                f"the NF twin feeds its feature order straight through as the "
+                f"slot order, but canonical_slot_order({n_slots}) is not "
+                f"ascending: the mapper folds a DIFFERENT order than this "
+                f"twin, and the two counts would diverge silently."
+            )
         self.events = flat
 
     def run_cycle(self, x: torch.Tensor, safe_scale) -> torch.Tensor:
@@ -79,11 +87,17 @@ class SerialFoldSlot:
         decomposed = torch.nn.functional.linear(
             events.to(self.weight.dtype), self.weight, self.bias)
         max_error = float((charge - decomposed).abs().max())
-        assert max_error <= _DECOMPOSITION_ATOL * max(self.theta, 1.0), (
-            f"NF event decomposition disagrees with the fused pre-activation "
-            f"by {max_error}: the twin's feature order or input scale is not "
-            f"the mapper's (max tolerated {_DECOMPOSITION_ATOL})"
-        )
+        tolerated = _DECOMPOSITION_ATOL * max(self.theta, 1.0)
+        if not max_error <= tolerated:
+            # An `assert` would vanish under `python -O`, and this comparison
+            # IS the NF-order == mapper-order contract of the whole twin.
+            raise SerialDecompositionMismatchError(
+                f"the NF event decomposition disagrees with the fused "
+                f"pre-activation by {max_error} (max tolerated {tolerated}): "
+                f"the twin's feature order or input scale is not the mapper's, "
+                f"so this fold would run a DIFFERENT event order than the "
+                f"deployment it is supposed to mirror."
+            )
         if self.membrane is None:
             self.membrane = torch.full(
                 (events.shape[0], int(self.weight.shape[0])),
