@@ -15,28 +15,26 @@ from mimarsinan.mapping.export.odin.feasibility import (
     EMISSION_CEILING,
     check_fan_in,
     check_membrane_init,
+    check_sign_granularity,
     check_theta_ceiling,
     entry_event_bound,
     propagate_emission_bounds,
 )
 from mimarsinan.mapping.export.odin.images import OdinCoreImage, build_core_image
+from mimarsinan.mapping.export.odin.manifest import build_manifest
 from mimarsinan.mapping.export.odin.program import (
     SequencerProgram,
     barrier_stage,
     clear_stage,
     config_stage,
     drain_bound_cycles,
+    gate_stage,
     inject_stage,
     plan_injection,
     readout_stage,
     tref_stage,
 )
 from mimarsinan.mapping.export.odin.layout import masked_state_byte_writes
-
-EXPORT_FORMAT_VERSION = 1
-
-#: The event-order contract every consumer of this export must implement.
-ORDERING_VERSION = "canonical-event-order-v1"
 
 #: While the memories are written the network must be gated (doc Sec.2.1).
 GATE_ACTIVITY_WHILE_PROGRAMMING = 1
@@ -72,11 +70,11 @@ def export_odin(
     """
     _require_odin_soma_law(soma_law)
     _require_computed_latencies(mapping)
+    sign_expansion = check_sign_granularity(weight_sign_granularity)
     bounds = propagate_emission_bounds(mapping, ceiling=EMISSION_CEILING)
 
     images: List[OdinCoreImage] = []
     expansions: List[RowPairExpansion] = []
-    stages: List[Dict[str, Any]] = []
     geometry_rows: List[Dict[str, Any]] = []
     thetas: Dict[str, int] = {}
 
@@ -102,15 +100,43 @@ def export_odin(
         thetas[str(core_index)] = theta
         geometry_rows.append(_core_geometry(core, core_index, expansion, used_axons))
 
-    for image in images:
-        stages.append(config_stage(
+    stages: List[Dict[str, Any]] = [
+        config_stage(
             core_index=image.core_index,
             register_writes=image.register_writes,
             neuron_words=image.neuron_words,
             synapse_words=image.synapse_words,
-        ))
+        )
+        for image in images
+    ]
+    stages.append(gate_stage(on=False))
+    stages.extend(_sample_stages(mapping, images, expansions, bounds))
+
+    return OdinExport(
+        cores=tuple(images),
+        program=SequencerProgram(stages=tuple(stages)),
+        manifest=build_manifest(
+            soma_law, bounds, geometry_rows, thetas,
+            weight_bits=weight_bits,
+            weight_sign_granularity=weight_sign_granularity,
+            sign_expansion=sign_expansion,
+            effective_max_axons=effective_max_axons,
+            cores_exported=len(mapping.cores),
+        ),
+    )
+
+
+def _sample_stages(
+    mapping: Any,
+    images: List[OdinCoreImage],
+    expansions: List[RowPairExpansion],
+    bounds: Dict[Tuple[int, int], int],
+) -> List[Dict[str, Any]]:
+    """ONE sample, self-contained: it gates the memory writes and ungates the run."""
+    stages: List[Dict[str, Any]] = [gate_stage(on=True)]
     for core_index, core in enumerate(mapping.cores):
         stages.append(_clear_stage_for(core, core_index, images[core_index]))
+    stages.append(gate_stage(on=False))
     for core_index, core in enumerate(mapping.cores):
         stages.append(_inject_stage_for(core, core_index, expansions[core_index]))
     stages.append(tref_stage(scope="all"))
@@ -120,17 +146,7 @@ def export_odin(
             core_index=core_index,
             neurons=range(_used_neurons(core)),
         ))
-
-    return OdinExport(
-        cores=tuple(images),
-        program=SequencerProgram(stages=tuple(stages)),
-        manifest=_manifest(
-            mapping, soma_law, bounds, geometry_rows, thetas,
-            weight_bits=weight_bits,
-            weight_sign_granularity=weight_sign_granularity,
-            effective_max_axons=effective_max_axons,
-        ),
-    )
+    return stages
 
 
 def _require_odin_soma_law(soma_law: SomaLaw) -> None:
@@ -230,60 +246,3 @@ def _drain_bound(
         for neuron in range(_used_neurons(core)):
             emitted += bounds.get((core_index, neuron), 0)
     return drain_bound_cycles(injected_events=injected, emitted_spike_bound=emitted)
-
-
-def _manifest(
-    mapping: Any,
-    soma_law: SomaLaw,
-    bounds: Dict[Tuple[int, int], int],
-    geometry_rows: List[Dict[str, Any]],
-    thetas: Dict[str, int],
-    *,
-    weight_bits: int,
-    weight_sign_granularity: str,
-    effective_max_axons: int,
-) -> Dict[str, Any]:
-    per_core_max: Dict[str, int] = {}
-    for (core_index, _neuron), value in bounds.items():
-        key = str(core_index)
-        per_core_max[key] = max(per_core_max.get(key, 0), value)
-    return {
-        "format_version": EXPORT_FORMAT_VERSION,
-        "soma_law": {
-            "firing_mode": soma_law.firing_mode,
-            "thresholding_mode": soma_law.thresholding_mode,
-            "firing_granularity": soma_law.firing_granularity,
-            "membrane_arithmetic": soma_law.membrane_arithmetic,
-            "membrane_bits": int(soma_law.membrane_bits),
-            "bias_slot": soma_law.bias_slot,
-        },
-        "ordering": {
-            "version": ORDERING_VERSION,
-            "bias_slot": soma_law.bias_slot,
-            "slots": "ascending",
-            "adjacency": "one slot's multiplicity is delivered adjacently",
-            "row_pair": "logical slot a occupies physical rows (2a, 2a+1)",
-        },
-        "geometry": {
-            "sign_expansion": 2,
-            "cores": geometry_rows,
-        },
-        "emission_bounds": {
-            "ceiling": EMISSION_CEILING,
-            "max": max(bounds.values(), default=0),
-            "per_core_max": per_core_max,
-        },
-        "feasibility": {
-            "gates": {
-                "theta_ceiling": True,
-                "weight_magnitude_range": True,
-                "fan_in": True,
-                "emission_bound": True,
-            },
-            "theta_per_core": thetas,
-            "weight_bits": int(weight_bits),
-            "weight_sign_granularity": weight_sign_granularity,
-            "effective_max_axons": int(effective_max_axons),
-            "cores_exported": len(mapping.cores),
-        },
-    }

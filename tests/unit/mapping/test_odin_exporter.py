@@ -13,28 +13,31 @@ import pytest
 
 from mimarsinan.chip_simulation.soma_law import SomaLaw
 from mimarsinan.code_generation.cpp_chip_model import SpikeSource
-from mimarsinan.mapping.export.odin.exporter import (
-    EXPORT_FORMAT_VERSION,
-    ORDERING_VERSION,
-    OdinExportError,
-    export_odin,
-)
+from mimarsinan.mapping.export.odin.exporter import OdinExportError, export_odin
 from mimarsinan.mapping.export.odin.feasibility import (
     KEY_FAN_IN,
+    KEY_SIGN_GRANULARITY,
     KEY_THETA_CEILING,
     OdinFeasibilityError,
 )
+from mimarsinan.mapping.export.odin.images import bias_row_count
 from mimarsinan.mapping.export.odin.layout import unpack_neuron_word
+from mimarsinan.mapping.export.odin.manifest import (
+    EXPORT_FORMAT_VERSION,
+    ORDERING_VERSION,
+)
 from mimarsinan.mapping.export.odin.program import (
     STAGE_BARRIER,
     STAGE_CLEAR,
     STAGE_CONFIG,
+    STAGE_GATE,
     STAGE_INJECT,
     STAGE_READOUT,
     STAGE_TREF,
     decode_program,
     emit_program,
 )
+from mimarsinan.mapping.export.odin.registers import config_register
 from mimarsinan.mapping.export.odin.synapse import synapse_address
 from mimarsinan.mapping.latency.chip import ChipLatency
 from mimarsinan.mapping.packing.softcore import HardCore, HardCoreMapping
@@ -82,6 +85,36 @@ def _two_core_mapping():
     mapping.output_sources = [SpikeSource(1, 0), SpikeSource(1, 1)]
     ChipLatency(mapping).calculate()
     return mapping
+
+
+def _single_core_mapping(matrix, sources, *, threshold=4.0):
+    core = _core(np.asarray(matrix), threshold=threshold, sources=sources)
+    mapping = HardCoreMapping(chip_cores=[])
+    mapping.cores = [core]
+    mapping.output_sources = [SpikeSource(0, n) for n in range(core.neurons_per_core)]
+    ChipLatency(mapping).calculate()
+    return mapping
+
+
+def _no_bias_mapping():
+    """No always-on tail at all: every emitting row is a runtime row."""
+    return _single_core_mapping(
+        [[1.0, 0.0], [-2.0, 3.0]],
+        [SpikeSource(-2, 0, is_input=True), SpikeSource(-2, 1, is_input=True)],
+    )
+
+
+def _two_bias_mapping():
+    """Two always-on tail sources, the second one INHIBITORY."""
+    return _single_core_mapping(
+        [[1.0, 0.0], [0.0, 2.0], [3.0, 0.0], [0.0, -4.0]],
+        [
+            SpikeSource(-2, 0, is_input=True),
+            SpikeSource(-2, 1, is_input=True),
+            SpikeSource(-3, 0, is_always_on=True),
+            SpikeSource(-3, 1, is_always_on=True),
+        ],
+    )
 
 
 def _export(mapping=None, **overrides):
@@ -213,6 +246,154 @@ class TestTheSequencerProgram:
         assert all(s["payload"]["cycles"] > 0 for s in barriers)
 
 
+def _injects(export):
+    return [s for s in export.program.stages if s["kind"] == STAGE_INJECT]
+
+
+def _stage_gate_levels(program):
+    """The SPI_GATE_ACTIVITY level in force at each non-GATE stage, in order."""
+    address = config_register("SPI_GATE_ACTIVITY").address
+    level = None
+    levels = []
+    for stage in program.stages:
+        if stage["kind"] == STAGE_GATE:
+            level = stage["payload"]["on"]
+            continue
+        if stage["kind"] == STAGE_CONFIG:
+            writes = {
+                w["address"]: w["value"] for w in stage["payload"]["register_writes"]
+            }
+            level = bool(writes[address])
+        levels.append((stage["kind"], level))
+    return levels
+
+
+class TestTheBiasTailIsWhatTheProgramInjects:
+    def test_the_bias_row_count_is_read_off_the_TAIL_of_the_slot_order(self):
+        mapping = _two_core_mapping()
+        assert bias_row_count(mapping.cores[0]) == 1
+        assert bias_row_count(mapping.cores[1]) == 0
+
+    def test_an_always_on_source_before_a_runtime_one_is_not_a_bias_row(self):
+        core = _core(
+            np.ones((3, 1)), threshold=2.0,
+            sources=[
+                SpikeSource(-3, 0, is_always_on=True),
+                SpikeSource(-2, 0, is_input=True),
+                SpikeSource(-3, 1, is_always_on=True),
+            ],
+        )
+        assert bias_row_count(core) == 1
+
+    def test_two_always_on_tail_sources_are_both_bias_rows(self):
+        assert bias_row_count(_two_bias_mapping().cores[0]) == 2
+
+    def test_the_whole_slot_order_can_be_bias_rows(self):
+        core = _core(
+            np.ones((2, 1)), threshold=2.0,
+            sources=[
+                SpikeSource(-3, 0, is_always_on=True),
+                SpikeSource(-3, 1, is_always_on=True),
+            ],
+        )
+        assert bias_row_count(core) == 2
+
+    def test_the_inject_payload_of_the_two_core_fixture_is_exact(self):
+        injects = _injects(_export())
+        assert [s["payload"]["core_index"] for s in injects] == [0, 1]
+        assert injects[0]["payload"]["events"] == [[4, 1]]
+        assert injects[0]["payload"]["runtime_rows"] == [[0, [0, 1]], [1, [2]]]
+        assert injects[1]["payload"]["events"] == []
+        assert injects[1]["payload"]["runtime_rows"] == [[0, [0]], [1, [2, 3]]]
+
+    def test_the_manifest_bias_slots_are_the_injected_tail_slots(self):
+        cores = _export().manifest["geometry"]["cores"]
+        assert [c["bias_slots"] for c in cores] == [[2], []]
+
+    def test_a_core_without_a_bias_tail_injects_nothing_at_export_time(self):
+        export = _export(_no_bias_mapping())
+        payload = _injects(export)[0]["payload"]
+        assert payload["events"] == []
+        assert payload["runtime_rows"] == [[0, [0]], [1, [2, 3]]]
+        assert export.manifest["geometry"]["cores"][0]["bias_slots"] == []
+
+    def test_two_bias_rows_are_injected_once_each_on_their_own_physical_row(self):
+        export = _export(_two_bias_mapping())
+        payload = _injects(export)[0]["payload"]
+        assert payload["events"] == [[4, 1], [7, 1]]
+        assert payload["runtime_rows"] == [[0, [0]], [1, [2]]]
+        assert export.manifest["geometry"]["cores"][0]["bias_slots"] == [2, 3]
+
+    def test_no_slot_is_both_injected_and_delegated_to_the_host(self):
+        for mapping in (_two_core_mapping(), _two_bias_mapping(), _no_bias_mapping()):
+            export = _export(mapping)
+            for core, stage in zip(mapping.cores, _injects(export)):
+                bias = set(export.manifest["geometry"]["cores"][
+                    stage["payload"]["core_index"]]["bias_slots"])
+                runtime = {slot for slot, _rows in stage["payload"]["runtime_rows"]}
+                assert not (bias & runtime)
+                assert bias == set(
+                    range(int(core.axons_per_core) - bias_row_count(core),
+                          int(core.axons_per_core)))
+
+
+class TestTheGateStagesTheMemoryAccess:
+    def test_the_config_stage_asserts_the_gate_through_its_register_write(self):
+        assert _stage_gate_levels(_export().program)[0] == (STAGE_CONFIG, True)
+
+    def test_the_programming_phase_ends_with_an_explicit_de_assertion(self):
+        stages = _export().program.stages
+        kinds = [s["kind"] for s in stages]
+        first_gate = kinds.index(STAGE_GATE)
+        assert kinds[first_gate - 1] == STAGE_CONFIG
+        assert stages[first_gate]["payload"]["on"] is False
+
+    def test_every_clear_runs_inside_a_gate_on_window(self):
+        for kind, level in _stage_gate_levels(_export().program):
+            if kind == STAGE_CLEAR:
+                assert level is True
+
+    def test_injection_and_readout_run_with_the_activity_ungated(self):
+        ungated = (STAGE_INJECT, STAGE_TREF, STAGE_BARRIER, STAGE_READOUT)
+        for kind, level in _stage_gate_levels(_export().program):
+            if kind in ungated:
+                assert level is False
+
+    def test_the_per_sample_block_closes_the_window_it_opened(self):
+        kinds = [s["kind"] for s in _export().program.stages]
+        first_clear = kinds.index(STAGE_CLEAR)
+        last_clear = len(kinds) - 1 - kinds[::-1].index(STAGE_CLEAR)
+        assert kinds[first_clear - 1] == STAGE_GATE
+        assert kinds[last_clear + 1] == STAGE_GATE
+
+
+class TestTheSignGranularityIsEnforcedNotJustRecorded:
+    def test_per_axon_expands_every_slot_into_its_row_pair(self):
+        export = _export()
+        assert export.manifest["geometry"]["sign_expansion"] == 2
+        assert export.manifest["feasibility"]["weight_sign_granularity"] == "per_axon"
+        assert [c["physical_rows_used"] for c in export.manifest["geometry"]["cores"]] \
+            == [2 * 3, 2 * 2]
+
+    def test_per_synapse_refuses_rather_than_emitting_an_unsigned_stock_image(self):
+        with pytest.raises(OdinFeasibilityError) as excinfo:
+            _export(weight_sign_granularity="per_synapse")
+        assert excinfo.value.key == KEY_SIGN_GRANULARITY
+
+    def test_an_unknown_granularity_refuses_by_the_same_key(self):
+        with pytest.raises(OdinFeasibilityError) as excinfo:
+            _export(weight_sign_granularity="banana")
+        assert excinfo.value.key == KEY_SIGN_GRANULARITY
+
+    def test_the_manifest_never_echoes_an_unvalidated_granularity(self):
+        for value in ("banana", "per_synapse", None):
+            with pytest.raises(OdinFeasibilityError):
+                _export(weight_sign_granularity=value)
+
+    def test_the_manifest_records_the_gate_as_checked(self):
+        assert _export().manifest["feasibility"]["gates"]["sign_granularity"] is True
+
+
 class TestTheManifest:
     def test_the_manifest_is_json_serializable(self):
         manifest = _export().manifest
@@ -239,7 +420,8 @@ class TestTheManifest:
     def test_the_manifest_records_every_gate_that_was_checked(self):
         gates = _export().manifest["feasibility"]["gates"]
         assert set(gates) == {
-            "theta_ceiling", "weight_magnitude_range", "fan_in", "emission_bound",
+            "theta_ceiling", "weight_magnitude_range", "sign_granularity",
+            "fan_in", "emission_bound",
         }
         assert all(gates.values())
 

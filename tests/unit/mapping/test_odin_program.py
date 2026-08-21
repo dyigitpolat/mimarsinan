@@ -18,6 +18,7 @@ from mimarsinan.mapping.export.odin.program import (
     STAGE_BARRIER,
     STAGE_CLEAR,
     STAGE_CONFIG,
+    STAGE_GATE,
     STAGE_INJECT,
     STAGE_KINDS,
     STAGE_READOUT,
@@ -30,6 +31,7 @@ from mimarsinan.mapping.export.odin.program import (
     decode_program,
     drain_bound_cycles,
     emit_program,
+    gate_stage,
     inject_stage,
     plan_injection,
     readout_stage,
@@ -42,9 +44,9 @@ class TestTheSchemaIsVersionedAndClosed:
     def test_the_schema_version_is_one(self):
         assert SEQUENCER_SCHEMA_VERSION == 1
 
-    def test_the_six_stage_kinds_are_the_declared_ones(self):
+    def test_the_seven_stage_kinds_are_the_declared_ones(self):
         assert STAGE_KINDS == (
-            STAGE_CONFIG, STAGE_CLEAR, STAGE_INJECT,
+            STAGE_CONFIG, STAGE_GATE, STAGE_CLEAR, STAGE_INJECT,
             STAGE_TREF, STAGE_BARRIER, STAGE_READOUT,
         )
 
@@ -68,6 +70,7 @@ def _program():
             neuron_words=(0xABCDEF, 0x1234),
             synapse_words=(0, 15, 0),
         ),
+        gate_stage(on=True),
         clear_stage(core_index=0, byte_writes=(
             {"neuron": 0, "byte_addr": 9, "value": 0, "mask": 0},
         )),
@@ -97,6 +100,26 @@ class TestTheGoldenRoundTrip:
     def test_a_truncated_document_is_refused(self):
         with pytest.raises(SequencerProgramError, match="stages"):
             decode_program({"schema_version": SEQUENCER_SCHEMA_VERSION})
+
+
+class TestTheGateStageIsExplicit:
+    def test_the_gate_stage_carries_the_asserted_level(self):
+        assert gate_stage(on=True) == {"kind": STAGE_GATE, "payload": {"on": True}}
+        assert gate_stage(on=False) == {"kind": STAGE_GATE, "payload": {"on": False}}
+
+    def test_the_level_stays_a_boolean_through_the_round_trip(self):
+        program = SequencerProgram(stages=(gate_stage(on=False), gate_stage(on=True)))
+        doc = json.loads(json.dumps(emit_program(program)))
+        assert [s["payload"]["on"] for s in doc["stages"]] == [False, True]
+        assert decode_program(doc) == program
+
+    def test_a_gate_stage_without_a_level_is_refused(self):
+        with pytest.raises(SequencerProgramError, match="on"):
+            SequencerProgram(stages=({"kind": STAGE_GATE, "payload": {}},))
+
+    def test_a_non_boolean_level_is_refused_rather_than_coerced(self):
+        with pytest.raises(SequencerProgramError, match="on"):
+            SequencerProgram(stages=({"kind": STAGE_GATE, "payload": {"on": 1}},))
 
 
 class TestTheClearStageIsPerSample:

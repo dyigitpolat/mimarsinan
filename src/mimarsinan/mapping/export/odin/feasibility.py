@@ -2,19 +2,27 @@
 
 from __future__ import annotations
 
-import math
 from typing import Any, Dict, Iterable, Tuple
 
 import numpy as np
 
-from mimarsinan.chip_simulation.soma_axes import PER_AXON_SIGN, PER_SYNAPSE_SIGN
+from mimarsinan.chip_simulation.soma_axes import (
+    PER_AXON_SIGN,
+    PER_SYNAPSE_SIGN,
+    physical_row_expansion,
+)
 from mimarsinan.transformations.quantization_bounds import quantization_bounds
 
 KEY_THETA_CEILING = "odin.theta_ceiling"
 KEY_WEIGHT_MAGNITUDE_RANGE = "odin.weight_magnitude_range"
+KEY_SIGN_GRANULARITY = "odin.weight_sign_granularity"
 KEY_FAN_IN = "odin.fan_in"
 KEY_EMISSION_BOUND = "odin.emission_bound"
 KEY_MEMBRANE_INIT = "odin.membrane_init"
+
+#: The stock synapse cell holds an UNSIGNED magnitude signed once per PRE-synaptic
+#: row by SPI_SYN_SIGN, so a logical slot costs an excitatory/inhibitory row PAIR.
+STOCK_ROW_EXPANSION = 2
 
 #: The count currency a segment boundary carries (plan Sec.2.2): a per-window
 #: count above this cannot be transported, so the deployment refuses at export
@@ -99,6 +107,29 @@ def check_weight_magnitudes(
             f"silently.")
 
 
+def check_sign_granularity(weight_sign_granularity: Any) -> int:
+    """The physical row expansion the STOCK layout can represent, or a refusal.
+
+    The expansion factor itself is ``soma_axes.physical_row_expansion``'s answer —
+    this gate only decides whether the stock packer can emit it.
+    """
+    try:
+        expansion = physical_row_expansion(weight_sign_granularity)
+    except ValueError as error:
+        raise OdinFeasibilityError(KEY_SIGN_GRANULARITY, str(error)) from error
+    if expansion != STOCK_ROW_EXPANSION:
+        raise OdinFeasibilityError(
+            KEY_SIGN_GRANULARITY,
+            f"weight_sign_granularity={weight_sign_granularity!r} costs {expansion} "
+            f"physical row(s) per logical slot, but the stock ODIN crossbar signs a "
+            f"whole PRE-synaptic row through SPI_SYN_SIGN and its cell carries an "
+            f"unsigned magnitude, so only {PER_AXON_SIGN!r} (expansion "
+            f"{STOCK_ROW_EXPANSION}) is representable here. A signed nibble is a "
+            f"generator-variant feature: export the variant target rather than a "
+            f"stock image whose sign nothing carries.")
+    return expansion
+
+
 def check_fan_in(used_axons: int, *, effective_max_axons: int, core_index: int) -> None:
     """The exporter RE-CHECKS what the mapper should already have refused."""
     if int(used_axons) > int(effective_max_axons):
@@ -126,9 +157,12 @@ def check_membrane_init(value: Any, *, theta: int, core_index: int) -> int:
 def emission_bound_of(
     contributions: Iterable[Tuple[int, int]], *, theta: int
 ) -> int:
-    """``ceil((sum_a max(w,0) e_in(a) + (theta - 1)) / theta)`` — plan Sec.2.2."""
+    """``floor((sum_a max(w,0) e_in(a) + (theta - 1)) / theta)`` — plan Sec.2.2."""
+    # Total available charge is the entering membrane (at most theta-1) plus the
+    # arriving positive sum; each fire consumes at least theta under zero reset,
+    # so the count is at most floor(total/theta) — the TIGHT bound, not a ceiling.
     total = sum(max(int(weight), 0) * int(events) for weight, events in contributions)
-    return int(math.ceil((total + theta - 1) / theta))
+    return (total + theta - 1) // theta
 
 
 def propagate_emission_bounds(

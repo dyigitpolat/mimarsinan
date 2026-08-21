@@ -8,15 +8,22 @@ so a gate cannot be satisfied by another gate firing first.
 import numpy as np
 import pytest
 
+from mimarsinan.chip_simulation.soma_axes import (
+    PER_AXON_SIGN,
+    PER_SYNAPSE_SIGN,
+    physical_row_expansion,
+)
 from mimarsinan.code_generation.cpp_chip_model import SpikeSource
 from mimarsinan.mapping.export.odin.feasibility import (
     EMISSION_CEILING,
     KEY_EMISSION_BOUND,
     KEY_FAN_IN,
+    KEY_SIGN_GRANULARITY,
     KEY_THETA_CEILING,
     KEY_WEIGHT_MAGNITUDE_RANGE,
     OdinFeasibilityError,
     check_fan_in,
+    check_sign_granularity,
     check_theta_ceiling,
     check_weight_magnitudes,
     emission_bound_of,
@@ -121,6 +128,40 @@ class TestTheSymmetricMagnitudeGate:
 
 
 # --------------------------------------------------------------------------
+# E2b. The sign granularity the STOCK layout can actually represent.
+# --------------------------------------------------------------------------
+
+class TestTheSignGranularityGate:
+    def test_per_axon_returns_the_row_pair_expansion_factor(self):
+        assert check_sign_granularity(PER_AXON_SIGN) == 2
+
+    def test_the_factor_is_the_soma_axes_one_rather_than_a_second_literal(self):
+        assert check_sign_granularity(PER_AXON_SIGN) == physical_row_expansion(
+            PER_AXON_SIGN)
+
+    def test_per_synapse_is_refused_because_the_stock_cell_holds_no_sign(self):
+        with pytest.raises(OdinFeasibilityError) as excinfo:
+            check_sign_granularity(PER_SYNAPSE_SIGN)
+        assert excinfo.value.key == KEY_SIGN_GRANULARITY
+        assert PER_AXON_SIGN in str(excinfo.value)
+
+    def test_the_per_synapse_refusal_names_the_generator_variant_remedy(self):
+        with pytest.raises(OdinFeasibilityError, match="variant"):
+            check_sign_granularity(PER_SYNAPSE_SIGN)
+
+    def test_an_unknown_granularity_is_refused_by_the_same_key(self):
+        with pytest.raises(OdinFeasibilityError) as excinfo:
+            check_sign_granularity("banana")
+        assert excinfo.value.key == KEY_SIGN_GRANULARITY
+        assert "banana" in str(excinfo.value)
+
+    def test_an_undeclared_granularity_is_refused_rather_than_defaulted(self):
+        with pytest.raises(OdinFeasibilityError) as excinfo:
+            check_sign_granularity(None)
+        assert excinfo.value.key == KEY_SIGN_GRANULARITY
+
+
+# --------------------------------------------------------------------------
 # E3. fan-in over the effective limit (should already have fired upstream).
 # --------------------------------------------------------------------------
 
@@ -176,19 +217,21 @@ def _from(core, neuron):
 
 
 class TestTheEmissionBoundFormula:
-    """e_out(n) = ceil((sum_a max(w,0) e_in(a) + (theta - 1)) / theta)."""
+    """e_out(n) = floor((sum_a max(w,0) e_in(a) + (theta - 1)) / theta) — the TIGHT form."""
 
     @pytest.mark.parametrize(
         "positives, theta, expected",
         [
             # one unit-weight input at theta=1: every event crosses.
             (((1, 1),), 1, 1),
-            # sum 3, theta 2, entering membrane theta-1=1 -> ceil(4/2) = 2.
+            # sum 3, theta 2, entering membrane theta-1=1 -> floor(4/2) = 2.
             (((3, 1),), 2, 2),
-            # sum 6 over two axons with multiplicity, theta 3 -> ceil(8/3) = 3.
-            (((2, 2), (2, 1)), 3, 3),
-            # nothing positive still admits the entering membrane: ceil(4/5)=1.
-            ((), 5, 1),
+            # sum 6 over two axons with multiplicity, theta 3 -> floor(8/3) = 2.
+            (((2, 2), (2, 1)), 3, 2),
+            # sum 3 at theta 4: 3 + 3 charge buys ONE fire, not two.
+            (((3, 1),), 4, 1),
+            # nothing positive arrives, so nothing fires: floor(4/5) = 0.
+            ((), 5, 0),
         ],
     )
     def test_hand_computed_single_neuron_cases(self, positives, theta, expected):
@@ -198,6 +241,16 @@ class TestTheEmissionBoundFormula:
         assert emission_bound_of(((-9, 4), (2, 1)), theta=2) == emission_bound_of(
             ((2, 1),), theta=2
         )
+
+    def test_the_bound_is_the_tight_charge_count_in_both_directions(self):
+        # Available charge is the entering (theta-1) plus the arriving sum, and
+        # each fire consumes at least theta: k fires iff k*theta <= available.
+        for theta in range(1, 9):
+            for total in range(0, 40):
+                available = total + theta - 1
+                bound = emission_bound_of(((total, 1),), theta=theta)
+                assert bound * theta <= available
+                assert (bound + 1) * theta > available
 
 
 class TestTheBoundPropagatesTopologically:
@@ -232,14 +285,15 @@ class TestTheBoundPropagatesTopologically:
             threshold=1.0,
             sources=[_in(i) for i in range(4)],
         )
-        # 4 incoming events at w=1 with theta=4 -> ceil((4 + 3)/4) = 2.
+        # 4 incoming events at w=1 with theta=4 -> floor((4 + 3)/4) = 1.
         second = _core(
             np.array([[1.0]]), threshold=4.0, sources=[_from(0, 0)]
         )
         bounds = propagate_emission_bounds(
             _mapping([first, second], [_from(1, 0)]), ceiling=EMISSION_CEILING
         )
-        assert bounds[(1, 0)] == 2
+        assert bounds[(0, 0)] == 4
+        assert bounds[(1, 0)] == 1
 
     def test_an_always_on_bias_row_is_seeded_at_one(self):
         core = _core(

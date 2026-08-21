@@ -1,4 +1,4 @@
-"""The ODIN sequencer program: one versioned schema, one emitter, one decoder."""
+"""The ODIN sequencer program: one versioned schema, one emitter, one decoder, one gate."""
 
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ from mimarsinan.mapping.platform.event_order import drain_events
 SEQUENCER_SCHEMA_VERSION = 1
 
 STAGE_CONFIG = "CONFIG"
+STAGE_GATE = "GATE"
 STAGE_CLEAR = "CLEAR"
 STAGE_INJECT = "INJECT"
 STAGE_TREF = "TREF"
@@ -18,8 +19,21 @@ STAGE_BARRIER = "BARRIER"
 STAGE_READOUT = "READOUT"
 
 STAGE_KINDS: Tuple[str, ...] = (
-    STAGE_CONFIG, STAGE_CLEAR, STAGE_INJECT, STAGE_TREF, STAGE_BARRIER, STAGE_READOUT,
+    STAGE_CONFIG, STAGE_GATE, STAGE_CLEAR, STAGE_INJECT,
+    STAGE_TREF, STAGE_BARRIER, STAGE_READOUT,
 )
+
+# CROSS-LANGUAGE CONTRACT — SPI_GATE_ACTIVITY (config register 0, doc/README.md
+# Sec.4) gates ALL network activity and is what enables SPI access to the neuron
+# and synapse memories (doc/README.md Sec.2.1), so a stage that writes a memory
+# (CONFIG, CLEAR) must run with it asserted and a stage that expects the network
+# to step (INJECT, TREF, BARRIER, READOUT) must run with it de-asserted. CONFIG
+# asserts it through its own register write; every later change is a GATE stage,
+# so a consumer executing this program literally never programs memories it then
+# leaves frozen.
+_REQUIRED_PAYLOAD_FIELDS: Dict[str, Tuple[Tuple[str, type], ...]] = {
+    STAGE_GATE: (("on", bool),),
+}
 
 # CROSS-LANGUAGE CONTRACT — the drain bound's constants come from
 # ChFrenkel/ODIN @ 1781931: a neuron spike event costs 1 push cycle plus a
@@ -62,8 +76,14 @@ class SequencerProgram:
                 raise SequencerProgramError(
                     f"unknown sequencer stage {kind!r}; the schema declares "
                     f"{', '.join(STAGE_KINDS)}")
-            if not isinstance(stage.get("payload"), Mapping):
+            payload = stage.get("payload")
+            if not isinstance(payload, Mapping):
                 raise SequencerProgramError(f"stage {kind!r} carries no payload")
+            for name, expected in _REQUIRED_PAYLOAD_FIELDS.get(str(kind), ()):
+                if not isinstance(payload.get(name), expected):
+                    raise SequencerProgramError(
+                        f"stage {kind!r} needs the payload field {name!r} as a "
+                        f"{expected.__name__}, got {payload.get(name)!r}")
 
 
 def _stage(kind: str, payload: Mapping[str, Any]) -> Dict[str, Any]:
@@ -86,6 +106,11 @@ def config_stage(
         "neuron_words": [int(w) for w in neuron_words],
         "synapse_words": [int(w) for w in synapse_words],
     })
+
+
+def gate_stage(*, on: bool) -> Dict[str, Any]:
+    """Assert (``on``) or release SPI_GATE_ACTIVITY: memory access vs. network activity."""
+    return _stage(STAGE_GATE, {"on": bool(on)})
 
 
 _CLEAR_WRITE_FIELDS = ("neuron", "byte_addr", "value", "mask")
